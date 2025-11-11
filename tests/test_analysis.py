@@ -328,6 +328,39 @@ class TestDecodeAndDiagnostics:
         # Assert - output structure should be correct
         assert result["post"].shape == (n_time, n_bins)
 
+    def test_with_inflated_transition_matrix(self) -> None:
+        """Test that inflated transition matrix is used in specified window."""
+        # Arrange
+        n_time, n_cells = 10, 2
+        n_bins = 11
+        spikes = np.random.poisson(1.0, size=(n_time, n_cells))
+        xs = np.linspace(0, 100, n_bins)
+        transition_matrix = np.eye(n_bins) * 0.5 + 0.5 / n_bins
+        transition_matrix_inflated = np.eye(n_bins) * 0.2 + 0.8 / n_bins
+        pf_centers = np.array([25.0, 75.0])
+        pf_width = 5.0
+        rate_scale = 0.1
+        remap_window = (20, 20)  # Outside range
+        remap_from_to = (0, 1)
+        inflate_window = (4, 7)
+
+        # Act - should not raise error
+        result = decode_and_diagnostics(
+            spikes,
+            xs,
+            transition_matrix,
+            pf_centers,
+            pf_width,
+            rate_scale,
+            remap_window,
+            remap_from_to,
+            transition_matrix_inflated=transition_matrix_inflated,
+            inflate_window=inflate_window,
+        )
+
+        # Assert - output structure should be correct
+        assert result["post"].shape == (n_time, n_bins)
+
 
 class TestThresholds:
     """Tests for Thresholds dataclass."""

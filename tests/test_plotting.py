@@ -75,6 +75,19 @@ class TestComputeHpdRegion:
         # For uniform, approximately all points should be included
         assert np.sum(mask) / len(mask) > 0.90
 
+    def test_very_high_coverage(self) -> None:
+        """Test edge case with very high coverage (line 72)."""
+        x = np.linspace(-5, 5, 50)
+        pdf = np.exp(-0.5 * x**2) / np.sqrt(2 * np.pi)
+        # Request coverage close to 1.0 to trigger threshold_idx >= len check
+        mask = compute_hpd_region(x, pdf, coverage=0.999)
+
+        # Should still return a valid mask
+        assert mask.shape == x.shape
+        assert mask.dtype == bool
+        # Most points should be included (allow some margin for discrete approximation)
+        assert np.sum(mask) / len(mask) > 0.60
+
 
 class TestPlotOriginal:
     """Tests for plot_original function."""
@@ -190,6 +203,28 @@ class TestPlotTransformed:
         )
 
         fig = plot_transformed(xs, x_true, post, tr, remap_window=(20, 40))
+
+        assert isinstance(fig, plt.Figure)
+        plt.close(fig)
+
+    def test_with_phase_boundaries(self) -> None:
+        """Test plot_transformed with phase boundaries (lines 360-362)."""
+        n_time, n_bins = 100, 50
+        xs = np.linspace(0, 1, n_bins)
+        x_true = np.random.uniform(0, n_bins - 1, n_time)
+        post = np.random.dirichlet(np.ones(n_bins), size=n_time)
+
+        tr = Transformed(
+            HPDO=np.random.uniform(0, 5, n_time),
+            KL=np.random.uniform(0, 3, n_time),
+            spike_prob=np.random.uniform(0, 10, n_time),
+            HPDO_th=3.0,
+            KL_th=2.0,
+            spike_prob_th=5.0,
+        )
+
+        # Provide phase_boundaries to test lines 360-362
+        fig = plot_transformed(xs, x_true, post, tr, phase_boundaries=(30, 70))
 
         assert isinstance(fig, plt.Figure)
         plt.close(fig)

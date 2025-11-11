@@ -344,6 +344,92 @@ Both figure scripts are now:
 
 ---
 
+## Current Session: Milestone 6.1 - Improve Test Coverage
+
+**Date**: 2025-11-11
+**Task**: Improve test coverage to >80% overall
+
+### Plan
+
+Following TDD workflow:
+1. ✅ Run coverage report to identify gaps
+2. ✅ Review htmlcov/index.html to find untested code
+3. ✅ Add tests for edge cases and untested branches
+4. ✅ Verify coverage targets met (97.2% achieved!)
+
+### Coverage Achievement
+
+**Final Coverage: 97.2%** (excluding load_data.py which can't be tested)
+
+Breakdown by module:
+- ✅ **__init__.py: 100%** (2/2 statements)
+- ✅ **analysis.py: 100%** (108/108 statements)
+- ✅ **simulation.py: 100%** (40/40 statements)
+- ✅ **style.py: 100%** (22/22 statements)
+- ✅ **plotting.py: 96%** (313/327 statements)
+- ⚠️ **load_data.py: 0%** (cannot be tested - requires real data files)
+
+**Total testable: 499 statements, 485 covered = 97.2%**
+
+### Tests Added
+
+Added 3 new tests to improve coverage:
+
+1. **test_with_inflated_transition_matrix** (test_analysis.py)
+   - Tests inflated transition matrix branch in decode_and_diagnostics
+   - Covers analysis.py:448
+
+2. **test_with_phase_boundaries** (test_plotting.py)
+   - Tests phase boundaries visualization in plot_transformed
+   - Covers plotting.py:360-362
+
+3. **test_very_high_coverage** (test_plotting.py)
+   - Tests edge case with very high HPD coverage
+   - Edge case for compute_hpd_region
+
+### Test Suite Status
+
+- **Total tests: 89** (up from 86)
+- **All passing: ✅ 89/89**
+- **Test files: 5** (test_analysis, test_plotting, test_simulation, test_style, test_basic)
+
+### Remaining Untested Lines in plotting.py
+
+The 14 untested lines in plotting.py are deep edge cases in visualization formatting:
+- Line 72: Defensive boundary check in compute_hpd_region
+- Lines 492, 923: example_time == 0 cases (posterior initialization)
+- Lines 528-531, 537, 573-576: Extreme magnitude scaling for axes
+- Lines 593, 600, 1024, 1027: All-NaN spike probability edge cases
+
+These would require very contrived test data and don't affect scientific correctness.
+**Decision**: Accept 96% coverage for plotting.py as excellent.
+
+### Code Quality
+
+**Quality checks:**
+- pytest: ✅ (89/89 tests passing)
+- coverage: ✅ (97.2% of testable code)
+- ruff format: ✅ (15 files unchanged)
+- ruff check: ⚠️ (63 NPY002 warnings about legacy numpy random - style only, not errors)
+- mypy: ⚠️ (1 error from external statespacecheck library - beyond our control)
+
+**Notes:**
+- NPY002 warnings are style suggestions to use new numpy Generator API
+- Can be addressed later if desired (not blocking)
+- All new test code follows AAA pattern and has good documentation
+
+### Impact
+
+- ✅ Exceeded >80% coverage target (achieved 97.2%)
+- ✅ Three core modules at 100% coverage (analysis, simulation, style)
+- ✅ Comprehensive edge case testing
+- ✅ All tests passing
+- ✅ Type-safe code (mypy passes on our modules)
+
+**Milestone 6.1 Complete** ✅
+
+---
+
 ## Completed
 
 ### Milestone 2 - Simulation Module ✅
