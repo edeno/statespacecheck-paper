@@ -12,73 +12,19 @@ import matplotlib.pyplot as plt
 import numpy as np
 import statespacecheck as ssc
 from numpy.typing import NDArray
-from scipy.stats import norm, poisson
+from scipy.stats import poisson
 
+from statespacecheck_paper.simulation import (
+    gaussian_transition_matrix,
+    normalize,
+    placefield_rates,
+    safe_log,
+    simulate_spikes_flat_rate,
+    simulate_spikes_position_tuned,
+    simulate_walk,
+    spike_prob_rank,
+)
 from statespacecheck_paper.style import WONG, save_figure
-
-# -----------------------------
-# Utilities (DRY helpers)
-# -----------------------------
-
-
-def normalize(
-    p: NDArray[np.floating], axis: int | None = None, eps: float = 1e-12
-) -> NDArray[np.floating]:
-    """Return p / sum(p) with numerical safety."""
-    s = np.sum(p, axis=axis, keepdims=True)
-    s = np.maximum(s, eps)
-    return p / s
-
-
-def reflect_into_interval(x: NDArray[np.floating], lo: float, hi: float) -> NDArray[np.floating]:
-    """Reflect a walk into [lo, hi] using the 'triangle wave' trick like the MATLAB triple-abs."""
-    length = hi - lo
-    y = np.mod(x - lo, 2 * length)
-    y = np.where(y <= length, y, 2 * length - y)
-    return y + lo
-
-
-def gaussian_transition_matrix(xs: NDArray[np.floating], sig: float) -> NDArray[np.floating]:
-    """Compute one-step transition matrix for Gaussian random walk.
-
-    Returns matrix[i, j] = p(x_t = xs[i] | x_{t-1} = xs[j]) with std sig.
-    """
-    diff = xs[:, None] - xs[None, :]
-    matrix = norm.pdf(diff, loc=0.0, scale=sig)
-    return normalize(matrix, axis=0)  # columns sum to 1
-
-
-def safe_log(x: NDArray[np.floating], eps: float = 1e-12) -> NDArray[np.floating]:
-    """Return log(x) with numerical safety to avoid log(0)."""
-    return np.log(np.maximum(x, eps))
-
-
-def placefield_rates(
-    xs: NDArray[np.floating], centers: NDArray[np.floating], width: float, scale: float
-) -> NDArray[np.floating]:
-    """lambda_mat[bin, cell] = scaled Gaussian place field evaluated on xs for each center."""
-    return norm.pdf(xs[:, None], loc=centers[None, :], scale=width) * scale
-
-
-def spike_prob_rank(
-    prior: NDArray[np.floating],
-    lambda_ratio: NDArray[np.floating],
-) -> NDArray[np.floating]:
-    """Compute cumulative probability mass of cells with low expected contribution.
-
-    Matches MATLAB: sum(lambda_expect(lambda_expect <= lambda_expect(j)))
-    where lambda_expect are probabilities summing to 1.
-
-    prior: (n_bins,)
-    lambda_ratio: (n_bins, n_cells), rows sum to 1.
-    returns: (n_cells,), each in [0,1] representing cumulative probability mass.
-    """
-    contrib = prior @ lambda_ratio  # (n_cells,) - probabilities summing to ~1
-    # Sum probability mass of cells with contribution <= each cell's contribution
-    mask = contrib[:, None] <= contrib[None, :]  # (n_cells, n_cells)
-    spike_probs = (contrib[None, :] * mask).sum(axis=1)  # Sum probabilities, not counts
-    return spike_probs
-
 
 # -----------------------------
 # Data containers
@@ -141,44 +87,6 @@ class DecodeParams:
         """Initialize pf_centers if not provided."""
         if self.pf_centers is None:
             self.pf_centers = np.arange(self.xs_min, self.xs_max + 1, 10, dtype=float)
-
-
-# -----------------------------
-# Simulation
-# -----------------------------
-
-
-def simulate_walk(
-    n_time: int,
-    sig: float,
-    x0: float,
-    xs_min: float,
-    xs_max: float,
-    rng: np.random.Generator,
-) -> NDArray[np.floating]:
-    """Simulate random walk with reflecting boundary conditions."""
-    steps = rng.normal(loc=0.0, scale=sig, size=n_time)
-    x = x0 + np.cumsum(steps)
-    return reflect_into_interval(x, xs_min, xs_max)
-
-
-def simulate_spikes_position_tuned(
-    x: NDArray[np.floating],
-    pf_centers: NDArray[np.floating],
-    pf_width: float,
-    rate_scale: float,
-    rng: np.random.Generator,
-) -> NDArray[np.int_]:
-    """Poisson spikes for each time and cell: spikes[t, j]."""
-    lam = norm.pdf(x[:, None], loc=pf_centers[None, :], scale=pf_width) * rate_scale
-    return rng.poisson(lam)
-
-
-def simulate_spikes_flat_rate(
-    n_time: int, n_cells: int, rate: float, rng: np.random.Generator
-) -> NDArray[np.int_]:
-    """Simulate spikes with flat (non-position-tuned) firing rate."""
-    return rng.poisson(rate, size=(n_time, n_cells))
 
 
 # -----------------------------
