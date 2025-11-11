@@ -6,279 +6,28 @@ then computes diagnostic metrics using the statespacecheck package.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 import matplotlib.pyplot as plt
 import numpy as np
-import statespacecheck as ssc
 from numpy.typing import NDArray
-from scipy.stats import poisson
 
+from statespacecheck_paper.analysis import (
+    DecodeParams,
+    Thresholds,
+    Transformed,
+    apply_remap_for_likelihoods,
+    compute_thresholds,
+    decode_and_diagnostics,
+    likelihood_grid_for_counts,
+)
 from statespacecheck_paper.simulation import (
     gaussian_transition_matrix,
     normalize,
-    placefield_rates,
     safe_log,
     simulate_spikes_flat_rate,
     simulate_spikes_position_tuned,
     simulate_walk,
-    spike_prob_rank,
 )
 from statespacecheck_paper.style import WONG, save_figure
-
-# -----------------------------
-# Data containers
-# -----------------------------
-
-
-@dataclass
-class DecodeParams:
-    """Parameters for decoding simulation."""
-
-    # Timeline with recovery periods between misfits:
-    # 0-6k: Clean baseline
-    # 6k-10k: Remapping misfit (4k)
-    # 10k-14k: Clean recovery (4k)
-    # 14k-16k: Flat firing misfit (2k)
-    # 16k-20k: Clean recovery (4k)
-    # 20k-24k: Fast movement misfit (4k)
-    # 24k-28k: Clean recovery (4k)
-    # 28k-32k: Slow movement misfit (4k)
-    T_remap_start: int = 6_000
-    T_remap_end: int = 10_000
-    T_recovery1_end: int = 14_000
-    T_flat_end: int = 16_000
-    T_recovery2_end: int = 20_000
-    T_fast_end: int = 24_000
-    T_recovery3_end: int = 28_000
-    T_slow_end: int = 32_000
-    sigx_pred: float = 0.5  # decoder's dynamics std (baseline)
-    sigx_pred_fast_phase: float = 0.1  # narrow decoder for fast phase (5x too narrow!)
-    sigx_pred_slow_phase: float = 20.0  # inflated decoder for slow phase (40x too broad!)
-    sigx_true_fast: float = 10.0  # true dynamics std in fast phase (100x faster than decoder!)
-    sigx_true_slow: float = 0.0  # true dynamics std in slow phase (completely stationary!)
-    xs_min: int = 0
-    xs_max: int = 100
-    xs_step: int = 1
-    pf_width: float = 5.0  # Narrow place fields for sharp spatial selectivity
-    pf_centers: NDArray[np.floating] | None = None  # set in __post_init__
-    rate_scale: float = 0.15  # Higher spike rate to reduce uncertainty
-    base_seed: int = 1
-    remap_from_to: tuple[tuple[int, int], ...] | tuple[int, int] = (
-        (0, 5),  # Position 0 → 50 (shift +50cm)
-        (1, 6),  # Position 10 → 60
-        (2, 7),  # Position 20 → 70
-        (3, 8),  # Position 30 → 80
-        (4, 9),  # Position 40 → 90
-        (5, 10),  # Position 50 → 100
-        (6, 0),  # Position 60 → 0
-        (7, 1),  # Position 70 → 10
-        (8, 2),  # Position 80 → 20
-        (9, 3),  # Position 90 → 30
-        (10, 4),  # Position 100 → 40
-    )  # Remap ALL 11 cells with +50cm circular shift
-
-    @property
-    def remap_window(self) -> tuple[int, int]:
-        """Remapping window for backward compatibility."""
-        return (self.T_remap_start, self.T_remap_end)
-
-    def __post_init__(self) -> None:
-        """Initialize pf_centers if not provided."""
-        if self.pf_centers is None:
-            self.pf_centers = np.arange(self.xs_min, self.xs_max + 1, 10, dtype=float)
-
-
-# -----------------------------
-# Decoder step (vectorized across cells/bins)
-# -----------------------------
-
-
-def likelihood_grid_for_counts(
-    xs: NDArray[np.floating],
-    pf_centers: NDArray[np.floating],
-    pf_width: float,
-    rate_scale: float,
-    counts: NDArray[np.int_],
-) -> NDArray[np.floating]:
-    """Compute likelihood grid for spike counts.
-
-    L_grid[bin, cell] ∝ P(counts[cell] | position=xs[bin])
-    Not normalized across bins; we normalize later per-cell.
-    """
-    lam = placefield_rates(xs, pf_centers, pf_width, rate_scale)  # (n_bins, n_cells)
-    # Poisson PMF per bin, per cell for this time's counts
-    # counts is (n_cells,), lam is (n_bins, n_cells)
-    likelihood_grid = poisson.pmf(counts[None, :], lam)
-    # Avoid degenerate zeros; normalize per cell (over bins) to a proper density on xs
-    likelihood_grid = normalize(likelihood_grid, axis=0)
-    return likelihood_grid
-
-
-def apply_remap_for_likelihoods(
-    likelihood: NDArray[np.floating],
-    remap_from_to: tuple[tuple[int, int], ...] | tuple[int, int],
-    active: bool,
-) -> NDArray[np.floating]:
-    """Optionally replace one or more columns by others (remapping cell identities)."""
-    if not active:
-        return likelihood
-    likelihood = likelihood.copy()
-
-    # Handle both single tuple and tuple of tuples
-    if (
-        isinstance(remap_from_to, tuple)
-        and len(remap_from_to) == 2
-        and isinstance(remap_from_to[0], int)
-    ):
-        # Single remapping: (src, dst)
-        src, dst = remap_from_to
-        likelihood[:, src] = likelihood[:, dst]
-    else:
-        # Multiple remappings: ((src1, dst1), (src2, dst2), ...)
-        for src, dst in remap_from_to:
-            likelihood[:, src] = likelihood[:, dst]
-
-    return likelihood
-
-
-def decode_and_diagnostics(
-    spikes: NDArray[np.int_],
-    xs: NDArray[np.floating],
-    transition_matrix: NDArray[np.floating],
-    pf_centers: NDArray[np.floating],
-    pf_width: float,
-    rate_scale: float,
-    remap_window: tuple[int, int],
-    remap_from_to: tuple[tuple[int, int], ...] | tuple[int, int],
-    rng: np.random.Generator | None = None,
-    transition_matrix_narrow: NDArray[np.floating] | None = None,
-    narrow_window: tuple[int, int] | None = None,
-    transition_matrix_inflated: NDArray[np.floating] | None = None,
-    inflate_window: tuple[int, int] | None = None,
-) -> dict[str, NDArray]:
-    """Run the Bayesian filter with per-time, per-cell diagnostics.
-
-    Returns dict with: post, HPDO, KL, spikeProb
-    """
-    n_time, n_cells = spikes.shape
-    n_bins = xs.size
-
-    post = np.zeros((n_time, n_bins), dtype=float)
-    hpdo = np.full(n_time, np.nan, dtype=float)  # Single value per timestep
-    kl = np.full(n_time, np.nan, dtype=float)  # Single value per timestep
-    spike_prob = np.full((n_time, n_cells), np.nan, dtype=float)  # Keep per-cell for this metric
-
-    # t=0 (MATLAB used a flat prior at t=1)
-    post[0] = normalize(np.ones(n_bins))
-
-    lam_grid_all = placefield_rates(xs, pf_centers, pf_width, rate_scale)  # (n_bins, n_cells)
-    lambda_ratio = normalize(lam_grid_all, axis=1)  # per-bin cell-fractions, rows sum to 1
-
-    start_r, end_r = remap_window
-    start_narrow, end_narrow = narrow_window if narrow_window else (n_time + 1, n_time + 1)
-    start_inflate, end_inflate = inflate_window if inflate_window else (n_time + 1, n_time + 1)
-
-    for t in range(1, n_time):
-        # Select transition matrix based on which window we're in
-        if transition_matrix_narrow is not None and start_narrow <= t <= end_narrow:
-            current_transition = transition_matrix_narrow
-        elif transition_matrix_inflated is not None and start_inflate <= t <= end_inflate:
-            current_transition = transition_matrix_inflated
-        else:
-            current_transition = transition_matrix
-
-        # Predict (prior from state dynamics)
-        prior = normalize(post[t - 1] @ current_transition)  # (n_bins,)
-
-        # Likelihood grid for this time's counts (vectorized over bins & cells)
-        likelihood = likelihood_grid_for_counts(xs, pf_centers, pf_width, rate_scale, spikes[t])
-        # Optional remap (imitating MATLAB's j==10 uses field of j==1 in a window)
-        active_remap = start_r <= t <= end_r
-        likelihood = apply_remap_for_likelihoods(likelihood, remap_from_to, active_remap)
-
-        # Compute combined likelihood from all cells (product over cells)
-        combined_likelihood = np.prod(likelihood, axis=1)  # (n_bins,)
-
-        # Compute diagnostics using statespacecheck functions
-        # Compare one-step prediction (prior) with combined likelihood (observation model)
-        prior_t = prior[np.newaxis, :]  # (1, n_bins)
-        combined_likelihood_t = combined_likelihood[np.newaxis, :]  # (1, n_bins)
-
-        # HPD overlap between prior and combined likelihood
-        hpdo_t = ssc.hpd_overlap(prior_t, combined_likelihood_t, coverage=0.95)
-        hpdo[t] = hpdo_t[0]
-
-        # KL divergence between prior and combined likelihood
-        kl_t = ssc.kl_divergence(prior_t, combined_likelihood_t)
-        kl[t] = kl_t[0]
-
-        # Posterior update
-        post[t] = normalize(prior * combined_likelihood)
-
-        # spike_prob: cumulative probability mass for cells with low expected contribution
-        spike_prob[t] = spike_prob_rank(prior, lambda_ratio)
-
-    # Mask spike_prob for cells with zero spikes (match MATLAB: spikeProb(spikes == 0) = nan)
-    # Note: HPDO and KL are now per-timestep (not per-cell) since they compare
-    # the combined likelihood with the prior, so we don't mask them
-    spike_prob[spikes == 0] = np.nan
-
-    return {"post": post, "HPDO": hpdo, "KL": kl, "spikeProb": spike_prob}
-
-
-# -----------------------------
-# Thresholds & transforms
-# -----------------------------
-
-
-@dataclass
-class Thresholds:
-    """Threshold values for diagnostic metrics."""
-
-    HPDO: float
-    KL: float
-    spike_prob: float
-
-
-def compute_thresholds(metrics: dict[str, NDArray], baseline_end: int = 60_000) -> Thresholds:
-    """Compute threshold values from baseline period."""
-    hpdo_thresh = np.nanquantile(metrics["HPDO"][:baseline_end], 0.01)
-    kl_thresh = np.nanquantile(metrics["KL"][:baseline_end], 0.99)
-    # MATLAB uses 0.05 as fixed threshold (raw count, not normalized)
-    spike_prob_thresh = 0.05
-    return Thresholds(HPDO=hpdo_thresh, KL=kl_thresh, spike_prob=spike_prob_thresh)
-
-
-@dataclass
-class Transformed:
-    """Transformed diagnostic metrics and thresholds."""
-
-    HPDO: NDArray[np.floating]
-    KL: NDArray[np.floating]
-    spike_prob: NDArray[np.floating]
-    HPDO_th: float
-    KL_th: float
-    spike_prob_th: float
-
-
-def transform_metrics(
-    metrics: dict[str, NDArray], th: Thresholds, eps1: float = 1e-2, eps2: float = 1e-10
-) -> Transformed:
-    """Apply transformations to metrics for better visualization."""
-    hpdo_transformed = -safe_log(metrics["HPDO"] + eps1)
-    kl_transformed = np.sqrt(metrics["KL"])
-    spike_prob_transformed = -safe_log(metrics["spikeProb"] + eps2)
-
-    return Transformed(
-        HPDO=hpdo_transformed,
-        KL=kl_transformed,
-        spike_prob=spike_prob_transformed,
-        HPDO_th=-np.log(th.HPDO + eps1),
-        KL_th=np.sqrt(th.KL),
-        spike_prob_th=-np.log(th.spike_prob + eps2),
-    )
-
 
 # -----------------------------
 # Plotting

@@ -75,6 +75,98 @@ All tests follow AAA pattern (Arrange-Act-Assert)
 
 ---
 
+## Current Session: Milestone 3 - Analysis Module
+
+**Date**: 2025-11-11
+**Task**: Extract analysis logic to `analysis.py` module
+
+### Plan
+
+Following TDD workflow:
+1. ✅ Read figure02.py to understand functions to extract
+2. ✅ Create test_analysis.py with tests (TDD - tests first!)
+3. ✅ Run tests and verify they FAIL (ModuleNotFoundError as expected)
+4. ✅ Create analysis.py implementation
+5. ✅ Run tests until they PASS (22/22 tests passing, 99% coverage)
+6. ✅ Update figure02.py to use new module
+7. ✅ Verify figure02.py imports work correctly
+8. ✅ Apply code-reviewer agent for quality checks
+9. ✅ Run all quality checks (ruff, mypy, pytest - all passing)
+
+### Items Extracted from figure02.py
+
+Three dataclasses:
+1. **DecodeParams** - Configuration for decoding simulation with timeline structure
+2. **Thresholds** - Threshold values for diagnostic metrics
+3. **Transformed** - Transformed diagnostic metrics for visualization
+
+Five analysis functions:
+1. **likelihood_grid_for_counts()** - Compute Poisson likelihood for spike counts
+2. **apply_remap_for_likelihoods()** - Apply cell identity remapping
+3. **decode_and_diagnostics()** - Main Bayesian decoder with diagnostics
+4. **compute_thresholds()** - Compute thresholds from baseline period
+5. **transform_metrics()** - Apply transformations for better visualization
+
+### Design Decisions
+
+**Type annotations:**
+- Full type hints using `NDArray[np.floating]`
+- Proper generic types for dict returns
+- No cast() needed - explicit variable typing
+
+**Module organization:**
+- Data containers first (DecodeParams, Thresholds, Transformed)
+- Decoder components (likelihood, remapping, filtering)
+- Post-processing (thresholds, transforms)
+- Clear progression from configuration to results
+
+**Scientific correctness:**
+- Proper Bayesian filter implementation (predict-update cycle)
+- Careful NaN handling for undefined diagnostics
+- Numerical stability via normalize() and safe_log()
+
+### Notes
+
+- Module-level docstring with runnable examples
+- Comprehensive NumPy-format docstrings for all functions and dataclasses
+- Full type hints required (mypy strict mode passes)
+- 99% test coverage achieved (22 tests)
+- Code-reviewer agent approved: "APPROVE - This is production-ready code"
+
+### Testing Strategy
+
+Created 8 test classes with 22 tests total:
+1. **TestDecodeParams** - 4 tests (defaults, post_init, property)
+2. **TestLikelihoodGridForCounts** - 3 tests (shape, normalization, zero counts)
+3. **TestApplyRemapForLikelihoods** - 4 tests (inactive, single/multiple remapping, copy behavior)
+4. **TestDecodeAndDiagnostics** - 4 tests (keys, shapes, NaN handling, transition matrices)
+5. **TestThresholds** - 1 test (instantiation)
+6. **TestComputeThresholds** - 2 tests (computation, NaN handling)
+7. **TestTransformed** - 1 test (instantiation)
+8. **TestTransformMetrics** - 3 tests (transformations, NaN handling, default eps)
+
+All tests follow AAA pattern (Arrange-Act-Assert)
+
+### Code Quality
+
+**Quality checks:**
+- ruff format: ✅ (2 files reformatted)
+- ruff check: ✅ (auto-fixed unused import and import ordering)
+- mypy: ✅ (only external library warning for statespacecheck)
+- pytest: ✅ (71/71 tests passing, 99% coverage on analysis.py)
+- code-reviewer: ✅ (APPROVED - "exceptional software engineering")
+
+**Review highlights:**
+- Outstanding documentation with examples
+- Excellent type hints (complete and correct)
+- Comprehensive test coverage (99%)
+- Clean separation of concerns
+- Excellent use of dataclasses
+- Scientific correctness validated
+- Performance considerations (vectorized operations)
+
+---
+
 ## Completed
 
 ### Milestone 2 - Simulation Module ✅

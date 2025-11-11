@@ -138,8 +138,8 @@ Track progress through the refactoring plan. See [REFACTORING_PLAN.md](REFACTORI
 
 ### 2.5 Commit
 
-- [ ] `git add src/statespacecheck_paper/simulation.py tests/test_simulation.py figures/figure02.py`
-- [ ] `git commit -m "Extract simulation utilities to simulation.py with tests"`
+- [x] `git add src/statespacecheck_paper/simulation.py tests/test_simulation.py figures/figure02.py`
+- [x] `git commit -m "Extract simulation utilities to simulation.py with tests"`
 
 **Milestone 2 Complete** ✅
 
@@ -151,63 +151,63 @@ Track progress through the refactoring plan. See [REFACTORING_PLAN.md](REFACTORI
 
 ### 3.1 Create analysis.py Module
 
-- [ ] Create `src/statespacecheck_paper/analysis.py`
-- [ ] Extract from figure02.py:
-  - [ ] `DecodeParams` dataclass (lines 87-142)
-  - [ ] `Thresholds` dataclass (lines 326-332)
-  - [ ] `Transformed` dataclass (lines 344-353)
-  - [ ] `likelihood_grid_for_counts()` (lines 187-205)
-  - [ ] `apply_remap_for_likelihoods()` (lines 208-232)
-  - [ ] `decode_and_diagnostics()` (lines 235-317)
-  - [ ] `compute_thresholds()` (lines 334-340)
-  - [ ] `transform_metrics()` (lines 356-370)
-- [ ] Add comprehensive docstrings
-- [ ] Add type hints
-- [ ] Add module-level docstring explaining diagnostic metrics
+- [x] Create `src/statespacecheck_paper/analysis.py`
+- [x] Extract from figure02.py:
+  - [x] `DecodeParams` dataclass (lines 87-142)
+  - [x] `Thresholds` dataclass (lines 326-332)
+  - [x] `Transformed` dataclass (lines 344-353)
+  - [x] `likelihood_grid_for_counts()` (lines 187-205)
+  - [x] `apply_remap_for_likelihoods()` (lines 208-232)
+  - [x] `decode_and_diagnostics()` (lines 235-317)
+  - [x] `compute_thresholds()` (lines 334-340)
+  - [x] `transform_metrics()` (lines 356-370)
+- [x] Add comprehensive docstrings
+- [x] Add type hints
+- [x] Add module-level docstring explaining diagnostic metrics
 
 ### 3.2 Update figure02.py
 
-- [ ] Add import: `from statespacecheck_paper.analysis import ...`
-- [ ] Remove extracted data classes and functions
-- [ ] Update calls to use imported functions
-- [ ] Test: `python figures/figure02.py` runs successfully
-- [ ] Verify: Output identical to before
+- [x] Add import: `from statespacecheck_paper.analysis import ...`
+- [x] Remove extracted data classes and functions
+- [x] Update calls to use imported functions
+- [x] Test: `python figures/figure02.py` runs successfully
+- [x] Verify: Output identical to before
 
 ### 3.3 Create Tests
 
-- [ ] Create `tests/test_analysis.py`
-- [ ] Test `DecodeParams`:
-  - [ ] Default values set correctly
-  - [ ] `__post_init__` initializes pf_centers
-  - [ ] `remap_window` property works
-- [ ] Test `likelihood_grid_for_counts()`:
-  - [ ] Output shape correct
-  - [ ] Values normalized per cell
-  - [ ] Handles zero counts
-- [ ] Test `apply_remap_for_likelihoods()`:
-  - [ ] Active=False returns unchanged
-  - [ ] Active=True applies remapping correctly
-  - [ ] Handles single and multiple remappings
-- [ ] Test `decode_and_diagnostics()` (integration):
-  - [ ] Output has expected keys
-  - [ ] Output shapes correct
-  - [ ] NaN handling correct
-- [ ] Test `compute_thresholds()`:
-  - [ ] Thresholds computed from baseline period
-  - [ ] Quantiles at correct levels
-- [ ] Test `transform_metrics()`:
-  - [ ] Transformations applied correctly
-  - [ ] Handles NaN values
-- [ ] Run: `uv run pytest tests/test_analysis.py -v --cov`
-- [ ] Target: >80% coverage achieved
+- [x] Create `tests/test_analysis.py`
+- [x] Test `DecodeParams`:
+  - [x] Default values set correctly
+  - [x] `__post_init__` initializes pf_centers
+  - [x] `remap_window` property works
+- [x] Test `likelihood_grid_for_counts()`:
+  - [x] Output shape correct
+  - [x] Values normalized per cell
+  - [x] Handles zero counts
+- [x] Test `apply_remap_for_likelihoods()`:
+  - [x] Active=False returns unchanged
+  - [x] Active=True applies remapping correctly
+  - [x] Handles single and multiple remappings
+- [x] Test `decode_and_diagnostics()` (integration):
+  - [x] Output has expected keys
+  - [x] Output shapes correct
+  - [x] NaN handling correct
+- [x] Test `compute_thresholds()`:
+  - [x] Thresholds computed from baseline period
+  - [x] Quantiles at correct levels
+- [x] Test `transform_metrics()`:
+  - [x] Transformations applied correctly
+  - [x] Handles NaN values
+- [x] Run: `uv run pytest tests/test_analysis.py -v --cov`
+- [x] Target: >80% coverage achieved (99% achieved!)
 
 ### 3.4 Quality Checks
 
-- [ ] Run: `uv run ruff format .`
-- [ ] Run: `uv run ruff check .`
-- [ ] Run: `uv run mypy src/`
-- [ ] Run: `uv run pytest`
-- [ ] All checks pass ✅
+- [x] Run: `uv run ruff format .`
+- [x] Run: `uv run ruff check .`
+- [x] Run: `uv run mypy src/`
+- [x] Run: `uv run pytest`
+- [x] All checks pass ✅
 
 ### 3.5 Commit
 
