@@ -12,42 +12,8 @@ import numpy as np
 from matplotlib.patches import Rectangle
 from scipy import stats
 
+from statespacecheck_paper.plotting import compute_hpd_region
 from statespacecheck_paper.style import WONG, save_figure, set_figure_defaults
-
-
-def compute_hpd_region(x: np.ndarray, pdf: np.ndarray, coverage: float = 0.95) -> np.ndarray:
-    """Compute highest posterior density region for given coverage.
-
-    Parameters
-    ----------
-    x : np.ndarray
-        Domain values.
-        Shape (n_points,)
-    pdf : np.ndarray
-        Probability density values (must be normalized).
-        Shape (n_points,)
-    coverage : float
-        Desired coverage probability (default 0.95).
-
-    Returns
-    -------
-    mask : np.ndarray
-        Boolean mask indicating points in HPD region.
-        Shape (n_points,)
-    """
-    # Normalize to ensure proper probability
-    dx = x[1] - x[0]
-    pdf_normalized = pdf / (np.sum(pdf) * dx)
-
-    # Sort by density and find threshold
-    sorted_pdf = np.sort(pdf_normalized)[::-1]  # Descending
-    cumsum = np.cumsum(sorted_pdf) * dx
-    threshold_idx = np.searchsorted(cumsum, coverage)
-    if threshold_idx >= len(sorted_pdf):
-        threshold_idx = len(sorted_pdf) - 1
-    threshold = sorted_pdf[threshold_idx]
-
-    return pdf_normalized >= threshold
 
 
 def create_figure() -> None:

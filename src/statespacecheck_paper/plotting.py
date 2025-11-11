@@ -1,0 +1,1094 @@
+"""Plotting utilities for state space model diagnostics.
+
+This module provides functions for creating publication-ready figures showing
+diagnostic metrics and misfit examples for state space models.
+
+Examples
+--------
+>>> import numpy as np
+>>> from statespacecheck_paper.plotting import compute_hpd_region
+>>> x = np.linspace(-5, 5, 100)
+>>> pdf = np.exp(-0.5 * x**2) / np.sqrt(2 * np.pi)
+>>> mask = compute_hpd_region(x, pdf, coverage=0.95)
+>>> mask.shape
+(100,)
+"""
+
+from __future__ import annotations
+
+import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
+import numpy as np
+from matplotlib import gridspec
+from matplotlib.figure import Figure
+from matplotlib.ticker import FuncFormatter, NullFormatter
+from numpy.typing import NDArray
+
+from statespacecheck_paper.analysis import (
+    DecodeParams,
+    Thresholds,
+    Transformed,
+    apply_remap_for_likelihoods,
+    likelihood_grid_for_counts,
+)
+from statespacecheck_paper.simulation import gaussian_transition_matrix, normalize, safe_log
+from statespacecheck_paper.style import WONG
+
+
+def compute_hpd_region(x: np.ndarray, pdf: np.ndarray, coverage: float = 0.95) -> np.ndarray:
+    """Compute highest posterior density region for given coverage.
+
+    Parameters
+    ----------
+    x : np.ndarray, shape (n_points,)
+        Domain values.
+    pdf : np.ndarray, shape (n_points,)
+        Probability density values (must be normalized).
+    coverage : float, default 0.95
+        Desired coverage probability.
+
+    Returns
+    -------
+    mask : np.ndarray, shape (n_points,)
+        Boolean mask indicating points in HPD region.
+
+    Examples
+    --------
+    >>> x = np.linspace(-5, 5, 100)
+    >>> pdf = np.exp(-0.5 * x**2) / np.sqrt(2 * np.pi)
+    >>> mask = compute_hpd_region(x, pdf, coverage=0.95)
+    >>> mask.dtype == bool
+    True
+    """
+    # Normalize to ensure proper probability
+    dx = x[1] - x[0]
+    pdf_normalized = pdf / (np.sum(pdf) * dx)
+
+    # Sort by density and find threshold
+    sorted_pdf = np.sort(pdf_normalized)[::-1]  # Descending
+    cumsum = np.cumsum(sorted_pdf) * dx
+    threshold_idx = int(np.searchsorted(cumsum, coverage))
+    if threshold_idx >= len(sorted_pdf):
+        threshold_idx = len(sorted_pdf) - 1
+    threshold = sorted_pdf[threshold_idx]
+
+    mask: np.ndarray = pdf_normalized >= threshold
+    return mask
+
+
+def plot_original(
+    xs: NDArray[np.floating],
+    x_true: NDArray[np.floating],
+    metrics: dict[str, NDArray[np.floating]],
+    th: Thresholds,
+    title: str = "Original Metrics",
+    remap_window: tuple[int, int] | None = None,
+    phase_boundaries: tuple[int, ...] | None = None,
+) -> Figure:
+    """Plot original diagnostic metrics with thresholds.
+
+    Creates a 4-panel figure showing:
+    1. Posterior heatmap with true position overlay
+    2. HPD overlap over time
+    3. KL divergence over time
+    4. Spike probability (transformed to -log scale) over time
+
+    Parameters
+    ----------
+    xs : NDArray, shape (n_bins,)
+        Position bin centers.
+    x_true : NDArray, shape (n_time,)
+        True position at each time point.
+    metrics : dict[str, NDArray]
+        Dictionary containing diagnostic metrics:
+        - 'post': Posterior distribution, shape (n_time, n_bins)
+        - 'HPDO': HPD overlap, shape (n_time,)
+        - 'KL': KL divergence, shape (n_time,)
+        - 'spikeProb': Spike probability, shape (n_time, n_cells)
+    th : Thresholds
+        Threshold values for each diagnostic.
+    title : str, default "Original Metrics"
+        Figure title.
+    remap_window : tuple[int, int] | None, optional
+        Time window where cell remapping occurs (start, end).
+    phase_boundaries : tuple[int, ...] | None, optional
+        Boundaries between phases: (T_remap_start, T_remap_end, T_recovery1_end,
+        T_flat_end, T_recovery2_end, T_fast_end, T_recovery3_end, T_slow_end).
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        The created figure.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from statespacecheck_paper.analysis import Thresholds
+    >>> n_time, n_bins = 100, 50
+    >>> xs = np.linspace(0, 1, n_bins)
+    >>> x_true = np.random.uniform(0, n_bins - 1, n_time)
+    >>> metrics = {
+    ...     'post': np.random.dirichlet(np.ones(n_bins), size=n_time),
+    ...     'HPDO': np.random.uniform(0, 1, n_time),
+    ...     'KL': np.random.uniform(0, 5, n_time),
+    ...     'spikeProb': np.random.uniform(0, 1, (n_time, 10)),
+    ... }
+    >>> th = Thresholds(HPDO=0.8, KL=2.0, spike_prob=0.05)
+    >>> fig = plot_original(xs, x_true, metrics, th)
+    >>> plt.close(fig)
+    """
+    n_time = metrics["post"].shape[0]
+    fig, axes = plt.subplots(
+        4,
+        1,
+        figsize=(8, 6),
+        constrained_layout={
+            "h_pad": 0.02,
+            "w_pad": 0.02,
+            "hspace": 0,
+            "wspace": 0,
+            "rect": [0, 0, 1, 0.97],
+        },
+        sharex=True,
+        dpi=450,
+    )
+
+    im = axes[0].imshow(
+        metrics["post"].T,
+        aspect="auto",
+        origin="lower",
+        vmin=0.0,
+        vmax=np.quantile(metrics["post"], 0.975),
+        cmap="bone_r",
+    )
+    # Plot true position in magenta for visibility against bone_r colormap
+    axes[0].plot(
+        np.arange(n_time), x_true, color="magenta", linewidth=1.5, alpha=0.85, label="True position"
+    )
+    axes[0].set_ylabel("Position (bin)", fontsize=10, labelpad=8)
+    axes[0].tick_params(labelsize=8)
+
+    # Create colorbar with better formatting
+    cbar = fig.colorbar(im, ax=axes[0], fraction=0.03, pad=0.02, aspect=30)
+    cbar.set_label("Probability (×10⁻¹²)", fontsize=9, labelpad=8)
+    cbar.ax.tick_params(labelsize=8, length=3, width=0.5)
+    # Scale tick labels by 1e12 to avoid offset text
+    cbar.ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, p: f"{x * 1e12:.1f}"))
+
+    # Add phase boundaries to all axes, but only add labels to first axis for legend
+    for i, ax in enumerate(axes):
+        # Highlight phase boundaries with different colors for misfit vs recovery
+        if phase_boundaries is not None and len(phase_boundaries) == 8:
+            (
+                t_remap_start,
+                t_remap_end,
+                t_recovery1_end,
+                t_flat_end,
+                t_recovery2_end,
+                t_fast_end,
+                t_recovery3_end,
+                t_slow_end,
+            ) = phase_boundaries
+
+            # Only add labels for the first axis (for legend)
+            add_labels = i == 0
+
+            # Misfit periods (colored)
+            ax.axvspan(
+                t_remap_start,
+                t_remap_end,
+                alpha=0.2,
+                color="orange",
+                label="Remapping" if add_labels else "",
+            )
+            ax.axvspan(
+                t_recovery1_end,
+                t_flat_end,
+                alpha=0.2,
+                color="gray",
+                label="Flat firing" if add_labels else "",
+            )
+            ax.axvspan(
+                t_recovery2_end,
+                t_fast_end,
+                alpha=0.2,
+                color="red",
+                label="Fast movement" if add_labels else "",
+            )
+            ax.axvspan(
+                t_recovery3_end,
+                t_slow_end,
+                alpha=0.2,
+                color="blue",
+                label="Stationary" if add_labels else "",
+            )
+
+    axes[1].plot(
+        metrics["HPDO"],
+        ".",
+        markersize=1.5,
+        alpha=0.6,
+        color="#56B4E9",
+        rasterized=True,
+    )
+    axes[1].axhline(th.HPDO, color="#E69F00", linewidth=1.5, zorder=10)
+    axes[1].set_xlim(0, n_time)
+    axes[1].set_ylabel("HPD Overlap", fontsize=10, labelpad=8)
+    axes[1].tick_params(labelsize=8)
+
+    axes[2].plot(metrics["KL"], ".", markersize=1.5, alpha=0.6, color="#56B4E9", rasterized=True)
+    axes[2].axhline(th.KL, color="#E69F00", linewidth=1.5, zorder=10)
+    axes[2].set_xlim(0, n_time)
+    axes[2].set_ylabel("KL Divergence", fontsize=10, labelpad=8)
+    axes[2].tick_params(labelsize=8)
+
+    # Transform spike probability to -log scale
+    eps2 = 1e-12
+    spike_prob_transformed = -safe_log(metrics["spikeProb"] + eps2)
+    spike_prob_thresh_transformed = -np.log(th.spike_prob + eps2)
+
+    axes[3].plot(
+        spike_prob_transformed,
+        ".",
+        markersize=1.5,
+        alpha=0.6,
+        color="#56B4E9",
+        rasterized=True,
+    )
+    axes[3].axhline(spike_prob_thresh_transformed, color="#E69F00", linewidth=1.5, zorder=10)
+    axes[3].set_xlim(0, n_time)
+    axes[3].set_ylabel("-log(Spike Prob)", fontsize=10, labelpad=8)
+    axes[3].set_xlabel("Time", fontsize=10, labelpad=8)
+    axes[3].tick_params(labelsize=8)
+
+    # Add comprehensive legend outside the plot area at the bottom
+    # Get handles and labels from axes[0] where they were defined
+    handles, labels = axes[0].get_legend_handles_labels()
+    axes[3].legend(
+        handles,
+        labels,
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.35),
+        fontsize=9,
+        frameon=True,
+        fancybox=False,
+        shadow=False,
+        ncol=5,
+    )
+
+    fig.suptitle(title, fontsize=11, y=0.99)
+    return fig
+
+
+def plot_transformed(
+    xs: NDArray[np.floating],
+    x_true: NDArray[np.floating],
+    post: NDArray[np.floating],
+    tr: Transformed,
+    title: str = "Transformed Metrics (-log, sqrt)",
+    remap_window: tuple[int, int] | None = None,
+    phase_boundaries: tuple[int, int] | None = None,
+) -> Figure:
+    """Plot transformed diagnostic metrics with thresholds.
+
+    Applies transformations to make distributions more Gaussian for better
+    visualization and threshold detection.
+
+    Parameters
+    ----------
+    xs : NDArray, shape (n_bins,)
+        Position bin centers.
+    x_true : NDArray, shape (n_time,)
+        True position at each time point.
+    post : NDArray, shape (n_time, n_bins)
+        Posterior distribution over time.
+    tr : Transformed
+        Transformed metrics and thresholds.
+    title : str, default "Transformed Metrics (-log, sqrt)"
+        Figure title.
+    remap_window : tuple[int, int] | None, optional
+        Time window where cell remapping occurs (start, end).
+    phase_boundaries : tuple[int, int] | None, optional
+        Boundaries between phases: (T1, T2) where T3 is end of data.
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        The created figure.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from statespacecheck_paper.analysis import Transformed
+    >>> n_time, n_bins = 100, 50
+    >>> xs = np.linspace(0, 1, n_bins)
+    >>> x_true = np.random.uniform(0, n_bins - 1, n_time)
+    >>> post = np.random.dirichlet(np.ones(n_bins), size=n_time)
+    >>> tr = Transformed(
+    ...     HPDO=np.random.uniform(0, 5, n_time),
+    ...     KL=np.random.uniform(0, 3, n_time),
+    ...     spike_prob=np.random.uniform(0, 10, n_time),
+    ...     HPDO_th=3.0, KL_th=2.0, spike_prob_th=5.0
+    ... )
+    >>> fig = plot_transformed(xs, x_true, post, tr)
+    >>> plt.close(fig)
+    """
+    n_time = post.shape[0]
+    fig, axes = plt.subplots(4, 1, figsize=(7, 6), constrained_layout=True, sharex=True, dpi=150)
+
+    im = axes[0].imshow(post.T, aspect="auto", origin="lower", cmap="viridis")
+    axes[0].plot(np.arange(n_time), x_true, "k", linewidth=1.0, alpha=0.8)
+    axes[0].set_ylabel("Position (bin)", fontsize=9, labelpad=8)
+    axes[0].tick_params(labelsize=7)
+    cbar = fig.colorbar(im, ax=axes[0], fraction=0.02, pad=0.02)
+    cbar.set_label("Probability", fontsize=8, labelpad=8)
+    cbar.ax.tick_params(labelsize=7)
+
+    for ax in axes:
+        # Highlight remap window (cell 10->1)
+        if remap_window is not None:
+            ax.axvspan(
+                remap_window[0],
+                remap_window[1],
+                alpha=0.15,
+                color="orange",
+                label="Remap",
+            )
+
+        # Highlight phase boundaries
+        if phase_boundaries is not None:
+            t1, t2 = phase_boundaries
+            ax.axvspan(t1, t2, alpha=0.15, color="gray", label="Flat rate")
+            ax.axvspan(t2, n_time, alpha=0.15, color="red", label="Fast movement")
+
+    axes[1].plot(tr.HPDO, ".", markersize=0.5, alpha=0.3, rasterized=True)
+    axes[1].axhline(tr.HPDO_th, color="#E69F00", linewidth=1.5, label="Threshold", zorder=10)
+    axes[1].set_xlim(0, n_time)
+    axes[1].set_ylabel("-log(HPD Overlap)", fontsize=9, labelpad=8)
+    axes[1].tick_params(labelsize=7)
+    axes[1].legend(loc="upper right", fontsize=7, frameon=False)
+
+    axes[2].plot(tr.KL, ".", markersize=0.5, alpha=0.3, rasterized=True)
+    axes[2].axhline(tr.KL_th, color="#E69F00", linewidth=1.5, label="Threshold", zorder=10)
+    axes[2].set_xlim(0, n_time)
+    axes[2].set_ylabel("sqrt(KL Divergence)", fontsize=9, labelpad=8)
+    axes[2].tick_params(labelsize=7)
+
+    axes[3].plot(tr.spike_prob, ".", markersize=0.5, alpha=0.3, rasterized=True)
+    axes[3].axhline(tr.spike_prob_th, color="#E69F00", linewidth=1.5, label="Threshold", zorder=10)
+    axes[3].set_xlim(0, n_time)
+    axes[3].set_ylabel("-log(Spike Prob)", fontsize=9, labelpad=8)
+    axes[3].set_xlabel("Time", fontsize=9, labelpad=8)
+    axes[3].tick_params(labelsize=7)
+
+    fig.suptitle(title, fontsize=10, y=0.998)
+    return fig
+
+
+def plot_misfit_examples(
+    xs: NDArray[np.floating],
+    x_true: NDArray[np.floating],
+    spikes: NDArray[np.floating],
+    metrics: dict[str, NDArray[np.floating]],
+    params: DecodeParams,
+    pf_centers: NDArray[np.floating],
+    pf_width: float,
+    rate_scale: float,
+) -> Figure:
+    """Plot examples of high misfit moments for each scenario.
+
+    Finds the worst time point in each misfit phase and shows the distributions.
+    Also includes a baseline example with good fit.
+    Shows 5 columns: baseline + 4 misfit types.
+
+    Parameters
+    ----------
+    xs : NDArray, shape (n_bins,)
+        Position bin centers.
+    x_true : NDArray, shape (n_time,)
+        True position at each time point.
+    spikes : NDArray, shape (n_time, n_cells)
+        Spike counts for each cell at each time point.
+    metrics : dict[str, NDArray]
+        Dictionary containing diagnostic metrics from decode_and_diagnostics.
+    params : DecodeParams
+        Decoding parameters containing timeline structure.
+    pf_centers : NDArray, shape (n_cells,)
+        Place field centers for each cell.
+    pf_width : float
+        Width of place fields (sigma).
+    rate_scale : float
+        Scaling factor for firing rates.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from statespacecheck_paper.analysis import DecodeParams
+    >>> n_time, n_bins, n_cells = 500, 50, 10
+    >>> xs = np.linspace(0, 1, n_bins)
+    >>> x_true = np.random.uniform(0, n_bins - 1, n_time)
+    >>> spikes = np.random.poisson(0.5, (n_time, n_cells))
+    >>> metrics = {
+    ...     'post': np.random.dirichlet(np.ones(n_bins), size=n_time),
+    ...     'HPDO': np.random.uniform(0, 1, n_time),
+    ...     'KL': np.random.uniform(0, 5, n_time),
+    ...     'spikeProb': np.random.uniform(0, 1, (n_time, n_cells)),
+    ... }
+    >>> params = DecodeParams(
+    ...     T_baseline=200, T_remap_start=200, T_remap_end=250,
+    ...     T_recovery1_end=280, T_flat_end=320, T_recovery2_end=350,
+    ...     T_fast_end=390, T_recovery3_end=420, T_slow_end=460,
+    ...     n_cells=n_cells, n_position_bins=n_bins
+    ... )
+    >>> pf_centers = np.linspace(0, 1, n_cells)
+    >>> plot_misfit_examples(xs, x_true, spikes, metrics, params, pf_centers, 0.1, 10.0)
+    >>> plt.close('all')
+    """
+    # Define phase windows - include baseline (good fit) and misfit phases
+    baseline_window = slice(1000, params.T_remap_start - 1000)  # Middle of baseline
+    remap_window = slice(params.T_remap_start, params.T_remap_end)
+    flat_window = slice(params.T_recovery1_end, params.T_flat_end)
+    fast_window = slice(params.T_recovery2_end, params.T_fast_end)
+    slow_window = slice(params.T_recovery3_end, params.T_slow_end)
+
+    phases = [
+        ("Baseline", baseline_window, True),  # Third element indicates if it's baseline
+        ("Remapping", remap_window, False),
+        ("Flat Firing", flat_window, False),
+        ("Fast Movement", fast_window, False),
+        ("Slow Movement", slow_window, False),
+    ]
+
+    # Publication quality: 450 DPI, single row with 5 columns
+    fig = plt.figure(figsize=(12.0, 2.5), dpi=450, constrained_layout=True)
+    gs = fig.add_gridspec(1, 5)
+    axes = [fig.add_subplot(gs[0, i]) for i in range(5)]
+
+    # Wong colorblind-friendly palette
+    wong = WONG
+
+    for phase_idx, (phase_name, phase_slice, is_baseline) in enumerate(phases):
+        # For baseline, find best fit (highest HPDO); for misfits, find worst fit (lowest HPDO)
+        # BUT: only consider time points with spikes so likelihood is informative
+        phase_hpdo = metrics["HPDO"][phase_slice]
+        phase_spikes = spikes[phase_slice]
+
+        # Mask times without spikes (likelihood will be flat/uninformative)
+        has_spikes = phase_spikes.sum(axis=1) > 0
+        valid_hpdo = phase_hpdo.copy()
+        valid_hpdo[~has_spikes] = np.nan  # Exclude times without spikes
+
+        if is_baseline:
+            example_idx_in_phase = np.nanargmax(valid_hpdo)  # Best fit with spikes
+        else:
+            example_idx_in_phase = np.nanargmin(valid_hpdo)  # Worst fit with spikes
+        example_time = phase_slice.start + example_idx_in_phase
+
+        # Recompute prior and likelihood at this time point
+        # Get posterior from previous timestep
+        if example_time > 0:
+            prev_post = metrics["post"][example_time - 1]
+        else:
+            prev_post = np.ones_like(xs) / len(xs)
+
+        # Select appropriate transition matrix
+        if params.T_recovery2_end <= example_time <= params.T_fast_end:
+            transition_matrix = gaussian_transition_matrix(xs, params.sigx_pred_fast_phase)
+        elif params.T_recovery3_end <= example_time <= params.T_slow_end:
+            transition_matrix = gaussian_transition_matrix(xs, params.sigx_pred_slow_phase)
+        else:
+            transition_matrix = gaussian_transition_matrix(xs, params.sigx_pred)
+
+        # Compute prior
+        prior = normalize(prev_post @ transition_matrix)
+
+        # Compute combined likelihood
+        likelihood = likelihood_grid_for_counts(
+            xs, pf_centers, pf_width, rate_scale, spikes[example_time]
+        )
+
+        # Apply remapping if in remap window
+        if params.T_remap_start <= example_time <= params.T_remap_end:
+            likelihood = apply_remap_for_likelihoods(likelihood, params.remap_from_to, active=True)
+
+        combined_likelihood = normalize(np.prod(likelihood, axis=1))
+
+        # Plot prior and likelihood with twin axes - use Wong colorblind-friendly palette
+        ax1 = axes[phase_idx]
+        ax2 = ax1.twinx()
+
+        # Plot prior on left axis (blue from Wong palette) with transparency
+        line1 = ax1.plot(xs, prior, color=wong[5], linewidth=1.5, alpha=0.7, label="Predictive")
+        # Determine scale factor for prior and include in ylabel
+        prior_max = np.max(prior)
+        if prior_max > 0:
+            prior_order = int(np.floor(np.log10(prior_max)))
+            # Use scale factor if magnitude is outside reasonable range
+            if prior_order < -2 or prior_order > 2:
+                prior_scale = 10**prior_order
+                ax1.plot(xs, prior / prior_scale, color=wong[5], linewidth=1.5, alpha=0.7)
+                ax1.lines[0].remove()  # Remove the unscaled plot
+                ax1.set_ylabel(
+                    f"Predictive (×10$^{{{prior_order}}}$)", fontsize=7, color=wong[5], labelpad=3
+                )
+            else:
+                ax1.set_ylabel("Predictive", fontsize=7, color=wong[5], labelpad=3)
+        else:
+            ax1.set_ylabel("Predictive", fontsize=7, color=wong[5], labelpad=3)
+        ax1.tick_params(axis="y", labelcolor=wong[5], labelsize=6)
+        ax1.set_ylim(0, None)
+
+        # Plot likelihood on right axis (orange from Wong palette) - solid line
+        likelihood_max = np.max(combined_likelihood)
+        if likelihood_max > 0:
+            likelihood_order = int(np.floor(np.log10(likelihood_max)))
+            # Use scale factor if magnitude is outside reasonable range
+            if likelihood_order < -2 or likelihood_order > 2:
+                likelihood_scale = 10**likelihood_order
+                line2 = ax2.plot(
+                    xs,
+                    combined_likelihood / likelihood_scale,
+                    color=wong[1],
+                    linewidth=1.5,
+                    alpha=0.9,
+                    label="Likelihood",
+                )
+                ax2.set_ylabel(
+                    f"Likelihood (×10$^{{{likelihood_order}}}$)",
+                    fontsize=7,
+                    color=wong[1],
+                    labelpad=3,
+                )
+            else:
+                line2 = ax2.plot(
+                    xs,
+                    combined_likelihood,
+                    color=wong[1],
+                    linewidth=1.5,
+                    alpha=0.9,
+                    label="Likelihood",
+                )
+                ax2.set_ylabel("Likelihood", fontsize=7, color=wong[1], labelpad=3)
+        else:
+            line2 = ax2.plot(
+                xs, combined_likelihood, color=wong[1], linewidth=1.5, alpha=0.9, label="Likelihood"
+            )
+            ax2.set_ylabel("Likelihood", fontsize=7, color=wong[1], labelpad=3)
+        ax2.tick_params(axis="y", labelcolor=wong[1], labelsize=6)
+        ax2.set_ylim(0, None)
+
+        # Add true position line (purple from Wong palette)
+        ax1.axvline(x_true[example_time], color=wong[7], linestyle="--", linewidth=1.0, alpha=0.7)
+
+        # Get diagnostic values
+        hpdo_val = metrics["HPDO"][example_time]
+        kl_val = metrics["KL"][example_time]
+        spike_prob_vals = metrics["spikeProb"][example_time]
+
+        # Calculate -log(min spike prob) with only significant digits
+        if not np.all(np.isnan(spike_prob_vals)):
+            spike_prob_min = np.nanmin(spike_prob_vals)
+            log_spike_prob = -np.log(spike_prob_min + 1e-12)
+        else:
+            log_spike_prob = np.nan
+
+        # Add phase name and metrics as title (always use engineering format for -log)
+        title_text = (
+            f"{phase_name}\nHPD: {hpdo_val:.2g}  KL: {kl_val:.2g}  -log: {log_spike_prob:.2e}"
+        )
+        if np.isnan(log_spike_prob):
+            title_text = f"{phase_name}\nHPD: {hpdo_val:.2g}  KL: {kl_val:.2g}  -log: N/A"
+        ax1.set_title(title_text, fontsize=7, pad=5, fontweight="bold")
+
+        ax1.tick_params(axis="x", labelsize=6)
+        ax1.set_xlabel("Position", fontsize=7, labelpad=3)
+
+        # Add legend to first panel only
+        if phase_idx == 0:
+            lines = line1 + line2
+            labels = [str(line.get_label()) for line in lines]
+            ax1.legend(lines, labels, fontsize=5, loc="lower right", frameon=False)
+
+    return fig
+
+
+def plot_combined_diagnostics(
+    xs: NDArray[np.floating],
+    x_true: NDArray[np.floating],
+    spikes: NDArray[np.floating],
+    metrics: dict[str, NDArray[np.floating]],
+    th: Thresholds,
+    params: DecodeParams,
+    pf_centers: NDArray[np.floating],
+    pf_width: float,
+    rate_scale: float,
+) -> Figure:
+    """Create comprehensive combined figure with misfit examples and time-series diagnostics.
+
+    Layout:
+    - Top section: 4 time-series panels (posterior, HPDO, KL, spike prob) with shared x-axis
+    - Bottom section: 5 distribution examples (baseline + 4 misfits)
+    - Background colors on examples match phase colors in time-series
+    - All formatting matches original figure standards
+
+    Parameters
+    ----------
+    xs : NDArray, shape (n_bins,)
+        Position bin centers.
+    x_true : NDArray, shape (n_time,)
+        True position at each time point.
+    spikes : NDArray, shape (n_time, n_cells)
+        Spike counts for each cell at each time point.
+    metrics : dict[str, NDArray]
+        Dictionary containing diagnostic metrics from decode_and_diagnostics.
+    th : Thresholds
+        Threshold values for each diagnostic.
+    params : DecodeParams
+        Decoding parameters containing timeline structure.
+    pf_centers : NDArray, shape (n_cells,)
+        Place field centers for each cell.
+    pf_width : float
+        Width of place fields (sigma).
+    rate_scale : float
+        Scaling factor for firing rates.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from statespacecheck_paper.analysis import DecodeParams, Thresholds
+    >>> n_time, n_bins, n_cells = 500, 50, 10
+    >>> xs = np.linspace(0, 1, n_bins)
+    >>> x_true = np.random.uniform(0, n_bins - 1, n_time)
+    >>> spikes = np.random.poisson(0.5, (n_time, n_cells))
+    >>> metrics = {
+    ...     'post': np.random.dirichlet(np.ones(n_bins), size=n_time),
+    ...     'HPDO': np.random.uniform(0, 1, n_time),
+    ...     'KL': np.random.uniform(0, 5, n_time),
+    ...     'spikeProb': np.random.uniform(0, 1, (n_time, n_cells)),
+    ... }
+    >>> th = Thresholds(HPDO=0.8, KL=2.0, spike_prob=0.05)
+    >>> params = DecodeParams(
+    ...     T_baseline=200, T_remap_start=200, T_remap_end=250,
+    ...     T_recovery1_end=280, T_flat_end=320, T_recovery2_end=350,
+    ...     T_fast_end=390, T_recovery3_end=420, T_slow_end=460,
+    ...     n_cells=n_cells, n_position_bins=n_bins
+    ... )
+    >>> pf_centers = np.linspace(0, 1, n_cells)
+    >>> plot_combined_diagnostics(
+    ...     xs, x_true, spikes, metrics, th, params, pf_centers, 0.1, 10.0
+    ... )
+    >>> plt.close('all')
+    """
+    # Wong colorblind-friendly palette
+    wong = WONG
+
+    # Phase colors (lighter versions for backgrounds)
+    phase_colors = {
+        "baseline": "#FFFFFF",  # White
+        "remap": "#FFE5CC",  # Light orange
+        "flat": "#E8E8E8",  # Light gray
+        "fast": "#FFD6D6",  # Light red
+        "slow": "#D6E5FF",  # Light blue
+    }
+
+    # Calculate figure size
+    fig_width = 7.0  # Full page width
+    fig_height = 7.5  # Compact height appropriate for manuscripts
+
+    fig = plt.figure(figsize=(fig_width, fig_height), dpi=450)
+
+    # Create grid: 4 rows for diagnostics, gap, 2 rows for examples
+    # 6 columns: 5 for plots + 1 for colorbar/legend
+    gs = gridspec.GridSpec(
+        7,
+        6,
+        figure=fig,
+        height_ratios=[1.5, 0.8, 0.8, 0.8, 0.5, 0.6, 0.6],  # Gap row increased to 0.5
+        width_ratios=[1, 1, 1, 1, 1, 0.10],  # Narrow column for colorbar/legend/annotations
+        hspace=0.12,
+        wspace=0.15,  # Minimal spacing between columns
+        left=0.08,
+        right=0.99,
+        top=0.97,
+        bottom=0.05,
+    )
+
+    # ===== TOP SECTION: Time-Series Diagnostics =====
+
+    n_time = metrics["post"].shape[0]
+
+    # Create time-series axes (all spanning first 5 columns, with shared x-axis)
+    ax_post = fig.add_subplot(gs[0, 0:5])
+    ax_hpdo = fig.add_subplot(gs[1, 0:5], sharex=ax_post)
+    ax_kl = fig.add_subplot(gs[2, 0:5], sharex=ax_post)
+    ax_spike = fig.add_subplot(gs[3, 0:5], sharex=ax_post)
+
+    # Posterior heatmap
+    im = ax_post.imshow(
+        metrics["post"].T,
+        aspect="auto",
+        origin="lower",
+        vmin=0.0,
+        vmax=np.quantile(metrics["post"], 0.975),
+        cmap="bone_r",
+    )
+    ax_post.plot(
+        np.arange(n_time),
+        x_true,
+        color="magenta",
+        linewidth=1.0,
+        alpha=0.85,
+        label="True position",
+    )
+    ax_post.set_ylabel("Position (a.u.)", fontsize=9, labelpad=7)
+    ax_post.tick_params(labelsize=7, labelbottom=False)
+    # Add legend for true position line (upper left)
+    ax_post.legend(loc="upper left", fontsize=6, frameon=False)
+
+    # HPDO
+    ax_hpdo.plot(metrics["HPDO"], ".", markersize=0.8, alpha=0.6, color=wong[5], rasterized=True)
+    ax_hpdo.axhline(th.HPDO, color="#666666", linewidth=1.2, alpha=0.7, zorder=10)
+    ax_hpdo.set_xlim(0, n_time)
+    ax_hpdo.set_ylabel("HPD Overlap", fontsize=9, labelpad=7)
+    ax_hpdo.tick_params(labelsize=7, labelbottom=False)
+    # Add directional indicator and threshold annotation
+    ax_hpdo.text(
+        1.01, 0.5, "↓ Worse fit", transform=ax_hpdo.transAxes, fontsize=6, va="center", ha="left"
+    )
+    ax_hpdo.text(
+        1.01,
+        th.HPDO,
+        "Threshold",
+        transform=ax_hpdo.get_yaxis_transform(),
+        fontsize=6,
+        va="center",
+        ha="left",
+        color="#666666",
+    )
+
+    # KL Divergence
+    ax_kl.plot(metrics["KL"], ".", markersize=0.8, alpha=0.6, color=wong[5], rasterized=True)
+    ax_kl.axhline(th.KL, color="#666666", linewidth=1.2, alpha=0.7, zorder=10)
+    ax_kl.set_xlim(0, n_time)
+    ax_kl.set_ylabel("KL Divergence", fontsize=9, labelpad=7)
+    ax_kl.tick_params(labelsize=7, labelbottom=False)
+    # Add directional indicator and threshold annotation
+    ax_kl.text(
+        1.01, 0.5, "↑ Worse fit", transform=ax_kl.transAxes, fontsize=6, va="center", ha="left"
+    )
+    ax_kl.text(
+        1.01,
+        th.KL,
+        "Threshold",
+        transform=ax_kl.get_yaxis_transform(),
+        fontsize=6,
+        va="center",
+        ha="left",
+        color="#666666",
+    )
+
+    # Spike Probability (transformed)
+    eps2 = 1e-12
+    spike_prob_transformed = -safe_log(metrics["spikeProb"] + eps2)
+    spike_prob_thresh_transformed = -np.log(th.spike_prob + eps2)
+
+    ax_spike.plot(
+        spike_prob_transformed,
+        ".",
+        markersize=0.8,
+        alpha=0.6,
+        color=wong[5],
+        rasterized=True,
+    )
+    ax_spike.axhline(
+        spike_prob_thresh_transformed,
+        color="#666666",
+        linewidth=1.2,
+        alpha=0.7,
+        zorder=10,
+    )
+    ax_spike.set_xlim(0, n_time)
+    ax_spike.set_ylabel("-log(p-value)", fontsize=9, labelpad=7)
+    ax_spike.set_xlabel("Time (a.u.)", fontsize=9, labelpad=7)
+    ax_spike.tick_params(labelsize=7)
+    # Add directional indicator and threshold annotation
+    ax_spike.text(
+        1.01, 0.5, "↑ Worse fit", transform=ax_spike.transAxes, fontsize=6, va="center", ha="left"
+    )
+    ax_spike.text(
+        1.01,
+        spike_prob_thresh_transformed,
+        "Threshold",
+        transform=ax_spike.get_yaxis_transform(),
+        fontsize=6,
+        va="center",
+        ha="left",
+        color="#666666",
+    )
+
+    # Colorbar for posterior only - in dedicated axes aligned with posterior panel
+    cax = fig.add_subplot(gs[0, 5])
+    cbar = fig.colorbar(im, cax=cax)
+    # Use clearer formatting: show values in scientific notation
+    cbar.ax.yaxis.set_major_formatter(FuncFormatter(lambda x, p: f"{x:.1e}" if x > 0 else "0"))
+    cbar.set_label("Probability", fontsize=8, labelpad=6)
+    cbar.ax.tick_params(labelsize=6, length=2, width=0.5)
+
+    # Add phase boundaries to all time-series panels
+    phase_boundaries = (
+        params.T_remap_start,
+        params.T_remap_end,
+        params.T_recovery1_end,
+        params.T_flat_end,
+        params.T_recovery2_end,
+        params.T_fast_end,
+        params.T_recovery3_end,
+        params.T_slow_end,
+    )
+
+    for ax in [ax_post, ax_hpdo, ax_kl, ax_spike]:
+        (
+            t_remap_start,
+            t_remap_end,
+            t_recovery1_end,
+            t_flat_end,
+            t_recovery2_end,
+            t_fast_end,
+            t_recovery3_end,
+            t_slow_end,
+        ) = phase_boundaries
+
+        # Misfit periods with matching colors
+        ax.axvspan(t_remap_start, t_remap_end, alpha=0.15, color="orange")
+        ax.axvspan(t_recovery1_end, t_flat_end, alpha=0.15, color="gray")
+        ax.axvspan(t_recovery2_end, t_fast_end, alpha=0.15, color="red")
+        ax.axvspan(t_recovery3_end, t_slow_end, alpha=0.15, color="blue")
+
+    # Add phase labels above top panel
+    phase_labels_info = [
+        ((t_remap_start + t_remap_end) / 2, "Remap", "c"),
+        ((t_recovery1_end + t_flat_end) / 2, "Flat", "d"),
+        ((t_recovery2_end + t_fast_end) / 2, "Fast", "e"),
+        ((t_recovery3_end + t_slow_end) / 2, "Slow", "f"),
+    ]
+    for x_pos, label_text, panel_id in phase_labels_info:
+        ax_post.text(
+            x_pos,
+            1.02,
+            f"{label_text} ({panel_id})",
+            transform=ax_post.get_xaxis_transform(),
+            fontsize=6,
+            ha="center",
+            va="bottom",
+            style="italic",
+        )
+
+    # ===== BOTTOM SECTION: Misfit Examples =====
+
+    # Define phases
+    baseline_window = slice(1000, params.T_remap_start - 1000)
+    remap_window = slice(params.T_remap_start, params.T_remap_end)
+    flat_window = slice(params.T_recovery1_end, params.T_flat_end)
+    fast_window = slice(params.T_recovery2_end, params.T_fast_end)
+    slow_window = slice(params.T_recovery3_end, params.T_slow_end)
+
+    phases = [
+        ("Baseline", baseline_window, True, 0, "baseline"),
+        ("Remapping", remap_window, False, 1, "remap"),
+        ("Flat Firing", flat_window, False, 2, "flat"),
+        ("Fast Movement", fast_window, False, 3, "fast"),
+        ("Slow Movement", slow_window, False, 4, "slow"),
+    ]
+
+    # First pass: compute all distributions to determine shared y-limits
+    plot_data = []
+    for _phase_idx, (phase_name, phase_slice, is_baseline, col_idx, color_key) in enumerate(phases):
+        # Find example time (best for baseline, worst for misfits)
+        phase_hpdo = metrics["HPDO"][phase_slice]
+        phase_spikes = spikes[phase_slice]
+        has_spikes = phase_spikes.sum(axis=1) > 0
+        valid_hpdo = phase_hpdo.copy()
+        valid_hpdo[~has_spikes] = np.nan
+
+        if is_baseline:
+            example_idx_in_phase = np.nanargmax(valid_hpdo)
+        else:
+            example_idx_in_phase = np.nanargmin(valid_hpdo)
+        example_time = phase_slice.start + example_idx_in_phase
+
+        # Recompute distributions at example time
+        if example_time > 0:
+            prev_post = metrics["post"][example_time - 1]
+        else:
+            prev_post = np.ones_like(xs) / len(xs)
+
+        # Select appropriate transition matrix
+        if params.T_recovery2_end <= example_time <= params.T_fast_end:
+            transition_matrix = gaussian_transition_matrix(xs, params.sigx_pred_fast_phase)
+        elif params.T_recovery3_end <= example_time <= params.T_slow_end:
+            transition_matrix = gaussian_transition_matrix(xs, params.sigx_pred_slow_phase)
+        else:
+            transition_matrix = gaussian_transition_matrix(xs, params.sigx_pred)
+
+        prior = normalize(prev_post @ transition_matrix)
+        likelihood = likelihood_grid_for_counts(
+            xs, pf_centers, pf_width, rate_scale, spikes[example_time]
+        )
+
+        if params.T_remap_start <= example_time <= params.T_remap_end:
+            likelihood = apply_remap_for_likelihoods(likelihood, params.remap_from_to, active=True)
+
+        combined_likelihood = normalize(np.prod(likelihood, axis=1))
+
+        # Normalize likelihood to probability density
+        dx = xs[1] - xs[0]
+        likelihood_norm = combined_likelihood / (np.sum(combined_likelihood) * dx)
+
+        plot_data.append(
+            {
+                "phase_name": phase_name,
+                "col_idx": col_idx,
+                "color_key": color_key,
+                "example_time": example_time,
+                "prior": prior,
+                "likelihood_norm": likelihood_norm,
+            }
+        )
+
+    # Determine shared y-limits across all panels using robust percentiles
+    all_y_values = []
+    for data in plot_data:
+        all_y_values.extend(data["prior"])
+        all_y_values.extend(data["likelihood_norm"])
+    # Use percentiles to avoid outliers distorting the scale
+    y_min, y_max = np.percentile(all_y_values, [0.1, 99.9])
+    # Add small padding
+    y_range = y_max - y_min
+    y_min = max(0, y_min - 0.02 * y_range)
+    y_max = y_max + 0.02 * y_range
+
+    # Second pass: create plots with shared y-axis
+    example_axes = []
+    for data in plot_data:
+        phase_name = data["phase_name"]
+        col_idx = data["col_idx"]
+        color_key = data["color_key"]
+        example_time = data["example_time"]
+        prior = data["prior"]
+        likelihood_norm = data["likelihood_norm"]
+
+        # Create subplot (spans 2 rows)
+        ax1 = fig.add_subplot(gs[5:7, col_idx])
+        example_axes.append(ax1)
+
+        # Set background color matching phase
+        ax1.set_facecolor(phase_colors[color_key])
+
+        # Plot both distributions on the same axis
+        ax1.plot(xs, prior, color=wong[5], linewidth=1.2, alpha=0.7, label="Predictive")
+        ax1.plot(xs, likelihood_norm, color=wong[1], linewidth=1.2, alpha=0.9, label="Likelihood")
+
+        # Share y-axis: same limits for all panels, labels only on leftmost
+        ax1.set_ylim(y_min, y_max)
+        if col_idx == 0:
+            ax1.set_ylabel("Probability Density", fontsize=7, labelpad=4)
+            ax1.tick_params(axis="y", labelsize=5)
+            # Use 3 ticks for better readability
+            ax1.set_yticks(np.linspace(y_min, y_max, 3))
+            ax1.yaxis.set_major_formatter(FuncFormatter(lambda x, p: f"{x:.2g}"))
+        else:
+            ax1.yaxis.set_major_formatter(NullFormatter())
+
+        # True position
+        ax1.axvline(
+            x_true[example_time],
+            color="magenta",
+            linestyle="--",
+            linewidth=0.8,
+            alpha=0.7,
+            zorder=5,
+            clip_on=False,
+        )
+
+        # Title with just phase name (de-emphasized)
+        ax1.set_title(phase_name, fontsize=7, pad=4)
+
+        # Add metrics as text annotation inside plot (upper left)
+        hpdo_val = metrics["HPDO"][example_time]
+        kl_val = metrics["KL"][example_time]
+        spike_prob_vals = metrics["spikeProb"][example_time]
+        if not np.all(np.isnan(spike_prob_vals)):
+            spike_prob_min = np.nanmin(spike_prob_vals)
+            log_spike_prob = -np.log(spike_prob_min + 1e-12)
+        else:
+            log_spike_prob = np.nan
+
+        if np.isnan(log_spike_prob):
+            metrics_text = f"HPD: {hpdo_val:.2f}\nKL: {kl_val:.1f}\n-log p: N/A"
+        else:
+            metrics_text = f"HPD: {hpdo_val:.2f}\nKL: {kl_val:.1f}\n-log p: {log_spike_prob:.1f}"
+        ax1.text(
+            0.05,
+            0.95,
+            metrics_text,
+            transform=ax1.transAxes,
+            fontsize=5,
+            va="top",
+            ha="left",
+            bbox={
+                "boxstyle": "round,pad=0.3",
+                "facecolor": "white",
+                "edgecolor": "none",
+                "alpha": 0.8,
+            },
+        )
+
+        # All panels show x-axis labels
+        ax1.set_xlim(xs[0], xs[-1])
+        ax1.tick_params(axis="x", labelsize=6)
+        ax1.set_xlabel("Position (a.u.)", fontsize=7, labelpad=4)
+
+    # Create legend in separate column (similar to colorbar)
+    legend_ax = fig.add_subplot(gs[5:7, 5])
+    legend_ax.axis("off")
+    # Create dummy lines for legend
+    from matplotlib.lines import Line2D
+
+    predictive_line = Line2D([0], [0], color=wong[5], linewidth=1.2, alpha=0.7)
+    likelihood_line = Line2D([0], [0], color=wong[1], linewidth=1.2, alpha=0.9)
+    position_line = Line2D([0], [0], color=wong[7], linestyle="--", linewidth=0.8, alpha=0.7)
+    legend_ax.legend(
+        [predictive_line, likelihood_line, position_line],
+        ["Predictive", "Likelihood", "Position"],
+        loc="upper left",
+        fontsize=6,
+        frameon=False,
+        handlelength=1.5,
+    )
+
+    # Panel labels: 'a' for time-series section, 'b-f' for examples
+    ax_post.text(
+        -0.08,
+        1.05,
+        "a",
+        transform=ax_post.transAxes,
+        fontsize=9,
+        fontweight="bold",
+        va="bottom",
+        ha="right",
+    )
+
+    example_labels = ["b", "c", "d", "e", "f"]
+    for label, ax in zip(example_labels, example_axes, strict=True):
+        ax.text(
+            -0.08,
+            1.08,
+            label,
+            transform=ax.transAxes,
+            fontsize=9,
+            fontweight="bold",
+            va="bottom",
+            ha="right",
+        )
+
+    return fig
