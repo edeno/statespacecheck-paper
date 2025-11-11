@@ -173,7 +173,7 @@ def run_demo(params: DecodeParams) -> None:
     plot_combined_diagnostics(
         xs,
         x_true,
-        spikes,
+        spikes.astype(np.float64),
         metrics,
         th,
         params,

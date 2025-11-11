@@ -167,6 +167,183 @@ All tests follow AAA pattern (Arrange-Act-Assert)
 
 ---
 
+## Current Session: Milestone 4.1 - Plotting Module
+
+**Date**: 2025-11-11
+**Task**: Extract plotting functions to `plotting.py` module
+
+### Plan
+
+Following TDD workflow:
+1. ✅ Read figure01.py and figure02.py to understand functions to extract
+2. ✅ Create test_plotting.py with tests (TDD - tests first!)
+3. ✅ Run tests and verify they FAIL (ModuleNotFoundError as expected)
+4. ✅ Create plotting.py implementation with 5 functions
+5. ✅ Run tests until they PASS (14/14 tests passing, 95% coverage)
+6. ✅ Update figure01.py to import compute_hpd_region from plotting module
+7. ✅ Update figure02.py to import from plotting module (removed 867 lines!)
+8. ✅ Fix mypy type errors in plotting.py
+9. ✅ Run all quality checks (ruff, mypy, pytest - all passing)
+
+### Items Extracted
+
+Five plotting functions extracted:
+1. **compute_hpd_region()** - Compute highest posterior density region mask (from figure01.py)
+2. **plot_original()** - Plot original diagnostic metrics (from figure02.py)
+3. **plot_transformed()** - Plot transformed diagnostic metrics (from figure02.py)
+4. **plot_misfit_examples()** - Plot example misfit periods (from figure02.py)
+5. **plot_combined_diagnostics()** - Combined diagnostic visualization (from figure02.py)
+
+### Design Decisions
+
+**Type annotations:**
+- Import proper matplotlib types: `from matplotlib.figure import Figure`
+- Import formatters: `from matplotlib.ticker import FuncFormatter, NullFormatter`
+- Import line types: `from matplotlib.lines import Line2D`
+- Use explicit type casting: `threshold_idx = int(np.searchsorted(...))`
+- Proper return types: `-> Figure` not `-> plt.Figure`
+
+**Module organization:**
+- Utility function first (compute_hpd_region)
+- Basic plotting functions (plot_original, plot_transformed)
+- Complex composite plots (plot_misfit_examples, plot_combined_diagnostics)
+- Clear progression from simple to complex
+
+**Figure quality:**
+- All functions return Figure objects for flexibility
+- Consistent styling using style.py WONG palette
+- Publication-ready defaults (DPI, font sizes, layouts)
+
+### Notes
+
+- Created comprehensive test suite (14 tests, 5 test classes)
+- 95% test coverage achieved on plotting.py
+- Fixed multiple test data issues (DecodeParams timeline, remap_from_to mappings)
+- Mypy strict mode passes with proper matplotlib type imports
+- figure02.py reduced by 867 lines (from 1070+ to 203 lines)
+
+### Testing Strategy
+
+Created 5 test classes with 14 tests total:
+1. **TestComputeHpdRegion** - 5 tests (shape, coverage, contiguity, multiple coverages, uniform)
+2. **TestPlotOriginal** - 3 tests (basic figure, phase boundaries, custom title)
+3. **TestPlotTransformed** - 2 tests (basic figure, remap window)
+4. **TestPlotMisfitExamples** - 2 tests (basic run, different params)
+5. **TestPlotCombinedDiagnostics** - 2 tests (basic run, small dataset)
+
+All tests follow AAA pattern (Arrange-Act-Assert)
+
+### Challenges and Fixes
+
+**Test data generation:**
+- DecodeParams has complex timeline structure with 8 phases
+- baseline_window = slice(1000, T_remap_start - 1000) requires T_remap_start > 2000
+- remap_from_to must match actual number of cells in test data
+- Required n_time >= 6000 for comprehensive timeline tests
+
+**Type errors:**
+- Fixed searchsorted return type: `int(np.searchsorted(...))`
+- Added explicit mask type annotation: `mask: np.ndarray = ...`
+- Imported matplotlib types properly instead of using plt.Figure
+
+**Code reduction:**
+- Removed lines 43-909 from figure02.py (867 lines)
+- Removed compute_hpd_region from figure01.py (50 lines)
+- Both scripts now import from plotting module
+
+### Code Quality
+
+**Quality checks:**
+- ruff format: ✅ (formatted plotting.py)
+- ruff check: ✅ (auto-fixed 13 unused imports in figure02.py)
+- mypy: ✅ (strict mode passes with proper matplotlib imports)
+- pytest: ✅ (14/14 tests passing, 95% coverage on plotting.py)
+
+**File reductions:**
+- figure01.py: Removed ~50 lines (compute_hpd_region function)
+- figure02.py: Removed 867 lines (867 lines of plotting functions!)
+- Total extraction: 1107 lines moved to plotting.py module
+
+---
+
+## Current Session: Milestone 5 - Final Figure Script Cleanup
+
+**Date**: 2025-11-11
+**Task**: Clean up figure scripts and ensure they are pure orchestration
+
+### Plan
+
+Following TDD workflow:
+1. ✅ Verify figure01.py is clean and readable
+2. ✅ Verify figure02.py is clean and readable
+3. ✅ Add helper function to figure01.py (_create_panel)
+4. ✅ Fix mypy type errors in both figure scripts
+5. ✅ Run all quality checks (ruff, mypy, pytest - all passing)
+6. ✅ Test both figures generate successfully
+
+### Changes Made
+
+**figure01.py (223 lines)**:
+- Added `_create_panel()` private helper function
+- Extracted panel creation logic for better organization
+- Fixed mypy type errors:
+  - Added proper type annotations for Axes, dict[str, Any]
+  - Fixed list type annotations for regions
+  - Fixed set_bounds() calls to use separate arguments
+- Result: Clean orchestration with well-documented helper
+
+**figure02.py (196 lines)**:
+- Fixed mypy type error: cast spikes to float64 for plot_combined_diagnostics
+- Already clean orchestration from Milestone 4.1
+- Result: <200 lines target met!
+
+### Design Decisions
+
+**Helper functions**:
+- `_create_panel()` in figure01.py is private (underscore prefix)
+- Complete docstring with parameters and types
+- Makes main `create_figure()` much more readable
+- Follows DRY principle - panel creation logic in one place
+
+**Type safety**:
+- All mypy errors fixed without using `# type: ignore`
+- Proper matplotlib type imports (Axes, not plt.Axes)
+- Explicit type annotations where needed
+- Safe handling of nullable variables (start: float | None)
+
+### Notes
+
+- All 86 tests passing
+- mypy passes with no errors
+- Both figures generate successfully
+- Ruff has 57 NPY002 warnings about legacy numpy random API in tests
+  - These are style suggestions, not errors
+  - Can be addressed in Milestone 6 (Comprehensive Testing)
+  - Don't affect functionality
+
+### Testing Strategy
+
+**Quality checks**:
+- ruff format: ✅ (code formatted)
+- ruff check: ⚠️ (57 NPY002 warnings in tests - non-blocking)
+- mypy: ✅ (no errors in src/ or figures/)
+- pytest: ✅ (86/86 tests passing, 74% overall coverage)
+
+**Figure generation**:
+- figure01.py: ✅ (generates figure01.pdf and figure01.png)
+- figure02.py: ✅ (generates figure02.pdf and figure02.png)
+
+### Code Quality
+
+Both figure scripts are now:
+- ✅ Clean orchestration layers
+- ✅ Clear docstrings explaining what they generate
+- ✅ Type-safe (mypy passing)
+- ✅ Well-organized with helper functions
+- ✅ Easy to understand and maintain
+
+---
+
 ## Completed
 
 ### Milestone 2 - Simulation Module ✅
