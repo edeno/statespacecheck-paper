@@ -70,22 +70,40 @@ Tests to write:
 
 ## Completed
 
-### Milestone 1.1 - Create style.py Module ✅
+### Milestone 1 - Style Module ✅ COMPLETE
 
 **Completed**: 2025-11-11
 
-Successfully extracted styling utilities from figure01.py:
+Successfully extracted styling utilities to shared module:
+
+**1.1 Create style.py Module ✅**
 - Created `src/statespacecheck_paper/style.py` with:
-  - WONG color palette constant
+  - WONG color palette constant (8 colorblind-friendly colors)
   - set_figure_defaults() with context support (paper/presentation/poster)
   - save_figure() with Path support, auto-directory creation, custom DPI
   - get_figure_size() helper function
 - Created comprehensive test suite (13 tests, 100% coverage)
-- Updated figure01.py to use new module
-- Verified figure01.py generates identical output
 - All quality checks passing (ruff, mypy, pytest)
 
-**Result**: figure01.py reduced from 279 lines to ~219 lines (21% reduction)
+**1.2 Update figure01.py ✅**
+- Imported WONG, save_figure, set_figure_defaults from style module
+- Removed duplicated code (color palette, utility functions)
+- Verified figure01.py generates identical output
+- Result: figure01.py reduced from 279 lines to ~219 lines (21% reduction)
+
+**1.3 Update figure02.py ✅**
+- Imported WONG and save_figure from style module
+- Replaced two inline wong palette definitions with WONG constant
+- Replaced manual save calls with save_figure()
+- Verified figure02.py generates identical output
+- Result: Eliminated code duplication between figure scripts
+
+**Impact**:
+- ✅ Single source of truth for styling
+- ✅ Zero code duplication for colors and save logic
+- ✅ Easy to change palette/fonts globally
+- ✅ Consistent figures across entire paper
+- ✅ 100% test coverage on style module
 
 ---
 
