@@ -599,6 +599,55 @@ Using Hypothesis library for property-based testing with realistic value ranges:
 
 ---
 
+## Current Session: Milestone 7.2 - Update pyproject.toml Metadata
+
+**Date**: 2025-11-11
+**Task**: Update pyproject.toml metadata to reflect current state
+
+### Plan
+
+1. ✅ Read current pyproject.toml
+2. ✅ Verify package description is accurate
+3. ✅ Check all dependencies are correct
+4. ✅ Add missing hypothesis to dev dependencies
+5. ✅ Verify classifiers are appropriate
+
+### Changes Made
+
+**Added hypothesis to dev dependencies**:
+- hypothesis>=6.0.0 added to [project.optional-dependencies]
+- Used in tests/test_properties.py for property-based testing
+- Was missing from dependencies but already used
+
+**Verified existing metadata**:
+- ✅ Description: Accurate - "Source code and supplementary materials for the paper..."
+- ✅ Dependencies: All present and used
+  - Core: numpy, scipy, matplotlib, seaborn, pandas, statespacecheck
+  - Data: non_local_detector, spyglass-neuro (used in load_data.py)
+- ✅ Dev dependencies: ruff, mypy, pytest, pytest-cov, jupyter, ipykernel, hypothesis
+- ✅ Classifiers: Appropriate for research paper repository
+  - Development Status: Alpha
+  - Intended Audience: Science/Research
+  - License: MIT
+  - Python: 3.10, 3.11, 3.12
+  - Topic: Scientific/Engineering
+
+### Notes
+
+- No dependencies removed (per user request - all are used)
+- Package builds successfully with updated dependencies
+- All 102 tests can be collected with pytest
+
+### Quality Checks
+
+- Package build: ✅ (builds successfully)
+- Pytest collection: ✅ (102 tests collected)
+- Metadata: ✅ (accurate and complete)
+
+**Milestone 7.2 Complete** ✅
+
+---
+
 ## Completed
 
 ### Milestone 2 - Simulation Module ✅

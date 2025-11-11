@@ -406,9 +406,10 @@ Track progress through the refactoring plan. See [REFACTORING_PLAN.md](REFACTORI
 
 ### 7.2 Update pyproject.toml Metadata
 
-- [ ] Verify package description accurate
-- [ ] Check dependencies are correct
-- [ ] Verify classifiers appropriate
+- [x] Verify package description accurate
+- [x] Check dependencies are correct (all present and used)
+- [x] Add hypothesis to dev dependencies
+- [x] Verify classifiers appropriate
 
 ### 7.3 Update README.md
 
