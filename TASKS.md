@@ -392,17 +392,17 @@ Track progress through the refactoring plan. See [REFACTORING_PLAN.md](REFACTORI
 
 ### 7.1 Update CLAUDE.md
 
-- [ ] Add section: "Repository Structure"
-  - [ ] Explain new module organization
-  - [ ] Describe what each module does
-- [ ] Update "Development Commands" section
-  - [ ] Add examples importing from modules
-- [ ] Add section: "Adding New Figures"
-  - [ ] Step-by-step guide
-  - [ ] Template/example code
-- [ ] Update "Code Quality Standards" section
-  - [ ] Reference new modules
-  - [ ] Explain where to add new functionality
+- [x] Add section: "Repository Structure"
+  - [x] Explain new module organization
+  - [x] Describe what each module does
+- [x] Update "Development Commands" section
+  - [x] Add examples importing from modules
+- [x] Update "Code Quality Standards" section
+  - [x] Reference new modules
+  - [x] Explain where to add new functionality
+- [x] Update "Architecture" section with new modules
+- [x] Update "Working with Figures" section
+- [x] Run quality checks (102/102 tests passing)
 
 ### 7.2 Update pyproject.toml Metadata
 

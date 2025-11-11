@@ -14,19 +14,131 @@ This repository contains the source code and supplementary materials for the pap
 statespacecheck-paper/
 ├── src/statespacecheck_paper/  # Analysis code and utilities
 │   ├── __init__.py             # Package initialization
-│   ├── figures.py              # Figure generation code
-│   ├── simulations.py          # Simulation utilities
-│   └── analysis.py             # Analysis utilities
+│   ├── load_data.py            # Data loading utilities
+│   ├── style.py                # Figure styling (colors, defaults, save)
+│   ├── simulation.py           # Simulation utilities
+│   ├── analysis.py             # Analysis logic and diagnostics
+│   └── plotting.py             # Plotting utilities
+├── figures/                     # Figure generation scripts
+│   ├── figure01.py             # Figure 1: Distribution comparisons
+│   ├── figure02.py             # Figure 2: Diagnostic demonstrations
+│   └── figure03.py             # Figure 3: (future)
 ├── notebooks/                   # Jupyter notebooks for exploration
-├── scripts/                     # Scripts to generate figures/results
-├── tests/                       # Tests for analysis code
+├── scripts/                     # Additional analysis scripts
+├── tests/                       # Comprehensive test suite (97.2% coverage)
+│   ├── test_style.py
+│   ├── test_simulation.py
+│   ├── test_analysis.py
+│   ├── test_plotting.py
+│   ├── test_figures.py         # Integration tests
+│   └── test_properties.py      # Property-based tests
 └── docs/                        # Documentation and examples
 ```
 
 **Key Modules**:
-- **figures.py**: Functions to generate publication-ready figures using matplotlib
-- **simulations.py**: Code to simulate state space models and generate synthetic data
-- **analysis.py**: Analysis pipelines and data processing utilities
+- **style.py**: Shared styling utilities (WONG palette, figure defaults, save function)
+- **simulation.py**: Simulation functions (random walks, spike generation, place fields)
+- **analysis.py**: Analysis logic (decoder, diagnostics, thresholds, transformations)
+- **plotting.py**: Reusable plotting functions (HPD regions, diagnostic plots)
+- **load_data.py**: Data loading utilities for real datasets
+
+**Figure Scripts**:
+- **figure01.py**: Thin orchestration layer (~220 lines) for Figure 1
+- **figure02.py**: Thin orchestration layer (~200 lines) for Figure 2
+
+## Repository Structure
+
+### Module Organization
+
+The repository follows a clean separation between **reusable code** (in `src/`) and **figure scripts** (in `figures/`).
+
+#### Core Modules (`src/statespacecheck_paper/`)
+
+**1. style.py** - Figure Styling Utilities
+- `WONG`: 8-color colorblind-friendly palette
+- `set_figure_defaults(context='paper')`: Set matplotlib defaults
+- `save_figure(basename, dpi=450)`: Save figures as PDF and PNG
+- `get_figure_size(width_type='single')`: Get standard figure dimensions
+
+**2. simulation.py** - Data Simulation
+- `normalize(x, axis=-1, eps=1e-10)`: Safe array normalization
+- `reflect_into_interval(x, xmin, xmax)`: Reflecting boundary conditions
+- `gaussian_transition_matrix(n_bins, sigma)`: Random walk transition matrix
+- `safe_log(x, eps=1e-10)`: Numerically stable logarithm
+- `placefield_rates(position_bins, centers, scale)`: Gaussian place fields
+- `spike_prob_rank(rates)`: Cumulative probability ranking
+- `simulate_walk(n_time, transition_matrix, x0, rng)`: Random walk simulation
+- `simulate_spikes_position_tuned(position, placefield_rates, rng)`: Position-tuned Poisson spikes
+- `simulate_spikes_flat_rate(n_time, n_cells, rate, rng)`: Constant-rate Poisson spikes
+
+**3. analysis.py** - Bayesian Decoding and Diagnostics
+- `DecodeParams`: Dataclass for decoder configuration (timeline, cells, remapping)
+- `Thresholds`: Dataclass for diagnostic thresholds
+- `Transformed`: Dataclass for transformed diagnostics
+- `likelihood_grid_for_counts(counts, placefield_rates)`: Poisson likelihood computation
+- `apply_remap_for_likelihoods(likelihoods, params)`: Cell identity remapping
+- `decode_and_diagnostics(spikes, params)`: Main decoder with KL/HPD diagnostics
+- `compute_thresholds(baseline_period, quantiles)`: Compute baseline thresholds
+- `transform_metrics(diagnostics, thresholds, eps)`: Transform for visualization
+
+**4. plotting.py** - Reusable Plotting Functions
+- `compute_hpd_region(distribution, coverage)`: Highest posterior density region mask
+- `plot_original(diagnostics, params, thresholds)`: Original diagnostic metrics plot
+- `plot_transformed(transformed, params, thresholds)`: Transformed metrics plot
+- `plot_misfit_examples(diagnostics, x_true, params)`: Example misfit periods
+- `plot_combined_diagnostics(diagnostics, x_true, spikes, params)`: Comprehensive visualization
+
+**5. load_data.py** - Real Data Loading
+- Functions to load real neural recording datasets (not covered in detail here)
+
+### Figure Scripts
+
+Figure scripts are thin orchestration layers that:
+1. Import from shared modules
+2. Set up simulation/analysis parameters
+3. Run simulations/analyses
+4. Generate and save figures
+
+**Example structure**:
+```python
+from statespacecheck_paper.style import WONG, set_figure_defaults, save_figure
+from statespacecheck_paper.simulation import simulate_walk, simulate_spikes_position_tuned
+from statespacecheck_paper.analysis import decode_and_diagnostics, DecodeParams
+
+def create_figure():
+    """Generate Figure X showing..."""
+    set_figure_defaults()
+
+    # Setup parameters
+    params = DecodeParams(...)
+
+    # Run simulation
+    x_true = simulate_walk(...)
+    spikes = simulate_spikes_position_tuned(...)
+
+    # Run analysis
+    results = decode_and_diagnostics(spikes, params)
+
+    # Create plots
+    fig, axes = plot_combined_diagnostics(results, x_true, spikes, params)
+
+    # Save
+    save_figure("figures/figureX")
+
+if __name__ == "__main__":
+    create_figure()
+```
+
+### Testing Structure
+
+Tests are organized by module with 97.2% coverage:
+
+- **test_style.py**: Style utilities (100% coverage)
+- **test_simulation.py**: Simulation functions (100% coverage)
+- **test_analysis.py**: Analysis functions (100% coverage)
+- **test_plotting.py**: Plotting functions (96% coverage)
+- **test_figures.py**: Integration tests for figure scripts
+- **test_properties.py**: Property-based tests using Hypothesis
 
 ## Development Commands
 
@@ -150,6 +262,45 @@ uv run jupyter lab
 
 ## Code Quality Standards
 
+### Where to Add New Functionality
+
+When adding new features, follow these guidelines:
+
+**Adding simulation functions** → `src/statespacecheck_paper/simulation.py`
+- Random walks, spike generation, place field models
+- Utility functions for simulation (normalize, boundary conditions)
+- Functions should be pure (no side effects) and reproducible (use `rng` parameter)
+
+**Adding analysis functions** → `src/statespacecheck_paper/analysis.py`
+- Decoder logic, filtering algorithms
+- Diagnostic computations (KL divergence, HPD overlap)
+- Data transformations and threshold computations
+- Use dataclasses for configuration objects
+
+**Adding plotting functions** → `src/statespacecheck_paper/plotting.py`
+- Reusable visualization components
+- Diagnostic plots, heatmaps, timeseries
+- Functions should return Figure objects for flexibility
+- Use consistent styling from `style.py`
+
+**Adding figure styling** → `src/statespacecheck_paper/style.py`
+- Color palettes, font configurations
+- Figure sizing and layout utilities
+- Save/export functions
+- Keep consistent across all figures
+
+**Creating new figures** → `figures/figureXX.py`
+- Import from shared modules (don't duplicate code!)
+- Keep scripts thin (<200 lines of orchestration)
+- Add integration test in `tests/test_figures.py`
+- Document what the figure demonstrates
+
+**DO NOT**:
+- ❌ Add utilities to figure scripts (extract to modules instead)
+- ❌ Duplicate code across figure scripts
+- ❌ Mix simulation/analysis/plotting in one large function
+- ❌ Create figure-specific versions of general utilities
+
 ### Docstrings
 
 Use NumPy format with shape specifications:
@@ -265,10 +416,24 @@ def test_create_diagnostic_figure() -> None:
 
 ### Figure Generation Pipeline
 
-1. **Create function in `figures.py`**: Reusable, well-tested
-2. **Develop in notebook**: Iterate quickly, visualize results
-3. **Create script in `scripts/`**: Production version to generate final figure
-4. **Document in `docs/`**: Add example with explanation
+The repository uses a modular approach where reusable code lives in `src/` and figure scripts orchestrate:
+
+1. **Extract reusable components** to appropriate modules:
+   - Simulation logic → `simulation.py`
+   - Analysis logic → `analysis.py`
+   - Plotting functions → `plotting.py`
+   - Write tests for each component
+
+2. **Create thin figure script** in `figures/`:
+   - Import from shared modules
+   - Set up parameters
+   - Call simulation/analysis/plotting functions
+   - Save outputs
+
+3. **Add integration test** in `tests/test_figures.py`:
+   - Verify imports work
+   - Test figure generation with small parameters
+   - Verify output files created
 
 ### Example Figure Function
 
@@ -317,34 +482,6 @@ def plot_kl_over_time(
 ```
 
 ## Common Workflows
-
-### Adding a New Figure
-
-1. **Explore in notebook**:
-   ```bash
-   uv run jupyter notebook
-   # Create notebooks/figure1_exploration.ipynb
-   ```
-
-2. **Extract to module**:
-   ```python
-   # Add to src/statespacecheck_paper/figures.py
-   def create_figure1(...) -> tuple[plt.Figure, ...]:
-       """..."""
-   ```
-
-3. **Write tests**:
-   ```python
-   # Add to tests/test_figures.py
-   def test_create_figure1() -> None:
-       """..."""
-   ```
-
-4. **Create production script**:
-   ```bash
-   # Create scripts/generate_figure1.py
-   uv run python scripts/generate_figure1.py
-   ```
 
 ### Running Analysis Pipeline
 

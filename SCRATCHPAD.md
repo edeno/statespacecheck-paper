@@ -525,6 +525,80 @@ Using Hypothesis library for property-based testing with realistic value ranges:
 
 ---
 
+## Current Session: Milestone 7.1 - Update CLAUDE.md
+
+**Date**: 2025-11-11
+**Task**: Update CLAUDE.md to reflect new repository structure
+
+### Plan
+
+1. ✅ Read current CLAUDE.md to understand structure
+2. ✅ Update Architecture section with all new modules
+3. ✅ Add comprehensive Repository Structure section
+4. ✅ Update Code Quality Standards with module guidance
+5. ✅ Update Working with Figures section
+6. ✅ Remove outdated "Adding a New Figure" workflow
+7. ✅ Run quality checks (102/102 tests passing)
+
+### Changes Made
+
+**Updated Architecture section**:
+- Added all 5 modules: style.py, simulation.py, analysis.py, plotting.py, load_data.py
+- Listed figure scripts with line counts
+- Added test file structure with coverage info
+
+**Added Repository Structure section**:
+- Comprehensive module organization overview
+- Detailed API documentation for each module
+- Listed all functions with brief descriptions
+- Example figure script structure with code
+- Testing structure overview
+
+**Updated Code Quality Standards**:
+- Added "Where to Add New Functionality" section
+- Clear guidelines for each module type
+- DO NOT list of anti-patterns
+- Prevents code duplication in figure scripts
+
+**Updated Working with Figures**:
+- Replaced old workflow with modular approach
+- Emphasizes extraction to shared modules
+- Integration testing guidance
+
+### Design Decisions
+
+**Comprehensive module API documentation**:
+- Each module gets a subsection with all exported functions
+- Brief one-line descriptions for quick reference
+- Organized by functionality (utilities, then high-level)
+
+**Clear guidance for contributors**:
+- Where to add new functionality (by type)
+- What NOT to do (no duplication)
+- Testing requirements
+
+**Example code**:
+- Added realistic figure script template
+- Shows proper import patterns
+- Demonstrates orchestration approach
+
+### Notes
+
+- All 102 tests still passing after documentation updates
+- Documentation accurately reflects current codebase
+- Clear module boundaries established
+- No "Adding New Figures" section per user request
+
+### Quality Checks
+
+- pytest: ✅ (102/102 tests passing)
+- Documentation: ✅ (accurate and comprehensive)
+- Examples: ✅ (realistic and runnable)
+
+**Milestone 7.1 Complete** ✅
+
+---
+
 ## Completed
 
 ### Milestone 2 - Simulation Module ✅
