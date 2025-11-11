@@ -14,6 +14,8 @@ import statespacecheck as ssc
 from numpy.typing import NDArray
 from scipy.stats import norm, poisson
 
+from statespacecheck_paper.style import WONG, save_figure
+
 # -----------------------------
 # Utilities (DRY helpers)
 # -----------------------------
@@ -646,7 +648,7 @@ def plot_misfit_examples(
     axes = [fig.add_subplot(gs[0, i]) for i in range(5)]
 
     # Wong colorblind-friendly palette
-    wong = ["#000000", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7"]
+    wong = WONG
 
     for phase_idx, (phase_name, phase_slice, is_baseline) in enumerate(phases):
         # For baseline, find best fit (highest HPDO); for misfits, find worst fit (lowest HPDO)
@@ -825,16 +827,7 @@ def plot_combined_diagnostics(
     import matplotlib.gridspec as gridspec
 
     # Wong colorblind-friendly palette
-    wong = [
-        "#000000",
-        "#E69F00",
-        "#56B4E9",
-        "#009E73",
-        "#F0E442",
-        "#0072B2",
-        "#D55E00",
-        "#CC79A7",
-    ]
+    wong = WONG
 
     # Phase colors (lighter versions for backgrounds)
     phase_colors = {
@@ -1250,9 +1243,7 @@ def plot_combined_diagnostics(
     figures_dir = os.path.join(os.path.dirname(__file__), "..", "figures")
     os.makedirs(figures_dir, exist_ok=True)
     save_path_base = os.path.join(figures_dir, "figure02")
-    plt.savefig(f"{save_path_base}.pdf", dpi=450, bbox_inches="tight")
-    plt.savefig(f"{save_path_base}.png", dpi=450, bbox_inches="tight")
-    plt.close()
+    save_figure(save_path_base)
     print(f"\nFigure 2 saved to {save_path_base}.{{pdf,png}}")
 
 

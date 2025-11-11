@@ -42,11 +42,11 @@ Track progress through the refactoring plan. See [REFACTORING_PLAN.md](REFACTORI
 
 ### 1.3 Update figure02.py
 
-- [ ] Add import: `from statespacecheck_paper.style import WONG, save_figure`
-- [ ] Replace inline `wong` definition (line 828) with `WONG` import
-- [ ] Replace inline save calls (lines 1253-1256) with `save_figure()`
-- [ ] Test: `python figures/figure02.py` runs successfully
-- [ ] Verify: Output identical to before (visual check)
+- [x] Add import: `from statespacecheck_paper.style import WONG, save_figure`
+- [x] Replace inline `wong` definition (line 828) with `WONG` import
+- [x] Replace inline save calls (lines 1253-1256) with `save_figure()`
+- [x] Test: `python figures/figure02.py` runs successfully
+- [x] Verify: Output identical to before (visual check)
 
 ### 1.4 Quality Checks
 
