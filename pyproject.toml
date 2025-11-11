@@ -31,6 +31,9 @@ dependencies = [
     "matplotlib>=3.8.0",
     "seaborn>=0.13.0",
     "pandas>=2.0.0",
+    "statespacecheck",
+    "non_local_detector",
+    "spyglass-neuro",
 ]
 
 [project.optional-dependencies]
@@ -49,14 +52,14 @@ target-version = "py310"
 
 [tool.ruff.lint]
 select = [
-    "E",    # pycodestyle errors
-    "W",    # pycodestyle warnings
-    "F",    # pyflakes
-    "I",    # isort
-    "N",    # pep8-naming
-    "UP",   # pyupgrade
-    "B",    # flake8-bugbear
-    "NPY",  # numpy-specific rules
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "N",   # pep8-naming
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "NPY", # numpy-specific rules
 ]
 
 [tool.ruff.lint.pydocstyle]
@@ -70,12 +73,7 @@ warn_unused_configs = true
 disallow_untyped_defs = true
 
 [[tool.mypy.overrides]]
-module = [
-    "scipy.*",
-    "matplotlib.*",
-    "seaborn.*",
-    "pandas.*",
-]
+module = ["scipy.*", "matplotlib.*", "seaborn.*", "pandas.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
