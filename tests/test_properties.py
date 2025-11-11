@@ -24,7 +24,9 @@ class TestNormalizeProperties:
         arr=arrays(
             dtype=np.float64,
             shape=st.integers(min_value=1, max_value=100),
-            elements=st.floats(min_value=0.01, max_value=1000.0, allow_nan=False, allow_infinity=False),
+            elements=st.floats(
+                min_value=0.01, max_value=1000.0, allow_nan=False, allow_infinity=False
+            ),
         )
     )
     def test_normalize_always_sums_to_one(self, arr: np.ndarray) -> None:
@@ -38,7 +40,9 @@ class TestNormalizeProperties:
         arr=arrays(
             dtype=np.float64,
             shape=st.integers(min_value=1, max_value=100),
-            elements=st.floats(min_value=0.0, max_value=1000.0, allow_nan=False, allow_infinity=False),
+            elements=st.floats(
+                min_value=0.0, max_value=1000.0, allow_nan=False, allow_infinity=False
+            ),
         )
     )
     def test_normalize_produces_nonnegative_values(self, arr: np.ndarray) -> None:
@@ -79,7 +83,9 @@ class TestReflectIntoIntervalProperties:
         arr=arrays(
             dtype=np.float64,
             shape=st.integers(min_value=1, max_value=100),
-            elements=st.floats(min_value=-1000, max_value=1000, allow_nan=False, allow_infinity=False),
+            elements=st.floats(
+                min_value=-1000, max_value=1000, allow_nan=False, allow_infinity=False
+            ),
         ),
         xmin=st.floats(min_value=-100, max_value=-0.1, allow_nan=False, allow_infinity=False),
         xmax=st.floats(min_value=0.1, max_value=100, allow_nan=False, allow_infinity=False),
@@ -93,5 +99,3 @@ class TestReflectIntoIntervalProperties:
         # All values must be within bounds (with small tolerance for floating point)
         assert np.all(result >= xmin - 1e-10)
         assert np.all(result <= xmax + 1e-10)
-
-

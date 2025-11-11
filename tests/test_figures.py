@@ -5,7 +5,6 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import matplotlib.pyplot as plt
 import pytest
 
 # Add figures directory to path to import figure scripts
