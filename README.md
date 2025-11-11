@@ -1,10 +1,19 @@
 # statespacecheck-paper
 
-This repository contains the source code and supplementary materials for the paper "Title here". The main package is `statespacecheck`, which provides tools for checking state space models.
-
 **Goodness-of-fit diagnostics for state space models in neuroscience**
 
-`statespacecheck` provides tools to assess how well Bayesian state space models fit neural data by examining the consistency between posterior distributions and their component likelihood distributions. These diagnostics help identify issues with prior specification and model assumptions, enabling iterative model refinement.
+This repository contains the source code and supplementary materials for the paper demonstrating `statespacecheck`, a package that provides tools to assess how well Bayesian state space models fit neural data by examining the consistency between posterior distributions and their component likelihood distributions. These diagnostics help identify issues with prior specification and model assumptions, enabling iterative model refinement.
+
+## Repository Structure
+
+This is a **paper/research repository** (not a library). The code is organized into:
+
+- **`src/statespacecheck_paper/`**: Reusable modules (styling, simulation, analysis, plotting)
+- **`figures/`**: Scripts to generate paper figures (thin orchestration layers)
+- **`tests/`**: Comprehensive test suite (102 tests, 97.2% coverage)
+- **`notebooks/`**: Jupyter notebooks for exploration
+
+**For developers**: See [CLAUDE.md](CLAUDE.md) for detailed development guide including module organization, coding standards, and where to add new functionality.
 
 ## Overview
 
@@ -212,9 +221,14 @@ Compute boolean mask indicating highest density region membership.
 
 ## Development
 
-### Setup
+This repository follows a modular architecture where reusable code lives in `src/statespacecheck_paper/` and figure scripts orchestrate. See [CLAUDE.md](CLAUDE.md) for comprehensive development guide.
+
+### Quick Setup
 
 ```bash
+# Install UV package manager if needed
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
 # Create virtual environment and install dependencies
 uv venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
@@ -224,37 +238,69 @@ uv pip install -e ".[dev]"
 ### Running Tests
 
 ```bash
-# Run all tests with coverage
-pytest tests/ -v
+# Run all tests with coverage (102 tests, 97.2% coverage)
+uv run pytest
 
-# Run specific test file
-pytest tests/test_posterior_consistency.py -v
+# Run specific module tests
+uv run pytest tests/test_simulation.py -v
 
-# Run with coverage report
-pytest tests/ --cov=src/statespacecheck --cov-report=html
+# Generate HTML coverage report
+uv run pytest --cov --cov-report=html
+open htmlcov/index.html
+```
+
+### Generating Figures
+
+```bash
+# Generate individual figures
+python figures/figure01.py
+python figures/figure02.py
+
+# Outputs saved to figures/ directory as PDF and PNG
 ```
 
 ### Code Quality
 
 ```bash
-# Check code style
-ruff check .
-
 # Format code
-ruff format .
+uv run ruff format .
+
+# Check linting
+uv run ruff check .
 
 # Type checking
-mypy src/
+uv run mypy src/
+
+# Run all checks
+uv run ruff format . && uv run ruff check . && uv run mypy src/ && uv run pytest
 ```
+
+### Module Organization
+
+- **`style.py`**: Shared styling (WONG palette, figure defaults, save functions)
+- **`simulation.py`**: Simulation utilities (random walks, spikes, place fields)
+- **`analysis.py`**: Analysis logic (decoder, diagnostics, thresholds)
+- **`plotting.py`**: Reusable plotting functions (HPD regions, diagnostic plots)
+- **`load_data.py`**: Real data loading utilities
 
 ### Standards
 
 - **Python**: 3.10+ (following [SPEC 0](https://scientific-python.org/specs/spec-0000/))
-- **Dependencies**: numpy>=1.26.0, scipy>=1.11.0, matplotlib>=3.8.0
-- **Docstrings**: NumPy format with parameter types and return values
+- **Package manager**: UV (recommended) or pip
+- **Dependencies**: See [pyproject.toml](pyproject.toml) for full list
+- **Docstrings**: NumPy format with shape specifications
 - **Type hints**: Full mypy strict mode compliance
 - **Style**: ruff for formatting and linting (100 char line length)
+- **Testing**: pytest with >90% coverage target
 - **No `# type: ignore`**: Fix type issues by refactoring, not suppressing
+
+### Adding New Functionality
+
+See [CLAUDE.md](CLAUDE.md) for detailed guidance on:
+- Where to add simulation/analysis/plotting code
+- How to create new figures
+- Testing requirements
+- Code quality standards
 
 ## Scientific Context
 

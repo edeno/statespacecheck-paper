@@ -413,15 +413,19 @@ Track progress through the refactoring plan. See [REFACTORING_PLAN.md](REFACTORI
 
 ### 7.3 Update README.md
 
-- [ ] Add note about repository structure
-- [ ] Link to CLAUDE.md for developer guide
-- [ ] Update development section if needed
+- [x] Add note about repository structure
+- [x] Link to CLAUDE.md for developer guide
+- [x] Update development section with module organization
+- [x] Add figure generation instructions
+- [x] Update code quality commands to use uv
 
 ### 7.4 Add Module-Level Documentation
 
-- [ ] Verify all modules have docstrings ✅
-- [ ] Check docstrings are comprehensive ✅
-- [ ] Ensure examples are included ✅
+- [x] Verify all modules have docstrings ✅
+- [x] Check docstrings are comprehensive ✅
+- [x] Ensure examples are included ✅
+- [x] All 4 core modules have excellent docstrings
+- [x] All functions have NumPy-format docstrings with examples
 
 ### 7.5 Create ARCHITECTURE.md (Optional)
 
