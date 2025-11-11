@@ -7,56 +7,12 @@ as a diagnostic.
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.patches import Rectangle
 from scipy import stats
 
-
-# Fallback colors
-WONG = [
-    "#000000",
-    "#E69F00",
-    "#56B4E9",
-    "#009E73",
-    "#F0E442",
-    "#0072B2",
-    "#D55E00",
-    "#CC79A7",
-]
-
-def set_figure_defaults(context: str = "paper") -> None:
-    """Set matplotlib defaults for publication figures.
-
-    Font sizes meet Nature/Science minimums (5-7pt).
-    TrueType font embedding (fonttype 42) required for journal submission.
-    """
-    plt.rcParams.update(
-        {
-            "font.size": 7,
-            "axes.labelsize": 7,
-            "axes.titlesize": 8,
-            "xtick.labelsize": 6,
-            "ytick.labelsize": 6,
-            "legend.fontsize": 6,
-            "font.family": "sans-serif",
-            "font.sans-serif": ["Arial"],
-            "axes.linewidth": 0.5,
-            "xtick.major.width": 0.5,
-            "ytick.major.width": 0.5,
-            "pdf.fonttype": 42,  # TrueType fonts for Nature/Science submission
-            "ps.fonttype": 42,  # Required for proper font embedding
-        }
-    )
-
-def save_figure(name: str) -> None:
-    """Save figure as both PDF and PNG."""
-    plt.savefig(f"{name}.pdf", dpi=450, bbox_inches="tight")
-    plt.savefig(f"{name}.png", dpi=450, bbox_inches="tight")
-    print(f"Saved {name}.pdf and {name}.png")
+from statespacecheck_paper.style import WONG, save_figure, set_figure_defaults
 
 
 def compute_hpd_region(x: np.ndarray, pdf: np.ndarray, coverage: float = 0.95) -> np.ndarray:
