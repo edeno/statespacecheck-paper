@@ -229,9 +229,7 @@ def placefield_rates(
     >>> rates.max(axis=0)  # Peak at each center
     array([0.398..., 0.398..., 0.398...])
     """
-    result: NDArray[np.floating] = (
-        norm.pdf(xs[:, None], loc=centers[None, :], scale=width) * scale
-    )
+    result: NDArray[np.floating] = norm.pdf(xs[:, None], loc=centers[None, :], scale=width) * scale
     return result
 
 
