@@ -3010,8 +3010,8 @@ wheels = [
 
 [[package]]
 name = "non-local-detector"
-version = "0.6.10.dev207+gfb5da7317"
-source = { git = "https://github.com/LorenFrankLab/non_local_detector.git#fb5da73176d3431cbce2c59b5ddffdeb20f85885" }
+version = "0.6.10.dev209+g58ae32af7"
+source = { git = "https://github.com/LorenFrankLab/non_local_detector.git#58ae32af7e6d609cdda6febbe86e4c2c541bb707" }
 dependencies = [
     { name = "jax", version = "0.6.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "jax", version = "0.8.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },

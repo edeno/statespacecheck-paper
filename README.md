@@ -80,6 +80,37 @@ uv pip install -e .
 pip install -e .
 ```
 
+### Installing Dependencies from GitHub
+
+This project may include dependencies installed directly from GitHub repositories. When using `uv`, these require special handling:
+
+1. **Enable direct references** in `pyproject.toml`:
+
+   ```toml
+   [tool.hatch.metadata]
+   allow-direct-references = true
+   ```
+
+2. **Specify GitHub dependencies** in `pyproject.toml`:
+
+   ```toml
+   dependencies = [
+       "package-name @ git+https://github.com/username/repo.git",
+   ]
+   ```
+
+3. **Update lock file** when dependencies change:
+
+   ```bash
+   # Update specific package from GitHub
+   uv lock --upgrade-package package-name
+
+   # Sync environment with updated lock
+   uv sync
+   ```
+
+**Important**: `uv` uses a lock file (`uv.lock`) to ensure reproducible installs. When a GitHub dependency is updated upstream, you must explicitly update the lock file—`uv` will not automatically fetch the latest commit.
+
 ## Quick Start
 
 ### Basic Example

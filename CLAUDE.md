@@ -536,6 +536,198 @@ uv run pytest
 - **mypy**: Static type checker
 - **pytest**: Testing framework
 
+### Installing from GitHub Repositories
+
+Some dependencies may be installed directly from GitHub rather than PyPI. This is useful for:
+- Development versions with unreleased features
+- Bug fixes not yet published
+- Custom forks with project-specific changes
+
+#### Configuration Required
+
+**1. Enable direct references in `pyproject.toml`:**
+
+Hatchling (the build backend) requires explicit permission for GitHub dependencies:
+
+```toml
+[tool.hatch.metadata]
+allow-direct-references = true
+```
+
+**2. Specify the GitHub dependency:**
+
+```toml
+dependencies = [
+    "package-name @ git+https://github.com/username/repo.git",
+]
+```
+
+**Optional**: Pin to specific branch, tag, or commit:
+```toml
+# Specific branch
+"package-name @ git+https://github.com/username/repo.git@branch-name"
+
+# Specific tag
+"package-name @ git+https://github.com/username/repo.git@v1.2.3"
+
+# Specific commit (most reproducible)
+"package-name @ git+https://github.com/username/repo.git@abc123def456"
+```
+
+#### Understanding `uv` Dependency Management
+
+**Key Concept**: `uv` uses a **lock file** (`uv.lock`) to ensure reproducible installations, similar to `npm`'s `package-lock.json` or `poetry`'s `poetry.lock`.
+
+**The Three Environments:**
+
+1. **`pyproject.toml`**: Declares dependency *requirements* (e.g., "latest from GitHub main branch")
+2. **`uv.lock`**: Pins *exact commits* for reproducibility (e.g., commit `abc123`)
+3. **`.venv/`**: The actual installed packages
+
+**Important Behaviors:**
+
+- `uv pip install -e ".[dev]"` → Creates/updates `.venv` but **does not update** `uv.lock`
+- `uv sync` → Installs packages from `uv.lock` into `.venv`
+- `uv run python` → Uses environment defined by `uv.lock` (may differ from `.venv`!)
+
+#### Updating GitHub Dependencies
+
+When a GitHub dependency is updated upstream, follow these steps:
+
+**Step 1: Update the lock file**
+```bash
+# Update specific package
+uv lock --upgrade-package package-name
+
+# Update all packages
+uv lock --upgrade
+```
+
+This fetches the latest commit from GitHub and updates `uv.lock`.
+
+**Step 2: Sync the environment**
+```bash
+uv sync
+```
+
+This installs the newly locked version into your `.venv`.
+
+**Step 3: Verify the update**
+```bash
+uv run python -c "import package_name; print(package_name.__version__)"
+```
+
+#### Common Issues and Solutions
+
+**Issue 1: `uv run` shows old version, but `.venv` has new version**
+
+**Cause**: Lock file (`uv.lock`) not updated
+
+**Solution**:
+```bash
+uv lock --upgrade-package package-name
+uv sync
+```
+
+**Issue 2: "Direct reference not allowed" error**
+
+**Cause**: Missing `allow-direct-references` in `pyproject.toml`
+
+**Solution**: Add to `pyproject.toml`:
+```toml
+[tool.hatch.metadata]
+allow-direct-references = true
+```
+
+**Issue 3: Package installed from cache instead of latest GitHub**
+
+**Cause**: `uv` caches Git repositories
+
+**Solution**: Force fresh install:
+```bash
+uv pip install --reinstall --no-cache "package @ git+https://github.com/user/repo.git"
+```
+
+Then update lock:
+```bash
+uv lock --upgrade-package package
+uv sync
+```
+
+#### Best Practices
+
+1. **Pin production dependencies** to specific commits for reproducibility:
+   ```toml
+   "non_local_detector @ git+https://github.com/LorenFrankLab/non_local_detector.git@abc123"
+   ```
+
+2. **Use branches for development** to automatically get updates:
+   ```toml
+   "package @ git+https://github.com/user/repo.git@develop"
+   ```
+
+3. **Always update lock after changing** `pyproject.toml`:
+   ```bash
+   uv lock
+   uv sync
+   ```
+
+4. **Commit `uv.lock`** to version control for reproducibility
+
+5. **Document expected features** if using unreleased versions (e.g., in CHANGELOG or commit message)
+
+#### Example Workflow
+
+Adding a new GitHub dependency:
+
+```bash
+# 1. Edit pyproject.toml
+cat >> pyproject.toml << 'EOF'
+dependencies = [
+    "my-package @ git+https://github.com/user/my-package.git",
+]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+EOF
+
+# 2. Update lock file
+uv lock
+
+# 3. Install to environment
+uv sync
+
+# 4. Verify installation
+uv run python -c "import my_package; print(my_package.__version__)"
+
+# 5. Commit changes
+git add pyproject.toml uv.lock
+git commit -m "Add my-package from GitHub"
+```
+
+Updating an existing GitHub dependency:
+
+```bash
+# 1. Check current version
+uv pip show package-name | grep Version
+
+# 2. Update lock to latest
+uv lock --upgrade-package package-name
+
+# 3. Sync environment
+uv sync
+
+# 4. Verify new version
+uv run python -c "import package_name; print(package_name.__version__)"
+
+# 5. Test that everything works
+uv run pytest
+
+# 6. Commit updated lock
+git add uv.lock
+git commit -m "Update package-name to latest GitHub version"
+```
+
 ## Performance Considerations
 
 ### Vectorization
