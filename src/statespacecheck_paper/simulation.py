@@ -241,7 +241,7 @@ def placefield_rates(
 
 def spike_prob_rank(
     prior: NDArray[np.floating],
-    lambda_ratio: NDArray[np.floating],
+    cell_fraction_per_bin: NDArray[np.floating],
 ) -> NDArray[np.floating]:
     """Compute cumulative probability mass of cells with low expected contribution.
 
@@ -253,8 +253,8 @@ def spike_prob_rank(
     ----------
     prior : np.ndarray, shape (n_bins,)
         Prior probability distribution over position bins.
-    lambda_ratio : np.ndarray, shape (n_bins, n_cells)
-        Normalized likelihood contributions where each row sums to 1.
+    cell_fraction_per_bin : np.ndarray, shape (n_bins, n_cells)
+        Normalized firing rate fractions where each row sums to 1.
 
     Returns
     -------
@@ -267,9 +267,9 @@ def spike_prob_rank(
     Compute spike probability ranks:
 
     >>> prior = np.array([0.5, 0.3, 0.2])
-    >>> lambda_ratio = np.array([[0.6, 0.2], [0.3, 0.5], [0.1, 0.3]])
-    >>> lambda_ratio = lambda_ratio / lambda_ratio.sum(axis=0, keepdims=True)
-    >>> ranks = spike_prob_rank(prior, lambda_ratio)
+    >>> cell_fraction_per_bin = np.array([[0.6, 0.2], [0.3, 0.5], [0.1, 0.3]])
+    >>> cell_fraction_per_bin = cell_fraction_per_bin / cell_fraction_per_bin.sum(axis=0, keepdims=True)
+    >>> ranks = spike_prob_rank(prior, cell_fraction_per_bin)
     >>> ranks.shape
     (2,)
     >>> (ranks >= 0.0).all() and (ranks <= 1.0).all()
@@ -282,7 +282,7 @@ def spike_prob_rank(
     where lambda_expect are probabilities summing to 1.
     """
     contrib: NDArray[np.floating] = (
-        prior @ lambda_ratio
+        prior @ cell_fraction_per_bin
     )  # (n_cells,) - expected contribution per cell
     # For each cell, sum contributions of cells with equal or lower contribution
     mask = contrib[:, None] <= contrib  # Broadcasting creates (n_cells, n_cells) comparison matrix

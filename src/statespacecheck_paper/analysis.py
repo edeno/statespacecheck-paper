@@ -237,10 +237,10 @@ def likelihood_grid_for_counts(
     >>> np.allclose(np.sum(likelihood, axis=0), 1.0)  # Normalized per cell
     True
     """
-    lam = placefield_rates(xs, pf_centers, pf_width, rate_scale)  # (n_bins, n_cells)
+    rates = placefield_rates(xs, pf_centers, pf_width, rate_scale)  # (n_bins, n_cells)
     # Poisson PMF per bin, per cell for this time's counts
-    # counts is (n_cells,), lam is (n_bins, n_cells)
-    likelihood_grid: NDArray[np.floating] = poisson.pmf(counts[None, :], lam)
+    # counts is (n_cells,), rates is (n_bins, n_cells)
+    likelihood_grid: NDArray[np.floating] = poisson.pmf(counts[None, :], rates)
     # Avoid degenerate zeros; normalize per cell (over bins) to a proper density on xs
     likelihood_grid = normalize(likelihood_grid, axis=0)
     return likelihood_grid
@@ -448,8 +448,9 @@ def decode_and_diagnostics(
     # t=0 (MATLAB used a flat prior at t=1)
     posterior[0] = normalize(np.ones(n_bins))
 
-    lam_grid_all = placefield_rates(xs, pf_centers, pf_width, rate_scale)  # (n_bins, n_cells)
-    lambda_ratio = normalize(lam_grid_all, axis=1)  # per-bin cell-fractions, rows sum to 1
+    rate_grid_all = placefield_rates(xs, pf_centers, pf_width, rate_scale)  # (n_bins, n_cells)
+    # Normalize to get per-bin cell-fractions (rows sum to 1)
+    cell_fraction_per_bin = normalize(rate_grid_all, axis=1)
 
     start_r, end_r = remap_window
     start_narrow, end_narrow = _window_or_never(narrow_window, n_time)
@@ -495,7 +496,7 @@ def decode_and_diagnostics(
         posterior[t] = normalize(prior * combined_likelihood)
 
         # spike_prob: cumulative probability mass for cells with low expected contribution
-        spike_prob[t] = spike_prob_rank(prior, lambda_ratio)
+        spike_prob[t] = spike_prob_rank(prior, cell_fraction_per_bin)
 
     # Mask spike_prob for cells with zero spikes (match MATLAB: spikeProb(spikes == 0) = nan)
     # Note: HPD overlap and KL divergence are now per-timestep (not per-cell) since they compare
