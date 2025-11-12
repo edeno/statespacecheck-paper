@@ -1,5 +1,6 @@
 import itertools
 import warnings
+from typing import Any
 
 import networkx as nx
 import numpy as np
@@ -143,7 +144,7 @@ def _get_interpolated_position_info(
     track_graph: nx.Graph,
     edge_order: list[tuple[int, int]],
     edge_spacing: list[float],
-    position_columns: list[str] = None,
+    position_columns: list[str] | None = None,
 ) -> pd.DataFrame:
     if position_columns is None:
         position_columns = ["head_position_x", "head_position_y"]
@@ -172,7 +173,7 @@ def _get_interpolated_position_info(
     )
 
 
-def _get_position_info(nwb_file_name: str, epoch_name: str, pos_name: str) -> dict:
+def _get_position_info(nwb_file_name: str, epoch_name: str, pos_name: str) -> dict[str, Any]:
     position_key = {
         "nwb_file_name": nwb_file_name,
         "interval_list_name": pos_name,
@@ -283,10 +284,10 @@ def _get_electrode_group_info(nwb_file_name: str) -> pd.DataFrame:
 
 
 def _detect_coincident_spikes(
-    spike_times: list,
+    spike_times: list[np.ndarray],
     spike_closeness_threshold: float = 0.00004,
     max_coincident_fraction: float = 0.33,
-) -> tuple:
+) -> tuple[list[np.ndarray], list[np.ndarray]]:
     # Concatenate all spike times
     concat_spike_times = np.concatenate(spike_times)
     # Create group IDs for each spike time
@@ -330,7 +331,7 @@ def _detect_coincident_spikes(
     return filtered_spike_times, filtered_time_bin_ind
 
 
-def _get_hpc_marks(nwb_file_name: str) -> tuple:
+def _get_hpc_marks(nwb_file_name: str) -> tuple[list[np.ndarray], list[np.ndarray]]:
     try:
         restriction = {
             "nwb_file_name": nwb_file_name,
@@ -344,7 +345,9 @@ def _get_hpc_marks(nwb_file_name: str) -> tuple:
         }
         marks = (UnitMarks & restriction).fetch_dataframe()
         marks = [(mark.index.to_numpy(), mark.to_numpy()) for mark in marks]
-        spike_times, spike_waveform_features = zip(*marks, strict=False)
+        spike_times_tuple, spike_waveform_features_tuple = zip(*marks, strict=False)
+        spike_times = list(spike_times_tuple)
+        spike_waveform_features = list(spike_waveform_features_tuple)
     except ValueError:
         restriction = {
             "nwb_file_name": nwb_file_name,
@@ -358,7 +361,9 @@ def _get_hpc_marks(nwb_file_name: str) -> tuple:
         }
         marks = (UnitMarks & restriction).fetch_dataframe()
         marks = [(mark.index.to_numpy(), mark.to_numpy()) for mark in marks]
-        spike_times, spike_waveform_features = zip(*marks, strict=False)
+        spike_times_tuple, spike_waveform_features_tuple = zip(*marks, strict=False)
+        spike_times = list(spike_times_tuple)
+        spike_waveform_features = list(spike_waveform_features_tuple)
 
     spike_times, filtered_time_bin_ind = _detect_coincident_spikes(spike_times)
     spike_waveform_features = [
@@ -369,7 +374,7 @@ def _get_hpc_marks(nwb_file_name: str) -> tuple:
     return spike_times, spike_waveform_features
 
 
-def _get_pfc_spike_times(nwb_file_name: str, brain_area: str) -> list:
+def _get_pfc_spike_times(nwb_file_name: str, brain_area: str) -> list[np.ndarray]:
     restriction = {
         "nwb_file_name": nwb_file_name,
         "preproc_params_name": "default",
@@ -410,7 +415,7 @@ def _get_pfc_spike_times(nwb_file_name: str, brain_area: str) -> list:
     )
 
 
-def _get_spike_data(nwb_file_name: str) -> dict:
+def _get_spike_data(nwb_file_name: str) -> dict[str, dict[str, Any]]:
     spike_times = dict()
     spike_waveform_features = dict()
 
@@ -434,7 +439,9 @@ def _get_spike_data(nwb_file_name: str) -> dict:
 
 
 def _filter_spike_times(
-    spike_times: dict, spike_waveform_features: dict, position_time: np.ndarray
+    spike_times: dict[str, Any],
+    spike_waveform_features: dict[str, Any],
+    position_time: np.ndarray,
 ) -> None:
     for brain_area, brain_area_spike_times in spike_times.items():
         filtered_spike_times = []
@@ -462,7 +469,7 @@ def _filter_spike_times(
 def load_data(
     nwb_file_name: str,
     epoch_name: str,
-) -> dict[pd.DataFrame]:
+) -> dict[str, Any]:
     electrode_group_info = _get_electrode_group_info(nwb_file_name)
 
     pos_name = (

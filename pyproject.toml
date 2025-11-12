@@ -74,7 +74,17 @@ warn_unused_configs = true
 disallow_untyped_defs = true
 
 [[tool.mypy.overrides]]
-module = ["scipy.*", "matplotlib.*", "seaborn.*", "pandas.*"]
+module = [
+    "scipy.*",
+    "matplotlib.*",
+    "seaborn.*",
+    "pandas.*",
+    "networkx.*",
+    "datajoint.*",
+    "spyglass.*",
+    "track_linearization.*",
+    "statespacecheck.*",
+]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
