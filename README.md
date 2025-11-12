@@ -303,6 +303,7 @@ uv run ruff format . && uv run ruff check . && uv run mypy src/ && uv run pytest
 ### Adding New Functionality
 
 See [CLAUDE.md](CLAUDE.md) for detailed guidance on:
+
 - Where to add simulation/analysis/plotting code
 - How to create new figures
 - Testing requirements

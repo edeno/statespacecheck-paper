@@ -173,9 +173,34 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 
-# Cursor  
-#  Cursor is an AI-powered code editor.`.cursorignore` specifies files/directories to 
+# Cursor
+#  Cursor is an AI-powered code editor.`.cursorignore` specifies files/directories to
 #  exclude from AI features like autocomplete and code analysis. Recommended for sensitive data
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+
+# LaTeX build artifacts
+## Core LaTeX auxiliary files
+*.aux
+*.fdb_latexmk
+*.fls
+*.out
+*.synctex.gz
+
+## Bibliography
+*.bbl
+*.blg
+
+## Build tool specific
+*.latexmk
+*.bcf
+*.run.xml
+
+## Beamer (if you add slides later)
+*.nav
+*.snm
+*.vrb
+
+## Optional: Uncomment to ignore compiled PDFs in manuscript/
+# manuscript/*.pdf
