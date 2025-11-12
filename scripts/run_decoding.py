@@ -84,8 +84,7 @@ cont_results = cont_model.predict(
     time=time,
     position_time=time,
     position=position_2d,
-    return_outputs=["log_likelihood", "predictive"],
-    cache_likelihood=True,
+    return_outputs=["log_likelihood", "predictive_posterior"],
 )
 
 cont_frag_results = cont_frag_model.predict(
@@ -93,25 +92,24 @@ cont_frag_results = cont_frag_model.predict(
     time=time,
     position_time=time,
     position=position_2d,
-    return_outputs=["log_likelihood", "predictive"],
-    cache_likelihood=True,
+    return_outputs=["log_likelihood", "predictive_posterior"],
 )
 
 print(cont_results)
-cont_results.isel(time=0).acausal_posterior.unstack("state_bins").squeeze().plot()
+cont_results.isel(time=0).predictive_posterior.unstack("state_bins").squeeze().plot()
 
 
-cont_frag_results.isel(time=0).acausal_posterior.unstack("state_bins").sum(
+cont_frag_results.isel(time=0).predictive_posterior.unstack("state_bins").sum(
     "state"
 ).plot(x="position")
 
 
 cont_hpd_overlap = hpd_overlap(
-    state_dist=cont_results.acausal_posterior.dropna("state_bins").to_numpy(),
+    state_dist=cont_results.predictive_posterior.dropna("state_bins").to_numpy(),
     likelihood=np.exp(cont_results.log_likelihood.dropna("state_bins").to_numpy()),
 )
 cont_frag_hpd_overlap = hpd_overlap(
-    state_dist=cont_frag_results.acausal_posterior.dropna("state_bins").to_numpy(),
+    state_dist=cont_frag_results.predictive_posterior.dropna("state_bins").to_numpy(),
     likelihood=np.exp(cont_frag_results.log_likelihood.dropna("state_bins").to_numpy()),
 )
 
@@ -275,7 +273,7 @@ def plot_model_checking(
     )
     fig, axes = plt.subplots(4, 1, figsize=(7, 8), sharex=True, constrained_layout=True)
     plot_posterior(
-        cont_results.acausal_posterior,
+        cont_results.predictive_posterior,
         time,
         position,
         time_slice_ind,
@@ -291,7 +289,7 @@ def plot_model_checking(
         color="tab:blue",
     )
     plot_posterior(
-        cont_frag_results.acausal_posterior,
+        cont_frag_results.predictive_posterior,
         time,
         position,
         time_slice_ind,
@@ -352,7 +350,7 @@ def plot_single_model_checking(
     )
     # Posterior
     plot_posterior(
-        results.acausal_posterior,
+        results.predictive_posterior,
         time,
         position,
         time_slice_ind,
@@ -1098,9 +1096,11 @@ def plot_hpd_overlap_at_time(
     figsize : tuple
         Figure size.
     """
-    posterior_at_t = results.acausal_posterior.dropna("state_bins").to_numpy()[t]
+    posterior_at_t = results.predictive_posterior.dropna("state_bins").to_numpy()[t]
     likelihood_at_t = np.exp(results.log_likelihood.dropna("state_bins").to_numpy())[t]
-    position_bins = results.acausal_posterior.dropna("state_bins").position.to_numpy()
+    position_bins = results.predictive_posterior.dropna(
+        "state_bins"
+    ).position.to_numpy()
 
     posterior_threshold = get_highest_posterior_threshold(
         posterior_at_t[None], coverage=coverage
@@ -1305,7 +1305,7 @@ plt.xlabel("Position")
     mental_position_2d,
     mental_position_edges,
 ) = get_trajectory_data(
-    posterior=cont_results.acausal_posterior.unstack("state_bins").squeeze(),
+    posterior=cont_results.predictive_posterior.unstack("state_bins").squeeze(),
     track_graph=track_graph,
     decoder=cont_model,
     actual_projected_position=position_info[
@@ -1356,7 +1356,7 @@ plt.show()
     mental_position_2d,
     mental_position_edges,
 ) = get_trajectory_data(
-    posterior=cont_frag_results.acausal_posterior.unstack("state_bins").sum("state"),
+    posterior=cont_frag_results.predictive_posterior.unstack("state_bins").sum("state"),
     track_graph=track_graph,
     decoder=cont_frag_model,
     actual_projected_position=position_info[
