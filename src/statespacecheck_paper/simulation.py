@@ -121,9 +121,9 @@ def reflect_into_interval(x: NDArray[np.floating], lo: float, hi: float) -> NDAr
     >>> np.allclose(result, x)
     True
     """
-    length = hi - lo
-    y: NDArray[np.floating] = np.mod(x - lo, 2 * length)
-    y = np.where(y <= length, y, 2 * length - y)
+    interval_length = hi - lo
+    y: NDArray[np.floating] = np.mod(x - lo, 2 * interval_length)
+    y = np.where(y <= interval_length, y, 2 * interval_length - y)
     result: NDArray[np.floating] = y + lo
     return result
 
@@ -161,7 +161,11 @@ def gaussian_transition_matrix(xs: NDArray[np.floating], sig: float) -> NDArray[
     """
     diff = xs[:, None] - xs[None, :]
     matrix = norm.pdf(diff, loc=0.0, scale=sig)
-    return normalize(matrix, axis=0)  # columns sum to 1
+    # Normalize columns in-place to avoid copy
+    col_sums = matrix.sum(axis=0, keepdims=True)
+    col_sums = np.maximum(col_sums, 1e-12)
+    result: NDArray[np.floating] = matrix / col_sums
+    return result
 
 
 def safe_log(x: NDArray[np.floating], eps: float = 1e-12) -> NDArray[np.floating]:
@@ -275,11 +279,12 @@ def spike_prob_rank(
     sum(lambda_expect(lambda_expect <= lambda_expect(j)))
     where lambda_expect are probabilities summing to 1.
     """
-    contrib: NDArray[np.floating] = prior @ lambda_ratio  # (n_cells,) - probabilities summing to ~1
-    # Sum probability mass of cells with contribution <= each cell's contribution
-    mask = contrib[:, None] <= contrib[None, :]  # (n_cells, n_cells)
-    # Sum probabilities, not counts
-    spike_probs: NDArray[np.floating] = (contrib[None, :] * mask).sum(axis=1)
+    contrib: NDArray[np.floating] = (
+        prior @ lambda_ratio
+    )  # (n_cells,) - expected contribution per cell
+    # For each cell, sum contributions of cells with equal or lower contribution
+    mask = contrib[:, None] <= contrib  # Broadcasting creates (n_cells, n_cells) comparison matrix
+    spike_probs: NDArray[np.floating] = (contrib * mask).sum(axis=1)
     return spike_probs
 
 

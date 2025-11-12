@@ -20,6 +20,7 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 import numpy as np
 from matplotlib import gridspec
+from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.ticker import FuncFormatter, NullFormatter
 from numpy.typing import NDArray
@@ -33,6 +34,67 @@ from statespacecheck_paper.analysis import (
 )
 from statespacecheck_paper.simulation import gaussian_transition_matrix, normalize, safe_log
 from statespacecheck_paper.style import WONG
+
+
+def add_phase_boundaries(
+    axes: list[Axes],
+    phase_boundaries: tuple[int, ...],
+    include_labels: bool = False,
+    alpha: float = 0.15,
+) -> None:
+    """Add colored phase boundaries to multiple axes.
+
+    Parameters
+    ----------
+    axes : list[plt.Axes]
+        List of axes to add phase boundaries to.
+    phase_boundaries : tuple[int, ...]
+        Phase boundary time points (must have 8 elements):
+        (remap_start, remap_end, recovery1_end, flat_end,
+         recovery2_end, fast_end, recovery3_end, slow_end).
+    include_labels : bool, default False
+        If True, add labels for legend on first axis.
+    alpha : float, default 0.15
+        Alpha (transparency) for phase boundaries.
+
+    Examples
+    --------
+    >>> fig, axes = plt.subplots(4, 1)
+    >>> boundaries = (10, 20, 30, 40, 50, 60, 70, 80)
+    >>> add_phase_boundaries(axes, boundaries, include_labels=True)
+    """
+    if len(phase_boundaries) != 8:
+        return
+
+    (
+        t_remap_start,
+        t_remap_end,
+        t_recovery1_end,
+        t_flat_end,
+        t_recovery2_end,
+        t_fast_end,
+        t_recovery3_end,
+        t_slow_end,
+    ) = phase_boundaries
+
+    # Define phases with (start, end, color, label)
+    phases = [
+        (t_remap_start, t_remap_end, "orange", "Remapping"),
+        (t_recovery1_end, t_flat_end, "gray", "Flat firing"),
+        (t_recovery2_end, t_fast_end, "red", "Fast movement"),
+        (t_recovery3_end, t_slow_end, "blue", "Stationary"),
+    ]
+
+    for ax_idx, ax in enumerate(axes):
+        add_labels_to_axis = include_labels and ax_idx == 0
+        for start, end, color, label in phases:
+            ax.axvspan(
+                start,
+                end,
+                alpha=alpha if not add_labels_to_axis else alpha + 0.05,
+                color=color,
+                label=label if add_labels_to_axis else "",
+            )
 
 
 def compute_hpd_region(x: np.ndarray, pdf: np.ndarray, coverage: float = 0.95) -> np.ndarray:
@@ -175,53 +237,9 @@ def plot_original(
     # Scale tick labels by 1e12 to avoid offset text
     cbar.ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, p: f"{x * 1e12:.1f}"))
 
-    # Add phase boundaries to all axes, but only add labels to first axis for legend
-    for i, ax in enumerate(axes):
-        # Highlight phase boundaries with different colors for misfit vs recovery
-        if phase_boundaries is not None and len(phase_boundaries) == 8:
-            (
-                t_remap_start,
-                t_remap_end,
-                t_recovery1_end,
-                t_flat_end,
-                t_recovery2_end,
-                t_fast_end,
-                t_recovery3_end,
-                t_slow_end,
-            ) = phase_boundaries
-
-            # Only add labels for the first axis (for legend)
-            add_labels = i == 0
-
-            # Misfit periods (colored)
-            ax.axvspan(
-                t_remap_start,
-                t_remap_end,
-                alpha=0.2,
-                color="orange",
-                label="Remapping" if add_labels else "",
-            )
-            ax.axvspan(
-                t_recovery1_end,
-                t_flat_end,
-                alpha=0.2,
-                color="gray",
-                label="Flat firing" if add_labels else "",
-            )
-            ax.axvspan(
-                t_recovery2_end,
-                t_fast_end,
-                alpha=0.2,
-                color="red",
-                label="Fast movement" if add_labels else "",
-            )
-            ax.axvspan(
-                t_recovery3_end,
-                t_slow_end,
-                alpha=0.2,
-                color="blue",
-                label="Stationary" if add_labels else "",
-            )
+    # Add phase boundaries to all axes
+    if phase_boundaries is not None:
+        add_phase_boundaries(axes, phase_boundaries, include_labels=True, alpha=0.2)
 
     axes[1].plot(
         metrics["HPDO"],
@@ -846,23 +864,20 @@ def plot_combined_diagnostics(
         params.T_slow_end,
     )
 
-    for ax in [ax_post, ax_hpdo, ax_kl, ax_spike]:
-        (
-            t_remap_start,
-            t_remap_end,
-            t_recovery1_end,
-            t_flat_end,
-            t_recovery2_end,
-            t_fast_end,
-            t_recovery3_end,
-            t_slow_end,
-        ) = phase_boundaries
+    # Add phase boundaries with matching colors
+    add_phase_boundaries([ax_post, ax_hpdo, ax_kl, ax_spike], phase_boundaries, alpha=0.15)
 
-        # Misfit periods with matching colors
-        ax.axvspan(t_remap_start, t_remap_end, alpha=0.15, color="orange")
-        ax.axvspan(t_recovery1_end, t_flat_end, alpha=0.15, color="gray")
-        ax.axvspan(t_recovery2_end, t_fast_end, alpha=0.15, color="red")
-        ax.axvspan(t_recovery3_end, t_slow_end, alpha=0.15, color="blue")
+    # Unpack for phase labels
+    (
+        t_remap_start,
+        t_remap_end,
+        t_recovery1_end,
+        t_flat_end,
+        t_recovery2_end,
+        t_fast_end,
+        t_recovery3_end,
+        t_slow_end,
+    ) = phase_boundaries
 
     # Add phase labels above top panel
     phase_labels_info = [

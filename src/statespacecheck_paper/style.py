@@ -175,11 +175,13 @@ def save_figure(
     # Create parent directories if they don't exist
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Save both formats
-    plt.savefig(f"{path}.pdf", dpi=dpi, bbox_inches="tight")
-    plt.savefig(f"{path}.png", dpi=dpi, bbox_inches="tight")
+    # Save both formats using pathlib
+    pdf_path = path.with_suffix(".pdf")
+    png_path = path.with_suffix(".png")
+    plt.savefig(pdf_path, dpi=dpi, bbox_inches="tight")
+    plt.savefig(png_path, dpi=dpi, bbox_inches="tight")
 
-    print(f"Saved {path}.pdf and {path}.png")
+    print(f"Saved {pdf_path} and {png_path}")
 
     # Close figure if requested
     if close:

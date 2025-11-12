@@ -299,12 +299,8 @@ def apply_remap_for_likelihoods(
         return likelihood
     likelihood = likelihood.copy()
 
-    # Handle both single tuple and tuple of tuples
-    if (
-        isinstance(remap_from_to, tuple)
-        and len(remap_from_to) == 2
-        and isinstance(remap_from_to[0], int)
-    ):
+    # Normalize to iterable of pairs (handles both single and multiple remappings)
+    if len(remap_from_to) == 2 and isinstance(remap_from_to[0], int):
         # Single remapping: (src, dst)
         src, dst = remap_from_to
         likelihood[:, src] = likelihood[:, dst]
@@ -314,6 +310,24 @@ def apply_remap_for_likelihoods(
             likelihood[:, src] = likelihood[:, dst]
 
     return likelihood
+
+
+def _window_or_never(window: tuple[int, int] | None, n_time: int) -> tuple[int, int]:
+    """Return window bounds or impossibly late bounds if None.
+
+    Parameters
+    ----------
+    window : tuple[int, int] | None
+        Window (start, end) or None.
+    n_time : int
+        Total number of time points.
+
+    Returns
+    -------
+    start, end : tuple[int, int]
+        Window bounds or (n_time + 1, n_time + 1) if window is None.
+    """
+    return window if window else (n_time + 1, n_time + 1)
 
 
 def decode_and_diagnostics(
@@ -423,11 +437,12 @@ def decode_and_diagnostics(
     n_time, n_cells = spikes.shape
     n_bins = xs.size
 
-    post: NDArray[np.floating] = np.zeros((n_time, n_bins), dtype=float)
-    hpdo: NDArray[np.floating] = np.full(n_time, np.nan, dtype=float)  # Single value per timestep
-    kl: NDArray[np.floating] = np.full(n_time, np.nan, dtype=float)  # Single value per timestep
+    # Preallocate outputs (NaN for unavailable values)
+    post: NDArray[np.floating] = np.zeros((n_time, n_bins))
+    hpdo: NDArray[np.floating] = np.full(n_time, np.nan)  # Single value per timestep
+    kl: NDArray[np.floating] = np.full(n_time, np.nan)  # Single value per timestep
     spike_prob: NDArray[np.floating] = np.full(
-        (n_time, n_cells), np.nan, dtype=float
+        (n_time, n_cells), np.nan
     )  # Keep per-cell for this metric
 
     # t=0 (MATLAB used a flat prior at t=1)
@@ -437,8 +452,8 @@ def decode_and_diagnostics(
     lambda_ratio = normalize(lam_grid_all, axis=1)  # per-bin cell-fractions, rows sum to 1
 
     start_r, end_r = remap_window
-    start_narrow, end_narrow = narrow_window if narrow_window else (n_time + 1, n_time + 1)
-    start_inflate, end_inflate = inflate_window if inflate_window else (n_time + 1, n_time + 1)
+    start_narrow, end_narrow = _window_or_never(narrow_window, n_time)
+    start_inflate, end_inflate = _window_or_never(inflate_window, n_time)
 
     for t in range(1, n_time):
         # Select transition matrix based on which window we're in
