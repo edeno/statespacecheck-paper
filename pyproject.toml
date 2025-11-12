@@ -32,7 +32,7 @@ dependencies = [
     "seaborn>=0.13.0",
     "pandas>=2.0.0",
     "statespacecheck",
-    "non_local_detector",
+    "non_local_detector @ git+https://github.com/LorenFrankLab/non_local_detector.git",
     "spyglass-neuro",
 ]
 
@@ -46,6 +46,9 @@ dev = [
     "jupyter>=1.0.0",
     "ipykernel>=6.0.0",
 ]
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.ruff]
 line-length = 100

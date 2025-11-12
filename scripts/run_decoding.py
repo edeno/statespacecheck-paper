@@ -9,11 +9,15 @@ import pandas as pd
 from non_local_detector import Environment
 from non_local_detector.analysis import get_ahead_behind_distance, get_trajectory_data
 from non_local_detector.likelihoods.common import get_spikecount_per_time_bin
+from non_local_detector.model_checking.highest_posterior_density import (
+    get_highest_posterior_threshold,
+)
 from non_local_detector.models import (
     ContFragSortedSpikesClassifier,
     SortedSpikesDecoder,
 )
 from scipy.ndimage import gaussian_filter1d, label
+from statespacecheck import hpd_overlap
 from track_linearization import get_linearized_position, plot_graph_as_1D
 
 FORMAT = "%(asctime)s %(message)s"
@@ -102,12 +106,12 @@ cont_frag_results.isel(time=0).acausal_posterior.unstack("state_bins").sum(
 ).plot(x="position")
 
 
-cont_hpd_overlap = posterior_consistency_hpd_overlap(
-    posterior=cont_results.acausal_posterior.dropna("state_bins").to_numpy(),
+cont_hpd_overlap = hpd_overlap(
+    state_dist=cont_results.acausal_posterior.dropna("state_bins").to_numpy(),
     likelihood=np.exp(cont_results.log_likelihood.dropna("state_bins").to_numpy()),
 )
-cont_frag_hpd_overlap = posterior_consistency_hpd_overlap(
-    posterior=cont_frag_results.acausal_posterior.dropna("state_bins").to_numpy(),
+cont_frag_hpd_overlap = hpd_overlap(
+    state_dist=cont_frag_results.acausal_posterior.dropna("state_bins").to_numpy(),
     likelihood=np.exp(cont_frag_results.log_likelihood.dropna("state_bins").to_numpy()),
 )
 
@@ -1041,12 +1045,6 @@ plt.legend()
 plt.tight_layout()
 
 
-np.isclose(cont_hpd_overlap, 0.5).nonzero()[0]
-
-
-np.isclose(cont_hpd_overlap, 0.5).nonzero()[0][1000]
-
-
 time_slice_ind = slice(40, 50)
 plot_model_checking(
     time_slice_ind,
@@ -1070,8 +1068,6 @@ spike_counts = np.stack(
     ],
     axis=1,
 )
-
-spike_counts[41:45].sum(axis=1)
 
 
 def plot_hpd_overlap_at_time(

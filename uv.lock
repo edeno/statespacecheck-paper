@@ -3010,13 +3010,11 @@ wheels = [
 
 [[package]]
 name = "non-local-detector"
-version = "0.6.9"
-source = { registry = "https://pypi.org/simple" }
+version = "0.6.10.dev207+gfb5da7317"
+source = { git = "https://github.com/LorenFrankLab/non_local_detector.git#fb5da73176d3431cbce2c59b5ddffdeb20f85885" }
 dependencies = [
     { name = "jax", version = "0.6.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "jax", version = "0.8.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
-    { name = "jaxlib", version = "0.6.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "jaxlib", version = "0.8.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "matplotlib" },
     { name = "networkx", version = "3.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "networkx", version = "3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
@@ -3032,10 +3030,6 @@ dependencies = [
     { name = "track-linearization" },
     { name = "xarray", version = "2025.6.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "xarray", version = "2025.10.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/e5/6d/9a89272192b32f68bc5fd6ef12bed71507e90f1efe4bc113eedc9e5da853/non_local_detector-0.6.9.tar.gz", hash = "sha256:b50e7a555582aa65689cfdcdda231d42067e1fb7694b63c28e9d633b80d17062", size = 1268723, upload-time = "2024-11-21T18:13:16.68Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/3f/16/c87f60545402753985c8c06061ef1b673abab004db2df7b1e4118659d0b8/non_local_detector-0.6.9-py3-none-any.whl", hash = "sha256:182ab58289adbf5e9039b66fa65ad0df6297fe9ba4623d8121af07302a09b788", size = 90167, upload-time = "2024-11-21T18:13:14.054Z" },
 ]
 
 [[package]]
@@ -4933,7 +4927,7 @@ requires-dist = [
     { name = "jupyter", marker = "extra == 'dev'", specifier = ">=1.0.0" },
     { name = "matplotlib", specifier = ">=3.8.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.0.0" },
-    { name = "non-local-detector" },
+    { name = "non-local-detector", git = "https://github.com/LorenFrankLab/non_local_detector.git" },
     { name = "numpy", specifier = ">=1.26.0" },
     { name = "pandas", specifier = ">=2.0.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0.0" },
