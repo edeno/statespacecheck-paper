@@ -57,15 +57,15 @@ latexmk -pvc main.tex
 ```bash
 cd manuscript
 
-# Build main manuscript (run 3-4 times for references)
+# Build main manuscript (using modern biblatex + biber)
 pdflatex main.tex
-bibtex main
+biber main          # Modern bibliography processor (not bibtex)
 pdflatex main.tex
 pdflatex main.tex
 
 # Build supplement
 pdflatex supplement.tex
-bibtex supplement
+biber supplement
 pdflatex supplement.tex
 pdflatex supplement.tex
 ```
@@ -90,11 +90,13 @@ make
 ## Preparing for bioRxiv Submission
 
 1. **Generate all figures**:
+
    ```bash
    python scripts/generate_all_figures.py
    ```
 
 2. **Build manuscript**:
+
    ```bash
    cd manuscript
    make
@@ -134,26 +136,10 @@ Both `main.tex` and `supplement.tex` use `preamble.tex` for consistent formattin
 \input{preamble}
 ```
 
-This ensures identical package versions and settings across documents.
-
-### Author Affiliations
-
-Authors are defined with the `authblk` package:
-
-```latex
-\author[1,2,3]{Eric L. Denovellis}
-\author[4]{Sirui Zeng}
-\author[4]{Uri T. Eden}
-
-\affil[1]{Howard Hughes Medical Institute, UCSF}
-\affil[2]{Departments of Physiology and Psychiatry, UCSF}
-\affil[3]{Kavli Institute for Fundamental Neuroscience, UCSF}
-\affil[4]{Department of Mathematics \& Statistics, Boston University}
-```
-
 ## Output
 
 Compiled PDFs are created in this directory:
+
 - `main.pdf` - Main manuscript
 - `supplement.pdf` - Supplementary materials
 
@@ -212,4 +198,5 @@ ls ../figures/main/
 ## Contact
 
 For questions about the manuscript, contact:
-- Eric L. Denovellis: eric.denovellis@ucsf.edu
+
+- Eric L. Denovellis: <eric.denovellis@ucsf.edu>

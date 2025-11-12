@@ -1,5 +1,12 @@
 % preamble.tex - shared packages and settings for main text and supplement
 
+% Modern encoding (explicit UTF-8 support)
+\usepackage[utf8]{inputenc}  % UTF-8 input encoding
+\usepackage[T1]{fontenc}     % Modern font encoding (better hyphenation, accents)
+
+% Language support
+\usepackage[american]{babel}  % American English hyphenation and typography
+
 % Graphics and figures
 \usepackage{graphicx}
 \usepackage{subcaption}
@@ -15,6 +22,9 @@
 % Better typography
 \usepackage{microtype}
 
+% Smart quotations
+\usepackage{csquotes}
+
 % Line numbers for review (comment out for final version)
 \usepackage{lineno}
 
@@ -27,8 +37,26 @@
 % Units and numbers
 \usepackage{siunitx}
 
+% Modern bibliography system (biblatex + biber)
+\usepackage[
+  style=numeric,        % Numbered citations [1], [2], etc.
+  sorting=none,         % Order by citation (not alphabetical)
+  backend=biber,        % Modern bibliography processor
+  doi=true,             % Include DOI links
+  url=true,             % Include URLs
+  isbn=false,           % Don't show ISBN
+  maxbibnames=99,       % Show all authors in bibliography
+  maxcitenames=2,       % Show max 2 authors in citations
+  giveninits=true,      % Use initials for first names (A. B. Smith)
+  terseinits=true       % No periods in initials (AB Smith not A.B. Smith)
+]{biblatex}
+\addbibresource{references.bib}  % Bibliography file
+
 % Hyperlinks (must be near end of preamble)
 \usepackage[colorlinks=true,citecolor=blue,linkcolor=blue,urlcolor=blue]{hyperref}
+
+% ORCID support (must come after hyperref)
+\usepackage{orcidlink}
 
 % Better cross-references (must come after hyperref)
 \usepackage[capitalize,noabbrev]{cleveref}

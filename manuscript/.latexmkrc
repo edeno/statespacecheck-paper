@@ -4,8 +4,8 @@
 # Generate PDF using pdflatex
 $pdf_mode = 1;
 
-# Use bibtex for bibliography
-$bibtex_use = 2;
+# Use biber for bibliography (modern biblatex backend)
+$biber = 'biber %O %S';
 
 # pdflatex command with options
 $pdflatex = 'pdflatex -interaction=nonstopmode -synctex=1 %O %S';
