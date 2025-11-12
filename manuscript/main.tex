@@ -1,21 +1,33 @@
 \documentclass[11pt]{article}
 
-\usepackage{graphicx}
-\usepackage{amsmath}
-\usepackage{hyperref}
-\usepackage[margin=1in]{geometry}
+\input{preamble}
 
 \title{Goodness-of-fit Diagnostics for State Space Models in Neuroscience}
-\author{Sirui Zeng, Uri T. Eden, Eric L. Denovellis}
+
+\author[1]{Sirui Zeng}
+\author[1]{Uri T. Eden}
+\author[2,3,4]{Eric L. Denovellis}
+
+\affil[1]{Department of Mathematics \& Statistics, Boston University, Boston, Massachusetts}
+\affil[2]{Howard Hughes Medical Institute, University of California, San Francisco, San Francisco, California}
+\affil[3]{Departments of Physiology and Psychiatry, University of California, San Francisco, San Francisco, California}
+\affil[4]{Kavli Institute for Fundamental Neuroscience, University of California, San Francisco, San Francisco, California}
+\affil[ ]{Correspondence: \texttt{eric.denovellis@ucsf.edu}}
+
 \date{\today}
 
 \begin{document}
 
 \maketitle
 
+% Enable line numbers for review
+\linenumbers
+
 \begin{abstract}
 State space models are widely used in neuroscience to relate neural activity to latent dynamic brain states. This paper introduces diagnostics (KL divergence and HPD overlap) to assess model goodness-of-fit by examining consistency between posterior distributions and component likelihood distributions.
 \end{abstract}
+
+\noindent\textbf{Keywords:} state space models, goodness-of-fit, model diagnostics, Bayesian inference, neuroscience, neural decoding
 
 \section{Introduction}
 
@@ -37,18 +49,18 @@ State space models are widely used in neuroscience to relate neural activity to 
 
 % TODO: Present simulation results
 
-\begin{figure}[h]
+\begin{figure}[htbp]
 \centering
 \includegraphics[width=0.8\textwidth]{../figures/main/figure01.pdf}
-\caption{Distribution consistency examples. Four scenarios showing predictive distribution and normalized likelihood with varying degrees of consistency.}
-\label{fig:figure01}
+\caption{\textbf{Distribution consistency examples.} Four scenarios showing predictive distribution and normalized likelihood with varying degrees of consistency.}
+\label{fig:distribution-consistency}
 \end{figure}
 
-\begin{figure}[h]
+\begin{figure}[htbp]
 \centering
 \includegraphics[width=\textwidth]{../figures/main/figure02.pdf}
-\caption{Diagnostic demonstration on simulated data. Time-resolved diagnostics showing periods of good and poor model fit.}
-\label{fig:figure02}
+\caption{\textbf{Diagnostic demonstration on simulated data.} Time-resolved diagnostics showing periods of good and poor model fit.}
+\label{fig:diagnostic-demo}
 \end{figure}
 
 \section{Discussion}
@@ -59,7 +71,23 @@ State space models are widely used in neuroscience to relate neural activity to 
 
 % TODO: Add conclusion
 
-\bibliographystyle{plain}
+\section*{Code and Data Availability}
+
+All code to reproduce figures and analyses is available at \url{https://github.com/Eden-Kramer-Lab/statespacecheck-paper}. The \texttt{statespacecheck} Python package is available at \url{https://github.com/Eden-Kramer-Lab/statespacecheck}.
+
+\section*{Author Contributions}
+
+SZ and ELD designed the study. SZ developed the diagnostic methods. ELD implemented the software package. SZ and ELD performed the analyses. SZ, UTE, and ELD wrote the manuscript.
+
+\section*{Competing Interests}
+
+The authors declare no competing interests.
+
+\section*{Acknowledgments}
+
+% TODO: Add funding information and acknowledgments
+
+\bibliographystyle{unsrt}
 \bibliography{references}
 
 \end{document}

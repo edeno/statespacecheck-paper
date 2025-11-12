@@ -1,0 +1,34 @@
+% preamble.tex - shared packages and settings for main text and supplement
+
+% Graphics and figures
+\usepackage{graphicx}
+\usepackage{subcaption}
+\usepackage{float}  % Provides [H] option for exact placement
+\usepackage[section]{placeins}  % Prevents floats from crossing section boundaries
+
+% Math packages
+\usepackage{amsmath,amssymb,amsthm}
+
+% Page layout
+\usepackage[margin=1in]{geometry}
+
+% Better typography
+\usepackage{microtype}
+
+% Line numbers for review (comment out for final version)
+\usepackage{lineno}
+
+% Author affiliations
+\usepackage{authblk}
+
+% Professional tables
+\usepackage{booktabs}
+
+% Units and numbers
+\usepackage{siunitx}
+
+% Hyperlinks (must be near end of preamble)
+\usepackage[colorlinks=true,citecolor=blue,linkcolor=blue,urlcolor=blue]{hyperref}
+
+% Better cross-references (must come after hyperref)
+\usepackage[capitalize,noabbrev]{cleveref}
