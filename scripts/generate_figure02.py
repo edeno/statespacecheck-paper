@@ -183,8 +183,8 @@ def run_demo(params: DecodeParams) -> None:
     )
 
     # Save figure (uses plt.gcf() to get current figure)
-    save_figure("figures/figure02", close=False)
-    print("\nFigure 2 saved to figures/figure02.{pdf,png}")
+    save_figure("figures/main/figure02", close=False)
+    print("\nFigure 2 saved to figures/main/figure02.{pdf,png}")
 
 
 if __name__ == "__main__":

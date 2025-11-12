@@ -7,53 +7,53 @@ from pathlib import Path
 
 import pytest
 
-# Add figures directory to path to import figure scripts
-FIGURES_DIR = Path(__file__).parent.parent / "figures"
-sys.path.insert(0, str(FIGURES_DIR))
+# Add scripts directory to path to import figure scripts
+SCRIPTS_DIR = Path(__file__).parent.parent / "scripts"
+sys.path.insert(0, str(SCRIPTS_DIR))
 
 
 class TestFigure01Integration:
-    """Integration tests for figure01.py script."""
+    """Integration tests for generate_figure01.py script."""
 
     def test_imports_work(self) -> None:
-        """Test that figure01.py imports successfully."""
+        """Test that generate_figure01.py imports successfully."""
         # This will raise ImportError if imports fail
-        import figure01  # noqa: F401
+        import generate_figure01  # noqa: F401
 
     def test_imports_required_modules(self) -> None:
-        """Test that figure01.py can import all required modules."""
+        """Test that generate_figure01.py can import all required modules."""
         # Import the main module
-        import figure01
+        import generate_figure01
 
         # Check that key functions are available
-        assert hasattr(figure01, "create_figure")
+        assert hasattr(generate_figure01, "create_figure")
 
         # Check that imported utilities are accessible
-        assert hasattr(figure01, "WONG") or hasattr(figure01, "wong")
-        assert hasattr(figure01, "save_figure")
+        assert hasattr(generate_figure01, "WONG") or hasattr(generate_figure01, "wong")
+        assert hasattr(generate_figure01, "save_figure")
 
 
 class TestFigure02Integration:
-    """Integration tests for figure02.py script."""
+    """Integration tests for generate_figure02.py script."""
 
     def test_imports_work(self) -> None:
-        """Test that figure02.py imports successfully."""
+        """Test that generate_figure02.py imports successfully."""
         # This will raise ImportError if imports fail
-        import figure02  # noqa: F401
+        import generate_figure02  # noqa: F401
 
     def test_imports_required_modules(self) -> None:
-        """Test that figure02.py can import all required modules."""
+        """Test that generate_figure02.py can import all required modules."""
         # Import the main module
-        import figure02
+        import generate_figure02
 
         # Check that key functions are available
-        assert hasattr(figure02, "run_demo")
-        assert hasattr(figure02, "DecodeParams")
+        assert hasattr(generate_figure02, "run_demo")
+        assert hasattr(generate_figure02, "DecodeParams")
 
         # Check that imported utilities are accessible
-        assert hasattr(figure02, "simulate_walk")
-        assert hasattr(figure02, "decode_and_diagnostics")
-        assert hasattr(figure02, "plot_combined_diagnostics")
+        assert hasattr(generate_figure02, "simulate_walk")
+        assert hasattr(generate_figure02, "decode_and_diagnostics")
+        assert hasattr(generate_figure02, "plot_combined_diagnostics")
 
 
 class TestFiguresModuleStructure:
@@ -61,33 +61,33 @@ class TestFiguresModuleStructure:
 
     def test_both_figures_use_shared_style(self) -> None:
         """Test that both figures import from shared style module."""
-        import figure01
-        import figure02
+        import generate_figure01
+        import generate_figure02
 
         # Both should import WONG colors from style module
-        assert hasattr(figure01, "WONG") or hasattr(figure01, "wong")
-        # figure02 uses functions that internally use WONG
+        assert hasattr(generate_figure01, "WONG") or hasattr(generate_figure01, "wong")
+        # generate_figure02 uses functions that internally use WONG
 
         # Both should use save_figure function
-        assert hasattr(figure01, "save_figure")
-        assert hasattr(figure02, "save_figure")
+        assert hasattr(generate_figure01, "save_figure")
+        assert hasattr(generate_figure02, "save_figure")
 
     def test_both_figures_are_executable(self) -> None:
         """Test that both figure scripts have proper structure."""
-        import figure01
-        import figure02
+        import generate_figure01
+        import generate_figure02
 
-        # figure01 should have create_figure function
-        assert callable(getattr(figure01, "create_figure", None))
+        # generate_figure01 should have create_figure function
+        assert callable(getattr(generate_figure01, "create_figure", None))
 
-        # figure02 should have run_demo function
-        assert callable(getattr(figure02, "run_demo", None))
+        # generate_figure02 should have run_demo function
+        assert callable(getattr(generate_figure02, "run_demo", None))
 
 
 # Cleanup sys.path after tests
 @pytest.fixture(autouse=True, scope="module")
 def cleanup_sys_path() -> None:
-    """Remove figures directory from sys.path after tests."""
+    """Remove scripts directory from sys.path after tests."""
     yield
-    if str(FIGURES_DIR) in sys.path:
-        sys.path.remove(str(FIGURES_DIR))
+    if str(SCRIPTS_DIR) in sys.path:
+        sys.path.remove(str(SCRIPTS_DIR))

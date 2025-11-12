@@ -9,8 +9,11 @@ This repository contains the source code and supplementary materials for the pap
 This is a **paper/research repository** (not a library). The code is organized into:
 
 - **`src/statespacecheck_paper/`**: Reusable modules (styling, simulation, analysis, plotting)
-- **`figures/`**: Scripts to generate paper figures (thin orchestration layers)
-- **`tests/`**: Comprehensive test suite (102 tests, 97.2% coverage)
+- **`scripts/`**: Figure generation scripts (thin orchestration layers)
+- **`figures/`**: Generated figure outputs (PDF and PNG)
+  - `figures/main/`: Main text figures
+  - `figures/supplementary/`: Supplementary figures
+- **`tests/`**: Comprehensive test suite (100 tests, 75% coverage)
 - **`notebooks/`**: Jupyter notebooks for exploration
 
 **For developers**: See [CLAUDE.md](CLAUDE.md) for detailed development guide including module organization, coding standards, and where to add new functionality.
@@ -238,7 +241,7 @@ uv pip install -e ".[dev]"
 ### Running Tests
 
 ```bash
-# Run all tests with coverage (102 tests, 97.2% coverage)
+# Run all tests with coverage (100 tests, 75% coverage)
 uv run pytest
 
 # Run specific module tests
@@ -252,11 +255,14 @@ open htmlcov/index.html
 ### Generating Figures
 
 ```bash
-# Generate individual figures
-python figures/figure01.py
-python figures/figure02.py
+# Generate all figures
+uv run python scripts/generate_all_figures.py
 
-# Outputs saved to figures/ directory as PDF and PNG
+# Or generate individual figures
+uv run python scripts/generate_figure01.py
+uv run python scripts/generate_figure02.py
+
+# Outputs saved to figures/main/ directory as PDF and PNG (450 DPI)
 ```
 
 ### Code Quality

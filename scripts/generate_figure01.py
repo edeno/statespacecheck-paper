@@ -214,15 +214,10 @@ def create_figure() -> None:
         if w:
             print(f"⚠️  Layout warning: {w[-1].message}")
 
-    # Save to figures directory
-    import os
-
-    figures_dir = os.path.join(os.path.dirname(__file__), "..", "figures")
-    os.makedirs(figures_dir, exist_ok=True)
-    save_path = os.path.join(figures_dir, "figure01")
-    save_figure(save_path)
+    # Save to figures/main directory
+    save_figure("figures/main/figure01")
     plt.close()
-    print(f"\nFigure 1 saved to {save_path}.{{pdf,png}}")
+    print("\nFigure 1 saved to figures/main/figure01.{pdf,png}")
 
 
 if __name__ == "__main__":

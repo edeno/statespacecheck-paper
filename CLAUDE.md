@@ -19,13 +19,21 @@ statespacecheck-paper/
 │   ├── simulation.py           # Simulation utilities
 │   ├── analysis.py             # Analysis logic and diagnostics
 │   └── plotting.py             # Plotting utilities
-├── figures/                     # Figure generation scripts
-│   ├── figure01.py             # Figure 1: Distribution comparisons
-│   ├── figure02.py             # Figure 2: Diagnostic demonstrations
-│   └── figure03.py             # Figure 3: (future)
+├── scripts/                     # Figure generation scripts
+│   ├── generate_figure01.py    # Figure 1: Distribution comparisons
+│   ├── generate_figure02.py    # Figure 2: Diagnostic demonstrations
+│   ├── generate_figure03.py    # Figure 3: (future)
+│   └── generate_all_figures.py # Master script to generate all figures
+├── figures/                     # Generated figure outputs
+│   ├── main/                   # Main text figures (PDF + PNG)
+│   └── supplementary/          # Supplementary figures (PDF + PNG)
+├── manuscript/                  # LaTeX source files for paper
+│   ├── main.tex
+│   ├── supplement.tex
+│   ├── references.bib
+│   └── README.md
 ├── notebooks/                   # Jupyter notebooks for exploration
-├── scripts/                     # Additional analysis scripts
-├── tests/                       # Comprehensive test suite (97.2% coverage)
+├── tests/                       # Comprehensive test suite (75% coverage)
 │   ├── test_style.py
 │   ├── test_simulation.py
 │   ├── test_analysis.py
@@ -42,9 +50,10 @@ statespacecheck-paper/
 - **plotting.py**: Reusable plotting functions (HPD regions, diagnostic plots)
 - **load_data.py**: Data loading utilities for real datasets
 
-**Figure Scripts**:
-- **figure01.py**: Thin orchestration layer (~220 lines) for Figure 1
-- **figure02.py**: Thin orchestration layer (~200 lines) for Figure 2
+**Figure Scripts** (in `scripts/`):
+- **generate_figure01.py**: Thin orchestration layer (~220 lines) for Figure 1
+- **generate_figure02.py**: Thin orchestration layer (~200 lines) for Figure 2
+- **generate_all_figures.py**: Master script to generate all figures
 
 ## Repository Structure
 
@@ -93,7 +102,7 @@ The repository follows a clean separation between **reusable code** (in `src/`) 
 
 ### Figure Scripts
 
-Figure scripts are thin orchestration layers that:
+Figure scripts (in `scripts/`) are thin orchestration layers that:
 1. Import from shared modules
 2. Set up simulation/analysis parameters
 3. Run simulations/analyses
@@ -122,8 +131,8 @@ def create_figure():
     # Create plots
     fig, axes = plot_combined_diagnostics(results, x_true, spikes, params)
 
-    # Save
-    save_figure("figures/figureX")
+    # Save to figures/main/
+    save_figure("figures/main/figureX")
 
 if __name__ == "__main__":
     create_figure()
@@ -289,9 +298,10 @@ When adding new features, follow these guidelines:
 - Save/export functions
 - Keep consistent across all figures
 
-**Creating new figures** → `figures/figureXX.py`
+**Creating new figures** → `scripts/generate_figureXX.py`
 - Import from shared modules (don't duplicate code!)
 - Keep scripts thin (<200 lines of orchestration)
+- Save outputs to `figures/main/` or `figures/supplementary/`
 - Add integration test in `tests/test_figures.py`
 - Document what the figure demonstrates
 
@@ -486,9 +496,10 @@ def plot_kl_over_time(
 ### Running Analysis Pipeline
 
 1. **Ensure dependencies installed**: `uv pip install -e ".[dev]"`
-2. **Run scripts**: `uv run python scripts/run_analysis.py`
-3. **Check outputs**: Results saved to `results/` or `figures/`
-4. **Verify**: Review generated figures and data files
+2. **Generate all figures**: `uv run python scripts/generate_all_figures.py`
+3. **Generate individual figure**: `uv run python scripts/generate_figure01.py`
+4. **Check outputs**: Figures saved to `figures/main/` or `figures/supplementary/`
+5. **Verify**: Review generated PDF and PNG files
 
 ### Before Committing
 
@@ -565,7 +576,7 @@ kl_div = np.array([
 source .venv/bin/activate
 uv pip install -e ".[dev]"
 
-# Run analysis
+# Generate figures
 uv run python scripts/generate_all_figures.py
 
 # Check quality
