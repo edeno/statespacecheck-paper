@@ -101,10 +101,10 @@ class TestPlotOriginal:
         x_true = rng.uniform(0, n_bins - 1, n_time)
 
         metrics = {
-            "post": rng.dirichlet(np.ones(n_bins), size=n_time),
-            "HPDO": rng.uniform(0, 1, n_time),
-            "KL": rng.uniform(0, 5, n_time),
-            "spikeProb": rng.uniform(0, 1, (n_time, 10)),
+            "posterior": rng.dirichlet(np.ones(n_bins), size=n_time),
+            "hpd_overlap": rng.uniform(0, 1, n_time),
+            "kl_divergence": rng.uniform(0, 5, n_time),
+            "spike_prob": rng.uniform(0, 1, (n_time, 10)),
         }
 
         thresholds = Thresholds(hpd_overlap=0.8, kl_divergence=2.0, spike_prob=0.05)
@@ -128,10 +128,10 @@ class TestPlotOriginal:
         x_true = rng.uniform(0, n_bins - 1, n_time)
 
         metrics = {
-            "post": rng.dirichlet(np.ones(n_bins), size=n_time),
-            "HPDO": rng.uniform(0, 1, n_time),
-            "KL": rng.uniform(0, 5, n_time),
-            "spikeProb": rng.uniform(0, 1, (n_time, 10)),
+            "posterior": rng.dirichlet(np.ones(n_bins), size=n_time),
+            "hpd_overlap": rng.uniform(0, 1, n_time),
+            "kl_divergence": rng.uniform(0, 5, n_time),
+            "spike_prob": rng.uniform(0, 1, (n_time, 10)),
         }
 
         thresholds = Thresholds(hpd_overlap=0.8, kl_divergence=2.0, spike_prob=0.05)
@@ -150,10 +150,10 @@ class TestPlotOriginal:
         x_true = rng.uniform(0, n_bins - 1, n_time)
 
         metrics = {
-            "post": rng.dirichlet(np.ones(n_bins), size=n_time),
-            "HPDO": rng.uniform(0, 1, n_time),
-            "KL": rng.uniform(0, 5, n_time),
-            "spikeProb": rng.uniform(0, 1, (n_time, 5)),
+            "posterior": rng.dirichlet(np.ones(n_bins), size=n_time),
+            "hpd_overlap": rng.uniform(0, 1, n_time),
+            "kl_divergence": rng.uniform(0, 5, n_time),
+            "spike_prob": rng.uniform(0, 1, (n_time, 5)),
         }
 
         thresholds = Thresholds(hpd_overlap=0.7, kl_divergence=1.5, spike_prob=0.1)
@@ -249,10 +249,10 @@ class TestPlotMisfitExamples:
         spikes = rng.poisson(0.5, (n_time, n_cells))
 
         metrics = {
-            "post": rng.dirichlet(np.ones(n_bins), size=n_time),
-            "HPDO": rng.uniform(0, 1, n_time),
-            "KL": rng.uniform(0, 5, n_time),
-            "spikeProb": rng.uniform(0, 1, (n_time, n_cells)),
+            "posterior": rng.dirichlet(np.ones(n_bins), size=n_time),
+            "hpd_overlap": rng.uniform(0, 1, n_time),
+            "kl_divergence": rng.uniform(0, 5, n_time),
+            "spike_prob": rng.uniform(0, 1, (n_time, n_cells)),
         }
 
         # Create DecodeParams with timeline structure
@@ -304,10 +304,10 @@ class TestPlotMisfitExamples:
         spikes = rng.poisson(1.0, (n_time, n_cells))
 
         metrics = {
-            "post": rng.dirichlet(np.ones(n_bins), size=n_time),
-            "HPDO": rng.uniform(0, 1, n_time),
-            "KL": rng.uniform(0, 5, n_time),
-            "spikeProb": rng.uniform(0, 1, (n_time, n_cells)),
+            "posterior": rng.dirichlet(np.ones(n_bins), size=n_time),
+            "hpd_overlap": rng.uniform(0, 1, n_time),
+            "kl_divergence": rng.uniform(0, 5, n_time),
+            "spike_prob": rng.uniform(0, 1, (n_time, n_cells)),
         }
 
         params = DecodeParams(
@@ -348,10 +348,10 @@ class TestPlotCombinedDiagnostics:
         spikes = rng.poisson(0.5, (n_time, n_cells))
 
         metrics = {
-            "post": rng.dirichlet(np.ones(n_bins), size=n_time),
-            "HPDO": rng.uniform(0, 1, n_time),
-            "KL": rng.uniform(0, 5, n_time),
-            "spikeProb": rng.uniform(0, 1, (n_time, n_cells)),
+            "posterior": rng.dirichlet(np.ones(n_bins), size=n_time),
+            "hpd_overlap": rng.uniform(0, 1, n_time),
+            "kl_divergence": rng.uniform(0, 5, n_time),
+            "spike_prob": rng.uniform(0, 1, (n_time, n_cells)),
         }
 
         thresholds = Thresholds(hpd_overlap=0.8, kl_divergence=2.0, spike_prob=0.05)
@@ -401,10 +401,10 @@ class TestPlotCombinedDiagnostics:
         spikes = rng.poisson(1.0, (n_time, n_cells))
 
         metrics = {
-            "post": rng.dirichlet(np.ones(n_bins), size=n_time),
-            "HPDO": rng.uniform(0, 1, n_time),
-            "KL": rng.uniform(0, 5, n_time),
-            "spikeProb": rng.uniform(0, 1, (n_time, n_cells)),
+            "posterior": rng.dirichlet(np.ones(n_bins), size=n_time),
+            "hpd_overlap": rng.uniform(0, 1, n_time),
+            "kl_divergence": rng.uniform(0, 5, n_time),
+            "spike_prob": rng.uniform(0, 1, (n_time, n_cells)),
         }
 
         thresholds = Thresholds(hpd_overlap=0.7, kl_divergence=1.5, spike_prob=0.1)

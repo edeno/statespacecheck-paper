@@ -502,7 +502,12 @@ def decode_and_diagnostics(
     # the combined likelihood with the prior, so we don't mask them
     spike_prob[spikes == 0] = np.nan
 
-    return {"post": posterior, "HPDO": hpd_overlap, "KL": kl_divergence, "spikeProb": spike_prob}
+    return {
+        "posterior": posterior,
+        "hpd_overlap": hpd_overlap,
+        "kl_divergence": kl_divergence,
+        "spike_prob": spike_prob,
+    }
 
 
 # -----------------------------
@@ -575,8 +580,8 @@ def compute_thresholds(
     >>> thresholds.spike_prob
     0.05
     """
-    hpd_overlap_threshold = np.nanquantile(metrics["HPDO"][:baseline_end], 0.01)
-    kl_divergence_threshold = np.nanquantile(metrics["KL"][:baseline_end], 0.99)
+    hpd_overlap_threshold = np.nanquantile(metrics["hpd_overlap"][:baseline_end], 0.01)
+    kl_divergence_threshold = np.nanquantile(metrics["kl_divergence"][:baseline_end], 0.99)
     # MATLAB uses 0.05 as fixed threshold (raw count, not normalized)
     spike_prob_threshold = 0.05
     return Thresholds(
@@ -682,9 +687,9 @@ def transform_metrics(
     >>> transformed.kl_divergence  # sqrt(KL)
     array([1.        , 2.        , 3.        ])
     """
-    hpd_overlap_transformed = -safe_log(metrics["HPDO"] + eps1)
-    kl_divergence_transformed = np.sqrt(metrics["KL"])
-    spike_prob_transformed = -safe_log(metrics["spikeProb"] + eps2)
+    hpd_overlap_transformed = -safe_log(metrics["hpd_overlap"] + eps1)
+    kl_divergence_transformed = np.sqrt(metrics["kl_divergence"])
+    spike_prob_transformed = -safe_log(metrics["spike_prob"] + eps2)
 
     return Transformed(
         hpd_overlap=hpd_overlap_transformed,

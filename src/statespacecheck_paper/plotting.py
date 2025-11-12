@@ -168,10 +168,10 @@ def plot_original(
         True position at each time point.
     metrics : dict[str, NDArray]
         Dictionary containing diagnostic metrics:
-        - 'post': Posterior distribution, shape (n_time, n_bins)
-        - 'HPDO': HPD overlap, shape (n_time,)
-        - 'KL': KL divergence, shape (n_time,)
-        - 'spikeProb': Spike probability, shape (n_time, n_cells)
+        - 'posterior': Posterior distribution, shape (n_time, n_bins)
+        - 'hpd_overlap': HPD overlap, shape (n_time,)
+        - 'kl_divergence': KL divergence, shape (n_time,)
+        - 'spike_prob': Spike probability, shape (n_time, n_cells)
     thresholds : Thresholds
         Threshold values for each diagnostic.
     title : str, default "Original Metrics"
@@ -195,16 +195,16 @@ def plot_original(
     >>> xs = np.linspace(0, 1, n_bins)
     >>> x_true = np.random.uniform(0, n_bins - 1, n_time)
     >>> metrics = {
-    ...     'post': np.random.dirichlet(np.ones(n_bins), size=n_time),
-    ...     'HPDO': np.random.uniform(0, 1, n_time),
-    ...     'KL': np.random.uniform(0, 5, n_time),
-    ...     'spikeProb': np.random.uniform(0, 1, (n_time, 10)),
+    ...     'posterior': np.random.dirichlet(np.ones(n_bins), size=n_time),
+    ...     'hpd_overlap': np.random.uniform(0, 1, n_time),
+    ...     'kl_divergence': np.random.uniform(0, 5, n_time),
+    ...     'spike_prob': np.random.uniform(0, 1, (n_time, 10)),
     ... }
     >>> thresholds = Thresholds(hpd_overlap=0.8, kl_divergence=2.0, spike_prob=0.05)
     >>> fig = plot_original(xs, x_true, metrics, thresholds)
     >>> plt.close(fig)
     """
-    n_time = metrics["post"].shape[0]
+    n_time = metrics["posterior"].shape[0]
     fig, axes = plt.subplots(
         4,
         1,
@@ -221,11 +221,11 @@ def plot_original(
     )
 
     im = axes[0].imshow(
-        metrics["post"].T,
+        metrics["posterior"].T,
         aspect="auto",
         origin="lower",
         vmin=0.0,
-        vmax=np.quantile(metrics["post"], 0.975),
+        vmax=np.quantile(metrics["posterior"], 0.975),
         cmap="bone_r",
     )
     # Plot true position in magenta for visibility against bone_r colormap
@@ -247,7 +247,7 @@ def plot_original(
         add_phase_boundaries(axes, phase_boundaries, include_labels=True, alpha=0.2)
 
     axes[1].plot(
-        metrics["HPDO"],
+        metrics["hpd_overlap"],
         ".",
         markersize=1.5,
         alpha=0.6,
@@ -259,7 +259,7 @@ def plot_original(
     axes[1].set_ylabel("HPD Overlap", fontsize=10, labelpad=8)
     axes[1].tick_params(labelsize=8)
 
-    axes[2].plot(metrics["KL"], ".", markersize=1.5, alpha=0.6, color="#56B4E9", rasterized=True)
+    axes[2].plot(metrics["kl_divergence"], ".", markersize=1.5, alpha=0.6, color="#56B4E9", rasterized=True)
     axes[2].axhline(thresholds.kl_divergence, color="#E69F00", linewidth=1.5, zorder=10)
     axes[2].set_xlim(0, n_time)
     axes[2].set_ylabel("KL Divergence", fontsize=10, labelpad=8)
@@ -267,7 +267,7 @@ def plot_original(
 
     # Transform spike probability to -log scale
     eps2 = 1e-12
-    spike_prob_transformed = -safe_log(metrics["spikeProb"] + eps2)
+    spike_prob_transformed = -safe_log(metrics["spike_prob"] + eps2)
     spike_prob_thresh_transformed = -np.log(thresholds.spike_prob + eps2)
 
     axes[3].plot(
@@ -457,10 +457,10 @@ def plot_misfit_examples(
     >>> x_true = np.random.uniform(0, n_bins - 1, n_time)
     >>> spikes = np.random.poisson(0.5, (n_time, n_cells))
     >>> metrics = {
-    ...     'post': np.random.dirichlet(np.ones(n_bins), size=n_time),
-    ...     'HPDO': np.random.uniform(0, 1, n_time),
-    ...     'KL': np.random.uniform(0, 5, n_time),
-    ...     'spikeProb': np.random.uniform(0, 1, (n_time, n_cells)),
+    ...     'posterior': np.random.dirichlet(np.ones(n_bins), size=n_time),
+    ...     'hpd_overlap': np.random.uniform(0, 1, n_time),
+    ...     'kl_divergence': np.random.uniform(0, 5, n_time),
+    ...     'spike_prob': np.random.uniform(0, 1, (n_time, n_cells)),
     ... }
     >>> params = DecodeParams(
     ...     T_baseline=200, T_remap_start=200, T_remap_end=250,
@@ -496,9 +496,9 @@ def plot_misfit_examples(
     wong = WONG
 
     for phase_idx, (phase_name, phase_slice, is_baseline) in enumerate(phases):
-        # For baseline, find best fit (highest HPDO); for misfits, find worst fit (lowest HPDO)
+        # For baseline, find best fit (highest hpd_overlap); for misfits, find worst fit (lowest hpd_overlap)
         # BUT: only consider time points with spikes so likelihood is informative
-        phase_hpdo = metrics["HPDO"][phase_slice]
+        phase_hpdo = metrics["hpd_overlap"][phase_slice]
         phase_spikes = spikes[phase_slice]
 
         # Mask times without spikes (likelihood will be flat/uninformative)
@@ -515,7 +515,7 @@ def plot_misfit_examples(
         # Recompute prior and likelihood at this time point
         # Get posterior from previous timestep
         if example_time > 0:
-            prev_post = metrics["post"][example_time - 1]
+            prev_post = metrics["posterior"][example_time - 1]
         else:
             prev_post = np.ones_like(xs) / len(xs)
 
@@ -609,9 +609,9 @@ def plot_misfit_examples(
         ax1.axvline(x_true[example_time], color=wong[7], linestyle="--", linewidth=1.0, alpha=0.7)
 
         # Get diagnostic values
-        hpdo_val = metrics["HPDO"][example_time]
-        kl_val = metrics["KL"][example_time]
-        spike_prob_vals = metrics["spikeProb"][example_time]
+        hpdo_val = metrics["hpd_overlap"][example_time]
+        kl_val = metrics["kl_divergence"][example_time]
+        spike_prob_vals = metrics["spike_prob"][example_time]
 
         # Calculate -log(min spike prob) with only significant digits
         if not np.all(np.isnan(spike_prob_vals)):
@@ -695,10 +695,10 @@ def plot_combined_diagnostics(
     >>> x_true = np.random.uniform(0, n_bins - 1, n_time)
     >>> spikes = np.random.poisson(0.5, (n_time, n_cells))
     >>> metrics = {
-    ...     'post': np.random.dirichlet(np.ones(n_bins), size=n_time),
-    ...     'HPDO': np.random.uniform(0, 1, n_time),
-    ...     'KL': np.random.uniform(0, 5, n_time),
-    ...     'spikeProb': np.random.uniform(0, 1, (n_time, n_cells)),
+    ...     'posterior': np.random.dirichlet(np.ones(n_bins), size=n_time),
+    ...     'hpd_overlap': np.random.uniform(0, 1, n_time),
+    ...     'kl_divergence': np.random.uniform(0, 5, n_time),
+    ...     'spike_prob': np.random.uniform(0, 1, (n_time, n_cells)),
     ... }
     >>> thresholds = Thresholds(hpd_overlap=0.8, kl_divergence=2.0, spike_prob=0.05)
     >>> params = DecodeParams(
@@ -749,7 +749,7 @@ def plot_combined_diagnostics(
 
     # ===== TOP SECTION: Time-Series Diagnostics =====
 
-    n_time = metrics["post"].shape[0]
+    n_time = metrics["posterior"].shape[0]
 
     # Create time-series axes (all spanning first 5 columns, with shared x-axis)
     ax_post = fig.add_subplot(gs[0, 0:5])
@@ -759,11 +759,11 @@ def plot_combined_diagnostics(
 
     # Posterior heatmap
     im = ax_post.imshow(
-        metrics["post"].T,
+        metrics["posterior"].T,
         aspect="auto",
         origin="lower",
         vmin=0.0,
-        vmax=np.quantile(metrics["post"], 0.975),
+        vmax=np.quantile(metrics["posterior"], 0.975),
         cmap="bone_r",
     )
     ax_post.plot(
@@ -780,7 +780,7 @@ def plot_combined_diagnostics(
     ax_post.legend(loc="upper left", fontsize=6, frameon=False)
 
     # HPDO
-    ax_hpdo.plot(metrics["HPDO"], ".", markersize=0.8, alpha=0.6, color=wong[5], rasterized=True)
+    ax_hpdo.plot(metrics["hpd_overlap"], ".", markersize=0.8, alpha=0.6, color=wong[5], rasterized=True)
     ax_hpdo.axhline(thresholds.hpd_overlap, color="#666666", linewidth=1.2, alpha=0.7, zorder=10)
     ax_hpdo.set_xlim(0, n_time)
     ax_hpdo.set_ylabel("HPD Overlap", fontsize=9, labelpad=7)
@@ -801,7 +801,7 @@ def plot_combined_diagnostics(
     )
 
     # KL Divergence
-    ax_kl.plot(metrics["KL"], ".", markersize=0.8, alpha=0.6, color=wong[5], rasterized=True)
+    ax_kl.plot(metrics["kl_divergence"], ".", markersize=0.8, alpha=0.6, color=wong[5], rasterized=True)
     ax_kl.axhline(thresholds.kl_divergence, color="#666666", linewidth=1.2, alpha=0.7, zorder=10)
     ax_kl.set_xlim(0, n_time)
     ax_kl.set_ylabel("KL Divergence", fontsize=9, labelpad=7)
@@ -823,7 +823,7 @@ def plot_combined_diagnostics(
 
     # Spike Probability (transformed)
     eps2 = 1e-12
-    spike_prob_transformed = -safe_log(metrics["spikeProb"] + eps2)
+    spike_prob_transformed = -safe_log(metrics["spike_prob"] + eps2)
     spike_prob_thresh_transformed = -np.log(thresholds.spike_prob + eps2)
 
     ax_spike.plot(
@@ -935,7 +935,7 @@ def plot_combined_diagnostics(
     plot_data = []
     for _phase_idx, (phase_name, phase_slice, is_baseline, col_idx, color_key) in enumerate(phases):
         # Find example time (best for baseline, worst for misfits)
-        phase_hpdo = metrics["HPDO"][phase_slice]
+        phase_hpdo = metrics["hpd_overlap"][phase_slice]
         phase_spikes = spikes[phase_slice]
         has_spikes = phase_spikes.sum(axis=1) > 0
         valid_hpdo = phase_hpdo.copy()
@@ -949,7 +949,7 @@ def plot_combined_diagnostics(
 
         # Recompute distributions at example time
         if example_time > 0:
-            prev_post = metrics["post"][example_time - 1]
+            prev_post = metrics["posterior"][example_time - 1]
         else:
             prev_post = np.ones_like(xs) / len(xs)
 
@@ -1045,9 +1045,9 @@ def plot_combined_diagnostics(
         ax1.set_title(phase_name, fontsize=7, pad=4)
 
         # Add metrics as text annotation inside plot (upper left)
-        hpdo_val = metrics["HPDO"][example_time]
-        kl_val = metrics["KL"][example_time]
-        spike_prob_vals = metrics["spikeProb"][example_time]
+        hpdo_val = metrics["hpd_overlap"][example_time]
+        kl_val = metrics["kl_divergence"][example_time]
+        spike_prob_vals = metrics["spike_prob"][example_time]
         if not np.all(np.isnan(spike_prob_vals)):
             spike_prob_min = np.nanmin(spike_prob_vals)
             log_spike_prob = -np.log(spike_prob_min + 1e-12)
