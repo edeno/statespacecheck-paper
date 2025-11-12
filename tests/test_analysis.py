@@ -136,7 +136,8 @@ class TestApplyRemapForLikelihoods:
     def test_inactive_returns_unchanged(self) -> None:
         """Test that active=False returns unchanged likelihood."""
         # Arrange
-        likelihood = np.random.rand(20, 5)
+        rng = np.random.default_rng(42)
+        likelihood = rng.random((20, 5))
         remap_from_to = (0, 1)
         active = False
 
@@ -200,9 +201,10 @@ class TestDecodeAndDiagnostics:
     def test_output_keys(self) -> None:
         """Test that output dictionary has expected keys."""
         # Arrange
+        rng = np.random.default_rng(42)
         n_time, n_cells = 10, 3
         n_bins = 21
-        spikes = np.random.poisson(1.0, size=(n_time, n_cells))
+        spikes = rng.poisson(1.0, size=(n_time, n_cells))
         xs = np.linspace(0, 100, n_bins)
         transition_matrix = np.eye(n_bins) * 0.9 + 0.1 / n_bins  # Diagonal dominant
         pf_centers = np.array([25.0, 50.0, 75.0])
@@ -232,9 +234,10 @@ class TestDecodeAndDiagnostics:
     def test_output_shapes(self) -> None:
         """Test that output arrays have correct shapes."""
         # Arrange
+        rng = np.random.default_rng(42)
         n_time, n_cells = 10, 3
         n_bins = 21
-        spikes = np.random.poisson(1.0, size=(n_time, n_cells))
+        spikes = rng.poisson(1.0, size=(n_time, n_cells))
         xs = np.linspace(0, 100, n_bins)
         transition_matrix = np.eye(n_bins) * 0.9 + 0.1 / n_bins
         pf_centers = np.array([25.0, 50.0, 75.0])
@@ -298,9 +301,10 @@ class TestDecodeAndDiagnostics:
     def test_with_narrow_transition_matrix(self) -> None:
         """Test that narrow transition matrix is used in specified window."""
         # Arrange
+        rng = np.random.default_rng(42)
         n_time, n_cells = 10, 2
         n_bins = 11
-        spikes = np.random.poisson(1.0, size=(n_time, n_cells))
+        spikes = rng.poisson(1.0, size=(n_time, n_cells))
         xs = np.linspace(0, 100, n_bins)
         transition_matrix = np.eye(n_bins) * 0.5 + 0.5 / n_bins
         transition_matrix_narrow = np.eye(n_bins) * 0.9 + 0.1 / n_bins
@@ -331,9 +335,10 @@ class TestDecodeAndDiagnostics:
     def test_with_inflated_transition_matrix(self) -> None:
         """Test that inflated transition matrix is used in specified window."""
         # Arrange
+        rng = np.random.default_rng(42)
         n_time, n_cells = 10, 2
         n_bins = 11
-        spikes = np.random.poisson(1.0, size=(n_time, n_cells))
+        spikes = rng.poisson(1.0, size=(n_time, n_cells))
         xs = np.linspace(0, 100, n_bins)
         transition_matrix = np.eye(n_bins) * 0.5 + 0.5 / n_bins
         transition_matrix_inflated = np.eye(n_bins) * 0.2 + 0.8 / n_bins
@@ -382,11 +387,12 @@ class TestComputeThresholds:
     def test_threshold_computation(self) -> None:
         """Test that thresholds are computed correctly from baseline."""
         # Arrange
+        rng = np.random.default_rng(42)
         n_time = 100
         metrics = {
-            "HPDO": np.random.uniform(0.5, 1.0, n_time),
-            "KL": np.random.uniform(0.0, 2.0, n_time),
-            "spikeProb": np.random.uniform(0.0, 0.5, n_time),
+            "HPDO": rng.uniform(0.5, 1.0, n_time),
+            "KL": rng.uniform(0.0, 2.0, n_time),
+            "spikeProb": rng.uniform(0.0, 0.5, n_time),
         }
         baseline_end = 50
 

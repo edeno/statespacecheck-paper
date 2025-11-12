@@ -95,15 +95,16 @@ class TestPlotOriginal:
     def test_creates_figure(self) -> None:
         """Test that plot_original creates a Figure object."""
         # Setup synthetic data
+        rng = np.random.default_rng(42)
         n_time, n_bins = 100, 50
         xs = np.linspace(0, 1, n_bins)
-        x_true = np.random.uniform(0, n_bins - 1, n_time)
+        x_true = rng.uniform(0, n_bins - 1, n_time)
 
         metrics = {
-            "post": np.random.dirichlet(np.ones(n_bins), size=n_time),
-            "HPDO": np.random.uniform(0, 1, n_time),
-            "KL": np.random.uniform(0, 5, n_time),
-            "spikeProb": np.random.uniform(0, 1, (n_time, 10)),
+            "post": rng.dirichlet(np.ones(n_bins), size=n_time),
+            "HPDO": rng.uniform(0, 1, n_time),
+            "KL": rng.uniform(0, 5, n_time),
+            "spikeProb": rng.uniform(0, 1, (n_time, 10)),
         }
 
         th = Thresholds(HPDO=0.8, KL=2.0, spike_prob=0.05)
@@ -121,15 +122,16 @@ class TestPlotOriginal:
 
     def test_with_phase_boundaries(self) -> None:
         """Test plot_original with phase boundaries."""
+        rng = np.random.default_rng(42)
         n_time, n_bins = 100, 50
         xs = np.linspace(0, 1, n_bins)
-        x_true = np.random.uniform(0, n_bins - 1, n_time)
+        x_true = rng.uniform(0, n_bins - 1, n_time)
 
         metrics = {
-            "post": np.random.dirichlet(np.ones(n_bins), size=n_time),
-            "HPDO": np.random.uniform(0, 1, n_time),
-            "KL": np.random.uniform(0, 5, n_time),
-            "spikeProb": np.random.uniform(0, 1, (n_time, 10)),
+            "post": rng.dirichlet(np.ones(n_bins), size=n_time),
+            "HPDO": rng.uniform(0, 1, n_time),
+            "KL": rng.uniform(0, 5, n_time),
+            "spikeProb": rng.uniform(0, 1, (n_time, 10)),
         }
 
         th = Thresholds(HPDO=0.8, KL=2.0, spike_prob=0.05)
@@ -142,15 +144,16 @@ class TestPlotOriginal:
 
     def test_with_custom_title(self) -> None:
         """Test plot_original with custom title."""
+        rng = np.random.default_rng(42)
         n_time, n_bins = 50, 30
         xs = np.linspace(0, 1, n_bins)
-        x_true = np.random.uniform(0, n_bins - 1, n_time)
+        x_true = rng.uniform(0, n_bins - 1, n_time)
 
         metrics = {
-            "post": np.random.dirichlet(np.ones(n_bins), size=n_time),
-            "HPDO": np.random.uniform(0, 1, n_time),
-            "KL": np.random.uniform(0, 5, n_time),
-            "spikeProb": np.random.uniform(0, 1, (n_time, 5)),
+            "post": rng.dirichlet(np.ones(n_bins), size=n_time),
+            "HPDO": rng.uniform(0, 1, n_time),
+            "KL": rng.uniform(0, 5, n_time),
+            "spikeProb": rng.uniform(0, 1, (n_time, 5)),
         }
 
         th = Thresholds(HPDO=0.7, KL=1.5, spike_prob=0.1)
@@ -166,15 +169,16 @@ class TestPlotTransformed:
 
     def test_creates_figure(self) -> None:
         """Test that plot_transformed creates a Figure object."""
+        rng = np.random.default_rng(42)
         n_time, n_bins = 100, 50
         xs = np.linspace(0, 1, n_bins)
-        x_true = np.random.uniform(0, n_bins - 1, n_time)
-        post = np.random.dirichlet(np.ones(n_bins), size=n_time)
+        x_true = rng.uniform(0, n_bins - 1, n_time)
+        post = rng.dirichlet(np.ones(n_bins), size=n_time)
 
         tr = Transformed(
-            HPDO=np.random.uniform(0, 5, n_time),
-            KL=np.random.uniform(0, 3, n_time),
-            spike_prob=np.random.uniform(0, 10, n_time),
+            HPDO=rng.uniform(0, 5, n_time),
+            KL=rng.uniform(0, 3, n_time),
+            spike_prob=rng.uniform(0, 10, n_time),
             HPDO_th=3.0,
             KL_th=2.0,
             spike_prob_th=5.0,
@@ -188,15 +192,16 @@ class TestPlotTransformed:
 
     def test_with_remap_window(self) -> None:
         """Test plot_transformed with remap window."""
+        rng = np.random.default_rng(42)
         n_time, n_bins = 80, 40
         xs = np.linspace(0, 1, n_bins)
-        x_true = np.random.uniform(0, n_bins - 1, n_time)
-        post = np.random.dirichlet(np.ones(n_bins), size=n_time)
+        x_true = rng.uniform(0, n_bins - 1, n_time)
+        post = rng.dirichlet(np.ones(n_bins), size=n_time)
 
         tr = Transformed(
-            HPDO=np.random.uniform(0, 5, n_time),
-            KL=np.random.uniform(0, 3, n_time),
-            spike_prob=np.random.uniform(0, 10, n_time),
+            HPDO=rng.uniform(0, 5, n_time),
+            KL=rng.uniform(0, 3, n_time),
+            spike_prob=rng.uniform(0, 10, n_time),
             HPDO_th=3.0,
             KL_th=2.0,
             spike_prob_th=5.0,
@@ -209,15 +214,16 @@ class TestPlotTransformed:
 
     def test_with_phase_boundaries(self) -> None:
         """Test plot_transformed with phase boundaries (lines 360-362)."""
+        rng = np.random.default_rng(42)
         n_time, n_bins = 100, 50
         xs = np.linspace(0, 1, n_bins)
-        x_true = np.random.uniform(0, n_bins - 1, n_time)
-        post = np.random.dirichlet(np.ones(n_bins), size=n_time)
+        x_true = rng.uniform(0, n_bins - 1, n_time)
+        post = rng.dirichlet(np.ones(n_bins), size=n_time)
 
         tr = Transformed(
-            HPDO=np.random.uniform(0, 5, n_time),
-            KL=np.random.uniform(0, 3, n_time),
-            spike_prob=np.random.uniform(0, 10, n_time),
+            HPDO=rng.uniform(0, 5, n_time),
+            KL=rng.uniform(0, 3, n_time),
+            spike_prob=rng.uniform(0, 10, n_time),
             HPDO_th=3.0,
             KL_th=2.0,
             spike_prob_th=5.0,
@@ -236,20 +242,22 @@ class TestPlotMisfitExamples:
     def test_creates_figure(self) -> None:
         """Test that plot_misfit_examples runs without errors."""
         # Setup synthetic data - need enough time points for baseline (starts at 1000)
+        rng = np.random.default_rng(42)
         n_time, n_bins, n_cells = 6000, 50, 10
         xs = np.linspace(0, 1, n_bins)
-        x_true = np.random.uniform(0, n_bins - 1, n_time)
-        spikes = np.random.poisson(0.5, (n_time, n_cells))
+        x_true = rng.uniform(0, n_bins - 1, n_time)
+        spikes = rng.poisson(0.5, (n_time, n_cells))
 
         metrics = {
-            "post": np.random.dirichlet(np.ones(n_bins), size=n_time),
-            "HPDO": np.random.uniform(0, 1, n_time),
-            "KL": np.random.uniform(0, 5, n_time),
-            "spikeProb": np.random.uniform(0, 1, (n_time, n_cells)),
+            "post": rng.dirichlet(np.ones(n_bins), size=n_time),
+            "HPDO": rng.uniform(0, 1, n_time),
+            "KL": rng.uniform(0, 5, n_time),
+            "spikeProb": rng.uniform(0, 1, (n_time, n_cells)),
         }
 
         # Create DecodeParams with timeline structure
-        # Must have T_remap_start > 2000 for baseline window slice(1000, T_remap_start-1000) to be valid
+        # Must have T_remap_start > 2000 for baseline window
+        # slice(1000, T_remap_start-1000) to be valid
         # Override remap_from_to to match number of cells (10 cells = indices 0-9)
         params = DecodeParams(
             T_remap_start=3000,
@@ -289,16 +297,17 @@ class TestPlotMisfitExamples:
 
     def test_with_different_params(self) -> None:
         """Test plot_misfit_examples with different parameters."""
+        rng = np.random.default_rng(42)
         n_time, n_bins, n_cells = 3500, 30, 5
         xs = np.linspace(0, 1, n_bins)
-        x_true = np.random.uniform(0, n_bins - 1, n_time)
-        spikes = np.random.poisson(1.0, (n_time, n_cells))
+        x_true = rng.uniform(0, n_bins - 1, n_time)
+        spikes = rng.poisson(1.0, (n_time, n_cells))
 
         metrics = {
-            "post": np.random.dirichlet(np.ones(n_bins), size=n_time),
-            "HPDO": np.random.uniform(0, 1, n_time),
-            "KL": np.random.uniform(0, 5, n_time),
-            "spikeProb": np.random.uniform(0, 1, (n_time, n_cells)),
+            "post": rng.dirichlet(np.ones(n_bins), size=n_time),
+            "HPDO": rng.uniform(0, 1, n_time),
+            "KL": rng.uniform(0, 5, n_time),
+            "spikeProb": rng.uniform(0, 1, (n_time, n_cells)),
         }
 
         params = DecodeParams(
@@ -332,16 +341,17 @@ class TestPlotCombinedDiagnostics:
     def test_creates_figure(self) -> None:
         """Test that plot_combined_diagnostics runs without errors."""
         # Setup synthetic data - need enough time points for baseline (starts at 1000)
+        rng = np.random.default_rng(42)
         n_time, n_bins, n_cells = 6000, 50, 10
         xs = np.linspace(0, 1, n_bins)
-        x_true = np.random.uniform(0, n_bins - 1, n_time)
-        spikes = np.random.poisson(0.5, (n_time, n_cells))
+        x_true = rng.uniform(0, n_bins - 1, n_time)
+        spikes = rng.poisson(0.5, (n_time, n_cells))
 
         metrics = {
-            "post": np.random.dirichlet(np.ones(n_bins), size=n_time),
-            "HPDO": np.random.uniform(0, 1, n_time),
-            "KL": np.random.uniform(0, 5, n_time),
-            "spikeProb": np.random.uniform(0, 1, (n_time, n_cells)),
+            "post": rng.dirichlet(np.ones(n_bins), size=n_time),
+            "HPDO": rng.uniform(0, 1, n_time),
+            "KL": rng.uniform(0, 5, n_time),
+            "spikeProb": rng.uniform(0, 1, (n_time, n_cells)),
         }
 
         th = Thresholds(HPDO=0.8, KL=2.0, spike_prob=0.05)
@@ -384,16 +394,17 @@ class TestPlotCombinedDiagnostics:
 
     def test_with_small_dataset(self) -> None:
         """Test plot_combined_diagnostics with smaller dataset."""
+        rng = np.random.default_rng(42)
         n_time, n_bins, n_cells = 3500, 30, 5
         xs = np.linspace(0, 1, n_bins)
-        x_true = np.random.uniform(0, n_bins - 1, n_time)
-        spikes = np.random.poisson(1.0, (n_time, n_cells))
+        x_true = rng.uniform(0, n_bins - 1, n_time)
+        spikes = rng.poisson(1.0, (n_time, n_cells))
 
         metrics = {
-            "post": np.random.dirichlet(np.ones(n_bins), size=n_time),
-            "HPDO": np.random.uniform(0, 1, n_time),
-            "KL": np.random.uniform(0, 5, n_time),
-            "spikeProb": np.random.uniform(0, 1, (n_time, n_cells)),
+            "post": rng.dirichlet(np.ones(n_bins), size=n_time),
+            "HPDO": rng.uniform(0, 1, n_time),
+            "KL": rng.uniform(0, 5, n_time),
+            "spikeProb": rng.uniform(0, 1, (n_time, n_cells)),
         }
 
         th = Thresholds(HPDO=0.7, KL=1.5, spike_prob=0.1)
