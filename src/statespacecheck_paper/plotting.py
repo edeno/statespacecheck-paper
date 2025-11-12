@@ -57,6 +57,11 @@ def add_phase_boundaries(
     alpha : float, default 0.15
         Alpha (transparency) for phase boundaries.
 
+    Returns
+    -------
+    None
+        Modifies axes in-place by adding colored phase boundary regions.
+
     Examples
     --------
     >>> fig, axes = plt.subplots(4, 1)
@@ -669,6 +674,12 @@ def plot_combined_diagnostics(
         Width of place fields (sigma).
     rate_scale : float
         Scaling factor for firing rates.
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        Combined diagnostic figure with time-series panels (top) and
+        misfit distribution examples (bottom).
 
     Examples
     --------

@@ -30,7 +30,39 @@ from statespacecheck_paper.style import save_figure
 
 
 def run_demo(params: DecodeParams) -> None:
-    """Run the full diagnostic demonstration with three simulation phases."""
+    """Run the full diagnostic demonstration with multiple simulation phases.
+
+    Generates Figure 2 showing a Bayesian decoder with periods of good and poor
+    model fit across 8 phases: baseline, remapping misfit, flat firing misfit,
+    fast movement misfit, and slow movement misfit, with recovery periods between.
+
+    Parameters
+    ----------
+    params : DecodeParams
+        Decoding parameters containing timeline structure, place field settings,
+        and simulation configuration. Must have pf_centers initialized.
+
+    Returns
+    -------
+    None
+        Saves figure to figures/main/figure02.{pdf,png}.
+
+    Notes
+    -----
+    The simulation includes the following phases:
+    1. Clean baseline (0 - T_remap_start): Model fits well
+    2. Remapping misfit (T_remap_start - T_remap_end): Place fields remap
+    3. Recovery 1 (T_remap_end - T_recovery1_end): Return to good fit
+    4. Flat firing misfit (T_recovery1_end - T_flat_end): Cells lose tuning
+    5. Recovery 2 (T_flat_end - T_recovery2_end): Return to good fit
+    6. Fast movement misfit (T_recovery2_end - T_fast_end): Animal moves faster
+       than model expects
+    7. Recovery 3 (T_fast_end - T_recovery3_end): Return to good fit
+    8. Slow movement misfit (T_recovery3_end - T_slow_end): Animal stationary
+       but model expects movement
+
+    Diagnostic thresholds are computed from the clean baseline period.
+    """
     rng = np.random.default_rng(params.base_seed)
 
     # Ensure pf_centers is initialized

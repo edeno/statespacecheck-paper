@@ -43,6 +43,12 @@ def _create_panel(
         Color for predictive distribution.
     color_likelihood : str
         Color for likelihood distribution.
+
+    Returns
+    -------
+    None
+        Modifies the axes in-place by adding distribution plots, HPD regions,
+        labels, and formatting.
     """
     # Generate distributions
     pred_mean, pred_std = scenario["predictive"]
@@ -157,6 +163,11 @@ def create_figure() -> None:
     This figure demonstrates scenarios where the predictive distribution (prior)
     and normalized likelihood are consistent or inconsistent, using HPD overlap
     as a diagnostic metric.
+
+    Returns
+    -------
+    None
+        Saves figure to figures/main/figure01.{pdf,png}.
     """
     import warnings
 

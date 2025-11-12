@@ -59,6 +59,10 @@ def set_figure_defaults(context: Literal["paper", "presentation", "poster"] = "p
         - "presentation": Medium fonts (12pt base) for talks/slides
         - "poster": Large fonts (16pt base) for conference posters
 
+    Returns
+    -------
+    None
+
     Notes
     -----
     - Font sizes for "paper" context meet Nature/Science minimums (5-7pt)
@@ -145,6 +149,12 @@ def save_figure(
         (Nature requires 300-600 dpi for final figures).
     close : bool, default True
         If True, close the figure after saving to free memory.
+
+    Returns
+    -------
+    None
+        Files are saved to disk as side effects. Prints confirmation message
+        with saved file paths.
 
     Examples
     --------
