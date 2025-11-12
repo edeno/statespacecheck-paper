@@ -107,10 +107,10 @@ class TestPlotOriginal:
             "spikeProb": rng.uniform(0, 1, (n_time, 10)),
         }
 
-        th = Thresholds(HPDO=0.8, KL=2.0, spike_prob=0.05)
+        thresholds = Thresholds(hpd_overlap=0.8, kl_divergence=2.0, spike_prob=0.05)
 
         # Execute
-        fig = plot_original(xs, x_true, metrics, th)
+        fig = plot_original(xs, x_true, metrics, thresholds)
 
         # Assert
         assert isinstance(fig, plt.Figure)
@@ -134,10 +134,10 @@ class TestPlotOriginal:
             "spikeProb": rng.uniform(0, 1, (n_time, 10)),
         }
 
-        th = Thresholds(HPDO=0.8, KL=2.0, spike_prob=0.05)
+        thresholds = Thresholds(hpd_overlap=0.8, kl_divergence=2.0, spike_prob=0.05)
         phase_boundaries = (10, 20, 30, 40, 50, 60, 70, 80)
 
-        fig = plot_original(xs, x_true, metrics, th, phase_boundaries=phase_boundaries)
+        fig = plot_original(xs, x_true, metrics, thresholds, phase_boundaries=phase_boundaries)
 
         assert isinstance(fig, plt.Figure)
         plt.close(fig)
@@ -156,9 +156,9 @@ class TestPlotOriginal:
             "spikeProb": rng.uniform(0, 1, (n_time, 5)),
         }
 
-        th = Thresholds(HPDO=0.7, KL=1.5, spike_prob=0.1)
+        thresholds = Thresholds(hpd_overlap=0.7, kl_divergence=1.5, spike_prob=0.1)
 
-        fig = plot_original(xs, x_true, metrics, th, title="Test Figure")
+        fig = plot_original(xs, x_true, metrics, thresholds, title="Test Figure")
 
         assert isinstance(fig, plt.Figure)
         plt.close(fig)
@@ -175,16 +175,16 @@ class TestPlotTransformed:
         x_true = rng.uniform(0, n_bins - 1, n_time)
         post = rng.dirichlet(np.ones(n_bins), size=n_time)
 
-        tr = Transformed(
-            HPDO=rng.uniform(0, 5, n_time),
-            KL=rng.uniform(0, 3, n_time),
+        transformed = Transformed(
+            hpd_overlap=rng.uniform(0, 5, n_time),
+            kl_divergence=rng.uniform(0, 3, n_time),
             spike_prob=rng.uniform(0, 10, n_time),
-            HPDO_th=3.0,
-            KL_th=2.0,
-            spike_prob_th=5.0,
+            hpd_overlap_threshold=3.0,
+            kl_divergence_threshold=2.0,
+            spike_prob_threshold=5.0,
         )
 
-        fig = plot_transformed(xs, x_true, post, tr)
+        fig = plot_transformed(xs, x_true, post, transformed)
 
         assert isinstance(fig, plt.Figure)
         assert len(fig.axes) >= 4
@@ -198,16 +198,16 @@ class TestPlotTransformed:
         x_true = rng.uniform(0, n_bins - 1, n_time)
         post = rng.dirichlet(np.ones(n_bins), size=n_time)
 
-        tr = Transformed(
-            HPDO=rng.uniform(0, 5, n_time),
-            KL=rng.uniform(0, 3, n_time),
+        transformed = Transformed(
+            hpd_overlap=rng.uniform(0, 5, n_time),
+            kl_divergence=rng.uniform(0, 3, n_time),
             spike_prob=rng.uniform(0, 10, n_time),
-            HPDO_th=3.0,
-            KL_th=2.0,
-            spike_prob_th=5.0,
+            hpd_overlap_threshold=3.0,
+            kl_divergence_threshold=2.0,
+            spike_prob_threshold=5.0,
         )
 
-        fig = plot_transformed(xs, x_true, post, tr, remap_window=(20, 40))
+        fig = plot_transformed(xs, x_true, post, transformed, remap_window=(20, 40))
 
         assert isinstance(fig, plt.Figure)
         plt.close(fig)
@@ -220,17 +220,17 @@ class TestPlotTransformed:
         x_true = rng.uniform(0, n_bins - 1, n_time)
         post = rng.dirichlet(np.ones(n_bins), size=n_time)
 
-        tr = Transformed(
-            HPDO=rng.uniform(0, 5, n_time),
-            KL=rng.uniform(0, 3, n_time),
+        transformed = Transformed(
+            hpd_overlap=rng.uniform(0, 5, n_time),
+            kl_divergence=rng.uniform(0, 3, n_time),
             spike_prob=rng.uniform(0, 10, n_time),
-            HPDO_th=3.0,
-            KL_th=2.0,
-            spike_prob_th=5.0,
+            hpd_overlap_threshold=3.0,
+            kl_divergence_threshold=2.0,
+            spike_prob_threshold=5.0,
         )
 
         # Provide phase_boundaries to test lines 360-362
-        fig = plot_transformed(xs, x_true, post, tr, phase_boundaries=(30, 70))
+        fig = plot_transformed(xs, x_true, post, transformed, phase_boundaries=(30, 70))
 
         assert isinstance(fig, plt.Figure)
         plt.close(fig)
@@ -282,13 +282,13 @@ class TestPlotMisfitExamples:
             ),
         )
 
-        pf_centers = np.linspace(0, 1, n_cells)
-        pf_width = 0.1
+        placefield_centers =np.linspace(0, 1, n_cells)
+        placefield_width =0.1
         rate_scale = 10.0
 
         # Execute
         fig = plot_misfit_examples(
-            xs, x_true, spikes, metrics, params, pf_centers, pf_width, rate_scale
+            xs, x_true, spikes, metrics, params, placefield_centers, placefield_width, rate_scale
         )
 
         # Assert
@@ -323,12 +323,12 @@ class TestPlotMisfitExamples:
             remap_from_to=((0, 2), (1, 3), (2, 4), (3, 0), (4, 1)),  # 5 cells
         )
 
-        pf_centers = np.linspace(0, 1, n_cells)
-        pf_width = 0.15
+        placefield_centers =np.linspace(0, 1, n_cells)
+        placefield_width =0.15
         rate_scale = 5.0
 
         fig = plot_misfit_examples(
-            xs, x_true, spikes, metrics, params, pf_centers, pf_width, rate_scale
+            xs, x_true, spikes, metrics, params, placefield_centers, placefield_width, rate_scale
         )
 
         assert isinstance(fig, plt.Figure)
@@ -354,7 +354,7 @@ class TestPlotCombinedDiagnostics:
             "spikeProb": rng.uniform(0, 1, (n_time, n_cells)),
         }
 
-        th = Thresholds(HPDO=0.8, KL=2.0, spike_prob=0.05)
+        thresholds = Thresholds(hpd_overlap=0.8, kl_divergence=2.0, spike_prob=0.05)
 
         params = DecodeParams(
             T_remap_start=3000,
@@ -379,13 +379,13 @@ class TestPlotCombinedDiagnostics:
             ),
         )
 
-        pf_centers = np.linspace(0, 1, n_cells)
-        pf_width = 0.1
+        placefield_centers =np.linspace(0, 1, n_cells)
+        placefield_width =0.1
         rate_scale = 10.0
 
         # Execute
         fig = plot_combined_diagnostics(
-            xs, x_true, spikes, metrics, th, params, pf_centers, pf_width, rate_scale
+            xs, x_true, spikes, metrics, thresholds, params, placefield_centers, placefield_width, rate_scale
         )
 
         # Assert
@@ -407,7 +407,7 @@ class TestPlotCombinedDiagnostics:
             "spikeProb": rng.uniform(0, 1, (n_time, n_cells)),
         }
 
-        th = Thresholds(HPDO=0.7, KL=1.5, spike_prob=0.1)
+        thresholds = Thresholds(hpd_overlap=0.7, kl_divergence=1.5, spike_prob=0.1)
 
         params = DecodeParams(
             T_remap_start=2100,
@@ -421,12 +421,12 @@ class TestPlotCombinedDiagnostics:
             remap_from_to=((0, 2), (1, 3), (2, 4), (3, 0), (4, 1)),  # 5 cells
         )
 
-        pf_centers = np.linspace(0, 1, n_cells)
-        pf_width = 0.15
+        placefield_centers =np.linspace(0, 1, n_cells)
+        placefield_width =0.15
         rate_scale = 5.0
 
         fig = plot_combined_diagnostics(
-            xs, x_true, spikes, metrics, th, params, pf_centers, pf_width, rate_scale
+            xs, x_true, spikes, metrics, thresholds, params, placefield_centers, placefield_width, rate_scale
         )
 
         assert isinstance(fig, plt.Figure)

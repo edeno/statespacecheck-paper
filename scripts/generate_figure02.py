@@ -199,7 +199,7 @@ def run_demo(params: DecodeParams) -> None:
     )
 
     # Thresholds from clean baseline window (first 6k timesteps, before remapping starts)
-    th = compute_thresholds(metrics, baseline_end=params.T_remap_start)
+    thresholds = compute_thresholds(metrics, baseline_end=params.T_remap_start)
 
     # Plot combined diagnostics figure
     plot_combined_diagnostics(
@@ -207,7 +207,7 @@ def run_demo(params: DecodeParams) -> None:
         x_true,
         spikes.astype(np.float64),
         metrics,
-        th,
+        thresholds,
         params,
         params.pf_centers,
         params.pf_width,

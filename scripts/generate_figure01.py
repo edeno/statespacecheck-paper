@@ -69,7 +69,13 @@ def _create_panel(
         linewidth=1.5,
         label="Predictive distribution",
     )
-    ax.plot(x, pdf_likelihood, color=color_likelihood, linewidth=1.5, label="Normalized likelihood")
+    ax.plot(
+        x,
+        pdf_likelihood,
+        color=color_likelihood,
+        linewidth=1.5,
+        label="Normalized likelihood",
+    )
 
     # Compute HPD regions
     hpd_predictive = compute_hpd_region(x, pdf_predictive, coverage=0.95)
@@ -78,7 +84,10 @@ def _create_panel(
     # Extract contiguous regions
     pred_regions: list[tuple[float, float]] = []
     like_regions: list[tuple[float, float]] = []
-    for mask, regions_list in [(hpd_predictive, pred_regions), (hpd_likelihood, like_regions)]:
+    for mask, regions_list in [
+        (hpd_predictive, pred_regions),
+        (hpd_likelihood, like_regions),
+    ]:
         in_region = False
         start: float | None = None
         for i, val in enumerate(mask):

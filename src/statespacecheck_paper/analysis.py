@@ -438,15 +438,15 @@ def decode_and_diagnostics(
     n_bins = xs.size
 
     # Preallocate outputs (NaN for unavailable values)
-    post: NDArray[np.floating] = np.zeros((n_time, n_bins))
-    hpdo: NDArray[np.floating] = np.full(n_time, np.nan)  # Single value per timestep
-    kl: NDArray[np.floating] = np.full(n_time, np.nan)  # Single value per timestep
+    posterior: NDArray[np.floating] = np.zeros((n_time, n_bins))
+    hpd_overlap: NDArray[np.floating] = np.full(n_time, np.nan)  # Single value per timestep
+    kl_divergence: NDArray[np.floating] = np.full(n_time, np.nan)  # Single value per timestep
     spike_prob: NDArray[np.floating] = np.full(
         (n_time, n_cells), np.nan
     )  # Keep per-cell for this metric
 
     # t=0 (MATLAB used a flat prior at t=1)
-    post[0] = normalize(np.ones(n_bins))
+    posterior[0] = normalize(np.ones(n_bins))
 
     lam_grid_all = placefield_rates(xs, pf_centers, pf_width, rate_scale)  # (n_bins, n_cells)
     lambda_ratio = normalize(lam_grid_all, axis=1)  # per-bin cell-fractions, rows sum to 1
@@ -465,7 +465,7 @@ def decode_and_diagnostics(
             current_transition = transition_matrix
 
         # Predict (prior from state dynamics)
-        prior = normalize(post[t - 1] @ current_transition)  # (n_bins,)
+        prior = normalize(posterior[t - 1] @ current_transition)  # (n_bins,)
 
         # Likelihood grid for this time's counts (vectorized over bins & cells)
         likelihood = likelihood_grid_for_counts(xs, pf_centers, pf_width, rate_scale, spikes[t])
@@ -482,27 +482,27 @@ def decode_and_diagnostics(
         combined_likelihood_t = combined_likelihood[np.newaxis, :]  # (1, n_bins)
 
         # HPD overlap between prior and combined likelihood
-        hpdo_t: NDArray[np.floating] = ssc.hpd_overlap(
+        hpd_overlap_t: NDArray[np.floating] = ssc.hpd_overlap(
             prior_t, combined_likelihood_t, coverage=0.95
         )
-        hpdo[t] = hpdo_t[0]
+        hpd_overlap[t] = hpd_overlap_t[0]
 
         # KL divergence between prior and combined likelihood
-        kl_t: NDArray[np.floating] = ssc.kl_divergence(prior_t, combined_likelihood_t)
-        kl[t] = kl_t[0]
+        kl_divergence_t: NDArray[np.floating] = ssc.kl_divergence(prior_t, combined_likelihood_t)
+        kl_divergence[t] = kl_divergence_t[0]
 
         # Posterior update
-        post[t] = normalize(prior * combined_likelihood)
+        posterior[t] = normalize(prior * combined_likelihood)
 
         # spike_prob: cumulative probability mass for cells with low expected contribution
         spike_prob[t] = spike_prob_rank(prior, lambda_ratio)
 
     # Mask spike_prob for cells with zero spikes (match MATLAB: spikeProb(spikes == 0) = nan)
-    # Note: HPDO and KL are now per-timestep (not per-cell) since they compare
+    # Note: HPD overlap and KL divergence are now per-timestep (not per-cell) since they compare
     # the combined likelihood with the prior, so we don't mask them
     spike_prob[spikes == 0] = np.nan
 
-    return {"post": post, "HPDO": hpdo, "KL": kl, "spikeProb": spike_prob}
+    return {"post": posterior, "HPDO": hpd_overlap, "KL": kl_divergence, "spikeProb": spike_prob}
 
 
 # -----------------------------
@@ -519,22 +519,22 @@ class Thresholds:
 
     Parameters
     ----------
-    HPDO : float
+    hpd_overlap : float
         HPD overlap threshold (lower values indicate worse fit).
-    KL : float
+    kl_divergence : float
         KL divergence threshold (higher values indicate worse fit).
     spike_prob : float
         Spike probability threshold (lower values indicate worse fit).
 
     Examples
     --------
-    >>> thresholds = Thresholds(HPDO=0.5, KL=2.0, spike_prob=0.05)
-    >>> thresholds.HPDO
+    >>> thresholds = Thresholds(hpd_overlap=0.5, kl_divergence=2.0, spike_prob=0.05)
+    >>> thresholds.hpd_overlap
     0.5
     """
 
-    HPDO: float
-    KL: float
+    hpd_overlap: float
+    kl_divergence: float
     spike_prob: float
 
 
@@ -544,8 +544,8 @@ def compute_thresholds(
     """Compute threshold values from baseline period.
 
     Thresholds are computed as extreme quantiles of the baseline period:
-    - HPDO threshold: 1st percentile (low values indicate misfit)
-    - KL threshold: 99th percentile (high values indicate misfit)
+    - HPD overlap threshold: 1st percentile (low values indicate misfit)
+    - KL divergence threshold: 99th percentile (high values indicate misfit)
     - spike_prob threshold: Fixed at 0.05 (matches MATLAB implementation)
 
     Parameters
@@ -575,11 +575,15 @@ def compute_thresholds(
     >>> thresholds.spike_prob
     0.05
     """
-    hpdo_thresh = np.nanquantile(metrics["HPDO"][:baseline_end], 0.01)
-    kl_thresh = np.nanquantile(metrics["KL"][:baseline_end], 0.99)
+    hpd_overlap_threshold = np.nanquantile(metrics["HPDO"][:baseline_end], 0.01)
+    kl_divergence_threshold = np.nanquantile(metrics["KL"][:baseline_end], 0.99)
     # MATLAB uses 0.05 as fixed threshold (raw count, not normalized)
-    spike_prob_thresh = 0.05
-    return Thresholds(HPDO=hpdo_thresh, KL=kl_thresh, spike_prob=spike_prob_thresh)
+    spike_prob_threshold = 0.05
+    return Thresholds(
+        hpd_overlap=hpd_overlap_threshold,
+        kl_divergence=kl_divergence_threshold,
+        spike_prob=spike_prob_threshold,
+    )
 
 
 @dataclass
@@ -591,53 +595,53 @@ class Transformed:
 
     Parameters
     ----------
-    HPDO : np.ndarray
+    hpd_overlap : np.ndarray
         Transformed HPD overlap values.
-    KL : np.ndarray
+    kl_divergence : np.ndarray
         Transformed KL divergence values.
     spike_prob : np.ndarray
         Transformed spike probability values.
-    HPDO_th : float
-        Transformed HPDO threshold.
-    KL_th : float
-        Transformed KL threshold.
-    spike_prob_th : float
-        Transformed spike_prob threshold.
+    hpd_overlap_threshold : float
+        Transformed HPD overlap threshold.
+    kl_divergence_threshold : float
+        Transformed KL divergence threshold.
+    spike_prob_threshold : float
+        Transformed spike probability threshold.
 
     Examples
     --------
     >>> import numpy as np
     >>> transformed = Transformed(
-    ...     HPDO=np.array([1.0, 2.0, 3.0]),
-    ...     KL=np.array([0.5, 1.0, 1.5]),
+    ...     hpd_overlap=np.array([1.0, 2.0, 3.0]),
+    ...     kl_divergence=np.array([0.5, 1.0, 1.5]),
     ...     spike_prob=np.array([[0.1, 0.2], [0.3, 0.4]]),
-    ...     HPDO_th=1.5,
-    ...     KL_th=1.0,
-    ...     spike_prob_th=0.15,
+    ...     hpd_overlap_threshold=1.5,
+    ...     kl_divergence_threshold=1.0,
+    ...     spike_prob_threshold=0.15,
     ... )
-    >>> transformed.HPDO_th
+    >>> transformed.hpd_overlap_threshold
     1.5
     """
 
-    HPDO: NDArray[np.floating]
-    KL: NDArray[np.floating]
+    hpd_overlap: NDArray[np.floating]
+    kl_divergence: NDArray[np.floating]
     spike_prob: NDArray[np.floating]
-    HPDO_th: float
-    KL_th: float
-    spike_prob_th: float
+    hpd_overlap_threshold: float
+    kl_divergence_threshold: float
+    spike_prob_threshold: float
 
 
 def transform_metrics(
     metrics: dict[str, NDArray[np.floating]],
-    th: Thresholds,
+    thresholds: Thresholds,
     eps1: float = 1e-2,
     eps2: float = 1e-10,
 ) -> Transformed:
     """Apply transformations to metrics for better visualization.
 
     **Transformations**:
-    - HPDO: -log(HPDO + eps1) - emphasizes low values (worse fit)
-    - KL: sqrt(KL) - compresses high values
+    - HPD overlap: -log(HPDO + eps1) - emphasizes low values (worse fit)
+    - KL divergence: sqrt(KL) - compresses high values
     - spike_prob: -log(spikeProb + eps2) - emphasizes low values (worse fit)
 
     The same transformations are applied to the threshold values.
@@ -649,10 +653,10 @@ def transform_metrics(
         - 'HPDO' : np.ndarray, shape (n_time,)
         - 'KL' : np.ndarray, shape (n_time,)
         - 'spikeProb' : np.ndarray, shape (n_time, n_cells)
-    th : Thresholds
+    thresholds : Thresholds
         Threshold values for each diagnostic metric.
     eps1 : float, default 1e-2
-        Small constant added before log transform for HPDO.
+        Small constant added before log transform for HPD overlap.
     eps2 : float, default 1e-10
         Small constant added before log transform for spike_prob.
 
@@ -673,20 +677,20 @@ def transform_metrics(
     ...     'KL': np.array([1.0, 4.0, 9.0]),
     ...     'spikeProb': np.array([[0.1, 0.2], [0.3, 0.4], [0.5, 0.6]]),
     ... }
-    >>> thresholds = Thresholds(HPDO=0.6, KL=5.0, spike_prob=0.05)
+    >>> thresholds = Thresholds(hpd_overlap=0.6, kl_divergence=5.0, spike_prob=0.05)
     >>> transformed = transform_metrics(metrics, thresholds)
-    >>> transformed.KL  # sqrt(KL)
+    >>> transformed.kl_divergence  # sqrt(KL)
     array([1.        , 2.        , 3.        ])
     """
-    hpdo_transformed = -safe_log(metrics["HPDO"] + eps1)
-    kl_transformed = np.sqrt(metrics["KL"])
+    hpd_overlap_transformed = -safe_log(metrics["HPDO"] + eps1)
+    kl_divergence_transformed = np.sqrt(metrics["KL"])
     spike_prob_transformed = -safe_log(metrics["spikeProb"] + eps2)
 
     return Transformed(
-        HPDO=hpdo_transformed,
-        KL=kl_transformed,
+        hpd_overlap=hpd_overlap_transformed,
+        kl_divergence=kl_divergence_transformed,
         spike_prob=spike_prob_transformed,
-        HPDO_th=-np.log(th.HPDO + eps1),
-        KL_th=np.sqrt(th.KL),
-        spike_prob_th=-np.log(th.spike_prob + eps2),
+        hpd_overlap_threshold=-np.log(thresholds.hpd_overlap + eps1),
+        kl_divergence_threshold=np.sqrt(thresholds.kl_divergence),
+        spike_prob_threshold=-np.log(thresholds.spike_prob + eps2),
     )

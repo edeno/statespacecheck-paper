@@ -147,7 +147,7 @@ def plot_original(
     xs: NDArray[np.floating],
     x_true: NDArray[np.floating],
     metrics: dict[str, NDArray[np.floating]],
-    th: Thresholds,
+    thresholds: Thresholds,
     title: str = "Original Metrics",
     remap_window: tuple[int, int] | None = None,
     phase_boundaries: tuple[int, ...] | None = None,
@@ -172,7 +172,7 @@ def plot_original(
         - 'HPDO': HPD overlap, shape (n_time,)
         - 'KL': KL divergence, shape (n_time,)
         - 'spikeProb': Spike probability, shape (n_time, n_cells)
-    th : Thresholds
+    thresholds : Thresholds
         Threshold values for each diagnostic.
     title : str, default "Original Metrics"
         Figure title.
@@ -200,8 +200,8 @@ def plot_original(
     ...     'KL': np.random.uniform(0, 5, n_time),
     ...     'spikeProb': np.random.uniform(0, 1, (n_time, 10)),
     ... }
-    >>> th = Thresholds(HPDO=0.8, KL=2.0, spike_prob=0.05)
-    >>> fig = plot_original(xs, x_true, metrics, th)
+    >>> thresholds = Thresholds(hpd_overlap=0.8, kl_divergence=2.0, spike_prob=0.05)
+    >>> fig = plot_original(xs, x_true, metrics, thresholds)
     >>> plt.close(fig)
     """
     n_time = metrics["post"].shape[0]
@@ -254,13 +254,13 @@ def plot_original(
         color="#56B4E9",
         rasterized=True,
     )
-    axes[1].axhline(th.HPDO, color="#E69F00", linewidth=1.5, zorder=10)
+    axes[1].axhline(thresholds.hpd_overlap, color="#E69F00", linewidth=1.5, zorder=10)
     axes[1].set_xlim(0, n_time)
     axes[1].set_ylabel("HPD Overlap", fontsize=10, labelpad=8)
     axes[1].tick_params(labelsize=8)
 
     axes[2].plot(metrics["KL"], ".", markersize=1.5, alpha=0.6, color="#56B4E9", rasterized=True)
-    axes[2].axhline(th.KL, color="#E69F00", linewidth=1.5, zorder=10)
+    axes[2].axhline(thresholds.kl_divergence, color="#E69F00", linewidth=1.5, zorder=10)
     axes[2].set_xlim(0, n_time)
     axes[2].set_ylabel("KL Divergence", fontsize=10, labelpad=8)
     axes[2].tick_params(labelsize=8)
@@ -268,7 +268,7 @@ def plot_original(
     # Transform spike probability to -log scale
     eps2 = 1e-12
     spike_prob_transformed = -safe_log(metrics["spikeProb"] + eps2)
-    spike_prob_thresh_transformed = -np.log(th.spike_prob + eps2)
+    spike_prob_thresh_transformed = -np.log(thresholds.spike_prob + eps2)
 
     axes[3].plot(
         spike_prob_transformed,
@@ -306,8 +306,8 @@ def plot_original(
 def plot_transformed(
     xs: NDArray[np.floating],
     x_true: NDArray[np.floating],
-    post: NDArray[np.floating],
-    tr: Transformed,
+    posterior: NDArray[np.floating],
+    transformed: Transformed,
     title: str = "Transformed Metrics (-log, sqrt)",
     remap_window: tuple[int, int] | None = None,
     phase_boundaries: tuple[int, int] | None = None,
@@ -323,9 +323,9 @@ def plot_transformed(
         Position bin centers.
     x_true : NDArray, shape (n_time,)
         True position at each time point.
-    post : NDArray, shape (n_time, n_bins)
+    posterior : NDArray, shape (n_time, n_bins)
         Posterior distribution over time.
-    tr : Transformed
+    transformed : Transformed
         Transformed metrics and thresholds.
     title : str, default "Transformed Metrics (-log, sqrt)"
         Figure title.
@@ -346,20 +346,20 @@ def plot_transformed(
     >>> n_time, n_bins = 100, 50
     >>> xs = np.linspace(0, 1, n_bins)
     >>> x_true = np.random.uniform(0, n_bins - 1, n_time)
-    >>> post = np.random.dirichlet(np.ones(n_bins), size=n_time)
-    >>> tr = Transformed(
-    ...     HPDO=np.random.uniform(0, 5, n_time),
-    ...     KL=np.random.uniform(0, 3, n_time),
+    >>> posterior = np.random.dirichlet(np.ones(n_bins), size=n_time)
+    >>> transformed = Transformed(
+    ...     hpd_overlap=np.random.uniform(0, 5, n_time),
+    ...     kl_divergence=np.random.uniform(0, 3, n_time),
     ...     spike_prob=np.random.uniform(0, 10, n_time),
-    ...     HPDO_th=3.0, KL_th=2.0, spike_prob_th=5.0
+    ...     hpd_overlap_threshold=3.0, kl_divergence_threshold=2.0, spike_prob_threshold=5.0
     ... )
-    >>> fig = plot_transformed(xs, x_true, post, tr)
+    >>> fig = plot_transformed(xs, x_true, posterior, transformed)
     >>> plt.close(fig)
     """
-    n_time = post.shape[0]
+    n_time = posterior.shape[0]
     fig, axes = plt.subplots(4, 1, figsize=(7, 6), constrained_layout=True, sharex=True, dpi=150)
 
-    im = axes[0].imshow(post.T, aspect="auto", origin="lower", cmap="viridis")
+    im = axes[0].imshow(posterior.T, aspect="auto", origin="lower", cmap="viridis")
     axes[0].plot(np.arange(n_time), x_true, "k", linewidth=1.0, alpha=0.8)
     axes[0].set_ylabel("Position (bin)", fontsize=9, labelpad=8)
     axes[0].tick_params(labelsize=7)
@@ -384,21 +384,21 @@ def plot_transformed(
             ax.axvspan(t1, t2, alpha=0.15, color="gray", label="Flat rate")
             ax.axvspan(t2, n_time, alpha=0.15, color="red", label="Fast movement")
 
-    axes[1].plot(tr.HPDO, ".", markersize=0.5, alpha=0.3, rasterized=True)
-    axes[1].axhline(tr.HPDO_th, color="#E69F00", linewidth=1.5, label="Threshold", zorder=10)
+    axes[1].plot(transformed.hpd_overlap, ".", markersize=0.5, alpha=0.3, rasterized=True)
+    axes[1].axhline(transformed.hpd_overlap_threshold, color="#E69F00", linewidth=1.5, label="Threshold", zorder=10)
     axes[1].set_xlim(0, n_time)
     axes[1].set_ylabel("-log(HPD Overlap)", fontsize=9, labelpad=8)
     axes[1].tick_params(labelsize=7)
     axes[1].legend(loc="upper right", fontsize=7, frameon=False)
 
-    axes[2].plot(tr.KL, ".", markersize=0.5, alpha=0.3, rasterized=True)
-    axes[2].axhline(tr.KL_th, color="#E69F00", linewidth=1.5, label="Threshold", zorder=10)
+    axes[2].plot(transformed.kl_divergence, ".", markersize=0.5, alpha=0.3, rasterized=True)
+    axes[2].axhline(transformed.kl_divergence_threshold, color="#E69F00", linewidth=1.5, label="Threshold", zorder=10)
     axes[2].set_xlim(0, n_time)
     axes[2].set_ylabel("sqrt(KL Divergence)", fontsize=9, labelpad=8)
     axes[2].tick_params(labelsize=7)
 
-    axes[3].plot(tr.spike_prob, ".", markersize=0.5, alpha=0.3, rasterized=True)
-    axes[3].axhline(tr.spike_prob_th, color="#E69F00", linewidth=1.5, label="Threshold", zorder=10)
+    axes[3].plot(transformed.spike_prob, ".", markersize=0.5, alpha=0.3, rasterized=True)
+    axes[3].axhline(transformed.spike_prob_threshold, color="#E69F00", linewidth=1.5, label="Threshold", zorder=10)
     axes[3].set_xlim(0, n_time)
     axes[3].set_ylabel("-log(Spike Prob)", fontsize=9, labelpad=8)
     axes[3].set_xlabel("Time", fontsize=9, labelpad=8)
@@ -414,8 +414,8 @@ def plot_misfit_examples(
     spikes: NDArray[np.floating],
     metrics: dict[str, NDArray[np.floating]],
     params: DecodeParams,
-    pf_centers: NDArray[np.floating],
-    pf_width: float,
+    placefield_centers: NDArray[np.floating],
+    placefield_width: float,
     rate_scale: float,
 ) -> Figure:
     """Plot examples of high misfit moments for each scenario.
@@ -442,6 +442,11 @@ def plot_misfit_examples(
         Width of place fields (sigma).
     rate_scale : float
         Scaling factor for firing rates.
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        Figure showing distribution comparisons for baseline and four misfit types.
 
     Examples
     --------
@@ -527,7 +532,7 @@ def plot_misfit_examples(
 
         # Compute combined likelihood
         likelihood = likelihood_grid_for_counts(
-            xs, pf_centers, pf_width, rate_scale, spikes[example_time]
+            xs, placefield_centers, placefield_width, rate_scale, spikes[example_time]
         )
 
         # Apply remapping if in remap window
@@ -640,10 +645,10 @@ def plot_combined_diagnostics(
     x_true: NDArray[np.floating],
     spikes: NDArray[np.floating],
     metrics: dict[str, NDArray[np.floating]],
-    th: Thresholds,
+    thresholds: Thresholds,
     params: DecodeParams,
-    pf_centers: NDArray[np.floating],
-    pf_width: float,
+    placefield_centers: NDArray[np.floating],
+    placefield_width: float,
     rate_scale: float,
 ) -> Figure:
     """Create comprehensive combined figure with misfit examples and time-series diagnostics.
@@ -695,16 +700,16 @@ def plot_combined_diagnostics(
     ...     'KL': np.random.uniform(0, 5, n_time),
     ...     'spikeProb': np.random.uniform(0, 1, (n_time, n_cells)),
     ... }
-    >>> th = Thresholds(HPDO=0.8, KL=2.0, spike_prob=0.05)
+    >>> thresholds = Thresholds(hpd_overlap=0.8, kl_divergence=2.0, spike_prob=0.05)
     >>> params = DecodeParams(
     ...     T_baseline=200, T_remap_start=200, T_remap_end=250,
     ...     T_recovery1_end=280, T_flat_end=320, T_recovery2_end=350,
     ...     T_fast_end=390, T_recovery3_end=420, T_slow_end=460,
     ...     n_cells=n_cells, n_position_bins=n_bins
     ... )
-    >>> pf_centers = np.linspace(0, 1, n_cells)
+    >>> placefield_centers = np.linspace(0, 1, n_cells)
     >>> plot_combined_diagnostics(
-    ...     xs, x_true, spikes, metrics, th, params, pf_centers, 0.1, 10.0
+    ...     xs, x_true, spikes, metrics, thresholds, params, placefield_centers, 0.1, 10.0
     ... )
     >>> plt.close('all')
     """
@@ -776,7 +781,7 @@ def plot_combined_diagnostics(
 
     # HPDO
     ax_hpdo.plot(metrics["HPDO"], ".", markersize=0.8, alpha=0.6, color=wong[5], rasterized=True)
-    ax_hpdo.axhline(th.HPDO, color="#666666", linewidth=1.2, alpha=0.7, zorder=10)
+    ax_hpdo.axhline(thresholds.hpd_overlap, color="#666666", linewidth=1.2, alpha=0.7, zorder=10)
     ax_hpdo.set_xlim(0, n_time)
     ax_hpdo.set_ylabel("HPD Overlap", fontsize=9, labelpad=7)
     ax_hpdo.tick_params(labelsize=7, labelbottom=False)
@@ -786,7 +791,7 @@ def plot_combined_diagnostics(
     )
     ax_hpdo.text(
         1.01,
-        th.HPDO,
+        thresholds.hpd_overlap,
         "Threshold",
         transform=ax_hpdo.get_yaxis_transform(),
         fontsize=6,
@@ -797,7 +802,7 @@ def plot_combined_diagnostics(
 
     # KL Divergence
     ax_kl.plot(metrics["KL"], ".", markersize=0.8, alpha=0.6, color=wong[5], rasterized=True)
-    ax_kl.axhline(th.KL, color="#666666", linewidth=1.2, alpha=0.7, zorder=10)
+    ax_kl.axhline(thresholds.kl_divergence, color="#666666", linewidth=1.2, alpha=0.7, zorder=10)
     ax_kl.set_xlim(0, n_time)
     ax_kl.set_ylabel("KL Divergence", fontsize=9, labelpad=7)
     ax_kl.tick_params(labelsize=7, labelbottom=False)
@@ -807,7 +812,7 @@ def plot_combined_diagnostics(
     )
     ax_kl.text(
         1.01,
-        th.KL,
+        thresholds.kl_divergence,
         "Threshold",
         transform=ax_kl.get_yaxis_transform(),
         fontsize=6,
@@ -819,7 +824,7 @@ def plot_combined_diagnostics(
     # Spike Probability (transformed)
     eps2 = 1e-12
     spike_prob_transformed = -safe_log(metrics["spikeProb"] + eps2)
-    spike_prob_thresh_transformed = -np.log(th.spike_prob + eps2)
+    spike_prob_thresh_transformed = -np.log(thresholds.spike_prob + eps2)
 
     ax_spike.plot(
         spike_prob_transformed,
@@ -958,7 +963,7 @@ def plot_combined_diagnostics(
 
         prior = normalize(prev_post @ transition_matrix)
         likelihood = likelihood_grid_for_counts(
-            xs, pf_centers, pf_width, rate_scale, spikes[example_time]
+            xs, placefield_centers, placefield_width, rate_scale, spikes[example_time]
         )
 
         if params.T_remap_start <= example_time <= params.T_remap_end:

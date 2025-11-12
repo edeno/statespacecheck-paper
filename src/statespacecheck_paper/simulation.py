@@ -85,8 +85,10 @@ def normalize(
     return result
 
 
-def reflect_into_interval(x: NDArray[np.floating], lo: float, hi: float) -> NDArray[np.floating]:
-    """Reflect values into interval [lo, hi] using triangle wave method.
+def reflect_into_interval(
+    x: NDArray[np.floating], lower_bound: float, upper_bound: float
+) -> NDArray[np.floating]:
+    """Reflect values into interval [lower_bound, upper_bound] using triangle wave method.
 
     This implements reflecting boundary conditions for random walks by treating
     the walk as a triangle wave that bounces off the boundaries.
@@ -95,15 +97,15 @@ def reflect_into_interval(x: NDArray[np.floating], lo: float, hi: float) -> NDAr
     ----------
     x : np.ndarray
         Array of values to reflect.
-    lo : float
+    lower_bound : float
         Lower bound of interval.
-    hi : float
+    upper_bound : float
         Upper bound of interval.
 
     Returns
     -------
     reflected : np.ndarray
-        Array of same shape as x with all values in [lo, hi].
+        Array of same shape as x with all values in [lower_bound, upper_bound].
 
     Examples
     --------
@@ -121,10 +123,10 @@ def reflect_into_interval(x: NDArray[np.floating], lo: float, hi: float) -> NDAr
     >>> np.allclose(result, x)
     True
     """
-    interval_length = hi - lo
-    y: NDArray[np.floating] = np.mod(x - lo, 2 * interval_length)
+    interval_length = upper_bound - lower_bound
+    y: NDArray[np.floating] = np.mod(x - lower_bound, 2 * interval_length)
     y = np.where(y <= interval_length, y, 2 * interval_length - y)
-    result: NDArray[np.floating] = y + lo
+    result: NDArray[np.floating] = y + lower_bound
     return result
 
 
