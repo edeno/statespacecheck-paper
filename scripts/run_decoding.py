@@ -84,7 +84,7 @@ cont_results = cont_model.predict(
     time=time,
     position_time=time,
     position=position_2d,
-    save_log_likelihood_to_results=True,
+    return_outputs=["log_likelihood", "predictive"],
     cache_likelihood=True,
 )
 
@@ -93,11 +93,11 @@ cont_frag_results = cont_frag_model.predict(
     time=time,
     position_time=time,
     position=position_2d,
-    save_log_likelihood_to_results=True,
+    return_outputs=["log_likelihood", "predictive"],
     cache_likelihood=True,
 )
 
-
+print(cont_results)
 cont_results.isel(time=0).acausal_posterior.unstack("state_bins").squeeze().plot()
 
 
