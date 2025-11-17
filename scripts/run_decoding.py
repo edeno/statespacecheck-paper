@@ -31,9 +31,7 @@ def load_data():
     spike_times = joblib.load(path + f"{animal_date_epoch}_HPC_spike_times.pkl")
     track_graph = joblib.load(path + f"{animal_date_epoch}_track_graph.pkl")
     linear_edge_order = joblib.load(path + f"{animal_date_epoch}_linear_edge_order.pkl")
-    linear_edge_spacing = joblib.load(
-        path + f"{animal_date_epoch}_linear_edge_spacing.pkl"
-    )
+    linear_edge_spacing = joblib.load(path + f"{animal_date_epoch}_linear_edge_spacing.pkl")
 
     return (
         position_info,
@@ -99,9 +97,9 @@ print(cont_results)
 cont_results.isel(time=0).predictive_posterior.unstack("state_bins").squeeze().plot()
 
 
-cont_frag_results.isel(time=0).predictive_posterior.unstack("state_bins").sum(
-    "state"
-).plot(x="position")
+cont_frag_results.isel(time=0).predictive_posterior.unstack("state_bins").sum("state").plot(
+    x="position"
+)
 
 
 cont_hpd_overlap = hpd_overlap(
@@ -120,8 +118,7 @@ def plot_raster(spike_times, time_slice, ax=None, sort_order=None, **eventplot_k
         ax = plt.gca()
     time_slice_spike_times = [
         neuron_spike_times[
-            (neuron_spike_times >= time_slice.start)
-            & (neuron_spike_times < time_slice.stop)
+            (neuron_spike_times >= time_slice.start) & (neuron_spike_times < time_slice.stop)
         ]
         for neuron_spike_times in spike_times
     ]
@@ -199,16 +196,12 @@ def plot_overlap_regions(
         )
 
 
-def plot_overlap_trace(
-    time, time_slice_ind, overlaps, labels=None, ax=None, **plot_kwargs
-):
+def plot_overlap_trace(time, time_slice_ind, overlaps, labels=None, ax=None, **plot_kwargs):
     """Plot HPD overlap traces."""
     if ax is None:
         ax = plt.gca()
     if isinstance(overlaps, list | tuple):
-        for overlap, label in zip(
-            overlaps, labels or [None] * len(overlaps), strict=False
-        ):
+        for overlap, label in zip(overlaps, labels or [None] * len(overlaps), strict=False):
             ax.plot(
                 time[time_slice_ind],
                 overlap[time_slice_ind],
@@ -216,9 +209,7 @@ def plot_overlap_trace(
                 **plot_kwargs,
             )
     else:
-        ax.plot(
-            time[time_slice_ind], overlaps[time_slice_ind], label=labels, **plot_kwargs
-        )
+        ax.plot(time[time_slice_ind], overlaps[time_slice_ind], label=labels, **plot_kwargs)
     if labels:
         ax.legend()
     ax.set_ylabel("HPD Overlap")
@@ -266,9 +257,7 @@ def plot_model_checking(
     time_slice = slice(time[time_slice_ind.start], time[time_slice_ind.stop])
     sort_order = np.argsort(
         cont_model.environments[0]
-        .place_bin_centers_[
-            cont_model.encoding_model_[("", 0)]["place_fields"].argmax(axis=1)
-        ]
+        .place_bin_centers_[cont_model.encoding_model_[("", 0)]["place_fields"].argmax(axis=1)]
         .squeeze()
     )
     fig, axes = plt.subplots(4, 1, figsize=(7, 8), sharex=True, constrained_layout=True)
@@ -345,9 +334,7 @@ def plot_single_model_checking(
 ):
     # Keep 16:9 ratio but set height to 4 inches
     width = 16 / 9 * 4  # width = aspect_ratio * height
-    fig, axes = plt.subplots(
-        4, 1, figsize=(width, 4), sharex=True, constrained_layout=True
-    )
+    fig, axes = plt.subplots(4, 1, figsize=(width, 4), sharex=True, constrained_layout=True)
     # Posterior
     plot_posterior(
         results.predictive_posterior,
@@ -370,9 +357,7 @@ def plot_single_model_checking(
     # Raster
     sort_order = np.argsort(
         model.environments[0]
-        .place_bin_centers_[
-            model.encoding_model_[("", 0)]["place_fields"].argmax(axis=1)
-        ]
+        .place_bin_centers_[model.encoding_model_[("", 0)]["place_fields"].argmax(axis=1)]
         .squeeze()
     )
     plot_raster(
@@ -419,7 +404,7 @@ low_cont_frag_inds = np.argsort(cont_frag_hpd_overlap)[:3]
 # Show 3 lowest HPD overlap examples for Continuous model
 for i, ind in enumerate(low_cont_inds):
     print(
-        f"Continuous model, example {i+1}, time index: {ind}, "
+        f"Continuous model, example {i + 1}, time index: {ind}, "
         f"HPD overlap: {cont_hpd_overlap[ind]:.3f}"
     )
     plot_single_model_checking(
@@ -438,7 +423,7 @@ for i, ind in enumerate(low_cont_inds):
 # Show 3 lowest HPD overlap examples for ContFrag model
 for i, ind in enumerate(low_cont_frag_inds):
     print(
-        f"ContFrag model, example {i+1}, time index: {ind},"
+        f"ContFrag model, example {i + 1}, time index: {ind},"
         f" HPD overlap: {cont_frag_hpd_overlap[ind]:.3f}"
     )
     plot_single_model_checking(
@@ -517,7 +502,7 @@ high_pos_inds = np.argsort(diff)[-n_examples:]
 high_neg_inds = np.argsort(diff)[:n_examples]
 
 for i, ind in enumerate(high_pos_inds):
-    print(f"High positive diff example {i+1}, time index: {ind}, diff: {diff[ind]:.3f}")
+    print(f"High positive diff example {i + 1}, time index: {ind}, diff: {diff[ind]:.3f}")
     plot_single_model_checking(
         slice(ind - 500, ind + 500),
         time,
@@ -544,7 +529,7 @@ for i, ind in enumerate(high_pos_inds):
     )
 
 for i, ind in enumerate(high_neg_inds):
-    print(f"High negative diff example {i+1}, time index: {ind}, diff: {diff[ind]:.3f}")
+    print(f"High negative diff example {i + 1}, time index: {ind}, diff: {diff[ind]:.3f}")
     plot_single_model_checking(
         slice(ind - 500, ind + 500),
         time,
@@ -647,7 +632,7 @@ for idx, regions in enumerate([cont_regions, cont_frag_regions]):
         end_ext = min(len(time), end + 500)
         print(
             f"Plotting {model_label} model sustained poor overlap region"
-            f" {n+1}: {start_ext} to {end_ext}"
+            f" {n + 1}: {start_ext} to {end_ext}"
         )
         plot_single_model_checking(
             slice(start_ext, end_ext),
@@ -745,9 +730,7 @@ def plot_posterior_consistency_vs_covariate(
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=figsize, constrained_layout=True)
 
     # Scatter plot
-    ax1.scatter(
-        x, y, s=scatter_size, alpha=alpha_scatter, color="tab:blue", edgecolor="none"
-    )
+    ax1.scatter(x, y, s=scatter_size, alpha=alpha_scatter, color="tab:blue", edgecolor="none")
     ax1.set_xlabel(covariate_label, fontsize=11)
     ax1.set_ylabel("HPD Overlap", fontsize=11)
     ax1.set_title("Scatter", fontsize=12)
@@ -757,9 +740,7 @@ def plot_posterior_consistency_vs_covariate(
     ax1.xaxis.grid(False)
 
     # Hexbin plot
-    hb = ax2.hexbin(
-        x, y, gridsize=gridsize, cmap=cmap, bins=bins, mincnt=mincnt, alpha=0.8
-    )
+    hb = ax2.hexbin(x, y, gridsize=gridsize, cmap=cmap, bins=bins, mincnt=mincnt, alpha=0.8)
     ax2.set_xlabel(covariate_label, fontsize=11)
     ax2.set_ylabel("HPD Overlap", fontsize=11)
     ax2.set_title("Density", fontsize=12)
@@ -829,9 +810,7 @@ def gaussian_smooth(data, sigma, sampling_frequency, axis=0, truncate=8):
     )
 
 
-def get_multiunit_population_firing_rate(
-    multiunit, sampling_frequency, smoothing_sigma=0.015
-):
+def get_multiunit_population_firing_rate(multiunit, sampling_frequency, smoothing_sigma=0.015):
     """Calculates the multiunit population firing rate.
 
     Parameters
@@ -890,9 +869,7 @@ def plot_posterior_consistency_vs_covariate2(
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=figsize, constrained_layout=True)
 
     # Scatter plot
-    ax1.scatter(
-        x, y, s=scatter_size, alpha=alpha_scatter, color="tab:blue", edgecolor="none"
-    )
+    ax1.scatter(x, y, s=scatter_size, alpha=alpha_scatter, color="tab:blue", edgecolor="none")
     ax1.set_xlabel(covariate_label, fontsize=11)
     ax1.set_ylabel("HPD Overlap", fontsize=11)
     ax1.set_title("Scatter", fontsize=12)
@@ -902,9 +879,7 @@ def plot_posterior_consistency_vs_covariate2(
     ax1.xaxis.grid(False)
 
     # Hexbin plot
-    hb = ax2.hexbin(
-        x, y, gridsize=gridsize, cmap=cmap, bins=bins, mincnt=mincnt, alpha=0.8
-    )
+    hb = ax2.hexbin(x, y, gridsize=gridsize, cmap=cmap, bins=bins, mincnt=mincnt, alpha=0.8)
     ax2.set_xlabel(covariate_label, fontsize=11)
     ax2.set_ylabel("HPD Overlap", fontsize=11)
     ax2.set_title("Density", fontsize=12)
@@ -1060,10 +1035,7 @@ plot_model_checking(
 
 
 spike_counts = np.stack(
-    [
-        get_spikecount_per_time_bin(st, time=cont_results.time.to_numpy())
-        for st in spike_times
-    ],
+    [get_spikecount_per_time_bin(st, time=cont_results.time.to_numpy()) for st in spike_times],
     axis=1,
 )
 
@@ -1098,37 +1070,27 @@ def plot_hpd_overlap_at_time(
     """
     posterior_at_t = results.predictive_posterior.dropna("state_bins").to_numpy()[t]
     likelihood_at_t = np.exp(results.log_likelihood.dropna("state_bins").to_numpy())[t]
-    position_bins = results.predictive_posterior.dropna(
-        "state_bins"
-    ).position.to_numpy()
+    position_bins = results.predictive_posterior.dropna("state_bins").position.to_numpy()
 
-    posterior_threshold = get_highest_posterior_threshold(
-        posterior_at_t[None], coverage=coverage
-    )
-    likelihood_threshold = get_highest_posterior_threshold(
-        likelihood_at_t[None], coverage=coverage
-    )
+    posterior_threshold = get_highest_posterior_threshold(posterior_at_t[None], coverage=coverage)
+    likelihood_threshold = get_highest_posterior_threshold(likelihood_at_t[None], coverage=coverage)
     isin_posterior_hpd = posterior_at_t >= posterior_threshold[:, None]
     isin_likelihood_hpd = likelihood_at_t >= likelihood_threshold[:, None]
 
     denom = np.min(
-        np.stack(
-            (isin_posterior_hpd.sum(axis=1), isin_likelihood_hpd.sum(axis=1)), axis=1
-        ),
+        np.stack((isin_posterior_hpd.sum(axis=1), isin_likelihood_hpd.sum(axis=1)), axis=1),
         axis=1,
     )
     # Avoid division by zero
     denom = np.clip(denom, 1, None)
 
-    fig, axes = plt.subplots(
-        3, 1, figsize=figsize, sharex=True, constrained_layout=True
-    )
+    fig, axes = plt.subplots(3, 1, figsize=figsize, sharex=True, constrained_layout=True)
     axes[0].plot(position_bins, posterior_at_t, label="Posterior", color="tab:blue")
     axes[0].axhline(
         posterior_threshold,
         color="tab:blue",
         linestyle="--",
-        label=f"{int(coverage*100)}% HPD Threshold",
+        label=f"{int(coverage * 100)}% HPD Threshold",
     )
     axes[0].fill_between(
         position_bins,
@@ -1154,7 +1116,7 @@ def plot_hpd_overlap_at_time(
         likelihood_threshold,
         color="tab:orange",
         linestyle="--",
-        label=f"{int(coverage*100)}% HPD Threshold",
+        label=f"{int(coverage * 100)}% HPD Threshold",
     )
     axes[1].set_title("Likelihood")
     axes[1].legend()
@@ -1308,9 +1270,7 @@ plt.xlabel("Position")
     posterior=cont_results.predictive_posterior.unstack("state_bins").squeeze(),
     track_graph=track_graph,
     decoder=cont_model,
-    actual_projected_position=position_info[
-        ["projected_x_position", "projected_y_position"]
-    ],
+    actual_projected_position=position_info[["projected_x_position", "projected_y_position"]],
     track_segment_id=position_info["track_segment_id"],
     actual_orientation=position_info["head_orientation"],
 )
@@ -1336,9 +1296,7 @@ ax.scatter(
 )
 ax.set_xlabel("Ahead/Behind Distance", fontsize=11)
 ax.set_ylabel("HPD Overlap", fontsize=11)
-ax.set_title(
-    "Posterior Consistency vs Ahead/Behind Distance (Cont)", fontsize=13, pad=8
-)
+ax.set_title("Posterior Consistency vs Ahead/Behind Distance (Cont)", fontsize=13, pad=8)
 ax.spines["top"].set_visible(False)
 ax.spines["right"].set_visible(False)
 ax.yaxis.grid(True, linestyle=":", alpha=0.4)
@@ -1359,9 +1317,7 @@ plt.show()
     posterior=cont_frag_results.predictive_posterior.unstack("state_bins").sum("state"),
     track_graph=track_graph,
     decoder=cont_frag_model,
-    actual_projected_position=position_info[
-        ["projected_x_position", "projected_y_position"]
-    ],
+    actual_projected_position=position_info[["projected_x_position", "projected_y_position"]],
     track_segment_id=position_info["track_segment_id"],
     actual_orientation=position_info["head_orientation"],
 )
@@ -1387,9 +1343,7 @@ ax.scatter(
 )
 ax.set_xlabel("Ahead/Behind Distance", fontsize=11)
 ax.set_ylabel("HPD Overlap", fontsize=11)
-ax.set_title(
-    "Posterior Consistency vs Ahead/Behind Distance (ContFrag)", fontsize=13, pad=8
-)
+ax.set_title("Posterior Consistency vs Ahead/Behind Distance (ContFrag)", fontsize=13, pad=8)
 ax.spines["top"].set_visible(False)
 ax.spines["right"].set_visible(False)
 ax.yaxis.grid(True, linestyle=":", alpha=0.4)
@@ -1401,9 +1355,7 @@ plt.show()
 
 
 # Boolean mask where Fragmented state probability > 0.8
-frag_mask = (
-    cont_frag_results.acausal_state_probabilities.sel(states="Fragmented") > 0.8
-).values
+frag_mask = (cont_frag_results.acausal_state_probabilities.sel(states="Fragmented") > 0.8).values
 
 # Label contiguous regions
 labels, n_labels = label(frag_mask)
@@ -1421,7 +1373,7 @@ print("Sustained fragmented state regions (>10 ms):", sustained_fragments)
 for i, (start, end) in enumerate(sustained_fragments):
     start_ext = max(0, start - 50)
     end_ext = min(len(time), end + 50)
-    print(f"Plotting sustained fragmented region {i+1}: {start_ext} to {end_ext}")
+    print(f"Plotting sustained fragmented region {i + 1}: {start_ext} to {end_ext}")
     plot_model_checking(
         slice(start_ext, end_ext),
         time,
@@ -1438,9 +1390,7 @@ for i, (start, end) in enumerate(sustained_fragments):
 
 
 # Boolean mask where Fragmented state probability > 0.8
-frag_mask = (
-    cont_frag_results.acausal_state_probabilities.sel(states="Fragmented") > 0.8
-).values
+frag_mask = (cont_frag_results.acausal_state_probabilities.sel(states="Fragmented") > 0.8).values
 
 # Label contiguous regions
 labels, n_labels = label(frag_mask)

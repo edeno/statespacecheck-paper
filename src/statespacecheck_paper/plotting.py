@@ -259,7 +259,9 @@ def plot_original(
     axes[1].set_ylabel("HPD Overlap", fontsize=10, labelpad=8)
     axes[1].tick_params(labelsize=8)
 
-    axes[2].plot(metrics["kl_divergence"], ".", markersize=1.5, alpha=0.6, color="#56B4E9", rasterized=True)
+    axes[2].plot(
+        metrics["kl_divergence"], ".", markersize=1.5, alpha=0.6, color="#56B4E9", rasterized=True
+    )
     axes[2].axhline(thresholds.kl_divergence, color="#E69F00", linewidth=1.5, zorder=10)
     axes[2].set_xlim(0, n_time)
     axes[2].set_ylabel("KL Divergence", fontsize=10, labelpad=8)
@@ -385,20 +387,38 @@ def plot_transformed(
             ax.axvspan(t2, n_time, alpha=0.15, color="red", label="Fast movement")
 
     axes[1].plot(transformed.hpd_overlap, ".", markersize=0.5, alpha=0.3, rasterized=True)
-    axes[1].axhline(transformed.hpd_overlap_threshold, color="#E69F00", linewidth=1.5, label="Threshold", zorder=10)
+    axes[1].axhline(
+        transformed.hpd_overlap_threshold,
+        color="#E69F00",
+        linewidth=1.5,
+        label="Threshold",
+        zorder=10,
+    )
     axes[1].set_xlim(0, n_time)
     axes[1].set_ylabel("-log(HPD Overlap)", fontsize=9, labelpad=8)
     axes[1].tick_params(labelsize=7)
     axes[1].legend(loc="upper right", fontsize=7, frameon=False)
 
     axes[2].plot(transformed.kl_divergence, ".", markersize=0.5, alpha=0.3, rasterized=True)
-    axes[2].axhline(transformed.kl_divergence_threshold, color="#E69F00", linewidth=1.5, label="Threshold", zorder=10)
+    axes[2].axhline(
+        transformed.kl_divergence_threshold,
+        color="#E69F00",
+        linewidth=1.5,
+        label="Threshold",
+        zorder=10,
+    )
     axes[2].set_xlim(0, n_time)
     axes[2].set_ylabel("sqrt(KL Divergence)", fontsize=9, labelpad=8)
     axes[2].tick_params(labelsize=7)
 
     axes[3].plot(transformed.spike_prob, ".", markersize=0.5, alpha=0.3, rasterized=True)
-    axes[3].axhline(transformed.spike_prob_threshold, color="#E69F00", linewidth=1.5, label="Threshold", zorder=10)
+    axes[3].axhline(
+        transformed.spike_prob_threshold,
+        color="#E69F00",
+        linewidth=1.5,
+        label="Threshold",
+        zorder=10,
+    )
     axes[3].set_xlim(0, n_time)
     axes[3].set_ylabel("-log(Spike Prob)", fontsize=9, labelpad=8)
     axes[3].set_xlabel("Time", fontsize=9, labelpad=8)
@@ -496,7 +516,8 @@ def plot_misfit_examples(
     wong = WONG
 
     for phase_idx, (phase_name, phase_slice, is_baseline) in enumerate(phases):
-        # For baseline, find best fit (highest hpd_overlap); for misfits, find worst fit (lowest hpd_overlap)
+        # For baseline, find best fit (highest hpd_overlap); for misfits,
+        # find worst fit (lowest hpd_overlap)
         # BUT: only consider time points with spikes so likelihood is informative
         phase_hpdo = metrics["hpd_overlap"][phase_slice]
         phase_spikes = spikes[phase_slice]
@@ -780,7 +801,9 @@ def plot_combined_diagnostics(
     ax_post.legend(loc="upper left", fontsize=6, frameon=False)
 
     # HPDO
-    ax_hpdo.plot(metrics["hpd_overlap"], ".", markersize=0.8, alpha=0.6, color=wong[5], rasterized=True)
+    ax_hpdo.plot(
+        metrics["hpd_overlap"], ".", markersize=0.8, alpha=0.6, color=wong[5], rasterized=True
+    )
     ax_hpdo.axhline(thresholds.hpd_overlap, color="#666666", linewidth=1.2, alpha=0.7, zorder=10)
     ax_hpdo.set_xlim(0, n_time)
     ax_hpdo.set_ylabel("HPD Overlap", fontsize=9, labelpad=7)
@@ -801,7 +824,9 @@ def plot_combined_diagnostics(
     )
 
     # KL Divergence
-    ax_kl.plot(metrics["kl_divergence"], ".", markersize=0.8, alpha=0.6, color=wong[5], rasterized=True)
+    ax_kl.plot(
+        metrics["kl_divergence"], ".", markersize=0.8, alpha=0.6, color=wong[5], rasterized=True
+    )
     ax_kl.axhline(thresholds.kl_divergence, color="#666666", linewidth=1.2, alpha=0.7, zorder=10)
     ax_kl.set_xlim(0, n_time)
     ax_kl.set_ylabel("KL Divergence", fontsize=9, labelpad=7)

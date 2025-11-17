@@ -282,8 +282,8 @@ class TestPlotMisfitExamples:
             ),
         )
 
-        placefield_centers =np.linspace(0, 1, n_cells)
-        placefield_width =0.1
+        placefield_centers = np.linspace(0, 1, n_cells)
+        placefield_width = 0.1
         rate_scale = 10.0
 
         # Execute
@@ -323,8 +323,8 @@ class TestPlotMisfitExamples:
             remap_from_to=((0, 2), (1, 3), (2, 4), (3, 0), (4, 1)),  # 5 cells
         )
 
-        placefield_centers =np.linspace(0, 1, n_cells)
-        placefield_width =0.15
+        placefield_centers = np.linspace(0, 1, n_cells)
+        placefield_width = 0.15
         rate_scale = 5.0
 
         fig = plot_misfit_examples(
@@ -379,13 +379,21 @@ class TestPlotCombinedDiagnostics:
             ),
         )
 
-        placefield_centers =np.linspace(0, 1, n_cells)
-        placefield_width =0.1
+        placefield_centers = np.linspace(0, 1, n_cells)
+        placefield_width = 0.1
         rate_scale = 10.0
 
         # Execute
         fig = plot_combined_diagnostics(
-            xs, x_true, spikes, metrics, thresholds, params, placefield_centers, placefield_width, rate_scale
+            xs,
+            x_true,
+            spikes,
+            metrics,
+            thresholds,
+            params,
+            placefield_centers,
+            placefield_width,
+            rate_scale,
         )
 
         # Assert
@@ -421,12 +429,20 @@ class TestPlotCombinedDiagnostics:
             remap_from_to=((0, 2), (1, 3), (2, 4), (3, 0), (4, 1)),  # 5 cells
         )
 
-        placefield_centers =np.linspace(0, 1, n_cells)
-        placefield_width =0.15
+        placefield_centers = np.linspace(0, 1, n_cells)
+        placefield_width = 0.15
         rate_scale = 5.0
 
         fig = plot_combined_diagnostics(
-            xs, x_true, spikes, metrics, thresholds, params, placefield_centers, placefield_width, rate_scale
+            xs,
+            x_true,
+            spikes,
+            metrics,
+            thresholds,
+            params,
+            placefield_centers,
+            placefield_width,
+            rate_scale,
         )
 
         assert isinstance(fig, plt.Figure)

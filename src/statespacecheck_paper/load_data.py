@@ -231,9 +231,7 @@ def _get_interpolated_position_info(
     )
 
     interpolated_position_info = (
-        position_info.reindex(index=new_index)
-        .interpolate(method="linear")
-        .reindex(index=time)
+        position_info.reindex(index=new_index).interpolate(method="linear").reindex(index=time)
     )
 
     linear_position_info = get_linearized_position(
@@ -252,9 +250,7 @@ def _get_interpolated_position_info(
     )
 
 
-def _get_position_info(
-    nwb_file_name: str, epoch_name: str, pos_name: str
-) -> dict[str, Any]:
+def _get_position_info(nwb_file_name: str, epoch_name: str, pos_name: str) -> dict[str, Any]:
     """Fetch and process position data from NWB file via Spyglass database.
 
     Retrieves position tracking data for a specific recording epoch from the
@@ -318,12 +314,8 @@ def _get_position_info(
     except DataJointError:
         track_graph_name = nwb_file_name.split("_")[0]
 
-    track_graph = (
-        TrackGraph() & {"track_graph_name": track_graph_name}
-    ).get_networkx_track_graph()
-    track_graph_params = (
-        TrackGraph() & {"track_graph_name": track_graph_name}
-    ).fetch1()
+    track_graph = (TrackGraph() & {"track_graph_name": track_graph_name}).get_networkx_track_graph()
+    track_graph_params = (TrackGraph() & {"track_graph_name": track_graph_name}).fetch1()
     linear_edge_order = track_graph_params["linear_edge_order"]
     linear_edge_spacing = track_graph_params["linear_edge_spacing"]
 
@@ -340,20 +332,14 @@ def _get_position_info(
             ).fetch1("merge_id")
         )
         position_info = (
-            (
-                (PositionOutput() & {"merge_id": pos_merge_id})
-                .fetch1_dataframe()
-                .dropna()
-            )
+            ((PositionOutput() & {"merge_id": pos_merge_id}).fetch1_dataframe().dropna())
             .drop(columns="video_frame_ind")
             .add_prefix("head_")
         )
         time = (IntervalPositionInfo() & position_key).fetch1_dataframe().dropna().index
 
     except DataJointError:
-        position_info = (
-            (IntervalPositionInfo() & position_key).fetch1_dataframe().dropna()
-        )
+        position_info = (IntervalPositionInfo() & position_key).fetch1_dataframe().dropna()
         time = position_info.index
     try:
         valid_interval_times = (
@@ -363,9 +349,7 @@ def _get_position_info(
                 "interval_list_name": epoch_name + " noPrePostTrialTimes",
             }
         ).fetch1("valid_times")
-        position_info = position_info.loc[
-            valid_interval_times[0][0] : valid_interval_times[-1][1]
-        ]
+        position_info = position_info.loc[valid_interval_times[0][0] : valid_interval_times[-1][1]]
     except DataJointError:
         pass
 
@@ -431,9 +415,7 @@ def _get_electrode_group_info(nwb_file_name: str) -> pd.DataFrame:
         electrode_group_df.append(current_electrode_group)
 
     electrode_group_df = (
-        pd.DataFrame(electrode_group_df)
-        .drop(columns=["device"])
-        .set_index("electrode_group_name")
+        pd.DataFrame(electrode_group_df).drop(columns=["device"]).set_index("electrode_group_name")
     )
 
     is_ca1 = electrode_group_df.targeted_location.str.contains("CA1") & (
@@ -503,10 +485,7 @@ def _detect_coincident_spikes(
     concat_spike_times = np.concatenate(spike_times)
     # Create group IDs for each spike time
     sort_group_id = np.concatenate(
-        [
-            np.ones(len(spike_time), dtype=int) * i
-            for i, spike_time in enumerate(spike_times)
-        ]
+        [np.ones(len(spike_time), dtype=int) * i for i, spike_time in enumerate(spike_times)]
     )
     time_bin_ind = np.concatenate(
         [np.arange(len(spike_time), dtype=int) for spike_time in spike_times]
@@ -534,19 +513,13 @@ def _detect_coincident_spikes(
     )
     # Calculate the fraction of each group and the median spike times
     n_sort_groups = len(spike_times)
-    frac = (
-        df.loc[df.labels > 0].groupby("labels").sort_group_id.nunique() / n_sort_groups
-    )
+    frac = df.loc[df.labels > 0].groupby("labels").sort_group_id.nunique() / n_sort_groups
     frac = frac[frac > max_coincident_fraction]
 
     df = df.loc[~df.labels.isin(frac.index)]
 
-    filtered_spike_times = (
-        df.groupby("sort_group_id").spike_times.apply(np.array).tolist()
-    )
-    filtered_time_bin_ind = (
-        df.groupby("sort_group_id").time_bin_ind.apply(np.array).tolist()
-    )
+    filtered_spike_times = df.groupby("sort_group_id").spike_times.apply(np.array).tolist()
+    filtered_time_bin_ind = df.groupby("sort_group_id").time_bin_ind.apply(np.array).tolist()
 
     return filtered_spike_times, filtered_time_bin_ind
 
@@ -626,9 +599,7 @@ def _get_hpc_marks(nwb_file_name: str) -> tuple[list[np.ndarray], list[np.ndarra
     spike_times, filtered_time_bin_ind = _detect_coincident_spikes(spike_times)
     spike_waveform_features = [
         features[ind]
-        for ind, features in zip(
-            filtered_time_bin_ind, spike_waveform_features, strict=False
-        )
+        for ind, features in zip(filtered_time_bin_ind, spike_waveform_features, strict=False)
     ]
 
     return spike_times, spike_waveform_features
@@ -709,11 +680,7 @@ def _get_pfc_spike_times(nwb_file_name: str, brain_area: str) -> list[np.ndarray
 
     return list(
         itertools.chain.from_iterable(
-            [
-                file["units"]["spike_times"].to_list()
-                for file in nwb_pfc
-                if "units" in file
-            ]
+            [file["units"]["spike_times"].to_list() for file in nwb_pfc if "units" in file]
         )
     )
 
@@ -763,9 +730,7 @@ def _get_spike_data(nwb_file_name: str) -> dict[str, dict[str, Any]]:
     spike_waveform_features = dict()
 
     try:
-        spike_times["HPC"], spike_waveform_features["HPC"] = _get_hpc_marks(
-            nwb_file_name
-        )
+        spike_times["HPC"], spike_waveform_features["HPC"] = _get_hpc_marks(nwb_file_name)
     except ValueError:
         pass
 
@@ -926,8 +891,7 @@ def load_data(
     electrode_group_info = _get_electrode_group_info(nwb_file_name)
 
     pos_name = (
-        PositionIntervalMap
-        & {"nwb_file_name": nwb_file_name, "interval_list_name": epoch_name}
+        PositionIntervalMap & {"nwb_file_name": nwb_file_name, "interval_list_name": epoch_name}
     ).fetch1("position_interval_name")
     position_data = _get_position_info(nwb_file_name, epoch_name, pos_name)
 

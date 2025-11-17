@@ -268,7 +268,9 @@ def spike_prob_rank(
 
     >>> prior = np.array([0.5, 0.3, 0.2])
     >>> cell_fraction_per_bin = np.array([[0.6, 0.2], [0.3, 0.5], [0.1, 0.3]])
-    >>> cell_fraction_per_bin = cell_fraction_per_bin / cell_fraction_per_bin.sum(axis=0, keepdims=True)
+    >>> cell_fraction_per_bin = cell_fraction_per_bin / cell_fraction_per_bin.sum(
+    ...     axis=0, keepdims=True
+    ... )
     >>> ranks = spike_prob_rank(prior, cell_fraction_per_bin)
     >>> ranks.shape
     (2,)

@@ -1,0 +1,42 @@
+# Pre-commit hooks for code quality
+# See https://pre-commit.com for more information
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.5
+    hooks:
+      # Run the formatter
+      - id: ruff-format
+        name: Format code with ruff
+      # Run the linter
+      - id: ruff
+        name: Lint code with ruff
+        args: [--fix]
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.18.2
+    hooks:
+      - id: mypy
+        name: Type check with mypy
+        additional_dependencies:
+          - numpy>=1.26.0
+          - types-setuptools
+        files: ^src/
+        args: [--strict]
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        name: Trim trailing whitespace
+      - id: end-of-file-fixer
+        name: Fix end of files
+      - id: check-yaml
+        name: Check YAML files
+      - id: check-added-large-files
+        name: Check for large files
+        args: [--maxkb=5000]
+      - id: check-merge-conflict
+        name: Check for merge conflicts
+      - id: mixed-line-ending
+        name: Fix mixed line endings

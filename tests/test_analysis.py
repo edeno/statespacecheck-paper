@@ -492,7 +492,9 @@ class TestTransformMetrics:
         expected_kl_divergence_threshold = np.sqrt(thresholds.kl_divergence)
         expected_spike_prob_threshold = -np.log(thresholds.spike_prob + eps2)
         assert transformed.hpd_overlap_threshold == pytest.approx(expected_hpd_overlap_threshold)
-        assert transformed.kl_divergence_threshold == pytest.approx(expected_kl_divergence_threshold)
+        assert transformed.kl_divergence_threshold == pytest.approx(
+            expected_kl_divergence_threshold
+        )
         assert transformed.spike_prob_threshold == pytest.approx(expected_spike_prob_threshold)
 
     def test_handles_nan_values(self) -> None:
