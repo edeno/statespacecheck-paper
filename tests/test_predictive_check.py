@@ -95,6 +95,40 @@ class TestSamplePositionsFromPosterior:
 
         assert_array_equal(positions1, positions2)
 
+    def test_vectorized_equivalence_to_loop(self) -> None:
+        """Test that vectorized inverse CDF sampling is equivalent to loop-based rng.choice()."""
+        from statespacecheck_paper.simulation import normalize
+
+        # Test with various posterior distributions
+        n_time = 50
+        n_bins = 10
+        rng_data = np.random.default_rng(123)
+        posterior = rng_data.dirichlet(np.ones(n_bins), size=n_time)
+
+        # Reference implementation: loop-based sampling with rng.choice
+        def sample_loop_based(posterior: np.ndarray, rng: np.random.Generator) -> np.ndarray:
+            """Reference implementation using loop and rng.choice."""
+            n_time, n_bins = posterior.shape
+            posterior_norm = normalize(posterior, axis=1)
+            return np.array(
+                [rng.choice(n_bins, p=posterior_norm[t]) for t in range(n_time)],
+                dtype=np.int64,
+            )
+
+        # Test both implementations with same seed
+        rng1 = np.random.default_rng(42)
+        loop_result = sample_loop_based(posterior, rng1)
+
+        rng2 = np.random.default_rng(42)
+        vectorized_result = sample_positions_from_posterior(posterior, rng2)
+
+        # Should produce identical results
+        assert_array_equal(
+            loop_result,
+            vectorized_result,
+            err_msg="Vectorized inverse CDF method should be equivalent to loop-based rng.choice",
+        )
+
 
 class TestGenerateSpikesFromPlaceFields:
     """Tests for generate_spikes_from_place_fields function."""
