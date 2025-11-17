@@ -19,14 +19,25 @@ Candidate figures generated:
 8. Ahead/behind distance analysis
 9. Fragmented state detection
 
+Performance optimization:
+- Model fitting and predictions are cached in data/intermediates/
+- Subsequent runs load from cache unless --recompute is specified
+- This reduces runtime from ~10 minutes to ~30 seconds
+
 Run with:
+    # Use cached results (fast, default)
     uv run python scripts/generate_figure03_candidates.py
+
+    # Force recomputation (slow, ~10 minutes)
+    uv run python scripts/generate_figure03_candidates.py --recompute
 """
 
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
+import joblib
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -202,6 +213,114 @@ def fit_and_predict_models(
         state_dist=cont_frag_results.predictive_posterior.dropna("state_bins").to_numpy(),
         likelihood=np.exp(cont_frag_results.log_likelihood.dropna("state_bins").to_numpy()),
     )
+
+    return (
+        cont_model,
+        cont_frag_model,
+        cont_results,
+        cont_frag_results,
+        cont_hpd_overlap,
+        cont_frag_hpd_overlap,
+    )
+
+
+def save_intermediate_results(
+    cont_model,
+    cont_frag_model,
+    cont_results,
+    cont_frag_results,
+    cont_hpd_overlap: np.ndarray,
+    cont_frag_hpd_overlap: np.ndarray,
+    output_dir: str | Path = "data/intermediates",
+) -> None:
+    """Save intermediate decoding results to disk.
+
+    Parameters
+    ----------
+    cont_model : SortedSpikesDecoder
+        Continuous model.
+    cont_frag_model : ContFragSortedSpikesClassifier
+        Continuous-fragmented model.
+    cont_results : xr.Dataset
+        Continuous model results.
+    cont_frag_results : xr.Dataset
+        Continuous-fragmented model results.
+    cont_hpd_overlap : np.ndarray
+        HPD overlap for continuous model.
+    cont_frag_hpd_overlap : np.ndarray
+        HPD overlap for continuous-fragmented model.
+    output_dir : str or Path, default "data/intermediates"
+        Directory to save intermediate results.
+    """
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    logging.info(f"Saving intermediate results to {output_dir}/...")
+
+    # Save models
+    joblib.dump(cont_model, output_dir / "cont_model.pkl")
+    joblib.dump(cont_frag_model, output_dir / "cont_frag_model.pkl")
+
+    # Save xarray datasets (reset MultiIndex to allow NetCDF serialization)
+    cont_results.reset_index("state_bins").to_netcdf(output_dir / "cont_results.nc")
+    cont_frag_results.reset_index("state_bins").to_netcdf(output_dir / "cont_frag_results.nc")
+
+    # Save HPD overlap arrays
+    np.save(output_dir / "cont_hpd_overlap.npy", cont_hpd_overlap)
+    np.save(output_dir / "cont_frag_hpd_overlap.npy", cont_frag_hpd_overlap)
+
+    logging.info("Intermediate results saved successfully")
+
+
+def load_intermediate_results(
+    input_dir: str | Path = "data/intermediates",
+) -> tuple | None:
+    """Load intermediate decoding results from disk.
+
+    Parameters
+    ----------
+    input_dir : str or Path, default "data/intermediates"
+        Directory containing intermediate results.
+
+    Returns
+    -------
+    results : tuple or None
+        Tuple of (cont_model, cont_frag_model, cont_results, cont_frag_results,
+        cont_hpd_overlap, cont_frag_hpd_overlap) if all files exist, None otherwise.
+    """
+    input_dir = Path(input_dir)
+
+    # Check if all required files exist
+    required_files = [
+        "cont_model.pkl",
+        "cont_frag_model.pkl",
+        "cont_results.nc",
+        "cont_frag_results.nc",
+        "cont_hpd_overlap.npy",
+        "cont_frag_hpd_overlap.npy",
+    ]
+
+    if not all((input_dir / f).exists() for f in required_files):
+        logging.info("Intermediate results not found, will compute from scratch")
+        return None
+
+    logging.info(f"Loading intermediate results from {input_dir}/...")
+
+    # Load models
+    cont_model = joblib.load(input_dir / "cont_model.pkl")
+    cont_frag_model = joblib.load(input_dir / "cont_frag_model.pkl")
+
+    # Load xarray datasets
+    import xarray as xr
+
+    cont_results = xr.load_dataset(input_dir / "cont_results.nc")
+    cont_frag_results = xr.load_dataset(input_dir / "cont_frag_results.nc")
+
+    # Load HPD overlap arrays
+    cont_hpd_overlap = np.load(input_dir / "cont_hpd_overlap.npy")
+    cont_frag_hpd_overlap = np.load(input_dir / "cont_frag_hpd_overlap.npy")
+
+    logging.info("Intermediate results loaded successfully")
 
     return (
         cont_model,
@@ -1012,8 +1131,15 @@ def generate_fragmented_state_figures(
         plt.close(fig)
 
 
-def main() -> None:
-    """Generate all candidate figures for Figure 3."""
+def main(recompute: bool = False) -> None:
+    """Generate all candidate figures for Figure 3.
+
+    Parameters
+    ----------
+    recompute : bool, default False
+        If True, recompute decoder models and predictions even if cached
+        intermediate results exist. If False, load from cache if available.
+    """
     set_figure_defaults()
 
     # Load and prepare data
@@ -1028,17 +1154,42 @@ def main() -> None:
         edge_spacing,
     ) = load_and_prepare_data()
 
-    # Fit models and generate predictions
-    (
-        cont_model,
-        cont_frag_model,
-        cont_results,
-        cont_frag_results,
-        cont_hpd_overlap,
-        cont_frag_hpd_overlap,
-    ) = fit_and_predict_models(
-        spike_times, position_2d, time, track_graph, edge_order, edge_spacing
-    )
+    # Try to load intermediate results (unless recompute is requested)
+    if not recompute:
+        loaded_results = load_intermediate_results()
+        if loaded_results is not None:
+            (
+                cont_model,
+                cont_frag_model,
+                cont_results,
+                cont_frag_results,
+                cont_hpd_overlap,
+                cont_frag_hpd_overlap,
+            ) = loaded_results
+        else:
+            recompute = True
+
+    # Fit models and generate predictions if needed
+    if recompute:
+        (
+            cont_model,
+            cont_frag_model,
+            cont_results,
+            cont_frag_results,
+            cont_hpd_overlap,
+            cont_frag_hpd_overlap,
+        ) = fit_and_predict_models(
+            spike_times, position_2d, time, track_graph, edge_order, edge_spacing
+        )
+        # Save for future runs
+        save_intermediate_results(
+            cont_model,
+            cont_frag_model,
+            cont_results,
+            cont_frag_results,
+            cont_hpd_overlap,
+            cont_frag_hpd_overlap,
+        )
 
     # Generate all candidate figures
     generate_overlap_distribution_figures(cont_hpd_overlap, cont_frag_hpd_overlap)
@@ -1120,4 +1271,25 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Generate candidate figures for Figure 3",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Use cached results if available (default)
+  python scripts/generate_figure03_candidates.py
+
+  # Force recomputation of models and predictions
+  python scripts/generate_figure03_candidates.py --recompute
+        """,
+    )
+    parser.add_argument(
+        "--recompute",
+        action="store_true",
+        help="Recompute decoder models and predictions even if cached results exist",
+    )
+    args = parser.parse_args()
+
+    main(recompute=args.recompute)
