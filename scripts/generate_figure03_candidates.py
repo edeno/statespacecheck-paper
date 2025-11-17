@@ -49,7 +49,7 @@ from non_local_detector.models import (
     SortedSpikesDecoder,
 )
 from scipy.ndimage import label
-from statespacecheck import hpd_overlap
+from statespacecheck import hpd_overlap, kl_divergence
 from track_linearization import get_linearized_position
 
 from statespacecheck_paper.load_local_data import load_neural_recording_from_files
@@ -160,10 +160,10 @@ def fit_and_predict_models(
         Continuous model results.
     cont_frag_results : xr.Dataset
         Continuous-fragmented model results.
-    cont_hpd_overlap : np.ndarray
-        HPD overlap for continuous model.
-    cont_frag_hpd_overlap : np.ndarray
-        HPD overlap for continuous-fragmented model.
+    diagnostics : pd.DataFrame
+        DataFrame with diagnostic metrics (HPD overlap, KL divergence) for both models.
+        Columns: cont_hpd_overlap, cont_kl_divergence, cont_frag_hpd_overlap,
+        cont_frag_kl_divergence.
     """
     logging.info("Creating environment...")
     env = Environment(
@@ -204,14 +204,37 @@ def fit_and_predict_models(
         return_outputs=["log_likelihood", "predictive_posterior"],
     )
 
-    logging.info("Computing HPD overlap...")
+    logging.info("Computing diagnostics (HPD overlap and KL divergence)...")
+
+    # Continuous model diagnostics
     cont_hpd_overlap = hpd_overlap(
         state_dist=cont_results.predictive_posterior.dropna("state_bins").to_numpy(),
         likelihood=np.exp(cont_results.log_likelihood.dropna("state_bins").to_numpy()),
     )
+    cont_kl_div = kl_divergence(
+        state_dist=cont_results.predictive_posterior.dropna("state_bins").to_numpy(),
+        likelihood=np.exp(cont_results.log_likelihood.dropna("state_bins").to_numpy()),
+    )
+
+    # Continuous-fragmented model diagnostics
     cont_frag_hpd_overlap = hpd_overlap(
         state_dist=cont_frag_results.predictive_posterior.dropna("state_bins").to_numpy(),
         likelihood=np.exp(cont_frag_results.log_likelihood.dropna("state_bins").to_numpy()),
+    )
+    cont_frag_kl_div = kl_divergence(
+        state_dist=cont_frag_results.predictive_posterior.dropna("state_bins").to_numpy(),
+        likelihood=np.exp(cont_frag_results.log_likelihood.dropna("state_bins").to_numpy()),
+    )
+
+    # Create DataFrame with all diagnostics
+    diagnostics = pd.DataFrame(
+        {
+            "cont_hpd_overlap": cont_hpd_overlap,
+            "cont_kl_divergence": cont_kl_div,
+            "cont_frag_hpd_overlap": cont_frag_hpd_overlap,
+            "cont_frag_kl_divergence": cont_frag_kl_div,
+        },
+        index=time,
     )
 
     return (
@@ -219,8 +242,7 @@ def fit_and_predict_models(
         cont_frag_model,
         cont_results,
         cont_frag_results,
-        cont_hpd_overlap,
-        cont_frag_hpd_overlap,
+        diagnostics,
     )
 
 
@@ -229,8 +251,7 @@ def save_intermediate_results(
     cont_frag_model,
     cont_results,
     cont_frag_results,
-    cont_hpd_overlap: np.ndarray,
-    cont_frag_hpd_overlap: np.ndarray,
+    diagnostics: pd.DataFrame,
     output_dir: str | Path = "data/intermediates",
 ) -> None:
     """Save intermediate decoding results to disk.
@@ -245,10 +266,10 @@ def save_intermediate_results(
         Continuous model results.
     cont_frag_results : xr.Dataset
         Continuous-fragmented model results.
-    cont_hpd_overlap : np.ndarray
-        HPD overlap for continuous model.
-    cont_frag_hpd_overlap : np.ndarray
-        HPD overlap for continuous-fragmented model.
+    diagnostics : pd.DataFrame
+        DataFrame with diagnostic metrics (HPD overlap, KL divergence) for both models.
+        Columns: cont_hpd_overlap, cont_kl_divergence, cont_frag_hpd_overlap,
+        cont_frag_kl_divergence.
     output_dir : str or Path, default "data/intermediates"
         Directory to save intermediate results.
     """
@@ -265,9 +286,8 @@ def save_intermediate_results(
     cont_results.reset_index("state_bins").to_netcdf(output_dir / "cont_results.nc")
     cont_frag_results.reset_index("state_bins").to_netcdf(output_dir / "cont_frag_results.nc")
 
-    # Save HPD overlap arrays
-    np.save(output_dir / "cont_hpd_overlap.npy", cont_hpd_overlap)
-    np.save(output_dir / "cont_frag_hpd_overlap.npy", cont_frag_hpd_overlap)
+    # Save diagnostics DataFrame
+    diagnostics.to_pickle(output_dir / "diagnostics.pkl")
 
     logging.info("Intermediate results saved successfully")
 
@@ -286,7 +306,9 @@ def load_intermediate_results(
     -------
     results : tuple or None
         Tuple of (cont_model, cont_frag_model, cont_results, cont_frag_results,
-        cont_hpd_overlap, cont_frag_hpd_overlap) if all files exist, None otherwise.
+        diagnostics) if all files exist, None otherwise.
+        diagnostics is a pd.DataFrame with columns: cont_hpd_overlap,
+        cont_kl_divergence, cont_frag_hpd_overlap, cont_frag_kl_divergence.
     """
     input_dir = Path(input_dir)
 
@@ -296,8 +318,7 @@ def load_intermediate_results(
         "cont_frag_model.pkl",
         "cont_results.nc",
         "cont_frag_results.nc",
-        "cont_hpd_overlap.npy",
-        "cont_frag_hpd_overlap.npy",
+        "diagnostics.pkl",
     ]
 
     if not all((input_dir / f).exists() for f in required_files):
@@ -316,9 +337,8 @@ def load_intermediate_results(
     cont_results = xr.load_dataset(input_dir / "cont_results.nc")
     cont_frag_results = xr.load_dataset(input_dir / "cont_frag_results.nc")
 
-    # Load HPD overlap arrays
-    cont_hpd_overlap = np.load(input_dir / "cont_hpd_overlap.npy")
-    cont_frag_hpd_overlap = np.load(input_dir / "cont_frag_hpd_overlap.npy")
+    # Load diagnostics DataFrame
+    diagnostics = pd.read_pickle(input_dir / "diagnostics.pkl")
 
     logging.info("Intermediate results loaded successfully")
 
@@ -327,8 +347,7 @@ def load_intermediate_results(
         cont_frag_model,
         cont_results,
         cont_frag_results,
-        cont_hpd_overlap,
-        cont_frag_hpd_overlap,
+        diagnostics,
     )
 
 
@@ -1163,8 +1182,7 @@ def main(recompute: bool = False) -> None:
                 cont_frag_model,
                 cont_results,
                 cont_frag_results,
-                cont_hpd_overlap,
-                cont_frag_hpd_overlap,
+                diagnostics,
             ) = loaded_results
         else:
             recompute = True
@@ -1176,8 +1194,7 @@ def main(recompute: bool = False) -> None:
             cont_frag_model,
             cont_results,
             cont_frag_results,
-            cont_hpd_overlap,
-            cont_frag_hpd_overlap,
+            diagnostics,
         ) = fit_and_predict_models(
             spike_times, position_2d, time, track_graph, edge_order, edge_spacing
         )
@@ -1187,9 +1204,12 @@ def main(recompute: bool = False) -> None:
             cont_frag_model,
             cont_results,
             cont_frag_results,
-            cont_hpd_overlap,
-            cont_frag_hpd_overlap,
+            diagnostics,
         )
+
+    # Extract diagnostic arrays from DataFrame for figure generation
+    cont_hpd_overlap = diagnostics["cont_hpd_overlap"].values
+    cont_frag_hpd_overlap = diagnostics["cont_frag_hpd_overlap"].values
 
     # Generate all candidate figures
     generate_overlap_distribution_figures(cont_hpd_overlap, cont_frag_hpd_overlap)
