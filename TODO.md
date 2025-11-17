@@ -13,3 +13,4 @@
 - [ ] Convert code showing integration error to a script. Decide whether it is main text or supplement figure.
 - [ ] Compute kl divergence and predictive checks for real data example
 - [ ] Reframe intro to focus on predictive distribution
+- [ ] Fix p-value computation in figure 2 script for subplots b-d
