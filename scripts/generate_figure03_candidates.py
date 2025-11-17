@@ -36,11 +36,13 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Any
 
 import joblib
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import xarray as xr
 from non_local_detector import Environment
 from non_local_detector.analysis import get_ahead_behind_distance, get_trajectory_data
 from non_local_detector.likelihoods.common import get_spikecount_per_time_bin
@@ -48,6 +50,7 @@ from non_local_detector.models import (
     ContFragSortedSpikesClassifier,
     SortedSpikesDecoder,
 )
+from numpy.typing import NDArray
 from scipy.ndimage import label
 from statespacecheck import hpd_overlap, kl_divergence
 from track_linearization import get_linearized_position
@@ -69,8 +72,27 @@ from statespacecheck_paper.style import save_figure, set_figure_defaults
 FORMAT = "%(asctime)s %(message)s"
 logging.basicConfig(level="INFO", format=FORMAT, datefmt="%d-%b-%y %H:%M:%S")
 
+# Constants for analysis parameters
+EXAMPLE_CONTEXT_SAMPLES = 500  # Context window for example figures (1 second at 500 Hz)
+LOW_OVERLAP_THRESHOLD = 0.2  # Threshold for detecting very poor model fit
+MODERATE_OVERLAP_THRESHOLD = 0.5  # Threshold for detecting moderate fit issues
+MIN_SUSTAINED_DURATION_SEC = 0.010  # Minimum duration for sustained regions (10ms)
+MIN_FRAGMENTED_SAMPLES = 5  # Minimum samples for fragmented state detection
+SAMPLING_FREQUENCY = 500  # Sampling frequency in Hz
+N_OVERLAP_EXAMPLES = 3  # Number of example figures to generate
+N_SUSTAINED_REGIONS = 10  # Number of sustained regions to plot
 
-def load_and_prepare_data() -> tuple:
+
+def load_and_prepare_data() -> tuple[
+    pd.Index,
+    NDArray[np.float64],
+    NDArray[np.float64],
+    pd.DataFrame,
+    list[NDArray[np.float64]],
+    Any,
+    list[tuple[Any, Any]],
+    float,
+]:
     """Load neural data and prepare for analysis.
 
     Returns
@@ -126,13 +148,19 @@ def load_and_prepare_data() -> tuple:
 
 
 def fit_and_predict_models(
-    spike_times: list,
-    position_2d: np.ndarray,
+    spike_times: list[NDArray[np.float64]],
+    position_2d: NDArray[np.float64],
     time: pd.Index,
-    track_graph,
-    edge_order: list,
+    track_graph: Any,
+    edge_order: list[tuple[Any, Any]],
     edge_spacing: float,
-) -> tuple:
+) -> tuple[
+    SortedSpikesDecoder,
+    ContFragSortedSpikesClassifier,
+    xr.Dataset,
+    xr.Dataset,
+    pd.DataFrame,
+]:
     """Fit decoder models and generate predictions.
 
     Parameters
@@ -247,10 +275,10 @@ def fit_and_predict_models(
 
 
 def save_intermediate_results(
-    cont_model,
-    cont_frag_model,
-    cont_results,
-    cont_frag_results,
+    cont_model: SortedSpikesDecoder,
+    cont_frag_model: ContFragSortedSpikesClassifier,
+    cont_results: xr.Dataset,
+    cont_frag_results: xr.Dataset,
     diagnostics: pd.DataFrame,
     output_dir: str | Path = "data/intermediates",
 ) -> None:
@@ -294,7 +322,16 @@ def save_intermediate_results(
 
 def load_intermediate_results(
     input_dir: str | Path = "data/intermediates",
-) -> tuple | None:
+) -> (
+    tuple[
+        SortedSpikesDecoder,
+        ContFragSortedSpikesClassifier,
+        xr.Dataset,
+        xr.Dataset,
+        pd.DataFrame,
+    ]
+    | None
+):
     """Load intermediate decoding results from disk.
 
     Parameters
@@ -328,17 +365,29 @@ def load_intermediate_results(
     logging.info(f"Loading intermediate results from {input_dir}/...")
 
     # Load models
-    cont_model = joblib.load(input_dir / "cont_model.pkl")
-    cont_frag_model = joblib.load(input_dir / "cont_frag_model.pkl")
+    cont_model: SortedSpikesDecoder = joblib.load(input_dir / "cont_model.pkl")
+    cont_frag_model: ContFragSortedSpikesClassifier = joblib.load(input_dir / "cont_frag_model.pkl")
 
     # Load xarray datasets
-    import xarray as xr
-
-    cont_results = xr.load_dataset(input_dir / "cont_results.nc")
-    cont_frag_results = xr.load_dataset(input_dir / "cont_frag_results.nc")
+    cont_results: xr.Dataset = xr.load_dataset(input_dir / "cont_results.nc")
+    cont_frag_results: xr.Dataset = xr.load_dataset(input_dir / "cont_frag_results.nc")
 
     # Load diagnostics DataFrame
-    diagnostics = pd.read_pickle(input_dir / "diagnostics.pkl")
+    diagnostics: pd.DataFrame = pd.read_pickle(input_dir / "diagnostics.pkl")
+
+    # Validate diagnostics DataFrame structure
+    expected_columns = {
+        "cont_hpd_overlap",
+        "cont_kl_divergence",
+        "cont_frag_hpd_overlap",
+        "cont_frag_kl_divergence",
+    }
+    if not expected_columns.issubset(diagnostics.columns):
+        missing = expected_columns - set(diagnostics.columns)
+        raise ValueError(
+            f"Diagnostics DataFrame missing required columns: {missing}. "
+            f"Delete {input_dir}/ and rerun with --recompute flag."
+        )
 
     logging.info("Intermediate results loaded successfully")
 
@@ -352,8 +401,8 @@ def load_intermediate_results(
 
 
 def generate_overlap_distribution_figures(
-    cont_hpd_overlap: np.ndarray,
-    cont_frag_hpd_overlap: np.ndarray,
+    cont_hpd_overlap: NDArray[np.float64],
+    cont_frag_hpd_overlap: NDArray[np.float64],
 ) -> None:
     """Generate HPD overlap distribution comparison figures.
 
@@ -373,7 +422,7 @@ def generate_overlap_distribution_figures(
     ax1 = plt.subplot(1, 2, 1)
     ax1.hist(
         cont_hpd_overlap,
-        bins=bins,
+        bins=bins.tolist(),
         alpha=0.7,
         label="Continuous",
         color="tab:blue",
@@ -382,7 +431,7 @@ def generate_overlap_distribution_figures(
     )
     ax1.hist(
         cont_frag_hpd_overlap,
-        bins=bins,
+        bins=bins.tolist(),
         alpha=0.7,
         label="ContFrag",
         color="tab:orange",
@@ -399,7 +448,7 @@ def generate_overlap_distribution_figures(
     diff_bins = np.linspace(-1, 1, 70)
     ax2.hist(
         cont_frag_hpd_overlap - cont_hpd_overlap,
-        bins=diff_bins,
+        bins=diff_bins.tolist(),
         density=True,
         color="tab:green",
         alpha=0.7,
@@ -451,15 +500,15 @@ def generate_overlap_distribution_figures(
 
 
 def generate_lowest_overlap_examples(
-    cont_hpd_overlap: np.ndarray,
-    cont_frag_hpd_overlap: np.ndarray,
+    cont_hpd_overlap: NDArray[np.float64],
+    cont_frag_hpd_overlap: NDArray[np.float64],
     time: pd.Index,
-    position: np.ndarray,
-    spike_times: list,
-    cont_model,
-    cont_frag_model,
-    cont_results,
-    cont_frag_results,
+    position: NDArray[np.float64],
+    spike_times: list[NDArray[np.float64]],
+    cont_model: Any,
+    cont_frag_model: Any,
+    cont_results: Any,
+    cont_frag_results: Any,
 ) -> None:
     """Generate figures showing lowest HPD overlap examples.
 
@@ -533,15 +582,15 @@ def generate_lowest_overlap_examples(
 
 
 def generate_highest_difference_examples(
-    cont_hpd_overlap: np.ndarray,
-    cont_frag_hpd_overlap: np.ndarray,
+    cont_hpd_overlap: NDArray[np.float64],
+    cont_frag_hpd_overlap: NDArray[np.float64],
     time: pd.Index,
-    position: np.ndarray,
-    spike_times: list,
-    cont_model,
-    cont_frag_model,
-    cont_results,
-    cont_frag_results,
+    position: NDArray[np.float64],
+    spike_times: list[NDArray[np.float64]],
+    cont_model: Any,
+    cont_frag_model: Any,
+    cont_results: Any,
+    cont_frag_results: Any,
 ) -> None:
     """Generate figures showing highest difference examples.
 
@@ -650,15 +699,15 @@ def generate_highest_difference_examples(
 
 
 def generate_sustained_region_figures(
-    cont_hpd_overlap: np.ndarray,
-    cont_frag_hpd_overlap: np.ndarray,
+    cont_hpd_overlap: NDArray[np.float64],
+    cont_frag_hpd_overlap: NDArray[np.float64],
     time: pd.Index,
-    position: np.ndarray,
-    spike_times: list,
-    cont_model,
-    cont_frag_model,
-    cont_results,
-    cont_frag_results,
+    position: NDArray[np.float64],
+    spike_times: list[NDArray[np.float64]],
+    cont_model: Any,
+    cont_frag_model: Any,
+    cont_results: Any,
+    cont_frag_results: Any,
 ) -> None:
     """Generate figures for sustained poor overlap regions.
 
@@ -756,10 +805,10 @@ def generate_sustained_region_figures(
 
 
 def generate_covariate_figures(
-    cont_hpd_overlap: np.ndarray,
-    cont_frag_hpd_overlap: np.ndarray,
+    cont_hpd_overlap: NDArray[np.float64],
+    cont_frag_hpd_overlap: NDArray[np.float64],
     position_info: pd.DataFrame,
-    spike_times: list,
+    spike_times: list[NDArray[np.float64]],
     time: pd.Index,
 ) -> None:
     """Generate HPD overlap vs covariate figures.
@@ -898,12 +947,12 @@ def generate_covariate_figures(
 
 
 def generate_mechanics_figures(
-    cont_results,
-    spike_times: list,
+    cont_results: Any,
+    spike_times: list[NDArray[np.float64]],
     time: pd.Index,
-    cont_hpd_overlap: np.ndarray,
-    track_graph,
-    edge_order: list,
+    cont_hpd_overlap: NDArray[np.float64],
+    track_graph: Any,
+    edge_order: list[tuple[Any, Any]],
     edge_spacing: float,
 ) -> None:
     """Generate HPD overlap mechanics figures at specific timepoints.
@@ -950,14 +999,14 @@ def generate_mechanics_figures(
 
 
 def generate_ahead_behind_figures(
-    cont_results,
-    cont_frag_results,
-    cont_hpd_overlap: np.ndarray,
-    cont_frag_hpd_overlap: np.ndarray,
+    cont_results: Any,
+    cont_frag_results: Any,
+    cont_hpd_overlap: NDArray[np.float64],
+    cont_frag_hpd_overlap: NDArray[np.float64],
     position_info: pd.DataFrame,
-    track_graph,
-    cont_model,
-    cont_frag_model,
+    track_graph: Any,
+    cont_model: Any,
+    cont_frag_model: Any,
 ) -> None:
     """Generate ahead/behind distance analysis figures.
 
@@ -1078,15 +1127,15 @@ def generate_ahead_behind_figures(
 
 
 def generate_fragmented_state_figures(
-    cont_frag_results,
+    cont_frag_results: Any,
     time: pd.Index,
-    position: np.ndarray,
-    spike_times: list,
-    cont_model,
-    cont_frag_model,
-    cont_results,
-    cont_hpd_overlap: np.ndarray,
-    cont_frag_hpd_overlap: np.ndarray,
+    position: NDArray[np.float64],
+    spike_times: list[NDArray[np.float64]],
+    cont_model: Any,
+    cont_frag_model: Any,
+    cont_results: Any,
+    cont_hpd_overlap: NDArray[np.float64],
+    cont_frag_hpd_overlap: NDArray[np.float64],
 ) -> None:
     """Generate fragmented state detection figures.
 
