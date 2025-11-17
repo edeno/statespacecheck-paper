@@ -88,6 +88,9 @@ module = [
     "spyglass.*",
     "track_linearization.*",
     "statespacecheck.*",
+    "joblib.*",
+    "xarray.*",
+    "non_local_detector.*",
 ]
 ignore_missing_imports = true
 
