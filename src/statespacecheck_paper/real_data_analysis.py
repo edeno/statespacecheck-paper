@@ -15,8 +15,6 @@ Examples
 
 from __future__ import annotations
 
-from typing import cast
-
 import numpy as np
 from numpy.typing import NDArray
 from scipy.ndimage import gaussian_filter1d, label
@@ -60,16 +58,15 @@ def gaussian_smooth(
     >>> smoothed.shape
     (1000,)
     """
-    return cast(
-        NDArray[np.float64],
-        gaussian_filter1d(
-            data,
-            sigma * sampling_frequency,
-            truncate=truncate,
-            axis=axis,
-            mode="constant",
-        ),
+    # scipy.ndimage.gaussian_filter1d preserves input dtype
+    result: NDArray[np.float64] = gaussian_filter1d(
+        data,
+        sigma * sampling_frequency,
+        truncate=truncate,
+        axis=axis,
+        mode="constant",
     )
+    return result
 
 
 def get_multiunit_population_firing_rate(

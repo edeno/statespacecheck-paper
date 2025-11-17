@@ -16,7 +16,7 @@ Examples
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Any
 
 import matplotlib.pyplot as plt
 import networkx as nx
@@ -25,7 +25,6 @@ import pandas as pd
 import xarray as xr
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
-from matplotlib.image import AxesImage
 from non_local_detector.model_checking.highest_posterior_density import (
     get_highest_posterior_threshold,
 )
@@ -95,7 +94,7 @@ def plot_posterior(
     title: str | None = None,
     scatter_kwargs: dict[str, Any] | None = None,
     **plot_kwargs: Any,
-) -> AxesImage:
+) -> Any:
     """Plot posterior probability as an image with position trace overlay.
 
     Parameters
@@ -119,8 +118,8 @@ def plot_posterior(
 
     Returns
     -------
-    im : matplotlib.image.AxesImage
-        The image object from the plot.
+    im : matplotlib artist
+        The plot artist (QuadMesh, AxesImage, etc.) returned by xarray.plot().
 
     Examples
     --------
@@ -171,7 +170,7 @@ def plot_posterior(
         ax.set_title(title)
     ax.set_ylabel("Position")
 
-    return cast(AxesImage, im)
+    return im
 
 
 def plot_overlap_regions(
@@ -360,7 +359,7 @@ def plot_model_checking(
     cont_hpd_overlap: NDArray[np.float64],
     cont_frag_hpd_overlap: NDArray[np.float64],
     overlap_threshold: float = 0.2,
-) -> tuple[Figure, np.ndarray[Any, Any]]:
+) -> tuple[Figure, NDArray[np.object_]]:
     """Create comprehensive model checking figure comparing two models.
 
     Parameters
