@@ -396,15 +396,15 @@ def decode_and_diagnostics(
     -------
     results : dict[str, NDArray]
         Dictionary containing:
-        - 'post' : np.ndarray, shape (n_time, n_bins)
+        - 'posterior' : np.ndarray, shape (n_time, n_bins)
             Posterior distribution at each timestep.
-        - 'HPDO' : np.ndarray, shape (n_time,)
+        - 'hpd_overlap' : np.ndarray, shape (n_time,)
             HPD overlap between prior and combined likelihood.
             NaN at t=0 (no prior available).
-        - 'KL' : np.ndarray, shape (n_time,)
+        - 'kl_divergence' : np.ndarray, shape (n_time,)
             KL divergence from prior to combined likelihood.
             NaN at t=0 (no prior available).
-        - 'spikeProb' : np.ndarray, shape (n_time, n_cells)
+        - 'spike_prob' : np.ndarray, shape (n_time, n_cells)
             Spike probability for each cell at each timestep.
             NaN for cells with zero spikes (no observation to evaluate).
 
@@ -558,9 +558,9 @@ def compute_thresholds(
     ----------
     metrics : dict[str, NDArray]
         Dictionary containing diagnostic metrics:
-        - 'HPDO' : np.ndarray, shape (n_time,)
-        - 'KL' : np.ndarray, shape (n_time,)
-        - 'spikeProb' : np.ndarray (not used, threshold is fixed)
+        - 'hpd_overlap' : np.ndarray, shape (n_time,)
+        - 'kl_divergence' : np.ndarray, shape (n_time,)
+        - 'spike_prob' : np.ndarray (not used, threshold is fixed)
     baseline_end : int, default 60_000
         Index marking end of baseline period (exclusive).
 
@@ -573,9 +573,9 @@ def compute_thresholds(
     --------
     >>> import numpy as np
     >>> metrics = {
-    ...     'HPDO': np.random.uniform(0.5, 1.0, 100),
-    ...     'KL': np.random.uniform(0.0, 2.0, 100),
-    ...     'spikeProb': np.random.uniform(0.0, 0.5, (100, 10)),
+    ...     'hpd_overlap': np.random.uniform(0.5, 1.0, 100),
+    ...     'kl_divergence': np.random.uniform(0.0, 2.0, 100),
+    ...     'spike_prob': np.random.uniform(0.0, 0.5, (100, 10)),
     ... }
     >>> thresholds = compute_thresholds(metrics, baseline_end=50)
     >>> thresholds.spike_prob
@@ -656,9 +656,9 @@ def transform_metrics(
     ----------
     metrics : dict[str, NDArray]
         Dictionary containing diagnostic metrics:
-        - 'HPDO' : np.ndarray, shape (n_time,)
-        - 'KL' : np.ndarray, shape (n_time,)
-        - 'spikeProb' : np.ndarray, shape (n_time, n_cells)
+        - 'hpd_overlap' : np.ndarray, shape (n_time,)
+        - 'kl_divergence' : np.ndarray, shape (n_time,)
+        - 'spike_prob' : np.ndarray, shape (n_time, n_cells)
     thresholds : Thresholds
         Threshold values for each diagnostic metric.
     eps1 : float, default 1e-2
@@ -679,9 +679,9 @@ def transform_metrics(
     --------
     >>> import numpy as np
     >>> metrics = {
-    ...     'HPDO': np.array([0.5, 0.8, 0.9]),
-    ...     'KL': np.array([1.0, 4.0, 9.0]),
-    ...     'spikeProb': np.array([[0.1, 0.2], [0.3, 0.4], [0.5, 0.6]]),
+    ...     'hpd_overlap': np.array([0.5, 0.8, 0.9]),
+    ...     'kl_divergence': np.array([1.0, 4.0, 9.0]),
+    ...     'spike_prob': np.array([[0.1, 0.2], [0.3, 0.4], [0.5, 0.6]]),
     ... }
     >>> thresholds = Thresholds(hpd_overlap=0.6, kl_divergence=5.0, spike_prob=0.05)
     >>> transformed = transform_metrics(metrics, thresholds)
