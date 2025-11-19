@@ -85,7 +85,11 @@ def sample_positions_from_posterior(
     # values fall in the CDF. This is ~18x faster than looping over rng.choice().
     cumsum = np.cumsum(posterior_norm, axis=1)
     uniform = rng.random((n_time, 1))
-    position_indices: NDArray[np.int64] = np.sum(uniform > cumsum, axis=1).astype(np.int64)
+    position_indices_raw = np.sum(uniform > cumsum, axis=1)
+    # Clamp to valid range [0, n_bins-1] to handle numerical precision issues
+    position_indices: NDArray[np.int64] = np.clip(position_indices_raw, 0, n_bins - 1).astype(
+        np.int64
+    )
 
     return position_indices
 
