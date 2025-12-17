@@ -220,18 +220,21 @@ def draw_spikes_inset(
 
     inset = fig.add_axes([left_fig, bottom_fig, width_fig, height_fig])
 
-    # Generate spike times
-    for i in range(n_cells):
+    # Generate spike times for each cell
+    spike_data = []
+    for _i in range(n_cells):
         n_spikes = rng.integers(2, 8)
         spike_times = rng.uniform(0, 1, n_spikes)
-        inset.scatter(
-            spike_times,
-            [i] * n_spikes,
-            marker="|",
-            s=30,
-            color="black",
-            linewidths=1,
-        )
+        spike_data.append(spike_times)
+
+    # Use eventplot for proper raster display
+    inset.eventplot(
+        spike_data,
+        lineoffsets=range(n_cells),
+        linelengths=0.6,
+        linewidths=0.8,
+        colors="black",
+    )
 
     inset.set_xlim(-0.1, 1.1)
     inset.set_ylim(-0.5, n_cells - 0.5)
@@ -311,7 +314,7 @@ def create_figure() -> None:
 
     arrow_start = (x_curr_pos[0], x_curr_pos[1] - node_radius - 0.05)
     arrow_end = (y_obs_pos[0], y_obs_pos[1] + node_radius + 0.05)
-    draw_arrow(ax, arrow_start, arrow_end, label=r"$p(y_t|x_t)$", color="black")
+    draw_arrow(ax, arrow_start, arrow_end, color="black")
 
     # Spikes below y_t (further from node for spacing)
     draw_spikes_inset(
