@@ -308,8 +308,8 @@ def _draw_graphical_model(
     if rng is None:
         rng = np.random.default_rng(42)
 
-    ax.set_xlim(-0.5, 7.5)  # Reduced from 9.5 - content ends around 7
-    ax.set_ylim(2.5, 6.7)  # Tighter fit - title at 6.6
+    ax.set_xlim(-0.5, 7.5)  # Content ends around 7
+    ax.set_ylim(2.5, 6.6)  # Content tops at 6.6, title via set_title()
     ax.axis("off")
 
     node_radius = 0.38
@@ -469,16 +469,8 @@ def _draw_graphical_model(
         label="Current\nSpikes",
     )
 
-    # Title
-    ax.text(
-        (x_prev_pos[0] + x_curr_pos[0]) / 2,
-        6.6,
-        "State Space Model",
-        ha="center",
-        va="bottom",
-        fontsize=8,
-        fontweight="bold",
-    )
+    # Title (using set_title for consistent positioning across panels)
+    ax.set_title("State Space Model", fontsize=8, fontweight="bold", pad=4)
 
     # Time direction indicator
     ax.text(
@@ -506,8 +498,8 @@ def _draw_equation_boxes(ax: Axes) -> None:
     ax : matplotlib.axes.Axes
         The axes to draw on.
     """
-    ax.set_xlim(-0.5, 7.5)  # Reduced from 9.5 - content ends around 7.15
-    ax.set_ylim(-0.95, 2.6)  # Room for title at 2.3
+    ax.set_xlim(-0.5, 7.5)  # Content ends around 7.15
+    ax.set_ylim(-0.95, 2.35)  # Content tops at ~2.3, title via set_title()
     ax.axis("off")
 
     # ==========================================================================
@@ -740,16 +732,8 @@ def _draw_equation_boxes(ax: Axes) -> None:
         color="#666666",
     )
 
-    # Title
-    ax.text(
-        box_center_x,
-        2.55,
-        "Recursive Estimation Algorithm",
-        ha="center",
-        va="bottom",
-        fontsize=8,
-        fontweight="bold",
-    )
+    # Title (using set_title for consistent positioning across panels)
+    ax.set_title("Recursive Estimation Algorithm", fontsize=8, fontweight="bold", pad=4)
 
 
 # =============================================================================
@@ -950,11 +934,27 @@ def create_figure() -> None:
     # Panel B: Equation boxes spans all columns in middle row
     axes["B"] = fig.add_subplot(gs[1, :])
 
-    # Panel C (sub-panels): Distribution panels
-    axes["C1"] = fig.add_subplot(gs[2, 0])
-    axes["C2"] = fig.add_subplot(gs[2, 1])
-    axes["C3"] = fig.add_subplot(gs[2, 2])
-    axes["C4"] = fig.add_subplot(gs[2, 3])
+    # Panel C: Create spanning axes for title, then sub-panels for content
+    # The spanning axes is invisible but holds the "Goodness-of-Fit" title
+    axes["C"] = fig.add_subplot(gs[2, :])
+    axes["C"].axis("off")
+    axes["C"].set_title("Goodness-of-Fit", fontsize=8, fontweight="bold", pad=4)
+
+    # Sub-panels for distribution plots (using inset_axes for precise positioning)
+    # Calculate sub-panel positions within the spanning axes
+    sub_width = 0.23  # Width of each sub-panel as fraction of parent
+    sub_gap = 0.02  # Gap between sub-panels
+    sub_left_positions = [i * (sub_width + sub_gap) + 0.02 for i in range(4)]
+
+    for i, key in enumerate(["C1", "C2", "C3", "C4"]):
+        axes[key] = inset_axes(
+            axes["C"],
+            width="100%",
+            height="100%",
+            bbox_to_anchor=(sub_left_positions[i], 0.0, sub_width, 0.85),
+            bbox_transform=axes["C"].transAxes,
+            borderpad=0,
+        )
 
     # =========================================================================
     # Panel A: Graphical model
@@ -1016,45 +1016,23 @@ def create_figure() -> None:
     # Draw canvas to finalize constrained_layout positions before querying them
     fig.canvas.draw()
 
-    # Add Panel C title above the sub-panels
-    c_panels_left = axes["C1"].get_position().x0
-    c_panels_right = axes["C4"].get_position().x1
-    c_panels_top = axes["C1"].get_position().y1
-    c_panels_bottom = axes["C1"].get_position().y0
-    fig.text(
-        (c_panels_left + c_panels_right) / 2,
-        c_panels_top + 0.025,
-        "Goodness-of-Fit",
-        ha="center",
-        va="bottom",
-        fontsize=8,
-        fontweight="bold",
-    )
-
     # Add shared x-axis label for Panel C
-    # Position below the center of the four sub-panels
+    c_pos = axes["C"].get_position()
     fig.text(
-        (c_panels_left + c_panels_right) / 2,
-        c_panels_bottom - 0.02,
+        (c_pos.x0 + c_pos.x1) / 2,
+        c_pos.y0 - 0.02,
         "Latent state",
         ha="center",
         va="top",
         fontsize=7,
     )
 
-    # Add panel labels using fig.text() at consistent x position
-    # Use panel C1's left edge as reference - it has content starting at the left edge
-    label_x = axes["C1"].get_position().x0 - 0.02
-    # For "c", position above the "Goodness-of-Fit" title (which is at c_panels_top + 0.025)
-    c_title_y = c_panels_top + 0.025
-    for label, ax_key, y_offset in [
-        ("a", "A", 0.01),
-        ("b", "B", 0.01),
-        ("c", "C1", c_title_y - axes["C1"].get_position().y1 + 0.02),
-    ]:
+    # Add panel labels (a, b, c) - now consistent since all panels use set_title()
+    label_x = axes["C"].get_position().x0 - 0.02
+    for label, ax_key in [("a", "A"), ("b", "B"), ("c", "C")]:
         fig.text(
             label_x,
-            axes[ax_key].get_position().y1 + y_offset,
+            axes[ax_key].get_position().y1 + 0.01,
             label,
             fontsize=9,
             fontweight="bold",
