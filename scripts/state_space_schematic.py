@@ -282,54 +282,154 @@ def create_figure() -> None:
     rng = np.random.default_rng(42)
 
     # Create figure
-    fig, ax = plt.subplots(figsize=(7.0, 6.5), dpi=450)
+    fig, ax = plt.subplots(figsize=(7.0, 7.0), dpi=450)
     ax.set_xlim(-0.5, 9.5)
-    ax.set_ylim(-0.5, 6.5)
+    ax.set_ylim(-0.5, 7.0)
     ax.set_aspect("equal")
     ax.axis("off")
 
     # ==========================================================================
-    # TOP: Graphical Model (x_{t-1} → x_t → y_t)
+    # TOP: Graphical Model (... → x_{t-1} → x_t with observations below)
     # ==========================================================================
 
     node_radius = 0.30
-    y_graphical = 5.5
+    y_latent = 5.5  # Y position for latent state nodes
+    y_obs = y_latent - 1.2  # Y position for observation nodes
 
     # Node positions
-    x_prev_pos = (2.0, y_graphical)
-    x_curr_pos = (4.5, y_graphical)
-    y_obs_pos = (4.5, y_graphical - 1.2)
+    x_prev_pos = (2.5, y_latent)
+    x_curr_pos = (5.0, y_latent)
+    y_prev_obs_pos = (x_prev_pos[0], y_obs)
+    y_curr_obs_pos = (x_curr_pos[0], y_obs)
+
+    # Ellipsis to indicate chain continues to the left
+    ax.text(
+        x_prev_pos[0] - 1.2,
+        y_latent,
+        r"$\cdots$",
+        ha="center",
+        va="center",
+        fontsize=14,
+    )
+
+    # Arrow from ellipsis to x_{t-1}
+    arrow_start = (x_prev_pos[0] - 0.9, y_latent)
+    arrow_end = (x_prev_pos[0] - node_radius - 0.05, y_latent)
+    draw_arrow(ax, arrow_start, arrow_end, color="black")
 
     # Draw state nodes (all black edges for standard graphical model)
     draw_node(ax, x_prev_pos, node_radius, r"$x_{t-1}$", edgecolor="black")
     draw_node(ax, x_curr_pos, node_radius, r"$x_t$", edgecolor="black")
 
-    # Draw observation node (filled to indicate observed)
-    draw_node(ax, y_obs_pos, node_radius, r"$y_t$", facecolor="lightgray", edgecolor="black")
+    # Draw observation nodes (filled to indicate observed)
+    draw_node(
+        ax, y_prev_obs_pos, node_radius, r"$y_{t-1}$", facecolor="lightgray", edgecolor="black"
+    )
+    draw_node(ax, y_curr_obs_pos, node_radius, r"$y_t$", facecolor="lightgray", edgecolor="black")
 
-    # Draw arrows
+    # Horizontal arrow: x_{t-1} → x_t with transition label
     arrow_start = (x_prev_pos[0] + node_radius + 0.05, x_prev_pos[1])
     arrow_end = (x_curr_pos[0] - node_radius - 0.05, x_curr_pos[1])
-    draw_arrow(ax, arrow_start, arrow_end, label=r"$p(x_t|x_{t-1})$", color="black")
-
-    arrow_start = (x_curr_pos[0], x_curr_pos[1] - node_radius - 0.05)
-    arrow_end = (y_obs_pos[0], y_obs_pos[1] + node_radius + 0.05)
     draw_arrow(ax, arrow_start, arrow_end, color="black")
 
-    # Spikes below y_t (further from node for spacing)
+    # Transition label above the arrow
+    ax.text(
+        (x_prev_pos[0] + x_curr_pos[0]) / 2,
+        y_latent + 0.25,
+        "Transition",
+        ha="center",
+        va="bottom",
+        fontsize=6,
+        color="#666666",
+    )
+    ax.text(
+        (x_prev_pos[0] + x_curr_pos[0]) / 2,
+        y_latent + 0.55,
+        r"$p(x_t|x_{t-1})$",
+        ha="center",
+        va="bottom",
+        fontsize=6,
+        color="#666666",
+    )
+
+    # Downward arrow: x_{t-1} → y_{t-1}
+    arrow_start = (x_prev_pos[0], x_prev_pos[1] - node_radius - 0.05)
+    arrow_end = (y_prev_obs_pos[0], y_prev_obs_pos[1] + node_radius + 0.05)
+    draw_arrow(ax, arrow_start, arrow_end, color="black")
+
+    # Downward arrow: x_t → y_t
+    arrow_start = (x_curr_pos[0], x_curr_pos[1] - node_radius - 0.05)
+    arrow_end = (y_curr_obs_pos[0], y_curr_obs_pos[1] + node_radius + 0.05)
+    draw_arrow(ax, arrow_start, arrow_end, color="black")
+
+    # Labels: "Latent states" on the left
+    ax.text(
+        0.3,
+        y_latent,
+        "Latent\nstates",
+        ha="left",
+        va="center",
+        fontsize=7,
+        fontstyle="italic",
+    )
+
+    # Labels: "Observations" on the left
+    ax.text(
+        0.3,
+        y_obs,
+        "Observations",
+        ha="left",
+        va="center",
+        fontsize=7,
+        fontstyle="italic",
+    )
+
+    # Label: "Previous Posterior" above x_{t-1}
+    ax.text(
+        x_prev_pos[0],
+        y_latent + 0.45,
+        "Previous\nPosterior",
+        ha="center",
+        va="bottom",
+        fontsize=6,
+        color=COLORS["posterior"],
+    )
+
+    # Label: "Current Posterior" above x_t
+    ax.text(
+        x_curr_pos[0],
+        y_latent + 0.45,
+        "Current\nPosterior",
+        ha="center",
+        va="bottom",
+        fontsize=6,
+        color=COLORS["posterior"],
+    )
+
+    # Spikes below y_{t-1}
     draw_spikes_inset(
         ax,
-        center=(y_obs_pos[0], y_obs_pos[1] - 0.9),
-        width=0.8,
-        height=0.4,
+        center=(y_prev_obs_pos[0], y_prev_obs_pos[1] - 0.85),
+        width=0.7,
+        height=0.35,
+        n_cells=5,
+        rng=rng,
+    )
+
+    # Spikes below y_t
+    draw_spikes_inset(
+        ax,
+        center=(y_curr_obs_pos[0], y_curr_obs_pos[1] - 0.85),
+        width=0.7,
+        height=0.35,
         n_cells=5,
         rng=rng,
     )
 
     # Title
     ax.text(
-        4.75,
-        6.3,
+        (x_prev_pos[0] + x_curr_pos[0]) / 2,
+        6.6,
         "State Space Model",
         ha="center",
         va="bottom",
