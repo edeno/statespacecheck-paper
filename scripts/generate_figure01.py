@@ -188,7 +188,7 @@ def create_figure() -> None:
 
     # Create figure with GridSpec for precise control
     # 3 rows: graphical model, equation boxes, distribution panels
-    fig = plt.figure(figsize=(5.0, 6.0), dpi=450, constrained_layout=True)
+    fig = plt.figure(figsize=(5.0, 6.5), dpi=450, constrained_layout=True)
     fig.set_constrained_layout_pads(w_pad=0.01, h_pad=0.02, wspace=0.01, hspace=0.02)
 
     # Create grid: 3 rows, 6 columns
@@ -201,7 +201,7 @@ def create_figure() -> None:
     gs = fig.add_gridspec(
         3,
         6,
-        height_ratios=[0.8, 1.0, 0.35],  # Shorter distribution panels
+        height_ratios=[0.6, 1.0, 0.35],  # Reduced panel A height to bring B closer
         width_ratios=[0.05, 0.715 / 4, 0.715 / 4, 0.715 / 4, 0.715 / 4, 0.235],
     )
 
