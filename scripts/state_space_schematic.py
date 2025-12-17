@@ -333,9 +333,10 @@ def create_figure() -> None:
     draw_arrow(ax, arrow_start, arrow_end, color="black")
 
     # Transition label above the arrow (text above, equation below)
+    transition_label_y = y_latent + 0.32
     ax.text(
         (x_prev_pos[0] + x_curr_pos[0]) / 2,
-        y_latent + 0.55,
+        transition_label_y + 0.02,
         "Transition",
         ha="center",
         va="bottom",
@@ -344,10 +345,10 @@ def create_figure() -> None:
     )
     ax.text(
         (x_prev_pos[0] + x_curr_pos[0]) / 2,
-        y_latent + 0.25,
+        transition_label_y - 0.02,
         r"$p(x_t|x_{t-1})$",
         ha="center",
-        va="bottom",
+        va="top",
         fontsize=6,
         color="#666666",
     )
@@ -361,6 +362,19 @@ def create_figure() -> None:
     arrow_start = (x_curr_pos[0], x_curr_pos[1] - node_radius - 0.05)
     arrow_end = (y_curr_obs_pos[0], y_curr_obs_pos[1] + node_radius + 0.05)
     draw_arrow(ax, arrow_start, arrow_end, color="black")
+
+    # Likelihood label to the right of the x_t → y_t arrow (vertically centered pair)
+    arrow_midpoint_y = (x_curr_pos[1] + y_curr_obs_pos[1]) / 2
+    ax.text(
+        x_curr_pos[0] + 0.15,
+        arrow_midpoint_y,
+        "Likelihood\n" + r"$p(y_t|x_t)$",
+        ha="left",
+        va="center",
+        fontsize=6,
+        color=COLORS["likelihood"],
+        linespacing=1.0,
+    )
 
     # Arrow from x_t to ellipsis (chain continues to the right)
     arrow_start = (x_curr_pos[0] + node_radius + 0.05, y_latent)
