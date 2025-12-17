@@ -310,7 +310,7 @@ def create_figure() -> None:
     # Draw arrows
     arrow_start = (x_prev_pos[0] + node_radius + 0.05, x_prev_pos[1])
     arrow_end = (x_curr_pos[0] - node_radius - 0.05, x_curr_pos[1])
-    draw_arrow(ax, arrow_start, arrow_end, label=r"$T$", color="black")
+    draw_arrow(ax, arrow_start, arrow_end, label=r"$p(x_t|x_{t-1})$", color="black")
 
     arrow_start = (x_curr_pos[0], x_curr_pos[1] - node_radius - 0.05)
     arrow_end = (y_obs_pos[0], y_obs_pos[1] + node_radius + 0.05)
@@ -370,7 +370,7 @@ def create_figure() -> None:
 
     # Operation symbol: ⊛
     ax.text(
-        2.5,
+        2.3,
         y_eq1 + 0.2,
         r"$\circledast$",
         ha="center",
@@ -379,21 +379,23 @@ def create_figure() -> None:
         fontweight="bold",
     )
 
-    # Transition matrix T
-    ax.text(
-        3.2,
-        y_eq1 + 0.2,
-        r"$T$",
-        ha="center",
-        va="center",
-        fontsize=10,
-        fontweight="bold",
-        style="italic",
+    # Transition distribution (gray to indicate fixed model component)
+    draw_distribution_inset(
+        ax,
+        center=(3.3, y_eq1 + 0.2),
+        width=0.9,
+        height=0.5,
+        mean=45,
+        std=10,
+        color="#666666",  # Gray - fixed model assumption
+        label=r"$p(x_t|x_{t-1})$",
+        label_size=5,
+        title="Transition",
     )
 
     # Equals
     ax.text(
-        3.9,
+        4.3,
         y_eq1 + 0.2,
         "=",
         ha="center",
@@ -401,10 +403,10 @@ def create_figure() -> None:
         fontsize=14,
     )
 
-    # Distribution 2: Predictive
+    # Distribution 3: Predictive
     draw_distribution_inset(
         ax,
-        center=(5.2, y_eq1 + 0.2),
+        center=(5.5, y_eq1 + 0.2),
         width=0.9,
         height=0.5,
         mean=45,
