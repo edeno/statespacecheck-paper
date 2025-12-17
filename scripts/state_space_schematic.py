@@ -200,6 +200,7 @@ def draw_spikes_inset(
     height: float,
     n_cells: int = 5,
     rng: np.random.Generator | None = None,
+    label: str = "Spikes",
 ) -> None:
     """Draw a small spike raster as an inset."""
     if rng is None:
@@ -244,7 +245,7 @@ def draw_spikes_inset(
     inset.text(
         0.5,
         -0.2,
-        "Spikes",
+        label,
         ha="center",
         va="top",
         transform=inset.transAxes,
@@ -282,9 +283,9 @@ def create_figure() -> None:
     rng = np.random.default_rng(42)
 
     # Create figure
-    fig, ax = plt.subplots(figsize=(7.0, 7.0), dpi=450)
+    fig, ax = plt.subplots(figsize=(7.0, 8.0), dpi=450)
     ax.set_xlim(-0.5, 9.5)
-    ax.set_ylim(-0.5, 7.0)
+    ax.set_ylim(-1.5, 7.0)
     ax.set_aspect("equal")
     ax.axis("off")
 
@@ -443,6 +444,7 @@ def create_figure() -> None:
         height=0.35,
         n_cells=5,
         rng=rng,
+        label="Previous\nSpikes",
     )
 
     # Spikes below y_t
@@ -453,6 +455,7 @@ def create_figure() -> None:
         height=0.35,
         n_cells=5,
         rng=rng,
+        label="Current\nSpikes",
     )
 
     # Title
@@ -482,7 +485,7 @@ def create_figure() -> None:
     # EQUATION 1: [Prev Posterior] ⊛ T = [Predictive]
     # ==========================================================================
 
-    y_eq1 = 1.9  # Shifted down to avoid spikes from graphical model
+    y_eq1 = 1.4  # Shifted down to avoid spike labels from graphical model
     box_height = 1.6  # Increased from 1.2 to accommodate distributions + labels
 
     # Draw equation box (center shifted up to match content at y_eq1 + 0.2)
@@ -585,7 +588,7 @@ def create_figure() -> None:
     # EQUATION 2: [Predictive] × [Likelihood] = [Current Posterior]
     # ==========================================================================
 
-    y_eq2 = 0.0  # Shifted down to maintain spacing
+    y_eq2 = -0.5  # Shifted down to maintain spacing
     box_height_eq2 = 1.6  # Same as Step 1
 
     # Draw equation box (center shifted up to match content at y_eq2 + 0.2)
