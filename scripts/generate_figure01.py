@@ -309,7 +309,7 @@ def _draw_graphical_model(
         rng = np.random.default_rng(42)
 
     ax.set_xlim(-0.5, 7.5)  # Reduced from 9.5 - content ends around 7
-    ax.set_ylim(2.5, 6.75)  # Reduced from 7.0 - content tops at 6.6
+    ax.set_ylim(2.5, 6.65)  # Content tops at 6.6, minimal padding
     ax.axis("off")
 
     node_radius = 0.38
@@ -869,7 +869,7 @@ def _create_distribution_panel(
 
     # Formatting
     ax.set_xlim(-20, 20)
-    ax.set_ylim(-0.1, 0.30)
+    ax.set_ylim(-0.1, 0.26)  # Tighter to match other panels' label spacing
     ax.set_title(scenario["title"], fontsize=7, fontweight="normal", pad=2)
 
     ax.axis("off")
