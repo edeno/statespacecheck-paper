@@ -149,7 +149,7 @@ def _create_distribution_panel(
     # Formatting - minimal style matching panel b
     ax.set_xlim(-20, 20)
     ax.set_ylim(-0.1, 0.30)  # Tighter y-limit to bring title closer to distributions
-    ax.set_title(scenario["title"], fontsize=8, fontweight="bold", pad=2)
+    ax.set_title(scenario["title"], fontsize=7, fontweight="normal", pad=2)
 
     # Turn off all axes (matching panel b style)
     ax.axis("off")
@@ -189,6 +189,7 @@ def create_figure() -> None:
     # Create figure with GridSpec for precise control
     # 3 rows: graphical model, equation boxes, distribution panels
     fig = plt.figure(figsize=(5.0, 6.0), dpi=450, constrained_layout=True)
+    fig.set_constrained_layout_pads(w_pad=0.01, h_pad=0.02, wspace=0.01, hspace=0.02)
 
     # Create grid: 3 rows, 4 columns
     # Row 0: Graphical model (full width)
@@ -197,7 +198,7 @@ def create_figure() -> None:
     gs = fig.add_gridspec(
         3,
         4,
-        height_ratios=[0.8, 1.0, 0.5],  # Tighter vertical spacing
+        height_ratios=[0.8, 1.0, 0.35],  # Shorter distribution panels
         width_ratios=[1, 1, 1, 1],  # Equal width panels, no margins
     )
 
