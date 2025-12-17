@@ -466,6 +466,18 @@ def create_figure() -> None:
         fontweight="bold",
     )
 
+    # Time direction indicator (vertically centered with spike markers)
+    ax.text(
+        x_curr_pos[0] + 1.5,
+        y_obs - 0.85,
+        r"Time $\rightarrow$",
+        ha="left",
+        va="center",
+        fontsize=6,
+        fontstyle="italic",
+        color="#666666",
+    )
+
     # ==========================================================================
     # EQUATION 1: [Prev Posterior] ⊛ T = [Predictive]
     # ==========================================================================
