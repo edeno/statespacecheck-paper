@@ -498,10 +498,13 @@ def create_figure() -> None:
         facecolor="#F9F9F9",
     )
 
+    # Offset to shift equation elements right to make room for labels
+    eq_offset = 0.8
+
     # Distribution 1: Previous Posterior
     draw_distribution_inset(
         ax,
-        center=(1.3, y_eq1 + 0.2),
+        center=(1.3 + eq_offset, y_eq1 + 0.2),
         width=0.9,
         height=0.5,
         mean=40,
@@ -514,7 +517,7 @@ def create_figure() -> None:
 
     # Operation symbol: ⊛
     ax.text(
-        2.3,
+        2.3 + eq_offset,
         y_eq1 + 0.2,
         r"$\circledast$",
         ha="center",
@@ -526,7 +529,7 @@ def create_figure() -> None:
     # Transition distribution (gray to indicate fixed model component)
     draw_distribution_inset(
         ax,
-        center=(3.3, y_eq1 + 0.2),
+        center=(3.3 + eq_offset, y_eq1 + 0.2),
         width=0.9,
         height=0.5,
         mean=45,
@@ -539,7 +542,7 @@ def create_figure() -> None:
 
     # Equals
     ax.text(
-        4.3,
+        4.3 + eq_offset,
         y_eq1 + 0.2,
         "=",
         ha="center",
@@ -550,7 +553,7 @@ def create_figure() -> None:
     # Distribution 3: Predictive
     draw_distribution_inset(
         ax,
-        center=(5.5, y_eq1 + 0.2),
+        center=(5.5 + eq_offset, y_eq1 + 0.2),
         width=0.9,
         height=0.5,
         mean=45,
@@ -561,22 +564,11 @@ def create_figure() -> None:
         title="Predictive\nDistribution",
     )
 
-    # Step label
+    # Descriptive label with step number (left side)
     ax.text(
         0.2,
         y_eq1 + 0.2,
-        "Step 1:",
-        ha="left",
-        va="center",
-        fontsize=7,
-        fontweight="bold",
-    )
-
-    # Descriptive label
-    ax.text(
-        7.5,
-        y_eq1 + 0.2,
-        "Prediction",
+        "1. Prediction",
         ha="left",
         va="center",
         fontsize=7,
@@ -604,7 +596,7 @@ def create_figure() -> None:
     # Distribution 1: Predictive (repeated from equation 1)
     draw_distribution_inset(
         ax,
-        center=(1.3, y_eq2 + 0.2),
+        center=(1.3 + eq_offset, y_eq2 + 0.2),
         width=0.9,
         height=0.5,
         mean=45,
@@ -617,7 +609,7 @@ def create_figure() -> None:
 
     # Operation symbol: ×
     ax.text(
-        2.5,
+        2.5 + eq_offset,
         y_eq2 + 0.2,
         r"$\times$",
         ha="center",
@@ -629,7 +621,7 @@ def create_figure() -> None:
     # Distribution 2: Likelihood (near observations)
     draw_distribution_inset(
         ax,
-        center=(3.5, y_eq2 + 0.2),
+        center=(3.5 + eq_offset, y_eq2 + 0.2),
         width=0.9,
         height=0.5,
         mean=50,
@@ -642,7 +634,7 @@ def create_figure() -> None:
 
     # Equals
     ax.text(
-        4.7,
+        4.7 + eq_offset,
         y_eq2 + 0.2,
         "=",
         ha="center",
@@ -653,7 +645,7 @@ def create_figure() -> None:
     # Distribution 3: Current Posterior
     draw_distribution_inset(
         ax,
-        center=(6.0, y_eq2 + 0.2),
+        center=(6.0 + eq_offset, y_eq2 + 0.2),
         width=0.9,
         height=0.5,
         mean=48,
@@ -664,27 +656,62 @@ def create_figure() -> None:
         title="Current\nPosterior",
     )
 
-    # Step label
+    # Step label - removed since "Each time t:" now spans both steps
+    # The "1." and "2." will indicate the ordering within the timestep
+
+    # Descriptive label with step number (left side)
     ax.text(
         0.2,
         y_eq2 + 0.2,
-        "Step 2:",
-        ha="left",
-        va="center",
-        fontsize=7,
-        fontweight="bold",
-    )
-
-    # Descriptive label
-    ax.text(
-        7.5,
-        y_eq2 + 0.2,
-        "Update",
+        "2. Update",
         ha="left",
         va="center",
         fontsize=7,
         color=COLORS["posterior"],
         fontweight="bold",
+    )
+
+    # ==========================================================================
+    # Bracket with arrow to show flow from step 1 to step 2 at each time step
+    # ==========================================================================
+
+    bracket_x = -0.4  # Further left to allow horizontal line before arrowhead
+    bracket_top = y_eq1 + 0.2  # Same level as "1. Prediction" text
+    bracket_bottom = y_eq2 + 0.2  # Same level as "2. Update" text
+    bracket_mid = (bracket_top + bracket_bottom) / 2
+
+    # Draw bracket using lines (top horizontal, vertical, bottom horizontal with arrow)
+    bracket_width = 0.25  # Top horizontal line extends toward the box
+    line_end = 0.20  # Where the line portion ends before the arrow (longer for visible line)
+    arrow_length = 0.35  # Total length including arrow
+    # Draw as single connected path: top horizontal -> vertical -> bottom horizontal (short)
+    ax.plot(
+        [bracket_x + bracket_width, bracket_x, bracket_x, bracket_x + line_end],
+        [bracket_top, bracket_top, bracket_bottom, bracket_bottom],
+        color="#666666",
+        linewidth=1.0,
+        solid_capstyle="round",
+        solid_joinstyle="round",
+    )
+    # Add arrow from end of line
+    draw_arrow(
+        ax,
+        start=(bracket_x + line_end, bracket_bottom),
+        end=(bracket_x + arrow_length, bracket_bottom),
+        color="#666666",
+        linewidth=1.0,
+    )
+
+    # Label for the bracket
+    ax.text(
+        bracket_x - 0.1,
+        bracket_mid,
+        "Each\ntime $t$",
+        ha="right",
+        va="center",
+        fontsize=6,
+        fontweight="bold",
+        color="#666666",
     )
 
     # Save
