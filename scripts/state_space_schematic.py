@@ -362,6 +362,21 @@ def create_figure() -> None:
     arrow_end = (y_curr_obs_pos[0], y_curr_obs_pos[1] + node_radius + 0.05)
     draw_arrow(ax, arrow_start, arrow_end, color="black")
 
+    # Arrow from x_t to ellipsis (chain continues to the right)
+    arrow_start = (x_curr_pos[0] + node_radius + 0.05, y_latent)
+    arrow_end = (x_curr_pos[0] + 0.9, y_latent)
+    draw_arrow(ax, arrow_start, arrow_end, color="black")
+
+    # Ellipsis to indicate chain continues to the right
+    ax.text(
+        x_curr_pos[0] + 1.2,
+        y_latent,
+        r"$\cdots$",
+        ha="center",
+        va="center",
+        fontsize=14,
+    )
+
     # Labels: "Latent states" on the left
     ax.text(
         0.3,
