@@ -191,15 +191,18 @@ def create_figure() -> None:
     fig = plt.figure(figsize=(5.0, 6.0), dpi=450, constrained_layout=True)
     fig.set_constrained_layout_pads(w_pad=0.01, h_pad=0.02, wspace=0.01, hspace=0.02)
 
-    # Create grid: 3 rows, 4 columns
+    # Create grid: 3 rows, 6 columns
     # Row 0: Graphical model (full width)
     # Row 1: Equation boxes (full width)
-    # Row 2: 4 distribution panels (full width, no margins)
+    # Row 2: margin + 4 distribution panels + margin
+    # Panel B equation boxes span x=0.0 to x=7.15 in xlim=(-0.5, 9.5)
+    # That's 5% left margin and 23.5% right margin
+    # Width ratios: left_margin=0.05, 4 panels share 0.715, right_margin=0.235
     gs = fig.add_gridspec(
         3,
-        4,
+        6,
         height_ratios=[0.8, 1.0, 0.35],  # Shorter distribution panels
-        width_ratios=[1, 1, 1, 1],  # Equal width panels, no margins
+        width_ratios=[0.05, 0.715 / 4, 0.715 / 4, 0.715 / 4, 0.715 / 4, 0.235],
     )
 
     # Panel A: Graphical model spans all columns in top row
@@ -209,11 +212,11 @@ def create_figure() -> None:
     # Panel B: Equation boxes spans all columns in middle row
     axes["B"] = fig.add_subplot(gs[1, :])
 
-    # Panel C (sub-panels): Distribution panels span full width
-    axes["C1"] = fig.add_subplot(gs[2, 0])
-    axes["C2"] = fig.add_subplot(gs[2, 1])
-    axes["C3"] = fig.add_subplot(gs[2, 2])
-    axes["C4"] = fig.add_subplot(gs[2, 3])
+    # Panel C (sub-panels): Distribution panels aligned with equation boxes
+    axes["C1"] = fig.add_subplot(gs[2, 1])
+    axes["C2"] = fig.add_subplot(gs[2, 2])
+    axes["C3"] = fig.add_subplot(gs[2, 3])
+    axes["C4"] = fig.add_subplot(gs[2, 4])
 
     # =========================================================================
     # Panel A: Graphical model
