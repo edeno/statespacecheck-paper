@@ -16,14 +16,16 @@ from __future__ import annotations
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.axes import Axes
 from matplotlib.patches import Circle, FancyArrowPatch, FancyBboxPatch
+from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 from scipy.stats import norm
 
 from statespacecheck_paper.style import COLORS, save_figure, set_figure_defaults
 
 
 def draw_node(
-    ax: plt.Axes,
+    ax: Axes,
     center: tuple[float, float],
     radius: float,
     label: str,
@@ -57,7 +59,7 @@ def draw_node(
 
 
 def draw_arrow(
-    ax: plt.Axes,
+    ax: Axes,
     start: tuple[float, float],
     end: tuple[float, float],
     label: str | None = None,
@@ -96,7 +98,7 @@ def draw_arrow(
 
 
 def draw_distribution_inset(
-    ax: plt.Axes,
+    ax: Axes,
     center: tuple[float, float],
     width: float,
     height: float,
@@ -134,8 +136,6 @@ def draw_distribution_inset(
     title_size : int, default 6
         Font size for the title above.
     """
-    from mpl_toolkits.axes_grid1.inset_locator import inset_axes
-
     if label_color is None:
         label_color = color
 
@@ -194,7 +194,7 @@ def draw_distribution_inset(
 
 
 def draw_spikes_inset(
-    ax: plt.Axes,
+    ax: Axes,
     center: tuple[float, float],
     width: float,
     height: float,
@@ -219,7 +219,7 @@ def draw_spikes_inset(
     width_fig = right_fig - left_fig
     height_fig = top_fig - bottom_fig
 
-    inset = fig.add_axes([left_fig, bottom_fig, width_fig, height_fig])
+    inset = fig.add_axes((left_fig, bottom_fig, width_fig, height_fig))
 
     # Generate spike times for each cell
     spike_data = []
@@ -254,7 +254,7 @@ def draw_spikes_inset(
 
 
 def draw_equation_box(
-    ax: plt.Axes,
+    ax: Axes,
     center: tuple[float, float],
     width: float,
     height: float,
@@ -688,8 +688,7 @@ def create_figure() -> None:
     )
 
     # Save
-    save_figure("figures/state_space_schematic")
-    print("Saved figures/state_space_schematic.pdf and .png")
+    save_figure("figures/main/state_space_schematic")
 
 
 if __name__ == "__main__":
