@@ -81,6 +81,7 @@ disallow_untyped_defs = true
 module = [
     "scipy.*",
     "matplotlib.*",
+    "mpl_toolkits.*",
     "seaborn.*",
     "pandas.*",
     "networkx.*",
