@@ -313,12 +313,12 @@ def create_figure() -> None:
     arrow_end = (y_obs_pos[0], y_obs_pos[1] + node_radius + 0.05)
     draw_arrow(ax, arrow_start, arrow_end, label=r"$p(y_t|x_t)$", color="black")
 
-    # Spikes below y_t
+    # Spikes below y_t (further from node for spacing)
     draw_spikes_inset(
         ax,
-        center=(y_obs_pos[0], y_obs_pos[1] - 0.75),
+        center=(y_obs_pos[0], y_obs_pos[1] - 0.9),
         width=0.8,
-        height=0.5,
+        height=0.4,
         n_cells=5,
         rng=rng,
     )
@@ -338,7 +338,7 @@ def create_figure() -> None:
     # EQUATION 1: [Prev Posterior] ⊛ T = [Predictive]
     # ==========================================================================
 
-    y_eq1 = 2.4  # Moved up for spacing between boxes
+    y_eq1 = 1.9  # Shifted down to avoid spikes from graphical model
     box_height = 1.6  # Increased from 1.2 to accommodate distributions + labels
 
     # Draw equation box (center shifted up to match content at y_eq1 + 0.2)
@@ -439,7 +439,7 @@ def create_figure() -> None:
     # EQUATION 2: [Predictive] × [Likelihood] = [Current Posterior]
     # ==========================================================================
 
-    y_eq2 = 0.5  # Slightly adjusted
+    y_eq2 = 0.0  # Shifted down to maintain spacing
     box_height_eq2 = 1.6  # Same as Step 1
 
     # Draw equation box (center shifted up to match content at y_eq2 + 0.2)
