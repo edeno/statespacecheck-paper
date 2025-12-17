@@ -332,10 +332,10 @@ def create_figure() -> None:
     arrow_end = (x_curr_pos[0] - node_radius - 0.05, x_curr_pos[1])
     draw_arrow(ax, arrow_start, arrow_end, color="black")
 
-    # Transition label above the arrow
+    # Transition label above the arrow (text above, equation below)
     ax.text(
         (x_prev_pos[0] + x_curr_pos[0]) / 2,
-        y_latent + 0.25,
+        y_latent + 0.55,
         "Transition",
         ha="center",
         va="bottom",
@@ -344,7 +344,7 @@ def create_figure() -> None:
     )
     ax.text(
         (x_prev_pos[0] + x_curr_pos[0]) / 2,
-        y_latent + 0.55,
+        y_latent + 0.25,
         r"$p(x_t|x_{t-1})$",
         ha="center",
         va="bottom",
