@@ -488,11 +488,16 @@ def create_figure() -> None:
     y_eq1 = 1.4  # Shifted down to avoid spike labels from graphical model
     box_height = 1.6  # Increased from 1.2 to accommodate distributions + labels
 
-    # Draw equation box (center shifted up to match content at y_eq1 + 0.2)
+    # Draw equation box - right edge aligns with where Time arrow ends
+    # Time arrow text is at x_curr_pos[0] + 1.5 = 6.5
+    box_right_edge = 7.15  # Halfway between 6.8 and 7.5
+    box_left_edge = 0.0  # Align with left side
+    box_width = box_right_edge - box_left_edge
+    box_center_x = (box_left_edge + box_right_edge) / 2
     draw_equation_box(
         ax,
-        center=(4.5, y_eq1 + 0.2),
-        width=9.2,
+        center=(box_center_x, y_eq1 + 0.2),
+        width=box_width,
         height=box_height,
         edgecolor="#CCCCCC",
         facecolor="#F9F9F9",
@@ -583,11 +588,11 @@ def create_figure() -> None:
     y_eq2 = -0.5  # Shifted down to maintain spacing
     box_height_eq2 = 1.6  # Same as Step 1
 
-    # Draw equation box (center shifted up to match content at y_eq2 + 0.2)
+    # Draw equation box - same dimensions as box 1
     draw_equation_box(
         ax,
-        center=(4.5, y_eq2 + 0.2),
-        width=9.2,
+        center=(box_center_x, y_eq2 + 0.2),
+        width=box_width,
         height=box_height_eq2,
         edgecolor="#CCCCCC",
         facecolor="#F9F9F9",
@@ -607,9 +612,9 @@ def create_figure() -> None:
         title="Predictive\nDistribution",
     )
 
-    # Operation symbol: ×
+    # Operation symbol: × (aligned with convolution symbol above)
     ax.text(
-        2.5 + eq_offset,
+        2.3 + eq_offset,
         y_eq2 + 0.2,
         r"$\times$",
         ha="center",
@@ -618,10 +623,10 @@ def create_figure() -> None:
         fontweight="bold",
     )
 
-    # Distribution 2: Likelihood (near observations)
+    # Distribution 2: Likelihood (aligned with Transition above)
     draw_distribution_inset(
         ax,
-        center=(3.5 + eq_offset, y_eq2 + 0.2),
+        center=(3.3 + eq_offset, y_eq2 + 0.2),
         width=0.9,
         height=0.5,
         mean=50,
@@ -632,9 +637,9 @@ def create_figure() -> None:
         title="Likelihood",
     )
 
-    # Equals
+    # Equals (aligned with equals sign above)
     ax.text(
-        4.7 + eq_offset,
+        4.3 + eq_offset,
         y_eq2 + 0.2,
         "=",
         ha="center",
@@ -642,10 +647,10 @@ def create_figure() -> None:
         fontsize=14,
     )
 
-    # Distribution 3: Current Posterior
+    # Distribution 3: Current Posterior (aligned with Predictive above)
     draw_distribution_inset(
         ax,
-        center=(6.0 + eq_offset, y_eq2 + 0.2),
+        center=(5.5 + eq_offset, y_eq2 + 0.2),
         width=0.9,
         height=0.5,
         mean=48,
