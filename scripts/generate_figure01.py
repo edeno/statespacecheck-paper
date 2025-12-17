@@ -506,7 +506,7 @@ def _draw_equation_boxes(ax: Axes) -> None:
         The axes to draw on.
     """
     ax.set_xlim(-0.5, 9.5)
-    ax.set_ylim(-1.5, 2.8)
+    ax.set_ylim(-0.95, 2.6)
     ax.axis("off")
 
     # ==========================================================================
@@ -514,7 +514,7 @@ def _draw_equation_boxes(ax: Axes) -> None:
     # ==========================================================================
 
     y_eq1 = 1.4
-    box_height = 1.6
+    box_height = 1.4
 
     # Box dimensions aligned with graphical model
     box_right_edge = 7.15
@@ -612,8 +612,8 @@ def _draw_equation_boxes(ax: Axes) -> None:
     # EQUATION 2: [Predictive] x [Likelihood] = [Current Posterior]
     # ==========================================================================
 
-    y_eq2 = -0.5
-    box_height_eq2 = 1.6
+    y_eq2 = -0.25
+    box_height_eq2 = 1.4
 
     _draw_equation_box(
         ax,
@@ -919,14 +919,14 @@ def create_figure() -> None:
 
     # Create figure with GridSpec for precise control
     # 3 rows: graphical model, equation boxes, distribution panels
-    fig = plt.figure(figsize=(5.0, 6.5), dpi=450, constrained_layout=True)
+    fig = plt.figure(figsize=(5.0, 5.8), dpi=450, constrained_layout=True)
     layout_engine: Any = fig.get_layout_engine()
     if layout_engine is not None:
         layout_engine.set(w_pad=0.01, h_pad=0.02, wspace=0.01, hspace=0.02)
 
     # Create grid: 3 rows, 6 columns
     # Row 0: Graphical model (full width)
-    # Row 1: Equation boxes (full width)
+    # Row 1: Equation boxes (full width) - reduced height
     # Row 2: margin + 4 distribution panels + margin
     # Panel B equation boxes span x=0.0 to x=7.15 in xlim=(-0.5, 9.5)
     # That's 5% left margin and 23.5% right margin
@@ -934,7 +934,7 @@ def create_figure() -> None:
     gs = fig.add_gridspec(
         3,
         6,
-        height_ratios=[0.6, 1.0, 0.35],
+        height_ratios=[0.6, 0.7, 0.35],
         width_ratios=[0.05, 0.715 / 4, 0.715 / 4, 0.715 / 4, 0.715 / 4, 0.235],
     )
 
@@ -1013,7 +1013,7 @@ def create_figure() -> None:
     # Add panel labels using fig.text() at consistent x position
     # Use panel A's left edge as reference for all labels
     label_x = axes["A"].get_position().x0 - 0.08
-    for label, ax_key, y_offset in [("a", "A", 0.04), ("b", "B", 0.04), ("c", "C1", -0.02)]:
+    for label, ax_key, y_offset in [("a", "A", 0.08), ("b", "B", 0.04), ("c", "C1", -0.02)]:
         fig.text(
             label_x,
             axes[ax_key].get_position().y1 + y_offset,
