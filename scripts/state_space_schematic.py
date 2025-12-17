@@ -202,24 +202,40 @@ def draw_spikes_inset(
     rng: np.random.Generator | None = None,
     label: str = "Spikes",
 ) -> None:
-    """Draw a small spike raster as an inset."""
+    """Draw a small spike raster as an inset.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        The axes to draw on.
+    center : tuple[float, float]
+        Center position in data coordinates.
+    width, height : float
+        Size of the inset in data coordinates.
+    n_cells : int, default 5
+        Number of cells to show in raster.
+    rng : np.random.Generator, optional
+        Random number generator. Defaults to seed 42.
+    label : str, default "Spikes"
+        Label to display below the raster.
+    """
     if rng is None:
         rng = np.random.default_rng(42)
 
-    fig = ax.figure
-    trans = ax.transData + fig.transFigure.inverted()
-
-    # Calculate bounds
+    # Calculate bounds in data coordinates
     left_data = center[0] - width / 2
     bottom_data = center[1] - height / 2
 
-    left_fig, bottom_fig = trans.transform((left_data, bottom_data))
-    right_fig, top_fig = trans.transform((left_data + width, bottom_data + height))
-
-    width_fig = right_fig - left_fig
-    height_fig = top_fig - bottom_fig
-
-    inset = fig.add_axes((left_fig, bottom_fig, width_fig, height_fig))
+    # Create inset using data coordinates directly via inset_axes
+    # This properly handles aspect ratio constraints and works in subplots
+    inset = inset_axes(
+        ax,
+        width="100%",
+        height="100%",
+        bbox_to_anchor=(left_data, bottom_data, width, height),
+        bbox_transform=ax.transData,
+        borderpad=0,
+    )
 
     # Generate spike times for each cell
     spike_data = []
@@ -277,25 +293,35 @@ def draw_equation_box(
     return box
 
 
-def create_figure() -> None:
-    """Create state space model schematic with equation blocks layout."""
-    set_figure_defaults(context="paper")
-    rng = np.random.default_rng(42)
+def draw_graphical_model(
+    ax: Axes,
+    rng: np.random.Generator | None = None,
+) -> None:
+    """Draw the graphical model portion of the schematic.
 
-    # Create figure
-    fig, ax = plt.subplots(figsize=(7.0, 8.0), dpi=450)
+    This function draws:
+    - Chain of latent states: ... → x_{t-1} → x_t → ...
+    - Observations: y_{t-1}, y_t
+    - Spike raster insets below observations
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        The axes to draw on.
+    rng : np.random.Generator, optional
+        Random number generator for spike insets. Defaults to seed 42.
+    """
+    if rng is None:
+        rng = np.random.default_rng(42)
+
+    # Set up axes - no aspect constraint to allow tighter layout
     ax.set_xlim(-0.5, 9.5)
-    ax.set_ylim(-1.5, 7.0)
-    ax.set_aspect("equal")
+    ax.set_ylim(2.5, 7.0)
     ax.axis("off")
 
-    # ==========================================================================
-    # TOP: Graphical Model (... → x_{t-1} → x_t with observations below)
-    # ==========================================================================
-
-    node_radius = 0.30
+    node_radius = 0.38
     y_latent = 5.5  # Y position for latent state nodes
-    y_obs = y_latent - 1.2  # Y position for observation nodes
+    y_obs = y_latent - 1.3  # Y position for observation nodes
 
     # Node positions
     x_prev_pos = (2.5, y_latent)
@@ -439,7 +465,7 @@ def create_figure() -> None:
     # Spikes below y_{t-1}
     draw_spikes_inset(
         ax,
-        center=(y_prev_obs_pos[0], y_prev_obs_pos[1] - 0.85),
+        center=(y_prev_obs_pos[0], y_prev_obs_pos[1] - 0.65),
         width=0.7,
         height=0.35,
         n_cells=5,
@@ -450,7 +476,480 @@ def create_figure() -> None:
     # Spikes below y_t
     draw_spikes_inset(
         ax,
-        center=(y_curr_obs_pos[0], y_curr_obs_pos[1] - 0.85),
+        center=(y_curr_obs_pos[0], y_curr_obs_pos[1] - 0.65),
+        width=0.7,
+        height=0.35,
+        n_cells=5,
+        rng=rng,
+        label="Current\nSpikes",
+    )
+
+    # Title
+    ax.text(
+        (x_prev_pos[0] + x_curr_pos[0]) / 2,
+        6.6,
+        "State Space Model",
+        ha="center",
+        va="bottom",
+        fontsize=8,
+        fontweight="bold",
+    )
+
+    # Time direction indicator (vertically centered with spike markers)
+    ax.text(
+        x_curr_pos[0] + 1.5,
+        y_obs - 0.85,
+        r"Time $\rightarrow$",
+        ha="left",
+        va="center",
+        fontsize=6,
+        fontstyle="italic",
+        color="#666666",
+    )
+
+
+def draw_equation_boxes(ax: Axes) -> None:
+    """Draw the equation boxes (Prediction and Update steps).
+
+    This function draws:
+    - Equation box 1: Previous Posterior ⊛ Transition = Predictive
+    - Equation box 2: Predictive × Likelihood = Current Posterior
+    - Connecting bracket with "Each time t" label
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        The axes to draw on.
+    """
+    # Set up axes - no aspect constraint to allow tighter layout
+    ax.set_xlim(-0.5, 9.5)
+    ax.set_ylim(-1.5, 2.8)
+    ax.axis("off")
+
+    # ==========================================================================
+    # EQUATION 1: [Prev Posterior] ⊛ T = [Predictive]
+    # ==========================================================================
+
+    y_eq1 = 1.4
+    box_height = 1.6
+
+    # Draw equation box
+    box_right_edge = 7.15
+    box_left_edge = 0.0
+    box_width = box_right_edge - box_left_edge
+    box_center_x = (box_left_edge + box_right_edge) / 2
+    draw_equation_box(
+        ax,
+        center=(box_center_x, y_eq1 + 0.2),
+        width=box_width,
+        height=box_height,
+        edgecolor="#CCCCCC",
+        facecolor="#F9F9F9",
+    )
+
+    # Offset to shift equation elements right to make room for labels
+    eq_offset = 0.8
+
+    # Distribution 1: Previous Posterior
+    draw_distribution_inset(
+        ax,
+        center=(1.3 + eq_offset, y_eq1 + 0.2),
+        width=0.9,
+        height=0.5,
+        mean=40,
+        std=8,
+        color=COLORS["posterior"],
+        label=r"$p(x_{t-1}|y_{1:t-1})$",
+        label_size=5,
+        title="Previous\nPosterior",
+    )
+
+    # Operation symbol: ⊛
+    ax.text(
+        2.3 + eq_offset,
+        y_eq1 + 0.2,
+        r"$\circledast$",
+        ha="center",
+        va="center",
+        fontsize=16,
+        fontweight="bold",
+    )
+
+    # Transition distribution (gray to indicate fixed model component)
+    draw_distribution_inset(
+        ax,
+        center=(3.3 + eq_offset, y_eq1 + 0.2),
+        width=0.9,
+        height=0.5,
+        mean=45,
+        std=10,
+        color="#666666",
+        label=r"$p(x_t|x_{t-1})$",
+        label_size=5,
+        title="Transition",
+    )
+
+    # Equals
+    ax.text(
+        4.3 + eq_offset,
+        y_eq1 + 0.2,
+        "=",
+        ha="center",
+        va="center",
+        fontsize=14,
+    )
+
+    # Distribution 3: Predictive
+    draw_distribution_inset(
+        ax,
+        center=(5.5 + eq_offset, y_eq1 + 0.2),
+        width=0.9,
+        height=0.5,
+        mean=45,
+        std=12,
+        color=COLORS["predictive"],
+        label=r"$p(x_t|y_{1:t-1})$",
+        label_size=5,
+        title="Predictive\nDistribution",
+    )
+
+    # Descriptive label with step number (left side)
+    ax.text(
+        0.2,
+        y_eq1 + 0.2,
+        "1. Prediction",
+        ha="left",
+        va="center",
+        fontsize=7,
+        color=COLORS["predictive"],
+        fontweight="bold",
+    )
+
+    # ==========================================================================
+    # EQUATION 2: [Predictive] × [Likelihood] = [Current Posterior]
+    # ==========================================================================
+
+    y_eq2 = -0.5
+    box_height_eq2 = 1.6
+
+    # Draw equation box - same dimensions as box 1
+    draw_equation_box(
+        ax,
+        center=(box_center_x, y_eq2 + 0.2),
+        width=box_width,
+        height=box_height_eq2,
+        edgecolor="#CCCCCC",
+        facecolor="#F9F9F9",
+    )
+
+    # Distribution 1: Predictive (repeated from equation 1)
+    draw_distribution_inset(
+        ax,
+        center=(1.3 + eq_offset, y_eq2 + 0.2),
+        width=0.9,
+        height=0.5,
+        mean=45,
+        std=12,
+        color=COLORS["predictive"],
+        label=r"$p(x_t|y_{1:t-1})$",
+        label_size=5,
+        title="Predictive\nDistribution",
+    )
+
+    # Operation symbol: × (aligned with convolution symbol above)
+    ax.text(
+        2.3 + eq_offset,
+        y_eq2 + 0.2,
+        r"$\times$",
+        ha="center",
+        va="center",
+        fontsize=14,
+        fontweight="bold",
+    )
+
+    # Distribution 2: Likelihood (aligned with Transition above)
+    draw_distribution_inset(
+        ax,
+        center=(3.3 + eq_offset, y_eq2 + 0.2),
+        width=0.9,
+        height=0.5,
+        mean=50,
+        std=10,
+        color=COLORS["likelihood"],
+        label=r"$p(x_t|y_t)$",
+        label_size=5,
+        title="Likelihood",
+    )
+
+    # Equals (aligned with equals sign above)
+    ax.text(
+        4.3 + eq_offset,
+        y_eq2 + 0.2,
+        "=",
+        ha="center",
+        va="center",
+        fontsize=14,
+    )
+
+    # Distribution 3: Current Posterior (aligned with Predictive above)
+    draw_distribution_inset(
+        ax,
+        center=(5.5 + eq_offset, y_eq2 + 0.2),
+        width=0.9,
+        height=0.5,
+        mean=48,
+        std=7,
+        color=COLORS["posterior"],
+        label=r"$p(x_t|y_{1:t})$",
+        label_size=5,
+        title="Current\nPosterior",
+    )
+
+    # Descriptive label with step number (left side)
+    ax.text(
+        0.2,
+        y_eq2 + 0.2,
+        "2. Update",
+        ha="left",
+        va="center",
+        fontsize=7,
+        color=COLORS["posterior"],
+        fontweight="bold",
+    )
+
+    # ==========================================================================
+    # Bracket with arrow to show flow from step 1 to step 2 at each time step
+    # ==========================================================================
+
+    bracket_x = -0.4
+    bracket_top = y_eq1 + 0.2
+    bracket_bottom = y_eq2 + 0.2
+    bracket_mid = (bracket_top + bracket_bottom) / 2
+
+    # Draw bracket using lines
+    bracket_width = 0.25
+    line_end = 0.20
+    arrow_length = 0.35
+    ax.plot(
+        [bracket_x + bracket_width, bracket_x, bracket_x, bracket_x + line_end],
+        [bracket_top, bracket_top, bracket_bottom, bracket_bottom],
+        color="#666666",
+        linewidth=1.0,
+        solid_capstyle="round",
+        solid_joinstyle="round",
+    )
+    # Add arrow from end of line
+    draw_arrow(
+        ax,
+        start=(bracket_x + line_end, bracket_bottom),
+        end=(bracket_x + arrow_length, bracket_bottom),
+        color="#666666",
+        linewidth=1.0,
+    )
+
+    # Label for the bracket
+    ax.text(
+        bracket_x - 0.1,
+        bracket_mid,
+        "Each\ntime $t$",
+        ha="right",
+        va="center",
+        fontsize=6,
+        fontweight="bold",
+        color="#666666",
+    )
+
+
+def draw_schematic_content(
+    ax: Axes,
+    rng: np.random.Generator | None = None,
+) -> None:
+    """Draw the state space model schematic content on the given axes.
+
+    This function draws the complete schematic including:
+    - Graphical model (... → x_{t-1} → x_t with observations)
+    - Prediction step equation box
+    - Update step equation box
+    - Connecting bracket
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        The axes to draw on. Should have appropriate xlim/ylim set.
+    rng : np.random.Generator, optional
+        Random number generator for spike insets. Defaults to seed 42.
+    """
+    if rng is None:
+        rng = np.random.default_rng(42)
+
+    # Set up axes
+    ax.set_xlim(-0.5, 9.5)
+    ax.set_ylim(-1.5, 7.0)
+    ax.set_aspect("equal")
+    ax.axis("off")
+
+    # ==========================================================================
+    # TOP: Graphical Model (... → x_{t-1} → x_t with observations below)
+    # ==========================================================================
+
+    node_radius = 0.38
+    y_latent = 5.5  # Y position for latent state nodes
+    y_obs = y_latent - 1.3  # Y position for observation nodes (adjusted for larger radius)
+
+    # Node positions
+    x_prev_pos = (2.5, y_latent)
+    x_curr_pos = (5.0, y_latent)
+    y_prev_obs_pos = (x_prev_pos[0], y_obs)
+    y_curr_obs_pos = (x_curr_pos[0], y_obs)
+
+    # Ellipsis to indicate chain continues to the left
+    ax.text(
+        x_prev_pos[0] - 1.2,
+        y_latent,
+        r"$\cdots$",
+        ha="center",
+        va="center",
+        fontsize=14,
+    )
+
+    # Arrow from ellipsis to x_{t-1}
+    arrow_start = (x_prev_pos[0] - 0.9, y_latent)
+    arrow_end = (x_prev_pos[0] - node_radius - 0.05, y_latent)
+    draw_arrow(ax, arrow_start, arrow_end, color="black")
+
+    # Draw state nodes (all black edges for standard graphical model)
+    draw_node(ax, x_prev_pos, node_radius, r"$x_{t-1}$", edgecolor="black")
+    draw_node(ax, x_curr_pos, node_radius, r"$x_t$", edgecolor="black")
+
+    # Draw observation nodes (filled to indicate observed)
+    draw_node(
+        ax, y_prev_obs_pos, node_radius, r"$y_{t-1}$", facecolor="lightgray", edgecolor="black"
+    )
+    draw_node(ax, y_curr_obs_pos, node_radius, r"$y_t$", facecolor="lightgray", edgecolor="black")
+
+    # Horizontal arrow: x_{t-1} → x_t with transition label
+    arrow_start = (x_prev_pos[0] + node_radius + 0.05, x_prev_pos[1])
+    arrow_end = (x_curr_pos[0] - node_radius - 0.05, x_curr_pos[1])
+    draw_arrow(ax, arrow_start, arrow_end, color="black")
+
+    # Transition label above the arrow (text above, equation below)
+    transition_label_y = y_latent + 0.32
+    ax.text(
+        (x_prev_pos[0] + x_curr_pos[0]) / 2,
+        transition_label_y + 0.02,
+        "Transition",
+        ha="center",
+        va="bottom",
+        fontsize=6,
+        color="#666666",
+    )
+    ax.text(
+        (x_prev_pos[0] + x_curr_pos[0]) / 2,
+        transition_label_y - 0.02,
+        r"$p(x_t|x_{t-1})$",
+        ha="center",
+        va="top",
+        fontsize=6,
+        color="#666666",
+    )
+
+    # Downward arrow: x_{t-1} → y_{t-1}
+    arrow_start = (x_prev_pos[0], x_prev_pos[1] - node_radius - 0.05)
+    arrow_end = (y_prev_obs_pos[0], y_prev_obs_pos[1] + node_radius + 0.05)
+    draw_arrow(ax, arrow_start, arrow_end, color="black")
+
+    # Downward arrow: x_t → y_t
+    arrow_start = (x_curr_pos[0], x_curr_pos[1] - node_radius - 0.05)
+    arrow_end = (y_curr_obs_pos[0], y_curr_obs_pos[1] + node_radius + 0.05)
+    draw_arrow(ax, arrow_start, arrow_end, color="black")
+
+    # Likelihood label to the right of the x_t → y_t arrow (vertically centered pair)
+    arrow_midpoint_y = (x_curr_pos[1] + y_curr_obs_pos[1]) / 2
+    ax.text(
+        x_curr_pos[0] + 0.15,
+        arrow_midpoint_y,
+        "Likelihood\n" + r"$p(y_t|x_t)$",
+        ha="left",
+        va="center",
+        fontsize=6,
+        color=COLORS["likelihood"],
+        linespacing=1.0,
+    )
+
+    # Arrow from x_t to ellipsis (chain continues to the right)
+    arrow_start = (x_curr_pos[0] + node_radius + 0.05, y_latent)
+    arrow_end = (x_curr_pos[0] + 0.9, y_latent)
+    draw_arrow(ax, arrow_start, arrow_end, color="black")
+
+    # Ellipsis to indicate chain continues to the right
+    ax.text(
+        x_curr_pos[0] + 1.2,
+        y_latent,
+        r"$\cdots$",
+        ha="center",
+        va="center",
+        fontsize=14,
+    )
+
+    # Labels: "Latent states" on the left
+    ax.text(
+        0.3,
+        y_latent,
+        "Latent\nstates",
+        ha="left",
+        va="center",
+        fontsize=7,
+        fontstyle="italic",
+    )
+
+    # Labels: "Observations" on the left
+    ax.text(
+        0.3,
+        y_obs,
+        "Observations",
+        ha="left",
+        va="center",
+        fontsize=7,
+        fontstyle="italic",
+    )
+
+    # Label: "Previous Posterior" above x_{t-1}
+    ax.text(
+        x_prev_pos[0],
+        y_latent + 0.45,
+        "Previous\nPosterior",
+        ha="center",
+        va="bottom",
+        fontsize=6,
+        color=COLORS["posterior"],
+    )
+
+    # Label: "Current Posterior" above x_t
+    ax.text(
+        x_curr_pos[0],
+        y_latent + 0.45,
+        "Current\nPosterior",
+        ha="center",
+        va="bottom",
+        fontsize=6,
+        color=COLORS["posterior"],
+    )
+
+    # Spikes below y_{t-1}
+    draw_spikes_inset(
+        ax,
+        center=(y_prev_obs_pos[0], y_prev_obs_pos[1] - 0.65),
+        width=0.7,
+        height=0.35,
+        n_cells=5,
+        rng=rng,
+        label="Previous\nSpikes",
+    )
+
+    # Spikes below y_t
+    draw_spikes_inset(
+        ax,
+        center=(y_curr_obs_pos[0], y_curr_obs_pos[1] - 0.65),
         width=0.7,
         height=0.35,
         n_cells=5,
@@ -718,6 +1217,17 @@ def create_figure() -> None:
         fontweight="bold",
         color="#666666",
     )
+
+
+def create_figure() -> None:
+    """Create standalone state space model schematic figure."""
+    set_figure_defaults(context="paper")
+
+    # Create figure
+    fig, ax = plt.subplots(figsize=(7.0, 8.0), dpi=450)
+
+    # Draw schematic content
+    draw_schematic_content(ax)
 
     # Save
     save_figure("figures/main/state_space_schematic")

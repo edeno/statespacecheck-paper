@@ -1,12 +1,20 @@
-"""Create Figure 1 showing consistent and inconsistent distributions.
+"""Create Figure 1: Combined state space model schematic and distribution consistency.
 
-This figure demonstrates scenarios where the predictive distribution (prior)
-and normalized likelihood are consistent or inconsistent, using HPD overlap
-as a diagnostic.
+This figure combines:
+- Panel a: State space model schematic showing graphical model and filtering equations
+- Panels b-e: Distribution comparison showing consistent/inconsistent scenarios
+
+The schematic demonstrates the two-step Bayesian filtering process:
+1. Prediction: Convolve previous posterior with transition to get predictive
+2. Update: Multiply predictive with likelihood to get current posterior
+
+The distribution panels show scenarios where predictive and normalized likelihood
+are consistent or inconsistent, using HPD overlap as a diagnostic.
 """
 
 from __future__ import annotations
 
+import warnings
 from typing import Any
 
 import matplotlib.pyplot as plt
@@ -15,17 +23,22 @@ from matplotlib.axes import Axes
 from matplotlib.patches import Rectangle
 from scipy import stats
 
+# Import schematic drawing functions
+from state_space_schematic import draw_equation_boxes, draw_graphical_model
+
 from statespacecheck_paper.plotting import compute_hpd_region
-from statespacecheck_paper.style import WONG, save_figure, set_figure_defaults
+from statespacecheck_paper.style import COLORS, save_figure, set_figure_defaults
 
 
-def _create_panel(
+def _create_distribution_panel(
     ax: Axes,
     x: np.ndarray,
     scenario: dict[str, Any],
-    idx: int,
+    panel_label: str,
     color_predictive: str,
     color_likelihood: str,
+    show_legend: bool = False,
+    show_ylabel: bool = True,
 ) -> None:
     """Create a single panel showing predictive and likelihood distributions.
 
@@ -37,18 +50,16 @@ def _create_panel(
         Position values for plotting.
     scenario : dict
         Dictionary with 'title', 'predictive', and 'likelihood' keys.
-    idx : int
-        Panel index (0-3) for labeling.
+    panel_label : str
+        Panel label (e.g., 'b', 'c', 'd', 'e').
     color_predictive : str
         Color for predictive distribution.
     color_likelihood : str
         Color for likelihood distribution.
-
-    Returns
-    -------
-    None
-        Modifies the axes in-place by adding distribution plots, HPD regions,
-        labels, and formatting.
+    show_legend : bool, default False
+        Whether to show legend on this panel.
+    show_ylabel : bool, default True
+        Whether to show y-axis label.
     """
     # Generate distributions
     pred_mean, pred_std = scenario["predictive"]
@@ -61,21 +72,24 @@ def _create_panel(
     dx = x[1] - x[0]
     pdf_likelihood = pdf_likelihood / (np.sum(pdf_likelihood) * dx)
 
-    # Plot distributions
+    # Plot distributions (matching style from panel b equation boxes)
     ax.plot(
         x,
         pdf_predictive,
         color=color_predictive,
-        linewidth=1.5,
+        linewidth=1.2,
         label="Predictive distribution",
     )
+    ax.fill_between(x, pdf_predictive, alpha=0.3, color=color_predictive)
+
     ax.plot(
         x,
         pdf_likelihood,
         color=color_likelihood,
-        linewidth=1.5,
+        linewidth=1.2,
         label="Normalized likelihood",
     )
+    ax.fill_between(x, pdf_likelihood, alpha=0.3, color=color_likelihood)
 
     # Compute HPD regions
     hpd_predictive = compute_hpd_region(x, pdf_predictive, coverage=0.95)
@@ -135,8 +149,9 @@ def _create_panel(
     # Formatting
     ax.set_xlim(-20, 20)
     ax.set_ylim(-0.1, 0.45)
-    ax.set_xlabel("Position (a.u.)", fontsize=7, labelpad=8)
-    ax.set_ylabel("Probability Density", fontsize=7, labelpad=8)
+    ax.set_xlabel("Latent State (a.u.)", fontsize=7, labelpad=8)
+    if show_ylabel:
+        ax.set_ylabel("Probability Density", fontsize=7, labelpad=8)
     ax.set_title(scenario["title"], fontsize=8, fontweight="bold", pad=8)
 
     # Spines and ticks
@@ -149,11 +164,10 @@ def _create_panel(
     ax.tick_params(labelsize=6)
 
     # Add panel label
-    panel_labels = ["a", "b", "c", "d"]
     ax.text(
         -0.12,
         1.08,
-        panel_labels[idx],
+        panel_label,
         transform=ax.transAxes,
         fontsize=9,
         fontweight="bold",
@@ -161,44 +175,74 @@ def _create_panel(
         ha="right",
     )
 
-    # Add legend to first panel only
-    if idx == 0:
+    # Add legend if requested
+    if show_legend:
         ax.legend(loc="upper left", fontsize=6, frameon=False)
 
 
 def create_figure() -> None:
-    """Create Figure 1 with four panels showing distribution consistency.
+    """Create Figure 1 combining schematic and distribution panels.
 
-    This figure demonstrates scenarios where the predictive distribution (prior)
-    and normalized likelihood are consistent or inconsistent, using HPD overlap
-    as a diagnostic metric.
+    This figure combines:
+    - Panel a: State space model graphical model (top)
+    - Panel b: Equation boxes (Prediction and Update steps)
+    - Panel c: Distribution consistency examples (4 sub-panels, bottom)
 
     Returns
     -------
     None
         Saves figure to figures/main/figure01.{pdf,png}.
     """
-    import warnings
-
     set_figure_defaults(context="paper")
 
-    # Create 2x2 grid
-    # Figure width: 7.0" matches Nature/Science full-page width (max 7.08")
-    # DPI set during save (450), not here - prevents redundancy
-    fig, axes = plt.subplots(
-        2, 2, figsize=(7.0, 5.0), constrained_layout=True, sharex=True, sharey=True
+    # Create figure with GridSpec for precise control
+    # 3 rows: graphical model, equation boxes, distribution panels
+    fig = plt.figure(figsize=(5.0, 6.0), dpi=450, constrained_layout=True)
+
+    # Create grid: 3 rows, 4 columns
+    # Row 0: Graphical model (full width)
+    # Row 1: Equation boxes (full width)
+    # Row 2: 4 distribution panels (full width, no margins)
+    gs = fig.add_gridspec(
+        3,
+        4,
+        height_ratios=[0.8, 1.0, 0.5],  # Tighter vertical spacing
+        width_ratios=[1, 1, 1, 1],  # Equal width panels, no margins
     )
 
-    # Flatten axes for easier iteration
-    axes_flat = axes.flatten()
+    # Panel A: Graphical model spans all columns in top row
+    axes = {}
+    axes["A"] = fig.add_subplot(gs[0, :])
 
-    # Define x-axis
+    # Panel B: Equation boxes spans all columns in middle row
+    axes["B"] = fig.add_subplot(gs[1, :])
+
+    # Panel C (sub-panels): Distribution panels span full width
+    axes["C1"] = fig.add_subplot(gs[2, 0])
+    axes["C2"] = fig.add_subplot(gs[2, 1])
+    axes["C3"] = fig.add_subplot(gs[2, 2])
+    axes["C4"] = fig.add_subplot(gs[2, 3])
+
+    # =========================================================================
+    # Panel A: Graphical model
+    # =========================================================================
+    draw_graphical_model(axes["A"])
+
+    # =========================================================================
+    # Panel B: Equation boxes
+    # =========================================================================
+    draw_equation_boxes(axes["B"])
+
+    # =========================================================================
+    # Panel C: Distribution consistency examples (4 sub-panels)
+    # =========================================================================
+
+    # Define x-axis for distributions
     x = np.linspace(-20, 20, 1000)
 
-    # Colors: Wong palette - colorblind-friendly (verified for deuteranopia/protanopia)
-    # These colors also work in grayscale and meet journal accessibility requirements
-    color_predictive = WONG[5]  # Blue (#0072B2) - matches figure 2
-    color_likelihood = WONG[1]  # Orange (#E69F00) - matches figure 2
+    # Colors from semantic COLORS system
+    color_predictive = COLORS["predictive"]  # Blue (#0072B2)
+    color_likelihood = COLORS["likelihood"]  # Orange (#E69F00)
 
     # Define scenarios
     scenarios = [
@@ -224,15 +268,40 @@ def create_figure() -> None:
         },
     ]
 
-    for idx, (ax, scenario) in enumerate(zip(axes_flat, scenarios, strict=True)):
-        _create_panel(ax, x, scenario, idx, color_predictive, color_likelihood)
+    sub_panel_names = ["C1", "C2", "C3", "C4"]
+
+    for panel_name, scenario in zip(sub_panel_names, scenarios, strict=True):
+        _create_distribution_panel(
+            axes[panel_name],
+            x,
+            scenario,
+            "",  # No individual panel labels for sub-panels
+            color_predictive,
+            color_likelihood,
+            show_legend=False,  # No legend - colors are explained in schematic
+            show_ylabel=(panel_name == "C1"),  # Y-axis label only on first sub-panel
+        )
+
+    # Add panel labels using fig.text() at consistent x position
+    # Use panel A's left edge as reference for all labels
+    label_x = axes["A"].get_position().x0 - 0.08  # Further left
+    for label, ax_key in [("a", "A"), ("b", "B"), ("c", "C1")]:
+        fig.text(
+            label_x,
+            axes[ax_key].get_position().y1 + 0.04,  # Higher position
+            label,
+            fontsize=9,
+            fontweight="bold",
+            va="bottom",
+            ha="right",
+        )
 
     # Validate layout before saving
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
         fig.canvas.draw()  # Force layout calculation
-        if w:
-            print(f"⚠️  Layout warning: {w[-1].message}")
+        for warning in w:
+            print(f"⚠️  Layout warning: {warning.message}")
 
     # Save to figures/main directory
     save_figure("figures/main/figure01")
