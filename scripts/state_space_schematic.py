@@ -106,8 +106,34 @@ def draw_distribution_inset(
     label: str | None = None,
     label_color: str | None = None,
     label_size: int = 6,
+    title: str | None = None,
+    title_size: int = 6,
 ) -> None:
-    """Draw a small distribution plot as an inset."""
+    """Draw a small distribution plot as an inset.
+
+    Parameters
+    ----------
+    ax : plt.Axes
+        The axes to draw on.
+    center : tuple[float, float]
+        Center position in data coordinates.
+    width, height : float
+        Size of the inset in data coordinates.
+    mean, std : float
+        Parameters for the Gaussian distribution.
+    color : str
+        Color for the distribution curve and fill.
+    label : str, optional
+        Label to display below the distribution (e.g., math notation).
+    label_color : str, optional
+        Color for the label. Defaults to distribution color.
+    label_size : int, default 6
+        Font size for the label below.
+    title : str, optional
+        Title to display above the distribution (e.g., "Previous Posterior").
+    title_size : int, default 6
+        Font size for the title above.
+    """
     from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 
     if label_color is None:
@@ -139,6 +165,19 @@ def draw_distribution_inset(
     inset.set_xlim(mean - 3.5 * std, mean + 3.5 * std)
     inset.set_ylim(0, y.max() * 1.1)
     inset.axis("off")
+
+    # Add title above
+    if title:
+        inset.text(
+            0.5,
+            1.15,
+            title,
+            ha="center",
+            va="bottom",
+            transform=inset.transAxes,
+            fontsize=title_size,
+            color=color,
+        )
 
     # Add label below
     if label:
@@ -299,13 +338,13 @@ def create_figure() -> None:
     # EQUATION 1: [Prev Posterior] ⊛ T = [Predictive]
     # ==========================================================================
 
-    y_eq1 = 2.0
+    y_eq1 = 2.4  # Moved up for spacing between boxes
     box_height = 1.6  # Increased from 1.2 to accommodate distributions + labels
 
-    # Draw equation box
+    # Draw equation box (center shifted up to match content at y_eq1 + 0.2)
     draw_equation_box(
         ax,
-        center=(4.5, y_eq1),
+        center=(4.5, y_eq1 + 0.2),
         width=9.2,
         height=box_height,
         edgecolor="#CCCCCC",
@@ -323,12 +362,13 @@ def create_figure() -> None:
         color=COLORS["posterior"],
         label=r"$p(x_{t-1}|y_{1:t-1})$",
         label_size=5,
+        title="Previous\nPosterior",
     )
 
     # Operation symbol: ⊛
     ax.text(
         2.5,
-        y_eq1,
+        y_eq1 + 0.2,
         r"$\circledast$",
         ha="center",
         va="center",
@@ -339,7 +379,7 @@ def create_figure() -> None:
     # Transition matrix T
     ax.text(
         3.2,
-        y_eq1,
+        y_eq1 + 0.2,
         r"$T$",
         ha="center",
         va="center",
@@ -351,7 +391,7 @@ def create_figure() -> None:
     # Equals
     ax.text(
         3.9,
-        y_eq1,
+        y_eq1 + 0.2,
         "=",
         ha="center",
         va="center",
@@ -369,12 +409,13 @@ def create_figure() -> None:
         color=COLORS["predictive"],
         label=r"$p(x_t|y_{1:t-1})$",
         label_size=5,
+        title="Predictive\nDistribution",
     )
 
     # Step label
     ax.text(
         0.2,
-        y_eq1,
+        y_eq1 + 0.2,
         "Step 1:",
         ha="left",
         va="center",
@@ -385,7 +426,7 @@ def create_figure() -> None:
     # Descriptive label
     ax.text(
         7.5,
-        y_eq1,
+        y_eq1 + 0.2,
         "Prediction",
         ha="left",
         va="center",
@@ -398,13 +439,13 @@ def create_figure() -> None:
     # EQUATION 2: [Predictive] × [Likelihood] = [Current Posterior]
     # ==========================================================================
 
-    y_eq2 = 0.4
+    y_eq2 = 0.5  # Slightly adjusted
     box_height_eq2 = 1.6  # Same as Step 1
 
-    # Draw equation box
+    # Draw equation box (center shifted up to match content at y_eq2 + 0.2)
     draw_equation_box(
         ax,
-        center=(4.5, y_eq2),
+        center=(4.5, y_eq2 + 0.2),
         width=9.2,
         height=box_height_eq2,
         edgecolor="#CCCCCC",
@@ -422,6 +463,7 @@ def create_figure() -> None:
         color=COLORS["predictive"],
         label=r"$p(x_t|y_{1:t-1})$",
         label_size=5,
+        title="Predictive\nDistribution",
     )
 
     # Operation symbol: ×
@@ -446,6 +488,7 @@ def create_figure() -> None:
         color=COLORS["likelihood"],
         label=r"$p(x_t|y_t)$",
         label_size=5,
+        title="Likelihood",
     )
 
     # Equals
@@ -469,6 +512,7 @@ def create_figure() -> None:
         color=COLORS["posterior"],
         label=r"$p(x_t|y_{1:t})$",
         label_size=5,
+        title="Current\nPosterior",
     )
 
     # Step label
