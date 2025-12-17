@@ -14,12 +14,13 @@ are consistent or inconsistent, using HPD overlap as a diagnostic.
 
 from __future__ import annotations
 
-import warnings
 from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.axes import Axes
+from matplotlib.figure import Figure
+from matplotlib.layout_engine import ConstrainedLayoutEngine
 from matplotlib.patches import Circle, FancyArrowPatch, FancyBboxPatch, Rectangle
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 from scipy import stats
@@ -307,8 +308,8 @@ def _draw_graphical_model(
     if rng is None:
         rng = np.random.default_rng(42)
 
-    ax.set_xlim(-0.5, 9.5)
-    ax.set_ylim(2.5, 7.0)
+    ax.set_xlim(-0.5, 7.5)  # Reduced from 9.5 - content ends around 7
+    ax.set_ylim(2.5, 6.75)  # Reduced from 7.0 - content tops at 6.6
     ax.axis("off")
 
     node_radius = 0.38
@@ -505,8 +506,8 @@ def _draw_equation_boxes(ax: Axes) -> None:
     ax : matplotlib.axes.Axes
         The axes to draw on.
     """
-    ax.set_xlim(-0.5, 9.5)
-    ax.set_ylim(-0.95, 2.6)
+    ax.set_xlim(-0.5, 7.5)  # Reduced from 9.5 - content ends around 7.15
+    ax.set_ylim(-0.95, 2.35)  # Reduced from 2.6 - content tops at ~2.3
     ax.axis("off")
 
     # ==========================================================================
@@ -760,31 +761,27 @@ def _extract_contiguous_regions(mask: np.ndarray, x: np.ndarray) -> list[tuple[f
     regions : list[tuple[float, float]]
         List of (start, end) tuples for each contiguous region.
     """
-    regions: list[tuple[float, float]] = []
-    in_region = False
-    start: float | None = None
-    for i, val in enumerate(mask):
-        if val and not in_region:
-            start = float(x[i])
-            in_region = True
-        elif not val and in_region:
-            if start is not None:
-                regions.append((start, float(x[i - 1])))
-            in_region = False
-    if in_region and start is not None:
-        regions.append((start, float(x[-1])))
-    return regions
+    if not np.any(mask):
+        return []
+
+    # Pad with False to detect edges at boundaries
+    padded = np.concatenate([[False], mask, [False]])
+    diff = np.diff(padded.astype(int))
+
+    # Rising edges (0->1) mark region starts, falling edges (1->0) mark ends
+    starts = np.where(diff == 1)[0]
+    ends = np.where(diff == -1)[0] - 1  # -1 to get last True index
+
+    return [(float(x[s]), float(x[e])) for s, e in zip(starts, ends, strict=True)]
 
 
 def _create_distribution_panel(
     ax: Axes,
     x: np.ndarray,
     scenario: dict[str, Any],
-    panel_label: str,
     color_predictive: str,
     color_likelihood: str,
-    show_legend: bool = False,
-    show_ylabel: bool = True,
+    show_direct_labels: bool = False,
 ) -> None:
     """Create a single panel showing predictive and likelihood distributions.
 
@@ -796,16 +793,12 @@ def _create_distribution_panel(
         Position values for plotting.
     scenario : dict
         Dictionary with 'title', 'predictive', and 'likelihood' keys.
-    panel_label : str
-        Panel label (e.g., 'b', 'c', 'd', 'e').
     color_predictive : str
         Color for predictive distribution.
     color_likelihood : str
         Color for likelihood distribution.
-    show_legend : bool, default False
-        Whether to show legend on this panel.
-    show_ylabel : bool, default True
-        Whether to show y-axis label.
+    show_direct_labels : bool, default False
+        Whether to show direct labels on the distribution curves.
     """
     # Generate distributions
     pred_mean, pred_std = scenario["predictive"]
@@ -881,20 +874,27 @@ def _create_distribution_panel(
 
     ax.axis("off")
 
-    # Add panel label
-    ax.text(
-        -0.12,
-        1.08,
-        panel_label,
-        transform=ax.transAxes,
-        fontsize=9,
-        fontweight="bold",
-        va="bottom",
-        ha="right",
-    )
-
-    if show_legend:
-        ax.legend(loc="upper left", fontsize=6, frameon=False)
+    # Add direct labels on distribution curves
+    if show_direct_labels:
+        # Label predictive on left side, likelihood on right side
+        ax.text(
+            -12,
+            0.22,
+            "Predictive",
+            ha="center",
+            va="bottom",
+            fontsize=5,
+            color=color_predictive,
+        )
+        ax.text(
+            16,
+            0.22,
+            "Likelihood",
+            ha="center",
+            va="bottom",
+            fontsize=5,
+            color=color_likelihood,
+        )
 
 
 # =============================================================================
@@ -919,23 +919,17 @@ def create_figure() -> None:
 
     # Create figure with GridSpec for precise control
     # 3 rows: graphical model, equation boxes, distribution panels
-    fig = plt.figure(figsize=(5.0, 5.8), dpi=450, constrained_layout=True)
-    layout_engine: Any = fig.get_layout_engine()
-    if layout_engine is not None:
+    fig: Figure = plt.figure(figsize=(5.0, 5.8), dpi=450, constrained_layout=True)
+    layout_engine = fig.get_layout_engine()
+    if isinstance(layout_engine, ConstrainedLayoutEngine):
         layout_engine.set(w_pad=0.01, h_pad=0.02, wspace=0.01, hspace=0.02)
 
-    # Create grid: 3 rows, 6 columns
-    # Row 0: Graphical model (full width)
-    # Row 1: Equation boxes (full width) - reduced height
-    # Row 2: margin + 4 distribution panels + margin
-    # Panel B equation boxes span x=0.0 to x=7.15 in xlim=(-0.5, 9.5)
-    # That's 5% left margin and 23.5% right margin
-    # Width ratios: left_margin=0.05, 4 panels share 0.715, right_margin=0.235
+    # Create grid: 3 rows, 4 columns (no margin column needed)
     gs = fig.add_gridspec(
         3,
-        6,
+        4,
         height_ratios=[0.6, 0.7, 0.35],
-        width_ratios=[0.05, 0.715 / 4, 0.715 / 4, 0.715 / 4, 0.715 / 4, 0.235],
+        width_ratios=[1, 1, 1, 1],
     )
 
     # Panel A: Graphical model spans all columns in top row
@@ -945,11 +939,11 @@ def create_figure() -> None:
     # Panel B: Equation boxes spans all columns in middle row
     axes["B"] = fig.add_subplot(gs[1, :])
 
-    # Panel C (sub-panels): Distribution panels aligned with equation boxes
-    axes["C1"] = fig.add_subplot(gs[2, 1])
-    axes["C2"] = fig.add_subplot(gs[2, 2])
-    axes["C3"] = fig.add_subplot(gs[2, 3])
-    axes["C4"] = fig.add_subplot(gs[2, 4])
+    # Panel C (sub-panels): Distribution panels
+    axes["C1"] = fig.add_subplot(gs[2, 0])
+    axes["C2"] = fig.add_subplot(gs[2, 1])
+    axes["C3"] = fig.add_subplot(gs[2, 2])
+    axes["C4"] = fig.add_subplot(gs[2, 3])
 
     # =========================================================================
     # Panel A: Graphical model
@@ -998,22 +992,37 @@ def create_figure() -> None:
 
     sub_panel_names = ["C1", "C2", "C3", "C4"]
 
-    for panel_name, scenario in zip(sub_panel_names, scenarios, strict=True):
+    for i, (panel_name, scenario) in enumerate(zip(sub_panel_names, scenarios, strict=True)):
         _create_distribution_panel(
             axes[panel_name],
             x,
             scenario,
-            "",
             color_predictive,
             color_likelihood,
-            show_legend=False,
-            show_ylabel=(panel_name == "C1"),
+            show_direct_labels=(i == 0),  # Only show labels on first panel
         )
 
+    # Draw canvas to finalize constrained_layout positions before querying them
+    fig.canvas.draw()
+
+    # Add shared x-axis label for Panel C
+    # Position below the center of the four sub-panels
+    c_panels_left = axes["C1"].get_position().x0
+    c_panels_right = axes["C4"].get_position().x1
+    c_panels_bottom = axes["C1"].get_position().y0
+    fig.text(
+        (c_panels_left + c_panels_right) / 2,
+        c_panels_bottom - 0.02,
+        "Latent state",
+        ha="center",
+        va="top",
+        fontsize=7,
+    )
+
     # Add panel labels using fig.text() at consistent x position
-    # Use panel A's left edge as reference for all labels
-    label_x = axes["A"].get_position().x0 - 0.08
-    for label, ax_key, y_offset in [("a", "A", 0.08), ("b", "B", 0.04), ("c", "C1", -0.02)]:
+    # Use panel C1's left edge as reference - it has content starting at the left edge
+    label_x = axes["C1"].get_position().x0 - 0.02
+    for label, ax_key, y_offset in [("a", "A", 0.01), ("b", "B", 0.01), ("c", "C1", 0.01)]:
         fig.text(
             label_x,
             axes[ax_key].get_position().y1 + y_offset,
@@ -1023,13 +1032,6 @@ def create_figure() -> None:
             va="bottom",
             ha="right",
         )
-
-    # Validate layout before saving
-    with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
-        fig.canvas.draw()
-        for warning in w:
-            print(f"Warning: Layout warning: {warning.message}")
 
     # Save to figures/main directory
     save_figure("figures/main/figure01")
