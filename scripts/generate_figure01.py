@@ -309,7 +309,7 @@ def _draw_graphical_model(
         rng = np.random.default_rng(42)
 
     ax.set_xlim(-0.5, 7.5)  # Reduced from 9.5 - content ends around 7
-    ax.set_ylim(2.5, 6.65)  # Content tops at 6.6, minimal padding
+    ax.set_ylim(2.5, 6.9)  # Room for title at 6.6
     ax.axis("off")
 
     node_radius = 0.38
@@ -507,7 +507,7 @@ def _draw_equation_boxes(ax: Axes) -> None:
         The axes to draw on.
     """
     ax.set_xlim(-0.5, 7.5)  # Reduced from 9.5 - content ends around 7.15
-    ax.set_ylim(-0.95, 2.35)  # Reduced from 2.6 - content tops at ~2.3
+    ax.set_ylim(-0.95, 2.6)  # Room for title at 2.3
     ax.axis("off")
 
     # ==========================================================================
@@ -740,6 +740,17 @@ def _draw_equation_boxes(ax: Axes) -> None:
         color="#666666",
     )
 
+    # Title
+    ax.text(
+        box_center_x,
+        2.55,
+        "Recursive Estimation Algorithm",
+        ha="center",
+        va="bottom",
+        fontsize=8,
+        fontweight="bold",
+    )
+
 
 # =============================================================================
 # Distribution Panel Functions
@@ -869,7 +880,7 @@ def _create_distribution_panel(
 
     # Formatting
     ax.set_xlim(-20, 20)
-    ax.set_ylim(-0.1, 0.26)  # Tighter to match other panels' label spacing
+    ax.set_ylim(-0.1, 0.30)  # Room for sub-panel titles and overall "Goodness-of-Fit" title
     ax.set_title(scenario["title"], fontsize=7, fontweight="normal", pad=2)
 
     ax.axis("off")
@@ -919,16 +930,16 @@ def create_figure() -> None:
 
     # Create figure with GridSpec for precise control
     # 3 rows: graphical model, equation boxes, distribution panels
-    fig: Figure = plt.figure(figsize=(5.0, 5.8), dpi=450, constrained_layout=True)
+    fig: Figure = plt.figure(figsize=(5.0, 6.2), dpi=450, constrained_layout=True)
     layout_engine = fig.get_layout_engine()
     if isinstance(layout_engine, ConstrainedLayoutEngine):
-        layout_engine.set(w_pad=0.01, h_pad=0.02, wspace=0.01, hspace=0.02)
+        layout_engine.set(w_pad=0.01, h_pad=0.02, wspace=0.01, hspace=0.10)
 
     # Create grid: 3 rows, 4 columns (no margin column needed)
     gs = fig.add_gridspec(
         3,
         4,
-        height_ratios=[0.6, 0.7, 0.35],
+        height_ratios=[0.6, 0.7, 0.45],
         width_ratios=[1, 1, 1, 1],
     )
 
@@ -1005,11 +1016,23 @@ def create_figure() -> None:
     # Draw canvas to finalize constrained_layout positions before querying them
     fig.canvas.draw()
 
-    # Add shared x-axis label for Panel C
-    # Position below the center of the four sub-panels
+    # Add Panel C title above the sub-panels
     c_panels_left = axes["C1"].get_position().x0
     c_panels_right = axes["C4"].get_position().x1
+    c_panels_top = axes["C1"].get_position().y1
     c_panels_bottom = axes["C1"].get_position().y0
+    fig.text(
+        (c_panels_left + c_panels_right) / 2,
+        c_panels_top + 0.025,
+        "Goodness-of-Fit",
+        ha="center",
+        va="bottom",
+        fontsize=8,
+        fontweight="bold",
+    )
+
+    # Add shared x-axis label for Panel C
+    # Position below the center of the four sub-panels
     fig.text(
         (c_panels_left + c_panels_right) / 2,
         c_panels_bottom - 0.02,
@@ -1022,7 +1045,13 @@ def create_figure() -> None:
     # Add panel labels using fig.text() at consistent x position
     # Use panel C1's left edge as reference - it has content starting at the left edge
     label_x = axes["C1"].get_position().x0 - 0.02
-    for label, ax_key, y_offset in [("a", "A", 0.01), ("b", "B", 0.01), ("c", "C1", 0.01)]:
+    # For "c", position above the "Goodness-of-Fit" title (which is at c_panels_top + 0.025)
+    c_title_y = c_panels_top + 0.025
+    for label, ax_key, y_offset in [
+        ("a", "A", 0.01),
+        ("b", "B", 0.01),
+        ("c", "C1", c_title_y - axes["C1"].get_position().y1 + 0.02),
+    ]:
         fig.text(
             label_x,
             axes[ax_key].get_position().y1 + y_offset,
