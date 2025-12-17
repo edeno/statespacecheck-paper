@@ -23,7 +23,6 @@ from matplotlib.axes import Axes
 from matplotlib.patches import Circle, FancyArrowPatch, FancyBboxPatch, Rectangle
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 from scipy import stats
-from scipy.stats import norm
 
 from statespacecheck_paper.plotting import compute_hpd_region
 from statespacecheck_paper.style import COLORS, save_figure, set_figure_defaults
@@ -159,7 +158,7 @@ def _draw_distribution_inset(
     )
 
     x = np.linspace(mean - 3.5 * std, mean + 3.5 * std, 100)
-    y = norm.pdf(x, mean, std)
+    y = stats.norm.pdf(x, mean, std)
 
     inset.plot(x, y, color=color, linewidth=1.2)
     inset.fill_between(x, y, alpha=0.3, color=color)
@@ -746,6 +745,37 @@ def _draw_equation_boxes(ax: Axes) -> None:
 # =============================================================================
 
 
+def _extract_contiguous_regions(mask: np.ndarray, x: np.ndarray) -> list[tuple[float, float]]:
+    """Extract contiguous True regions from a boolean mask.
+
+    Parameters
+    ----------
+    mask : np.ndarray, shape (n_points,)
+        Boolean mask indicating region membership.
+    x : np.ndarray, shape (n_points,)
+        Position values corresponding to mask.
+
+    Returns
+    -------
+    regions : list[tuple[float, float]]
+        List of (start, end) tuples for each contiguous region.
+    """
+    regions: list[tuple[float, float]] = []
+    in_region = False
+    start: float | None = None
+    for i, val in enumerate(mask):
+        if val and not in_region:
+            start = float(x[i])
+            in_region = True
+        elif not val and in_region:
+            if start is not None:
+                regions.append((start, float(x[i - 1])))
+            in_region = False
+    if in_region and start is not None:
+        regions.append((start, float(x[-1])))
+    return regions
+
+
 def _create_distribution_panel(
     ax: Axes,
     x: np.ndarray,
@@ -807,29 +837,11 @@ def _create_distribution_panel(
     )
     ax.fill_between(x, pdf_likelihood, alpha=0.3, color=color_likelihood)
 
-    # Compute HPD regions
+    # Compute HPD regions and extract contiguous intervals
     hpd_predictive = compute_hpd_region(x, pdf_predictive, coverage=0.95)
     hpd_likelihood = compute_hpd_region(x, pdf_likelihood, coverage=0.95)
-
-    # Extract contiguous regions
-    pred_regions: list[tuple[float, float]] = []
-    like_regions: list[tuple[float, float]] = []
-    for mask, regions_list in [
-        (hpd_predictive, pred_regions),
-        (hpd_likelihood, like_regions),
-    ]:
-        in_region = False
-        start: float | None = None
-        for i, val in enumerate(mask):
-            if val and not in_region:
-                start = float(x[i])
-                in_region = True
-            elif not val and in_region:
-                if start is not None:
-                    regions_list.append((start, float(x[i - 1])))
-                in_region = False
-        if in_region and start is not None:
-            regions_list.append((start, float(x[-1])))
+    pred_regions = _extract_contiguous_regions(hpd_predictive, x)
+    like_regions = _extract_contiguous_regions(hpd_likelihood, x)
 
     # Draw HPD regions as horizontal bars
     bar_height = 0.015
