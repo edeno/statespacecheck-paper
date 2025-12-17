@@ -146,22 +146,13 @@ def _create_distribution_panel(
             )
         )
 
-    # Formatting
+    # Formatting - minimal style matching panel b
     ax.set_xlim(-20, 20)
-    ax.set_ylim(-0.1, 0.45)
-    ax.set_xlabel("Latent State (a.u.)", fontsize=7, labelpad=8)
-    if show_ylabel:
-        ax.set_ylabel("Probability Density", fontsize=7, labelpad=8)
-    ax.set_title(scenario["title"], fontsize=8, fontweight="bold", pad=8)
+    ax.set_ylim(-0.1, 0.30)  # Tighter y-limit to bring title closer to distributions
+    ax.set_title(scenario["title"], fontsize=8, fontweight="bold", pad=2)
 
-    # Spines and ticks
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    ylim = ax.get_ylim()
-    xlim = ax.get_xlim()
-    ax.spines["left"].set_bounds(ylim[0], ylim[1])
-    ax.spines["bottom"].set_bounds(xlim[0], xlim[1])
-    ax.tick_params(labelsize=6)
+    # Turn off all axes (matching panel b style)
+    ax.axis("off")
 
     # Add panel label
     ax.text(
@@ -285,10 +276,10 @@ def create_figure() -> None:
     # Add panel labels using fig.text() at consistent x position
     # Use panel A's left edge as reference for all labels
     label_x = axes["A"].get_position().x0 - 0.08  # Further left
-    for label, ax_key in [("a", "A"), ("b", "B"), ("c", "C1")]:
+    for label, ax_key, y_offset in [("a", "A", 0.04), ("b", "B", 0.04), ("c", "C1", -0.02)]:
         fig.text(
             label_x,
-            axes[ax_key].get_position().y1 + 0.04,  # Higher position
+            axes[ax_key].get_position().y1 + y_offset,
             label,
             fontsize=9,
             fontweight="bold",
