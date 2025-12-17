@@ -211,3 +211,4 @@ data/
 # Candidate figures (temporary/exploratory)
 figures/candidates/
 manuscript/old/
+.DS_Store
