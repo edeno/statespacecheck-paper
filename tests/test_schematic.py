@@ -236,7 +236,7 @@ class TestDrawGraphicalModel:
 
         # Check xlim and ylim are set
         assert ax.get_xlim() == (-0.5, 7.5)
-        assert ax.get_ylim() == (2.5, 6.6)
+        assert ax.get_ylim() == (2.7, 6.4)
         plt.close(fig)
 
     def test_reproducible_with_rng(self) -> None:
@@ -275,7 +275,7 @@ class TestDrawEquationBoxes:
 
         # Check xlim and ylim are set
         assert ax.get_xlim() == (-0.5, 7.5)
-        assert ax.get_ylim() == (-0.95, 2.35)
+        assert ax.get_ylim() == (-0.85, 2.45)
         plt.close(fig)
 
     def test_has_title(self) -> None:

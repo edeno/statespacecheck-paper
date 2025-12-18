@@ -425,7 +425,7 @@ def draw_graphical_model(
         rng = np.random.default_rng(42)
 
     ax.set_xlim(-0.5, 7.5)  # Content ends around 7
-    ax.set_ylim(2.5, 6.6)  # Content tops at 6.6, title via set_title()
+    ax.set_ylim(2.7, 6.4)  # Content from ~2.9 to ~6.0, with room for title
     ax.axis("off")
 
     node_radius = 0.38
@@ -621,7 +621,7 @@ def draw_equation_boxes(ax: Axes) -> None:
     >>> plt.close(fig)
     """
     ax.set_xlim(-0.5, 7.5)  # Content ends around 7.15
-    ax.set_ylim(-0.95, 2.35)  # Content tops at ~2.3, title via set_title()
+    ax.set_ylim(-0.85, 2.45)  # Content from ~-0.7 to ~2.3, with room for title
     ax.axis("off")
 
     # ==========================================================================

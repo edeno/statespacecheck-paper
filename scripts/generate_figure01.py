@@ -17,7 +17,6 @@ from __future__ import annotations
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.figure import Figure
-from matplotlib.layout_engine import ConstrainedLayoutEngine
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 
 from statespacecheck_paper.plotting import create_distribution_comparison_panel
@@ -42,17 +41,20 @@ def create_figure() -> None:
 
     # Create figure with GridSpec for precise control
     # 3 rows: graphical model, equation boxes, distribution panels
-    fig: Figure = plt.figure(figsize=(5.0, 6.2), dpi=450, constrained_layout=True)
-    layout_engine = fig.get_layout_engine()
-    if isinstance(layout_engine, ConstrainedLayoutEngine):
-        layout_engine.set(w_pad=0.01, h_pad=0.02, wspace=0.01, hspace=0.10)
+    fig: Figure = plt.figure(figsize=(5.0, 5.1), dpi=450)
 
-    # Create grid: 3 rows, 4 columns (no margin column needed)
+    # Create grid with minimal spacing between rows
     gs = fig.add_gridspec(
         3,
         4,
-        height_ratios=[0.6, 0.7, 0.45],
+        height_ratios=[0.55, 0.65, 0.35],
         width_ratios=[1, 1, 1, 1],
+        left=0.08,
+        right=0.98,
+        top=0.97,
+        bottom=0.05,
+        hspace=0.12,  # Moderate vertical space between panels
+        wspace=0.02,
     )
 
     # Panel A: Graphical model spans all columns in top row
@@ -66,7 +68,12 @@ def create_figure() -> None:
     # The spanning axes is invisible but holds the "Goodness-of-Fit" title
     axes["C"] = fig.add_subplot(gs[2, :])
     axes["C"].axis("off")
-    axes["C"].set_title("Goodness-of-Fit", fontsize=8, fontweight="bold", pad=4)
+    axes["C"].set_title(
+        "Goodness-of-Fit: Predictive vs. Likelihood",
+        fontsize=8,
+        fontweight="bold",
+        pad=4,
+    )
 
     # Sub-panels for distribution plots (using inset_axes for precise positioning)
     # Calculate sub-panel positions within the spanning axes
@@ -128,9 +135,6 @@ def create_figure() -> None:
             title=title,
             show_labels=(i == 0),  # Only show labels on first panel
         )
-
-    # Draw canvas to finalize constrained_layout positions before querying them
-    fig.canvas.draw()
 
     # Add shared x-axis label for Panel C
     c_pos = axes["C"].get_position()
