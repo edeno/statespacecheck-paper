@@ -20,6 +20,8 @@ repos:
         name: Type check with mypy
         additional_dependencies:
           - numpy>=1.26.0
+          - matplotlib>=3.8.0
+          - scipy>=1.12.0
           - types-setuptools
         files: ^src/
         args: [--strict]

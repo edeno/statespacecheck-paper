@@ -43,6 +43,114 @@ WONG = [
     "#CC79A7",  # Reddish Purple
 ]
 
+# =============================================================================
+# Semantic Color System
+# =============================================================================
+# Provides consistent colors for concepts across all figures.
+# Design principles:
+# 1. Colorblind accessible (uses WONG palette)
+# 2. Semantic consistency (same concept = same color everywhere)
+# 3. Visual hierarchy (primary concepts are saturated, secondary are muted)
+# 4. Print compatible (distinct in grayscale)
+#
+# Usage:
+#   from statespacecheck_paper.style import COLORS
+#   ax.plot(x, predictive, color=COLORS["predictive"])
+#   ax.fill_between(x, likelihood, color=COLORS["likelihood"], alpha=0.3)
+
+COLORS: dict[str, str] = {
+    # -------------------------------------------------------------------------
+    # Primary Distributions (the core comparison in all diagnostics)
+    # -------------------------------------------------------------------------
+    # Predictive: "What we expect" - the one-step-ahead prediction from the model
+    # Blue chosen for "cool" association with prior/prediction (before evidence)
+    "predictive": "#0072B2",  # WONG[5] Blue
+    #
+    # Likelihood: "What we observe" - evidence from current observations
+    # Orange chosen for "warm" association with data/evidence (new information)
+    "likelihood": "#E69F00",  # WONG[1] Orange
+    #
+    # Posterior: "What we believe" - combined belief after incorporating evidence
+    # Black chosen as neutral, authoritative color (the "answer")
+    "posterior": "#000000",  # WONG[0] Black
+    #
+    # -------------------------------------------------------------------------
+    # Ground Truth and Reference
+    # -------------------------------------------------------------------------
+    # True position/state - must be highly visible but distinct from distributions
+    # Magenta chosen for high visibility and distinction from all other colors
+    "ground_truth": "#FF00FF",  # Magenta
+    #
+    # Threshold lines - subtle reference, should not compete with data
+    "threshold": "#666666",  # Dark gray
+    #
+    # Zero/baseline reference lines
+    "reference": "#999999",  # Medium gray
+    #
+    # -------------------------------------------------------------------------
+    # Diagnostic Metrics
+    # -------------------------------------------------------------------------
+    # HPD Overlap metric - related to distributions but distinct
+    # Sky blue: lighter than predictive blue, suggests "overlap/intersection"
+    "hpd_overlap": "#56B4E9",  # WONG[2] Sky Blue
+    #
+    # KL Divergence metric - measures information difference
+    # Bluish green: distinct from both primary colors, suggests "divergence"
+    "kl_divergence": "#009E73",  # WONG[3] Bluish Green
+    #
+    # Combined/summary metric (e.g., p-value)
+    "metric_combined": "#CC79A7",  # WONG[7] Reddish Purple
+    #
+    # -------------------------------------------------------------------------
+    # KL Decomposition (for mechanics figures)
+    # -------------------------------------------------------------------------
+    # Positive log ratio: posterior > likelihood (model expects more)
+    "kl_positive": "#009E73",  # WONG[3] Bluish Green
+    #
+    # Negative log ratio: posterior < likelihood (model expects less)
+    "kl_negative": "#0072B2",  # WONG[5] Blue
+    #
+    # Pointwise KL contribution
+    "kl_pointwise": "#56B4E9",  # WONG[2] Sky Blue
+    #
+    # -------------------------------------------------------------------------
+    # Experimental Phase Backgrounds (very light, ~15% saturation)
+    # -------------------------------------------------------------------------
+    # These are derived from WONG colors but lightened significantly
+    # to serve as subtle background indicators without competing with data
+    #
+    # Baseline period - no manipulation
+    "phase_baseline": "#FFFFFF",  # White
+    #
+    # Remapping period - place field remapping (related to likelihood change)
+    "phase_remap": "#FFF0D6",  # Light orange (from WONG[1])
+    #
+    # Flat firing period - constant firing rates
+    "phase_flat": "#E8E8E8",  # Light gray (neutral)
+    #
+    # Fast movement period - rapid position changes
+    "phase_fast": "#FFE0D6",  # Light vermillion (from WONG[6])
+    #
+    # Slow/stationary period - minimal movement
+    "phase_slow": "#D6E8FF",  # Light blue (from WONG[5])
+    #
+    # -------------------------------------------------------------------------
+    # Heatmap Colormaps
+    # -------------------------------------------------------------------------
+    # Use these string values with matplotlib's cmap parameter
+    # "heatmap_posterior": "bone_r"  # Defined as constant below
+}
+
+# Colormap constants (can't be in dict since they're not colors)
+CMAP_POSTERIOR = "bone_r"  # Reversed bone for posterior heatmaps
+CMAP_DIAGNOSTIC = "bone_r"  # Same for diagnostic heatmaps (consistency)
+
+# Convenience aliases for common use cases
+COLORS["prior"] = COLORS["predictive"]  # Alias: prior = predictive
+COLORS["one_step"] = COLORS["predictive"]  # Alias: one-step prediction
+COLORS["observation"] = COLORS["likelihood"]  # Alias: observation evidence
+COLORS["true_position"] = COLORS["ground_truth"]  # Alias: true position
+
 
 def set_figure_defaults(context: Literal["paper", "presentation", "poster"] = "paper") -> None:
     """Set matplotlib defaults for publication figures.
