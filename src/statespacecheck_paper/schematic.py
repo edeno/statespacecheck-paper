@@ -663,14 +663,25 @@ def draw_equation_boxes(ax: Axes) -> None:
     )
 
     # Operation symbol: convolution
+    conv_x = 2.3 + eq_offset
     ax.text(
-        2.3 + eq_offset,
+        conv_x,
         y_eq1 + 0.2,
         r"$\circledast$",
         ha="center",
         va="center",
         fontsize=16,
         fontweight="bold",
+    )
+    # Label for convolution
+    ax.text(
+        conv_x,
+        y_eq1 + 0.55,
+        "Convolve",
+        ha="center",
+        va="bottom",
+        fontsize=5,
+        color="#666666",
     )
 
     # Transition distribution (gray for fixed model component)
@@ -754,14 +765,25 @@ def draw_equation_boxes(ax: Axes) -> None:
     )
 
     # Operation symbol: multiplication
+    mult_x = 2.3 + eq_offset
     ax.text(
-        2.3 + eq_offset,
+        mult_x,
         y_eq2 + 0.2,
         r"$\times$",
         ha="center",
         va="center",
         fontsize=14,
         fontweight="bold",
+    )
+    # Label for multiplication
+    ax.text(
+        mult_x,
+        y_eq2 + 0.55,
+        "Mult.",
+        ha="center",
+        va="bottom",
+        fontsize=5,
+        color="#666666",
     )
 
     # Distribution 2: Likelihood
