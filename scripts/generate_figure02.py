@@ -1,228 +1,814 @@
-"""Demonstration simulation for state space model diagnostics.
+"""Create Figure 2: Diagnostic Metrics for State Space Models.
 
-This script simulates a Bayesian decoder with periods of good and poor model fit,
-then computes diagnostic metrics using the statespacecheck package.
+This figure explains the three diagnostic metrics (KL divergence, HPD overlap,
+and predictive checks) using a shared synthetic example.
+
+Layout (3 columns x 3 rows):
+    AABBCC    <- Row 1: Input distributions for each metric
+    AABBCC    <- Row 2: Intermediate computation
+    AABBCC    <- Row 3: Final result with metric value
+
+Columns (single panel label per column):
+    A = KL Divergence mechanics (all 3 rows)
+    B = HPD Overlap mechanics (all 3 rows)
+    C = Predictive Check mechanics (all 3 rows)
 """
 
 from __future__ import annotations
 
+from typing import Any
+
+import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.axes import Axes
+from numpy.typing import NDArray
+from scipy.stats import norm
 
-from statespacecheck_paper.analysis import (
-    DecodeParams,
-    compute_thresholds,
-    decode_and_diagnostics,
-)
-from statespacecheck_paper.plotting import (
-    plot_combined_diagnostics,
-)
-from statespacecheck_paper.simulation import (
-    gaussian_transition_matrix,
-    simulate_spikes_flat_rate,
-    simulate_spikes_position_tuned,
-    simulate_walk,
-)
-from statespacecheck_paper.style import save_figure
+from statespacecheck_paper.plotting import compute_hpd_region
+from statespacecheck_paper.simulation import normalize, safe_log
+from statespacecheck_paper.style import COLORS, save_figure, set_figure_defaults
 
-# -----------------------------
-# Main orchestration
-# -----------------------------
+# =============================================================================
+# Shared Example Data
+# =============================================================================
 
 
-def run_demo(params: DecodeParams) -> None:
-    """Run the full diagnostic demonstration with multiple simulation phases.
+def create_shared_example(rng: np.random.Generator) -> dict[str, Any]:
+    """Create shared example data for all three metrics.
 
-    Generates Figure 2 showing a Bayesian decoder with periods of good and poor
-    model fit across 8 phases: baseline, remapping misfit, flat firing misfit,
-    fast movement misfit, and slow movement misfit, with recovery periods between.
+    All metrics are computed exactly using the same distributions.
+    The predictive check p-value is computed via Monte Carlo sampling.
 
     Parameters
     ----------
-    params : DecodeParams
-        Decoding parameters containing timeline structure, place field settings,
-        and simulation configuration. Must have pf_centers initialized.
+    rng : np.random.Generator
+        Random number generator for reproducibility.
 
     Returns
     -------
-    None
-        Saves figure to figures/main/figure02.{pdf,png}.
-
-    Notes
-    -----
-    The simulation includes the following phases:
-    1. Clean baseline (0 - T_remap_start): Model fits well
-    2. Remapping misfit (T_remap_start - T_remap_end): Place fields remap
-    3. Recovery 1 (T_remap_end - T_recovery1_end): Return to good fit
-    4. Flat firing misfit (T_recovery1_end - T_flat_end): Cells lose tuning
-    5. Recovery 2 (T_flat_end - T_recovery2_end): Return to good fit
-    6. Fast movement misfit (T_recovery2_end - T_fast_end): Animal moves faster
-       than model expects
-    7. Recovery 3 (T_fast_end - T_recovery3_end): Return to good fit
-    8. Slow movement misfit (T_recovery3_end - T_slow_end): Animal stationary
-       but model expects movement
-
-    Diagnostic thresholds are computed from the clean baseline period.
+    dict[str, Any]
+        Dictionary with predictive distribution, likelihood,
+        position bins, and precomputed metrics.
     """
-    rng = np.random.default_rng(params.base_seed)
+    import statespacecheck as ssc
 
-    # Ensure pf_centers is initialized
-    assert params.pf_centers is not None, "pf_centers must be initialized"
+    # Position grid
+    n_bins = 200
+    position_bins = np.linspace(0, 100, n_bins)
+    dx = position_bins[1] - position_bins[0]
 
-    # Grid & transition matrices
-    xs = np.arange(params.xs_min, params.xs_max + params.xs_step, params.xs_step, dtype=float)
-    transition_matrix = gaussian_transition_matrix(xs, params.sigx_pred)
-    transition_matrix_narrow = gaussian_transition_matrix(xs, params.sigx_pred_fast_phase)
-    transition_matrix_inflated = gaussian_transition_matrix(xs, params.sigx_pred_slow_phase)
+    # Predictive distribution: centered at 35, narrower (more certain)
+    # Likelihood: centered at 60, broader (less certain)
+    # Different widths make the min() in HPD overlap formula more meaningful
+    pred_mean, pred_std = 35.0, 8.0
+    like_mean, like_std = 60.0, 12.0
 
-    # Generate all phases with recovery periods
-    phases = []
-    phase_labels = []
+    predictive = norm.pdf(position_bins, loc=pred_mean, scale=pred_std)
+    predictive = normalize(predictive)
 
-    # Phase 1: Clean baseline (0 - T_remap_start)
-    x_last = 0.0
-    n_time = params.T_remap_start
-    x_true_phase = simulate_walk(
-        n_time, params.sigx_pred, x_last, params.xs_min, params.xs_max, rng
-    )
-    spikes_phase = simulate_spikes_position_tuned(
-        x_true_phase, params.pf_centers, params.pf_width, params.rate_scale, rng
-    )
-    phases.append((x_true_phase, spikes_phase))
-    phase_labels.append("Clean Baseline")
-    x_last = x_true_phase[-1]
+    likelihood = norm.pdf(position_bins, loc=like_mean, scale=like_std)
+    likelihood = normalize(likelihood)
 
-    # Phase 2: Remapping misfit (T_remap_start - T_remap_end)
-    n_time = params.T_remap_end - params.T_remap_start
-    x_true_phase = simulate_walk(
-        n_time, params.sigx_pred, x_last, params.xs_min, params.xs_max, rng
-    )
-    spikes_phase = simulate_spikes_position_tuned(
-        x_true_phase, params.pf_centers, params.pf_width, params.rate_scale, rng
-    )
-    phases.append((x_true_phase, spikes_phase))
-    phase_labels.append("Remapping Misfit")
-    x_last = x_true_phase[-1]
+    # Compute KL divergence and HPD overlap using statespacecheck
+    kl_value = float(ssc.kl_divergence(predictive[np.newaxis, :], likelihood[np.newaxis, :])[0])
+    hpd_value = float(ssc.hpd_overlap(predictive[np.newaxis, :], likelihood[np.newaxis, :])[0])
 
-    # Phase 3: Recovery 1 (T_remap_end - T_recovery1_end)
-    n_time = params.T_recovery1_end - params.T_remap_end
-    x_true_phase = simulate_walk(
-        n_time, params.sigx_pred, x_last, params.xs_min, params.xs_max, rng
-    )
-    spikes_phase = simulate_spikes_position_tuned(
-        x_true_phase, params.pf_centers, params.pf_width, params.rate_scale, rng
-    )
-    phases.append((x_true_phase, spikes_phase))
-    phase_labels.append("Clean Recovery")
-    x_last = x_true_phase[-1]
+    # Compute exact p-value using Monte Carlo sampling
+    # This mirrors the approach in analysis.py decode_and_diagnostics
+    n_mc_samples = 1000
 
-    # Phase 4: Flat firing misfit (T_recovery1_end - T_flat_end)
-    n_time = params.T_flat_end - params.T_recovery1_end
-    x_true_phase = simulate_walk(
-        n_time, params.sigx_pred, x_last, params.xs_min, params.xs_max, rng
-    )
-    spikes_phase = simulate_spikes_flat_rate(n_time, len(params.pf_centers), rate=7e-3, rng=rng)
-    phases.append((x_true_phase, spikes_phase))
-    phase_labels.append("Flat Firing Misfit")
-    x_last = x_true_phase[-1]
+    # Observed log predictive density: log(integral of predictive * likelihood)
+    # This is log p(y | y_{1:t-1}) = log sum_x p(x_t | y_{1:t-1}) p(y_t | x_t)
+    # For normalized distributions, this is the dot product
+    observed_log_pred = np.log(np.sum(predictive * likelihood) * dx + 1e-300)
 
-    # Phase 5: Recovery 2 (T_flat_end - T_recovery2_end)
-    n_time = params.T_recovery2_end - params.T_flat_end
-    x_true_phase = simulate_walk(
-        n_time, params.sigx_pred, x_last, params.xs_min, params.xs_max, rng
-    )
-    spikes_phase = simulate_spikes_position_tuned(
-        x_true_phase, params.pf_centers, params.pf_width, params.rate_scale, rng
-    )
-    phases.append((x_true_phase, spikes_phase))
-    phase_labels.append("Clean Recovery")
-    x_last = x_true_phase[-1]
+    # Simulate reference distribution by:
+    # 1. Sample position from predictive
+    # 2. Generate "observation" from likelihood centered at that position
+    # 3. Compute log predictive density for simulated observation
+    simulated_log_pred_values = np.zeros(n_mc_samples)
 
-    # Phase 6: Fast movement misfit (T_recovery2_end - T_fast_end)
-    # Transition model misfit: decoder uses narrow transition matrix (sigx=0.1),
-    # animal moves fast (sigx=10.0)
-    # Prior will be far too narrow/concentrated compared to actual movement (100x mismatch!)
-    n_time = params.T_fast_end - params.T_recovery2_end
-    x_true_phase = simulate_walk(
-        n_time, params.sigx_true_fast, x_last, params.xs_min, params.xs_max, rng
-    )
-    spikes_phase = simulate_spikes_position_tuned(
-        x_true_phase, params.pf_centers, params.pf_width, params.rate_scale, rng
-    )
-    phases.append((x_true_phase, spikes_phase))
-    phase_labels.append("Fast Movement Misfit")
-    x_last = x_true_phase[-1]
+    for i in range(n_mc_samples):
+        # Sample position from predictive distribution
+        cumsum = np.cumsum(predictive)
+        cumsum = cumsum / cumsum[-1]  # Ensure sums to 1
+        u = rng.random()
+        sampled_idx = int(np.searchsorted(cumsum, u))
+        sampled_idx = min(sampled_idx, len(position_bins) - 1)
+        sampled_pos = position_bins[sampled_idx]
 
-    # Phase 7: Recovery 3 (T_fast_end - T_recovery3_end)
-    n_time = params.T_recovery3_end - params.T_fast_end
-    x_true_phase = simulate_walk(
-        n_time, params.sigx_pred, x_last, params.xs_min, params.xs_max, rng
-    )
-    spikes_phase = simulate_spikes_position_tuned(
-        x_true_phase, params.pf_centers, params.pf_width, params.rate_scale, rng
-    )
-    phases.append((x_true_phase, spikes_phase))
-    phase_labels.append("Clean Recovery")
-    x_last = x_true_phase[-1]
+        # Generate simulated "likelihood" centered at sampled position
+        # (same width as original likelihood)
+        simulated_likelihood = norm.pdf(position_bins, loc=sampled_pos, scale=like_std)
+        simulated_likelihood = normalize(simulated_likelihood)
 
-    # Phase 8: Slow movement misfit (T_recovery3_end - T_slow_end)
-    # Transition model misfit: decoder uses inflated transition matrix (sigx=20.0),
-    # animal stationary (sigx=0.0)
-    # Prior will be far too broad/diffuse compared to actual lack of movement
-    n_time = params.T_slow_end - params.T_recovery3_end
-    x_true_phase = simulate_walk(
-        n_time, params.sigx_true_slow, x_last, params.xs_min, params.xs_max, rng
+        # Compute log predictive density for this simulated observation
+        simulated_log_pred_values[i] = np.log(
+            np.sum(predictive * simulated_likelihood) * dx + 1e-300
+        )
+
+    # P-value: proportion of simulated values <= observed value
+    p_value = float(np.mean(simulated_log_pred_values <= observed_log_pred))
+
+    return {
+        "position_bins": position_bins,
+        "predictive": predictive,
+        "likelihood": likelihood,
+        "kl_value": kl_value,
+        "hpd_value": hpd_value,
+        "p_value": p_value,
+        "pred_mean": pred_mean,
+        "like_mean": like_mean,
+        "pred_std": pred_std,
+        "like_std": like_std,
+        "observed_log_pred": observed_log_pred,
+        "simulated_log_pred": simulated_log_pred_values,
+    }
+
+
+# =============================================================================
+# KL Divergence Panels (A, B, C)
+# =============================================================================
+
+
+def plot_kl_panel_a(ax: Axes, data: dict[str, Any]) -> None:
+    """Panel A: Predictive and Likelihood distributions overlaid."""
+    x = data["position_bins"]
+    pred = data["predictive"]
+    like = data["likelihood"]
+
+    ax.plot(x, pred, color=COLORS["predictive"], linewidth=1.5, label="Predictive")
+    ax.fill_between(x, pred, alpha=0.3, color=COLORS["predictive"])
+    ax.plot(x, like, color=COLORS["likelihood"], linewidth=1.5, label="Likelihood")
+    ax.fill_between(x, like, alpha=0.3, color=COLORS["likelihood"])
+
+    ax.set_xlabel("Latent state (a.u.)", fontsize=7, labelpad=8)
+    ax.set_ylabel("Probability", fontsize=7, labelpad=8)
+    ax.legend(fontsize=5, frameon=False, loc="upper right")
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.set_xlim(0, 100)
+    ax.set_ylim(bottom=0)
+    # Minimal x-ticks: first and last only
+    ax.set_xticks([0, 100])
+    ax.set_xticklabels(["0", "100"], fontsize=5)
+    # Minimal y-ticks: first and last only
+    y_max = ax.get_ylim()[1]
+    ax.set_yticks([0, y_max])
+    ax.set_yticklabels(["0", f"{y_max:.2f}"], fontsize=5)
+
+
+def plot_kl_panel_b(ax: Axes, data: dict[str, Any]) -> None:
+    """Panel B: Log ratio = log(Predictive / Likelihood)."""
+    x = data["position_bins"]
+    pred = data["predictive"]
+    like = data["likelihood"]
+
+    log_ratio = safe_log(pred) - safe_log(like)
+
+    ax.plot(x, log_ratio, color="gray", linewidth=1.5)
+    ax.axhline(0, color=COLORS["reference"], linestyle="--", linewidth=0.8, alpha=0.7)
+
+    # Fill positive and negative regions
+    # Positive (pred > like) uses predictive color, negative (like > pred) uses likelihood color
+    ax.fill_between(
+        x,
+        log_ratio,
+        0,
+        where=list(log_ratio > 0),
+        alpha=0.3,
+        color=COLORS["predictive"],
     )
-    spikes_phase = simulate_spikes_position_tuned(
-        x_true_phase, params.pf_centers, params.pf_width, params.rate_scale, rng
-    )
-    phases.append((x_true_phase, spikes_phase))
-    phase_labels.append("Slow Movement Misfit")
-
-    # Concatenate all phases
-    x_true = np.concatenate([x for x, _ in phases], axis=0)
-    spikes = np.vstack([s for _, s in phases])
-
-    # Decode (vectorized within time)
-    metrics = decode_and_diagnostics(
-        spikes=spikes,
-        xs=xs,
-        transition_matrix=transition_matrix,
-        pf_centers=params.pf_centers,
-        pf_width=params.pf_width,
-        rate_scale=params.rate_scale,
-        remap_window=params.remap_window,
-        remap_from_to=params.remap_from_to,
-        transition_matrix_narrow=transition_matrix_narrow,
-        narrow_window=(params.T_recovery2_end, params.T_fast_end),
-        transition_matrix_inflated=transition_matrix_inflated,
-        inflate_window=(params.T_recovery3_end, params.T_slow_end),
-    )
-
-    # Thresholds from clean baseline window (first 6k timesteps, before remapping starts)
-    thresholds = compute_thresholds(metrics, baseline_end=params.T_remap_start)
-
-    # Plot combined diagnostics figure
-    plot_combined_diagnostics(
-        xs,
-        x_true,
-        spikes.astype(np.float64),
-        metrics,
-        thresholds,
-        params,
-        params.pf_centers,
-        params.pf_width,
-        params.rate_scale,
+    ax.fill_between(
+        x,
+        log_ratio,
+        0,
+        where=list(log_ratio < 0),
+        alpha=0.3,
+        color=COLORS["likelihood"],
     )
 
-    # Save figure (uses plt.gcf() to get current figure)
-    save_figure("figures/main/figure02", close=False)
+    ax.set_xlabel("Latent state (a.u.)", fontsize=7, labelpad=8)
+    ax.set_ylabel(r"$\log(\mathrm{pred}) - \log(\mathrm{like})$", fontsize=6, labelpad=8)
+    ax.set_title("Log Ratio", fontsize=6, pad=4)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.set_xlim(0, 100)
+    # Minimal x-ticks: first and last only
+    ax.set_xticks([0, 100])
+    ax.set_xticklabels(["0", "100"], fontsize=5)
+    # Minimal y-ticks: first and last only
+    y_min, y_max = ax.get_ylim()
+    ax.set_yticks([y_min, 0, y_max])
+    ax.set_yticklabels([f"{y_min:.0f}", "0", f"{y_max:.0f}"], fontsize=5)
+
+
+def plot_kl_panel_c(ax: Axes, data: dict[str, Any]) -> None:
+    """Panel C: Pointwise KL = Predictive * log(Pred/Lik)."""
+    x = data["position_bins"]
+    pred = data["predictive"]
+    like = data["likelihood"]
+
+    log_ratio = safe_log(pred) - safe_log(like)
+    pointwise_kl = pred * log_ratio
+
+    ax.plot(x, pointwise_kl, color=COLORS["kl_divergence"], linewidth=1.5)
+    ax.fill_between(x, pointwise_kl, alpha=0.3, color=COLORS["kl_divergence"])
+    ax.axhline(0, color=COLORS["reference"], linestyle="--", linewidth=0.8, alpha=0.7)
+
+    ax.set_xlabel("Latent state (a.u.)", fontsize=7, labelpad=8)
+    ax.set_ylabel(
+        r"$\mathrm{pred} \cdot [\log(\mathrm{pred}) - \log(\mathrm{like})]$",
+        fontsize=6,
+        labelpad=8,
+    )
+    ax.set_title("Pointwise KL: pred × log ratio", fontsize=6, pad=4)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.set_xlim(0, 100)
+    # Minimal x-ticks: first and last only
+    ax.set_xticks([0, 100])
+    ax.set_xticklabels(["0", "100"], fontsize=5)
+    # Minimal y-ticks: first and last only
+    y_min, y_max = ax.get_ylim()
+    ax.set_yticks([y_min, 0, y_max])
+    ax.set_yticklabels([f"{y_min:.3f}", "0", f"{y_max:.3f}"], fontsize=5)
+
+
+# =============================================================================
+# HPD Overlap Panels (D, E, F)
+# =============================================================================
+
+
+def plot_hpd_panel_d(ax: Axes, data: dict[str, Any]) -> None:
+    """Panel D: Predictive distribution with 95% HPD region shaded.
+
+    Uses consistent HPD visual scheme: shaded region under curve within HPD.
+    """
+    x = data["position_bins"]
+    pred = data["predictive"]
+    coverage = 0.95
+
+    hpd_mask = compute_hpd_region(x, pred, coverage)
+
+    # Compute HPD threshold (minimum density value in HPD region)
+    hpd_threshold = np.min(pred[hpd_mask])
+
+    # Plot full distribution as line
+    ax.plot(x, pred, color=COLORS["predictive"], linewidth=1.2)
+
+    # Shade HPD region under curve (consistent scheme)
+    ax.fill_between(
+        x,
+        0,
+        pred,
+        where=list(hpd_mask),
+        alpha=0.35,
+        color=COLORS["predictive"],
+        label="95% HPD",
+    )
+
+    # Add 95% HPD threshold as dashed line with label
+    ax.axhline(
+        hpd_threshold,
+        color=COLORS["predictive"],
+        linestyle="--",
+        linewidth=0.8,
+        alpha=0.7,
+    )
+    # Label the threshold line
+    ax.text(
+        95,
+        hpd_threshold,
+        "95% threshold",
+        fontsize=5,
+        ha="right",
+        va="bottom",
+        color=COLORS["predictive"],
+        alpha=0.8,
+    )
+
+    ax.set_xlabel("Latent state (a.u.)", fontsize=7, labelpad=8)
+    ax.set_ylabel("Probability", fontsize=7, labelpad=8)
+    ax.set_title(r"Predictive HPD ($H_{\mathrm{pred}}$)", fontsize=6, pad=4)
+    ax.legend(fontsize=5, frameon=False, loc="upper right")
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.set_xlim(0, 100)
+    ax.set_ylim(bottom=0)
+    # Minimal x-ticks: first and last only
+    ax.set_xticks([0, 100])
+    ax.set_xticklabels(["0", "100"], fontsize=5)
+    # Minimal y-ticks: first and last only
+    y_max = ax.get_ylim()[1]
+    ax.set_yticks([0, y_max])
+    ax.set_yticklabels(["0", f"{y_max:.2f}"], fontsize=5)
+
+
+def plot_hpd_panel_e(ax: Axes, data: dict[str, Any]) -> None:
+    """Panel E: Likelihood distribution with 95% HPD region shaded.
+
+    Uses consistent HPD visual scheme: shaded region under curve within HPD.
+    """
+    x = data["position_bins"]
+    like = data["likelihood"]
+    coverage = 0.95
+
+    hpd_mask = compute_hpd_region(x, like, coverage)
+
+    # Compute HPD threshold (minimum density value in HPD region)
+    hpd_threshold = np.min(like[hpd_mask])
+
+    # Plot full distribution as line
+    ax.plot(x, like, color=COLORS["likelihood"], linewidth=1.2)
+
+    # Shade HPD region under curve (consistent scheme)
+    ax.fill_between(
+        x,
+        0,
+        like,
+        where=list(hpd_mask),
+        alpha=0.35,
+        color=COLORS["likelihood"],
+        label="95% HPD",
+    )
+
+    # Add 95% HPD threshold as dashed line with label
+    ax.axhline(
+        hpd_threshold,
+        color=COLORS["likelihood"],
+        linestyle="--",
+        linewidth=0.8,
+        alpha=0.7,
+    )
+    # Label the threshold line (on left side to avoid distribution)
+    ax.text(
+        5,
+        hpd_threshold,
+        "95% threshold",
+        fontsize=5,
+        ha="left",
+        va="bottom",
+        color=COLORS["likelihood"],
+        alpha=0.8,
+    )
+
+    ax.set_xlabel("Latent state (a.u.)", fontsize=7, labelpad=8)
+    ax.set_ylabel("Probability", fontsize=7, labelpad=8)
+    ax.set_title(r"Likelihood HPD ($H_{\mathrm{like}}$)", fontsize=6, pad=4)
+    ax.legend(fontsize=5, frameon=False, loc="upper right")
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.set_xlim(0, 100)
+    ax.set_ylim(bottom=0)
+    # Minimal x-ticks: first and last only
+    ax.set_xticks([0, 100])
+    ax.set_xticklabels(["0", "100"], fontsize=5)
+    # Minimal y-ticks: first and last only
+    y_max = ax.get_ylim()[1]
+    ax.set_yticks([0, y_max])
+    ax.set_yticklabels(["0", f"{y_max:.2f}"], fontsize=5)
+
+
+def plot_hpd_panel_f(ax: Axes, data: dict[str, Any]) -> tuple[float, float, float]:
+    """Panel F: HPD intersection region.
+
+    Shows HPD regions as thick horizontal lines at different y-levels.
+    Order: Pred HPD (top), Lik HPD (middle), Overlap (bottom) to match panels above.
+    Labels use descriptive text with formula notation in parentheses.
+    Size values are displayed on each bar for the calculation breakdown.
+
+    Returns
+    -------
+    tuple[float, float, float]
+        (pred_hpd_size, like_hpd_size, intersection_size) for use in formula.
+    """
+    x = data["position_bins"]
+    pred = data["predictive"]
+    like = data["likelihood"]
+    coverage = 0.95
+    dx = x[1] - x[0]
+
+    pred_hpd = compute_hpd_region(x, pred, coverage)
+    like_hpd = compute_hpd_region(x, like, coverage)
+    intersection = pred_hpd & like_hpd
+
+    # Compute sizes for annotation
+    pred_hpd_size = float(np.sum(pred_hpd) * dx)
+    like_hpd_size = float(np.sum(like_hpd) * dx)
+    intersection_size = float(np.sum(intersection) * dx)
+
+    # Convert boolean masks to y-values (NaN where False for line breaks)
+    def mask_to_line(mask: NDArray[np.bool_], y_level: float) -> NDArray[np.float64]:
+        """Convert boolean mask to y-values with NaN gaps."""
+        result = np.where(mask, y_level, np.nan)
+        return result.astype(np.float64)
+
+    # Draw thick horizontal lines for each HPD region
+    # Order top-to-bottom: Pred HPD, Lik HPD, Overlap (matching panels above)
+    ax.plot(
+        x,
+        mask_to_line(pred_hpd, 0.8),
+        color=COLORS["predictive"],
+        linewidth=6,
+        solid_capstyle="butt",
+    )
+    ax.plot(
+        x,
+        mask_to_line(like_hpd, 0.5),
+        color=COLORS["likelihood"],
+        linewidth=6,
+        solid_capstyle="butt",
+    )
+    ax.plot(
+        x,
+        mask_to_line(intersection, 0.2),
+        color=COLORS["hpd_overlap"],
+        linewidth=6,
+        solid_capstyle="butt",
+    )
+
+    # Add size labels centered on each bar
+    def get_center(mask: NDArray[np.bool_], positions: NDArray[np.floating]) -> float:
+        """Get center position of a mask region."""
+        if not np.any(mask):
+            return 50.0
+        return float(np.mean(positions[mask]))
+
+    pred_center = get_center(pred_hpd, x)
+    like_center = get_center(like_hpd, x)
+    inter_center = get_center(intersection, x)
+
+    ax.text(
+        pred_center,
+        0.84,
+        rf"|$H_{{\mathrm{{pred}}}}$| = {pred_hpd_size:.1f}",
+        fontsize=6,
+        ha="center",
+        va="bottom",
+        color=COLORS["predictive"],
+    )
+    ax.text(
+        like_center,
+        0.54,
+        rf"|$H_{{\mathrm{{like}}}}$| = {like_hpd_size:.1f}",
+        fontsize=6,
+        ha="center",
+        va="bottom",
+        color=COLORS["likelihood"],
+    )
+    ax.text(
+        inter_center,
+        0.24,
+        rf"|$H_{{\mathrm{{pred}}}} \cap H_{{\mathrm{{like}}}}$| = {intersection_size:.1f}",
+        fontsize=6,
+        ha="center",
+        va="bottom",
+        color=COLORS["hpd_overlap"],
+    )
+
+    ax.set_xlabel("Latent state (a.u.)", fontsize=7, labelpad=8)
+    ax.set_ylabel("", fontsize=7, labelpad=8)  # No y-label needed
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_visible(False)
+    ax.set_xlim(0, 100)
+    ax.set_ylim(0, 1.0)
+    ax.set_yticks([0.8, 0.5, 0.2])
+
+    # Descriptive labels with formula notation
+    ax.set_yticklabels(
+        [r"Pred. HPD ($H_{\mathrm{pred}}$)", r"Like. HPD ($H_{\mathrm{like}}$)", r"Intersection"],
+        fontsize=5,
+    )
+
+    ax.tick_params(axis="y", length=0)  # Hide tick marks
+    # Minimal x-ticks: first and last only
+    ax.set_xticks([0, 100])
+    ax.set_xticklabels(["0", "100"], fontsize=5)
+
+    return pred_hpd_size, like_hpd_size, intersection_size
+
+
+# =============================================================================
+# Predictive Check Panels (G, H, I)
+# =============================================================================
+
+
+def plot_ppc_panel_g(ax: Axes, data: dict[str, Any]) -> None:
+    """Panel G: Predictive distribution with sampled position marked."""
+    x = data["position_bins"]
+    pred = data["predictive"]
+
+    ax.plot(x, pred, color=COLORS["predictive"], linewidth=1.5, label="Predictive")
+    ax.fill_between(x, pred, alpha=0.3, color=COLORS["predictive"])
+
+    # Show sampled position (near the peak)
+    sampled_pos = data["pred_mean"] + 3  # Slightly off-peak for visibility
+    sampled_idx = np.argmin(np.abs(x - sampled_pos))
+
+    ax.axvline(
+        sampled_pos,
+        color=COLORS["ground_truth"],
+        linestyle="-",
+        linewidth=1.5,
+        alpha=0.8,
+    )
+    ax.scatter(
+        [sampled_pos],
+        [pred[sampled_idx]],
+        color=COLORS["ground_truth"],
+        s=40,
+        zorder=5,
+        label="Sample",
+    )
+
+    ax.set_xlabel("Latent state (a.u.)", fontsize=7, labelpad=8)
+    ax.set_ylabel("Probability", fontsize=7, labelpad=8)
+    ax.legend(fontsize=5, frameon=False, loc="upper right")
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.set_xlim(0, 100)
+    ax.set_ylim(bottom=0)
+    # Minimal x-ticks: first and last only
+    ax.set_xticks([0, 100])
+    ax.set_xticklabels(["0", "100"], fontsize=5)
+    # Minimal y-ticks: first and last only
+    y_max = ax.get_ylim()[1]
+    ax.set_yticks([0, y_max])
+    ax.set_yticklabels(["0", f"{y_max:.2f}"], fontsize=5)
+
+
+def plot_ppc_panel_h(ax: Axes, data: dict[str, Any], rng: np.random.Generator) -> None:
+    """Panel H: Simulated spikes from sampled position (raster-style)."""
+    # Simulate spike counts for ~10 cells at the sampled position
+    n_cells = 8
+    sampled_pos = data["pred_mean"] + 3
+
+    # Create simple place fields and simulate spikes
+    cell_centers = np.linspace(10, 90, n_cells)
+    cell_width = 15.0
+
+    # Firing rates at sampled position
+    rates = norm.pdf(sampled_pos, loc=cell_centers, scale=cell_width)
+    rates = rates / rates.max() * 0.3  # Scale to reasonable spike probability
+
+    # Generate spikes (binary for this visualization)
+    spikes = rng.random(n_cells) < rates
+
+    # Plot as colored circles (filled = spike, empty = no spike)
+    for i, (center, has_spike) in enumerate(zip(cell_centers, spikes, strict=True)):
+        color = COLORS["likelihood"] if has_spike else "white"
+        edgecolor = COLORS["likelihood"]
+        ax.scatter(
+            [center],
+            [i],
+            s=60,
+            c=color,
+            edgecolors=edgecolor,
+            linewidths=1,
+            zorder=5,
+        )
+
+    # Mark sampled position
+    ax.axvline(
+        sampled_pos,
+        color=COLORS["ground_truth"],
+        linestyle="-",
+        linewidth=1.5,
+        alpha=0.5,
+    )
+
+    ax.set_xlabel("Latent state (a.u.)", fontsize=7, labelpad=8)
+    ax.set_ylabel("Cell", fontsize=7, labelpad=8)
+    ax.set_xlim(0, 100)
+    ax.set_ylim(-0.5, n_cells - 0.5)
+    ax.set_yticks([0, n_cells - 1])
+    ax.set_yticklabels(["1", str(n_cells)], fontsize=5)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    # Minimal x-ticks: first and last only
+    ax.set_xticks([0, 100])
+    ax.set_xticklabels(["0", "100"], fontsize=5)
+
+    # Add annotation
+    ax.text(
+        0.5,
+        1.02,
+        "Simulated spikes",
+        transform=ax.transAxes,
+        fontsize=6,
+        ha="center",
+        va="bottom",
+        style="italic",
+    )
+
+
+def plot_ppc_panel_i(ax: Axes, data: dict[str, Any]) -> None:
+    """Panel I: Histogram of observed vs simulated log predictive density.
+
+    Uses the exact Monte Carlo samples computed in create_shared_example().
+    """
+    # Use exact values from Monte Carlo simulation
+    simulated_log_pred = data["simulated_log_pred"]
+    observed_log_pred = data["observed_log_pred"]
+
+    # Histogram of simulated values
+    ax.hist(
+        simulated_log_pred,
+        bins=30,
+        density=True,
+        alpha=0.5,
+        color=COLORS["likelihood"],
+        edgecolor="none",
+        label="Simulated",
+    )
+
+    # Mark observed value
+    ax.axvline(
+        observed_log_pred,
+        color=COLORS["predictive"],
+        linewidth=2,
+        linestyle="-",
+        label="Observed",
+    )
+
+    ax.set_xlabel("Log pred. density", fontsize=7, labelpad=8)
+    ax.set_ylabel("Density", fontsize=7, labelpad=8)
+    ax.legend(fontsize=5, frameon=False, loc="upper left")
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    # Minimal x-ticks: first and last only
+    x_min, x_max = ax.get_xlim()
+    ax.set_xticks([x_min, x_max])
+    ax.set_xticklabels([f"{x_min:.0f}", f"{x_max:.0f}"], fontsize=5)
+    # Minimal y-ticks: first and last only
+    y_max = ax.get_ylim()[1]
+    ax.set_yticks([0, y_max])
+    ax.set_yticklabels(["0", f"{y_max:.1f}"], fontsize=5)
+
+
+# =============================================================================
+# Main Figure Creation
+# =============================================================================
+
+
+def create_figure() -> None:
+    """Create Figure 2 with diagnostic metric mechanics.
+
+    Layout (3 columns x 4 rows):
+        Row 1: Input distributions for each metric
+        Row 2: Intermediate computation
+        Row 3: Final result
+        Row 4: Formula with computed value
+
+    Columns (single panel label per column):
+        a = KL Divergence mechanics
+        b = HPD Overlap mechanics
+        c = Predictive Check mechanics
+    """
+    set_figure_defaults(context="paper")
+    rng = np.random.default_rng(42)
+
+    # Create shared example data (pass rng for reproducible Monte Carlo p-value)
+    data = create_shared_example(rng)
+
+    # =========================================================================
+    # LAYOUT CONFIGURATION
+    # =========================================================================
+    # 3 columns x 4 rows - each column is one metric
+    # Use '.' spacers between columns for visual separation (Tufte principle)
+    layout = """
+        AA.BB.CC
+        DD.EE.FF
+        GG.HH.II
+        JJ.KK.LL
+        """
+
+    fig, axes = plt.subplot_mosaic(
+        layout,
+        figsize=(7.0, 5.5),  # Taller to accommodate formula row
+        width_ratios=[1, 1, 0.15, 1, 1, 0.15, 1, 1],  # Spacer columns
+        height_ratios=[1, 1, 1, 0.4],  # Formula row is shorter
+        dpi=450,
+        constrained_layout={"h_pad": 0.02, "w_pad": 0.02},  # Tighter row spacing
+    )
+
+    # -------------------------------------------------------------------------
+    # KL Divergence column (A, D, G)
+    # -------------------------------------------------------------------------
+    plot_kl_panel_a(axes["A"], data)
+    plot_kl_panel_b(axes["D"], data)
+    plot_kl_panel_c(axes["G"], data)
+
+    # -------------------------------------------------------------------------
+    # HPD Overlap column (B, E, H)
+    # -------------------------------------------------------------------------
+    plot_hpd_panel_d(axes["B"], data)
+    plot_hpd_panel_e(axes["E"], data)
+    # Returns (pred_size, like_size, intersection_size) for formula
+    hpd_sizes = plot_hpd_panel_f(axes["H"], data)
+
+    # -------------------------------------------------------------------------
+    # Predictive Check column (C, F, I)
+    # -------------------------------------------------------------------------
+    plot_ppc_panel_g(axes["C"], data)
+    plot_ppc_panel_h(axes["F"], data, rng)
+    plot_ppc_panel_i(axes["I"], data)
+
+    # Column titles for metrics (above subplot titles)
+    # Use text annotations positioned above each column
+    column_titles = [("A", "KL Divergence"), ("B", "HPD Overlap"), ("C", "Predictive Check")]
+    for ax_key, col_title in column_titles:
+        ax = axes[ax_key]
+        ax.text(
+            0.5,
+            1.25,
+            col_title,
+            transform=ax.transAxes,
+            fontsize=7,
+            fontweight="bold",
+            ha="center",
+            va="bottom",
+        )
+
+    # -------------------------------------------------------------------------
+    # Formula row (J, K, L)
+    # -------------------------------------------------------------------------
+    # KL Divergence formula
+    axes["J"].axis("off")
+    axes["J"].text(
+        0.5,
+        0.5,
+        r"$D_{\mathrm{KL}} = \sum \mathrm{pred} \cdot \log(\mathrm{pred}/\mathrm{like})$"
+        f" = {data['kl_value']:.2f}",
+        transform=axes["J"].transAxes,
+        fontsize=8,
+        fontweight="bold",
+        ha="center",
+        va="center",
+    )
+
+    # HPD Overlap formula with notation and calculation breakdown
+    pred_size, like_size, intersection_size = hpd_sizes
+    axes["K"].axis("off")
+    # Show notation = fraction with numbers = result
+    hpd_formula = (
+        r"$\frac{|H_{\mathrm{pred}} \cap H_{\mathrm{like}}|}"
+        r"{\min(|H_{\mathrm{pred}}|, |H_{\mathrm{like}}|)}$"
+        f" = "
+        rf"$\frac{{{intersection_size:.1f}}}{{{min(pred_size, like_size):.1f}}}$"
+        f" = {data['hpd_value']:.2f}"
+    )
+    axes["K"].text(
+        0.5,
+        0.5,
+        hpd_formula,
+        transform=axes["K"].transAxes,
+        fontsize=8,
+        fontweight="bold",
+        ha="center",
+        va="center",
+    )
+
+    # Predictive Check formula
+    axes["L"].axis("off")
+    axes["L"].text(
+        0.5,
+        0.5,
+        f"$p = P(T^{{rep}} \\leq T^{{obs}})$ = {data['p_value']:.2f}",
+        transform=axes["L"].transAxes,
+        fontsize=8,
+        fontweight="bold",
+        ha="center",
+        va="center",
+    )
+
+    # =========================================================================
+    # PANEL LABELS (one per column, on top row only)
+    # =========================================================================
+    column_panels = ["A", "B", "C"]
+    labels = ["a", "b", "c"]
+
+    for label, ax_key in zip(labels, column_panels, strict=True):
+        ax = axes[ax_key]
+        ax.text(
+            -0.15,  # Further left, outside frame
+            1.08,  # Above frame
+            label,
+            transform=ax.transAxes,
+            fontsize=8,
+            fontweight="bold",
+            va="bottom",
+            ha="right",
+        )
+
+    # =========================================================================
+    # SAVE
+    # =========================================================================
+    save_figure("figures/main/figure02")
     print("\nFigure 2 saved to figures/main/figure02.{pdf,png}")
 
 
 if __name__ == "__main__":
-    # Default params mirror the MATLAB script. To run quickly while prototyping,
-    # reduce T1/T2/T3 here.
-    params = DecodeParams()
-    # e.g., for a fast smoke test:
-    # params = DecodeParams(T1=3_000, T2=4_000, T3=5_000)
-    run_demo(params)
+    create_figure()
