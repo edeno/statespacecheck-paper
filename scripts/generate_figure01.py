@@ -115,9 +115,9 @@ def create_figure() -> None:
     # Define scenarios: (title, predictive_params, likelihood_params)
     scenarios = [
         ("Inconsistent", (0, 1.5), (5, 1.5)),
+        ("Consistent", (0, 4.0), (5, 3.5)),
         ("Consistent", (0, 1.5), (2, 3.0)),
         ("Consistent", (0, 5.0), (5, 1.5)),
-        ("Consistent", (0, 4.0), (5, 3.5)),
     ]
 
     sub_panel_names = ["C1", "C2", "C3", "C4"]
