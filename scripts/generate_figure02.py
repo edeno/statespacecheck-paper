@@ -557,9 +557,10 @@ def plot_ppc_panel_h(ax: Axes, data: dict[str, Any], rng: np.random.Generator) -
     spikes = rng.random(n_cells) < rates
 
     # Plot as colored circles (filled = spike, empty = no spike)
+    # Spikes are simulated from predictive distribution, so use predictive color
     for i, (center, has_spike) in enumerate(zip(cell_centers, spikes, strict=True)):
-        color = COLORS["likelihood"] if has_spike else "white"
-        edgecolor = COLORS["likelihood"]
+        color = COLORS["predictive"] if has_spike else "white"
+        edgecolor = COLORS["predictive"]
         ax.scatter(
             [center],
             [i],
@@ -613,21 +614,21 @@ def plot_ppc_panel_i(ax: Axes, data: dict[str, Any]) -> None:
     simulated_log_pred = data["simulated_log_pred"]
     observed_log_pred = data["observed_log_pred"]
 
-    # Histogram of simulated values
+    # Histogram of simulated values (from predictive distribution)
     ax.hist(
         simulated_log_pred,
         bins=30,
         density=True,
         alpha=0.5,
-        color=COLORS["likelihood"],
+        color=COLORS["predictive"],
         edgecolor="none",
         label="Simulated",
     )
 
-    # Mark observed value
+    # Mark observed value (from likelihood/actual observation)
     ax.axvline(
         observed_log_pred,
-        color=COLORS["predictive"],
+        color=COLORS["likelihood"],
         linewidth=2,
         linestyle="-",
         label="Observed",
@@ -676,8 +677,9 @@ def create_figure() -> None:
     # =========================================================================
     # LAYOUT CONFIGURATION
     # =========================================================================
-    # 3 columns x 4 rows - each column is one metric
-    # Use '.' spacers between columns for visual separation (Tufte principle)
+    # Simple 3 columns x 4 rows - each column is one metric
+    # No arrow rows - computational flow is implicit (top to bottom)
+    # Use '.' spacers between columns for visual separation
     layout = """
         AA.BB.CC
         DD.EE.FF
@@ -687,11 +689,11 @@ def create_figure() -> None:
 
     fig, axes = plt.subplot_mosaic(
         layout,
-        figsize=(7.0, 5.5),  # Taller to accommodate formula row
-        width_ratios=[1, 1, 0.15, 1, 1, 0.15, 1, 1],  # Spacer columns
-        height_ratios=[1, 1, 1, 0.4],  # Formula row is shorter
+        figsize=(7.0, 5.5),  # More compact without arrow rows
+        width_ratios=[1, 1, 0.2, 1, 1, 0.2, 1, 1],  # Spacer columns
+        height_ratios=[1, 1, 1, 0.35],  # Content rows + formula row
         dpi=450,
-        constrained_layout={"h_pad": 0.02, "w_pad": 0.02},  # Tighter row spacing
+        constrained_layout={"h_pad": 0.08, "w_pad": 0.04},  # More padding between rows
     )
 
     # -------------------------------------------------------------------------
@@ -716,17 +718,16 @@ def create_figure() -> None:
     plot_ppc_panel_h(axes["F"], data, rng)
     plot_ppc_panel_i(axes["I"], data)
 
-    # Column titles for metrics (above subplot titles)
-    # Use text annotations positioned above each column
+    # Column titles for metrics (above top row)
     column_titles = [("A", "KL Divergence"), ("B", "HPD Overlap"), ("C", "Predictive Check")]
     for ax_key, col_title in column_titles:
         ax = axes[ax_key]
         ax.text(
             0.5,
-            1.25,
+            1.18,
             col_title,
             transform=ax.transAxes,
-            fontsize=7,
+            fontsize=8,
             fontweight="bold",
             ha="center",
             va="bottom",
