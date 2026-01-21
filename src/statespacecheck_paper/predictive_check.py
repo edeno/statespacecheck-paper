@@ -235,12 +235,12 @@ def extract_place_fields_from_model(
     place_fields = encoding_model["place_fields"]  # Shape: (n_cells, n_bins)
 
     # Get time bin size from model
-    dt = 1.0 / model.sampling_frequency
+    dt = 1.0
 
     return place_fields, dt
 
 
-def create_posterior_predictive_sampler(
+def create_predictive_sampler(
     model: Any,
     results: xr.Dataset,
     rng: np.random.Generator,
@@ -266,7 +266,7 @@ def create_posterior_predictive_sampler(
     Examples
     --------
     >>> rng = np.random.default_rng(42)
-    >>> sampler = create_posterior_predictive_sampler(model, results, rng)
+    >>> sampler = create_predictive_sampler(model, results, rng)
     >>> simulated_log_pred = sampler(100)  # 100 Monte Carlo samples
     >>> simulated_log_pred.shape
     (100, n_time)
@@ -384,7 +384,7 @@ def compute_predictive_pvalues(
     )
 
     # 2. Create sampler for posterior predictive distribution
-    sampler = create_posterior_predictive_sampler(model, results, rng)
+    sampler = create_predictive_sampler(model, results, rng)
 
     # 3. Compute p-values using Monte Carlo sampling
     p_values_result: NDArray[np.float64] = predictive_pvalue(
