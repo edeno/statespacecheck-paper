@@ -34,6 +34,7 @@ Examples
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 import numpy as np
@@ -97,7 +98,6 @@ def sample_positions_from_posterior(
 def generate_spikes_from_place_fields(
     position_indices: NDArray[np.int64],
     place_fields: NDArray[np.float64],
-    dt: float,
     rng: np.random.Generator,
 ) -> NDArray[np.int64]:
     """Generate synthetic spike counts from place field model.
@@ -108,8 +108,6 @@ def generate_spikes_from_place_fields(
         Position bin indices at each time point.
     place_fields : np.ndarray, shape (n_cells, n_bins)
         Firing rate (spikes/sec) for each cell at each position bin.
-    dt : float
-        Time bin duration in seconds (e.g., 0.002 for 500 Hz sampling).
     rng : np.random.Generator
         Random number generator for reproducibility.
 
@@ -122,19 +120,16 @@ def generate_spikes_from_place_fields(
     --------
     >>> rng = np.random.default_rng(42)
     >>> position_indices = np.array([0, 1, 2])
-    >>> place_fields = np.array([[10.0, 20.0, 5.0], [5.0, 10.0, 15.0]])
     >>> dt = 0.002  # 500 Hz
+    >>> place_fields = np.array([[10.0, 20.0, 5.0], [5.0, 10.0, 15.0]]) * dt
     >>> spikes = generate_spikes_from_place_fields(
-    ...     position_indices, place_fields, dt, rng
+    ...     position_indices, place_fields, rng
     ... )
     >>> spikes.shape
     (3, 2)
     """
     # Get firing rates at sampled positions: shape (n_time, n_cells)
-    rates_at_positions = place_fields[:, position_indices].T
-
-    # Expected spike count in time bin dt
-    expected_counts = rates_at_positions * dt
+    expected_counts = place_fields[:, position_indices].T
 
     # Draw from Poisson distribution
     spike_counts: NDArray[np.int64] = rng.poisson(expected_counts).astype(np.int64)
@@ -145,7 +140,6 @@ def generate_spikes_from_place_fields(
 def compute_log_likelihood_from_place_fields(
     spike_counts: NDArray[np.int64],
     place_fields: NDArray[np.float64],
-    dt: float,
 ) -> NDArray[np.float64]:
     """Compute log likelihood of spike counts under place field model.
 
@@ -157,9 +151,7 @@ def compute_log_likelihood_from_place_fields(
     spike_counts : np.ndarray, shape (n_time, n_cells)
         Observed spike counts for each cell at each time.
     place_fields : np.ndarray, shape (n_cells, n_bins)
-        Firing rate (spikes/sec) for each cell at each position bin.
-    dt : float
-        Time bin duration in seconds.
+        Firing rate (spikes/bin) for each cell at each position bin.
 
     Returns
     -------
@@ -169,10 +161,10 @@ def compute_log_likelihood_from_place_fields(
     Examples
     --------
     >>> spike_counts = np.array([[1, 0], [2, 1]])
-    >>> place_fields = np.array([[10.0, 20.0, 5.0], [5.0, 10.0, 15.0]])
     >>> dt = 0.002
+    >>> place_fields = np.array([[10.0, 20.0, 5.0], [5.0, 10.0, 15.0]]) * dt
     >>> log_like = compute_log_likelihood_from_place_fields(
-    ...     spike_counts, place_fields, dt
+    ...     spike_counts, place_fields
     ... )
     >>> log_like.shape
     (2, 3)
@@ -187,13 +179,11 @@ def compute_log_likelihood_from_place_fields(
     - When expected_counts is very small, log-likelihood remains numerically stable
     - Large spike counts are handled correctly by scipy's implementation
     """
-    # Expected counts at each position: shape (n_cells, n_bins)
-    expected_counts = place_fields * dt
 
     # Reshape for broadcasting: spike_counts (n_time, n_cells, 1)
     #                            expected_counts (1, n_cells, n_bins)
     spike_counts_3d = spike_counts[:, :, np.newaxis]
-    expected_counts_3d = expected_counts[np.newaxis, :, :]
+    expected_counts_3d = place_fields[np.newaxis, :, :]
 
     # Poisson log likelihood using scipy
     # log p(n|λ) = n * log(λ) - λ - log(n!)
@@ -207,8 +197,8 @@ def compute_log_likelihood_from_place_fields(
 
 def extract_place_fields_from_model(
     model: Any,
-) -> tuple[NDArray[np.float64], float]:
-    """Extract place fields and time bin size from fitted model.
+) -> NDArray[np.float64]:
+    """Extract place fields from fitted model.
 
     Parameters
     ----------
@@ -218,33 +208,31 @@ def extract_place_fields_from_model(
     Returns
     -------
     place_fields : np.ndarray, shape (n_cells, n_bins)
-        Firing rates (spikes/sec) for each cell at each position.
-    dt : float
-        Time bin duration in seconds.
+        Firing rates (spikes/bin) for each cell at each position.
 
     Examples
     --------
     >>> # With actual fitted model
-    >>> place_fields, dt = extract_place_fields_from_model(cont_model)
+    >>> place_fields = extract_place_fields_from_model(cont_model)
     >>> place_fields.shape
     (n_cells, n_bins)
     """
     # Extract from non_local_detector model structure
     # The encoding model stores place fields in the first environment
     encoding_model = model.encoding_model_[("", 0)]
-    place_fields = encoding_model["place_fields"]  # Shape: (n_cells, n_bins)
+    place_fields_raw = encoding_model["place_fields"]  # Shape: (n_cells, n_bins)
 
-    # Get time bin size from model
-    dt = 1.0
+    # Explicit conversion to satisfy mypy - ensures correct return type
+    place_fields: NDArray[np.float64] = np.asarray(place_fields_raw, dtype=np.float64)
 
-    return place_fields, dt
+    return place_fields
 
 
 def create_predictive_sampler(
     model: Any,
     results: xr.Dataset,
     rng: np.random.Generator,
-) -> Any:
+) -> Callable[[int], NDArray[np.float64]]:
     """Create sampler function for posterior predictive check.
 
     Parameters
@@ -272,7 +260,7 @@ def create_predictive_sampler(
     (100, n_time)
     """
     # Extract place fields and time bin
-    place_fields, dt = extract_place_fields_from_model(model)
+    place_fields = extract_place_fields_from_model(model)
 
     # Get predictive posterior (state distribution before observing data)
     predictive_posterior = results.predictive_posterior.dropna("state_bins").to_numpy()
@@ -288,13 +276,11 @@ def create_predictive_sampler(
 
             # 2. Generate synthetic spikes given sampled positions
             spike_counts_sim = generate_spikes_from_place_fields(
-                position_indices, place_fields, dt, rng
+                position_indices, place_fields, rng
             )
 
             # 3. Compute log likelihood for synthetic spikes
-            log_like_sim = compute_log_likelihood_from_place_fields(
-                spike_counts_sim, place_fields, dt
-            )
+            log_like_sim = compute_log_likelihood_from_place_fields(spike_counts_sim, place_fields)
 
             # 4. Compute log predictive density for synthetic data
             log_pred_samples[i] = log_predictive_density(
