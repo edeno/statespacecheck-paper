@@ -33,7 +33,7 @@ from statespacecheck_paper.analysis import (
     likelihood_grid_for_counts,
 )
 from statespacecheck_paper.simulation import gaussian_transition_matrix, normalize, safe_log
-from statespacecheck_paper.style import WONG
+from statespacecheck_paper.style import CMAP_POSTERIOR, COLORS
 
 
 def add_phase_boundaries(
@@ -83,11 +83,12 @@ def add_phase_boundaries(
     ) = phase_boundaries
 
     # Define phases with (start, end, color, label)
+    # Use semantic colors from COLORS dictionary
     phases = [
-        (t_remap_start, t_remap_end, "orange", "Remapping"),
-        (t_recovery1_end, t_flat_end, "gray", "Flat firing"),
-        (t_recovery2_end, t_fast_end, "red", "Fast movement"),
-        (t_recovery3_end, t_slow_end, "blue", "Stationary"),
+        (t_remap_start, t_remap_end, COLORS["likelihood"], "Remapping"),
+        (t_recovery1_end, t_flat_end, COLORS["reference"], "Flat firing"),
+        (t_recovery2_end, t_fast_end, COLORS["ground_truth"], "Fast movement"),
+        (t_recovery3_end, t_slow_end, COLORS["predictive"], "Stationary"),
     ]
 
     for ax_idx, ax in enumerate(axes):
@@ -141,6 +142,201 @@ def compute_hpd_region(x: np.ndarray, pdf: np.ndarray, coverage: float = 0.95) -
 
     mask: np.ndarray = pdf_normalized >= threshold
     return mask
+
+
+def extract_contiguous_regions(
+    mask: NDArray[np.bool_],
+    x: NDArray[np.floating],
+) -> list[tuple[float, float]]:
+    """Extract contiguous True regions from a boolean mask.
+
+    Parameters
+    ----------
+    mask : np.ndarray, shape (n_points,)
+        Boolean mask indicating region membership.
+    x : np.ndarray, shape (n_points,)
+        Position values corresponding to mask.
+
+    Returns
+    -------
+    regions : list[tuple[float, float]]
+        List of (start, end) tuples for each contiguous region.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> x = np.linspace(0, 10, 100)
+    >>> mask = (x > 2) & (x < 8)
+    >>> regions = extract_contiguous_regions(mask, x)
+    >>> len(regions)
+    1
+    """
+    if not np.any(mask):
+        return []
+
+    # Pad with False to detect edges at boundaries
+    padded = np.concatenate([[False], mask, [False]])
+    diff = np.diff(padded.astype(int))
+
+    # Rising edges (0->1) mark region starts, falling edges (1->0) mark ends
+    starts = np.where(diff == 1)[0]
+    ends = np.where(diff == -1)[0] - 1  # -1 to get last True index
+
+    return [(float(x[s]), float(x[e])) for s, e in zip(starts, ends, strict=True)]
+
+
+def create_distribution_comparison_panel(
+    ax: Axes,
+    x: NDArray[np.floating],
+    predictive_params: tuple[float, float],
+    likelihood_params: tuple[float, float],
+    color_predictive: str,
+    color_likelihood: str,
+    title: str | None = None,
+    show_labels: bool = False,
+    coverage: float = 0.95,
+) -> None:
+    """Create a panel comparing predictive and likelihood distributions.
+
+    Shows both distributions with filled curves and HPD regions as
+    horizontal bars below the plot.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        Axes to plot on.
+    x : np.ndarray, shape (n_points,)
+        Position values for plotting.
+    predictive_params : tuple[float, float]
+        (mean, std) for predictive Gaussian distribution.
+    likelihood_params : tuple[float, float]
+        (mean, std) for likelihood Gaussian distribution.
+    color_predictive : str
+        Color for predictive distribution.
+    color_likelihood : str
+        Color for likelihood distribution.
+    title : str | None, optional
+        Panel title.
+    show_labels : bool, default False
+        Whether to show "Predictive"/"Likelihood" text labels on curves.
+    coverage : float, default 0.95
+        Coverage probability for HPD regions.
+
+    Examples
+    --------
+    >>> import matplotlib.pyplot as plt
+    >>> import numpy as np
+    >>> fig, ax = plt.subplots()
+    >>> x = np.linspace(-20, 20, 1000)
+    >>> create_distribution_comparison_panel(
+    ...     ax, x,
+    ...     predictive_params=(0, 1.5),
+    ...     likelihood_params=(5, 1.5),
+    ...     color_predictive="blue",
+    ...     color_likelihood="orange",
+    ...     title="Example",
+    ... )
+    >>> plt.close(fig)
+    """
+    from matplotlib.patches import Rectangle
+    from scipy import stats
+
+    # Generate distributions
+    pred_mean, pred_std = predictive_params
+    like_mean, like_std = likelihood_params
+
+    pdf_predictive: NDArray[np.floating] = stats.norm.pdf(x, loc=pred_mean, scale=pred_std)
+    pdf_likelihood: NDArray[np.floating] = stats.norm.pdf(x, loc=like_mean, scale=like_std)
+
+    # Normalize likelihood
+    dx = float(x[1] - x[0])
+    pdf_likelihood = pdf_likelihood / (np.sum(pdf_likelihood) * dx)
+
+    # Plot distributions
+    ax.plot(
+        x,
+        pdf_predictive,
+        color=color_predictive,
+        linewidth=1.2,
+        label="Predictive distribution",
+    )
+    ax.fill_between(x, pdf_predictive, alpha=0.3, color=color_predictive)
+
+    ax.plot(
+        x,
+        pdf_likelihood,
+        color=color_likelihood,
+        linewidth=1.2,
+        label="Normalized likelihood",
+    )
+    ax.fill_between(x, pdf_likelihood, alpha=0.3, color=color_likelihood)
+
+    # Compute HPD regions and extract contiguous intervals
+    hpd_predictive = compute_hpd_region(x, pdf_predictive, coverage=coverage)
+    hpd_likelihood = compute_hpd_region(x, pdf_likelihood, coverage=coverage)
+    pred_regions = extract_contiguous_regions(hpd_predictive, x)
+    like_regions = extract_contiguous_regions(hpd_likelihood, x)
+
+    # Draw HPD regions as horizontal bars
+    bar_height = 0.015
+    y_pred = -0.08
+    y_like = -0.05
+
+    for start, end in pred_regions:
+        ax.add_patch(
+            Rectangle(
+                (start, y_pred),
+                end - start,
+                bar_height,
+                facecolor=color_predictive,
+                edgecolor=color_predictive,
+                linewidth=1.0,
+                clip_on=False,
+            )
+        )
+
+    for start, end in like_regions:
+        ax.add_patch(
+            Rectangle(
+                (start, y_like),
+                end - start,
+                bar_height,
+                facecolor=color_likelihood,
+                edgecolor=color_likelihood,
+                linewidth=1.0,
+                clip_on=False,
+            )
+        )
+
+    # Formatting
+    ax.set_xlim(float(x[0]), float(x[-1]))
+    ax.set_ylim(-0.1, 0.30)  # Room for sub-panel titles
+    if title:
+        ax.set_title(title, fontsize=7, fontweight="normal", pad=2)
+
+    ax.axis("off")
+
+    # Add direct labels on distribution curves
+    if show_labels:
+        # Label predictive on left side, likelihood on right side
+        ax.text(
+            -12,
+            0.22,
+            "Predictive",
+            ha="center",
+            va="bottom",
+            fontsize=5,
+            color=color_predictive,
+        )
+        ax.text(
+            16,
+            0.22,
+            "Likelihood",
+            ha="center",
+            va="bottom",
+            fontsize=5,
+            color=color_likelihood,
+        )
 
 
 def plot_original(
@@ -226,11 +422,16 @@ def plot_original(
         origin="lower",
         vmin=0.0,
         vmax=np.quantile(metrics["posterior"], 0.975),
-        cmap="bone_r",
+        cmap=CMAP_POSTERIOR,
     )
-    # Plot true position in magenta for visibility against bone_r colormap
+    # Plot true position for visibility against posterior colormap
     axes[0].plot(
-        np.arange(n_time), x_true, color="magenta", linewidth=1.5, alpha=0.85, label="True position"
+        np.arange(n_time),
+        x_true,
+        color=COLORS["ground_truth"],
+        linewidth=1.5,
+        alpha=0.85,
+        label="True position",
     )
     axes[0].set_ylabel("Position (bin)", fontsize=10, labelpad=8)
     axes[0].tick_params(labelsize=8)
@@ -251,18 +452,23 @@ def plot_original(
         ".",
         markersize=1.5,
         alpha=0.6,
-        color="#56B4E9",
+        color=COLORS["hpd_overlap"],
         rasterized=True,
     )
-    axes[1].axhline(thresholds.hpd_overlap, color="#E69F00", linewidth=1.5, zorder=10)
+    axes[1].axhline(thresholds.hpd_overlap, color=COLORS["threshold"], linewidth=1.5, zorder=10)
     axes[1].set_xlim(0, n_time)
     axes[1].set_ylabel("HPD Overlap", fontsize=10, labelpad=8)
     axes[1].tick_params(labelsize=8)
 
     axes[2].plot(
-        metrics["kl_divergence"], ".", markersize=1.5, alpha=0.6, color="#56B4E9", rasterized=True
+        metrics["kl_divergence"],
+        ".",
+        markersize=1.5,
+        alpha=0.6,
+        color=COLORS["kl_divergence"],
+        rasterized=True,
     )
-    axes[2].axhline(thresholds.kl_divergence, color="#E69F00", linewidth=1.5, zorder=10)
+    axes[2].axhline(thresholds.kl_divergence, color=COLORS["threshold"], linewidth=1.5, zorder=10)
     axes[2].set_xlim(0, n_time)
     axes[2].set_ylabel("KL Divergence", fontsize=10, labelpad=8)
     axes[2].tick_params(labelsize=8)
@@ -277,10 +483,12 @@ def plot_original(
         ".",
         markersize=1.5,
         alpha=0.6,
-        color="#56B4E9",
+        color=COLORS["metric_combined"],
         rasterized=True,
     )
-    axes[3].axhline(spike_prob_thresh_transformed, color="#E69F00", linewidth=1.5, zorder=10)
+    axes[3].axhline(
+        spike_prob_thresh_transformed, color=COLORS["threshold"], linewidth=1.5, zorder=10
+    )
     axes[3].set_xlim(0, n_time)
     axes[3].set_ylabel("-log(Spike Prob)", fontsize=10, labelpad=8)
     axes[3].set_xlabel("Time", fontsize=10, labelpad=8)
@@ -353,7 +561,12 @@ def plot_transformed(
     ...     hpd_overlap=np.random.uniform(0, 5, n_time),
     ...     kl_divergence=np.random.uniform(0, 3, n_time),
     ...     spike_prob=np.random.uniform(0, 10, n_time),
-    ...     hpd_overlap_threshold=3.0, kl_divergence_threshold=2.0, spike_prob_threshold=5.0
+    ...     p_values=np.random.uniform(0, 1, n_time),
+    ...     hpd_overlap_threshold=3.0,
+    ...     kl_divergence_threshold=2.0,
+    ...     spike_prob_threshold=5.0,
+    ...     p_value_lower_threshold=0.05,
+    ...     p_value_upper_threshold=0.95,
     ... )
     >>> fig = plot_transformed(xs, x_true, posterior, transformed)
     >>> plt.close(fig)
@@ -361,8 +574,8 @@ def plot_transformed(
     n_time = posterior.shape[0]
     fig, axes = plt.subplots(4, 1, figsize=(7, 6), constrained_layout=True, sharex=True, dpi=150)
 
-    im = axes[0].imshow(posterior.T, aspect="auto", origin="lower", cmap="viridis")
-    axes[0].plot(np.arange(n_time), x_true, "k", linewidth=1.0, alpha=0.8)
+    im = axes[0].imshow(posterior.T, aspect="auto", origin="lower", cmap=CMAP_POSTERIOR)
+    axes[0].plot(np.arange(n_time), x_true, color=COLORS["ground_truth"], linewidth=1.0, alpha=0.8)
     axes[0].set_ylabel("Position (bin)", fontsize=9, labelpad=8)
     axes[0].tick_params(labelsize=7)
     cbar = fig.colorbar(im, ax=axes[0], fraction=0.02, pad=0.02)
@@ -376,20 +589,27 @@ def plot_transformed(
                 remap_window[0],
                 remap_window[1],
                 alpha=0.15,
-                color="orange",
+                color=COLORS["likelihood"],
                 label="Remap",
             )
 
         # Highlight phase boundaries
         if phase_boundaries is not None:
             t1, t2 = phase_boundaries
-            ax.axvspan(t1, t2, alpha=0.15, color="gray", label="Flat rate")
-            ax.axvspan(t2, n_time, alpha=0.15, color="red", label="Fast movement")
+            ax.axvspan(t1, t2, alpha=0.15, color=COLORS["reference"], label="Flat rate")
+            ax.axvspan(t2, n_time, alpha=0.15, color=COLORS["ground_truth"], label="Fast movement")
 
-    axes[1].plot(transformed.hpd_overlap, ".", markersize=0.5, alpha=0.3, rasterized=True)
+    axes[1].plot(
+        transformed.hpd_overlap,
+        ".",
+        markersize=0.5,
+        alpha=0.3,
+        color=COLORS["hpd_overlap"],
+        rasterized=True,
+    )
     axes[1].axhline(
         transformed.hpd_overlap_threshold,
-        color="#E69F00",
+        color=COLORS["threshold"],
         linewidth=1.5,
         label="Threshold",
         zorder=10,
@@ -399,10 +619,17 @@ def plot_transformed(
     axes[1].tick_params(labelsize=7)
     axes[1].legend(loc="upper right", fontsize=7, frameon=False)
 
-    axes[2].plot(transformed.kl_divergence, ".", markersize=0.5, alpha=0.3, rasterized=True)
+    axes[2].plot(
+        transformed.kl_divergence,
+        ".",
+        markersize=0.5,
+        alpha=0.3,
+        color=COLORS["kl_divergence"],
+        rasterized=True,
+    )
     axes[2].axhline(
         transformed.kl_divergence_threshold,
-        color="#E69F00",
+        color=COLORS["threshold"],
         linewidth=1.5,
         label="Threshold",
         zorder=10,
@@ -411,16 +638,35 @@ def plot_transformed(
     axes[2].set_ylabel("sqrt(KL Divergence)", fontsize=9, labelpad=8)
     axes[2].tick_params(labelsize=7)
 
-    axes[3].plot(transformed.spike_prob, ".", markersize=0.5, alpha=0.3, rasterized=True)
+    axes[3].plot(
+        transformed.p_values,
+        ".",
+        markersize=1.5,
+        alpha=0.7,
+        color=COLORS["metric_combined"],
+        rasterized=True,
+    )
     axes[3].axhline(
-        transformed.spike_prob_threshold,
-        color="#E69F00",
+        transformed.p_value_lower_threshold,
+        color=COLORS["threshold"],
         linewidth=1.5,
-        label="Threshold",
+        label="Lower Threshold",
         zorder=10,
     )
+    axes[3].axhline(
+        transformed.p_value_upper_threshold,
+        color=COLORS["threshold"],
+        linewidth=1.5,
+        linestyle="--",
+        label="Upper Threshold",
+        zorder=10,
+    )
+    axes[3].axhline(
+        0.5, color=COLORS["reference"], linestyle=":", alpha=0.5, linewidth=1.0
+    )  # Median
     axes[3].set_xlim(0, n_time)
-    axes[3].set_ylabel("-log(Spike Prob)", fontsize=9, labelpad=8)
+    axes[3].set_ylim(0, 1)
+    axes[3].set_ylabel("P-value", fontsize=9, labelpad=8)
     axes[3].set_xlabel("Time", fontsize=9, labelpad=8)
     axes[3].tick_params(labelsize=7)
 
@@ -512,9 +758,6 @@ def plot_misfit_examples(
     gs = fig.add_gridspec(1, 5)
     axes = [fig.add_subplot(gs[0, i]) for i in range(5)]
 
-    # Wong colorblind-friendly palette
-    wong = WONG
-
     for phase_idx, (phase_name, phase_slice, is_baseline) in enumerate(phases):
         # For baseline, find best fit (highest hpd_overlap); for misfits,
         # find worst fit (lowest hpd_overlap)
@@ -566,8 +809,10 @@ def plot_misfit_examples(
         ax1 = axes[phase_idx]
         ax2 = ax1.twinx()
 
-        # Plot prior on left axis (blue from Wong palette) with transparency
-        line1 = ax1.plot(xs, prior, color=wong[5], linewidth=1.5, alpha=0.7, label="Predictive")
+        # Plot prior on left axis with transparency
+        line1 = ax1.plot(
+            xs, prior, color=COLORS["predictive"], linewidth=1.5, alpha=0.7, label="Predictive"
+        )
         # Determine scale factor for prior and include in ylabel
         prior_max = np.max(prior)
         if prior_max > 0:
@@ -575,19 +820,24 @@ def plot_misfit_examples(
             # Use scale factor if magnitude is outside reasonable range
             if prior_order < -2 or prior_order > 2:
                 prior_scale = 10**prior_order
-                ax1.plot(xs, prior / prior_scale, color=wong[5], linewidth=1.5, alpha=0.7)
+                ax1.plot(
+                    xs, prior / prior_scale, color=COLORS["predictive"], linewidth=1.5, alpha=0.7
+                )
                 ax1.lines[0].remove()  # Remove the unscaled plot
                 ax1.set_ylabel(
-                    f"Predictive (×10$^{{{prior_order}}}$)", fontsize=7, color=wong[5], labelpad=3
+                    f"Predictive (×10$^{{{prior_order}}}$)",
+                    fontsize=7,
+                    color=COLORS["predictive"],
+                    labelpad=3,
                 )
             else:
-                ax1.set_ylabel("Predictive", fontsize=7, color=wong[5], labelpad=3)
+                ax1.set_ylabel("Predictive", fontsize=7, color=COLORS["predictive"], labelpad=3)
         else:
-            ax1.set_ylabel("Predictive", fontsize=7, color=wong[5], labelpad=3)
-        ax1.tick_params(axis="y", labelcolor=wong[5], labelsize=6)
+            ax1.set_ylabel("Predictive", fontsize=7, color=COLORS["predictive"], labelpad=3)
+        ax1.tick_params(axis="y", labelcolor=COLORS["predictive"], labelsize=6)
         ax1.set_ylim(0, None)
 
-        # Plot likelihood on right axis (orange from Wong palette) - solid line
+        # Plot likelihood on right axis - solid line
         likelihood_max = np.max(combined_likelihood)
         if likelihood_max > 0:
             likelihood_order = int(np.floor(np.log10(likelihood_max)))
@@ -597,7 +847,7 @@ def plot_misfit_examples(
                 line2 = ax2.plot(
                     xs,
                     combined_likelihood / likelihood_scale,
-                    color=wong[1],
+                    color=COLORS["likelihood"],
                     linewidth=1.5,
                     alpha=0.9,
                     label="Likelihood",
@@ -605,48 +855,51 @@ def plot_misfit_examples(
                 ax2.set_ylabel(
                     f"Likelihood (×10$^{{{likelihood_order}}}$)",
                     fontsize=7,
-                    color=wong[1],
+                    color=COLORS["likelihood"],
                     labelpad=3,
                 )
             else:
                 line2 = ax2.plot(
                     xs,
                     combined_likelihood,
-                    color=wong[1],
+                    color=COLORS["likelihood"],
                     linewidth=1.5,
                     alpha=0.9,
                     label="Likelihood",
                 )
-                ax2.set_ylabel("Likelihood", fontsize=7, color=wong[1], labelpad=3)
+                ax2.set_ylabel("Likelihood", fontsize=7, color=COLORS["likelihood"], labelpad=3)
         else:
             line2 = ax2.plot(
-                xs, combined_likelihood, color=wong[1], linewidth=1.5, alpha=0.9, label="Likelihood"
+                xs,
+                combined_likelihood,
+                color=COLORS["likelihood"],
+                linewidth=1.5,
+                alpha=0.9,
+                label="Likelihood",
             )
-            ax2.set_ylabel("Likelihood", fontsize=7, color=wong[1], labelpad=3)
-        ax2.tick_params(axis="y", labelcolor=wong[1], labelsize=6)
+            ax2.set_ylabel("Likelihood", fontsize=7, color=COLORS["likelihood"], labelpad=3)
+        ax2.tick_params(axis="y", labelcolor=COLORS["likelihood"], labelsize=6)
         ax2.set_ylim(0, None)
 
-        # Add true position line (purple from Wong palette)
-        ax1.axvline(x_true[example_time], color=wong[7], linestyle="--", linewidth=1.0, alpha=0.7)
+        # Add true position line
+        ax1.axvline(
+            x_true[example_time],
+            color=COLORS["ground_truth"],
+            linestyle="--",
+            linewidth=1.0,
+            alpha=0.7,
+        )
 
         # Get diagnostic values
         hpdo_val = metrics["hpd_overlap"][example_time]
         kl_val = metrics["kl_divergence"][example_time]
-        spike_prob_vals = metrics["spike_prob"][example_time]
+        p_val = metrics["p_values"][example_time]
 
-        # Calculate -log(min spike prob) with only significant digits
-        if not np.all(np.isnan(spike_prob_vals)):
-            spike_prob_min = np.nanmin(spike_prob_vals)
-            log_spike_prob = -np.log(spike_prob_min + 1e-12)
+        # Add phase name and metrics as title
+        if np.isnan(p_val):
+            title_text = f"{phase_name}\nHPD: {hpdo_val:.2g}  KL: {kl_val:.2g}  p: N/A"
         else:
-            log_spike_prob = np.nan
-
-        # Add phase name and metrics as title (always use engineering format for -log)
-        title_text = (
-            f"{phase_name}\nHPD: {hpdo_val:.2g}  KL: {kl_val:.2g}  -log: {log_spike_prob:.2e}"
-        )
-        if np.isnan(log_spike_prob):
-            title_text = f"{phase_name}\nHPD: {hpdo_val:.2g}  KL: {kl_val:.2g}  -log: N/A"
+            title_text = f"{phase_name}\nHPD: {hpdo_val:.2g}  KL: {kl_val:.2g}  p: {p_val:.3f}"
         ax1.set_title(title_text, fontsize=7, pad=5, fontweight="bold")
 
         ax1.tick_params(axis="x", labelsize=6)
@@ -734,16 +987,13 @@ def plot_combined_diagnostics(
     ... )
     >>> plt.close('all')
     """
-    # Wong colorblind-friendly palette
-    wong = WONG
-
-    # Phase colors (lighter versions for backgrounds)
+    # Phase colors (lighter versions for backgrounds) from semantic COLORS
     phase_colors = {
-        "baseline": "#FFFFFF",  # White
-        "remap": "#FFE5CC",  # Light orange
-        "flat": "#E8E8E8",  # Light gray
-        "fast": "#FFD6D6",  # Light red
-        "slow": "#D6E5FF",  # Light blue
+        "baseline": COLORS["phase_baseline"],
+        "remap": COLORS["phase_remap"],
+        "flat": COLORS["phase_flat"],
+        "fast": COLORS["phase_fast"],
+        "slow": COLORS["phase_slow"],
     }
 
     # Calculate figure size
@@ -785,12 +1035,12 @@ def plot_combined_diagnostics(
         origin="lower",
         vmin=0.0,
         vmax=np.quantile(metrics["posterior"], 0.975),
-        cmap="bone_r",
+        cmap=CMAP_POSTERIOR,
     )
     ax_post.plot(
         np.arange(n_time),
         x_true,
-        color="magenta",
+        color=COLORS["ground_truth"],
         linewidth=1.0,
         alpha=0.85,
         label="True position",
@@ -802,9 +1052,16 @@ def plot_combined_diagnostics(
 
     # HPDO
     ax_hpdo.plot(
-        metrics["hpd_overlap"], ".", markersize=0.8, alpha=0.6, color=wong[5], rasterized=True
+        metrics["hpd_overlap"],
+        ".",
+        markersize=0.8,
+        alpha=0.6,
+        color=COLORS["hpd_overlap"],
+        rasterized=True,
     )
-    ax_hpdo.axhline(thresholds.hpd_overlap, color="#666666", linewidth=1.2, alpha=0.7, zorder=10)
+    ax_hpdo.axhline(
+        thresholds.hpd_overlap, color=COLORS["threshold"], linewidth=1.2, alpha=0.7, zorder=10
+    )
     ax_hpdo.set_xlim(0, n_time)
     ax_hpdo.set_ylabel("HPD Overlap", fontsize=9, labelpad=7)
     ax_hpdo.tick_params(labelsize=7, labelbottom=False)
@@ -820,14 +1077,21 @@ def plot_combined_diagnostics(
         fontsize=6,
         va="center",
         ha="left",
-        color="#666666",
+        color=COLORS["threshold"],
     )
 
     # KL Divergence
     ax_kl.plot(
-        metrics["kl_divergence"], ".", markersize=0.8, alpha=0.6, color=wong[5], rasterized=True
+        metrics["kl_divergence"],
+        ".",
+        markersize=0.8,
+        alpha=0.6,
+        color=COLORS["kl_divergence"],
+        rasterized=True,
     )
-    ax_kl.axhline(thresholds.kl_divergence, color="#666666", linewidth=1.2, alpha=0.7, zorder=10)
+    ax_kl.axhline(
+        thresholds.kl_divergence, color=COLORS["threshold"], linewidth=1.2, alpha=0.7, zorder=10
+    )
     ax_kl.set_xlim(0, n_time)
     ax_kl.set_ylabel("KL Divergence", fontsize=9, labelpad=7)
     ax_kl.tick_params(labelsize=7, labelbottom=False)
@@ -843,46 +1107,70 @@ def plot_combined_diagnostics(
         fontsize=6,
         va="center",
         ha="left",
-        color="#666666",
+        color=COLORS["threshold"],
     )
 
-    # Spike Probability (transformed)
-    eps2 = 1e-12
-    spike_prob_transformed = -safe_log(metrics["spike_prob"] + eps2)
-    spike_prob_thresh_transformed = -np.log(thresholds.spike_prob + eps2)
-
+    # P-values (no transformation needed)
     ax_spike.plot(
-        spike_prob_transformed,
+        metrics["p_values"],
         ".",
-        markersize=0.8,
-        alpha=0.6,
-        color=wong[5],
+        markersize=1.5,
+        alpha=0.8,
+        color=COLORS["metric_combined"],
         rasterized=True,
     )
     ax_spike.axhline(
-        spike_prob_thresh_transformed,
-        color="#666666",
+        thresholds.p_value_lower,
+        color=COLORS["threshold"],
         linewidth=1.2,
         alpha=0.7,
         zorder=10,
+        label="Lower threshold",
+    )
+    ax_spike.axhline(
+        thresholds.p_value_upper,
+        color=COLORS["threshold"],
+        linewidth=1.2,
+        alpha=0.7,
+        linestyle="--",
+        zorder=10,
+        label="Upper threshold",
+    )
+    ax_spike.axhline(
+        0.5, color=COLORS["reference"], linestyle=":", alpha=0.5, linewidth=1.0, zorder=5
     )
     ax_spike.set_xlim(0, n_time)
-    ax_spike.set_ylabel("-log(p-value)", fontsize=9, labelpad=7)
+    # Zoom in on the relevant range where p-values cluster
+    pval_min = np.nanmin(metrics["p_values"])
+    pval_max = np.nanmax(metrics["p_values"])
+    pval_range = pval_max - pval_min
+    if pval_range < 0.2:  # If data is highly clustered, zoom in
+        y_center = (pval_min + pval_max) / 2
+        y_margin = max(0.1, pval_range * 2)  # At least 0.2 range
+        ax_spike.set_ylim(max(0, y_center - y_margin), min(1, y_center + y_margin))
+    else:
+        ax_spike.set_ylim(0, 1)
+    ax_spike.set_ylabel("P-value", fontsize=9, labelpad=7)
     ax_spike.set_xlabel("Time (a.u.)", fontsize=9, labelpad=7)
     ax_spike.tick_params(labelsize=7)
-    # Add directional indicator and threshold annotation
+    # Add directional indicators
     ax_spike.text(
-        1.01, 0.5, "↑ Worse fit", transform=ax_spike.transAxes, fontsize=6, va="center", ha="left"
+        1.01,
+        0.02,
+        "← Misfit",
+        transform=ax_spike.transAxes,
+        fontsize=6,
+        va="bottom",
+        ha="left",
     )
     ax_spike.text(
         1.01,
-        spike_prob_thresh_transformed,
-        "Threshold",
-        transform=ax_spike.get_yaxis_transform(),
+        0.98,
+        "← Misfit",
+        transform=ax_spike.transAxes,
         fontsize=6,
-        va="center",
+        va="top",
         ha="left",
-        color="#666666",
     )
 
     # Colorbar for posterior only - in dedicated axes aligned with posterior panel
@@ -1041,8 +1329,17 @@ def plot_combined_diagnostics(
         ax1.set_facecolor(phase_colors[color_key])
 
         # Plot both distributions on the same axis
-        ax1.plot(xs, prior, color=wong[5], linewidth=1.2, alpha=0.7, label="Predictive")
-        ax1.plot(xs, likelihood_norm, color=wong[1], linewidth=1.2, alpha=0.9, label="Likelihood")
+        ax1.plot(
+            xs, prior, color=COLORS["predictive"], linewidth=1.2, alpha=0.7, label="Predictive"
+        )
+        ax1.plot(
+            xs,
+            likelihood_norm,
+            color=COLORS["likelihood"],
+            linewidth=1.2,
+            alpha=0.9,
+            label="Likelihood",
+        )
 
         # Share y-axis: same limits for all panels, labels only on leftmost
         ax1.set_ylim(y_min, y_max)
@@ -1058,7 +1355,7 @@ def plot_combined_diagnostics(
         # True position
         ax1.axvline(
             x_true[example_time],
-            color="magenta",
+            color=COLORS["ground_truth"],
             linestyle="--",
             linewidth=0.8,
             alpha=0.7,
@@ -1072,17 +1369,12 @@ def plot_combined_diagnostics(
         # Add metrics as text annotation inside plot (upper left)
         hpdo_val = metrics["hpd_overlap"][example_time]
         kl_val = metrics["kl_divergence"][example_time]
-        spike_prob_vals = metrics["spike_prob"][example_time]
-        if not np.all(np.isnan(spike_prob_vals)):
-            spike_prob_min = np.nanmin(spike_prob_vals)
-            log_spike_prob = -np.log(spike_prob_min + 1e-12)
-        else:
-            log_spike_prob = np.nan
+        p_val = metrics["p_values"][example_time]
 
-        if np.isnan(log_spike_prob):
-            metrics_text = f"HPD: {hpdo_val:.2f}\nKL: {kl_val:.1f}\n-log p: N/A"
+        if np.isnan(p_val):
+            metrics_text = f"HPD: {hpdo_val:.2f}\nKL: {kl_val:.1f}\np: N/A"
         else:
-            metrics_text = f"HPD: {hpdo_val:.2f}\nKL: {kl_val:.1f}\n-log p: {log_spike_prob:.1f}"
+            metrics_text = f"HPD: {hpdo_val:.2f}\nKL: {kl_val:.1f}\np: {p_val:.3f}"
         ax1.text(
             0.05,
             0.95,
@@ -1110,9 +1402,11 @@ def plot_combined_diagnostics(
     # Create dummy lines for legend
     from matplotlib.lines import Line2D
 
-    predictive_line = Line2D([0], [0], color=wong[5], linewidth=1.2, alpha=0.7)
-    likelihood_line = Line2D([0], [0], color=wong[1], linewidth=1.2, alpha=0.9)
-    position_line = Line2D([0], [0], color=wong[7], linestyle="--", linewidth=0.8, alpha=0.7)
+    predictive_line = Line2D([0], [0], color=COLORS["predictive"], linewidth=1.2, alpha=0.7)
+    likelihood_line = Line2D([0], [0], color=COLORS["likelihood"], linewidth=1.2, alpha=0.9)
+    position_line = Line2D(
+        [0], [0], color=COLORS["ground_truth"], linestyle="--", linewidth=0.8, alpha=0.7
+    )
     legend_ax.legend(
         [predictive_line, likelihood_line, position_line],
         ["Predictive", "Likelihood", "Position"],

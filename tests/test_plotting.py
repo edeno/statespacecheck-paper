@@ -8,6 +8,8 @@ import numpy as np
 from statespacecheck_paper.analysis import DecodeParams, Thresholds, Transformed
 from statespacecheck_paper.plotting import (
     compute_hpd_region,
+    create_distribution_comparison_panel,
+    extract_contiguous_regions,
     plot_combined_diagnostics,
     plot_misfit_examples,
     plot_original,
@@ -105,9 +107,16 @@ class TestPlotOriginal:
             "hpd_overlap": rng.uniform(0, 1, n_time),
             "kl_divergence": rng.uniform(0, 5, n_time),
             "spike_prob": rng.uniform(0, 1, (n_time, 10)),
+            "p_values": rng.uniform(0, 1, n_time),
         }
 
-        thresholds = Thresholds(hpd_overlap=0.8, kl_divergence=2.0, spike_prob=0.05)
+        thresholds = Thresholds(
+            hpd_overlap=0.8,
+            kl_divergence=2.0,
+            spike_prob=0.05,
+            p_value_lower=0.05,
+            p_value_upper=0.95,
+        )
 
         # Execute
         fig = plot_original(xs, x_true, metrics, thresholds)
@@ -132,9 +141,16 @@ class TestPlotOriginal:
             "hpd_overlap": rng.uniform(0, 1, n_time),
             "kl_divergence": rng.uniform(0, 5, n_time),
             "spike_prob": rng.uniform(0, 1, (n_time, 10)),
+            "p_values": rng.uniform(0, 1, n_time),
         }
 
-        thresholds = Thresholds(hpd_overlap=0.8, kl_divergence=2.0, spike_prob=0.05)
+        thresholds = Thresholds(
+            hpd_overlap=0.8,
+            kl_divergence=2.0,
+            spike_prob=0.05,
+            p_value_lower=0.05,
+            p_value_upper=0.95,
+        )
         phase_boundaries = (10, 20, 30, 40, 50, 60, 70, 80)
 
         fig = plot_original(xs, x_true, metrics, thresholds, phase_boundaries=phase_boundaries)
@@ -154,9 +170,16 @@ class TestPlotOriginal:
             "hpd_overlap": rng.uniform(0, 1, n_time),
             "kl_divergence": rng.uniform(0, 5, n_time),
             "spike_prob": rng.uniform(0, 1, (n_time, 5)),
+            "p_values": rng.uniform(0, 1, n_time),
         }
 
-        thresholds = Thresholds(hpd_overlap=0.7, kl_divergence=1.5, spike_prob=0.1)
+        thresholds = Thresholds(
+            hpd_overlap=0.7,
+            kl_divergence=1.5,
+            spike_prob=0.1,
+            p_value_lower=0.05,
+            p_value_upper=0.95,
+        )
 
         fig = plot_original(xs, x_true, metrics, thresholds, title="Test Figure")
 
@@ -182,6 +205,9 @@ class TestPlotTransformed:
             hpd_overlap_threshold=3.0,
             kl_divergence_threshold=2.0,
             spike_prob_threshold=5.0,
+            p_values=rng.uniform(0, 1, n_time),
+            p_value_lower_threshold=0.05,
+            p_value_upper_threshold=0.95,
         )
 
         fig = plot_transformed(xs, x_true, post, transformed)
@@ -205,6 +231,9 @@ class TestPlotTransformed:
             hpd_overlap_threshold=3.0,
             kl_divergence_threshold=2.0,
             spike_prob_threshold=5.0,
+            p_values=rng.uniform(0, 1, n_time),
+            p_value_lower_threshold=0.05,
+            p_value_upper_threshold=0.95,
         )
 
         fig = plot_transformed(xs, x_true, post, transformed, remap_window=(20, 40))
@@ -227,6 +256,9 @@ class TestPlotTransformed:
             hpd_overlap_threshold=3.0,
             kl_divergence_threshold=2.0,
             spike_prob_threshold=5.0,
+            p_values=rng.uniform(0, 1, n_time),
+            p_value_lower_threshold=0.05,
+            p_value_upper_threshold=0.95,
         )
 
         # Provide phase_boundaries to test lines 360-362
@@ -253,6 +285,7 @@ class TestPlotMisfitExamples:
             "hpd_overlap": rng.uniform(0, 1, n_time),
             "kl_divergence": rng.uniform(0, 5, n_time),
             "spike_prob": rng.uniform(0, 1, (n_time, n_cells)),
+            "p_values": rng.uniform(0, 1, n_time),
         }
 
         # Create DecodeParams with timeline structure
@@ -308,6 +341,7 @@ class TestPlotMisfitExamples:
             "hpd_overlap": rng.uniform(0, 1, n_time),
             "kl_divergence": rng.uniform(0, 5, n_time),
             "spike_prob": rng.uniform(0, 1, (n_time, n_cells)),
+            "p_values": rng.uniform(0, 1, n_time),
         }
 
         params = DecodeParams(
@@ -352,9 +386,16 @@ class TestPlotCombinedDiagnostics:
             "hpd_overlap": rng.uniform(0, 1, n_time),
             "kl_divergence": rng.uniform(0, 5, n_time),
             "spike_prob": rng.uniform(0, 1, (n_time, n_cells)),
+            "p_values": rng.uniform(0, 1, n_time),
         }
 
-        thresholds = Thresholds(hpd_overlap=0.8, kl_divergence=2.0, spike_prob=0.05)
+        thresholds = Thresholds(
+            hpd_overlap=0.8,
+            kl_divergence=2.0,
+            spike_prob=0.05,
+            p_value_lower=0.05,
+            p_value_upper=0.95,
+        )
 
         params = DecodeParams(
             T_remap_start=3000,
@@ -413,9 +454,16 @@ class TestPlotCombinedDiagnostics:
             "hpd_overlap": rng.uniform(0, 1, n_time),
             "kl_divergence": rng.uniform(0, 5, n_time),
             "spike_prob": rng.uniform(0, 1, (n_time, n_cells)),
+            "p_values": rng.uniform(0, 1, n_time),
         }
 
-        thresholds = Thresholds(hpd_overlap=0.7, kl_divergence=1.5, spike_prob=0.1)
+        thresholds = Thresholds(
+            hpd_overlap=0.7,
+            kl_divergence=1.5,
+            spike_prob=0.1,
+            p_value_lower=0.05,
+            p_value_upper=0.95,
+        )
 
         params = DecodeParams(
             T_remap_start=2100,
@@ -446,4 +494,172 @@ class TestPlotCombinedDiagnostics:
         )
 
         assert isinstance(fig, plt.Figure)
+        plt.close(fig)
+
+
+class TestExtractContiguousRegions:
+    """Tests for extract_contiguous_regions function."""
+
+    def test_single_region(self) -> None:
+        """Test extraction of single contiguous region."""
+        x = np.linspace(0, 10, 100)
+        mask = (x > 2) & (x < 8)
+        regions = extract_contiguous_regions(mask, x)
+
+        assert len(regions) == 1
+        start, end = regions[0]
+        assert 2.0 < start < 2.5
+        assert 7.5 < end < 8.0
+
+    def test_multiple_regions(self) -> None:
+        """Test extraction of multiple regions."""
+        x = np.linspace(0, 10, 100)
+        mask = ((x > 1) & (x < 3)) | ((x > 6) & (x < 9))
+        regions = extract_contiguous_regions(mask, x)
+
+        assert len(regions) == 2
+        # First region ~(1, 3)
+        assert 1.0 < regions[0][0] < 1.5
+        assert 2.5 < regions[0][1] < 3.0
+        # Second region ~(6, 9)
+        assert 6.0 < regions[1][0] < 6.5
+        assert 8.5 < regions[1][1] < 9.0
+
+    def test_empty_mask(self) -> None:
+        """Test with no True values."""
+        x = np.linspace(0, 10, 100)
+        mask = np.zeros(100, dtype=bool)
+        regions = extract_contiguous_regions(mask, x)
+
+        assert regions == []
+
+    def test_all_true(self) -> None:
+        """Test with all True values."""
+        x = np.linspace(0, 10, 100)
+        mask = np.ones(100, dtype=bool)
+        regions = extract_contiguous_regions(mask, x)
+
+        assert len(regions) == 1
+        assert regions[0][0] == x[0]
+        assert regions[0][1] == x[-1]
+
+    def test_edges_true(self) -> None:
+        """Test with True values at array edges."""
+        x = np.linspace(0, 10, 100)
+        mask = (x < 2) | (x > 8)
+        regions = extract_contiguous_regions(mask, x)
+
+        assert len(regions) == 2
+        # First region starts at 0
+        assert regions[0][0] == x[0]
+        # Second region ends at 10
+        assert regions[1][1] == x[-1]
+
+
+class TestCreateDistributionComparisonPanel:
+    """Tests for create_distribution_comparison_panel function."""
+
+    def test_creates_panel(self) -> None:
+        """Test that panel is created without errors."""
+        fig, ax = plt.subplots()
+        x = np.linspace(-20, 20, 1000)
+
+        create_distribution_comparison_panel(
+            ax,
+            x,
+            predictive_params=(0, 1.5),
+            likelihood_params=(5, 1.5),
+            color_predictive="blue",
+            color_likelihood="orange",
+        )
+
+        # Should have at least 2 lines (predictive and likelihood)
+        assert len(ax.lines) >= 2
+        plt.close(fig)
+
+    def test_with_title(self) -> None:
+        """Test panel with title."""
+        fig, ax = plt.subplots()
+        x = np.linspace(-20, 20, 1000)
+
+        create_distribution_comparison_panel(
+            ax,
+            x,
+            predictive_params=(0, 1.5),
+            likelihood_params=(5, 1.5),
+            color_predictive="blue",
+            color_likelihood="orange",
+            title="Test Title",
+        )
+
+        assert ax.get_title() == "Test Title"
+        plt.close(fig)
+
+    def test_with_labels(self) -> None:
+        """Test panel with labels shown."""
+        fig, ax = plt.subplots()
+        x = np.linspace(-20, 20, 1000)
+
+        create_distribution_comparison_panel(
+            ax,
+            x,
+            predictive_params=(0, 1.5),
+            likelihood_params=(5, 1.5),
+            color_predictive="blue",
+            color_likelihood="orange",
+            show_labels=True,
+        )
+
+        # Should have text labels
+        texts = ax.texts
+        assert len(texts) >= 2  # At least "Predictive" and "Likelihood"
+        plt.close(fig)
+
+    def test_hpd_bars_added(self) -> None:
+        """Test that HPD bars are added as patches."""
+        fig, ax = plt.subplots()
+        x = np.linspace(-20, 20, 1000)
+
+        create_distribution_comparison_panel(
+            ax,
+            x,
+            predictive_params=(0, 1.5),
+            likelihood_params=(5, 1.5),
+            color_predictive="blue",
+            color_likelihood="orange",
+        )
+
+        # Should have patches (Rectangle for HPD bars)
+        assert len(ax.patches) >= 2  # At least 2 HPD bars
+        plt.close(fig)
+
+    def test_different_scenarios(self) -> None:
+        """Test with different distribution parameters."""
+        fig, ax = plt.subplots()
+        x = np.linspace(-20, 20, 1000)
+
+        # Overlapping distributions (consistent)
+        create_distribution_comparison_panel(
+            ax,
+            x,
+            predictive_params=(0, 5.0),
+            likelihood_params=(2, 3.0),
+            color_predictive="blue",
+            color_likelihood="orange",
+        )
+
+        # Should complete without error
+        plt.close(fig)
+
+        # Non-overlapping distributions (inconsistent)
+        fig, ax = plt.subplots()
+        create_distribution_comparison_panel(
+            ax,
+            x,
+            predictive_params=(-10, 1.0),
+            likelihood_params=(10, 1.0),
+            color_predictive="blue",
+            color_likelihood="orange",
+        )
+
         plt.close(fig)
