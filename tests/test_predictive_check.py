@@ -9,7 +9,7 @@ from numpy.testing import assert_array_almost_equal, assert_array_equal
 from statespacecheck_paper.predictive_check import (
     compute_log_likelihood_from_place_fields,
     compute_predictive_pvalues,
-    create_posterior_predictive_sampler,
+    create_predictive_sampler,
     extract_place_fields_from_model,
     generate_spikes_from_place_fields,
     sample_positions_from_posterior,
@@ -300,7 +300,7 @@ class TestExtractPlaceFieldsFromModel:
 
 
 class TestCreatePosteriorPredictiveSampler:
-    """Tests for create_posterior_predictive_sampler function."""
+    """Tests for create_predictive_sampler function."""
 
     def test_sampler_creation(self) -> None:
         """Test creating posterior predictive sampler."""
@@ -328,7 +328,7 @@ class TestCreatePosteriorPredictiveSampler:
         )
 
         rng = np.random.default_rng(42)
-        sampler = create_posterior_predictive_sampler(MockModel(), results, rng)
+        sampler = create_predictive_sampler(MockModel(), results, rng)
 
         # Test that sampler works
         samples = sampler(n_samples=5)
@@ -360,11 +360,11 @@ class TestCreatePosteriorPredictiveSampler:
 
         # Create two samplers with same seed
         rng1 = np.random.default_rng(42)
-        sampler1 = create_posterior_predictive_sampler(MockModel(), results, rng1)
+        sampler1 = create_predictive_sampler(MockModel(), results, rng1)
         samples1 = sampler1(n_samples=5)
 
         rng2 = np.random.default_rng(42)
-        sampler2 = create_posterior_predictive_sampler(MockModel(), results, rng2)
+        sampler2 = create_predictive_sampler(MockModel(), results, rng2)
         samples2 = sampler2(n_samples=5)
 
         assert_array_almost_equal(samples1, samples2)
