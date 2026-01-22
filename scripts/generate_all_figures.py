@@ -25,7 +25,7 @@ def main() -> int:
     figure_scripts = [
         "generate_figure01.py",
         "generate_figure02.py",
-        # "generate_figure03.py",  # Uncomment when implemented
+        "generate_figure03.py",
     ]
 
     print("=" * 70)
