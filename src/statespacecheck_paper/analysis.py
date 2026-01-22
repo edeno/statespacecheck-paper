@@ -30,8 +30,8 @@ goodness-of-fit.
     ...     spikes, xs, transition_matrix, params.pf_centers,
     ...     params.pf_width, params.rate_scale, params.remap_window, params.remap_from_to
     ... )
-    >>> results.keys()
-    dict_keys(['post', 'HPDO', 'KL', 'spikeProb'])
+    >>> sorted(results.keys())
+    ['hpd_overlap', 'kl_divergence', 'likelihood', 'posterior', 'predictive', 'spike_prob']
 """
 
 from __future__ import annotations
@@ -332,76 +332,6 @@ def _window_or_never(window: tuple[int, int] | None, n_time: int) -> tuple[int, 
     return window if window else (n_time + 1, n_time + 1)
 
 
-def compute_conditional_pvalue(
-    spike_prob: NDArray[np.floating],
-    spikes: NDArray[np.int_],
-    eps: float = 1e-10,
-) -> NDArray[np.floating]:
-    """Compute conditional predictive p-value from spike probability ranks.
-
-    For each timestep, computes the sum of log(spike_prob) for neurons that fired,
-    weighted by their spike counts. This aggregates the per-cell spike_prob
-    into a single diagnostic value per timestep.
-
-    This is a conditional predictive check that evaluates whether the identity
-    of firing neurons matches model expectations, only at times when spikes occur.
-
-    Parameters
-    ----------
-    spike_prob : np.ndarray, shape (n_time, n_cells)
-        Spike probability ranks from spike_prob_rank. Values in [0, 1].
-        These are computed BEFORE masking cells with zero spikes.
-    spikes : np.ndarray, shape (n_time, n_cells)
-        Observed spike counts.
-    eps : float, default 1e-10
-        Small constant to prevent log(0).
-
-    Returns
-    -------
-    conditional_pvalue : np.ndarray, shape (n_time,)
-        Sum of log(spike_prob) for firing neurons at each timestep,
-        weighted by spike count. More negative values indicate misfit.
-        NaN at timesteps with no spikes.
-
-    Notes
-    -----
-    This metric answers: "How expected were the neurons that fired?"
-
-    Interpretation:
-    - Values near 0: Firing neurons were among the most expected (spike_prob near 1)
-    - Very negative values: Firing neurons were unexpected (low spike_prob = misfit)
-
-    The sum of logs is sensitive to ANY unexpected neuron firing - a single
-    cell with low spike_prob will produce a very negative contribution,
-    signaling model misfit.
-
-    Examples
-    --------
-    >>> import numpy as np
-    >>> spike_prob = np.array([[0.2, 0.8], [0.3, 0.7], [0.5, 0.5]])
-    >>> spikes = np.array([[1, 0], [0, 2], [1, 1]])
-    >>> pvals = compute_conditional_pvalue(spike_prob, spikes)
-    >>> pvals[0]  # Only cell 0 fired, log(0.2) ≈ -1.61
-    np.float64(-1.6094379124341003)
-    >>> pvals[1]  # Cell 1 fired twice, 2 * log(0.7) ≈ -0.71
-    np.float64(-0.7133498878774648)
-    >>> pvals[2]  # Both fired once, log(0.5) + log(0.5) ≈ -1.39
-    np.float64(-1.3862943611198906)
-    """
-    n_time = spikes.shape[0]
-    conditional_pvalue: NDArray[np.floating] = np.full(n_time, np.nan)
-
-    for t in range(n_time):
-        total_spikes = spikes[t].sum()
-        if total_spikes > 0:
-            # Weight by spike count, sum of logs
-            weights = spikes[t].astype(np.float64)
-            log_values = np.log(np.maximum(spike_prob[t], eps))
-            conditional_pvalue[t] = (weights * log_values).sum()
-
-    return conditional_pvalue
-
-
 def decode_and_diagnostics(
     spikes: NDArray[np.int_],
     xs: NDArray[np.floating],
@@ -476,16 +406,15 @@ def decode_and_diagnostics(
         - 'likelihood' : np.ndarray, shape (n_time, n_bins)
             Normalized combined likelihood from all cells at each timestep.
             At t=0, equals a flat distribution.
-        - 'hpd_overlap' : np.ndarray, shape (n_time,)
-            HPD overlap between prior and combined likelihood.
-            NaN at t=0 (no prior available) and at timesteps with no spikes.
-        - 'kl_divergence' : np.ndarray, shape (n_time,)
-            KL divergence from prior to combined likelihood.
-            NaN at t=0 (no prior available) and at timesteps with no spikes.
-        - 'conditional_pvalue' : np.ndarray, shape (n_time,)
-            Conditional predictive p-value at each timestep.
-            Mean spike_prob of neurons that fired, weighted by spike count.
-            NaN at timesteps with no spikes.
+        - 'hpd_overlap' : np.ndarray, shape (n_time, n_cells)
+            HPD overlap between prior and each cell's likelihood.
+            NaN at t=0 and when cell j has no spike at timestep t.
+        - 'kl_divergence' : np.ndarray, shape (n_time, n_cells)
+            KL divergence from prior to each cell's likelihood.
+            NaN at t=0 and when cell j has no spike at timestep t.
+        - 'spike_prob' : np.ndarray, shape (n_time, n_cells)
+            Cumulative probability mass for cells with contribution <= cell j.
+            NaN at t=0 and when cell j has no spike at timestep t.
 
     Examples
     --------
@@ -506,11 +435,11 @@ def decode_and_diagnostics(
     ...     spikes, xs, transition_matrix, pf_centers, pf_width, rate_scale,
     ...     remap_window, remap_from_to
     ... )
-    >>> results['post'].shape
+    >>> results['posterior'].shape
     (10, 21)
-    >>> results['HPDO'].shape
-    (10,)
-    >>> np.isnan(results['HPDO'][0])  # t=0 has no prior
+    >>> results['hpd_overlap'].shape  # Now per-cell
+    (10, 3)
+    >>> np.all(np.isnan(results['hpd_overlap'][0]))  # t=0 has no prior
     True
     """
     n_time, n_cells = spikes.shape
@@ -523,12 +452,11 @@ def decode_and_diagnostics(
     _ = rng
 
     # Preallocate outputs (NaN for unavailable values)
+    # Per-cell metrics: shape (n_time, n_cells), NaN when cell has no spike
     posterior: NDArray[np.floating] = np.zeros((n_time, n_bins))
-    hpd_overlap: NDArray[np.floating] = np.full(n_time, np.nan)  # Single value per timestep
-    kl_divergence: NDArray[np.floating] = np.full(n_time, np.nan)  # Single value per timestep
-    spike_prob: NDArray[np.floating] = np.full(
-        (n_time, n_cells), np.nan
-    )  # Keep per-cell for this metric
+    hpd_overlap: NDArray[np.floating] = np.full((n_time, n_cells), np.nan)
+    kl_divergence: NDArray[np.floating] = np.full((n_time, n_cells), np.nan)
+    spike_prob: NDArray[np.floating] = np.full((n_time, n_cells), np.nan)
 
     # Storage for distributions
     predictive_posterior: NDArray[np.floating] = np.zeros((n_time, n_bins))  # p(x_t | y_{1:t-1})
@@ -573,31 +501,35 @@ def decode_and_diagnostics(
         combined_likelihood = np.prod(likelihood, axis=1)  # (n_bins,)
         combined_likelihood_all[t] = normalize(combined_likelihood)  # Store normalized likelihood
 
-        # Compute diagnostics only at spike times (skip if no spikes at this timestep)
-        # This avoids evaluating metrics when there's no observation to assess
+        # Compute per-cell diagnostics
+        # Each cell's diagnostic is computed against the prior (one-step prediction)
+        # Metrics are NaN for cells that did not fire at this timestep
+        for j in range(n_cells):
+            # Skip if no spike from this cell
+            if spikes[t, j] == 0:
+                # hpd_overlap[t, j], kl_divergence[t, j], spike_prob[t, j] remain NaN
+                continue
+
+            # Get cell j's likelihood and normalize
+            lik_j = likelihood[:, j]  # (n_bins,)
+            lik_j_norm = lik_j / np.maximum(lik_j.sum(), 1e-12)  # Normalize
+
+            # Reshape for statespacecheck functions: (1, n_bins)
+            prior_t = prior[np.newaxis, :]
+            lik_j_t = lik_j_norm[np.newaxis, :]
+
+            # HPD overlap: prior vs this cell's likelihood
+            hpd_overlap[t, j] = ssc.hpd_overlap(prior_t, lik_j_t, coverage=0.95)[0]
+
+            # KL divergence: prior vs this cell's likelihood
+            kl_divergence[t, j] = ssc.kl_divergence(prior_t, lik_j_t)[0]
+
+        # spike_prob computed for all cells (even those without spikes for ranking)
+        # Then mask cells without spikes
         if spikes[t].sum() > 0:
-            # Compare one-step prediction (prior) with combined likelihood (observation model)
-            # Use combined_likelihood_all[t] which already has remapping applied
-            prior_t = prior[np.newaxis, :]  # (1, n_bins)
-            combined_likelihood_t = combined_likelihood_all[t][np.newaxis, :]  # (1, n_bins)
-
-            # HPD overlap between prior and combined likelihood
-            hpd_overlap_t: NDArray[np.floating] = ssc.hpd_overlap(
-                prior_t, combined_likelihood_t, coverage=0.95
-            )
-            hpd_overlap[t] = hpd_overlap_t[0]
-
-            # KL divergence between prior and combined likelihood
-            kl_divergence_t: NDArray[np.floating] = ssc.kl_divergence(
-                prior_t, combined_likelihood_t
-            )
-            kl_divergence[t] = kl_divergence_t[0]
-
-            # spike_prob: cumulative probability mass for cells with low expected contribution
-            # (used internally to compute conditional_pvalue, not returned)
-            # Only computed when there are spikes (no observation to evaluate otherwise)
             spike_prob[t] = spike_prob_rank(prior, cell_fraction_per_bin)
-        # else: hpd_overlap[t], kl_divergence[t], spike_prob[t] remain NaN (initialized above)
+            # Mask cells that did not fire
+            spike_prob[t, spikes[t] == 0] = np.nan
 
         # Posterior update with underflow protection
         # When prior-likelihood mismatch is extreme, the product can underflow to zero.
@@ -609,17 +541,13 @@ def decode_and_diagnostics(
         else:
             posterior[t] = unnormalized_posterior / posterior_sum
 
-    # Compute conditional predictive p-values from spike_prob
-    # This aggregates per-cell spike_prob into a per-timestep metric
-    conditional_pvalue = compute_conditional_pvalue(spike_prob, spikes)
-
     return {
         "posterior": posterior,
         "predictive": predictive_posterior,
         "likelihood": combined_likelihood_all,
-        "hpd_overlap": hpd_overlap,
-        "kl_divergence": kl_divergence,
-        "conditional_pvalue": conditional_pvalue,
+        "hpd_overlap": hpd_overlap,  # Now (n_time, n_cells)
+        "kl_divergence": kl_divergence,  # Now (n_time, n_cells)
+        "spike_prob": spike_prob,  # Now (n_time, n_cells), replaces conditional_pvalue
     }
 
 
@@ -632,24 +560,28 @@ def decode_and_diagnostics(
 class Thresholds:
     """Threshold values for diagnostic metrics.
 
-    Thresholds are typically computed from a baseline period to define what
-    constitutes "abnormal" diagnostic values indicating model misfit.
+    Thresholds are computed from baseline period across ALL cells (flattened).
+    This matches the MATLAB implementation where quantiles are computed over
+    the full (n_time * n_cells) array of metric values.
 
     Parameters
     ----------
     hpd_overlap : float
-        HPD overlap threshold (lower values indicate worse fit).
+        HPD overlap threshold (1st percentile across all cells).
+        Lower values indicate worse fit.
     kl_divergence : float
-        KL divergence threshold (higher values indicate worse fit).
-    conditional_pvalue : float
-        Conditional p-value threshold (lower values indicate misfit).
+        KL divergence threshold (99th percentile across all cells).
+        Higher values indicate worse fit.
+    spike_prob : float
+        Spike probability threshold (fixed at 0.05 per MATLAB).
+        Lower values indicate misfit.
 
     Examples
     --------
     >>> thresholds = Thresholds(
     ...     hpd_overlap=0.5,
     ...     kl_divergence=2.0,
-    ...     conditional_pvalue=0.05,
+    ...     spike_prob=0.05,
     ... )
     >>> thresholds.hpd_overlap
     0.5
@@ -657,7 +589,7 @@ class Thresholds:
 
     hpd_overlap: float
     kl_divergence: float
-    conditional_pvalue: float
+    spike_prob: float
 
 
 def compute_thresholds(
@@ -665,18 +597,19 @@ def compute_thresholds(
 ) -> Thresholds:
     """Compute threshold values from baseline period.
 
-    Thresholds are computed as extreme quantiles of the baseline period:
+    Thresholds are computed across ALL cells (flattened), matching MATLAB.
+    The (n_time, n_cells) arrays are flattened to 1D before computing quantiles:
     - HPD overlap threshold: 1st percentile (low values indicate misfit)
     - KL divergence threshold: 99th percentile (high values indicate misfit)
-    - conditional_pvalue threshold: 1st percentile (more negative values indicate misfit)
+    - spike_prob threshold: fixed at 0.05 (per MATLAB implementation)
 
     Parameters
     ----------
     metrics : dict[str, NDArray]
         Dictionary containing diagnostic metrics:
-        - 'hpd_overlap' : np.ndarray, shape (n_time,)
-        - 'kl_divergence' : np.ndarray, shape (n_time,)
-        - 'conditional_pvalue' : np.ndarray, shape (n_time,)
+        - 'hpd_overlap' : np.ndarray, shape (n_time, n_cells)
+        - 'kl_divergence' : np.ndarray, shape (n_time, n_cells)
+        - 'spike_prob' : np.ndarray, shape (n_time, n_cells)
     baseline_end : int, default 60_000
         Index marking end of baseline period (exclusive).
 
@@ -688,26 +621,30 @@ def compute_thresholds(
     Examples
     --------
     >>> import numpy as np
+    >>> rng = np.random.default_rng(42)
     >>> metrics = {
-    ...     'hpd_overlap': np.random.uniform(0.5, 1.0, 100),
-    ...     'kl_divergence': np.random.uniform(0.0, 2.0, 100),
-    ...     'conditional_pvalue': np.random.uniform(-5.0, 0.0, 100),
+    ...     'hpd_overlap': rng.uniform(0.5, 1.0, (100, 5)),
+    ...     'kl_divergence': rng.uniform(0.0, 2.0, (100, 5)),
+    ...     'spike_prob': rng.uniform(0.0, 1.0, (100, 5)),
     ... }
     >>> thresholds = compute_thresholds(metrics, baseline_end=50)
-    >>> thresholds.conditional_pvalue < 0  # Should be negative (sum of logs)
-    True
+    >>> thresholds.spike_prob  # Fixed at 0.05 per MATLAB
+    0.05
     """
-    hpd_overlap_threshold = np.nanquantile(metrics["hpd_overlap"][:baseline_end], 0.01)
-    kl_divergence_threshold = np.nanquantile(metrics["kl_divergence"][:baseline_end], 0.99)
-    # Conditional p-value: more negative values indicate unexpected neurons fired (misfit)
-    # Use 1st percentile since lower (more negative) values indicate worse fit
-    conditional_pvalue_threshold = np.nanquantile(
-        metrics["conditional_pvalue"][:baseline_end], 0.01
-    )
+    # Flatten (n_time, n_cells) to 1D for quantile computation
+    hpd_baseline = metrics["hpd_overlap"][:baseline_end].ravel()
+    hpd_overlap_threshold = np.nanquantile(hpd_baseline, 0.01)
+
+    kl_baseline = metrics["kl_divergence"][:baseline_end].ravel()
+    kl_divergence_threshold = np.nanquantile(kl_baseline, 0.99)
+
+    # spike_prob threshold is fixed at 0.05 per MATLAB
+    spike_prob_threshold = 0.05
+
     return Thresholds(
         hpd_overlap=hpd_overlap_threshold,
         kl_divergence=kl_divergence_threshold,
-        conditional_pvalue=conditional_pvalue_threshold,
+        spike_prob=spike_prob_threshold,
     )
 
 
@@ -718,31 +655,33 @@ class Transformed:
     Transformations are applied to diagnostic metrics to improve visualization
     and interpretability (e.g., log-transform for better dynamic range).
 
+    All metrics have shape (n_time, n_cells).
+
     Parameters
     ----------
-    hpd_overlap : np.ndarray
-        Transformed HPD overlap values.
-    kl_divergence : np.ndarray
-        Transformed KL divergence values.
-    conditional_pvalue : np.ndarray
-        Transformed conditional p-values.
+    hpd_overlap : np.ndarray, shape (n_time, n_cells)
+        Transformed HPD overlap values: -log(HPDO + eps1).
+    kl_divergence : np.ndarray, shape (n_time, n_cells)
+        Transformed KL divergence values: sqrt(KL).
+    spike_prob : np.ndarray, shape (n_time, n_cells)
+        Transformed spike probability values: -log(spikeProb + eps2).
     hpd_overlap_threshold : float
         Transformed HPD overlap threshold.
     kl_divergence_threshold : float
         Transformed KL divergence threshold.
-    conditional_pvalue_threshold : float
-        Transformed conditional p-value threshold.
+    spike_prob_threshold : float
+        Transformed spike probability threshold.
 
     Examples
     --------
     >>> import numpy as np
     >>> transformed = Transformed(
-    ...     hpd_overlap=np.array([1.0, 2.0, 3.0]),
-    ...     kl_divergence=np.array([0.5, 1.0, 1.5]),
-    ...     conditional_pvalue=np.array([0.1, 0.5, 0.9]),
+    ...     hpd_overlap=np.array([[1.0, 2.0], [3.0, 4.0]]),
+    ...     kl_divergence=np.array([[0.5, 1.0], [1.5, 2.0]]),
+    ...     spike_prob=np.array([[0.1, 0.5], [0.9, 1.2]]),
     ...     hpd_overlap_threshold=1.5,
     ...     kl_divergence_threshold=1.0,
-    ...     conditional_pvalue_threshold=0.05,
+    ...     spike_prob_threshold=23.0,
     ... )
     >>> transformed.hpd_overlap_threshold
     1.5
@@ -750,23 +689,24 @@ class Transformed:
 
     hpd_overlap: NDArray[np.floating]
     kl_divergence: NDArray[np.floating]
-    conditional_pvalue: NDArray[np.floating]
+    spike_prob: NDArray[np.floating]
     hpd_overlap_threshold: float
     kl_divergence_threshold: float
-    conditional_pvalue_threshold: float
+    spike_prob_threshold: float
 
 
 def transform_metrics(
     metrics: dict[str, NDArray[np.floating]],
     thresholds: Thresholds,
     eps1: float = 1e-2,
+    eps2: float = 1e-10,
 ) -> Transformed:
     """Apply transformations to metrics for better visualization.
 
-    **Transformations**:
+    **Transformations** (matching MATLAB):
     - HPD overlap: -log(HPDO + eps1) - emphasizes low values (worse fit)
     - KL divergence: sqrt(KL) - compresses high values
-    - conditional_pvalue: negated - already sum of logs, negate so higher = worse fit
+    - spike_prob: -log(spikeProb + eps2) - emphasizes low values (worse fit)
 
     The same transformations are applied to the threshold values.
 
@@ -774,13 +714,15 @@ def transform_metrics(
     ----------
     metrics : dict[str, NDArray]
         Dictionary containing diagnostic metrics:
-        - 'hpd_overlap' : np.ndarray, shape (n_time,)
-        - 'kl_divergence' : np.ndarray, shape (n_time,)
-        - 'conditional_pvalue' : np.ndarray, shape (n_time,)
+        - 'hpd_overlap' : np.ndarray, shape (n_time, n_cells)
+        - 'kl_divergence' : np.ndarray, shape (n_time, n_cells)
+        - 'spike_prob' : np.ndarray, shape (n_time, n_cells)
     thresholds : Thresholds
         Threshold values for each diagnostic metric.
     eps1 : float, default 1e-2
         Small constant added before log transform for HPD overlap.
+    eps2 : float, default 1e-10
+        Small constant added before log transform for spike_prob.
 
     Returns
     -------
@@ -795,32 +737,32 @@ def transform_metrics(
     --------
     >>> import numpy as np
     >>> metrics = {
-    ...     'hpd_overlap': np.array([0.5, 0.8, 0.9]),
-    ...     'kl_divergence': np.array([1.0, 4.0, 9.0]),
-    ...     'conditional_pvalue': np.array([-1.0, -0.5, -0.1]),
+    ...     'hpd_overlap': np.array([[0.5, 0.8], [0.9, 0.7]]),
+    ...     'kl_divergence': np.array([[1.0, 4.0], [9.0, 16.0]]),
+    ...     'spike_prob': np.array([[0.1, 0.5], [0.01, 0.05]]),
     ... }
     >>> thresholds = Thresholds(
     ...     hpd_overlap=0.6,
     ...     kl_divergence=5.0,
-    ...     conditional_pvalue=-2.0,
+    ...     spike_prob=0.05,
     ... )
     >>> transformed = transform_metrics(metrics, thresholds)
     >>> transformed.kl_divergence  # sqrt(KL)
-    array([1.        , 2.        , 3.        ])
-    >>> transformed.conditional_pvalue  # negated, so higher = worse fit
-    array([1. , 0.5, 0.1])
+    array([[1., 2.],
+           [3., 4.]])
+    >>> np.allclose(transformed.spike_prob_threshold, -np.log(0.05 + 1e-10))
+    True
     """
     hpd_overlap_transformed = -safe_log(metrics["hpd_overlap"] + eps1)
     kl_divergence_transformed = np.sqrt(metrics["kl_divergence"])
-    # conditional_pvalue is already sum of logs (negative values)
-    # Negate so that higher values indicate worse fit (consistent with other metrics)
-    conditional_pvalue_transformed = -metrics["conditional_pvalue"]
+    # spike_prob transformed with -log (matching MATLAB's -log(spikeProb + 1e-10))
+    spike_prob_transformed = -safe_log(metrics["spike_prob"] + eps2)
 
     return Transformed(
         hpd_overlap=hpd_overlap_transformed,
         kl_divergence=kl_divergence_transformed,
-        conditional_pvalue=conditional_pvalue_transformed,
+        spike_prob=spike_prob_transformed,
         hpd_overlap_threshold=-np.log(thresholds.hpd_overlap + eps1),
         kl_divergence_threshold=np.sqrt(thresholds.kl_divergence),
-        conditional_pvalue_threshold=-thresholds.conditional_pvalue,
+        spike_prob_threshold=-np.log(thresholds.spike_prob + eps2),
     )

@@ -352,9 +352,9 @@ def plot_original(
 
     Creates a 4-panel figure showing:
     1. Posterior heatmap with true position overlay
-    2. HPD overlap over time
-    3. KL divergence over time
-    4. Conditional p-value (transformed to -log scale) over time
+    2. HPD overlap over time (per-cell scatter)
+    3. KL divergence over time (per-cell scatter)
+    4. Spike probability over time (per-cell scatter)
 
     Parameters
     ----------
@@ -365,9 +365,9 @@ def plot_original(
     metrics : dict[str, NDArray]
         Dictionary containing diagnostic metrics:
         - 'posterior': Posterior distribution, shape (n_time, n_bins)
-        - 'hpd_overlap': HPD overlap, shape (n_time,)
-        - 'kl_divergence': KL divergence, shape (n_time,)
-        - 'conditional_pvalue': Conditional p-value, shape (n_time,)
+        - 'hpd_overlap': HPD overlap, shape (n_time, n_cells)
+        - 'kl_divergence': KL divergence, shape (n_time, n_cells)
+        - 'spike_prob': Spike probability, shape (n_time, n_cells)
     thresholds : Thresholds
         Threshold values for each diagnostic.
     title : str, default "Original Metrics"
@@ -387,16 +387,16 @@ def plot_original(
     --------
     >>> import numpy as np
     >>> from statespacecheck_paper.analysis import Thresholds
-    >>> n_time, n_bins = 100, 50
+    >>> n_time, n_bins, n_cells = 100, 50, 10
     >>> xs = np.linspace(0, 1, n_bins)
     >>> x_true = np.random.uniform(0, n_bins - 1, n_time)
     >>> metrics = {
     ...     'posterior': np.random.dirichlet(np.ones(n_bins), size=n_time),
-    ...     'hpd_overlap': np.random.uniform(0, 1, n_time),
-    ...     'kl_divergence': np.random.uniform(0, 5, n_time),
-    ...     'conditional_pvalue': np.random.uniform(0, 1, n_time),
+    ...     'hpd_overlap': np.random.uniform(0, 1, (n_time, n_cells)),
+    ...     'kl_divergence': np.random.uniform(0, 5, (n_time, n_cells)),
+    ...     'spike_prob': np.random.uniform(0, 1, (n_time, n_cells)),
     ... }
-    >>> thresholds = Thresholds(hpd_overlap=0.8, kl_divergence=2.0, conditional_pvalue=0.05)
+    >>> thresholds = Thresholds(hpd_overlap=0.8, kl_divergence=2.0, spike_prob=0.05)
     >>> fig = plot_original(xs, x_true, metrics, thresholds)
     >>> plt.close(fig)
     """
@@ -447,12 +447,16 @@ def plot_original(
     if phase_boundaries is not None:
         add_phase_boundaries(axes, phase_boundaries, include_labels=True, alpha=0.2)
 
-    axes[1].plot(
-        metrics["hpd_overlap"],
-        ".",
-        markersize=1.5,
+    # Create time indices for scatter plots (metrics are now 2D: n_time x n_cells)
+    n_cells = metrics["hpd_overlap"].shape[1]
+    time_indices = np.tile(np.arange(n_time)[:, np.newaxis], (1, n_cells))
+
+    axes[1].scatter(
+        time_indices.ravel(),
+        metrics["hpd_overlap"].ravel(),
+        s=1.5,
         alpha=0.6,
-        color=COLORS["hpd_overlap"],
+        c=COLORS["hpd_overlap"],
         rasterized=True,
     )
     axes[1].axhline(thresholds.hpd_overlap, color=COLORS["threshold"], linewidth=1.5, zorder=10)
@@ -460,12 +464,12 @@ def plot_original(
     axes[1].set_ylabel("HPD Overlap", fontsize=10, labelpad=8)
     axes[1].tick_params(labelsize=8)
 
-    axes[2].plot(
-        metrics["kl_divergence"],
-        ".",
-        markersize=1.5,
+    axes[2].scatter(
+        time_indices.ravel(),
+        metrics["kl_divergence"].ravel(),
+        s=1.5,
         alpha=0.6,
-        color=COLORS["kl_divergence"],
+        c=COLORS["kl_divergence"],
         rasterized=True,
     )
     axes[2].axhline(thresholds.kl_divergence, color=COLORS["threshold"], linewidth=1.5, zorder=10)
@@ -473,24 +477,18 @@ def plot_original(
     axes[2].set_ylabel("KL Divergence", fontsize=10, labelpad=8)
     axes[2].tick_params(labelsize=8)
 
-    # Conditional p-value is sum of logs (negative values, more negative = worse fit)
-    # Negate for display so higher values indicate worse fit
-    cond_pval_transformed = -metrics["conditional_pvalue"]
-    cond_pval_thresh_transformed = -thresholds.conditional_pvalue
-
-    axes[3].plot(
-        cond_pval_transformed,
-        ".",
-        markersize=1.5,
+    # Spike probability: lower values indicate worse fit
+    axes[3].scatter(
+        time_indices.ravel(),
+        metrics["spike_prob"].ravel(),
+        s=1.5,
         alpha=0.6,
-        color=COLORS["metric_combined"],
+        c=COLORS["metric_combined"],
         rasterized=True,
     )
-    axes[3].axhline(
-        cond_pval_thresh_transformed, color=COLORS["threshold"], linewidth=1.5, zorder=10
-    )
+    axes[3].axhline(thresholds.spike_prob, color=COLORS["threshold"], linewidth=1.5, zorder=10)
     axes[3].set_xlim(0, n_time)
-    axes[3].set_ylabel("-Σlog(spike prob)", fontsize=10, labelpad=8)
+    axes[3].set_ylabel("Spike Prob", fontsize=10, labelpad=8)
     axes[3].set_xlabel("Time", fontsize=10, labelpad=8)
     axes[3].tick_params(labelsize=8)
 
@@ -525,7 +523,8 @@ def plot_transformed(
     """Plot transformed diagnostic metrics with thresholds.
 
     Applies transformations to make distributions more Gaussian for better
-    visualization and threshold detection.
+    visualization and threshold detection. Metrics are per-cell and displayed
+    as scatter plots.
 
     Parameters
     ----------
@@ -536,7 +535,7 @@ def plot_transformed(
     posterior : NDArray, shape (n_time, n_bins)
         Posterior distribution over time.
     transformed : Transformed
-        Transformed metrics and thresholds.
+        Transformed metrics and thresholds (metrics have shape n_time, n_cells).
     title : str, default "Transformed Metrics (-log, sqrt)"
         Figure title.
     remap_window : tuple[int, int] | None, optional
@@ -553,17 +552,17 @@ def plot_transformed(
     --------
     >>> import numpy as np
     >>> from statespacecheck_paper.analysis import Transformed
-    >>> n_time, n_bins = 100, 50
+    >>> n_time, n_bins, n_cells = 100, 50, 10
     >>> xs = np.linspace(0, 1, n_bins)
     >>> x_true = np.random.uniform(0, n_bins - 1, n_time)
     >>> posterior = np.random.dirichlet(np.ones(n_bins), size=n_time)
     >>> transformed = Transformed(
-    ...     hpd_overlap=np.random.uniform(0, 5, n_time),
-    ...     kl_divergence=np.random.uniform(0, 3, n_time),
-    ...     conditional_pvalue=np.random.uniform(0, 10, n_time),
+    ...     hpd_overlap=np.random.uniform(0, 5, (n_time, n_cells)),
+    ...     kl_divergence=np.random.uniform(0, 3, (n_time, n_cells)),
+    ...     spike_prob=np.random.uniform(0, 10, (n_time, n_cells)),
     ...     hpd_overlap_threshold=3.0,
     ...     kl_divergence_threshold=2.0,
-    ...     conditional_pvalue_threshold=3.0,
+    ...     spike_prob_threshold=3.0,
     ... )
     >>> fig = plot_transformed(xs, x_true, posterior, transformed)
     >>> plt.close(fig)
@@ -596,12 +595,16 @@ def plot_transformed(
             ax.axvspan(t1, t2, alpha=0.15, color=COLORS["reference"], label="Flat rate")
             ax.axvspan(t2, n_time, alpha=0.15, color=COLORS["ground_truth"], label="Fast movement")
 
-    axes[1].plot(
-        transformed.hpd_overlap,
-        ".",
-        markersize=0.5,
+    # Create time indices for scatter plots (metrics are now 2D: n_time x n_cells)
+    n_cells = transformed.hpd_overlap.shape[1]
+    time_indices = np.tile(np.arange(n_time)[:, np.newaxis], (1, n_cells))
+
+    axes[1].scatter(
+        time_indices.ravel(),
+        transformed.hpd_overlap.ravel(),
+        s=0.5,
         alpha=0.3,
-        color=COLORS["hpd_overlap"],
+        c=COLORS["hpd_overlap"],
         rasterized=True,
     )
     axes[1].axhline(
@@ -616,12 +619,12 @@ def plot_transformed(
     axes[1].tick_params(labelsize=7)
     axes[1].legend(loc="upper right", fontsize=7, frameon=False)
 
-    axes[2].plot(
-        transformed.kl_divergence,
-        ".",
-        markersize=0.5,
+    axes[2].scatter(
+        time_indices.ravel(),
+        transformed.kl_divergence.ravel(),
+        s=0.5,
         alpha=0.3,
-        color=COLORS["kl_divergence"],
+        c=COLORS["kl_divergence"],
         rasterized=True,
     )
     axes[2].axhline(
@@ -635,23 +638,23 @@ def plot_transformed(
     axes[2].set_ylabel("sqrt(KL Divergence)", fontsize=9, labelpad=8)
     axes[2].tick_params(labelsize=7)
 
-    axes[3].plot(
-        transformed.conditional_pvalue,
-        ".",
-        markersize=1.5,
-        alpha=0.7,
-        color=COLORS["metric_combined"],
+    axes[3].scatter(
+        time_indices.ravel(),
+        transformed.spike_prob.ravel(),
+        s=0.5,
+        alpha=0.3,
+        c=COLORS["metric_combined"],
         rasterized=True,
     )
     axes[3].axhline(
-        transformed.conditional_pvalue_threshold,
+        transformed.spike_prob_threshold,
         color=COLORS["threshold"],
         linewidth=1.5,
         label="Threshold",
         zorder=10,
     )
     axes[3].set_xlim(0, n_time)
-    axes[3].set_ylabel("-log(Cond. P-value)", fontsize=9, labelpad=8)
+    axes[3].set_ylabel("-log(Spike Prob)", fontsize=9, labelpad=8)
     axes[3].set_xlabel("Time", fontsize=9, labelpad=8)
     axes[3].tick_params(labelsize=7)
 
@@ -685,6 +688,7 @@ def plot_misfit_examples(
         Spike counts for each cell at each time point.
     metrics : dict[str, NDArray]
         Dictionary containing diagnostic metrics from decode_and_diagnostics.
+        Metrics 'hpd_overlap', 'kl_divergence', 'spike_prob' have shape (n_time, n_cells).
     params : DecodeParams
         Decoding parameters containing timeline structure.
     pf_centers : NDArray, shape (n_cells,)
@@ -709,9 +713,9 @@ def plot_misfit_examples(
     >>> spikes = np.random.poisson(0.5, (n_time, n_cells))
     >>> metrics = {
     ...     'posterior': np.random.dirichlet(np.ones(n_bins), size=n_time),
-    ...     'hpd_overlap': np.random.uniform(0, 1, n_time),
-    ...     'kl_divergence': np.random.uniform(0, 5, n_time),
-    ...     'conditional_pvalue': np.random.uniform(0, 1, n_time),
+    ...     'hpd_overlap': np.random.uniform(0, 1, (n_time, n_cells)),
+    ...     'kl_divergence': np.random.uniform(0, 5, (n_time, n_cells)),
+    ...     'spike_prob': np.random.uniform(0, 1, (n_time, n_cells)),
     ... }
     >>> params = DecodeParams(
     ...     T_baseline=200, T_remap_start=200, T_remap_end=250,
@@ -747,7 +751,8 @@ def plot_misfit_examples(
         # For baseline, find best fit (highest hpd_overlap); for misfits,
         # find worst fit (lowest hpd_overlap)
         # BUT: only consider time points with spikes so likelihood is informative
-        phase_hpdo = metrics["hpd_overlap"][phase_slice]
+        # Metrics are now (n_time, n_cells), use mean across cells for selection
+        phase_hpdo = np.nanmean(metrics["hpd_overlap"][phase_slice], axis=1)
         phase_spikes = spikes[phase_slice]
 
         # Mask times without spikes (likelihood will be flat/uninformative)
@@ -875,16 +880,17 @@ def plot_misfit_examples(
             alpha=0.7,
         )
 
-        # Get diagnostic values
-        hpdo_val = metrics["hpd_overlap"][example_time]
-        kl_val = metrics["kl_divergence"][example_time]
-        cond_pval = metrics["conditional_pvalue"][example_time]
+        # Get diagnostic values - now per-cell, use nanmean for display
+        hpdo_val = np.nanmean(metrics["hpd_overlap"][example_time])
+        kl_val = np.nanmean(metrics["kl_divergence"][example_time])
+        spike_prob_val = np.nanmean(metrics["spike_prob"][example_time])
 
         # Add phase name and metrics as title
-        if np.isnan(cond_pval):
-            title_text = f"{phase_name}\nHPD: {hpdo_val:.2g}  KL: {kl_val:.2g}  CP: N/A"
+        if np.isnan(spike_prob_val):
+            title_text = f"{phase_name}\nHPD: {hpdo_val:.2g}  KL: {kl_val:.2g}  SP: N/A"
         else:
-            title_text = f"{phase_name}\nHPD: {hpdo_val:.2g}  KL: {kl_val:.2g}  CP: {cond_pval:.3f}"
+            sp_str = f"{spike_prob_val:.2g}"
+            title_text = f"{phase_name}\nHPD: {hpdo_val:.2g}  KL: {kl_val:.2g}  SP: {sp_str}"
         ax1.set_title(title_text, fontsize=7, pad=5, fontweight="bold")
 
         ax1.tick_params(axis="x", labelsize=6)
@@ -928,6 +934,7 @@ def plot_combined_diagnostics(
         Spike counts for each cell at each time point.
     metrics : dict[str, NDArray]
         Dictionary containing diagnostic metrics from decode_and_diagnostics.
+        Metrics 'hpd_overlap', 'kl_divergence', 'spike_prob' have shape (n_time, n_cells).
     th : Thresholds
         Threshold values for each diagnostic.
     params : DecodeParams
@@ -955,11 +962,11 @@ def plot_combined_diagnostics(
     >>> spikes = np.random.poisson(0.5, (n_time, n_cells))
     >>> metrics = {
     ...     'posterior': np.random.dirichlet(np.ones(n_bins), size=n_time),
-    ...     'hpd_overlap': np.random.uniform(0, 1, n_time),
-    ...     'kl_divergence': np.random.uniform(0, 5, n_time),
-    ...     'conditional_pvalue': np.random.uniform(0, 1, n_time),
+    ...     'hpd_overlap': np.random.uniform(0, 1, (n_time, n_cells)),
+    ...     'kl_divergence': np.random.uniform(0, 5, (n_time, n_cells)),
+    ...     'spike_prob': np.random.uniform(0, 1, (n_time, n_cells)),
     ... }
-    >>> thresholds = Thresholds(hpd_overlap=0.8, kl_divergence=2.0, conditional_pvalue=0.05)
+    >>> thresholds = Thresholds(hpd_overlap=0.8, kl_divergence=2.0, spike_prob=0.05)
     >>> params = DecodeParams(
     ...     T_baseline=200, T_remap_start=200, T_remap_end=250,
     ...     T_recovery1_end=280, T_flat_end=320, T_recovery2_end=350,
@@ -1035,13 +1042,17 @@ def plot_combined_diagnostics(
     # Add legend for true position line (upper left)
     ax_post.legend(loc="upper left", fontsize=6, frameon=False)
 
+    # Create time indices for scatter plots (metrics are now 2D: n_time x n_cells)
+    n_cells = metrics["hpd_overlap"].shape[1]
+    time_indices = np.tile(np.arange(n_time)[:, np.newaxis], (1, n_cells))
+
     # HPDO
-    ax_hpdo.plot(
-        metrics["hpd_overlap"],
-        ".",
-        markersize=0.8,
+    ax_hpdo.scatter(
+        time_indices.ravel(),
+        metrics["hpd_overlap"].ravel(),
+        s=0.8,
         alpha=0.6,
-        color=COLORS["hpd_overlap"],
+        c=COLORS["hpd_overlap"],
         rasterized=True,
     )
     ax_hpdo.axhline(
@@ -1066,12 +1077,12 @@ def plot_combined_diagnostics(
     )
 
     # KL Divergence
-    ax_kl.plot(
-        metrics["kl_divergence"],
-        ".",
-        markersize=0.8,
+    ax_kl.scatter(
+        time_indices.ravel(),
+        metrics["kl_divergence"].ravel(),
+        s=0.8,
         alpha=0.6,
-        color=COLORS["kl_divergence"],
+        c=COLORS["kl_divergence"],
         rasterized=True,
     )
     ax_kl.axhline(
@@ -1095,21 +1106,17 @@ def plot_combined_diagnostics(
         color=COLORS["threshold"],
     )
 
-    # Conditional p-values: sum of logs, more negative = worse fit
-    # Negate for display so higher values = worse fit (consistent with KL)
-    cond_pval_display = -metrics["conditional_pvalue"]
-    cond_pval_thresh_display = -thresholds.conditional_pvalue
-
-    ax_spike.plot(
-        cond_pval_display,
-        ".",
-        markersize=1.5,
-        alpha=0.8,
-        color=COLORS["metric_combined"],
+    # Spike probability: lower values indicate worse fit
+    ax_spike.scatter(
+        time_indices.ravel(),
+        metrics["spike_prob"].ravel(),
+        s=0.8,
+        alpha=0.6,
+        c=COLORS["metric_combined"],
         rasterized=True,
     )
     ax_spike.axhline(
-        cond_pval_thresh_display,
+        thresholds.spike_prob,
         color=COLORS["threshold"],
         linewidth=1.2,
         alpha=0.7,
@@ -1117,14 +1124,14 @@ def plot_combined_diagnostics(
         label="Threshold",
     )
     ax_spike.set_xlim(0, n_time)
-    ax_spike.set_ylabel("-Σlog(spike prob)", fontsize=9, labelpad=7)
+    ax_spike.set_ylabel("Spike Prob", fontsize=9, labelpad=7)
     ax_spike.set_xlabel("Time (a.u.)", fontsize=9, labelpad=7)
     ax_spike.tick_params(labelsize=7)
-    # Add directional indicator (higher values indicate misfit after negation)
+    # Add directional indicator (lower values indicate misfit for spike_prob)
     ax_spike.text(
         1.01,
         0.5,
-        "↑ Worse fit",
+        "↓ Worse fit",
         transform=ax_spike.transAxes,
         fontsize=6,
         va="center",
@@ -1132,7 +1139,7 @@ def plot_combined_diagnostics(
     )
     ax_spike.text(
         1.01,
-        cond_pval_thresh_display,
+        thresholds.spike_prob,
         "Threshold",
         transform=ax_spike.get_yaxis_transform(),
         fontsize=6,
@@ -1216,7 +1223,8 @@ def plot_combined_diagnostics(
     plot_data = []
     for _phase_idx, (phase_name, phase_slice, is_baseline, col_idx, color_key) in enumerate(phases):
         # Find example time (best for baseline, worst for misfits)
-        phase_hpdo = metrics["hpd_overlap"][phase_slice]
+        # Metrics are now (n_time, n_cells), use mean across cells for selection
+        phase_hpdo = np.nanmean(metrics["hpd_overlap"][phase_slice], axis=1)
         phase_spikes = spikes[phase_slice]
         has_spikes = phase_spikes.sum(axis=1) > 0
         valid_hpdo = phase_hpdo.copy()
@@ -1335,14 +1343,15 @@ def plot_combined_diagnostics(
         ax1.set_title(phase_name, fontsize=7, pad=4)
 
         # Add metrics as text annotation inside plot (upper left)
-        hpdo_val = metrics["hpd_overlap"][example_time]
-        kl_val = metrics["kl_divergence"][example_time]
-        cond_pval = metrics["conditional_pvalue"][example_time]
+        # Use mean across cells for display
+        hpdo_val = np.nanmean(metrics["hpd_overlap"][example_time])
+        kl_val = np.nanmean(metrics["kl_divergence"][example_time])
+        spike_prob_val = np.nanmean(metrics["spike_prob"][example_time])
 
-        if np.isnan(cond_pval):
-            metrics_text = f"HPD: {hpdo_val:.2f}\nKL: {kl_val:.1f}\nCP: N/A"
+        if np.isnan(spike_prob_val):
+            metrics_text = f"HPD: {hpdo_val:.2f}\nKL: {kl_val:.1f}\nSP: N/A"
         else:
-            metrics_text = f"HPD: {hpdo_val:.2f}\nKL: {kl_val:.1f}\nCP: {cond_pval:.3f}"
+            metrics_text = f"HPD: {hpdo_val:.2f}\nKL: {kl_val:.1f}\nSP: {spike_prob_val:.2g}"
         ax1.text(
             0.05,
             0.95,
