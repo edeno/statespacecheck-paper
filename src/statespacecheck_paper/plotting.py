@@ -32,7 +32,7 @@ from statespacecheck_paper.analysis import (
     apply_remap_for_likelihoods,
     likelihood_grid_for_counts,
 )
-from statespacecheck_paper.simulation import gaussian_transition_matrix, normalize, safe_log
+from statespacecheck_paper.simulation import gaussian_transition_matrix, normalize
 from statespacecheck_paper.style import CMAP_POSTERIOR, COLORS
 
 
@@ -354,7 +354,7 @@ def plot_original(
     1. Posterior heatmap with true position overlay
     2. HPD overlap over time
     3. KL divergence over time
-    4. Spike probability (transformed to -log scale) over time
+    4. Conditional p-value (transformed to -log scale) over time
 
     Parameters
     ----------
@@ -367,7 +367,7 @@ def plot_original(
         - 'posterior': Posterior distribution, shape (n_time, n_bins)
         - 'hpd_overlap': HPD overlap, shape (n_time,)
         - 'kl_divergence': KL divergence, shape (n_time,)
-        - 'spike_prob': Spike probability, shape (n_time, n_cells)
+        - 'conditional_pvalue': Conditional p-value, shape (n_time,)
     thresholds : Thresholds
         Threshold values for each diagnostic.
     title : str, default "Original Metrics"
@@ -394,9 +394,9 @@ def plot_original(
     ...     'posterior': np.random.dirichlet(np.ones(n_bins), size=n_time),
     ...     'hpd_overlap': np.random.uniform(0, 1, n_time),
     ...     'kl_divergence': np.random.uniform(0, 5, n_time),
-    ...     'spike_prob': np.random.uniform(0, 1, (n_time, 10)),
+    ...     'conditional_pvalue': np.random.uniform(0, 1, n_time),
     ... }
-    >>> thresholds = Thresholds(hpd_overlap=0.8, kl_divergence=2.0, spike_prob=0.05)
+    >>> thresholds = Thresholds(hpd_overlap=0.8, kl_divergence=2.0, conditional_pvalue=0.05)
     >>> fig = plot_original(xs, x_true, metrics, thresholds)
     >>> plt.close(fig)
     """
@@ -473,13 +473,13 @@ def plot_original(
     axes[2].set_ylabel("KL Divergence", fontsize=10, labelpad=8)
     axes[2].tick_params(labelsize=8)
 
-    # Transform spike probability to -log scale
-    eps2 = 1e-12
-    spike_prob_transformed = -safe_log(metrics["spike_prob"] + eps2)
-    spike_prob_thresh_transformed = -np.log(thresholds.spike_prob + eps2)
+    # Conditional p-value is sum of logs (negative values, more negative = worse fit)
+    # Negate for display so higher values indicate worse fit
+    cond_pval_transformed = -metrics["conditional_pvalue"]
+    cond_pval_thresh_transformed = -thresholds.conditional_pvalue
 
     axes[3].plot(
-        spike_prob_transformed,
+        cond_pval_transformed,
         ".",
         markersize=1.5,
         alpha=0.6,
@@ -487,10 +487,10 @@ def plot_original(
         rasterized=True,
     )
     axes[3].axhline(
-        spike_prob_thresh_transformed, color=COLORS["threshold"], linewidth=1.5, zorder=10
+        cond_pval_thresh_transformed, color=COLORS["threshold"], linewidth=1.5, zorder=10
     )
     axes[3].set_xlim(0, n_time)
-    axes[3].set_ylabel("-log(Spike Prob)", fontsize=10, labelpad=8)
+    axes[3].set_ylabel("-Σlog(spike prob)", fontsize=10, labelpad=8)
     axes[3].set_xlabel("Time", fontsize=10, labelpad=8)
     axes[3].tick_params(labelsize=8)
 
@@ -560,13 +560,10 @@ def plot_transformed(
     >>> transformed = Transformed(
     ...     hpd_overlap=np.random.uniform(0, 5, n_time),
     ...     kl_divergence=np.random.uniform(0, 3, n_time),
-    ...     spike_prob=np.random.uniform(0, 10, n_time),
-    ...     p_values=np.random.uniform(0, 1, n_time),
+    ...     conditional_pvalue=np.random.uniform(0, 10, n_time),
     ...     hpd_overlap_threshold=3.0,
     ...     kl_divergence_threshold=2.0,
-    ...     spike_prob_threshold=5.0,
-    ...     p_value_lower_threshold=0.05,
-    ...     p_value_upper_threshold=0.95,
+    ...     conditional_pvalue_threshold=3.0,
     ... )
     >>> fig = plot_transformed(xs, x_true, posterior, transformed)
     >>> plt.close(fig)
@@ -639,7 +636,7 @@ def plot_transformed(
     axes[2].tick_params(labelsize=7)
 
     axes[3].plot(
-        transformed.p_values,
+        transformed.conditional_pvalue,
         ".",
         markersize=1.5,
         alpha=0.7,
@@ -647,26 +644,14 @@ def plot_transformed(
         rasterized=True,
     )
     axes[3].axhline(
-        transformed.p_value_lower_threshold,
+        transformed.conditional_pvalue_threshold,
         color=COLORS["threshold"],
         linewidth=1.5,
-        label="Lower Threshold",
+        label="Threshold",
         zorder=10,
     )
-    axes[3].axhline(
-        transformed.p_value_upper_threshold,
-        color=COLORS["threshold"],
-        linewidth=1.5,
-        linestyle="--",
-        label="Upper Threshold",
-        zorder=10,
-    )
-    axes[3].axhline(
-        0.5, color=COLORS["reference"], linestyle=":", alpha=0.5, linewidth=1.0
-    )  # Median
     axes[3].set_xlim(0, n_time)
-    axes[3].set_ylim(0, 1)
-    axes[3].set_ylabel("P-value", fontsize=9, labelpad=8)
+    axes[3].set_ylabel("-log(Cond. P-value)", fontsize=9, labelpad=8)
     axes[3].set_xlabel("Time", fontsize=9, labelpad=8)
     axes[3].tick_params(labelsize=7)
 
@@ -726,7 +711,7 @@ def plot_misfit_examples(
     ...     'posterior': np.random.dirichlet(np.ones(n_bins), size=n_time),
     ...     'hpd_overlap': np.random.uniform(0, 1, n_time),
     ...     'kl_divergence': np.random.uniform(0, 5, n_time),
-    ...     'spike_prob': np.random.uniform(0, 1, (n_time, n_cells)),
+    ...     'conditional_pvalue': np.random.uniform(0, 1, n_time),
     ... }
     >>> params = DecodeParams(
     ...     T_baseline=200, T_remap_start=200, T_remap_end=250,
@@ -893,13 +878,13 @@ def plot_misfit_examples(
         # Get diagnostic values
         hpdo_val = metrics["hpd_overlap"][example_time]
         kl_val = metrics["kl_divergence"][example_time]
-        p_val = metrics["p_values"][example_time]
+        cond_pval = metrics["conditional_pvalue"][example_time]
 
         # Add phase name and metrics as title
-        if np.isnan(p_val):
-            title_text = f"{phase_name}\nHPD: {hpdo_val:.2g}  KL: {kl_val:.2g}  p: N/A"
+        if np.isnan(cond_pval):
+            title_text = f"{phase_name}\nHPD: {hpdo_val:.2g}  KL: {kl_val:.2g}  CP: N/A"
         else:
-            title_text = f"{phase_name}\nHPD: {hpdo_val:.2g}  KL: {kl_val:.2g}  p: {p_val:.3f}"
+            title_text = f"{phase_name}\nHPD: {hpdo_val:.2g}  KL: {kl_val:.2g}  CP: {cond_pval:.3f}"
         ax1.set_title(title_text, fontsize=7, pad=5, fontweight="bold")
 
         ax1.tick_params(axis="x", labelsize=6)
@@ -972,9 +957,9 @@ def plot_combined_diagnostics(
     ...     'posterior': np.random.dirichlet(np.ones(n_bins), size=n_time),
     ...     'hpd_overlap': np.random.uniform(0, 1, n_time),
     ...     'kl_divergence': np.random.uniform(0, 5, n_time),
-    ...     'spike_prob': np.random.uniform(0, 1, (n_time, n_cells)),
+    ...     'conditional_pvalue': np.random.uniform(0, 1, n_time),
     ... }
-    >>> thresholds = Thresholds(hpd_overlap=0.8, kl_divergence=2.0, spike_prob=0.05)
+    >>> thresholds = Thresholds(hpd_overlap=0.8, kl_divergence=2.0, conditional_pvalue=0.05)
     >>> params = DecodeParams(
     ...     T_baseline=200, T_remap_start=200, T_remap_end=250,
     ...     T_recovery1_end=280, T_flat_end=320, T_recovery2_end=350,
@@ -1110,9 +1095,13 @@ def plot_combined_diagnostics(
         color=COLORS["threshold"],
     )
 
-    # P-values (no transformation needed)
+    # Conditional p-values: sum of logs, more negative = worse fit
+    # Negate for display so higher values = worse fit (consistent with KL)
+    cond_pval_display = -metrics["conditional_pvalue"]
+    cond_pval_thresh_display = -thresholds.conditional_pvalue
+
     ax_spike.plot(
-        metrics["p_values"],
+        cond_pval_display,
         ".",
         markersize=1.5,
         alpha=0.8,
@@ -1120,57 +1109,36 @@ def plot_combined_diagnostics(
         rasterized=True,
     )
     ax_spike.axhline(
-        thresholds.p_value_lower,
+        cond_pval_thresh_display,
         color=COLORS["threshold"],
         linewidth=1.2,
         alpha=0.7,
         zorder=10,
-        label="Lower threshold",
-    )
-    ax_spike.axhline(
-        thresholds.p_value_upper,
-        color=COLORS["threshold"],
-        linewidth=1.2,
-        alpha=0.7,
-        linestyle="--",
-        zorder=10,
-        label="Upper threshold",
-    )
-    ax_spike.axhline(
-        0.5, color=COLORS["reference"], linestyle=":", alpha=0.5, linewidth=1.0, zorder=5
+        label="Threshold",
     )
     ax_spike.set_xlim(0, n_time)
-    # Zoom in on the relevant range where p-values cluster
-    pval_min = np.nanmin(metrics["p_values"])
-    pval_max = np.nanmax(metrics["p_values"])
-    pval_range = pval_max - pval_min
-    if pval_range < 0.2:  # If data is highly clustered, zoom in
-        y_center = (pval_min + pval_max) / 2
-        y_margin = max(0.1, pval_range * 2)  # At least 0.2 range
-        ax_spike.set_ylim(max(0, y_center - y_margin), min(1, y_center + y_margin))
-    else:
-        ax_spike.set_ylim(0, 1)
-    ax_spike.set_ylabel("P-value", fontsize=9, labelpad=7)
+    ax_spike.set_ylabel("-Σlog(spike prob)", fontsize=9, labelpad=7)
     ax_spike.set_xlabel("Time (a.u.)", fontsize=9, labelpad=7)
     ax_spike.tick_params(labelsize=7)
-    # Add directional indicators
+    # Add directional indicator (higher values indicate misfit after negation)
     ax_spike.text(
         1.01,
-        0.02,
-        "← Misfit",
+        0.5,
+        "↑ Worse fit",
         transform=ax_spike.transAxes,
         fontsize=6,
-        va="bottom",
+        va="center",
         ha="left",
     )
     ax_spike.text(
         1.01,
-        0.98,
-        "← Misfit",
-        transform=ax_spike.transAxes,
+        cond_pval_thresh_display,
+        "Threshold",
+        transform=ax_spike.get_yaxis_transform(),
         fontsize=6,
-        va="top",
+        va="center",
         ha="left",
+        color=COLORS["threshold"],
     )
 
     # Colorbar for posterior only - in dedicated axes aligned with posterior panel
@@ -1369,12 +1337,12 @@ def plot_combined_diagnostics(
         # Add metrics as text annotation inside plot (upper left)
         hpdo_val = metrics["hpd_overlap"][example_time]
         kl_val = metrics["kl_divergence"][example_time]
-        p_val = metrics["p_values"][example_time]
+        cond_pval = metrics["conditional_pvalue"][example_time]
 
-        if np.isnan(p_val):
-            metrics_text = f"HPD: {hpdo_val:.2f}\nKL: {kl_val:.1f}\np: N/A"
+        if np.isnan(cond_pval):
+            metrics_text = f"HPD: {hpdo_val:.2f}\nKL: {kl_val:.1f}\nCP: N/A"
         else:
-            metrics_text = f"HPD: {hpdo_val:.2f}\nKL: {kl_val:.1f}\np: {p_val:.3f}"
+            metrics_text = f"HPD: {hpdo_val:.2f}\nKL: {kl_val:.1f}\nCP: {cond_pval:.3f}"
         ax1.text(
             0.05,
             0.95,

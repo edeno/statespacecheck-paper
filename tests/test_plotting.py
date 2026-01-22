@@ -106,16 +106,13 @@ class TestPlotOriginal:
             "posterior": rng.dirichlet(np.ones(n_bins), size=n_time),
             "hpd_overlap": rng.uniform(0, 1, n_time),
             "kl_divergence": rng.uniform(0, 5, n_time),
-            "spike_prob": rng.uniform(0, 1, (n_time, 10)),
-            "p_values": rng.uniform(0, 1, n_time),
+            "conditional_pvalue": rng.uniform(0, 1, n_time),
         }
 
         thresholds = Thresholds(
             hpd_overlap=0.8,
             kl_divergence=2.0,
-            spike_prob=0.05,
-            p_value_lower=0.05,
-            p_value_upper=0.95,
+            conditional_pvalue=0.05,
         )
 
         # Execute
@@ -123,7 +120,7 @@ class TestPlotOriginal:
 
         # Assert
         assert isinstance(fig, plt.Figure)
-        # Should have 4 subplots (posterior, HPDO, KL, spike prob)
+        # Should have 4 subplots (posterior, HPDO, KL, conditional_pvalue)
         assert len(fig.axes) >= 4
 
         # Cleanup
@@ -140,16 +137,13 @@ class TestPlotOriginal:
             "posterior": rng.dirichlet(np.ones(n_bins), size=n_time),
             "hpd_overlap": rng.uniform(0, 1, n_time),
             "kl_divergence": rng.uniform(0, 5, n_time),
-            "spike_prob": rng.uniform(0, 1, (n_time, 10)),
-            "p_values": rng.uniform(0, 1, n_time),
+            "conditional_pvalue": rng.uniform(0, 1, n_time),
         }
 
         thresholds = Thresholds(
             hpd_overlap=0.8,
             kl_divergence=2.0,
-            spike_prob=0.05,
-            p_value_lower=0.05,
-            p_value_upper=0.95,
+            conditional_pvalue=0.05,
         )
         phase_boundaries = (10, 20, 30, 40, 50, 60, 70, 80)
 
@@ -169,16 +163,13 @@ class TestPlotOriginal:
             "posterior": rng.dirichlet(np.ones(n_bins), size=n_time),
             "hpd_overlap": rng.uniform(0, 1, n_time),
             "kl_divergence": rng.uniform(0, 5, n_time),
-            "spike_prob": rng.uniform(0, 1, (n_time, 5)),
-            "p_values": rng.uniform(0, 1, n_time),
+            "conditional_pvalue": rng.uniform(0, 1, n_time),
         }
 
         thresholds = Thresholds(
             hpd_overlap=0.7,
             kl_divergence=1.5,
-            spike_prob=0.1,
-            p_value_lower=0.05,
-            p_value_upper=0.95,
+            conditional_pvalue=0.05,
         )
 
         fig = plot_original(xs, x_true, metrics, thresholds, title="Test Figure")
@@ -201,13 +192,10 @@ class TestPlotTransformed:
         transformed = Transformed(
             hpd_overlap=rng.uniform(0, 5, n_time),
             kl_divergence=rng.uniform(0, 3, n_time),
-            spike_prob=rng.uniform(0, 10, n_time),
+            conditional_pvalue=rng.uniform(0, 10, n_time),
             hpd_overlap_threshold=3.0,
             kl_divergence_threshold=2.0,
-            spike_prob_threshold=5.0,
-            p_values=rng.uniform(0, 1, n_time),
-            p_value_lower_threshold=0.05,
-            p_value_upper_threshold=0.95,
+            conditional_pvalue_threshold=5.0,
         )
 
         fig = plot_transformed(xs, x_true, post, transformed)
@@ -227,13 +215,10 @@ class TestPlotTransformed:
         transformed = Transformed(
             hpd_overlap=rng.uniform(0, 5, n_time),
             kl_divergence=rng.uniform(0, 3, n_time),
-            spike_prob=rng.uniform(0, 10, n_time),
+            conditional_pvalue=rng.uniform(0, 10, n_time),
             hpd_overlap_threshold=3.0,
             kl_divergence_threshold=2.0,
-            spike_prob_threshold=5.0,
-            p_values=rng.uniform(0, 1, n_time),
-            p_value_lower_threshold=0.05,
-            p_value_upper_threshold=0.95,
+            conditional_pvalue_threshold=5.0,
         )
 
         fig = plot_transformed(xs, x_true, post, transformed, remap_window=(20, 40))
@@ -252,13 +237,10 @@ class TestPlotTransformed:
         transformed = Transformed(
             hpd_overlap=rng.uniform(0, 5, n_time),
             kl_divergence=rng.uniform(0, 3, n_time),
-            spike_prob=rng.uniform(0, 10, n_time),
+            conditional_pvalue=rng.uniform(0, 10, n_time),
             hpd_overlap_threshold=3.0,
             kl_divergence_threshold=2.0,
-            spike_prob_threshold=5.0,
-            p_values=rng.uniform(0, 1, n_time),
-            p_value_lower_threshold=0.05,
-            p_value_upper_threshold=0.95,
+            conditional_pvalue_threshold=5.0,
         )
 
         # Provide phase_boundaries to test lines 360-362
@@ -284,8 +266,7 @@ class TestPlotMisfitExamples:
             "posterior": rng.dirichlet(np.ones(n_bins), size=n_time),
             "hpd_overlap": rng.uniform(0, 1, n_time),
             "kl_divergence": rng.uniform(0, 5, n_time),
-            "spike_prob": rng.uniform(0, 1, (n_time, n_cells)),
-            "p_values": rng.uniform(0, 1, n_time),
+            "conditional_pvalue": rng.uniform(0, 1, n_time),
         }
 
         # Create DecodeParams with timeline structure
@@ -340,8 +321,7 @@ class TestPlotMisfitExamples:
             "posterior": rng.dirichlet(np.ones(n_bins), size=n_time),
             "hpd_overlap": rng.uniform(0, 1, n_time),
             "kl_divergence": rng.uniform(0, 5, n_time),
-            "spike_prob": rng.uniform(0, 1, (n_time, n_cells)),
-            "p_values": rng.uniform(0, 1, n_time),
+            "conditional_pvalue": rng.uniform(0, 1, n_time),
         }
 
         params = DecodeParams(
@@ -385,16 +365,13 @@ class TestPlotCombinedDiagnostics:
             "posterior": rng.dirichlet(np.ones(n_bins), size=n_time),
             "hpd_overlap": rng.uniform(0, 1, n_time),
             "kl_divergence": rng.uniform(0, 5, n_time),
-            "spike_prob": rng.uniform(0, 1, (n_time, n_cells)),
-            "p_values": rng.uniform(0, 1, n_time),
+            "conditional_pvalue": rng.uniform(0, 1, n_time),
         }
 
         thresholds = Thresholds(
             hpd_overlap=0.8,
             kl_divergence=2.0,
-            spike_prob=0.05,
-            p_value_lower=0.05,
-            p_value_upper=0.95,
+            conditional_pvalue=0.05,
         )
 
         params = DecodeParams(
@@ -453,16 +430,13 @@ class TestPlotCombinedDiagnostics:
             "posterior": rng.dirichlet(np.ones(n_bins), size=n_time),
             "hpd_overlap": rng.uniform(0, 1, n_time),
             "kl_divergence": rng.uniform(0, 5, n_time),
-            "spike_prob": rng.uniform(0, 1, (n_time, n_cells)),
-            "p_values": rng.uniform(0, 1, n_time),
+            "conditional_pvalue": rng.uniform(0, 1, n_time),
         }
 
         thresholds = Thresholds(
             hpd_overlap=0.7,
             kl_divergence=1.5,
-            spike_prob=0.1,
-            p_value_lower=0.05,
-            p_value_upper=0.95,
+            conditional_pvalue=0.05,
         )
 
         params = DecodeParams(
