@@ -229,7 +229,7 @@ class TestDecodeAndDiagnostics:
         assert "posterior" in result
         assert "hpd_overlap" in result
         assert "kl_divergence" in result
-        assert "spike_prob" in result
+        assert "conditional_pvalue" in result
 
     def test_output_shapes(self) -> None:
         """Test that output arrays have correct shapes."""
@@ -262,7 +262,7 @@ class TestDecodeAndDiagnostics:
         assert result["posterior"].shape == (n_time, n_bins)
         assert result["hpd_overlap"].shape == (n_time,)
         assert result["kl_divergence"].shape == (n_time,)
-        assert result["spike_prob"].shape == (n_time, n_cells)
+        assert result["conditional_pvalue"].shape == (n_time,)
 
     def test_nan_handling(self) -> None:
         """Test that NaN values are correctly placed in outputs."""
@@ -304,19 +304,15 @@ class TestDecodeAndDiagnostics:
         assert not np.isnan(result["kl_divergence"][1])
         assert not np.isnan(result["kl_divergence"][2])
         assert not np.isnan(result["kl_divergence"][4])
-        # spike_prob at t=0 should be NaN (no prior available)
-        assert np.all(np.isnan(result["spike_prob"][0]))
-        # For t>0: spike_prob should be NaN where individual cell spikes are zero
-        assert np.all(np.isnan(result["spike_prob"][1:][spikes[1:] == 0]))
-        assert np.all(~np.isnan(result["spike_prob"][1:][spikes[1:] > 0]))
-        # p_values should be NaN only at t=3 (no spikes)
-        # Note: t=0 has spikes so p_value is computed (using flat prior as predictive)
-        assert np.isnan(result["p_values"][3])
-        # p_values should be computed at spike times (t=0, t=1, t=2, t=4)
-        assert not np.isnan(result["p_values"][0])
-        assert not np.isnan(result["p_values"][1])
-        assert not np.isnan(result["p_values"][2])
-        assert not np.isnan(result["p_values"][4])
+        # conditional_pvalue:
+        # - t=0: NaN because spike_prob is not computed at t=0 (loop starts at t=1)
+        # - t=3: NaN because no spikes
+        # - t=1, t=2, t=4: computed because spikes occurred and spike_prob is available
+        assert np.isnan(result["conditional_pvalue"][0])  # spike_prob not computed at t=0
+        assert np.isnan(result["conditional_pvalue"][3])  # No spikes
+        assert not np.isnan(result["conditional_pvalue"][1])
+        assert not np.isnan(result["conditional_pvalue"][2])
+        assert not np.isnan(result["conditional_pvalue"][4])
 
     def test_with_narrow_transition_matrix(self) -> None:
         """Test that narrow transition matrix is used in specified window."""
@@ -396,17 +392,13 @@ class TestThresholds:
         thresholds = Thresholds(
             hpd_overlap=0.5,
             kl_divergence=2.0,
-            spike_prob=0.05,
-            p_value_lower=0.05,
-            p_value_upper=0.95,
+            conditional_pvalue=-3.0,  # Sum of logs (negative)
         )
 
         # Assert
         assert thresholds.hpd_overlap == 0.5
         assert thresholds.kl_divergence == 2.0
-        assert thresholds.spike_prob == 0.05
-        assert thresholds.p_value_lower == 0.05
-        assert thresholds.p_value_upper == 0.95
+        assert thresholds.conditional_pvalue == -3.0
 
 
 class TestComputeThresholds:
@@ -420,8 +412,8 @@ class TestComputeThresholds:
         metrics = {
             "hpd_overlap": rng.uniform(0.5, 1.0, n_time),
             "kl_divergence": rng.uniform(0.0, 2.0, n_time),
-            "spike_prob": rng.uniform(0.0, 0.5, n_time),
-            "p_values": rng.uniform(0.0, 1.0, n_time),
+            # conditional_pvalue is now sum of logs (negative values)
+            "conditional_pvalue": rng.uniform(-5.0, -0.1, n_time),
         }
         baseline_end = 50
 
@@ -436,11 +428,11 @@ class TestComputeThresholds:
         # KL divergence threshold should be 99th percentile of baseline
         expected_kl_divergence = np.nanquantile(metrics["kl_divergence"][:baseline_end], 0.99)
         assert thresholds.kl_divergence == pytest.approx(expected_kl_divergence)
-        # spike_prob threshold is fixed at 0.05
-        assert thresholds.spike_prob == 0.05
-        # p-value thresholds are fixed at 0.05 and 0.95
-        assert thresholds.p_value_lower == 0.05
-        assert thresholds.p_value_upper == 0.95
+        # conditional_pvalue threshold should be 1st percentile (more negative = worse fit)
+        expected_conditional_pvalue = np.nanquantile(
+            metrics["conditional_pvalue"][:baseline_end], 0.01
+        )
+        assert thresholds.conditional_pvalue == pytest.approx(expected_conditional_pvalue)
 
     def test_handles_nan_values(self) -> None:
         """Test that compute_thresholds handles NaN values correctly."""
@@ -451,8 +443,7 @@ class TestComputeThresholds:
         metrics = {
             "hpd_overlap": hpdo,
             "kl_divergence": np.full(n_time, 1.0),
-            "spike_prob": np.full(n_time, 0.1),
-            "p_values": np.full(n_time, 0.5),
+            "conditional_pvalue": np.full(n_time, -1.0),  # Sum of logs (negative)
         }
 
         # Act
@@ -461,6 +452,7 @@ class TestComputeThresholds:
         # Assert - should compute from non-NaN values
         assert not np.isnan(thresholds.hpd_overlap)
         assert not np.isnan(thresholds.kl_divergence)
+        assert not np.isnan(thresholds.conditional_pvalue)
 
 
 class TestTransformed:
@@ -471,32 +463,25 @@ class TestTransformed:
         # Arrange
         hpd_overlap = np.array([1.0, 2.0, 3.0])
         kl_divergence = np.array([0.5, 1.0, 1.5])
-        spike_prob = np.array([0.1, 0.2, 0.3])
-        p_values = np.array([0.1, 0.5, 0.9])
+        conditional_pvalue = np.array([0.1, 0.5, 0.9])
 
         # Act
         transformed = Transformed(
             hpd_overlap=hpd_overlap,
             kl_divergence=kl_divergence,
-            spike_prob=spike_prob,
-            p_values=p_values,
+            conditional_pvalue=conditional_pvalue,
             hpd_overlap_threshold=1.5,
             kl_divergence_threshold=1.0,
-            spike_prob_threshold=0.15,
-            p_value_lower_threshold=0.05,
-            p_value_upper_threshold=0.95,
+            conditional_pvalue_threshold=3.0,
         )
 
         # Assert
         np.testing.assert_array_equal(transformed.hpd_overlap, hpd_overlap)
         np.testing.assert_array_equal(transformed.kl_divergence, kl_divergence)
-        np.testing.assert_array_equal(transformed.spike_prob, spike_prob)
-        np.testing.assert_array_equal(transformed.p_values, p_values)
+        np.testing.assert_array_equal(transformed.conditional_pvalue, conditional_pvalue)
         assert transformed.hpd_overlap_threshold == 1.5
         assert transformed.kl_divergence_threshold == 1.0
-        assert transformed.spike_prob_threshold == 0.15
-        assert transformed.p_value_lower_threshold == 0.05
-        assert transformed.p_value_upper_threshold == 0.95
+        assert transformed.conditional_pvalue_threshold == 3.0
 
 
 class TestTransformMetrics:
@@ -508,21 +493,18 @@ class TestTransformMetrics:
         metrics = {
             "hpd_overlap": np.array([0.5, 0.8, 0.9]),
             "kl_divergence": np.array([1.0, 4.0, 9.0]),
-            "spike_prob": np.array([[0.1, 0.2], [0.3, 0.4], [0.5, 0.6]]),
-            "p_values": np.array([0.1, 0.5, 0.9]),
+            # conditional_pvalue is now sum of logs (negative values)
+            "conditional_pvalue": np.array([-1.0, -0.5, -0.1]),
         }
         thresholds = Thresholds(
             hpd_overlap=0.6,
             kl_divergence=5.0,
-            spike_prob=0.05,
-            p_value_lower=0.05,
-            p_value_upper=0.95,
+            conditional_pvalue=-2.0,  # More negative = worse fit
         )
         eps1 = 1e-2
-        eps2 = 1e-10
 
         # Act
-        transformed = transform_metrics(metrics, thresholds, eps1=eps1, eps2=eps2)
+        transformed = transform_metrics(metrics, thresholds, eps1=eps1)
 
         # Assert
         # HPDO: -log(HPDO + eps1)
@@ -531,18 +513,20 @@ class TestTransformMetrics:
         # KL: sqrt(KL)
         expected_kl = np.sqrt(metrics["kl_divergence"])
         np.testing.assert_allclose(transformed.kl_divergence, expected_kl)
-        # spikeProb: -log(spikeProb + eps2)
-        expected_spike_prob = -np.log(metrics["spike_prob"] + eps2)
-        np.testing.assert_allclose(transformed.spike_prob, expected_spike_prob)
+        # conditional_pvalue: negated (already sum of logs)
+        expected_conditional_pvalue = -metrics["conditional_pvalue"]
+        np.testing.assert_allclose(transformed.conditional_pvalue, expected_conditional_pvalue)
         # Thresholds transformed
         expected_hpd_overlap_threshold = -np.log(thresholds.hpd_overlap + eps1)
         expected_kl_divergence_threshold = np.sqrt(thresholds.kl_divergence)
-        expected_spike_prob_threshold = -np.log(thresholds.spike_prob + eps2)
+        expected_conditional_pvalue_threshold = -thresholds.conditional_pvalue
         assert transformed.hpd_overlap_threshold == pytest.approx(expected_hpd_overlap_threshold)
         assert transformed.kl_divergence_threshold == pytest.approx(
             expected_kl_divergence_threshold
         )
-        assert transformed.spike_prob_threshold == pytest.approx(expected_spike_prob_threshold)
+        assert transformed.conditional_pvalue_threshold == pytest.approx(
+            expected_conditional_pvalue_threshold
+        )
 
     def test_handles_nan_values(self) -> None:
         """Test that transform_metrics preserves NaN values."""
@@ -550,15 +534,12 @@ class TestTransformMetrics:
         metrics = {
             "hpd_overlap": np.array([0.5, np.nan, 0.9]),
             "kl_divergence": np.array([1.0, 4.0, np.nan]),
-            "spike_prob": np.array([[0.1, np.nan], [np.nan, 0.4], [0.5, 0.6]]),
-            "p_values": np.array([0.1, np.nan, 0.9]),
+            "conditional_pvalue": np.array([-1.0, np.nan, -0.5]),
         }
         thresholds = Thresholds(
             hpd_overlap=0.6,
             kl_divergence=5.0,
-            spike_prob=0.05,
-            p_value_lower=0.05,
-            p_value_upper=0.95,
+            conditional_pvalue=-2.0,
         )
 
         # Act
@@ -567,8 +548,7 @@ class TestTransformMetrics:
         # Assert - NaN values should be preserved
         assert np.isnan(transformed.hpd_overlap[1])
         assert np.isnan(transformed.kl_divergence[2])
-        assert np.isnan(transformed.spike_prob[0, 1])
-        assert np.isnan(transformed.spike_prob[1, 0])
+        assert np.isnan(transformed.conditional_pvalue[1])
 
     def test_default_eps_values(self) -> None:
         """Test that default eps values are used correctly."""
@@ -576,15 +556,12 @@ class TestTransformMetrics:
         metrics = {
             "hpd_overlap": np.array([0.5]),
             "kl_divergence": np.array([1.0]),
-            "spike_prob": np.array([[0.1]]),
-            "p_values": np.array([0.5]),
+            "conditional_pvalue": np.array([-1.0]),  # Sum of logs
         }
         thresholds = Thresholds(
             hpd_overlap=0.6,
             kl_divergence=5.0,
-            spike_prob=0.05,
-            p_value_lower=0.05,
-            p_value_upper=0.95,
+            conditional_pvalue=-2.0,
         )
 
         # Act - use defaults
@@ -593,4 +570,4 @@ class TestTransformMetrics:
         # Assert - should not raise errors and produce finite values
         assert np.isfinite(transformed.hpd_overlap[0])
         assert np.isfinite(transformed.kl_divergence[0])
-        assert np.isfinite(transformed.spike_prob[0, 0])
+        assert np.isfinite(transformed.conditional_pvalue[0])
