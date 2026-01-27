@@ -32,6 +32,8 @@ from numpy.typing import NDArray
 from scipy.ndimage import label
 from track_linearization import plot_graph_as_1D
 
+from statespacecheck_paper.style import COLORS
+
 
 def plot_raster(
     spike_times: list[NDArray[np.float64]],
@@ -997,21 +999,40 @@ def plot_per_cell_diagnostic_scatter(
     ax.scatter(
         time_indices.ravel(),
         metric.ravel(),
-        s=0.5,
-        alpha=0.3,
+        s=0.8,
+        alpha=0.6,
         c=color,
         rasterized=True,
     )
 
     if threshold is not None:
-        ax.axhline(threshold, color="red", linestyle="--", linewidth=1.5, label="Threshold")
-        ax.legend(loc="upper right", fontsize=7, frameon=False)
+        ax.axhline(
+            threshold,
+            color=COLORS["threshold"],
+            linewidth=1.2,
+            alpha=0.7,
+            zorder=10,
+        )
+        # Add threshold annotation on right side
+        ax.text(
+            1.01,
+            threshold,
+            "Threshold",
+            transform=ax.get_yaxis_transform(),
+            fontsize=6,
+            va="center",
+            ha="left",
+            color=COLORS["threshold"],
+        )
 
     ax.set_xlim(time_arr.min(), time_arr.max())
-    ax.set_ylabel(ylabel or metric_name, fontsize=9)
+    ax.set_ylabel(ylabel or metric_name, fontsize=9, labelpad=7)
 
     if show_xlabel:
-        ax.set_xlabel("Time", fontsize=9)
+        ax.set_xlabel("Time (s)", fontsize=9, labelpad=7)
+        ax.tick_params(labelsize=7)
+    else:
+        ax.tick_params(labelsize=7, labelbottom=False)
 
     return ax
 
@@ -1071,13 +1092,17 @@ def plot_model_comparison_diagnostics(
     >>> plt.close(fig)
     """
     metrics = ["hpd_overlap", "kl_divergence", "spike_prob"]
-    # spike_prob uses -log10 scale to match Figure 3
-    ylabels = ["HPD Overlap", "KL Divergence", r"$-\log_{10}$(Spike Prob)"]
-    colors = ["tab:blue", "tab:green", "tab:purple"]
+    # Match Figure 3 styling: labels and colors from COLORS dict
+    ylabels = ["HPD Overlap", "KL Divergence", r"$-\log_{10}(p)$"]
+    colors = [COLORS["hpd_overlap"], COLORS["kl_divergence"], COLORS["metric_combined"]]
+    # Direction indicators: which direction indicates worse fit
+    worse_fit_directions = ["↓ Worse fit", "↑ Worse fit", "↑ Worse fit"]
 
     fig, axes = plt.subplots(3, 2, figsize=figsize, sharex=True, constrained_layout=True)
 
-    for i, (metric, ylabel, color) in enumerate(zip(metrics, ylabels, colors, strict=True)):
+    for i, (metric, ylabel, color, worse_dir) in enumerate(
+        zip(metrics, ylabels, colors, worse_fit_directions, strict=True)
+    ):
         threshold = thresholds.get(metric) if thresholds else None
 
         # Model A (left column)
@@ -1104,6 +1129,17 @@ def plot_model_comparison_diagnostics(
             color=color,
             ylabel="",  # Empty string to suppress ylabel (left column has it)
             show_xlabel=(i == 2),
+        )
+
+        # Add direction indicator on right side of right column (matching Figure 3)
+        axes[i, 1].text(
+            1.01,
+            0.5,
+            worse_dir,
+            transform=axes[i, 1].transAxes,
+            fontsize=6,
+            va="center",
+            ha="left",
         )
 
         # Add column titles on first row
@@ -1152,8 +1188,8 @@ def plot_diagnostic_summary_comparison(
     >>> plt.close(fig)
     """
     metrics = ["hpd_overlap", "kl_divergence", "spike_prob"]
-    # spike_prob uses -log10 scale to match Figure 3
-    xlabels = ["HPD Overlap", "KL Divergence", r"$-\log_{10}$(Spike Prob)"]
+    # Match Figure 3 styling for labels
+    xlabels = ["HPD Overlap", "KL Divergence", r"$-\log_{10}(p)$"]
 
     fig, axes = plt.subplots(1, 3, figsize=figsize, constrained_layout=True)
 
@@ -1258,19 +1294,35 @@ def plot_model_comparison_with_posterior(
     >>> # )
     """
     metrics = ["hpd_overlap", "kl_divergence", "spike_prob"]
-    # spike_prob uses -log10 scale to match Figure 3
-    ylabels = ["HPD Overlap", "KL Divergence", r"$-\log_{10}$(Spike Prob)"]
-    colors = ["tab:blue", "tab:green", "tab:purple"]
+    # Match Figure 3 styling: labels and colors from COLORS dict
+    ylabels = ["HPD Overlap", "KL Divergence", r"$-\log_{10}(p)$"]
+    colors = [COLORS["hpd_overlap"], COLORS["kl_divergence"], COLORS["metric_combined"]]
+    # Direction indicators: which direction indicates worse fit
+    worse_fit_directions = ["↓ Worse fit", "↑ Worse fit", "↑ Worse fit"]
 
     # Create 4x2 grid: posterior + 3 diagnostics
-    fig, axes = plt.subplots(
-        4,
-        2,
-        figsize=figsize,
-        sharex=True,
-        gridspec_kw={"height_ratios": [3, 1, 1, 1]},
-        constrained_layout=True,
-    )
+    # Use gridspec to manually share y-axes within each row
+    fig = plt.figure(figsize=figsize, constrained_layout=True)
+    gs = fig.add_gridspec(4, 2, height_ratios=[3, 1, 1, 1])
+
+    # Create axes with shared x and shared y within each row
+    axes = np.empty((4, 2), dtype=object)
+
+    # Row 0: Posterior heatmaps (share y within row)
+    axes[0, 0] = fig.add_subplot(gs[0, 0])
+    axes[0, 1] = fig.add_subplot(gs[0, 1], sharex=axes[0, 0], sharey=axes[0, 0])
+
+    # Row 1: HPD overlap (share y within row, share x with row 0)
+    axes[1, 0] = fig.add_subplot(gs[1, 0], sharex=axes[0, 0])
+    axes[1, 1] = fig.add_subplot(gs[1, 1], sharex=axes[0, 0], sharey=axes[1, 0])
+
+    # Row 2: KL divergence (share y within row, share x with row 0)
+    axes[2, 0] = fig.add_subplot(gs[2, 0], sharex=axes[0, 0])
+    axes[2, 1] = fig.add_subplot(gs[2, 1], sharex=axes[0, 0], sharey=axes[2, 0])
+
+    # Row 3: Spike probability (share y within row, share x with row 0)
+    axes[3, 0] = fig.add_subplot(gs[3, 0], sharex=axes[0, 0])
+    axes[3, 1] = fig.add_subplot(gs[3, 1], sharex=axes[0, 0], sharey=axes[3, 0])
 
     if time_slice_ind is None:
         time_slice_ind = slice(None)
@@ -1325,19 +1377,26 @@ def plot_model_comparison_with_posterior(
         ax.scatter(
             time_arr[time_slice_ind],
             position[time_slice_ind],
-            c="magenta",
+            c=COLORS["ground_truth"],
             s=1,
-            alpha=0.7,
+            alpha=0.85,
             rasterized=True,
-            label="Animal position",
+            label="True position",
         )
 
         ax.set_title(model_name, fontsize=11)
-        ax.set_ylabel("Position" if col == 0 else "")
+        ax.set_ylabel("Position (cm)" if col == 0 else "", fontsize=9, labelpad=7)
         ax.set_xlabel("")
+        ax.tick_params(labelsize=7, labelbottom=False)
+
+        # Add legend for true position line (only on first column)
+        if col == 0:
+            ax.legend(loc="upper left", fontsize=6, frameon=False)
 
     # Rows 1-3: Diagnostic scatter plots
-    for i, (metric, ylabel, color) in enumerate(zip(metrics, ylabels, colors, strict=True)):
+    for i, (metric, ylabel, color, worse_dir) in enumerate(
+        zip(metrics, ylabels, colors, worse_fit_directions, strict=True)
+    ):
         row = i + 1  # Offset by 1 for posterior row
         threshold = thresholds.get(metric) if thresholds else None
 
@@ -1366,7 +1425,20 @@ def plot_model_comparison_with_posterior(
             ylabel="",  # Left column has ylabel
             show_xlabel=(i == 2),
         )
-        if col == 1:
-            axes[row, 1].set_ylabel("")
+
+        # Add direction indicator on right side of right column (matching Figure 3)
+        axes[row, 1].text(
+            1.01,
+            0.5,
+            worse_dir,
+            transform=axes[row, 1].transAxes,
+            fontsize=6,
+            va="center",
+            ha="left",
+        )
+
+    # Hide y-tick labels on right column (since y-axes are shared within rows)
+    for row in range(4):
+        axes[row, 1].tick_params(labelleft=False)
 
     return fig, axes
