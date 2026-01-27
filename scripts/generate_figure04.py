@@ -50,8 +50,8 @@ DATA_PATH = Path(__file__).parent.parent / "data"
 ANIMAL_DATE_EPOCH = "j1620210710_02_r1"
 
 # Time parameters for development
-TEST_WINDOW_START = 5_000  # Start index for decoding window
-TEST_WINDOW_END = 15_000  # End index for decoding window
+TEST_WINDOW_START = 177301 - 500  # Start index for decoding window
+TEST_WINDOW_END = 177301 + 500  # End index for decoding window
 
 
 def run_demo() -> None:

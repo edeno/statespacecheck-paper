@@ -1268,7 +1268,7 @@ def plot_model_comparison_with_posterior(
         2,
         figsize=figsize,
         sharex=True,
-        gridspec_kw={"height_ratios": [1.5, 1, 1, 1]},
+        gridspec_kw={"height_ratios": [3, 1, 1, 1]},
         constrained_layout=True,
     )
 
@@ -1366,5 +1366,7 @@ def plot_model_comparison_with_posterior(
             ylabel="",  # Left column has ylabel
             show_xlabel=(i == 2),
         )
+        if col == 1:
+            axes[row, 1].set_ylabel("")
 
     return fig, axes
