@@ -21,6 +21,7 @@ from statespacecheck_paper.load_local_data import load_neural_recording_from_fil
 from statespacecheck_paper.real_data_analysis import (
     compute_model_diagnostics,
     create_decoder_environment,
+    extract_place_fields,
     fit_decoder_models,
     get_spike_counts,
 )
@@ -116,6 +117,10 @@ def run_demo() -> None:
         contfrag_model, contfrag_results, spike_counts, test_time
     )
 
+    # Extract place fields to get peak positions for sorting raster
+    place_fields, position_bins = extract_place_fields(continuous_model)
+    place_field_peaks = position_bins[np.argmax(place_fields, axis=1)]
+
     # Print summary
     print("\n=== Diagnostic Summary ===")
     for metric in ["hpd_overlap", "kl_divergence", "spike_prob"]:
@@ -129,7 +134,7 @@ def run_demo() -> None:
     print("\nGenerating Figure 4...")
     set_figure_defaults()
 
-    # Figure 4a: Model comparison with posterior and diagnostics
+    # Figure 4a: Model comparison with posterior, raster, and diagnostics
     fig, axes = plot_model_comparison_with_posterior(
         test_time,
         test_linear_position,
@@ -137,6 +142,8 @@ def run_demo() -> None:
         contfrag_results,
         continuous_diagnostics,
         contfrag_diagnostics,
+        spike_times=spike_times_list,
+        place_field_peaks=place_field_peaks,
         model_a_name="Continuous",
         model_b_name="Continuous-Fragmented",
     )
