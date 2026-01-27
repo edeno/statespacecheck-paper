@@ -70,6 +70,13 @@ select = [
 [tool.ruff.lint.pydocstyle]
 convention = "numpy"
 
+[tool.ruff.lint.per-file-ignores]
+# Notebooks have cell-based imports and exploration code
+"notebooks/*.py" = ["E402", "F401", "F541"]
+"notebooks/*.ipynb" = ["E402", "F401", "F821"]
+# Tests use legacy numpy random for simplicity
+"tests/*.py" = ["NPY002"]
+
 [tool.mypy]
 python_version = "3.10"
 strict = true

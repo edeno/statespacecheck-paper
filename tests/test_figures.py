@@ -77,43 +77,44 @@ class TestFigure03Integration:
         assert hasattr(generate_figure03, "plot_combined_diagnostics")
 
 
-class TestFigure03CandidatesIntegration:
-    """Integration tests for generate_figure03_candidates.py script."""
+class TestFigure04Integration:
+    """Integration tests for generate_figure04.py script (real data model comparison)."""
 
     def test_imports_work(self) -> None:
-        """Test that generate_figure03_candidates.py imports successfully."""
+        """Test that generate_figure04.py imports successfully."""
         # This will raise ImportError if imports fail
-        import generate_figure03_candidates  # noqa: F401
+        import generate_figure04  # noqa: F401
 
     def test_imports_required_modules(self) -> None:
-        """Test that generate_figure03_candidates.py can import all required modules."""
+        """Test that generate_figure04.py can import all required modules."""
         # Import the main module
-        import generate_figure03_candidates
+        import generate_figure04
 
         # Check that key functions are available
-        assert hasattr(generate_figure03_candidates, "main")
-        assert hasattr(generate_figure03_candidates, "fit_and_predict_models")
-        assert hasattr(generate_figure03_candidates, "save_intermediate_results")
-        assert hasattr(generate_figure03_candidates, "load_intermediate_results")
+        assert hasattr(generate_figure04, "run_demo")
 
-        # Check that constants are defined
-        assert hasattr(generate_figure03_candidates, "EXAMPLE_CONTEXT_SAMPLES")
-        assert hasattr(generate_figure03_candidates, "LOW_OVERLAP_THRESHOLD")
-        assert hasattr(generate_figure03_candidates, "MODERATE_OVERLAP_THRESHOLD")
-        assert hasattr(generate_figure03_candidates, "SAMPLING_FREQUENCY")
+        # Check that configuration constants are defined
+        assert hasattr(generate_figure04, "DATA_PATH")
+        assert hasattr(generate_figure04, "ANIMAL_DATE_EPOCH")
+        assert hasattr(generate_figure04, "N_TIME_FIT")
 
-    def test_has_all_figure_generation_functions(self) -> None:
-        """Test that all figure generation functions are present."""
-        import generate_figure03_candidates
+    def test_imports_analysis_utilities(self) -> None:
+        """Test that generate_figure04.py imports required analysis utilities."""
+        import generate_figure04
 
-        # Check all 7 figure generation functions exist
-        assert hasattr(generate_figure03_candidates, "generate_lowest_overlap_examples")
-        assert hasattr(generate_figure03_candidates, "generate_highest_difference_examples")
-        assert hasattr(generate_figure03_candidates, "generate_sustained_region_figures")
-        assert hasattr(generate_figure03_candidates, "generate_covariate_figures")
-        assert hasattr(generate_figure03_candidates, "generate_mechanics_figures")
-        assert hasattr(generate_figure03_candidates, "generate_ahead_behind_figures")
-        assert hasattr(generate_figure03_candidates, "generate_fragmented_state_figures")
+        # Check imports from real_data_analysis module
+        assert hasattr(generate_figure04, "create_decoder_environment")
+        assert hasattr(generate_figure04, "fit_decoder_models")
+        assert hasattr(generate_figure04, "get_spike_counts")
+        assert hasattr(generate_figure04, "compute_model_diagnostics")
+
+    def test_imports_plotting_utilities(self) -> None:
+        """Test that generate_figure04.py imports required plotting utilities."""
+        import generate_figure04
+
+        # Check imports from real_data_plotting module
+        assert hasattr(generate_figure04, "plot_model_comparison_with_posterior")
+        assert hasattr(generate_figure04, "plot_diagnostic_summary_comparison")
 
 
 class TestFiguresModuleStructure:
@@ -137,7 +138,7 @@ class TestFiguresModuleStructure:
         import generate_figure01
         import generate_figure02
         import generate_figure03
-        import generate_figure03_candidates
+        import generate_figure04
 
         # generate_figure01 should have create_figure function
         assert callable(getattr(generate_figure01, "create_figure", None))
@@ -148,8 +149,8 @@ class TestFiguresModuleStructure:
         # generate_figure03 should have run_demo function (simulation demo)
         assert callable(getattr(generate_figure03, "run_demo", None))
 
-        # generate_figure03_candidates should have main function
-        assert callable(getattr(generate_figure03_candidates, "main", None))
+        # generate_figure04 should have run_demo function (real data model comparison)
+        assert callable(getattr(generate_figure04, "run_demo", None))
 
 
 # Cleanup sys.path after tests

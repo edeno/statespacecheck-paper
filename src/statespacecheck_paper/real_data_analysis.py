@@ -1,7 +1,18 @@
 """Analysis utilities for real neural data.
 
 This module provides utilities for analyzing real neural recordings, including
-spike rate estimation, sustained event detection, and temporal smoothing.
+spike rate estimation, sustained event detection, temporal smoothing, and
+per-cell diagnostic computations for model checking.
+
+**Key Components**:
+
+- **gaussian_smooth**: Apply 1D Gaussian convolution
+- **get_multiunit_population_firing_rate**: Calculate smoothed population rate
+- **find_sustained_low_overlap**: Find low-overlap time regions
+- **extract_place_fields**: Extract place fields from fitted decoder model
+- **compute_per_cell_likelihood**: Compute per-cell Poisson likelihood
+- **compute_per_cell_diagnostics**: Compute HPD overlap, KL divergence, spike prob
+- **get_state_marginalized_posterior**: Extract state-marginalized posterior
 
 Examples
 --------
@@ -15,9 +26,16 @@ Examples
 
 from __future__ import annotations
 
+from typing import Any, Literal
+
 import numpy as np
+import statespacecheck as ssc
+import xarray as xr
 from numpy.typing import NDArray
 from scipy.ndimage import gaussian_filter1d, label
+from scipy.stats import poisson
+
+from statespacecheck_paper.simulation import normalize, spike_prob_rank
 
 
 def gaussian_smooth(
@@ -161,3 +179,511 @@ def find_sustained_low_overlap(
             regions.append((start, end))
 
     return regions
+
+
+# =============================================================================
+# Per-Cell Diagnostic Functions for Real Data
+# =============================================================================
+
+
+def extract_place_fields(
+    model: Any,
+    environment_name: str = "",
+    encoding_group: int = 0,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Extract place fields and position bins from fitted decoder model.
+
+    Retrieves the place field firing rates and corresponding position bin centers
+    from a fitted `SortedSpikesDecoder` or `ContFragSortedSpikesClassifier` model.
+
+    Parameters
+    ----------
+    model : SortedSpikesDecoder or ContFragSortedSpikesClassifier
+        Fitted decoder model from non_local_detector package.
+    environment_name : str, default ""
+        Name of the environment in the model. Default empty string for standard
+        single-environment models.
+    encoding_group : int, default 0
+        Encoding group index. Default 0 for standard models.
+
+    Returns
+    -------
+    place_fields : np.ndarray, shape (n_cells, n_bins)
+        Firing rate at each position bin for each cell (in Hz or spikes/time).
+    position_bins : np.ndarray, shape (n_bins,)
+        Position bin centers.
+
+    Examples
+    --------
+    >>> # Requires fitted model from non_local_detector
+    >>> # place_fields, position_bins = extract_place_fields(model)
+    >>> # place_fields.shape  # (n_cells, n_bins)
+    >>> # position_bins.shape  # (n_bins,)
+    """
+    # Access place fields from encoding model
+    # Key is tuple (environment_name, encoding_group)
+    key = (environment_name, encoding_group)
+    place_fields: NDArray[np.float64] = model.encoding_model_[key]["place_fields"]
+
+    # Get position bin centers from environment
+    # environments is a list; encoding_group corresponds to environment index
+    position_bins: NDArray[np.float64] = model.environments[
+        encoding_group
+    ].place_bin_centers_.squeeze()
+
+    return place_fields, position_bins
+
+
+def compute_per_cell_likelihood(
+    place_fields: NDArray[np.float64],
+    spike_counts: NDArray[np.int64],
+    dt: float,
+    eps: float = 1e-10,
+) -> NDArray[np.float64]:
+    """Compute per-cell Poisson likelihood over position bins.
+
+    For each cell at each time point, computes the likelihood of observing the
+    spike count given the place field rates. The likelihood is normalized over
+    position bins to form a proper distribution.
+
+    Parameters
+    ----------
+    place_fields : np.ndarray, shape (n_cells, n_bins)
+        Firing rate at each position bin for each cell.
+    spike_counts : np.ndarray, shape (n_time, n_cells)
+        Spike count for each cell at each time point.
+    dt : float
+        Time bin duration in seconds.
+    eps : float, default 1e-10
+        Small constant to prevent division by zero during normalization.
+
+    Returns
+    -------
+    likelihood : np.ndarray, shape (n_time, n_cells, n_bins)
+        Normalized likelihood for each cell at each time point.
+        Each (time, cell) slice sums to 1 over bins.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> n_cells, n_bins, n_time = 10, 50, 100
+    >>> place_fields = np.random.rand(n_cells, n_bins) * 10  # Hz
+    >>> spike_counts = np.random.poisson(0.5, (n_time, n_cells))
+    >>> dt = 0.002  # 2 ms bins
+    >>> likelihood = compute_per_cell_likelihood(place_fields, spike_counts, dt)
+    >>> likelihood.shape
+    (100, 10, 50)
+    >>> np.allclose(likelihood.sum(axis=2), 1.0)
+    True
+    """
+    # Expected counts = rate * dt
+    # Shape: (1, n_cells, n_bins) for broadcasting
+    expected_counts = place_fields[np.newaxis, :, :] * dt
+
+    # Poisson PMF: P(k | lambda) for each (time, cell, bin)
+    # spike_counts[:, :, np.newaxis] has shape (n_time, n_cells, 1)
+    # expected_counts has shape (1, n_cells, n_bins)
+    # Result: (n_time, n_cells, n_bins)
+    likelihood: NDArray[np.float64] = poisson.pmf(
+        spike_counts[:, :, np.newaxis],
+        expected_counts,
+    )
+
+    # Normalize each cell's likelihood over bins to get proper distribution
+    # Sum over bins (axis=2), keepdims for broadcasting
+    normalization = likelihood.sum(axis=2, keepdims=True)
+    likelihood = likelihood / (normalization + eps)
+
+    return likelihood
+
+
+def compute_per_cell_diagnostics(
+    predictive_posterior: NDArray[np.float64],
+    per_cell_likelihood: NDArray[np.float64],
+    spike_counts: NDArray[np.int64],
+    place_fields: NDArray[np.float64],
+    coverage: float = 0.95,
+) -> dict[str, NDArray[np.float64]]:
+    """Compute per-cell diagnostic metrics for model checking.
+
+    Computes HPD overlap, KL divergence, and spike probability ranking for each
+    cell at each time point. Metrics are set to NaN for cells that did not fire
+    at a given time point (uninformative likelihood).
+
+    Parameters
+    ----------
+    predictive_posterior : np.ndarray, shape (n_time, n_bins)
+        State-marginalized predictive posterior distribution over position.
+    per_cell_likelihood : np.ndarray, shape (n_time, n_cells, n_bins)
+        Normalized likelihood for each cell at each time point.
+    spike_counts : np.ndarray, shape (n_time, n_cells)
+        Spike count for each cell at each time point.
+    place_fields : np.ndarray, shape (n_cells, n_bins)
+        Firing rate at each position bin for each cell.
+    coverage : float, default 0.95
+        Coverage probability for HPD region computation.
+
+    Returns
+    -------
+    diagnostics : dict[str, np.ndarray]
+        Dictionary with keys:
+        - 'hpd_overlap': shape (n_time, n_cells), NaN when cell has no spike
+        - 'kl_divergence': shape (n_time, n_cells), NaN when cell has no spike
+        - 'spike_prob': shape (n_time, n_cells), NaN when cell has no spike
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> n_time, n_bins, n_cells = 100, 50, 10
+    >>> predictive = np.random.dirichlet(np.ones(n_bins), size=n_time)
+    >>> likelihood = np.random.dirichlet(np.ones(n_bins), size=(n_time, n_cells))
+    >>> spike_counts = np.random.poisson(0.5, (n_time, n_cells))
+    >>> place_fields = np.random.rand(n_cells, n_bins) * 10
+    >>> diagnostics = compute_per_cell_diagnostics(
+    ...     predictive, likelihood, spike_counts, place_fields
+    ... )
+    >>> diagnostics['hpd_overlap'].shape
+    (100, 10)
+    """
+    # Ensure all inputs are NumPy arrays (handles JAX arrays from decoder)
+    predictive_posterior = np.asarray(predictive_posterior)
+    per_cell_likelihood = np.asarray(per_cell_likelihood)
+    spike_counts = np.asarray(spike_counts)
+    place_fields = np.asarray(place_fields)
+
+    n_time, n_cells, n_bins = per_cell_likelihood.shape
+
+    # Initialize output arrays with NaN
+    hpd_overlap = np.full((n_time, n_cells), np.nan, dtype=np.float64)
+    kl_divergence = np.full((n_time, n_cells), np.nan, dtype=np.float64)
+
+    # Compute HPD overlap and KL divergence for each cell
+    for j in range(n_cells):
+        cell_lik = per_cell_likelihood[:, j, :]  # (n_time, n_bins)
+        hpd_overlap[:, j] = ssc.hpd_overlap(predictive_posterior, cell_lik, coverage=coverage)
+        kl_divergence[:, j] = ssc.kl_divergence(predictive_posterior, cell_lik)
+
+    # Compute spike probability ranking
+    # cell_fraction_per_bin: (n_bins, n_cells) - normalized so each row (bin) sums to 1
+    # This matches analysis.py: at each position, fractions across cells sum to 1
+    cell_fraction_per_bin = normalize(place_fields.T, axis=1)  # (n_bins, n_cells)
+    spike_prob: NDArray[np.float64] = spike_prob_rank(
+        predictive_posterior, cell_fraction_per_bin
+    ).astype(np.float64)  # (n_time, n_cells)
+
+    # Mask cells that did not fire
+    # - HPD/KL: likelihood is uninformative (uniform over bins) without a spike
+    # - spike_prob: set to NaN for consistency with Figure 3 visualization
+    no_spike_mask = spike_counts == 0
+    hpd_overlap[no_spike_mask] = np.nan
+    kl_divergence[no_spike_mask] = np.nan
+    spike_prob[no_spike_mask] = np.nan
+
+    return {
+        "hpd_overlap": hpd_overlap,
+        "kl_divergence": kl_divergence,
+        "spike_prob": spike_prob,
+    }
+
+
+def get_state_marginalized_posterior(
+    results: xr.Dataset,
+    posterior_type: Literal["predictive", "acausal"] = "predictive",
+) -> NDArray[np.float64]:
+    """Extract state-marginalized posterior from decoder results.
+
+    For multi-state models (e.g., ContFragSortedSpikesClassifier), sums over
+    states to get the marginal posterior over position. For single-state models,
+    simply extracts the posterior. Also handles NaN state bins (e.g., track edges).
+
+    Parameters
+    ----------
+    results : xr.Dataset
+        Decoding results from model.predict() containing posterior distributions.
+    posterior_type : {"predictive", "acausal"}, default "predictive"
+        Type of posterior to extract:
+        - "predictive": One-step-ahead prediction p(x_t | y_{1:t-1})
+        - "acausal": Smoothed posterior p(x_t | y_{1:T})
+
+    Returns
+    -------
+    posterior : np.ndarray, shape (n_time, n_bins)
+        State-marginalized posterior summed over states, with NaN bins dropped.
+
+    Examples
+    --------
+    >>> # Requires xarray Dataset from non_local_detector
+    >>> # posterior = get_state_marginalized_posterior(results, "predictive")
+    >>> # posterior.shape  # (n_time, n_bins)
+    """
+    # Select appropriate posterior
+    if posterior_type == "predictive":
+        posterior_da = results.predictive_posterior
+    else:
+        posterior_da = results.acausal_posterior
+
+    # Drop NaN state bins (e.g., track interior only)
+    posterior_da = posterior_da.dropna("state_bins")
+
+    # Check if this is a multi-state model by looking for state dimension
+    # after unstacking state_bins
+    try:
+        unstacked = posterior_da.unstack("state_bins")
+        if "state" in unstacked.dims:
+            # Multi-state model: sum over states
+            marginalized = unstacked.sum("state")
+            posterior: NDArray[np.float64] = np.asarray(marginalized.values)
+        else:
+            # Single-state model: just extract values
+            posterior = np.asarray(posterior_da.values)
+    except (ValueError, KeyError):
+        # If unstack fails, assume single-state model
+        posterior = np.asarray(posterior_da.values)
+
+    return posterior
+
+
+# =============================================================================
+# High-Level Analysis Pipeline Functions
+# =============================================================================
+
+
+def create_decoder_environment(
+    track_graph: Any,
+    edge_order: list[tuple[Any, Any]],
+    edge_spacing: float | list[float],
+) -> Any:
+    """Create track environment for decoder models.
+
+    Parameters
+    ----------
+    track_graph : networkx.Graph
+        Track structure graph.
+    edge_order : list[tuple]
+        Edge ordering for linearization.
+    edge_spacing : float or list[float]
+        Spacing between nodes.
+
+    Returns
+    -------
+    env : Environment
+        Track environment object.
+
+    Raises
+    ------
+    ImportError
+        If non_local_detector package is not available.
+
+    Examples
+    --------
+    >>> # Requires non_local_detector package
+    >>> # env = create_decoder_environment(track_graph, edge_order, edge_spacing)
+    """
+    try:
+        from non_local_detector.environment import Environment
+    except ImportError as e:
+        raise ImportError(
+            "non_local_detector package required. Install with: pip install non_local_detector"
+        ) from e
+
+    return Environment(
+        track_graph=track_graph,
+        edge_order=edge_order,
+        edge_spacing=edge_spacing,
+    )
+
+
+def fit_decoder_models(
+    position: NDArray[np.float64],
+    spike_times: list[NDArray[np.float64]],
+    time: NDArray[np.float64],
+    environment: Any,
+) -> tuple[Any, Any]:
+    """Fit Continuous and ContFrag decoder models.
+
+    Parameters
+    ----------
+    position : np.ndarray, shape (n_time,)
+        Linear position values.
+    spike_times : list[np.ndarray]
+        List of spike time arrays, one per cell.
+    time : np.ndarray, shape (n_time,)
+        Time values corresponding to position.
+    environment : Environment
+        Track environment object.
+
+    Returns
+    -------
+    continuous_model : SortedSpikesDecoder
+        Fitted continuous decoder model.
+    contfrag_model : ContFragSortedSpikesClassifier
+        Fitted continuous-fragmented decoder model.
+
+    Raises
+    ------
+    ImportError
+        If non_local_detector package is not available.
+
+    Examples
+    --------
+    >>> # Requires non_local_detector package and fitted environment
+    >>> # continuous_model, contfrag_model = fit_decoder_models(
+    >>> #     position, spike_times, time, environment
+    >>> # )
+    """
+    try:
+        from non_local_detector import ContFragSortedSpikesClassifier, SortedSpikesDecoder
+    except ImportError as e:
+        raise ImportError(
+            "non_local_detector package required. Install with: pip install non_local_detector"
+        ) from e
+
+    # Ensure position is 2D (n_time, 1) for the decoder
+    position_2d = position.reshape(-1, 1) if position.ndim == 1 else position
+
+    # Fit Continuous model
+    continuous_model = SortedSpikesDecoder(environments=[environment])
+    continuous_model.fit(position=position_2d, spike_times=spike_times, position_time=time)
+
+    # Fit ContFrag model
+    contfrag_model = ContFragSortedSpikesClassifier(environments=[environment])
+    contfrag_model.fit(position=position_2d, spike_times=spike_times, position_time=time)
+
+    return continuous_model, contfrag_model
+
+
+def get_spike_counts(
+    spike_times: list[NDArray[np.float64]],
+    time: NDArray[np.float64],
+) -> NDArray[np.int64]:
+    """Get spike count matrix aligned to time bins.
+
+    Parameters
+    ----------
+    spike_times : list[np.ndarray]
+        List of spike time arrays, one per cell.
+    time : np.ndarray, shape (n_time,)
+        Time bin centers.
+
+    Returns
+    -------
+    spike_counts : np.ndarray, shape (n_time, n_cells)
+        Spike count for each cell at each time bin.
+
+    Raises
+    ------
+    ImportError
+        If non_local_detector package is not available.
+
+    Examples
+    --------
+    >>> # Requires non_local_detector package
+    >>> # spike_counts = get_spike_counts(spike_times, time)
+    >>> # spike_counts.shape  # (n_time, n_cells)
+    """
+    try:
+        from non_local_detector.likelihoods.common import get_spikecount_per_time_bin
+    except ImportError as e:
+        raise ImportError(
+            "non_local_detector package required. Install with: pip install non_local_detector"
+        ) from e
+
+    counts_per_cell = [get_spikecount_per_time_bin(spike_times=st, time=time) for st in spike_times]
+    spike_counts = np.stack(counts_per_cell, axis=1).astype(np.int64)
+
+    return spike_counts
+
+
+def compute_model_diagnostics(
+    model: Any,
+    results: Any,
+    spike_counts: NDArray[np.int64],
+    time: NDArray[np.float64],
+) -> dict[str, NDArray[np.float64]]:
+    """Compute per-cell diagnostics for a fitted decoder model.
+
+    This is a convenience function that chains together extract_place_fields,
+    compute_per_cell_likelihood, get_state_marginalized_posterior, and
+    compute_per_cell_diagnostics.
+
+    Parameters
+    ----------
+    model : decoder model
+        Fitted SortedSpikesDecoder or ContFragSortedSpikesClassifier.
+    results : xr.Dataset
+        Decoding results from model.predict().
+    spike_counts : np.ndarray, shape (n_time, n_cells)
+        Spike count matrix.
+    time : np.ndarray, shape (n_time,)
+        Time values.
+
+    Returns
+    -------
+    diagnostics : dict[str, np.ndarray]
+        Dictionary with keys 'hpd_overlap', 'kl_divergence', 'spike_prob'.
+        Each has shape (n_time, n_cells).
+
+    Examples
+    --------
+    >>> # Requires fitted model and decoding results
+    >>> # diagnostics = compute_model_diagnostics(model, results, spike_counts, time)
+    >>> # diagnostics['hpd_overlap'].shape  # (n_time, n_cells)
+    """
+    # Extract place fields
+    place_fields_full, position_bins_full = extract_place_fields(model)
+
+    # Get state-marginalized predictive posterior (handles multi-state models)
+    # This drops NaN state bins internally
+    predictive_posterior = get_state_marginalized_posterior(results, posterior_type="predictive")
+
+    # The posterior may have fewer bins than place_fields if track edges are NaN
+    # Determine which position bins are valid by comparing sizes
+    n_posterior_bins = predictive_posterior.shape[1]
+    n_place_field_bins = place_fields_full.shape[1]
+
+    if n_posterior_bins < n_place_field_bins:
+        # Posterior has dropped NaN bins - need to find which ones are valid
+        # Get the original state_bins coordinate to identify valid positions
+        if "predictive_posterior" in results:
+            posterior_da = results.predictive_posterior
+        else:
+            posterior_da = results.acausal_posterior
+
+        # Drop NaN state bins (same as get_state_marginalized_posterior does)
+        posterior_da = posterior_da.dropna("state_bins")
+
+        # For multi-state models, unstack to get position dimension
+        try:
+            unstacked = posterior_da.unstack("state_bins")
+            if "position" in unstacked.dims:
+                # Get unique positions from the unstacked coordinates
+                valid_positions = unstacked.coords["position"].values
+            else:
+                # Single-state model - positions are in state_bins directly
+                valid_positions = posterior_da.coords["state_bins"].values
+        except (ValueError, KeyError):
+            # Fallback: assume first n_posterior_bins positions are valid
+            valid_positions = position_bins_full[:n_posterior_bins]
+
+        # Find mask of valid position bins
+        valid_mask = np.isin(position_bins_full, valid_positions)
+        place_fields = place_fields_full[:, valid_mask]
+    else:
+        # All bins are valid
+        place_fields = place_fields_full
+
+    # Compute time bin size
+    dt = float(np.median(np.diff(time)))
+
+    # Compute per-cell likelihood (using filtered place fields)
+    per_cell_likelihood = compute_per_cell_likelihood(place_fields, spike_counts, dt)
+
+    # Compute diagnostics
+    diagnostics = compute_per_cell_diagnostics(
+        predictive_posterior,
+        per_cell_likelihood,
+        spike_counts,
+        place_fields,
+    )
+
+    return diagnostics

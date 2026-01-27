@@ -946,7 +946,7 @@ def load_neural_recording_from_files(
     Examples
     --------
     >>> data = load_neural_recording_from_files(
-    ...     "/Users/edeno/Downloads/", "j1620210710_02_r1"
+    ...     "data/", "j1620210710_02_r1"
     ... )
     >>> position = data["position_info"]
     >>> spikes = data["spike_times"]

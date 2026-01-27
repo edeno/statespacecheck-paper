@@ -482,7 +482,7 @@ def plot_single_model_checking(
     overlap_threshold: float = 0.2,
     model_label: str = "Model",
     color: str = "tab:blue",
-) -> tuple[Figure, NDArray[Axes]]:
+) -> tuple[Figure, NDArray[np.object_]]:
     """Create model checking figure for a single model.
 
     Parameters
@@ -789,7 +789,7 @@ def plot_hpd_overlap_at_time(
     edge_spacing: float,
     coverage: float = 0.95,
     figsize: tuple[float, float] = (7, 5),
-) -> tuple[Figure, NDArray[Axes]]:
+) -> tuple[Figure, NDArray[np.object_]]:
     """Plot posterior, likelihood, and HPD intersection at a specific time.
 
     Shows the mechanics of HPD overlap calculation at a single timepoint.
@@ -910,5 +910,461 @@ def plot_hpd_overlap_at_time(
         fontsize=12,
         y=1.12,
     )
+
+    return fig, axes
+
+
+# =============================================================================
+# Per-Cell Diagnostic Plotting for Model Comparison (Figure 4)
+# =============================================================================
+
+
+def plot_per_cell_diagnostic_scatter(
+    time: NDArray[np.float64] | pd.Index,
+    diagnostics: dict[str, NDArray[np.float64]],
+    time_slice_ind: slice | None = None,
+    threshold: float | None = None,
+    ax: Axes | None = None,
+    metric_name: str = "hpd_overlap",
+    color: str = "steelblue",
+    ylabel: str | None = None,
+    show_xlabel: bool = True,
+) -> Axes:
+    """Plot per-cell diagnostic metric as scatter plot over time.
+
+    Each point represents one cell at one time point. Values are scattered
+    to show the distribution of diagnostics across cells.
+
+    For spike_prob, values are transformed to -log10 scale to match Figure 3
+    visualization where higher values indicate worse fit.
+
+    Parameters
+    ----------
+    time : np.ndarray or pd.Index
+        Time values.
+    diagnostics : dict[str, np.ndarray]
+        Dictionary with diagnostic arrays, each with shape (n_time, n_cells).
+    time_slice_ind : slice, optional
+        Time slice indices to plot. If None, plots all time points.
+    threshold : float, optional
+        Threshold to draw as horizontal line. For spike_prob, this should be
+        the raw threshold value (e.g., 0.05) which will be transformed.
+    ax : plt.Axes, optional
+        Axes to plot on. If None, uses current axes.
+    metric_name : str, default "hpd_overlap"
+        Key in diagnostics dict to plot.
+    color : str, default "steelblue"
+        Color for scatter points.
+    ylabel : str, optional
+        Y-axis label. If None, uses metric_name.
+    show_xlabel : bool, default True
+        Whether to show "Time" xlabel.
+
+    Returns
+    -------
+    ax : plt.Axes
+        The axes object.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> time = np.linspace(0, 10, 100)
+    >>> diagnostics = {"hpd_overlap": np.random.rand(100, 10)}
+    >>> ax = plot_per_cell_diagnostic_scatter(time, diagnostics)
+    """
+    if ax is None:
+        ax = plt.gca()
+
+    metric = diagnostics[metric_name].copy()
+
+    if time_slice_ind is not None:
+        time = time[time_slice_ind]
+        metric = metric[time_slice_ind]
+
+    # Transform spike_prob to -log10 scale (matching Figure 3)
+    # Higher values indicate worse fit (low probability)
+    if metric_name == "spike_prob":
+        metric = -np.log10(np.maximum(metric, 1e-10))
+        if threshold is not None:
+            threshold = -np.log10(max(threshold, 1e-10))
+
+    n_time, n_cells = metric.shape
+
+    # Create time indices for scatter plot
+    time_arr = np.asarray(time)
+    time_indices = np.tile(time_arr[:, np.newaxis], (1, n_cells))
+
+    ax.scatter(
+        time_indices.ravel(),
+        metric.ravel(),
+        s=0.5,
+        alpha=0.3,
+        c=color,
+        rasterized=True,
+    )
+
+    if threshold is not None:
+        ax.axhline(threshold, color="red", linestyle="--", linewidth=1.5, label="Threshold")
+        ax.legend(loc="upper right", fontsize=7, frameon=False)
+
+    ax.set_xlim(time_arr.min(), time_arr.max())
+    ax.set_ylabel(ylabel or metric_name, fontsize=9)
+
+    if show_xlabel:
+        ax.set_xlabel("Time", fontsize=9)
+
+    return ax
+
+
+def plot_model_comparison_diagnostics(
+    time: NDArray[np.float64] | pd.Index,
+    diagnostics_a: dict[str, NDArray[np.float64]],
+    diagnostics_b: dict[str, NDArray[np.float64]],
+    time_slice_ind: slice | None = None,
+    model_a_name: str = "Continuous",
+    model_b_name: str = "ContFrag",
+    thresholds: dict[str, float] | None = None,
+    figsize: tuple[float, float] = (12, 8),
+) -> tuple[Figure, NDArray[np.object_]]:
+    """Create side-by-side comparison of per-cell diagnostics for two models.
+
+    Creates a 3x2 grid of scatter plots showing HPD overlap, KL divergence,
+    and spike probability for each model.
+
+    Parameters
+    ----------
+    time : np.ndarray or pd.Index
+        Time values.
+    diagnostics_a : dict[str, np.ndarray]
+        Diagnostics for model A with keys 'hpd_overlap', 'kl_divergence', 'spike_prob'.
+    diagnostics_b : dict[str, np.ndarray]
+        Diagnostics for model B with same keys.
+    time_slice_ind : slice, optional
+        Time slice indices to plot. If None, plots all time points.
+    model_a_name : str, default "Continuous"
+        Name for model A (column title).
+    model_b_name : str, default "ContFrag"
+        Name for model B (column title).
+    thresholds : dict[str, float], optional
+        Thresholds for each metric to draw as horizontal lines.
+    figsize : tuple[float, float], default (12, 8)
+        Figure size in inches.
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        The figure object.
+    axes : np.ndarray[plt.Axes]
+        Array of axes objects with shape (3, 2).
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> time = np.linspace(0, 10, 100)
+    >>> diag_a = {
+    ...     "hpd_overlap": np.random.rand(100, 10),
+    ...     "kl_divergence": np.random.rand(100, 10),
+    ...     "spike_prob": np.random.rand(100, 10),
+    ... }
+    >>> diag_b = {k: np.random.rand(100, 10) for k in diag_a}
+    >>> fig, axes = plot_model_comparison_diagnostics(time, diag_a, diag_b)
+    >>> plt.close(fig)
+    """
+    metrics = ["hpd_overlap", "kl_divergence", "spike_prob"]
+    # spike_prob uses -log10 scale to match Figure 3
+    ylabels = ["HPD Overlap", "KL Divergence", r"$-\log_{10}$(Spike Prob)"]
+    colors = ["tab:blue", "tab:green", "tab:purple"]
+
+    fig, axes = plt.subplots(3, 2, figsize=figsize, sharex=True, constrained_layout=True)
+
+    for i, (metric, ylabel, color) in enumerate(zip(metrics, ylabels, colors, strict=True)):
+        threshold = thresholds.get(metric) if thresholds else None
+
+        # Model A (left column)
+        plot_per_cell_diagnostic_scatter(
+            time,
+            diagnostics_a,
+            time_slice_ind=time_slice_ind,
+            threshold=threshold,
+            ax=axes[i, 0],
+            metric_name=metric,
+            color=color,
+            ylabel=ylabel,
+            show_xlabel=(i == 2),
+        )
+
+        # Model B (right column) - no ylabel, left column has it
+        plot_per_cell_diagnostic_scatter(
+            time,
+            diagnostics_b,
+            time_slice_ind=time_slice_ind,
+            threshold=threshold,
+            ax=axes[i, 1],
+            metric_name=metric,
+            color=color,
+            ylabel="",  # Empty string to suppress ylabel (left column has it)
+            show_xlabel=(i == 2),
+        )
+
+        # Add column titles on first row
+        if i == 0:
+            axes[i, 0].set_title(model_a_name, fontsize=11)
+            axes[i, 1].set_title(model_b_name, fontsize=11)
+
+    return fig, axes
+
+
+def plot_diagnostic_summary_comparison(
+    diagnostics_a: dict[str, NDArray[np.float64]],
+    diagnostics_b: dict[str, NDArray[np.float64]],
+    model_a_name: str = "Continuous",
+    model_b_name: str = "ContFrag",
+    figsize: tuple[float, float] = (10, 4),
+) -> tuple[Figure, NDArray[np.object_]]:
+    """Create bar chart comparing mean diagnostics between models.
+
+    Parameters
+    ----------
+    diagnostics_a : dict[str, np.ndarray]
+        Diagnostics for model A.
+    diagnostics_b : dict[str, np.ndarray]
+        Diagnostics for model B.
+    model_a_name : str, default "Continuous"
+        Name for model A.
+    model_b_name : str, default "ContFrag"
+        Name for model B.
+    figsize : tuple[float, float], default (10, 4)
+        Figure size in inches.
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        The figure object.
+    axes : np.ndarray[plt.Axes]
+        Array of axes objects.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> diag_a = {"hpd_overlap": np.random.rand(100, 10)}
+    >>> diag_b = {"hpd_overlap": np.random.rand(100, 10)}
+    >>> fig, axes = plot_diagnostic_summary_comparison(diag_a, diag_b)
+    >>> plt.close(fig)
+    """
+    metrics = ["hpd_overlap", "kl_divergence", "spike_prob"]
+    # spike_prob uses -log10 scale to match Figure 3
+    xlabels = ["HPD Overlap", "KL Divergence", r"$-\log_{10}$(Spike Prob)"]
+
+    fig, axes = plt.subplots(1, 3, figsize=figsize, constrained_layout=True)
+
+    for i, (metric, xlabel) in enumerate(zip(metrics, xlabels, strict=True)):
+        if metric not in diagnostics_a or metric not in diagnostics_b:
+            continue
+
+        # Get data and transform spike_prob to -log10 scale
+        data_a = diagnostics_a[metric]
+        data_b = diagnostics_b[metric]
+        if metric == "spike_prob":
+            data_a = -np.log10(np.maximum(data_a, 1e-10))
+            data_b = -np.log10(np.maximum(data_b, 1e-10))
+
+        mean_a = np.nanmean(data_a)
+        mean_b = np.nanmean(data_b)
+        sem_a = np.nanstd(data_a) / np.sqrt(np.sum(~np.isnan(data_a)))
+        sem_b = np.nanstd(data_b) / np.sqrt(np.sum(~np.isnan(data_b)))
+
+        x = [0, 1]
+        heights = [mean_a, mean_b]
+        errors = [sem_a, sem_b]
+        colors = ["tab:blue", "tab:orange"]
+
+        bars = axes[i].bar(x, heights, yerr=errors, color=colors, capsize=5, alpha=0.8)
+        axes[i].set_xticks(x)
+        axes[i].set_xticklabels([model_a_name, model_b_name])
+        axes[i].set_ylabel(f"Mean {xlabel}")
+        axes[i].set_title(xlabel)
+
+        # Add value annotations
+        for bar, h, err in zip(bars, heights, errors, strict=True):
+            axes[i].annotate(
+                f"{h:.3f}",
+                xy=(bar.get_x() + bar.get_width() / 2, h + err + 0.01),
+                ha="center",
+                va="bottom",
+                fontsize=9,
+            )
+
+    return fig, axes
+
+
+def plot_model_comparison_with_posterior(
+    time: NDArray[np.float64] | pd.Index,
+    position: NDArray[np.float64],
+    results_a: xr.Dataset,
+    results_b: xr.Dataset,
+    diagnostics_a: dict[str, NDArray[np.float64]],
+    diagnostics_b: dict[str, NDArray[np.float64]],
+    time_slice_ind: slice | None = None,
+    model_a_name: str = "Continuous",
+    model_b_name: str = "Continuous-Fragmented",
+    thresholds: dict[str, float] | None = None,
+    figsize: tuple[float, float] = (12, 10),
+) -> tuple[Figure, NDArray[np.object_]]:
+    """Create model comparison with posterior heatmaps and per-cell diagnostics.
+
+    Creates a 4x2 grid with:
+    - Row 0: Decoded posterior with animal position overlay
+    - Row 1: HPD overlap scatter
+    - Row 2: KL divergence scatter
+    - Row 3: Spike probability scatter
+
+    Parameters
+    ----------
+    time : np.ndarray or pd.Index
+        Time values.
+    position : np.ndarray, shape (n_time,)
+        Animal position values.
+    results_a : xr.Dataset
+        Decoding results for model A with predictive_posterior.
+    results_b : xr.Dataset
+        Decoding results for model B with predictive_posterior.
+    diagnostics_a : dict[str, np.ndarray]
+        Diagnostics for model A with keys 'hpd_overlap', 'kl_divergence', 'spike_prob'.
+    diagnostics_b : dict[str, np.ndarray]
+        Diagnostics for model B with same keys.
+    time_slice_ind : slice, optional
+        Time slice indices to plot. If None, plots all time points.
+    model_a_name : str, default "Continuous"
+        Name for model A (column title).
+    model_b_name : str, default "Continuous-Fragmented"
+        Name for model B (column title).
+    thresholds : dict[str, float], optional
+        Thresholds for each metric to draw as horizontal lines.
+    figsize : tuple[float, float], default (12, 10)
+        Figure size in inches.
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        The figure object.
+    axes : np.ndarray[plt.Axes]
+        Array of axes objects with shape (4, 2).
+
+    Examples
+    --------
+    >>> # Requires xr.Dataset from non_local_detector
+    >>> # fig, axes = plot_model_comparison_with_posterior(
+    >>> #     time, position, results_a, results_b, diagnostics_a, diagnostics_b
+    >>> # )
+    """
+    metrics = ["hpd_overlap", "kl_divergence", "spike_prob"]
+    # spike_prob uses -log10 scale to match Figure 3
+    ylabels = ["HPD Overlap", "KL Divergence", r"$-\log_{10}$(Spike Prob)"]
+    colors = ["tab:blue", "tab:green", "tab:purple"]
+
+    # Create 4x2 grid: posterior + 3 diagnostics
+    fig, axes = plt.subplots(
+        4,
+        2,
+        figsize=figsize,
+        sharex=True,
+        gridspec_kw={"height_ratios": [1.5, 1, 1, 1]},
+        constrained_layout=True,
+    )
+
+    if time_slice_ind is None:
+        time_slice_ind = slice(None)
+
+    # Row 0: Posterior heatmaps with position overlay
+    for col, (results, model_name) in enumerate(
+        [(results_a, model_a_name), (results_b, model_b_name)]
+    ):
+        ax = axes[0, col]
+
+        # Get posterior and marginalize over states
+        if "predictive_posterior" in results:
+            posterior_da = results.predictive_posterior
+        else:
+            posterior_da = results.acausal_posterior
+
+        # Drop NaN bins and marginalize
+        posterior_da = posterior_da.dropna("state_bins")
+
+        # Plot posterior heatmap
+        try:
+            unstacked = posterior_da.unstack("state_bins")
+            if "state" in unstacked.dims:
+                # Multi-state model: sum over states
+                marginalized = unstacked.sum("state")
+            else:
+                marginalized = unstacked
+
+            # Plot using xarray
+            marginalized.isel(time=time_slice_ind).plot(
+                x="time",
+                y="position",
+                ax=ax,
+                add_colorbar=False,
+                robust=True,
+                cmap="bone_r",
+                rasterized=True,
+            )
+        except (ValueError, KeyError):
+            # Fallback: plot raw posterior
+            posterior_da.isel(time=time_slice_ind).plot(
+                x="time",
+                ax=ax,
+                add_colorbar=False,
+                robust=True,
+                cmap="bone_r",
+                rasterized=True,
+            )
+
+        # Overlay animal position
+        time_arr = np.asarray(time)
+        ax.scatter(
+            time_arr[time_slice_ind],
+            position[time_slice_ind],
+            c="magenta",
+            s=1,
+            alpha=0.7,
+            rasterized=True,
+            label="Animal position",
+        )
+
+        ax.set_title(model_name, fontsize=11)
+        ax.set_ylabel("Position" if col == 0 else "")
+        ax.set_xlabel("")
+
+    # Rows 1-3: Diagnostic scatter plots
+    for i, (metric, ylabel, color) in enumerate(zip(metrics, ylabels, colors, strict=True)):
+        row = i + 1  # Offset by 1 for posterior row
+        threshold = thresholds.get(metric) if thresholds else None
+
+        # Model A (left column)
+        plot_per_cell_diagnostic_scatter(
+            time,
+            diagnostics_a,
+            time_slice_ind=time_slice_ind,
+            threshold=threshold,
+            ax=axes[row, 0],
+            metric_name=metric,
+            color=color,
+            ylabel=ylabel,
+            show_xlabel=(i == 2),
+        )
+
+        # Model B (right column)
+        plot_per_cell_diagnostic_scatter(
+            time,
+            diagnostics_b,
+            time_slice_ind=time_slice_ind,
+            threshold=threshold,
+            ax=axes[row, 1],
+            metric_name=metric,
+            color=color,
+            ylabel="",  # Left column has ylabel
+            show_xlabel=(i == 2),
+        )
 
     return fig, axes

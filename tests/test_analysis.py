@@ -43,7 +43,7 @@ class TestDecodeParams:
         assert params.xs_max == 100
         assert params.xs_step == 1
         assert params.pf_width == 10.0
-        assert params.rate_scale == 20.0
+        assert params.rate_scale == 0.02  # Matches MATLAB normpdf * 0.02 scaling
         assert params.base_seed == 1
 
     def test_post_init_initializes_pf_centers(self) -> None:
