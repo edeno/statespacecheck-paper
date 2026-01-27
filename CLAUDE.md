@@ -18,11 +18,12 @@ statespacecheck-paper/
 │   ├── style.py                # Figure styling (colors, defaults, save)
 │   ├── simulation.py           # Simulation utilities
 │   ├── analysis.py             # Analysis logic and diagnostics
-│   └── plotting.py             # Plotting utilities
+│   ├── plotting.py             # Plotting utilities
+│   └── schematic.py            # Graphical model and equation diagrams
 ├── scripts/                     # Figure generation scripts
-│   ├── generate_figure01.py    # Figure 1: Distribution comparisons
+│   ├── generate_figure01.py    # Figure 1: Schematic and distribution comparisons
 │   ├── generate_figure02.py    # Figure 2: Diagnostic demonstrations
-│   ├── generate_figure03.py    # Figure 3: (future)
+│   ├── generate_figure03.py    # Figure 3: Per-cell diagnostic metrics
 │   └── generate_all_figures.py # Master script to generate all figures
 ├── figures/                     # Generated figure outputs
 │   ├── main/                   # Main text figures (PDF + PNG)
@@ -33,43 +34,51 @@ statespacecheck-paper/
 │   ├── references.bib
 │   └── README.md
 ├── notebooks/                   # Jupyter notebooks for exploration
-├── tests/                       # Comprehensive test suite (75% coverage)
-│   ├── test_style.py
-│   ├── test_simulation.py
-│   ├── test_analysis.py
-│   ├── test_plotting.py
-│   ├── test_figures.py         # Integration tests
-│   └── test_properties.py      # Property-based tests
-└── docs/                        # Documentation and examples
+└── tests/                       # Comprehensive test suite (97% coverage)
+    ├── test_style.py
+    ├── test_simulation.py
+    ├── test_analysis.py
+    ├── test_plotting.py
+    ├── test_schematic.py       # Tests for schematic module
+    ├── test_figures.py         # Integration tests
+    └── test_properties.py      # Property-based tests
 ```
 
 **Key Modules**:
-- **style.py**: Shared styling utilities (WONG palette, figure defaults, save function)
+
+- **style.py**: Shared styling utilities (WONG palette, COLORS dict, figure defaults, save function)
 - **simulation.py**: Simulation functions (random walks, spike generation, place fields)
 - **analysis.py**: Analysis logic (decoder, diagnostics, thresholds, transformations)
 - **plotting.py**: Reusable plotting functions (HPD regions, diagnostic plots)
+- **schematic.py**: Graphical model diagrams and Bayesian equation boxes for Figure 1
 - **load_data.py**: Data loading utilities for real datasets
 
 **Figure Scripts** (in `scripts/`):
-- **generate_figure01.py**: Thin orchestration layer (~220 lines) for Figure 1
-- **generate_figure02.py**: Thin orchestration layer (~200 lines) for Figure 2
+
+- **generate_figure01.py**: Figure 1 orchestration (~170 lines) - schematic and distributions
+- **generate_figure02.py**: Figure 2 orchestration (~815 lines) - diagnostic demonstrations
+- **generate_figure03.py**: Figure 3 orchestration (~228 lines) - per-cell metrics
 - **generate_all_figures.py**: Master script to generate all figures
 
 ## Repository Structure
 
 ### Module Organization
 
-The repository follows a clean separation between **reusable code** (in `src/`) and **figure scripts** (in `figures/`).
+The repository follows a clean separation between **reusable code** (in `src/`) and **figure scripts** (in `scripts/`).
 
 #### Core Modules (`src/statespacecheck_paper/`)
 
 **1. style.py** - Figure Styling Utilities
+
 - `WONG`: 8-color colorblind-friendly palette
+- `COLORS`: Semantic color dictionary for consistent styling across figures
+- `CMAP_POSTERIOR`, `CMAP_DIAGNOSTIC`: Colormaps for heatmaps
 - `set_figure_defaults(context='paper')`: Set matplotlib defaults
 - `save_figure(basename, dpi=450)`: Save figures as PDF and PNG
 - `get_figure_size(width_type='single')`: Get standard figure dimensions
 
 **2. simulation.py** - Data Simulation
+
 - `normalize(x, axis=-1, eps=1e-10)`: Safe array normalization
 - `reflect_into_interval(x, xmin, xmax)`: Reflecting boundary conditions
 - `gaussian_transition_matrix(n_bins, sigma)`: Random walk transition matrix
@@ -81,34 +90,48 @@ The repository follows a clean separation between **reusable code** (in `src/`) 
 - `simulate_spikes_flat_rate(n_time, n_cells, rate, rng)`: Constant-rate Poisson spikes
 
 **3. analysis.py** - Bayesian Decoding and Diagnostics
+
 - `DecodeParams`: Dataclass for decoder configuration (timeline, cells, remapping)
 - `Thresholds`: Dataclass for diagnostic thresholds
 - `Transformed`: Dataclass for transformed diagnostics
 - `likelihood_grid_for_counts(counts, placefield_rates)`: Poisson likelihood computation
-- `apply_remap_for_likelihoods(likelihoods, params)`: Cell identity remapping
+- `get_remapped_pf_centers(params)`: Compute remapped place field centers
 - `decode_and_diagnostics(spikes, params)`: Main decoder with KL/HPD diagnostics
 - `compute_thresholds(baseline_period, quantiles)`: Compute baseline thresholds
 - `transform_metrics(diagnostics, thresholds, eps)`: Transform for visualization
 
 **4. plotting.py** - Reusable Plotting Functions
+
 - `compute_hpd_region(distribution, coverage)`: Highest posterior density region mask
+- `add_phase_boundaries(ax, params)`: Add vertical lines at phase transitions
+- `extract_contiguous_regions(mask)`: Find contiguous True regions in boolean array
+- `create_distribution_comparison_panel(...)`: Create comparison panels for Figure 1
 - `plot_original(diagnostics, params, thresholds)`: Original diagnostic metrics plot
 - `plot_transformed(transformed, params, thresholds)`: Transformed metrics plot
 - `plot_misfit_examples(diagnostics, x_true, params)`: Example misfit periods
 - `plot_combined_diagnostics(diagnostics, x_true, spikes, params)`: Comprehensive visualization
 
-**5. load_data.py** - Real Data Loading
+**5. schematic.py** - Graphical Model Diagrams
+
+- `draw_graphical_model(ax)`: Draw state space model graphical representation
+- `draw_equation_boxes(ax)`: Draw Bayesian filtering equations
+- Used by Figure 1 to create schematic overview
+
+**6. load_data.py** - Real Data Loading
+
 - Functions to load real neural recording datasets (not covered in detail here)
 
 ### Figure Scripts
 
 Figure scripts (in `scripts/`) are thin orchestration layers that:
+
 1. Import from shared modules
 2. Set up simulation/analysis parameters
 3. Run simulations/analyses
 4. Generate and save figures
 
 **Example structure**:
+
 ```python
 from statespacecheck_paper.style import WONG, set_figure_defaults, save_figure
 from statespacecheck_paper.simulation import simulate_walk, simulate_spikes_position_tuned
@@ -225,6 +248,7 @@ uv run jupyter lab
 ### 1. Reproducibility First
 
 **All analysis must be reproducible**:
+
 - Set random seeds explicitly: `np.random.seed(42)`
 - Pin dependency versions in pyproject.toml
 - Document data sources and preprocessing steps
@@ -233,7 +257,8 @@ uv run jupyter lab
 ### 2. Publication-Ready Figures
 
 **Follow principles from Tufte, Gelman, and Heer**:
-- Use `statespacecheck_paper.figures` module for consistent styling
+
+- Use `statespacecheck_paper.style` module for consistent styling
 - Default figure size: (8, 6) inches for single column, (16, 6) for double
 - Font sizes: 12pt for axis labels, 10pt for tick labels
 - Use colorblind-friendly palettes from seaborn
@@ -249,6 +274,7 @@ uv run jupyter lab
 ### 4. Time-Resolved Diagnostics
 
 **When working with temporal data**:
+
 - Arrays should be `(n_time, ...)` with time as first dimension
 - Use vectorized operations, avoid Python loops
 - Handle NaN values properly (mark invalid spatial bins)
@@ -257,14 +283,17 @@ uv run jupyter lab
 ### 5. Data Structure Conventions
 
 **Spatial distributions**:
+
 - 1D: `(n_time, n_position_bins)` - Linear track
 - 2D: `(n_time, n_x_bins, n_y_bins)` - Open field
 
 **Neural data**:
+
 - Spike counts: `(n_cells, n_time)`
 - Place fields: `(n_cells, n_bins)` or `(n_cells, n_x_bins, n_y_bins)`
 
 **State space model outputs**:
+
 - Predictive: `p(x_t | y_{1:t-1})`
 - Filtered: `p(x_t | y_{1:t})`
 - Smoothed: `p(x_t | y_{1:T})`
@@ -276,29 +305,34 @@ uv run jupyter lab
 When adding new features, follow these guidelines:
 
 **Adding simulation functions** → `src/statespacecheck_paper/simulation.py`
+
 - Random walks, spike generation, place field models
 - Utility functions for simulation (normalize, boundary conditions)
 - Functions should be pure (no side effects) and reproducible (use `rng` parameter)
 
 **Adding analysis functions** → `src/statespacecheck_paper/analysis.py`
+
 - Decoder logic, filtering algorithms
 - Diagnostic computations (KL divergence, HPD overlap)
 - Data transformations and threshold computations
 - Use dataclasses for configuration objects
 
 **Adding plotting functions** → `src/statespacecheck_paper/plotting.py`
+
 - Reusable visualization components
 - Diagnostic plots, heatmaps, timeseries
 - Functions should return Figure objects for flexibility
 - Use consistent styling from `style.py`
 
 **Adding figure styling** → `src/statespacecheck_paper/style.py`
+
 - Color palettes, font configurations
 - Figure sizing and layout utilities
 - Save/export functions
 - Keep consistent across all figures
 
 **Creating new figures** → `scripts/generate_figureXX.py`
+
 - Import from shared modules (don't duplicate code!)
 - Keep scripts thin (<200 lines of orchestration)
 - Save outputs to `figures/main/` or `figures/supplementary/`
@@ -306,6 +340,7 @@ When adding new features, follow these guidelines:
 - Document what the figure demonstrates
 
 **DO NOT**:
+
 - ❌ Add utilities to figure scripts (extract to modules instead)
 - ❌ Duplicate code across figure scripts
 - ❌ Mix simulation/analysis/plotting in one large function
@@ -369,6 +404,7 @@ def analyze_fit(
 ### No Type Ignores
 
 **NEVER use `# type: ignore` comments**. If mypy complains:
+
 1. Fix the actual type issue
 2. Add proper type hints
 3. Use type narrowing with `isinstance()` checks
@@ -389,25 +425,27 @@ def analyze_fit(
 ### Test Structure
 
 ```python
-"""Tests for figure generation."""
+"""Tests for plotting utilities."""
 
 import numpy as np
-from statespacecheck_paper.figures import create_diagnostic_figure
+from statespacecheck_paper.plotting import compute_hpd_region
 
 
-def test_create_diagnostic_figure() -> None:
-    """Test diagnostic figure generation."""
+def test_compute_hpd_region() -> None:
+    """Test HPD region computation."""
     # Setup
-    n_time, n_bins = 100, 50
-    state_dist = np.random.dirichlet(np.ones(n_bins), size=n_time)
-    likelihood = np.random.dirichlet(np.ones(n_bins), size=n_time)
+    n_bins = 50
+    x = np.linspace(0, 1, n_bins)
+    pdf = np.exp(-((x - 0.5) ** 2) / 0.1)  # Gaussian-like
+    pdf = pdf / pdf.sum()
 
     # Execute
-    fig, axes = create_diagnostic_figure(state_dist, likelihood)
+    region = compute_hpd_region(x, pdf, coverage=0.95)
 
     # Assert
-    assert fig is not None
-    assert len(axes) == 2  # Two subplots expected
+    assert region is not None
+    assert len(region) == n_bins
+    assert region.dtype == bool
 ```
 
 ### Test Data
@@ -434,7 +472,7 @@ The repository uses a modular approach where reusable code lives in `src/` and f
    - Plotting functions → `plotting.py`
    - Write tests for each component
 
-2. **Create thin figure script** in `figures/`:
+2. **Create thin figure script** in `scripts/`:
    - Import from shared modules
    - Set up parameters
    - Call simulation/analysis/plotting functions
@@ -524,6 +562,7 @@ uv run pytest
 ## Dependencies
 
 ### Core Analysis
+
 - **statespacecheck**: Main package with diagnostics
 - **numpy**: Array operations
 - **scipy**: Statistical functions
@@ -531,7 +570,13 @@ uv run pytest
 - **seaborn**: Statistical visualization
 - **pandas**: Data manipulation
 
+### Real Data Analysis (optional)
+
+- **non_local_detector**: GitHub dependency for neural decoding (from LorenFrankLab)
+- **spyglass-neuro**: Neural data pipeline framework
+
 ### Development
+
 - **ruff**: Fast linter and formatter
 - **mypy**: Static type checker
 - **pytest**: Testing framework
@@ -539,6 +584,7 @@ uv run pytest
 ### Installing from GitHub Repositories
 
 Some dependencies may be installed directly from GitHub rather than PyPI. This is useful for:
+
 - Development versions with unreleased features
 - Bug fixes not yet published
 - Custom forks with project-specific changes
@@ -563,6 +609,7 @@ dependencies = [
 ```
 
 **Optional**: Pin to specific branch, tag, or commit:
+
 ```toml
 # Specific branch
 "package-name @ git+https://github.com/username/repo.git@branch-name"
@@ -595,6 +642,7 @@ dependencies = [
 When a GitHub dependency is updated upstream, follow these steps:
 
 **Step 1: Update the lock file**
+
 ```bash
 # Update specific package
 uv lock --upgrade-package package-name
@@ -606,6 +654,7 @@ uv lock --upgrade
 This fetches the latest commit from GitHub and updates `uv.lock`.
 
 **Step 2: Sync the environment**
+
 ```bash
 uv sync
 ```
@@ -613,6 +662,7 @@ uv sync
 This installs the newly locked version into your `.venv`.
 
 **Step 3: Verify the update**
+
 ```bash
 uv run python -c "import package_name; print(package_name.__version__)"
 ```
@@ -624,6 +674,7 @@ uv run python -c "import package_name; print(package_name.__version__)"
 **Cause**: Lock file (`uv.lock`) not updated
 
 **Solution**:
+
 ```bash
 uv lock --upgrade-package package-name
 uv sync
@@ -634,6 +685,7 @@ uv sync
 **Cause**: Missing `allow-direct-references` in `pyproject.toml`
 
 **Solution**: Add to `pyproject.toml`:
+
 ```toml
 [tool.hatch.metadata]
 allow-direct-references = true
@@ -644,11 +696,13 @@ allow-direct-references = true
 **Cause**: `uv` caches Git repositories
 
 **Solution**: Force fresh install:
+
 ```bash
 uv pip install --reinstall --no-cache "package @ git+https://github.com/user/repo.git"
 ```
 
 Then update lock:
+
 ```bash
 uv lock --upgrade-package package
 uv sync
@@ -657,16 +711,19 @@ uv sync
 #### Best Practices
 
 1. **Pin production dependencies** to specific commits for reproducibility:
+
    ```toml
    "non_local_detector @ git+https://github.com/LorenFrankLab/non_local_detector.git@abc123"
    ```
 
 2. **Use branches for development** to automatically get updates:
+
    ```toml
    "package @ git+https://github.com/user/repo.git@develop"
    ```
 
 3. **Always update lock after changing** `pyproject.toml`:
+
    ```bash
    uv lock
    uv sync
@@ -733,11 +790,13 @@ git commit -m "Update package-name to latest GitHub version"
 ### Vectorization
 
 **Good** (vectorized):
+
 ```python
 kl_div = kl_divergence(state_dist, likelihood)  # Operates on all time points
 ```
 
 **Bad** (loop):
+
 ```python
 kl_div = np.array([
     kl_divergence(state_dist[t:t+1], likelihood[t:t+1])
@@ -778,6 +837,6 @@ uv run ruff format . && uv run ruff check . && uv run mypy src/ && uv run pytest
 ## Resources
 
 - **statespacecheck docs**: Documentation for the main package
-- **NumPy style guide**: https://numpydoc.readthedocs.io/
-- **Scientific Python SPEC 0**: https://scientific-python.org/specs/spec-0000/
-- **Matplotlib gallery**: https://matplotlib.org/stable/gallery/
+- **NumPy style guide**: <https://numpydoc.readthedocs.io/>
+- **Scientific Python SPEC 0**: <https://scientific-python.org/specs/spec-0000/>
+- **Matplotlib gallery**: <https://matplotlib.org/stable/gallery/>
