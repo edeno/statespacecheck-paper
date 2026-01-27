@@ -7,7 +7,7 @@ goodness-of-fit.
 **Key Components**:
 - **DecodeParams**: Parameter container for decoding simulations
 - **likelihood_grid_for_counts**: Compute Poisson likelihood for spike counts
-- **apply_remap_for_likelihoods**: Apply cell identity remapping
+- **get_remapped_pf_centers**: Apply place field center remapping
 - **decode_and_diagnostics**: Main decoder with diagnostic computation
 - **Thresholds**: Container for diagnostic threshold values
 - **compute_thresholds**: Compute thresholds from baseline period
@@ -109,9 +109,10 @@ class DecodeParams:
         Spike rate scaling factor (matches MATLAB normpdf * 0.02).
     base_seed : int, default 1
         Base random seed for reproducibility.
-    remap_from_to : tuple of tuples, default ((0, 5), (1, 6), ...)
-        Remapping specification: ((src1, dst1), (src2, dst2), ...).
-        Default implements +50cm circular shift for all 11 cells.
+    remap_from_to : tuple of ints, default (9, 0)
+        Remapping specification: (src, dst) remaps cell src to use cell dst's place field.
+        Default remaps cell 9 (place field at 90) to use cell 0's place field (at 0),
+        matching the MATLAB implementation.
 
     Examples
     --------
@@ -146,23 +147,12 @@ class DecodeParams:
     xs_step: int = 1
     pf_width: float = 10.0  # Place field width (std of Gaussian tuning curves)
     pf_centers: NDArray[np.floating] | None = None  # set in __post_init__
-    rate_scale: float = (
-        20.0  # High spike rate to avoid ties in predictive checks (MATLAB used 0.02)
-    )
+    rate_scale: float = 0.02  # Spike rate scaling factor (matches MATLAB normpdf * 0.02)
     base_seed: int = 1
     remap_from_to: tuple[tuple[int, int], ...] | tuple[int, int] = (
-        (0, 5),  # Position 0 → 50 (shift +50cm)
-        (1, 6),  # Position 10 → 60
-        (2, 7),  # Position 20 → 70
-        (3, 8),  # Position 30 → 80
-        (4, 9),  # Position 40 → 90
-        (5, 10),  # Position 50 → 100
-        (6, 0),  # Position 60 → 0
-        (7, 1),  # Position 70 → 10
-        (8, 2),  # Position 80 → 20
-        (9, 3),  # Position 90 → 30
-        (10, 4),  # Position 100 → 40
-    )  # Remap ALL 11 cells with +50cm circular shift
+        2,
+        8,
+    )  # Remap cell 2 (pf_center=20) to use cell 8's place field (pf_center=80)
 
     @property
     def remap_window(self) -> tuple[int, int]:
@@ -248,70 +238,70 @@ def likelihood_grid_for_counts(
     return likelihood_grid
 
 
-def apply_remap_for_likelihoods(
-    likelihood: NDArray[np.floating],
+def get_remapped_pf_centers(
+    pf_centers: NDArray[np.floating],
     remap_from_to: tuple[tuple[int, int], ...] | tuple[int, int],
     active: bool,
 ) -> NDArray[np.floating]:
-    """Optionally replace one or more columns by others (remapping cell identities).
+    """Get place field centers with optional remapping.
 
-    This function simulates model misfit by remapping cell identities - replacing
-    the likelihood column for one cell with the likelihood column from another cell.
-    This mimics a situation where the decoder has incorrect place field assignments.
+    This function creates remapped place field centers for computing likelihoods
+    during model misfit periods. When active, the source cell's place field center
+    is replaced with the target cell's center, so the likelihood is computed using
+    the wrong place field for that cell's spikes.
+
+    This matches the MATLAB implementation where:
+    ``L = poisspdf(spikes(t, j), normpdf(xs, pfc(1), pfw) * .02)``
+    uses pfc(1) (cell 1's center) instead of pfc(10) for cell 10.
 
     Parameters
     ----------
-    likelihood : np.ndarray, shape (n_bins, n_cells)
-        Likelihood grid with one column per cell.
+    pf_centers : np.ndarray, shape (n_cells,)
+        Original place field centers for each cell.
     remap_from_to : tuple of tuples or tuple of ints
         Remapping specification. Can be:
-        - Single remapping: (src, dst) - replace column src with column dst
+        - Single remapping: (src, dst) - cell src uses cell dst's place field center
         - Multiple remappings: ((src1, dst1), (src2, dst2), ...) - apply all remappings
     active : bool
-        If False, returns likelihood unchanged. If True, applies remapping.
+        If False, returns pf_centers unchanged. If True, applies remapping.
 
     Returns
     -------
-    likelihood : np.ndarray, shape (n_bins, n_cells)
-        Modified likelihood grid. If active=True, returns a copy with remapping applied.
-        If active=False, returns the original array (not a copy).
+    pf_centers : np.ndarray, shape (n_cells,)
+        Place field centers, potentially modified if active=True.
+        Returns original array if active=False, copy if active=True.
 
     Examples
     --------
     >>> import numpy as np
-    >>> likelihood = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
-    >>> # Single remapping: cell 0 becomes like cell 2
-    >>> result = apply_remap_for_likelihoods(likelihood, (0, 2), active=True)
+    >>> pf_centers = np.array([0.0, 10.0, 20.0, 30.0])
+    >>> # Single remapping: cell 2 uses cell 0's place field
+    >>> result = get_remapped_pf_centers(pf_centers, (2, 0), active=True)
     >>> result
-    array([[3., 2., 3.],
-           [6., 5., 6.]])
-
-    >>> # Multiple remappings
-    >>> result = apply_remap_for_likelihoods(likelihood, ((0, 1), (2, 1)), active=True)
-    >>> result
-    array([[2., 2., 2.],
-           [5., 5., 5.]])
+    array([ 0., 10.,  0., 30.])
 
     >>> # Inactive (no remapping)
-    >>> result = apply_remap_for_likelihoods(likelihood, (0, 2), active=False)
-    >>> np.array_equal(result, likelihood)
+    >>> result = get_remapped_pf_centers(pf_centers, (2, 0), active=False)
+    >>> np.array_equal(result, pf_centers)
     True
     """
     if not active:
-        return likelihood
-    likelihood = likelihood.copy()
+        return pf_centers
+    pf_centers = pf_centers.copy()
 
     # Normalize to iterable of pairs (handles both single and multiple remappings)
     if len(remap_from_to) == 2 and isinstance(remap_from_to[0], int):
         # Single remapping: (src, dst)
         src, dst = remap_from_to
-        likelihood[:, src] = likelihood[:, dst]
+        pf_centers[src] = pf_centers[dst]
     else:
         # Multiple remappings: ((src1, dst1), (src2, dst2), ...)
+        # Note: We need the ORIGINAL centers for all targets, so copy first
+        original_centers = pf_centers.copy()
         for src, dst in remap_from_to:
-            likelihood[:, src] = likelihood[:, dst]
+            pf_centers[src] = original_centers[dst]
 
-    return likelihood
+    return pf_centers
 
 
 def _window_or_never(window: tuple[int, int] | None, n_time: int) -> tuple[int, int]:
@@ -382,7 +372,7 @@ def decode_and_diagnostics(
     remap_window : tuple[int, int]
         Time window (start, end) where cell remapping is active.
     remap_from_to : tuple of tuples or tuple of ints
-        Remapping specification (see apply_remap_for_likelihoods).
+        Remapping specification (see get_remapped_pf_centers).
     rng : np.random.Generator | None, optional
         Random number generator (reserved for future use).
     transition_matrix_narrow : np.ndarray, shape (n_bins, n_bins), optional
@@ -461,6 +451,8 @@ def decode_and_diagnostics(
     # Storage for distributions
     predictive_posterior: NDArray[np.floating] = np.zeros((n_time, n_bins))  # p(x_t | y_{1:t-1})
     combined_likelihood_all: NDArray[np.floating] = np.zeros((n_time, n_bins))  # p(y_t | x_t)
+    # Per-cell likelihoods for batched diagnostic computation
+    per_cell_likelihood: NDArray[np.floating] = np.zeros((n_time, n_bins, n_cells))
 
     # t=0 (MATLAB used a flat prior at t=1)
     posterior[0] = normalize(np.ones(n_bins))
@@ -492,44 +484,20 @@ def decode_and_diagnostics(
 
         # Likelihood grid for this time's counts (vectorized over bins & cells)
         # Note: likelihood_grid_for_counts returns NORMALIZED likelihoods per cell
-        likelihood = likelihood_grid_for_counts(xs, pf_centers, pf_width, rate_scale, spikes[t])
-        # Optional remap (imitating MATLAB's j==10 uses field of j==1 in a window)
+        # Optional remap: use remapped place field centers during misfit window
+        # This matches MATLAB where cell j's likelihood is computed using another cell's pf_center
         active_remap = start_r <= t <= end_r
-        likelihood = apply_remap_for_likelihoods(likelihood, remap_from_to, active_remap)
+        current_pf_centers = get_remapped_pf_centers(pf_centers, remap_from_to, active_remap)
+        likelihood = likelihood_grid_for_counts(
+            xs, current_pf_centers, pf_width, rate_scale, spikes[t]
+        )
 
         # Compute combined likelihood from all cells (product over cells)
         combined_likelihood = np.prod(likelihood, axis=1)  # (n_bins,)
         combined_likelihood_all[t] = normalize(combined_likelihood)  # Store normalized likelihood
 
-        # Compute per-cell diagnostics
-        # Each cell's diagnostic is computed against the prior (one-step prediction)
-        # Metrics are NaN for cells that did not fire at this timestep
-        for j in range(n_cells):
-            # Skip if no spike from this cell
-            if spikes[t, j] == 0:
-                # hpd_overlap[t, j], kl_divergence[t, j], spike_prob[t, j] remain NaN
-                continue
-
-            # Get cell j's likelihood and normalize
-            lik_j = likelihood[:, j]  # (n_bins,)
-            lik_j_norm = lik_j / np.maximum(lik_j.sum(), 1e-12)  # Normalize
-
-            # Reshape for statespacecheck functions: (1, n_bins)
-            prior_t = prior[np.newaxis, :]
-            lik_j_t = lik_j_norm[np.newaxis, :]
-
-            # HPD overlap: prior vs this cell's likelihood
-            hpd_overlap[t, j] = ssc.hpd_overlap(prior_t, lik_j_t, coverage=0.95)[0]
-
-            # KL divergence: prior vs this cell's likelihood
-            kl_divergence[t, j] = ssc.kl_divergence(prior_t, lik_j_t)[0]
-
-        # spike_prob computed for all cells (even those without spikes for ranking)
-        # Then mask cells without spikes
-        if spikes[t].sum() > 0:
-            spike_prob[t] = spike_prob_rank(prior, cell_fraction_per_bin)
-            # Mask cells that did not fire
-            spike_prob[t, spikes[t] == 0] = np.nan
+        # Store per-cell likelihoods (normalized) for batched diagnostic computation
+        per_cell_likelihood[t] = normalize(likelihood, axis=0)  # Normalize each cell's likelihood
 
         # Posterior update with underflow protection
         # When prior-likelihood mismatch is extreme, the product can underflow to zero.
@@ -541,13 +509,35 @@ def decode_and_diagnostics(
         else:
             posterior[t] = unnormalized_posterior / posterior_sum
 
+    # Compute per-cell diagnostics in batched mode (once per cell, vectorized over time)
+    for j in range(n_cells):
+        # Get cell j's likelihood across all timesteps: (n_time, n_bins)
+        lik_j_all = per_cell_likelihood[:, :, j]
+
+        # Compute HPD overlap and KL divergence for all timesteps at once
+        hpd_overlap[:, j] = ssc.hpd_overlap(predictive_posterior, lik_j_all, coverage=0.95)
+        kl_divergence[:, j] = ssc.kl_divergence(predictive_posterior, lik_j_all)
+
+    # Mask t=0 (no valid prior) and cells that did not fire (set to NaN)
+    no_spike_mask = spikes == 0
+    hpd_overlap[0, :] = np.nan  # t=0 has no valid prior
+    kl_divergence[0, :] = np.nan
+    hpd_overlap[no_spike_mask] = np.nan
+    kl_divergence[no_spike_mask] = np.nan
+
+    # Compute spike_prob in batched mode (vectorized over time)
+    spike_prob = spike_prob_rank(predictive_posterior, cell_fraction_per_bin)
+    # Mask t=0 and cells that did not fire
+    spike_prob[0, :] = np.nan
+    spike_prob[no_spike_mask] = np.nan
+
     return {
         "posterior": posterior,
         "predictive": predictive_posterior,
         "likelihood": combined_likelihood_all,
-        "hpd_overlap": hpd_overlap,  # Now (n_time, n_cells)
-        "kl_divergence": kl_divergence,  # Now (n_time, n_cells)
-        "spike_prob": spike_prob,  # Now (n_time, n_cells), replaces conditional_pvalue
+        "hpd_overlap": hpd_overlap,  # (n_time, n_cells)
+        "kl_divergence": kl_divergence,  # (n_time, n_cells)
+        "spike_prob": spike_prob,  # (n_time, n_cells)
     }
 
 

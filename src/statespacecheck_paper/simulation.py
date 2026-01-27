@@ -249,22 +249,26 @@ def spike_prob_rank(
     expected contribution to the likelihood. For each cell, it computes the
     cumulative probability mass of all cells with equal or lower contribution.
 
+    Supports both single-timestep and batched (multi-timestep) inputs.
+
     Parameters
     ----------
-    prior : np.ndarray, shape (n_bins,)
-        Prior probability distribution over position bins.
+    prior : np.ndarray, shape (n_bins,) or (n_time, n_bins)
+        Prior probability distribution over position bins. Can be a single
+        distribution or batched over time.
     cell_fraction_per_bin : np.ndarray, shape (n_bins, n_cells)
         Normalized firing rate fractions where each row sums to 1.
 
     Returns
     -------
-    spike_probs : np.ndarray, shape (n_cells,)
+    spike_probs : np.ndarray, shape (n_cells,) or (n_time, n_cells)
         For each cell, the cumulative probability mass of cells with
         contribution <= that cell's contribution. Values in [0, 1].
+        Output shape matches input: 1D for single timestep, 2D for batched.
 
     Examples
     --------
-    Compute spike probability ranks:
+    Compute spike probability ranks for a single timestep:
 
     >>> prior = np.array([0.5, 0.3, 0.2])
     >>> cell_fraction_per_bin = np.array([[0.6, 0.2], [0.3, 0.5], [0.1, 0.3]])
@@ -277,18 +281,34 @@ def spike_prob_rank(
     >>> (ranks >= 0.0).all() and (ranks <= 1.0).all()
     True
 
+    Compute spike probability ranks for multiple timesteps (batched):
+
+    >>> prior_batched = np.array([[0.5, 0.3, 0.2], [0.2, 0.5, 0.3]])
+    >>> ranks_batched = spike_prob_rank(prior_batched, cell_fraction_per_bin)
+    >>> ranks_batched.shape
+    (2, 2)
+
     Notes
     -----
     This matches the MATLAB implementation:
     sum(lambda_expect(lambda_expect <= lambda_expect(j)))
     where lambda_expect are probabilities summing to 1.
     """
-    contrib: NDArray[np.floating] = (
-        prior @ cell_fraction_per_bin
-    )  # (n_cells,) - expected contribution per cell
-    # For each cell, sum contributions of cells with equal or lower contribution
-    mask = contrib[:, None] <= contrib  # Broadcasting creates (n_cells, n_cells) comparison matrix
-    spike_probs: NDArray[np.floating] = (contrib * mask).sum(axis=1)
+    # prior @ cell_fraction_per_bin gives expected contribution per cell
+    # Shape: (n_cells,) for 1D prior, (n_time, n_cells) for 2D prior
+    contrib: NDArray[np.floating] = prior @ cell_fraction_per_bin
+
+    if contrib.ndim == 1:
+        # Single timestep: (n_cells,)
+        # mask[i, j] = True means contrib[i] <= contrib[j]
+        mask = contrib[:, None] <= contrib  # (n_cells, n_cells)
+        spike_probs: NDArray[np.floating] = (contrib[:, None] * mask).sum(axis=0)
+    else:
+        # Batched: (n_time, n_cells)
+        # mask[t, i, j] = True means contrib[t, i] <= contrib[t, j]
+        mask = contrib[:, :, None] <= contrib[:, None, :]  # (n_time, n_cells, n_cells)
+        spike_probs = (contrib[:, :, None] * mask).sum(axis=1)  # (n_time, n_cells)
+
     return spike_probs
 
 

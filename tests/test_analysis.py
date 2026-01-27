@@ -9,9 +9,9 @@ from statespacecheck_paper.analysis import (
     DecodeParams,
     Thresholds,
     Transformed,
-    apply_remap_for_likelihoods,
     compute_thresholds,
     decode_and_diagnostics,
+    get_remapped_pf_centers,
     likelihood_grid_for_counts,
     transform_metrics,
 )
@@ -130,69 +130,68 @@ class TestLikelihoodGridForCounts:
         np.testing.assert_allclose(np.sum(likelihood, axis=0), 1.0, rtol=1e-5)
 
 
-class TestApplyRemapForLikelihoods:
-    """Tests for apply_remap_for_likelihoods function."""
+class TestGetRemappedPfCenters:
+    """Tests for get_remapped_pf_centers function."""
 
     def test_inactive_returns_unchanged(self) -> None:
-        """Test that active=False returns unchanged likelihood."""
+        """Test that active=False returns unchanged pf_centers."""
         # Arrange
-        rng = np.random.default_rng(42)
-        likelihood = rng.random((20, 5))
+        pf_centers = np.array([0.0, 10.0, 20.0, 30.0, 40.0])
         remap_from_to = (0, 1)
         active = False
 
         # Act
-        result = apply_remap_for_likelihoods(likelihood, remap_from_to, active)
+        result = get_remapped_pf_centers(pf_centers, remap_from_to, active)
 
         # Assert
-        np.testing.assert_array_equal(result, likelihood)
+        np.testing.assert_array_equal(result, pf_centers)
         # Verify it's not a copy (same object)
-        assert result is likelihood
+        assert result is pf_centers
 
     def test_single_remapping(self) -> None:
         """Test that single remapping (src, dst) works correctly."""
         # Arrange
-        likelihood = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])  # (2 bins, 3 cells)
-        remap_from_to = (0, 2)  # Cell 0 should become like cell 2
+        pf_centers = np.array([0.0, 10.0, 20.0, 30.0])  # 4 cells
+        remap_from_to = (2, 0)  # Cell 2 should use cell 0's place field center
         active = True
 
         # Act
-        result = apply_remap_for_likelihoods(likelihood, remap_from_to, active)
+        result = get_remapped_pf_centers(pf_centers, remap_from_to, active)
 
         # Assert
-        expected = np.array([[3.0, 2.0, 3.0], [6.0, 5.0, 6.0]])
+        expected = np.array([0.0, 10.0, 0.0, 30.0])  # Cell 2's center changed to 0.0
         np.testing.assert_array_equal(result, expected)
         # Verify original is unchanged
-        np.testing.assert_array_equal(likelihood, [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+        np.testing.assert_array_equal(pf_centers, [0.0, 10.0, 20.0, 30.0])
 
     def test_multiple_remappings(self) -> None:
         """Test that multiple remappings work correctly."""
         # Arrange
-        likelihood = np.array([[1.0, 2.0, 3.0, 4.0]])  # (1 bin, 4 cells)
+        pf_centers = np.array([0.0, 10.0, 20.0, 30.0])  # 4 cells
         remap_from_to = ((0, 1), (2, 3))  # Cell 0→1, Cell 2→3
         active = True
 
         # Act
-        result = apply_remap_for_likelihoods(likelihood, remap_from_to, active)
+        result = get_remapped_pf_centers(pf_centers, remap_from_to, active)
 
         # Assert
-        expected = np.array([[2.0, 2.0, 4.0, 4.0]])
+        expected = np.array([10.0, 10.0, 30.0, 30.0])
         np.testing.assert_array_equal(result, expected)
 
     def test_returns_copy_when_active(self) -> None:
         """Test that active=True returns a copy, not modifying original."""
         # Arrange
-        likelihood = np.array([[1.0, 2.0, 3.0]])
+        pf_centers = np.array([0.0, 10.0, 20.0])
         remap_from_to = (0, 1)
         active = True
 
         # Act
-        result = apply_remap_for_likelihoods(likelihood, remap_from_to, active)
+        result = get_remapped_pf_centers(pf_centers, remap_from_to, active)
 
         # Assert
-        assert result is not likelihood
+        assert result is not pf_centers
         # Original should be unchanged
-        np.testing.assert_array_equal(likelihood, [[1.0, 2.0, 3.0]])
+        np.testing.assert_array_equal(pf_centers, [0.0, 10.0, 20.0])
 
 
 class TestDecodeAndDiagnostics:

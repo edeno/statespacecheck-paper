@@ -210,6 +210,50 @@ class TestSpikeProbRank:
         # All cells should have same rank when contributions are equal
         assert_allclose(result, result[0] * np.ones(n_cells), atol=1e-10)
 
+    def test_spike_prob_rank_batched_shape(self) -> None:
+        """Test that batched input produces correct output shape."""
+        n_time = 10
+        n_bins = 5
+        n_cells = 3
+        rng = np.random.default_rng(42)
+        prior_batched = rng.dirichlet(np.ones(n_bins), size=n_time)
+        lambda_ratio = np.ones((n_bins, n_cells)) / n_bins
+        result = spike_prob_rank(prior_batched, lambda_ratio)
+        assert result.shape == (n_time, n_cells)
+
+    def test_spike_prob_rank_batched_values_in_range(self) -> None:
+        """Test that batched output values are in [0, 1]."""
+        n_time = 10
+        n_bins = 5
+        n_cells = 3
+        rng = np.random.default_rng(42)
+        prior_batched = rng.dirichlet(np.ones(n_bins), size=n_time)
+        lambda_ratio = rng.random((n_bins, n_cells))
+        lambda_ratio = lambda_ratio / lambda_ratio.sum(axis=0, keepdims=True)
+        result = spike_prob_rank(prior_batched, lambda_ratio)
+        assert np.all(result >= 0.0)
+        assert np.all(result <= 1.0)
+
+    def test_spike_prob_rank_batched_matches_loop(self) -> None:
+        """Test that batched computation matches per-timestep loop."""
+        n_time = 10
+        n_bins = 5
+        n_cells = 3
+        rng = np.random.default_rng(42)
+        prior_batched = rng.dirichlet(np.ones(n_bins), size=n_time)
+        lambda_ratio = rng.random((n_bins, n_cells))
+        lambda_ratio = lambda_ratio / lambda_ratio.sum(axis=0, keepdims=True)
+
+        # Batched computation
+        result_batched = spike_prob_rank(prior_batched, lambda_ratio)
+
+        # Per-timestep loop
+        result_loop = np.zeros((n_time, n_cells))
+        for t in range(n_time):
+            result_loop[t] = spike_prob_rank(prior_batched[t], lambda_ratio)
+
+        assert_allclose(result_batched, result_loop)
+
 
 class TestSimulateWalk:
     """Tests for simulate_walk function."""

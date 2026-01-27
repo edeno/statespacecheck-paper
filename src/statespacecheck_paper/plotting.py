@@ -29,7 +29,7 @@ from statespacecheck_paper.analysis import (
     DecodeParams,
     Thresholds,
     Transformed,
-    apply_remap_for_likelihoods,
+    get_remapped_pf_centers,
     likelihood_grid_for_counts,
 )
 from statespacecheck_paper.simulation import gaussian_transition_matrix, normalize
@@ -784,14 +784,14 @@ def plot_misfit_examples(
         # Compute prior
         prior = normalize(prev_post @ transition_matrix)
 
-        # Compute combined likelihood
-        likelihood = likelihood_grid_for_counts(
-            xs, placefield_centers, placefield_width, rate_scale, spikes[example_time]
+        # Compute combined likelihood (with remapping if in remap window)
+        active_remap = params.T_remap_start <= example_time <= params.T_remap_end
+        current_pf_centers = get_remapped_pf_centers(
+            placefield_centers, params.remap_from_to, active_remap
         )
-
-        # Apply remapping if in remap window
-        if params.T_remap_start <= example_time <= params.T_remap_end:
-            likelihood = apply_remap_for_likelihoods(likelihood, params.remap_from_to, active=True)
+        likelihood = likelihood_grid_for_counts(
+            xs, current_pf_centers, placefield_width, rate_scale, spikes[example_time]
+        )
 
         combined_likelihood = normalize(np.prod(likelihood, axis=1))
 
@@ -1106,17 +1106,20 @@ def plot_combined_diagnostics(
         color=COLORS["threshold"],
     )
 
-    # Spike probability: lower values indicate worse fit
+    # Spike probability: transform to -log10(p) so higher values indicate worse fit
+    # This makes interpretation consistent with KL divergence (higher = worse)
+    spike_prob_transformed = -np.log10(np.maximum(metrics["spike_prob"], 1e-10))
+    threshold_transformed = -np.log10(np.maximum(thresholds.spike_prob, 1e-10))
     ax_spike.scatter(
         time_indices.ravel(),
-        metrics["spike_prob"].ravel(),
+        spike_prob_transformed.ravel(),
         s=0.8,
         alpha=0.6,
         c=COLORS["metric_combined"],
         rasterized=True,
     )
     ax_spike.axhline(
-        thresholds.spike_prob,
+        threshold_transformed,
         color=COLORS["threshold"],
         linewidth=1.2,
         alpha=0.7,
@@ -1124,14 +1127,14 @@ def plot_combined_diagnostics(
         label="Threshold",
     )
     ax_spike.set_xlim(0, n_time)
-    ax_spike.set_ylabel("Spike Prob", fontsize=9, labelpad=7)
+    ax_spike.set_ylabel(r"$-\log_{10}(p)$", fontsize=9, labelpad=7)
     ax_spike.set_xlabel("Time (a.u.)", fontsize=9, labelpad=7)
     ax_spike.tick_params(labelsize=7)
-    # Add directional indicator (lower values indicate misfit for spike_prob)
+    # Add directional indicator (higher values now indicate misfit after log transform)
     ax_spike.text(
         1.01,
         0.5,
-        "↓ Worse fit",
+        "↑ Worse fit",
         transform=ax_spike.transAxes,
         fontsize=6,
         va="center",
@@ -1139,7 +1142,7 @@ def plot_combined_diagnostics(
     )
     ax_spike.text(
         1.01,
-        thresholds.spike_prob,
+        threshold_transformed,
         "Threshold",
         transform=ax_spike.get_yaxis_transform(),
         fontsize=6,
@@ -1251,12 +1254,15 @@ def plot_combined_diagnostics(
             transition_matrix = gaussian_transition_matrix(xs, params.sigx_pred)
 
         prior = normalize(prev_post @ transition_matrix)
-        likelihood = likelihood_grid_for_counts(
-            xs, placefield_centers, placefield_width, rate_scale, spikes[example_time]
-        )
 
-        if params.T_remap_start <= example_time <= params.T_remap_end:
-            likelihood = apply_remap_for_likelihoods(likelihood, params.remap_from_to, active=True)
+        # Compute likelihood (with remapping if in remap window)
+        active_remap = params.T_remap_start <= example_time <= params.T_remap_end
+        current_pf_centers = get_remapped_pf_centers(
+            placefield_centers, params.remap_from_to, active_remap
+        )
+        likelihood = likelihood_grid_for_counts(
+            xs, current_pf_centers, placefield_width, rate_scale, spikes[example_time]
+        )
 
         combined_likelihood = normalize(np.prod(likelihood, axis=1))
 
