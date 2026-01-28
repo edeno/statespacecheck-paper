@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import matplotlib
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
@@ -33,6 +34,247 @@ from scipy.ndimage import label
 from track_linearization import plot_graph_as_1D
 
 from statespacecheck_paper.style import COLORS
+
+
+def add_scalebar(
+    ax: Axes,
+    length: float,
+    label: str,
+    loc: str = "lower right",
+    pad: float = 0.1,
+    fontsize: int = 7,
+) -> None:
+    """Add a scale bar to an axes.
+
+    Parameters
+    ----------
+    ax : Axes
+        The axes to add the scale bar to.
+    length : float
+        Length of the scale bar in data units.
+    label : str
+        Label text for the scale bar.
+    loc : str, default "lower right"
+        Location for the scale bar.
+    pad : float, default 0.1
+        Padding from edges as fraction of axes size.
+    fontsize : int, default 7
+        Font size for the label.
+    """
+    xlim = ax.get_xlim()
+    ylim = ax.get_ylim()
+    x_range = xlim[1] - xlim[0]
+    y_range = ylim[1] - ylim[0]
+
+    if "right" in loc:
+        x_start = xlim[1] - pad * x_range - length
+    else:
+        x_start = xlim[0] + pad * x_range
+
+    if "lower" in loc:
+        y_pos = ylim[0] + pad * y_range
+    else:
+        y_pos = ylim[1] - pad * y_range
+
+    ax.plot([x_start, x_start + length], [y_pos, y_pos], "k-", linewidth=2, clip_on=False)
+    ax.text(
+        x_start + length / 2,
+        y_pos - 0.03 * y_range,
+        label,
+        ha="center",
+        va="top",
+        fontsize=fontsize,
+    )
+
+
+def plot_track_graph_2d(
+    track_graph: nx.Graph,
+    position_info: pd.DataFrame,
+    ax: Axes | None = None,
+    edge_order: list[tuple[int, int]] | None = None,
+    reward_well_nodes: list[int] | None = None,
+    edge_colors: NDArray[np.float64] | None = None,
+    position_names: tuple[str, str] = ("head_position_x", "head_position_y"),
+    scalebar_length: float = 20,
+    scalebar_label: str = "20 cm",
+    show_trajectory: bool = True,
+) -> Axes:
+    """Plot 2D track graph with optional position trajectory overlay.
+
+    Parameters
+    ----------
+    track_graph : networkx.Graph
+        Track graph with nodes containing 'pos' attributes.
+    position_info : pandas.DataFrame
+        DataFrame containing position columns for trajectory overlay.
+    ax : Axes, optional
+        Axes to plot on. If None, uses current axes.
+    edge_order : list of tuple of int, optional
+        Order of edges. If None, uses graph's natural edge order.
+    reward_well_nodes : list of int, optional
+        Node indices that are reward wells (marked with scatter points).
+    edge_colors : ndarray, optional
+        Array of colors for each edge. If None, uses tab10 colormap.
+    position_names : tuple of str, optional
+        Column names for (x, y) position in position_info.
+    scalebar_length : float, optional
+        Length of scale bar in data units, by default 20.
+    scalebar_label : str, optional
+        Label for scale bar, by default "20 cm".
+    show_trajectory : bool, default True
+        Whether to show the position trajectory.
+
+    Returns
+    -------
+    ax : Axes
+        The axes object.
+    """
+    if ax is None:
+        ax = plt.gca()
+    if reward_well_nodes is None:
+        reward_well_nodes = []
+    if edge_colors is None:
+        cmap = matplotlib.colormaps.get_cmap("tab10")
+        edge_colors = np.array([cmap(i) for i in range(10)])
+    if edge_order is None:
+        edge_order = list(track_graph.edges)
+
+    # Plot trajectory
+    if show_trajectory:
+        ax.plot(
+            position_info[position_names[0]],
+            position_info[position_names[1]],
+            color="lightgrey",
+            alpha=0.7,
+            linewidth=0.5,
+            rasterized=True,
+        )
+
+    # Plot track graph edges
+    for edge_ind, (node1, node2) in enumerate(edge_order):
+        edge_color = edge_colors[edge_ind % len(edge_colors)]
+        node1_pos = track_graph.nodes[node1]["pos"]
+        node2_pos = track_graph.nodes[node2]["pos"]
+        ax.plot(
+            [node1_pos[0], node2_pos[0]],
+            [node1_pos[1], node2_pos[1]],
+            linewidth=2,
+            color=edge_color,
+        )
+        if node1 in reward_well_nodes:
+            ax.scatter(
+                node1_pos[0],
+                node1_pos[1],
+                color=edge_color,
+                s=30,
+                zorder=10,
+            )
+        if node2 in reward_well_nodes:
+            ax.scatter(
+                node2_pos[0],
+                node2_pos[1],
+                color=edge_color,
+                s=30,
+                zorder=10,
+            )
+
+    add_scalebar(ax, scalebar_length, scalebar_label)
+    ax.set_aspect("equal", adjustable="box")
+    ax.axis("off")
+
+    return ax
+
+
+def plot_track_graph_1d(
+    track_graph: nx.Graph,
+    ax: Axes,
+    edge_order: list[tuple[int, int]] | None = None,
+    edge_spacing: float | list[float] = 0.0,
+    reward_well_nodes: list[int] | None = None,
+    other_axis_start: float = 0,
+    edge_colors: NDArray[np.float64] | None = None,
+    reward_well_size: int = 10,
+    edge_linewidth: int = 2,
+) -> None:
+    """Plot track graph as 1D linearized representation.
+
+    Draws the track graph edges as vertical line segments positioned
+    sequentially to show the linearized track structure.
+
+    Parameters
+    ----------
+    track_graph : networkx.Graph
+        Track graph with edges containing 'distance' attributes (in cm).
+    ax : Axes
+        Axes to plot on.
+    edge_order : list of tuple of int, optional
+        Order of edges for linearization. If None, uses graph's natural edge order.
+    edge_spacing : float or list of float, optional
+        Spacing between edges in cm. By default 0.0.
+    reward_well_nodes : list of int, optional
+        Node indices that are reward wells (marked with scatter points).
+    other_axis_start : float, optional
+        X-position for the 1D representation in data coordinates.
+    edge_colors : ndarray, optional
+        Array of RGB colors for each edge. If None, uses tab10 colormap.
+    reward_well_size : int, optional
+        Marker size for reward well points, by default 10.
+    edge_linewidth : int, optional
+        Line width for edge segments, by default 2.
+    """
+    if edge_order is None:
+        edge_order = list(track_graph.edges)
+    if reward_well_nodes is None:
+        reward_well_nodes = []
+    if edge_colors is None:
+        cmap = matplotlib.colormaps.get_cmap("tab10")
+        edge_colors = np.array([cmap(i) for i in range(10)])
+
+    n_edges = len(edge_order)
+    if isinstance(edge_spacing, int | float):
+        edge_spacing_list = [float(edge_spacing)] * (n_edges - 1)
+    else:
+        edge_spacing_list = list(edge_spacing)
+
+    start_node_linear_position = 0.0
+
+    for edge_ind, edge in enumerate(edge_order):
+        edge_color = edge_colors[edge_ind % len(edge_colors)]
+        end_node_linear_position = start_node_linear_position + track_graph.edges[edge]["distance"]
+        ax.plot(
+            (other_axis_start, other_axis_start),
+            (start_node_linear_position, end_node_linear_position),
+            color=edge_color,
+            clip_on=False,
+            zorder=7,
+            linewidth=edge_linewidth,
+        )
+        if edge[0] in reward_well_nodes:
+            ax.scatter(
+                other_axis_start,
+                start_node_linear_position,
+                color=edge_color,
+                s=reward_well_size,
+                zorder=10,
+                clip_on=False,
+            )
+        if edge[1] in reward_well_nodes:
+            ax.scatter(
+                other_axis_start,
+                end_node_linear_position,
+                color=edge_color,
+                s=reward_well_size,
+                zorder=10,
+                clip_on=False,
+            )
+
+        # Update position for next edge (skip spacing on last edge)
+        if edge_ind < len(edge_spacing_list):
+            start_node_linear_position += (
+                track_graph.edges[edge]["distance"] + edge_spacing_list[edge_ind]
+            )
+        else:
+            start_node_linear_position += track_graph.edges[edge]["distance"]
 
 
 def plot_raster(
@@ -78,7 +320,8 @@ def plot_raster(
 
     ax.eventplot(
         time_slice_spike_times,
-        linelengths=0.5,
+        linelengths=0.8,
+        linewidths=1.0,
         colors="black",
         rasterized=True,
         **eventplot_kwargs,
@@ -1247,6 +1490,9 @@ def plot_model_comparison_with_posterior(
     model_b_name: str = "Continuous-Fragmented",
     thresholds: dict[str, float] | None = None,
     figsize: tuple[float, float] = (7.0, 8.5),
+    track_graph: nx.Graph | None = None,
+    edge_order: list[tuple[int, int]] | None = None,
+    edge_spacing: float | list[float] = 0.0,
 ) -> tuple[Figure, NDArray[np.object_]]:
     """Create model comparison with posterior heatmaps, spike raster, and diagnostics.
 
@@ -1406,6 +1652,23 @@ def plot_model_comparison_with_posterior(
         if col == 0:
             ax.legend(loc="upper left", fontsize=6, frameon=False)
 
+        # Add 1D track graph on right edge of posterior plot (inside plot area)
+        if track_graph is not None and col == 1:  # Only on right column
+            time_arr = np.asarray(time)
+            sliced_time = time_arr[time_slice_ind]
+            # Position inside the plot, near the right edge
+            # x_pos = float(sliced_time[-1]) - 0.02 * (sliced_time[-1] - sliced_time[0])
+            x_pos = float(sliced_time[-1])
+            plot_track_graph_1d(
+                track_graph,
+                ax=ax,
+                edge_order=edge_order,
+                edge_spacing=edge_spacing,
+                other_axis_start=x_pos,
+                edge_linewidth=3,
+                reward_well_size=20,
+            )
+
     # Row 1: Spike raster (both columns show same raster, sorted by place field peak)
     if spike_times is not None:
         # Compute sort order by place field peak position
@@ -1426,7 +1689,6 @@ def plot_model_comparison_with_posterior(
                 time_slice,
                 ax=ax,
                 sort_order=sort_order,
-                linewidths=0.5,
             )
             ax.set_ylabel("Neuron" if col == 0 else "", fontsize=9, labelpad=7)
             ax.set_xlabel("")
@@ -1479,5 +1741,123 @@ def plot_model_comparison_with_posterior(
     # Hide y-tick labels on right column (since y-axes are shared within rows)
     for row in range(5):
         axes[row, 1].tick_params(labelleft=False)
+
+    return fig, axes
+
+
+def plot_metric_distributions(
+    diagnostics_a: dict[str, NDArray[np.float64]],
+    diagnostics_b: dict[str, NDArray[np.float64]],
+    model_a_name: str = "Continuous",
+    model_b_name: str = "Continuous-Fragmented",
+    figsize: tuple[float, float] = (7.0, 2.5),
+) -> tuple[Figure, NDArray[np.object_]]:
+    """Plot scatter comparison of diagnostic metrics between two models.
+
+    Creates a 1x3 grid of scatter plots where each point represents a
+    (time, cell) pair. X-axis shows model A's metric value, Y-axis shows
+    model B's metric value. Points on the diagonal indicate agreement.
+
+    Parameters
+    ----------
+    diagnostics_a : dict[str, np.ndarray]
+        Diagnostics for model A with keys 'hpd_overlap', 'kl_divergence', 'spike_prob'.
+        Each array has shape (n_time, n_cells).
+    diagnostics_b : dict[str, np.ndarray]
+        Diagnostics for model B with same keys.
+    model_a_name : str, default "Continuous"
+        Name for model A (x-axis label).
+    model_b_name : str, default "Continuous-Fragmented"
+        Name for model B (y-axis label).
+    figsize : tuple[float, float], default (7.0, 2.5)
+        Figure size in inches.
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        The figure object.
+    axes : np.ndarray[plt.Axes]
+        Array of axes objects with shape (1, 3).
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> diag_a = {
+    ...     "hpd_overlap": np.random.rand(100, 10),
+    ...     "kl_divergence": np.random.rand(100, 10),
+    ...     "spike_prob": np.random.rand(100, 10),
+    ... }
+    >>> diag_b = {k: np.random.rand(100, 10) for k in diag_a}
+    >>> fig, axes = plot_metric_distributions(diag_a, diag_b)
+    >>> plt.close(fig)
+    """
+    metrics = ["hpd_overlap", "kl_divergence", "spike_prob"]
+    titles = ["HPD Overlap", "KL Divergence", r"$-\log_{10}(p)$"]
+    colors = [COLORS["hpd_overlap"], COLORS["kl_divergence"], COLORS["metric_combined"]]
+
+    fig, axes = plt.subplots(1, 3, figsize=figsize, constrained_layout=True)
+    axes = np.atleast_1d(axes)
+
+    for i, (metric, title, color) in enumerate(zip(metrics, titles, colors, strict=True)):
+        ax = axes[i]
+
+        # Get data and flatten
+        data_a = diagnostics_a[metric].ravel()
+        data_b = diagnostics_b[metric].ravel()
+
+        # Transform spike_prob to -log10 scale
+        if metric == "spike_prob":
+            data_a = -np.log10(np.maximum(data_a, 1e-10))
+            data_b = -np.log10(np.maximum(data_b, 1e-10))
+
+        # Create mask for valid (non-NaN) values in both arrays
+        valid_mask = ~np.isnan(data_a) & ~np.isnan(data_b)
+        data_a = data_a[valid_mask]
+        data_b = data_b[valid_mask]
+
+        # Scatter plot: model A vs model B
+        ax.scatter(
+            data_a,
+            data_b,
+            s=0.8,
+            alpha=0.3,
+            c=color,
+            rasterized=True,
+        )
+
+        # Add identity line (y=x)
+        lims = [
+            min(ax.get_xlim()[0], ax.get_ylim()[0]),
+            max(ax.get_xlim()[1], ax.get_ylim()[1]),
+        ]
+        ax.plot(
+            lims,
+            lims,
+            color=COLORS["threshold"],
+            linewidth=1,
+            linestyle="--",
+            alpha=0.7,
+        )
+        ax.set_xlim(lims)
+        ax.set_ylim(lims)
+
+        # Labels and styling
+        ax.set_xlabel(model_a_name, fontsize=9, labelpad=7)
+        ax.set_ylabel(model_b_name if i == 0 else "", fontsize=9, labelpad=7)
+        ax.set_title(title, fontsize=9)
+        ax.tick_params(labelsize=7)
+        ax.set_aspect("equal", adjustable="box")
+
+        # Add n values as text
+        ax.text(
+            0.02,
+            0.98,
+            f"n={len(data_a):,}",
+            transform=ax.transAxes,
+            fontsize=6,
+            va="top",
+            ha="left",
+            color="gray",
+        )
 
     return fig, axes

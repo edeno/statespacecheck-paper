@@ -15,6 +15,7 @@ import warnings
 from pathlib import Path
 from typing import Any
 
+import matplotlib.pyplot as plt
 import numpy as np
 
 from statespacecheck_paper.load_local_data import load_neural_recording_from_files
@@ -26,8 +27,9 @@ from statespacecheck_paper.real_data_analysis import (
     get_spike_counts,
 )
 from statespacecheck_paper.real_data_plotting import (
-    plot_diagnostic_summary_comparison,
+    plot_metric_distributions,
     plot_model_comparison_with_posterior,
+    plot_track_graph_2d,
 )
 from statespacecheck_paper.style import save_figure, set_figure_defaults
 
@@ -50,15 +52,17 @@ except ImportError:
 DATA_PATH = Path(__file__).parent.parent / "data"
 ANIMAL_DATE_EPOCH = "j1620210710_02_r1"
 
-# Time parameters for development
-TEST_WINDOW_START = 177301 - 500  # Start index for decoding window
-TEST_WINDOW_END = 177301 + 500  # End index for decoding window
+# Time window for Figure 4a (index into decoded results)
+FIGURE_4A_WINDOW_CENTER = 177301  # Time index around which to show detail
+FIGURE_4A_WINDOW_HALF_WIDTH = 100  # Half-width in time points
 
 
 def run_demo() -> None:
     """Run the full Figure 4 generation pipeline.
 
     Loads data, fits models, computes diagnostics, and generates figures.
+    Decodes all time points for summary statistics (Figure 4b), then shows
+    a specific time window in detail (Figure 4a).
     """
     # Load data
     print("Loading data...")
@@ -88,41 +92,38 @@ def run_demo() -> None:
         environment=env,
     )
 
-    # Run decoding on test window
-    test_time = time[TEST_WINDOW_START:TEST_WINDOW_END]
-    test_linear_position = linear_position[TEST_WINDOW_START:TEST_WINDOW_END]
-
-    print(f"Decoding {len(test_time)} time points...")
+    # Decode all time points
+    print(f"Decoding {len(time)} time points...")
 
     continuous_results = continuous_model.predict(
         spike_times=spike_times_list,
-        time=test_time,
+        time=time,
         return_outputs="predictive_posterior",
     )
     contfrag_results = contfrag_model.predict(
         spike_times=spike_times_list,
-        time=test_time,
+        time=time,
         return_outputs="predictive_posterior",
     )
 
-    # Get spike counts
-    spike_counts = get_spike_counts(spike_times_list, test_time)
+    # Get spike counts for all time
+    spike_counts = get_spike_counts(spike_times_list, time)
 
-    # Compute diagnostics
+    # Compute diagnostics for all time
     print("Computing diagnostics...")
     continuous_diagnostics = compute_model_diagnostics(
-        continuous_model, continuous_results, spike_counts, test_time
+        continuous_model, continuous_results, spike_counts, time
     )
     contfrag_diagnostics = compute_model_diagnostics(
-        contfrag_model, contfrag_results, spike_counts, test_time
+        contfrag_model, contfrag_results, spike_counts, time
     )
 
     # Extract place fields to get peak positions for sorting raster
     place_fields, position_bins = extract_place_fields(continuous_model)
     place_field_peaks = position_bins[np.argmax(place_fields, axis=1)]
 
-    # Print summary
-    print("\n=== Diagnostic Summary ===")
+    # Print summary (all time points)
+    print("\n=== Diagnostic Summary (all time points) ===")
     for metric in ["hpd_overlap", "kl_divergence", "spike_prob"]:
         cont_mean = np.nanmean(continuous_diagnostics[metric])
         frag_mean = np.nanmean(contfrag_diagnostics[metric])
@@ -134,24 +135,34 @@ def run_demo() -> None:
     print("\nGenerating Figure 4...")
     set_figure_defaults()
 
-    # Figure 4a: Model comparison with posterior, raster, and diagnostics
+    # Define time slice for Figure 4a (detail view)
+    window_start = FIGURE_4A_WINDOW_CENTER - FIGURE_4A_WINDOW_HALF_WIDTH
+    window_end = FIGURE_4A_WINDOW_CENTER + FIGURE_4A_WINDOW_HALF_WIDTH
+    time_slice_ind = slice(window_start, window_end)
+
+    # Figure 4a: Model comparison with posterior, raster, and diagnostics (time window)
+    # should plot predictive posterior, likelihood, filter distribution?
     fig, axes = plot_model_comparison_with_posterior(
-        test_time,
-        test_linear_position,
+        time,
+        linear_position,
         continuous_results,
         contfrag_results,
         continuous_diagnostics,
         contfrag_diagnostics,
         spike_times=spike_times_list,
         place_field_peaks=place_field_peaks,
+        time_slice_ind=time_slice_ind,
         model_a_name="Continuous",
         model_b_name="Continuous-Fragmented",
+        track_graph=data["track_graph"],
+        edge_order=data["linear_edge_order"],
+        edge_spacing=data["linear_edge_spacing"],
     )
     save_figure("figures/main/figure04a", close=True)
     print("Saved figures/main/figure04a.{pdf,png}")
 
-    # Figure 4b: Summary bar chart
-    fig, axes = plot_diagnostic_summary_comparison(
+    # Figure 4b: Metric distributions comparing all time points
+    fig, axes = plot_metric_distributions(
         continuous_diagnostics,
         contfrag_diagnostics,
         model_a_name="Continuous",
@@ -159,6 +170,18 @@ def run_demo() -> None:
     )
     save_figure("figures/main/figure04b", close=True)
     print("Saved figures/main/figure04b.{pdf,png}")
+
+    # Figure 4c: 2D track graph for reference
+    fig, ax = plt.subplots(figsize=(2.5, 2.5), constrained_layout=True)
+    plot_track_graph_2d(
+        data["track_graph"],
+        position_info,
+        ax=ax,
+        edge_order=data["linear_edge_order"],
+        show_trajectory=True,
+    )
+    save_figure("figures/main/figure04c", close=True)
+    print("Saved figures/main/figure04c.{pdf,png}")
 
     print("\nFigure 4 complete!")
 
