@@ -1063,7 +1063,7 @@ def plot_combined_diagnostics(
     ax_hpdo.tick_params(labelsize=7, labelbottom=False)
     # Add directional indicator and threshold annotation
     ax_hpdo.text(
-        1.01, 0.5, "↓ Worse fit", transform=ax_hpdo.transAxes, fontsize=6, va="center", ha="left"
+        1.01, 0.02, "↓ Worse fit", transform=ax_hpdo.transAxes, fontsize=6, va="bottom", ha="left"
     )
     ax_hpdo.text(
         1.01,
