@@ -1355,9 +1355,15 @@ def plot_combined_diagnostics(
         spike_prob_val = np.nanmean(metrics["spike_prob"][example_time])
 
         if np.isnan(spike_prob_val):
-            metrics_text = f"HPD: {hpdo_val:.2f}\nKL: {kl_val:.1f}\nSP: N/A"
+            metrics_text = f"HPD: {hpdo_val:.2f}\nKL: {kl_val:.1f}\n" + r"$-\log_{10}(p)$: N/A"
         else:
-            metrics_text = f"HPD: {hpdo_val:.2f}\nKL: {kl_val:.1f}\nSP: {spike_prob_val:.2g}"
+            # Transform to -log10 scale for consistency with time-series plot
+            spike_prob_transformed = -np.log10(max(spike_prob_val, 1e-10))
+            metrics_text = (
+                f"HPD: {hpdo_val:.2f}\nKL: {kl_val:.1f}\n"
+                + r"$-\log_{10}(p)$"
+                + f": {spike_prob_transformed:.1f}"
+            )
         ax1.text(
             0.05,
             0.95,

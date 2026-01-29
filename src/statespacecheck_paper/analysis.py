@@ -432,7 +432,7 @@ def decode_and_diagnostics(
     >>> np.all(np.isnan(results['hpd_overlap'][0]))  # t=0 has no prior
     True
     """
-    n_time, n_cells = spikes.shape
+    n_time = spikes.shape[0]
     n_bins = xs.size
 
     # Initialize RNG if not provided (reserved for future use)
@@ -441,27 +441,15 @@ def decode_and_diagnostics(
     # Suppress unused variable warning
     _ = rng
 
-    # Preallocate outputs (NaN for unavailable values)
-    # Per-cell metrics: shape (n_time, n_cells), NaN when cell has no spike
+    # Preallocate outputs
     posterior: NDArray[np.floating] = np.zeros((n_time, n_bins))
-    hpd_overlap: NDArray[np.floating] = np.full((n_time, n_cells), np.nan)
-    kl_divergence: NDArray[np.floating] = np.full((n_time, n_cells), np.nan)
-    spike_prob: NDArray[np.floating] = np.full((n_time, n_cells), np.nan)
-
-    # Storage for distributions
     predictive_posterior: NDArray[np.floating] = np.zeros((n_time, n_bins))  # p(x_t | y_{1:t-1})
     combined_likelihood_all: NDArray[np.floating] = np.zeros((n_time, n_bins))  # p(y_t | x_t)
-    # Per-cell likelihoods for batched diagnostic computation
-    per_cell_likelihood: NDArray[np.floating] = np.zeros((n_time, n_bins, n_cells))
 
     # t=0 (MATLAB used a flat prior at t=1)
     posterior[0] = normalize(np.ones(n_bins))
     predictive_posterior[0] = posterior[0]  # At t=0, predictive = prior
     combined_likelihood_all[0] = normalize(np.ones(n_bins))  # Flat at t=0
-
-    rate_grid_all = placefield_rates(xs, pf_centers, pf_width, rate_scale)  # (n_bins, n_cells)
-    # Normalize to get per-bin cell-fractions (rows sum to 1)
-    cell_fraction_per_bin = normalize(rate_grid_all, axis=1)
 
     start_r, end_r = remap_window
     start_narrow, end_narrow = _window_or_never(narrow_window, n_time)
@@ -496,9 +484,6 @@ def decode_and_diagnostics(
         combined_likelihood = np.prod(likelihood, axis=1)  # (n_bins,)
         combined_likelihood_all[t] = normalize(combined_likelihood)  # Store normalized likelihood
 
-        # Store per-cell likelihoods (normalized) for batched diagnostic computation
-        per_cell_likelihood[t] = normalize(likelihood, axis=0)  # Normalize each cell's likelihood
-
         # Posterior update with underflow protection
         # When prior-likelihood mismatch is extreme, the product can underflow to zero.
         # Fall back to uniform distribution to allow filter to recover.
@@ -509,35 +494,130 @@ def decode_and_diagnostics(
         else:
             posterior[t] = unnormalized_posterior / posterior_sum
 
-    # Compute per-cell diagnostics in batched mode (once per cell, vectorized over time)
-    for j in range(n_cells):
-        # Get cell j's likelihood across all timesteps: (n_time, n_bins)
-        lik_j_all = per_cell_likelihood[:, :, j]
+    # Find all spike events (excluding t=0 which has no valid prior)
+    spike_time_ind, spike_cell_ind = np.nonzero(spikes[1:])
+    spike_time_ind = spike_time_ind + 1  # Adjust for offset from [1:]
 
-        # Compute HPD overlap and KL divergence for all timesteps at once
-        hpd_overlap[:, j] = ssc.hpd_overlap(predictive_posterior, lik_j_all, coverage=0.95)
-        kl_divergence[:, j] = ssc.kl_divergence(predictive_posterior, lik_j_all)
+    # Compute rates from place field parameters: (n_bins, n_cells)
+    rates = placefield_rates(xs, pf_centers, pf_width, rate_scale)
 
-    # Mask t=0 (no valid prior) and cells that did not fire (set to NaN)
-    no_spike_mask = spikes == 0
-    hpd_overlap[0, :] = np.nan  # t=0 has no valid prior
-    kl_divergence[0, :] = np.nan
-    hpd_overlap[no_spike_mask] = np.nan
-    kl_divergence[no_spike_mask] = np.nan
-
-    # Compute spike_prob in batched mode (vectorized over time)
-    spike_prob = spike_prob_rank(predictive_posterior, cell_fraction_per_bin)
-    # Mask t=0 and cells that did not fire
-    spike_prob[0, :] = np.nan
-    spike_prob[no_spike_mask] = np.nan
+    # Compute per-cell diagnostics using shared function
+    diagnostics = compute_per_cell_diagnostics_from_rates(
+        predictive_posterior,
+        rates,
+        spike_time_ind,
+        spike_cell_ind,
+        coverage=0.95,
+    )
 
     return {
         "posterior": posterior,
         "predictive": predictive_posterior,
         "likelihood": combined_likelihood_all,
-        "hpd_overlap": hpd_overlap,  # (n_time, n_cells)
-        "kl_divergence": kl_divergence,  # (n_time, n_cells)
-        "spike_prob": spike_prob,  # (n_time, n_cells)
+        "hpd_overlap": diagnostics["hpd_overlap"],
+        "kl_divergence": diagnostics["kl_divergence"],
+        "spike_prob": diagnostics["spike_prob"],
+    }
+
+
+# -----------------------------
+# Per-cell diagnostics (shared logic)
+# -----------------------------
+
+
+def compute_per_cell_diagnostics_from_rates(
+    predictive_posterior: NDArray[np.floating],
+    rates: NDArray[np.floating],
+    spike_time_ind: NDArray[np.intp],
+    spike_cell_ind: NDArray[np.intp],
+    coverage: float = 0.95,
+) -> dict[str, NDArray[np.floating]]:
+    """Compute per-cell diagnostic metrics at spike times.
+
+    This is the core computation shared by both simulated and real data analysis.
+    It computes HPD overlap, KL divergence, and spike probability ranking for
+    each spike event, assuming each spike represents exactly one spike (k=1).
+
+    Parameters
+    ----------
+    predictive_posterior : np.ndarray, shape (n_time, n_bins)
+        Predictive posterior distribution over position at each time.
+    rates : np.ndarray, shape (n_bins, n_cells)
+        Expected spike rate (spikes/bin) at each position for each cell.
+    spike_time_ind : np.ndarray, shape (n_spikes,)
+        Time indices where spikes occurred.
+    spike_cell_ind : np.ndarray, shape (n_spikes,)
+        Cell indices for each spike event.
+    coverage : float, default 0.95
+        Coverage probability for HPD region computation.
+
+    Returns
+    -------
+    diagnostics : dict[str, np.ndarray]
+        Dictionary with keys:
+        - 'hpd_overlap': shape (n_time, n_cells), NaN where no spike
+        - 'kl_divergence': shape (n_time, n_cells), NaN where no spike
+        - 'spike_prob': shape (n_time, n_cells), NaN where no spike
+
+    Notes
+    -----
+    The likelihood P(k=1 | position) is computed for each spike event using
+    the Poisson distribution. We assume each time bin contains at most one
+    spike, so the likelihood is always computed with k=1.
+    """
+    n_time = predictive_posterior.shape[0]
+    n_cells = rates.shape[1]
+    n_spikes = len(spike_time_ind)
+
+    # Initialize output arrays with NaN
+    hpd_overlap: NDArray[np.floating] = np.full((n_time, n_cells), np.nan)
+    kl_divergence: NDArray[np.floating] = np.full((n_time, n_cells), np.nan)
+    spike_prob: NDArray[np.floating] = np.full((n_time, n_cells), np.nan)
+
+    if n_spikes > 0:
+        # Gather predictive posterior at spike times: (n_spikes, n_bins)
+        pred_at_spikes = predictive_posterior[spike_time_ind]
+
+        # Get rates for each spike's cell: (n_spikes, n_bins)
+        rates_at_spikes = rates[:, spike_cell_ind].T  # (n_spikes, n_bins)
+
+        # Compute Poisson likelihood P(k=1 | lambda) for each spike
+        lik_at_spikes = poisson.pmf(1, mu=rates_at_spikes)  # (n_spikes, n_bins)
+
+        # Normalize per spike (over bins) to get proper distribution
+        lik_at_spikes = normalize(lik_at_spikes, axis=1)
+
+        # Compute diagnostics for all spikes in one vectorized call
+        hpd_at_spikes = ssc.hpd_overlap(pred_at_spikes, lik_at_spikes, coverage=coverage)
+        kl_at_spikes = ssc.kl_divergence(pred_at_spikes, lik_at_spikes)
+
+        # Scatter results back to (n_time, n_cells) arrays
+        hpd_overlap[spike_time_ind, spike_cell_ind] = hpd_at_spikes
+        kl_divergence[spike_time_ind, spike_cell_ind] = kl_at_spikes
+
+        # Compute spike_prob at unique spike times (more efficient)
+        # cell_fraction_per_bin: (n_bins, n_cells) - normalized so each row sums to 1
+        cell_fraction_per_bin = normalize(rates, axis=1)  # (n_bins, n_cells)
+
+        unique_spike_times = np.unique(spike_time_ind)
+        pred_at_unique_times = predictive_posterior[unique_spike_times]
+        spike_prob_at_unique_times = spike_prob_rank(
+            pred_at_unique_times, cell_fraction_per_bin
+        )  # (n_unique_times, n_cells)
+
+        # Map unique times to indices for fast lookup
+        time_to_idx = np.empty(n_time, dtype=np.intp)
+        time_to_idx[unique_spike_times] = np.arange(len(unique_spike_times))
+
+        # Scatter spike_prob values to output array at spike locations
+        spike_prob[spike_time_ind, spike_cell_ind] = spike_prob_at_unique_times[
+            time_to_idx[spike_time_ind], spike_cell_ind
+        ]
+
+    return {
+        "hpd_overlap": hpd_overlap,
+        "kl_divergence": kl_divergence,
+        "spike_prob": spike_prob,
     }
 
 

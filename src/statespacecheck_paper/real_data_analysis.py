@@ -29,13 +29,11 @@ from __future__ import annotations
 from typing import Any, Literal
 
 import numpy as np
-import statespacecheck as ssc
 import xarray as xr
 from numpy.typing import NDArray
 from scipy.ndimage import gaussian_filter1d, label
-from scipy.stats import poisson
 
-from statespacecheck_paper.simulation import normalize, spike_prob_rank
+from statespacecheck_paper.analysis import compute_per_cell_diagnostics_from_rates
 
 
 def gaussian_smooth(
@@ -234,35 +232,8 @@ def extract_place_fields(
     return place_fields, position_bins
 
 
-def compute_per_cell_likelihood(
-    place_fields: NDArray[np.float64],
-    dt: float = 1.0,
-) -> NDArray[np.float64]:
-    """Compute per-cell Poisson likelihood over position bins assuming 1 spike.
-
-    For each cell at each time point, computes the likelihood of observing the
-    spike count given the place field rates.
-
-    Parameters
-    ----------
-    place_fields : np.ndarray, shape (n_cells, n_bins)
-        Firing rate at each position bin for each cell.
-    dt : float, Optional, default=1.0
-        Time bin duration in seconds.
-
-    Returns
-    -------
-    likelihood : np.ndarray, shape (n_cells, n_bins)
-        Poisson likelihood for each cell at each position bin.
-
-    """
-    result: NDArray[np.float64] = poisson.pmf(np.ones_like(place_fields), mu=place_fields * dt)
-    return result
-
-
 def compute_per_cell_diagnostics(
     predictive_posterior: NDArray[np.float64],
-    per_cell_likelihood: NDArray[np.float64],
     spike_counts: NDArray[np.int64],
     place_fields: NDArray[np.float64],
     coverage: float = 0.95,
@@ -273,16 +244,18 @@ def compute_per_cell_diagnostics(
     cell at each time point. Metrics are set to NaN for cells that did not fire
     at a given time point (uninformative likelihood).
 
+    The likelihood for each spike is computed assuming spike count = 1,
+    which is appropriate when spike counts are typically 0 or 1 per time bin.
+
     Parameters
     ----------
     predictive_posterior : np.ndarray, shape (n_time, n_bins)
         State-marginalized predictive posterior distribution over position.
-    per_cell_likelihood : np.ndarray, shape (n_cells, n_bins)
-        Normalized likelihood for each cell at each time point.
     spike_counts : np.ndarray, shape (n_time, n_cells)
         Spike count for each cell at each time point.
     place_fields : np.ndarray, shape (n_cells, n_bins)
-        Firing rate at each position bin for each cell.
+        Expected spike count at each position bin for each cell (spikes/bin).
+        This is the format returned by non_local_detector.
     coverage : float, default 0.95
         Coverage probability for HPD region computation.
 
@@ -294,75 +267,51 @@ def compute_per_cell_diagnostics(
         - 'kl_divergence': shape (n_time, n_cells), NaN when cell has no spike
         - 'spike_prob': shape (n_time, n_cells), NaN when cell has no spike
 
+    Notes
+    -----
+    The likelihood P(k=1 | position) is computed for each spike event using
+    the Poisson distribution with rate lambda = place_fields (already in
+    spikes/bin from non_local_detector). We assume each bin contains at most
+    one spike, so the likelihood is always computed with k=1.
+
+    This function delegates to ``compute_per_cell_diagnostics_from_rates`` in
+    ``analysis.py`` to ensure identical computation for simulated and real data.
+
     Examples
     --------
     >>> import numpy as np
     >>> n_time, n_bins, n_cells = 100, 50, 10
     >>> predictive = np.random.dirichlet(np.ones(n_bins), size=n_time)
-    >>> likelihood = np.random.dirichlet(np.ones(n_bins), size=(n_time, n_cells))
-    >>> spike_counts = np.random.poisson(0.5, (n_time, n_cells))
     >>> place_fields = np.random.rand(n_cells, n_bins) * 10
+    >>> spike_counts = np.random.poisson(0.5, (n_time, n_cells))
     >>> diagnostics = compute_per_cell_diagnostics(
-    ...     predictive, likelihood, spike_counts, place_fields
+    ...     predictive, spike_counts, place_fields
     ... )
     >>> diagnostics['hpd_overlap'].shape
     (100, 10)
     """
     # Ensure all inputs are NumPy arrays (handles JAX arrays from decoder)
     predictive_posterior = np.asarray(predictive_posterior)
-    per_cell_likelihood = np.asarray(per_cell_likelihood)
     spike_counts = np.asarray(spike_counts)
     place_fields = np.asarray(place_fields)
 
-    n_time, n_cells = spike_counts.shape
+    # place_fields is (n_cells, n_bins), we need (n_bins, n_cells) for the shared function
+    rates = place_fields.T  # (n_bins, n_cells)
+
+    # Find all spike events: (time_index, cell_index) pairs
     spike_time_ind, spike_cell_ind = np.nonzero(spike_counts)
 
-    # Initialize output arrays with NaN
-    hpd_overlap = np.full((n_time, n_cells), np.nan, dtype=np.float64)
-    kl_divergence = np.full((n_time, n_cells), np.nan, dtype=np.float64)
+    # Use shared function from analysis.py
+    result = compute_per_cell_diagnostics_from_rates(
+        predictive_posterior,
+        rates,
+        spike_time_ind.astype(np.intp),
+        spike_cell_ind.astype(np.intp),
+        coverage=coverage,
+    )
 
-    n_bins = place_fields.shape[1]
-
-    # Compute HPD overlap and KL divergence for each cell
-    for j in range(n_cells):
-        is_spike = spike_cell_ind == j
-        cell_spike_time_ind = spike_time_ind[is_spike]
-        n_spikes = len(cell_spike_time_ind)
-        if n_spikes == 0:
-            continue
-        ones = np.ones((n_spikes, n_bins))
-
-        hpd_overlap[cell_spike_time_ind, j] = ssc.hpd_overlap(
-            predictive_posterior[cell_spike_time_ind],
-            per_cell_likelihood[j] * ones,
-            coverage=coverage,
-        )
-        kl_divergence[cell_spike_time_ind, j] = ssc.kl_divergence(
-            predictive_posterior[cell_spike_time_ind],
-            per_cell_likelihood[j] * ones,
-        )
-
-    # Compute spike probability ranking
-    # cell_fraction_per_bin: (n_bins, n_cells) - normalized so each row (bin) sums to 1
-    # This matches analysis.py: at each position, fractions across cells sum to 1
-    cell_fraction_per_bin = normalize(place_fields.T, axis=1)  # (n_bins, n_cells)
-    spike_prob: NDArray[np.float64] = spike_prob_rank(
-        predictive_posterior, cell_fraction_per_bin
-    ).astype(np.float64)  # (n_time, n_cells)
-
-    # Mask cells that did not fire
-    # - HPD/KL: likelihood is uninformative (uniform over bins) without a spike
-    # - spike_prob: set to NaN for consistency with Figure 3 visualization
-    no_spike_mask = spike_counts == 0
-    hpd_overlap[no_spike_mask] = np.nan
-    kl_divergence[no_spike_mask] = np.nan
-    spike_prob[no_spike_mask] = np.nan
-
-    return {
-        "hpd_overlap": hpd_overlap,
-        "kl_divergence": kl_divergence,
-        "spike_prob": spike_prob,
-    }
+    # Cast to float64 for type consistency
+    return {k: v.astype(np.float64) for k, v in result.items()}
 
 
 def get_state_marginalized_posterior(
@@ -654,14 +603,10 @@ def compute_model_diagnostics(
         # All bins are valid
         place_fields = place_fields_full
 
-    # Compute per-cell likelihood (using filtered place fields)
-    # dt = 1.0 because place fields are in spikes per time bin
-    per_cell_likelihood = compute_per_cell_likelihood(place_fields, dt=1.0)
-
-    # Compute diagnostics
+    # Compute diagnostics using actual spike counts
+    # place_fields are already in spikes per time bin from non_local_detector
     diagnostics = compute_per_cell_diagnostics(
         predictive_posterior,
-        per_cell_likelihood,
         spike_counts,
         place_fields,
     )

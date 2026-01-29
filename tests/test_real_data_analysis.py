@@ -9,7 +9,6 @@ import xarray as xr
 
 from statespacecheck_paper.real_data_analysis import (
     compute_per_cell_diagnostics,
-    compute_per_cell_likelihood,
     extract_place_fields,
     find_sustained_low_overlap,
     gaussian_smooth,
@@ -120,62 +119,22 @@ class TestExtractPlaceFields:
         np.testing.assert_array_equal(position_bins, mock_position_bins)
 
 
-class TestComputePerCellLikelihood:
-    """Tests for compute_per_cell_likelihood function."""
-
-    def test_output_shape(self) -> None:
-        """Test that output has shape (n_time, n_cells, n_bins)."""
-        n_cells, n_bins, n_time = 10, 50, 100
-        place_fields = np.random.rand(n_cells, n_bins) * 10
-        spike_counts = np.random.poisson(0.5, (n_time, n_cells)).astype(np.int64)
-        dt = 0.002
-
-        result = compute_per_cell_likelihood(place_fields, spike_counts, dt)
-
-        assert result.shape == (n_time, n_cells, n_bins)
-
-    def test_normalized_over_bins(self) -> None:
-        """Test that each (time, cell) slice sums to 1 over bins."""
-        n_cells, n_bins, n_time = 10, 50, 100
-        rng = np.random.default_rng(42)
-        place_fields = rng.random((n_cells, n_bins)) * 10 + 0.1  # Avoid zero rates
-        # Use small spike counts to avoid numerical issues
-        spike_counts = rng.poisson(0.1, (n_time, n_cells)).astype(np.int64)
-        spike_counts = np.clip(spike_counts, 0, 3)  # Limit max count
-        dt = 0.002
-
-        result = compute_per_cell_likelihood(place_fields, spike_counts, dt)
-
-        # Check normalization - numerical precision issues can cause small deviations
-        sums = result.sum(axis=2)
-        np.testing.assert_allclose(sums, 1.0, rtol=1e-2)
-
-    def test_handles_zero_spike_counts(self) -> None:
-        """Test that zero spike counts produce valid normalized likelihood."""
-        n_cells, n_bins, n_time = 5, 20, 10
-        place_fields = np.random.rand(n_cells, n_bins) * 10 + 0.1
-        spike_counts = np.zeros((n_time, n_cells), dtype=np.int64)
-        dt = 0.002
-
-        result = compute_per_cell_likelihood(place_fields, spike_counts, dt)
-
-        # Should still be normalized
-        sums = result.sum(axis=2)
-        np.testing.assert_allclose(sums, 1.0, rtol=1e-5)
-
-
 class TestComputePerCellDiagnostics:
-    """Tests for compute_per_cell_diagnostics function."""
+    """Tests for compute_per_cell_diagnostics function.
+
+    The function computes diagnostics using the actual spike count for each
+    spike event, matching the approach in analysis.py for simulated data.
+    """
 
     def test_output_shapes(self) -> None:
         """Test that output dict has arrays with correct shapes."""
         n_time, n_bins, n_cells = 100, 50, 10
-        predictive = np.random.dirichlet(np.ones(n_bins), size=n_time)
-        likelihood = np.random.dirichlet(np.ones(n_bins), size=(n_time, n_cells))
-        spike_counts = np.random.poisson(0.5, (n_time, n_cells)).astype(np.int64)
-        place_fields = np.random.rand(n_cells, n_bins) * 10
+        rng = np.random.default_rng(42)
+        predictive = rng.dirichlet(np.ones(n_bins), size=n_time)
+        place_fields = rng.random((n_cells, n_bins)) * 10 + 0.1
+        spike_counts = rng.poisson(0.5, (n_time, n_cells)).astype(np.int64)
 
-        result = compute_per_cell_diagnostics(predictive, likelihood, spike_counts, place_fields)
+        result = compute_per_cell_diagnostics(predictive, spike_counts, place_fields)
 
         assert "hpd_overlap" in result
         assert "kl_divergence" in result
@@ -187,12 +146,12 @@ class TestComputePerCellDiagnostics:
     def test_nan_where_no_spikes(self) -> None:
         """Test that metrics are NaN where spike_counts == 0."""
         n_time, n_bins, n_cells = 50, 30, 5
-        predictive = np.random.dirichlet(np.ones(n_bins), size=n_time)
-        likelihood = np.random.dirichlet(np.ones(n_bins), size=(n_time, n_cells))
-        spike_counts = np.random.poisson(0.3, (n_time, n_cells)).astype(np.int64)
-        place_fields = np.random.rand(n_cells, n_bins) * 10
+        rng = np.random.default_rng(42)
+        predictive = rng.dirichlet(np.ones(n_bins), size=n_time)
+        place_fields = rng.random((n_cells, n_bins)) * 10 + 0.1
+        spike_counts = rng.poisson(0.3, (n_time, n_cells)).astype(np.int64)
 
-        result = compute_per_cell_diagnostics(predictive, likelihood, spike_counts, place_fields)
+        result = compute_per_cell_diagnostics(predictive, spike_counts, place_fields)
 
         # Check that NaN where no spikes
         no_spike_mask = spike_counts == 0
@@ -203,13 +162,13 @@ class TestComputePerCellDiagnostics:
     def test_hpd_overlap_values_in_range(self) -> None:
         """Test that HPD overlap values are in [0, 1]."""
         n_time, n_bins, n_cells = 100, 50, 10
-        predictive = np.random.dirichlet(np.ones(n_bins), size=n_time)
-        likelihood = np.random.dirichlet(np.ones(n_bins), size=(n_time, n_cells))
+        rng = np.random.default_rng(42)
+        predictive = rng.dirichlet(np.ones(n_bins), size=n_time)
+        place_fields = rng.random((n_cells, n_bins)) * 10 + 0.1
         # Ensure all cells have spikes
         spike_counts = np.ones((n_time, n_cells), dtype=np.int64)
-        place_fields = np.random.rand(n_cells, n_bins) * 10
 
-        result = compute_per_cell_diagnostics(predictive, likelihood, spike_counts, place_fields)
+        result = compute_per_cell_diagnostics(predictive, spike_counts, place_fields)
 
         valid_values = result["hpd_overlap"][~np.isnan(result["hpd_overlap"])]
         assert np.all(valid_values >= 0.0)
@@ -228,12 +187,6 @@ class TestComputePerCellDiagnostics:
         # Create proper predictive posterior (sums to 1 over bins)
         predictive = rng.dirichlet(np.ones(n_bins), size=n_time)
 
-        # Create likelihood (also proper distribution)
-        likelihood = rng.dirichlet(np.ones(n_bins), size=(n_time, n_cells))
-
-        # All cells spike
-        spike_counts = np.ones((n_time, n_cells), dtype=np.int64)
-
         # Create place fields with proper structure
         # Each cell has a Gaussian tuning curve
         place_fields = np.zeros((n_cells, n_bins))
@@ -242,12 +195,49 @@ class TestComputePerCellDiagnostics:
             place_fields[j, :] = np.exp(-0.5 * ((np.arange(n_bins) - center) / 5) ** 2)
         place_fields = place_fields * 10 + 0.1  # Scale and add baseline
 
-        result = compute_per_cell_diagnostics(predictive, likelihood, spike_counts, place_fields)
+        # All cells spike
+        spike_counts = np.ones((n_time, n_cells), dtype=np.int64)
+
+        result = compute_per_cell_diagnostics(predictive, spike_counts, place_fields)
 
         valid_values = result["spike_prob"][~np.isnan(result["spike_prob"])]
         assert np.all(valid_values >= 0.0)
         # Allow small floating point error beyond 1.0
         assert np.all(valid_values <= 1.0 + 1e-9)
+
+    def test_diagnostics_at_spike_times_only(self) -> None:
+        """Test that diagnostics are computed only at spike times."""
+        n_time, n_bins, n_cells = 20, 10, 3
+        rng = np.random.default_rng(42)
+
+        # Create simple predictive posterior
+        predictive = rng.dirichlet(np.ones(n_bins), size=n_time)
+
+        # Create place fields
+        place_fields = rng.random((n_cells, n_bins)) * 10 + 0.1
+
+        # Cell 0 spikes at times 0, 5, 10
+        # Cell 1 spikes at times 2, 7
+        # Cell 2 spikes at time 15
+        spike_counts = np.zeros((n_time, n_cells), dtype=np.int64)
+        spike_counts[[0, 5, 10], 0] = 1
+        spike_counts[[2, 7], 1] = 1
+        spike_counts[15, 2] = 1
+
+        result = compute_per_cell_diagnostics(predictive, spike_counts, place_fields)
+
+        # Check that we have valid values only at spike times
+        assert not np.isnan(result["hpd_overlap"][0, 0])
+        assert not np.isnan(result["hpd_overlap"][5, 0])
+        assert not np.isnan(result["hpd_overlap"][10, 0])
+        assert not np.isnan(result["hpd_overlap"][2, 1])
+        assert not np.isnan(result["hpd_overlap"][7, 1])
+        assert not np.isnan(result["hpd_overlap"][15, 2])
+
+        # Check that non-spike times are NaN
+        assert np.isnan(result["hpd_overlap"][1, 0])
+        assert np.isnan(result["hpd_overlap"][0, 1])
+        assert np.isnan(result["hpd_overlap"][0, 2])
 
 
 class TestGetStateMarginalizedPosterior:
