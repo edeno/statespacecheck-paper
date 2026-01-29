@@ -195,11 +195,13 @@ def plot_track_graph_1d(
     edge_colors: NDArray[np.float64] | None = None,
     reward_well_size: int = 10,
     edge_linewidth: int = 2,
+    orientation: str = "vertical",
 ) -> None:
     """Plot track graph as 1D linearized representation.
 
-    Draws the track graph edges as vertical line segments positioned
-    sequentially to show the linearized track structure.
+    Draws the track graph edges as line segments positioned sequentially
+    to show the linearized track structure. Default is vertical orientation
+    (position on y-axis). Use orientation="horizontal" for position on x-axis.
 
     Parameters
     ----------
@@ -214,13 +216,16 @@ def plot_track_graph_1d(
     reward_well_nodes : list of int, optional
         Node indices that are reward wells (marked with scatter points).
     other_axis_start : float, optional
-        X-position for the 1D representation in data coordinates.
+        Position on the non-position axis (x for vertical, y for horizontal).
     edge_colors : ndarray, optional
         Array of RGB colors for each edge. If None, uses tab10 colormap.
     reward_well_size : int, optional
         Marker size for reward well points, by default 10.
     edge_linewidth : int, optional
         Line width for edge segments, by default 2.
+    orientation : str, default "vertical"
+        Orientation of the track. "vertical" places position on y-axis,
+        "horizontal" places position on x-axis.
     """
     if edge_order is None:
         edge_order = list(track_graph.edges)
@@ -241,32 +246,77 @@ def plot_track_graph_1d(
     for edge_ind, edge in enumerate(edge_order):
         edge_color = edge_colors[edge_ind % len(edge_colors)]
         end_node_linear_position = start_node_linear_position + track_graph.edges[edge]["distance"]
-        ax.plot(
-            (other_axis_start, other_axis_start),
-            (start_node_linear_position, end_node_linear_position),
-            color=edge_color,
-            clip_on=False,
-            zorder=7,
-            linewidth=edge_linewidth,
-        )
-        if edge[0] in reward_well_nodes:
-            ax.scatter(
+
+        if orientation == "vertical":
+            # Position on y-axis, other_axis_start is x-position
+            ax.plot(
+                (other_axis_start, other_axis_start),
+                (start_node_linear_position, end_node_linear_position),
+                color=edge_color,
+                clip_on=False,
+                zorder=7,
+                linewidth=edge_linewidth,
+            )
+            scatter_x, scatter_y_start, scatter_y_end = (
                 other_axis_start,
                 start_node_linear_position,
-                color=edge_color,
-                s=reward_well_size,
-                zorder=10,
-                clip_on=False,
-            )
-        if edge[1] in reward_well_nodes:
-            ax.scatter(
-                other_axis_start,
                 end_node_linear_position,
-                color=edge_color,
-                s=reward_well_size,
-                zorder=10,
-                clip_on=False,
             )
+        else:
+            # Position on x-axis, other_axis_start is y-position
+            ax.plot(
+                (start_node_linear_position, end_node_linear_position),
+                (other_axis_start, other_axis_start),
+                color=edge_color,
+                clip_on=False,
+                zorder=7,
+                linewidth=edge_linewidth,
+                solid_capstyle="butt",
+            )
+            scatter_x_start, scatter_x_end, scatter_y = (
+                start_node_linear_position,
+                end_node_linear_position,
+                other_axis_start,
+            )
+
+        if edge[0] in reward_well_nodes:
+            if orientation == "vertical":
+                ax.scatter(
+                    scatter_x,
+                    scatter_y_start,
+                    color=edge_color,
+                    s=reward_well_size,
+                    zorder=10,
+                    clip_on=False,
+                )
+            else:
+                ax.scatter(
+                    scatter_x_start,
+                    scatter_y,
+                    color=edge_color,
+                    s=reward_well_size,
+                    zorder=10,
+                    clip_on=False,
+                )
+        if edge[1] in reward_well_nodes:
+            if orientation == "vertical":
+                ax.scatter(
+                    scatter_x,
+                    scatter_y_end,
+                    color=edge_color,
+                    s=reward_well_size,
+                    zorder=10,
+                    clip_on=False,
+                )
+            else:
+                ax.scatter(
+                    scatter_x_end,
+                    scatter_y,
+                    color=edge_color,
+                    s=reward_well_size,
+                    zorder=10,
+                    clip_on=False,
+                )
 
         # Update position for next edge (skip spacing on last edge)
         if edge_ind < len(edge_spacing_list):
@@ -1858,6 +1908,323 @@ def plot_model_comparison_with_posterior(
     return fig, axes
 
 
+def plot_metrics_vs_position(
+    linear_position: NDArray[np.float64],
+    diagnostics_a: dict[str, NDArray[np.float64]],
+    diagnostics_b: dict[str, NDArray[np.float64]],
+    model_a_name: str = "Continuous",
+    model_b_name: str = "Continuous-Fragmented",
+    figsize: tuple[float, float] = (7.0, 6.0),
+    track_graph: nx.Graph | None = None,
+    edge_order: list[tuple[int, int]] | None = None,
+    edge_spacing: float | list[float] = 0.0,
+) -> tuple[Figure, NDArray[np.object_]]:
+    """Plot diagnostic metrics vs linear position for two models.
+
+    Creates a 3x2 grid of hexbin plots showing the relationship between
+    linear position and each diagnostic metric. This helps identify
+    position-dependent model failures.
+
+    Parameters
+    ----------
+    linear_position : np.ndarray, shape (n_time,)
+        Linear position of the animal at each time point.
+    diagnostics_a : dict[str, np.ndarray]
+        Diagnostics for model A with keys 'hpd_overlap', 'kl_divergence', 'spike_prob'.
+        Each array has shape (n_time, n_cells).
+    diagnostics_b : dict[str, np.ndarray]
+        Diagnostics for model B with same keys.
+    model_a_name : str, default "Continuous"
+        Name for model A (column title).
+    model_b_name : str, default "Continuous-Fragmented"
+        Name for model B (column title).
+    figsize : tuple[float, float], default (7.0, 6.0)
+        Figure size in inches.
+    track_graph : nx.Graph, optional
+        Track graph for 1D linearized track visualization.
+    edge_order : list[tuple[int, int]], optional
+        Order of edges for linearization.
+    edge_spacing : float or list[float], default 0.0
+        Spacing between edges.
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        The figure object.
+    axes : np.ndarray[plt.Axes]
+        Array of axes objects with shape (3, 2).
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> position = np.random.rand(100) * 200  # 0-200 cm track
+    >>> diag_a = {
+    ...     "hpd_overlap": np.random.rand(100, 10),
+    ...     "kl_divergence": np.random.rand(100, 10),
+    ...     "spike_prob": np.random.rand(100, 10),
+    ... }
+    >>> diag_b = {k: np.random.rand(100, 10) for k in diag_a}
+    >>> fig, axes = plot_metrics_vs_position(position, diag_a, diag_b)
+    >>> plt.close(fig)
+    """
+    metrics = ["hpd_overlap", "kl_divergence", "spike_prob"]
+    ylabels = ["HPD Overlap", "KL Divergence", r"$-\log_{10}(p)$"]
+    colors = [COLORS["hpd_overlap"], COLORS["kl_divergence"], COLORS["metric_combined"]]
+    worse_fit_directions = ["↓ Worse fit", "↑ Worse fit", "↑ Worse fit"]
+
+    fig, axes = plt.subplots(3, 2, figsize=figsize, constrained_layout=True)
+
+    for i, (metric, ylabel, _color, worse_dir) in enumerate(
+        zip(metrics, ylabels, colors, worse_fit_directions, strict=True)
+    ):
+        for col, (diagnostics, model_name) in enumerate(
+            [(diagnostics_a, model_a_name), (diagnostics_b, model_b_name)]
+        ):
+            ax = axes[i, col]
+
+            # Get data for this metric
+            data = diagnostics[metric].copy()
+
+            # Transform spike_prob to -log10 scale
+            if metric == "spike_prob":
+                data = -np.log10(np.maximum(data, 1e-10))
+
+            # Expand position to match data shape (n_time,) -> (n_time, n_cells)
+            n_time, n_cells = data.shape
+            position_expanded = np.tile(linear_position[:, np.newaxis], (1, n_cells))
+
+            # Flatten for hexbin
+            x = position_expanded.ravel()
+            y = data.ravel()
+
+            # Remove NaN values
+            valid_mask = ~np.isnan(x) & ~np.isnan(y)
+            x = x[valid_mask]
+            y = y[valid_mask]
+
+            # Hexbin plot
+            ax.hexbin(
+                x,
+                y,
+                gridsize=50,
+                cmap="Blues",
+                bins="log",
+                mincnt=1,
+                alpha=0.8,
+                rasterized=True,
+            )
+
+            # Styling
+            ax.set_ylabel(ylabel if col == 0 else "", fontsize=9, labelpad=7)
+            ax.set_xlabel("Linear Position (cm)" if i == 2 else "", fontsize=9, labelpad=7)
+            ax.tick_params(labelsize=7, labelbottom=(i == 2))
+
+            # Add column titles on first row
+            if i == 0:
+                ax.set_title(model_name, fontsize=11)
+
+            # Add direction indicator on right side of right column
+            if col == 1:
+                ax.text(
+                    1.01,
+                    0.5,
+                    worse_dir,
+                    transform=ax.transAxes,
+                    fontsize=6,
+                    va="center",
+                    ha="left",
+                )
+
+            # Add 1D track graph at top of plot (right column only)
+            if track_graph is not None and col == 1 and i == 0:
+                # Get y-axis limits to position track at top
+                ylim = ax.get_ylim()
+                y_top = ylim[1]
+                plot_track_graph_1d(
+                    track_graph,
+                    ax=ax,
+                    edge_order=edge_order,
+                    edge_spacing=edge_spacing,
+                    other_axis_start=y_top,
+                    edge_linewidth=2,
+                    reward_well_size=15,
+                    reward_well_nodes=list(range(6)),
+                )
+
+    # Hide y-tick labels on right column
+    for row in range(3):
+        axes[row, 1].tick_params(labelleft=False)
+
+    return fig, axes
+
+
+def plot_metrics_time_vs_position_comparison(
+    linear_position: NDArray[np.float64],
+    diagnostics_a: dict[str, NDArray[np.float64]],
+    diagnostics_b: dict[str, NDArray[np.float64]],
+    model_a_name: str = "Continuous",
+    model_b_name: str = "Continuous-Fragmented",
+    figsize: tuple[float, float] = (7.0, 6.0),
+    track_graph: nx.Graph | None = None,
+    edge_order: list[tuple[int, int]] | None = None,
+    edge_spacing: float | list[float] = 0.0,
+) -> tuple[Figure, NDArray[np.object_]]:
+    """Plot diagnostic metrics vs linear position for both models side by side.
+
+    Creates a 3x2 grid comparing:
+    - Columns: Model A, Model B
+    - Rows: HPD Overlap, KL Divergence, Spike Probability
+
+    Each plot shows linear position on x-axis and the metric value on y-axis,
+    allowing comparison of position-dependent model performance.
+
+    Parameters
+    ----------
+    linear_position : np.ndarray, shape (n_time,)
+        Linear position of the animal at each time point.
+    diagnostics_a : dict[str, np.ndarray]
+        Diagnostics for model A with keys 'hpd_overlap', 'kl_divergence', 'spike_prob'.
+        Each array has shape (n_time, n_cells).
+    diagnostics_b : dict[str, np.ndarray]
+        Diagnostics for model B with same keys.
+    model_a_name : str, default "Continuous"
+        Name for model A.
+    model_b_name : str, default "Continuous-Fragmented"
+        Name for model B.
+    figsize : tuple[float, float], default (7.0, 6.0)
+        Figure size in inches.
+    track_graph : nx.Graph, optional
+        Track graph for 1D linearized track visualization.
+    edge_order : list[tuple[int, int]], optional
+        Order of edges for linearization.
+    edge_spacing : float or list[float], default 0.0
+        Spacing between edges.
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        The figure object.
+    axes : np.ndarray[plt.Axes]
+        Array of axes objects with shape (3, 2).
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> position = np.random.rand(1000) * 200
+    >>> diag_a = {
+    ...     "hpd_overlap": np.random.rand(1000, 10),
+    ...     "kl_divergence": np.random.rand(1000, 10),
+    ...     "spike_prob": np.random.rand(1000, 10),
+    ... }
+    >>> diag_b = {k: np.random.rand(1000, 10) for k in diag_a}
+    >>> fig, axes = plot_metrics_time_vs_position_comparison(position, diag_a, diag_b)
+    >>> plt.close(fig)
+    """
+    metrics = ["hpd_overlap", "kl_divergence", "spike_prob"]
+    ylabels = ["HPD Overlap", "KL Divergence", r"$-\log_{10}(p)$"]
+    colors = [COLORS["hpd_overlap"], COLORS["kl_divergence"], COLORS["metric_combined"]]
+    worse_fit_directions = ["↓ Worse fit", "↑ Worse fit", "↑ Worse fit"]
+
+    fig, axes = plt.subplots(3, 2, figsize=figsize, constrained_layout=True)
+
+    for row, (metric, ylabel, _color, worse_dir) in enumerate(
+        zip(metrics, ylabels, colors, worse_fit_directions, strict=True)
+    ):
+        for col, (diagnostics, model_name) in enumerate(
+            [(diagnostics_a, model_a_name), (diagnostics_b, model_b_name)]
+        ):
+            ax = axes[row, col]
+
+            # Get data for this metric
+            data = diagnostics[metric].copy()
+
+            # Transform spike_prob to -log10 scale
+            if metric == "spike_prob":
+                data = -np.log10(np.maximum(data, 1e-10))
+
+            # Expand position to match data shape (n_time,) -> (n_time, n_cells)
+            n_time, n_cells = data.shape
+            position_expanded = np.tile(linear_position[:, np.newaxis], (1, n_cells))
+
+            # Flatten for hexbin
+            x = position_expanded.ravel()
+            y = data.ravel()
+
+            # Remove NaN values
+            valid_mask = ~np.isnan(x) & ~np.isnan(y)
+            x = x[valid_mask]
+            y = y[valid_mask]
+
+            # Hexbin plot: position on x-axis, metric on y-axis
+            ax.hexbin(
+                x,
+                y,
+                gridsize=50,
+                cmap="Blues",
+                bins="log",
+                mincnt=1,
+                alpha=0.8,
+                rasterized=True,
+            )
+
+            # Styling
+            ax.set_ylabel(ylabel if col == 0 else "", fontsize=9, labelpad=7)
+            ax.set_xlabel("Linear Position (cm)" if row == 2 else "", fontsize=9, labelpad=7)
+            ax.tick_params(labelsize=7, labelbottom=(row == 2), labelleft=(col == 0))
+
+            # Add column titles on first row
+            if row == 0:
+                ax.set_title(model_name, fontsize=11)
+
+            # Add direction indicator on right side of right column
+            if col == 1:
+                ax.text(
+                    1.01,
+                    0.5,
+                    worse_dir,
+                    transform=ax.transAxes,
+                    fontsize=6,
+                    va="center",
+                    ha="left",
+                )
+
+    # Share y-axes within each row
+    for row in range(3):
+        y_min = min(axes[row, col].get_ylim()[0] for col in range(2))
+        y_max = max(axes[row, col].get_ylim()[1] for col in range(2))
+        for col in range(2):
+            axes[row, col].set_ylim(y_min, y_max)
+
+    # Share x-axes across all plots
+    x_min = min(axes[row, col].get_xlim()[0] for row in range(3) for col in range(2))
+    x_max = max(axes[row, col].get_xlim()[1] for row in range(3) for col in range(2))
+    for row in range(3):
+        for col in range(2):
+            axes[row, col].set_xlim(x_min, x_max)
+
+    # Add horizontal track graph at bottom of each row if provided
+    if track_graph is not None:
+        for row in range(3):
+            for col in range(2):
+                ax = axes[row, col]
+                ylim = ax.get_ylim()
+                y_bottom = ylim[0]
+
+                plot_track_graph_1d(
+                    track_graph,
+                    ax=ax,
+                    edge_order=edge_order,
+                    edge_spacing=edge_spacing,
+                    other_axis_start=y_bottom,
+                    edge_linewidth=3,
+                    reward_well_size=15,
+                    reward_well_nodes=list(range(6)),
+                    orientation="horizontal",
+                )
+
+    return fig, axes
+
+
 def plot_metric_distributions(
     diagnostics_a: dict[str, NDArray[np.float64]],
     diagnostics_b: dict[str, NDArray[np.float64]],
@@ -1865,11 +2232,11 @@ def plot_metric_distributions(
     model_b_name: str = "Continuous-Fragmented",
     figsize: tuple[float, float] = (7.0, 2.5),
 ) -> tuple[Figure, NDArray[np.object_]]:
-    """Plot scatter comparison of diagnostic metrics between two models.
+    """Plot hexbin density comparison of diagnostic metrics between two models.
 
-    Creates a 1x3 grid of scatter plots where each point represents a
-    (time, cell) pair. X-axis shows model A's metric value, Y-axis shows
-    model B's metric value. Points on the diagonal indicate agreement.
+    Creates a 1x3 grid of hexbin density plots where each hexagon represents
+    the density of (time, cell) pairs. X-axis shows model A's metric value,
+    Y-axis shows model B's metric value. Points on the diagonal indicate agreement.
 
     Parameters
     ----------
@@ -1906,12 +2273,19 @@ def plot_metric_distributions(
     """
     metrics = ["hpd_overlap", "kl_divergence", "spike_prob"]
     titles = ["HPD Overlap", "KL Divergence", r"$-\log_{10}(p)$"]
-    colors = [COLORS["hpd_overlap"], COLORS["kl_divergence"], COLORS["metric_combined"]]
+    # Create colormaps from white to each metric's color
+    colors_list = [COLORS["hpd_overlap"], COLORS["kl_divergence"], COLORS["metric_combined"]]
+    cmaps = []
+    for color in colors_list:
+        from matplotlib.colors import LinearSegmentedColormap
+
+        cmap = LinearSegmentedColormap.from_list("custom", ["white", color])
+        cmaps.append(cmap)
 
     fig, axes = plt.subplots(1, 3, figsize=figsize, constrained_layout=True)
     axes = np.atleast_1d(axes)
 
-    for i, (metric, title, color) in enumerate(zip(metrics, titles, colors, strict=True)):
+    for i, (metric, title, cmap) in enumerate(zip(metrics, titles, cmaps, strict=True)):
         ax = axes[i]
 
         # Get data and flatten
@@ -1928,13 +2302,15 @@ def plot_metric_distributions(
         data_a = data_a[valid_mask]
         data_b = data_b[valid_mask]
 
-        # Scatter plot: model A vs model B
-        ax.scatter(
+        # Hexbin density plot: model A vs model B
+        ax.hexbin(
             data_a,
             data_b,
-            s=0.8,
-            alpha=0.3,
-            c=color,
+            gridsize=50,
+            cmap=cmap,
+            bins="log",
+            mincnt=1,
+            alpha=0.8,
             rasterized=True,
         )
 

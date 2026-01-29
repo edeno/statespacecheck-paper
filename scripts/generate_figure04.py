@@ -28,6 +28,7 @@ from statespacecheck_paper.real_data_analysis import (
 )
 from statespacecheck_paper.real_data_plotting import (
     plot_metric_distributions,
+    plot_metrics_time_vs_position_comparison,
     plot_model_comparison_with_posterior,
     plot_track_graph_2d,
 )
@@ -182,6 +183,20 @@ def run_demo() -> None:
     )
     save_figure("figures/main/figure04c", close=True)
     print("Saved figures/main/figure04c.{pdf,png}")
+
+    # Figure 4d: Metrics vs linear position for both models
+    fig, axes = plot_metrics_time_vs_position_comparison(
+        linear_position,
+        continuous_diagnostics,
+        contfrag_diagnostics,
+        model_a_name="Continuous",
+        model_b_name="Cont-Frag",
+        track_graph=data["track_graph"],
+        edge_order=data["linear_edge_order"],
+        edge_spacing=data["linear_edge_spacing"],
+    )
+    save_figure("figures/main/figure04d", close=True)
+    print("Saved figures/main/figure04d.{pdf,png}")
 
     print("\nFigure 4 complete!")
 
