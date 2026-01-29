@@ -98,12 +98,12 @@ def run_demo() -> None:
     continuous_results = continuous_model.predict(
         spike_times=spike_times_list,
         time=time,
-        return_outputs="predictive_posterior",
+        return_outputs=["filter", "predictive_posterior", "log_likelihood"],
     )
     contfrag_results = contfrag_model.predict(
         spike_times=spike_times_list,
         time=time,
-        return_outputs="predictive_posterior",
+        return_outputs=["filter", "predictive_posterior", "log_likelihood"],
     )
 
     # Get spike counts for all time
@@ -140,8 +140,7 @@ def run_demo() -> None:
     window_end = FIGURE_4A_WINDOW_CENTER + FIGURE_4A_WINDOW_HALF_WIDTH
     time_slice_ind = slice(window_start, window_end)
 
-    # Figure 4a: Model comparison with posterior, raster, and diagnostics (time window)
-    # should plot predictive posterior, likelihood, filter distribution?
+    # Figure 4a: Model comparison with filter, predictive, likelihood, raster, and diagnostics
     fig, axes = plot_model_comparison_with_posterior(
         time,
         linear_position,
@@ -150,6 +149,7 @@ def run_demo() -> None:
         continuous_diagnostics,
         contfrag_diagnostics,
         spike_times=spike_times_list,
+        spike_counts=spike_counts,
         place_field_peaks=place_field_peaks,
         time_slice_ind=time_slice_ind,
         model_a_name="Continuous",

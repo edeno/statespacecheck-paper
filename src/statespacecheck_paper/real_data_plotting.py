@@ -318,12 +318,18 @@ def plot_raster(
     if sort_order is not None:
         time_slice_spike_times = [time_slice_spike_times[i] for i in sort_order]
 
+    # Set defaults that can be overridden by eventplot_kwargs
+    linelengths = eventplot_kwargs.pop("linelengths", 1.0)
+    linewidths = eventplot_kwargs.pop("linewidths", 1.5)
+    colors = eventplot_kwargs.pop("colors", "black")
+    rasterized = eventplot_kwargs.pop("rasterized", True)
+
     ax.eventplot(
         time_slice_spike_times,
-        linelengths=0.8,
-        linewidths=1.0,
-        colors="black",
-        rasterized=True,
+        linelengths=linelengths,
+        linewidths=linewidths,
+        colors=colors,
+        rasterized=rasterized,
         **eventplot_kwargs,
     )
     ax.set_ylabel("Neuron")
@@ -1476,162 +1482,79 @@ def plot_diagnostic_summary_comparison(
     return fig, axes
 
 
-def plot_model_comparison_with_posterior(
+def _plot_distribution_heatmap(
+    ax: Axes,
+    distribution_da: xr.DataArray,
     time: NDArray[np.float64] | pd.Index,
     position: NDArray[np.float64],
-    results_a: xr.Dataset,
-    results_b: xr.Dataset,
-    diagnostics_a: dict[str, NDArray[np.float64]],
-    diagnostics_b: dict[str, NDArray[np.float64]],
-    spike_times: list[NDArray[np.float64]] | None = None,
-    place_field_peaks: NDArray[np.float64] | None = None,
-    time_slice_ind: slice | None = None,
-    model_a_name: str = "Continuous",
-    model_b_name: str = "Continuous-Fragmented",
-    thresholds: dict[str, float] | None = None,
-    figsize: tuple[float, float] = (7.0, 8.5),
-    track_graph: nx.Graph | None = None,
-    edge_order: list[tuple[int, int]] | None = None,
-    edge_spacing: float | list[float] = 0.0,
-) -> tuple[Figure, NDArray[np.object_]]:
-    """Create model comparison with posterior heatmaps, spike raster, and diagnostics.
-
-    Creates a 5x2 grid with:
-    - Row 0: Decoded posterior with animal position overlay
-    - Row 1: Spike raster (cells sorted by place field peak)
-    - Row 2: HPD overlap scatter
-    - Row 3: KL divergence scatter
-    - Row 4: Spike probability scatter
+    time_slice_ind: slice,
+    show_position: bool = True,
+    cmap: str = "bone_r",
+) -> None:
+    """Plot a distribution heatmap with optional position overlay.
 
     Parameters
     ----------
+    ax : Axes
+        The axes to plot on.
+    distribution_da : xr.DataArray
+        Distribution data array with state_bins dimension.
     time : np.ndarray or pd.Index
         Time values.
     position : np.ndarray, shape (n_time,)
         Animal position values.
-    results_a : xr.Dataset
-        Decoding results for model A with predictive_posterior.
-    results_b : xr.Dataset
-        Decoding results for model B with predictive_posterior.
-    diagnostics_a : dict[str, np.ndarray]
-        Diagnostics for model A with keys 'hpd_overlap', 'kl_divergence', 'spike_prob'.
-    diagnostics_b : dict[str, np.ndarray]
-        Diagnostics for model B with same keys.
-    spike_times : list[np.ndarray], optional
-        List of spike time arrays, one per neuron. Required for raster plot.
-    place_field_peaks : np.ndarray, shape (n_cells,), optional
-        Position of place field peak for each cell, used for sorting raster.
-        If None, cells are plotted in original order.
-    time_slice_ind : slice, optional
-        Time slice indices to plot. If None, plots all time points.
-    model_a_name : str, default "Continuous"
-        Name for model A (column title).
-    model_b_name : str, default "Continuous-Fragmented"
-        Name for model B (column title).
-    thresholds : dict[str, float], optional
-        Thresholds for each metric to draw as horizontal lines.
-    figsize : tuple[float, float], default (7.0, 8.5)
-        Figure size in inches.
-
-    Returns
-    -------
-    fig : matplotlib.figure.Figure
-        The figure object.
-    axes : np.ndarray[plt.Axes]
-        Array of axes objects with shape (5, 2).
-
-    Examples
-    --------
-    >>> # Requires xr.Dataset from non_local_detector
-    >>> # fig, axes = plot_model_comparison_with_posterior(
-    >>> #     time, position, results_a, results_b, diagnostics_a, diagnostics_b,
-    >>> #     spike_times=spike_times, place_field_peaks=pf_peaks
-    >>> # )
+    time_slice_ind : slice
+        Time slice indices to plot.
+    show_position : bool, default True
+        Whether to show position overlay.
+    cmap : str, default "bone_r"
+        Colormap for the heatmap.
     """
-    metrics = ["hpd_overlap", "kl_divergence", "spike_prob"]
-    # Match Figure 3 styling: labels and colors from COLORS dict
-    ylabels = ["HPD Overlap", "KL Divergence", r"$-\log_{10}(p)$"]
-    colors = [COLORS["hpd_overlap"], COLORS["kl_divergence"], COLORS["metric_combined"]]
-    # Direction indicators: which direction indicates worse fit
-    worse_fit_directions = ["↓ Worse fit", "↑ Worse fit", "↑ Worse fit"]
+    # Drop NaN bins (spatial bins that are always NaN)
+    distribution_da = distribution_da.dropna("state_bins", how="all")
 
-    # Create 5x2 grid: posterior + raster + 3 diagnostics
-    # Use gridspec to manually share y-axes within each row
-    fig = plt.figure(figsize=figsize, constrained_layout=True)
-    gs = fig.add_gridspec(5, 2, height_ratios=[3, 1.5, 1, 1, 1])
-
-    # Create axes with shared x and shared y within each row
-    axes = np.empty((5, 2), dtype=object)
-
-    # Row 0: Posterior heatmaps (share y within row)
-    axes[0, 0] = fig.add_subplot(gs[0, 0])
-    axes[0, 1] = fig.add_subplot(gs[0, 1], sharex=axes[0, 0], sharey=axes[0, 0])
-
-    # Row 1: Spike raster (share y within row, share x with row 0)
-    axes[1, 0] = fig.add_subplot(gs[1, 0], sharex=axes[0, 0])
-    axes[1, 1] = fig.add_subplot(gs[1, 1], sharex=axes[0, 0], sharey=axes[1, 0])
-
-    # Row 2: HPD overlap (share y within row, share x with row 0)
-    axes[2, 0] = fig.add_subplot(gs[2, 0], sharex=axes[0, 0])
-    axes[2, 1] = fig.add_subplot(gs[2, 1], sharex=axes[0, 0], sharey=axes[2, 0])
-
-    # Row 3: KL divergence (share y within row, share x with row 0)
-    axes[3, 0] = fig.add_subplot(gs[3, 0], sharex=axes[0, 0])
-    axes[3, 1] = fig.add_subplot(gs[3, 1], sharex=axes[0, 0], sharey=axes[3, 0])
-
-    # Row 4: Spike probability (share y within row, share x with row 0)
-    axes[4, 0] = fig.add_subplot(gs[4, 0], sharex=axes[0, 0])
-    axes[4, 1] = fig.add_subplot(gs[4, 1], sharex=axes[0, 0], sharey=axes[4, 0])
-
-    if time_slice_ind is None:
-        time_slice_ind = slice(None)
-
-    # Row 0: Posterior heatmaps with position overlay
-    for col, (results, model_name) in enumerate(
-        [(results_a, model_a_name), (results_b, model_b_name)]
-    ):
-        ax = axes[0, col]
-
-        # Get posterior and marginalize over states
-        if "predictive_posterior" in results:
-            posterior_da = results.predictive_posterior
+    # Plot distribution heatmap
+    try:
+        unstacked = distribution_da.unstack("state_bins")
+        if "state" in unstacked.dims:
+            # Multi-state model: sum over states
+            marginalized = unstacked.sum("state")
         else:
-            posterior_da = results.acausal_posterior
+            marginalized = unstacked
 
-        # Drop NaN bins and marginalize
-        posterior_da = posterior_da.dropna("state_bins")
+        # Get the sliced data
+        sliced_data = marginalized.isel(time=time_slice_ind)
 
-        # Plot posterior heatmap
-        try:
-            unstacked = posterior_da.unstack("state_bins")
-            if "state" in unstacked.dims:
-                # Multi-state model: sum over states
-                marginalized = unstacked.sum("state")
-            else:
-                marginalized = unstacked
-
-            # Plot using xarray
-            marginalized.isel(time=time_slice_ind).plot(
+        # Check if there's any non-NaN data to plot
+        if sliced_data.notnull().any():
+            sliced_data.plot(
                 x="time",
                 y="position",
                 ax=ax,
                 add_colorbar=False,
                 robust=True,
-                cmap="bone_r",
+                cmap=cmap,
                 rasterized=True,
             )
-        except (ValueError, KeyError):
-            # Fallback: plot raw posterior
-            posterior_da.isel(time=time_slice_ind).plot(
+        else:
+            # No data to plot - just set up the axes with proper limits
+            time_arr = np.asarray(time)
+            ax.set_xlim(time_arr[time_slice_ind].min(), time_arr[time_slice_ind].max())
+    except (ValueError, KeyError, TypeError):
+        # Fallback: plot raw distribution
+        sliced_data = distribution_da.isel(time=time_slice_ind)
+        if sliced_data.notnull().any():
+            sliced_data.plot(
                 x="time",
                 ax=ax,
                 add_colorbar=False,
                 robust=True,
-                cmap="bone_r",
+                cmap=cmap,
                 rasterized=True,
             )
 
-        # Overlay animal position
+    # Overlay animal position
+    if show_position:
         time_arr = np.asarray(time)
         ax.scatter(
             time_arr[time_slice_ind],
@@ -1643,33 +1566,223 @@ def plot_model_comparison_with_posterior(
             label="True position",
         )
 
-        ax.set_title(model_name, fontsize=11)
-        ax.set_ylabel("Position (cm)" if col == 0 else "", fontsize=9, labelpad=7)
-        ax.set_xlabel("")
-        ax.tick_params(labelsize=7, labelbottom=False)
 
-        # Add legend for true position line (only on first column)
-        if col == 0:
-            ax.legend(loc="upper left", fontsize=6, frameon=False)
+def plot_model_comparison_with_posterior(
+    time: NDArray[np.float64] | pd.Index,
+    position: NDArray[np.float64],
+    results_a: xr.Dataset,
+    results_b: xr.Dataset,
+    diagnostics_a: dict[str, NDArray[np.float64]],
+    diagnostics_b: dict[str, NDArray[np.float64]],
+    spike_times: list[NDArray[np.float64]] | None = None,
+    spike_counts: NDArray[np.int64] | None = None,
+    place_field_peaks: NDArray[np.float64] | None = None,
+    time_slice_ind: slice | None = None,
+    model_a_name: str = "Continuous",
+    model_b_name: str = "Continuous-Fragmented",
+    thresholds: dict[str, float] | None = None,
+    figsize: tuple[float, float] = (7.0, 11.0),
+    track_graph: nx.Graph | None = None,
+    edge_order: list[tuple[int, int]] | None = None,
+    edge_spacing: float | list[float] = 0.0,
+) -> tuple[Figure, NDArray[np.object_]]:
+    """Create model comparison with filter, predictive, likelihood, raster, and diagnostics.
 
-        # Add 1D track graph on right edge of posterior plot (inside plot area)
-        if track_graph is not None and col == 1:  # Only on right column
-            time_arr = np.asarray(time)
-            sliced_time = time_arr[time_slice_ind]
-            # Position inside the plot, near the right edge
-            # x_pos = float(sliced_time[-1]) - 0.02 * (sliced_time[-1] - sliced_time[0])
-            x_pos = float(sliced_time[-1])
-            plot_track_graph_1d(
-                track_graph,
+    Creates a 7x2 grid with:
+    - Row 0: Filtered posterior p(x_t | y_{1:t}) with animal position overlay
+    - Row 1: Predictive posterior p(x_t | y_{1:t-1}) with animal position overlay
+    - Row 2: Likelihood p(y_t | x_t) with animal position overlay (only at spike times)
+    - Row 3: Spike raster (cells sorted by place field peak)
+    - Row 4: HPD overlap scatter
+    - Row 5: KL divergence scatter
+    - Row 6: Spike probability scatter
+
+    Parameters
+    ----------
+    time : np.ndarray or pd.Index
+        Time values.
+    position : np.ndarray, shape (n_time,)
+        Animal position values.
+    results_a : xr.Dataset
+        Decoding results for model A with causal_posterior, predictive_posterior,
+        and log_likelihood.
+    results_b : xr.Dataset
+        Decoding results for model B with same outputs.
+    diagnostics_a : dict[str, np.ndarray]
+        Diagnostics for model A with keys 'hpd_overlap', 'kl_divergence', 'spike_prob'.
+    diagnostics_b : dict[str, np.ndarray]
+        Diagnostics for model B with same keys.
+    spike_times : list[np.ndarray], optional
+        List of spike time arrays, one per neuron. Required for raster plot.
+    spike_counts : np.ndarray, shape (n_time, n_cells), optional
+        Spike count matrix. If provided, likelihood is only shown at times with spikes.
+    place_field_peaks : np.ndarray, shape (n_cells,), optional
+        Position of place field peak for each cell, used for sorting raster.
+        If None, cells are plotted in original order.
+    time_slice_ind : slice, optional
+        Time slice indices to plot. If None, plots all time points.
+    model_a_name : str, default "Continuous"
+        Name for model A (column title).
+    model_b_name : str, default "Continuous-Fragmented"
+        Name for model B (column title).
+    thresholds : dict[str, float], optional
+        Thresholds for each metric to draw as horizontal lines.
+    figsize : tuple[float, float], default (7.0, 11.0)
+        Figure size in inches.
+    track_graph : nx.Graph, optional
+        Track graph for 1D linearized track visualization.
+    edge_order : list[tuple[int, int]], optional
+        Order of edges for linearization.
+    edge_spacing : float or list[float], default 0.0
+        Spacing between edges.
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        The figure object.
+    axes : np.ndarray[plt.Axes]
+        Array of axes objects with shape (7, 2).
+
+    Examples
+    --------
+    >>> # Requires xr.Dataset from non_local_detector
+    >>> # fig, axes = plot_model_comparison_with_posterior(
+    >>> #     time, position, results_a, results_b, diagnostics_a, diagnostics_b,
+    >>> #     spike_times=spike_times, spike_counts=spike_counts, place_field_peaks=pf_peaks
+    >>> # )
+    """
+    metrics = ["hpd_overlap", "kl_divergence", "spike_prob"]
+    # Match Figure 3 styling: labels and colors from COLORS dict
+    ylabels = ["HPD Overlap", "KL Divergence", r"$-\log_{10}(p)$"]
+    colors = [COLORS["hpd_overlap"], COLORS["kl_divergence"], COLORS["metric_combined"]]
+    # Direction indicators: which direction indicates worse fit
+    worse_fit_directions = ["↓ Worse fit", "↑ Worse fit", "↑ Worse fit"]
+
+    # Create 7x2 grid: filter + predictive + likelihood + raster + 3 diagnostics
+    # Use gridspec to manually share y-axes within each row
+    fig = plt.figure(figsize=figsize, constrained_layout=True)
+    gs = fig.add_gridspec(7, 2, height_ratios=[2, 2, 2, 1.5, 1, 1, 1])
+
+    # Create axes with shared x and shared y within each row
+    axes = np.empty((7, 2), dtype=object)
+
+    # Row 0: Filtered posterior heatmaps (share y within row)
+    axes[0, 0] = fig.add_subplot(gs[0, 0])
+    axes[0, 1] = fig.add_subplot(gs[0, 1], sharex=axes[0, 0], sharey=axes[0, 0])
+
+    # Row 1: Predictive posterior heatmaps (share y within row, share x with row 0)
+    axes[1, 0] = fig.add_subplot(gs[1, 0], sharex=axes[0, 0], sharey=axes[0, 0])
+    axes[1, 1] = fig.add_subplot(gs[1, 1], sharex=axes[0, 0], sharey=axes[0, 0])
+
+    # Row 2: Likelihood heatmaps (share y within row, share x with row 0)
+    axes[2, 0] = fig.add_subplot(gs[2, 0], sharex=axes[0, 0], sharey=axes[0, 0])
+    axes[2, 1] = fig.add_subplot(gs[2, 1], sharex=axes[0, 0], sharey=axes[0, 0])
+
+    # Row 3: Spike raster (share y within row, share x with row 0)
+    axes[3, 0] = fig.add_subplot(gs[3, 0], sharex=axes[0, 0])
+    axes[3, 1] = fig.add_subplot(gs[3, 1], sharex=axes[0, 0], sharey=axes[3, 0])
+
+    # Row 4: HPD overlap (share y within row, share x with row 0)
+    axes[4, 0] = fig.add_subplot(gs[4, 0], sharex=axes[0, 0])
+    axes[4, 1] = fig.add_subplot(gs[4, 1], sharex=axes[0, 0], sharey=axes[4, 0])
+
+    # Row 5: KL divergence (share y within row, share x with row 0)
+    axes[5, 0] = fig.add_subplot(gs[5, 0], sharex=axes[0, 0])
+    axes[5, 1] = fig.add_subplot(gs[5, 1], sharex=axes[0, 0], sharey=axes[5, 0])
+
+    # Row 6: Spike probability (share y within row, share x with row 0)
+    axes[6, 0] = fig.add_subplot(gs[6, 0], sharex=axes[0, 0])
+    axes[6, 1] = fig.add_subplot(gs[6, 1], sharex=axes[0, 0], sharey=axes[6, 0])
+
+    if time_slice_ind is None:
+        time_slice_ind = slice(None)
+
+    # Compute mask for times with spikes (for likelihood plotting)
+    has_spikes_mask: NDArray[np.bool_] | None = None
+    if spike_counts is not None:
+        # Sum across cells to get total spikes per time point
+        has_spikes_mask = spike_counts.sum(axis=1) > 0
+
+    # Distribution rows configuration: (row_idx, data_key, ylabel, show_title)
+    distribution_rows = [
+        (0, "causal_posterior", "Filter", True),
+        (1, "predictive_posterior", "Predictive", False),
+        (2, "log_likelihood", "Likelihood", False),
+    ]
+
+    # Plot distribution heatmaps for rows 0-2
+    for row_idx, data_key, ylabel, show_title in distribution_rows:
+        for col, (results, model_name) in enumerate(
+            [(results_a, model_a_name), (results_b, model_b_name)]
+        ):
+            ax = axes[row_idx, col]
+
+            # Get the appropriate distribution
+            if data_key == "log_likelihood":
+                # Convert log likelihood to likelihood for visualization
+                if data_key in results:
+                    # Use xarray's exp to preserve DataArray structure
+                    distribution_da = xr.apply_ufunc(np.exp, results[data_key])
+
+                    # Mask times without spikes (set to NaN)
+                    if has_spikes_mask is not None:
+                        # Create mask DataArray aligned with time dimension
+                        mask_da = xr.DataArray(
+                            has_spikes_mask,
+                            dims=["time"],
+                            coords={"time": distribution_da.coords["time"]},
+                        )
+                        distribution_da = distribution_da.where(mask_da)
+                else:
+                    # Fallback if not available
+                    distribution_da = results.get("predictive_posterior", results.acausal_posterior)
+            else:
+                distribution_da = results.get(data_key, results.acausal_posterior)
+
+            # Use a more saturated colormap for likelihood (sparse data)
+            cmap = "magma" if data_key == "log_likelihood" else "bone_r"
+
+            _plot_distribution_heatmap(
                 ax=ax,
-                edge_order=edge_order,
-                edge_spacing=edge_spacing,
-                other_axis_start=x_pos,
-                edge_linewidth=3,
-                reward_well_size=20,
+                distribution_da=distribution_da,
+                time=time,
+                position=position,
+                time_slice_ind=time_slice_ind,
+                show_position=True,
+                cmap=cmap,
             )
 
-    # Row 1: Spike raster (both columns show same raster, sorted by place field peak)
+            # Set titles and labels
+            if show_title:
+                ax.set_title(model_name, fontsize=11)
+            else:
+                ax.set_title("")
+
+            ax.set_ylabel(ylabel if col == 0 else "", fontsize=9, labelpad=7)
+            ax.set_xlabel("")
+            ax.tick_params(labelsize=7, labelbottom=False)
+
+            # Add legend for true position line (only on first column, first row)
+            if col == 0 and row_idx == 0:
+                ax.legend(loc="upper left", fontsize=6, frameon=False)
+
+            # Add 1D track graph on right edge (right column, all distribution rows)
+            if track_graph is not None and col == 1:
+                time_arr = np.asarray(time)
+                sliced_time = time_arr[time_slice_ind]
+                x_pos = float(sliced_time[-1])
+                plot_track_graph_1d(
+                    track_graph,
+                    ax=ax,
+                    edge_order=edge_order,
+                    edge_spacing=edge_spacing,
+                    other_axis_start=x_pos,
+                    edge_linewidth=3,
+                    reward_well_size=20,
+                    reward_well_nodes=list(range(6)),
+                )
+
+    # Row 3: Spike raster (both columns show same raster, sorted by place field peak)
     if spike_times is not None:
         # Compute sort order by place field peak position
         if place_field_peaks is not None:
@@ -1683,7 +1796,7 @@ def plot_model_comparison_with_posterior(
         time_slice = slice(float(sliced_time[0]), float(sliced_time[-1]))
 
         for col in range(2):
-            ax = axes[1, col]
+            ax = axes[3, col]
             plot_raster(
                 spike_times,
                 time_slice,
@@ -1694,11 +1807,11 @@ def plot_model_comparison_with_posterior(
             ax.set_xlabel("")
             ax.tick_params(labelsize=7, labelbottom=False)
 
-    # Rows 2-4: Diagnostic scatter plots
+    # Rows 4-6: Diagnostic scatter plots
     for i, (metric, ylabel, color, worse_dir) in enumerate(
         zip(metrics, ylabels, colors, worse_fit_directions, strict=True)
     ):
-        row = i + 2  # Offset by 2 for posterior and raster rows
+        row = i + 4  # Offset by 4 for distribution and raster rows
         threshold = thresholds.get(metric) if thresholds else None
 
         # Model A (left column)
@@ -1739,7 +1852,7 @@ def plot_model_comparison_with_posterior(
         )
 
     # Hide y-tick labels on right column (since y-axes are shared within rows)
-    for row in range(5):
+    for row in range(7):
         axes[row, 1].tick_params(labelleft=False)
 
     return fig, axes
