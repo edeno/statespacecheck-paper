@@ -22,6 +22,8 @@ import numpy as np
 from matplotlib import gridspec
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
+from matplotlib.image import AxesImage
+from matplotlib.lines import Line2D
 from matplotlib.ticker import FuncFormatter, NullFormatter
 from numpy.typing import NDArray
 
@@ -905,6 +907,119 @@ def plot_misfit_examples(
     return fig
 
 
+def _plot_timeseries_heatmap(
+    ax: Axes,
+    data: NDArray[np.floating],
+    x_true: NDArray[np.floating] | None = None,
+    cmap: str = CMAP_POSTERIOR,
+    vmax_quantile: float = 0.975,
+) -> AxesImage:
+    """Plot time x position heatmap with optional true position overlay.
+
+    Parameters
+    ----------
+    ax : Axes
+        Matplotlib axes to plot on.
+    data : NDArray, shape (n_time, n_bins)
+        Distribution data (predictive, likelihood, or posterior).
+    x_true : NDArray, shape (n_time,), optional
+        True position to overlay as a line.
+    cmap : str, default CMAP_POSTERIOR
+        Colormap for heatmap.
+    vmax_quantile : float, default 0.975
+        Quantile for vmax (for robustness to outliers).
+
+    Returns
+    -------
+    im : AxesImage
+        The image object (for colorbar creation if needed).
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> import matplotlib.pyplot as plt
+    >>> fig, ax = plt.subplots()
+    >>> data = np.random.dirichlet(np.ones(50), size=100)
+    >>> x_true = np.random.uniform(0, 49, 100)
+    >>> im = _plot_timeseries_heatmap(ax, data, x_true)
+    >>> plt.close(fig)
+    """
+    n_time = data.shape[0]
+    # Use nanquantile to handle NaN values (e.g., masked likelihood)
+    im = ax.imshow(
+        data.T,
+        aspect="auto",
+        origin="lower",
+        vmin=0.0,
+        vmax=np.nanquantile(data, vmax_quantile),
+        cmap=cmap,
+    )
+    if x_true is not None:
+        ax.plot(
+            np.arange(n_time),
+            x_true,
+            color=COLORS["ground_truth"],
+            linewidth=1.0,
+            alpha=0.85,
+        )
+    return im
+
+
+def _plot_spike_count_raster(
+    ax: Axes,
+    spikes: NDArray[np.floating],
+    placefield_centers: NDArray[np.floating],
+) -> None:
+    """Plot spike counts as a raster, sorted by place field peak.
+
+    Neurons are sorted by their place field center position so that
+    sequential activation during movement is visible as diagonal patterns.
+    Uses scatter plot for better visibility of sparse events.
+
+    Parameters
+    ----------
+    ax : Axes
+        Matplotlib axes to plot on.
+    spikes : NDArray, shape (n_time, n_cells)
+        Spike counts at each timestep for each cell.
+    placefield_centers : NDArray, shape (n_cells,)
+        Place field centers for sorting neurons by preferred position.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> import matplotlib.pyplot as plt
+    >>> fig, ax = plt.subplots()
+    >>> spikes = np.random.poisson(0.1, (100, 20))
+    >>> pf_centers = np.linspace(0, 1, 20)
+    >>> _plot_spike_count_raster(ax, spikes, pf_centers)
+    >>> plt.close(fig)
+    """
+    # Sort neurons by place field peak position
+    sort_order = np.argsort(placefield_centers)
+    spikes_sorted = spikes[:, sort_order]
+
+    # Find spike locations (time, neuron pairs where spikes occurred)
+    spike_times, spike_neurons = np.where(spikes_sorted > 0)
+
+    # Use scatter plot for better visibility of sparse events
+    ax.scatter(
+        spike_times,
+        spike_neurons,
+        s=1.0,
+        c="black",
+        marker="|",
+        linewidths=0.8,
+        rasterized=True,
+    )
+
+    # Set axis limits
+    n_time, n_cells = spikes_sorted.shape
+    ax.set_xlim(0, n_time)
+    ax.set_ylim(-0.5, n_cells - 0.5)
+    ax.set_ylabel("Neuron", fontsize=9, labelpad=7)
+
+
 def plot_combined_diagnostics(
     xs: NDArray[np.floating],
     x_true: NDArray[np.floating],
@@ -919,7 +1034,8 @@ def plot_combined_diagnostics(
     """Create comprehensive combined figure with misfit examples and time-series diagnostics.
 
     Layout:
-    - Top section: 4 time-series panels (posterior, HPDO, KL, spike prob) with shared x-axis
+    - Top section: 7 time-series panels (predictive, likelihood, posterior, raster,
+      HPDO, KL, spike prob) with shared x-axis
     - Bottom section: 5 distribution examples (baseline + 4 misfits)
     - Background colors on examples match phase colors in time-series
     - All formatting matches original figure standards
@@ -961,6 +1077,8 @@ def plot_combined_diagnostics(
     >>> x_true = np.random.uniform(0, n_bins - 1, n_time)
     >>> spikes = np.random.poisson(0.5, (n_time, n_cells))
     >>> metrics = {
+    ...     'predictive': np.random.dirichlet(np.ones(n_bins), size=n_time),
+    ...     'likelihood': np.random.dirichlet(np.ones(n_bins), size=n_time),
     ...     'posterior': np.random.dirichlet(np.ones(n_bins), size=n_time),
     ...     'hpd_overlap': np.random.uniform(0, 1, (n_time, n_cells)),
     ...     'kl_divergence': np.random.uniform(0, 5, (n_time, n_cells)),
@@ -988,26 +1106,27 @@ def plot_combined_diagnostics(
         "slow": COLORS["phase_slow"],
     }
 
-    # Calculate figure size
+    # Calculate figure size - taller to accommodate new panels
     fig_width = 7.0  # Full page width
-    fig_height = 7.5  # Compact height appropriate for manuscripts
+    fig_height = 10.5  # Increased height for new panels
 
     fig = plt.figure(figsize=(fig_width, fig_height), dpi=450)
 
-    # Create grid: 4 rows for diagnostics, gap, 2 rows for examples
+    # Create grid: 7 rows for time-series (pred, like, post, raster, hpdo, kl, spike),
+    # gap, 2 rows for examples
     # 6 columns: 5 for plots + 1 for colorbar/legend
     gs = gridspec.GridSpec(
-        7,
+        10,
         6,
         figure=fig,
-        height_ratios=[1.5, 0.8, 0.8, 0.8, 0.5, 0.6, 0.6],  # Gap row increased to 0.5
+        height_ratios=[1.2, 1.2, 1.2, 0.8, 0.7, 0.7, 0.7, 0.4, 0.55, 0.55],
         width_ratios=[1, 1, 1, 1, 1, 0.10],  # Narrow column for colorbar/legend/annotations
         hspace=0.12,
         wspace=0.15,  # Minimal spacing between columns
         left=0.08,
         right=0.99,
         top=0.97,
-        bottom=0.05,
+        bottom=0.04,
     )
 
     # ===== TOP SECTION: Time-Series Diagnostics =====
@@ -1015,32 +1134,85 @@ def plot_combined_diagnostics(
     n_time = metrics["posterior"].shape[0]
 
     # Create time-series axes (all spanning first 5 columns, with shared x-axis)
-    ax_post = fig.add_subplot(gs[0, 0:5])
-    ax_hpdo = fig.add_subplot(gs[1, 0:5], sharex=ax_post)
-    ax_kl = fig.add_subplot(gs[2, 0:5], sharex=ax_post)
-    ax_spike = fig.add_subplot(gs[3, 0:5], sharex=ax_post)
+    # New order: Predictive -> Likelihood -> Posterior -> Raster -> HPD -> KL -> Spike
+    ax_pred = fig.add_subplot(gs[0, 0:5])
+    ax_like = fig.add_subplot(gs[1, 0:5], sharex=ax_pred)
+    ax_post = fig.add_subplot(gs[2, 0:5], sharex=ax_pred)
+    ax_raster = fig.add_subplot(gs[3, 0:5], sharex=ax_pred)
+    ax_hpdo = fig.add_subplot(gs[4, 0:5], sharex=ax_pred)
+    ax_kl = fig.add_subplot(gs[5, 0:5], sharex=ax_pred)
+    ax_spike = fig.add_subplot(gs[6, 0:5], sharex=ax_pred)
 
-    # Posterior heatmap
-    im = ax_post.imshow(
-        metrics["posterior"].T,
-        aspect="auto",
-        origin="lower",
-        vmin=0.0,
-        vmax=np.quantile(metrics["posterior"], 0.975),
-        cmap=CMAP_POSTERIOR,
+    # Predictive heatmap
+    _plot_timeseries_heatmap(ax_pred, metrics["predictive"], x_true)
+    ax_pred.set_ylabel("Position (a.u.)", fontsize=9, labelpad=7)
+    ax_pred.tick_params(labelsize=7, labelbottom=False)
+    ax_pred.legend(
+        [Line2D([0], [0], color=COLORS["ground_truth"], linewidth=1.0)],
+        ["True position"],
+        loc="upper left",
+        fontsize=6,
+        frameon=False,
     )
-    ax_post.plot(
-        np.arange(n_time),
-        x_true,
-        color=COLORS["ground_truth"],
-        linewidth=1.0,
-        alpha=0.85,
-        label="True position",
+    # Add label "Predictive" on right side
+    ax_pred.text(
+        1.01,
+        0.5,
+        "Predictive",
+        transform=ax_pred.transAxes,
+        fontsize=7,
+        va="center",
+        ha="left",
+        rotation=270,
     )
+
+    # Likelihood heatmap - only show at times with spikes
+    # Mask times without spikes (likelihood is only meaningful when there are spikes)
+    has_spikes = spikes.sum(axis=1) > 0
+    likelihood_masked = metrics["likelihood"].copy()
+    likelihood_masked[~has_spikes, :] = np.nan  # Set to NaN at times without spikes
+    im = _plot_timeseries_heatmap(ax_like, likelihood_masked, x_true, cmap="magma")
+    ax_like.set_ylabel("Position (a.u.)", fontsize=9, labelpad=7)
+    ax_like.tick_params(labelsize=7, labelbottom=False)
+    ax_like.text(
+        1.01,
+        0.5,
+        "Likelihood",
+        transform=ax_like.transAxes,
+        fontsize=7,
+        va="center",
+        ha="left",
+        rotation=270,
+    )
+
+    # Posterior heatmap (filtered)
+    _plot_timeseries_heatmap(ax_post, metrics["posterior"], x_true)
     ax_post.set_ylabel("Position (a.u.)", fontsize=9, labelpad=7)
     ax_post.tick_params(labelsize=7, labelbottom=False)
-    # Add legend for true position line (upper left)
-    ax_post.legend(loc="upper left", fontsize=6, frameon=False)
+    ax_post.text(
+        1.01,
+        0.5,
+        "Posterior",
+        transform=ax_post.transAxes,
+        fontsize=7,
+        va="center",
+        ha="left",
+        rotation=270,
+    )
+
+    # Spike raster (sorted by place field peak)
+    _plot_spike_count_raster(ax_raster, spikes, placefield_centers)
+    ax_raster.tick_params(labelsize=7, labelbottom=False)
+    ax_raster.text(
+        1.01,
+        0.5,
+        "Spikes",
+        transform=ax_raster.transAxes,
+        fontsize=7,
+        va="center",
+        ha="left",
+        rotation=270,
+    )
 
     # Create time indices for scatter plots (metrics are now 2D: n_time x n_cells)
     n_cells = metrics["hpd_overlap"].shape[1]
@@ -1151,8 +1323,8 @@ def plot_combined_diagnostics(
         color=COLORS["threshold"],
     )
 
-    # Colorbar for posterior only - in dedicated axes aligned with posterior panel
-    cax = fig.add_subplot(gs[0, 5])
+    # Colorbar for heatmaps - in dedicated axes aligned with likelihood panel
+    cax = fig.add_subplot(gs[1, 5])
     cbar = fig.colorbar(im, cax=cax)
     # Use clearer formatting: show values in scientific notation
     cbar.ax.yaxis.set_major_formatter(FuncFormatter(lambda x, p: f"{x:.1e}" if x > 0 else "0"))
@@ -1171,8 +1343,12 @@ def plot_combined_diagnostics(
         params.T_slow_end,
     )
 
-    # Add phase boundaries with matching colors
-    add_phase_boundaries([ax_post, ax_hpdo, ax_kl, ax_spike], phase_boundaries, alpha=0.15)
+    # Add phase boundaries with matching colors to all panels
+    add_phase_boundaries(
+        [ax_pred, ax_like, ax_post, ax_raster, ax_hpdo, ax_kl, ax_spike],
+        phase_boundaries,
+        alpha=0.15,
+    )
 
     # Unpack for phase labels
     (
@@ -1186,7 +1362,7 @@ def plot_combined_diagnostics(
         t_slow_end,
     ) = phase_boundaries
 
-    # Add phase labels above top panel
+    # Add phase labels above top panel (ax_pred is now the top panel)
     phase_labels_info = [
         ((t_remap_start + t_remap_end) / 2, "Remap", "c"),
         ((t_recovery1_end + t_flat_end) / 2, "Flat", "d"),
@@ -1194,11 +1370,11 @@ def plot_combined_diagnostics(
         ((t_recovery3_end + t_slow_end) / 2, "Slow", "f"),
     ]
     for x_pos, label_text, panel_id in phase_labels_info:
-        ax_post.text(
+        ax_pred.text(
             x_pos,
             1.02,
             f"{label_text} ({panel_id})",
-            transform=ax_post.get_xaxis_transform(),
+            transform=ax_pred.get_xaxis_transform(),
             fontsize=6,
             ha="center",
             va="bottom",
@@ -1224,6 +1400,7 @@ def plot_combined_diagnostics(
 
     # First pass: compute all distributions to determine shared y-limits
     plot_data = []
+
     for _phase_idx, (phase_name, phase_slice, is_baseline, col_idx, color_key) in enumerate(phases):
         # Find example time (best for baseline, worst for misfits)
         # Metrics are now (n_time, n_cells), use mean across cells for selection
@@ -1260,6 +1437,7 @@ def plot_combined_diagnostics(
         current_pf_centers = get_remapped_pf_centers(
             placefield_centers, params.remap_from_to, active_remap
         )
+
         likelihood = likelihood_grid_for_counts(
             xs, current_pf_centers, placefield_width, rate_scale, spikes[example_time]
         )
@@ -1303,8 +1481,8 @@ def plot_combined_diagnostics(
         prior = data["prior"]
         likelihood_norm = data["likelihood_norm"]
 
-        # Create subplot (spans 2 rows)
-        ax1 = fig.add_subplot(gs[5:7, col_idx])
+        # Create subplot (spans 2 rows) - bottom section is rows 8-9
+        ax1 = fig.add_subplot(gs[8:10, col_idx])
         example_axes.append(ax1)
 
         # Set background color matching phase
@@ -1385,12 +1563,10 @@ def plot_combined_diagnostics(
         ax1.tick_params(axis="x", labelsize=6)
         ax1.set_xlabel("Position (a.u.)", fontsize=7, labelpad=4)
 
-    # Create legend in separate column (similar to colorbar)
-    legend_ax = fig.add_subplot(gs[5:7, 5])
+    # Create legend in separate column (similar to colorbar) - rows 8-9
+    legend_ax = fig.add_subplot(gs[8:10, 5])
     legend_ax.axis("off")
     # Create dummy lines for legend
-    from matplotlib.lines import Line2D
-
     predictive_line = Line2D([0], [0], color=COLORS["predictive"], linewidth=1.2, alpha=0.7)
     likelihood_line = Line2D([0], [0], color=COLORS["likelihood"], linewidth=1.2, alpha=0.9)
     position_line = Line2D(
@@ -1406,11 +1582,11 @@ def plot_combined_diagnostics(
     )
 
     # Panel labels: 'a' for time-series section, 'b-f' for examples
-    ax_post.text(
+    ax_pred.text(
         -0.08,
         1.05,
         "a",
-        transform=ax_post.transAxes,
+        transform=ax_pred.transAxes,
         fontsize=9,
         fontweight="bold",
         va="bottom",
