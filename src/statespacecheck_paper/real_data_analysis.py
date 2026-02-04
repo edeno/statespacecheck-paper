@@ -9,6 +9,7 @@ per-cell diagnostic computations for model checking.
 - **gaussian_smooth**: Apply 1D Gaussian convolution
 - **get_multiunit_population_firing_rate**: Calculate smoothed population rate
 - **find_sustained_low_overlap**: Find low-overlap time regions
+- **compute_running_average**: Compute running average of per-cell diagnostics
 - **extract_place_fields**: Extract place fields from fitted decoder model
 - **compute_per_cell_likelihood**: Compute per-cell Poisson likelihood
 - **compute_per_cell_diagnostics**: Compute HPD overlap, KL divergence, spike prob
@@ -177,6 +178,103 @@ def find_sustained_low_overlap(
             regions.append((start, end))
 
     return regions
+
+
+def compute_running_average(
+    metric: NDArray[np.float64],
+    time: NDArray[np.float64],
+    window_size: float = 0.050,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Compute running average of per-cell diagnostic metric over time.
+
+    Implements the weighted average formula from the manuscript for evaluating
+    goodness-of-fit over a period:
+
+        D = sum(metric_k * I(t_k in window)) / sum(I(t_k in window))
+
+    where I(*) is the indicator function selecting time points within the window.
+
+    This function first computes the mean across cells at each time bin (ignoring
+    NaN values where cells have no spikes), then applies a sliding window average
+    over time to produce a smooth summary line.
+
+    Parameters
+    ----------
+    metric : np.ndarray, shape (n_time, n_cells)
+        Per-cell diagnostic metric values. NaN where cell has no spike.
+    time : np.ndarray, shape (n_time,)
+        Time values for each bin.
+    window_size : float, default 0.050
+        Size of the sliding window in seconds.
+
+    Returns
+    -------
+    running_avg : np.ndarray, shape (n_time,)
+        Running average of the metric over time.
+    time_out : np.ndarray, shape (n_time,)
+        Time values (same as input, for convenience).
+
+    Notes
+    -----
+    The function uses a uniform (boxcar) filter for the sliding window average,
+    which treats all time points within the window equally. Edge effects are
+    handled by using 'nearest' mode, which extends the edge values.
+
+    For metrics with many NaN values (sparse spikes), the mean across cells
+    at each time bin may itself be NaN. These are handled by the uniform filter
+    using linear interpolation.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> n_time, n_cells = 100, 10
+    >>> metric = np.random.rand(n_time, n_cells)
+    >>> metric[::2, :] = np.nan  # Sparse spikes
+    >>> time = np.linspace(0, 1, n_time)
+    >>> running_avg, time_out = compute_running_average(metric, time, window_size=0.1)
+    >>> running_avg.shape
+    (100,)
+    """
+    import warnings
+
+    from scipy.ndimage import uniform_filter1d
+
+    # Step 1: Compute mean across cells at each time bin (ignoring NaN)
+    # Suppress expected warning when all cells at a time bin are NaN (no spikes)
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message="Mean of empty slice")
+        mean_per_bin = np.nanmean(metric, axis=1)  # (n_time,)
+
+    # Step 2: Estimate time bin width from the time array
+    if len(time) > 1:
+        dt = float(np.median(np.diff(time)))
+    else:
+        dt = 1.0
+
+    # Step 3: Convert window size from seconds to number of bins
+    window_bins = max(1, int(np.round(window_size / dt)))
+
+    # Step 4: Handle NaN values before filtering
+    # Replace NaN with interpolated values for filtering, then restore
+    valid_mask = ~np.isnan(mean_per_bin)
+    if valid_mask.sum() == 0:
+        # All NaN - return NaN array
+        return np.full_like(mean_per_bin, np.nan), time.copy()
+
+    # Interpolate NaN values for filtering
+    mean_interpolated = mean_per_bin.copy()
+    if not valid_mask.all():
+        # Use numpy interp to fill NaN values
+        valid_indices = np.where(valid_mask)[0]
+        nan_indices = np.where(~valid_mask)[0]
+        mean_interpolated[nan_indices] = np.interp(
+            nan_indices, valid_indices, mean_per_bin[valid_indices]
+        )
+
+    # Step 5: Apply uniform (boxcar) filter for running average
+    running_avg = uniform_filter1d(mean_interpolated, size=window_bins, mode="nearest")
+
+    return running_avg, time.copy()
 
 
 # =============================================================================

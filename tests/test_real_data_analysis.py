@@ -432,3 +432,226 @@ class TestPlotPerCellDiagnosticScatterWithSpikeTimes:
         np.testing.assert_allclose(sorted(valid_offsets[:, 0]), sorted(expected_x))
 
         plt.close(fig)
+
+
+class TestComputeRunningAverage:
+    """Tests for compute_running_average function."""
+
+    def test_output_shape_matches_input(self) -> None:
+        """Test that output has same shape as input time dimension."""
+        from statespacecheck_paper.real_data_analysis import compute_running_average
+
+        n_time, n_cells = 100, 10
+        metric = np.random.rand(n_time, n_cells)
+        time = np.linspace(0, 1, n_time)
+
+        running_avg, time_out = compute_running_average(metric, time, window_size=0.1)
+
+        assert running_avg.shape == (n_time,)
+        assert time_out.shape == (n_time,)
+        np.testing.assert_array_equal(time_out, time)
+
+    def test_handles_nan_values(self) -> None:
+        """Test that NaN values are handled correctly."""
+        from statespacecheck_paper.real_data_analysis import compute_running_average
+
+        n_time, n_cells = 100, 10
+        metric = np.random.rand(n_time, n_cells)
+        # Add NaN values (simulating sparse spikes)
+        metric[::2, :] = np.nan
+        time = np.linspace(0, 1, n_time)
+
+        running_avg, _ = compute_running_average(metric, time, window_size=0.1)
+
+        # Should not have NaN in output (interpolated)
+        assert not np.any(np.isnan(running_avg))
+
+    def test_all_nan_returns_nan_array(self) -> None:
+        """Test that all-NaN input returns NaN array."""
+        from statespacecheck_paper.real_data_analysis import compute_running_average
+
+        n_time, n_cells = 100, 10
+        metric = np.full((n_time, n_cells), np.nan)
+        time = np.linspace(0, 1, n_time)
+
+        running_avg, _ = compute_running_average(metric, time, window_size=0.1)
+
+        assert np.all(np.isnan(running_avg))
+
+    def test_smoothing_effect(self) -> None:
+        """Test that larger window produces smoother output."""
+        from statespacecheck_paper.real_data_analysis import compute_running_average
+
+        n_time, n_cells = 1000, 10
+        # Create noisy data
+        rng = np.random.default_rng(42)
+        metric = rng.random((n_time, n_cells))
+        time = np.linspace(0, 1, n_time)
+
+        # Compute with small and large windows
+        small_window, _ = compute_running_average(metric, time, window_size=0.01)
+        large_window, _ = compute_running_average(metric, time, window_size=0.1)
+
+        # Larger window should have smaller variance (smoother)
+        assert np.var(large_window) < np.var(small_window)
+
+    def test_window_size_affects_output(self) -> None:
+        """Test that different window sizes produce different outputs."""
+        from statespacecheck_paper.real_data_analysis import compute_running_average
+
+        n_time, n_cells = 100, 10
+        rng = np.random.default_rng(42)
+        metric = rng.random((n_time, n_cells))
+        time = np.linspace(0, 1, n_time)
+
+        result1, _ = compute_running_average(metric, time, window_size=0.05)
+        result2, _ = compute_running_average(metric, time, window_size=0.2)
+
+        # Results should be different
+        assert not np.allclose(result1, result2)
+
+
+class TestPlotPerCellDiagnosticScatterWithRunningAverage:
+    """Tests for plot_per_cell_diagnostic_scatter with running average."""
+
+    def test_running_average_adds_line(self) -> None:
+        """Test that show_running_average=True adds a line to the plot."""
+        import matplotlib.pyplot as plt
+
+        from statespacecheck_paper.real_data_plotting import (
+            plot_per_cell_diagnostic_scatter,
+        )
+
+        n_time, n_cells = 100, 10
+        time = np.linspace(0.0, 1.0, n_time)
+        diagnostics = {"hpd_overlap": np.random.rand(n_time, n_cells)}
+
+        fig, ax = plt.subplots()
+
+        # Plot WITHOUT running average
+        plot_per_cell_diagnostic_scatter(
+            time,
+            diagnostics,
+            ax=ax,
+            show_running_average=False,
+        )
+        n_lines_without = len(ax.lines)
+
+        plt.close(fig)
+
+        # Plot WITH running average
+        fig, ax = plt.subplots()
+        plot_per_cell_diagnostic_scatter(
+            time,
+            diagnostics,
+            ax=ax,
+            show_running_average=True,
+        )
+        n_lines_with = len(ax.lines)
+
+        # Should have one more line
+        assert n_lines_with == n_lines_without + 1
+
+        plt.close(fig)
+
+    def test_running_average_custom_window(self) -> None:
+        """Test that custom window size is used."""
+        import matplotlib.pyplot as plt
+
+        from statespacecheck_paper.real_data_plotting import (
+            plot_per_cell_diagnostic_scatter,
+        )
+
+        n_time, n_cells = 100, 10
+        time = np.linspace(0.0, 1.0, n_time)
+        rng = np.random.default_rng(42)
+        diagnostics = {"hpd_overlap": rng.random((n_time, n_cells))}
+
+        # Plot with different window sizes
+        fig1, ax1 = plt.subplots()
+        plot_per_cell_diagnostic_scatter(
+            time,
+            diagnostics,
+            ax=ax1,
+            show_running_average=True,
+            running_average_window=0.05,
+        )
+        line1_y = ax1.lines[0].get_ydata()
+
+        fig2, ax2 = plt.subplots()
+        plot_per_cell_diagnostic_scatter(
+            time,
+            diagnostics,
+            ax=ax2,
+            show_running_average=True,
+            running_average_window=0.2,
+        )
+        line2_y = ax2.lines[0].get_ydata()
+
+        # Different window sizes should produce different lines
+        assert not np.allclose(line1_y, line2_y)
+
+        plt.close(fig1)
+        plt.close(fig2)
+
+    def test_spike_prob_running_average_uses_raw_values(self) -> None:
+        """Test that running average for spike_prob uses raw probabilities.
+
+        The running average should be computed on raw probability values,
+        then transformed to -log10 scale. This differs from computing
+        the mean of transformed values:
+            -log10(mean(p_i)) != mean(-log10(p_i))
+
+        For example, with probabilities [0.01, 0.99]:
+            mean(raw) = 0.5, then -log10(0.5) = 0.301
+            mean(-log10([0.01, 0.99])) = mean([2.0, 0.004]) = 1.002
+        These are very different!
+        """
+        import matplotlib.pyplot as plt
+
+        from statespacecheck_paper.real_data_plotting import (
+            plot_per_cell_diagnostic_scatter,
+        )
+
+        # Create spike_prob values with different values across cells
+        # This ensures mean(raw) differs from mean(transformed)
+        n_time = 3
+        spike_probs = np.array(
+            [
+                [0.01, 0.99],  # mean_raw=0.5, -log10(0.5)=0.301; mean_transformed=1.002
+                [0.1, 0.9],  # mean_raw=0.5, -log10(0.5)=0.301; mean_transformed=0.523
+                [0.5, 0.5],  # mean_raw=0.5, same either way (control case)
+            ]
+        )
+        time = np.linspace(0, 0.2, n_time)
+        diagnostics = {"spike_prob": spike_probs}
+
+        fig, ax = plt.subplots()
+        plot_per_cell_diagnostic_scatter(
+            time,
+            diagnostics,
+            ax=ax,
+            metric_name="spike_prob",
+            show_running_average=True,
+            running_average_window=0.01,  # Small window = minimal smoothing
+        )
+
+        # Extract running average line
+        line = ax.lines[0]
+        y_actual = line.get_ydata()
+
+        # Expected: avg(raw) then transform to -log10
+        mean_raw = np.mean(spike_probs, axis=1)  # [0.5, 0.5, 0.5]
+        expected = -np.log10(np.maximum(mean_raw, 1e-10))  # [0.301, 0.301, 0.301]
+
+        # Should match expected (avg then transform)
+        np.testing.assert_allclose(y_actual, expected, rtol=1e-3)
+
+        # Verify this differs from incorrect approach (transform then avg)
+        transformed = -np.log10(np.maximum(spike_probs, 1e-10))
+        incorrect = np.mean(transformed, axis=1)  # [1.002, 0.523, 0.301]
+
+        # The incorrect approach gives different values for rows 0 and 1
+        assert not np.allclose(y_actual, incorrect, rtol=1e-3)
+
+        plt.close(fig)

@@ -164,6 +164,8 @@ def run_demo() -> None:
         track_graph=data["track_graph"],
         edge_order=data["linear_edge_order"],
         edge_spacing=data["linear_edge_spacing"],
+        show_running_average=True,
+        running_average_window=0.020,  # 20ms window for running average
     )
     save_figure("figures/main/figure04a", close=True)
     print("Saved figures/main/figure04a.{pdf,png}")

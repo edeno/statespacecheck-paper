@@ -1231,6 +1231,9 @@ def plot_per_cell_diagnostic_scatter(
     ylabel: str | None = None,
     show_xlabel: bool = True,
     spike_times: list[NDArray[np.float64]] | None = None,
+    show_running_average: bool = False,
+    running_average_window: float = 0.050,
+    running_average_color: str | None = None,
 ) -> Axes:
     """Plot per-cell diagnostic metric as scatter plot over time.
 
@@ -1265,6 +1268,15 @@ def plot_per_cell_diagnostic_scatter(
         List of spike time arrays, one per cell. If provided, diagnostic
         points are plotted at actual spike times instead of bin values,
         aligning them with raster plots.
+    show_running_average : bool, default False
+        If True, overlay a running average line on top of the scatter plot.
+        The running average is computed as the weighted mean over a sliding
+        window, as described in the manuscript.
+    running_average_window : float, default 0.050
+        Size of the sliding window in seconds for the running average.
+    running_average_color : str, optional
+        Color for the running average line. If None, uses a darker version
+        of the scatter color.
 
     Returns
     -------
@@ -1287,6 +1299,11 @@ def plot_per_cell_diagnostic_scatter(
     if time_slice_ind is not None:
         time_arr = time_arr[time_slice_ind]
         metric = metric[time_slice_ind]
+
+    # Store raw metric for running average computation (before transformation)
+    # The running average should be computed on raw values per manuscript formula:
+    # D = sum(metric_k * I(t_k in window)) / sum(I(t_k in window))
+    raw_metric = metric.copy()
 
     # Transform spike_prob to -log10 scale (matching Figure 3)
     # Higher values indicate worse fit (low probability)
@@ -1342,6 +1359,43 @@ def plot_per_cell_diagnostic_scatter(
         c=color,
         rasterized=True,
     )
+
+    # Add running average line if requested
+    if show_running_average:
+        from statespacecheck_paper.real_data_analysis import compute_running_average
+
+        # Compute running average on RAW values (before transformation)
+        # per manuscript formula, then transform for display
+        running_avg, _ = compute_running_average(
+            raw_metric, time_arr, window_size=running_average_window
+        )
+
+        # Transform running average if needed (same as scatter points)
+        if metric_name == "spike_prob":
+            running_avg = -np.log10(np.maximum(running_avg, 1e-10))
+
+        # Determine line color (darker version of scatter color if not specified)
+        line_color: str | tuple[float, ...]
+        if running_average_color is None:
+            import matplotlib.colors as mcolors
+
+            # Convert to RGB, darken by 30%, convert back
+            try:
+                rgb = mcolors.to_rgb(color)
+                line_color = tuple(c * 0.7 for c in rgb)
+            except ValueError:
+                line_color = "black"
+        else:
+            line_color = running_average_color
+
+        ax.plot(
+            time_arr,
+            running_avg,
+            color=line_color,
+            linewidth=2,
+            alpha=0.9,
+            zorder=5,
+        )
 
     if threshold is not None:
         ax.axhline(
@@ -1674,6 +1728,8 @@ def plot_model_comparison_with_posterior(
     track_graph: nx.Graph | None = None,
     edge_order: list[tuple[int, int]] | None = None,
     edge_spacing: float | list[float] = 0.0,
+    show_running_average: bool = False,
+    running_average_window: float = 0.050,
 ) -> tuple[Figure, NDArray[np.object_]]:
     """Create model comparison with predictive, likelihood, posterior, raster, and diagnostics.
 
@@ -1724,6 +1780,10 @@ def plot_model_comparison_with_posterior(
         Order of edges for linearization.
     edge_spacing : float or list[float], default 0.0
         Spacing between edges.
+    show_running_average : bool, default False
+        If True, overlay a running average line on diagnostic scatter plots.
+    running_average_window : float, default 0.050
+        Size of the sliding window in seconds for the running average.
 
     Returns
     -------
@@ -1917,6 +1977,8 @@ def plot_model_comparison_with_posterior(
             ylabel=ylabel,
             show_xlabel=(i == 2),
             spike_times=spike_times,
+            show_running_average=show_running_average,
+            running_average_window=running_average_window,
         )
 
         # Model B (right column)
@@ -1931,6 +1993,8 @@ def plot_model_comparison_with_posterior(
             ylabel="",  # Left column has ylabel
             show_xlabel=(i == 2),
             spike_times=spike_times,
+            show_running_average=show_running_average,
+            running_average_window=running_average_window,
         )
 
         # Add direction indicator on right side of right column (matching Figure 3)
