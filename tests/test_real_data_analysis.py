@@ -337,3 +337,98 @@ class TestGetStateMarginalizedPosterior:
 
         assert posterior.shape == (n_time, n_bins)
         np.testing.assert_allclose(posterior, posterior_data)
+
+
+class TestPlotPerCellDiagnosticScatterWithSpikeTimes:
+    """Tests for plot_per_cell_diagnostic_scatter with spike_times alignment."""
+
+    def test_spike_times_aligns_with_raster(self) -> None:
+        """Test that spike_times parameter aligns scatter points with actual spike times."""
+        import matplotlib.pyplot as plt
+
+        from statespacecheck_paper.real_data_plotting import (
+            plot_per_cell_diagnostic_scatter,
+        )
+
+        # Create time bins: 0.0, 0.1, 0.2, ..., 0.9 (10 bins, 100ms each)
+        time = np.linspace(0.0, 0.9, 10)
+        n_time, n_cells = 10, 3
+
+        # Create spike times at non-bin-center positions
+        # Cell 0: spike at 0.15 (falls in bin 1, which starts at 0.1)
+        # Cell 1: spike at 0.35 (falls in bin 3, which starts at 0.3)
+        # Cell 2: spike at 0.55 (falls in bin 5, which starts at 0.5)
+        spike_times_list = [
+            np.array([0.15]),  # Cell 0
+            np.array([0.35]),  # Cell 1
+            np.array([0.55]),  # Cell 2
+        ]
+
+        # Create diagnostics with NaN everywhere except at spike times
+        diagnostics = {"hpd_overlap": np.full((n_time, n_cells), np.nan)}
+        diagnostics["hpd_overlap"][1, 0] = 0.8  # Bin 1, cell 0 (spike at 0.15)
+        diagnostics["hpd_overlap"][3, 1] = 0.6  # Bin 3, cell 1 (spike at 0.35)
+        diagnostics["hpd_overlap"][5, 2] = 0.4  # Bin 5, cell 2 (spike at 0.55)
+
+        fig, ax = plt.subplots()
+
+        # Plot with spike_times
+        plot_per_cell_diagnostic_scatter(
+            time,
+            diagnostics,
+            ax=ax,
+            spike_times=spike_times_list,
+        )
+
+        # Get the scatter collection
+        scatter = ax.collections[0]
+        offsets = scatter.get_offsets()
+
+        # Filter out masked values (NaN positions)
+        valid_mask = ~np.ma.getmask(offsets).any(axis=1)
+        valid_offsets = offsets[valid_mask]
+
+        # Should have 3 points at x = 0.15, 0.35, 0.55 (actual spike times)
+        assert len(valid_offsets) == 3
+        expected_x = np.array([0.15, 0.35, 0.55])
+        np.testing.assert_allclose(sorted(valid_offsets[:, 0]), sorted(expected_x))
+
+        plt.close(fig)
+
+    def test_without_spike_times_uses_bin_values(self) -> None:
+        """Test that without spike_times, scatter uses bin values."""
+        import matplotlib.pyplot as plt
+
+        from statespacecheck_paper.real_data_plotting import (
+            plot_per_cell_diagnostic_scatter,
+        )
+
+        time = np.linspace(0.0, 0.9, 10)
+        n_time, n_cells = 10, 2
+
+        # Create simple diagnostics
+        diagnostics = {"hpd_overlap": np.full((n_time, n_cells), np.nan)}
+        diagnostics["hpd_overlap"][1, 0] = 0.8  # Bin 1
+        diagnostics["hpd_overlap"][3, 1] = 0.6  # Bin 3
+
+        fig, ax = plt.subplots()
+
+        # Plot WITHOUT spike_times (original behavior)
+        plot_per_cell_diagnostic_scatter(
+            time,
+            diagnostics,
+            ax=ax,
+            spike_times=None,
+        )
+
+        scatter = ax.collections[0]
+        offsets = scatter.get_offsets()
+        valid_mask = ~np.ma.getmask(offsets).any(axis=1)
+        valid_offsets = offsets[valid_mask]
+
+        # Should have points at x = 0.1, 0.3 (bin values, not spike times)
+        assert len(valid_offsets) == 2
+        expected_x = np.array([0.1, 0.3])
+        np.testing.assert_allclose(sorted(valid_offsets[:, 0]), sorted(expected_x))
+
+        plt.close(fig)

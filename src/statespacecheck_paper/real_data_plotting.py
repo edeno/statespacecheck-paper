@@ -1230,6 +1230,7 @@ def plot_per_cell_diagnostic_scatter(
     color: str = "steelblue",
     ylabel: str | None = None,
     show_xlabel: bool = True,
+    spike_times: list[NDArray[np.float64]] | None = None,
 ) -> Axes:
     """Plot per-cell diagnostic metric as scatter plot over time.
 
@@ -1242,7 +1243,7 @@ def plot_per_cell_diagnostic_scatter(
     Parameters
     ----------
     time : np.ndarray or pd.Index
-        Time values.
+        Time values (bin centers/starts).
     diagnostics : dict[str, np.ndarray]
         Dictionary with diagnostic arrays, each with shape (n_time, n_cells).
     time_slice_ind : slice, optional
@@ -1260,6 +1261,10 @@ def plot_per_cell_diagnostic_scatter(
         Y-axis label. If None, uses metric_name.
     show_xlabel : bool, default True
         Whether to show "Time" xlabel.
+    spike_times : list[np.ndarray], optional
+        List of spike time arrays, one per cell. If provided, diagnostic
+        points are plotted at actual spike times instead of bin values,
+        aligning them with raster plots.
 
     Returns
     -------
@@ -1277,9 +1282,10 @@ def plot_per_cell_diagnostic_scatter(
         ax = plt.gca()
 
     metric = diagnostics[metric_name].copy()
+    time_arr = np.asarray(time)
 
     if time_slice_ind is not None:
-        time = time[time_slice_ind]
+        time_arr = time_arr[time_slice_ind]
         metric = metric[time_slice_ind]
 
     # Transform spike_prob to -log10 scale (matching Figure 3)
@@ -1291,13 +1297,46 @@ def plot_per_cell_diagnostic_scatter(
 
     n_time, n_cells = metric.shape
 
-    # Create time indices for scatter plot
-    time_arr = np.asarray(time)
-    time_indices = np.tile(time_arr[:, np.newaxis], (1, n_cells))
+    if spike_times is not None:
+        # Use actual spike times for x-positions to align with raster
+        # Find the time range for filtering spikes
+        time_min, time_max = time_arr.min(), time_arr.max()
+
+        # Collect (spike_time, diagnostic_value) pairs for all non-NaN diagnostics
+        x_positions = []
+        y_values = []
+
+        for cell_idx in range(n_cells):
+            cell_spike_times = spike_times[cell_idx]
+            # Filter to spikes within the time window
+            mask = (cell_spike_times >= time_min) & (cell_spike_times < time_max)
+            cell_spikes_in_window = cell_spike_times[mask]
+
+            # For each spike, find which time bin it falls into
+            # Use searchsorted to find bin indices
+            # Spikes are binned into time[i] if time[i] <= spike < time[i+1]
+            bin_indices = np.searchsorted(time_arr, cell_spikes_in_window, side="right") - 1
+            # Clamp to valid range
+            bin_indices = np.clip(bin_indices, 0, n_time - 1)
+
+            # Get diagnostic values at those bins for this cell
+            for spike_t, bin_idx in zip(cell_spikes_in_window, bin_indices, strict=True):
+                diag_val = metric[bin_idx, cell_idx]
+                if not np.isnan(diag_val):
+                    x_positions.append(spike_t)
+                    y_values.append(diag_val)
+
+        x_positions_arr = np.array(x_positions)
+        y_values_arr = np.array(y_values)
+    else:
+        # Original behavior: use time bin values for x-positions
+        time_indices = np.tile(time_arr[:, np.newaxis], (1, n_cells))
+        x_positions_arr = time_indices.ravel()
+        y_values_arr = metric.ravel()
 
     ax.scatter(
-        time_indices.ravel(),
-        metric.ravel(),
+        x_positions_arr,
+        y_values_arr,
         s=0.8,
         alpha=0.6,
         c=color,
@@ -1877,6 +1916,7 @@ def plot_model_comparison_with_posterior(
             color=color,
             ylabel=ylabel,
             show_xlabel=(i == 2),
+            spike_times=spike_times,
         )
 
         # Model B (right column)
@@ -1890,6 +1930,7 @@ def plot_model_comparison_with_posterior(
             color=color,
             ylabel="",  # Left column has ylabel
             show_xlabel=(i == 2),
+            spike_times=spike_times,
         )
 
         # Add direction indicator on right side of right column (matching Figure 3)
