@@ -120,7 +120,13 @@ def run_demo() -> None:
     )
 
     # Extract place fields to get peak positions for sorting raster
+    # Note: np.nanargmax returns 0 for all-NaN rows, which maps to first position bin
     place_fields, position_bins = extract_place_fields(continuous_model)
+    if np.any(np.all(np.isnan(place_fields), axis=1)):
+        warnings.warn(
+            "Some cells have all-NaN place fields; peak positions may be incorrect",
+            stacklevel=2,
+        )
     place_field_peaks = position_bins[np.nanargmax(place_fields, axis=1)]
 
     # Print summary (all time points)

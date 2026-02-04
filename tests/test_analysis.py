@@ -193,6 +193,42 @@ class TestGetRemappedPfCenters:
         # Original should be unchanged
         np.testing.assert_array_equal(pf_centers, [0.0, 10.0, 20.0])
 
+    def test_default_remapping_pattern(self) -> None:
+        """Test that default DecodeParams remapping (6 bidirectional pairs) works."""
+        # Arrange: 10 cells with place field centers at 0, 10, 20, ..., 90
+        pf_centers = np.arange(10) * 10.0  # [0, 10, 20, 30, 40, 50, 60, 70, 80, 90]
+        # Default remapping swaps cells across the track:
+        # (0, 9), (1, 8), (2, 7), (9, 0), (8, 1), (7, 2)
+        remap_from_to = (
+            (0, 9),  # Cell 0 (pf=0) -> uses cell 9's pf (pf=90)
+            (1, 8),  # Cell 1 (pf=10) -> uses cell 8's pf (pf=80)
+            (2, 7),  # Cell 2 (pf=20) -> uses cell 7's pf (pf=70)
+            (9, 0),  # Cell 9 (pf=90) -> uses cell 0's pf (pf=0)
+            (8, 1),  # Cell 8 (pf=80) -> uses cell 1's pf (pf=10)
+            (7, 2),  # Cell 7 (pf=70) -> uses cell 2's pf (pf=20)
+        )
+        active = True
+
+        # Act
+        result = get_remapped_pf_centers(pf_centers, remap_from_to, active)
+
+        # Assert: bidirectional swaps
+        assert result[0] == pf_centers[9]  # 0 -> 90
+        assert result[9] == pf_centers[0]  # 90 -> 0
+        assert result[1] == pf_centers[8]  # 10 -> 80
+        assert result[8] == pf_centers[1]  # 80 -> 10
+        assert result[2] == pf_centers[7]  # 20 -> 70
+        assert result[7] == pf_centers[2]  # 70 -> 20
+        # Cells 3, 4, 5, 6 should remain unchanged
+        assert result[3] == pf_centers[3]  # 30
+        assert result[4] == pf_centers[4]  # 40
+        assert result[5] == pf_centers[5]  # 50
+        assert result[6] == pf_centers[6]  # 60
+
+        # Verify full expected array
+        expected = np.array([90.0, 80.0, 70.0, 30.0, 40.0, 50.0, 60.0, 20.0, 10.0, 0.0])
+        np.testing.assert_array_equal(result, expected)
+
 
 class TestDecodeAndDiagnostics:
     """Tests for decode_and_diagnostics function (integration test)."""

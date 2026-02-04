@@ -96,7 +96,8 @@ class TestFigure04Integration:
         # Check that configuration constants are defined
         assert hasattr(generate_figure04, "DATA_PATH")
         assert hasattr(generate_figure04, "ANIMAL_DATE_EPOCH")
-        assert hasattr(generate_figure04, "N_TIME_FIT")
+        assert hasattr(generate_figure04, "FIGURE_4A_WINDOW_CENTER")
+        assert hasattr(generate_figure04, "FIGURE_4A_WINDOW_HALF_WIDTH")
 
     def test_imports_analysis_utilities(self) -> None:
         """Test that generate_figure04.py imports required analysis utilities."""
@@ -114,7 +115,9 @@ class TestFigure04Integration:
 
         # Check imports from real_data_plotting module
         assert hasattr(generate_figure04, "plot_model_comparison_with_posterior")
-        assert hasattr(generate_figure04, "plot_diagnostic_summary_comparison")
+        assert hasattr(generate_figure04, "plot_metric_distributions")
+        assert hasattr(generate_figure04, "plot_metrics_time_vs_position_comparison")
+        assert hasattr(generate_figure04, "plot_track_graph_2d")
 
 
 class TestFiguresModuleStructure:

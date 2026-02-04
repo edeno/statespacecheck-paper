@@ -570,7 +570,13 @@ def compute_model_diagnostics(
     >>> # diagnostics = compute_model_diagnostics(model, results, spike_counts, time)
     >>> # diagnostics['hpd_overlap'].shape  # (n_time, n_cells)
     """
-    # Extract place fields: state_ind -> place_fields
+    # Extract place fields from all observation models and concatenate along state bins.
+    # Filter to track interior bins using model.is_track_interior_state_bins_.
+    #
+    # IMPORTANT: Both place_fields and predictive_posterior are filtered using the same
+    # mask (is_track_interior_state_bins_), which ensures they have matching bin dimensions.
+    # The model guarantees that results.predictive_posterior uses the same state_bins
+    # indexing as the encoding model, so dropna removes exactly the non-interior bins.
     place_fields = np.concatenate(
         [
             extract_place_fields(
@@ -584,8 +590,7 @@ def compute_model_diagnostics(
     )  # shape (n_cells, n_bins)
     place_fields = place_fields[:, model.is_track_interior_state_bins_]
 
-    # Get state-marginalized predictive posterior (handles multi-state models)
-    # This drops NaN state bins internally
+    # Get predictive posterior, dropping NaN state bins (non-interior bins)
     predictive_posterior = results.predictive_posterior.dropna(dim="state_bins").values
 
     # Compute diagnostics using actual spike counts
