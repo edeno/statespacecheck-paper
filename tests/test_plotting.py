@@ -368,6 +368,8 @@ class TestPlotCombinedDiagnostics:
         spikes = rng.poisson(0.5, (n_time, n_cells))
 
         metrics = {
+            "predictive": rng.dirichlet(np.ones(n_bins), size=n_time),
+            "likelihood": rng.dirichlet(np.ones(n_bins), size=n_time),
             "posterior": rng.dirichlet(np.ones(n_bins), size=n_time),
             "hpd_overlap": rng.uniform(0, 1, (n_time, n_cells)),
             "kl_divergence": rng.uniform(0, 5, (n_time, n_cells)),
@@ -434,6 +436,8 @@ class TestPlotCombinedDiagnostics:
 
         # Metrics are now 2D: (n_time, n_cells)
         metrics = {
+            "predictive": rng.dirichlet(np.ones(n_bins), size=n_time),
+            "likelihood": rng.dirichlet(np.ones(n_bins), size=n_time),
             "posterior": rng.dirichlet(np.ones(n_bins), size=n_time),
             "hpd_overlap": rng.uniform(0, 1, (n_time, n_cells)),
             "kl_divergence": rng.uniform(0, 5, (n_time, n_cells)),
