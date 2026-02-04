@@ -121,7 +121,7 @@ def run_demo() -> None:
 
     # Extract place fields to get peak positions for sorting raster
     place_fields, position_bins = extract_place_fields(continuous_model)
-    place_field_peaks = position_bins[np.argmax(place_fields, axis=1)]
+    place_field_peaks = position_bins[np.nanargmax(place_fields, axis=1)]
 
     # Print summary (all time points)
     print("\n=== Diagnostic Summary (all time points) ===")
@@ -184,13 +184,11 @@ def run_demo() -> None:
     save_figure("figures/main/figure04c", close=True)
     print("Saved figures/main/figure04c.{pdf,png}")
 
-    # Figure 4d: Metrics vs linear position for both models
+    # Figure 4d: Metrics vs linear position for continuous-fragmented model
     fig, axes = plot_metrics_time_vs_position_comparison(
         linear_position,
-        continuous_diagnostics,
         contfrag_diagnostics,
-        model_a_name="Continuous",
-        model_b_name="Cont-Frag",
+        model_name="Cont-Frag",
         track_graph=data["track_graph"],
         edge_order=data["linear_edge_order"],
         edge_spacing=data["linear_edge_spacing"],
