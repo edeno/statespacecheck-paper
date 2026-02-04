@@ -293,10 +293,6 @@ def compute_per_cell_diagnostics(
     # Ensure all inputs are NumPy arrays (handles JAX arrays from decoder)
     predictive_posterior = np.asarray(predictive_posterior)
     spike_counts = np.asarray(spike_counts)
-    place_fields = np.asarray(place_fields)
-
-    # place_fields is (n_cells, n_bins), we need (n_bins, n_cells) for the shared function
-    rates = place_fields.T  # (n_bins, n_cells)
 
     # Find all spike events: (time_index, cell_index) pairs
     spike_time_ind, spike_cell_ind = np.nonzero(spike_counts)
@@ -304,7 +300,7 @@ def compute_per_cell_diagnostics(
     # Use shared function from analysis.py
     result = compute_per_cell_diagnostics_from_rates(
         predictive_posterior,
-        rates,
+        place_fields.T,  # (n_bins, n_cells)
         spike_time_ind.astype(np.intp),
         spike_cell_ind.astype(np.intp),
         coverage=coverage,
@@ -574,48 +570,23 @@ def compute_model_diagnostics(
     >>> # diagnostics = compute_model_diagnostics(model, results, spike_counts, time)
     >>> # diagnostics['hpd_overlap'].shape  # (n_time, n_cells)
     """
-    # Extract place fields
-    place_fields_full, position_bins_full = extract_place_fields(model)
+    # Extract place fields: state_ind -> place_fields
+    place_fields = np.concatenate(
+        [
+            extract_place_fields(
+                model,
+                environment_name=obs.environment_name,
+                encoding_group=obs.encoding_group,
+            )[0]
+            for obs in model.observation_models
+        ],
+        axis=1,
+    )  # shape (n_cells, n_bins)
+    place_fields = place_fields[:, model.is_track_interior_state_bins_]
 
     # Get state-marginalized predictive posterior (handles multi-state models)
     # This drops NaN state bins internally
-    predictive_posterior = get_state_marginalized_posterior(results, posterior_type="predictive")
-
-    # The posterior may have fewer bins than place_fields if track edges are NaN
-    # Determine which position bins are valid by comparing sizes
-    n_posterior_bins = predictive_posterior.shape[1]
-    n_place_field_bins = place_fields_full.shape[1]
-
-    if n_posterior_bins < n_place_field_bins:
-        # Posterior has dropped NaN bins - need to find which ones are valid
-        # Get the original state_bins coordinate to identify valid positions
-        if "predictive_posterior" in results:
-            posterior_da = results.predictive_posterior
-        else:
-            posterior_da = results.acausal_posterior
-
-        # Drop NaN state bins (same as get_state_marginalized_posterior does)
-        posterior_da = posterior_da.dropna("state_bins")
-
-        # For multi-state models, unstack to get position dimension
-        try:
-            unstacked = posterior_da.unstack("state_bins")
-            if "position" in unstacked.dims:
-                # Get unique positions from the unstacked coordinates
-                valid_positions = unstacked.coords["position"].values
-            else:
-                # Single-state model - positions are in state_bins directly
-                valid_positions = posterior_da.coords["state_bins"].values
-        except (ValueError, KeyError):
-            # Fallback: assume first n_posterior_bins positions are valid
-            valid_positions = position_bins_full[:n_posterior_bins]
-
-        # Find mask of valid position bins
-        valid_mask = np.isin(position_bins_full, valid_positions)
-        place_fields = place_fields_full[:, valid_mask]
-    else:
-        # All bins are valid
-        place_fields = place_fields_full
+    predictive_posterior = results.predictive_posterior.dropna(dim="state_bins").values
 
     # Compute diagnostics using actual spike counts
     # place_fields are already in spikes per time bin from non_local_detector
