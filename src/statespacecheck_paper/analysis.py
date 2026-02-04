@@ -43,7 +43,12 @@ import statespacecheck as ssc
 from numpy.typing import NDArray
 from scipy.stats import poisson
 
-from statespacecheck_paper.simulation import normalize, placefield_rates, safe_log, spike_prob_rank
+from statespacecheck_paper.simulation import (
+    normalize,
+    placefield_rates,
+    safe_log,
+    spike_prob_rank,
+)
 
 # -----------------------------
 # Data containers
@@ -589,7 +594,7 @@ def compute_per_cell_diagnostics_from_rates(
         rates_at_spikes = rates[:, spike_cell_ind].T  # (n_spikes, n_bins)
 
         # Compute Poisson likelihood P(k=1 | lambda) for each spike
-        lik_at_spikes = poisson.pmf(1, mu=rates_at_spikes)  # (n_spikes, n_bins)
+        lik_at_spikes = poisson.pmf(k=1, mu=rates_at_spikes)  # (n_spikes, n_bins)
 
         # Normalize per spike (over bins) to get proper distribution
         lik_at_spikes = normalize(lik_at_spikes, axis=1)
