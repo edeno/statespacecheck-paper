@@ -149,10 +149,17 @@ class DecodeParams:
     pf_centers: NDArray[np.floating] | None = None  # set in __post_init__
     rate_scale: float = 0.02  # Spike rate scaling factor (matches MATLAB normpdf * 0.02)
     base_seed: int = 1
+    # Remap multiple cells to very different locations for clear misfit visualization
+    # Original place fields: cell i has pf_center = i * 10 (0, 10, 20, ..., 90)
+    # Remapping swaps cells across the track to maximize spatial mismatch
     remap_from_to: tuple[tuple[int, int], ...] | tuple[int, int] = (
-        2,
-        8,
-    )  # Remap cell 2 (pf_center=20) to use cell 8's place field (pf_center=80)
+        (0, 9),  # Cell 0 (pf=0) -> uses cell 9's pf (pf=90)
+        (1, 8),  # Cell 1 (pf=10) -> uses cell 8's pf (pf=80)
+        (2, 7),  # Cell 2 (pf=20) -> uses cell 7's pf (pf=70)
+        (9, 0),  # Cell 9 (pf=90) -> uses cell 0's pf (pf=0)
+        (8, 1),  # Cell 8 (pf=80) -> uses cell 1's pf (pf=10)
+        (7, 2),  # Cell 7 (pf=70) -> uses cell 2's pf (pf=20)
+    )
 
     @property
     def remap_window(self) -> tuple[int, int]:
