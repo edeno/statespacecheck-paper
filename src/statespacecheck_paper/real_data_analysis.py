@@ -347,8 +347,12 @@ def get_state_marginalized_posterior(
     # Select appropriate posterior
     if posterior_type == "predictive":
         posterior_da = results.predictive_posterior
-    else:
+    elif posterior_type == "acausal":
         posterior_da = results.acausal_posterior
+    else:
+        raise ValueError(
+            f"Invalid posterior_type: {posterior_type}. Must be 'predictive' or 'acausal'."
+        )
 
     # Drop NaN state bins (e.g., track interior only)
     posterior_da = posterior_da.dropna("state_bins")
@@ -473,11 +477,21 @@ def fit_decoder_models(
     position_2d = position.reshape(-1, 1) if position.ndim == 1 else position
 
     # Fit Continuous model
-    continuous_model = SortedSpikesDecoder(environments=[environment])
+    sorted_spikes_algorithm_params = {
+        "block_size": 10000,
+        "position_std": np.sqrt(12.5),
+    }
+    continuous_model = SortedSpikesDecoder(
+        environments=[environment],
+        sorted_spikes_algorithm_params=sorted_spikes_algorithm_params,
+    )
     continuous_model.fit(position=position_2d, spike_times=spike_times, position_time=time)
 
     # Fit ContFrag model
-    contfrag_model = ContFragSortedSpikesClassifier(environments=[environment])
+    contfrag_model = ContFragSortedSpikesClassifier(
+        environments=[environment],
+        sorted_spikes_algorithm_params=sorted_spikes_algorithm_params,
+    )
     contfrag_model.fit(position=position_2d, spike_times=spike_times, position_time=time)
 
     return continuous_model, contfrag_model
