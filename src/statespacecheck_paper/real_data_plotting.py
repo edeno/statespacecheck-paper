@@ -1636,12 +1636,12 @@ def plot_model_comparison_with_posterior(
     edge_order: list[tuple[int, int]] | None = None,
     edge_spacing: float | list[float] = 0.0,
 ) -> tuple[Figure, NDArray[np.object_]]:
-    """Create model comparison with filter, predictive, likelihood, raster, and diagnostics.
+    """Create model comparison with predictive, likelihood, posterior, raster, and diagnostics.
 
     Creates a 7x2 grid with:
-    - Row 0: Filtered posterior p(x_t | y_{1:t}) with animal position overlay
-    - Row 1: Predictive posterior p(x_t | y_{1:t-1}) with animal position overlay
-    - Row 2: Likelihood p(y_t | x_t) with animal position overlay (only at spike times)
+    - Row 0: Predictive posterior p(x_t | y_{1:t-1}) with animal position overlay
+    - Row 1: Likelihood p(y_t | x_t) with animal position overlay (only at spike times)
+    - Row 2: Filtered posterior p(x_t | y_{1:t}) with animal position overlay
     - Row 3: Spike raster (cells sorted by place field peak)
     - Row 4: HPD overlap scatter
     - Row 5: KL divergence scatter
@@ -1708,7 +1708,7 @@ def plot_model_comparison_with_posterior(
     # Direction indicators: which direction indicates worse fit
     worse_fit_directions = ["↓ Worse fit", "↑ Worse fit", "↑ Worse fit"]
 
-    # Create 7x2 grid: filter + predictive + likelihood + raster + 3 diagnostics
+    # Create 7x2 grid: predictive + likelihood + posterior + raster + 3 diagnostics
     # Use gridspec to manually share y-axes within each row
     fig = plt.figure(figsize=figsize, constrained_layout=True)
     gs = fig.add_gridspec(7, 2, height_ratios=[2, 2, 2, 1.5, 1, 1, 1])
@@ -1716,15 +1716,15 @@ def plot_model_comparison_with_posterior(
     # Create axes with shared x and shared y within each row
     axes = np.empty((7, 2), dtype=object)
 
-    # Row 0: Filtered posterior heatmaps (share y within row)
+    # Row 0: Predictive posterior heatmaps (share y within row)
     axes[0, 0] = fig.add_subplot(gs[0, 0])
     axes[0, 1] = fig.add_subplot(gs[0, 1], sharex=axes[0, 0], sharey=axes[0, 0])
 
-    # Row 1: Predictive posterior heatmaps (share y within row, share x with row 0)
+    # Row 1: Likelihood heatmaps (share y within row, share x with row 0)
     axes[1, 0] = fig.add_subplot(gs[1, 0], sharex=axes[0, 0], sharey=axes[0, 0])
     axes[1, 1] = fig.add_subplot(gs[1, 1], sharex=axes[0, 0], sharey=axes[0, 0])
 
-    # Row 2: Likelihood heatmaps (share y within row, share x with row 0)
+    # Row 2: Filtered posterior heatmaps (share y within row, share x with row 0)
     axes[2, 0] = fig.add_subplot(gs[2, 0], sharex=axes[0, 0], sharey=axes[0, 0])
     axes[2, 1] = fig.add_subplot(gs[2, 1], sharex=axes[0, 0], sharey=axes[0, 0])
 
@@ -1754,10 +1754,11 @@ def plot_model_comparison_with_posterior(
         has_spikes_mask = spike_counts.sum(axis=1) > 0
 
     # Distribution rows configuration: (row_idx, data_key, ylabel, show_title)
+    # Order: Predictive -> Likelihood -> Posterior (matches Figure 3)
     distribution_rows = [
-        (0, "causal_posterior", "Filter", True),
-        (1, "predictive_posterior", "Predictive", False),
-        (2, "log_likelihood", "Likelihood", False),
+        (0, "predictive_posterior", "Predictive", True),
+        (1, "log_likelihood", "Likelihood", False),
+        (2, "causal_posterior", "Posterior", False),
     ]
 
     # Plot distribution heatmaps for rows 0-2
@@ -1783,11 +1784,12 @@ def plot_model_comparison_with_posterior(
                             coords={"time": distribution_da.coords["time"]},
                         )
                         distribution_da = distribution_da.where(mask_da)
-                else:
-                    # Fallback if not available
-                    distribution_da = results.get("predictive_posterior", results.acausal_posterior)
+            elif data_key == "predictive_posterior":
+                distribution_da = results.predictive_posterior
+            elif data_key == "causal_posterior":
+                distribution_da = results.causal_posterior
             else:
-                distribution_da = results.get(data_key, results.acausal_posterior)
+                raise ValueError(f"Unknown data_key: {data_key}")
 
             # Use a more saturated colormap for likelihood (sparse data)
             cmap = "magma" if data_key == "log_likelihood" else "bone_r"
@@ -2060,19 +2062,16 @@ def plot_metrics_vs_position(
 
 def plot_metrics_time_vs_position_comparison(
     linear_position: NDArray[np.float64],
-    diagnostics_a: dict[str, NDArray[np.float64]],
-    diagnostics_b: dict[str, NDArray[np.float64]],
-    model_a_name: str = "Continuous",
-    model_b_name: str = "Continuous-Fragmented",
+    diagnostics: dict[str, NDArray[np.float64]],
+    model_name: str = "Continuous",
     figsize: tuple[float, float] = (7.0, 6.0),
     track_graph: nx.Graph | None = None,
     edge_order: list[tuple[int, int]] | None = None,
     edge_spacing: float | list[float] = 0.0,
 ) -> tuple[Figure, NDArray[np.object_]]:
-    """Plot diagnostic metrics vs linear position for both models side by side.
+    """Plot diagnostic metrics vs linear position for a single model.
 
-    Creates a 3x2 grid comparing:
-    - Columns: Model A, Model B
+    Creates a 3x1 grid showing:
     - Rows: HPD Overlap, KL Divergence, Spike Probability
 
     Each plot shows linear position on x-axis and the metric value on y-axis,
@@ -2082,15 +2081,11 @@ def plot_metrics_time_vs_position_comparison(
     ----------
     linear_position : np.ndarray, shape (n_time,)
         Linear position of the animal at each time point.
-    diagnostics_a : dict[str, np.ndarray]
-        Diagnostics for model A with keys 'hpd_overlap', 'kl_divergence', 'spike_prob'.
+    diagnostics : dict[str, np.ndarray]
+        Diagnostics with keys 'hpd_overlap', 'kl_divergence', 'spike_prob'.
         Each array has shape (n_time, n_cells).
-    diagnostics_b : dict[str, np.ndarray]
-        Diagnostics for model B with same keys.
-    model_a_name : str, default "Continuous"
-        Name for model A.
-    model_b_name : str, default "Continuous-Fragmented"
-        Name for model B.
+    model_name : str, default "Continuous"
+        Name for the model.
     figsize : tuple[float, float], default (7.0, 6.0)
         Figure size in inches.
     track_graph : nx.Graph, optional
@@ -2105,122 +2100,105 @@ def plot_metrics_time_vs_position_comparison(
     fig : matplotlib.figure.Figure
         The figure object.
     axes : np.ndarray[plt.Axes]
-        Array of axes objects with shape (3, 2).
+        Array of axes objects with shape (3,).
 
     Examples
     --------
     >>> import numpy as np
     >>> position = np.random.rand(1000) * 200
-    >>> diag_a = {
+    >>> diagnostics = {
     ...     "hpd_overlap": np.random.rand(1000, 10),
     ...     "kl_divergence": np.random.rand(1000, 10),
     ...     "spike_prob": np.random.rand(1000, 10),
     ... }
-    >>> diag_b = {k: np.random.rand(1000, 10) for k in diag_a}
-    >>> fig, axes = plot_metrics_time_vs_position_comparison(position, diag_a, diag_b)
+    >>> fig, axes = plot_metrics_time_vs_position_comparison(position, diagnostics)
     >>> plt.close(fig)
     """
     metrics = ["hpd_overlap", "kl_divergence", "spike_prob"]
     ylabels = ["HPD Overlap", "KL Divergence", r"$-\log_{10}(p)$"]
-    colors = [COLORS["hpd_overlap"], COLORS["kl_divergence"], COLORS["metric_combined"]]
     worse_fit_directions = ["↓ Worse fit", "↑ Worse fit", "↑ Worse fit"]
 
-    fig, axes = plt.subplots(3, 2, figsize=figsize, constrained_layout=True)
+    fig, axes = plt.subplots(3, 1, figsize=figsize, constrained_layout=True)
+    axes = np.atleast_1d(axes)
 
-    for row, (metric, ylabel, _color, worse_dir) in enumerate(
-        zip(metrics, ylabels, colors, worse_fit_directions, strict=True)
+    for ax, metric, ylabel, worse_dir in zip(
+        axes, metrics, ylabels, worse_fit_directions, strict=True
     ):
-        for col, (diagnostics, model_name) in enumerate(
-            [(diagnostics_a, model_a_name), (diagnostics_b, model_b_name)]
-        ):
-            ax = axes[row, col]
+        # Get data for this metric
+        data = diagnostics[metric].copy()
 
-            # Get data for this metric
-            data = diagnostics[metric].copy()
+        # Transform spike_prob to -log10 scale
+        if metric == "spike_prob":
+            data = -np.log10(np.maximum(data, 1e-10))
 
-            # Transform spike_prob to -log10 scale
-            if metric == "spike_prob":
-                data = -np.log10(np.maximum(data, 1e-10))
+        # Expand position to match data shape (n_time,) -> (n_time, n_cells)
+        n_time, n_cells = data.shape
+        position_expanded = np.tile(linear_position[:, np.newaxis], (1, n_cells))
 
-            # Expand position to match data shape (n_time,) -> (n_time, n_cells)
-            n_time, n_cells = data.shape
-            position_expanded = np.tile(linear_position[:, np.newaxis], (1, n_cells))
+        # Flatten for hexbin
+        x = position_expanded.ravel()
+        y = data.ravel()
 
-            # Flatten for hexbin
-            x = position_expanded.ravel()
-            y = data.ravel()
+        # Remove NaN values
+        valid_mask = ~np.isnan(x) & ~np.isnan(y)
+        x = x[valid_mask]
+        y = y[valid_mask]
 
-            # Remove NaN values
-            valid_mask = ~np.isnan(x) & ~np.isnan(y)
-            x = x[valid_mask]
-            y = y[valid_mask]
+        # Hexbin plot: position on x-axis, metric on y-axis
+        ax.hexbin(
+            x,
+            y,
+            gridsize=50,
+            cmap="Blues",
+            bins="log",
+            mincnt=1,
+            alpha=0.8,
+            rasterized=True,
+        )
 
-            # Hexbin plot: position on x-axis, metric on y-axis
-            ax.hexbin(
-                x,
-                y,
-                gridsize=50,
-                cmap="Blues",
-                bins="log",
-                mincnt=1,
-                alpha=0.8,
-                rasterized=True,
-            )
+        # Styling
+        ax.set_ylabel(ylabel, fontsize=9, labelpad=7)
 
-            # Styling
-            ax.set_ylabel(ylabel if col == 0 else "", fontsize=9, labelpad=7)
-            ax.set_xlabel("Linear Position (cm)" if row == 2 else "", fontsize=9, labelpad=7)
-            ax.tick_params(labelsize=7, labelbottom=(row == 2), labelleft=(col == 0))
+        # Add direction indicator on right side
+        ax.text(
+            1.01,
+            0.5,
+            worse_dir,
+            transform=ax.transAxes,
+            fontsize=6,
+            va="center",
+            ha="left",
+        )
 
-            # Add column titles on first row
-            if row == 0:
-                ax.set_title(model_name, fontsize=11)
+    # Add title on first axes only
+    axes[0].set_title(model_name, fontsize=11)
 
-            # Add direction indicator on right side of right column
-            if col == 1:
-                ax.text(
-                    1.01,
-                    0.5,
-                    worse_dir,
-                    transform=ax.transAxes,
-                    fontsize=6,
-                    va="center",
-                    ha="left",
-                )
-
-    # Share y-axes within each row
-    for row in range(3):
-        y_min = min(axes[row, col].get_ylim()[0] for col in range(2))
-        y_max = max(axes[row, col].get_ylim()[1] for col in range(2))
-        for col in range(2):
-            axes[row, col].set_ylim(y_min, y_max)
+    # Add x-label on last axes only
+    axes[-1].set_xlabel("Linear Position (cm)", fontsize=9, labelpad=7)
+    for ax in axes[:-1]:
+        ax.tick_params(labelbottom=False)
 
     # Share x-axes across all plots
-    x_min = min(axes[row, col].get_xlim()[0] for row in range(3) for col in range(2))
-    x_max = max(axes[row, col].get_xlim()[1] for row in range(3) for col in range(2))
-    for row in range(3):
-        for col in range(2):
-            axes[row, col].set_xlim(x_min, x_max)
+    x_min = min(ax.get_xlim()[0] for ax in axes)
+    x_max = max(ax.get_xlim()[1] for ax in axes)
+    for ax in axes:
+        ax.set_xlim(x_min, x_max)
 
     # Add horizontal track graph at bottom of each row if provided
     if track_graph is not None:
-        for row in range(3):
-            for col in range(2):
-                ax = axes[row, col]
-                ylim = ax.get_ylim()
-                y_bottom = ylim[0]
-
-                plot_track_graph_1d(
-                    track_graph,
-                    ax=ax,
-                    edge_order=edge_order,
-                    edge_spacing=edge_spacing,
-                    other_axis_start=y_bottom,
-                    edge_linewidth=3,
-                    reward_well_size=15,
-                    reward_well_nodes=list(range(6)),
-                    orientation="horizontal",
-                )
+        for ax in axes:
+            y_bottom = ax.get_ylim()[0]
+            plot_track_graph_1d(
+                track_graph,
+                ax=ax,
+                edge_order=edge_order,
+                edge_spacing=edge_spacing,
+                other_axis_start=y_bottom,
+                edge_linewidth=3,
+                reward_well_size=15,
+                reward_well_nodes=list(range(6)),
+                orientation="horizontal",
+            )
 
     return fig, axes
 
@@ -2274,7 +2252,11 @@ def plot_metric_distributions(
     metrics = ["hpd_overlap", "kl_divergence", "spike_prob"]
     titles = ["HPD Overlap", "KL Divergence", r"$-\log_{10}(p)$"]
     # Create colormaps from white to each metric's color
-    colors_list = [COLORS["hpd_overlap"], COLORS["kl_divergence"], COLORS["metric_combined"]]
+    colors_list = [
+        COLORS["hpd_overlap"],
+        COLORS["kl_divergence"],
+        COLORS["metric_combined"],
+    ]
     cmaps = []
     for color in colors_list:
         from matplotlib.colors import LinearSegmentedColormap
