@@ -2436,3 +2436,339 @@ def plot_metric_distributions(
         )
 
     return fig, axes
+
+
+def plot_metric_diff_histogram(
+    diagnostics_a: dict[str, NDArray[np.float64]],
+    diagnostics_b: dict[str, NDArray[np.float64]],
+    model_a_name: str = "Continuous",
+    model_b_name: str = "Continuous-Fragmented",
+    figsize: tuple[float, float] = (7.0, 2.5),
+) -> tuple[Figure, NDArray[np.object_]]:
+    """Plot histograms of metric differences (model B - model A).
+
+    Creates a 1x3 grid of histograms showing the distribution of per-(time, cell)
+    differences for each diagnostic metric.
+
+    Parameters
+    ----------
+    diagnostics_a : dict[str, np.ndarray]
+        Diagnostics for model A with keys 'hpd_overlap', 'kl_divergence', 'spike_prob'.
+        Each array has shape (n_time, n_cells).
+    diagnostics_b : dict[str, np.ndarray]
+        Diagnostics for model B with same keys.
+    model_a_name : str, default "Continuous"
+        Name for model A.
+    model_b_name : str, default "Continuous-Fragmented"
+        Name for model B.
+    figsize : tuple[float, float], default (7.0, 2.5)
+        Figure size in inches.
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        The figure object.
+    axes : np.ndarray[plt.Axes]
+        Array of axes objects with shape (3,).
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> diag_a = {
+    ...     "hpd_overlap": np.random.rand(100, 10),
+    ...     "kl_divergence": np.random.rand(100, 10),
+    ...     "spike_prob": np.random.rand(100, 10),
+    ... }
+    >>> diag_b = {k: np.random.rand(100, 10) for k in diag_a}
+    >>> fig, axes = plot_metric_diff_histogram(diag_a, diag_b)
+    >>> plt.close(fig)
+    """
+    metrics = ["hpd_overlap", "kl_divergence", "spike_prob"]
+    titles = ["HPD Overlap", "KL Divergence", r"$-\log_{10}(p)$"]
+    colors_list = [
+        COLORS["hpd_overlap"],
+        COLORS["kl_divergence"],
+        COLORS["metric_combined"],
+    ]
+
+    fig, axes = plt.subplots(1, 3, figsize=figsize, constrained_layout=True)
+    axes = np.atleast_1d(axes)
+
+    for i, (metric, title, color) in enumerate(zip(metrics, titles, colors_list, strict=True)):
+        ax = axes[i]
+
+        # Get data and flatten
+        data_a = diagnostics_a[metric].ravel()
+        data_b = diagnostics_b[metric].ravel()
+
+        # Transform spike_prob to -log10 scale
+        if metric == "spike_prob":
+            data_a = -np.log10(np.maximum(data_a, 1e-10))
+            data_b = -np.log10(np.maximum(data_b, 1e-10))
+
+        # Create mask for valid (non-NaN) values in both arrays
+        valid_mask = ~np.isnan(data_a) & ~np.isnan(data_b)
+        diff = data_b[valid_mask] - data_a[valid_mask]
+
+        # Histogram
+        ax.hist(diff, bins=100, color=color, alpha=0.7, edgecolor="none", rasterized=True)
+
+        # Reference line at zero
+        ax.axvline(0, color=COLORS["threshold"], linewidth=1, linestyle="--", alpha=0.7)
+
+        # Labels and styling
+        ax.set_xlabel(
+            f"\u0394 ({model_b_name} \u2212 {model_a_name})" if i == 1 else "",
+            fontsize=9,
+            labelpad=7,
+        )
+        ax.set_ylabel("Count" if i == 0 else "", fontsize=9, labelpad=7)
+        ax.set_title(title, fontsize=9)
+        ax.tick_params(labelsize=7)
+
+        # Annotation: n, median, mean
+        median_val = float(np.median(diff))
+        mean_val = float(np.mean(diff))
+        ax.text(
+            0.02,
+            0.98,
+            f"n={len(diff):,}\nmedian={median_val:.3f}\nmean={mean_val:.3f}",
+            transform=ax.transAxes,
+            fontsize=6,
+            va="top",
+            ha="left",
+            color="gray",
+        )
+
+    return fig, axes
+
+
+def plot_metric_diff_hexbin(
+    diagnostics_a: dict[str, NDArray[np.float64]],
+    diagnostics_b: dict[str, NDArray[np.float64]],
+    model_a_name: str = "Continuous",
+    model_b_name: str = "Continuous-Fragmented",
+    figsize: tuple[float, float] = (7.0, 2.5),
+) -> tuple[Figure, NDArray[np.object_]]:
+    """Plot hexbin of metric value vs. metric difference (model B - model A).
+
+    Creates a 1x3 grid of hexbin density plots where x-axis is the metric value
+    from model A and y-axis is the difference (B - A). Shows how the difference
+    varies as a function of metric magnitude.
+
+    Parameters
+    ----------
+    diagnostics_a : dict[str, np.ndarray]
+        Diagnostics for model A with keys 'hpd_overlap', 'kl_divergence', 'spike_prob'.
+        Each array has shape (n_time, n_cells).
+    diagnostics_b : dict[str, np.ndarray]
+        Diagnostics for model B with same keys.
+    model_a_name : str, default "Continuous"
+        Name for model A (x-axis label).
+    model_b_name : str, default "Continuous-Fragmented"
+        Name for model B.
+    figsize : tuple[float, float], default (7.0, 2.5)
+        Figure size in inches.
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        The figure object.
+    axes : np.ndarray[plt.Axes]
+        Array of axes objects with shape (3,).
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> diag_a = {
+    ...     "hpd_overlap": np.random.rand(100, 10),
+    ...     "kl_divergence": np.random.rand(100, 10),
+    ...     "spike_prob": np.random.rand(100, 10),
+    ... }
+    >>> diag_b = {k: np.random.rand(100, 10) for k in diag_a}
+    >>> fig, axes = plot_metric_diff_hexbin(diag_a, diag_b)
+    >>> plt.close(fig)
+    """
+    from matplotlib.colors import LinearSegmentedColormap
+
+    metrics = ["hpd_overlap", "kl_divergence", "spike_prob"]
+    titles = ["HPD Overlap", "KL Divergence", r"$-\log_{10}(p)$"]
+    colors_list = [
+        COLORS["hpd_overlap"],
+        COLORS["kl_divergence"],
+        COLORS["metric_combined"],
+    ]
+    cmaps = [LinearSegmentedColormap.from_list("custom", ["white", c]) for c in colors_list]
+
+    fig, axes = plt.subplots(1, 3, figsize=figsize, constrained_layout=True)
+    axes = np.atleast_1d(axes)
+
+    for i, (metric, title, cmap) in enumerate(zip(metrics, titles, cmaps, strict=True)):
+        ax = axes[i]
+
+        # Get data and flatten
+        data_a = diagnostics_a[metric].ravel()
+        data_b = diagnostics_b[metric].ravel()
+
+        # Transform spike_prob to -log10 scale
+        if metric == "spike_prob":
+            data_a = -np.log10(np.maximum(data_a, 1e-10))
+            data_b = -np.log10(np.maximum(data_b, 1e-10))
+
+        # Create mask for valid (non-NaN) values in both arrays
+        valid_mask = ~np.isnan(data_a) & ~np.isnan(data_b)
+        x = data_a[valid_mask]
+        diff = data_b[valid_mask] - data_a[valid_mask]
+
+        # Hexbin: metric value vs difference
+        ax.hexbin(
+            x,
+            diff,
+            gridsize=50,
+            cmap=cmap,
+            bins="log",
+            mincnt=1,
+            alpha=0.8,
+            rasterized=True,
+        )
+
+        # Reference line at y=0
+        ax.axhline(0, color=COLORS["threshold"], linewidth=1, linestyle="--", alpha=0.7)
+
+        # Labels and styling
+        ax.set_xlabel(model_a_name if i == 1 else "", fontsize=9, labelpad=7)
+        ax.set_ylabel(
+            f"\u0394 ({model_b_name} \u2212 {model_a_name})" if i == 0 else "",
+            fontsize=9,
+            labelpad=7,
+        )
+        ax.set_title(title, fontsize=9)
+        ax.tick_params(labelsize=7)
+
+        # Add n values as text
+        ax.text(
+            0.02,
+            0.98,
+            f"n={len(x):,}",
+            transform=ax.transAxes,
+            fontsize=6,
+            va="top",
+            ha="left",
+            color="gray",
+        )
+
+    return fig, axes
+
+
+def plot_metric_diff_kde(
+    diagnostics_a: dict[str, NDArray[np.float64]],
+    diagnostics_b: dict[str, NDArray[np.float64]],
+    model_a_name: str = "Continuous",
+    model_b_name: str = "Continuous-Fragmented",
+    figsize: tuple[float, float] = (7.0, 2.5),
+    n_eval: int = 500,
+) -> tuple[Figure, NDArray[np.object_]]:
+    """Plot KDE of metric differences (model B - model A).
+
+    Creates a 1x3 grid of kernel density estimate curves showing the distribution
+    of per-(time, cell) differences for each diagnostic metric.
+
+    Parameters
+    ----------
+    diagnostics_a : dict[str, np.ndarray]
+        Diagnostics for model A with keys 'hpd_overlap', 'kl_divergence', 'spike_prob'.
+        Each array has shape (n_time, n_cells).
+    diagnostics_b : dict[str, np.ndarray]
+        Diagnostics for model B with same keys.
+    model_a_name : str, default "Continuous"
+        Name for model A.
+    model_b_name : str, default "Continuous-Fragmented"
+        Name for model B.
+    figsize : tuple[float, float], default (7.0, 2.5)
+        Figure size in inches.
+    n_eval : int, default 500
+        Number of evaluation points for the KDE.
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        The figure object.
+    axes : np.ndarray[plt.Axes]
+        Array of axes objects with shape (3,).
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> diag_a = {
+    ...     "hpd_overlap": np.random.rand(100, 10),
+    ...     "kl_divergence": np.random.rand(100, 10),
+    ...     "spike_prob": np.random.rand(100, 10),
+    ... }
+    >>> diag_b = {k: np.random.rand(100, 10) for k in diag_a}
+    >>> fig, axes = plot_metric_diff_kde(diag_a, diag_b)
+    >>> plt.close(fig)
+    """
+    from scipy.stats import gaussian_kde
+
+    metrics = ["hpd_overlap", "kl_divergence", "spike_prob"]
+    titles = ["HPD Overlap", "KL Divergence", r"$-\log_{10}(p)$"]
+    colors_list = [
+        COLORS["hpd_overlap"],
+        COLORS["kl_divergence"],
+        COLORS["metric_combined"],
+    ]
+
+    fig, axes = plt.subplots(1, 3, figsize=figsize, constrained_layout=True)
+    axes = np.atleast_1d(axes)
+
+    for i, (metric, title, color) in enumerate(zip(metrics, titles, colors_list, strict=True)):
+        ax = axes[i]
+
+        # Get data and flatten
+        data_a = diagnostics_a[metric].ravel()
+        data_b = diagnostics_b[metric].ravel()
+
+        # Transform spike_prob to -log10 scale
+        if metric == "spike_prob":
+            data_a = -np.log10(np.maximum(data_a, 1e-10))
+            data_b = -np.log10(np.maximum(data_b, 1e-10))
+
+        # Create mask for valid (non-NaN) values in both arrays
+        valid_mask = ~np.isnan(data_a) & ~np.isnan(data_b)
+        diff = data_b[valid_mask] - data_a[valid_mask]
+
+        # KDE
+        kde = gaussian_kde(diff)
+        x_eval = np.linspace(float(diff.min()), float(diff.max()), n_eval)
+        density = kde(x_eval)
+
+        ax.plot(x_eval, density, color=color, linewidth=1.5)
+        ax.fill_between(x_eval, density, alpha=0.3, color=color)
+
+        # Reference line at zero
+        ax.axvline(0, color=COLORS["threshold"], linewidth=1, linestyle="--", alpha=0.7)
+
+        # Labels and styling
+        ax.set_xlabel(
+            f"\u0394 ({model_b_name} \u2212 {model_a_name})" if i == 1 else "",
+            fontsize=9,
+            labelpad=7,
+        )
+        ax.set_ylabel("Density" if i == 0 else "", fontsize=9, labelpad=7)
+        ax.set_title(title, fontsize=9)
+        ax.tick_params(labelsize=7)
+
+        # Annotation: n, median
+        median_val = float(np.median(diff))
+        ax.text(
+            0.02,
+            0.98,
+            f"n={len(diff):,}\nmedian={median_val:.3f}",
+            transform=ax.transAxes,
+            fontsize=6,
+            va="top",
+            ha="left",
+            color="gray",
+        )
+
+    return fig, axes
