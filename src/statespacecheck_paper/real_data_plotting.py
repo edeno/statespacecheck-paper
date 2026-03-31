@@ -1730,16 +1730,15 @@ def plot_model_comparison_with_posterior(
     show_running_average: bool = False,
     running_average_window: float = 0.050,
 ) -> tuple[Figure, NDArray[np.object_]]:
-    """Create model comparison with predictive, likelihood, posterior, raster, and diagnostics.
+    """Create model comparison with predictive, likelihood, raster, and diagnostics.
 
-    Creates a 7x2 grid with:
+    Creates a 6x2 grid with:
     - Row 0: Predictive posterior p(x_t | y_{1:t-1}) with animal position overlay
     - Row 1: Likelihood p(y_t | x_t) with animal position overlay (only at spike times)
-    - Row 2: Filtered posterior p(x_t | y_{1:t}) with animal position overlay
-    - Row 3: Spike raster (cells sorted by place field peak)
-    - Row 4: HPD overlap scatter
-    - Row 5: KL divergence scatter
-    - Row 6: Spike probability scatter
+    - Row 2: Spike raster (cells sorted by place field peak)
+    - Row 3: HPD overlap scatter
+    - Row 4: KL divergence scatter
+    - Row 5: Spike probability scatter
 
     Parameters
     ----------
@@ -1789,7 +1788,7 @@ def plot_model_comparison_with_posterior(
     fig : matplotlib.figure.Figure
         The figure object.
     axes : np.ndarray[plt.Axes]
-        Array of axes objects with shape (7, 2).
+        Array of axes objects with shape (6, 2).
 
     Examples
     --------
@@ -1806,13 +1805,13 @@ def plot_model_comparison_with_posterior(
     # Direction indicators: which direction indicates worse fit
     worse_fit_directions = ["↓ Worse fit", "↑ Worse fit", "↑ Worse fit"]
 
-    # Create 7x2 grid: predictive + likelihood + posterior + raster + 3 diagnostics
+    # Create 6x2 grid: predictive + likelihood + raster + 3 diagnostics
     # Use gridspec to manually share y-axes within each row
     fig = plt.figure(figsize=figsize, constrained_layout=True)
-    gs = fig.add_gridspec(7, 2, height_ratios=[2, 2, 2, 1.5, 1, 1, 1])
+    gs = fig.add_gridspec(6, 2, height_ratios=[2, 2, 1.5, 1, 1, 1])
 
     # Create axes with shared x and shared y within each row
-    axes = np.empty((7, 2), dtype=object)
+    axes = np.empty((6, 2), dtype=object)
 
     # Row 0: Predictive posterior heatmaps (share y within row)
     axes[0, 0] = fig.add_subplot(gs[0, 0])
@@ -1822,25 +1821,21 @@ def plot_model_comparison_with_posterior(
     axes[1, 0] = fig.add_subplot(gs[1, 0], sharex=axes[0, 0], sharey=axes[0, 0])
     axes[1, 1] = fig.add_subplot(gs[1, 1], sharex=axes[0, 0], sharey=axes[0, 0])
 
-    # Row 2: Filtered posterior heatmaps (share y within row, share x with row 0)
-    axes[2, 0] = fig.add_subplot(gs[2, 0], sharex=axes[0, 0], sharey=axes[0, 0])
-    axes[2, 1] = fig.add_subplot(gs[2, 1], sharex=axes[0, 0], sharey=axes[0, 0])
+    # Row 2: Spike raster (share y within row, share x with row 0)
+    axes[2, 0] = fig.add_subplot(gs[2, 0], sharex=axes[0, 0])
+    axes[2, 1] = fig.add_subplot(gs[2, 1], sharex=axes[0, 0], sharey=axes[2, 0])
 
-    # Row 3: Spike raster (share y within row, share x with row 0)
+    # Row 3: HPD overlap (share y within row, share x with row 0)
     axes[3, 0] = fig.add_subplot(gs[3, 0], sharex=axes[0, 0])
     axes[3, 1] = fig.add_subplot(gs[3, 1], sharex=axes[0, 0], sharey=axes[3, 0])
 
-    # Row 4: HPD overlap (share y within row, share x with row 0)
+    # Row 4: KL divergence (share y within row, share x with row 0)
     axes[4, 0] = fig.add_subplot(gs[4, 0], sharex=axes[0, 0])
     axes[4, 1] = fig.add_subplot(gs[4, 1], sharex=axes[0, 0], sharey=axes[4, 0])
 
-    # Row 5: KL divergence (share y within row, share x with row 0)
+    # Row 5: Spike probability (share y within row, share x with row 0)
     axes[5, 0] = fig.add_subplot(gs[5, 0], sharex=axes[0, 0])
     axes[5, 1] = fig.add_subplot(gs[5, 1], sharex=axes[0, 0], sharey=axes[5, 0])
-
-    # Row 6: Spike probability (share y within row, share x with row 0)
-    axes[6, 0] = fig.add_subplot(gs[6, 0], sharex=axes[0, 0])
-    axes[6, 1] = fig.add_subplot(gs[6, 1], sharex=axes[0, 0], sharey=axes[6, 0])
 
     if time_slice_ind is None:
         time_slice_ind = slice(None)
@@ -1852,11 +1847,10 @@ def plot_model_comparison_with_posterior(
         has_spikes_mask = spike_counts.sum(axis=1) > 0
 
     # Distribution rows configuration: (row_idx, data_key, ylabel, show_title)
-    # Order: Predictive -> Likelihood -> Posterior (matches Figure 3)
+    # Order: Predictive -> Likelihood
     distribution_rows = [
         (0, "predictive_posterior", "Predictive", True),
         (1, "log_likelihood", "Likelihood", False),
-        (2, "causal_posterior", "Posterior", False),
     ]
 
     # Plot distribution heatmaps for rows 0-2
@@ -1884,8 +1878,6 @@ def plot_model_comparison_with_posterior(
                         distribution_da = distribution_da.where(mask_da)
             elif data_key == "predictive_posterior":
                 distribution_da = results.predictive_posterior
-            elif data_key == "causal_posterior":
-                distribution_da = results.causal_posterior
             else:
                 raise ValueError(f"Unknown data_key: {data_key}")
 
@@ -1932,7 +1924,7 @@ def plot_model_comparison_with_posterior(
                     reward_well_nodes=list(range(6)),
                 )
 
-    # Row 3: Spike raster (both columns show same raster, sorted by place field peak)
+    # Row 2: Spike raster (both columns show same raster, sorted by place field peak)
     if spike_times is not None:
         # Compute sort order by place field peak position
         if place_field_peaks is not None:
@@ -1946,7 +1938,7 @@ def plot_model_comparison_with_posterior(
         time_slice = slice(float(sliced_time[0]), float(sliced_time[-1]))
 
         for col in range(2):
-            ax = axes[3, col]
+            ax = axes[2, col]
             plot_raster(
                 spike_times,
                 time_slice,
@@ -1957,11 +1949,11 @@ def plot_model_comparison_with_posterior(
             ax.set_xlabel("")
             ax.tick_params(labelsize=7, labelbottom=False)
 
-    # Rows 4-6: Diagnostic scatter plots
+    # Rows 3-5: Diagnostic scatter plots
     for i, (metric, ylabel, color, worse_dir) in enumerate(
         zip(metrics, ylabels, colors, worse_fit_directions, strict=True)
     ):
-        row = i + 4  # Offset by 4 for distribution and raster rows
+        row = i + 3  # Offset by 3 for distribution and raster rows
         threshold = thresholds.get(metric) if thresholds else None
 
         # Model A (left column)
@@ -2008,7 +2000,7 @@ def plot_model_comparison_with_posterior(
         )
 
     # Hide y-tick labels on right column (since y-axes are shared within rows)
-    for row in range(7):
+    for row in range(6):
         axes[row, 1].tick_params(labelleft=False)
 
     return fig, axes
