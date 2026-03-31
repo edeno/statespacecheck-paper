@@ -57,7 +57,7 @@ ANIMAL_DATE_EPOCH = "j1620210710_02_r1"
 
 # Time window for Figure 4a (index into decoded results)
 FIGURE_4A_WINDOW_CENTER = 177301  # Time index around which to show detail
-FIGURE_4A_WINDOW_HALF_WIDTH = 100  # Half-width in time points
+FIGURE_4A_WINDOW_HALF_WIDTH = 50  # Half-width in time points
 
 
 def run_demo() -> None:
