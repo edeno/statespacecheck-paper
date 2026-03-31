@@ -26,6 +26,7 @@ def main() -> int:
         "generate_figure01.py",
         "generate_figure02.py",
         "generate_figure03.py",
+        "generate_figure04.py",
     ]
 
     print("=" * 70)
