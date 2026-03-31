@@ -36,6 +36,8 @@ from statespacecheck_paper.style import save_figure, set_figure_defaults
 
 # Check for optional decoder dependencies
 try:
+    import non_local_detector  # noqa: F401
+
     DECODERS_AVAILABLE = True
 except ImportError:
     DECODERS_AVAILABLE = False

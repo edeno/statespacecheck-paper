@@ -27,12 +27,13 @@ Examples
 
 from __future__ import annotations
 
+import warnings
 from typing import Any, Literal
 
 import numpy as np
 import xarray as xr
 from numpy.typing import NDArray
-from scipy.ndimage import gaussian_filter1d, label
+from scipy.ndimage import gaussian_filter1d, label, uniform_filter1d
 
 from statespacecheck_paper.analysis import compute_per_cell_diagnostics_from_rates
 
@@ -235,10 +236,6 @@ def compute_running_average(
     >>> running_avg.shape
     (100,)
     """
-    import warnings
-
-    from scipy.ndimage import uniform_filter1d
-
     # Step 1: Compute mean across cells at each time bin (ignoring NaN)
     # Suppress expected warning when all cells at a time bin are NaN (no spikes)
     with warnings.catch_warnings():
@@ -529,8 +526,9 @@ def fit_decoder_models(
 
     Parameters
     ----------
-    position : np.ndarray, shape (n_time,)
-        Linear position values.
+    position : np.ndarray, shape (n_time,) or (n_time, n_dims)
+        Position values. 1D arrays (linear position) are reshaped
+        to (n_time, 1) before being passed to the model.
     spike_times : list[np.ndarray]
         List of spike time arrays, one per cell.
     time : np.ndarray, shape (n_time,)
@@ -670,6 +668,12 @@ def compute_model_diagnostics(
     """
     # Extract place fields from all observation models and concatenate along state bins.
     # Filter to track interior bins using model.is_track_interior_state_bins_.
+    #
+    # For multi-state models (e.g. ContFragSortedSpikesClassifier), position bins repeat
+    # across states: place_fields become (n_cells, n_bins_state1 + n_bins_state2).
+    # The un-marginalized predictive_posterior has matching extended dimensions because
+    # per-state place fields must be evaluated against the per-state posterior (not the
+    # state-marginalized version from get_state_marginalized_posterior).
     #
     # IMPORTANT: Both place_fields and predictive_posterior are filtered using the same
     # mask (is_track_interior_state_bins_), which ensures they have matching bin dimensions.

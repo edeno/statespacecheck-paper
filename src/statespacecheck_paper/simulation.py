@@ -302,11 +302,14 @@ def spike_prob_rank(
         # Single timestep: (n_cells,)
         # mask[i, j] = True means contrib[i] <= contrib[j]
         mask = contrib[:, None] <= contrib  # (n_cells, n_cells)
+        # For each cell j, sum contrib[i] over all cells i where contrib[i] <= contrib[j].
+        # axis=0 accumulates across the i dimension (rows) for each j (column).
         spike_probs: NDArray[np.floating] = (contrib[:, None] * mask).sum(axis=0)
     else:
         # Batched: (n_time, n_cells)
         # mask[t, i, j] = True means contrib[t, i] <= contrib[t, j]
         mask = contrib[:, :, None] <= contrib[:, None, :]  # (n_time, n_cells, n_cells)
+        # axis=1 accumulates across the i dimension for each (t, j).
         spike_probs = (contrib[:, :, None] * mask).sum(axis=1)  # (n_time, n_cells)
 
     return spike_probs

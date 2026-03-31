@@ -447,10 +447,7 @@ def decode_and_diagnostics(
     n_time = spikes.shape[0]
     n_bins = xs.size
 
-    # Initialize RNG if not provided (reserved for future use)
-    if rng is None:
-        rng = np.random.default_rng()
-    # Suppress unused variable warning
+    # rng parameter reserved for future use
     _ = rng
 
     # Preallocate outputs

@@ -19,6 +19,7 @@ from __future__ import annotations
 from typing import Any
 
 import matplotlib
+import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
@@ -1377,8 +1378,6 @@ def plot_per_cell_diagnostic_scatter(
         # Determine line color (darker version of scatter color if not specified)
         line_color: str | tuple[float, ...]
         if running_average_color is None:
-            import matplotlib.colors as mcolors
-
             # Convert to RGB, darken by 30%, convert back
             try:
                 rgb = mcolors.to_rgb(color)
