@@ -2304,13 +2304,16 @@ def plot_metric_distributions(
     diagnostics_b: dict[str, NDArray[np.float64]],
     model_a_name: str = "Continuous",
     model_b_name: str = "Continuous-Fragmented",
-    figsize: tuple[float, float] = (7.0, 2.5),
+    figsize: tuple[float, float] = (7.0, 5.0),
+    show_diff: bool = True,
 ) -> tuple[Figure, NDArray[np.object_]]:
     """Plot hexbin density comparison of diagnostic metrics between two models.
 
-    Creates a 1x3 grid of hexbin density plots where each hexagon represents
+    Creates a grid of hexbin density plots (top row) where each hexagon represents
     the density of (time, cell) pairs. X-axis shows model A's metric value,
     Y-axis shows model B's metric value. Points on the diagonal indicate agreement.
+    When ``show_diff`` is True, a second row shows histograms of the per-(time, cell)
+    difference (model B - model A).
 
     Parameters
     ----------
@@ -2323,15 +2326,18 @@ def plot_metric_distributions(
         Name for model A (x-axis label).
     model_b_name : str, default "Continuous-Fragmented"
         Name for model B (y-axis label).
-    figsize : tuple[float, float], default (7.0, 2.5)
+    figsize : tuple[float, float], default (7.0, 5.0)
         Figure size in inches.
+    show_diff : bool, default True
+        If True, add a second row with difference histograms (model B - model A).
 
     Returns
     -------
     fig : matplotlib.figure.Figure
         The figure object.
     axes : np.ndarray[plt.Axes]
-        Array of axes objects with shape (1, 3).
+        Array of axes objects with shape (2, 3) when ``show_diff`` is True,
+        or (3,) when False.
 
     Examples
     --------
@@ -2345,6 +2351,8 @@ def plot_metric_distributions(
     >>> fig, axes = plot_metric_distributions(diag_a, diag_b)
     >>> plt.close(fig)
     """
+    from matplotlib.colors import LinearSegmentedColormap
+
     metrics = ["hpd_overlap", "kl_divergence", "spike_prob"]
     titles = ["HPD Overlap", "KL Divergence", r"$-\log_{10}(p)$"]
     # Create colormaps from white to each metric's color
@@ -2353,18 +2361,21 @@ def plot_metric_distributions(
         COLORS["kl_divergence"],
         COLORS["metric_combined"],
     ]
-    cmaps = []
-    for color in colors_list:
-        from matplotlib.colors import LinearSegmentedColormap
+    cmaps = [LinearSegmentedColormap.from_list("custom", ["white", c]) for c in colors_list]
 
-        cmap = LinearSegmentedColormap.from_list("custom", ["white", color])
-        cmaps.append(cmap)
+    n_rows = 2 if show_diff else 1
+    fig, axes = plt.subplots(
+        n_rows,
+        3,
+        figsize=figsize,
+        constrained_layout=True,
+    )
+    axes = np.atleast_2d(axes)
 
-    fig, axes = plt.subplots(1, 3, figsize=figsize, constrained_layout=True)
-    axes = np.atleast_1d(axes)
-
-    for i, (metric, title, cmap) in enumerate(zip(metrics, titles, cmaps, strict=True)):
-        ax = axes[i]
+    for i, (metric, title, cmap, color) in enumerate(
+        zip(metrics, titles, cmaps, colors_list, strict=True)
+    ):
+        ax = axes[0, i]
 
         # Get data and flatten
         data_a = diagnostics_a[metric].ravel()
@@ -2426,6 +2437,99 @@ def plot_metric_distributions(
             ha="left",
             color="gray",
         )
+
+        # Difference histogram (bottom row)
+        if show_diff:
+            ax_diff = axes[1, i]
+            diff = data_b - data_a
+
+            ax_diff.hist(
+                diff,
+                bins=100,
+                color=color,
+                alpha=0.7,
+                edgecolor="none",
+                rasterized=True,
+                density=True,
+            )
+
+            # Reference line at zero
+            ax_diff.axvline(
+                0,
+                color=COLORS["threshold"],
+                linewidth=1,
+                linestyle="--",
+                alpha=0.7,
+            )
+
+            # Arrows indicating "better fit" direction for each model
+            # HPD overlap: higher is better → positive diff means B better
+            # KL divergence: lower is better → negative diff means B better
+            # Spike prob (-log10 p): lower is better → negative diff means B better
+            if metric == "hpd_overlap":
+                b_side = "right"
+                a_side = "left"
+            else:
+                b_side = "left"
+                a_side = "right"
+
+            # Place arrows in the upper-right area, stacked vertically
+            for arrow_y, side, label in [
+                (0.92, b_side, f"{model_b_name} better"),
+                (0.82, a_side, f"{model_a_name} better"),
+            ]:
+                if side == "right":
+                    x_start, x_end = 0.60, 0.78
+                    text_x, text_ha = x_start - 0.02, "right"
+                else:
+                    x_start, x_end = 0.40, 0.22
+                    text_x, text_ha = x_start + 0.02, "left"
+
+                ax_diff.annotate(
+                    "",
+                    xy=(x_end, arrow_y),
+                    xytext=(x_start, arrow_y),
+                    xycoords="axes fraction",
+                    arrowprops=dict(
+                        arrowstyle="->",
+                        color="0.4",
+                        lw=1.0,
+                    ),
+                )
+                ax_diff.text(
+                    text_x,
+                    arrow_y,
+                    label,
+                    transform=ax_diff.transAxes,
+                    fontsize=5.5,
+                    color="0.4",
+                    ha=text_ha,
+                    va="center",
+                )
+
+            # Labels and styling
+            ax_diff.set_xlabel(
+                f"\u0394 ({model_b_name} \u2212 {model_a_name})" if i == 1 else "",
+                fontsize=9,
+                labelpad=7,
+            )
+            ax_diff.set_ylabel("Density" if i == 0 else "", fontsize=9, labelpad=7)
+            ax_diff.set_title("Difference", fontsize=9)
+            ax_diff.tick_params(labelsize=7)
+
+            # Annotation: n, median, mean
+            median_val = float(np.median(diff))
+            mean_val = float(np.mean(diff))
+            ax_diff.text(
+                0.02,
+                0.58,
+                f"n={len(diff):,}\nmedian={median_val:.3f}\nmean={mean_val:.3f}",
+                transform=ax_diff.transAxes,
+                fontsize=6,
+                va="top",
+                ha="left",
+                color="gray",
+            )
 
     return fig, axes
 
