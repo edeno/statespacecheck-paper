@@ -57,6 +57,11 @@ Z_MULTIUNIT_THRESHOLD = 2.0  # z-score threshold for high multiunit activity
 WINDOW_HALF_WIDTH = 100  # Half-width in time points for visualization
 RUNNING_AVG_WINDOW = 0.020  # 20ms window for running average
 
+# Diagnostic-driven detection defaults
+DIAGNOSTIC_METRIC = "hpd_overlap"
+CELL_THRESHOLD = 0.3  # Per-cell threshold for flagging disagreement
+MIN_DISAGREEING_CELLS = 3  # Minimum cells that must disagree at a time point
+
 # Filtering thresholds
 MIN_DURATION_BINS = 5  # Minimum event duration in time bins (~10ms at 500Hz)
 MIN_SPIKES = 10  # Minimum spikes in event
@@ -67,7 +72,7 @@ N_TOP_CANDIDATES = 10
 
 @dataclass
 class ReplayCandidate:
-    """A candidate replay event with diagnostic metrics."""
+    """A candidate event with diagnostic metrics."""
 
     start_idx: int
     end_idx: int
@@ -75,15 +80,17 @@ class ReplayCandidate:
     time_start: float
     time_end: float
     duration_ms: float
-    # Event characteristics
-    mean_speed: float
-    mean_z_multiunit: float
     n_spikes: int
     # HPD overlap metrics (weighted averages)
     cont_hpd_overlap: float
     frag_hpd_overlap: float
     # Score: positive means frag is better than continuous
     hpd_difference: float
+    # Behavioral characteristics (None in diagnostic mode)
+    mean_speed: float | None = None
+    mean_z_multiunit: float | None = None
+    # Diagnostic-mode metrics
+    mean_disagreeing_cells: float | None = None
 
 
 def compute_multiunit_zscore(
@@ -171,6 +178,78 @@ def find_immobile_high_activity_periods(
     return periods
 
 
+def find_poor_diagnostic_periods(
+    diagnostics: dict[str, NDArray[np.float64]],
+    metric_name: str = DIAGNOSTIC_METRIC,
+    cell_threshold: float = CELL_THRESHOLD,
+    min_disagreeing_cells: int = MIN_DISAGREEING_CELLS,
+    min_duration_bins: int = MIN_DURATION_BINS,
+) -> list[tuple[int, int]]:
+    """Find contiguous periods where multiple cells flag poor model fit.
+
+    For each time bin, counts cells whose diagnostic metric crosses a threshold
+    (below for HPD overlap/spike_prob, above for KL divergence). Periods where
+    the count meets or exceeds ``min_disagreeing_cells`` are returned.
+
+    Parameters
+    ----------
+    diagnostics : dict[str, np.ndarray]
+        Diagnostics with per-cell metrics, each shape (n_time, n_cells).
+    metric_name : str
+        Which metric to threshold ('hpd_overlap', 'kl_divergence', 'spike_prob').
+    cell_threshold : float
+        Per-cell threshold for flagging disagreement.
+    min_disagreeing_cells : int
+        Minimum number of cells that must disagree at a time point.
+    min_duration_bins : int
+        Minimum contiguous duration in time bins.
+
+    Returns
+    -------
+    periods : list of (start_idx, end_idx) tuples
+        Contiguous periods meeting criteria.
+    """
+    metric = diagnostics[metric_name]  # (n_time, n_cells)
+
+    # Flag per-cell disagreement: higher is worse for KL, lower is worse for others
+    if metric_name == "kl_divergence":
+        disagreeing = metric > cell_threshold
+    else:
+        disagreeing = metric < cell_threshold
+
+    # NaN entries (no spike) are not disagreeing
+    disagreeing = disagreeing & ~np.isnan(metric)
+
+    # Count disagreeing cells per time bin
+    n_disagreeing = disagreeing.sum(axis=1)  # (n_time,)
+
+    # Find contiguous regions where enough cells disagree
+    is_poor_fit = n_disagreeing >= min_disagreeing_cells
+    labeled_array, n_labels = label(is_poor_fit)
+
+    all_durations = []
+    periods = []
+    for label_id in range(1, n_labels + 1):
+        indices = np.where(labeled_array == label_id)[0]
+        start_idx = int(indices[0])
+        end_idx = int(indices[-1])
+        duration = end_idx - start_idx + 1
+        all_durations.append(duration)
+        if duration >= min_duration_bins:
+            periods.append((start_idx, end_idx))
+
+    if all_durations:
+        all_durations_arr = np.array(all_durations)
+        print("  Period duration statistics (before filtering):")
+        print(f"    Total periods found: {len(all_durations)}")
+        print(f"    Duration range: {all_durations_arr.min()} - {all_durations_arr.max()} bins")
+        print(f"    Mean duration: {all_durations_arr.mean():.1f} bins")
+        print(f"    Median duration: {np.median(all_durations_arr):.1f} bins")
+        print(f"    Periods >= {min_duration_bins} bins: {len(periods)}")
+
+    return periods
+
+
 def compute_event_hpd_overlap(
     diagnostics: dict[str, NDArray[np.float64]],
     time: NDArray[np.float64],
@@ -212,12 +291,14 @@ def compute_event_hpd_overlap(
 def score_replay_candidates(
     periods: list[tuple[int, int]],
     time: NDArray[np.float64],
-    speed: NDArray[np.float64],
-    z_multiunit: NDArray[np.float64],
     spike_counts: NDArray[np.int64],
     continuous_diagnostics: dict[str, NDArray[np.float64]],
     contfrag_diagnostics: dict[str, NDArray[np.float64]],
+    speed: NDArray[np.float64] | None = None,
+    z_multiunit: NDArray[np.float64] | None = None,
     min_spikes: int = MIN_SPIKES,
+    diagnostic_metric: str = DIAGNOSTIC_METRIC,
+    cell_threshold: float = CELL_THRESHOLD,
 ) -> list[ReplayCandidate]:
     """Score candidate events by model difference in HPD overlap.
 
@@ -227,18 +308,22 @@ def score_replay_candidates(
         Candidate periods.
     time : np.ndarray
         Time values.
-    speed : np.ndarray
-        Animal speed.
-    z_multiunit : np.ndarray
-        Z-scored multiunit rate.
     spike_counts : np.ndarray
         Spike count matrix.
     continuous_diagnostics : dict
         Diagnostics for continuous model.
     contfrag_diagnostics : dict
         Diagnostics for cont-frag model.
+    speed : np.ndarray, optional
+        Animal speed. If None, behavioral metrics are omitted.
+    z_multiunit : np.ndarray, optional
+        Z-scored multiunit rate. If None, behavioral metrics are omitted.
     min_spikes : int
         Minimum spikes required.
+    diagnostic_metric : str
+        Which metric to use for disagreeing cell count.
+    cell_threshold : float
+        Per-cell threshold for counting disagreeing cells.
 
     Returns
     -------
@@ -253,9 +338,13 @@ def score_replay_candidates(
         if n_spikes < min_spikes:
             continue
 
-        # Compute event characteristics
-        mean_speed = float(np.mean(speed[start_idx : end_idx + 1]))
-        mean_z = float(np.mean(z_multiunit[start_idx : end_idx + 1]))
+        # Behavioral characteristics (optional)
+        mean_speed: float | None = None
+        mean_z: float | None = None
+        if speed is not None:
+            mean_speed = float(np.mean(speed[start_idx : end_idx + 1]))
+        if z_multiunit is not None:
+            mean_z = float(np.mean(z_multiunit[start_idx : end_idx + 1]))
 
         # Compute HPD overlap for both models
         cont_hpd = compute_event_hpd_overlap(continuous_diagnostics, time, start_idx, end_idx)
@@ -263,6 +352,14 @@ def score_replay_candidates(
 
         # Score: positive means frag is better
         hpd_diff = frag_hpd - cont_hpd
+
+        # Compute mean disagreeing cells in window (for the continuous model)
+        metric_window = continuous_diagnostics[diagnostic_metric][start_idx : end_idx + 1]
+        if diagnostic_metric == "kl_divergence":
+            disagreeing_per_bin = (metric_window > cell_threshold) & ~np.isnan(metric_window)
+        else:
+            disagreeing_per_bin = (metric_window < cell_threshold) & ~np.isnan(metric_window)
+        mean_disagreeing = float(np.mean(disagreeing_per_bin.sum(axis=1)))
 
         # Compute timing
         center_idx = (start_idx + end_idx) // 2
@@ -277,12 +374,13 @@ def score_replay_candidates(
             time_start=time_start,
             time_end=time_end,
             duration_ms=duration_ms,
-            mean_speed=mean_speed,
-            mean_z_multiunit=mean_z,
             n_spikes=n_spikes,
             cont_hpd_overlap=cont_hpd,
             frag_hpd_overlap=frag_hpd,
             hpd_difference=hpd_diff,
+            mean_speed=mean_speed,
+            mean_z_multiunit=mean_z,
+            mean_disagreeing_cells=mean_disagreeing,
         )
         candidates.append(candidate)
 
@@ -295,22 +393,29 @@ def score_replay_candidates(
 def print_candidates(
     candidates: list[ReplayCandidate],
     n_top: int = N_TOP_CANDIDATES,
+    diagnostic_mode: bool = False,
     speed_threshold: float = SPEED_THRESHOLD,
     z_threshold: float = Z_MULTIUNIT_THRESHOLD,
 ) -> None:
     """Print summary of top candidate events."""
     print(f"\n{'=' * 80}")
-    print(f"Top {min(n_top, len(candidates))} Immobile High-Activity Events")
-    print("  (Cont-Frag HPD overlap better than Continuous)")
-    print(f"{'=' * 80}")
-    print(f"Criteria: speed < {speed_threshold} cm/s, multiunit z-score > {z_threshold}")
+    if diagnostic_mode:
+        print(f"Top {min(n_top, len(candidates))} Diagnostic-Flagged Events")
+        print("  (Windows where per-cell diagnostics flag poor fit)")
+    else:
+        print(f"Top {min(n_top, len(candidates))} Immobile High-Activity Events")
+        print("  (Cont-Frag HPD overlap better than Continuous)")
+        print(f"Criteria: speed < {speed_threshold} cm/s, multiunit z-score > {z_threshold}")
     print(f"{'=' * 80}\n")
 
     for i, c in enumerate(candidates[:n_top]):
         print(f"Rank {i + 1}: idx={c.center_idx}")
         print(f"  Time: {c.time_start:.3f} - {c.time_end:.3f} s ({c.duration_ms:.0f} ms)")
-        print(f"  Speed: {c.mean_speed:.1f} cm/s, Z-multiunit: {c.mean_z_multiunit:.1f}")
+        if c.mean_speed is not None and c.mean_z_multiunit is not None:
+            print(f"  Speed: {c.mean_speed:.1f} cm/s, Z-multiunit: {c.mean_z_multiunit:.1f}")
         print(f"  N spikes: {c.n_spikes}")
+        if c.mean_disagreeing_cells is not None:
+            print(f"  Mean disagreeing cells: {c.mean_disagreeing_cells:.1f}")
         print(
             f"  HPD overlap: Continuous={c.cont_hpd_overlap:.3f}, "
             f"Cont-Frag={c.frag_hpd_overlap:.3f}"
@@ -375,14 +480,19 @@ def generate_preview_figures(
             track_graph=data["track_graph"],
             edge_order=data["linear_edge_order"],
             edge_spacing=data["linear_edge_spacing"],
-            show_running_average=True,
-            running_average_window=0.020,
+            show_running_average=False,
         )
 
         # Add title with event info
+        speed_str = f", speed={c.mean_speed:.1f} cm/s" if c.mean_speed is not None else ""
+        z_str = f", z={c.mean_z_multiunit:.1f}" if c.mean_z_multiunit is not None else ""
+        disagree_str = (
+            f", disagree={c.mean_disagreeing_cells:.1f} cells"
+            if c.mean_disagreeing_cells is not None
+            else ""
+        )
         fig.suptitle(
-            f"Replay rank {i + 1}: HPD diff={c.hpd_difference:+.3f}, "
-            f"speed={c.mean_speed:.1f} cm/s, z={c.mean_z_multiunit:.1f}",
+            f"Rank {i + 1}: HPD diff={c.hpd_difference:+.3f}{disagree_str}{speed_str}{z_str}",
             fontsize=10,
         )
 
@@ -400,21 +510,33 @@ def main(
     z_threshold: float = Z_MULTIUNIT_THRESHOLD,
     n_top: int = N_TOP_CANDIDATES,
     min_duration_bins: int = MIN_DURATION_BINS,
+    diagnostic_mode: bool = False,
+    diagnostic_metric: str = DIAGNOSTIC_METRIC,
+    cell_threshold: float = CELL_THRESHOLD,
+    min_disagreeing_cells: int = MIN_DISAGREEING_CELLS,
 ) -> list[ReplayCandidate]:
-    """Run the immobile replay window finding pipeline.
+    """Run the window finding pipeline.
 
     Parameters
     ----------
     generate_previews : bool
         Whether to generate preview figures.
     speed_threshold : float
-        Speed threshold for immobility (cm/s).
+        Speed threshold for immobility (cm/s). Used in behavioral mode.
     z_threshold : float
-        Z-score threshold for high multiunit activity.
+        Z-score threshold for high multiunit activity. Used in behavioral mode.
     n_top : int
         Number of top candidates to report/visualize.
     min_duration_bins : int
         Minimum event duration in time bins.
+    diagnostic_mode : bool
+        If True, find windows using diagnostic metrics instead of behavioral filters.
+    diagnostic_metric : str
+        Which metric to use in diagnostic mode.
+    cell_threshold : float
+        Per-cell threshold for flagging disagreement in diagnostic mode.
+    min_disagreeing_cells : int
+        Minimum cells that must disagree at a time point in diagnostic mode.
 
     Returns
     -------
@@ -438,7 +560,6 @@ def main(
     time = position_info.index.values
     position = position_info[["head_position_x", "head_position_y"]].values
     linear_position = position_info["linear_position"].values
-    speed = position_info["head_speed"].values
     spike_times_list: list[Any] = list(data["spike_times"])
 
     # Fit models
@@ -475,22 +596,41 @@ def main(
         contfrag_model, contfrag_results, spike_counts, time
     )
 
-    # Compute multiunit z-score
-    print("Computing multiunit z-score...")
-    z_multiunit = compute_multiunit_zscore(spike_counts)
+    # Find candidate periods
+    speed_arr: NDArray[np.float64] | None = None
+    z_multiunit: NDArray[np.float64] | None = None
 
-    # Find immobile high-activity periods
-    print(
-        f"Finding immobile (speed < {speed_threshold}) + "
-        f"high-activity (z > {z_threshold}) periods..."
-    )
-    periods = find_immobile_high_activity_periods(
-        speed,
-        z_multiunit,
-        speed_threshold=speed_threshold,
-        z_threshold=z_threshold,
-        min_duration_bins=min_duration_bins,
-    )
+    if diagnostic_mode:
+        # Diagnostic-driven: threshold per-cell metrics, count disagreeing cells
+        print(
+            f"Finding periods where >= {min_disagreeing_cells} cells have "
+            f"{diagnostic_metric} {'>' if diagnostic_metric == 'kl_divergence' else '<'} "
+            f"{cell_threshold}..."
+        )
+        periods = find_poor_diagnostic_periods(
+            continuous_diagnostics,
+            metric_name=diagnostic_metric,
+            cell_threshold=cell_threshold,
+            min_disagreeing_cells=min_disagreeing_cells,
+            min_duration_bins=min_duration_bins,
+        )
+    else:
+        # Behavioral filtering: immobile + high multiunit activity
+        speed_arr = position_info["head_speed"].values
+        print("Computing multiunit z-score...")
+        z_multiunit = compute_multiunit_zscore(spike_counts)
+        print(
+            f"Finding immobile (speed < {speed_threshold}) + "
+            f"high-activity (z > {z_threshold}) periods..."
+        )
+        periods = find_immobile_high_activity_periods(
+            speed_arr,
+            z_multiunit,
+            speed_threshold=speed_threshold,
+            z_threshold=z_threshold,
+            min_duration_bins=min_duration_bins,
+        )
+
     print(f"  Found {len(periods)} candidate periods")
 
     # Score candidates by model difference
@@ -498,11 +638,13 @@ def main(
     candidates = score_replay_candidates(
         periods,
         time,
-        speed,
-        z_multiunit,
         spike_counts,
         continuous_diagnostics,
         contfrag_diagnostics,
+        speed=speed_arr,
+        z_multiunit=z_multiunit,
+        diagnostic_metric=diagnostic_metric,
+        cell_threshold=cell_threshold,
     )
     print(f"  {len(candidates)} candidates after filtering")
 
@@ -510,6 +652,7 @@ def main(
     print_candidates(
         candidates,
         n_top=n_top,
+        diagnostic_mode=diagnostic_mode,
         speed_threshold=speed_threshold,
         z_threshold=z_threshold,
     )
@@ -578,6 +721,30 @@ if __name__ == "__main__":
         default=MIN_DURATION_BINS,
         help=f"Minimum event duration in time bins. Default: {MIN_DURATION_BINS}",
     )
+    parser.add_argument(
+        "--diagnostic-mode",
+        action="store_true",
+        help="Find windows using diagnostic metrics instead of behavioral filters",
+    )
+    parser.add_argument(
+        "--diagnostic-metric",
+        type=str,
+        default=DIAGNOSTIC_METRIC,
+        choices=["hpd_overlap", "kl_divergence", "spike_prob"],
+        help=f"Metric to use in diagnostic mode. Default: {DIAGNOSTIC_METRIC}",
+    )
+    parser.add_argument(
+        "--cell-threshold",
+        type=float,
+        default=CELL_THRESHOLD,
+        help=f"Per-cell threshold for flagging disagreement. Default: {CELL_THRESHOLD}",
+    )
+    parser.add_argument(
+        "--min-disagreeing-cells",
+        type=int,
+        default=MIN_DISAGREEING_CELLS,
+        help=f"Min cells that must disagree at a time point. Default: {MIN_DISAGREEING_CELLS}",
+    )
     args = parser.parse_args()
 
     main(
@@ -586,4 +753,8 @@ if __name__ == "__main__":
         z_threshold=args.z_threshold,
         n_top=args.n_top,
         min_duration_bins=args.min_duration,
+        diagnostic_mode=args.diagnostic_mode,
+        diagnostic_metric=args.diagnostic_metric,
+        cell_threshold=args.cell_threshold,
+        min_disagreeing_cells=args.min_disagreeing_cells,
     )
