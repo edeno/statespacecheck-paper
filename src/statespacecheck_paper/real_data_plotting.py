@@ -965,9 +965,9 @@ def plot_posterior_consistency_vs_covariate(
 
     # Scatter plot
     ax1.scatter(x, y, s=scatter_size, alpha=alpha_scatter, color="tab:blue", edgecolor="none")
-    ax1.set_xlabel(covariate_label, fontsize=11)
-    ax1.set_ylabel("HPD Overlap", fontsize=11)
-    ax1.set_title("Scatter", fontsize=12)
+    ax1.set_xlabel(covariate_label, fontsize=7)
+    ax1.set_ylabel("HPD Overlap", fontsize=7)
+    ax1.set_title("Scatter", fontsize=7)
     ax1.spines["top"].set_visible(False)
     ax1.spines["right"].set_visible(False)
     ax1.yaxis.grid(True, linestyle=":", alpha=0.5)
@@ -975,9 +975,9 @@ def plot_posterior_consistency_vs_covariate(
 
     # Hexbin plot
     hb = ax2.hexbin(x, y, gridsize=gridsize, cmap=cmap, bins=bins, mincnt=mincnt, alpha=0.8)
-    ax2.set_xlabel(covariate_label, fontsize=11)
-    ax2.set_ylabel("HPD Overlap", fontsize=11)
-    ax2.set_title("Density", fontsize=12)
+    ax2.set_xlabel(covariate_label, fontsize=7)
+    ax2.set_ylabel("HPD Overlap", fontsize=7)
+    ax2.set_title("Density", fontsize=7)
     ax2.spines["top"].set_visible(False)
     ax2.spines["right"].set_visible(False)
     ax2.yaxis.grid(True, linestyle=":", alpha=0.5)
@@ -985,7 +985,7 @@ def plot_posterior_consistency_vs_covariate(
     cb = plt.colorbar(hb, ax=ax2, label="log10(N)")
     cb.ax.tick_params(labelsize=9)
 
-    fig.suptitle(suptitle, fontsize=14, y=1.05)
+    fig.suptitle(suptitle, fontsize=8, y=1.05)
 
     return fig, (ax1, ax2)
 
@@ -1055,9 +1055,9 @@ def plot_posterior_consistency_vs_array(
 
     # Scatter plot
     ax1.scatter(x, y, s=scatter_size, alpha=alpha_scatter, color="tab:blue", edgecolor="none")
-    ax1.set_xlabel(covariate_label, fontsize=11)
-    ax1.set_ylabel("HPD Overlap", fontsize=11)
-    ax1.set_title("Scatter", fontsize=12)
+    ax1.set_xlabel(covariate_label, fontsize=7)
+    ax1.set_ylabel("HPD Overlap", fontsize=7)
+    ax1.set_title("Scatter", fontsize=7)
     ax1.spines["top"].set_visible(False)
     ax1.spines["right"].set_visible(False)
     ax1.yaxis.grid(True, linestyle=":", alpha=0.5)
@@ -1065,9 +1065,9 @@ def plot_posterior_consistency_vs_array(
 
     # Hexbin plot
     hb = ax2.hexbin(x, y, gridsize=gridsize, cmap=cmap, bins=bins, mincnt=mincnt, alpha=0.8)
-    ax2.set_xlabel(covariate_label, fontsize=11)
-    ax2.set_ylabel("HPD Overlap", fontsize=11)
-    ax2.set_title("Density", fontsize=12)
+    ax2.set_xlabel(covariate_label, fontsize=7)
+    ax2.set_ylabel("HPD Overlap", fontsize=7)
+    ax2.set_title("Density", fontsize=7)
     ax2.spines["top"].set_visible(False)
     ax2.spines["right"].set_visible(False)
     ax2.yaxis.grid(True, linestyle=":", alpha=0.5)
@@ -1076,7 +1076,7 @@ def plot_posterior_consistency_vs_array(
     cb.ax.tick_params(labelsize=9)
 
     if suptitle:
-        fig.suptitle(suptitle, fontsize=14, y=1.05)
+        fig.suptitle(suptitle, fontsize=8, y=1.05)
 
     return fig, (ax1, ax2)
 
@@ -1209,7 +1209,7 @@ def plot_hpd_overlap_at_time(
         f"Index {t}, overlap = {overlap[t]:.3f}, n_spikes = {n_total_spikes},\n"
         f"n_hpd_likelihood = {n_hpd_likelihood}, n_hpd_posterior = {n_hpd_posterior}, \n"
         f"n_overlap = {n_overlap}, denom = {denom_val}",
-        fontsize=12,
+        fontsize=8,
         y=1.12,
     )
 
@@ -1417,13 +1417,13 @@ def plot_per_cell_diagnostic_scatter(
         )
 
     ax.set_xlim(time_arr.min(), time_arr.max())
-    ax.set_ylabel(metric_name if ylabel is None else ylabel, fontsize=9, labelpad=7)
+    ax.set_ylabel(metric_name if ylabel is None else ylabel, fontsize=7, labelpad=7)
 
     if show_xlabel:
-        ax.set_xlabel("Time (s)", fontsize=9, labelpad=7)
-        ax.tick_params(labelsize=7)
+        ax.set_xlabel("Time (s)", fontsize=7, labelpad=7)
+        ax.tick_params(labelsize=6)
     else:
-        ax.tick_params(labelsize=7, labelbottom=False)
+        ax.tick_params(labelsize=6, labelbottom=False)
 
     return ax
 
@@ -1535,8 +1535,8 @@ def plot_model_comparison_diagnostics(
 
         # Add column titles on first row
         if i == 0:
-            axes[i, 0].set_title(model_a_name, fontsize=11)
-            axes[i, 1].set_title(model_b_name, fontsize=11)
+            axes[i, 0].set_title(model_a_name, fontsize=7)
+            axes[i, 1].set_title(model_b_name, fontsize=7)
 
     return fig, axes
 
@@ -1618,7 +1618,7 @@ def plot_diagnostic_summary_comparison(
                 xy=(bar.get_x() + bar.get_width() / 2, h + err + 0.01),
                 ha="center",
                 va="bottom",
-                fontsize=9,
+                fontsize=7,
             )
 
     return fig, axes
@@ -1898,13 +1898,13 @@ def plot_model_comparison_with_posterior(
 
             # Set titles and labels
             if show_title:
-                ax.set_title(model_name, fontsize=11)
+                ax.set_title(model_name, fontsize=7)
             else:
                 ax.set_title("")
 
-            ax.set_ylabel(ylabel if col == 0 else "", fontsize=9, labelpad=7)
+            ax.set_ylabel(ylabel if col == 0 else "", fontsize=7, labelpad=7)
             ax.set_xlabel("")
-            ax.tick_params(labelsize=7, labelbottom=False)
+            ax.tick_params(labelsize=6, labelbottom=False)
 
             # Add legend for true position line (only on first column, first row)
             if col == 0 and row_idx == 0:
@@ -1947,9 +1947,9 @@ def plot_model_comparison_with_posterior(
                 ax=ax,
                 sort_order=sort_order,
             )
-            ax.set_ylabel("Neuron" if col == 0 else "", fontsize=9, labelpad=7)
+            ax.set_ylabel("Neuron" if col == 0 else "", fontsize=7, labelpad=7)
             ax.set_xlabel("")
-            ax.tick_params(labelsize=7, labelbottom=False)
+            ax.tick_params(labelsize=6, labelbottom=False)
 
     # Rows 3-5: Diagnostic scatter plots
     for i, (metric, ylabel, color, worse_dir) in enumerate(
@@ -2115,13 +2115,13 @@ def plot_metrics_vs_position(
             )
 
             # Styling
-            ax.set_ylabel(ylabel if col == 0 else "", fontsize=9, labelpad=7)
-            ax.set_xlabel("Linear Position (cm)" if i == 2 else "", fontsize=9, labelpad=7)
-            ax.tick_params(labelsize=7, labelbottom=(i == 2))
+            ax.set_ylabel(ylabel if col == 0 else "", fontsize=7, labelpad=7)
+            ax.set_xlabel("Linear Position (cm)" if i == 2 else "", fontsize=7, labelpad=7)
+            ax.tick_params(labelsize=6, labelbottom=(i == 2))
 
             # Add column titles on first row
             if i == 0:
-                ax.set_title(model_name, fontsize=11)
+                ax.set_title(model_name, fontsize=7)
 
             # Add direction indicator on right side of right column
             if col == 1:
@@ -2263,7 +2263,7 @@ def plot_metrics_time_vs_position_comparison(
         )
 
         # Styling
-        ax.set_ylabel(ylabel, fontsize=9, labelpad=7)
+        ax.set_ylabel(ylabel, fontsize=7, labelpad=7)
 
         # Add direction indicator on right side
         ax.text(
@@ -2277,10 +2277,10 @@ def plot_metrics_time_vs_position_comparison(
         )
 
     # Add title on first axes only
-    axes[0].set_title(model_name, fontsize=11)
+    axes[0].set_title(model_name, fontsize=7)
 
     # Add x-label on last axes only
-    axes[-1].set_xlabel("Linear Position (cm)", fontsize=9, labelpad=7)
+    axes[-1].set_xlabel("Linear Position (cm)", fontsize=7, labelpad=7)
     for ax in axes[:-1]:
         ax.tick_params(labelbottom=False)
 
@@ -2438,10 +2438,10 @@ def plot_metric_distributions(
         ax.set_ylim(lims)
 
         # Labels and styling
-        ax.set_xlabel(model_a_name, fontsize=9, labelpad=7)
-        ax.set_ylabel(model_b_name if i == 0 else "", fontsize=9, labelpad=7)
-        ax.set_title(title, fontsize=9)
-        ax.tick_params(labelsize=7)
+        ax.set_xlabel(model_a_name, fontsize=7, labelpad=7)
+        ax.set_ylabel(model_b_name if i == 0 else "", fontsize=7, labelpad=7)
+        ax.set_title(title, fontsize=7)
+        ax.tick_params(labelsize=6)
         ax.set_aspect("equal", adjustable="box")
 
         # Add n values as text
@@ -2528,12 +2528,12 @@ def plot_metric_distributions(
             # Labels and styling
             ax_diff.set_xlabel(
                 f"\u0394 ({model_b_name} \u2212 {model_a_name})" if i == 1 else "",
-                fontsize=9,
+                fontsize=7,
                 labelpad=7,
             )
-            ax_diff.set_ylabel("Density" if i == 0 else "", fontsize=9, labelpad=7)
-            ax_diff.set_title("Difference", fontsize=9)
-            ax_diff.tick_params(labelsize=7)
+            ax_diff.set_ylabel("Density" if i == 0 else "", fontsize=7, labelpad=7)
+            ax_diff.set_title("Difference", fontsize=7)
+            ax_diff.tick_params(labelsize=6)
 
             # Annotation: n, median, mean
             median_val = float(np.median(diff))
@@ -2633,12 +2633,12 @@ def plot_metric_diff_histogram(
         # Labels and styling
         ax.set_xlabel(
             f"\u0394 ({model_b_name} \u2212 {model_a_name})" if i == 1 else "",
-            fontsize=9,
+            fontsize=7,
             labelpad=7,
         )
-        ax.set_ylabel("Count" if i == 0 else "", fontsize=9, labelpad=7)
-        ax.set_title(title, fontsize=9)
-        ax.tick_params(labelsize=7)
+        ax.set_ylabel("Count" if i == 0 else "", fontsize=7, labelpad=7)
+        ax.set_title(title, fontsize=7)
+        ax.tick_params(labelsize=6)
 
         # Annotation: n, median, mean
         median_val = float(np.median(diff))
@@ -2750,14 +2750,14 @@ def plot_metric_diff_hexbin(
         ax.axhline(0, color=COLORS["threshold"], linewidth=1, linestyle="--", alpha=0.7)
 
         # Labels and styling
-        ax.set_xlabel(model_a_name if i == 1 else "", fontsize=9, labelpad=7)
+        ax.set_xlabel(model_a_name if i == 1 else "", fontsize=7, labelpad=7)
         ax.set_ylabel(
             f"\u0394 ({model_b_name} \u2212 {model_a_name})" if i == 0 else "",
-            fontsize=9,
+            fontsize=7,
             labelpad=7,
         )
-        ax.set_title(title, fontsize=9)
-        ax.tick_params(labelsize=7)
+        ax.set_title(title, fontsize=7)
+        ax.tick_params(labelsize=6)
 
         # Add n values as text
         ax.text(
@@ -2865,12 +2865,12 @@ def plot_metric_diff_kde(
         # Labels and styling
         ax.set_xlabel(
             f"\u0394 ({model_b_name} \u2212 {model_a_name})" if i == 1 else "",
-            fontsize=9,
+            fontsize=7,
             labelpad=7,
         )
-        ax.set_ylabel("Density" if i == 0 else "", fontsize=9, labelpad=7)
-        ax.set_title(title, fontsize=9)
-        ax.tick_params(labelsize=7)
+        ax.set_ylabel("Density" if i == 0 else "", fontsize=7, labelpad=7)
+        ax.set_title(title, fontsize=7)
+        ax.tick_params(labelsize=6)
 
         # Annotation: n, median
         median_val = float(np.median(diff))

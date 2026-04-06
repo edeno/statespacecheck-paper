@@ -435,12 +435,12 @@ def plot_original(
         alpha=0.85,
         label="True position",
     )
-    axes[0].set_ylabel("Position (bin)", fontsize=10, labelpad=8)
+    axes[0].set_ylabel("Position (bin)", fontsize=7, labelpad=8)
     axes[0].tick_params(labelsize=8)
 
     # Create colorbar with better formatting
     cbar = fig.colorbar(im, ax=axes[0], fraction=0.03, pad=0.02, aspect=30)
-    cbar.set_label("Probability (×10⁻¹²)", fontsize=9, labelpad=8)
+    cbar.set_label("Probability (×10⁻¹²)", fontsize=7, labelpad=8)
     cbar.ax.tick_params(labelsize=8, length=3, width=0.5)
     # Scale tick labels by 1e12 to avoid offset text
     cbar.ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, p: f"{x * 1e12:.1f}"))
@@ -463,7 +463,7 @@ def plot_original(
     )
     axes[1].axhline(thresholds.hpd_overlap, color=COLORS["threshold"], linewidth=1.5, zorder=10)
     axes[1].set_xlim(0, n_time)
-    axes[1].set_ylabel("HPD Overlap", fontsize=10, labelpad=8)
+    axes[1].set_ylabel("HPD Overlap", fontsize=7, labelpad=8)
     axes[1].tick_params(labelsize=8)
 
     axes[2].scatter(
@@ -476,7 +476,7 @@ def plot_original(
     )
     axes[2].axhline(thresholds.kl_divergence, color=COLORS["threshold"], linewidth=1.5, zorder=10)
     axes[2].set_xlim(0, n_time)
-    axes[2].set_ylabel("KL Divergence", fontsize=10, labelpad=8)
+    axes[2].set_ylabel("KL Divergence", fontsize=7, labelpad=8)
     axes[2].tick_params(labelsize=8)
 
     # Spike probability: lower values indicate worse fit
@@ -490,8 +490,8 @@ def plot_original(
     )
     axes[3].axhline(thresholds.spike_prob, color=COLORS["threshold"], linewidth=1.5, zorder=10)
     axes[3].set_xlim(0, n_time)
-    axes[3].set_ylabel("Spike Prob", fontsize=10, labelpad=8)
-    axes[3].set_xlabel("Time", fontsize=10, labelpad=8)
+    axes[3].set_ylabel("Spike Prob", fontsize=7, labelpad=8)
+    axes[3].set_xlabel("Time", fontsize=7, labelpad=8)
     axes[3].tick_params(labelsize=8)
 
     # Add comprehensive legend outside the plot area at the bottom
@@ -502,14 +502,14 @@ def plot_original(
         labels,
         loc="upper center",
         bbox_to_anchor=(0.5, -0.35),
-        fontsize=9,
+        fontsize=6,
         frameon=True,
         fancybox=False,
         shadow=False,
         ncol=5,
     )
 
-    fig.suptitle(title, fontsize=11, y=0.99)
+    fig.suptitle(title, fontsize=8, y=0.99)
     return fig
 
 
@@ -574,10 +574,10 @@ def plot_transformed(
 
     im = axes[0].imshow(posterior.T, aspect="auto", origin="lower", cmap=CMAP_POSTERIOR)
     axes[0].plot(np.arange(n_time), x_true, color=COLORS["ground_truth"], linewidth=1.0, alpha=0.8)
-    axes[0].set_ylabel("Position (bin)", fontsize=9, labelpad=8)
+    axes[0].set_ylabel("Position (bin)", fontsize=7, labelpad=8)
     axes[0].tick_params(labelsize=7)
     cbar = fig.colorbar(im, ax=axes[0], fraction=0.02, pad=0.02)
-    cbar.set_label("Probability", fontsize=8, labelpad=8)
+    cbar.set_label("Probability", fontsize=7, labelpad=8)
     cbar.ax.tick_params(labelsize=7)
 
     for ax in axes:
@@ -617,7 +617,7 @@ def plot_transformed(
         zorder=10,
     )
     axes[1].set_xlim(0, n_time)
-    axes[1].set_ylabel("-log(HPD Overlap)", fontsize=9, labelpad=8)
+    axes[1].set_ylabel("-log(HPD Overlap)", fontsize=7, labelpad=8)
     axes[1].tick_params(labelsize=7)
     axes[1].legend(loc="upper right", fontsize=7, frameon=False)
 
@@ -637,7 +637,7 @@ def plot_transformed(
         zorder=10,
     )
     axes[2].set_xlim(0, n_time)
-    axes[2].set_ylabel("sqrt(KL Divergence)", fontsize=9, labelpad=8)
+    axes[2].set_ylabel("sqrt(KL Divergence)", fontsize=7, labelpad=8)
     axes[2].tick_params(labelsize=7)
 
     axes[3].scatter(
@@ -656,11 +656,11 @@ def plot_transformed(
         zorder=10,
     )
     axes[3].set_xlim(0, n_time)
-    axes[3].set_ylabel("-log(Spike Prob)", fontsize=9, labelpad=8)
-    axes[3].set_xlabel("Time", fontsize=9, labelpad=8)
+    axes[3].set_ylabel("-log(Spike Prob)", fontsize=7, labelpad=8)
+    axes[3].set_xlabel("Time", fontsize=7, labelpad=8)
     axes[3].tick_params(labelsize=7)
 
-    fig.suptitle(title, fontsize=10, y=0.998)
+    fig.suptitle(title, fontsize=8, y=0.998)
     return fig
 
 
@@ -1016,7 +1016,7 @@ def _plot_spike_count_raster(
     n_time, n_cells = spikes_sorted.shape
     ax.set_xlim(0, n_time)
     ax.set_ylim(-0.5, n_cells - 0.5)
-    ax.set_ylabel("Neuron", fontsize=9, labelpad=7)
+    ax.set_ylabel("Neuron", fontsize=7, labelpad=7)
 
 
 def plot_combined_diagnostics(
@@ -1143,8 +1143,8 @@ def plot_combined_diagnostics(
 
     # Predictive heatmap
     _plot_timeseries_heatmap(ax_pred, metrics["predictive"], x_true)
-    ax_pred.set_ylabel("Position (a.u.)", fontsize=9, labelpad=7)
-    ax_pred.tick_params(labelsize=7, labelbottom=False)
+    ax_pred.set_ylabel("Position (a.u.)", fontsize=7, labelpad=7)
+    ax_pred.tick_params(labelsize=6, labelbottom=False)
     ax_pred.legend(
         [Line2D([0], [0], color=COLORS["ground_truth"], linewidth=1.0)],
         ["True position"],
@@ -1170,8 +1170,8 @@ def plot_combined_diagnostics(
     likelihood_masked = metrics["likelihood"].copy()
     likelihood_masked[~has_spikes, :] = np.nan  # Set to NaN at times without spikes
     im = _plot_timeseries_heatmap(ax_like, likelihood_masked, x_true, cmap="magma")
-    ax_like.set_ylabel("Position (a.u.)", fontsize=9, labelpad=7)
-    ax_like.tick_params(labelsize=7, labelbottom=False)
+    ax_like.set_ylabel("Position (a.u.)", fontsize=7, labelpad=7)
+    ax_like.tick_params(labelsize=6, labelbottom=False)
     ax_like.text(
         1.01,
         0.5,
@@ -1185,8 +1185,8 @@ def plot_combined_diagnostics(
 
     # Posterior heatmap (filtered)
     _plot_timeseries_heatmap(ax_post, metrics["posterior"], x_true)
-    ax_post.set_ylabel("Position (a.u.)", fontsize=9, labelpad=7)
-    ax_post.tick_params(labelsize=7, labelbottom=False)
+    ax_post.set_ylabel("Position (a.u.)", fontsize=7, labelpad=7)
+    ax_post.tick_params(labelsize=6, labelbottom=False)
     ax_post.text(
         1.01,
         0.5,
@@ -1200,7 +1200,7 @@ def plot_combined_diagnostics(
 
     # Spike raster (sorted by place field peak)
     _plot_spike_count_raster(ax_raster, spikes, placefield_centers)
-    ax_raster.tick_params(labelsize=7, labelbottom=False)
+    ax_raster.tick_params(labelsize=6, labelbottom=False)
     ax_raster.text(
         1.01,
         0.5,
@@ -1229,8 +1229,8 @@ def plot_combined_diagnostics(
         thresholds.hpd_overlap, color=COLORS["threshold"], linewidth=1.2, alpha=0.7, zorder=10
     )
     ax_hpdo.set_xlim(0, n_time)
-    ax_hpdo.set_ylabel("HPD Overlap", fontsize=9, labelpad=7)
-    ax_hpdo.tick_params(labelsize=7, labelbottom=False)
+    ax_hpdo.set_ylabel("HPD Overlap", fontsize=7, labelpad=7)
+    ax_hpdo.tick_params(labelsize=6, labelbottom=False)
     # Add directional indicator and threshold annotation
     ax_hpdo.text(
         1.01, 0.02, "↓ Worse fit", transform=ax_hpdo.transAxes, fontsize=6, va="bottom", ha="left"
@@ -1259,8 +1259,8 @@ def plot_combined_diagnostics(
         thresholds.kl_divergence, color=COLORS["threshold"], linewidth=1.2, alpha=0.7, zorder=10
     )
     ax_kl.set_xlim(0, n_time)
-    ax_kl.set_ylabel("KL Divergence", fontsize=9, labelpad=7)
-    ax_kl.tick_params(labelsize=7, labelbottom=False)
+    ax_kl.set_ylabel("KL Divergence", fontsize=7, labelpad=7)
+    ax_kl.tick_params(labelsize=6, labelbottom=False)
     # Add directional indicator and threshold annotation
     ax_kl.text(
         1.01, 0.5, "↑ Worse fit", transform=ax_kl.transAxes, fontsize=6, va="center", ha="left"
@@ -1297,8 +1297,8 @@ def plot_combined_diagnostics(
         label="Threshold",
     )
     ax_spike.set_xlim(0, n_time)
-    ax_spike.set_ylabel(r"$-\log_{10}(p)$", fontsize=9, labelpad=7)
-    ax_spike.set_xlabel("Time (a.u.)", fontsize=9, labelpad=7)
+    ax_spike.set_ylabel(r"$-\log_{10}(p)$", fontsize=7, labelpad=7)
+    ax_spike.set_xlabel("Time (a.u.)", fontsize=7, labelpad=7)
     ax_spike.tick_params(labelsize=7)
     # Add directional indicator (higher values now indicate misfit after log transform)
     ax_spike.text(
@@ -1326,7 +1326,7 @@ def plot_combined_diagnostics(
     cbar = fig.colorbar(im, cax=cax)
     # Use clearer formatting: show values in scientific notation
     cbar.ax.yaxis.set_major_formatter(FuncFormatter(lambda x, p: f"{x:.1e}" if x > 0 else "0"))
-    cbar.set_label("Probability", fontsize=8, labelpad=6)
+    cbar.set_label("Probability", fontsize=7, labelpad=6)
     cbar.ax.tick_params(labelsize=6, length=2, width=0.5)
 
     # Add phase boundaries to all time-series panels
@@ -1585,7 +1585,7 @@ def plot_combined_diagnostics(
         1.05,
         "a",
         transform=ax_pred.transAxes,
-        fontsize=9,
+        fontsize=8,
         fontweight="bold",
         va="bottom",
         ha="right",
@@ -1598,7 +1598,7 @@ def plot_combined_diagnostics(
             1.08,
             label,
             transform=ax.transAxes,
-            fontsize=9,
+            fontsize=8,
             fontweight="bold",
             va="bottom",
             ha="right",

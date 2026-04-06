@@ -141,7 +141,7 @@ def run_demo() -> None:
 
     # Generate Figure 4
     print("\nGenerating Figure 4...")
-    set_figure_defaults()
+    set_figure_defaults(context="paper")
 
     # Define time slice for detail view
     window_start = FIGURE_4A_WINDOW_CENTER - FIGURE_4A_WINDOW_HALF_WIDTH

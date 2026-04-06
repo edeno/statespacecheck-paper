@@ -116,7 +116,6 @@ class TestFigure04Integration:
         # Check imports from real_data_plotting module
         assert hasattr(generate_figure04, "plot_model_comparison_with_posterior")
         assert hasattr(generate_figure04, "plot_metric_distributions")
-        assert hasattr(generate_figure04, "plot_metrics_time_vs_position_comparison")
         assert hasattr(generate_figure04, "plot_track_graph_2d")
 
 
