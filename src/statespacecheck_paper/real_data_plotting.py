@@ -983,7 +983,7 @@ def plot_posterior_consistency_vs_covariate(
     ax2.yaxis.grid(True, linestyle=":", alpha=0.5)
     ax2.xaxis.grid(False)
     cb = plt.colorbar(hb, ax=ax2, label="log10(N)")
-    cb.ax.tick_params(labelsize=9)
+    cb.ax.tick_params(labelsize=6)
 
     fig.suptitle(suptitle, fontsize=8, y=1.05)
 
@@ -1073,7 +1073,7 @@ def plot_posterior_consistency_vs_array(
     ax2.yaxis.grid(True, linestyle=":", alpha=0.5)
     ax2.xaxis.grid(False)
     cb = plt.colorbar(hb, ax=ax2, label="log10(N)")
-    cb.ax.tick_params(labelsize=9)
+    cb.ax.tick_params(labelsize=6)
 
     if suptitle:
         fig.suptitle(suptitle, fontsize=8, y=1.05)
@@ -2527,7 +2527,7 @@ def plot_metric_distributions(
 
             # Labels and styling
             ax_diff.set_xlabel(
-                f"\u0394 ({model_b_name} \u2212 {model_a_name})" if i == 1 else "",
+                f"\u0394 ({model_b_name} \u2212 {model_a_name})",
                 fontsize=7,
                 labelpad=7,
             )

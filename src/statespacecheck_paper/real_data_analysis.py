@@ -222,8 +222,13 @@ def compute_running_average(
     handled by using 'nearest' mode, which extends the edge values.
 
     For metrics with many NaN values (sparse spikes), the mean across cells
-    at each time bin may itself be NaN. These are handled by the uniform filter
-    using linear interpolation.
+    at each time bin may itself be NaN. These NaN bins are filled via linear
+    interpolation before filtering. This means interpolated values contribute
+    to the sliding window average, which can dilute the result when spikes are
+    very sparse. At time-series edges, ``np.interp`` forward/back-fills from
+    the nearest valid point, and ``uniform_filter1d(mode="nearest")`` further
+    extends edge values, which may produce a smooth but misleading ramp if
+    the first/last valid points are far from the edges.
 
     Examples
     --------

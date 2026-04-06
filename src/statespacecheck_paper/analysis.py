@@ -36,6 +36,7 @@ goodness-of-fit.
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 
 import numpy as np
@@ -46,7 +47,6 @@ from scipy.stats import poisson
 from statespacecheck_paper.simulation import (
     normalize,
     placefield_rates,
-    safe_log,
     spike_prob_rank,
 )
 
@@ -504,6 +504,11 @@ def decode_and_diagnostics(
             posterior[t] = unnormalized_posterior / posterior_sum
 
     # Find all spike events (excluding t=0 which has no valid prior)
+    if np.any(spikes > 1):
+        warnings.warn(
+            "Spike counts > 1 detected; per-cell diagnostics assume k=1 per bin.",
+            stacklevel=2,
+        )
     spike_time_ind, spike_cell_ind = np.nonzero(spikes[1:])
     spike_time_ind = spike_time_ind + 1  # Adjust for offset from [1:]
 
@@ -672,7 +677,7 @@ class Thresholds:
 
 
 def compute_thresholds(
-    metrics: dict[str, NDArray[np.floating]], baseline_end: int = 60_000
+    metrics: dict[str, NDArray[np.floating]], baseline_end: int | None = None
 ) -> Thresholds:
     """Compute threshold values from baseline period.
 
@@ -689,8 +694,9 @@ def compute_thresholds(
         - 'hpd_overlap' : np.ndarray, shape (n_time, n_cells)
         - 'kl_divergence' : np.ndarray, shape (n_time, n_cells)
         - 'spike_prob' : np.ndarray, shape (n_time, n_cells)
-    baseline_end : int, default 60_000
+    baseline_end : int or None, default None
         Index marking end of baseline period (exclusive).
+        If None, uses all time points for threshold computation.
 
     Returns
     -------
@@ -739,11 +745,11 @@ class Transformed:
     Parameters
     ----------
     hpd_overlap : np.ndarray, shape (n_time, n_cells)
-        Transformed HPD overlap values: -log(HPDO + eps1).
+        Transformed HPD overlap values: -log10(HPDO + eps1).
     kl_divergence : np.ndarray, shape (n_time, n_cells)
         Transformed KL divergence values: sqrt(KL).
     spike_prob : np.ndarray, shape (n_time, n_cells)
-        Transformed spike probability values: -log(spikeProb + eps2).
+        Transformed spike probability values: -log10(spikeProb + eps2).
     hpd_overlap_threshold : float
         Transformed HPD overlap threshold.
     kl_divergence_threshold : float
@@ -782,10 +788,10 @@ def transform_metrics(
 ) -> Transformed:
     """Apply transformations to metrics for better visualization.
 
-    **Transformations** (matching MATLAB):
-    - HPD overlap: -log(HPDO + eps1) - emphasizes low values (worse fit)
+    **Transformations**:
+    - HPD overlap: -log10(HPDO + eps1) - emphasizes low values (worse fit)
     - KL divergence: sqrt(KL) - compresses high values
-    - spike_prob: -log(spikeProb + eps2) - emphasizes low values (worse fit)
+    - spike_prob: -log10(spikeProb + eps2) - emphasizes low values (worse fit)
 
     The same transformations are applied to the threshold values.
 
@@ -829,19 +835,18 @@ def transform_metrics(
     >>> transformed.kl_divergence  # sqrt(KL)
     array([[1., 2.],
            [3., 4.]])
-    >>> np.allclose(transformed.spike_prob_threshold, -np.log(0.05 + 1e-10))
+    >>> np.allclose(transformed.spike_prob_threshold, -np.log10(0.05 + 1e-10))
     True
     """
-    hpd_overlap_transformed = -safe_log(metrics["hpd_overlap"] + eps1)
+    hpd_overlap_transformed = -np.log10(np.maximum(metrics["hpd_overlap"] + eps1, 1e-10))
     kl_divergence_transformed = np.sqrt(metrics["kl_divergence"])
-    # spike_prob transformed with -log (matching MATLAB's -log(spikeProb + 1e-10))
-    spike_prob_transformed = -safe_log(metrics["spike_prob"] + eps2)
+    spike_prob_transformed = -np.log10(np.maximum(metrics["spike_prob"] + eps2, 1e-10))
 
     return Transformed(
         hpd_overlap=hpd_overlap_transformed,
         kl_divergence=kl_divergence_transformed,
         spike_prob=spike_prob_transformed,
-        hpd_overlap_threshold=-np.log(thresholds.hpd_overlap + eps1),
+        hpd_overlap_threshold=-np.log10(max(thresholds.hpd_overlap + eps1, 1e-10)),
         kl_divergence_threshold=np.sqrt(thresholds.kl_divergence),
-        spike_prob_threshold=-np.log(thresholds.spike_prob + eps2),
+        spike_prob_threshold=-np.log10(max(thresholds.spike_prob + eps2, 1e-10)),
     )

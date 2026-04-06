@@ -559,19 +559,19 @@ class TestTransformMetrics:
         transformed = transform_metrics(metrics, thresholds, eps1=eps1, eps2=eps2)
 
         # Assert
-        # HPDO: -log(HPDO + eps1)
-        expected_hpdo = -np.log(metrics["hpd_overlap"] + eps1)
+        # HPDO: -log10(HPDO + eps1)
+        expected_hpdo = -np.log10(metrics["hpd_overlap"] + eps1)
         np.testing.assert_allclose(transformed.hpd_overlap, expected_hpdo)
         # KL: sqrt(KL)
         expected_kl = np.sqrt(metrics["kl_divergence"])
         np.testing.assert_allclose(transformed.kl_divergence, expected_kl)
-        # spike_prob: -log(spike_prob + eps2)
-        expected_spike_prob = -np.log(metrics["spike_prob"] + eps2)
+        # spike_prob: -log10(spike_prob + eps2)
+        expected_spike_prob = -np.log10(metrics["spike_prob"] + eps2)
         np.testing.assert_allclose(transformed.spike_prob, expected_spike_prob)
         # Thresholds transformed
-        expected_hpd_overlap_threshold = -np.log(thresholds.hpd_overlap + eps1)
+        expected_hpd_overlap_threshold = -np.log10(thresholds.hpd_overlap + eps1)
         expected_kl_divergence_threshold = np.sqrt(thresholds.kl_divergence)
-        expected_spike_prob_threshold = -np.log(thresholds.spike_prob + eps2)
+        expected_spike_prob_threshold = -np.log10(thresholds.spike_prob + eps2)
         assert transformed.hpd_overlap_threshold == pytest.approx(expected_hpd_overlap_threshold)
         assert transformed.kl_divergence_threshold == pytest.approx(
             expected_kl_divergence_threshold

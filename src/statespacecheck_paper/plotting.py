@@ -436,12 +436,12 @@ def plot_original(
         label="True position",
     )
     axes[0].set_ylabel("Position (bin)", fontsize=7, labelpad=8)
-    axes[0].tick_params(labelsize=8)
+    axes[0].tick_params(labelsize=6)
 
     # Create colorbar with better formatting
     cbar = fig.colorbar(im, ax=axes[0], fraction=0.03, pad=0.02, aspect=30)
     cbar.set_label("Probability (×10⁻¹²)", fontsize=7, labelpad=8)
-    cbar.ax.tick_params(labelsize=8, length=3, width=0.5)
+    cbar.ax.tick_params(labelsize=6, length=3, width=0.5)
     # Scale tick labels by 1e12 to avoid offset text
     cbar.ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, p: f"{x * 1e12:.1f}"))
 
@@ -464,7 +464,7 @@ def plot_original(
     axes[1].axhline(thresholds.hpd_overlap, color=COLORS["threshold"], linewidth=1.5, zorder=10)
     axes[1].set_xlim(0, n_time)
     axes[1].set_ylabel("HPD Overlap", fontsize=7, labelpad=8)
-    axes[1].tick_params(labelsize=8)
+    axes[1].tick_params(labelsize=6)
 
     axes[2].scatter(
         time_indices.ravel(),
@@ -477,7 +477,7 @@ def plot_original(
     axes[2].axhline(thresholds.kl_divergence, color=COLORS["threshold"], linewidth=1.5, zorder=10)
     axes[2].set_xlim(0, n_time)
     axes[2].set_ylabel("KL Divergence", fontsize=7, labelpad=8)
-    axes[2].tick_params(labelsize=8)
+    axes[2].tick_params(labelsize=6)
 
     # Spike probability: lower values indicate worse fit
     axes[3].scatter(
@@ -492,7 +492,7 @@ def plot_original(
     axes[3].set_xlim(0, n_time)
     axes[3].set_ylabel("Spike Prob", fontsize=7, labelpad=8)
     axes[3].set_xlabel("Time", fontsize=7, labelpad=8)
-    axes[3].tick_params(labelsize=8)
+    axes[3].tick_params(labelsize=6)
 
     # Add comprehensive legend outside the plot area at the bottom
     # Get handles and labels from axes[0] where they were defined
