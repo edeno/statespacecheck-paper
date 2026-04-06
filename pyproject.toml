@@ -73,7 +73,7 @@ convention = "numpy"
 [tool.ruff.lint.per-file-ignores]
 # Notebooks have cell-based imports and exploration code
 "notebooks/*.py" = ["E402", "F401", "F541"]
-"notebooks/*.ipynb" = ["E402", "F401", "F821"]
+"notebooks/*.ipynb" = ["E402", "F401", "F821", "E501"]
 # Tests use legacy numpy random for simplicity
 "tests/*.py" = ["NPY002"]
 
