@@ -28,7 +28,6 @@ from statespacecheck_paper.real_data_analysis import (
 )
 from statespacecheck_paper.real_data_plotting import (
     plot_metric_distributions,
-    plot_metrics_time_vs_position_comparison,
     plot_model_comparison_with_posterior,
     plot_track_graph_2d,
 )
@@ -140,75 +139,14 @@ def run_demo() -> None:
         print(f"  Continuous: {cont_mean:.4f}")
         print(f"  ContFrag:   {frag_mean:.4f}")
 
-    # Generate figures
+    # Generate Figure 4
     print("\nGenerating Figure 4...")
     set_figure_defaults()
 
-    # Define time slice for Figure 4a (detail view)
+    # Define time slice for detail view
     window_start = FIGURE_4A_WINDOW_CENTER - FIGURE_4A_WINDOW_HALF_WIDTH
     window_end = FIGURE_4A_WINDOW_CENTER + FIGURE_4A_WINDOW_HALF_WIDTH
     time_slice_ind = slice(window_start, window_end)
-
-    # Figure 4a: Model comparison with filter, predictive, likelihood, raster, and diagnostics
-    fig, axes = plot_model_comparison_with_posterior(
-        time,
-        linear_position,
-        continuous_results,
-        contfrag_results,
-        continuous_diagnostics,
-        contfrag_diagnostics,
-        spike_times=spike_times_list,
-        spike_counts=spike_counts,
-        place_field_peaks=place_field_peaks,
-        time_slice_ind=time_slice_ind,
-        model_a_name="Continuous",
-        model_b_name="Continuous-Fragmented",
-        track_graph=data["track_graph"],
-        edge_order=data["linear_edge_order"],
-        edge_spacing=data["linear_edge_spacing"],
-        show_running_average=False,
-    )
-    save_figure("figures/main/figure04a", close=True)
-    print("Saved figures/main/figure04a.{pdf,png}")
-
-    # Figure 4b: Metric distributions comparing all time points
-    fig, axes = plot_metric_distributions(
-        continuous_diagnostics,
-        contfrag_diagnostics,
-        model_a_name="Continuous",
-        model_b_name="Continuous-Fragmented",
-    )
-    save_figure("figures/main/figure04b", close=True)
-    print("Saved figures/main/figure04b.{pdf,png}")
-
-    # Figure 4c: 2D track graph for reference
-    fig, ax = plt.subplots(figsize=(2.5, 2.5), constrained_layout=True)
-    plot_track_graph_2d(
-        data["track_graph"],
-        position_info,
-        ax=ax,
-        edge_order=data["linear_edge_order"],
-        show_trajectory=True,
-    )
-    save_figure("figures/main/figure04c", close=True)
-    print("Saved figures/main/figure04c.{pdf,png}")
-
-    # Figure 4d: Metrics vs linear position for continuous-fragmented model
-    fig, axes = plot_metrics_time_vs_position_comparison(
-        linear_position,
-        contfrag_diagnostics,
-        model_name="Cont-Frag",
-        track_graph=data["track_graph"],
-        edge_order=data["linear_edge_order"],
-        edge_spacing=data["linear_edge_spacing"],
-    )
-    save_figure("figures/main/figure04d", close=True)
-    print("Saved figures/main/figure04d.{pdf,png}")
-
-    # ---------------------------------------------------------------
-    # Combined Figure 4: all panels in a single one-page figure
-    # ---------------------------------------------------------------
-    print("\nGenerating combined Figure 4...")
 
     # Two rows: (top) example window + track graph, (bottom) hexbin + diff
     fig = plt.figure(figsize=(7.0, 9.0), dpi=450, constrained_layout=True)
