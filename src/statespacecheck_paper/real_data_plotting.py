@@ -1729,6 +1729,7 @@ def plot_model_comparison_with_posterior(
     edge_spacing: float | list[float] = 0.0,
     show_running_average: bool = False,
     running_average_window: float = 0.050,
+    fig: Figure | None = None,
 ) -> tuple[Figure, NDArray[np.object_]]:
     """Create model comparison with predictive, likelihood, raster, and diagnostics.
 
@@ -1807,7 +1808,8 @@ def plot_model_comparison_with_posterior(
 
     # Create 6x2 grid: predictive + likelihood + raster + 3 diagnostics
     # Use gridspec to manually share y-axes within each row
-    fig = plt.figure(figsize=figsize, constrained_layout=True)
+    if fig is None:
+        fig = plt.figure(figsize=figsize, constrained_layout=True)
     gs = fig.add_gridspec(6, 2, height_ratios=[2, 2, 1.5, 1, 1, 1])
 
     # Create axes with shared x and shared y within each row
@@ -2164,6 +2166,8 @@ def plot_metrics_time_vs_position_comparison(
     track_graph: nx.Graph | None = None,
     edge_order: list[tuple[int, int]] | None = None,
     edge_spacing: float | list[float] = 0.0,
+    fig: Figure | None = None,
+    axes: NDArray[np.object_] | None = None,
 ) -> tuple[Figure, NDArray[np.object_]]:
     """Plot diagnostic metrics vs linear position for a single model.
 
@@ -2214,7 +2218,13 @@ def plot_metrics_time_vs_position_comparison(
     ylabels = ["HPD Overlap", "KL Divergence", r"$-\log_{10}(p)$"]
     worse_fit_directions = ["↓ Worse fit", "↑ Worse fit", "↑ Worse fit"]
 
-    fig, axes = plt.subplots(3, 1, figsize=figsize, constrained_layout=True)
+    if fig is None and axes is None:
+        fig, axes = plt.subplots(3, 1, figsize=figsize, constrained_layout=True)
+    elif fig is not None and axes is None:
+        axes = fig.subplots(3, 1)
+    else:
+        assert axes is not None
+        fig = axes.flat[0].get_figure()
     axes = np.atleast_1d(axes)
 
     for ax, metric, ylabel, worse_dir in zip(
@@ -2306,6 +2316,8 @@ def plot_metric_distributions(
     model_b_name: str = "Continuous-Fragmented",
     figsize: tuple[float, float] = (7.0, 5.0),
     show_diff: bool = True,
+    fig: Figure | None = None,
+    axes: NDArray[np.object_] | None = None,
 ) -> tuple[Figure, NDArray[np.object_]]:
     """Plot hexbin density comparison of diagnostic metrics between two models.
 
@@ -2364,12 +2376,18 @@ def plot_metric_distributions(
     cmaps = [LinearSegmentedColormap.from_list("custom", ["white", c]) for c in colors_list]
 
     n_rows = 2 if show_diff else 1
-    fig, axes = plt.subplots(
-        n_rows,
-        3,
-        figsize=figsize,
-        constrained_layout=True,
-    )
+    if fig is None and axes is None:
+        fig, axes = plt.subplots(
+            n_rows,
+            3,
+            figsize=figsize,
+            constrained_layout=True,
+        )
+    elif fig is not None and axes is None:
+        axes = fig.subplots(n_rows, 3)
+    else:
+        assert axes is not None
+        fig = axes.flat[0].get_figure()
     axes = np.atleast_2d(axes)
 
     for i, (metric, title, cmap, color) in enumerate(

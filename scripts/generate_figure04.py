@@ -205,6 +205,101 @@ def run_demo() -> None:
     save_figure("figures/main/figure04d", close=True)
     print("Saved figures/main/figure04d.{pdf,png}")
 
+    # ---------------------------------------------------------------
+    # Combined Figure 4: all panels in a single one-page figure
+    # ---------------------------------------------------------------
+    print("\nGenerating combined Figure 4...")
+
+    # Two rows: (top) example window + track graph, (bottom) hexbin + diff
+    fig = plt.figure(figsize=(7.0, 9.0), dpi=450, constrained_layout=True)
+    subfigs = fig.subfigures(
+        2,
+        1,
+        height_ratios=[5.5, 3.5],
+        hspace=0.03,
+    )
+
+    # --- Row 0: (a) example time window + (b) track graph on right ---
+    subfigs_top = subfigs[0].subfigures(
+        1,
+        2,
+        width_ratios=[5.5, 1.5],
+        wspace=0.01,
+    )
+
+    # Panel (a): example time window (6x2 grid)
+    _, axes_a = plot_model_comparison_with_posterior(
+        time,
+        linear_position,
+        continuous_results,
+        contfrag_results,
+        continuous_diagnostics,
+        contfrag_diagnostics,
+        spike_times=spike_times_list,
+        spike_counts=spike_counts,
+        place_field_peaks=place_field_peaks,
+        time_slice_ind=time_slice_ind,
+        model_a_name="Continuous",
+        model_b_name="Cont-Frag",
+        track_graph=data["track_graph"],
+        edge_order=data["linear_edge_order"],
+        edge_spacing=data["linear_edge_spacing"],
+        show_running_average=False,
+        fig=subfigs_top[0],
+    )
+    # Use blended transform: x in figure coords, y in axes coords
+    # This ensures both panel labels share the same absolute x position
+    from matplotlib.transforms import blended_transform_factory
+
+    label_x = 0.01  # absolute figure x for both labels
+    trans_a = blended_transform_factory(fig.transFigure, axes_a[0, 0].transAxes)
+    axes_a[0, 0].text(
+        label_x,
+        1.15,
+        "a",
+        fontsize=8,
+        fontweight="bold",
+        transform=trans_a,
+        va="top",
+        ha="left",
+    )
+
+    # Panel (b): 2D track graph on the right, vertically centered
+    ax_track = subfigs_top[1].subplots(1, 1)
+    plot_track_graph_2d(
+        data["track_graph"],
+        position_info,
+        ax=ax_track,
+        edge_order=data["linear_edge_order"],
+        show_trajectory=True,
+    )
+    ax_track.set_title("")
+    ax_track.tick_params(labelsize=5)
+    # --- Row 1: (b) model comparison hexbin + difference histograms ---
+    _, axes_b = plot_metric_distributions(
+        continuous_diagnostics,
+        contfrag_diagnostics,
+        model_a_name="Continuous",
+        model_b_name="Cont-Frag",
+        show_diff=True,
+        fig=subfigs[1],
+    )
+    # Same blended transform: figure x, axes y — ensures vertical alignment with "a"
+    trans_b = blended_transform_factory(fig.transFigure, axes_b[0, 0].transAxes)
+    axes_b[0, 0].text(
+        label_x,
+        1.15,
+        "b",
+        fontsize=8,
+        fontweight="bold",
+        transform=trans_b,
+        va="top",
+        ha="left",
+    )
+
+    save_figure("figures/main/figure04", close=True)
+    print("Saved figures/main/figure04.{pdf,png}")
+
     print("\nFigure 4 complete!")
 
 
