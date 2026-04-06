@@ -27,7 +27,6 @@ Examples
 
 from __future__ import annotations
 
-import warnings
 from typing import Any, Literal
 
 import numpy as np
@@ -188,16 +187,14 @@ def compute_running_average(
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Compute running average of per-cell diagnostic metric over time.
 
-    Implements the weighted average formula from the manuscript for evaluating
-    goodness-of-fit over a period:
+    Implements the event-weighted average formula from the manuscript:
 
-        D = sum(metric_k * I(t_k in window)) / sum(I(t_k in window))
+        D(t) = sum(metric_k * I(t_k in window)) / sum(I(t_k in window))
 
-    where I(*) is the indicator function selecting time points within the window.
-
-    This function first computes the mean across cells at each time bin (ignoring
-    NaN values where cells have no spikes), then applies a sliding window average
-    over time to produce a smooth summary line.
+    where the sum is over all spike events (time, cell) pairs and I(*) is the
+    indicator function selecting events within the sliding window centered at t.
+    Each spike event contributes equally regardless of how many cells fire in
+    a given time bin.
 
     Parameters
     ----------
@@ -211,24 +208,18 @@ def compute_running_average(
     Returns
     -------
     running_avg : np.ndarray, shape (n_time,)
-        Running average of the metric over time.
+        Running average of the metric over time. NaN where no events fall
+        within the window.
     time_out : np.ndarray, shape (n_time,)
         Time values (same as input, for convenience).
 
     Notes
     -----
-    The function uses a uniform (boxcar) filter for the sliding window average,
-    which treats all time points within the window equally. Edge effects are
-    handled by using 'nearest' mode, which extends the edge values.
-
-    For metrics with many NaN values (sparse spikes), the mean across cells
-    at each time bin may itself be NaN. These NaN bins are filled via linear
-    interpolation before filtering. This means interpolated values contribute
-    to the sliding window average, which can dilute the result when spikes are
-    very sparse. At time-series edges, ``np.interp`` forward/back-fills from
-    the nearest valid point, and ``uniform_filter1d(mode="nearest")`` further
-    extends edge values, which may produce a smooth but misleading ramp if
-    the first/last valid points are far from the edges.
+    The implementation computes sum(values) and count(events) per time bin,
+    then applies a boxcar filter to both before dividing. This is equivalent
+    to the event-weighted sliding window average but runs in O(n) time.
+    Edge effects are handled by ``uniform_filter1d(mode="constant")``, which
+    zero-pads outside the array. Bins with no events in the window produce NaN.
 
     Examples
     --------
@@ -241,11 +232,16 @@ def compute_running_average(
     >>> running_avg.shape
     (100,)
     """
-    # Step 1: Compute mean across cells at each time bin (ignoring NaN)
-    # Suppress expected warning when all cells at a time bin are NaN (no spikes)
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", message="Mean of empty slice")
-        mean_per_bin = np.nanmean(metric, axis=1)  # (n_time,)
+    n_time_pts = metric.shape[0]
+
+    # Step 1: Compute per-bin event sum and count across cells
+    # Each non-NaN entry is one spike event
+    event_values = np.where(np.isnan(metric), 0.0, metric)
+    event_counts = np.where(np.isnan(metric), 0.0, 1.0)
+
+    # Sum across cells: total metric value and event count per time bin
+    bin_sum = event_values.sum(axis=1)  # (n_time,)
+    bin_count = event_counts.sum(axis=1)  # (n_time,)
 
     # Step 2: Estimate time bin width from the time array
     if len(time) > 1:
@@ -256,25 +252,16 @@ def compute_running_average(
     # Step 3: Convert window size from seconds to number of bins
     window_bins = max(1, int(np.round(window_size / dt)))
 
-    # Step 4: Handle NaN values before filtering
-    # Replace NaN with interpolated values for filtering, then restore
-    valid_mask = ~np.isnan(mean_per_bin)
-    if valid_mask.sum() == 0:
-        # All NaN - return NaN array
-        return np.full_like(mean_per_bin, np.nan), time.copy()
+    # Step 4: Apply boxcar filter to numerator and denominator separately
+    # Using mode="constant" (zero-pad) so edge bins have fewer events, not
+    # inflated counts from nearest-value extension.
+    windowed_sum = uniform_filter1d(bin_sum, size=window_bins, mode="constant")
+    windowed_count = uniform_filter1d(bin_count, size=window_bins, mode="constant")
 
-    # Interpolate NaN values for filtering
-    mean_interpolated = mean_per_bin.copy()
-    if not valid_mask.all():
-        # Use numpy interp to fill NaN values
-        valid_indices = np.where(valid_mask)[0]
-        nan_indices = np.where(~valid_mask)[0]
-        mean_interpolated[nan_indices] = np.interp(
-            nan_indices, valid_indices, mean_per_bin[valid_indices]
-        )
-
-    # Step 5: Apply uniform (boxcar) filter for running average
-    running_avg = uniform_filter1d(mean_interpolated, size=window_bins, mode="nearest")
+    # Step 5: Divide to get event-weighted average; NaN where no events
+    running_avg = np.full(n_time_pts, np.nan)
+    has_events = windowed_count > 0
+    running_avg[has_events] = windowed_sum[has_events] / windowed_count[has_events]
 
     return running_avg, time.copy()
 

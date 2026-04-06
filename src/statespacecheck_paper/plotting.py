@@ -1420,18 +1420,18 @@ def plot_combined_diagnostics(
         else:
             prev_post = np.ones_like(xs) / len(xs)
 
-        # Select appropriate transition matrix
-        if params.T_recovery2_end <= example_time <= params.T_fast_end:
+        # Select appropriate transition matrix (half-open intervals [start, end))
+        if params.T_recovery2_end <= example_time < params.T_fast_end:
             transition_matrix = gaussian_transition_matrix(xs, params.sigx_pred_fast_phase)
-        elif params.T_recovery3_end <= example_time <= params.T_slow_end:
+        elif params.T_recovery3_end <= example_time < params.T_slow_end:
             transition_matrix = gaussian_transition_matrix(xs, params.sigx_pred_slow_phase)
         else:
             transition_matrix = gaussian_transition_matrix(xs, params.sigx_pred)
 
         prior = normalize(prev_post @ transition_matrix)
 
-        # Compute likelihood (with remapping if in remap window)
-        active_remap = params.T_remap_start <= example_time <= params.T_remap_end
+        # Compute likelihood (with remapping if in remap window, half-open)
+        active_remap = params.T_remap_start <= example_time < params.T_remap_end
         current_pf_centers = get_remapped_pf_centers(
             placefield_centers, params.remap_from_to, active_remap
         )

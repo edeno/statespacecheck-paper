@@ -466,9 +466,10 @@ def decode_and_diagnostics(
 
     for t in range(1, n_time):
         # Select transition matrix based on which window we're in
-        if transition_matrix_narrow is not None and start_narrow <= t <= end_narrow:
+        # Window checks use half-open intervals [start, end) to match simulation phases
+        if transition_matrix_narrow is not None and start_narrow <= t < end_narrow:
             current_transition = transition_matrix_narrow
-        elif transition_matrix_inflated is not None and start_inflate <= t <= end_inflate:
+        elif transition_matrix_inflated is not None and start_inflate <= t < end_inflate:
             current_transition = transition_matrix_inflated
         else:
             current_transition = transition_matrix
@@ -483,7 +484,7 @@ def decode_and_diagnostics(
         # Note: likelihood_grid_for_counts returns NORMALIZED likelihoods per cell
         # Optional remap: use remapped place field centers during misfit window
         # This matches MATLAB where cell j's likelihood is computed using another cell's pf_center
-        active_remap = start_r <= t <= end_r
+        active_remap = start_r <= t < end_r
         current_pf_centers = get_remapped_pf_centers(pf_centers, remap_from_to, active_remap)
         likelihood = likelihood_grid_for_counts(
             xs, current_pf_centers, pf_width, rate_scale, spikes[t]
@@ -512,7 +513,12 @@ def decode_and_diagnostics(
     spike_time_ind, spike_cell_ind = np.nonzero(spikes[1:])
     spike_time_ind = spike_time_ind + 1  # Adjust for offset from [1:]
 
-    # Compute rates from place field parameters: (n_bins, n_cells)
+    # Compute rates from the ORIGINAL (unremapped) place field parameters.
+    # This is intentional: diagnostics evaluate whether the observed spikes are
+    # consistent with the *model's* assumed likelihood (original place fields).
+    # During remapping, the decoder updates the posterior using remapped fields
+    # (simulating a changed neural code), but the diagnostic correctly flags this
+    # as a misfit because the model's likelihood no longer matches the data.
     rates = placefield_rates(xs, pf_centers, pf_width, rate_scale)
 
     # Compute per-cell diagnostics using shared function
@@ -576,8 +582,13 @@ def compute_per_cell_diagnostics_from_rates(
     Notes
     -----
     The likelihood P(k=1 | position) is computed for each spike event using
-    the Poisson distribution. We assume each time bin contains at most one
-    spike, so the likelihood is always computed with k=1.
+    the Poisson distribution. This assumes each time bin contains at most one
+    spike per cell, so the likelihood is always computed with k=1. If a time
+    bin contains multiple spikes from the same cell (spike_count > 1), only
+    one event is recorded and scored as k=1, ignoring the additional spikes.
+    This approximation is valid when time bins are short enough that
+    multi-spike bins are rare (e.g., 500 μs bins for typical hippocampal
+    firing rates). A warning is issued upstream if counts > 1 are detected.
     """
     n_time = predictive_posterior.shape[0]
     n_cells = rates.shape[1]
