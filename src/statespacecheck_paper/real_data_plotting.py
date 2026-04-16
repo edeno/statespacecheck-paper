@@ -2044,6 +2044,224 @@ def plot_model_comparison_with_posterior(
     return fig, axes
 
 
+def plot_single_model_diagnostics(
+    time: NDArray[np.float64] | pd.Index,
+    position: NDArray[np.float64],
+    results: xr.Dataset,
+    diagnostics: dict[str, NDArray[np.float64]],
+    spike_times: list[NDArray[np.float64]] | None = None,
+    spike_counts: NDArray[np.int64] | None = None,
+    place_field_peaks: NDArray[np.float64] | None = None,
+    time_slice_ind: slice | None = None,
+    model_name: str = "Continuous",
+    thresholds: dict[str, float] | None = None,
+    track_graph: nx.Graph | None = None,
+    edge_order: list[tuple[int, int]] | None = None,
+    edge_spacing: float | list[float] = 0.0,
+    show_running_average: bool = False,
+    running_average_window: float = 0.050,
+    fig: Figure | None = None,
+) -> tuple[Figure, NDArray[np.object_]]:
+    """Create single-model diagnostic figure with 6 rows.
+
+    Layout (6 rows, single column):
+    - Row 0: Predictive posterior with animal position overlay
+    - Row 1: Likelihood at spike times with position overlay
+    - Row 2: Spike raster (sorted by place field peak)
+    - Row 3: HPD overlap scatter
+    - Row 4: KL divergence scatter
+    - Row 5: Spike probability scatter (-log10 scale)
+
+    Parameters
+    ----------
+    time : np.ndarray or pd.Index
+        Time values.
+    position : np.ndarray, shape (n_time,)
+        Animal position values.
+    results : xr.Dataset
+        Decoding results with predictive_posterior and log_likelihood.
+    diagnostics : dict[str, np.ndarray]
+        Diagnostics with keys 'hpd_overlap', 'kl_divergence', 'spike_prob'.
+    spike_times : list[np.ndarray], optional
+        List of spike time arrays, one per neuron.
+    spike_counts : np.ndarray, shape (n_time, n_cells), optional
+        Spike count matrix.
+    place_field_peaks : np.ndarray, shape (n_cells,), optional
+        Place field peak positions for raster sorting.
+    time_slice_ind : slice, optional
+        Time slice to plot. If None, plots all time points.
+    model_name : str, default "Continuous"
+        Model name for title.
+    thresholds : dict[str, float], optional
+        Thresholds for horizontal lines on diagnostic plots.
+    track_graph : nx.Graph, optional
+        Track graph for 1D linearized track visualization.
+    edge_order : list[tuple[int, int]], optional
+        Order of edges for linearization.
+    edge_spacing : float or list[float], default 0.0
+        Spacing between edges.
+    show_running_average : bool, default False
+        If True, overlay a running average on diagnostic scatters.
+    running_average_window : float, default 0.050
+        Window size in seconds for running average.
+    fig : Figure, optional
+        Existing figure to draw into.
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        The figure object.
+    axes : np.ndarray[plt.Axes]
+        Array of axes objects with shape (6,).
+    """
+    metrics = ["hpd_overlap", "kl_divergence", "spike_prob"]
+    ylabels = ["HPD Overlap", "KL Divergence", r"$-\log_{10}(p)$"]
+    colors = [COLORS["hpd_overlap"], COLORS["kl_divergence"], COLORS["metric_combined"]]
+    worse_fit_directions = ["↓ Worse fit", "↑ Worse fit", "↑ Worse fit"]
+
+    if fig is None:
+        fig = plt.figure(figsize=(7.0, 8.0), constrained_layout=True)
+    gs = fig.add_gridspec(6, 1, height_ratios=[2, 2, 1.5, 1, 1, 1])
+
+    axes = np.empty(6, dtype=object)
+    axes[0] = fig.add_subplot(gs[0])
+    for i in range(1, 6):
+        axes[i] = fig.add_subplot(gs[i], sharex=axes[0])
+
+    if time_slice_ind is None:
+        time_slice_ind = slice(None)
+
+    # Mask for times with spikes
+    has_spikes_mask: NDArray[np.bool_] | None = None
+    if spike_counts is not None:
+        has_spikes_mask = spike_counts.sum(axis=1) > 0
+
+    # Row 0: Predictive posterior
+    _plot_distribution_heatmap(
+        ax=axes[0],
+        distribution_da=results.predictive_posterior,
+        time=time,
+        position=position,
+        time_slice_ind=time_slice_ind,
+        show_position=True,
+        cmap=CMAP_POSTERIOR,
+    )
+    axes[0].set_title(model_name, fontsize=7)
+    axes[0].set_ylabel("Predictive", fontsize=7, labelpad=7)
+    axes[0].set_xlabel("")
+    axes[0].tick_params(labelsize=6, labelbottom=False)
+    axes[0].legend(loc="upper left", fontsize=6, frameon=False)
+
+    # Row 1: Likelihood overlay at spike times
+    ax_lik = axes[1]
+    ax_lik.set_facecolor("black")
+
+    if "log_likelihood" in results:
+        lik_da = xr.apply_ufunc(np.exp, results["log_likelihood"]).dropna("state_bins", how="all")
+        try:
+            lik_unstacked = lik_da.unstack("state_bins")
+            if "state" in lik_unstacked.dims:
+                lik_unstacked = lik_unstacked.sum("state")
+            lik_sliced = lik_unstacked.isel(time=time_slice_ind)
+        except (ValueError, KeyError):
+            lik_sliced = lik_da.isel(time=time_slice_ind)
+
+        lik_np = lik_sliced.values
+        time_coords = lik_sliced.coords["time"].values
+        pos_coords = lik_sliced.coords["position"].values
+        t0, t1 = float(time_coords[0]), float(time_coords[-1])
+        p0, p1 = float(pos_coords[0]), float(pos_coords[-1])
+        dt = (t1 - t0) / max(len(time_coords) - 1, 1) / 2
+        dp = (p1 - p0) / max(len(pos_coords) - 1, 1) / 2
+        extent = (t0 - dt, t1 + dt, p0 - dp, p1 + dp)
+
+        has_spk_slice = (
+            has_spikes_mask[time_slice_ind]
+            if has_spikes_mask is not None
+            else np.ones(lik_np.shape[0], dtype=bool)
+        )
+
+        plot_likelihood_columns(
+            ax_lik,
+            lik_np,
+            has_spk_slice,
+            n_time=len(time_coords),
+            extent=extent,
+            cmap=CMAP_LIKELIHOOD,
+        )
+
+    # Position overlay
+    time_arr = np.asarray(time)
+    ax_lik.scatter(
+        time_arr[time_slice_ind],
+        position[time_slice_ind],
+        c=COLORS["ground_truth"],
+        s=1,
+        alpha=0.85,
+    )
+    ax_lik.set_ylabel("Likelihood", fontsize=7, labelpad=7)
+    ax_lik.set_xlabel("")
+    ax_lik.tick_params(labelsize=6, labelbottom=False)
+
+    # 1D track graph on right edge of predictive and likelihood rows
+    if track_graph is not None:
+        sliced_time = time_arr[time_slice_ind]
+        x_pos = float(sliced_time[-1])
+        for row_idx in range(2):
+            plot_track_graph_1d(
+                track_graph,
+                ax=axes[row_idx],
+                edge_order=edge_order,
+                edge_spacing=edge_spacing,
+                other_axis_start=x_pos,
+                edge_linewidth=3,
+                reward_well_size=20,
+                reward_well_nodes=list(range(6)),
+            )
+
+    # Row 2: Spike raster
+    if spike_times is not None:
+        sort_order = np.argsort(place_field_peaks) if place_field_peaks is not None else None
+        sliced_time = time_arr[time_slice_ind]
+        time_slice = slice(float(sliced_time[0]), float(sliced_time[-1]))
+        plot_raster(spike_times, time_slice, ax=axes[2], sort_order=sort_order)
+        axes[2].set_ylabel("Neuron", fontsize=7, labelpad=7)
+        axes[2].set_xlabel("")
+        axes[2].tick_params(labelsize=6, labelbottom=False)
+
+    # Rows 3-5: Diagnostic scatters
+    for i, (metric, ylabel, color, worse_dir) in enumerate(
+        zip(metrics, ylabels, colors, worse_fit_directions, strict=True)
+    ):
+        row = i + 3
+        threshold = thresholds.get(metric) if thresholds else None
+        plot_per_cell_diagnostic_scatter(
+            time,
+            diagnostics,
+            time_slice_ind=time_slice_ind,
+            threshold=threshold,
+            ax=axes[row],
+            metric_name=metric,
+            color=color,
+            ylabel=ylabel,
+            show_xlabel=(i == 2),
+            spike_times=spike_times,
+            show_running_average=show_running_average,
+            running_average_window=running_average_window,
+        )
+        axes[row].text(
+            1.01,
+            0.5,
+            worse_dir,
+            transform=axes[row].transAxes,
+            fontsize=6,
+            va="center",
+            ha="left",
+        )
+
+    return fig, axes
+
+
 def plot_metrics_vs_position(
     linear_position: NDArray[np.float64],
     diagnostics_a: dict[str, NDArray[np.float64]],

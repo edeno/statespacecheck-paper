@@ -1,8 +1,9 @@
-"""Real hippocampal data model comparison for state space model diagnostics.
+"""Real hippocampal data diagnostics for state space model.
 
-This script generates Figure 4, which compares per-cell diagnostic metrics
-between Continuous and Continuous-Fragmented decoder models on real neural
-recording data from hippocampus.
+This script generates Figure 4, which shows per-cell diagnostic metrics
+for the Continuous decoder model on real neural recording data from
+hippocampus. Panel (a) shows a longer context window with surrounding
+run periods, and panel (b) shows a zoomed-in detail view.
 
 Requires:
 - non_local_detector package for decoder models
@@ -17,6 +18,7 @@ from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.transforms import blended_transform_factory
 
 from statespacecheck_paper.load_local_data import load_neural_recording_from_files
 from statespacecheck_paper.real_data_analysis import (
@@ -27,9 +29,7 @@ from statespacecheck_paper.real_data_analysis import (
     get_spike_counts,
 )
 from statespacecheck_paper.real_data_plotting import (
-    plot_metric_distributions,
-    plot_model_comparison_with_posterior,
-    plot_track_graph_2d,
+    plot_single_model_diagnostics,
 )
 from statespacecheck_paper.style import save_figure, set_figure_defaults
 
@@ -54,17 +54,19 @@ except ImportError:
 DATA_PATH = Path(__file__).parent.parent / "data"
 ANIMAL_DATE_EPOCH = "j1620210710_02_r1"
 
-# Time window for Figure 4a (index into decoded results)
-FIGURE_4A_WINDOW_CENTER = 177301  # Time index around which to show detail
-FIGURE_4A_WINDOW_HALF_WIDTH = 50  # Half-width in time points
+# Time window for Figure 4b (detail view)
+FIGURE_4B_WINDOW_CENTER = 177301  # Time index around which to show detail
+FIGURE_4B_WINDOW_HALF_WIDTH = 50  # Half-width in time points
+
+# Time window for Figure 4a (context view showing surrounding run periods)
+FIGURE_4A_CONTEXT_HALF_WIDTH = 500  # Half-width in time points
 
 
 def run_demo() -> None:
     """Run the full Figure 4 generation pipeline.
 
-    Loads data, fits models, computes diagnostics, and generates figures.
-    Decodes all time points for summary statistics (Figure 4b), then shows
-    a specific time window in detail (Figure 4a).
+    Loads data, fits the Continuous decoder model, computes diagnostics,
+    and generates Figure 4 with context (a) and detail (b) panels.
     """
     # Load data
     print("Loading data...")
@@ -85,9 +87,9 @@ def run_demo() -> None:
     linear_position = position_info["linear_position"].values
     spike_times_list: list[Any] = list(data["spike_times"])
 
-    # Fit models
-    print("Fitting models...")
-    continuous_model, contfrag_model = fit_decoder_models(
+    # Fit continuous model only
+    print("Fitting model...")
+    continuous_model, _ = fit_decoder_models(
         position=position,
         spike_times=spike_times_list,
         time=time,
@@ -96,13 +98,7 @@ def run_demo() -> None:
 
     # Decode all time points
     print(f"Decoding {len(time)} time points...")
-
     continuous_results = continuous_model.predict(
-        spike_times=spike_times_list,
-        time=time,
-        return_outputs=["filter", "predictive_posterior", "log_likelihood"],
-    )
-    contfrag_results = contfrag_model.predict(
         spike_times=spike_times_list,
         time=time,
         return_outputs=["filter", "predictive_posterior", "log_likelihood"],
@@ -111,17 +107,13 @@ def run_demo() -> None:
     # Get spike counts for all time
     spike_counts = get_spike_counts(spike_times_list, time)
 
-    # Compute diagnostics for all time
+    # Compute diagnostics
     print("Computing diagnostics...")
     continuous_diagnostics = compute_model_diagnostics(
         continuous_model, continuous_results, spike_counts, time
     )
-    contfrag_diagnostics = compute_model_diagnostics(
-        contfrag_model, contfrag_results, spike_counts, time
-    )
 
     # Extract place fields to get peak positions for sorting raster
-    # Note: np.nanargmax returns 0 for all-NaN rows, which maps to first position bin
     place_fields, position_bins = extract_place_fields(continuous_model)
     if np.any(np.all(np.isnan(place_fields), axis=1)):
         warnings.warn(
@@ -130,68 +122,75 @@ def run_demo() -> None:
         )
     place_field_peaks = position_bins[np.nanargmax(place_fields, axis=1)]
 
-    # Print summary (all time points)
+    # Print summary
     print("\n=== Diagnostic Summary (all time points) ===")
     for metric in ["hpd_overlap", "kl_divergence", "spike_prob"]:
         cont_mean = np.nanmean(continuous_diagnostics[metric])
-        frag_mean = np.nanmean(contfrag_diagnostics[metric])
-        print(f"{metric}:")
-        print(f"  Continuous: {cont_mean:.4f}")
-        print(f"  ContFrag:   {frag_mean:.4f}")
+        print(f"{metric}: {cont_mean:.4f}")
 
     # Generate Figure 4
     print("\nGenerating Figure 4...")
     set_figure_defaults(context="paper")
 
-    # Define time slice for detail view
-    window_start = FIGURE_4A_WINDOW_CENTER - FIGURE_4A_WINDOW_HALF_WIDTH
-    window_end = FIGURE_4A_WINDOW_CENTER + FIGURE_4A_WINDOW_HALF_WIDTH
-    time_slice_ind = slice(window_start, window_end)
-
-    # Two rows: (top) example window + track graph, (bottom) hexbin + diff
-    fig = plt.figure(figsize=(7.0, 9.0), dpi=450, constrained_layout=True)
-    subfigs = fig.subfigures(
-        2,
-        1,
-        height_ratios=[5.5, 3.5],
-        hspace=0.03,
+    # Define time slices
+    context_slice = slice(
+        FIGURE_4B_WINDOW_CENTER - FIGURE_4A_CONTEXT_HALF_WIDTH,
+        FIGURE_4B_WINDOW_CENTER + FIGURE_4A_CONTEXT_HALF_WIDTH,
+    )
+    detail_slice = slice(
+        FIGURE_4B_WINDOW_CENTER - FIGURE_4B_WINDOW_HALF_WIDTH,
+        FIGURE_4B_WINDOW_CENTER + FIGURE_4B_WINDOW_HALF_WIDTH,
     )
 
-    # --- Row 0: (a) example time window + (b) track graph on right ---
-    subfigs_top = subfigs[0].subfigures(
-        1,
-        2,
-        width_ratios=[5.5, 1.5],
-        wspace=0.01,
-    )
+    # Two side-by-side panels: (a) context, (b) detail
+    fig = plt.figure(figsize=(7.0, 7.0), dpi=450, constrained_layout=True)
+    subfigs = fig.subfigures(1, 2, width_ratios=[3, 2], wspace=0.03)
 
-    # Panel (a): example time window (6x2 grid)
-    _, axes_a = plot_model_comparison_with_posterior(
+    # Panel (a): context view (wider time window)
+    _, axes_a = plot_single_model_diagnostics(
         time,
         linear_position,
         continuous_results,
-        contfrag_results,
         continuous_diagnostics,
-        contfrag_diagnostics,
         spike_times=spike_times_list,
         spike_counts=spike_counts,
         place_field_peaks=place_field_peaks,
-        time_slice_ind=time_slice_ind,
-        model_a_name="Continuous",
-        model_b_name="Cont-Frag",
+        time_slice_ind=context_slice,
+        model_name="",
         track_graph=data["track_graph"],
         edge_order=data["linear_edge_order"],
         edge_spacing=data["linear_edge_spacing"],
-        show_running_average=False,
-        fig=subfigs_top[0],
+        fig=subfigs[0],
     )
-    # Use blended transform: x in figure coords, y in axes coords
-    # This ensures both panel labels share the same absolute x position
-    from matplotlib.transforms import blended_transform_factory
 
-    label_x = 0.01  # absolute figure x for both labels
-    trans_a = blended_transform_factory(fig.transFigure, axes_a[0, 0].transAxes)
-    axes_a[0, 0].text(
+    # Highlight the detail window region in panel (a)
+    time_arr = np.asarray(time)
+    detail_start = time_arr[detail_slice.start]
+    detail_end = time_arr[detail_slice.stop - 1]
+    for ax in axes_a:
+        ax.axvspan(detail_start, detail_end, alpha=0.15, color="gray", zorder=0)
+
+    # Panel (b): detail view (zoomed-in)
+    _, axes_b = plot_single_model_diagnostics(
+        time,
+        linear_position,
+        continuous_results,
+        continuous_diagnostics,
+        spike_times=spike_times_list,
+        spike_counts=spike_counts,
+        place_field_peaks=place_field_peaks,
+        time_slice_ind=detail_slice,
+        model_name="",
+        track_graph=data["track_graph"],
+        edge_order=data["linear_edge_order"],
+        edge_spacing=data["linear_edge_spacing"],
+        fig=subfigs[1],
+    )
+
+    # Panel labels
+    label_x = 0.01
+    trans_a = blended_transform_factory(fig.transFigure, axes_a[0].transAxes)
+    axes_a[0].text(
         label_x,
         1.15,
         "a",
@@ -201,31 +200,9 @@ def run_demo() -> None:
         va="top",
         ha="left",
     )
-
-    # Panel (b): 2D track graph on the right, vertically centered
-    ax_track = subfigs_top[1].subplots(1, 1)
-    plot_track_graph_2d(
-        data["track_graph"],
-        position_info,
-        ax=ax_track,
-        edge_order=data["linear_edge_order"],
-        show_trajectory=True,
-    )
-    ax_track.set_title("")
-    ax_track.tick_params(labelsize=5)
-    # --- Row 1: (b) model comparison hexbin + difference histograms ---
-    _, axes_b = plot_metric_distributions(
-        continuous_diagnostics,
-        contfrag_diagnostics,
-        model_a_name="Continuous",
-        model_b_name="Cont-Frag",
-        show_diff=True,
-        fig=subfigs[1],
-    )
-    # Same blended transform: figure x, axes y — ensures vertical alignment with "a"
-    trans_b = blended_transform_factory(fig.transFigure, axes_b[0, 0].transAxes)
-    axes_b[0, 0].text(
-        label_x,
+    trans_b = blended_transform_factory(fig.transFigure, axes_b[0].transAxes)
+    axes_b[0].text(
+        0.45,
         1.15,
         "b",
         fontsize=8,
@@ -237,7 +214,6 @@ def run_demo() -> None:
 
     save_figure("figures/main/figure04", close=True)
     print("Saved figures/main/figure04.{pdf,png}")
-
     print("\nFigure 4 complete!")
 
 
