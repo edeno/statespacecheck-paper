@@ -59,7 +59,7 @@ FIGURE_4B_WINDOW_CENTER = 177301  # Time index around which to show detail
 FIGURE_4B_WINDOW_HALF_WIDTH = 50  # Half-width in time points
 
 # Time window for Figure 4a (context view showing surrounding run periods)
-FIGURE_4A_CONTEXT_HALF_WIDTH = 500  # Half-width in time points
+FIGURE_4A_CONTEXT_HALF_WIDTH = 5000  # Half-width in time points (~20 seconds)
 
 
 def run_demo() -> None:
