@@ -34,7 +34,8 @@ from numpy.typing import NDArray
 from scipy.ndimage import label
 from track_linearization import plot_graph_as_1D
 
-from statespacecheck_paper.style import COLORS
+from statespacecheck_paper.plotting import plot_likelihood_columns
+from statespacecheck_paper.style import CMAP_LIKELIHOOD, CMAP_POSTERIOR, COLORS
 
 
 def add_scalebar(
@@ -448,7 +449,7 @@ def plot_posterior(
             ax=ax,
             add_colorbar=False,
             robust=True,
-            cmap="bone_r",
+            cmap=CMAP_POSTERIOR,
             rasterized=True,
             **plot_kwargs,
         )
@@ -456,7 +457,7 @@ def plot_posterior(
 
     if scatter_kwargs is None:
         scatter_kwargs = {
-            "color": "magenta",
+            "color": COLORS["ground_truth"],
             "s": 1,
             "rasterized": True,
             "clip_on": False,
@@ -1631,7 +1632,7 @@ def _plot_distribution_heatmap(
     position: NDArray[np.float64],
     time_slice_ind: slice,
     show_position: bool = True,
-    cmap: str = "bone_r",
+    cmap: str = CMAP_POSTERIOR,
 ) -> None:
     """Plot a distribution heatmap with optional position overlay.
 
@@ -1649,7 +1650,7 @@ def _plot_distribution_heatmap(
         Time slice indices to plot.
     show_position : bool, default True
         Whether to show position overlay.
-    cmap : str, default "bone_r"
+    cmap : str, default CMAP_POSTERIOR
         Colormap for the heatmap.
     """
     # Drop NaN bins (spatial bins that are always NaN)
@@ -1848,83 +1849,118 @@ def plot_model_comparison_with_posterior(
         # Sum across cells to get total spikes per time point
         has_spikes_mask = spike_counts.sum(axis=1) > 0
 
-    # Distribution rows configuration: (row_idx, data_key, ylabel, show_title)
-    # Order: Predictive -> Likelihood
-    distribution_rows = [
-        (0, "predictive_posterior", "Predictive", True),
-        (1, "log_likelihood", "Likelihood", False),
-    ]
+    # --- Row 0: Predictive posterior ---
+    for col, (results, model_name) in enumerate(
+        [(results_a, model_a_name), (results_b, model_b_name)]
+    ):
+        ax = axes[0, col]
+        _plot_distribution_heatmap(
+            ax=ax,
+            distribution_da=results.predictive_posterior,
+            time=time,
+            position=position,
+            time_slice_ind=time_slice_ind,
+            show_position=True,
+            cmap=CMAP_POSTERIOR,
+        )
+        ax.set_title(model_name, fontsize=7)
+        ax.set_ylabel("Predictive" if col == 0 else "", fontsize=7, labelpad=7)
+        ax.set_xlabel("")
+        ax.tick_params(labelsize=6, labelbottom=False)
+        if col == 0:
+            ax.legend(loc="upper left", fontsize=6, frameon=False)
 
-    # Plot distribution heatmaps for rows 0-2
-    for row_idx, data_key, ylabel, show_title in distribution_rows:
-        for col, (results, model_name) in enumerate(
-            [(results_a, model_a_name), (results_b, model_b_name)]
-        ):
-            ax = axes[row_idx, col]
+    # --- Row 1: Likelihood overlay (predictive underlay + likelihood at spike times) ---
+    for col, (results, _model_name) in enumerate(
+        [(results_a, model_a_name), (results_b, model_b_name)]
+    ):
+        ax = axes[1, col]
 
-            # Get the appropriate distribution
-            if data_key == "log_likelihood":
-                # Convert log likelihood to likelihood for visualization
-                if data_key in results:
-                    # Use xarray's exp to preserve DataArray structure
-                    distribution_da = xr.apply_ufunc(np.exp, results[data_key])
+        # Step 1: Plot predictive as faint underlay using xarray (handles coordinates)
+        _plot_distribution_heatmap(
+            ax=ax,
+            distribution_da=results.predictive_posterior,
+            time=time,
+            position=position,
+            time_slice_ind=time_slice_ind,
+            show_position=False,
+            cmap=CMAP_POSTERIOR,
+        )
+        # Reduce underlay opacity (xarray .plot() uses pcolormesh -> collections)
+        for artist in list(ax.images) + list(ax.collections):
+            artist.set_alpha(0.35)
 
-                    # Mask times without spikes (set to NaN)
-                    if has_spikes_mask is not None:
-                        # Create mask DataArray aligned with time dimension
-                        mask_da = xr.DataArray(
-                            has_spikes_mask,
-                            dims=["time"],
-                            coords={"time": distribution_da.coords["time"]},
-                        )
-                        distribution_da = distribution_da.where(mask_da)
-            elif data_key == "predictive_posterior":
-                distribution_da = results.predictive_posterior
-            else:
-                raise ValueError(f"Unknown data_key: {data_key}")
+        # Step 2: Overlay likelihood at spike times using shared column renderer
+        if "log_likelihood" in results:
+            lik_da = xr.apply_ufunc(np.exp, results["log_likelihood"]).dropna(
+                "state_bins", how="all"
+            )
+            try:
+                lik_unstacked = lik_da.unstack("state_bins")
+                if "state" in lik_unstacked.dims:
+                    lik_unstacked = lik_unstacked.sum("state")
+                lik_sliced = lik_unstacked.isel(time=time_slice_ind)
+            except (ValueError, KeyError):
+                lik_sliced = lik_da.isel(time=time_slice_ind)
 
-            # Use a more saturated colormap for likelihood (sparse data)
-            cmap = "magma" if data_key == "log_likelihood" else "bone_r"
+            lik_np = lik_sliced.values  # (n_time_slice, n_position)
 
-            _plot_distribution_heatmap(
-                ax=ax,
-                distribution_da=distribution_da,
-                time=time,
-                position=position,
-                time_slice_ind=time_slice_ind,
-                show_position=True,
-                cmap=cmap,
+            # Get coordinate arrays for extent
+            time_coords = lik_sliced.coords["time"].values
+            pos_coords = lik_sliced.coords["position"].values
+            t0, t1 = float(time_coords[0]), float(time_coords[-1])
+            p0, p1 = float(pos_coords[0]), float(pos_coords[-1])
+            # Half-pixel padding for imshow extent
+            dt = (t1 - t0) / max(len(time_coords) - 1, 1) / 2
+            dp = (p1 - p0) / max(len(pos_coords) - 1, 1) / 2
+            extent = (t0 - dt, t1 + dt, p0 - dp, p1 + dp)
+
+            has_spk_slice = (
+                has_spikes_mask[time_slice_ind]
+                if has_spikes_mask is not None
+                else np.ones(lik_np.shape[0], dtype=bool)
             )
 
-            # Set titles and labels
-            if show_title:
-                ax.set_title(model_name, fontsize=7)
-            else:
-                ax.set_title("")
+            plot_likelihood_columns(
+                ax,
+                lik_np,
+                has_spk_slice,
+                n_time=len(time_coords),
+                extent=extent,
+                cmap=CMAP_LIKELIHOOD,
+            )
 
-            ax.set_ylabel(ylabel if col == 0 else "", fontsize=7, labelpad=7)
-            ax.set_xlabel("")
-            ax.tick_params(labelsize=6, labelbottom=False)
+        # Position overlay
+        time_arr = np.asarray(time)
+        ax.scatter(
+            time_arr[time_slice_ind],
+            position[time_slice_ind],
+            c=COLORS["ground_truth"],
+            s=1,
+            alpha=0.85,
+        )
 
-            # Add legend for true position line (only on first column, first row)
-            if col == 0 and row_idx == 0:
-                ax.legend(loc="upper left", fontsize=6, frameon=False)
+        ax.set_title("")
+        ax.set_ylabel("Likelihood" if col == 0 else "", fontsize=7, labelpad=7)
+        ax.set_xlabel("")
+        ax.tick_params(labelsize=6, labelbottom=False)
 
-            # Add 1D track graph on right edge (right column, all distribution rows)
-            if track_graph is not None and col == 1:
-                time_arr = np.asarray(time)
-                sliced_time = time_arr[time_slice_ind]
-                x_pos = float(sliced_time[-1])
-                plot_track_graph_1d(
-                    track_graph,
-                    ax=ax,
-                    edge_order=edge_order,
-                    edge_spacing=edge_spacing,
-                    other_axis_start=x_pos,
-                    edge_linewidth=3,
-                    reward_well_size=20,
-                    reward_well_nodes=list(range(6)),
-                )
+    # Add 1D track graph on right edge (right column, predictive and likelihood rows)
+    if track_graph is not None:
+        time_arr = np.asarray(time)
+        sliced_time = time_arr[time_slice_ind]
+        x_pos = float(sliced_time[-1])
+        for row_idx in range(2):
+            plot_track_graph_1d(
+                track_graph,
+                ax=axes[row_idx, 1],
+                edge_order=edge_order,
+                edge_spacing=edge_spacing,
+                other_axis_start=x_pos,
+                edge_linewidth=3,
+                reward_well_size=20,
+                reward_well_nodes=list(range(6)),
+            )
 
     # Row 2: Spike raster (both columns show same raster, sorted by place field peak)
     if spike_times is not None:
