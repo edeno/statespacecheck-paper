@@ -152,7 +152,7 @@ class DecodeParams:
     xs_step: int = 1
     pf_width: float = 10.0  # Place field width (std of Gaussian tuning curves)
     pf_centers: NDArray[np.floating] | None = None  # set in __post_init__
-    rate_scale: float = 0.02  # Spike rate scaling factor (matches MATLAB normpdf * 0.02)
+    rate_scale: float = 5.0  # Spike rate scaling factor
     base_seed: int = 1
     # Remap multiple cells to very different locations for clear misfit visualization
     # Original place fields: cell i has pf_center = i * 10 (0, 10, 20, ..., 90)
@@ -348,7 +348,7 @@ def decode_and_diagnostics(
     narrow_window: tuple[int, int] | None = None,
     transition_matrix_inflated: NDArray[np.floating] | None = None,
     inflate_window: tuple[int, int] | None = None,
-) -> dict[str, NDArray[np.floating]]:
+) -> dict[str, NDArray[np.floating] | NDArray[np.intp]]:
     """Run the Bayesian filter with per-time, per-cell diagnostics.
 
     This function implements a Bayesian decoder for position from neural spikes,
@@ -417,6 +417,16 @@ def decode_and_diagnostics(
         - 'spike_prob' : np.ndarray, shape (n_time, n_cells)
             Cumulative probability mass for cells with contribution <= cell j.
             NaN at t=0 and when cell j has no spike at timestep t.
+        - 'spike_likelihood' : np.ndarray, shape (n_time, n_bins)
+            Combined likelihood from only spiking cells at each timestep.
+            NaN at timesteps with no spikes. Uses decoder's (remapped) rates.
+        - 'per_spike_likelihood' : np.ndarray, shape (n_spikes, n_bins)
+            Normalized likelihood for each individual spike event, using the
+            decoder's actual place field centers (remapped during remap window).
+        - 'spike_time_ind' : np.ndarray, shape (n_spikes,)
+            Time index for each spike event (excludes t=0).
+        - 'spike_cell_ind' : np.ndarray, shape (n_spikes,)
+            Cell index for each spike event.
 
     Examples
     --------
@@ -454,6 +464,9 @@ def decode_and_diagnostics(
     posterior: NDArray[np.floating] = np.zeros((n_time, n_bins))
     predictive_posterior: NDArray[np.floating] = np.zeros((n_time, n_bins))  # p(x_t | y_{1:t-1})
     combined_likelihood_all: NDArray[np.floating] = np.zeros((n_time, n_bins))  # p(y_t | x_t)
+    # Spike-only likelihood: product over only cells that fired (for display).
+    # NaN at times with no spikes.
+    spike_likelihood_all: NDArray[np.floating] = np.full((n_time, n_bins), np.nan)
 
     # t=0 (MATLAB used a flat prior at t=1)
     posterior[0] = normalize(np.ones(n_bins))
@@ -494,6 +507,11 @@ def decode_and_diagnostics(
         combined_likelihood = np.prod(likelihood, axis=1)  # (n_bins,)
         combined_likelihood_all[t] = normalize(combined_likelihood)  # Store normalized likelihood
 
+        # Spike-only likelihood: product over only cells that fired.
+        spiking_mask = spikes[t] > 0
+        if np.any(spiking_mask):
+            spike_likelihood_all[t] = normalize(np.prod(likelihood[:, spiking_mask], axis=1))
+
         # Posterior update with underflow protection
         # When prior-likelihood mismatch is extreme, the product can underflow to zero.
         # Fall back to uniform distribution to allow filter to recover.
@@ -530,13 +548,44 @@ def decode_and_diagnostics(
         coverage=0.95,
     )
 
+    # Compute per-spike likelihoods from the DECODER's (potentially remapped) rates
+    # for display in the likelihood panel. During the remap window the decoder uses
+    # different place field centers, so these likelihoods differ from the diagnostic
+    # likelihoods (which always use original rates).
+    n_spikes = len(spike_time_ind)
+    decoder_per_spike_lik: NDArray[np.floating] = np.zeros((n_spikes, n_bins))
+    if n_spikes > 0:
+        # Determine which spikes fall in the remap window
+        in_remap = (spike_time_ind >= start_r) & (spike_time_ind < end_r)
+
+        # Compute likelihoods using original rates (overwritten below for remap window)
+        rates_orig = rates[:, spike_cell_ind].T  # (n_spikes, n_bins)
+        decoder_per_spike_lik = normalize(poisson.pmf(k=1, mu=rates_orig), axis=1)
+
+        # Overwrite remap-window spikes with remapped rates
+        if np.any(in_remap):
+            remap_rates = placefield_rates(
+                xs,
+                get_remapped_pf_centers(pf_centers, remap_from_to, active=True),
+                pf_width,
+                rate_scale,
+            )
+            remap_cell_rates = remap_rates[:, spike_cell_ind[in_remap]].T
+            decoder_per_spike_lik[in_remap] = normalize(
+                poisson.pmf(k=1, mu=remap_cell_rates), axis=1
+            )
+
     return {
         "posterior": posterior,
         "predictive": predictive_posterior,
         "likelihood": combined_likelihood_all,
+        "spike_likelihood": spike_likelihood_all,
         "hpd_overlap": diagnostics["hpd_overlap"],
         "kl_divergence": diagnostics["kl_divergence"],
         "spike_prob": diagnostics["spike_prob"],
+        "per_spike_likelihood": decoder_per_spike_lik,
+        "spike_time_ind": diagnostics["spike_time_ind"],
+        "spike_cell_ind": diagnostics["spike_cell_ind"],
     }
 
 
@@ -551,7 +600,7 @@ def compute_per_cell_diagnostics_from_rates(
     spike_time_ind: NDArray[np.intp],
     spike_cell_ind: NDArray[np.intp],
     coverage: float = 0.95,
-) -> dict[str, NDArray[np.floating]]:
+) -> dict[str, NDArray[np.floating] | NDArray[np.intp]]:
     """Compute per-cell diagnostic metrics at spike times.
 
     This is the core computation shared by both simulated and real data analysis.
@@ -578,6 +627,10 @@ def compute_per_cell_diagnostics_from_rates(
         - 'hpd_overlap': shape (n_time, n_cells), NaN where no spike
         - 'kl_divergence': shape (n_time, n_cells), NaN where no spike
         - 'spike_prob': shape (n_time, n_cells), NaN where no spike
+        - 'per_spike_likelihood': shape (n_spikes, n_bins), normalized
+          likelihood distribution for each individual spike event
+        - 'spike_time_ind': shape (n_spikes,), time index for each spike
+        - 'spike_cell_ind': shape (n_spikes,), cell index for each spike
 
     Notes
     -----
@@ -590,7 +643,7 @@ def compute_per_cell_diagnostics_from_rates(
     multi-spike bins are rare (e.g., 500 μs bins for typical hippocampal
     firing rates). A warning is issued upstream if counts > 1 are detected.
     """
-    n_time = predictive_posterior.shape[0]
+    n_time, n_bins = predictive_posterior.shape
     n_cells = rates.shape[1]
     n_spikes = len(spike_time_ind)
 
@@ -598,6 +651,9 @@ def compute_per_cell_diagnostics_from_rates(
     hpd_overlap: NDArray[np.floating] = np.full((n_time, n_cells), np.nan)
     kl_divergence: NDArray[np.floating] = np.full((n_time, n_cells), np.nan)
     spike_prob: NDArray[np.floating] = np.full((n_time, n_cells), np.nan)
+
+    # Per-spike likelihood: one distribution per spike event
+    per_spike_likelihood: NDArray[np.floating] = np.empty((n_spikes, n_bins))
 
     if n_spikes > 0:
         # Gather predictive posterior at spike times: (n_spikes, n_bins)
@@ -611,6 +667,9 @@ def compute_per_cell_diagnostics_from_rates(
 
         # Normalize per spike (over bins) to get proper distribution
         lik_at_spikes = normalize(lik_at_spikes, axis=1)
+
+        # Store per-spike likelihoods
+        per_spike_likelihood = lik_at_spikes
 
         # Compute diagnostics for all spikes in one vectorized call
         hpd_at_spikes = ssc.hpd_overlap(pred_at_spikes, lik_at_spikes, coverage=coverage)
@@ -643,6 +702,9 @@ def compute_per_cell_diagnostics_from_rates(
         "hpd_overlap": hpd_overlap,
         "kl_divergence": kl_divergence,
         "spike_prob": spike_prob,
+        "per_spike_likelihood": per_spike_likelihood,
+        "spike_time_ind": spike_time_ind,
+        "spike_cell_ind": spike_cell_ind,
     }
 
 

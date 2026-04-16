@@ -1479,18 +1479,18 @@ def plot_combined_diagnostics(
         t_slow_end,
     ) = phase_boundaries
 
-    # Add phase labels above top panel (ax_pred is now the top panel)
+    # Add phase labels above top panel
     phase_labels_info = [
-        ((t_remap_start + t_remap_end) / 2, "Remap", "c"),
-        ((t_recovery1_end + t_flat_end) / 2, "Flat", "d"),
-        ((t_recovery2_end + t_fast_end) / 2, "Fast", "e"),
-        ((t_recovery3_end + t_slow_end) / 2, "Slow", "f"),
+        ((t_remap_start + t_remap_end) / 2, "Remap"),
+        ((t_recovery1_end + t_flat_end) / 2, "Flat"),
+        ((t_recovery2_end + t_fast_end) / 2, "Fast"),
+        ((t_recovery3_end + t_slow_end) / 2, "Slow"),
     ]
-    for x_pos, label_text, panel_id in phase_labels_info:
+    for x_pos, label_text in phase_labels_info:
         ax_pred.text(
             x_pos,
             1.02,
-            f"{label_text} ({panel_id})",
+            label_text,
             transform=ax_pred.get_xaxis_transform(),
             fontsize=6,
             ha="center",
