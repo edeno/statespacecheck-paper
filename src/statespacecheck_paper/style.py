@@ -142,8 +142,9 @@ COLORS: dict[str, str] = {
 }
 
 # Colormap constants (can't be in dict since they're not colors)
-CMAP_POSTERIOR = "bone_r"  # Reversed bone for posterior heatmaps
-CMAP_DIAGNOSTIC = "bone_r"  # Same for diagnostic heatmaps (consistency)
+CMAP_POSTERIOR = "bone_r"  # Reversed bone for posterior/predictive heatmaps
+CMAP_LIKELIHOOD = "inferno"  # Warm colormap for likelihood overlay at spike times
+CMAP_DIAGNOSTIC = "bone_r"  # Same as posterior for diagnostic heatmaps
 
 # Convenience aliases for common use cases
 COLORS["prior"] = COLORS["predictive"]  # Alias: prior = predictive

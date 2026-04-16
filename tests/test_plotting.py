@@ -367,13 +367,28 @@ class TestPlotCombinedDiagnostics:
         x_true = rng.uniform(0, n_bins - 1, n_time)
         spikes = rng.poisson(0.5, (n_time, n_cells))
 
+        # Spike-only likelihood: NaN at no-spike times
+        spike_lik = np.full((n_time, n_bins), np.nan)
+        has_spk = spikes.sum(axis=1) > 0
+        spike_lik[has_spk] = rng.dirichlet(np.ones(n_bins), size=int(has_spk.sum()))
+
+        # Per-spike likelihoods
+        spike_time_ind, spike_cell_ind = np.nonzero(spikes[1:])
+        spike_time_ind = spike_time_ind + 1
+        n_spikes = len(spike_time_ind)
+        per_spike_lik = rng.dirichlet(np.ones(n_bins), size=max(n_spikes, 1))[:n_spikes]
+
         metrics = {
             "predictive": rng.dirichlet(np.ones(n_bins), size=n_time),
             "likelihood": rng.dirichlet(np.ones(n_bins), size=n_time),
+            "spike_likelihood": spike_lik,
             "posterior": rng.dirichlet(np.ones(n_bins), size=n_time),
             "hpd_overlap": rng.uniform(0, 1, (n_time, n_cells)),
             "kl_divergence": rng.uniform(0, 5, (n_time, n_cells)),
             "spike_prob": rng.uniform(0, 1, (n_time, n_cells)),
+            "per_spike_likelihood": per_spike_lik,
+            "spike_time_ind": spike_time_ind,
+            "spike_cell_ind": spike_cell_ind,
         }
 
         thresholds = Thresholds(
@@ -406,8 +421,6 @@ class TestPlotCombinedDiagnostics:
         )
 
         placefield_centers = np.linspace(0, 1, n_cells)
-        placefield_width = 0.1
-        rate_scale = 10.0
 
         # Execute
         fig = plot_combined_diagnostics(
@@ -418,8 +431,6 @@ class TestPlotCombinedDiagnostics:
             thresholds,
             params,
             placefield_centers,
-            placefield_width,
-            rate_scale,
         )
 
         # Assert
@@ -434,14 +445,29 @@ class TestPlotCombinedDiagnostics:
         x_true = rng.uniform(0, n_bins - 1, n_time)
         spikes = rng.poisson(1.0, (n_time, n_cells))
 
+        # Spike-only likelihood: NaN at no-spike times
+        spike_lik = np.full((n_time, n_bins), np.nan)
+        has_spk = spikes.sum(axis=1) > 0
+        spike_lik[has_spk] = rng.dirichlet(np.ones(n_bins), size=int(has_spk.sum()))
+
+        # Per-spike likelihoods
+        spike_time_ind, spike_cell_ind = np.nonzero(spikes[1:])
+        spike_time_ind = spike_time_ind + 1
+        n_spikes = len(spike_time_ind)
+        per_spike_lik = rng.dirichlet(np.ones(n_bins), size=max(n_spikes, 1))[:n_spikes]
+
         # Metrics are now 2D: (n_time, n_cells)
         metrics = {
             "predictive": rng.dirichlet(np.ones(n_bins), size=n_time),
             "likelihood": rng.dirichlet(np.ones(n_bins), size=n_time),
+            "spike_likelihood": spike_lik,
             "posterior": rng.dirichlet(np.ones(n_bins), size=n_time),
             "hpd_overlap": rng.uniform(0, 1, (n_time, n_cells)),
             "kl_divergence": rng.uniform(0, 5, (n_time, n_cells)),
             "spike_prob": rng.uniform(0, 1, (n_time, n_cells)),
+            "per_spike_likelihood": per_spike_lik,
+            "spike_time_ind": spike_time_ind,
+            "spike_cell_ind": spike_cell_ind,
         }
 
         thresholds = Thresholds(
@@ -463,8 +489,6 @@ class TestPlotCombinedDiagnostics:
         )
 
         placefield_centers = np.linspace(0, 1, n_cells)
-        placefield_width = 0.15
-        rate_scale = 5.0
 
         fig = plot_combined_diagnostics(
             xs,
@@ -474,8 +498,6 @@ class TestPlotCombinedDiagnostics:
             thresholds,
             params,
             placefield_centers,
-            placefield_width,
-            rate_scale,
         )
 
         assert isinstance(fig, plt.Figure)

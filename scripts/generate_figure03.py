@@ -210,8 +210,6 @@ def run_demo(params: DecodeParams) -> None:
         thresholds,
         params,
         params.pf_centers,
-        params.pf_width,
-        params.rate_scale,
     )
 
     # Save figure (uses plt.gcf() to get current figure)
