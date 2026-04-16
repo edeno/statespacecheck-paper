@@ -52,9 +52,10 @@ def add_phase_boundaries(
     axes : list[plt.Axes]
         List of axes to add phase boundaries to.
     phase_boundaries : tuple[int, ...]
-        Phase boundary time points (must have 8 elements):
-        (remap_start, remap_end, recovery1_end, flat_end,
-         recovery2_end, fast_end, recovery3_end, slow_end).
+        Phase boundary time points (6 or 8 elements).
+        6 elements: (remap_start, remap_end, recovery1_end, flat_end,
+         recovery2_end, fast_end).
+        8 elements: adds (recovery3_end, slow_end).
     include_labels : bool, default False
         If True, add labels for legend on first axis.
     alpha : float, default 0.15
@@ -68,22 +69,18 @@ def add_phase_boundaries(
     Examples
     --------
     >>> fig, axes = plt.subplots(4, 1)
-    >>> boundaries = (10, 20, 30, 40, 50, 60, 70, 80)
+    >>> boundaries = (10, 20, 30, 40, 50, 60)
     >>> add_phase_boundaries(axes, boundaries, include_labels=True)
     """
-    if len(phase_boundaries) != 8:
+    if len(phase_boundaries) < 6:
         return
 
-    (
-        t_remap_start,
-        t_remap_end,
-        t_recovery1_end,
-        t_flat_end,
-        t_recovery2_end,
-        t_fast_end,
-        t_recovery3_end,
-        t_slow_end,
-    ) = phase_boundaries
+    t_remap_start = phase_boundaries[0]
+    t_remap_end = phase_boundaries[1]
+    t_recovery1_end = phase_boundaries[2]
+    t_flat_end = phase_boundaries[3]
+    t_recovery2_end = phase_boundaries[4]
+    t_fast_end = phase_boundaries[5]
 
     # Define phases with (start, end, color, label)
     # Use semantic colors from COLORS dictionary
@@ -91,8 +88,12 @@ def add_phase_boundaries(
         (t_remap_start, t_remap_end, COLORS["likelihood"], "Remapping"),
         (t_recovery1_end, t_flat_end, COLORS["reference"], "Flat firing"),
         (t_recovery2_end, t_fast_end, COLORS["ground_truth"], "Fast movement"),
-        (t_recovery3_end, t_slow_end, COLORS["predictive"], "Stationary"),
     ]
+
+    if len(phase_boundaries) >= 8:
+        t_recovery3_end = phase_boundaries[6]
+        t_slow_end = phase_boundaries[7]
+        phases.append((t_recovery3_end, t_slow_end, COLORS["predictive"], "Momentum"))
 
     for ax_idx, ax in enumerate(axes):
         add_labels_to_axis = include_labels and ax_idx == 0
@@ -741,7 +742,7 @@ def plot_misfit_examples(
         ("Remapping", remap_window, False),
         ("Flat Firing", flat_window, False),
         ("Fast Movement", fast_window, False),
-        ("Slow Movement", slow_window, False),
+        ("Momentum", slow_window, False),
     ]
 
     # Publication quality: 450 DPI, single row with 5 columns
@@ -1050,7 +1051,7 @@ def _plot_likelihood_overlay(
     cmap_overlay: str = CMAP_LIKELIHOOD,
     underlay_alpha: float = 0.35,
 ) -> AxesImage:
-    """Plot per-spike likelihood distributions over a faint predictive underlay.
+    """Plot per-spike likelihood distributions at spike times.
 
     Aggregates per-spike likelihoods into per-timestep distributions and renders
     each spike time as a colored column with guaranteed minimum width.
@@ -1060,7 +1061,7 @@ def _plot_likelihood_overlay(
     ax : Axes
         Matplotlib axes to plot on.
     predictive : NDArray, shape (n_time, n_bins)
-        Predictive distribution over position at each time.
+        Predictive distribution over position at each time (used for shape only).
     per_spike_likelihood : NDArray, shape (n_spikes, n_bins)
         Normalized likelihood distribution for each individual spike event.
     spike_time_ind : NDArray, shape (n_spikes,)
@@ -1072,29 +1073,21 @@ def _plot_likelihood_overlay(
     x_true : NDArray, shape (n_time,), optional
         True position to overlay.
     cmap_underlay : str, default CMAP_POSTERIOR
-        Colormap for the faint predictive underlay.
+        Unused, kept for API compatibility.
     cmap_overlay : str, default CMAP_LIKELIHOOD
         Colormap for the likelihood columns.
     underlay_alpha : float, default 0.35
-        Alpha for the predictive underlay.
+        Unused, kept for API compatibility.
 
     Returns
     -------
     im : AxesImage
-        The underlay image object.
+        A placeholder image object.
     """
     n_time, n_bins = predictive.shape
 
-    # Underlay: faint predictive heatmap
-    im = ax.imshow(
-        predictive.T,
-        aspect="auto",
-        origin="lower",
-        vmin=0.0,
-        vmax=float(np.nanquantile(predictive, 0.975)),
-        cmap=cmap_underlay,
-        alpha=underlay_alpha,
-    )
+    # Black background so likelihood columns stand out
+    ax.set_facecolor("black")
 
     # Aggregate per-spike likelihoods into per-timestep arrays.
     # When multiple cells spike at the same time, average their likelihoods.
@@ -1118,7 +1111,16 @@ def _plot_likelihood_overlay(
         )
 
     ax.set_xlim(0, n_time - 1)
+    ax.set_ylim(0, n_bins - 1)
 
+    # Return a dummy AxesImage for API compatibility
+    im = ax.imshow(
+        np.zeros((1, 1)),
+        aspect="auto",
+        origin="lower",
+        extent=(0, n_time - 1, 0, n_bins - 1),
+        alpha=0.0,
+    )
     return im
 
 
@@ -1360,7 +1362,7 @@ def plot_combined_diagnostics(
     ax_hpdo.tick_params(labelsize=6, labelbottom=False)
     # Add directional indicator and threshold annotation
     ax_hpdo.text(
-        1.01, 0.02, "↓ Worse fit", transform=ax_hpdo.transAxes, fontsize=6, va="bottom", ha="left"
+        1.01, 0.5, "↓ Worse fit", transform=ax_hpdo.transAxes, fontsize=6, va="center", ha="left"
     )
     ax_hpdo.text(
         1.01,
@@ -1467,24 +1469,17 @@ def plot_combined_diagnostics(
         alpha=0.15,
     )
 
-    # Unpack for phase labels
-    (
-        t_remap_start,
-        t_remap_end,
-        t_recovery1_end,
-        t_flat_end,
-        t_recovery2_end,
-        t_fast_end,
-        t_recovery3_end,
-        t_slow_end,
-    ) = phase_boundaries
-
     # Add phase labels above top panel
+    t_remap_start, t_remap_end = params.T_remap_start, params.T_remap_end
+    t_recovery1_end, t_flat_end = params.T_recovery1_end, params.T_flat_end
+    t_recovery2_end, t_fast_end = params.T_recovery2_end, params.T_fast_end
+    t_recovery3_end, t_slow_end = params.T_recovery3_end, params.T_slow_end
+
     phase_labels_info = [
         ((t_remap_start + t_remap_end) / 2, "Remap"),
-        ((t_recovery1_end + t_flat_end) / 2, "Flat"),
-        ((t_recovery2_end + t_fast_end) / 2, "Fast"),
-        ((t_recovery3_end + t_slow_end) / 2, "Slow"),
+        ((t_recovery1_end + t_flat_end) / 2, "Flat Firing"),
+        ((t_recovery2_end + t_fast_end) / 2, "Fast Movement"),
+        ((t_recovery3_end + t_slow_end) / 2, "Momentum"),
     ]
     for x_pos, label_text in phase_labels_info:
         ax_pred.text(

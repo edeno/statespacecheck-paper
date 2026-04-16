@@ -60,7 +60,8 @@ class DecodeParams:
     """Parameters for decoding simulation.
 
     This dataclass contains all parameters needed to run a state space model decoding
-    simulation with various model misfits (remapping, flat firing, fast/slow movement).
+    simulation with various model misfits (remapping, flat firing, fast movement,
+    momentum).
 
     **Timeline Structure**:
     - 0-6k: Clean baseline
@@ -70,7 +71,7 @@ class DecodeParams:
     - 16k-20k: Clean recovery (4k timesteps)
     - 20k-24k: Fast movement misfit (4k timesteps)
     - 24k-28k: Clean recovery (4k timesteps)
-    - 28k-32k: Slow movement misfit (4k timesteps)
+    - 28k-32k: Momentum misfit (4k timesteps)
 
     Parameters
     ----------
@@ -110,8 +111,8 @@ class DecodeParams:
         Place field width (std of Gaussian tuning curves).
     pf_centers : NDArray[np.floating] | None, default None
         Place field center positions. If None, initialized in __post_init__.
-    rate_scale : float, default 0.02
-        Spike rate scaling factor (matches MATLAB normpdf * 0.02).
+    rate_scale : float, default 5.0
+        Spike rate scaling factor.
     base_seed : int, default 1
         Base random seed for reproducibility.
     remap_from_to : tuple of ints, default (9, 0)

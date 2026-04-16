@@ -18,6 +18,7 @@ from statespacecheck_paper.plotting import (
 )
 from statespacecheck_paper.simulation import (
     gaussian_transition_matrix,
+    reflect_into_interval,
     simulate_spikes_flat_rate,
     simulate_spikes_position_tuned,
     simulate_walk,
@@ -34,7 +35,7 @@ def run_demo(params: DecodeParams) -> None:
 
     Generates Figure 3 showing a Bayesian decoder with periods of good and poor
     model fit across 8 phases: baseline, remapping misfit, flat firing misfit,
-    fast movement misfit, and slow movement misfit, with recovery periods between.
+    fast movement misfit, and momentum misfit, with recovery periods between.
 
     Parameters
     ----------
@@ -58,8 +59,8 @@ def run_demo(params: DecodeParams) -> None:
     6. Fast movement misfit (T_recovery2_end - T_fast_end): Animal moves faster
        than model expects
     7. Recovery 3 (T_fast_end - T_recovery3_end): Return to good fit
-    8. Slow movement misfit (T_recovery3_end - T_slow_end): Animal stationary
-       but model expects movement
+    8. Momentum misfit (T_recovery3_end - T_slow_end): Animal has persistent
+       velocity but model assumes memoryless random walk
 
     Diagnostic thresholds are computed from the clean baseline period.
     """
@@ -72,7 +73,6 @@ def run_demo(params: DecodeParams) -> None:
     xs = np.arange(params.xs_min, params.xs_max + params.xs_step, params.xs_step, dtype=float)
     transition_matrix = gaussian_transition_matrix(xs, params.sigx_pred)
     transition_matrix_narrow = gaussian_transition_matrix(xs, params.sigx_pred_fast_phase)
-    transition_matrix_inflated = gaussian_transition_matrix(xs, params.sigx_pred_slow_phase)
 
     # Generate all phases with recovery periods
     phases = []
@@ -140,7 +140,6 @@ def run_demo(params: DecodeParams) -> None:
     # Phase 6: Fast movement misfit (T_recovery2_end - T_fast_end)
     # Transition model misfit: decoder uses narrow transition matrix (sigx=0.1),
     # animal moves fast (sigx=10.0)
-    # Prior will be far too narrow/concentrated compared to actual movement (100x mismatch!)
     n_time = params.T_fast_end - params.T_recovery2_end
     x_true_phase = simulate_walk(
         n_time, params.sigx_true_fast, x_last, params.xs_min, params.xs_max, rng
@@ -164,19 +163,24 @@ def run_demo(params: DecodeParams) -> None:
     phase_labels.append("Clean Recovery")
     x_last = x_true_phase[-1]
 
-    # Phase 8: Slow movement misfit (T_recovery3_end - T_slow_end)
-    # Transition model misfit: decoder uses inflated transition matrix (sigx=20.0),
-    # animal stationary (sigx=0.0)
-    # Prior will be far too broad/diffuse compared to actual lack of movement
+    # Phase 8: Momentum misfit (T_recovery3_end - T_slow_end)
+    # Transition model misfit: decoder assumes memoryless random walk,
+    # but the animal has persistent momentum (correlated steps).
+    # The predictive distribution is systematically behind the true position.
     n_time = params.T_slow_end - params.T_recovery3_end
-    x_true_phase = simulate_walk(
-        n_time, params.sigx_true_slow, x_last, params.xs_min, params.xs_max, rng
-    )
+    momentum = 0.95  # High autocorrelation of velocity
+    x_momentum = np.zeros(n_time)
+    x_momentum[0] = x_last
+    velocity = 0.0
+    for t in range(1, n_time):
+        velocity = momentum * velocity + rng.normal(0, params.sigx_pred)
+        x_momentum[t] = x_momentum[t - 1] + velocity
+    x_true_phase = reflect_into_interval(x_momentum, float(params.xs_min), float(params.xs_max))
     spikes_phase = simulate_spikes_position_tuned(
         x_true_phase, params.pf_centers, params.pf_width, params.rate_scale, rng
     )
     phases.append((x_true_phase, spikes_phase))
-    phase_labels.append("Slow Movement Misfit")
+    phase_labels.append("Drift Misfit")
 
     # Concatenate all phases
     x_true = np.concatenate([x for x, _ in phases], axis=0)
@@ -194,8 +198,6 @@ def run_demo(params: DecodeParams) -> None:
         remap_from_to=params.remap_from_to,
         transition_matrix_narrow=transition_matrix_narrow,
         narrow_window=(params.T_recovery2_end, params.T_fast_end),
-        transition_matrix_inflated=transition_matrix_inflated,
-        inflate_window=(params.T_recovery3_end, params.T_slow_end),
     )
 
     # Thresholds from clean baseline window (first 6k timesteps, before remapping starts)
