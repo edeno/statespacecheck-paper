@@ -116,6 +116,8 @@ def run_demo(params: DecodeParams) -> None:
     x_last = x_true_phase[-1]
 
     # Phase 4: Flat firing misfit (T_recovery1_end - T_flat_end)
+    # Observation model misfit: cells fire at a constant rate regardless of position.
+    # The decoder expects spatially tuned firing but the spikes carry no spatial information.
     n_time = params.T_flat_end - params.T_recovery1_end
     x_true_phase = simulate_walk(
         n_time, params.sigx_pred, x_last, params.xs_min, params.xs_max, rng
