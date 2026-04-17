@@ -1251,22 +1251,33 @@ def plot_combined_diagnostics(
     """
     # Calculate figure size
     fig_width = 7.0  # Full page width
-    fig_height = 7.0
+    fig_height = 8.8
 
     fig = plt.figure(figsize=(fig_width, fig_height), dpi=450)
 
-    # Create grid: 6 rows for time-series (pred, like, raster, hpdo, kl, spike)
-    gs = gridspec.GridSpec(
-        6,
+    # Outer grid: time-series block on top, summary heatmap on bottom
+    gs_outer = gridspec.GridSpec(
+        2,
         1,
         figure=fig,
-        height_ratios=[1.2, 1.2, 0.8, 0.7, 0.7, 0.7],
-        hspace=0.12,
+        height_ratios=[5.3, 1.2],
+        hspace=0.35,
         left=0.08,
         right=0.93,
         top=0.97,
         bottom=0.06,
     )
+
+    # Inner grid for time-series panels (6 rows)
+    gs = gs_outer[0].subgridspec(
+        6,
+        1,
+        height_ratios=[1.2, 1.2, 0.8, 0.7, 0.7, 0.7],
+        hspace=0.12,
+    )
+
+    # Reserve gs_outer[1] for the summary heatmap (used later)
+    gs_summary = gs_outer[1]
 
     # ===== TOP SECTION: Time-Series Diagnostics =====
 
@@ -1492,5 +1503,130 @@ def plot_combined_diagnostics(
             va="bottom",
             style="italic",
         )
+
+    # Panel label (a) for time-series
+    ax_pred.text(
+        -0.05,
+        1.15,
+        "a",
+        fontsize=8,
+        fontweight="bold",
+        transform=ax_pred.transAxes,
+        va="top",
+        ha="right",
+    )
+
+    # ===== SUMMARY HEATMAP: % exceeding baseline threshold per phase =====
+    ax_summary = fig.add_subplot(gs_summary)
+
+    # Panel label (b) for summary
+    ax_summary.text(
+        -0.05,
+        1.25,
+        "b",
+        fontsize=8,
+        fontweight="bold",
+        transform=ax_summary.transAxes,
+        va="top",
+        ha="right",
+    )
+
+    # Phase windows for summary computation
+    phase_windows = [
+        ("Remap", t_remap_start, t_remap_end),
+        ("Flat\nFiring", t_recovery1_end, t_flat_end),
+        ("Fast\nMovement", t_recovery2_end, t_fast_end),
+        ("Momentum", t_recovery3_end, t_slow_end),
+    ]
+    component_labels = ["Observation", "Observation", "Transition", "Transition"]
+
+    # Use the same thresholds as the time-series panels above
+    hpd_thr = thresholds.hpd_overlap
+    kl_thr = thresholds.kl_divergence
+    sp_thr = thresholds.spike_prob
+
+    # Compute fraction exceeding threshold per phase (non-NaN only)
+    frac_data = np.zeros((3, len(phase_windows)))
+    for j, (_name, t0, t1) in enumerate(phase_windows):
+        for i, (metric_key, thr_val, direction) in enumerate(
+            [
+                ("hpd_overlap", hpd_thr, "below"),
+                ("kl_divergence", kl_thr, "above"),
+                ("spike_prob", sp_thr, "below"),
+            ]
+        ):
+            vals = metrics[metric_key][t0:t1]
+            valid = vals[~np.isnan(vals)]
+            if len(valid) > 0:
+                if direction == "below":
+                    frac_data[i, j] = 100 * np.mean(valid <= thr_val)
+                else:
+                    frac_data[i, j] = 100 * np.mean(valid >= thr_val)
+
+    # Normalize for color mapping
+    max_frac = np.nanmax(frac_data)
+    norm_frac = frac_data / max_frac if max_frac > 0 else frac_data
+
+    # Plot heatmap
+    ax_summary.imshow(norm_frac, cmap="YlOrRd", aspect="auto", vmin=0, vmax=1)
+
+    # Metric labels
+    metric_labels = ["HPD\nOverlap", "KL\nDivergence", r"$-\log_{10}(p)$"]
+    ax_summary.set_yticks(range(3))
+    ax_summary.set_yticklabels(metric_labels, fontsize=6)
+
+    # Phase labels on top
+    ax_summary.set_xticks(range(len(phase_windows)))
+    ax_summary.set_xticklabels([name for name, _, _ in phase_windows], fontsize=6)
+    ax_summary.tick_params(top=True, bottom=False, labeltop=True, labelbottom=False)
+
+    # Value annotations inside cells
+    for i in range(3):
+        for j in range(len(phase_windows)):
+            val = frac_data[i, j]
+            color = "white" if norm_frac[i, j] > 0.55 else "black"
+            weight = "bold" if norm_frac[i, j] > 0.7 else "normal"
+            ax_summary.text(
+                j,
+                i,
+                f"{val:.0f}%",
+                ha="center",
+                va="center",
+                fontsize=6,
+                color=color,
+                fontweight=weight,
+            )
+
+    # Component attribution below heatmap
+    for j, comp in enumerate(component_labels):
+        color = "#E69F00" if comp == "Observation" else "#0072B2"
+        ax_summary.text(
+            j,
+            3.5,
+            comp,
+            ha="center",
+            va="center",
+            fontsize=5.5,
+            fontstyle="italic",
+            color=color,
+        )
+    ax_summary.text(
+        -1.4,
+        3.5,
+        "Known\ncomponent:",
+        ha="center",
+        va="center",
+        fontsize=5.5,
+        color="0.4",
+        fontstyle="italic",
+    )
+
+    # Title
+    ax_summary.set_title(
+        "% of spike events exceeding baseline threshold",
+        fontsize=7,
+        pad=15,
+        loc="center",
+    )
 
     return fig

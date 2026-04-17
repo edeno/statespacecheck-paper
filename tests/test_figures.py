@@ -96,9 +96,10 @@ class TestFigure04Integration:
         # Check that configuration constants are defined
         assert hasattr(generate_figure04, "DATA_PATH")
         assert hasattr(generate_figure04, "ANIMAL_DATE_EPOCH")
-        assert hasattr(generate_figure04, "FIGURE_4B_WINDOW_CENTER")
-        assert hasattr(generate_figure04, "FIGURE_4B_WINDOW_HALF_WIDTH")
+        assert hasattr(generate_figure04, "FIGURE_4A_CONTEXT_CENTER")
         assert hasattr(generate_figure04, "FIGURE_4A_CONTEXT_HALF_WIDTH")
+        assert hasattr(generate_figure04, "FIGURE_4B_DETAIL_CENTER")
+        assert hasattr(generate_figure04, "FIGURE_4B_DETAIL_HALF_WIDTH")
 
     def test_imports_analysis_utilities(self) -> None:
         """Test that generate_figure04.py imports required analysis utilities."""

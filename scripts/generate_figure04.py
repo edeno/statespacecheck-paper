@@ -1,9 +1,10 @@
 """Real hippocampal data diagnostics for state space model.
 
 This script generates Figure 4, which shows per-cell diagnostic metrics
-for the Continuous decoder model on real neural recording data from
-hippocampus. Panel (a) shows a longer context window with surrounding
-run periods, and panel (b) shows a zoomed-in detail view.
+for decoder models on real neural recording data from hippocampus.
+Panel (a) shows a longer context window with surrounding run periods,
+panel (b) shows a zoomed-in detail view with the Continuous decoder, and
+panel (c) shows the same detail view with the Continuous-Fragmented decoder.
 
 Requires:
 - non_local_detector package for decoder models
@@ -54,19 +55,23 @@ except ImportError:
 DATA_PATH = Path(__file__).parent.parent / "data"
 ANIMAL_DATE_EPOCH = "j1620210710_02_r1"
 
-# Time window for Figure 4b (detail view)
-FIGURE_4B_WINDOW_CENTER = 177301  # Time index around which to show detail
-FIGURE_4B_WINDOW_HALF_WIDTH = 50  # Half-width in time points
-
-# Time window for Figure 4a (context view showing surrounding run periods)
+# Time window for Figure 4a (context view)
+# Shows ~20 seconds encompassing running and immobility at reward well
+FIGURE_4A_CONTEXT_CENTER = 190000  # Time index for context center
 FIGURE_4A_CONTEXT_HALF_WIDTH = 5000  # Half-width in time points (~20 seconds)
+
+# Time window for Figure 4b/c (detail view)
+# Centered on a period of clear diagnostic activity at reward well
+FIGURE_4B_DETAIL_CENTER = 193069  # Time index with KL spike during immobility
+FIGURE_4B_DETAIL_HALF_WIDTH = 500  # Half-width in time points (~2 seconds at 500 Hz)
 
 
 def run_demo() -> None:
     """Run the full Figure 4 generation pipeline.
 
-    Loads data, fits the Continuous decoder model, computes diagnostics,
-    and generates Figure 4 with context (a) and detail (b) panels.
+    Loads data, fits Continuous and ContFrag decoder models, computes
+    diagnostics, and generates Figure 4 with context (a), Continuous
+    detail (b), and ContFrag detail (c) panels.
     """
     # Load data
     print("Loading data...")
@@ -87,33 +92,42 @@ def run_demo() -> None:
     linear_position = position_info["linear_position"].values
     spike_times_list: list[Any] = list(data["spike_times"])
 
-    # Fit continuous model only
-    print("Fitting model...")
-    continuous_model, _ = fit_decoder_models(
+    # Fit both models
+    print("Fitting models...")
+    continuous_model, contfrag_model = fit_decoder_models(
         position=position,
         spike_times=spike_times_list,
         time=time,
         environment=env,
     )
 
-    # Decode all time points
+    # Decode all time points with both models
     print(f"Decoding {len(time)} time points...")
+    decode_outputs = ["filter", "predictive_posterior", "log_likelihood"]
     continuous_results = continuous_model.predict(
         spike_times=spike_times_list,
         time=time,
-        return_outputs=["filter", "predictive_posterior", "log_likelihood"],
+        return_outputs=decode_outputs,
+    )
+    contfrag_results = contfrag_model.predict(
+        spike_times=spike_times_list,
+        time=time,
+        return_outputs=decode_outputs,
     )
 
     # Get spike counts for all time
     spike_counts = get_spike_counts(spike_times_list, time)
 
-    # Compute diagnostics
+    # Compute diagnostics for both models
     print("Computing diagnostics...")
     continuous_diagnostics = compute_model_diagnostics(
         continuous_model, continuous_results, spike_counts, time
     )
+    contfrag_diagnostics = compute_model_diagnostics(
+        contfrag_model, contfrag_results, spike_counts, time
+    )
 
-    # Extract place fields to get peak positions for sorting raster
+    # Extract place fields for raster sorting (use continuous model)
     place_fields, position_bins = extract_place_fields(continuous_model)
     if np.any(np.all(np.isnan(place_fields), axis=1)):
         warnings.warn(
@@ -124,39 +138,75 @@ def run_demo() -> None:
 
     # Print summary
     print("\n=== Diagnostic Summary (all time points) ===")
-    for metric in ["hpd_overlap", "kl_divergence", "spike_prob"]:
-        cont_mean = np.nanmean(continuous_diagnostics[metric])
-        print(f"{metric}: {cont_mean:.4f}")
+    for name, diag in [("Continuous", continuous_diagnostics), ("ContFrag", contfrag_diagnostics)]:
+        print(f"\n{name}:")
+        for metric in ["hpd_overlap", "kl_divergence", "spike_prob"]:
+            print(f"  {metric}: {np.nanmean(diag[metric]):.4f}")
 
     # Generate Figure 4
     print("\nGenerating Figure 4...")
     set_figure_defaults(context="paper")
 
+    # Diagnostic thresholds
+    diagnostic_thresholds = {
+        "hpd_overlap": 0.05,
+        "spike_prob": 0.05,
+    }
+
     # Define time slices
     context_slice = slice(
-        FIGURE_4B_WINDOW_CENTER - FIGURE_4A_CONTEXT_HALF_WIDTH,
-        FIGURE_4B_WINDOW_CENTER + FIGURE_4A_CONTEXT_HALF_WIDTH,
+        FIGURE_4A_CONTEXT_CENTER - FIGURE_4A_CONTEXT_HALF_WIDTH,
+        FIGURE_4A_CONTEXT_CENTER + FIGURE_4A_CONTEXT_HALF_WIDTH,
     )
     detail_slice = slice(
-        FIGURE_4B_WINDOW_CENTER - FIGURE_4B_WINDOW_HALF_WIDTH,
-        FIGURE_4B_WINDOW_CENTER + FIGURE_4B_WINDOW_HALF_WIDTH,
+        FIGURE_4B_DETAIL_CENTER - FIGURE_4B_DETAIL_HALF_WIDTH,
+        FIGURE_4B_DETAIL_CENTER + FIGURE_4B_DETAIL_HALF_WIDTH,
     )
 
-    # Two side-by-side panels: (a) context, (b) detail
-    fig = plt.figure(figsize=(7.0, 7.0), dpi=450, constrained_layout=True)
-    subfigs = fig.subfigures(1, 2, width_ratios=[3, 2], wspace=0.03)
+    # Convert time to relative seconds from start of context window
+    time_arr = np.asarray(time, dtype=np.float64)
+    time_offset = time_arr[context_slice.start]
+    time_relative = time_arr - time_offset
 
-    # Panel (a): context view (wider time window)
+    # Shift xarray time coordinates to relative seconds
+    continuous_results = continuous_results.assign_coords(
+        time=continuous_results.coords["time"].values - time_offset
+    )
+    contfrag_results = contfrag_results.assign_coords(
+        time=contfrag_results.coords["time"].values - time_offset
+    )
+
+    # Shift spike times to relative seconds
+    spike_times_relative: list[Any] = [st - time_offset for st in spike_times_list]
+
+    # Three panels: (a) context, (b) Continuous detail, (c) ContFrag detail
+    fig = plt.figure(figsize=(10.0, 7.0), dpi=450, constrained_layout=True)
+    subfigs = fig.subfigures(1, 3, width_ratios=[3, 2, 2], wspace=0.03)
+
+    # Shared plotting kwargs for detail panels
+    detail_kwargs: dict[str, Any] = dict(
+        spike_times=spike_times_relative,
+        spike_counts=spike_counts,
+        place_field_peaks=place_field_peaks,
+        time_slice_ind=detail_slice,
+        thresholds=diagnostic_thresholds,
+        track_graph=data["track_graph"],
+        edge_order=data["linear_edge_order"],
+        edge_spacing=data["linear_edge_spacing"],
+    )
+
+    # Panel (a): context view (wider time window, Continuous model)
     _, axes_a = plot_single_model_diagnostics(
-        time,
+        time_relative,
         linear_position,
         continuous_results,
         continuous_diagnostics,
-        spike_times=spike_times_list,
+        spike_times=spike_times_relative,
         spike_counts=spike_counts,
         place_field_peaks=place_field_peaks,
         time_slice_ind=context_slice,
         model_name="",
+        thresholds=diagnostic_thresholds,
         track_graph=data["track_graph"],
         edge_order=data["linear_edge_order"],
         edge_spacing=data["linear_edge_spacing"],
@@ -164,53 +214,73 @@ def run_demo() -> None:
     )
 
     # Highlight the detail window region in panel (a)
-    time_arr = np.asarray(time)
-    detail_start = time_arr[detail_slice.start]
-    detail_end = time_arr[detail_slice.stop - 1]
+    detail_start = time_relative[detail_slice.start]
+    detail_end = time_relative[detail_slice.stop - 1]
     for ax in axes_a:
         ax.axvspan(detail_start, detail_end, alpha=0.15, color="gray", zorder=0)
 
-    # Panel (b): detail view (zoomed-in)
+    # Panel (b): Continuous detail view
     _, axes_b = plot_single_model_diagnostics(
-        time,
+        time_relative,
         linear_position,
         continuous_results,
         continuous_diagnostics,
-        spike_times=spike_times_list,
-        spike_counts=spike_counts,
-        place_field_peaks=place_field_peaks,
-        time_slice_ind=detail_slice,
-        model_name="",
-        track_graph=data["track_graph"],
-        edge_order=data["linear_edge_order"],
-        edge_spacing=data["linear_edge_spacing"],
+        model_name="Continuous",
         fig=subfigs[1],
+        **detail_kwargs,
     )
 
-    # Panel labels
-    label_x = 0.01
-    trans_a = blended_transform_factory(fig.transFigure, axes_a[0].transAxes)
-    axes_a[0].text(
-        label_x,
-        1.15,
-        "a",
-        fontsize=8,
-        fontweight="bold",
-        transform=trans_a,
-        va="top",
-        ha="left",
+    # Panel (c): ContFrag detail view
+    _, axes_c = plot_single_model_diagnostics(
+        time_relative,
+        linear_position,
+        contfrag_results,
+        contfrag_diagnostics,
+        model_name="Cont-Frag",
+        fig=subfigs[2],
+        **detail_kwargs,
     )
-    trans_b = blended_transform_factory(fig.transFigure, axes_b[0].transAxes)
-    axes_b[0].text(
-        0.45,
-        1.15,
-        "b",
-        fontsize=8,
-        fontweight="bold",
-        transform=trans_b,
-        va="top",
-        ha="left",
-    )
+
+    # Match y-axis limits between detail panels for direct comparison
+    for i in range(6):
+        ylim_b = axes_b[i].get_ylim()
+        ylim_c = axes_c[i].get_ylim()
+        shared_ylim = (min(ylim_b[0], ylim_c[0]), max(ylim_b[1], ylim_c[1]))
+        axes_b[i].set_ylim(shared_ylim)
+        axes_c[i].set_ylim(shared_ylim)
+
+    # Annotate behavioral states on context panel (top of predictive row)
+    behavioral_periods = [
+        (0.5, "Run"),
+        (4.5, "Immobile"),
+        (9.5, "Run"),
+        (15.0, "Immobile"),
+    ]
+    ax_top = axes_a[0]
+    for t_center, label in behavioral_periods:
+        ax_top.text(
+            t_center,
+            1.05,
+            label,
+            transform=blended_transform_factory(ax_top.transData, ax_top.transAxes),
+            fontsize=6,
+            ha="center",
+            va="bottom",
+            fontstyle="italic",
+        )
+
+    # Panel labels - place in axes coordinates
+    for axes, label in [(axes_a, "a"), (axes_b, "b"), (axes_c, "c")]:
+        axes[0].text(
+            -0.05,
+            1.15,
+            label,
+            fontsize=8,
+            fontweight="bold",
+            transform=axes[0].transAxes,
+            va="top",
+            ha="right",
+        )
 
     save_figure("figures/main/figure04", close=True)
     print("Saved figures/main/figure04.{pdf,png}")
