@@ -118,8 +118,20 @@ def find_continuous_better_periods(
     cont_hpd = continuous_diagnostics["hpd_overlap"]  # (n_time, n_cells)
     frag_hpd = contfrag_diagnostics["hpd_overlap"]  # (n_time, n_cells)
 
-    cont_avg, _ = compute_running_average(cont_hpd, time, window_size=running_avg_window)
-    frag_avg, _ = compute_running_average(frag_hpd, time, window_size=running_avg_window)
+    cont_avg, _ = compute_running_average(
+        cont_hpd,
+        time,
+        window_size=running_avg_window,
+        event_times=continuous_diagnostics.get("event_time"),
+        event_values=continuous_diagnostics.get("event_hpd_overlap"),
+    )
+    frag_avg, _ = compute_running_average(
+        frag_hpd,
+        time,
+        window_size=running_avg_window,
+        event_times=contfrag_diagnostics.get("event_time"),
+        event_values=contfrag_diagnostics.get("event_hpd_overlap"),
+    )
 
     # Find where continuous is better by at least min_hpd_diff
     diff = cont_avg - frag_avg
@@ -184,9 +196,24 @@ def compute_event_hpd_overlap(
     window_time = time[window_slice]
     metric_data = diagnostics["hpd_overlap"][window_slice]
 
-    running_avg, _ = compute_running_average(
-        metric_data, window_time, window_size=running_avg_window
-    )
+    event_times = diagnostics.get("event_time")
+    event_values = diagnostics.get("event_hpd_overlap")
+    if event_times is not None and event_values is not None:
+        event_times = np.asarray(event_times)
+        time_start = time[start_idx]
+        time_end = time[end_idx]
+        event_mask = (event_times >= time_start) & (event_times <= time_end)
+        running_avg, _ = compute_running_average(
+            metric_data,
+            window_time,
+            window_size=running_avg_window,
+            event_times=event_times[event_mask],
+            event_values=np.asarray(event_values)[event_mask],
+        )
+    else:
+        running_avg, _ = compute_running_average(
+            metric_data, window_time, window_size=running_avg_window
+        )
 
     return float(np.nanmean(running_avg))
 
@@ -431,10 +458,10 @@ def main(
     # Compute diagnostics
     print("Computing diagnostics...")
     continuous_diagnostics = compute_model_diagnostics(
-        continuous_model, continuous_results, spike_counts, time
+        continuous_model, continuous_results, spike_counts, time, spike_times=spike_times_list
     )
     contfrag_diagnostics = compute_model_diagnostics(
-        contfrag_model, contfrag_results, spike_counts, time
+        contfrag_model, contfrag_results, spike_counts, time, spike_times=spike_times_list
     )
 
     # Find periods where continuous is better

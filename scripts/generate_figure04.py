@@ -66,6 +66,25 @@ FIGURE_4B_DETAIL_CENTER = 193069  # Time index with KL spike during immobility
 FIGURE_4B_DETAIL_HALF_WIDTH = 500  # Half-width in time points (~2 seconds at 500 Hz)
 
 
+def shift_diagnostic_event_times(
+    diagnostics: dict[str, Any],
+    time_offset: float,
+) -> dict[str, Any]:
+    """Return diagnostics with event timestamps shifted by ``time_offset``."""
+    shifted = dict(diagnostics)
+    if "event_time" in shifted:
+        shifted["event_time"] = np.asarray(shifted["event_time"], dtype=np.float64) - time_offset
+    return shifted
+
+
+def diagnostic_event_mean(diagnostics: dict[str, Any], metric: str) -> float:
+    """Return the per-spike mean for a diagnostic metric."""
+    event_key = f"event_{metric}"
+    if event_key not in diagnostics:
+        raise KeyError(f"Missing per-spike diagnostic array: {event_key}")
+    return float(np.nanmean(diagnostics[event_key]))
+
+
 def run_demo() -> None:
     """Run the full Figure 4 generation pipeline.
 
@@ -121,10 +140,10 @@ def run_demo() -> None:
     # Compute diagnostics for both models
     print("Computing diagnostics...")
     continuous_diagnostics = compute_model_diagnostics(
-        continuous_model, continuous_results, spike_counts, time
+        continuous_model, continuous_results, spike_counts, time, spike_times=spike_times_list
     )
     contfrag_diagnostics = compute_model_diagnostics(
-        contfrag_model, contfrag_results, spike_counts, time
+        contfrag_model, contfrag_results, spike_counts, time, spike_times=spike_times_list
     )
 
     # Extract place fields for raster sorting (use continuous model)
@@ -141,7 +160,7 @@ def run_demo() -> None:
     for name, diag in [("Continuous", continuous_diagnostics), ("ContFrag", contfrag_diagnostics)]:
         print(f"\n{name}:")
         for metric in ["hpd_overlap", "kl_divergence", "spike_prob"]:
-            print(f"  {metric}: {np.nanmean(diag[metric]):.4f}")
+            print(f"  {metric}: {diagnostic_event_mean(diag, metric):.4f}")
 
     # Generate Figure 4
     print("\nGenerating Figure 4...")
@@ -178,6 +197,14 @@ def run_demo() -> None:
 
     # Shift spike times to relative seconds
     spike_times_relative: list[Any] = [st - time_offset for st in spike_times_list]
+    continuous_diagnostics_relative = shift_diagnostic_event_times(
+        continuous_diagnostics,
+        time_offset,
+    )
+    contfrag_diagnostics_relative = shift_diagnostic_event_times(
+        contfrag_diagnostics,
+        time_offset,
+    )
 
     # Three panels: (a) context, (b) Continuous detail, (c) ContFrag detail
     fig = plt.figure(figsize=(10.0, 7.0), dpi=450, constrained_layout=True)
@@ -200,7 +227,7 @@ def run_demo() -> None:
         time_relative,
         linear_position,
         continuous_results,
-        continuous_diagnostics,
+        continuous_diagnostics_relative,
         spike_times=spike_times_relative,
         spike_counts=spike_counts,
         place_field_peaks=place_field_peaks,
@@ -224,7 +251,7 @@ def run_demo() -> None:
         time_relative,
         linear_position,
         continuous_results,
-        continuous_diagnostics,
+        continuous_diagnostics_relative,
         model_name="Continuous",
         fig=subfigs[1],
         **detail_kwargs,
@@ -235,7 +262,7 @@ def run_demo() -> None:
         time_relative,
         linear_position,
         contfrag_results,
-        contfrag_diagnostics,
+        contfrag_diagnostics_relative,
         model_name="Cont-Frag",
         fig=subfigs[2],
         **detail_kwargs,

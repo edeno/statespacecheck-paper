@@ -163,10 +163,10 @@ def run_sanity_check() -> None:
 
     print("Computing diagnostics...")
     continuous_diagnostics = compute_model_diagnostics(
-        continuous_model, continuous_results, spike_counts, time
+        continuous_model, continuous_results, spike_counts, time, spike_times=spike_times_list
     )
     contfrag_diagnostics = compute_model_diagnostics(
-        contfrag_model, contfrag_results, spike_counts, time
+        contfrag_model, contfrag_results, spike_counts, time, spike_times=spike_times_list
     )
 
     place_fields, position_bins = extract_place_fields(continuous_model)

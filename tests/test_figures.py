@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 # Add scripts directory to path to import figure scripts
@@ -117,6 +118,43 @@ class TestFigure04Integration:
 
         # Check imports from real_data_plotting module
         assert hasattr(generate_figure04, "plot_single_model_diagnostics")
+
+    def test_shift_diagnostic_event_times_matches_relative_time_axis(self) -> None:
+        """Figure 4 event metrics should use the same relative time base as plots."""
+        import generate_figure04
+
+        diagnostics = {
+            "event_time": np.array([101.0, 101.5]),
+            "event_hpd_overlap": np.array([0.25, 0.75]),
+        }
+
+        shifted = generate_figure04.shift_diagnostic_event_times(diagnostics, 100.0)
+
+        np.testing.assert_allclose(shifted["event_time"], [1.0, 1.5])
+        np.testing.assert_allclose(diagnostics["event_time"], [101.0, 101.5])
+        assert shifted["event_hpd_overlap"] is diagnostics["event_hpd_overlap"]
+
+    def test_diagnostic_event_mean_uses_per_spike_values(self) -> None:
+        """Figure 4 summary should not average collapsed binned matrix values."""
+        import generate_figure04
+
+        diagnostics = {
+            "hpd_overlap": np.array([[0.0, np.nan], [1.0, np.nan]]),
+            "event_hpd_overlap": np.array([0.0, 1.0, 1.0]),
+        }
+
+        assert generate_figure04.diagnostic_event_mean(diagnostics, "hpd_overlap") == pytest.approx(
+            2.0 / 3.0
+        )
+
+    def test_diagnostic_event_mean_requires_event_array(self) -> None:
+        """Missing per-spike arrays should fail instead of silently using bins."""
+        import generate_figure04
+
+        diagnostics = {"hpd_overlap": np.array([[0.0, 1.0]])}
+
+        with pytest.raises(KeyError, match="event_hpd_overlap"):
+            generate_figure04.diagnostic_event_mean(diagnostics, "hpd_overlap")
 
 
 class TestFiguresModuleStructure:

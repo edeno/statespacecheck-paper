@@ -625,9 +625,11 @@ def main() -> None:
     # Diagnostics
     print("Computing diagnostics...")
     continuous_diag = compute_model_diagnostics(
-        continuous_model, continuous_results, spike_counts, time
+        continuous_model, continuous_results, spike_counts, time, spike_times=spike_times_list
     )
-    contfrag_diag = compute_model_diagnostics(contfrag_model, contfrag_results, spike_counts, time)
+    contfrag_diag = compute_model_diagnostics(
+        contfrag_model, contfrag_results, spike_counts, time, spike_times=spike_times_list
+    )
 
     # Use full session to find rare low-HPD/low-KL events
     n_time = len(time)

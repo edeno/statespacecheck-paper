@@ -280,9 +280,24 @@ def compute_event_hpd_overlap(
     metric_data = diagnostics["hpd_overlap"][window_slice]
 
     # Compute running average
-    running_avg, _ = compute_running_average(
-        metric_data, window_time, window_size=running_avg_window
-    )
+    event_times = diagnostics.get("event_time")
+    event_values = diagnostics.get("event_hpd_overlap")
+    if event_times is not None and event_values is not None:
+        event_times = np.asarray(event_times)
+        time_start = time[start_idx]
+        time_end = time[end_idx]
+        event_mask = (event_times >= time_start) & (event_times <= time_end)
+        running_avg, _ = compute_running_average(
+            metric_data,
+            window_time,
+            window_size=running_avg_window,
+            event_times=event_times[event_mask],
+            event_values=np.asarray(event_values)[event_mask],
+        )
+    else:
+        running_avg, _ = compute_running_average(
+            metric_data, window_time, window_size=running_avg_window
+        )
 
     # Return mean of running average (excludes NaN)
     return float(np.nanmean(running_avg))
@@ -590,10 +605,10 @@ def main(
     # Compute diagnostics
     print("Computing diagnostics...")
     continuous_diagnostics = compute_model_diagnostics(
-        continuous_model, continuous_results, spike_counts, time
+        continuous_model, continuous_results, spike_counts, time, spike_times=spike_times_list
     )
     contfrag_diagnostics = compute_model_diagnostics(
-        contfrag_model, contfrag_results, spike_counts, time
+        contfrag_model, contfrag_results, spike_counts, time, spike_times=spike_times_list
     )
 
     # Find candidate periods
