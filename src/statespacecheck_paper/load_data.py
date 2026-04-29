@@ -54,13 +54,6 @@ import numpy as np
 import pandas as pd
 from datajoint import DataJointError
 from scipy.ndimage import label
-from spyglass.common import IntervalList, Nwbfile, PositionIntervalMap
-from spyglass.common.common_position import IntervalPositionInfo
-from spyglass.decoding.v0.clusterless import UnitMarks
-from spyglass.linearization.v0.main import IntervalLinearizedPosition, TrackGraph
-from spyglass.position import PositionOutput
-from spyglass.spikesorting.v0 import CuratedSpikeSorting, SortGroup
-from spyglass.utils.nwb_helper_fn import get_nwb_file
 from track_linearization import get_linearized_position
 
 # Ignore warnings
@@ -296,6 +289,11 @@ def _get_position_info(nwb_file_name: str, epoch_name: str, pos_name: str) -> di
     Applies "noPrePostTrialTimes" filtering when available to exclude pre/post
     trial periods from analysis.
     """
+    from spyglass.common import IntervalList
+    from spyglass.common.common_position import IntervalPositionInfo
+    from spyglass.linearization.v0.main import IntervalLinearizedPosition, TrackGraph
+    from spyglass.position import PositionOutput
+
     position_key = {
         "nwb_file_name": nwb_file_name,
         "interval_list_name": pos_name,
@@ -405,6 +403,9 @@ def _get_electrode_group_info(nwb_file_name: str) -> pd.DataFrame:
     This standardization enables pooling neurons by brain region regardless
     of minor labeling variations across recording sessions.
     """
+    from spyglass.common import Nwbfile
+    from spyglass.utils.nwb_helper_fn import get_nwb_file
+
     nwb_file_abspath = Nwbfile.get_abs_path(nwb_file_name)
     nwb_file_handle = get_nwb_file(nwb_file_abspath)
     electrode_group_df = []
@@ -565,6 +566,8 @@ def _get_hpc_marks(nwb_file_name: str) -> tuple[list[np.ndarray], list[np.ndarra
     ValueError
         If no hippocampal marks found in database for this file.
     """
+    from spyglass.decoding.v0.clusterless import UnitMarks
+
     try:
         restriction = {
             "nwb_file_name": nwb_file_name,
@@ -647,6 +650,8 @@ def _get_pfc_spike_times(nwb_file_name: str, brain_area: str) -> list[np.ndarray
     ValueError
         If no curated spikes found for this brain area in this file.
     """
+    from spyglass.spikesorting.v0 import CuratedSpikeSorting, SortGroup
+
     restriction = {
         "nwb_file_name": nwb_file_name,
         "preproc_params_name": "default",
@@ -890,6 +895,8 @@ def load_data(
     _get_spike_data : Neural data loading
     _filter_spike_times : Temporal alignment
     """
+    from spyglass.common import PositionIntervalMap
+
     electrode_group_info = _get_electrode_group_info(nwb_file_name)
 
     pos_name = (
