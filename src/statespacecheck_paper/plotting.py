@@ -1352,14 +1352,26 @@ def plot_combined_diagnostics(
         rotation=270,
     )
 
-    # Create time indices for scatter plots (metrics are now 2D: n_time x n_cells)
+    # Use per-spike event arrays when available so repeated spikes in the same
+    # time-cell bin are represented as distinct diagnostic events.
     n_cells = metrics["hpd_overlap"].shape[1]
     time_indices = np.tile(np.arange(n_time)[:, np.newaxis], (1, n_cells))
 
+    def get_scatter_values(metric_name: str) -> tuple[np.ndarray, np.ndarray]:
+        event_time_ind = metrics.get("event_time_ind")
+        event_values = metrics.get(f"event_{metric_name}")
+        if event_time_ind is not None and event_values is not None:
+            return np.asarray(event_time_ind), np.asarray(event_values)
+        return time_indices.ravel(), metrics[metric_name].ravel()
+
+    hpd_time_ind, hpd_values = get_scatter_values("hpd_overlap")
+    kl_time_ind, kl_values = get_scatter_values("kl_divergence")
+    spike_prob_time_ind, spike_prob_values = get_scatter_values("spike_prob")
+
     # HPDO
     ax_hpdo.scatter(
-        time_indices.ravel(),
-        metrics["hpd_overlap"].ravel(),
+        hpd_time_ind,
+        hpd_values,
         s=0.8,
         alpha=0.6,
         c=COLORS["hpd_overlap"],
@@ -1388,8 +1400,8 @@ def plot_combined_diagnostics(
 
     # KL Divergence
     ax_kl.scatter(
-        time_indices.ravel(),
-        metrics["kl_divergence"].ravel(),
+        kl_time_ind,
+        kl_values,
         s=0.8,
         alpha=0.6,
         c=COLORS["kl_divergence"],
@@ -1418,11 +1430,11 @@ def plot_combined_diagnostics(
 
     # Spike probability: transform to -log10(p) so higher values indicate worse fit
     # This makes interpretation consistent with KL divergence (higher = worse)
-    spike_prob_transformed = -np.log10(np.maximum(metrics["spike_prob"], 1e-10))
+    spike_prob_transformed = -np.log10(np.maximum(spike_prob_values, 1e-10))
     threshold_transformed = -np.log10(np.maximum(thresholds.spike_prob, 1e-10))
     ax_spike.scatter(
-        time_indices.ravel(),
-        spike_prob_transformed.ravel(),
+        spike_prob_time_ind,
+        spike_prob_transformed,
         s=0.8,
         alpha=0.6,
         c=COLORS["metric_combined"],

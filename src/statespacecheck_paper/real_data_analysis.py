@@ -184,6 +184,8 @@ def compute_running_average(
     metric: NDArray[np.float64],
     time: NDArray[np.float64],
     window_size: float = 0.050,
+    event_times: NDArray[np.float64] | None = None,
+    event_values: NDArray[np.float64] | None = None,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Compute running average of per-cell diagnostic metric over time.
 
@@ -204,6 +206,12 @@ def compute_running_average(
         Time values for each bin.
     window_size : float, default 0.050
         Size of the sliding window in seconds.
+    event_times : np.ndarray, shape (n_events,), optional
+        Exact event times. If provided with ``event_values``, the running
+        average is computed directly over events instead of bin/cell matrix
+        entries.
+    event_values : np.ndarray, shape (n_events,), optional
+        Diagnostic values for each event.
 
     Returns
     -------
@@ -232,7 +240,35 @@ def compute_running_average(
     >>> running_avg.shape
     (100,)
     """
-    n_time_pts = metric.shape[0]
+    n_time_pts = len(time)
+
+    if event_times is not None and event_values is not None:
+        event_times = np.asarray(event_times, dtype=np.float64)
+        event_values = np.asarray(event_values, dtype=np.float64)
+
+        valid_events = ~np.isnan(event_values)
+        event_times = event_times[valid_events]
+        event_values = event_values[valid_events]
+
+        if len(event_times) == 0:
+            return np.full(n_time_pts, np.nan), time.copy()
+
+        sort_ind = np.argsort(event_times)
+        sorted_times = event_times[sort_ind]
+        sorted_values = event_values[sort_ind]
+        cumsum = np.concatenate(([0.0], np.cumsum(sorted_values)))
+
+        half_window = window_size / 2.0
+        starts = np.searchsorted(sorted_times, time - half_window, side="left")
+        stops = np.searchsorted(sorted_times, time + half_window, side="right")
+        counts = stops - starts
+        sums = cumsum[stops] - cumsum[starts]
+
+        running_avg = np.full(n_time_pts, np.nan)
+        has_events = counts > 0
+        running_avg[has_events] = sums[has_events] / counts[has_events]
+
+        return running_avg, time.copy()
 
     # Step 1: Compute per-bin event sum and count across cells
     # Each non-NaN entry is one spike event
@@ -264,6 +300,57 @@ def compute_running_average(
     running_avg[has_events] = windowed_sum[has_events] / windowed_count[has_events]
 
     return running_avg, time.copy()
+
+
+def _get_spike_events_from_counts(
+    spike_counts: NDArray[np.int64],
+    time: NDArray[np.float64] | None = None,
+) -> tuple[NDArray[np.intp], NDArray[np.intp], NDArray[np.float64] | None]:
+    """Expand binned spike counts into one event per spike."""
+    spike_time_ind, spike_cell_ind = np.nonzero(spike_counts)
+    counts = spike_counts[spike_time_ind, spike_cell_ind].astype(np.intp)
+
+    spike_time_ind = np.repeat(spike_time_ind, counts).astype(np.intp)
+    spike_cell_ind = np.repeat(spike_cell_ind, counts).astype(np.intp)
+    event_times = None if time is None else np.asarray(time, dtype=np.float64)[spike_time_ind]
+
+    return spike_time_ind, spike_cell_ind, event_times
+
+
+def _get_spike_events_from_spike_times(
+    spike_times: list[NDArray[np.float64]],
+    time: NDArray[np.float64],
+) -> tuple[NDArray[np.intp], NDArray[np.intp], NDArray[np.float64]]:
+    """Map exact spike timestamps to predictive-posterior time indices."""
+    time = np.asarray(time, dtype=np.float64)
+    spike_time_inds = []
+    spike_cell_inds = []
+    event_times = []
+
+    for cell_ind, cell_spike_times in enumerate(spike_times):
+        cell_spike_times = np.asarray(cell_spike_times, dtype=np.float64)
+        in_bounds = (cell_spike_times >= time[0]) & (cell_spike_times <= time[-1])
+        cell_event_times = cell_spike_times[in_bounds]
+        cell_time_inds = np.searchsorted(time, cell_event_times, side="right") - 1
+        cell_time_inds = np.clip(cell_time_inds, 0, len(time) - 1)
+
+        spike_time_inds.append(cell_time_inds.astype(np.intp))
+        spike_cell_inds.append(np.full(len(cell_event_times), cell_ind, dtype=np.intp))
+        event_times.append(cell_event_times)
+
+    if not event_times:
+        return (
+            np.empty(0, dtype=np.intp),
+            np.empty(0, dtype=np.intp),
+            np.empty(0, dtype=np.float64),
+        )
+
+    spike_time_ind = np.concatenate(spike_time_inds)
+    spike_cell_ind = np.concatenate(spike_cell_inds)
+    event_time = np.concatenate(event_times)
+    sort_ind = np.argsort(event_time)
+
+    return spike_time_ind[sort_ind], spike_cell_ind[sort_ind], event_time[sort_ind]
 
 
 # =============================================================================
@@ -324,15 +411,15 @@ def compute_per_cell_diagnostics(
     spike_counts: NDArray[np.int64],
     place_fields: NDArray[np.float64],
     coverage: float = 0.95,
-) -> dict[str, NDArray[np.float64]]:
+    spike_times: list[NDArray[np.float64]] | None = None,
+    time: NDArray[np.float64] | None = None,
+) -> dict[str, NDArray[np.floating] | NDArray[np.intp]]:
     """Compute per-cell diagnostic metrics for model checking.
 
     Computes HPD overlap, KL divergence, and spike probability ranking for each
-    cell at each time point. Metrics are set to NaN for cells that did not fire
-    at a given time point (uninformative likelihood).
-
-    The likelihood for each spike is computed assuming spike count = 1,
-    which is appropriate when spike counts are typically 0 or 1 per time bin.
+    spike event. Matrix outputs are retained for backward-compatible plotting,
+    and event arrays preserve one row per spike with exact timestamps when
+    ``spike_times`` and ``time`` are supplied.
 
     Parameters
     ----------
@@ -345,6 +432,12 @@ def compute_per_cell_diagnostics(
         This is the format returned by non_local_detector.
     coverage : float, default 0.95
         Coverage probability for HPD region computation.
+    spike_times : list of np.ndarray, optional
+        Exact spike timestamps for each cell. If supplied, diagnostics are
+        computed per spike event and plotted at exact spike times.
+    time : np.ndarray, optional
+        Decoder time grid used to map spike timestamps to predictive posterior
+        rows. Required when ``spike_times`` is supplied.
 
     Returns
     -------
@@ -353,13 +446,16 @@ def compute_per_cell_diagnostics(
         - 'hpd_overlap': shape (n_time, n_cells), NaN when cell has no spike
         - 'kl_divergence': shape (n_time, n_cells), NaN when cell has no spike
         - 'spike_prob': shape (n_time, n_cells), NaN when cell has no spike
+        - 'event_time': shape (n_spikes,), exact spike time when available
+        - 'event_hpd_overlap': shape (n_spikes,), one value per spike
+        - 'event_kl_divergence': shape (n_spikes,), one value per spike
+        - 'event_spike_prob': shape (n_spikes,), one value per spike
 
     Notes
     -----
-    The likelihood P(k=1 | position) is computed for each spike event using
-    the Poisson distribution with rate lambda = place_fields (already in
-    spikes/bin from non_local_detector). We assume each bin contains at most
-    one spike, so the likelihood is always computed with k=1.
+    The likelihood P(k=1 | position) is computed once for each observed spike.
+    Multiple spikes from the same cell in the same decoder bin contribute
+    multiple event rows rather than being collapsed into one binned count.
 
     This function delegates to ``compute_per_cell_diagnostics_from_rates`` in
     ``analysis.py`` to ensure identical computation for simulated and real data.
@@ -381,8 +477,18 @@ def compute_per_cell_diagnostics(
     predictive_posterior = np.asarray(predictive_posterior)
     spike_counts = np.asarray(spike_counts)
 
-    # Find all spike events: (time_index, cell_index) pairs
-    spike_time_ind, spike_cell_ind = np.nonzero(spike_counts)
+    event_times: NDArray[np.float64] | None
+    if spike_times is not None:
+        if time is None:
+            raise ValueError("time must be provided when spike_times is provided")
+        spike_time_ind, spike_cell_ind, event_times = _get_spike_events_from_spike_times(
+            spike_times, time
+        )
+    else:
+        spike_time_ind, spike_cell_ind, event_times = _get_spike_events_from_counts(
+            spike_counts,
+            time,
+        )
 
     # Use shared function from analysis.py
     result = compute_per_cell_diagnostics_from_rates(
@@ -393,8 +499,20 @@ def compute_per_cell_diagnostics(
         coverage=coverage,
     )
 
-    # Cast to float64 for type consistency
-    return {k: v.astype(np.float64) for k, v in result.items()}
+    result_float = dict(result)
+    for key in [
+        "hpd_overlap",
+        "kl_divergence",
+        "spike_prob",
+        "per_spike_likelihood",
+        "event_hpd_overlap",
+        "event_kl_divergence",
+        "event_spike_prob",
+    ]:
+        result_float[key] = np.asarray(result_float[key], dtype=np.float64)
+    if event_times is not None:
+        result_float["event_time"] = event_times.astype(np.float64)
+    return result_float
 
 
 def get_state_marginalized_posterior(
@@ -628,7 +746,8 @@ def compute_model_diagnostics(
     results: Any,
     spike_counts: NDArray[np.int64],
     time: NDArray[np.float64],
-) -> dict[str, NDArray[np.float64]]:
+    spike_times: list[NDArray[np.float64]] | None = None,
+) -> dict[str, NDArray[np.floating] | NDArray[np.intp]]:
     """Compute per-cell diagnostics for a fitted decoder model.
 
     This is a convenience function that chains together extract_place_fields,
@@ -645,12 +764,28 @@ def compute_model_diagnostics(
         Spike count matrix.
     time : np.ndarray, shape (n_time,)
         Time values.
+    spike_times : list of np.ndarray, optional
+        Exact spike timestamps for each cell. If supplied, diagnostics are
+        computed as one event per spike instead of one event per nonzero bin.
 
     Returns
     -------
     diagnostics : dict[str, np.ndarray]
-        Dictionary with keys 'hpd_overlap', 'kl_divergence', 'spike_prob'.
-        Each has shape (n_time, n_cells).
+        Dictionary with keys:
+        - 'hpd_overlap': shape (n_time, n_cells), NaN where no spike
+        - 'kl_divergence': shape (n_time, n_cells), NaN where no spike
+        - 'spike_prob': shape (n_time, n_cells), NaN where no spike
+        - 'per_spike_likelihood': shape (n_spikes, n_bins), normalized
+          likelihood distribution for each individual spike event
+        - 'event_time_ind': shape (n_spikes,), time index for each spike
+        - 'event_cell_ind': shape (n_spikes,), cell index for each spike
+        - 'event_hpd_overlap': shape (n_spikes,), per-spike HPD overlap
+        - 'event_kl_divergence': shape (n_spikes,), per-spike KL divergence
+        - 'event_spike_prob': shape (n_spikes,), per-spike spike probability
+        - 'event_time': shape (n_spikes,), exact spike timestamps in seconds
+          (present whenever ``time`` is supplied; with ``spike_times`` these
+          are the original timestamps, otherwise they are the decoder time
+          grid values at each event's time index)
 
     Examples
     --------
@@ -693,6 +828,8 @@ def compute_model_diagnostics(
         predictive_posterior,
         spike_counts,
         place_fields,
+        spike_times=spike_times,
+        time=time,
     )
 
     return diagnostics

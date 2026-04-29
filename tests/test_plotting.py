@@ -503,6 +503,69 @@ class TestPlotCombinedDiagnostics:
         assert isinstance(fig, plt.Figure)
         plt.close(fig)
 
+    def test_prefers_event_diagnostics_for_scatter_plots(self) -> None:
+        """Duplicate spike events in one bin are plotted as separate diagnostics."""
+        rng = np.random.default_rng(42)
+        n_time, n_bins, n_cells = 3500, 30, 2
+        xs = np.linspace(0, 1, n_bins)
+        x_true = rng.uniform(0, n_bins - 1, n_time)
+        spikes = np.zeros((n_time, n_cells), dtype=int)
+        spikes[10, 0] = 2
+
+        metrics = {
+            "predictive": rng.dirichlet(np.ones(n_bins), size=n_time),
+            "likelihood": rng.dirichlet(np.ones(n_bins), size=n_time),
+            "spike_likelihood": np.full((n_time, n_bins), np.nan),
+            "posterior": rng.dirichlet(np.ones(n_bins), size=n_time),
+            "hpd_overlap": np.full((n_time, n_cells), np.nan),
+            "kl_divergence": np.full((n_time, n_cells), np.nan),
+            "spike_prob": np.full((n_time, n_cells), np.nan),
+            "per_spike_likelihood": rng.dirichlet(np.ones(n_bins), size=2),
+            "spike_time_ind": np.array([10, 10]),
+            "spike_cell_ind": np.array([0, 0]),
+            "event_time_ind": np.array([10, 10]),
+            "event_cell_ind": np.array([0, 0]),
+            "event_hpd_overlap": np.array([0.25, 0.75]),
+            "event_kl_divergence": np.array([1.0, 3.0]),
+            "event_spike_prob": np.array([0.1, 0.01]),
+        }
+        metrics["spike_likelihood"][10] = metrics["per_spike_likelihood"][0]
+        metrics["hpd_overlap"][10, 0] = 0.5
+        metrics["kl_divergence"][10, 0] = 2.0
+        metrics["spike_prob"][10, 0] = 0.05
+
+        thresholds = Thresholds(hpd_overlap=0.8, kl_divergence=2.0, spike_prob=0.05)
+        params = DecodeParams(
+            T_remap_start=2100,
+            T_remap_end=2400,
+            T_recovery1_end=2600,
+            T_flat_end=2900,
+            T_recovery2_end=3100,
+            T_fast_end=3300,
+            T_recovery3_end=3400,
+            T_slow_end=3450,
+            remap_from_to=((0, 1), (1, 0)),
+        )
+
+        fig = plot_combined_diagnostics(
+            xs,
+            x_true,
+            spikes,
+            metrics,
+            thresholds,
+            params,
+            placefield_centers=np.linspace(0, 1, n_cells),
+        )
+
+        hpd_offsets = fig.axes[3].collections[0].get_offsets()
+        np.testing.assert_array_equal(hpd_offsets[:, 0], [10, 10])
+        np.testing.assert_allclose(hpd_offsets[:, 1], [0.25, 0.75])
+
+        spike_prob_offsets = fig.axes[5].collections[0].get_offsets()
+        np.testing.assert_array_equal(spike_prob_offsets[:, 0], [10, 10])
+        np.testing.assert_allclose(spike_prob_offsets[:, 1], [1.0, 2.0])
+        plt.close(fig)
+
 
 class TestExtractContiguousRegions:
     """Tests for extract_contiguous_regions function."""

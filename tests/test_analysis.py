@@ -364,6 +364,37 @@ class TestDecodeAndDiagnostics:
         assert not np.isnan(result["spike_prob"][4, 0])  # t=4: both have spikes
         assert not np.isnan(result["spike_prob"][4, 1])
 
+    def test_count_greater_than_one_expands_to_multiple_events(self) -> None:
+        """Test that count-valued spikes are represented as repeated events."""
+        n_bins = 11
+        spikes = np.zeros((4, 2), dtype=int)
+        spikes[1, 0] = 2
+        spikes[2, 1] = 1
+        xs = np.linspace(0, 100, n_bins)
+        transition_matrix = np.eye(n_bins) * 0.9 + 0.1 / n_bins
+        pf_centers = np.array([25.0, 75.0])
+        pf_width = 5.0
+        rate_scale = 0.1
+
+        result = decode_and_diagnostics(
+            spikes,
+            xs,
+            transition_matrix,
+            pf_centers,
+            pf_width,
+            rate_scale,
+            remap_window=(10, 10),
+            remap_from_to=(0, 1),
+        )
+
+        np.testing.assert_array_equal(result["spike_time_ind"], [1, 1, 2])
+        np.testing.assert_array_equal(result["spike_cell_ind"], [0, 0, 1])
+        assert result["event_kl_divergence"].shape == (3,)
+        np.testing.assert_allclose(
+            result["event_kl_divergence"][:2],
+            np.repeat(result["kl_divergence"][1, 0], 2),
+        )
+
     def test_with_narrow_transition_matrix(self) -> None:
         """Test that narrow transition matrix is used in specified window."""
         # Arrange

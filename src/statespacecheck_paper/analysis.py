@@ -36,7 +36,6 @@ goodness-of-fit.
 
 from __future__ import annotations
 
-import warnings
 from dataclasses import dataclass
 
 import numpy as np
@@ -523,13 +522,12 @@ def decode_and_diagnostics(
         else:
             posterior[t] = unnormalized_posterior / posterior_sum
 
-    # Find all spike events (excluding t=0 which has no valid prior)
-    if np.any(spikes > 1):
-        warnings.warn(
-            "Spike counts > 1 detected; per-cell diagnostics assume k=1 per bin.",
-            stacklevel=2,
-        )
+    # Find all spike events (excluding t=0 which has no valid prior). Count
+    # matrices are expanded so a bin with count k contributes k spike events.
     spike_time_ind, spike_cell_ind = np.nonzero(spikes[1:])
+    spike_counts_at_events = spikes[1:][spike_time_ind, spike_cell_ind].astype(np.intp)
+    spike_time_ind = np.repeat(spike_time_ind, spike_counts_at_events)
+    spike_cell_ind = np.repeat(spike_cell_ind, spike_counts_at_events)
     spike_time_ind = spike_time_ind + 1  # Adjust for offset from [1:]
 
     # Compute rates from the ORIGINAL (unremapped) place field parameters.
@@ -587,6 +585,11 @@ def decode_and_diagnostics(
         "per_spike_likelihood": decoder_per_spike_lik,
         "spike_time_ind": diagnostics["spike_time_ind"],
         "spike_cell_ind": diagnostics["spike_cell_ind"],
+        "event_time_ind": diagnostics["event_time_ind"],
+        "event_cell_ind": diagnostics["event_cell_ind"],
+        "event_hpd_overlap": diagnostics["event_hpd_overlap"],
+        "event_kl_divergence": diagnostics["event_kl_divergence"],
+        "event_spike_prob": diagnostics["event_spike_prob"],
     }
 
 
@@ -632,17 +635,16 @@ def compute_per_cell_diagnostics_from_rates(
           likelihood distribution for each individual spike event
         - 'spike_time_ind': shape (n_spikes,), time index for each spike
         - 'spike_cell_ind': shape (n_spikes,), cell index for each spike
+        - 'event_hpd_overlap': shape (n_spikes,), per-spike HPD overlap
+        - 'event_kl_divergence': shape (n_spikes,), per-spike KL divergence
+        - 'event_spike_prob': shape (n_spikes,), per-spike spike probability
 
     Notes
     -----
-    The likelihood P(k=1 | position) is computed for each spike event using
-    the Poisson distribution. This assumes each time bin contains at most one
-    spike per cell, so the likelihood is always computed with k=1. If a time
-    bin contains multiple spikes from the same cell (spike_count > 1), only
-    one event is recorded and scored as k=1, ignoring the additional spikes.
-    This approximation is valid when time bins are short enough that
-    multi-spike bins are rare (e.g., 500 μs bins for typical hippocampal
-    firing rates). A warning is issued upstream if counts > 1 are detected.
+    The likelihood P(k=1 | position) is computed for each spike event. If
+    multiple spikes occur in the same time/cell bin, callers should pass
+    repeated entries in ``spike_time_ind`` and ``spike_cell_ind`` so each
+    observed spike contributes one event to the returned event arrays.
     """
     n_time, n_bins = predictive_posterior.shape
     n_cells = rates.shape[1]
@@ -655,6 +657,9 @@ def compute_per_cell_diagnostics_from_rates(
 
     # Per-spike likelihood: one distribution per spike event
     per_spike_likelihood: NDArray[np.floating] = np.empty((n_spikes, n_bins))
+    event_hpd_overlap: NDArray[np.floating] = np.empty(n_spikes)
+    event_kl_divergence: NDArray[np.floating] = np.empty(n_spikes)
+    event_spike_prob: NDArray[np.floating] = np.empty(n_spikes)
 
     if n_spikes > 0:
         # Gather predictive posterior at spike times: (n_spikes, n_bins)
@@ -675,6 +680,8 @@ def compute_per_cell_diagnostics_from_rates(
         # Compute diagnostics for all spikes in one vectorized call
         hpd_at_spikes = ssc.hpd_overlap(pred_at_spikes, lik_at_spikes, coverage=coverage)
         kl_at_spikes = ssc.kl_divergence(pred_at_spikes, lik_at_spikes)
+        event_hpd_overlap = hpd_at_spikes
+        event_kl_divergence = kl_at_spikes
 
         # Scatter results back to (n_time, n_cells) arrays
         hpd_overlap[spike_time_ind, spike_cell_ind] = hpd_at_spikes
@@ -695,9 +702,11 @@ def compute_per_cell_diagnostics_from_rates(
         time_to_idx[unique_spike_times] = np.arange(len(unique_spike_times))
 
         # Scatter spike_prob values to output array at spike locations
-        spike_prob[spike_time_ind, spike_cell_ind] = spike_prob_at_unique_times[
+        spike_prob_for_events = spike_prob_at_unique_times[
             time_to_idx[spike_time_ind], spike_cell_ind
         ]
+        event_spike_prob = spike_prob_for_events
+        spike_prob[spike_time_ind, spike_cell_ind] = spike_prob_for_events
 
     return {
         "hpd_overlap": hpd_overlap,
@@ -706,6 +715,11 @@ def compute_per_cell_diagnostics_from_rates(
         "per_spike_likelihood": per_spike_likelihood,
         "spike_time_ind": spike_time_ind,
         "spike_cell_ind": spike_cell_ind,
+        "event_time_ind": spike_time_ind,
+        "event_cell_ind": spike_cell_ind,
+        "event_hpd_overlap": event_hpd_overlap,
+        "event_kl_divergence": event_kl_divergence,
+        "event_spike_prob": event_spike_prob,
     }
 
 

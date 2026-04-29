@@ -1302,10 +1302,16 @@ def plot_per_cell_diagnostic_scatter(
         time_arr = time_arr[time_slice_ind]
         metric = metric[time_slice_ind]
 
+    event_times = diagnostics.get("event_time")
+    event_metric_values = diagnostics.get(f"event_{metric_name}")
+
     # Store raw metric for running average computation (before transformation)
     # The running average should be computed on raw values per manuscript formula:
     # D = sum(metric_k * I(t_k in window)) / sum(I(t_k in window))
     raw_metric = metric.copy()
+    raw_event_metric_values = (
+        None if event_metric_values is None else np.asarray(event_metric_values).copy()
+    )
 
     # Transform spike_prob to -log10 scale (matching Figure 3)
     # Higher values indicate worse fit (low probability)
@@ -1316,7 +1322,19 @@ def plot_per_cell_diagnostic_scatter(
 
     n_time, n_cells = metric.shape
 
-    if spike_times is not None:
+    if event_times is not None and raw_event_metric_values is not None:
+        event_times_arr = np.asarray(event_times)
+        time_min, time_max = time_arr.min(), time_arr.max()
+        event_mask = (event_times_arr >= time_min) & (event_times_arr < time_max)
+
+        x_positions_arr = event_times_arr[event_mask]
+        y_values_arr = raw_event_metric_values[event_mask]
+        if metric_name == "spike_prob":
+            y_values_arr = -np.log10(np.maximum(y_values_arr, 1e-10))
+        valid = ~np.isnan(y_values_arr)
+        x_positions_arr = x_positions_arr[valid]
+        y_values_arr = y_values_arr[valid]
+    elif spike_times is not None:
         # Use actual spike times for x-positions to align with raster
         # Find the time range for filtering spikes
         time_min, time_max = time_arr.min(), time_arr.max()
@@ -1368,9 +1386,21 @@ def plot_per_cell_diagnostic_scatter(
 
         # Compute running average on RAW values (before transformation)
         # per manuscript formula, then transform for display
-        running_avg, _ = compute_running_average(
-            raw_metric, time_arr, window_size=running_average_window
-        )
+        if event_times is not None and raw_event_metric_values is not None:
+            event_times_arr = np.asarray(event_times)
+            time_min, time_max = time_arr.min(), time_arr.max()
+            event_mask = (event_times_arr >= time_min) & (event_times_arr < time_max)
+            running_avg, _ = compute_running_average(
+                raw_metric,
+                time_arr,
+                window_size=running_average_window,
+                event_times=event_times_arr[event_mask],
+                event_values=raw_event_metric_values[event_mask],
+            )
+        else:
+            running_avg, _ = compute_running_average(
+                raw_metric, time_arr, window_size=running_average_window
+            )
 
         # Transform running average if needed (same as scatter points)
         if metric_name == "spike_prob":

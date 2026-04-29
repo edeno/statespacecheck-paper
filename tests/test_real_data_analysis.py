@@ -239,6 +239,36 @@ class TestComputePerCellDiagnostics:
         assert np.isnan(result["hpd_overlap"][0, 1])
         assert np.isnan(result["hpd_overlap"][0, 2])
 
+    def test_duplicate_spikes_in_same_bin_are_separate_events(self) -> None:
+        """Test that same-bin spikes remain separate event-level diagnostics."""
+        n_time, n_bins, n_cells = 4, 8, 1
+        rng = np.random.default_rng(42)
+        predictive = rng.dirichlet(np.ones(n_bins), size=n_time)
+        place_fields = rng.random((n_cells, n_bins)) + 0.1
+        time = np.arange(n_time, dtype=np.float64)
+        spike_counts = np.zeros((n_time, n_cells), dtype=np.int64)
+        spike_counts[1, 0] = 2
+        spike_times = [np.array([1.10, 1.20])]
+
+        result = compute_per_cell_diagnostics(
+            predictive,
+            spike_counts,
+            place_fields,
+            spike_times=spike_times,
+            time=time,
+        )
+
+        np.testing.assert_allclose(result["event_time"], [1.10, 1.20])
+        np.testing.assert_array_equal(result["event_time_ind"], [1, 1])
+        np.testing.assert_array_equal(result["event_cell_ind"], [0, 0])
+        assert result["event_hpd_overlap"].shape == (2,)
+        assert result["event_kl_divergence"].shape == (2,)
+        assert result["event_spike_prob"].shape == (2,)
+        np.testing.assert_allclose(
+            result["event_kl_divergence"],
+            np.repeat(result["kl_divergence"][1, 0], 2),
+        )
+
 
 class TestGetStateMarginalizedPosterior:
     """Tests for get_state_marginalized_posterior function."""
@@ -395,6 +425,35 @@ class TestPlotPerCellDiagnosticScatterWithSpikeTimes:
 
         plt.close(fig)
 
+    def test_event_diagnostics_plot_at_exact_spike_times(self) -> None:
+        """Test event diagnostics are plotted directly without bin remapping."""
+        import matplotlib.pyplot as plt
+
+        from statespacecheck_paper.real_data_plotting import (
+            plot_per_cell_diagnostic_scatter,
+        )
+
+        time = np.linspace(0.0, 0.9, 10)
+        diagnostics = {
+            "hpd_overlap": np.full((10, 1), np.nan),
+            "event_time": np.array([0.151, 0.157]),
+            "event_hpd_overlap": np.array([0.8, 0.6]),
+        }
+        diagnostics["hpd_overlap"][1, 0] = 0.7
+
+        fig, ax = plt.subplots()
+        plot_per_cell_diagnostic_scatter(time, diagnostics, ax=ax)
+
+        offsets = ax.collections[0].get_offsets()
+        valid_mask = ~np.ma.getmask(offsets).any(axis=1)
+        valid_offsets = offsets[valid_mask]
+
+        assert len(valid_offsets) == 2
+        np.testing.assert_allclose(valid_offsets[:, 0], [0.151, 0.157])
+        np.testing.assert_allclose(valid_offsets[:, 1], [0.8, 0.6])
+
+        plt.close(fig)
+
     def test_without_spike_times_uses_bin_values(self) -> None:
         """Test that without spike_times, scatter uses bin values."""
         import matplotlib.pyplot as plt
@@ -509,6 +568,27 @@ class TestComputeRunningAverage:
 
         # Results should be different
         assert not np.allclose(result1, result2)
+
+    def test_event_inputs_count_duplicate_spikes(self) -> None:
+        """Test event running average counts duplicate events at same time."""
+        from statespacecheck_paper.real_data_analysis import compute_running_average
+
+        metric = np.full((3, 1), np.nan)
+        time = np.array([0.0, 1.0, 2.0])
+        event_times = np.array([1.0, 1.0])
+        event_values = np.array([1.0, 3.0])
+
+        running_avg, _ = compute_running_average(
+            metric,
+            time,
+            window_size=0.1,
+            event_times=event_times,
+            event_values=event_values,
+        )
+
+        assert np.isnan(running_avg[0])
+        assert running_avg[1] == 2.0
+        assert np.isnan(running_avg[2])
 
 
 class TestPlotPerCellDiagnosticScatterWithRunningAverage:
