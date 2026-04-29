@@ -53,7 +53,6 @@ import networkx as nx
 import numpy as np
 import pandas as pd
 from datajoint import DataJointError
-from scipy.ndimage import label
 from track_linearization import get_linearized_position
 
 # Ignore warnings
@@ -500,10 +499,17 @@ def _detect_coincident_spikes(
     sort_group_id = sort_group_id[sort_ind]
     time_bin_ind = time_bin_ind[sort_ind]
 
-    # Find differences and label close spikes
-    is_close = np.diff(sorted_spike_times) < spike_closeness_threshold
-    is_close = np.concatenate([[False], is_close])
-    labels, _ = label(is_close)
+    if len(sorted_spike_times) == 0:
+        empty_indices = [np.array([], dtype=int) for _ in spike_times]
+        return [spike_time.copy() for spike_time in spike_times], empty_indices
+
+    # Label connected components where adjacent sorted spikes are close.
+    # The first spike in a close run must share the run label; otherwise one
+    # spike from every artifact cluster is retained.
+    starts_new_cluster = np.concatenate(
+        [[True], np.diff(sorted_spike_times) >= spike_closeness_threshold]
+    )
+    labels = np.cumsum(starts_new_cluster) - 1
 
     # Create a DataFrame for further analysis
     df = pd.DataFrame(
@@ -514,15 +520,25 @@ def _detect_coincident_spikes(
             "spike_times": sorted_spike_times,
         },
     )
-    # Calculate the fraction of each group and the median spike times
+    # Calculate the fraction of groups represented in each close-spike cluster.
     n_sort_groups = len(spike_times)
-    frac = df.loc[df.labels > 0].groupby("labels").sort_group_id.nunique() / n_sort_groups
-    frac = frac[frac > max_coincident_fraction]
+    grouped = df.groupby("labels").sort_group_id
+    cluster_sizes = df.groupby("labels").size()
+    n_groups_per_cluster = grouped.nunique()
+    frac = n_groups_per_cluster / n_sort_groups
+    artifact_labels = frac[
+        (frac > max_coincident_fraction) & (cluster_sizes > 1) & (n_groups_per_cluster > 1)
+    ].index
 
-    df = df.loc[~df.labels.isin(frac.index)]
+    keep_masks = [np.ones(len(spike_time), dtype=bool) for spike_time in spike_times]
+    artifact_rows = df.loc[df.labels.isin(artifact_labels)]
+    for row in artifact_rows.itertuples(index=False):
+        keep_masks[row.sort_group_id][row.time_bin_ind] = False
 
-    filtered_spike_times = df.groupby("sort_group_id").spike_times.apply(np.array).tolist()
-    filtered_time_bin_ind = df.groupby("sort_group_id").time_bin_ind.apply(np.array).tolist()
+    filtered_spike_times = [
+        spike_time[keep_mask] for spike_time, keep_mask in zip(spike_times, keep_masks, strict=True)
+    ]
+    filtered_time_bin_ind = [np.flatnonzero(keep_mask) for keep_mask in keep_masks]
 
     return filtered_spike_times, filtered_time_bin_ind
 
