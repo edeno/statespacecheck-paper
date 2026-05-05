@@ -331,6 +331,177 @@ class RasterPanel(pg.PlotWidget):
 
 
 # ---------------------------------------------------------------------------
+# Slice panel (1D posterior + likelihood at the current center time)
+# ---------------------------------------------------------------------------
+
+
+# Posterior is solid; likelihood is filled-area; they share the position axis.
+_LIKELIHOOD_PEN_RGB = (200, 90, 0)
+_TRUE_POSITION_PEN = pg.mkPen((50, 50, 50), width=1, style=QtCore.Qt.PenStyle.DashLine)
+# Per-state colors (Continuous, Fragmented for ContFrag).
+_STATE_POSTERIOR_RGB: tuple[tuple[int, int, int], ...] = (
+    (31, 119, 180),  # blue
+    (44, 160, 44),  # green
+)
+_STATE_LIKELIHOOD_RGB: tuple[tuple[int, int, int], ...] = (
+    (255, 127, 14),  # orange
+    (214, 39, 40),  # red
+)
+
+
+class SlicePanel(pg.PlotWidget):
+    """1D animated posterior + likelihood curves at the current center time.
+
+    The hot path is ``update_for_index(t_idx)``: it indexes one
+    pre-loaded window's float32 row and calls ``setData`` on each
+    curve. This must stay sub-millisecond so the slice animates
+    smoothly while the user scrolls.
+
+    For multi-state models (ContFrag) the panel switches to
+    stacked-by-state rendering: one posterior curve and one
+    likelihood-fill per state, color-coded. A "sum over state" toggle
+    is intentionally deferred to a later phase; until then both states
+    are always visible.
+    """
+
+    def __init__(
+        self,
+        *,
+        position_bins: NDArray[np.float64],
+        n_states: int,
+    ) -> None:
+        super().__init__()
+        self.setBackground("w")
+        self.setMenuEnabled(False)
+        self.setMouseEnabled(x=False, y=False)
+        self.setLabel("bottom", "Position (cm)")
+        self.setLabel("left", "Density")
+        self.getPlotItem().setTitle("Slice at center time")
+
+        self._position_bins = np.asarray(position_bins, dtype=np.float64)
+        self._n_pos = int(self._position_bins.shape[0])
+        self._n_states = max(1, int(n_states))
+        self._zero_curve = np.zeros(self._n_pos, dtype=np.float32)
+
+        # Likelihood alpha — set by an external slider (0..255).
+        self._likelihood_alpha = 140
+
+        self._posterior_curves: list[pg.PlotDataItem] = []
+        self._likelihood_curves: list[pg.PlotDataItem] = []
+        self._likelihood_baseline_curves: list[pg.PlotDataItem] = []
+        self._likelihood_fills: list[pg.FillBetweenItem] = []
+        for s in range(self._n_states):
+            post_rgb = _STATE_POSTERIOR_RGB[s % len(_STATE_POSTERIOR_RGB)]
+            lik_rgb = _STATE_LIKELIHOOD_RGB[s % len(_STATE_LIKELIHOOD_RGB)]
+            post_curve = pg.PlotDataItem(
+                self._position_bins,
+                self._zero_curve,
+                pen=pg.mkPen(post_rgb, width=2),
+            )
+            self.addItem(post_curve)
+            self._posterior_curves.append(post_curve)
+
+            # Likelihood is shown as a filled area between a zero baseline
+            # and the curve. We keep both curves (top + baseline) so the
+            # ``FillBetweenItem`` can update via the curves.
+            lik_top = pg.PlotDataItem(
+                self._position_bins,
+                self._zero_curve,
+                pen=pg.mkPen(_LIKELIHOOD_PEN_RGB, width=1),
+            )
+            lik_base = pg.PlotDataItem(self._position_bins, self._zero_curve, pen=None)
+            self.addItem(lik_top)
+            self.addItem(lik_base)
+            self._likelihood_curves.append(lik_top)
+            self._likelihood_baseline_curves.append(lik_base)
+            fill = pg.FillBetweenItem(
+                lik_top,
+                lik_base,
+                brush=pg.mkBrush(*lik_rgb, self._likelihood_alpha),
+            )
+            self.addItem(fill)
+            self._likelihood_fills.append(fill)
+
+        # True animal position marker.
+        self._true_position_line = pg.InfiniteLine(
+            angle=90,
+            movable=False,
+            pen=_TRUE_POSITION_PEN,
+        )
+        self.addItem(self._true_position_line)
+
+        # Window-buffer state. The viewer pushes a freshly loaded
+        # window via ``set_window_buffer``; subsequent
+        # ``update_for_index`` calls index into it.
+        self._buffer_slice: slice | None = None
+        self._buffer_post: NDArray[np.float32] | None = None
+        self._buffer_lik: NDArray[np.float32] | None = None
+
+    # ------------------------------------------------------------------
+    # Data plumbing
+    # ------------------------------------------------------------------
+
+    def set_window_buffer(
+        self,
+        sl: slice,
+        post: NDArray[np.float32],
+        lik: NDArray[np.float32],
+    ) -> None:
+        """Cache the most recent window for fast per-tick row access.
+
+        ``post`` and ``lik`` are the full ``(n_visible, n_state_bins)``
+        arrays exactly as ``Figure4DataSource.load_*`` returned them
+        (NaN-cleaned and exp'd by the worker thread). We store them as
+        a ring of one window — the simplest safe option, since each
+        new ``set_window_buffer`` call lines up with a fresh load that
+        already brought the data into RAM.
+        """
+        self._buffer_slice = sl
+        self._buffer_post = post
+        self._buffer_lik = lik
+
+    def update_for_index(self, t_idx: int, true_position: float) -> None:
+        """Update the curves for a single decoder time index.
+
+        ``t_idx`` is an absolute decoder index. If it falls outside the
+        currently buffered window, this method silently does nothing
+        and waits for the next buffer; the viewer triggers a fresh load
+        whenever the center moves outside the visible window.
+        """
+        sl = self._buffer_slice
+        post = self._buffer_post
+        lik = self._buffer_lik
+        if sl is None or post is None or lik is None:
+            return
+        if not (sl.start <= t_idx < sl.stop):
+            return
+        local_idx = t_idx - sl.start
+        post_row = post[local_idx]
+        lik_row = lik[local_idx]
+        if self._n_states == 1:
+            self._posterior_curves[0].setData(self._position_bins, post_row)
+            self._likelihood_curves[0].setData(self._position_bins, lik_row)
+        else:
+            # Reshape (n_state_bins,) -> (n_states, n_pos) for stacked rendering.
+            post_rs = post_row.reshape(self._n_states, self._n_pos)
+            lik_rs = lik_row.reshape(self._n_states, self._n_pos)
+            for s in range(self._n_states):
+                self._posterior_curves[s].setData(self._position_bins, post_rs[s])
+                self._likelihood_curves[s].setData(self._position_bins, lik_rs[s])
+        self._true_position_line.setPos(true_position)
+
+    def set_likelihood_alpha(self, alpha: int) -> None:
+        """Adjust the likelihood-fill opacity (0..255)."""
+        alpha = int(np.clip(alpha, 0, 255))
+        if alpha == self._likelihood_alpha:
+            return
+        self._likelihood_alpha = alpha
+        for s, fill in enumerate(self._likelihood_fills):
+            lik_rgb = _STATE_LIKELIHOOD_RGB[s % len(_STATE_LIKELIHOOD_RGB)]
+            fill.setBrush(pg.mkBrush(*lik_rgb, alpha))
+
+
+# ---------------------------------------------------------------------------
 # Main window
 # ---------------------------------------------------------------------------
 
@@ -372,17 +543,26 @@ class Figure4Viewer(QtWidgets.QMainWindow):
 
     def _build_panels(self) -> None:
         ds = self._ds
+        # Heatmap and slice panels use the full per-state position grid
+        # (256 bins, including non-interior edges that the worker
+        # NaN-cleans to zero). ``position_bins`` (248 interior) is only
+        # used for things that operate on the interior subset, like
+        # place-field peaks.
         self.posterior_panel = PosteriorPanel(
-            position_bins=ds.position_bins,
+            position_bins=ds.position_grid_full,
             n_states=ds.n_states,
         )
         self.likelihood_panel = LikelihoodPanel(
-            position_bins=ds.position_bins,
+            position_bins=ds.position_grid_full,
             n_states=ds.n_states,
         )
         self.raster_panel = RasterPanel(
             n_cells=ds.n_cells,
             place_field_peaks=ds.place_field_peaks,
+        )
+        self.slice_panel = SlicePanel(
+            position_bins=ds.position_grid_full,
+            n_states=ds.n_states,
         )
         # Link x-axes so any zoom/range change propagates.
         self.likelihood_panel.setXLink(self.posterior_panel)
@@ -392,13 +572,24 @@ class Figure4Viewer(QtWidgets.QMainWindow):
         central = QtWidgets.QWidget(self)
         self.setCentralWidget(central)
 
-        layout = QtWidgets.QVBoxLayout(central)
-        layout.setContentsMargins(4, 4, 4, 4)
-        layout.setSpacing(4)
+        outer = QtWidgets.QVBoxLayout(central)
+        outer.setContentsMargins(4, 4, 4, 4)
+        outer.setSpacing(4)
 
-        layout.addWidget(self.posterior_panel, stretch=2)
-        layout.addWidget(self.likelihood_panel, stretch=2)
-        layout.addWidget(self.raster_panel, stretch=1)
+        # Horizontal split: time-axis panels (left, ~70%) | slice panel (right, ~30%).
+        split = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
+        time_axis = QtWidgets.QWidget()
+        time_axis_layout = QtWidgets.QVBoxLayout(time_axis)
+        time_axis_layout.setContentsMargins(0, 0, 0, 0)
+        time_axis_layout.setSpacing(2)
+        time_axis_layout.addWidget(self.posterior_panel, stretch=2)
+        time_axis_layout.addWidget(self.likelihood_panel, stretch=2)
+        time_axis_layout.addWidget(self.raster_panel, stretch=1)
+        split.addWidget(time_axis)
+        split.addWidget(self.slice_panel)
+        split.setStretchFactor(0, 7)
+        split.setStretchFactor(1, 3)
+        outer.addWidget(split, stretch=1)
 
         controls = QtWidgets.QWidget(central)
         controls_layout = QtWidgets.QHBoxLayout(controls)
@@ -415,7 +606,16 @@ class Figure4Viewer(QtWidgets.QMainWindow):
         self._time_label.setMinimumWidth(220)
         controls_layout.addWidget(self._time_label)
 
-        layout.addWidget(controls)
+        controls_layout.addSpacing(12)
+        controls_layout.addWidget(QtWidgets.QLabel("Likelihood α:"))
+        self._alpha_slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
+        self._alpha_slider.setRange(0, 255)
+        self._alpha_slider.setValue(140)
+        self._alpha_slider.setMaximumWidth(140)
+        self._alpha_slider.valueChanged.connect(self._on_alpha_changed)
+        controls_layout.addWidget(self._alpha_slider)
+
+        outer.addWidget(controls)
 
     def _wire_load_worker(self) -> None:
         self._thread_pool = QtCore.QThreadPool.globalInstance()
@@ -436,9 +636,22 @@ class Figure4Viewer(QtWidgets.QMainWindow):
     def _on_slider_changed(self, value: int) -> None:
         self._t_center = self._time_for_slider(value)
         self._time_label.setText(self._format_time_label())
-        # Re-arm the debounce timer; the actual load happens once the
-        # user pauses for ~16 ms (i.e. one frame at 60 Hz).
+        # Animate the slice panel immediately — this is the per-tick
+        # path the user perceives during scrubbing. It is a single
+        # array index into the in-RAM ring buffer, so it is sub-ms.
+        self._update_slice_panel_at_center()
+        # Re-arm the debounce timer for the heavier window load.
         self._load_timer.start()
+
+    @QtCore.Slot(int)
+    def _on_alpha_changed(self, value: int) -> None:
+        self.slice_panel.set_likelihood_alpha(value)
+
+    def _update_slice_panel_at_center(self) -> None:
+        ds = self._ds
+        t_idx = ds.index_at_time(self._t_center)
+        true_pos = float(ds.linear_position[t_idx])
+        self.slice_panel.update_for_index(t_idx, true_pos)
 
     @QtCore.Slot(int, slice, object, object)
     def _on_window_loaded(
@@ -469,6 +682,13 @@ class Figure4Viewer(QtWidgets.QMainWindow):
         t_end = float(time[sl.stop - 1])
         rel_start = 0.0
         rel_end = t_end - t_offset
+
+        # Slice panel buffer: hand the freshly loaded full-resolution
+        # arrays so per-tick ``update_for_index`` is a NumPy index.
+        self.slice_panel.set_window_buffer(sl, post, lik)
+        # Animate now — the slice should reflect the current center
+        # immediately after a load, even if the slider has not moved.
+        self._update_slice_panel_at_center()
 
         self.posterior_panel.update_with_window(rel_start, rel_end, post)
         self.likelihood_panel.update_with_window(rel_start, rel_end, lik)
@@ -542,6 +762,9 @@ class Figure4Viewer(QtWidgets.QMainWindow):
         self._slider.setValue(self._slider_value_for(self._t_center))
         self._slider.blockSignals(False)
         self._time_label.setText(self._format_time_label())
+        # Match the slider path: animate the slice immediately, debounce
+        # the heavy heatmap load.
+        self._update_slice_panel_at_center()
         self._load_timer.start()
 
 

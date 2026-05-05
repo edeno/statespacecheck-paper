@@ -159,14 +159,33 @@ class Figure4DataSource:
 
         self.n_time: int = int(self.time.shape[0])
         self.n_interior: int = int(self.position_bins.shape[0])
-        # Total interior state bins after the cache's interior-mask drop.
+        # Total state bins along the Zarr ``state_bins`` axis. For a
+        # Continuous classifier this is one state's full position grid;
+        # for ContFrag it is ``n_states * n_pos_full``.
         post_da = self._ds[self.POSTERIOR_VAR]
         self.n_state_bins: int = int(post_da.sizes["state_bins"])
-        # The Zarr store keeps the full (interior + non-interior)
-        # state_bins; the interior count we expose is what matters for
-        # the slice-panel reshape, but ``load_posterior`` returns the
-        # full row to match ``ImageItem`` expectations.
-        self.n_states: int = max(1, self.place_fields.shape[1] // max(self.n_interior, 1))
+
+        # Full (non-interior + interior) per-state position grid. The
+        # Zarr's ``position`` non-dim coord on ``state_bins`` repeats
+        # the same per-state grid across states; the unique sorted
+        # values give the canonical 1D grid.
+        position_coord = np.asarray(self._ds["position"].values, dtype=np.float64)
+        self.position_grid_full: NDArray[np.float64] = np.unique(position_coord)
+        self.n_position_full: int = int(self.position_grid_full.shape[0])
+        # Interior mask in per-state position-grid coordinates (shape
+        # ``(n_position_full,)``). Used by ``SlicePanel`` to find which
+        # entries of a posterior row are real vs. NaN-filled by the
+        # cache.
+        pfs = np.load(self._layout.place_fields)
+        interior_mask_full = np.asarray(pfs["interior_mask"], dtype=bool)
+        # ``interior_mask`` saved by the cache is concatenated across
+        # states; collapse to per-state (the cache verifies states are
+        # identical).
+        per_state = max(1, interior_mask_full.shape[0] // max(self.n_position_full, 1))
+        self.interior_mask: NDArray[np.bool_] = interior_mask_full.reshape(
+            per_state, self.n_position_full
+        )[0].copy()
+        self.n_states: int = max(1, self.n_state_bins // max(self.n_position_full, 1))
 
         self._post_lazy = self._ds[self.POSTERIOR_VAR]
         self._loglik_lazy = self._ds[self.LIKELIHOOD_VAR]
