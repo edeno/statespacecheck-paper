@@ -255,9 +255,9 @@ def _write_zarr_store(
 
     # Cast object-dtype string coords to fixed-width unicode so xarray
     # does not have to load them into memory to infer length on write.
-    for coord_name in ("state", "states"):
-        if coord_name in base.coords and base[coord_name].dtype == object:
-            base = base.assign_coords({coord_name: base[coord_name].astype("<U16")})
+    for coord_name in list(base.coords):
+        if base[coord_name].dtype == object:
+            base = base.assign_coords({coord_name: base[coord_name].astype("<U64")})
 
     base.to_zarr(out_dir, mode="w", consolidated=True)
 
@@ -410,7 +410,7 @@ def build_model_cache(
         # across states for multi-state classifiers. The unique sorted
         # values are the underlying 1D position grid.
         position_coord = np.asarray(ds["position"].values, dtype=np.float64)
-        position_bins = np.unique(position_coord)
+        position_grid_full = np.unique(position_coord)
 
         predictive_interior = np.asarray(
             ds["predictive_posterior"].dropna(dim="state_bins").values,
@@ -438,9 +438,31 @@ def build_model_cache(
             f"({predictive_interior.shape[1]})"
         )
 
-    # Place-field peaks for raster sorting use the first state's slice.
-    n_pos = position_bins.shape[0]
-    place_fields_per_state = place_fields[:, :n_pos]
+    # Per-state interior position grid for raster sorting and the slice
+    # panel. The full state-bin count is ``n_states * len(position_grid_full)``;
+    # after the interior mask, it is ``n_states * n_interior_per_state``.
+    # The interior mask is identical across states (it depends on position,
+    # not state), so the first state's slice gives the canonical 1D grid.
+    n_pos_full = position_grid_full.shape[0]
+    n_states = place_fields_full.shape[1] // n_pos_full
+    if n_states * n_pos_full != place_fields_full.shape[1]:
+        raise ValueError(
+            f"place_fields_full shape {place_fields_full.shape} not divisible by "
+            f"n_pos_full={n_pos_full}"
+        )
+    n_interior_per_state = place_fields.shape[1] // n_states
+    if n_interior_per_state * n_states != place_fields.shape[1]:
+        raise ValueError(
+            f"interior place_fields shape {place_fields.shape} not divisible by n_states={n_states}"
+        )
+    interior_mask_per_state = interior_mask.reshape(n_states, n_pos_full)[0]
+    if not np.array_equal(interior_mask_per_state, interior_mask.reshape(n_states, n_pos_full)[-1]):
+        raise ValueError(
+            "Interior mask is not identical across states; per-state slicing "
+            "would produce inconsistent place-field grids."
+        )
+    position_bins = position_grid_full[interior_mask_per_state]
+    place_fields_per_state = place_fields[:, :n_interior_per_state]
     with np.errstate(invalid="ignore"):
         peak_idx = np.nanargmax(place_fields_per_state, axis=1)
     place_field_peaks = position_bins[peak_idx]
