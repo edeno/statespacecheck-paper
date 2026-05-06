@@ -312,22 +312,62 @@ def test_data_source_cells_at_index_returns_unique_cells(tmp_path: Path) -> None
         src.close()
 
 
-def test_slice_panel_does_not_update_outside_buffer(tmp_path: Path) -> None:
+def test_slice_panel_falls_back_to_row_provider_outside_buffer(tmp_path: Path) -> None:
+    """When ``t_idx`` is outside the buffered window, the slice panel
+    fetches a single row via the registered ``row_provider`` callable
+    so the curves keep animating until the next async load commits.
+    """
     _build_cache(tmp_path / "cache", n_states=1)
     app, viewer, ds = _make_viewer(tmp_path / "cache")
     try:
-        target = viewer._next_request_id  # noqa: SLF001
+        # Wait for the initial in-flight load so subsequent
+        # ``force_reload_now`` calls aren't merely queued as pending.
+        assert _wait_for_request(app, viewer, viewer._next_request_id)  # noqa: SLF001
+        # Now shrink the window and recenter so the buffer no longer
+        # covers the entire (small) synthetic session.
+        viewer._set_window_seconds(0.05)  # noqa: SLF001
+        viewer.set_center_time(float(ds.time[100]))
         viewer.force_reload_now()
+        target = viewer._next_request_id  # noqa: SLF001
         assert _wait_for_request(app, viewer, target)
 
         sp = viewer.slice_panel
         sl = sp._buffer_slice  # noqa: SLF001
         assert sl is not None
+        # 25-sample window vs. 500-sample session -> plenty of room
+        # for an out-of-buffer index.
+        assert sl.stop - sl.start < ds.n_time
+        out_of_buffer = sl.stop + 50
+        assert sl.stop < out_of_buffer < ds.n_time
 
         x_before, y_before = sp._lik_predictive_curve.getData()  # noqa: SLF001
-        sp.update_for_index(sl.stop + 10, true_position=42.0)
+        sp.update_for_index(out_of_buffer, true_position=42.0)
         x_after, y_after = sp._lik_predictive_curve.getData()  # noqa: SLF001
-        np.testing.assert_array_equal(y_after, y_before)
+        assert y_after.shape == y_before.shape
+        # The predictive at the out-of-buffer index is almost certainly
+        # different from the buffered center (Dirichlet rows are
+        # independent draws); without the row provider this would
+        # silently be a no-op.
+        assert not np.array_equal(y_after, y_before)
     finally:
         viewer.close()
         ds.close()
+
+
+def test_slice_panel_no_op_outside_buffer_without_provider(tmp_path: Path) -> None:
+    """When no row provider is wired (e.g. unit tests for the panel
+    in isolation), out-of-buffer ``update_for_index`` is a silent no-op
+    instead of raising.
+    """
+    from statespacecheck_paper.interactive.viewer import SlicePanel
+
+    panel = SlicePanel(position_bins=np.linspace(0.0, 100.0, 16), n_states=1)
+    try:
+        zero = np.zeros(16, dtype=np.float32)
+        panel.set_window_buffer(slice(0, 1), zero[None, :], zero[None, :])
+        x_before, y_before = panel._lik_predictive_curve.getData()  # noqa: SLF001
+        panel.update_for_index(50, true_position=10.0)
+        x_after, y_after = panel._lik_predictive_curve.getData()  # noqa: SLF001
+        np.testing.assert_array_equal(y_after, y_before)
+    finally:
+        panel.close()

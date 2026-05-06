@@ -253,18 +253,23 @@ class _BaseHeatmapPanel(pg.PlotWidget):
         # The worker has already replaced NaNs from non-interior bins;
         # the array is finite at this point.
         if self._levels is None:
-            # First update: let pyqtgraph compute levels and pin them.
-            self._image.setImage(array, autoLevels=True, autoDownsample=False)
-            levels = self._image.getLevels()
-            if levels is not None and len(levels) == 2:
-                self._levels = (float(levels[0]), float(levels[1]))
-        else:
-            self._image.setImage(
-                array,
-                autoLevels=False,
-                levels=self._levels,
-                autoDownsample=False,
-            )
+            # Use percentile-based level pinning instead of the
+            # ``(min, max)`` that ``autoLevels=True`` would pick.
+            # ``(min, max)`` makes the colormap saturate or wash out
+            # whenever the first window is non-representative
+            # (e.g. happens to span an extreme decoder period). The
+            # 1st / 99th percentile is robust to those outliers.
+            lo = float(np.percentile(array, 1.0))
+            hi = float(np.percentile(array, 99.0))
+            if hi <= lo:
+                hi = lo + 1.0
+            self._levels = (lo, hi)
+        self._image.setImage(
+            array,
+            autoLevels=False,
+            levels=self._levels,
+            autoDownsample=False,
+        )
         # Use the actual data extent for the rect so each pixel sits at
         # its true relative time. The axis range itself is set by the
         # viewer in one place (with the *target* window half-width) so
@@ -972,6 +977,13 @@ class SlicePanel(QtWidgets.QWidget):
         self._buffer_slice: slice | None = None
         self._buffer_post: NDArray[np.float32] | None = None
         self._buffer_lik: NDArray[np.float32] | None = None
+        # When the slider scrubs past the loaded window the buffer goes
+        # stale until the next async load commits. The viewer wires a
+        # row provider (single-row Zarr read) so ``update_for_index``
+        # can keep the slice animating in the meantime.
+        self._row_provider: (
+            Callable[[int], tuple[NDArray[np.float32], NDArray[np.float32]]] | None
+        ) = None
 
     # ------------------------------------------------------------------
     # Legend
@@ -1003,18 +1015,36 @@ class SlicePanel(QtWidgets.QWidget):
         self._buffer_post = post
         self._buffer_lik = lik
 
+    def set_row_provider(
+        self,
+        provider: Callable[[int], tuple[NDArray[np.float32], NDArray[np.float32]]] | None,
+    ) -> None:
+        """Install a single-row reader for use when ``t_idx`` is outside the buffer.
+
+        ``provider(t_idx)`` should return a ``(post_row, lik_row)``
+        pair already NaN-cleaned and (for ``lik_row``) exponentiated
+        from the cache's ``log_likelihood``, matching what the worker
+        thread would have produced for the buffered case.
+        """
+        self._row_provider = provider
+
     def update_for_index(self, t_idx: int, true_position: float) -> None:
         """Update the population plot + the predictive overlay every plot uses."""
         sl = self._buffer_slice
         post = self._buffer_post
         lik = self._buffer_lik
-        if sl is None or post is None or lik is None:
+        if sl is not None and post is not None and lik is not None and sl.start <= t_idx < sl.stop:
+            local_idx = t_idx - sl.start
+            post_row = post[local_idx]
+            lik_row = lik[local_idx]
+        elif self._row_provider is not None:
+            # Buffer doesn't cover ``t_idx`` (the user has scrubbed
+            # past the loaded window). Fall back to a single-row read
+            # so the slice keeps animating until the next async load
+            # commits. This is sub-ms when the OS chunk is hot.
+            post_row, lik_row = self._row_provider(t_idx)
+        else:
             return
-        if not (sl.start <= t_idx < sl.stop):
-            return
-        local_idx = t_idx - sl.start
-        post_row = post[local_idx]
-        lik_row = lik[local_idx]
         if self._n_states > 1:
             post_row_collapsed = post_row.reshape(self._n_states, self._n_pos).sum(axis=0)
             lik_rs = lik_row.reshape(self._n_states, self._n_pos)
@@ -1271,12 +1301,34 @@ class Figure4Viewer(QtWidgets.QMainWindow):
             position_bins=ds.position_grid_full,
             n_states=ds.n_states,
         )
+        self.slice_panel.set_row_provider(self._slice_row_at)
         # Link x-axes so any zoom/range change propagates across the
         # time-axis stack (heatmaps + raster + metric panels).
         x_linked: list[pg.PlotWidget] = [self.likelihood_panel, self.raster_panel]
         x_linked.extend(self.metric_panels.values())
         for panel in x_linked:
             panel.setXLink(self.posterior_panel)
+
+    def _slice_row_at(self, t_idx: int) -> tuple[NDArray[np.float32], NDArray[np.float32]]:
+        """Single-row read used by ``SlicePanel`` when the buffer is stale.
+
+        Mirrors the per-window normalization the worker thread does in
+        ``_WindowLoadWorker.run`` so the slice panel sees the same kind
+        of arrays whether the row came from the buffered window or
+        from this fallback path.
+        """
+        ds = self._ds
+        post_row = ds.slice_at_index(t_idx, which="posterior").copy()
+        loglik_row = ds.slice_at_index(t_idx, which="likelihood").copy()
+        np.nan_to_num(post_row, copy=False, nan=0.0)
+        np.nan_to_num(loglik_row, copy=False, nan=-np.inf)
+        if loglik_row.size:
+            row_max = float(loglik_row.max()) if np.isfinite(loglik_row.max()) else 0.0
+            lik_row = np.exp(loglik_row - row_max, dtype=np.float32)
+            np.nan_to_num(lik_row, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
+        else:
+            lik_row = loglik_row.astype(np.float32, copy=False)
+        return post_row, lik_row
 
     def _build_controls(self) -> None:
         central = QtWidgets.QWidget(self)

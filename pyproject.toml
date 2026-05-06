@@ -127,6 +127,12 @@ addopts = [
     "--cov=src/statespacecheck_paper",
     "--cov-report=html",
     "--cov-report=term-missing",
+    # Skip ``slow``-marked tests by default. The real-data
+    # cache-build integration test reads multi-GB ``data/intermediates/``
+    # files and rebuilds a Zarr store; running it accidentally on a
+    # fully provisioned checkout has been a foot-gun.
+    "-m",
+    "not slow",
 ]
 markers = [
     "slow: long-running tests (e.g. real-data cache builds); run with `-m slow`",

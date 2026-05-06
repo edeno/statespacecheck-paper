@@ -96,7 +96,7 @@ def build_synthetic_cache(
     )
 
     paths = cache_mod.cache_paths(cache_dir, model)  # type: ignore[arg-type]
-    cache_mod._write_zarr_store(ds=ds, out_dir=paths["zarr"], time_chunk=64, pyramid_strides=(8,))
+    cache_mod._write_zarr_store(ds=ds, out_dir=paths["zarr"], time_chunk=64)
 
     spike_times = [
         np.sort(rng.uniform(time_arr[0], time_arr[-1], size=n_spikes_per_cell)).astype(np.float64)

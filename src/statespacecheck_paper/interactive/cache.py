@@ -4,8 +4,7 @@ The cache reformats the pre-computed decoder outputs in
 ``data/intermediates/`` into a layout that supports fast windowed reads:
 
 - A Zarr store per model with chunked posterior / log-likelihood arrays
-  (chunked along time, full position axis per chunk) and a max-pooled
-  time pyramid for overview rendering.
+  (chunked along time, full position axis per chunk).
 - A Parquet event table with one row per spike, sorted by time, holding
   the per-spike diagnostic metrics (HPD overlap, KL divergence, spike
   probability) plus the cell index.
@@ -40,7 +39,6 @@ from numpy.typing import NDArray
 ModelName = Literal["continuous", "contfrag"]
 MODEL_NAMES: tuple[ModelName, ...] = ("continuous", "contfrag")
 
-DEFAULT_PYRAMID_STRIDES: tuple[int, ...] = (8, 64, 512)
 DEFAULT_TIME_CHUNK = 8192
 
 
@@ -105,47 +103,6 @@ def _restore_state_bins_index(ds: xr.Dataset) -> xr.Dataset:
     if "state" in ds.coords and "position" in ds.coords:
         return cast(xr.Dataset, ds.set_index(state_bins=["state", "position"]))
     return ds
-
-
-def _max_pool_time(arr: NDArray[np.float32], stride: int) -> NDArray[np.float32]:
-    """Max-pool ``arr`` along axis 0 with the given stride.
-
-    Parameters
-    ----------
-    arr : np.ndarray, shape (n_time, n_state_bins)
-        Source array (float32).
-    stride : int
-        Downsampling stride; the leading axis is reduced by ~``stride``.
-
-    Returns
-    -------
-    pooled : np.ndarray, shape (ceil(n_time / stride), n_state_bins)
-        Per-bucket maximum along time. The final bucket may be shorter
-        than ``stride``.
-    """
-    n_time = arr.shape[0]
-    if stride <= 1 or n_time <= 1:
-        return arr.astype(np.float32, copy=True)
-    indices = np.arange(0, n_time, stride, dtype=np.intp)
-    pooled = np.maximum.reduceat(arr, indices, axis=0)
-    return np.ascontiguousarray(pooled, dtype=np.float32)
-
-
-def _build_pyramid_levels(
-    arr: NDArray[np.float32],
-    strides: tuple[int, ...],
-) -> dict[int, NDArray[np.float32]]:
-    """Build a max-pooled time pyramid for ``arr`` at each stride.
-
-    Notes
-    -----
-    Each level pools the original (full-resolution) array, not the
-    previous level — this avoids accumulating max-of-max bias when
-    strides are not perfect multiples of each other. Strides used in
-    practice (8, 64, 512) are powers of 8 so the difference is small,
-    but recomputing is cheap and keeps the semantics simple.
-    """
-    return {stride: _max_pool_time(arr, stride) for stride in strides}
 
 
 def _extract_place_fields_concat(model: Any) -> tuple[NDArray[np.float64], NDArray[np.bool_]]:
@@ -227,15 +184,17 @@ def _write_zarr_store(
     ds: xr.Dataset,
     out_dir: Path,
     time_chunk: int,
-    pyramid_strides: tuple[int, ...],
 ) -> dict[str, tuple[int, ...]]:
-    """Write the per-model Zarr store with full-res arrays and pyramids.
+    """Stream the decoder NetCDF into a chunked Zarr store.
 
-    Returns
-    -------
-    shapes : dict[str, tuple[int, ...]]
-        Map from data-var name (and pyramid-level name) to written shape,
-        for verification by callers.
+    Writes ``predictive_posterior``, ``log_likelihood``, and
+    ``acausal_state_probabilities`` (when present), chunked at
+    ``time_chunk`` along the time axis so the viewer's window reads
+    only touch one or two chunks. ``xarray.to_zarr`` streams chunk
+    by chunk, so peak in-memory cost is bounded by the chunk size,
+    not the full session.
+
+    Returns the per-variable shapes for caller-side verification.
 
     Notes
     -----
@@ -261,34 +220,7 @@ def _write_zarr_store(
 
     base.to_zarr(out_dir, mode="w", consolidated=True)
 
-    shapes: dict[str, tuple[int, ...]] = {name: base[name].shape for name in keep_vars}
-
-    posterior = np.ascontiguousarray(ds["predictive_posterior"].values, dtype=np.float32)
-    loglik = np.ascontiguousarray(ds["log_likelihood"].values, dtype=np.float32)
-
-    posterior_pyramid = _build_pyramid_levels(posterior, pyramid_strides)
-    loglik_pyramid = _build_pyramid_levels(loglik, pyramid_strides)
-
-    pyramid_arrays: dict[str, NDArray[np.float32]] = {}
-    for stride, pooled in posterior_pyramid.items():
-        pyramid_arrays[f"predictive_posterior_pyramid_{stride}"] = pooled
-    for stride, pooled in loglik_pyramid.items():
-        pyramid_arrays[f"log_likelihood_pyramid_{stride}"] = pooled
-
-    pyramid_ds = xr.Dataset(
-        {
-            name: xr.DataArray(
-                pyramid_arrays[name],
-                dims=(f"time_pooled_{name.rsplit('_', 1)[-1]}", "state_bins"),
-            )
-            for name in pyramid_arrays
-        }
-    )
-    pyramid_ds.to_zarr(out_dir, mode="a", consolidated=True)
-    for name, arr in pyramid_arrays.items():
-        shapes[name] = arr.shape
-
-    return shapes
+    return {name: base[name].shape for name in keep_vars}
 
 
 def _write_place_fields(
@@ -343,7 +275,6 @@ def build_model_cache(
     cache_dir: Path,
     animal_date_epoch: str,
     time_chunk: int = DEFAULT_TIME_CHUNK,
-    pyramid_strides: tuple[int, ...] = DEFAULT_PYRAMID_STRIDES,
     force: bool = False,
 ) -> dict[str, Any]:
     """Build the full cache for one model.
@@ -364,8 +295,6 @@ def build_model_cache(
         Identifier passed to ``load_neural_recording_from_files``.
     time_chunk : int, default 8192
         Zarr chunk size along the time axis (~16 s at 500 Hz).
-    pyramid_strides : tuple of int
-        Strides used for the time-pyramid max-pool levels.
     force : bool, default False
         If False, raises if the model's Zarr store already exists.
 
@@ -385,9 +314,6 @@ def build_model_cache(
         if not path.exists():
             raise FileNotFoundError(f"Required input missing: {path}")
 
-    # Open NetCDF once and reuse: write Zarr (with pyramids), and
-    # extract the time axis, position coord, and interior posterior
-    # for diagnostics.
     from statespacecheck_paper.load_local_data import load_neural_recording_from_files
     from statespacecheck_paper.real_data_analysis import (
         _get_spike_events_from_spike_times,
@@ -400,7 +326,6 @@ def build_model_cache(
             ds=ds,
             out_dir=paths["zarr"],
             time_chunk=time_chunk,
-            pyramid_strides=pyramid_strides,
         )
 
         time_arr: NDArray[np.float64] = np.asarray(ds["time"].values, dtype=np.float64)
@@ -516,7 +441,6 @@ def build_model_cache(
         "n_state_bins_full_res": int(zarr_shapes["predictive_posterior"][1]),
         "n_position_bins": int(position_bins.shape[0]),
         "n_events": int(len(events_df)),
-        "pyramid_strides": list(pyramid_strides),
         "zarr_shapes": {k: list(v) for k, v in zarr_shapes.items()},
         "cache_paths": {k: str(v) for k, v in paths.items()},
         "meta_path": str(meta_path(cache_dir)),
@@ -546,7 +470,6 @@ def _build_command(args: argparse.Namespace) -> int:
             cache_dir=cache_dir,
             animal_date_epoch=args.animal_date_epoch,
             time_chunk=args.time_chunk,
-            pyramid_strides=tuple(args.pyramid_strides),
             force=args.force,
         )
         summaries.append(info)
@@ -609,13 +532,6 @@ def main(argv: list[str] | None = None) -> int:
         type=int,
         default=DEFAULT_TIME_CHUNK,
         help="Zarr chunk size along the time axis.",
-    )
-    build.add_argument(
-        "--pyramid-strides",
-        type=int,
-        nargs="+",
-        default=list(DEFAULT_PYRAMID_STRIDES),
-        help="Pyramid strides for max-pooled overview levels.",
     )
     build.add_argument(
         "--force",

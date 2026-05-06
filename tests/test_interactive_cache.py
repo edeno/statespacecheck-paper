@@ -78,34 +78,6 @@ def _synthetic_results_dataset(
     return xr.Dataset(data_vars=data_vars, coords=coords)
 
 
-@pytest.mark.parametrize("stride", [1, 2, 8, 64])
-def test_max_pool_time_shape(stride: int) -> None:
-    """Max-pool along axis 0 with the expected output length."""
-    n_time, n_state_bins = 1000, 16
-    arr = np.random.default_rng(42).standard_normal((n_time, n_state_bins), dtype=np.float32)
-    pooled = cache_mod._max_pool_time(arr, stride)
-    expected_n = int(np.ceil(n_time / stride))
-    assert pooled.shape == (expected_n, n_state_bins)
-    assert pooled.dtype == np.float32
-
-
-def test_max_pool_time_preserves_max() -> None:
-    """Pooled value at each bucket equals the max within that bucket."""
-    arr = np.arange(20, dtype=np.float32).reshape(20, 1)
-    pooled = cache_mod._max_pool_time(arr, stride=4)
-    # Buckets: [0..3]→3, [4..7]→7, [8..11]→11, [12..15]→15, [16..19]→19
-    np.testing.assert_array_equal(pooled.flatten(), [3, 7, 11, 15, 19])
-
-
-def test_build_pyramid_levels_returns_one_array_per_stride() -> None:
-    arr = np.random.default_rng(1).standard_normal((512, 8), dtype=np.float32)
-    pyramid = cache_mod._build_pyramid_levels(arr, strides=(1, 8, 64))
-    assert set(pyramid.keys()) == {1, 8, 64}
-    assert pyramid[1].shape == (512, 8)
-    assert pyramid[8].shape == (64, 8)
-    assert pyramid[64].shape == (8, 8)
-
-
 def test_events_dataframe_sorts_by_time_and_validates_cell_id() -> None:
     diagnostics: dict[str, np.ndarray] = {
         "event_time": np.array([2.0, 1.0, 3.0], dtype=np.float64),
@@ -139,53 +111,37 @@ def test_events_dataframe_rejects_out_of_range_cell_id() -> None:
         cache_mod._events_dataframe(diagnostics, n_cells=3)
 
 
-def test_write_zarr_store_roundtrips_arrays_and_pyramids(tmp_path: Path) -> None:
-    """``_write_zarr_store`` writes full-res + pyramid arrays that read back identically."""
+def test_write_zarr_store_roundtrips_arrays(tmp_path: Path) -> None:
+    """``_write_zarr_store`` writes the full-res arrays + non-dim coords."""
     ds = _synthetic_results_dataset(n_time=200, n_states=2, n_position=8)
     out_dir = tmp_path / "cache.zarr"
 
-    shapes = cache_mod._write_zarr_store(
-        ds=ds,
-        out_dir=out_dir,
-        time_chunk=64,
-        pyramid_strides=(8, 64),
-    )
-
-    # Shapes reported back match the data we wrote.
+    shapes = cache_mod._write_zarr_store(ds=ds, out_dir=out_dir, time_chunk=64)
     assert shapes["predictive_posterior"] == (200, 16)
-    assert shapes["predictive_posterior_pyramid_8"] == (25, 16)
-    assert shapes["predictive_posterior_pyramid_64"] == (4, 16)
-    assert shapes["log_likelihood_pyramid_8"] == (25, 16)
+    assert shapes["log_likelihood"] == (200, 16)
 
-    # Round-trip: the stored arrays match the in-memory ones.
     with xr.open_zarr(out_dir, consolidated=True) as readback:
         np.testing.assert_array_equal(
             readback["predictive_posterior"].values,
             ds["predictive_posterior"].values,
         )
-        # The non-dim coords on state_bins survive.
+        # ``state`` / ``position`` non-dim coords on ``state_bins`` survive.
         np.testing.assert_array_equal(readback["state"].values, ds["state"].values)
         np.testing.assert_array_equal(readback["position"].values, ds["position"].values)
-        # Pyramid level matches what _max_pool_time would produce.
-        expected_pyr_8 = cache_mod._max_pool_time(
-            ds["predictive_posterior"].values.astype(np.float32), stride=8
-        )
-        np.testing.assert_array_equal(
-            readback["predictive_posterior_pyramid_8"].values, expected_pyr_8
-        )
 
 
 def test_write_zarr_store_overwrites_existing(tmp_path: Path) -> None:
     """Re-writing the same path replaces the prior store."""
     ds = _synthetic_results_dataset(n_time=64, n_states=1, n_position=4)
     out_dir = tmp_path / "cache.zarr"
-    cache_mod._write_zarr_store(ds=ds, out_dir=out_dir, time_chunk=32, pyramid_strides=(4,))
-    cache_mod._write_zarr_store(ds=ds, out_dir=out_dir, time_chunk=16, pyramid_strides=(2, 8))
+    cache_mod._write_zarr_store(ds=ds, out_dir=out_dir, time_chunk=32)
+    # Smaller chunks the second time around — verify it doesn't error
+    # and the round-tripped data still matches.
+    cache_mod._write_zarr_store(ds=ds, out_dir=out_dir, time_chunk=16)
     with xr.open_zarr(out_dir, consolidated=True) as rb:
-        assert "predictive_posterior_pyramid_2" in rb.data_vars
-        assert "predictive_posterior_pyramid_8" in rb.data_vars
-        # Old stride is gone.
-        assert "predictive_posterior_pyramid_4" not in rb.data_vars
+        np.testing.assert_array_equal(
+            rb["predictive_posterior"].values, ds["predictive_posterior"].values
+        )
 
 
 # ---------------------------------------------------------------------------
