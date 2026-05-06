@@ -191,7 +191,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
         self._ds = data_source
         self._cache_dir = Path(cache_dir) if cache_dir is not None else None
 
-        self.setWindowTitle(f"Decoder viewer — {data_source.model}")
+        self.setWindowTitle(f"Decoder viewer — {data_source.display_name}")
         self.resize(1200, 900)
 
         self._t_min = float(data_source.time[0])
@@ -445,16 +445,25 @@ class DecoderViewer(QtWidgets.QMainWindow):
         self._speed_combo.currentIndexChanged.connect(self._on_speed_combo_changed)
         controls_layout.addWidget(self._speed_combo)
 
-        controls_layout.addSpacing(12)
-        controls_layout.addWidget(QtWidgets.QLabel("Model:"))
-        self._model_combo = QtWidgets.QComboBox()
-        self._model_combo.addItems(["continuous", "contfrag"])
-        self._model_combo.setCurrentText(self._ds.model or "")
-        self._model_combo.currentTextChanged.connect(self._on_model_changed)
-        # Disabled when the cache directory wasn't provided (e.g. tests
-        # that construct with a single model in tmp_path).
-        self._model_combo.setEnabled(self._cache_dir is not None)
-        controls_layout.addWidget(self._model_combo)
+        # Model swap UI only makes sense for real-data caches with both
+        # ``continuous`` and ``contfrag`` available. The figure-3
+        # simulation has a single decoder baked into the data and no
+        # alternative to swap to, so the label + combo are hidden
+        # entirely (not just disabled — there's no model concept here).
+        self._model_label: QtWidgets.QLabel | None = None
+        self._model_combo: QtWidgets.QComboBox | None = None
+        if self._ds.dataset_kind == "model":
+            controls_layout.addSpacing(12)
+            self._model_label = QtWidgets.QLabel("Model:")
+            controls_layout.addWidget(self._model_label)
+            self._model_combo = QtWidgets.QComboBox()
+            self._model_combo.addItems(["continuous", "contfrag"])
+            self._model_combo.setCurrentText(self._ds.model or "")
+            self._model_combo.currentTextChanged.connect(self._on_model_changed)
+            # Disabled when the cache directory wasn't provided (e.g.
+            # tests that construct with a single model in tmp_path).
+            self._model_combo.setEnabled(self._cache_dir is not None)
+            controls_layout.addWidget(self._model_combo)
 
         outer.addWidget(controls)
 
@@ -1078,13 +1087,16 @@ class DecoderViewer(QtWidgets.QMainWindow):
 
     @QtCore.Slot()
     def _toggle_model(self) -> None:
-        if self._cache_dir is None:
+        if self._ds.dataset_kind != "model" or self._cache_dir is None:
+            # The simulation dataset has no alternative model; the
+            # ``M`` keyboard shortcut and any stray combo signal
+            # both no-op.
             return
         new_model: ModelName = "contfrag" if self._ds.model == "continuous" else "continuous"
         self._switch_model(new_model)
 
     def _switch_model(self, model: ModelName) -> None:
-        if self._cache_dir is None:
+        if self._ds.dataset_kind != "model" or self._cache_dir is None:
             return
         if model == self._ds.model:
             return
@@ -1093,9 +1105,10 @@ class DecoderViewer(QtWidgets.QMainWindow):
         except FileNotFoundError:
             # The requested cache doesn't exist; revert the combo
             # box and bail.
-            self._model_combo.blockSignals(True)
-            self._model_combo.setCurrentText(self._ds.model or "")
-            self._model_combo.blockSignals(False)
+            if self._model_combo is not None:
+                self._model_combo.blockSignals(True)
+                self._model_combo.setCurrentText(self._ds.model or "")
+                self._model_combo.blockSignals(False)
             return
 
         # Drain the in-flight worker before swapping so the worker
@@ -1128,7 +1141,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
         self._t_min = float(new_ds.time[0])
         self._t_max = float(new_ds.time[-1])
         self._t_center = float(np.clip(self._t_center, self._t_min, self._t_max))
-        self.setWindowTitle(f"Decoder viewer — {new_ds.model}")
+        self.setWindowTitle(f"Decoder viewer — {new_ds.display_name}")
 
         # Rebuild the central widget against the new data source. The
         # heatmap, slice and metric panels all bake ``n_states``, so a
@@ -1146,9 +1159,10 @@ class DecoderViewer(QtWidgets.QMainWindow):
             overlay_choice = "predictive"
         self._overlay_combo.setCurrentIndex(OVERLAY_CHOICES.index(overlay_choice))
         self.slice_panel.set_overlay_choice(overlay_choice)
-        self._model_combo.blockSignals(True)
-        self._model_combo.setCurrentText(new_ds.model or "")
-        self._model_combo.blockSignals(False)
+        if self._model_combo is not None:
+            self._model_combo.blockSignals(True)
+            self._model_combo.setCurrentText(new_ds.model or "")
+            self._model_combo.blockSignals(False)
         if was_playing:
             self._play_button.setChecked(True)
 

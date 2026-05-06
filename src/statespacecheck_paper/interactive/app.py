@@ -3,7 +3,7 @@
 Owns the small amount of plumbing that runs once at process start:
 choosing / configuring the ``QApplication``, instantiating
 ``DecoderDataSource`` and ``DecoderViewer``, and the
-``argparse`` CLI for ``python -m statespacecheck_paper.interactive.viewer``.
+``argparse`` CLI for ``python -m statespacecheck_paper.interactive``.
 """
 
 from __future__ import annotations
@@ -35,12 +35,27 @@ def configure_qt_application(app: QtWidgets.QApplication) -> None:
     app.setFont(font)
 
 
-def launch(cache_dir: Path | str, model: ModelName) -> int:
-    """Open the viewer for ``model`` from ``cache_dir`` and run the event loop."""
+def launch(
+    cache_dir: Path | str,
+    model: ModelName | None = None,
+    *,
+    simulation: bool = False,
+) -> int:
+    """Open the viewer for the cache at ``cache_dir`` and run the event loop.
+
+    Pass ``simulation=True`` to open the figure-3 simulation cache;
+    otherwise pass ``model=`` to choose the real-data model. Exactly
+    one of those must be specified.
+    """
     # Deferred to break the import cycle with ``viewer``: this module
     # is imported by ``viewer.py``'s re-export footer, so a top-level
     # ``from .viewer import DecoderViewer`` here would loop back.
     from .viewer import DecoderViewer  # noqa: PLC0415
+
+    if simulation and model is not None:
+        raise ValueError("launch(): pass simulation=True OR model=, not both.")
+    if not simulation and model is None:
+        raise ValueError("launch(): pass model= for real-data or simulation=True.")
 
     existing = QtWidgets.QApplication.instance()
     app: QtWidgets.QApplication = (
@@ -49,7 +64,11 @@ def launch(cache_dir: Path | str, model: ModelName) -> int:
         else QtWidgets.QApplication(sys.argv)
     )
     configure_qt_application(app)
-    ds = DecoderDataSource(cache_dir, model)
+    if simulation:
+        ds = DecoderDataSource.for_simulation(cache_dir)
+    else:
+        assert model is not None  # narrowed above
+        ds = DecoderDataSource.for_model(cache_dir, model)
     viewer = DecoderViewer(ds, cache_dir=cache_dir)
     viewer.show()
     try:
@@ -59,16 +78,27 @@ def launch(cache_dir: Path | str, model: ModelName) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="statespacecheck_paper.interactive.viewer")
+    parser = argparse.ArgumentParser(prog="statespacecheck_paper.interactive")
     parser.add_argument("--cache-dir", required=True, help="Cache directory.")
-    parser.add_argument(
+    target = parser.add_mutually_exclusive_group()
+    target.add_argument(
         "--model",
         choices=("continuous", "contfrag"),
-        default="continuous",
-        help="Which model's cache to open.",
+        default=None,
+        help="Open the real-data cache for this model.",
+    )
+    target.add_argument(
+        "--simulation",
+        action="store_true",
+        help="Open the figure-3 simulation cache (built via ``cache build-simulated``).",
     )
     args = parser.parse_args(argv)
-    return launch(args.cache_dir, args.model)
+    if args.simulation:
+        return launch(args.cache_dir, simulation=True)
+    # Default to ``continuous`` when the user hasn't specified either
+    # flag (preserves the legacy CLI behaviour).
+    model: ModelName = args.model if args.model is not None else "continuous"
+    return launch(args.cache_dir, model=model)
 
 
 if __name__ == "__main__":
