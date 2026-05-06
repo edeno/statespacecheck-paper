@@ -29,7 +29,10 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: uv pip install -e ".[dev]" --system
+        # Tests import the interactive cache / data-source modules at
+        # collection time, which pull in zarr + pyarrow from the
+        # ``interactive`` extra. Install both so the suite collects.
+        run: uv pip install -e ".[dev,interactive]" --system
 
       - name: Check formatting with ruff
         run: uv run ruff format --check .
