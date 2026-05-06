@@ -242,7 +242,10 @@ class PosteriorPanel(_BaseHeatmapPanel):
     """Predictive posterior heatmap (state-summed for multi-state models)."""
 
     def __init__(self, *, position_bins: NDArray[np.float64], n_states: int) -> None:
-        super().__init__(title="Predictive posterior", position_bins=position_bins)
+        # Title: ``predictive`` is the SSM-standard term for
+        # ``p(x_t | y_{1:t-1})``; the cache variable is named
+        # ``predictive_posterior`` per ``non_local_detector``.
+        super().__init__(title="Predictive distribution", position_bins=position_bins)
         self._n_states = max(1, n_states)
         self._n_pos = position_bins.shape[0]
 
@@ -682,7 +685,7 @@ class SlicePanel(QtWidgets.QWidget):
         self._plot.setMouseEnabled(x=False, y=False)
         self._plot.setLabel("bottom", "Position (cm)")
         self._plot.setLabel("left", "Density")
-        self._plot.getPlotItem().setTitle("Slice at center time")
+        self._plot.getPlotItem().setTitle("Predictive distribution at center time")
 
         self._posterior_curves: list[pg.PlotDataItem] = []
         self._likelihood_curves: list[pg.PlotDataItem] = []
@@ -794,6 +797,9 @@ class SlicePanel(QtWidgets.QWidget):
     # ------------------------------------------------------------------
 
     def _build_legend_html(self) -> str:
+        # The blue curve is the *predictive* distribution
+        # ``p(x_t | y_{1:t-1})``; the cache variable is named
+        # ``predictive_posterior`` per ``non_local_detector``'s API.
         parts: list[str] = []
         for s in range(self._n_states):
             post_rgb = _STATE_POSTERIOR_RGB[s % len(_STATE_POSTERIOR_RGB)]
@@ -801,7 +807,7 @@ class SlicePanel(QtWidgets.QWidget):
             tag = "" if self._n_states == 1 else f" (state {s})"
             parts.append(
                 f"<span style='color:rgb({post_rgb[0]},{post_rgb[1]},{post_rgb[2]});"
-                f"font-size:14pt'>━</span> Posterior{tag}"
+                f"font-size:14pt'>━</span> Predictive{tag}"
             )
             parts.append(
                 f"<span style='color:rgb({lik_rgb[0]},{lik_rgb[1]},{lik_rgb[2]});"
