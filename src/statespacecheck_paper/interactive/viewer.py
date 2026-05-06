@@ -243,6 +243,11 @@ class _BaseHeatmapPanel(pg.PlotWidget):
                 levels=self._levels,
                 autoDownsample=False,
             )
+        # Use the actual data extent for the rect so each pixel sits at
+        # its true relative time. The axis range itself is set by the
+        # viewer in one place (with the *target* window half-width) so
+        # the tick labels do not jitter as ``time_start`` /
+        # ``time_end`` shift by sub-millisecond amounts each load.
         self._image.setRect(
             QtCore.QRectF(
                 time_start,
@@ -251,7 +256,6 @@ class _BaseHeatmapPanel(pg.PlotWidget):
                 self._y1 - self._y0,
             )
         )
-        self.setXRange(time_start, time_end, padding=0)
         self.setYRange(self._y0, self._y1, padding=0)
 
 
@@ -422,9 +426,12 @@ class RasterPanel(pg.PlotWidget):
         else:
             self._window_event_indices = np.asarray(global_event_indices, dtype=np.int64)
 
+        # The X axis is driven by the master ``PosteriorPanel`` via
+        # ``setXLink`` (configured in ``Figure4Viewer._build_panels``),
+        # so we only update the scatter data here and leave the range
+        # to the viewer's single ``setXRange`` call.
         if events_time.size == 0:
             self._scatter.setData(x=[], y=[], data=[])
-            self.setXRange(time_start, time_end, padding=0)
             return
         x = events_time - time_offset
         y = self._cell_rank[events_cell_id]
@@ -433,7 +440,6 @@ class RasterPanel(pg.PlotWidget):
             y=y,
             data=np.arange(x.shape[0], dtype=np.int64),
         )
-        self.setXRange(time_start, time_end, padding=0)
 
     def update_pinned_event(
         self,
@@ -594,9 +600,10 @@ class MetricPanel(pg.PlotWidget):
         it to map a clicked SpotItem back to the canonical event row.
         """
         self._window_event_indices = np.asarray(global_event_indices, dtype=np.int64)
+        # X axis is driven by the master ``PosteriorPanel`` via
+        # ``setXLink``; only the scatter data is updated here.
         if events_time.size == 0:
             self._scatter.setData(x=[], y=[], data=[])
-            self.setXRange(time_start, time_end, padding=0)
             return
         x = events_time - time_offset
         y = self._display_values(events_metric)
@@ -608,7 +615,6 @@ class MetricPanel(pg.PlotWidget):
             y=y,
             data=np.arange(x.shape[0], dtype=np.int64),
         )
-        self.setXRange(time_start, time_end, padding=0)
 
     def update_pinned_event(
         self,
@@ -1444,6 +1450,15 @@ class Figure4Viewer(QtWidgets.QMainWindow):
         t_offset = float(self._t_center)
         rel_start = float(time[sl.start]) - t_offset
         rel_end = float(time[sl.stop - 1]) - t_offset
+
+        # Pin the visible X range to the *target* half-width (always
+        # exactly ``-w/2`` to ``+w/2``) so the tick labels stay
+        # rock-stable as the slider moves between samples. The data
+        # is positioned with the actual sample extent above; the axis
+        # range here is independent of those sub-millisecond shifts.
+        # The other time-axis panels follow via ``setXLink``.
+        target_half_w = self._window_seconds / 2.0
+        self.posterior_panel.setXRange(-target_half_w, target_half_w, padding=0)
 
         # Slice panel buffer: hand the freshly loaded full-resolution
         # arrays so per-tick ``update_for_index`` is a NumPy index.
