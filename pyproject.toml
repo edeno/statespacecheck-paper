@@ -107,6 +107,7 @@ module = [
     "non_local_detector.*",
     "pyqtgraph.*",
     "PySide6.*",
+    "zarr.*",
 ]
 ignore_missing_imports = true
 

@@ -32,6 +32,7 @@ from typing import Literal
 import numpy as np
 import pandas as pd
 import xarray as xr
+import zarr
 from numpy.typing import NDArray
 
 from . import cache as cache_mod
@@ -128,7 +129,14 @@ class Figure4DataSource:
         self._layout = CacheLayout.for_model(self._cache_dir, model)
         self._layout.assert_exists()
 
-        self._ds = xr.open_zarr(self._layout.zarr, consolidated=True)
+        # Open the Zarr store directly for the hot-path window reads.
+        # Direct zarr access (no dask) avoids the async chunk-load
+        # races we saw with ``xarray.open_zarr`` during test teardown.
+        self._zarr_group: zarr.Group = zarr.open_group(str(self._layout.zarr), mode="r")
+        # xarray is still convenient for one-shot metadata pulls
+        # (position coord, state_bins size). We close it immediately
+        # after extracting what we need so no dask graph survives.
+        meta_ds = xr.open_zarr(self._layout.zarr, consolidated=True)
 
         meta = np.load(self._layout.meta)
         self.time: NDArray[np.float64] = np.asarray(meta["time"], dtype=np.float64)
@@ -159,24 +167,25 @@ class Figure4DataSource:
 
         self.n_time: int = int(self.time.shape[0])
         self.n_interior: int = int(self.position_bins.shape[0])
+
         # Total state bins along the Zarr ``state_bins`` axis. For a
         # Continuous classifier this is one state's full position grid;
         # for ContFrag it is ``n_states * n_pos_full``.
-        post_da = self._ds[self.POSTERIOR_VAR]
-        self.n_state_bins: int = int(post_da.sizes["state_bins"])
+        self.n_state_bins: int = int(meta_ds[self.POSTERIOR_VAR].sizes["state_bins"])
 
         # Full (non-interior + interior) per-state position grid. The
         # Zarr's ``position`` non-dim coord on ``state_bins`` repeats
         # the same per-state grid across states; the unique sorted
         # values give the canonical 1D grid.
-        position_coord = np.asarray(self._ds["position"].values, dtype=np.float64)
+        position_coord = np.asarray(meta_ds["position"].values, dtype=np.float64)
         self.position_grid_full: NDArray[np.float64] = np.unique(position_coord)
         self.n_position_full: int = int(self.position_grid_full.shape[0])
+        meta_ds.close()
+
         # Interior mask in per-state position-grid coordinates (shape
         # ``(n_position_full,)``). Used by ``SlicePanel`` to find which
         # entries of a posterior row are real vs. NaN-filled by the
         # cache.
-        pfs = np.load(self._layout.place_fields)
         interior_mask_full = np.asarray(pfs["interior_mask"], dtype=bool)
         # ``interior_mask`` saved by the cache is concatenated across
         # states; collapse to per-state (the cache verifies states are
@@ -187,8 +196,9 @@ class Figure4DataSource:
         )[0].copy()
         self.n_states: int = max(1, self.n_state_bins // max(self.n_position_full, 1))
 
-        self._post_lazy = self._ds[self.POSTERIOR_VAR]
-        self._loglik_lazy = self._ds[self.LIKELIHOOD_VAR]
+        # Direct zarr arrays for the hot path.
+        self._post_arr: zarr.Array = self._zarr_group[self.POSTERIOR_VAR]
+        self._loglik_arr: zarr.Array = self._zarr_group[self.LIKELIHOOD_VAR]
 
     # ------------------------------------------------------------------
     # Consistency / sanity
@@ -263,7 +273,7 @@ class Figure4DataSource:
 
     def load_posterior(self, sl: slice) -> NDArray[np.float32]:
         """Load the predictive posterior for the given time slice."""
-        return self._read_window(self._post_lazy, sl)
+        return self._read_window(self._post_arr, sl)
 
     def load_likelihood(self, sl: slice) -> NDArray[np.float32]:
         """Load the (log) likelihood for the given time slice.
@@ -273,7 +283,7 @@ class Figure4DataSource:
         result; the slice panel exponentiates per-row when computing
         the likelihood curve.
         """
-        return self._read_window(self._loglik_lazy, sl)
+        return self._read_window(self._loglik_arr, sl)
 
     def slice_at_index(
         self,
@@ -283,22 +293,18 @@ class Figure4DataSource:
     ) -> NDArray[np.float32]:
         """Return one 1D row (length ``n_state_bins``) at ``t_idx``.
 
-        This is the call the slice panel makes on every UI tick when
-        the center time changes. With the underlying Zarr chunk size
-        of 8192 along time, a single row read costs one chunk fetch
-        from disk if not already cached by the OS; in typical use the
-        viewer maintains a small in-RAM ring buffer of the most recent
-        window so this becomes a pure NumPy index.
+        Hot-path call from the slice panel: a single Zarr row read.
+        Typical chunk size (8192 along time) means at most one chunk
+        fetch from disk, then in-cache for repeat reads.
         """
         if not 0 <= t_idx < self.n_time:
             raise IndexError(f"t_idx {t_idx} out of range [0, {self.n_time})")
-        da = self._post_lazy if which == "posterior" else self._loglik_lazy
-        row = np.asarray(da.isel(time=t_idx).values, dtype=np.float32)
-        return row
+        arr = self._post_arr if which == "posterior" else self._loglik_arr
+        return np.asarray(arr[t_idx], dtype=np.float32)
 
     @staticmethod
-    def _read_window(da: xr.DataArray, sl: slice) -> NDArray[np.float32]:
-        return np.ascontiguousarray(da.isel(time=sl).values, dtype=np.float32)
+    def _read_window(arr: zarr.Array, sl: slice) -> NDArray[np.float32]:
+        return np.ascontiguousarray(arr[sl], dtype=np.float32)
 
     # ------------------------------------------------------------------
     # Events
@@ -327,8 +333,16 @@ class Figure4DataSource:
     # ------------------------------------------------------------------
 
     def close(self) -> None:
-        """Close the underlying Zarr store handle."""
-        self._ds.close()
+        """Close the underlying Zarr store handle.
+
+        Direct ``zarr`` arrays do not have a ``close`` method; their
+        store closes via garbage collection. Holding the references
+        on the data source keeps them alive for the panel's lifetime.
+        """
+        # Drop array references so the underlying store can be GC'd.
+        self._zarr_group = None
+        self._post_arr = None
+        self._loglik_arr = None
 
     def __enter__(self) -> Figure4DataSource:
         return self

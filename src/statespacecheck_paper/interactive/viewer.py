@@ -25,8 +25,10 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pyqtgraph as pg
@@ -154,6 +156,22 @@ class _BaseHeatmapPanel(pg.PlotWidget):
         # every call, which dominates the main-thread cost when the
         # window is large.
         self._levels: tuple[float, float] | None = None
+
+        # Pinned-event vertical marker on the time axis.
+        self._pin_line = pg.InfiniteLine(
+            angle=90,
+            pen=pg.mkPen((255, 255, 0), width=2),
+            movable=False,
+        )
+        self._pin_line.setVisible(False)
+        self.addItem(self._pin_line)
+
+    def update_pinned_event(self, relative_time: float | None) -> None:
+        if relative_time is None:
+            self._pin_line.setVisible(False)
+            return
+        self._pin_line.setPos(relative_time)
+        self._pin_line.setVisible(True)
 
     def update_window(
         self,
@@ -295,9 +313,35 @@ class RasterPanel(pg.PlotWidget):
             brush=pg.mkBrush(0, 0, 0, 255),
             size=2,
             pxMode=True,
+            useCache=True,
         )
         self.addItem(self._scatter)
         self.setYRange(-0.5, n_cells - 0.5, padding=0)
+
+        # Click + pin support.
+        self._window_event_indices: NDArray[np.int64] = np.empty(0, dtype=np.int64)
+        self._on_click: Callable[[int], None] | None = None
+        self._scatter.sigClicked.connect(self._handle_click)
+
+        self._pin_line = pg.InfiniteLine(
+            angle=90,
+            pen=pg.mkPen((50, 50, 50), width=2),
+            movable=False,
+        )
+        self._pin_line.setVisible(False)
+        self.addItem(self._pin_line)
+        self._pin_dot = pg.ScatterPlotItem(
+            pen=pg.mkPen("k", width=1),
+            brush=pg.mkBrush(255, 255, 0, 255),
+            size=10,
+            pxMode=True,
+        )
+        self._pin_dot.setVisible(False)
+        self.addItem(self._pin_dot)
+
+    def set_click_handler(self, handler: Callable[[int], None]) -> None:
+        """Register a callback that takes the global event-row index."""
+        self._on_click = handler
 
     def update_window(
         self,
@@ -306,6 +350,7 @@ class RasterPanel(pg.PlotWidget):
         events_time: NDArray[np.float64],
         events_cell_id: NDArray[np.int32],
         time_offset: float,
+        global_event_indices: NDArray[np.int64] | None = None,
     ) -> None:
         """Plot spikes whose absolute time is in ``[t_start_abs, t_end_abs]``.
 
@@ -319,15 +364,234 @@ class RasterPanel(pg.PlotWidget):
             Cell index for each spike.
         time_offset : float
             Subtract from ``events_time`` to convert absolute → relative.
+        global_event_indices : np.ndarray, shape (n_window_events,), optional
+            Row positions in the full ``Figure4DataSource.events`` frame
+            for click-to-recenter. When omitted, clicks are ignored.
         """
+        if global_event_indices is None:
+            self._window_event_indices = np.empty(0, dtype=np.int64)
+        else:
+            self._window_event_indices = np.asarray(global_event_indices, dtype=np.int64)
+
         if events_time.size == 0:
-            self._scatter.setData(x=[], y=[])
+            self._scatter.setData(x=[], y=[], data=[])
             self.setXRange(time_start, time_end, padding=0)
             return
         x = events_time - time_offset
         y = self._cell_rank[events_cell_id]
-        self._scatter.setData(x=x, y=y)
+        self._scatter.setData(
+            x=x,
+            y=y,
+            data=np.arange(x.shape[0], dtype=np.int64),
+        )
         self.setXRange(time_start, time_end, padding=0)
+
+    def update_pinned_event(
+        self,
+        *,
+        relative_time: float | None,
+        cell_id: int | None,
+    ) -> None:
+        if relative_time is None or cell_id is None:
+            self._pin_line.setVisible(False)
+            self._pin_dot.setVisible(False)
+            return
+        rank = float(self._cell_rank[int(cell_id)])
+        self._pin_line.setPos(relative_time)
+        self._pin_line.setVisible(True)
+        self._pin_dot.setData(x=[relative_time], y=[rank])
+        self._pin_dot.setVisible(True)
+
+    def _handle_click(self, _scatter: pg.ScatterPlotItem, points: list[Any]) -> None:
+        if not points or self._on_click is None:
+            return
+        spot = points[0]
+        local_idx_obj = spot.data()
+        try:
+            local_idx = int(local_idx_obj)
+        except (TypeError, ValueError):
+            return
+        if not 0 <= local_idx < self._window_event_indices.shape[0]:
+            return
+        self._on_click(int(self._window_event_indices[local_idx]))
+
+
+# ---------------------------------------------------------------------------
+# Per-spike metric panel (HPD overlap, KL divergence, -log10 spike prob)
+# ---------------------------------------------------------------------------
+
+
+METRIC_COLORS: dict[str, tuple[int, int, int]] = {
+    "event_hpd_overlap": (44, 160, 44),  # green
+    "event_kl_divergence": (214, 39, 40),  # red
+    "event_spike_prob": (148, 103, 189),  # purple
+}
+METRIC_TITLES: dict[str, str] = {
+    "event_hpd_overlap": "HPD overlap",
+    "event_kl_divergence": "KL divergence",
+    "event_spike_prob": "-log10(p)",
+}
+
+
+class MetricPanel(pg.PlotWidget):
+    """Window-local per-spike scatter for one diagnostic metric.
+
+    Each spike is one dot at ``(time_relative, metric_value)``. Clicks
+    on a dot recenter the viewer on the spike's time and pin a marker
+    across all panels via the supplied ``on_click`` callback.
+
+    The ``event_spike_prob`` metric is shown as ``-log10(p)`` so
+    "worse fit" goes up like the other two diagnostic axes.
+    """
+
+    def __init__(self, *, metric: str, threshold: float | None = None) -> None:
+        super().__init__()
+        self.setBackground("w")
+        self.setMenuEnabled(False)
+        self.setMouseEnabled(x=False, y=False)
+        self.setLabel("bottom", "Time (s)")
+        self.setLabel("left", METRIC_TITLES.get(metric, metric))
+
+        self._metric = metric
+        rgb = METRIC_COLORS.get(metric, (50, 50, 50))
+        self._scatter = pg.ScatterPlotItem(
+            pen=pg.mkPen(rgb, width=0),
+            brush=pg.mkBrush(*rgb, 200),
+            size=4,
+            pxMode=True,
+            useCache=True,
+        )
+        self.addItem(self._scatter)
+
+        # Threshold horizontal line for the two metrics that have one in
+        # the existing Figure 4 (HPD overlap = 0.05, spike prob = 0.05
+        # which becomes -log10(0.05) ≈ 1.30 on this axis).
+        self._threshold_line: pg.InfiniteLine | None = None
+        if threshold is not None:
+            disp = -np.log10(threshold) if metric == "event_spike_prob" else threshold
+            self._threshold_line = pg.InfiniteLine(
+                pos=float(disp),
+                angle=0,
+                pen=pg.mkPen((100, 100, 100), width=1, style=QtCore.Qt.PenStyle.DashLine),
+                movable=False,
+            )
+            self.addItem(self._threshold_line)
+
+        # Pinned-event marker: vertical line at the clicked spike's
+        # time, plus a single highlighted dot. Both share the metric's
+        # color but use a thicker stroke.
+        pin_rgb = (rgb[0], rgb[1], rgb[2])
+        self._pin_line = pg.InfiniteLine(
+            angle=90,
+            pen=pg.mkPen(pin_rgb, width=2),
+            movable=False,
+        )
+        self._pin_line.setVisible(False)
+        self.addItem(self._pin_line)
+        self._pin_dot = pg.ScatterPlotItem(
+            pen=pg.mkPen("k", width=1),
+            brush=pg.mkBrush(*pin_rgb, 255),
+            size=10,
+            pxMode=True,
+        )
+        self._pin_dot.setVisible(False)
+        self.addItem(self._pin_dot)
+
+        # Filled by ``update_window`` so click handlers can map a Qt
+        # ``SpotItem`` back to a row index in the events table.
+        self._window_event_indices: NDArray[np.int64] = np.empty(0, dtype=np.int64)
+        self._on_click: Callable[[int], None] | None = None
+        self._scatter.sigClicked.connect(self._handle_click)
+
+    # ------------------------------------------------------------------
+    # Wiring
+    # ------------------------------------------------------------------
+
+    @property
+    def metric(self) -> str:
+        return self._metric
+
+    def set_click_handler(self, handler: Callable[[int], None]) -> None:
+        """Register a callback that takes the global event-row index."""
+        self._on_click = handler
+
+    # ------------------------------------------------------------------
+    # Per-window updates
+    # ------------------------------------------------------------------
+
+    def update_window(
+        self,
+        time_start: float,
+        time_end: float,
+        events_time: NDArray[np.float64],
+        events_metric: NDArray[np.float32],
+        time_offset: float,
+        global_event_indices: NDArray[np.int64],
+    ) -> None:
+        """Plot the in-window events for this metric.
+
+        ``global_event_indices`` is the array of row positions in the
+        full ``Figure4DataSource.events`` frame; the click handler uses
+        it to map a clicked SpotItem back to the canonical event row.
+        """
+        self._window_event_indices = np.asarray(global_event_indices, dtype=np.int64)
+        if events_time.size == 0:
+            self._scatter.setData(x=[], y=[], data=[])
+            self.setXRange(time_start, time_end, padding=0)
+            return
+        x = events_time - time_offset
+        y = self._display_values(events_metric)
+        # ``data`` is the per-spot payload pyqtgraph returns on click.
+        # We attach the local index so we can map back to the global
+        # event-row index without a hash lookup.
+        self._scatter.setData(
+            x=x,
+            y=y,
+            data=np.arange(x.shape[0], dtype=np.int64),
+        )
+        self.setXRange(time_start, time_end, padding=0)
+
+    def update_pinned_event(
+        self,
+        *,
+        relative_time: float | None,
+        metric_value: float | None,
+    ) -> None:
+        """Show or hide the pinned-event vertical marker and dot."""
+        if relative_time is None or metric_value is None:
+            self._pin_line.setVisible(False)
+            self._pin_dot.setVisible(False)
+            return
+        self._pin_line.setPos(relative_time)
+        self._pin_line.setVisible(True)
+        disp = -np.log10(metric_value) if self._metric == "event_spike_prob" else metric_value
+        self._pin_dot.setData(x=[relative_time], y=[float(disp)])
+        self._pin_dot.setVisible(True)
+
+    # ------------------------------------------------------------------
+    # Internals
+    # ------------------------------------------------------------------
+
+    def _display_values(self, raw: NDArray[np.float32]) -> NDArray[np.float32]:
+        if self._metric == "event_spike_prob":
+            # Avoid log(0); cache stores values >= 0. Tiny floor is fine.
+            safe = np.maximum(raw, 1e-12, dtype=np.float32)
+            return np.asarray(-np.log10(safe), dtype=np.float32)
+        return np.asarray(raw, dtype=np.float32)
+
+    def _handle_click(self, _scatter: pg.ScatterPlotItem, points: list[Any]) -> None:
+        if not points or self._on_click is None:
+            return
+        spot = points[0]
+        local_idx_obj = spot.data()
+        try:
+            local_idx = int(local_idx_obj)
+        except (TypeError, ValueError):
+            return
+        if not 0 <= local_idx < self._window_event_indices.shape[0]:
+            return
+        global_idx = int(self._window_event_indices[local_idx])
+        self._on_click(global_idx)
 
 
 # ---------------------------------------------------------------------------
@@ -430,6 +694,20 @@ class SlicePanel(pg.PlotWidget):
         )
         self.addItem(self._true_position_line)
 
+        # Pinned-spike overlay: the clicked spike's place-field curve
+        # over position, plus a small annotation in the upper-left.
+        self._pinned_curve = pg.PlotDataItem(
+            self._position_bins,
+            self._zero_curve,
+            pen=pg.mkPen((255, 215, 0), width=2),
+        )
+        self._pinned_curve.setVisible(False)
+        self.addItem(self._pinned_curve)
+        self._annotation = pg.TextItem(anchor=(0, 0), color=(50, 50, 50))
+        self._annotation.setPos(self._position_bins[0], 0.0)
+        self._annotation.setVisible(False)
+        self.addItem(self._annotation)
+
         # Window-buffer state. The viewer pushes a freshly loaded
         # window via ``set_window_buffer``; subsequent
         # ``update_for_index`` calls index into it.
@@ -500,6 +778,27 @@ class SlicePanel(pg.PlotWidget):
             lik_rgb = _STATE_LIKELIHOOD_RGB[s % len(_STATE_LIKELIHOOD_RGB)]
             fill.setBrush(pg.mkBrush(*lik_rgb, alpha))
 
+    def update_pinned_event(
+        self,
+        *,
+        place_field_row: NDArray[np.float32] | None,
+        annotation: str | None,
+    ) -> None:
+        """Show / hide the clicked spike's place-field curve and annotation."""
+        if place_field_row is None or annotation is None:
+            self._pinned_curve.setVisible(False)
+            self._annotation.setVisible(False)
+            return
+        if place_field_row.shape[0] != self._position_bins.shape[0]:
+            # Defensive: should match the per-state grid; if not, hide.
+            self._pinned_curve.setVisible(False)
+            self._annotation.setVisible(False)
+            return
+        self._pinned_curve.setData(self._position_bins, place_field_row)
+        self._pinned_curve.setVisible(True)
+        self._annotation.setText(annotation)
+        self._annotation.setVisible(True)
+
 
 # ---------------------------------------------------------------------------
 # Main window
@@ -529,10 +828,15 @@ class Figure4Viewer(QtWidgets.QMainWindow):
         # arrived and should fire when the current one completes.
         self._inflight_request_id: int | None = None
         self._pending_dispatch = False
+        # Pinned-event state. ``None`` when no event is pinned; when
+        # set it is a global row index into ``data_source.events`` so
+        # the panels can fetch the spike's metrics on demand.
+        self._pinned_event_row: int | None = None
 
         self._build_panels()
         self._build_controls()
         self._wire_load_worker()
+        self._wire_click_handlers()
 
         # Trigger initial load.
         self._dispatch_load()
@@ -560,13 +864,23 @@ class Figure4Viewer(QtWidgets.QMainWindow):
             n_cells=ds.n_cells,
             place_field_peaks=ds.place_field_peaks,
         )
+        # Three diagnostic-metric panels; the thresholds match Figure 4
+        # defaults at scripts/generate_figure04.py.
+        self.metric_panels: dict[str, MetricPanel] = {
+            "event_hpd_overlap": MetricPanel(metric="event_hpd_overlap", threshold=0.05),
+            "event_kl_divergence": MetricPanel(metric="event_kl_divergence", threshold=None),
+            "event_spike_prob": MetricPanel(metric="event_spike_prob", threshold=0.05),
+        }
         self.slice_panel = SlicePanel(
             position_bins=ds.position_grid_full,
             n_states=ds.n_states,
         )
-        # Link x-axes so any zoom/range change propagates.
-        self.likelihood_panel.setXLink(self.posterior_panel)
-        self.raster_panel.setXLink(self.posterior_panel)
+        # Link x-axes so any zoom/range change propagates across the
+        # time-axis stack (heatmaps + raster + metric panels).
+        x_linked: list[pg.PlotWidget] = [self.likelihood_panel, self.raster_panel]
+        x_linked.extend(self.metric_panels.values())
+        for panel in x_linked:
+            panel.setXLink(self.posterior_panel)
 
     def _build_controls(self) -> None:
         central = QtWidgets.QWidget(self)
@@ -585,6 +899,12 @@ class Figure4Viewer(QtWidgets.QMainWindow):
         time_axis_layout.addWidget(self.posterior_panel, stretch=2)
         time_axis_layout.addWidget(self.likelihood_panel, stretch=2)
         time_axis_layout.addWidget(self.raster_panel, stretch=1)
+        for metric in (
+            "event_hpd_overlap",
+            "event_kl_divergence",
+            "event_spike_prob",
+        ):
+            time_axis_layout.addWidget(self.metric_panels[metric], stretch=1)
         split.addWidget(time_axis)
         split.addWidget(self.slice_panel)
         split.setStretchFactor(0, 7)
@@ -617,6 +937,12 @@ class Figure4Viewer(QtWidgets.QMainWindow):
 
         outer.addWidget(controls)
 
+    def _wire_click_handlers(self) -> None:
+        """Connect raster + metric ``sigClicked`` to the pin-and-recenter path."""
+        self.raster_panel.set_click_handler(self._handle_event_click)
+        for panel in self.metric_panels.values():
+            panel.set_click_handler(self._handle_event_click)
+
     def _wire_load_worker(self) -> None:
         self._thread_pool = QtCore.QThreadPool.globalInstance()
         self._load_signals = _LoadSignals()
@@ -636,6 +962,9 @@ class Figure4Viewer(QtWidgets.QMainWindow):
     def _on_slider_changed(self, value: int) -> None:
         self._t_center = self._time_for_slider(value)
         self._time_label.setText(self._format_time_label())
+        # Manual scrolling unpins any previously pinned event.
+        if self._pinned_event_row is not None:
+            self._set_pinned_event(None)
         # Animate the slice panel immediately — this is the per-tick
         # path the user perceives during scrubbing. It is a single
         # array index into the in-RAM ring buffer, so it is sub-ms.
@@ -652,6 +981,84 @@ class Figure4Viewer(QtWidgets.QMainWindow):
         t_idx = ds.index_at_time(self._t_center)
         true_pos = float(ds.linear_position[t_idx])
         self.slice_panel.update_for_index(t_idx, true_pos)
+
+    # ------------------------------------------------------------------
+    # Click / pin
+    # ------------------------------------------------------------------
+
+    def _handle_event_click(self, global_event_row: int) -> None:
+        """Recenter on the clicked spike's time and pin a marker."""
+        ds = self._ds
+        if not 0 <= global_event_row < len(ds.events):
+            return
+        event = ds.events.iloc[global_event_row]
+        self._set_pinned_event(global_event_row)
+        # Recenter the window on the spike's time. set_center_time
+        # animates the slice panel and arms the load-debounce timer.
+        self.set_center_time(float(event["time"]))
+
+    def _set_pinned_event(self, global_event_row: int | None) -> None:
+        self._pinned_event_row = global_event_row
+        self._refresh_pin_markers()
+
+    def _refresh_pin_markers(self) -> None:
+        """Sync every panel's pin marker with the current pinned event."""
+        ds = self._ds
+        row = self._pinned_event_row
+        if row is None or not 0 <= row < len(ds.events):
+            for panel in self.metric_panels.values():
+                panel.update_pinned_event(relative_time=None, metric_value=None)
+            self.raster_panel.update_pinned_event(relative_time=None, cell_id=None)
+            self.posterior_panel.update_pinned_event(None)
+            self.likelihood_panel.update_pinned_event(None)
+            self.slice_panel.update_pinned_event(
+                place_field_row=None,
+                annotation=None,
+            )
+            return
+
+        event = ds.events.iloc[row]
+        sl = self.slice_panel._buffer_slice  # noqa: SLF001
+        # The pin's relative time is meaningful only when the event
+        # falls within the currently rendered window.
+        if sl is None or not (sl.start <= ds.index_at_time(float(event["time"])) < sl.stop):
+            relative_time: float | None = None
+        else:
+            relative_time = float(event["time"]) - float(ds.time[sl.start])
+
+        for metric, panel in self.metric_panels.items():
+            panel.update_pinned_event(
+                relative_time=relative_time,
+                metric_value=float(event[metric]),
+            )
+        self.raster_panel.update_pinned_event(
+            relative_time=relative_time,
+            cell_id=int(event["cell_id"]),
+        )
+        self.posterior_panel.update_pinned_event(relative_time)
+        self.likelihood_panel.update_pinned_event(relative_time)
+
+        # Slice-panel overlay: the cell's own place-field over position.
+        cell_id = int(event["cell_id"])
+        per_state_cols = ds.place_fields.shape[1] // max(ds.n_states, 1)
+        # Use the cell's first-state place field; for ContFrag that's
+        # the Continuous-state slice (same place fields are repeated
+        # across states by the encoding model).
+        place_field = ds.place_fields[cell_id, :per_state_cols]
+        # Embed into the full per-state position grid (interior bins
+        # only carry data; non-interior bins stay at zero).
+        full_curve = np.zeros(ds.n_position_full, dtype=np.float32)
+        full_curve[ds.interior_mask] = place_field
+        annotation = (
+            f"t={float(event['time']):.3f}  cell={cell_id}\n"
+            f"HPD={float(event['event_hpd_overlap']):.3f}  "
+            f"KL={float(event['event_kl_divergence']):.3f}  "
+            f"p={float(event['event_spike_prob']):.3f}"
+        )
+        self.slice_panel.update_pinned_event(
+            place_field_row=full_curve,
+            annotation=annotation,
+        )
 
     @QtCore.Slot(int, slice, object, object)
     def _on_window_loaded(
@@ -695,21 +1102,52 @@ class Figure4Viewer(QtWidgets.QMainWindow):
 
         events = self._ds.events_in_window(sl)
         if events.empty:
+            empty_t = np.empty(0, dtype=np.float64)
+            empty_c = np.empty(0, dtype=np.int32)
+            empty_m = np.empty(0, dtype=np.float32)
+            empty_idx = np.empty(0, dtype=np.int64)
             self.raster_panel.update_window(
                 rel_start,
                 rel_end,
-                np.empty(0, dtype=np.float64),
-                np.empty(0, dtype=np.int32),
+                empty_t,
+                empty_c,
                 t_offset,
+                empty_idx,
             )
+            for panel in self.metric_panels.values():
+                panel.update_window(
+                    rel_start,
+                    rel_end,
+                    empty_t,
+                    empty_m,
+                    t_offset,
+                    empty_idx,
+                )
         else:
+            event_times_arr = events["time"].to_numpy()
+            cell_ids = events["cell_id"].to_numpy()
+            global_indices = events.index.to_numpy().astype(np.int64, copy=False)
             self.raster_panel.update_window(
                 rel_start,
                 rel_end,
-                events["time"].to_numpy(),
-                events["cell_id"].to_numpy(),
+                event_times_arr,
+                cell_ids,
                 t_offset,
+                global_indices,
             )
+            for metric, panel in self.metric_panels.items():
+                panel.update_window(
+                    rel_start,
+                    rel_end,
+                    event_times_arr,
+                    events[metric].to_numpy(),
+                    t_offset,
+                    global_indices,
+                )
+
+        # Refresh pin markers (the pinned event may now be visible or
+        # not depending on the freshly committed window).
+        self._refresh_pin_markers()
 
     # ------------------------------------------------------------------
     # Internals
@@ -754,6 +1192,31 @@ class Figure4Viewer(QtWidgets.QMainWindow):
         """Bypass the debounce timer; used in benchmarks / tests."""
         self._load_timer.stop()
         self._dispatch_load()
+
+    # Resource cleanup ------------------------------------------------
+
+    def closeEvent(self, event: QtGui.QCloseEvent) -> None:  # noqa: N802 (Qt API)
+        """Wait for any in-flight load worker before tearing down.
+
+        Without this, ``QThreadPool`` may run a worker after the
+        ``Figure4DataSource``'s Zarr store has been closed, which
+        accesses freed memory and aborts (bus error).
+        """
+        # Stop any pending dispatches.
+        self._load_timer.stop()
+        self._pending_dispatch = False
+        # Block briefly until the in-flight worker finishes.
+        deadline = QtCore.QElapsedTimer()
+        deadline.start()
+        while self._inflight_request_id is not None and deadline.elapsed() < 5000:
+            self._thread_pool.waitForDone(50)
+            QtWidgets.QApplication.processEvents()
+        # Drop the signals object so any straggler emit hits a noop.
+        try:
+            self._load_signals.finished.disconnect()
+        except (RuntimeError, TypeError):
+            pass
+        super().closeEvent(event)
 
     def set_center_time(self, t_center: float) -> None:
         """Programmatic scroll for benchmark scripts and tests."""
