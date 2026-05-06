@@ -55,6 +55,7 @@ RESET_WINDOW_SECONDS = 20.0
 # Auto-scroll defaults.
 AUTOSCROLL_TICK_HZ = 30.0
 AUTOSCROLL_RATE_REALTIME = 1.0  # advance 1 second of session per second of wall time
+AUTOSCROLL_SPEED_OPTIONS: tuple[float, ...] = (0.25, 0.5, 1.0, 2.0, 4.0, 8.0)
 
 
 @dataclass(frozen=True)
@@ -1007,6 +1008,16 @@ class Figure4Viewer(QtWidgets.QMainWindow):
         self._play_button.toggled.connect(self._on_play_toggled)
         controls_layout.addWidget(self._play_button)
 
+        self._speed_combo = QtWidgets.QComboBox()
+        self._speed_combo.setToolTip(
+            "Auto-scroll speed (×realtime). Shortcuts: , faster, . slower."
+        )
+        for speed in AUTOSCROLL_SPEED_OPTIONS:
+            self._speed_combo.addItem(self._format_speed(speed), userData=speed)
+        self._speed_combo.setCurrentIndex(self._speed_combo_default_index())
+        self._speed_combo.currentIndexChanged.connect(self._on_speed_combo_changed)
+        controls_layout.addWidget(self._speed_combo)
+
         controls_layout.addSpacing(12)
         controls_layout.addWidget(QtWidgets.QLabel("Model:"))
         self._model_combo = QtWidgets.QComboBox()
@@ -1052,6 +1063,11 @@ class Figure4Viewer(QtWidgets.QMainWindow):
         add("[", lambda: self._scale_window(0.5))
         add("]", lambda: self._scale_window(2.0))
         add("R", self._reset_view)
+        # ``,`` and ``.`` (the same keys as ``<`` / ``>`` without
+        # Shift) step the auto-scroll speed up / down through the
+        # preset list.
+        add(",", lambda: self._step_speed(-1))
+        add(".", lambda: self._step_speed(+1))
 
     def _wire_load_worker(self) -> None:
         self._thread_pool = QtCore.QThreadPool.globalInstance()
@@ -1106,6 +1122,13 @@ class Figure4Viewer(QtWidgets.QMainWindow):
         if model not in ("continuous", "contfrag"):
             return
         self._switch_model(cast(ModelName, model))
+
+    @QtCore.Slot(int)
+    def _on_speed_combo_changed(self, index: int) -> None:
+        speed = self._speed_combo.itemData(index)
+        if speed is None:
+            return
+        self._autoscroll_rate = float(speed)
 
     def _update_slice_panel_at_center(self) -> None:
         ds = self._ds
@@ -1383,6 +1406,26 @@ class Figure4Viewer(QtWidgets.QMainWindow):
     def _toggle_play(self) -> None:
         self._play_button.toggle()
 
+    # Speed -----------------------------------------------------------
+
+    @staticmethod
+    def _format_speed(speed: float) -> str:
+        if speed >= 1.0:
+            return f"{speed:.0f}×" if speed.is_integer() else f"{speed:.2g}×"
+        return f"{speed:.2g}×"
+
+    def _speed_combo_default_index(self) -> int:
+        # Pick the option closest to ``AUTOSCROLL_RATE_REALTIME``.
+        diffs = [abs(s - AUTOSCROLL_RATE_REALTIME) for s in AUTOSCROLL_SPEED_OPTIONS]
+        return int(np.argmin(diffs))
+
+    def _step_speed(self, delta: int) -> None:
+        idx = self._speed_combo.currentIndex() + delta
+        idx = int(np.clip(idx, 0, len(AUTOSCROLL_SPEED_OPTIONS) - 1))
+        if idx == self._speed_combo.currentIndex():
+            return
+        self._speed_combo.setCurrentIndex(idx)
+
     # Keyboard helpers --------------------------------------------------
 
     def _step_center_by_indices(self, n: int) -> None:
@@ -1446,6 +1489,7 @@ class Figure4Viewer(QtWidgets.QMainWindow):
             self._play_button.setChecked(False)  # ensures _stop_autoscroll runs
         alpha = int(self._alpha_slider.value())
         window_seconds = float(self._window_seconds)
+        speed_index = int(self._speed_combo.currentIndex())
 
         old_ds = self._ds
         self._ds = new_ds
@@ -1472,6 +1516,8 @@ class Figure4Viewer(QtWidgets.QMainWindow):
         self._alpha_slider.blockSignals(False)
         self.slice_panel.set_likelihood_alpha(alpha)
         self._set_window_seconds(window_seconds)
+        if 0 <= speed_index < self._speed_combo.count():
+            self._speed_combo.setCurrentIndex(speed_index)
         self._model_combo.blockSignals(True)
         self._model_combo.setCurrentText(new_ds.model)
         self._model_combo.blockSignals(False)

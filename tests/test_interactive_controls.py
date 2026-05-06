@@ -288,6 +288,70 @@ def test_autoscroll_step_advances_center_time(tmp_path: Path) -> None:
         ds.close()
 
 
+def test_speed_combo_changes_autoscroll_rate(tmp_path: Path) -> None:
+    _build_cache(tmp_path / "cache")
+    app, viewer, ds = _make_viewer(tmp_path / "cache")
+    try:
+        from statespacecheck_paper.interactive.viewer import AUTOSCROLL_SPEED_OPTIONS
+
+        # Set to the highest option; ``_autoscroll_rate`` should match.
+        last_idx = len(AUTOSCROLL_SPEED_OPTIONS) - 1
+        viewer._speed_combo.setCurrentIndex(last_idx)  # noqa: SLF001
+        assert abs(viewer._autoscroll_rate - AUTOSCROLL_SPEED_OPTIONS[last_idx]) < 1e-9  # noqa: SLF001
+
+        # Set to the lowest.
+        viewer._speed_combo.setCurrentIndex(0)  # noqa: SLF001
+        assert abs(viewer._autoscroll_rate - AUTOSCROLL_SPEED_OPTIONS[0]) < 1e-9  # noqa: SLF001
+    finally:
+        viewer.close()
+        ds.close()
+
+
+def test_speed_step_keyboard_shortcut(tmp_path: Path) -> None:
+    _build_cache(tmp_path / "cache")
+    app, viewer, ds = _make_viewer(tmp_path / "cache")
+    try:
+        from statespacecheck_paper.interactive.viewer import AUTOSCROLL_SPEED_OPTIONS
+
+        viewer._speed_combo.setCurrentIndex(2)  # noqa: SLF001
+        viewer._step_speed(+1)  # noqa: SLF001
+        assert viewer._speed_combo.currentIndex() == 3  # noqa: SLF001
+        assert abs(viewer._autoscroll_rate - AUTOSCROLL_SPEED_OPTIONS[3]) < 1e-9  # noqa: SLF001
+
+        viewer._step_speed(-2)  # noqa: SLF001
+        assert viewer._speed_combo.currentIndex() == 1  # noqa: SLF001
+        # Stepping past either end clamps without erroring.
+        viewer._step_speed(-100)  # noqa: SLF001
+        assert viewer._speed_combo.currentIndex() == 0  # noqa: SLF001
+        viewer._step_speed(+100)  # noqa: SLF001
+        assert viewer._speed_combo.currentIndex() == len(AUTOSCROLL_SPEED_OPTIONS) - 1  # noqa: SLF001
+    finally:
+        viewer.close()
+        ds.close()
+
+
+def test_autoscroll_step_uses_current_speed(tmp_path: Path) -> None:
+    _build_cache(tmp_path / "cache")
+    app, viewer, ds = _make_viewer(tmp_path / "cache")
+    try:
+        from statespacecheck_paper.interactive.viewer import (
+            AUTOSCROLL_SPEED_OPTIONS,
+            AUTOSCROLL_TICK_HZ,
+        )
+
+        # Pick the 4× option from the preset list.
+        idx_4x = AUTOSCROLL_SPEED_OPTIONS.index(4.0)
+        viewer.set_center_time(float(ds.time[100]))
+        viewer._speed_combo.setCurrentIndex(idx_4x)  # noqa: SLF001
+        before = viewer._t_center  # noqa: SLF001
+        viewer._autoscroll_step()  # noqa: SLF001
+        expected_dt = 4.0 / AUTOSCROLL_TICK_HZ
+        assert abs((viewer._t_center - before) - expected_dt) < 1e-6  # noqa: SLF001
+    finally:
+        viewer.close()
+        ds.close()
+
+
 def test_autoscroll_pauses_at_session_end(tmp_path: Path) -> None:
     _build_cache(tmp_path / "cache")
     app, viewer, ds = _make_viewer(tmp_path / "cache")
