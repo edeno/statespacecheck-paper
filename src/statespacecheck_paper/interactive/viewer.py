@@ -58,6 +58,25 @@ AUTOSCROLL_RATE_REALTIME = 1.0  # advance 1 second of session per second of wall
 AUTOSCROLL_SPEED_OPTIONS: tuple[float, ...] = (0.25, 0.5, 1.0, 2.0, 4.0, 8.0)
 
 
+def _nearest_index(sorted_arr: NDArray[np.float64], value: float) -> int:
+    """Return the index of the entry in ``sorted_arr`` closest to ``value``.
+
+    ``sorted_arr`` must be monotonically increasing. Used by the
+    per-tick live-readout path (avoids a ``np.argmin`` allocation).
+    """
+    n = sorted_arr.size
+    if n == 0:
+        raise ValueError("Empty array")
+    i = int(np.searchsorted(sorted_arr, value))
+    if i <= 0:
+        return 0
+    if i >= n:
+        return n - 1
+    if abs(float(sorted_arr[i - 1]) - value) <= abs(float(sorted_arr[i]) - value):
+        return i - 1
+    return i
+
+
 @dataclass(frozen=True)
 class ViewState:
     """Immutable snapshot of the viewer's current request.
@@ -1291,50 +1310,33 @@ class Figure4Viewer(QtWidgets.QMainWindow):
           current center time, with the time offset Δt for context
         """
         ds = self._ds
-        rel_t = ds.time[t_idx] - ds.time[0]
-        lines = [f"t = {rel_t:.3f} s"]
+        t_now = float(ds.time[t_idx])
+        lines = [f"t = {t_now - float(ds.time[0]):.3f} s"]
 
-        # Predictive value at the animal's true position. The slice
-        # panel's buffer holds the latest posterior window; if the
-        # current index is inside it, we read directly from the
-        # buffer (no disk hit). Multi-state: sum over states first.
         sl = self.slice_panel._buffer_slice  # noqa: SLF001
         post_buf = self.slice_panel._buffer_post  # noqa: SLF001
-        predictive_val: float | None = None
         if sl is not None and post_buf is not None and sl.start <= t_idx < sl.stop:
             row = post_buf[t_idx - sl.start]
             if ds.n_states > 1:
                 row = row.reshape(ds.n_states, ds.n_position_full).sum(axis=0)
-            # Find the position bin closest to ``true_pos``.
-            pos_bin = int(np.argmin(np.abs(ds.position_grid_full - true_pos)))
-            predictive_val = float(row[pos_bin])
-        if predictive_val is not None:
-            lines.append(f"predictive(x_true) = {predictive_val:.4f}")
+            # ``position_grid_full`` is monotonic, so a single
+            # ``searchsorted`` + neighbor compare beats the per-tick
+            # ``argmin(abs(... - true_pos))`` allocation.
+            pos_bin = _nearest_index(ds.position_grid_full, true_pos)
+            lines.append(f"predictive(x_true) = {float(row[pos_bin]):.4f}")
 
-        # Nearest spike (in absolute time) and its diagnostic metrics.
-        events = ds.events
-        if not events.empty:
-            event_times = events["time"].to_numpy()
-            i = int(np.searchsorted(event_times, ds.time[t_idx]))
-            candidates: list[int] = []
-            if 0 <= i - 1 < event_times.size:
-                candidates.append(i - 1)
-            if 0 <= i < event_times.size:
-                candidates.append(i)
-            if candidates:
-                # Closest neighbor by absolute time difference.
-                k = min(
-                    candidates,
-                    key=lambda j: abs(float(event_times[j]) - float(ds.time[t_idx])),
-                )
-                ev = events.iloc[k]
-                dt_ms = (float(ev["time"]) - float(ds.time[t_idx])) * 1000.0
-                lines.append(f"nearest spike: cell={int(ev['cell_id'])}  Δt={dt_ms:+.1f} ms")
-                lines.append(
-                    f"HPD = {float(ev['event_hpd_overlap']):.3f}   "
-                    f"KL = {float(ev['event_kl_divergence']):.3f}   "
-                    f"p = {float(ev['event_spike_prob']):.3g}"
-                )
+        # Nearest spike via the cached column views (no per-tick
+        # ``DataFrame.iloc`` row construction or ``to_numpy()`` rebuild).
+        ev_t = ds.event_times
+        if ev_t.size:
+            k = _nearest_index(ev_t, t_now)
+            dt_ms = (float(ev_t[k]) - t_now) * 1000.0
+            lines.append(f"nearest spike: cell={int(ds.event_cell_ids[k])}  Δt={dt_ms:+.1f} ms")
+            lines.append(
+                f"HPD = {float(ds.event_hpd_overlap[k]):.3f}   "
+                f"KL = {float(ds.event_kl_divergence[k]):.3f}   "
+                f"p = {float(ds.event_spike_prob[k]):.3g}"
+            )
         return "\n".join(lines)
 
     # ------------------------------------------------------------------

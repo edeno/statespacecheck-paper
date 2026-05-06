@@ -12,143 +12,20 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
 import pytest
-import xarray as xr
 
-from statespacecheck_paper.interactive import cache as cache_mod
 from statespacecheck_paper.interactive.data_source import Figure4DataSource
+
+from ._synthetic_cache import build_synthetic_cache
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CACHE_DIR = REPO_ROOT / "data" / "cache"
 
 
-# ---------------------------------------------------------------------------
-# Synthetic cache builder (independent of the real fitted-model pickles).
-# ---------------------------------------------------------------------------
-
-
-def _build_synthetic_cache(
-    cache_dir: Path,
-    *,
-    n_time: int = 500,
-    n_states: int = 1,
-    n_position: int = 16,
-    n_cells: int = 4,
-    n_events: int = 60,
-    seed: int = 0,
-) -> None:
-    """Create a minimal, self-consistent Continuous-style cache on disk."""
-    rng = np.random.default_rng(seed)
-    cache_dir.mkdir(parents=True, exist_ok=True)
-
-    n_state_bins = n_states * n_position
-    state_names = [f"state_{i}" for i in range(n_states)]
-    state_coord = np.array([state_names[i] for i in range(n_states) for _ in range(n_position)])
-    position_grid = np.linspace(0.0, 100.0, n_position)
-    position_coord = np.tile(position_grid, n_states)
-
-    posterior = rng.dirichlet(np.ones(n_state_bins), size=n_time).astype(np.float32)
-    log_likelihood = np.log(posterior + 1e-12).astype(np.float32)
-    state_probs = np.ones((n_time,), dtype=np.float32)
-
-    time = 1000.0 + np.arange(n_time, dtype=np.float64) * 0.002
-
-    ds = xr.Dataset(
-        data_vars={
-            "predictive_posterior": (("time", "state_bins"), posterior),
-            "log_likelihood": (("time", "state_bins"), log_likelihood),
-            "acausal_state_probabilities": (("time",), state_probs),
-        },
-        coords={
-            "time": ("time", time),
-            "state_bins": ("state_bins", np.arange(n_state_bins, dtype=np.int64)),
-            "state": ("state_bins", state_coord),
-            "position": ("state_bins", position_coord),
-        },
-    )
-
-    paths = cache_mod.cache_paths(cache_dir, "continuous")
-
-    cache_mod._write_zarr_store(
-        ds=ds,
-        out_dir=paths["zarr"],
-        time_chunk=64,
-        pyramid_strides=(8, 64),
-    )
-
-    # Per-cell spike times: roughly uniform across the session.
-    spike_times: list[np.ndarray] = []
-    cumulative = 0
-    for _cell in range(n_cells):
-        n_spk = max(1, n_events // n_cells)
-        t = np.sort(rng.uniform(time[0], time[-1], size=n_spk))
-        spike_times.append(t.astype(np.float64))
-        cumulative += n_spk
-
-    # Event table: one row per spike across all cells, sorted by time.
-    event_records: list[tuple[float, int, float, float, float]] = []
-    for cell_id, t_arr in enumerate(spike_times):
-        for t_val in t_arr:
-            event_records.append(
-                (
-                    float(t_val),
-                    int(cell_id),
-                    float(rng.uniform(0.0, 1.0)),
-                    float(rng.uniform(0.0, 5.0)),
-                    float(rng.uniform(0.0, 1.0)),
-                )
-            )
-    event_records.sort(key=lambda r: r[0])
-    events = pd.DataFrame(
-        event_records,
-        columns=[
-            "time",
-            "cell_id",
-            "event_hpd_overlap",
-            "event_kl_divergence",
-            "event_spike_prob",
-        ],
-    )
-    events = events.astype(
-        {
-            "time": np.float64,
-            "cell_id": np.int32,
-            "event_hpd_overlap": np.float32,
-            "event_kl_divergence": np.float32,
-            "event_spike_prob": np.float32,
-        }
-    )
-    events.to_parquet(paths["events"], engine="pyarrow", compression="zstd")
-
-    # Place fields keyed to the position grid; peaks sample positions.
-    place_fields = rng.uniform(0.0, 5.0, size=(n_cells, n_position)).astype(np.float32)
-    peak_idx = np.argmax(place_fields, axis=1)
-    np.savez(
-        paths["place_fields"],
-        place_fields=place_fields,
-        interior_mask=np.ones(n_state_bins, dtype=bool),
-        position_bins=position_grid.astype(np.float64),
-        place_field_peaks=position_grid[peak_idx].astype(np.float64),
-    )
-
-    np.savez(
-        cache_mod.meta_path(cache_dir),
-        time=time,
-        linear_position=rng.uniform(0.0, 100.0, size=n_time).astype(np.float64),
-        n_cells=np.int64(n_cells),
-    )
-
-    container = np.empty(n_cells, dtype=object)
-    for i, st in enumerate(spike_times):
-        container[i] = st
-    np.save(cache_mod.spike_times_path(cache_dir), container, allow_pickle=True)
-
-
 @pytest.fixture
 def synthetic_cache(tmp_path: Path) -> Path:
     cache_dir = tmp_path / "cache"
-    _build_synthetic_cache(cache_dir)
+    build_synthetic_cache(cache_dir)
     return cache_dir
 
 

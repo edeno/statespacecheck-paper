@@ -163,6 +163,25 @@ class Figure4DataSource:
         if not self.events["time"].is_monotonic_increasing:
             self.events = self.events.sort_values("time", kind="mergesort").reset_index(drop=True)
 
+        # Pre-extracted NumPy views over the events frame. The viewer's
+        # per-tick live readout indexes these directly to avoid the
+        # cost of ``DataFrame.iloc`` row construction on every UI tick.
+        self.event_times: NDArray[np.float64] = self.events["time"].to_numpy(
+            dtype=np.float64, copy=False
+        )
+        self.event_cell_ids: NDArray[np.int32] = self.events["cell_id"].to_numpy(
+            dtype=np.int32, copy=False
+        )
+        self.event_hpd_overlap: NDArray[np.float32] = self.events["event_hpd_overlap"].to_numpy(
+            dtype=np.float32, copy=False
+        )
+        self.event_kl_divergence: NDArray[np.float32] = self.events["event_kl_divergence"].to_numpy(
+            dtype=np.float32, copy=False
+        )
+        self.event_spike_prob: NDArray[np.float32] = self.events["event_spike_prob"].to_numpy(
+            dtype=np.float32, copy=False
+        )
+
         self._validate_consistency()
 
         self.n_time: int = int(self.time.shape[0])
@@ -322,10 +341,9 @@ class Figure4DataSource:
         i0_t = self.time[sl.start]
         # Use the last in-window index, not sl.stop (which is one past).
         i1_t = self.time[min(sl.stop, self.n_time) - 1]
-        # ``time`` column is already sorted (verified at load).
-        event_times = self.events["time"].to_numpy()
-        i0 = int(np.searchsorted(event_times, i0_t, side="left"))
-        i1 = int(np.searchsorted(event_times, i1_t, side="right"))
+        # ``event_times`` is the cached, monotonic-increasing column.
+        i0 = int(np.searchsorted(self.event_times, i0_t, side="left"))
+        i1 = int(np.searchsorted(self.event_times, i1_t, side="right"))
         return self.events.iloc[i0:i1]
 
     # ------------------------------------------------------------------
