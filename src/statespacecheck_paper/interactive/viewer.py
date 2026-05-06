@@ -1,34 +1,32 @@
-"""Figure 4 viewer skeleton (pyqtgraph + PySide6).
+"""Top-level Figure 4 viewer window and worker plumbing.
 
-Phase 3 of the plan: build the foundation needed to run the performance
-benchmark gate. Three panels:
+``Figure4Viewer`` orchestrates the panels (provided by ``panels.py``)
+and the cache reads (provided by ``data_source.py``). It owns:
 
-- ``PosteriorPanel``  — predictive posterior heatmap.
-- ``LikelihoodPanel`` — log-likelihood heatmap.
-- ``RasterPanel``     — spike raster (sorted by place-field peak).
+- view state (center time, window width, model, pinned event),
+- the autoscroll / keyboard / model-swap UI behaviors,
+- the ``_WindowLoadWorker`` + ``_LoadSignals`` thread-pool harness that
+  reads a window's posterior + log-likelihood off the disk cache and
+  hands the result to the panels on the main thread.
 
-A center-time slider drives the visible window; a ``QThreadPool``
-worker loads chunks from the Zarr cache so the UI thread never blocks
-on disk. No metric panels, no 1D slice panel, no click handling yet —
-those land in subsequent phases.
+For the Qt-application entry point and the
+``python -m statespacecheck_paper.interactive.viewer`` CLI, see
+``app.py``. Panel widget classes (``PosteriorPanel``,
+``LikelihoodPanel``, ``RasterPanel``, ``MetricPanel``, ``SlicePanel``)
+plus the ``CellSlice`` payload dataclass live in ``panels.py``.
 
-Run with ::
-
-    python -m statespacecheck_paper.interactive.viewer \\
-        --cache-dir data/cache --model continuous
-
-The module imports lazily — running anything under ``__main__`` requires
-the ``[interactive]`` extras (``PySide6``, ``pyqtgraph``).
+Names imported from those modules (and a few constants) are
+re-exported at the bottom of this file so ``from
+statespacecheck_paper.interactive.viewer import X`` keeps working for
+the existing test suite.
 """
 
 from __future__ import annotations
 
-import argparse
-import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 import numpy as np
 import pyqtgraph as pg
@@ -36,6 +34,15 @@ from numpy.typing import NDArray
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from .data_source import Figure4DataSource, ModelName
+from .panels import (
+    MAX_PER_CELL_PLOTS,
+    CellSlice,
+    LikelihoodPanel,
+    MetricPanel,
+    PosteriorPanel,
+    RasterPanel,
+    SlicePanel,
+)
 
 # Plan defaults.
 DEFAULT_WINDOW_SECONDS = 2.0
@@ -43,8 +50,8 @@ MIN_WINDOW_SECONDS = 0.1
 MAX_WINDOW_SECONDS = 60.0
 SLIDER_RESOLUTION = 100_000  # subdivides the full session into this many ticks
 
-# Window-width slider works in log-space so a single slider position can
-# resolve both 0.1 s and 60 s endpoints with reasonable granularity.
+# Window-width slider works in log-space so a single slider position
+# can resolve both 0.1 s and 60 s endpoints with reasonable granularity.
 WINDOW_SLIDER_RESOLUTION = 1000
 
 # Reset shortcut targets (matches the Figure 4a context window from
@@ -54,11 +61,8 @@ RESET_WINDOW_SECONDS = 20.0
 
 # Auto-scroll defaults.
 AUTOSCROLL_TICK_HZ = 30.0
-AUTOSCROLL_RATE_REALTIME = 1.0  # advance 1 second of session per second of wall time
+AUTOSCROLL_RATE_REALTIME = 1.0  # 1 second of session per second of wall time
 AUTOSCROLL_SPEED_OPTIONS: tuple[float, ...] = (0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0)
-
-# Maximum rows in the per-cell live-readout block before truncation.
-MAX_PER_CELL_READOUT_ROWS = 6
 
 
 def _nearest_index(sorted_arr: NDArray[np.float64], value: float) -> int:
@@ -99,10 +103,11 @@ class _LoadSignals(QtCore.QObject):
     """Bridge object owning the result signal for the load worker.
 
     ``QRunnable`` cannot inherit from ``QObject``; the standard
-    workaround is to attach a ``QObject`` member that owns the signals.
+    workaround is to attach a ``QObject`` member that owns the
+    signals.
     """
 
-    finished = QtCore.Signal(int, slice, object, object)  # request_id, slice, post, lik
+    finished = QtCore.Signal(int, slice, object, object)
 
 
 class _WindowLoadWorker(QtCore.QRunnable):
@@ -130,19 +135,17 @@ class _WindowLoadWorker(QtCore.QRunnable):
         post = self._ds.load_posterior(sl)
         loglik = self._ds.load_likelihood(sl)
 
-        # Replace NaN at non-interior bins with zero so the heatmap's
-        # autoLevels pass does not see all-NaN rows. Done here on the
-        # worker thread so the main thread never sees NaNs.
+        # NaN-clean non-interior bins so the heatmap's level
+        # computation never sees all-NaN rows.
         if post.size:
             np.nan_to_num(post, copy=False, nan=0.0)
         if loglik.size:
             np.nan_to_num(loglik, copy=False, nan=-np.inf)
 
-        # Convert log-likelihood -> normalized linear likelihood here on
-        # the worker thread so the main thread does not pay np.exp on
-        # every committed update. Subtract the per-row max first to
-        # avoid float32 overflow; this only affects the absolute scale,
-        # which the panel pins after the first autoLevels pass.
+        # Convert log-likelihood -> normalized linear likelihood here
+        # on the worker thread so the main thread does not pay
+        # ``np.exp`` per committed update. Subtract the per-row max
+        # first to avoid float32 overflow.
         if loglik.size:
             row_max = loglik.max(axis=1, keepdims=True)
             row_max = np.where(np.isfinite(row_max), row_max, 0.0)
@@ -151,1060 +154,6 @@ class _WindowLoadWorker(QtCore.QRunnable):
         else:
             lik = loglik
         self._signals.finished.emit(self._state.request_id, sl, post, lik)
-
-
-# ---------------------------------------------------------------------------
-# Panels
-# ---------------------------------------------------------------------------
-
-
-class _BaseHeatmapPanel(pg.PlotWidget):
-    """Common posterior / likelihood heatmap behavior.
-
-    Subclasses provide ``_array_for_window`` which decides whether to
-    show the raw posterior or its log; the rest of the panel is
-    identical: an ``ImageItem`` with one row per time sample, the time
-    axis (relative to window start in seconds), and the position axis.
-    """
-
-    def __init__(self, *, title: str, position_bins: NDArray[np.float64]) -> None:
-        super().__init__()
-        self.setBackground("w")
-        self.setMenuEnabled(False)
-        self.setMouseEnabled(x=False, y=False)
-        self.setLabel("left", "Position (cm)")
-        self.setLabel("bottom", "Time relative to center (s)")
-        # Disable pyqtgraph's auto-SI-prefix on the time axis so the
-        # tick labels do not flip between e.g. ``0.500`` and ``500
-        # (×10⁻³)`` as the user scrolls through small / large values.
-        self.getAxis("bottom").enableAutoSIPrefix(False)
-        self.getPlotItem().setTitle(title)
-
-        # ``axisOrder='col-major'`` interprets ``image[i, j]`` as
-        # ``(x_index=i, y_index=j)``. Our window arrays come in as
-        # ``(n_time, n_state_bins)``, which we want displayed with
-        # time on x and position on y — col-major lines up the array's
-        # first axis with the time axis without a transpose.
-        self._image = pg.ImageItem(axisOrder="col-major")
-        self._image.setLookupTable(pg.colormap.get("viridis").getLookupTable(0.0, 1.0, 256))
-        self.addItem(self._image)
-
-        # Position axis y-extent: full interior grid.
-        self._position_bins = np.asarray(position_bins, dtype=np.float64)
-        # ImageItem rect is set per update; remember the position extent.
-        self._y0 = float(self._position_bins[0])
-        self._y1 = float(self._position_bins[-1])
-
-        # Auto-level on the first update only; subsequent updates reuse
-        # the pinned levels. ``ImageItem.setImage(autoLevels=True)``
-        # otherwise runs ``nanmin``/``nanmax`` over the full window on
-        # every call, which dominates the main-thread cost when the
-        # window is large.
-        self._levels: tuple[float, float] | None = None
-
-        # Center-time vertical marker. The time-axis is shifted so
-        # x=0 is the current center time (the slice panel's
-        # ``t_center``), and this line is always at x=0 so the user
-        # can see which column on the heatmap corresponds to the
-        # slice panel's curves.
-        self._center_line = pg.InfiniteLine(
-            angle=90,
-            pos=0.0,
-            pen=pg.mkPen((100, 100, 100), width=1, style=QtCore.Qt.PenStyle.DashLine),
-            movable=False,
-        )
-        self.addItem(self._center_line)
-
-        # Pinned-event vertical marker on the time axis.
-        self._pin_line = pg.InfiniteLine(
-            angle=90,
-            pen=pg.mkPen((255, 255, 0), width=2),
-            movable=False,
-        )
-        self._pin_line.setVisible(False)
-        self.addItem(self._pin_line)
-
-    def update_pinned_event(self, relative_time: float | None) -> None:
-        if relative_time is None:
-            self._pin_line.setVisible(False)
-            return
-        self._pin_line.setPos(relative_time)
-        self._pin_line.setVisible(True)
-
-    def update_window(
-        self,
-        time_start: float,
-        time_end: float,
-        array: NDArray[np.float32],
-    ) -> None:
-        """Update the heatmap for a fresh window.
-
-        Parameters
-        ----------
-        time_start, time_end : float
-            Time bounds of the window in *relative* seconds (start = 0
-            at the window's left edge for visual stability under
-            scrolling).
-        array : np.ndarray, shape (n_time_visible, n_state_bins)
-            Already-loaded window data (float32).
-        """
-        if array.size == 0:
-            return
-        # The worker has already replaced NaNs from non-interior bins;
-        # the array is finite at this point.
-        if self._levels is None:
-            # Use percentile-based level pinning instead of the
-            # ``(min, max)`` that ``autoLevels=True`` would pick.
-            # ``(min, max)`` makes the colormap saturate or wash out
-            # whenever the first window is non-representative
-            # (e.g. happens to span an extreme decoder period). The
-            # 1st / 99th percentile is robust to those outliers.
-            lo = float(np.percentile(array, 1.0))
-            hi = float(np.percentile(array, 99.0))
-            if hi <= lo:
-                hi = lo + 1.0
-            self._levels = (lo, hi)
-        self._image.setImage(
-            array,
-            autoLevels=False,
-            levels=self._levels,
-            autoDownsample=False,
-        )
-        # Use the actual data extent for the rect so each pixel sits at
-        # its true relative time. The axis range itself is set by the
-        # viewer in one place (with the *target* window half-width) so
-        # the tick labels do not jitter as ``time_start`` /
-        # ``time_end`` shift by sub-millisecond amounts each load.
-        self._image.setRect(
-            QtCore.QRectF(
-                time_start,
-                self._y0,
-                time_end - time_start,
-                self._y1 - self._y0,
-            )
-        )
-        self.setYRange(self._y0, self._y1, padding=0)
-
-
-class PosteriorPanel(_BaseHeatmapPanel):
-    """Predictive posterior heatmap (state-summed for multi-state models)."""
-
-    def __init__(self, *, position_bins: NDArray[np.float64], n_states: int) -> None:
-        # Title: ``predictive`` is the SSM-standard term for
-        # ``p(x_t | y_{1:t-1})``; the cache variable is named
-        # ``predictive_posterior`` per ``non_local_detector``.
-        super().__init__(title="Predictive distribution", position_bins=position_bins)
-        self._n_states = max(1, n_states)
-        self._n_pos = position_bins.shape[0]
-
-    def update_with_window(
-        self,
-        time_start: float,
-        time_end: float,
-        post: NDArray[np.float32],
-    ) -> None:
-        """Reduce to ``(n_visible, n_pos)`` and forward to the heatmap.
-
-        For ContFrag the cache stores ``(n_visible, n_states * n_pos)``
-        with state varying slowest; sum across states to get the
-        marginal posterior over position.
-        """
-        arr = post
-        if self._n_states > 1:
-            n_pos = self._n_pos
-            n_visible = arr.shape[0]
-            arr = arr.reshape(n_visible, self._n_states, n_pos).sum(axis=1)
-        self.update_window(time_start, time_end, arr.astype(np.float32, copy=False))
-
-
-class LikelihoodPanel(_BaseHeatmapPanel):
-    """Log-likelihood heatmap.
-
-    The cache stores raw log-likelihoods; we exponentiate per-window for
-    visual range control. For multi-state models we sum the
-    likelihood (not the log) across states, the same convention used by
-    the existing ``plot_single_model_diagnostics`` flow at
-    ``src/statespacecheck_paper/real_data_plotting.py``.
-    """
-
-    def __init__(self, *, position_bins: NDArray[np.float64], n_states: int) -> None:
-        super().__init__(title="Likelihood", position_bins=position_bins)
-        self._n_states = max(1, n_states)
-        self._n_pos = position_bins.shape[0]
-
-    def update_with_window(
-        self,
-        time_start: float,
-        time_end: float,
-        likelihood: NDArray[np.float32],
-    ) -> None:
-        """Update the heatmap with a pre-exponentiated linear likelihood.
-
-        ``likelihood`` is already on a linear scale (the worker calls
-        ``np.exp(loglik - row_max)`` before emitting the result). For
-        multi-state classifiers we sum across states to get a marginal
-        likelihood over position.
-        """
-        lik = likelihood
-        if self._n_states > 1:
-            n_pos = self._n_pos
-            n_visible = lik.shape[0]
-            lik = lik.reshape(n_visible, self._n_states, n_pos).sum(axis=1)
-        self.update_window(time_start, time_end, lik)
-
-
-class RasterPanel(pg.PlotWidget):
-    """Spike raster sorted by place-field peak position."""
-
-    def __init__(
-        self,
-        *,
-        n_cells: int,
-        place_field_peaks: NDArray[np.float64],
-    ) -> None:
-        super().__init__()
-        self.setBackground("w")
-        self.setMenuEnabled(False)
-        self.setMouseEnabled(x=False, y=False)
-        self.setLabel("left", "Cell (PF rank)")
-        self.setLabel("bottom", "Time relative to center (s)")
-        self.getAxis("bottom").enableAutoSIPrefix(False)
-        self.getPlotItem().setTitle("Raster")
-
-        self._n_cells = int(n_cells)
-        # Sort cells by their place-field peak (ascending). The rank
-        # array maps cell_id -> visual y-position.
-        order = np.argsort(np.nan_to_num(place_field_peaks, nan=np.inf))
-        rank = np.empty_like(order)
-        rank[order] = np.arange(order.size)
-        self._cell_rank = rank
-
-        self._scatter = pg.ScatterPlotItem(
-            pen=None,
-            brush=pg.mkBrush(0, 0, 0, 255),
-            size=2,
-            pxMode=True,
-            useCache=True,
-        )
-        self.addItem(self._scatter)
-        self.setYRange(-0.5, n_cells - 0.5, padding=0)
-
-        # Click + pin support.
-        self._window_event_indices: NDArray[np.int64] = np.empty(0, dtype=np.int64)
-        self._on_click: Callable[[int], None] | None = None
-        self._scatter.sigClicked.connect(self._handle_click)
-
-        # Center-time vertical marker (matches the heatmap panels).
-        self._center_line = pg.InfiniteLine(
-            angle=90,
-            pos=0.0,
-            pen=pg.mkPen((100, 100, 100), width=1, style=QtCore.Qt.PenStyle.DashLine),
-            movable=False,
-        )
-        self.addItem(self._center_line)
-
-        self._pin_line = pg.InfiniteLine(
-            angle=90,
-            pen=pg.mkPen((50, 50, 50), width=2),
-            movable=False,
-        )
-        self._pin_line.setVisible(False)
-        self.addItem(self._pin_line)
-        self._pin_dot = pg.ScatterPlotItem(
-            pen=pg.mkPen("k", width=1),
-            brush=pg.mkBrush(255, 255, 0, 255),
-            size=10,
-            pxMode=True,
-        )
-        self._pin_dot.setVisible(False)
-        self.addItem(self._pin_dot)
-
-    def set_click_handler(self, handler: Callable[[int], None]) -> None:
-        """Register a callback that takes the global event-row index."""
-        self._on_click = handler
-
-    def update_window(
-        self,
-        time_start: float,
-        time_end: float,
-        events_time: NDArray[np.float64],
-        events_cell_id: NDArray[np.int32],
-        time_offset: float,
-        global_event_indices: NDArray[np.int64] | None = None,
-    ) -> None:
-        """Plot spikes whose absolute time is in ``[t_start_abs, t_end_abs]``.
-
-        Parameters
-        ----------
-        time_start, time_end : float
-            Window bounds in relative seconds.
-        events_time : np.ndarray, shape (n_window_events,)
-            Spike times, absolute (will be shifted by ``time_offset``).
-        events_cell_id : np.ndarray, shape (n_window_events,)
-            Cell index for each spike.
-        time_offset : float
-            Subtract from ``events_time`` to convert absolute → relative.
-        global_event_indices : np.ndarray, shape (n_window_events,), optional
-            Row positions in the full ``Figure4DataSource.events`` frame
-            for click-to-recenter. When omitted, clicks are ignored.
-        """
-        if global_event_indices is None:
-            self._window_event_indices = np.empty(0, dtype=np.int64)
-        else:
-            self._window_event_indices = np.asarray(global_event_indices, dtype=np.int64)
-
-        # The X axis is driven by the master ``PosteriorPanel`` via
-        # ``setXLink`` (configured in ``Figure4Viewer._build_panels``),
-        # so we only update the scatter data here and leave the range
-        # to the viewer's single ``setXRange`` call.
-        if events_time.size == 0:
-            self._scatter.setData(x=[], y=[], data=[])
-            return
-        x = events_time - time_offset
-        y = self._cell_rank[events_cell_id]
-        self._scatter.setData(
-            x=x,
-            y=y,
-            data=np.arange(x.shape[0], dtype=np.int64),
-        )
-
-    def update_pinned_event(
-        self,
-        *,
-        relative_time: float | None,
-        cell_id: int | None,
-    ) -> None:
-        if relative_time is None or cell_id is None:
-            self._pin_line.setVisible(False)
-            self._pin_dot.setVisible(False)
-            return
-        rank = float(self._cell_rank[int(cell_id)])
-        self._pin_line.setPos(relative_time)
-        self._pin_line.setVisible(True)
-        self._pin_dot.setData(x=[relative_time], y=[rank])
-        self._pin_dot.setVisible(True)
-
-    def _handle_click(self, _scatter: pg.ScatterPlotItem, points: list[Any]) -> None:
-        if not points or self._on_click is None:
-            return
-        spot = points[0]
-        local_idx_obj = spot.data()
-        try:
-            local_idx = int(local_idx_obj)
-        except (TypeError, ValueError):
-            return
-        if not 0 <= local_idx < self._window_event_indices.shape[0]:
-            return
-        self._on_click(int(self._window_event_indices[local_idx]))
-
-
-# ---------------------------------------------------------------------------
-# Per-spike metric panel (HPD overlap, KL divergence, -log10 spike prob)
-# ---------------------------------------------------------------------------
-
-
-METRIC_COLORS: dict[str, tuple[int, int, int]] = {
-    "event_hpd_overlap": (44, 160, 44),  # green
-    "event_kl_divergence": (214, 39, 40),  # red
-    "event_spike_prob": (148, 103, 189),  # purple
-}
-METRIC_TITLES: dict[str, str] = {
-    "event_hpd_overlap": "HPD overlap",
-    "event_kl_divergence": "KL divergence",
-    "event_spike_prob": "-log10(p)",
-}
-
-
-class MetricPanel(pg.PlotWidget):
-    """Window-local per-spike scatter for one diagnostic metric.
-
-    Each spike is one dot at ``(time_relative, metric_value)``. Clicks
-    on a dot recenter the viewer on the spike's time and pin a marker
-    across all panels via the supplied ``on_click`` callback.
-
-    The ``event_spike_prob`` metric is shown as ``-log10(p)`` so
-    "worse fit" goes up like the other two diagnostic axes.
-    """
-
-    def __init__(self, *, metric: str, threshold: float | None = None) -> None:
-        super().__init__()
-        self.setBackground("w")
-        self.setMenuEnabled(False)
-        self.setMouseEnabled(x=False, y=False)
-        self.setLabel("bottom", "Time relative to center (s)")
-        self.getAxis("bottom").enableAutoSIPrefix(False)
-        self.setLabel("left", METRIC_TITLES.get(metric, metric))
-
-        self._metric = metric
-        rgb = METRIC_COLORS.get(metric, (50, 50, 50))
-        self._scatter = pg.ScatterPlotItem(
-            pen=pg.mkPen(rgb, width=0),
-            brush=pg.mkBrush(*rgb, 200),
-            size=4,
-            pxMode=True,
-            useCache=True,
-        )
-        self.addItem(self._scatter)
-
-        # Threshold horizontal line for the two metrics that have one in
-        # the existing Figure 4 (HPD overlap = 0.05, spike prob = 0.05
-        # which becomes -log10(0.05) ≈ 1.30 on this axis).
-        self._threshold_line: pg.InfiniteLine | None = None
-        if threshold is not None:
-            disp = -np.log10(threshold) if metric == "event_spike_prob" else threshold
-            self._threshold_line = pg.InfiniteLine(
-                pos=float(disp),
-                angle=0,
-                pen=pg.mkPen((100, 100, 100), width=1, style=QtCore.Qt.PenStyle.DashLine),
-                movable=False,
-            )
-            self.addItem(self._threshold_line)
-
-        # Center-time vertical marker (matches the heatmap panels).
-        self._center_line = pg.InfiniteLine(
-            angle=90,
-            pos=0.0,
-            pen=pg.mkPen((100, 100, 100), width=1, style=QtCore.Qt.PenStyle.DashLine),
-            movable=False,
-        )
-        self.addItem(self._center_line)
-
-        # Pinned-event marker: vertical line at the clicked spike's
-        # time, plus a single highlighted dot. Both share the metric's
-        # color but use a thicker stroke.
-        pin_rgb = (rgb[0], rgb[1], rgb[2])
-        self._pin_line = pg.InfiniteLine(
-            angle=90,
-            pen=pg.mkPen(pin_rgb, width=2),
-            movable=False,
-        )
-        self._pin_line.setVisible(False)
-        self.addItem(self._pin_line)
-        self._pin_dot = pg.ScatterPlotItem(
-            pen=pg.mkPen("k", width=1),
-            brush=pg.mkBrush(*pin_rgb, 255),
-            size=10,
-            pxMode=True,
-        )
-        self._pin_dot.setVisible(False)
-        self.addItem(self._pin_dot)
-
-        # Filled by ``update_window`` so click handlers can map a Qt
-        # ``SpotItem`` back to a row index in the events table.
-        self._window_event_indices: NDArray[np.int64] = np.empty(0, dtype=np.int64)
-        self._on_click: Callable[[int], None] | None = None
-        self._scatter.sigClicked.connect(self._handle_click)
-
-    # ------------------------------------------------------------------
-    # Wiring
-    # ------------------------------------------------------------------
-
-    @property
-    def metric(self) -> str:
-        return self._metric
-
-    def set_click_handler(self, handler: Callable[[int], None]) -> None:
-        """Register a callback that takes the global event-row index."""
-        self._on_click = handler
-
-    # ------------------------------------------------------------------
-    # Per-window updates
-    # ------------------------------------------------------------------
-
-    def update_window(
-        self,
-        time_start: float,
-        time_end: float,
-        events_time: NDArray[np.float64],
-        events_metric: NDArray[np.float32],
-        time_offset: float,
-        global_event_indices: NDArray[np.int64],
-    ) -> None:
-        """Plot the in-window events for this metric.
-
-        ``global_event_indices`` is the array of row positions in the
-        full ``Figure4DataSource.events`` frame; the click handler uses
-        it to map a clicked SpotItem back to the canonical event row.
-        """
-        self._window_event_indices = np.asarray(global_event_indices, dtype=np.int64)
-        # X axis is driven by the master ``PosteriorPanel`` via
-        # ``setXLink``; only the scatter data is updated here.
-        if events_time.size == 0:
-            self._scatter.setData(x=[], y=[], data=[])
-            return
-        x = events_time - time_offset
-        y = self._display_values(events_metric)
-        # ``data`` is the per-spot payload pyqtgraph returns on click.
-        # We attach the local index so we can map back to the global
-        # event-row index without a hash lookup.
-        self._scatter.setData(
-            x=x,
-            y=y,
-            data=np.arange(x.shape[0], dtype=np.int64),
-        )
-
-    def update_pinned_event(
-        self,
-        *,
-        relative_time: float | None,
-        metric_value: float | None,
-    ) -> None:
-        """Show or hide the pinned-event vertical marker and dot."""
-        if relative_time is None or metric_value is None:
-            self._pin_line.setVisible(False)
-            self._pin_dot.setVisible(False)
-            return
-        self._pin_line.setPos(relative_time)
-        self._pin_line.setVisible(True)
-        disp = -np.log10(metric_value) if self._metric == "event_spike_prob" else metric_value
-        self._pin_dot.setData(x=[relative_time], y=[float(disp)])
-        self._pin_dot.setVisible(True)
-
-    # ------------------------------------------------------------------
-    # Internals
-    # ------------------------------------------------------------------
-
-    def _display_values(self, raw: NDArray[np.float32]) -> NDArray[np.float32]:
-        if self._metric == "event_spike_prob":
-            # Avoid log(0); cache stores values >= 0. Tiny floor is fine.
-            safe = np.maximum(raw, 1e-12, dtype=np.float32)
-            return np.asarray(-np.log10(safe), dtype=np.float32)
-        return np.asarray(raw, dtype=np.float32)
-
-    def _handle_click(self, _scatter: pg.ScatterPlotItem, points: list[Any]) -> None:
-        if not points or self._on_click is None:
-            return
-        spot = points[0]
-        local_idx_obj = spot.data()
-        try:
-            local_idx = int(local_idx_obj)
-        except (TypeError, ValueError):
-            return
-        if not 0 <= local_idx < self._window_event_indices.shape[0]:
-            return
-        global_idx = int(self._window_event_indices[local_idx])
-        self._on_click(global_idx)
-
-
-# ---------------------------------------------------------------------------
-# Slice panel (1D posterior + likelihood at the current center time)
-# ---------------------------------------------------------------------------
-
-
-# Posterior is solid; likelihood is filled-area; they share the position axis.
-_LIKELIHOOD_PEN_RGB = (200, 90, 0)
-_TRUE_POSITION_PEN = pg.mkPen((50, 50, 50), width=1, style=QtCore.Qt.PenStyle.DashLine)
-# Per-state colors (Continuous, Fragmented for ContFrag).
-_STATE_POSTERIOR_RGB: tuple[tuple[int, int, int], ...] = (
-    (31, 119, 180),  # blue
-    (44, 160, 44),  # green
-)
-_STATE_LIKELIHOOD_RGB: tuple[tuple[int, int, int], ...] = (
-    (255, 127, 14),  # orange
-    (214, 39, 40),  # red
-)
-# Palette for the per-cell place-field overlay. Picked to be distinct
-# from the joint posterior (blue), joint likelihood (orange), pinned
-# curve (gold), and true-position line (gray). Cells are colored by
-# ``cell_id % len(palette)``, so distinct cells in the same bin land
-# on different hues even when their IDs are adjacent.
-_PER_CELL_PALETTE: tuple[tuple[int, int, int], ...] = (
-    (44, 160, 44),  # green
-    (214, 39, 40),  # red
-    (148, 103, 189),  # purple
-    (227, 119, 194),  # pink
-    (23, 190, 207),  # cyan
-    (140, 86, 75),  # brown
-    (188, 189, 34),  # olive
-    (227, 49, 165),  # magenta
-)
-
-
-@dataclass(frozen=True)
-class CellSlice:
-    """One row of per-cell information, pushed by the viewer per tick."""
-
-    cell_id: int
-    place_field_norm: NDArray[np.float32]
-    hpd: float
-    kl: float
-    spike_prob: float
-    n_spikes: int
-    is_pinned: bool
-
-
-# Cap on simultaneously visible per-cell rows; bins with more cells get
-# a "(+K more)" indicator below.
-MAX_PER_CELL_PLOTS = 6
-
-
-# Stylesheets shared by the slice-panel labels.
-_SLICE_LEGEND_STYLE = (
-    "QLabel { background-color: #ffffff; color: #202020; "
-    "padding: 4px 6px; border: 1px solid #cccccc; border-radius: 3px; "
-    "font-size: 11pt; }"
-)
-_SLICE_READOUT_STYLE = (
-    "QLabel { background-color: #ffffff; color: #202020; "
-    "padding: 4px 6px; border: 1px solid #cccccc; border-radius: 3px; "
-    "font-family: 'Menlo', 'Consolas', monospace; font-size: 11pt; }"
-)
-_SLICE_ANNOTATION_STYLE = (
-    "QLabel { background-color: #fff7d6; color: #6a4f00; "
-    "padding: 4px 6px; border: 1px solid #d4b85a; border-radius: 3px; "
-    "font-family: 'Menlo', 'Consolas', monospace; font-size: 11pt; }"
-)
-_SLICE_CELL_HEADER_STYLE = (
-    "QLabel { background-color: #f4f4f4; color: #202020; "
-    "padding: 2px 6px; border: 1px solid #d8d8d8; border-radius: 3px; "
-    "font-family: 'Menlo', 'Consolas', monospace; font-size: 10pt; }"
-)
-_SLICE_CELL_HEADER_PINNED_STYLE = (
-    "QLabel { background-color: #fff2a8; color: #4d3700; "
-    "padding: 2px 6px; border: 2px solid #d4b85a; border-radius: 3px; "
-    "font-family: 'Menlo', 'Consolas', monospace; font-size: 10pt; "
-    "font-weight: bold; }"
-)
-
-
-@dataclass
-class _PerCellRow:
-    """One per-cell plot row inside the slice panel.
-
-    Each row owns a header ``QLabel`` (cell + metrics + pinned badge),
-    a ``pg.PlotWidget`` containing a colored cell-likelihood curve, an
-    overlaid blue predictive curve, and a dashed true-position line.
-    The container ``QWidget`` is what gets shown/hidden by the
-    visibility toggle and the pool-resize logic.
-    """
-
-    container: QtWidgets.QWidget
-    header: QtWidgets.QLabel
-    plot: pg.PlotWidget
-    cell_curve: pg.PlotDataItem
-    predictive_curve: pg.PlotDataItem
-    true_position_line: pg.InfiniteLine
-
-
-_SLICE_Y_MIN = 0.0
-_SLICE_Y_MAX = 1.05
-
-
-def _pin_slice_axes(plot: pg.PlotWidget, position_bins: NDArray[np.float64]) -> None:
-    """Hard-pin the slice subplot's x and y axes.
-
-    All curves in the slice column are peak-normalized to 1, so the
-    y-axis range is known a priori. Auto-range is fully disabled on
-    both axes and ``setLimits`` clamps the user's pan/zoom to the
-    same window so subsequent ``addItem``/``setData`` calls cannot
-    nudge the view.
-    """
-    vb = plot.getViewBox()
-    vb.disableAutoRange()
-    vb.setXRange(float(position_bins[0]), float(position_bins[-1]), padding=0)
-    vb.setYRange(_SLICE_Y_MIN, _SLICE_Y_MAX, padding=0)
-    vb.setLimits(
-        xMin=float(position_bins[0]),
-        xMax=float(position_bins[-1]),
-        yMin=_SLICE_Y_MIN,
-        yMax=_SLICE_Y_MAX,
-    )
-
-
-def _make_slice_subplot(
-    *,
-    title: str | None,
-    position_bins: NDArray[np.float64],
-    height: int,
-) -> pg.PlotWidget:
-    """Configure a small position-axis plot used in the slice column."""
-    plot = pg.PlotWidget()
-    plot.setBackground("w")
-    plot.setMenuEnabled(False)
-    plot.setMouseEnabled(x=False, y=False)
-    plot.setLabel("bottom", "Position (cm)")
-    plot.setLabel("left", "Density")
-    plot.getAxis("bottom").enableAutoSIPrefix(False)
-    plot.getAxis("left").enableAutoSIPrefix(False)
-    if title is not None:
-        plot.getPlotItem().setTitle(title)
-    plot.setMinimumHeight(height)
-    _pin_slice_axes(plot, position_bins)
-    return plot
-
-
-class SlicePanel(QtWidgets.QWidget):
-    """Stacked slice plots: population likelihood + per-cell likelihoods.
-
-    Layout (top to bottom):
-
-    1. Legend label (color swatches + names).
-    2. **Population-likelihood plot**: orange-fill joint likelihood
-       overlaid by a thin blue *predictive* line. Always visible.
-    3. **Per-cell-likelihood plots**: a pool of up to
-       ``MAX_PER_CELL_PLOTS`` rows. When the current bin contains
-       spikes from multiple cells (deduped by cell), one row per
-       cell shows the cell's normalized place-field overlaid by
-       the predictive line. The header label carries that cell's
-       ``HPD`` / ``KL`` / ``p`` values; pinned cells get a yellow
-       header. Hidden when the bin is empty.
-    4. Truncation label (shown when the bin has more than
-       ``MAX_PER_CELL_PLOTS`` cells).
-    5. Live-readout label (``t = …``, ``predictive(x_true) = …``).
-    6. Pinned-event annotation (visible only when a spike is pinned).
-
-    Every plot has the predictive distribution overlaid (peak-
-    normalized to 1) so each row is a direct shape comparison
-    against the predictive prior, which is what the HPD/KL
-    diagnostics measure.
-
-    The hot path is ``update_for_index(t_idx, true_pos)`` and the
-    viewer's follow-up ``set_per_cell_slices(slices)`` — both are
-    sub-millisecond at typical bin sizes.
-    """
-
-    def __init__(
-        self,
-        *,
-        position_bins: NDArray[np.float64],
-        n_states: int,
-        parent: QtWidgets.QWidget | None = None,
-    ) -> None:
-        super().__init__(parent)
-
-        self._position_bins = np.asarray(position_bins, dtype=np.float64)
-        self._n_pos = int(self._position_bins.shape[0])
-        self._n_states = max(1, int(n_states))
-        self._zero_curve = np.zeros(self._n_pos, dtype=np.float32)
-
-        self._per_cell_visible = True
-
-        # Pre-rendered predictive curve, peak-normalized; same array is
-        # passed by reference into every plot's ``predictive_curve``
-        # via ``setData``, so updating it once per tick refreshes all
-        # plots.
-        self._predictive_norm = self._zero_curve.copy()
-
-        self._likelihood_plot = _make_slice_subplot(
-            title="Population likelihood",
-            position_bins=self._position_bins,
-            height=140,
-        )
-        self._lik_predictive_curve = pg.PlotDataItem(
-            self._position_bins,
-            self._zero_curve,
-            pen=pg.mkPen(*_STATE_POSTERIOR_RGB[0], 230, width=2),
-        )
-        self._likelihood_plot.addItem(self._lik_predictive_curve)
-
-        self._lik_top_curves: list[pg.PlotDataItem] = []
-        for s in range(self._n_states):
-            lik_rgb = _STATE_LIKELIHOOD_RGB[s % len(_STATE_LIKELIHOOD_RGB)]
-            top = pg.PlotDataItem(
-                self._position_bins,
-                self._zero_curve,
-                pen=pg.mkPen(*lik_rgb, 240, width=3),
-            )
-            self._likelihood_plot.addItem(top)
-            self._lik_top_curves.append(top)
-
-        self._lik_true_position_line = pg.InfiniteLine(
-            angle=90, movable=False, pen=_TRUE_POSITION_PEN
-        )
-        self._likelihood_plot.addItem(self._lik_true_position_line)
-        # Re-pin axes after every ``addItem`` finishes; pyqtgraph's
-        # auto-range can re-engage when items are added even after we
-        # explicitly disable it during the subplot's construction.
-        _pin_slice_axes(self._likelihood_plot, self._position_bins)
-
-        # Per-cell row pool. Rows are constructed lazily in
-        # ``set_per_cell_slices``; the count never shrinks (rows hide
-        # rather than getting destroyed) so Qt doesn't churn graphics
-        # items as the user scrolls between bins.
-        self._per_cell_rows: list[_PerCellRow] = []
-        self._n_active_per_cell_rows = 0
-
-        self._truncation_label = QtWidgets.QLabel("")
-        self._truncation_label.setStyleSheet(
-            "QLabel { color: #777; font-style: italic; padding: 1px 6px; }"
-        )
-        self._truncation_label.setVisible(False)
-
-        self._legend_label = QtWidgets.QLabel(self._build_legend_html())
-        self._legend_label.setTextFormat(QtCore.Qt.TextFormat.RichText)
-        self._legend_label.setAutoFillBackground(True)
-        self._legend_label.setStyleSheet(_SLICE_LEGEND_STYLE)
-        self._legend_label.setWordWrap(True)
-
-        self._readout_label = QtWidgets.QLabel("")
-        self._readout_label.setTextFormat(QtCore.Qt.TextFormat.PlainText)
-        self._readout_label.setAutoFillBackground(True)
-        self._readout_label.setStyleSheet(_SLICE_READOUT_STYLE)
-
-        self._annotation = QtWidgets.QLabel("")
-        self._annotation.setTextFormat(QtCore.Qt.TextFormat.PlainText)
-        self._annotation.setAutoFillBackground(True)
-        self._annotation.setStyleSheet(_SLICE_ANNOTATION_STYLE)
-        self._annotation.setVisible(False)
-
-        # Container for the per-cell rows; we add row widgets to this
-        # layout so they sit between the population plot and the
-        # truncation label.
-        self._per_cell_container = QtWidgets.QWidget()
-        self._per_cell_layout = QtWidgets.QVBoxLayout(self._per_cell_container)
-        self._per_cell_layout.setContentsMargins(0, 0, 0, 0)
-        self._per_cell_layout.setSpacing(2)
-        # Pre-allocate the full row pool up front so the slice column's
-        # vertical layout is fixed from frame 0 (combined with each row's
-        # ``retainSizeWhenHidden`` policy below). Without this the
-        # container would grow each time a new ``cell_id`` first appears
-        # at runtime, and the population plot above would visibly
-        # resize as the user scrolled.
-        for _ in range(MAX_PER_CELL_PLOTS):
-            self._ensure_row(len(self._per_cell_rows))
-
-        outer = QtWidgets.QVBoxLayout(self)
-        outer.setContentsMargins(2, 2, 2, 2)
-        outer.setSpacing(4)
-        outer.addWidget(self._legend_label)
-        outer.addWidget(self._likelihood_plot, stretch=2)
-        outer.addWidget(self._per_cell_container, stretch=4)
-        outer.addWidget(self._truncation_label)
-        outer.addWidget(self._readout_label)
-        outer.addWidget(self._annotation)
-
-        # Window-buffer state pushed by the viewer on every commit.
-        self._buffer_slice: slice | None = None
-        self._buffer_post: NDArray[np.float32] | None = None
-        self._buffer_lik: NDArray[np.float32] | None = None
-        # When the slider scrubs past the loaded window the buffer goes
-        # stale until the next async load commits. The viewer wires a
-        # row provider (single-row Zarr read) so ``update_for_index``
-        # can keep the slice animating in the meantime.
-        self._row_provider: (
-            Callable[[int], tuple[NDArray[np.float32], NDArray[np.float32]]] | None
-        ) = None
-
-    # ------------------------------------------------------------------
-    # Legend
-    # ------------------------------------------------------------------
-
-    def _build_legend_html(self) -> str:
-        post_rgb = _STATE_POSTERIOR_RGB[0]
-        lik_rgb = _STATE_LIKELIHOOD_RGB[0]
-        parts = [
-            f"<span style='color:rgb({lik_rgb[0]},{lik_rgb[1]},{lik_rgb[2]});"
-            "font-size:14pt'>━</span> Likelihood",
-            f"<span style='color:rgb({post_rgb[0]},{post_rgb[1]},{post_rgb[2]});"
-            "font-size:14pt'>━</span> Predictive",
-            "<span style='color:rgb(50,50,50);font-size:14pt'>┄</span> True position",
-        ]
-        return " &nbsp;&nbsp; ".join(parts)
-
-    # ------------------------------------------------------------------
-    # Buffer + per-tick updates
-    # ------------------------------------------------------------------
-
-    def set_window_buffer(
-        self,
-        sl: slice,
-        post: NDArray[np.float32],
-        lik: NDArray[np.float32],
-    ) -> None:
-        self._buffer_slice = sl
-        self._buffer_post = post
-        self._buffer_lik = lik
-
-    def set_row_provider(
-        self,
-        provider: Callable[[int], tuple[NDArray[np.float32], NDArray[np.float32]]] | None,
-    ) -> None:
-        """Install a single-row reader for use when ``t_idx`` is outside the buffer.
-
-        ``provider(t_idx)`` should return a ``(post_row, lik_row)``
-        pair already NaN-cleaned and (for ``lik_row``) exponentiated
-        from the cache's ``log_likelihood``, matching what the worker
-        thread would have produced for the buffered case.
-        """
-        self._row_provider = provider
-
-    def update_for_index(self, t_idx: int, true_position: float) -> None:
-        """Update the population plot + the predictive overlay every plot uses."""
-        sl = self._buffer_slice
-        post = self._buffer_post
-        lik = self._buffer_lik
-        if sl is not None and post is not None and lik is not None and sl.start <= t_idx < sl.stop:
-            local_idx = t_idx - sl.start
-            post_row = post[local_idx]
-            lik_row = lik[local_idx]
-        elif self._row_provider is not None:
-            # Buffer doesn't cover ``t_idx`` (the user has scrubbed
-            # past the loaded window). Fall back to a single-row read
-            # so the slice keeps animating until the next async load
-            # commits. This is sub-ms when the OS chunk is hot.
-            post_row, lik_row = self._row_provider(t_idx)
-        else:
-            return
-        if self._n_states > 1:
-            post_row_collapsed = post_row.reshape(self._n_states, self._n_pos).sum(axis=0)
-            lik_rs = lik_row.reshape(self._n_states, self._n_pos)
-        else:
-            post_row_collapsed = post_row
-            lik_rs = lik_row[None, :]
-
-        peak = float(post_row_collapsed.max())
-        if peak > 0:
-            self._predictive_norm = (post_row_collapsed / peak).astype(np.float32, copy=False)
-        else:
-            self._predictive_norm = post_row_collapsed.astype(np.float32, copy=False)
-
-        # Population likelihood + predictive overlay.
-        self._lik_predictive_curve.setData(self._position_bins, self._predictive_norm)
-        for s in range(self._n_states):
-            row = lik_rs[s]
-            row_peak = float(row.max())
-            row_norm = (row / row_peak).astype(np.float32, copy=False) if row_peak > 0 else row
-            self._lik_top_curves[s].setData(self._position_bins, row_norm)
-        self._lik_true_position_line.setPos(true_position)
-
-        # Per-cell rows: refresh predictive overlay + true-position
-        # line on each row that's currently active. The cell-likelihood
-        # curve is set by ``set_per_cell_slices`` which only fires when
-        # the bin's cell membership changes; this hot path just pokes
-        # the shared predictive into each row.
-        for i in range(self._n_active_per_cell_rows):
-            row = self._per_cell_rows[i]
-            row.predictive_curve.setData(self._position_bins, self._predictive_norm)
-            row.true_position_line.setPos(true_position)
-
-    def set_live_readout(self, text: str | None) -> None:
-        self._readout_label.setText(text or "")
-
-    # ------------------------------------------------------------------
-    # Per-cell rows
-    # ------------------------------------------------------------------
-
-    def set_per_cell_visible(self, visible: bool) -> None:
-        self._per_cell_visible = bool(visible)
-        for i, row in enumerate(self._per_cell_rows):
-            row.container.setVisible(self._per_cell_visible and i < self._n_active_per_cell_rows)
-
-    def _ensure_row(self, index: int) -> _PerCellRow:
-        while len(self._per_cell_rows) <= index:
-            self._per_cell_rows.append(self._build_row())
-            self._per_cell_layout.addWidget(self._per_cell_rows[-1].container)
-        return self._per_cell_rows[index]
-
-    def _build_row(self) -> _PerCellRow:
-        plot = _make_slice_subplot(title=None, position_bins=self._position_bins, height=70)
-        cell_curve = pg.PlotDataItem(
-            self._position_bins, self._zero_curve, pen=pg.mkPen((44, 160, 44), width=3)
-        )
-        predictive_curve = pg.PlotDataItem(
-            self._position_bins,
-            self._predictive_norm,
-            pen=pg.mkPen(*_STATE_POSTERIOR_RGB[0], 200, width=2),
-        )
-        plot.addItem(cell_curve)
-        plot.addItem(predictive_curve)
-        true_position_line = pg.InfiniteLine(angle=90, movable=False, pen=_TRUE_POSITION_PEN)
-        plot.addItem(true_position_line)
-        # Re-pin the axes after every ``addItem`` so the y-range
-        # cannot get nudged by pyqtgraph's auto-range hooks.
-        _pin_slice_axes(plot, self._position_bins)
-
-        header = QtWidgets.QLabel("")
-        header.setAutoFillBackground(True)
-        header.setStyleSheet(_SLICE_CELL_HEADER_STYLE)
-
-        container = QtWidgets.QWidget()
-        layout = QtWidgets.QVBoxLayout(container)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
-        layout.addWidget(header)
-        layout.addWidget(plot, stretch=1)
-        # Hidden rows must keep their footprint, otherwise the slice
-        # column's QVBoxLayout collapses the gap and the population-
-        # likelihood plot stretches to fill it -- which is what made
-        # the plots appear to "resize" during auto-scroll.
-        size_policy = container.sizePolicy()
-        size_policy.setRetainSizeWhenHidden(True)
-        container.setSizePolicy(size_policy)
-        container.setVisible(False)
-
-        return _PerCellRow(
-            container=container,
-            header=header,
-            plot=plot,
-            cell_curve=cell_curve,
-            predictive_curve=predictive_curve,
-            true_position_line=true_position_line,
-        )
-
-    def set_per_cell_slices(self, slices: list[CellSlice], total_in_bin: int | None = None) -> None:
-        """Refresh the per-cell rows for the cells in the current bin.
-
-        Parameters
-        ----------
-        slices : list[CellSlice]
-            One entry per cell to display (already capped to
-            ``MAX_PER_CELL_PLOTS`` and deduped by ``cell_id``).
-        total_in_bin : int, optional
-            Total cells in the bin before truncation; if it exceeds
-            ``len(slices)``, a "(+K more)" label appears below the
-            rows. Defaults to ``len(slices)``.
-        """
-        n = len(slices)
-        for i, cs in enumerate(slices):
-            row = self._ensure_row(i)
-            row.cell_curve.setData(self._position_bins, cs.place_field_norm)
-            rgb = _PER_CELL_PALETTE[cs.cell_id % len(_PER_CELL_PALETTE)]
-            row.cell_curve.setPen(pg.mkPen(*rgb, 230, width=3))
-            n_spikes_str = f"  ({cs.n_spikes} spikes)" if cs.n_spikes > 1 else ""
-            pin_str = "  ★" if cs.is_pinned else ""
-            row.header.setText(
-                f"Cell {cs.cell_id:>3d}{pin_str}   "
-                f"HPD={cs.hpd:.3f}  KL={cs.kl:.3f}  p={cs.spike_prob:.3g}{n_spikes_str}"
-            )
-            row.header.setStyleSheet(
-                _SLICE_CELL_HEADER_PINNED_STYLE if cs.is_pinned else _SLICE_CELL_HEADER_STYLE
-            )
-            row.predictive_curve.setData(self._position_bins, self._predictive_norm)
-            row.container.setVisible(self._per_cell_visible)
-        for i in range(n, self._n_active_per_cell_rows):
-            self._per_cell_rows[i].container.setVisible(False)
-        self._n_active_per_cell_rows = n
-
-        total = total_in_bin if total_in_bin is not None else n
-        extra = max(0, total - n)
-        if extra > 0:
-            self._truncation_label.setText(f"(+{extra} more cells in this bin)")
-            self._truncation_label.setVisible(True)
-        else:
-            self._truncation_label.setVisible(False)
-
-    def update_pinned_event(
-        self,
-        *,
-        place_field_row: NDArray[np.float32] | None,
-        annotation: str | None,
-    ) -> None:
-        """Show / hide the pinned-event annotation label.
-
-        The pinned-cell highlight on the per-cell row is driven by
-        the ``is_pinned`` flag on each ``CellSlice``; this method
-        only manages the annotation label below the rows.
-        """
-        del place_field_row  # honored via the per-cell row highlight
-        if annotation is None:
-            self._annotation.setVisible(False)
-            self._annotation.setText("")
-            return
-        self._annotation.setText(f"Pinned: {annotation}")
-        self._annotation.setVisible(True)
-
-    def is_pin_displayed(self) -> bool:
-        return bool(self._annotation.text())
 
 
 # ---------------------------------------------------------------------------
@@ -2066,57 +1015,29 @@ class Figure4Viewer(QtWidgets.QMainWindow):
 
 
 # ---------------------------------------------------------------------------
-# CLI entry point
+# Backward-compat re-exports
 # ---------------------------------------------------------------------------
+#
+# Pre-split, all of the panel classes and the launch / configure_qt_application
+# helpers lived in this module. Tests and downstream callers still import
+# them via ``from statespacecheck_paper.interactive.viewer import X``; keep
+# those imports working without forcing an update.
 
-
-def configure_qt_application(app: QtWidgets.QApplication) -> None:
-    """Set viewer-wide Qt defaults (font, pyqtgraph options).
-
-    Setting an explicit application font sidesteps Qt's
-    ``Populating font family aliases`` lookup, which can take ~250 ms
-    at first show because it expands the missing ``"Sans Serif"``
-    alias against the system font set.
-    """
-    pg.setConfigOptions(antialias=False, useOpenGL=False)
-    font = QtGui.QFont("Helvetica", 9)
-    if not font.exactMatch():
-        font = QtGui.QFont("Arial", 9)
-    if not font.exactMatch():
-        font = app.font()
-    app.setFont(font)
-
-
-def launch(cache_dir: Path | str, model: ModelName) -> int:
-    """Open the viewer for ``model`` from ``cache_dir`` and run the event loop."""
-    existing = QtWidgets.QApplication.instance()
-    app: QtWidgets.QApplication = (
-        existing
-        if isinstance(existing, QtWidgets.QApplication)
-        else QtWidgets.QApplication(sys.argv)
-    )
-    configure_qt_application(app)
-    ds = Figure4DataSource(cache_dir, model)
-    viewer = Figure4Viewer(ds, cache_dir=cache_dir)
-    viewer.show()
-    try:
-        return int(app.exec())
-    finally:
-        ds.close()
-
-
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="statespacecheck_paper.interactive.viewer")
-    parser.add_argument("--cache-dir", required=True, help="Cache directory.")
-    parser.add_argument(
-        "--model",
-        choices=("continuous", "contfrag"),
-        default="continuous",
-        help="Which model's cache to open.",
-    )
-    args = parser.parse_args(argv)
-    return launch(args.cache_dir, args.model)
-
+from .app import configure_qt_application, launch, main  # noqa: E402, F401
+from .panels import (  # noqa: E402, F401
+    _LIKELIHOOD_PEN_RGB,
+    _PER_CELL_PALETTE,
+    _SLICE_Y_MAX,
+    _SLICE_Y_MIN,
+    _STATE_LIKELIHOOD_RGB,
+    _STATE_POSTERIOR_RGB,
+    _TRUE_POSITION_PEN,
+    METRIC_COLORS,
+    METRIC_TITLES,
+    _make_slice_subplot,
+    _PerCellRow,
+    _pin_slice_axes,
+)
 
 if __name__ == "__main__":
     raise SystemExit(main())
