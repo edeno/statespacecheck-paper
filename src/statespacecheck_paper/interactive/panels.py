@@ -479,8 +479,12 @@ class RasterPanel(pg.PlotWidget):
         self._pin_dot.setData(x=[relative_time], y=[rank])
         self._pin_dot.setVisible(True)
 
-    def _handle_click(self, _scatter: pg.ScatterPlotItem, points: list[Any]) -> None:
-        if not points or self._on_click is None:
+    def _handle_click(self, _scatter: pg.ScatterPlotItem, points: Any) -> None:
+        # ``ScatterPlotItem.sigClicked`` emits ``points`` as either a
+        # Python list of ``SpotItem`` or (on some pyqtgraph builds) a
+        # numpy object-dtype array. ``not points`` raises on the array
+        # form; use ``len`` for both.
+        if self._on_click is None or len(points) == 0:
             return
         spot = points[0]
         try:
@@ -620,8 +624,12 @@ class MetricPanel(pg.PlotWidget):
             return np.asarray(-np.log10(safe), dtype=np.float32)
         return np.asarray(raw, dtype=np.float32)
 
-    def _handle_click(self, _scatter: pg.ScatterPlotItem, points: list[Any]) -> None:
-        if not points or self._on_click is None:
+    def _handle_click(self, _scatter: pg.ScatterPlotItem, points: Any) -> None:
+        # ``ScatterPlotItem.sigClicked`` emits ``points`` as either a
+        # Python list of ``SpotItem`` or (on some pyqtgraph builds) a
+        # numpy object-dtype array. ``not points`` raises on the array
+        # form; use ``len`` for both.
+        if self._on_click is None or len(points) == 0:
             return
         spot = points[0]
         try:
