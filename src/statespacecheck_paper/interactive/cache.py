@@ -523,6 +523,214 @@ def build_model_cache(
     return info
 
 
+# ---------------------------------------------------------------------------
+# Simulated-dataset cache builder
+# ---------------------------------------------------------------------------
+
+# 1 sample = ``_SIMULATED_DT`` seconds when written to the simulation
+# meta sidecar. The figure-3 simulation is unitless (each time index is
+# one decoder step). We pick 2 ms so the viewer's window-width slider
+# (0.1 s – 60 s) maps to 50 – 30 000 simulation samples, matching the
+# ``dt = 1/500 Hz`` cadence the figure-4 cache uses.
+_SIMULATED_DT = 0.002
+
+
+def build_simulated_cache(
+    cache_dir: Path,
+    *,
+    params: Any | None = None,
+    seed: int | None = None,
+    time_chunk: int = DEFAULT_TIME_CHUNK,
+    force: bool = False,
+) -> dict[str, Any]:
+    """Run the figure-3 simulation and write a viewer-compatible cache.
+
+    The figure-3 demo is a fundamentally different dataset than the
+    figure-4 real-data caches (no recording session, no model choice,
+    no smoothed posterior — just a forward filter under several misfit
+    conditions). It uses a separate filename layout
+    (``simulation.zarr``, ``simulation_events.parquet``,
+    ``simulation_place_fields.npz``, ``simulation_meta.npz``,
+    ``simulation_spike_times.npy``) and the
+    ``DecoderDataSource.for_simulation`` factory.
+
+    Parameters
+    ----------
+    cache_dir : Path
+        Output directory.
+    params : DecodeParams, optional
+        Simulation configuration. ``None`` ⇒ default ``DecodeParams()``.
+    seed : int, optional
+        Override ``params.base_seed`` for the run.
+    time_chunk : int
+        Zarr chunk size along the time axis.
+    force : bool
+        Overwrite an existing ``simulation.zarr``.
+
+    Returns
+    -------
+    dict
+        Summary of what was written: ``n_time``, ``n_cells``,
+        ``n_bins``, ``n_events``, plus the cache paths.
+
+    Notes
+    -----
+    The simulation's ``metrics["likelihood"]`` is the *normalized linear*
+    combined likelihood. The viewer's worker exponentiates the cache's
+    ``log_likelihood`` back, so this builder writes
+    ``log_likelihood = log(max(likelihood, 1e-12))`` — true log space.
+    Without the ``log``, the worker would ``exp`` an already-normalized
+    distribution and the likelihood panel would visually flatten.
+
+    No ``acausal_posterior`` is written: the simulation only forward-
+    filters, so the smoothed-overlay control is honestly disabled by
+    the loader (matching legacy real-data caches without acausal).
+    """
+    # Imported here so the cache module doesn't pull simulation
+    # machinery on every figure-4 cache build.
+    from statespacecheck_paper.figure03_demo import (  # noqa: PLC0415
+        run_figure03_simulation,
+    )
+    from statespacecheck_paper.simulation import placefield_rates  # noqa: PLC0415
+
+    cache_dir = Path(cache_dir)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    paths = simulated_cache_paths(cache_dir)
+    if paths["zarr"].exists() and not force:
+        raise FileExistsError(f"{paths['zarr']} already exists; pass force=True to overwrite.")
+
+    sim = run_figure03_simulation(params, seed=seed)
+    params_used = sim["params"]
+    xs: NDArray[np.float64] = np.asarray(sim["xs"], dtype=np.float64)
+    x_true: NDArray[np.float64] = np.asarray(sim["x_true"], dtype=np.float64)
+    spikes: NDArray[np.int_] = np.asarray(sim["spikes"], dtype=np.int_)
+    metrics = sim["metrics"]
+
+    n_time = x_true.shape[0]
+    n_bins = xs.shape[0]
+    n_cells = int(spikes.shape[1])
+    pf_centers = np.asarray(params_used.pf_centers, dtype=np.float64)
+    if pf_centers.shape[0] != n_cells:
+        raise ValueError(f"pf_centers length {pf_centers.shape[0]} != n_cells={n_cells}")
+
+    time_arr = (np.arange(n_time, dtype=np.float64) * _SIMULATED_DT).astype(np.float64)
+
+    # log_likelihood: true log space. ``metrics["likelihood"]`` is a
+    # normalized linear distribution per row; clamp before log to avoid
+    # ``-inf`` for zeros (the viewer's worker filters out non-finite
+    # rows but a row of all-``-inf`` would still trigger NaN handling
+    # downstream).
+    predictive = np.asarray(metrics["predictive"], dtype=np.float32)
+    likelihood_lin = np.asarray(metrics["likelihood"], dtype=np.float64)
+    log_lik = np.log(np.maximum(likelihood_lin, 1e-12)).astype(np.float32)
+
+    # ``state_bins`` axis: one state, so it equals the position grid.
+    ds = xr.Dataset(
+        data_vars={
+            "predictive_posterior": (("time", "state_bins"), predictive),
+            "log_likelihood": (("time", "state_bins"), log_lik),
+            # Single-state state probability (always 1.0).
+            "acausal_state_probabilities": (("time",), np.ones(n_time, dtype=np.float32)),
+        },
+        coords={
+            "time": ("time", time_arr),
+            "state_bins": ("state_bins", np.arange(n_bins, dtype=np.int64)),
+            "state": ("state_bins", np.array(["state_0"] * n_bins)),
+            "position": ("state_bins", xs),
+        },
+    )
+    if paths["zarr"].exists():
+        shutil.rmtree(paths["zarr"])
+    _write_zarr_store(ds=ds, out_dir=paths["zarr"], time_chunk=time_chunk)
+
+    # Events table. ``spike_time_ind`` / ``spike_cell_ind`` from
+    # ``decode_and_diagnostics`` are already expanded for multi-count
+    # bins (a bin with ``k`` spikes contributes ``k`` events) and
+    # ``compute_per_cell_diagnostics_from_rates`` returns per-event
+    # diagnostics in the same order.
+    spike_time_ind = np.asarray(metrics["spike_time_ind"], dtype=np.intp)
+    spike_cell_ind = np.asarray(metrics["spike_cell_ind"], dtype=np.intp)
+    event_times = time_arr[spike_time_ind]
+    events_df = pd.DataFrame(
+        {
+            "time": event_times.astype(np.float64),
+            "cell_id": spike_cell_ind.astype(np.int32),
+            "event_hpd_overlap": np.asarray(metrics["event_hpd_overlap"], dtype=np.float32),
+            "event_kl_divergence": np.asarray(metrics["event_kl_divergence"], dtype=np.float32),
+            "event_spike_prob": np.asarray(metrics["event_spike_prob"], dtype=np.float32),
+        }
+    )
+    events_df.sort_values("time", kind="mergesort", inplace=True)
+    events_df.reset_index(drop=True, inplace=True)
+    events_df.to_parquet(paths["events"], engine="pyarrow", compression="zstd")
+
+    # Place-fields sidecar. ``placefield_rates`` returns
+    # ``(n_bins, n_cells)``; the viewer expects ``(n_cells, n_bins)``.
+    rates = np.asarray(
+        placefield_rates(xs, pf_centers, params_used.pf_width, params_used.rate_scale),
+        dtype=np.float64,
+    )
+    place_fields = rates.T  # (n_cells, n_bins)
+    interior_mask = np.ones(n_bins, dtype=bool)
+    _write_place_fields(
+        out_path=paths["place_fields"],
+        place_fields=place_fields,
+        interior_mask=interior_mask,
+        position_bins=xs,
+        place_field_peaks=pf_centers,
+    )
+
+    _write_meta(
+        out_path=simulated_meta_path(cache_dir),
+        time=time_arr,
+        linear_position=x_true,
+        n_cells=n_cells,
+    )
+
+    # Per-cell spike-time arrays. Build by gathering the absolute times
+    # at which each cell fired, preserving ordering (already monotone
+    # because ``spike_time_ind`` is built from ``np.nonzero`` on the
+    # row-major spike matrix).
+    spike_times_per_cell: list[NDArray[np.float64]] = []
+    for cell_id in range(n_cells):
+        mask = spike_cell_ind == cell_id
+        spike_times_per_cell.append(event_times[mask].astype(np.float64))
+    _write_spike_times(
+        out_path=simulated_spike_times_path(cache_dir),
+        spike_times=spike_times_per_cell,
+    )
+
+    return {
+        "n_time": int(n_time),
+        "n_cells": int(n_cells),
+        "n_bins": int(n_bins),
+        "n_events": int(len(events_df)),
+        "cache_paths": {k: str(v) for k, v in paths.items()},
+        "meta_path": str(simulated_meta_path(cache_dir)),
+        "spike_times_path": str(simulated_spike_times_path(cache_dir)),
+    }
+
+
+def _build_simulated_command(args: argparse.Namespace) -> int:
+    """CLI entry point for ``cache build-simulated``."""
+    cache_dir = Path(args.cache_dir).expanduser().resolve()
+    print(f"[cache] Building figure-3 simulation cache → {cache_dir} ...", flush=True)
+    info = build_simulated_cache(
+        cache_dir,
+        seed=args.seed,
+        time_chunk=args.time_chunk,
+        force=args.force,
+    )
+    print(
+        f"[cache] simulation: n_time={info['n_time']} n_cells={info['n_cells']} "
+        f"n_bins={info['n_bins']} n_events={info['n_events']}",
+        flush=True,
+    )
+    print("[cache] Done.")
+    return 0
+
+
 def _build_command(args: argparse.Namespace) -> int:
     """CLI entry point for ``cache build``."""
     intermediates_dir = Path(args.intermediates_dir).expanduser().resolve()
@@ -614,11 +822,40 @@ def main(argv: list[str] | None = None) -> int:
     )
     build.set_defaults(func=_build_command)
 
+    build_sim = sub.add_parser(
+        "build-simulated",
+        help="Build the figure-3 simulation cache for the interactive viewer.",
+    )
+    build_sim.add_argument(
+        "--cache-dir",
+        required=True,
+        help="Output cache directory (will hold simulation.zarr + sidecars).",
+    )
+    build_sim.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Override DecodeParams.base_seed for stochastic draws.",
+    )
+    build_sim.add_argument(
+        "--time-chunk",
+        type=int,
+        default=DEFAULT_TIME_CHUNK,
+        help="Zarr chunk size along the time axis.",
+    )
+    build_sim.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite an existing simulation cache.",
+    )
+    build_sim.set_defaults(func=_build_simulated_command)
+
     args = parser.parse_args(argv)
-    if args.intermediates_dir is None:
-        args.intermediates_dir = str(Path(args.data_dir) / "intermediates")
-    if args.cache_dir is None:
-        args.cache_dir = str(Path(args.data_dir) / "cache")
+    if args.command == "build":
+        if args.intermediates_dir is None:
+            args.intermediates_dir = str(Path(args.data_dir) / "intermediates")
+        if args.cache_dir is None:
+            args.cache_dir = str(Path(args.data_dir) / "cache")
     return int(args.func(args))
 
 
