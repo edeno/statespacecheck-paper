@@ -152,6 +152,10 @@ class _BaseHeatmapPanel(pg.PlotWidget):
         self.setMouseEnabled(x=False, y=False)
         self.setLabel("left", "Position (cm)")
         self.setLabel("bottom", "Time relative to center (s)")
+        # Disable pyqtgraph's auto-SI-prefix on the time axis so the
+        # tick labels do not flip between e.g. ``0.500`` and ``500
+        # (×10⁻³)`` as the user scrolls through small / large values.
+        self.getAxis("bottom").enableAutoSIPrefix(False)
         self.getPlotItem().setTitle(title)
 
         # ``axisOrder='col-major'`` interprets ``image[i, j]`` as
@@ -333,6 +337,7 @@ class RasterPanel(pg.PlotWidget):
         self.setMouseEnabled(x=False, y=False)
         self.setLabel("left", "Cell (PF rank)")
         self.setLabel("bottom", "Time relative to center (s)")
+        self.getAxis("bottom").enableAutoSIPrefix(False)
         self.getPlotItem().setTitle("Raster")
 
         self._n_cells = int(n_cells)
@@ -494,6 +499,7 @@ class MetricPanel(pg.PlotWidget):
         self.setMenuEnabled(False)
         self.setMouseEnabled(x=False, y=False)
         self.setLabel("bottom", "Time relative to center (s)")
+        self.getAxis("bottom").enableAutoSIPrefix(False)
         self.setLabel("left", METRIC_TITLES.get(metric, metric))
 
         self._metric = metric
