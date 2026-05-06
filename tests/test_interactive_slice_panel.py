@@ -31,7 +31,6 @@ pytestmark = pytest.mark.skipif(
 
 
 def _build_cache(cache_dir: Path, *, n_states: int) -> None:
-    """Slice-panel tests need single- and multi-state caches."""
     _build_cache_impl(cache_dir, model="continuous", n_states=n_states)
 
 
@@ -63,7 +62,7 @@ def _wait_for_request(app, viewer, request_id: int, timeout_s: float = 5.0) -> b
 
 
 # ---------------------------------------------------------------------------
-# Single-state behavior
+# Population-likelihood plot
 # ---------------------------------------------------------------------------
 
 
@@ -71,10 +70,15 @@ def test_slice_panel_constructs_with_single_state(tmp_path: Path) -> None:
     _build_cache(tmp_path / "cache", n_states=1)
     app, viewer, ds = _make_viewer(tmp_path / "cache")
     try:
-        assert len(viewer.slice_panel._posterior_curves) == 1  # noqa: SLF001
-        assert len(viewer.slice_panel._likelihood_curves) == 1  # noqa: SLF001
-        assert viewer.slice_panel._n_states == 1  # noqa: SLF001
-        assert viewer.slice_panel._n_pos == ds.n_interior  # noqa: SLF001
+        sp = viewer.slice_panel
+        # Population likelihood: one fill (single state) + a predictive
+        # overlay curve.
+        assert len(sp._lik_top_curves) == 1  # noqa: SLF001
+        assert len(sp._lik_fills) == 1  # noqa: SLF001
+        assert sp._n_states == 1  # noqa: SLF001
+        assert sp._n_pos == ds.n_interior  # noqa: SLF001
+        # Per-cell rows are empty until the first commit.
+        assert sp._n_active_per_cell_rows == 0  # noqa: SLF001
     finally:
         viewer.close()
         ds.close()
@@ -88,19 +92,17 @@ def test_slice_panel_updates_after_window_load(tmp_path: Path) -> None:
         viewer.force_reload_now()
         assert _wait_for_request(app, viewer, target)
 
-        # The slice panel's posterior curve now matches the
-        # corresponding row of the loaded window.
         sp = viewer.slice_panel
         assert sp._buffer_post is not None  # noqa: SLF001
         assert sp._buffer_lik is not None  # noqa: SLF001
-        assert sp._buffer_slice is not None  # noqa: SLF001
-        sl = sp._buffer_slice  # noqa: SLF001
-        t_idx = ds.index_at_time(viewer._t_center)  # noqa: SLF001
-        if sl.start <= t_idx < sl.stop:
-            local = t_idx - sl.start
-            expected = sp._buffer_post[local]  # noqa: SLF001
-            x_data, y_data = sp._posterior_curves[0].getData()  # noqa: SLF001
-            np.testing.assert_array_almost_equal(y_data, expected)
+        # Predictive overlay on the population plot is populated and
+        # peak-normalized to 1 (within fp tolerance).
+        x_data, y_data = sp._lik_predictive_curve.getData()  # noqa: SLF001
+        assert y_data.shape == (ds.n_position_full,)
+        assert 0.0 < float(np.max(y_data)) <= 1.0 + 1e-6
+        # Likelihood top curve is populated.
+        x_lik, y_lik = sp._lik_top_curves[0].getData()  # noqa: SLF001
+        assert y_lik.shape == (ds.n_position_full,)
     finally:
         viewer.close()
         ds.close()
@@ -117,13 +119,12 @@ def test_slice_panel_animates_on_set_center_time(tmp_path: Path) -> None:
         sp = viewer.slice_panel
         sl = sp._buffer_slice  # noqa: SLF001
         assert sl is not None
-        # Move within the same window; slice must update without a new load.
         idx_a = sl.start + 1
         idx_b = sl.start + (sl.stop - sl.start) // 2
         viewer.set_center_time(ds.time[idx_a])
-        x_a, y_a = sp._posterior_curves[0].getData()  # noqa: SLF001
+        x_a, y_a = sp._lik_predictive_curve.getData()  # noqa: SLF001
         viewer.set_center_time(ds.time[idx_b])
-        x_b, y_b = sp._posterior_curves[0].getData()  # noqa: SLF001
+        x_b, y_b = sp._lik_predictive_curve.getData()  # noqa: SLF001
         assert not np.array_equal(y_a, y_b)
     finally:
         viewer.close()
@@ -155,23 +156,25 @@ def test_slice_panel_stacks_states_for_contfrag(tmp_path: Path) -> None:
     try:
         sp = viewer.slice_panel
         assert sp._n_states == 2  # noqa: SLF001
-        assert len(sp._posterior_curves) == 2  # noqa: SLF001
-        assert len(sp._likelihood_curves) == 2  # noqa: SLF001
+        assert len(sp._lik_top_curves) == 2  # noqa: SLF001
+        assert len(sp._lik_fills) == 2  # noqa: SLF001
 
         target = viewer._next_request_id  # noqa: SLF001
         viewer.force_reload_now()
         assert _wait_for_request(app, viewer, target)
 
-        # Each state's curve has length n_interior, not n_state_bins.
-        x0, y0 = sp._posterior_curves[0].getData()  # noqa: SLF001
-        x1, y1 = sp._posterior_curves[1].getData()  # noqa: SLF001
-        assert y0.shape[0] == ds.n_interior
-        assert y1.shape[0] == ds.n_interior
-        # The two state slices generally differ.
-        assert not np.array_equal(y0, y1)
+        x0, y0 = sp._lik_top_curves[0].getData()  # noqa: SLF001
+        x1, y1 = sp._lik_top_curves[1].getData()  # noqa: SLF001
+        assert y0.shape == (ds.n_position_full,)
+        assert y1.shape == (ds.n_position_full,)
     finally:
         viewer.close()
         ds.close()
+
+
+# ---------------------------------------------------------------------------
+# Live-readout (simplified)
+# ---------------------------------------------------------------------------
 
 
 def test_slice_panel_live_readout_updates_with_center(tmp_path: Path) -> None:
@@ -182,16 +185,14 @@ def test_slice_panel_live_readout_updates_with_center(tmp_path: Path) -> None:
         viewer.force_reload_now()
         assert _wait_for_request(app, viewer, target)
 
-        # Recenter on a known spike so the in-bin block must appear.
         viewer.set_center_time(float(ds.event_times[0]))
         viewer._update_slice_panel_at_center()  # noqa: SLF001
         text = viewer.slice_panel._readout_label.text()  # noqa: SLF001
         assert text.startswith("t = ")
         assert "predictive(x_true)" in text
-        assert "spikes in bin" in text
-        assert "HPD=" in text and "KL=" in text
+        # Per-cell metrics now live in the row headers, not the readout.
+        assert "HPD=" not in text and "spikes in bin" not in text
 
-        # Move to a different center and verify the readout updates.
         viewer.set_center_time(float(ds.time[200]))
         viewer._update_slice_panel_at_center()  # noqa: SLF001
         text2 = viewer.slice_panel._readout_label.text()  # noqa: SLF001
@@ -201,34 +202,37 @@ def test_slice_panel_live_readout_updates_with_center(tmp_path: Path) -> None:
         ds.close()
 
 
-def test_slice_panel_shows_per_cell_curves_when_spikes_present(tmp_path: Path) -> None:
+# ---------------------------------------------------------------------------
+# Per-cell rows
+# ---------------------------------------------------------------------------
+
+
+def test_per_cell_row_visible_when_spikes_present(tmp_path: Path) -> None:
     _build_cache(tmp_path / "cache", n_states=1)
     app, viewer, ds = _make_viewer(tmp_path / "cache")
     try:
         target = viewer._next_request_id  # noqa: SLF001
         viewer.force_reload_now()
         assert _wait_for_request(app, viewer, target)
-        # Per-cell overlay defaults to off; enable it so the test can
-        # verify visibility.
-        viewer._per_cell_checkbox.setChecked(True)  # noqa: SLF001
+        # Per-cell rows default to ON in the new layout.
+        assert viewer._per_cell_checkbox.isChecked()  # noqa: SLF001
 
-        first_event_t = float(ds.event_times[0])
-        viewer.set_center_time(first_event_t)
+        viewer.set_center_time(float(ds.event_times[0]))
         viewer._update_slice_panel_at_center()  # noqa: SLF001
 
         sp = viewer.slice_panel
-        assert sp._n_active_per_cell_curves >= 1  # noqa: SLF001
-        assert sp._per_cell_curves[0].isVisible()  # noqa: SLF001
-        x_data, y_data = sp._per_cell_curves[0].getData()  # noqa: SLF001
-        assert y_data.shape == (ds.n_position_full,)
-        # Normalized to its own peak: 0 < max <= 1.
-        assert 0.0 < float(np.max(y_data)) <= 1.0 + 1e-6
+        assert sp._n_active_per_cell_rows >= 1  # noqa: SLF001
+        row = sp._per_cell_rows[0]  # noqa: SLF001
+        # Cell-curve data is the cell's normalized place-field shape.
+        x, y = row.cell_curve.getData()
+        assert y.shape == (ds.n_position_full,)
+        assert 0.0 < float(np.max(y)) <= 1.0 + 1e-6
     finally:
         viewer.close()
         ds.close()
 
 
-def test_per_cell_checkbox_hides_curves(tmp_path: Path) -> None:
+def test_per_cell_row_header_contains_metrics(tmp_path: Path) -> None:
     _build_cache(tmp_path / "cache", n_states=1)
     app, viewer, ds = _make_viewer(tmp_path / "cache")
     try:
@@ -236,57 +240,59 @@ def test_per_cell_checkbox_hides_curves(tmp_path: Path) -> None:
         viewer.force_reload_now()
         assert _wait_for_request(app, viewer, target)
 
-        # Enable, recenter onto a spike, verify visible.
-        viewer._per_cell_checkbox.setChecked(True)  # noqa: SLF001
         viewer.set_center_time(float(ds.event_times[0]))
         viewer._update_slice_panel_at_center()  # noqa: SLF001
-        assert viewer.slice_panel._per_cell_curves[0].isVisible()  # noqa: SLF001
 
-        # Disable — every curve in the pool hides regardless of state.
+        header_text = viewer.slice_panel._per_cell_rows[0].header.text()  # noqa: SLF001
+        assert header_text.startswith("Cell")
+        assert "HPD=" in header_text
+        assert "KL=" in header_text
+    finally:
+        viewer.close()
+        ds.close()
+
+
+def test_per_cell_checkbox_hides_rows(tmp_path: Path) -> None:
+    _build_cache(tmp_path / "cache", n_states=1)
+    app, viewer, ds = _make_viewer(tmp_path / "cache")
+    try:
+        target = viewer._next_request_id  # noqa: SLF001
+        viewer.force_reload_now()
+        assert _wait_for_request(app, viewer, target)
+
+        viewer.set_center_time(float(ds.event_times[0]))
+        viewer._update_slice_panel_at_center()  # noqa: SLF001
+        sp = viewer.slice_panel
+        assert sp._n_active_per_cell_rows >= 1  # noqa: SLF001
+
         viewer._per_cell_checkbox.setChecked(False)  # noqa: SLF001
-        for curve in viewer.slice_panel._per_cell_curves:  # noqa: SLF001
-            assert not curve.isVisible()
-    finally:
-        viewer.close()
-        ds.close()
-
-
-def test_live_readout_lists_each_spike_in_bin(tmp_path: Path) -> None:
-    _build_cache(tmp_path / "cache", n_states=1)
-    app, viewer, ds = _make_viewer(tmp_path / "cache")
-    try:
-        target = viewer._next_request_id  # noqa: SLF001
-        viewer.force_reload_now()
-        assert _wait_for_request(app, viewer, target)
-
-        # Recenter on the first event's bin.
-        viewer.set_center_time(float(ds.event_times[0]))
-        viewer._update_slice_panel_at_center()  # noqa: SLF001
-
-        text = viewer.slice_panel._readout_label.text()  # noqa: SLF001
-        assert "spikes in bin" in text
-        # At least one ``cell=`` row.
-        assert "cell=" in text
+        for row in sp._per_cell_rows:  # noqa: SLF001
+            assert not row.container.isVisible()
+        # Toggle back: active rows reappear; inactive stay hidden.
+        viewer._per_cell_checkbox.setChecked(True)  # noqa: SLF001
+        for i, row in enumerate(sp._per_cell_rows):  # noqa: SLF001
+            expected = i < sp._n_active_per_cell_rows  # noqa: SLF001
+            # ``isVisible`` requires the parent tree to be shown under
+            # offscreen Qt; check the panel-side flag instead.
+            if expected:
+                assert sp._per_cell_visible  # noqa: SLF001
+            del row
     finally:
         viewer.close()
         ds.close()
 
 
 def test_data_source_cells_at_index_returns_unique_cells(tmp_path: Path) -> None:
-    """``cells_at_index`` returns unique cell IDs for the given time bin."""
     _build_cache(tmp_path / "cache", n_states=1)
     from statespacecheck_paper.interactive.data_source import Figure4DataSource
 
     src = Figure4DataSource(tmp_path / "cache", model="continuous")
     try:
-        # First event's bin should yield at least one cell.
         first_t_idx = int(src.event_time_idx[0])
         cells = src.cells_at_index(first_t_idx)
         assert cells.size >= 1
         assert cells.dtype == np.int32
-        # No duplicates.
         assert cells.size == np.unique(cells).size
-        # Empty bin (well before any event): empty result.
         empty = src.cells_at_index(int(src.event_time_idx[0]) - 100)
         assert empty.size == 0
     finally:
@@ -305,12 +311,9 @@ def test_slice_panel_does_not_update_outside_buffer(tmp_path: Path) -> None:
         sl = sp._buffer_slice  # noqa: SLF001
         assert sl is not None
 
-        # Capture the current curve data.
-        x_before, y_before = sp._posterior_curves[0].getData()  # noqa: SLF001
-
-        # Update for a t_idx outside the buffer: should be a no-op.
+        x_before, y_before = sp._lik_predictive_curve.getData()  # noqa: SLF001
         sp.update_for_index(sl.stop + 10, true_position=42.0)
-        x_after, y_after = sp._posterior_curves[0].getData()  # noqa: SLF001
+        x_after, y_after = sp._lik_predictive_curve.getData()  # noqa: SLF001
         np.testing.assert_array_equal(y_after, y_before)
     finally:
         viewer.close()

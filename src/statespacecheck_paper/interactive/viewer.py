@@ -715,30 +715,122 @@ _PER_CELL_PALETTE: tuple[tuple[int, int, int], ...] = (
 )
 
 
+@dataclass(frozen=True)
+class CellSlice:
+    """One row of per-cell information, pushed by the viewer per tick."""
+
+    cell_id: int
+    place_field_norm: NDArray[np.float32]
+    hpd: float
+    kl: float
+    spike_prob: float
+    n_spikes: int
+    is_pinned: bool
+
+
+# Cap on simultaneously visible per-cell rows; bins with more cells get
+# a "(+K more)" indicator below.
+MAX_PER_CELL_PLOTS = 6
+
+
+# Stylesheets shared by the slice-panel labels.
+_SLICE_LEGEND_STYLE = (
+    "QLabel { background-color: #ffffff; color: #202020; "
+    "padding: 4px 6px; border: 1px solid #cccccc; border-radius: 3px; "
+    "font-size: 11pt; }"
+)
+_SLICE_READOUT_STYLE = (
+    "QLabel { background-color: #ffffff; color: #202020; "
+    "padding: 4px 6px; border: 1px solid #cccccc; border-radius: 3px; "
+    "font-family: 'Menlo', 'Consolas', monospace; font-size: 11pt; }"
+)
+_SLICE_ANNOTATION_STYLE = (
+    "QLabel { background-color: #fff7d6; color: #6a4f00; "
+    "padding: 4px 6px; border: 1px solid #d4b85a; border-radius: 3px; "
+    "font-family: 'Menlo', 'Consolas', monospace; font-size: 11pt; }"
+)
+_SLICE_CELL_HEADER_STYLE = (
+    "QLabel { background-color: #f4f4f4; color: #202020; "
+    "padding: 2px 6px; border: 1px solid #d8d8d8; border-radius: 3px; "
+    "font-family: 'Menlo', 'Consolas', monospace; font-size: 10pt; }"
+)
+_SLICE_CELL_HEADER_PINNED_STYLE = (
+    "QLabel { background-color: #fff2a8; color: #4d3700; "
+    "padding: 2px 6px; border: 2px solid #d4b85a; border-radius: 3px; "
+    "font-family: 'Menlo', 'Consolas', monospace; font-size: 10pt; "
+    "font-weight: bold; }"
+)
+
+
+@dataclass
+class _PerCellRow:
+    """One per-cell plot row inside the slice panel.
+
+    Each row owns a header ``QLabel`` (cell + metrics + pinned badge),
+    a ``pg.PlotWidget`` containing a colored cell-likelihood curve, an
+    overlaid blue predictive curve, and a dashed true-position line.
+    The container ``QWidget`` is what gets shown/hidden by the
+    visibility toggle and the pool-resize logic.
+    """
+
+    container: QtWidgets.QWidget
+    header: QtWidgets.QLabel
+    plot: pg.PlotWidget
+    cell_curve: pg.PlotDataItem
+    predictive_curve: pg.PlotDataItem
+    true_position_line: pg.InfiniteLine
+
+
+def _make_slice_subplot(
+    *,
+    title: str | None,
+    position_bins: NDArray[np.float64],
+    height: int,
+) -> pg.PlotWidget:
+    """Configure a small position-axis plot used in the slice column."""
+    plot = pg.PlotWidget()
+    plot.setBackground("w")
+    plot.setMenuEnabled(False)
+    plot.setMouseEnabled(x=False, y=False)
+    plot.setLabel("bottom", "Position (cm)")
+    plot.setLabel("left", "Density")
+    plot.getAxis("bottom").enableAutoSIPrefix(False)
+    plot.getAxis("left").enableAutoSIPrefix(False)
+    if title is not None:
+        plot.getPlotItem().setTitle(title)
+    plot.setMinimumHeight(height)
+    plot.setXRange(float(position_bins[0]), float(position_bins[-1]), padding=0)
+    return plot
+
+
 class SlicePanel(QtWidgets.QWidget):
-    """1D animated posterior + likelihood curves at the current center time.
+    """Stacked slice plots: population likelihood + per-cell likelihoods.
 
     Layout (top to bottom):
 
-    - Legend label: color swatches + names for the curves.
-    - Plot: the posterior + likelihood curves vs. position, with a
-      dashed vertical line at the animal's true linear position.
-    - Live readout label: per-tick HPD / KL / spike-prob / predictive
-      values for the spike closest to the center time.
-    - Pinned readout label (visible only when a spike is pinned):
-      the clicked event's metrics.
+    1. Legend label (color swatches + names).
+    2. **Population-likelihood plot**: orange-fill joint likelihood
+       overlaid by a thin blue *predictive* line. Always visible.
+    3. **Per-cell-likelihood plots**: a pool of up to
+       ``MAX_PER_CELL_PLOTS`` rows. When the current bin contains
+       spikes from multiple cells (deduped by cell), one row per
+       cell shows the cell's normalized place-field overlaid by
+       the predictive line. The header label carries that cell's
+       ``HPD`` / ``KL`` / ``p`` values; pinned cells get a yellow
+       header. Hidden when the bin is empty.
+    4. Truncation label (shown when the bin has more than
+       ``MAX_PER_CELL_PLOTS`` cells).
+    5. Live-readout label (``t = …``, ``predictive(x_true) = …``).
+    6. Pinned-event annotation (visible only when a spike is pinned).
 
-    The legend and both readouts live outside the plot proper as
-    ``QLabel`` widgets, so the curves are not occluded.
+    Every plot has the predictive distribution overlaid (peak-
+    normalized to 1) so each row is a direct shape comparison
+    against the predictive prior, which is what the HPD/KL
+    diagnostics measure.
 
-    The hot path is ``update_for_index(t_idx)``: it indexes one
-    pre-loaded window's float32 row and calls ``setData`` on each
-    curve. This must stay sub-millisecond so the slice animates
-    smoothly while the user scrolls.
-
-    For multi-state models (ContFrag) the panel switches to
-    stacked-by-state rendering: one posterior curve and one
-    likelihood-fill per state, color-coded.
+    The hot path is ``update_for_index(t_idx, true_pos)`` and the
+    viewer's follow-up ``set_per_cell_slices(slices)`` — both are
+    sub-millisecond at typical bin sizes.
     """
 
     def __init__(
@@ -755,130 +847,100 @@ class SlicePanel(QtWidgets.QWidget):
         self._n_states = max(1, int(n_states))
         self._zero_curve = np.zeros(self._n_pos, dtype=np.float32)
 
-        # Likelihood alpha — set by an external slider (0..255).
         self._likelihood_alpha = 140
+        self._per_cell_visible = True
 
-        # ----- Plot widget --------------------------------------------------
-        self._plot = pg.PlotWidget()
-        self._plot.setBackground("w")
-        self._plot.setMenuEnabled(False)
-        self._plot.setMouseEnabled(x=False, y=False)
-        self._plot.setLabel("bottom", "Position (cm)")
-        self._plot.setLabel("left", "Density")
-        self._plot.getPlotItem().setTitle("Predictive distribution at center time")
+        # Pre-rendered predictive curve, peak-normalized; same array is
+        # passed by reference into every plot's ``predictive_curve``
+        # via ``setData``, so updating it once per tick refreshes all
+        # plots.
+        self._predictive_norm = self._zero_curve.copy()
 
-        self._posterior_curves: list[pg.PlotDataItem] = []
-        self._likelihood_curves: list[pg.PlotDataItem] = []
-        self._likelihood_baseline_curves: list[pg.PlotDataItem] = []
-        self._likelihood_fills: list[pg.FillBetweenItem] = []
+        self._likelihood_plot = _make_slice_subplot(
+            title="Population likelihood",
+            position_bins=self._position_bins,
+            height=140,
+        )
+        self._lik_predictive_curve = pg.PlotDataItem(
+            self._position_bins,
+            self._zero_curve,
+            pen=pg.mkPen(_STATE_POSTERIOR_RGB[0], width=2),
+        )
+        self._likelihood_plot.addItem(self._lik_predictive_curve)
+
+        self._lik_top_curves: list[pg.PlotDataItem] = []
+        self._lik_base_curves: list[pg.PlotDataItem] = []
+        self._lik_fills: list[pg.FillBetweenItem] = []
         for s in range(self._n_states):
-            post_rgb = _STATE_POSTERIOR_RGB[s % len(_STATE_POSTERIOR_RGB)]
             lik_rgb = _STATE_LIKELIHOOD_RGB[s % len(_STATE_LIKELIHOOD_RGB)]
-            post_curve = pg.PlotDataItem(
-                self._position_bins,
-                self._zero_curve,
-                pen=pg.mkPen(post_rgb, width=3),
-            )
-            self._plot.addItem(post_curve)
-            self._posterior_curves.append(post_curve)
-
-            lik_top = pg.PlotDataItem(
+            top = pg.PlotDataItem(
                 self._position_bins,
                 self._zero_curve,
                 pen=pg.mkPen(_LIKELIHOOD_PEN_RGB, width=2),
             )
-            lik_base = pg.PlotDataItem(self._position_bins, self._zero_curve, pen=None)
-            self._plot.addItem(lik_top)
-            self._plot.addItem(lik_base)
-            self._likelihood_curves.append(lik_top)
-            self._likelihood_baseline_curves.append(lik_base)
-            fill = pg.FillBetweenItem(
-                lik_top,
-                lik_base,
-                brush=pg.mkBrush(*lik_rgb, self._likelihood_alpha),
-            )
-            self._plot.addItem(fill)
-            self._likelihood_fills.append(fill)
+            base = pg.PlotDataItem(self._position_bins, self._zero_curve, pen=None)
+            self._likelihood_plot.addItem(top)
+            self._likelihood_plot.addItem(base)
+            fill = pg.FillBetweenItem(top, base, brush=pg.mkBrush(*lik_rgb, self._likelihood_alpha))
+            self._likelihood_plot.addItem(fill)
+            self._lik_top_curves.append(top)
+            self._lik_base_curves.append(base)
+            self._lik_fills.append(fill)
 
-        self._true_position_line = pg.InfiniteLine(
-            angle=90,
-            movable=False,
-            pen=_TRUE_POSITION_PEN,
+        self._lik_true_position_line = pg.InfiniteLine(
+            angle=90, movable=False, pen=_TRUE_POSITION_PEN
         )
-        self._plot.addItem(self._true_position_line)
+        self._likelihood_plot.addItem(self._lik_true_position_line)
 
-        # Per-cell place-field overlay: at each tick, the viewer pushes
-        # one normalized curve per cell that fired in the current bin.
-        # We grow a small pool of ``PlotDataItem``s on demand and reuse
-        # them across updates (avoids re-creating Qt graphics items per
-        # tick during scrolling).
-        self._per_cell_curves: list[pg.PlotDataItem] = []
-        self._n_active_per_cell_curves = 0
-        # Off by default so the slice plot stays uncluttered; user
-        # turns it on via the controls-bar checkbox.
-        self._per_cell_visible = False
+        # Per-cell row pool. Rows are constructed lazily in
+        # ``set_per_cell_slices``; the count never shrinks (rows hide
+        # rather than getting destroyed) so Qt doesn't churn graphics
+        # items as the user scrolls between bins.
+        self._per_cell_rows: list[_PerCellRow] = []
+        self._n_active_per_cell_rows = 0
 
-        # Pinned-spike overlay: the clicked spike's place-field curve
-        # over position. The textual annotation lives in the QLabel
-        # below the plot, not as an in-plot TextItem.
-        self._pinned_curve = pg.PlotDataItem(
-            self._position_bins,
-            self._zero_curve,
-            pen=pg.mkPen((255, 215, 0), width=3),
+        self._truncation_label = QtWidgets.QLabel("")
+        self._truncation_label.setStyleSheet(
+            "QLabel { color: #777; font-style: italic; padding: 1px 6px; }"
         )
-        self._pinned_curve.setVisible(False)
-        self._plot.addItem(self._pinned_curve)
-
-        # ----- Out-of-plot labels ------------------------------------------
-        # Force opaque light backgrounds so the labels stay readable
-        # under the system theme (especially macOS dark mode, where
-        # the default QWidget background would be near-black).
-        legend_style = (
-            "QLabel { background-color: #ffffff; color: #202020; "
-            "padding: 4px 6px; border: 1px solid #cccccc; border-radius: 3px; "
-            "font-size: 11pt; }"
-        )
-        readout_style = (
-            "QLabel { background-color: #ffffff; color: #202020; "
-            "padding: 4px 6px; border: 1px solid #cccccc; border-radius: 3px; "
-            "font-family: 'Menlo', 'Consolas', monospace; font-size: 11pt; }"
-        )
-        annotation_style = (
-            "QLabel { background-color: #fff7d6; color: #6a4f00; "
-            "padding: 4px 6px; border: 1px solid #d4b85a; border-radius: 3px; "
-            "font-family: 'Menlo', 'Consolas', monospace; font-size: 11pt; }"
-        )
+        self._truncation_label.setVisible(False)
 
         self._legend_label = QtWidgets.QLabel(self._build_legend_html())
         self._legend_label.setTextFormat(QtCore.Qt.TextFormat.RichText)
         self._legend_label.setAutoFillBackground(True)
-        self._legend_label.setStyleSheet(legend_style)
+        self._legend_label.setStyleSheet(_SLICE_LEGEND_STYLE)
         self._legend_label.setWordWrap(True)
 
         self._readout_label = QtWidgets.QLabel("")
         self._readout_label.setTextFormat(QtCore.Qt.TextFormat.PlainText)
         self._readout_label.setAutoFillBackground(True)
-        self._readout_label.setStyleSheet(readout_style)
+        self._readout_label.setStyleSheet(_SLICE_READOUT_STYLE)
 
-        # The pinned-event annotation (matches the ``_annotation``
-        # attribute kept by the test suite for visibility checks).
         self._annotation = QtWidgets.QLabel("")
         self._annotation.setTextFormat(QtCore.Qt.TextFormat.PlainText)
         self._annotation.setAutoFillBackground(True)
-        self._annotation.setStyleSheet(annotation_style)
+        self._annotation.setStyleSheet(_SLICE_ANNOTATION_STYLE)
         self._annotation.setVisible(False)
 
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(2, 2, 2, 2)
-        layout.setSpacing(4)
-        layout.addWidget(self._legend_label)
-        layout.addWidget(self._plot, stretch=1)
-        layout.addWidget(self._readout_label)
-        layout.addWidget(self._annotation)
+        # Container for the per-cell rows; we add row widgets to this
+        # layout so they sit between the population plot and the
+        # truncation label.
+        self._per_cell_container = QtWidgets.QWidget()
+        self._per_cell_layout = QtWidgets.QVBoxLayout(self._per_cell_container)
+        self._per_cell_layout.setContentsMargins(0, 0, 0, 0)
+        self._per_cell_layout.setSpacing(2)
 
-        # Window-buffer state. The viewer pushes a freshly loaded
-        # window via ``set_window_buffer``; subsequent
-        # ``update_for_index`` calls index into it.
+        outer = QtWidgets.QVBoxLayout(self)
+        outer.setContentsMargins(2, 2, 2, 2)
+        outer.setSpacing(4)
+        outer.addWidget(self._legend_label)
+        outer.addWidget(self._likelihood_plot, stretch=2)
+        outer.addWidget(self._per_cell_container, stretch=4)
+        outer.addWidget(self._truncation_label)
+        outer.addWidget(self._readout_label)
+        outer.addWidget(self._annotation)
+
+        # Window-buffer state pushed by the viewer on every commit.
         self._buffer_slice: slice | None = None
         self._buffer_post: NDArray[np.float32] | None = None
         self._buffer_lik: NDArray[np.float32] | None = None
@@ -888,31 +950,19 @@ class SlicePanel(QtWidgets.QWidget):
     # ------------------------------------------------------------------
 
     def _build_legend_html(self) -> str:
-        # The blue curve is the *predictive* distribution
-        # ``p(x_t | y_{1:t-1})``; the cache variable is named
-        # ``predictive_posterior`` per ``non_local_detector``'s API.
-        parts: list[str] = []
-        for s in range(self._n_states):
-            post_rgb = _STATE_POSTERIOR_RGB[s % len(_STATE_POSTERIOR_RGB)]
-            lik_rgb = _STATE_LIKELIHOOD_RGB[s % len(_STATE_LIKELIHOOD_RGB)]
-            tag = "" if self._n_states == 1 else f" (state {s})"
-            parts.append(
-                f"<span style='color:rgb({post_rgb[0]},{post_rgb[1]},{post_rgb[2]});"
-                f"font-size:14pt'>━</span> Predictive{tag}"
-            )
-            parts.append(
-                f"<span style='color:rgb({lik_rgb[0]},{lik_rgb[1]},{lik_rgb[2]});"
-                f"font-size:14pt'>━</span> Likelihood{tag}"
-            )
-        parts.append(
-            "<span style='color:rgb(120,120,120);font-size:14pt'>━</span> Per-cell place fields"
-        )
-        parts.append("<span style='color:rgb(50,50,50);font-size:14pt'>┄</span> True position")
-        parts.append("<span style='color:rgb(255,215,0);font-size:14pt'>━</span> Pinned cell PF")
+        post_rgb = _STATE_POSTERIOR_RGB[0]
+        lik_rgb = _STATE_LIKELIHOOD_RGB[0]
+        parts = [
+            f"<span style='color:rgb({lik_rgb[0]},{lik_rgb[1]},{lik_rgb[2]});"
+            "font-size:14pt'>━</span> Likelihood",
+            f"<span style='color:rgb({post_rgb[0]},{post_rgb[1]},{post_rgb[2]});"
+            "font-size:14pt'>━</span> Predictive",
+            "<span style='color:rgb(50,50,50);font-size:14pt'>┄</span> True position",
+        ]
         return " &nbsp;&nbsp; ".join(parts)
 
     # ------------------------------------------------------------------
-    # Data plumbing
+    # Buffer + per-tick updates
     # ------------------------------------------------------------------
 
     def set_window_buffer(
@@ -921,27 +971,12 @@ class SlicePanel(QtWidgets.QWidget):
         post: NDArray[np.float32],
         lik: NDArray[np.float32],
     ) -> None:
-        """Cache the most recent window for fast per-tick row access.
-
-        ``post`` and ``lik`` are the full ``(n_visible, n_state_bins)``
-        arrays exactly as ``Figure4DataSource.load_*`` returned them
-        (NaN-cleaned and exp'd by the worker thread). We store them as
-        a ring of one window — the simplest safe option, since each
-        new ``set_window_buffer`` call lines up with a fresh load that
-        already brought the data into RAM.
-        """
         self._buffer_slice = sl
         self._buffer_post = post
         self._buffer_lik = lik
 
     def update_for_index(self, t_idx: int, true_position: float) -> None:
-        """Update the curves for a single decoder time index.
-
-        ``t_idx`` is an absolute decoder index. If it falls outside the
-        currently buffered window, this method silently does nothing
-        and waits for the next buffer; the viewer triggers a fresh load
-        whenever the center moves outside the visible window.
-        """
+        """Update the population plot + the predictive overlay every plot uses."""
         sl = self._buffer_slice
         post = self._buffer_post
         lik = self._buffer_lik
@@ -952,78 +987,140 @@ class SlicePanel(QtWidgets.QWidget):
         local_idx = t_idx - sl.start
         post_row = post[local_idx]
         lik_row = lik[local_idx]
-        if self._n_states == 1:
-            self._posterior_curves[0].setData(self._position_bins, post_row)
-            self._likelihood_curves[0].setData(self._position_bins, lik_row)
-        else:
-            # Reshape (n_state_bins,) -> (n_states, n_pos) for stacked rendering.
-            post_rs = post_row.reshape(self._n_states, self._n_pos)
+        if self._n_states > 1:
+            post_row_collapsed = post_row.reshape(self._n_states, self._n_pos).sum(axis=0)
             lik_rs = lik_row.reshape(self._n_states, self._n_pos)
-            for s in range(self._n_states):
-                self._posterior_curves[s].setData(self._position_bins, post_rs[s])
-                self._likelihood_curves[s].setData(self._position_bins, lik_rs[s])
-        self._true_position_line.setPos(true_position)
+        else:
+            post_row_collapsed = post_row
+            lik_rs = lik_row[None, :]
+
+        peak = float(post_row_collapsed.max())
+        if peak > 0:
+            self._predictive_norm = (post_row_collapsed / peak).astype(np.float32, copy=False)
+        else:
+            self._predictive_norm = post_row_collapsed.astype(np.float32, copy=False)
+
+        # Population likelihood + predictive overlay.
+        self._lik_predictive_curve.setData(self._position_bins, self._predictive_norm)
+        for s in range(self._n_states):
+            row = lik_rs[s]
+            row_peak = float(row.max())
+            row_norm = (row / row_peak).astype(np.float32, copy=False) if row_peak > 0 else row
+            self._lik_top_curves[s].setData(self._position_bins, row_norm)
+        self._lik_true_position_line.setPos(true_position)
+
+        # Per-cell rows: refresh predictive overlay + true-position
+        # line on each row that's currently active. The cell-likelihood
+        # curve is set by ``set_per_cell_slices`` which only fires when
+        # the bin's cell membership changes; this hot path just pokes
+        # the shared predictive into each row.
+        for i in range(self._n_active_per_cell_rows):
+            row = self._per_cell_rows[i]
+            row.predictive_curve.setData(self._position_bins, self._predictive_norm)
+            row.true_position_line.setPos(true_position)
 
     def set_live_readout(self, text: str | None) -> None:
-        """Update the live-readout label below the plot."""
         self._readout_label.setText(text or "")
 
+    # ------------------------------------------------------------------
+    # Per-cell rows
+    # ------------------------------------------------------------------
+
     def set_per_cell_visible(self, visible: bool) -> None:
-        """Toggle the per-cell place-field overlay on/off.
-
-        When off, every pooled curve is hidden regardless of
-        ``set_per_cell_likelihoods`` calls; the active count is
-        retained so re-enabling restores the same curves.
-        """
         self._per_cell_visible = bool(visible)
-        if not self._per_cell_visible:
-            for curve in self._per_cell_curves:
-                curve.setVisible(False)
-        else:
-            for i in range(self._n_active_per_cell_curves):
-                self._per_cell_curves[i].setVisible(True)
+        for i, row in enumerate(self._per_cell_rows):
+            row.container.setVisible(self._per_cell_visible and i < self._n_active_per_cell_rows)
 
-    def set_per_cell_likelihoods(
-        self,
-        place_fields: NDArray[np.float32],
-        cell_ids: NDArray[np.int32],
-    ) -> None:
-        """Show one thin curve per cell that fired in the current bin.
+    def _ensure_row(self, index: int) -> _PerCellRow:
+        while len(self._per_cell_rows) <= index:
+            self._per_cell_rows.append(self._build_row())
+            self._per_cell_layout.addWidget(self._per_cell_rows[-1].container)
+        return self._per_cell_rows[index]
+
+    def _build_row(self) -> _PerCellRow:
+        plot = _make_slice_subplot(title=None, position_bins=self._position_bins, height=70)
+        cell_curve = pg.PlotDataItem(
+            self._position_bins, self._zero_curve, pen=pg.mkPen((44, 160, 44), width=2)
+        )
+        predictive_curve = pg.PlotDataItem(
+            self._position_bins,
+            self._predictive_norm,
+            pen=pg.mkPen(_STATE_POSTERIOR_RGB[0], width=1),
+        )
+        plot.addItem(cell_curve)
+        plot.addItem(predictive_curve)
+        true_position_line = pg.InfiniteLine(angle=90, movable=False, pen=_TRUE_POSITION_PEN)
+        plot.addItem(true_position_line)
+
+        header = QtWidgets.QLabel("")
+        header.setAutoFillBackground(True)
+        header.setStyleSheet(_SLICE_CELL_HEADER_STYLE)
+
+        container = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(header)
+        layout.addWidget(plot, stretch=1)
+        container.setVisible(False)
+
+        return _PerCellRow(
+            container=container,
+            header=header,
+            plot=plot,
+            cell_curve=cell_curve,
+            predictive_curve=predictive_curve,
+            true_position_line=true_position_line,
+        )
+
+    def set_per_cell_slices(self, slices: list[CellSlice], total_in_bin: int | None = None) -> None:
+        """Refresh the per-cell rows for the cells in the current bin.
 
         Parameters
         ----------
-        place_fields : np.ndarray, shape (n_cells_at_bin, n_position_full)
-            Already-normalized per-cell curves over the full per-state
-            position grid (caller is responsible for scaling so the
-            curves coexist visually with the joint-likelihood fill).
-        cell_ids : np.ndarray, shape (n_cells_at_bin,)
-            Original cell index for each curve, used to choose a
-            distinct color via ``pg.intColor``.
+        slices : list[CellSlice]
+            One entry per cell to display (already capped to
+            ``MAX_PER_CELL_PLOTS`` and deduped by ``cell_id``).
+        total_in_bin : int, optional
+            Total cells in the bin before truncation; if it exceeds
+            ``len(slices)``, a "(+K more)" label appears below the
+            rows. Defaults to ``len(slices)``.
         """
-        n = int(place_fields.shape[0]) if place_fields.size else 0
-        while len(self._per_cell_curves) < n:
-            curve = pg.PlotDataItem(pen=pg.mkPen((120, 120, 120), width=1))
-            curve.setVisible(False)
-            self._plot.addItem(curve)
-            self._per_cell_curves.append(curve)
+        n = len(slices)
+        for i, cs in enumerate(slices):
+            row = self._ensure_row(i)
+            row.cell_curve.setData(self._position_bins, cs.place_field_norm)
+            rgb = _PER_CELL_PALETTE[cs.cell_id % len(_PER_CELL_PALETTE)]
+            row.cell_curve.setPen(pg.mkPen(*rgb, 220, width=2))
+            n_spikes_str = f"  ({cs.n_spikes} spikes)" if cs.n_spikes > 1 else ""
+            pin_str = "  ★" if cs.is_pinned else ""
+            row.header.setText(
+                f"Cell {cs.cell_id:>3d}{pin_str}   "
+                f"HPD={cs.hpd:.3f}  KL={cs.kl:.3f}  p={cs.spike_prob:.3g}{n_spikes_str}"
+            )
+            row.header.setStyleSheet(
+                _SLICE_CELL_HEADER_PINNED_STYLE if cs.is_pinned else _SLICE_CELL_HEADER_STYLE
+            )
+            row.predictive_curve.setData(self._position_bins, self._predictive_norm)
+            row.container.setVisible(self._per_cell_visible)
+        for i in range(n, self._n_active_per_cell_rows):
+            self._per_cell_rows[i].container.setVisible(False)
+        self._n_active_per_cell_rows = n
 
-        for i in range(n):
-            curve = self._per_cell_curves[i]
-            curve.setData(self._position_bins, place_fields[i])
-            rgb = _PER_CELL_PALETTE[int(cell_ids[i]) % len(_PER_CELL_PALETTE)]
-            curve.setPen(pg.mkPen(*rgb, 200, width=1.5))
-            curve.setVisible(self._per_cell_visible)
-        for i in range(n, self._n_active_per_cell_curves):
-            self._per_cell_curves[i].setVisible(False)
-        self._n_active_per_cell_curves = n
+        total = total_in_bin if total_in_bin is not None else n
+        extra = max(0, total - n)
+        if extra > 0:
+            self._truncation_label.setText(f"(+{extra} more cells in this bin)")
+            self._truncation_label.setVisible(True)
+        else:
+            self._truncation_label.setVisible(False)
 
     def set_likelihood_alpha(self, alpha: int) -> None:
-        """Adjust the likelihood-fill opacity (0..255)."""
         alpha = int(np.clip(alpha, 0, 255))
         if alpha == self._likelihood_alpha:
             return
         self._likelihood_alpha = alpha
-        for s, fill in enumerate(self._likelihood_fills):
+        for s, fill in enumerate(self._lik_fills):
             lik_rgb = _STATE_LIKELIHOOD_RGB[s % len(_STATE_LIKELIHOOD_RGB)]
             fill.setBrush(pg.mkBrush(*lik_rgb, alpha))
 
@@ -1033,32 +1130,22 @@ class SlicePanel(QtWidgets.QWidget):
         place_field_row: NDArray[np.float32] | None,
         annotation: str | None,
     ) -> None:
-        """Show / hide the clicked spike's place-field curve and annotation."""
-        if place_field_row is None or annotation is None:
-            self._pinned_curve.setVisible(False)
+        """Show / hide the pinned-event annotation label.
+
+        The pinned-cell highlight on the per-cell row is driven by
+        the ``is_pinned`` flag on each ``CellSlice``; this method
+        only manages the annotation label below the rows.
+        """
+        del place_field_row  # honored via the per-cell row highlight
+        if annotation is None:
             self._annotation.setVisible(False)
             self._annotation.setText("")
             return
-        if place_field_row.shape[0] != self._position_bins.shape[0]:
-            # Defensive: should match the per-state grid; if not, hide.
-            self._pinned_curve.setVisible(False)
-            self._annotation.setVisible(False)
-            self._annotation.setText("")
-            return
-        self._pinned_curve.setData(self._position_bins, place_field_row)
-        self._pinned_curve.setVisible(True)
         self._annotation.setText(f"Pinned: {annotation}")
         self._annotation.setVisible(True)
 
     def is_pin_displayed(self) -> bool:
-        """True when a pinned-event annotation is currently shown.
-
-        Using a Python-side flag instead of ``QLabel.isVisible()`` so
-        callers (especially tests under offscreen Qt where the widget
-        tree may not be shown) can check intent without relying on
-        the platform's window-visibility state.
-        """
-        return bool(self._annotation.text()) and self._pinned_curve.isVisible()
+        return bool(self._annotation.text())
 
 
 # ---------------------------------------------------------------------------
@@ -1243,12 +1330,13 @@ class Figure4Viewer(QtWidgets.QMainWindow):
         controls_layout.addWidget(self._alpha_slider)
 
         controls_layout.addSpacing(12)
-        self._per_cell_checkbox = QtWidgets.QCheckBox("Per-cell PFs")
+        self._per_cell_checkbox = QtWidgets.QCheckBox("Per-cell rows")
         self._per_cell_checkbox.setToolTip(
-            "Show one place-field curve on the slice panel for each cell "
-            "that fired in the current bin."
+            "Show a per-cell likelihood plot for each cell that fired "
+            "in the current bin (with the predictive distribution "
+            "overlaid)."
         )
-        self._per_cell_checkbox.setChecked(False)
+        self._per_cell_checkbox.setChecked(True)
         self._per_cell_checkbox.toggled.connect(self._on_per_cell_toggled)
         controls_layout.addWidget(self._per_cell_checkbox)
 
@@ -1392,49 +1480,70 @@ class Figure4Viewer(QtWidgets.QMainWindow):
         true_pos = float(ds.linear_position[t_idx])
         self.slice_panel.update_for_index(t_idx, true_pos)
         self.slice_panel.set_live_readout(self._format_live_readout(t_idx, true_pos))
-        self.slice_panel.set_per_cell_likelihoods(*self._per_cell_curves_at(t_idx))
+        slices, total = self._per_cell_slices_at(t_idx)
+        self.slice_panel.set_per_cell_slices(slices, total_in_bin=total)
 
-    def _per_cell_curves_at(self, t_idx: int) -> tuple[NDArray[np.float32], NDArray[np.int32]]:
-        """Build (curves, cell_ids) for the cells that fired at ``t_idx``.
+    def _per_cell_slices_at(self, t_idx: int) -> tuple[list[CellSlice], int]:
+        """Build the per-cell row payload for the current bin.
 
-        Each curve is the cell's first-state place field embedded into
-        the full per-state position grid (non-interior bins stay at
-        zero), normalized to its own peak so multiple cells coexist on
-        a [0, 1] visual scale alongside the joint-likelihood fill.
+        Deduplicates by ``cell_id`` (a cell that fires twice in the
+        same bin gets one row with an ``n_spikes=2`` suffix in the
+        header). Caps at ``MAX_PER_CELL_PLOTS`` and returns the
+        truncated list plus the unique total so the panel can show a
+        ``(+K more)`` indicator.
 
-        For ContFrag the first state's place field is the Continuous
-        state's place tuning; the Fragmented state's tuning is
-        typically uniform and adds little visual signal, so it is
-        omitted from this overlay.
+        Each row's ``place_field_norm`` is the cell's first-state
+        place-field tuning embedded into the full per-state position
+        grid (non-interior bins stay at zero), normalized to its own
+        peak so it sits on a [0, 1] axis alongside the predictive
+        overlay.
         """
         ds = self._ds
-        cells = ds.cells_at_index(t_idx)
-        if cells.size == 0:
-            empty_curves = np.empty((0, ds.n_position_full), dtype=np.float32)
-            return empty_curves, cells
+        i0, i1 = ds.event_indices_at(t_idx)
+        if i1 <= i0:
+            return [], 0
+        cell_ids_in_bin = ds.event_cell_ids[i0:i1]
+        seen: dict[int, int] = {}
+        for offset, cell_id in enumerate(cell_ids_in_bin):
+            seen.setdefault(int(cell_id), i0 + offset)
+        unique_cells = list(seen.keys())
+        total_unique = len(unique_cells)
+        kept = unique_cells[:MAX_PER_CELL_PLOTS]
+
         n_interior = ds.n_interior
-        cell_pf = ds.place_fields[cells, :n_interior]
-        peak = cell_pf.max(axis=1, keepdims=True)
-        peak = np.where(peak > 0, peak, 1.0)
-        cell_pf_norm = (cell_pf / peak).astype(np.float32, copy=False)
-        curves = np.zeros((cells.size, ds.n_position_full), dtype=np.float32)
-        curves[:, ds.interior_mask] = cell_pf_norm
-        return curves, cells
+        slices: list[CellSlice] = []
+        pinned_cell_id = self._pinned_cell_id()
+        for cell_id in kept:
+            first_event = seen[cell_id]
+            n_spikes = int(np.sum(cell_ids_in_bin == cell_id))
+            pf = ds.place_fields[cell_id, :n_interior]
+            peak = float(pf.max())
+            pf_norm_interior = (pf / peak).astype(np.float32, copy=False) if peak > 0 else pf
+            curve = np.zeros(ds.n_position_full, dtype=np.float32)
+            curve[ds.interior_mask] = pf_norm_interior
+            slices.append(
+                CellSlice(
+                    cell_id=cell_id,
+                    place_field_norm=curve,
+                    hpd=float(ds.event_hpd_overlap[first_event]),
+                    kl=float(ds.event_kl_divergence[first_event]),
+                    spike_prob=float(ds.event_spike_prob[first_event]),
+                    n_spikes=n_spikes,
+                    is_pinned=(pinned_cell_id is not None and cell_id == pinned_cell_id),
+                )
+            )
+        return slices, total_unique
+
+    def _pinned_cell_id(self) -> int | None:
+        row = self._pinned_event_row
+        if row is None or not 0 <= row < len(self._ds.events):
+            return None
+        return int(self._ds.event_cell_ids[row])
 
     def _format_live_readout(self, t_idx: int, true_pos: float) -> str:
-        """Build the slice-panel live-readout text for the current center.
-
-        - When the current bin contains spikes, list each one with its
-          per-cell HPD / KL / spike-prob (capped at
-          ``MAX_PER_CELL_READOUT_ROWS`` rows so the readout stays
-          compact; remaining count is shown as ``(+K more)``).
-        - When the bin is empty, fall back to the closest neighboring
-          spike with the time offset Δt for context.
-        """
+        """Time + predictive(x_true). Per-cell metrics live in the row headers."""
         ds = self._ds
-        t_now = float(ds.time[t_idx])
-        lines = [f"t = {t_now - float(ds.time[0]):.3f} s"]
-
+        lines = [f"t = {float(ds.time[t_idx]) - float(ds.time[0]):.3f} s"]
         sl = self.slice_panel._buffer_slice  # noqa: SLF001
         post_buf = self.slice_panel._buffer_post  # noqa: SLF001
         if sl is not None and post_buf is not None and sl.start <= t_idx < sl.stop:
@@ -1443,21 +1552,6 @@ class Figure4Viewer(QtWidgets.QMainWindow):
                 row = row.reshape(ds.n_states, ds.n_position_full).sum(axis=0)
             pos_bin = _nearest_index(ds.position_grid_full, true_pos)
             lines.append(f"predictive(x_true) = {float(row[pos_bin]):.4f}")
-
-        i0, i1 = ds.event_indices_at(t_idx)
-        if i1 > i0:
-            n_in_bin = i1 - i0
-            shown = min(n_in_bin, MAX_PER_CELL_READOUT_ROWS)
-            lines.append(f"spikes in bin ({n_in_bin}):")
-            for j in range(i0, i0 + shown):
-                lines.append(
-                    f"  cell={int(ds.event_cell_ids[j]):>3d}  "
-                    f"HPD={float(ds.event_hpd_overlap[j]):.3f}  "
-                    f"KL={float(ds.event_kl_divergence[j]):.3f}  "
-                    f"p={float(ds.event_spike_prob[j]):.3g}"
-                )
-            if n_in_bin > shown:
-                lines.append(f"  (+{n_in_bin - shown} more)")
         return "\n".join(lines)
 
     # ------------------------------------------------------------------
@@ -1518,17 +1612,10 @@ class Figure4Viewer(QtWidgets.QMainWindow):
         self.posterior_panel.update_pinned_event(relative_time)
         self.likelihood_panel.update_pinned_event(relative_time)
 
-        # Slice-panel overlay: the cell's own place-field over position.
+        # Slice-panel: the pinned-row highlight is driven via the
+        # ``is_pinned`` flag on the next ``set_per_cell_slices`` call;
+        # here we only update the annotation label below the rows.
         cell_id = int(event["cell_id"])
-        per_state_cols = ds.place_fields.shape[1] // max(ds.n_states, 1)
-        # Use the cell's first-state place field; for ContFrag that's
-        # the Continuous-state slice (same place fields are repeated
-        # across states by the encoding model).
-        place_field = ds.place_fields[cell_id, :per_state_cols]
-        # Embed into the full per-state position grid (interior bins
-        # only carry data; non-interior bins stay at zero).
-        full_curve = np.zeros(ds.n_position_full, dtype=np.float32)
-        full_curve[ds.interior_mask] = place_field
         annotation = (
             f"t={float(event['time']):.3f}  cell={cell_id}\n"
             f"HPD={float(event['event_hpd_overlap']):.3f}  "
@@ -1536,9 +1623,12 @@ class Figure4Viewer(QtWidgets.QMainWindow):
             f"p={float(event['event_spike_prob']):.3f}"
         )
         self.slice_panel.update_pinned_event(
-            place_field_row=full_curve,
+            place_field_row=None,
             annotation=annotation,
         )
+        # Refresh the per-cell rows so the pinned cell's header lights
+        # up immediately (without waiting for the next slider tick).
+        self._update_slice_panel_at_center()
 
     @QtCore.Slot(int, slice, object, object)
     def _on_window_loaded(
