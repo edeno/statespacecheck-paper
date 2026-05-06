@@ -16,7 +16,6 @@ import pyqtgraph as pg
 from PySide6 import QtGui, QtWidgets
 
 from .data_source import Figure4DataSource, ModelName
-from .viewer import Figure4Viewer
 
 
 def configure_qt_application(app: QtWidgets.QApplication) -> None:
@@ -38,6 +37,11 @@ def configure_qt_application(app: QtWidgets.QApplication) -> None:
 
 def launch(cache_dir: Path | str, model: ModelName) -> int:
     """Open the viewer for ``model`` from ``cache_dir`` and run the event loop."""
+    # Deferred to break the import cycle with ``viewer``: this module
+    # is imported by ``viewer.py``'s re-export footer, so a top-level
+    # ``from .viewer import Figure4Viewer`` here would loop back.
+    from .viewer import Figure4Viewer  # noqa: PLC0415
+
     existing = QtWidgets.QApplication.instance()
     app: QtWidgets.QApplication = (
         existing
