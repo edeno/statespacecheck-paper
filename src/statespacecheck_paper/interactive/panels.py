@@ -174,6 +174,23 @@ class _BaseHeatmapPanel(pg.PlotWidget):
         # ``setImage`` calls don't trigger a full nanmin/nanmax scan.
         self._levels: tuple[float, float] | None = None
 
+        # Translucent shaded band over the active bin's real-time
+        # interval ``[time[t_idx], time[t_idx+1])``, drawn *behind* the
+        # heatmap data. The center dashed line marks ``t_center`` (a
+        # continuous value); on its own it can sit on a bin edge when
+        # ``t_center`` aligns with a sample tick, leaving the user
+        # uncertain which bin is the one the slice panel is showing.
+        # The band makes the active bin unambiguous.
+        self._center_bin_band = pg.LinearRegionItem(
+            values=(0.0, 0.0),
+            orientation="vertical",
+            brush=pg.mkBrush(255, 255, 0, 55),
+            pen=pg.mkPen(None),
+            movable=False,
+        )
+        self._center_bin_band.setZValue(5)
+        self.addItem(self._center_bin_band)
+
         self._center_line = pg.InfiniteLine(
             angle=90,
             pos=0.0,
@@ -198,6 +215,15 @@ class _BaseHeatmapPanel(pg.PlotWidget):
             pen=pg.mkPen((255, 255, 255), width=1.5),
         )
         self.addItem(self._position_curve)
+
+    def update_active_bin_band(self, left_rel: float, right_rel: float) -> None:
+        """Set the active-bin highlight band's bounds (window-relative seconds).
+
+        ``left_rel`` is ``time[t_idx] - t_center`` and ``right_rel`` is
+        ``time[t_idx + 1] - t_center`` (the half-open interval the
+        slice panel is showing under the LEFT-EDGE bin convention).
+        """
+        self._center_bin_band.setRegion([left_rel, right_rel])
 
     def update_pinned_event(self, relative_time: float | None) -> None:
         if relative_time is None:
@@ -371,6 +397,20 @@ class RasterPanel(pg.PlotWidget):
         self._on_click: Callable[[int], None] | None = None
         self._scatter.sigClicked.connect(self._handle_click)
 
+        # Active-bin highlight band — see ``_BaseHeatmapPanel`` for
+        # the rationale (the dashed center line marks ``t_center`` but
+        # can sit on a bin edge; the band makes the active bin
+        # unambiguous on this panel as well).
+        self._center_bin_band = pg.LinearRegionItem(
+            values=(0.0, 0.0),
+            orientation="vertical",
+            brush=pg.mkBrush(255, 255, 0, 55),
+            pen=pg.mkPen(None),
+            movable=False,
+        )
+        self._center_bin_band.setZValue(-5)
+        self.addItem(self._center_bin_band)
+
         self._center_line = pg.InfiniteLine(
             angle=90,
             pos=0.0,
@@ -394,6 +434,10 @@ class RasterPanel(pg.PlotWidget):
         )
         self._pin_dot.setVisible(False)
         self.addItem(self._pin_dot)
+
+    def update_active_bin_band(self, left_rel: float, right_rel: float) -> None:
+        """Set the active-bin highlight band's bounds (window-relative seconds)."""
+        self._center_bin_band.setRegion([left_rel, right_rel])
 
     def set_click_handler(self, handler: Callable[[int], None]) -> None:
         self._on_click = handler
@@ -485,6 +529,18 @@ class MetricPanel(pg.PlotWidget):
             )
             self.addItem(self._threshold_line)
 
+        # Active-bin highlight band — see ``_BaseHeatmapPanel`` for
+        # the rationale.
+        self._center_bin_band = pg.LinearRegionItem(
+            values=(0.0, 0.0),
+            orientation="vertical",
+            brush=pg.mkBrush(255, 255, 0, 55),
+            pen=pg.mkPen(None),
+            movable=False,
+        )
+        self._center_bin_band.setZValue(-5)
+        self.addItem(self._center_bin_band)
+
         self._center_line = pg.InfiniteLine(
             angle=90,
             pos=0.0,
@@ -520,6 +576,10 @@ class MetricPanel(pg.PlotWidget):
 
     def set_click_handler(self, handler: Callable[[int], None]) -> None:
         self._on_click = handler
+
+    def update_active_bin_band(self, left_rel: float, right_rel: float) -> None:
+        """Set the active-bin highlight band's bounds (window-relative seconds)."""
+        self._center_bin_band.setRegion([left_rel, right_rel])
 
     def update_window(
         self,

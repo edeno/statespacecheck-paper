@@ -594,6 +594,30 @@ class Figure4Viewer(QtWidgets.QMainWindow):
         self.slice_panel.set_live_readout(self._format_live_readout(t_idx, true_pos))
         slices, total = self._per_cell_slices_at(t_idx)
         self.slice_panel.set_per_cell_slices(slices, total_in_bin=total)
+        self._refresh_active_bin_band(t_idx)
+
+    def _refresh_active_bin_band(self, t_idx: int) -> None:
+        """Push the active-bin highlight band to every time-axis panel.
+
+        Bin ``t_idx`` covers the half-open interval
+        ``[time[t_idx], time[t_idx+1])`` (LEFT-EDGE convention). The
+        band is positioned in window-relative seconds (``x = 0`` at
+        the current center). When the active bin is the last one in
+        the session there's no ``time[t_idx + 1]`` so we extrapolate
+        by one ``dt`` from the previous interval.
+        """
+        ds = self._ds
+        t_left = float(ds.time[t_idx])
+        if t_idx + 1 < ds.n_time:
+            t_right = float(ds.time[t_idx + 1])
+        elif t_idx > 0:
+            t_right = t_left + float(ds.time[t_idx] - ds.time[t_idx - 1])
+        else:
+            t_right = t_left
+        left_rel = t_left - self._t_center
+        right_rel = t_right - self._t_center
+        for panel in self._wheel_filter_targets:
+            panel.update_active_bin_band(left_rel, right_rel)
 
     def _per_cell_slices_at(self, t_idx: int) -> tuple[list[CellSlice], int]:
         """Build the per-cell row payload for the current bin.
