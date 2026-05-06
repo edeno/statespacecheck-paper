@@ -270,6 +270,22 @@ class Figure4Viewer(QtWidgets.QMainWindow):
         for panel in x_linked:
             panel.setXLink(self.posterior_panel)
 
+        # Wheel-over-time-axis-panel scrolls the window width. Install
+        # the event filter both on the panel itself and its viewport
+        # because pyqtgraph's ``PlotWidget`` (a ``GraphicsView``) routes
+        # wheel events through the viewport widget.
+        self._wheel_filter_targets: tuple[pg.PlotWidget, ...] = (
+            self.posterior_panel,
+            self.likelihood_panel,
+            self.raster_panel,
+            *self.metric_panels.values(),
+        )
+        for panel in self._wheel_filter_targets:
+            panel.installEventFilter(self)
+            viewport = panel.viewport()
+            if viewport is not None:
+                viewport.installEventFilter(self)
+
     def _slice_row_at(
         self, t_idx: int
     ) -> tuple[NDArray[np.float32], NDArray[np.float32], NDArray[np.float32] | None]:
@@ -451,7 +467,9 @@ class Figure4Viewer(QtWidgets.QMainWindow):
         - ``Shift+←`` / ``Shift+→``: step by one window-width.
         - ``Space``              : play / pause auto-scroll.
         - ``M``                  : toggle model (Continuous ↔ ContFrag).
-        - ``[`` / ``]``          : shrink / grow window width.
+        - ``[`` / ``]``          : shrink / grow window width (or
+                                    scroll the mouse wheel over any
+                                    time-axis panel).
         - ``R``                  : reset to a 20 s context window centered
                                     near the Figure 4a default.
         - ``Esc``                : unpin the currently pinned spike
@@ -994,6 +1012,30 @@ class Figure4Viewer(QtWidgets.QMainWindow):
 
     def _scale_window(self, factor: float) -> None:
         self._set_window_seconds(self._window_seconds * factor)
+
+    def eventFilter(  # noqa: N802 — overrides ``QObject.eventFilter`` (Qt API name)
+        self, watched: QtCore.QObject, event: QtCore.QEvent
+    ) -> bool:
+        """Intercept wheel events on time-axis panels to scale the window width.
+
+        Mouse-wheel up = zoom in (smaller window, more detail). Mouse-wheel
+        down = zoom out (larger window). The event filter runs *before*
+        ``pg.PlotWidget``'s own ``wheelEvent`` so we can replace its
+        viewbox-zoom behavior cleanly without disabling other plot
+        interactions. Touchpads emit a stream of small ``angleDelta``
+        events; the exponential factor keeps the response smooth instead
+        of stepping.
+        """
+        if event.type() == QtCore.QEvent.Type.Wheel and isinstance(event, QtGui.QWheelEvent):
+            delta = event.angleDelta().y()
+            if delta != 0:
+                # 120 units = one notch on a standard mouse wheel; touchpad
+                # scrolls report smaller deltas and accumulate naturally.
+                factor = 1.15 ** (-delta / 120.0)
+                self._scale_window(factor)
+                event.accept()
+                return True
+        return bool(super().eventFilter(watched, event))
 
     @QtCore.Slot()
     def _reset_view(self) -> None:
