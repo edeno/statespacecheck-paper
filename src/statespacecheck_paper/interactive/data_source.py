@@ -1,6 +1,6 @@
-"""In-process data source for the Figure 4 interactive viewer.
+"""In-process data source for the interactive decoder viewer.
 
-``Figure4DataSource`` wraps the on-disk cache produced by
+``DecoderDataSource`` wraps the on-disk cache produced by
 ``cache.py`` and exposes the windowed-read API consumed by the
 viewer panels:
 
@@ -73,7 +73,7 @@ class CacheLayout:
                 raise FileNotFoundError(f"Missing cache artifact ({label}): {path}")
 
 
-class Figure4DataSource:
+class DecoderDataSource:
     """Lazy data source backed by the cache produced by ``cache.build``.
 
     Construction is cheap: it reads the small sidecars (~50 MB total)
@@ -433,7 +433,7 @@ class Figure4DataSource:
         self._loglik_arr = None
         self._acausal_arr = None
 
-    def __enter__(self) -> Figure4DataSource:
+    def __enter__(self) -> DecoderDataSource:
         return self
 
     def __exit__(self, *exc_info: object) -> None:

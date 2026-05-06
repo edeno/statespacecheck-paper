@@ -81,11 +81,11 @@ def run_benchmark(
 
     from PySide6 import QtCore  # noqa: PLC0415
 
-    from statespacecheck_paper.interactive.data_source import Figure4DataSource  # noqa: PLC0415
-    from statespacecheck_paper.interactive.viewer import Figure4Viewer  # noqa: PLC0415
+    from statespacecheck_paper.interactive.data_source import DecoderDataSource  # noqa: PLC0415
+    from statespacecheck_paper.interactive.viewer import DecoderViewer  # noqa: PLC0415
 
-    ds = Figure4DataSource(cache_dir, model=model)  # type: ignore[arg-type]
-    viewer = Figure4Viewer(ds)
+    ds = DecoderDataSource(cache_dir, model=model)  # type: ignore[arg-type]
+    viewer = DecoderViewer(ds)
     # Match the requested window size.
     viewer._window_seconds = window_seconds  # noqa: SLF001
     viewer.show()

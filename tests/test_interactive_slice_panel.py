@@ -1,4 +1,4 @@
-"""Tests for ``SlicePanel`` and its wiring into ``Figure4Viewer``."""
+"""Tests for ``SlicePanel`` and its wiring into ``DecoderViewer``."""
 
 from __future__ import annotations
 
@@ -42,12 +42,12 @@ def _qt_offscreen() -> None:
 def _make_viewer(cache_dir: Path):
     from PySide6 import QtWidgets
 
-    from statespacecheck_paper.interactive.data_source import Figure4DataSource
-    from statespacecheck_paper.interactive.viewer import Figure4Viewer
+    from statespacecheck_paper.interactive.data_source import DecoderDataSource
+    from statespacecheck_paper.interactive.viewer import DecoderViewer
 
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-    ds = Figure4DataSource(cache_dir, model="continuous")
-    viewer = Figure4Viewer(ds)
+    ds = DecoderDataSource(cache_dir, model="continuous")
+    viewer = DecoderViewer(ds)
     return app, viewer, ds
 
 
@@ -297,9 +297,9 @@ def test_per_cell_checkbox_hides_rows(tmp_path: Path) -> None:
 
 def test_data_source_cells_at_index_returns_unique_cells(tmp_path: Path) -> None:
     _build_cache(tmp_path / "cache", n_states=1)
-    from statespacecheck_paper.interactive.data_source import Figure4DataSource
+    from statespacecheck_paper.interactive.data_source import DecoderDataSource
 
-    src = Figure4DataSource(tmp_path / "cache", model="continuous")
+    src = DecoderDataSource(tmp_path / "cache", model="continuous")
     try:
         first_t_idx = int(src.event_time_idx[0])
         cells = src.cells_at_index(first_t_idx)

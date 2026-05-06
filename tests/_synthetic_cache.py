@@ -3,7 +3,7 @@
 The five ``test_interactive_*.py`` files all want a tiny but
 self-consistent cache (Zarr posterior + log-likelihood, Parquet event
 table, place-fields .npz, meta + spike-times sidecars) to drive
-``Figure4DataSource`` and ``Figure4Viewer`` without touching the real
+``DecoderDataSource`` and ``DecoderViewer`` without touching the real
 ~5 GB of decoder outputs. This module is the single source of truth.
 """
 

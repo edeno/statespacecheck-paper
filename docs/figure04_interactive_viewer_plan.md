@@ -62,7 +62,7 @@ viewer-friendly format. It does not re-run `model.predict(...)`.
 - `cache.py` — one-shot builder that converts the existing
   `intermediates/` NetCDF + pickle files into a Zarr store + Parquet
   event table + small `.npy` sidecars. Idempotent. CLI entry point.
-- `data_source.py` — `Figure4DataSource`: opens the cache lazily, exposes
+- `data_source.py` — `DecoderDataSource`: opens the cache lazily, exposes
   `window_indices`, `load_posterior(slice)`, `load_likelihood(slice)`,
   `events_in_window(slice)`. Holds in-RAM the small things (`time`,
   `linear_position`, `place_field_peaks`, the full event Parquet, the
@@ -72,7 +72,7 @@ viewer-friendly format. It does not re-run `model.predict(...)`.
   `RasterPanel`, `MetricPanel` (parameterized by metric name),
   `SlicePanel`. Each owns its `pg.PlotItem` and an `update_window` and
   `update_center` method.
-- `viewer.py` — `Figure4Viewer(QtWidgets.QMainWindow)`: builds the
+- `viewer.py` — `DecoderViewer(QtWidgets.QMainWindow)`: builds the
   layout, owns `view_state` (center_t, window_w, model, pinned_event),
   wires panels, runs the load worker.
 - `controls.py` — center-time slider (range = full session), window-width
@@ -174,7 +174,7 @@ timepoints; 869,047 spikes; 203 cells) and refuses to overwrite without
 
 ```
 disk cache (zarr + parquet + npz)
-  → Figure4DataSource (lazy zarr handles + in-RAM small arrays)
+  → DecoderDataSource (lazy zarr handles + in-RAM small arrays)
     → on view-state change:
         UI tick (60 Hz)              → SlicePanel.setData (in-RAM ring buffer)
         window-load tick (debounced) → QThreadPool worker reads zarr chunk
@@ -295,7 +295,7 @@ Slice animation stays silky during scroll even when chunk reads stutter.
 `scripts/benchmark_figure04_viewer.py`:
 
 1. Load Continuous cache; open Zarr.
-2. Build `Figure4Viewer` with posterior + likelihood + raster panels
+2. Build `DecoderViewer` with posterior + likelihood + raster panels
    only. No metrics, no slice, no clicks.
 3. Programmatically drag center time across 60 s of session at slider
    rate 60 Hz, with window width 20 s.

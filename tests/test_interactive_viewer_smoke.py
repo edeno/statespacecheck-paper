@@ -1,4 +1,4 @@
-"""Headless smoke test for the Figure 4 viewer skeleton.
+"""Headless smoke test for the decoder-viewer skeleton.
 
 The test runs under the Qt offscreen platform plugin so it can execute
 in CI / headless environments without a display server. It exercises
@@ -51,12 +51,12 @@ def viewer_setup(tmp_path: Path):
 
     from PySide6 import QtWidgets
 
-    from statespacecheck_paper.interactive.data_source import Figure4DataSource
-    from statespacecheck_paper.interactive.viewer import Figure4Viewer
+    from statespacecheck_paper.interactive.data_source import DecoderDataSource
+    from statespacecheck_paper.interactive.viewer import DecoderViewer
 
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-    ds = Figure4DataSource(cache_dir, model="continuous")
-    viewer = Figure4Viewer(ds)
+    ds = DecoderDataSource(cache_dir, model="continuous")
+    viewer = DecoderViewer(ds)
     yield app, viewer, ds
     viewer.close()
     ds.close()

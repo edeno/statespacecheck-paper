@@ -43,12 +43,12 @@ def _qt_offscreen() -> None:
 def _make_viewer(cache_dir: Path):
     from PySide6 import QtWidgets
 
-    from statespacecheck_paper.interactive.data_source import Figure4DataSource
-    from statespacecheck_paper.interactive.viewer import Figure4Viewer
+    from statespacecheck_paper.interactive.data_source import DecoderDataSource
+    from statespacecheck_paper.interactive.viewer import DecoderViewer
 
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-    ds = Figure4DataSource(cache_dir, model="continuous")
-    viewer = Figure4Viewer(ds)
+    ds = DecoderDataSource(cache_dir, model="continuous")
+    viewer = DecoderViewer(ds)
     return app, viewer, ds
 
 

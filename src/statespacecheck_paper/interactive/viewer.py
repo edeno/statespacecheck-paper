@@ -1,6 +1,6 @@
-"""Top-level Figure 4 viewer window and worker plumbing.
+"""Top-level decoder-viewer window and worker plumbing.
 
-``Figure4Viewer`` orchestrates the panels (provided by ``panels.py``)
+``DecoderViewer`` orchestrates the panels (provided by ``panels.py``)
 and the cache reads (provided by ``data_source.py``). It owns:
 
 - view state (center time, window width, model, pinned event),
@@ -33,7 +33,7 @@ import pyqtgraph as pg
 from numpy.typing import NDArray
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from .data_source import Figure4DataSource, ModelName
+from .data_source import DecoderDataSource, ModelName
 from .panels import (
     _OVERLAY_LABELS,
     MAX_PER_CELL_PLOTS,
@@ -132,7 +132,7 @@ class _WindowLoadWorker(QtCore.QRunnable):
 
     def __init__(
         self,
-        data_source: Figure4DataSource,
+        data_source: DecoderDataSource,
         state: ViewState,
         signals: _LoadSignals,
     ) -> None:
@@ -177,12 +177,12 @@ class _WindowLoadWorker(QtCore.QRunnable):
 # ---------------------------------------------------------------------------
 
 
-class Figure4Viewer(QtWidgets.QMainWindow):
+class DecoderViewer(QtWidgets.QMainWindow):
     """Top-level window owning the panels and view state."""
 
     def __init__(
         self,
-        data_source: Figure4DataSource,
+        data_source: DecoderDataSource,
         *,
         parent: QtWidgets.QWidget | None = None,
         cache_dir: Path | str | None = None,
@@ -191,7 +191,7 @@ class Figure4Viewer(QtWidgets.QMainWindow):
         self._ds = data_source
         self._cache_dir = Path(cache_dir) if cache_dir is not None else None
 
-        self.setWindowTitle(f"Figure 4 viewer — {data_source.model}")
+        self.setWindowTitle(f"Decoder viewer — {data_source.model}")
         self.resize(1200, 900)
 
         self._t_min = float(data_source.time[0])
@@ -1089,7 +1089,7 @@ class Figure4Viewer(QtWidgets.QMainWindow):
         if model == self._ds.model:
             return
         try:
-            new_ds = Figure4DataSource(self._cache_dir, model)
+            new_ds = DecoderDataSource(self._cache_dir, model)
         except FileNotFoundError:
             # The requested cache doesn't exist; revert the combo
             # box and bail.
@@ -1128,7 +1128,7 @@ class Figure4Viewer(QtWidgets.QMainWindow):
         self._t_min = float(new_ds.time[0])
         self._t_max = float(new_ds.time[-1])
         self._t_center = float(np.clip(self._t_center, self._t_min, self._t_max))
-        self.setWindowTitle(f"Figure 4 viewer — {new_ds.model}")
+        self.setWindowTitle(f"Decoder viewer — {new_ds.model}")
 
         # Rebuild the central widget against the new data source. The
         # heatmap, slice and metric panels all bake ``n_states``, so a
@@ -1167,7 +1167,7 @@ class Figure4Viewer(QtWidgets.QMainWindow):
         """Wait for any in-flight load worker before tearing down.
 
         Without this, ``QThreadPool`` may run a worker after the
-        ``Figure4DataSource``'s Zarr store has been closed, which
+        ``DecoderDataSource``'s Zarr store has been closed, which
         accesses freed memory and aborts (bus error).
         """
         # Stop any pending dispatches.

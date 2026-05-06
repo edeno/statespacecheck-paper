@@ -1,8 +1,8 @@
-"""Application entry point and Qt setup for the Figure 4 interactive viewer.
+"""Application entry point and Qt setup for the interactive decoder viewer.
 
 Owns the small amount of plumbing that runs once at process start:
 choosing / configuring the ``QApplication``, instantiating
-``Figure4DataSource`` and ``Figure4Viewer``, and the
+``DecoderDataSource`` and ``DecoderViewer``, and the
 ``argparse`` CLI for ``python -m statespacecheck_paper.interactive.viewer``.
 """
 
@@ -15,7 +15,7 @@ from pathlib import Path
 import pyqtgraph as pg
 from PySide6 import QtGui, QtWidgets
 
-from .data_source import Figure4DataSource, ModelName
+from .data_source import DecoderDataSource, ModelName
 
 
 def configure_qt_application(app: QtWidgets.QApplication) -> None:
@@ -39,8 +39,8 @@ def launch(cache_dir: Path | str, model: ModelName) -> int:
     """Open the viewer for ``model`` from ``cache_dir`` and run the event loop."""
     # Deferred to break the import cycle with ``viewer``: this module
     # is imported by ``viewer.py``'s re-export footer, so a top-level
-    # ``from .viewer import Figure4Viewer`` here would loop back.
-    from .viewer import Figure4Viewer  # noqa: PLC0415
+    # ``from .viewer import DecoderViewer`` here would loop back.
+    from .viewer import DecoderViewer  # noqa: PLC0415
 
     existing = QtWidgets.QApplication.instance()
     app: QtWidgets.QApplication = (
@@ -49,8 +49,8 @@ def launch(cache_dir: Path | str, model: ModelName) -> int:
         else QtWidgets.QApplication(sys.argv)
     )
     configure_qt_application(app)
-    ds = Figure4DataSource(cache_dir, model)
-    viewer = Figure4Viewer(ds, cache_dir=cache_dir)
+    ds = DecoderDataSource(cache_dir, model)
+    viewer = DecoderViewer(ds, cache_dir=cache_dir)
     viewer.show()
     try:
         return int(app.exec())

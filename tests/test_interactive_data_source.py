@@ -1,4 +1,4 @@
-"""Tests for ``Figure4DataSource``.
+"""Tests for ``DecoderDataSource``.
 
 The unit-style tests build a tiny synthetic cache (Zarr + Parquet +
 sidecars) in ``tmp_path`` and exercise the windowed-read API. The
@@ -14,7 +14,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from statespacecheck_paper.interactive.data_source import Figure4DataSource
+from statespacecheck_paper.interactive.data_source import DecoderDataSource
 
 from ._synthetic_cache import build_synthetic_cache
 
@@ -30,7 +30,7 @@ def synthetic_cache(tmp_path: Path) -> Path:
 
 
 def test_constructs_with_expected_shapes(synthetic_cache: Path) -> None:
-    src = Figure4DataSource(synthetic_cache, model="continuous")
+    src = DecoderDataSource(synthetic_cache, model="continuous")
     try:
         assert src.n_time == 500
         assert src.n_cells == 4
@@ -48,7 +48,7 @@ def test_constructs_with_expected_shapes(synthetic_cache: Path) -> None:
 
 
 def test_window_indices_clamps_and_returns_nonempty(synthetic_cache: Path) -> None:
-    with Figure4DataSource(synthetic_cache, model="continuous") as src:
+    with DecoderDataSource(synthetic_cache, model="continuous") as src:
         # Center inside the session, narrow window.
         sl = src.window_indices(t_center=src.time[100], t_width=0.020)
         assert sl.start <= 100 <= sl.stop
@@ -66,13 +66,13 @@ def test_window_indices_clamps_and_returns_nonempty(synthetic_cache: Path) -> No
 
 
 def test_window_indices_rejects_nonpositive_width(synthetic_cache: Path) -> None:
-    with Figure4DataSource(synthetic_cache, model="continuous") as src:
+    with DecoderDataSource(synthetic_cache, model="continuous") as src:
         with pytest.raises(ValueError, match="t_width must be positive"):
             src.window_indices(t_center=src.time[10], t_width=0.0)
 
 
 def test_index_at_time_returns_nearest_neighbor(synthetic_cache: Path) -> None:
-    with Figure4DataSource(synthetic_cache, model="continuous") as src:
+    with DecoderDataSource(synthetic_cache, model="continuous") as src:
         # Exact match.
         assert src.index_at_time(src.time[123]) == 123
         # Halfway between two samples → either is acceptable, but must be
@@ -85,7 +85,7 @@ def test_index_at_time_returns_nearest_neighbor(synthetic_cache: Path) -> None:
 
 
 def test_load_posterior_returns_window_shape_and_dtype(synthetic_cache: Path) -> None:
-    with Figure4DataSource(synthetic_cache, model="continuous") as src:
+    with DecoderDataSource(synthetic_cache, model="continuous") as src:
         sl = slice(50, 150)
         post = src.load_posterior(sl)
         assert post.shape == (100, src.n_state_bins)
@@ -94,7 +94,7 @@ def test_load_posterior_returns_window_shape_and_dtype(synthetic_cache: Path) ->
 
 
 def test_load_likelihood_returns_window(synthetic_cache: Path) -> None:
-    with Figure4DataSource(synthetic_cache, model="continuous") as src:
+    with DecoderDataSource(synthetic_cache, model="continuous") as src:
         sl = slice(0, 64)
         loglik = src.load_likelihood(sl)
         assert loglik.shape == (64, src.n_state_bins)
@@ -102,7 +102,7 @@ def test_load_likelihood_returns_window(synthetic_cache: Path) -> None:
 
 
 def test_slice_at_index_matches_load_posterior_row(synthetic_cache: Path) -> None:
-    with Figure4DataSource(synthetic_cache, model="continuous") as src:
+    with DecoderDataSource(synthetic_cache, model="continuous") as src:
         sl = slice(40, 60)
         post = src.load_posterior(sl)
         for offset in [0, 5, 19]:
@@ -111,7 +111,7 @@ def test_slice_at_index_matches_load_posterior_row(synthetic_cache: Path) -> Non
 
 
 def test_slice_at_index_likelihood_branch(synthetic_cache: Path) -> None:
-    with Figure4DataSource(synthetic_cache, model="continuous") as src:
+    with DecoderDataSource(synthetic_cache, model="continuous") as src:
         sl = slice(80, 96)
         loglik = src.load_likelihood(sl)
         row = src.slice_at_index(sl.start + 7, which="likelihood")
@@ -119,7 +119,7 @@ def test_slice_at_index_likelihood_branch(synthetic_cache: Path) -> None:
 
 
 def test_slice_at_index_raises_for_out_of_range(synthetic_cache: Path) -> None:
-    with Figure4DataSource(synthetic_cache, model="continuous") as src:
+    with DecoderDataSource(synthetic_cache, model="continuous") as src:
         with pytest.raises(IndexError):
             src.slice_at_index(-1)
         with pytest.raises(IndexError):
@@ -127,7 +127,7 @@ def test_slice_at_index_raises_for_out_of_range(synthetic_cache: Path) -> None:
 
 
 def test_events_in_window_returns_sorted_subset(synthetic_cache: Path) -> None:
-    with Figure4DataSource(synthetic_cache, model="continuous") as src:
+    with DecoderDataSource(synthetic_cache, model="continuous") as src:
         sl = src.window_indices(
             t_center=0.5 * (src.time[100] + src.time[300]),
             t_width=src.time[300] - src.time[100],
@@ -142,7 +142,7 @@ def test_events_in_window_returns_sorted_subset(synthetic_cache: Path) -> None:
 
 
 def test_events_in_window_empty_when_outside(synthetic_cache: Path) -> None:
-    with Figure4DataSource(synthetic_cache, model="continuous") as src:
+    with DecoderDataSource(synthetic_cache, model="continuous") as src:
         # Slice a single sample at the very front: very few events expected.
         sl = slice(0, 1)
         events = src.events_in_window(sl)
@@ -172,7 +172,7 @@ def test_real_continuous_cache_window_read_latency() -> None:
     """
     import time
 
-    src = Figure4DataSource(CACHE_DIR, model="continuous")
+    src = DecoderDataSource(CACHE_DIR, model="continuous")
     try:
         assert src.n_time == 709321
         assert src.n_cells == 203
@@ -204,7 +204,7 @@ def test_real_continuous_cache_window_read_latency() -> None:
     "--model contfrag --data-dir data` first.",
 )
 def test_real_contfrag_cache_has_two_states() -> None:
-    src = Figure4DataSource(CACHE_DIR, model="contfrag")
+    src = DecoderDataSource(CACHE_DIR, model="contfrag")
     try:
         assert src.n_time == 709321
         assert src.n_cells == 203
