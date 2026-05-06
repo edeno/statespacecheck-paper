@@ -283,8 +283,7 @@ def test_slice_panel_live_readout_updates_with_center(tmp_path: Path) -> None:
         viewer.force_reload_now()
         assert _wait_for_request(app, viewer, target)
 
-        readout = viewer.slice_panel._live_readout  # noqa: SLF001
-        text = readout.toPlainText()
+        text = viewer.slice_panel._readout_label.text()  # noqa: SLF001
         # The default readout always includes the time line.
         assert text.startswith("t = ")
         # When the buffer holds the center, the predictive value line
@@ -296,7 +295,7 @@ def test_slice_panel_live_readout_updates_with_center(tmp_path: Path) -> None:
 
         # Move to a different center and verify the time line updates.
         viewer.set_center_time(float(ds.time[200]))
-        text2 = viewer.slice_panel._live_readout.toPlainText()  # noqa: SLF001
+        text2 = viewer.slice_panel._readout_label.text()  # noqa: SLF001
         assert text2 != text
     finally:
         viewer.close()

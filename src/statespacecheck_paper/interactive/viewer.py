@@ -632,8 +632,21 @@ _STATE_LIKELIHOOD_RGB: tuple[tuple[int, int, int], ...] = (
 )
 
 
-class SlicePanel(pg.PlotWidget):
+class SlicePanel(QtWidgets.QWidget):
     """1D animated posterior + likelihood curves at the current center time.
+
+    Layout (top to bottom):
+
+    - Legend label: color swatches + names for the curves.
+    - Plot: the posterior + likelihood curves vs. position, with a
+      dashed vertical line at the animal's true linear position.
+    - Live readout label: per-tick HPD / KL / spike-prob / predictive
+      values for the spike closest to the center time.
+    - Pinned readout label (visible only when a spike is pinned):
+      the clicked event's metrics.
+
+    The legend and both readouts live outside the plot proper as
+    ``QLabel`` widgets, so the curves are not occluded.
 
     The hot path is ``update_for_index(t_idx)``: it indexes one
     pre-loaded window's float32 row and calls ``setData`` on each
@@ -642,9 +655,7 @@ class SlicePanel(pg.PlotWidget):
 
     For multi-state models (ContFrag) the panel switches to
     stacked-by-state rendering: one posterior curve and one
-    likelihood-fill per state, color-coded. A "sum over state" toggle
-    is intentionally deferred to a later phase; until then both states
-    are always visible.
+    likelihood-fill per state, color-coded.
     """
 
     def __init__(
@@ -652,14 +663,9 @@ class SlicePanel(pg.PlotWidget):
         *,
         position_bins: NDArray[np.float64],
         n_states: int,
+        parent: QtWidgets.QWidget | None = None,
     ) -> None:
-        super().__init__()
-        self.setBackground("w")
-        self.setMenuEnabled(False)
-        self.setMouseEnabled(x=False, y=False)
-        self.setLabel("bottom", "Position (cm)")
-        self.setLabel("left", "Density")
-        self.getPlotItem().setTitle("Slice at center time")
+        super().__init__(parent)
 
         self._position_bins = np.asarray(position_bins, dtype=np.float64)
         self._n_pos = int(self._position_bins.shape[0])
@@ -668,6 +674,15 @@ class SlicePanel(pg.PlotWidget):
 
         # Likelihood alpha — set by an external slider (0..255).
         self._likelihood_alpha = 140
+
+        # ----- Plot widget --------------------------------------------------
+        self._plot = pg.PlotWidget()
+        self._plot.setBackground("w")
+        self._plot.setMenuEnabled(False)
+        self._plot.setMouseEnabled(x=False, y=False)
+        self._plot.setLabel("bottom", "Position (cm)")
+        self._plot.setLabel("left", "Density")
+        self._plot.getPlotItem().setTitle("Slice at center time")
 
         self._posterior_curves: list[pg.PlotDataItem] = []
         self._likelihood_curves: list[pg.PlotDataItem] = []
@@ -681,20 +696,17 @@ class SlicePanel(pg.PlotWidget):
                 self._zero_curve,
                 pen=pg.mkPen(post_rgb, width=3),
             )
-            self.addItem(post_curve)
+            self._plot.addItem(post_curve)
             self._posterior_curves.append(post_curve)
 
-            # Likelihood is shown as a filled area between a zero baseline
-            # and the curve. We keep both curves (top + baseline) so the
-            # ``FillBetweenItem`` can update via the curves.
             lik_top = pg.PlotDataItem(
                 self._position_bins,
                 self._zero_curve,
                 pen=pg.mkPen(_LIKELIHOOD_PEN_RGB, width=2),
             )
             lik_base = pg.PlotDataItem(self._position_bins, self._zero_curve, pen=None)
-            self.addItem(lik_top)
-            self.addItem(lik_base)
+            self._plot.addItem(lik_top)
+            self._plot.addItem(lik_base)
             self._likelihood_curves.append(lik_top)
             self._likelihood_baseline_curves.append(lik_base)
             fill = pg.FillBetweenItem(
@@ -702,49 +714,59 @@ class SlicePanel(pg.PlotWidget):
                 lik_base,
                 brush=pg.mkBrush(*lik_rgb, self._likelihood_alpha),
             )
-            self.addItem(fill)
+            self._plot.addItem(fill)
             self._likelihood_fills.append(fill)
 
-        # True animal position marker.
         self._true_position_line = pg.InfiniteLine(
             angle=90,
             movable=False,
             pen=_TRUE_POSITION_PEN,
         )
-        self.addItem(self._true_position_line)
+        self._plot.addItem(self._true_position_line)
 
         # Pinned-spike overlay: the clicked spike's place-field curve
-        # over position, plus a small annotation in the upper-left.
+        # over position. The textual annotation lives in the QLabel
+        # below the plot, not as an in-plot TextItem.
         self._pinned_curve = pg.PlotDataItem(
             self._position_bins,
             self._zero_curve,
             pen=pg.mkPen((255, 215, 0), width=3),
         )
         self._pinned_curve.setVisible(False)
-        self.addItem(self._pinned_curve)
-        self._annotation = pg.TextItem(anchor=(0, 0), color=(50, 50, 50))
-        self._annotation.setPos(self._position_bins[0], 0.0)
-        self._annotation.setVisible(False)
-        self.addItem(self._annotation)
+        self._plot.addItem(self._pinned_curve)
 
-        # Live-readout text in the upper-right of the slice panel.
-        # Updated every UI tick via ``set_live_readout``.
-        #
-        # ``ignoreBounds=True`` keeps the TextItem out of the
-        # viewbox's auto-range computation — without it, repositioning
-        # the text on ``sigRangeChanged`` would feed back into the
-        # range (text expands bounds -> autoRange fires ->
-        # repositioning -> bounds expand again), producing a runaway
-        # zoom-out loop on every UI tick.
-        self._live_readout = pg.TextItem(
-            anchor=(1, 0),
-            color=(20, 20, 20),
-            fill=pg.mkBrush(255, 255, 255, 220),
+        # ----- Out-of-plot labels ------------------------------------------
+        self._legend_label = QtWidgets.QLabel(self._build_legend_html())
+        self._legend_label.setTextFormat(QtCore.Qt.TextFormat.RichText)
+        self._legend_label.setStyleSheet("QLabel { color: #202020; padding: 2px 4px; }")
+        self._legend_label.setWordWrap(True)
+
+        self._readout_label = QtWidgets.QLabel("")
+        self._readout_label.setTextFormat(QtCore.Qt.TextFormat.PlainText)
+        self._readout_label.setStyleSheet(
+            "QLabel { font-family: 'Menlo', 'Consolas', monospace; "
+            "color: #202020; padding: 2px 4px; }"
         )
-        self.getPlotItem().addItem(self._live_readout, ignoreBounds=True)
-        # Reposition on legitimate viewbox changes so the readout
-        # stays parked at the top-right corner.
-        self.getViewBox().sigRangeChanged.connect(self._reposition_live_readout)
+        self._readout_label.setMinimumHeight(0)
+
+        # The pinned-event annotation (matches the ``_annotation``
+        # attribute kept by the test suite for visibility checks).
+        self._annotation = QtWidgets.QLabel("")
+        self._annotation.setTextFormat(QtCore.Qt.TextFormat.PlainText)
+        self._annotation.setStyleSheet(
+            "QLabel { font-family: 'Menlo', 'Consolas', monospace; "
+            "color: #6a4f00; background: #fff7d6; "
+            "border: 1px solid #d4b85a; border-radius: 2px; padding: 2px 4px; }"
+        )
+        self._annotation.setVisible(False)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(2, 2, 2, 2)
+        layout.setSpacing(2)
+        layout.addWidget(self._legend_label)
+        layout.addWidget(self._plot, stretch=1)
+        layout.addWidget(self._readout_label)
+        layout.addWidget(self._annotation)
 
         # Window-buffer state. The viewer pushes a freshly loaded
         # window via ``set_window_buffer``; subsequent
@@ -752,6 +774,28 @@ class SlicePanel(pg.PlotWidget):
         self._buffer_slice: slice | None = None
         self._buffer_post: NDArray[np.float32] | None = None
         self._buffer_lik: NDArray[np.float32] | None = None
+
+    # ------------------------------------------------------------------
+    # Legend
+    # ------------------------------------------------------------------
+
+    def _build_legend_html(self) -> str:
+        parts: list[str] = []
+        for s in range(self._n_states):
+            post_rgb = _STATE_POSTERIOR_RGB[s % len(_STATE_POSTERIOR_RGB)]
+            lik_rgb = _STATE_LIKELIHOOD_RGB[s % len(_STATE_LIKELIHOOD_RGB)]
+            tag = "" if self._n_states == 1 else f" (state {s})"
+            parts.append(
+                f"<span style='color:rgb({post_rgb[0]},{post_rgb[1]},{post_rgb[2]});"
+                f"font-size:14pt'>━</span> Posterior{tag}"
+            )
+            parts.append(
+                f"<span style='color:rgb({lik_rgb[0]},{lik_rgb[1]},{lik_rgb[2]});"
+                f"font-size:14pt'>━</span> Likelihood{tag}"
+            )
+        parts.append("<span style='color:rgb(50,50,50);font-size:14pt'>┄</span> True position")
+        parts.append("<span style='color:rgb(255,215,0);font-size:14pt'>━</span> Pinned cell PF")
+        return " &nbsp;&nbsp; ".join(parts)
 
     # ------------------------------------------------------------------
     # Data plumbing
@@ -807,22 +851,8 @@ class SlicePanel(pg.PlotWidget):
         self._true_position_line.setPos(true_position)
 
     def set_live_readout(self, text: str | None) -> None:
-        """Update the live-readout box (top-right of the panel)."""
-        if not text:
-            self._live_readout.setText("")
-        else:
-            self._live_readout.setText(text)
-        # Re-park at the top-right after each text change (text
-        # bounding rect changes with content).
-        self._reposition_live_readout()
-
-    def _reposition_live_readout(self, *_args: object) -> None:
-        """Park the live-readout at the top-right of the current view."""
-        view = self.getViewBox()
-        if view is None:
-            return
-        x_range, y_range = view.viewRange()
-        self._live_readout.setPos(float(x_range[1]), float(y_range[1]))
+        """Update the live-readout label below the plot."""
+        self._readout_label.setText(text or "")
 
     def set_likelihood_alpha(self, alpha: int) -> None:
         """Adjust the likelihood-fill opacity (0..255)."""
@@ -844,16 +874,28 @@ class SlicePanel(pg.PlotWidget):
         if place_field_row is None or annotation is None:
             self._pinned_curve.setVisible(False)
             self._annotation.setVisible(False)
+            self._annotation.setText("")
             return
         if place_field_row.shape[0] != self._position_bins.shape[0]:
             # Defensive: should match the per-state grid; if not, hide.
             self._pinned_curve.setVisible(False)
             self._annotation.setVisible(False)
+            self._annotation.setText("")
             return
         self._pinned_curve.setData(self._position_bins, place_field_row)
         self._pinned_curve.setVisible(True)
-        self._annotation.setText(annotation)
+        self._annotation.setText(f"Pinned: {annotation}")
         self._annotation.setVisible(True)
+
+    def is_pin_displayed(self) -> bool:
+        """True when a pinned-event annotation is currently shown.
+
+        Using a Python-side flag instead of ``QLabel.isVisible()`` so
+        callers (especially tests under offscreen Qt where the widget
+        tree may not be shown) can check intent without relying on
+        the platform's window-visibility state.
+        """
+        return bool(self._annotation.text()) and self._pinned_curve.isVisible()
 
 
 # ---------------------------------------------------------------------------
