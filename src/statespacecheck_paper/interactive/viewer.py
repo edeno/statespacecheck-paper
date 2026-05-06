@@ -55,7 +55,7 @@ RESET_WINDOW_SECONDS = 20.0
 # Auto-scroll defaults.
 AUTOSCROLL_TICK_HZ = 30.0
 AUTOSCROLL_RATE_REALTIME = 1.0  # advance 1 second of session per second of wall time
-AUTOSCROLL_SPEED_OPTIONS: tuple[float, ...] = (0.25, 0.5, 1.0, 2.0, 4.0, 8.0)
+AUTOSCROLL_SPEED_OPTIONS: tuple[float, ...] = (0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0)
 
 # Maximum rows in the per-cell live-readout block before truncation.
 MAX_PER_CELL_READOUT_ROWS = 6
@@ -787,7 +787,14 @@ def _make_slice_subplot(
     position_bins: NDArray[np.float64],
     height: int,
 ) -> pg.PlotWidget:
-    """Configure a small position-axis plot used in the slice column."""
+    """Configure a small position-axis plot used in the slice column.
+
+    Pins the y-axis range to ``[0, 1.05]`` since every curve plotted
+    here is peak-normalized to 1; without this, pyqtgraph's auto-range
+    re-fits the y-axis on every tick and the curves visibly bounce
+    during auto-scroll. Disabling auto-range on the viewbox also stops
+    later items from re-triggering it.
+    """
     plot = pg.PlotWidget()
     plot.setBackground("w")
     plot.setMenuEnabled(False)
@@ -800,6 +807,8 @@ def _make_slice_subplot(
         plot.getPlotItem().setTitle(title)
     plot.setMinimumHeight(height)
     plot.setXRange(float(position_bins[0]), float(position_bins[-1]), padding=0)
+    plot.setYRange(0.0, 1.05, padding=0)
+    plot.getViewBox().enableAutoRange(axis=pg.ViewBox.YAxis, enable=False)
     return plot
 
 
@@ -864,7 +873,7 @@ class SlicePanel(QtWidgets.QWidget):
         self._lik_predictive_curve = pg.PlotDataItem(
             self._position_bins,
             self._zero_curve,
-            pen=pg.mkPen(_STATE_POSTERIOR_RGB[0], width=2),
+            pen=pg.mkPen(*_STATE_POSTERIOR_RGB[0], 230, width=2),
         )
         self._likelihood_plot.addItem(self._lik_predictive_curve)
 
@@ -876,7 +885,7 @@ class SlicePanel(QtWidgets.QWidget):
             top = pg.PlotDataItem(
                 self._position_bins,
                 self._zero_curve,
-                pen=pg.mkPen(_LIKELIHOOD_PEN_RGB, width=2),
+                pen=pg.mkPen(_LIKELIHOOD_PEN_RGB, width=3),
             )
             base = pg.PlotDataItem(self._position_bins, self._zero_curve, pen=None)
             self._likelihood_plot.addItem(top)
@@ -1040,12 +1049,12 @@ class SlicePanel(QtWidgets.QWidget):
     def _build_row(self) -> _PerCellRow:
         plot = _make_slice_subplot(title=None, position_bins=self._position_bins, height=70)
         cell_curve = pg.PlotDataItem(
-            self._position_bins, self._zero_curve, pen=pg.mkPen((44, 160, 44), width=2)
+            self._position_bins, self._zero_curve, pen=pg.mkPen((44, 160, 44), width=3)
         )
         predictive_curve = pg.PlotDataItem(
             self._position_bins,
             self._predictive_norm,
-            pen=pg.mkPen(_STATE_POSTERIOR_RGB[0], width=1),
+            pen=pg.mkPen(*_STATE_POSTERIOR_RGB[0], 200, width=2),
         )
         plot.addItem(cell_curve)
         plot.addItem(predictive_curve)
@@ -1091,7 +1100,7 @@ class SlicePanel(QtWidgets.QWidget):
             row = self._ensure_row(i)
             row.cell_curve.setData(self._position_bins, cs.place_field_norm)
             rgb = _PER_CELL_PALETTE[cs.cell_id % len(_PER_CELL_PALETTE)]
-            row.cell_curve.setPen(pg.mkPen(*rgb, 220, width=2))
+            row.cell_curve.setPen(pg.mkPen(*rgb, 230, width=3))
             n_spikes_str = f"  ({cs.n_spikes} spikes)" if cs.n_spikes > 1 else ""
             pin_str = "  ★" if cs.is_pinned else ""
             row.header.setText(
