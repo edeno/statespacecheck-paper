@@ -728,19 +728,22 @@ class SlicePanel(pg.PlotWidget):
         self.addItem(self._annotation)
 
         # Live-readout text in the upper-right of the slice panel.
-        # Anchored to the viewbox itself (in pixel coordinates), so it
-        # sits in the top-right corner of the visible plot regardless
-        # of how the y-axis auto-scales as curves change. Updated every
-        # UI tick via ``set_live_readout``.
+        # Updated every UI tick via ``set_live_readout``.
+        #
+        # ``ignoreBounds=True`` keeps the TextItem out of the
+        # viewbox's auto-range computation — without it, repositioning
+        # the text on ``sigRangeChanged`` would feed back into the
+        # range (text expands bounds -> autoRange fires ->
+        # repositioning -> bounds expand again), producing a runaway
+        # zoom-out loop on every UI tick.
         self._live_readout = pg.TextItem(
             anchor=(1, 0),
             color=(20, 20, 20),
             fill=pg.mkBrush(255, 255, 255, 220),
         )
-        self.addItem(self._live_readout)
-        # Reposition on every viewbox change so the readout stays
-        # parked at the top-right corner during scrolling / zooming /
-        # auto-range.
+        self.getPlotItem().addItem(self._live_readout, ignoreBounds=True)
+        # Reposition on legitimate viewbox changes so the readout
+        # stays parked at the top-right corner.
         self.getViewBox().sigRangeChanged.connect(self._reposition_live_readout)
 
         # Window-buffer state. The viewer pushes a freshly loaded
