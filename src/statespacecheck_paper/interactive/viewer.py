@@ -151,7 +151,7 @@ class _BaseHeatmapPanel(pg.PlotWidget):
         self.setMenuEnabled(False)
         self.setMouseEnabled(x=False, y=False)
         self.setLabel("left", "Position (cm)")
-        self.setLabel("bottom", "Time (s)")
+        self.setLabel("bottom", "Time relative to center (s)")
         self.getPlotItem().setTitle(title)
 
         # ``axisOrder='col-major'`` interprets ``image[i, j]`` as
@@ -175,6 +175,19 @@ class _BaseHeatmapPanel(pg.PlotWidget):
         # every call, which dominates the main-thread cost when the
         # window is large.
         self._levels: tuple[float, float] | None = None
+
+        # Center-time vertical marker. The time-axis is shifted so
+        # x=0 is the current center time (the slice panel's
+        # ``t_center``), and this line is always at x=0 so the user
+        # can see which column on the heatmap corresponds to the
+        # slice panel's curves.
+        self._center_line = pg.InfiniteLine(
+            angle=90,
+            pos=0.0,
+            pen=pg.mkPen((100, 100, 100), width=1, style=QtCore.Qt.PenStyle.DashLine),
+            movable=False,
+        )
+        self.addItem(self._center_line)
 
         # Pinned-event vertical marker on the time axis.
         self._pin_line = pg.InfiniteLine(
@@ -319,7 +332,7 @@ class RasterPanel(pg.PlotWidget):
         self.setMenuEnabled(False)
         self.setMouseEnabled(x=False, y=False)
         self.setLabel("left", "Cell (PF rank)")
-        self.setLabel("bottom", "Time (s)")
+        self.setLabel("bottom", "Time relative to center (s)")
         self.getPlotItem().setTitle("Raster")
 
         self._n_cells = int(n_cells)
@@ -344,6 +357,15 @@ class RasterPanel(pg.PlotWidget):
         self._window_event_indices: NDArray[np.int64] = np.empty(0, dtype=np.int64)
         self._on_click: Callable[[int], None] | None = None
         self._scatter.sigClicked.connect(self._handle_click)
+
+        # Center-time vertical marker (matches the heatmap panels).
+        self._center_line = pg.InfiniteLine(
+            angle=90,
+            pos=0.0,
+            pen=pg.mkPen((100, 100, 100), width=1, style=QtCore.Qt.PenStyle.DashLine),
+            movable=False,
+        )
+        self.addItem(self._center_line)
 
         self._pin_line = pg.InfiniteLine(
             angle=90,
@@ -471,7 +493,7 @@ class MetricPanel(pg.PlotWidget):
         self.setBackground("w")
         self.setMenuEnabled(False)
         self.setMouseEnabled(x=False, y=False)
-        self.setLabel("bottom", "Time (s)")
+        self.setLabel("bottom", "Time relative to center (s)")
         self.setLabel("left", METRIC_TITLES.get(metric, metric))
 
         self._metric = metric
@@ -498,6 +520,15 @@ class MetricPanel(pg.PlotWidget):
                 movable=False,
             )
             self.addItem(self._threshold_line)
+
+        # Center-time vertical marker (matches the heatmap panels).
+        self._center_line = pg.InfiniteLine(
+            angle=90,
+            pos=0.0,
+            pen=pg.mkPen((100, 100, 100), width=1, style=QtCore.Qt.PenStyle.DashLine),
+            movable=False,
+        )
+        self.addItem(self._center_line)
 
         # Pinned-event marker: vertical line at the clicked spike's
         # time, plus a single highlighted dot. Both share the metric's
@@ -1332,11 +1363,13 @@ class Figure4Viewer(QtWidgets.QMainWindow):
         event = ds.events.iloc[row]
         sl = self.slice_panel._buffer_slice  # noqa: SLF001
         # The pin's relative time is meaningful only when the event
-        # falls within the currently rendered window.
+        # falls within the currently rendered window. The time axis
+        # is centered at ``t_center``, so the relative time is the
+        # event time minus the current center.
         if sl is None or not (sl.start <= ds.index_at_time(float(event["time"])) < sl.stop):
             relative_time: float | None = None
         else:
-            relative_time = float(event["time"]) - float(ds.time[sl.start])
+            relative_time = float(event["time"]) - float(self._t_center)
 
         for metric, panel in self.metric_panels.items():
             panel.update_pinned_event(
@@ -1397,10 +1430,14 @@ class Figure4Viewer(QtWidgets.QMainWindow):
         time = self._ds.time
         if sl.stop <= sl.start:
             return
-        t_offset = float(time[sl.start])
-        t_end = float(time[sl.stop - 1])
-        rel_start = 0.0
-        rel_end = t_end - t_offset
+        # Time axis is centered at the current ``t_center``: x=0 is
+        # the center, the visible window extends symmetrically to
+        # negative and positive values. The center-time vertical
+        # line on each panel sits at x=0 so the user can see which
+        # column corresponds to the slice panel.
+        t_offset = float(self._t_center)
+        rel_start = float(time[sl.start]) - t_offset
+        rel_end = float(time[sl.stop - 1]) - t_offset
 
         # Slice panel buffer: hand the freshly loaded full-resolution
         # arrays so per-tick ``update_for_index`` is a NumPy index.
