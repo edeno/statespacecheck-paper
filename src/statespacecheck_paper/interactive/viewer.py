@@ -57,6 +57,9 @@ AUTOSCROLL_TICK_HZ = 30.0
 AUTOSCROLL_RATE_REALTIME = 1.0  # advance 1 second of session per second of wall time
 AUTOSCROLL_SPEED_OPTIONS: tuple[float, ...] = (0.25, 0.5, 1.0, 2.0, 4.0, 8.0)
 
+# Maximum rows in the per-cell live-readout block before truncation.
+MAX_PER_CELL_READOUT_ROWS = 6
+
 
 def _nearest_index(sorted_arr: NDArray[np.float64], value: float) -> int:
     """Return the index of the entry in ``sorted_arr`` closest to ``value``.
@@ -796,6 +799,9 @@ class SlicePanel(QtWidgets.QWidget):
         # tick during scrolling).
         self._per_cell_curves: list[pg.PlotDataItem] = []
         self._n_active_per_cell_curves = 0
+        # Off by default so the slice plot stays uncluttered; user
+        # turns it on via the controls-bar checkbox.
+        self._per_cell_visible = False
 
         # Pinned-spike overlay: the clicked spike's place-field curve
         # over position. The textual annotation lives in the QLabel
@@ -947,6 +953,21 @@ class SlicePanel(QtWidgets.QWidget):
         """Update the live-readout label below the plot."""
         self._readout_label.setText(text or "")
 
+    def set_per_cell_visible(self, visible: bool) -> None:
+        """Toggle the per-cell place-field overlay on/off.
+
+        When off, every pooled curve is hidden regardless of
+        ``set_per_cell_likelihoods`` calls; the active count is
+        retained so re-enabling restores the same curves.
+        """
+        self._per_cell_visible = bool(visible)
+        if not self._per_cell_visible:
+            for curve in self._per_cell_curves:
+                curve.setVisible(False)
+        else:
+            for i in range(self._n_active_per_cell_curves):
+                self._per_cell_curves[i].setVisible(True)
+
     def set_per_cell_likelihoods(
         self,
         place_fields: NDArray[np.float32],
@@ -965,19 +986,18 @@ class SlicePanel(QtWidgets.QWidget):
             distinct color via ``pg.intColor``.
         """
         n = int(place_fields.shape[0]) if place_fields.size else 0
-        # Grow the curve pool on demand; never shrink (curves get
-        # hidden, not destroyed, to avoid Qt graphics-item churn).
         while len(self._per_cell_curves) < n:
             curve = pg.PlotDataItem(pen=pg.mkPen((120, 120, 120), width=1))
+            curve.setVisible(False)
             self._plot.addItem(curve)
             self._per_cell_curves.append(curve)
 
         for i in range(n):
             curve = self._per_cell_curves[i]
             curve.setData(self._position_bins, place_fields[i])
-            color = pg.intColor(int(cell_ids[i]), hues=24, alpha=140)
+            color = pg.intColor(int(cell_ids[i]), hues=24, alpha=110)
             curve.setPen(pg.mkPen(color, width=1))
-            curve.setVisible(True)
+            curve.setVisible(self._per_cell_visible)
         for i in range(n, self._n_active_per_cell_curves):
             self._per_cell_curves[i].setVisible(False)
         self._n_active_per_cell_curves = n
@@ -1208,6 +1228,16 @@ class Figure4Viewer(QtWidgets.QMainWindow):
         controls_layout.addWidget(self._alpha_slider)
 
         controls_layout.addSpacing(12)
+        self._per_cell_checkbox = QtWidgets.QCheckBox("Per-cell PFs")
+        self._per_cell_checkbox.setToolTip(
+            "Show one place-field curve on the slice panel for each cell "
+            "that fired in the current bin."
+        )
+        self._per_cell_checkbox.setChecked(False)
+        self._per_cell_checkbox.toggled.connect(self._on_per_cell_toggled)
+        controls_layout.addWidget(self._per_cell_checkbox)
+
+        controls_layout.addSpacing(12)
         self._play_button = QtWidgets.QToolButton()
         self._play_button.setText("▶")
         self._play_button.setToolTip("Play / pause auto-scroll (Space)")
@@ -1309,6 +1339,10 @@ class Figure4Viewer(QtWidgets.QMainWindow):
     def _on_alpha_changed(self, value: int) -> None:
         self.slice_panel.set_likelihood_alpha(value)
 
+    @QtCore.Slot(bool)
+    def _on_per_cell_toggled(self, checked: bool) -> None:
+        self.slice_panel.set_per_cell_visible(checked)
+
     @QtCore.Slot(int)
     def _on_window_slider_changed(self, value: int) -> None:
         self._set_window_seconds(self._window_seconds_for(value))
@@ -1375,13 +1409,12 @@ class Figure4Viewer(QtWidgets.QMainWindow):
     def _format_live_readout(self, t_idx: int, true_pos: float) -> str:
         """Build the slice-panel live-readout text for the current center.
 
-        Includes:
-        - center time (relative to session start)
-        - predictive posterior value at the animal's true position
-          (state-summed for multi-state classifiers)
-        - the per-spike HPD overlap, KL divergence, and spike
-          probability of the spike whose time is closest to the
-          current center time, with the time offset Δt for context
+        - When the current bin contains spikes, list each one with its
+          per-cell HPD / KL / spike-prob (capped at
+          ``MAX_PER_CELL_READOUT_ROWS`` rows so the readout stays
+          compact; remaining count is shown as ``(+K more)``).
+        - When the bin is empty, fall back to the closest neighboring
+          spike with the time offset Δt for context.
         """
         ds = self._ds
         t_now = float(ds.time[t_idx])
@@ -1393,23 +1426,31 @@ class Figure4Viewer(QtWidgets.QMainWindow):
             row = post_buf[t_idx - sl.start]
             if ds.n_states > 1:
                 row = row.reshape(ds.n_states, ds.n_position_full).sum(axis=0)
-            # ``position_grid_full`` is monotonic, so a single
-            # ``searchsorted`` + neighbor compare beats the per-tick
-            # ``argmin(abs(... - true_pos))`` allocation.
             pos_bin = _nearest_index(ds.position_grid_full, true_pos)
             lines.append(f"predictive(x_true) = {float(row[pos_bin]):.4f}")
 
-        # Nearest spike via the cached column views (no per-tick
-        # ``DataFrame.iloc`` row construction or ``to_numpy()`` rebuild).
-        ev_t = ds.event_times
-        if ev_t.size:
-            k = _nearest_index(ev_t, t_now)
-            dt_ms = (float(ev_t[k]) - t_now) * 1000.0
+        i0, i1 = ds.event_indices_at(t_idx)
+        if i1 > i0:
+            n_in_bin = i1 - i0
+            shown = min(n_in_bin, MAX_PER_CELL_READOUT_ROWS)
+            lines.append(f"spikes in bin ({n_in_bin}):")
+            for j in range(i0, i0 + shown):
+                lines.append(
+                    f"  cell={int(ds.event_cell_ids[j]):>3d}  "
+                    f"HPD={float(ds.event_hpd_overlap[j]):.3f}  "
+                    f"KL={float(ds.event_kl_divergence[j]):.3f}  "
+                    f"p={float(ds.event_spike_prob[j]):.3g}"
+                )
+            if n_in_bin > shown:
+                lines.append(f"  (+{n_in_bin - shown} more)")
+        elif ds.event_times.size:
+            k = _nearest_index(ds.event_times, t_now)
+            dt_ms = (float(ds.event_times[k]) - t_now) * 1000.0
             lines.append(f"nearest spike: cell={int(ds.event_cell_ids[k])}  Δt={dt_ms:+.1f} ms")
             lines.append(
-                f"HPD = {float(ds.event_hpd_overlap[k]):.3f}   "
-                f"KL = {float(ds.event_kl_divergence[k]):.3f}   "
-                f"p = {float(ds.event_spike_prob[k]):.3g}"
+                f"  HPD={float(ds.event_hpd_overlap[k]):.3f}  "
+                f"KL={float(ds.event_kl_divergence[k]):.3f}  "
+                f"p={float(ds.event_spike_prob[k]):.3g}"
             )
         return "\n".join(lines)
 
@@ -1782,6 +1823,7 @@ class Figure4Viewer(QtWidgets.QMainWindow):
         alpha = int(self._alpha_slider.value())
         window_seconds = float(self._window_seconds)
         speed_index = int(self._speed_combo.currentIndex())
+        per_cell_on = bool(self._per_cell_checkbox.isChecked())
 
         old_ds = self._ds
         self._ds = new_ds
@@ -1810,6 +1852,7 @@ class Figure4Viewer(QtWidgets.QMainWindow):
         self._set_window_seconds(window_seconds)
         if 0 <= speed_index < self._speed_combo.count():
             self._speed_combo.setCurrentIndex(speed_index)
+        self._per_cell_checkbox.setChecked(per_cell_on)
         self._model_combo.blockSignals(True)
         self._model_combo.setCurrentText(new_ds.model)
         self._model_combo.blockSignals(False)

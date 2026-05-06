@@ -188,9 +188,10 @@ def test_slice_panel_live_readout_updates_with_center(tmp_path: Path) -> None:
         # When the buffer holds the center, the predictive value line
         # should be present.
         assert "predictive(x_true)" in text
-        # And with events sprinkled across the synthetic session, a
-        # nearest-spike block should also be emitted.
-        assert "nearest spike" in text and "HPD =" in text and "KL =" in text
+        # The synthetic session always has events; the readout should
+        # show either an in-bin block or the nearest-spike fallback.
+        assert ("spikes in bin" in text) or ("nearest spike" in text)
+        assert "HPD=" in text and "KL=" in text
 
         # Move to a different center and verify the time line updates.
         viewer.set_center_time(float(ds.time[200]))
@@ -208,37 +209,65 @@ def test_slice_panel_shows_per_cell_curves_when_spikes_present(tmp_path: Path) -
         target = viewer._next_request_id  # noqa: SLF001
         viewer.force_reload_now()
         assert _wait_for_request(app, viewer, target)
+        # Per-cell overlay defaults to off; enable it so the test can
+        # verify visibility.
+        viewer._per_cell_checkbox.setChecked(True)  # noqa: SLF001
 
-        # Pick the time bin of the first spike and recenter on it.
         first_event_t = float(ds.event_times[0])
         viewer.set_center_time(first_event_t)
-        # Drive the per-tick path explicitly (set_center_time calls it
-        # but we want to be sure the event-bin lookup ran).
         viewer._update_slice_panel_at_center()  # noqa: SLF001
 
         sp = viewer.slice_panel
-        # At least one per-cell curve should be active and visible.
         assert sp._n_active_per_cell_curves >= 1  # noqa: SLF001
         assert sp._per_cell_curves[0].isVisible()  # noqa: SLF001
         x_data, y_data = sp._per_cell_curves[0].getData()  # noqa: SLF001
         assert y_data.shape == (ds.n_position_full,)
-        # Curve is normalized so its max is at most 1 (or exactly 0 if
-        # the cell has an all-zero place field, which our synthetic
-        # builder avoids).
+        # Normalized to its own peak: 0 < max <= 1.
         assert 0.0 < float(np.max(y_data)) <= 1.0 + 1e-6
+    finally:
+        viewer.close()
+        ds.close()
 
-        # Move to a time bin with no spikes (between two events) — the
-        # active count drops back to zero.
-        midpoint = 0.5 * (float(ds.event_times[0]) + float(ds.event_times[1]))
-        # Find a time bin whose nearest event is far enough away that
-        # no spikes land in it. Use a synthetic-time gap if needed.
-        viewer.set_center_time(midpoint)
+
+def test_per_cell_checkbox_hides_curves(tmp_path: Path) -> None:
+    _build_cache(tmp_path / "cache", n_states=1)
+    app, viewer, ds = _make_viewer(tmp_path / "cache")
+    try:
+        target = viewer._next_request_id  # noqa: SLF001
+        viewer.force_reload_now()
+        assert _wait_for_request(app, viewer, target)
+
+        # Enable, recenter onto a spike, verify visible.
+        viewer._per_cell_checkbox.setChecked(True)  # noqa: SLF001
+        viewer.set_center_time(float(ds.event_times[0]))
         viewer._update_slice_panel_at_center()  # noqa: SLF001
-        # If the chosen bin happens to contain a spike (depends on
-        # synthetic RNG), we can't assert the count is 0; only the
-        # invariant that all hidden curves stay hidden.
-        for i in range(sp._n_active_per_cell_curves, len(sp._per_cell_curves)):  # noqa: SLF001
-            assert not sp._per_cell_curves[i].isVisible()  # noqa: SLF001
+        assert viewer.slice_panel._per_cell_curves[0].isVisible()  # noqa: SLF001
+
+        # Disable — every curve in the pool hides regardless of state.
+        viewer._per_cell_checkbox.setChecked(False)  # noqa: SLF001
+        for curve in viewer.slice_panel._per_cell_curves:  # noqa: SLF001
+            assert not curve.isVisible()
+    finally:
+        viewer.close()
+        ds.close()
+
+
+def test_live_readout_lists_each_spike_in_bin(tmp_path: Path) -> None:
+    _build_cache(tmp_path / "cache", n_states=1)
+    app, viewer, ds = _make_viewer(tmp_path / "cache")
+    try:
+        target = viewer._next_request_id  # noqa: SLF001
+        viewer.force_reload_now()
+        assert _wait_for_request(app, viewer, target)
+
+        # Recenter on the first event's bin.
+        viewer.set_center_time(float(ds.event_times[0]))
+        viewer._update_slice_panel_at_center()  # noqa: SLF001
+
+        text = viewer.slice_panel._readout_label.text()  # noqa: SLF001
+        assert "spikes in bin" in text
+        # At least one ``cell=`` row.
+        assert "cell=" in text
     finally:
         viewer.close()
         ds.close()

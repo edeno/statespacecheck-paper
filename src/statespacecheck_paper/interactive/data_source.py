@@ -296,18 +296,23 @@ class Figure4DataSource:
             return i - 1
         return i
 
-    def cells_at_index(self, t_idx: int) -> NDArray[np.int32]:
-        """Return the unique cell IDs that fired in time bin ``t_idx``.
+    def event_indices_at(self, t_idx: int) -> tuple[int, int]:
+        """Return the ``[i0, i1)`` event-row range whose bin equals ``t_idx``.
 
-        Two ``np.searchsorted`` calls on the precomputed
-        ``event_time_idx`` (sorted because events are sorted by time)
-        plus a small ``np.unique`` on the in-bin slice — sub-ms even
-        for large event tables.
+        Both endpoints index into the precomputed event-column views
+        (``event_times``, ``event_cell_ids``, ``event_hpd_overlap``,
+        ``event_kl_divergence``, ``event_spike_prob``). ``i1 <= i0``
+        means no events landed in this bin.
         """
         if self.event_time_idx.size == 0:
-            return np.empty(0, dtype=np.int32)
+            return 0, 0
         i0 = int(np.searchsorted(self.event_time_idx, t_idx, side="left"))
         i1 = int(np.searchsorted(self.event_time_idx, t_idx, side="right"))
+        return i0, i1
+
+    def cells_at_index(self, t_idx: int) -> NDArray[np.int32]:
+        """Return the unique cell IDs that fired in time bin ``t_idx``."""
+        i0, i1 = self.event_indices_at(t_idx)
         if i1 <= i0:
             return np.empty(0, dtype=np.int32)
         return np.unique(self.event_cell_ids[i0:i1])
