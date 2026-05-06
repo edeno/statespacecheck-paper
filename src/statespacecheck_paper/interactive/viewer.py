@@ -66,6 +66,10 @@ RESET_WINDOW_SECONDS = 20.0
 AUTOSCROLL_TICK_HZ = 30.0
 AUTOSCROLL_RATE_REALTIME = 1.0  # 1 second of session per second of wall time
 AUTOSCROLL_SPEED_OPTIONS: tuple[float, ...] = (0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0)
+# Startup default. Real-time playback is so fast that the slice panel
+# barely registers; 0.05× is slow enough to actually watch the
+# decoder track the animal between bins.
+AUTOSCROLL_RATE_DEFAULT = 0.05
 
 
 def _nearest_index(sorted_arr: NDArray[np.float64], value: float) -> int:
@@ -206,7 +210,7 @@ class Figure4Viewer(QtWidgets.QMainWindow):
         # the panels can fetch the spike's metrics on demand.
         self._pinned_event_row: int | None = None
         # Auto-scroll (play/pause) state.
-        self._autoscroll_rate = AUTOSCROLL_RATE_REALTIME
+        self._autoscroll_rate = AUTOSCROLL_RATE_DEFAULT
         self._autoscroll_timer: QtCore.QTimer | None = None
 
         self._wire_load_worker()
@@ -987,8 +991,8 @@ class Figure4Viewer(QtWidgets.QMainWindow):
         return f"{speed:.2g}×"
 
     def _speed_combo_default_index(self) -> int:
-        # Pick the option closest to ``AUTOSCROLL_RATE_REALTIME``.
-        diffs = [abs(s - AUTOSCROLL_RATE_REALTIME) for s in AUTOSCROLL_SPEED_OPTIONS]
+        # Pick the option closest to ``AUTOSCROLL_RATE_DEFAULT``.
+        diffs = [abs(s - AUTOSCROLL_RATE_DEFAULT) for s in AUTOSCROLL_SPEED_OPTIONS]
         return int(np.argmin(diffs))
 
     def _step_speed(self, delta: int) -> None:

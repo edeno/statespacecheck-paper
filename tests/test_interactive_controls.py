@@ -183,13 +183,12 @@ def test_autoscroll_step_advances_center_time(tmp_path: Path) -> None:
         viewer.set_center_time(float(ds.time[100]))
         before = viewer._t_center  # noqa: SLF001
         viewer._autoscroll_step()  # noqa: SLF001
-        # One tick advances by rate / tick_hz seconds.
-        from statespacecheck_paper.interactive.viewer import (
-            AUTOSCROLL_RATE_REALTIME,
-            AUTOSCROLL_TICK_HZ,
-        )
+        # One tick advances by ``current rate / tick_hz`` seconds.
+        # Read the rate off the viewer rather than pinning to a constant
+        # so the test doesn't break when the startup default changes.
+        from statespacecheck_paper.interactive.viewer import AUTOSCROLL_TICK_HZ
 
-        expected_dt = AUTOSCROLL_RATE_REALTIME / AUTOSCROLL_TICK_HZ
+        expected_dt = viewer._autoscroll_rate / AUTOSCROLL_TICK_HZ  # noqa: SLF001
         assert viewer._t_center > before  # noqa: SLF001
         assert abs((viewer._t_center - before) - expected_dt) < 1e-6  # noqa: SLF001
     finally:
