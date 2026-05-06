@@ -727,9 +727,19 @@ def compute_per_cell_diagnostics_from_rates(
             # expected contribution at this event's time, target is
             # the contribution of *this event's cell*, and the rank is
             # the cumulative mass of cells with weakly smaller contrib.
+            # The ``rank_atol`` slack on the ``<=`` comparison absorbs
+            # BLAS reduction-order FP noise so equal contributions
+            # yield equal ranks across platforms (matches the same
+            # tolerance pattern in ``simulation.spike_prob_rank``).
             contrib_chunk = pred_chunk @ cell_fraction_per_bin  # (B, n_cells)
             target_contrib = contrib_chunk[np.arange(chunk_size), sci]  # (B,)
-            rank_mask = contrib_chunk <= target_contrib[:, None]  # (B, n_cells)
+            rank_atol = (
+                float(np.finfo(contrib_chunk.dtype).eps * n_bins * 16)
+                * float(np.max(contrib_chunk))
+                if contrib_chunk.size
+                else 0.0
+            )
+            rank_mask = contrib_chunk <= target_contrib[:, None] + rank_atol
             event_spike_prob[start:stop] = (contrib_chunk * rank_mask).sum(axis=1)
 
             if per_spike_likelihood is not None:

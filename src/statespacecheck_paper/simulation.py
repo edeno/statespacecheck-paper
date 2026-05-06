@@ -298,17 +298,30 @@ def spike_prob_rank(
     # Shape: (n_cells,) for 1D prior, (n_time, n_cells) for 2D prior
     contrib: NDArray[np.floating] = prior @ cell_fraction_per_bin
 
+    # Comparison tolerance for the rank mask. The matmul above sums
+    # ``n_bins`` floating-point products in BLAS-defined order, which
+    # differs across platforms (Accelerate vs OpenBLAS) and produces
+    # FP-noise-different contributions even for inputs that should be
+    # exactly equal. A strict ``<=`` comparison turns those tiny
+    # differences into rank flips, breaking platform reproducibility.
+    # The tolerance scales with the contribution magnitude × the
+    # accumulation depth so it absorbs reduction-order noise without
+    # affecting genuine differences in real-world non-uniform inputs.
+    eps = np.finfo(contrib.dtype).eps
+    n_terms = max(1, prior.shape[-1])
+    rank_atol = float(eps * n_terms * 16) * float(np.max(contrib))
+
     if contrib.ndim == 1:
         # Single timestep: (n_cells,)
-        # mask[i, j] = True means contrib[i] <= contrib[j]
-        mask = contrib[:, None] <= contrib  # (n_cells, n_cells)
+        # mask[i, j] = True means contrib[i] <= contrib[j] (within tolerance).
+        mask = contrib[:, None] <= contrib + rank_atol  # (n_cells, n_cells)
         # For each cell j, sum contrib[i] over all cells i where contrib[i] <= contrib[j].
         # axis=0 accumulates across the i dimension (rows) for each j (column).
         spike_probs: NDArray[np.floating] = (contrib[:, None] * mask).sum(axis=0)
     else:
         # Batched: (n_time, n_cells)
-        # mask[t, i, j] = True means contrib[t, i] <= contrib[t, j]
-        mask = contrib[:, :, None] <= contrib[:, None, :]  # (n_time, n_cells, n_cells)
+        # mask[t, i, j] = True means contrib[t, i] <= contrib[t, j].
+        mask = contrib[:, :, None] <= contrib[:, None, :] + rank_atol
         # axis=1 accumulates across the i dimension for each (t, j).
         spike_probs = (contrib[:, :, None] * mask).sum(axis=1)  # (n_time, n_cells)
 
