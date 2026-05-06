@@ -153,7 +153,12 @@ class _BaseHeatmapPanel(pg.PlotWidget):
         self.setLabel("bottom", "Time (s)")
         self.getPlotItem().setTitle(title)
 
-        self._image = pg.ImageItem(axisOrder="row-major")
+        # ``axisOrder='col-major'`` interprets ``image[i, j]`` as
+        # ``(x_index=i, y_index=j)``. Our window arrays come in as
+        # ``(n_time, n_state_bins)``, which we want displayed with
+        # time on x and position on y — col-major lines up the array's
+        # first axis with the time axis without a transpose.
+        self._image = pg.ImageItem(axisOrder="col-major")
         self._image.setLookupTable(pg.colormap.get("viridis").getLookupTable(0.0, 1.0, 256))
         self.addItem(self._image)
 
