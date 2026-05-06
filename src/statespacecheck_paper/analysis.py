@@ -46,7 +46,6 @@ from scipy.stats import poisson
 from statespacecheck_paper.simulation import (
     normalize,
     placefield_rates,
-    spike_prob_rank,
 )
 
 # Spike-batch size for ``compute_per_cell_diagnostics_from_rates``.
@@ -688,18 +687,31 @@ def compute_per_cell_diagnostics_from_rates(
         per_spike_likelihood = np.empty((n_spikes, n_bins))
 
     if n_spikes > 0:
-        # Per-spike Poisson-likelihood / HPD / KL all need ``(S, n_bins)``
-        # working arrays. For full-session real-data builds (~870 K
-        # spikes × 256 bins × 8 B ≈ 1.8 GB *per array*) materializing
-        # them in one shot blows the working set even when
-        # ``include_dense_matrices=False`` skips the (n_time, n_cells)
-        # outputs. Process in chunks to bound peak memory to
-        # ``_PER_SPIKE_BATCH × n_bins × 8 B`` per scratch array.
+        # Per-spike Poisson-likelihood / HPD / KL / spike-prob all need
+        # ``(S, n_bins)`` or ``(S, n_cells)`` working arrays. For
+        # full-session real-data builds (~870 K spikes × 256 bins
+        # × 8 B ≈ 1.8 GB *per array*) materializing them in one shot
+        # blows the working set even when ``include_dense_matrices=False``
+        # skips the (n_time, n_cells) outputs. Process in chunks to
+        # bound peak memory to ``_PER_SPIKE_BATCH × n_bins × 8 B`` per
+        # scratch array.
+        #
+        # ``spike_prob`` was previously vectorized as
+        # ``spike_prob_rank(pred[unique_times], cell_fraction)`` ⇒ a
+        # ``(n_unique_times, n_cells, n_cells)`` mask, which is
+        # ``709 K × 200²`` ≈ 28 GB on the real W-track session.
+        # Inline a per-event rank computation here instead — same
+        # math (``sum_i contrib[i] where contrib[i] <= contrib[j]``)
+        # but only over the rows we actually need. Cost: ~3× the
+        # rank work versus the unique-time dedup, but the memory
+        # ceiling drops to ``B × n_cells``.
+        cell_fraction_per_bin = normalize(rates, axis=1)  # (n_bins, n_cells)
         batch = max(1, _PER_SPIKE_BATCH)
         for start in range(0, n_spikes, batch):
             stop = min(start + batch, n_spikes)
             sti = spike_time_ind[start:stop]
             sci = spike_cell_ind[start:stop]
+            chunk_size = stop - start
 
             # (chunk, n_bins) gathers + Poisson lik for this batch only.
             pred_chunk = predictive_posterior[sti]
@@ -711,34 +723,24 @@ def compute_per_cell_diagnostics_from_rates(
             )
             event_kl_divergence[start:stop] = ssc.kl_divergence(pred_chunk, lik_chunk)
 
+            # Per-event spike-prob rank: contrib[k, j] is cell ``j``'s
+            # expected contribution at this event's time, target is
+            # the contribution of *this event's cell*, and the rank is
+            # the cumulative mass of cells with weakly smaller contrib.
+            contrib_chunk = pred_chunk @ cell_fraction_per_bin  # (B, n_cells)
+            target_contrib = contrib_chunk[np.arange(chunk_size), sci]  # (B,)
+            rank_mask = contrib_chunk <= target_contrib[:, None]  # (B, n_cells)
+            event_spike_prob[start:stop] = (contrib_chunk * rank_mask).sum(axis=1)
+
             if per_spike_likelihood is not None:
                 per_spike_likelihood[start:stop] = lik_chunk
 
-        if hpd_overlap is not None and kl_divergence is not None:
+        if hpd_overlap is not None:
             hpd_overlap[spike_time_ind, spike_cell_ind] = event_hpd_overlap
+        if kl_divergence is not None:
             kl_divergence[spike_time_ind, spike_cell_ind] = event_kl_divergence
-
-        # Compute spike_prob at unique spike times (more efficient)
-        # cell_fraction_per_bin: (n_bins, n_cells) - normalized so each row sums to 1
-        cell_fraction_per_bin = normalize(rates, axis=1)  # (n_bins, n_cells)
-
-        unique_spike_times = np.unique(spike_time_ind)
-        pred_at_unique_times = predictive_posterior[unique_spike_times]
-        spike_prob_at_unique_times = spike_prob_rank(
-            pred_at_unique_times, cell_fraction_per_bin
-        )  # (n_unique_times, n_cells)
-
-        # Map unique times to indices for fast lookup
-        time_to_idx = np.empty(n_time, dtype=np.intp)
-        time_to_idx[unique_spike_times] = np.arange(len(unique_spike_times))
-
-        # Scatter spike_prob values to output array at spike locations
-        spike_prob_for_events = spike_prob_at_unique_times[
-            time_to_idx[spike_time_ind], spike_cell_ind
-        ]
-        event_spike_prob = spike_prob_for_events
         if spike_prob is not None:
-            spike_prob[spike_time_ind, spike_cell_ind] = spike_prob_for_events
+            spike_prob[spike_time_ind, spike_cell_ind] = event_spike_prob
 
     result: dict[str, NDArray[np.floating] | NDArray[np.intp]] = {
         "spike_time_ind": spike_time_ind,
