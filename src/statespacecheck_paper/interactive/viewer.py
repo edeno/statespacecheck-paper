@@ -679,7 +679,7 @@ class SlicePanel(pg.PlotWidget):
             post_curve = pg.PlotDataItem(
                 self._position_bins,
                 self._zero_curve,
-                pen=pg.mkPen(post_rgb, width=2),
+                pen=pg.mkPen(post_rgb, width=3),
             )
             self.addItem(post_curve)
             self._posterior_curves.append(post_curve)
@@ -690,7 +690,7 @@ class SlicePanel(pg.PlotWidget):
             lik_top = pg.PlotDataItem(
                 self._position_bins,
                 self._zero_curve,
-                pen=pg.mkPen(_LIKELIHOOD_PEN_RGB, width=1),
+                pen=pg.mkPen(_LIKELIHOOD_PEN_RGB, width=2),
             )
             lik_base = pg.PlotDataItem(self._position_bins, self._zero_curve, pen=None)
             self.addItem(lik_top)
@@ -718,7 +718,7 @@ class SlicePanel(pg.PlotWidget):
         self._pinned_curve = pg.PlotDataItem(
             self._position_bins,
             self._zero_curve,
-            pen=pg.mkPen((255, 215, 0), width=2),
+            pen=pg.mkPen((255, 215, 0), width=3),
         )
         self._pinned_curve.setVisible(False)
         self.addItem(self._pinned_curve)
@@ -726,6 +726,18 @@ class SlicePanel(pg.PlotWidget):
         self._annotation.setPos(self._position_bins[0], 0.0)
         self._annotation.setVisible(False)
         self.addItem(self._annotation)
+
+        # Live-readout text in the upper-right of the slice panel:
+        # current center time, predictive posterior at the animal's
+        # true position, and the metrics for the spike closest to the
+        # center time. Updated every UI tick via ``set_live_readout``.
+        self._live_readout = pg.TextItem(
+            anchor=(1, 0),
+            color=(20, 20, 20),
+            fill=pg.mkBrush(255, 255, 255, 200),
+        )
+        self._live_readout.setPos(float(self._position_bins[-1]), 0.0)
+        self.addItem(self._live_readout)
 
         # Window-buffer state. The viewer pushes a freshly loaded
         # window via ``set_window_buffer``; subsequent
@@ -786,6 +798,13 @@ class SlicePanel(pg.PlotWidget):
                 self._posterior_curves[s].setData(self._position_bins, post_rs[s])
                 self._likelihood_curves[s].setData(self._position_bins, lik_rs[s])
         self._true_position_line.setPos(true_position)
+
+    def set_live_readout(self, text: str | None) -> None:
+        """Update the live-readout box (top-right of the panel)."""
+        if not text:
+            self._live_readout.setText("")
+            return
+        self._live_readout.setText(text)
 
     def set_likelihood_alpha(self, alpha: int) -> None:
         """Adjust the likelihood-fill opacity (0..255)."""
@@ -1135,6 +1154,65 @@ class Figure4Viewer(QtWidgets.QMainWindow):
         t_idx = ds.index_at_time(self._t_center)
         true_pos = float(ds.linear_position[t_idx])
         self.slice_panel.update_for_index(t_idx, true_pos)
+        self.slice_panel.set_live_readout(self._format_live_readout(t_idx, true_pos))
+
+    def _format_live_readout(self, t_idx: int, true_pos: float) -> str:
+        """Build the slice-panel live-readout text for the current center.
+
+        Includes:
+        - center time (relative to session start)
+        - predictive posterior value at the animal's true position
+          (state-summed for multi-state classifiers)
+        - the per-spike HPD overlap, KL divergence, and spike
+          probability of the spike whose time is closest to the
+          current center time, with the time offset Δt for context
+        """
+        ds = self._ds
+        rel_t = ds.time[t_idx] - ds.time[0]
+        lines = [f"t = {rel_t:.3f} s"]
+
+        # Predictive value at the animal's true position. The slice
+        # panel's buffer holds the latest posterior window; if the
+        # current index is inside it, we read directly from the
+        # buffer (no disk hit). Multi-state: sum over states first.
+        sl = self.slice_panel._buffer_slice  # noqa: SLF001
+        post_buf = self.slice_panel._buffer_post  # noqa: SLF001
+        predictive_val: float | None = None
+        if sl is not None and post_buf is not None and sl.start <= t_idx < sl.stop:
+            row = post_buf[t_idx - sl.start]
+            if ds.n_states > 1:
+                row = row.reshape(ds.n_states, ds.n_position_full).sum(axis=0)
+            # Find the position bin closest to ``true_pos``.
+            pos_bin = int(np.argmin(np.abs(ds.position_grid_full - true_pos)))
+            predictive_val = float(row[pos_bin])
+        if predictive_val is not None:
+            lines.append(f"predictive(x_true) = {predictive_val:.4f}")
+
+        # Nearest spike (in absolute time) and its diagnostic metrics.
+        events = ds.events
+        if not events.empty:
+            event_times = events["time"].to_numpy()
+            i = int(np.searchsorted(event_times, ds.time[t_idx]))
+            candidates: list[int] = []
+            if 0 <= i - 1 < event_times.size:
+                candidates.append(i - 1)
+            if 0 <= i < event_times.size:
+                candidates.append(i)
+            if candidates:
+                # Closest neighbor by absolute time difference.
+                k = min(
+                    candidates,
+                    key=lambda j: abs(float(event_times[j]) - float(ds.time[t_idx])),
+                )
+                ev = events.iloc[k]
+                dt_ms = (float(ev["time"]) - float(ds.time[t_idx])) * 1000.0
+                lines.append(f"nearest spike: cell={int(ev['cell_id'])}  Δt={dt_ms:+.1f} ms")
+                lines.append(
+                    f"HPD = {float(ev['event_hpd_overlap']):.3f}   "
+                    f"KL = {float(ev['event_kl_divergence']):.3f}   "
+                    f"p = {float(ev['event_spike_prob']):.3g}"
+                )
+        return "\n".join(lines)
 
     # ------------------------------------------------------------------
     # Click / pin

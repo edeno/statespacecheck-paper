@@ -275,6 +275,34 @@ def test_slice_panel_stacks_states_for_contfrag(tmp_path: Path) -> None:
         ds.close()
 
 
+def test_slice_panel_live_readout_updates_with_center(tmp_path: Path) -> None:
+    _build_cache(tmp_path / "cache", n_states=1)
+    app, viewer, ds = _make_viewer(tmp_path / "cache")
+    try:
+        target = viewer._next_request_id  # noqa: SLF001
+        viewer.force_reload_now()
+        assert _wait_for_request(app, viewer, target)
+
+        readout = viewer.slice_panel._live_readout  # noqa: SLF001
+        text = readout.toPlainText()
+        # The default readout always includes the time line.
+        assert text.startswith("t = ")
+        # When the buffer holds the center, the predictive value line
+        # should be present.
+        assert "predictive(x_true)" in text
+        # And with events sprinkled across the synthetic session, a
+        # nearest-spike block should also be emitted.
+        assert "nearest spike" in text and "HPD =" in text and "KL =" in text
+
+        # Move to a different center and verify the time line updates.
+        viewer.set_center_time(float(ds.time[200]))
+        text2 = viewer.slice_panel._live_readout.toPlainText()  # noqa: SLF001
+        assert text2 != text
+    finally:
+        viewer.close()
+        ds.close()
+
+
 def test_slice_panel_does_not_update_outside_buffer(tmp_path: Path) -> None:
     _build_cache(tmp_path / "cache", n_states=1)
     app, viewer, ds = _make_viewer(tmp_path / "cache")
