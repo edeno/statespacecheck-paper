@@ -949,6 +949,14 @@ class SlicePanel(QtWidgets.QWidget):
         self._per_cell_layout = QtWidgets.QVBoxLayout(self._per_cell_container)
         self._per_cell_layout.setContentsMargins(0, 0, 0, 0)
         self._per_cell_layout.setSpacing(2)
+        # Pre-allocate the full row pool up front so the slice column's
+        # vertical layout is fixed from frame 0 (combined with each row's
+        # ``retainSizeWhenHidden`` policy below). Without this the
+        # container would grow each time a new ``cell_id`` first appears
+        # at runtime, and the population plot above would visibly
+        # resize as the user scrolled.
+        for _ in range(MAX_PER_CELL_PLOTS):
+            self._ensure_row(len(self._per_cell_rows))
 
         outer = QtWidgets.QVBoxLayout(self)
         outer.setContentsMargins(2, 2, 2, 2)
@@ -1085,6 +1093,13 @@ class SlicePanel(QtWidgets.QWidget):
         layout.setSpacing(0)
         layout.addWidget(header)
         layout.addWidget(plot, stretch=1)
+        # Hidden rows must keep their footprint, otherwise the slice
+        # column's QVBoxLayout collapses the gap and the population-
+        # likelihood plot stretches to fill it -- which is what made
+        # the plots appear to "resize" during auto-scroll.
+        size_policy = container.sizePolicy()
+        size_policy.setRetainSizeWhenHidden(True)
+        container.setSizePolicy(size_policy)
         container.setVisible(False)
 
         return _PerCellRow(
