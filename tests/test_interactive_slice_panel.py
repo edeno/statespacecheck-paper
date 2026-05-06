@@ -71,10 +71,9 @@ def test_slice_panel_constructs_with_single_state(tmp_path: Path) -> None:
     app, viewer, ds = _make_viewer(tmp_path / "cache")
     try:
         sp = viewer.slice_panel
-        # Population likelihood: one fill (single state) + a predictive
-        # overlay curve.
+        # Population likelihood: one top-curve per state + the
+        # shared blue predictive overlay.
         assert len(sp._lik_top_curves) == 1  # noqa: SLF001
-        assert len(sp._lik_fills) == 1  # noqa: SLF001
         assert sp._n_states == 1  # noqa: SLF001
         assert sp._n_pos == ds.n_interior  # noqa: SLF001
         # Per-cell rows are empty until the first commit.
@@ -131,15 +130,30 @@ def test_slice_panel_animates_on_set_center_time(tmp_path: Path) -> None:
         ds.close()
 
 
-def test_slice_panel_alpha_slider_updates_brushes(tmp_path: Path) -> None:
+def test_slice_panel_y_axis_pinned_to_unit_range(tmp_path: Path) -> None:
+    """Population-likelihood + per-cell-row plots have y-range hard-pinned."""
+    from statespacecheck_paper.interactive.viewer import _SLICE_Y_MAX, _SLICE_Y_MIN
+
     _build_cache(tmp_path / "cache", n_states=1)
     app, viewer, ds = _make_viewer(tmp_path / "cache")
     try:
+        target = viewer._next_request_id  # noqa: SLF001
+        viewer.force_reload_now()
+        assert _wait_for_request(app, viewer, target)
+        viewer.set_center_time(float(ds.event_times[0]))
+        viewer._update_slice_panel_at_center()  # noqa: SLF001
+
         sp = viewer.slice_panel
-        original_alpha = sp._likelihood_alpha  # noqa: SLF001
-        viewer._alpha_slider.setValue(40)  # noqa: SLF001
-        assert sp._likelihood_alpha == 40  # noqa: SLF001
-        assert sp._likelihood_alpha != original_alpha  # noqa: SLF001
+        # Population plot: explicit y-range matches the pin.
+        y_lo, y_hi = sp._likelihood_plot.viewRange()[1]  # noqa: SLF001
+        assert abs(y_lo - _SLICE_Y_MIN) < 1e-6
+        assert abs(y_hi - _SLICE_Y_MAX) < 1e-6
+        # Active per-cell rows: same.
+        for i in range(sp._n_active_per_cell_rows):  # noqa: SLF001
+            row = sp._per_cell_rows[i]  # noqa: SLF001
+            y_lo, y_hi = row.plot.viewRange()[1]
+            assert abs(y_lo - _SLICE_Y_MIN) < 1e-6
+            assert abs(y_hi - _SLICE_Y_MAX) < 1e-6
     finally:
         viewer.close()
         ds.close()
@@ -157,7 +171,6 @@ def test_slice_panel_stacks_states_for_contfrag(tmp_path: Path) -> None:
         sp = viewer.slice_panel
         assert sp._n_states == 2  # noqa: SLF001
         assert len(sp._lik_top_curves) == 2  # noqa: SLF001
-        assert len(sp._lik_fills) == 2  # noqa: SLF001
 
         target = viewer._next_request_id  # noqa: SLF001
         viewer.force_reload_now()

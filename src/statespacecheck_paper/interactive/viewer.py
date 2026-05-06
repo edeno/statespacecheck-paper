@@ -781,20 +781,38 @@ class _PerCellRow:
     true_position_line: pg.InfiniteLine
 
 
+_SLICE_Y_MIN = 0.0
+_SLICE_Y_MAX = 1.05
+
+
+def _pin_slice_axes(plot: pg.PlotWidget, position_bins: NDArray[np.float64]) -> None:
+    """Hard-pin the slice subplot's x and y axes.
+
+    All curves in the slice column are peak-normalized to 1, so the
+    y-axis range is known a priori. Auto-range is fully disabled on
+    both axes and ``setLimits`` clamps the user's pan/zoom to the
+    same window so subsequent ``addItem``/``setData`` calls cannot
+    nudge the view.
+    """
+    vb = plot.getViewBox()
+    vb.disableAutoRange()
+    vb.setXRange(float(position_bins[0]), float(position_bins[-1]), padding=0)
+    vb.setYRange(_SLICE_Y_MIN, _SLICE_Y_MAX, padding=0)
+    vb.setLimits(
+        xMin=float(position_bins[0]),
+        xMax=float(position_bins[-1]),
+        yMin=_SLICE_Y_MIN,
+        yMax=_SLICE_Y_MAX,
+    )
+
+
 def _make_slice_subplot(
     *,
     title: str | None,
     position_bins: NDArray[np.float64],
     height: int,
 ) -> pg.PlotWidget:
-    """Configure a small position-axis plot used in the slice column.
-
-    Pins the y-axis range to ``[0, 1.05]`` since every curve plotted
-    here is peak-normalized to 1; without this, pyqtgraph's auto-range
-    re-fits the y-axis on every tick and the curves visibly bounce
-    during auto-scroll. Disabling auto-range on the viewbox also stops
-    later items from re-triggering it.
-    """
+    """Configure a small position-axis plot used in the slice column."""
     plot = pg.PlotWidget()
     plot.setBackground("w")
     plot.setMenuEnabled(False)
@@ -806,9 +824,7 @@ def _make_slice_subplot(
     if title is not None:
         plot.getPlotItem().setTitle(title)
     plot.setMinimumHeight(height)
-    plot.setXRange(float(position_bins[0]), float(position_bins[-1]), padding=0)
-    plot.setYRange(0.0, 1.05, padding=0)
-    plot.getViewBox().enableAutoRange(axis=pg.ViewBox.YAxis, enable=False)
+    _pin_slice_axes(plot, position_bins)
     return plot
 
 
@@ -856,7 +872,6 @@ class SlicePanel(QtWidgets.QWidget):
         self._n_states = max(1, int(n_states))
         self._zero_curve = np.zeros(self._n_pos, dtype=np.float32)
 
-        self._likelihood_alpha = 140
         self._per_cell_visible = True
 
         # Pre-rendered predictive curve, peak-normalized; same array is
@@ -878,28 +893,24 @@ class SlicePanel(QtWidgets.QWidget):
         self._likelihood_plot.addItem(self._lik_predictive_curve)
 
         self._lik_top_curves: list[pg.PlotDataItem] = []
-        self._lik_base_curves: list[pg.PlotDataItem] = []
-        self._lik_fills: list[pg.FillBetweenItem] = []
         for s in range(self._n_states):
             lik_rgb = _STATE_LIKELIHOOD_RGB[s % len(_STATE_LIKELIHOOD_RGB)]
             top = pg.PlotDataItem(
                 self._position_bins,
                 self._zero_curve,
-                pen=pg.mkPen(_LIKELIHOOD_PEN_RGB, width=3),
+                pen=pg.mkPen(*lik_rgb, 240, width=3),
             )
-            base = pg.PlotDataItem(self._position_bins, self._zero_curve, pen=None)
             self._likelihood_plot.addItem(top)
-            self._likelihood_plot.addItem(base)
-            fill = pg.FillBetweenItem(top, base, brush=pg.mkBrush(*lik_rgb, self._likelihood_alpha))
-            self._likelihood_plot.addItem(fill)
             self._lik_top_curves.append(top)
-            self._lik_base_curves.append(base)
-            self._lik_fills.append(fill)
 
         self._lik_true_position_line = pg.InfiniteLine(
             angle=90, movable=False, pen=_TRUE_POSITION_PEN
         )
         self._likelihood_plot.addItem(self._lik_true_position_line)
+        # Re-pin axes after every ``addItem`` finishes; pyqtgraph's
+        # auto-range can re-engage when items are added even after we
+        # explicitly disable it during the subplot's construction.
+        _pin_slice_axes(self._likelihood_plot, self._position_bins)
 
         # Per-cell row pool. Rows are constructed lazily in
         # ``set_per_cell_slices``; the count never shrinks (rows hide
@@ -1060,6 +1071,9 @@ class SlicePanel(QtWidgets.QWidget):
         plot.addItem(predictive_curve)
         true_position_line = pg.InfiniteLine(angle=90, movable=False, pen=_TRUE_POSITION_PEN)
         plot.addItem(true_position_line)
+        # Re-pin the axes after every ``addItem`` so the y-range
+        # cannot get nudged by pyqtgraph's auto-range hooks.
+        _pin_slice_axes(plot, self._position_bins)
 
         header = QtWidgets.QLabel("")
         header.setAutoFillBackground(True)
@@ -1123,15 +1137,6 @@ class SlicePanel(QtWidgets.QWidget):
             self._truncation_label.setVisible(True)
         else:
             self._truncation_label.setVisible(False)
-
-    def set_likelihood_alpha(self, alpha: int) -> None:
-        alpha = int(np.clip(alpha, 0, 255))
-        if alpha == self._likelihood_alpha:
-            return
-        self._likelihood_alpha = alpha
-        for s, fill in enumerate(self._lik_fills):
-            lik_rgb = _STATE_LIKELIHOOD_RGB[s % len(_STATE_LIKELIHOOD_RGB)]
-            fill.setBrush(pg.mkBrush(*lik_rgb, alpha))
 
     def update_pinned_event(
         self,
@@ -1330,15 +1335,6 @@ class Figure4Viewer(QtWidgets.QMainWindow):
         controls_layout.addWidget(self._window_label)
 
         controls_layout.addSpacing(12)
-        controls_layout.addWidget(QtWidgets.QLabel("Likelihood α:"))
-        self._alpha_slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
-        self._alpha_slider.setRange(0, 255)
-        self._alpha_slider.setValue(140)
-        self._alpha_slider.setMaximumWidth(140)
-        self._alpha_slider.valueChanged.connect(self._on_alpha_changed)
-        controls_layout.addWidget(self._alpha_slider)
-
-        controls_layout.addSpacing(12)
         self._per_cell_checkbox = QtWidgets.QCheckBox("Per-cell rows")
         self._per_cell_checkbox.setToolTip(
             "Show a per-cell likelihood plot for each cell that fired "
@@ -1446,10 +1442,6 @@ class Figure4Viewer(QtWidgets.QMainWindow):
         self._update_slice_panel_at_center()
         # Re-arm the debounce timer for the heavier window load.
         self._load_timer.start()
-
-    @QtCore.Slot(int)
-    def _on_alpha_changed(self, value: int) -> None:
-        self.slice_panel.set_likelihood_alpha(value)
 
     @QtCore.Slot(bool)
     def _on_per_cell_toggled(self, checked: bool) -> None:
@@ -1925,7 +1917,6 @@ class Figure4Viewer(QtWidgets.QMainWindow):
         was_playing = bool(self._play_button.isChecked())
         if was_playing:
             self._play_button.setChecked(False)  # ensures _stop_autoscroll runs
-        alpha = int(self._alpha_slider.value())
         window_seconds = float(self._window_seconds)
         speed_index = int(self._speed_combo.currentIndex())
         per_cell_on = bool(self._per_cell_checkbox.isChecked())
@@ -1950,10 +1941,6 @@ class Figure4Viewer(QtWidgets.QMainWindow):
         self._build_central_widget()
 
         # Restore captured state onto the new widgets.
-        self._alpha_slider.blockSignals(True)
-        self._alpha_slider.setValue(alpha)
-        self._alpha_slider.blockSignals(False)
-        self.slice_panel.set_likelihood_alpha(alpha)
         self._set_window_seconds(window_seconds)
         if 0 <= speed_index < self._speed_combo.count():
             self._speed_combo.setCurrentIndex(speed_index)
