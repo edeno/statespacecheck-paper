@@ -28,7 +28,7 @@ import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import pyqtgraph as pg
@@ -42,6 +42,19 @@ DEFAULT_WINDOW_SECONDS = 2.0
 MIN_WINDOW_SECONDS = 0.1
 MAX_WINDOW_SECONDS = 60.0
 SLIDER_RESOLUTION = 100_000  # subdivides the full session into this many ticks
+
+# Window-width slider works in log-space so a single slider position can
+# resolve both 0.1 s and 60 s endpoints with reasonable granularity.
+WINDOW_SLIDER_RESOLUTION = 1000
+
+# Reset shortcut targets (matches the Figure 4a context window from
+# scripts/generate_figure04.py via ``index 190000`` at the decoder
+# sampling rate of 500 Hz, ~20 s wide).
+RESET_WINDOW_SECONDS = 20.0
+
+# Auto-scroll defaults.
+AUTOSCROLL_TICK_HZ = 30.0
+AUTOSCROLL_RATE_REALTIME = 1.0  # advance 1 second of session per second of wall time
 
 
 @dataclass(frozen=True)
@@ -809,13 +822,18 @@ class Figure4Viewer(QtWidgets.QMainWindow):
     """Top-level window owning the panels and view state."""
 
     def __init__(
-        self, data_source: Figure4DataSource, *, parent: QtWidgets.QWidget | None = None
+        self,
+        data_source: Figure4DataSource,
+        *,
+        parent: QtWidgets.QWidget | None = None,
+        cache_dir: Path | str | None = None,
     ) -> None:
         super().__init__(parent)
         self._ds = data_source
+        self._cache_dir = Path(cache_dir) if cache_dir is not None else None
 
         self.setWindowTitle(f"Figure 4 viewer — {data_source.model}")
-        self.resize(1100, 800)
+        self.resize(1200, 900)
 
         self._t_min = float(data_source.time[0])
         self._t_max = float(data_source.time[-1])
@@ -832,11 +850,13 @@ class Figure4Viewer(QtWidgets.QMainWindow):
         # set it is a global row index into ``data_source.events`` so
         # the panels can fetch the spike's metrics on demand.
         self._pinned_event_row: int | None = None
+        # Auto-scroll (play/pause) state.
+        self._autoscroll_rate = AUTOSCROLL_RATE_REALTIME
+        self._autoscroll_timer: QtCore.QTimer | None = None
 
-        self._build_panels()
-        self._build_controls()
         self._wire_load_worker()
-        self._wire_click_handlers()
+        self._build_central_widget()
+        self._wire_keyboard_shortcuts()
 
         # Trigger initial load.
         self._dispatch_load()
@@ -844,6 +864,18 @@ class Figure4Viewer(QtWidgets.QMainWindow):
     # ------------------------------------------------------------------
     # UI construction
     # ------------------------------------------------------------------
+
+    def _build_central_widget(self) -> None:
+        """Build (or rebuild) panels + controls and install as central widget.
+
+        Used both at construction and after a model swap. The bottom
+        controls hold the persistent UI state (slider position, alpha,
+        play state, model choice); the new ``QWidget`` reparents the
+        existing widgets and Qt deletes the old central tree.
+        """
+        self._build_panels()
+        self._build_controls()
+        self._wire_click_handlers()
 
     def _build_panels(self) -> None:
         ds = self._ds
@@ -927,6 +959,18 @@ class Figure4Viewer(QtWidgets.QMainWindow):
         controls_layout.addWidget(self._time_label)
 
         controls_layout.addSpacing(12)
+        controls_layout.addWidget(QtWidgets.QLabel("Window:"))
+        self._window_slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
+        self._window_slider.setRange(0, WINDOW_SLIDER_RESOLUTION)
+        self._window_slider.setValue(self._window_slider_value_for(self._window_seconds))
+        self._window_slider.setMaximumWidth(140)
+        self._window_slider.valueChanged.connect(self._on_window_slider_changed)
+        controls_layout.addWidget(self._window_slider)
+        self._window_label = QtWidgets.QLabel(self._format_window_label())
+        self._window_label.setMinimumWidth(70)
+        controls_layout.addWidget(self._window_label)
+
+        controls_layout.addSpacing(12)
         controls_layout.addWidget(QtWidgets.QLabel("Likelihood α:"))
         self._alpha_slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
         self._alpha_slider.setRange(0, 255)
@@ -935,6 +979,25 @@ class Figure4Viewer(QtWidgets.QMainWindow):
         self._alpha_slider.valueChanged.connect(self._on_alpha_changed)
         controls_layout.addWidget(self._alpha_slider)
 
+        controls_layout.addSpacing(12)
+        self._play_button = QtWidgets.QToolButton()
+        self._play_button.setText("▶")
+        self._play_button.setToolTip("Play / pause auto-scroll (Space)")
+        self._play_button.setCheckable(True)
+        self._play_button.toggled.connect(self._on_play_toggled)
+        controls_layout.addWidget(self._play_button)
+
+        controls_layout.addSpacing(12)
+        controls_layout.addWidget(QtWidgets.QLabel("Model:"))
+        self._model_combo = QtWidgets.QComboBox()
+        self._model_combo.addItems(["continuous", "contfrag"])
+        self._model_combo.setCurrentText(self._ds.model)
+        self._model_combo.currentTextChanged.connect(self._on_model_changed)
+        # Disabled when the cache directory wasn't provided (e.g. tests
+        # that construct with a single model in tmp_path).
+        self._model_combo.setEnabled(self._cache_dir is not None)
+        controls_layout.addWidget(self._model_combo)
+
         outer.addWidget(controls)
 
     def _wire_click_handlers(self) -> None:
@@ -942,6 +1005,33 @@ class Figure4Viewer(QtWidgets.QMainWindow):
         self.raster_panel.set_click_handler(self._handle_event_click)
         for panel in self.metric_panels.values():
             panel.set_click_handler(self._handle_event_click)
+
+    def _wire_keyboard_shortcuts(self) -> None:
+        """Bind the keyboard shortcuts spec'd in the plan.
+
+        - ``←`` / ``→``         : step center by one decoder time bin.
+        - ``Shift+←`` / ``Shift+→``: step by one window-width.
+        - ``Space``              : play / pause auto-scroll.
+        - ``M``                  : toggle model (Continuous ↔ ContFrag).
+        - ``[`` / ``]``          : shrink / grow window width.
+        - ``R``                  : reset to a 20 s context window centered
+                                    near the Figure 4a default.
+        """
+
+        def add(seq: str, slot: Callable[[], None]) -> None:
+            shortcut = QtGui.QShortcut(QtGui.QKeySequence(seq), self)
+            shortcut.setContext(QtCore.Qt.ShortcutContext.ApplicationShortcut)
+            shortcut.activated.connect(slot)
+
+        add("Right", lambda: self._step_center_by_indices(1))
+        add("Left", lambda: self._step_center_by_indices(-1))
+        add("Shift+Right", lambda: self._step_center_by_seconds(self._window_seconds))
+        add("Shift+Left", lambda: self._step_center_by_seconds(-self._window_seconds))
+        add("Space", self._toggle_play)
+        add("M", self._toggle_model)
+        add("[", lambda: self._scale_window(0.5))
+        add("]", lambda: self._scale_window(2.0))
+        add("R", self._reset_view)
 
     def _wire_load_worker(self) -> None:
         self._thread_pool = QtCore.QThreadPool.globalInstance()
@@ -975,6 +1065,27 @@ class Figure4Viewer(QtWidgets.QMainWindow):
     @QtCore.Slot(int)
     def _on_alpha_changed(self, value: int) -> None:
         self.slice_panel.set_likelihood_alpha(value)
+
+    @QtCore.Slot(int)
+    def _on_window_slider_changed(self, value: int) -> None:
+        self._set_window_seconds(self._window_seconds_for(value))
+
+    @QtCore.Slot(bool)
+    def _on_play_toggled(self, on: bool) -> None:
+        if on:
+            self._start_autoscroll()
+            self._play_button.setText("⏸")
+        else:
+            self._stop_autoscroll()
+            self._play_button.setText("▶")
+
+    @QtCore.Slot(str)
+    def _on_model_changed(self, model: str) -> None:
+        if model == self._ds.model:
+            return
+        if model not in ("continuous", "contfrag"):
+            return
+        self._switch_model(cast(ModelName, model))
 
     def _update_slice_panel_at_center(self) -> None:
         ds = self._ds
@@ -1186,6 +1297,169 @@ class Figure4Viewer(QtWidgets.QMainWindow):
         rel = self._t_center - self._t_min
         return f"t={self._t_center:.3f}  ({rel:.2f} s into session, w={self._window_seconds:.2f} s)"
 
+    # Window-width slider (log-spaced) ---------------------------------
+
+    def _window_slider_value_for(self, window_seconds: float) -> int:
+        w = float(np.clip(window_seconds, MIN_WINDOW_SECONDS, MAX_WINDOW_SECONDS))
+        log_min = np.log10(MIN_WINDOW_SECONDS)
+        log_max = np.log10(MAX_WINDOW_SECONDS)
+        frac = (np.log10(w) - log_min) / (log_max - log_min)
+        return int(round(frac * WINDOW_SLIDER_RESOLUTION))
+
+    def _window_seconds_for(self, slider_value: int) -> float:
+        log_min = np.log10(MIN_WINDOW_SECONDS)
+        log_max = np.log10(MAX_WINDOW_SECONDS)
+        frac = slider_value / WINDOW_SLIDER_RESOLUTION
+        return float(10 ** (log_min + frac * (log_max - log_min)))
+
+    def _format_window_label(self) -> str:
+        return f"{self._window_seconds:.2f} s"
+
+    def _set_window_seconds(self, w: float) -> None:
+        new_w = float(np.clip(w, MIN_WINDOW_SECONDS, MAX_WINDOW_SECONDS))
+        if abs(new_w - self._window_seconds) < 1e-9:
+            return
+        self._window_seconds = new_w
+        # Sync the slider visually (without triggering another event).
+        self._window_slider.blockSignals(True)
+        self._window_slider.setValue(self._window_slider_value_for(new_w))
+        self._window_slider.blockSignals(False)
+        self._window_label.setText(self._format_window_label())
+        self._time_label.setText(self._format_time_label())
+        # Window width changes always require a fresh load.
+        self._load_timer.start()
+
+    # Auto-scroll (play/pause) -----------------------------------------
+
+    def _start_autoscroll(self) -> None:
+        if self._autoscroll_timer is not None:
+            return
+        timer = QtCore.QTimer(self)
+        interval_ms = max(1, int(round(1000.0 / AUTOSCROLL_TICK_HZ)))
+        timer.setInterval(interval_ms)
+        timer.timeout.connect(self._autoscroll_step)
+        self._autoscroll_timer = timer
+        timer.start()
+
+    def _stop_autoscroll(self) -> None:
+        if self._autoscroll_timer is None:
+            return
+        self._autoscroll_timer.stop()
+        self._autoscroll_timer.deleteLater()
+        self._autoscroll_timer = None
+
+    @QtCore.Slot()
+    def _autoscroll_step(self) -> None:
+        dt = self._autoscroll_rate / AUTOSCROLL_TICK_HZ
+        new_t = self._t_center + dt
+        if new_t >= self._t_max:
+            new_t = self._t_max
+            # End of session — pause and reset the play button.
+            if self._play_button.isChecked():
+                self._play_button.setChecked(False)
+        self.set_center_time(float(new_t))
+
+    @QtCore.Slot()
+    def _toggle_play(self) -> None:
+        self._play_button.toggle()
+
+    # Keyboard helpers --------------------------------------------------
+
+    def _step_center_by_indices(self, n: int) -> None:
+        if n == 0 or self._ds.n_time == 0:
+            return
+        idx = self._ds.index_at_time(self._t_center) + n
+        idx = int(np.clip(idx, 0, self._ds.n_time - 1))
+        self.set_center_time(float(self._ds.time[idx]))
+
+    def _step_center_by_seconds(self, dt: float) -> None:
+        self.set_center_time(float(self._t_center + dt))
+
+    def _scale_window(self, factor: float) -> None:
+        self._set_window_seconds(self._window_seconds * factor)
+
+    @QtCore.Slot()
+    def _reset_view(self) -> None:
+        # Match the Figure 4a context window: 20 s wide, centered near the
+        # session midpoint (the Figure 4 default uses index 190000 of a
+        # 709321-point session ~ 27% in, but for synthetic / shorter
+        # sessions we pick the geometric default of mid-session).
+        mid_idx = max(0, min(self._ds.n_time - 1, self._ds.n_time // 4))
+        target_t = float(self._ds.time[mid_idx])
+        self._set_window_seconds(RESET_WINDOW_SECONDS)
+        self.set_center_time(target_t)
+
+    @QtCore.Slot()
+    def _toggle_model(self) -> None:
+        if self._cache_dir is None:
+            return
+        new_model: ModelName = "contfrag" if self._ds.model == "continuous" else "continuous"
+        self._switch_model(new_model)
+
+    def _switch_model(self, model: ModelName) -> None:
+        if self._cache_dir is None:
+            return
+        if model == self._ds.model:
+            return
+        try:
+            new_ds = Figure4DataSource(self._cache_dir, model)
+        except FileNotFoundError:
+            # The requested cache doesn't exist; revert the combo
+            # box and bail.
+            self._model_combo.blockSignals(True)
+            self._model_combo.setCurrentText(self._ds.model)
+            self._model_combo.blockSignals(False)
+            return
+
+        # Drain the in-flight worker before swapping so the worker
+        # never touches the freed Zarr handle.
+        self._load_timer.stop()
+        deadline = QtCore.QElapsedTimer()
+        deadline.start()
+        while self._inflight_request_id is not None and deadline.elapsed() < 5000:
+            self._thread_pool.waitForDone(50)
+            QtWidgets.QApplication.processEvents()
+
+        # Capture persistent UI state before the rebuild.
+        was_playing = bool(self._play_button.isChecked())
+        if was_playing:
+            self._play_button.setChecked(False)  # ensures _stop_autoscroll runs
+        alpha = int(self._alpha_slider.value())
+        window_seconds = float(self._window_seconds)
+
+        old_ds = self._ds
+        self._ds = new_ds
+        old_ds.close()
+        self._set_pinned_event(None)
+        self._latest_committed_request_id = -1
+        self._inflight_request_id = None
+        self._pending_dispatch = False
+
+        # Update session-level state for the new model.
+        self._t_min = float(new_ds.time[0])
+        self._t_max = float(new_ds.time[-1])
+        self._t_center = float(np.clip(self._t_center, self._t_min, self._t_max))
+        self.setWindowTitle(f"Figure 4 viewer — {new_ds.model}")
+
+        # Rebuild the central widget against the new data source. The
+        # heatmap, slice and metric panels all bake ``n_states``, so a
+        # fresh construction is the safest path.
+        self._build_central_widget()
+
+        # Restore captured state onto the new widgets.
+        self._alpha_slider.blockSignals(True)
+        self._alpha_slider.setValue(alpha)
+        self._alpha_slider.blockSignals(False)
+        self.slice_panel.set_likelihood_alpha(alpha)
+        self._set_window_seconds(window_seconds)
+        self._model_combo.blockSignals(True)
+        self._model_combo.setCurrentText(new_ds.model)
+        self._model_combo.blockSignals(False)
+        if was_playing:
+            self._play_button.setChecked(True)
+
+        self.force_reload_now()
+
     # Test hooks ------------------------------------------------------
 
     def force_reload_now(self) -> None:
@@ -1263,7 +1537,7 @@ def launch(cache_dir: Path | str, model: ModelName) -> int:
     )
     configure_qt_application(app)
     ds = Figure4DataSource(cache_dir, model)
-    viewer = Figure4Viewer(ds)
+    viewer = Figure4Viewer(ds, cache_dir=cache_dir)
     viewer.show()
     try:
         return int(app.exec())
