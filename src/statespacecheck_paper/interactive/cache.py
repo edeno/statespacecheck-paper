@@ -617,13 +617,20 @@ def build_simulated_cache(
     time_arr = (np.arange(n_time, dtype=np.float64) * _SIMULATED_DT).astype(np.float64)
 
     # log_likelihood: true log space. ``metrics["likelihood"]`` is a
-    # normalized linear distribution per row; clamp before log to avoid
-    # ``-inf`` for zeros (the viewer's worker filters out non-finite
-    # rows but a row of all-``-inf`` would still trigger NaN handling
-    # downstream).
+    # normalized linear distribution per row; we take ``log`` directly
+    # — bins with exact-zero likelihood become ``-inf`` and the
+    # viewer's worker handles those (``np.where(np.isfinite(row_max),
+    # row_max, 0.0)`` for the per-row shift, then
+    # ``np.nan_to_num(neginf=0.0)`` after ``exp``). A blanket clamp
+    # at e.g. ``1e-12`` distorts rows whose peak is smaller than the
+    # clamp (rare but real for very-flat simulated likelihoods at
+    # misfit times — the clamp would round those rows to a uniform
+    # response that the viewer renders as flat colour, hiding the
+    # actual decoded structure).
     predictive = np.asarray(metrics["predictive"], dtype=np.float32)
     likelihood_lin = np.asarray(metrics["likelihood"], dtype=np.float64)
-    log_lik = np.log(np.maximum(likelihood_lin, 1e-12)).astype(np.float32)
+    with np.errstate(divide="ignore"):
+        log_lik = np.log(likelihood_lin).astype(np.float32)
 
     # ``state_bins`` axis: one state, so it equals the position grid.
     ds = xr.Dataset(
