@@ -121,6 +121,7 @@ class Figure4DataSource:
 
     POSTERIOR_VAR = "predictive_posterior"
     LIKELIHOOD_VAR = "log_likelihood"
+    ACAUSAL_VAR = "acausal_posterior"
 
     def __init__(self, cache_dir: Path | str, model: ModelName) -> None:
         self._cache_dir = Path(cache_dir)
@@ -228,6 +229,14 @@ class Figure4DataSource:
         # Direct zarr arrays for the hot path.
         self._post_arr: zarr.Array = self._zarr_group[self.POSTERIOR_VAR]
         self._loglik_arr: zarr.Array = self._zarr_group[self.LIKELIHOOD_VAR]
+        # ``acausal_posterior`` (smoothed distribution) is only present
+        # in caches built after the smoothed-overlay feature landed.
+        # Older caches do not have it and the slice panel falls back
+        # to the predictive overlay only.
+        self._acausal_arr: zarr.Array | None = (
+            self._zarr_group[self.ACAUSAL_VAR] if self.ACAUSAL_VAR in self._zarr_group else None
+        )
+        self.has_acausal: bool = self._acausal_arr is not None
 
     # ------------------------------------------------------------------
     # Consistency / sanity
@@ -335,11 +344,22 @@ class Figure4DataSource:
         """
         return self._read_window(self._loglik_arr, sl)
 
+    def load_acausal(self, sl: slice) -> NDArray[np.float32] | None:
+        """Load the acausal (smoothed) posterior, or ``None`` if absent.
+
+        Older caches built before the smoothed-overlay feature landed
+        did not include this variable; callers should fall back to
+        predictive in that case.
+        """
+        if self._acausal_arr is None:
+            return None
+        return self._read_window(self._acausal_arr, sl)
+
     def slice_at_index(
         self,
         t_idx: int,
         *,
-        which: Literal["posterior", "likelihood"] = "posterior",
+        which: Literal["posterior", "likelihood", "acausal"] = "posterior",
     ) -> NDArray[np.float32]:
         """Return one 1D row (length ``n_state_bins``) at ``t_idx``.
 
@@ -349,7 +369,19 @@ class Figure4DataSource:
         """
         if not 0 <= t_idx < self.n_time:
             raise IndexError(f"t_idx {t_idx} out of range [0, {self.n_time})")
-        arr = self._post_arr if which == "posterior" else self._loglik_arr
+        if which == "posterior":
+            arr = self._post_arr
+        elif which == "likelihood":
+            arr = self._loglik_arr
+        elif which == "acausal":
+            if self._acausal_arr is None:
+                raise ValueError(
+                    "acausal_posterior is not present in this cache; "
+                    "rebuild via 'python -m statespacecheck_paper.interactive.cache build'."
+                )
+            arr = self._acausal_arr
+        else:
+            raise ValueError(f"Unknown slice variant: {which!r}")
         return np.asarray(arr[t_idx], dtype=np.float32)
 
     @staticmethod
@@ -392,6 +424,7 @@ class Figure4DataSource:
         self._zarr_group = None
         self._post_arr = None
         self._loglik_arr = None
+        self._acausal_arr = None
 
     def __enter__(self) -> Figure4DataSource:
         return self

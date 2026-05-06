@@ -35,10 +35,13 @@ from PySide6 import QtCore, QtGui, QtWidgets
 
 from .data_source import Figure4DataSource, ModelName
 from .panels import (
+    _OVERLAY_LABELS,
     MAX_PER_CELL_PLOTS,
+    OVERLAY_CHOICES,
     CellSlice,
     LikelihoodPanel,
     MetricPanel,
+    OverlayChoice,
     PosteriorPanel,
     RasterPanel,
     SlicePanel,
@@ -97,6 +100,11 @@ class ViewState:
     request_id: int
     t_center: float
     t_width: float
+    # Skip the acausal load on the worker when the slice panel is not
+    # using the smoothed overlay — for the default predictive overlay
+    # we save one full Zarr read per window dispatch (≈ a third of the
+    # load cost on this cache).
+    load_acausal: bool
 
 
 class _LoadSignals(QtCore.QObject):
@@ -107,11 +115,12 @@ class _LoadSignals(QtCore.QObject):
     signals.
     """
 
-    finished = QtCore.Signal(int, slice, object, object)
+    # request_id, slice, post, lik, acausal (None if cache lacks it)
+    finished = QtCore.Signal(int, slice, object, object, object)
 
 
 class _WindowLoadWorker(QtCore.QRunnable):
-    """Pull one window's posterior + log-likelihood from the cache.
+    """Pull one window's posterior + log-likelihood + acausal from the cache.
 
     Runs on a ``QThreadPool`` worker thread; emits the result on the
     main thread via the bridge ``QObject``'s signal.
@@ -134,6 +143,7 @@ class _WindowLoadWorker(QtCore.QRunnable):
         sl = self._ds.window_indices(self._state.t_center, self._state.t_width)
         post = self._ds.load_posterior(sl)
         loglik = self._ds.load_likelihood(sl)
+        acausal = self._ds.load_acausal(sl) if self._state.load_acausal else None
 
         # NaN-clean non-interior bins so the heatmap's level
         # computation never sees all-NaN rows.
@@ -141,6 +151,8 @@ class _WindowLoadWorker(QtCore.QRunnable):
             np.nan_to_num(post, copy=False, nan=0.0)
         if loglik.size:
             np.nan_to_num(loglik, copy=False, nan=-np.inf)
+        if acausal is not None and acausal.size:
+            np.nan_to_num(acausal, copy=False, nan=0.0)
 
         # Convert log-likelihood -> normalized linear likelihood here
         # on the worker thread so the main thread does not pay
@@ -153,7 +165,7 @@ class _WindowLoadWorker(QtCore.QRunnable):
             np.nan_to_num(lik, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
         else:
             lik = loglik
-        self._signals.finished.emit(self._state.request_id, sl, post, lik)
+        self._signals.finished.emit(self._state.request_id, sl, post, lik, acausal)
 
 
 # ---------------------------------------------------------------------------
@@ -258,13 +270,17 @@ class Figure4Viewer(QtWidgets.QMainWindow):
         for panel in x_linked:
             panel.setXLink(self.posterior_panel)
 
-    def _slice_row_at(self, t_idx: int) -> tuple[NDArray[np.float32], NDArray[np.float32]]:
+    def _slice_row_at(
+        self, t_idx: int
+    ) -> tuple[NDArray[np.float32], NDArray[np.float32], NDArray[np.float32] | None]:
         """Single-row read used by ``SlicePanel`` when the buffer is stale.
 
         Mirrors the per-window normalization the worker thread does in
         ``_WindowLoadWorker.run`` so the slice panel sees the same kind
         of arrays whether the row came from the buffered window or
-        from this fallback path.
+        from this fallback path. Returns ``(post, lik, acausal)``;
+        ``acausal`` is ``None`` for older caches without
+        ``acausal_posterior``.
         """
         ds = self._ds
         post_row = ds.slice_at_index(t_idx, which="posterior").copy()
@@ -277,7 +293,12 @@ class Figure4Viewer(QtWidgets.QMainWindow):
             np.nan_to_num(lik_row, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
         else:
             lik_row = loglik_row.astype(np.float32, copy=False)
-        return post_row, lik_row
+        if ds.has_acausal:
+            acausal_row = ds.slice_at_index(t_idx, which="acausal").copy()
+            np.nan_to_num(acausal_row, copy=False, nan=0.0)
+        else:
+            acausal_row = None
+        return post_row, lik_row, acausal_row
 
     def _build_controls(self) -> None:
         central = QtWidgets.QWidget(self)
@@ -349,6 +370,31 @@ class Figure4Viewer(QtWidgets.QMainWindow):
         self._window_label = QtWidgets.QLabel(self._format_window_label())
         self._window_label.setMinimumWidth(70)
         controls_layout.addWidget(self._window_label)
+
+        controls_layout.addSpacing(12)
+        controls_layout.addWidget(QtWidgets.QLabel("Overlay:"))
+        self._overlay_combo = QtWidgets.QComboBox()
+        self._overlay_combo.setToolTip(
+            "Distribution shown as the blue overlay on the top slice "
+            "plot. Per-cell rows always use the predictive prior."
+        )
+        for choice in OVERLAY_CHOICES:
+            self._overlay_combo.addItem(_OVERLAY_LABELS[choice], userData=choice)
+        # Smoothed requires ``acausal_posterior`` in the cache; older
+        # caches don't have it, so disable the option there.
+        if not self._ds.has_acausal:
+            smoothed_idx = OVERLAY_CHOICES.index("smoothed")
+            combo_model = cast(QtGui.QStandardItemModel, self._overlay_combo.model())
+            model_item = combo_model.item(smoothed_idx)
+            if model_item is not None:
+                model_item.setEnabled(False)
+                model_item.setToolTip(
+                    "Cache built before the smoothed-overlay feature; "
+                    "rebuild via 'python -m statespacecheck_paper.interactive.cache build'."
+                )
+        self._overlay_combo.setCurrentIndex(OVERLAY_CHOICES.index(self.slice_panel.overlay_choice))
+        self._overlay_combo.currentIndexChanged.connect(self._on_overlay_combo_changed)
+        controls_layout.addWidget(self._overlay_combo)
 
         controls_layout.addSpacing(12)
         self._per_cell_checkbox = QtWidgets.QCheckBox("Per-cell rows")
@@ -462,6 +508,29 @@ class Figure4Viewer(QtWidgets.QMainWindow):
     @QtCore.Slot(bool)
     def _on_per_cell_toggled(self, checked: bool) -> None:
         self.slice_panel.set_per_cell_visible(checked)
+
+    @QtCore.Slot(int)
+    def _on_overlay_combo_changed(self, index: int) -> None:
+        choice = self._overlay_combo.itemData(index)
+        if choice is None:
+            return
+        prev_choice = self.slice_panel.overlay_choice
+        self.slice_panel.set_overlay_choice(cast(OverlayChoice, choice))
+        # Refresh the slice immediately so the new overlay appears
+        # without waiting for a slider tick.
+        self._update_slice_panel_at_center()
+        # The worker only loads ``acausal_posterior`` when the current
+        # overlay is ``smoothed`` (saving one Zarr read per window on
+        # the default predictive path). Switching into ``smoothed``
+        # therefore needs a fresh window load to populate the buffer
+        # — without it the slice would silently fall back to predictive.
+        if (
+            self._ds.has_acausal
+            and choice == "smoothed"
+            and prev_choice != "smoothed"
+            and self.slice_panel._buffer_acausal is None  # noqa: SLF001
+        ):
+            self.force_reload_now()
 
     @QtCore.Slot(int)
     def _on_window_slider_changed(self, value: int) -> None:
@@ -647,13 +716,14 @@ class Figure4Viewer(QtWidgets.QMainWindow):
         # up immediately (without waiting for the next slider tick).
         self._update_slice_panel_at_center()
 
-    @QtCore.Slot(int, slice, object, object)
+    @QtCore.Slot(int, slice, object, object, object)
     def _on_window_loaded(
         self,
         request_id: int,
         sl: slice,
         post: NDArray[np.float32],
         lik: NDArray[np.float32],
+        acausal: NDArray[np.float32] | None,
     ) -> None:
         # The in-flight worker just finished; clear the slot and fire
         # any deferred dispatch (this is how a paused-then-moved center
@@ -692,13 +762,21 @@ class Figure4Viewer(QtWidgets.QMainWindow):
 
         # Slice panel buffer: hand the freshly loaded full-resolution
         # arrays so per-tick ``update_for_index`` is a NumPy index.
-        self.slice_panel.set_window_buffer(sl, post, lik)
+        self.slice_panel.set_window_buffer(sl, post, lik, acausal=acausal)
         # Animate now — the slice should reflect the current center
         # immediately after a load, even if the slider has not moved.
         self._update_slice_panel_at_center()
 
         self.posterior_panel.update_with_window(rel_start, rel_end, post)
         self.likelihood_panel.update_with_window(rel_start, rel_end, lik)
+
+        # Overlay the animal's true position trajectory on both heatmaps.
+        # Times are relative to ``t_center`` so the curve aligns with the
+        # heatmap's center marker at x=0.
+        rel_time_window = np.asarray(time[sl], dtype=np.float64) - t_offset
+        linear_pos_window = np.asarray(self._ds.linear_position[sl], dtype=np.float64)
+        self.posterior_panel.update_position_trajectory(rel_time_window, linear_pos_window)
+        self.likelihood_panel.update_position_trajectory(rel_time_window, linear_pos_window)
 
         events = self._ds.events_in_window(sl)
         if events.empty:
@@ -768,6 +846,7 @@ class Figure4Viewer(QtWidgets.QMainWindow):
             request_id=self._next_request_id,
             t_center=self._t_center,
             t_width=self._window_seconds,
+            load_acausal=(self._ds.has_acausal and self.slice_panel.overlay_choice == "smoothed"),
         )
         worker = _WindowLoadWorker(self._ds, state, self._load_signals)
         self._thread_pool.start(worker)
@@ -936,6 +1015,7 @@ class Figure4Viewer(QtWidgets.QMainWindow):
         window_seconds = float(self._window_seconds)
         speed_index = int(self._speed_combo.currentIndex())
         per_cell_on = bool(self._per_cell_checkbox.isChecked())
+        overlay_choice = self.slice_panel.overlay_choice
 
         old_ds = self._ds
         self._ds = new_ds
@@ -961,6 +1041,12 @@ class Figure4Viewer(QtWidgets.QMainWindow):
         if 0 <= speed_index < self._speed_combo.count():
             self._speed_combo.setCurrentIndex(speed_index)
         self._per_cell_checkbox.setChecked(per_cell_on)
+        # Restore overlay choice; falls back to predictive if the
+        # new model's cache lacks acausal_posterior.
+        if overlay_choice == "smoothed" and not self._ds.has_acausal:
+            overlay_choice = "predictive"
+        self._overlay_combo.setCurrentIndex(OVERLAY_CHOICES.index(overlay_choice))
+        self.slice_panel.set_overlay_choice(overlay_choice)
         self._model_combo.blockSignals(True)
         self._model_combo.setCurrentText(new_ds.model)
         self._model_combo.blockSignals(False)

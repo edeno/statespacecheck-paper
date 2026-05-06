@@ -49,6 +49,13 @@ from statespacecheck_paper.simulation import (
     spike_prob_rank,
 )
 
+# Spike-batch size for ``compute_per_cell_diagnostics_from_rates``.
+# Caps the (n_spikes, n_bins) scratch arrays at ``_PER_SPIKE_BATCH``
+# rows so full-session real-data builds (~870 K spikes) don't allocate
+# multi-GB working buffers. 50 K × 512 bins × float64 ≈ 200 MB per
+# scratch array, ~600 MB peak with three live (pred / rates / lik).
+_PER_SPIKE_BATCH = 50_000
+
 # -----------------------------
 # Data containers
 # -----------------------------
@@ -604,6 +611,7 @@ def compute_per_cell_diagnostics_from_rates(
     spike_time_ind: NDArray[np.intp],
     spike_cell_ind: NDArray[np.intp],
     coverage: float = 0.95,
+    include_dense_matrices: bool = True,
 ) -> dict[str, NDArray[np.floating] | NDArray[np.intp]]:
     """Compute per-cell diagnostic metrics at spike times.
 
@@ -623,21 +631,33 @@ def compute_per_cell_diagnostics_from_rates(
         Cell indices for each spike event.
     coverage : float, default 0.95
         Coverage probability for HPD region computation.
+    include_dense_matrices : bool, default True
+        If True (default), also return the (n_time, n_cells) ``hpd_overlap``,
+        ``kl_divergence``, ``spike_prob`` matrices and the (n_spikes, n_bins)
+        ``per_spike_likelihood``. If False, those four keys are omitted from
+        the result dict and the matching allocations / scatters are skipped
+        — useful for callers that only need the per-spike event arrays
+        (the cache builder is the canonical example), since for real
+        recordings the dense matrices can be hundreds of MB.
 
     Returns
     -------
     diagnostics : dict[str, np.ndarray]
-        Dictionary with keys:
+        Always contains:
+
+        - 'spike_time_ind' / 'event_time_ind': shape (n_spikes,)
+        - 'spike_cell_ind' / 'event_cell_ind': shape (n_spikes,)
+        - 'event_hpd_overlap': shape (n_spikes,), per-spike HPD overlap
+        - 'event_kl_divergence': shape (n_spikes,), per-spike KL divergence
+        - 'event_spike_prob': shape (n_spikes,), per-spike spike probability
+
+        If ``include_dense_matrices`` (the default), additionally:
+
         - 'hpd_overlap': shape (n_time, n_cells), NaN where no spike
         - 'kl_divergence': shape (n_time, n_cells), NaN where no spike
         - 'spike_prob': shape (n_time, n_cells), NaN where no spike
         - 'per_spike_likelihood': shape (n_spikes, n_bins), normalized
           likelihood distribution for each individual spike event
-        - 'spike_time_ind': shape (n_spikes,), time index for each spike
-        - 'spike_cell_ind': shape (n_spikes,), cell index for each spike
-        - 'event_hpd_overlap': shape (n_spikes,), per-spike HPD overlap
-        - 'event_kl_divergence': shape (n_spikes,), per-spike KL divergence
-        - 'event_spike_prob': shape (n_spikes,), per-spike spike probability
 
     Notes
     -----
@@ -650,42 +670,53 @@ def compute_per_cell_diagnostics_from_rates(
     n_cells = rates.shape[1]
     n_spikes = len(spike_time_ind)
 
-    # Initialize output arrays with NaN
-    hpd_overlap: NDArray[np.floating] = np.full((n_time, n_cells), np.nan)
-    kl_divergence: NDArray[np.floating] = np.full((n_time, n_cells), np.nan)
-    spike_prob: NDArray[np.floating] = np.full((n_time, n_cells), np.nan)
-
-    # Per-spike likelihood: one distribution per spike event
-    per_spike_likelihood: NDArray[np.floating] = np.empty((n_spikes, n_bins))
     event_hpd_overlap: NDArray[np.floating] = np.empty(n_spikes)
     event_kl_divergence: NDArray[np.floating] = np.empty(n_spikes)
     event_spike_prob: NDArray[np.floating] = np.empty(n_spikes)
 
+    # Dense (n_time, n_cells) matrices are only allocated when requested;
+    # for real recordings with millions of time bins they can dwarf the
+    # rest of the working set, so the cache builder opts out.
+    hpd_overlap: NDArray[np.floating] | None = None
+    kl_divergence: NDArray[np.floating] | None = None
+    spike_prob: NDArray[np.floating] | None = None
+    per_spike_likelihood: NDArray[np.floating] | None = None
+    if include_dense_matrices:
+        hpd_overlap = np.full((n_time, n_cells), np.nan)
+        kl_divergence = np.full((n_time, n_cells), np.nan)
+        spike_prob = np.full((n_time, n_cells), np.nan)
+        per_spike_likelihood = np.empty((n_spikes, n_bins))
+
     if n_spikes > 0:
-        # Gather predictive posterior at spike times: (n_spikes, n_bins)
-        pred_at_spikes = predictive_posterior[spike_time_ind]
+        # Per-spike Poisson-likelihood / HPD / KL all need ``(S, n_bins)``
+        # working arrays. For full-session real-data builds (~870 K
+        # spikes × 256 bins × 8 B ≈ 1.8 GB *per array*) materializing
+        # them in one shot blows the working set even when
+        # ``include_dense_matrices=False`` skips the (n_time, n_cells)
+        # outputs. Process in chunks to bound peak memory to
+        # ``_PER_SPIKE_BATCH × n_bins × 8 B`` per scratch array.
+        batch = max(1, _PER_SPIKE_BATCH)
+        for start in range(0, n_spikes, batch):
+            stop = min(start + batch, n_spikes)
+            sti = spike_time_ind[start:stop]
+            sci = spike_cell_ind[start:stop]
 
-        # Get rates for each spike's cell: (n_spikes, n_bins)
-        rates_at_spikes = rates[:, spike_cell_ind].T  # (n_spikes, n_bins)
+            # (chunk, n_bins) gathers + Poisson lik for this batch only.
+            pred_chunk = predictive_posterior[sti]
+            rates_chunk = rates[:, sci].T
+            lik_chunk = normalize(poisson.pmf(k=1, mu=rates_chunk), axis=1)
 
-        # Compute Poisson likelihood P(k=1 | lambda) for each spike
-        lik_at_spikes = poisson.pmf(k=1, mu=rates_at_spikes)  # (n_spikes, n_bins)
+            event_hpd_overlap[start:stop] = ssc.hpd_overlap(
+                pred_chunk, lik_chunk, coverage=coverage
+            )
+            event_kl_divergence[start:stop] = ssc.kl_divergence(pred_chunk, lik_chunk)
 
-        # Normalize per spike (over bins) to get proper distribution
-        lik_at_spikes = normalize(lik_at_spikes, axis=1)
+            if per_spike_likelihood is not None:
+                per_spike_likelihood[start:stop] = lik_chunk
 
-        # Store per-spike likelihoods
-        per_spike_likelihood = lik_at_spikes
-
-        # Compute diagnostics for all spikes in one vectorized call
-        hpd_at_spikes = ssc.hpd_overlap(pred_at_spikes, lik_at_spikes, coverage=coverage)
-        kl_at_spikes = ssc.kl_divergence(pred_at_spikes, lik_at_spikes)
-        event_hpd_overlap = hpd_at_spikes
-        event_kl_divergence = kl_at_spikes
-
-        # Scatter results back to (n_time, n_cells) arrays
-        hpd_overlap[spike_time_ind, spike_cell_ind] = hpd_at_spikes
-        kl_divergence[spike_time_ind, spike_cell_ind] = kl_at_spikes
+        if hpd_overlap is not None and kl_divergence is not None:
+            hpd_overlap[spike_time_ind, spike_cell_ind] = event_hpd_overlap
+            kl_divergence[spike_time_ind, spike_cell_ind] = event_kl_divergence
 
         # Compute spike_prob at unique spike times (more efficient)
         # cell_fraction_per_bin: (n_bins, n_cells) - normalized so each row sums to 1
@@ -706,13 +737,10 @@ def compute_per_cell_diagnostics_from_rates(
             time_to_idx[spike_time_ind], spike_cell_ind
         ]
         event_spike_prob = spike_prob_for_events
-        spike_prob[spike_time_ind, spike_cell_ind] = spike_prob_for_events
+        if spike_prob is not None:
+            spike_prob[spike_time_ind, spike_cell_ind] = spike_prob_for_events
 
-    return {
-        "hpd_overlap": hpd_overlap,
-        "kl_divergence": kl_divergence,
-        "spike_prob": spike_prob,
-        "per_spike_likelihood": per_spike_likelihood,
+    result: dict[str, NDArray[np.floating] | NDArray[np.intp]] = {
         "spike_time_ind": spike_time_ind,
         "spike_cell_ind": spike_cell_ind,
         "event_time_ind": spike_time_ind,
@@ -721,6 +749,15 @@ def compute_per_cell_diagnostics_from_rates(
         "event_kl_divergence": event_kl_divergence,
         "event_spike_prob": event_spike_prob,
     }
+    if hpd_overlap is not None:
+        assert kl_divergence is not None
+        assert spike_prob is not None
+        assert per_spike_likelihood is not None
+        result["hpd_overlap"] = hpd_overlap
+        result["kl_divergence"] = kl_divergence
+        result["spike_prob"] = spike_prob
+        result["per_spike_likelihood"] = per_spike_likelihood
+    return result
 
 
 # -----------------------------

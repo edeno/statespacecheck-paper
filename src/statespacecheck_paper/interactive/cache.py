@@ -207,6 +207,11 @@ def _write_zarr_store(
         shutil.rmtree(out_dir)
 
     keep_vars = ["predictive_posterior", "log_likelihood"]
+    # ``acausal_posterior`` is the smoothed distribution
+    # ``p(x_t | y_{1:T})`` — included so the slice panel's top-plot
+    # overlay can switch between predictive / filtered / smoothed.
+    if "acausal_posterior" in ds.data_vars:
+        keep_vars.append("acausal_posterior")
     if "acausal_state_probabilities" in ds.data_vars:
         keep_vars.append("acausal_state_probabilities")
 
@@ -393,12 +398,16 @@ def build_model_cache(
     place_field_peaks = position_bins[peak_idx]
 
     spike_counts = get_spike_counts(spike_times, time_arr)
+    # The cache only consumes the per-spike ``event_*`` arrays;
+    # ``include_dense_matrices=False`` skips the (n_time, n_cells) matrix
+    # allocations + scatters, which on real data are hundreds of MB.
     diagnostics = compute_per_cell_diagnostics(
         predictive_interior,
         spike_counts,
         place_fields,
         spike_times=spike_times,
         time=time_arr,
+        include_dense_matrices=False,
     )
     # ``compute_per_cell_diagnostics`` returns event arrays sorted in the
     # same order as the (spike_time_ind, spike_cell_ind) pair built by
@@ -420,7 +429,30 @@ def build_model_cache(
 
     # Meta + spike-times sidecars (model-independent; safe to overwrite).
     position_info = raw["position_info"]
-    linear_position = np.asarray(position_info["linear_position"].values, dtype=np.float64)
+    # The ``linear_position`` field on ``position_info`` was computed
+    # with the data-loading pipeline's ``edge_spacing`` (15 cm on this
+    # session), so its coordinate system spans 0 → ~608 cm.
+    # The fitted decoder, however, was created with ``edge_spacing=1.5``
+    # (see ``scripts/run_decoding.py``), so its bin centers only span
+    # 0 → ~500 cm. Plotting the position-pkl ``linear_position`` over
+    # the decoder's heatmap therefore offsets the trajectory from the
+    # underlying probability mass by ~100 cm. Re-linearize the 2-D
+    # position using the *decoder's* track graph + edge ordering +
+    # edge spacing so the saved trajectory shares one coordinate
+    # system with ``predictive_posterior``.
+    from track_linearization import get_linearized_position  # noqa: PLC0415
+
+    decoder_env = fitted_model.environments[0]
+    pos_2d = position_info[["head_position_x", "head_position_y"]].to_numpy()
+    linear_position = np.asarray(
+        get_linearized_position(
+            position=pos_2d,
+            track_graph=decoder_env.track_graph,
+            edge_order=decoder_env.edge_order,
+            edge_spacing=decoder_env.edge_spacing,
+        )["linear_position"].values,
+        dtype=np.float64,
+    )
     if linear_position.shape[0] != n_time:
         raise ValueError(
             f"linear_position has {linear_position.shape[0]} samples but "

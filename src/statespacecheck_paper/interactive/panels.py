@@ -24,12 +24,22 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 import pyqtgraph as pg
 from numpy.typing import NDArray
 from PySide6 import QtCore, QtWidgets
+
+# Top-plot overlay choices: which derived distribution the slice
+# panel's population plot draws as the blue overlay line.
+OverlayChoice = Literal["predictive", "filtered", "smoothed"]
+OVERLAY_CHOICES: tuple[OverlayChoice, ...] = ("predictive", "filtered", "smoothed")
+_OVERLAY_LABELS: dict[OverlayChoice, str] = {
+    "predictive": "Predictive",
+    "filtered": "Filtered",
+    "smoothed": "Smoothed",
+}
 
 # ---------------------------------------------------------------------------
 # Shared style constants
@@ -150,8 +160,14 @@ class _BaseHeatmapPanel(pg.PlotWidget):
         self.addItem(self._image)
 
         self._position_bins = np.asarray(position_bins, dtype=np.float64)
+        # ``position_bins`` are bin *centers*. ``ImageItem.setRect``
+        # stretches an N-pixel column to fill the rect, so to keep each
+        # pixel's center co-located with its bin center we have to pad
+        # the rect by half a bin on each side.
         self._y0 = float(self._position_bins[0])
         self._y1 = float(self._position_bins[-1])
+        n_pos = int(self._position_bins.shape[0])
+        self._dy_half = float(self._y1 - self._y0) / (2 * (n_pos - 1)) if n_pos > 1 else 0.0
 
         # Color levels are pinned from the first window's percentiles
         # (see ``update_window``) and then frozen so subsequent
@@ -174,12 +190,59 @@ class _BaseHeatmapPanel(pg.PlotWidget):
         self._pin_line.setVisible(False)
         self.addItem(self._pin_line)
 
+        # Animal's true position trajectory across the visible window.
+        # White on viridis stays readable across the full colormap range
+        # (viridis hits both deep purple at the low end and bright yellow
+        # at the high end; white contrasts with both).
+        self._position_curve = pg.PlotDataItem(
+            pen=pg.mkPen((255, 255, 255), width=1.5),
+        )
+        self.addItem(self._position_curve)
+
     def update_pinned_event(self, relative_time: float | None) -> None:
         if relative_time is None:
             self._pin_line.setVisible(False)
             return
         self._pin_line.setPos(relative_time)
         self._pin_line.setVisible(True)
+
+    def update_position_trajectory(
+        self,
+        rel_time: NDArray[np.float64],
+        linear_position: NDArray[np.float64],
+    ) -> None:
+        """Draw the animal's position trajectory on the heatmap.
+
+        ``rel_time`` is time relative to the current center (so x=0 is
+        the center marker), matching the heatmap's time axis.
+
+        ``linear_position`` is in cm. ``position_bins`` (the decoder's
+        bin centers) are non-uniformly spaced — for the W-track they
+        drift up to ~1.1 cm (>0.5 bin width) from a uniform grid — so
+        an ``ImageItem`` stretched uniformly between the first and last
+        center renders bin ``i`` at a y that is *not*
+        ``position_bins[i]``. Map each ``linear_position`` value through
+        ``position_bins`` to a fractional bin index, then onto the same
+        uniform y-axis the heatmap uses. The trajectory then lines up
+        pixel-for-pixel with the underlying probability mass; the
+        residual error in the y-axis cm labels is bounded by the bin
+        spacing variation (≲ 0.2 % on this track).
+        """
+        if rel_time.size == 0:
+            self._position_curve.clear()
+            return
+        n_pos = self._position_bins.shape[0]
+        if n_pos > 1:
+            fractional_idx = np.interp(
+                linear_position,
+                self._position_bins,
+                np.arange(n_pos, dtype=np.float64),
+            )
+            uniform_step = (self._y1 - self._y0) / (n_pos - 1)
+            uniform_y = self._y0 + fractional_idx * uniform_step
+        else:
+            uniform_y = np.full_like(linear_position, self._y0)
+        self._position_curve.setData(rel_time, uniform_y)
 
     def update_window(
         self,
@@ -204,15 +267,24 @@ class _BaseHeatmapPanel(pg.PlotWidget):
             levels=self._levels,
             autoDownsample=False,
         )
+        # ``time_start`` / ``time_end`` are the centers of the first and
+        # last visible time bins, just like the position bins are bin
+        # centers. Pad the rect by half a bin on each axis so each
+        # pixel's center sits at its (time, position) bin center —
+        # otherwise the animal-position trajectory drawn at exact
+        # (time, position) values is offset by half a bin from the
+        # heatmap underneath.
+        n_visible = array.shape[0]
+        dx_half = (time_end - time_start) / (2 * (n_visible - 1)) if n_visible > 1 else 0.0
         self._image.setRect(
             QtCore.QRectF(
-                time_start,
-                self._y0,
-                time_end - time_start,
-                self._y1 - self._y0,
+                time_start - dx_half,
+                self._y0 - self._dy_half,
+                (time_end - time_start) + 2 * dx_half,
+                (self._y1 - self._y0) + 2 * self._dy_half,
             )
         )
-        self.setYRange(self._y0, self._y1, padding=0)
+        self.setYRange(self._y0 - self._dy_half, self._y1 + self._dy_half, padding=0)
 
 
 class PosteriorPanel(_BaseHeatmapPanel):
@@ -604,34 +676,68 @@ class SlicePanel(QtWidgets.QWidget):
 
         self._position_bins = np.asarray(position_bins, dtype=np.float64)
         self._n_pos = int(self._position_bins.shape[0])
+        # Plot the slice curves on a uniform x-grid that matches the
+        # heatmap's uniform-stretched y-axis (see ``_BaseHeatmapPanel``).
+        # The decoder's ``position_bins`` are non-uniformly spaced (≲ 1
+        # cm cumulative drift on the W-track), so plotting at the real
+        # cm values would offset the slice peaks from the heatmap
+        # pixels they correspond to and from the animal-position line.
+        # The first / last bin centers and therefore the x-axis range
+        # are unchanged; interior x-values are off by ≲ 0.2 % from
+        # their nominal cm.
+        if self._n_pos > 1:
+            self._position_bins_uniform = np.linspace(
+                float(self._position_bins[0]),
+                float(self._position_bins[-1]),
+                self._n_pos,
+                dtype=np.float64,
+            )
+        else:
+            self._position_bins_uniform = self._position_bins.astype(np.float64, copy=True)
         self._n_states = max(1, int(n_states))
         self._zero_curve = np.zeros(self._n_pos, dtype=np.float32)
 
         self._per_cell_visible = True
+        # The top plot's blue overlay can be the predictive
+        # ``p(x_t | y_{1:t-1})`` (default), the filtered
+        # ``p(x_t | y_{1:t})`` (computed on the fly from
+        # ``predictive × likelihood``), or the smoothed
+        # ``p(x_t | y_{1:T})`` (read from the cache's
+        # ``acausal_posterior``). The per-cell rows always use the
+        # predictive overlay -- HPD overlap and KL divergence
+        # diagnostics compare the cell's likelihood against the
+        # predictive prior, so other choices would break the
+        # visual semantics.
+        self._overlay_choice: OverlayChoice = "predictive"
 
-        # Pre-rendered predictive curve, peak-normalized; same array is
-        # passed by reference into every plot's ``predictive_curve``
-        # via ``setData``, so updating it once per tick refreshes all
-        # plots.
+        # Pre-rendered predictive curve, peak-normalized. This is what
+        # the per-cell rows always show; the top plot uses
+        # ``_top_overlay_norm`` instead, which tracks the current
+        # overlay choice.
         self._predictive_norm = self._zero_curve.copy()
+        self._top_overlay_norm = self._zero_curve.copy()
 
         self._likelihood_plot = _make_slice_subplot(
             title="Population likelihood",
             position_bins=self._position_bins,
             height=140,
         )
-        self._lik_predictive_curve = pg.PlotDataItem(
-            self._position_bins,
+        # Top-plot overlay. Renamed from ``_lik_predictive_curve`` to
+        # match its new role as a switchable predictive / filtered /
+        # smoothed line; legacy alias kept for back-compat with tests.
+        self._lik_overlay_curve = pg.PlotDataItem(
+            self._position_bins_uniform,
             self._zero_curve,
             pen=pg.mkPen(*_STATE_POSTERIOR_RGB[0], 230, width=2),
         )
-        self._likelihood_plot.addItem(self._lik_predictive_curve)
+        self._likelihood_plot.addItem(self._lik_overlay_curve)
+        self._lik_predictive_curve = self._lik_overlay_curve  # back-compat alias
 
         self._lik_top_curves: list[pg.PlotDataItem] = []
         for s in range(self._n_states):
             lik_rgb = _STATE_LIKELIHOOD_RGB[s % len(_STATE_LIKELIHOOD_RGB)]
             top = pg.PlotDataItem(
-                self._position_bins,
+                self._position_bins_uniform,
                 self._zero_curve,
                 pen=pg.mkPen(*lik_rgb, 240, width=3),
             )
@@ -694,8 +800,17 @@ class SlicePanel(QtWidgets.QWidget):
         self._buffer_slice: slice | None = None
         self._buffer_post: NDArray[np.float32] | None = None
         self._buffer_lik: NDArray[np.float32] | None = None
+        self._buffer_acausal: NDArray[np.float32] | None = None
+        # Row provider returns ``(post, lik, acausal)`` for a single
+        # ``t_idx``. ``acausal`` may be ``None`` for caches that don't
+        # have the smoothed posterior; the panel falls back to
+        # predictive in that case.
         self._row_provider: (
-            Callable[[int], tuple[NDArray[np.float32], NDArray[np.float32]]] | None
+            Callable[
+                [int],
+                tuple[NDArray[np.float32], NDArray[np.float32], NDArray[np.float32] | None],
+            ]
+            | None
         ) = None
 
     # ------------------------------------------------------------------
@@ -705,11 +820,12 @@ class SlicePanel(QtWidgets.QWidget):
     def _build_legend_html(self) -> str:
         post_rgb = _STATE_POSTERIOR_RGB[0]
         lik_rgb = _STATE_LIKELIHOOD_RGB[0]
+        overlay_label = _OVERLAY_LABELS[self._overlay_choice]
         parts = [
             f"<span style='color:rgb({lik_rgb[0]},{lik_rgb[1]},{lik_rgb[2]});"
             "font-size:14pt'>━</span> Likelihood",
             f"<span style='color:rgb({post_rgb[0]},{post_rgb[1]},{post_rgb[2]});"
-            "font-size:14pt'>━</span> Predictive",
+            f"font-size:14pt'>━</span> {overlay_label} (top) / Predictive (per cell)",
             "<span style='color:rgb(50,50,50);font-size:14pt'>┄</span> True position",
         ]
         return " &nbsp;&nbsp; ".join(parts)
@@ -723,38 +839,74 @@ class SlicePanel(QtWidgets.QWidget):
         sl: slice,
         post: NDArray[np.float32],
         lik: NDArray[np.float32],
+        *,
+        acausal: NDArray[np.float32] | None = None,
     ) -> None:
         self._buffer_slice = sl
         self._buffer_post = post
         self._buffer_lik = lik
+        self._buffer_acausal = acausal
 
     def set_row_provider(
         self,
-        provider: Callable[[int], tuple[NDArray[np.float32], NDArray[np.float32]]] | None,
+        provider: Callable[
+            [int],
+            tuple[NDArray[np.float32], NDArray[np.float32], NDArray[np.float32] | None],
+        ]
+        | None,
     ) -> None:
         """Install a single-row reader for use when ``t_idx`` is outside the buffer.
 
-        ``provider(t_idx)`` should return a ``(post_row, lik_row)``
-        pair already NaN-cleaned and (for ``lik_row``) exponentiated
-        from the cache's ``log_likelihood``, matching what the worker
-        thread would have produced for the buffered case.
+        ``provider(t_idx)`` returns ``(post_row, lik_row, acausal_row)``
+        — already NaN-cleaned (and ``lik_row`` exponentiated from the
+        cache's ``log_likelihood``) — matching what the worker thread
+        produces for the buffered case. ``acausal_row`` is ``None``
+        when the cache lacks ``acausal_posterior``.
         """
         self._row_provider = provider
+
+    def set_overlay_choice(self, choice: OverlayChoice) -> None:
+        """Switch the top-plot blue overlay between predictive / filtered / smoothed.
+
+        Per-cell row overlays always use the predictive prior (the
+        diagnostics compare each cell's likelihood against it), so
+        only the population plot's overlay changes.
+        """
+        if choice == self._overlay_choice:
+            return
+        self._overlay_choice = choice
+        self._legend_label.setText(self._build_legend_html())
+
+    @property
+    def overlay_choice(self) -> OverlayChoice:
+        return self._overlay_choice
+
+    def _uniform_x_for(self, real_cm: float) -> float:
+        """Project a real-cm position onto the uniform x-grid used by the slice plots.
+
+        Mirrors the same ``np.interp`` mapping ``_BaseHeatmapPanel``
+        applies to its position trajectory, so the slice's true-position
+        marker, the population / per-cell curves, and the heatmap pixels
+        all share one coordinate system.
+        """
+        if self._n_pos <= 1:
+            return float(self._position_bins_uniform[0])
+        return float(np.interp(real_cm, self._position_bins, self._position_bins_uniform))
 
     def update_for_index(self, t_idx: int, true_position: float) -> None:
         sl = self._buffer_slice
         post = self._buffer_post
         lik = self._buffer_lik
+        acausal = self._buffer_acausal
         if sl is not None and post is not None and lik is not None and sl.start <= t_idx < sl.stop:
             local_idx = t_idx - sl.start
             post_row = post[local_idx]
             lik_row = lik[local_idx]
+            acausal_row = acausal[local_idx] if acausal is not None else None
         elif self._row_provider is not None:
             # Buffer doesn't cover ``t_idx`` (the user has scrubbed
-            # past the loaded window). Fall back to a single-row read
-            # so the slice keeps animating until the next async load
-            # commits.
-            post_row, lik_row = self._row_provider(t_idx)
+            # past the loaded window). Fall back to a single-row read.
+            post_row, lik_row, acausal_row = self._row_provider(t_idx)
         else:
             return
         if self._n_states > 1:
@@ -764,24 +916,75 @@ class SlicePanel(QtWidgets.QWidget):
             post_row_collapsed = post_row
             lik_rs = lik_row[None, :]
 
+        # Predictive (always used for per-cell row overlays).
         peak = float(post_row_collapsed.max())
         if peak > 0:
             self._predictive_norm = (post_row_collapsed / peak).astype(np.float32, copy=False)
         else:
             self._predictive_norm = post_row_collapsed.astype(np.float32, copy=False)
 
-        self._lik_predictive_curve.setData(self._position_bins, self._predictive_norm)
+        # Top-plot overlay: predictive / filtered / smoothed.
+        self._top_overlay_norm = self._compute_top_overlay(
+            post_row=post_row,
+            lik_row=lik_row,
+            acausal_row=acausal_row,
+            post_row_collapsed=post_row_collapsed,
+        )
+        self._lik_overlay_curve.setData(self._position_bins_uniform, self._top_overlay_norm)
+
+        # Population likelihood (the orange line).
         for s in range(self._n_states):
             row = lik_rs[s]
             row_peak = float(row.max())
             row_norm = (row / row_peak).astype(np.float32, copy=False) if row_peak > 0 else row
-            self._lik_top_curves[s].setData(self._position_bins, row_norm)
-        self._lik_true_position_line.setPos(true_position)
+            self._lik_top_curves[s].setData(self._position_bins_uniform, row_norm)
+        # ``true_position`` is in real cm; map onto the uniform x-grid
+        # so the marker sits on the same column as the heatmap pixel
+        # for the animal's current bin (see ``_position_bins_uniform``).
+        true_x = self._uniform_x_for(true_position)
+        self._lik_true_position_line.setPos(true_x)
 
+        # Per-cell rows: predictive overlay only.
         for i in range(self._n_active_per_cell_rows):
             row = self._per_cell_rows[i]
-            row.predictive_curve.setData(self._position_bins, self._predictive_norm)
-            row.true_position_line.setPos(true_position)
+            row.predictive_curve.setData(self._position_bins_uniform, self._predictive_norm)
+            row.true_position_line.setPos(true_x)
+
+    def _compute_top_overlay(
+        self,
+        *,
+        post_row: NDArray[np.float32],
+        lik_row: NDArray[np.float32],
+        acausal_row: NDArray[np.float32] | None,
+        post_row_collapsed: NDArray[np.float32],
+    ) -> NDArray[np.float32]:
+        """Build the peak-normalized overlay for the top plot."""
+        choice = self._overlay_choice
+        if choice == "predictive" or (choice == "smoothed" and acausal_row is None):
+            return np.asarray(self._predictive_norm, dtype=np.float32)
+        if choice == "filtered":
+            # Bayesian filtered: ``predictive × likelihood``, normalized
+            # over state_bins, then state-collapsed for the visual.
+            filtered_full = post_row * lik_row
+            total = float(filtered_full.sum())
+            if total > 0:
+                filtered_full = filtered_full / total
+            if self._n_states > 1:
+                collapsed = filtered_full.reshape(self._n_states, self._n_pos).sum(axis=0)
+            else:
+                collapsed = filtered_full
+        else:
+            # ``acausal_row`` is a probability over state_bins from the
+            # decoder's smoother; just collapse states for the visual.
+            assert acausal_row is not None
+            if self._n_states > 1:
+                collapsed = acausal_row.reshape(self._n_states, self._n_pos).sum(axis=0)
+            else:
+                collapsed = acausal_row
+        peak = float(collapsed.max())
+        if peak > 0:
+            return np.asarray(collapsed / peak, dtype=np.float32)
+        return np.asarray(collapsed, dtype=np.float32)
 
     def set_live_readout(self, text: str | None) -> None:
         self._readout_label.setText(text or "")
@@ -849,7 +1052,7 @@ class SlicePanel(QtWidgets.QWidget):
         n = len(slices)
         for i, cs in enumerate(slices):
             row = self._ensure_row(i)
-            row.cell_curve.setData(self._position_bins, cs.place_field_norm)
+            row.cell_curve.setData(self._position_bins_uniform, cs.place_field_norm)
             rgb = _PER_CELL_PALETTE[cs.cell_id % len(_PER_CELL_PALETTE)]
             row.cell_curve.setPen(pg.mkPen(*rgb, 230, width=3))
             n_spikes_str = f"  ({cs.n_spikes} spikes)" if cs.n_spikes > 1 else ""
@@ -861,7 +1064,7 @@ class SlicePanel(QtWidgets.QWidget):
             row.header.setStyleSheet(
                 _SLICE_CELL_HEADER_PINNED_STYLE if cs.is_pinned else _SLICE_CELL_HEADER_STYLE
             )
-            row.predictive_curve.setData(self._position_bins, self._predictive_norm)
+            row.predictive_curve.setData(self._position_bins_uniform, self._predictive_norm)
             row.container.setVisible(self._per_cell_visible)
         for i in range(n, self._n_active_per_cell_rows):
             self._per_cell_rows[i].container.setVisible(False)

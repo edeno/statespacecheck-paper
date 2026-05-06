@@ -413,6 +413,7 @@ def compute_per_cell_diagnostics(
     coverage: float = 0.95,
     spike_times: list[NDArray[np.float64]] | None = None,
     time: NDArray[np.float64] | None = None,
+    include_dense_matrices: bool = True,
 ) -> dict[str, NDArray[np.floating] | NDArray[np.intp]]:
     """Compute per-cell diagnostic metrics for model checking.
 
@@ -438,18 +439,25 @@ def compute_per_cell_diagnostics(
     time : np.ndarray, optional
         Decoder time grid used to map spike timestamps to predictive posterior
         rows. Required when ``spike_times`` is supplied.
+    include_dense_matrices : bool, default True
+        Forwarded to ``compute_per_cell_diagnostics_from_rates``. Set False
+        when only the per-spike event arrays are needed (avoids the
+        ``(n_time, n_cells)`` allocations, which can be hundreds of MB
+        for full-session real-data builds).
 
     Returns
     -------
     diagnostics : dict[str, np.ndarray]
-        Dictionary with keys:
-        - 'hpd_overlap': shape (n_time, n_cells), NaN when cell has no spike
-        - 'kl_divergence': shape (n_time, n_cells), NaN when cell has no spike
-        - 'spike_prob': shape (n_time, n_cells), NaN when cell has no spike
+        Always contains:
         - 'event_time': shape (n_spikes,), exact spike time when available
         - 'event_hpd_overlap': shape (n_spikes,), one value per spike
         - 'event_kl_divergence': shape (n_spikes,), one value per spike
         - 'event_spike_prob': shape (n_spikes,), one value per spike
+
+        When ``include_dense_matrices`` (the default), additionally:
+        - 'hpd_overlap': shape (n_time, n_cells), NaN when cell has no spike
+        - 'kl_divergence': shape (n_time, n_cells), NaN when cell has no spike
+        - 'spike_prob': shape (n_time, n_cells), NaN when cell has no spike
 
     Notes
     -----
@@ -497,18 +505,14 @@ def compute_per_cell_diagnostics(
         spike_time_ind.astype(np.intp),
         spike_cell_ind.astype(np.intp),
         coverage=coverage,
+        include_dense_matrices=include_dense_matrices,
     )
 
     result_float = dict(result)
-    for key in [
-        "hpd_overlap",
-        "kl_divergence",
-        "spike_prob",
-        "per_spike_likelihood",
-        "event_hpd_overlap",
-        "event_kl_divergence",
-        "event_spike_prob",
-    ]:
+    cast_keys = ["event_hpd_overlap", "event_kl_divergence", "event_spike_prob"]
+    if include_dense_matrices:
+        cast_keys.extend(["hpd_overlap", "kl_divergence", "spike_prob", "per_spike_likelihood"])
+    for key in cast_keys:
         result_float[key] = np.asarray(result_float[key], dtype=np.float64)
     if event_times is not None:
         result_float["event_time"] = event_times.astype(np.float64)

@@ -76,8 +76,12 @@ viewer-friendly format. It does not re-run `model.predict(...)`.
   layout, owns `view_state` (center_t, window_w, model, pinned_event),
   wires panels, runs the load worker.
 - `controls.py` — center-time slider (range = full session), window-width
-  slider, model selector, alpha slider for likelihood overlay in the
-  slice panel, play/pause button.
+  slider, model selector, top-overlay choice (predictive / filtered /
+  smoothed) for the slice panel, per-cell-rows toggle, play/pause +
+  speed combo. (The original plan called for an alpha slider on the
+  likelihood overlay; that was dropped during implementation in favour
+  of always-on line curves once we moved the likelihood panel to its
+  own area.)
 - `app.py` — `python -m statespacecheck_paper.interactive` entry point.
 
 ### Notebook driver
@@ -128,18 +132,13 @@ state_bins, state, position, states  coords (and the restored MultiIndex)
 - No chunking along position/state (a window read needs the full
   position axis anyway).
 
-**Time pyramid** (also in the same Zarr store, separate arrays):
-
-```
-predictive_posterior_pyramid_1   stride 8     (88666, n_state_bins)
-predictive_posterior_pyramid_2   stride 64    (11084, n_state_bins)
-predictive_posterior_pyramid_3   stride 512   (1386, n_state_bins)
-log_likelihood_pyramid_*         same
-```
-
-Pooling = `np.maximum.reduceat` along time. Storage overhead ~14 %.
-Viewer picks the coarsest level whose stride keeps the window under
-~30,000 samples after subsampling.
+**Time pyramid (NOT IMPLEMENTED).** The original plan called for
+strided ``predictive_posterior_pyramid_*`` / ``log_likelihood_pyramid_*``
+arrays plus a viewer-side level-of-detail switch, but the as-built
+viewer hard-caps the window to ``MAX_WINDOW_SECONDS = 60 s``
+(``viewer.py``), at which point the full-resolution chunked Zarr is
+fast enough on its own. Pyramids were dropped during implementation;
+the cache builder no longer writes them.
 
 **Event Parquet** (`data/cache/figure04_<model>_events.parquet`):
 
@@ -199,10 +198,11 @@ a debounced async chunk read.
   `src/statespacecheck_paper/real_data_plotting.py:2189-2197`).
 - True position overlaid as a `PlotCurveItem` updated from the in-RAM
   `linear_position` slice — cheap.
-- Detail mode (window ≤ 60 s): full-resolution chunk read.
-- Overview mode (window > 60 s): read from the appropriate pyramid
-  level, picking the coarsest whose stride keeps visible-sample count
-  under ~30,000.
+- Full-resolution chunk read for every window. The plan originally
+  split this into a detail mode + a pyramid-backed overview mode, but
+  the implementation caps the window to 60 s and serves all reads off
+  the chunked Zarr — pyramids were dropped (see "Time pyramid (NOT
+  IMPLEMENTED)" above).
 
 ### RasterPanel
 
@@ -224,9 +224,13 @@ a debounced async chunk read.
 
 ### SlicePanel (right side, ~30 % width)
 
-- Two overlaid `PlotCurveItem`s: posterior (solid) + likelihood (filled
-  area). Alpha on the likelihood is controlled by a slider (per your
-  spec: "overlaid but I can change the alpha").
+- Top plot: a posterior overlay line (the choice — predictive,
+  filtered, or smoothed — is exposed via a combo in the controls bar,
+  defaulting to predictive) plus the population-likelihood line. Both
+  are line curves; the original plan called for a filled likelihood
+  area with an alpha slider, but during implementation we moved to
+  line curves and dropped the slider since the likelihood now also
+  has its own dedicated heatmap panel.
 - `InfiniteLine` at `linear_position[t_idx]` for the animal's true
   position.
 - On every UI tick, `posterior_curve.setData(position_bins,
@@ -319,7 +323,8 @@ get added until this passes.
 1. **`interactive/cache.py`** — Zarr writer that opens the existing
    `cont_results.nc` / `cont_frag_results.nc`, restores the
    `state_bins` MultiIndex, writes to `data/cache/figure04_<model>.zarr`.
-   Build pyramids. Walk
+   (Originally specified pyramid arrays here; dropped during
+   implementation — see "Time pyramid (NOT IMPLEMENTED)" above.) Walk
    `fig4_diagnostics.pkl` → events Parquet. Write meta and per-cell
    spike-times sidecars. Verify shapes (709,321; 256/512; 869,047;
    203). CLI: `python -m statespacecheck_paper.interactive.cache build`.
@@ -328,10 +333,13 @@ get added until this passes.
    smoke test asserting shapes + that a 2-s window read takes < 30 ms.
 3. **`interactive/viewer.py` skeleton** — window, center-time slider,
    three panels (posterior, likelihood, raster), QThreadPool window-load
-   worker, level-of-detail switch.
+   worker. (Original plan included a level-of-detail switch tied to the
+   pyramid arrays; the as-built viewer caps the window to 60 s and
+   reads full-resolution Zarr only — see "Time pyramid (NOT
+   IMPLEMENTED)" above.)
 4. **Run the benchmark.** Iterate until it passes.
 5. **`SlicePanel`** + ring buffer + ContFrag stacked-by-state mode +
-   alpha slider.
+   top-overlay choice (predictive / filtered / smoothed).
 6. **Metric panels** with window-local event scatters; `sigClicked`
    wiring.
 7. **Pinning**: vertical markers across all panels, corner annotation

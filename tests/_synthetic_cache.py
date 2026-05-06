@@ -86,10 +86,19 @@ def build_synthetic_cache(
     if n_states > 1:
         coords["states"] = ("states", np.array(state_names))
 
+    # Synthetic acausal (smoothed) posterior: a different Dirichlet
+    # draw so it is distinguishable from ``predictive_posterior`` in
+    # round-trip tests. Uses a separate RNG to keep the main ``rng``
+    # sequence (and therefore spike times / event metadata) identical
+    # to the pre-acausal version of the cache builder.
+    acausal_rng = np.random.default_rng(seed + 1)
+    acausal = acausal_rng.dirichlet(np.ones(n_state_bins), size=n_time).astype(np.float32)
+
     ds = xr.Dataset(
         data_vars={
             "predictive_posterior": (("time", "state_bins"), posterior),
             "log_likelihood": (("time", "state_bins"), log_likelihood),
+            "acausal_posterior": (("time", "state_bins"), acausal),
             "acausal_state_probabilities": state_probs_var,
         },
         coords=coords,
