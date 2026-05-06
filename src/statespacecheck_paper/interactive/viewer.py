@@ -698,6 +698,21 @@ _STATE_LIKELIHOOD_RGB: tuple[tuple[int, int, int], ...] = (
     (255, 127, 14),  # orange
     (214, 39, 40),  # red
 )
+# Palette for the per-cell place-field overlay. Picked to be distinct
+# from the joint posterior (blue), joint likelihood (orange), pinned
+# curve (gold), and true-position line (gray). Cells are colored by
+# ``cell_id % len(palette)``, so distinct cells in the same bin land
+# on different hues even when their IDs are adjacent.
+_PER_CELL_PALETTE: tuple[tuple[int, int, int], ...] = (
+    (44, 160, 44),  # green
+    (214, 39, 40),  # red
+    (148, 103, 189),  # purple
+    (227, 119, 194),  # pink
+    (23, 190, 207),  # cyan
+    (140, 86, 75),  # brown
+    (188, 189, 34),  # olive
+    (227, 49, 165),  # magenta
+)
 
 
 class SlicePanel(QtWidgets.QWidget):
@@ -995,8 +1010,8 @@ class SlicePanel(QtWidgets.QWidget):
         for i in range(n):
             curve = self._per_cell_curves[i]
             curve.setData(self._position_bins, place_fields[i])
-            color = pg.intColor(int(cell_ids[i]), hues=24, alpha=110)
-            curve.setPen(pg.mkPen(color, width=1))
+            rgb = _PER_CELL_PALETTE[int(cell_ids[i]) % len(_PER_CELL_PALETTE)]
+            curve.setPen(pg.mkPen(*rgb, 200, width=1.5))
             curve.setVisible(self._per_cell_visible)
         for i in range(n, self._n_active_per_cell_curves):
             self._per_cell_curves[i].setVisible(False)
@@ -1443,15 +1458,6 @@ class Figure4Viewer(QtWidgets.QMainWindow):
                 )
             if n_in_bin > shown:
                 lines.append(f"  (+{n_in_bin - shown} more)")
-        elif ds.event_times.size:
-            k = _nearest_index(ds.event_times, t_now)
-            dt_ms = (float(ds.event_times[k]) - t_now) * 1000.0
-            lines.append(f"nearest spike: cell={int(ds.event_cell_ids[k])}  Δt={dt_ms:+.1f} ms")
-            lines.append(
-                f"  HPD={float(ds.event_hpd_overlap[k]):.3f}  "
-                f"KL={float(ds.event_kl_divergence[k]):.3f}  "
-                f"p={float(ds.event_spike_prob[k]):.3g}"
-            )
         return "\n".join(lines)
 
     # ------------------------------------------------------------------
