@@ -29,10 +29,15 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
-        # Tests import the interactive cache / data-source modules at
-        # collection time, which pull in zarr + pyarrow from the
-        # ``interactive`` extra. Install both so the suite collects.
-        run: uv pip install -e ".[dev,interactive]" --system
+        # Sync from the committed lock file so every job pins the
+        # same dep versions across OS / Python combos. Previously we
+        # ran ``uv pip install --system`` (which doesn't honor
+        # ``uv.lock``) and let ``uv run`` separately resolve each
+        # check's deps — that produced a different numpy across jobs
+        # (2.2 vs 2.4) and intermittent mypy ``[type-arg]`` /
+        # ``[redundant-cast]`` failures depending on which numpy
+        # stubs landed.
+        run: uv sync --frozen --extra dev --extra interactive
 
       - name: Check formatting with ruff
         run: uv run ruff format --check .
