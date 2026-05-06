@@ -354,6 +354,116 @@ def test_slice_panel_falls_back_to_row_provider_outside_buffer(tmp_path: Path) -
         ds.close()
 
 
+# ---------------------------------------------------------------------------
+# Top-plot overlay choice: predictive / filtered / smoothed
+# ---------------------------------------------------------------------------
+
+
+def test_filtered_overlay_matches_predictive_times_likelihood(tmp_path: Path) -> None:
+    """``filtered`` = ``predictive × likelihood`` normalized over state_bins,
+    then state-collapsed and peak-normalized for display.
+    """
+    _build_cache(tmp_path / "cache", n_states=1)
+    app, viewer, ds = _make_viewer(tmp_path / "cache")
+    try:
+        target = viewer._next_request_id  # noqa: SLF001
+        viewer.force_reload_now()
+        assert _wait_for_request(app, viewer, target)
+
+        sp = viewer.slice_panel
+        sl = sp._buffer_slice  # noqa: SLF001
+        post = sp._buffer_post  # noqa: SLF001
+        lik = sp._buffer_lik  # noqa: SLF001
+        assert sl is not None and post is not None and lik is not None
+
+        # Pick a definite bin in the middle of the loaded buffer and
+        # ``set_center_time`` to its real-time tick, so we know the
+        # slice panel is rendering exactly that bin's row.
+        target_idx = (sl.start + sl.stop) // 2
+        viewer.set_center_time(float(ds.time[target_idx]))
+        sp.set_overlay_choice("filtered")
+        viewer._update_slice_panel_at_center()  # noqa: SLF001
+        _, top = sp._lik_overlay_curve.getData()  # noqa: SLF001
+
+        post_row = post[target_idx - sl.start]
+        lik_row = lik[target_idx - sl.start]
+        prod = post_row * lik_row
+        prod /= float(prod.sum())
+        peak = float(prod.max())
+        expected = (prod / peak).astype(np.float32, copy=False)
+
+        np.testing.assert_allclose(top, expected, rtol=1e-5, atol=1e-6)
+    finally:
+        viewer.close()
+        ds.close()
+
+
+def test_smoothed_overlay_reload_populates_buffer_acausal(tmp_path: Path) -> None:
+    """The worker only loads ``acausal_posterior`` when the slice panel's
+    overlay is ``smoothed``. Switching from predictive to smoothed must
+    trigger a fresh window load that populates the buffer.
+    """
+    _build_cache(tmp_path / "cache", n_states=1)
+    app, viewer, ds = _make_viewer(tmp_path / "cache")
+    try:
+        target = viewer._next_request_id  # noqa: SLF001
+        viewer.force_reload_now()
+        assert _wait_for_request(app, viewer, target)
+
+        sp = viewer.slice_panel
+        # Default overlay is predictive ⇒ buffer should not have acausal.
+        assert sp.overlay_choice == "predictive"
+        assert sp._buffer_acausal is None  # noqa: SLF001
+
+        smoothed_idx = next(
+            i
+            for i in range(viewer._overlay_combo.count())  # noqa: SLF001
+            if viewer._overlay_combo.itemData(i) == "smoothed"  # noqa: SLF001
+        )
+        target = viewer._next_request_id  # noqa: SLF001
+        viewer._overlay_combo.setCurrentIndex(smoothed_idx)  # noqa: SLF001
+        assert _wait_for_request(app, viewer, target + 1)
+
+        assert sp.overlay_choice == "smoothed"
+        assert sp._buffer_acausal is not None  # noqa: SLF001
+        assert sp._buffer_acausal.shape == sp._buffer_post.shape  # noqa: SLF001
+    finally:
+        viewer.close()
+        ds.close()
+
+
+def test_old_cache_without_acausal_disables_smoothed(tmp_path: Path) -> None:
+    """Caches built before the smoothed-overlay feature don't have
+    ``acausal_posterior``. The viewer should report ``has_acausal=False``,
+    leave the smoothed combo entry disabled, and never load acausal
+    even if some path tried to.
+    """
+    from PySide6 import QtGui
+
+    _build_cache_impl(tmp_path / "cache", model="continuous", with_acausal=False)
+    app, viewer, ds = _make_viewer(tmp_path / "cache")
+    try:
+        assert ds.has_acausal is False
+
+        smoothed_idx = next(
+            i
+            for i in range(viewer._overlay_combo.count())  # noqa: SLF001
+            if viewer._overlay_combo.itemData(i) == "smoothed"  # noqa: SLF001
+        )
+        combo_model = viewer._overlay_combo.model()  # noqa: SLF001
+        # Combos backed by a ``QStandardItemModel`` expose ``.item``;
+        # the disable was wired via that interface in viewer setup.
+        assert isinstance(combo_model, QtGui.QStandardItemModel)
+        assert combo_model.item(smoothed_idx).isEnabled() is False
+
+        # The data-source's load_acausal returns ``None`` regardless of
+        # slice — exercises the worker's lazy-load short-circuit.
+        assert ds.load_acausal(slice(0, 10)) is None
+    finally:
+        viewer.close()
+        ds.close()
+
+
 def test_slice_panel_no_op_outside_buffer_without_provider(tmp_path: Path) -> None:
     """When no row provider is wired (e.g. unit tests for the panel
     in isolation), out-of-buffer ``update_for_index`` is a silent no-op

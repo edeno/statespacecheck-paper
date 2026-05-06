@@ -30,6 +30,7 @@ def build_synthetic_cache(
     n_spikes_per_cell: int = 15,
     p_min: float = 0.001,
     seed: int = 0,
+    with_acausal: bool = True,
 ) -> None:
     """Write a minimal, self-consistent cache for the given model name.
 
@@ -54,6 +55,10 @@ def build_synthetic_cache(
         Lower bound for the synthetic ``event_spike_prob`` column.
     seed : int
         RNG seed for reproducibility.
+    with_acausal : bool, default True
+        Include ``acausal_posterior`` in the dataset (matches caches
+        built post-smoothed-overlay feature). Set ``False`` to
+        produce a legacy-shape cache for fallback tests.
     """
     rng = np.random.default_rng(seed)
     n_state_bins = n_states * n_position
@@ -86,23 +91,22 @@ def build_synthetic_cache(
     if n_states > 1:
         coords["states"] = ("states", np.array(state_names))
 
-    # Synthetic acausal (smoothed) posterior: a different Dirichlet
-    # draw so it is distinguishable from ``predictive_posterior`` in
-    # round-trip tests. Uses a separate RNG to keep the main ``rng``
-    # sequence (and therefore spike times / event metadata) identical
-    # to the pre-acausal version of the cache builder.
-    acausal_rng = np.random.default_rng(seed + 1)
-    acausal = acausal_rng.dirichlet(np.ones(n_state_bins), size=n_time).astype(np.float32)
+    data_vars: dict[str, Any] = {
+        "predictive_posterior": (("time", "state_bins"), posterior),
+        "log_likelihood": (("time", "state_bins"), log_likelihood),
+        "acausal_state_probabilities": state_probs_var,
+    }
+    if with_acausal:
+        # Synthetic acausal (smoothed) posterior: a different Dirichlet
+        # draw so it is distinguishable from ``predictive_posterior`` in
+        # round-trip tests. Uses a separate RNG to keep the main ``rng``
+        # sequence (and therefore spike times / event metadata) identical
+        # to the pre-acausal version of the cache builder.
+        acausal_rng = np.random.default_rng(seed + 1)
+        acausal = acausal_rng.dirichlet(np.ones(n_state_bins), size=n_time).astype(np.float32)
+        data_vars["acausal_posterior"] = (("time", "state_bins"), acausal)
 
-    ds = xr.Dataset(
-        data_vars={
-            "predictive_posterior": (("time", "state_bins"), posterior),
-            "log_likelihood": (("time", "state_bins"), log_likelihood),
-            "acausal_posterior": (("time", "state_bins"), acausal),
-            "acausal_state_probabilities": state_probs_var,
-        },
-        coords=coords,
-    )
+    ds = xr.Dataset(data_vars=data_vars, coords=coords)
 
     paths = cache_mod.cache_paths(cache_dir, model)  # type: ignore[arg-type]
     cache_mod._write_zarr_store(ds=ds, out_dir=paths["zarr"], time_chunk=64)
