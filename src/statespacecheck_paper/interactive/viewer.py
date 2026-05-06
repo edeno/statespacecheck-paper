@@ -26,7 +26,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import numpy as np
 import pyqtgraph as pg
@@ -472,10 +472,31 @@ class DecoderViewer(QtWidgets.QMainWindow):
         outer.addWidget(controls)
 
     def _wire_click_handlers(self) -> None:
-        """Connect raster + metric ``sigClicked`` to the pin-and-recenter path."""
+        """Connect raster + metric ``sigClicked`` to the pin-and-recenter path,
+        and every time-axis panel's empty-space click to a plain recenter.
+        """
         self.raster_panel.set_click_handler(self._handle_event_click)
         for panel in self.metric_panels.values():
             panel.set_click_handler(self._handle_event_click)
+        # Empty-space click on any time-axis panel recenters on the
+        # clicked x-coordinate. Scatter clicks (raster, metric)
+        # accept their own event before the scene-level signal fires,
+        # so this handler only sees clicks that didn't land on a spike.
+        for panel in self._wheel_filter_targets:
+            panel.scene().sigMouseClicked.connect(
+                lambda event, p=panel: self._handle_panel_recenter_click(event, p)
+            )
+
+    def _handle_panel_recenter_click(self, event: Any, panel: pg.PlotWidget) -> None:
+        if event.button() != QtCore.Qt.MouseButton.LeftButton:
+            return
+        if event.isAccepted():
+            # A scatter point handled the click via ``sigClicked``;
+            # ``_handle_event_click`` already recentered + pinned.
+            return
+        view_pos = panel.getPlotItem().getViewBox().mapSceneToView(event.scenePos())
+        rel_t = float(view_pos.x())
+        self.set_center_time(self._t_center + rel_t)
 
     def _wire_keyboard_shortcuts(self) -> None:
         """Bind the keyboard shortcuts spec'd in the plan.
