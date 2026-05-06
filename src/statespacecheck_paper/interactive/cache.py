@@ -18,7 +18,7 @@ Usage::
     python -m statespacecheck_paper.interactive.cache build \\
         --model continuous --data-dir DATA --cache-dir DATA/cache
 
-See ``docs/figure04_interactive_viewer_plan.md`` for design rationale.
+See the package's ``__init__.py`` for the public surface.
 """
 
 from __future__ import annotations

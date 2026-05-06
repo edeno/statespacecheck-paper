@@ -1,10 +1,9 @@
 """Interactive decoder viewer (pyqtgraph desktop app).
 
-See ``docs/figure04_interactive_viewer_plan.md`` for design.
-
 The :func:`launch` helper opens the viewer for a given cache and runs
 the Qt event loop; ``python -m statespacecheck_paper.interactive`` is
-the equivalent CLI entry point (delegates to :mod:`.app`).
+the equivalent CLI entry point (delegates to :mod:`.app`). See the
+README for an end-to-end walkthrough.
 """
 
 from __future__ import annotations

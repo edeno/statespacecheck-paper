@@ -1,10 +1,11 @@
 """Performance benchmark for the Figure 4 interactive viewer skeleton.
 
-Plan gate (see ``docs/figure04_interactive_viewer_plan.md``):
+Plan gate:
 
 - median frame time <= 16 ms (60 Hz) for the UI path
   (slice + view-range update);
-- window-load p95 <= 50 ms for 20 s windows;
+- window-load p95 <= 50 ms for 20 s windows on a connected display
+  (or 400 ms with the ``--offscreen`` software rasterizer);
 - no memory growth over 60 s of scrubbing.
 
 This run sweeps the center-time slider across the requested duration,
