@@ -927,7 +927,11 @@ class Figure4Viewer(QtWidgets.QMainWindow):
         outer.setContentsMargins(4, 4, 4, 4)
         outer.setSpacing(4)
 
-        # Horizontal split: time-axis panels (left, ~70%) | slice panel (right, ~30%).
+        # Horizontal split: time-axis panels (left, ~70%) | slice column
+        # (right, ~30%). The right column wraps the slice panel in a
+        # vertical layout with a trailing spacer so the slice does not
+        # stretch the full window height — the curves are easier to
+        # read at the same vertical extent as the posterior heatmap.
         split = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
         time_axis = QtWidgets.QWidget()
         time_axis_layout = QtWidgets.QVBoxLayout(time_axis)
@@ -942,8 +946,19 @@ class Figure4Viewer(QtWidgets.QMainWindow):
             "event_spike_prob",
         ):
             time_axis_layout.addWidget(self.metric_panels[metric], stretch=1)
+
+        slice_column = QtWidgets.QWidget()
+        slice_column_layout = QtWidgets.QVBoxLayout(slice_column)
+        slice_column_layout.setContentsMargins(0, 0, 0, 0)
+        slice_column_layout.setSpacing(0)
+        # Match the posterior panel's stretch (2 of 8 units in the
+        # time-axis stack) so the slice's vertical extent lines up
+        # with the posterior heatmap above.
+        slice_column_layout.addWidget(self.slice_panel, stretch=2)
+        slice_column_layout.addStretch(stretch=6)
+
         split.addWidget(time_axis)
-        split.addWidget(self.slice_panel)
+        split.addWidget(slice_column)
         split.setStretchFactor(0, 7)
         split.setStretchFactor(1, 3)
         outer.addWidget(split, stretch=1)
