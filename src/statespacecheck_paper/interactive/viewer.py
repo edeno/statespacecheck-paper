@@ -727,17 +727,21 @@ class SlicePanel(pg.PlotWidget):
         self._annotation.setVisible(False)
         self.addItem(self._annotation)
 
-        # Live-readout text in the upper-right of the slice panel:
-        # current center time, predictive posterior at the animal's
-        # true position, and the metrics for the spike closest to the
-        # center time. Updated every UI tick via ``set_live_readout``.
+        # Live-readout text in the upper-right of the slice panel.
+        # Anchored to the viewbox itself (in pixel coordinates), so it
+        # sits in the top-right corner of the visible plot regardless
+        # of how the y-axis auto-scales as curves change. Updated every
+        # UI tick via ``set_live_readout``.
         self._live_readout = pg.TextItem(
             anchor=(1, 0),
             color=(20, 20, 20),
-            fill=pg.mkBrush(255, 255, 255, 200),
+            fill=pg.mkBrush(255, 255, 255, 220),
         )
-        self._live_readout.setPos(float(self._position_bins[-1]), 0.0)
         self.addItem(self._live_readout)
+        # Reposition on every viewbox change so the readout stays
+        # parked at the top-right corner during scrolling / zooming /
+        # auto-range.
+        self.getViewBox().sigRangeChanged.connect(self._reposition_live_readout)
 
         # Window-buffer state. The viewer pushes a freshly loaded
         # window via ``set_window_buffer``; subsequent
@@ -803,8 +807,19 @@ class SlicePanel(pg.PlotWidget):
         """Update the live-readout box (top-right of the panel)."""
         if not text:
             self._live_readout.setText("")
+        else:
+            self._live_readout.setText(text)
+        # Re-park at the top-right after each text change (text
+        # bounding rect changes with content).
+        self._reposition_live_readout()
+
+    def _reposition_live_readout(self, *_args: object) -> None:
+        """Park the live-readout at the top-right of the current view."""
+        view = self.getViewBox()
+        if view is None:
             return
-        self._live_readout.setText(text)
+        x_range, y_range = view.viewRange()
+        self._live_readout.setPos(float(x_range[1]), float(y_range[1]))
 
     def set_likelihood_alpha(self, alpha: int) -> None:
         """Adjust the likelihood-fill opacity (0..255)."""
