@@ -736,33 +736,47 @@ class SlicePanel(QtWidgets.QWidget):
         self._plot.addItem(self._pinned_curve)
 
         # ----- Out-of-plot labels ------------------------------------------
+        # Force opaque light backgrounds so the labels stay readable
+        # under the system theme (especially macOS dark mode, where
+        # the default QWidget background would be near-black).
+        legend_style = (
+            "QLabel { background-color: #ffffff; color: #202020; "
+            "padding: 4px 6px; border: 1px solid #cccccc; border-radius: 3px; "
+            "font-size: 11pt; }"
+        )
+        readout_style = (
+            "QLabel { background-color: #ffffff; color: #202020; "
+            "padding: 4px 6px; border: 1px solid #cccccc; border-radius: 3px; "
+            "font-family: 'Menlo', 'Consolas', monospace; font-size: 11pt; }"
+        )
+        annotation_style = (
+            "QLabel { background-color: #fff7d6; color: #6a4f00; "
+            "padding: 4px 6px; border: 1px solid #d4b85a; border-radius: 3px; "
+            "font-family: 'Menlo', 'Consolas', monospace; font-size: 11pt; }"
+        )
+
         self._legend_label = QtWidgets.QLabel(self._build_legend_html())
         self._legend_label.setTextFormat(QtCore.Qt.TextFormat.RichText)
-        self._legend_label.setStyleSheet("QLabel { color: #202020; padding: 2px 4px; }")
+        self._legend_label.setAutoFillBackground(True)
+        self._legend_label.setStyleSheet(legend_style)
         self._legend_label.setWordWrap(True)
 
         self._readout_label = QtWidgets.QLabel("")
         self._readout_label.setTextFormat(QtCore.Qt.TextFormat.PlainText)
-        self._readout_label.setStyleSheet(
-            "QLabel { font-family: 'Menlo', 'Consolas', monospace; "
-            "color: #202020; padding: 2px 4px; }"
-        )
-        self._readout_label.setMinimumHeight(0)
+        self._readout_label.setAutoFillBackground(True)
+        self._readout_label.setStyleSheet(readout_style)
 
         # The pinned-event annotation (matches the ``_annotation``
         # attribute kept by the test suite for visibility checks).
         self._annotation = QtWidgets.QLabel("")
         self._annotation.setTextFormat(QtCore.Qt.TextFormat.PlainText)
-        self._annotation.setStyleSheet(
-            "QLabel { font-family: 'Menlo', 'Consolas', monospace; "
-            "color: #6a4f00; background: #fff7d6; "
-            "border: 1px solid #d4b85a; border-radius: 2px; padding: 2px 4px; }"
-        )
+        self._annotation.setAutoFillBackground(True)
+        self._annotation.setStyleSheet(annotation_style)
         self._annotation.setVisible(False)
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(2, 2, 2, 2)
-        layout.setSpacing(2)
+        layout.setSpacing(4)
         layout.addWidget(self._legend_label)
         layout.addWidget(self._plot, stretch=1)
         layout.addWidget(self._readout_label)
