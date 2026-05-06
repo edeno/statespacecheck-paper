@@ -75,6 +75,12 @@ def run_demo(params: DecodeParams) -> None:
     spikes = sim["spikes"]
     metrics = sim["metrics"]
 
+    # ``run_figure03_simulation`` already validates this, but rebind to
+    # a non-Optional local so ``plot_combined_diagnostics``'s typed
+    # signature is satisfied without a cast.
+    pf_centers = params.pf_centers
+    assert pf_centers is not None, "pf_centers must be initialized"
+
     # Thresholds from clean baseline window (first 6k timesteps, before remapping starts)
     thresholds = compute_thresholds(metrics, baseline_end=params.T_remap_start)
 
@@ -86,7 +92,7 @@ def run_demo(params: DecodeParams) -> None:
         metrics,
         thresholds,
         params,
-        params.pf_centers,
+        pf_centers,
     )
 
     # Save figure (uses plt.gcf() to get current figure)
