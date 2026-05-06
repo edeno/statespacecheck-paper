@@ -789,6 +789,14 @@ class SlicePanel(QtWidgets.QWidget):
         )
         self._plot.addItem(self._true_position_line)
 
+        # Per-cell place-field overlay: at each tick, the viewer pushes
+        # one normalized curve per cell that fired in the current bin.
+        # We grow a small pool of ``PlotDataItem``s on demand and reuse
+        # them across updates (avoids re-creating Qt graphics items per
+        # tick during scrolling).
+        self._per_cell_curves: list[pg.PlotDataItem] = []
+        self._n_active_per_cell_curves = 0
+
         # Pinned-spike overlay: the clicked spike's place-field curve
         # over position. The textual annotation lives in the QLabel
         # below the plot, not as an in-plot TextItem.
@@ -875,6 +883,9 @@ class SlicePanel(QtWidgets.QWidget):
                 f"<span style='color:rgb({lik_rgb[0]},{lik_rgb[1]},{lik_rgb[2]});"
                 f"font-size:14pt'>━</span> Likelihood{tag}"
             )
+        parts.append(
+            "<span style='color:rgb(120,120,120);font-size:14pt'>━</span> Per-cell place fields"
+        )
         parts.append("<span style='color:rgb(50,50,50);font-size:14pt'>┄</span> True position")
         parts.append("<span style='color:rgb(255,215,0);font-size:14pt'>━</span> Pinned cell PF")
         return " &nbsp;&nbsp; ".join(parts)
@@ -935,6 +946,41 @@ class SlicePanel(QtWidgets.QWidget):
     def set_live_readout(self, text: str | None) -> None:
         """Update the live-readout label below the plot."""
         self._readout_label.setText(text or "")
+
+    def set_per_cell_likelihoods(
+        self,
+        place_fields: NDArray[np.float32],
+        cell_ids: NDArray[np.int32],
+    ) -> None:
+        """Show one thin curve per cell that fired in the current bin.
+
+        Parameters
+        ----------
+        place_fields : np.ndarray, shape (n_cells_at_bin, n_position_full)
+            Already-normalized per-cell curves over the full per-state
+            position grid (caller is responsible for scaling so the
+            curves coexist visually with the joint-likelihood fill).
+        cell_ids : np.ndarray, shape (n_cells_at_bin,)
+            Original cell index for each curve, used to choose a
+            distinct color via ``pg.intColor``.
+        """
+        n = int(place_fields.shape[0]) if place_fields.size else 0
+        # Grow the curve pool on demand; never shrink (curves get
+        # hidden, not destroyed, to avoid Qt graphics-item churn).
+        while len(self._per_cell_curves) < n:
+            curve = pg.PlotDataItem(pen=pg.mkPen((120, 120, 120), width=1))
+            self._plot.addItem(curve)
+            self._per_cell_curves.append(curve)
+
+        for i in range(n):
+            curve = self._per_cell_curves[i]
+            curve.setData(self._position_bins, place_fields[i])
+            color = pg.intColor(int(cell_ids[i]), hues=24, alpha=140)
+            curve.setPen(pg.mkPen(color, width=1))
+            curve.setVisible(True)
+        for i in range(n, self._n_active_per_cell_curves):
+            self._per_cell_curves[i].setVisible(False)
+        self._n_active_per_cell_curves = n
 
     def set_likelihood_alpha(self, alpha: int) -> None:
         """Adjust the likelihood-fill opacity (0..255)."""
@@ -1297,6 +1343,34 @@ class Figure4Viewer(QtWidgets.QMainWindow):
         true_pos = float(ds.linear_position[t_idx])
         self.slice_panel.update_for_index(t_idx, true_pos)
         self.slice_panel.set_live_readout(self._format_live_readout(t_idx, true_pos))
+        self.slice_panel.set_per_cell_likelihoods(*self._per_cell_curves_at(t_idx))
+
+    def _per_cell_curves_at(self, t_idx: int) -> tuple[NDArray[np.float32], NDArray[np.int32]]:
+        """Build (curves, cell_ids) for the cells that fired at ``t_idx``.
+
+        Each curve is the cell's first-state place field embedded into
+        the full per-state position grid (non-interior bins stay at
+        zero), normalized to its own peak so multiple cells coexist on
+        a [0, 1] visual scale alongside the joint-likelihood fill.
+
+        For ContFrag the first state's place field is the Continuous
+        state's place tuning; the Fragmented state's tuning is
+        typically uniform and adds little visual signal, so it is
+        omitted from this overlay.
+        """
+        ds = self._ds
+        cells = ds.cells_at_index(t_idx)
+        if cells.size == 0:
+            empty_curves = np.empty((0, ds.n_position_full), dtype=np.float32)
+            return empty_curves, cells
+        n_interior = ds.n_interior
+        cell_pf = ds.place_fields[cells, :n_interior]
+        peak = cell_pf.max(axis=1, keepdims=True)
+        peak = np.where(peak > 0, peak, 1.0)
+        cell_pf_norm = (cell_pf / peak).astype(np.float32, copy=False)
+        curves = np.zeros((cells.size, ds.n_position_full), dtype=np.float32)
+        curves[:, ds.interior_mask] = cell_pf_norm
+        return curves, cells
 
     def _format_live_readout(self, t_idx: int, true_pos: float) -> str:
         """Build the slice-panel live-readout text for the current center.

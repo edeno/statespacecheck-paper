@@ -201,6 +201,70 @@ def test_slice_panel_live_readout_updates_with_center(tmp_path: Path) -> None:
         ds.close()
 
 
+def test_slice_panel_shows_per_cell_curves_when_spikes_present(tmp_path: Path) -> None:
+    _build_cache(tmp_path / "cache", n_states=1)
+    app, viewer, ds = _make_viewer(tmp_path / "cache")
+    try:
+        target = viewer._next_request_id  # noqa: SLF001
+        viewer.force_reload_now()
+        assert _wait_for_request(app, viewer, target)
+
+        # Pick the time bin of the first spike and recenter on it.
+        first_event_t = float(ds.event_times[0])
+        viewer.set_center_time(first_event_t)
+        # Drive the per-tick path explicitly (set_center_time calls it
+        # but we want to be sure the event-bin lookup ran).
+        viewer._update_slice_panel_at_center()  # noqa: SLF001
+
+        sp = viewer.slice_panel
+        # At least one per-cell curve should be active and visible.
+        assert sp._n_active_per_cell_curves >= 1  # noqa: SLF001
+        assert sp._per_cell_curves[0].isVisible()  # noqa: SLF001
+        x_data, y_data = sp._per_cell_curves[0].getData()  # noqa: SLF001
+        assert y_data.shape == (ds.n_position_full,)
+        # Curve is normalized so its max is at most 1 (or exactly 0 if
+        # the cell has an all-zero place field, which our synthetic
+        # builder avoids).
+        assert 0.0 < float(np.max(y_data)) <= 1.0 + 1e-6
+
+        # Move to a time bin with no spikes (between two events) — the
+        # active count drops back to zero.
+        midpoint = 0.5 * (float(ds.event_times[0]) + float(ds.event_times[1]))
+        # Find a time bin whose nearest event is far enough away that
+        # no spikes land in it. Use a synthetic-time gap if needed.
+        viewer.set_center_time(midpoint)
+        viewer._update_slice_panel_at_center()  # noqa: SLF001
+        # If the chosen bin happens to contain a spike (depends on
+        # synthetic RNG), we can't assert the count is 0; only the
+        # invariant that all hidden curves stay hidden.
+        for i in range(sp._n_active_per_cell_curves, len(sp._per_cell_curves)):  # noqa: SLF001
+            assert not sp._per_cell_curves[i].isVisible()  # noqa: SLF001
+    finally:
+        viewer.close()
+        ds.close()
+
+
+def test_data_source_cells_at_index_returns_unique_cells(tmp_path: Path) -> None:
+    """``cells_at_index`` returns unique cell IDs for the given time bin."""
+    _build_cache(tmp_path / "cache", n_states=1)
+    from statespacecheck_paper.interactive.data_source import Figure4DataSource
+
+    src = Figure4DataSource(tmp_path / "cache", model="continuous")
+    try:
+        # First event's bin should yield at least one cell.
+        first_t_idx = int(src.event_time_idx[0])
+        cells = src.cells_at_index(first_t_idx)
+        assert cells.size >= 1
+        assert cells.dtype == np.int32
+        # No duplicates.
+        assert cells.size == np.unique(cells).size
+        # Empty bin (well before any event): empty result.
+        empty = src.cells_at_index(int(src.event_time_idx[0]) - 100)
+        assert empty.size == 0
+    finally:
+        src.close()
+
+
 def test_slice_panel_does_not_update_outside_buffer(tmp_path: Path) -> None:
     _build_cache(tmp_path / "cache", n_states=1)
     app, viewer, ds = _make_viewer(tmp_path / "cache")

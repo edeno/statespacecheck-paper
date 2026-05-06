@@ -184,6 +184,16 @@ class Figure4DataSource:
 
         self._validate_consistency()
 
+        # Decoder time-bin index for each event. Used by
+        # ``cells_at_index`` to find which cells fired in a given
+        # time bin without re-bisecting the time grid per call.
+        self._time_arr_for_bin = np.asarray(self.time, dtype=np.float64)
+        self.event_time_idx: NDArray[np.int64] = np.clip(
+            np.searchsorted(self._time_arr_for_bin, self.event_times, side="right") - 1,
+            0,
+            max(self._time_arr_for_bin.shape[0] - 1, 0),
+        ).astype(np.int64)
+
         self.n_time: int = int(self.time.shape[0])
         self.n_interior: int = int(self.position_bins.shape[0])
 
@@ -285,6 +295,22 @@ class Figure4DataSource:
         if abs(self.time[i - 1] - t) <= abs(self.time[i] - t):
             return i - 1
         return i
+
+    def cells_at_index(self, t_idx: int) -> NDArray[np.int32]:
+        """Return the unique cell IDs that fired in time bin ``t_idx``.
+
+        Two ``np.searchsorted`` calls on the precomputed
+        ``event_time_idx`` (sorted because events are sorted by time)
+        plus a small ``np.unique`` on the in-bin slice — sub-ms even
+        for large event tables.
+        """
+        if self.event_time_idx.size == 0:
+            return np.empty(0, dtype=np.int32)
+        i0 = int(np.searchsorted(self.event_time_idx, t_idx, side="left"))
+        i1 = int(np.searchsorted(self.event_time_idx, t_idx, side="right"))
+        if i1 <= i0:
+            return np.empty(0, dtype=np.int32)
+        return np.unique(self.event_cell_ids[i0:i1])
 
     # ------------------------------------------------------------------
     # Hot-path readers
