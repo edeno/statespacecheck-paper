@@ -75,7 +75,14 @@ def model_paths(intermediates_dir: Path, model: ModelName) -> ModelPaths:
 
 
 def cache_paths(cache_dir: Path, model: ModelName) -> dict[str, Path]:
-    """Return the on-disk cache layout for ``model`` under ``cache_dir``."""
+    """Return the on-disk cache layout for ``model`` under ``cache_dir``.
+
+    Real-data caches are figure-4 specific (the ``figure04_`` prefix
+    is meaningful — these files come out of the
+    ``cont_results.nc`` / ``cont_frag_results.nc`` decoder runs).
+    Simulated-data caches use a separate filename layout via
+    ``simulated_cache_paths``.
+    """
     return {
         "zarr": cache_dir / f"figure04_{model}.zarr",
         "events": cache_dir / f"figure04_{model}_events.parquet",
@@ -84,13 +91,48 @@ def cache_paths(cache_dir: Path, model: ModelName) -> dict[str, Path]:
 
 
 def meta_path(cache_dir: Path) -> Path:
-    """Path to the model-independent meta sidecar."""
+    """Path to the real-data (figure-4) meta sidecar.
+
+    Both ``continuous`` and ``contfrag`` real-data caches share this
+    sidecar — the recording session's time grid, animal linear position,
+    and cell count are model-independent.
+    """
     return cache_dir / "figure04_meta.npz"
 
 
 def spike_times_path(cache_dir: Path) -> Path:
-    """Path to the per-cell spike-times sidecar (object-dtype .npy)."""
+    """Path to the real-data per-cell spike-times sidecar (object-dtype .npy)."""
     return cache_dir / "figure04_spike_times.npy"
+
+
+# ---------------------------------------------------------------------------
+# Simulation cache layout
+# ---------------------------------------------------------------------------
+#
+# The figure-3 simulation is a fundamentally different dataset than the
+# figure-4 real-data caches: there's no recording session, no model
+# choice (the simulation has its own forward filter built in), and no
+# smoothed posterior. It uses its own filename prefix so it can coexist
+# in a shared cache directory if desired.
+
+
+def simulated_cache_paths(cache_dir: Path) -> dict[str, Path]:
+    """Return the on-disk cache layout for the figure-3 simulated dataset."""
+    return {
+        "zarr": cache_dir / "simulation.zarr",
+        "events": cache_dir / "simulation_events.parquet",
+        "place_fields": cache_dir / "simulation_place_fields.npz",
+    }
+
+
+def simulated_meta_path(cache_dir: Path) -> Path:
+    """Path to the simulated-dataset meta sidecar."""
+    return cache_dir / "simulation_meta.npz"
+
+
+def simulated_spike_times_path(cache_dir: Path) -> Path:
+    """Path to the simulated-dataset per-cell spike-times sidecar."""
+    return cache_dir / "simulation_spike_times.npy"
 
 
 def _restore_state_bins_index(ds: xr.Dataset) -> xr.Dataset:

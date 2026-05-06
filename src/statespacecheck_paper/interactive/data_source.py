@@ -40,9 +40,12 @@ from . import cache as cache_mod
 ModelName = cache_mod.ModelName
 
 
+DatasetKind = Literal["model", "simulation"]
+
+
 @dataclass(frozen=True)
 class CacheLayout:
-    """Resolved on-disk paths for a single model's cache + shared sidecars."""
+    """Resolved on-disk paths for a dataset's cache + sidecars."""
 
     zarr: Path
     events: Path
@@ -59,6 +62,17 @@ class CacheLayout:
             place_fields=paths["place_fields"],
             meta=cache_mod.meta_path(cache_dir),
             spike_times=cache_mod.spike_times_path(cache_dir),
+        )
+
+    @classmethod
+    def for_simulation(cls, cache_dir: Path) -> CacheLayout:
+        paths = cache_mod.simulated_cache_paths(cache_dir)
+        return cls(
+            zarr=paths["zarr"],
+            events=paths["events"],
+            place_fields=paths["place_fields"],
+            meta=cache_mod.simulated_meta_path(cache_dir),
+            spike_times=cache_mod.simulated_spike_times_path(cache_dir),
         )
 
     def assert_exists(self) -> None:
@@ -80,17 +94,49 @@ class DecoderDataSource:
     and opens the Zarr store as a lazy ``xarray.Dataset``. The full
     posterior / log-likelihood arrays are never realized in memory.
 
-    Parameters
-    ----------
-    cache_dir : Path
-        Directory containing the cache produced by ``cache.build``.
-    model : {"continuous", "contfrag"}
-        Which model's Zarr store to open.
+    The data source serves two distinct dataset kinds:
+
+    * **Real-data decoder caches** (``dataset_kind == "model"``) — built
+      by ``cache.build`` from a fitted ``SortedSpikesDecoder`` /
+      ``ContFragSortedSpikesClassifier``. The viewer can swap between
+      ``"continuous"`` and ``"contfrag"`` if both caches are present
+      in ``cache_dir``. Use ``DecoderDataSource.for_model`` (or the
+      legacy ``DecoderDataSource(cache_dir, model)``) to load.
+
+    * **Figure-3 simulation cache** (``dataset_kind == "simulation"``) —
+      built by ``cache.build_simulated``. Single dataset, no model
+      choice, no smoothed posterior. Use
+      ``DecoderDataSource.for_simulation``.
+
+    Sidecar schema (the same for both kinds):
+
+    * ``meta``: ``time`` f64 ``(n_time,)``, ``linear_position`` f64
+      ``(n_time,)``, ``n_cells`` i64.
+    * ``place_fields .npz``: ``place_fields`` f32 ``(n_cells, n_state_bins)``,
+      ``position_bins`` f64 ``(n_interior,)``,
+      ``place_field_peaks`` f64 ``(n_cells,)``,
+      ``interior_mask`` bool ``(n_state_bins // n_states,)``.
+    * ``events .parquet``: ``time`` f64, ``cell_id`` i32,
+      ``event_hpd_overlap`` f32, ``event_kl_divergence`` f32,
+      ``event_spike_prob`` f32 — sorted by ``time``.
+    * ``spike_times .npy``: object-dtype array length ``n_cells``,
+      each entry an f64 array of spike timestamps.
+    * ``Zarr``: ``predictive_posterior`` (n_time, n_state_bins) f32,
+      ``log_likelihood`` (n_time, n_state_bins) f32 (true log-space),
+      optional ``acausal_posterior`` (n_time, n_state_bins) f32 — only
+      present for real-data caches built post-smoothed-overlay feature.
 
     Attributes
     ----------
-    model : str
-        The active model name.
+    dataset_kind : Literal["model", "simulation"]
+        Which kind of dataset is loaded. Drives viewer UI choices
+        (model-swap visibility, window title).
+    model : str | None
+        The active model name (``"continuous"`` / ``"contfrag"``) for
+        real-data caches; ``None`` for the simulation cache.
+    display_name : str
+        Human-readable name for the loaded dataset (drives the window
+        title): ``"continuous"``, ``"contfrag"``, or ``"figure-3 simulation"``.
     time : np.ndarray, shape (n_time,), float64
         Decoder time grid (absolute seconds).
     linear_position : np.ndarray, shape (n_time,), float64
@@ -111,8 +157,8 @@ class DecoderDataSource:
     n_cells : int
     n_time : int
     n_states : int
-        Number of state slots in ``place_fields`` (1 for Continuous, 2
-        for ContFrag).
+        Number of state slots in ``place_fields`` (1 for Continuous /
+        simulation, 2 for ContFrag).
     n_interior : int
         Number of interior position bins per state.
     n_state_bins : int
@@ -123,11 +169,32 @@ class DecoderDataSource:
     LIKELIHOOD_VAR = "log_likelihood"
     ACAUSAL_VAR = "acausal_posterior"
 
-    def __init__(self, cache_dir: Path | str, model: ModelName) -> None:
+    def __init__(
+        self,
+        cache_dir: Path | str,
+        model: ModelName | None = None,
+        *,
+        layout: CacheLayout | None = None,
+        dataset_kind: DatasetKind = "model",
+        display_name: str | None = None,
+    ) -> None:
+        # ``__init__`` accepts either the legacy real-data signature
+        # (``cache_dir, model``) or an explicit ``layout`` for the
+        # simulation path. Use the named constructors
+        # (``for_model`` / ``for_simulation``) for new callers.
         self._cache_dir = Path(cache_dir)
-        self.model: ModelName = model
+        if layout is None:
+            if model is None:
+                raise ValueError(
+                    "DecoderDataSource(): pass model= for real-data caches "
+                    "or use DecoderDataSource.for_simulation(cache_dir)."
+                )
+            layout = CacheLayout.for_model(self._cache_dir, model)
+        self._layout = layout
+        self.dataset_kind: DatasetKind = dataset_kind
+        self.model: ModelName | None = model
+        self.display_name: str = display_name or (model if model is not None else "decoder")
 
-        self._layout = CacheLayout.for_model(self._cache_dir, model)
         self._layout.assert_exists()
 
         # Open the Zarr store directly for the hot-path window reads.
@@ -415,6 +482,32 @@ class DecoderDataSource:
             # ``<= time[-1]`` by the cache builder).
             i1 = len(self.events)
         return self.events.iloc[i0:i1]
+
+    # ------------------------------------------------------------------
+    # Named constructors
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def for_model(cls, cache_dir: Path | str, model: ModelName) -> DecoderDataSource:
+        """Open the real-data (figure-4) cache for ``model`` under ``cache_dir``."""
+        return cls(cache_dir, model)
+
+    @classmethod
+    def for_simulation(cls, cache_dir: Path | str) -> DecoderDataSource:
+        """Open the figure-3 simulation cache under ``cache_dir``.
+
+        The simulation has no model choice and no smoothed posterior
+        (the demo only forward-filters), so the viewer hides the
+        model-swap UI and the smoothed overlay-choice entry stays
+        disabled.
+        """
+        layout = CacheLayout.for_simulation(Path(cache_dir))
+        return cls(
+            cache_dir,
+            layout=layout,
+            dataset_kind="simulation",
+            display_name="figure-3 simulation",
+        )
 
     # ------------------------------------------------------------------
     # Resource management

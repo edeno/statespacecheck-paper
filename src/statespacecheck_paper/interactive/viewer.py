@@ -449,7 +449,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
         controls_layout.addWidget(QtWidgets.QLabel("Model:"))
         self._model_combo = QtWidgets.QComboBox()
         self._model_combo.addItems(["continuous", "contfrag"])
-        self._model_combo.setCurrentText(self._ds.model)
+        self._model_combo.setCurrentText(self._ds.model or "")
         self._model_combo.currentTextChanged.connect(self._on_model_changed)
         # Disabled when the cache directory wasn't provided (e.g. tests
         # that construct with a single model in tmp_path).
@@ -1094,7 +1094,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
             # The requested cache doesn't exist; revert the combo
             # box and bail.
             self._model_combo.blockSignals(True)
-            self._model_combo.setCurrentText(self._ds.model)
+            self._model_combo.setCurrentText(self._ds.model or "")
             self._model_combo.blockSignals(False)
             return
 
@@ -1147,7 +1147,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
         self._overlay_combo.setCurrentIndex(OVERLAY_CHOICES.index(overlay_choice))
         self.slice_panel.set_overlay_choice(overlay_choice)
         self._model_combo.blockSignals(True)
-        self._model_combo.setCurrentText(new_ds.model)
+        self._model_combo.setCurrentText(new_ds.model or "")
         self._model_combo.blockSignals(False)
         if was_playing:
             self._play_button.setChecked(True)
