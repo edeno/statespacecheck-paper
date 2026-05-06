@@ -454,6 +454,9 @@ class Figure4Viewer(QtWidgets.QMainWindow):
         - ``[`` / ``]``          : shrink / grow window width.
         - ``R``                  : reset to a 20 s context window centered
                                     near the Figure 4a default.
+        - ``Esc``                : unpin the currently pinned spike
+                                    (clicking the pinned spike again
+                                    also unpins).
         """
 
         def add(seq: str, slot: Callable[[], None]) -> None:
@@ -475,6 +478,7 @@ class Figure4Viewer(QtWidgets.QMainWindow):
         # preset list.
         add(",", lambda: self._step_speed(-1))
         add(".", lambda: self._step_speed(+1))
+        add("Escape", self._unpin_event)
 
     def _wire_load_worker(self) -> None:
         self._thread_pool = QtCore.QThreadPool.globalInstance()
@@ -645,15 +649,26 @@ class Figure4Viewer(QtWidgets.QMainWindow):
     # ------------------------------------------------------------------
 
     def _handle_event_click(self, global_event_row: int) -> None:
-        """Recenter on the clicked spike's time and pin a marker."""
+        """Pin a clicked spike and recenter on it; clicking the pinned spike unpins."""
         ds = self._ds
         if not 0 <= global_event_row < len(ds.events):
+            return
+        # Toggle: clicking the already-pinned spike clears the pin.
+        # (Manual scrolling also unpins — see ``set_center_time``;
+        # ``Escape`` is a no-recenter shortcut that does the same.)
+        if global_event_row == self._pinned_event_row:
+            self._set_pinned_event(None)
             return
         event = ds.events.iloc[global_event_row]
         self._set_pinned_event(global_event_row)
         # Recenter the window on the spike's time. set_center_time
         # animates the slice panel and arms the load-debounce timer.
         self.set_center_time(float(event["time"]))
+
+    def _unpin_event(self) -> None:
+        """Clear any pinned spike without changing the window center."""
+        if self._pinned_event_row is not None:
+            self._set_pinned_event(None)
 
     def _set_pinned_event(self, global_event_row: int | None) -> None:
         self._pinned_event_row = global_event_row
