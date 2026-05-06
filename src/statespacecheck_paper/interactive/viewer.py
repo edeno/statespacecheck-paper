@@ -747,9 +747,23 @@ class Figure4Viewer(QtWidgets.QMainWindow):
         # negative and positive values. The center-time vertical
         # line on each panel sits at x=0 so the user can see which
         # column corresponds to the slice panel.
+        # LEFT-EDGE bin convention (matches ``event_time_idx`` and
+        # ``np.digitize`` spike binning): bin ``i`` covers the real-time
+        # interval ``[time[i], time[i+1])``. The visible window is
+        # therefore the half-open interval ``[time[sl.start], time[sl.stop])``.
+        # ``rel_start`` / ``rel_end`` are those edges shifted to be
+        # relative to the current center marker (``x = 0`` = ``t_center``).
+        # When the window includes the very last sample, extrapolate the
+        # right edge by one ``dt`` since there's no ``time[sl.stop]``.
         t_offset = float(self._t_center)
         rel_start = float(time[sl.start]) - t_offset
-        rel_end = float(time[sl.stop - 1]) - t_offset
+        if sl.stop < self._ds.n_time:
+            rel_end = float(time[sl.stop]) - t_offset
+        elif sl.stop - sl.start >= 2:
+            dt = float(time[sl.stop - 1] - time[sl.stop - 2])
+            rel_end = float(time[sl.stop - 1]) + dt - t_offset
+        else:
+            rel_end = float(time[sl.stop - 1]) - t_offset
 
         # Pin the visible X range to the *target* half-width (always
         # exactly ``-w/2`` to ``+w/2``) so the tick labels stay

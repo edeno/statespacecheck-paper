@@ -267,20 +267,24 @@ class _BaseHeatmapPanel(pg.PlotWidget):
             levels=self._levels,
             autoDownsample=False,
         )
-        # ``time_start`` / ``time_end`` are the centers of the first and
-        # last visible time bins, just like the position bins are bin
-        # centers. Pad the rect by half a bin on each axis so each
-        # pixel's center sits at its (time, position) bin center —
-        # otherwise the animal-position trajectory drawn at exact
-        # (time, position) values is offset by half a bin from the
-        # heatmap underneath.
-        n_visible = array.shape[0]
-        dx_half = (time_end - time_start) / (2 * (n_visible - 1)) if n_visible > 1 else 0.0
+        # X axis (time): LEFT-EDGE convention — bin ``i`` covers
+        # ``[time[i], time[i+1])`` (matches ``np.digitize`` spike
+        # binning). The viewer hands ``time_start`` = left edge of
+        # the first visible bin and ``time_end`` = right edge of the
+        # last, so the rect spans those edges directly. A spike at
+        # ``time[i] + 0.7·dt`` falls on pixel ``i``, the same bin it
+        # was assigned by ``event_time_idx``.
+        #
+        # Y axis (position): CENTER convention — ``position_bins[j]``
+        # is bin ``j``'s center. Pad by half a bin on each side so
+        # pixel centers sit at the bin centers (otherwise the
+        # animal-position trajectory drawn at exact ``(time, position)``
+        # values is offset by half a bin from the heatmap underneath).
         self._image.setRect(
             QtCore.QRectF(
-                time_start - dx_half,
+                time_start,
                 self._y0 - self._dy_half,
-                (time_end - time_start) + 2 * dx_half,
+                time_end - time_start,
                 (self._y1 - self._y0) + 2 * self._dy_half,
             )
         )

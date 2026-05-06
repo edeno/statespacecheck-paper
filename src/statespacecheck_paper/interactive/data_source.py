@@ -288,22 +288,20 @@ class Figure4DataSource:
         return slice(i0, i1)
 
     def index_at_time(self, t: float) -> int:
-        """Return the decoder-grid index closest to ``t``.
+        """Return the decoder-grid index for the bin containing ``t``.
 
-        Used by the slice panel and click handlers to map a clicked
-        spike time onto the integer index used by ``slice_at_index``.
+        Uses LEFT-EDGE bin convention — bin ``i`` covers
+        ``[time[i], time[i+1])`` — matching ``event_time_idx`` (which
+        is built via ``np.searchsorted(side="right") - 1``) and
+        ``non_local_detector``'s ``np.digitize``-based spike binning.
+        Click handlers therefore land on the same bin as the spike's
+        ``event_time_idx``, so the per-cell rows on the slice panel
+        always include the clicked event.
         """
         if self.n_time == 0:
             raise ValueError("Empty time grid")
-        i = int(np.searchsorted(self.time, t, side="left"))
-        if i <= 0:
-            return 0
-        if i >= self.n_time:
-            return self.n_time - 1
-        # Pick whichever neighbor is closer.
-        if abs(self.time[i - 1] - t) <= abs(self.time[i] - t):
-            return i - 1
-        return i
+        i = int(np.searchsorted(self.time, t, side="right")) - 1
+        return max(0, min(i, self.n_time - 1))
 
     def event_indices_at(self, t_idx: int) -> tuple[int, int]:
         """Return the ``[i0, i1)`` event-row range whose bin equals ``t_idx``.
@@ -395,18 +393,27 @@ class Figure4DataSource:
     def events_in_window(self, sl: slice) -> pd.DataFrame:
         """Return the slice of ``events`` whose ``time`` falls in ``sl``.
 
-        ``sl`` is a slice into the decoder time grid; this method maps
-        the slice's endpoint times to row positions in ``events`` via
-        ``np.searchsorted`` for O(log n) lookup.
+        ``sl`` is a slice into the decoder time grid; bin ``i`` covers
+        ``[time[i], time[i+1])`` (LEFT-EDGE convention, matching the
+        decoder's ``np.digitize`` spike binning). Visible bins
+        ``[sl.start, sl.stop)`` therefore cover the *real-time*
+        interval ``[time[sl.start], time[sl.stop])``; events whose
+        ``time`` falls in that interval are returned.
         """
         if self.events.empty:
             return self.events.iloc[0:0]
         i0_t = self.time[sl.start]
-        # Use the last in-window index, not sl.stop (which is one past).
-        i1_t = self.time[min(sl.stop, self.n_time) - 1]
-        # ``event_times`` is the cached, monotonic-increasing column.
         i0 = int(np.searchsorted(self.event_times, i0_t, side="left"))
-        i1 = int(np.searchsorted(self.event_times, i1_t, side="right"))
+        if sl.stop < self.n_time:
+            # Exclusive upper bound: events at ``time[sl.stop]`` belong
+            # to the next bin and should not appear in this window.
+            i1_t = self.time[sl.stop]
+            i1 = int(np.searchsorted(self.event_times, i1_t, side="left"))
+        else:
+            # Last bin's right edge has no next time sample; include
+            # all remaining events (they're already clamped to
+            # ``<= time[-1]`` by the cache builder).
+            i1 = len(self.events)
         return self.events.iloc[i0:i1]
 
     # ------------------------------------------------------------------
