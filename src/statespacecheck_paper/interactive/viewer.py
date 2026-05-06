@@ -212,6 +212,10 @@ class DecoderViewer(QtWidgets.QMainWindow):
         # Auto-scroll (play/pause) state.
         self._autoscroll_rate = AUTOSCROLL_RATE_DEFAULT
         self._autoscroll_timer: QtCore.QTimer | None = None
+        # Cached ``(left_rel, right_rel)`` of the active-bin highlight
+        # band so per-tick refreshes can early-return when the bounds
+        # haven't moved (see ``_refresh_active_bin_band``).
+        self._active_bin_band_bounds: tuple[float, float] | None = None
 
         self._wire_load_worker()
         self._build_central_widget()
@@ -614,6 +618,11 @@ class DecoderViewer(QtWidgets.QMainWindow):
         the current center). When the active bin is the last one in
         the session there's no ``time[t_idx + 1]`` so we extrapolate
         by one ``dt`` from the previous interval.
+
+        Called every UI tick. Skip the per-panel ``setRegion`` updates
+        when the rendered bounds haven't moved (``t_idx`` and
+        ``t_center`` unchanged) — autoscroll between bin transitions
+        otherwise pushes ~5 redundant ``setRegion`` calls per tick.
         """
         ds = self._ds
         t_left = float(ds.time[t_idx])
@@ -625,6 +634,9 @@ class DecoderViewer(QtWidgets.QMainWindow):
             t_right = t_left
         left_rel = t_left - self._t_center
         right_rel = t_right - self._t_center
+        if self._active_bin_band_bounds == (left_rel, right_rel):
+            return
+        self._active_bin_band_bounds = (left_rel, right_rel)
         for panel in self._wheel_filter_targets:
             panel.update_active_bin_band(left_rel, right_rel)
 

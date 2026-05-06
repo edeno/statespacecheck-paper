@@ -136,7 +136,7 @@ class DecoderDataSource:
         real-data caches; ``None`` for the simulation cache.
     display_name : str
         Human-readable name for the loaded dataset (drives the window
-        title): ``"continuous"``, ``"contfrag"``, or ``"figure-3 simulation"``.
+        title): ``"continuous"``, ``"contfrag"``, or ``"Figure 3 simulation"``.
     time : np.ndarray, shape (n_time,), float64
         Decoder time grid (absolute seconds).
     linear_position : np.ndarray, shape (n_time,), float64
@@ -506,7 +506,7 @@ class DecoderDataSource:
             cache_dir,
             layout=layout,
             dataset_kind="simulation",
-            display_name="figure-3 simulation",
+            display_name="Figure 3 simulation",
         )
 
     # ------------------------------------------------------------------

@@ -85,7 +85,7 @@ def test_simulated_cache_loader_metadata(tmp_path: Path) -> None:
     try:
         assert ds.dataset_kind == "simulation"
         assert ds.model is None
-        assert ds.display_name == "figure-3 simulation"
+        assert ds.display_name == "Figure 3 simulation"
         # Simulation only forward-filters — no smoothed posterior.
         assert ds.has_acausal is False
         # Single state, all bins interior.
@@ -173,7 +173,7 @@ def test_simulated_viewer_hides_model_combo(tmp_path: Path) -> None:
         assert viewer._model_combo is None  # noqa: SLF001
         assert viewer._model_label is None  # noqa: SLF001
         # Window title uses display_name, not "None" from a missing model.
-        assert "figure-3 simulation" in viewer.windowTitle()
+        assert "Figure 3 simulation" in viewer.windowTitle()
         # Smoothed overlay disabled (data source has no acausal).
         smoothed_idx = next(
             i

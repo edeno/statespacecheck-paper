@@ -168,6 +168,12 @@ class _BaseHeatmapPanel(pg.PlotWidget):
         self._y1 = float(self._position_bins[-1])
         n_pos = int(self._position_bins.shape[0])
         self._dy_half = float(self._y1 - self._y0) / (2 * (n_pos - 1)) if n_pos > 1 else 0.0
+        # Precomputed for ``update_position_trajectory``: the linear
+        # mapping from real-cm position to the heatmap's uniform y-grid.
+        # Both arrays + ``_uniform_step`` are immutable after init, so
+        # there's no need to rebuild them on every window load.
+        self._arange_n_pos = np.arange(n_pos, dtype=np.float64)
+        self._uniform_step = float(self._y1 - self._y0) / (n_pos - 1) if n_pos > 1 else 0.0
 
         # Color levels are pinned from the first window's percentiles
         # (see ``update_window``) and then frozen so subsequent
@@ -257,15 +263,9 @@ class _BaseHeatmapPanel(pg.PlotWidget):
         if rel_time.size == 0:
             self._position_curve.clear()
             return
-        n_pos = self._position_bins.shape[0]
-        if n_pos > 1:
-            fractional_idx = np.interp(
-                linear_position,
-                self._position_bins,
-                np.arange(n_pos, dtype=np.float64),
-            )
-            uniform_step = (self._y1 - self._y0) / (n_pos - 1)
-            uniform_y = self._y0 + fractional_idx * uniform_step
+        if self._position_bins.shape[0] > 1:
+            fractional_idx = np.interp(linear_position, self._position_bins, self._arange_n_pos)
+            uniform_y = self._y0 + fractional_idx * self._uniform_step
         else:
             uniform_y = np.full_like(linear_position, self._y0)
         self._position_curve.setData(rel_time, uniform_y)

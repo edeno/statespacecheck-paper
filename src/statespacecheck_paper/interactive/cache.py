@@ -148,42 +148,17 @@ def _restore_state_bins_index(ds: xr.Dataset) -> xr.Dataset:
 
 
 def _extract_place_fields_concat(model: Any) -> tuple[NDArray[np.float64], NDArray[np.bool_]]:
-    """Extract place fields concatenated across observation models.
+    """Thin re-export of the shared place-field concat helper.
 
-    Mirrors the place-field assembly used by ``compute_model_diagnostics``
-    in ``real_data_analysis.py`` so the cached place fields align with
-    the predictive posterior's ``state_bins`` axis after the
-    ``is_track_interior_state_bins_`` mask is applied.
-
-    Parameters
-    ----------
-    model : decoder model
-        Fitted SortedSpikesDecoder or ContFragSortedSpikesClassifier.
-
-    Returns
-    -------
-    place_fields : np.ndarray, shape (n_cells, n_state_bins_full)
-        Place field firing rate per cell, concatenated across observation
-        models (i.e. across states for multi-state classifiers).
-    interior_mask : np.ndarray, shape (n_state_bins_full,)
-        Boolean mask of track-interior bins (the same one used by
-        ``model.predict`` to drop NaN bins).
+    Kept for back-compat with any external script that imported the
+    underscore-private name; new code should use
+    ``real_data_analysis.extract_place_fields_concat`` directly.
     """
-    from statespacecheck_paper.real_data_analysis import extract_place_fields
-
-    place_fields = np.concatenate(
-        [
-            extract_place_fields(
-                model,
-                environment_name=obs.environment_name,
-                encoding_group=obs.encoding_group,
-            )[0]
-            for obs in model.observation_models
-        ],
-        axis=1,
+    from statespacecheck_paper.real_data_analysis import (  # noqa: PLC0415
+        extract_place_fields_concat,
     )
-    interior_mask: NDArray[np.bool_] = np.asarray(model.is_track_interior_state_bins_, dtype=bool)
-    return place_fields, interior_mask
+
+    return extract_place_fields_concat(model)
 
 
 def _events_dataframe(
@@ -363,8 +338,8 @@ def build_model_cache(
 
     from statespacecheck_paper.load_local_data import load_neural_recording_from_files
     from statespacecheck_paper.real_data_analysis import (
-        _get_spike_events_from_spike_times,
         compute_per_cell_diagnostics,
+        extract_place_fields_concat,
         get_spike_counts,
     )
 
@@ -395,7 +370,7 @@ def build_model_cache(
 
     fitted_model = joblib.load(inputs.model_pkl)
 
-    place_fields_full, interior_mask = _extract_place_fields_concat(fitted_model)
+    place_fields_full, interior_mask = extract_place_fields_concat(fitted_model)
     if place_fields_full.shape[0] != n_cells:
         raise ValueError(
             f"Place fields cell count ({place_fields_full.shape[0]}) "
@@ -451,13 +426,9 @@ def build_model_cache(
         time=time_arr,
         include_dense_matrices=False,
     )
-    # ``compute_per_cell_diagnostics`` returns event arrays sorted in the
-    # same order as the (spike_time_ind, spike_cell_ind) pair built by
-    # ``_get_spike_events_from_spike_times``. Recompute that pair to
-    # obtain the matching ``cell_id`` column for the event table.
-    _, spike_cell_ind, _ = _get_spike_events_from_spike_times(spike_times, time_arr)
-    diagnostics["event_cell_ind"] = np.asarray(spike_cell_ind, dtype=np.int64)
-
+    # ``compute_per_cell_diagnostics`` already returns ``event_cell_ind``
+    # in the same order as the per-spike diagnostic arrays — no need to
+    # re-derive it via ``_get_spike_events_from_spike_times``.
     events_df = _events_dataframe(diagnostics, n_cells=n_cells)
     events_df.to_parquet(paths["events"], engine="pyarrow", compression="zstd")
 
@@ -699,10 +670,16 @@ def build_simulated_cache(
     # at which each cell fired, preserving ordering (already monotone
     # because ``spike_time_ind`` is built from ``np.nonzero`` on the
     # row-major spike matrix).
-    spike_times_per_cell: list[NDArray[np.float64]] = []
-    for cell_id in range(n_cells):
-        mask = spike_cell_ind == cell_id
-        spike_times_per_cell.append(event_times[mask].astype(np.float64))
+    # Bucket spike times by cell in O(n_spikes log n_spikes) — the
+    # naive ``mask = spike_cell_ind == cell_id`` loop would be
+    # O(n_cells × n_spikes) and wasteful at full real-data scale.
+    order = np.argsort(spike_cell_ind, kind="stable")
+    sorted_cell_ind = spike_cell_ind[order]
+    sorted_event_times = event_times[order].astype(np.float64)
+    bucket_starts = np.searchsorted(sorted_cell_ind, np.arange(n_cells + 1))
+    spike_times_per_cell: list[NDArray[np.float64]] = [
+        sorted_event_times[bucket_starts[c] : bucket_starts[c + 1]] for c in range(n_cells)
+    ]
     _write_spike_times(
         out_path=simulated_spike_times_path(cache_dir),
         spike_times=spike_times_per_cell,
