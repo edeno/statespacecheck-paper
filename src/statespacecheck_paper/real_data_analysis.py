@@ -406,6 +406,37 @@ def extract_place_fields(
     return place_fields, position_bins
 
 
+def extract_place_fields_concat(
+    model: Any,
+) -> tuple[NDArray[np.float64], NDArray[np.bool_]]:
+    """Concatenate per-observation-model place fields + the interior mask.
+
+    Returns the place fields aligned with the predictive posterior's
+    full ``state_bins`` axis (i.e. before the interior-mask filter):
+    one ``(n_cells, n_state_bins_full)`` array stacked across the
+    model's observation models, plus the matching boolean
+    ``is_track_interior_state_bins_`` mask. Callers that only need
+    the interior bins do ``place_fields[:, interior_mask]``.
+
+    Used by both ``compute_model_diagnostics`` (interior-only) and
+    the interactive cache builder (which keeps both so the viewer
+    can reconstruct the non-interior NaN columns).
+    """
+    place_fields = np.concatenate(
+        [
+            extract_place_fields(
+                model,
+                environment_name=obs.environment_name,
+                encoding_group=obs.encoding_group,
+            )[0]
+            for obs in model.observation_models
+        ],
+        axis=1,
+    )
+    interior_mask: NDArray[np.bool_] = np.asarray(model.is_track_interior_state_bins_, dtype=bool)
+    return place_fields, interior_mask
+
+
 def compute_per_cell_diagnostics(
     predictive_posterior: NDArray[np.float64],
     spike_counts: NDArray[np.int64],
@@ -413,6 +444,7 @@ def compute_per_cell_diagnostics(
     coverage: float = 0.95,
     spike_times: list[NDArray[np.float64]] | None = None,
     time: NDArray[np.float64] | None = None,
+    include_dense_matrices: bool = True,
 ) -> dict[str, NDArray[np.floating] | NDArray[np.intp]]:
     """Compute per-cell diagnostic metrics for model checking.
 
@@ -438,18 +470,25 @@ def compute_per_cell_diagnostics(
     time : np.ndarray, optional
         Decoder time grid used to map spike timestamps to predictive posterior
         rows. Required when ``spike_times`` is supplied.
+    include_dense_matrices : bool, default True
+        Forwarded to ``compute_per_cell_diagnostics_from_rates``. Set False
+        when only the per-spike event arrays are needed (avoids the
+        ``(n_time, n_cells)`` allocations, which can be hundreds of MB
+        for full-session real-data builds).
 
     Returns
     -------
     diagnostics : dict[str, np.ndarray]
-        Dictionary with keys:
-        - 'hpd_overlap': shape (n_time, n_cells), NaN when cell has no spike
-        - 'kl_divergence': shape (n_time, n_cells), NaN when cell has no spike
-        - 'spike_prob': shape (n_time, n_cells), NaN when cell has no spike
+        Always contains:
         - 'event_time': shape (n_spikes,), exact spike time when available
         - 'event_hpd_overlap': shape (n_spikes,), one value per spike
         - 'event_kl_divergence': shape (n_spikes,), one value per spike
         - 'event_spike_prob': shape (n_spikes,), one value per spike
+
+        When ``include_dense_matrices`` (the default), additionally:
+        - 'hpd_overlap': shape (n_time, n_cells), NaN when cell has no spike
+        - 'kl_divergence': shape (n_time, n_cells), NaN when cell has no spike
+        - 'spike_prob': shape (n_time, n_cells), NaN when cell has no spike
 
     Notes
     -----
@@ -497,18 +536,14 @@ def compute_per_cell_diagnostics(
         spike_time_ind.astype(np.intp),
         spike_cell_ind.astype(np.intp),
         coverage=coverage,
+        include_dense_matrices=include_dense_matrices,
     )
 
     result_float = dict(result)
-    for key in [
-        "hpd_overlap",
-        "kl_divergence",
-        "spike_prob",
-        "per_spike_likelihood",
-        "event_hpd_overlap",
-        "event_kl_divergence",
-        "event_spike_prob",
-    ]:
+    cast_keys = ["event_hpd_overlap", "event_kl_divergence", "event_spike_prob"]
+    if include_dense_matrices:
+        cast_keys.extend(["hpd_overlap", "kl_divergence", "spike_prob", "per_spike_likelihood"])
+    for key in cast_keys:
         result_float[key] = np.asarray(result_float[key], dtype=np.float64)
     if event_times is not None:
         result_float["event_time"] = event_times.astype(np.float64)
@@ -793,31 +828,14 @@ def compute_model_diagnostics(
     >>> # diagnostics = compute_model_diagnostics(model, results, spike_counts, time)
     >>> # diagnostics['hpd_overlap'].shape  # (n_time, n_cells)
     """
-    # Extract place fields from all observation models and concatenate along state bins.
-    # Filter to track interior bins using model.is_track_interior_state_bins_.
-    #
-    # For multi-state models (e.g. ContFragSortedSpikesClassifier), position bins repeat
-    # across states: place_fields become (n_cells, n_bins_state1 + n_bins_state2).
-    # The un-marginalized predictive_posterior has matching extended dimensions because
-    # per-state place fields must be evaluated against the per-state posterior (not the
-    # state-marginalized version from get_state_marginalized_posterior).
-    #
-    # IMPORTANT: Both place_fields and predictive_posterior are filtered using the same
-    # mask (is_track_interior_state_bins_), which ensures they have matching bin dimensions.
-    # The model guarantees that results.predictive_posterior uses the same state_bins
-    # indexing as the encoding model, so dropna removes exactly the non-interior bins.
-    place_fields = np.concatenate(
-        [
-            extract_place_fields(
-                model,
-                environment_name=obs.environment_name,
-                encoding_group=obs.encoding_group,
-            )[0]
-            for obs in model.observation_models
-        ],
-        axis=1,
-    )  # shape (n_cells, n_bins)
-    place_fields = place_fields[:, model.is_track_interior_state_bins_]
+    # Extract place fields concatenated across observation models (one
+    # per state for multi-state classifiers) and filter to interior bins.
+    # ``predictive_posterior.dropna(state_bins)`` below produces a matching
+    # interior-only column count because the model uses one
+    # ``is_track_interior_state_bins_`` mask consistently across the
+    # encoding model and ``predict()`` output.
+    place_fields_full, interior_mask = extract_place_fields_concat(model)
+    place_fields = place_fields_full[:, interior_mask]
 
     # Get predictive posterior, dropping NaN state bins (non-interior bins)
     predictive_posterior = results.predictive_posterior.dropna(dim="state_bins").values

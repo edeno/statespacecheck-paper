@@ -47,6 +47,12 @@ dev = [
     "ipykernel>=6.0.0",
     "pre-commit>=3.0.0",
 ]
+interactive = [
+    "pyqtgraph>=0.13",
+    "PySide6>=6.6",
+    "zarr>=2.16,<3",
+    "pyarrow>=14",
+]
 
 [tool.hatch.metadata]
 allow-direct-references = true
@@ -99,8 +105,39 @@ module = [
     "joblib.*",
     "xarray.*",
     "non_local_detector.*",
+    "pyqtgraph.*",
+    "PySide6.*",
+    "zarr.*",
 ]
 ignore_missing_imports = true
+
+# ``non_local_detector`` ships without a ``py.typed`` marker and
+# its top-level ``__init__.py`` re-exports symbols without an
+# explicit ``__all__``. Mypy >= 1.20 flags those implicit re-exports
+# as ``[attr-defined]`` errors when it can locate the installed
+# package (so ``ignore_missing_imports`` doesn't help — the import
+# is found, the analysis just trips on missing ``__all__``). Tell
+# mypy to skip following imports of this package so it's treated as
+# ``Any`` regardless of installed version. Scoped to this one
+# package — applying ``follow_imports="skip"`` to ``matplotlib`` /
+# ``pandas`` would propagate ``Any`` into typed return values
+# elsewhere in the codebase.
+[[tool.mypy.overrides]]
+module = ["non_local_detector.*"]
+follow_imports = "skip"
+
+# pyqtgraph and PySide6 have no stubs, so subclassing their widgets
+# shows up as "Class cannot subclass Any" and ``@Slot``-decorated
+# methods register as untyped. Disable both checks for the modules
+# that touch Qt; this does not relax other strict checks.
+[[tool.mypy.overrides]]
+module = [
+    "statespacecheck_paper.interactive.viewer",
+    "statespacecheck_paper.interactive.panels",
+    "statespacecheck_paper.interactive.app",
+]
+disallow_subclassing_any = false
+disallow_untyped_decorators = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -109,4 +146,13 @@ addopts = [
     "--cov=src/statespacecheck_paper",
     "--cov-report=html",
     "--cov-report=term-missing",
+    # Skip ``slow``-marked tests by default. The real-data
+    # cache-build integration test reads multi-GB ``data/intermediates/``
+    # files and rebuilds a Zarr store; running it accidentally on a
+    # fully provisioned checkout has been a foot-gun.
+    "-m",
+    "not slow",
+]
+markers = [
+    "slow: long-running tests (e.g. real-data cache builds); run with `-m slow`",
 ]

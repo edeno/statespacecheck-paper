@@ -205,7 +205,8 @@ cython_debug/
 ## Optional: Uncomment to ignore compiled PDFs in manuscript/
 # manuscript/*.pdf
 
-# Data files
+# Data files (also matches a ``data`` symlink to an external dataset)
+data
 data/
 
 # Candidate figures (temporary/exploratory)
