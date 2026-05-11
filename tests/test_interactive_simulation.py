@@ -56,6 +56,10 @@ def _tiny_params():
         T_fast_end=700,
         T_recovery3_end=800,
         T_slow_end=1000,
+        T_recovery4_end=1050,
+        T_broad_decoder_end=1100,
+        T_recovery5_end=1150,
+        T_tight_decoder_end=1200,
     )
 
 

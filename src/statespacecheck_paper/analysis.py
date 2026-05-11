@@ -76,7 +76,11 @@ class DecodeParams:
     - 16k-20k: Clean recovery (4k timesteps)
     - 20k-24k: Fast movement misfit (4k timesteps)
     - 24k-28k: Clean recovery (4k timesteps)
-    - 28k-32k: Momentum misfit (4k timesteps)
+    - 28k-32k: Drift misfit (4k timesteps)
+    - 32k-34k: Clean recovery (2k timesteps)
+    - 34k-36k: Broad-decoder phase (2k timesteps)
+    - 36k-38k: Clean recovery (2k timesteps)
+    - 38k-40k: Tight-decoder phase (2k timesteps)
 
     Parameters
     ----------
@@ -95,13 +99,29 @@ class DecodeParams:
     T_recovery3_end : int, default 28_000
         End of third recovery period.
     T_slow_end : int, default 32_000
-        End of slow movement misfit period.
+        End of drift misfit period.
+    T_recovery4_end : int, default 34_000
+        End of fourth recovery period (after drift).
+    T_broad_decoder_end : int, default 36_000
+        End of broad-decoder phase. Decoder uses inflated transition matrix
+        (sigx_pred_slow_phase) while animal walks normally and cells fire
+        normally; engineered to show KL false-positives when predictive
+        is much wider than the per-spike likelihood.
+    T_recovery5_end : int, default 38_000
+        End of fifth recovery period.
+    T_tight_decoder_end : int, default 40_000
+        End of tight-decoder phase. Decoder uses tight transition matrix
+        (sigx_pred_tight) while animal is stationary; engineered to show
+        KL false-positives in the opposite shape-mismatch direction
+        (predictive much narrower than the per-spike likelihood).
     sigx_pred : float, default 0.5
         Decoder's dynamics standard deviation (baseline).
     sigx_pred_fast_phase : float, default 0.1
         Narrow decoder for fast phase (5x too narrow!).
     sigx_pred_slow_phase : float, default 20.0
         Inflated decoder for slow phase (40x too broad!).
+    sigx_pred_tight : float, default 0.01
+        Tight decoder for tight-decoder phase (50x tighter than baseline).
     sigx_true_fast : float, default 10.0
         True dynamics std in fast phase (100x faster than decoder!).
     sigx_true_slow : float, default 0.0
@@ -148,9 +168,19 @@ class DecodeParams:
     T_fast_end: int = 24_000
     T_recovery3_end: int = 28_000
     T_slow_end: int = 32_000
+    # Extended timeline for metric-dissociation phases
+    T_recovery4_end: int = 34_000  # clean recovery after drift
+    T_broad_decoder_end: int = 36_000  # broad-decoder phase (KL false-positives)
+    T_recovery5_end: int = 38_000  # clean recovery
+    T_tight_decoder_end: int = (
+        40_000  # tight-decoder phase (KL false-positives, opposite direction)
+    )
     sigx_pred: float = 0.5  # decoder's dynamics std (baseline)
     sigx_pred_fast_phase: float = 0.1  # narrow decoder for fast phase (5x too narrow!)
     sigx_pred_slow_phase: float = 20.0  # inflated decoder for slow phase (40x too broad!)
+    sigx_pred_tight: float = (
+        0.01  # tight decoder for tight-decoder phase (50x tighter than baseline)
+    )
     sigx_true_fast: float = 10.0  # true dynamics std in fast phase (100x faster than decoder!)
     sigx_true_slow: float = 0.0  # true dynamics std in slow phase (completely stationary!)
     xs_min: int = 0
@@ -354,6 +384,8 @@ def decode_and_diagnostics(
     narrow_window: tuple[int, int] | None = None,
     transition_matrix_inflated: NDArray[np.floating] | None = None,
     inflate_window: tuple[int, int] | None = None,
+    transition_matrix_tight: NDArray[np.floating] | None = None,
+    tight_window: tuple[int, int] | None = None,
 ) -> dict[str, NDArray[np.floating] | NDArray[np.intp]]:
     """Run the Bayesian filter with per-time, per-cell diagnostics.
 
@@ -398,9 +430,16 @@ def decode_and_diagnostics(
     narrow_window : tuple[int, int], optional
         Time window (start, end) for narrow transition matrix.
     transition_matrix_inflated : np.ndarray, shape (n_bins, n_bins), optional
-        Alternative transition matrix for inflated window (slow movement misfit).
+        Alternative transition matrix for inflated window (broad-decoder phase
+        — predictive much wider than per-spike likelihood).
     inflate_window : tuple[int, int], optional
         Time window (start, end) for inflated transition matrix.
+    transition_matrix_tight : np.ndarray, shape (n_bins, n_bins), optional
+        Alternative transition matrix for tight window (tight-decoder phase
+        — predictive much narrower than per-spike likelihood). Both this
+        argument and ``tight_window`` must be provided to take effect.
+    tight_window : tuple[int, int], optional
+        Time window (start, end) for tight transition matrix.
 
     Returns
     -------
@@ -482,6 +521,7 @@ def decode_and_diagnostics(
     start_r, end_r = remap_window
     start_narrow, end_narrow = _window_or_never(narrow_window, n_time)
     start_inflate, end_inflate = _window_or_never(inflate_window, n_time)
+    start_tight, end_tight = _window_or_never(tight_window, n_time)
 
     for t in range(1, n_time):
         # Select transition matrix based on which window we're in
@@ -490,6 +530,8 @@ def decode_and_diagnostics(
             current_transition = transition_matrix_narrow
         elif transition_matrix_inflated is not None and start_inflate <= t < end_inflate:
             current_transition = transition_matrix_inflated
+        elif transition_matrix_tight is not None and start_tight <= t < end_tight:
+            current_transition = transition_matrix_tight
         else:
             current_transition = transition_matrix
 

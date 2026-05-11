@@ -134,6 +134,19 @@ COLORS: dict[str, str] = {
     # Slow/stationary period - minimal movement
     "phase_slow": "#D6E8FF",  # Light blue (from WONG[5])
     #
+    # Broad-decoder phase - decoder uses inflated transition matrix while
+    # animal walks and cells fire normally; engineered to inflate KL
+    # divergence while HPD overlap and the rank-based p-value stay near
+    # baseline (KL false-positive).
+    "phase_broad_decoder": "#E8E1F2",  # Light purple (from WONG[7])
+    #
+    # Tight-decoder phase - decoder uses a very tight transition matrix
+    # with stationary animal; engineered to inflate KL in the opposite
+    # shape-mismatch direction (predictive much narrower than the
+    # per-spike likelihood) while HPD overlap and p-value stay near
+    # baseline.
+    "phase_tight_decoder": "#E0F2E8",  # Light green (from WONG[3])
+    #
     # -------------------------------------------------------------------------
     # Heatmap Colormaps
     # -------------------------------------------------------------------------

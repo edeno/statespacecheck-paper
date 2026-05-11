@@ -23,7 +23,7 @@ statespacecheck-paper/
 ├── scripts/                     # Figure generation scripts
 │   ├── generate_figure01.py    # Figure 1: Schematic and distribution comparisons
 │   ├── generate_figure02.py    # Figure 2: Diagnostic demonstrations
-│   ├── generate_figure03.py    # Figure 3: Per-cell diagnostic metrics
+│   ├── generate_figure03.py    # Figure 3: Per-cell diagnostics + metric-error dissociation panels
 │   └── generate_all_figures.py # Master script to generate all figures
 ├── figures/                     # Generated figure outputs
 │   ├── main/                   # Main text figures (PDF + PNG)
@@ -57,7 +57,7 @@ statespacecheck-paper/
 
 - **generate_figure01.py**: Figure 1 orchestration (~170 lines) - schematic and distributions
 - **generate_figure02.py**: Figure 2 orchestration (~815 lines) - diagnostic demonstrations
-- **generate_figure03.py**: Figure 3 orchestration (~228 lines) - per-cell metrics
+- **generate_figure03.py**: Figure 3 orchestration (~228 lines) - per-cell metrics across 12 simulation phases including two engineered metric-stress phases (broad-decoder and tight-decoder) that dissociate KL divergence from HPD overlap and the rank-based p-value; also shows recovery-transient and per-spike scatter panels
 - **generate_all_figures.py**: Master script to generate all figures
 
 ## Repository Structure

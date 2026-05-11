@@ -36,6 +36,26 @@ def run_figure03_simulation(
 ) -> dict[str, Any]:
     """Run the figure-3 phased simulation and decode it.
 
+    Phases (in order):
+
+    1. Clean baseline
+    2. Remapping misfit
+    3. Clean recovery
+    4. Flat-firing misfit
+    5. Clean recovery
+    6. Fast-movement misfit
+    7. Clean recovery
+    8. Drift misfit
+    9. Clean recovery
+    10. Broad-decoder phase (decoder uses ~40x inflated transition matrix;
+        engineered to inflate KL while HPD overlap and the rank-based
+        p-value stay near baseline)
+    11. Clean recovery
+    12. Tight-decoder phase (decoder uses ~50x tighter transition matrix
+        with stationary animal; engineered to inflate KL in the opposite
+        shape-mismatch direction while HPD overlap and p-value stay near
+        baseline)
+
     Parameters
     ----------
     params : DecodeParams, optional
@@ -74,6 +94,8 @@ def run_figure03_simulation(
     xs = np.arange(params.xs_min, params.xs_max + params.xs_step, params.xs_step, dtype=float)
     transition_matrix = gaussian_transition_matrix(xs, params.sigx_pred)
     transition_matrix_narrow = gaussian_transition_matrix(xs, params.sigx_pred_fast_phase)
+    transition_matrix_inflated = gaussian_transition_matrix(xs, params.sigx_pred_slow_phase)
+    transition_matrix_tight = gaussian_transition_matrix(xs, params.sigx_pred_tight)
 
     phases: list[tuple[NDArray[np.floating], NDArray[np.int_]]] = []
     phase_labels: list[str] = []
@@ -129,7 +151,7 @@ def run_figure03_simulation(
     x = _walk(n, params.sigx_pred)
     _add_phase("Clean Recovery", x, _spikes_position_tuned(x))
 
-    # 8. Momentum misfit (persistent velocity vs memoryless random walk)
+    # 8. Drift misfit (persistent velocity vs memoryless random walk)
     n = params.T_slow_end - params.T_recovery3_end
     momentum = 0.95
     x_mom = np.zeros(n)
@@ -140,6 +162,37 @@ def run_figure03_simulation(
         x_mom[t] = x_mom[t - 1] + velocity
     x = reflect_into_interval(x_mom, float(params.xs_min), float(params.xs_max))
     _add_phase("Drift Misfit", x, _spikes_position_tuned(x))
+
+    # 9. Clean Recovery 4 (resets walk after drift)
+    n = params.T_recovery4_end - params.T_slow_end
+    x = _walk(n, params.sigx_pred)
+    _add_phase("Clean Recovery", x, _spikes_position_tuned(x))
+
+    # 10. Broad-Decoder Phase
+    #     True walk and spikes are normal; the decoder applies an inflated
+    #     transition matrix (sigx_pred_slow_phase ~ 40x baseline). Predictive
+    #     becomes very wide while per-spike likelihoods stay narrow at the
+    #     correct location -> KL inflates strongly while HPD overlap and the
+    #     rank-based p-value stay near baseline (KL false-positive).
+    n = params.T_broad_decoder_end - params.T_recovery4_end
+    x = _walk(n, params.sigx_pred)
+    _add_phase("Broad-Decoder Phase", x, _spikes_position_tuned(x))
+
+    # 11. Clean Recovery 5
+    n = params.T_recovery5_end - params.T_broad_decoder_end
+    x = _walk(n, params.sigx_pred)
+    _add_phase("Clean Recovery", x, _spikes_position_tuned(x))
+
+    # 12. Tight-Decoder Phase
+    #     Animal stationary (sigx_true_slow=0.0); decoder applies a very
+    #     tight transition matrix (sigx_pred_tight ~ 50x tighter than
+    #     baseline). Predictive collapses to nearly a point estimate while
+    #     per-spike likelihoods are normal-width at the same location -> KL
+    #     inflates in the opposite shape-mismatch direction; HPD overlap and
+    #     p-value stay near baseline.
+    n = params.T_tight_decoder_end - params.T_recovery5_end
+    x = _walk(n, params.sigx_true_slow)  # stationary
+    _add_phase("Tight-Decoder Phase", x, _spikes_position_tuned(x))
 
     x_true = np.concatenate([p_x for p_x, _ in phases], axis=0)
     spikes = np.vstack([p_s for _, p_s in phases])
@@ -155,6 +208,10 @@ def run_figure03_simulation(
         remap_from_to=params.remap_from_to,
         transition_matrix_narrow=transition_matrix_narrow,
         narrow_window=(params.T_recovery2_end, params.T_fast_end),
+        transition_matrix_inflated=transition_matrix_inflated,
+        inflate_window=(params.T_recovery4_end, params.T_broad_decoder_end),
+        transition_matrix_tight=transition_matrix_tight,
+        tight_window=(params.T_recovery5_end, params.T_tight_decoder_end),
     )
 
     boundaries = np.cumsum([len(p_x) for p_x, _ in phases]).tolist()

@@ -34,9 +34,14 @@ class TestDecodeParams:
         assert params.T_fast_end == 24_000
         assert params.T_recovery3_end == 28_000
         assert params.T_slow_end == 32_000
+        assert params.T_recovery4_end == 34_000
+        assert params.T_broad_decoder_end == 36_000
+        assert params.T_recovery5_end == 38_000
+        assert params.T_tight_decoder_end == 40_000
         assert params.sigx_pred == 0.5
         assert params.sigx_pred_fast_phase == 0.1
         assert params.sigx_pred_slow_phase == 20.0
+        assert params.sigx_pred_tight == 0.01
         assert params.sigx_true_fast == 10.0
         assert params.sigx_true_slow == 0.0
         assert params.xs_min == 0

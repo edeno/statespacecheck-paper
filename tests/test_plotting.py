@@ -389,6 +389,11 @@ class TestPlotCombinedDiagnostics:
             "per_spike_likelihood": per_spike_lik,
             "spike_time_ind": spike_time_ind,
             "spike_cell_ind": spike_cell_ind,
+            "event_time_ind": spike_time_ind,
+            "event_cell_ind": spike_cell_ind,
+            "event_hpd_overlap": rng.uniform(0, 1, n_spikes),
+            "event_kl_divergence": rng.uniform(0, 5, n_spikes),
+            "event_spike_prob": rng.uniform(0, 1, n_spikes),
         }
 
         thresholds = Thresholds(
@@ -406,6 +411,10 @@ class TestPlotCombinedDiagnostics:
             T_fast_end=5500,
             T_recovery3_end=5700,
             T_slow_end=5900,
+            T_recovery4_end=5950,
+            T_broad_decoder_end=5970,
+            T_recovery5_end=5980,
+            T_tight_decoder_end=5990,
             remap_from_to=(
                 (0, 5),
                 (1, 6),
@@ -468,6 +477,11 @@ class TestPlotCombinedDiagnostics:
             "per_spike_likelihood": per_spike_lik,
             "spike_time_ind": spike_time_ind,
             "spike_cell_ind": spike_cell_ind,
+            "event_time_ind": spike_time_ind,
+            "event_cell_ind": spike_cell_ind,
+            "event_hpd_overlap": rng.uniform(0, 1, n_spikes),
+            "event_kl_divergence": rng.uniform(0, 5, n_spikes),
+            "event_spike_prob": rng.uniform(0, 1, n_spikes),
         }
 
         thresholds = Thresholds(
@@ -485,6 +499,10 @@ class TestPlotCombinedDiagnostics:
             T_fast_end=3300,
             T_recovery3_end=3400,
             T_slow_end=3450,
+            T_recovery4_end=3460,
+            T_broad_decoder_end=3470,
+            T_recovery5_end=3480,
+            T_tight_decoder_end=3495,
             remap_from_to=((0, 2), (1, 3), (2, 4), (3, 0), (4, 1)),  # 5 cells
         )
 
@@ -544,6 +562,10 @@ class TestPlotCombinedDiagnostics:
             T_fast_end=3300,
             T_recovery3_end=3400,
             T_slow_end=3450,
+            T_recovery4_end=3460,
+            T_broad_decoder_end=3470,
+            T_recovery5_end=3480,
+            T_tight_decoder_end=3495,
             remap_from_to=((0, 1), (1, 0)),
         )
 

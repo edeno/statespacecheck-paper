@@ -39,8 +39,8 @@ def run_demo(params: DecodeParams) -> None:
     """Run the full diagnostic demonstration with multiple simulation phases.
 
     Generates Figure 3 showing a Bayesian decoder with periods of good and poor
-    model fit across 8 phases: baseline, remapping misfit, flat firing misfit,
-    fast movement misfit, and momentum misfit, with recovery periods between.
+    model fit across 12 phases: baseline, four misfits + recoveries, drift, and
+    two engineered metric-stress phases (broad-decoder and tight-decoder).
 
     Parameters
     ----------
@@ -64,8 +64,23 @@ def run_demo(params: DecodeParams) -> None:
     6. Fast movement misfit (T_recovery2_end - T_fast_end): Animal moves faster
        than model expects
     7. Recovery 3 (T_fast_end - T_recovery3_end): Return to good fit
-    8. Momentum misfit (T_recovery3_end - T_slow_end): Animal has persistent
+    8. Drift misfit (T_recovery3_end - T_slow_end): Animal has persistent
        velocity but model assumes memoryless random walk
+    9. Recovery 4 (T_slow_end - T_recovery4_end): Return to good fit
+    10. Broad-decoder phase (T_recovery4_end - T_broad_decoder_end): Decoder
+        applies an inflated transition matrix; engineered to inflate KL while
+        HPD overlap and p-value stay near baseline (KL false-positive).
+    11. Recovery 5 (T_broad_decoder_end - T_recovery5_end): Return to good fit
+    12. Tight-decoder phase (T_recovery5_end - T_tight_decoder_end): Decoder
+        applies a very tight transition matrix with stationary animal;
+        engineered to inflate KL in the opposite shape-mismatch direction
+        while HPD overlap and p-value stay near baseline.
+
+    Beyond the time-series block, figure 3 includes a recovery-transient panel
+    (KL recovers more slowly than HPD overlap and p-value after each misfit),
+    a per-spike scatter (KL vs HPD overlap, colored by phase, showing the
+    broad-decoder cluster sitting at high KL AND high HPDO), and a summary
+    heatmap of % events exceeding baseline threshold per phase per metric.
 
     Diagnostic thresholds are computed from the clean baseline period.
     """
@@ -93,6 +108,8 @@ def run_demo(params: DecodeParams) -> None:
         thresholds,
         params,
         pf_centers,
+        phase_boundaries=sim["phase_boundaries"],
+        phase_labels=sim["phase_labels"],
     )
 
     # Save figure (uses plt.gcf() to get current figure)
