@@ -123,6 +123,13 @@ class DecodeParams:
         Inflated decoder for slow phase (40x too broad!).
     sigx_pred_tight : float, default 0.01
         Tight decoder for tight-decoder phase (50x tighter than baseline).
+        At sigma values << bin width, the transition matrix is effectively
+        identity, so further reduction has no numerical effect on the
+        per-step predictive. The KL inflation in this phase is therefore
+        bounded by the likelihood width (KL(point || gaussian_like) is
+        roughly log(sqrt(2*pi) * pf_width)), which is milder than the
+        broad-decoder direction; the heatmap row reflects the asymmetry
+        of KL.
     sigx_true_fast : float, default 10.0
         True dynamics std in fast phase (100x faster than decoder!).
     sigx_true_slow : float, default 0.0

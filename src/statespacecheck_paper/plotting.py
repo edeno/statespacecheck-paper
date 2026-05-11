@@ -104,11 +104,14 @@ def add_phase_boundaries(
         t_broad_decoder_end = phase_boundaries[9]
         t_recovery5_end = phase_boundaries[10]
         t_tight_decoder_end = phase_boundaries[11]
+        # ``phase_broad_decoder`` and ``phase_tight_decoder`` are registered
+        # in ``style.COLORS``; direct indexing fails loudly if they're ever
+        # renamed, rather than silently substituting a different hex.
         phases.append(
             (
                 t_recovery4_end,
                 t_broad_decoder_end,
-                COLORS.get("phase_broad_decoder", "#E8E1F2"),
+                COLORS["phase_broad_decoder"],
                 "Broad decoder",
             )
         )
@@ -116,7 +119,7 @@ def add_phase_boundaries(
             (
                 t_recovery5_end,
                 t_tight_decoder_end,
-                COLORS.get("phase_tight_decoder", "#E0F2E8"),
+                COLORS["phase_tight_decoder"],
                 "Tight decoder",
             )
         )
@@ -1308,14 +1311,17 @@ def _phase_color_for_label(label: str) -> str:
     Falls back to neutral grey when no specific color is registered for the
     label (covers the multiple ``"Clean Recovery"`` blocks).
     """
+    # All keyed colors below are registered in ``style.COLORS``; direct
+    # indexing fails loudly if a key is ever renamed or removed, rather
+    # than silently substituting a different (and inconsistent) hex.
     mapping = {
         "Clean Baseline": COLORS["ground_truth"],
         "Remapping Misfit": COLORS["phase_remap"],
-        "Flat Firing Misfit": COLORS.get("phase_flat", "#FFD6D6"),
+        "Flat Firing Misfit": COLORS["phase_flat"],
         "Fast Movement Misfit": COLORS["phase_fast"],
         "Drift Misfit": COLORS["phase_slow"],
-        "Broad-Decoder Phase": COLORS.get("phase_broad_decoder", "#9E7BB5"),
-        "Tight-Decoder Phase": COLORS.get("phase_tight_decoder", "#73A89B"),
+        "Broad-Decoder Phase": COLORS["phase_broad_decoder"],
+        "Tight-Decoder Phase": COLORS["phase_tight_decoder"],
     }
     return mapping.get(label, "0.7")
 
@@ -1861,7 +1867,18 @@ def plot_combined_diagnostics(
     kl_thr = thresholds.kl_divergence
     sp_thr = thresholds.spike_prob
 
-    # Compute fraction exceeding threshold per phase (non-NaN only)
+    # Compute fraction exceeding threshold per phase (non-NaN only).
+    #
+    # Floor-effect caveat for HPD overlap: ``hpd_thr`` is the 1st-percentile
+    # of baseline HPDO. With our default place-field geometry, baseline HPDOs
+    # are tightly concentrated near 1.0 and a substantial fraction of baseline
+    # events achieve HPDO == 0.0 exactly (single-bin disjoint distributions).
+    # That pushes the 1st-percentile threshold to 0.0, and ``valid <= 0.0``
+    # then degenerates to ``valid == 0.0``. The row is still informative —
+    # exact-zero overlap is genuine inconsistency — but the % is a count of
+    # disjoint-HPD events rather than a graded "below baseline" rate.
+    # Re-evaluate if PF geometry changes enough to shift the 1st percentile
+    # above 0.
     frac_data = np.zeros((3, len(phase_windows)))
     for j, (_name, t0, t1) in enumerate(phase_windows):
         for i, (metric_key, thr_val, direction) in enumerate(

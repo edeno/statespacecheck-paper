@@ -208,6 +208,14 @@ def run_figure03_simulation(
     #     per-spike likelihoods are normal-width at the same location -> KL
     #     inflates in the opposite shape-mismatch direction; HPD overlap and
     #     p-value stay near baseline.
+    #
+    #     Note: KL's asymmetry makes this direction the *milder* false-positive
+    #     case. KL(broad || narrow) >> KL(narrow || broad) because the broad
+    #     side has mass in regions where the narrow side is near zero;
+    #     swapping the order makes the offending region near-zero-weight under
+    #     the narrow predictive. The tight column of the summary heatmap is
+    #     therefore lighter than the broad column even though the underlying
+    #     dissociation is real.
     n = params.T_tight_decoder_end - params.T_recovery5_end
     x = _walk(n, params.sigx_true_slow)  # stationary
     _add_phase("Tight-Decoder Phase", x, _spikes_position_tuned(x))
