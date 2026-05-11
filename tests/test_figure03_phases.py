@@ -19,13 +19,12 @@ story the paper claims; CI flags the regression.
 from __future__ import annotations
 
 import warnings
-from typing import Any
 
 import numpy as np
 import pytest
 
 from statespacecheck_paper.analysis import DecodeParams, compute_thresholds
-from statespacecheck_paper.figure03_demo import run_figure03_simulation
+from statespacecheck_paper.figure03_demo import SimulationResult, run_figure03_simulation
 
 
 def _moderate_params() -> DecodeParams:
@@ -53,15 +52,15 @@ def _moderate_params() -> DecodeParams:
 
 
 def _per_phase_medians(
-    sim: dict[str, Any],
+    sim: SimulationResult,
 ) -> dict[str, tuple[float, float, float]]:
     """Return (kl_med, hpd_med, sp_med) per phase label."""
-    metrics = sim["metrics"]  # type: ignore[index]
-    boundaries = np.asarray(sim["phase_boundaries"])  # type: ignore[arg-type]
-    labels = sim["phase_labels"]  # type: ignore[index]
+    metrics = sim["metrics"]
+    boundaries = np.asarray(sim["phase_boundaries"])
+    labels = sim["phase_labels"]
     event_phase = np.searchsorted(boundaries, metrics["event_time_ind"], side="right")
     out: dict[str, tuple[float, float, float]] = {}
-    for i, label in enumerate(labels):  # type: ignore[arg-type]
+    for i, label in enumerate(labels):
         mask = event_phase == i
         if not mask.any():
             continue
@@ -73,15 +72,14 @@ def _per_phase_medians(
 
 
 @pytest.fixture(scope="module")
-def sim() -> dict[str, Any]:
+def sim() -> SimulationResult:
     return run_figure03_simulation(_moderate_params(), seed=0)
 
 
-def test_run_figure03_simulation_extended_phases(sim: dict[str, Any]) -> None:
+def test_run_figure03_simulation_extended_phases(sim: SimulationResult) -> None:
     """``run_figure03_simulation`` returns the expected 12 phases in order
     and a timeline that ends at ``T_tight_decoder_end``.
     """
-    params = sim["params"]  # type: ignore[index]
     expected_labels = [
         "Clean Baseline",
         "Remapping Misfit",
@@ -96,15 +94,16 @@ def test_run_figure03_simulation_extended_phases(sim: dict[str, Any]) -> None:
         "Clean Recovery",
         "Tight-Decoder Phase",
     ]
+    params = sim["params"]
     assert sim["phase_labels"] == expected_labels
-    boundaries = np.asarray(sim["phase_boundaries"])  # type: ignore[arg-type]
-    assert boundaries[-1] == params.T_tight_decoder_end  # type: ignore[attr-defined]
+    boundaries = np.asarray(sim["phase_boundaries"])
+    assert boundaries[-1] == params.T_tight_decoder_end
     assert np.all(np.diff(boundaries) > 0)
-    x_true = np.asarray(sim["x_true"])  # type: ignore[arg-type]
-    assert x_true.shape[0] == params.T_tight_decoder_end  # type: ignore[attr-defined]
+    x_true = np.asarray(sim["x_true"])
+    assert x_true.shape[0] == params.T_tight_decoder_end
 
 
-def test_broad_decoder_phase_dissociates_kl_from_hpd(sim: dict[str, Any]) -> None:
+def test_broad_decoder_phase_dissociates_kl_from_hpd(sim: SimulationResult) -> None:
     """Load-bearing: broad-decoder phase inflates KL while HPD overlap
     stays near baseline. This is the headline KL-false-positive case.
     """
@@ -126,7 +125,7 @@ def test_broad_decoder_phase_dissociates_kl_from_hpd(sim: dict[str, Any]) -> Non
     )
 
 
-def test_tight_decoder_phase_dissociates_kl_from_hpd(sim: dict[str, Any]) -> None:
+def test_tight_decoder_phase_dissociates_kl_from_hpd(sim: SimulationResult) -> None:
     """Load-bearing: tight-decoder phase inflates KL in the opposite
     shape-mismatch direction (predictive much narrower than likelihood)
     while HPD overlap stays near baseline.
@@ -149,7 +148,7 @@ def test_tight_decoder_phase_dissociates_kl_from_hpd(sim: dict[str, Any]) -> Non
     )
 
 
-def test_remapping_phase_flags_all_three(sim: dict[str, Any]) -> None:
+def test_remapping_phase_flags_all_three(sim: SimulationResult) -> None:
     """Regression guard: remapping phase flags all three metrics."""
     medians = _per_phase_medians(sim)
     base_kl, base_hpd, base_sp = medians["Clean Baseline"]
@@ -165,16 +164,20 @@ def test_remapping_phase_flags_all_three(sim: dict[str, Any]) -> None:
     )
 
 
-def test_kl_recovery_slower_than_hpdo_after_remap(sim: dict[str, Any]) -> None:
+def test_kl_recovery_slower_than_hpdo_after_remap(sim: SimulationResult) -> None:
     """Load-bearing: KL takes at least as many timesteps as HPDO to
     return to baseline-safe side after the remap misfit ends.
 
     The recovery-transient panel of figure 3 visualizes this lag; the
-    assertion makes the claim CI-enforced.
+    assertion makes the claim CI-enforced. At small simulation scales
+    the two metrics may both return at the same timestep
+    (``kl_back == hpd_back``), which still satisfies the ``>=`` bound;
+    the strictly-slower-recovery claim becomes visually clearer at
+    full simulation size.
     """
-    params = sim["params"]  # type: ignore[index]
-    metrics = sim["metrics"]  # type: ignore[index]
-    thresholds = compute_thresholds(metrics, baseline_end=params.T_remap_start)  # type: ignore[attr-defined,arg-type]
+    params = sim["params"]
+    metrics = sim["metrics"]
+    thresholds = compute_thresholds(metrics, baseline_end=params.T_remap_start)
 
     # Per-timestep median across cells (suppress all-NaN slice warnings
     # for timesteps with no spikes — those just appear as NaN gaps).
@@ -183,8 +186,8 @@ def test_kl_recovery_slower_than_hpdo_after_remap(sim: dict[str, Any]) -> None:
         hpd_t = np.nanmedian(metrics["hpd_overlap"], axis=1)
         kl_t = np.nanmedian(metrics["kl_divergence"], axis=1)
 
-    t_lo = params.T_remap_end  # type: ignore[attr-defined]
-    t_hi = params.T_recovery1_end  # type: ignore[attr-defined]
+    t_lo = params.T_remap_end
+    t_hi = params.T_recovery1_end
     hpd_window = hpd_t[t_lo:t_hi]
     kl_window = kl_t[t_lo:t_hi]
 
@@ -202,7 +205,7 @@ def test_kl_recovery_slower_than_hpdo_after_remap(sim: dict[str, Any]) -> None:
 
 
 def test_broad_decoder_events_cluster_at_high_kl_and_high_hpdo(
-    sim: dict[str, Any],
+    sim: SimulationResult,
 ) -> None:
     """The visible payload of the per-spike scatter panel: events in
     the broad-decoder phase occupy the upper-right region of (KL, HPDO)

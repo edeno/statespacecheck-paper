@@ -14,7 +14,7 @@ computation + plotting.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TypedDict
 
 import numpy as np
 from numpy.typing import NDArray
@@ -29,11 +29,29 @@ from statespacecheck_paper.simulation import (
 )
 
 
+class SimulationResult(TypedDict):
+    """Return shape of :func:`run_figure03_simulation`.
+
+    Promotes the simulation dict from ``dict[str, Any]`` to a fixed schema
+    so downstream consumers (the figure script, the interactive cache
+    builder, the test suite) get real type checking on every field
+    access.
+    """
+
+    params: DecodeParams
+    xs: NDArray[np.floating]
+    x_true: NDArray[np.floating]
+    spikes: NDArray[np.int_]
+    metrics: dict[str, NDArray[np.floating] | NDArray[np.intp]]
+    phase_labels: list[str]
+    phase_boundaries: list[int]
+
+
 def run_figure03_simulation(
     params: DecodeParams | None = None,
     *,
     seed: int | None = None,
-) -> dict[str, Any]:
+) -> SimulationResult:
     """Run the figure-3 phased simulation and decode it.
 
     Phases (in order):
@@ -216,12 +234,12 @@ def run_figure03_simulation(
 
     boundaries = np.cumsum([len(p_x) for p_x, _ in phases]).tolist()
 
-    return {
-        "params": params,
-        "xs": xs,
-        "x_true": x_true,
-        "spikes": spikes,
-        "metrics": metrics,
-        "phase_labels": phase_labels,
-        "phase_boundaries": boundaries,
-    }
+    return SimulationResult(
+        params=params,
+        xs=xs,
+        x_true=x_true,
+        spikes=spikes,
+        metrics=metrics,
+        phase_labels=phase_labels,
+        phase_boundaries=boundaries,
+    )

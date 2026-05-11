@@ -36,6 +36,7 @@ goodness-of-fit.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 import numpy as np
@@ -856,7 +857,8 @@ class Thresholds:
 
 
 def compute_thresholds(
-    metrics: dict[str, NDArray[np.floating]], baseline_end: int | None = None
+    metrics: Mapping[str, NDArray[np.floating] | NDArray[np.intp]],
+    baseline_end: int | None = None,
 ) -> Thresholds:
     """Compute threshold values from baseline period.
 
@@ -895,12 +897,14 @@ def compute_thresholds(
     >>> thresholds.spike_prob  # Fixed at 0.05 per MATLAB
     0.05
     """
-    # Flatten (n_time, n_cells) to 1D for quantile computation
+    # Flatten (n_time, n_cells) to 1D for quantile computation. ``np.nanquantile``
+    # returns ``np.floating``; cast to plain ``float`` to match the ``Thresholds``
+    # dataclass signature.
     hpd_baseline = metrics["hpd_overlap"][:baseline_end].ravel()
-    hpd_overlap_threshold = np.nanquantile(hpd_baseline, 0.01)
+    hpd_overlap_threshold = float(np.nanquantile(hpd_baseline, 0.01))
 
     kl_baseline = metrics["kl_divergence"][:baseline_end].ravel()
-    kl_divergence_threshold = np.nanquantile(kl_baseline, 0.99)
+    kl_divergence_threshold = float(np.nanquantile(kl_baseline, 0.99))
 
     # spike_prob threshold is fixed at 0.05 per MATLAB
     spike_prob_threshold = 0.05

@@ -1431,6 +1431,18 @@ def plot_combined_diagnostics(
         Decoding parameters containing timeline structure.
     placefield_centers : NDArray, shape (n_cells,)
         Place field centers for each cell (used for spike raster sorting).
+    phase_boundaries : list[int] | NDArray[np.intp] | None, optional
+        Cumulative phase-end time indices (one entry per simulated phase),
+        matching the ``phase_boundaries`` returned by
+        :func:`statespacecheck_paper.figure03_demo.run_figure03_simulation`.
+        Used by the per-spike scatter panel to assign each spike event to
+        its source phase. If ``None``, derived from ``params`` via
+        :func:`_default_phase_metadata` for backward compatibility with
+        callers that pre-date the extended timeline.
+    phase_labels : list[str] | None, optional
+        Phase names matched 1:1 with ``phase_boundaries``. Used to color
+        and label phases in the per-spike scatter legend. If ``None``,
+        derived from ``params`` alongside ``phase_boundaries``.
 
     Returns
     -------
