@@ -51,15 +51,13 @@ def _tiny_params():
         T_remap_start=200,
         T_remap_end=300,
         T_recovery1_end=400,
-        T_flat_end=500,
+        T_hist_dep_end=500,
         T_recovery2_end=600,
-        T_fast_end=700,
+        T_drift_end=700,
         T_recovery3_end=800,
-        T_slow_end=1000,
-        T_recovery4_end=1050,
-        T_broad_decoder_end=1100,
-        T_recovery5_end=1150,
-        T_tight_decoder_end=1200,
+        T_wide_dynamics_end=900,
+        T_recovery4_end=1000,
+        T_wiggly_end=1100,
     )
 
 

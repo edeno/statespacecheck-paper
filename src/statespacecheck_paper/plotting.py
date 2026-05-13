@@ -52,13 +52,13 @@ def add_phase_boundaries(
     axes : list[plt.Axes]
         List of axes to add phase boundaries to.
     phase_boundaries : tuple[int, ...]
-        Phase boundary time points. Recognized lengths:
-        - 6 elements: (remap_start, remap_end, recovery1_end, flat_end,
-          recovery2_end, fast_end).
-        - 8 elements: adds (recovery3_end, slow_end) → drift misfit.
-        - 12 elements: adds (recovery4_end, broad_decoder_end,
-          recovery5_end, tight_decoder_end) → broad/tight-decoder
-          metric-stress phases.
+        Phase boundary time points, in the canonical 10-element order used
+        by :class:`statespacecheck_paper.analysis.DecodeParams`:
+        ``(T_remap_start, T_remap_end, T_recovery1_end, T_hist_dep_end,
+        T_recovery2_end, T_drift_end, T_recovery3_end, T_wide_dynamics_end,
+        T_recovery4_end, T_wiggly_end)``. Shorter tuples (down to 2
+        elements) are accepted and produce a partial shading; only the
+        misfit windows whose pair of boundary entries is present are drawn.
     include_labels : bool, default False
         If True, add labels for legend on first axis.
     alpha : float, default 0.15
@@ -72,58 +72,50 @@ def add_phase_boundaries(
     Examples
     --------
     >>> fig, axes = plt.subplots(4, 1)
-    >>> boundaries = (10, 20, 30, 40, 50, 60)
+    >>> boundaries = (10, 20, 30, 40, 50, 60, 70, 80, 90, 100)
     >>> add_phase_boundaries(axes, boundaries, include_labels=True)
     """
-    if len(phase_boundaries) < 6:
-        return
-
-    t_remap_start = phase_boundaries[0]
-    t_remap_end = phase_boundaries[1]
-    t_recovery1_end = phase_boundaries[2]
-    t_flat_end = phase_boundaries[3]
-    t_recovery2_end = phase_boundaries[4]
-    t_fast_end = phase_boundaries[5]
-
-    # Define phases with (start, end, color, label)
-    # Use semantic colors from COLORS dictionary
-    phases = [
-        (t_remap_start, t_remap_end, COLORS["likelihood"], "Remapping"),
-        (t_recovery1_end, t_flat_end, COLORS["reference"], "Flat firing"),
-        (t_recovery2_end, t_fast_end, COLORS["ground_truth"], "Fast movement"),
-    ]
-
-    if len(phase_boundaries) >= 8:
-        t_recovery3_end = phase_boundaries[6]
-        t_slow_end = phase_boundaries[7]
-        phases.append((t_recovery3_end, t_slow_end, COLORS["predictive"], "Drift"))
-
-    if len(phase_boundaries) >= 12:
-        t_recovery4_end = phase_boundaries[8]
-        t_broad_decoder_end = phase_boundaries[9]
-        t_recovery5_end = phase_boundaries[10]
-        t_tight_decoder_end = phase_boundaries[11]
-        # Use saturated WONG colors here rather than ``phase_broad_decoder`` /
-        # ``phase_tight_decoder`` (which are pastel background fills). At the
-        # α=0.15 ``axvspan`` alpha used below, pastels wash out completely;
-        # the existing 4 phases use vivid hexes via ``COLORS["likelihood"]``,
-        # ``COLORS["ground_truth"]`` etc. for the same reason.
-        phases.append(
+    # Saturated colors so axvspan at low alpha is still visible. We use
+    # ``COLORS`` entries that are vivid hexes (the pastel ``phase_*``
+    # palette entries wash out completely at this alpha).
+    misfit_specs: list[tuple[int, int, str, str]] = []
+    n = len(phase_boundaries)
+    if n >= 2:
+        misfit_specs.append(
+            (phase_boundaries[0], phase_boundaries[1], COLORS["likelihood"], "Remap")
+        )
+    if n >= 4:
+        misfit_specs.append(
             (
-                t_recovery4_end,
-                t_broad_decoder_end,
-                COLORS["metric_combined"],  # WONG[7] reddish purple
-                "Broad decoder",
+                phase_boundaries[2],
+                phase_boundaries[3],
+                COLORS["reference"],
+                "History-dependent firing",
             )
         )
-        phases.append(
+    if n >= 6:
+        misfit_specs.append(
+            (phase_boundaries[4], phase_boundaries[5], COLORS["predictive"], "Drift")
+        )
+    if n >= 8:
+        misfit_specs.append(
             (
-                t_recovery5_end,
-                t_tight_decoder_end,
-                COLORS["kl_divergence"],  # WONG[3] bluish green
-                "Tight decoder",
+                phase_boundaries[6],
+                phase_boundaries[7],
+                COLORS["metric_combined"],
+                "Wide dynamics noise",
             )
         )
+    if n >= 10:
+        misfit_specs.append(
+            (
+                phase_boundaries[8],
+                phase_boundaries[9],
+                COLORS["kl_divergence"],
+                "Wiggly-flat likelihood",
+            )
+        )
+    phases = misfit_specs
 
     for ax_idx, ax in enumerate(axes):
         add_labels_to_axis = include_labels and ax_idx == 0
@@ -760,25 +752,28 @@ def plot_misfit_examples(
     >>> plot_misfit_examples(xs, x_true, spikes, metrics, params, pf_centers, 0.1, 10.0)
     >>> plt.close('all')
     """
-    # Define phase windows - include baseline (good fit) and misfit phases
+    # Define phase windows - one example timestep per misfit class.
     baseline_window = slice(1000, params.T_remap_start - 1000)  # Middle of baseline
     remap_window = slice(params.T_remap_start, params.T_remap_end)
-    flat_window = slice(params.T_recovery1_end, params.T_flat_end)
-    fast_window = slice(params.T_recovery2_end, params.T_fast_end)
-    slow_window = slice(params.T_recovery3_end, params.T_slow_end)
+    hist_dep_window = slice(params.T_recovery1_end, params.T_hist_dep_end)
+    drift_window = slice(params.T_recovery2_end, params.T_drift_end)
+    wide_dynamics_window = slice(params.T_recovery3_end, params.T_wide_dynamics_end)
+    wiggly_window = slice(params.T_recovery4_end, params.T_wiggly_end)
 
     phases = [
-        ("Baseline", baseline_window, True),  # Third element indicates if it's baseline
-        ("Remapping", remap_window, False),
-        ("Flat Firing", flat_window, False),
-        ("Fast Movement", fast_window, False),
-        ("Momentum", slow_window, False),
+        ("Baseline", baseline_window, True),
+        ("Remap", remap_window, False),
+        ("History-dep.", hist_dep_window, False),
+        ("Drift", drift_window, False),
+        ("Wide dyn. noise", wide_dynamics_window, False),
+        ("Wiggly-flat like.", wiggly_window, False),
     ]
 
-    # Publication quality: 450 DPI, single row with 5 columns
-    fig = plt.figure(figsize=(12.0, 2.5), dpi=450, constrained_layout=True)
-    gs = fig.add_gridspec(1, 5)
-    axes = [fig.add_subplot(gs[0, i]) for i in range(5)]
+    # Publication quality: 450 DPI, single row with one column per phase
+    n_phases = len(phases)
+    fig = plt.figure(figsize=(2.4 * n_phases, 2.5), dpi=450, constrained_layout=True)
+    gs = fig.add_gridspec(1, n_phases)
+    axes = [fig.add_subplot(gs[0, i]) for i in range(n_phases)]
 
     for phase_idx, (phase_name, phase_slice, is_baseline) in enumerate(phases):
         # For baseline, find best fit (highest hpd_overlap); for misfits,
@@ -807,11 +802,11 @@ def plot_misfit_examples(
             prev_post = np.ones_like(xs) / len(xs)
 
         # Select appropriate transition matrix (half-open intervals [start, end)
-        # to match decode_and_diagnostics)
-        if params.T_recovery2_end <= example_time < params.T_fast_end:
-            transition_matrix = gaussian_transition_matrix(xs, params.sigx_pred_fast_phase)
-        elif params.T_recovery3_end <= example_time < params.T_slow_end:
-            transition_matrix = gaussian_transition_matrix(xs, params.sigx_pred_slow_phase)
+        # to match decode_and_diagnostics). Only the wide-dynamics-noise
+        # window uses an alternate transition matrix; all other phases use
+        # the baseline.
+        if params.T_recovery3_end <= example_time < params.T_wide_dynamics_end:
+            transition_matrix = gaussian_transition_matrix(xs, params.sigx_wide_dynamics)
         else:
             transition_matrix = gaussian_transition_matrix(xs, params.sigx_pred)
 
@@ -1503,21 +1498,19 @@ def plot_combined_diagnostics(
     )
 
     # Add phase boundaries to all time-series panels (local variable name
-    # ``tseries_boundaries`` avoids shadowing the new ``phase_boundaries``
-    # parameter to ``plot_combined_diagnostics``).
+    # ``tseries_boundaries`` avoids shadowing the ``phase_boundaries``
+    # parameter conventions used elsewhere in this module).
     tseries_boundaries = (
         params.T_remap_start,
         params.T_remap_end,
         params.T_recovery1_end,
-        params.T_flat_end,
+        params.T_hist_dep_end,
         params.T_recovery2_end,
-        params.T_fast_end,
+        params.T_drift_end,
         params.T_recovery3_end,
-        params.T_slow_end,
+        params.T_wide_dynamics_end,
         params.T_recovery4_end,
-        params.T_broad_decoder_end,
-        params.T_recovery5_end,
-        params.T_tight_decoder_end,
+        params.T_wiggly_end,
     )
 
     # Add phase boundaries with matching colors to all panels
@@ -1527,27 +1520,24 @@ def plot_combined_diagnostics(
         alpha=0.15,
     )
 
-    # Add phase labels above top panel
+    # Add phase labels above top panel. Stagger vertical positions so the
+    # narrow wide-dynamics phase (~2k timesteps) doesn't crowd its
+    # neighbours.
     t_remap_start, t_remap_end = params.T_remap_start, params.T_remap_end
-    t_recovery1_end, t_flat_end = params.T_recovery1_end, params.T_flat_end
-    t_recovery2_end, t_fast_end = params.T_recovery2_end, params.T_fast_end
-    t_recovery3_end, t_slow_end = params.T_recovery3_end, params.T_slow_end
+    t_recovery1_end, t_hist_dep_end = params.T_recovery1_end, params.T_hist_dep_end
+    t_recovery2_end, t_drift_end = params.T_recovery2_end, params.T_drift_end
+    t_recovery3_end, t_wide_dynamics_end = (
+        params.T_recovery3_end,
+        params.T_wide_dynamics_end,
+    )
+    t_recovery4_end, t_wiggly_end = params.T_recovery4_end, params.T_wiggly_end
 
-    t_recovery4_end = params.T_recovery4_end
-    t_broad_decoder_end = params.T_broad_decoder_end
-    t_recovery5_end = params.T_recovery5_end
-    t_tight_decoder_end = params.T_tight_decoder_end
-
-    # Stagger label vertical positions so the narrow broad/tight-decoder
-    # phases (~2k timesteps each) don't crowd the wider misfit labels.
-    # Tuple is (x_center, label, y_offset_axes_fraction).
     phase_labels_info: list[tuple[float, str, float]] = [
         ((t_remap_start + t_remap_end) / 2, "Remap", 1.02),
-        ((t_recovery1_end + t_flat_end) / 2, "Flat Firing", 1.07),
-        ((t_recovery2_end + t_fast_end) / 2, "Fast Movement", 1.02),
-        ((t_recovery3_end + t_slow_end) / 2, "Drift", 1.07),
-        ((t_recovery4_end + t_broad_decoder_end) / 2, "Broad Decoder", 1.02),
-        ((t_recovery5_end + t_tight_decoder_end) / 2, "Tight Decoder", 1.07),
+        ((t_recovery1_end + t_hist_dep_end) / 2, "History-dep.", 1.07),
+        ((t_recovery2_end + t_drift_end) / 2, "Drift", 1.02),
+        ((t_recovery3_end + t_wide_dynamics_end) / 2, "Wide dyn. noise", 1.07),
+        ((t_recovery4_end + t_wiggly_end) / 2, "Wiggly-flat like.", 1.02),
     ]
     for x_pos, label_text, y_pos in phase_labels_info:
         ax_pred.text(
@@ -1591,19 +1581,18 @@ def plot_combined_diagnostics(
     # Phase windows for summary computation
     phase_windows = [
         ("Remap", t_remap_start, t_remap_end),
-        ("Flat\nFiring", t_recovery1_end, t_flat_end),
-        ("Fast\nMovement", t_recovery2_end, t_fast_end),
-        ("Drift", t_recovery3_end, t_slow_end),
-        ("Broad\nDecoder", t_recovery4_end, t_broad_decoder_end),
-        ("Tight\nDecoder", t_recovery5_end, t_tight_decoder_end),
+        ("History-\ndep.", t_recovery1_end, t_hist_dep_end),
+        ("Drift", t_recovery2_end, t_drift_end),
+        ("Wide dyn.\nnoise", t_recovery3_end, t_wide_dynamics_end),
+        ("Wiggly-flat\nlikelihood", t_recovery4_end, t_wiggly_end),
     ]
     component_labels = [
         "Observation",  # Remap
-        "Observation",  # Flat Firing
-        "Transition",  # Fast Movement
+        "Observation",  # History-dependent firing
         "Transition",  # Drift
-        "Transition",  # Broad Decoder
-        "Transition",  # Tight Decoder
+        "Transition",  # Wide dynamics noise
+        # Wiggly-flat likelihood misspecifies the *observation* model (likelihood).
+        "Observation",
     ]
 
     # Use the same thresholds as the time-series panels above

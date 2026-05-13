@@ -298,25 +298,18 @@ class TestDecodeAndDiagnostics:
         assert result["event_cell_ind"].shape == (0,)
         assert result["event_kl_divergence"].shape == (0,)
 
-    @pytest.mark.parametrize(
-        ("matrix_kwarg", "window_kwarg"),
-        [
-            ("transition_matrix_narrow", "narrow_window"),
-            ("transition_matrix_inflated", "inflate_window"),
-            ("transition_matrix_tight", "tight_window"),
-        ],
-    )
     def test_alternative_transition_matrix_used_only_inside_window(
         self,
         decoder_inputs: DecoderInputs,
-        matrix_kwarg: str,
-        window_kwarg: str,
     ) -> None:
-        """The alternative transition matrices in src/.../analysis.py:537
+        """The ``transition_matrix_inflated``/``inflate_window`` kwarg pair
         must (a) leave the predictive untouched before the window and
         (b) actually change it inside. A regression that ignored the kwarg
         would still produce well-shaped output, so we compare against a
-        baseline run instead."""
+        baseline run instead.
+        """
+        matrix_kwarg = "transition_matrix_inflated"
+        window_kwarg = "inflate_window"
         n_bins = decoder_inputs.xs.size
         # Choose an alternative matrix that is *very* different from the
         # baseline (peak=0.9 diag-dominant). A near-uniform matrix forces

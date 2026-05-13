@@ -63,95 +63,99 @@ _PER_SPIKE_BATCH = 50_000
 
 @dataclass
 class DecodeParams:
-    """Parameters for decoding simulation.
+    """Parameters for the figure-3 decoding simulation.
 
-    This dataclass contains all parameters needed to run a state space model decoding
-    simulation with various model misfits (remapping, flat firing, fast movement,
-    momentum).
+    The simulation walks through five misfit conditions separated by
+    clean-recovery windows. Time steps are 1 ms by convention — the
+    simulation math itself is dt-agnostic, but the default parameters
+    (`rate_scale=5.0`, refractory and burst windows in
+    ``simulate_spikes_history_dependent``) are tuned for that mapping
+    and yield hippocampally-realistic spike rates and timescales.
 
-    **Timeline Structure**:
-    - 0-6k: Clean baseline
-    - 6k-10k: Remapping misfit (4k timesteps)
-    - 10k-14k: Clean recovery (4k timesteps)
-    - 14k-16k: Flat firing misfit (2k timesteps)
-    - 16k-20k: Clean recovery (4k timesteps)
-    - 20k-24k: Fast movement misfit (4k timesteps)
-    - 24k-28k: Clean recovery (4k timesteps)
-    - 28k-32k: Drift misfit (4k timesteps)
-    - 32k-34k: Clean recovery (2k timesteps)
-    - 34k-36k: Broad-decoder phase (2k timesteps)
-    - 36k-38k: Clean recovery (2k timesteps)
-    - 38k-40k: Tight-decoder phase (2k timesteps)
+    **Timeline Structure** (default; all indices in 1-ms steps):
+
+    - 0–6k: Clean baseline
+    - 6k–10k: Remap misfit (4 s)
+    - 10k–14k: Clean recovery
+    - 14k–18k: History-dependent firing misfit (4 s)
+    - 18k–22k: Clean recovery
+    - 22k–26k: Drift misfit (4 s)
+    - 26k–30k: Clean recovery
+    - 30k–32k: Wide-dynamics-noise misfit (2 s)
+    - 32k–34k: Clean recovery
+    - 34k–38k: Wiggly-flat-likelihood misfit (4 s)
 
     Parameters
     ----------
     T_remap_start : int, default 6_000
-        Start of remapping misfit period.
+        Start of remap misfit window (end of clean baseline).
     T_remap_end : int, default 10_000
-        End of remapping misfit period.
+        End of remap misfit window.
     T_recovery1_end : int, default 14_000
         End of first recovery period.
-    T_flat_end : int, default 16_000
-        End of flat firing misfit period.
-    T_recovery2_end : int, default 20_000
+    T_hist_dep_end : int, default 18_000
+        End of history-dependent firing misfit window. Spikes use
+        :func:`simulate_spikes_history_dependent` (refractory +
+        bursting); decoder still assumes Poisson. The misfit lives
+        in spike-train temporal correlations, not in the per-spike
+        spatial likelihood, so per-spike diagnostics largely miss it
+        — a deliberate demonstration of the spatial-only nature of
+        the metrics.
+    T_recovery2_end : int, default 22_000
         End of second recovery period.
-    T_fast_end : int, default 24_000
-        End of fast movement misfit period.
-    T_recovery3_end : int, default 28_000
+    T_drift_end : int, default 26_000
+        End of drift misfit window. Animal trajectory has persistent
+        velocity (momentum = 0.8); decoder assumes memoryless random
+        walk.
+    T_recovery3_end : int, default 30_000
         End of third recovery period.
-    T_slow_end : int, default 32_000
-        End of drift misfit period.
+    T_wide_dynamics_end : int, default 32_000
+        End of wide-dynamics-noise misfit window. Decoder applies an
+        inflated transition matrix (``sigx_wide_dynamics``) while the
+        animal walks normally; engineered to inflate KL while HPD
+        overlap and the rank-based p-value stay near baseline (the
+        KL-false-positive case).
     T_recovery4_end : int, default 34_000
-        End of fourth recovery period (after drift).
-    T_broad_decoder_end : int, default 36_000
-        End of broad-decoder phase. Decoder uses inflated transition matrix
-        (sigx_pred_slow_phase) while animal walks normally and cells fire
-        normally; engineered to show KL false-positives when predictive
-        is much wider than the per-spike likelihood.
-    T_recovery5_end : int, default 38_000
-        End of fifth recovery period.
-    T_tight_decoder_end : int, default 40_000
-        End of tight-decoder phase. Decoder uses tight transition matrix
-        (sigx_pred_tight) while animal is stationary; engineered to show
-        KL false-positives in the opposite shape-mismatch direction
-        (predictive much narrower than the per-spike likelihood).
+        End of fourth recovery period.
+    T_wiggly_end : int, default 38_000
+        End of wiggly-flat-likelihood misfit window. Decoder uses
+        per-cell wiggly-flat rate functions (see
+        :func:`statespacecheck_paper.simulation.wiggly_flat_rates`)
+        for both posterior updates and diagnostic rate matrix during
+        this window. The per-spike likelihood is wiggly-flat instead
+        of Gaussian; HPDO becomes unstable (irregular HPD region) and
+        the rank-based p-value becomes ambiguous (no clearly
+        most-expected cell).
     sigx_pred : float, default 0.5
-        Decoder's dynamics standard deviation (baseline).
-    sigx_pred_fast_phase : float, default 0.1
-        Narrow decoder for fast phase (5x too narrow!).
-    sigx_pred_slow_phase : float, default 20.0
-        Inflated decoder for slow phase (40x too broad!).
-    sigx_pred_tight : float, default 0.01
-        Tight decoder for tight-decoder phase (50x tighter than baseline).
-        At sigma values << bin width, the transition matrix is effectively
-        identity, so further reduction has no numerical effect on the
-        per-step predictive. The KL inflation in this phase is therefore
-        bounded by the likelihood width (KL(point || gaussian_like) is
-        roughly log(sqrt(2*pi) * pf_width)), which is milder than the
-        broad-decoder direction; the heatmap row reflects the asymmetry
-        of KL.
-    sigx_true_fast : float, default 10.0
-        True dynamics std in fast phase (100x faster than decoder!).
-    sigx_true_slow : float, default 0.0
-        True dynamics std in slow phase (completely stationary!).
-    xs_min : int, default 0
-        Minimum position value.
-    xs_max : int, default 100
-        Maximum position value.
-    xs_step : int, default 1
-        Step size for position grid.
+        Decoder's baseline dynamics standard deviation.
+    sigx_wide_dynamics : float, default 20.0
+        Inflated decoder transition std for the wide-dynamics-noise
+        misfit (40× baseline). Engineered to be wide enough that the
+        decoder's predictive covers most of the track and the
+        per-spike likelihood (narrow at the firing cell's PF) sits
+        cleanly inside it.
+    drift_momentum : float, default 0.8
+        AR(1) coefficient on the animal's velocity during the drift
+        misfit phase. The true trajectory is
+        ``x[t] = x[t-1] + v[t]`` with
+        ``v[t] = drift_momentum * v[t-1] + N(0, sigx_pred)``. The
+        decoder assumes ``x[t] = x[t-1] + N(0, sigx_pred)`` (no
+        persistent velocity).
+    xs_min, xs_max, xs_step : int
+        Position grid bounds and step.
     pf_width : float, default 10.0
-        Place field width (std of Gaussian tuning curves).
-    pf_centers : NDArray[np.floating] | None, default None
-        Place field center positions. If None, initialized in __post_init__.
+        Gaussian place-field std (in position units).
+    pf_centers : NDArray[np.floating] | None
+        Place-field center positions; defaults to ``np.arange(0, 101, 10)``.
     rate_scale : float, default 5.0
-        Spike rate scaling factor.
+        Peak Poisson rate scale (spikes/step at the cell's PF center).
+        At 1 ms/step the default gives ~200 Hz peak — within the
+        plausible range for hippocampal pyramidal cells.
     base_seed : int, default 1
-        Base random seed for reproducibility.
-    remap_from_to : tuple of ints, default (9, 0)
-        Remapping specification: (src, dst) remaps cell src to use cell dst's place field.
-        Default remaps cell 9 (place field at 90) to use cell 0's place field (at 0),
-        matching the MATLAB implementation.
+        Random seed for reproducibility.
+    remap_from_to : tuple of (int, int) pairs, default see source
+        Specification of which cells get remapped during the remap
+        window. Default is six bidirectional swaps across the track.
 
     Examples
     --------
@@ -160,54 +164,46 @@ class DecodeParams:
     (6000, 10000)
     >>> params.pf_centers
     array([  0.,  10.,  20.,  30.,  40.,  50.,  60.,  70.,  80.,  90., 100.])
-
-    >>> # Custom parameters
-    >>> params = DecodeParams(T_remap_start=1000, T_remap_end=2000, sigx_pred=1.0)
-    >>> params.sigx_pred
-    1.0
     """
 
-    # Timeline with recovery periods between misfits
+    # Timeline (1 ms steps by convention; the math is dt-agnostic)
     T_remap_start: int = 6_000
     T_remap_end: int = 10_000
     T_recovery1_end: int = 14_000
-    T_flat_end: int = 16_000
-    T_recovery2_end: int = 20_000
-    T_fast_end: int = 24_000
-    T_recovery3_end: int = 28_000
-    T_slow_end: int = 32_000
-    # Extended timeline for metric-dissociation phases
-    T_recovery4_end: int = 34_000  # clean recovery after drift
-    T_broad_decoder_end: int = 36_000  # broad-decoder phase (KL false-positives)
-    T_recovery5_end: int = 38_000  # clean recovery
-    T_tight_decoder_end: int = (
-        40_000  # tight-decoder phase (KL false-positives, opposite direction)
-    )
-    sigx_pred: float = 0.5  # decoder's dynamics std (baseline)
-    sigx_pred_fast_phase: float = 0.1  # narrow decoder for fast phase (5x too narrow!)
-    sigx_pred_slow_phase: float = 20.0  # inflated decoder for slow phase (40x too broad!)
-    sigx_pred_tight: float = (
-        0.01  # tight decoder for tight-decoder phase (50x tighter than baseline)
-    )
-    sigx_true_fast: float = 10.0  # true dynamics std in fast phase (100x faster than decoder!)
-    sigx_true_slow: float = 0.0  # true dynamics std in slow phase (completely stationary!)
+    T_hist_dep_end: int = 18_000
+    T_recovery2_end: int = 22_000
+    T_drift_end: int = 26_000
+    T_recovery3_end: int = 30_000
+    T_wide_dynamics_end: int = 32_000
+    T_recovery4_end: int = 34_000
+    T_wiggly_end: int = 38_000
+
+    # Decoder & dynamics parameters
+    sigx_pred: float = 0.5  # baseline dynamics std
+    sigx_wide_dynamics: float = 20.0  # 40× baseline — wide-dynamics-noise phase
+    drift_momentum: float = 0.8  # AR(1) coefficient for drift-misfit trajectory
+
+    # Position grid
     xs_min: int = 0
     xs_max: int = 100
     xs_step: int = 1
-    pf_width: float = 10.0  # Place field width (std of Gaussian tuning curves)
+
+    # Place fields
+    pf_width: float = 10.0
     pf_centers: NDArray[np.floating] | None = None  # set in __post_init__
-    rate_scale: float = 5.0  # Spike rate scaling factor
+    rate_scale: float = 5.0
+
     base_seed: int = 1
-    # Remap multiple cells to very different locations for clear misfit visualization
-    # Original place fields: cell i has pf_center = i * 10 (0, 10, 20, ..., 90)
-    # Remapping swaps cells across the track to maximize spatial mismatch
+    # Six bidirectional swaps so the remap window is unambiguous: every
+    # remapped cell has another cell whose PF center it adopts, and that
+    # cell adopts its center. Cell 0↔9, 1↔8, 2↔7 — three swap pairs.
     remap_from_to: tuple[tuple[int, int], ...] | tuple[int, int] = (
-        (0, 9),  # Cell 0 (pf=0) -> uses cell 9's pf (pf=90)
-        (1, 8),  # Cell 1 (pf=10) -> uses cell 8's pf (pf=80)
-        (2, 7),  # Cell 2 (pf=20) -> uses cell 7's pf (pf=70)
-        (9, 0),  # Cell 9 (pf=90) -> uses cell 0's pf (pf=0)
-        (8, 1),  # Cell 8 (pf=80) -> uses cell 1's pf (pf=10)
-        (7, 2),  # Cell 7 (pf=70) -> uses cell 2's pf (pf=20)
+        (0, 9),
+        (1, 8),
+        (2, 7),
+        (9, 0),
+        (8, 1),
+        (7, 2),
     )
 
     @property
@@ -388,12 +384,10 @@ def decode_and_diagnostics(
     remap_window: tuple[int, int],
     remap_from_to: tuple[tuple[int, int], ...] | tuple[int, int],
     rng: np.random.Generator | None = None,
-    transition_matrix_narrow: NDArray[np.floating] | None = None,
-    narrow_window: tuple[int, int] | None = None,
     transition_matrix_inflated: NDArray[np.floating] | None = None,
     inflate_window: tuple[int, int] | None = None,
-    transition_matrix_tight: NDArray[np.floating] | None = None,
-    tight_window: tuple[int, int] | None = None,
+    wiggly_rates: NDArray[np.floating] | None = None,
+    wiggly_window: tuple[int, int] | None = None,
 ) -> dict[str, NDArray[np.floating] | NDArray[np.intp]]:
     """Run the Bayesian filter with per-time, per-cell diagnostics.
 
@@ -438,16 +432,22 @@ def decode_and_diagnostics(
     narrow_window : tuple[int, int], optional
         Time window (start, end) for narrow transition matrix.
     transition_matrix_inflated : np.ndarray, shape (n_bins, n_bins), optional
-        Alternative transition matrix for inflated window (broad-decoder phase
-        — predictive much wider than per-spike likelihood).
+        Alternative transition matrix for the wide-dynamics-noise misfit
+        window — produces a predictive much wider than the per-spike
+        likelihood. Both this argument and ``inflate_window`` must be
+        provided to take effect.
     inflate_window : tuple[int, int], optional
-        Time window (start, end) for inflated transition matrix.
-    transition_matrix_tight : np.ndarray, shape (n_bins, n_bins), optional
-        Alternative transition matrix for tight window (tight-decoder phase
-        — predictive much narrower than per-spike likelihood). Both this
-        argument and ``tight_window`` must be provided to take effect.
-    tight_window : tuple[int, int], optional
-        Time window (start, end) for tight transition matrix.
+        Time window (start, end) during which ``transition_matrix_inflated``
+        replaces ``transition_matrix``.
+    wiggly_rates : np.ndarray, shape (n_bins, n_cells), optional
+        Per-cell rate table used inside ``wiggly_window`` for *both*
+        the posterior-update likelihood and the diagnostic rate matrix.
+        See :func:`statespacecheck_paper.simulation.wiggly_flat_rates`
+        for the canonical wiggly-flat-rate generator. Both this argument
+        and ``wiggly_window`` must be provided to take effect.
+    wiggly_window : tuple[int, int], optional
+        Time window (start, end) during which ``wiggly_rates`` replaces
+        the place-field-based rate table.
 
     Returns
     -------
@@ -527,19 +527,14 @@ def decode_and_diagnostics(
     combined_likelihood_all[0] = normalize(np.ones(n_bins))  # Flat at t=0
 
     start_r, end_r = remap_window
-    start_narrow, end_narrow = _window_or_never(narrow_window, n_time)
     start_inflate, end_inflate = _window_or_never(inflate_window, n_time)
-    start_tight, end_tight = _window_or_never(tight_window, n_time)
+    start_wiggly, end_wiggly = _window_or_never(wiggly_window, n_time)
 
     for t in range(1, n_time):
         # Select transition matrix based on which window we're in
         # Window checks use half-open intervals [start, end) to match simulation phases
-        if transition_matrix_narrow is not None and start_narrow <= t < end_narrow:
-            current_transition = transition_matrix_narrow
-        elif transition_matrix_inflated is not None and start_inflate <= t < end_inflate:
+        if transition_matrix_inflated is not None and start_inflate <= t < end_inflate:
             current_transition = transition_matrix_inflated
-        elif transition_matrix_tight is not None and start_tight <= t < end_tight:
-            current_transition = transition_matrix_tight
         else:
             current_transition = transition_matrix
 
@@ -549,15 +544,22 @@ def decode_and_diagnostics(
         # Store predictive posterior for p-value computation
         predictive_posterior[t] = prior
 
-        # Likelihood grid for this time's counts (vectorized over bins & cells)
-        # Note: likelihood_grid_for_counts returns NORMALIZED likelihoods per cell
-        # Optional remap: use remapped place field centers during misfit window
-        # This matches MATLAB where cell j's likelihood is computed using another cell's pf_center
-        active_remap = start_r <= t < end_r
-        current_pf_centers = get_remapped_pf_centers(pf_centers, remap_from_to, active_remap)
-        likelihood = likelihood_grid_for_counts(
-            xs, current_pf_centers, pf_width, rate_scale, spikes[t]
-        )
+        # Likelihood grid for this time's counts.
+        # In the wiggly window, the decoder uses ``wiggly_rates`` directly
+        # for the Poisson likelihood; outside it, the standard Gaussian-PF
+        # rate table is used (with the remapped centers during the remap
+        # window, as before).
+        active_wiggly = wiggly_rates is not None and start_wiggly <= t < end_wiggly
+        if active_wiggly:
+            # Likelihood ∝ Poisson(counts | wiggly_rates[bin, cell]), normalized per cell.
+            likelihood = poisson.pmf(spikes[t][None, :], wiggly_rates)
+            likelihood = normalize(likelihood, axis=0)
+        else:
+            active_remap = start_r <= t < end_r
+            current_pf_centers = get_remapped_pf_centers(pf_centers, remap_from_to, active_remap)
+            likelihood = likelihood_grid_for_counts(
+                xs, current_pf_centers, pf_width, rate_scale, spikes[t]
+            )
 
         # Compute combined likelihood from all cells (product over cells)
         combined_likelihood = np.prod(likelihood, axis=1)  # (n_bins,)
@@ -594,14 +596,47 @@ def decode_and_diagnostics(
     # as a misfit because the model's likelihood no longer matches the data.
     rates = placefield_rates(xs, pf_centers, pf_width, rate_scale)
 
-    # Compute per-cell diagnostics using shared function
-    diagnostics = compute_per_cell_diagnostics_from_rates(
-        predictive_posterior,
-        rates,
-        spike_time_ind,
-        spike_cell_ind,
-        coverage=0.95,
-    )
+    # In the wiggly-likelihood window the decoder's per-cell rate function is
+    # different from the standard Gaussian PF — both the posterior update and
+    # the diagnostic must use ``wiggly_rates`` for events inside the window.
+    # Compute diagnostics in two batches (in/out of window) and merge,
+    # since ``compute_per_cell_diagnostics_from_rates`` takes a single rate
+    # table. When ``wiggly_rates`` is ``None`` this collapses to one call.
+    if wiggly_rates is not None and len(spike_time_ind) > 0:
+        in_wiggly = (spike_time_ind >= start_wiggly) & (spike_time_ind < end_wiggly)
+        diag_normal = compute_per_cell_diagnostics_from_rates(
+            predictive_posterior,
+            rates,
+            spike_time_ind[~in_wiggly],
+            spike_cell_ind[~in_wiggly],
+            coverage=0.95,
+            include_dense_matrices=False,
+        )
+        diag_wiggly = compute_per_cell_diagnostics_from_rates(
+            predictive_posterior,
+            wiggly_rates,
+            spike_time_ind[in_wiggly],
+            spike_cell_ind[in_wiggly],
+            coverage=0.95,
+            include_dense_matrices=False,
+        )
+        diagnostics = _merge_diagnostics(
+            n_time=n_time,
+            n_cells=rates.shape[1],
+            spike_time_ind=spike_time_ind,
+            spike_cell_ind=spike_cell_ind,
+            in_window=in_wiggly,
+            diag_out=diag_normal,
+            diag_in=diag_wiggly,
+        )
+    else:
+        diagnostics = compute_per_cell_diagnostics_from_rates(
+            predictive_posterior,
+            rates,
+            spike_time_ind,
+            spike_cell_ind,
+            coverage=0.95,
+        )
 
     # Compute per-spike likelihoods from the DECODER's (potentially remapped) rates
     # for display in the likelihood panel. During the remap window the decoder uses
@@ -610,14 +645,13 @@ def decode_and_diagnostics(
     n_spikes = len(spike_time_ind)
     decoder_per_spike_lik: NDArray[np.floating] = np.zeros((n_spikes, n_bins))
     if n_spikes > 0:
-        # Determine which spikes fall in the remap window
-        in_remap = (spike_time_ind >= start_r) & (spike_time_ind < end_r)
-
-        # Compute likelihoods using original rates (overwritten below for remap window)
+        # Default: per-spike likelihood from the standard (non-remapped) PF
+        # rates. Two windows overwrite this below: the remap window (uses
+        # remapped PF centers) and the wiggly window (uses ``wiggly_rates``).
         rates_orig = rates[:, spike_cell_ind].T  # (n_spikes, n_bins)
         decoder_per_spike_lik = normalize(poisson.pmf(k=1, mu=rates_orig), axis=1)
 
-        # Overwrite remap-window spikes with remapped rates
+        in_remap = (spike_time_ind >= start_r) & (spike_time_ind < end_r)
         if np.any(in_remap):
             remap_rates = placefield_rates(
                 xs,
@@ -629,6 +663,14 @@ def decode_and_diagnostics(
             decoder_per_spike_lik[in_remap] = normalize(
                 poisson.pmf(k=1, mu=remap_cell_rates), axis=1
             )
+
+        if wiggly_rates is not None:
+            in_wiggly_evt = (spike_time_ind >= start_wiggly) & (spike_time_ind < end_wiggly)
+            if np.any(in_wiggly_evt):
+                wiggly_cell_rates = wiggly_rates[:, spike_cell_ind[in_wiggly_evt]].T
+                decoder_per_spike_lik[in_wiggly_evt] = normalize(
+                    poisson.pmf(k=1, mu=wiggly_cell_rates), axis=1
+                )
 
     return {
         "posterior": posterior,
@@ -652,6 +694,57 @@ def decode_and_diagnostics(
 # -----------------------------
 # Per-cell diagnostics (shared logic)
 # -----------------------------
+
+
+def _merge_diagnostics(
+    *,
+    n_time: int,
+    n_cells: int,
+    spike_time_ind: NDArray[np.intp],
+    spike_cell_ind: NDArray[np.intp],
+    in_window: NDArray[np.bool_],
+    diag_out: dict[str, NDArray[np.floating] | NDArray[np.intp]],
+    diag_in: dict[str, NDArray[np.floating] | NDArray[np.intp]],
+) -> dict[str, NDArray[np.floating] | NDArray[np.intp]]:
+    """Merge two per-event diagnostic batches (in vs out of a special window)
+    into a single result dict matching the ``include_dense_matrices=True``
+    shape produced by :func:`compute_per_cell_diagnostics_from_rates`.
+
+    Used when the diagnostic rate table differs between time windows
+    (currently: the wiggly-flat-likelihood phase uses
+    ``wiggly_rates``, all other timesteps use the standard Gaussian-PF
+    rates).
+    """
+    n_spikes = spike_time_ind.shape[0]
+    event_hpd_overlap = np.empty(n_spikes)
+    event_kl_divergence = np.empty(n_spikes)
+    event_spike_prob = np.empty(n_spikes)
+    event_hpd_overlap[~in_window] = diag_out["event_hpd_overlap"]
+    event_hpd_overlap[in_window] = diag_in["event_hpd_overlap"]
+    event_kl_divergence[~in_window] = diag_out["event_kl_divergence"]
+    event_kl_divergence[in_window] = diag_in["event_kl_divergence"]
+    event_spike_prob[~in_window] = diag_out["event_spike_prob"]
+    event_spike_prob[in_window] = diag_in["event_spike_prob"]
+
+    hpd_overlap = np.full((n_time, n_cells), np.nan)
+    kl_divergence = np.full((n_time, n_cells), np.nan)
+    spike_prob = np.full((n_time, n_cells), np.nan)
+    hpd_overlap[spike_time_ind, spike_cell_ind] = event_hpd_overlap
+    kl_divergence[spike_time_ind, spike_cell_ind] = event_kl_divergence
+    spike_prob[spike_time_ind, spike_cell_ind] = event_spike_prob
+
+    return {
+        "spike_time_ind": spike_time_ind,
+        "spike_cell_ind": spike_cell_ind,
+        "event_time_ind": spike_time_ind,
+        "event_cell_ind": spike_cell_ind,
+        "event_hpd_overlap": event_hpd_overlap,
+        "event_kl_divergence": event_kl_divergence,
+        "event_spike_prob": event_spike_prob,
+        "hpd_overlap": hpd_overlap,
+        "kl_divergence": kl_divergence,
+        "spike_prob": spike_prob,
+    }
 
 
 def compute_per_cell_diagnostics_from_rates(

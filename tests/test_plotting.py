@@ -106,22 +106,24 @@ def _bidirectional_remap(n_cells: int) -> tuple[tuple[int, int], ...]:
 
 
 def _params_for_short_run(n_time: int, n_cells: int, sigx_pred: float = 0.5) -> DecodeParams:
-    """DecodeParams with phase boundaries scaled to fit ``n_time``."""
-    # Distribute the 12 phase boundaries evenly across the run, leaving the
-    # final few bins for the misfit phases that the plot expects to exist.
+    """DecodeParams with phase boundaries scaled to fit ``n_time``.
+
+    Distributes the 10 phase boundaries (5 misfits with recovery between
+    each) so every misfit window has at least a few timesteps. ``n_time``
+    needs to be large enough that ``T_remap_start - 1000`` is positive
+    (some downstream helpers index a 1000-timestep baseline preamble).
+    """
     return DecodeParams(
         T_remap_start=int(n_time * 0.5),
         T_remap_end=int(n_time * 0.6),
         T_recovery1_end=int(n_time * 0.66),
-        T_flat_end=int(n_time * 0.74),
+        T_hist_dep_end=int(n_time * 0.74),
         T_recovery2_end=int(n_time * 0.8),
-        T_fast_end=int(n_time * 0.85),
+        T_drift_end=int(n_time * 0.85),
         T_recovery3_end=int(n_time * 0.9),
-        T_slow_end=int(n_time * 0.93),
-        T_recovery4_end=int(n_time * 0.945),
-        T_broad_decoder_end=int(n_time * 0.96),
-        T_recovery5_end=int(n_time * 0.975),
-        T_tight_decoder_end=int(n_time * 0.99),
+        T_wide_dynamics_end=int(n_time * 0.93),
+        T_recovery4_end=int(n_time * 0.96),
+        T_wiggly_end=int(n_time * 0.99),
         sigx_pred=sigx_pred,
         remap_from_to=_bidirectional_remap(n_cells),
     )
