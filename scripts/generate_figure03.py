@@ -108,8 +108,6 @@ def run_demo(params: DecodeParams) -> None:
         thresholds,
         params,
         pf_centers,
-        phase_boundaries=sim["phase_boundaries"],
-        phase_labels=sim["phase_labels"],
     )
 
     # Save figure (uses plt.gcf() to get current figure)

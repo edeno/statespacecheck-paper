@@ -16,7 +16,6 @@ Examples
 
 from __future__ import annotations
 
-import warnings
 from typing import Any
 
 import matplotlib.pyplot as plt
@@ -104,14 +103,16 @@ def add_phase_boundaries(
         t_broad_decoder_end = phase_boundaries[9]
         t_recovery5_end = phase_boundaries[10]
         t_tight_decoder_end = phase_boundaries[11]
-        # ``phase_broad_decoder`` and ``phase_tight_decoder`` are registered
-        # in ``style.COLORS``; direct indexing fails loudly if they're ever
-        # renamed, rather than silently substituting a different hex.
+        # Use saturated WONG colors here rather than ``phase_broad_decoder`` /
+        # ``phase_tight_decoder`` (which are pastel background fills). At the
+        # α=0.15 ``axvspan`` alpha used below, pastels wash out completely;
+        # the existing 4 phases use vivid hexes via ``COLORS["likelihood"]``,
+        # ``COLORS["ground_truth"]`` etc. for the same reason.
         phases.append(
             (
                 t_recovery4_end,
                 t_broad_decoder_end,
-                COLORS["phase_broad_decoder"],
+                COLORS["metric_combined"],  # WONG[7] reddish purple
                 "Broad decoder",
             )
         )
@@ -119,7 +120,7 @@ def add_phase_boundaries(
             (
                 t_recovery5_end,
                 t_tight_decoder_end,
-                COLORS["phase_tight_decoder"],
+                COLORS["kl_divergence"],  # WONG[3] bluish green
                 "Tight decoder",
             )
         )
@@ -1208,202 +1209,6 @@ def _plot_spike_count_raster(
     ax.set_ylabel("Neuron", fontsize=7, labelpad=7)
 
 
-def _default_phase_metadata(
-    params: DecodeParams,
-) -> tuple[list[int], list[str]]:
-    """Derive (phase_boundaries, phase_labels) from a ``DecodeParams``.
-
-    Used as a fallback when callers don't pass them through explicitly.
-    Must stay in sync with the phase order in
-    ``statespacecheck_paper.figure03_demo.run_figure03_simulation``.
-    """
-    boundaries = [
-        params.T_remap_start,
-        params.T_remap_end,
-        params.T_recovery1_end,
-        params.T_flat_end,
-        params.T_recovery2_end,
-        params.T_fast_end,
-        params.T_recovery3_end,
-        params.T_slow_end,
-        params.T_recovery4_end,
-        params.T_broad_decoder_end,
-        params.T_recovery5_end,
-        params.T_tight_decoder_end,
-    ]
-    labels = [
-        "Clean Baseline",
-        "Remapping Misfit",
-        "Clean Recovery",
-        "Flat Firing Misfit",
-        "Clean Recovery",
-        "Fast Movement Misfit",
-        "Clean Recovery",
-        "Drift Misfit",
-        "Clean Recovery",
-        "Broad-Decoder Phase",
-        "Clean Recovery",
-        "Tight-Decoder Phase",
-    ]
-    return boundaries, labels
-
-
-def _plot_recovery_transient(
-    ax: Axes,
-    metrics: dict[str, Any],
-    thresholds: Thresholds,
-    misfit_end_t: int,
-    window_before: int = 100,
-    window_after: int = 400,
-) -> None:
-    """Per-timestep median of three metrics in a window straddling a
-    misfit end boundary. KL typically takes more timesteps than HPD
-    overlap or the rank-based p-value to return to baseline-safe values.
-    """
-    n_time = metrics["hpd_overlap"].shape[0]
-    t_lo = max(0, misfit_end_t - window_before)
-    t_hi = min(n_time, misfit_end_t + window_after)
-    t = np.arange(t_lo, t_hi)
-
-    # Apply the same transforms used in the time-series panels so the
-    # y-axis is visually comparable. -log10(HPDO + 0.01), sqrt(KL),
-    # -log10(spike_prob + 1e-10). Timesteps with no spikes are all-NaN
-    # rows; nanmedian returns NaN there which renders as a gap — fine,
-    # but we suppress the chatty "All-NaN slice" RuntimeWarning.
-    hpd_raw = metrics["hpd_overlap"][t_lo:t_hi]
-    kl_raw = metrics["kl_divergence"][t_lo:t_hi]
-    sp_raw = metrics["spike_prob"][t_lo:t_hi]
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", category=RuntimeWarning)
-        hpd = -np.log10(np.maximum(np.nanmedian(hpd_raw, axis=1) + 1e-2, 1e-10))
-        kl = np.sqrt(np.nanmedian(kl_raw, axis=1))
-        sp = -np.log10(np.maximum(np.nanmedian(sp_raw, axis=1) + 1e-10, 1e-10))
-
-    ax.plot(t, hpd, color=COLORS["hpd_overlap"], lw=1.0, label="HPD overlap")
-    ax.plot(t, kl, color=COLORS["kl_divergence"], lw=1.0, label="KL divergence")
-    ax.plot(t, sp, color=COLORS["metric_combined"], lw=1.0, label=r"$-\log_{10}(p)$")
-    ax.axvline(misfit_end_t, color="0.4", lw=0.6, ls="--")
-
-    # Transformed thresholds for reference.
-    hpd_thr_t = -np.log10(max(thresholds.hpd_overlap + 1e-2, 1e-10))
-    kl_thr_t = float(np.sqrt(thresholds.kl_divergence))
-    sp_thr_t = -np.log10(max(thresholds.spike_prob + 1e-10, 1e-10))
-    ax.axhline(hpd_thr_t, color=COLORS["hpd_overlap"], lw=0.5, ls=":", alpha=0.6)
-    ax.axhline(kl_thr_t, color=COLORS["kl_divergence"], lw=0.5, ls=":", alpha=0.6)
-    ax.axhline(sp_thr_t, color=COLORS["metric_combined"], lw=0.5, ls=":", alpha=0.6)
-
-    ax.set_xlabel("Time (steps)", fontsize=7, labelpad=2)
-    ax.set_ylabel("Transformed metric\n(per-step median)", fontsize=7, labelpad=4)
-    ax.set_title(
-        "Post-misfit recovery transient (vertical line = misfit end)",
-        fontsize=7,
-        pad=4,
-    )
-    ax.legend(fontsize=5, frameon=False, loc="upper right", ncols=3)
-    ax.tick_params(labelsize=6)
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-
-
-def _phase_color_for_label(label: str) -> str:
-    """Map a phase label to the matching per-phase color in ``style.COLORS``.
-
-    Falls back to neutral grey when no specific color is registered for the
-    label (covers the multiple ``"Clean Recovery"`` blocks).
-    """
-    # All keyed colors below are registered in ``style.COLORS``; direct
-    # indexing fails loudly if a key is ever renamed or removed, rather
-    # than silently substituting a different (and inconsistent) hex.
-    mapping = {
-        "Clean Baseline": COLORS["ground_truth"],
-        "Remapping Misfit": COLORS["phase_remap"],
-        "Flat Firing Misfit": COLORS["phase_flat"],
-        "Fast Movement Misfit": COLORS["phase_fast"],
-        "Drift Misfit": COLORS["phase_slow"],
-        "Broad-Decoder Phase": COLORS["phase_broad_decoder"],
-        "Tight-Decoder Phase": COLORS["phase_tight_decoder"],
-    }
-    return mapping.get(label, "0.7")
-
-
-def _plot_per_spike_scatter(
-    ax: Axes,
-    metrics: dict[str, Any],
-    phase_boundaries: list[int] | NDArray[np.intp],
-    phase_labels: list[str],
-    thresholds: Thresholds,
-    *,
-    max_per_phase: int = 5000,
-) -> None:
-    """Per-spike scatter of transformed KL (x) vs transformed HPDO (y),
-    colored by phase. Reveals the broad-decoder cluster sitting at high
-    KL AND high HPDO simultaneously — KL and HPDO disagree per-spike,
-    not just on aggregate.
-    """
-    event_kl = np.asarray(metrics["event_kl_divergence"])
-    event_hpd = np.asarray(metrics["event_hpd_overlap"])
-    event_t = np.asarray(metrics["event_time_ind"])
-
-    kl_t = np.sqrt(event_kl)
-    hpd_t = -np.log10(np.maximum(event_hpd + 1e-2, 1e-10))
-
-    boundaries_arr = np.asarray(phase_boundaries)
-    phase_idx = np.searchsorted(boundaries_arr, event_t, side="right")
-
-    # Subsample dense phases for clarity.
-    rng = np.random.default_rng(0)
-    keep = np.zeros(len(event_t), dtype=bool)
-    for p in range(len(phase_labels)):
-        in_phase = np.where(phase_idx == p)[0]
-        if len(in_phase) > max_per_phase:
-            keep[rng.choice(in_phase, size=max_per_phase, replace=False)] = True
-        else:
-            keep[in_phase] = True
-
-    # Track which labels have been added to the legend (multiple "Clean
-    # Recovery" phases would otherwise clutter it).
-    legend_seen: set[str] = set()
-    for p, label in enumerate(phase_labels):
-        mask = (phase_idx == p) & keep
-        if not mask.any():
-            continue
-        legend_label: str | None = label if label not in legend_seen else None
-        legend_seen.add(label)
-        ax.scatter(
-            kl_t[mask],
-            hpd_t[mask],
-            s=2,
-            alpha=0.4,
-            linewidths=0,
-            color=_phase_color_for_label(label),
-            label=legend_label,
-        )
-
-    kl_thr_t = float(np.sqrt(thresholds.kl_divergence))
-    hpd_thr_t = -np.log10(max(thresholds.hpd_overlap + 1e-2, 1e-10))
-    ax.axvline(kl_thr_t, color="0.5", lw=0.6, ls="--")
-    ax.axhline(hpd_thr_t, color="0.5", lw=0.6, ls="--")
-
-    ax.set_xlabel(r"$\sqrt{\mathrm{KL\ divergence}}$", fontsize=7, labelpad=2)
-    ax.set_ylabel(r"$-\log_{10}$(HPD overlap + 0.01)", fontsize=7, labelpad=4)
-    ax.set_title(
-        "Per-spike scatter (each point = one spike event)",
-        fontsize=7,
-        pad=4,
-    )
-    ax.tick_params(labelsize=6)
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    ax.legend(
-        fontsize=5,
-        frameon=False,
-        loc="upper right",
-        markerscale=3,
-        scatterpoints=1,
-        ncols=2,
-    )
-
-
 def plot_combined_diagnostics(
     xs: NDArray[np.floating],
     x_true: NDArray[np.floating],
@@ -1412,8 +1217,6 @@ def plot_combined_diagnostics(
     thresholds: Thresholds,
     params: DecodeParams,
     placefield_centers: NDArray[np.floating],
-    phase_boundaries: list[int] | NDArray[np.intp] | None = None,
-    phase_labels: list[str] | None = None,
 ) -> Figure:
     """Create comprehensive time-series diagnostics figure.
 
@@ -1437,18 +1240,6 @@ def plot_combined_diagnostics(
         Decoding parameters containing timeline structure.
     placefield_centers : NDArray, shape (n_cells,)
         Place field centers for each cell (used for spike raster sorting).
-    phase_boundaries : list[int] | NDArray[np.intp] | None, optional
-        Cumulative phase-end time indices (one entry per simulated phase),
-        matching the ``phase_boundaries`` returned by
-        :func:`statespacecheck_paper.figure03_demo.run_figure03_simulation`.
-        Used by the per-spike scatter panel to assign each spike event to
-        its source phase. If ``None``, derived from ``params`` via
-        :func:`_default_phase_metadata` for backward compatibility with
-        callers that pre-date the extended timeline.
-    phase_labels : list[str] | None, optional
-        Phase names matched 1:1 with ``phase_boundaries``. Used to color
-        and label phases in the per-spike scatter legend. If ``None``,
-        derived from ``params`` alongside ``phase_boundaries``.
 
     Returns
     -------
@@ -1490,22 +1281,21 @@ def plot_combined_diagnostics(
     """
     # Calculate figure size
     fig_width = 7.0  # Full page width
-    fig_height = 12.0  # Extra rows for recovery-transient + per-spike scatter panels
+    fig_height = 8.8
 
     fig = plt.figure(figsize=(fig_width, fig_height), dpi=450)
 
-    # Outer grid: time-series block, then recovery-transient panel, then
-    # per-spike scatter panel, then summary heatmap.
+    # Outer grid: time-series block on top, summary heatmap on bottom.
     gs_outer = gridspec.GridSpec(
-        4,
+        2,
         1,
         figure=fig,
-        height_ratios=[5.3, 1.0, 1.3, 1.2],
-        hspace=0.45,
+        height_ratios=[5.3, 1.2],
+        hspace=0.35,
         left=0.08,
         right=0.93,
         top=0.97,
-        bottom=0.05,
+        bottom=0.06,
     )
 
     # Inner grid for time-series panels (6 rows)
@@ -1516,9 +1306,7 @@ def plot_combined_diagnostics(
         hspace=0.12,
     )
 
-    gs_recovery = gs_outer[1]
-    gs_scatter = gs_outer[2]
-    gs_summary = gs_outer[3]
+    gs_summary = gs_outer[1]
 
     # ===== TOP SECTION: Time-Series Diagnostics =====
 
@@ -1750,18 +1538,21 @@ def plot_combined_diagnostics(
     t_recovery5_end = params.T_recovery5_end
     t_tight_decoder_end = params.T_tight_decoder_end
 
-    phase_labels_info = [
-        ((t_remap_start + t_remap_end) / 2, "Remap"),
-        ((t_recovery1_end + t_flat_end) / 2, "Flat Firing"),
-        ((t_recovery2_end + t_fast_end) / 2, "Fast Movement"),
-        ((t_recovery3_end + t_slow_end) / 2, "Drift"),
-        ((t_recovery4_end + t_broad_decoder_end) / 2, "Broad Decoder"),
-        ((t_recovery5_end + t_tight_decoder_end) / 2, "Tight Decoder"),
+    # Stagger label vertical positions so the narrow broad/tight-decoder
+    # phases (~2k timesteps each) don't crowd the wider misfit labels.
+    # Tuple is (x_center, label, y_offset_axes_fraction).
+    phase_labels_info: list[tuple[float, str, float]] = [
+        ((t_remap_start + t_remap_end) / 2, "Remap", 1.02),
+        ((t_recovery1_end + t_flat_end) / 2, "Flat Firing", 1.07),
+        ((t_recovery2_end + t_fast_end) / 2, "Fast Movement", 1.02),
+        ((t_recovery3_end + t_slow_end) / 2, "Drift", 1.07),
+        ((t_recovery4_end + t_broad_decoder_end) / 2, "Broad Decoder", 1.02),
+        ((t_recovery5_end + t_tight_decoder_end) / 2, "Tight Decoder", 1.07),
     ]
-    for x_pos, label_text in phase_labels_info:
+    for x_pos, label_text, y_pos in phase_labels_info:
         ax_pred.text(
             x_pos,
-            1.02,
+            y_pos,
             label_text,
             transform=ax_pred.get_xaxis_transform(),
             fontsize=6,
@@ -1782,61 +1573,14 @@ def plot_combined_diagnostics(
         ha="right",
     )
 
-    # ===== RECOVERY-TRANSIENT PANEL =====
-    ax_recovery = fig.add_subplot(gs_recovery)
-    _plot_recovery_transient(
-        ax_recovery,
-        metrics,
-        thresholds,
-        misfit_end_t=params.T_remap_end,
-    )
-    ax_recovery.text(
-        -0.05,
-        1.20,
-        "b",
-        fontsize=8,
-        fontweight="bold",
-        transform=ax_recovery.transAxes,
-        va="top",
-        ha="right",
-    )
-
-    # ===== PER-SPIKE SCATTER (KL vs HPDO, colored by phase) =====
-    # Falls back to ``params``-derived boundaries / labels if the caller
-    # didn't pass them through; this keeps the public API backward
-    # compatible with callers that pre-date the extended timeline.
-    if phase_boundaries is None or phase_labels is None:
-        boundaries_for_scatter, labels_for_scatter = _default_phase_metadata(params)
-    else:
-        boundaries_for_scatter = list(phase_boundaries)
-        labels_for_scatter = list(phase_labels)
-    ax_scatter = fig.add_subplot(gs_scatter)
-    _plot_per_spike_scatter(
-        ax_scatter,
-        metrics,
-        phase_boundaries=boundaries_for_scatter,
-        phase_labels=labels_for_scatter,
-        thresholds=thresholds,
-    )
-    ax_scatter.text(
-        -0.05,
-        1.20,
-        "c",
-        fontsize=8,
-        fontweight="bold",
-        transform=ax_scatter.transAxes,
-        va="top",
-        ha="right",
-    )
-
     # ===== SUMMARY HEATMAP: % exceeding baseline threshold per phase =====
     ax_summary = fig.add_subplot(gs_summary)
 
-    # Panel label (d) for summary
+    # Panel label (b) for summary
     ax_summary.text(
         -0.05,
         1.25,
-        "d",
+        "b",
         fontsize=8,
         fontweight="bold",
         transform=ax_summary.transAxes,
