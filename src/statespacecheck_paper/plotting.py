@@ -400,11 +400,11 @@ def plot_original(
         Figure title.
     remap_window : tuple[int, int] | None, optional
         Time window where cell remapping occurs (start, end).
-    phase_boundaries : tuple[int, int] | None, optional
-        Generic two-element ``(t1, t2)`` boundary pair; the two regions
-        ``[t1, t2)`` and ``[t2, n_time)`` are shaded. ``plot_transformed``
-        is a generic diagnostic helper and does not assume the figure-3
-        phase layout (see ``add_phase_boundaries`` for that).
+    phase_boundaries : tuple[int, ...] | None, optional
+        Cumulative phase-end time indices, forwarded as-is to
+        :func:`add_phase_boundaries` (see that function for the
+        recognized tuple lengths and the misfit windows they shade).
+        ``None`` skips phase shading.
 
     Returns
     -------

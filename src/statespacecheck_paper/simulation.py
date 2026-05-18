@@ -634,7 +634,7 @@ def wiggly_flat_rates(
     Parameters
     ----------
     xs : np.ndarray, shape (n_bins,)
-        Position grid.
+        Position grid; must be strictly increasing with at least 2 points.
     n_cells : int
         Number of cells whose rates to construct.
     base_rate : float, optional
@@ -656,8 +656,8 @@ def wiggly_flat_rates(
     Raises
     ------
     ValueError
-        If ``n_cells < 1``, ``xs`` has fewer than 2 points or a
-        non-positive range, ``base_rate <= 0``, ``wiggle_amp < 0``, or
+        If ``n_cells < 1``, ``xs`` has fewer than 2 points or is not
+        strictly increasing, ``base_rate <= 0``, ``wiggle_amp < 0``, or
         ``wiggle_amp >= base_rate``.
 
     Examples
@@ -677,9 +677,11 @@ def wiggly_flat_rates(
         raise ValueError(f"n_cells must be >= 1, got {n_cells}")
     if xs.size < 2:
         raise ValueError("xs must have at least 2 points to define a position range")
+    # ``normalized_x`` below maps xs onto [0, 1] assuming a monotone grid;
+    # a non-monotone xs (e.g. [0, 2, 1, 3]) would warp the sinusoid phase.
+    if not np.all(np.diff(xs) > 0):
+        raise ValueError("xs must be strictly increasing")
     x_range = float(xs[-1] - xs[0])
-    if x_range <= 0:
-        raise ValueError("xs must be increasing with positive range")
     if base_rate <= 0:
         raise ValueError(f"base_rate must be positive, got {base_rate}")
     if wiggle_amp < 0:
