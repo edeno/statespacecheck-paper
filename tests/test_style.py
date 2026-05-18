@@ -114,16 +114,26 @@ def test_save_figure_creates_parent_directories(tmp_path: Path) -> None:
     plt.close(fig)
 
 
-def test_save_figure_respects_custom_dpi(tmp_path: Path) -> None:
-    """Custom dpi propagates to the saved PNG (raster) file."""
-    from PIL import Image
+def test_save_figure_respects_custom_dpi(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The ``dpi`` argument is forwarded to every ``plt.savefig`` call.
+
+    Asserts the kwarg passthrough directly rather than reading it back
+    from the rendered PNG, which would pull in a Pillow dependency that
+    the package does not otherwise declare.
+    """
+    captured_dpis: list[object] = []
+    real_savefig = plt.savefig
+
+    def _spy_savefig(*args: object, **kwargs: object) -> object:
+        captured_dpis.append(kwargs["dpi"])
+        return real_savefig(*args, **kwargs)
+
+    monkeypatch.setattr(plt, "savefig", _spy_savefig)
 
     fig = _make_simple_figure()
     save_figure(tmp_path / "test_figure", dpi=150)
-    with Image.open(tmp_path / "test_figure.png") as img:
-        # PIL records dpi as a (x, y) tuple of floats.
-        dpi_x, _ = img.info.get("dpi", (None, None))
-        assert dpi_x == pytest.approx(150, abs=1)
+    # save_figure writes both a PDF and a PNG; dpi must reach both.
+    assert captured_dpis == [150, 150]
     plt.close(fig)
 
 

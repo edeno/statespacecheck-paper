@@ -427,10 +427,6 @@ def decode_and_diagnostics(
         Remapping specification (see get_remapped_pf_centers).
     rng : np.random.Generator | None, optional
         Random number generator (reserved for future use).
-    transition_matrix_narrow : np.ndarray, shape (n_bins, n_bins), optional
-        Alternative transition matrix for narrow window (fast movement misfit).
-    narrow_window : tuple[int, int], optional
-        Time window (start, end) for narrow transition matrix.
     transition_matrix_inflated : np.ndarray, shape (n_bins, n_bins), optional
         Alternative transition matrix for the wide-dynamics-noise misfit
         window — produces a predictive much wider than the per-spike

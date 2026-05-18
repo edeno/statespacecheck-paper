@@ -219,7 +219,8 @@ Two dataset kinds are supported:
 - **Real-data decoder caches** (`continuous` / `contfrag` models from
   fitted `non_local_detector` decoders).
 - **Figure-3 simulation cache** — the simulated demonstration with
-  baseline / remap / flat-firing / fast-movement / momentum phases.
+  baseline / remap / history-dependent-firing / drift /
+  wide-dynamics-noise / wiggly-flat-likelihood phases.
 
 ### Build a cache
 

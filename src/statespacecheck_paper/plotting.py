@@ -615,11 +615,13 @@ def plot_transformed(
                 label="Remap",
             )
 
-        # Highlight phase boundaries
+        # Highlight the two regions defined by the generic phase boundary
+        # pair. ``plot_transformed`` is a generic diagnostic helper, so the
+        # shaded regions get neutral labels rather than misfit-specific ones.
         if phase_boundaries is not None:
             t1, t2 = phase_boundaries
-            ax.axvspan(t1, t2, alpha=0.15, color=COLORS["reference"], label="Flat rate")
-            ax.axvspan(t2, n_time, alpha=0.15, color=COLORS["ground_truth"], label="Fast movement")
+            ax.axvspan(t1, t2, alpha=0.15, color=COLORS["reference"], label="Region 1")
+            ax.axvspan(t2, n_time, alpha=0.15, color=COLORS["ground_truth"], label="Region 2")
 
     # Create time indices for scatter plots (metrics are now 2D: n_time x n_cells)
     n_cells = transformed.hpd_overlap.shape[1]

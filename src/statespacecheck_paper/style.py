@@ -114,38 +114,33 @@ COLORS: dict[str, str] = {
     "kl_pointwise": "#56B4E9",  # WONG[2] Sky Blue
     #
     # -------------------------------------------------------------------------
-    # Experimental Phase Backgrounds (very light, ~15% saturation)
+    # Figure-3 Phase Backgrounds (very light, ~15% saturation)
     # -------------------------------------------------------------------------
-    # These are derived from WONG colors but lightened significantly
-    # to serve as subtle background indicators without competing with data
+    # Subtle background fills, one per figure-3 misfit phase. Derived from
+    # WONG colors but lightened so they don't compete with data. Keys match
+    # the misfit phases produced by
+    # ``statespacecheck_paper.figure03_demo.run_figure03_simulation``.
     #
-    # Baseline period - no manipulation
+    # Baseline / clean-recovery — no manipulation.
     "phase_baseline": "#FFFFFF",  # White
     #
-    # Remapping period - place field remapping (related to likelihood change)
+    # Remap misfit — a subset of cells use swapped place-field identities.
     "phase_remap": "#FFF0D6",  # Light orange (from WONG[1])
     #
-    # Flat firing period - constant firing rates
-    "phase_flat": "#E8E8E8",  # Light gray (neutral)
+    # History-dependent firing misfit — refractory + bursting spike trains.
+    "phase_history_dependent": "#E8E8E8",  # Light gray (neutral)
     #
-    # Fast movement period - rapid position changes
-    "phase_fast": "#FFE0D6",  # Light vermillion (from WONG[6])
+    # Drift misfit — persistent-velocity trajectory vs. memoryless decoder.
+    "phase_drift": "#D6E8FF",  # Light blue (from WONG[5])
     #
-    # Slow/stationary period - minimal movement
-    "phase_slow": "#D6E8FF",  # Light blue (from WONG[5])
+    # Wide-dynamics-noise misfit — decoder uses an inflated transition matrix;
+    # engineered to inflate KL while HPD overlap and the rank-based p-value
+    # stay near baseline (the KL false-positive case).
+    "phase_wide_dynamics": "#E8E1F2",  # Light purple (from WONG[7])
     #
-    # Broad-decoder phase - decoder uses inflated transition matrix while
-    # animal walks and cells fire normally; engineered to inflate KL
-    # divergence while HPD overlap and the rank-based p-value stay near
-    # baseline (KL false-positive).
-    "phase_broad_decoder": "#E8E1F2",  # Light purple (from WONG[7])
-    #
-    # Tight-decoder phase - decoder uses a very tight transition matrix
-    # with stationary animal; engineered to inflate KL in the opposite
-    # shape-mismatch direction (predictive much narrower than the
-    # per-spike likelihood) while HPD overlap and p-value stay near
-    # baseline.
-    "phase_tight_decoder": "#E0F2E8",  # Light green (from WONG[3])
+    # Wiggly-flat-likelihood misfit — decoder uses low-information wiggly-flat
+    # rate functions; destabilizes HPD overlap and the rank-based p-value.
+    "phase_wiggly": "#E0F2E8",  # Light green (from WONG[3])
     #
     # -------------------------------------------------------------------------
     # Heatmap Colormaps
