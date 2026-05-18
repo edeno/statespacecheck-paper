@@ -503,9 +503,21 @@ def decode_and_diagnostics(
             Normalized likelihood for each individual spike event, using the
             decoder's actual place field centers (remapped during remap window).
         - 'spike_time_ind' : np.ndarray, shape (n_spikes,)
-            Time index for each spike event (excludes t=0).
+            Time index for each spike event (excludes t=0). Count > 1 in a
+            bin expands to that many repeated events.
         - 'spike_cell_ind' : np.ndarray, shape (n_spikes,)
             Cell index for each spike event.
+        - 'event_time_ind' : np.ndarray, shape (n_spikes,)
+            Alias of 'spike_time_ind' (the per-event time index).
+        - 'event_cell_ind' : np.ndarray, shape (n_spikes,)
+            Alias of 'spike_cell_ind' (the per-event cell index).
+        - 'event_hpd_overlap' : np.ndarray, shape (n_spikes,)
+            Per-spike-event HPD overlap (the dense 'hpd_overlap' matrix
+            scattered to one value per event).
+        - 'event_kl_divergence' : np.ndarray, shape (n_spikes,)
+            Per-spike-event KL divergence.
+        - 'event_spike_prob' : np.ndarray, shape (n_spikes,)
+            Per-spike-event spike probability.
 
     Raises
     ------
@@ -1060,8 +1072,9 @@ def compute_thresholds(
 
     Parameters
     ----------
-    metrics : dict[str, NDArray]
-        Dictionary containing diagnostic metrics:
+    metrics : Mapping[str, NDArray]
+        Mapping containing diagnostic metrics (accepts the full
+        ``decode_and_diagnostics`` result; only these three keys are read):
         - 'hpd_overlap' : np.ndarray, shape (n_time, n_cells)
         - 'kl_divergence' : np.ndarray, shape (n_time, n_cells)
         - 'spike_prob' : np.ndarray, shape (n_time, n_cells)

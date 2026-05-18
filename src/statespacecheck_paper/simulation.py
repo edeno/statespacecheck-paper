@@ -567,7 +567,7 @@ def simulate_spikes_history_dependent(
     ... )
     >>> spikes.shape
     (200, 3)
-    >>> (spikes >= 0).all()
+    >>> bool((spikes >= 0).all())
     True
     """
     # Validate up front: silently-accepted nonsense (refractory_steps=0,
@@ -667,7 +667,7 @@ def wiggly_flat_rates(
     >>> rates = wiggly_flat_rates(xs, n_cells=11)
     >>> rates.shape
     (101, 11)
-    >>> (rates > 0).all()
+    >>> bool((rates > 0).all())
     True
     """
     # Validate up front: a sign-flipped or out-of-range argument here would
