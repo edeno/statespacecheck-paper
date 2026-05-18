@@ -22,7 +22,7 @@ Simulate a random walk with reflecting boundaries:
 ...                      xs_min=0.0, xs_max=100.0, rng=rng)
 >>> walk.shape
 (100,)
->>> (walk >= 0.0).all() and (walk <= 100.0).all()
+>>> bool((walk >= 0.0).all() and (walk <= 100.0).all())
 True
 
 Generate position-tuned spikes:
@@ -113,7 +113,7 @@ def reflect_into_interval(
 
     >>> x = np.array([-1.0, 0.5, 2.5])
     >>> result = reflect_into_interval(x, 0.0, 2.0)
-    >>> (result >= 0.0).all() and (result <= 2.0).all()
+    >>> bool((result >= 0.0).all() and (result <= 2.0).all())
     True
 
     Values inside bounds are unchanged:
@@ -191,7 +191,7 @@ def safe_log(x: NDArray[np.floating], eps: float = 1e-12) -> NDArray[np.floating
 
     >>> x = np.array([0.0, 1.0, 2.0])
     >>> result = safe_log(x)
-    >>> np.isfinite(result).all()  # No -inf values
+    >>> bool(np.isfinite(result).all())  # No -inf values
     True
     """
     result: NDArray[np.floating] = np.log(np.maximum(x, eps))
@@ -232,8 +232,8 @@ def placefield_rates(
     >>> rates = placefield_rates(xs, centers, width=1.0, scale=1.0)
     >>> rates.shape
     (11, 3)
-    >>> rates.max(axis=0)  # Peak at each center
-    array([0.398..., 0.398..., 0.398...])
+    >>> rates.max(axis=0).round(3)  # Peak at each center
+    array([0.399, 0.399, 0.399])
     """
     result: NDArray[np.floating] = norm.pdf(xs[:, None], loc=centers[None, :], scale=width) * scale
     return result
@@ -278,7 +278,7 @@ def spike_prob_rank(
     >>> ranks = spike_prob_rank(prior, cell_fraction_per_bin)
     >>> ranks.shape
     (2,)
-    >>> (ranks >= 0.0).all() and (ranks <= 1.0).all()
+    >>> bool((ranks >= 0.0).all() and (ranks <= 1.0).all())
     True
 
     Compute spike probability ranks for multiple timesteps (batched):
@@ -370,7 +370,7 @@ def simulate_walk(
     >>> walk = simulate_walk(100, sig=1.0, x0=50.0, xs_min=0.0, xs_max=100.0, rng=rng)
     >>> walk.shape
     (100,)
-    >>> (walk >= 0.0).all() and (walk <= 100.0).all()
+    >>> bool((walk >= 0.0).all() and (walk <= 100.0).all())
     True
 
     With zero step size, trajectory is constant:
@@ -427,7 +427,7 @@ def simulate_spikes_position_tuned(
     ...                                         rate_scale=0.1, rng=rng)
     >>> spikes.shape
     (100, 3)
-    >>> (spikes >= 0).all()
+    >>> bool((spikes >= 0).all())
     True
     """
     lam = norm.pdf(x[:, None], loc=pf_centers[None, :], scale=pf_width) * rate_scale
@@ -468,7 +468,7 @@ def simulate_spikes_flat_rate(
     >>> spikes = simulate_spikes_flat_rate(100, 5, rate=0.1, rng=rng)
     >>> spikes.shape
     (100, 5)
-    >>> (spikes >= 0).all()
+    >>> bool((spikes >= 0).all())
     True
     """
     return rng.poisson(rate, size=(n_time, n_cells))

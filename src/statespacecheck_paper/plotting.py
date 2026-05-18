@@ -736,25 +736,31 @@ def plot_misfit_examples(
     Examples
     --------
     >>> import numpy as np
+    >>> import matplotlib.pyplot as plt
     >>> from statespacecheck_paper.analysis import DecodeParams
-    >>> n_time, n_bins, n_cells = 500, 50, 10
+    >>> rng = np.random.default_rng(0)
+    >>> # n_time must be large enough for the baseline window
+    >>> # slice(1000, T_remap_start - 1000) to be non-empty.
+    >>> n_time, n_bins, n_cells = 6000, 50, 10
     >>> xs = np.linspace(0, 1, n_bins)
-    >>> x_true = np.random.uniform(0, n_bins - 1, n_time)
-    >>> spikes = np.random.poisson(0.5, (n_time, n_cells))
+    >>> x_true = rng.uniform(0, n_bins - 1, n_time)
+    >>> spikes = rng.poisson(0.5, (n_time, n_cells))
     >>> metrics = {
-    ...     'posterior': np.random.dirichlet(np.ones(n_bins), size=n_time),
-    ...     'hpd_overlap': np.random.uniform(0, 1, (n_time, n_cells)),
-    ...     'kl_divergence': np.random.uniform(0, 5, (n_time, n_cells)),
-    ...     'spike_prob': np.random.uniform(0, 1, (n_time, n_cells)),
+    ...     'posterior': rng.dirichlet(np.ones(n_bins), size=n_time),
+    ...     'hpd_overlap': rng.uniform(0, 1, (n_time, n_cells)),
+    ...     'kl_divergence': rng.uniform(0, 5, (n_time, n_cells)),
+    ...     'spike_prob': rng.uniform(0, 1, (n_time, n_cells)),
     ... }
     >>> params = DecodeParams(
-    ...     T_remap_start=200, T_remap_end=250, T_recovery1_end=280,
-    ...     T_hist_dep_end=320, T_recovery2_end=350, T_drift_end=390,
-    ...     T_recovery3_end=420, T_wide_dynamics_end=460,
-    ...     T_recovery4_end=490, T_wiggly_end=540,
+    ...     T_remap_start=3000, T_remap_end=3600, T_recovery1_end=3960,
+    ...     T_hist_dep_end=4440, T_recovery2_end=4800, T_drift_end=5100,
+    ...     T_recovery3_end=5400, T_wide_dynamics_end=5580,
+    ...     T_recovery4_end=5760, T_wiggly_end=5940,
     ... )
     >>> pf_centers = np.linspace(0, 1, n_cells)
-    >>> plot_misfit_examples(xs, x_true, spikes, metrics, params, pf_centers, 0.1, 10.0)
+    >>> fig = plot_misfit_examples(
+    ...     xs, x_true, spikes, metrics, params, pf_centers, 0.1, 10.0
+    ... )
     >>> plt.close('all')
     """
     # Define phase windows - one example timestep per misfit class.
@@ -1249,6 +1255,7 @@ def plot_combined_diagnostics(
     Examples
     --------
     >>> import numpy as np
+    >>> import matplotlib.pyplot as plt
     >>> from statespacecheck_paper.analysis import DecodeParams, Thresholds
     >>> n_time, n_bins, n_cells = 500, 50, 10
     >>> xs = np.linspace(0, 1, n_bins)
@@ -1275,7 +1282,7 @@ def plot_combined_diagnostics(
     ...     T_recovery4_end=490, T_wiggly_end=540,
     ... )
     >>> placefield_centers = np.linspace(0, 1, n_cells)
-    >>> plot_combined_diagnostics(
+    >>> fig = plot_combined_diagnostics(
     ...     xs, x_true, spikes, metrics, thresholds, params, placefield_centers
     ... )
     >>> plt.close('all')

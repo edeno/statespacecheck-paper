@@ -8,18 +8,20 @@ Examples
 --------
 Basic usage for creating a publication figure:
 
->>> from statespacecheck_paper.style import WONG, set_figure_defaults, save_figure
+>>> from statespacecheck_paper.style import (
+...     WONG, get_figure_size, set_figure_defaults, save_figure
+... )
 >>> import matplotlib.pyplot as plt
 >>> set_figure_defaults(context="paper")
 >>> fig, ax = plt.subplots(figsize=get_figure_size("single"))
->>> ax.plot([1, 2, 3], [1, 2, 3], color=WONG[1])
->>> save_figure("figures/my_figure")
+>>> _ = ax.plot([1, 2, 3], [1, 2, 3], color=WONG[1])
+>>> save_figure("figures/my_figure")  # doctest: +SKIP
 
 For presentations:
 
 >>> set_figure_defaults(context="presentation")
 >>> fig, ax = plt.subplots(figsize=get_figure_size("double"))
->>> save_figure("figures/presentation_figure", dpi=300)
+>>> save_figure("figures/presentation_figure", dpi=300)  # doctest: +SKIP
 """
 
 from __future__ import annotations
@@ -193,7 +195,7 @@ def set_figure_defaults(context: Literal["paper", "presentation", "poster"] = "p
 
     >>> set_figure_defaults(context="paper")
     >>> fig, ax = plt.subplots()
-    >>> ax.plot([1, 2, 3], [1, 2, 3])
+    >>> _ = ax.plot([1, 2, 3], [1, 2, 3])
 
     For a presentation:
 
@@ -275,26 +277,27 @@ def save_figure(
 
     Examples
     --------
-    Basic usage:
+    Basic usage (the ``save_figure`` calls are marked ``+SKIP`` because
+    they write PDF/PNG files to disk):
 
     >>> fig, ax = plt.subplots()
-    >>> ax.plot([1, 2, 3], [1, 2, 3])
-    >>> save_figure("figures/my_figure")
+    >>> _ = ax.plot([1, 2, 3], [1, 2, 3])
+    >>> save_figure("figures/my_figure")  # doctest: +SKIP
     Saved figures/my_figure.pdf and figures/my_figure.png
 
     With custom DPI and keeping figure open:
 
-    >>> save_figure("figures/my_figure", dpi=300, close=False)
+    >>> save_figure("figures/my_figure", dpi=300, close=False)  # doctest: +SKIP
 
     Using Path object:
 
     >>> from pathlib import Path
     >>> output_path = Path("results") / "figure1"
-    >>> save_figure(output_path)
+    >>> save_figure(output_path)  # doctest: +SKIP
 
     Auto-creates nested directories:
 
-    >>> save_figure("figures/supplementary/figure_s1")  # Creates figures/supplementary/
+    >>> save_figure("figures/supplementary/figure_s1")  # doctest: +SKIP
     """
     # Convert to Path object for easier handling
     path = Path(name)
