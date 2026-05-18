@@ -30,8 +30,11 @@ goodness-of-fit.
     ...     spikes, xs, transition_matrix, params.pf_centers,
     ...     params.pf_width, params.rate_scale, params.remap_window, params.remap_from_to
     ... )
-    >>> sorted(results.keys())
-    ['hpd_overlap', 'kl_divergence', 'likelihood', 'posterior', 'predictive', 'spike_prob']
+    >>> sorted(results.keys())  # doctest: +NORMALIZE_WHITESPACE
+    ['event_cell_ind', 'event_hpd_overlap', 'event_kl_divergence',
+     'event_spike_prob', 'event_time_ind', 'hpd_overlap', 'kl_divergence',
+     'likelihood', 'per_spike_likelihood', 'posterior', 'predictive',
+     'spike_cell_ind', 'spike_likelihood', 'spike_prob', 'spike_time_ind']
 """
 
 from __future__ import annotations
@@ -520,7 +523,7 @@ def decode_and_diagnostics(
     >>> n_time, n_cells, n_bins = 10, 3, 21
     >>> spikes = np.random.poisson(1.0, size=(n_time, n_cells))
     >>> xs = np.linspace(0, 100, n_bins)
-    >>> transition_matrix = gaussian_transition_matrix(xs, sigma=0.5)
+    >>> transition_matrix = gaussian_transition_matrix(xs, sig=0.5)
     >>> pf_centers = np.array([25.0, 50.0, 75.0])
     >>> pf_width = 5.0
     >>> rate_scale = 0.1
@@ -535,7 +538,7 @@ def decode_and_diagnostics(
     (10, 21)
     >>> results['hpd_overlap'].shape  # Now per-cell
     (10, 3)
-    >>> np.all(np.isnan(results['hpd_overlap'][0]))  # t=0 has no prior
+    >>> bool(np.all(np.isnan(results['hpd_overlap'][0])))  # t=0 has no prior
     True
     """
     n_time = spikes.shape[0]
