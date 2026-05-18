@@ -23,7 +23,11 @@ import numpy as np
 import pytest
 
 from statespacecheck_paper.analysis import DecodeParams
-from statespacecheck_paper.figure03_demo import SimulationResult, run_figure03_simulation
+from statespacecheck_paper.figure03_demo import (
+    PHASE_LABELS,
+    SimulationResult,
+    run_figure03_simulation,
+)
 
 
 def _moderate_params() -> DecodeParams:
@@ -70,23 +74,23 @@ def sim() -> SimulationResult:
 
 
 def test_phase_labels_and_boundaries(sim: SimulationResult) -> None:
-    """``run_figure03_simulation`` returns the expected 10 phases in order
+    """``run_figure03_simulation`` emits every canonical phase in order
     and a timeline that ends at ``T_wiggly_end``.
     """
-    expected_labels = [
-        "Clean Baseline",
-        "Remap Misfit",
-        "Clean Recovery",
-        "History-Dependent Firing",
-        "Clean Recovery",
-        "Drift Misfit",
-        "Clean Recovery",
-        "Wide Dynamics Noise",
-        "Clean Recovery",
-        "Wiggly-Flat Likelihood",
-    ]
     params = sim["params"]
-    assert sim["phase_labels"] == expected_labels
+    # The simulation must emit exactly the canonical phase set, in order.
+    assert sim["phase_labels"] == list(PHASE_LABELS)
+    # Sanity-check the canonical set itself: 10 phases, the 5 expected
+    # misfits each appearing once.
+    assert len(PHASE_LABELS) == 10
+    for misfit in (
+        "Remap Misfit",
+        "History-Dependent Firing",
+        "Drift Misfit",
+        "Wide Dynamics Noise",
+        "Wiggly-Flat Likelihood",
+    ):
+        assert PHASE_LABELS.count(misfit) == 1
     boundaries = np.asarray(sim["phase_boundaries"])
     assert boundaries[-1] == params.T_wiggly_end
     assert np.all(np.diff(boundaries) > 0)

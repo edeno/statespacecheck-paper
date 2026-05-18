@@ -1503,9 +1503,7 @@ def plot_combined_diagnostics(
         color=COLORS["threshold"],
     )
 
-    # Add phase boundaries to all time-series panels (local variable name
-    # ``tseries_boundaries`` avoids shadowing the ``phase_boundaries``
-    # parameter conventions used elsewhere in this module).
+    # Add phase boundaries to all time-series panels.
     tseries_boundaries = (
         params.T_remap_start,
         params.T_remap_end,

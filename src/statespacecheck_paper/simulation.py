@@ -584,9 +584,8 @@ def simulate_spikes_history_dependent(
 
     n_time = x.shape[0]
     n_cells = pf_centers.shape[0]
-    base_rates = (
-        norm.pdf(x[:, None], loc=pf_centers[None, :], scale=pf_width) * rate_scale
-    )  # (n_time, n_cells)
+    # (n_time, n_cells) Gaussian place-field rate at each step's position.
+    base_rates = placefield_rates(x, pf_centers, pf_width, rate_scale)
 
     spikes = np.zeros((n_time, n_cells), dtype=np.int_)
     # ``steps_since_spike[c]`` = number of steps since cell ``c`` last fired.

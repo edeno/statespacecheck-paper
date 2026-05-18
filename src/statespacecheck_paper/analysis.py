@@ -576,6 +576,18 @@ def decode_and_diagnostics(
     start_inflate, end_inflate = _window_or_never(inflate_window, n_time)
     start_wiggly, end_wiggly = _window_or_never(wiggly_window, n_time)
 
+    # Precompute the per-cell Poisson rate tables once. The decode loop
+    # selects among them by window instead of recomputing placefield_rates
+    # every timestep. ``rates`` (the unremapped Gaussian-PF table) is also
+    # the diagnostic rate table — see the diagnostics section below.
+    rates = placefield_rates(xs, pf_centers, pf_width, rate_scale)
+    rates_remapped = placefield_rates(
+        xs,
+        get_remapped_pf_centers(pf_centers, remap_from_to, active=True),
+        pf_width,
+        rate_scale,
+    )
+
     for t in range(1, n_time):
         # Select transition matrix based on which window we're in
         # Window checks use half-open intervals [start, end) to match simulation phases
@@ -590,22 +602,17 @@ def decode_and_diagnostics(
         # Store predictive posterior for p-value computation
         predictive_posterior[t] = prior
 
-        # Likelihood grid for this time's counts.
-        # In the wiggly window, the decoder uses ``wiggly_rates`` directly
-        # for the Poisson likelihood; outside it, the standard Gaussian-PF
-        # rate table is used (with the remapped centers during the remap
-        # window, as before).
-        active_wiggly = wiggly_rates is not None and start_wiggly <= t < end_wiggly
-        if active_wiggly:
-            # Likelihood ∝ Poisson(counts | wiggly_rates[bin, cell]), normalized per cell.
-            likelihood = poisson.pmf(spikes[t][None, :], wiggly_rates)
-            likelihood = normalize(likelihood, axis=0)
+        # Likelihood grid for this time's counts. Select the per-cell rate
+        # table by window — ``wiggly_rates`` inside the wiggly window, the
+        # remapped table inside the remap window, else the standard
+        # Gaussian-PF table — then form the normalized Poisson likelihood.
+        if wiggly_rates is not None and start_wiggly <= t < end_wiggly:
+            rates_t = wiggly_rates
+        elif start_r <= t < end_r:
+            rates_t = rates_remapped
         else:
-            active_remap = start_r <= t < end_r
-            current_pf_centers = get_remapped_pf_centers(pf_centers, remap_from_to, active_remap)
-            likelihood = likelihood_grid_for_counts(
-                xs, current_pf_centers, pf_width, rate_scale, spikes[t]
-            )
+            rates_t = rates
+        likelihood = normalize(poisson.pmf(spikes[t][None, :], rates_t), axis=0)
 
         # Compute combined likelihood from all cells (product over cells)
         combined_likelihood = np.prod(likelihood, axis=1)  # (n_bins,)
@@ -634,13 +641,13 @@ def decode_and_diagnostics(
     spike_cell_ind = np.repeat(spike_cell_ind, spike_counts_at_events)
     spike_time_ind = spike_time_ind + 1  # Adjust for offset from [1:]
 
-    # Compute rates from the ORIGINAL (unremapped) place field parameters.
-    # This is intentional: diagnostics evaluate whether the observed spikes are
-    # consistent with the *model's* assumed likelihood (original place fields).
-    # During remapping, the decoder updates the posterior using remapped fields
-    # (simulating a changed neural code), but the diagnostic correctly flags this
-    # as a misfit because the model's likelihood no longer matches the data.
-    rates = placefield_rates(xs, pf_centers, pf_width, rate_scale)
+    # Diagnostics use ``rates`` — the ORIGINAL (unremapped) place-field rate
+    # table precomputed above. This is intentional: diagnostics evaluate
+    # whether the observed spikes are consistent with the *model's* assumed
+    # likelihood (original place fields). During remapping the decoder
+    # updates the posterior using remapped fields (simulating a changed
+    # neural code), but the diagnostic correctly flags this as a misfit
+    # because the model's likelihood no longer matches the data.
 
     # In the wiggly-likelihood window the decoder's per-cell rate function is
     # different from the standard Gaussian PF — both the posterior update and
@@ -699,13 +706,7 @@ def decode_and_diagnostics(
 
         in_remap = (spike_time_ind >= start_r) & (spike_time_ind < end_r)
         if np.any(in_remap):
-            remap_rates = placefield_rates(
-                xs,
-                get_remapped_pf_centers(pf_centers, remap_from_to, active=True),
-                pf_width,
-                rate_scale,
-            )
-            remap_cell_rates = remap_rates[:, spike_cell_ind[in_remap]].T
+            remap_cell_rates = rates_remapped[:, spike_cell_ind[in_remap]].T
             decoder_per_spike_lik[in_remap] = normalize(
                 poisson.pmf(k=1, mu=remap_cell_rates), axis=1
             )

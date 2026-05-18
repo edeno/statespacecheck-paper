@@ -29,6 +29,23 @@ from statespacecheck_paper.simulation import (
     wiggly_flat_rates,
 )
 
+# Canonical ordered phase labels — the public contract of
+# ``SimulationResult["phase_labels"]``. ``run_figure03_simulation`` emits
+# these by position (one per ``_add_phase`` call); tests and downstream
+# code import this tuple rather than re-typing the strings.
+PHASE_LABELS: tuple[str, ...] = (
+    "Clean Baseline",
+    "Remap Misfit",
+    "Clean Recovery",
+    "History-Dependent Firing",
+    "Clean Recovery",
+    "Drift Misfit",
+    "Clean Recovery",
+    "Wide Dynamics Noise",
+    "Clean Recovery",
+    "Wiggly-Flat Likelihood",
+)
+
 
 class SimulationResult(TypedDict):
     """Return shape of :func:`run_figure03_simulation`.
@@ -123,28 +140,29 @@ def run_figure03_simulation(
             x, pf_centers, params.pf_width, params.rate_scale, rng
         )
 
-    def _add_phase(label: str, x: NDArray[np.floating], sp: NDArray[np.int_]) -> None:
+    def _add_phase(x: NDArray[np.floating], sp: NDArray[np.int_]) -> None:
+        """Append one phase; its label is ``PHASE_LABELS`` at this position."""
         nonlocal x_last
+        phase_labels.append(PHASE_LABELS[len(phases)])
         phases.append((x, sp))
-        phase_labels.append(label)
         x_last = float(x[-1])
 
     # 1. Clean baseline
     n = params.T_remap_start
     x = _walk(n, params.sigx_pred)
-    _add_phase("Clean Baseline", x, _spikes_position_tuned(x))
+    _add_phase(x, _spikes_position_tuned(x))
 
     # 2. Remap misfit — handled by ``remap_window`` inside decode_and_diagnostics.
     #    The spike *generation* is normal position-tuned; the decoder is the one
     #    that uses remapped PF centers during this window.
     n = params.T_remap_end - params.T_remap_start
     x = _walk(n, params.sigx_pred)
-    _add_phase("Remap Misfit", x, _spikes_position_tuned(x))
+    _add_phase(x, _spikes_position_tuned(x))
 
     # 3. Clean recovery 1
     n = params.T_recovery1_end - params.T_remap_end
     x = _walk(n, params.sigx_pred)
-    _add_phase("Clean Recovery", x, _spikes_position_tuned(x))
+    _add_phase(x, _spikes_position_tuned(x))
 
     # 4. History-Dependent Firing Misfit
     #    Cells generate spikes via ``simulate_spikes_history_dependent``:
@@ -156,12 +174,12 @@ def run_figure03_simulation(
     n = params.T_hist_dep_end - params.T_recovery1_end
     x = _walk(n, params.sigx_pred)
     sp = simulate_spikes_history_dependent(x, pf_centers, params.pf_width, params.rate_scale, rng)
-    _add_phase("History-Dependent Firing", x, sp)
+    _add_phase(x, sp)
 
     # 5. Clean recovery 2
     n = params.T_recovery2_end - params.T_hist_dep_end
     x = _walk(n, params.sigx_pred)
-    _add_phase("Clean Recovery", x, _spikes_position_tuned(x))
+    _add_phase(x, _spikes_position_tuned(x))
 
     # 6. Drift Misfit — persistent-velocity walk; decoder assumes memoryless.
     n = params.T_drift_end - params.T_recovery2_end
@@ -173,12 +191,12 @@ def run_figure03_simulation(
         velocity = momentum * velocity + rng.normal(0, params.sigx_pred)
         x_mom[t] = x_mom[t - 1] + velocity
     x = reflect_into_interval(x_mom, float(params.xs_min), float(params.xs_max))
-    _add_phase("Drift Misfit", x, _spikes_position_tuned(x))
+    _add_phase(x, _spikes_position_tuned(x))
 
     # 7. Clean recovery 3
     n = params.T_recovery3_end - params.T_drift_end
     x = _walk(n, params.sigx_pred)
-    _add_phase("Clean Recovery", x, _spikes_position_tuned(x))
+    _add_phase(x, _spikes_position_tuned(x))
 
     # 8. Wide Dynamics Noise — decoder applies an inflated transition matrix
     #    (~40× baseline). Predictive becomes wide; per-spike likelihoods stay
@@ -187,12 +205,12 @@ def run_figure03_simulation(
     #    false-positive case).
     n = params.T_wide_dynamics_end - params.T_recovery3_end
     x = _walk(n, params.sigx_pred)
-    _add_phase("Wide Dynamics Noise", x, _spikes_position_tuned(x))
+    _add_phase(x, _spikes_position_tuned(x))
 
     # 9. Clean recovery 4
     n = params.T_recovery4_end - params.T_wide_dynamics_end
     x = _walk(n, params.sigx_pred)
-    _add_phase("Clean Recovery", x, _spikes_position_tuned(x))
+    _add_phase(x, _spikes_position_tuned(x))
 
     # 10. Wiggly-Flat Likelihood Misfit
     #     Spike generation is *unchanged* (normal position-tuned firing); the
@@ -203,7 +221,7 @@ def run_figure03_simulation(
     #     rank-based p-value ambiguous.
     n = params.T_wiggly_end - params.T_recovery4_end
     x = _walk(n, params.sigx_pred)
-    _add_phase("Wiggly-Flat Likelihood", x, _spikes_position_tuned(x))
+    _add_phase(x, _spikes_position_tuned(x))
 
     x_true = np.concatenate([p_x for p_x, _ in phases], axis=0)
     spikes = np.vstack([p_s for _, p_s in phases])
