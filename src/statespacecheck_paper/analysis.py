@@ -456,8 +456,8 @@ def decode_and_diagnostics(
     transition_matrix_inflated : np.ndarray, shape (n_bins, n_bins), optional
         Alternative transition matrix for the wide-dynamics-noise misfit
         window — produces a predictive much wider than the per-spike
-        likelihood. Both this argument and ``inflate_window`` must be
-        provided to take effect.
+        likelihood. Must be provided together with ``inflate_window``:
+        passing exactly one of the pair raises ``ValueError``.
     inflate_window : tuple[int, int], optional
         Time window (start, end) during which ``transition_matrix_inflated``
         replaces ``transition_matrix``.
@@ -465,8 +465,9 @@ def decode_and_diagnostics(
         Per-cell rate table used inside ``wiggly_window`` for *both*
         the posterior-update likelihood and the diagnostic rate matrix.
         See :func:`statespacecheck_paper.simulation.wiggly_flat_rates`
-        for the canonical wiggly-flat-rate generator. Both this argument
-        and ``wiggly_window`` must be provided to take effect.
+        for the canonical wiggly-flat-rate generator. Must be provided
+        together with ``wiggly_window``: passing exactly one of the pair
+        raises ``ValueError``.
     wiggly_window : tuple[int, int], optional
         Time window (start, end) during which ``wiggly_rates`` replaces
         the place-field-based rate table.
@@ -502,6 +503,14 @@ def decode_and_diagnostics(
             Time index for each spike event (excludes t=0).
         - 'spike_cell_ind' : np.ndarray, shape (n_spikes,)
             Cell index for each spike event.
+
+    Raises
+    ------
+    ValueError
+        If exactly one of ``transition_matrix_inflated`` / ``inflate_window``
+        is provided, if exactly one of ``wiggly_rates`` / ``wiggly_window``
+        is provided, or if ``wiggly_rates`` contains negative or
+        non-finite entries.
 
     Examples
     --------
