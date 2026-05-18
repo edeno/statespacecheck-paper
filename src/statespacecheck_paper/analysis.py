@@ -218,7 +218,33 @@ class DecodeParams:
         return (self.T_remap_start, self.T_remap_end)
 
     def __post_init__(self) -> None:
-        """Initialize pf_centers if not provided."""
+        """Validate the timeline and initialize ``pf_centers`` if not provided.
+
+        The 10 ``T_*`` fields are phase-boundary indices that must be
+        strictly increasing — ``run_figure03_simulation`` builds each
+        phase as ``T_next - T_prev`` and a non-monotonic timeline would
+        yield a negative phase length, which ``np.arange``/``np.zeros``
+        silently turn into an empty phase, shifting every later misfit
+        window. Catch that here at construction rather than as a
+        misaligned figure downstream.
+        """
+        timeline = [
+            self.T_remap_start,
+            self.T_remap_end,
+            self.T_recovery1_end,
+            self.T_hist_dep_end,
+            self.T_recovery2_end,
+            self.T_drift_end,
+            self.T_recovery3_end,
+            self.T_wide_dynamics_end,
+            self.T_recovery4_end,
+            self.T_wiggly_end,
+        ]
+        if any(later <= earlier for earlier, later in zip(timeline, timeline[1:], strict=False)):
+            raise ValueError(
+                f"DecodeParams timeline boundaries must be strictly increasing; got {timeline}"
+            )
+
         if self.pf_centers is None:
             self.pf_centers = np.arange(self.xs_min, self.xs_max + 1, 10, dtype=float)
 
@@ -509,6 +535,30 @@ def decode_and_diagnostics(
     # rng parameter reserved for future use
     _ = rng
 
+    # Window/matrix arguments come in pairs: passing only one half silently
+    # no-ops (the misfit window is never entered), which would produce a
+    # plausible-but-wrong figure with no error. Fail loud instead.
+    if (transition_matrix_inflated is None) != (inflate_window is None):
+        raise ValueError(
+            "transition_matrix_inflated and inflate_window must be provided "
+            "together (got transition_matrix_inflated="
+            f"{'set' if transition_matrix_inflated is not None else None}, "
+            f"inflate_window={inflate_window})"
+        )
+    if (wiggly_rates is None) != (wiggly_window is None):
+        raise ValueError(
+            "wiggly_rates and wiggly_window must be provided together "
+            f"(got wiggly_rates={'set' if wiggly_rates is not None else None}, "
+            f"wiggly_window={wiggly_window})"
+        )
+    # A hand-built wiggly_rates table (not produced by wiggly_flat_rates)
+    # could carry negative or non-finite entries, which poisson.pmf turns
+    # into NaN likelihoods that propagate silently through the posterior.
+    if wiggly_rates is not None and not (
+        np.all(np.isfinite(wiggly_rates)) and np.all(wiggly_rates >= 0.0)
+    ):
+        raise ValueError("wiggly_rates must be finite and non-negative everywhere")
+
     # Preallocate outputs
     posterior: NDArray[np.floating] = np.zeros((n_time, n_bins))
     predictive_posterior: NDArray[np.floating] = np.zeros((n_time, n_bins))  # p(x_t | y_{1:t-1})
@@ -703,15 +753,39 @@ def _merge_diagnostics(
     diag_in: dict[str, NDArray[np.floating] | NDArray[np.intp]],
 ) -> dict[str, NDArray[np.floating] | NDArray[np.intp]]:
     """Merge two per-event diagnostic batches (in vs out of a special window)
-    into a single result dict matching the ``include_dense_matrices=True``
-    shape produced by :func:`compute_per_cell_diagnostics_from_rates`.
+    into a single result dict.
+
+    The merged dict has the keys of the
+    ``include_dense_matrices=True`` result of
+    :func:`compute_per_cell_diagnostics_from_rates` *except*
+    ``per_spike_likelihood`` — that key is supplied separately by the
+    caller (``decode_and_diagnostics`` builds its own per-spike
+    likelihood from the decoder's rate table).
 
     Used when the diagnostic rate table differs between time windows
-    (currently: the wiggly-flat-likelihood phase uses
-    ``wiggly_rates``, all other timesteps use the standard Gaussian-PF
-    rates).
+    (currently: the wiggly-flat-likelihood phase uses ``wiggly_rates``,
+    all other timesteps use the standard Gaussian-PF rates).
+
+    ``in_window`` must be the exact boolean mask used to split
+    ``spike_time_ind`` / ``spike_cell_ind`` into the per-event inputs of
+    ``diag_in`` (the ``True`` subset) and ``diag_out`` (the ``False``
+    subset). Boolean-mask indexing preserves order within each subset,
+    so scattering the two batches back via the same mask reassembles the
+    events in their original order — this only holds if the same mask
+    defined both the split and the merge.
     """
     n_spikes = spike_time_ind.shape[0]
+    n_in = int(in_window.sum())
+    if in_window.shape[0] != n_spikes:
+        raise ValueError(f"in_window length {in_window.shape[0]} != n_spikes {n_spikes}")
+    for name, diag, expected in (
+        ("diag_in", diag_in, n_in),
+        ("diag_out", diag_out, n_spikes - n_in),
+    ):
+        got = diag["event_hpd_overlap"].shape[0]
+        if got != expected:
+            raise ValueError(f"{name} has {got} events but the mask expects {expected}")
+
     event_hpd_overlap = np.empty(n_spikes)
     event_kl_divergence = np.empty(n_spikes)
     event_spike_prob = np.empty(n_spikes)
@@ -722,6 +796,13 @@ def _merge_diagnostics(
     event_spike_prob[~in_window] = diag_out["event_spike_prob"]
     event_spike_prob[in_window] = diag_in["event_spike_prob"]
 
+    # Scatter per-event values into the dense (n_time, n_cells) matrices.
+    # A bin with count k > 1 contributes k repeated (time, cell) index
+    # pairs, so the dense matrix keeps the last writer for that cell —
+    # safe here because per-event diagnostics for repeated same-(t, c)
+    # spikes are identical by construction (same predictive row, same
+    # cell rate). This mirrors the dense-matrix behavior of
+    # ``compute_per_cell_diagnostics_from_rates``.
     hpd_overlap = np.full((n_time, n_cells), np.nan)
     kl_divergence = np.full((n_time, n_cells), np.nan)
     spike_prob = np.full((n_time, n_cells), np.nan)

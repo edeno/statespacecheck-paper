@@ -12,12 +12,14 @@ from statespacecheck_paper.analysis import (
     DecodeParams,
     Thresholds,
     Transformed,
+    _merge_diagnostics,
     compute_thresholds,
     decode_and_diagnostics,
     get_remapped_pf_centers,
     likelihood_grid_for_counts,
     transform_metrics,
 )
+from statespacecheck_paper.simulation import wiggly_flat_rates
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -339,6 +341,150 @@ class TestDecodeAndDiagnostics:
             with_alt["predictive"][inside],
             atol=1e-6,
         ), f"{matrix_kwarg} in {window} did not change predictive — kwarg ignored?"
+
+    def test_wiggly_rates_used_only_inside_window(self, decoder_inputs: DecoderInputs) -> None:
+        """``wiggly_rates``/``wiggly_window`` must leave per-event diagnostics
+        untouched for events outside the window and change at least one
+        event inside it. Compared against a baseline run so a regression
+        that ignored the kwarg cannot pass on output shape alone.
+        """
+        wiggly = wiggly_flat_rates(decoder_inputs.xs, n_cells=3)
+        window = (3, 7)
+
+        baseline = decoder_inputs.call()
+        with_wiggly = decoder_inputs.call(wiggly_rates=wiggly, wiggly_window=window)
+
+        evt_t = with_wiggly["event_time_ind"]
+        # Events strictly before the window are unaffected — the filter
+        # state has not diverged yet. (Events *after* the window
+        # legitimately differ: the in-window posterior updates carry
+        # forward, so we do not check those.)
+        before = evt_t < window[0]
+        inside = (evt_t >= window[0]) & (evt_t < window[1])
+
+        np.testing.assert_array_equal(
+            baseline["event_kl_divergence"][before],
+            with_wiggly["event_kl_divergence"][before],
+        )
+        # At least one in-window event's KL changed (the wiggly likelihood
+        # is genuinely different from the Gaussian-PF likelihood).
+        assert inside.any(), "test fixture produced no in-window spike events"
+        assert not np.allclose(
+            baseline["event_kl_divergence"][inside],
+            with_wiggly["event_kl_divergence"][inside],
+            atol=1e-6,
+        ), "wiggly_rates did not change in-window diagnostics — kwarg ignored?"
+
+    @pytest.mark.parametrize(
+        ("kwargs", "match"),
+        [
+            (
+                {"transition_matrix_inflated": np.eye(21)},
+                "must be provided together",
+            ),
+            ({"inflate_window": (2, 5)}, "must be provided together"),
+            ({"wiggly_window": (2, 5)}, "must be provided together"),
+        ],
+    )
+    def test_unpaired_window_kwarg_raises(
+        self, decoder_inputs: DecoderInputs, kwargs: dict, match: str
+    ) -> None:
+        """Passing only one half of a matrix/window pair must fail loud —
+        a silent fallback would produce a plausible-but-wrong figure.
+        """
+        with pytest.raises(ValueError, match=match):
+            decoder_inputs.call(**kwargs)
+
+    def test_wiggly_rates_with_negative_entries_raises(self, decoder_inputs: DecoderInputs) -> None:
+        """A hand-built wiggly_rates table with negative entries is rejected
+        before it can become NaN likelihoods downstream."""
+        bad = wiggly_flat_rates(decoder_inputs.xs, n_cells=3)
+        bad[0, 0] = -1.0
+        with pytest.raises(ValueError, match="finite and non-negative"):
+            decoder_inputs.call(wiggly_rates=bad, wiggly_window=(3, 7))
+
+
+# ---------------------------------------------------------------------------
+# _merge_diagnostics
+# ---------------------------------------------------------------------------
+
+
+class TestMergeDiagnostics:
+    @staticmethod
+    def _batch(values: list[float]) -> dict[str, np.ndarray]:
+        """A minimal per-event diagnostic batch with distinct sentinel values."""
+        arr = np.asarray(values, dtype=float)
+        return {
+            "event_hpd_overlap": arr,
+            "event_kl_divergence": arr + 100.0,
+            "event_spike_prob": arr + 200.0,
+        }
+
+    def test_mixed_mask_reassembles_in_original_event_order(self) -> None:
+        """Events split by an in/out mask are scattered back in order."""
+        spike_time_ind = np.array([1, 2, 3, 4], dtype=np.intp)
+        spike_cell_ind = np.array([0, 1, 0, 1], dtype=np.intp)
+        in_window = np.array([False, True, True, False])
+        # diag_out covers events 0 and 3; diag_in covers events 1 and 2.
+        diag_out = self._batch([10.0, 13.0])
+        diag_in = self._batch([11.0, 12.0])
+
+        merged = _merge_diagnostics(
+            n_time=5,
+            n_cells=2,
+            spike_time_ind=spike_time_ind,
+            spike_cell_ind=spike_cell_ind,
+            in_window=in_window,
+            diag_out=diag_out,
+            diag_in=diag_in,
+        )
+        # Original event order is 10, 11, 12, 13.
+        np.testing.assert_array_equal(merged["event_hpd_overlap"], [10.0, 11.0, 12.0, 13.0])
+        # Dense matrix carries each event at its (time, cell) slot; all
+        # other slots stay NaN.
+        dense = merged["hpd_overlap"]
+        assert dense.shape == (5, 2)
+        assert dense[1, 0] == 10.0
+        assert dense[2, 1] == 11.0
+        assert dense[3, 0] == 12.0
+        assert dense[4, 1] == 13.0
+        assert np.isnan(dense[0, 0])
+
+    @pytest.mark.parametrize("all_in", [True, False])
+    def test_all_in_or_all_out_mask(self, all_in: bool) -> None:
+        """A mask that puts every event on one side still merges correctly."""
+        n = 3
+        spike_time_ind = np.arange(1, n + 1, dtype=np.intp)
+        spike_cell_ind = np.zeros(n, dtype=np.intp)
+        in_window = np.full(n, all_in)
+        populated = self._batch([1.0, 2.0, 3.0])
+        empty = self._batch([])
+        merged = _merge_diagnostics(
+            n_time=n + 1,
+            n_cells=1,
+            spike_time_ind=spike_time_ind,
+            spike_cell_ind=spike_cell_ind,
+            in_window=in_window,
+            diag_out=empty if all_in else populated,
+            diag_in=populated if all_in else empty,
+        )
+        np.testing.assert_array_equal(merged["event_kl_divergence"], [101.0, 102.0, 103.0])
+
+    def test_length_mismatch_raises(self) -> None:
+        """A batch whose event count disagrees with the mask fails loud."""
+        spike_time_ind = np.array([1, 2, 3], dtype=np.intp)
+        spike_cell_ind = np.zeros(3, dtype=np.intp)
+        in_window = np.array([False, True, True])
+        with pytest.raises(ValueError, match="diag_in has 1 events but the mask expects 2"):
+            _merge_diagnostics(
+                n_time=4,
+                n_cells=1,
+                spike_time_ind=spike_time_ind,
+                spike_cell_ind=spike_cell_ind,
+                in_window=in_window,
+                diag_out=self._batch([10.0]),
+                diag_in=self._batch([11.0]),  # mask expects 2, not 1
+            )
 
 
 # ---------------------------------------------------------------------------

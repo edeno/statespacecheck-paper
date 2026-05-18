@@ -13,9 +13,11 @@ from statespacecheck_paper.simulation import (
     reflect_into_interval,
     safe_log,
     simulate_spikes_flat_rate,
+    simulate_spikes_history_dependent,
     simulate_spikes_position_tuned,
     simulate_walk,
     spike_prob_rank,
+    wiggly_flat_rates,
 )
 
 # ---------------------------------------------------------------------------
@@ -333,3 +335,173 @@ class TestSimulateSpikesFlatRate:
         """Edge case: rate=0 must produce only zeros."""
         result = simulate_spikes_flat_rate(100, 5, rate=0.0, rng=rng)
         assert (result == 0).all()
+
+
+# ---------------------------------------------------------------------------
+# simulate_spikes_history_dependent
+# ---------------------------------------------------------------------------
+
+
+class TestSimulateSpikesHistoryDependent:
+    def test_shape_and_dtype(self, rng: np.random.Generator) -> None:
+        x = np.full(500, 50.0)
+        pf = np.array([20.0, 50.0, 80.0])
+        spikes = simulate_spikes_history_dependent(x, pf, 10.0, 5.0, rng)
+        assert spikes.shape == (500, 3)
+        assert (spikes >= 0).all()
+        assert np.issubdtype(spikes.dtype, np.integer)
+
+    def test_hard_refractory_suppresses_adjacent_spikes(self, rng: np.random.Generator) -> None:
+        """A 1-step refractory means no cell fires on two consecutive steps.
+
+        Driven hard (high rate, animal parked on a place-field center) so
+        that without the refractory adjacent spikes would be common.
+        """
+        x = np.full(2000, 50.0)  # parked on cell 1's PF center
+        pf = np.array([20.0, 50.0, 80.0])
+        spikes = simulate_spikes_history_dependent(
+            x, pf, pf_width=10.0, rate_scale=50.0, rng=rng, refractory_steps=1
+        )
+        fired = spikes > 0
+        adjacent = fired[1:] & fired[:-1]
+        assert not adjacent.any(), (
+            f"{int(adjacent.sum())} adjacent-step spike pairs survived a 1-step refractory"
+        )
+
+    def test_longer_refractory_enforces_minimum_gap(self, rng: np.random.Generator) -> None:
+        """With refractory_steps=3, every inter-spike interval is >= 3."""
+        x = np.full(3000, 50.0)
+        pf = np.array([50.0])
+        spikes = simulate_spikes_history_dependent(
+            x, pf, pf_width=10.0, rate_scale=50.0, rng=rng, refractory_steps=3
+        )
+        spike_steps = np.flatnonzero(spikes[:, 0] > 0)
+        if spike_steps.size > 1:
+            assert np.diff(spike_steps).min() >= 3
+
+    def test_burst_window_elevates_post_spike_firing(self, rng: np.random.Generator) -> None:
+        """Firing probability in the burst window exceeds firing well
+        outside it (post-refractory, pre-burst-decay)."""
+        x = np.full(20000, 50.0)
+        pf = np.array([50.0])
+        spikes = simulate_spikes_history_dependent(
+            x,
+            pf,
+            pf_width=10.0,
+            rate_scale=5.0,
+            rng=rng,
+            refractory_steps=1,
+            burst_window=(2, 10),
+            burst_factor=5.0,
+        )[:, 0]
+        spike_steps = np.flatnonzero(spikes > 0)
+        # For each spike, was there a spike 2-10 steps later (burst window)
+        # vs. 30-100 steps later (well outside)?
+        fired = spikes > 0
+        in_burst = np.zeros(spikes.size, dtype=bool)
+        far = np.zeros(spikes.size, dtype=bool)
+        for s in spike_steps:
+            in_burst[s + 2 : s + 11] = True
+            far[s + 30 : s + 101] = True
+        burst_rate = fired[in_burst].mean()
+        far_rate = fired[far].mean()
+        assert burst_rate > far_rate, (
+            f"burst-window firing {burst_rate:.4f} should exceed "
+            f"far-from-spike firing {far_rate:.4f}"
+        )
+
+    def test_reproducible_with_same_seed(self) -> None:
+        x = np.full(300, 50.0)
+        pf = np.array([20.0, 50.0, 80.0])
+        a = simulate_spikes_history_dependent(x, pf, 10.0, 5.0, np.random.default_rng(7))
+        b = simulate_spikes_history_dependent(x, pf, 10.0, 5.0, np.random.default_rng(7))
+        assert_array_equal(a, b)
+
+    def test_empty_timeline_returns_empty(self, rng: np.random.Generator) -> None:
+        spikes = simulate_spikes_history_dependent(np.empty(0), np.array([50.0]), 10.0, 5.0, rng)
+        assert spikes.shape == (0, 1)
+
+    def test_zero_rate_scale_yields_no_spikes(self, rng: np.random.Generator) -> None:
+        x = np.full(200, 50.0)
+        spikes = simulate_spikes_history_dependent(x, np.array([50.0]), 10.0, 0.0, rng)
+        assert (spikes == 0).all()
+
+    @pytest.mark.parametrize(
+        ("kwargs", "match"),
+        [
+            ({"refractory_steps": 0}, "refractory_steps must be >= 1"),
+            ({"burst_window": (5, 2)}, "burst_window must satisfy"),
+            ({"burst_window": (-1, 3)}, "burst_window must satisfy"),
+            ({"burst_factor": 0.0}, "burst_factor must be positive"),
+        ],
+    )
+    def test_invalid_parameters_raise(
+        self, rng: np.random.Generator, kwargs: dict, match: str
+    ) -> None:
+        with pytest.raises(ValueError, match=match):
+            simulate_spikes_history_dependent(
+                np.full(50, 50.0), np.array([50.0]), 10.0, 5.0, rng, **kwargs
+            )
+
+
+# ---------------------------------------------------------------------------
+# wiggly_flat_rates
+# ---------------------------------------------------------------------------
+
+
+class TestWigglyFlatRates:
+    def test_shape(self) -> None:
+        rates = wiggly_flat_rates(np.linspace(0, 100, 101), n_cells=11)
+        assert rates.shape == (101, 11)
+
+    def test_rates_strictly_positive(self) -> None:
+        """The function promises strictly positive rates everywhere — a
+        negative entry would become NaN once it reaches poisson.pmf."""
+        rates = wiggly_flat_rates(
+            np.linspace(0, 100, 257), n_cells=8, base_rate=0.05, wiggle_amp=0.049
+        )
+        assert (rates > 0).all()
+
+    def test_mean_near_base_rate(self) -> None:
+        """A full set of sine cycles averages back to base_rate per cell."""
+        rates = wiggly_flat_rates(
+            np.linspace(0, 100, 1001), n_cells=10, base_rate=0.05, n_wiggles=5.0
+        )
+        assert_allclose(rates.mean(axis=0), 0.05, atol=2e-3)
+
+    def test_cells_have_distinct_phases(self) -> None:
+        """Cell-specific phase offsets make the per-cell rate columns
+        differ — otherwise every cell would carry identical likelihoods."""
+        rates = wiggly_flat_rates(np.linspace(0, 100, 101), n_cells=4)
+        # No two columns identical.
+        for c in range(1, 4):
+            assert not np.allclose(rates[:, 0], rates[:, c])
+
+    def test_zero_wiggle_amp_is_allowed_and_flat(self) -> None:
+        """wiggle_amp=0 is valid (degenerate flat table), not an error."""
+        rates = wiggly_flat_rates(
+            np.linspace(0, 100, 51), n_cells=3, base_rate=0.05, wiggle_amp=0.0
+        )
+        assert_allclose(rates, 0.05)
+
+    @pytest.mark.parametrize(
+        ("kwargs", "match"),
+        [
+            ({"n_cells": 0}, "n_cells must be >= 1"),
+            ({"n_cells": 11, "base_rate": -0.1}, "base_rate must be positive"),
+            ({"n_cells": 11, "base_rate": 0.0}, "base_rate must be positive"),
+            ({"n_cells": 11, "wiggle_amp": -0.01}, "wiggle_amp must be non-negative"),
+            (
+                {"n_cells": 11, "base_rate": 0.05, "wiggle_amp": 0.05},
+                "wiggle_amp must be < base_rate",
+            ),
+        ],
+    )
+    def test_invalid_parameters_raise(self, kwargs: dict, match: str) -> None:
+        with pytest.raises(ValueError, match=match):
+            wiggly_flat_rates(np.linspace(0, 100, 101), **kwargs)
+
+    @pytest.mark.parametrize("xs", [np.array([5.0]), np.array([3.0, 3.0])])
+    def test_degenerate_position_grid_raises(self, xs: np.ndarray) -> None:
+        with pytest.raises(ValueError):
+            wiggly_flat_rates(xs, n_cells=4)

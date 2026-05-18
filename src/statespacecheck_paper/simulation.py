@@ -524,19 +524,26 @@ def simulate_spikes_history_dependent(
         Random number generator for reproducibility.
     refractory_steps : int, optional
         Number of steps after a spike during which the cell cannot fire.
-        Defaults to 1 (i.e., the immediately-following step is
+        Must be >= 1. Defaults to 1 (the immediately-following step is
         suppressed).
     burst_window : tuple[int, int], optional
         ``(start, end)`` step offsets after a spike during which the
-        rate is boosted. End is inclusive. Defaults to ``(2, 10)``.
+        rate is boosted. End is inclusive; must satisfy
+        ``0 <= start <= end``. Defaults to ``(2, 10)``.
     burst_factor : float, optional
-        Multiplier on the base rate during the burst window. Defaults
-        to 3.0.
+        Multiplier on the base rate during the burst window. Must be
+        positive. Defaults to 3.0.
 
     Returns
     -------
     spikes : np.ndarray, shape (n_time, n_cells)
         Spike counts (non-negative integers).
+
+    Raises
+    ------
+    ValueError
+        If ``refractory_steps < 1``, ``burst_window`` does not satisfy
+        ``0 <= start <= end``, or ``burst_factor <= 0``.
 
     Notes
     -----
@@ -544,6 +551,11 @@ def simulate_spikes_history_dependent(
     loops per timestep (still vectorized over cells per step). For
     figure-3-scale runs (~40k timesteps, 11 cells) this is fast enough
     to be unnoticeable.
+
+    When ``burst_window`` overlaps the refractory region
+    (``burst_start < refractory_steps``), the refractory zero is applied
+    first, so the effective burst window is
+    ``[max(burst_start, refractory_steps), burst_end]``.
 
     Examples
     --------
@@ -558,6 +570,18 @@ def simulate_spikes_history_dependent(
     >>> (spikes >= 0).all()
     True
     """
+    # Validate up front: silently-accepted nonsense (refractory_steps=0,
+    # a reversed or negative burst_window) would disable the refractory or
+    # burst mechanism with no error, producing a generative model subtly
+    # different from the one requested.
+    if refractory_steps < 1:
+        raise ValueError(f"refractory_steps must be >= 1, got {refractory_steps}")
+    burst_start, burst_end = burst_window
+    if not (0 <= burst_start <= burst_end):
+        raise ValueError(f"burst_window must satisfy 0 <= start <= end, got {burst_window}")
+    if burst_factor <= 0:
+        raise ValueError(f"burst_factor must be positive, got {burst_factor}")
+
     n_time = x.shape[0]
     n_cells = pf_centers.shape[0]
     base_rates = (
@@ -566,11 +590,10 @@ def simulate_spikes_history_dependent(
 
     spikes = np.zeros((n_time, n_cells), dtype=np.int_)
     # ``steps_since_spike[c]`` = number of steps since cell ``c`` last fired.
-    # Initialize to ``burst_window[1] + 1`` so every cell starts outside both
+    # Initialize to ``burst_end + 1`` so every cell starts outside both
     # the refractory and burst regimes.
-    steps_since_spike = np.full(n_cells, burst_window[1] + 1, dtype=np.int64)
+    steps_since_spike = np.full(n_cells, burst_end + 1, dtype=np.int64)
 
-    burst_start, burst_end = burst_window
     for t in range(n_time):
         rate = base_rates[t].copy()  # (n_cells,)
         in_refractory = steps_since_spike < refractory_steps
@@ -616,12 +639,12 @@ def wiggly_flat_rates(
     n_cells : int
         Number of cells whose rates to construct.
     base_rate : float, optional
-        Constant rate floor (in same units as ``rate_scale``). Defaults
-        to 0.05.
+        Constant rate floor (in same units as ``rate_scale``). Must be
+        positive. Defaults to 0.05.
     wiggle_amp : float, optional
-        Amplitude of the sinusoidal modulation. Should be smaller than
-        ``base_rate`` to keep rates non-negative everywhere. Defaults
-        to 0.01.
+        Amplitude of the sinusoidal modulation. Must be non-negative and
+        strictly smaller than ``base_rate`` so rates stay positive
+        everywhere. Defaults to 0.01.
     n_wiggles : float, optional
         Number of full sine cycles across the position grid. Defaults
         to 5.
@@ -629,7 +652,14 @@ def wiggly_flat_rates(
     Returns
     -------
     rates : np.ndarray, shape (n_bins, n_cells)
-        Wiggly-flat rate table.
+        Wiggly-flat rate table. Strictly positive everywhere.
+
+    Raises
+    ------
+    ValueError
+        If ``n_cells < 1``, ``xs`` has fewer than 2 points or a
+        non-positive range, ``base_rate <= 0``, ``wiggle_amp < 0``, or
+        ``wiggle_amp >= base_rate``.
 
     Examples
     --------
@@ -641,16 +671,25 @@ def wiggly_flat_rates(
     >>> (rates > 0).all()
     True
     """
+    # Validate up front: a sign-flipped or out-of-range argument here would
+    # otherwise produce negative rates, which silently become NaN once they
+    # reach ``poisson.pmf`` downstream in ``decode_and_diagnostics``.
+    if n_cells < 1:
+        raise ValueError(f"n_cells must be >= 1, got {n_cells}")
     if xs.size < 2:
         raise ValueError("xs must have at least 2 points to define a position range")
     x_range = float(xs[-1] - xs[0])
     if x_range <= 0:
         raise ValueError("xs must be increasing with positive range")
+    if base_rate <= 0:
+        raise ValueError(f"base_rate must be positive, got {base_rate}")
+    if wiggle_amp < 0:
+        raise ValueError(f"wiggle_amp must be non-negative, got {wiggle_amp}")
     if wiggle_amp >= base_rate:
-        raise ValueError("wiggle_amp must be < base_rate to keep rates non-negative")
+        raise ValueError("wiggle_amp must be < base_rate to keep rates positive")
 
     normalized_x = (xs - xs[0]) / x_range  # (n_bins,) in [0, 1]
-    phases = 2 * np.pi * np.arange(n_cells, dtype=float) / max(n_cells, 1)  # (n_cells,)
+    phases = 2 * np.pi * np.arange(n_cells, dtype=float) / n_cells  # (n_cells,)
     angle = 2 * np.pi * n_wiggles * normalized_x[:, None] + phases[None, :]  # (n_bins, n_cells)
     rates: NDArray[np.floating] = base_rate + wiggle_amp * np.sin(angle)
     return rates

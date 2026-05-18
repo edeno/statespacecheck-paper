@@ -400,9 +400,11 @@ def plot_original(
         Figure title.
     remap_window : tuple[int, int] | None, optional
         Time window where cell remapping occurs (start, end).
-    phase_boundaries : tuple[int, ...] | None, optional
-        Boundaries between phases: (T_remap_start, T_remap_end, T_recovery1_end,
-        T_flat_end, T_recovery2_end, T_fast_end, T_recovery3_end, T_slow_end).
+    phase_boundaries : tuple[int, int] | None, optional
+        Generic two-element ``(t1, t2)`` boundary pair; the two regions
+        ``[t1, t2)`` and ``[t2, n_time)`` are shaded. ``plot_transformed``
+        is a generic diagnostic helper and does not assume the figure-3
+        phase layout (see ``add_phase_boundaries`` for that).
 
     Returns
     -------
@@ -746,9 +748,10 @@ def plot_misfit_examples(
     ...     'spike_prob': np.random.uniform(0, 1, (n_time, n_cells)),
     ... }
     >>> params = DecodeParams(
-    ...     T_remap_start=200, T_remap_end=250,
-    ...     T_recovery1_end=280, T_flat_end=320, T_recovery2_end=350,
-    ...     T_fast_end=390, T_recovery3_end=420, T_slow_end=460,
+    ...     T_remap_start=200, T_remap_end=250, T_recovery1_end=280,
+    ...     T_hist_dep_end=320, T_recovery2_end=350, T_drift_end=390,
+    ...     T_recovery3_end=420, T_wide_dynamics_end=460,
+    ...     T_recovery4_end=490, T_wiggly_end=540,
     ... )
     >>> pf_centers = np.linspace(0, 1, n_cells)
     >>> plot_misfit_examples(xs, x_true, spikes, metrics, params, pf_centers, 0.1, 10.0)
@@ -1266,9 +1269,10 @@ def plot_combined_diagnostics(
     ... }
     >>> thresholds = Thresholds(hpd_overlap=0.8, kl_divergence=2.0, spike_prob=0.05)
     >>> params = DecodeParams(
-    ...     T_remap_start=200, T_remap_end=250,
-    ...     T_recovery1_end=280, T_flat_end=320, T_recovery2_end=350,
-    ...     T_fast_end=390, T_recovery3_end=420, T_slow_end=460,
+    ...     T_remap_start=200, T_remap_end=250, T_recovery1_end=280,
+    ...     T_hist_dep_end=320, T_recovery2_end=350, T_drift_end=390,
+    ...     T_recovery3_end=420, T_wide_dynamics_end=460,
+    ...     T_recovery4_end=490, T_wiggly_end=540,
     ... )
     >>> placefield_centers = np.linspace(0, 1, n_cells)
     >>> plot_combined_diagnostics(

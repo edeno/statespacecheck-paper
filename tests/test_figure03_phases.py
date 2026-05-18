@@ -95,21 +95,22 @@ def test_phase_labels_and_boundaries(sim: SimulationResult) -> None:
 
 
 def test_remap_phase_flags_all_three(sim: SimulationResult) -> None:
-    """Regression guard: the remap phase moves all three metrics away
-    from baseline in the expected direction.
+    """Regression guard: the remap phase is a strong, unambiguous misfit —
+    all three metrics move far from baseline, not merely in the right
+    direction. Magnitude bounds (not bare inequalities) so a remap that
+    barely perturbed the metrics would fail.
     """
     medians = _per_phase_medians(sim)
-    base_kl, base_hpd, base_sp = medians["Clean Baseline"]
+    base_kl, _, _ = medians["Clean Baseline"]
     remap_kl, remap_hpd, remap_sp = medians["Remap Misfit"]
-    assert remap_kl > base_kl, (
-        f"remap KL should exceed baseline; got base={base_kl:.3f}, remap={remap_kl:.3f}"
+    # KL inflates by at least 5x (observed ~30x at the test scale).
+    assert remap_kl > 5 * base_kl, (
+        f"remap KL should be >5x baseline; got base={base_kl:.3f}, remap={remap_kl:.3f}"
     )
-    assert remap_hpd < base_hpd, (
-        f"remap HPDO should fall below baseline; got base={base_hpd:.3f}, remap={remap_hpd:.3f}"
-    )
-    assert remap_sp < base_sp, (
-        f"remap spike_prob should fall below baseline; got base={base_sp:.3f}, remap={remap_sp:.3f}"
-    )
+    # HPD overlap collapses toward zero (observed ~0.0).
+    assert remap_hpd < 0.5, f"remap HPDO should collapse below 0.5; got {remap_hpd:.3f}"
+    # Rank-based p-value collapses toward zero (observed ~0.0).
+    assert remap_sp < 0.2, f"remap spike_prob should collapse below 0.2; got {remap_sp:.3f}"
 
 
 def test_wide_dynamics_noise_phase_dissociates_kl_from_hpd(
@@ -125,10 +126,12 @@ def test_wide_dynamics_noise_phase_dissociates_kl_from_hpd(
     assert wide_kl > 2 * base_kl, (
         f"wide-dynamics-noise should inflate KL by >2x; got base={base_kl:.3f}, wide={wide_kl:.3f}"
     )
-    # HPD overlap preserved: wide phase HPDO median should remain in
-    # the same neighborhood as baseline.
-    assert wide_hpd >= 0.5 * base_hpd - 1e-12, (
-        f"wide-dynamics-noise should preserve HPD overlap; "
+    # HPD overlap preserved: wide-phase HPDO must stay within 10% of
+    # baseline. The dissociation claim is that HPDO barely moves while KL
+    # inflates — a 50%-drop tolerance would not distinguish "preserved"
+    # from "moderately degraded".
+    assert wide_hpd >= 0.9 * base_hpd, (
+        f"wide-dynamics-noise should preserve HPD overlap (>=0.9x baseline); "
         f"got base={base_hpd:.3f}, wide={wide_hpd:.3f}"
     )
 
@@ -148,26 +151,27 @@ def test_history_dependent_firing_per_spike_metrics_near_baseline(
     medians = _per_phase_medians(sim)
     base_kl, base_hpd, base_sp = medians["Clean Baseline"]
     hd_kl, hd_hpd, hd_sp = medians["History-Dependent Firing"]
-    remap_kl, remap_hpd, _ = medians["Remap Misfit"]
 
-    # KL should NOT inflate the way it does for remap; specifically, the
-    # history-dep median KL should be much closer to baseline than to the
-    # remap KL. We require ``hd_kl < (base + remap) / 2``.
-    midpoint = 0.5 * (base_kl + remap_kl)
-    assert hd_kl < midpoint, (
-        "per-spike KL in history-dependent phase should stay near "
-        "baseline rather than approach the remap-scale inflation; "
-        f"baseline={base_kl:.3f}, remap={remap_kl:.3f}, hist-dep={hd_kl:.3f}"
+    # All three per-spike metrics stay near baseline — the temporal
+    # misfit barely registers. Bounds are absolute (vs. baseline), not
+    # relative to the remap collapse: the claim is "near baseline", and
+    # a midpoint-vs-remap bound would be trivially satisfied because the
+    # remap inflation is ~30x.
+    assert hd_kl < 3 * base_kl, (
+        "per-spike KL in the history-dependent phase should stay within "
+        f"3x baseline; got baseline={base_kl:.3f}, hist-dep={hd_kl:.3f}"
     )
-    # HPDO should stay near baseline (well above the remap collapse).
-    midpoint_hpd = 0.5 * (base_hpd + remap_hpd)
-    assert hd_hpd > midpoint_hpd, (
-        "per-spike HPDO in history-dependent phase should stay near "
-        "baseline rather than collapse to the remap-scale low; "
-        f"baseline={base_hpd:.3f}, remap={remap_hpd:.3f}, hist-dep={hd_hpd:.3f}"
+    assert hd_hpd > 0.9 * base_hpd, (
+        "per-spike HPDO in the history-dependent phase should stay within "
+        f"10% of baseline; got baseline={base_hpd:.3f}, hist-dep={hd_hpd:.3f}"
     )
-    # spike_prob should likewise stay closer to baseline than to remap.
-    _ = (hd_sp, base_sp)  # currently no strict bound — placeholder for follow-up
+    # spike_prob stays in a band around baseline (neither collapsing like
+    # remap nor spuriously inflating).
+    assert 0.5 * base_sp < hd_sp < 1.5 * base_sp, (
+        "per-spike spike_prob in the history-dependent phase should stay "
+        f"within +/-50% of baseline; got baseline={base_sp:.3f}, "
+        f"hist-dep={hd_sp:.3f}"
+    )
 
 
 def test_wiggly_flat_likelihood_inflates_kl(sim: SimulationResult) -> None:
