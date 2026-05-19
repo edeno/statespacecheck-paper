@@ -95,7 +95,7 @@ The state-space paradigm is particularly well suited for neural data analysis si
 
 For a discrete set of time points, $t_0, \ldots, t_K$, we define an unobserved state process $x_k$, which influences a neural observation process $y_k$ at each time $t_k$. We define a state space model by combining a state transition distribution $p(x_k|x_{k-1})$, which defines how the state evolves in time, with an observation likelihood $p(y_k|x_k)$, which defines the neural representation of each state. To simplify the problem, we assume that the state transition depends only on the most recent past value of the state and that the observation likelihood depends only on the current state value. Figure \ref{fig01} (a) shows a schematic of this state-space model structure.
 
-\begin{figure}
+\begin{figure}[htbp]
 \centerline{\includegraphics[width=\textwidth]{../figures/main/figure01.pdf}}
 \caption{Schematics for state-space model and goodness-of-fit measures. (a) Graphical model depiction of state-space model includes state transition model, $p(x_t|x_{t-1})$, and observation likelihood $p(y_t|x_t)$. (b) These model components are sufficient to compute an iterative expression for the posterior filter distribution at time $t_k$, $p(x_k|y_{1:k})$ from the distribution at the previous time step. This involves first convolving the previous posterior with the state transition distribution to compute the one-step predictive distribution, $p(x_k|y_{1:k-1})$, and then updating the predictive distribution with information from the most recent spiking by multiplying by the observation likelihood. (c) For each new spike observation, we compute the local goodness-of-fit by assessing the consistency of information between the predictive distribution and likelihood. These are considered inconsistent when they assign high probability to mostly disjoint subsets of the state-space. When the regions with high probability overlap, the distributions are considered consistent, even if the distributions differ in their central tendency or certainty.}
 \label{fig01}
@@ -120,7 +120,7 @@ where $P(x_k) = p(x_k|y_{1:k-1})$ is the predictive distribution and $Q(x_k) = \
 
 \textcolor{blue}{Do we use $p(y_k|x_k)$ with a uniform prior instead normalized likelihood?}
 
-\begin{figure}
+\begin{figure}[htbp]
 \centerline{\includegraphics[width=\textwidth]{../figures/main/figure02.pdf}}
 \caption{Visualizations of the computation of each local goodness-of-fit metric. (a) The KL divergence compares the predictive distribution (blue) and the observation likelihood (orange) (top panel) by computing the difference in their log density (middle panel) and computing its expectation with respect to the predictive distribution (bottom panel). (b) The HPD overlap is defined by computing the HPD for the predictive distribution (top) and for the observation likelihood (middle) and then computing the size of their intersection relative to the size of the smaller of these two HPD regions (bottom). (c) Predictive checks are computed by sampling values of the state from the predictive distribution multiple times (top), then sampling from the conditional distribution of neurons that could have generated the observed spike given each sampled state value (middle), and then computing the probability that the log of the predictive distribution of the observed spike is greater than the log of empirical predictive distribution of the sampled spikes (bottom).}
 \label{fig02}
@@ -423,7 +423,7 @@ In addition, based on the definition in (\ref{generative_0}), in each scenario, 
 
 \subsection{Simulation Results}
 
-\begin{figure}
+\begin{figure}[htbp]
 % TODO: wire up the simulation-results figure. The current repo pipeline
 % generates figures/main/figure03.pdf (5-misfit per-cell diagnostics),
 % which does not match this figure's caption/Results prose; needs a
@@ -447,7 +447,7 @@ The results above are mainly based on hippocampal spikes observed at each spike 
 
 %The results above are mainly based on hippocampal spikes observed at each spiking moment. Next, we will present the findings using event-level metrics to evaluate the detected non-local events, determining whether we have enough evidence to reject the assumption that they are non-local events with a simple random walk movement. Based on the definition mentioned in equation (\ref{eq0}), in each scenario, we simulated 120 non-local events with small variance and 120 local events with some non-spatial hippocampal spikes. We simulated the rat's movement for one minute, segmenting time into $100$ ms intervals. Within each second, we designated the second and sixth intervals as the non-local state with small variance, i.e. $s_k=1$, while the fourth and eighth intervals were set as the local state with non-spatial hippocampal spike data, i.e. $s_k=2$. The remaining intervals were set as the local state, i.e. $s_k=0$. In addition, we changed the random walk standard $\sigma$ in equation (\ref{eq0}) or the hippocampal spiking rate $\alpha_{s_k,j }^i$ in equation (\ref{eq1}) to generate the data under different scenarios and evaluated the two kinds of events. All the other parameters used to generate these events were the same as what we had mentioned in simulation study. As for the parameters we used in estimation model, we continue with the same form, adjusting the value of $\sigma$ or $\alpha_j^i$ as needed to suit different scenarios. We further evaluated two distinct pairs of events: non-local event with small variance vs. non-local event with large variance, drift diffusion and low hippocampal spike rate and non-local event with small variance vs. non-local event with drift diffusion and high hippocampal spike rate. Following the similar method, we generated 120 events for each kind of event. To explore different scenarios, we changed $\sigma$ and $\alpha_{s_k,j}^i$, while keeping all other parameters consistent with those used in the previous simulation study. We used the period-level metrics we have defined to evaluate them and report the type I and type II error as below.
 
-\begin{figure}
+\begin{figure}[htbp]
 % TODO: wire up the Type I/II error-rate figure. No equivalent figure is
 % currently generated by the repo pipeline; needs to be produced.
 \fbox{\parbox[c][8cm][c]{0.95\textwidth}{\centering\itshape
@@ -609,7 +609,7 @@ For the estimation model, we adopt the same one as used in the simulation study.
 
 We show three decoding examples in this section: the first one seems to be a real non-local events with small variance while the second one is suspicious. The third one presents decoding results with longer duration , revealing one detected non-local event, while the remaining time is interpreted as local state.
 
-\begin{figure}
+\begin{figure}[htbp]
 % TODO: wire up the real-data decoding-examples figure. The current repo
 % pipeline generates figures/main/figure04.pdf (W-track decoder
 % comparison), which does not match this figure's caption/Results prose;
@@ -627,7 +627,7 @@ Fig. \ref{fig12}(j)-(l) show the HPDROR between isolated distribution of $x_k$ a
 
 Fig. \ref{fig12}(m)-(o) show the estimated probability under the predictive distribution of $\vec{m}_k$ based on one-step prediction distribution of $x_k$ combined with the observation process $p\left(\vec{m}_k \mid x_k, \Delta N_{k}^{(1: E)} \right)$ for the observed spikes at each spiking moment. In panel (m), there is only one spike with relatively low probability at the end of the non-local event, while maintaining a higher probability at other times. On the other hand, in panel (n), the frequent occurrence of lower probabilities diminishes our confidence in the decoding results. In panel (o), multiple instances of low probability under the estimated local state suggest potential issues with our local model fit. In general, the first detected non-local event should not be dismissed as a non-local event with small variance, much like the so-called hippocampal replay event. However, with the second detected non-local event, we gain a certain degree of confidence in rejecting it as a non-local event with small variance. As for the estimated local state in the third example, the spatial information embedded in the spikes not only corresponds to the local state but also includes information in favor of non-local state, raising doubts about the reliability of our decoding results.
 
-\begin{figure}
+\begin{figure}[htbp]
 % TODO: wire up the real-data summary figure. No equivalent figure is
 % currently generated by the repo pipeline; needs to be produced.
 \fbox{\parbox[c][6cm][c]{0.95\textwidth}{\centering\itshape
@@ -641,7 +641,7 @@ Based on the above results, all three metrics consistently indicate that there e
 
 Similar to the previous toy example, we present scatter plots among the three metrics at each moment using the real hippocampal data with the assumed two-state model.
 
-\begin{figure}
+\begin{figure}[htbp]
 % TODO: wire up the real-data metric scatter-plot figure. No equivalent
 % figure is currently generated by the repo pipeline; needs to be produced.
 \fbox{\parbox[c][8cm][c]{0.95\textwidth}{\centering\itshape
@@ -776,151 +776,7 @@ This work was supported by research grants from XXX. We thank Dr. Loren Frank an
 %In order to control the spike rate, we may choose $\alpha$ in different scenarios. The choices are set as $6$, $4.5$, $3.5$ and $2$.
 
 
-\bibliographystyle{APA}
-\begin{thebibliography}{100}
-\providecommand{\natexlab}[1]{#1}
-\expandafter\ifx\csname urlstyle\endcsname\relax
-  \providecommand{\doi}[1]{doi:\discretionary{}{}{}#1}\else
-  \providecommand{\doi}{doi:\discretionary{}{}{}\begingroup
-  \urlstyle{rm}\Url}\fi
+\bibliographystyle{plainnat}
+\bibliography{references}
 
-
-
-\bibitem[{Arulampalam et~al.(2002) Arulampalam M Sanjeev, Maskell Simon, Gordon Neil \& Clapp Tim}]{Ref2002} Arulampalam M Sanjeev, Maskell Simon, Gordon Neil \& Clapp Tim (2002). \newblock A tutorial on particle filters for online nonlinear/non-Gaussian Bayesian tracking. \newblock \emph{IEEE Transactions on signal processing}, \emph{2}, 174-188.
-
-\bibitem[{Cavanaugh et~al.(1997) Cavanaugh Joseph E \& Shumway Robert H}]{Ref1997} Cavanaugh Joseph E \& Shumway Robert H (1997). \newblock A bootstrap variant of AIC for state-space model selection. \newblock \emph{Statistica Sinica}, 473-496.
-
-\bibitem[{Titman et~al.(2008) Titman Andrew C \& Sharples Linda D}]{Ref2008} Titman Andrew C \& Sharples Linda D (2008). \newblock A general goodness-of-fit test for Markov and hidden Markov models. \newblock \emph{Statistics in medicine}, \newblock \emph{12}, 2177-2195.
-
-\bibitem[{Gu(2013)}]{Ref2013} Gu Fei (2013). \newblock Used parametric and residual-based bootstrap to assess the absolute goodness-of-fit for state space model. \newblock \emph{University of Kansas}
-
-\bibitem[{Brown et~al.(2002) Brown Emery N, Barbieri Riccardo,  Ventura Val{\'e}rie, Kass Robert E \& Frank Loren M}]{Ref2002b} Brown Emery N, Barbieri Riccardo,  Ventura Val{\'e}rie, Kass Robert E \& Frank Loren M (2002) \newblock The time-rescaling theorem and its application to neural spike train data analysis. \newblock \emph{Neural computation}, \emph{2}, 325-346
-
-\bibitem[{Tao et~al.(2018) Tao Long, Weber Karoline E,  Arai Kensuke \& Eden Uri T}]{Ref2018} Tao Long, Weber Karoline E,  Arai Kensuke \& Eden Uri T (2018) \newblock A common goodness-of-fit framework for neural population models using marked point process time-rescaling. \newblock \emph{Journal of computational neuroscience}, 147-162
-
-\bibitem[{Eden et~al.(2018) Eden Uri T, Frank Loren M \& Tao Long}]{Ref2018b} Eden Uri T, Frank Loren M \& Tao Long (2018) \newblock Characterizing complex, multi-scale neural phenomena using state-space models \newblock \emph{Dynamic Neuroscience: Statistics, Modeling, and Control}, 29-52
-
-\bibitem[{Yousefi et~al.(2020) Yousefi Ali, Amidi Yalda, Nazari  Behzad \& Eden Uri T}]{Ref2020} Yousefi Ali, Amidi Yalda, Nazari  Behzad \& Eden Uri T (2020) \newblock Assessing goodness-of-fit in marked point process models of neural population coding via time and rate rescaling \newblock \emph{Neural computation}, \emph{32}, 2145-2186
-
-\bibitem[{Solomon et~al.(1951) Kullback Solomon \& Leibler Richard A}]{Ref1951} Kullback Solomon \& Leibler Richard A (1951) \newblock On information and sufficiency. \newblock \emph{The annals of mathematical statistics}, \emph{22}, 79-86
-
-\bibitem[{Alexander et~al.(2023) Litvinenko Alexander, Marzouk Youssef, Matthies Hermann G, Scavino Marco \& Spantini Alessio}]{Ref2023} Litvinenko Alexander, Marzouk Youssef, Matthies Hermann G, Scavino Marco \& Spantini Alessio (2023) \newblock Computing f-divergences and distances of high-dimensional probability density functions \newblock \emph{Numerical Linear Algebra with Applications}, \emph{30}, e2467
-
-\bibitem[{Thomas et~al.(2006) Bengtsson Thomas \& Cavanaugh Joseph E}] {Ref2006} Bengtsson Thomas \& Cavanaugh Joseph E (2006) \newblock An improved Akaike information criterion for state-space model selection \newblock \emph{Computational Statistics \& Data Analysis}, \emph{50}, 2635-2654
-
-\bibitem[{David(2014)}]{Ref2014} Blei, David M(2014). \newblock Build, compute, critique, repeat: Data analysis with latent variable models \newblock \emph{Annual Review of Statistics and Its Application}, \emph{1}, 203-232
-
-\bibitem[{Marie et~al.(2021) Auger Marie, Newman Ken, Cole Diana, Empacher Fanny, Gryba Rowenna, King Aaron A, Leos-Barajas Vianey, Mills Flemming Joanna, Nielsen Anders, Petris Giovanni \& others}] {Ref2021} AugerMth Marie, Newman Ken, Cole Diana, Empacher Fanny, Gryba Rowenna, King Aaron A, Leos-Barajas Vianey, Mills Flemming Joanna, Nielsen Anders, Petris Giovanni \& others (2021)  \newblock A guide to state--space modeling of ecological time series \newblock \emph{Ecological Monographs}, \emph{91}, e01470
-
-\bibitem[{Newman et~al.(2014) Newman KB, Buckland ST, Morgan Byron JT, King R, Borchers DL, Cole Diana J, Besbeas Panagiotis, Gimenez O \& Thomas L}] {Ref2014b} Newman KB, Buckland ST, Morgan Byron JT, King R, Borchers DL, Cole Diana J, Besbeas Panagiotis, Gimenez O \& Thomas L (2014) \newblock Modelling population dynamics \newblock \emph{Springer New York, New York, USA}, 169-195
-
-\bibitem[{Bayarri et~al.(2007) Garc{\'\i}a Mar{\'\i}a Jes{\'u}s Bayarri and Castellanos ME}] {Ref2007} Garc{\'\i}a Mar{\'\i}a Jes{\'u}s Bayarri and Castellanos ME (2007) \newblock Bayesian Checking of the Second Levels of Hierarchical Models \newblock \emph{Institute of Mathematical Statistics}, 363-367
-
-\bibitem[{Gemma et~al.(2019) Moran Gemma E, Blei David M \& Ranganath Rajesh}] {Ref2019} Moran Gemma E, Blei David M \& Ranganath Rajesh (2019) \newblock Population predictive checks \newblock \emph{arXiv}
-
-
-
-\bibitem[{Guttman(1967)}]{Ref1967} Guttman Irwin (1967). \newblock The use of the concept of a future observation in goodness-of-fit problems \newblock \emph{Journal of the Royal Statistical Society: Series B (Methodological)}, \emph{29}, 83-100
-
-\bibitem[{Smith et~al.(2003) Smith Anne C \& Brown Emery N}]{Ref2003} Smith Anne C \& Brown Emery N (2003) \newblock Estimating a state-space model from point process observations \newblock \emph{Neural computation}, \emph{5}, 965-991
-
-\bibitem[Archer et al.(2014) Archer, E. W., Koster, U., Pillow, J. W., \& Macke, J. H. ]{Ref2014c} Archer, E. W., Koster, U., Pillow, J. W., \& Macke, J. H. (2014) \newblock Low-dimensional models of neural population activity in sensory cortical circuits \newblock \emph{Advances in neural information processing systems}, \emph{27}
-
-\bibitem[Brown et al.(1998)]{Ref1998a} Brown, E. N., Frank, L. M., Tang, D., Quirk, M. C., \& Wilson, M. A. (1998) \newblock A statistical paradigm for neural spike train decoding applied to position prediction from ensemble firing patterns of rat hippocampal place cells \newblock \emph{Journal of Neuroscience}, \emph{18}, 7411-7425.
-
-\bibitem[Chen et al.(2010)]{Ref2010a} Chen, Z., Barbieri, R., \& Brown, E. N. (2010). \newblock State space modeling of neural spike train and behavioral data. \newblock \emph{Statistical signal processing for neuroscience and neurotechnology}, 175-218
-
-\bibitem[Eden et al.(2004)]{Ref2004a} Eden, U. T., Frank, L. M., Barbieri, R., Solo, V., \& Brown, E. N. (2004) \newblock Dynamic analysis of neural encoding by point process adaptive filtering \newblock \emph{Neural computation}, \emph{16}, 971-998.
-
-\bibitem[Brown et al.(2004)]{Ref2004b} Brown, E. N., Kass, R. E., \& Mitra, P. P. (2004). \newblock Multiple neural spike train data analysis: state-of-the-art and future challenges \newblock \emph{Nature neuroscience}, \emph{7}, 456-461.
-
-\bibitem[Lewicki, M. S.(1998)]{Ref1998b} Lewicki, M. S. (1998) \newblock A review of methods for spike sorting: the detection and classification of neural action potentials \newblock \emph{Network: Computation in Neural Systems}, \emph{9}, R53.
-
-\bibitem[Wild et al.(2012)]{Ref2012a} Wild, J., Prekopcsak, Z., Sieger, T., Novak, D., \& Jech, R. (2012) \newblock Performance comparison of extracellular spike sorting algorithms for single-channel recordings \newblock \emph{Journal of neuroscience methods}, \emph{203}, 369-376.
-
-\bibitem[Buzsáki, G(2004)]{Ref2004c} Buzsáki, G. (2004) \newblock Large-scale recording of neuronal ensembles \newblock \emph{Nature neuroscience}, \emph{7}, 446-451.
-
-\bibitem[Jun et al.(2017)]{Ref2017a} Jun, J. J., Steinmetz, N. A., Siegle, J. H., Denman, D. J., Bauza, M., Barbarits, B., ... \& Harris, T. D. (2017) \newblock Fully integrated silicon probes for high-density recording of neural activity \newblock \emph{Nature}, \emph{551}, 232-236.
-
-\bibitem[V.Ventura and R.C.Gerkin(2012)]{Ref2012b} Ventura, V., \& Gerkin, R. C. (2012) \newblock Accurately estimating neuronal correlation requires a new spike-sorting paradigm \newblock \emph{Proceedings of the National Academy of Sciences}, \emph{109}, 7230-7235.
-
-\bibitem[Lee et al.(2020)]{Ref2020b} Lee, J., Mitelut, C., Shokri, H., Kinsella, I., Dethe, N., Wu, S., ... \& Paninski, L. (2020) \newblock YASS: Yet Another Spike Sorter applied to large-scale multi-electrode array recordings in primate retina \newblock \emph{BioRxiv}, 2020-03.
-
-\bibitem[S. N. Kadir, D. F. Goodman, and K. D. Harris(2014)]{Ref2014d} Kadir, S. N., Goodman, D. F., \& Harris, K. D. (2014) \newblock High-dimensional cluster analysis with the masked EM algorithm \newblock \emph{Neural computation}, \emph{26}, 2379-2394.
-
-\bibitem[T. A. Machado, I. V. Kauvar, and K. Deisseroth(2022)]{Ref2022a} Machado, T. A., Kauvar, I. V., \& Deisseroth, K. (2022) \newblock Multiregion neuronal activity: the forest and the trees \newblock \emph{Nature Reviews Neuroscience}, \emph{23}, 683-704.
-
-\bibitem[E. L. Denovellis, L. M. Frank, and U.T. Eden(2019)]{Ref2019b} Denovellis, E. L., Frank, L. M., \& Eden, U. T. (2019) \newblock Characterizing hippocampal replay using hybrid point process state space models \newblock \emph{2019 53rd Asilomar Conference on Signals, Systems, and Computers}, 245-249, \emph{IEEE}.
-
-\bibitem[E. L. Denovellis et al.(2021)]{Ref2021b} Denovellis, E. L., Gillespie, A. K., Coulter, M. E., Sosa, M., Chung, J. E., Eden, U. T., \& Frank, L. M. (2021) \newblock Hippocampal replay of experience at real-world speeds \newblock \emph{Elife}, \emph{10}, e64505.
-
-
-\bibitem[T. J. Davidson, F. Kloosterman, and M. A. Wilson(2009)]{Ref2009a} Davidson, T. J., Kloosterman, F., \& Wilson, M. A. (2009) \newblock Hippocampal replay of extended experience \newblock \emph{Neuron}, \emph{63}, 497-507.
-
-\bibitem[Kloosterman et al.(2014)]{Ref2014e} Kloosterman, F., Layton, S. P., Chen, Z., \& Wilson, M. A. (2014) \newblock Bayesian decoding using unsorted spikes in the rat hippocampus \newblock \emph{Journal of neurophysiology}, \emph{111}, 217-227.
-
-\bibitem[Deng et al.(2016)]{Ref2016a} Deng, X., Liu, D. F., Karlsson, M. P., Frank, L. M., \& Eden, U. T. (2016) \newblock Rapid classification of hippocampal replay content for real-time applications \newblock \emph{Journal of neurophysiology}, \emph{116}, 2221-2235.
-
-\bibitem[Deng et al.(2015)]{Ref2015a} Deng, X., Liu, D. F., Kay, K., Frank, L. M., \& Eden, U. T. (2015) \newblock Clusterless decoding of position from multiunit activity using a marked point process filter \newblock \emph{Neural computation}, \emph{27}, 1438-1460.
-
-\bibitem[Chen et al.(2012)]{Ref2012c} Chen, Z., Kloosterman, F., Layton, S., \& Wilson, M. A. (2012) \newblock Transductive neural decoding for unsorted neuronal spikes of rat hippocampus \newblock \emph{2012 Annual International Conference of the IEEE Engineering in Medicine and Biology Society}, 1310-1313, \emph{IEEE}.
-
-\bibitem[D. R. Cox and V. Isham(1980)]{Ref1980a} Cox, D. R., \& Isham, V. (1980) \newblock Point processes, \emph{12}, \emph{CRC Press}.
-
-\bibitem[J. P. Chu et al.(2024)]{Ref2024a} Chu, J. P., Coulter, M. E., Denovellis, E. L., Nguyen, T. T., Liu, D. F., Deng, X., ... \& Frank, L. M. (2024) \newblock RealtimeDecoder: A fast software module for online clusterless decoding \newblock \emph{bioRxiv}, 2024-05.
-
-\bibitem[J. M. Marin et al.(2012)]{Ref2012d} Marin, J. M., Pudlo, P., Robert, C. P., \& Ryder, R. J. (2012) \newblock Approximate Bayesian computational methods. \newblock \emph{Statistics and computing}, \emph{22}, 1167-1180.
-
-\bibitem[T. Toni et al.(2009)]{Ref2009b} Toni, T., Welch, D., Strelkowa, N., Ipsen, A., \& Stumpf, M. P. (2009) \newblock Approximate Bayesian computation scheme for parameter inference and model selection in dynamical systems \newblock \emph{Journal of the Royal Society Interface}, \emph{6}, 187-202.
-
-\bibitem[Jungbacker, B.M.J.P. and Koopman, S.J(2008)]{Ref2008a} Jungbacker, B. M. J. P., \& Koopman, S. J. (2008) \newblock Likelihood-based analysis for dynamic factor models
-
-\bibitem[Commandeur, Jacques JF, and Siem Jan Koopman(2007)]{Ref2007b} Commandeur, J. J., \& Koopman, S. J. (2007) \newblock An introduction to state space time series analysis \newblock \emph{Oxford University Press}, \emph{USA}.
-
-\bibitem[A. Gelman, X. Meng and H. Stern(1996)]{Ref1996a} Gelman, A., Meng, X. L., \& Stern, H. (1996) \newblock Posterior predictive assessment of model fitness via realized discrepancies \newblock \emph{Statistica sinica}, 733-760.
-
-\bibitem[X. Meng(1994)]{Ref1994a} Meng, X. L. (1994). \newblock Posterior predictive $ p $-values \newblock \emph{The annals of statistics}, \emph{22}, 1142-1160.
-
-\bibitem[E. Marshall and D. Spiegelhalter(2007)]{Ref2007c} Marshall, E. C., \& Spiegelhalter, D. J. (2007) \newblock Identifying outliers in Bayesian hierarchical models: a simulation-based approach.
-
-\bibitem[Wu et al.(2006)]{Ref2006b} Wu, W., Gao, Y., Bienenstock, E., Donoghue, J. P., \& Black, M. J. (2006). \newblock Bayesian population decoding of motor cortical activity using a Kalman filter \newblock \emph{Neural computation}, \emph{18}, 80-118.
-
-\bibitem[Linderman et al.(2019)]{Ref2019c} Linderman, S., Nichols, A., Blei, D., Zimmer, M., \& Paninski, L. (2019) \newblock Hierarchical recurrent state space models reveal discrete and continuous dynamics of neural activity in C. elegans \newblock \emph{BioRxiv}, \emph{621540}.
-
-\bibitem[Paninski et al.(2010)]{Ref2010b} Paninski, L., Ahmadian, Y., Ferreira, D. G., Koyama, S., Rahnama Rad, K., Vidne, M., ... \& Wu, W. (2010) \newblock A new look at state-space models for neural data \newblock \emph{Journal of computational neuroscience}, \emph{29}, 107-126.
-
-\bibitem[Wodeyar et al.(2021)]{Ref2021c} Wodeyar, A., Schatza, M., Widge, A. S., Eden, U. T., \& Kramer, M. A. (2021). \newblock A state space modeling approach to real-time phase estimation. \newblock \emph{Elife}, \emph{10}, e68803.
-
-\bibitem[Hsin et al.(2022)]{Ref2022b} Hsin, W. C., Eden, U. T., \& Stephen, E. P. (2022). \newblock Switching Functional Network Models of Oscillatory Brain Dynamics. \newblock \emph{2022 56th Asilomar Conference on Signals, Systems, and Computers}, 607-612
-
-\bibitem[G. Peyré and M. Cuturi (2019)]{Ref2019d} Peyré, G., \& Cuturi, M. (2019). \newblock Computational optimal transport: With applications to data science. \newblock \emph{Foundations and Trends® in Machine Learning}, \emph{11}, 355-607.
-
-\bibitem[T. M. Cover (1999)]{Ref1999a}Cover, T. M. (1999). \newblock Elements of information theory \newblock \emph{John Wiley \& Sons}.
-
-
-\bibitem[J. M. Robins, Vaart van der and V. Ventura (2000)]{Ref2000a}Robins, J. M., van der Vaart, A., \& Ventura, V. (2000). \newblock Asymptotic distribution of p values in composite null models \newblock \emph{Journal of the American Statistical Association}, \emph{95}, 1143-1156.
-
-\bibitem[Zeng \& Eden(2025)]{Ref2025a}
-Zeng, S., \& Eden, U. T. (2025). \newblock A state-space framework for causal detection of hippocampal ripple-replay events. \newblock \emph{IEEE Transactions on Biomedical Engineering}.
-
-\bibitem[Newman et al.(2014)]{Ref2014c}. Newman, K. B., Buckland, S. T., Morgan, B. J. T., King, R., Borchers, D. L., Cole, D. J., Besbeas, P., Gimenez, O., \& Thomas, L. (2014). \newblock Modelling population dynamics. \newblock \emph{Methods in Statistical Ecology}.
-
-\bibitem[Vinograd et al.(2024)]{Ref2024a} Vinograd, A., Nair, A., Kim, J. H., Linderman, S. W., \& Anderson, D. J. (2024) \newblock Causal evidence of a line attractor encoding an affective state. \newblock \emph{Nature}, \emph{634}, 910-918.
-
-\bibitem[Jones et al.(2007)]{Ref2007a}
-Jones, L. M., Fontanini, A., Sadacca, B. F., Miller, P., \& Katz, D. B. (2007). \newblock Natural stimuli evoke dynamic sequences of states in sensory cortical ensembles. \newblock \emph{Proceedings of the National Academy of Sciences}, \emph{104}, 18772-18777.
-
-\bibitem[Stone(1974)]{Ref1974a}Stone, M. (1974). \newblock Cross‐validatory choice and assessment of statistical predictions. \newblock \emph{Journal of the royal statistical society: Series B (Methodological)}, \emph{36}, 111-133.
-
-\bibitem[Hastie(2009)]{Ref2009c}Hastie, T., Tibshirani, R., \& Friedman, J. (2009). \newblock The elements of statistical learning.
-
-\bibitem[Shen \& Zhuang(2024)]{Ref2024b}Shen, X., \& Zhuang, J. (2024). \newblock Residual analysis-based model improvement for state space models with nonlinear responses. \newblock \emph{IEEE Transactions on Emerging Topics in Computational Intelligence}, \emph{8}, 1728-1743.
-
-\bibitem[Bhattacharyya et al.(2023)]{Ref2023b}Bhattacharyya, A., Gayen, S., Meel, K. S., Myrisiotis, D., Pavan, A., \& Vinodchandran, N. V. (2023). \newblock Total variation distance meets probabilistic inference. \newblock \emph{arXiv preprint} arXiv:2309.09134.
-
-\bibitem[Crack(2018)]{Ref2018d}Crack, T. F. (2018). \newblock A note on Karl Pearson’s 1900 chi-squared test: two derivations of the asymptotic distribution, and uses in goodness of fit and contingency tests of independence, and a comparison with the exact sample variance chi-square result. \newblock Available at SSRN 3284255.
-
-
-
-\end{thebibliography}
 \end{document}
