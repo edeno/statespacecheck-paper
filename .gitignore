@@ -214,3 +214,16 @@ figures/candidates/
 figures/preview/
 manuscript/old/
 .DS_Store
+
+# Claude Code
+#   Local machine settings and AI scaffolding docs (implementation plans,
+#   design notes) are personal and not part of the shipped repository.
+#   Shared slash commands under .claude/commands/ are tracked deliberately.
+.claude/settings.local.json
+.claude/docs/
+
+# Generated diagnostic caches
+#   Rebuilt on demand by the interactive cache builder
+#   (statespacecheck_paper.interactive.cache); reproducible from source,
+#   so the binary zarr/parquet/npz artifacts are not version-controlled.
+caches/
