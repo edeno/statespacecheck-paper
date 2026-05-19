@@ -1,52 +1,40 @@
 \documentclass[12pt]{article}
+
+% --- Encoding and fonts (Times-like text with matching math) ---
+\usepackage[T1]{fontenc}
 \usepackage{amsmath}
-\usepackage{times}
+\usepackage{amssymb}
+\usepackage{newtxtext}
+\usepackage{newtxmath}
+
+% --- Graphics, colour, tables ---
 \usepackage{graphicx}
-\usepackage{color}
-\usepackage{multirow}
-\usepackage{float}
-\usepackage{url}
 \usepackage{xcolor}
-%
-\usepackage[authoryear]{natbib}
-%
+\usepackage{float}
+\usepackage{multirow}
 \usepackage{rotating}
-\usepackage{bbm}
-\usepackage{latexsym}
 
-%\DeclareGraphicsExtensions{.eps,.png}
-
-%%% margins
-\setlength{\textwidth}{16cm}
-\setlength{\textheight}{22.5cm}
-\setlength{\oddsidemargin}{0cm}
-\setlength{\evensidemargin}{0cm}
-\setlength{\topmargin}{-0.5cm}
-%
-\renewcommand{\baselinestretch}{2}
-%
+% --- Page layout and spacing ---
+\usepackage[letterpaper, textwidth=16cm, textheight=22.5cm, centering]{geometry}
+\usepackage{setspace}
+\doublespacing
+\usepackage{caption}
+\captionsetup{labelsep=colon, font=normalsize}
 \interfootnotelinepenalty=10000
-%
-\newcommand{\myparagraph}[1]{\ \\{\em #1}.\ \ }
-\newcommand{\citealtt}[1]{\citeauthor{#1},\citeyear{#1}}
-\newcommand{\myycite}[1]{\citep{#1}}
 
-% Different font in captions
-\newcommand{\captionfonts}{\normalsize}
+% --- Bibliography ---
+\usepackage[authoryear]{natbib}
 
-\makeatletter
-\long\def\@makecaption#1#2{%
-  \vskip\abovecaptionskip
-  \sbox\@tempboxa{{\captionfonts #1: #2}}%
-  \ifdim \wd\@tempboxa >\hsize
-    % Added \linespread{1}\selectfont to ensure single spacing for multi-line captions
-    {\captionfonts \linespread{1}\selectfont #1: #2\par}
-  \else
-    \hbox to\hsize{\hfil\box\@tempboxa\hfil}%
-  \fi
-  \vskip\belowcaptionskip}
-\makeatother
-%%%%%
+% --- Hyperlinks (loaded last, as hyperref requires) ---
+\usepackage{hyperref}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue,
+  citecolor=blue,
+  urlcolor=blue,
+  pdftitle={Local goodness-of-fit measures for neural decoding},
+  pdfauthor={Sirui Zeng, Alison E. Comrie, Loren M. Frank, Uri T. Eden, Eric Denovellis},
+}
 
 
 \begin{document}
