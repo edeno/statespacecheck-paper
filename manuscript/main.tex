@@ -1,94 +1,926 @@
-\documentclass[11pt]{article}
+\documentclass[12pt]{article}
+\usepackage{amsmath}
+\usepackage{times}
+\usepackage{graphicx}
+\usepackage{color}
+\usepackage{multirow}
+\usepackage{float}
+\usepackage{url}
+\usepackage{xcolor}
+%
+\usepackage[authoryear]{natbib}
+%
+\usepackage{rotating}
+\usepackage{bbm}
+\usepackage{latexsym}
 
-\input{preamble}
+%\DeclareGraphicsExtensions{.eps,.png}
 
-\title{Goodness-of-fit Diagnostics for State Space Models in Neuroscience}
+%%% margins
+\setlength{\textwidth}{16cm}
+\setlength{\textheight}{22.5cm}
+\setlength{\oddsidemargin}{0cm}
+\setlength{\evensidemargin}{0cm}
+\setlength{\topmargin}{-0.5cm}
+%
+\renewcommand{\baselinestretch}{2}
+%
+\interfootnotelinepenalty=10000
+%
+\renewcommand{\thesubsubsection}{\arabic{section}.\arabic{subsubsection}}
+\newcommand{\myparagraph}[1]{\ \\{\em #1}.\ \ }
+\newcommand{\citealtt}[1]{\citeauthor{#1},\citeyear{#1}}
+\newcommand{\myycite}[1]{\citep{#1}}
 
-% TODO: Replace 0000-0000-0000-0000 with actual ORCID IDs from https://orcid.org/
-\author[1]{Sirui Zeng\,\orcidlink{0000-0000-0000-0000}}
-\author[1]{Uri T. Eden\,\orcidlink{0000-0000-0000-0000}}
-\author[2,3,4]{Eric L. Denovellis\,\orcidlink{0000-0000-0000-0000}}
+% Different font in captions
+\newcommand{\captionfonts}{\normalsize}
 
-\affil[1]{Department of Mathematics \& Statistics, Boston University, Boston, Massachusetts}
-\affil[2]{Howard Hughes Medical Institute, University of California, San Francisco, San Francisco, California}
-\affil[3]{Departments of Physiology and Psychiatry, University of California, San Francisco, San Francisco, California}
-\affil[4]{Kavli Institute for Fundamental Neuroscience, University of California, San Francisco, San Francisco, California}
-\affil[ ]{Correspondence: \texttt{eric.denovellis@ucsf.edu}}
+\makeatletter
+\long\def\@makecaption#1#2{%
+  \vskip\abovecaptionskip
+  \sbox\@tempboxa{{\captionfonts #1: #2}}%
+  \ifdim \wd\@tempboxa >\hsize
+    % Added \linespread{1}\selectfont to ensure single spacing for multi-line captions
+    {\captionfonts \linespread{1}\selectfont #1: #2\par}
+  \else
+    \hbox to\hsize{\hfil\box\@tempboxa\hfil}%
+  \fi
+  \vskip\belowcaptionskip}
+\makeatother
+%%%%%
 
-\date{\today}
 
 \begin{document}
+\hspace{13.9cm}1
 
-\maketitle
+\ \vspace{20mm}\\
 
-% Enable line numbers for review
-\linenumbers
+{\LARGE Local goodness-of-Fit measures for neural decoding}
 
-\begin{abstract}
-State space models are widely used in neuroscience to relate neural activity to latent dynamic brain states. This paper introduces diagnostics (KL divergence and HPD overlap) to assess model goodness-of-fit by examining consistency between posterior distributions and component likelihood distributions.
-\end{abstract}
+\ \\
+{\bf \large {Sirui Zeng$^{\displaystyle 1}$, Alison E. Comrie, Loren M. Frank, Uri T. Eden$^{\displaystyle 1}$, Eric Denovellis$^{\displaystyle 2}$}}\\
+{$^{\displaystyle 1}$Department of Mathematics and Statistics, Boston University}\\
+{$^{\displaystyle 2}$Department of Physiology, University of California San Francisco}\\
+%
 
-\noindent\textbf{Keywords:} state space models, goodness-of-fit, model diagnostics, Bayesian inference, neuroscience, neural decoding
+%\ \\[-2mm]
+{\bf Keywords:} Neural decoding, State-space models, Goodness-of-fit
+
+\thispagestyle{empty}
+\markboth{}{NC instructions}
+%
+\ \vspace{-0mm}\\
+%
+%Abstract
+\begin{center} {\bf Abstract} \end{center}
+State-space models are widely used in many fields to infer latent states from observations, but there are still some issues and challenges related to them. First, because latent variables are inherently unobservable, their decoding results cannot be directly validated against observed data. Second, it is often challenging to disentangle prediction errors stemming from model misspecification. Third, such errors can accumulate and propagate over time, amplifying uncertainty in long-term predictions. Moreover, many state-space models are purposefully simplified, accepting some degree of inaccuracy in exchange for greater computational efficiency. To address this challenge, we developed three classes of metrics designed to identify localized periods where model misspecification leads to inaccurate estimates. Each metric assesses the consistency between the information contained in individual observations and the information extracted by the state-space model from a local window of data. These metrics fall into three categories: 1) a set of divergence measures,
+specifically F-divergences, which compare the distributions of the latent state process directly; 2) measures of overlap between estimated credible regions obtained from the state distributions; and 3) predictive checks for individual observations, based on samples from the estimated state process. We applied these metrics to the problem of estimating nonlocal spatial representations in both simulated and real hippocampal spiking data, demonstrating the strengths and limitations of our approach.
+
 
 \section{Introduction}
 
-% TODO: Add introduction text
+Many brain states, such as those related to memory, emotion, and attention, are not directly observable. They are internal states that are not solely determined by the external world and can change over time. This makes them challenging to understand. However, these brain states are critical for understanding how the brain supports complex behavior, because they go beyond simple stimulus and response relationships. A major challenge for systems neuroscience is to relate neural activity (spikes, spike waveforms, calcium traces, etc.) to these latent dynamic brain states.
+
+State space models are a powerful way to understand how neural activity relates to latent dynamic brain states. They have been applied to diverse neural systems such as gustatory activity \citep{Ref2007a}, hippocampal replay dynamics \citep{Ref2021b}, and hypothalamic activity dynamics \citep{Ref2024a}. The core assumption of these state space models is that complex, high dimensional neural activity can be related to low dimensional, latent states. State space models aggregate information over time about the latent states, weighing both the information from the data at the current time (normalized likelihood distribution) with the accumulated information used to predict the latent state (prediction distribution). This powerful combination enables robust estimation of the latent state, effectively balancing current information with the accumulated history of the system and prior knowledge.
+
+Despite the wide use of state space models in neuroscience, methods to validate state space models remain underdeveloped and underutilized. One reason is that latent states are inherently difficult to evaluate \citep{Ref2014c}. Without ground truth, model validity can only be inferred indirectly—from relative likelihoods under multiple models, from the quality of reconstructed signals, or from performance on downstream tasks. Another challenge is that neural data are dynamic, so model fit may vary substantially across time. Compounding this problem is that common methods of validating models, such as cross-validation and “shuffle” permutation tests, are holistic evaluations of the model – they tell neuroscientists whether or not the model generalizes well or is different from a simplified model with less utility – but they fail to indicate when the model fits poorly or which specific components are responsible. Consequently, these methods can reject models that are intentionally simplified yet scientifically meaningful and offer little guidance for targeted improvement of the model. Many state-space models in neuroscience are intentionally simplified—not because the brain is simple, but because tractable computation and clear interpretation often matter most. For example, some state-space models smooth emotional movement into a low-dimensional trajectory \citep{Ref2015a}; others compress field-linked structure into a stationary, locally anchored map \citep{Ref2022b}. Some frameworks simplify both at once, jointly compressing affective trajectories and local field potentials into compact latent states for computation and inference \citep{Ref2018, Ref2025a}. Under standard goodness-of-fit criteria, such simplifications would likely fail.
+
+State space models already contain rich diagnostic information in the form of distributions used in their estimation. One potential solution for more targeted local diagnostic information of state space models would be to utilize the information in the normalized likelihood, which reflects information from only the current neural observations, and prediction distribution, which aggregates information from all past observations based on the state space model structure. When these two distributions agree, the model’s prior expectations and data-driven evidence are consistent. When they diverge, the mismatch can reveal where and when and potentially how the model fails to capture the structure of the data. Examining these discrepancies could therefore provide a direct, interpretable measure of model–data agreement—analogous to a local, time-resolved goodness-of-fit test.
+
+To address these gaps, we develop and validate a suite of three complementary goodness-of-fit methods – KL divergence, highest posterior density (HPD) overlap region, predictive checks – designed to provide actionable feedback to neuroscientists. Specifically, each of these methods utilize the mismatch between prediction and likelihood to: (1) identify time periods of poor model–data agreement; (2) distinguish errors arising from the state versus observation components; and (3) provide intuitive visualizations accessible to a broad audience. We demonstrate the utility of these techniques on simulated and real hippocampal data, offering a path for neuroscientists to move from binary model rejection toward an iterative, diagnostic approach to building interpretable theories of neural dynamics.
 
 \section{Methods}
+\subsection{State-Space Models}
+The state-space paradigm is particularly well suited for neural data analysis since many neuroscience experiments focus on internal brain processes that are not directly observable. For example, hippocampal replay of spatial trajectories has been hypothesized to be related to mental exploration of space, but the specific spatial trajectories being replayed are not directly observable by experimentalists \citep{Ref2018}. In such cases, state-space models are used to estimate simultaneously the unobserved internal representations and their relation to neural activity patterns.
 
-\subsection{State Space Model Framework}
+For a discrete set of time points, $t_0, \ldots, t_K$, we define an unobserved state process $x_k$, which influences a neural observation process $y_k$ at each time $t_k$. We define a state space model by combining a state transition distribution $p(x_k|x_{k-1})$, which defines how the state evolves in time, with an observation likelihood $p(y_k|x_k)$, which defines the neural representation of each state. To simplify the problem, we assume that the state transition depends only on the most recent past value of the state and that the observation likelihood depends only on the current state value. Figure \ref{fig01} (a) shows a schematic of this state-space model structure.
 
-% TODO: Describe state space model framework
-
-\subsection{Diagnostic Metrics}
-
-% TODO: Describe KL divergence and HPD overlap
-
-\section{Results}
-
-\subsection{Simulated Data}
-
-% TODO: Present simulation results
-
-\begin{figure}[htbp]
-\centering
-\includegraphics[width=0.8\textwidth]{../figures/main/figure01.pdf}
-\caption{\textbf{Distribution consistency examples.} Four scenarios showing predictive distribution and normalized likelihood with varying degrees of consistency.}
-\label{fig:distribution-consistency}
+\begin{figure}
+\centerline{\includegraphics[width=\textwidth]{../figures/main/figure01.pdf}}
+\caption{Schematics for state-space model and goodness-of-fit measures. (a) Graphical model depiction of state-space model includes state transition model, $p(x_t|x_{t-1})$, and observation likelihood $p(y_t|x_t)$. (b) These model components are sufficient to compute an iterative expression for the posterior filter distribution at time $t_k$, $p(x_k|y_{1:k})$ from the distribution at the previous time step. This involves first convolving the previous posterior with the state transition distribution to compute the one-step predictive distribution, $p(x_k|y_{1:k-1})$, and then updating the predictive distribution with information from the most recent spiking by multiplying by the observation likelihood. (c) For each new spike observation, we compute the local goodness-of-fit by assessing the consistency of information between the predictive distribution and likelihood. These are considered inconsistent when they assign high probability to mostly disjoint subsets of the state-space. When the regions with high probability overlap, the distributions are considered consistent, even if the distributions differ in their central tendency or certainty.}
+\label{fig01}
 \end{figure}
 
-\begin{figure}[htbp]
-\centering
-\includegraphics[width=\textwidth]{../figures/main/figure02.pdf}
-\caption{\textbf{Diagnostic demonstration on simulated data.} Time-resolved diagnostics showing periods of good and poor model fit.}
-\label{fig:diagnostic-demo}
+This state-space model structure allows for iterative estimation of the state process at each time step based on all the neural data up to that time, as shown in Fig. \ref{fig01} (b). If the distribution of the state at time $t_{k-1}$ has been computed, we can convolve it with the state transition distribution to obtain a one-step prediction distribution, $p(x_{k}|y_{1:k-1}) = \int_{x_{k-1}}{p(x_k|x_{k-1}) \cdot p(x_{k-1}|y_{1:k-1})}dx_{k-1}$. This predictive distribution combines the information from all previous observations to compute the distribution of the state at the next time step. We update this predictive distribution with the information from the most recent observation by multiplying by the observation likelihood to compute the posterior distribution of the state given all of the data up to the current timestep, $p(x_{k}|y_{1:k}) \propto p(y_{k}|x_{k}) \cdot p(x_{k}|y_{1:k-1})$.
+
+Common approaches for assessing the goodness-of-fit of state-space models include examining the cross-validated error measures in the state process when the state is observable \citep{Ref1974a}, cross-validated error measures in the observation process such as the mean-squared prediction error \citep{Ref2009c}, and the distribution of prediction residuals \citep{Ref2024b}. For many neural modeling problems, state-space models are intentionally simplified and these standard goodness-of-fit measures trivially show lack of fit.
+
+Here we explore a set of local goodness-of-fit measures, each of which compares the prediction distribution to the normalized likelihood of the most recent observation as a function of the state or to that observation itself. Thus, these measures consider the consistency between information accumulated through the state-space model over past spiking with the information from the most recent spiking activity. We do not expect these distributions to align perfectly since they likely contain different amounts of information about the state process. Instead, we assess whether the information these distributions provide about the state and observation processes is consistent in the sense illustrated in Fig. \ref{fig01} (c). Specifically, we say that the two distributions are inconsistent when their probability mass is concentrated in mostly non-overlapping regions of the state space. This suggests disagreement between the information from past spiking and the information from the most recent spiking. Distributions that largely align, or that are shifted from each other but are supported over largely overlapping regions of state space are considered consistent. Additionally, if one distribution covers a broad region of the state-space and the other covers a much narrower subset of that region, the distributions are considered to be consistent. We expect this situation to arise often since the prediction distribution contains information accumulated from many past spikes.
+
+\subsection{Local Goodness-Of-Fit Measures}
+In this section, we introduce three classes of metrics designed to characterize the local goodness-of-fit of the state-space model.
+
+\subsubsection*{2.2.1 \quad KL Divergence}
+
+One of the most well-known measures of discrepancy between probability distributions is the Kullback-Leibler (KL) divergence \citep{Ref1951}, defined in this case as the expected excess self-information (log of the density function) when using the likelihood to predict the state in place of the predictive distribution,
+\begin{equation}
+    D_{\mathrm{KL}}(P \| Q)=\int P(x_k) \log \left(\frac{P(x_k)}{Q(x_k)}\right) dx_k,
+\end{equation}
+where $P(x_k) = p(x_k|y_{1:k-1})$ is the predictive distribution and $Q(x_k) = \frac{p(y_k|x_k)}{\int p(y_k|x_k) dx_k}$ is the normalized likelihood in $x_k$ given the observed spiking $y_k$.
+
+\textcolor{blue}{Do we use $p(y_k|x_k)$ with a uniform prior instead normalized likelihood?}
+
+\begin{figure}
+\centerline{\includegraphics[width=\textwidth]{../figures/main/figure02.pdf}}
+\caption{Visualizations of the computation of each local goodness-of-fit metric. (a) The KL divergence compares the predictive distribution (blue) and the observation likelihood (orange) (top panel) by computing the difference in their log density (middle panel) and computing its expectation with respect to the predictive distribution (bottom panel). (b) The HPD overlap is defined by computing the HPD for the predictive distribution (top) and for the observation likelihood (middle) and then computing the size of their intersection relative to the size of the smaller of these two HPD regions (bottom). (c) Predictive checks are computed by sampling values of the state from the predictive distribution multiple times (top), then sampling from the conditional distribution of neurons that could have generated the observed spike given each sampled state value (middle), and then computing the probability that the log of the predictive distribution of the observed spike is greater than the log of empirical predictive distribution of the sampled spikes (bottom).}
+\label{fig02}
 \end{figure}
 
-\section{Discussion}
+Figure \ref{fig02} (a) illustrates the computation of the KL divergence. The top panel shows the predictive distribution and normalized observation likelihood as functions of $x_k$. The middle panel shows the difference in self-information between these distributions, $\log \left(\frac{P(x_k)}{Q(x_k)}\right)$. The bottom panel is this difference in self information weighted by $P(x_k)$, which when integrated gives the value of the KL divergence.
 
-% TODO: Add discussion
+The KL divergence is an asymmetric measure, meaning that $D_{KL}(P||Q) \neq D_{KL}(Q||P)$. We could also compute the KL divergence from the likelihood to the predictive distribution $D_{KL}(Q||P)$ or the mean between these two divergences $\frac{1}{2}(D_{KL}(P||Q)+D_{KL}(Q||P))$. More broadly, the KL divergence is part of a larger family of divergence metrics between distributions, known as F-divergences. Other members include the total variation distance \citep{Ref2023b} and the Pearson $\chi^2$ divergence \citep{Ref2018d}. It is simple to extend the KL divergence metric between the predictive distribution and the observation likelihood to any of these other divergence metrics to identify differences in additional features of the distributions.
 
-\section{Conclusion}
+%To determine whether there is consistency between the decoding distribution inferred from the current spiking observation and the distribution shaped by accumulated spikes over time, the most intuitive approach is to quantify the distance or divergence between these two distributions.
 
-% TODO: Add conclusion
+%A variety of well-established methods exist to measure divergence between probability distributions, with the F-divergence family being among the most widely used. Within this family, KL divergence stands out as the most prevalent and insightful measure. In our analysis, we adopt the KL divergence as a practical and illustrative example, allowing us to systematically examine the extent of the discrepancy between the two distributions.
 
-\section*{Code and Data Availability}
+%KL divergence, also known as relative entropy, is a measure of how one probability distribution diverges from another distribution, i.e. the expected probability distribution. For discrete probability distributions $P$ and $Q$ defined in the same sample space $\mathcal{X}$, the relative entropy from $Q$ to $P$ is defined as follows \citep{Ref1951}
+%\begin{equation}
+%    D_{\mathrm{KL}}(P \| Q)=\sum_{x \in \mathcal{X}} P(x) \log \left(\frac{P(x)}{Q(x)}\right)
+%\end{equation}
 
-All code to reproduce figures and analyses is available at \url{https://github.com/Eden-Kramer-Lab/statespacecheck-paper}. The \texttt{statespacecheck} Python package is available at \url{https://github.com/Eden-Kramer-Lab/statespacecheck}.
+%A simple interpretation of the KL divergence of $P$ from $Q$ is the expected excess surprise from using $Q$ as a model instead of $P$ when the actual distribution is $P$.
 
-\section*{Author Contributions}
+%While it is a measure of how different two distributions are, and in some sense is thus a "distance", it is not actually a metric, which is the most familiar and formal type of distance. In particular, it is not symmetric in the two distributions and does not satisfy the triangle inequality. Instead, in terms of information geometry, it is a type of divergence, a generalization of squared distance.
 
-SZ, UTE, and ELD wrote the manuscript.
+%In fact, KL divergence is one of the special case in F-divergence. The concept of F-divergence is a general framework for measuring the difference between two probability distributions. It encompasses a wide variety of specific divergence measures, many of which are commonly used in statistics, information theory, and machine learning. There are many special cases in F-divergence, like KL divergence, total variation distance and Hellinger distance. F-divergence provides a unifying framework for understanding and deriving various measures of distance between probability distributions. By choosing different convex functions, one can derive a multitude of divergence measures each with unique properties and applications. This flexibility makes F-divergence a powerful tool in theoretical and applied contexts.
 
-\section*{Competing Interests}
+%Of course, there are some drawbacks of F-divergence. First, F-divergences can be sensitive to the behavior of distributions in the tails. In cases where distributions have heavy tails or outliers, F-divergences may give disproportionate importance to these extreme values, leading to misleading divergence measures. Second, F-divergences are generally not symmetric, meaning that the divergence between two distributions may differ depending on their order of appearance. This lack of symmetry can make it challenging to interpret and compare divergences between different pairs of distributions. Third, F-divergences are mathematical measures and may not have direct interpretation in real-world contexts. While they provide a numerical value indicating dissimilarity between distributions, understanding the practical implications or meaningful interpretation of these values can be challenging. Additionally, in some cases, computing F-divergences may be computationally expensive, especially for complex or high-dimensional distributions \citep{Ref2023}. This can limit their practical utility in situations where efficient computation is crucial.
 
-The authors declare no competing interests.
+%We would like to calculate the KL divergence $D_k$ between the accumulated distribution of latent variable $x_k$, $\text{f}_{\text{accumulated}}\left(x_k\right)$ and isolated distribution $\text{f}_{\text{isolated}}\left(x_k\right)$. In this formula, $\text{f}_{\text{accumulated}}\left(x_k \right)$ can be the filter, prediction or smoother probability distribution. We calculate $D_k$ sequentially at the specified time point in state-space model as a measure of local goodness-of-fit. A high value may indicate local lack of fit due to conflicting information propagated over time using the state-space model and that from the current observation. A series of consecutive high values may indicate anomalies in our decoding results, prompting us to carefully examine these observed values, as they might deviate from our assumed state-space model.
 
-\section*{Acknowledgments}
+%While our formula here is based on KL divergence, other divergence measures can also be employed to assess local goodness-of-fit. Different choices may offer unique perspectives on the discrepancies between distributions, providing alternative ways to evaluate the coherence and reliability of the model’s inferences.
 
-% TODO: Add funding information and acknowledgments
+\subsubsection*{2.2.2 \quad Overlap Between HPD Regions}
 
-% Print bibliography (biblatex command)
-\printbibliography
+Another way to assess the consistency between the predictive distribution and the observation likelihood is to examine the extent to which their highest posterior density (HPD) regions overlap. A substantial intersection suggests that the two distributions convey consistent information, reinforcing the reliability of the inferred latent state. In contrast, minimal or no overlap signals a significant discrepancy, hinting at potential inconsistencies in the local fit of the model. This approach provides an interpretable and intuitive metric of the degree of consistency between these distributions.
 
+We define the overlap between the HPD for the predictive distribution and the likelihood as
+\begin{equation}
+    \text{HPD Overlap} \left(P,Q\right)=\frac{\left|\cap\left(HPD_{P}, HPD_{Q}\right)\right|}{\operatorname{min}\left\{\left|HPD_{P}\right|,\left|HPD_{Q}\right|\right\}}
+\end{equation}
+where $HPD_{P}$ and $HPD_{Q}$ are the highest posterior density regions of the predictive density and the normalized observation likelihood respectively and $|*|$ is the volume of the region. The numerator is the size of the overlap between these regions and the denominator is the size of the smaller of the two HPD regions. This normalization ensures that the resulting value is in the range $[0,1]$, with 0 indicating no overlap, and 1 indicating that one of the HPDs is entirely contained within the other. This means that if, for example, the likelihood produces an HPD that is wider and therefore less informative than the predictive density but that completely contains the HPD of the predictive density then the HPD ratio will be 1, suggesting that the two distributions are statistically consistent. Conversely, if the ratio is close to 0, it indicates little or no overlap, suggesting significant differences between range of values for the state that would be inferred from these two distributions.
+
+Figure \ref{fig02} (b) illustrates the computation of the HPD overlap. The HPD for the predictive distribution (top) and the normalized likelihood (middle) are computed, and the size of their intersection is normalized by the size of the smaller of the two HPDs (bottom).
+
+
+
+\subsubsection*{2.2.3 \quad Predictive Checks}
+The previous metrics compared two distributions of the state: one based on the accumulated past information and the other based on the isolated information from the likelihood of the most recent spiking observation. Another approach is predictive checking, which compares the observation itself to a predictive distribution of that observation estimated from the model. \cite{Ref2007} proposed Bayesian checking of the second levels of hierarchical models with partial posterior predictive checking. \cite{Ref2019} used population predictive checking to evaluate model's goodness-of-fit. \cite{Ref1967} used future observations to evaluate model's goodness-of-fit. Predictive checks have the advantage that they allow for the computation of p-values for individual observations, which are easy to interpret  \citep{Ref1994a, Ref1996a}.
+
+Predictive checks for spiking data can be challenging to implement, since in sufficiently small intervals, any spikes are unlikely compared to no spiking at all. One approach to deal with this might be to consider patterns of spikes over longer fixed intervals over which multiple spikes would be expected. Here, we take a simpler approach of focusing only on spike times and measuring the likelihood that an observed spike comes from a particular neuron (for spike-sorted models) or has a particular set of waveform features (for clusterless models).
+
+In particular, let $y_{k,j}$ be the identity of the neuron (spike-sorted model) or a spike waveform feature (clusterless model) for the $j^{th}$ spike occurring in the $k^{th}$ time bin. We define the predictive distribution of the observation based on the state model as
+\begin{equation}
+\text{f}_{\text{predictive}}\left(y_{k,j} \right) = \int p\left(y_{k,j} \mid x_k \right) p\left(x_k|y_{1:k-1} \right) d x_k
+\end{equation}
+to be the predictive distribution of $y_{k,j}$, where $p\left(y_{k,j} \mid x_k \right)$ is the observation process and
+$p\left(x_k|y_{1:k-1} \right)$ is the one-step prediction distribution of the current state given all previous spikes. We can sample new observations, $\widetilde{y}_{k,j}$ from this predictive distribution, and compute the probability that the observed spike is as likely as the sampled spike.
+\begin{equation}
+\label{predictive_application}
+    D_{k,j}=Pr\left( \log\left(\text{f}_{\text{predictive}}\left(y_{k,j} \right)\right) \geq \log\left(\text{f}_{\text{predictive}}\left(\widetilde{y}_{k,j} \right)\right)\right).
+\end{equation}
+The log terms in Equation (\ref{predictive_application}) are unnecessary, but suggest the method to estimate $D_{k, j}$. We sample $x_k$ multiple times from the one-step prediction distribution, $p\left(x_k|y_{1:k-1}\right)$ and use these to generate samples of the spike observations, $\widetilde{y}_{k,j}$ from the predictive distribution. We then compute the fraction of these samples whose log likelihood is smaller than or equal to that of the observed spike.
+
+Figure \ref{fig02} (c) illustrates the computation of a predictive p-value for spike sorted data. Many values of the state are sampled from the predictive distribution (top), each of which is used to sample a neuron that could have generated the observed spike (middle). The log likelihood of the observed spike is then compared to an empirical cumulative distribution of the log likelihoods of the sampled spikes (bottom) leading to a goodness-of-fit metric that can be interpreted as a p-value for that individual spike. High p-values suggest that the observed spike is consistent with the predictive distribution of spikes and a p-value near zero suggests that the observed spike is unexpected based on the predictive distribution computed from the past spiking and the model.
+
+%By defining this metric, we obtain the likelihood of the observation based on the information propagated over time using the assumed model. A low value indicates that the current observation is unlikely based on the information propagated over time using the assigned state-space model. A sudden accumulation of low values within a short period may suggest a divergence between the decoded distributions derived from the state-space model and the actual observations, serving as a reminder of the subtle discord between the model and the observations. More importantly, this metric provides the likelihood of the actual observation under the distribution that accumulated information over time using the assumed state-space model, offering a statistical measure of the model’s fit to each observation. To some extent, this value can be interpreted as a p-value, where a smaller p-value indicates that the likelihood of the observation occurring under the assigned state-space model is exceedingly low.
+
+
+%\subsection{Using Local Goodness-Of-Fit Measures to Evaluate a Period of Decoding Results}
+%In the previous subsection, we introduced several methods for evaluating the local goodness-of-fit of the state-space model based on each single observation. Traditionally, researchers have developed various approaches to evaluate model goodness-of-fit based on the entire dataset. However, a significant gap exists between these two perspectives. To bridge this gap, we aim to extend our established evaluation method based on single observation to multiple observations, enabling us to evaluate the model’s local goodness-of-fit over a period of time. To systematically assess the decoding results during a period, we introduce a new set of metrics. We aim to assess a period of decoding results to determine whether they genuinely exhibit consistent information from others using our assumed state-space model.
+
+%These metrics are natural extensions of those previously defined at the observation level, allowing for a more precise evaluation of each period of the decoding results. The first one relates to the weighted average divergence between two distributions of the latent state $x_k$. As an specific example, we proposed the weighted average KL divergence between the accumulated distribution propagated observation information using the assumed state-space model and isolated distribution based on current observation information in each period. Mathematically, we define the metrics as follows. We define the weighted average KL divergence between the accumulated distribution of $x_k$ and isolated distribution in this period as
+%\begin{equation}
+%\label{kl_period}
+%D=\frac{\sum D_{\mathrm{KL}} \left(\text{f}_{\text{accumulated}}\left(x_k \right) \| \text{f}_{\text{isolated}}\left(x_k \right)\right)I\left([t_{k-1}, t_k) \in \mathcal{E}\right)}{\sum I\left([t_{k-1}, t_k) \in \mathcal{E}\right)}
+%\end{equation}
+%where $\mathcal{E}$ is the evaluation candidate set of each moment, $I(*)$ is the indicator function that is either $0$ or $1$ depending on whether we select $k^{th}$ time interval as a candidate in the evaluation candidate set $\mathcal{E}$. $D_{\mathrm{KL}}\left(\mathbf{f}_{\text {accumulated}}\left(x_{k}\right) \| \mathbf{f}_{\text {isolated }}\left(x_{k}\right)\right)$ calculates the KL divergence between accumulated distribution of latent variable $x_k$ and isolated distribution at each moment.
+
+%As defined previously at the observation level, a larger value signifies a greater discrepancy between the two distributions. This suggests that certain observations within this period deviate from the state-space model we are using, raising concerns about its validity. Consequently, a higher value serves as a cautionary signal, prompting us to question the reliability of this period of decoding results and reducing our confidence in its interpretation.
+
+%The second metric we define is related to the overlap between the credible regions from two distributions of latent state $x_k$. As a specific example, we proposed the weighted average $95\%$ HPDROR between the accumulated distribution of $x_k$ propagated observation information over time using the state-space model and isolated distribution based on current observation information in each period. Mathematically, we define the weighted average $95\%$ HPDROR between the accumulated distribution and isolated distribution as
+%\begin{equation}
+%\label{hpdror_period}
+%D=\frac{\sum \textbf{HPDROR} \left(\text{f}_{\text{accumulated}}\left(x_k \right), \text{f}_{\text{isolated}}\left(x_k \right)\right)I\left([t_{k-1}, t_k) \in \mathcal{E}\right)}{\sum I\left([t_{k-1}, t_k) \in \mathcal{E}\right)}
+%\end{equation}
+%where $I(*)$ is the indicator function showing whether we choose $k^{th}$ time interval as an evaluation candidate. $\textbf{HPDROR} (\text{f}_{\text{accumulated}}(x_k), \text{f}_{\text{isolated}}(x_k))$ calculates the HPDROR between accumulated distribution of latent variable $x_k$ and isolated distribution at each moment.
+
+
+%As with the observation level analysis, a smaller value indicates a greater disparity between the distributions. Among the period, there are moments where the current observation information deviates from the accumulated information of observations using the assumed state-space model. This inconsistency suggests that the observations in this period may not align with the assumed state-space model, potentially leading to the erroneous decoding results.
+
+%We also extend the predictive checking approach to period-level evaluation. As a specific example, we still use predictive distribution of current observation using the assumed state-space model. The differences are that we calculate the likelihood of obtaining all the observations in a period rather than that from each moment. In mathematics, we define the metrics as
+%\begin{equation}
+%\label{predictive_period}
+%\small
+%    D=Pr\left(\sum \log\left(\text{f}_{\text{predictive}}\left(y_k \right)\right)I\left([t_{k-1}, t_k) \in \mathcal{E}\right) \geq \sum \log\left(\text{f}_{\text{predictive}}\left(\widetilde{y}_k \right)\right)I\left([t_{k-1}, t_k) \in \mathcal{E}\right)\right)
+%\end{equation}
+%where $I(*)$ is still the indicator function showing whether we choose $k^{th}$ time interval as an evaluation candidate from the evaluation candidate set $\mathcal{E}$. The notation is the same as those defined in (\ref{predictive_application}).
+
+%This metric can be regarded as a natural extension of predictive checking at the observation level. It quantifies the likelihood that the observations within a period originating from the distribution of the accumulated observation information over time under the given model. To some extent, this likelihood can also be interpreted as the p-value of the observations over this period based on the decoding distribution. A small value suggests that certain observations in the period may not conform to the our model, signaling potential inconsistencies. This serves as a cautionary indicator, reminding us that the decoding results from this period may be questionable due to incorrect assumptions in our model.
+
+%\section{Toy Example}
+%To help readers grasp these metrics intuitively, we begin with a simple example based on simulated data. In this simulation, the data was generated using $X \sim N\left(\mu, \sigma^2\right)$ and $Y\mid X \sim N\left(x, 4\right)$. By varying the model parameters, we obtain the following three metrics under different scenarios: $D_{\mathrm{KL}}( \text{f}_{\text{accumulated}}\left(x\right) \| \text{f}_{\text{isolated}}\left(x\right) )$, $\textbf{HPDROR} \left(\text{f}_{\text{accumulated}}\left(x\right),\text{f}_{\text{isolated}}\left(x\right)\right)$ and $Pr\left( \log\left(\text{f}_{\text{predictive}}\left(y \right)\right) \geq \log\left(\text{f}_{\text{predictive}}\left(\widetilde{y} \right)\right)\right)$, where $\text{f}_{\text{accumulated}}\left(x\right)$ is the density function of $N\left(\mu, \sigma^2\right)$, $\text{f}_{\text{isolated}}\left(x\right)$ comes from $P\left(x \mid y \right)$ combined with a uniform prior and $\text{f}_{\text{predictive}}\left(y \right)=\int p\left(y \mid x \right) \text{f}_{\text{accumulated}}\left(x \right) d x$. $\widetilde{y}$ represent the samples generated by $\text{f}_{\text{predictive}}\left(y \right)$. The scatter plots of the three metrics under various scenarios are presented below.
+
+%\begin{figure}
+%\centerline{\includegraphics[width=16cm, height=8cm]{toy example point plot.png}}
+%\caption{Scatter plots of the three metrics under varying scenarios: (a) shows scatter plot between $D_{\mathrm{KL}}( \text{f}_{\text{accumulated}}\left(x\right) \| \text{f}_{\text{isolated}}\left(x\right) )$ and $\textbf{HPDROR} \left(\text{f}_{\text{accumulated}}\left(x\right),\text{f}_{\text{isolated}}\left(x\right)\right)$, (b) shows that between $D_{\mathrm{KL}}( \text{f}_{\text{accumulated}}\left(x\right) \| \text{f}_{\text{isolated}}\left(x\right) )$ and $Pr\left( \log\left(\text{f}_{\text{predictive}}\left(y \right)\right) \geq \log\left(\text{f}_{\text{predictive}}\left(\widetilde{y} \right)\right)\right)$, and (c) shows that between $\textbf{HPDROR} \left(\text{f}_{\text{accumulated}}\left(x\right),\text{f}_{\text{isolated}}\left(x\right)\right)$ and $Pr\left( \log\left(\text{f}_{\text{predictive}}\left(y \right)\right) \geq \log\left(\text{f}_{\text{predictive}}\left(\widetilde{y} \right)\right)\right)$.}
+%\label{toy example 1}
+%\end{figure}
+%In Fig. \ref{toy example 1} we show scatter plots of three different metrics in different situations. In Fig. \ref{toy example 1} (a) we show the scatter plot between $D_{\mathrm{KL}}( \text{f}_{\text{accumulated}}\left(x\right) \| \text{f}_{\text{isolated}}\left(x\right) )$ and $\textbf{HPDROR} \left(\text{f}_{\text{accumulated}}\left(x\right),\text{f}_{\text{isolated}}\left(x\right)\right)$. As HPDROR decreases, the KL divergence tends to increase to some extent. When HPDROR is high, the KL divergence remains small, which aligns with our expectations. However, when HPDROR is low, KL divergence tends to vary too widely, making it an unreliable indicator of the degree of overlap between $\text{f}_{\text{accumulated}}\left(x\right)$ and $\text{f}_{\text{isolated}}\left(x\right)$. While HPDROR can directly and effectively quantify the overlap between the distributions, KL divergence fails to provide an accurate measure of this overlap. Fig. \ref{toy example 1} (b) shows the scatter plot between $D_{\mathrm{KL}}( \text{f}_{\text{accumulated}}\left(x\right) \| \text{f}_{\text{isolated}}\left(x\right) )$ and $Pr\left( \log\left(\text{f}_{\text{predictive}}\left(y \right)\right) \geq \log\left(\text{f}_{\text{predictive}}\left(\widetilde{y} \right)\right)\right)$. In general, the p-values of the predictive check resemble those obtained from HPDROR, suggesting that the predictive check and HPDROR are comparable in their ability to assess the degree of overlap between the two distributions. (c) shows that between $\textbf{HPDROR} \left(\text{f}_{\text{accumulated}}\left(x\right),\text{f}_{\text{isolated}}\left(x\right)\right)$ and $Pr\left( \log\left(\text{f}_{\text{predictive}}\left(y \right)\right) \geq \log\left(\text{f}_{\text{predictive}}\left(\widetilde{y} \right)\right)\right)$. What is striking in this simple simulation is that the values of the two metrics are similar, indicating that they provide relatively consistent assessments of the degree of overlap between $\text{f}_{\text{accumulated}}\left(x\right)$ and $\text{f}_{\text{isolated}}\left(x\right)$. This finding further suggests that, in certain cases, relying on just one of the two metrics may be sufficient to draw conclusions.
+
+
+
+
+
+
+
+
+
+
+
+\section{Simulation Study}
+To demonstrate the performance of our local goodness-of-fit metrics in real-world applications, we designed a simulation study, generated neural signal data, constructed state-space model, and applied our metrics to evaluate the model's local goodness-of-fit. We established a framework to analyze spatial mapping in the hippocampus of a rat. Specifically, we simulated data that approximates the rat’s movement and the corresponding hippocampal spike activity. Our simulation will encompasses both local and non-local states, which, while resembling real-world rat behavior and neural signals to some extent, may also deviate from them. Our goal is to decode the latent variables using an intentionally simplified model applied to data generated by a more complex, true generative process. We then utilize local goodness-of-fit metrics to assess the model’s alignment with observed data, identifying periods of potential misspecification and evaluating the model’s reliability over time.
+
+%The state-space model is a powerful statistical framework used to analyze hippocampal spike data. It allows researchers to infer the underlying dynamics of neural activity and relate it to cognitive processes such as spatial navigation and memory. In this section, we build upon the previously discussed metrics for identifying periods of model misspecification and assessing local goodness-of-fit in state-space models with some simulated neural signal data.
+
+
+\subsection{Generative Model}
+We assume that the data are observed over a set of discrete time points $t_0, t_1, \ldots, t_k, \ldots, t_K$. We define a discrete variable process $s_k$, called the locality state. This state defines a set of dynamic models for the spiking data at each time step $t_k$. We label the values that $s_k$ can take as follows.
+\begin{equation}
+    s_{k}=\left\{\begin{array}{ll}0, & \text {local state } ; \\ 1, & \text {non-local state with small variance }; \\ 2, & \text {local state with some non-spatial hippocampal spikes }; \\ 3, & \text {non-local state with drift diffusion, large variance and low hippocampal spike rate } ;\\ 4, & \text {non-local state with drift diffusion and high hippocampal spike rate} ;\end{array}\right.
+\end{equation}
+This is a latent state process, so we cannot directly observe the value of $s_k$. Instead, we will define another set of latent processes that link this state to the observation processes. We assume the probability of being in any state at time $t_k$ only depends on the state at the previous time $t_{k-1}$. To simplify the situation, except state $0$, we also assume that all other states can only originate from or transition to state $0$.
+
+
+We link the locality state to the hippocampal spiking activity from the population of place cells by defining a continuous state variable $x_k$, which captures the factors that influence spiking activity. When the rat is in a local state, the neurons have place fields which fire as a function of the linearized position at time $t_k$. We let $o_k$ be the observed linearized position at time $t_k$. Therefore, whenever $s_k=0$, we set $x_k=o_k$. When $s_k \neq 0$ or $2$, we treat $x_k$ as an unobserved, latent variable.
+
+When the locality state $s_k$ changes from a local state into a non-local one, we allow $x_k$ to correspond to any location, not just the rat's current location. The distribution of possible initial locations when the local state switches to a non-local state is assumed to be uniform over the entire environment. We assume that as long as the rat stays in the non-local state, its trajectory is assumed to be a random walk, whose variance and drift parameters are determined by the value of $s_k$. Mathematically, the dynamics of $x_k$ are defined by the following state transition model.
+\begin{equation}
+\label{generative_0}
+p\left(x_{k} \mid x_{k-1}, s_{k}, s_{k-1}\right)=\left\{\begin{array}{lc}\delta\left(o_{k}\right), & \text { if } s_{k} =0 \text{ or } s_k=2; \\ \mathcal{U}(a, b), & \text { if } s_{k}=1 \text{ or } s_k=3 \text{ or } s_k=4 \\ & \text { and } s_{k-1} = 0; \\ \mathcal{N}\left(x_{k-1}, \sigma\right), & \text { if } s_{k}=1 \\ & \text { and } s_{k-1}=1; \\ \mathcal{N}\left(x_{k-1}, \sigma^{\prime}\right)+\beta \left(t_k-t_{k-1}\right), & \text { if } s_{k}=3 \\ & \text { and } s_{k-1}=3; \\ \mathcal{N}\left(x_{k-1}, \sigma\right)+\beta \left(t_k-t_{k-1}\right), & \text { if } s_{k}=4 \\ & \text { and } s_{k-1}=4; \end{array}\right.
+\end{equation}
+In (\ref{generative_0}), when the rat is in a local state, i.e. $s_k=0$ or $2$, we just use the observed linearized position at $t_k$ to describe $x_k$. When the locality state changes from local into non-local, we allow $x_k$ to correspond to any location, not just the rat’s current location. The distribution of possible initial locations for the non-local event is assumed to be uniform over the entire environment. We assume that as long as the rat stays in the non-local state with small variance, the trajectory of $x_k$ is continuous, and use a random walk with smaller variance to model transitions. While the rat stays in non-local state with drift diffusion, large variance and low hippocampal spike rate, this trajectory of $x_k$ is characterized by a random walk exhibiting higher variance and a drift term. At the same time, we would generate relatively fewer hippocampal spikes during this state. While the rat remains in a non-local state with drift diffusion and high hippocampal spike rate, the trajectory of $x_k$ is described as a random walk with a drift component. The variance in the random walk as well as the hippocampal spike intensity is the same as that of non-local state with small variance.
+
+The spiking activity of each tetrode is modeled as a marked Poisson process, which defines the probability distribution of observing a spike with particular waveform features as a function of $x_k$. When $s_k=0$ or $2$, $x_k$ is the rat's actual position and so this model describes the place field properties of the entire population. When $s_k=1$ or $3$ or $4$, $x_k$ corresponds to an internal cognitive representation of position, and this model describes the pattern of reactivation of spiking during non-local state. In general, the marks can be any waveform features, up to the full waveform function. Here, we use the maximum amplitude of the spike on each of the $4$ electrodes comprising the tetrode to define a 4-dimensional mark. The data comprises the spike time and the value of this mark for each observed spike. The marked point process model for the neural population recorded by $i^{th}$ tetrode is defined by a joint mark-intensity function $\lambda_{i}\left(t, \vec{m}\right)$, which expresses the probability of observing a spike with features in a neighborhood of $\vec{m}$ in an interval around $t$. We construct a joint mark-intensity model by expressing $\lambda_{i}\left(t, \vec{m}\right)$ as a function of $s_k$ and $x_k$.
+
+
+We assumed that the spike times and waveforms for all the tetrodes followed a joint mark intensity that included two modes corresponding to two place cells. The parameters in the joint mark intensity vary depending on the locality state, and as the latent spatial variable shifts, the intensity function adjusts accordingly.
+\begin{equation}
+\label{generative_1}
+\footnotesize
+\begin{aligned}
+    \lambda_{i}\left(t_{k}, \vec{m}\right) &= \left(1-\omega_{s_k}^i\right)\sum_{j=1}^2
+    \exp \left\{\alpha_{s_k, j}^i - \frac{1}{2} \left(
+    \begin{array}{c}
+        x_k - \mu_{x,j}^{i} \\
+        \vec{m} - \mu_{\vec{m},j}^{i}
+    \end{array}
+    \right)^{\prime} \Sigma^{-1}
+    \left(
+    \begin{array}{c}
+        x_k - \mu_{x,j}^{i} \\
+        \vec{m} - \mu_{\vec{m},j}^{i}
+    \end{array}
+    \right)
+    \right\} \\
+    &\quad + \omega_{s_k}^i \sum_{j=1}^2 \exp \left\{
+    \alpha_{s_k, j}^i-\frac{1}{2} \left(\vec{m} - \mu_{\vec{m}, j}^{i}\right)^{\prime}
+    \Sigma_m^{-1} \left(\vec{m} - \mu_{\vec{m}, j}^i\right)
+    \right\}
+\end{aligned}
+\end{equation}
+where $i=1,2, \cdots, E$ and $E$ is the number of tetrodes. $\Sigma$ is the covariance diagonal matrix with diagonal elements $\left(\sigma_x^2, \sigma_m^2, \sigma_m^2, \sigma_m^2, \sigma_m^2 \right)$. We chose this form of $\Sigma$ with zero off-diagonal elements to simplify the scenarios to allow for analytic solutions. $\Sigma_m$ is a diagonal matrix with diagonal elements $\left( \sigma_m^2, \sigma_m^2, \sigma_m^2, \sigma_m^2 \right)$. $\omega_{s_k}^i$ can range from $0$ to $1$. When $s_k \neq 2$, we set $\omega_{s_k}^i=0$ for $i=1,2, \cdots E$. By doing this, we ensure that the generated hippocampal spikes carry spatially relevant information. Otherwise, we set $\omega_{s_k}^i \neq 0$ to obtain some hippocampal spikes without spatial content. When $s_k \neq 3$, we set $\alpha_{s_k, j}^i$ to be a larger value for $i=1,2 \cdots E$ and $j=1,2$. Otherwise, $\alpha_{s_k, j}^i$ is set to be a relatively small value to obtain fewer spikes in this period. We express the joint mark intensity as a function of time $t_k$ and waveform features $\vec{m}_k$. In reality, it depends on both the latent locality state $s_k$ and the latent spatial content $x_k$.
+
+
+\subsection{Estimation Model}
+To evaluate our local goodness-of-fit approaches, we intentionally decode the simulated data with a simple and misspecified model for the latent variables $s_k$ and $x_k$.  As for the latent locality state $s_k$, instead of $5$ discrete states, this model assumes only two states: the local state and the non-local state with small variance. It is defined as follows:
+\begin{equation}
+\label{estimation_0}
+    s_{k}=\left\{\begin{array}{ll}0, & \text {local state } ; \\ 1, & \text {non-local state with small variance }; \end{array}\right.
+\end{equation}
+Similarily, we simplify the state model for $x_k$ as follows.
+\begin{equation}
+\label{estimation}
+    p\left(x_{k} \mid x_{k-1}, s_{k}, s_{k-1}\right)=\left\{\begin{array}{ll}\delta\left(o_{k}\right), & \text { if } s_{k} =0 ; \\ \mathcal{U}(a, b), & \text { if } s_{k}=1 \\ & \text { and } s_{k-1} =0 ; \\ \mathcal{N}\left(x_{k-1}, \sigma\right), & \text { if } s_{k}=1 \\ & \text { and } s_{k-1}=1\end{array}\right.
+\end{equation}
+This model simplifies the distribution of $x_k$, setting $x_k$ equal to $o_k$ in the local state while assuming a simple random walk model during non-local state. In addition to the incorrectly assumed state model, we can also employ this misspecified observation process to decode the observed hippocampal spikes and evaluate the local goodness-of-fit with our established metrics. For the joint intensity function of hippocampal spike data, we continue to assume a strong correlation between waveform features and spatial content. In other words, no matter what the locality state is, we utilize the joint intensity function defined by equations (\ref{generative_1}) with $\omega_{s_k}^i=0$ for $i=1,2 \cdots, E$. This flawed assumption results in an inaccurate observation process.
+
+If the observed spiking data from $i^{th}$ tetrode in the interval $[t_{k-1},t_k)$ includes $\Delta N_k^i$ spikes with marks $(\vec{m}_{k,1}^i, \vec{m}_{k,2}^i, \cdots \vec{m}_{k,\Delta N_k^i}^i)$, and we assume independence between tetrodes, the likelihood of the observed spiking is expressed as:
+\begin{equation}
+\label{likelihood}
+L(x_{k}) \propto  \prod_{i=1}^{E} \prod_{j=1}^{\Delta N_{k}^{i}}\lambda_{i}\left(t_{k}, \vec{m}_{k, j}^{i} \right) \exp \left[-\Lambda_{i}\left(t_{k} \right) \Delta_{k}\right]
+\end{equation}
+where $E$ is the number of tetrodes, $\Delta_{k}=t_k-t_{k-1}$, and $\Lambda_{i}(t_{k})=\int_\mathcal{M} \lambda_{i}\left(t_{k}, \vec{m}_{k, j}^{i} \right) d\vec{m}_{k, j}^{i}$ is the ground intensity.
+
+Based on the oversimplified decoding model we have defined, we derive the joint filter probability distribution for all latent variables, given all the observed signals up to the current time i.e. $p(s_{k}, x_{k}\mid \Delta N_{0:k}^{(1: E)}, \vec{m}_{0:k})$. This allows us to compute the marginal probability that a non-local event with small variance is occurring at each instant as well as the marginal distributions of the latent variables representing the spatial content of each non-local event.
+
+First, using Bayes's rule, combined with the assumptions in this work \citep{Ref2018b}, we obtain an iterative expression for the filter distribution.
+  \begin{equation} \label{eq: filter}
+  \begin{aligned}
+ & p\left(s_{k}, x_{k} \mid \Delta N_{0:k}^{(1: E)}, \vec{m}_{0:k}\right) \propto p\left(\Delta N_{k}^{(1: E)}, \vec{m}_{k} \mid x_{k}\right) \\ & \times  \sum_{s_{k-1}} \int_{x_{k-1}} Pr\left(s_{k} \mid s_{k-1}\right)  p\left(x_{k} \mid x_{k-1}, s_{k}, s_{k-1}\right)  p\left(s_{k-1}, x_{k-1} \mid \Delta N_{0:(k-1)}^{(1: E)}, \vec{m}_{0:(k-1)}\right) d x_{k-1}
+ \end{aligned}
+  \end{equation}
+The last term on the right side of (\ref{eq: filter}) is the filter distribution from the previous time step, which is multiplied by the state transition for each latent state and integrated and summed over the previous latent variables to produce the one-step prediction probability distribution. This distribution is then multiplied by the likelihood of the spiking at the current time step, based on the observation model, to compute the filter distribution at the current time step. We select an initial distribution for the states at time $t_0$, and iterate through (\ref{eq: filter}) to compute the filter distribution at all time steps. We define a non-local event as an extended period when the filter probability of non-local state $\operatorname{Pr}\left(s_k \mid \Delta N_{0:k}^{(1: E)}, \vec{m}_{0:k} \right)$ exceeds a threshold (eg. 0.99, 0.95, 0.9).
+
+In order to define the metrics, we use the following marginal distributions for $x_k$: the filter probability distribution $p\left(x_{k} \mid \Delta N_{0:k}^{(1: E)}, \vec{m}_{0:k}\right)$, the one-step predictor probability distribution $p\left(x_{k} \mid \Delta N_{0:(k-1)}^{(1: E)}, \vec{m}_{0:(k-1)}\right)$ and the isolated probability distribution $p\left(x_{k} \mid \Delta N_{k}^{(1: E)}, \vec{m}_{k}\right)$ based on the current spiking information.
+
+The first metric we define is the KL divergence between the filter distribution of $x_k$ and the isolated distribution. A larger divergence indicates a substantial discrepancy between the distribution inferred from information up to now using the estimation model and the distribution derived from our current observations, suggesting potential issues with local model fitting. To extend this metric for evaluating each detected non-local event, we define a weighted average of the KL divergence between the filter and isolated distributions as shown in equation (\ref{kl_period}). Only intervals containing at least one spike are included in this evaluation; intervals without any spike are excluded from the evaluation.
+
+The second metric we define is the $95\%$ HPDROR between one-step predictor distribution of $x_k$ based on past information using the estimation model and the isolated distribution based on the current observation. A smaller value of this metric indicates a significant discrepancy between the distribution inferred from past information using the estimation model and the distribution derived from current observations. To extend this metric for evaluating each detected non-local event, we define the weighted average of the $95\%$ HPDROR between the one-step prediction distribution and the isolated distribution as shown in equation (\ref{hpdror_period}). As before, we include an interval in the evaluation set only if it contains at least one spike; otherwise, it is excluded from consideration.
+
+The third metric we define is based on predictive checking. Specifically, as shown in (\ref{predictive_application}), the predictive distribution $p\left(\vec{m}_k \mid \vec{m}_{0:(k-1)}, \Delta N_{0:k}^{(1: E)} \right)$ is calculated by the integral of one-step predictor distribution $p\left(x_k \mid \vec{m}_{0:(k-1)}, \Delta N_{0:(k-1)}^{(1: E)} \right)$ and the observation process $p\left(\vec{m}_k \mid x_k, \Delta N_{k}^{(1: E)} \right)$. A low probability indicates that the current observation is unlikely under the distribution inferred from prior information using the assumed estimation model, suggesting potential inconsistencies in local model fitting. To extend this metric for evaluating each detected non-local event, we adopt the same formulation as in (\ref{predictive_period}), where the predictive distribution is specified as $p\left(\vec{m}_k \mid \vec{m}_{0:(k-1)}, \Delta N_{0:k}^{(1: E)} \right)$. As before, an interval is included in the evaluation only if it contains at least one spike; otherwise, it is excluded from consideration.
+
+
+
+%This model is relatively simple and, therefore, based on certain degree of misspecification. Likewise, for another latent variable $x_k$, which is related to spatial content, we will also simplify its distribution accordingly. When in the local dynamic state, the neurons have place fields which fire as a function of the rat’s linearized position at time $t_k$. Therefore, we set $x_k=o_k$, where $o_k$ is the observed linearized position. When the dynamic state changes from local to non-local, we allow $x_k$ to correspond to any location, not just the rat’s current location. The distribution of possible initial locations for the non-local event is assumed to be uniform over the entire environment. We assume that as long as the rat stays in the non-local state, the trajectory of $x_k$ is continuous, and use a random walk to model transitions within this state. Mathematically, the dynamics of $x_k$ are defined by the following state transition model.
+%Similarily, we can simplify the state model for $x_k$ based on the true generative model in equation (\ref{eq0}) as follows.
+%\begin{equation}
+%\label{estimation}
+%    p\left(x_{k} \mid x_{k-1}, s_{k}, s_{k-1}\right)=\left\{\begin{array}{ll}\delta\left(o_{k}\right), & \text { if } s_{k} =0 ; \\ \mathcal{U}(a, b), & \text { if } s_{k}=1 \\ & \text { and } s_{k-1} =0 ; \\ \mathcal{N}\left(x_{k-1}, \sigma\right), & \text { if } s_{k}=1 \\ & \text { and } s_{k-1}=1\end{array}\right.
+%\end{equation}
+%This model simplifies the distribution of $x_k$, setting $x_k$ equal to $o_k$ in the local state while assuming a simple random walk model during non-local state. Naturally, such a simplified framework entails certain incorrect assumption. For the joint intensity function of hippocampal spike data, we continue to assume a correlation between waveform features and spatial content. In other words, no matter what locality state the animal is, we utilize the joint intensity function defined by equations ($\ref{eq1}$) with $\omega_{s_k}^i=0$ for $i=1,2 \cdots, E$. This flawed assumption results in an inaccurate observation process. In addition to the incorrectly assumed state model, we can also employ this misspecified observation process to decode the observed hippocampal spikes and evaluate the local goodness-of-fit with our established metrics.
+
+%If the observed spiking data from $i^{th}$ tetrode in the interval $[t_{k-1},t_k)$ includes $\Delta N_k^i$ spikes with marks $(\vec{m}_{k,1}^i, \vec{m}_{k,2}^i, \cdots \vec{m}_{k,\Delta N_k^i}^i)$, and we assume independence between tetrodes, the likelihood of the observed spiking is expressed as:
+%\begin{equation}
+%\label{likelihood}
+%L(x_{k}) \propto  \prod_{i=1}^{E} \prod_{j=1}^{\Delta N_{k}^{i}}\lambda_{i}\left(t_{k}, \vec{m}_{k, j}^{i} \right) \exp \left[-\Lambda_{i}\left(t_{k} \right) \Delta_{k}\right]
+%\end{equation}
+%where $E$ is the number of tetrodes, $\Delta_{k}=t_k-t_{k-1}$, and $\Lambda_{i}(t_{k})=\int_\mathcal{M} \lambda_{i}\left(t_{k}, \vec{m}_{k, j}^{i} \right) d\vec{m}_{k, j}^{i}$ is the integral of the joint mark intensity over the entire mark space, $\mathcal{M}$, called the ground intensity.
+
+
+
+
+%\subsection{Several Common Misspecified Models}
+
+%\subsubsection{Misspecified Observation Model}
+
+%\subsubsection*{3.2.1 \quad Misspecified Observation Model}
+
+%Misspecification can be common in state-space model. One of the scenario can be inconsistent observations which may lead to wrong inferences about the latent variables. As for hippocampal ripple-replay detection, these inconsistent hippocampal spike observations can lead to incorrect inferences about the replay events and even the decoding of spatial content. We will check what would happen when using these spikes under the misspecified observation model to decode the latent variables.
+
+%Under this scenario, for the ripple-replay state, instead of two states, we define replay-hallucination model with $3$ states. The model can be defined as follows:
+%\begin{equation}
+%    s_{k}=\left\{\begin{array}{lll}2, & \text { if a hallucination is occurring at time } t_{k}; \\ 1, & \text { if a replay event is occurring at time } t_{k}; \\ 0, & \text { if neither a replay event nor a hallucination event is  occurring at time } t_{k};\end{array}\right.
+%\end{equation}
+%In order to distinguish from replay state, we call it hallucination when $s_k=2$. When the state $s_k \neq 2$, we assume the joint intensity functions follow equations ($\ref{eq1}$) and ($\ref{eq2}$). When $s_k=2$, in such a scenario, the dependence between hippocampal spikes and $x_k$ might be different. For example, the hippocampal spikes could be independent of $x_k$. That is to say, the joint intensity function should be written as following forms:
+%\begin{equation}
+%\label{eq3}
+%\lambda_{i}\left(t_{k}, \vec{m}\right) \propto \sum_{j=1}^2 \exp \left\{-\frac{1}{2}\left(\vec{m}-\mu_{\vec{m}, j}^{i}\right)^{\prime} \Sigma_m^{-1}\left(\vec{m}-\mu_{\vec{m}^{i}, j}\right)\right\}
+%\end{equation}
+%where $i=1,2,3,4$, and $\Sigma_m$ is the successive principal matrix obtained by eliminating the first row and first column of $\Sigma$. The parameters related to the marks in this model should be the same as that when $s_k=0$ or $1$ and
+%\begin{equation}
+%\label{eq31}
+%\lambda_{i}\left(t_{k}, \vec{m}\right) \propto \exp \left\{-\frac{1}{2}\left(\vec{m}-\mu_{\vec{m}}^{i}\right)^{\prime} \Sigma_m^{-1}\left(\vec{m}-\mu_{\vec{m}^{i}}\right)\right\}
+%\end{equation}
+%where $i=5,6$ and the parameters related to the marks in this model should be the same as that when $s_k=0$ or $1$.
+
+%In the true hippocampal spike model, the joint intensity function remains independent of $x_k$. However, our misspecified model falsely imposes such a dependence, leading us astray. Consequently, when we use this flawed model to decode observed data, it produces numerous erroneous inferences, distorting our understanding of the underlying neural dynamics.
+
+%\subsubsection*{3.2.2 \quad Misspecified State Model}
+%In addition to the chaotic observations, sometimes, the incorrect state model we defined may also lead to specious inferences. In order to see what will happen in this case, we define replay-hallucination model with $3$ states related to replay as follows.
+%\begin{equation}
+%\label{eq4}
+%p\left(x_{k} \mid x_{k-1}, s_{k}, s_{k-1}\right)=\left\{\begin{array}{lc}\delta\left(o_{k}\right), & \text { if } s_{k} = 0; \\ \mathcal{U}(a, b), & \text { if } s_{k} \neq 0 \\ & \text { and } s_{k-1} = 0; \\ \mathcal{N}\left(x_{k-1}, \sigma\right), & \text { if } s_{k}=1 \\ & \text { and } s_{k-1}=1; \\ \mathcal{U}(a, b), & \text { if } s_{k}=2; \end{array}\right.
+%\end{equation}
+%Within this model, $x_k$ follows the same distribution when $s_k$ is $0$ or $1$. However, when $s_k=2$ (we also call it hallucination), we assume a uniform distribution for $x_k$. As for the hippocampal spikes, we still assume that their joint intensity functions follow equations ($\ref{eq1}$) and ($\ref{eq2}$) no matter what state the rat is in.
+
+%Beyond the misspecification of the random walk to describe a uniform distribution, there exist other instances where the state model errs in its assumptions—such as the improper value of the standard deviation in the context of a random walk. In mathematics, we can have the following true model.
+%\begin{equation}
+%\label{eq41}
+%p\left(x_{k} \mid x_{k-1}, s_{k}, s_{k-1}\right)=\left\{\begin{array}{lc}\delta\left(o_{k}\right), & \text { if } s_{k} = 0; \\ \mathcal{U}(a, b), & \text { if } s_{k} \neq 0 \\ & \text { and } s_{k-1} = 0; \\ \mathcal{N}\left(x_{k-1}, \sigma\right), & \text { if } s_{k}=1 \\ & \text { and } s_{k-1}=1; \\ \mathcal{N}\left(x_{k-1}, \sigma^{\prime}\right), & \text { if } s_{k}=2 \\ & \text { and } s_{k-1}=2; \end{array}\right.
+%\end{equation}
+%In this model, $x_k$ follows the same distribution when $s_k$ is $0$ or $1$. However, when $s_k=2$, we assume a random walk with larger standard deviation $\sigma^{\prime}$ for $x_k$. As for the hippocampal spikes, we still assume that their joint intensity functions follow equations ($\ref{eq1}$) and ($\ref{eq2}$) no matter what state the rat is in.
+
+%In addition, a random walk with drift is often a more appropriate model for capturing the movement of the rat in the replay state. Thus, if we mistakenly employ a simple random walk to describe this movement, the model is inherently flawed in its assumptions, potentially leading to misleading or problematic results. Mathematically, the following equation can describe this model.
+%\begin{equation}
+%\label{eq42}
+%p\left(x_{k} \mid x_{k-1}, s_{k}, s_{k-1}\right)=\left\{\begin{array}{lc}\delta\left(o_{k}\right), & \text { if } s_{k} = 0; \\ \mathcal{U}(a, b), & \text { if } s_{k} \neq 0 \\ & \text { and } s_{k-1} = 0; \\ \mathcal{N}\left(x_{k-1}, \sigma\right), & \text { if } s_{k}=1 \\ & \text { and } s_{k-1}=1; \\ \mathcal{N}\left(x_{k-1}, \sigma\right)+\alpha \left(t_k-t_{k-1}\right), & \text { if } s_{k}=2 \\ & \text { and } s_{k-1}=2; \end{array}\right.
+%\end{equation}
+%In this model, $x_k$ follows the same distribution when $s_k$ is $0$ or $1$. However, when $s_k=2$, we assume a random walk with drift for $x_k$. As for the hippocampal spikes, we still assume that their joint intensity functions follow equations ($\ref{eq1}$) and ($\ref{eq2}$) no matter what state the rat is in.
+
+
+
+%If our state model mistakenly assumes that, in the replay state, $x_k$ follows a random walk rather than its true distribution, the inferences we draw from observations may be fundamentally flawed. This misrepresentation not only casts doubt on our ability to accurately decode their spatial content but also undermines the reliability of detection of hippocampal replay events, obscuring our understanding of the neural mechanisms that govern memory and navigation. Of course, these incorrectly assumed models exhibit a certain degree of robustness. That is, despite inaccuracies in the model's assumptions, the decoding results remain reasonably acceptable—though this robustness ultimately depends on the extent of the model's misalignment with reality. Furthermore, we have highlighted only a few common scenarios when the state-space models suffer from incorrect assumptions. In real-world applications, model misassumptions can arise from a variety of factors—often as a blend of these typical errors or from different sources of discrepancy. The methods we have proposed to detect inconsistencies between the model and observations should, in principle, be adaptable to these scenarios as well.
+
+%\subsubsection*{4.2.3 \quad Missorted Spike Model}
+%Alongside advanced clusterless decoding techniques, traditional encoding and decoding methods based on sorted spikes continue to hold a significant role in the analysis of hippocampal spike data. A prerequisite for these increasingly efficient decoding methods is the application of spike sorting: the waveforms recorded extracellularly at electrodes must be clustered into putative single neurons. Therefore, the accuracy of the spike sorting has a critical impact on the accuracy of the decoding. The majority of these algorithms are clustering-based methods, allocating each spike to a putative single cell based on the characteristics of spike waveforms. These types of pure waveform, hard boundary spike-sorting algorithms, suffer from many sources of error, such as non-stationary noises, non-gaussian clusters, and synchrony. In addition, they have been shown to yield biased and inconsistent estimates for neural receptive fields. As a consequence, missorted spikes are really common during our encoding and decoding procedure.
+
+%In our simulation, we may generate the missorted spikes by switching the wavefrom features but keeping the linearized position at the spike time for several spikes. By doing this, we could simulate several missorted spikes during the movement. We will use such spikes to decode the latent states and do some analysis about the results.
+
+
+\subsection{Implementation Details}
+
+We begin with a simple toy example to develop intuition about each of the local goodness-of-fit metrics. We simulated a second movement using the generative model defined above. In this second, we assume that the rat is in the non-local state with small variance in the interval from $100$ to $200$ ms. From $300$ to $400$ ms, the rat is in the local state with some non-spatial hippocampal spikes. From $500$ to $600$ ms, the rat is in the non-local state with large variance, drift diffusion and local hippocampal spike rate. From $700$ to $800$ ms, the rat is in the non-local state with drift diffusion and high hippocampal spike rate. Then we simulated the movement trajectory $o_k$ starting from the position $o_0 = 0$ cm using a random walk with standard deviation $0.3$ cm for each time step. The range of the uniform distribution in (\ref{generative_0}) was from $-10$ to $10$ cm. When $s_k=1$ or $4$, the random walk standard deviation is set $\sigma=0.3$ cm. As for the larger random walk standard deviation when $s_k=3$, we set it to $\sigma^{\prime}=1$ cm. When $s_k=3$ or $4$, the drift is set to $\beta=150$ cm per second. The time step in our simulation was chosen to be $1$ ms. The path was bounded between $-10$ cm and $10$ cm by fixing any movements that would have extended beyond these bounds at the boundary. We sampled the semi-latent state $x_k|s_k$ using (\ref{generative_0}). In order to match real trajectories, all the simulated spatial trajectories were smoothed.
+
+We simulated the spike times and waveforms using a set of joint mark intensity functions as described in equation (\ref{generative_1}) that included two modes corresponding to two place cells for each tetrode. For the simple simulation scenario, we chose $\sigma_x=1$ and $\sigma_m=1$. When $s_k \neq 3$, we set $\alpha_{s_k, j}^i=3.5$ for $i=1,\cdots,5$ and $j=1,2$. Otherwise, $\alpha_{s_k, j}^i$ was  set to $1.5$. When $s_k \neq 2$, we set $\omega_{s_k}^i=0$ for $i=1,\cdots,5$. Otherwise, $\omega_{s_k}^i$ was set to $0.9$. The other parameters are listed in Appendix.
+
+The locality state was initially set in a local state, $\operatorname{Pr}(s_{0}=0)=1$. By definition, when $s_0=0$, the distribution of $x_0$ is a delta function at the rat’s linearized position. For the state transition probability for $s_k$, we used $Pr \left(s_k=1 \mid s_{k-1}=0 \right)=0.0001$ and $Pr \left(s_k=1 \mid s_{k-1}=1 \right)=0.95$.
+
+The latent variable $x_k$ is one-dimensional and $s_k$ is discrete. Since there is no analytic solution of the cumulative distribution of latent state $x_k$, we employed numerical integration methods, specifically Riemann sum approximation to estimate the solution. The KL divergence was also calculated by the Riemann sum approximation. As for HPDROR, we first sorted each distribution we might use by the value of probability mass and then found the HPDR. Finally, we calculated the HPDROR through the HPDR we have defined. Finally, for predictive checking, since there was no analytic solution for $p\left(\vec{m}_k \mid \vec{m}_{0:(k-1)}, \Delta N_{0:k}^{(1: E)} \right)$, we used a two-stage monte carlo procedure to sample $x_k$ under the one-step prediction distribution and $\vec{m}_k$ under the predictive distribution. By doing this, we estimated the likelihood of observing $\vec{m}_k$ under the predictive distribution.
+
+In addition, based on the definition in (\ref{generative_0}), in each scenario, we simulated 120 non-local events with small variance and 120 local events with some non-spatial hippocampal spikes. We simulated the rat's movement for one minute, segmenting time into $100$ ms intervals. Within each second, we designated the second and sixth intervals as the non-local state with small variance, i.e. $s_k=1$, while the fourth and eighth intervals were set as the local state with non-spatial hippocampal spike data, i.e. $s_k=2$. The remaining intervals were set as the local state, i.e. $s_k=0$. In addition, we changed the random walk standard deviation parameter $\sigma$ in (\ref{generative_0}) or the hippocampal spiking rate parameter $\alpha_{s_k,j }^i$ in (\ref{generative_1}) to generate the data under different scenarios and evaluated the two kinds of events. All the other parameters used to generate these events were the same as described previously. The parameters for the estimation model are adjusted in the value of $\sigma$ or $\alpha_j^i$. We further evaluated two distinct pairs of events: non-local events with small variance vs. non-local events with large variance, drift diffusion and low hippocampal spike rate and non-local events with small variance vs. non-local events with drift diffusion and high hippocampal spike rate. Following a similar method, we generated 120 events for each kind of event. To explore different scenarios, we changed $\sigma$ and $\alpha_{s_k,j}^i$, while keeping all other parameters consistent with those used in the previous simulation study. We used the period-level metrics to evaluate the type I and type II error rates.
+
+\subsection{Simulation Results}
+
+\begin{figure}
+% TODO: wire up the simulation-results figure. The current repo pipeline
+% generates figures/main/figure03.pdf (5-misfit per-cell diagnostics),
+% which does not match this figure's caption/Results prose; needs a
+% figure + prose update before it can be included.
+\fbox{\parbox[c][8cm][c]{0.95\textwidth}{\centering\itshape
+Figure pending: simulation-results plot.}}
+\caption{Decoding and evaluation results for simulation study: the first row shows heat plot of the filter probability distribution for the semi-latent continuous variable, $x_k$. The red line is the actual trajectory of the semi-latent variable. The green line is the observed linearized position. The shaded area shows the marginal filter distribution of $x_k$. The second row shows the square root of the KL divergence between the filter distribution of $x_k$ and the isolated distribution at each spike time. The third row shows the $95\%$ HPDROR between the isolated distribution of $x_k$ and one-step prediction distribution at each spike time. The fourth row shows the estimated likelihood under the predictive distribution of $\vec{m}_k$ for the observed spikes at each spiking moment. The red dotted line shows a significance level of $0.05$. The blue boxes illustrate the content from each detected non-local event.}
+\label{simulation}
+\end{figure}
+
+Fig. \ref{simulation} shows the decoding and evaluation results for the simulated data. Several detected non-local events under the misspecified estimation model are shown. The first row shows a heat plot of the filter probability distribution for the semi-latent continuous variable $x_k$. The red line shows the actual value of semi-latent variable $x_k$ and the green line shows the observed linearized position. When the animal is in the local state, $x_k$ is the same as the observed linearized position. When the locality state changes from local to non-local, the representation of $x_k$ jumps rapidly to a new location. When the model assumption is correct, the filter distribution should align with the true value of $x_k$, as we see in the first detected non-local event. As for the second detected non-local event, although the rat is in a local state, we still obtain numerous non-local estimates due to the incorrect model for the joint mark intensity function. As for the third detected non-local event, owing to our reliance on an overly simplistic estimation model and the scarcity of hippocampal spikes, noticeable discrepancies arise between our estimates and the true values. As for the last detected non-local event, this estimate is derived from a simpler estimation model. Given the smaller gap between the generative model and estimation model with the ample information provided by hippocampal spikes, our estimate closely aligns with the true value.
+
+The second row shows the KL divergence between the filter distribution of $x_k$ and isolated distribution at each spike time. When a non-local event is detected, it tends to decrease, apart from a few spikes at the beginning and end of the event—indicating state transitions. When the locality state is estimated as local, the filter distribution of $x_k$ remains confined to the current observed linearized position. In contrast, when the state is estimated as non-local, the filter distribution extends beyond the current location, reaching other plausible positions. This broader spread allows for greater overlap with the spatial information implied by the current observation. For the first detected non-local event, since we used the same generative and estimation model, the KL divergence decreased during the event except the spikes at the beginning and end of the event. For period-level evaluation based on this metric, we cannot reject the assumption that this event is a non-local event with small variance. During the second detected event, there are also a substantial number of hippocampal spikes with large KL divergence values occurring. This suggests that our estimation model does not align with the dynamics represented by these spikes. Based on our period-level evaluation, we have enough evidence to reject the assumption of a non-local event with small variance. In the third detected non-local event, there are numerous moments with large KL divergence values. This indicates a discrepancy between these spikes and prior spiking information accumulated over time using our estimation model, suggesting that our model may not accurately capture the dynamics of observed spikes, making the decoding results unreliable. Based on our period-level evaluation, we reject the assumption that this event is a non-local event with small variance. In the last detected non-local event, the values remain small. Although our estimation model differs from the generative model, the abundance of hippocampal spikes leads to accurate estimates despite this misspecification. This metric indicates that our result remains relatively reliable. For the period-level evaluation, we cannot reject the assumption of a non-local event with small variance.
+
+The third row shows the $95\%$ HPDROR between the isolated distribution of $x_k$ and one-step prediction distribution at each spike time. For the first detected non-local event, except for some spikes at the beginning and end of the event, the ratio is high, which means that the spikes we observed are consistent with the previous spiking information based on the estimation model, and we have not detected inconsistency here. Based on this metric, at the period level, we cannot reject that this is a non-local event with small variance. In the second detected non-local event, there are numerous moments where this ratio is extremely low, casting doubt on whether the observed hippocampal spikes align with our assumed model. Based on our period-level evaluation, we can reject that this is a non-local event with small variance. The third detected non-local event contains only a few spikes. Additionally, certain moments exhibit very low ratios, lowering the overall average ratio during this period. For the period-level evaluation, we reject that the event is a non-local event with small variance. The last detected non-local event closely resembles the first. Except for a few observed spikes at the beginning and end that exhibit lower ratios, the ratio remains high, leading us to believe that our estimation model aligns well with the generative model. Although this event is derived from a misspecified model, based on period-level metric, we cannot reject that it is a non-local event with small variance.
+
+The last row shows the estimated likelihood under the predictive distribution of $\vec{m}_k$ based on one-step prediction distribution of $x_k$ combined with the observation process $p\left(\vec{m}_k \mid x_k, \Delta N_{k}^{(1: E)} \right)$ for the observed spikes at each moment. Although this value differs in meaning from HPDROR, both exhibit similar trends. In the first detected non-local event, apart from a few spikes with extremely low likelihood at the beginning and end, the remaining spikes have marks that are likely based on the estimated state. Based on period-level metrics, we cannot reject the assumption of a non-local event with small variance. The second detected non-local event contains a large number of spikes with extreme marks given the estimated state, making it difficult to believe they align with previous spiking information based on our estimation model. At the same time, this event yields a very low value in the likelihood based on period-level evaluation, we can confidently reject it as a non-local event with small variance. The third detected non-local event contains relatively few spikes, and among them, a considerable number have marks with low likelihood. This diminishes our confidence that these spikes align with our estimation model. Consequently, based on period-level evaluation, we have enough confidence to reject the assumption that this event is a non-local one with small variance. Finally, for the last detected non-local event, apart from the spikes at the beginning and end of the detected event, the spikes occurring at other times have marks with high likelihood. This strengthens our confidence that our estimation model aligns well with these observed spikes. Although the generative model of the latent variables in this event differs from our estimation model, this metric suggests that our decoding results remain reasonable. Consequently, based on period-level evaluation, we cannot reject it as a non-local event with small variance.
+
+The results above are mainly based on hippocampal spikes observed at each spike time. Next, we will present the findings using period-level metrics to evaluate the detected non-local events, determining whether we have enough evidence to reject the assumption that they are non-local events with a simple random walk movement model.
+
+
+%The results above are mainly based on hippocampal spikes observed at each spiking moment. Next, we will present the findings using event-level metrics to evaluate the detected non-local events, determining whether we have enough evidence to reject the assumption that they are non-local events with a simple random walk movement. Based on the definition mentioned in equation (\ref{eq0}), in each scenario, we simulated 120 non-local events with small variance and 120 local events with some non-spatial hippocampal spikes. We simulated the rat's movement for one minute, segmenting time into $100$ ms intervals. Within each second, we designated the second and sixth intervals as the non-local state with small variance, i.e. $s_k=1$, while the fourth and eighth intervals were set as the local state with non-spatial hippocampal spike data, i.e. $s_k=2$. The remaining intervals were set as the local state, i.e. $s_k=0$. In addition, we changed the random walk standard $\sigma$ in equation (\ref{eq0}) or the hippocampal spiking rate $\alpha_{s_k,j }^i$ in equation (\ref{eq1}) to generate the data under different scenarios and evaluated the two kinds of events. All the other parameters used to generate these events were the same as what we had mentioned in simulation study. As for the parameters we used in estimation model, we continue with the same form, adjusting the value of $\sigma$ or $\alpha_j^i$ as needed to suit different scenarios. We further evaluated two distinct pairs of events: non-local event with small variance vs. non-local event with large variance, drift diffusion and low hippocampal spike rate and non-local event with small variance vs. non-local event with drift diffusion and high hippocampal spike rate. Following the similar method, we generated 120 events for each kind of event. To explore different scenarios, we changed $\sigma$ and $\alpha_{s_k,j}^i$, while keeping all other parameters consistent with those used in the previous simulation study. We used the period-level metrics we have defined to evaluate them and report the type I and type II error as below.
+
+\begin{figure}
+% TODO: wire up the Type I/II error-rate figure. No equivalent figure is
+% currently generated by the repo pipeline; needs to be produced.
+\fbox{\parbox[c][8cm][c]{0.95\textwidth}{\centering\itshape
+Figure pending: Type I/II error-rate plot.}}
+\caption{Type I and II error rates of evaluation of non-local events. In the first column, we show the type I error rate vs. the random walk standard deviation $\sigma$ defined in both (\ref{generative_0}) and (\ref{estimation}). In the second column, we show the type I error rate vs. the rate parameter $\alpha_{s_k, j}^i$ in joint intensity mark function as mentioned in (\ref{generative_1}). The third and fourth column shows the corresponding type II error rate. The black line shows the results based on weighted average KL divergence between the filter distribution of $x_k$ and isolated distribution. The red line shows the results based on weighted average HPDROR between the one-step prediction distribution of $x_k$ and isolated distribution while the blue line shows the results based on prior predictive checking for $\vec{m}_k$. (a) - (d) show the type I and II error rates for evaluating non-local events with small variance and local events with non-spatial hippocampal spike data. (e) - (h) show the type I and II error rates for evaluating non-local events with small variance and non-local events with large variance, drift diffusion and low hippocampal spike rate. (i) - (l) show the type I and II error rates for evaluating non-local events with small variance and non-local events with drift diffusion and high hippocampal spike rate. }
+\label{error rate_1}
+\end{figure}
+
+Fig. \ref{error rate_1} shows the type I and II error rates in evaluating non-local events. As the random walk standard deviation $\sigma$ increases, the error rate of all methods rises accordingly. This occurs because, even if the estimation model is incorrect, a larger standard deviation in the random walk diminishes the influence of past spiking information. In this case, the distribution of $x_k$ at each moment relies more heavily on the spike data at that specific time. As a result, it becomes challenging to detect discrepancies between the distribution derived from the current spike and the distribution accumulated from previous spike information using the estimation model. In addition, the accuracy of our evaluation is also constrained by the hippocampal spike rate. When the spike count is high, the error rate remains low; however, with fewer spikes, the error rate increases. Among the three metrics, the one based on credible regions demonstrates the greatest robustness, yielding the lowest error rate in most scenarios. In contrast, the other two metrics exhibit lower stability but possess unique advantages depending on the specific scenario. In addition, the metric based on predictive checking seems to have high dependence on the spike rate parameter in the intensity function. Lower spike rates always lead to inaccurate evaluation. In contrast, the method based on the credible region overlap ratio demonstrates greater robustness, consistently maintaining a lower type I error rate across various situations even when the level of model misspecification is very low. Of course, when the true generative model and our estimation model are close, the type II error from all methods becomes relatively large.
+
+
+%\subsection{Simulating the Data With the Misspesified Model}
+%In our simulations, we may use different set of parameters to simulate the replay-hallucination state $s_k$, linearized position, the semi-latent variable $x_k$ as well as the spiking data.
+
+%In the misspecified observation model, as for the replay-hallucination state, we set $s_k=1$ when $k \in [100k_1+100,100k_1+200]$ or $k \in [100k_1+500,100k_1+600]$. When $k \in [100k_1+600,100k_1+700]$, where $k_1$ is an integer. As for the linearized position, we use a random walk with standard error $\sigma=0.5$ to simulate the path. When it comes to the semi-latent variable $x_k$, we use a model in equation (\ref{eq0}), where $\sigma$ is set to $0.5$. $a$ and $b$ is set to $-30$ and $30$. Finally, we simulated the spike data using equations (\ref{eq1}), (\ref{eq2}) and (\ref{eq3}).
+
+%In the misspecified state model, we still set $s_k=1$ when $k \in [100k_1+100,100k_1+200]$ and $s_k=2$ when $k \in [100k_1+600,100k_1+700]$, where $k_1$ is an integer. As for the linearized position, we used that from the misspecified observation model. Then, we simulate the semi-latent variable $x_k$ using equation (\ref{eq4}), where $\sigma=0.5$.
+%We simulated the spiking data for misspecified state model using equation (\ref{eq1}) and (\ref{eq2}) and the parameters we used are the same as that in misspecified observation model.
+
+%Finally, in the missorted spike model, we used the same simulated linearized position as that in the previous simulations. Also, we assumed that the semi-latent variable $x_k$ followed the linearized position. We just switched several pairs of the waveform features from the spiking data.
+
+%Of course, in order to compare the performance of each method, we may use different parameters to make several different simulations. We will show the results in the following subsections and provide some discussion about them.
+
+
+%\subsection{Using Several Metrics to Measure Local Goodness-Of-Fit}
+%The first measure we define is the average KL divergence between the incremental posterior and isolated posterior. Mathematically, we can calculate the KL divergence between them as
+%\begin{equation}
+%D_k=\mathbf{K L}\left(p\left(x_{k} \mid \Delta N_{k}^{(1: E)}, \vec{m}_{k}, H_k \right), p\left(x_{k} \mid \Delta N_{k}^{(1: E)}, \vec{m}_{k}\right)\right)
+%\end{equation}
+
+%In order to use KL divergence to check if our detected ripple-replay events are correct or not, we apply it to each detected event and take the average as the metrics for each detected replay event to show the local goodness-of-fit of our model.
+
+%In simulation, when there exists $d_1$ and $d_2$ such that $d_1< d_2$, $s_{d_1-1} \neq 1$, $s_{d_1}=1$, $s_{d_2}=1$ and $s_{d_2+1} \neq 1$, we define the average KL divergence with the incremental posterior and isolated posterior in this segment as
+%\begin{equation}
+%\scriptsize
+%\text{dist}_{1}=\frac{\sum_{d_1 \leq k \leq d_2}\textbf{KL} \left(p\left(x_k \mid \Delta N_{k}^{(1: E)}, \vec{m}_{k}, H_k \right), p\left(x_k \mid \Delta N_{k}^{(1:E)}, \vec{m}_{k} \right)\right)I\left(\text{$s_k=1$ and there exists spike in $[t_{k-1},t_k)$}\right)}{\sum_{d_1 \leq k \leq d_2} I\left(\text{$s_k=1$ and there exists spike in $[t_{k-1},t_k)$}\right)}
+%\end{equation}
+%where $I(*)$ is the indicator function and $s_k$ is the true replay-hallucination state.
+
+%When there exists $d_1^{\prime}$ and $d_2^{\prime}$ such that $d_1^{\prime}< d_2^{\prime}$, $s_{d_1^{\prime}-1} \neq 2$, $s_{d_1^{\prime}}=2$, $s_{d_2^{\prime}}=2$ and $s_{d_2^{\prime}+1} \neq 2$, we define the average KL divergence between the incremental posterior and isolated posterior in this segment as
+%\begin{equation}
+%\scriptsize
+%\text{dist}_{2}=\frac{\sum_{d_1^{\prime} \leq k \leq d_2^{\prime}}\textbf{KL} \left(p\left(x_k \mid \Delta N_{k}^{(1: E)}, \vec{m}_{k}, H_k \right), p\left(x_k \mid \Delta N_{k}^{(1:E)}, \vec{m}_{k} \right)\right)I\left(\text{$s_k=2$ and there exists spike in $[t_{k-1},t_k)$}\right)}{\sum_{d_1^{\prime} \leq k \leq d_2^{\prime}} I\left(\text{$s_k=2$ and there exists spike in $[t_{k-1},t_k)$}\right)}
+%\end{equation}
+%By using this metric, it is easy for us to distinguish between ripple-replay events and misleading hallucination.
+
+%Next, we define the following metric using highest posterior density region (HPDR). We calculate the overlapping ratio of the highest posterior density region overlapping ratio between incremental prior and isolated posterior as follows.
+%\begin{equation}
+ % D_k=\textbf{HPDROR}\left(p\left(x_{k} \mid \Delta N_{k}^{(1: E)}, \vec{m}_{k}\right), p\left(x_{k} \mid \Delta N_{k-1}^{(1: E)}, \vec{m}_{k-1}, H_{k-1}\right)\right)
+%\end{equation}
+%Similarily, we can also apply this measure to the detected replay events by taking the average of HPDROR for each event as the metrics based on the same notation in the previous subsection.
+%\begin{equation}
+%\scriptsize
+%\text{dist}_{1}=\frac{\sum_{d_1 \leq k \leq d_2}\textbf{HPDROR} \left(p\left(x_k \mid \Delta N_k^{(1: E)}, \vec{m}_k\right), p\left(x_k \mid \Delta N_{k-1}^{(1:E)}, \vec{m}_{k-1}, H_{k-1} \right)\right)I\left(\text{$s_k=1$ and there exists spike in $[t_{k-1},t_k)$}\right)}{\sum_{d_1 \leq k \leq d_2} I\left(\text{$s_k=1$ and there exists spike in $[t_{k-1},t_k)$}\right)}
+%\end{equation}
+%and
+%\begin{equation}
+%\scriptsize
+%\text{dist}_{2}=\frac{\sum_{d_1^{\prime} \leq k \leq d_2^{\prime}}\textbf{HPDROR} \left(p\left(x_k \mid \Delta N_k^{(1: E)}, \vec{m}_k\right), p\left(x_k \mid \Delta N_{k-1}^{(1:E)}, \vec{m}_{k-1}, H_{k-1} \right)\right)I\left(\text{$s_k=2$ and there exists spike in $[t_{k-1},t_k)$}\right)}{\sum_{d_1^{\prime} \leq k \leq d_2^{\prime}} I\left(\text{$s_k=2$ and there exists spike in $[t_{k-1},t_k)$}\right)}
+%\end{equation}
+%where $\textbf{HPDROR} \left(p,q\right)=\frac{\left|\cap\left(H P D R_{q}, H P D R_{p}\right)\right|}{\operatorname{min}\left\{\left|H P D R_{q}\right|,\left|H P D R_{p}\right|\right\}}(\alpha)$.
+%Similarily, we can use $\text{dist}_{1}$ and $\text{dist}_{2}$ to distinguish between real ripple-replay events and hallucination.
+
+%In our simulation, to check how likely we should get the observed spikes, we calculate the logarithm of the likelihood with the observed spikes using the incremental prior prediction distribution as follows.
+%\begin{equation}
+ %   D_k=Pr\left( \log\left(p\left(\vec{m}_k \mid \Delta N_{k}^{(1: E)},  H_{k} \right)\right) \geq \log\left(p\left(\widetilde{m}_k \mid \Delta N_{k}^{(1: E)}, H_{k} \right)\right)\right)
+%\end{equation}
+%where $p\left(\vec{m}_k \mid \Delta N_{k}^{(1: E)}, H_{k} \right)=\int p\left(\vec{m}_k \mid x_k, \Delta N_{k}^{(1: E)} \right) p\left(x_k \mid \Delta N_{k}^{(1: E)}, H_k \right) d x_k$ and $\widetilde{m}_k$ is from the empirical distribution for the waveform features based on the incremental prior distribution.
+
+%As for the detected replay events, we can apply this measure by comparing it with the empirical prior prediction distribution to show the local goodness-of-fit.
+%\begin{equation}
+%\footnotesize
+%    p_1=Pr\left(\sum_{d_1 \leq k \leq d_2} \log\left(p\left(\vec{m}_k \mid \Delta N_{k}^{(1: E)},  H_{k} \right)\right) \geq \sum_{d_1 \leq k \leq d_2} \log\left(p\left(\widetilde{m}_k \mid \Delta N_{k}^{(1: E)}, H_{k} \right)\right)\right)
+%\end{equation}
+%and
+%\begin{equation}
+%\footnotesize
+%    p_2=Pr\left(\sum_{d_1^{\prime} \leq k \leq d_2^{\prime}} \log\left(p\left(\vec{m}_k \mid \Delta N_{k}^{(1: E)}, H_{k} \right)\right) \geq \sum_{d_1^{\prime} \leq k \leq d_2^{\prime}} \log\left(p\left(\widetilde{m}_k \mid \Delta N_{k}^{(1: E)}, H_{k} \right)\right)\right)
+%\end{equation}
+%where $\widetilde{m}_k$ is from the empirical distribution for the waveform features based on the incremental prior distribution. The other notations are the same as those mentioned before. The differences between $p_1$ and $p_2$ can help us find the true ripple-replay events and hallucination.
+
+%\subsection{Simulation Results}
+%In this subsection, we would show some results using the methods and metrics we defined to detect model misspcification with hippocampal spike data. To begin with, we show decoding results for the detected replay events.
+
+
+%\begin{figure}[H]
+%\centerline{\includegraphics[width=15cm, height=8cm]{plot21.png}}
+%\caption{Decoding results for real replay events from misspecified observation model: (a) shows the heat plot of filter probability distribution for semi-latent continuous variable $x_k$. The red line is the actual semi-latent variable and the green line is the observed linearized position. (b) shows the filter probability of a replay event at each time step. The red line is the actual latent replay-hallucination state. (c) shows the heat plot of the isolated posterior based on each spike. The red line is the actual semi-latent variable and the green line is the observed linearized position. (d) shows the highest posterior density region overlapping ratio between the incremental prior and isolated posterior based on each spike.}
+%\label{fig2}
+%\end{figure}
+%Fig. \ref{fig2} shows a decoding example for the real replay event. (a) shows the value of the simulated semi-latent process in red, the value of the simulated linearized position in green, and a heat plot of its filter probability distribution in grayscale. The center of the filter distribution rapidly jumps to, and then hovers around, the true value of $x_k$ when the switch to a ripple-replay event occurs. (b) shows the filter probability of a replay event at each time step. The red line is the actual latent replay state (inverted for visual clarity). When the actual state shifts to a replay-hallucination event, the filter probability rapidly switches from a value near 0 to a value near 1, and persists at that high value throughout the event, after which it rapidly switches back. (c) shows the isolated posterior based on each spike during this event and there is clear consistency among the spikes. (d) shows the highest posterior density region overlapping ratio between the incremental prior and isolated posterior for each spike during the event. Most of the spikes are consistent with the prior information with a overlapping ratio close to 1. When there is a state switch, the overlapping ratio would decrease to almost 0. Due to the fact that both the incremental prior and isolated posterior are narrow, occasionally, the overlapping ratio may decrease when the rat moved quickly in a short duration. In general, the model should be suitable for the spike dateset and the local goodness-of-fit can be satisfying.
+
+%\begin{figure}[H]
+%\centerline{\includegraphics[width=15cm, height=8cm]{plot31.png}}
+%\caption{Decoding results for specious replay events from misspecified observation model: (a) shows the heat plot of filter probability distribution for semi-latent continuous variable, $x_k$. The red line is the actual semi-latent variable and the green line is the observed linearized position. Both values are equal during this event. (Therefore, we only see one line in the plot.) (b) shows the filter probability of a replay event at each time step. The red line is the actual latent replay-hallucination state. The filter probability does dip occasionally, when the spiking  data become more ambiguous. (c) shows the heat plot of isolated posterior based on each spike. The red line is the actual semi-latent variable and the green line is the observed linearized position. (d) shows the highest posterior density region overlapping ratio between the incremental prior and isolated posterior from each spike.}
+%\label{fig3}
+%\end{figure}
+%Fig. \ref{fig3} shows a decoding example for the specious replay event with misspecified observation model. (a) shows the heat plot of the filter probability distribution for semi-latent variable $x_k$ in grayscale. During this event, $x_k$ should be equal to the observed linearized position so that the two lines overlap with each other. Under the misspecified observation model, the spikes would lead to incorrect inferences about the semi-latent variable $x_k$. (b) shows the filter probability of a replay event at each time step. The red line is the actual latent replay state. Due to the misspecified observation model, even though we assumed that there is not replay event at that moment, the filter probability also shows a value near 1, which can be an incorrect inference based on the spikes. (c) shows the isolated posterior based on the current spikes during this event and there is no consistency among the spikes. Also, due to the small random walk standard deviation in state model, the filter distribution $p\left(x_{k} \mid \Delta N_{k}^{(1: E)}, \vec{m}_{k}, H_{k}\right)$ sometimes does not follow the information from current spike. (d) shows the highest posterior density region overlapping ratio for each spike with the prior during the event. Most of the spikes are not consistent with the prior information with the overlapping ratio almost $0$. Based on these low overlapping ratios, we may consider the local disharmony between the spike data and model.
+
+
+%\begin{figure}[H]
+%\centerline{\includegraphics[width=15cm, height=8cm]{plot41.png}}
+%\caption{Decoding results for specious replay events from misspecified state model: (a) shows the heat plot of filter probability distribution for semi-latent continuous variable, $x_k$. The red line is the actual semi-latent variable and the green line is the observed linearized position. (b) shows the filter probability of a replay event at each time step. The red line is the actual latent replay-hallucination state. (c) shows the heat plot of the isolated posterior based on each spike. The red line is the actual semi-latent variable and the green line is the observed linearized position. (d) shows the highest posterior density region overlapping ratio between the incremental prior and isolated posterior for each spike.}
+%\label{fig4}
+%\end{figure}
+%Fig. \ref{fig4} shows another decoding example for the specious replay event with misspecified state model. (a) shows the heat plot of the filter probability for semi-latent variable $x_k$ in grayscale. During this event, $x_k$ follows a different model from that we assumed in encoding and decoding. Under the misspecified model, we cannot make correct inferences about the semi-latent variable $x_k$. (b) shows the filter probability of a replay event at each time step. The red line is the actual latent replay state. The filter probability can switch from $0$ to $1$ since there are some non-local spikes and the probability would switch back to $0$ when some local spikes come out. (c) shows the isolated posterior based on each spike during this event and there is no consistency among the spikes even though the spikes follow the pattern of $x_k$. Due to the model structure, we cannot make correct inferences about $x_k$ based on these spikes. (d) shows the highest posterior density region overlapping ratio between isolated posterior and incremental prior for each spike. Most of the spikes are not consistent with the prior information so that the overlapping ratio is almost $0$. Based on these low overlapping ratios, we can detect the local disharmony between the spike data and model.
+
+%\begin{figure}[H]
+%\centerline{\includegraphics[width=15cm, height=8cm]{plot141.png}}
+%\caption{Decoding results for specious replay events from missorted spike model: (a) shows the heat plot of filter probability distribution for semi-latent continuous variable, $x_k$. The red line is the actual semi-latent variable and the green line is the observed linearized position. Both values are equal during this event. (Therefore, we only see one line in the plot.) (b) shows the filter probability of a replay event at each time step. The red line is the actual latent ripple-replay state. (c) shows the heat plot of isolated posterior based on each spike. The red line is the actual semi-latent variable and the green line is the observed linearized position. (d) shows the highest posterior density region overlapping ratio between the incremental prior and isolated posterior from each spike.}
+%\label{fig14}
+%\end{figure}
+%Fig. \ref{fig14} shows a decoding example for the specious replay event with missorted spike model. (a) shows the heat plot of the filter probability distribution for semi-latent variable $x_k$ in grayscale. During this event, $x_k$ should be equal to the observed linearized position so that the two lines overlap with each other. Under the missorted spike model, the spikes would lead to incorrect inferences about the semi-latent variable $x_k$. In fact, only one spike seems to be inconsistent but that spike lead to a duration of specious replay event due to small random walk standard deviation in state model. (b) shows the filter probability of a replay event at each time step. Due to the missorted spike, even though we assumed that there is not replay event at that moment, the filter probability also shows a value near 1, which can be an incorrect inference based on the spikes. (c) shows the isolated posterior based on the current spikes during this event and one of the spike seems to be inconsistent with the others. (d) shows the highest posterior density region overlapping ratio for each spike with the prior during the event. Due to one inconsistent spike, the overall overlapping ratio is not so high and the first spike with low overlapping ratio may indicate local disharmony between the observed spike and model.
+
+
+%\begin{figure}[H]
+%\centerline{\includegraphics[width=15cm, height=8cm]{plot20.png}}
+%\caption{Comparison between several metrics in detected events with misspecified observation model: (a) shows the heat plot of filter probability distribution for semi-latent continuous variable, $x_k$. The red line is the actual semi-latent variable and the green line is the observed linearized position. Both values are equal during this event. (Therefore, we only see one line in the plot.) (b) shows the filter probability of a replay event at each time step. The red line is the actual latent ripple-replay state. (c) shows the heat plot of isolated posterior based on each spike. The red line is the actual semi-latent variable and the green line is the observed linearized position. (d) shows the highest posterior density region overlapping ratio between the incremental prior and isolated posterior from each spike. (e) shows the KL-divergence between incremental posterior and isolated posterior from each spike. (f) shows predictive checking based on the incremental prior for each spike.}
+%\label{fig20}
+%\end{figure}
+%Fig. \ref{fig20} shows comparison between several metrics in detected events with misspecified observation model. (a) shows the heat plot of the filter probability distribution for semi-latent variable $x_k$ in grayscale. During this event, $x_k$ should be equal to the observed linearized position so that the two lines overlap with each other. (b) shows the filter probability of a replay event at each time step. The red line is the actual latent replay state. (c) shows the isolated posterior based on the current spikes during this event. (d) shows the highest posterior density region overlapping ratio for the each spike with the prior during the event. Most of the spikes are not consistent with the prior information with the overlapping ratio almost $0$. (e) shows the KL-divergence between incremental posterior and isolated posterior from each spike during the event. Not all the spikes in this event can lead to a high divergence. Only some of them look like extreme values and lead to the specious detections. As for (f), it shows the prediction checking based on the incremental prior for each spike. When there comes a specious replay event, the probability that we observes such a spike with the specified mark value can be relatively small which lead to some extremely small values in the statistic.
+
+
+
+%For the decoded true replay events, there is a clear pattern of switch in the estimated replay probability, decoded latent state $x_k$, the isolated posterior as well as the metrics we defined. However, during the event, the spikes are relatively consistent with each other. Therefore, the incremental prior is also consistent with the isolated posterior and the highest posterior density region overlapping ratio is relatively high except the first and last spikes in the event, which shows great goodness-of-fit. As for these spikes, they indicated the state switch of the latent variables since there is a large change with the value of the metrics. On the other hand, for the suspicious replay event, there is also clear pattern switch during the event. However, there is a lack of consistency in both the decoded latent state $x_k$ as well as the isolated posterior for $x_k$. Almost all the spikes in that event seem to be random while the spikes in real replay events are relatively consistent. This lack of consistency tells us that this model may not be suitable. At the same time, the highest posterior density region overlapping ratio is relatively low during the event, which indicates the inconsistency between the observed spike and prior. Therefore, the local goodness-of-fit is not as good as that of the real replay events. Finally, for the model with missoerted spikes, due to the small random walk standard deviation in state model, it is hard to tell if the detected replay events are reasonable or not. Fortunately, with our metrics, it is easy to show the outlier in the spikes which lead to the incorrect inference about the latent variable.
+
+%In addition, we also change some parameters in our simulation to compare the performance of several metrics we defined in several different scenarios. We can compare the area under curve (AUC) of the several classifiers for distinguishing true replay events and suspicious ones. The results are listed as follows.
+
+%\begin{figure}[H]
+%\centerline{\includegraphics[width=18cm, height=6cm]{plot101.pdf}}
+%\caption{AUC of the three classifiers from the metrics for distinguishing real replay events and specious events in misspecified observation model under different scenarios. I: narrow isolated posterior and large size of spikes, II: narrow isolated posterior and moderate size of spikes, III: narrow isolated posterior and small size of spikes, IV: moderate isolated posterior and moderate size of spikes, V: broad isolated posterior and moderate size of spikes. (a) shows the AUC of the classifier based on the average KL-divergence between incremental posterior and isolated posterior using only current spike information in several different scenarios. (b) shows the AUC of classifier based on the average highest posterior density region overlapping ratio between incremental prior and isolated posterior using only current spike information. (c) shows AUC for the classifier based on the logarithm of the likelihood with the observed spikes using the incremental prior prediction distribution.}
+%\label{fig101}
+%\end{figure}
+
+%Fig. \ref{fig101} shows AUC of the three classifiers from the metrics we defined for distinguishing real replay events and specious ones in misspecified observation model. (a) shows the AUC of the classifier based on the average KL-divergence between incremental posterior and isolated posterior using only current spike information in several different scenarios. When both the spike and incremental prior are informative, this metric can help us detect the conflict between them. While one of them is non-informative, it is rare to show any information conflict between them. Of course, the number of spikes in each replay-hallucination event may also play an important role in distinguishing the two states. More spikes in each event may help increase the statistical power of the classifier based on average KL-divergence between incremental posterior and isolated posterior. (b) shows the AUC of classifier based on the average highest posterior region overlapping ratio between incremental prior and isolated posterior using only current spike information. Also, when both the prior and spike are informative, the AUC can be large, which means the metric we defined can help us distinguish replay and hallucination with high accuracy. If either of them is non-informative, the AUC may decrease due to no information conflict between them. At the same time, with more spikes in each event, we can also increase the statistical power of the method. For (c), we have AUC for the classifier based on the logarithm of the likelihood with the observed spikes using the incremental prior prediction distribution. Similarily, when both of the incremental prior and spike are informative, there can be high AUC value with the classifier. More importantly, the number of spikes in each event can be crucial to this classifier. In order to gain enough evidence about information conflict between the prior and current spike, we must have a large number of spikes in each event to help us distinguish the two kinds of events.
+
+%\begin{figure}[H]
+%\centerline{\includegraphics[width=18cm, height=6cm]{plot100.pdf}}
+%\caption{AUC of the three classifiers from the metrics for distinguishing real replay events and specious events in misspecified state model under different scenarios. I: narrow isolated posterior and large size of spikes, II: narrow isolated posterior and moderate size of spikes, III: narrow isolated posterior and small size of spikes, IV: moderate isolated posterior and moderate size of spikes, V: broad isolated posterior and moderate size of spikes. (a) shows the AUC of the classifier based on the average KL-divergence between incremental posterior and isolated posterior using only current spike information in several different scenarios. (b) shows the AUC of classifier based on the average highest posterior region overlapping ratio between incremental prior and isolated posterior using only current spike information. (c) shows AUC for the classifier based on the logarithm of the likelihood with the observed spikes using the incremental prior
+%prediction distribution.}
+%\label{fig100}
+%\end{figure}
+
+%Fig. \ref{fig100} shows AUC of the three classifiers from the metrics we defined for distinguishing real replay events and specious ones in misspecified state model. The performance of each method can be  similar to that in misspecified observation model.
+
+
+\section{Real Hippocampal Data Analysis}
+We analyzed publicly available hippocampal data from a single male Long Evans rat trained to perform a memory-guided spatial alternation task on a W-shaped maze. The data, recorded in the laboratory of Dr. Loren Frank at UCSF is available online at \url{https://datadryad.org/stash/dataset/doi:10.7272/Q61N7ZC3}. We extracted spiking data from $12$ tetrodes located in the CA1 region during a single $15$ minute trial of spatial navigation.
+
+For the clusterless spike, we used a kernel based intensity model fit over the spiking data to estimate intensity function from a separate training set of the form:
+\begin{equation}
+\label{lambda}
+\lambda_{i}\left(t, \vec{m}\right) = \frac{\sum_{i=1}^N \mathcal{K}(x_t-x_{i},\vec{m}-\vec{m}_{i})}{\sum_{j=1}^K \mathcal{G}(x_t-x_j)}
+\end{equation}
+where $N$ is the total number of spikes in the training set, $\mathcal{K}(x_t-x_{i},\vec{m}-\vec{m}_{i})$ is a 5-dimensional Gaussian kernel function (1 dimension for space and 4 for each mark dimension), centered at each observed spike location and mark in the training set, and $\mathcal{G}(x_t-x_j)$ is a 1-dimensional Gaussian kernel function centered at each location visited at the $K$ discrete time points in the training set. We used a bandwidth of $6$ cm for the linearized position and $24$ $\mu$V for the spike amplitude dimensions.
+
+For the estimation model, we adopt the same one as used in the simulation study. Specifically, we treat the locality state $s_k$ as a binary variable, adhering to the definition given in (\ref{generative_0}). We assume $Pr \left(s_k=1 \mid s_{k-1}=0 \right)=0.0001$ and $Pr \left(s_k=1 \mid s_{k-1}=1 \right)=0.95$. Likewise, $x_k$ is assumed to follow the distribution outlined in (\ref{estimation}). The uniform distribution is set to the span of the environment between $0$ and $187$ cm. The standard deviation of random walk is set to $3$ cm. The likelihood function governing the observed hippocampal spikes in each time interval $[t_{k-1},t_k)$ also conforms to the definition provided in (\ref{likelihood}). We assumed that the locality state was initially to be in a local state, $\operatorname{Pr}(s_{0}=0)=1$. In order to reduce the computational burden, for the prior predictive checking for the waveform features $\vec{m}_k$ at each spiking moment, we used a bootstrap method to get many samples of waveform features from our training set based on the sampled latent variable $x_k$.
+
+
+We show three decoding examples in this section: the first one seems to be a real non-local events with small variance while the second one is suspicious. The third one presents decoding results with longer duration , revealing one detected non-local event, while the remaining time is interpreted as local state.
+
+\begin{figure}
+% TODO: wire up the real-data decoding-examples figure. The current repo
+% pipeline generates figures/main/figure04.pdf (W-track decoder
+% comparison), which does not match this figure's caption/Results prose;
+% needs a figure + prose update before it can be included.
+\fbox{\parbox[c][9cm][c]{0.95\textwidth}{\centering\itshape
+Figure pending: real-data decoding-examples plot.}}
+\caption{Three decoding examples for both local and non-local events in real dataset: (a)-(c) shows the filter probability of non-local state. (d)-(f) shows heat plot of filter probability distribution for semi-latent continuous variable $x_k$. The green line is the observed linearized position. (g)-(i) shows the KL divergence between filter distribution of $x_k$ and isolated prediction distribution at each spiking moment. (j)-(l) shows the HPDROR between isolated distribution of $x_k$ and one-step prediction distribution at each spiking moment. (m)-(o) shows the estimated probability under the predictive distribution of $\vec{m}_k$ for the observed spikes at each spiking moment. The red dot line shows a level of $0.05$.}
+\label{fig12}
+\end{figure}
+Fig. \ref{fig12} shows several decoding examples for both local and non-local events detected in this dataset. Panels (a)-(c) shows the filter probability of being in a non-local state with small variance at each instant. When there are many hippocampal spiking moments with non-local representations, the filter probability switches from a value near 0 to a value near 1, and persists at that high value throughout the non-local event, after which it rapidly switches back. The filter probability does dip occasionally, when the spiking data become more ambiguous. Panels (d)-(f) show a heat plot of the filter probability distribution for the semi-latent continuous variable $x_k$. When the state changes from local to non-local, the representation jumps rapidly to a new location. While the estimated locality state is local, the filter distribution for $x_k$ is fixed at the observed linearized position.
+
+Fig. \ref{fig12}(g)-(i) show the KL divergence between the filter distribution of $x_k$ and the isolated distribution at each spike time. In panel (g), when a non-local event occurred, the divergence tended to become smaller because the spatial information contained in each spike is close to that from filter estimate, leading to a reduction in divergence. The consistently lower values observed in this event suggest a strong alignment with the predefined state-space model. However, in panel (h), there are more spikes with higher value in this metric, demonstrating uncertainty about the decoding results. In panel (i), while the discrete state suggests that the neural representation is local, certain spikes exhibit unusually large values, suggesting a potential inconsistency between our assumed estimation model and the information from these spikes. The spatial content contained in these spikes deviates from the observed linearized position, yet does not gather sufficient non-local information to alter the estimate of the locality state from local to non-local. Consequently, these moments, though identified as local states, reveal underlying issues in local model fitting.
+
+Fig. \ref{fig12}(j)-(l) show the HPDROR between isolated distribution of $x_k$ and one-step prediction distribution at each moment. In panel (j), apart from the spike at the end, the overlapping ratio between the two distributions remains high throughout. The spikes with lower ratios serve as indicators of state transitions. Panel (k) shows the ratios for another decoding example with many lower ratios during this detected non-local event. These represent inconsistency in the model leading to uncertainty about the decoding results. In panel (l), while the discrete state suggests that the neural representation is local, there are still moments when this ratio drops to a low value, indicating a potential mismatch between our assumed model and the spiking information. The spatial content from these spikes deviates from the local state, yet it may not accumulate sufficient non-local information to meaningfully alter the locality state. As a result, these moments reveal a lack of fit.
+
+Fig. \ref{fig12}(m)-(o) show the estimated probability under the predictive distribution of $\vec{m}_k$ based on one-step prediction distribution of $x_k$ combined with the observation process $p\left(\vec{m}_k \mid x_k, \Delta N_{k}^{(1: E)} \right)$ for the observed spikes at each spiking moment. In panel (m), there is only one spike with relatively low probability at the end of the non-local event, while maintaining a higher probability at other times. On the other hand, in panel (n), the frequent occurrence of lower probabilities diminishes our confidence in the decoding results. In panel (o), multiple instances of low probability under the estimated local state suggest potential issues with our local model fit. In general, the first detected non-local event should not be dismissed as a non-local event with small variance, much like the so-called hippocampal replay event. However, with the second detected non-local event, we gain a certain degree of confidence in rejecting it as a non-local event with small variance. As for the estimated local state in the third example, the spatial information embedded in the spikes not only corresponds to the local state but also includes information in favor of non-local state, raising doubts about the reliability of our decoding results.
+
+\begin{figure}
+% TODO: wire up the real-data summary figure. No equivalent figure is
+% currently generated by the repo pipeline; needs to be produced.
+\fbox{\parbox[c][6cm][c]{0.95\textwidth}{\centering\itshape
+Figure pending: real-data metric-summary plot.}}
+\caption{Summary of the three local goodness-of-fit metrics for decoding results at each spike time vs. estimated filter probability of the non-local state based on real hippocampal spike data. (a) KL divergence (b) HPDROR (c) p-value for predictive checking of observed mark $\vec{m}_k$.}
+\label{fig13}
+\end{figure}
+Fig. \ref{fig13} shows how the three local goodness-of-fit metrics at each spike time evolve with the estimated filter probability of the non-local state. In panel (a), we show how the KL divergence between the filter distribution of $x_k$ and the isolated distribution at each spiking moment changes with the estimated filter probability of the non-local state. Surprisingly, we find that the spikes with the largest divergence mostly occur during periods when the model estimates that the neural representation is local to the rat's position. This suggests that the model does not often generate non-local trajectories when the hippocampus is really encoding the rat's position. Instead it seems that there are numerous hippocampal spikes that contain non-local information during periods that the model assumes they should be local. This could occur, for example, if the hippocampus switches between local and non-local representations much more rapidly than the model assumes. Another possibility is that a subset of hippocampal neurons have non-local spiking properties while a larger majority of neurons do reflect the rat's current location. In panel (b), we observe that the smallest HPDROR values are mostly clustered at times when the discrete state suggests that spike should be local. This corroborates the finding based on the KL divergence, suggesting that the biggest source of model misspecification is related to the assumption that the hippocampus represents the rat's current location homogeneously and consistently in this state. In panel (c), we observe similar results for the p-values arising from predictive checking of the spike waveform marks. The lowest p-values cluster at times when the model estimates hippocampal coding to be local, suggesting that we observe spikes from neurons we would not expect to fire at these locations if all of the neurons were representing the rat's actual location as the model assumes.
+
+Based on the above results, all three metrics consistently indicate that there exist multiple spikes that do not reflect the rat's location occurring at times when the model predicts that they should. In contrast, when the estimated state is non-local, the KL divergence-based metric predominantly produces small values, whereas the other two metrics exhibit few small values. These results likely stem from limitations in our model assumptions. To transform from local state to non-local state, the model requires continuous non-local spikes with consistent spatial content—a stringent condition that enhances the credibility of identified non-local events. When the estimated state is local, not all hippocampal spikes exhibit local spatial content. Due to insufficient accumulation of non-local information, the locality state remains local, even when certain spikes actually contain non-local spatial content. This misspecification leads to problems with the model’s local fit. Crucially, the local goodness-of-fit metrics we established are able to detect and capture these discrepancies effectively.
+
+Similar to the previous toy example, we present scatter plots among the three metrics at each moment using the real hippocampal data with the assumed two-state model.
+
+\begin{figure}
+% TODO: wire up the real-data metric scatter-plot figure. No equivalent
+% figure is currently generated by the repo pipeline; needs to be produced.
+\fbox{\parbox[c][8cm][c]{0.95\textwidth}{\centering\itshape
+Figure pending: real-data metric scatter plots.}}
+\caption{Scatter plots of the three metrics from real hippocampal data: (a) shows scatter plot between $D_{\mathrm{KL}}( \text{f}_{\text{accumulated}}\left(x\right) \| \text{f}_{\text{isolated}}\left(x\right) )$ and $\textbf{HPDROR} \left(\text{f}_{\text{accumulated}}\left(x\right),\text{f}_{\text{isolated}}\left(x\right)\right)$ at each moment, (b) shows that between $D_{\mathrm{KL}}( \text{f}_{\text{accumulated}}\left(x\right) \| \text{f}_{\text{isolated}}\left(x\right) )$ and $Pr\left( \log\left(\text{f}_{\text{predictive}}\left(y \right)\right) \geq \log\left(\text{f}_{\text{predictive}}\left(\widetilde{y} \right)\right)\right)$, and (c) shows that between $\textbf{HPDROR} \left(\text{f}_{\text{accumulated}}\left(x\right),\text{f}_{\text{isolated}}\left(x\right)\right)$ and $Pr\left( \log\left(\text{f}_{\text{predictive}}\left(y \right)\right) \geq \log\left(\text{f}_{\text{predictive}}\left(\widetilde{y} \right)\right)\right)$.}
+\label{compare three metrics in real data}
+\end{figure}
+
+In Fig. \ref{compare three metrics in real data}, because a relatively large bin was used to decode the latent variable $x_k$, HPDROR exhibits stratification to some extent. In (a), we show the scatter plot between $D_{\mathrm{KL}}( \text{f}_{\text{accumulated}}\left(x\right) \| \text{f}_{\text{isolated}}\left(x\right) )$ and $\textbf{HPDROR} \left(\text{f}_{\text{accumulated}}\left(x\right),\text{f}_{\text{isolated}}\left(x\right)\right)$. When HPDROR is small, the KL divergence tends to be relatively larger, and in these cases, the two metrics provide relatively consistent assessments of the overlap between $\text{f}_{\text{accumulated}}\left(x\right)$ and $\text{f}_{\text{isolated}}\left(x\right)$. However, as HPDROR approaches $1$, the KL divergence spans a wider range of values, making it unreliable for accurately evaluating the degree of overlap. In (b), we show the scatter plot between $D_{\mathrm{KL}}( \text{f}_{\text{accumulated}}\left(x\right) \| \text{f}_{\text{isolated}}\left(x\right) )$ and $Pr\left( \log\left(\text{f}_{\text{predictive}}\left(y \right)\right) \geq \log\left(\text{f}_{\text{predictive}}\left(\widetilde{y} \right)\right)\right)$. Compared to HPDROR, the p-values of the predictive check follow a similar trend, though they span a wider range, which makes stratification less evident. In (c), we show the scatter plot between $\textbf{HPDROR} \left(\text{f}_{\text{accumulated}}\left(x\right),\text{f}_{\text{isolated}}\left(x\right)\right)$ and $Pr\left( \log\left(\text{f}_{\text{predictive}}\left(y \right)\right) \geq \log\left(\text{f}_{\text{predictive}}\left(\widetilde{y} \right)\right)\right)$. Consistent with the results of toy examples, the two metrics exhibit similar trends. Although the p-values generated by the predictive check vary over a wider range, they remain broadly comparable, suggesting that both metrics play a similar role in assessing the degree of overlap between $\text{f}_{\text{accumulated}}\left(x\right)$ and $\text{f}_{\text{isolated}}\left(x\right)$.
+
+Drawing on both the previous toy example and the analysis of real hippocampal data, we compared three metrics. Because KL divergence provides only an indirect measure for overlap between $\text{f}_{\text{accumulated}}\left(x\right)$ and $\text{f}_{\text{isolated}}\left(x\right)$, its values may not reliably capture the true extent of overlap between the two distributions. In contrast, both HPDROR and the p-values of the predictive check capture the degree of overlap between $\text{f}_{\text{accumulated}}\left(x\right)$ and $\text{f}_{\text{isolated}}\left(x\right)$ with considerable accuracy. More importantly, the two metrics yield largely consistent assessments of this overlap. Given the higher computational cost of the predictive check, we therefore favor HPDROR as a faster and equally reliable measure to evaluate the degree of overlap.
+
+
+
+%The results above are based on our analysis of individual detected replay events, using metrics derived from hippocampal spikes observed at each moment. In the following section, we will assign a single value to each detected replay event to assess its credibility, following the approach used in the simulation study.
+
+%\begin{figure}
+%\centerline{\includegraphics[width=15cm, height=8cm]{histogram_use.pdf}}
+%\caption{Histogram of the metrics for each detected hippocampal replay event. (a) shows the histogram of average of KL divergence between the filter distribution of $x_k$ based on spiking information up to $t_k$ using the state-space model and isolated distribution using only current spiking information at each moment in the detected hippocampal replay event. (b) shows the histogram of average of HPDROR between the one-step predictor distribution of $x_k$ based on spiking information up to $t_{k-1}$ using the state-space model and isolated distribution using only current spiking information at each moment in the detected hippocampal replay event. (c) shows the histogram of likelihood of observing all the spikes under the predictive distribution based on the one-step predictive distribution of $x_k$ and the observation process of hippocampal spikes for each detected replay event.}
+%\label{fig14}
+%\end{figure}
+
+%Fig. \ref{fig14} shows the histogram of local goodness-of-fit metrics for each detected replay event. Fig. \ref{fig14} (a) shows the histogram of average KL divergence between filter distribution of $x_k$ and the isolated distribution of $x_k$. Most values fall between $1.5$ and $2$. Events exceeding $2$ may warrant attention, as they likely contain moments where the divergence between the two distributions is significantly large. This indicates a degree of information conflict, suggesting a potential mismatch between our model and the observed spikes. However, since KL divergence is unbounded, these values may fluctuate when the distribution space of $x_k$ changes. Therefore, it is necessary to establish new thresholds to effectively evaluate such events. Fig. \ref{fig14} (b) shows the histogram of average HPDROR between one-step predictor distribution of $x_k$ and the isolated distribution of $x_k$. Most values are not lower than $0.85$, indicating that these events are generally reliable. However, a small number of events exhibit lower ratios, suggesting the presence of spikes with inconsistent information that could potentially mislead detection. Since this ratio ranges between 0 and 1, it provides an intuition of the model’s local goodness-of-fit, remaining informative even if the distribution space of $x_k$ changes. shows the histogram of likelihood of observing all the spikes under the predictive distribution for each detected event. Most of the time, the likelihood remains high, with only a few instances where it drops significantly, which suggests that, under the assumption that the model is correct, combined with the previous spiking information, such observations have a very low probability. This indicates a poor local goodness-of-fit during these periods, which in turn raises doubts about the detected events.
+
+
+\section{Discussion \& Conclusion}
+
+State space modeling has become a powerful tool for describing the latent dynamics of neural systems. However, validating these models is inherently difficult because latent states are unobservable and many models are purposefully simplified. To address this, we developed multiple local goodness-of-fit metrics that compare the instantaneous information received from each spike to the aggregated information computed based on recent spiking activity and the state-space model assumptions. Rather than dismissing a model in its entirety, these metrics are able to assess the consistency between immediate observations and the information accumulated through the state-space structure, providing a more granular assessment of decoding reliability.
+
+We defined three classes of metrics: F-divergence measures (e.g., KL divergence), overlap ratios between credible regions (HPD overlap), and predictive checks. While KL divergence is computationally simple, it is sensitive to distribution tails and lacks a clear upper bound for assessing similarity. In contrast, the HPD overlap offers a more robust geometric measure of similarity, consistently maintaining lower error rates across various conditions. Predictive checks provide a direct statistical assessment through observation-level p-values, but are more computationally intensive. While each metric has particular advantages, when used in combination, they provide a more complete perspective on decoding reliability.
+
+We illustrated the application of these metrics to simulated and real spike sorted data from rat hippocampus. These same metrics naturally extend to other neural data types when incorporated into state space models. In particular, recent work has shown that clusterless neural spiking models can substantially reduce bias and variance in neural decoding and estimation problems when compared to spike sorted models. The metrics, as defined in Section 2, naturally extend to clusterless models. In that case, a lack of fit for any particular spike suggests that a spike with that waveform was unexpected based on the accumulated information from the state space model up to that point in time.
+
+For simplicity, in this paper, we focused on comparing the instantaneous information in the likelihood of each spike to the aggregated information from the past contained in the one-step prediction density. A natural, powerful extension of these methods is obtained by replacing the one-step prediction density with any posterior density derived from the state-space framework. In particular, replacing the one-step prediction density with a smoothing density (e.g. from a fixed-interval smoother over the observation period) would allow us to leverage both past and future data to increase statistical power in identifying model misspecification.
+
+One potential challenge for applying these methods broadly has to do with the computational burden of computing these metrics as the dimensionality of the state process increases. In all of our examples, we computed the KL divergence measure and the HPD overlap by partitioning the state space into a lattice and computing the likelihoods and prediction densities at each point in that lattice. As the dimension of the state increases, the size of that lattice will grow exponentially. While the predictive checks are the most computationally burdensome in lower state dimensions, the fact that we are sampling from the state-space rather than computing values over a lattice means that in higher dimensions the predictive checks will become more computationally efficient. It also suggests that we may be able to improve the efficiency of the KL and HPD overlap metrics by using sampling-based estimation methods. This will not solve the curse of dimensionality, as the number of samples required for accurate estimates will likely still grow with dimension, but it is likely to allow for efficient estimation in moderate dimensions. Another approach for dealing with this issue may be to compute these consistency metrics in lower-dimensional subspaces of the state space. How to identify subspaces that retain the statistical power of the original space is a topic for future exploration.
+
+Another potential challenge relates to identifying time-scales for which to assess for lack of fit. These methods allow us to focus in on time scales as short as individual spikes, and for our place cell decoding examples individual spikes are sufficiently informative that we are often able to detect local model misfit at this time-scale. For other neural systems, it may be the case that local model errors are more likely to be detected over longer timescales. In this paper we discuss how to extend these goodness-of-fit measures to longer time intervals, but determining what time scales are most appropriate may require relying about prior knowledge about the system, or exploring the values of these metrics across multiple time scales.
+
+We believe that these local goodness-of-fit tools provide an important step toward making inferences from state-space neural models more reliable and interpretable. By pinpointing specific moments when the model assumptions break down, researchers can be more confident in their inferences. Ultimately, these measures empower us to refine our understanding of neural dynamics and deepen our understanding of how the brain encodes and processes information.
+
+%In this chapter, we developed several metrics to assess goodness-of-fit for the state-space model structure over sub-intervals of data. These methods can build quantitative metrics to detect conflict between the information propagated over time using the assumed state-space model and that from current observation. In order to provide a better understanding of these methods, we list their advantages as well as disadvantages.
+
+%The divergence between the accumulated and isolated distributions is a common method used to describe the differences between the two distributions. Based on the definitions, most of the divergences can be easily obtained without high computational burden especially when using discretized numerical computation. Of course, there are some disadvantages related to this method. First, the divergence is a little hard to interpret numerically. For discretized distributions, its value will depend on the specific discretization we used. As the distribution of latent variables shifts, this metric correspondingly changes, rendering it infeasible to employ a single, universal value for evaluating the model's local goodness-of-fit. Second, this method is not robust and depends on the domain of latent variables. Particularly, it is quite sensitive to the tail structure of distributions describing latent variables. Therefore, the value may vary a lot even if there is only a small change in the tail structure. More importantly, most of the divergences are asymmetric, which poses certain challenges to our selection and interpretation of the metrics. Additionally, some divergences are undefined when one distribution assigns zero probability to regions where the other does not, making them sensitive to data sparsity and potentially unreliable in certain scenarios. Another limitation is the absence of a clear upper bound in many divergence measures, making it difficult to assess similarity on an absolute scale. Furthermore, some divergences disproportionately emphasize differences in low-probability regions, which may not be meaningful in practical applications \citep{Ref1951, Ref2019d, Ref1999a}.
+
+%As for the methods related to credible regions from the accumulated distribution of latent variables and isolated distribution, this method can enjoy many advantages. First, the metrics can be easily interpreted since they measure the degree of overlap between the two distributions. The value should vary between $0$ and $1$, which makes this metrics easy to understand. Second, it is highly robust and remains largely unaffected by the distribution of the latent variable, even in the presence of heavy tails. Third, it is usually inherently symmetric with respect to the distributions, eliminating the need to consider their order. This not only streamlines the process but also enhances interpretability. Finally, in some practical applications, this method can achieve perfect performance in evaluating the local fit of the model based on decoding results. However, due to the use of credible regions, the computational burden is relatively high especially in the scenario of multi-dimensional or high-dimensional latent variables. In high-dimensional scenarios, credible regions are no longer simple intervals but rather complex geometric shapes, which may be difficult to construct. In addition, the choice of credible level can heavily influence the results, introducing subjectivity into the similarity assessment.
+
+%As for the predictive checking method, it provides the likelihood of the observations under the given distributions propagated over time using the assigned state-space model. Since it computes the probability distribution of such an observation under the assumed distribution of the state, the metrics can be easy to understand and interpret. It can also be interpreted as the p-value of the observation, assuming the model holds true. More importantly, it can be extended to evaluate multiple observations under the given state-space model in a natural way. At the same time, in practical application, this method can achieve great performance. Unfortunately, the computational burden of this method is relatively large. On the one hand, there is usually no analytic solution to the likelihood of observation under the given predictive distribution, therefore, some numerical methods are needed to estimate it \citep{Ref2000a}. For example, Monte Carlo can help estimate the likelihood of the observation under the given distribution but we need to obtain many samples for both latent variables and empirical observations, which can be computationally expensive for multi-dimensional and high-dimensional scenarios. Of course, one potential enhancement is to employ a bootstrap sampling method based on the training samples used to establish the state-space model. On the other hand, this method is not quite robust because it is sensitive to the outliers. In addition, in multi-dimensional or even high-dimensional settings, assessing discrepancies between observed and simulated data becomes more difficult, as traditional summary statistics may fail to capture subtle but important differences.
+
+%When selecting among the aforementioned metrics, the priorities can guide our choice. If computational efficiency or higher evaluation accuracy is desired, HPDROR is an excellent option. For better interpretation of results, we recommend predictive checking. While we provide explicit formulas for several metrics, it is the underlying methodology that truly matters. The specific formulas can be adapted to yield alternative metrics, which may offer improved properties. For instance, when measuring the distance between two distributions, the family of f-divergences presents a broad spectrum of choices, with KL divergence as just one example. Other metrics may lead to more effective evaluations. Likewise, in predictive checking, employing different summary statistics to characterize the data may further enhance both the accuracy and efficiency of this approach.
+
+%To demonstrate the performance of our local goodness-of-fit metrics in real-world applications, we conducted a simulation study alongside analyses of real hippocampal spike data. We designed a framework to investigate spatial representations in the rat hippocampus, integrating both simulated and empirical data to evaluate the local fit for our established model. In our simulation, we generated synthetic neural signals that approximated a rat’s movement and the corresponding hippocampal spike activity. By incorporating both local and non-local states, our simulated data captured key characteristics of real-world neural encoding while also introducing controlled deviations from biological recordings. This allowed us to identify periods of misspecification in our state-space model when applied to data generated by a more complex, underlying process.
+
+%Beyond simulations, we extended our analysis to experimentally recorded hippocampal spike data, providing a direct assessment of model using our local goodness-of-fit metrics. We identified periods where the model aligned well with neural activity, as well as moments suggesting potential model misspecification. These discrepancies highlight moments when the assumed state-space structure failed to capture the full complexity of hippocampal representations, emphasizing the importance of local fit in dynamic neural systems. Notably, when applying these metrics to real data, we observed that — beyond the expected poor local fit in a few estimated non-local moments — many moments estimated as local also exhibited poor fit. This suggests that some moments estimated as local may in fact contain spikes with non-local representations. Such findings reveal potential issues within our state-space model. On the one hand, the state model may over-assume the rarity of non-local representations. On the other hand, certain neurons may usually encode non-local representations. These results point to the need for revisiting both the state and observation models in the state-space framework.
+
+%It is well recognized that nearly all models are, in some way, imperfect representations of reality. Nevertheless, many of them prove remarkably useful in enhancing our understanding of complex data. Thus, pinpointing the exact moments or intervals when the data do not conform to the model becomes especially important. Such insights allow us to distinguish between reliable and questionable model-based inferences, ensuring that our interpretations remain grounded and our conclusions more robust. For these reasons, the development of local goodness-of-fit metrics is essential. These tools enable us to detect when and where a model aligns—or fails to align—with the observed data, thereby helping us to assess the reliability of model-based inferences with greater precision and confidence.
+
+
+
+
+
+
+
+
+\subsection*{Acknowledgments}
+This work was supported by research grants from XXX. We thank Dr. Loren Frank and Dr. Eric Denovellis for providing data and for many helpful discussions related to these methods.
+
+%\section*{Appendix}
+%\subsection{Parameters for spike simulation}
+%\begin{table}[h]
+%\renewcommand{\arraystretch}{1.2}
+%\caption{Parameters for spike simulation}
+%\begin{center}
+%\begin{tabular}{|l|p{4cm}|p{4cm}|p{4cm}|}
+%\hline
+ %  Parameters         &  Values  & Parameters & Values  \\
+%\hline
+ %  $\mu_{\vec{m},1}^{1}$         &   (2,2,2,2)  & $\mu_{x,1}^{1}$ & -20  \\
+%\hline
+  %  $\mu_{\vec{m},2}^{1}$     & (-2,-2,-2,-2) & $\mu_{x,2}^{1}$ & 20 \\
+%\hline
+ %  $\mu_{\vec{m},1}^{2}$ & (9,9,9,9) & $\mu_{x,1}^{2}$ & -10 \\
+%\hline
+%5\mu_{\vec{m},2}^{2}$ & (6,6,6,6) & $\mu_{x,2}^{2}$ & 10 \\
+%\hline
+%$\mu_{\vec{m},1}^{3}$ & (-5,-5,-5,-5) & $\mu_{x,1}^{3}$ & -23 \\
+%\hline
+%$\mu_{\vec{m},2}^{3}$ & (5,5,5,5) & $\mu_{x,2}^{3}$ & 23 \\
+%\hline
+%$\mu_{\vec{m},1}^{4}$ & (12,12,12,12) & %$\mu_{x,1}^{4}$ & -3 \\
+%\hline
+%$\mu_{\vec{m},2}^{4}$ & (-12,-12,-12,-12) & $\mu_{x,2}^{4}$ & 3 \\
+%\hline
+%$\mu_{\vec{m},1}^{5}$ & (0,0,0,0) & $\mu_{x,1}^{5}$ & 28 \\
+%\hline
+%$\mu_{\vec{m},1}^{6}$ & (-2,-2,2,2) & $\mu_{x,1}^{6}$ & 18 \\
+%\hline
+
+%\end{tabular}
+%\end{center}
+%\end{table}
+%As for the matrix $\Sigma$, we have several choices depending on how we set the isolated posterior. We have three choices as
+%\[
+%\Sigma=\left(\begin{array}{ccccc}
+%4.0 & 1.2 & 1.6 & 1.4 & 1.8 \\
+%1.2 & 1.0 & 0.7 & 0.8 & 0.6 \\
+%1.6 & 0.7 & 1.0 & 0.6 & 0.8 \\
+%1.4 & 0.8 & 0.6 & 1.0 & 0.7 \\
+%1.8 & 0.6 & 0.8 & 0.7 & 1.0
+%\end{array}\right)
+%\]
+%Or
+%\[
+%\Sigma=\left(\begin{array}{ccccc}
+%100.0 & 6.0 & 8.0 & 7.0 & 9.0 \\
+%6.0 & 1.0 & 0.7 & 0.8 & 0.6 \\
+%8.0 & 0.7 & 1.0 & 0.6 & 0.8 \\
+%7.0 & 0.8 & 0.6 & 1.0 & 0.7 \\
+%9.0 & 0.6 & 0.8 & 0.7 & 1.0
+%\end{array}\right)
+%\]
+%Or
+%\[
+%\Sigma=\left(\begin{array}{ccccc}
+%900.0 & 18.0 & 24.0 & 21.0 & 27.0 \\
+%18.0 & 1.0 & 0.7 & 0.8 & 0.6 \\
+%24.0 & 0.7 & 1.0 & 0.6 & 0.8 \\
+%21.0 & 0.8 & 0.6 & 1.0 & 0.7 \\
+%27.0 & 0.6 & 0.8 & 0.7 & 1.0
+%\end{array}\right)
+%\]
+%In order to control the spike rate, we may choose $\alpha$ in different scenarios. The choices are set as $6$, $4.5$, $3.5$ and $2$.
+
+
+\bibliographystyle{APA}
+\begin{thebibliography}{100}
+\providecommand{\natexlab}[1]{#1}
+\expandafter\ifx\csname urlstyle\endcsname\relax
+  \providecommand{\doi}[1]{doi:\discretionary{}{}{}#1}\else
+  \providecommand{\doi}{doi:\discretionary{}{}{}\begingroup
+  \urlstyle{rm}\Url}\fi
+
+
+
+\bibitem[{Arulampalam et~al.(2002) Arulampalam M Sanjeev, Maskell Simon, Gordon Neil \& Clapp Tim}]{Ref2002} Arulampalam M Sanjeev, Maskell Simon, Gordon Neil \& Clapp Tim (2002). \newblock A tutorial on particle filters for online nonlinear/non-Gaussian Bayesian tracking. \newblock \emph{IEEE Transactions on signal processing}, \emph{2}, 174-188.
+
+\bibitem[{Cavanaugh et~al.(1997) Cavanaugh Joseph E \& Shumway Robert H}]{Ref1997} Cavanaugh Joseph E \& Shumway Robert H (1997). \newblock A bootstrap variant of AIC for state-space model selection. \newblock \emph{Statistica Sinica}, 473-496.
+
+\bibitem[{Titman et~al.(2008) Titman Andrew C \& Sharples Linda D}]{Ref2008} Titman Andrew C \& Sharples Linda D (2008). \newblock A general goodness-of-fit test for Markov and hidden Markov models. \newblock \emph{Statistics in medicine}, \newblock \emph{12}, 2177-2195.
+
+\bibitem[{Gu(2013)}]{Ref2013} Gu Fei (2013). \newblock Used parametric and residual-based bootstrap to assess the absolute goodness-of-fit for state space model. \newblock \emph{University of Kansas}
+
+\bibitem[{Brown et~al.(2002) Brown Emery N, Barbieri Riccardo,  Ventura Val{\'e}rie, Kass Robert E \& Frank Loren M}]{Ref2002b} Brown Emery N, Barbieri Riccardo,  Ventura Val{\'e}rie, Kass Robert E \& Frank Loren M (2002) \newblock The time-rescaling theorem and its application to neural spike train data analysis. \newblock \emph{Neural computation}, \emph{2}, 325-346
+
+\bibitem[{Tao et~al.(2018) Tao Long, Weber Karoline E,  Arai Kensuke \& Eden Uri T}]{Ref2018} Tao Long, Weber Karoline E,  Arai Kensuke \& Eden Uri T (2018) \newblock A common goodness-of-fit framework for neural population models using marked point process time-rescaling. \newblock \emph{Journal of computational neuroscience}, 147-162
+
+\bibitem[{Eden et~al.(2018) Eden Uri T, Frank Loren M \& Tao Long}]{Ref2018b} Eden Uri T, Frank Loren M \& Tao Long (2018) \newblock Characterizing complex, multi-scale neural phenomena using state-space models \newblock \emph{Dynamic Neuroscience: Statistics, Modeling, and Control}, 29-52
+
+\bibitem[{Yousefi et~al.(2020) Yousefi Ali, Amidi Yalda, Nazari  Behzad \& Eden Uri T}]{Ref2020} Yousefi Ali, Amidi Yalda, Nazari  Behzad \& Eden Uri T (2020) \newblock Assessing goodness-of-fit in marked point process models of neural population coding via time and rate rescaling \newblock \emph{Neural computation}, \emph{32}, 2145-2186
+
+\bibitem[{Solomon et~al.(1951) Kullback Solomon \& Leibler Richard A}]{Ref1951} Kullback Solomon \& Leibler Richard A (1951) \newblock On information and sufficiency. \newblock \emph{The annals of mathematical statistics}, \emph{22}, 79-86
+
+\bibitem[{Alexander et~al.(2023) Litvinenko Alexander, Marzouk Youssef, Matthies Hermann G, Scavino Marco \& Spantini Alessio}]{Ref2023} Litvinenko Alexander, Marzouk Youssef, Matthies Hermann G, Scavino Marco \& Spantini Alessio (2023) \newblock Computing f-divergences and distances of high-dimensional probability density functions \newblock \emph{Numerical Linear Algebra with Applications}, \emph{30}, e2467
+
+\bibitem[{Thomas et~al.(2006) Bengtsson Thomas \& Cavanaugh Joseph E}] {Ref2006} Bengtsson Thomas \& Cavanaugh Joseph E (2006) \newblock An improved Akaike information criterion for state-space model selection \newblock \emph{Computational Statistics \& Data Analysis}, \emph{50}, 2635-2654
+
+\bibitem[{David(2014)}]{Ref2014} Blei, David M(2014). \newblock Build, compute, critique, repeat: Data analysis with latent variable models \newblock \emph{Annual Review of Statistics and Its Application}, \emph{1}, 203-232
+
+\bibitem[{Marie et~al.(2021) Auger Marie, Newman Ken, Cole Diana, Empacher Fanny, Gryba Rowenna, King Aaron A, Leos-Barajas Vianey, Mills Flemming Joanna, Nielsen Anders, Petris Giovanni \& others}] {Ref2021} AugerMth Marie, Newman Ken, Cole Diana, Empacher Fanny, Gryba Rowenna, King Aaron A, Leos-Barajas Vianey, Mills Flemming Joanna, Nielsen Anders, Petris Giovanni \& others (2021)  \newblock A guide to state--space modeling of ecological time series \newblock \emph{Ecological Monographs}, \emph{91}, e01470
+
+\bibitem[{Newman et~al.(2014) Newman KB, Buckland ST, Morgan Byron JT, King R, Borchers DL, Cole Diana J, Besbeas Panagiotis, Gimenez O \& Thomas L}] {Ref2014b} Newman KB, Buckland ST, Morgan Byron JT, King R, Borchers DL, Cole Diana J, Besbeas Panagiotis, Gimenez O \& Thomas L (2014) \newblock Modelling population dynamics \newblock \emph{Springer New York, New York, USA}, 169-195
+
+\bibitem[{Bayarri et~al.(2007) Garc{\'\i}a Mar{\'\i}a Jes{\'u}s Bayarri and Castellanos ME}] {Ref2007} Garc{\'\i}a Mar{\'\i}a Jes{\'u}s Bayarri and Castellanos ME (2007) \newblock Bayesian Checking of the Second Levels of Hierarchical Models \newblock \emph{Institute of Mathematical Statistics}, 363-367
+
+\bibitem[{Gemma et~al.(2019) Moran Gemma E, Blei David M \& Ranganath Rajesh}] {Ref2019} Moran Gemma E, Blei David M \& Ranganath Rajesh (2019) \newblock Population predictive checks \newblock \emph{arXiv}
+
+
+
+\bibitem[{Guttman(1967)}]{Ref1967} Guttman Irwin (1967). \newblock The use of the concept of a future observation in goodness-of-fit problems \newblock \emph{Journal of the Royal Statistical Society: Series B (Methodological)}, \emph{29}, 83-100
+
+\bibitem[{Smith et~al.(2003) Smith Anne C \& Brown Emery N}]{Ref2003} Smith Anne C \& Brown Emery N (2003) \newblock Estimating a state-space model from point process observations \newblock \emph{Neural computation}, \emph{5}, 965-991
+
+\bibitem[Archer et al.(2014) Archer, E. W., Koster, U., Pillow, J. W., \& Macke, J. H. ]{Ref2014c} Archer, E. W., Koster, U., Pillow, J. W., \& Macke, J. H. (2014) \newblock Low-dimensional models of neural population activity in sensory cortical circuits \newblock \emph{Advances in neural information processing systems}, \emph{27}
+
+\bibitem[Brown et al.(1998)]{Ref1998a} Brown, E. N., Frank, L. M., Tang, D., Quirk, M. C., \& Wilson, M. A. (1998) \newblock A statistical paradigm for neural spike train decoding applied to position prediction from ensemble firing patterns of rat hippocampal place cells \newblock \emph{Journal of Neuroscience}, \emph{18}, 7411-7425.
+
+\bibitem[Chen et al.(2010)]{Ref2010a} Chen, Z., Barbieri, R., \& Brown, E. N. (2010). \newblock State space modeling of neural spike train and behavioral data. \newblock \emph{Statistical signal processing for neuroscience and neurotechnology}, 175-218
+
+\bibitem[Eden et al.(2004)]{Ref2004a} Eden, U. T., Frank, L. M., Barbieri, R., Solo, V., \& Brown, E. N. (2004) \newblock Dynamic analysis of neural encoding by point process adaptive filtering \newblock \emph{Neural computation}, \emph{16}, 971-998.
+
+\bibitem[Brown et al.(2004)]{Ref2004b} Brown, E. N., Kass, R. E., \& Mitra, P. P. (2004). \newblock Multiple neural spike train data analysis: state-of-the-art and future challenges \newblock \emph{Nature neuroscience}, \emph{7}, 456-461.
+
+\bibitem[Lewicki, M. S.(1998)]{Ref1998b} Lewicki, M. S. (1998) \newblock A review of methods for spike sorting: the detection and classification of neural action potentials \newblock \emph{Network: Computation in Neural Systems}, \emph{9}, R53.
+
+\bibitem[Wild et al.(2012)]{Ref2012a} Wild, J., Prekopcsak, Z., Sieger, T., Novak, D., \& Jech, R. (2012) \newblock Performance comparison of extracellular spike sorting algorithms for single-channel recordings \newblock \emph{Journal of neuroscience methods}, \emph{203}, 369-376.
+
+\bibitem[Buzsáki, G(2004)]{Ref2004c} Buzsáki, G. (2004) \newblock Large-scale recording of neuronal ensembles \newblock \emph{Nature neuroscience}, \emph{7}, 446-451.
+
+\bibitem[Jun et al.(2017)]{Ref2017a} Jun, J. J., Steinmetz, N. A., Siegle, J. H., Denman, D. J., Bauza, M., Barbarits, B., ... \& Harris, T. D. (2017) \newblock Fully integrated silicon probes for high-density recording of neural activity \newblock \emph{Nature}, \emph{551}, 232-236.
+
+\bibitem[V.Ventura and R.C.Gerkin(2012)]{Ref2012b} Ventura, V., \& Gerkin, R. C. (2012) \newblock Accurately estimating neuronal correlation requires a new spike-sorting paradigm \newblock \emph{Proceedings of the National Academy of Sciences}, \emph{109}, 7230-7235.
+
+\bibitem[Lee et al.(2020)]{Ref2020b} Lee, J., Mitelut, C., Shokri, H., Kinsella, I., Dethe, N., Wu, S., ... \& Paninski, L. (2020) \newblock YASS: Yet Another Spike Sorter applied to large-scale multi-electrode array recordings in primate retina \newblock \emph{BioRxiv}, 2020-03.
+
+\bibitem[S. N. Kadir, D. F. Goodman, and K. D. Harris(2014)]{Ref2014d} Kadir, S. N., Goodman, D. F., \& Harris, K. D. (2014) \newblock High-dimensional cluster analysis with the masked EM algorithm \newblock \emph{Neural computation}, \emph{26}, 2379-2394.
+
+\bibitem[T. A. Machado, I. V. Kauvar, and K. Deisseroth(2022)]{Ref2022a} Machado, T. A., Kauvar, I. V., \& Deisseroth, K. (2022) \newblock Multiregion neuronal activity: the forest and the trees \newblock \emph{Nature Reviews Neuroscience}, \emph{23}, 683-704.
+
+\bibitem[E. L. Denovellis, L. M. Frank, and U.T. Eden(2019)]{Ref2019b} Denovellis, E. L., Frank, L. M., \& Eden, U. T. (2019) \newblock Characterizing hippocampal replay using hybrid point process state space models \newblock \emph{2019 53rd Asilomar Conference on Signals, Systems, and Computers}, 245-249, \emph{IEEE}.
+
+\bibitem[E. L. Denovellis et al.(2021)]{Ref2021b} Denovellis, E. L., Gillespie, A. K., Coulter, M. E., Sosa, M., Chung, J. E., Eden, U. T., \& Frank, L. M. (2021) \newblock Hippocampal replay of experience at real-world speeds \newblock \emph{Elife}, \emph{10}, e64505.
+
+
+\bibitem[T. J. Davidson, F. Kloosterman, and M. A. Wilson(2009)]{Ref2009a} Davidson, T. J., Kloosterman, F., \& Wilson, M. A. (2009) \newblock Hippocampal replay of extended experience \newblock \emph{Neuron}, \emph{63}, 497-507.
+
+\bibitem[Kloosterman et al.(2014)]{Ref2014e} Kloosterman, F., Layton, S. P., Chen, Z., \& Wilson, M. A. (2014) \newblock Bayesian decoding using unsorted spikes in the rat hippocampus \newblock \emph{Journal of neurophysiology}, \emph{111}, 217-227.
+
+\bibitem[Deng et al.(2016)]{Ref2016a} Deng, X., Liu, D. F., Karlsson, M. P., Frank, L. M., \& Eden, U. T. (2016) \newblock Rapid classification of hippocampal replay content for real-time applications \newblock \emph{Journal of neurophysiology}, \emph{116}, 2221-2235.
+
+\bibitem[Deng et al.(2015)]{Ref2015a} Deng, X., Liu, D. F., Kay, K., Frank, L. M., \& Eden, U. T. (2015) \newblock Clusterless decoding of position from multiunit activity using a marked point process filter \newblock \emph{Neural computation}, \emph{27}, 1438-1460.
+
+\bibitem[Chen et al.(2012)]{Ref2012c} Chen, Z., Kloosterman, F., Layton, S., \& Wilson, M. A. (2012) \newblock Transductive neural decoding for unsorted neuronal spikes of rat hippocampus \newblock \emph{2012 Annual International Conference of the IEEE Engineering in Medicine and Biology Society}, 1310-1313, \emph{IEEE}.
+
+\bibitem[D. R. Cox and V. Isham(1980)]{Ref1980a} Cox, D. R., \& Isham, V. (1980) \newblock Point processes, \emph{12}, \emph{CRC Press}.
+
+\bibitem[J. P. Chu et al.(2024)]{Ref2024a} Chu, J. P., Coulter, M. E., Denovellis, E. L., Nguyen, T. T., Liu, D. F., Deng, X., ... \& Frank, L. M. (2024) \newblock RealtimeDecoder: A fast software module for online clusterless decoding \newblock \emph{bioRxiv}, 2024-05.
+
+\bibitem[J. M. Marin et al.(2012)]{Ref2012d} Marin, J. M., Pudlo, P., Robert, C. P., \& Ryder, R. J. (2012) \newblock Approximate Bayesian computational methods. \newblock \emph{Statistics and computing}, \emph{22}, 1167-1180.
+
+\bibitem[T. Toni et al.(2009)]{Ref2009b} Toni, T., Welch, D., Strelkowa, N., Ipsen, A., \& Stumpf, M. P. (2009) \newblock Approximate Bayesian computation scheme for parameter inference and model selection in dynamical systems \newblock \emph{Journal of the Royal Society Interface}, \emph{6}, 187-202.
+
+\bibitem[Jungbacker, B.M.J.P. and Koopman, S.J(2008)]{Ref2008a} Jungbacker, B. M. J. P., \& Koopman, S. J. (2008) \newblock Likelihood-based analysis for dynamic factor models
+
+\bibitem[Commandeur, Jacques JF, and Siem Jan Koopman(2007)]{Ref2007b} Commandeur, J. J., \& Koopman, S. J. (2007) \newblock An introduction to state space time series analysis \newblock \emph{Oxford University Press}, \emph{USA}.
+
+\bibitem[A. Gelman, X. Meng and H. Stern(1996)]{Ref1996a} Gelman, A., Meng, X. L., \& Stern, H. (1996) \newblock Posterior predictive assessment of model fitness via realized discrepancies \newblock \emph{Statistica sinica}, 733-760.
+
+\bibitem[X. Meng(1994)]{Ref1994a} Meng, X. L. (1994). \newblock Posterior predictive $ p $-values \newblock \emph{The annals of statistics}, \emph{22}, 1142-1160.
+
+\bibitem[E. Marshall and D. Spiegelhalter(2007)]{Ref2007c} Marshall, E. C., \& Spiegelhalter, D. J. (2007) \newblock Identifying outliers in Bayesian hierarchical models: a simulation-based approach.
+
+\bibitem[Wu et al.(2006)]{Ref2006b} Wu, W., Gao, Y., Bienenstock, E., Donoghue, J. P., \& Black, M. J. (2006). \newblock Bayesian population decoding of motor cortical activity using a Kalman filter \newblock \emph{Neural computation}, \emph{18}, 80-118.
+
+\bibitem[Linderman et al.(2019)]{Ref2019c} Linderman, S., Nichols, A., Blei, D., Zimmer, M., \& Paninski, L. (2019) \newblock Hierarchical recurrent state space models reveal discrete and continuous dynamics of neural activity in C. elegans \newblock \emph{BioRxiv}, \emph{621540}.
+
+\bibitem[Paninski et al.(2010)]{Ref2010b} Paninski, L., Ahmadian, Y., Ferreira, D. G., Koyama, S., Rahnama Rad, K., Vidne, M., ... \& Wu, W. (2010) \newblock A new look at state-space models for neural data \newblock \emph{Journal of computational neuroscience}, \emph{29}, 107-126.
+
+\bibitem[Wodeyar et al.(2021)]{Ref2021c} Wodeyar, A., Schatza, M., Widge, A. S., Eden, U. T., \& Kramer, M. A. (2021). \newblock A state space modeling approach to real-time phase estimation. \newblock \emph{Elife}, \emph{10}, e68803.
+
+\bibitem[Hsin et al.(2022)]{Ref2022b} Hsin, W. C., Eden, U. T., \& Stephen, E. P. (2022). \newblock Switching Functional Network Models of Oscillatory Brain Dynamics. \newblock \emph{2022 56th Asilomar Conference on Signals, Systems, and Computers}, 607-612
+
+\bibitem[G. Peyré and M. Cuturi (2019)]{Ref2019d} Peyré, G., \& Cuturi, M. (2019). \newblock Computational optimal transport: With applications to data science. \newblock \emph{Foundations and Trends® in Machine Learning}, \emph{11}, 355-607.
+
+\bibitem[T. M. Cover (1999)]{Ref1999a}Cover, T. M. (1999). \newblock Elements of information theory \newblock \emph{John Wiley \& Sons}.
+
+
+\bibitem[J. M. Robins, Vaart van der and V. Ventura (2000)]{Ref2000a}Robins, J. M., van der Vaart, A., \& Ventura, V. (2000). \newblock Asymptotic distribution of p values in composite null models \newblock \emph{Journal of the American Statistical Association}, \emph{95}, 1143-1156.
+
+\bibitem[Zeng \& Eden(2025)]{Ref2025a}
+Zeng, S., \& Eden, U. T. (2025). \newblock A state-space framework for causal detection of hippocampal ripple-replay events. \newblock \emph{IEEE Transactions on Biomedical Engineering}.
+
+\bibitem[Newman et al.(2014)]{Ref2014c}. Newman, K. B., Buckland, S. T., Morgan, B. J. T., King, R., Borchers, D. L., Cole, D. J., Besbeas, P., Gimenez, O., \& Thomas, L. (2014). \newblock Modelling population dynamics. \newblock \emph{Methods in Statistical Ecology}.
+
+\bibitem[Vinograd et al.(2024)]{Ref2024a} Vinograd, A., Nair, A., Kim, J. H., Linderman, S. W., \& Anderson, D. J. (2024) \newblock Causal evidence of a line attractor encoding an affective state. \newblock \emph{Nature}, \emph{634}, 910-918.
+
+\bibitem[Jones et al.(2007)]{Ref2007a}
+Jones, L. M., Fontanini, A., Sadacca, B. F., Miller, P., \& Katz, D. B. (2007). \newblock Natural stimuli evoke dynamic sequences of states in sensory cortical ensembles. \newblock \emph{Proceedings of the National Academy of Sciences}, \emph{104}, 18772-18777.
+
+\bibitem[Stone(1974)]{Ref1974a}Stone, M. (1974). \newblock Cross‐validatory choice and assessment of statistical predictions. \newblock \emph{Journal of the royal statistical society: Series B (Methodological)}, \emph{36}, 111-133.
+
+\bibitem[Hastie(2009)]{Ref2009c}Hastie, T., Tibshirani, R., \& Friedman, J. (2009). \newblock The elements of statistical learning.
+
+\bibitem[Shen \& Zhuang(2024)]{Ref2024b}Shen, X., \& Zhuang, J. (2024). \newblock Residual analysis-based model improvement for state space models with nonlinear responses. \newblock \emph{IEEE Transactions on Emerging Topics in Computational Intelligence}, \emph{8}, 1728-1743.
+
+\bibitem[Bhattacharyya et al.(2023)]{Ref2023b}Bhattacharyya, A., Gayen, S., Meel, K. S., Myrisiotis, D., Pavan, A., \& Vinodchandran, N. V. (2023). \newblock Total variation distance meets probabilistic inference. \newblock \emph{arXiv preprint} arXiv:2309.09134.
+
+\bibitem[Crack(2018)]{Ref2018d}Crack, T. F. (2018). \newblock A note on Karl Pearson’s 1900 chi-squared test: two derivations of the asymptotic distribution, and uses in goodness of fit and contingency tests of independence, and a comparison with the exact sample variance chi-square result. \newblock Available at SSRN 3284255.
+
+
+
+\end{thebibliography}
 \end{document}

@@ -3,8 +3,8 @@
 # Default target
 all: main.pdf supplement.pdf
 
-# Build main manuscript
-main.pdf: main.tex preamble.tex references.bib
+# Build main manuscript (self-contained: own preamble + embedded bibliography)
+main.pdf: main.tex
 	latexmk -pdf main.tex
 
 # Build supplement
