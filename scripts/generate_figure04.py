@@ -31,6 +31,7 @@ from statespacecheck_paper.real_data_analysis import (
 )
 from statespacecheck_paper.real_data_plotting import (
     plot_single_model_diagnostics,
+    plot_track_graph_2d,
 )
 from statespacecheck_paper.style import save_figure, set_figure_defaults
 
@@ -206,9 +207,21 @@ def run_demo() -> None:
         time_offset,
     )
 
-    # Three panels: (a) context, (b) Continuous detail, (c) ContFrag detail
-    fig = plt.figure(figsize=(10.0, 7.0), dpi=450, constrained_layout=True)
+    # Three panels: (a) track layout + context, (b) Continuous detail, (c) ContFrag detail
+    fig = plt.figure(figsize=(10.0, 7.5), dpi=450, constrained_layout=True)
     subfigs = fig.subfigures(1, 3, width_ratios=[3, 2, 2], wspace=0.03)
+
+    # Split panel (a) vertically: small track layout on top, 6-row diagnostics below
+    subfigs_a = subfigs[0].subfigures(2, 1, height_ratios=[1, 5])
+    ax_track = subfigs_a[0].subplots()
+    plot_track_graph_2d(
+        track_graph=data["track_graph"],
+        position_info=position_info,
+        ax=ax_track,
+        edge_order=data["linear_edge_order"],
+        scalebar_length=20,
+        scalebar_label="20 cm",
+    )
 
     # Shared plotting kwargs for detail panels
     detail_kwargs: dict[str, Any] = dict(
@@ -237,7 +250,7 @@ def run_demo() -> None:
         track_graph=data["track_graph"],
         edge_order=data["linear_edge_order"],
         edge_spacing=data["linear_edge_spacing"],
-        fig=subfigs[0],
+        fig=subfigs_a[1],
     )
 
     # Highlight the detail window region in panel (a)
@@ -296,8 +309,19 @@ def run_demo() -> None:
             fontstyle="italic",
         )
 
-    # Panel labels - place in axes coordinates
-    for axes, label in [(axes_a, "a"), (axes_b, "b"), (axes_c, "c")]:
+    # Panel labels - place in axes coordinates. Panel (a) label sits on the
+    # track-layout inset (top of column a); (b)/(c) sit on the predictive row.
+    ax_track.text(
+        -0.05,
+        1.05,
+        "a",
+        fontsize=8,
+        fontweight="bold",
+        transform=ax_track.transAxes,
+        va="top",
+        ha="right",
+    )
+    for axes, label in [(axes_b, "b"), (axes_c, "c")]:
         axes[0].text(
             -0.05,
             1.15,
