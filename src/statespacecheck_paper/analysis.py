@@ -25,10 +25,10 @@ goodness-of-fit.
     >>> transition_matrix = gaussian_transition_matrix(xs, params.sigx_pred)
     >>> # Simulate some spike data
     >>> spikes = np.random.poisson(0.1, size=(100, len(params.pf_centers)))
-    >>> # Run decoder
+    >>> # Run decoder (clean decode, no misfit schedule)
     >>> results = decode_and_diagnostics(
     ...     spikes, xs, transition_matrix, params.pf_centers,
-    ...     params.pf_width, params.rate_scale, params.remap_window, params.remap_from_to
+    ...     params.pf_width, params.rate_scale
     ... )
     >>> sorted(results.keys())  # doctest: +NORMALIZE_WHITESPACE
     ['event_cell_ind', 'event_hpd_overlap', 'event_kl_divergence',
@@ -252,6 +252,125 @@ class DecodeParams:
             self.pf_centers = np.arange(self.xs_min, self.xs_max + 1, 10, dtype=float)
 
 
+@dataclass(frozen=True)
+class MisfitWindow:
+    """One decoder-side misfit, active over the half-open interval ``[start, end)``.
+
+    A misfit window substitutes any of three baseline quantities while the
+    decoder runs inside it. Each field is optional; ``None`` means "use the
+    baseline".
+
+    Parameters
+    ----------
+    start, end : int
+        Half-open time-step bounds ``[start, end)``. ``start < end`` is
+        required.
+    transition_matrix : np.ndarray, shape (n_bins, n_bins), optional
+        Replaces the baseline transition matrix in the predict step
+        (used by the wide-dynamics-noise misfit).
+    decoder_rates : np.ndarray, shape (n_bins, n_cells), optional
+        Replaces the baseline Gaussian place-field rate table used to
+        form the posterior-update likelihood (and the displayed per-spike
+        likelihood). Used by the remap misfit (remapped place fields) and
+        the wiggly-flat-likelihood misfit.
+    diagnostic_rates : np.ndarray, shape (n_bins, n_cells), optional
+        Replaces the rate table the *diagnostics* judge spikes against.
+        Leave ``None`` for a misfit that perturbs the world the decoder
+        observes but not the decoder's own model — remapping: the
+        diagnostic should still reference the model's intended Gaussian
+        place fields, so it correctly flags the mismatch. Set it (equal
+        to ``decoder_rates``) only for a misfit that redefines what the
+        decoder's model *is* — the wiggly-flat-likelihood phase.
+
+    Raises
+    ------
+    ValueError
+        If ``start >= end`` or a supplied rate table contains negative or
+        non-finite entries.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> rates = np.full((5, 3), 0.1)
+    >>> w = MisfitWindow(10, 20, decoder_rates=rates, diagnostic_rates=rates)
+    >>> w.start, w.end
+    (10, 20)
+    """
+
+    start: int
+    end: int
+    transition_matrix: NDArray[np.floating] | None = None
+    decoder_rates: NDArray[np.floating] | None = None
+    diagnostic_rates: NDArray[np.floating] | None = None
+
+    def __post_init__(self) -> None:
+        """Validate the window bounds and any supplied rate tables."""
+        if self.start >= self.end:
+            raise ValueError(f"MisfitWindow requires start < end, got ({self.start}, {self.end})")
+        # A negative or non-finite rate table would become NaN once it
+        # reaches ``poisson.pmf`` and propagate silently through the
+        # posterior — reject it at construction.
+        for name in ("decoder_rates", "diagnostic_rates"):
+            table = getattr(self, name)
+            if table is not None and not (np.all(np.isfinite(table)) and np.all(table >= 0.0)):
+                raise ValueError(f"MisfitWindow.{name} must be finite and non-negative everywhere")
+
+
+@dataclass(frozen=True)
+class MisfitSchedule:
+    """An ordered set of non-overlapping :class:`MisfitWindow` entries.
+
+    Time steps not covered by any window decode with the baseline
+    transition matrix and Gaussian place-field rates. The empty schedule
+    (the default) is a clean decode with no misfits — used for real-data
+    decoding.
+
+    Parameters
+    ----------
+    windows : tuple[MisfitWindow, ...]
+        The misfit windows. Must not overlap; order is not significant.
+
+    Raises
+    ------
+    ValueError
+        If any two windows overlap.
+
+    Examples
+    --------
+    >>> MisfitSchedule().window_at(5) is None
+    True
+    >>> sched = MisfitSchedule((MisfitWindow(10, 20), MisfitWindow(30, 40)))
+    >>> sched.window_at(15).start
+    10
+    >>> sched.window_at(25) is None
+    True
+    """
+
+    windows: tuple[MisfitWindow, ...] = ()
+
+    def __post_init__(self) -> None:
+        """Reject overlapping windows."""
+        ordered = sorted(self.windows, key=lambda w: w.start)
+        for earlier, later in zip(ordered, ordered[1:], strict=False):
+            if later.start < earlier.end:
+                raise ValueError(
+                    "MisfitSchedule windows must not overlap; "
+                    f"[{earlier.start}, {earlier.end}) overlaps "
+                    f"[{later.start}, {later.end})"
+                )
+
+    def window_at(self, t: int) -> MisfitWindow | None:
+        """Return the window containing time step ``t``, or ``None``.
+
+        Windows are non-overlapping (enforced at construction), so at most
+        one can match.
+        """
+        for window in self.windows:
+            if window.start <= t < window.end:
+                return window
+        return None
+
+
 # -----------------------------
 # Decoder components
 # -----------------------------
@@ -385,24 +504,6 @@ def get_remapped_pf_centers(
     return pf_centers
 
 
-def _window_or_never(window: tuple[int, int] | None, n_time: int) -> tuple[int, int]:
-    """Return window bounds or impossibly late bounds if None.
-
-    Parameters
-    ----------
-    window : tuple[int, int] | None
-        Window (start, end) or None.
-    n_time : int
-        Total number of time points.
-
-    Returns
-    -------
-    start, end : tuple[int, int]
-        Window bounds or (n_time + 1, n_time + 1) if window is None.
-    """
-    return window if window else (n_time + 1, n_time + 1)
-
-
 def decode_and_diagnostics(
     spikes: NDArray[np.int_],
     xs: NDArray[np.floating],
@@ -410,13 +511,8 @@ def decode_and_diagnostics(
     pf_centers: NDArray[np.floating],
     pf_width: float,
     rate_scale: float,
-    remap_window: tuple[int, int],
-    remap_from_to: tuple[tuple[int, int], ...] | tuple[int, int],
+    misfit_schedule: MisfitSchedule | None = None,
     rng: np.random.Generator | None = None,
-    transition_matrix_inflated: NDArray[np.floating] | None = None,
-    inflate_window: tuple[int, int] | None = None,
-    wiggly_rates: NDArray[np.floating] | None = None,
-    wiggly_window: tuple[int, int] | None = None,
 ) -> dict[str, NDArray[np.floating] | NDArray[np.intp]]:
     """Run the Bayesian filter with per-time, per-cell diagnostics.
 
@@ -450,30 +546,14 @@ def decode_and_diagnostics(
         Width (standard deviation) of Gaussian place fields.
     rate_scale : float
         Scaling factor for firing rates.
-    remap_window : tuple[int, int]
-        Time window (start, end) where cell remapping is active.
-    remap_from_to : tuple of tuples or tuple of ints
-        Remapping specification (see get_remapped_pf_centers).
+    misfit_schedule : MisfitSchedule, optional
+        Decoder-side misfit windows — remapping, wide-dynamics noise,
+        wiggly-flat likelihood. Each :class:`MisfitWindow` swaps the
+        transition matrix and/or the per-cell rate table for its
+        interval. Defaults to an empty schedule: a clean decode with no
+        misfits (the real-data decoding case).
     rng : np.random.Generator | None, optional
         Random number generator (reserved for future use).
-    transition_matrix_inflated : np.ndarray, shape (n_bins, n_bins), optional
-        Alternative transition matrix for the wide-dynamics-noise misfit
-        window — produces a predictive much wider than the per-spike
-        likelihood. Must be provided together with ``inflate_window``:
-        passing exactly one of the pair raises ``ValueError``.
-    inflate_window : tuple[int, int], optional
-        Time window (start, end) during which ``transition_matrix_inflated``
-        replaces ``transition_matrix``.
-    wiggly_rates : np.ndarray, shape (n_bins, n_cells), optional
-        Per-cell rate table used inside ``wiggly_window`` for *both*
-        the posterior-update likelihood and the diagnostic rate matrix.
-        See :func:`statespacecheck_paper.simulation.wiggly_flat_rates`
-        for the canonical wiggly-flat-rate generator. Must be provided
-        together with ``wiggly_window``: passing exactly one of the pair
-        raises ``ValueError``.
-    wiggly_window : tuple[int, int], optional
-        Time window (start, end) during which ``wiggly_rates`` replaces
-        the place-field-based rate table.
 
     Returns
     -------
@@ -519,13 +599,12 @@ def decode_and_diagnostics(
         - 'event_spike_prob' : np.ndarray, shape (n_spikes,)
             Per-spike-event spike probability.
 
-    Raises
-    ------
-    ValueError
-        If exactly one of ``transition_matrix_inflated`` / ``inflate_window``
-        is provided, if exactly one of ``wiggly_rates`` / ``wiggly_window``
-        is provided, or if ``wiggly_rates`` contains negative or
-        non-finite entries.
+    Notes
+    -----
+    Invalid misfit configurations (overlapping windows, ``start >= end``,
+    negative/non-finite rate tables) are rejected when the
+    :class:`MisfitSchedule` / :class:`MisfitWindow` is *constructed*, not
+    here.
 
     Examples
     --------
@@ -539,12 +618,9 @@ def decode_and_diagnostics(
     >>> pf_centers = np.array([25.0, 50.0, 75.0])
     >>> pf_width = 5.0
     >>> rate_scale = 0.1
-    >>> remap_window = (5, 7)
-    >>> remap_from_to = (0, 1)
-    >>> # Run decoder
+    >>> # Clean decode, no misfits
     >>> results = decode_and_diagnostics(
-    ...     spikes, xs, transition_matrix, pf_centers, pf_width, rate_scale,
-    ...     remap_window, remap_from_to
+    ...     spikes, xs, transition_matrix, pf_centers, pf_width, rate_scale
     ... )
     >>> results['posterior'].shape
     (10, 21)
@@ -559,29 +635,8 @@ def decode_and_diagnostics(
     # rng parameter reserved for future use
     _ = rng
 
-    # Window/matrix arguments come in pairs: passing only one half silently
-    # no-ops (the misfit window is never entered), which would produce a
-    # plausible-but-wrong figure with no error. Fail loud instead.
-    if (transition_matrix_inflated is None) != (inflate_window is None):
-        raise ValueError(
-            "transition_matrix_inflated and inflate_window must be provided "
-            "together (got transition_matrix_inflated="
-            f"{'set' if transition_matrix_inflated is not None else None}, "
-            f"inflate_window={inflate_window})"
-        )
-    if (wiggly_rates is None) != (wiggly_window is None):
-        raise ValueError(
-            "wiggly_rates and wiggly_window must be provided together "
-            f"(got wiggly_rates={'set' if wiggly_rates is not None else None}, "
-            f"wiggly_window={wiggly_window})"
-        )
-    # A hand-built wiggly_rates table (not produced by wiggly_flat_rates)
-    # could carry negative or non-finite entries, which poisson.pmf turns
-    # into NaN likelihoods that propagate silently through the posterior.
-    if wiggly_rates is not None and not (
-        np.all(np.isfinite(wiggly_rates)) and np.all(wiggly_rates >= 0.0)
-    ):
-        raise ValueError("wiggly_rates must be finite and non-negative everywhere")
+    if misfit_schedule is None:
+        misfit_schedule = MisfitSchedule()
 
     # Preallocate outputs
     posterior: NDArray[np.floating] = np.zeros((n_time, n_bins))
@@ -596,46 +651,28 @@ def decode_and_diagnostics(
     predictive_posterior[0] = posterior[0]  # At t=0, predictive = prior
     combined_likelihood_all[0] = normalize(np.ones(n_bins))  # Flat at t=0
 
-    start_r, end_r = remap_window
-    start_inflate, end_inflate = _window_or_never(inflate_window, n_time)
-    start_wiggly, end_wiggly = _window_or_never(wiggly_window, n_time)
-
-    # Precompute the per-cell Poisson rate tables once. The decode loop
-    # selects among them by window instead of recomputing placefield_rates
-    # every timestep. ``rates`` (the unremapped Gaussian-PF table) is also
-    # the diagnostic rate table — see the diagnostics section below.
+    # Baseline per-cell Poisson rate table. Used at every timestep not
+    # covered by a misfit window whose ``decoder_rates`` is set, and as
+    # the default diagnostic rate table.
     rates = placefield_rates(xs, pf_centers, pf_width, rate_scale)
-    rates_remapped = placefield_rates(
-        xs,
-        get_remapped_pf_centers(pf_centers, remap_from_to, active=True),
-        pf_width,
-        rate_scale,
-    )
 
     for t in range(1, n_time):
-        # Select transition matrix based on which window we're in
-        # Window checks use half-open intervals [start, end) to match simulation phases
-        if transition_matrix_inflated is not None and start_inflate <= t < end_inflate:
-            current_transition = transition_matrix_inflated
-        else:
-            current_transition = transition_matrix
+        window = misfit_schedule.window_at(t)
 
-        # Predict (prior from state dynamics)
+        # Predict — baseline transition unless the active misfit window
+        # overrides it.
+        current_transition = transition_matrix
+        if window is not None and window.transition_matrix is not None:
+            current_transition = window.transition_matrix
         prior = normalize(posterior[t - 1] @ current_transition)  # (n_bins,)
+        predictive_posterior[t] = prior  # stored for p-value computation
 
-        # Store predictive posterior for p-value computation
-        predictive_posterior[t] = prior
-
-        # Likelihood grid for this time's counts. Select the per-cell rate
-        # table by window — ``wiggly_rates`` inside the wiggly window, the
-        # remapped table inside the remap window, else the standard
-        # Gaussian-PF table — then form the normalized Poisson likelihood.
-        if wiggly_rates is not None and start_wiggly <= t < end_wiggly:
-            rates_t = wiggly_rates
-        elif start_r <= t < end_r:
-            rates_t = rates_remapped
-        else:
-            rates_t = rates
+        # Likelihood grid for this time's counts. The per-cell rate table
+        # is the baseline Gaussian-PF table unless the active misfit
+        # window overrides it (remapped or wiggly-flat table).
+        rates_t = rates
+        if window is not None and window.decoder_rates is not None:
+            rates_t = window.decoder_rates
         likelihood = normalize(poisson.pmf(spikes[t][None, :], rates_t), axis=0)
 
         # Compute combined likelihood from all cells (product over cells)
@@ -664,49 +701,31 @@ def decode_and_diagnostics(
     spike_time_ind = np.repeat(spike_time_ind, spike_counts_at_events)
     spike_cell_ind = np.repeat(spike_cell_ind, spike_counts_at_events)
     spike_time_ind = spike_time_ind + 1  # Adjust for offset from [1:]
+    n_spikes = len(spike_time_ind)
 
-    # Diagnostics use ``rates`` — the ORIGINAL (unremapped) place-field rate
-    # table precomputed above. This is intentional: diagnostics evaluate
-    # whether the observed spikes are consistent with the *model's* assumed
-    # likelihood (original place fields). During remapping the decoder
-    # updates the posterior using remapped fields (simulating a changed
-    # neural code), but the diagnostic correctly flags this as a misfit
-    # because the model's likelihood no longer matches the data.
+    # Diagnostics. Each spike event is judged against a rate table: the
+    # baseline Gaussian-PF ``rates`` unless it falls in a misfit window
+    # whose ``diagnostic_rates`` is set. ``rates`` is the *model's*
+    # intended likelihood — during remapping the decoder updates the
+    # posterior with remapped fields but the diagnostic still references
+    # the original fields (``diagnostic_rates`` is ``None`` for remap),
+    # so the diagnostic correctly flags the mismatch. The wiggly-flat
+    # phase redefines the model itself, so its window sets
+    # ``diagnostic_rates`` and those events are judged against it.
+    # ``compute_per_cell_diagnostics_from_rates`` takes a single rate
+    # table, so group events by table, diagnose each group, and merge.
+    diag_tables: list[NDArray[np.floating]] = [rates]
+    event_group: NDArray[np.intp] = np.zeros(n_spikes, dtype=np.intp)
+    for window in misfit_schedule.windows:
+        if window.diagnostic_rates is None:
+            continue
+        in_window = (spike_time_ind >= window.start) & (spike_time_ind < window.end)
+        if not np.any(in_window):
+            continue
+        diag_tables.append(window.diagnostic_rates)
+        event_group[in_window] = len(diag_tables) - 1
 
-    # In the wiggly-likelihood window the decoder's per-cell rate function is
-    # different from the standard Gaussian PF — both the posterior update and
-    # the diagnostic must use ``wiggly_rates`` for events inside the window.
-    # Compute diagnostics in two batches (in/out of window) and merge,
-    # since ``compute_per_cell_diagnostics_from_rates`` takes a single rate
-    # table. When ``wiggly_rates`` is ``None`` this collapses to one call.
-    if wiggly_rates is not None and len(spike_time_ind) > 0:
-        in_wiggly = (spike_time_ind >= start_wiggly) & (spike_time_ind < end_wiggly)
-        diag_normal = compute_per_cell_diagnostics_from_rates(
-            predictive_posterior,
-            rates,
-            spike_time_ind[~in_wiggly],
-            spike_cell_ind[~in_wiggly],
-            coverage=0.95,
-            include_dense_matrices=False,
-        )
-        diag_wiggly = compute_per_cell_diagnostics_from_rates(
-            predictive_posterior,
-            wiggly_rates,
-            spike_time_ind[in_wiggly],
-            spike_cell_ind[in_wiggly],
-            coverage=0.95,
-            include_dense_matrices=False,
-        )
-        diagnostics = _merge_diagnostics(
-            n_time=n_time,
-            n_cells=rates.shape[1],
-            spike_time_ind=spike_time_ind,
-            spike_cell_ind=spike_cell_ind,
-            in_window=in_wiggly,
-            diag_out=diag_normal,
-            diag_in=diag_wiggly,
-        )
-    else:
+    if len(diag_tables) == 1:
         diagnostics = compute_per_cell_diagnostics_from_rates(
             predictive_posterior,
             rates,
@@ -714,33 +733,44 @@ def decode_and_diagnostics(
             spike_cell_ind,
             coverage=0.95,
         )
+    else:
+        per_group = [
+            compute_per_cell_diagnostics_from_rates(
+                predictive_posterior,
+                table,
+                spike_time_ind[event_group == group],
+                spike_cell_ind[event_group == group],
+                coverage=0.95,
+                include_dense_matrices=False,
+            )
+            for group, table in enumerate(diag_tables)
+        ]
+        diagnostics = _merge_diagnostics(
+            n_time=n_time,
+            n_cells=rates.shape[1],
+            spike_time_ind=spike_time_ind,
+            spike_cell_ind=spike_cell_ind,
+            event_group=event_group,
+            per_group=per_group,
+        )
 
-    # Compute per-spike likelihoods from the DECODER's (potentially remapped) rates
-    # for display in the likelihood panel. During the remap window the decoder uses
-    # different place field centers, so these likelihoods differ from the diagnostic
-    # likelihoods (which always use original rates).
-    n_spikes = len(spike_time_ind)
+    # Per-spike likelihoods from the DECODER's actual rate table — for
+    # display in the likelihood panel. Baseline Gaussian-PF rates, then
+    # each misfit window with ``decoder_rates`` set overwrites its own
+    # (disjoint) events with that table.
     decoder_per_spike_lik: NDArray[np.floating] = np.zeros((n_spikes, n_bins))
     if n_spikes > 0:
-        # Default: per-spike likelihood from the standard (non-remapped) PF
-        # rates. Two windows overwrite this below: the remap window (uses
-        # remapped PF centers) and the wiggly window (uses ``wiggly_rates``).
         rates_orig = rates[:, spike_cell_ind].T  # (n_spikes, n_bins)
         decoder_per_spike_lik = normalize(poisson.pmf(k=1, mu=rates_orig), axis=1)
 
-        in_remap = (spike_time_ind >= start_r) & (spike_time_ind < end_r)
-        if np.any(in_remap):
-            remap_cell_rates = rates_remapped[:, spike_cell_ind[in_remap]].T
-            decoder_per_spike_lik[in_remap] = normalize(
-                poisson.pmf(k=1, mu=remap_cell_rates), axis=1
-            )
-
-        if wiggly_rates is not None:
-            in_wiggly_evt = (spike_time_ind >= start_wiggly) & (spike_time_ind < end_wiggly)
-            if np.any(in_wiggly_evt):
-                wiggly_cell_rates = wiggly_rates[:, spike_cell_ind[in_wiggly_evt]].T
-                decoder_per_spike_lik[in_wiggly_evt] = normalize(
-                    poisson.pmf(k=1, mu=wiggly_cell_rates), axis=1
+        for window in misfit_schedule.windows:
+            if window.decoder_rates is None:
+                continue
+            in_window = (spike_time_ind >= window.start) & (spike_time_ind < window.end)
+            if np.any(in_window):
+                cell_rates = window.decoder_rates[:, spike_cell_ind[in_window]].T
+                decoder_per_spike_lik[in_window] = normalize(
+                    poisson.pmf(k=1, mu=cell_rates), axis=1
                 )
 
     return {
@@ -773,12 +803,11 @@ def _merge_diagnostics(
     n_cells: int,
     spike_time_ind: NDArray[np.intp],
     spike_cell_ind: NDArray[np.intp],
-    in_window: NDArray[np.bool_],
-    diag_out: dict[str, NDArray[np.floating] | NDArray[np.intp]],
-    diag_in: dict[str, NDArray[np.floating] | NDArray[np.intp]],
+    event_group: NDArray[np.intp],
+    per_group: list[dict[str, NDArray[np.floating] | NDArray[np.intp]]],
 ) -> dict[str, NDArray[np.floating] | NDArray[np.intp]]:
-    """Merge two per-event diagnostic batches (in vs out of a special window)
-    into a single result dict.
+    """Merge per-event diagnostic batches computed against different rate
+    tables into a single result dict.
 
     The merged dict has the keys of the
     ``include_dense_matrices=True`` result of
@@ -787,39 +816,39 @@ def _merge_diagnostics(
     caller (``decode_and_diagnostics`` builds its own per-spike
     likelihood from the decoder's rate table).
 
-    Used when the diagnostic rate table differs between time windows
-    (currently: the wiggly-flat-likelihood phase uses ``wiggly_rates``,
-    all other timesteps use the standard Gaussian-PF rates).
+    Used when the diagnostic rate table differs across the timeline
+    because the :class:`MisfitSchedule` has windows with
+    ``diagnostic_rates`` set (the wiggly-flat-likelihood phase).
 
-    ``in_window`` must be the exact boolean mask used to split
-    ``spike_time_ind`` / ``spike_cell_ind`` into the per-event inputs of
-    ``diag_in`` (the ``True`` subset) and ``diag_out`` (the ``False``
-    subset). Boolean-mask indexing preserves order within each subset,
-    so scattering the two batches back via the same mask reassembles the
-    events in their original order — this only holds if the same mask
-    defined both the split and the merge.
+    Parameters
+    ----------
+    event_group : np.ndarray, shape (n_spikes,)
+        For each spike event, the index of the rate-table group it was
+        diagnosed under. ``per_group[event_group[i]]`` is the diagnostic
+        batch containing event ``i``.
+    per_group : list of dict
+        One ``compute_per_cell_diagnostics_from_rates(...,
+        include_dense_matrices=False)`` result per group, group ``g``
+        computed on the events with ``event_group == g`` (boolean-mask
+        indexing preserves order, so scattering back via the same mask
+        reassembles events in their original order).
     """
     n_spikes = spike_time_ind.shape[0]
-    n_in = int(in_window.sum())
-    if in_window.shape[0] != n_spikes:
-        raise ValueError(f"in_window length {in_window.shape[0]} != n_spikes {n_spikes}")
-    for name, diag, expected in (
-        ("diag_in", diag_in, n_in),
-        ("diag_out", diag_out, n_spikes - n_in),
-    ):
-        got = diag["event_hpd_overlap"].shape[0]
-        if got != expected:
-            raise ValueError(f"{name} has {got} events but the mask expects {expected}")
+    if event_group.shape[0] != n_spikes:
+        raise ValueError(f"event_group length {event_group.shape[0]} != n_spikes {n_spikes}")
 
     event_hpd_overlap = np.empty(n_spikes)
     event_kl_divergence = np.empty(n_spikes)
     event_spike_prob = np.empty(n_spikes)
-    event_hpd_overlap[~in_window] = diag_out["event_hpd_overlap"]
-    event_hpd_overlap[in_window] = diag_in["event_hpd_overlap"]
-    event_kl_divergence[~in_window] = diag_out["event_kl_divergence"]
-    event_kl_divergence[in_window] = diag_in["event_kl_divergence"]
-    event_spike_prob[~in_window] = diag_out["event_spike_prob"]
-    event_spike_prob[in_window] = diag_in["event_spike_prob"]
+    for group, diag in enumerate(per_group):
+        sel = event_group == group
+        expected = int(sel.sum())
+        got = diag["event_hpd_overlap"].shape[0]
+        if got != expected:
+            raise ValueError(f"group {group} has {got} events but the mask expects {expected}")
+        event_hpd_overlap[sel] = diag["event_hpd_overlap"]
+        event_kl_divergence[sel] = diag["event_kl_divergence"]
+        event_spike_prob[sel] = diag["event_spike_prob"]
 
     # Scatter per-event values into the dense (n_time, n_cells) matrices.
     # A bin with count k > 1 contributes k repeated (time, cell) index

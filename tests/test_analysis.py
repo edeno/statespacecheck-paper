@@ -10,6 +10,8 @@ import pytest
 
 from statespacecheck_paper.analysis import (
     DecodeParams,
+    MisfitSchedule,
+    MisfitWindow,
     Thresholds,
     Transformed,
     _merge_diagnostics,
@@ -36,8 +38,6 @@ class DecoderInputs:
     pf_centers: np.ndarray
     pf_width: float
     rate_scale: float
-    remap_window: tuple[int, int]
-    remap_from_to: tuple[int, int]
 
     def call(self, **overrides: Any) -> dict:
         kwargs: dict[str, Any] = {
@@ -47,8 +47,6 @@ class DecoderInputs:
             "pf_centers": self.pf_centers,
             "pf_width": self.pf_width,
             "rate_scale": self.rate_scale,
-            "remap_window": self.remap_window,
-            "remap_from_to": self.remap_from_to,
         }
         kwargs.update(overrides)
         return decode_and_diagnostics(**kwargs)
@@ -60,7 +58,7 @@ def _diag_dominant_transition(n_bins: int, peak: float = 0.9) -> np.ndarray:
 
 @pytest.fixture
 def decoder_inputs() -> DecoderInputs:
-    """Small reproducible decoder problem with no remapping inside the run."""
+    """Small reproducible decoder problem with no misfit schedule."""
     rng = np.random.default_rng(42)
     n_time, n_cells, n_bins = 10, 3, 21
     return DecoderInputs(
@@ -70,8 +68,6 @@ def decoder_inputs() -> DecoderInputs:
         pf_centers=np.array([25.0, 50.0, 75.0]),
         pf_width=5.0,
         rate_scale=0.1,
-        remap_window=(20, 20),  # outside range -> no remap
-        remap_from_to=(0, 1),
     )
 
 
@@ -242,8 +238,6 @@ class TestDecodeAndDiagnostics:
             pf_centers=np.array([25.0, 75.0]),
             pf_width=5.0,
             rate_scale=0.1,
-            remap_window=(10, 10),
-            remap_from_to=(0, 1),
         )
 
         # Diagnostics NaN at (t, cell) iff cell has no spike at that t,
@@ -266,8 +260,6 @@ class TestDecodeAndDiagnostics:
             pf_centers=np.array([25.0, 75.0]),
             pf_width=5.0,
             rate_scale=0.1,
-            remap_window=(10, 10),
-            remap_from_to=(0, 1),
         )
 
         np.testing.assert_array_equal(result["spike_time_ind"], [1, 1, 2])
@@ -290,8 +282,6 @@ class TestDecodeAndDiagnostics:
             pf_centers=np.array([25.0, 75.0]),
             pf_width=5.0,
             rate_scale=0.1,
-            remap_window=(10, 10),
-            remap_from_to=(0, 1),
         )
         assert np.all(np.isnan(result["hpd_overlap"]))
         assert np.all(np.isnan(result["kl_divergence"]))
@@ -304,23 +294,24 @@ class TestDecodeAndDiagnostics:
         self,
         decoder_inputs: DecoderInputs,
     ) -> None:
-        """The ``transition_matrix_inflated``/``inflate_window`` kwarg pair
-        must (a) leave the predictive untouched before the window and
-        (b) actually change it inside. A regression that ignored the kwarg
-        would still produce well-shaped output, so we compare against a
-        baseline run instead.
+        """A :class:`MisfitWindow` with a ``transition_matrix`` must
+        (a) leave the predictive untouched before the window and
+        (b) actually change it inside. A regression that ignored the
+        schedule would still produce well-shaped output, so we compare
+        against a baseline run instead.
         """
-        matrix_kwarg = "transition_matrix_inflated"
-        window_kwarg = "inflate_window"
         n_bins = decoder_inputs.xs.size
         # Choose an alternative matrix that is *very* different from the
         # baseline (peak=0.9 diag-dominant). A near-uniform matrix forces
         # the predictive to spread out dramatically — easy to detect.
         alt_matrix = _diag_dominant_transition(n_bins, peak=0.05)
         window = (3, 6)
+        schedule = MisfitSchedule(
+            (MisfitWindow(window[0], window[1], transition_matrix=alt_matrix),)
+        )
 
         baseline = decoder_inputs.call()
-        with_alt = decoder_inputs.call(**{matrix_kwarg: alt_matrix, window_kwarg: window})
+        with_alt = decoder_inputs.call(misfit_schedule=schedule)
 
         # Before the window, the two runs must be bit-identical: nothing
         # in the algorithm has diverged yet.
@@ -332,27 +323,38 @@ class TestDecodeAndDiagnostics:
         )
 
         # Inside the window, at least one timestep's predictive must
-        # measurably differ (this is the line the kwarg actually
-        # controls). Use a generous tolerance so we don't depend on the
-        # exact magnitude — we only assert "different".
+        # measurably differ (this is what the window actually controls).
+        # Use a generous tolerance so we don't depend on the exact
+        # magnitude — we only assert "different".
         inside = slice(*window)
         assert not np.allclose(
             baseline["predictive"][inside],
             with_alt["predictive"][inside],
             atol=1e-6,
-        ), f"{matrix_kwarg} in {window} did not change predictive — kwarg ignored?"
+        ), f"transition_matrix in {window} did not change predictive — schedule ignored?"
 
     def test_wiggly_rates_used_only_inside_window(self, decoder_inputs: DecoderInputs) -> None:
-        """``wiggly_rates``/``wiggly_window`` must leave per-event diagnostics
-        untouched for events outside the window and change at least one
-        event inside it. Compared against a baseline run so a regression
-        that ignored the kwarg cannot pass on output shape alone.
+        """A :class:`MisfitWindow` with ``decoder_rates``/``diagnostic_rates``
+        must leave per-event diagnostics untouched for events outside the
+        window and change at least one event inside it. Compared against a
+        baseline run so a regression that ignored the schedule cannot pass
+        on output shape alone.
         """
         wiggly = wiggly_flat_rates(decoder_inputs.xs, n_cells=3)
         window = (3, 7)
+        schedule = MisfitSchedule(
+            (
+                MisfitWindow(
+                    window[0],
+                    window[1],
+                    decoder_rates=wiggly,
+                    diagnostic_rates=wiggly,
+                ),
+            )
+        )
 
         baseline = decoder_inputs.call()
-        with_wiggly = decoder_inputs.call(wiggly_rates=wiggly, wiggly_window=window)
+        with_wiggly = decoder_inputs.call(misfit_schedule=schedule)
 
         evt_t = with_wiggly["event_time_ind"]
         # Events strictly before the window are unaffected — the filter
@@ -373,35 +375,59 @@ class TestDecodeAndDiagnostics:
             baseline["event_kl_divergence"][inside],
             with_wiggly["event_kl_divergence"][inside],
             atol=1e-6,
-        ), "wiggly_rates did not change in-window diagnostics — kwarg ignored?"
+        ), "wiggly rates did not change in-window diagnostics — schedule ignored?"
 
-    @pytest.mark.parametrize(
-        ("kwargs", "match"),
-        [
-            (
-                {"transition_matrix_inflated": np.eye(21)},
-                "must be provided together",
-            ),
-            ({"inflate_window": (2, 5)}, "must be provided together"),
-            ({"wiggly_window": (2, 5)}, "must be provided together"),
-        ],
-    )
-    def test_unpaired_window_kwarg_raises(
-        self, decoder_inputs: DecoderInputs, kwargs: dict, match: str
-    ) -> None:
-        """Passing only one half of a matrix/window pair must fail loud —
-        a silent fallback would produce a plausible-but-wrong figure.
-        """
-        with pytest.raises(ValueError, match=match):
-            decoder_inputs.call(**kwargs)
 
-    def test_wiggly_rates_with_negative_entries_raises(self, decoder_inputs: DecoderInputs) -> None:
-        """A hand-built wiggly_rates table with negative entries is rejected
-        before it can become NaN likelihoods downstream."""
-        bad = wiggly_flat_rates(decoder_inputs.xs, n_cells=3)
+# ---------------------------------------------------------------------------
+# MisfitWindow / MisfitSchedule
+# ---------------------------------------------------------------------------
+
+
+class TestMisfitWindow:
+    def test_start_not_before_end_raises(self) -> None:
+        """``start >= end`` is rejected at construction."""
+        with pytest.raises(ValueError, match="start < end"):
+            MisfitWindow(10, 10)
+        with pytest.raises(ValueError, match="start < end"):
+            MisfitWindow(10, 5)
+
+    @pytest.mark.parametrize("field", ["decoder_rates", "diagnostic_rates"])
+    def test_negative_rate_table_raises(self, field: str) -> None:
+        """A negative rate table is rejected before it can become NaN
+        likelihoods downstream."""
+        bad = wiggly_flat_rates(np.linspace(0, 100, 21), n_cells=3)
         bad[0, 0] = -1.0
         with pytest.raises(ValueError, match="finite and non-negative"):
-            decoder_inputs.call(wiggly_rates=bad, wiggly_window=(3, 7))
+            MisfitWindow(3, 7, **{field: bad})
+
+    @pytest.mark.parametrize("field", ["decoder_rates", "diagnostic_rates"])
+    def test_nonfinite_rate_table_raises(self, field: str) -> None:
+        """A non-finite rate table is rejected at construction."""
+        bad = wiggly_flat_rates(np.linspace(0, 100, 21), n_cells=3)
+        bad[0, 0] = np.nan
+        with pytest.raises(ValueError, match="finite and non-negative"):
+            MisfitWindow(3, 7, **{field: bad})
+
+
+class TestMisfitSchedule:
+    def test_empty_schedule_has_no_window_anywhere(self) -> None:
+        assert MisfitSchedule().window_at(0) is None
+        assert MisfitSchedule().window_at(10_000) is None
+
+    def test_window_at_returns_containing_window(self) -> None:
+        sched = MisfitSchedule((MisfitWindow(10, 20), MisfitWindow(30, 40)))
+        assert sched.window_at(15) is sched.windows[0]
+        assert sched.window_at(35) is sched.windows[1]
+        # Half-open: end is exclusive, start inclusive.
+        assert sched.window_at(10) is sched.windows[0]
+        assert sched.window_at(20) is None
+        assert sched.window_at(25) is None
+
+    def test_overlapping_windows_raise(self) -> None:
+        """Overlapping windows are rejected — diagnostics could not pick a
+        single rate table for the overlap."""
+        with pytest.raises(ValueError, match="must not overlap"):
+            MisfitSchedule((MisfitWindow(10, 25), MisfitWindow(20, 30)))
 
 
 # ---------------------------------------------------------------------------
@@ -420,23 +446,21 @@ class TestMergeDiagnostics:
             "event_spike_prob": arr + 200.0,
         }
 
-    def test_mixed_mask_reassembles_in_original_event_order(self) -> None:
-        """Events split by an in/out mask are scattered back in order."""
+    def test_mixed_groups_reassemble_in_original_event_order(self) -> None:
+        """Events split across rate-table groups are scattered back in order."""
         spike_time_ind = np.array([1, 2, 3, 4], dtype=np.intp)
         spike_cell_ind = np.array([0, 1, 0, 1], dtype=np.intp)
-        in_window = np.array([False, True, True, False])
-        # diag_out covers events 0 and 3; diag_in covers events 1 and 2.
-        diag_out = self._batch([10.0, 13.0])
-        diag_in = self._batch([11.0, 12.0])
+        # Group 0 covers events 0 and 3; group 1 covers events 1 and 2.
+        event_group = np.array([0, 1, 1, 0], dtype=np.intp)
+        per_group = [self._batch([10.0, 13.0]), self._batch([11.0, 12.0])]
 
         merged = _merge_diagnostics(
             n_time=5,
             n_cells=2,
             spike_time_ind=spike_time_ind,
             spike_cell_ind=spike_cell_ind,
-            in_window=in_window,
-            diag_out=diag_out,
-            diag_in=diag_in,
+            event_group=event_group,
+            per_group=per_group,
         )
         # Original event order is 10, 11, 12, 13.
         np.testing.assert_array_equal(merged["event_hpd_overlap"], [10.0, 11.0, 12.0, 13.0])
@@ -450,40 +474,40 @@ class TestMergeDiagnostics:
         assert dense[4, 1] == 13.0
         assert np.isnan(dense[0, 0])
 
-    @pytest.mark.parametrize("all_in", [True, False])
-    def test_all_in_or_all_out_mask(self, all_in: bool) -> None:
-        """A mask that puts every event on one side still merges correctly."""
+    @pytest.mark.parametrize("all_group1", [True, False])
+    def test_all_events_in_one_group(self, all_group1: bool) -> None:
+        """A grouping that puts every event in one group still merges
+        correctly, with the other group empty."""
         n = 3
         spike_time_ind = np.arange(1, n + 1, dtype=np.intp)
         spike_cell_ind = np.zeros(n, dtype=np.intp)
-        in_window = np.full(n, all_in)
+        event_group = np.full(n, 1 if all_group1 else 0, dtype=np.intp)
         populated = self._batch([1.0, 2.0, 3.0])
         empty = self._batch([])
+        per_group = [empty, populated] if all_group1 else [populated, empty]
         merged = _merge_diagnostics(
             n_time=n + 1,
             n_cells=1,
             spike_time_ind=spike_time_ind,
             spike_cell_ind=spike_cell_ind,
-            in_window=in_window,
-            diag_out=empty if all_in else populated,
-            diag_in=populated if all_in else empty,
+            event_group=event_group,
+            per_group=per_group,
         )
         np.testing.assert_array_equal(merged["event_kl_divergence"], [101.0, 102.0, 103.0])
 
     def test_length_mismatch_raises(self) -> None:
-        """A batch whose event count disagrees with the mask fails loud."""
+        """A batch whose event count disagrees with its group fails loud."""
         spike_time_ind = np.array([1, 2, 3], dtype=np.intp)
         spike_cell_ind = np.zeros(3, dtype=np.intp)
-        in_window = np.array([False, True, True])
-        with pytest.raises(ValueError, match="diag_in has 1 events but the mask expects 2"):
+        event_group = np.array([0, 1, 1], dtype=np.intp)
+        with pytest.raises(ValueError, match="group 1 has 1 events but the mask expects 2"):
             _merge_diagnostics(
                 n_time=4,
                 n_cells=1,
                 spike_time_ind=spike_time_ind,
                 spike_cell_ind=spike_cell_ind,
-                in_window=in_window,
-                diag_out=self._batch([10.0]),
-                diag_in=self._batch([11.0]),  # mask expects 2, not 1
+                event_group=event_group,
+                per_group=[self._batch([10.0]), self._batch([11.0])],  # group 1 expects 2
             )
 
 

@@ -19,9 +19,16 @@ from typing import TypedDict
 import numpy as np
 from numpy.typing import NDArray
 
-from statespacecheck_paper.analysis import DecodeParams, decode_and_diagnostics
+from statespacecheck_paper.analysis import (
+    DecodeParams,
+    MisfitSchedule,
+    MisfitWindow,
+    decode_and_diagnostics,
+    get_remapped_pf_centers,
+)
 from statespacecheck_paper.simulation import (
     gaussian_transition_matrix,
+    placefield_rates,
     reflect_into_interval,
     simulate_spikes_history_dependent,
     simulate_spikes_position_tuned,
@@ -226,6 +233,42 @@ def run_figure03_simulation(
     x_true = np.concatenate([p_x for p_x, _ in phases], axis=0)
     spikes = np.vstack([p_s for _, p_s in phases])
 
+    # The three decoder-side misfits as a single schedule:
+    # - Remap: the decoder's posterior update uses remapped place-field
+    #   centers (``decoder_rates``); the diagnostics still reference the
+    #   original Gaussian fields (``diagnostic_rates`` left None) so they
+    #   correctly flag the mismatch.
+    # - Wide dynamics noise: an inflated transition matrix only.
+    # - Wiggly-flat likelihood: the decoder's rate model itself becomes
+    #   wiggly-flat, used for both the posterior update and the
+    #   diagnostics (``diagnostic_rates`` == ``decoder_rates``).
+    remapped_rates = placefield_rates(
+        xs,
+        get_remapped_pf_centers(pf_centers, params.remap_from_to, active=True),
+        params.pf_width,
+        params.rate_scale,
+    )
+    misfit_schedule = MisfitSchedule(
+        (
+            MisfitWindow(
+                params.T_remap_start,
+                params.T_remap_end,
+                decoder_rates=remapped_rates,
+            ),
+            MisfitWindow(
+                params.T_recovery3_end,
+                params.T_wide_dynamics_end,
+                transition_matrix=transition_matrix_inflated,
+            ),
+            MisfitWindow(
+                params.T_recovery4_end,
+                params.T_wiggly_end,
+                decoder_rates=wiggly_rates,
+                diagnostic_rates=wiggly_rates,
+            ),
+        )
+    )
+
     metrics = decode_and_diagnostics(
         spikes=spikes,
         xs=xs,
@@ -233,12 +276,7 @@ def run_figure03_simulation(
         pf_centers=pf_centers,
         pf_width=params.pf_width,
         rate_scale=params.rate_scale,
-        remap_window=params.remap_window,
-        remap_from_to=params.remap_from_to,
-        transition_matrix_inflated=transition_matrix_inflated,
-        inflate_window=(params.T_recovery3_end, params.T_wide_dynamics_end),
-        wiggly_rates=wiggly_rates,
-        wiggly_window=(params.T_recovery4_end, params.T_wiggly_end),
+        misfit_schedule=misfit_schedule,
     )
 
     boundaries = np.cumsum([len(p_x) for p_x, _ in phases]).tolist()
