@@ -165,8 +165,22 @@ To demonstrate the performance of our local goodness-of-fit metrics in real-worl
 
 \subsection{Simulation Results}
 
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\textwidth]{../figures/main/figure03.pdf}
+\caption{Per-spike goodness-of-fit diagnostics across a five-misfit simulation. The simulation walks through five model misspecifications separated by clean-recovery windows: place-field remapping, unmodeled history-dependent firing, persistent-velocity drift, wide-dynamics noise, and a wiggly-flat likelihood. The top block shows the three diagnostics (HPD overlap, KL divergence, and the rank-based predictive $p$-value) as a function of time; the bottom heatmap summarizes each diagnostic over each phase, highlighting where the metrics agree and where they disagree.}
+\label{fig:simulation}
+\end{figure}
+
 
 \section{Real Hippocampal Data Analysis}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\textwidth]{../figures/main/figure04.pdf}
+\caption{Per-spike goodness-of-fit diagnostics on real hippocampal recordings during W-track running. (a) Longer context window showing the surrounding run periods. (b) Zoomed-in detail view under a Continuous decoder. (c) The same detail view under a Continuous--Fragmented decoder.}
+\label{fig:real_data}
+\end{figure}
 
 
 \section{Discussion \& Conclusion}
