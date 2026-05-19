@@ -14,23 +14,18 @@ from __future__ import annotations
 
 import numpy as np
 
-# Imports preserved as the public surface of this script (tests/test_figures.py
-# asserts these are accessible at module level — see TestFigure03Integration).
-from statespacecheck_paper.analysis import (  # noqa: F401
+# ``decode_and_diagnostics`` and ``simulate_walk`` are re-exported as part of
+# this script's public surface — tests/test_figures.py asserts they are
+# accessible at module level.
+from statespacecheck_paper.analysis import (
     DecodeParams,
     compute_thresholds,
-    decode_and_diagnostics,
+    decode_and_diagnostics,  # noqa: F401 — re-exported public surface
 )
 from statespacecheck_paper.figure03_demo import run_figure03_simulation
-from statespacecheck_paper.plotting import (
-    plot_combined_diagnostics,
-)
-from statespacecheck_paper.simulation import (  # noqa: F401
-    gaussian_transition_matrix,
-    reflect_into_interval,
-    simulate_spikes_flat_rate,
-    simulate_spikes_position_tuned,
-    simulate_walk,
+from statespacecheck_paper.plotting import plot_combined_diagnostics
+from statespacecheck_paper.simulation import (
+    simulate_walk,  # noqa: F401 — re-exported public surface
 )
 from statespacecheck_paper.style import save_figure
 
@@ -38,9 +33,10 @@ from statespacecheck_paper.style import save_figure
 def run_demo(params: DecodeParams) -> None:
     """Run the full diagnostic demonstration with multiple simulation phases.
 
-    Generates Figure 3 showing a Bayesian decoder with periods of good and poor
-    model fit across 8 phases: baseline, remapping misfit, flat firing misfit,
-    fast movement misfit, and momentum misfit, with recovery periods between.
+    Generates Figure 3: a Bayesian decoder stepped through five model-misfit
+    conditions separated by clean-recovery windows, chosen to span the
+    metric-disagreement space (which misfits each of HPD overlap, KL
+    divergence, and the rank-based predictive p-value detects vs. misses).
 
     Parameters
     ----------
@@ -55,17 +51,37 @@ def run_demo(params: DecodeParams) -> None:
 
     Notes
     -----
-    The simulation includes the following phases:
-    1. Clean baseline (0 - T_remap_start): Model fits well
-    2. Remapping misfit (T_remap_start - T_remap_end): Place fields remap
-    3. Recovery 1 (T_remap_end - T_recovery1_end): Return to good fit
-    4. Flat firing misfit (T_recovery1_end - T_flat_end): Cells lose tuning
-    5. Recovery 2 (T_flat_end - T_recovery2_end): Return to good fit
-    6. Fast movement misfit (T_recovery2_end - T_fast_end): Animal moves faster
-       than model expects
-    7. Recovery 3 (T_fast_end - T_recovery3_end): Return to good fit
-    8. Momentum misfit (T_recovery3_end - T_slow_end): Animal has persistent
-       velocity but model assumes memoryless random walk
+    The simulation includes 10 phases (5 misfits, each preceded by a
+    clean-recovery or baseline window):
+
+    1. Clean baseline (0 - T_remap_start): Model fits well.
+    2. Remap misfit (T_remap_start - T_remap_end): A subset of cells use
+       swapped place-field identities — an observation-model misfit.
+    3. Clean recovery (T_remap_end - T_recovery1_end).
+    4. History-dependent firing misfit (T_recovery1_end - T_hist_dep_end):
+       Spikes are generated with a hard refractory period plus bursting;
+       the decoder still assumes Poisson. The misfit lives in spike-train
+       temporal correlations, so per-spike spatial diagnostics largely
+       miss it.
+    5. Clean recovery (T_hist_dep_end - T_recovery2_end).
+    6. Drift misfit (T_recovery2_end - T_drift_end): The trajectory has
+       persistent velocity (AR(1), drift_momentum); the decoder assumes a
+       memoryless random walk.
+    7. Clean recovery (T_drift_end - T_recovery3_end).
+    8. Wide dynamics noise (T_recovery3_end - T_wide_dynamics_end): The
+       decoder applies an inflated transition matrix; engineered to
+       inflate KL while HPD overlap and the rank-based p-value stay near
+       baseline (the KL false-positive case).
+    9. Clean recovery (T_wide_dynamics_end - T_recovery4_end).
+    10. Wiggly-flat likelihood misfit (T_recovery4_end - T_wiggly_end):
+        The decoder uses per-cell wiggly-flat rate functions; the
+        per-spike likelihood is low-information, which destabilizes HPD
+        overlap and makes the rank-based p-value ambiguous.
+
+    Figure 3 has two panels: a time-series block (predictive, likelihood,
+    raster, and the three diagnostics over time) and a summary heatmap of
+    the fraction of spike events exceeding the baseline threshold per
+    phase per metric.
 
     Diagnostic thresholds are computed from the clean baseline period.
     """
@@ -81,7 +97,8 @@ def run_demo(params: DecodeParams) -> None:
     pf_centers = params.pf_centers
     assert pf_centers is not None, "pf_centers must be initialized"
 
-    # Thresholds from clean baseline window (first 6k timesteps, before remapping starts)
+    # Thresholds from the clean-baseline window (everything before the remap
+    # misfit starts).
     thresholds = compute_thresholds(metrics, baseline_end=params.T_remap_start)
 
     # Plot combined diagnostics figure
@@ -101,9 +118,13 @@ def run_demo(params: DecodeParams) -> None:
 
 
 if __name__ == "__main__":
-    # Default params mirror the MATLAB script. To run quickly while prototyping,
-    # reduce T1/T2/T3 here.
+    # Full-size run (~38k 1-ms steps). To prototype quickly, shrink the
+    # timeline by passing smaller T_* boundaries, e.g.:
+    #   params = DecodeParams(
+    #       T_remap_start=600, T_remap_end=900, T_recovery1_end=1100,
+    #       T_hist_dep_end=1400, T_recovery2_end=1600, T_drift_end=1900,
+    #       T_recovery3_end=2100, T_wide_dynamics_end=2400,
+    #       T_recovery4_end=2600, T_wiggly_end=2900,
+    #   )
     params = DecodeParams()
-    # e.g., for a fast smoke test:
-    # params = DecodeParams(T1=3_000, T2=4_000, T3=5_000)
     run_demo(params)

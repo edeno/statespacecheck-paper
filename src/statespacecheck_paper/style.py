@@ -8,18 +8,20 @@ Examples
 --------
 Basic usage for creating a publication figure:
 
->>> from statespacecheck_paper.style import WONG, set_figure_defaults, save_figure
+>>> from statespacecheck_paper.style import (
+...     WONG, get_figure_size, set_figure_defaults, save_figure
+... )
 >>> import matplotlib.pyplot as plt
 >>> set_figure_defaults(context="paper")
 >>> fig, ax = plt.subplots(figsize=get_figure_size("single"))
->>> ax.plot([1, 2, 3], [1, 2, 3], color=WONG[1])
->>> save_figure("figures/my_figure")
+>>> _ = ax.plot([1, 2, 3], [1, 2, 3], color=WONG[1])
+>>> save_figure("figures/my_figure")  # doctest: +SKIP
 
 For presentations:
 
 >>> set_figure_defaults(context="presentation")
 >>> fig, ax = plt.subplots(figsize=get_figure_size("double"))
->>> save_figure("figures/presentation_figure", dpi=300)
+>>> save_figure("figures/presentation_figure", dpi=300)  # doctest: +SKIP
 """
 
 from __future__ import annotations
@@ -114,25 +116,33 @@ COLORS: dict[str, str] = {
     "kl_pointwise": "#56B4E9",  # WONG[2] Sky Blue
     #
     # -------------------------------------------------------------------------
-    # Experimental Phase Backgrounds (very light, ~15% saturation)
+    # Figure-3 Phase Backgrounds (very light, ~15% saturation)
     # -------------------------------------------------------------------------
-    # These are derived from WONG colors but lightened significantly
-    # to serve as subtle background indicators without competing with data
+    # Subtle background fills, one per figure-3 misfit phase. Derived from
+    # WONG colors but lightened so they don't compete with data. Keys match
+    # the misfit phases produced by
+    # ``statespacecheck_paper.figure03_demo.run_figure03_simulation``.
     #
-    # Baseline period - no manipulation
+    # Baseline / clean-recovery — no manipulation.
     "phase_baseline": "#FFFFFF",  # White
     #
-    # Remapping period - place field remapping (related to likelihood change)
+    # Remap misfit — a subset of cells use swapped place-field identities.
     "phase_remap": "#FFF0D6",  # Light orange (from WONG[1])
     #
-    # Flat firing period - constant firing rates
-    "phase_flat": "#E8E8E8",  # Light gray (neutral)
+    # History-dependent firing misfit — refractory + bursting spike trains.
+    "phase_history_dependent": "#E8E8E8",  # Light gray (neutral)
     #
-    # Fast movement period - rapid position changes
-    "phase_fast": "#FFE0D6",  # Light vermillion (from WONG[6])
+    # Drift misfit — persistent-velocity trajectory vs. memoryless decoder.
+    "phase_drift": "#D6E8FF",  # Light blue (from WONG[5])
     #
-    # Slow/stationary period - minimal movement
-    "phase_slow": "#D6E8FF",  # Light blue (from WONG[5])
+    # Wide-dynamics-noise misfit — decoder uses an inflated transition matrix;
+    # engineered to inflate KL while HPD overlap and the rank-based p-value
+    # stay near baseline (the KL false-positive case).
+    "phase_wide_dynamics": "#E8E1F2",  # Light purple (from WONG[7])
+    #
+    # Wiggly-flat-likelihood misfit — decoder uses low-information wiggly-flat
+    # rate functions; destabilizes HPD overlap and the rank-based p-value.
+    "phase_wiggly": "#E0F2E8",  # Light green (from WONG[3])
     #
     # -------------------------------------------------------------------------
     # Heatmap Colormaps
@@ -185,7 +195,7 @@ def set_figure_defaults(context: Literal["paper", "presentation", "poster"] = "p
 
     >>> set_figure_defaults(context="paper")
     >>> fig, ax = plt.subplots()
-    >>> ax.plot([1, 2, 3], [1, 2, 3])
+    >>> _ = ax.plot([1, 2, 3], [1, 2, 3])
 
     For a presentation:
 
@@ -267,26 +277,27 @@ def save_figure(
 
     Examples
     --------
-    Basic usage:
+    Basic usage (the ``save_figure`` calls are marked ``+SKIP`` because
+    they write PDF/PNG files to disk):
 
     >>> fig, ax = plt.subplots()
-    >>> ax.plot([1, 2, 3], [1, 2, 3])
-    >>> save_figure("figures/my_figure")
+    >>> _ = ax.plot([1, 2, 3], [1, 2, 3])
+    >>> save_figure("figures/my_figure")  # doctest: +SKIP
     Saved figures/my_figure.pdf and figures/my_figure.png
 
     With custom DPI and keeping figure open:
 
-    >>> save_figure("figures/my_figure", dpi=300, close=False)
+    >>> save_figure("figures/my_figure", dpi=300, close=False)  # doctest: +SKIP
 
     Using Path object:
 
     >>> from pathlib import Path
     >>> output_path = Path("results") / "figure1"
-    >>> save_figure(output_path)
+    >>> save_figure(output_path)  # doctest: +SKIP
 
     Auto-creates nested directories:
 
-    >>> save_figure("figures/supplementary/figure_s1")  # Creates figures/supplementary/
+    >>> save_figure("figures/supplementary/figure_s1")  # doctest: +SKIP
     """
     # Convert to Path object for easier handling
     path = Path(name)

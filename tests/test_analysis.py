@@ -2,653 +2,618 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import Any
+
 import numpy as np
 import pytest
 
 from statespacecheck_paper.analysis import (
     DecodeParams,
+    MisfitSchedule,
+    MisfitWindow,
     Thresholds,
     Transformed,
+    _merge_diagnostics,
     compute_thresholds,
     decode_and_diagnostics,
     get_remapped_pf_centers,
     likelihood_grid_for_counts,
     transform_metrics,
 )
+from statespacecheck_paper.simulation import wiggly_flat_rates
+
+# ---------------------------------------------------------------------------
+# Shared fixtures
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class DecoderInputs:
+    """Bundle of inputs for ``decode_and_diagnostics``."""
+
+    spikes: np.ndarray
+    xs: np.ndarray
+    transition_matrix: np.ndarray
+    pf_centers: np.ndarray
+    pf_width: float
+    rate_scale: float
+
+    def call(self, **overrides: Any) -> dict:
+        kwargs: dict[str, Any] = {
+            "spikes": self.spikes,
+            "xs": self.xs,
+            "transition_matrix": self.transition_matrix,
+            "pf_centers": self.pf_centers,
+            "pf_width": self.pf_width,
+            "rate_scale": self.rate_scale,
+        }
+        kwargs.update(overrides)
+        return decode_and_diagnostics(**kwargs)
+
+
+def _diag_dominant_transition(n_bins: int, peak: float = 0.9) -> np.ndarray:
+    return np.eye(n_bins) * peak + (1.0 - peak) / n_bins
+
+
+@pytest.fixture
+def decoder_inputs() -> DecoderInputs:
+    """Small reproducible decoder problem with no misfit schedule."""
+    rng = np.random.default_rng(42)
+    n_time, n_cells, n_bins = 10, 3, 21
+    return DecoderInputs(
+        spikes=rng.poisson(1.0, size=(n_time, n_cells)),
+        xs=np.linspace(0, 100, n_bins),
+        transition_matrix=_diag_dominant_transition(n_bins),
+        pf_centers=np.array([25.0, 50.0, 75.0]),
+        pf_width=5.0,
+        rate_scale=0.1,
+    )
+
+
+@pytest.fixture
+def metrics_2d() -> dict[str, np.ndarray]:
+    """Standard (n_time, n_cells) metrics dict for transform/threshold tests."""
+    rng = np.random.default_rng(42)
+    return {
+        "hpd_overlap": rng.uniform(0.5, 1.0, (100, 5)),
+        "kl_divergence": rng.uniform(0.0, 2.0, (100, 5)),
+        "spike_prob": rng.uniform(0.0, 1.0, (100, 5)),
+    }
+
+
+# ---------------------------------------------------------------------------
+# DecodeParams
+# ---------------------------------------------------------------------------
 
 
 class TestDecodeParams:
-    """Tests for DecodeParams dataclass."""
-
-    def test_default_values(self) -> None:
-        """Test that default values are set correctly."""
-        # Arrange & Act
+    def test_post_init_initializes_pf_centers_to_grid(self) -> None:
         params = DecodeParams()
-
-        # Assert
-        assert params.T_remap_start == 6_000
-        assert params.T_remap_end == 10_000
-        assert params.T_recovery1_end == 14_000
-        assert params.T_flat_end == 16_000
-        assert params.T_recovery2_end == 20_000
-        assert params.T_fast_end == 24_000
-        assert params.T_recovery3_end == 28_000
-        assert params.T_slow_end == 32_000
-        assert params.sigx_pred == 0.5
-        assert params.sigx_pred_fast_phase == 0.1
-        assert params.sigx_pred_slow_phase == 20.0
-        assert params.sigx_true_fast == 10.0
-        assert params.sigx_true_slow == 0.0
-        assert params.xs_min == 0
-        assert params.xs_max == 100
-        assert params.xs_step == 1
-        assert params.pf_width == 10.0
-        assert params.rate_scale == 5.0
-        assert params.base_seed == 1
-
-    def test_post_init_initializes_pf_centers(self) -> None:
-        """Test that __post_init__ initializes pf_centers if not provided."""
-        # Arrange & Act
-        params = DecodeParams()
-
-        # Assert
-        assert params.pf_centers is not None
-        expected_centers = np.arange(0, 101, 10, dtype=float)
-        np.testing.assert_array_equal(params.pf_centers, expected_centers)
+        np.testing.assert_array_equal(params.pf_centers, np.arange(0, 101, 10, dtype=float))
 
     def test_post_init_respects_provided_pf_centers(self) -> None:
-        """Test that __post_init__ doesn't override provided pf_centers."""
-        # Arrange
-        custom_centers = np.array([0.0, 25.0, 50.0, 75.0, 100.0])
+        custom = np.array([0.0, 25.0, 50.0, 75.0, 100.0])
+        params = DecodeParams(pf_centers=custom)
+        np.testing.assert_array_equal(params.pf_centers, custom)
 
-        # Act
-        params = DecodeParams(pf_centers=custom_centers)
-
-        # Assert
-        np.testing.assert_array_equal(params.pf_centers, custom_centers)
-
-    def test_remap_window_property(self) -> None:
-        """Test that remap_window property returns correct tuple."""
-        # Arrange
+    def test_remap_window_returns_start_end_tuple(self) -> None:
         params = DecodeParams(T_remap_start=1000, T_remap_end=2000)
+        assert params.remap_window == (1000, 2000)
 
-        # Act
-        remap_window = params.remap_window
 
-        # Assert
-        assert remap_window == (1000, 2000)
+# ---------------------------------------------------------------------------
+# likelihood_grid_for_counts
+# ---------------------------------------------------------------------------
 
 
 class TestLikelihoodGridForCounts:
-    """Tests for likelihood_grid_for_counts function."""
+    @pytest.fixture
+    def grid_args(self) -> dict[str, Any]:
+        return {
+            "xs": np.linspace(0, 100, 21),
+            "pf_centers": np.array([25.0, 50.0, 75.0]),
+            "pf_width": 5.0,
+            "rate_scale": 0.1,
+        }
 
-    def test_output_shape(self) -> None:
-        """Test that output has correct shape (n_bins, n_cells)."""
-        # Arrange
-        xs = np.linspace(0, 100, 21)  # 21 bins
-        pf_centers = np.array([25.0, 50.0, 75.0])  # 3 cells
-        pf_width = 5.0
-        rate_scale = 0.1
-        counts = np.array([2, 1, 3])  # 3 cells
-
-        # Act
-        likelihood = likelihood_grid_for_counts(xs, pf_centers, pf_width, rate_scale, counts)
-
-        # Assert
+    def test_shape_matches_n_bins_and_n_cells(self, grid_args: dict) -> None:
+        likelihood = likelihood_grid_for_counts(counts=np.array([2, 1, 3]), **grid_args)
         assert likelihood.shape == (21, 3)
 
-    def test_normalized_per_cell(self) -> None:
-        """Test that values are normalized per cell (over bins)."""
-        # Arrange
-        xs = np.linspace(0, 100, 21)
-        pf_centers = np.array([50.0])
-        pf_width = 5.0
-        rate_scale = 0.1
-        counts = np.array([2])
+    def test_normalized_per_cell(self, grid_args: dict) -> None:
+        likelihood = likelihood_grid_for_counts(counts=np.array([2, 1, 3]), **grid_args)
+        np.testing.assert_allclose(likelihood.sum(axis=0), 1.0, rtol=1e-5)
 
-        # Act
-        likelihood = likelihood_grid_for_counts(xs, pf_centers, pf_width, rate_scale, counts)
+    def test_zero_counts_still_normalized(self, grid_args: dict) -> None:
+        """Zero spikes shouldn't produce NaN/Inf or break normalization."""
+        likelihood = likelihood_grid_for_counts(counts=np.zeros(3, dtype=int), **grid_args)
+        assert np.isfinite(likelihood).all()
+        np.testing.assert_allclose(likelihood.sum(axis=0), 1.0, rtol=1e-5)
 
-        # Assert - sum over bins (axis 0) should be 1 for each cell
-        np.testing.assert_allclose(np.sum(likelihood, axis=0), 1.0, rtol=1e-5)
 
-    def test_handles_zero_counts(self) -> None:
-        """Test that function handles zero spike counts correctly."""
-        # Arrange
-        xs = np.linspace(0, 100, 21)
-        pf_centers = np.array([25.0, 75.0])
-        pf_width = 5.0
-        rate_scale = 0.1
-        counts = np.array([0, 0])  # Zero spikes
-
-        # Act
-        likelihood = likelihood_grid_for_counts(xs, pf_centers, pf_width, rate_scale, counts)
-
-        # Assert - should still be normalized and not contain NaN or Inf
-        assert not np.any(np.isnan(likelihood))
-        assert not np.any(np.isinf(likelihood))
-        np.testing.assert_allclose(np.sum(likelihood, axis=0), 1.0, rtol=1e-5)
+# ---------------------------------------------------------------------------
+# get_remapped_pf_centers
+# ---------------------------------------------------------------------------
 
 
 class TestGetRemappedPfCenters:
-    """Tests for get_remapped_pf_centers function."""
-
-    def test_inactive_returns_unchanged(self) -> None:
-        """Test that active=False returns unchanged pf_centers."""
-        # Arrange
+    def test_inactive_returns_input_unchanged_without_copy(self) -> None:
+        """active=False is the hot path — must avoid the copy."""
         pf_centers = np.array([0.0, 10.0, 20.0, 30.0, 40.0])
-        remap_from_to = (0, 1)
-        active = False
-
-        # Act
-        result = get_remapped_pf_centers(pf_centers, remap_from_to, active)
-
-        # Assert
+        result = get_remapped_pf_centers(pf_centers, (0, 1), active=False)
         np.testing.assert_array_equal(result, pf_centers)
-        # Verify it's not a copy (same object)
         assert result is pf_centers
 
-    def test_single_remapping(self) -> None:
-        """Test that single remapping (src, dst) works correctly."""
-        # Arrange
-        pf_centers = np.array([0.0, 10.0, 20.0, 30.0])  # 4 cells
-        remap_from_to = (2, 0)  # Cell 2 should use cell 0's place field center
-        active = True
-
-        # Act
-        result = get_remapped_pf_centers(pf_centers, remap_from_to, active)
-
-        # Assert
-        expected = np.array([0.0, 10.0, 0.0, 30.0])  # Cell 2's center changed to 0.0
-        np.testing.assert_array_equal(result, expected)
-        # Verify original is unchanged
-        np.testing.assert_array_equal(pf_centers, [0.0, 10.0, 20.0, 30.0])
-
-    def test_multiple_remappings(self) -> None:
-        """Test that multiple remappings work correctly."""
-        # Arrange
-        pf_centers = np.array([0.0, 10.0, 20.0, 30.0])  # 4 cells
-        remap_from_to = ((0, 1), (2, 3))  # Cell 0→1, Cell 2→3
-        active = True
-
-        # Act
-        result = get_remapped_pf_centers(pf_centers, remap_from_to, active)
-
-        # Assert
-        expected = np.array([10.0, 10.0, 30.0, 30.0])
-        np.testing.assert_array_equal(result, expected)
-
-    def test_returns_copy_when_active(self) -> None:
-        """Test that active=True returns a copy, not modifying original."""
-        # Arrange
+    def test_active_returns_copy_and_does_not_mutate_input(self) -> None:
         pf_centers = np.array([0.0, 10.0, 20.0])
-        remap_from_to = (0, 1)
-        active = True
-
-        # Act
-        result = get_remapped_pf_centers(pf_centers, remap_from_to, active)
-
-        # Assert
+        result = get_remapped_pf_centers(pf_centers, (0, 1), active=True)
         assert result is not pf_centers
-        # Original should be unchanged
         np.testing.assert_array_equal(pf_centers, [0.0, 10.0, 20.0])
 
-    def test_default_remapping_pattern(self) -> None:
-        """Test that default DecodeParams remapping (6 bidirectional pairs) works."""
-        # Arrange: 10 cells with place field centers at 0, 10, 20, ..., 90
-        pf_centers = np.arange(10) * 10.0  # [0, 10, 20, 30, 40, 50, 60, 70, 80, 90]
-        # Default remapping swaps cells across the track:
-        # (0, 9), (1, 8), (2, 7), (9, 0), (8, 1), (7, 2)
-        remap_from_to = (
-            (0, 9),  # Cell 0 (pf=0) -> uses cell 9's pf (pf=90)
-            (1, 8),  # Cell 1 (pf=10) -> uses cell 8's pf (pf=80)
-            (2, 7),  # Cell 2 (pf=20) -> uses cell 7's pf (pf=70)
-            (9, 0),  # Cell 9 (pf=90) -> uses cell 0's pf (pf=0)
-            (8, 1),  # Cell 8 (pf=80) -> uses cell 1's pf (pf=10)
-            (7, 2),  # Cell 7 (pf=70) -> uses cell 2's pf (pf=20)
-        )
-        active = True
+    def test_single_remapping_assigns_dst_center_to_src(self) -> None:
+        pf_centers = np.array([0.0, 10.0, 20.0, 30.0])
+        result = get_remapped_pf_centers(pf_centers, (2, 0), active=True)
+        np.testing.assert_array_equal(result, [0.0, 10.0, 0.0, 30.0])
 
-        # Act
-        result = get_remapped_pf_centers(pf_centers, remap_from_to, active)
+    def test_multiple_remappings_use_original_dst_values(self) -> None:
+        """Bidirectional swap (0->1, 1->0) must use *original* values, not
+        sequentially overwritten ones — otherwise both end up with the same
+        center."""
+        pf_centers = np.array([0.0, 10.0, 20.0, 30.0])
+        result = get_remapped_pf_centers(pf_centers, ((0, 1), (1, 0)), active=True)
+        np.testing.assert_array_equal(result, [10.0, 0.0, 20.0, 30.0])
 
-        # Assert: bidirectional swaps
-        assert result[0] == pf_centers[9]  # 0 -> 90
-        assert result[9] == pf_centers[0]  # 90 -> 0
-        assert result[1] == pf_centers[8]  # 10 -> 80
-        assert result[8] == pf_centers[1]  # 80 -> 10
-        assert result[2] == pf_centers[7]  # 20 -> 70
-        assert result[7] == pf_centers[2]  # 70 -> 20
-        # Cells 3, 4, 5, 6 should remain unchanged
-        assert result[3] == pf_centers[3]  # 30
-        assert result[4] == pf_centers[4]  # 40
-        assert result[5] == pf_centers[5]  # 50
-        assert result[6] == pf_centers[6]  # 60
-
-        # Verify full expected array
+    def test_default_bidirectional_swap_pattern(self) -> None:
+        """The DecodeParams default is six bidirectional swaps; verify the
+        full pattern preserves the swap semantics across all 10 cells."""
+        pf_centers = np.arange(10) * 10.0
+        remap_from_to = ((0, 9), (1, 8), (2, 7), (9, 0), (8, 1), (7, 2))
+        result = get_remapped_pf_centers(pf_centers, remap_from_to, active=True)
         expected = np.array([90.0, 80.0, 70.0, 30.0, 40.0, 50.0, 60.0, 20.0, 10.0, 0.0])
         np.testing.assert_array_equal(result, expected)
 
 
+# ---------------------------------------------------------------------------
+# decode_and_diagnostics
+# ---------------------------------------------------------------------------
+
+
 class TestDecodeAndDiagnostics:
-    """Tests for decode_and_diagnostics function (integration test)."""
+    def test_full_output_contract(self, decoder_inputs: DecoderInputs) -> None:
+        """Lock in the full set of returned keys + their shapes. Downstream
+        plotting and cache code consumes the *whole* dict, so silently
+        dropping any key (e.g. ``predictive``, ``per_spike_likelihood``,
+        ``event_*``) is a regression even if the four headline metrics are
+        intact."""
+        result = decoder_inputs.call()
+        n_time, n_cells = decoder_inputs.spikes.shape
+        n_bins = decoder_inputs.xs.size
+        # Events come from spikes[1:] (t=0 has no prior); count > 1 expands
+        # to that many events (src/.../analysis.py:583).
+        n_events = int(decoder_inputs.spikes[1:].sum())
 
-    def test_output_keys(self) -> None:
-        """Test that output dictionary has expected keys."""
-        # Arrange
-        rng = np.random.default_rng(42)
-        n_time, n_cells = 10, 3
-        n_bins = 21
-        spikes = rng.poisson(1.0, size=(n_time, n_cells))
-        xs = np.linspace(0, 100, n_bins)
-        transition_matrix = np.eye(n_bins) * 0.9 + 0.1 / n_bins  # Diagonal dominant
-        pf_centers = np.array([25.0, 50.0, 75.0])
-        pf_width = 5.0
-        rate_scale = 0.1
-        remap_window = (5, 7)
-        remap_from_to = (0, 1)
+        expected_shapes = {
+            # Distributions over position (time × bins).
+            "posterior": (n_time, n_bins),
+            "predictive": (n_time, n_bins),
+            "likelihood": (n_time, n_bins),
+            "spike_likelihood": (n_time, n_bins),
+            # Per-cell metric matrices.
+            "hpd_overlap": (n_time, n_cells),
+            "kl_divergence": (n_time, n_cells),
+            "spike_prob": (n_time, n_cells),
+            # Per-spike-event arrays (count expansion in src/.../analysis.py:584).
+            "per_spike_likelihood": (n_events, n_bins),
+            "spike_time_ind": (n_events,),
+            "spike_cell_ind": (n_events,),
+            "event_time_ind": (n_events,),
+            "event_cell_ind": (n_events,),
+            "event_hpd_overlap": (n_events,),
+            "event_kl_divergence": (n_events,),
+            "event_spike_prob": (n_events,),
+        }
+        # No missing keys, no surprise extras.
+        assert set(result) == set(expected_shapes)
+        for key, shape in expected_shapes.items():
+            assert result[key].shape == shape, (
+                f"{key} shape mismatch: got {result[key].shape}, want {shape}"
+            )
 
-        # Act
-        result = decode_and_diagnostics(
-            spikes,
-            xs,
-            transition_matrix,
-            pf_centers,
-            pf_width,
-            rate_scale,
-            remap_window,
-            remap_from_to,
-        )
+    def test_t0_diagnostics_are_nan(self, decoder_inputs: DecoderInputs) -> None:
+        """No prior exists at t=0, so all diagnostics are NaN."""
+        result = decoder_inputs.call()
+        for key in ("hpd_overlap", "kl_divergence", "spike_prob"):
+            assert np.all(np.isnan(result[key][0]))
 
-        # Assert
-        assert "posterior" in result
-        assert "hpd_overlap" in result
-        assert "kl_divergence" in result
-        assert "spike_prob" in result
-
-    def test_output_shapes(self) -> None:
-        """Test that output arrays have correct shapes."""
-        # Arrange
-        rng = np.random.default_rng(42)
-        n_time, n_cells = 10, 3
-        n_bins = 21
-        spikes = rng.poisson(1.0, size=(n_time, n_cells))
-        xs = np.linspace(0, 100, n_bins)
-        transition_matrix = np.eye(n_bins) * 0.9 + 0.1 / n_bins
-        pf_centers = np.array([25.0, 50.0, 75.0])
-        pf_width = 5.0
-        rate_scale = 0.1
-        remap_window = (5, 7)
-        remap_from_to = (0, 1)
-
-        # Act
-        result = decode_and_diagnostics(
-            spikes,
-            xs,
-            transition_matrix,
-            pf_centers,
-            pf_width,
-            rate_scale,
-            remap_window,
-            remap_from_to,
-        )
-
-        # Assert
-        assert result["posterior"].shape == (n_time, n_bins)
-        assert result["hpd_overlap"].shape == (n_time, n_cells)
-        assert result["kl_divergence"].shape == (n_time, n_cells)
-        assert result["spike_prob"].shape == (n_time, n_cells)
-
-    def test_nan_handling(self) -> None:
-        """Test that NaN values are correctly placed in outputs."""
-        # Arrange
+    def test_nan_pattern_matches_spike_pattern(self) -> None:
+        """Diagnostics are NaN exactly where a cell has no spike at that time."""
         n_bins = 11
-        # spikes: t=0 has spikes, t=1 has spikes, t=2 has spikes, t=3 has NO spikes, t=4 has spikes
-        # Cell 0: [1, 0, 1, 0, 2], Cell 1: [0, 1, 1, 0, 2]
         spikes = np.array([[1, 0], [0, 1], [1, 1], [0, 0], [2, 2]])
         xs = np.linspace(0, 100, n_bins)
-        transition_matrix = np.eye(n_bins) * 0.9 + 0.1 / n_bins
-        pf_centers = np.array([25.0, 75.0])
-        pf_width = 5.0
-        rate_scale = 0.1
-        remap_window = (10, 10)  # Outside range
-        remap_from_to = (0, 1)
-
-        # Act
         result = decode_and_diagnostics(
-            spikes,
-            xs,
-            transition_matrix,
-            pf_centers,
-            pf_width,
-            rate_scale,
-            remap_window,
-            remap_from_to,
+            spikes=spikes,
+            xs=xs,
+            transition_matrix=_diag_dominant_transition(n_bins),
+            pf_centers=np.array([25.0, 75.0]),
+            pf_width=5.0,
+            rate_scale=0.1,
         )
 
-        # Assert - metrics are now per-cell: (n_time, n_cells)
-        # t=0: all NaN (no prior available)
-        assert np.all(np.isnan(result["hpd_overlap"][0]))
-        assert np.all(np.isnan(result["kl_divergence"][0]))
-
-        # t=3: all NaN (no spikes from any cell)
-        assert np.all(np.isnan(result["hpd_overlap"][3]))
-        assert np.all(np.isnan(result["kl_divergence"][3]))
-
-        # t=1: cell 0 has no spike (NaN), cell 1 has spike (computed)
-        assert np.isnan(result["hpd_overlap"][1, 0])  # Cell 0: no spike
-        assert not np.isnan(result["hpd_overlap"][1, 1])  # Cell 1: has spike
-        assert np.isnan(result["kl_divergence"][1, 0])
-        assert not np.isnan(result["kl_divergence"][1, 1])
-
-        # t=2: both cells have spikes (both computed)
-        assert not np.isnan(result["hpd_overlap"][2, 0])
-        assert not np.isnan(result["hpd_overlap"][2, 1])
-        assert not np.isnan(result["kl_divergence"][2, 0])
-        assert not np.isnan(result["kl_divergence"][2, 1])
-
-        # t=4: both cells have spikes (both computed)
-        assert not np.isnan(result["hpd_overlap"][4, 0])
-        assert not np.isnan(result["hpd_overlap"][4, 1])
-
-        # spike_prob:
-        # - t=0: NaN (loop starts at t=1)
-        # - t=3: NaN (no spikes)
-        # - Other times: NaN for cells without spikes, computed for cells with spikes
-        assert np.all(np.isnan(result["spike_prob"][0]))  # t=0: no computation
-        assert np.all(np.isnan(result["spike_prob"][3]))  # t=3: no spikes
-        assert np.isnan(result["spike_prob"][1, 0])  # t=1, cell 0: no spike
-        assert not np.isnan(result["spike_prob"][1, 1])  # t=1, cell 1: has spike
-        assert not np.isnan(result["spike_prob"][2, 0])  # t=2: both have spikes
-        assert not np.isnan(result["spike_prob"][2, 1])
-        assert not np.isnan(result["spike_prob"][4, 0])  # t=4: both have spikes
-        assert not np.isnan(result["spike_prob"][4, 1])
+        # Diagnostics NaN at (t, cell) iff cell has no spike at that t,
+        # plus all of t=0 (no prior available).
+        no_spike = spikes == 0
+        no_spike[0] = True
+        for key in ("hpd_overlap", "kl_divergence", "spike_prob"):
+            np.testing.assert_array_equal(np.isnan(result[key]), no_spike)
 
     def test_count_greater_than_one_expands_to_multiple_events(self) -> None:
-        """Test that count-valued spikes are represented as repeated events."""
         n_bins = 11
         spikes = np.zeros((4, 2), dtype=int)
         spikes[1, 0] = 2
         spikes[2, 1] = 1
-        xs = np.linspace(0, 100, n_bins)
-        transition_matrix = np.eye(n_bins) * 0.9 + 0.1 / n_bins
-        pf_centers = np.array([25.0, 75.0])
-        pf_width = 5.0
-        rate_scale = 0.1
 
         result = decode_and_diagnostics(
-            spikes,
-            xs,
-            transition_matrix,
-            pf_centers,
-            pf_width,
-            rate_scale,
-            remap_window=(10, 10),
-            remap_from_to=(0, 1),
+            spikes=spikes,
+            xs=np.linspace(0, 100, n_bins),
+            transition_matrix=_diag_dominant_transition(n_bins),
+            pf_centers=np.array([25.0, 75.0]),
+            pf_width=5.0,
+            rate_scale=0.1,
         )
 
         np.testing.assert_array_equal(result["spike_time_ind"], [1, 1, 2])
         np.testing.assert_array_equal(result["spike_cell_ind"], [0, 0, 1])
         assert result["event_kl_divergence"].shape == (3,)
+        # The two count=2 spikes share a (time, cell), so their per-event
+        # diagnostics must equal the matrix value at that bin.
         np.testing.assert_allclose(
             result["event_kl_divergence"][:2],
             np.repeat(result["kl_divergence"][1, 0], 2),
         )
 
-    def test_with_narrow_transition_matrix(self) -> None:
-        """Test that narrow transition matrix is used in specified window."""
-        # Arrange
-        rng = np.random.default_rng(42)
-        n_time, n_cells = 10, 2
-        n_bins = 11
-        spikes = rng.poisson(1.0, size=(n_time, n_cells))
-        xs = np.linspace(0, 100, n_bins)
-        transition_matrix = np.eye(n_bins) * 0.5 + 0.5 / n_bins
-        transition_matrix_narrow = np.eye(n_bins) * 0.9 + 0.1 / n_bins
-        pf_centers = np.array([25.0, 75.0])
-        pf_width = 5.0
-        rate_scale = 0.1
-        remap_window = (20, 20)  # Outside range
-        remap_from_to = (0, 1)
-        narrow_window = (3, 6)
-
-        # Act - should not raise error
+    def test_no_spikes_produces_all_nan_diagnostics(self) -> None:
+        """Edge case: zero spikes => all-NaN matrices and empty event arrays."""
+        n_time, n_cells, n_bins = 5, 2, 11
         result = decode_and_diagnostics(
-            spikes,
-            xs,
-            transition_matrix,
-            pf_centers,
-            pf_width,
-            rate_scale,
-            remap_window,
-            remap_from_to,
-            transition_matrix_narrow=transition_matrix_narrow,
-            narrow_window=narrow_window,
+            spikes=np.zeros((n_time, n_cells), dtype=int),
+            xs=np.linspace(0, 100, n_bins),
+            transition_matrix=_diag_dominant_transition(n_bins),
+            pf_centers=np.array([25.0, 75.0]),
+            pf_width=5.0,
+            rate_scale=0.1,
+        )
+        assert np.all(np.isnan(result["hpd_overlap"]))
+        assert np.all(np.isnan(result["kl_divergence"]))
+        assert np.all(np.isnan(result["spike_prob"]))
+        assert result["event_time_ind"].shape == (0,)
+        assert result["event_cell_ind"].shape == (0,)
+        assert result["event_kl_divergence"].shape == (0,)
+
+    def test_alternative_transition_matrix_used_only_inside_window(
+        self,
+        decoder_inputs: DecoderInputs,
+    ) -> None:
+        """A :class:`MisfitWindow` with a ``transition_matrix`` must
+        (a) leave the predictive untouched before the window and
+        (b) actually change it inside. A regression that ignored the
+        schedule would still produce well-shaped output, so we compare
+        against a baseline run instead.
+        """
+        n_bins = decoder_inputs.xs.size
+        # Choose an alternative matrix that is *very* different from the
+        # baseline (peak=0.9 diag-dominant). A near-uniform matrix forces
+        # the predictive to spread out dramatically — easy to detect.
+        alt_matrix = _diag_dominant_transition(n_bins, peak=0.05)
+        window = (3, 6)
+        schedule = MisfitSchedule(
+            (MisfitWindow(window[0], window[1], transition_matrix=alt_matrix),)
         )
 
-        # Assert - output structure should be correct
-        assert result["posterior"].shape == (n_time, n_bins)
+        baseline = decoder_inputs.call()
+        with_alt = decoder_inputs.call(misfit_schedule=schedule)
 
-    def test_with_inflated_transition_matrix(self) -> None:
-        """Test that inflated transition matrix is used in specified window."""
-        # Arrange
-        rng = np.random.default_rng(42)
-        n_time, n_cells = 10, 2
-        n_bins = 11
-        spikes = rng.poisson(1.0, size=(n_time, n_cells))
-        xs = np.linspace(0, 100, n_bins)
-        transition_matrix = np.eye(n_bins) * 0.5 + 0.5 / n_bins
-        transition_matrix_inflated = np.eye(n_bins) * 0.2 + 0.8 / n_bins
-        pf_centers = np.array([25.0, 75.0])
-        pf_width = 5.0
-        rate_scale = 0.1
-        remap_window = (20, 20)  # Outside range
-        remap_from_to = (0, 1)
-        inflate_window = (4, 7)
-
-        # Act - should not raise error
-        result = decode_and_diagnostics(
-            spikes,
-            xs,
-            transition_matrix,
-            pf_centers,
-            pf_width,
-            rate_scale,
-            remap_window,
-            remap_from_to,
-            transition_matrix_inflated=transition_matrix_inflated,
-            inflate_window=inflate_window,
+        # Before the window, the two runs must be bit-identical: nothing
+        # in the algorithm has diverged yet.
+        np.testing.assert_array_equal(
+            baseline["predictive"][: window[0]], with_alt["predictive"][: window[0]]
+        )
+        np.testing.assert_array_equal(
+            baseline["posterior"][: window[0]], with_alt["posterior"][: window[0]]
         )
 
-        # Assert - output structure should be correct
-        assert result["posterior"].shape == (n_time, n_bins)
+        # Inside the window, at least one timestep's predictive must
+        # measurably differ (this is what the window actually controls).
+        # Use a generous tolerance so we don't depend on the exact
+        # magnitude — we only assert "different".
+        inside = slice(*window)
+        assert not np.allclose(
+            baseline["predictive"][inside],
+            with_alt["predictive"][inside],
+            atol=1e-6,
+        ), f"transition_matrix in {window} did not change predictive — schedule ignored?"
 
-
-class TestThresholds:
-    """Tests for Thresholds dataclass."""
-
-    def test_instantiation(self) -> None:
-        """Test that Thresholds can be instantiated correctly."""
-        # Arrange & Act
-        thresholds = Thresholds(
-            hpd_overlap=0.5,
-            kl_divergence=2.0,
-            spike_prob=0.05,  # Fixed at 0.05 per MATLAB
+    def test_wiggly_rates_used_only_inside_window(self, decoder_inputs: DecoderInputs) -> None:
+        """A :class:`MisfitWindow` with ``decoder_rates``/``diagnostic_rates``
+        must leave per-event diagnostics untouched for events outside the
+        window and change at least one event inside it. Compared against a
+        baseline run so a regression that ignored the schedule cannot pass
+        on output shape alone.
+        """
+        wiggly = wiggly_flat_rates(decoder_inputs.xs, n_cells=3)
+        window = (3, 7)
+        schedule = MisfitSchedule(
+            (
+                MisfitWindow(
+                    window[0],
+                    window[1],
+                    decoder_rates=wiggly,
+                    diagnostic_rates=wiggly,
+                ),
+            )
         )
 
-        # Assert
-        assert thresholds.hpd_overlap == 0.5
-        assert thresholds.kl_divergence == 2.0
-        assert thresholds.spike_prob == 0.05
+        baseline = decoder_inputs.call()
+        with_wiggly = decoder_inputs.call(misfit_schedule=schedule)
+
+        evt_t = with_wiggly["event_time_ind"]
+        # Events strictly before the window are unaffected — the filter
+        # state has not diverged yet. (Events *after* the window
+        # legitimately differ: the in-window posterior updates carry
+        # forward, so we do not check those.)
+        before = evt_t < window[0]
+        inside = (evt_t >= window[0]) & (evt_t < window[1])
+
+        np.testing.assert_array_equal(
+            baseline["event_kl_divergence"][before],
+            with_wiggly["event_kl_divergence"][before],
+        )
+        # At least one in-window event's KL changed (the wiggly likelihood
+        # is genuinely different from the Gaussian-PF likelihood).
+        assert inside.any(), "test fixture produced no in-window spike events"
+        assert not np.allclose(
+            baseline["event_kl_divergence"][inside],
+            with_wiggly["event_kl_divergence"][inside],
+            atol=1e-6,
+        ), "wiggly rates did not change in-window diagnostics — schedule ignored?"
+
+
+# ---------------------------------------------------------------------------
+# MisfitWindow / MisfitSchedule
+# ---------------------------------------------------------------------------
+
+
+class TestMisfitWindow:
+    def test_start_not_before_end_raises(self) -> None:
+        """``start >= end`` is rejected at construction."""
+        with pytest.raises(ValueError, match="start < end"):
+            MisfitWindow(10, 10)
+        with pytest.raises(ValueError, match="start < end"):
+            MisfitWindow(10, 5)
+
+    @pytest.mark.parametrize("field", ["decoder_rates", "diagnostic_rates"])
+    def test_negative_rate_table_raises(self, field: str) -> None:
+        """A negative rate table is rejected before it can become NaN
+        likelihoods downstream."""
+        bad = wiggly_flat_rates(np.linspace(0, 100, 21), n_cells=3)
+        bad[0, 0] = -1.0
+        with pytest.raises(ValueError, match="finite and non-negative"):
+            MisfitWindow(3, 7, **{field: bad})
+
+    @pytest.mark.parametrize("field", ["decoder_rates", "diagnostic_rates"])
+    def test_nonfinite_rate_table_raises(self, field: str) -> None:
+        """A non-finite rate table is rejected at construction."""
+        bad = wiggly_flat_rates(np.linspace(0, 100, 21), n_cells=3)
+        bad[0, 0] = np.nan
+        with pytest.raises(ValueError, match="finite and non-negative"):
+            MisfitWindow(3, 7, **{field: bad})
+
+
+class TestMisfitSchedule:
+    def test_empty_schedule_has_no_window_anywhere(self) -> None:
+        assert MisfitSchedule().window_at(0) is None
+        assert MisfitSchedule().window_at(10_000) is None
+
+    def test_window_at_returns_containing_window(self) -> None:
+        sched = MisfitSchedule((MisfitWindow(10, 20), MisfitWindow(30, 40)))
+        assert sched.window_at(15) is sched.windows[0]
+        assert sched.window_at(35) is sched.windows[1]
+        # Half-open: end is exclusive, start inclusive.
+        assert sched.window_at(10) is sched.windows[0]
+        assert sched.window_at(20) is None
+        assert sched.window_at(25) is None
+
+    def test_overlapping_windows_raise(self) -> None:
+        """Overlapping windows are rejected — diagnostics could not pick a
+        single rate table for the overlap."""
+        with pytest.raises(ValueError, match="must not overlap"):
+            MisfitSchedule((MisfitWindow(10, 25), MisfitWindow(20, 30)))
+
+
+# ---------------------------------------------------------------------------
+# _merge_diagnostics
+# ---------------------------------------------------------------------------
+
+
+class TestMergeDiagnostics:
+    @staticmethod
+    def _batch(values: list[float]) -> dict[str, np.ndarray]:
+        """A minimal per-event diagnostic batch with distinct sentinel values."""
+        arr = np.asarray(values, dtype=float)
+        return {
+            "event_hpd_overlap": arr,
+            "event_kl_divergence": arr + 100.0,
+            "event_spike_prob": arr + 200.0,
+        }
+
+    def test_mixed_groups_reassemble_in_original_event_order(self) -> None:
+        """Events split across rate-table groups are scattered back in order."""
+        spike_time_ind = np.array([1, 2, 3, 4], dtype=np.intp)
+        spike_cell_ind = np.array([0, 1, 0, 1], dtype=np.intp)
+        # Group 0 covers events 0 and 3; group 1 covers events 1 and 2.
+        event_group = np.array([0, 1, 1, 0], dtype=np.intp)
+        per_group = [self._batch([10.0, 13.0]), self._batch([11.0, 12.0])]
+
+        merged = _merge_diagnostics(
+            n_time=5,
+            n_cells=2,
+            spike_time_ind=spike_time_ind,
+            spike_cell_ind=spike_cell_ind,
+            event_group=event_group,
+            per_group=per_group,
+        )
+        # Original event order is 10, 11, 12, 13.
+        np.testing.assert_array_equal(merged["event_hpd_overlap"], [10.0, 11.0, 12.0, 13.0])
+        # Dense matrix carries each event at its (time, cell) slot; all
+        # other slots stay NaN.
+        dense = merged["hpd_overlap"]
+        assert dense.shape == (5, 2)
+        assert dense[1, 0] == 10.0
+        assert dense[2, 1] == 11.0
+        assert dense[3, 0] == 12.0
+        assert dense[4, 1] == 13.0
+        assert np.isnan(dense[0, 0])
+
+    @pytest.mark.parametrize("all_group1", [True, False])
+    def test_all_events_in_one_group(self, all_group1: bool) -> None:
+        """A grouping that puts every event in one group still merges
+        correctly, with the other group empty."""
+        n = 3
+        spike_time_ind = np.arange(1, n + 1, dtype=np.intp)
+        spike_cell_ind = np.zeros(n, dtype=np.intp)
+        event_group = np.full(n, 1 if all_group1 else 0, dtype=np.intp)
+        populated = self._batch([1.0, 2.0, 3.0])
+        empty = self._batch([])
+        per_group = [empty, populated] if all_group1 else [populated, empty]
+        merged = _merge_diagnostics(
+            n_time=n + 1,
+            n_cells=1,
+            spike_time_ind=spike_time_ind,
+            spike_cell_ind=spike_cell_ind,
+            event_group=event_group,
+            per_group=per_group,
+        )
+        np.testing.assert_array_equal(merged["event_kl_divergence"], [101.0, 102.0, 103.0])
+
+    def test_length_mismatch_raises(self) -> None:
+        """A batch whose event count disagrees with its group fails loud."""
+        spike_time_ind = np.array([1, 2, 3], dtype=np.intp)
+        spike_cell_ind = np.zeros(3, dtype=np.intp)
+        event_group = np.array([0, 1, 1], dtype=np.intp)
+        with pytest.raises(ValueError, match="group 1 has 1 events but the mask expects 2"):
+            _merge_diagnostics(
+                n_time=4,
+                n_cells=1,
+                spike_time_ind=spike_time_ind,
+                spike_cell_ind=spike_cell_ind,
+                event_group=event_group,
+                per_group=[self._batch([10.0]), self._batch([11.0])],  # group 1 expects 2
+            )
+
+
+# ---------------------------------------------------------------------------
+# Thresholds / compute_thresholds
+# ---------------------------------------------------------------------------
 
 
 class TestComputeThresholds:
-    """Tests for compute_thresholds function."""
-
-    def test_threshold_computation(self) -> None:
-        """Test that thresholds are computed correctly from baseline."""
-        # Arrange
-        rng = np.random.default_rng(42)
-        n_time = 100
-        n_cells = 5
-        # Metrics are now 2D: (n_time, n_cells)
-        metrics = {
-            "hpd_overlap": rng.uniform(0.5, 1.0, (n_time, n_cells)),
-            "kl_divergence": rng.uniform(0.0, 2.0, (n_time, n_cells)),
-            "spike_prob": rng.uniform(0.0, 1.0, (n_time, n_cells)),
-        }
+    def test_thresholds_match_quantile_definitions(self, metrics_2d: dict[str, np.ndarray]) -> None:
         baseline_end = 50
+        thresholds = compute_thresholds(metrics_2d, baseline_end=baseline_end)
 
-        # Act
-        thresholds = compute_thresholds(metrics, baseline_end=baseline_end)
-
-        # Assert
-        assert isinstance(thresholds, Thresholds)
-        # HPD overlap threshold should be 1st percentile of flattened baseline
-        expected_hpd_overlap = np.nanquantile(metrics["hpd_overlap"][:baseline_end].ravel(), 0.01)
-        assert thresholds.hpd_overlap == pytest.approx(expected_hpd_overlap)
-        # KL divergence threshold should be 99th percentile of flattened baseline
-        expected_kl_divergence = np.nanquantile(
-            metrics["kl_divergence"][:baseline_end].ravel(), 0.99
-        )
-        assert thresholds.kl_divergence == pytest.approx(expected_kl_divergence)
-        # spike_prob threshold is fixed at 0.05 per MATLAB (not computed from data)
+        expected_hpdo = np.nanquantile(metrics_2d["hpd_overlap"][:baseline_end].ravel(), 0.01)
+        expected_kl = np.nanquantile(metrics_2d["kl_divergence"][:baseline_end].ravel(), 0.99)
+        assert thresholds.hpd_overlap == pytest.approx(expected_hpdo)
+        assert thresholds.kl_divergence == pytest.approx(expected_kl)
+        # spike_prob is fixed at 0.05 (matches MATLAB), not data-driven.
         assert thresholds.spike_prob == 0.05
 
-    def test_handles_nan_values(self) -> None:
-        """Test that compute_thresholds handles NaN values correctly."""
-        # Arrange
-        n_time = 20
-        n_cells = 3
+    def test_handles_partial_nan_baseline(self) -> None:
+        """NaNs in the baseline must be ignored, not propagate to thresholds."""
+        n_time, n_cells = 20, 3
         hpdo = np.full((n_time, n_cells), 0.8)
-        hpdo[:5, :] = np.nan  # First 5 time points are NaN
-        metrics = {
+        hpdo[:5] = np.nan
+        metrics: dict[str, np.ndarray] = {
             "hpd_overlap": hpdo,
             "kl_divergence": np.full((n_time, n_cells), 1.0),
             "spike_prob": np.full((n_time, n_cells), 0.5),
         }
-
-        # Act
         thresholds = compute_thresholds(metrics, baseline_end=10)
-
-        # Assert - should compute from non-NaN values
         assert not np.isnan(thresholds.hpd_overlap)
         assert not np.isnan(thresholds.kl_divergence)
-        # spike_prob is always 0.05 (fixed)
-        assert thresholds.spike_prob == 0.05
 
 
-class TestTransformed:
-    """Tests for Transformed dataclass."""
-
-    def test_instantiation(self) -> None:
-        """Test that Transformed can be instantiated correctly."""
-        # Arrange - now 2D arrays: (n_time=3, n_cells=2)
-        hpd_overlap = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
-        kl_divergence = np.array([[0.5, 1.0], [1.5, 2.0], [2.5, 3.0]])
-        spike_prob = np.array([[0.1, 0.5], [0.9, 1.2], [1.5, 2.0]])
-
-        # Act
-        transformed = Transformed(
-            hpd_overlap=hpd_overlap,
-            kl_divergence=kl_divergence,
-            spike_prob=spike_prob,
-            hpd_overlap_threshold=1.5,
-            kl_divergence_threshold=1.0,
-            spike_prob_threshold=3.0,
-        )
-
-        # Assert
-        np.testing.assert_array_equal(transformed.hpd_overlap, hpd_overlap)
-        np.testing.assert_array_equal(transformed.kl_divergence, kl_divergence)
-        np.testing.assert_array_equal(transformed.spike_prob, spike_prob)
-        assert transformed.hpd_overlap_threshold == 1.5
-        assert transformed.kl_divergence_threshold == 1.0
-        assert transformed.spike_prob_threshold == 3.0
+# ---------------------------------------------------------------------------
+# Transformed / transform_metrics
+# ---------------------------------------------------------------------------
 
 
 class TestTransformMetrics:
-    """Tests for transform_metrics function."""
-
-    def test_transformations_applied(self) -> None:
-        """Test that transformations are applied correctly."""
-        # Arrange - now 2D arrays: (n_time, n_cells)
+    def test_transformations_match_documented_formulas(self) -> None:
         metrics = {
             "hpd_overlap": np.array([[0.5, 0.8], [0.9, 0.7]]),
             "kl_divergence": np.array([[1.0, 4.0], [9.0, 16.0]]),
             "spike_prob": np.array([[0.1, 0.5], [0.01, 0.05]]),
         }
-        thresholds = Thresholds(
-            hpd_overlap=0.6,
-            kl_divergence=5.0,
-            spike_prob=0.05,  # Fixed at 0.05 per MATLAB
-        )
-        eps1 = 1e-2
-        eps2 = 1e-10
+        thresholds = Thresholds(hpd_overlap=0.6, kl_divergence=5.0, spike_prob=0.05)
+        eps1, eps2 = 1e-2, 1e-10
 
-        # Act
         transformed = transform_metrics(metrics, thresholds, eps1=eps1, eps2=eps2)
 
-        # Assert
-        # HPDO: -log10(HPDO + eps1)
-        expected_hpdo = -np.log10(metrics["hpd_overlap"] + eps1)
-        np.testing.assert_allclose(transformed.hpd_overlap, expected_hpdo)
-        # KL: sqrt(KL)
-        expected_kl = np.sqrt(metrics["kl_divergence"])
-        np.testing.assert_allclose(transformed.kl_divergence, expected_kl)
-        # spike_prob: -log10(spike_prob + eps2)
-        expected_spike_prob = -np.log10(metrics["spike_prob"] + eps2)
-        np.testing.assert_allclose(transformed.spike_prob, expected_spike_prob)
-        # Thresholds transformed
-        expected_hpd_overlap_threshold = -np.log10(thresholds.hpd_overlap + eps1)
-        expected_kl_divergence_threshold = np.sqrt(thresholds.kl_divergence)
-        expected_spike_prob_threshold = -np.log10(thresholds.spike_prob + eps2)
-        assert transformed.hpd_overlap_threshold == pytest.approx(expected_hpd_overlap_threshold)
+        np.testing.assert_allclose(
+            transformed.hpd_overlap, -np.log10(metrics["hpd_overlap"] + eps1)
+        )
+        np.testing.assert_allclose(transformed.kl_divergence, np.sqrt(metrics["kl_divergence"]))
+        np.testing.assert_allclose(transformed.spike_prob, -np.log10(metrics["spike_prob"] + eps2))
+        assert transformed.hpd_overlap_threshold == pytest.approx(
+            -np.log10(thresholds.hpd_overlap + eps1)
+        )
         assert transformed.kl_divergence_threshold == pytest.approx(
-            expected_kl_divergence_threshold
+            np.sqrt(thresholds.kl_divergence)
         )
-        assert transformed.spike_prob_threshold == pytest.approx(expected_spike_prob_threshold)
+        assert transformed.spike_prob_threshold == pytest.approx(
+            -np.log10(thresholds.spike_prob + eps2)
+        )
 
-    def test_handles_nan_values(self) -> None:
-        """Test that transform_metrics preserves NaN values."""
-        # Arrange - now 2D arrays: (n_time, n_cells)
+    def test_nan_inputs_propagate_to_outputs(self) -> None:
+        """NaNs in metrics must remain NaN after transformation."""
+        nan_mask = np.array([[False, True], [False, False]])
         metrics = {
-            "hpd_overlap": np.array([[0.5, np.nan], [0.9, 0.7]]),
-            "kl_divergence": np.array([[1.0, 4.0], [np.nan, 16.0]]),
-            "spike_prob": np.array([[np.nan, 0.5], [0.01, 0.05]]),
+            "hpd_overlap": np.where(nan_mask, np.nan, 0.5),
+            "kl_divergence": np.where(nan_mask, np.nan, 1.0),
+            "spike_prob": np.where(nan_mask, np.nan, 0.05),
         }
-        thresholds = Thresholds(
-            hpd_overlap=0.6,
-            kl_divergence=5.0,
-            spike_prob=0.05,
-        )
-
-        # Act
+        thresholds = Thresholds(hpd_overlap=0.6, kl_divergence=5.0, spike_prob=0.05)
         transformed = transform_metrics(metrics, thresholds)
+        assert np.array_equal(np.isnan(transformed.hpd_overlap), nan_mask)
+        assert np.array_equal(np.isnan(transformed.kl_divergence), nan_mask)
+        assert np.array_equal(np.isnan(transformed.spike_prob), nan_mask)
 
-        # Assert - NaN values should be preserved
-        assert np.isnan(transformed.hpd_overlap[0, 1])
-        assert np.isnan(transformed.kl_divergence[1, 0])
-        assert np.isnan(transformed.spike_prob[0, 0])
-
-    def test_default_eps_values(self) -> None:
-        """Test that default eps values are used correctly."""
-        # Arrange - now 2D arrays: (n_time, n_cells)
+    def test_default_eps_yields_finite_outputs(self) -> None:
         metrics = {
             "hpd_overlap": np.array([[0.5, 0.8]]),
             "kl_divergence": np.array([[1.0, 4.0]]),
             "spike_prob": np.array([[0.1, 0.05]]),
         }
-        thresholds = Thresholds(
-            hpd_overlap=0.6,
-            kl_divergence=5.0,
-            spike_prob=0.05,
-        )
-
-        # Act - use defaults
+        thresholds = Thresholds(hpd_overlap=0.6, kl_divergence=5.0, spike_prob=0.05)
         transformed = transform_metrics(metrics, thresholds)
+        assert np.isfinite(transformed.hpd_overlap).all()
+        assert np.isfinite(transformed.kl_divergence).all()
+        assert np.isfinite(transformed.spike_prob).all()
 
-        # Assert - should not raise errors and produce finite values
-        assert np.all(np.isfinite(transformed.hpd_overlap))
-        assert np.all(np.isfinite(transformed.kl_divergence))
-        assert np.all(np.isfinite(transformed.spike_prob))
+
+class TestTransformedDataclass:
+    def test_construction_preserves_arrays_and_thresholds(self) -> None:
+        hpd_overlap = np.array([[1.0, 2.0]])
+        transformed = Transformed(
+            hpd_overlap=hpd_overlap,
+            kl_divergence=hpd_overlap.copy(),
+            spike_prob=hpd_overlap.copy(),
+            hpd_overlap_threshold=1.5,
+            kl_divergence_threshold=1.0,
+            spike_prob_threshold=3.0,
+        )
+        np.testing.assert_array_equal(transformed.hpd_overlap, hpd_overlap)
+        assert transformed.hpd_overlap_threshold == 1.5
+        assert transformed.kl_divergence_threshold == 1.0
+        assert transformed.spike_prob_threshold == 3.0

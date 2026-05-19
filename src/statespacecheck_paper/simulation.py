@@ -22,7 +22,7 @@ Simulate a random walk with reflecting boundaries:
 ...                      xs_min=0.0, xs_max=100.0, rng=rng)
 >>> walk.shape
 (100,)
->>> (walk >= 0.0).all() and (walk <= 100.0).all()
+>>> bool((walk >= 0.0).all() and (walk <= 100.0).all())
 True
 
 Generate position-tuned spikes:
@@ -113,7 +113,7 @@ def reflect_into_interval(
 
     >>> x = np.array([-1.0, 0.5, 2.5])
     >>> result = reflect_into_interval(x, 0.0, 2.0)
-    >>> (result >= 0.0).all() and (result <= 2.0).all()
+    >>> bool((result >= 0.0).all() and (result <= 2.0).all())
     True
 
     Values inside bounds are unchanged:
@@ -191,7 +191,7 @@ def safe_log(x: NDArray[np.floating], eps: float = 1e-12) -> NDArray[np.floating
 
     >>> x = np.array([0.0, 1.0, 2.0])
     >>> result = safe_log(x)
-    >>> np.isfinite(result).all()  # No -inf values
+    >>> bool(np.isfinite(result).all())  # No -inf values
     True
     """
     result: NDArray[np.floating] = np.log(np.maximum(x, eps))
@@ -232,8 +232,8 @@ def placefield_rates(
     >>> rates = placefield_rates(xs, centers, width=1.0, scale=1.0)
     >>> rates.shape
     (11, 3)
-    >>> rates.max(axis=0)  # Peak at each center
-    array([0.398..., 0.398..., 0.398...])
+    >>> rates.max(axis=0).round(3)  # Peak at each center
+    array([0.399, 0.399, 0.399])
     """
     result: NDArray[np.floating] = norm.pdf(xs[:, None], loc=centers[None, :], scale=width) * scale
     return result
@@ -278,7 +278,7 @@ def spike_prob_rank(
     >>> ranks = spike_prob_rank(prior, cell_fraction_per_bin)
     >>> ranks.shape
     (2,)
-    >>> (ranks >= 0.0).all() and (ranks <= 1.0).all()
+    >>> bool((ranks >= 0.0).all() and (ranks <= 1.0).all())
     True
 
     Compute spike probability ranks for multiple timesteps (batched):
@@ -370,7 +370,7 @@ def simulate_walk(
     >>> walk = simulate_walk(100, sig=1.0, x0=50.0, xs_min=0.0, xs_max=100.0, rng=rng)
     >>> walk.shape
     (100,)
-    >>> (walk >= 0.0).all() and (walk <= 100.0).all()
+    >>> bool((walk >= 0.0).all() and (walk <= 100.0).all())
     True
 
     With zero step size, trajectory is constant:
@@ -427,7 +427,7 @@ def simulate_spikes_position_tuned(
     ...                                         rate_scale=0.1, rng=rng)
     >>> spikes.shape
     (100, 3)
-    >>> (spikes >= 0).all()
+    >>> bool((spikes >= 0).all())
     True
     """
     lam = norm.pdf(x[:, None], loc=pf_centers[None, :], scale=pf_width) * rate_scale
@@ -468,7 +468,229 @@ def simulate_spikes_flat_rate(
     >>> spikes = simulate_spikes_flat_rate(100, 5, rate=0.1, rng=rng)
     >>> spikes.shape
     (100, 5)
-    >>> (spikes >= 0).all()
+    >>> bool((spikes >= 0).all())
     True
     """
     return rng.poisson(rate, size=(n_time, n_cells))
+
+
+def simulate_spikes_history_dependent(
+    x: NDArray[np.floating],
+    pf_centers: NDArray[np.floating],
+    pf_width: float,
+    rate_scale: float,
+    rng: np.random.Generator,
+    *,
+    refractory_steps: int = 1,
+    burst_window: tuple[int, int] = (2, 10),
+    burst_factor: float = 3.0,
+) -> NDArray[np.int_]:
+    """Position-tuned spikes with hippocampal-style refractory + bursting.
+
+    Generates per-step Poisson spikes whose rate is modulated by each cell's
+    own recent history:
+
+    - Hard refractory: a cell that just fired cannot fire for the next
+      ``refractory_steps`` steps (rate set to 0).
+    - Burst window: ``burst_window[0]`` to ``burst_window[1]`` steps after
+      a spike, the rate is multiplied by ``burst_factor``.
+    - Outside both windows, the rate is the standard Gaussian place-field
+      rate, same as :func:`simulate_spikes_position_tuned`.
+
+    At 1 ms / step (the default temporal interpretation of the figure-3
+    simulation), the defaults ``refractory_steps=1`` and ``burst_window=(2,
+    10)`` correspond to a 1 ms hard refractory period followed by a
+    burst-prone window 2-10 ms post-spike, matching the rough phenomenology
+    of CA1 pyramidal cells.
+
+    The Poisson assumption is violated by this generator: the
+    spike-spike correlations introduced by the burst window create a
+    joint distribution that is not memoryless. Per-spike spatial
+    likelihoods (which evaluate ``Poisson(k=1 | rate(x))``) are
+    unchanged for any individual spike — the misfit is in the
+    *temporal* joint distribution, not the per-step marginal.
+
+    Parameters
+    ----------
+    x : np.ndarray, shape (n_time,)
+        Position at each time step.
+    pf_centers : np.ndarray, shape (n_cells,)
+        Place field centers for each cell.
+    pf_width : float
+        Standard deviation of the Gaussian place field.
+    rate_scale : float
+        Peak firing rate (scales the Gaussian).
+    rng : np.random.Generator
+        Random number generator for reproducibility.
+    refractory_steps : int, optional
+        Number of steps after a spike during which the cell cannot fire.
+        Must be >= 1. Defaults to 1 (the immediately-following step is
+        suppressed).
+    burst_window : tuple[int, int], optional
+        ``(start, end)`` step offsets after a spike during which the
+        rate is boosted. End is inclusive; must satisfy
+        ``0 <= start <= end``. Defaults to ``(2, 10)``.
+    burst_factor : float, optional
+        Multiplier on the base rate during the burst window. Must be
+        positive. Defaults to 3.0.
+
+    Returns
+    -------
+    spikes : np.ndarray, shape (n_time, n_cells)
+        Spike counts (non-negative integers).
+
+    Raises
+    ------
+    ValueError
+        If ``refractory_steps < 1``, ``burst_window`` does not satisfy
+        ``0 <= start <= end``, or ``burst_factor <= 0``.
+
+    Notes
+    -----
+    History dependence breaks vectorization over time, so this routine
+    loops per timestep (still vectorized over cells per step). For
+    figure-3-scale runs (~40k timesteps, 11 cells) this is fast enough
+    to be unnoticeable.
+
+    When ``burst_window`` overlaps the refractory region
+    (``burst_start < refractory_steps``), the refractory zero is applied
+    first, so the effective burst window is
+    ``[max(burst_start, refractory_steps), burst_end]``.
+
+    Examples
+    --------
+    >>> rng = np.random.default_rng(0)
+    >>> x = np.linspace(0, 100, 200)
+    >>> pf_centers = np.array([20.0, 50.0, 80.0])
+    >>> spikes = simulate_spikes_history_dependent(
+    ...     x, pf_centers, pf_width=10.0, rate_scale=5.0, rng=rng
+    ... )
+    >>> spikes.shape
+    (200, 3)
+    >>> bool((spikes >= 0).all())
+    True
+    """
+    # Validate up front: silently-accepted nonsense (refractory_steps=0,
+    # a reversed or negative burst_window) would disable the refractory or
+    # burst mechanism with no error, producing a generative model subtly
+    # different from the one requested.
+    if refractory_steps < 1:
+        raise ValueError(f"refractory_steps must be >= 1, got {refractory_steps}")
+    burst_start, burst_end = burst_window
+    if not (0 <= burst_start <= burst_end):
+        raise ValueError(f"burst_window must satisfy 0 <= start <= end, got {burst_window}")
+    if burst_factor <= 0:
+        raise ValueError(f"burst_factor must be positive, got {burst_factor}")
+
+    n_time = x.shape[0]
+    n_cells = pf_centers.shape[0]
+    # (n_time, n_cells) Gaussian place-field rate at each step's position.
+    base_rates = placefield_rates(x, pf_centers, pf_width, rate_scale)
+
+    spikes = np.zeros((n_time, n_cells), dtype=np.int_)
+    # ``steps_since_spike[c]`` = number of steps since cell ``c`` last fired.
+    # Initialize to ``burst_end + 1`` so every cell starts outside both
+    # the refractory and burst regimes.
+    steps_since_spike = np.full(n_cells, burst_end + 1, dtype=np.int64)
+
+    for t in range(n_time):
+        rate = base_rates[t].copy()  # (n_cells,)
+        in_refractory = steps_since_spike < refractory_steps
+        in_burst = (steps_since_spike >= burst_start) & (steps_since_spike <= burst_end)
+        rate[in_refractory] = 0.0
+        rate[in_burst] *= burst_factor
+
+        step_spikes = rng.poisson(rate)
+        spikes[t] = step_spikes
+        # Cells that fired reset to 0; everyone else increments.
+        fired = step_spikes > 0
+        steps_since_spike = np.where(fired, 0, steps_since_spike + 1)
+
+    return spikes
+
+
+def wiggly_flat_rates(
+    xs: NDArray[np.floating],
+    n_cells: int,
+    *,
+    base_rate: float = 0.05,
+    wiggle_amp: float = 0.01,
+    n_wiggles: float = 5.0,
+) -> NDArray[np.floating]:
+    """Per-cell rate functions that are mostly flat with small spatial wiggles.
+
+    Each cell ``c`` gets a rate ``base_rate + wiggle_amp * sin(2π * n_wiggles
+    * (x - x_min) / (x_max - x_min) + φ_c)`` with cell-specific phase
+    ``φ_c = 2π * c / n_cells``. The rate is nearly position-independent —
+    a spike from such a cell carries little spatial information.
+
+    Used to construct the "wiggly-flat likelihood" misfit phase: the
+    decoder uses this rate table to compute likelihoods, so per-spike
+    likelihoods are wiggly-flat rather than Gaussian. HPD regions of
+    such likelihoods are unstable (small perturbations move the HPD
+    threshold across many bins), and the rank-based p-value becomes
+    ambiguous because no cell has a clearly higher expected contribution.
+
+    Parameters
+    ----------
+    xs : np.ndarray, shape (n_bins,)
+        Position grid; must be strictly increasing with at least 2 points.
+    n_cells : int
+        Number of cells whose rates to construct.
+    base_rate : float, optional
+        Constant rate floor (in same units as ``rate_scale``). Must be
+        positive. Defaults to 0.05.
+    wiggle_amp : float, optional
+        Amplitude of the sinusoidal modulation. Must be non-negative and
+        strictly smaller than ``base_rate`` so rates stay positive
+        everywhere. Defaults to 0.01.
+    n_wiggles : float, optional
+        Number of full sine cycles across the position grid. Defaults
+        to 5.
+
+    Returns
+    -------
+    rates : np.ndarray, shape (n_bins, n_cells)
+        Wiggly-flat rate table. Strictly positive everywhere.
+
+    Raises
+    ------
+    ValueError
+        If ``n_cells < 1``, ``xs`` has fewer than 2 points or is not
+        strictly increasing, ``base_rate <= 0``, ``wiggle_amp < 0``, or
+        ``wiggle_amp >= base_rate``.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> xs = np.linspace(0, 100, 101)
+    >>> rates = wiggly_flat_rates(xs, n_cells=11)
+    >>> rates.shape
+    (101, 11)
+    >>> bool((rates > 0).all())
+    True
+    """
+    # Validate up front: a sign-flipped or out-of-range argument here would
+    # otherwise produce negative rates, which silently become NaN once they
+    # reach ``poisson.pmf`` downstream in ``decode_and_diagnostics``.
+    if n_cells < 1:
+        raise ValueError(f"n_cells must be >= 1, got {n_cells}")
+    if xs.size < 2:
+        raise ValueError("xs must have at least 2 points to define a position range")
+    # ``normalized_x`` below maps xs onto [0, 1] assuming a monotone grid;
+    # a non-monotone xs (e.g. [0, 2, 1, 3]) would warp the sinusoid phase.
+    if not np.all(np.diff(xs) > 0):
+        raise ValueError("xs must be strictly increasing")
+    x_range = float(xs[-1] - xs[0])
+    if base_rate <= 0:
+        raise ValueError(f"base_rate must be positive, got {base_rate}")
+    if wiggle_amp < 0:
+        raise ValueError(f"wiggle_amp must be non-negative, got {wiggle_amp}")
+    if wiggle_amp >= base_rate:
+        raise ValueError("wiggle_amp must be < base_rate to keep rates positive")
+
+    normalized_x = (xs - xs[0]) / x_range  # (n_bins,) in [0, 1]
+    phases = 2 * np.pi * np.arange(n_cells, dtype=float) / n_cells  # (n_cells,)
+    angle = 2 * np.pi * n_wiggles * normalized_x[:, None] + phases[None, :]  # (n_bins, n_cells)
+    rates: NDArray[np.floating] = base_rate + wiggle_amp * np.sin(angle)
+    return rates

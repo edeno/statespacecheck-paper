@@ -2,201 +2,128 @@
 
 from __future__ import annotations
 
+import importlib
 import sys
+from collections.abc import Iterator
 from pathlib import Path
+from types import ModuleType
 
 import numpy as np
 import pytest
 
-# Add scripts directory to path to import figure scripts
+# Add scripts directory to path so we can import the figure scripts.
 SCRIPTS_DIR = Path(__file__).parent.parent / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 
-class TestFigure01Integration:
-    """Integration tests for generate_figure01.py script."""
-
-    def test_imports_work(self) -> None:
-        """Test that generate_figure01.py imports successfully."""
-        # This will raise ImportError if imports fail
-        import generate_figure01  # noqa: F401
-
-    def test_imports_required_modules(self) -> None:
-        """Test that generate_figure01.py can import all required modules."""
-        # Import the main module
-        import generate_figure01
-
-        # Check that key functions are available
-        assert hasattr(generate_figure01, "create_figure")
-
-        # Check that imported utilities are accessible
-        assert hasattr(generate_figure01, "COLORS")
-        assert hasattr(generate_figure01, "save_figure")
+@pytest.fixture(autouse=True, scope="module")
+def cleanup_sys_path() -> Iterator[None]:
+    """Remove scripts directory from sys.path after the module's tests run."""
+    yield
+    if str(SCRIPTS_DIR) in sys.path:
+        sys.path.remove(str(SCRIPTS_DIR))
 
 
-class TestFigure02Integration:
-    """Integration tests for generate_figure02.py script (diagnostic metrics)."""
-
-    def test_imports_work(self) -> None:
-        """Test that generate_figure02.py imports successfully."""
-        # This will raise ImportError if imports fail
-        import generate_figure02  # noqa: F401
-
-    def test_imports_required_modules(self) -> None:
-        """Test that generate_figure02.py can import all required modules."""
-        # Import the main module
-        import generate_figure02
-
-        # Check that key functions are available
-        assert hasattr(generate_figure02, "create_figure")
-
-        # Check that imported utilities are accessible
-        assert hasattr(generate_figure02, "COLORS")
-        assert hasattr(generate_figure02, "save_figure")
+# ---------------------------------------------------------------------------
+# Per-figure script contract: each script defines an entry point and pulls
+# from the shared style module. One parameterized test replaces four near-
+# identical TestFigure*Integration classes.
+# ---------------------------------------------------------------------------
 
 
-class TestFigure03Integration:
-    """Integration tests for generate_figure03.py script (simulation demo)."""
+_FIGURE_CONTRACT = [
+    ("generate_figure01", "create_figure", ["COLORS", "save_figure"]),
+    ("generate_figure02", "create_figure", ["COLORS", "save_figure"]),
+    (
+        "generate_figure03",
+        "run_demo",
+        [
+            "DecodeParams",
+            "simulate_walk",
+            "decode_and_diagnostics",
+            "plot_combined_diagnostics",
+        ],
+    ),
+    (
+        "generate_figure04",
+        "run_demo",
+        [
+            "DATA_PATH",
+            "ANIMAL_DATE_EPOCH",
+            "FIGURE_4A_CONTEXT_CENTER",
+            "FIGURE_4A_CONTEXT_HALF_WIDTH",
+            "FIGURE_4B_DETAIL_CENTER",
+            "FIGURE_4B_DETAIL_HALF_WIDTH",
+            "create_decoder_environment",
+            "fit_decoder_models",
+            "get_spike_counts",
+            "compute_model_diagnostics",
+            "plot_single_model_diagnostics",
+        ],
+    ),
+]
 
-    def test_imports_work(self) -> None:
-        """Test that generate_figure03.py imports successfully."""
-        # This will raise ImportError if imports fail
-        import generate_figure03  # noqa: F401
 
-    def test_imports_required_modules(self) -> None:
-        """Test that generate_figure03.py can import all required modules."""
-        # Import the main module
-        import generate_figure03
+@pytest.mark.parametrize(
+    ("module_name", "entry_point", "required_attrs"),
+    _FIGURE_CONTRACT,
+    ids=[contract[0] for contract in _FIGURE_CONTRACT],
+)
+def test_figure_script_exports_expected_api(
+    module_name: str, entry_point: str, required_attrs: list[str]
+) -> None:
+    """Each figure script must import cleanly, expose its entry point, and
+    pull required utilities from shared modules — anything missing breaks
+    ``generate_all_figures.py``."""
+    module = importlib.import_module(module_name)
+    assert callable(getattr(module, entry_point, None)), (
+        f"{module_name}.{entry_point} must be callable"
+    )
+    missing = [name for name in required_attrs if not hasattr(module, name)]
+    assert not missing, f"{module_name} missing attributes: {missing}"
 
-        # Check that key functions are available
-        assert hasattr(generate_figure03, "run_demo")
-        assert hasattr(generate_figure03, "DecodeParams")
 
-        # Check that imported utilities are accessible
-        assert hasattr(generate_figure03, "simulate_walk")
-        assert hasattr(generate_figure03, "decode_and_diagnostics")
-        assert hasattr(generate_figure03, "plot_combined_diagnostics")
+# ---------------------------------------------------------------------------
+# generate_figure04 helper functions: small focused logic that is hard to
+# regression-test through the figure pipeline.
+# ---------------------------------------------------------------------------
 
 
-class TestFigure04Integration:
-    """Integration tests for generate_figure04.py script (real data model comparison)."""
+@pytest.fixture(scope="module")
+def figure04() -> ModuleType:
+    return importlib.import_module("generate_figure04")
 
-    def test_imports_work(self) -> None:
-        """Test that generate_figure04.py imports successfully."""
-        # This will raise ImportError if imports fail
-        import generate_figure04  # noqa: F401
 
-    def test_imports_required_modules(self) -> None:
-        """Test that generate_figure04.py can import all required modules."""
-        # Import the main module
-        import generate_figure04
-
-        # Check that key functions are available
-        assert hasattr(generate_figure04, "run_demo")
-
-        # Check that configuration constants are defined
-        assert hasattr(generate_figure04, "DATA_PATH")
-        assert hasattr(generate_figure04, "ANIMAL_DATE_EPOCH")
-        assert hasattr(generate_figure04, "FIGURE_4A_CONTEXT_CENTER")
-        assert hasattr(generate_figure04, "FIGURE_4A_CONTEXT_HALF_WIDTH")
-        assert hasattr(generate_figure04, "FIGURE_4B_DETAIL_CENTER")
-        assert hasattr(generate_figure04, "FIGURE_4B_DETAIL_HALF_WIDTH")
-
-    def test_imports_analysis_utilities(self) -> None:
-        """Test that generate_figure04.py imports required analysis utilities."""
-        import generate_figure04
-
-        # Check imports from real_data_analysis module
-        assert hasattr(generate_figure04, "create_decoder_environment")
-        assert hasattr(generate_figure04, "fit_decoder_models")
-        assert hasattr(generate_figure04, "get_spike_counts")
-        assert hasattr(generate_figure04, "compute_model_diagnostics")
-
-    def test_imports_plotting_utilities(self) -> None:
-        """Test that generate_figure04.py imports required plotting utilities."""
-        import generate_figure04
-
-        # Check imports from real_data_plotting module
-        assert hasattr(generate_figure04, "plot_single_model_diagnostics")
-
-    def test_shift_diagnostic_event_times_matches_relative_time_axis(self) -> None:
-        """Figure 4 event metrics should use the same relative time base as plots."""
-        import generate_figure04
-
+class TestFigure04Helpers:
+    def test_shift_diagnostic_event_times_subtracts_offset(self, figure04: ModuleType) -> None:
+        """Per-spike event times must be relative to the same time base as
+        the figure axis — otherwise scatter points slide off the panels."""
         diagnostics = {
             "event_time": np.array([101.0, 101.5]),
             "event_hpd_overlap": np.array([0.25, 0.75]),
         }
-
-        shifted = generate_figure04.shift_diagnostic_event_times(diagnostics, 100.0)
-
+        shifted = figure04.shift_diagnostic_event_times(diagnostics, 100.0)
         np.testing.assert_allclose(shifted["event_time"], [1.0, 1.5])
+        # Original dict not mutated.
         np.testing.assert_allclose(diagnostics["event_time"], [101.0, 101.5])
+        # Non-time arrays passed through by reference (zero-copy).
         assert shifted["event_hpd_overlap"] is diagnostics["event_hpd_overlap"]
 
-    def test_diagnostic_event_mean_uses_per_spike_values(self) -> None:
-        """Figure 4 summary should not average collapsed binned matrix values."""
-        import generate_figure04
-
+    def test_diagnostic_event_mean_uses_per_spike_array(self, figure04: ModuleType) -> None:
+        """Summary mean must use per-spike values, not the (n_time, n_cells)
+        matrix collapsed by nanmean — those answers differ when multiple
+        spikes share a (time, cell)."""
         diagnostics = {
             "hpd_overlap": np.array([[0.0, np.nan], [1.0, np.nan]]),
             "event_hpd_overlap": np.array([0.0, 1.0, 1.0]),
         }
+        result = figure04.diagnostic_event_mean(diagnostics, "hpd_overlap")
+        assert result == pytest.approx(2.0 / 3.0)
 
-        assert generate_figure04.diagnostic_event_mean(diagnostics, "hpd_overlap") == pytest.approx(
-            2.0 / 3.0
-        )
-
-    def test_diagnostic_event_mean_requires_event_array(self) -> None:
-        """Missing per-spike arrays should fail instead of silently using bins."""
-        import generate_figure04
-
-        diagnostics = {"hpd_overlap": np.array([[0.0, 1.0]])}
-
+    def test_diagnostic_event_mean_raises_when_event_array_missing(
+        self, figure04: ModuleType
+    ) -> None:
+        """Silently falling back to bin values would re-introduce the bug
+        the per-spike array was created to fix; raise loudly instead."""
         with pytest.raises(KeyError, match="event_hpd_overlap"):
-            generate_figure04.diagnostic_event_mean(diagnostics, "hpd_overlap")
-
-
-class TestFiguresModuleStructure:
-    """Tests for overall figure module structure and consistency."""
-
-    def test_all_figures_use_shared_style(self) -> None:
-        """Test that all figures import from shared style module."""
-        import generate_figure01
-        import generate_figure02
-
-        # Both should import COLORS from style module
-        assert hasattr(generate_figure01, "COLORS")
-        # generate_figure02 uses functions that internally use COLORS
-
-        # Both should use save_figure function
-        assert hasattr(generate_figure01, "save_figure")
-        assert hasattr(generate_figure02, "save_figure")
-
-    def test_all_figures_are_executable(self) -> None:
-        """Test that all figure scripts have proper structure."""
-        import generate_figure01
-        import generate_figure02
-        import generate_figure03
-        import generate_figure04
-
-        # generate_figure01 should have create_figure function
-        assert callable(getattr(generate_figure01, "create_figure", None))
-
-        # generate_figure02 should have create_figure function (diagnostic metrics)
-        assert callable(getattr(generate_figure02, "create_figure", None))
-
-        # generate_figure03 should have run_demo function (simulation demo)
-        assert callable(getattr(generate_figure03, "run_demo", None))
-
-        # generate_figure04 should have run_demo function (real data model comparison)
-        assert callable(getattr(generate_figure04, "run_demo", None))
-
-
-# Cleanup sys.path after tests
-@pytest.fixture(autouse=True, scope="module")
-def cleanup_sys_path() -> None:
-    """Remove scripts directory from sys.path after tests."""
-    yield
-    if str(SCRIPTS_DIR) in sys.path:
-        sys.path.remove(str(SCRIPTS_DIR))
+            figure04.diagnostic_event_mean({"hpd_overlap": np.array([[0.0, 1.0]])}, "hpd_overlap")

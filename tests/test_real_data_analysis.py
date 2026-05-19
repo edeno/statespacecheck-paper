@@ -2,437 +2,332 @@
 
 from __future__ import annotations
 
+from typing import Any, Literal
 from unittest.mock import MagicMock
 
+import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
+import pytest
 import xarray as xr
 
 from statespacecheck_paper.real_data_analysis import (
     compute_per_cell_diagnostics,
+    compute_running_average,
     extract_place_fields,
     find_sustained_low_overlap,
     gaussian_smooth,
     get_multiunit_population_firing_rate,
     get_state_marginalized_posterior,
 )
+from statespacecheck_paper.real_data_plotting import (
+    plot_per_cell_diagnostic_scatter,
+)
+
+# ---------------------------------------------------------------------------
+# Shared fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def per_cell_setup(rng: np.random.Generator) -> dict[str, Any]:
+    """Standard inputs for ``compute_per_cell_diagnostics``."""
+    n_time, n_bins, n_cells = 100, 50, 10
+    return {
+        "n_time": n_time,
+        "n_bins": n_bins,
+        "n_cells": n_cells,
+        "predictive": rng.dirichlet(np.ones(n_bins), size=n_time),
+        "place_fields": rng.random((n_cells, n_bins)) * 10 + 0.1,
+        "spike_counts": rng.poisson(0.5, (n_time, n_cells)).astype(np.int64),
+    }
+
+
+def _xarray_results(
+    posterior_data: np.ndarray,
+    name: str,
+    state_bins: pd.MultiIndex | np.ndarray | None = None,
+) -> xr.Dataset:
+    """Build a 2-variable Dataset matching the on-disk results layout."""
+    n_time, n_state_bins = posterior_data.shape
+    if state_bins is None:
+        state_bins = np.arange(n_state_bins)
+    return xr.Dataset(
+        {
+            name: xr.DataArray(
+                posterior_data,
+                dims=["time", "state_bins"],
+                coords={"time": np.arange(n_time), "state_bins": state_bins},
+            )
+        }
+    )
+
+
+# ---------------------------------------------------------------------------
+# gaussian_smooth, get_multiunit_population_firing_rate
+# ---------------------------------------------------------------------------
 
 
 class TestGaussianSmooth:
-    """Tests for gaussian_smooth function."""
-
-    def test_output_shape_matches_input(self) -> None:
-        """Test that output has same shape as input."""
-        data = np.random.randn(1000)
+    def test_output_shape_matches_input(self, rng: np.random.Generator) -> None:
+        data = rng.standard_normal(1000)
         result = gaussian_smooth(data, sigma=0.01, sampling_frequency=1000)
         assert result.shape == data.shape
 
-    def test_smoothing_reduces_variance(self) -> None:
-        """Test that smoothing reduces variance of noisy data."""
-        rng = np.random.default_rng(42)
+    def test_smoothing_reduces_variance_of_noise(self, rng: np.random.Generator) -> None:
         data = rng.standard_normal(1000)
         result = gaussian_smooth(data, sigma=0.02, sampling_frequency=500)
-        assert np.var(result) < np.var(data)
+        assert result.var() < data.var()
 
 
-class TestGetMultiunitPopulationFiringRate:
-    """Tests for get_multiunit_population_firing_rate function."""
+def test_get_multiunit_population_firing_rate_collapses_cell_dim(
+    rng: np.random.Generator,
+) -> None:
+    """Collapses (n_time, n_cells) multiunit array to (n_time,)."""
+    multiunit = rng.poisson(0.1, size=(1000, 50)).astype(np.float64)
+    result = get_multiunit_population_firing_rate(
+        multiunit, sampling_frequency=500, smoothing_sigma=0.015
+    )
+    assert result.shape == (1000,)
 
-    def test_output_shape(self) -> None:
-        """Test that output has shape (n_time,)."""
-        multiunit = np.random.poisson(0.1, size=(1000, 50))
-        result = get_multiunit_population_firing_rate(
-            multiunit, sampling_frequency=500, smoothing_sigma=0.015
-        )
-        assert result.shape == (1000,)
+
+# ---------------------------------------------------------------------------
+# find_sustained_low_overlap
+# ---------------------------------------------------------------------------
 
 
 class TestFindSustainedLowOverlap:
-    """Tests for find_sustained_low_overlap function."""
-
-    def test_returns_list(self) -> None:
-        """Test that function returns a list."""
-        hpd_overlap = np.random.rand(1000)
-        result = find_sustained_low_overlap(hpd_overlap, threshold=0.3)
+    def test_returns_list(self, rng: np.random.Generator) -> None:
+        result = find_sustained_low_overlap(rng.random(1000), threshold=0.3)
         assert isinstance(result, list)
 
-    def test_finds_low_regions(self) -> None:
-        """Test that function finds regions below threshold."""
-        # Create data with a clear low region
+    def test_finds_clearly_below_threshold_region(self) -> None:
         hpd_overlap = np.ones(1000)
-        hpd_overlap[200:300] = 0.1  # Low region
+        hpd_overlap[200:300] = 0.1
         result = find_sustained_low_overlap(
             hpd_overlap, threshold=0.5, min_duration=0.05, sampling_frequency=1000
         )
-        # Should find the low region
         assert len(result) >= 1
-        # First region should be around 200-300
         start, end = result[0]
         assert 150 < start < 250
         assert 250 < end < 350
 
+    def test_returns_empty_when_nothing_below_threshold(self) -> None:
+        """Edge case: no low-overlap regions => empty list, not error."""
+        hpd_overlap = np.ones(1000) * 0.8
+        result = find_sustained_low_overlap(hpd_overlap, threshold=0.5)
+        assert result == []
+
+
+# ---------------------------------------------------------------------------
+# extract_place_fields
+# ---------------------------------------------------------------------------
+
+
+def _mock_model(
+    place_fields: np.ndarray,
+    position_bins: np.ndarray,
+    env_name: str = "",
+    encoding_group: int = 0,
+) -> MagicMock:
+    """Mock with the small surface used by ``extract_place_fields``."""
+    mock_model = MagicMock()
+    mock_model.encoding_model_ = {(env_name, encoding_group): {"place_fields": place_fields}}
+    mock_env = MagicMock()
+    mock_env.place_bin_centers_ = position_bins.reshape(-1, 1)
+    envs: list[MagicMock | None] = [None] * (encoding_group + 1)
+    envs[encoding_group] = mock_env
+    mock_model.environments = envs
+    return mock_model
+
 
 class TestExtractPlaceFields:
-    """Tests for extract_place_fields function."""
-
-    def test_extracts_place_fields_from_mock_model(self) -> None:
-        """Test extraction from a mock model object."""
-        # Arrange: create mock model
+    def test_extracts_default_environment(self, rng: np.random.Generator) -> None:
         n_cells, n_bins = 10, 50
-        mock_place_fields = np.random.rand(n_cells, n_bins) * 10
-        mock_position_bins = np.linspace(0, 100, n_bins)
+        place_fields = rng.random((n_cells, n_bins)) * 10
+        position_bins = np.linspace(0, 100, n_bins)
+        model = _mock_model(place_fields, position_bins)
+        pf, bins = extract_place_fields(model)
+        np.testing.assert_array_equal(pf, place_fields)
+        np.testing.assert_array_equal(bins, position_bins)
 
-        mock_model = MagicMock()
-        mock_model.encoding_model_ = {("", 0): {"place_fields": mock_place_fields}}
-        mock_env = MagicMock()
-        mock_env.place_bin_centers_ = mock_position_bins.reshape(-1, 1)
-        mock_model.environments = [mock_env]
-
-        # Act
-        place_fields, position_bins = extract_place_fields(mock_model)
-
-        # Assert
-        assert place_fields.shape == (n_cells, n_bins)
-        assert position_bins.shape == (n_bins,)
-        np.testing.assert_array_equal(place_fields, mock_place_fields)
-        np.testing.assert_array_equal(position_bins, mock_position_bins)
-
-    def test_custom_environment_name_and_group(self) -> None:
-        """Test extraction with custom environment name and encoding group."""
-        # Arrange
+    def test_extracts_named_environment_and_group(self, rng: np.random.Generator) -> None:
         n_cells, n_bins = 5, 30
-        mock_place_fields = np.random.rand(n_cells, n_bins) * 10
-        mock_position_bins = np.linspace(0, 50, n_bins)
+        place_fields = rng.random((n_cells, n_bins)) * 10
+        position_bins = np.linspace(0, 50, n_bins)
+        model = _mock_model(place_fields, position_bins, env_name="env1", encoding_group=1)
+        pf, bins = extract_place_fields(model, environment_name="env1", encoding_group=1)
+        np.testing.assert_array_equal(pf, place_fields)
+        np.testing.assert_array_equal(bins, position_bins)
 
-        mock_model = MagicMock()
-        mock_model.encoding_model_ = {("env1", 1): {"place_fields": mock_place_fields}}
-        mock_env = MagicMock()
-        mock_env.place_bin_centers_ = mock_position_bins.reshape(-1, 1)
-        mock_model.environments = [None, mock_env]  # Index 1 for encoding_group=1
 
-        # Act
-        place_fields, position_bins = extract_place_fields(
-            mock_model, environment_name="env1", encoding_group=1
-        )
-
-        # Assert
-        np.testing.assert_array_equal(place_fields, mock_place_fields)
-        np.testing.assert_array_equal(position_bins, mock_position_bins)
+# ---------------------------------------------------------------------------
+# compute_per_cell_diagnostics
+# ---------------------------------------------------------------------------
 
 
 class TestComputePerCellDiagnostics:
-    """Tests for compute_per_cell_diagnostics function.
+    def test_shapes_and_keys(self, per_cell_setup: dict) -> None:
+        result = compute_per_cell_diagnostics(
+            per_cell_setup["predictive"],
+            per_cell_setup["spike_counts"],
+            per_cell_setup["place_fields"],
+        )
+        for key in ("hpd_overlap", "kl_divergence", "spike_prob"):
+            assert key in result
+            assert result[key].shape == (per_cell_setup["n_time"], per_cell_setup["n_cells"])
 
-    The function computes diagnostics using the actual spike count for each
-    spike event, matching the approach in analysis.py for simulated data.
-    """
+    def test_nan_exactly_where_no_spikes(self, per_cell_setup: dict) -> None:
+        result = compute_per_cell_diagnostics(
+            per_cell_setup["predictive"],
+            per_cell_setup["spike_counts"],
+            per_cell_setup["place_fields"],
+        )
+        no_spike = per_cell_setup["spike_counts"] == 0
+        for key in ("hpd_overlap", "kl_divergence", "spike_prob"):
+            assert np.all(np.isnan(result[key][no_spike]))
 
-    def test_output_shapes(self) -> None:
-        """Test that output dict has arrays with correct shapes."""
+    @pytest.mark.parametrize("metric", ["hpd_overlap", "spike_prob"])
+    def test_metric_in_unit_range_with_gaussian_place_fields(
+        self, rng: np.random.Generator, metric: str
+    ) -> None:
+        """HPD overlap and spike_prob are bounded in [0, 1] (allowing tiny
+        floating-point overshoot above 1 for spike_prob)."""
         n_time, n_bins, n_cells = 100, 50, 10
-        rng = np.random.default_rng(42)
         predictive = rng.dirichlet(np.ones(n_bins), size=n_time)
-        place_fields = rng.random((n_cells, n_bins)) * 10 + 0.1
-        spike_counts = rng.poisson(0.5, (n_time, n_cells)).astype(np.int64)
-
-        result = compute_per_cell_diagnostics(predictive, spike_counts, place_fields)
-
-        assert "hpd_overlap" in result
-        assert "kl_divergence" in result
-        assert "spike_prob" in result
-        assert result["hpd_overlap"].shape == (n_time, n_cells)
-        assert result["kl_divergence"].shape == (n_time, n_cells)
-        assert result["spike_prob"].shape == (n_time, n_cells)
-
-    def test_nan_where_no_spikes(self) -> None:
-        """Test that metrics are NaN where spike_counts == 0."""
-        n_time, n_bins, n_cells = 50, 30, 5
-        rng = np.random.default_rng(42)
-        predictive = rng.dirichlet(np.ones(n_bins), size=n_time)
-        place_fields = rng.random((n_cells, n_bins)) * 10 + 0.1
-        spike_counts = rng.poisson(0.3, (n_time, n_cells)).astype(np.int64)
-
-        result = compute_per_cell_diagnostics(predictive, spike_counts, place_fields)
-
-        # Check that NaN where no spikes
-        no_spike_mask = spike_counts == 0
-        assert np.all(np.isnan(result["hpd_overlap"][no_spike_mask]))
-        assert np.all(np.isnan(result["kl_divergence"][no_spike_mask]))
-        assert np.all(np.isnan(result["spike_prob"][no_spike_mask]))
-
-    def test_hpd_overlap_values_in_range(self) -> None:
-        """Test that HPD overlap values are in [0, 1]."""
-        n_time, n_bins, n_cells = 100, 50, 10
-        rng = np.random.default_rng(42)
-        predictive = rng.dirichlet(np.ones(n_bins), size=n_time)
-        place_fields = rng.random((n_cells, n_bins)) * 10 + 0.1
-        # Ensure all cells have spikes
-        spike_counts = np.ones((n_time, n_cells), dtype=np.int64)
-
-        result = compute_per_cell_diagnostics(predictive, spike_counts, place_fields)
-
-        valid_values = result["hpd_overlap"][~np.isnan(result["hpd_overlap"])]
-        assert np.all(valid_values >= 0.0)
-        assert np.all(valid_values <= 1.0)
-
-    def test_spike_prob_values_in_range(self) -> None:
-        """Test that spike probability values are in [0, 1].
-
-        Note: spike_prob_rank returns cumulative probability mass which
-        should be in [0, 1] for a proper distribution. We use a simple
-        case where the place fields are well-defined.
-        """
-        n_time, n_bins, n_cells = 100, 50, 10
-        rng = np.random.default_rng(42)
-
-        # Create proper predictive posterior (sums to 1 over bins)
-        predictive = rng.dirichlet(np.ones(n_bins), size=n_time)
-
-        # Create place fields with proper structure
-        # Each cell has a Gaussian tuning curve
+        # Gaussian place fields ensure spike_prob_rank stays well-defined.
         place_fields = np.zeros((n_cells, n_bins))
-        centers = np.linspace(5, n_bins - 5, n_cells)
-        for j, center in enumerate(centers):
-            place_fields[j, :] = np.exp(-0.5 * ((np.arange(n_bins) - center) / 5) ** 2)
-        place_fields = place_fields * 10 + 0.1  # Scale and add baseline
-
-        # All cells spike
+        for j, center in enumerate(np.linspace(5, n_bins - 5, n_cells)):
+            place_fields[j] = np.exp(-0.5 * ((np.arange(n_bins) - center) / 5) ** 2)
+        place_fields = place_fields * 10 + 0.1
         spike_counts = np.ones((n_time, n_cells), dtype=np.int64)
 
         result = compute_per_cell_diagnostics(predictive, spike_counts, place_fields)
+        valid = result[metric][~np.isnan(result[metric])]
+        assert (valid >= 0.0).all()
+        assert (valid <= 1.0 + 1e-9).all()
 
-        valid_values = result["spike_prob"][~np.isnan(result["spike_prob"])]
-        assert np.all(valid_values >= 0.0)
-        # Allow small floating point error beyond 1.0
-        assert np.all(valid_values <= 1.0 + 1e-9)
-
-    def test_diagnostics_at_spike_times_only(self) -> None:
-        """Test that diagnostics are computed only at spike times."""
+    def test_diagnostics_only_at_spike_times(self, rng: np.random.Generator) -> None:
         n_time, n_bins, n_cells = 20, 10, 3
-        rng = np.random.default_rng(42)
-
-        # Create simple predictive posterior
         predictive = rng.dirichlet(np.ones(n_bins), size=n_time)
-
-        # Create place fields
         place_fields = rng.random((n_cells, n_bins)) * 10 + 0.1
-
-        # Cell 0 spikes at times 0, 5, 10
-        # Cell 1 spikes at times 2, 7
-        # Cell 2 spikes at time 15
         spike_counts = np.zeros((n_time, n_cells), dtype=np.int64)
         spike_counts[[0, 5, 10], 0] = 1
         spike_counts[[2, 7], 1] = 1
         spike_counts[15, 2] = 1
 
         result = compute_per_cell_diagnostics(predictive, spike_counts, place_fields)
+        # Diagnostics finite at spike times, NaN elsewhere — single check.
+        np.testing.assert_array_equal(np.isnan(result["hpd_overlap"]), spike_counts == 0)
 
-        # Check that we have valid values only at spike times
-        assert not np.isnan(result["hpd_overlap"][0, 0])
-        assert not np.isnan(result["hpd_overlap"][5, 0])
-        assert not np.isnan(result["hpd_overlap"][10, 0])
-        assert not np.isnan(result["hpd_overlap"][2, 1])
-        assert not np.isnan(result["hpd_overlap"][7, 1])
-        assert not np.isnan(result["hpd_overlap"][15, 2])
-
-        # Check that non-spike times are NaN
-        assert np.isnan(result["hpd_overlap"][1, 0])
-        assert np.isnan(result["hpd_overlap"][0, 1])
-        assert np.isnan(result["hpd_overlap"][0, 2])
-
-    def test_duplicate_spikes_in_same_bin_are_separate_events(self) -> None:
-        """Test that same-bin spikes remain separate event-level diagnostics."""
+    def test_duplicate_spikes_in_same_bin_are_separate_events(
+        self, rng: np.random.Generator
+    ) -> None:
+        """Two spikes in one (time, cell) bin must yield two event entries
+        with the same value as the bin's matrix entry."""
         n_time, n_bins, n_cells = 4, 8, 1
-        rng = np.random.default_rng(42)
         predictive = rng.dirichlet(np.ones(n_bins), size=n_time)
         place_fields = rng.random((n_cells, n_bins)) + 0.1
-        time = np.arange(n_time, dtype=np.float64)
         spike_counts = np.zeros((n_time, n_cells), dtype=np.int64)
         spike_counts[1, 0] = 2
-        spike_times = [np.array([1.10, 1.20])]
 
         result = compute_per_cell_diagnostics(
             predictive,
             spike_counts,
             place_fields,
-            spike_times=spike_times,
-            time=time,
+            spike_times=[np.array([1.10, 1.20])],
+            time=np.arange(n_time, dtype=np.float64),
         )
 
         np.testing.assert_allclose(result["event_time"], [1.10, 1.20])
         np.testing.assert_array_equal(result["event_time_ind"], [1, 1])
         np.testing.assert_array_equal(result["event_cell_ind"], [0, 0])
-        assert result["event_hpd_overlap"].shape == (2,)
-        assert result["event_kl_divergence"].shape == (2,)
-        assert result["event_spike_prob"].shape == (2,)
+        for event_key in ("event_hpd_overlap", "event_kl_divergence", "event_spike_prob"):
+            assert result[event_key].shape == (2,)
         np.testing.assert_allclose(
             result["event_kl_divergence"],
             np.repeat(result["kl_divergence"][1, 0], 2),
         )
 
 
+# ---------------------------------------------------------------------------
+# get_state_marginalized_posterior
+# ---------------------------------------------------------------------------
+
+
 class TestGetStateMarginalizedPosterior:
-    """Tests for get_state_marginalized_posterior function."""
-
-    def test_single_state_model(self) -> None:
-        """Test extraction from single-state model (no state dimension)."""
+    @pytest.mark.parametrize("posterior_type", ["predictive", "acausal"])
+    def test_single_state_passthrough(
+        self,
+        rng: np.random.Generator,
+        posterior_type: Literal["predictive", "acausal"],
+    ) -> None:
+        """Single-state model: no states to marginalize, output equals input."""
         n_time, n_bins = 100, 50
-        posterior_data = np.random.dirichlet(np.ones(n_bins), size=n_time)
+        posterior_data = rng.dirichlet(np.ones(n_bins), size=n_time)
+        results = _xarray_results(posterior_data, f"{posterior_type}_posterior")
+        result = get_state_marginalized_posterior(results, posterior_type)
+        assert result.shape == (n_time, n_bins)
+        np.testing.assert_allclose(result, posterior_data)
 
-        # Create xarray Dataset mimicking single-state model
-        results = xr.Dataset(
-            {
-                "predictive_posterior": xr.DataArray(
-                    posterior_data,
-                    dims=["time", "state_bins"],
-                    coords={
-                        "time": np.arange(n_time),
-                        "state_bins": np.arange(n_bins),
-                    },
-                )
-            }
-        )
-
-        posterior = get_state_marginalized_posterior(results, "predictive")
-
-        assert posterior.shape == (n_time, n_bins)
-        np.testing.assert_allclose(posterior, posterior_data)
-
-    def test_multi_state_model(self) -> None:
-        """Test extraction from multi-state model (sums over states)."""
+    def test_multi_state_sums_over_states(self, rng: np.random.Generator) -> None:
+        """Multi-state model: result is the sum across states."""
         n_time, n_bins, n_states = 100, 50, 2
-
-        # Create posterior over (time, state, position)
-        rng = np.random.default_rng(42)
         posterior_per_state = rng.dirichlet(np.ones(n_bins), size=(n_time, n_states))
-
-        # Normalize to be proper joint distribution
         posterior_per_state = posterior_per_state / posterior_per_state.sum(
             axis=(1, 2), keepdims=True
         )
-
-        # Create MultiIndex for state_bins (mimics non_local_detector format)
         states = ["Continuous", "Fragmented"]
         positions = np.arange(n_bins, dtype=float)
-
-        # Create MultiIndex directly
-        import pandas as pd
-
         multi_index = pd.MultiIndex.from_product([states, positions], names=["state", "position"])
-
-        # Flatten the posterior for xarray
-        posterior_flat = posterior_per_state.reshape(n_time, -1)
-
-        # Create Dataset with state_bins as MultiIndex
-        results = xr.Dataset(
-            {
-                "predictive_posterior": xr.DataArray(
-                    posterior_flat,
-                    dims=["time", "state_bins"],
-                    coords={
-                        "time": np.arange(n_time),
-                        "state_bins": multi_index,
-                    },
-                )
-            }
+        results = _xarray_results(
+            posterior_per_state.reshape(n_time, -1),
+            "predictive_posterior",
+            state_bins=multi_index,
         )
-
-        posterior = get_state_marginalized_posterior(results, "predictive")
-
-        # Check shape
-        assert posterior.shape == (n_time, n_bins)
-
-        # Check that it's the sum over states
-        expected = posterior_per_state.sum(axis=1)
-        np.testing.assert_allclose(posterior, expected, rtol=1e-5)
-
-    def test_acausal_posterior_type(self) -> None:
-        """Test that acausal posterior_type works."""
-        n_time, n_bins = 50, 30
-        posterior_data = np.random.dirichlet(np.ones(n_bins), size=n_time)
-
-        results = xr.Dataset(
-            {
-                "acausal_posterior": xr.DataArray(
-                    posterior_data,
-                    dims=["time", "state_bins"],
-                    coords={
-                        "time": np.arange(n_time),
-                        "state_bins": np.arange(n_bins),
-                    },
-                )
-            }
-        )
-
-        posterior = get_state_marginalized_posterior(results, "acausal")
-
-        assert posterior.shape == (n_time, n_bins)
-        np.testing.assert_allclose(posterior, posterior_data)
+        result = get_state_marginalized_posterior(results, "predictive")
+        np.testing.assert_allclose(result, posterior_per_state.sum(axis=1), rtol=1e-5)
 
 
-class TestPlotPerCellDiagnosticScatterWithSpikeTimes:
-    """Tests for plot_per_cell_diagnostic_scatter with spike_times alignment."""
+# ---------------------------------------------------------------------------
+# plot_per_cell_diagnostic_scatter (spike-time alignment behavior)
+# ---------------------------------------------------------------------------
 
-    def test_spike_times_aligns_with_raster(self) -> None:
-        """Test that spike_times parameter aligns scatter points with actual spike times."""
-        import matplotlib.pyplot as plt
 
-        from statespacecheck_paper.real_data_plotting import (
-            plot_per_cell_diagnostic_scatter,
-        )
+def _scatter_offsets(ax: plt.Axes) -> np.ndarray:
+    offsets = ax.collections[0].get_offsets()
+    mask = np.ma.getmaskarray(offsets)
+    return np.asarray(offsets)[~mask.any(axis=1)]
 
-        # Create time bins: 0.0, 0.1, 0.2, ..., 0.9 (10 bins, 100ms each)
+
+class TestPlotPerCellDiagnosticScatter:
+    def test_with_spike_times_aligns_at_actual_spike_times(self) -> None:
+        """``spike_times`` shifts scatter dots to the actual spike instants
+        instead of the bin starts (which are 100ms apart here)."""
         time = np.linspace(0.0, 0.9, 10)
-        n_time, n_cells = 10, 3
-
-        # Create spike times at non-bin-center positions
-        # Cell 0: spike at 0.15 (falls in bin 1, which starts at 0.1)
-        # Cell 1: spike at 0.35 (falls in bin 3, which starts at 0.3)
-        # Cell 2: spike at 0.55 (falls in bin 5, which starts at 0.5)
-        spike_times_list = [
-            np.array([0.15]),  # Cell 0
-            np.array([0.35]),  # Cell 1
-            np.array([0.55]),  # Cell 2
-        ]
-
-        # Create diagnostics with NaN everywhere except at spike times
-        diagnostics = {"hpd_overlap": np.full((n_time, n_cells), np.nan)}
-        diagnostics["hpd_overlap"][1, 0] = 0.8  # Bin 1, cell 0 (spike at 0.15)
-        diagnostics["hpd_overlap"][3, 1] = 0.6  # Bin 3, cell 1 (spike at 0.35)
-        diagnostics["hpd_overlap"][5, 2] = 0.4  # Bin 5, cell 2 (spike at 0.55)
+        diagnostics = {"hpd_overlap": np.full((10, 3), np.nan)}
+        diagnostics["hpd_overlap"][1, 0] = 0.8
+        diagnostics["hpd_overlap"][3, 1] = 0.6
+        diagnostics["hpd_overlap"][5, 2] = 0.4
 
         fig, ax = plt.subplots()
-
-        # Plot with spike_times
         plot_per_cell_diagnostic_scatter(
             time,
             diagnostics,
             ax=ax,
-            spike_times=spike_times_list,
+            spike_times=[
+                np.array([0.15]),
+                np.array([0.35]),
+                np.array([0.55]),
+            ],
         )
-
-        # Get the scatter collection
-        scatter = ax.collections[0]
-        offsets = scatter.get_offsets()
-
-        # Filter out masked values (NaN positions)
-        valid_mask = ~np.ma.getmask(offsets).any(axis=1)
-        valid_offsets = offsets[valid_mask]
-
-        # Should have 3 points at x = 0.15, 0.35, 0.55 (actual spike times)
-        assert len(valid_offsets) == 3
-        expected_x = np.array([0.15, 0.35, 0.55])
-        np.testing.assert_allclose(sorted(valid_offsets[:, 0]), sorted(expected_x))
-
+        offsets = _scatter_offsets(ax)
+        np.testing.assert_allclose(sorted(offsets[:, 0]), [0.15, 0.35, 0.55])
         plt.close(fig)
 
-    def test_event_diagnostics_plot_at_exact_spike_times(self) -> None:
-        """Test event diagnostics are plotted directly without bin remapping."""
-        import matplotlib.pyplot as plt
-
-        from statespacecheck_paper.real_data_plotting import (
-            plot_per_cell_diagnostic_scatter,
-        )
-
+    def test_event_diagnostics_plot_at_exact_event_times(self) -> None:
+        """When ``event_*`` arrays are present, scatter uses their times
+        directly with no bin lookup."""
         time = np.linspace(0.0, 0.9, 10)
         diagnostics = {
             "hpd_overlap": np.full((10, 1), np.nan),
@@ -443,267 +338,124 @@ class TestPlotPerCellDiagnosticScatterWithSpikeTimes:
 
         fig, ax = plt.subplots()
         plot_per_cell_diagnostic_scatter(time, diagnostics, ax=ax)
-
-        offsets = ax.collections[0].get_offsets()
-        valid_mask = ~np.ma.getmask(offsets).any(axis=1)
-        valid_offsets = offsets[valid_mask]
-
-        assert len(valid_offsets) == 2
-        np.testing.assert_allclose(valid_offsets[:, 0], [0.151, 0.157])
-        np.testing.assert_allclose(valid_offsets[:, 1], [0.8, 0.6])
-
+        offsets = _scatter_offsets(ax)
+        np.testing.assert_allclose(offsets[:, 0], [0.151, 0.157])
+        np.testing.assert_allclose(offsets[:, 1], [0.8, 0.6])
         plt.close(fig)
 
-    def test_without_spike_times_uses_bin_values(self) -> None:
-        """Test that without spike_times, scatter uses bin values."""
-        import matplotlib.pyplot as plt
-
-        from statespacecheck_paper.real_data_plotting import (
-            plot_per_cell_diagnostic_scatter,
-        )
-
+    def test_without_spike_times_uses_bin_centers(self) -> None:
+        """Without per-spike alignment, scatter uses bin-start times."""
         time = np.linspace(0.0, 0.9, 10)
-        n_time, n_cells = 10, 2
-
-        # Create simple diagnostics
-        diagnostics = {"hpd_overlap": np.full((n_time, n_cells), np.nan)}
-        diagnostics["hpd_overlap"][1, 0] = 0.8  # Bin 1
-        diagnostics["hpd_overlap"][3, 1] = 0.6  # Bin 3
+        diagnostics = {"hpd_overlap": np.full((10, 2), np.nan)}
+        diagnostics["hpd_overlap"][1, 0] = 0.8
+        diagnostics["hpd_overlap"][3, 1] = 0.6
 
         fig, ax = plt.subplots()
-
-        # Plot WITHOUT spike_times (original behavior)
-        plot_per_cell_diagnostic_scatter(
-            time,
-            diagnostics,
-            ax=ax,
-            spike_times=None,
-        )
-
-        scatter = ax.collections[0]
-        offsets = scatter.get_offsets()
-        valid_mask = ~np.ma.getmask(offsets).any(axis=1)
-        valid_offsets = offsets[valid_mask]
-
-        # Should have points at x = 0.1, 0.3 (bin values, not spike times)
-        assert len(valid_offsets) == 2
-        expected_x = np.array([0.1, 0.3])
-        np.testing.assert_allclose(sorted(valid_offsets[:, 0]), sorted(expected_x))
-
+        plot_per_cell_diagnostic_scatter(time, diagnostics, ax=ax, spike_times=None)
+        offsets = _scatter_offsets(ax)
+        np.testing.assert_allclose(sorted(offsets[:, 0]), [0.1, 0.3])
         plt.close(fig)
+
+
+# ---------------------------------------------------------------------------
+# compute_running_average
+# ---------------------------------------------------------------------------
 
 
 class TestComputeRunningAverage:
-    """Tests for compute_running_average function."""
-
-    def test_output_shape_matches_input(self) -> None:
-        """Test that output has same shape as input time dimension."""
-        from statespacecheck_paper.real_data_analysis import compute_running_average
-
+    def test_output_shape_collapses_cells(self, rng: np.random.Generator) -> None:
         n_time, n_cells = 100, 10
-        metric = np.random.rand(n_time, n_cells)
+        metric = rng.random((n_time, n_cells))
         time = np.linspace(0, 1, n_time)
-
         running_avg, time_out = compute_running_average(metric, time, window_size=0.1)
-
         assert running_avg.shape == (n_time,)
-        assert time_out.shape == (n_time,)
         np.testing.assert_array_equal(time_out, time)
 
-    def test_handles_nan_values(self) -> None:
-        """Test that NaN values are handled correctly."""
-        from statespacecheck_paper.real_data_analysis import compute_running_average
-
+    def test_partial_nan_input_yields_finite_output(self, rng: np.random.Generator) -> None:
         n_time, n_cells = 100, 10
-        metric = np.random.rand(n_time, n_cells)
-        # Add NaN values (simulating sparse spikes)
-        metric[::2, :] = np.nan
+        metric = rng.random((n_time, n_cells))
+        metric[::2] = np.nan
         time = np.linspace(0, 1, n_time)
-
         running_avg, _ = compute_running_average(metric, time, window_size=0.1)
-
-        # Should not have NaN in output (interpolated)
         assert not np.any(np.isnan(running_avg))
 
-    def test_all_nan_returns_nan_array(self) -> None:
-        """Test that all-NaN input returns NaN array."""
-        from statespacecheck_paper.real_data_analysis import compute_running_average
-
+    def test_all_nan_input_yields_all_nan_output(self) -> None:
+        """All-NaN must propagate, not be silently filled with zeros."""
         n_time, n_cells = 100, 10
         metric = np.full((n_time, n_cells), np.nan)
         time = np.linspace(0, 1, n_time)
-
         running_avg, _ = compute_running_average(metric, time, window_size=0.1)
-
         assert np.all(np.isnan(running_avg))
 
-    def test_smoothing_effect(self) -> None:
-        """Test that larger window produces smoother output."""
-        from statespacecheck_paper.real_data_analysis import compute_running_average
-
+    def test_larger_window_smooths_more(self, rng: np.random.Generator) -> None:
         n_time, n_cells = 1000, 10
-        # Create noisy data
-        rng = np.random.default_rng(42)
         metric = rng.random((n_time, n_cells))
         time = np.linspace(0, 1, n_time)
+        small, _ = compute_running_average(metric, time, window_size=0.01)
+        large, _ = compute_running_average(metric, time, window_size=0.1)
+        assert large.var() < small.var()
 
-        # Compute with small and large windows
-        small_window, _ = compute_running_average(metric, time, window_size=0.01)
-        large_window, _ = compute_running_average(metric, time, window_size=0.1)
-
-        # Larger window should have smaller variance (smoother)
-        assert np.var(large_window) < np.var(small_window)
-
-    def test_window_size_affects_output(self) -> None:
-        """Test that different window sizes produce different outputs."""
-        from statespacecheck_paper.real_data_analysis import compute_running_average
-
-        n_time, n_cells = 100, 10
-        rng = np.random.default_rng(42)
-        metric = rng.random((n_time, n_cells))
-        time = np.linspace(0, 1, n_time)
-
-        result1, _ = compute_running_average(metric, time, window_size=0.05)
-        result2, _ = compute_running_average(metric, time, window_size=0.2)
-
-        # Results should be different
-        assert not np.allclose(result1, result2)
-
-    def test_event_inputs_count_duplicate_spikes(self) -> None:
-        """Test event running average counts duplicate events at same time."""
-        from statespacecheck_paper.real_data_analysis import compute_running_average
-
+    def test_event_inputs_count_duplicates_at_same_time(self) -> None:
+        """Two events at the same time both contribute to the running mean."""
         metric = np.full((3, 1), np.nan)
         time = np.array([0.0, 1.0, 2.0])
-        event_times = np.array([1.0, 1.0])
-        event_values = np.array([1.0, 3.0])
-
         running_avg, _ = compute_running_average(
             metric,
             time,
             window_size=0.1,
-            event_times=event_times,
-            event_values=event_values,
+            event_times=np.array([1.0, 1.0]),
+            event_values=np.array([1.0, 3.0]),
         )
-
         assert np.isnan(running_avg[0])
         assert running_avg[1] == 2.0
         assert np.isnan(running_avg[2])
 
 
-class TestPlotPerCellDiagnosticScatterWithRunningAverage:
-    """Tests for plot_per_cell_diagnostic_scatter with running average."""
+class TestPlotPerCellDiagnosticScatterRunningAverage:
+    def test_running_average_adds_a_line_to_axis(self, rng: np.random.Generator) -> None:
+        time = np.linspace(0.0, 1.0, 100)
+        diagnostics = {"hpd_overlap": rng.random((100, 10))}
 
-    def test_running_average_adds_line(self) -> None:
-        """Test that show_running_average=True adds a line to the plot."""
-        import matplotlib.pyplot as plt
+        fig_off, ax_off = plt.subplots()
+        plot_per_cell_diagnostic_scatter(time, diagnostics, ax=ax_off, show_running_average=False)
+        n_off = len(ax_off.lines)
+        plt.close(fig_off)
 
-        from statespacecheck_paper.real_data_plotting import (
-            plot_per_cell_diagnostic_scatter,
-        )
+        fig_on, ax_on = plt.subplots()
+        plot_per_cell_diagnostic_scatter(time, diagnostics, ax=ax_on, show_running_average=True)
+        assert len(ax_on.lines) == n_off + 1
+        plt.close(fig_on)
 
-        n_time, n_cells = 100, 10
-        time = np.linspace(0.0, 1.0, n_time)
-        diagnostics = {"hpd_overlap": np.random.rand(n_time, n_cells)}
+    def test_running_average_window_size_changes_curve(self, rng: np.random.Generator) -> None:
+        time = np.linspace(0.0, 1.0, 100)
+        diagnostics = {"hpd_overlap": rng.random((100, 10))}
 
-        fig, ax = plt.subplots()
+        def _line_y(window: float) -> np.ndarray:
+            fig, ax = plt.subplots()
+            plot_per_cell_diagnostic_scatter(
+                time,
+                diagnostics,
+                ax=ax,
+                show_running_average=True,
+                running_average_window=window,
+            )
+            y = np.asarray(ax.lines[0].get_ydata()).copy()
+            plt.close(fig)
+            return y
 
-        # Plot WITHOUT running average
-        plot_per_cell_diagnostic_scatter(
-            time,
-            diagnostics,
-            ax=ax,
-            show_running_average=False,
-        )
-        n_lines_without = len(ax.lines)
+        assert not np.allclose(_line_y(0.05), _line_y(0.2))
 
-        plt.close(fig)
-
-        # Plot WITH running average
-        fig, ax = plt.subplots()
-        plot_per_cell_diagnostic_scatter(
-            time,
-            diagnostics,
-            ax=ax,
-            show_running_average=True,
-        )
-        n_lines_with = len(ax.lines)
-
-        # Should have one more line
-        assert n_lines_with == n_lines_without + 1
-
-        plt.close(fig)
-
-    def test_running_average_custom_window(self) -> None:
-        """Test that custom window size is used."""
-        import matplotlib.pyplot as plt
-
-        from statespacecheck_paper.real_data_plotting import (
-            plot_per_cell_diagnostic_scatter,
-        )
-
-        n_time, n_cells = 100, 10
-        time = np.linspace(0.0, 1.0, n_time)
-        rng = np.random.default_rng(42)
-        diagnostics = {"hpd_overlap": rng.random((n_time, n_cells))}
-
-        # Plot with different window sizes
-        fig1, ax1 = plt.subplots()
-        plot_per_cell_diagnostic_scatter(
-            time,
-            diagnostics,
-            ax=ax1,
-            show_running_average=True,
-            running_average_window=0.05,
-        )
-        line1_y = ax1.lines[0].get_ydata()
-
-        fig2, ax2 = plt.subplots()
-        plot_per_cell_diagnostic_scatter(
-            time,
-            diagnostics,
-            ax=ax2,
-            show_running_average=True,
-            running_average_window=0.2,
-        )
-        line2_y = ax2.lines[0].get_ydata()
-
-        # Different window sizes should produce different lines
-        assert not np.allclose(line1_y, line2_y)
-
-        plt.close(fig1)
-        plt.close(fig2)
-
-    def test_spike_prob_running_average_uses_raw_values(self) -> None:
-        """Test that running average for spike_prob uses raw probabilities.
-
-        The running average should be computed on raw probability values,
-        then transformed to -log10 scale. This differs from computing
-        the mean of transformed values:
-            -log10(mean(p_i)) != mean(-log10(p_i))
-
-        For example, with probabilities [0.01, 0.99]:
-            mean(raw) = 0.5, then -log10(0.5) = 0.301
-            mean(-log10([0.01, 0.99])) = mean([2.0, 0.004]) = 1.002
-        These are very different!
-        """
-        import matplotlib.pyplot as plt
-
-        from statespacecheck_paper.real_data_plotting import (
-            plot_per_cell_diagnostic_scatter,
-        )
-
-        # Create spike_prob values with different values across cells
-        # This ensures mean(raw) differs from mean(transformed)
-        n_time = 3
+    def test_spike_prob_running_average_uses_raw_then_transforms(self) -> None:
+        """Critical correctness: -log10(mean(p)) != mean(-log10(p)). Running
+        average must average raw probabilities first, then take -log10."""
         spike_probs = np.array(
             [
-                [0.01, 0.99],  # mean_raw=0.5, -log10(0.5)=0.301; mean_transformed=1.002
-                [0.1, 0.9],  # mean_raw=0.5, -log10(0.5)=0.301; mean_transformed=0.523
-                [0.5, 0.5],  # mean_raw=0.5, same either way (control case)
+                [0.01, 0.99],  # mean(raw) = 0.5
+                [0.1, 0.9],  # mean(raw) = 0.5
+                [0.5, 0.5],  # mean(raw) = 0.5 (control)
             ]
         )
-        time = np.linspace(0, 0.2, n_time)
+        time = np.linspace(0, 0.2, 3)
         diagnostics = {"spike_prob": spike_probs}
 
         fig, ax = plt.subplots()
@@ -713,25 +465,15 @@ class TestPlotPerCellDiagnosticScatterWithRunningAverage:
             ax=ax,
             metric_name="spike_prob",
             show_running_average=True,
-            running_average_window=0.01,  # Small window = minimal smoothing
+            running_average_window=0.01,
         )
+        y_actual = np.asarray(ax.lines[0].get_ydata())
 
-        # Extract running average line
-        line = ax.lines[0]
-        y_actual = line.get_ydata()
-
-        # Expected: avg(raw) then transform to -log10
-        mean_raw = np.mean(spike_probs, axis=1)  # [0.5, 0.5, 0.5]
-        expected = -np.log10(np.maximum(mean_raw, 1e-10))  # [0.301, 0.301, 0.301]
-
-        # Should match expected (avg then transform)
+        # Correct path: average raw, then -log10.
+        expected = -np.log10(np.maximum(np.mean(spike_probs, axis=1), 1e-10))
         np.testing.assert_allclose(y_actual, expected, rtol=1e-3)
 
-        # Verify this differs from incorrect approach (transform then avg)
-        transformed = -np.log10(np.maximum(spike_probs, 1e-10))
-        incorrect = np.mean(transformed, axis=1)  # [1.002, 0.523, 0.301]
-
-        # The incorrect approach gives different values for rows 0 and 1
-        assert not np.allclose(y_actual, incorrect, rtol=1e-3)
-
+        # Wrong path: -log10 first, then average. Different on rows 0 and 1.
+        wrong = np.mean(-np.log10(np.maximum(spike_probs, 1e-10)), axis=1)
+        assert not np.allclose(y_actual, wrong, rtol=1e-3)
         plt.close(fig)

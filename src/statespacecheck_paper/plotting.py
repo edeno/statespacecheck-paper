@@ -52,10 +52,13 @@ def add_phase_boundaries(
     axes : list[plt.Axes]
         List of axes to add phase boundaries to.
     phase_boundaries : tuple[int, ...]
-        Phase boundary time points (6 or 8 elements).
-        6 elements: (remap_start, remap_end, recovery1_end, flat_end,
-         recovery2_end, fast_end).
-        8 elements: adds (recovery3_end, slow_end).
+        Phase boundary time points, in the canonical 10-element order used
+        by :class:`statespacecheck_paper.analysis.DecodeParams`:
+        ``(T_remap_start, T_remap_end, T_recovery1_end, T_hist_dep_end,
+        T_recovery2_end, T_drift_end, T_recovery3_end, T_wide_dynamics_end,
+        T_recovery4_end, T_wiggly_end)``. Shorter tuples (down to 2
+        elements) are accepted and produce a partial shading; only the
+        misfit windows whose pair of boundary entries is present are drawn.
     include_labels : bool, default False
         If True, add labels for legend on first axis.
     alpha : float, default 0.15
@@ -69,31 +72,50 @@ def add_phase_boundaries(
     Examples
     --------
     >>> fig, axes = plt.subplots(4, 1)
-    >>> boundaries = (10, 20, 30, 40, 50, 60)
+    >>> boundaries = (10, 20, 30, 40, 50, 60, 70, 80, 90, 100)
     >>> add_phase_boundaries(axes, boundaries, include_labels=True)
     """
-    if len(phase_boundaries) < 6:
-        return
-
-    t_remap_start = phase_boundaries[0]
-    t_remap_end = phase_boundaries[1]
-    t_recovery1_end = phase_boundaries[2]
-    t_flat_end = phase_boundaries[3]
-    t_recovery2_end = phase_boundaries[4]
-    t_fast_end = phase_boundaries[5]
-
-    # Define phases with (start, end, color, label)
-    # Use semantic colors from COLORS dictionary
-    phases = [
-        (t_remap_start, t_remap_end, COLORS["likelihood"], "Remapping"),
-        (t_recovery1_end, t_flat_end, COLORS["reference"], "Flat firing"),
-        (t_recovery2_end, t_fast_end, COLORS["ground_truth"], "Fast movement"),
-    ]
-
-    if len(phase_boundaries) >= 8:
-        t_recovery3_end = phase_boundaries[6]
-        t_slow_end = phase_boundaries[7]
-        phases.append((t_recovery3_end, t_slow_end, COLORS["predictive"], "Momentum"))
+    # Saturated colors so axvspan at low alpha is still visible. We use
+    # ``COLORS`` entries that are vivid hexes (the pastel ``phase_*``
+    # palette entries wash out completely at this alpha).
+    misfit_specs: list[tuple[int, int, str, str]] = []
+    n = len(phase_boundaries)
+    if n >= 2:
+        misfit_specs.append(
+            (phase_boundaries[0], phase_boundaries[1], COLORS["likelihood"], "Remap")
+        )
+    if n >= 4:
+        misfit_specs.append(
+            (
+                phase_boundaries[2],
+                phase_boundaries[3],
+                COLORS["reference"],
+                "History-dependent firing",
+            )
+        )
+    if n >= 6:
+        misfit_specs.append(
+            (phase_boundaries[4], phase_boundaries[5], COLORS["predictive"], "Drift")
+        )
+    if n >= 8:
+        misfit_specs.append(
+            (
+                phase_boundaries[6],
+                phase_boundaries[7],
+                COLORS["metric_combined"],
+                "Wide dynamics noise",
+            )
+        )
+    if n >= 10:
+        misfit_specs.append(
+            (
+                phase_boundaries[8],
+                phase_boundaries[9],
+                COLORS["kl_divergence"],
+                "Wiggly-flat likelihood",
+            )
+        )
+    phases = misfit_specs
 
     for ax_idx, ax in enumerate(axes):
         add_labels_to_axis = include_labels and ax_idx == 0
@@ -379,8 +401,10 @@ def plot_original(
     remap_window : tuple[int, int] | None, optional
         Time window where cell remapping occurs (start, end).
     phase_boundaries : tuple[int, ...] | None, optional
-        Boundaries between phases: (T_remap_start, T_remap_end, T_recovery1_end,
-        T_flat_end, T_recovery2_end, T_fast_end, T_recovery3_end, T_slow_end).
+        Cumulative phase-end time indices, forwarded as-is to
+        :func:`add_phase_boundaries` (see that function for the
+        recognized tuple lengths and the misfit windows they shade).
+        ``None`` skips phase shading.
 
     Returns
     -------
@@ -593,11 +617,13 @@ def plot_transformed(
                 label="Remap",
             )
 
-        # Highlight phase boundaries
+        # Highlight the two regions defined by the generic phase boundary
+        # pair. ``plot_transformed`` is a generic diagnostic helper, so the
+        # shaded regions get neutral labels rather than misfit-specific ones.
         if phase_boundaries is not None:
             t1, t2 = phase_boundaries
-            ax.axvspan(t1, t2, alpha=0.15, color=COLORS["reference"], label="Flat rate")
-            ax.axvspan(t2, n_time, alpha=0.15, color=COLORS["ground_truth"], label="Fast movement")
+            ax.axvspan(t1, t2, alpha=0.15, color=COLORS["reference"], label="Region 1")
+            ax.axvspan(t2, n_time, alpha=0.15, color=COLORS["ground_truth"], label="Region 2")
 
     # Create time indices for scatter plots (metrics are now 2D: n_time x n_cells)
     n_cells = transformed.hpd_overlap.shape[1]
@@ -710,45 +736,55 @@ def plot_misfit_examples(
     Examples
     --------
     >>> import numpy as np
+    >>> import matplotlib.pyplot as plt
     >>> from statespacecheck_paper.analysis import DecodeParams
-    >>> n_time, n_bins, n_cells = 500, 50, 10
+    >>> rng = np.random.default_rng(0)
+    >>> # n_time must be large enough for the baseline window
+    >>> # slice(1000, T_remap_start - 1000) to be non-empty.
+    >>> n_time, n_bins, n_cells = 6000, 50, 10
     >>> xs = np.linspace(0, 1, n_bins)
-    >>> x_true = np.random.uniform(0, n_bins - 1, n_time)
-    >>> spikes = np.random.poisson(0.5, (n_time, n_cells))
+    >>> x_true = rng.uniform(0, n_bins - 1, n_time)
+    >>> spikes = rng.poisson(0.5, (n_time, n_cells))
     >>> metrics = {
-    ...     'posterior': np.random.dirichlet(np.ones(n_bins), size=n_time),
-    ...     'hpd_overlap': np.random.uniform(0, 1, (n_time, n_cells)),
-    ...     'kl_divergence': np.random.uniform(0, 5, (n_time, n_cells)),
-    ...     'spike_prob': np.random.uniform(0, 1, (n_time, n_cells)),
+    ...     'posterior': rng.dirichlet(np.ones(n_bins), size=n_time),
+    ...     'hpd_overlap': rng.uniform(0, 1, (n_time, n_cells)),
+    ...     'kl_divergence': rng.uniform(0, 5, (n_time, n_cells)),
+    ...     'spike_prob': rng.uniform(0, 1, (n_time, n_cells)),
     ... }
     >>> params = DecodeParams(
-    ...     T_remap_start=200, T_remap_end=250,
-    ...     T_recovery1_end=280, T_flat_end=320, T_recovery2_end=350,
-    ...     T_fast_end=390, T_recovery3_end=420, T_slow_end=460,
+    ...     T_remap_start=3000, T_remap_end=3600, T_recovery1_end=3960,
+    ...     T_hist_dep_end=4440, T_recovery2_end=4800, T_drift_end=5100,
+    ...     T_recovery3_end=5400, T_wide_dynamics_end=5580,
+    ...     T_recovery4_end=5760, T_wiggly_end=5940,
     ... )
     >>> pf_centers = np.linspace(0, 1, n_cells)
-    >>> plot_misfit_examples(xs, x_true, spikes, metrics, params, pf_centers, 0.1, 10.0)
+    >>> fig = plot_misfit_examples(
+    ...     xs, x_true, spikes, metrics, params, pf_centers, 0.1, 10.0
+    ... )
     >>> plt.close('all')
     """
-    # Define phase windows - include baseline (good fit) and misfit phases
+    # Define phase windows - one example timestep per misfit class.
     baseline_window = slice(1000, params.T_remap_start - 1000)  # Middle of baseline
     remap_window = slice(params.T_remap_start, params.T_remap_end)
-    flat_window = slice(params.T_recovery1_end, params.T_flat_end)
-    fast_window = slice(params.T_recovery2_end, params.T_fast_end)
-    slow_window = slice(params.T_recovery3_end, params.T_slow_end)
+    hist_dep_window = slice(params.T_recovery1_end, params.T_hist_dep_end)
+    drift_window = slice(params.T_recovery2_end, params.T_drift_end)
+    wide_dynamics_window = slice(params.T_recovery3_end, params.T_wide_dynamics_end)
+    wiggly_window = slice(params.T_recovery4_end, params.T_wiggly_end)
 
     phases = [
-        ("Baseline", baseline_window, True),  # Third element indicates if it's baseline
-        ("Remapping", remap_window, False),
-        ("Flat Firing", flat_window, False),
-        ("Fast Movement", fast_window, False),
-        ("Momentum", slow_window, False),
+        ("Baseline", baseline_window, True),
+        ("Remap", remap_window, False),
+        ("History-dep.", hist_dep_window, False),
+        ("Drift", drift_window, False),
+        ("Wide dyn. noise", wide_dynamics_window, False),
+        ("Wiggly-flat like.", wiggly_window, False),
     ]
 
-    # Publication quality: 450 DPI, single row with 5 columns
-    fig = plt.figure(figsize=(12.0, 2.5), dpi=450, constrained_layout=True)
-    gs = fig.add_gridspec(1, 5)
-    axes = [fig.add_subplot(gs[0, i]) for i in range(5)]
+    # Publication quality: 450 DPI, single row with one column per phase
+    n_phases = len(phases)
+    fig = plt.figure(figsize=(2.4 * n_phases, 2.5), dpi=450, constrained_layout=True)
+    gs = fig.add_gridspec(1, n_phases)
+    axes = [fig.add_subplot(gs[0, i]) for i in range(n_phases)]
 
     for phase_idx, (phase_name, phase_slice, is_baseline) in enumerate(phases):
         # For baseline, find best fit (highest hpd_overlap); for misfits,
@@ -777,11 +813,11 @@ def plot_misfit_examples(
             prev_post = np.ones_like(xs) / len(xs)
 
         # Select appropriate transition matrix (half-open intervals [start, end)
-        # to match decode_and_diagnostics)
-        if params.T_recovery2_end <= example_time < params.T_fast_end:
-            transition_matrix = gaussian_transition_matrix(xs, params.sigx_pred_fast_phase)
-        elif params.T_recovery3_end <= example_time < params.T_slow_end:
-            transition_matrix = gaussian_transition_matrix(xs, params.sigx_pred_slow_phase)
+        # to match decode_and_diagnostics). Only the wide-dynamics-noise
+        # window uses an alternate transition matrix; all other phases use
+        # the baseline.
+        if params.T_recovery3_end <= example_time < params.T_wide_dynamics_end:
+            transition_matrix = gaussian_transition_matrix(xs, params.sigx_wide_dynamics)
         else:
             transition_matrix = gaussian_transition_matrix(xs, params.sigx_pred)
 
@@ -1219,6 +1255,7 @@ def plot_combined_diagnostics(
     Examples
     --------
     >>> import numpy as np
+    >>> import matplotlib.pyplot as plt
     >>> from statespacecheck_paper.analysis import DecodeParams, Thresholds
     >>> n_time, n_bins, n_cells = 500, 50, 10
     >>> xs = np.linspace(0, 1, n_bins)
@@ -1239,12 +1276,13 @@ def plot_combined_diagnostics(
     ... }
     >>> thresholds = Thresholds(hpd_overlap=0.8, kl_divergence=2.0, spike_prob=0.05)
     >>> params = DecodeParams(
-    ...     T_remap_start=200, T_remap_end=250,
-    ...     T_recovery1_end=280, T_flat_end=320, T_recovery2_end=350,
-    ...     T_fast_end=390, T_recovery3_end=420, T_slow_end=460,
+    ...     T_remap_start=200, T_remap_end=250, T_recovery1_end=280,
+    ...     T_hist_dep_end=320, T_recovery2_end=350, T_drift_end=390,
+    ...     T_recovery3_end=420, T_wide_dynamics_end=460,
+    ...     T_recovery4_end=490, T_wiggly_end=540,
     ... )
     >>> placefield_centers = np.linspace(0, 1, n_cells)
-    >>> plot_combined_diagnostics(
+    >>> fig = plot_combined_diagnostics(
     ...     xs, x_true, spikes, metrics, thresholds, params, placefield_centers
     ... )
     >>> plt.close('all')
@@ -1255,7 +1293,7 @@ def plot_combined_diagnostics(
 
     fig = plt.figure(figsize=(fig_width, fig_height), dpi=450)
 
-    # Outer grid: time-series block on top, summary heatmap on bottom
+    # Outer grid: time-series block on top, summary heatmap on bottom.
     gs_outer = gridspec.GridSpec(
         2,
         1,
@@ -1276,7 +1314,6 @@ def plot_combined_diagnostics(
         hspace=0.12,
     )
 
-    # Reserve gs_outer[1] for the summary heatmap (used later)
     gs_summary = gs_outer[1]
 
     # ===== TOP SECTION: Time-Series Diagnostics =====
@@ -1473,41 +1510,50 @@ def plot_combined_diagnostics(
         color=COLORS["threshold"],
     )
 
-    # Add phase boundaries to all time-series panels
-    phase_boundaries = (
+    # Add phase boundaries to all time-series panels.
+    tseries_boundaries = (
         params.T_remap_start,
         params.T_remap_end,
         params.T_recovery1_end,
-        params.T_flat_end,
+        params.T_hist_dep_end,
         params.T_recovery2_end,
-        params.T_fast_end,
+        params.T_drift_end,
         params.T_recovery3_end,
-        params.T_slow_end,
+        params.T_wide_dynamics_end,
+        params.T_recovery4_end,
+        params.T_wiggly_end,
     )
 
     # Add phase boundaries with matching colors to all panels
     add_phase_boundaries(
         [ax_pred, ax_like, ax_raster, ax_hpdo, ax_kl, ax_spike],
-        phase_boundaries,
+        tseries_boundaries,
         alpha=0.15,
     )
 
-    # Add phase labels above top panel
+    # Add phase labels above top panel. Stagger vertical positions so the
+    # narrow wide-dynamics phase (~2k timesteps) doesn't crowd its
+    # neighbours.
     t_remap_start, t_remap_end = params.T_remap_start, params.T_remap_end
-    t_recovery1_end, t_flat_end = params.T_recovery1_end, params.T_flat_end
-    t_recovery2_end, t_fast_end = params.T_recovery2_end, params.T_fast_end
-    t_recovery3_end, t_slow_end = params.T_recovery3_end, params.T_slow_end
+    t_recovery1_end, t_hist_dep_end = params.T_recovery1_end, params.T_hist_dep_end
+    t_recovery2_end, t_drift_end = params.T_recovery2_end, params.T_drift_end
+    t_recovery3_end, t_wide_dynamics_end = (
+        params.T_recovery3_end,
+        params.T_wide_dynamics_end,
+    )
+    t_recovery4_end, t_wiggly_end = params.T_recovery4_end, params.T_wiggly_end
 
-    phase_labels_info = [
-        ((t_remap_start + t_remap_end) / 2, "Remap"),
-        ((t_recovery1_end + t_flat_end) / 2, "Flat Firing"),
-        ((t_recovery2_end + t_fast_end) / 2, "Fast Movement"),
-        ((t_recovery3_end + t_slow_end) / 2, "Momentum"),
+    phase_labels_info: list[tuple[float, str, float]] = [
+        ((t_remap_start + t_remap_end) / 2, "Remap", 1.02),
+        ((t_recovery1_end + t_hist_dep_end) / 2, "History-dep.", 1.07),
+        ((t_recovery2_end + t_drift_end) / 2, "Drift", 1.02),
+        ((t_recovery3_end + t_wide_dynamics_end) / 2, "Wide dyn. noise", 1.07),
+        ((t_recovery4_end + t_wiggly_end) / 2, "Wiggly-flat like.", 1.02),
     ]
-    for x_pos, label_text in phase_labels_info:
+    for x_pos, label_text, y_pos in phase_labels_info:
         ax_pred.text(
             x_pos,
-            1.02,
+            y_pos,
             label_text,
             transform=ax_pred.get_xaxis_transform(),
             fontsize=6,
@@ -1546,18 +1592,37 @@ def plot_combined_diagnostics(
     # Phase windows for summary computation
     phase_windows = [
         ("Remap", t_remap_start, t_remap_end),
-        ("Flat\nFiring", t_recovery1_end, t_flat_end),
-        ("Fast\nMovement", t_recovery2_end, t_fast_end),
-        ("Momentum", t_recovery3_end, t_slow_end),
+        ("History-\ndep.", t_recovery1_end, t_hist_dep_end),
+        ("Drift", t_recovery2_end, t_drift_end),
+        ("Wide dyn.\nnoise", t_recovery3_end, t_wide_dynamics_end),
+        ("Wiggly-flat\nlikelihood", t_recovery4_end, t_wiggly_end),
     ]
-    component_labels = ["Observation", "Observation", "Transition", "Transition"]
+    component_labels = [
+        "Observation",  # Remap
+        "Observation",  # History-dependent firing
+        "Transition",  # Drift
+        "Transition",  # Wide dynamics noise
+        # Wiggly-flat likelihood misspecifies the *observation* model (likelihood).
+        "Observation",
+    ]
 
     # Use the same thresholds as the time-series panels above
     hpd_thr = thresholds.hpd_overlap
     kl_thr = thresholds.kl_divergence
     sp_thr = thresholds.spike_prob
 
-    # Compute fraction exceeding threshold per phase (non-NaN only)
+    # Compute fraction exceeding threshold per phase (non-NaN only).
+    #
+    # Floor-effect caveat for HPD overlap: ``hpd_thr`` is the 1st-percentile
+    # of baseline HPDO. With our default place-field geometry, baseline HPDOs
+    # are tightly concentrated near 1.0 and a substantial fraction of baseline
+    # events achieve HPDO == 0.0 exactly (single-bin disjoint distributions).
+    # That pushes the 1st-percentile threshold to 0.0, and ``valid <= 0.0``
+    # then degenerates to ``valid == 0.0``. The row is still informative —
+    # exact-zero overlap is genuine inconsistency — but the % is a count of
+    # disjoint-HPD events rather than a graded "below baseline" rate.
+    # Re-evaluate if PF geometry changes enough to shift the 1st percentile
+    # above 0.
     frac_data = np.zeros((3, len(phase_windows)))
     for j, (_name, t0, t1) in enumerate(phase_windows):
         for i, (metric_key, thr_val, direction) in enumerate(

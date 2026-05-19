@@ -1,9 +1,9 @@
 """Reusable figure-3 simulation driver.
 
 The figure-3 demo simulates a hippocampal-style decoder under a
-sequence of misfit conditions (clean baseline, remapping, flat
-firing, fast movement, momentum). The simulation pipeline is the
-same one that drives ``scripts/generate_figure03.py`` and
+sequence of misfit conditions (remap, history-dependent firing,
+drift, wide-dynamics noise, wiggly-flat likelihood). The simulation
+pipeline drives both ``scripts/generate_figure03.py`` and
 ``statespacecheck_paper.interactive.cache.build_simulated_cache``;
 both call ``run_figure03_simulation`` so the figure and the
 interactive viewer's simulated cache stay byte-identical.
@@ -14,27 +14,97 @@ computation + plotting.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TypedDict
 
 import numpy as np
 from numpy.typing import NDArray
 
-from statespacecheck_paper.analysis import DecodeParams, decode_and_diagnostics
+from statespacecheck_paper.analysis import (
+    DecodeParams,
+    MisfitSchedule,
+    MisfitWindow,
+    decode_and_diagnostics,
+    get_remapped_pf_centers,
+)
 from statespacecheck_paper.simulation import (
     gaussian_transition_matrix,
+    placefield_rates,
     reflect_into_interval,
-    simulate_spikes_flat_rate,
+    simulate_spikes_history_dependent,
     simulate_spikes_position_tuned,
     simulate_walk,
+    wiggly_flat_rates,
 )
+
+# Canonical ordered phase labels — the public contract of
+# ``SimulationResult["phase_labels"]``. ``run_figure03_simulation`` emits
+# these by position (one per ``_add_phase`` call); tests and downstream
+# code import this tuple rather than re-typing the strings.
+PHASE_LABELS: tuple[str, ...] = (
+    "Clean Baseline",
+    "Remap Misfit",
+    "Clean Recovery",
+    "History-Dependent Firing",
+    "Clean Recovery",
+    "Drift Misfit",
+    "Clean Recovery",
+    "Wide Dynamics Noise",
+    "Clean Recovery",
+    "Wiggly-Flat Likelihood",
+)
+
+
+class SimulationResult(TypedDict):
+    """Return shape of :func:`run_figure03_simulation`.
+
+    Promotes the simulation dict from ``dict[str, Any]`` to a fixed schema
+    so downstream consumers (the figure script, the interactive cache
+    builder, the test suite) get real type checking on every field
+    access.
+    """
+
+    params: DecodeParams
+    xs: NDArray[np.floating]
+    x_true: NDArray[np.floating]
+    spikes: NDArray[np.int_]
+    metrics: dict[str, NDArray[np.floating] | NDArray[np.intp]]
+    phase_labels: list[str]
+    phase_boundaries: list[int]
 
 
 def run_figure03_simulation(
     params: DecodeParams | None = None,
     *,
     seed: int | None = None,
-) -> dict[str, Any]:
+) -> SimulationResult:
     """Run the figure-3 phased simulation and decode it.
+
+    Phases (in order, with their misfit class):
+
+    1. Clean Baseline
+    2. **Remap Misfit** (observation: wrong place-field identities for
+       a subset of cells)
+    3. Clean Recovery
+    4. **History-Dependent Firing Misfit** (observation: spikes
+       generated with hard refractory + bursting; decoder still
+       assumes Poisson. Per-spike spatial likelihood is unchanged,
+       so the per-spike diagnostics largely miss this — deliberate
+       demonstration of the spatial-only nature of the metrics.)
+    5. Clean Recovery
+    6. **Drift Misfit** (transition: trajectory has persistent velocity
+       at AR(1) coefficient ``params.drift_momentum``; decoder assumes
+       memoryless walk)
+    7. Clean Recovery
+    8. **Wide Dynamics Noise** (transition: decoder uses inflated
+       transition matrix ``sigx_wide_dynamics ~ 40× baseline``;
+       engineered to inflate KL while HPD overlap and the rank-based
+       p-value stay near baseline — the KL false-positive case)
+    9. Clean Recovery
+    10. **Wiggly-Flat Likelihood Misfit** (observation: decoder uses
+        wiggly-flat rate functions for both posterior update and
+        diagnostic rate matrix during this window. Per-spike
+        likelihood is wiggly-flat; HPDO is destabilized and the
+        rank-based p-value becomes ambiguous.)
 
     Parameters
     ----------
@@ -47,19 +117,9 @@ def run_figure03_simulation(
 
     Returns
     -------
-    dict
-        Dictionary with keys:
-
-        - ``params``: the ``DecodeParams`` used.
-        - ``xs``: position grid, shape ``(n_bins,)``.
-        - ``x_true``: true linear position, shape ``(n_time,)``.
-        - ``spikes``: spike-count matrix, shape ``(n_time, n_cells)``.
-        - ``metrics``: dict from :func:`decode_and_diagnostics`
-          with ``predictive``, ``posterior``, ``likelihood``, plus
-          per-cell diagnostics and per-spike event arrays.
-        - ``phase_labels``: list of per-phase descriptors.
-        - ``phase_boundaries``: cumulative phase end indices, useful
-          for marking misfit windows on the time axis.
+    SimulationResult
+        TypedDict with ``params``, ``xs``, ``x_true``, ``spikes``,
+        ``metrics``, ``phase_labels``, ``phase_boundaries``.
     """
     if params is None:
         params = DecodeParams()
@@ -68,12 +128,12 @@ def run_figure03_simulation(
 
     if params.pf_centers is None:
         raise ValueError("params.pf_centers must be initialized")
-    # Bind to a local so closures below see a non-Optional type.
     pf_centers = params.pf_centers
 
     xs = np.arange(params.xs_min, params.xs_max + params.xs_step, params.xs_step, dtype=float)
     transition_matrix = gaussian_transition_matrix(xs, params.sigx_pred)
-    transition_matrix_narrow = gaussian_transition_matrix(xs, params.sigx_pred_fast_phase)
+    transition_matrix_inflated = gaussian_transition_matrix(xs, params.sigx_wide_dynamics)
+    wiggly_rates = wiggly_flat_rates(xs, n_cells=len(pf_centers))
 
     phases: list[tuple[NDArray[np.floating], NDArray[np.int_]]] = []
     phase_labels: list[str] = []
@@ -87,51 +147,50 @@ def run_figure03_simulation(
             x, pf_centers, params.pf_width, params.rate_scale, rng
         )
 
-    def _add_phase(label: str, x: NDArray[np.floating], sp: NDArray[np.int_]) -> None:
+    def _add_phase(x: NDArray[np.floating], sp: NDArray[np.int_]) -> None:
+        """Append one phase; its label is ``PHASE_LABELS`` at this position."""
         nonlocal x_last
+        phase_labels.append(PHASE_LABELS[len(phases)])
         phases.append((x, sp))
-        phase_labels.append(label)
         x_last = float(x[-1])
 
     # 1. Clean baseline
     n = params.T_remap_start
     x = _walk(n, params.sigx_pred)
-    _add_phase("Clean Baseline", x, _spikes_position_tuned(x))
+    _add_phase(x, _spikes_position_tuned(x))
 
-    # 2. Remapping misfit
+    # 2. Remap misfit — handled by ``remap_window`` inside decode_and_diagnostics.
+    #    The spike *generation* is normal position-tuned; the decoder is the one
+    #    that uses remapped PF centers during this window.
     n = params.T_remap_end - params.T_remap_start
     x = _walk(n, params.sigx_pred)
-    _add_phase("Remapping Misfit", x, _spikes_position_tuned(x))
+    _add_phase(x, _spikes_position_tuned(x))
 
-    # 3. Recovery 1
+    # 3. Clean recovery 1
     n = params.T_recovery1_end - params.T_remap_end
     x = _walk(n, params.sigx_pred)
-    _add_phase("Clean Recovery", x, _spikes_position_tuned(x))
+    _add_phase(x, _spikes_position_tuned(x))
 
-    # 4. Flat firing misfit (cells lose spatial tuning)
-    n = params.T_flat_end - params.T_recovery1_end
+    # 4. History-Dependent Firing Misfit
+    #    Cells generate spikes via ``simulate_spikes_history_dependent``:
+    #    hard 1-step (1 ms) refractory + 2-10 step (2-10 ms) burst window
+    #    with 3× rate boost. Decoder still treats every spike as an
+    #    independent Poisson draw at the cell's standard rate; the misfit
+    #    lives in the *temporal* correlations and is largely invisible to
+    #    per-spike spatial diagnostics.
+    n = params.T_hist_dep_end - params.T_recovery1_end
     x = _walk(n, params.sigx_pred)
-    sp = simulate_spikes_flat_rate(n, len(pf_centers), rate=7e-3, rng=rng)
-    _add_phase("Flat Firing Misfit", x, sp)
+    sp = simulate_spikes_history_dependent(x, pf_centers, params.pf_width, params.rate_scale, rng)
+    _add_phase(x, sp)
 
-    # 5. Recovery 2
-    n = params.T_recovery2_end - params.T_flat_end
+    # 5. Clean recovery 2
+    n = params.T_recovery2_end - params.T_hist_dep_end
     x = _walk(n, params.sigx_pred)
-    _add_phase("Clean Recovery", x, _spikes_position_tuned(x))
+    _add_phase(x, _spikes_position_tuned(x))
 
-    # 6. Fast movement misfit (decoder uses narrow transition; animal moves fast)
-    n = params.T_fast_end - params.T_recovery2_end
-    x = _walk(n, params.sigx_true_fast)
-    _add_phase("Fast Movement Misfit", x, _spikes_position_tuned(x))
-
-    # 7. Recovery 3
-    n = params.T_recovery3_end - params.T_fast_end
-    x = _walk(n, params.sigx_pred)
-    _add_phase("Clean Recovery", x, _spikes_position_tuned(x))
-
-    # 8. Momentum misfit (persistent velocity vs memoryless random walk)
-    n = params.T_slow_end - params.T_recovery3_end
-    momentum = 0.95
+    # 6. Drift Misfit — persistent-velocity walk; decoder assumes memoryless.
+    n = params.T_drift_end - params.T_recovery2_end
+    momentum = params.drift_momentum
     x_mom = np.zeros(n)
     x_mom[0] = x_last
     velocity = 0.0
@@ -139,10 +198,76 @@ def run_figure03_simulation(
         velocity = momentum * velocity + rng.normal(0, params.sigx_pred)
         x_mom[t] = x_mom[t - 1] + velocity
     x = reflect_into_interval(x_mom, float(params.xs_min), float(params.xs_max))
-    _add_phase("Drift Misfit", x, _spikes_position_tuned(x))
+    _add_phase(x, _spikes_position_tuned(x))
+
+    # 7. Clean recovery 3
+    n = params.T_recovery3_end - params.T_drift_end
+    x = _walk(n, params.sigx_pred)
+    _add_phase(x, _spikes_position_tuned(x))
+
+    # 8. Wide Dynamics Noise — decoder applies an inflated transition matrix
+    #    (~40× baseline). Predictive becomes wide; per-spike likelihoods stay
+    #    narrow at the firing cell's PF -> KL inflates strongly while HPD
+    #    overlap and the rank-based p-value stay near baseline (KL
+    #    false-positive case).
+    n = params.T_wide_dynamics_end - params.T_recovery3_end
+    x = _walk(n, params.sigx_pred)
+    _add_phase(x, _spikes_position_tuned(x))
+
+    # 9. Clean recovery 4
+    n = params.T_recovery4_end - params.T_wide_dynamics_end
+    x = _walk(n, params.sigx_pred)
+    _add_phase(x, _spikes_position_tuned(x))
+
+    # 10. Wiggly-Flat Likelihood Misfit
+    #     Spike generation is *unchanged* (normal position-tuned firing); the
+    #     decoder swaps its per-cell rate functions for the wiggly-flat
+    #     ``wiggly_rates`` table during this window (handled inside
+    #     ``decode_and_diagnostics``). Per-spike likelihood is wiggly-flat
+    #     instead of Gaussian, which destabilizes HPDO and makes the
+    #     rank-based p-value ambiguous.
+    n = params.T_wiggly_end - params.T_recovery4_end
+    x = _walk(n, params.sigx_pred)
+    _add_phase(x, _spikes_position_tuned(x))
 
     x_true = np.concatenate([p_x for p_x, _ in phases], axis=0)
     spikes = np.vstack([p_s for _, p_s in phases])
+
+    # The three decoder-side misfits as a single schedule:
+    # - Remap: the decoder's posterior update uses remapped place-field
+    #   centers (``decoder_rates``); the diagnostics still reference the
+    #   original Gaussian fields (``diagnostic_rates`` left None) so they
+    #   correctly flag the mismatch.
+    # - Wide dynamics noise: an inflated transition matrix only.
+    # - Wiggly-flat likelihood: the decoder's rate model itself becomes
+    #   wiggly-flat, used for both the posterior update and the
+    #   diagnostics (``diagnostic_rates`` == ``decoder_rates``).
+    remapped_rates = placefield_rates(
+        xs,
+        get_remapped_pf_centers(pf_centers, params.remap_from_to, active=True),
+        params.pf_width,
+        params.rate_scale,
+    )
+    misfit_schedule = MisfitSchedule(
+        (
+            MisfitWindow(
+                params.T_remap_start,
+                params.T_remap_end,
+                decoder_rates=remapped_rates,
+            ),
+            MisfitWindow(
+                params.T_recovery3_end,
+                params.T_wide_dynamics_end,
+                transition_matrix=transition_matrix_inflated,
+            ),
+            MisfitWindow(
+                params.T_recovery4_end,
+                params.T_wiggly_end,
+                decoder_rates=wiggly_rates,
+                diagnostic_rates=wiggly_rates,
+            ),
+        )
+    )
 
     metrics = decode_and_diagnostics(
         spikes=spikes,
@@ -151,20 +276,17 @@ def run_figure03_simulation(
         pf_centers=pf_centers,
         pf_width=params.pf_width,
         rate_scale=params.rate_scale,
-        remap_window=params.remap_window,
-        remap_from_to=params.remap_from_to,
-        transition_matrix_narrow=transition_matrix_narrow,
-        narrow_window=(params.T_recovery2_end, params.T_fast_end),
+        misfit_schedule=misfit_schedule,
     )
 
     boundaries = np.cumsum([len(p_x) for p_x, _ in phases]).tolist()
 
-    return {
-        "params": params,
-        "xs": xs,
-        "x_true": x_true,
-        "spikes": spikes,
-        "metrics": metrics,
-        "phase_labels": phase_labels,
-        "phase_boundaries": boundaries,
-    }
+    return SimulationResult(
+        params=params,
+        xs=xs,
+        x_true=x_true,
+        spikes=spikes,
+        metrics=metrics,
+        phase_labels=phase_labels,
+        phase_boundaries=boundaries,
+    )
