@@ -121,9 +121,7 @@ def _params_for_short_run(n_time: int, n_cells: int, sigx_pred: float = 0.5) -> 
         T_recovery2_end=int(n_time * 0.8),
         T_drift_end=int(n_time * 0.85),
         T_recovery3_end=int(n_time * 0.9),
-        T_wide_dynamics_end=int(n_time * 0.93),
-        T_recovery4_end=int(n_time * 0.96),
-        T_wiggly_end=int(n_time * 0.99),
+        T_wide_dynamics_end=int(n_time * 0.99),
         sigx_pred=sigx_pred,
         remap_from_to=_bidirectional_remap(n_cells),
     )

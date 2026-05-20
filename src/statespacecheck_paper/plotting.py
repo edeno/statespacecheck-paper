@@ -52,13 +52,13 @@ def add_phase_boundaries(
     axes : list[plt.Axes]
         List of axes to add phase boundaries to.
     phase_boundaries : tuple[int, ...]
-        Phase boundary time points, in the canonical 10-element order used
+        Phase boundary time points, in the canonical 8-element order used
         by :class:`statespacecheck_paper.analysis.DecodeParams`:
         ``(T_remap_start, T_remap_end, T_recovery1_end, T_hist_dep_end,
-        T_recovery2_end, T_drift_end, T_recovery3_end, T_wide_dynamics_end,
-        T_recovery4_end, T_wiggly_end)``. Shorter tuples (down to 2
-        elements) are accepted and produce a partial shading; only the
-        misfit windows whose pair of boundary entries is present are drawn.
+        T_recovery2_end, T_drift_end, T_recovery3_end, T_wide_dynamics_end)``.
+        Shorter tuples (down to 2 elements) are accepted and produce a
+        partial shading; only the misfit windows whose pair of boundary
+        entries is present are drawn.
     include_labels : bool, default False
         If True, add labels for legend on first axis.
     alpha : float, default 0.15
@@ -104,15 +104,6 @@ def add_phase_boundaries(
                 phase_boundaries[7],
                 COLORS["metric_combined"],
                 "Wide dynamics noise",
-            )
-        )
-    if n >= 10:
-        misfit_specs.append(
-            (
-                phase_boundaries[8],
-                phase_boundaries[9],
-                COLORS["kl_divergence"],
-                "Wiggly-flat likelihood",
             )
         )
     phases = misfit_specs
@@ -755,7 +746,6 @@ def plot_misfit_examples(
     ...     T_remap_start=3000, T_remap_end=3600, T_recovery1_end=3960,
     ...     T_hist_dep_end=4440, T_recovery2_end=4800, T_drift_end=5100,
     ...     T_recovery3_end=5400, T_wide_dynamics_end=5580,
-    ...     T_recovery4_end=5760, T_wiggly_end=5940,
     ... )
     >>> pf_centers = np.linspace(0, 1, n_cells)
     >>> fig = plot_misfit_examples(
@@ -769,7 +759,6 @@ def plot_misfit_examples(
     hist_dep_window = slice(params.T_recovery1_end, params.T_hist_dep_end)
     drift_window = slice(params.T_recovery2_end, params.T_drift_end)
     wide_dynamics_window = slice(params.T_recovery3_end, params.T_wide_dynamics_end)
-    wiggly_window = slice(params.T_recovery4_end, params.T_wiggly_end)
 
     phases = [
         ("Baseline", baseline_window, True),
@@ -777,7 +766,6 @@ def plot_misfit_examples(
         ("History-dep.", hist_dep_window, False),
         ("Drift", drift_window, False),
         ("Wide dyn. noise", wide_dynamics_window, False),
-        ("Wiggly-flat like.", wiggly_window, False),
     ]
 
     # Publication quality: 450 DPI, single row with one column per phase
@@ -1279,7 +1267,6 @@ def plot_combined_diagnostics(
     ...     T_remap_start=200, T_remap_end=250, T_recovery1_end=280,
     ...     T_hist_dep_end=320, T_recovery2_end=350, T_drift_end=390,
     ...     T_recovery3_end=420, T_wide_dynamics_end=460,
-    ...     T_recovery4_end=490, T_wiggly_end=540,
     ... )
     >>> placefield_centers = np.linspace(0, 1, n_cells)
     >>> fig = plot_combined_diagnostics(
@@ -1520,8 +1507,6 @@ def plot_combined_diagnostics(
         params.T_drift_end,
         params.T_recovery3_end,
         params.T_wide_dynamics_end,
-        params.T_recovery4_end,
-        params.T_wiggly_end,
     )
 
     # Add phase boundaries with matching colors to all panels
@@ -1541,14 +1526,12 @@ def plot_combined_diagnostics(
         params.T_recovery3_end,
         params.T_wide_dynamics_end,
     )
-    t_recovery4_end, t_wiggly_end = params.T_recovery4_end, params.T_wiggly_end
 
     phase_labels_info: list[tuple[float, str, float]] = [
         ((t_remap_start + t_remap_end) / 2, "Remap", 1.02),
         ((t_recovery1_end + t_hist_dep_end) / 2, "History-dep.", 1.07),
         ((t_recovery2_end + t_drift_end) / 2, "Drift", 1.02),
         ((t_recovery3_end + t_wide_dynamics_end) / 2, "Wide dyn. noise", 1.07),
-        ((t_recovery4_end + t_wiggly_end) / 2, "Wiggly-flat like.", 1.02),
     ]
     for x_pos, label_text, y_pos in phase_labels_info:
         ax_pred.text(
@@ -1595,15 +1578,12 @@ def plot_combined_diagnostics(
         ("History-\ndep.", t_recovery1_end, t_hist_dep_end),
         ("Drift", t_recovery2_end, t_drift_end),
         ("Wide dyn.\nnoise", t_recovery3_end, t_wide_dynamics_end),
-        ("Wiggly-flat\nlikelihood", t_recovery4_end, t_wiggly_end),
     ]
     component_labels = [
         "Observation",  # Remap
         "Observation",  # History-dependent firing
         "Transition",  # Drift
         "Transition",  # Wide dynamics noise
-        # Wiggly-flat likelihood misspecifies the *observation* model (likelihood).
-        "Observation",
     ]
 
     # Use the same thresholds as the time-series panels above

@@ -57,7 +57,7 @@ statespacecheck-paper/
 
 - **generate_figure01.py**: Figure 1 orchestration (~170 lines) - schematic and distributions
 - **generate_figure02.py**: Figure 2 orchestration (~815 lines) - diagnostic demonstrations
-- **generate_figure03.py**: Figure 3 orchestration - per-cell diagnostics across a 10-phase simulation (5 misfit scenarios separated by clean-recovery windows): remap, history-dependent firing, drift, wide-dynamics noise, and wiggly-flat likelihood. The scenarios are chosen to span the metric-disagreement space - e.g. wide-dynamics noise inflates KL while HPD overlap and the rank-based p-value stay near baseline, and history-dependent firing is largely missed by all three per-spike spatial diagnostics. Figure 3 has two panels: a time-series block and a per-phase summary heatmap.
+- **generate_figure03.py**: Figure 3 orchestration - per-cell diagnostics across an 8-phase simulation (4 misfit scenarios separated by clean-recovery windows): remap, history-dependent firing, drift, and wide-dynamics noise. The scenarios are chosen to span the metric-disagreement space - e.g. wide-dynamics noise inflates KL while HPD overlap and the rank-based p-value stay near baseline, and history-dependent firing is largely missed by all three per-spike spatial diagnostics. Figure 3 has two panels: a time-series block and a per-phase summary heatmap.
 - **generate_all_figures.py**: Master script to generate all figures
 
 ## Repository Structure

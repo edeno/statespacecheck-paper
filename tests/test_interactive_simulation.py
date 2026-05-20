@@ -56,8 +56,6 @@ def _tiny_params():
         T_drift_end=700,
         T_recovery3_end=800,
         T_wide_dynamics_end=900,
-        T_recovery4_end=1000,
-        T_wiggly_end=1100,
     )
 
 

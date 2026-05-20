@@ -140,10 +140,6 @@ COLORS: dict[str, str] = {
     # stay near baseline (the KL false-positive case).
     "phase_wide_dynamics": "#E8E1F2",  # Light purple (from WONG[7])
     #
-    # Wiggly-flat-likelihood misfit — decoder uses low-information wiggly-flat
-    # rate functions; destabilizes HPD overlap and the rank-based p-value.
-    "phase_wiggly": "#E0F2E8",  # Light green (from WONG[3])
-    #
     # -------------------------------------------------------------------------
     # Heatmap Colormaps
     # -------------------------------------------------------------------------

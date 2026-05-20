@@ -72,11 +72,6 @@ def run_demo(params: DecodeParams) -> None:
        decoder applies an inflated transition matrix; engineered to
        inflate KL while HPD overlap and the rank-based p-value stay near
        baseline (the KL false-positive case).
-    9. Clean recovery (T_wide_dynamics_end - T_recovery4_end).
-    10. Wiggly-flat likelihood misfit (T_recovery4_end - T_wiggly_end):
-        The decoder uses per-cell wiggly-flat rate functions; the
-        per-spike likelihood is low-information, which destabilizes HPD
-        overlap and makes the rank-based p-value ambiguous.
 
     Figure 3 has two panels: a time-series block (predictive, likelihood,
     raster, and the three diagnostics over time) and a summary heatmap of
@@ -118,13 +113,12 @@ def run_demo(params: DecodeParams) -> None:
 
 
 if __name__ == "__main__":
-    # Full-size run (~38k 1-ms steps). To prototype quickly, shrink the
+    # Full-size run (~32k 1-ms steps). To prototype quickly, shrink the
     # timeline by passing smaller T_* boundaries, e.g.:
     #   params = DecodeParams(
     #       T_remap_start=600, T_remap_end=900, T_recovery1_end=1100,
     #       T_hist_dep_end=1400, T_recovery2_end=1600, T_drift_end=1900,
     #       T_recovery3_end=2100, T_wide_dynamics_end=2400,
-    #       T_recovery4_end=2600, T_wiggly_end=2900,
     #   )
     params = DecodeParams()
     run_demo(params)

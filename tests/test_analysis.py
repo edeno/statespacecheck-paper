@@ -21,7 +21,6 @@ from statespacecheck_paper.analysis import (
     likelihood_grid_for_counts,
     transform_metrics,
 )
-from statespacecheck_paper.simulation import wiggly_flat_rates
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -333,30 +332,32 @@ class TestDecodeAndDiagnostics:
             atol=1e-6,
         ), f"transition_matrix in {window} did not change predictive — schedule ignored?"
 
-    def test_wiggly_rates_used_only_inside_window(self, decoder_inputs: DecoderInputs) -> None:
+    def test_alt_rates_used_only_inside_window(self, decoder_inputs: DecoderInputs) -> None:
         """A :class:`MisfitWindow` with ``decoder_rates``/``diagnostic_rates``
         must leave per-event diagnostics untouched for events outside the
         window and change at least one event inside it. Compared against a
         baseline run so a regression that ignored the schedule cannot pass
         on output shape alone.
         """
-        wiggly = wiggly_flat_rates(decoder_inputs.xs, n_cells=3)
+        # Flat-rate table that's clearly different from the Gaussian-PF
+        # baseline — used here only to exercise the schedule plumbing.
+        alt_rates = np.full((decoder_inputs.xs.size, 3), 0.05)
         window = (3, 7)
         schedule = MisfitSchedule(
             (
                 MisfitWindow(
                     window[0],
                     window[1],
-                    decoder_rates=wiggly,
-                    diagnostic_rates=wiggly,
+                    decoder_rates=alt_rates,
+                    diagnostic_rates=alt_rates,
                 ),
             )
         )
 
         baseline = decoder_inputs.call()
-        with_wiggly = decoder_inputs.call(misfit_schedule=schedule)
+        with_alt = decoder_inputs.call(misfit_schedule=schedule)
 
-        evt_t = with_wiggly["event_time_ind"]
+        evt_t = with_alt["event_time_ind"]
         # Events strictly before the window are unaffected — the filter
         # state has not diverged yet. (Events *after* the window
         # legitimately differ: the in-window posterior updates carry
@@ -366,16 +367,16 @@ class TestDecodeAndDiagnostics:
 
         np.testing.assert_array_equal(
             baseline["event_kl_divergence"][before],
-            with_wiggly["event_kl_divergence"][before],
+            with_alt["event_kl_divergence"][before],
         )
-        # At least one in-window event's KL changed (the wiggly likelihood
+        # At least one in-window event's KL changed (the alt likelihood
         # is genuinely different from the Gaussian-PF likelihood).
         assert inside.any(), "test fixture produced no in-window spike events"
         assert not np.allclose(
             baseline["event_kl_divergence"][inside],
-            with_wiggly["event_kl_divergence"][inside],
+            with_alt["event_kl_divergence"][inside],
             atol=1e-6,
-        ), "wiggly rates did not change in-window diagnostics — schedule ignored?"
+        ), "alt rates did not change in-window diagnostics — schedule ignored?"
 
 
 # ---------------------------------------------------------------------------
@@ -395,7 +396,7 @@ class TestMisfitWindow:
     def test_negative_rate_table_raises(self, field: str) -> None:
         """A negative rate table is rejected before it can become NaN
         likelihoods downstream."""
-        bad = wiggly_flat_rates(np.linspace(0, 100, 21), n_cells=3)
+        bad = np.full((21, 3), 0.05)
         bad[0, 0] = -1.0
         with pytest.raises(ValueError, match="finite and non-negative"):
             MisfitWindow(3, 7, **{field: bad})
@@ -403,7 +404,7 @@ class TestMisfitWindow:
     @pytest.mark.parametrize("field", ["decoder_rates", "diagnostic_rates"])
     def test_nonfinite_rate_table_raises(self, field: str) -> None:
         """A non-finite rate table is rejected at construction."""
-        bad = wiggly_flat_rates(np.linspace(0, 100, 21), n_cells=3)
+        bad = np.full((21, 3), 0.05)
         bad[0, 0] = np.nan
         with pytest.raises(ValueError, match="finite and non-negative"):
             MisfitWindow(3, 7, **{field: bad})

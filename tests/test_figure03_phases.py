@@ -10,8 +10,6 @@ These tests verify the scientific claims of the figure-3 simulation:
   comparable to baseline — i.e., the per-spike spatial diagnostics
   largely *miss* a purely temporal misspecification (the deliberate
   demonstration of metric scope).
-- The wiggly-flat-likelihood phase pushes HPD overlap toward instability
-  and decouples KL from HPDO in the per-spike scatter.
 
 If any of these assertions ever flips, the figure no longer tells the
 story the paper claims; CI flags the regression.
@@ -43,8 +41,6 @@ def _moderate_params() -> DecodeParams:
         T_drift_end=1900,
         T_recovery3_end=2100,
         T_wide_dynamics_end=2400,
-        T_recovery4_end=2600,
-        T_wiggly_end=2900,
     )
 
 
@@ -75,27 +71,26 @@ def sim() -> SimulationResult:
 
 def test_phase_labels_and_boundaries(sim: SimulationResult) -> None:
     """``run_figure03_simulation`` emits every canonical phase in order
-    and a timeline that ends at ``T_wiggly_end``.
+    and a timeline that ends at ``T_wide_dynamics_end``.
     """
     params = sim["params"]
     # The simulation must emit exactly the canonical phase set, in order.
     assert sim["phase_labels"] == list(PHASE_LABELS)
-    # Sanity-check the canonical set itself: 10 phases, the 5 expected
+    # Sanity-check the canonical set itself: 8 phases, the 4 expected
     # misfits each appearing once.
-    assert len(PHASE_LABELS) == 10
+    assert len(PHASE_LABELS) == 8
     for misfit in (
         "Remap Misfit",
         "History-Dependent Firing",
         "Drift Misfit",
         "Wide Dynamics Noise",
-        "Wiggly-Flat Likelihood",
     ):
         assert PHASE_LABELS.count(misfit) == 1
     boundaries = np.asarray(sim["phase_boundaries"])
-    assert boundaries[-1] == params.T_wiggly_end
+    assert boundaries[-1] == params.T_wide_dynamics_end
     assert np.all(np.diff(boundaries) > 0)
     x_true = np.asarray(sim["x_true"])
-    assert x_true.shape[0] == params.T_wiggly_end
+    assert x_true.shape[0] == params.T_wide_dynamics_end
 
 
 def test_remap_phase_flags_all_three(sim: SimulationResult) -> None:
@@ -175,18 +170,4 @@ def test_history_dependent_firing_per_spike_metrics_near_baseline(
         "per-spike spike_prob in the history-dependent phase should stay "
         f"within +/-50% of baseline; got baseline={base_sp:.3f}, "
         f"hist-dep={hd_sp:.3f}"
-    )
-
-
-def test_wiggly_flat_likelihood_inflates_kl(sim: SimulationResult) -> None:
-    """Wiggly-flat-likelihood phase produces a wide, low-info likelihood;
-    KL(narrow_predictive || wiggly_flat_likelihood) is meaningfully
-    larger than baseline.
-    """
-    medians = _per_phase_medians(sim)
-    base_kl, _, _ = medians["Clean Baseline"]
-    wiggly_kl, _, _ = medians["Wiggly-Flat Likelihood"]
-    assert wiggly_kl > 1.5 * base_kl, (
-        "wiggly-flat-likelihood phase should inflate KL > 1.5x baseline; "
-        f"got base={base_kl:.3f}, wiggly={wiggly_kl:.3f}"
     )

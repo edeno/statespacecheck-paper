@@ -220,7 +220,7 @@ Two dataset kinds are supported:
   fitted `non_local_detector` decoders).
 - **Figure-3 simulation cache** — the simulated demonstration with
   baseline / remap / history-dependent-firing / drift /
-  wide-dynamics-noise / wiggly-flat-likelihood phases.
+  wide-dynamics-noise phases.
 
 ### Build a cache
 

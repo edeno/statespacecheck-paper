@@ -68,7 +68,7 @@ _PER_SPIKE_BATCH = 50_000
 class DecodeParams:
     """Parameters for the figure-3 decoding simulation.
 
-    The simulation walks through five misfit conditions separated by
+    The simulation walks through four misfit conditions separated by
     clean-recovery windows. Time steps are 1 ms by convention — the
     simulation math itself is dt-agnostic, but the default parameters
     (`rate_scale=5.0`, refractory and burst windows in
@@ -85,8 +85,6 @@ class DecodeParams:
     - 22k–26k: Drift misfit (4 s)
     - 26k–30k: Clean recovery
     - 30k–32k: Wide-dynamics-noise misfit (2 s)
-    - 32k–34k: Clean recovery
-    - 34k–38k: Wiggly-flat-likelihood misfit (4 s)
 
     Parameters
     ----------
@@ -118,17 +116,6 @@ class DecodeParams:
         animal walks normally; engineered to inflate KL while HPD
         overlap and the rank-based p-value stay near baseline (the
         KL-false-positive case).
-    T_recovery4_end : int, default 34_000
-        End of fourth recovery period.
-    T_wiggly_end : int, default 38_000
-        End of wiggly-flat-likelihood misfit window. Decoder uses
-        per-cell wiggly-flat rate functions (see
-        :func:`statespacecheck_paper.simulation.wiggly_flat_rates`)
-        for both posterior updates and diagnostic rate matrix during
-        this window. The per-spike likelihood is wiggly-flat instead
-        of Gaussian; HPDO becomes unstable (irregular HPD region) and
-        the rank-based p-value becomes ambiguous (no clearly
-        most-expected cell).
     sigx_pred : float, default 0.5
         Decoder's baseline dynamics standard deviation.
     sigx_wide_dynamics : float, default 20.0
@@ -178,8 +165,6 @@ class DecodeParams:
     T_drift_end: int = 26_000
     T_recovery3_end: int = 30_000
     T_wide_dynamics_end: int = 32_000
-    T_recovery4_end: int = 34_000
-    T_wiggly_end: int = 38_000
 
     # Decoder & dynamics parameters
     sigx_pred: float = 0.5  # baseline dynamics std
@@ -240,8 +225,6 @@ class DecodeParams:
             self.T_drift_end,
             self.T_recovery3_end,
             self.T_wide_dynamics_end,
-            self.T_recovery4_end,
-            self.T_wiggly_end,
         ]
         if any(later <= earlier for earlier, later in zip(timeline, timeline[1:], strict=False)):
             raise ValueError(
@@ -271,16 +254,15 @@ class MisfitWindow:
     decoder_rates : np.ndarray, shape (n_bins, n_cells), optional
         Replaces the baseline Gaussian place-field rate table used to
         form the posterior-update likelihood (and the displayed per-spike
-        likelihood). Used by the remap misfit (remapped place fields) and
-        the wiggly-flat-likelihood misfit.
+        likelihood). Used by the remap misfit (remapped place fields).
     diagnostic_rates : np.ndarray, shape (n_bins, n_cells), optional
         Replaces the rate table the *diagnostics* judge spikes against.
         Leave ``None`` for a misfit that perturbs the world the decoder
-        observes but not the decoder's own model — remapping: the
+        observes but not the decoder's own model — for remapping, the
         diagnostic should still reference the model's intended Gaussian
         place fields, so it correctly flags the mismatch. Set it (equal
         to ``decoder_rates``) only for a misfit that redefines what the
-        decoder's model *is* — the wiggly-flat-likelihood phase.
+        decoder's model *is*.
 
     Raises
     ------
@@ -547,10 +529,10 @@ def decode_and_diagnostics(
     rate_scale : float
         Scaling factor for firing rates.
     misfit_schedule : MisfitSchedule, optional
-        Decoder-side misfit windows — remapping, wide-dynamics noise,
-        wiggly-flat likelihood. Each :class:`MisfitWindow` swaps the
-        transition matrix and/or the per-cell rate table for its
-        interval. Defaults to an empty schedule: a clean decode with no
+        Decoder-side misfit windows — remapping and wide-dynamics noise.
+        Each :class:`MisfitWindow` swaps the transition matrix and/or
+        the per-cell rate table for its interval. Defaults to an empty
+        schedule: a clean decode with no
         misfits (the real-data decoding case).
     rng : np.random.Generator | None, optional
         Random number generator (reserved for future use).
@@ -669,7 +651,7 @@ def decode_and_diagnostics(
 
         # Likelihood grid for this time's counts. The per-cell rate table
         # is the baseline Gaussian-PF table unless the active misfit
-        # window overrides it (remapped or wiggly-flat table).
+        # window overrides it (e.g. remapped table).
         rates_t = rates
         if window is not None and window.decoder_rates is not None:
             rates_t = window.decoder_rates
@@ -709,9 +691,9 @@ def decode_and_diagnostics(
     # intended likelihood — during remapping the decoder updates the
     # posterior with remapped fields but the diagnostic still references
     # the original fields (``diagnostic_rates`` is ``None`` for remap),
-    # so the diagnostic correctly flags the mismatch. The wiggly-flat
-    # phase redefines the model itself, so its window sets
-    # ``diagnostic_rates`` and those events are judged against it.
+    # so the diagnostic correctly flags the mismatch. A misfit that
+    # redefines the model itself would set ``diagnostic_rates`` so its
+    # events are judged against that table.
     # ``compute_per_cell_diagnostics_from_rates`` takes a single rate
     # table, so group events by table, diagnose each group, and merge.
     diag_tables: list[NDArray[np.floating]] = [rates]
@@ -818,7 +800,7 @@ def _merge_diagnostics(
 
     Used when the diagnostic rate table differs across the timeline
     because the :class:`MisfitSchedule` has windows with
-    ``diagnostic_rates`` set (the wiggly-flat-likelihood phase).
+    ``diagnostic_rates`` set.
 
     Parameters
     ----------
