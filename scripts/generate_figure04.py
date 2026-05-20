@@ -333,8 +333,8 @@ def run_demo() -> None:
             ha="right",
         )
 
-    save_figure("figures/main/figure04", close=True)
-    print("Saved figures/main/figure04.{pdf,png}")
+    save_figure("manuscript/figures/main/figure04", close=True)
+    print("Saved manuscript/figures/main/figure04.{pdf,png}")
     print("\nFigure 4 complete!")
 
 

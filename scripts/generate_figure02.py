@@ -807,8 +807,8 @@ def create_figure() -> None:
     # =========================================================================
     # SAVE
     # =========================================================================
-    save_figure("figures/main/figure02")
-    print("\nFigure 2 saved to figures/main/figure02.{pdf,png}")
+    save_figure("manuscript/figures/main/figure02")
+    print("\nFigure 2 saved to manuscript/figures/main/figure02.{pdf,png}")
 
 
 if __name__ == "__main__":

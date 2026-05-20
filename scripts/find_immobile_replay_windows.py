@@ -15,7 +15,7 @@ Usage:
 
 Outputs:
     - Prints ranked list of candidate events
-    - Optionally generates preview figures in figures/preview/
+    - Optionally generates preview figures in manuscript/figures/preview/
 """
 
 from __future__ import annotations
@@ -463,7 +463,7 @@ def generate_preview_figures(
     n_top : int
         Number of preview figures to generate.
     output_dir : Path, optional
-        Output directory. If None, uses figures/preview/.
+        Output directory. If None, uses manuscript/figures/preview/.
     """
     if output_dir is None:
         output_dir = Path(__file__).parent.parent / "figures" / "preview"

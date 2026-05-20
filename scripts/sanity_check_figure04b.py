@@ -4,7 +4,7 @@ For each metric (HPD overlap, KL divergence, spike prob), finds time windows whe
 the model difference falls at different quantiles (Continuous better, similar,
 Continuous-Fragmented better) and generates Figure 4a-style diagnostic panels.
 
-Saves output to figures/preview/sanity_check_4b/.
+Saves output to manuscript/figures/preview/sanity_check_4b/.
 """
 
 from __future__ import annotations
@@ -43,7 +43,7 @@ except ImportError:
 
 DATA_PATH = Path(__file__).parent.parent / "data"
 ANIMAL_DATE_EPOCH = "j1620210710_02_r1"
-OUTPUT_DIR = "figures/preview/sanity_check_4b"
+OUTPUT_DIR = "manuscript/figures/preview/sanity_check_4b"
 HALF_WIDTH = 50  # Same as Figure 4a
 
 

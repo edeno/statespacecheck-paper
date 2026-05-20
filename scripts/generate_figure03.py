@@ -47,7 +47,7 @@ def run_demo(params: DecodeParams) -> None:
     Returns
     -------
     None
-        Saves figure to figures/main/figure03.{pdf,png}.
+        Saves figure to manuscript/figures/main/figure03.{pdf,png}.
 
     Notes
     -----
@@ -113,8 +113,8 @@ def run_demo(params: DecodeParams) -> None:
     )
 
     # Save figure (uses plt.gcf() to get current figure)
-    save_figure("figures/main/figure03", close=False)
-    print("\nFigure 3 saved to figures/main/figure03.{pdf,png}")
+    save_figure("manuscript/figures/main/figure03", close=False)
+    print("\nFigure 3 saved to manuscript/figures/main/figure03.{pdf,png}")
 
 
 if __name__ == "__main__":

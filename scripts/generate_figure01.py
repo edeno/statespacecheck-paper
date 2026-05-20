@@ -35,7 +35,7 @@ def create_figure() -> None:
     Returns
     -------
     None
-        Saves figure to figures/main/figure01.{pdf,png}.
+        Saves figure to manuscript/figures/main/figure01.{pdf,png}.
     """
     set_figure_defaults(context="paper")
 
@@ -160,10 +160,10 @@ def create_figure() -> None:
             ha="right",
         )
 
-    # Save to figures/main directory
-    save_figure("figures/main/figure01")
+    # Save to manuscript/figures/main directory
+    save_figure("manuscript/figures/main/figure01")
     plt.close()
-    print("\nFigure 1 saved to figures/main/figure01.{pdf,png}")
+    print("\nFigure 1 saved to manuscript/figures/main/figure01.{pdf,png}")
 
 
 if __name__ == "__main__":

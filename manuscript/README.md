@@ -72,10 +72,10 @@ pdflatex supplement.tex
 
 ## Figures
 
-Figures are stored in `../figures/main/` and `../figures/supplementary/` and referenced with relative paths:
+Figures are stored in `figures/main/` and `figures/supplementary/` (within `manuscript/`) and referenced with relative paths:
 
 ```latex
-\includegraphics[width=\textwidth]{../figures/main/figure01.pdf}
+\includegraphics[width=\textwidth]{figures/main/figure01.pdf}
 ```
 
 Generate figures before building the manuscript:
@@ -192,7 +192,7 @@ cd manuscript
 Verify figures exist:
 
 ```bash
-ls ../figures/main/
+ls figures/main/
 ```
 
 ## Contact
