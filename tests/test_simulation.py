@@ -36,9 +36,11 @@ class TestNormalize:
         result = normalize(p, axis=axis)
         assert_allclose(result.sum(axis=axis), [1.0, 1.0])
 
-    def test_normalize_zeros_uses_eps_to_avoid_nan(self) -> None:
-        """Zero-sum input must produce finite output (uses eps internally)."""
-        result = normalize(np.zeros(5))
+    def test_normalize_zeros_uses_eps_to_avoid_nan_and_warns(self) -> None:
+        """Zero-sum input must produce finite output (uses eps internally) and
+        must emit a RuntimeWarning so the situation isn't silent."""
+        with pytest.warns(RuntimeWarning, match="normalize: input sum"):
+            result = normalize(np.zeros(5))
         assert np.isfinite(result).all()
 
 

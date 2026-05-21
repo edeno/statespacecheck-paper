@@ -78,14 +78,18 @@ def create_shared_example(rng: np.random.Generator) -> dict[str, Any]:
     n_mc_samples = 1000
 
     # Observed log predictive density: log(integral of predictive * likelihood)
-    # This is log p(y | y_{1:t-1}) = log sum_x p(x_t | y_{1:t-1}) p(y_t | x_t)
-    # For normalized distributions, this is the dot product
-    observed_log_pred = np.log(np.sum(predictive * likelihood) * dx + 1e-300)
+    # This is log p(y | y_{1:t-1}) = log sum_x p(x_t | y_{1:t-1}) p(y_t | x_t).
+    # If the overlap underflows for some pathological draw, np.log emits a
+    # RuntimeWarning and yields -inf rather than the previous behaviour of
+    # mapping zero to log(1e-300) ≈ -690, which would silently turn the
+    # p-value into a tie count between observed and simulated underflows.
+    observed_log_pred = float(np.log(np.sum(predictive * likelihood) * dx))
 
-    # Simulate reference distribution by:
-    # 1. Sample position from predictive
-    # 2. Generate "observation" from likelihood centered at that position
-    # 3. Compute log predictive density for simulated observation
+    # Simulate the reference distribution per the predictive-check
+    # definition in eq:fpred / eq:predictive_application:
+    # 1. Sample state x_s ~ predictive(x).
+    # 2. Sample observation y_tilde ~ p(y | x_s) = N(x_s, like_std^2).
+    # 3. Compute log f_pred(y_tilde) = log integral predictive(x) * p(y_tilde | x) dx.
     simulated_log_pred_values = np.zeros(n_mc_samples)
 
     cumsum = np.cumsum(predictive)
@@ -108,9 +112,10 @@ def create_shared_example(rng: np.random.Generator) -> dict[str, Any]:
         simulated_likelihood = normalize(simulated_likelihood)
 
         # Compute log predictive density for this simulated observation.
-        simulated_log_pred_values[i] = np.log(
-            np.sum(predictive * simulated_likelihood) * dx + 1e-300
-        )
+        # Lets np.log handle underflow with -inf + RuntimeWarning rather
+        # than masking it with a +1e-300 shift (see observed_log_pred above
+        # for the rationale).
+        simulated_log_pred_values[i] = np.log(np.sum(predictive * simulated_likelihood) * dx)
 
     # P-value: proportion of simulated values <= observed value
     p_value = float(np.mean(simulated_log_pred_values <= observed_log_pred))

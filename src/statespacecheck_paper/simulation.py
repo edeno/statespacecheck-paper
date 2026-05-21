@@ -37,6 +37,8 @@ Generate position-tuned spikes:
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 from numpy.typing import NDArray
 from scipy.stats import norm
@@ -61,6 +63,19 @@ def normalize(
     normalized : np.ndarray
         Normalized array with same shape as input, where sum along axis equals 1.
 
+    Notes
+    -----
+    When the input sum falls below ``eps`` along one or more axes, the
+    function emits a ``RuntimeWarning`` and returns a near-zero non-
+    normalized result (``p / eps``). All-zero input usually signals an
+    upstream bug — a cell with zero rate everywhere on the analyzed
+    bins, or a likelihood that fully decoupled from the data — and
+    consumers downstream (``hpd_overlap``, ``kl_divergence``) will
+    silently treat the result as a probability distribution despite it
+    not summing to 1. The warning makes the situation visible so a
+    failing run leaves a paper trail in the test log instead of
+    plausible-looking-but-wrong scientific output.
+
     Examples
     --------
     Normalize a 1D probability distribution:
@@ -80,6 +95,15 @@ def normalize(
     True
     """
     s: NDArray[np.floating] = np.sum(p, axis=axis, keepdims=True)
+    if np.any(s < eps):
+        warnings.warn(
+            "normalize: input sum fell below eps along one or more axes; "
+            "result will be near-zero and is not a proper probability "
+            "distribution. Filter all-zero rows upstream if this is "
+            "expected, or investigate the source if not.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
     s = np.maximum(s, eps)
     result: NDArray[np.floating] = p / s
     return result
