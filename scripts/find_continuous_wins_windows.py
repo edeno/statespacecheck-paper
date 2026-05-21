@@ -340,7 +340,9 @@ def generate_preview_figures(
         Output directory. If None, uses manuscript/figures/preview/continuous_wins/.
     """
     if output_dir is None:
-        output_dir = Path(__file__).parent.parent / "figures" / "preview" / "continuous_wins"
+        output_dir = (
+            Path(__file__).parent.parent / "manuscript" / "figures" / "preview" / "continuous_wins"
+        )
 
     output_dir.mkdir(parents=True, exist_ok=True)
     set_figure_defaults()
