@@ -572,11 +572,11 @@ def build_simulated_cache(
         raise FileExistsError(f"{paths['zarr']} already exists; pass force=True to overwrite.")
 
     sim = run_figure03_simulation(params, seed=seed)
-    params_used = sim["params"]
-    xs: NDArray[np.float64] = np.asarray(sim["xs"], dtype=np.float64)
-    x_true: NDArray[np.float64] = np.asarray(sim["x_true"], dtype=np.float64)
-    spikes: NDArray[np.int_] = np.asarray(sim["spikes"], dtype=np.int_)
-    metrics = sim["metrics"]
+    params_used = sim.params
+    xs: NDArray[np.float64] = np.asarray(sim.xs, dtype=np.float64)
+    x_true: NDArray[np.float64] = np.asarray(sim.x_true, dtype=np.float64)
+    spikes: NDArray[np.int_] = np.asarray(sim.spikes, dtype=np.int_)
+    metrics = sim.metrics
 
     n_time = x_true.shape[0]
     n_bins = xs.shape[0]

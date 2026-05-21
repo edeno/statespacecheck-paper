@@ -81,10 +81,10 @@ def run_demo(params: DecodeParams) -> None:
     Diagnostic thresholds are computed from the clean baseline period.
     """
     sim = run_figure03_simulation(params)
-    xs = sim["xs"]
-    x_true = sim["x_true"]
-    spikes = sim["spikes"]
-    metrics = sim["metrics"]
+    xs = sim.xs
+    x_true = sim.x_true
+    spikes = sim.spikes
+    metrics = sim.metrics
 
     # ``run_figure03_simulation`` already validates this, but rebind to
     # a non-Optional local so ``plot_combined_diagnostics``'s typed
@@ -114,11 +114,9 @@ def run_demo(params: DecodeParams) -> None:
 
 if __name__ == "__main__":
     # Full-size run (~32k 1-ms steps). To prototype quickly, shrink the
-    # timeline by passing smaller T_* boundaries, e.g.:
+    # timeline by passing a smaller ``phase_boundaries`` tuple, e.g.:
     #   params = DecodeParams(
-    #       T_remap_start=600, T_remap_end=900, T_recovery1_end=1100,
-    #       T_hist_dep_end=1400, T_recovery2_end=1600, T_drift_end=1900,
-    #       T_recovery3_end=2100, T_wide_dynamics_end=2400,
+    #       phase_boundaries=(600, 900, 1100, 1400, 1600, 1900, 2100, 2400),
     #   )
     params = DecodeParams()
     run_demo(params)

@@ -743,9 +743,7 @@ def plot_misfit_examples(
     ...     'spike_prob': rng.uniform(0, 1, (n_time, n_cells)),
     ... }
     >>> params = DecodeParams(
-    ...     T_remap_start=3000, T_remap_end=3600, T_recovery1_end=3960,
-    ...     T_hist_dep_end=4440, T_recovery2_end=4800, T_drift_end=5100,
-    ...     T_recovery3_end=5400, T_wide_dynamics_end=5580,
+    ...     phase_boundaries=(3000, 3600, 3960, 4440, 4800, 5100, 5400, 5580),
     ... )
     >>> pf_centers = np.linspace(0, 1, n_cells)
     >>> fig = plot_misfit_examples(
@@ -1264,9 +1262,7 @@ def plot_combined_diagnostics(
     ... }
     >>> thresholds = Thresholds(hpd_overlap=0.8, kl_divergence=2.0, spike_prob=0.05)
     >>> params = DecodeParams(
-    ...     T_remap_start=200, T_remap_end=250, T_recovery1_end=280,
-    ...     T_hist_dep_end=320, T_recovery2_end=350, T_drift_end=390,
-    ...     T_recovery3_end=420, T_wide_dynamics_end=460,
+    ...     phase_boundaries=(200, 250, 280, 320, 350, 390, 420, 460),
     ... )
     >>> placefield_centers = np.linspace(0, 1, n_cells)
     >>> fig = plot_combined_diagnostics(

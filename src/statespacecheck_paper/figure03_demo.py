@@ -14,7 +14,7 @@ computation + plotting.
 
 from __future__ import annotations
 
-from typing import TypedDict
+from dataclasses import dataclass
 
 import numpy as np
 from numpy.typing import NDArray
@@ -51,13 +51,17 @@ PHASE_LABELS: tuple[str, ...] = (
 )
 
 
-class SimulationResult(TypedDict):
-    """Return shape of :func:`run_figure03_simulation`.
+@dataclass(frozen=True)
+class SimulationResult:
+    """Result of :func:`run_figure03_simulation`.
 
-    Promotes the simulation dict from ``dict[str, Any]`` to a fixed schema
-    so downstream consumers (the figure script, the interactive cache
-    builder, the test suite) get real type checking on every field
-    access.
+    Promoted from ``TypedDict`` to frozen dataclass so the load-bearing
+    length invariants — one ``phase_labels`` entry per phase, boundaries
+    delimit those phases, ``spikes`` and ``x_true`` share the timeline,
+    and the final boundary equals the timeline length — are checked at
+    construction. Without this, adding or removing a phase silently
+    changes downstream lengths and the figure-3 pipeline would run with
+    miscounted indices.
     """
 
     params: DecodeParams
@@ -67,6 +71,29 @@ class SimulationResult(TypedDict):
     metrics: dict[str, NDArray[np.floating] | NDArray[np.intp]]
     phase_labels: list[str]
     phase_boundaries: list[int]
+
+    def __post_init__(self) -> None:
+        """Enforce length and timeline-consistency invariants."""
+        if list(self.phase_labels) != list(PHASE_LABELS):
+            raise ValueError(
+                f"phase_labels must equal PHASE_LABELS in order; "
+                f"got {self.phase_labels!r} vs canonical {list(PHASE_LABELS)!r}"
+            )
+        if len(self.phase_boundaries) != len(self.phase_labels):
+            raise ValueError(
+                f"phase_boundaries length ({len(self.phase_boundaries)}) "
+                f"must equal phase_labels length ({len(self.phase_labels)})."
+            )
+        if self.spikes.shape[0] != self.x_true.shape[0]:
+            raise ValueError(
+                f"spikes timeline ({self.spikes.shape[0]}) must equal "
+                f"x_true timeline ({self.x_true.shape[0]})."
+            )
+        if self.phase_boundaries[-1] != self.x_true.shape[0]:
+            raise ValueError(
+                f"final phase boundary ({self.phase_boundaries[-1]}) must "
+                f"equal x_true timeline ({self.x_true.shape[0]})."
+            )
 
 
 def run_figure03_simulation(

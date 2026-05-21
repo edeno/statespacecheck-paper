@@ -109,6 +109,35 @@ def _condition_on(
 # -----------------------------
 
 
+# Canonical names for the figure-3 phase boundaries, in order. One entry
+# per position in :attr:`DecodeParams.phase_boundaries`. Public so tests
+# and downstream code refer to the names symbolically rather than by index.
+PHASE_BOUNDARY_NAMES: tuple[str, ...] = (
+    "T_remap_start",  # end of clean baseline
+    "T_remap_end",  # end of remap misfit
+    "T_recovery1_end",  # end of clean recovery 1
+    "T_hist_dep_end",  # end of history-dependent firing misfit
+    "T_recovery2_end",  # end of clean recovery 2
+    "T_drift_end",  # end of drift misfit
+    "T_recovery3_end",  # end of clean recovery 3
+    "T_wide_dynamics_end",  # end of wide-dynamics-noise misfit
+)
+# Default phase ladder in 1-ms steps. Used as the default of
+# ``DecodeParams.phase_boundaries`` and re-exported here so tests and
+# scripts that want to override a subset don't have to re-list the
+# unchanged entries.
+_DEFAULT_PHASE_BOUNDARIES: tuple[int, ...] = (
+    6_000,
+    10_000,
+    14_000,
+    18_000,
+    22_000,
+    26_000,
+    30_000,
+    32_000,
+)
+
+
 @dataclass
 class DecodeParams:
     """Parameters for the figure-3 decoding simulation.
@@ -133,34 +162,14 @@ class DecodeParams:
 
     Parameters
     ----------
-    T_remap_start : int, default 6_000
-        Start of remap misfit window (end of clean baseline).
-    T_remap_end : int, default 10_000
-        End of remap misfit window.
-    T_recovery1_end : int, default 14_000
-        End of first recovery period.
-    T_hist_dep_end : int, default 18_000
-        End of history-dependent firing misfit window. Spikes use
-        :func:`simulate_spikes_history_dependent` (refractory +
-        bursting); decoder still assumes Poisson. The misfit lives
-        in spike-train temporal correlations, not in the per-spike
-        spatial likelihood, so per-spike diagnostics largely miss it
-        — a deliberate demonstration of the spatial-only nature of
-        the metrics.
-    T_recovery2_end : int, default 22_000
-        End of second recovery period.
-    T_drift_end : int, default 26_000
-        End of drift misfit window. Animal trajectory has persistent
-        velocity (momentum = 0.8); decoder assumes memoryless random
-        walk.
-    T_recovery3_end : int, default 30_000
-        End of third recovery period.
-    T_wide_dynamics_end : int, default 32_000
-        End of wide-dynamics-noise misfit window. Decoder applies an
-        inflated transition matrix (``sigx_wide_dynamics``) while the
-        animal walks normally; engineered to inflate KL while HPD
-        overlap and the rank-based p-value stay near baseline (the
-        KL-false-positive case).
+    phase_boundaries : tuple of int, default ``_DEFAULT_PHASE_BOUNDARIES``
+        Strictly increasing end-of-phase indices, one per entry of
+        :data:`PHASE_BOUNDARY_NAMES`. The named accessors
+        (``T_remap_start``, ``T_remap_end``, etc.) are read-only views
+        onto this tuple by index. Override a subset by spelling out the
+        whole tuple — partial overrides aren't supported because the
+        invariant the dataclass enforces ("strictly increasing ladder")
+        only makes sense over the full ladder.
     sigx_pred : float, default 0.5
         Decoder's baseline dynamics standard deviation.
     sigx_wide_dynamics : float, default 20.0
@@ -197,19 +206,15 @@ class DecodeParams:
     >>> params = DecodeParams()
     >>> params.remap_window
     (6000, 10000)
+    >>> params.T_remap_start, params.T_wide_dynamics_end
+    (6000, 32000)
     >>> params.pf_centers
     array([  0.,  10.,  20.,  30.,  40.,  50.,  60.,  70.,  80.,  90., 100.])
     """
 
-    # Timeline (1 ms steps by convention; the math is dt-agnostic)
-    T_remap_start: int = 6_000
-    T_remap_end: int = 10_000
-    T_recovery1_end: int = 14_000
-    T_hist_dep_end: int = 18_000
-    T_recovery2_end: int = 22_000
-    T_drift_end: int = 26_000
-    T_recovery3_end: int = 30_000
-    T_wide_dynamics_end: int = 32_000
+    # Phase ladder. One boundary per entry of PHASE_BOUNDARY_NAMES,
+    # strictly increasing; validated in __post_init__.
+    phase_boundaries: tuple[int, ...] = _DEFAULT_PHASE_BOUNDARIES
 
     # Decoder & dynamics parameters
     sigx_pred: float = 0.5  # baseline dynamics std
@@ -239,42 +244,72 @@ class DecodeParams:
         (7, 2),
     )
 
+    # Named accessors — index into ``phase_boundaries``. The names are
+    # the same as the previous dataclass fields so existing read sites
+    # (``params.T_remap_end``) keep working without migration.
+
+    @property
+    def T_remap_start(self) -> int:  # noqa: N802 — naming matches the boundary index it surfaces
+        return self.phase_boundaries[0]
+
+    @property
+    def T_remap_end(self) -> int:  # noqa: N802
+        return self.phase_boundaries[1]
+
+    @property
+    def T_recovery1_end(self) -> int:  # noqa: N802
+        return self.phase_boundaries[2]
+
+    @property
+    def T_hist_dep_end(self) -> int:  # noqa: N802
+        return self.phase_boundaries[3]
+
+    @property
+    def T_recovery2_end(self) -> int:  # noqa: N802
+        return self.phase_boundaries[4]
+
+    @property
+    def T_drift_end(self) -> int:  # noqa: N802
+        return self.phase_boundaries[5]
+
+    @property
+    def T_recovery3_end(self) -> int:  # noqa: N802
+        return self.phase_boundaries[6]
+
+    @property
+    def T_wide_dynamics_end(self) -> int:  # noqa: N802
+        return self.phase_boundaries[7]
+
     @property
     def remap_window(self) -> tuple[int, int]:
-        """Remapping window for backward compatibility.
-
-        Returns
-        -------
-        tuple[int, int]
-            (T_remap_start, T_remap_end)
-        """
+        """Remapping window as ``(start, end)``."""
         return (self.T_remap_start, self.T_remap_end)
 
     def __post_init__(self) -> None:
         """Validate the timeline and initialize ``pf_centers`` if not provided.
 
-        The 10 ``T_*`` fields are phase-boundary indices that must be
-        strictly increasing — ``run_figure03_simulation`` builds each
-        phase as ``T_next - T_prev`` and a non-monotonic timeline would
-        yield a negative phase length, which ``np.arange``/``np.zeros``
-        silently turn into an empty phase, shifting every later misfit
-        window. Catch that here at construction rather than as a
-        misaligned figure downstream.
+        ``phase_boundaries`` must have exactly :data:`PHASE_BOUNDARY_NAMES`
+        entries and be strictly increasing — ``run_figure03_simulation``
+        builds each phase as ``T_next - T_prev`` and a non-monotonic
+        timeline would yield a negative phase length, which
+        ``np.arange``/``np.zeros`` silently turn into an empty phase,
+        shifting every later misfit window. Catch that here at
+        construction rather than as a misaligned figure downstream.
         """
-        timeline = [
-            self.T_remap_start,
-            self.T_remap_end,
-            self.T_recovery1_end,
-            self.T_hist_dep_end,
-            self.T_recovery2_end,
-            self.T_drift_end,
-            self.T_recovery3_end,
-            self.T_wide_dynamics_end,
-        ]
-        if any(later <= earlier for earlier, later in zip(timeline, timeline[1:], strict=False)):
+        bnds = tuple(self.phase_boundaries)
+        if len(bnds) != len(PHASE_BOUNDARY_NAMES):
             raise ValueError(
-                f"DecodeParams timeline boundaries must be strictly increasing; got {timeline}"
+                f"DecodeParams.phase_boundaries must have "
+                f"{len(PHASE_BOUNDARY_NAMES)} entries "
+                f"(one per PHASE_BOUNDARY_NAMES); got {len(bnds)}."
             )
+        if any(later <= earlier for earlier, later in zip(bnds, bnds[1:], strict=False)):
+            raise ValueError(
+                f"DecodeParams.phase_boundaries must be strictly increasing; got {list(bnds)}."
+            )
+        # Re-bind as a tuple in case the user passed a list/array — the
+        # named accessors expect a sequence and we want hashability.
+        self.phase_boundaries = bnds
 
         if self.pf_centers is None:
             self.pf_centers = np.arange(self.xs_min, self.xs_max + 1, 10, dtype=float)
@@ -312,11 +347,30 @@ class MisfitWindow:
         hypothetical future misfits whose rate table the diagnostic
         should also adopt rather than judging against the original.
 
+        Setting this without also setting ``decoder_rates`` is rejected
+        at construction — the diagnostic would judge spikes against a
+        table the decoder never used.
+
     Raises
     ------
     ValueError
-        If ``start >= end`` or a supplied rate table contains negative or
-        non-finite entries.
+        If ``start >= end``; if a supplied rate table contains negative
+        or non-finite entries; or if ``diagnostic_rates`` is set with
+        ``decoder_rates=None``.
+
+    Notes
+    -----
+    Supplied ``transition_matrix``, ``decoder_rates``, and
+    ``diagnostic_rates`` are deep-copied at construction and the copy
+    is marked write-protected, extending the dataclass's ``frozen=True``
+    invariant to the array contents. Callers retain a writable
+    reference to the original they passed in.
+
+    Shape parity with the decoder's grid (``(n_bins, n_cells)`` for
+    rate tables, ``(n_bins, n_bins)`` for the transition matrix) is
+    checked by :meth:`validate_against`, which the decoder calls once
+    per schedule entry — too late to check at construction because the
+    schedule may be built before ``xs`` is pinned down.
 
     Examples
     --------
@@ -337,9 +391,20 @@ class MisfitWindow:
     diagnostic_rates: NDArray[np.floating] | None = None
 
     def __post_init__(self) -> None:
-        """Validate the window bounds and any supplied rate tables."""
+        """Validate the window bounds and any supplied rate tables.
+
+        Beyond the basic ``start < end`` and finite/non-negative
+        checks, this also (a) rejects the nonsense configuration of
+        ``diagnostic_rates`` set with ``decoder_rates=None`` — there's
+        no meaningful misfit there, just a diagnostic judging spikes
+        against a rate table the decoder never used; (b) makes a
+        write-protected copy of any supplied rate table so the
+        ``frozen=True`` invariant extends to the array contents, not
+        just the dataclass field bindings.
+        """
         if self.start >= self.end:
             raise ValueError(f"MisfitWindow requires start < end, got ({self.start}, {self.end})")
+
         # A negative or non-finite rate table would become NaN once it
         # reaches ``poisson.pmf`` and propagate silently through the
         # posterior — reject it at construction.
@@ -347,6 +412,82 @@ class MisfitWindow:
             table = getattr(self, name)
             if table is not None and not (np.all(np.isfinite(table)) and np.all(table >= 0.0)):
                 raise ValueError(f"MisfitWindow.{name} must be finite and non-negative everywhere")
+
+        # diagnostic_rates without decoder_rates is incoherent. Either
+        # the diagnostic should reference the model's intended rates
+        # (decoder_rates=None, diagnostic_rates=None) or the misfit
+        # redefines the model (decoder_rates set, diagnostic_rates set
+        # — typically to the same table). Setting only diagnostic_rates
+        # would have the diagnostic judge spikes against a table the
+        # decoder never used, which is nonsense.
+        if self.diagnostic_rates is not None and self.decoder_rates is None:
+            raise ValueError(
+                "MisfitWindow.diagnostic_rates is set but decoder_rates is None — "
+                "the diagnostic would judge spikes against a rate table the "
+                "decoder never used. Set both fields (typically to the same "
+                "array) for a misfit that redefines the decoder's model, or "
+                "leave both None and let the diagnostic reference the original "
+                "Gaussian PFs (e.g. remap, where only decoder_rates is set)."
+            )
+
+        # Write-protect any supplied rate tables. A frozen dataclass
+        # only prevents rebinding ``self.decoder_rates``; the underlying
+        # ndarray is still mutable. Take a defensive copy and mark it
+        # read-only so callers can't bypass the validation above by
+        # mutating in place after construction.
+        for name in ("transition_matrix", "decoder_rates", "diagnostic_rates"):
+            table = getattr(self, name)
+            if table is None:
+                continue
+            if table.flags.writeable:
+                copy = table.copy()
+                copy.setflags(write=False)
+                # Bypass ``frozen=True`` for the in-place field rebind.
+                object.__setattr__(self, name, copy)
+
+    def validate_against(self, n_bins: int, n_cells: int) -> None:
+        """Validate that supplied rate tables match the decoder's grid.
+
+        Shape parity with the decoder's position grid and cell count
+        can't be checked at construction time because the schedule may
+        be built before the decoder's ``xs`` is pinned down (e.g.
+        scripts that construct the schedule, then pass it through to
+        ``decode_and_diagnostics`` which knows ``n_bins``). Call this
+        once per schedule entry inside the decoder, before any window
+        is consulted.
+
+        Parameters
+        ----------
+        n_bins : int
+            Number of position bins in the decoder's grid
+            (``xs.size``).
+        n_cells : int
+            Number of cells in the spike train (``spikes.shape[1]``).
+
+        Raises
+        ------
+        ValueError
+            If any supplied rate table's shape doesn't equal
+            ``(n_bins, n_cells)``.
+        """
+        for name in ("decoder_rates", "diagnostic_rates"):
+            table = getattr(self, name)
+            if table is None:
+                continue
+            if table.shape != (n_bins, n_cells):
+                raise ValueError(
+                    f"MisfitWindow.{name} shape {table.shape} does not "
+                    f"match decoder grid ({n_bins}, {n_cells})."
+                )
+        if self.transition_matrix is not None and self.transition_matrix.shape != (
+            n_bins,
+            n_bins,
+        ):
+            raise ValueError(
+                f"MisfitWindow.transition_matrix shape "
+                f"{self.transition_matrix.shape} does not match decoder grid "
+                f"({n_bins}, {n_bins})."
+            )
 
 
 @dataclass(frozen=True)
@@ -677,6 +818,13 @@ def decode_and_diagnostics(
 
     if misfit_schedule is None:
         misfit_schedule = MisfitSchedule()
+
+    # Shape-validate every schedule entry against the decoder's grid.
+    # MisfitWindow's __post_init__ can't check this because the schedule
+    # may be built before xs / spikes are pinned down.
+    n_cells = spikes.shape[1]
+    for schedule_entry in misfit_schedule.windows:
+        schedule_entry.validate_against(n_bins=n_bins, n_cells=n_cells)
 
     # Preallocate outputs
     posterior: NDArray[np.floating] = np.zeros((n_time, n_bins))

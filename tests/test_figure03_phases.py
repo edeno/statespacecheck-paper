@@ -33,14 +33,7 @@ def _moderate_params() -> DecodeParams:
     small enough to keep the test fast (~3 s on a laptop).
     """
     return DecodeParams(
-        T_remap_start=600,
-        T_remap_end=900,
-        T_recovery1_end=1100,
-        T_hist_dep_end=1400,
-        T_recovery2_end=1600,
-        T_drift_end=1900,
-        T_recovery3_end=2100,
-        T_wide_dynamics_end=2400,
+        phase_boundaries=(600, 900, 1100, 1400, 1600, 1900, 2100, 2400),
     )
 
 
@@ -48,9 +41,9 @@ def _per_phase_medians(
     sim: SimulationResult,
 ) -> dict[str, tuple[float, float, float]]:
     """Return (kl_med, hpd_med, sp_med) per phase label."""
-    metrics = sim["metrics"]
-    boundaries = np.asarray(sim["phase_boundaries"])
-    labels = sim["phase_labels"]
+    metrics = sim.metrics
+    boundaries = np.asarray(sim.phase_boundaries)
+    labels = sim.phase_labels
     event_phase = np.searchsorted(boundaries, metrics["event_time_ind"], side="right")
     out: dict[str, tuple[float, float, float]] = {}
     for i, label in enumerate(labels):
@@ -73,9 +66,9 @@ def test_phase_labels_and_boundaries(sim: SimulationResult) -> None:
     """``run_figure03_simulation`` emits every canonical phase in order
     and a timeline that ends at ``T_wide_dynamics_end``.
     """
-    params = sim["params"]
+    params = sim.params
     # The simulation must emit exactly the canonical phase set, in order.
-    assert sim["phase_labels"] == list(PHASE_LABELS)
+    assert sim.phase_labels == list(PHASE_LABELS)
     # Sanity-check the canonical set itself: 8 phases, the 4 expected
     # misfits each appearing once.
     assert len(PHASE_LABELS) == 8
@@ -86,10 +79,10 @@ def test_phase_labels_and_boundaries(sim: SimulationResult) -> None:
         "Wide Dynamics Noise",
     ):
         assert PHASE_LABELS.count(misfit) == 1
-    boundaries = np.asarray(sim["phase_boundaries"])
+    boundaries = np.asarray(sim.phase_boundaries)
     assert boundaries[-1] == params.T_wide_dynamics_end
     assert np.all(np.diff(boundaries) > 0)
-    x_true = np.asarray(sim["x_true"])
+    x_true = np.asarray(sim.x_true)
     assert x_true.shape[0] == params.T_wide_dynamics_end
 
 

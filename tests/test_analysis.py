@@ -98,7 +98,9 @@ class TestDecodeParams:
         np.testing.assert_array_equal(params.pf_centers, custom)
 
     def test_remap_window_returns_start_end_tuple(self) -> None:
-        params = DecodeParams(T_remap_start=1000, T_remap_end=2000)
+        params = DecodeParams(
+            phase_boundaries=(1000, 2000, 14_000, 18_000, 22_000, 26_000, 30_000, 32_000)
+        )
         assert params.remap_window == (1000, 2000)
 
 
@@ -775,3 +777,180 @@ class TestDecodeAndDiagnosticsLogSpace:
             f"final posterior peak at x={peak_pos:.1f}, expected near 90 "
             f"under sustained firing at PF centers (88, 92)."
         )
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 invariants: phase_boundaries tuple, MisfitWindow tightening
+# ---------------------------------------------------------------------------
+
+
+class TestDecodeParamsPhaseBoundaries:
+    """The phase ladder collapsed from 8 ``T_*`` fields to one
+    ``phase_boundaries`` tuple. Lock the invariants in.
+    """
+
+    def test_default_boundaries_match_documented_defaults(self) -> None:
+        params = DecodeParams()
+        assert params.phase_boundaries == (
+            6_000,
+            10_000,
+            14_000,
+            18_000,
+            22_000,
+            26_000,
+            30_000,
+            32_000,
+        )
+
+    def test_phase_boundaries_wrong_length_raises(self) -> None:
+        with pytest.raises(ValueError, match="must have 8 entries"):
+            DecodeParams(phase_boundaries=(1, 2, 3))
+
+    def test_phase_boundaries_non_monotonic_raises(self) -> None:
+        with pytest.raises(ValueError, match="strictly increasing"):
+            DecodeParams(
+                phase_boundaries=(100, 200, 200, 400, 500, 600, 700, 800),
+            )
+
+    def test_phase_boundaries_equal_consecutive_raises(self) -> None:
+        """Equal consecutive entries (zero-width phase) must reject too."""
+        with pytest.raises(ValueError, match="strictly increasing"):
+            DecodeParams(
+                phase_boundaries=(100, 200, 300, 300, 500, 600, 700, 800),
+            )
+
+    @pytest.mark.parametrize(
+        ("name", "index"),
+        [
+            ("T_remap_start", 0),
+            ("T_remap_end", 1),
+            ("T_recovery1_end", 2),
+            ("T_hist_dep_end", 3),
+            ("T_recovery2_end", 4),
+            ("T_drift_end", 5),
+            ("T_recovery3_end", 6),
+            ("T_wide_dynamics_end", 7),
+        ],
+    )
+    def test_named_accessor_indexes_into_tuple(self, name: str, index: int) -> None:
+        boundaries = (100, 200, 300, 400, 500, 600, 700, 800)
+        params = DecodeParams(phase_boundaries=boundaries)
+        assert getattr(params, name) == boundaries[index]
+
+
+class TestMisfitWindowTightening:
+    """Phase-2 additions: write-protect, shape validation, pairing invariant."""
+
+    def test_diagnostic_rates_without_decoder_rates_raises(self) -> None:
+        bad = np.full((5, 3), 0.1)
+        with pytest.raises(
+            ValueError,
+            match="diagnostic_rates is set but decoder_rates is None",
+        ):
+            MisfitWindow(10, 20, diagnostic_rates=bad)
+
+    def test_decoder_rates_array_is_write_protected(self) -> None:
+        """``frozen=True`` only blocks rebinding the field; the array
+        itself must also be read-only so callers can't bypass
+        validation by mutating in place."""
+        rates = np.full((5, 3), 0.1)
+        w = MisfitWindow(10, 20, decoder_rates=rates)
+        assert w.decoder_rates is not None
+        assert w.decoder_rates.flags.writeable is False
+        with pytest.raises(ValueError, match="read-only|assignment destination"):
+            w.decoder_rates[0, 0] = 999.0
+
+    def test_caller_array_not_mutated_by_construction(self) -> None:
+        """Defensive copy: caller's original array stays writable."""
+        rates = np.full((5, 3), 0.1)
+        original_id = id(rates)
+        MisfitWindow(10, 20, decoder_rates=rates)
+        assert id(rates) == original_id
+        assert rates.flags.writeable is True
+
+    def test_validate_against_accepts_matching_shape(self) -> None:
+        rates = np.full((5, 3), 0.1)
+        w = MisfitWindow(10, 20, decoder_rates=rates, diagnostic_rates=rates)
+        w.validate_against(n_bins=5, n_cells=3)  # does not raise
+
+    def test_validate_against_raises_on_mismatched_decoder_rates_shape(self) -> None:
+        rates = np.full((5, 3), 0.1)
+        w = MisfitWindow(10, 20, decoder_rates=rates)
+        with pytest.raises(ValueError, match=r"decoder_rates shape"):
+            w.validate_against(n_bins=7, n_cells=3)
+
+    def test_validate_against_raises_on_mismatched_transition_shape(self) -> None:
+        transition = np.eye(5)
+        w = MisfitWindow(10, 20, transition_matrix=transition)
+        with pytest.raises(ValueError, match=r"transition_matrix shape"):
+            w.validate_against(n_bins=7, n_cells=3)
+
+
+class TestSimulationResultDataclass:
+    """The ``TypedDict`` → frozen-dataclass conversion brought length
+    validation. Cover the failure modes."""
+
+    def test_phase_labels_wrong_order_raises(self) -> None:
+        from statespacecheck_paper.figure03_demo import PHASE_LABELS, SimulationResult
+
+        n_bins = 5
+        n_time = 10
+        bogus_labels = list(reversed(PHASE_LABELS))
+        with pytest.raises(ValueError, match="phase_labels must equal PHASE_LABELS"):
+            SimulationResult(
+                params=DecodeParams(),
+                xs=np.linspace(0.0, 100.0, n_bins),
+                x_true=np.zeros(n_time),
+                spikes=np.zeros((n_time, 1), dtype=np.int_),
+                metrics={},
+                phase_labels=bogus_labels,
+                phase_boundaries=[1, 2, 3, 4, 5, 6, 7, n_time],
+            )
+
+    def test_phase_boundary_length_mismatch_raises(self) -> None:
+        from statespacecheck_paper.figure03_demo import PHASE_LABELS, SimulationResult
+
+        n_bins = 5
+        n_time = 10
+        with pytest.raises(ValueError, match="phase_boundaries length"):
+            SimulationResult(
+                params=DecodeParams(),
+                xs=np.linspace(0.0, 100.0, n_bins),
+                x_true=np.zeros(n_time),
+                spikes=np.zeros((n_time, 1), dtype=np.int_),
+                metrics={},
+                phase_labels=list(PHASE_LABELS),
+                phase_boundaries=[1, 2, 3],  # wrong length
+            )
+
+    def test_spikes_and_x_true_timeline_mismatch_raises(self) -> None:
+        from statespacecheck_paper.figure03_demo import PHASE_LABELS, SimulationResult
+
+        n_bins = 5
+        n_time = 10
+        with pytest.raises(ValueError, match="spikes timeline"):
+            SimulationResult(
+                params=DecodeParams(),
+                xs=np.linspace(0.0, 100.0, n_bins),
+                x_true=np.zeros(n_time),
+                spikes=np.zeros((n_time + 1, 1), dtype=np.int_),  # off by one
+                metrics={},
+                phase_labels=list(PHASE_LABELS),
+                phase_boundaries=[1, 2, 3, 4, 5, 6, 7, n_time],
+            )
+
+    def test_final_boundary_must_equal_timeline_length(self) -> None:
+        from statespacecheck_paper.figure03_demo import PHASE_LABELS, SimulationResult
+
+        n_bins = 5
+        n_time = 10
+        with pytest.raises(ValueError, match="final phase boundary"):
+            SimulationResult(
+                params=DecodeParams(),
+                xs=np.linspace(0.0, 100.0, n_bins),
+                x_true=np.zeros(n_time),
+                spikes=np.zeros((n_time, 1), dtype=np.int_),
+                metrics={},
+                phase_labels=list(PHASE_LABELS),
+                phase_boundaries=[1, 2, 3, 4, 5, 6, 7, n_time + 1],
+            )
