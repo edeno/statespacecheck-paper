@@ -21,6 +21,7 @@ from numpy.typing import NDArray
 
 from statespacecheck_paper.analysis import (
     DecodeParams,
+    Diagnostics,
     MisfitSchedule,
     MisfitWindow,
     decode_and_diagnostics,
@@ -50,22 +51,6 @@ PHASE_LABELS: tuple[str, ...] = (
     "Wide Dynamics Noise",
 )
 
-# Keys of ``decode_and_diagnostics`` outputs that are indexed by time
-# (leading dim ``n_time``). Listed positively to avoid silently missing
-# new event-indexed keys (``event_*``, ``per_spike_likelihood``,
-# ``spike_time_ind``, ``spike_cell_ind``) that don't match a negative
-# filter. Used by :meth:`SimulationResult.__post_init__` for shape
-# validation.
-TIME_INDEXED_METRIC_KEYS: tuple[str, ...] = (
-    "posterior",
-    "predictive",
-    "likelihood",
-    "spike_likelihood",
-    "hpd_overlap",
-    "kl_divergence",
-    "spike_prob",
-)
-
 
 @dataclass(frozen=True)
 class SimulationResult:
@@ -84,7 +69,7 @@ class SimulationResult:
     xs: NDArray[np.floating]
     x_true: NDArray[np.floating]
     spikes: NDArray[np.int_]
-    metrics: dict[str, NDArray[np.floating] | NDArray[np.intp]]
+    metrics: Diagnostics
     # Sequence fields are declared as tuple so ``frozen=True``'s
     # immutability extends to the contents — list would leave
     # ``sim.phase_labels.append(...)`` and ``sim.phase_boundaries[-1] = 9999``
@@ -128,17 +113,16 @@ class SimulationResult:
                 f"final phase boundary ({self.phase_boundaries[-1]}) must "
                 f"equal x_true timeline ({n_time})."
             )
-        # Per-time metrics must share the timeline (see
-        # ``TIME_INDEXED_METRIC_KEYS`` for the contract).
-        for key in TIME_INDEXED_METRIC_KEYS:
-            if key not in self.metrics:
-                continue
-            arr = self.metrics[key]
-            if arr.ndim >= 1 and arr.shape[0] != n_time:
-                raise ValueError(
-                    f"metrics[{key!r}] has leading dim {arr.shape[0]}; "
-                    f"expected {n_time} (must match the x_true timeline)."
-                )
+        # Per-time metrics share the timeline by construction —
+        # ``Diagnostics.__post_init__`` enforces shape internally, so
+        # the previous TIME_INDEXED_METRIC_KEYS loop is redundant.
+        # Still cross-check against ``x_true`` since ``Diagnostics``
+        # only knows its own ``n_time``, not the timeline supplied here.
+        if self.metrics.posterior.shape[0] != n_time:
+            raise ValueError(
+                f"metrics.posterior leading dim {self.metrics.posterior.shape[0]} "
+                f"does not match x_true timeline ({n_time})."
+            )
 
 
 def run_figure03_simulation(

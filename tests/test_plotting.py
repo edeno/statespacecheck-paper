@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
-from statespacecheck_paper.analysis import DecodeParams, Thresholds
+from statespacecheck_paper.analysis import DecodeParams, Diagnostics, Thresholds
 from statespacecheck_paper.plotting import (
     compute_hpd_region,
     create_distribution_comparison_panel,
@@ -62,35 +62,35 @@ def thresholds_default() -> Thresholds:
 def _combined_metrics(
     rng: np.random.Generator, n_time: int, n_bins: int, n_cells: int
 ) -> dict[str, Any]:
-    """Build the full metrics dict accepted by ``plot_combined_diagnostics``."""
+    """Build the full ``Diagnostics`` accepted by ``plot_combined_diagnostics``."""
     spikes = rng.poisson(0.5, (n_time, n_cells))
     spike_lik = np.full((n_time, n_bins), np.nan)
     has_spk = spikes.sum(axis=1) > 0
     spike_lik[has_spk] = rng.dirichlet(np.ones(n_bins), size=int(has_spk.sum()))
 
     spike_time_ind, spike_cell_ind = np.nonzero(spikes[1:])
-    spike_time_ind = spike_time_ind + 1
+    spike_time_ind = (spike_time_ind + 1).astype(np.intp)
+    spike_cell_ind = spike_cell_ind.astype(np.intp)
     n_spikes = max(len(spike_time_ind), 1)
     per_spike_lik = rng.dirichlet(np.ones(n_bins), size=n_spikes)[: len(spike_time_ind)]
 
-    return {
-        "spikes": spikes,
-        "metrics": {
-            "predictive": rng.dirichlet(np.ones(n_bins), size=n_time),
-            "likelihood": rng.dirichlet(np.ones(n_bins), size=n_time),
-            "spike_likelihood": spike_lik,
-            "posterior": rng.dirichlet(np.ones(n_bins), size=n_time),
-            **_per_cell_metrics(rng, n_time, n_cells),
-            "per_spike_likelihood": per_spike_lik,
-            "spike_time_ind": spike_time_ind,
-            "spike_cell_ind": spike_cell_ind,
-            "event_time_ind": spike_time_ind,
-            "event_cell_ind": spike_cell_ind,
-            "event_hpd_overlap": rng.uniform(0, 1, len(spike_time_ind)),
-            "event_kl_divergence": rng.uniform(0, 5, len(spike_time_ind)),
-            "event_spike_prob": rng.uniform(0, 1, len(spike_time_ind)),
-        },
-    }
+    per_cell = _per_cell_metrics(rng, n_time, n_cells)
+    diagnostics = Diagnostics(
+        posterior=rng.dirichlet(np.ones(n_bins), size=n_time),
+        predictive=rng.dirichlet(np.ones(n_bins), size=n_time),
+        likelihood=rng.dirichlet(np.ones(n_bins), size=n_time),
+        spike_likelihood=spike_lik,
+        hpd_overlap=per_cell["hpd_overlap"],
+        kl_divergence=per_cell["kl_divergence"],
+        spike_prob=per_cell["spike_prob"],
+        event_time_ind=spike_time_ind,
+        event_cell_ind=spike_cell_ind,
+        event_hpd_overlap=rng.uniform(0, 1, len(spike_time_ind)),
+        event_kl_divergence=rng.uniform(0, 5, len(spike_time_ind)),
+        event_spike_prob=rng.uniform(0, 1, len(spike_time_ind)),
+        per_spike_likelihood=per_spike_lik,
+    )
+    return {"spikes": spikes, "metrics": diagnostics}
 
 
 def _bidirectional_remap(n_cells: int) -> tuple[tuple[int, int], ...]:
@@ -194,15 +194,13 @@ def test_plot_misfit_examples_runs(rng: np.random.Generator) -> None:
     xs = np.linspace(0, 1, n_bins)
     x_true = rng.uniform(0, n_bins - 1, n_time)
     spikes = rng.poisson(0.5, (n_time, n_cells))
-    metrics = {
-        "posterior": rng.dirichlet(np.ones(n_bins), size=n_time),
-        **_per_cell_metrics(rng, n_time, n_cells),
-    }
+    bundle = _combined_metrics(rng, n_time, n_bins, n_cells)
+    metrics = bundle["metrics"]
     params = _params_for_short_run(n_time, n_cells)
     fig = plot_misfit_examples(
         xs,
         x_true,
-        spikes,
+        spikes.astype(np.float64),
         metrics,
         params,
         np.linspace(0, 1, n_cells),
@@ -256,27 +254,31 @@ def test_plot_combined_diagnostics_uses_event_diagnostics_for_scatter() -> None:
     spikes = np.zeros((n_time, n_cells), dtype=int)
     spikes[10, 0] = 2
 
-    metrics = {
-        "predictive": rng.dirichlet(np.ones(n_bins), size=n_time),
-        "likelihood": rng.dirichlet(np.ones(n_bins), size=n_time),
-        "spike_likelihood": np.full((n_time, n_bins), np.nan),
-        "posterior": rng.dirichlet(np.ones(n_bins), size=n_time),
-        "hpd_overlap": np.full((n_time, n_cells), np.nan),
-        "kl_divergence": np.full((n_time, n_cells), np.nan),
-        "spike_prob": np.full((n_time, n_cells), np.nan),
-        "per_spike_likelihood": rng.dirichlet(np.ones(n_bins), size=2),
-        "spike_time_ind": np.array([10, 10]),
-        "spike_cell_ind": np.array([0, 0]),
-        "event_time_ind": np.array([10, 10]),
-        "event_cell_ind": np.array([0, 0]),
-        "event_hpd_overlap": np.array([0.25, 0.75]),
-        "event_kl_divergence": np.array([1.0, 3.0]),
-        "event_spike_prob": np.array([0.1, 0.01]),
-    }
-    metrics["spike_likelihood"][10] = metrics["per_spike_likelihood"][0]
-    metrics["hpd_overlap"][10, 0] = 0.5
-    metrics["kl_divergence"][10, 0] = 2.0
-    metrics["spike_prob"][10, 0] = 0.05
+    spike_lik = np.full((n_time, n_bins), np.nan)
+    hpd = np.full((n_time, n_cells), np.nan)
+    kl = np.full((n_time, n_cells), np.nan)
+    sp = np.full((n_time, n_cells), np.nan)
+    per_spike_lik = rng.dirichlet(np.ones(n_bins), size=2)
+    spike_lik[10] = per_spike_lik[0]
+    hpd[10, 0] = 0.5
+    kl[10, 0] = 2.0
+    sp[10, 0] = 0.05
+
+    metrics = Diagnostics(
+        posterior=rng.dirichlet(np.ones(n_bins), size=n_time),
+        predictive=rng.dirichlet(np.ones(n_bins), size=n_time),
+        likelihood=rng.dirichlet(np.ones(n_bins), size=n_time),
+        spike_likelihood=spike_lik,
+        hpd_overlap=hpd,
+        kl_divergence=kl,
+        spike_prob=sp,
+        event_time_ind=np.array([10, 10], dtype=np.intp),
+        event_cell_ind=np.array([0, 0], dtype=np.intp),
+        event_hpd_overlap=np.array([0.25, 0.75]),
+        event_kl_divergence=np.array([1.0, 3.0]),
+        event_spike_prob=np.array([0.1, 0.01]),
+        per_spike_likelihood=per_spike_lik,
+    )
 
     thresholds = Thresholds(hpd_overlap=0.8, kl_divergence=2.0, spike_prob=0.05)
     params = _params_for_short_run(n_time, n_cells)

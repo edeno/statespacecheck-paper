@@ -23,6 +23,7 @@ the existing test suite.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -109,6 +110,14 @@ class ViewState:
     # we save one full Zarr read per window dispatch (≈ a third of the
     # load cost on this cache).
     load_acausal: bool
+
+    def __post_init__(self) -> None:
+        if self.request_id < 0:
+            raise ValueError(f"ViewState.request_id must be non-negative; got {self.request_id}")
+        if not math.isfinite(self.t_center):
+            raise ValueError(f"ViewState.t_center must be finite; got {self.t_center}")
+        if not (self.t_width > 0.0 and math.isfinite(self.t_width)):
+            raise ValueError(f"ViewState.t_width must be positive finite; got {self.t_width}")
 
 
 class _LoadSignals(QtCore.QObject):

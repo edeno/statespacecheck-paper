@@ -44,15 +44,15 @@ def _per_phase_medians(
     metrics = sim.metrics
     boundaries = np.asarray(sim.phase_boundaries)
     labels = sim.phase_labels
-    event_phase = np.searchsorted(boundaries, metrics["event_time_ind"], side="right")
+    event_phase = np.searchsorted(boundaries, metrics.event_time_ind, side="right")
     out: dict[str, tuple[float, float, float]] = {}
     for i, label in enumerate(labels):
         mask = event_phase == i
         if not mask.any():
             continue
-        kl = float(np.nanmedian(metrics["event_kl_divergence"][mask]))
-        hpd = float(np.nanmedian(metrics["event_hpd_overlap"][mask]))
-        sp = float(np.nanmedian(metrics["event_spike_prob"][mask]))
+        kl = float(np.nanmedian(metrics.event_kl_divergence[mask]))
+        hpd = float(np.nanmedian(metrics.event_hpd_overlap[mask]))
+        sp = float(np.nanmedian(metrics.event_spike_prob[mask]))
         out[label] = (kl, hpd, sp)
     return out
 

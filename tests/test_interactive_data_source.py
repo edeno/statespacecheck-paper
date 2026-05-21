@@ -47,6 +47,36 @@ def test_constructs_with_expected_shapes(synthetic_cache: Path) -> None:
         src.close()
 
 
+def test_public_arrays_are_write_protected(synthetic_cache: Path) -> None:
+    """Panel code that pulls ``ds.event_kl_divergence`` (or any other
+    pre-extracted array) into its own pipeline must not be able to
+    mutate the array in place — the next tick would silently render
+    the corruption."""
+    src = DecoderDataSource(synthetic_cache, model="continuous")
+    try:
+        for name in (
+            "time",
+            "linear_position",
+            "place_fields",
+            "position_bins",
+            "place_field_peaks",
+            "event_times",
+            "event_cell_ids",
+            "event_hpd_overlap",
+            "event_kl_divergence",
+            "event_spike_prob",
+        ):
+            arr = getattr(src, name)
+            assert arr.flags.writeable is False, f"{name} is not write-protected"
+        # Confirm the protection actually blocks mutation.
+        import pytest
+
+        with pytest.raises(ValueError, match="read-only|assignment destination"):
+            src.event_kl_divergence[0] = 999.0
+    finally:
+        src.close()
+
+
 def test_window_indices_clamps_and_returns_nonempty(synthetic_cache: Path) -> None:
     with DecoderDataSource(synthetic_cache, model="continuous") as src:
         # Center inside the session, narrow window.

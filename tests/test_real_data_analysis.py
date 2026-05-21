@@ -11,6 +11,7 @@ import pandas as pd
 import pytest
 import xarray as xr
 
+from statespacecheck_paper.analysis import PerCellDiagnostics
 from statespacecheck_paper.real_data_analysis import (
     compute_per_cell_diagnostics,
     compute_running_average,
@@ -23,6 +24,47 @@ from statespacecheck_paper.real_data_analysis import (
 from statespacecheck_paper.real_data_plotting import (
     plot_per_cell_diagnostic_scatter,
 )
+
+
+def _diagnostics_from_metric(
+    metric_name: str,
+    metric: np.ndarray,
+    *,
+    event_time: np.ndarray | None = None,
+    event_values: np.ndarray | None = None,
+) -> PerCellDiagnostics:
+    """Build a ``PerCellDiagnostics`` from a single (n_time, n_cells) metric.
+
+    Other metric fields are filled with NaN/zeros matching shape; the
+    scatter helper under test only consumes the named metric plus the
+    optional ``event_*`` arrays.
+    """
+    n_time, n_cells = metric.shape
+    blank_2d = np.full((n_time, n_cells), np.nan)
+    n_spikes = 0 if event_time is None else event_time.shape[0]
+    blank_evt = np.zeros(n_spikes)
+
+    def _named(name: str, value: np.ndarray) -> np.ndarray:
+        return value if name == metric_name else blank_2d
+
+    def _named_evt(name: str) -> np.ndarray:
+        if event_values is not None and name == f"event_{metric_name}":
+            return event_values
+        return blank_evt
+
+    return PerCellDiagnostics(
+        event_time_ind=np.zeros(n_spikes, dtype=np.intp),
+        event_cell_ind=np.zeros(n_spikes, dtype=np.intp),
+        event_hpd_overlap=_named_evt("event_hpd_overlap"),
+        event_kl_divergence=_named_evt("event_kl_divergence"),
+        event_spike_prob=_named_evt("event_spike_prob"),
+        hpd_overlap=_named("hpd_overlap", metric),
+        kl_divergence=_named("kl_divergence", metric),
+        spike_prob=_named("spike_prob", metric),
+        per_spike_likelihood=np.zeros((n_spikes, 1)),
+        event_time=event_time,
+    )
+
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -174,8 +216,9 @@ class TestComputePerCellDiagnostics:
             per_cell_setup["place_fields"],
         )
         for key in ("hpd_overlap", "kl_divergence", "spike_prob"):
-            assert key in result
-            assert result[key].shape == (per_cell_setup["n_time"], per_cell_setup["n_cells"])
+            arr = getattr(result, key)
+            assert arr is not None
+            assert arr.shape == (per_cell_setup["n_time"], per_cell_setup["n_cells"])
 
     def test_nan_exactly_where_no_spikes(self, per_cell_setup: dict) -> None:
         result = compute_per_cell_diagnostics(
@@ -185,7 +228,9 @@ class TestComputePerCellDiagnostics:
         )
         no_spike = per_cell_setup["spike_counts"] == 0
         for key in ("hpd_overlap", "kl_divergence", "spike_prob"):
-            assert np.all(np.isnan(result[key][no_spike]))
+            arr = getattr(result, key)
+            assert arr is not None
+            assert np.all(np.isnan(arr[no_spike]))
 
     @pytest.mark.parametrize("metric", ["hpd_overlap", "spike_prob"])
     def test_metric_in_unit_range_with_gaussian_place_fields(
@@ -203,7 +248,9 @@ class TestComputePerCellDiagnostics:
         spike_counts = np.ones((n_time, n_cells), dtype=np.int64)
 
         result = compute_per_cell_diagnostics(predictive, spike_counts, place_fields)
-        valid = result[metric][~np.isnan(result[metric])]
+        arr = getattr(result, metric)
+        assert arr is not None
+        valid = arr[~np.isnan(arr)]
         assert (valid >= 0.0).all()
         assert (valid <= 1.0 + 1e-9).all()
 
@@ -218,7 +265,8 @@ class TestComputePerCellDiagnostics:
 
         result = compute_per_cell_diagnostics(predictive, spike_counts, place_fields)
         # Diagnostics finite at spike times, NaN elsewhere — single check.
-        np.testing.assert_array_equal(np.isnan(result["hpd_overlap"]), spike_counts == 0)
+        assert result.hpd_overlap is not None
+        np.testing.assert_array_equal(np.isnan(result.hpd_overlap), spike_counts == 0)
 
     def test_duplicate_spikes_in_same_bin_are_separate_events(
         self, rng: np.random.Generator
@@ -239,14 +287,16 @@ class TestComputePerCellDiagnostics:
             time=np.arange(n_time, dtype=np.float64),
         )
 
-        np.testing.assert_allclose(result["event_time"], [1.10, 1.20])
-        np.testing.assert_array_equal(result["event_time_ind"], [1, 1])
-        np.testing.assert_array_equal(result["event_cell_ind"], [0, 0])
+        assert result.event_time is not None
+        assert result.kl_divergence is not None
+        np.testing.assert_allclose(result.event_time, [1.10, 1.20])
+        np.testing.assert_array_equal(result.event_time_ind, [1, 1])
+        np.testing.assert_array_equal(result.event_cell_ind, [0, 0])
         for event_key in ("event_hpd_overlap", "event_kl_divergence", "event_spike_prob"):
-            assert result[event_key].shape == (2,)
+            assert getattr(result, event_key).shape == (2,)
         np.testing.assert_allclose(
-            result["event_kl_divergence"],
-            np.repeat(result["kl_divergence"][1, 0], 2),
+            result.event_kl_divergence,
+            np.repeat(result.kl_divergence[1, 0], 2),
         )
 
 
@@ -325,10 +375,11 @@ class TestPlotPerCellDiagnosticScatter:
         """``spike_times`` shifts scatter dots to the actual spike instants
         instead of the bin starts (which are 100ms apart here)."""
         time = np.linspace(0.0, 0.9, 10)
-        diagnostics = {"hpd_overlap": np.full((10, 3), np.nan)}
-        diagnostics["hpd_overlap"][1, 0] = 0.8
-        diagnostics["hpd_overlap"][3, 1] = 0.6
-        diagnostics["hpd_overlap"][5, 2] = 0.4
+        hpd = np.full((10, 3), np.nan)
+        hpd[1, 0] = 0.8
+        hpd[3, 1] = 0.6
+        hpd[5, 2] = 0.4
+        diagnostics = _diagnostics_from_metric("hpd_overlap", hpd)
 
         fig, ax = plt.subplots()
         plot_per_cell_diagnostic_scatter(
@@ -349,12 +400,14 @@ class TestPlotPerCellDiagnosticScatter:
         """When ``event_*`` arrays are present, scatter uses their times
         directly with no bin lookup."""
         time = np.linspace(0.0, 0.9, 10)
-        diagnostics = {
-            "hpd_overlap": np.full((10, 1), np.nan),
-            "event_time": np.array([0.151, 0.157]),
-            "event_hpd_overlap": np.array([0.8, 0.6]),
-        }
-        diagnostics["hpd_overlap"][1, 0] = 0.7
+        hpd = np.full((10, 1), np.nan)
+        hpd[1, 0] = 0.7
+        diagnostics = _diagnostics_from_metric(
+            "hpd_overlap",
+            hpd,
+            event_time=np.array([0.151, 0.157]),
+            event_values=np.array([0.8, 0.6]),
+        )
 
         fig, ax = plt.subplots()
         plot_per_cell_diagnostic_scatter(time, diagnostics, ax=ax)
@@ -366,9 +419,10 @@ class TestPlotPerCellDiagnosticScatter:
     def test_without_spike_times_uses_bin_centers(self) -> None:
         """Without per-spike alignment, scatter uses bin-start times."""
         time = np.linspace(0.0, 0.9, 10)
-        diagnostics = {"hpd_overlap": np.full((10, 2), np.nan)}
-        diagnostics["hpd_overlap"][1, 0] = 0.8
-        diagnostics["hpd_overlap"][3, 1] = 0.6
+        hpd = np.full((10, 2), np.nan)
+        hpd[1, 0] = 0.8
+        hpd[3, 1] = 0.6
+        diagnostics = _diagnostics_from_metric("hpd_overlap", hpd)
 
         fig, ax = plt.subplots()
         plot_per_cell_diagnostic_scatter(time, diagnostics, ax=ax, spike_times=None)
@@ -434,7 +488,7 @@ class TestComputeRunningAverage:
 class TestPlotPerCellDiagnosticScatterRunningAverage:
     def test_running_average_adds_a_line_to_axis(self, rng: np.random.Generator) -> None:
         time = np.linspace(0.0, 1.0, 100)
-        diagnostics = {"hpd_overlap": rng.random((100, 10))}
+        diagnostics = _diagnostics_from_metric("hpd_overlap", rng.random((100, 10)))
 
         fig_off, ax_off = plt.subplots()
         plot_per_cell_diagnostic_scatter(time, diagnostics, ax=ax_off, show_running_average=False)
@@ -448,7 +502,7 @@ class TestPlotPerCellDiagnosticScatterRunningAverage:
 
     def test_running_average_window_size_changes_curve(self, rng: np.random.Generator) -> None:
         time = np.linspace(0.0, 1.0, 100)
-        diagnostics = {"hpd_overlap": rng.random((100, 10))}
+        diagnostics = _diagnostics_from_metric("hpd_overlap", rng.random((100, 10)))
 
         def _line_y(window: float) -> np.ndarray:
             fig, ax = plt.subplots()
@@ -476,7 +530,7 @@ class TestPlotPerCellDiagnosticScatterRunningAverage:
             ]
         )
         time = np.linspace(0, 0.2, 3)
-        diagnostics = {"spike_prob": spike_probs}
+        diagnostics = _diagnostics_from_metric("spike_prob", spike_probs)
 
         fig, ax = plt.subplots()
         plot_per_cell_diagnostic_scatter(

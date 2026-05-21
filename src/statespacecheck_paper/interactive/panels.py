@@ -73,12 +73,14 @@ _PER_CELL_PALETTE: tuple[tuple[int, int, int], ...] = (
     (227, 49, 165),  # magenta
 )
 
-METRIC_COLORS: dict[str, tuple[int, int, int]] = {
+MetricName = Literal["event_hpd_overlap", "event_kl_divergence", "event_spike_prob"]
+
+METRIC_COLORS: dict[MetricName, tuple[int, int, int]] = {
     "event_hpd_overlap": (44, 160, 44),
     "event_kl_divergence": (214, 39, 40),
     "event_spike_prob": (148, 103, 189),
 }
-METRIC_TITLES: dict[str, str] = {
+METRIC_TITLES: dict[MetricName, str] = {
     "event_hpd_overlap": "HPD overlap",
     "event_kl_divergence": "KL divergence",
     "event_spike_prob": "-log10(p)",
@@ -499,17 +501,17 @@ class RasterPanel(pg.PlotWidget):
 class MetricPanel(pg.PlotWidget):
     """Per-spike scatter for one diagnostic metric."""
 
-    def __init__(self, *, metric: str, threshold: float | None = None) -> None:
+    def __init__(self, *, metric: MetricName, threshold: float | None = None) -> None:
         super().__init__()
         self.setBackground("w")
         self.setMenuEnabled(False)
         self.setMouseEnabled(x=False, y=False)
         self.setLabel("bottom", "Time relative to center (s)")
         self.getAxis("bottom").enableAutoSIPrefix(False)
-        self.setLabel("left", METRIC_TITLES.get(metric, metric))
+        self.setLabel("left", METRIC_TITLES[metric])
 
-        self._metric = metric
-        rgb = METRIC_COLORS.get(metric, (50, 50, 50))
+        self._metric: MetricName = metric
+        rgb = METRIC_COLORS[metric]
         self._scatter = pg.ScatterPlotItem(
             pen=pg.mkPen(rgb, width=0),
             brush=pg.mkBrush(*rgb, 200),
@@ -657,6 +659,27 @@ class CellSlice:
     spike_prob: float
     n_spikes: int
     is_pinned: bool
+
+    def __post_init__(self) -> None:
+        # ``place_field_norm`` shape is checked by the panel renderer
+        # (it must match the position-bin axis the panel was built
+        # against); only the scalar invariants live here.
+        if self.cell_id < 0:
+            raise ValueError(f"CellSlice.cell_id must be non-negative; got {self.cell_id}")
+        if self.n_spikes < 0:
+            raise ValueError(f"CellSlice.n_spikes must be non-negative; got {self.n_spikes}")
+        # ``hpd`` and ``spike_prob`` are probabilities; ``kl`` is a
+        # non-negative divergence. NaN can legitimately appear when a
+        # cell has no spikes in the window, so allow NaN here but
+        # otherwise require the documented ranges.
+        if not np.isnan(self.hpd) and not (0.0 <= self.hpd <= 1.0):
+            raise ValueError(f"CellSlice.hpd must lie in [0, 1] or be NaN; got {self.hpd}")
+        if not np.isnan(self.spike_prob) and not (0.0 <= self.spike_prob <= 1.0):
+            raise ValueError(
+                f"CellSlice.spike_prob must lie in [0, 1] or be NaN; got {self.spike_prob}"
+            )
+        if not np.isnan(self.kl) and self.kl < 0.0:
+            raise ValueError(f"CellSlice.kl must be non-negative or NaN; got {self.kl}")
 
 
 @dataclass

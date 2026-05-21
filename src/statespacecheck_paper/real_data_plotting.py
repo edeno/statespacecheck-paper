@@ -16,7 +16,7 @@ Examples
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from typing import Any
 
 import matplotlib
@@ -31,6 +31,7 @@ from matplotlib.figure import Figure
 from numpy.typing import NDArray
 from scipy.ndimage import label
 
+from statespacecheck_paper.analysis import PerCellDiagnostics
 from statespacecheck_paper.plotting import plot_likelihood_columns
 from statespacecheck_paper.style import CMAP_LIKELIHOOD, CMAP_POSTERIOR, COLORS
 
@@ -649,7 +650,7 @@ def plot_acausal_state_prob(
 
 def plot_per_cell_diagnostic_scatter(
     time: NDArray[np.float64] | pd.Index,
-    diagnostics: dict[str, NDArray[np.float64]],
+    diagnostics: PerCellDiagnostics,
     time_slice_ind: slice | None = None,
     threshold: float | None = None,
     ax: Axes | None = None,
@@ -720,15 +721,15 @@ def plot_per_cell_diagnostic_scatter(
     if ax is None:
         ax = plt.gca()
 
-    metric = diagnostics[metric_name].copy()
+    metric = np.asarray(getattr(diagnostics, metric_name)).copy()
     time_arr = np.asarray(time)
 
     if time_slice_ind is not None:
         time_arr = time_arr[time_slice_ind]
         metric = metric[time_slice_ind]
 
-    event_times = diagnostics.get("event_time")
-    event_metric_values = diagnostics.get(f"event_{metric_name}")
+    event_times = diagnostics.event_time
+    event_metric_values = getattr(diagnostics, f"event_{metric_name}", None)
 
     # Store raw metric for running average computation (before transformation)
     # The running average should be computed on raw values per manuscript formula:
@@ -980,8 +981,8 @@ def plot_model_comparison_with_posterior(
     position: NDArray[np.float64],
     results_a: xr.Dataset,
     results_b: xr.Dataset,
-    diagnostics_a: dict[str, NDArray[np.float64]],
-    diagnostics_b: dict[str, NDArray[np.float64]],
+    diagnostics_a: PerCellDiagnostics,
+    diagnostics_b: PerCellDiagnostics,
     spike_times: list[NDArray[np.float64]] | None = None,
     spike_counts: NDArray[np.int64] | None = None,
     place_field_peaks: NDArray[np.float64] | None = None,
@@ -1330,7 +1331,7 @@ def plot_single_model_diagnostics(
     time: NDArray[np.float64] | pd.Index,
     position: NDArray[np.float64],
     results: xr.Dataset,
-    diagnostics: dict[str, NDArray[np.float64]],
+    diagnostics: PerCellDiagnostics,
     spike_times: list[NDArray[np.float64]] | None = None,
     spike_counts: NDArray[np.int64] | None = None,
     place_field_peaks: NDArray[np.float64] | None = None,
@@ -1559,8 +1560,8 @@ def plot_single_model_diagnostics(
 
 
 def plot_per_spike_metric_hexbin_row(
-    diagnostics_a: Mapping[str, NDArray[np.floating] | NDArray[np.intp]],
-    diagnostics_b: Mapping[str, NDArray[np.floating] | NDArray[np.intp]],
+    diagnostics_a: PerCellDiagnostics,
+    diagnostics_b: PerCellDiagnostics,
     axes: Sequence[Axes],
     *,
     model_a_name: str = "Continuous",
@@ -1601,8 +1602,8 @@ def plot_per_spike_metric_hexbin_row(
     ]
 
     for ax, (key, title, color, log_transform) in zip(axes, metric_specs, strict=True):
-        data_a = np.asarray(diagnostics_a[key], dtype=np.float64)
-        data_b = np.asarray(diagnostics_b[key], dtype=np.float64)
+        data_a = np.asarray(getattr(diagnostics_a, key), dtype=np.float64)
+        data_b = np.asarray(getattr(diagnostics_b, key), dtype=np.float64)
         if data_a.shape != data_b.shape:
             raise ValueError(
                 f"diagnostics_a[{key!r}] and diagnostics_b[{key!r}] must "

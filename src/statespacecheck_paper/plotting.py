@@ -16,8 +16,6 @@ Examples
 
 from __future__ import annotations
 
-from typing import Any
-
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib import gridspec
@@ -29,6 +27,7 @@ from numpy.typing import NDArray
 
 from statespacecheck_paper.analysis import (
     DecodeParams,
+    Diagnostics,
     Thresholds,
     get_remapped_pf_centers,
     likelihood_grid_for_counts,
@@ -358,7 +357,7 @@ def plot_misfit_examples(
     xs: NDArray[np.floating],
     x_true: NDArray[np.floating],
     spikes: NDArray[np.floating],
-    metrics: dict[str, NDArray[np.floating]],
+    metrics: Diagnostics,
     params: DecodeParams,
     placefield_centers: NDArray[np.floating],
     placefield_width: float,
@@ -405,22 +404,9 @@ def plot_misfit_examples(
     >>> # slice(1000, T_remap_start - 1000) to be non-empty.
     >>> n_time, n_bins, n_cells = 6000, 50, 10
     >>> xs = np.linspace(0, 1, n_bins)
-    >>> x_true = rng.uniform(0, n_bins - 1, n_time)
-    >>> spikes = rng.poisson(0.5, (n_time, n_cells))
-    >>> metrics = {
-    ...     'posterior': rng.dirichlet(np.ones(n_bins), size=n_time),
-    ...     'hpd_overlap': rng.uniform(0, 1, (n_time, n_cells)),
-    ...     'kl_divergence': rng.uniform(0, 5, (n_time, n_cells)),
-    ...     'spike_prob': rng.uniform(0, 1, (n_time, n_cells)),
-    ... }
-    >>> params = DecodeParams(
-    ...     phase_boundaries=(3000, 3600, 3960, 4440, 4800, 5100, 5400, 5580),
-    ... )
-    >>> pf_centers = np.linspace(0, 1, n_cells)
-    >>> fig = plot_misfit_examples(
-    ...     xs, x_true, spikes, metrics, params, pf_centers, 0.1, 10.0
-    ... )
-    >>> plt.close('all')
+    >>> # Build inputs and run through ``decode_and_diagnostics`` to get
+    >>> # a ``Diagnostics``; see tests/test_plotting.py for a worked
+    >>> # example fixture. The doctest skips the actual call.
     """
     # Define phase windows - one example timestep per misfit class.
     baseline_window = slice(1000, params.T_remap_start - 1000)  # Middle of baseline
@@ -448,7 +434,7 @@ def plot_misfit_examples(
         # find worst fit (lowest hpd_overlap)
         # BUT: only consider time points with spikes so likelihood is informative
         # Metrics are now (n_time, n_cells), use mean across cells for selection
-        phase_hpdo = np.nanmean(metrics["hpd_overlap"][phase_slice], axis=1)
+        phase_hpdo = np.nanmean(metrics.hpd_overlap[phase_slice], axis=1)
         phase_spikes = spikes[phase_slice]
 
         # Mask times without spikes (likelihood will be flat/uninformative)
@@ -465,7 +451,7 @@ def plot_misfit_examples(
         # Recompute prior and likelihood at this time point
         # Get posterior from previous timestep
         if example_time > 0:
-            prev_post = metrics["posterior"][example_time - 1]
+            prev_post = metrics.posterior[example_time - 1]
         else:
             prev_post = np.ones_like(xs) / len(xs)
 
@@ -584,9 +570,9 @@ def plot_misfit_examples(
         )
 
         # Get diagnostic values - now per-cell, use nanmean for display
-        hpdo_val = np.nanmean(metrics["hpd_overlap"][example_time])
-        kl_val = np.nanmean(metrics["kl_divergence"][example_time])
-        spike_prob_val = np.nanmean(metrics["spike_prob"][example_time])
+        hpdo_val = np.nanmean(metrics.hpd_overlap[example_time])
+        kl_val = np.nanmean(metrics.kl_divergence[example_time])
+        spike_prob_val = np.nanmean(metrics.spike_prob[example_time])
 
         # Add phase name and metrics as title
         if np.isnan(spike_prob_val):
@@ -873,7 +859,7 @@ def _plot_spike_count_raster(
 def plot_combined_diagnostics(
     x_true: NDArray[np.floating],
     spikes: NDArray[np.floating],
-    metrics: dict[str, Any],
+    metrics: Diagnostics,
     thresholds: Thresholds,
     params: DecodeParams,
     placefield_centers: NDArray[np.floating],
@@ -906,34 +892,11 @@ def plot_combined_diagnostics(
 
     Examples
     --------
-    >>> import numpy as np
-    >>> import matplotlib.pyplot as plt
-    >>> from statespacecheck_paper.analysis import DecodeParams, Thresholds
-    >>> n_time, n_bins, n_cells = 500, 50, 10
-    >>> x_true = np.random.uniform(0, n_bins - 1, n_time)
-    >>> spikes = np.random.poisson(0.5, (n_time, n_cells))
-    >>> spike_time_ind = np.array([1, 2, 3])
-    >>> spike_cell_ind = np.array([0, 1, 2])
-    >>> metrics = {
-    ...     'predictive': np.random.dirichlet(np.ones(n_bins), size=n_time),
-    ...     'likelihood': np.random.dirichlet(np.ones(n_bins), size=n_time),
-    ...     'posterior': np.random.dirichlet(np.ones(n_bins), size=n_time),
-    ...     'hpd_overlap': np.random.uniform(0, 1, (n_time, n_cells)),
-    ...     'kl_divergence': np.random.uniform(0, 5, (n_time, n_cells)),
-    ...     'spike_prob': np.random.uniform(0, 1, (n_time, n_cells)),
-    ...     'per_spike_likelihood': np.random.dirichlet(np.ones(n_bins), size=3),
-    ...     'spike_time_ind': spike_time_ind,
-    ...     'spike_cell_ind': spike_cell_ind,
-    ... }
-    >>> thresholds = Thresholds(hpd_overlap=0.8, kl_divergence=2.0, spike_prob=0.05)
-    >>> params = DecodeParams(
-    ...     phase_boundaries=(200, 250, 280, 320, 350, 390, 420, 460),
+    >>> from statespacecheck_paper.analysis import (
+    ...     DecodeParams, Diagnostics, Thresholds, decode_and_diagnostics,
     ... )
-    >>> placefield_centers = np.linspace(0, 1, n_cells)
-    >>> fig = plot_combined_diagnostics(
-    ...     x_true, spikes, metrics, thresholds, params, placefield_centers
-    ... )
-    >>> plt.close('all')
+    >>> # See tests/test_plotting.py for a worked Diagnostics fixture
+    >>> # and how to plumb it into plot_combined_diagnostics.
     """
     # Calculate figure size
     fig_width = 7.0  # Full page width
@@ -966,7 +929,7 @@ def plot_combined_diagnostics(
 
     # ===== TOP SECTION: Time-Series Diagnostics =====
 
-    n_time = metrics["posterior"].shape[0]
+    n_time = metrics.posterior.shape[0]
 
     # Create time-series axes with shared x-axis
     # Order: Predictive -> Likelihood -> Raster -> HPD -> KL -> Spike
@@ -978,7 +941,7 @@ def plot_combined_diagnostics(
     ax_spike = fig.add_subplot(gs[5], sharex=ax_pred)
 
     # Predictive heatmap
-    _plot_timeseries_heatmap(ax_pred, metrics["predictive"], x_true)
+    _plot_timeseries_heatmap(ax_pred, metrics.predictive, x_true)
     ax_pred.set_ylabel("Position (a.u.)", fontsize=7, labelpad=7)
     ax_pred.tick_params(labelsize=6, labelbottom=False)
     ax_pred.legend(
@@ -1003,9 +966,9 @@ def plot_combined_diagnostics(
     # Likelihood overlay: per-spike likelihood bars at spike times
     _plot_likelihood_overlay(
         ax_like,
-        metrics["predictive"],
-        metrics["per_spike_likelihood"],
-        metrics["spike_time_ind"],
+        metrics.predictive,
+        metrics.per_spike_likelihood,
+        metrics.event_time_ind,
         x_true=x_true,
     )
     ax_like.set_ylabel("Position (a.u.)", fontsize=7, labelpad=7)
@@ -1035,21 +998,12 @@ def plot_combined_diagnostics(
         rotation=270,
     )
 
-    # Use per-spike event arrays when available so repeated spikes in the same
-    # time-cell bin are represented as distinct diagnostic events.
-    n_cells = metrics["hpd_overlap"].shape[1]
-    time_indices = np.tile(np.arange(n_time)[:, np.newaxis], (1, n_cells))
-
-    def get_scatter_values(metric_name: str) -> tuple[np.ndarray, np.ndarray]:
-        event_time_ind = metrics.get("event_time_ind")
-        event_values = metrics.get(f"event_{metric_name}")
-        if event_time_ind is not None and event_values is not None:
-            return np.asarray(event_time_ind), np.asarray(event_values)
-        return time_indices.ravel(), metrics[metric_name].ravel()
-
-    hpd_time_ind, hpd_values = get_scatter_values("hpd_overlap")
-    kl_time_ind, kl_values = get_scatter_values("kl_divergence")
-    spike_prob_time_ind, spike_prob_values = get_scatter_values("spike_prob")
+    # Use per-spike event arrays so repeated spikes in the same
+    # (time, cell) bin show up as distinct diagnostic events.
+    event_time_ind = metrics.event_time_ind
+    hpd_time_ind, hpd_values = event_time_ind, metrics.event_hpd_overlap
+    kl_time_ind, kl_values = event_time_ind, metrics.event_kl_divergence
+    spike_prob_time_ind, spike_prob_values = event_time_ind, metrics.event_spike_prob
 
     # HPDO
     ax_hpdo.scatter(
@@ -1271,7 +1225,7 @@ def plot_combined_diagnostics(
                 ("spike_prob", sp_thr, "below"),
             ]
         ):
-            vals = metrics[metric_key][t0:t1]
+            vals = getattr(metrics, metric_key)[t0:t1]
             valid = vals[~np.isnan(vals)]
             if len(valid) > 0:
                 if direction == "below":

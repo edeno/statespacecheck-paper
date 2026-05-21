@@ -36,6 +36,8 @@ import pandas as pd
 import xarray as xr
 from numpy.typing import NDArray
 
+from statespacecheck_paper.analysis import PerCellDiagnostics
+
 ModelName = Literal["continuous", "contfrag"]
 MODEL_NAMES: tuple[ModelName, ...] = ("continuous", "contfrag")
 
@@ -162,21 +164,17 @@ def _extract_place_fields_concat(model: Any) -> tuple[NDArray[np.float64], NDArr
 
 
 def _events_dataframe(
-    diagnostics: dict[str, NDArray[Any]],
+    diagnostics: PerCellDiagnostics,
     n_cells: int,
 ) -> pd.DataFrame:
     """Convert per-spike diagnostic arrays into a sorted Parquet-friendly frame."""
-    required = {
-        "event_time",
-        "event_hpd_overlap",
-        "event_kl_divergence",
-        "event_spike_prob",
-    }
-    missing = required.difference(diagnostics)
-    if missing:
-        raise KeyError(f"Diagnostics missing required event keys: {sorted(missing)}")
+    if diagnostics.event_time is None:
+        raise ValueError(
+            "PerCellDiagnostics.event_time is required when building the cache "
+            "events frame; the simulated path leaves it None."
+        )
 
-    cell_id = np.asarray(diagnostics["event_cell_ind"], dtype=np.int32)
+    cell_id = np.asarray(diagnostics.event_cell_ind, dtype=np.int32)
     if cell_id.size and (cell_id.min() < 0 or cell_id.max() >= n_cells):
         raise ValueError(
             f"event_cell_ind out of range [0, {n_cells}); got [{cell_id.min()}, {cell_id.max()}]"
@@ -184,11 +182,11 @@ def _events_dataframe(
 
     df = pd.DataFrame(
         {
-            "time": np.asarray(diagnostics["event_time"], dtype=np.float64),
+            "time": np.asarray(diagnostics.event_time, dtype=np.float64),
             "cell_id": cell_id,
-            "event_hpd_overlap": np.asarray(diagnostics["event_hpd_overlap"], dtype=np.float32),
-            "event_kl_divergence": np.asarray(diagnostics["event_kl_divergence"], dtype=np.float32),
-            "event_spike_prob": np.asarray(diagnostics["event_spike_prob"], dtype=np.float32),
+            "event_hpd_overlap": np.asarray(diagnostics.event_hpd_overlap, dtype=np.float32),
+            "event_kl_divergence": np.asarray(diagnostics.event_kl_divergence, dtype=np.float32),
+            "event_spike_prob": np.asarray(diagnostics.event_spike_prob, dtype=np.float32),
         }
     )
     df.sort_values("time", kind="mergesort", inplace=True)
@@ -598,8 +596,8 @@ def build_simulated_cache(
     # misfit times — the clamp would round those rows to a uniform
     # response that the viewer renders as flat colour, hiding the
     # actual decoded structure).
-    predictive = np.asarray(metrics["predictive"], dtype=np.float32)
-    likelihood_lin = np.asarray(metrics["likelihood"], dtype=np.float64)
+    predictive = np.asarray(metrics.predictive, dtype=np.float32)
+    likelihood_lin = np.asarray(metrics.likelihood, dtype=np.float64)
     with np.errstate(divide="ignore"):
         log_lik = np.log(likelihood_lin).astype(np.float32)
 
@@ -622,21 +620,21 @@ def build_simulated_cache(
         shutil.rmtree(paths["zarr"])
     _write_zarr_store(ds=ds, out_dir=paths["zarr"], time_chunk=time_chunk)
 
-    # Events table. ``spike_time_ind`` / ``spike_cell_ind`` from
+    # Events table. ``event_time_ind`` / ``event_cell_ind`` from
     # ``decode_and_diagnostics`` are already expanded for multi-count
     # bins (a bin with ``k`` spikes contributes ``k`` events) and
     # ``compute_per_cell_diagnostics_from_rates`` returns per-event
     # diagnostics in the same order.
-    spike_time_ind = np.asarray(metrics["spike_time_ind"], dtype=np.intp)
-    spike_cell_ind = np.asarray(metrics["spike_cell_ind"], dtype=np.intp)
+    spike_time_ind = np.asarray(metrics.event_time_ind, dtype=np.intp)
+    spike_cell_ind = np.asarray(metrics.event_cell_ind, dtype=np.intp)
     event_times = time_arr[spike_time_ind]
     events_df = pd.DataFrame(
         {
             "time": event_times.astype(np.float64),
             "cell_id": spike_cell_ind.astype(np.int32),
-            "event_hpd_overlap": np.asarray(metrics["event_hpd_overlap"], dtype=np.float32),
-            "event_kl_divergence": np.asarray(metrics["event_kl_divergence"], dtype=np.float32),
-            "event_spike_prob": np.asarray(metrics["event_spike_prob"], dtype=np.float32),
+            "event_hpd_overlap": np.asarray(metrics.event_hpd_overlap, dtype=np.float32),
+            "event_kl_divergence": np.asarray(metrics.event_kl_divergence, dtype=np.float32),
+            "event_spike_prob": np.asarray(metrics.event_spike_prob, dtype=np.float32),
         }
     )
     events_df.sort_values("time", kind="mergesort", inplace=True)

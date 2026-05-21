@@ -35,7 +35,10 @@ import xarray as xr
 from numpy.typing import NDArray
 from scipy.ndimage import gaussian_filter1d, label, uniform_filter1d
 
-from statespacecheck_paper.analysis import compute_per_cell_diagnostics_from_rates
+from statespacecheck_paper.analysis import (
+    PerCellDiagnostics,
+    compute_per_cell_diagnostics_from_rates,
+)
 
 
 def gaussian_smooth(
@@ -446,7 +449,7 @@ def compute_per_cell_diagnostics(
     spike_times: list[NDArray[np.float64]] | None = None,
     time: NDArray[np.float64] | None = None,
     include_dense_matrices: bool = True,
-) -> dict[str, NDArray[np.floating] | NDArray[np.intp]]:
+) -> PerCellDiagnostics:
     """Compute per-cell diagnostic metrics for model checking.
 
     Computes HPD overlap, KL divergence, and spike probability ranking for each
@@ -540,15 +543,24 @@ def compute_per_cell_diagnostics(
         include_dense_matrices=include_dense_matrices,
     )
 
-    result_float = dict(result)
-    cast_keys = ["event_hpd_overlap", "event_kl_divergence", "event_spike_prob"]
-    if include_dense_matrices:
-        cast_keys.extend(["hpd_overlap", "kl_divergence", "spike_prob", "per_spike_likelihood"])
-    for key in cast_keys:
-        result_float[key] = np.asarray(result_float[key], dtype=np.float64)
-    if event_times is not None:
-        result_float["event_time"] = event_times.astype(np.float64)
-    return result_float
+    def _f64(arr: NDArray[np.floating] | None) -> NDArray[np.floating] | None:
+        return None if arr is None else np.asarray(arr, dtype=np.float64)
+
+    # Cast to float64 (the result-arrays default to whatever
+    # ``np.full`` / ``np.empty`` gave them, typically float64 already,
+    # but the explicit cast preserves the previous contract).
+    return PerCellDiagnostics(
+        event_time_ind=result.event_time_ind,
+        event_cell_ind=result.event_cell_ind,
+        event_hpd_overlap=np.asarray(result.event_hpd_overlap, dtype=np.float64),
+        event_kl_divergence=np.asarray(result.event_kl_divergence, dtype=np.float64),
+        event_spike_prob=np.asarray(result.event_spike_prob, dtype=np.float64),
+        hpd_overlap=_f64(result.hpd_overlap),
+        kl_divergence=_f64(result.kl_divergence),
+        spike_prob=_f64(result.spike_prob),
+        per_spike_likelihood=_f64(result.per_spike_likelihood),
+        event_time=None if event_times is None else event_times.astype(np.float64),
+    )
 
 
 def get_state_marginalized_posterior(
@@ -800,7 +812,7 @@ def compute_model_diagnostics(
     spike_counts: NDArray[np.int64],
     time: NDArray[np.float64],
     spike_times: list[NDArray[np.float64]] | None = None,
-) -> dict[str, NDArray[np.floating] | NDArray[np.intp]]:
+) -> PerCellDiagnostics:
     """Compute per-cell diagnostics for a fitted decoder model.
 
     This is a convenience function that chains together extract_place_fields,
