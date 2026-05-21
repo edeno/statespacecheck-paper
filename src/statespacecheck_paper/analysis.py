@@ -1189,7 +1189,8 @@ class Thresholds:
 
 def compute_thresholds(
     metrics: Mapping[str, NDArray[np.floating] | NDArray[np.intp]],
-    baseline_end: int | None = None,
+    *,
+    baseline_end: int,
 ) -> Thresholds:
     """Compute threshold values from baseline period.
 
@@ -1207,14 +1208,23 @@ def compute_thresholds(
         - 'hpd_overlap' : np.ndarray, shape (n_time, n_cells)
         - 'kl_divergence' : np.ndarray, shape (n_time, n_cells)
         - 'spike_prob' : np.ndarray, shape (n_time, n_cells)
-    baseline_end : int or None, default None
-        Index marking end of baseline period (exclusive).
-        If None, uses all time points for threshold computation.
+    baseline_end : int, keyword-only
+        Index marking end of baseline period (exclusive). Required —
+        silently slicing the whole recording would contaminate
+        "baseline" thresholds with misfit data and is rarely what
+        the caller intends.
 
     Returns
     -------
     thresholds : Thresholds
         Threshold values for each diagnostic metric.
+
+    Raises
+    ------
+    ValueError
+        If the baseline slice of ``hpd_overlap`` or ``kl_divergence``
+        contains no finite values (thresholds would be NaN and
+        downstream comparisons would silently evaluate False).
 
     Examples
     --------
@@ -1233,9 +1243,21 @@ def compute_thresholds(
     # returns ``np.floating``; cast to plain ``float`` to match the ``Thresholds``
     # dataclass signature.
     hpd_baseline = metrics["hpd_overlap"][:baseline_end].ravel()
+    if not np.any(np.isfinite(hpd_baseline)):
+        raise ValueError(
+            "compute_thresholds: hpd_overlap baseline slice "
+            f"(:{baseline_end}) contains no finite values; threshold "
+            "would be NaN."
+        )
     hpd_overlap_threshold = float(np.nanquantile(hpd_baseline, 0.01))
 
     kl_baseline = metrics["kl_divergence"][:baseline_end].ravel()
+    if not np.any(np.isfinite(kl_baseline)):
+        raise ValueError(
+            "compute_thresholds: kl_divergence baseline slice "
+            f"(:{baseline_end}) contains no finite values; threshold "
+            "would be NaN."
+        )
     kl_divergence_threshold = float(np.nanquantile(kl_baseline, 0.99))
 
     # spike_prob threshold is fixed at 0.05 per MATLAB

@@ -915,19 +915,23 @@ def _plot_distribution_heatmap(
     # Drop NaN bins (spatial bins that are always NaN)
     distribution_da = distribution_da.dropna("state_bins", how="all")
 
-    # Plot distribution heatmap
-    try:
-        unstacked = distribution_da.unstack("state_bins")
-        if "state" in unstacked.dims:
-            # Multi-state model: sum over states
-            marginalized = unstacked.sum("state")
-        else:
-            marginalized = unstacked
-
-        # Get the sliced data
+    # Plot distribution heatmap. Multi-state models encode
+    # (state, position) in state_bins as a MultiIndex; single-state
+    # models leave it as a plain Index without a separate ``position``
+    # coord. Branch on the index type so a malformed MultiIndex fails
+    # loud, and single-state data plots against state_bins directly
+    # rather than dying inside xarray on a missing ``position``.
+    if isinstance(distribution_da.indexes["state_bins"], pd.MultiIndex):
+        try:
+            unstacked = distribution_da.unstack("state_bins")
+        except (ValueError, KeyError, TypeError) as e:
+            raise ValueError(
+                "Failed to unstack state_bins MultiIndex on the "
+                "distribution heatmap; the index is malformed and cannot "
+                f"be marginalized. Underlying error: {e}"
+            ) from e
+        marginalized = unstacked.sum("state") if "state" in unstacked.dims else unstacked
         sliced_data = marginalized.isel(time=time_slice_ind)
-
-        # Check if there's any non-NaN data to plot
         if sliced_data.notnull().any():
             sliced_data.plot(
                 x="time",
@@ -939,11 +943,13 @@ def _plot_distribution_heatmap(
                 rasterized=True,
             )
         else:
-            # No data to plot - just set up the axes with proper limits
+            # No data to plot — set axes to the requested slice anyway.
             time_arr = np.asarray(time)
             ax.set_xlim(time_arr[time_slice_ind].min(), time_arr[time_slice_ind].max())
-    except (ValueError, KeyError, TypeError):
-        # Fallback: plot raw distribution
+    else:
+        # Single-state model: no separate ``position`` axis. Plot
+        # against the state_bins axis directly so the figure still
+        # renders something meaningful.
         sliced_data = distribution_da.isel(time=time_slice_ind)
         if sliced_data.notnull().any():
             sliced_data.plot(
@@ -1154,13 +1160,30 @@ def plot_model_comparison_with_posterior(
             lik_da = xr.apply_ufunc(np.exp, results["log_likelihood"]).dropna(
                 "state_bins", how="all"
             )
+            # The likelihood overlay needs a ``position`` coordinate
+            # downstream (``pos_coords = lik_sliced.coords["position"]``).
+            # Multi-state models supply it via the (state, position)
+            # MultiIndex. Single-state data has no separate position
+            # axis and cannot be rendered as a 2D overlay — refuse
+            # rather than die deep inside matplotlib on a missing coord.
+            state_bins_index = lik_da.indexes["state_bins"]
+            if not isinstance(state_bins_index, pd.MultiIndex):
+                raise NotImplementedError(
+                    "Likelihood overlay requires a (state, position) "
+                    "MultiIndex on state_bins; single-state data has "
+                    "no separate position axis and cannot be rendered."
+                )
             try:
                 lik_unstacked = lik_da.unstack("state_bins")
-                if "state" in lik_unstacked.dims:
-                    lik_unstacked = lik_unstacked.sum("state")
-                lik_sliced = lik_unstacked.isel(time=time_slice_ind)
-            except (ValueError, KeyError):
-                lik_sliced = lik_da.isel(time=time_slice_ind)
+            except (ValueError, KeyError) as e:
+                raise ValueError(
+                    "Failed to unstack state_bins MultiIndex on the "
+                    "likelihood overlay; the index is malformed and "
+                    f"cannot be marginalized. Underlying error: {e}"
+                ) from e
+            if "state" in lik_unstacked.dims:
+                lik_unstacked = lik_unstacked.sum("state")
+            lik_sliced = lik_unstacked.isel(time=time_slice_ind)
 
             lik_np = lik_sliced.values  # (n_time_slice, n_position)
 
@@ -1417,13 +1440,27 @@ def plot_single_model_diagnostics(
 
     if "log_likelihood" in results:
         lik_da = xr.apply_ufunc(np.exp, results["log_likelihood"]).dropna("state_bins", how="all")
+        # See ``plot_model_comparison_with_posterior`` above for the
+        # MultiIndex-vs-Index rationale; the overlay needs a position
+        # coord that single-state data cannot supply.
+        state_bins_index = lik_da.indexes["state_bins"]
+        if not isinstance(state_bins_index, pd.MultiIndex):
+            raise NotImplementedError(
+                "Likelihood overlay requires a (state, position) "
+                "MultiIndex on state_bins; single-state data has no "
+                "separate position axis and cannot be rendered."
+            )
         try:
             lik_unstacked = lik_da.unstack("state_bins")
-            if "state" in lik_unstacked.dims:
-                lik_unstacked = lik_unstacked.sum("state")
-            lik_sliced = lik_unstacked.isel(time=time_slice_ind)
-        except (ValueError, KeyError):
-            lik_sliced = lik_da.isel(time=time_slice_ind)
+        except (ValueError, KeyError) as e:
+            raise ValueError(
+                "Failed to unstack state_bins MultiIndex on the "
+                "likelihood overlay; the index is malformed and "
+                f"cannot be marginalized. Underlying error: {e}"
+            ) from e
+        if "state" in lik_unstacked.dims:
+            lik_unstacked = lik_unstacked.sum("state")
+        lik_sliced = lik_unstacked.isel(time=time_slice_ind)
 
         lik_np = lik_sliced.values
         time_coords = lik_sliced.coords["time"].values

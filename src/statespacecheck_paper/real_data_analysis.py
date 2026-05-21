@@ -30,6 +30,7 @@ from __future__ import annotations
 from typing import Any, Literal
 
 import numpy as np
+import pandas as pd
 import xarray as xr
 from numpy.typing import NDArray
 from scipy.ndimage import gaussian_filter1d, label, uniform_filter1d
@@ -574,6 +575,16 @@ def get_state_marginalized_posterior(
     posterior : np.ndarray, shape (n_time, n_bins)
         State-marginalized posterior summed over states, with NaN bins dropped.
 
+    Raises
+    ------
+    ValueError
+        If ``posterior_type`` is not ``"predictive"`` or ``"acausal"``,
+        or if the ``state_bins`` MultiIndex on a multi-state model is
+        malformed (e.g. duplicate ``(state, position)`` entries) and
+        cannot be unstacked. Refusing here is intentional: a silent
+        fallback would return a per-state slice labeled as the
+        marginal posterior, producing a wrong figure.
+
     Examples
     --------
     >>> # Requires xarray Dataset from non_local_detector
@@ -593,19 +604,26 @@ def get_state_marginalized_posterior(
     # Drop NaN state bins (e.g., track interior only)
     posterior_da = posterior_da.dropna("state_bins")
 
-    # Check if this is a multi-state model by looking for state dimension
-    # after unstacking state_bins
-    try:
-        unstacked = posterior_da.unstack("state_bins")
-        if "state" in unstacked.dims:
-            # Multi-state model: sum over states
-            marginalized = unstacked.sum("state")
-            posterior: NDArray[np.float64] = np.asarray(marginalized.values)
-        else:
-            # Single-state model: just extract values
-            posterior = np.asarray(posterior_da.values)
-    except (ValueError, KeyError):
-        # If unstack fails, assume single-state model
+    # Multi-state models encode (state, position) in state_bins as a
+    # MultiIndex; single-state models use a plain Index. Branch on
+    # the index type rather than catching a generic unstack failure,
+    # which would silently treat a malformed multi-state model as
+    # single-state and produce a per-state slice labeled as marginal.
+    state_bins_index = posterior_da.indexes["state_bins"]
+    if isinstance(state_bins_index, pd.MultiIndex):
+        try:
+            unstacked = posterior_da.unstack("state_bins")
+        except (ValueError, KeyError) as e:
+            raise ValueError(
+                "Failed to unstack the state_bins MultiIndex on the "
+                "decoder posterior; the index is malformed (likely "
+                "duplicate (state, position) entries) and cannot be "
+                f"marginalized. Underlying error: {e}"
+            ) from e
+        marginalized = unstacked.sum("state") if "state" in unstacked.dims else unstacked
+        posterior: NDArray[np.float64] = np.asarray(marginalized.values)
+    else:
+        # Single-state model: no states to sum over.
         posterior = np.asarray(posterior_da.values)
 
     return posterior

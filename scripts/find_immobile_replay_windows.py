@@ -107,13 +107,31 @@ def compute_multiunit_zscore(
     -------
     z_multiunit : np.ndarray, shape (n_time,)
         Z-scored multiunit firing rate.
+
+    Raises
+    ------
+    ValueError
+        If ``multiunit_rate`` has zero or non-finite standard deviation
+        (every cell silent, or an upstream NaN propagated through
+        ``np.nanstd``). The prior implementation silently masked this
+        with ``nan_to_num`` and produced an all-zero output indistinguishable
+        from a real no-replay-candidate outcome.
     """
     multiunit_rate = spike_counts.sum(axis=1).astype(np.float64)
-    # Handle case where std is 0
+    # A degenerate (zero-variance) multiunit signal cannot be z-scored;
+    # the prior code silently turned every bin into "at the mean" via
+    # ``nan_to_num`` and reported zero candidate windows indistinguishably
+    # from a real "no candidates" outcome.
+    std = float(np.nanstd(multiunit_rate))
+    if not np.isfinite(std) or std == 0.0:
+        raise ValueError(
+            "compute_multiunit_zscore: multiunit_rate is degenerate "
+            f"(std={std}); cannot z-score. Investigate the source "
+            "recording — this is almost certainly a preprocessing bug "
+            "rather than a data property."
+        )
     z_multiunit: NDArray[np.float64] = zscore(multiunit_rate, nan_policy="omit")
-    # Replace NaN with 0 (happens if all values are identical)
-    z_multiunit = np.nan_to_num(z_multiunit, nan=0.0).astype(np.float64)
-    return z_multiunit
+    return z_multiunit.astype(np.float64)
 
 
 def find_immobile_high_activity_periods(
