@@ -104,12 +104,24 @@ class TestPlotPerSpikeMetricHexbinRow:
         fig, axes = plt.subplots(1, 3)
         plot_per_spike_metric_hexbin_row(diag_a_nan, diag_b_nan, axes)
 
-        expected = f"n={n_total - n_nans:,}"
+        import re
+
+        expected_count = n_total - n_nans
+        # Match any ``n=<digits>`` (with or without thousands separator
+        # and surrounding whitespace) so a cosmetic format change
+        # ("n = 45" or "n=45_000") doesn't break the test. The
+        # behavioural contract is the integer in the annotation.
+        pattern = re.compile(r"n\s*=\s*([\d,_]+)")
         for ax in axes:
-            n_texts = [t.get_text() for t in ax.texts if t.get_text().startswith("n=")]
-            assert n_texts, f"axis {ax.get_title()!r} has no n= annotation"
-            assert any(t == expected for t in n_texts), (
-                f"axis {ax.get_title()!r} reports {n_texts} but expected {expected}"
+            counts = [
+                int(m.group(1).replace(",", "").replace("_", ""))
+                for t in ax.texts
+                for m in [pattern.match(t.get_text())]
+                if m is not None
+            ]
+            assert counts, f"axis {ax.get_title()!r} has no n= annotation"
+            assert expected_count in counts, (
+                f"axis {ax.get_title()!r} reports {counts}; expected {expected_count}"
             )
 
         plt.close(fig)

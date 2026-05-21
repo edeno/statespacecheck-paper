@@ -368,10 +368,21 @@ class TestDecodeAndDiagnostics:
         before = evt_t < window[0]
         inside = (evt_t >= window[0]) & (evt_t < window[1])
 
-        np.testing.assert_array_equal(
-            baseline["event_kl_divergence"][before],
-            with_alt["event_kl_divergence"][before],
-        )
+        # Pre-window events: bit-identical across all three per-event
+        # diagnostics. A regression that only re-routed one metric
+        # through the alt-rates branch would still pass a single-metric
+        # check, so check all three.
+        for metric_key in (
+            "event_kl_divergence",
+            "event_hpd_overlap",
+            "event_spike_prob",
+        ):
+            np.testing.assert_array_equal(
+                baseline[metric_key][before],
+                with_alt[metric_key][before],
+                err_msg=f"pre-window {metric_key} differs — schedule leaked outside window",
+            )
+
         # At least one in-window event's KL changed *meaningfully* (median
         # |Δ| above 0.01). Bare ``not np.allclose`` would fire on float
         # noise too; the magnitude bound catches a near-noop schedule that
@@ -657,23 +668,37 @@ class TestConditionOn:
         np.testing.assert_allclose(log_norm, logsumexp(ll) - np.log(n_bins), rtol=1e-12)
 
     def test_handles_all_neg_inf_loglik(self) -> None:
-        """All -inf likelihoods would be a degenerate observation (no
-        bin has finite probability). The helper should not produce NaN
-        — it falls back via the ll_max guard and the eps in the
-        denominator.
+        """All ``-inf`` likelihoods are a degenerate observation: the
+        model assigns zero probability to the spike everywhere on the
+        grid. The helper falls back to a uniform posterior and signals
+        the situation via ``log_norm = -inf``; the caller in
+        ``decode_and_diagnostics`` then surfaces the count via a
+        ``RuntimeWarning``.
         """
         n_bins = 5
         prior = np.full(n_bins, 1.0 / n_bins)
         ll = np.full(n_bins, -np.inf)
         new_probs, log_norm = _condition_on(prior, ll)
-        # Result is finite — no NaN, no inf.
-        assert np.all(np.isfinite(new_probs))
-        # In this degenerate case the helper returns the prior re-scaled
-        # by 1.0 (since exp(-inf - 0) = 0 everywhere → weighted = 0 →
-        # new_probs = 0 / eps = 0; but ll_max is masked to 0 by the
-        # finite-check). Acceptable failure mode; document via the
-        # assertion that the math at least doesn't propagate NaN.
-        assert np.isfinite(log_norm) or log_norm == -np.inf
+        # Uniform fallback, properly normalized.
+        np.testing.assert_allclose(new_probs, 1.0 / n_bins, rtol=1e-12)
+        np.testing.assert_allclose(new_probs.sum(), 1.0, rtol=1e-12)
+        # Underflow signal is exactly -inf so callers can ``== -np.inf``.
+        assert log_norm == -np.inf
+
+    def test_handles_prior_likelihood_disjoint(self) -> None:
+        """A finite but vanishingly small overlap also takes the
+        fallback path: ``weighted.sum() < eps`` triggers the explicit
+        uniform reset. Prior concentrated at one end, likelihood at the
+        other.
+        """
+        n_bins = 8
+        prior = np.zeros(n_bins)
+        prior[0] = 1.0
+        ll = np.full(n_bins, -1000.0)
+        ll[-1] = 0.0  # likelihood mass at the opposite end of the grid
+        new_probs, log_norm = _condition_on(prior, ll)
+        np.testing.assert_allclose(new_probs, 1.0 / n_bins, rtol=1e-12)
+        assert log_norm == -np.inf
 
     def test_extreme_loglik_does_not_underflow(self) -> None:
         """Likelihoods with -800 magnitude (would underflow exp(-800)
@@ -849,16 +874,31 @@ class TestMisfitWindowTightening:
         ):
             MisfitWindow(10, 20, diagnostic_rates=bad)
 
-    def test_decoder_rates_array_is_write_protected(self) -> None:
+    @pytest.mark.parametrize(
+        "field",
+        ["decoder_rates", "diagnostic_rates", "transition_matrix"],
+    )
+    def test_arrays_are_write_protected(self, field: str) -> None:
         """``frozen=True`` only blocks rebinding the field; the array
         itself must also be read-only so callers can't bypass
-        validation by mutating in place."""
-        rates = np.full((5, 3), 0.1)
-        w = MisfitWindow(10, 20, decoder_rates=rates)
-        assert w.decoder_rates is not None
-        assert w.decoder_rates.flags.writeable is False
+        validation by mutating in place. Covers all three array
+        fields — same write-protect code path applies to each."""
+        if field == "transition_matrix":
+            arr = np.eye(5) * 0.5 + 0.1
+            kwargs: dict = {field: arr}
+        elif field == "diagnostic_rates":
+            # diagnostic_rates requires decoder_rates per the pairing rule.
+            arr = np.full((5, 3), 0.1)
+            kwargs = {"decoder_rates": arr, "diagnostic_rates": arr}
+        else:
+            arr = np.full((5, 3), 0.1)
+            kwargs = {field: arr}
+        w = MisfitWindow(10, 20, **kwargs)
+        stored = getattr(w, field)
+        assert stored is not None
+        assert stored.flags.writeable is False
         with pytest.raises(ValueError, match="read-only|assignment destination"):
-            w.decoder_rates[0, 0] = 999.0
+            stored[0, 0] = 999.0
 
     def test_caller_array_not_mutated_by_construction(self) -> None:
         """Defensive copy: caller's original array stays writable."""
@@ -888,14 +928,38 @@ class TestMisfitWindowTightening:
 
 class TestSimulationResultDataclass:
     """The ``TypedDict`` → frozen-dataclass conversion brought length
-    validation. Cover the failure modes."""
+    validation. Cover the success contract and the failure modes."""
+
+    def test_valid_construction_succeeds(self) -> None:
+        """Happy path: a well-formed SimulationResult constructs cleanly,
+        coerces list inputs to tuple, and exposes attribute access on
+        every field."""
+        from statespacecheck_paper.figure03_demo import PHASE_LABELS, SimulationResult
+
+        n_bins = 5
+        n_time = 10
+        sim = SimulationResult(
+            params=DecodeParams(),
+            xs=np.linspace(0.0, 100.0, n_bins),
+            x_true=np.zeros(n_time),
+            spikes=np.zeros((n_time, 1), dtype=np.int_),
+            metrics={},
+            phase_labels=PHASE_LABELS,
+            phase_boundaries=(1, 2, 3, 4, 5, 6, 7, n_time),
+        )
+        # Sequence fields coerced to tuple by __post_init__.
+        assert isinstance(sim.phase_labels, tuple)
+        assert isinstance(sim.phase_boundaries, tuple)
+        # Attribute access works (the migration test).
+        assert sim.xs.shape == (n_bins,)
+        assert sim.x_true.shape == (n_time,)
 
     def test_phase_labels_wrong_order_raises(self) -> None:
         from statespacecheck_paper.figure03_demo import PHASE_LABELS, SimulationResult
 
         n_bins = 5
         n_time = 10
-        bogus_labels = list(reversed(PHASE_LABELS))
+        bogus_labels = tuple(reversed(PHASE_LABELS))
         with pytest.raises(ValueError, match="phase_labels must equal PHASE_LABELS"):
             SimulationResult(
                 params=DecodeParams(),
@@ -904,7 +968,7 @@ class TestSimulationResultDataclass:
                 spikes=np.zeros((n_time, 1), dtype=np.int_),
                 metrics={},
                 phase_labels=bogus_labels,
-                phase_boundaries=[1, 2, 3, 4, 5, 6, 7, n_time],
+                phase_boundaries=(1, 2, 3, 4, 5, 6, 7, n_time),
             )
 
     def test_phase_boundary_length_mismatch_raises(self) -> None:
@@ -919,8 +983,8 @@ class TestSimulationResultDataclass:
                 x_true=np.zeros(n_time),
                 spikes=np.zeros((n_time, 1), dtype=np.int_),
                 metrics={},
-                phase_labels=list(PHASE_LABELS),
-                phase_boundaries=[1, 2, 3],  # wrong length
+                phase_labels=PHASE_LABELS,
+                phase_boundaries=(1, 2, 3),  # wrong length
             )
 
     def test_spikes_and_x_true_timeline_mismatch_raises(self) -> None:
@@ -935,8 +999,8 @@ class TestSimulationResultDataclass:
                 x_true=np.zeros(n_time),
                 spikes=np.zeros((n_time + 1, 1), dtype=np.int_),  # off by one
                 metrics={},
-                phase_labels=list(PHASE_LABELS),
-                phase_boundaries=[1, 2, 3, 4, 5, 6, 7, n_time],
+                phase_labels=PHASE_LABELS,
+                phase_boundaries=(1, 2, 3, 4, 5, 6, 7, n_time),
             )
 
     def test_final_boundary_must_equal_timeline_length(self) -> None:
@@ -951,6 +1015,136 @@ class TestSimulationResultDataclass:
                 x_true=np.zeros(n_time),
                 spikes=np.zeros((n_time, 1), dtype=np.int_),
                 metrics={},
-                phase_labels=list(PHASE_LABELS),
-                phase_boundaries=[1, 2, 3, 4, 5, 6, 7, n_time + 1],
+                phase_labels=PHASE_LABELS,
+                phase_boundaries=(1, 2, 3, 4, 5, 6, 7, n_time + 1),
             )
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 follow-ups: stored-likelihood normalization, end-to-end
+# validate_against, log-space reference comparison
+# ---------------------------------------------------------------------------
+
+
+class TestStoredLikelihoodNormalization:
+    """The log-space rewrite stores ``combined_likelihood_all`` and
+    ``spike_likelihood_all`` via a bespoke shift-and-normalize. A
+    regression that left these unnormalized would still pass shape
+    contracts but distort every downstream HPD / KL on the displayed
+    likelihood. Pin the normalization directly.
+    """
+
+    def test_combined_likelihood_sums_to_one_at_every_step(
+        self, decoder_inputs: DecoderInputs
+    ) -> None:
+        result = decoder_inputs.call()
+        likelihood = result["likelihood"]
+        np.testing.assert_allclose(
+            likelihood.sum(axis=1),
+            1.0,
+            rtol=1e-10,
+            atol=1e-12,
+            err_msg="combined_likelihood_all is not row-normalized",
+        )
+
+    def test_spike_likelihood_sums_to_one_at_spike_steps(
+        self, decoder_inputs: DecoderInputs
+    ) -> None:
+        """Steps with at least one spike must produce a normalized
+        spike-only likelihood. NaN at no-spike steps is acceptable (and
+        documented)."""
+        result = decoder_inputs.call()
+        spike_lik = result["spike_likelihood"]
+        spikes = decoder_inputs.spikes
+        spike_steps = np.where(spikes.sum(axis=1) > 0)[0]
+        # Skip t=0 which is a flat-initialized row, not a likelihood
+        # over any observation.
+        spike_steps = spike_steps[spike_steps > 0]
+        assert spike_steps.size, "test fixture produced no spikes"
+        sums = spike_lik[spike_steps].sum(axis=1)
+        np.testing.assert_allclose(
+            sums,
+            1.0,
+            rtol=1e-10,
+            atol=1e-12,
+            err_msg="spike_likelihood_all is not row-normalized at spike steps",
+        )
+
+
+class TestDecoderValidatesScheduleShapes:
+    """``decode_and_diagnostics`` must invoke ``validate_against`` on
+    every schedule entry before running the time loop. A regression
+    that drops the call would only fail later with a cryptic
+    broadcasting error inside ``poisson.logpmf``.
+    """
+
+    def test_mismatched_decoder_rates_raises_before_decode(
+        self, decoder_inputs: DecoderInputs
+    ) -> None:
+        n_bins = decoder_inputs.xs.size
+        wrong_shape = np.full((n_bins + 3, decoder_inputs.spikes.shape[1]), 0.1)
+        schedule = MisfitSchedule((MisfitWindow(2, 5, decoder_rates=wrong_shape),))
+        with pytest.raises(ValueError, match=r"decoder_rates shape"):
+            decoder_inputs.call(misfit_schedule=schedule)
+
+    def test_mismatched_transition_matrix_raises_before_decode(
+        self, decoder_inputs: DecoderInputs
+    ) -> None:
+        n_bins = decoder_inputs.xs.size
+        wrong_transition = np.eye(n_bins + 1)
+        schedule = MisfitSchedule((MisfitWindow(2, 5, transition_matrix=wrong_transition),))
+        with pytest.raises(ValueError, match=r"transition_matrix shape"):
+            decoder_inputs.call(misfit_schedule=schedule)
+
+
+class TestLogSpaceReferenceComparison:
+    """Tighter regression guard for the log-space posterior update:
+    compare against an independent log-space reference computed step by
+    step. A regression that subtly resets to uniform on a subset of
+    steps would pass the earlier "max_dev > 0.05" smoke check but fail
+    here.
+    """
+
+    def test_posterior_matches_independent_log_space_reference(self) -> None:
+        from scipy.special import logsumexp
+        from scipy.stats import poisson as _poisson
+
+        from statespacecheck_paper.simulation import (
+            gaussian_transition_matrix,
+            placefield_rates,
+        )
+
+        rng = np.random.default_rng(7)
+        n_time, n_cells, n_bins = 25, 3, 21
+        xs = np.linspace(0.0, 100.0, n_bins)
+        transition = gaussian_transition_matrix(xs, sig=2.0)
+        pf_centers = np.array([25.0, 50.0, 75.0])
+        pf_width = 10.0
+        rate_scale = 0.1
+        spikes = rng.poisson(1.0, size=(n_time, n_cells))
+
+        # Reference: linear-space prior, log-space combined likelihood,
+        # logsumexp normalization. No reset-to-uniform branch.
+        rates = placefield_rates(xs, pf_centers, pf_width, rate_scale)
+        ref_post = np.zeros((n_time, n_bins))
+        ref_post[0] = np.ones(n_bins) / n_bins
+        for t in range(1, n_time):
+            prior = ref_post[t - 1] @ transition
+            prior = prior / prior.sum()
+            log_lik = _poisson.logpmf(spikes[t][None, :], rates).sum(axis=1)
+            ll_max = float(np.max(log_lik))
+            assert np.isfinite(ll_max)
+            weighted = prior * np.exp(log_lik - ll_max)
+            norm = weighted.sum()
+            assert norm > 0
+            ref_post[t] = weighted / norm
+
+        result = decode_and_diagnostics(
+            spikes, xs, transition, pf_centers, pf_width=pf_width, rate_scale=rate_scale
+        )
+        np.testing.assert_allclose(result["posterior"], ref_post, rtol=1e-10, atol=1e-12)
+        # logsumexp + log_combined provides an independent sanity check
+        # on combined_likelihood_all row sums (already pinned in the
+        # dedicated test, repeated here as a cross-check).
+        np.testing.assert_allclose(result["likelihood"].sum(axis=1), 1.0, rtol=1e-10)
+        _ = logsumexp  # imported only for clarity in the reference-equivalence proof

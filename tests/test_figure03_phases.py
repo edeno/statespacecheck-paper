@@ -68,7 +68,7 @@ def test_phase_labels_and_boundaries(sim: SimulationResult) -> None:
     """
     params = sim.params
     # The simulation must emit exactly the canonical phase set, in order.
-    assert sim.phase_labels == list(PHASE_LABELS)
+    assert sim.phase_labels == PHASE_LABELS
     # Sanity-check the canonical set itself: 8 phases, the 4 expected
     # misfits each appearing once.
     assert len(PHASE_LABELS) == 8

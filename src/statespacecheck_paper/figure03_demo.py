@@ -69,31 +69,75 @@ class SimulationResult:
     x_true: NDArray[np.floating]
     spikes: NDArray[np.int_]
     metrics: dict[str, NDArray[np.floating] | NDArray[np.intp]]
-    phase_labels: list[str]
-    phase_boundaries: list[int]
+    # Sequence fields are declared as tuple so ``frozen=True``'s
+    # immutability extends to the contents — list would leave
+    # ``sim.phase_labels.append(...)`` and ``sim.phase_boundaries[-1] = 9999``
+    # as silent invariant-breakers. Callers passing a list at construction
+    # are coerced in __post_init__.
+    phase_labels: tuple[str, ...]
+    phase_boundaries: tuple[int, ...]
 
     def __post_init__(self) -> None:
-        """Enforce length and timeline-consistency invariants."""
-        if list(self.phase_labels) != list(PHASE_LABELS):
+        """Enforce length and timeline-consistency invariants.
+
+        Also coerces the two sequence fields to tuple (in case the
+        caller supplied a list) and validates each metrics array shares
+        the spike timeline.
+        """
+        # Coerce list -> tuple so frozen=True's immutability extends to
+        # the contents. ``object.__setattr__`` because frozen blocks the
+        # normal binding.
+        if not isinstance(self.phase_labels, tuple):
+            object.__setattr__(self, "phase_labels", tuple(self.phase_labels))
+        if not isinstance(self.phase_boundaries, tuple):
+            object.__setattr__(self, "phase_boundaries", tuple(self.phase_boundaries))
+
+        if self.phase_labels != PHASE_LABELS:
             raise ValueError(
                 f"phase_labels must equal PHASE_LABELS in order; "
-                f"got {self.phase_labels!r} vs canonical {list(PHASE_LABELS)!r}"
+                f"got {list(self.phase_labels)!r} vs canonical {list(PHASE_LABELS)!r}"
             )
         if len(self.phase_boundaries) != len(self.phase_labels):
             raise ValueError(
                 f"phase_boundaries length ({len(self.phase_boundaries)}) "
                 f"must equal phase_labels length ({len(self.phase_labels)})."
             )
-        if self.spikes.shape[0] != self.x_true.shape[0]:
+        n_time = self.x_true.shape[0]
+        if self.spikes.shape[0] != n_time:
             raise ValueError(
-                f"spikes timeline ({self.spikes.shape[0]}) must equal "
-                f"x_true timeline ({self.x_true.shape[0]})."
+                f"spikes timeline ({self.spikes.shape[0]}) must equal x_true timeline ({n_time})."
             )
-        if self.phase_boundaries[-1] != self.x_true.shape[0]:
+        if self.phase_boundaries[-1] != n_time:
             raise ValueError(
                 f"final phase boundary ({self.phase_boundaries[-1]}) must "
-                f"equal x_true timeline ({self.x_true.shape[0]})."
+                f"equal x_true timeline ({n_time})."
             )
+        # Per-time metrics must share the timeline. Only the dense
+        # (n_time, ...) arrays are checked; event-indexed arrays
+        # (``event_*``, ``per_spike_likelihood``, ``spike_time_ind``,
+        # ``spike_cell_ind``) are indexed by spike-event count not
+        # time. Listing the time-indexed keys positively (rather than
+        # excluding the rest) avoids silently missing a new
+        # event-indexed key that happens not to match the negative
+        # filter.
+        time_indexed_keys = (
+            "posterior",
+            "predictive",
+            "likelihood",
+            "spike_likelihood",
+            "hpd_overlap",
+            "kl_divergence",
+            "spike_prob",
+        )
+        for key in time_indexed_keys:
+            if key not in self.metrics:
+                continue
+            arr = self.metrics[key]
+            if arr.ndim >= 1 and arr.shape[0] != n_time:
+                raise ValueError(
+                    f"metrics[{key!r}] has leading dim {arr.shape[0]}; "
+                    f"expected {n_time} (must match the x_true timeline)."
+                )
 
 
 def run_figure03_simulation(
@@ -136,8 +180,9 @@ def run_figure03_simulation(
     Returns
     -------
     SimulationResult
-        TypedDict with ``params``, ``xs``, ``x_true``, ``spikes``,
-        ``metrics``, ``phase_labels``, ``phase_boundaries``.
+        Dataclass with attributes ``params``, ``xs``, ``x_true``,
+        ``spikes``, ``metrics``, ``phase_labels``, ``phase_boundaries``.
+        Access via attribute (``sim.metrics``), not subscript.
     """
     if params is None:
         params = DecodeParams()
@@ -279,6 +324,6 @@ def run_figure03_simulation(
         x_true=x_true,
         spikes=spikes,
         metrics=metrics,
-        phase_labels=phase_labels,
-        phase_boundaries=boundaries,
+        phase_labels=tuple(phase_labels),
+        phase_boundaries=tuple(boundaries),
     )

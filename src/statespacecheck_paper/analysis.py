@@ -39,6 +39,7 @@ goodness-of-fit.
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Mapping
 from dataclasses import dataclass
 
@@ -60,6 +61,24 @@ from statespacecheck_paper.simulation import (
 _PER_SPIKE_BATCH = 50_000
 
 
+def _softmax_with_shift(ll: NDArray[np.floating], eps: float = 1e-15) -> NDArray[np.floating]:
+    """Numerically stable softmax via the log-sum-exp shift.
+
+    Equivalent to ``exp(ll) / exp(ll).sum()`` but subtracts ``ll.max()``
+    first so the largest entry is exactly 1 and the rest are bounded.
+    Used for the stored display likelihoods in :func:`decode_and_diagnostics`
+    where bins underflowing to zero is acceptable but the row sum must
+    still equal 1.
+    """
+    lmax = float(np.max(ll))
+    if not np.isfinite(lmax):
+        n_bins = ll.size
+        return np.full(n_bins, 1.0 / n_bins)
+    weighted = np.exp(ll - lmax)
+    result: NDArray[np.floating] = weighted / (weighted.sum() + eps)
+    return result
+
+
 def _condition_on(
     probs: NDArray[np.floating],
     ll: NDArray[np.floating],
@@ -69,10 +88,22 @@ def _condition_on(
 
     Adapted from ``non_local_detector.core._condition_on`` (which itself
     is adapted from ``dynamax``). The log-sum-exp shift of subtracting
-    ``ll.max()`` before exponentiation makes the largest likelihood
-    entry equal to 1 and the others arbitrarily small but never
-    underflowing — letting the posterior update stay numerically stable
-    even when individual cell likelihoods would have underflowed.
+    ``ll.max()`` before exponentiation makes ``exp(ll - ll_max)`` peak
+    at 1, keeping the posterior update numerically stable even when
+    individual cell likelihoods would have underflowed in linear space.
+
+    Underflow regime: when the prior and likelihood are essentially
+    disjoint (``weighted.sum() < eps``), the marginal likelihood
+    underflows and the returned posterior would be a meaningless
+    near-zero vector. Rather than propagate that into the next step's
+    predict-and-update (where it would silently become uniform via the
+    eps clamp in :func:`statespacecheck_paper.simulation.normalize`),
+    this function explicitly returns a uniform posterior and
+    ``log_norm = -inf``. Callers should treat ``log_norm == -inf`` as
+    the signal to flag the step — the figure-3 decoder in
+    :func:`decode_and_diagnostics` counts these and emits a single
+    summary ``RuntimeWarning`` per call so the underflow events are
+    visible without flooding the test log.
 
     Parameters
     ----------
@@ -81,26 +112,28 @@ def _condition_on(
     ll : np.ndarray, shape (n_bins,)
         Log-likelihood of the observation at each bin (unnormalized).
     eps : float, default 1e-15
-        Added to the denominator to avoid divide-by-zero when all
-        likelihoods are -inf (no bin has finite probability of the
-        observation).
+        Underflow threshold on ``weighted.sum()``; below this the
+        uniform fallback path runs.
 
     Returns
     -------
     new_probs : np.ndarray, shape (n_bins,)
-        Posterior; sums to 1.
+        Posterior; sums to 1. Equals ``1/n_bins`` everywhere when the
+        underflow fallback runs.
     log_norm : float
         Log marginal likelihood for this step (``log p(obs | past)``).
-        Not currently consumed by callers but cheap to compute and
-        useful for downstream model comparison.
+        ``-inf`` when the underflow fallback runs.
     """
+    n_bins = probs.size
     ll_max = float(np.max(ll))
     if not np.isfinite(ll_max):
-        ll_max = 0.0
+        return np.full(n_bins, 1.0 / n_bins), float("-inf")
     weighted = probs * np.exp(ll - ll_max)
     norm = float(weighted.sum())
-    new_probs = weighted / (norm + eps)
-    log_norm = float(np.log(norm + eps)) + ll_max
+    if norm < eps:
+        return np.full(n_bins, 1.0 / n_bins), float("-inf")
+    new_probs = weighted / norm
+    log_norm = float(np.log(norm)) + ll_max
     return new_probs, log_norm
 
 
@@ -307,12 +340,26 @@ class DecodeParams:
             raise ValueError(
                 f"DecodeParams.phase_boundaries must be strictly increasing; got {list(bnds)}."
             )
-        # Re-bind as a tuple in case the user passed a list/array — the
-        # named accessors expect a sequence and we want hashability.
+        # Re-bind as a tuple in case the user passed a list/array. The
+        # named accessors only need indexed read access, but storing as
+        # tuple makes the field hashable for consumers that key on
+        # ``DecodeParams.phase_boundaries`` and prevents
+        # ``params.phase_boundaries.append(...)`` from silently breaking
+        # the validated invariants.
         self.phase_boundaries = bnds
 
         if self.pf_centers is None:
             self.pf_centers = np.arange(self.xs_min, self.xs_max + 1, 10, dtype=float)
+        else:
+            # Copy the caller's array so we don't write-protect their
+            # reference; they keep a writable original.
+            self.pf_centers = np.asarray(self.pf_centers).copy()
+        # Write-protect against in-place mutation. ``DecodeParams`` is a
+        # plain (non-frozen) dataclass so the field can still be
+        # *rebound* (``params.pf_centers = other``), but ``params.pf_centers[i] = x``
+        # is now an error — the latter is the more dangerous case because
+        # it silently corrupts every downstream decoder call.
+        self.pf_centers.setflags(write=False)
 
 
 @dataclass(frozen=True)
@@ -361,10 +408,12 @@ class MisfitWindow:
     Notes
     -----
     Supplied ``transition_matrix``, ``decoder_rates``, and
-    ``diagnostic_rates`` are deep-copied at construction and the copy
-    is marked write-protected, extending the dataclass's ``frozen=True``
-    invariant to the array contents. Callers retain a writable
-    reference to the original they passed in.
+    ``diagnostic_rates`` are copied at construction
+    (``ndarray.copy()`` — buffer copy, not ``copy.deepcopy``) and the
+    copy is marked write-protected via ``setflags(write=False)``,
+    extending the dataclass's ``frozen=True`` invariant to the array
+    contents. The caller's original array is untouched, so the caller
+    keeps a writable reference to its own copy.
 
     Shape parity with the decoder's grid (``(n_bins, n_cells)`` for
     rate tables, ``(n_bins, n_bins)`` for the transition matrix) is
@@ -434,18 +483,21 @@ class MisfitWindow:
         # only prevents rebinding ``self.decoder_rates``; the underlying
         # ndarray is still mutable. Take a defensive copy and mark it
         # read-only so callers can't bypass the validation above by
-        # mutating in place after construction.
+        # mutating in place after construction. The copy runs even when
+        # the input is already read-only — otherwise the dataclass
+        # would alias the caller's view, which (despite the read-only
+        # flag) shares memory and ties the window's lifetime to
+        # something the caller might unflag later via
+        # ``setflags(write=True)``.
         for name in ("transition_matrix", "decoder_rates", "diagnostic_rates"):
             table = getattr(self, name)
             if table is None:
                 continue
-            if table.flags.writeable:
-                copy = table.copy()
-                copy.setflags(write=False)
-                # Bypass ``frozen=True`` for the in-place field rebind.
-                object.__setattr__(self, name, copy)
+            copy = table.copy()
+            copy.setflags(write=False)
+            object.__setattr__(self, name, copy)
 
-    def validate_against(self, n_bins: int, n_cells: int) -> None:
+    def validate_against(self, *, n_bins: int, n_cells: int) -> None:
         """Validate that supplied rate tables match the decoder's grid.
 
         Shape parity with the decoder's position grid and cell count
@@ -782,10 +834,20 @@ def decode_and_diagnostics(
 
     The per-cell likelihood combination and the posterior update both
     run in log-space via the :func:`_condition_on` pattern adapted from
-    ``dynamax`` / ``non_local_detector.core``. This eliminates the
-    underflow regime that the previous linear-space implementation
-    guarded against with a reset-to-uniform fallback; the new
-    implementation cannot underflow on the inner update.
+    ``dynamax`` / ``non_local_detector.core``. The posterior update
+    itself cannot underflow on the inner step (it uses an explicit
+    log-sum-exp shift). The stored ``combined_likelihood`` and
+    ``spike_likelihood`` arrays are renormalized after the same shift,
+    so individual bins still underflow to zero in linear space but the
+    row as a whole remains a proper probability distribution.
+
+    When the prior and combined likelihood have no meaningful overlap
+    (``weighted.sum() < eps`` inside ``_condition_on``), the helper
+    falls back to a uniform posterior and signals via
+    ``log_norm = -inf``. This function counts such steps and emits a
+    single summary ``RuntimeWarning`` at the end so the situation is
+    visible. Diagnostics at flagged steps reference a uniform
+    predictive; consumers should mask them out if needed.
 
     Examples
     --------
@@ -844,6 +906,14 @@ def decode_and_diagnostics(
     # the default diagnostic rate table.
     rates = placefield_rates(xs, pf_centers, pf_width, rate_scale)
 
+    # Track timesteps where _condition_on fell back to uniform (prior and
+    # likelihood had essentially no overlap). The fallback keeps the
+    # filter alive but the diagnostics at those steps are computed
+    # against a uniform predictive; report a summary at the end so the
+    # caller can mask them out if desired.
+    n_underflow_steps = 0
+    first_underflow_t = -1
+
     for t in range(1, n_time):
         window = misfit_schedule.window_at(t)
 
@@ -871,32 +941,39 @@ def decode_and_diagnostics(
         # space — the first underflow site).
         log_lik_combined = log_lik_per_cell.sum(axis=1)  # (n_bins,)
 
-        # Stored combined likelihood — normalize the log-space combined
-        # likelihood with the same log-sum-exp shift trick used in
-        # _condition_on so the array is well-scaled for downstream HPD
-        # and KL computation.
-        lmax = float(np.max(log_lik_combined))
-        if not np.isfinite(lmax):
-            lmax = 0.0
-        weighted_combined = np.exp(log_lik_combined - lmax)
-        combined_likelihood_all[t] = weighted_combined / (weighted_combined.sum() + 1e-15)
+        # Stored combined likelihood: same shift-and-normalize math as
+        # _condition_on, factored into the shared helper.
+        combined_likelihood_all[t] = _softmax_with_shift(log_lik_combined)
 
         # Spike-only likelihood: product over only cells that fired.
         spiking_mask = spikes[t] > 0
         if np.any(spiking_mask):
-            log_spike = log_lik_per_cell[:, spiking_mask].sum(axis=1)
-            sm = float(np.max(log_spike))
-            if not np.isfinite(sm):
-                sm = 0.0
-            weighted_spike = np.exp(log_spike - sm)
-            spike_likelihood_all[t] = weighted_spike / (weighted_spike.sum() + 1e-15)
+            spike_likelihood_all[t] = _softmax_with_shift(
+                log_lik_per_cell[:, spiking_mask].sum(axis=1)
+            )
 
         # Posterior update via the _condition_on pattern (dynamax /
-        # non_local_detector). Was prior * combined_likelihood / sum in
-        # linear space — the second underflow site, which the old code
-        # papered over with a reset-to-uniform fallback. The new
-        # implementation cannot underflow on this step.
-        posterior[t], _ = _condition_on(prior, log_lik_combined)
+        # non_local_detector). ``log_norm = -inf`` flags steps where the
+        # prior and likelihood had no meaningful overlap; the helper
+        # explicitly returns a uniform posterior in that case and we
+        # surface the count post-loop rather than letting the situation
+        # silently propagate.
+        posterior[t], log_norm = _condition_on(prior, log_lik_combined)
+        if log_norm == float("-inf"):
+            if n_underflow_steps == 0:
+                first_underflow_t = t
+            n_underflow_steps += 1
+
+    if n_underflow_steps > 0:
+        warnings.warn(
+            f"decode_and_diagnostics: prior/likelihood overlap underflowed at "
+            f"{n_underflow_steps} timestep(s); first at t={first_underflow_t}. "
+            f"Posterior was reset to uniform at those steps; downstream "
+            f"per-spike diagnostics computed at those times reference a "
+            f"uniform predictive and should be interpreted accordingly.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
 
     # Find all spike events (excluding t=0 which has no valid prior). Count
     # matrices are expanded so a bin with count k contributes k spike events.
@@ -1183,7 +1260,19 @@ def compute_per_cell_diagnostics_from_rates(
         # but only over the rows we actually need. Cost: ~3× the
         # rank work versus the unique-time dedup, but the memory
         # ceiling drops to ``B × n_cells``.
-        cell_fraction_per_bin = normalize(rates, axis=1)  # (n_bins, n_cells)
+        # ``cell_fraction_per_bin[x, c] = p(cell c | bin x, spike happened)``.
+        # Bins where every cell has zero rate (sparse real-data coverage
+        # away from any PF) would trigger ``normalize``'s near-zero
+        # warning and produce a meaningless near-zero row. Use a uniform
+        # ``1/n_cells`` fallback on those rows so the rank statistic
+        # treats them as non-discriminative rather than handing
+        # ``hpd_overlap``/``kl_divergence`` a non-distribution.
+        row_sums = rates.sum(axis=1, keepdims=True)
+        zero_rows = row_sums.squeeze(-1) <= 1e-12
+        safe_row_sums = np.where(row_sums > 1e-12, row_sums, 1.0)
+        cell_fraction_per_bin = rates / safe_row_sums  # (n_bins, n_cells)
+        if zero_rows.any():
+            cell_fraction_per_bin[zero_rows] = 1.0 / rates.shape[1]
         batch = max(1, _PER_SPIKE_BATCH)
         for start in range(0, n_spikes, batch):
             stop = min(start + batch, n_spikes)
