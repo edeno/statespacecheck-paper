@@ -19,7 +19,6 @@ from __future__ import annotations
 from typing import Any
 
 import matplotlib.pyplot as plt
-import matplotlib.ticker as ticker
 import numpy as np
 from matplotlib import gridspec
 from matplotlib.axes import Axes
@@ -31,7 +30,6 @@ from numpy.typing import NDArray
 from statespacecheck_paper.analysis import (
     DecodeParams,
     Thresholds,
-    Transformed,
     get_remapped_pf_centers,
     likelihood_grid_for_counts,
 )
@@ -354,333 +352,6 @@ def create_distribution_comparison_panel(
             fontsize=5,
             color=color_likelihood,
         )
-
-
-def plot_original(
-    xs: NDArray[np.floating],
-    x_true: NDArray[np.floating],
-    metrics: dict[str, NDArray[np.floating]],
-    thresholds: Thresholds,
-    title: str = "Original Metrics",
-    remap_window: tuple[int, int] | None = None,
-    phase_boundaries: tuple[int, ...] | None = None,
-) -> Figure:
-    """Plot original diagnostic metrics with thresholds.
-
-    Creates a 4-panel figure showing:
-    1. Posterior heatmap with true position overlay
-    2. HPD overlap over time (per-cell scatter)
-    3. KL divergence over time (per-cell scatter)
-    4. Spike probability over time (per-cell scatter)
-
-    Parameters
-    ----------
-    xs : NDArray, shape (n_bins,)
-        Position bin centers.
-    x_true : NDArray, shape (n_time,)
-        True position at each time point.
-    metrics : dict[str, NDArray]
-        Dictionary containing diagnostic metrics:
-        - 'posterior': Posterior distribution, shape (n_time, n_bins)
-        - 'hpd_overlap': HPD overlap, shape (n_time, n_cells)
-        - 'kl_divergence': KL divergence, shape (n_time, n_cells)
-        - 'spike_prob': Spike probability, shape (n_time, n_cells)
-    thresholds : Thresholds
-        Threshold values for each diagnostic.
-    title : str, default "Original Metrics"
-        Figure title.
-    remap_window : tuple[int, int] | None, optional
-        Time window where cell remapping occurs (start, end).
-    phase_boundaries : tuple[int, ...] | None, optional
-        Cumulative phase-end time indices, forwarded as-is to
-        :func:`add_phase_boundaries` (see that function for the
-        recognized tuple lengths and the misfit windows they shade).
-        ``None`` skips phase shading.
-
-    Returns
-    -------
-    fig : matplotlib.figure.Figure
-        The created figure.
-
-    Examples
-    --------
-    >>> import numpy as np
-    >>> from statespacecheck_paper.analysis import Thresholds
-    >>> n_time, n_bins, n_cells = 100, 50, 10
-    >>> xs = np.linspace(0, 1, n_bins)
-    >>> x_true = np.random.uniform(0, n_bins - 1, n_time)
-    >>> metrics = {
-    ...     'posterior': np.random.dirichlet(np.ones(n_bins), size=n_time),
-    ...     'hpd_overlap': np.random.uniform(0, 1, (n_time, n_cells)),
-    ...     'kl_divergence': np.random.uniform(0, 5, (n_time, n_cells)),
-    ...     'spike_prob': np.random.uniform(0, 1, (n_time, n_cells)),
-    ... }
-    >>> thresholds = Thresholds(hpd_overlap=0.8, kl_divergence=2.0, spike_prob=0.05)
-    >>> fig = plot_original(xs, x_true, metrics, thresholds)
-    >>> plt.close(fig)
-    """
-    n_time = metrics["posterior"].shape[0]
-    fig, axes = plt.subplots(
-        4,
-        1,
-        figsize=(8, 6),
-        constrained_layout={
-            "h_pad": 0.02,
-            "w_pad": 0.02,
-            "hspace": 0,
-            "wspace": 0,
-            "rect": [0, 0, 1, 0.97],
-        },
-        sharex=True,
-        dpi=450,
-    )
-
-    im = axes[0].imshow(
-        metrics["posterior"].T,
-        aspect="auto",
-        origin="lower",
-        vmin=0.0,
-        vmax=np.quantile(metrics["posterior"], 0.975),
-        cmap=CMAP_POSTERIOR,
-    )
-    # Plot true position for visibility against posterior colormap
-    axes[0].plot(
-        np.arange(n_time),
-        x_true,
-        color=COLORS["ground_truth"],
-        linewidth=1.5,
-        alpha=0.85,
-        label="True position",
-    )
-    axes[0].set_ylabel("Position (bin)", fontsize=7, labelpad=8)
-    axes[0].tick_params(labelsize=6)
-
-    # Create colorbar with better formatting
-    cbar = fig.colorbar(im, ax=axes[0], fraction=0.03, pad=0.02, aspect=30)
-    cbar.set_label("Probability (×10⁻¹²)", fontsize=7, labelpad=8)
-    cbar.ax.tick_params(labelsize=6, length=3, width=0.5)
-    # Scale tick labels by 1e12 to avoid offset text
-    cbar.ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, p: f"{x * 1e12:.1f}"))
-
-    # Add phase boundaries to all axes
-    if phase_boundaries is not None:
-        add_phase_boundaries(axes, phase_boundaries, include_labels=True, alpha=0.2)
-
-    # Create time indices for scatter plots (metrics are now 2D: n_time x n_cells)
-    n_cells = metrics["hpd_overlap"].shape[1]
-    time_indices = np.tile(np.arange(n_time)[:, np.newaxis], (1, n_cells))
-
-    axes[1].scatter(
-        time_indices.ravel(),
-        metrics["hpd_overlap"].ravel(),
-        s=1.5,
-        alpha=0.6,
-        c=COLORS["hpd_overlap"],
-        rasterized=True,
-    )
-    axes[1].axhline(thresholds.hpd_overlap, color=COLORS["threshold"], linewidth=1.5, zorder=10)
-    axes[1].set_xlim(0, n_time)
-    axes[1].set_ylabel("HPD Overlap", fontsize=7, labelpad=8)
-    axes[1].tick_params(labelsize=6)
-
-    axes[2].scatter(
-        time_indices.ravel(),
-        metrics["kl_divergence"].ravel(),
-        s=1.5,
-        alpha=0.6,
-        c=COLORS["kl_divergence"],
-        rasterized=True,
-    )
-    axes[2].axhline(thresholds.kl_divergence, color=COLORS["threshold"], linewidth=1.5, zorder=10)
-    axes[2].set_xlim(0, n_time)
-    axes[2].set_ylabel("KL Divergence", fontsize=7, labelpad=8)
-    axes[2].tick_params(labelsize=6)
-
-    # Spike probability: lower values indicate worse fit
-    axes[3].scatter(
-        time_indices.ravel(),
-        metrics["spike_prob"].ravel(),
-        s=1.5,
-        alpha=0.6,
-        c=COLORS["metric_combined"],
-        rasterized=True,
-    )
-    axes[3].axhline(thresholds.spike_prob, color=COLORS["threshold"], linewidth=1.5, zorder=10)
-    axes[3].set_xlim(0, n_time)
-    axes[3].set_ylabel("Spike Prob", fontsize=7, labelpad=8)
-    axes[3].set_xlabel("Time", fontsize=7, labelpad=8)
-    axes[3].tick_params(labelsize=6)
-
-    # Add comprehensive legend outside the plot area at the bottom
-    # Get handles and labels from axes[0] where they were defined
-    handles, labels = axes[0].get_legend_handles_labels()
-    axes[3].legend(
-        handles,
-        labels,
-        loc="upper center",
-        bbox_to_anchor=(0.5, -0.35),
-        fontsize=6,
-        frameon=True,
-        fancybox=False,
-        shadow=False,
-        ncol=5,
-    )
-
-    fig.suptitle(title, fontsize=8, y=0.99)
-    return fig
-
-
-def plot_transformed(
-    xs: NDArray[np.floating],
-    x_true: NDArray[np.floating],
-    posterior: NDArray[np.floating],
-    transformed: Transformed,
-    title: str = "Transformed Metrics (-log, sqrt)",
-    remap_window: tuple[int, int] | None = None,
-    phase_boundaries: tuple[int, int] | None = None,
-) -> Figure:
-    """Plot transformed diagnostic metrics with thresholds.
-
-    Applies transformations to make distributions more Gaussian for better
-    visualization and threshold detection. Metrics are per-cell and displayed
-    as scatter plots.
-
-    Parameters
-    ----------
-    xs : NDArray, shape (n_bins,)
-        Position bin centers.
-    x_true : NDArray, shape (n_time,)
-        True position at each time point.
-    posterior : NDArray, shape (n_time, n_bins)
-        Posterior distribution over time.
-    transformed : Transformed
-        Transformed metrics and thresholds (metrics have shape n_time, n_cells).
-    title : str, default "Transformed Metrics (-log, sqrt)"
-        Figure title.
-    remap_window : tuple[int, int] | None, optional
-        Time window where cell remapping occurs (start, end).
-    phase_boundaries : tuple[int, int] | None, optional
-        Boundaries between phases: (T1, T2) where T3 is end of data.
-
-    Returns
-    -------
-    fig : matplotlib.figure.Figure
-        The created figure.
-
-    Examples
-    --------
-    >>> import numpy as np
-    >>> from statespacecheck_paper.analysis import Transformed
-    >>> n_time, n_bins, n_cells = 100, 50, 10
-    >>> xs = np.linspace(0, 1, n_bins)
-    >>> x_true = np.random.uniform(0, n_bins - 1, n_time)
-    >>> posterior = np.random.dirichlet(np.ones(n_bins), size=n_time)
-    >>> transformed = Transformed(
-    ...     hpd_overlap=np.random.uniform(0, 5, (n_time, n_cells)),
-    ...     kl_divergence=np.random.uniform(0, 3, (n_time, n_cells)),
-    ...     spike_prob=np.random.uniform(0, 10, (n_time, n_cells)),
-    ...     hpd_overlap_threshold=3.0,
-    ...     kl_divergence_threshold=2.0,
-    ...     spike_prob_threshold=3.0,
-    ... )
-    >>> fig = plot_transformed(xs, x_true, posterior, transformed)
-    >>> plt.close(fig)
-    """
-    n_time = posterior.shape[0]
-    fig, axes = plt.subplots(4, 1, figsize=(7, 6), constrained_layout=True, sharex=True, dpi=150)
-
-    im = axes[0].imshow(posterior.T, aspect="auto", origin="lower", cmap=CMAP_POSTERIOR)
-    axes[0].plot(np.arange(n_time), x_true, color=COLORS["ground_truth"], linewidth=1.0, alpha=0.8)
-    axes[0].set_ylabel("Position (bin)", fontsize=7, labelpad=8)
-    axes[0].tick_params(labelsize=7)
-    cbar = fig.colorbar(im, ax=axes[0], fraction=0.02, pad=0.02)
-    cbar.set_label("Probability", fontsize=7, labelpad=8)
-    cbar.ax.tick_params(labelsize=7)
-
-    for ax in axes:
-        # Highlight remap window (cell 10->1)
-        if remap_window is not None:
-            ax.axvspan(
-                remap_window[0],
-                remap_window[1],
-                alpha=0.15,
-                color=COLORS["likelihood"],
-                label="Remap",
-            )
-
-        # Highlight the two regions defined by the generic phase boundary
-        # pair. ``plot_transformed`` is a generic diagnostic helper, so the
-        # shaded regions get neutral labels rather than misfit-specific ones.
-        if phase_boundaries is not None:
-            t1, t2 = phase_boundaries
-            ax.axvspan(t1, t2, alpha=0.15, color=COLORS["reference"], label="Region 1")
-            ax.axvspan(t2, n_time, alpha=0.15, color=COLORS["ground_truth"], label="Region 2")
-
-    # Create time indices for scatter plots (metrics are now 2D: n_time x n_cells)
-    n_cells = transformed.hpd_overlap.shape[1]
-    time_indices = np.tile(np.arange(n_time)[:, np.newaxis], (1, n_cells))
-
-    axes[1].scatter(
-        time_indices.ravel(),
-        transformed.hpd_overlap.ravel(),
-        s=0.5,
-        alpha=0.3,
-        c=COLORS["hpd_overlap"],
-        rasterized=True,
-    )
-    axes[1].axhline(
-        transformed.hpd_overlap_threshold,
-        color=COLORS["threshold"],
-        linewidth=1.5,
-        label="Threshold",
-        zorder=10,
-    )
-    axes[1].set_xlim(0, n_time)
-    axes[1].set_ylabel("-log(HPD Overlap)", fontsize=7, labelpad=8)
-    axes[1].tick_params(labelsize=7)
-    axes[1].legend(loc="upper right", fontsize=7, frameon=False)
-
-    axes[2].scatter(
-        time_indices.ravel(),
-        transformed.kl_divergence.ravel(),
-        s=0.5,
-        alpha=0.3,
-        c=COLORS["kl_divergence"],
-        rasterized=True,
-    )
-    axes[2].axhline(
-        transformed.kl_divergence_threshold,
-        color=COLORS["threshold"],
-        linewidth=1.5,
-        label="Threshold",
-        zorder=10,
-    )
-    axes[2].set_xlim(0, n_time)
-    axes[2].set_ylabel("sqrt(KL Divergence)", fontsize=7, labelpad=8)
-    axes[2].tick_params(labelsize=7)
-
-    axes[3].scatter(
-        time_indices.ravel(),
-        transformed.spike_prob.ravel(),
-        s=0.5,
-        alpha=0.3,
-        c=COLORS["metric_combined"],
-        rasterized=True,
-    )
-    axes[3].axhline(
-        transformed.spike_prob_threshold,
-        color=COLORS["threshold"],
-        linewidth=1.5,
-        label="Threshold",
-        zorder=10,
-    )
-    axes[3].set_xlim(0, n_time)
-    axes[3].set_ylabel("-log(Spike Prob)", fontsize=7, labelpad=8)
-    axes[3].set_xlabel("Time", fontsize=7, labelpad=8)
-    axes[3].tick_params(labelsize=7)
-
-    fig.suptitle(title, fontsize=8, y=0.998)
-    return fig
 
 
 def plot_misfit_examples(
@@ -1072,12 +743,8 @@ def _plot_likelihood_overlay(
     predictive: NDArray[np.floating],
     per_spike_likelihood: NDArray[np.floating],
     spike_time_ind: NDArray[np.intp],
-    spike_cell_ind: NDArray[np.intp],
-    position_bins: NDArray[np.floating],
     x_true: NDArray[np.floating] | None = None,
-    cmap_underlay: str = CMAP_POSTERIOR,
     cmap_overlay: str = CMAP_LIKELIHOOD,
-    underlay_alpha: float = 0.35,
 ) -> AxesImage:
     """Plot per-spike likelihood distributions at spike times.
 
@@ -1094,18 +761,10 @@ def _plot_likelihood_overlay(
         Normalized likelihood distribution for each individual spike event.
     spike_time_ind : NDArray, shape (n_spikes,)
         Time index for each spike event.
-    spike_cell_ind : NDArray, shape (n_spikes,)
-        Cell index for each spike event.
-    position_bins : NDArray, shape (n_bins,)
-        Position bin centers.
     x_true : NDArray, shape (n_time,), optional
         True position to overlay.
-    cmap_underlay : str, default CMAP_POSTERIOR
-        Unused, kept for API compatibility.
     cmap_overlay : str, default CMAP_LIKELIHOOD
         Colormap for the likelihood columns.
-    underlay_alpha : float, default 0.35
-        Unused, kept for API compatibility.
 
     Returns
     -------
@@ -1208,7 +867,6 @@ def _plot_spike_count_raster(
 
 
 def plot_combined_diagnostics(
-    xs: NDArray[np.floating],
     x_true: NDArray[np.floating],
     spikes: NDArray[np.floating],
     metrics: dict[str, Any],
@@ -1223,8 +881,6 @@ def plot_combined_diagnostics(
 
     Parameters
     ----------
-    xs : NDArray, shape (n_bins,)
-        Position bin centers.
     x_true : NDArray, shape (n_time,)
         True position at each time point.
     spikes : NDArray, shape (n_time, n_cells)
@@ -1250,7 +906,6 @@ def plot_combined_diagnostics(
     >>> import matplotlib.pyplot as plt
     >>> from statespacecheck_paper.analysis import DecodeParams, Thresholds
     >>> n_time, n_bins, n_cells = 500, 50, 10
-    >>> xs = np.linspace(0, 1, n_bins)
     >>> x_true = np.random.uniform(0, n_bins - 1, n_time)
     >>> spikes = np.random.poisson(0.5, (n_time, n_cells))
     >>> spike_time_ind = np.array([1, 2, 3])
@@ -1272,7 +927,7 @@ def plot_combined_diagnostics(
     ... )
     >>> placefield_centers = np.linspace(0, 1, n_cells)
     >>> fig = plot_combined_diagnostics(
-    ...     xs, x_true, spikes, metrics, thresholds, params, placefield_centers
+    ...     x_true, spikes, metrics, thresholds, params, placefield_centers
     ... )
     >>> plt.close('all')
     """
@@ -1347,9 +1002,7 @@ def plot_combined_diagnostics(
         metrics["predictive"],
         metrics["per_spike_likelihood"],
         metrics["spike_time_ind"],
-        metrics["spike_cell_ind"],
-        xs,
-        x_true,
+        x_true=x_true,
     )
     ax_like.set_ylabel("Position (a.u.)", fontsize=7, labelpad=7)
     ax_like.tick_params(labelsize=6, labelbottom=False)

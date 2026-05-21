@@ -17,12 +17,13 @@ import pandas as pd
 import xarray as xr
 
 from statespacecheck_paper.interactive import cache as cache_mod
+from statespacecheck_paper.interactive.cache import ModelName
 
 
 def build_synthetic_cache(
     cache_dir: Path,
     *,
-    model: str = "continuous",
+    model: ModelName = "continuous",
     n_states: int = 1,
     n_time: int = 500,
     n_position: int = 16,
@@ -108,7 +109,7 @@ def build_synthetic_cache(
 
     ds = xr.Dataset(data_vars=data_vars, coords=coords)
 
-    paths = cache_mod.cache_paths(cache_dir, model)  # type: ignore[arg-type]
+    paths = cache_mod.cache_paths(cache_dir, model)
     cache_mod._write_zarr_store(ds=ds, out_dir=paths["zarr"], time_chunk=64)
 
     spike_times = [

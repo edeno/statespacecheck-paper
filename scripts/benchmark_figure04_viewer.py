@@ -35,9 +35,11 @@ import sys
 import time
 import tracemalloc
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
+
+from statespacecheck_paper.interactive.cache import ModelName
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -71,7 +73,7 @@ def _setup_qt(offscreen: bool) -> Any:
 def run_benchmark(
     *,
     cache_dir: Path,
-    model: str,
+    model: ModelName,
     window_seconds: float = 20.0,
     sweep_seconds: float = 60.0,
     tick_hz: float = 60.0,
@@ -85,7 +87,7 @@ def run_benchmark(
     from statespacecheck_paper.interactive.data_source import DecoderDataSource  # noqa: PLC0415
     from statespacecheck_paper.interactive.viewer import DecoderViewer  # noqa: PLC0415
 
-    ds = DecoderDataSource(cache_dir, model=model)  # type: ignore[arg-type]
+    ds = DecoderDataSource(cache_dir, model=model)
     viewer = DecoderViewer(ds)
     # Match the requested window size.
     viewer._window_seconds = window_seconds  # noqa: SLF001
@@ -124,7 +126,10 @@ def run_benchmark(
         if not was_inflight and viewer._inflight_request_id is not None:  # noqa: SLF001
             request_dispatch_times[viewer._inflight_request_id] = time.perf_counter()  # noqa: SLF001
 
-    viewer._dispatch_load = timed_dispatch  # type: ignore[method-assign]  # noqa: SLF001
+    # Intentional method-assign so dispatches go through the timing
+    # wrapper. ``cast`` documents that the bound-method shape mismatch
+    # (closure-based callable vs. ``(self) -> None``) is deliberate.
+    viewer._dispatch_load = cast(Any, timed_dispatch)  # noqa: SLF001
 
     def on_loaded(request_id: int, *_: object) -> None:
         sent = request_dispatch_times.pop(request_id, None)
@@ -201,9 +206,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--no-offscreen", dest="offscreen", action="store_false")
     args = parser.parse_args(argv)
 
+    # argparse ``choices=("continuous", "contfrag")`` validates the
+    # string at the CLI boundary, so the cast just narrows the type.
     metrics = run_benchmark(
         cache_dir=Path(args.cache_dir),
-        model=args.model,
+        model=cast(ModelName, args.model),
         window_seconds=args.window_seconds,
         sweep_seconds=args.sweep_seconds,
         tick_hz=args.tick_hz,

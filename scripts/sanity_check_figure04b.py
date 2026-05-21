@@ -28,19 +28,6 @@ from statespacecheck_paper.real_data_plotting import (
 )
 from statespacecheck_paper.style import save_figure, set_figure_defaults
 
-# Check for optional decoder dependencies
-try:
-    import non_local_detector  # noqa: F401
-
-    DECODERS_AVAILABLE = True
-except ImportError:
-    DECODERS_AVAILABLE = False
-    warnings.warn(
-        "non_local_detector not available.",
-        stacklevel=2,
-    )
-
-
 DATA_PATH = Path(__file__).parent.parent / "data"
 ANIMAL_DATE_EPOCH = "j1620210710_02_r1"
 OUTPUT_DIR = "manuscript/figures/preview/sanity_check_4b"

@@ -12,6 +12,8 @@ from typing import Any
 
 import pytest
 
+from statespacecheck_paper.interactive.cache import ModelName
+
 from ._synthetic_cache import build_synthetic_cache as _build_cache_impl
 
 PYSIDE6_AVAILABLE = True
@@ -41,7 +43,7 @@ def _qt_offscreen() -> None:
 def _build_cache(
     cache_dir: Path,
     *,
-    model: str = "continuous",
+    model: ModelName = "continuous",
     n_states: int = 1,
     seed: int = 0,
 ) -> None:
@@ -49,7 +51,7 @@ def _build_cache(
     _build_cache_impl(cache_dir, model=model, n_states=n_states, seed=seed)
 
 
-def _make_viewer(cache_dir: Path, *, model: str = "continuous") -> tuple[Any, Any, Any]:
+def _make_viewer(cache_dir: Path, *, model: ModelName = "continuous") -> tuple[Any, Any, Any]:
     from PySide6 import QtWidgets
 
     from statespacecheck_paper.interactive.data_source import DecoderDataSource

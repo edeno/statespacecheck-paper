@@ -282,9 +282,8 @@ def run_figure03_simulation(
 
     # The two decoder-side misfits as a single schedule:
     # - Remap: the decoder's posterior update uses remapped place-field
-    #   centers (``decoder_rates``); the diagnostics still reference the
-    #   original Gaussian fields (``diagnostic_rates`` left None) so they
-    #   correctly flag the mismatch.
+    #   centers (``decoder_rates``); diagnostics always reference the
+    #   original Gaussian fields, so the mismatch surfaces.
     # - Wide dynamics noise: an inflated transition matrix only.
     remapped_rates = placefield_rates(
         xs,
