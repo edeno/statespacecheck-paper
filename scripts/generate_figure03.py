@@ -81,7 +81,6 @@ def run_demo(params: DecodeParams) -> None:
     Diagnostic thresholds are computed from the clean baseline period.
     """
     sim = run_figure03_simulation(params)
-    xs = sim.xs
     x_true = sim.x_true
     spikes = sim.spikes
     metrics = sim.metrics
@@ -98,7 +97,6 @@ def run_demo(params: DecodeParams) -> None:
 
     # Plot combined diagnostics figure
     plot_combined_diagnostics(
-        xs,
         x_true,
         spikes.astype(np.float64),
         metrics,

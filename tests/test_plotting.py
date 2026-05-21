@@ -8,15 +8,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
-from statespacecheck_paper.analysis import DecodeParams, Thresholds, Transformed
+from statespacecheck_paper.analysis import DecodeParams, Thresholds
 from statespacecheck_paper.plotting import (
     compute_hpd_region,
     create_distribution_comparison_panel,
     extract_contiguous_regions,
     plot_combined_diagnostics,
     plot_misfit_examples,
-    plot_original,
-    plot_transformed,
 )
 
 # ---------------------------------------------------------------------------
@@ -185,76 +183,6 @@ class TestComputeHpdRegion:
 
 
 # ---------------------------------------------------------------------------
-# plot_original / plot_transformed
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    "extra_kwargs",
-    [
-        {},
-        {"phase_boundaries": (10, 20, 30, 40, 50, 60, 70, 80)},
-        {"title": "Custom Test Title"},
-    ],
-    ids=["base", "phase_boundaries", "title"],
-)
-def test_plot_original_returns_figure(
-    small_metrics: dict[str, Any],
-    thresholds_default: Thresholds,
-    extra_kwargs: dict[str, Any],
-) -> None:
-    fig = plot_original(
-        small_metrics["xs"],
-        small_metrics["x_true"],
-        small_metrics["metrics"],
-        thresholds_default,
-        **extra_kwargs,
-    )
-    try:
-        assert isinstance(fig, plt.Figure)
-        # 4 panels: posterior + 3 metrics (HPDO, KL, spike_prob).
-        assert len(fig.axes) >= 4
-    finally:
-        plt.close(fig)
-
-
-def _make_transformed(rng: np.random.Generator, n_time: int, n_cells: int) -> Transformed:
-    return Transformed(
-        hpd_overlap=rng.uniform(0, 5, (n_time, n_cells)),
-        kl_divergence=rng.uniform(0, 3, (n_time, n_cells)),
-        spike_prob=rng.uniform(0, 10, (n_time, n_cells)),
-        hpd_overlap_threshold=3.0,
-        kl_divergence_threshold=2.0,
-        spike_prob_threshold=5.0,
-    )
-
-
-@pytest.mark.parametrize(
-    "extra_kwargs",
-    [
-        {},
-        {"remap_window": (20, 40)},
-        {"phase_boundaries": (30, 70)},
-    ],
-    ids=["base", "remap_window", "phase_boundaries"],
-)
-def test_plot_transformed_returns_figure(extra_kwargs: dict[str, Any]) -> None:
-    rng = np.random.default_rng(42)
-    n_time, n_bins, n_cells = 100, 50, 5
-    xs = np.linspace(0, 1, n_bins)
-    x_true = rng.uniform(0, n_bins - 1, n_time)
-    posterior = rng.dirichlet(np.ones(n_bins), size=n_time)
-    transformed = _make_transformed(rng, n_time, n_cells)
-
-    fig = plot_transformed(xs, x_true, posterior, transformed, **extra_kwargs)
-    try:
-        assert isinstance(fig, plt.Figure)
-        assert len(fig.axes) >= 4
-    finally:
-        plt.close(fig)
-
-
-# ---------------------------------------------------------------------------
 # plot_misfit_examples
 # ---------------------------------------------------------------------------
 
@@ -301,13 +229,11 @@ def test_plot_combined_diagnostics_runs(
     n_time: int, n_bins: int, n_cells: int, thresholds_default: Thresholds
 ) -> None:
     rng = np.random.default_rng(42)
-    xs = np.linspace(0, 1, n_bins)
     x_true = rng.uniform(0, n_bins - 1, n_time)
     bundle = _combined_metrics(rng, n_time, n_bins, n_cells)
     params = _params_for_short_run(n_time, n_cells)
 
     fig = plot_combined_diagnostics(
-        xs,
         x_true,
         bundle["spikes"],
         bundle["metrics"],
@@ -326,7 +252,6 @@ def test_plot_combined_diagnostics_uses_event_diagnostics_for_scatter() -> None:
     show each event independently — not collapse to the matrix value."""
     rng = np.random.default_rng(42)
     n_time, n_bins, n_cells = 3500, 30, 2
-    xs = np.linspace(0, 1, n_bins)
     x_true = rng.uniform(0, n_bins - 1, n_time)
     spikes = np.zeros((n_time, n_cells), dtype=int)
     spikes[10, 0] = 2
@@ -357,7 +282,6 @@ def test_plot_combined_diagnostics_uses_event_diagnostics_for_scatter() -> None:
     params = _params_for_short_run(n_time, n_cells)
 
     fig = plot_combined_diagnostics(
-        xs,
         x_true,
         spikes,
         metrics,

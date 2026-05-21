@@ -360,35 +360,21 @@ class MisfitWindow:
         Replaces the baseline Gaussian place-field rate table used to
         form the posterior-update likelihood (and the displayed per-spike
         likelihood). Used by the remap misfit (remapped place fields).
-    diagnostic_rates : np.ndarray, shape (n_bins, n_cells), optional
-        Replaces the rate table the *diagnostics* judge spikes against.
-        Leave ``None`` for a misfit that perturbs the world the decoder
-        observes but not the decoder's own model — for remapping, the
-        diagnostic should still reference the model's intended Gaussian
-        place fields, so it correctly flags the mismatch. Set it (equal
-        to ``decoder_rates``) only for a misfit that redefines what the
-        decoder's model *is*. No current ``MisfitSchedule`` in the
-        figure-3 pipeline sets this field; it is reserved for
-        hypothetical future misfits whose rate table the diagnostic
-        should also adopt rather than judging against the original.
-
-        Setting this without also setting ``decoder_rates`` is rejected
-        at construction — the diagnostic would judge spikes against a
-        table the decoder never used.
+        Diagnostics continue to judge spikes against the model's
+        intended Gaussian PFs, so the mismatch surfaces.
 
     Raises
     ------
     ValueError
-        If ``start >= end``; if a supplied rate table contains negative
-        or non-finite entries; or if ``diagnostic_rates`` is set with
-        ``decoder_rates=None``.
+        If ``start >= end`` or if ``decoder_rates`` contains negative or
+        non-finite entries.
 
     Notes
     -----
-    Supplied ``transition_matrix``, ``decoder_rates``, and
-    ``diagnostic_rates`` are copied at construction and marked
-    write-protected via ``setflags(write=False)``, extending the
-    dataclass's ``frozen=True`` invariant to the array contents.
+    Supplied ``transition_matrix`` and ``decoder_rates`` are copied at
+    construction and marked write-protected via ``setflags(write=False)``,
+    extending the dataclass's ``frozen=True`` invariant to the array
+    contents.
 
     Shape parity with the decoder's grid is checked by
     :meth:`validate_against`, which the decoder calls once per
@@ -403,25 +389,19 @@ class MisfitWindow:
     >>> import numpy as np
     >>> remapped = np.full((5, 3), 0.1)
     >>> w = MisfitWindow(10, 20, decoder_rates=remapped)
-    >>> w.start, w.end, w.diagnostic_rates is None
-    (10, 20, True)
+    >>> w.start, w.end
+    (10, 20)
     """
 
     start: int
     end: int
     transition_matrix: NDArray[np.floating] | None = None
     decoder_rates: NDArray[np.floating] | None = None
-    diagnostic_rates: NDArray[np.floating] | None = None
 
     def __post_init__(self) -> None:
         """Validate the window bounds and any supplied rate tables.
 
-        Beyond the basic ``start < end`` and finite/non-negative
-        checks, this also (a) rejects the nonsense configuration of
-        ``diagnostic_rates`` set with ``decoder_rates=None`` — there's
-        no meaningful misfit there, just a diagnostic judging spikes
-        against a rate table the decoder never used; (b) makes a
-        write-protected copy of any supplied rate table so the
+        Makes a write-protected copy of any supplied table so the
         ``frozen=True`` invariant extends to the array contents, not
         just the dataclass field bindings.
         """
@@ -431,39 +411,19 @@ class MisfitWindow:
         # A negative or non-finite rate table would become NaN once it
         # reaches ``poisson.pmf`` and propagate silently through the
         # posterior — reject it at construction.
-        for name in ("decoder_rates", "diagnostic_rates"):
-            table = getattr(self, name)
-            if table is not None and not (np.all(np.isfinite(table)) and np.all(table >= 0.0)):
-                raise ValueError(f"MisfitWindow.{name} must be finite and non-negative everywhere")
-
-        # diagnostic_rates without decoder_rates is incoherent. Either
-        # the diagnostic should reference the model's intended rates
-        # (decoder_rates=None, diagnostic_rates=None) or the misfit
-        # redefines the model (decoder_rates set, diagnostic_rates set
-        # — typically to the same table). Setting only diagnostic_rates
-        # would have the diagnostic judge spikes against a table the
-        # decoder never used, which is nonsense.
-        if self.diagnostic_rates is not None and self.decoder_rates is None:
+        if self.decoder_rates is not None and not (
+            np.all(np.isfinite(self.decoder_rates)) and np.all(self.decoder_rates >= 0.0)
+        ):
             raise ValueError(
-                "MisfitWindow.diagnostic_rates is set but decoder_rates is None — "
-                "the diagnostic would judge spikes against a rate table the "
-                "decoder never used. Set both fields (typically to the same "
-                "array) for a misfit that redefines the decoder's model, or "
-                "leave both None and let the diagnostic reference the original "
-                "Gaussian PFs (e.g. remap, where only decoder_rates is set)."
+                "MisfitWindow.decoder_rates must be finite and non-negative everywhere"
             )
 
-        # Write-protect any supplied rate tables. A frozen dataclass
-        # only prevents rebinding ``self.decoder_rates``; the underlying
+        # Write-protect any supplied tables. A frozen dataclass only
+        # prevents rebinding ``self.decoder_rates``; the underlying
         # ndarray is still mutable. Take a defensive copy and mark it
         # read-only so callers can't bypass the validation above by
-        # mutating in place after construction. The copy runs even when
-        # the input is already read-only — otherwise the dataclass
-        # would alias the caller's view, which (despite the read-only
-        # flag) shares memory and ties the window's lifetime to
-        # something the caller might unflag later via
-        # ``setflags(write=True)``.
-        for name in ("transition_matrix", "decoder_rates", "diagnostic_rates"):
+        # mutating in place after construction.
+        for name in ("transition_matrix", "decoder_rates"):
             table = getattr(self, name)
             if table is None:
                 continue
@@ -476,35 +436,27 @@ class MisfitWindow:
 
         Shape parity with the decoder's position grid and cell count
         can't be checked at construction time because the schedule may
-        be built before the decoder's ``xs`` is pinned down (e.g.
-        scripts that construct the schedule, then pass it through to
-        ``decode_and_diagnostics`` which knows ``n_bins``). Call this
-        once per schedule entry inside the decoder, before any window
-        is consulted.
+        be built before the decoder's ``xs`` is pinned down. Call this
+        once per schedule entry inside the decoder.
 
         Parameters
         ----------
         n_bins : int
-            Number of position bins in the decoder's grid
-            (``xs.size``).
+            Number of position bins in the decoder's grid (``xs.size``).
         n_cells : int
             Number of cells in the spike train (``spikes.shape[1]``).
 
         Raises
         ------
         ValueError
-            If any supplied rate table's shape doesn't equal
-            ``(n_bins, n_cells)``.
+            If ``decoder_rates`` shape doesn't equal ``(n_bins, n_cells)``,
+            or ``transition_matrix`` shape doesn't equal ``(n_bins, n_bins)``.
         """
-        for name in ("decoder_rates", "diagnostic_rates"):
-            table = getattr(self, name)
-            if table is None:
-                continue
-            if table.shape != (n_bins, n_cells):
-                raise ValueError(
-                    f"MisfitWindow.{name} shape {table.shape} does not "
-                    f"match decoder grid ({n_bins}, {n_cells})."
-                )
+        if self.decoder_rates is not None and self.decoder_rates.shape != (n_bins, n_cells):
+            raise ValueError(
+                f"MisfitWindow.decoder_rates shape {self.decoder_rates.shape} does not "
+                f"match decoder grid ({n_bins}, {n_cells})."
+            )
         if self.transition_matrix is not None and self.transition_matrix.shape != (
             n_bins,
             n_bins,
@@ -958,56 +910,18 @@ def decode_and_diagnostics(
     spike_time_ind = spike_time_ind + 1  # Adjust for offset from [1:]
     n_spikes = len(spike_time_ind)
 
-    # Diagnostics. Each spike event is judged against a rate table: the
-    # baseline Gaussian-PF ``rates`` unless it falls in a misfit window
-    # whose ``diagnostic_rates`` is set. ``rates`` is the *model's*
-    # intended likelihood — during remapping the decoder updates the
-    # posterior with remapped fields but the diagnostic still references
-    # the original fields (``diagnostic_rates`` is ``None`` for remap),
-    # so the diagnostic correctly flags the mismatch. A misfit that
-    # redefines the model itself would set ``diagnostic_rates`` so its
-    # events are judged against that table.
-    # ``compute_per_cell_diagnostics_from_rates`` takes a single rate
-    # table, so group events by table, diagnose each group, and merge.
-    diag_tables: list[NDArray[np.floating]] = [rates]
-    event_group: NDArray[np.intp] = np.zeros(n_spikes, dtype=np.intp)
-    for window in misfit_schedule.windows:
-        if window.diagnostic_rates is None:
-            continue
-        in_window = (spike_time_ind >= window.start) & (spike_time_ind < window.end)
-        if not np.any(in_window):
-            continue
-        diag_tables.append(window.diagnostic_rates)
-        event_group[in_window] = len(diag_tables) - 1
-
-    if len(diag_tables) == 1:
-        diagnostics = compute_per_cell_diagnostics_from_rates(
-            predictive_posterior,
-            rates,
-            spike_time_ind,
-            spike_cell_ind,
-            coverage=0.95,
-        )
-    else:
-        per_group = [
-            compute_per_cell_diagnostics_from_rates(
-                predictive_posterior,
-                table,
-                spike_time_ind[event_group == group],
-                spike_cell_ind[event_group == group],
-                coverage=0.95,
-                include_dense_matrices=False,
-            )
-            for group, table in enumerate(diag_tables)
-        ]
-        diagnostics = _merge_diagnostics(
-            n_time=n_time,
-            n_cells=rates.shape[1],
-            spike_time_ind=spike_time_ind,
-            spike_cell_ind=spike_cell_ind,
-            event_group=event_group,
-            per_group=per_group,
-        )
+    # Diagnostics. Every spike event is judged against the baseline
+    # Gaussian-PF ``rates`` — the model's intended likelihood. During
+    # remapping the decoder updates the posterior with remapped fields
+    # but the diagnostic still references the original fields, so the
+    # mismatch surfaces.
+    diagnostics = compute_per_cell_diagnostics_from_rates(
+        predictive_posterior,
+        rates,
+        spike_time_ind,
+        spike_cell_ind,
+        coverage=0.95,
+    )
 
     # Per-spike likelihoods from the DECODER's actual rate table — for
     # display in the likelihood panel. Baseline Gaussian-PF rates, then
@@ -1050,87 +964,6 @@ def decode_and_diagnostics(
 # -----------------------------
 # Per-cell diagnostics (shared logic)
 # -----------------------------
-
-
-def _merge_diagnostics(
-    *,
-    n_time: int,
-    n_cells: int,
-    spike_time_ind: NDArray[np.intp],
-    spike_cell_ind: NDArray[np.intp],
-    event_group: NDArray[np.intp],
-    per_group: list[dict[str, NDArray[np.floating] | NDArray[np.intp]]],
-) -> dict[str, NDArray[np.floating] | NDArray[np.intp]]:
-    """Merge per-event diagnostic batches computed against different rate
-    tables into a single result dict.
-
-    The merged dict has the keys of the
-    ``include_dense_matrices=True`` result of
-    :func:`compute_per_cell_diagnostics_from_rates` *except*
-    ``per_spike_likelihood`` — that key is supplied separately by the
-    caller (``decode_and_diagnostics`` builds its own per-spike
-    likelihood from the decoder's rate table).
-
-    Used when the diagnostic rate table differs across the timeline
-    because the :class:`MisfitSchedule` has windows with
-    ``diagnostic_rates`` set.
-
-    Parameters
-    ----------
-    event_group : np.ndarray, shape (n_spikes,)
-        For each spike event, the index of the rate-table group it was
-        diagnosed under. ``per_group[event_group[i]]`` is the diagnostic
-        batch containing event ``i``.
-    per_group : list of dict
-        One ``compute_per_cell_diagnostics_from_rates(...,
-        include_dense_matrices=False)`` result per group, group ``g``
-        computed on the events with ``event_group == g`` (boolean-mask
-        indexing preserves order, so scattering back via the same mask
-        reassembles events in their original order).
-    """
-    n_spikes = spike_time_ind.shape[0]
-    if event_group.shape[0] != n_spikes:
-        raise ValueError(f"event_group length {event_group.shape[0]} != n_spikes {n_spikes}")
-
-    event_hpd_overlap = np.empty(n_spikes)
-    event_kl_divergence = np.empty(n_spikes)
-    event_spike_prob = np.empty(n_spikes)
-    for group, diag in enumerate(per_group):
-        sel = event_group == group
-        expected = int(sel.sum())
-        got = diag["event_hpd_overlap"].shape[0]
-        if got != expected:
-            raise ValueError(f"group {group} has {got} events but the mask expects {expected}")
-        event_hpd_overlap[sel] = diag["event_hpd_overlap"]
-        event_kl_divergence[sel] = diag["event_kl_divergence"]
-        event_spike_prob[sel] = diag["event_spike_prob"]
-
-    # Scatter per-event values into the dense (n_time, n_cells) matrices.
-    # A bin with count k > 1 contributes k repeated (time, cell) index
-    # pairs, so the dense matrix keeps the last writer for that cell —
-    # safe here because per-event diagnostics for repeated same-(t, c)
-    # spikes are identical by construction (same predictive row, same
-    # cell rate). This mirrors the dense-matrix behavior of
-    # ``compute_per_cell_diagnostics_from_rates``.
-    hpd_overlap = np.full((n_time, n_cells), np.nan)
-    kl_divergence = np.full((n_time, n_cells), np.nan)
-    spike_prob = np.full((n_time, n_cells), np.nan)
-    hpd_overlap[spike_time_ind, spike_cell_ind] = event_hpd_overlap
-    kl_divergence[spike_time_ind, spike_cell_ind] = event_kl_divergence
-    spike_prob[spike_time_ind, spike_cell_ind] = event_spike_prob
-
-    return {
-        "spike_time_ind": spike_time_ind,
-        "spike_cell_ind": spike_cell_ind,
-        "event_time_ind": spike_time_ind,
-        "event_cell_ind": spike_cell_ind,
-        "event_hpd_overlap": event_hpd_overlap,
-        "event_kl_divergence": event_kl_divergence,
-        "event_spike_prob": event_spike_prob,
-        "hpd_overlap": hpd_overlap,
-        "kl_divergence": kl_divergence,
-        "spike_prob": spike_prob,
-    }
 
 
 def compute_per_cell_diagnostics_from_rates(

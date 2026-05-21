@@ -36,20 +36,6 @@ from statespacecheck_paper.real_data_plotting import (
 )
 from statespacecheck_paper.style import save_figure, set_figure_defaults
 
-# Check for optional decoder dependencies
-try:
-    import non_local_detector  # noqa: F401
-
-    DECODERS_AVAILABLE = True
-except ImportError:
-    DECODERS_AVAILABLE = False
-    warnings.warn(
-        "non_local_detector not available. Figure 4 requires fitted decoder models. "
-        "Install with: pip install non_local_detector",
-        stacklevel=2,
-    )
-
-
 # -----------------------------
 # Configuration
 # -----------------------------
