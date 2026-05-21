@@ -51,13 +51,14 @@ class TestNormalize:
 
 
 class TestSoftmaxWithShift:
-    """The all-``-inf`` fallback at simulation.py:57-58 is load-bearing
-    in the decoder pipeline: ``_condition_on`` relies on it for the
-    "all bins underflowed in linear space" case and would otherwise
-    return NaN. Pin the contract directly so a future refactor that
-    drops the guard fails here, not silently in the decoder."""
+    """The all-``-inf`` fallback is load-bearing in the decoder pipeline:
+    ``_condition_on`` relies on it for the "all bins underflowed in
+    linear space" case and would otherwise return NaN."""
 
     def test_all_neg_inf_returns_uniform(self) -> None:
+        """Sole direct cover for the ``not np.isfinite(lmax)`` branch.
+        Reverting the branch makes ``softmax_with_shift`` return NaN
+        on all-``-inf`` input (``exp(-inf - -inf) = exp(nan)``)."""
         ll = np.full(8, -np.inf)
         result = softmax_with_shift(ll)
         assert result.shape == (8,)
@@ -65,10 +66,9 @@ class TestSoftmaxWithShift:
         assert_allclose(result.sum(), 1.0)
 
     def test_single_finite_entry_concentrates_mass(self) -> None:
-        """One finite entry among ``-inf``s is the maximally-discriminative
-        observation: the softmax assigns probability 1 to that bin and
-        zero everywhere else. Catches a regression where the shift was
-        applied but the uniform fallback ran anyway."""
+        """Contract test for the normal (shift-applied) path on input
+        with one finite entry — the shift makes the finite entry's
+        ``exp(0) = 1`` dominate and the result is one-hot."""
         ll = np.full(8, -np.inf)
         ll[3] = 0.0
         result = softmax_with_shift(ll)

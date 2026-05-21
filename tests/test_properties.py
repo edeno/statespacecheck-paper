@@ -103,11 +103,9 @@ class TestReflectIntoIntervalProperties:
 
 
 class TestSoftmaxWithShiftProperties:
-    """``softmax_with_shift`` is the numerical primitive at the heart of
-    the log-space decoder update. Three invariants define it
-    operationally; any future "simplification" that breaks numerical
-    stability or normalization fails one of them.
-    """
+    """``softmax_with_shift`` properties: sums to 1, shift-invariant,
+    all outputs non-negative. Any future "simplification" that breaks
+    numerical stability or normalization fails one of these."""
 
     @given(
         ll=arrays(
@@ -135,10 +133,9 @@ class TestSoftmaxWithShiftProperties:
     def test_shift_invariant(self, ll: np.ndarray, c: float) -> None:
         """Adding a constant to every log-likelihood leaves the
         distribution unchanged — the load-bearing identity of the
-        log-sum-exp trick. The bounded ``c`` range stays within float64
-        headroom; the function's documented purpose is to handle
-        unbounded ``ll`` via the internal shift, but the *property*
-        only holds when adding ``c`` doesn't overflow."""
+        log-sum-exp trick. Bounds keep ``ll + c`` within float64
+        headroom; for unbounded inputs the function's internal shift
+        still works but the equality property would not hold."""
         np.testing.assert_allclose(
             softmax_with_shift(ll), softmax_with_shift(ll + c), rtol=1e-10, atol=1e-12
         )

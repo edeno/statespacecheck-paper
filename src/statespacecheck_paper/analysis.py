@@ -1070,10 +1070,12 @@ def compute_per_cell_diagnostics_from_rates(
         # ``cell_fraction_per_bin[x, c] = p(cell c | bin x, spike happened)``.
         # Bins where every cell has zero rate (sparse real-data coverage
         # away from any PF) would trigger ``normalize``'s near-zero
-        # warning and produce a meaningless near-zero row. Use a uniform
-        # ``1/n_cells`` fallback on those rows so the rank statistic
-        # treats them as non-discriminative rather than handing
-        # ``hpd_overlap``/``kl_divergence`` a non-distribution.
+        # warning and produce a non-discriminative near-zero row in
+        # ``cell_fraction_per_bin``. Use a uniform ``1/n_cells`` fallback
+        # so the rank statistic (and therefore ``event_spike_prob``)
+        # treats those bins as non-informative. Note this branch does
+        # not protect ``event_hpd_overlap`` / ``event_kl_divergence``,
+        # which consume the per-cell Poisson ``lik_chunk`` directly.
         row_sums = rates.sum(axis=1, keepdims=True)
         zero_rows = row_sums.squeeze(-1) <= 1e-12
         safe_row_sums = np.where(row_sums > 1e-12, row_sums, 1.0)
