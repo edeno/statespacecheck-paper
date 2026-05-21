@@ -15,6 +15,7 @@ from statespacecheck_paper.analysis import (
     Thresholds,
     Transformed,
     _condition_on,
+    compute_per_cell_diagnostics_from_rates,
     compute_thresholds,
     decode_and_diagnostics,
     get_remapped_pf_centers,
@@ -734,6 +735,87 @@ class TestDecodeAndDiagnosticsLogSpace:
             f"under sustained firing at PF centers (88, 92)."
         )
 
+    def test_underflow_emits_summary_warning(self) -> None:
+        """The per-step ``_condition_on`` ``-inf`` path is covered by
+        ``TestConditionOn``; the *summary* warning emitted post-loop
+        is not asserted anywhere. Force the underflow regime via a
+        place-field center so far from the decoder grid that every
+        bin's rate underflows to 0.0."""
+        n_time, n_cells, n_bins = 8, 1, 21
+        xs = np.linspace(0.0, 100.0, n_bins)
+        transition_matrix = gaussian_transition_matrix(xs, sig=2.0)
+        # PF center so far from xs that exp(-d^2 / 2*pf_width^2)
+        # underflows to exactly 0.0 — every bin's rate is 0.0.
+        pf_centers = np.array([1e6])
+        spikes = np.ones((n_time, n_cells), dtype=np.int_)
+
+        with pytest.warns(
+            RuntimeWarning,
+            match=r"prior/likelihood overlap underflowed at \d+ timestep",
+        ):
+            decode_and_diagnostics(
+                spikes, xs, transition_matrix, pf_centers, pf_width=5.0, rate_scale=1.0
+            )
+
+
+# ---------------------------------------------------------------------------
+# compute_per_cell_diagnostics_from_rates
+# ---------------------------------------------------------------------------
+
+
+class TestComputePerCellDiagnosticsFromRates:
+    """Direct tests for the per-cell diagnostics helper. The
+    zero-rate-row uniform-fallback branch fills ``1/n_cells`` on bins
+    where every cell's expected rate is zero (sparse real-data
+    coverage); only ``event_spike_prob`` depends on it.
+    """
+
+    def test_zero_rate_row_yields_uniform_rank(self) -> None:
+        """With one zero-rate row and otherwise-constant rates, every
+        cell becomes indistinguishable in rank-contribution — so
+        ``event_spike_prob`` is exactly 1.0 (max rank, all cells tied).
+        Reverting the uniform fallback lets the zero row reach
+        ``normalize`` and produces a non-uniform contribution column;
+        ``event_spike_prob`` drops to a strictly-less-than-1 value.
+        """
+        n_time, n_bins, n_cells = 10, 5, 3
+        rng = np.random.default_rng(0)
+        predictive = rng.dirichlet(np.ones(n_bins), size=n_time)
+
+        rates = np.full((n_bins, n_cells), 0.5)
+        rates[2, :] = 0.0  # the previously-broken path
+
+        spike_time_ind = np.array([0, 1, 5], dtype=np.intp)
+        spike_cell_ind = np.array([0, 1, 2], dtype=np.intp)
+
+        result = compute_per_cell_diagnostics_from_rates(
+            predictive, rates, spike_time_ind, spike_cell_ind, coverage=0.95
+        )
+        # The uniform fallback makes every cell contribute equally;
+        # max rank = 1.0 for every event. Without the fix, the zero
+        # row produces a [0, 0, 0] cell_fraction column and the
+        # downstream rank computation yields ~0.6-0.99 instead.
+        np.testing.assert_allclose(result["event_spike_prob"], 1.0, atol=1e-12)
+
+    def test_fully_degenerate_rates_yield_uniform_rank(self) -> None:
+        """Pathological case: every rate row is zero. With the uniform
+        fallback every bin in ``cell_fraction_per_bin`` becomes
+        ``1/n_cells``, so the rank statistic gives 1.0 (uniform tie).
+        Reverting the fallback lets normalize's eps-clamp produce a
+        zero ``cell_fraction``; the rank then yields exactly 0.0,
+        which would be silently indistinguishable from a real
+        "spike fully predicted" outcome on a healthy bin.
+        """
+        n_time, n_bins, n_cells = 5, 3, 2
+        predictive = np.full((n_time, n_bins), 1.0 / n_bins)
+        rates = np.zeros((n_bins, n_cells))
+        spike_time_ind = np.array([0], dtype=np.intp)
+        spike_cell_ind = np.array([0], dtype=np.intp)
+        result = compute_per_cell_diagnostics_from_rates(
+            predictive, rates, spike_time_ind, spike_cell_ind, coverage=0.95
+        )
+        np.testing.assert_allclose(result["event_spike_prob"], 1.0, atol=1e-12)
+
 
 # ---------------------------------------------------------------------------
 # Phase 2 invariants: phase_boundaries tuple, MisfitWindow tightening
@@ -924,6 +1006,29 @@ class TestSimulationResultDataclass:
                 metrics={},
                 phase_labels=PHASE_LABELS,
                 phase_boundaries=(1, 2, 3, 4, 5, 6, 7, n_time + 1),
+            )
+
+    def test_metrics_with_wrong_time_indexed_leading_dim_raises(self) -> None:
+        """The ``TIME_INDEXED_METRIC_KEYS`` loop in ``__post_init__``
+        rejects a dense metric array whose leading dim doesn't match
+        ``x_true``'s timeline. Reverting that loop lets a mis-shaped
+        ``posterior`` slip through and the figure-3 pipeline runs with
+        misaligned indices."""
+        n_bins = 5
+        n_time = 10
+        # Wrong leading dim: posterior is one row longer than x_true.
+        bad_metrics: dict[str, np.ndarray] = {
+            "posterior": np.zeros((n_time + 1, n_bins)),
+        }
+        with pytest.raises(ValueError, match=r"metrics\['posterior'\] has leading dim"):
+            SimulationResult(
+                params=DecodeParams(),
+                xs=np.linspace(0.0, 100.0, n_bins),
+                x_true=np.zeros(n_time),
+                spikes=np.zeros((n_time, 1), dtype=np.int_),
+                metrics=bad_metrics,
+                phase_labels=PHASE_LABELS,
+                phase_boundaries=(1, 2, 3, 4, 5, 6, 7, n_time),
             )
 
 

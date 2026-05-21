@@ -16,6 +16,7 @@ from statespacecheck_paper.simulation import (
     simulate_spikes_history_dependent,
     simulate_spikes_position_tuned,
     simulate_walk,
+    softmax_with_shift,
     spike_prob_rank,
 )
 
@@ -42,6 +43,38 @@ class TestNormalize:
         with pytest.warns(RuntimeWarning, match="normalize: input sum"):
             result = normalize(np.zeros(5))
         assert np.isfinite(result).all()
+
+
+# ---------------------------------------------------------------------------
+# softmax_with_shift
+# ---------------------------------------------------------------------------
+
+
+class TestSoftmaxWithShift:
+    """The all-``-inf`` fallback is load-bearing in the decoder pipeline:
+    ``_condition_on`` relies on it for the "all bins underflowed in
+    linear space" case and would otherwise return NaN."""
+
+    def test_all_neg_inf_returns_uniform(self) -> None:
+        """Sole direct cover for the ``not np.isfinite(lmax)`` branch.
+        Reverting the branch makes ``softmax_with_shift`` return NaN
+        on all-``-inf`` input (``exp(-inf - -inf) = exp(nan)``)."""
+        ll = np.full(8, -np.inf)
+        result = softmax_with_shift(ll)
+        assert result.shape == (8,)
+        assert_allclose(result, np.full(8, 1.0 / 8))
+        assert_allclose(result.sum(), 1.0)
+
+    def test_single_finite_entry_concentrates_mass(self) -> None:
+        """Contract test for the normal (shift-applied) path on input
+        with one finite entry — the shift makes the finite entry's
+        ``exp(0) = 1`` dominate and the result is one-hot."""
+        ll = np.full(8, -np.inf)
+        ll[3] = 0.0
+        result = softmax_with_shift(ll)
+        assert result[3] == 1.0
+        assert_allclose(np.delete(result, 3), 0.0)
+        assert_allclose(result.sum(), 1.0)
 
 
 # ---------------------------------------------------------------------------
