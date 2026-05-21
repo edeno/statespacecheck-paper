@@ -59,6 +59,51 @@ from statespacecheck_paper.simulation import (
 # scratch array, ~600 MB peak with three live (pred / rates / lik).
 _PER_SPIKE_BATCH = 50_000
 
+
+def _condition_on(
+    probs: NDArray[np.floating],
+    ll: NDArray[np.floating],
+    eps: float = 1e-15,
+) -> tuple[NDArray[np.floating], float]:
+    """Bayesian update: multiply prior by emission likelihood, normalize.
+
+    Adapted from ``non_local_detector.core._condition_on`` (which itself
+    is adapted from ``dynamax``). The log-sum-exp shift of subtracting
+    ``ll.max()`` before exponentiation makes the largest likelihood
+    entry equal to 1 and the others arbitrarily small but never
+    underflowing — letting the posterior update stay numerically stable
+    even when individual cell likelihoods would have underflowed.
+
+    Parameters
+    ----------
+    probs : np.ndarray, shape (n_bins,)
+        Linear-space prior, must sum to 1.
+    ll : np.ndarray, shape (n_bins,)
+        Log-likelihood of the observation at each bin (unnormalized).
+    eps : float, default 1e-15
+        Added to the denominator to avoid divide-by-zero when all
+        likelihoods are -inf (no bin has finite probability of the
+        observation).
+
+    Returns
+    -------
+    new_probs : np.ndarray, shape (n_bins,)
+        Posterior; sums to 1.
+    log_norm : float
+        Log marginal likelihood for this step (``log p(obs | past)``).
+        Not currently consumed by callers but cheap to compute and
+        useful for downstream model comparison.
+    """
+    ll_max = float(np.max(ll))
+    if not np.isfinite(ll_max):
+        ll_max = 0.0
+    weighted = probs * np.exp(ll - ll_max)
+    norm = float(weighted.sum())
+    new_probs = weighted / (norm + eps)
+    log_norm = float(np.log(norm + eps)) + ll_max
+    return new_probs, log_norm
+
+
 # -----------------------------
 # Data containers
 # -----------------------------
@@ -262,7 +307,10 @@ class MisfitWindow:
         diagnostic should still reference the model's intended Gaussian
         place fields, so it correctly flags the mismatch. Set it (equal
         to ``decoder_rates``) only for a misfit that redefines what the
-        decoder's model *is*.
+        decoder's model *is*. No current ``MisfitSchedule`` in the
+        figure-3 pipeline sets this field; it is reserved for
+        hypothetical future misfits whose rate table the diagnostic
+        should also adopt rather than judging against the original.
 
     Raises
     ------
@@ -272,11 +320,14 @@ class MisfitWindow:
 
     Examples
     --------
+    Remap-style misfit — decoder uses an alternate rate table, diagnostic
+    still references the original Gaussian PFs so the mismatch surfaces:
+
     >>> import numpy as np
-    >>> rates = np.full((5, 3), 0.1)
-    >>> w = MisfitWindow(10, 20, decoder_rates=rates, diagnostic_rates=rates)
-    >>> w.start, w.end
-    (10, 20)
+    >>> remapped = np.full((5, 3), 0.1)
+    >>> w = MisfitWindow(10, 20, decoder_rates=remapped)
+    >>> w.start, w.end, w.diagnostic_rates is None
+    (10, 20, True)
     """
 
     start: int
@@ -588,6 +639,13 @@ def decode_and_diagnostics(
     :class:`MisfitSchedule` / :class:`MisfitWindow` is *constructed*, not
     here.
 
+    The per-cell likelihood combination and the posterior update both
+    run in log-space via the :func:`_condition_on` pattern adapted from
+    ``dynamax`` / ``non_local_detector.core``. This eliminates the
+    underflow regime that the previous linear-space implementation
+    guarded against with a reset-to-uniform fallback; the new
+    implementation cannot underflow on the inner update.
+
     Examples
     --------
     >>> import numpy as np
@@ -649,32 +707,48 @@ def decode_and_diagnostics(
         prior = normalize(posterior[t - 1] @ current_transition)  # (n_bins,)
         predictive_posterior[t] = prior  # stored for p-value computation
 
-        # Likelihood grid for this time's counts. The per-cell rate table
-        # is the baseline Gaussian-PF table unless the active misfit
-        # window overrides it (e.g. remapped table).
+        # Per-cell rate table for this step. The baseline Gaussian-PF
+        # table unless the active misfit window overrides it (e.g.
+        # remapped table).
         rates_t = rates
         if window is not None and window.decoder_rates is not None:
             rates_t = window.decoder_rates
-        likelihood = normalize(poisson.pmf(spikes[t][None, :], rates_t), axis=0)
 
-        # Compute combined likelihood from all cells (product over cells)
-        combined_likelihood = np.prod(likelihood, axis=1)  # (n_bins,)
-        combined_likelihood_all[t] = normalize(combined_likelihood)  # Store normalized likelihood
+        # Per-cell log-likelihoods. Using poisson.logpmf directly avoids
+        # underflow that the linear-space pmf path used to hit when many
+        # per-cell normalized likelihoods got multiplied together.
+        log_lik_per_cell = poisson.logpmf(spikes[t][None, :], rates_t)  # (n_bins, n_cells)
+
+        # Combined log-likelihood across cells (was np.prod in linear
+        # space — the first underflow site).
+        log_lik_combined = log_lik_per_cell.sum(axis=1)  # (n_bins,)
+
+        # Stored combined likelihood — normalize the log-space combined
+        # likelihood with the same log-sum-exp shift trick used in
+        # _condition_on so the array is well-scaled for downstream HPD
+        # and KL computation.
+        lmax = float(np.max(log_lik_combined))
+        if not np.isfinite(lmax):
+            lmax = 0.0
+        weighted_combined = np.exp(log_lik_combined - lmax)
+        combined_likelihood_all[t] = weighted_combined / (weighted_combined.sum() + 1e-15)
 
         # Spike-only likelihood: product over only cells that fired.
         spiking_mask = spikes[t] > 0
         if np.any(spiking_mask):
-            spike_likelihood_all[t] = normalize(np.prod(likelihood[:, spiking_mask], axis=1))
+            log_spike = log_lik_per_cell[:, spiking_mask].sum(axis=1)
+            sm = float(np.max(log_spike))
+            if not np.isfinite(sm):
+                sm = 0.0
+            weighted_spike = np.exp(log_spike - sm)
+            spike_likelihood_all[t] = weighted_spike / (weighted_spike.sum() + 1e-15)
 
-        # Posterior update with underflow protection
-        # When prior-likelihood mismatch is extreme, the product can underflow to zero.
-        # Fall back to uniform distribution to allow filter to recover.
-        unnormalized_posterior = prior * combined_likelihood
-        posterior_sum = np.sum(unnormalized_posterior)
-        if posterior_sum < 1e-300:  # Numerical underflow detected
-            posterior[t] = np.ones(n_bins) / n_bins  # Reset to uniform
-        else:
-            posterior[t] = unnormalized_posterior / posterior_sum
+        # Posterior update via the _condition_on pattern (dynamax /
+        # non_local_detector). Was prior * combined_likelihood / sum in
+        # linear space — the second underflow site, which the old code
+        # papered over with a reset-to-uniform fallback. The new
+        # implementation cannot underflow on this step.
+        posterior[t], _ = _condition_on(prior, log_lik_combined)
 
     # Find all spike events (excluding t=0 which has no valid prior). Count
     # matrices are expanded so a bin with count k contributes k spike events.

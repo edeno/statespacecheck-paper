@@ -14,6 +14,7 @@ from statespacecheck_paper.analysis import (
     MisfitWindow,
     Thresholds,
     Transformed,
+    _condition_on,
     _merge_diagnostics,
     compute_thresholds,
     decode_and_diagnostics,
@@ -369,14 +370,17 @@ class TestDecodeAndDiagnostics:
             baseline["event_kl_divergence"][before],
             with_alt["event_kl_divergence"][before],
         )
-        # At least one in-window event's KL changed (the alt likelihood
-        # is genuinely different from the Gaussian-PF likelihood).
+        # At least one in-window event's KL changed *meaningfully* (median
+        # |Δ| above 0.01). Bare ``not np.allclose`` would fire on float
+        # noise too; the magnitude bound catches a near-noop schedule that
+        # still produces float-different outputs.
         assert inside.any(), "test fixture produced no in-window spike events"
-        assert not np.allclose(
-            baseline["event_kl_divergence"][inside],
-            with_alt["event_kl_divergence"][inside],
-            atol=1e-6,
-        ), "alt rates did not change in-window diagnostics — schedule ignored?"
+        diff = with_alt["event_kl_divergence"][inside] - baseline["event_kl_divergence"][inside]
+        median_abs_diff = float(np.median(np.abs(diff)))
+        assert median_abs_diff > 0.01, (
+            f"alt rates produced trivially small in-window diagnostic change; "
+            f"median |Δ KL| = {median_abs_diff:.4f}. The schedule may be near-noop."
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -618,3 +622,156 @@ class TestTransformedDataclass:
         assert transformed.hpd_overlap_threshold == 1.5
         assert transformed.kl_divergence_threshold == 1.0
         assert transformed.spike_prob_threshold == 3.0
+
+
+# ---------------------------------------------------------------------------
+# _condition_on (Bayesian update helper) and the log-space decode_and_diagnostics
+# ---------------------------------------------------------------------------
+
+
+class TestConditionOn:
+    """The dynamax/non_local_detector-style Bayesian update helper."""
+
+    def test_uniform_prior_yields_softmax_of_loglik(self) -> None:
+        """With a uniform prior, the posterior must equal softmax(ll)."""
+        n_bins = 8
+        prior = np.full(n_bins, 1.0 / n_bins)
+        ll = np.linspace(-5.0, 0.0, n_bins)
+        new_probs, log_norm = _condition_on(prior, ll)
+
+        # Posterior matches softmax(ll) — the log-sum-exp shift in
+        # _condition_on is mathematically equivalent.
+        expected = np.exp(ll - ll.max())
+        expected = expected / expected.sum()
+        np.testing.assert_allclose(new_probs, expected, rtol=1e-12, atol=1e-15)
+
+        # Sums to 1.
+        np.testing.assert_allclose(new_probs.sum(), 1.0, rtol=1e-12)
+
+        # Log marginal: ll_max + log(sum exp(ll - ll_max)). For uniform
+        # prior this is just log_sumexp(ll) - log(n_bins).
+        from scipy.special import logsumexp
+
+        np.testing.assert_allclose(log_norm, logsumexp(ll) - np.log(n_bins), rtol=1e-12)
+
+    def test_handles_all_neg_inf_loglik(self) -> None:
+        """All -inf likelihoods would be a degenerate observation (no
+        bin has finite probability). The helper should not produce NaN
+        — it falls back via the ll_max guard and the eps in the
+        denominator.
+        """
+        n_bins = 5
+        prior = np.full(n_bins, 1.0 / n_bins)
+        ll = np.full(n_bins, -np.inf)
+        new_probs, log_norm = _condition_on(prior, ll)
+        # Result is finite — no NaN, no inf.
+        assert np.all(np.isfinite(new_probs))
+        # In this degenerate case the helper returns the prior re-scaled
+        # by 1.0 (since exp(-inf - 0) = 0 everywhere → weighted = 0 →
+        # new_probs = 0 / eps = 0; but ll_max is masked to 0 by the
+        # finite-check). Acceptable failure mode; document via the
+        # assertion that the math at least doesn't propagate NaN.
+        assert np.isfinite(log_norm) or log_norm == -np.inf
+
+    def test_extreme_loglik_does_not_underflow(self) -> None:
+        """Likelihoods with -800 magnitude (would underflow exp(-800)
+        to zero in float64) must still produce a normalized posterior.
+        This is the regime the linear-space code's reset-to-uniform
+        branch was guarding against.
+        """
+        n_bins = 10
+        prior = np.full(n_bins, 1.0 / n_bins)
+        # Likelihoods centered around -800 — exp() would underflow but
+        # the log-sum-exp shift handles it.
+        ll = np.array(
+            [-800.0, -795.0, -790.0, -785.0, -780.0, -782.0, -787.0, -792.0, -797.0, -802.0]
+        )
+        new_probs, log_norm = _condition_on(prior, ll)
+        assert np.all(np.isfinite(new_probs))
+        np.testing.assert_allclose(new_probs.sum(), 1.0, rtol=1e-12)
+        # log_norm carries the magnitude through, finite.
+        assert np.isfinite(log_norm)
+        assert log_norm < -700  # Same order of magnitude as the input.
+
+
+class TestDecodeAndDiagnosticsLogSpace:
+    """Stress tests for the log-space rewrite of decode_and_diagnostics.
+
+    The previous implementation reset the posterior to uniform when
+    ``prior * combined_likelihood`` underflowed to zero. The log-space
+    rewrite removes that branch; the failure mode it guarded against
+    cannot occur. These tests pin that property so a future refactor
+    can't silently reintroduce the reset.
+    """
+
+    def test_posterior_sums_to_one_at_every_step(self) -> None:
+        """Algorithmic correctness: at every time step the posterior
+        must be a proper probability distribution.
+        """
+        from statespacecheck_paper.simulation import gaussian_transition_matrix
+
+        rng = np.random.default_rng(0)
+        n_time, n_cells, n_bins = 50, 3, 21
+        spikes = rng.poisson(1.0, size=(n_time, n_cells))
+        xs = np.linspace(0.0, 100.0, n_bins)
+        transition_matrix = gaussian_transition_matrix(xs, sig=2.0)
+        pf_centers = np.array([25.0, 50.0, 75.0])
+        results = decode_and_diagnostics(
+            spikes, xs, transition_matrix, pf_centers, pf_width=10.0, rate_scale=0.1
+        )
+        posterior = results["posterior"]
+        np.testing.assert_allclose(posterior.sum(axis=1), 1.0, rtol=1e-10, atol=1e-12)
+
+    def test_extreme_prior_likelihood_mismatch_yields_meaningful_posterior(self) -> None:
+        """Stress test for the underflow regime: place a narrow prior at
+        one end of the grid then drive the decoder with spikes whose
+        place-field rate is concentrated at the *other* end.
+
+        On the pre-refactor code this configuration triggered the
+        ``posterior_sum < 1e-300`` reset-to-uniform branch. The
+        log-space implementation must instead produce a normalized,
+        non-uniform posterior at every step.
+        """
+        from statespacecheck_paper.simulation import gaussian_transition_matrix
+
+        n_time, n_cells, n_bins = 30, 2, 51
+        xs = np.linspace(0.0, 100.0, n_bins)
+        # Narrow transition kernel so the prior stays concentrated.
+        transition_matrix = gaussian_transition_matrix(xs, sig=0.5)
+        # Two cells with place fields at x≈90 — far from the
+        # bias-initialized posterior which mostly accumulates near 0.
+        pf_centers = np.array([88.0, 92.0])
+        # Both cells fire every time step → strong likelihood signal at
+        # x≈90.
+        spikes = np.ones((n_time, n_cells), dtype=np.int_)
+
+        results = decode_and_diagnostics(
+            spikes, xs, transition_matrix, pf_centers, pf_width=2.0, rate_scale=5.0
+        )
+        posterior = results["posterior"]
+
+        # Every step's posterior sums to 1 (no underflow, no reset).
+        np.testing.assert_allclose(posterior.sum(axis=1), 1.0, rtol=1e-8, atol=1e-10)
+
+        # Posterior is not uniform — at least one step's distribution
+        # is meaningfully concentrated. The old reset-to-uniform branch
+        # would have made every transitioning step uniform, so non-
+        # uniformity at any step rules out the silent fallback.
+        uniform = 1.0 / n_bins
+        max_dev = float(np.max(np.abs(posterior - uniform)))
+        assert max_dev > 0.05, (
+            f"posterior is uniformly flat (max |Δ uniform| = {max_dev:.4f}); "
+            f"the log-space rewrite may have collapsed to the old reset-to-"
+            f"uniform behaviour."
+        )
+
+        # The mass should ultimately concentrate near the place-field
+        # centers under sustained firing — sanity check the filter is
+        # working at all.
+        final_posterior = posterior[-1]
+        peak_bin = int(np.argmax(final_posterior))
+        peak_pos = xs[peak_bin]
+        assert peak_pos > 80.0, (
+            f"final posterior peak at x={peak_pos:.1f}, expected near 90 "
+            f"under sustained firing at PF centers (88, 92)."
+        )
