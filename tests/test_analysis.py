@@ -15,6 +15,7 @@ from statespacecheck_paper.analysis import (
     Thresholds,
     Transformed,
     _condition_on,
+    compute_per_cell_diagnostics_from_rates,
     compute_thresholds,
     decode_and_diagnostics,
     get_remapped_pf_centers,
@@ -734,6 +735,97 @@ class TestDecodeAndDiagnosticsLogSpace:
             f"under sustained firing at PF centers (88, 92)."
         )
 
+    def test_underflow_emits_summary_warning(self) -> None:
+        """The per-step ``_condition_on`` ``-inf`` path is covered by
+        ``TestConditionOn``; the *summary* warning emitted by
+        ``decode_and_diagnostics`` post-loop is not asserted anywhere.
+
+        Force the underflow path by placing the cell's gaussian place
+        field so far from the decoder grid that every bin's rate
+        underflows to exactly 0.0. ``poisson.logpmf(k=1, mu=0) = -inf``
+        at every bin → ``ll_max = -inf`` → ``_condition_on`` returns
+        the uniform-fallback sentinel at every spike timestep.
+
+        Reverting the post-loop warning emit makes this test fail,
+        leaving the operator with no signal that some posterior steps
+        ran the uniform fallback.
+        """
+        n_time, n_cells, n_bins = 8, 1, 21
+        xs = np.linspace(0.0, 100.0, n_bins)
+        transition_matrix = gaussian_transition_matrix(xs, sig=2.0)
+        # PF center so far from xs that exp(-d^2 / 2*pf_width^2)
+        # underflows to exactly 0.0 — every bin's rate is 0.0.
+        pf_centers = np.array([1e6])
+        spikes = np.ones((n_time, n_cells), dtype=np.int_)
+
+        with pytest.warns(
+            RuntimeWarning,
+            match=r"prior/likelihood overlap underflowed at \d+ timestep",
+        ):
+            decode_and_diagnostics(
+                spikes, xs, transition_matrix, pf_centers, pf_width=5.0, rate_scale=1.0
+            )
+
+
+# ---------------------------------------------------------------------------
+# compute_per_cell_diagnostics_from_rates
+# ---------------------------------------------------------------------------
+
+
+class TestComputePerCellDiagnosticsFromRates:
+    """Direct tests for the per-cell diagnostics helper.
+
+    The zero-rate-row branch at analysis.py:1244-1249 fills uniform
+    ``1/n_cells`` on bins where every cell's expected rate is zero
+    (sparse real-data coverage). The branch was added during the
+    previous review cycle but had no direct test — the function was
+    only exercised transitively through ``decode_and_diagnostics``,
+    where synthetic Gaussian place-field rates never produce a zero
+    row.
+
+    Note: only ``event_spike_prob`` depends on ``cell_fraction_per_bin``,
+    which is what the fix protects. ``event_hpd_overlap`` and
+    ``event_kl_divergence`` compute against the per-cell Poisson
+    likelihood directly and can still be ``inf`` when the predictive
+    has mass at a bin where the cell has zero rate — that is correct
+    behavior, not the bug the zero-rate-row branch addresses.
+    """
+
+    def test_zero_rate_row_keeps_event_spike_prob_finite(self) -> None:
+        n_time, n_bins, n_cells = 10, 5, 3
+        rng = np.random.default_rng(0)
+        predictive = rng.dirichlet(np.ones(n_bins), size=n_time)
+
+        # One bin row is entirely zero — the previously-broken path.
+        rates = np.full((n_bins, n_cells), 0.5)
+        rates[2, :] = 0.0
+
+        spike_time_ind = np.array([0, 1, 5], dtype=np.intp)
+        spike_cell_ind = np.array([0, 1, 2], dtype=np.intp)
+
+        result = compute_per_cell_diagnostics_from_rates(
+            predictive, rates, spike_time_ind, spike_cell_ind, coverage=0.95
+        )
+        # Reverting the if-zero-rows-fill-uniform fix lets the zero
+        # row reach normalize() and produces a non-distribution row in
+        # cell_fraction_per_bin, which propagates to event_spike_prob.
+        assert np.all(np.isfinite(result["event_spike_prob"]))
+
+    def test_fully_degenerate_rates_still_produces_finite_spike_prob(self) -> None:
+        """Pathological case: every rate row is zero. The uniform
+        fallback covers every row, so ``event_spike_prob`` stays finite
+        even though the result is statistically meaningless. Catches a
+        regression that would let ``normalize``'s eps-clamp leak through."""
+        n_time, n_bins, n_cells = 5, 3, 2
+        predictive = np.full((n_time, n_bins), 1.0 / n_bins)
+        rates = np.zeros((n_bins, n_cells))
+        spike_time_ind = np.array([0], dtype=np.intp)
+        spike_cell_ind = np.array([0], dtype=np.intp)
+        result = compute_per_cell_diagnostics_from_rates(
+            predictive, rates, spike_time_ind, spike_cell_ind, coverage=0.95
+        )
+        assert np.all(np.isfinite(result["event_spike_prob"]))
+
 
 # ---------------------------------------------------------------------------
 # Phase 2 invariants: phase_boundaries tuple, MisfitWindow tightening
@@ -924,6 +1016,29 @@ class TestSimulationResultDataclass:
                 metrics={},
                 phase_labels=PHASE_LABELS,
                 phase_boundaries=(1, 2, 3, 4, 5, 6, 7, n_time + 1),
+            )
+
+    def test_metrics_with_wrong_time_indexed_leading_dim_raises(self) -> None:
+        """The ``TIME_INDEXED_METRIC_KEYS`` loop in ``__post_init__``
+        rejects a dense metric array whose leading dim doesn't match
+        ``x_true``'s timeline. Reverting that loop lets a mis-shaped
+        ``posterior`` slip through and the figure-3 pipeline runs with
+        misaligned indices."""
+        n_bins = 5
+        n_time = 10
+        # Wrong leading dim: posterior is one row longer than x_true.
+        bad_metrics: dict[str, np.ndarray] = {
+            "posterior": np.zeros((n_time + 1, n_bins)),
+        }
+        with pytest.raises(ValueError, match=r"metrics\['posterior'\] has leading dim"):
+            SimulationResult(
+                params=DecodeParams(),
+                xs=np.linspace(0.0, 100.0, n_bins),
+                x_true=np.zeros(n_time),
+                spikes=np.zeros((n_time, 1), dtype=np.int_),
+                metrics=bad_metrics,
+                phase_labels=PHASE_LABELS,
+                phase_boundaries=(1, 2, 3, 4, 5, 6, 7, n_time),
             )
 
 

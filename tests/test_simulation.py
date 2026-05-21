@@ -16,6 +16,7 @@ from statespacecheck_paper.simulation import (
     simulate_spikes_history_dependent,
     simulate_spikes_position_tuned,
     simulate_walk,
+    softmax_with_shift,
     spike_prob_rank,
 )
 
@@ -42,6 +43,38 @@ class TestNormalize:
         with pytest.warns(RuntimeWarning, match="normalize: input sum"):
             result = normalize(np.zeros(5))
         assert np.isfinite(result).all()
+
+
+# ---------------------------------------------------------------------------
+# softmax_with_shift
+# ---------------------------------------------------------------------------
+
+
+class TestSoftmaxWithShift:
+    """The all-``-inf`` fallback at simulation.py:57-58 is load-bearing
+    in the decoder pipeline: ``_condition_on`` relies on it for the
+    "all bins underflowed in linear space" case and would otherwise
+    return NaN. Pin the contract directly so a future refactor that
+    drops the guard fails here, not silently in the decoder."""
+
+    def test_all_neg_inf_returns_uniform(self) -> None:
+        ll = np.full(8, -np.inf)
+        result = softmax_with_shift(ll)
+        assert result.shape == (8,)
+        assert_allclose(result, np.full(8, 1.0 / 8))
+        assert_allclose(result.sum(), 1.0)
+
+    def test_single_finite_entry_concentrates_mass(self) -> None:
+        """One finite entry among ``-inf``s is the maximally-discriminative
+        observation: the softmax assigns probability 1 to that bin and
+        zero everywhere else. Catches a regression where the shift was
+        applied but the uniform fallback ran anyway."""
+        ll = np.full(8, -np.inf)
+        ll[3] = 0.0
+        result = softmax_with_shift(ll)
+        assert result[3] == 1.0
+        assert_allclose(np.delete(result, 3), 0.0)
+        assert_allclose(result.sum(), 1.0)
 
 
 # ---------------------------------------------------------------------------

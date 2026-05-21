@@ -14,6 +14,7 @@ from hypothesis.extra.numpy import arrays
 from statespacecheck_paper.simulation import (
     normalize,
     reflect_into_interval,
+    softmax_with_shift,
 )
 
 
@@ -99,3 +100,58 @@ class TestReflectIntoIntervalProperties:
         # All values must be within bounds (with small tolerance for floating point)
         assert np.all(result >= xmin - 1e-10)
         assert np.all(result <= xmax + 1e-10)
+
+
+class TestSoftmaxWithShiftProperties:
+    """``softmax_with_shift`` is the numerical primitive at the heart of
+    the log-space decoder update. Three invariants define it
+    operationally; any future "simplification" that breaks numerical
+    stability or normalization fails one of them.
+    """
+
+    @given(
+        ll=arrays(
+            dtype=np.float64,
+            shape=st.integers(min_value=1, max_value=64),
+            elements=st.floats(
+                min_value=-500, max_value=500, allow_nan=False, allow_infinity=False
+            ),
+        )
+    )
+    def test_sums_to_one(self, ll: np.ndarray) -> None:
+        """The output is a probability distribution."""
+        np.testing.assert_allclose(softmax_with_shift(ll).sum(), 1.0, rtol=1e-12)
+
+    @given(
+        ll=arrays(
+            dtype=np.float64,
+            shape=st.integers(min_value=1, max_value=64),
+            elements=st.floats(
+                min_value=-100, max_value=100, allow_nan=False, allow_infinity=False
+            ),
+        ),
+        c=st.floats(min_value=-1e6, max_value=1e6, allow_nan=False, allow_infinity=False),
+    )
+    def test_shift_invariant(self, ll: np.ndarray, c: float) -> None:
+        """Adding a constant to every log-likelihood leaves the
+        distribution unchanged — the load-bearing identity of the
+        log-sum-exp trick. The bounded ``c`` range stays within float64
+        headroom; the function's documented purpose is to handle
+        unbounded ``ll`` via the internal shift, but the *property*
+        only holds when adding ``c`` doesn't overflow."""
+        np.testing.assert_allclose(
+            softmax_with_shift(ll), softmax_with_shift(ll + c), rtol=1e-10, atol=1e-12
+        )
+
+    @given(
+        ll=arrays(
+            dtype=np.float64,
+            shape=st.integers(min_value=1, max_value=64),
+            elements=st.floats(
+                min_value=-500, max_value=500, allow_nan=False, allow_infinity=False
+            ),
+        )
+    )
+    def test_outputs_are_nonneg(self, ll: np.ndarray) -> None:
+        """The output is a probability distribution — every entry ≥ 0."""
+        assert np.all(softmax_with_shift(ll) >= 0)
