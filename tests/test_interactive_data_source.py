@@ -69,8 +69,6 @@ def test_public_arrays_are_write_protected(synthetic_cache: Path) -> None:
             arr = getattr(src, name)
             assert arr.flags.writeable is False, f"{name} is not write-protected"
         # Confirm the protection actually blocks mutation.
-        import pytest
-
         with pytest.raises(ValueError, match="read-only|assignment destination"):
             src.event_kl_divergence[0] = 999.0
     finally:

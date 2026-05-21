@@ -13,6 +13,7 @@ from statespacecheck_paper.analysis import (
     Diagnostics,
     MisfitSchedule,
     MisfitWindow,
+    PerCellDiagnostics,
     Thresholds,
     Transformed,
     _condition_on,
@@ -515,6 +516,23 @@ class TestComputeThresholds:
         with pytest.raises(ValueError, match="kl_divergence baseline slice"):
             compute_thresholds(metrics, baseline_end=10)
 
+    def test_accepts_diagnostics_object(self, decoder_inputs: DecoderInputs) -> None:
+        """``compute_thresholds`` accepts either a ``Diagnostics`` or a
+        plain dict (union back-compat for synthetic test fixtures). Pin
+        the Diagnostics branch so it stays exercised."""
+        diagnostics = decoder_inputs.call()
+        thresholds = compute_thresholds(diagnostics, baseline_end=5)
+        # Same call shape with a dict — results must agree.
+        as_dict = {
+            "hpd_overlap": diagnostics.hpd_overlap,
+            "kl_divergence": diagnostics.kl_divergence,
+            "spike_prob": diagnostics.spike_prob,
+        }
+        from_dict = compute_thresholds(as_dict, baseline_end=5)
+        assert thresholds.hpd_overlap == pytest.approx(from_dict.hpd_overlap)
+        assert thresholds.kl_divergence == pytest.approx(from_dict.kl_divergence)
+        assert thresholds.spike_prob == from_dict.spike_prob
+
 
 class TestThresholdsInvariants:
     """Range validation at construction. Reverting any branch lets a
@@ -543,8 +561,10 @@ class TestThresholdsInvariants:
 
     def test_is_frozen(self) -> None:
         """Frozen so a downstream consumer cannot rebind a field mid-pipeline."""
+        from dataclasses import FrozenInstanceError
+
         t: Any = Thresholds(hpd_overlap=0.5, kl_divergence=0.0, spike_prob=0.05)
-        with pytest.raises(Exception, match=r"frozen|cannot assign"):
+        with pytest.raises(FrozenInstanceError):
             t.hpd_overlap = 0.7
 
 
@@ -660,6 +680,98 @@ class TestTransformedDataclass:
             assert getattr(transformed, name).flags.writeable is False
         with pytest.raises(ValueError, match="read-only|assignment destination"):
             transformed.hpd_overlap[0, 0] = 1.0
+
+
+class TestDiagnosticsInvariants:
+    """``Diagnostics.__post_init__`` validates shape and value ranges
+    on every field. Exercise the most-likely-to-regress branches
+    directly so a future "loosen the check" change fails here, not
+    later as a NaN downstream."""
+
+    def _kwargs(
+        self, *, n_time: int = 4, n_bins: int = 3, n_cells: int = 2, n_spikes: int = 1
+    ) -> dict[str, np.ndarray]:
+        posterior = np.full((n_time, n_bins), 1.0 / n_bins)
+        return dict(
+            posterior=posterior,
+            predictive=posterior.copy(),
+            likelihood=posterior.copy(),
+            spike_likelihood=posterior.copy(),
+            hpd_overlap=np.zeros((n_time, n_cells)),
+            kl_divergence=np.zeros((n_time, n_cells)),
+            spike_prob=np.zeros((n_time, n_cells)),
+            event_time_ind=np.zeros(n_spikes, dtype=np.intp),
+            event_cell_ind=np.zeros(n_spikes, dtype=np.intp),
+            event_hpd_overlap=np.zeros(n_spikes),
+            event_kl_divergence=np.zeros(n_spikes),
+            event_spike_prob=np.zeros(n_spikes),
+            per_spike_likelihood=np.zeros((n_spikes, n_bins)),
+        )
+
+    def test_predictive_shape_mismatch_raises(self) -> None:
+        kwargs = self._kwargs(n_time=4, n_bins=3)
+        kwargs["predictive"] = np.zeros((5, 3))  # wrong leading dim
+        with pytest.raises(ValueError, match=r"Diagnostics\.predictive shape"):
+            Diagnostics(**kwargs)
+
+    def test_per_event_shape_mismatch_raises(self) -> None:
+        kwargs = self._kwargs(n_spikes=3)
+        kwargs["event_kl_divergence"] = np.zeros(4)  # wrong leading dim
+        with pytest.raises(ValueError, match=r"Diagnostics\.event_kl_divergence shape"):
+            Diagnostics(**kwargs)
+
+    def test_posterior_must_be_2d(self) -> None:
+        kwargs = self._kwargs()
+        kwargs["posterior"] = np.zeros(12)  # 1-D
+        with pytest.raises(ValueError, match=r"Diagnostics\.posterior must be 2-D"):
+            Diagnostics(**kwargs)
+
+    def test_hpd_overlap_out_of_range_raises(self) -> None:
+        """A buggy decoder shipping ``hpd_overlap > 1`` is caught at the
+        producer boundary, not silently propagated into HPD overlap
+        statistics that look fine at first glance."""
+        kwargs = self._kwargs()
+        kwargs["hpd_overlap"] = np.full((4, 2), 1.5)
+        with pytest.raises(ValueError, match=r"Diagnostics\.hpd_overlap: values above 1"):
+            Diagnostics(**kwargs)
+
+    def test_kl_divergence_negative_raises(self) -> None:
+        kwargs = self._kwargs()
+        kwargs["kl_divergence"] = np.full((4, 2), -0.5)
+        with pytest.raises(ValueError, match=r"Diagnostics\.kl_divergence: values below 0"):
+            Diagnostics(**kwargs)
+
+    def test_nan_in_dense_field_is_allowed(self) -> None:
+        """NaN at (t, cell) without a spike is legitimate; the range
+        check must let it through."""
+        kwargs = self._kwargs()
+        kwargs["hpd_overlap"][0, :] = np.nan
+        kwargs["kl_divergence"][0, :] = np.nan
+        kwargs["spike_prob"][0, :] = np.nan
+        Diagnostics(**kwargs)  # does not raise
+
+
+class TestPerCellDiagnosticsInvariants:
+    """All-or-nothing on the dense matrices is the load-bearing
+    invariant of ``PerCellDiagnostics``; cover it directly so a
+    future caller can't supply ``hpd_overlap`` without
+    ``kl_divergence`` and have downstream code mistake the
+    None as "include_dense_matrices=False"."""
+
+    def test_partial_dense_matrices_rejected(self) -> None:
+        n_spikes, n_time, n_cells, n_bins = 2, 4, 2, 3
+        with pytest.raises(ValueError, match="all-or-nothing"):
+            PerCellDiagnostics(
+                event_time_ind=np.zeros(n_spikes, dtype=np.intp),
+                event_cell_ind=np.zeros(n_spikes, dtype=np.intp),
+                event_hpd_overlap=np.zeros(n_spikes),
+                event_kl_divergence=np.zeros(n_spikes),
+                event_spike_prob=np.zeros(n_spikes),
+                hpd_overlap=np.zeros((n_time, n_cells)),
+                kl_divergence=None,  # only some dense matrices supplied
+                spike_prob=np.zeros((n_time, n_cells)),
+                per_spike_likelihood=np.zeros((n_spikes, n_bins)),
+            )
 
 
 # ---------------------------------------------------------------------------

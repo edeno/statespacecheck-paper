@@ -729,7 +729,9 @@ def plot_per_cell_diagnostic_scatter(
         metric = metric[time_slice_ind]
 
     event_times = diagnostics.event_time
-    event_metric_values = getattr(diagnostics, f"event_{metric_name}", None)
+    # No default: the three ``event_*`` fields are required on
+    # PerCellDiagnostics; an unexpected metric_name must fail loud.
+    event_metric_values = getattr(diagnostics, f"event_{metric_name}")
 
     # Store raw metric for running average computation (before transformation)
     # The running average should be computed on raw values per manuscript formula:

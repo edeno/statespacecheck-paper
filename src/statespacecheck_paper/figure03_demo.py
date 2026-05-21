@@ -113,11 +113,9 @@ class SimulationResult:
                 f"final phase boundary ({self.phase_boundaries[-1]}) must "
                 f"equal x_true timeline ({n_time})."
             )
-        # Per-time metrics share the timeline by construction —
-        # ``Diagnostics.__post_init__`` enforces shape internally, so
-        # the previous TIME_INDEXED_METRIC_KEYS loop is redundant.
-        # Still cross-check against ``x_true`` since ``Diagnostics``
-        # only knows its own ``n_time``, not the timeline supplied here.
+        # ``Diagnostics.__post_init__`` enforces shape agreement across
+        # its own fields; cross-check that ``Diagnostics``'s leading dim
+        # matches the ``x_true`` timeline supplied here.
         if self.metrics.posterior.shape[0] != n_time:
             raise ValueError(
                 f"metrics.posterior leading dim {self.metrics.posterior.shape[0]} "
