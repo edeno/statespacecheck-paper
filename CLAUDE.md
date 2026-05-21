@@ -23,7 +23,7 @@ statespacecheck-paper/
 ├── scripts/                     # Figure generation scripts
 │   ├── generate_figure01.py    # Figure 1: Schematic and distribution comparisons
 │   ├── generate_figure02.py    # Figure 2: Diagnostic demonstrations
-│   ├── generate_figure03.py    # Figure 3: Per-cell diagnostics across 5 simulated misfit scenarios
+│   ├── generate_figure03.py    # Figure 3: Per-cell diagnostics across 4 simulated misfit scenarios
 │   └── generate_all_figures.py # Master script to generate all figures
 ├── manuscript/                  # LaTeX source files + bundled figures (Overleaf-ready)
 │   ├── main.tex
@@ -34,7 +34,7 @@ statespacecheck-paper/
 │       ├── main/               # Main text figures (PDF + PNG)
 │       └── supplementary/      # Supplementary figures (PDF + PNG)
 ├── notebooks/                   # Jupyter notebooks for exploration
-└── tests/                       # Comprehensive test suite (97% coverage)
+└── tests/                       # Test suite (unit + property-based + integration)
     ├── test_style.py
     ├── test_simulation.py
     ├── test_analysis.py
@@ -163,7 +163,7 @@ if __name__ == "__main__":
 
 ### Testing Structure
 
-Tests are organized by module with 97.2% coverage:
+Tests are organized by module (regenerate exact percentages with `uv run pytest --cov --cov-report=term-missing | tail -1`):
 
 - **test_style.py**: Style utilities (100% coverage)
 - **test_simulation.py**: Simulation functions (100% coverage)

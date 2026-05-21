@@ -127,3 +127,43 @@ class TestFigure04Helpers:
         the per-spike array was created to fix; raise loudly instead."""
         with pytest.raises(KeyError, match="event_hpd_overlap"):
             figure04.diagnostic_event_mean({"hpd_overlap": np.array([[0.0, 1.0]])}, "hpd_overlap")
+
+
+def test_figure02_create_shared_example_samples_y_tilde_with_noise() -> None:
+    """The Figure 2 predictive-check MC loop must draw y_tilde from
+    N(x_s, like_std), not use x_s as the observation. That step is the
+    only thing distinguishing the corrected schematic from the previous
+    mean-prediction shortcut, so a regression that quietly reverted it
+    would land silently.
+    """
+    import generate_figure02
+
+    rng = np.random.default_rng(42)
+    data = generate_figure02.create_shared_example(rng)
+
+    p_value = data["p_value"]
+    assert 0.0 <= p_value <= 1.0, f"p_value out of [0, 1]: {p_value}"
+
+    observed = data["observed_log_pred"]
+    simulated = data["simulated_log_pred"]
+    assert np.isfinite(observed), f"observed_log_pred is not finite: {observed}"
+    assert np.all(np.isfinite(simulated)), (
+        f"simulated_log_pred contains non-finite values: "
+        f"{np.sum(~np.isfinite(simulated))} of {simulated.size}"
+    )
+
+    positions = np.asarray(data["showcase_positions"])
+    y_tildes = np.asarray(data["showcase_y_tildes"])
+    assert positions.shape == y_tildes.shape, (
+        "showcase_positions and showcase_y_tildes must have the same shape"
+    )
+    # Load-bearing assertion: y_tilde must differ from its originating
+    # state position by more than rounding (~1 bin width = 0.5). If every
+    # y_tilde sits exactly on its sample position, the MC loop has been
+    # reverted to the deterministic y_tilde = x_s shortcut and the
+    # manuscript's predictive-check definition is no longer depicted.
+    deltas = np.abs(y_tildes - positions)
+    assert np.any(deltas > 0.5), (
+        f"showcase_y_tildes equal showcase_positions (max |Δ| = {deltas.max():.3f}); "
+        f"the y_tilde ~ N(x_s, like_std) draw step was skipped or shortcut."
+    )

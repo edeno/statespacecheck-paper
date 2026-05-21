@@ -171,3 +171,24 @@ def test_history_dependent_firing_per_spike_metrics_near_baseline(
         f"within +/-50% of baseline; got baseline={base_sp:.3f}, "
         f"hist-dep={hd_sp:.3f}"
     )
+
+
+def test_drift_phase_inflates_kl(sim: SimulationResult) -> None:
+    """The drift misfit (persistent-velocity trajectory vs. memoryless
+    decoder) must produce a meaningfully larger per-spike KL than
+    baseline. With the wiggly phase removed, this and the wide-dynamics
+    test are the only metric-dissociation regression guards left, so the
+    bound is tight enough to catch a near-noop drift.
+    """
+    medians = _per_phase_medians(sim)
+    base_kl, _, _ = medians["Clean Baseline"]
+    drift_kl, _, _ = medians["Drift Misfit"]
+    # Bound chosen against observed ratio (~1.38x at the moderate test
+    # scale) — strict enough to catch a regression where drift becomes
+    # indistinguishable from baseline, loose enough to absorb normal
+    # seed-to-seed variation. Tighten if a wider session shows clearer
+    # separation.
+    assert drift_kl > 1.2 * base_kl, (
+        f"drift phase should inflate KL by >1.2x baseline; "
+        f"got base={base_kl:.3f}, drift={drift_kl:.3f}"
+    )
