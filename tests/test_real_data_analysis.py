@@ -288,6 +288,26 @@ class TestGetStateMarginalizedPosterior:
         result = get_state_marginalized_posterior(results, "predictive")
         np.testing.assert_allclose(result, posterior_per_state.sum(axis=1), rtol=1e-5)
 
+    def test_unstack_failure_raises(self) -> None:
+        """A malformed state_bins index that fails to unstack must
+        raise — silently treating it as single-state and returning a
+        per-state slice would render a wrong figure with no warning."""
+        # Build a posterior with a state_bins coordinate that has
+        # duplicate (state, position) entries, which xarray cannot
+        # unstack into a (state, position) rectangular product.
+        n_time = 20
+        # Duplicated (state, position) tuples — unstack fails.
+        broken_index = pd.MultiIndex.from_tuples(
+            [("A", 0), ("A", 0), ("B", 0), ("B", 0)], names=["state", "position"]
+        )
+        results = _xarray_results(
+            np.random.default_rng(0).random((n_time, 4)),
+            "predictive_posterior",
+            state_bins=broken_index,
+        )
+        with pytest.raises(ValueError, match="Failed to unstack"):
+            get_state_marginalized_posterior(results, "predictive")
+
 
 # ---------------------------------------------------------------------------
 # plot_per_cell_diagnostic_scatter (spike-time alignment behavior)

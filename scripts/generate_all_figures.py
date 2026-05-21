@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import sys
 import time
+import traceback
 from pathlib import Path
 
 
@@ -56,10 +57,11 @@ def main() -> int:
             elapsed = time.time() - start_time
             results.append((script_name, True, elapsed))
             print(f"✅ {script_name} completed in {elapsed:.1f}s")
-        except Exception as e:
+        except Exception:
             elapsed = time.time() - start_time
             results.append((script_name, False, elapsed))
-            print(f"❌ {script_name} failed after {elapsed:.1f}s: {e}")
+            print(f"❌ {script_name} failed after {elapsed:.1f}s:")
+            traceback.print_exc()
 
     # Print summary
     print("\n" + "=" * 70)

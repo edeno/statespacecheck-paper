@@ -462,6 +462,41 @@ class TestComputeThresholds:
         assert not np.isnan(thresholds.hpd_overlap)
         assert not np.isnan(thresholds.kl_divergence)
 
+    def test_baseline_end_is_keyword_only(self, metrics_2d: dict[str, np.ndarray]) -> None:
+        """Passing baseline_end positionally must fail — the argument is
+        keyword-only so callers can't accidentally omit it via the prior
+        ``None`` default that silently used the whole recording."""
+        from typing import cast
+
+        # ``cast`` to ``Any`` lets us probe the runtime keyword-only
+        # contract without ty flagging the deliberately-wrong call.
+        unchecked = cast(Any, compute_thresholds)
+        with pytest.raises(TypeError, match="positional"):
+            unchecked(metrics_2d, 50)
+
+    def test_all_nan_hpd_baseline_raises(self) -> None:
+        """An all-NaN baseline slice would produce a NaN threshold and
+        every downstream ``metric < threshold`` comparison would silently
+        evaluate False. Raise instead."""
+        n_time, n_cells = 20, 3
+        metrics: dict[str, np.ndarray] = {
+            "hpd_overlap": np.full((n_time, n_cells), np.nan),
+            "kl_divergence": np.full((n_time, n_cells), 1.0),
+            "spike_prob": np.full((n_time, n_cells), 0.5),
+        }
+        with pytest.raises(ValueError, match="hpd_overlap baseline slice"):
+            compute_thresholds(metrics, baseline_end=10)
+
+    def test_all_nan_kl_baseline_raises(self) -> None:
+        n_time, n_cells = 20, 3
+        metrics: dict[str, np.ndarray] = {
+            "hpd_overlap": np.full((n_time, n_cells), 0.8),
+            "kl_divergence": np.full((n_time, n_cells), np.nan),
+            "spike_prob": np.full((n_time, n_cells), 0.5),
+        }
+        with pytest.raises(ValueError, match="kl_divergence baseline slice"):
+            compute_thresholds(metrics, baseline_end=10)
+
 
 # ---------------------------------------------------------------------------
 # Transformed / transform_metrics
