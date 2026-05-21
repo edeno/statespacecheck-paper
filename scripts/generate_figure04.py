@@ -341,7 +341,7 @@ def run_demo() -> None:
     plot_per_spike_metric_hexbin_row(
         continuous_diagnostics,
         contfrag_diagnostics,
-        list(axes_hexbin),
+        axes_hexbin,
         model_a_name="Continuous",
         model_b_name="Cont-Frag",
     )

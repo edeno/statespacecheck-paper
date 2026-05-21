@@ -16,6 +16,7 @@ Examples
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 import matplotlib
@@ -2293,9 +2294,9 @@ def plot_single_model_diagnostics(
 
 
 def plot_per_spike_metric_hexbin_row(
-    diagnostics_a: dict[str, Any],
-    diagnostics_b: dict[str, Any],
-    axes: list[Axes],
+    diagnostics_a: Mapping[str, NDArray[np.floating] | NDArray[np.intp]],
+    diagnostics_b: Mapping[str, NDArray[np.floating] | NDArray[np.intp]],
+    axes: Sequence[Axes],
     *,
     model_a_name: str = "Continuous",
     model_b_name: str = "Cont-Frag",
@@ -2303,28 +2304,28 @@ def plot_per_spike_metric_hexbin_row(
     """Plot a 1x3 row of hexbin densities comparing per-spike diagnostics between two decoders.
 
     Each panel shows one diagnostic on the x-axis (model A) and the same
-    diagnostic on the y-axis (model B). Each hexagon's colour is the count of
-    spike events landing in that bin. Points on the identity line indicate
-    decoder agreement on that spike.
+    diagnostic on the y-axis (model B). Each hexagon's colour encodes
+    log-scaled spike-event count (matplotlib ``bins='log'``). Points on
+    the identity line indicate decoder agreement on that spike.
 
-    Both diagnostics dicts must carry the same set of per-spike events in the
-    same order (i.e. ``event_*`` arrays produced from the same spike trains by
+    Both diagnostics dicts must carry the same set of per-spike events
+    in the same order (i.e. ``event_*`` arrays produced from the same
+    spike trains by
     :func:`statespacecheck_paper.real_data_analysis.compute_model_diagnostics`).
+    Raises ``ValueError`` if shapes differ for any of the three metrics.
 
     Parameters
     ----------
-    diagnostics_a, diagnostics_b : dict[str, np.ndarray]
+    diagnostics_a, diagnostics_b : Mapping[str, np.ndarray]
         Per-spike diagnostic dicts with keys ``event_hpd_overlap``,
         ``event_kl_divergence``, ``event_spike_prob`` (each shape
         ``(n_spikes,)``).
-    axes : list[matplotlib.axes.Axes]
+    axes : Sequence[matplotlib.axes.Axes]
         Three axes, one per metric (HPD overlap, KL divergence,
         ``-log10(p)``).
     model_a_name, model_b_name : str
         Axis labels for each decoder.
     """
-    from matplotlib.colors import LinearSegmentedColormap
-
     if len(axes) != 3:
         raise ValueError(f"axes must have length 3, got {len(axes)}")
 
@@ -2337,6 +2338,12 @@ def plot_per_spike_metric_hexbin_row(
     for ax, (key, title, color, log_transform) in zip(axes, metric_specs, strict=True):
         data_a = np.asarray(diagnostics_a[key], dtype=np.float64)
         data_b = np.asarray(diagnostics_b[key], dtype=np.float64)
+        if data_a.shape != data_b.shape:
+            raise ValueError(
+                f"diagnostics_a[{key!r}] and diagnostics_b[{key!r}] must "
+                f"carry the same set of spike events in the same order; "
+                f"got shapes {data_a.shape} vs {data_b.shape}."
+            )
         if log_transform:
             data_a = -np.log10(np.maximum(data_a, 1e-10))
             data_b = -np.log10(np.maximum(data_b, 1e-10))
@@ -2345,7 +2352,7 @@ def plot_per_spike_metric_hexbin_row(
         data_a = data_a[valid]
         data_b = data_b[valid]
 
-        cmap = LinearSegmentedColormap.from_list("custom", ["white", color])
+        cmap = mcolors.LinearSegmentedColormap.from_list("custom", ["white", color])
         ax.hexbin(
             data_a,
             data_b,
@@ -2356,11 +2363,10 @@ def plot_per_spike_metric_hexbin_row(
             rasterized=True,
         )
 
-        # Identity line for visual agreement reference.
-        lims = (
-            min(ax.get_xlim()[0], ax.get_ylim()[0]),
-            max(ax.get_xlim()[1], ax.get_ylim()[1]),
-        )
+        # Identity line — span the actual data range so the visual
+        # agreement reference doesn't depend on matplotlib's autoscale.
+        combined = np.concatenate([data_a, data_b])
+        lims = (float(np.nanmin(combined)), float(np.nanmax(combined)))
         ax.plot(lims, lims, color=COLORS["threshold"], lw=0.8, ls="--", alpha=0.7)
         ax.set_xlim(lims)
         ax.set_ylim(lims)
