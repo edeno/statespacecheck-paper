@@ -51,6 +51,7 @@ from scipy.stats import poisson
 from statespacecheck_paper.simulation import (
     normalize,
     placefield_rates,
+    softmax_with_shift,
 )
 
 # Spike-batch size for ``compute_per_cell_diagnostics_from_rates``.
@@ -60,23 +61,8 @@ from statespacecheck_paper.simulation import (
 # scratch array, ~600 MB peak with three live (pred / rates / lik).
 _PER_SPIKE_BATCH = 50_000
 
-
-def _softmax_with_shift(ll: NDArray[np.floating], eps: float = 1e-15) -> NDArray[np.floating]:
-    """Numerically stable softmax via the log-sum-exp shift.
-
-    Equivalent to ``exp(ll) / exp(ll).sum()`` but subtracts ``ll.max()``
-    first so the largest entry is exactly 1 and the rest are bounded.
-    Used for the stored display likelihoods in :func:`decode_and_diagnostics`
-    where bins underflowing to zero is acceptable but the row sum must
-    still equal 1.
-    """
-    lmax = float(np.max(ll))
-    if not np.isfinite(lmax):
-        n_bins = ll.size
-        return np.full(n_bins, 1.0 / n_bins)
-    weighted = np.exp(ll - lmax)
-    result: NDArray[np.floating] = weighted / (weighted.sum() + eps)
-    return result
+# Sentinel for ``_condition_on`` underflow steps.
+_NEG_INF = float("-inf")
 
 
 def _condition_on(
@@ -100,10 +86,7 @@ def _condition_on(
     eps clamp in :func:`statespacecheck_paper.simulation.normalize`),
     this function explicitly returns a uniform posterior and
     ``log_norm = -inf``. Callers should treat ``log_norm == -inf`` as
-    the signal to flag the step — the figure-3 decoder in
-    :func:`decode_and_diagnostics` counts these and emits a single
-    summary ``RuntimeWarning`` per call so the underflow events are
-    visible without flooding the test log.
+    the signal to flag the step.
 
     Parameters
     ----------
@@ -127,11 +110,11 @@ def _condition_on(
     n_bins = probs.size
     ll_max = float(np.max(ll))
     if not np.isfinite(ll_max):
-        return np.full(n_bins, 1.0 / n_bins), float("-inf")
+        return np.full(n_bins, 1.0 / n_bins), _NEG_INF
     weighted = probs * np.exp(ll - ll_max)
     norm = float(weighted.sum())
     if norm < eps:
-        return np.full(n_bins, 1.0 / n_bins), float("-inf")
+        return np.full(n_bins, 1.0 / n_bins), _NEG_INF
     new_probs = weighted / norm
     log_norm = float(np.log(norm)) + ll_max
     return new_probs, log_norm
@@ -340,12 +323,7 @@ class DecodeParams:
             raise ValueError(
                 f"DecodeParams.phase_boundaries must be strictly increasing; got {list(bnds)}."
             )
-        # Re-bind as a tuple in case the user passed a list/array. The
-        # named accessors only need indexed read access, but storing as
-        # tuple makes the field hashable for consumers that key on
-        # ``DecodeParams.phase_boundaries`` and prevents
-        # ``params.phase_boundaries.append(...)`` from silently breaking
-        # the validated invariants.
+        # Coerce to tuple so the field is hashable and immutable.
         self.phase_boundaries = bnds
 
         if self.pf_centers is None:
@@ -408,17 +386,13 @@ class MisfitWindow:
     Notes
     -----
     Supplied ``transition_matrix``, ``decoder_rates``, and
-    ``diagnostic_rates`` are copied at construction
-    (``ndarray.copy()`` — buffer copy, not ``copy.deepcopy``) and the
-    copy is marked write-protected via ``setflags(write=False)``,
-    extending the dataclass's ``frozen=True`` invariant to the array
-    contents. The caller's original array is untouched, so the caller
-    keeps a writable reference to its own copy.
+    ``diagnostic_rates`` are copied at construction and marked
+    write-protected via ``setflags(write=False)``, extending the
+    dataclass's ``frozen=True`` invariant to the array contents.
 
-    Shape parity with the decoder's grid (``(n_bins, n_cells)`` for
-    rate tables, ``(n_bins, n_bins)`` for the transition matrix) is
-    checked by :meth:`validate_against`, which the decoder calls once
-    per schedule entry — too late to check at construction because the
+    Shape parity with the decoder's grid is checked by
+    :meth:`validate_against`, which the decoder calls once per
+    schedule entry — too late to check at construction because the
     schedule may be built before ``xs`` is pinned down.
 
     Examples
@@ -943,12 +917,12 @@ def decode_and_diagnostics(
 
         # Stored combined likelihood: same shift-and-normalize math as
         # _condition_on, factored into the shared helper.
-        combined_likelihood_all[t] = _softmax_with_shift(log_lik_combined)
+        combined_likelihood_all[t] = softmax_with_shift(log_lik_combined)
 
         # Spike-only likelihood: product over only cells that fired.
         spiking_mask = spikes[t] > 0
         if np.any(spiking_mask):
-            spike_likelihood_all[t] = _softmax_with_shift(
+            spike_likelihood_all[t] = softmax_with_shift(
                 log_lik_per_cell[:, spiking_mask].sum(axis=1)
             )
 
@@ -959,7 +933,7 @@ def decode_and_diagnostics(
         # surface the count post-loop rather than letting the situation
         # silently propagate.
         posterior[t], log_norm = _condition_on(prior, log_lik_combined)
-        if log_norm == float("-inf"):
+        if log_norm == _NEG_INF:
             if n_underflow_steps == 0:
                 first_underflow_t = t
             n_underflow_steps += 1

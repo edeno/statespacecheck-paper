@@ -44,6 +44,23 @@ from numpy.typing import NDArray
 from scipy.stats import norm
 
 
+def softmax_with_shift(ll: NDArray[np.floating]) -> NDArray[np.floating]:
+    """Numerically stable softmax via the log-sum-exp shift.
+
+    Subtracts ``ll.max()`` before exponentiation so the largest entry
+    is exactly 1 and the rest are bounded in (0, 1]. The result sums
+    to 1. Falls back to a uniform distribution if every entry is
+    ``-inf`` (degenerate observation that ``scipy.special.softmax``
+    would return as NaN for).
+    """
+    lmax = float(np.max(ll))
+    if not np.isfinite(lmax):
+        return np.full(ll.size, 1.0 / ll.size)
+    weighted = np.exp(ll - lmax)
+    normalized: NDArray[np.floating] = weighted / weighted.sum()
+    return normalized
+
+
 def normalize(
     p: NDArray[np.floating], axis: int | None = None, eps: float = 1e-12
 ) -> NDArray[np.floating]:

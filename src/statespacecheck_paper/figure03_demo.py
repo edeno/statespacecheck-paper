@@ -50,6 +50,22 @@ PHASE_LABELS: tuple[str, ...] = (
     "Wide Dynamics Noise",
 )
 
+# Keys of ``decode_and_diagnostics`` outputs that are indexed by time
+# (leading dim ``n_time``). Listed positively to avoid silently missing
+# new event-indexed keys (``event_*``, ``per_spike_likelihood``,
+# ``spike_time_ind``, ``spike_cell_ind``) that don't match a negative
+# filter. Used by :meth:`SimulationResult.__post_init__` for shape
+# validation.
+TIME_INDEXED_METRIC_KEYS: tuple[str, ...] = (
+    "posterior",
+    "predictive",
+    "likelihood",
+    "spike_likelihood",
+    "hpd_overlap",
+    "kl_divergence",
+    "spike_prob",
+)
+
 
 @dataclass(frozen=True)
 class SimulationResult:
@@ -112,24 +128,9 @@ class SimulationResult:
                 f"final phase boundary ({self.phase_boundaries[-1]}) must "
                 f"equal x_true timeline ({n_time})."
             )
-        # Per-time metrics must share the timeline. Only the dense
-        # (n_time, ...) arrays are checked; event-indexed arrays
-        # (``event_*``, ``per_spike_likelihood``, ``spike_time_ind``,
-        # ``spike_cell_ind``) are indexed by spike-event count not
-        # time. Listing the time-indexed keys positively (rather than
-        # excluding the rest) avoids silently missing a new
-        # event-indexed key that happens not to match the negative
-        # filter.
-        time_indexed_keys = (
-            "posterior",
-            "predictive",
-            "likelihood",
-            "spike_likelihood",
-            "hpd_overlap",
-            "kl_divergence",
-            "spike_prob",
-        )
-        for key in time_indexed_keys:
+        # Per-time metrics must share the timeline (see
+        # ``TIME_INDEXED_METRIC_KEYS`` for the contract).
+        for key in TIME_INDEXED_METRIC_KEYS:
             if key not in self.metrics:
                 continue
             arr = self.metrics[key]

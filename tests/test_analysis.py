@@ -22,6 +22,8 @@ from statespacecheck_paper.analysis import (
     likelihood_grid_for_counts,
     transform_metrics,
 )
+from statespacecheck_paper.figure03_demo import PHASE_LABELS, SimulationResult
+from statespacecheck_paper.simulation import gaussian_transition_matrix
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -735,8 +737,6 @@ class TestDecodeAndDiagnosticsLogSpace:
         """Algorithmic correctness: at every time step the posterior
         must be a proper probability distribution.
         """
-        from statespacecheck_paper.simulation import gaussian_transition_matrix
-
         rng = np.random.default_rng(0)
         n_time, n_cells, n_bins = 50, 3, 21
         spikes = rng.poisson(1.0, size=(n_time, n_cells))
@@ -759,8 +759,6 @@ class TestDecodeAndDiagnosticsLogSpace:
         log-space implementation must instead produce a normalized,
         non-uniform posterior at every step.
         """
-        from statespacecheck_paper.simulation import gaussian_transition_matrix
-
         n_time, n_cells, n_bins = 30, 2, 51
         xs = np.linspace(0.0, 100.0, n_bins)
         # Narrow transition kernel so the prior stays concentrated.
@@ -875,25 +873,20 @@ class TestMisfitWindowTightening:
             MisfitWindow(10, 20, diagnostic_rates=bad)
 
     @pytest.mark.parametrize(
-        "field",
-        ["decoder_rates", "diagnostic_rates", "transition_matrix"],
+        ("field", "kwargs_factory"),
+        [
+            ("decoder_rates", lambda arr: {"decoder_rates": arr}),
+            # diagnostic_rates requires decoder_rates per the pairing rule.
+            ("diagnostic_rates", lambda arr: {"decoder_rates": arr, "diagnostic_rates": arr}),
+            ("transition_matrix", lambda arr: {"transition_matrix": arr}),
+        ],
     )
-    def test_arrays_are_write_protected(self, field: str) -> None:
+    def test_arrays_are_write_protected(self, field: str, kwargs_factory: Any) -> None:
         """``frozen=True`` only blocks rebinding the field; the array
         itself must also be read-only so callers can't bypass
-        validation by mutating in place. Covers all three array
-        fields — same write-protect code path applies to each."""
-        if field == "transition_matrix":
-            arr = np.eye(5) * 0.5 + 0.1
-            kwargs: dict = {field: arr}
-        elif field == "diagnostic_rates":
-            # diagnostic_rates requires decoder_rates per the pairing rule.
-            arr = np.full((5, 3), 0.1)
-            kwargs = {"decoder_rates": arr, "diagnostic_rates": arr}
-        else:
-            arr = np.full((5, 3), 0.1)
-            kwargs = {field: arr}
-        w = MisfitWindow(10, 20, **kwargs)
+        validation by mutating in place. Covers all three array fields."""
+        arr = np.eye(5) * 0.5 + 0.1 if field == "transition_matrix" else np.full((5, 3), 0.1)
+        w = MisfitWindow(10, 20, **kwargs_factory(arr))
         stored = getattr(w, field)
         assert stored is not None
         assert stored.flags.writeable is False
@@ -934,7 +927,6 @@ class TestSimulationResultDataclass:
         """Happy path: a well-formed SimulationResult constructs cleanly,
         coerces list inputs to tuple, and exposes attribute access on
         every field."""
-        from statespacecheck_paper.figure03_demo import PHASE_LABELS, SimulationResult
 
         n_bins = 5
         n_time = 10
@@ -955,8 +947,6 @@ class TestSimulationResultDataclass:
         assert sim.x_true.shape == (n_time,)
 
     def test_phase_labels_wrong_order_raises(self) -> None:
-        from statespacecheck_paper.figure03_demo import PHASE_LABELS, SimulationResult
-
         n_bins = 5
         n_time = 10
         bogus_labels = tuple(reversed(PHASE_LABELS))
@@ -972,8 +962,6 @@ class TestSimulationResultDataclass:
             )
 
     def test_phase_boundary_length_mismatch_raises(self) -> None:
-        from statespacecheck_paper.figure03_demo import PHASE_LABELS, SimulationResult
-
         n_bins = 5
         n_time = 10
         with pytest.raises(ValueError, match="phase_boundaries length"):
@@ -988,8 +976,6 @@ class TestSimulationResultDataclass:
             )
 
     def test_spikes_and_x_true_timeline_mismatch_raises(self) -> None:
-        from statespacecheck_paper.figure03_demo import PHASE_LABELS, SimulationResult
-
         n_bins = 5
         n_time = 10
         with pytest.raises(ValueError, match="spikes timeline"):
@@ -1004,8 +990,6 @@ class TestSimulationResultDataclass:
             )
 
     def test_final_boundary_must_equal_timeline_length(self) -> None:
-        from statespacecheck_paper.figure03_demo import PHASE_LABELS, SimulationResult
-
         n_bins = 5
         n_time = 10
         with pytest.raises(ValueError, match="final phase boundary"):
@@ -1105,27 +1089,27 @@ class TestLogSpaceReferenceComparison:
     here.
     """
 
-    def test_posterior_matches_independent_log_space_reference(self) -> None:
-        from scipy.special import logsumexp
+    def test_posterior_matches_independent_log_space_reference(
+        self, decoder_inputs: DecoderInputs
+    ) -> None:
         from scipy.stats import poisson as _poisson
 
-        from statespacecheck_paper.simulation import (
-            gaussian_transition_matrix,
-            placefield_rates,
-        )
+        from statespacecheck_paper.simulation import placefield_rates
 
-        rng = np.random.default_rng(7)
-        n_time, n_cells, n_bins = 25, 3, 21
-        xs = np.linspace(0.0, 100.0, n_bins)
-        transition = gaussian_transition_matrix(xs, sig=2.0)
-        pf_centers = np.array([25.0, 50.0, 75.0])
-        pf_width = 10.0
-        rate_scale = 0.1
-        spikes = rng.poisson(1.0, size=(n_time, n_cells))
+        spikes = decoder_inputs.spikes
+        xs = decoder_inputs.xs
+        transition = decoder_inputs.transition_matrix
+        n_time, _ = spikes.shape
+        n_bins = xs.size
 
         # Reference: linear-space prior, log-space combined likelihood,
-        # logsumexp normalization. No reset-to-uniform branch.
-        rates = placefield_rates(xs, pf_centers, pf_width, rate_scale)
+        # softmax-shift normalization. No reset-to-uniform branch.
+        rates = placefield_rates(
+            xs,
+            decoder_inputs.pf_centers,
+            decoder_inputs.pf_width,
+            decoder_inputs.rate_scale,
+        )
         ref_post = np.zeros((n_time, n_bins))
         ref_post[0] = np.ones(n_bins) / n_bins
         for t in range(1, n_time):
@@ -1139,12 +1123,5 @@ class TestLogSpaceReferenceComparison:
             assert norm > 0
             ref_post[t] = weighted / norm
 
-        result = decode_and_diagnostics(
-            spikes, xs, transition, pf_centers, pf_width=pf_width, rate_scale=rate_scale
-        )
+        result = decoder_inputs.call()
         np.testing.assert_allclose(result["posterior"], ref_post, rtol=1e-10, atol=1e-12)
-        # logsumexp + log_combined provides an independent sanity check
-        # on combined_likelihood_all row sums (already pinned in the
-        # dedicated test, repeated here as a cross-check).
-        np.testing.assert_allclose(result["likelihood"].sum(axis=1), 1.0, rtol=1e-10)
-        _ = logsumexp  # imported only for clarity in the reference-equivalence proof

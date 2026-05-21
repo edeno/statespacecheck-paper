@@ -821,13 +821,11 @@ def plot_misfit_examples(
 
         # Combine per-cell normalized likelihoods across cells in log-space.
         # The linear-space ``np.prod(likelihood, axis=1)`` underflows once
-        # n_cells * log(peak) crosses the float64 floor (~700) — same pattern
-        # that ``analysis._condition_on`` / ``_softmax_with_shift`` avoid in
-        # the decoder pipeline.
-        from statespacecheck_paper.analysis import _softmax_with_shift
+        # n_cells * log(peak) crosses the float64 floor (~700).
+        from statespacecheck_paper.simulation import softmax_with_shift
 
         log_lik = np.log(np.maximum(likelihood, np.finfo(likelihood.dtype).tiny))
-        combined_likelihood = _softmax_with_shift(log_lik.sum(axis=1))
+        combined_likelihood = softmax_with_shift(log_lik.sum(axis=1))
 
         # Plot prior and likelihood with twin axes - use Wong colorblind-friendly palette
         ax1 = axes[phase_idx]
