@@ -715,12 +715,12 @@ def plot_likelihood_columns(
     spike_times = np.where(has_spikes)[0]
     for idx in spike_times:
         lik_row = likelihood[idx]
-        # Row-normalize to [0, 1]. A flat likelihood (rmax == rmin) is
-        # real information — render it at the mid-color rather than
-        # silently dropping the column, which would be visually
-        # indistinguishable from "no spike at this time".
+        # Row-normalize to [0, 1]. A flat-or-degenerate likelihood
+        # (rmax == rmin, or both NaN) is still real information —
+        # render at mid-color rather than silently dropping the column,
+        # which would be indistinguishable from "no spike at this time".
         rmin, rmax = float(np.nanmin(lik_row)), float(np.nanmax(lik_row))
-        if rmax <= rmin:
+        if not np.isfinite(rmax) or rmax <= rmin:
             normed = np.full_like(lik_row, 0.5)
         else:
             normed = (lik_row - rmin) / (rmax - rmin)

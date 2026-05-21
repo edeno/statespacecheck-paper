@@ -466,11 +466,9 @@ class TestComputeThresholds:
         """Passing baseline_end positionally must fail — the argument is
         keyword-only so callers can't accidentally omit it via the prior
         ``None`` default that silently used the whole recording."""
-        from typing import cast
-
-        # ``cast`` to ``Any`` lets us probe the runtime keyword-only
-        # contract without ty flagging the deliberately-wrong call.
-        unchecked = cast(Any, compute_thresholds)
+        # Cast to Any to probe the runtime contract without the static
+        # type checker rejecting the deliberately-wrong call.
+        unchecked: Any = compute_thresholds
         with pytest.raises(TypeError, match="positional"):
             unchecked(metrics_2d, 50)
 

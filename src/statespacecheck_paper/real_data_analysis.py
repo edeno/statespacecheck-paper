@@ -575,6 +575,16 @@ def get_state_marginalized_posterior(
     posterior : np.ndarray, shape (n_time, n_bins)
         State-marginalized posterior summed over states, with NaN bins dropped.
 
+    Raises
+    ------
+    ValueError
+        If ``posterior_type`` is not ``"predictive"`` or ``"acausal"``,
+        or if the ``state_bins`` MultiIndex on a multi-state model is
+        malformed (e.g. duplicate ``(state, position)`` entries) and
+        cannot be unstacked. Refusing here is intentional: a silent
+        fallback would return a per-state slice labeled as the
+        marginal posterior, producing a wrong figure.
+
     Examples
     --------
     >>> # Requires xarray Dataset from non_local_detector

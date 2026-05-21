@@ -107,6 +107,15 @@ def compute_multiunit_zscore(
     -------
     z_multiunit : np.ndarray, shape (n_time,)
         Z-scored multiunit firing rate.
+
+    Raises
+    ------
+    ValueError
+        If ``multiunit_rate`` has zero or non-finite standard deviation
+        (every cell silent, or an upstream NaN propagated through
+        ``np.nanstd``). The prior implementation silently masked this
+        with ``nan_to_num`` and produced an all-zero output indistinguishable
+        from a real no-replay-candidate outcome.
     """
     multiunit_rate = spike_counts.sum(axis=1).astype(np.float64)
     # A degenerate (zero-variance) multiunit signal cannot be z-scored;
