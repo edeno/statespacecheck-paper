@@ -37,9 +37,28 @@ Generate position-tuned spikes:
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 from numpy.typing import NDArray
 from scipy.stats import norm
+
+
+def softmax_with_shift(ll: NDArray[np.floating]) -> NDArray[np.floating]:
+    """Numerically stable softmax via the log-sum-exp shift.
+
+    Subtracts ``ll.max()`` before exponentiation so the largest entry
+    is exactly 1 and the rest are bounded in (0, 1]. The result sums
+    to 1. Falls back to a uniform distribution if every entry is
+    ``-inf`` (degenerate observation that ``scipy.special.softmax``
+    would return as NaN for).
+    """
+    lmax = float(np.max(ll))
+    if not np.isfinite(lmax):
+        return np.full(ll.size, 1.0 / ll.size)
+    weighted = np.exp(ll - lmax)
+    normalized: NDArray[np.floating] = weighted / weighted.sum()
+    return normalized
 
 
 def normalize(
@@ -61,6 +80,19 @@ def normalize(
     normalized : np.ndarray
         Normalized array with same shape as input, where sum along axis equals 1.
 
+    Notes
+    -----
+    When the input sum falls below ``eps`` along one or more axes, the
+    function emits a ``RuntimeWarning`` and returns a near-zero non-
+    normalized result (``p / eps``). All-zero input usually signals an
+    upstream bug — a cell with zero rate everywhere on the analyzed
+    bins, or a likelihood that fully decoupled from the data — and
+    consumers downstream (``hpd_overlap``, ``kl_divergence``) will
+    silently treat the result as a probability distribution despite it
+    not summing to 1. The warning makes the situation visible so a
+    failing run leaves a paper trail in the test log instead of
+    plausible-looking-but-wrong scientific output.
+
     Examples
     --------
     Normalize a 1D probability distribution:
@@ -80,6 +112,15 @@ def normalize(
     True
     """
     s: NDArray[np.floating] = np.sum(p, axis=axis, keepdims=True)
+    if np.any(s < eps):
+        warnings.warn(
+            "normalize: input sum fell below eps along one or more axes; "
+            "result will be near-zero and is not a proper probability "
+            "distribution. Filter all-zero rows upstream if this is "
+            "expected, or investigate the source if not.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
     s = np.maximum(s, eps)
     result: NDArray[np.floating] = p / s
     return result
@@ -607,90 +648,3 @@ def simulate_spikes_history_dependent(
         steps_since_spike = np.where(fired, 0, steps_since_spike + 1)
 
     return spikes
-
-
-def wiggly_flat_rates(
-    xs: NDArray[np.floating],
-    n_cells: int,
-    *,
-    base_rate: float = 0.05,
-    wiggle_amp: float = 0.01,
-    n_wiggles: float = 5.0,
-) -> NDArray[np.floating]:
-    """Per-cell rate functions that are mostly flat with small spatial wiggles.
-
-    Each cell ``c`` gets a rate ``base_rate + wiggle_amp * sin(2π * n_wiggles
-    * (x - x_min) / (x_max - x_min) + φ_c)`` with cell-specific phase
-    ``φ_c = 2π * c / n_cells``. The rate is nearly position-independent —
-    a spike from such a cell carries little spatial information.
-
-    Used to construct the "wiggly-flat likelihood" misfit phase: the
-    decoder uses this rate table to compute likelihoods, so per-spike
-    likelihoods are wiggly-flat rather than Gaussian. HPD regions of
-    such likelihoods are unstable (small perturbations move the HPD
-    threshold across many bins), and the rank-based p-value becomes
-    ambiguous because no cell has a clearly higher expected contribution.
-
-    Parameters
-    ----------
-    xs : np.ndarray, shape (n_bins,)
-        Position grid; must be strictly increasing with at least 2 points.
-    n_cells : int
-        Number of cells whose rates to construct.
-    base_rate : float, optional
-        Constant rate floor (in same units as ``rate_scale``). Must be
-        positive. Defaults to 0.05.
-    wiggle_amp : float, optional
-        Amplitude of the sinusoidal modulation. Must be non-negative and
-        strictly smaller than ``base_rate`` so rates stay positive
-        everywhere. Defaults to 0.01.
-    n_wiggles : float, optional
-        Number of full sine cycles across the position grid. Defaults
-        to 5.
-
-    Returns
-    -------
-    rates : np.ndarray, shape (n_bins, n_cells)
-        Wiggly-flat rate table. Strictly positive everywhere.
-
-    Raises
-    ------
-    ValueError
-        If ``n_cells < 1``, ``xs`` has fewer than 2 points or is not
-        strictly increasing, ``base_rate <= 0``, ``wiggle_amp < 0``, or
-        ``wiggle_amp >= base_rate``.
-
-    Examples
-    --------
-    >>> import numpy as np
-    >>> xs = np.linspace(0, 100, 101)
-    >>> rates = wiggly_flat_rates(xs, n_cells=11)
-    >>> rates.shape
-    (101, 11)
-    >>> bool((rates > 0).all())
-    True
-    """
-    # Validate up front: a sign-flipped or out-of-range argument here would
-    # otherwise produce negative rates, which silently become NaN once they
-    # reach ``poisson.pmf`` downstream in ``decode_and_diagnostics``.
-    if n_cells < 1:
-        raise ValueError(f"n_cells must be >= 1, got {n_cells}")
-    if xs.size < 2:
-        raise ValueError("xs must have at least 2 points to define a position range")
-    # ``normalized_x`` below maps xs onto [0, 1] assuming a monotone grid;
-    # a non-monotone xs (e.g. [0, 2, 1, 3]) would warp the sinusoid phase.
-    if not np.all(np.diff(xs) > 0):
-        raise ValueError("xs must be strictly increasing")
-    x_range = float(xs[-1] - xs[0])
-    if base_rate <= 0:
-        raise ValueError(f"base_rate must be positive, got {base_rate}")
-    if wiggle_amp < 0:
-        raise ValueError(f"wiggle_amp must be non-negative, got {wiggle_amp}")
-    if wiggle_amp >= base_rate:
-        raise ValueError("wiggle_amp must be < base_rate to keep rates positive")
-
-    normalized_x = (xs - xs[0]) / x_range  # (n_bins,) in [0, 1]
-    phases = 2 * np.pi * np.arange(n_cells, dtype=float) / n_cells  # (n_cells,)
-    angle = 2 * np.pi * n_wiggles * normalized_x[:, None] + phases[None, :]  # (n_bins, n_cells)
-    rates: NDArray[np.floating] = base_rate + wiggle_amp * np.sin(angle)
-    return rates

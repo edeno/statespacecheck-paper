@@ -23,18 +23,18 @@ statespacecheck-paper/
 ├── scripts/                     # Figure generation scripts
 │   ├── generate_figure01.py    # Figure 1: Schematic and distribution comparisons
 │   ├── generate_figure02.py    # Figure 2: Diagnostic demonstrations
-│   ├── generate_figure03.py    # Figure 3: Per-cell diagnostics across 5 simulated misfit scenarios
+│   ├── generate_figure03.py    # Figure 3: Per-cell diagnostics across 4 simulated misfit scenarios
 │   └── generate_all_figures.py # Master script to generate all figures
-├── figures/                     # Generated figure outputs
-│   ├── main/                   # Main text figures (PDF + PNG)
-│   └── supplementary/          # Supplementary figures (PDF + PNG)
-├── manuscript/                  # LaTeX source files for paper
+├── manuscript/                  # LaTeX source files + bundled figures (Overleaf-ready)
 │   ├── main.tex
 │   ├── supplement.tex
 │   ├── references.bib
-│   └── README.md
+│   ├── README.md
+│   └── figures/                # Generated figure outputs
+│       ├── main/               # Main text figures (PDF + PNG)
+│       └── supplementary/      # Supplementary figures (PDF + PNG)
 ├── notebooks/                   # Jupyter notebooks for exploration
-└── tests/                       # Comprehensive test suite (97% coverage)
+└── tests/                       # Test suite (unit + property-based + integration)
     ├── test_style.py
     ├── test_simulation.py
     ├── test_analysis.py
@@ -57,7 +57,7 @@ statespacecheck-paper/
 
 - **generate_figure01.py**: Figure 1 orchestration (~170 lines) - schematic and distributions
 - **generate_figure02.py**: Figure 2 orchestration (~815 lines) - diagnostic demonstrations
-- **generate_figure03.py**: Figure 3 orchestration - per-cell diagnostics across a 10-phase simulation (5 misfit scenarios separated by clean-recovery windows): remap, history-dependent firing, drift, wide-dynamics noise, and wiggly-flat likelihood. The scenarios are chosen to span the metric-disagreement space - e.g. wide-dynamics noise inflates KL while HPD overlap and the rank-based p-value stay near baseline, and history-dependent firing is largely missed by all three per-spike spatial diagnostics. Figure 3 has two panels: a time-series block and a per-phase summary heatmap.
+- **generate_figure03.py**: Figure 3 orchestration - per-cell diagnostics across an 8-phase simulation (4 misfit scenarios separated by clean-recovery windows): remap, history-dependent firing, drift, and wide-dynamics noise. The scenarios are chosen to span the metric-disagreement space - e.g. wide-dynamics noise inflates KL while HPD overlap and the rank-based p-value stay near baseline, and history-dependent firing is largely missed by all three per-spike spatial diagnostics. Figure 3 has two panels: a time-series block and a per-phase summary heatmap.
 - **generate_all_figures.py**: Master script to generate all figures
 
 ## Repository Structure
@@ -154,8 +154,8 @@ def create_figure():
     # Create plots
     fig, axes = plot_combined_diagnostics(results, x_true, spikes, params)
 
-    # Save to figures/main/
-    save_figure("figures/main/figureX")
+    # Save to manuscript/figures/main/
+    save_figure("manuscript/figures/main/figureX")
 
 if __name__ == "__main__":
     create_figure()
@@ -163,7 +163,7 @@ if __name__ == "__main__":
 
 ### Testing Structure
 
-Tests are organized by module with 97.2% coverage:
+Tests are organized by module (regenerate exact percentages with `uv run pytest --cov --cov-report=term-missing | tail -1`):
 
 - **test_style.py**: Style utilities (100% coverage)
 - **test_simulation.py**: Simulation functions (100% coverage)
@@ -335,7 +335,7 @@ When adding new features, follow these guidelines:
 
 - Import from shared modules (don't duplicate code!)
 - Keep scripts thin (<200 lines of orchestration)
-- Save outputs to `figures/main/` or `figures/supplementary/`
+- Save outputs to `manuscript/figures/main/` or `manuscript/figures/supplementary/`
 - Add integration test in `tests/test_figures.py`
 - Document what the figure demonstrates
 
@@ -536,7 +536,7 @@ def plot_kl_over_time(
 1. **Ensure dependencies installed**: `uv pip install -e ".[dev]"`
 2. **Generate all figures**: `uv run python scripts/generate_all_figures.py`
 3. **Generate individual figure**: `uv run python scripts/generate_figure01.py`
-4. **Check outputs**: Figures saved to `figures/main/` or `figures/supplementary/`
+4. **Check outputs**: Figures saved to `manuscript/figures/main/` or `manuscript/figures/supplementary/`
 5. **Verify**: Review generated PDF and PNG files
 
 ### Before Committing

@@ -10,8 +10,6 @@ These tests verify the scientific claims of the figure-3 simulation:
   comparable to baseline — i.e., the per-spike spatial diagnostics
   largely *miss* a purely temporal misspecification (the deliberate
   demonstration of metric scope).
-- The wiggly-flat-likelihood phase pushes HPD overlap toward instability
-  and decouples KL from HPDO in the per-spike scatter.
 
 If any of these assertions ever flips, the figure no longer tells the
 story the paper claims; CI flags the regression.
@@ -35,16 +33,7 @@ def _moderate_params() -> DecodeParams:
     small enough to keep the test fast (~3 s on a laptop).
     """
     return DecodeParams(
-        T_remap_start=600,
-        T_remap_end=900,
-        T_recovery1_end=1100,
-        T_hist_dep_end=1400,
-        T_recovery2_end=1600,
-        T_drift_end=1900,
-        T_recovery3_end=2100,
-        T_wide_dynamics_end=2400,
-        T_recovery4_end=2600,
-        T_wiggly_end=2900,
+        phase_boundaries=(600, 900, 1100, 1400, 1600, 1900, 2100, 2400),
     )
 
 
@@ -52,9 +41,9 @@ def _per_phase_medians(
     sim: SimulationResult,
 ) -> dict[str, tuple[float, float, float]]:
     """Return (kl_med, hpd_med, sp_med) per phase label."""
-    metrics = sim["metrics"]
-    boundaries = np.asarray(sim["phase_boundaries"])
-    labels = sim["phase_labels"]
+    metrics = sim.metrics
+    boundaries = np.asarray(sim.phase_boundaries)
+    labels = sim.phase_labels
     event_phase = np.searchsorted(boundaries, metrics["event_time_ind"], side="right")
     out: dict[str, tuple[float, float, float]] = {}
     for i, label in enumerate(labels):
@@ -75,27 +64,26 @@ def sim() -> SimulationResult:
 
 def test_phase_labels_and_boundaries(sim: SimulationResult) -> None:
     """``run_figure03_simulation`` emits every canonical phase in order
-    and a timeline that ends at ``T_wiggly_end``.
+    and a timeline that ends at ``T_wide_dynamics_end``.
     """
-    params = sim["params"]
+    params = sim.params
     # The simulation must emit exactly the canonical phase set, in order.
-    assert sim["phase_labels"] == list(PHASE_LABELS)
-    # Sanity-check the canonical set itself: 10 phases, the 5 expected
+    assert sim.phase_labels == PHASE_LABELS
+    # Sanity-check the canonical set itself: 8 phases, the 4 expected
     # misfits each appearing once.
-    assert len(PHASE_LABELS) == 10
+    assert len(PHASE_LABELS) == 8
     for misfit in (
         "Remap Misfit",
         "History-Dependent Firing",
         "Drift Misfit",
         "Wide Dynamics Noise",
-        "Wiggly-Flat Likelihood",
     ):
         assert PHASE_LABELS.count(misfit) == 1
-    boundaries = np.asarray(sim["phase_boundaries"])
-    assert boundaries[-1] == params.T_wiggly_end
+    boundaries = np.asarray(sim.phase_boundaries)
+    assert boundaries[-1] == params.T_wide_dynamics_end
     assert np.all(np.diff(boundaries) > 0)
-    x_true = np.asarray(sim["x_true"])
-    assert x_true.shape[0] == params.T_wiggly_end
+    x_true = np.asarray(sim.x_true)
+    assert x_true.shape[0] == params.T_wide_dynamics_end
 
 
 def test_remap_phase_flags_all_three(sim: SimulationResult) -> None:
@@ -178,15 +166,22 @@ def test_history_dependent_firing_per_spike_metrics_near_baseline(
     )
 
 
-def test_wiggly_flat_likelihood_inflates_kl(sim: SimulationResult) -> None:
-    """Wiggly-flat-likelihood phase produces a wide, low-info likelihood;
-    KL(narrow_predictive || wiggly_flat_likelihood) is meaningfully
-    larger than baseline.
+def test_drift_phase_inflates_kl(sim: SimulationResult) -> None:
+    """The drift misfit (persistent-velocity trajectory vs. memoryless
+    decoder) must produce a meaningfully larger per-spike KL than
+    baseline. With the wiggly phase removed, this and the wide-dynamics
+    test are the only metric-dissociation regression guards left, so the
+    bound is tight enough to catch a near-noop drift.
     """
     medians = _per_phase_medians(sim)
     base_kl, _, _ = medians["Clean Baseline"]
-    wiggly_kl, _, _ = medians["Wiggly-Flat Likelihood"]
-    assert wiggly_kl > 1.5 * base_kl, (
-        "wiggly-flat-likelihood phase should inflate KL > 1.5x baseline; "
-        f"got base={base_kl:.3f}, wiggly={wiggly_kl:.3f}"
+    drift_kl, _, _ = medians["Drift Misfit"]
+    # Bound chosen against observed ratio (~1.38x at the moderate test
+    # scale) — strict enough to catch a regression where drift becomes
+    # indistinguishable from baseline, loose enough to absorb normal
+    # seed-to-seed variation. Tighten if a wider session shows clearer
+    # separation.
+    assert drift_kl > 1.2 * base_kl, (
+        f"drift phase should inflate KL by >1.2x baseline; "
+        f"got base={base_kl:.3f}, drift={drift_kl:.3f}"
     )

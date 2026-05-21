@@ -114,16 +114,16 @@ def _params_for_short_run(n_time: int, n_cells: int, sigx_pred: float = 0.5) -> 
     (some downstream helpers index a 1000-timestep baseline preamble).
     """
     return DecodeParams(
-        T_remap_start=int(n_time * 0.5),
-        T_remap_end=int(n_time * 0.6),
-        T_recovery1_end=int(n_time * 0.66),
-        T_hist_dep_end=int(n_time * 0.74),
-        T_recovery2_end=int(n_time * 0.8),
-        T_drift_end=int(n_time * 0.85),
-        T_recovery3_end=int(n_time * 0.9),
-        T_wide_dynamics_end=int(n_time * 0.93),
-        T_recovery4_end=int(n_time * 0.96),
-        T_wiggly_end=int(n_time * 0.99),
+        phase_boundaries=(
+            int(n_time * 0.5),
+            int(n_time * 0.6),
+            int(n_time * 0.66),
+            int(n_time * 0.74),
+            int(n_time * 0.8),
+            int(n_time * 0.85),
+            int(n_time * 0.9),
+            int(n_time * 0.99),
+        ),
         sigx_pred=sigx_pred,
         remap_from_to=_bidirectional_remap(n_cells),
     )

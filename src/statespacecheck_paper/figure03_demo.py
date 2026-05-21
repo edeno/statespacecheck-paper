@@ -2,8 +2,8 @@
 
 The figure-3 demo simulates a hippocampal-style decoder under a
 sequence of misfit conditions (remap, history-dependent firing,
-drift, wide-dynamics noise, wiggly-flat likelihood). The simulation
-pipeline drives both ``scripts/generate_figure03.py`` and
+drift, wide-dynamics noise). The simulation pipeline drives both
+``scripts/generate_figure03.py`` and
 ``statespacecheck_paper.interactive.cache.build_simulated_cache``;
 both call ``run_figure03_simulation`` so the figure and the
 interactive viewer's simulated cache stay byte-identical.
@@ -14,7 +14,7 @@ computation + plotting.
 
 from __future__ import annotations
 
-from typing import TypedDict
+from dataclasses import dataclass
 
 import numpy as np
 from numpy.typing import NDArray
@@ -33,7 +33,6 @@ from statespacecheck_paper.simulation import (
     simulate_spikes_history_dependent,
     simulate_spikes_position_tuned,
     simulate_walk,
-    wiggly_flat_rates,
 )
 
 # Canonical ordered phase labels — the public contract of
@@ -49,18 +48,36 @@ PHASE_LABELS: tuple[str, ...] = (
     "Drift Misfit",
     "Clean Recovery",
     "Wide Dynamics Noise",
-    "Clean Recovery",
-    "Wiggly-Flat Likelihood",
+)
+
+# Keys of ``decode_and_diagnostics`` outputs that are indexed by time
+# (leading dim ``n_time``). Listed positively to avoid silently missing
+# new event-indexed keys (``event_*``, ``per_spike_likelihood``,
+# ``spike_time_ind``, ``spike_cell_ind``) that don't match a negative
+# filter. Used by :meth:`SimulationResult.__post_init__` for shape
+# validation.
+TIME_INDEXED_METRIC_KEYS: tuple[str, ...] = (
+    "posterior",
+    "predictive",
+    "likelihood",
+    "spike_likelihood",
+    "hpd_overlap",
+    "kl_divergence",
+    "spike_prob",
 )
 
 
-class SimulationResult(TypedDict):
-    """Return shape of :func:`run_figure03_simulation`.
+@dataclass(frozen=True)
+class SimulationResult:
+    """Result of :func:`run_figure03_simulation`.
 
-    Promotes the simulation dict from ``dict[str, Any]`` to a fixed schema
-    so downstream consumers (the figure script, the interactive cache
-    builder, the test suite) get real type checking on every field
-    access.
+    Promoted from ``TypedDict`` to frozen dataclass so the load-bearing
+    length invariants — one ``phase_labels`` entry per phase, boundaries
+    delimit those phases, ``spikes`` and ``x_true`` share the timeline,
+    and the final boundary equals the timeline length — are checked at
+    construction. Without this, adding or removing a phase silently
+    changes downstream lengths and the figure-3 pipeline would run with
+    miscounted indices.
     """
 
     params: DecodeParams
@@ -68,8 +85,60 @@ class SimulationResult(TypedDict):
     x_true: NDArray[np.floating]
     spikes: NDArray[np.int_]
     metrics: dict[str, NDArray[np.floating] | NDArray[np.intp]]
-    phase_labels: list[str]
-    phase_boundaries: list[int]
+    # Sequence fields are declared as tuple so ``frozen=True``'s
+    # immutability extends to the contents — list would leave
+    # ``sim.phase_labels.append(...)`` and ``sim.phase_boundaries[-1] = 9999``
+    # as silent invariant-breakers. Callers passing a list at construction
+    # are coerced in __post_init__.
+    phase_labels: tuple[str, ...]
+    phase_boundaries: tuple[int, ...]
+
+    def __post_init__(self) -> None:
+        """Enforce length and timeline-consistency invariants.
+
+        Also coerces the two sequence fields to tuple (in case the
+        caller supplied a list) and validates each metrics array shares
+        the spike timeline.
+        """
+        # Coerce list -> tuple so frozen=True's immutability extends to
+        # the contents. ``object.__setattr__`` because frozen blocks the
+        # normal binding.
+        if not isinstance(self.phase_labels, tuple):
+            object.__setattr__(self, "phase_labels", tuple(self.phase_labels))
+        if not isinstance(self.phase_boundaries, tuple):
+            object.__setattr__(self, "phase_boundaries", tuple(self.phase_boundaries))
+
+        if self.phase_labels != PHASE_LABELS:
+            raise ValueError(
+                f"phase_labels must equal PHASE_LABELS in order; "
+                f"got {list(self.phase_labels)!r} vs canonical {list(PHASE_LABELS)!r}"
+            )
+        if len(self.phase_boundaries) != len(self.phase_labels):
+            raise ValueError(
+                f"phase_boundaries length ({len(self.phase_boundaries)}) "
+                f"must equal phase_labels length ({len(self.phase_labels)})."
+            )
+        n_time = self.x_true.shape[0]
+        if self.spikes.shape[0] != n_time:
+            raise ValueError(
+                f"spikes timeline ({self.spikes.shape[0]}) must equal x_true timeline ({n_time})."
+            )
+        if self.phase_boundaries[-1] != n_time:
+            raise ValueError(
+                f"final phase boundary ({self.phase_boundaries[-1]}) must "
+                f"equal x_true timeline ({n_time})."
+            )
+        # Per-time metrics must share the timeline (see
+        # ``TIME_INDEXED_METRIC_KEYS`` for the contract).
+        for key in TIME_INDEXED_METRIC_KEYS:
+            if key not in self.metrics:
+                continue
+            arr = self.metrics[key]
+            if arr.ndim >= 1 and arr.shape[0] != n_time:
+                raise ValueError(
+                    f"metrics[{key!r}] has leading dim {arr.shape[0]}; "
+                    f"expected {n_time} (must match the x_true timeline)."
+                )
 
 
 def run_figure03_simulation(
@@ -99,12 +168,6 @@ def run_figure03_simulation(
        transition matrix ``sigx_wide_dynamics ~ 40× baseline``;
        engineered to inflate KL while HPD overlap and the rank-based
        p-value stay near baseline — the KL false-positive case)
-    9. Clean Recovery
-    10. **Wiggly-Flat Likelihood Misfit** (observation: decoder uses
-        wiggly-flat rate functions for both posterior update and
-        diagnostic rate matrix during this window. Per-spike
-        likelihood is wiggly-flat; HPDO is destabilized and the
-        rank-based p-value becomes ambiguous.)
 
     Parameters
     ----------
@@ -118,8 +181,9 @@ def run_figure03_simulation(
     Returns
     -------
     SimulationResult
-        TypedDict with ``params``, ``xs``, ``x_true``, ``spikes``,
-        ``metrics``, ``phase_labels``, ``phase_boundaries``.
+        Dataclass with attributes ``params``, ``xs``, ``x_true``,
+        ``spikes``, ``metrics``, ``phase_labels``, ``phase_boundaries``.
+        Access via attribute (``sim.metrics``), not subscript.
     """
     if params is None:
         params = DecodeParams()
@@ -133,7 +197,6 @@ def run_figure03_simulation(
     xs = np.arange(params.xs_min, params.xs_max + params.xs_step, params.xs_step, dtype=float)
     transition_matrix = gaussian_transition_matrix(xs, params.sigx_pred)
     transition_matrix_inflated = gaussian_transition_matrix(xs, params.sigx_wide_dynamics)
-    wiggly_rates = wiggly_flat_rates(xs, n_cells=len(pf_centers))
 
     phases: list[tuple[NDArray[np.floating], NDArray[np.int_]]] = []
     phase_labels: list[str] = []
@@ -214,34 +277,15 @@ def run_figure03_simulation(
     x = _walk(n, params.sigx_pred)
     _add_phase(x, _spikes_position_tuned(x))
 
-    # 9. Clean recovery 4
-    n = params.T_recovery4_end - params.T_wide_dynamics_end
-    x = _walk(n, params.sigx_pred)
-    _add_phase(x, _spikes_position_tuned(x))
-
-    # 10. Wiggly-Flat Likelihood Misfit
-    #     Spike generation is *unchanged* (normal position-tuned firing); the
-    #     decoder swaps its per-cell rate functions for the wiggly-flat
-    #     ``wiggly_rates`` table during this window (handled inside
-    #     ``decode_and_diagnostics``). Per-spike likelihood is wiggly-flat
-    #     instead of Gaussian, which destabilizes HPDO and makes the
-    #     rank-based p-value ambiguous.
-    n = params.T_wiggly_end - params.T_recovery4_end
-    x = _walk(n, params.sigx_pred)
-    _add_phase(x, _spikes_position_tuned(x))
-
     x_true = np.concatenate([p_x for p_x, _ in phases], axis=0)
     spikes = np.vstack([p_s for _, p_s in phases])
 
-    # The three decoder-side misfits as a single schedule:
+    # The two decoder-side misfits as a single schedule:
     # - Remap: the decoder's posterior update uses remapped place-field
     #   centers (``decoder_rates``); the diagnostics still reference the
     #   original Gaussian fields (``diagnostic_rates`` left None) so they
     #   correctly flag the mismatch.
     # - Wide dynamics noise: an inflated transition matrix only.
-    # - Wiggly-flat likelihood: the decoder's rate model itself becomes
-    #   wiggly-flat, used for both the posterior update and the
-    #   diagnostics (``diagnostic_rates`` == ``decoder_rates``).
     remapped_rates = placefield_rates(
         xs,
         get_remapped_pf_centers(pf_centers, params.remap_from_to, active=True),
@@ -259,12 +303,6 @@ def run_figure03_simulation(
                 params.T_recovery3_end,
                 params.T_wide_dynamics_end,
                 transition_matrix=transition_matrix_inflated,
-            ),
-            MisfitWindow(
-                params.T_recovery4_end,
-                params.T_wiggly_end,
-                decoder_rates=wiggly_rates,
-                diagnostic_rates=wiggly_rates,
             ),
         )
     )
@@ -287,6 +325,6 @@ def run_figure03_simulation(
         x_true=x_true,
         spikes=spikes,
         metrics=metrics,
-        phase_labels=phase_labels,
-        phase_boundaries=boundaries,
+        phase_labels=tuple(phase_labels),
+        phase_boundaries=tuple(boundaries),
     )

@@ -15,13 +15,13 @@ Basic usage for creating a publication figure:
 >>> set_figure_defaults(context="paper")
 >>> fig, ax = plt.subplots(figsize=get_figure_size("single"))
 >>> _ = ax.plot([1, 2, 3], [1, 2, 3], color=WONG[1])
->>> save_figure("figures/my_figure")  # doctest: +SKIP
+>>> save_figure("manuscript/figures/my_figure")  # doctest: +SKIP
 
 For presentations:
 
 >>> set_figure_defaults(context="presentation")
 >>> fig, ax = plt.subplots(figsize=get_figure_size("double"))
->>> save_figure("figures/presentation_figure", dpi=300)  # doctest: +SKIP
+>>> save_figure("manuscript/figures/presentation_figure", dpi=300)  # doctest: +SKIP
 """
 
 from __future__ import annotations
@@ -139,10 +139,6 @@ COLORS: dict[str, str] = {
     # engineered to inflate KL while HPD overlap and the rank-based p-value
     # stay near baseline (the KL false-positive case).
     "phase_wide_dynamics": "#E8E1F2",  # Light purple (from WONG[7])
-    #
-    # Wiggly-flat-likelihood misfit — decoder uses low-information wiggly-flat
-    # rate functions; destabilizes HPD overlap and the rank-based p-value.
-    "phase_wiggly": "#E0F2E8",  # Light green (from WONG[3])
     #
     # -------------------------------------------------------------------------
     # Heatmap Colormaps
@@ -282,12 +278,12 @@ def save_figure(
 
     >>> fig, ax = plt.subplots()
     >>> _ = ax.plot([1, 2, 3], [1, 2, 3])
-    >>> save_figure("figures/my_figure")  # doctest: +SKIP
-    Saved figures/my_figure.pdf and figures/my_figure.png
+    >>> save_figure("manuscript/figures/my_figure")  # doctest: +SKIP
+    Saved manuscript/figures/my_figure.pdf and manuscript/figures/my_figure.png
 
     With custom DPI and keeping figure open:
 
-    >>> save_figure("figures/my_figure", dpi=300, close=False)  # doctest: +SKIP
+    >>> save_figure("manuscript/figures/my_figure", dpi=300, close=False)  # doctest: +SKIP
 
     Using Path object:
 
@@ -297,7 +293,7 @@ def save_figure(
 
     Auto-creates nested directories:
 
-    >>> save_figure("figures/supplementary/figure_s1")  # doctest: +SKIP
+    >>> save_figure("manuscript/figures/supplementary/figure_s1")  # doctest: +SKIP
     """
     # Convert to Path object for easier handling
     path = Path(name)

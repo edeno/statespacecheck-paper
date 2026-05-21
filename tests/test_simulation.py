@@ -17,7 +17,6 @@ from statespacecheck_paper.simulation import (
     simulate_spikes_position_tuned,
     simulate_walk,
     spike_prob_rank,
-    wiggly_flat_rates,
 )
 
 # ---------------------------------------------------------------------------
@@ -37,9 +36,11 @@ class TestNormalize:
         result = normalize(p, axis=axis)
         assert_allclose(result.sum(axis=axis), [1.0, 1.0])
 
-    def test_normalize_zeros_uses_eps_to_avoid_nan(self) -> None:
-        """Zero-sum input must produce finite output (uses eps internally)."""
-        result = normalize(np.zeros(5))
+    def test_normalize_zeros_uses_eps_to_avoid_nan_and_warns(self) -> None:
+        """Zero-sum input must produce finite output (uses eps internally) and
+        must emit a RuntimeWarning so the situation isn't silent."""
+        with pytest.warns(RuntimeWarning, match="normalize: input sum"):
+            result = normalize(np.zeros(5))
         assert np.isfinite(result).all()
 
 
@@ -442,66 +443,3 @@ class TestSimulateSpikesHistoryDependent:
             simulate_spikes_history_dependent(
                 np.full(50, 50.0), np.array([50.0]), 10.0, 5.0, rng, **kwargs
             )
-
-
-# ---------------------------------------------------------------------------
-# wiggly_flat_rates
-# ---------------------------------------------------------------------------
-
-
-class TestWigglyFlatRates:
-    def test_shape(self) -> None:
-        rates = wiggly_flat_rates(np.linspace(0, 100, 101), n_cells=11)
-        assert rates.shape == (101, 11)
-
-    def test_rates_strictly_positive(self) -> None:
-        """The function promises strictly positive rates everywhere — a
-        negative entry would become NaN once it reaches poisson.pmf."""
-        rates = wiggly_flat_rates(
-            np.linspace(0, 100, 257), n_cells=8, base_rate=0.05, wiggle_amp=0.049
-        )
-        assert (rates > 0).all()
-
-    def test_mean_near_base_rate(self) -> None:
-        """A full set of sine cycles averages back to base_rate per cell."""
-        rates = wiggly_flat_rates(
-            np.linspace(0, 100, 1001), n_cells=10, base_rate=0.05, n_wiggles=5.0
-        )
-        assert_allclose(rates.mean(axis=0), 0.05, atol=2e-3)
-
-    def test_cells_have_distinct_phases(self) -> None:
-        """Cell-specific phase offsets make the per-cell rate columns
-        differ — otherwise every cell would carry identical likelihoods."""
-        rates = wiggly_flat_rates(np.linspace(0, 100, 101), n_cells=4)
-        # No two columns identical.
-        for c in range(1, 4):
-            assert not np.allclose(rates[:, 0], rates[:, c])
-
-    def test_zero_wiggle_amp_is_allowed_and_flat(self) -> None:
-        """wiggle_amp=0 is valid (degenerate flat table), not an error."""
-        rates = wiggly_flat_rates(
-            np.linspace(0, 100, 51), n_cells=3, base_rate=0.05, wiggle_amp=0.0
-        )
-        assert_allclose(rates, 0.05)
-
-    @pytest.mark.parametrize(
-        ("kwargs", "match"),
-        [
-            ({"n_cells": 0}, "n_cells must be >= 1"),
-            ({"n_cells": 11, "base_rate": -0.1}, "base_rate must be positive"),
-            ({"n_cells": 11, "base_rate": 0.0}, "base_rate must be positive"),
-            ({"n_cells": 11, "wiggle_amp": -0.01}, "wiggle_amp must be non-negative"),
-            (
-                {"n_cells": 11, "base_rate": 0.05, "wiggle_amp": 0.05},
-                "wiggle_amp must be < base_rate",
-            ),
-        ],
-    )
-    def test_invalid_parameters_raise(self, kwargs: dict, match: str) -> None:
-        with pytest.raises(ValueError, match=match):
-            wiggly_flat_rates(np.linspace(0, 100, 101), **kwargs)
-
-    @pytest.mark.parametrize("xs", [np.array([5.0]), np.array([3.0, 3.0])])
-    def test_degenerate_position_grid_raises(self, xs: np.ndarray) -> None:
-        with pytest.raises(ValueError):
-            wiggly_flat_rates(xs, n_cells=4)

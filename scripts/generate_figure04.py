@@ -30,7 +30,9 @@ from statespacecheck_paper.real_data_analysis import (
     get_spike_counts,
 )
 from statespacecheck_paper.real_data_plotting import (
+    plot_per_spike_metric_hexbin_row,
     plot_single_model_diagnostics,
+    plot_track_graph_2d,
 )
 from statespacecheck_paper.style import save_figure, set_figure_defaults
 
@@ -206,9 +208,12 @@ def run_demo() -> None:
         time_offset,
     )
 
-    # Three panels: (a) context, (b) Continuous detail, (c) ContFrag detail
-    fig = plt.figure(figsize=(10.0, 7.0), dpi=450, constrained_layout=True)
-    subfigs = fig.subfigures(1, 3, width_ratios=[3, 2, 2], wspace=0.03)
+    # Two-row figure: decoding panels on top, track+hexbin row on bottom.
+    fig = plt.figure(figsize=(10.0, 9.5), dpi=450, constrained_layout=True)
+    subfigs_rows = fig.subfigures(2, 1, height_ratios=[6.5, 3.0], hspace=0.04)
+
+    # Top row: three columns (a) context, (b) Continuous detail, (c) ContFrag detail
+    subfigs = subfigs_rows[0].subfigures(1, 3, width_ratios=[3, 2, 2], wspace=0.03)
 
     # Shared plotting kwargs for detail panels
     detail_kwargs: dict[str, Any] = dict(
@@ -296,7 +301,8 @@ def run_demo() -> None:
             fontstyle="italic",
         )
 
-    # Panel labels - place in axes coordinates
+    # Panel labels - place in axes coordinates on the predictive row of each
+    # top-row column.
     for axes, label in [(axes_a, "a"), (axes_b, "b"), (axes_c, "c")]:
         axes[0].text(
             -0.05,
@@ -309,8 +315,49 @@ def run_demo() -> None:
             ha="right",
         )
 
-    save_figure("figures/main/figure04", close=True)
-    print("Saved figures/main/figure04.{pdf,png}")
+    # Bottom row: 2D track layout (d) and whole-session metric hexbins (e)
+    subfigs_bot = subfigs_rows[1].subfigures(1, 2, width_ratios=[2.5, 7], wspace=0.05)
+    ax_track = subfigs_bot[0].subplots()
+    plot_track_graph_2d(
+        track_graph=data["track_graph"],
+        position_info=position_info,
+        ax=ax_track,
+        edge_order=data["linear_edge_order"],
+        scalebar_length=20,
+        scalebar_label="20 cm",
+    )
+    ax_track.text(
+        -0.05,
+        1.05,
+        "d",
+        fontsize=8,
+        fontweight="bold",
+        transform=ax_track.transAxes,
+        va="top",
+        ha="right",
+    )
+
+    axes_hexbin = subfigs_bot[1].subplots(1, 3)
+    plot_per_spike_metric_hexbin_row(
+        continuous_diagnostics,
+        contfrag_diagnostics,
+        axes_hexbin,
+        model_a_name="Continuous",
+        model_b_name="Cont-Frag",
+    )
+    axes_hexbin[0].text(
+        -0.18,
+        1.10,
+        "e",
+        fontsize=8,
+        fontweight="bold",
+        transform=axes_hexbin[0].transAxes,
+        va="top",
+        ha="right",
+    )
+
+    save_figure("manuscript/figures/main/figure04", close=True)
+    print("Saved manuscript/figures/main/figure04.{pdf,png}")
     print("\nFigure 4 complete!")
 
 

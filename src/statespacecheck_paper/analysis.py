@@ -39,6 +39,7 @@ goodness-of-fit.
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Mapping
 from dataclasses import dataclass
 
@@ -50,6 +51,7 @@ from scipy.stats import poisson
 from statespacecheck_paper.simulation import (
     normalize,
     placefield_rates,
+    softmax_with_shift,
 )
 
 # Spike-batch size for ``compute_per_cell_diagnostics_from_rates``.
@@ -59,16 +61,104 @@ from statespacecheck_paper.simulation import (
 # scratch array, ~600 MB peak with three live (pred / rates / lik).
 _PER_SPIKE_BATCH = 50_000
 
+# Sentinel for ``_condition_on`` underflow steps.
+_NEG_INF = float("-inf")
+
+
+def _condition_on(
+    probs: NDArray[np.floating],
+    ll: NDArray[np.floating],
+    eps: float = 1e-15,
+) -> tuple[NDArray[np.floating], float]:
+    """Bayesian update: multiply prior by emission likelihood, normalize.
+
+    Adapted from ``non_local_detector.core._condition_on`` (which itself
+    is adapted from ``dynamax``). The log-sum-exp shift of subtracting
+    ``ll.max()`` before exponentiation makes ``exp(ll - ll_max)`` peak
+    at 1, keeping the posterior update numerically stable even when
+    individual cell likelihoods would have underflowed in linear space.
+
+    Underflow regime: when the prior and likelihood are essentially
+    disjoint (``weighted.sum() < eps``), the marginal likelihood
+    underflows and the returned posterior would be a meaningless
+    near-zero vector. Rather than propagate that into the next step's
+    predict-and-update (where it would silently become uniform via the
+    eps clamp in :func:`statespacecheck_paper.simulation.normalize`),
+    this function explicitly returns a uniform posterior and
+    ``log_norm = -inf``. Callers should treat ``log_norm == -inf`` as
+    the signal to flag the step.
+
+    Parameters
+    ----------
+    probs : np.ndarray, shape (n_bins,)
+        Linear-space prior, must sum to 1.
+    ll : np.ndarray, shape (n_bins,)
+        Log-likelihood of the observation at each bin (unnormalized).
+    eps : float, default 1e-15
+        Underflow threshold on ``weighted.sum()``; below this the
+        uniform fallback path runs.
+
+    Returns
+    -------
+    new_probs : np.ndarray, shape (n_bins,)
+        Posterior; sums to 1. Equals ``1/n_bins`` everywhere when the
+        underflow fallback runs.
+    log_norm : float
+        Log marginal likelihood for this step (``log p(obs | past)``).
+        ``-inf`` when the underflow fallback runs.
+    """
+    n_bins = probs.size
+    ll_max = float(np.max(ll))
+    if not np.isfinite(ll_max):
+        return np.full(n_bins, 1.0 / n_bins), _NEG_INF
+    weighted = probs * np.exp(ll - ll_max)
+    norm = float(weighted.sum())
+    if norm < eps:
+        return np.full(n_bins, 1.0 / n_bins), _NEG_INF
+    new_probs = weighted / norm
+    log_norm = float(np.log(norm)) + ll_max
+    return new_probs, log_norm
+
+
 # -----------------------------
 # Data containers
 # -----------------------------
+
+
+# Canonical names for the figure-3 phase boundaries, in order. One entry
+# per position in :attr:`DecodeParams.phase_boundaries`. Public so tests
+# and downstream code refer to the names symbolically rather than by index.
+PHASE_BOUNDARY_NAMES: tuple[str, ...] = (
+    "T_remap_start",  # end of clean baseline
+    "T_remap_end",  # end of remap misfit
+    "T_recovery1_end",  # end of clean recovery 1
+    "T_hist_dep_end",  # end of history-dependent firing misfit
+    "T_recovery2_end",  # end of clean recovery 2
+    "T_drift_end",  # end of drift misfit
+    "T_recovery3_end",  # end of clean recovery 3
+    "T_wide_dynamics_end",  # end of wide-dynamics-noise misfit
+)
+# Default phase ladder in 1-ms steps. Used as the default of
+# ``DecodeParams.phase_boundaries`` and re-exported here so tests and
+# scripts that want to override a subset don't have to re-list the
+# unchanged entries.
+_DEFAULT_PHASE_BOUNDARIES: tuple[int, ...] = (
+    6_000,
+    10_000,
+    14_000,
+    18_000,
+    22_000,
+    26_000,
+    30_000,
+    32_000,
+)
 
 
 @dataclass
 class DecodeParams:
     """Parameters for the figure-3 decoding simulation.
 
-    The simulation walks through five misfit conditions separated by
+    The simulation walks through four misfit conditions separated by
     clean-recovery windows. Time steps are 1 ms by convention — the
     simulation math itself is dt-agnostic, but the default parameters
     (`rate_scale=5.0`, refractory and burst windows in
@@ -85,50 +175,17 @@ class DecodeParams:
     - 22k–26k: Drift misfit (4 s)
     - 26k–30k: Clean recovery
     - 30k–32k: Wide-dynamics-noise misfit (2 s)
-    - 32k–34k: Clean recovery
-    - 34k–38k: Wiggly-flat-likelihood misfit (4 s)
 
     Parameters
     ----------
-    T_remap_start : int, default 6_000
-        Start of remap misfit window (end of clean baseline).
-    T_remap_end : int, default 10_000
-        End of remap misfit window.
-    T_recovery1_end : int, default 14_000
-        End of first recovery period.
-    T_hist_dep_end : int, default 18_000
-        End of history-dependent firing misfit window. Spikes use
-        :func:`simulate_spikes_history_dependent` (refractory +
-        bursting); decoder still assumes Poisson. The misfit lives
-        in spike-train temporal correlations, not in the per-spike
-        spatial likelihood, so per-spike diagnostics largely miss it
-        — a deliberate demonstration of the spatial-only nature of
-        the metrics.
-    T_recovery2_end : int, default 22_000
-        End of second recovery period.
-    T_drift_end : int, default 26_000
-        End of drift misfit window. Animal trajectory has persistent
-        velocity (momentum = 0.8); decoder assumes memoryless random
-        walk.
-    T_recovery3_end : int, default 30_000
-        End of third recovery period.
-    T_wide_dynamics_end : int, default 32_000
-        End of wide-dynamics-noise misfit window. Decoder applies an
-        inflated transition matrix (``sigx_wide_dynamics``) while the
-        animal walks normally; engineered to inflate KL while HPD
-        overlap and the rank-based p-value stay near baseline (the
-        KL-false-positive case).
-    T_recovery4_end : int, default 34_000
-        End of fourth recovery period.
-    T_wiggly_end : int, default 38_000
-        End of wiggly-flat-likelihood misfit window. Decoder uses
-        per-cell wiggly-flat rate functions (see
-        :func:`statespacecheck_paper.simulation.wiggly_flat_rates`)
-        for both posterior updates and diagnostic rate matrix during
-        this window. The per-spike likelihood is wiggly-flat instead
-        of Gaussian; HPDO becomes unstable (irregular HPD region) and
-        the rank-based p-value becomes ambiguous (no clearly
-        most-expected cell).
+    phase_boundaries : tuple of int, default ``_DEFAULT_PHASE_BOUNDARIES``
+        Strictly increasing end-of-phase indices, one per entry of
+        :data:`PHASE_BOUNDARY_NAMES`. The named accessors
+        (``T_remap_start``, ``T_remap_end``, etc.) are read-only views
+        onto this tuple by index. Override a subset by spelling out the
+        whole tuple — partial overrides aren't supported because the
+        invariant the dataclass enforces ("strictly increasing ladder")
+        only makes sense over the full ladder.
     sigx_pred : float, default 0.5
         Decoder's baseline dynamics standard deviation.
     sigx_wide_dynamics : float, default 20.0
@@ -165,21 +222,15 @@ class DecodeParams:
     >>> params = DecodeParams()
     >>> params.remap_window
     (6000, 10000)
+    >>> params.T_remap_start, params.T_wide_dynamics_end
+    (6000, 32000)
     >>> params.pf_centers
     array([  0.,  10.,  20.,  30.,  40.,  50.,  60.,  70.,  80.,  90., 100.])
     """
 
-    # Timeline (1 ms steps by convention; the math is dt-agnostic)
-    T_remap_start: int = 6_000
-    T_remap_end: int = 10_000
-    T_recovery1_end: int = 14_000
-    T_hist_dep_end: int = 18_000
-    T_recovery2_end: int = 22_000
-    T_drift_end: int = 26_000
-    T_recovery3_end: int = 30_000
-    T_wide_dynamics_end: int = 32_000
-    T_recovery4_end: int = 34_000
-    T_wiggly_end: int = 38_000
+    # Phase ladder. One boundary per entry of PHASE_BOUNDARY_NAMES,
+    # strictly increasing; validated in __post_init__.
+    phase_boundaries: tuple[int, ...] = _DEFAULT_PHASE_BOUNDARIES
 
     # Decoder & dynamics parameters
     sigx_pred: float = 0.5  # baseline dynamics std
@@ -209,47 +260,84 @@ class DecodeParams:
         (7, 2),
     )
 
+    # Named accessors — index into ``phase_boundaries``. The names are
+    # the same as the previous dataclass fields so existing read sites
+    # (``params.T_remap_end``) keep working without migration.
+
+    @property
+    def T_remap_start(self) -> int:  # noqa: N802 — naming matches the boundary index it surfaces
+        return self.phase_boundaries[0]
+
+    @property
+    def T_remap_end(self) -> int:  # noqa: N802
+        return self.phase_boundaries[1]
+
+    @property
+    def T_recovery1_end(self) -> int:  # noqa: N802
+        return self.phase_boundaries[2]
+
+    @property
+    def T_hist_dep_end(self) -> int:  # noqa: N802
+        return self.phase_boundaries[3]
+
+    @property
+    def T_recovery2_end(self) -> int:  # noqa: N802
+        return self.phase_boundaries[4]
+
+    @property
+    def T_drift_end(self) -> int:  # noqa: N802
+        return self.phase_boundaries[5]
+
+    @property
+    def T_recovery3_end(self) -> int:  # noqa: N802
+        return self.phase_boundaries[6]
+
+    @property
+    def T_wide_dynamics_end(self) -> int:  # noqa: N802
+        return self.phase_boundaries[7]
+
     @property
     def remap_window(self) -> tuple[int, int]:
-        """Remapping window for backward compatibility.
-
-        Returns
-        -------
-        tuple[int, int]
-            (T_remap_start, T_remap_end)
-        """
+        """Remapping window as ``(start, end)``."""
         return (self.T_remap_start, self.T_remap_end)
 
     def __post_init__(self) -> None:
         """Validate the timeline and initialize ``pf_centers`` if not provided.
 
-        The 10 ``T_*`` fields are phase-boundary indices that must be
-        strictly increasing — ``run_figure03_simulation`` builds each
-        phase as ``T_next - T_prev`` and a non-monotonic timeline would
-        yield a negative phase length, which ``np.arange``/``np.zeros``
-        silently turn into an empty phase, shifting every later misfit
-        window. Catch that here at construction rather than as a
-        misaligned figure downstream.
+        ``phase_boundaries`` must have exactly :data:`PHASE_BOUNDARY_NAMES`
+        entries and be strictly increasing — ``run_figure03_simulation``
+        builds each phase as ``T_next - T_prev`` and a non-monotonic
+        timeline would yield a negative phase length, which
+        ``np.arange``/``np.zeros`` silently turn into an empty phase,
+        shifting every later misfit window. Catch that here at
+        construction rather than as a misaligned figure downstream.
         """
-        timeline = [
-            self.T_remap_start,
-            self.T_remap_end,
-            self.T_recovery1_end,
-            self.T_hist_dep_end,
-            self.T_recovery2_end,
-            self.T_drift_end,
-            self.T_recovery3_end,
-            self.T_wide_dynamics_end,
-            self.T_recovery4_end,
-            self.T_wiggly_end,
-        ]
-        if any(later <= earlier for earlier, later in zip(timeline, timeline[1:], strict=False)):
+        bnds = tuple(self.phase_boundaries)
+        if len(bnds) != len(PHASE_BOUNDARY_NAMES):
             raise ValueError(
-                f"DecodeParams timeline boundaries must be strictly increasing; got {timeline}"
+                f"DecodeParams.phase_boundaries must have "
+                f"{len(PHASE_BOUNDARY_NAMES)} entries "
+                f"(one per PHASE_BOUNDARY_NAMES); got {len(bnds)}."
             )
+        if any(later <= earlier for earlier, later in zip(bnds, bnds[1:], strict=False)):
+            raise ValueError(
+                f"DecodeParams.phase_boundaries must be strictly increasing; got {list(bnds)}."
+            )
+        # Coerce to tuple so the field is hashable and immutable.
+        self.phase_boundaries = bnds
 
         if self.pf_centers is None:
             self.pf_centers = np.arange(self.xs_min, self.xs_max + 1, 10, dtype=float)
+        else:
+            # Copy the caller's array so we don't write-protect their
+            # reference; they keep a writable original.
+            self.pf_centers = np.asarray(self.pf_centers).copy()
+        # Write-protect against in-place mutation. ``DecodeParams`` is a
+        # plain (non-frozen) dataclass so the field can still be
+        # *rebound* (``params.pf_centers = other``), but ``params.pf_centers[i] = x``
+        # is now an error — the latter is the more dangerous case because
+        # it silently corrupts every downstream decoder call.
+        self.pf_centers.setflags(write=False)
 
 
 @dataclass(frozen=True)
@@ -271,30 +359,52 @@ class MisfitWindow:
     decoder_rates : np.ndarray, shape (n_bins, n_cells), optional
         Replaces the baseline Gaussian place-field rate table used to
         form the posterior-update likelihood (and the displayed per-spike
-        likelihood). Used by the remap misfit (remapped place fields) and
-        the wiggly-flat-likelihood misfit.
+        likelihood). Used by the remap misfit (remapped place fields).
     diagnostic_rates : np.ndarray, shape (n_bins, n_cells), optional
         Replaces the rate table the *diagnostics* judge spikes against.
         Leave ``None`` for a misfit that perturbs the world the decoder
-        observes but not the decoder's own model — remapping: the
+        observes but not the decoder's own model — for remapping, the
         diagnostic should still reference the model's intended Gaussian
         place fields, so it correctly flags the mismatch. Set it (equal
         to ``decoder_rates``) only for a misfit that redefines what the
-        decoder's model *is* — the wiggly-flat-likelihood phase.
+        decoder's model *is*. No current ``MisfitSchedule`` in the
+        figure-3 pipeline sets this field; it is reserved for
+        hypothetical future misfits whose rate table the diagnostic
+        should also adopt rather than judging against the original.
+
+        Setting this without also setting ``decoder_rates`` is rejected
+        at construction — the diagnostic would judge spikes against a
+        table the decoder never used.
 
     Raises
     ------
     ValueError
-        If ``start >= end`` or a supplied rate table contains negative or
-        non-finite entries.
+        If ``start >= end``; if a supplied rate table contains negative
+        or non-finite entries; or if ``diagnostic_rates`` is set with
+        ``decoder_rates=None``.
+
+    Notes
+    -----
+    Supplied ``transition_matrix``, ``decoder_rates``, and
+    ``diagnostic_rates`` are copied at construction and marked
+    write-protected via ``setflags(write=False)``, extending the
+    dataclass's ``frozen=True`` invariant to the array contents.
+
+    Shape parity with the decoder's grid is checked by
+    :meth:`validate_against`, which the decoder calls once per
+    schedule entry — too late to check at construction because the
+    schedule may be built before ``xs`` is pinned down.
 
     Examples
     --------
+    Remap-style misfit — decoder uses an alternate rate table, diagnostic
+    still references the original Gaussian PFs so the mismatch surfaces:
+
     >>> import numpy as np
-    >>> rates = np.full((5, 3), 0.1)
-    >>> w = MisfitWindow(10, 20, decoder_rates=rates, diagnostic_rates=rates)
-    >>> w.start, w.end
-    (10, 20)
+    >>> remapped = np.full((5, 3), 0.1)
+    >>> w = MisfitWindow(10, 20, decoder_rates=remapped)
+    >>> w.start, w.end, w.diagnostic_rates is None
+    (10, 20, True)
     """
 
     start: int
@@ -304,9 +414,20 @@ class MisfitWindow:
     diagnostic_rates: NDArray[np.floating] | None = None
 
     def __post_init__(self) -> None:
-        """Validate the window bounds and any supplied rate tables."""
+        """Validate the window bounds and any supplied rate tables.
+
+        Beyond the basic ``start < end`` and finite/non-negative
+        checks, this also (a) rejects the nonsense configuration of
+        ``diagnostic_rates`` set with ``decoder_rates=None`` — there's
+        no meaningful misfit there, just a diagnostic judging spikes
+        against a rate table the decoder never used; (b) makes a
+        write-protected copy of any supplied rate table so the
+        ``frozen=True`` invariant extends to the array contents, not
+        just the dataclass field bindings.
+        """
         if self.start >= self.end:
             raise ValueError(f"MisfitWindow requires start < end, got ({self.start}, {self.end})")
+
         # A negative or non-finite rate table would become NaN once it
         # reaches ``poisson.pmf`` and propagate silently through the
         # posterior — reject it at construction.
@@ -314,6 +435,85 @@ class MisfitWindow:
             table = getattr(self, name)
             if table is not None and not (np.all(np.isfinite(table)) and np.all(table >= 0.0)):
                 raise ValueError(f"MisfitWindow.{name} must be finite and non-negative everywhere")
+
+        # diagnostic_rates without decoder_rates is incoherent. Either
+        # the diagnostic should reference the model's intended rates
+        # (decoder_rates=None, diagnostic_rates=None) or the misfit
+        # redefines the model (decoder_rates set, diagnostic_rates set
+        # — typically to the same table). Setting only diagnostic_rates
+        # would have the diagnostic judge spikes against a table the
+        # decoder never used, which is nonsense.
+        if self.diagnostic_rates is not None and self.decoder_rates is None:
+            raise ValueError(
+                "MisfitWindow.diagnostic_rates is set but decoder_rates is None — "
+                "the diagnostic would judge spikes against a rate table the "
+                "decoder never used. Set both fields (typically to the same "
+                "array) for a misfit that redefines the decoder's model, or "
+                "leave both None and let the diagnostic reference the original "
+                "Gaussian PFs (e.g. remap, where only decoder_rates is set)."
+            )
+
+        # Write-protect any supplied rate tables. A frozen dataclass
+        # only prevents rebinding ``self.decoder_rates``; the underlying
+        # ndarray is still mutable. Take a defensive copy and mark it
+        # read-only so callers can't bypass the validation above by
+        # mutating in place after construction. The copy runs even when
+        # the input is already read-only — otherwise the dataclass
+        # would alias the caller's view, which (despite the read-only
+        # flag) shares memory and ties the window's lifetime to
+        # something the caller might unflag later via
+        # ``setflags(write=True)``.
+        for name in ("transition_matrix", "decoder_rates", "diagnostic_rates"):
+            table = getattr(self, name)
+            if table is None:
+                continue
+            copy = table.copy()
+            copy.setflags(write=False)
+            object.__setattr__(self, name, copy)
+
+    def validate_against(self, *, n_bins: int, n_cells: int) -> None:
+        """Validate that supplied rate tables match the decoder's grid.
+
+        Shape parity with the decoder's position grid and cell count
+        can't be checked at construction time because the schedule may
+        be built before the decoder's ``xs`` is pinned down (e.g.
+        scripts that construct the schedule, then pass it through to
+        ``decode_and_diagnostics`` which knows ``n_bins``). Call this
+        once per schedule entry inside the decoder, before any window
+        is consulted.
+
+        Parameters
+        ----------
+        n_bins : int
+            Number of position bins in the decoder's grid
+            (``xs.size``).
+        n_cells : int
+            Number of cells in the spike train (``spikes.shape[1]``).
+
+        Raises
+        ------
+        ValueError
+            If any supplied rate table's shape doesn't equal
+            ``(n_bins, n_cells)``.
+        """
+        for name in ("decoder_rates", "diagnostic_rates"):
+            table = getattr(self, name)
+            if table is None:
+                continue
+            if table.shape != (n_bins, n_cells):
+                raise ValueError(
+                    f"MisfitWindow.{name} shape {table.shape} does not "
+                    f"match decoder grid ({n_bins}, {n_cells})."
+                )
+        if self.transition_matrix is not None and self.transition_matrix.shape != (
+            n_bins,
+            n_bins,
+        ):
+            raise ValueError(
+                f"MisfitWindow.transition_matrix shape "
+                f"{self.transition_matrix.shape} does not match decoder grid "
+                f"({n_bins}, {n_bins})."
+            )
 
 
 @dataclass(frozen=True)
@@ -547,10 +747,10 @@ def decode_and_diagnostics(
     rate_scale : float
         Scaling factor for firing rates.
     misfit_schedule : MisfitSchedule, optional
-        Decoder-side misfit windows — remapping, wide-dynamics noise,
-        wiggly-flat likelihood. Each :class:`MisfitWindow` swaps the
-        transition matrix and/or the per-cell rate table for its
-        interval. Defaults to an empty schedule: a clean decode with no
+        Decoder-side misfit windows — remapping and wide-dynamics noise.
+        Each :class:`MisfitWindow` swaps the transition matrix and/or
+        the per-cell rate table for its interval. Defaults to an empty
+        schedule: a clean decode with no
         misfits (the real-data decoding case).
     rng : np.random.Generator | None, optional
         Random number generator (reserved for future use).
@@ -606,6 +806,23 @@ def decode_and_diagnostics(
     :class:`MisfitSchedule` / :class:`MisfitWindow` is *constructed*, not
     here.
 
+    The per-cell likelihood combination and the posterior update both
+    run in log-space via the :func:`_condition_on` pattern adapted from
+    ``dynamax`` / ``non_local_detector.core``. The posterior update
+    itself cannot underflow on the inner step (it uses an explicit
+    log-sum-exp shift). The stored ``combined_likelihood`` and
+    ``spike_likelihood`` arrays are renormalized after the same shift,
+    so individual bins still underflow to zero in linear space but the
+    row as a whole remains a proper probability distribution.
+
+    When the prior and combined likelihood have no meaningful overlap
+    (``weighted.sum() < eps`` inside ``_condition_on``), the helper
+    falls back to a uniform posterior and signals via
+    ``log_norm = -inf``. This function counts such steps and emits a
+    single summary ``RuntimeWarning`` at the end so the situation is
+    visible. Diagnostics at flagged steps reference a uniform
+    predictive; consumers should mask them out if needed.
+
     Examples
     --------
     >>> import numpy as np
@@ -638,6 +855,13 @@ def decode_and_diagnostics(
     if misfit_schedule is None:
         misfit_schedule = MisfitSchedule()
 
+    # Shape-validate every schedule entry against the decoder's grid.
+    # MisfitWindow's __post_init__ can't check this because the schedule
+    # may be built before xs / spikes are pinned down.
+    n_cells = spikes.shape[1]
+    for schedule_entry in misfit_schedule.windows:
+        schedule_entry.validate_against(n_bins=n_bins, n_cells=n_cells)
+
     # Preallocate outputs
     posterior: NDArray[np.floating] = np.zeros((n_time, n_bins))
     predictive_posterior: NDArray[np.floating] = np.zeros((n_time, n_bins))  # p(x_t | y_{1:t-1})
@@ -656,6 +880,14 @@ def decode_and_diagnostics(
     # the default diagnostic rate table.
     rates = placefield_rates(xs, pf_centers, pf_width, rate_scale)
 
+    # Track timesteps where _condition_on fell back to uniform (prior and
+    # likelihood had essentially no overlap). The fallback keeps the
+    # filter alive but the diagnostics at those steps are computed
+    # against a uniform predictive; report a summary at the end so the
+    # caller can mask them out if desired.
+    n_underflow_steps = 0
+    first_underflow_t = -1
+
     for t in range(1, n_time):
         window = misfit_schedule.window_at(t)
 
@@ -667,32 +899,55 @@ def decode_and_diagnostics(
         prior = normalize(posterior[t - 1] @ current_transition)  # (n_bins,)
         predictive_posterior[t] = prior  # stored for p-value computation
 
-        # Likelihood grid for this time's counts. The per-cell rate table
-        # is the baseline Gaussian-PF table unless the active misfit
-        # window overrides it (remapped or wiggly-flat table).
+        # Per-cell rate table for this step. The baseline Gaussian-PF
+        # table unless the active misfit window overrides it (e.g.
+        # remapped table).
         rates_t = rates
         if window is not None and window.decoder_rates is not None:
             rates_t = window.decoder_rates
-        likelihood = normalize(poisson.pmf(spikes[t][None, :], rates_t), axis=0)
 
-        # Compute combined likelihood from all cells (product over cells)
-        combined_likelihood = np.prod(likelihood, axis=1)  # (n_bins,)
-        combined_likelihood_all[t] = normalize(combined_likelihood)  # Store normalized likelihood
+        # Per-cell log-likelihoods. Using poisson.logpmf directly avoids
+        # underflow that the linear-space pmf path used to hit when many
+        # per-cell normalized likelihoods got multiplied together.
+        log_lik_per_cell = poisson.logpmf(spikes[t][None, :], rates_t)  # (n_bins, n_cells)
+
+        # Combined log-likelihood across cells (was np.prod in linear
+        # space — the first underflow site).
+        log_lik_combined = log_lik_per_cell.sum(axis=1)  # (n_bins,)
+
+        # Stored combined likelihood: same shift-and-normalize math as
+        # _condition_on, factored into the shared helper.
+        combined_likelihood_all[t] = softmax_with_shift(log_lik_combined)
 
         # Spike-only likelihood: product over only cells that fired.
         spiking_mask = spikes[t] > 0
         if np.any(spiking_mask):
-            spike_likelihood_all[t] = normalize(np.prod(likelihood[:, spiking_mask], axis=1))
+            spike_likelihood_all[t] = softmax_with_shift(
+                log_lik_per_cell[:, spiking_mask].sum(axis=1)
+            )
 
-        # Posterior update with underflow protection
-        # When prior-likelihood mismatch is extreme, the product can underflow to zero.
-        # Fall back to uniform distribution to allow filter to recover.
-        unnormalized_posterior = prior * combined_likelihood
-        posterior_sum = np.sum(unnormalized_posterior)
-        if posterior_sum < 1e-300:  # Numerical underflow detected
-            posterior[t] = np.ones(n_bins) / n_bins  # Reset to uniform
-        else:
-            posterior[t] = unnormalized_posterior / posterior_sum
+        # Posterior update via the _condition_on pattern (dynamax /
+        # non_local_detector). ``log_norm = -inf`` flags steps where the
+        # prior and likelihood had no meaningful overlap; the helper
+        # explicitly returns a uniform posterior in that case and we
+        # surface the count post-loop rather than letting the situation
+        # silently propagate.
+        posterior[t], log_norm = _condition_on(prior, log_lik_combined)
+        if log_norm == _NEG_INF:
+            if n_underflow_steps == 0:
+                first_underflow_t = t
+            n_underflow_steps += 1
+
+    if n_underflow_steps > 0:
+        warnings.warn(
+            f"decode_and_diagnostics: prior/likelihood overlap underflowed at "
+            f"{n_underflow_steps} timestep(s); first at t={first_underflow_t}. "
+            f"Posterior was reset to uniform at those steps; downstream "
+            f"per-spike diagnostics computed at those times reference a "
+            f"uniform predictive and should be interpreted accordingly.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
 
     # Find all spike events (excluding t=0 which has no valid prior). Count
     # matrices are expanded so a bin with count k contributes k spike events.
@@ -709,9 +964,9 @@ def decode_and_diagnostics(
     # intended likelihood — during remapping the decoder updates the
     # posterior with remapped fields but the diagnostic still references
     # the original fields (``diagnostic_rates`` is ``None`` for remap),
-    # so the diagnostic correctly flags the mismatch. The wiggly-flat
-    # phase redefines the model itself, so its window sets
-    # ``diagnostic_rates`` and those events are judged against it.
+    # so the diagnostic correctly flags the mismatch. A misfit that
+    # redefines the model itself would set ``diagnostic_rates`` so its
+    # events are judged against that table.
     # ``compute_per_cell_diagnostics_from_rates`` takes a single rate
     # table, so group events by table, diagnose each group, and merge.
     diag_tables: list[NDArray[np.floating]] = [rates]
@@ -818,7 +1073,7 @@ def _merge_diagnostics(
 
     Used when the diagnostic rate table differs across the timeline
     because the :class:`MisfitSchedule` has windows with
-    ``diagnostic_rates`` set (the wiggly-flat-likelihood phase).
+    ``diagnostic_rates`` set.
 
     Parameters
     ----------
@@ -979,7 +1234,19 @@ def compute_per_cell_diagnostics_from_rates(
         # but only over the rows we actually need. Cost: ~3× the
         # rank work versus the unique-time dedup, but the memory
         # ceiling drops to ``B × n_cells``.
-        cell_fraction_per_bin = normalize(rates, axis=1)  # (n_bins, n_cells)
+        # ``cell_fraction_per_bin[x, c] = p(cell c | bin x, spike happened)``.
+        # Bins where every cell has zero rate (sparse real-data coverage
+        # away from any PF) would trigger ``normalize``'s near-zero
+        # warning and produce a meaningless near-zero row. Use a uniform
+        # ``1/n_cells`` fallback on those rows so the rank statistic
+        # treats them as non-discriminative rather than handing
+        # ``hpd_overlap``/``kl_divergence`` a non-distribution.
+        row_sums = rates.sum(axis=1, keepdims=True)
+        zero_rows = row_sums.squeeze(-1) <= 1e-12
+        safe_row_sums = np.where(row_sums > 1e-12, row_sums, 1.0)
+        cell_fraction_per_bin = rates / safe_row_sums  # (n_bins, n_cells)
+        if zero_rows.any():
+            cell_fraction_per_bin[zero_rows] = 1.0 / rates.shape[1]
         batch = max(1, _PER_SPIKE_BATCH)
         for start in range(0, n_spikes, batch):
             stop = min(start + batch, n_spikes)

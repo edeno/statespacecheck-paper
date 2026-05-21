@@ -48,16 +48,7 @@ def _tiny_params():
     from statespacecheck_paper.analysis import DecodeParams
 
     return DecodeParams(
-        T_remap_start=200,
-        T_remap_end=300,
-        T_recovery1_end=400,
-        T_hist_dep_end=500,
-        T_recovery2_end=600,
-        T_drift_end=700,
-        T_recovery3_end=800,
-        T_wide_dynamics_end=900,
-        T_recovery4_end=1000,
-        T_wiggly_end=1100,
+        phase_boundaries=(200, 300, 400, 500, 600, 700, 800, 900),
     )
 
 
@@ -134,7 +125,7 @@ def test_simulated_cache_log_likelihood_round_trips(tmp_path: Path) -> None:
 
     # Reference: the simulation's normalised linear likelihood,
     # peak-normalised the same way the worker output is.
-    sim_lik = np.asarray(sim["metrics"]["likelihood"], dtype=np.float64)
+    sim_lik = np.asarray(sim.metrics["likelihood"], dtype=np.float64)
     sim_peak = sim_lik.max(axis=1, keepdims=True)
     sim_peak = np.where(sim_peak > 0, sim_peak, 1.0)
     sim_lik_peak_normed = (sim_lik / sim_peak).astype(np.float32)

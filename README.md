@@ -10,9 +10,9 @@ This is a **paper/research repository** (not a library). The code is organized i
 
 - **`src/statespacecheck_paper/`**: Reusable modules (styling, simulation, analysis, plotting)
 - **`scripts/`**: Figure generation scripts (thin orchestration layers)
-- **`figures/`**: Generated figure outputs (PDF and PNG)
-  - `figures/main/`: Main text figures
-  - `figures/supplementary/`: Supplementary figures
+- **`manuscript/figures/`**: Generated figure outputs (PDF and PNG)
+  - `manuscript/figures/main/`: Main text figures
+  - `manuscript/figures/supplementary/`: Supplementary figures
 - **`tests/`**: Comprehensive test suite (100 tests, 75% coverage)
 - **`notebooks/`**: Jupyter notebooks for exploration
 
@@ -220,7 +220,7 @@ Two dataset kinds are supported:
   fitted `non_local_detector` decoders).
 - **Figure-3 simulation cache** — the simulated demonstration with
   baseline / remap / history-dependent-firing / drift /
-  wide-dynamics-noise / wiggly-flat-likelihood phases.
+  wide-dynamics-noise phases.
 
 ### Build a cache
 
@@ -373,7 +373,7 @@ uv run python scripts/generate_all_figures.py
 uv run python scripts/generate_figure01.py
 uv run python scripts/generate_figure02.py
 
-# Outputs saved to figures/main/ directory as PDF and PNG (450 DPI)
+# Outputs saved to manuscript/figures/main/ directory as PDF and PNG (450 DPI)
 ```
 
 ### Code Quality

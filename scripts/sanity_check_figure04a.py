@@ -7,7 +7,7 @@ For each spike event in the Figure 4a time window, plots:
 
 Annotated with true position, metric values (HPD overlap, KL divergence,
 spike probability rank).  Produces plots for both Continuous and Cont-Frag
-models, saved into separate folders under figures/preview/sanity_check_4a/.
+models, saved into separate folders under manuscript/figures/preview/sanity_check_4a/.
 
 Spikes are sampled at quantiles of KL divergence so the output covers the
 full range from best to worst model fit.

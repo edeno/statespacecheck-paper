@@ -78,37 +78,62 @@ def create_shared_example(rng: np.random.Generator) -> dict[str, Any]:
     n_mc_samples = 1000
 
     # Observed log predictive density: log(integral of predictive * likelihood)
-    # This is log p(y | y_{1:t-1}) = log sum_x p(x_t | y_{1:t-1}) p(y_t | x_t)
-    # For normalized distributions, this is the dot product
-    observed_log_pred = np.log(np.sum(predictive * likelihood) * dx + 1e-300)
+    # This is log p(y | y_{1:t-1}) = log sum_x p(x_t | y_{1:t-1}) p(y_t | x_t).
+    # If the overlap underflows for some pathological draw, np.log emits a
+    # RuntimeWarning and yields -inf rather than the previous behaviour of
+    # mapping zero to log(1e-300) ≈ -690, which would silently turn the
+    # p-value into a tie count between observed and simulated underflows.
+    observed_log_pred = float(np.log(np.sum(predictive * likelihood) * dx))
 
-    # Simulate reference distribution by:
-    # 1. Sample position from predictive
-    # 2. Generate "observation" from likelihood centered at that position
-    # 3. Compute log predictive density for simulated observation
+    # Simulate the reference distribution per the predictive-check
+    # definition in eq:fpred / eq:predictive_application:
+    # 1. Sample state x_s ~ predictive(x).
+    # 2. Sample observation y_tilde ~ p(y | x_s) = N(x_s, like_std^2).
+    # 3. Compute log f_pred(y_tilde) = log integral predictive(x) * p(y_tilde | x) dx.
     simulated_log_pred_values = np.zeros(n_mc_samples)
 
+    cumsum = np.cumsum(predictive)
+    cumsum = cumsum / cumsum[-1]  # Ensure sums to 1
+
     for i in range(n_mc_samples):
-        # Sample position from predictive distribution
-        cumsum = np.cumsum(predictive)
-        cumsum = cumsum / cumsum[-1]  # Ensure sums to 1
+        # Sample state from the predictive distribution.
         u = rng.random()
         sampled_idx = int(np.searchsorted(cumsum, u))
         sampled_idx = min(sampled_idx, len(position_bins) - 1)
         sampled_pos = position_bins[sampled_idx]
 
-        # Generate simulated "likelihood" centered at sampled position
-        # (same width as original likelihood)
-        simulated_likelihood = norm.pdf(position_bins, loc=sampled_pos, scale=like_std)
+        # Sample a simulated observation y_tilde ~ p(y | x_s) = N(x_s, like_std^2).
+        # This is the step that makes the schematic match the manuscript's
+        # predictive-check algorithm rather than its mean-prediction shortcut.
+        y_tilde = float(rng.normal(loc=sampled_pos, scale=like_std))
+
+        # Simulated likelihood as a function of x: p(y_tilde | x) = N(y_tilde; x, like_std).
+        simulated_likelihood = norm.pdf(position_bins, loc=y_tilde, scale=like_std)
         simulated_likelihood = normalize(simulated_likelihood)
 
-        # Compute log predictive density for this simulated observation
-        simulated_log_pred_values[i] = np.log(
-            np.sum(predictive * simulated_likelihood) * dx + 1e-300
-        )
+        # Compute log predictive density for this simulated observation.
+        # Lets np.log handle underflow with -inf + RuntimeWarning rather
+        # than masking it with a +1e-300 shift (see observed_log_pred above
+        # for the rationale).
+        simulated_log_pred_values[i] = np.log(np.sum(predictive * simulated_likelihood) * dx)
 
     # P-value: proportion of simulated values <= observed value
     p_value = float(np.mean(simulated_log_pred_values <= observed_log_pred))
+
+    # Showcase samples for the predictive-check schematic (panels G and H).
+    # State positions are picked at evenly-spaced quantiles of the predictive
+    # CDF so the displayed fan spans the predictive's support rather than
+    # clustering near the peak. For each state, a simulated observation
+    # y_tilde is then drawn from p(y | x_s) = N(x_s, like_std^2) -- the same
+    # step the Monte Carlo loop above uses -- and the simulated likelihood is
+    # p(y_tilde | x) plotted as a function of x.
+    showcase_quantiles = np.array([0.10, 0.30, 0.50, 0.70, 0.90])
+    showcase_idx = np.minimum(np.searchsorted(cumsum, showcase_quantiles), n_bins - 1)
+    showcase_positions = position_bins[showcase_idx]
+    showcase_y_tildes = rng.normal(loc=showcase_positions, scale=like_std)
+    showcase_likelihoods = np.stack(
+        [normalize(norm.pdf(position_bins, loc=y, scale=like_std)) for y in showcase_y_tildes]
+    )
 
     return {
         "position_bins": position_bins,
@@ -123,6 +148,9 @@ def create_shared_example(rng: np.random.Generator) -> dict[str, Any]:
         "like_std": like_std,
         "observed_log_pred": observed_log_pred,
         "simulated_log_pred": simulated_log_pred_values,
+        "showcase_positions": showcase_positions,
+        "showcase_y_tildes": showcase_y_tildes,
+        "showcase_likelihoods": showcase_likelihoods,
     }
 
 
@@ -495,33 +523,38 @@ def plot_hpd_panel_f(ax: Axes, data: dict[str, Any]) -> tuple[float, float, floa
 # =============================================================================
 
 
+def _showcase_colors(n: int) -> NDArray[np.float64]:
+    """Distinct colors for the predictive-check sample fan.
+
+    Sampled from viridis avoiding the very dark and very light ends so
+    every curve stays legible at small panel sizes.
+    """
+    cmap = plt.get_cmap("viridis")
+    return cmap(np.linspace(0.15, 0.85, n))
+
+
 def plot_ppc_panel_g(ax: Axes, data: dict[str, Any]) -> None:
-    """Panel G: Predictive distribution with sampled position marked."""
+    """Panel G: Predictive distribution with a fan of sampled positions.
+
+    Each colored marker is one draw from the predictive that flows into
+    the corresponding simulated observation likelihood plotted in panel H.
+    """
     x = data["position_bins"]
     pred = data["predictive"]
+    positions = data["showcase_positions"]
+    colors = _showcase_colors(len(positions))
 
     ax.plot(x, pred, color=COLORS["predictive"], linewidth=1.5, label="Predictive")
     ax.fill_between(x, pred, alpha=0.3, color=COLORS["predictive"])
 
-    # Show sampled position (near the peak)
-    sampled_pos = data["pred_mean"] + 3  # Slightly off-peak for visibility
-    sampled_idx = np.argmin(np.abs(x - sampled_pos))
-
-    ax.axvline(
-        sampled_pos,
-        color=COLORS["ground_truth"],
-        linestyle="-",
-        linewidth=1.5,
-        alpha=0.8,
-    )
-    ax.scatter(
-        [sampled_pos],
-        [pred[sampled_idx]],
-        color=COLORS["ground_truth"],
-        s=40,
-        zorder=5,
-        label="Sample",
-    )
+    # Each sampled state is shown as a colored tick + dot on the predictive
+    # so the matching simulated likelihood in panel H can be read off by colour.
+    sample_indices = np.argmin(np.abs(x[None, :] - positions[:, None]), axis=1)
+    for pos, idx, color in zip(positions, sample_indices, colors, strict=True):
+        ax.axvline(pos, color=color, linestyle="-", linewidth=1.0, alpha=0.7)
+        ax.scatter([pos], [pred[idx]], color=color, s=30, zorder=5)
+    # Single legend entry summarises the fan.
+    ax.scatter([], [], color=colors[len(colors) // 2], s=30, label="Samples")
 
     ax.set_xlabel("Latent state (a.u.)", fontsize=7, labelpad=8)
     ax.set_ylabel("Probability", fontsize=7, labelpad=8)
@@ -539,64 +572,108 @@ def plot_ppc_panel_g(ax: Axes, data: dict[str, Any]) -> None:
     ax.set_yticklabels(["0", f"{y_max:.2f}"], fontsize=5)
 
 
-def plot_ppc_panel_h(ax: Axes, data: dict[str, Any], rng: np.random.Generator) -> None:
-    """Panel H: Simulated spikes from sampled position (raster-style)."""
-    # Simulate spike counts for ~10 cells at the sampled position
-    n_cells = 8
-    sampled_pos = data["pred_mean"] + 3
+def plot_ppc_panel_h(ax: Axes, data: dict[str, Any]) -> None:
+    """Panel H: Fan of simulated observation likelihoods.
 
-    # Create simple place fields and simulate spikes
-    cell_centers = np.linspace(10, 90, n_cells)
-    cell_width = 15.0
+    For each state sample drawn from the predictive (panel G), the
+    Monte Carlo loop draws an observation y_tilde ~ p(y | x_s) and
+    constructs the corresponding observation likelihood p(y_tilde | x).
+    This panel shows that fan of likelihood curves, colored to match
+    the samples in panel G. Per-curve markers distinguish the state
+    sample (dotted line at x_s) from the drawn observation (triangle
+    at the curve peak, at y_tilde). A faint dashed copy of the
+    predictive is overlaid so the reader can see what the curves get
+    multiplied by when computing the log predictive density that ends
+    up in panel I.
+    """
 
-    # Firing rates at sampled position
-    rates = norm.pdf(sampled_pos, loc=cell_centers, scale=cell_width)
-    rates = rates / rates.max() * 0.3  # Scale to reasonable spike probability
+    x = data["position_bins"]
+    pred = data["predictive"]
+    positions = data["showcase_positions"]
+    y_tildes = data["showcase_y_tildes"]
+    likelihoods = data["showcase_likelihoods"]
+    colors = _showcase_colors(len(positions))
 
-    # Generate spikes (binary for this visualization)
-    spikes = rng.random(n_cells) < rates
-
-    # Plot as colored circles (filled = spike, empty = no spike)
-    # Spikes are simulated from predictive distribution, so use predictive color
-    for i, (center, has_spike) in enumerate(zip(cell_centers, spikes, strict=True)):
-        color = COLORS["predictive"] if has_spike else "white"
-        edgecolor = COLORS["predictive"]
-        ax.scatter(
-            [center],
-            [i],
-            s=60,
-            c=color,
-            edgecolors=edgecolor,
-            linewidths=1,
-            zorder=5,
-        )
-
-    # Mark sampled position
-    ax.axvline(
-        sampled_pos,
-        color=COLORS["ground_truth"],
-        linestyle="-",
-        linewidth=1.5,
-        alpha=0.5,
+    # Faint dashed predictive overlay so the reader sees what each
+    # simulated likelihood gets weighted by when integrated into panel I.
+    ax.plot(
+        x,
+        pred,
+        color=COLORS["predictive"],
+        linewidth=0.8,
+        linestyle="--",
+        alpha=0.4,
     )
 
+    for pos, y_t, lik, color in zip(positions, y_tildes, likelihoods, colors, strict=True):
+        ax.plot(x, lik, color=color, linewidth=1.0, alpha=0.85)
+        ax.fill_between(x, lik, color=color, alpha=0.12)
+        # Dotted vertical at the originating state sample x_s — lines up
+        # with the dot at the same color in panel G.
+        ax.axvline(pos, color=color, linestyle=":", linewidth=0.8, alpha=0.5)
+        # Downward triangle at the curve peak marks the drawn observation
+        # y_tilde. Distinct from the dot symbol used for state samples in
+        # panel G so the two quantities are never conflated.
+        peak_idx = int(np.argmin(np.abs(x - y_t)))
+        ax.scatter(
+            [x[peak_idx]],
+            [lik[peak_idx]],
+            color=color,
+            marker="v",
+            s=24,
+            zorder=5,
+            edgecolors="white",
+            linewidths=0.4,
+        )
+
+    # Legend-only proxy artists describe the visual conventions of the
+    # panel; the real curves/markers are colored per-sample.
+    neutral = "0.4"
+    ax.plot(
+        [],
+        [],
+        color=COLORS["predictive"],
+        linewidth=0.8,
+        linestyle="--",
+        alpha=0.6,
+        label="Predictive",
+    )
+    ax.plot(
+        [],
+        [],
+        color=neutral,
+        linestyle=":",
+        linewidth=0.8,
+        label=r"State $x_s$",
+    )
+    ax.scatter(
+        [],
+        [],
+        color=neutral,
+        marker="v",
+        s=24,
+        edgecolors="white",
+        linewidths=0.4,
+        label=r"Obs. $\tilde{y}$",
+    )
+
+    ax.legend(fontsize=5, frameon=False, loc="upper right")
     ax.set_xlabel("Latent state (a.u.)", fontsize=7, labelpad=8)
-    ax.set_ylabel("Cell", fontsize=7, labelpad=8)
-    ax.set_xlim(0, 100)
-    ax.set_ylim(-0.5, n_cells - 0.5)
-    ax.set_yticks([0, n_cells - 1])
-    ax.set_yticklabels(["1", str(n_cells)], fontsize=5)
+    ax.set_ylabel("Probability", fontsize=7, labelpad=8)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
-    # Minimal x-ticks: first and last only
+    ax.set_xlim(0, 100)
+    ax.set_ylim(bottom=0)
     ax.set_xticks([0, 100])
     ax.set_xticklabels(["0", "100"], fontsize=5)
+    y_max = ax.get_ylim()[1]
+    ax.set_yticks([0, y_max])
+    ax.set_yticklabels(["0", f"{y_max:.2f}"], fontsize=5)
 
-    # Add annotation
     ax.text(
         0.5,
         1.02,
-        "Simulated spikes",
+        "Simulated obs. likelihoods",
         transform=ax.transAxes,
         fontsize=6,
         ha="center",
@@ -715,7 +792,7 @@ def create_figure() -> None:
     # Predictive Check column (C, F, I)
     # -------------------------------------------------------------------------
     plot_ppc_panel_g(axes["C"], data)
-    plot_ppc_panel_h(axes["F"], data, rng)
+    plot_ppc_panel_h(axes["F"], data)
     plot_ppc_panel_i(axes["I"], data)
 
     # Column titles for metrics (above top row)
@@ -807,8 +884,8 @@ def create_figure() -> None:
     # =========================================================================
     # SAVE
     # =========================================================================
-    save_figure("figures/main/figure02")
-    print("\nFigure 2 saved to figures/main/figure02.{pdf,png}")
+    save_figure("manuscript/figures/main/figure02")
+    print("\nFigure 2 saved to manuscript/figures/main/figure02.{pdf,png}")
 
 
 if __name__ == "__main__":

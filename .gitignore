@@ -210,8 +210,8 @@ data
 data/
 
 # Candidate figures (temporary/exploratory)
-figures/candidates/
-figures/preview/
+manuscript/figures/candidates/
+manuscript/figures/preview/
 manuscript/old/
 .DS_Store
 
