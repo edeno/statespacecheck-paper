@@ -572,7 +572,7 @@ def plot_ppc_panel_g(ax: Axes, data: dict[str, Any]) -> None:
     ax.set_yticklabels(["0", f"{y_max:.2f}"], fontsize=5)
 
 
-def plot_ppc_panel_h(ax: Axes, data: dict[str, Any], rng: np.random.Generator) -> None:
+def plot_ppc_panel_h(ax: Axes, data: dict[str, Any]) -> None:
     """Panel H: Fan of simulated observation likelihoods.
 
     For each state sample drawn from the predictive (panel G), the
@@ -580,12 +580,12 @@ def plot_ppc_panel_h(ax: Axes, data: dict[str, Any], rng: np.random.Generator) -
     constructs the corresponding observation likelihood p(y_tilde | x).
     This panel shows that fan of likelihood curves, colored to match
     the samples in panel G. Per-curve markers distinguish the state
-    sample (dotted line at x_s) from the drawn observation (dot at the
-    curve peak, at y_tilde). A faint dashed copy of the predictive is
-    overlaid so the reader can see what the curves get multiplied by
-    when computing the log predictive density that ends up in panel I.
+    sample (dotted line at x_s) from the drawn observation (triangle
+    at the curve peak, at y_tilde). A faint dashed copy of the
+    predictive is overlaid so the reader can see what the curves get
+    multiplied by when computing the log predictive density that ends
+    up in panel I.
     """
-    del rng  # No randomness needed: showcase samples are deterministic quantiles.
 
     x = data["position_bins"]
     pred = data["predictive"]
@@ -792,7 +792,7 @@ def create_figure() -> None:
     # Predictive Check column (C, F, I)
     # -------------------------------------------------------------------------
     plot_ppc_panel_g(axes["C"], data)
-    plot_ppc_panel_h(axes["F"], data, rng)
+    plot_ppc_panel_h(axes["F"], data)
     plot_ppc_panel_i(axes["I"], data)
 
     # Column titles for metrics (above top row)
