@@ -845,9 +845,9 @@ def get_remapped_pf_centers(
     is replaced with the target cell's center, so the likelihood is computed using
     the wrong place field for that cell's spikes.
 
-    This matches the MATLAB implementation where:
-    ``L = poisspdf(spikes(t, j), normpdf(xs, pfc(1), pfw) * .02)``
-    uses pfc(1) (cell 1's center) instead of pfc(10) for cell 10.
+    Each ``(src, dst)`` pair makes cell ``src`` use cell ``dst``'s place-field
+    center; original centers are snapshotted before any writes so a pair of
+    swaps (``(a, b)``, ``(b, a)``) works correctly.
 
     Parameters
     ----------
@@ -1052,7 +1052,8 @@ def decode_and_diagnostics(
     # NaN at times with no spikes.
     spike_likelihood_all: NDArray[np.floating] = np.full((n_time, n_bins), np.nan)
 
-    # t=0 (MATLAB used a flat prior at t=1)
+    # t=0: flat prior. Diagnostics at t=0 are NaN (no posterior update
+    # has happened yet); downstream code masks those entries.
     posterior[0] = normalize(np.ones(n_bins))
     predictive_posterior[0] = posterior[0]  # At t=0, predictive = prior
     combined_likelihood_all[0] = normalize(np.ones(n_bins))  # Flat at t=0
@@ -1088,13 +1089,13 @@ def decode_and_diagnostics(
         if window is not None and window.decoder_rates is not None:
             rates_t = window.decoder_rates
 
-        # Per-cell log-likelihoods. Using poisson.logpmf directly avoids
-        # underflow that the linear-space pmf path used to hit when many
-        # per-cell normalized likelihoods got multiplied together.
+        # Per-cell log-likelihoods. Log-space avoids underflow when
+        # ``n_cells * log(peak)`` crosses the float64 floor (~700) —
+        # likely on real-data sessions with many sparsely-firing cells.
         log_lik_per_cell = poisson.logpmf(spikes[t][None, :], rates_t)  # (n_bins, n_cells)
 
-        # Combined log-likelihood across cells (was np.prod in linear
-        # space — the first underflow site).
+        # Combined log-likelihood across cells (sum in log space =
+        # product in linear space).
         log_lik_combined = log_lik_per_cell.sum(axis=1)  # (n_bins,)
 
         # Stored combined likelihood: same shift-and-normalize math as
@@ -1287,17 +1288,11 @@ def compute_per_cell_diagnostics_from_rates(
         # blows the working set even when ``include_dense_matrices=False``
         # skips the (n_time, n_cells) outputs. Process in chunks to
         # bound peak memory to ``_PER_SPIKE_BATCH × n_bins × 8 B`` per
-        # scratch array.
-        #
-        # ``spike_prob`` was previously vectorized as
-        # ``spike_prob_rank(pred[unique_times], cell_fraction)`` ⇒ a
-        # ``(n_unique_times, n_cells, n_cells)`` mask, which is
-        # ``709 K × 200²`` ≈ 28 GB on the real W-track session.
-        # Inline a per-event rank computation here instead — same
-        # math (``sum_i contrib[i] where contrib[i] <= contrib[j]``)
-        # but only over the rows we actually need. Cost: ~3× the
-        # rank work versus the unique-time dedup, but the memory
-        # ceiling drops to ``B × n_cells``.
+        # scratch array. ``spike_prob`` is the per-event rank
+        # ``sum_i contrib[i] where contrib[i] <= contrib[j]``;
+        # computing it per event (not vectorized over unique times)
+        # bounds the rank computation's working set to
+        # ``B × n_cells``.
         # ``cell_fraction_per_bin[x, c] = p(cell c | bin x, spike happened)``.
         # Bins where every cell has zero rate (sparse real-data coverage
         # away from any PF) would trigger ``normalize``'s near-zero
@@ -1440,11 +1435,13 @@ def compute_thresholds(
 ) -> Thresholds:
     """Compute threshold values from baseline period.
 
-    Thresholds are computed across ALL cells (flattened), matching MATLAB.
-    The (n_time, n_cells) arrays are flattened to 1D before computing quantiles:
+    Thresholds are computed across all cells (flattened (n_time, n_cells)
+    → 1D) so a single threshold scalar can compare against any cell's
+    diagnostic time series:
+
     - HPD overlap threshold: 1st percentile (low values indicate misfit)
     - KL divergence threshold: 99th percentile (high values indicate misfit)
-    - spike_prob threshold: fixed at 0.05 (per MATLAB implementation)
+    - spike_prob threshold: fixed at 0.05 (a conventional rank-statistic cutoff)
 
     Parameters
     ----------
@@ -1482,7 +1479,7 @@ def compute_thresholds(
     ...     'spike_prob': rng.uniform(0.0, 1.0, (100, 5)),
     ... }
     >>> thresholds = compute_thresholds(metrics, baseline_end=50)
-    >>> thresholds.spike_prob  # Fixed at 0.05 per MATLAB
+    >>> thresholds.spike_prob  # Fixed at 0.05
     0.05
     """
 
@@ -1511,7 +1508,7 @@ def compute_thresholds(
         )
     kl_divergence_threshold = float(np.nanquantile(kl_baseline, 0.99))
 
-    # spike_prob threshold is fixed at 0.05 per MATLAB
+    # Fixed rank-statistic cutoff; not derived from the data.
     spike_prob_threshold = 0.05
 
     return Thresholds(
