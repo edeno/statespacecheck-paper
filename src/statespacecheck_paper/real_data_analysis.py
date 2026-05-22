@@ -476,9 +476,12 @@ def compute_per_cell_diagnostics(
           decoder-bin and cell indices per spike event.
         - ``event_hpd_overlap``, ``event_kl_divergence``, ``event_spike_prob``:
           shape (n_spikes,), one value per spike event.
-        - ``event_time``: shape (n_spikes,), exact wall-clock spike time
-          (the real-data path always populates this when ``spike_times``
-          and ``time`` are supplied; ``None`` only on the simulated path).
+
+        Optionally populated:
+
+        - ``event_time``: shape (n_spikes,), exact wall-clock spike time.
+          Populated when either ``spike_times`` (preferred) or ``time``
+          alone is supplied; ``None`` when both are ``None``.
 
         When ``include_dense_matrices`` (the default), additionally:
 
@@ -842,7 +845,7 @@ def compute_model_diagnostics(
     --------
     >>> # Requires fitted model and decoding results
     >>> # diagnostics = compute_model_diagnostics(model, results, spike_counts, time)
-    >>> # diagnostics['hpd_overlap'].shape  # (n_time, n_cells)
+    >>> # diagnostics.hpd_overlap.shape  # (n_time, n_cells)
     """
     # Extract place fields concatenated across observation models (one
     # per state for multi-state classifiers) and filter to interior bins.

@@ -167,3 +167,55 @@ def test_figure02_create_shared_example_samples_y_tilde_with_noise() -> None:
         f"showcase_y_tildes equal showcase_positions (max |Δ| = {deltas.max():.3f}); "
         f"the y_tilde ~ N(x_s, like_std) draw step was skipped or shortcut."
     )
+
+
+def test_figure02_panels_module_is_load_bearing() -> None:
+    """After the figure-02 extraction, the script must import its panel
+    renderers from ``statespacecheck_paper.figure02_panels``. A revert
+    that inlined the panels back into the script would silently pass
+    every other check; this test pins the architectural decision."""
+    import generate_figure02
+
+    panel_module = "statespacecheck_paper.figure02_panels"
+    assert panel_module in sys.modules, (
+        f"generate_figure02 did not import {panel_module}; "
+        f"the figure-02 extraction may have been undone."
+    )
+    # And the script must re-export at least one panel symbol pulled
+    # from that module, so callers (e.g. notebook code in the repo)
+    # importing the script keep working.
+    assert hasattr(generate_figure02, "plot_kl_panel_a"), (
+        "generate_figure02 must re-export plot_kl_panel_a from figure02_panels"
+    )
+
+
+def test_figure02_create_figure_invokes_all_panels(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """End-to-end smoke test: ``create_figure`` must run the 9 panel
+    renderers + the 2 shared helpers without raising. Without this,
+    any panel could ``raise`` on every invocation and only manual
+    figure regeneration would notice — the existing tests don't
+    invoke the entry point.
+
+    Redirect the figure write to a tmp_path so we don't touch the
+    real ``manuscript/figures/main/`` artifacts. The actual byte-
+    identical check lives in the figure-3 SHA workflow.
+    """
+    import generate_figure02
+
+    # Redirect ``save_figure`` to write into a tmp directory.
+    out_dir = tmp_path / "fig02"
+
+    def _save(name: str | Path, **kwargs: object) -> None:
+        target = out_dir / Path(name).name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.with_suffix(".pdf").touch()
+        target.with_suffix(".png").touch()
+
+    monkeypatch.setattr(generate_figure02, "save_figure", _save)
+    generate_figure02.create_figure()  # does not raise
+    # The redirected ``save_figure`` is called once; the smoke test's
+    # job is to surface a panel-renderer regression, not to verify
+    # disk-writing semantics.
+    assert (out_dir / "figure02.png").exists()

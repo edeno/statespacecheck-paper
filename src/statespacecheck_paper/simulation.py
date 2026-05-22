@@ -339,7 +339,9 @@ def spike_prob_rank(
 
     ``contrib`` is the per-cell expected contribution under the
     predictive prior; with probabilities summing to 1, ``rank[j] = 1.0``
-    means every cell is at least as likely to fire as cell ``j``.
+    means cell ``j`` has the highest expected contribution (no other
+    cell is more likely to fire), and ``rank[j] ≈ 0`` means cell ``j``
+    is unusually unlikely under the prior given the observed spike.
     """
     # prior @ cell_fraction_per_bin gives expected contribution per cell
     # Shape: (n_cells,) for 1D prior, (n_time, n_cells) for 2D prior
