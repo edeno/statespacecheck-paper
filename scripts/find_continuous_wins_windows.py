@@ -28,6 +28,7 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.ndimage import label
 
+from statespacecheck_paper.analysis import PerCellDiagnostics
 from statespacecheck_paper.load_local_data import load_neural_recording_from_files
 from statespacecheck_paper.real_data_analysis import (
     compute_model_diagnostics,
@@ -81,8 +82,8 @@ class ContinuousWinsCandidate:
 
 
 def find_continuous_better_periods(
-    continuous_diagnostics: dict[str, NDArray[np.float64]],
-    contfrag_diagnostics: dict[str, NDArray[np.float64]],
+    continuous_diagnostics: PerCellDiagnostics,
+    contfrag_diagnostics: PerCellDiagnostics,
     time: NDArray[np.float64],
     min_hpd_diff: float = MIN_HPD_DIFF,
     min_duration_bins: int = MIN_DURATION_BINS,
@@ -115,22 +116,22 @@ def find_continuous_better_periods(
     """
     # Compute running average of HPD overlap for both models
     # HPD overlap shape is (n_time, n_cells) — average across cells first
-    cont_hpd = continuous_diagnostics["hpd_overlap"]  # (n_time, n_cells)
-    frag_hpd = contfrag_diagnostics["hpd_overlap"]  # (n_time, n_cells)
+    cont_hpd = continuous_diagnostics.hpd_overlap  # (n_time, n_cells)
+    frag_hpd = contfrag_diagnostics.hpd_overlap  # (n_time, n_cells)
 
     cont_avg, _ = compute_running_average(
         cont_hpd,
         time,
         window_size=running_avg_window,
-        event_times=continuous_diagnostics.get("event_time"),
-        event_values=continuous_diagnostics.get("event_hpd_overlap"),
+        event_times=continuous_diagnostics.event_time,
+        event_values=continuous_diagnostics.event_hpd_overlap,
     )
     frag_avg, _ = compute_running_average(
         frag_hpd,
         time,
         window_size=running_avg_window,
-        event_times=contfrag_diagnostics.get("event_time"),
-        event_values=contfrag_diagnostics.get("event_hpd_overlap"),
+        event_times=contfrag_diagnostics.event_time,
+        event_values=contfrag_diagnostics.event_hpd_overlap,
     )
 
     # Find where continuous is better by at least min_hpd_diff
@@ -168,7 +169,7 @@ def find_continuous_better_periods(
 
 
 def compute_event_hpd_overlap(
-    diagnostics: dict[str, NDArray[np.float64]],
+    diagnostics: PerCellDiagnostics,
     time: NDArray[np.float64],
     start_idx: int,
     end_idx: int,
@@ -194,10 +195,10 @@ def compute_event_hpd_overlap(
     """
     window_slice = slice(start_idx, end_idx + 1)
     window_time = time[window_slice]
-    metric_data = diagnostics["hpd_overlap"][window_slice]
+    metric_data = diagnostics.hpd_overlap[window_slice]
 
-    event_times = diagnostics.get("event_time")
-    event_values = diagnostics.get("event_hpd_overlap")
+    event_times = diagnostics.event_time
+    event_values = diagnostics.event_hpd_overlap
     if event_times is not None and event_values is not None:
         event_times = np.asarray(event_times)
         time_start = time[start_idx]
@@ -223,8 +224,8 @@ def score_continuous_wins(
     time: NDArray[np.float64],
     speed: NDArray[np.float64],
     spike_counts: NDArray[np.int64],
-    continuous_diagnostics: dict[str, NDArray[np.float64]],
-    contfrag_diagnostics: dict[str, NDArray[np.float64]],
+    continuous_diagnostics: PerCellDiagnostics,
+    contfrag_diagnostics: PerCellDiagnostics,
     min_spikes: int = MIN_SPIKES,
 ) -> list[ContinuousWinsCandidate]:
     """Score candidate events by how much Continuous outperforms Cont-Frag.
@@ -319,8 +320,8 @@ def generate_preview_figures(
     linear_position: NDArray[np.float64],
     continuous_results: Any,
     contfrag_results: Any,
-    continuous_diagnostics: dict[str, NDArray[np.float64]],
-    contfrag_diagnostics: dict[str, NDArray[np.float64]],
+    continuous_diagnostics: PerCellDiagnostics,
+    contfrag_diagnostics: PerCellDiagnostics,
     spike_times: list[NDArray[np.float64]],
     spike_counts: NDArray[np.int64],
     place_field_peaks: NDArray[np.float64],

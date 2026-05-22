@@ -30,6 +30,7 @@ from numpy.typing import NDArray
 from scipy.ndimage import label
 from scipy.stats import zscore
 
+from statespacecheck_paper.analysis import PerCellDiagnostics
 from statespacecheck_paper.load_local_data import load_neural_recording_from_files
 from statespacecheck_paper.real_data_analysis import (
     compute_model_diagnostics,
@@ -197,7 +198,7 @@ def find_immobile_high_activity_periods(
 
 
 def find_poor_diagnostic_periods(
-    diagnostics: dict[str, NDArray[np.float64]],
+    diagnostics: PerCellDiagnostics,
     metric_name: str = DIAGNOSTIC_METRIC,
     cell_threshold: float = CELL_THRESHOLD,
     min_disagreeing_cells: int = MIN_DISAGREEING_CELLS,
@@ -211,7 +212,7 @@ def find_poor_diagnostic_periods(
 
     Parameters
     ----------
-    diagnostics : dict[str, np.ndarray]
+    diagnostics : PerCellDiagnostics
         Diagnostics with per-cell metrics, each shape (n_time, n_cells).
     metric_name : str
         Which metric to threshold ('hpd_overlap', 'kl_divergence', 'spike_prob').
@@ -227,7 +228,7 @@ def find_poor_diagnostic_periods(
     periods : list of (start_idx, end_idx) tuples
         Contiguous periods meeting criteria.
     """
-    metric = diagnostics[metric_name]  # (n_time, n_cells)
+    metric = getattr(diagnostics, metric_name)  # (n_time, n_cells)
 
     # Flag per-cell disagreement: higher is worse for KL, lower is worse for others
     if metric_name == "kl_divergence":
@@ -269,7 +270,7 @@ def find_poor_diagnostic_periods(
 
 
 def compute_event_hpd_overlap(
-    diagnostics: dict[str, NDArray[np.float64]],
+    diagnostics: PerCellDiagnostics,
     time: NDArray[np.float64],
     start_idx: int,
     end_idx: int,
@@ -295,11 +296,11 @@ def compute_event_hpd_overlap(
     """
     window_slice = slice(start_idx, end_idx + 1)
     window_time = time[window_slice]
-    metric_data = diagnostics["hpd_overlap"][window_slice]
+    metric_data = diagnostics.hpd_overlap[window_slice]
 
     # Compute running average
-    event_times = diagnostics.get("event_time")
-    event_values = diagnostics.get("event_hpd_overlap")
+    event_times = diagnostics.event_time
+    event_values = diagnostics.event_hpd_overlap
     if event_times is not None and event_values is not None:
         event_times = np.asarray(event_times)
         time_start = time[start_idx]
@@ -325,8 +326,8 @@ def score_replay_candidates(
     periods: list[tuple[int, int]],
     time: NDArray[np.float64],
     spike_counts: NDArray[np.int64],
-    continuous_diagnostics: dict[str, NDArray[np.float64]],
-    contfrag_diagnostics: dict[str, NDArray[np.float64]],
+    continuous_diagnostics: PerCellDiagnostics,
+    contfrag_diagnostics: PerCellDiagnostics,
     speed: NDArray[np.float64] | None = None,
     z_multiunit: NDArray[np.float64] | None = None,
     min_spikes: int = MIN_SPIKES,
@@ -387,7 +388,7 @@ def score_replay_candidates(
         hpd_diff = frag_hpd - cont_hpd
 
         # Compute mean disagreeing cells in window (for the continuous model)
-        metric_window = continuous_diagnostics[diagnostic_metric][start_idx : end_idx + 1]
+        metric_window = getattr(continuous_diagnostics, diagnostic_metric)[start_idx : end_idx + 1]
         if diagnostic_metric == "kl_divergence":
             disagreeing_per_bin = (metric_window > cell_threshold) & ~np.isnan(metric_window)
         else:
@@ -463,8 +464,8 @@ def generate_preview_figures(
     linear_position: NDArray[np.float64],
     continuous_results: Any,
     contfrag_results: Any,
-    continuous_diagnostics: dict[str, NDArray[np.float64]],
-    contfrag_diagnostics: dict[str, NDArray[np.float64]],
+    continuous_diagnostics: PerCellDiagnostics,
+    contfrag_diagnostics: PerCellDiagnostics,
     spike_times: list[NDArray[np.float64]],
     spike_counts: NDArray[np.int64],
     place_field_peaks: NDArray[np.float64],

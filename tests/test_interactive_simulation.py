@@ -125,7 +125,7 @@ def test_simulated_cache_log_likelihood_round_trips(tmp_path: Path) -> None:
 
     # Reference: the simulation's normalised linear likelihood,
     # peak-normalised the same way the worker output is.
-    sim_lik = np.asarray(sim.metrics["likelihood"], dtype=np.float64)
+    sim_lik = np.asarray(sim.metrics.likelihood, dtype=np.float64)
     sim_peak = sim_lik.max(axis=1, keepdims=True)
     sim_peak = np.where(sim_peak > 0, sim_peak, 1.0)
     sim_lik_peak_normed = (sim_lik / sim_peak).astype(np.float32)

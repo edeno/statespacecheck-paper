@@ -27,6 +27,7 @@ from matplotlib.figure import Figure
 from numpy.typing import NDArray
 from scipy.stats import poisson
 
+from statespacecheck_paper.analysis import PerCellDiagnostics
 from statespacecheck_paper.load_local_data import load_neural_recording_from_files
 from statespacecheck_paper.plotting import compute_hpd_region
 from statespacecheck_paper.real_data_analysis import (
@@ -234,8 +235,8 @@ def plot_spike_sanity(
     fig, axes = plt.subplots(3, 1, figsize=(8, 6), sharex=True, constrained_layout=True)
 
     panels = [
-        (axes[0], predictive, COLORS["predictive"], "Predictive posterior"),
-        (axes[1], likelihood_norm, COLORS["likelihood"], "Likelihood (norm)"),
+        (axes[0], predictive, COLORS.predictive, "Predictive posterior"),
+        (axes[1], likelihood_norm, COLORS.likelihood, "Likelihood (norm)"),
         (axes[2], place_field_rate, "k", "Place field rate"),
     ]
 
@@ -384,7 +385,7 @@ def _select_spikes(
 
 
 def _select_spikes_joint(
-    diagnostics: dict[str, NDArray[np.float64]],
+    diagnostics: PerCellDiagnostics,
     spike_time_ind: NDArray[np.intp],
     spike_cell_ind: NDArray[np.intp],
     primary_metric: str,
@@ -405,11 +406,11 @@ def _select_spikes_joint(
     filter_quantile_range : (lo, hi) quantiles for filter_metric (e.g., (0.0, 0.5))
     n_spikes : number to return
     """
-    primary = diagnostics[primary_metric][spike_time_ind, spike_cell_ind]
+    primary = getattr(diagnostics, primary_metric)[spike_time_ind, spike_cell_ind]
     valid = ~np.isnan(primary)
 
     if filter_metric is not None:
-        filt = diagnostics[filter_metric][spike_time_ind, spike_cell_ind]
+        filt = getattr(diagnostics, filter_metric)[spike_time_ind, spike_cell_ind]
         valid &= ~np.isnan(filt)
         filt_valid = filt[valid]
         lo = np.quantile(filt_valid, filter_quantile_range[0])
@@ -437,7 +438,7 @@ def generate_sanity_plots(
     model: Any,
     results: Any,
     spike_counts: NDArray[np.int64],
-    diagnostics: dict[str, NDArray[np.float64]],
+    diagnostics: PerCellDiagnostics,
     linear_position: NDArray[np.float64],
     model_name: str,
     output_dir: Path,
@@ -509,7 +510,7 @@ def generate_sanity_plots(
         )
     else:
         sel_t, sel_c = _select_spikes(
-            diagnostics[select_metric],
+            getattr(diagnostics, select_metric),
             spike_t_global.astype(np.intp),
             spike_c.astype(np.intp),
             mode=select_mode,
@@ -526,9 +527,9 @@ def generate_sanity_plots(
         lik_raw = poisson.pmf(k=1, mu=rate)  # (n_bins,)
         lik_norm = normalize(lik_raw, axis=0)  # normalize over bins
 
-        hpd_val = float(diagnostics["hpd_overlap"][t_idx, c_idx])
-        kl_val = float(diagnostics["kl_divergence"][t_idx, c_idx])
-        sp_val = float(diagnostics["spike_prob"][t_idx, c_idx])
+        hpd_val = float(diagnostics.hpd_overlap[t_idx, c_idx])
+        kl_val = float(diagnostics.kl_divergence[t_idx, c_idx])
+        sp_val = float(diagnostics.spike_prob[t_idx, c_idx])
 
         true_pos = float(linear_position[t_idx])
         true_pos_indices = _find_true_pos_bin_indices(true_pos, position_bins, n_bins_per_state)
@@ -646,8 +647,8 @@ def main() -> None:
 
     # Joint distribution summary
     for name, diag in [("Continuous", continuous_diag), ("ContFrag", contfrag_diag)]:
-        hpd = diag["hpd_overlap"]
-        kl = diag["kl_divergence"]
+        hpd = diag.hpd_overlap
+        kl = diag.kl_divergence
         valid = ~np.isnan(hpd) & ~np.isnan(kl)
         hpd_v, kl_v = hpd[valid], kl[valid]
 

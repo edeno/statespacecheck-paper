@@ -10,8 +10,10 @@ import pytest
 
 from statespacecheck_paper.analysis import (
     DecodeParams,
+    Diagnostics,
     MisfitSchedule,
     MisfitWindow,
+    PerCellDiagnostics,
     Thresholds,
     Transformed,
     _condition_on,
@@ -41,7 +43,7 @@ class DecoderInputs:
     pf_width: float
     rate_scale: float
 
-    def call(self, **overrides: Any) -> dict:
+    def call(self, **overrides: Any) -> Diagnostics:
         kwargs: dict[str, Any] = {
             "spikes": self.spikes,
             "xs": self.xs,
@@ -56,6 +58,29 @@ class DecoderInputs:
 
 def _diag_dominant_transition(n_bins: int, peak: float = 0.9) -> np.ndarray:
     return np.eye(n_bins) * peak + (1.0 - peak) / n_bins
+
+
+def _zero_diagnostics(
+    *, n_time: int, n_bins: int, n_cells: int = 1, n_spikes: int = 0
+) -> Diagnostics:
+    """Construct a well-shaped all-zero/empty ``Diagnostics`` for tests
+    that only need a valid placeholder, not real diagnostic content."""
+    posterior = np.full((n_time, n_bins), 1.0 / n_bins)
+    return Diagnostics(
+        posterior=posterior,
+        predictive=posterior.copy(),
+        likelihood=posterior.copy(),
+        spike_likelihood=posterior.copy(),
+        hpd_overlap=np.zeros((n_time, n_cells)),
+        kl_divergence=np.zeros((n_time, n_cells)),
+        spike_prob=np.zeros((n_time, n_cells)),
+        event_time_ind=np.zeros(n_spikes, dtype=np.intp),
+        event_cell_ind=np.zeros(n_spikes, dtype=np.intp),
+        event_hpd_overlap=np.zeros(n_spikes),
+        event_kl_divergence=np.zeros(n_spikes),
+        event_spike_prob=np.zeros(n_spikes),
+        per_spike_likelihood=np.zeros((n_spikes, n_bins)),
+    )
 
 
 @pytest.fixture
@@ -185,11 +210,11 @@ class TestGetRemappedPfCenters:
 
 class TestDecodeAndDiagnostics:
     def test_full_output_contract(self, decoder_inputs: DecoderInputs) -> None:
-        """Lock in the full set of returned keys + their shapes. Downstream
-        plotting and cache code consumes the *whole* dict, so silently
-        dropping any key (e.g. ``predictive``, ``per_spike_likelihood``,
-        ``event_*``) is a regression even if the four headline metrics are
-        intact."""
+        """Lock in the full set of fields + their shapes. Downstream
+        plotting and cache code consumes every field, so silently
+        dropping one (e.g. ``predictive``, ``per_spike_likelihood``,
+        ``event_*``) is a regression even if the four headline metrics
+        are intact."""
         result = decoder_inputs.call()
         n_time, n_cells = decoder_inputs.spikes.shape
         n_bins = decoder_inputs.xs.size
@@ -209,26 +234,21 @@ class TestDecodeAndDiagnostics:
             "spike_prob": (n_time, n_cells),
             # Per-spike-event arrays (count expansion in src/.../analysis.py:584).
             "per_spike_likelihood": (n_events, n_bins),
-            "spike_time_ind": (n_events,),
-            "spike_cell_ind": (n_events,),
             "event_time_ind": (n_events,),
             "event_cell_ind": (n_events,),
             "event_hpd_overlap": (n_events,),
             "event_kl_divergence": (n_events,),
             "event_spike_prob": (n_events,),
         }
-        # No missing keys, no surprise extras.
-        assert set(result) == set(expected_shapes)
-        for key, shape in expected_shapes.items():
-            assert result[key].shape == shape, (
-                f"{key} shape mismatch: got {result[key].shape}, want {shape}"
-            )
+        for name, shape in expected_shapes.items():
+            arr = getattr(result, name)
+            assert arr.shape == shape, f"{name} shape mismatch: got {arr.shape}, want {shape}"
 
     def test_t0_diagnostics_are_nan(self, decoder_inputs: DecoderInputs) -> None:
         """No prior exists at t=0, so all diagnostics are NaN."""
         result = decoder_inputs.call()
         for key in ("hpd_overlap", "kl_divergence", "spike_prob"):
-            assert np.all(np.isnan(result[key][0]))
+            assert np.all(np.isnan(getattr(result, key)[0]))
 
     def test_nan_pattern_matches_spike_pattern(self) -> None:
         """Diagnostics are NaN exactly where a cell has no spike at that time."""
@@ -249,7 +269,7 @@ class TestDecodeAndDiagnostics:
         no_spike = spikes == 0
         no_spike[0] = True
         for key in ("hpd_overlap", "kl_divergence", "spike_prob"):
-            np.testing.assert_array_equal(np.isnan(result[key]), no_spike)
+            np.testing.assert_array_equal(np.isnan(getattr(result, key)), no_spike)
 
     def test_count_greater_than_one_expands_to_multiple_events(self) -> None:
         n_bins = 11
@@ -266,14 +286,14 @@ class TestDecodeAndDiagnostics:
             rate_scale=0.1,
         )
 
-        np.testing.assert_array_equal(result["spike_time_ind"], [1, 1, 2])
-        np.testing.assert_array_equal(result["spike_cell_ind"], [0, 0, 1])
-        assert result["event_kl_divergence"].shape == (3,)
+        np.testing.assert_array_equal(result.event_time_ind, [1, 1, 2])
+        np.testing.assert_array_equal(result.event_cell_ind, [0, 0, 1])
+        assert result.event_kl_divergence.shape == (3,)
         # The two count=2 spikes share a (time, cell), so their per-event
         # diagnostics must equal the matrix value at that bin.
         np.testing.assert_allclose(
-            result["event_kl_divergence"][:2],
-            np.repeat(result["kl_divergence"][1, 0], 2),
+            result.event_kl_divergence[:2],
+            np.repeat(result.kl_divergence[1, 0], 2),
         )
 
     def test_no_spikes_produces_all_nan_diagnostics(self) -> None:
@@ -287,12 +307,12 @@ class TestDecodeAndDiagnostics:
             pf_width=5.0,
             rate_scale=0.1,
         )
-        assert np.all(np.isnan(result["hpd_overlap"]))
-        assert np.all(np.isnan(result["kl_divergence"]))
-        assert np.all(np.isnan(result["spike_prob"]))
-        assert result["event_time_ind"].shape == (0,)
-        assert result["event_cell_ind"].shape == (0,)
-        assert result["event_kl_divergence"].shape == (0,)
+        assert np.all(np.isnan(result.hpd_overlap))
+        assert np.all(np.isnan(result.kl_divergence))
+        assert np.all(np.isnan(result.spike_prob))
+        assert result.event_time_ind.shape == (0,)
+        assert result.event_cell_ind.shape == (0,)
+        assert result.event_kl_divergence.shape == (0,)
 
     def test_alternative_transition_matrix_used_only_inside_window(
         self,
@@ -320,10 +340,10 @@ class TestDecodeAndDiagnostics:
         # Before the window, the two runs must be bit-identical: nothing
         # in the algorithm has diverged yet.
         np.testing.assert_array_equal(
-            baseline["predictive"][: window[0]], with_alt["predictive"][: window[0]]
+            baseline.predictive[: window[0]], with_alt.predictive[: window[0]]
         )
         np.testing.assert_array_equal(
-            baseline["posterior"][: window[0]], with_alt["posterior"][: window[0]]
+            baseline.posterior[: window[0]], with_alt.posterior[: window[0]]
         )
 
         # Inside the window, at least one timestep's predictive must
@@ -332,8 +352,8 @@ class TestDecodeAndDiagnostics:
         # magnitude — we only assert "different".
         inside = slice(*window)
         assert not np.allclose(
-            baseline["predictive"][inside],
-            with_alt["predictive"][inside],
+            baseline.predictive[inside],
+            with_alt.predictive[inside],
             atol=1e-6,
         ), f"transition_matrix in {window} did not change predictive — schedule ignored?"
 
@@ -353,7 +373,7 @@ class TestDecodeAndDiagnostics:
         baseline = decoder_inputs.call()
         with_alt = decoder_inputs.call(misfit_schedule=schedule)
 
-        evt_t = with_alt["event_time_ind"]
+        evt_t = with_alt.event_time_ind
         # Events strictly before the window are unaffected — the filter
         # state has not diverged yet. (Events *after* the window
         # legitimately differ: the in-window posterior updates carry
@@ -365,8 +385,8 @@ class TestDecodeAndDiagnostics:
         # likelihood panel reads from the decoder's rate table and is
         # untouched by the schedule outside the window.
         np.testing.assert_array_equal(
-            baseline["per_spike_likelihood"][before],
-            with_alt["per_spike_likelihood"][before],
+            baseline.per_spike_likelihood[before],
+            with_alt.per_spike_likelihood[before],
             err_msg="pre-window per_spike_likelihood differs — schedule leaked outside window",
         )
 
@@ -375,7 +395,7 @@ class TestDecodeAndDiagnostics:
         # decoder's rate table in-window, so the displayed likelihood
         # must change.
         assert inside.any(), "test fixture produced no in-window spike events"
-        diff = with_alt["per_spike_likelihood"][inside] - baseline["per_spike_likelihood"][inside]
+        diff = with_alt.per_spike_likelihood[inside] - baseline.per_spike_likelihood[inside]
         assert np.any(np.abs(diff) > 0.0), (
             "alt rates produced no in-window change in per_spike_likelihood; "
             "the schedule may be near-noop."
@@ -496,6 +516,57 @@ class TestComputeThresholds:
         with pytest.raises(ValueError, match="kl_divergence baseline slice"):
             compute_thresholds(metrics, baseline_end=10)
 
+    def test_accepts_diagnostics_object(self, decoder_inputs: DecoderInputs) -> None:
+        """``compute_thresholds`` accepts either a ``Diagnostics`` or a
+        plain dict (union back-compat for synthetic test fixtures). Pin
+        the Diagnostics branch so it stays exercised."""
+        diagnostics = decoder_inputs.call()
+        thresholds = compute_thresholds(diagnostics, baseline_end=5)
+        # Same call shape with a dict — results must agree.
+        as_dict = {
+            "hpd_overlap": diagnostics.hpd_overlap,
+            "kl_divergence": diagnostics.kl_divergence,
+            "spike_prob": diagnostics.spike_prob,
+        }
+        from_dict = compute_thresholds(as_dict, baseline_end=5)
+        assert thresholds.hpd_overlap == pytest.approx(from_dict.hpd_overlap)
+        assert thresholds.kl_divergence == pytest.approx(from_dict.kl_divergence)
+        assert thresholds.spike_prob == from_dict.spike_prob
+
+
+class TestThresholdsInvariants:
+    """Range validation at construction. Reverting any branch lets a
+    NaN or out-of-range threshold slip through and silently make
+    downstream ``metric < threshold`` comparisons evaluate False."""
+
+    @pytest.mark.parametrize("bad", [-0.01, 1.01, float("nan")])
+    def test_hpd_overlap_out_of_range_raises(self, bad: float) -> None:
+        with pytest.raises(ValueError, match=r"hpd_overlap must lie in \[0, 1\]"):
+            Thresholds(hpd_overlap=bad, kl_divergence=0.0, spike_prob=0.05)
+
+    @pytest.mark.parametrize("bad", [-0.01, float("nan"), float("inf")])
+    def test_kl_divergence_non_finite_or_negative_raises(self, bad: float) -> None:
+        with pytest.raises(ValueError, match=r"kl_divergence must be finite and non-negative"):
+            Thresholds(hpd_overlap=0.5, kl_divergence=bad, spike_prob=0.05)
+
+    @pytest.mark.parametrize("bad", [-0.01, 1.01, float("nan")])
+    def test_spike_prob_out_of_range_raises(self, bad: float) -> None:
+        with pytest.raises(ValueError, match=r"spike_prob must lie in \[0, 1\]"):
+            Thresholds(hpd_overlap=0.5, kl_divergence=0.0, spike_prob=bad)
+
+    def test_boundary_values_accepted(self) -> None:
+        """The closed-interval boundaries [0, 1] must construct cleanly."""
+        Thresholds(hpd_overlap=0.0, kl_divergence=0.0, spike_prob=0.0)
+        Thresholds(hpd_overlap=1.0, kl_divergence=0.0, spike_prob=1.0)
+
+    def test_is_frozen(self) -> None:
+        """Frozen so a downstream consumer cannot rebind a field mid-pipeline."""
+        from dataclasses import FrozenInstanceError
+
+        t: Any = Thresholds(hpd_overlap=0.5, kl_divergence=0.0, spike_prob=0.05)
+        with pytest.raises(FrozenInstanceError):
+            t.hpd_overlap = 0.7
+
 
 # ---------------------------------------------------------------------------
 # Transformed / transform_metrics
@@ -571,6 +642,136 @@ class TestTransformedDataclass:
         assert transformed.hpd_overlap_threshold == 1.5
         assert transformed.kl_divergence_threshold == 1.0
         assert transformed.spike_prob_threshold == 3.0
+
+    def test_kl_shape_mismatch_raises(self) -> None:
+        """Downstream heatmaps stack the three metric arrays; a shape
+        mismatch would silently misalign cells against threshold rows."""
+        with pytest.raises(ValueError, match="kl_divergence shape"):
+            Transformed(
+                hpd_overlap=np.zeros((4, 3)),
+                kl_divergence=np.zeros((4, 2)),  # wrong shape
+                spike_prob=np.zeros((4, 3)),
+                hpd_overlap_threshold=0.0,
+                kl_divergence_threshold=0.0,
+                spike_prob_threshold=0.0,
+            )
+
+    def test_spike_prob_shape_mismatch_raises(self) -> None:
+        with pytest.raises(ValueError, match="spike_prob shape"):
+            Transformed(
+                hpd_overlap=np.zeros((4, 3)),
+                kl_divergence=np.zeros((4, 3)),
+                spike_prob=np.zeros((3, 3)),  # wrong leading dim
+                hpd_overlap_threshold=0.0,
+                kl_divergence_threshold=0.0,
+                spike_prob_threshold=0.0,
+            )
+
+    def test_arrays_are_write_protected(self) -> None:
+        transformed = Transformed(
+            hpd_overlap=np.zeros((2, 2)),
+            kl_divergence=np.zeros((2, 2)),
+            spike_prob=np.zeros((2, 2)),
+            hpd_overlap_threshold=0.0,
+            kl_divergence_threshold=0.0,
+            spike_prob_threshold=0.0,
+        )
+        for name in ("hpd_overlap", "kl_divergence", "spike_prob"):
+            assert getattr(transformed, name).flags.writeable is False
+        with pytest.raises(ValueError, match="read-only|assignment destination"):
+            transformed.hpd_overlap[0, 0] = 1.0
+
+
+class TestDiagnosticsInvariants:
+    """``Diagnostics.__post_init__`` validates shape and value ranges
+    on every field. Exercise the most-likely-to-regress branches
+    directly so a future "loosen the check" change fails here, not
+    later as a NaN downstream."""
+
+    def _kwargs(
+        self, *, n_time: int = 4, n_bins: int = 3, n_cells: int = 2, n_spikes: int = 1
+    ) -> dict[str, np.ndarray]:
+        posterior = np.full((n_time, n_bins), 1.0 / n_bins)
+        return dict(
+            posterior=posterior,
+            predictive=posterior.copy(),
+            likelihood=posterior.copy(),
+            spike_likelihood=posterior.copy(),
+            hpd_overlap=np.zeros((n_time, n_cells)),
+            kl_divergence=np.zeros((n_time, n_cells)),
+            spike_prob=np.zeros((n_time, n_cells)),
+            event_time_ind=np.zeros(n_spikes, dtype=np.intp),
+            event_cell_ind=np.zeros(n_spikes, dtype=np.intp),
+            event_hpd_overlap=np.zeros(n_spikes),
+            event_kl_divergence=np.zeros(n_spikes),
+            event_spike_prob=np.zeros(n_spikes),
+            per_spike_likelihood=np.zeros((n_spikes, n_bins)),
+        )
+
+    def test_predictive_shape_mismatch_raises(self) -> None:
+        kwargs = self._kwargs(n_time=4, n_bins=3)
+        kwargs["predictive"] = np.zeros((5, 3))  # wrong leading dim
+        with pytest.raises(ValueError, match=r"Diagnostics\.predictive shape"):
+            Diagnostics(**kwargs)
+
+    def test_per_event_shape_mismatch_raises(self) -> None:
+        kwargs = self._kwargs(n_spikes=3)
+        kwargs["event_kl_divergence"] = np.zeros(4)  # wrong leading dim
+        with pytest.raises(ValueError, match=r"Diagnostics\.event_kl_divergence shape"):
+            Diagnostics(**kwargs)
+
+    def test_posterior_must_be_2d(self) -> None:
+        kwargs = self._kwargs()
+        kwargs["posterior"] = np.zeros(12)  # 1-D
+        with pytest.raises(ValueError, match=r"Diagnostics\.posterior must be 2-D"):
+            Diagnostics(**kwargs)
+
+    def test_hpd_overlap_out_of_range_raises(self) -> None:
+        """A buggy decoder shipping ``hpd_overlap > 1`` is caught at the
+        producer boundary, not silently propagated into HPD overlap
+        statistics that look fine at first glance."""
+        kwargs = self._kwargs()
+        kwargs["hpd_overlap"] = np.full((4, 2), 1.5)
+        with pytest.raises(ValueError, match=r"Diagnostics\.hpd_overlap: values above 1"):
+            Diagnostics(**kwargs)
+
+    def test_kl_divergence_negative_raises(self) -> None:
+        kwargs = self._kwargs()
+        kwargs["kl_divergence"] = np.full((4, 2), -0.5)
+        with pytest.raises(ValueError, match=r"Diagnostics\.kl_divergence: values below 0"):
+            Diagnostics(**kwargs)
+
+    def test_nan_in_dense_field_is_allowed(self) -> None:
+        """NaN at (t, cell) without a spike is legitimate; the range
+        check must let it through."""
+        kwargs = self._kwargs()
+        kwargs["hpd_overlap"][0, :] = np.nan
+        kwargs["kl_divergence"][0, :] = np.nan
+        kwargs["spike_prob"][0, :] = np.nan
+        Diagnostics(**kwargs)  # does not raise
+
+
+class TestPerCellDiagnosticsInvariants:
+    """All-or-nothing on the dense matrices is the load-bearing
+    invariant of ``PerCellDiagnostics``; cover it directly so a
+    future caller can't supply ``hpd_overlap`` without
+    ``kl_divergence`` and have downstream code mistake the
+    None as "include_dense_matrices=False"."""
+
+    def test_partial_dense_matrices_rejected(self) -> None:
+        n_spikes, n_time, n_cells, n_bins = 2, 4, 2, 3
+        with pytest.raises(ValueError, match="all-or-nothing"):
+            PerCellDiagnostics(
+                event_time_ind=np.zeros(n_spikes, dtype=np.intp),
+                event_cell_ind=np.zeros(n_spikes, dtype=np.intp),
+                event_hpd_overlap=np.zeros(n_spikes),
+                event_kl_divergence=np.zeros(n_spikes),
+                event_spike_prob=np.zeros(n_spikes),
+                hpd_overlap=np.zeros((n_time, n_cells)),
+                kl_divergence=None,  # only some dense matrices supplied
+                spike_prob=np.zeros((n_time, n_cells)),
+                per_spike_likelihood=np.zeros((n_spikes, n_bins)),
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -680,7 +881,7 @@ class TestDecodeAndDiagnosticsLogSpace:
         results = decode_and_diagnostics(
             spikes, xs, transition_matrix, pf_centers, pf_width=10.0, rate_scale=0.1
         )
-        posterior = results["posterior"]
+        posterior = results.posterior
         np.testing.assert_allclose(posterior.sum(axis=1), 1.0, rtol=1e-10, atol=1e-12)
 
     def test_extreme_prior_likelihood_mismatch_yields_meaningful_posterior(self) -> None:
@@ -707,7 +908,7 @@ class TestDecodeAndDiagnosticsLogSpace:
         results = decode_and_diagnostics(
             spikes, xs, transition_matrix, pf_centers, pf_width=2.0, rate_scale=5.0
         )
-        posterior = results["posterior"]
+        posterior = results.posterior
 
         # Every step's posterior sums to 1 (no underflow, no reset).
         np.testing.assert_allclose(posterior.sum(axis=1), 1.0, rtol=1e-8, atol=1e-10)
@@ -795,7 +996,7 @@ class TestComputePerCellDiagnosticsFromRates:
         # max rank = 1.0 for every event. Without the fix, the zero
         # row produces a [0, 0, 0] cell_fraction column and the
         # downstream rank computation yields ~0.6-0.99 instead.
-        np.testing.assert_allclose(result["event_spike_prob"], 1.0, atol=1e-12)
+        np.testing.assert_allclose(result.event_spike_prob, 1.0, atol=1e-12)
 
     def test_fully_degenerate_rates_yield_uniform_rank(self) -> None:
         """Pathological case: every rate row is zero. With the uniform
@@ -814,7 +1015,7 @@ class TestComputePerCellDiagnosticsFromRates:
         result = compute_per_cell_diagnostics_from_rates(
             predictive, rates, spike_time_ind, spike_cell_ind, coverage=0.95
         )
-        np.testing.assert_allclose(result["event_spike_prob"], 1.0, atol=1e-12)
+        np.testing.assert_allclose(result.event_spike_prob, 1.0, atol=1e-12)
 
 
 # ---------------------------------------------------------------------------
@@ -940,7 +1141,7 @@ class TestSimulationResultDataclass:
             xs=np.linspace(0.0, 100.0, n_bins),
             x_true=np.zeros(n_time),
             spikes=np.zeros((n_time, 1), dtype=np.int_),
-            metrics={},
+            metrics=_zero_diagnostics(n_time=n_time, n_bins=n_bins),
             phase_labels=PHASE_LABELS,
             phase_boundaries=(1, 2, 3, 4, 5, 6, 7, n_time),
         )
@@ -961,7 +1162,7 @@ class TestSimulationResultDataclass:
                 xs=np.linspace(0.0, 100.0, n_bins),
                 x_true=np.zeros(n_time),
                 spikes=np.zeros((n_time, 1), dtype=np.int_),
-                metrics={},
+                metrics=_zero_diagnostics(n_time=n_time, n_bins=n_bins),
                 phase_labels=bogus_labels,
                 phase_boundaries=(1, 2, 3, 4, 5, 6, 7, n_time),
             )
@@ -975,7 +1176,7 @@ class TestSimulationResultDataclass:
                 xs=np.linspace(0.0, 100.0, n_bins),
                 x_true=np.zeros(n_time),
                 spikes=np.zeros((n_time, 1), dtype=np.int_),
-                metrics={},
+                metrics=_zero_diagnostics(n_time=n_time, n_bins=n_bins),
                 phase_labels=PHASE_LABELS,
                 phase_boundaries=(1, 2, 3),  # wrong length
             )
@@ -989,7 +1190,7 @@ class TestSimulationResultDataclass:
                 xs=np.linspace(0.0, 100.0, n_bins),
                 x_true=np.zeros(n_time),
                 spikes=np.zeros((n_time + 1, 1), dtype=np.int_),  # off by one
-                metrics={},
+                metrics=_zero_diagnostics(n_time=n_time, n_bins=n_bins),
                 phase_labels=PHASE_LABELS,
                 phase_boundaries=(1, 2, 3, 4, 5, 6, 7, n_time),
             )
@@ -1003,24 +1204,22 @@ class TestSimulationResultDataclass:
                 xs=np.linspace(0.0, 100.0, n_bins),
                 x_true=np.zeros(n_time),
                 spikes=np.zeros((n_time, 1), dtype=np.int_),
-                metrics={},
+                metrics=_zero_diagnostics(n_time=n_time, n_bins=n_bins),
                 phase_labels=PHASE_LABELS,
                 phase_boundaries=(1, 2, 3, 4, 5, 6, 7, n_time + 1),
             )
 
-    def test_metrics_with_wrong_time_indexed_leading_dim_raises(self) -> None:
-        """The ``TIME_INDEXED_METRIC_KEYS`` loop in ``__post_init__``
-        rejects a dense metric array whose leading dim doesn't match
-        ``x_true``'s timeline. Reverting that loop lets a mis-shaped
-        ``posterior`` slip through and the figure-3 pipeline runs with
-        misaligned indices."""
+    def test_metrics_timeline_mismatch_against_x_true_raises(self) -> None:
+        """``SimulationResult.__post_init__`` rejects a ``Diagnostics``
+        whose ``posterior`` timeline doesn't match ``x_true``. The
+        ``Diagnostics`` dataclass itself enforces internal-shape
+        consistency; this test pins the cross-check against the outer
+        timeline that only ``SimulationResult`` can see."""
         n_bins = 5
         n_time = 10
-        # Wrong leading dim: posterior is one row longer than x_true.
-        bad_metrics: dict[str, np.ndarray] = {
-            "posterior": np.zeros((n_time + 1, n_bins)),
-        }
-        with pytest.raises(ValueError, match=r"metrics\['posterior'\] has leading dim"):
+        # A perfectly-shaped Diagnostics with the wrong leading dim.
+        bad_metrics = _zero_diagnostics(n_time=n_time + 1, n_bins=n_bins)
+        with pytest.raises(ValueError, match=r"metrics.posterior leading dim"):
             SimulationResult(
                 params=DecodeParams(),
                 xs=np.linspace(0.0, 100.0, n_bins),
@@ -1050,7 +1249,7 @@ class TestStoredLikelihoodNormalization:
         self, decoder_inputs: DecoderInputs
     ) -> None:
         result = decoder_inputs.call()
-        likelihood = result["likelihood"]
+        likelihood = result.likelihood
         np.testing.assert_allclose(
             likelihood.sum(axis=1),
             1.0,
@@ -1066,7 +1265,7 @@ class TestStoredLikelihoodNormalization:
         spike-only likelihood. NaN at no-spike steps is acceptable (and
         documented)."""
         result = decoder_inputs.call()
-        spike_lik = result["spike_likelihood"]
+        spike_lik = result.spike_likelihood
         spikes = decoder_inputs.spikes
         spike_steps = np.where(spikes.sum(axis=1) > 0)[0]
         # Skip t=0 which is a flat-initialized row, not a likelihood
@@ -1152,4 +1351,4 @@ class TestLogSpaceReferenceComparison:
             ref_post[t] = weighted / norm
 
         result = decoder_inputs.call()
-        np.testing.assert_allclose(result["posterior"], ref_post, rtol=1e-10, atol=1e-12)
+        np.testing.assert_allclose(result.posterior, ref_post, rtol=1e-10, atol=1e-12)

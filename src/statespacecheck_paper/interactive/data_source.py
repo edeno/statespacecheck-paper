@@ -27,7 +27,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import numpy as np
 import pandas as pd
@@ -41,6 +41,18 @@ ModelName = cache_mod.ModelName
 
 
 DatasetKind = Literal["model", "simulation"]
+
+
+def _readonly(arr: NDArray[Any]) -> NDArray[Any]:
+    """Mark ``arr`` write-protected in place and return it.
+
+    Used by ``DecoderDataSource`` to extend its "single source of
+    truth" contract from the field bindings to the buffer contents:
+    panel code that grabs ``ds.event_kl_divergence`` cannot silently
+    mutate the array and corrupt the next tick's render.
+    """
+    arr.setflags(write=False)
+    return arr
 
 
 @dataclass(frozen=True)
@@ -207,47 +219,42 @@ class DecoderDataSource:
         meta_ds = xr.open_zarr(self._layout.zarr, consolidated=True)
 
         meta = np.load(self._layout.meta)
-        self.time: NDArray[np.float64] = np.asarray(meta["time"], dtype=np.float64)
-        self.linear_position: NDArray[np.float64] = np.asarray(
-            meta["linear_position"], dtype=np.float64
-        )
+        self.time = _readonly(np.asarray(meta["time"], dtype=np.float64))
+        self.linear_position = _readonly(np.asarray(meta["linear_position"], dtype=np.float64))
         self.n_cells = int(meta["n_cells"])
 
         pfs = np.load(self._layout.place_fields)
-        self.place_fields: NDArray[np.float32] = np.asarray(pfs["place_fields"], dtype=np.float32)
-        self.position_bins: NDArray[np.float64] = np.asarray(pfs["position_bins"], dtype=np.float64)
-        self.place_field_peaks: NDArray[np.float64] = np.asarray(
-            pfs["place_field_peaks"], dtype=np.float64
-        )
+        self.place_fields = _readonly(np.asarray(pfs["place_fields"], dtype=np.float32))
+        self.position_bins = _readonly(np.asarray(pfs["position_bins"], dtype=np.float64))
+        self.place_field_peaks = _readonly(np.asarray(pfs["place_field_peaks"], dtype=np.float64))
 
         spike_arr = np.load(self._layout.spike_times, allow_pickle=True)
         if spike_arr.dtype != object:
             raise ValueError(f"Expected object-dtype spike-times array, got {spike_arr.dtype}")
         self.spike_times: list[NDArray[np.float64]] = [
-            np.asarray(st, dtype=np.float64) for st in spike_arr
+            _readonly(np.asarray(st, dtype=np.float64)) for st in spike_arr
         ]
 
         self.events: pd.DataFrame = pd.read_parquet(self._layout.events)
         if not self.events["time"].is_monotonic_increasing:
             self.events = self.events.sort_values("time", kind="mergesort").reset_index(drop=True)
 
-        # Pre-extracted NumPy views over the events frame. The viewer's
+        # Pre-extracted NumPy copies of the events frame. The viewer's
         # per-tick live readout indexes these directly to avoid the
         # cost of ``DataFrame.iloc`` row construction on every UI tick.
-        self.event_times: NDArray[np.float64] = self.events["time"].to_numpy(
-            dtype=np.float64, copy=False
+        # We take a defensive copy (instead of ``copy=False``) before
+        # marking read-only — otherwise the write-protect flag would
+        # also lock the underlying DataFrame storage.
+        self.event_times = _readonly(self.events["time"].to_numpy(dtype=np.float64))
+        self.event_cell_ids = _readonly(self.events["cell_id"].to_numpy(dtype=np.int32))
+        self.event_hpd_overlap = _readonly(
+            self.events["event_hpd_overlap"].to_numpy(dtype=np.float32)
         )
-        self.event_cell_ids: NDArray[np.int32] = self.events["cell_id"].to_numpy(
-            dtype=np.int32, copy=False
+        self.event_kl_divergence = _readonly(
+            self.events["event_kl_divergence"].to_numpy(dtype=np.float32)
         )
-        self.event_hpd_overlap: NDArray[np.float32] = self.events["event_hpd_overlap"].to_numpy(
-            dtype=np.float32, copy=False
-        )
-        self.event_kl_divergence: NDArray[np.float32] = self.events["event_kl_divergence"].to_numpy(
-            dtype=np.float32, copy=False
-        )
-        self.event_spike_prob: NDArray[np.float32] = self.events["event_spike_prob"].to_numpy(
-            dtype=np.float32, copy=False
+        self.event_spike_prob = _readonly(
+            self.events["event_spike_prob"].to_numpy(dtype=np.float32)
         )
 
         self._validate_consistency()
@@ -321,12 +328,36 @@ class DecoderDataSource:
             raise ValueError(
                 f"place_field_peaks shape {self.place_field_peaks.shape} != ({n_cells},)"
             )
-        if self.events["cell_id"].max() >= n_cells or self.events["cell_id"].min() < 0:
+        if self.events.shape[0] > 0 and (
+            self.events["cell_id"].max() >= n_cells or self.events["cell_id"].min() < 0
+        ):
             raise ValueError(
                 f"events cell_id out of range [0, {n_cells}); "
                 f"got [{self.events['cell_id'].min()}, "
                 f"{self.events['cell_id'].max()}]"
             )
+        # The hot-path window slicer assumes ``time`` is monotonic
+        # non-decreasing — a backwards entry would silently scramble
+        # ``searchsorted`` lookups.
+        if self.time.size > 1 and not np.all(np.diff(self.time) >= 0):
+            raise ValueError(
+                "DecoderDataSource.time is not monotonic non-decreasing; "
+                "window-slice indexing would be undefined."
+            )
+        # Place-field peaks must lie inside the position-bin range,
+        # otherwise the slice-panel overlay places them off-axis.
+        if self.position_bins.size and self.place_field_peaks.size:
+            pos_min = float(self.position_bins.min())
+            pos_max = float(self.position_bins.max())
+            finite_peaks = self.place_field_peaks[np.isfinite(self.place_field_peaks)]
+            if finite_peaks.size and (
+                float(finite_peaks.min()) < pos_min or float(finite_peaks.max()) > pos_max
+            ):
+                raise ValueError(
+                    f"place_field_peaks fall outside position_bins range "
+                    f"[{pos_min}, {pos_max}]; got "
+                    f"[{float(finite_peaks.min())}, {float(finite_peaks.max())}]"
+                )
 
     # ------------------------------------------------------------------
     # Window helpers

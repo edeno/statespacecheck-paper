@@ -15,6 +15,7 @@ from typing import Any
 
 import numpy as np
 
+from statespacecheck_paper.analysis import PerCellDiagnostics
 from statespacecheck_paper.load_local_data import load_neural_recording_from_files
 from statespacecheck_paper.real_data_analysis import (
     compute_model_diagnostics,
@@ -35,8 +36,8 @@ HALF_WIDTH = 50  # Same as Figure 4a
 
 
 def find_representative_windows(
-    continuous_diagnostics: dict[str, np.ndarray],
-    contfrag_diagnostics: dict[str, np.ndarray],
+    continuous_diagnostics: PerCellDiagnostics,
+    contfrag_diagnostics: PerCellDiagnostics,
     half_width: int = HALF_WIDTH,
     quantiles: tuple[float, ...] = (0.05, 0.50, 0.95),
 ) -> dict[str, list[tuple[str, int, slice]]]:
@@ -71,16 +72,16 @@ def find_representative_windows(
         "spike_prob": {0.05: "ContFrag better", 0.50: "Similar", 0.95: "Cont better"},
     }
 
-    n_time = continuous_diagnostics["hpd_overlap"].shape[0]
+    n_time = continuous_diagnostics.hpd_overlap.shape[0]
     windows: dict[str, list[tuple[str, int, slice]]] = {}
 
     for metric in metrics:
-        diff = contfrag_diagnostics[metric] - continuous_diagnostics[metric]
+        diff = getattr(contfrag_diagnostics, metric) - getattr(continuous_diagnostics, metric)
 
         # Transform spike_prob to -log10 scale for consistency with 4b
         if metric == "spike_prob":
-            a = -np.log10(np.maximum(continuous_diagnostics[metric], 1e-10))
-            b = -np.log10(np.maximum(contfrag_diagnostics[metric], 1e-10))
+            a = -np.log10(np.maximum(getattr(continuous_diagnostics, metric), 1e-10))
+            b = -np.log10(np.maximum(getattr(contfrag_diagnostics, metric), 1e-10))
             diff = b - a
 
         # Median across cells at each time point
@@ -183,12 +184,12 @@ def run_sanity_check() -> None:
         for label, center_idx, time_slice_ind in metric_windows:
             # Print summary for this window
             diff_hpd = (
-                contfrag_diagnostics["hpd_overlap"][time_slice_ind]
-                - continuous_diagnostics["hpd_overlap"][time_slice_ind]
+                contfrag_diagnostics.hpd_overlap[time_slice_ind]
+                - continuous_diagnostics.hpd_overlap[time_slice_ind]
             )
             diff_kl = (
-                contfrag_diagnostics["kl_divergence"][time_slice_ind]
-                - continuous_diagnostics["kl_divergence"][time_slice_ind]
+                contfrag_diagnostics.kl_divergence[time_slice_ind]
+                - continuous_diagnostics.kl_divergence[time_slice_ind]
             )
             print(
                 f"  {label} (idx={center_idx}): "
