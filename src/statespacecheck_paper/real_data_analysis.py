@@ -79,7 +79,6 @@ def gaussian_smooth(
     >>> smoothed.shape
     (1000,)
     """
-    # scipy.ndimage.gaussian_filter1d preserves input dtype
     result: NDArray[np.float64] = gaussian_filter1d(
         data,
         sigma * sampling_frequency,
@@ -274,31 +273,19 @@ def compute_running_average(
 
         return running_avg, time.copy()
 
-    # Step 1: Compute per-bin event sum and count across cells
-    # Each non-NaN entry is one spike event
     event_values = np.where(np.isnan(metric), 0.0, metric)
     event_counts = np.where(np.isnan(metric), 0.0, 1.0)
-
-    # Sum across cells: total metric value and event count per time bin
     bin_sum = event_values.sum(axis=1)  # (n_time,)
     bin_count = event_counts.sum(axis=1)  # (n_time,)
 
-    # Step 2: Estimate time bin width from the time array
-    if len(time) > 1:
-        dt = float(np.median(np.diff(time)))
-    else:
-        dt = 1.0
-
-    # Step 3: Convert window size from seconds to number of bins
+    dt = float(np.median(np.diff(time))) if len(time) > 1 else 1.0
     window_bins = max(1, int(np.round(window_size / dt)))
 
-    # Step 4: Apply boxcar filter to numerator and denominator separately
-    # Using mode="constant" (zero-pad) so edge bins have fewer events, not
-    # inflated counts from nearest-value extension.
+    # Zero-pad mode rather than nearest-value so edge bins have fewer
+    # events instead of inflated counts from extended-value extension.
     windowed_sum = uniform_filter1d(bin_sum, size=window_bins, mode="constant")
     windowed_count = uniform_filter1d(bin_count, size=window_bins, mode="constant")
 
-    # Step 5: Divide to get event-weighted average; NaN where no events
     running_avg = np.full(n_time_pts, np.nan)
     has_events = windowed_count > 0
     running_avg[has_events] = windowed_sum[has_events] / windowed_count[has_events]
@@ -482,17 +469,28 @@ def compute_per_cell_diagnostics(
 
     Returns
     -------
-    diagnostics : dict[str, np.ndarray]
-        Always contains:
-        - 'event_time': shape (n_spikes,), exact spike time when available
-        - 'event_hpd_overlap': shape (n_spikes,), one value per spike
-        - 'event_kl_divergence': shape (n_spikes,), one value per spike
-        - 'event_spike_prob': shape (n_spikes,), one value per spike
+    diagnostics : PerCellDiagnostics
+        Always populated:
+
+        - ``event_time_ind`` (n_spikes,) and ``event_cell_ind`` (n_spikes,):
+          decoder-bin and cell indices per spike event.
+        - ``event_hpd_overlap``, ``event_kl_divergence``, ``event_spike_prob``:
+          shape (n_spikes,), one value per spike event.
+        - ``event_time``: shape (n_spikes,), exact wall-clock spike time
+          (the real-data path always populates this when ``spike_times``
+          and ``time`` are supplied; ``None`` only on the simulated path).
 
         When ``include_dense_matrices`` (the default), additionally:
-        - 'hpd_overlap': shape (n_time, n_cells), NaN when cell has no spike
-        - 'kl_divergence': shape (n_time, n_cells), NaN when cell has no spike
-        - 'spike_prob': shape (n_time, n_cells), NaN when cell has no spike
+
+        - ``hpd_overlap``, ``kl_divergence``, ``spike_prob``: shape
+          (n_time, n_cells), NaN where the cell has no spike at that
+          timestep.
+        - ``per_spike_likelihood``: shape (n_spikes, n_bins), normalized
+          per-event Poisson likelihood.
+
+        When ``include_dense_matrices=False`` those four dense fields
+        are ``None`` together (the all-or-nothing invariant in
+        ``PerCellDiagnostics.__post_init__``).
 
     Notes
     -----
@@ -513,7 +511,7 @@ def compute_per_cell_diagnostics(
     >>> diagnostics = compute_per_cell_diagnostics(
     ...     predictive, spike_counts, place_fields
     ... )
-    >>> diagnostics['hpd_overlap'].shape
+    >>> diagnostics.hpd_overlap.shape
     (100, 10)
     """
     # Ensure all inputs are NumPy arrays (handles JAX arrays from decoder)
@@ -835,22 +833,10 @@ def compute_model_diagnostics(
 
     Returns
     -------
-    diagnostics : dict[str, np.ndarray]
-        Dictionary with keys:
-        - 'hpd_overlap': shape (n_time, n_cells), NaN where no spike
-        - 'kl_divergence': shape (n_time, n_cells), NaN where no spike
-        - 'spike_prob': shape (n_time, n_cells), NaN where no spike
-        - 'per_spike_likelihood': shape (n_spikes, n_bins), normalized
-          likelihood distribution for each individual spike event
-        - 'event_time_ind': shape (n_spikes,), time index for each spike
-        - 'event_cell_ind': shape (n_spikes,), cell index for each spike
-        - 'event_hpd_overlap': shape (n_spikes,), per-spike HPD overlap
-        - 'event_kl_divergence': shape (n_spikes,), per-spike KL divergence
-        - 'event_spike_prob': shape (n_spikes,), per-spike spike probability
-        - 'event_time': shape (n_spikes,), exact spike timestamps in seconds
-          (present whenever ``time`` is supplied; with ``spike_times`` these
-          are the original timestamps, otherwise they are the decoder time
-          grid values at each event's time index)
+    diagnostics : PerCellDiagnostics
+        See :func:`compute_per_cell_diagnostics` for the schema. The
+        ``event_time`` field carries either the original ``spike_times``
+        (when supplied) or the decoder-grid time at each event's index.
 
     Examples
     --------

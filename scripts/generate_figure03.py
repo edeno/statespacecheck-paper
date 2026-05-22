@@ -51,7 +51,7 @@ def run_demo(params: DecodeParams) -> None:
 
     Notes
     -----
-    The simulation includes 10 phases (5 misfits, each preceded by a
+    The simulation includes 8 phases (4 misfits, each preceded by a
     clean-recovery or baseline window):
 
     1. Clean baseline (0 - T_remap_start): Model fits well.

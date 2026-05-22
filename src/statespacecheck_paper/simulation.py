@@ -331,9 +331,15 @@ def spike_prob_rank(
 
     Notes
     -----
-    This matches the MATLAB implementation:
-    sum(lambda_expect(lambda_expect <= lambda_expect(j)))
-    where lambda_expect are probabilities summing to 1.
+    For each spike event ``j``, the rank is the cumulative probability
+    mass of cells whose expected contribution is ``<=`` cell ``j``'s
+    contribution:
+
+        rank[j] = sum over i of contrib[i] where contrib[i] <= contrib[j]
+
+    ``contrib`` is the per-cell expected contribution under the
+    predictive prior; with probabilities summing to 1, ``rank[j] = 1.0``
+    means every cell is at least as likely to fire as cell ``j``.
     """
     # prior @ cell_fraction_per_bin gives expected contribution per cell
     # Shape: (n_cells,) for 1D prior, (n_time, n_cells) for 2D prior

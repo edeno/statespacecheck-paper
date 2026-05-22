@@ -106,7 +106,7 @@ def _bidirectional_remap(n_cells: int) -> tuple[tuple[int, int], ...]:
 def _params_for_short_run(n_time: int, n_cells: int, sigx_pred: float = 0.5) -> DecodeParams:
     """DecodeParams with phase boundaries scaled to fit ``n_time``.
 
-    Distributes the 10 phase boundaries (5 misfits with recovery between
+    Distributes the 8 phase boundaries (4 misfits with recovery between
     each) so every misfit window has at least a few timesteps. ``n_time``
     needs to be large enough that ``T_remap_start - 1000`` is positive
     (some downstream helpers index a 1000-timestep baseline preamble).

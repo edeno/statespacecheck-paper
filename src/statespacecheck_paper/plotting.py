@@ -69,7 +69,7 @@ def add_phase_boundaries(
     Examples
     --------
     >>> fig, axes = plt.subplots(4, 1)
-    >>> boundaries = (10, 20, 30, 40, 50, 60, 70, 80, 90, 100)
+    >>> boundaries = (10, 20, 30, 40, 50, 60, 70, 80)
     >>> add_phase_boundaries(axes, boundaries, include_labels=True)
     """
     # Saturated colors so axvspan at low alpha is still visible. We use

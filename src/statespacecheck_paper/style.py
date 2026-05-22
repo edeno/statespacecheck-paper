@@ -143,8 +143,7 @@ COLORS: dict[str, str] = {
     # -------------------------------------------------------------------------
     # Heatmap Colormaps
     # -------------------------------------------------------------------------
-    # Use these string values with matplotlib's cmap parameter
-    # "heatmap_posterior": "bone_r"  # Defined as constant below
+    # See ``CMAP_*`` constants below for the matplotlib colormaps.
 }
 
 # Colormap constants (can't be in dict since they're not colors)
@@ -226,10 +225,7 @@ def set_figure_defaults(context: Literal["paper", "presentation", "poster"] = "p
         },
     }
 
-    # Get font sizes for selected context
     sizes = font_sizes[context]
-
-    # Apply all settings
     plt.rcParams.update(
         {
             **sizes,
@@ -295,13 +291,9 @@ def save_figure(
 
     >>> save_figure("manuscript/figures/supplementary/figure_s1")  # doctest: +SKIP
     """
-    # Convert to Path object for easier handling
     path = Path(name)
-
-    # Create parent directories if they don't exist
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Save both formats using pathlib
     pdf_path = path.with_suffix(".pdf")
     png_path = path.with_suffix(".png")
     plt.savefig(pdf_path, dpi=dpi, bbox_inches="tight")
@@ -309,7 +301,6 @@ def save_figure(
 
     print(f"Saved {pdf_path} and {png_path}")
 
-    # Close figure if requested
     if close:
         plt.close()
 

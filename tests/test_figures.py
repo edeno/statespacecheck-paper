@@ -33,7 +33,7 @@ def cleanup_sys_path() -> Iterator[None]:
 
 _FIGURE_CONTRACT = [
     ("generate_figure01", "create_figure", ["COLORS", "save_figure"]),
-    ("generate_figure02", "create_figure", ["COLORS", "save_figure"]),
+    ("generate_figure02", "create_figure", ["save_figure"]),
     (
         "generate_figure03",
         "run_demo",

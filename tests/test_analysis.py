@@ -466,7 +466,7 @@ class TestComputeThresholds:
         expected_kl = np.nanquantile(metrics_2d["kl_divergence"][:baseline_end].ravel(), 0.99)
         assert thresholds.hpd_overlap == pytest.approx(expected_hpdo)
         assert thresholds.kl_divergence == pytest.approx(expected_kl)
-        # spike_prob is fixed at 0.05 (matches MATLAB), not data-driven.
+        # spike_prob is a fixed rank-statistic cutoff, not data-driven.
         assert thresholds.spike_prob == 0.05
 
     def test_handles_partial_nan_baseline(self) -> None:
@@ -1019,7 +1019,7 @@ class TestComputePerCellDiagnosticsFromRates:
 
 
 # ---------------------------------------------------------------------------
-# Phase 2 invariants: phase_boundaries tuple, MisfitWindow tightening
+# DecodeParams.phase_boundaries tuple + MisfitWindow tightening
 # ---------------------------------------------------------------------------
 
 
@@ -1232,8 +1232,8 @@ class TestSimulationResultDataclass:
 
 
 # ---------------------------------------------------------------------------
-# Phase 3 follow-ups: stored-likelihood normalization, end-to-end
-# validate_against, log-space reference comparison
+# Stored-likelihood normalization, end-to-end validate_against,
+# log-space reference comparison
 # ---------------------------------------------------------------------------
 
 

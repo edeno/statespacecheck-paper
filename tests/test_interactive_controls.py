@@ -1,5 +1,5 @@
-"""Tests for the Phase 6 controls: window-width slider, model swap,
-play/pause auto-scroll, and keyboard shortcuts.
+"""Tests for the viewer's interactive controls: window-width slider,
+model swap, play/pause auto-scroll, and keyboard shortcuts.
 """
 
 from __future__ import annotations
