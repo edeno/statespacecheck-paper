@@ -1,6 +1,6 @@
 # statespacecheck-paper
 
-**Goodness-of-fit diagnostics for state space models in neuroscience**
+**Local goodness-of-fit measures for neural decoding**
 
 This repository contains the source code and supplementary materials for the paper demonstrating `statespacecheck`, a package that provides tools to assess how well Bayesian state space models fit neural data by examining the consistency between posterior distributions and their component likelihood distributions. These diagnostics help identify issues with prior specification and model assumptions, enabling iterative model refinement.
 
@@ -13,7 +13,7 @@ This is a **paper/research repository** (not a library). The code is organized i
 - **`manuscript/figures/`**: Generated figure outputs (PDF and PNG)
   - `manuscript/figures/main/`: Main text figures
   - `manuscript/figures/supplementary/`: Supplementary figures
-- **`tests/`**: Comprehensive test suite (100 tests, 75% coverage)
+- **`tests/`**: Comprehensive test suite (326 tests)
 - **`notebooks/`**: Jupyter notebooks for exploration
 
 **For developers**: See [CLAUDE.md](CLAUDE.md) for detailed development guide including module organization, coding standards, and where to add new functionality.
@@ -352,7 +352,7 @@ uv pip install -e ".[dev]"
 ### Running Tests
 
 ```bash
-# Run all tests with coverage (100 tests, 75% coverage)
+# Run all tests with coverage (326 tests)
 uv run pytest
 
 # Run specific module tests
@@ -398,7 +398,7 @@ uv run ruff format . && uv run ruff check . && uv run mypy src/ && uv run pytest
 - **`simulation.py`**: Simulation utilities (random walks, spikes, place fields)
 - **`analysis.py`**: Analysis logic (decoder, diagnostics, thresholds)
 - **`plotting.py`**: Reusable plotting functions (HPD regions, diagnostic plots)
-- **`load_data.py`**: Real data loading utilities
+- **`load_local_data.py`**: Real data loading utilities
 
 ### Standards
 
@@ -435,16 +435,19 @@ These diagnostics complement but are distinct from:
 
 ## Citation
 
-If you use this package in your research, please cite:
+If you use this package in your research, please cite the paper:
 
 ```bibtex
-@software{statespacecheck2025,
-  title={statespacecheck: Goodness-of-fit diagnostics for state space models},
-  author={Your Name},
-  year={2025},
-  url={https://github.com/yourusername/statespacecheck}
+@article{zeng2026local,
+  title   = {Local goodness-of-fit measures for neural decoding},
+  author  = {Zeng, Sirui and Comrie, Alison E. and Frank, Loren M. and
+             Eden, Uri T. and Denovellis, Eric L.},
+  year    = {2026},
 }
 ```
+
+A machine-readable citation in CFF format is also provided in
+[CITATION.cff](CITATION.cff).
 
 ## License
 

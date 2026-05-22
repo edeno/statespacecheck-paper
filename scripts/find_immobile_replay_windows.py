@@ -32,6 +32,7 @@ from scipy.stats import zscore
 
 from statespacecheck_paper.analysis import PerCellDiagnostics
 from statespacecheck_paper.load_local_data import load_neural_recording_from_files
+from statespacecheck_paper.paths import ANIMAL_DATE_EPOCH, DATA_PATH
 from statespacecheck_paper.real_data_analysis import (
     compute_model_diagnostics,
     compute_running_average,
@@ -47,8 +48,7 @@ from statespacecheck_paper.style import save_figure, set_figure_defaults
 # Configuration
 # -----------------------------
 
-DATA_PATH = Path(__file__).parent.parent / "data"
-ANIMAL_DATE_EPOCH = "j1620210710_02_r1"
+__all__ = ["ANIMAL_DATE_EPOCH", "DATA_PATH"]
 
 # Event detection thresholds
 SPEED_THRESHOLD = 4.0  # cm/s - below this is "immobile"

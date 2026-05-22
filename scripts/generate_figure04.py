@@ -14,7 +14,6 @@ Requires:
 from __future__ import annotations
 
 import warnings
-from pathlib import Path
 from typing import Any
 
 import matplotlib.pyplot as plt
@@ -22,6 +21,7 @@ import numpy as np
 from matplotlib.transforms import blended_transform_factory
 
 from statespacecheck_paper.load_local_data import load_neural_recording_from_files
+from statespacecheck_paper.paths import ANIMAL_DATE_EPOCH, DATA_PATH
 from statespacecheck_paper.real_data_analysis import (
     compute_model_diagnostics,
     create_decoder_environment,
@@ -40,8 +40,7 @@ from statespacecheck_paper.style import save_figure, set_figure_defaults
 # Configuration
 # -----------------------------
 
-DATA_PATH = Path(__file__).parent.parent / "data"
-ANIMAL_DATE_EPOCH = "j1620210710_02_r1"
+__all__ = ["ANIMAL_DATE_EPOCH", "DATA_PATH"]
 
 # Time window for Figure 4a (context view)
 # Shows ~20 seconds encompassing running and immobility at reward well

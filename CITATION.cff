@@ -1,0 +1,48 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite the paper as below."
+title: "statespacecheck-paper: Source code for 'Local goodness-of-fit measures for neural decoding'"
+abstract: >-
+  Source code, analysis scripts, and figure-generation pipeline for the
+  paper introducing local goodness-of-fit diagnostics (KL divergence,
+  HPD overlap, predictive checks) for Bayesian state space decoders
+  used in systems neuroscience.
+type: software
+license: MIT
+repository-code: "https://github.com/edeno/statespacecheck-paper"
+authors:
+  - family-names: Zeng
+    given-names: Sirui
+    email: zengsr@bu.edu
+    affiliation: "Department of Mathematics and Statistics, Boston University"
+  - family-names: Comrie
+    given-names: Alison E.
+    affiliation: "HHMI Janelia Research Campus"
+  - family-names: Frank
+    given-names: Loren M.
+    affiliation: >-
+      Departments of Physiology and Psychiatry, UCSF; Kavli Institute
+      for Fundamental Neuroscience, UCSF; HHMI, UCSF
+  - family-names: Eden
+    given-names: Uri T.
+    email: tzvi@bu.edu
+    affiliation: "Department of Mathematics and Statistics, Boston University"
+  - family-names: Denovellis
+    given-names: Eric L.
+    email: eric.denovellis@ucsf.edu
+    affiliation: >-
+      Departments of Physiology and Psychiatry, UCSF; HHMI, UCSF
+preferred-citation:
+  type: article
+  title: "Local goodness-of-fit measures for neural decoding"
+  authors:
+    - family-names: Zeng
+      given-names: Sirui
+    - family-names: Comrie
+      given-names: Alison E.
+    - family-names: Frank
+      given-names: Loren M.
+    - family-names: Eden
+      given-names: Uri T.
+    - family-names: Denovellis
+      given-names: Eric L.
+  year: 2026

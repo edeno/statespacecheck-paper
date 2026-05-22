@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-This repository contains the source code and supplementary materials for the paper **"Goodness-of-fit diagnostics for state space models in neuroscience"**. It includes analysis scripts, figure generation code, and examples demonstrating the `statespacecheck` package.
+This repository contains the source code and supplementary materials for the paper **"Local goodness-of-fit measures for neural decoding"**. It includes analysis scripts, figure generation code, and examples demonstrating the `statespacecheck` package.
 
 **Scientific Context**: State space models are widely used in neuroscience to relate neural activity to latent dynamic brain states. This paper introduces diagnostics (KL divergence and HPD overlap) to assess model goodness-of-fit by examining consistency between posterior distributions and component likelihood distributions.
 
@@ -14,11 +14,16 @@ This repository contains the source code and supplementary materials for the pap
 statespacecheck-paper/
 ├── src/statespacecheck_paper/  # Analysis code and utilities
 │   ├── __init__.py             # Package initialization
-│   ├── load_data.py            # Data loading utilities
+│   ├── load_local_data.py      # Data loading utilities (file-based)
+│   ├── paths.py                # DATA_PATH + ANIMAL_DATE_EPOCH constants
 │   ├── style.py                # Figure styling (colors, defaults, save)
 │   ├── simulation.py           # Simulation utilities
 │   ├── analysis.py             # Analysis logic and diagnostics
 │   ├── plotting.py             # Plotting utilities
+│   ├── figure02_panels.py      # Figure-2 per-panel renderers
+│   ├── figure03_demo.py        # Figure-3 simulation + decoder pipeline
+│   ├── real_data_analysis.py   # Figure-4 decoder + diagnostics
+│   ├── real_data_plotting.py   # Figure-4 plotting helpers
 │   └── schematic.py            # Graphical model and equation diagrams
 ├── scripts/                     # Figure generation scripts
 │   ├── generate_figure01.py    # Figure 1: Schematic and distribution comparisons
@@ -51,12 +56,13 @@ statespacecheck-paper/
 - **analysis.py**: Analysis logic (decoder, diagnostics, thresholds, transformations)
 - **plotting.py**: Reusable plotting functions (HPD regions, diagnostic plots)
 - **schematic.py**: Graphical model diagrams and Bayesian equation boxes for Figure 1
-- **load_data.py**: Data loading utilities for real datasets
+- **load_local_data.py**: Data loading utilities for real datasets
+- **paths.py**: Shared `DATA_PATH` / `ANIMAL_DATE_EPOCH` constants (env-overridable)
 
 **Figure Scripts** (in `scripts/`):
 
-- **generate_figure01.py**: Figure 1 orchestration (~170 lines) - schematic and distributions
-- **generate_figure02.py**: Figure 2 orchestration (~815 lines) - diagnostic demonstrations
+- **generate_figure01.py**: Figure 1 orchestration - schematic and distributions
+- **generate_figure02.py**: Figure 2 orchestration - diagnostic demonstrations (per-panel renderers live in `figure02_panels.py`)
 - **generate_figure03.py**: Figure 3 orchestration - per-cell diagnostics across an 8-phase simulation (4 misfit scenarios separated by clean-recovery windows): remap, history-dependent firing, drift, and wide-dynamics noise. The scenarios are chosen to span the metric-disagreement space - e.g. wide-dynamics noise inflates KL while HPD overlap and the rank-based p-value stay near baseline, and history-dependent firing is largely missed by all three per-spike spatial diagnostics. Figure 3 has two panels: a time-series block and a per-phase summary heatmap.
 - **generate_all_figures.py**: Master script to generate all figures
 
@@ -117,9 +123,20 @@ The repository follows a clean separation between **reusable code** (in `src/`) 
 - `draw_equation_boxes(ax)`: Draw Bayesian filtering equations
 - Used by Figure 1 to create schematic overview
 
-**6. load_data.py** - Real Data Loading
+**6. load_local_data.py** - Real Data Loading
 
-- Functions to load real neural recording datasets (not covered in detail here)
+- `load_neural_recording_from_files(data_path, animal_date_epoch)`: loads
+  position info, spike times, track graph, and linear edge data from
+  pre-exported pickle files in the supplied data directory. No Spyglass
+  database connection required.
+
+**7. paths.py** - Shared Data Identifiers
+
+- `DATA_PATH`: default `<repo>/data`; override via `STATESPACECHECK_DATA_PATH`.
+- `ANIMAL_DATE_EPOCH`: default `j1620210710_02_r1`; override via
+  `STATESPACECHECK_ANIMAL_DATE_EPOCH`.
+- Imported by `scripts/generate_figure04.py` and the four
+  `sanity_check_*` / `find_*` scripts so they share one source of truth.
 
 ### Figure Scripts
 

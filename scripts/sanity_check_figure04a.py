@@ -29,6 +29,7 @@ from scipy.stats import poisson
 
 from statespacecheck_paper.analysis import PerCellDiagnostics
 from statespacecheck_paper.load_local_data import load_neural_recording_from_files
+from statespacecheck_paper.paths import ANIMAL_DATE_EPOCH, DATA_PATH
 from statespacecheck_paper.plotting import compute_hpd_region
 from statespacecheck_paper.real_data_analysis import (
     compute_model_diagnostics,
@@ -43,8 +44,7 @@ from statespacecheck_paper.style import COLORS, set_figure_defaults
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-DATA_PATH = Path(__file__).parent.parent / "data"
-ANIMAL_DATE_EPOCH = "j1620210710_02_r1"
+__all__ = ["ANIMAL_DATE_EPOCH", "DATA_PATH"]
 
 # Time index for the Figure 4a replay event (matches generate_figure04.py)
 WINDOW_CENTER = 177301

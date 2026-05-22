@@ -17,6 +17,7 @@ import numpy as np
 
 from statespacecheck_paper.analysis import PerCellDiagnostics
 from statespacecheck_paper.load_local_data import load_neural_recording_from_files
+from statespacecheck_paper.paths import ANIMAL_DATE_EPOCH, DATA_PATH
 from statespacecheck_paper.real_data_analysis import (
     compute_model_diagnostics,
     create_decoder_environment,
@@ -29,8 +30,7 @@ from statespacecheck_paper.real_data_plotting import (
 )
 from statespacecheck_paper.style import save_figure, set_figure_defaults
 
-DATA_PATH = Path(__file__).parent.parent / "data"
-ANIMAL_DATE_EPOCH = "j1620210710_02_r1"
+__all__ = ["ANIMAL_DATE_EPOCH", "DATA_PATH"]
 OUTPUT_DIR = "manuscript/figures/preview/sanity_check_4b"
 HALF_WIDTH = 50  # Same as Figure 4a
 
