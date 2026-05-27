@@ -24,6 +24,7 @@ from statespacecheck_paper.analysis import (
     Diagnostics,
     MisfitSchedule,
     MisfitWindow,
+    PhaseBoundary,
     decode_and_diagnostics,
     get_remapped_pf_centers,
 )
@@ -199,20 +200,22 @@ def run_figure03_simulation(
         phases.append((x, sp))
         x_last = float(x[-1])
 
+    bnd = params.phase_boundaries
+
     # 1. Clean baseline
-    n = params.T_remap_start
+    n = bnd[PhaseBoundary.REMAP_START]
     x = _walk(n, params.sigx_pred)
     _add_phase(x, _spikes_position_tuned(x))
 
-    # 2. Remap misfit — handled by ``remap_window`` inside decode_and_diagnostics.
-    #    The spike *generation* is normal position-tuned; the decoder is the one
-    #    that uses remapped PF centers during this window.
-    n = params.T_remap_end - params.T_remap_start
+    # 2. Remap misfit — the spike *generation* is normal position-tuned;
+    #    the decoder is the one that uses remapped PF centers during this
+    #    window (via ``MisfitWindow`` below).
+    n = bnd[PhaseBoundary.REMAP_END] - bnd[PhaseBoundary.REMAP_START]
     x = _walk(n, params.sigx_pred)
     _add_phase(x, _spikes_position_tuned(x))
 
     # 3. Clean recovery 1
-    n = params.T_recovery1_end - params.T_remap_end
+    n = bnd[PhaseBoundary.RECOVERY1_END] - bnd[PhaseBoundary.REMAP_END]
     x = _walk(n, params.sigx_pred)
     _add_phase(x, _spikes_position_tuned(x))
 
@@ -223,18 +226,18 @@ def run_figure03_simulation(
     #    independent Poisson draw at the cell's standard rate; the misfit
     #    lives in the *temporal* correlations and is largely invisible to
     #    per-spike spatial diagnostics.
-    n = params.T_hist_dep_end - params.T_recovery1_end
+    n = bnd[PhaseBoundary.HIST_DEP_END] - bnd[PhaseBoundary.RECOVERY1_END]
     x = _walk(n, params.sigx_pred)
     sp = simulate_spikes_history_dependent(x, pf_centers, params.pf_width, params.rate_scale, rng)
     _add_phase(x, sp)
 
     # 5. Clean recovery 2
-    n = params.T_recovery2_end - params.T_hist_dep_end
+    n = bnd[PhaseBoundary.RECOVERY2_END] - bnd[PhaseBoundary.HIST_DEP_END]
     x = _walk(n, params.sigx_pred)
     _add_phase(x, _spikes_position_tuned(x))
 
     # 6. Drift Misfit — persistent-velocity walk; decoder assumes memoryless.
-    n = params.T_drift_end - params.T_recovery2_end
+    n = bnd[PhaseBoundary.DRIFT_END] - bnd[PhaseBoundary.RECOVERY2_END]
     momentum = params.drift_momentum
     x_mom = np.zeros(n)
     x_mom[0] = x_last
@@ -246,7 +249,7 @@ def run_figure03_simulation(
     _add_phase(x, _spikes_position_tuned(x))
 
     # 7. Clean recovery 3
-    n = params.T_recovery3_end - params.T_drift_end
+    n = bnd[PhaseBoundary.RECOVERY3_END] - bnd[PhaseBoundary.DRIFT_END]
     x = _walk(n, params.sigx_pred)
     _add_phase(x, _spikes_position_tuned(x))
 
@@ -255,7 +258,7 @@ def run_figure03_simulation(
     #    narrow at the firing cell's PF -> KL inflates strongly while HPD
     #    overlap and the rank-based p-value stay near baseline (KL
     #    false-positive case).
-    n = params.T_wide_dynamics_end - params.T_recovery3_end
+    n = bnd[PhaseBoundary.WIDE_DYNAMICS_END] - bnd[PhaseBoundary.RECOVERY3_END]
     x = _walk(n, params.sigx_pred)
     _add_phase(x, _spikes_position_tuned(x))
 
@@ -276,13 +279,13 @@ def run_figure03_simulation(
     misfit_schedule = MisfitSchedule(
         (
             MisfitWindow(
-                params.T_remap_start,
-                params.T_remap_end,
+                bnd[PhaseBoundary.REMAP_START],
+                bnd[PhaseBoundary.REMAP_END],
                 decoder_rates=remapped_rates,
             ),
             MisfitWindow(
-                params.T_recovery3_end,
-                params.T_wide_dynamics_end,
+                bnd[PhaseBoundary.RECOVERY3_END],
+                bnd[PhaseBoundary.WIDE_DYNAMICS_END],
                 transition_matrix=transition_matrix_inflated,
             ),
         )

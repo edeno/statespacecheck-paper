@@ -14,6 +14,7 @@ from statespacecheck_paper.analysis import (
     MisfitSchedule,
     MisfitWindow,
     PerCellDiagnostics,
+    PhaseBoundary,
     Thresholds,
     Transformed,
     _condition_on,
@@ -124,11 +125,12 @@ class TestDecodeParams:
         params = DecodeParams(pf_centers=custom)
         np.testing.assert_array_equal(params.pf_centers, custom)
 
-    def test_remap_window_returns_start_end_tuple(self) -> None:
+    def test_phase_boundaries_indexed_by_enum(self) -> None:
         params = DecodeParams(
             phase_boundaries=(1000, 2000, 14_000, 18_000, 22_000, 26_000, 30_000, 32_000)
         )
-        assert params.remap_window == (1000, 2000)
+        assert params.phase_boundaries[PhaseBoundary.REMAP_START] == 1000
+        assert params.phase_boundaries[PhaseBoundary.REMAP_END] == 2000
 
 
 # ---------------------------------------------------------------------------
@@ -1059,22 +1061,24 @@ class TestDecodeParamsPhaseBoundaries:
             )
 
     @pytest.mark.parametrize(
-        ("name", "index"),
+        ("member", "index"),
         [
-            ("T_remap_start", 0),
-            ("T_remap_end", 1),
-            ("T_recovery1_end", 2),
-            ("T_hist_dep_end", 3),
-            ("T_recovery2_end", 4),
-            ("T_drift_end", 5),
-            ("T_recovery3_end", 6),
-            ("T_wide_dynamics_end", 7),
+            (PhaseBoundary.REMAP_START, 0),
+            (PhaseBoundary.REMAP_END, 1),
+            (PhaseBoundary.RECOVERY1_END, 2),
+            (PhaseBoundary.HIST_DEP_END, 3),
+            (PhaseBoundary.RECOVERY2_END, 4),
+            (PhaseBoundary.DRIFT_END, 5),
+            (PhaseBoundary.RECOVERY3_END, 6),
+            (PhaseBoundary.WIDE_DYNAMICS_END, 7),
         ],
     )
-    def test_named_accessor_indexes_into_tuple(self, name: str, index: int) -> None:
+    def test_phase_boundary_enum_indexes_into_tuple(
+        self, member: PhaseBoundary, index: int
+    ) -> None:
         boundaries = (100, 200, 300, 400, 500, 600, 700, 800)
         params = DecodeParams(phase_boundaries=boundaries)
-        assert getattr(params, name) == boundaries[index]
+        assert params.phase_boundaries[member] == boundaries[index]
 
 
 class TestMisfitWindowTightening:

@@ -11,6 +11,8 @@ from types import ModuleType
 import numpy as np
 import pytest
 
+from statespacecheck_paper.analysis import PerCellDiagnostics
+
 # Add scripts directory to path so we can import the figure scripts.
 SCRIPTS_DIR = Path(__file__).parent.parent / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIR))
@@ -94,29 +96,56 @@ def figure04() -> ModuleType:
     return importlib.import_module("generate_figure04")
 
 
+def _make_per_cell_diagnostics(
+    *,
+    event_time: np.ndarray | None,
+    event_hpd_overlap: np.ndarray,
+) -> PerCellDiagnostics:
+    n_spikes = event_hpd_overlap.shape[0]
+    return PerCellDiagnostics(
+        event_time_ind=np.zeros(n_spikes, dtype=np.intp),
+        event_cell_ind=np.zeros(n_spikes, dtype=np.intp),
+        event_hpd_overlap=event_hpd_overlap,
+        event_kl_divergence=np.zeros(n_spikes),
+        event_spike_prob=np.zeros(n_spikes),
+        hpd_overlap=None,
+        kl_divergence=None,
+        spike_prob=None,
+        per_spike_likelihood=None,
+        event_time=event_time,
+    )
+
+
 class TestFigure04Helpers:
     def test_shift_diagnostic_event_times_subtracts_offset(self, figure04: ModuleType) -> None:
         """Per-spike event times must be relative to the same time base as
         the figure axis — otherwise scatter points slide off the panels."""
-        diagnostics = {
-            "event_time": np.array([101.0, 101.5]),
-            "event_hpd_overlap": np.array([0.25, 0.75]),
-        }
+        diagnostics = _make_per_cell_diagnostics(
+            event_time=np.array([101.0, 101.5]),
+            event_hpd_overlap=np.array([0.25, 0.75]),
+        )
         shifted = figure04.shift_diagnostic_event_times(diagnostics, 100.0)
-        np.testing.assert_allclose(shifted["event_time"], [1.0, 1.5])
-        # Original dict not mutated.
-        np.testing.assert_allclose(diagnostics["event_time"], [101.0, 101.5])
+        np.testing.assert_allclose(shifted.event_time, [1.0, 1.5])
+        # Original instance not mutated (frozen + write-protected).
+        np.testing.assert_allclose(diagnostics.event_time, [101.0, 101.5])
         # Non-time arrays passed through by reference (zero-copy).
-        assert shifted["event_hpd_overlap"] is diagnostics["event_hpd_overlap"]
+        assert shifted.event_hpd_overlap is diagnostics.event_hpd_overlap
+
+    def test_shift_diagnostic_event_times_passthrough_when_none(self, figure04: ModuleType) -> None:
+        """Simulated-data path leaves ``event_time`` as ``None``; the
+        shift must be a no-op there, not raise."""
+        diagnostics = _make_per_cell_diagnostics(event_time=None, event_hpd_overlap=np.array([0.5]))
+        shifted = figure04.shift_diagnostic_event_times(diagnostics, 100.0)
+        assert shifted is diagnostics
 
     def test_diagnostic_event_mean_uses_per_spike_array(self, figure04: ModuleType) -> None:
         """Summary mean must use per-spike values, not the (n_time, n_cells)
         matrix collapsed by nanmean — those answers differ when multiple
         spikes share a (time, cell)."""
-        diagnostics = {
-            "hpd_overlap": np.array([[0.0, np.nan], [1.0, np.nan]]),
-            "event_hpd_overlap": np.array([0.0, 1.0, 1.0]),
-        }
+        diagnostics = _make_per_cell_diagnostics(
+            event_time=None,
+            event_hpd_overlap=np.array([0.0, 1.0, 1.0]),
+        )
         result = figure04.diagnostic_event_mean(diagnostics, "hpd_overlap")
         assert result == pytest.approx(2.0 / 3.0)
 
@@ -125,8 +154,9 @@ class TestFigure04Helpers:
     ) -> None:
         """Silently falling back to bin values would re-introduce the bug
         the per-spike array was created to fix; raise loudly instead."""
-        with pytest.raises(KeyError, match="event_hpd_overlap"):
-            figure04.diagnostic_event_mean({"hpd_overlap": np.array([[0.0, 1.0]])}, "hpd_overlap")
+        diagnostics = _make_per_cell_diagnostics(event_time=None, event_hpd_overlap=np.array([0.5]))
+        with pytest.raises(KeyError, match="event_made_up_metric"):
+            figure04.diagnostic_event_mean(diagnostics, "made_up_metric")
 
 
 def test_figure02_create_shared_example_samples_y_tilde_with_noise() -> None:

@@ -19,6 +19,7 @@ import numpy as np
 # accessible at module level.
 from statespacecheck_paper.analysis import (
     DecodeParams,
+    PhaseBoundary,
     compute_thresholds,
     decode_and_diagnostics,  # noqa: F401 — re-exported public surface
 )
@@ -93,7 +94,9 @@ def run_demo(params: DecodeParams) -> None:
 
     # Thresholds from the clean-baseline window (everything before the remap
     # misfit starts).
-    thresholds = compute_thresholds(metrics, baseline_end=params.T_remap_start)
+    thresholds = compute_thresholds(
+        metrics, baseline_end=params.phase_boundaries[PhaseBoundary.REMAP_START]
+    )
 
     # Plot combined diagnostics figure
     plot_combined_diagnostics(

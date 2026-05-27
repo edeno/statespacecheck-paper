@@ -13,6 +13,7 @@ Requires:
 
 from __future__ import annotations
 
+import dataclasses
 import warnings
 from typing import Any
 
@@ -20,6 +21,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.transforms import blended_transform_factory
 
+from statespacecheck_paper.analysis import PerCellDiagnostics
 from statespacecheck_paper.load_local_data import load_neural_recording_from_files
 from statespacecheck_paper.paths import ANIMAL_DATE_EPOCH, DATA_PATH
 from statespacecheck_paper.real_data_analysis import (
@@ -54,22 +56,28 @@ FIGURE_4B_DETAIL_HALF_WIDTH = 500  # Half-width in time points (~2 seconds at 50
 
 
 def shift_diagnostic_event_times(
-    diagnostics: dict[str, Any],
+    diagnostics: PerCellDiagnostics,
     time_offset: float,
-) -> dict[str, Any]:
-    """Return diagnostics with event timestamps shifted by ``time_offset``."""
-    shifted = dict(diagnostics)
-    if "event_time" in shifted:
-        shifted["event_time"] = np.asarray(shifted["event_time"], dtype=np.float64) - time_offset
-    return shifted
+) -> PerCellDiagnostics:
+    """Return diagnostics with event timestamps shifted by ``time_offset``.
+
+    Returns the original instance unchanged when ``event_time`` is
+    ``None`` (simulated data path) so callers don't need to branch.
+    """
+    if diagnostics.event_time is None:
+        return diagnostics
+    return dataclasses.replace(
+        diagnostics,
+        event_time=np.asarray(diagnostics.event_time, dtype=np.float64) - time_offset,
+    )
 
 
-def diagnostic_event_mean(diagnostics: dict[str, Any], metric: str) -> float:
+def diagnostic_event_mean(diagnostics: PerCellDiagnostics, metric: str) -> float:
     """Return the per-spike mean for a diagnostic metric."""
     event_key = f"event_{metric}"
-    if event_key not in diagnostics:
+    if not hasattr(diagnostics, event_key):
         raise KeyError(f"Missing per-spike diagnostic array: {event_key}")
-    return float(np.nanmean(diagnostics[event_key]))
+    return float(np.nanmean(getattr(diagnostics, event_key)))
 
 
 def run_demo() -> None:

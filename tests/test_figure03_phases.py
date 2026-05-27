@@ -20,7 +20,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from statespacecheck_paper.analysis import DecodeParams
+from statespacecheck_paper.analysis import DecodeParams, PhaseBoundary
 from statespacecheck_paper.figure03_demo import (
     PHASE_LABELS,
     SimulationResult,
@@ -64,7 +64,7 @@ def sim() -> SimulationResult:
 
 def test_phase_labels_and_boundaries(sim: SimulationResult) -> None:
     """``run_figure03_simulation`` emits every canonical phase in order
-    and a timeline that ends at ``T_wide_dynamics_end``.
+    and a timeline that ends at the WIDE_DYNAMICS_END boundary.
     """
     params = sim.params
     # The simulation must emit exactly the canonical phase set, in order.
@@ -80,10 +80,11 @@ def test_phase_labels_and_boundaries(sim: SimulationResult) -> None:
     ):
         assert PHASE_LABELS.count(misfit) == 1
     boundaries = np.asarray(sim.phase_boundaries)
-    assert boundaries[-1] == params.T_wide_dynamics_end
+    end = params.phase_boundaries[PhaseBoundary.WIDE_DYNAMICS_END]
+    assert boundaries[-1] == end
     assert np.all(np.diff(boundaries) > 0)
     x_true = np.asarray(sim.x_true)
-    assert x_true.shape[0] == params.T_wide_dynamics_end
+    assert x_true.shape[0] == end
 
 
 def test_remap_phase_flags_all_three(sim: SimulationResult) -> None:

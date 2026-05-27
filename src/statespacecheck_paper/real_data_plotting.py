@@ -33,7 +33,12 @@ from scipy.ndimage import label
 
 from statespacecheck_paper.analysis import PerCellDiagnostics
 from statespacecheck_paper.plotting import plot_likelihood_columns
-from statespacecheck_paper.style import CMAP_LIKELIHOOD, CMAP_POSTERIOR, COLORS
+from statespacecheck_paper.style import (
+    CMAP_LIKELIHOOD,
+    CMAP_POSTERIOR,
+    COLORS,
+    METRIC_SPECS,
+)
 
 
 def add_scalebar(
@@ -1068,13 +1073,6 @@ def plot_model_comparison_with_posterior(
     >>> #     spike_times=spike_times, spike_counts=spike_counts, place_field_peaks=pf_peaks
     >>> # )
     """
-    metrics = ["hpd_overlap", "kl_divergence", "spike_prob"]
-    # Match Figure 3 styling: labels and colors from COLORS dict
-    ylabels = ["HPD Overlap", "KL Divergence", r"$-\log_{10}(p)$"]
-    colors = [COLORS["hpd_overlap"], COLORS["kl_divergence"], COLORS["metric_combined"]]
-    # Direction indicators: which direction indicates worse fit
-    worse_fit_directions = ["↓ Worse fit", "↑ Worse fit", "↑ Worse fit"]
-
     # Create 6x2 grid: predictive + likelihood + raster + 3 diagnostics
     # Use gridspec to manually share y-axes within each row
     if fig is None:
@@ -1273,11 +1271,9 @@ def plot_model_comparison_with_posterior(
             ax.tick_params(labelsize=6, labelbottom=False)
 
     # Rows 3-5: Diagnostic scatter plots
-    for i, (metric, ylabel, color, worse_dir) in enumerate(
-        zip(metrics, ylabels, colors, worse_fit_directions, strict=True)
-    ):
+    for i, spec in enumerate(METRIC_SPECS):
         row = i + 3  # Offset by 3 for distribution and raster rows
-        threshold = thresholds.get(metric) if thresholds else None
+        threshold = thresholds.get(spec.name) if thresholds else None
 
         # Model A (left column)
         plot_per_cell_diagnostic_scatter(
@@ -1286,9 +1282,9 @@ def plot_model_comparison_with_posterior(
             time_slice_ind=time_slice_ind,
             threshold=threshold,
             ax=axes[row, 0],
-            metric_name=metric,
-            color=color,
-            ylabel=ylabel,
+            metric_name=spec.name,
+            color=spec.color,
+            ylabel=spec.ylabel,
             show_xlabel=(i == 2),
             spike_times=spike_times,
             show_running_average=show_running_average,
@@ -1302,8 +1298,8 @@ def plot_model_comparison_with_posterior(
             time_slice_ind=time_slice_ind,
             threshold=threshold,
             ax=axes[row, 1],
-            metric_name=metric,
-            color=color,
+            metric_name=spec.name,
+            color=spec.color,
             ylabel="",  # Left column has ylabel
             show_xlabel=(i == 2),
             spike_times=spike_times,
@@ -1315,7 +1311,7 @@ def plot_model_comparison_with_posterior(
         axes[row, 1].text(
             1.01,
             0.5,
-            worse_dir,
+            spec.worse_fit_direction,
             transform=axes[row, 1].transAxes,
             fontsize=6,
             va="center",
@@ -1399,11 +1395,6 @@ def plot_single_model_diagnostics(
     axes : np.ndarray[plt.Axes]
         Array of axes objects with shape (6,).
     """
-    metrics = ["hpd_overlap", "kl_divergence", "spike_prob"]
-    ylabels = ["HPD Overlap", "KL Divergence", r"$-\log_{10}(p)$"]
-    colors = [COLORS["hpd_overlap"], COLORS["kl_divergence"], COLORS["metric_combined"]]
-    worse_fit_directions = ["↓ Worse fit", "↑ Worse fit", "↑ Worse fit"]
-
     if fig is None:
         fig = plt.figure(figsize=(7.0, 8.0), constrained_layout=True)
     gs = fig.add_gridspec(6, 1, height_ratios=[2, 2, 1.5, 1, 1, 1])
@@ -1529,20 +1520,18 @@ def plot_single_model_diagnostics(
         axes[2].tick_params(labelsize=6, labelbottom=False)
 
     # Rows 3-5: Diagnostic scatters
-    for i, (metric, ylabel, color, worse_dir) in enumerate(
-        zip(metrics, ylabels, colors, worse_fit_directions, strict=True)
-    ):
+    for i, spec in enumerate(METRIC_SPECS):
         row = i + 3
-        threshold = thresholds.get(metric) if thresholds else None
+        threshold = thresholds.get(spec.name) if thresholds else None
         plot_per_cell_diagnostic_scatter(
             time,
             diagnostics,
             time_slice_ind=time_slice_ind,
             threshold=threshold,
             ax=axes[row],
-            metric_name=metric,
-            color=color,
-            ylabel=ylabel,
+            metric_name=spec.name,
+            color=spec.color,
+            ylabel=spec.ylabel,
             show_xlabel=(i == 2),
             spike_times=spike_times,
             show_running_average=show_running_average,
@@ -1551,7 +1540,7 @@ def plot_single_model_diagnostics(
         axes[row].text(
             1.01,
             0.5,
-            worse_dir,
+            spec.worse_fit_direction,
             transform=axes[row].transAxes,
             fontsize=6,
             va="center",

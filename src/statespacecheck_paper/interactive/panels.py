@@ -31,6 +31,8 @@ import pyqtgraph as pg
 from numpy.typing import NDArray
 from PySide6 import QtCore, QtWidgets
 
+from statespacecheck_paper.style import COLORS, WONG, hex_to_rgb
+
 # Top-plot overlay choices: which derived distribution the slice
 # panel's population plot draws as the blue overlay line.
 OverlayChoice = Literal["predictive", "filtered", "smoothed"]
@@ -41,20 +43,29 @@ _OVERLAY_LABELS: dict[OverlayChoice, str] = {
     "smoothed": "Smoothed",
 }
 
+# Shared 256-stop viridis LUT for all heatmap panels; rebuilt panels
+# (e.g. on model swap) reuse this rather than re-fetching the colormap.
+_VIRIDIS_LUT: NDArray[np.uint8] = pg.colormap.get("viridis").getLookupTable(0.0, 1.0, 256)
+
 # ---------------------------------------------------------------------------
 # Shared style constants
 # ---------------------------------------------------------------------------
 
-# Per-state colors (Continuous, Fragmented for ContFrag).
+# Per-state colors (Continuous, Fragmented for ContFrag). Derived from
+# the paper's WONG palette via :data:`statespacecheck_paper.style.COLORS`
+# so the GUI matches the manuscript figures. State-0 uses the paper's
+# "predictive" / "likelihood" semantics; state-1 picks the adjacent
+# WONG entry in the same hue family (cool for posterior, warm for
+# likelihood) for within-panel separation.
 _STATE_POSTERIOR_RGB: tuple[tuple[int, int, int], ...] = (
-    (31, 119, 180),  # blue
-    (44, 160, 44),  # green
+    hex_to_rgb(COLORS["predictive"]),  # WONG[5] Blue
+    hex_to_rgb(WONG[3]),  # WONG[3] Bluish Green
 )
 _STATE_LIKELIHOOD_RGB: tuple[tuple[int, int, int], ...] = (
-    (255, 127, 14),  # orange
-    (214, 39, 40),  # red
+    hex_to_rgb(COLORS["likelihood"]),  # WONG[1] Orange
+    hex_to_rgb(WONG[6]),  # WONG[6] Vermillion
 )
-_LIKELIHOOD_PEN_RGB = (200, 90, 0)
+_LIKELIHOOD_PEN_RGB = hex_to_rgb(WONG[6])  # WONG[6] Vermillion
 _TRUE_POSITION_PEN = pg.mkPen((50, 50, 50), width=1, style=QtCore.Qt.PenStyle.DashLine)
 
 # Palette for the per-cell place-field overlay. Picked to be distinct
@@ -76,9 +87,9 @@ _PER_CELL_PALETTE: tuple[tuple[int, int, int], ...] = (
 MetricName = Literal["event_hpd_overlap", "event_kl_divergence", "event_spike_prob"]
 
 METRIC_COLORS: dict[MetricName, tuple[int, int, int]] = {
-    "event_hpd_overlap": (44, 160, 44),
-    "event_kl_divergence": (214, 39, 40),
-    "event_spike_prob": (148, 103, 189),
+    "event_hpd_overlap": hex_to_rgb(COLORS["hpd_overlap"]),  # WONG[2] Sky Blue
+    "event_kl_divergence": hex_to_rgb(COLORS["kl_divergence"]),  # WONG[3] Bluish Green
+    "event_spike_prob": hex_to_rgb(COLORS["metric_combined"]),  # WONG[7] Reddish Purple
 }
 METRIC_TITLES: dict[MetricName, str] = {
     "event_hpd_overlap": "HPD overlap",
@@ -158,7 +169,7 @@ class _BaseHeatmapPanel(pg.PlotWidget):
         # time on x and position on y — col-major lines up the array's
         # first axis with the time axis without a transpose.
         self._image = pg.ImageItem(axisOrder="col-major")
-        self._image.setLookupTable(pg.colormap.get("viridis").getLookupTable(0.0, 1.0, 256))
+        self._image.setLookupTable(_VIRIDIS_LUT)
         self.addItem(self._image)
 
         self._position_bins = np.asarray(position_bins, dtype=np.float64)
@@ -1101,8 +1112,12 @@ class SlicePanel(QtWidgets.QWidget):
 
     def _build_row(self) -> _PerCellRow:
         plot = _make_slice_subplot(title=None, position_bins=self._position_bins, height=70)
+        # Placeholder pen — overwritten by ``_PER_CELL_PALETTE`` in
+        # ``set_per_cell_slices`` before the row is shown.
         cell_curve = pg.PlotDataItem(
-            self._position_bins, self._zero_curve, pen=pg.mkPen((44, 160, 44), width=3)
+            self._position_bins,
+            self._zero_curve,
+            pen=pg.mkPen(_PER_CELL_PALETTE[0], width=3),
         )
         predictive_curve = pg.PlotDataItem(
             self._position_bins,

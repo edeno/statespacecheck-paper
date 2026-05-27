@@ -34,8 +34,8 @@ from statespacecheck_paper.analysis import PerCellDiagnostics
 from statespacecheck_paper.load_local_data import load_neural_recording_from_files
 from statespacecheck_paper.paths import ANIMAL_DATE_EPOCH, DATA_PATH
 from statespacecheck_paper.real_data_analysis import (
+    compute_event_hpd_overlap,
     compute_model_diagnostics,
-    compute_running_average,
     create_decoder_environment,
     extract_place_fields,
     fit_decoder_models,
@@ -56,7 +56,6 @@ Z_MULTIUNIT_THRESHOLD = 2.0  # z-score threshold for high multiunit activity
 
 # Window parameters
 WINDOW_HALF_WIDTH = 100  # Half-width in time points for visualization
-RUNNING_AVG_WINDOW = 0.020  # 20ms window for running average
 
 # Diagnostic-driven detection defaults
 DIAGNOSTIC_METRIC = "hpd_overlap"
@@ -267,59 +266,6 @@ def find_poor_diagnostic_periods(
         print(f"    Periods >= {min_duration_bins} bins: {len(periods)}")
 
     return periods
-
-
-def compute_event_hpd_overlap(
-    diagnostics: PerCellDiagnostics,
-    time: NDArray[np.float64],
-    start_idx: int,
-    end_idx: int,
-    running_avg_window: float = RUNNING_AVG_WINDOW,
-) -> float:
-    """Compute weighted average HPD overlap for an event.
-
-    Parameters
-    ----------
-    diagnostics : dict
-        Diagnostics with 'hpd_overlap' key, shape (n_time, n_cells).
-    time : np.ndarray
-        Time values.
-    start_idx, end_idx : int
-        Event boundaries (inclusive).
-    running_avg_window : float
-        Window size for running average.
-
-    Returns
-    -------
-    hpd_overlap : float
-        Weighted average HPD overlap over the event.
-    """
-    window_slice = slice(start_idx, end_idx + 1)
-    window_time = time[window_slice]
-    metric_data = diagnostics.hpd_overlap[window_slice]
-
-    # Compute running average
-    event_times = diagnostics.event_time
-    event_values = diagnostics.event_hpd_overlap
-    if event_times is not None and event_values is not None:
-        event_times = np.asarray(event_times)
-        time_start = time[start_idx]
-        time_end = time[end_idx]
-        event_mask = (event_times >= time_start) & (event_times <= time_end)
-        running_avg, _ = compute_running_average(
-            metric_data,
-            window_time,
-            window_size=running_avg_window,
-            event_times=event_times[event_mask],
-            event_values=np.asarray(event_values)[event_mask],
-        )
-    else:
-        running_avg, _ = compute_running_average(
-            metric_data, window_time, window_size=running_avg_window
-        )
-
-    # Return mean of running average (excludes NaN)
-    return float(np.nanmean(running_avg))
 
 
 def score_replay_candidates(

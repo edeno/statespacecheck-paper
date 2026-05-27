@@ -27,6 +27,7 @@ Examples
 
 from __future__ import annotations
 
+import dataclasses
 from typing import Any, Literal
 
 import numpy as np
@@ -184,11 +185,11 @@ def find_sustained_low_overlap(
 
 
 def compute_running_average(
-    metric: NDArray[np.float64],
+    metric: NDArray[np.floating],
     time: NDArray[np.float64],
     window_size: float = 0.050,
-    event_times: NDArray[np.float64] | None = None,
-    event_values: NDArray[np.float64] | None = None,
+    event_times: NDArray[np.floating] | None = None,
+    event_values: NDArray[np.floating] | None = None,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Compute running average of per-cell diagnostic metric over time.
 
@@ -291,6 +292,65 @@ def compute_running_average(
     running_avg[has_events] = windowed_sum[has_events] / windowed_count[has_events]
 
     return running_avg, time.copy()
+
+
+RUNNING_AVG_WINDOW: float = 0.020
+
+
+def compute_event_hpd_overlap(
+    diagnostics: PerCellDiagnostics,
+    time: NDArray[np.float64],
+    start_idx: int,
+    end_idx: int,
+    running_avg_window: float = RUNNING_AVG_WINDOW,
+) -> float:
+    """Compute mean running-averaged HPD overlap for an event window.
+
+    Parameters
+    ----------
+    diagnostics : PerCellDiagnostics
+        Must have ``hpd_overlap`` populated (``include_dense_matrices=True``).
+    time : np.ndarray, shape (n_time,)
+        Time values for each bin.
+    start_idx, end_idx : int
+        Event boundaries (inclusive).
+    running_avg_window : float, default :data:`RUNNING_AVG_WINDOW`
+        Window size for running average, in seconds.
+
+    Returns
+    -------
+    float
+        Mean running-averaged HPD overlap over the event window.
+    """
+    window_slice = slice(start_idx, end_idx + 1)
+    window_time = time[window_slice]
+    if diagnostics.hpd_overlap is None:
+        raise ValueError(
+            "compute_event_hpd_overlap requires dense ``hpd_overlap`` "
+            "(re-run with ``include_dense_matrices=True``)."
+        )
+    metric_data = diagnostics.hpd_overlap[window_slice]
+
+    event_times = diagnostics.event_time
+    event_values = diagnostics.event_hpd_overlap
+    if event_times is not None and event_values is not None:
+        event_times = np.asarray(event_times)
+        time_start = time[start_idx]
+        time_end = time[end_idx]
+        event_mask = (event_times >= time_start) & (event_times <= time_end)
+        running_avg, _ = compute_running_average(
+            metric_data,
+            window_time,
+            window_size=running_avg_window,
+            event_times=event_times[event_mask],
+            event_values=np.asarray(event_values)[event_mask],
+        )
+    else:
+        running_avg, _ = compute_running_average(
+            metric_data, window_time, window_size=running_avg_window
+        )
+
+    return float(np.nanmean(running_avg))
 
 
 def _get_spike_events_from_counts(
@@ -534,7 +594,6 @@ def compute_per_cell_diagnostics(
             time,
         )
 
-    # Use shared function from analysis.py
     result = compute_per_cell_diagnostics_from_rates(
         predictive_posterior,
         place_fields.T,  # (n_bins, n_cells)
@@ -544,24 +603,7 @@ def compute_per_cell_diagnostics(
         include_dense_matrices=include_dense_matrices,
     )
 
-    def _f64(arr: NDArray[np.floating] | None) -> NDArray[np.floating] | None:
-        return None if arr is None else np.asarray(arr, dtype=np.float64)
-
-    # Cast to float64 (the result-arrays default to whatever
-    # ``np.full`` / ``np.empty`` gave them, typically float64 already,
-    # but the explicit cast preserves the previous contract).
-    return PerCellDiagnostics(
-        event_time_ind=result.event_time_ind,
-        event_cell_ind=result.event_cell_ind,
-        event_hpd_overlap=np.asarray(result.event_hpd_overlap, dtype=np.float64),
-        event_kl_divergence=np.asarray(result.event_kl_divergence, dtype=np.float64),
-        event_spike_prob=np.asarray(result.event_spike_prob, dtype=np.float64),
-        hpd_overlap=_f64(result.hpd_overlap),
-        kl_divergence=_f64(result.kl_divergence),
-        spike_prob=_f64(result.spike_prob),
-        per_spike_likelihood=_f64(result.per_spike_likelihood),
-        event_time=None if event_times is None else event_times.astype(np.float64),
-    )
+    return dataclasses.replace(result, event_time=event_times)
 
 
 def get_state_marginalized_posterior(

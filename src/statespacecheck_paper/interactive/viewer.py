@@ -690,19 +690,25 @@ class DecoderViewer(QtWidgets.QMainWindow):
         if i1 <= i0:
             return [], 0
         cell_ids_in_bin = ds.event_cell_ids[i0:i1]
+        # One pass for first-event offsets + per-cell counts. ``np.unique``
+        # with ``return_counts=True`` does both in one scan rather than
+        # iterating ``cell_ids_in_bin`` once for ``seen`` and again per
+        # kept cell for ``np.sum(==)``.
         seen: dict[int, int] = {}
         for offset, cell_id in enumerate(cell_ids_in_bin):
             seen.setdefault(int(cell_id), i0 + offset)
         unique_cells = list(seen.keys())
         total_unique = len(unique_cells)
         kept = unique_cells[:MAX_PER_CELL_PLOTS]
+        unique_arr, counts = np.unique(cell_ids_in_bin, return_counts=True)
+        count_by_cell = dict(zip(unique_arr.tolist(), counts.tolist(), strict=True))
 
         n_interior = ds.n_interior
         slices: list[CellSlice] = []
         pinned_cell_id = self._pinned_cell_id()
         for cell_id in kept:
             first_event = seen[cell_id]
-            n_spikes = int(np.sum(cell_ids_in_bin == cell_id))
+            n_spikes = int(count_by_cell[cell_id])
             pf = ds.place_fields[cell_id, :n_interior]
             peak = float(pf.max())
             pf_norm_interior = (pf / peak).astype(np.float32, copy=False) if peak > 0 else pf

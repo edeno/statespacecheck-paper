@@ -39,6 +39,7 @@ from __future__ import annotations
 import warnings
 from collections.abc import Mapping
 from dataclasses import dataclass
+from enum import IntEnum
 from typing import cast
 
 import numpy as np
@@ -123,19 +124,25 @@ def _condition_on(
 # -----------------------------
 
 
-# Canonical names for the figure-3 phase boundaries, in order. One entry
-# per position in :attr:`DecodeParams.phase_boundaries`. Public so tests
-# and downstream code refer to the names symbolically rather than by index.
-PHASE_BOUNDARY_NAMES: tuple[str, ...] = (
-    "T_remap_start",  # end of clean baseline
-    "T_remap_end",  # end of remap misfit
-    "T_recovery1_end",  # end of clean recovery 1
-    "T_hist_dep_end",  # end of history-dependent firing misfit
-    "T_recovery2_end",  # end of clean recovery 2
-    "T_drift_end",  # end of drift misfit
-    "T_recovery3_end",  # end of clean recovery 3
-    "T_wide_dynamics_end",  # end of wide-dynamics-noise misfit
-)
+class PhaseBoundary(IntEnum):
+    """Indices into :attr:`DecodeParams.phase_boundaries`.
+
+    Each member is the position of one figure-3 phase transition in
+    the 8-tuple. Use as ``params.phase_boundaries[PhaseBoundary.REMAP_END]``
+    rather than indexing by literal integer, so a phase-ladder
+    reshuffle stays compile-time-checkable.
+    """
+
+    REMAP_START = 0  # end of clean baseline
+    REMAP_END = 1  # end of remap misfit
+    RECOVERY1_END = 2  # end of clean recovery 1
+    HIST_DEP_END = 3  # end of history-dependent firing misfit
+    RECOVERY2_END = 4  # end of clean recovery 2
+    DRIFT_END = 5  # end of drift misfit
+    RECOVERY3_END = 6  # end of clean recovery 3
+    WIDE_DYNAMICS_END = 7  # end of wide-dynamics-noise misfit
+
+
 # Default phase ladder in 1-ms steps. Used as the default of
 # ``DecodeParams.phase_boundaries`` and re-exported here so tests and
 # scripts that want to override a subset don't have to re-list the
@@ -177,10 +184,10 @@ class DecodeParams:
     Parameters
     ----------
     phase_boundaries : tuple of int, default ``_DEFAULT_PHASE_BOUNDARIES``
-        Strictly increasing end-of-phase indices, one per entry of
-        :data:`PHASE_BOUNDARY_NAMES`. The named accessors
-        (``T_remap_start``, ``T_remap_end``, etc.) are read-only views
-        onto this tuple by index. Override a subset by spelling out the
+        Strictly increasing end-of-phase indices, one per member of
+        :class:`PhaseBoundary`. Read via the enum
+        (``params.phase_boundaries[PhaseBoundary.REMAP_END]``) rather
+        than by literal integer. Override a subset by spelling out the
         whole tuple — partial overrides aren't supported because the
         invariant the dataclass enforces ("strictly increasing ladder")
         only makes sense over the full ladder.
@@ -218,15 +225,15 @@ class DecodeParams:
     Examples
     --------
     >>> params = DecodeParams()
-    >>> params.remap_window
-    (6000, 10000)
-    >>> params.T_remap_start, params.T_wide_dynamics_end
-    (6000, 32000)
+    >>> params.phase_boundaries[PhaseBoundary.REMAP_START]
+    6000
+    >>> params.phase_boundaries[PhaseBoundary.WIDE_DYNAMICS_END]
+    32000
     >>> params.pf_centers
     array([  0.,  10.,  20.,  30.,  40.,  50.,  60.,  70.,  80.,  90., 100.])
     """
 
-    # Phase ladder. One boundary per entry of PHASE_BOUNDARY_NAMES,
+    # Phase ladder. One boundary per :class:`PhaseBoundary` member,
     # strictly increasing; validated in __post_init__.
     phase_boundaries: tuple[int, ...] = _DEFAULT_PHASE_BOUNDARIES
 
@@ -258,64 +265,24 @@ class DecodeParams:
         (7, 2),
     )
 
-    # Named accessors — index into ``phase_boundaries``. The names are
-    # the same as the previous dataclass fields so existing read sites
-    # (``params.T_remap_end``) keep working without migration.
-
-    @property
-    def T_remap_start(self) -> int:  # noqa: N802 — naming matches the boundary index it surfaces
-        return self.phase_boundaries[0]
-
-    @property
-    def T_remap_end(self) -> int:  # noqa: N802
-        return self.phase_boundaries[1]
-
-    @property
-    def T_recovery1_end(self) -> int:  # noqa: N802
-        return self.phase_boundaries[2]
-
-    @property
-    def T_hist_dep_end(self) -> int:  # noqa: N802
-        return self.phase_boundaries[3]
-
-    @property
-    def T_recovery2_end(self) -> int:  # noqa: N802
-        return self.phase_boundaries[4]
-
-    @property
-    def T_drift_end(self) -> int:  # noqa: N802
-        return self.phase_boundaries[5]
-
-    @property
-    def T_recovery3_end(self) -> int:  # noqa: N802
-        return self.phase_boundaries[6]
-
-    @property
-    def T_wide_dynamics_end(self) -> int:  # noqa: N802
-        return self.phase_boundaries[7]
-
-    @property
-    def remap_window(self) -> tuple[int, int]:
-        """Remapping window as ``(start, end)``."""
-        return (self.T_remap_start, self.T_remap_end)
-
     def __post_init__(self) -> None:
         """Validate the timeline and initialize ``pf_centers`` if not provided.
 
-        ``phase_boundaries`` must have exactly :data:`PHASE_BOUNDARY_NAMES`
-        entries and be strictly increasing — ``run_figure03_simulation``
-        builds each phase as ``T_next - T_prev`` and a non-monotonic
-        timeline would yield a negative phase length, which
-        ``np.arange``/``np.zeros`` silently turn into an empty phase,
-        shifting every later misfit window. Catch that here at
-        construction rather than as a misaligned figure downstream.
+        ``phase_boundaries`` must have exactly one entry per
+        :class:`PhaseBoundary` member and be strictly increasing —
+        ``run_figure03_simulation`` builds each phase as
+        ``T_next - T_prev`` and a non-monotonic timeline would yield a
+        negative phase length, which ``np.arange``/``np.zeros``
+        silently turn into an empty phase, shifting every later misfit
+        window. Catch that here at construction rather than as a
+        misaligned figure downstream.
         """
         bnds = tuple(self.phase_boundaries)
-        if len(bnds) != len(PHASE_BOUNDARY_NAMES):
+        if len(bnds) != len(PhaseBoundary):
             raise ValueError(
                 f"DecodeParams.phase_boundaries must have "
-                f"{len(PHASE_BOUNDARY_NAMES)} entries "
-                f"(one per PHASE_BOUNDARY_NAMES); got {len(bnds)}."
+                f"{len(PhaseBoundary)} entries "
+                f"(one per PhaseBoundary member); got {len(bnds)}."
             )
         if any(later <= earlier for earlier, later in zip(bnds, bnds[1:], strict=False)):
             raise ValueError(

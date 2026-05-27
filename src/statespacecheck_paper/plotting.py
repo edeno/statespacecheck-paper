@@ -28,11 +28,16 @@ from numpy.typing import NDArray
 from statespacecheck_paper.analysis import (
     DecodeParams,
     Diagnostics,
+    PhaseBoundary,
     Thresholds,
     get_remapped_pf_centers,
     likelihood_grid_for_counts,
 )
-from statespacecheck_paper.simulation import gaussian_transition_matrix, normalize
+from statespacecheck_paper.simulation import (
+    gaussian_transition_matrix,
+    normalize,
+    softmax_with_shift,
+)
 from statespacecheck_paper.style import CMAP_LIKELIHOOD, CMAP_POSTERIOR, COLORS
 
 
@@ -49,13 +54,14 @@ def add_phase_boundaries(
     axes : list[plt.Axes]
         List of axes to add phase boundaries to.
     phase_boundaries : tuple[int, ...]
-        Phase boundary time points, in the canonical 8-element order used
-        by :class:`statespacecheck_paper.analysis.DecodeParams`:
-        ``(T_remap_start, T_remap_end, T_recovery1_end, T_hist_dep_end,
-        T_recovery2_end, T_drift_end, T_recovery3_end, T_wide_dynamics_end)``.
-        Shorter tuples (down to 2 elements) are accepted and produce a
-        partial shading; only the misfit windows whose pair of boundary
-        entries is present are drawn.
+        Phase boundary time points, in the canonical 8-element order
+        indexed by :class:`statespacecheck_paper.analysis.PhaseBoundary`
+        (``REMAP_START``, ``REMAP_END``, ``RECOVERY1_END``,
+        ``HIST_DEP_END``, ``RECOVERY2_END``, ``DRIFT_END``,
+        ``RECOVERY3_END``, ``WIDE_DYNAMICS_END``). Shorter tuples (down
+        to 2 elements) are accepted and produce a partial shading; only
+        the misfit windows whose pair of boundary entries is present
+        are drawn.
     include_labels : bool, default False
         If True, add labels for legend on first axis.
     alpha : float, default 0.15
@@ -262,11 +268,9 @@ def create_distribution_comparison_panel(
     pdf_predictive: NDArray[np.floating] = stats.norm.pdf(x, loc=pred_mean, scale=pred_std)
     pdf_likelihood: NDArray[np.floating] = stats.norm.pdf(x, loc=like_mean, scale=like_std)
 
-    # Normalize likelihood
     dx = float(x[1] - x[0])
     pdf_likelihood = pdf_likelihood / (np.sum(pdf_likelihood) * dx)
 
-    # Plot distributions
     ax.plot(
         x,
         pdf_predictive,
@@ -401,7 +405,7 @@ def plot_misfit_examples(
     >>> from statespacecheck_paper.analysis import DecodeParams
     >>> rng = np.random.default_rng(0)
     >>> # n_time must be large enough for the baseline window
-    >>> # slice(1000, T_remap_start - 1000) to be non-empty.
+    >>> # slice(1000, phase_boundaries[REMAP_START] - 1000) to be non-empty.
     >>> n_time, n_bins, n_cells = 6000, 50, 10
     >>> xs = np.linspace(0, 1, n_bins)
     >>> # Build inputs and run through ``decode_and_diagnostics`` to get
@@ -409,11 +413,14 @@ def plot_misfit_examples(
     >>> # example fixture. The doctest skips the actual call.
     """
     # Define phase windows - one example timestep per misfit class.
-    baseline_window = slice(1000, params.T_remap_start - 1000)  # Middle of baseline
-    remap_window = slice(params.T_remap_start, params.T_remap_end)
-    hist_dep_window = slice(params.T_recovery1_end, params.T_hist_dep_end)
-    drift_window = slice(params.T_recovery2_end, params.T_drift_end)
-    wide_dynamics_window = slice(params.T_recovery3_end, params.T_wide_dynamics_end)
+    bnd = params.phase_boundaries
+    baseline_window = slice(1000, bnd[PhaseBoundary.REMAP_START] - 1000)  # Middle of baseline
+    remap_window = slice(bnd[PhaseBoundary.REMAP_START], bnd[PhaseBoundary.REMAP_END])
+    hist_dep_window = slice(bnd[PhaseBoundary.RECOVERY1_END], bnd[PhaseBoundary.HIST_DEP_END])
+    drift_window = slice(bnd[PhaseBoundary.RECOVERY2_END], bnd[PhaseBoundary.DRIFT_END])
+    wide_dynamics_window = slice(
+        bnd[PhaseBoundary.RECOVERY3_END], bnd[PhaseBoundary.WIDE_DYNAMICS_END]
+    )
 
     phases = [
         ("Baseline", baseline_window, True),
@@ -448,8 +455,6 @@ def plot_misfit_examples(
             example_idx_in_phase = np.nanargmin(valid_hpdo)  # Worst fit with spikes
         example_time = phase_slice.start + example_idx_in_phase
 
-        # Recompute prior and likelihood at this time point
-        # Get posterior from previous timestep
         if example_time > 0:
             prev_post = metrics.posterior[example_time - 1]
         else:
@@ -459,16 +464,14 @@ def plot_misfit_examples(
         # to match decode_and_diagnostics). Only the wide-dynamics-noise
         # window uses an alternate transition matrix; all other phases use
         # the baseline.
-        if params.T_recovery3_end <= example_time < params.T_wide_dynamics_end:
+        if bnd[PhaseBoundary.RECOVERY3_END] <= example_time < bnd[PhaseBoundary.WIDE_DYNAMICS_END]:
             transition_matrix = gaussian_transition_matrix(xs, params.sigx_wide_dynamics)
         else:
             transition_matrix = gaussian_transition_matrix(xs, params.sigx_pred)
 
-        # Compute prior
         prior = normalize(prev_post @ transition_matrix)
 
-        # Compute combined likelihood (with remapping if in remap window, half-open)
-        active_remap = params.T_remap_start <= example_time < params.T_remap_end
+        active_remap = bnd[PhaseBoundary.REMAP_START] <= example_time < bnd[PhaseBoundary.REMAP_END]
         current_pf_centers = get_remapped_pf_centers(
             placefield_centers, params.remap_from_to, active_remap
         )
@@ -479,16 +482,12 @@ def plot_misfit_examples(
         # Combine per-cell normalized likelihoods across cells in log-space.
         # The linear-space ``np.prod(likelihood, axis=1)`` underflows once
         # n_cells * log(peak) crosses the float64 floor (~700).
-        from statespacecheck_paper.simulation import softmax_with_shift
-
         log_lik = np.log(np.maximum(likelihood, np.finfo(likelihood.dtype).tiny))
         combined_likelihood = softmax_with_shift(log_lik.sum(axis=1))
 
-        # Plot prior and likelihood with twin axes - use Wong colorblind-friendly palette
         ax1 = axes[phase_idx]
         ax2 = ax1.twinx()
 
-        # Plot prior on left axis with transparency
         line1 = ax1.plot(
             xs, prior, color=COLORS["predictive"], linewidth=1.5, alpha=0.7, label="Predictive"
         )
@@ -569,7 +568,6 @@ def plot_misfit_examples(
             alpha=0.7,
         )
 
-        # Get diagnostic values - now per-cell, use nanmean for display
         hpdo_val = np.nanmean(metrics.hpd_overlap[example_time])
         kl_val = np.nanmean(metrics.kl_divergence[example_time])
         spike_prob_val = np.nanmean(metrics.spike_prob[example_time])
@@ -1111,16 +1109,7 @@ def plot_combined_diagnostics(
     )
 
     # Add phase boundaries to all time-series panels.
-    tseries_boundaries = (
-        params.T_remap_start,
-        params.T_remap_end,
-        params.T_recovery1_end,
-        params.T_hist_dep_end,
-        params.T_recovery2_end,
-        params.T_drift_end,
-        params.T_recovery3_end,
-        params.T_wide_dynamics_end,
-    )
+    tseries_boundaries = tuple(params.phase_boundaries)
 
     # Add phase boundaries with matching colors to all panels
     add_phase_boundaries(
@@ -1132,13 +1121,15 @@ def plot_combined_diagnostics(
     # Add phase labels above top panel. Stagger vertical positions so the
     # narrow wide-dynamics phase (~2k timesteps) doesn't crowd its
     # neighbours.
-    t_remap_start, t_remap_end = params.T_remap_start, params.T_remap_end
-    t_recovery1_end, t_hist_dep_end = params.T_recovery1_end, params.T_hist_dep_end
-    t_recovery2_end, t_drift_end = params.T_recovery2_end, params.T_drift_end
-    t_recovery3_end, t_wide_dynamics_end = (
-        params.T_recovery3_end,
-        params.T_wide_dynamics_end,
-    )
+    bnd = params.phase_boundaries
+    t_remap_start = bnd[PhaseBoundary.REMAP_START]
+    t_remap_end = bnd[PhaseBoundary.REMAP_END]
+    t_recovery1_end = bnd[PhaseBoundary.RECOVERY1_END]
+    t_hist_dep_end = bnd[PhaseBoundary.HIST_DEP_END]
+    t_recovery2_end = bnd[PhaseBoundary.RECOVERY2_END]
+    t_drift_end = bnd[PhaseBoundary.DRIFT_END]
+    t_recovery3_end = bnd[PhaseBoundary.RECOVERY3_END]
+    t_wide_dynamics_end = bnd[PhaseBoundary.WIDE_DYNAMICS_END]
 
     phase_labels_info: list[tuple[float, str, float]] = [
         ((t_remap_start + t_remap_end) / 2, "Remap", 1.02),
@@ -1185,14 +1176,27 @@ def plot_combined_diagnostics(
         ha="right",
     )
 
-    # Phase windows for summary computation
-    phase_windows = [
-        ("Remap", t_remap_start, t_remap_end),
-        ("History-\ndep.", t_recovery1_end, t_hist_dep_end),
-        ("Drift", t_recovery2_end, t_drift_end),
-        ("Wide dyn.\nnoise", t_recovery3_end, t_wide_dynamics_end),
+    # Phase windows for summary computation. Each entry is
+    # ``(label, [(t0, t1), ...])`` — a list of (start, end) slices so a
+    # single column can aggregate multiple disjoint windows (used by the
+    # "Clean" column, which concatenates the three recovery windows for an
+    # out-of-sample false-positive rate against the matched misfit columns).
+    phase_windows: list[tuple[str, list[tuple[int, int]]]] = [
+        (
+            "Clean",
+            [
+                (t_remap_end, t_recovery1_end),
+                (t_hist_dep_end, t_recovery2_end),
+                (t_drift_end, t_recovery3_end),
+            ],
+        ),
+        ("Remap", [(t_remap_start, t_remap_end)]),
+        ("History-\ndep.", [(t_recovery1_end, t_hist_dep_end)]),
+        ("Drift", [(t_recovery2_end, t_drift_end)]),
+        ("Wide dyn.\nnoise", [(t_recovery3_end, t_wide_dynamics_end)]),
     ]
     component_labels = [
+        "—",  # Clean (no induced misfit)
         "Observation",  # Remap
         "Observation",  # History-dependent firing
         "Transition",  # Drift
@@ -1217,7 +1221,7 @@ def plot_combined_diagnostics(
     # Re-evaluate if PF geometry changes enough to shift the 1st percentile
     # above 0.
     frac_data = np.zeros((3, len(phase_windows)))
-    for j, (_name, t0, t1) in enumerate(phase_windows):
+    for j, (_name, slices) in enumerate(phase_windows):
         for i, (metric_key, thr_val, direction) in enumerate(
             [
                 ("hpd_overlap", hpd_thr, "below"),
@@ -1225,7 +1229,8 @@ def plot_combined_diagnostics(
                 ("spike_prob", sp_thr, "below"),
             ]
         ):
-            vals = getattr(metrics, metric_key)[t0:t1]
+            full = getattr(metrics, metric_key)
+            vals = np.concatenate([full[t0:t1] for t0, t1 in slices])
             valid = vals[~np.isnan(vals)]
             if len(valid) > 0:
                 if direction == "below":
@@ -1247,7 +1252,7 @@ def plot_combined_diagnostics(
 
     # Phase labels on top
     ax_summary.set_xticks(range(len(phase_windows)))
-    ax_summary.set_xticklabels([name for name, _, _ in phase_windows], fontsize=6)
+    ax_summary.set_xticklabels([name for name, _ in phase_windows], fontsize=6)
     ax_summary.tick_params(top=True, bottom=False, labeltop=True, labelbottom=False)
 
     # Value annotations inside cells
@@ -1268,8 +1273,9 @@ def plot_combined_diagnostics(
             )
 
     # Component attribution below heatmap
+    component_color = {"Observation": "#E69F00", "Transition": "#0072B2"}
     for j, comp in enumerate(component_labels):
-        color = "#E69F00" if comp == "Observation" else "#0072B2"
+        color = component_color.get(comp, "0.4")
         ax_summary.text(
             j,
             3.5,

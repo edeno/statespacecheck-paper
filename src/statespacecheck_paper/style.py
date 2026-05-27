@@ -26,6 +26,7 @@ For presentations:
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
@@ -156,6 +157,46 @@ COLORS["prior"] = COLORS["predictive"]  # Alias: prior = predictive
 COLORS["one_step"] = COLORS["predictive"]  # Alias: one-step prediction
 COLORS["observation"] = COLORS["likelihood"]  # Alias: observation evidence
 COLORS["true_position"] = COLORS["ground_truth"]  # Alias: true position
+
+
+def hex_to_rgb(hex_str: str) -> tuple[int, int, int]:
+    """Convert a ``#RRGGBB`` color string to an ``(R, G, B)`` int tuple.
+
+    Used by the pyqtgraph interactive viewer, which takes RGB tuples
+    instead of hex strings for ``pg.mkPen`` / ``pg.mkBrush``. Keeps the
+    paper's WONG palette (declared as hex in :data:`COLORS`) as the
+    single source of truth.
+    """
+    h = hex_str.lstrip("#")
+    if len(h) != 6:
+        raise ValueError(f"hex_to_rgb expected '#RRGGBB'; got {hex_str!r}")
+    return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+
+
+MetricName = Literal["hpd_overlap", "kl_divergence", "spike_prob"]
+
+
+@dataclass(frozen=True)
+class MetricSpec:
+    """Display metadata for one diagnostic metric.
+
+    Centralizing this collapses the parallel ``(metric, ylabel, color,
+    worse_fit_direction)`` arrays previously repeated in the two
+    per-cell-scatter helpers in ``real_data_plotting``.
+    """
+
+    name: MetricName
+    ylabel: str
+    color: str
+    worse_fit_direction: str
+
+
+METRIC_SPECS: tuple[MetricSpec, ...] = (
+    MetricSpec("hpd_overlap", "HPD Overlap", COLORS["hpd_overlap"], "↓ Worse fit"),
+    MetricSpec("kl_divergence", "KL Divergence", COLORS["kl_divergence"], "↑ Worse fit"),
+    MetricSpec("spike_prob", r"$-\log_{10}(p)$", COLORS["metric_combined"], "↑ Worse fit"),
+)
+METRIC_NAMES: tuple[MetricName, ...] = tuple(s.name for s in METRIC_SPECS)
 
 
 def set_figure_defaults(context: Literal["paper", "presentation", "poster"] = "paper") -> None:

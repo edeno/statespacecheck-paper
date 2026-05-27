@@ -108,8 +108,9 @@ def _params_for_short_run(n_time: int, n_cells: int, sigx_pred: float = 0.5) -> 
 
     Distributes the 8 phase boundaries (4 misfits with recovery between
     each) so every misfit window has at least a few timesteps. ``n_time``
-    needs to be large enough that ``T_remap_start - 1000`` is positive
-    (some downstream helpers index a 1000-timestep baseline preamble).
+    needs to be large enough that ``phase_boundaries[REMAP_START] - 1000``
+    is positive (some downstream helpers index a 1000-timestep baseline
+    preamble).
     """
     return DecodeParams(
         phase_boundaries=(
@@ -189,7 +190,7 @@ class TestComputeHpdRegion:
 
 def test_plot_misfit_examples_runs(rng: np.random.Generator) -> None:
     """Smoke test on a dataset large enough to satisfy the baseline window
-    (the function indexes ``slice(1000, T_remap_start - 1000)``)."""
+    (the function indexes ``slice(1000, phase_boundaries[REMAP_START] - 1000)``)."""
     n_time, n_bins, n_cells = 6000, 50, 10
     xs = np.linspace(0, 1, n_bins)
     x_true = rng.uniform(0, n_bins - 1, n_time)
