@@ -1624,9 +1624,13 @@ def plot_per_spike_metric_hexbin_row(
         # agreement reference doesn't depend on matplotlib's autoscale.
         combined = np.concatenate([data_a, data_b])
         lims = (float(np.nanmin(combined)), float(np.nanmax(combined)))
-        ax.plot(lims, lims, color=COLORS["threshold"], lw=0.8, ls="--", alpha=0.7)
-        ax.set_xlim(lims)
-        ax.set_ylim(lims)
+        # Pad limits so hexbins centred on the data extrema (e.g. at 0)
+        # render fully instead of being clipped at the axis spine.
+        margin = (lims[1] - lims[0]) * 0.05
+        padded_lims = (lims[0] - margin, lims[1] + margin)
+        ax.plot(padded_lims, padded_lims, color=COLORS["threshold"], lw=0.8, ls="--", alpha=0.7)
+        ax.set_xlim(padded_lims)
+        ax.set_ylim(padded_lims)
         ax.set_aspect("equal", adjustable="box")
 
         ax.set_xlabel(model_a_name, fontsize=7, labelpad=4)
