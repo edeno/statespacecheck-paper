@@ -1003,33 +1003,54 @@ def plot_combined_diagnostics(
     kl_time_ind, kl_values = event_time_ind, metrics.event_kl_divergence
     spike_prob_time_ind, spike_prob_values = event_time_ind, metrics.event_spike_prob
 
-    # HPDO. The y-axis is inverted so worse fit (HPDO near 0) sits at
-    # the *top* of the panel, matching the "up = worse" convention used
-    # by the KL and -log10(p) panels below. Inversion lifts the failure
-    # cluster off the bottom spine and makes the metric direction
-    # consistent across all three diagnostic rows.
+    # HPDO reframed as "HPD shortfall" = 1 - HPDO. Three stacked tricks:
+    #   1. Reframing puts the worst-fit region (shortfall near 1) at the
+    #      *top* of a naturally ascending y-axis, matching KL and
+    #      -log10(p) below; readers see "0 at bottom = good, 1 at top =
+    #      bad" instead of a confusing inverted axis.
+    #   2. A mirror-sqrt y-scale (y -> 1 - sqrt(1 - y)) expands the upper
+    #      end of [0, 1]: the [0.9, 1.0] band displays at ~32% of the
+    #      panel height instead of 10%.
+    #   3. ylim extends slightly past 1 so y=1 markers float below the
+    #      top spine instead of being half-occluded by it.
+    hpd_shortfall = 1.0 - hpd_values
+    threshold_shortfall = 1.0 - thresholds.hpd_overlap
+
+    def _mirror_sqrt(y: NDArray[np.floating]) -> NDArray[np.floating]:
+        # 1 - sign(1-y) * sqrt(|1-y|) — sign-preserving so values just
+        # past 1 (added padding) still transform cleanly.
+        diff = 1.0 - y
+        out: NDArray[np.floating] = 1.0 - np.sign(diff) * np.sqrt(np.abs(diff))
+        return out
+
+    def _mirror_sqrt_inv(y: NDArray[np.floating]) -> NDArray[np.floating]:
+        diff = 1.0 - y
+        out: NDArray[np.floating] = 1.0 - np.sign(diff) * diff**2
+        return out
+
     ax_hpdo.scatter(
         hpd_time_ind,
-        hpd_values,
+        hpd_shortfall,
         s=0.8,
         alpha=0.6,
         c=COLORS["hpd_overlap"],
         rasterized=True,
     )
     ax_hpdo.axhline(
-        thresholds.hpd_overlap, color=COLORS["threshold"], linewidth=1.2, alpha=0.7, zorder=10
+        threshold_shortfall, color=COLORS["threshold"], linewidth=1.2, alpha=0.7, zorder=10
     )
+    ax_hpdo.set_yscale("function", functions=(_mirror_sqrt, _mirror_sqrt_inv))
+    ax_hpdo.set_yticks([0.0, 0.25, 0.5, 0.75, 1.0])
     ax_hpdo.set_xlim(0, n_time)
-    ax_hpdo.set_ylim(1.0, 0.0)  # inverted: HPDO=0 at top, HPDO=1 at bottom
-    ax_hpdo.set_ylabel("HPD Overlap", fontsize=7, labelpad=7)
+    ax_hpdo.set_ylim(0.0, 1.005)  # padded past 1 so shortfall=1 floats below top spine
+    ax_hpdo.set_ylabel("HPD Shortfall\n(1 − HPDO)", fontsize=7, labelpad=7)
     ax_hpdo.tick_params(labelsize=6, labelbottom=False)
-    # Add directional indicator and threshold annotation
     ax_hpdo.text(
         1.01, 0.5, "↑ Worse fit", transform=ax_hpdo.transAxes, fontsize=6, va="center", ha="left"
     )
     ax_hpdo.text(
         1.01,
-        thresholds.hpd_overlap,
+        threshold_shortfall,
         "Threshold",
         transform=ax_hpdo.get_yaxis_transform(),
         fontsize=6,
