@@ -1003,22 +1003,35 @@ def plot_combined_diagnostics(
     kl_time_ind, kl_values = event_time_ind, metrics.event_kl_divergence
     spike_prob_time_ind, spike_prob_values = event_time_ind, metrics.event_spike_prob
 
-    # HPDO. The worst fit lives at 0, so events at the floor pile on the
-    # bottom spine and compress vertically. Three tricks counter this:
+    # HPDO. Four stacked tricks make the worst-fit cluster visible:
     #   1. Sign-preserving sqrt y-scale expands the low end so structure
     #      near the floor becomes visible (a value of 0.1 displays at ~0.32
     #      of the [0, 1] band instead of 0.1).
-    #   2. ylim extends slightly below 0 so y=0 markers float above the
-    #      bottom spine instead of being half-occluded by it.
+    #   2. Axis is inverted (ylim 1.0 -> -0.005) so worse fit reads upward,
+    #      matching KL and -log10(p) below; failures float off the *top*
+    #      spine after padding.
     #   3. Events below the baseline threshold render in a saturated
     #      vermillion (WONG[6]) on top of a faded sky-blue background of
-    #      passing events, so failures are salient even when piled at 0.
+    #      passing events. The same vermillion treatment is applied to KL
+    #      and -log10(p) for above-threshold events.
+    #   4. Threshold line drops to zorder=2 with reduced linewidth so the
+    #      failure scatter stays on top.
+    bad_color = "#D55E00"  # WONG[6] Vermillion — failure highlight
+
+    def _sqrt_signed(y: NDArray[np.floating]) -> NDArray[np.floating]:
+        out: NDArray[np.floating] = np.sign(y) * np.sqrt(np.abs(y))
+        return out
+
+    def _square_signed(y: NDArray[np.floating]) -> NDArray[np.floating]:
+        out: NDArray[np.floating] = np.sign(y) * y**2
+        return out
+
     hpd_below_mask = hpd_values < thresholds.hpd_overlap
     ax_hpdo.scatter(
         hpd_time_ind[~hpd_below_mask],
         hpd_values[~hpd_below_mask],
         s=0.8,
-        alpha=0.35,
+        alpha=0.5,
         c=COLORS["hpd_overlap"],
         rasterized=True,
     )
@@ -1030,28 +1043,18 @@ def plot_combined_diagnostics(
         hpd_values[hpd_below_mask],
         s=1.4,
         alpha=0.85,
-        c="#D55E00",  # WONG[6] Vermillion — failure highlight
+        c=bad_color,
         rasterized=True,
         zorder=4,
     )
-
-    def _sqrt_signed(y: NDArray[np.floating]) -> NDArray[np.floating]:
-        out: NDArray[np.floating] = np.sign(y) * np.sqrt(np.abs(y))
-        return out
-
-    def _square_signed(y: NDArray[np.floating]) -> NDArray[np.floating]:
-        out: NDArray[np.floating] = np.sign(y) * y**2
-        return out
-
     ax_hpdo.set_yscale("function", functions=(_sqrt_signed, _square_signed))
     ax_hpdo.set_yticks([0.0, 0.25, 0.5, 0.75, 1.0])
     ax_hpdo.set_xlim(0, n_time)
-    ax_hpdo.set_ylim(-0.005, 1.0)
+    ax_hpdo.set_ylim(1.0, -0.005)  # inverted: HPDO=0 (worst) sits at the top
     ax_hpdo.set_ylabel("HPD Overlap", fontsize=7, labelpad=7)
     ax_hpdo.tick_params(labelsize=6, labelbottom=False)
-    # Add directional indicator and threshold annotation
     ax_hpdo.text(
-        1.01, 0.5, "↓ Worse fit", transform=ax_hpdo.transAxes, fontsize=6, va="center", ha="left"
+        1.01, 0.5, "↑ Worse fit", transform=ax_hpdo.transAxes, fontsize=6, va="center", ha="left"
     )
     ax_hpdo.text(
         1.01,
@@ -1064,22 +1067,32 @@ def plot_combined_diagnostics(
         color=COLORS["threshold"],
     )
 
-    # KL Divergence
+    # KL Divergence. Above-threshold events render in vermillion on top
+    # of a faded baseline, matching the HPDO treatment.
+    kl_above_mask = kl_values > thresholds.kl_divergence
     ax_kl.scatter(
-        kl_time_ind,
-        kl_values,
+        kl_time_ind[~kl_above_mask],
+        kl_values[~kl_above_mask],
         s=0.8,
-        alpha=0.6,
+        alpha=0.5,
         c=COLORS["kl_divergence"],
         rasterized=True,
     )
     ax_kl.axhline(
-        thresholds.kl_divergence, color=COLORS["threshold"], linewidth=1.2, alpha=0.7, zorder=10
+        thresholds.kl_divergence, color=COLORS["threshold"], linewidth=0.9, alpha=0.55, zorder=2
+    )
+    ax_kl.scatter(
+        kl_time_ind[kl_above_mask],
+        kl_values[kl_above_mask],
+        s=1.4,
+        alpha=0.85,
+        c=bad_color,
+        rasterized=True,
+        zorder=4,
     )
     ax_kl.set_xlim(0, n_time)
     ax_kl.set_ylabel("KL Divergence", fontsize=7, labelpad=7)
     ax_kl.tick_params(labelsize=6, labelbottom=False)
-    # Add directional indicator and threshold annotation
     ax_kl.text(
         1.01, 0.5, "↑ Worse fit", transform=ax_kl.transAxes, fontsize=6, va="center", ha="left"
     )
@@ -1098,21 +1111,31 @@ def plot_combined_diagnostics(
     # This makes interpretation consistent with KL divergence (higher = worse)
     spike_prob_transformed = -np.log10(np.maximum(spike_prob_values, 1e-10))
     threshold_transformed = -np.log10(np.maximum(thresholds.spike_prob, 1e-10))
+    spike_above_mask = spike_prob_transformed > threshold_transformed
     ax_spike.scatter(
-        spike_prob_time_ind,
-        spike_prob_transformed,
+        spike_prob_time_ind[~spike_above_mask],
+        spike_prob_transformed[~spike_above_mask],
         s=0.8,
-        alpha=0.6,
+        alpha=0.5,
         c=COLORS["metric_combined"],
         rasterized=True,
     )
     ax_spike.axhline(
         threshold_transformed,
         color=COLORS["threshold"],
-        linewidth=1.2,
-        alpha=0.7,
-        zorder=10,
+        linewidth=0.9,
+        alpha=0.55,
+        zorder=2,
         label="Threshold",
+    )
+    ax_spike.scatter(
+        spike_prob_time_ind[spike_above_mask],
+        spike_prob_transformed[spike_above_mask],
+        s=1.4,
+        alpha=0.85,
+        c=bad_color,
+        rasterized=True,
+        zorder=4,
     )
     ax_spike.set_xlim(0, n_time)
     ax_spike.set_ylabel(r"$-\log_{10}(p)$", fontsize=7, labelpad=7)
