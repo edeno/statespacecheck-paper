@@ -16,6 +16,7 @@ Examples
 
 from __future__ import annotations
 
+import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib import gridspec
@@ -1003,22 +1004,61 @@ def plot_combined_diagnostics(
     kl_time_ind, kl_values = event_time_ind, metrics.event_kl_divergence
     spike_prob_time_ind, spike_prob_values = event_time_ind, metrics.event_spike_prob
 
-    # HPDO
-    ax_hpdo.scatter(
-        hpd_time_ind,
-        hpd_values,
-        s=0.8,
-        alpha=0.6,
-        c=COLORS["hpd_overlap"],
-        rasterized=True,
+    # Render each per-spike diagnostic as a 2D hexbin density (time x
+    # metric value). With ~30k spike events, scatter compresses
+    # high-count regions onto the y=0 spine; hexbin maps event counts
+    # to colour (log-scaled) so the floor concentration shows as a
+    # bright band whose intensity tracks the temporal failure rate.
+    spike_prob_transformed = -np.log10(np.maximum(spike_prob_values, 1e-10))
+    threshold_spike_transformed = -np.log10(np.maximum(thresholds.spike_prob, 1e-10))
+
+    def _metric_hexbin(
+        ax: Axes,
+        time_ind: NDArray[np.number],
+        values: NDArray[np.floating],
+        color: str,
+        ymin: float,
+        ymax: float,
+    ) -> None:
+        cmap = mcolors.LinearSegmentedColormap.from_list(
+            "metric_density", ["#FFFFFF", color, "#08366B"]
+        )
+        ax.hexbin(
+            time_ind,
+            values,
+            gridsize=(90, 14),
+            cmap=cmap,
+            bins="log",
+            mincnt=1,
+            extent=(0, n_time, ymin, ymax),
+            linewidths=0.0,
+            rasterized=True,
+        )
+        ax.set_xlim(0, n_time)
+        ax.set_ylim(ymin, ymax)
+
+    # Clip KL and -log10(p) at the 99.5th percentile so a handful of
+    # outliers don't expand the y-range and squash the bulk of events
+    # against the floor.
+    kl_ymax = float(np.nanquantile(kl_values, 0.995))
+    spike_ymax = float(np.nanquantile(spike_prob_transformed, 0.995))
+
+    _metric_hexbin(ax_hpdo, hpd_time_ind, hpd_values, COLORS["hpd_overlap"], 0.0, 1.0)
+    _metric_hexbin(ax_kl, kl_time_ind, kl_values, COLORS["kl_divergence"], 0.0, kl_ymax)
+    _metric_hexbin(
+        ax_spike,
+        spike_prob_time_ind,
+        spike_prob_transformed,
+        COLORS["metric_combined"],
+        0.0,
+        spike_ymax,
     )
+
     ax_hpdo.axhline(
         thresholds.hpd_overlap, color=COLORS["threshold"], linewidth=1.2, alpha=0.7, zorder=10
     )
-    ax_hpdo.set_xlim(0, n_time)
     ax_hpdo.set_ylabel("HPD Overlap", fontsize=7, labelpad=7)
     ax_hpdo.tick_params(labelsize=6, labelbottom=False)
-    # Add directional indicator and threshold annotation
     ax_hpdo.text(
         1.01, 0.5, "↓ Worse fit", transform=ax_hpdo.transAxes, fontsize=6, va="center", ha="left"
     )
@@ -1033,22 +1073,11 @@ def plot_combined_diagnostics(
         color=COLORS["threshold"],
     )
 
-    # KL Divergence
-    ax_kl.scatter(
-        kl_time_ind,
-        kl_values,
-        s=0.8,
-        alpha=0.6,
-        c=COLORS["kl_divergence"],
-        rasterized=True,
-    )
     ax_kl.axhline(
         thresholds.kl_divergence, color=COLORS["threshold"], linewidth=1.2, alpha=0.7, zorder=10
     )
-    ax_kl.set_xlim(0, n_time)
     ax_kl.set_ylabel("KL Divergence", fontsize=7, labelpad=7)
     ax_kl.tick_params(labelsize=6, labelbottom=False)
-    # Add directional indicator and threshold annotation
     ax_kl.text(
         1.01, 0.5, "↑ Worse fit", transform=ax_kl.transAxes, fontsize=6, va="center", ha="left"
     )
@@ -1063,27 +1092,14 @@ def plot_combined_diagnostics(
         color=COLORS["threshold"],
     )
 
-    # Spike probability: transform to -log10(p) so higher values indicate worse fit
-    # This makes interpretation consistent with KL divergence (higher = worse)
-    spike_prob_transformed = -np.log10(np.maximum(spike_prob_values, 1e-10))
-    threshold_transformed = -np.log10(np.maximum(thresholds.spike_prob, 1e-10))
-    ax_spike.scatter(
-        spike_prob_time_ind,
-        spike_prob_transformed,
-        s=0.8,
-        alpha=0.6,
-        c=COLORS["metric_combined"],
-        rasterized=True,
-    )
     ax_spike.axhline(
-        threshold_transformed,
+        threshold_spike_transformed,
         color=COLORS["threshold"],
         linewidth=1.2,
         alpha=0.7,
         zorder=10,
         label="Threshold",
     )
-    ax_spike.set_xlim(0, n_time)
     ax_spike.set_ylabel(r"$-\log_{10}(p)$", fontsize=7, labelpad=7)
     ax_spike.set_xlabel("Time (a.u.)", fontsize=7, labelpad=7)
     ax_spike.tick_params(labelsize=7)
@@ -1099,7 +1115,7 @@ def plot_combined_diagnostics(
     )
     ax_spike.text(
         1.01,
-        threshold_transformed,
+        threshold_spike_transformed,
         "Threshold",
         transform=ax_spike.get_yaxis_transform(),
         fontsize=6,
