@@ -1003,7 +1003,11 @@ def plot_combined_diagnostics(
     kl_time_ind, kl_values = event_time_ind, metrics.event_kl_divergence
     spike_prob_time_ind, spike_prob_values = event_time_ind, metrics.event_spike_prob
 
-    # HPDO
+    # HPDO. Symlog with small linthresh expands the floor: with
+    # linthresh=0.05, the [0, 0.05] band displays as ~0.30 of the
+    # log10(1 + 1/linthresh) display range (vs. 5% under a linear
+    # scale), so failures piled near zero spread vertically and read
+    # as a band rather than a spine-hugging line.
     ax_hpdo.scatter(
         hpd_time_ind,
         hpd_values,
@@ -1015,7 +1019,11 @@ def plot_combined_diagnostics(
     ax_hpdo.axhline(
         thresholds.hpd_overlap, color=COLORS["threshold"], linewidth=1.2, alpha=0.7, zorder=10
     )
+    ax_hpdo.set_yscale("symlog", linthresh=0.05, linscale=1.0)
+    ax_hpdo.set_yticks([0.0, 0.05, 0.1, 0.5, 1.0])
+    ax_hpdo.set_yticklabels(["0", "0.05", "0.1", "0.5", "1"])
     ax_hpdo.set_xlim(0, n_time)
+    ax_hpdo.set_ylim(0.0, 1.0)
     ax_hpdo.set_ylabel("HPD Overlap", fontsize=7, labelpad=7)
     ax_hpdo.tick_params(labelsize=6, labelbottom=False)
     # Add directional indicator and threshold annotation
