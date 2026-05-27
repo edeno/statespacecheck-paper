@@ -1003,27 +1003,42 @@ def plot_combined_diagnostics(
     kl_time_ind, kl_values = event_time_ind, metrics.event_kl_divergence
     spike_prob_time_ind, spike_prob_values = event_time_ind, metrics.event_spike_prob
 
-    # HPDO. Symlog with small linthresh expands the floor: with
-    # linthresh=0.05, the [0, 0.05] band displays as ~0.30 of the
-    # log10(1 + 1/linthresh) display range (vs. 5% under a linear
-    # scale), so failures piled near zero spread vertically and read
-    # as a band rather than a spine-hugging line.
+    # HPDO. Three stacked tricks make the worst-fit cluster visible:
+    #   1. Symlog with a tight linthresh=0.01 routes the [0, 0.01] floor
+    #      through log10(1 + y/linthresh), pushing it to ~30% of the
+    #      display.
+    #   2. ylim extends slightly below 0 so y=0 markers float above the
+    #      bottom spine instead of sitting on it (symlog accepts small
+    #      negative limits because it's symmetric around 0).
+    #   3. Below-threshold events render in saturated vermillion on top
+    #      of a faded sky-blue background of passing events.
+    bad_color = "#D55E00"  # WONG[6] Vermillion — failure highlight
+    hpd_below_mask = hpd_values < thresholds.hpd_overlap
     ax_hpdo.scatter(
-        hpd_time_ind,
-        hpd_values,
+        hpd_time_ind[~hpd_below_mask],
+        hpd_values[~hpd_below_mask],
         s=0.8,
-        alpha=0.6,
+        alpha=0.5,
         c=COLORS["hpd_overlap"],
         rasterized=True,
     )
     ax_hpdo.axhline(
-        thresholds.hpd_overlap, color=COLORS["threshold"], linewidth=1.2, alpha=0.7, zorder=10
+        thresholds.hpd_overlap, color=COLORS["threshold"], linewidth=0.9, alpha=0.55, zorder=2
     )
-    ax_hpdo.set_yscale("symlog", linthresh=0.05, linscale=1.0)
-    ax_hpdo.set_yticks([0.0, 0.05, 0.1, 0.5, 1.0])
-    ax_hpdo.set_yticklabels(["0", "0.05", "0.1", "0.5", "1"])
+    ax_hpdo.scatter(
+        hpd_time_ind[hpd_below_mask],
+        hpd_values[hpd_below_mask],
+        s=1.4,
+        alpha=0.85,
+        c=bad_color,
+        rasterized=True,
+        zorder=4,
+    )
+    ax_hpdo.set_yscale("symlog", linthresh=0.01, linscale=1.0)
+    ax_hpdo.set_yticks([0.0, 0.01, 0.1, 0.5, 1.0])
+    ax_hpdo.set_yticklabels(["0", "0.01", "0.1", "0.5", "1"])
     ax_hpdo.set_xlim(0, n_time)
-    ax_hpdo.set_ylim(0.0, 1.0)
+    ax_hpdo.set_ylim(-0.005, 1.0)
     ax_hpdo.set_ylabel("HPD Overlap", fontsize=7, labelpad=7)
     ax_hpdo.tick_params(labelsize=6, labelbottom=False)
     # Add directional indicator and threshold annotation
