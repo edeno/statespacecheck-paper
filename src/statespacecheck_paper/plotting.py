@@ -1003,7 +1003,11 @@ def plot_combined_diagnostics(
     kl_time_ind, kl_values = event_time_ind, metrics.event_kl_divergence
     spike_prob_time_ind, spike_prob_values = event_time_ind, metrics.event_spike_prob
 
-    # HPDO
+    # HPDO. The y-axis is inverted so worse fit (HPDO near 0) sits at
+    # the *top* of the panel, matching the "up = worse" convention used
+    # by the KL and -log10(p) panels below. Inversion lifts the failure
+    # cluster off the bottom spine and makes the metric direction
+    # consistent across all three diagnostic rows.
     ax_hpdo.scatter(
         hpd_time_ind,
         hpd_values,
@@ -1016,11 +1020,12 @@ def plot_combined_diagnostics(
         thresholds.hpd_overlap, color=COLORS["threshold"], linewidth=1.2, alpha=0.7, zorder=10
     )
     ax_hpdo.set_xlim(0, n_time)
+    ax_hpdo.set_ylim(1.0, 0.0)  # inverted: HPDO=0 at top, HPDO=1 at bottom
     ax_hpdo.set_ylabel("HPD Overlap", fontsize=7, labelpad=7)
     ax_hpdo.tick_params(labelsize=6, labelbottom=False)
     # Add directional indicator and threshold annotation
     ax_hpdo.text(
-        1.01, 0.5, "↓ Worse fit", transform=ax_hpdo.transAxes, fontsize=6, va="center", ha="left"
+        1.01, 0.5, "↑ Worse fit", transform=ax_hpdo.transAxes, fontsize=6, va="center", ha="left"
     )
     ax_hpdo.text(
         1.01,
