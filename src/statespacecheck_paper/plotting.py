@@ -1004,15 +1004,22 @@ def plot_combined_diagnostics(
     kl_time_ind, kl_values = event_time_ind, metrics.event_kl_divergence
     spike_prob_time_ind, spike_prob_values = event_time_ind, metrics.event_spike_prob
 
-    # Render each per-spike diagnostic as a 2D hexbin density (time x
-    # metric value). With ~30k spike events, scatter compresses
-    # high-count regions onto the y=0 spine; hexbin maps event counts
-    # to colour (log-scaled) so the floor concentration shows as a
-    # bright band whose intensity tracks the temporal failure rate.
+    # Render each per-spike diagnostic as a 2D-histogram density (time x
+    # metric value) via imshow. With ~30k spike events, scatter
+    # compresses high-count regions onto the y=0 spine; a binned density
+    # maps event counts to colour (log-scaled) so the floor concentration
+    # reads as a bright band whose intensity tracks the temporal failure
+    # rate. Imshow gives smoother coverage than hexbin's sparse hex grid.
+    # Each panel also gets a thin vermillion rolling-fraction-violating
+    # trace on a twin axis so the temporal failure *rate* is unambiguous.
     spike_prob_transformed = -np.log10(np.maximum(spike_prob_values, 1e-10))
     threshold_spike_transformed = -np.log10(np.maximum(thresholds.spike_prob, 1e-10))
 
-    def _metric_hexbin(
+    bad_color = "#D55E00"  # WONG[6] Vermillion — failure highlight
+    n_time_bins = 200
+    n_value_bins = 40
+
+    def _metric_hist2d(
         ax: Axes,
         time_ind: NDArray[np.number],
         values: NDArray[np.floating],
@@ -1023,19 +1030,66 @@ def plot_combined_diagnostics(
         cmap = mcolors.LinearSegmentedColormap.from_list(
             "metric_density", ["#FFFFFF", color, "#08366B"]
         )
-        ax.hexbin(
-            time_ind,
+        counts, _, _ = np.histogram2d(
+            np.asarray(time_ind, dtype=np.float64),
             values,
-            gridsize=(90, 14),
-            cmap=cmap,
-            bins="log",
-            mincnt=1,
+            bins=(n_time_bins, n_value_bins),
+            range=((0, n_time), (ymin, ymax)),
+        )
+        # log1p compresses the dynamic range so low-density cells stay
+        # visible against the high-count baseline band.
+        density = np.log1p(counts.T)
+        ax.imshow(
+            density,
+            origin="lower",
+            aspect="auto",
             extent=(0, n_time, ymin, ymax),
-            linewidths=0.0,
+            cmap=cmap,
+            interpolation="nearest",
             rasterized=True,
         )
         ax.set_xlim(0, n_time)
         ax.set_ylim(ymin, ymax)
+
+    def _rolling_violation_fraction(
+        time_ind: NDArray[np.number],
+        values: NDArray[np.floating],
+        threshold: float,
+        violates_when_above: bool,
+        n_bins: int = 150,
+    ) -> tuple[NDArray[np.floating], NDArray[np.floating]]:
+        edges = np.linspace(0, n_time, n_bins + 1)
+        if violates_when_above:
+            violates = values > threshold
+        else:
+            violates = values < threshold
+        counts_total, _ = np.histogram(time_ind, bins=edges)
+        counts_violate, _ = np.histogram(time_ind[violates], bins=edges)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            fraction = np.where(
+                counts_total > 0, counts_violate / np.maximum(counts_total, 1), np.nan
+            )
+        centers = 0.5 * (edges[:-1] + edges[1:])
+        return centers, fraction
+
+    def _overlay_fraction(
+        ax: Axes,
+        time_ind: NDArray[np.number],
+        values: NDArray[np.floating],
+        threshold: float,
+        violates_when_above: bool,
+    ) -> None:
+        centers, fraction = _rolling_violation_fraction(
+            time_ind, values, threshold, violates_when_above
+        )
+        ax_twin = ax.twinx()
+        ax_twin.plot(centers, fraction, color=bad_color, linewidth=0.9, alpha=0.9, zorder=5)
+        ax_twin.set_ylim(0, 1)
+        ax_twin.set_yticks([])
+        ax_twin.spines["right"].set_visible(False)
+        ax_twin.spines["top"].set_visible(False)
+        ax_twin.spines["left"].set_visible(False)
+        ax_twin.spines["bottom"].set_visible(False)
 
     # Clip KL and -log10(p) at the 99.5th percentile so a handful of
     # outliers don't expand the y-range and squash the bulk of events
@@ -1043,15 +1097,25 @@ def plot_combined_diagnostics(
     kl_ymax = float(np.nanquantile(kl_values, 0.995))
     spike_ymax = float(np.nanquantile(spike_prob_transformed, 0.995))
 
-    _metric_hexbin(ax_hpdo, hpd_time_ind, hpd_values, COLORS["hpd_overlap"], 0.0, 1.0)
-    _metric_hexbin(ax_kl, kl_time_ind, kl_values, COLORS["kl_divergence"], 0.0, kl_ymax)
-    _metric_hexbin(
+    _metric_hist2d(ax_hpdo, hpd_time_ind, hpd_values, COLORS["hpd_overlap"], 0.0, 1.0)
+    _metric_hist2d(ax_kl, kl_time_ind, kl_values, COLORS["kl_divergence"], 0.0, kl_ymax)
+    _metric_hist2d(
         ax_spike,
         spike_prob_time_ind,
         spike_prob_transformed,
         COLORS["metric_combined"],
         0.0,
         spike_ymax,
+    )
+
+    _overlay_fraction(ax_hpdo, hpd_time_ind, hpd_values, thresholds.hpd_overlap, False)
+    _overlay_fraction(ax_kl, kl_time_ind, kl_values, thresholds.kl_divergence, True)
+    _overlay_fraction(
+        ax_spike,
+        spike_prob_time_ind,
+        spike_prob_transformed,
+        threshold_spike_transformed,
+        True,
     )
 
     ax_hpdo.axhline(
