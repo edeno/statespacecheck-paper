@@ -1003,19 +1003,39 @@ def plot_combined_diagnostics(
     kl_time_ind, kl_values = event_time_ind, metrics.event_kl_divergence
     spike_prob_time_ind, spike_prob_values = event_time_ind, metrics.event_spike_prob
 
-    # HPDO
+    # HPDO. The worst fit lives at 0, so events at the floor pile on the
+    # bottom spine and compress vertically. Two tricks counter this:
+    #   1. Square-root y-scale expands the low end (a value of 0.1 displays
+    #      at ~0.32 of the axis instead of 0.1), so structure near the floor
+    #      becomes visible.
+    #   2. Events below the baseline threshold render in a saturated
+    #      vermillion (WONG[6]) on top of a faded sky-blue background of
+    #      passing events, so failures are salient even when piled at 0.
+    hpd_below_mask = hpd_values < thresholds.hpd_overlap
     ax_hpdo.scatter(
-        hpd_time_ind,
-        hpd_values,
+        hpd_time_ind[~hpd_below_mask],
+        hpd_values[~hpd_below_mask],
         s=0.8,
-        alpha=0.6,
+        alpha=0.35,
         c=COLORS["hpd_overlap"],
         rasterized=True,
+    )
+    ax_hpdo.scatter(
+        hpd_time_ind[hpd_below_mask],
+        hpd_values[hpd_below_mask],
+        s=1.4,
+        alpha=0.85,
+        c="#D55E00",  # WONG[6] Vermillion — failure highlight
+        rasterized=True,
+        zorder=3,
     )
     ax_hpdo.axhline(
         thresholds.hpd_overlap, color=COLORS["threshold"], linewidth=1.2, alpha=0.7, zorder=10
     )
+    ax_hpdo.set_yscale("function", functions=(np.sqrt, np.square))
+    ax_hpdo.set_yticks([0.0, 0.25, 0.5, 0.75, 1.0])
     ax_hpdo.set_xlim(0, n_time)
+    ax_hpdo.set_ylim(0.0, 1.0)
     ax_hpdo.set_ylabel("HPD Overlap", fontsize=7, labelpad=7)
     ax_hpdo.tick_params(labelsize=6, labelbottom=False)
     # Add directional indicator and threshold annotation
