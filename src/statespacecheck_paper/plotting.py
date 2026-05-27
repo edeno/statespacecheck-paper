@@ -1022,6 +1022,9 @@ def plot_combined_diagnostics(
         c=COLORS["hpd_overlap"],
         rasterized=True,
     )
+    ax_hpdo.axhline(
+        thresholds.hpd_overlap, color=COLORS["threshold"], linewidth=0.9, alpha=0.55, zorder=2
+    )
     ax_hpdo.scatter(
         hpd_time_ind[hpd_below_mask],
         hpd_values[hpd_below_mask],
@@ -1029,10 +1032,7 @@ def plot_combined_diagnostics(
         alpha=0.85,
         c="#D55E00",  # WONG[6] Vermillion — failure highlight
         rasterized=True,
-        zorder=3,
-    )
-    ax_hpdo.axhline(
-        thresholds.hpd_overlap, color=COLORS["threshold"], linewidth=1.2, alpha=0.7, zorder=10
+        zorder=4,
     )
 
     def _sqrt_signed(y: NDArray[np.floating]) -> NDArray[np.floating]:
