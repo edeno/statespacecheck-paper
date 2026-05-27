@@ -645,7 +645,7 @@ def _plot_timeseries_heatmap(
             x_true,
             color=COLORS["ground_truth"],
             linewidth=1.0,
-            alpha=0.85,
+            alpha=0.5,
         )
     return im
 
@@ -782,7 +782,7 @@ def _plot_likelihood_overlay(
             x_true,
             color=COLORS["ground_truth"],
             linewidth=1.0,
-            alpha=0.85,
+            alpha=0.5,
         )
 
     ax.set_xlim(0, n_time - 1)
@@ -1179,11 +1179,12 @@ def plot_combined_diagnostics(
     # Phase windows for summary computation. Each entry is
     # ``(label, [(t0, t1), ...])`` — a list of (start, end) slices so a
     # single column can aggregate multiple disjoint windows (used by the
-    # "Clean" column, which concatenates the three recovery windows for an
-    # out-of-sample false-positive rate against the matched misfit columns).
+    # "Well-specified" column, which concatenates the three recovery windows
+    # for an out-of-sample false-positive rate against the matched misfit
+    # columns).
     phase_windows: list[tuple[str, list[tuple[int, int]]]] = [
         (
-            "Clean",
+            "Well-\nspecified",
             [
                 (t_remap_end, t_recovery1_end),
                 (t_hist_dep_end, t_recovery2_end),
@@ -1196,7 +1197,7 @@ def plot_combined_diagnostics(
         ("Wide dyn.\nnoise", [(t_recovery3_end, t_wide_dynamics_end)]),
     ]
     component_labels = [
-        "—",  # Clean (no induced misfit)
+        "—",  # Well-specified (no induced misfit)
         "Observation",  # Remap
         "Observation",  # History-dependent firing
         "Transition",  # Drift
