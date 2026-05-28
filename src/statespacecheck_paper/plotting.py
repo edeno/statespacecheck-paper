@@ -1059,10 +1059,14 @@ def plot_combined_diagnostics(
         n_bins: int = 150,
     ) -> tuple[NDArray[np.floating], NDArray[np.floating]]:
         edges = np.linspace(0, n_time, n_bins + 1)
+        # Match the summary-heatmap convention (>= / <=) so the trace
+        # counts the same events. This matters for HPDO, whose baseline
+        # threshold collapses to ~0 under the floor effect: a strict
+        # ``values < 0`` would catch nothing and flatten the trace.
         if violates_when_above:
-            violates = values > threshold
+            violates = values >= threshold
         else:
-            violates = values < threshold
+            violates = values <= threshold
         counts_total, _ = np.histogram(time_ind, bins=edges)
         counts_violate, _ = np.histogram(time_ind[violates], bins=edges)
         with np.errstate(invalid="ignore", divide="ignore"):
