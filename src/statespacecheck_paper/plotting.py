@@ -1003,6 +1003,51 @@ def plot_combined_diagnostics(
     kl_time_ind, kl_values = event_time_ind, metrics.event_kl_divergence
     spike_prob_time_ind, spike_prob_values = event_time_ind, metrics.event_spike_prob
 
+    bad_color = "#D55E00"  # WONG[6] Vermillion — failure highlight
+
+    def _rolling_upper_fraction(
+        time_ind: NDArray[np.number],
+        values: NDArray[np.floating],
+        threshold: float,
+        strict: bool,
+        n_bins: int = 150,
+    ) -> tuple[NDArray[np.floating], NDArray[np.floating]]:
+        """Fraction of events on the *upper* side of ``threshold`` per time bin.
+
+        Counting the upper side makes the trace co-move with its panel's
+        scatter cloud: for HPD overlap (high = good) the upper fraction is
+        the pass rate, which falls when the cloud sinks; for KL / -log10(p)
+        (high = bad) it is the fail rate, which rises with the cloud. HPD
+        uses ``strict`` (``> threshold``) because its baseline threshold
+        collapses to ~0 under the floor effect and ``>= 0`` would match
+        everything.
+        """
+        edges = np.linspace(0, n_time, n_bins + 1)
+        upper = values > threshold if strict else values >= threshold
+        counts_total, _ = np.histogram(np.asarray(time_ind, dtype=np.float64), bins=edges)
+        counts_upper, _ = np.histogram(np.asarray(time_ind[upper], dtype=np.float64), bins=edges)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            fraction = np.where(
+                counts_total > 0, counts_upper / np.maximum(counts_total, 1), np.nan
+            )
+        centers = 0.5 * (edges[:-1] + edges[1:])
+        return centers, fraction
+
+    def _overlay_upper_fraction(
+        ax: Axes,
+        time_ind: NDArray[np.number],
+        values: NDArray[np.floating],
+        threshold: float,
+        strict: bool,
+    ) -> None:
+        centers, fraction = _rolling_upper_fraction(time_ind, values, threshold, strict)
+        ax_twin = ax.twinx()
+        ax_twin.plot(centers, fraction, color=bad_color, linewidth=0.9, alpha=0.9, zorder=5)
+        ax_twin.set_ylim(0, 1)
+        ax_twin.set_yticks([])
+        for side in ("right", "top", "left", "bottom"):
+            ax_twin.spines[side].set_visible(False)
+
     # HPDO. Three stacked tricks make the worst-fit cluster visible:
     #   1. Symlog with a tight linthresh=0.01 routes the [0, 0.01] floor
     #      through log10(1 + y/linthresh), pushing it to ~30% of the
@@ -1012,7 +1057,9 @@ def plot_combined_diagnostics(
     #      negative limits because it's symmetric around 0).
     #   3. Below-threshold events render in saturated vermillion on top
     #      of a faded sky-blue background of passing events.
-    bad_color = "#D55E00"  # WONG[6] Vermillion — failure highlight
+    #   4. A vermillion rolling pass-rate trace (fraction of spikes above
+    #      threshold per time bin) co-moves with the cloud: high when the
+    #      fit is good, dipping during failures.
     hpd_below_mask = hpd_values < thresholds.hpd_overlap
     ax_hpdo.scatter(
         hpd_time_ind[~hpd_below_mask],
@@ -1055,6 +1102,9 @@ def plot_combined_diagnostics(
         ha="left",
         color=COLORS["threshold"],
     )
+    # Pass-rate trace (fraction strictly above the ~0 threshold) — falls
+    # when the HPD cloud sinks, so it co-moves with the metric.
+    _overlay_upper_fraction(ax_hpdo, hpd_time_ind, hpd_values, thresholds.hpd_overlap, True)
 
     # KL Divergence
     ax_kl.scatter(
@@ -1085,6 +1135,9 @@ def plot_combined_diagnostics(
         ha="left",
         color=COLORS["threshold"],
     )
+    # Fail-rate trace (fraction at/above threshold) — rises with the KL
+    # cloud, co-moving with the metric.
+    _overlay_upper_fraction(ax_kl, kl_time_ind, kl_values, thresholds.kl_divergence, False)
 
     # Spike probability: transform to -log10(p) so higher values indicate worse fit
     # This makes interpretation consistent with KL divergence (higher = worse)
@@ -1129,6 +1182,11 @@ def plot_combined_diagnostics(
         va="center",
         ha="left",
         color=COLORS["threshold"],
+    )
+    # Fail-rate trace (fraction at/above threshold) — rises with the
+    # -log10(p) cloud, co-moving with the metric.
+    _overlay_upper_fraction(
+        ax_spike, spike_prob_time_ind, spike_prob_transformed, threshold_transformed, False
     )
 
     # Add phase boundaries to all time-series panels.
