@@ -667,6 +667,8 @@ def plot_per_cell_diagnostic_scatter(
     show_running_average: bool = False,
     running_average_window: float = 0.050,
     running_average_color: str | None = None,
+    show_violation_fraction: bool = False,
+    violation_fraction_bins: int = 60,
 ) -> Axes:
     """Plot per-cell diagnostic metric as scatter plot over time.
 
@@ -710,6 +712,14 @@ def plot_per_cell_diagnostic_scatter(
     running_average_color : str, optional
         Color for the running average line. If None, uses a darker version
         of the scatter color.
+    show_violation_fraction : bool, default False
+        If True, overlay a vermillion rolling trace (on a hidden twin
+        y-axis) showing the per-time-bin fraction of spikes on the upper
+        side of the threshold. For HPD overlap (high = good) this is the
+        pass rate; for KL / -log10(p) (high = bad) it is the fail rate, so
+        the trace co-moves with its scatter cloud in every panel.
+    violation_fraction_bins : int, default 60
+        Number of time bins for the rolling violation-fraction trace.
 
     Returns
     -------
@@ -879,6 +889,32 @@ def plot_per_cell_diagnostic_scatter(
             ha="left",
             color=COLORS["threshold"],
         )
+
+    # Rolling fraction-on-the-upper-side-of-threshold trace. Counting the
+    # upper side makes the trace co-move with the scatter cloud: for HPD
+    # overlap (high = good) it is the pass rate (which dips during
+    # failures); for KL / -log10(p) (high = bad) it is the fail rate
+    # (which rises). HPD uses a strict ``>`` so a baseline threshold that
+    # collapses to ~0 doesn't make the pass rate degenerate to ~1.
+    if show_violation_fraction and threshold is not None and x_positions_arr.size > 0:
+        higher_is_better = metric_name == "hpd_overlap"
+        upper = y_values_arr > threshold if higher_is_better else y_values_arr >= threshold
+        edges = np.linspace(
+            float(time_arr.min()), float(time_arr.max()), violation_fraction_bins + 1
+        )
+        counts_total, _ = np.histogram(x_positions_arr, bins=edges)
+        counts_upper, _ = np.histogram(x_positions_arr[upper], bins=edges)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            fraction = np.where(
+                counts_total > 0, counts_upper / np.maximum(counts_total, 1), np.nan
+            )
+        centers = 0.5 * (edges[:-1] + edges[1:])
+        ax_twin = ax.twinx()
+        ax_twin.plot(centers, fraction, color="#D55E00", linewidth=0.9, alpha=0.9, zorder=5)
+        ax_twin.set_ylim(0, 1)
+        ax_twin.set_yticks([])
+        for side in ("right", "top", "left", "bottom"):
+            ax_twin.spines[side].set_visible(False)
 
     ax.set_xlim(time_arr.min(), time_arr.max())
     ax.set_ylabel(metric_name if ylabel is None else ylabel, fontsize=7, labelpad=7)
@@ -1341,6 +1377,7 @@ def plot_single_model_diagnostics(
     edge_spacing: float | list[float] = 0.0,
     show_running_average: bool = False,
     running_average_window: float = 0.050,
+    show_violation_fraction: bool = False,
     fig: Figure | None = None,
 ) -> tuple[Figure, NDArray[np.object_]]:
     """Create single-model diagnostic figure with 6 rows.
@@ -1536,6 +1573,7 @@ def plot_single_model_diagnostics(
             spike_times=spike_times,
             show_running_average=show_running_average,
             running_average_window=running_average_window,
+            show_violation_fraction=show_violation_fraction,
         )
         axes[row].text(
             1.01,

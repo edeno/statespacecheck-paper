@@ -218,6 +218,7 @@ def run_demo() -> None:
         track_graph=data["track_graph"],
         edge_order=data["linear_edge_order"],
         edge_spacing=data["linear_edge_spacing"],
+        show_violation_fraction=True,
     )
 
     # Panel (a): context view (wider time window, Continuous model)
@@ -235,6 +236,7 @@ def run_demo() -> None:
         track_graph=data["track_graph"],
         edge_order=data["linear_edge_order"],
         edge_spacing=data["linear_edge_spacing"],
+        show_violation_fraction=True,
         fig=subfigs[0],
     )
 
