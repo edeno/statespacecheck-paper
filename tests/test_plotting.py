@@ -292,12 +292,26 @@ def test_plot_combined_diagnostics_uses_event_diagnostics_for_scatter() -> None:
         params,
         placefield_centers=np.linspace(0, 1, n_cells),
     )
+
+    def _all_offsets(ax: plt.Axes) -> np.ndarray:
+        # The HPD panel splits its scatter into below-/above-threshold
+        # collections (vermillion failure highlight), so gather offsets
+        # across every scatter collection on the axis and sort by value
+        # for a stable comparison.
+        parts = [
+            np.asarray(c.get_offsets())
+            for c in ax.collections
+            if np.asarray(c.get_offsets()).size > 0
+        ]
+        stacked = np.vstack(parts)
+        return stacked[np.argsort(stacked[:, 1])]
+
     try:
-        hpd_offsets = fig.axes[3].collections[0].get_offsets()
+        hpd_offsets = _all_offsets(fig.axes[3])
         np.testing.assert_array_equal(hpd_offsets[:, 0], [10, 10])
         np.testing.assert_allclose(hpd_offsets[:, 1], [0.25, 0.75])
 
-        spike_prob_offsets = fig.axes[5].collections[0].get_offsets()
+        spike_prob_offsets = _all_offsets(fig.axes[5])
         np.testing.assert_array_equal(spike_prob_offsets[:, 0], [10, 10])
         # Plotted as -log10(spike_prob); 0.1 -> 1.0, 0.01 -> 2.0.
         np.testing.assert_allclose(spike_prob_offsets[:, 1], [1.0, 2.0])
