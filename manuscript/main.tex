@@ -200,7 +200,7 @@ The 32-second simulation ($T = \num{32000}$ steps) is partitioned into eight con
     \item[\textbf{Remap} (steps \num{6000}--\num{10000}; decoder side):] the decoder evaluates per-spike likelihoods against a remapped place-field map in which three cell pairs ($0\leftrightarrow 9$, $1\leftrightarrow 8$, $2\leftrightarrow 7$) have swapped centers, so the decoder's intended likelihood is at the wrong location for six of the eleven cells. Spike generation is unchanged.
     \item[\textbf{History-dependent firing} (steps \num{14000}--\num{18000}; generative side):] spikes are generated with a \SI{1}{ms} hard refractory period followed by a 2--\SI{10}{ms} post-spike burst window in which the rate is multiplied by $3\times$, consistent with the rough phenomenology of CA1 pyramidal-cell refractory and burst windows; the decoder continues to assume independent Poisson firing. The per-spike spatial likelihood for any individual spike is unchanged, so the misfit lives entirely in the spike-train temporal joint distribution.
     \item[\textbf{Drift} (steps \num{22000}--\num{26000}; generative side):] the trajectory is generated with persistent velocity, $v_t = 0.8\, v_{t-1} + \eta_t$ and $x_t = x_{t-1} + v_t$ with $\eta_t \sim \mathcal{N}(0, \sigma_{\mathrm{pred}}^{2})$; the decoder continues to assume a memoryless random walk with step standard deviation $\sigma_{\mathrm{pred}}$.
-    \item[\textbf{Wide-dynamics noise} (steps \num{30000}--\num{32000}; decoder side):] the decoder is given an inflated transition matrix with step standard deviation $\sigma_{\mathrm{inflated}} = 20$ a.u.\ (forty times the baseline), so its one-step predictive spreads broadly across the track; spike generation is unchanged. This phase is engineered to inflate the KL divergence while leaving HPD overlap and the rank-based predictive $p$-value near baseline.
+    \item[\textbf{Wide-dynamics noise} (steps \num{30000}--\num{32000}; decoder side):] the decoder is given an inflated transition matrix with step standard deviation $\sigma_{\mathrm{inflated}} = 20$ a.u.\ (forty times the baseline), so its one-step predictive distribution spreads broadly across the track; spike generation is unchanged. This phase is engineered to inflate the KL divergence while leaving HPD overlap and the rank-based predictive $p$-value near baseline.
 \end{description}
 
 The three intermediate clean-recovery windows (steps \num{10000}--\num{14000}; \num{18000}--\num{22000}; \num{26000}--\num{30000}) restore both the generative process and the decoder to the baseline configuration, providing within-session reference periods against which each metric's behavior during a misfit can be calibrated. Each diagnostic can be evaluated directly against a known ground-truth fault, and the three responses can be compared across faults that differ in which side of the model is perturbed. The next subsection traces each metric across the full session, identifying the phases in which one diagnostic flags a fault that the others miss.
@@ -244,7 +244,7 @@ We believe that these local goodness-of-fit tools provide an important step towa
 
 
 \subsection*{Acknowledgments}
-This work was supported by \textcolor{red}{[TODO: funding sources / grant numbers]}. We thank Dr.~Loren Frank and Dr.~Eric Denovellis for providing data and for many helpful discussions related to these methods.
+This work was supported by \textcolor{red}{[TODO: funding sources / grant numbers]}.
 
 
 \bibliographystyle{plainnat}
