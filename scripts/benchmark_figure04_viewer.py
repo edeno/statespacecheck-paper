@@ -126,10 +126,12 @@ def run_benchmark(
         if not was_inflight and viewer._inflight_request_id is not None:  # noqa: SLF001
             request_dispatch_times[viewer._inflight_request_id] = time.perf_counter()  # noqa: SLF001
 
-    # Intentional method-assign so dispatches go through the timing
-    # wrapper. ``cast`` documents that the bound-method shape mismatch
-    # (closure-based callable vs. ``(self) -> None``) is deliberate.
-    viewer._dispatch_load = cast(Any, timed_dispatch)  # noqa: SLF001
+    # Intentional method override so dispatches go through the timing
+    # wrapper. Done via ``setattr`` because a direct attribute assignment
+    # to a bound method is a mypy ``[method-assign]`` error (the
+    # closure-based callable has a different shape than ``(self) -> None``),
+    # and the project forbids ``# type: ignore``.
+    setattr(viewer, "_dispatch_load", timed_dispatch)  # noqa: SLF001, B010
 
     def on_loaded(request_id: int, *_: object) -> None:
         sent = request_dispatch_times.pop(request_id, None)

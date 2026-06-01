@@ -72,6 +72,12 @@ def find_representative_windows(
         "spike_prob": {0.05: "ContFrag better", 0.50: "Similar", 0.95: "Cont better"},
     }
 
+    # Dense matrices populated by the producer; narrow away the Optional.
+    assert continuous_diagnostics.hpd_overlap is not None
+    assert contfrag_diagnostics.hpd_overlap is not None
+    assert continuous_diagnostics.kl_divergence is not None
+    assert contfrag_diagnostics.kl_divergence is not None
+
     n_time = continuous_diagnostics.hpd_overlap.shape[0]
     windows: dict[str, list[tuple[str, int, slice]]] = {}
 
@@ -178,6 +184,12 @@ def run_sanity_check() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     linear_position = position_info["linear_position"].values
+
+    # Dense matrices populated by the producer; narrow away the Optional.
+    assert continuous_diagnostics.hpd_overlap is not None
+    assert contfrag_diagnostics.hpd_overlap is not None
+    assert continuous_diagnostics.kl_divergence is not None
+    assert contfrag_diagnostics.kl_divergence is not None
 
     for metric, metric_windows in windows.items():
         print(f"\n=== {metric} ===")

@@ -117,6 +117,9 @@ def find_continuous_better_periods(
     """
     # Compute running average of HPD overlap for both models
     # HPD overlap shape is (n_time, n_cells) — average across cells first
+    # Dense matrices populated by the producer; narrow away the Optional.
+    assert continuous_diagnostics.hpd_overlap is not None
+    assert contfrag_diagnostics.hpd_overlap is not None
     cont_hpd = continuous_diagnostics.hpd_overlap  # (n_time, n_cells)
     frag_hpd = contfrag_diagnostics.hpd_overlap  # (n_time, n_cells)
 

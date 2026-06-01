@@ -53,7 +53,9 @@ WINDOW_HALF_WIDTH = 50
 # Number of spikes to sample at evenly-spaced KL quantiles
 N_QUANTILE_SPIKES = 20
 
-OUTPUT_ROOT = Path(__file__).parent.parent / "figures" / "preview" / "sanity_check_4a"
+OUTPUT_ROOT = (
+    Path(__file__).parent.parent / "manuscript" / "figures" / "preview" / "sanity_check_4a"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -235,8 +237,8 @@ def plot_spike_sanity(
     fig, axes = plt.subplots(3, 1, figsize=(8, 6), sharex=True, constrained_layout=True)
 
     panels = [
-        (axes[0], predictive, COLORS.predictive, "Predictive posterior"),
-        (axes[1], likelihood_norm, COLORS.likelihood, "Likelihood (norm)"),
+        (axes[0], predictive, COLORS["predictive"], "Predictive posterior"),
+        (axes[1], likelihood_norm, COLORS["likelihood"], "Likelihood (norm)"),
         (axes[2], place_field_rate, "k", "Place field rate"),
     ]
 
@@ -518,6 +520,13 @@ def generate_sanity_plots(
 
     print(f"  Generating {len(sel_t)} plots for {model_name}...")
 
+    # Dense diagnostic matrices are populated here (producer called with
+    # include_dense_matrices=True); narrow away the Optional for the indexing
+    # below.
+    assert diagnostics.hpd_overlap is not None
+    assert diagnostics.kl_divergence is not None
+    assert diagnostics.spike_prob is not None
+
     for t_idx, c_idx in zip(sel_t, sel_c, strict=True):
         pred = predictive_posterior[t_idx]
         rate = place_fields[c_idx]  # (n_bins,) un-normalized rate
@@ -647,6 +656,8 @@ def main() -> None:
 
     # Joint distribution summary
     for name, diag in [("Continuous", continuous_diag), ("ContFrag", contfrag_diag)]:
+        # Dense matrices populated by the producer; narrow away the Optional.
+        assert diag.hpd_overlap is not None and diag.kl_divergence is not None
         hpd = diag.hpd_overlap
         kl = diag.kl_divergence
         valid = ~np.isnan(hpd) & ~np.isnan(kl)
