@@ -3,8 +3,16 @@
 # Default target
 all: main.pdf supplement.pdf
 
+# Convenience aliases so `make main` / `make supplement` build the PDFs
+# (the phony names in .PHONY would otherwise be no-op targets).
+main: main.pdf
+supplement: supplement.pdf
+
+# Figures bundled into the manuscript; changing any should force a rebuild.
+FIGURES := $(wildcard figures/main/*.pdf figures/supplementary/*.pdf)
+
 # Build main manuscript (self-contained: own preamble + embedded bibliography)
-main.pdf: main.tex
+main.pdf: main.tex references.bib $(FIGURES)
 	latexmk -pdf main.tex
 
 # Build supplement
