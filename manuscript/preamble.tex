@@ -37,20 +37,10 @@
 % Units and numbers
 \usepackage{siunitx}
 
-% Modern bibliography system (biblatex + biber)
-\usepackage[
-  style=numeric,        % Numbered citations [1], [2], etc.
-  sorting=none,         % Order by citation (not alphabetical)
-  backend=biber,        % Modern bibliography processor
-  doi=true,             % Include DOI links
-  url=true,             % Include URLs
-  isbn=false,           % Don't show ISBN
-  maxbibnames=99,       % Show all authors in bibliography
-  maxcitenames=2,       % Show max 2 authors in citations
-  giveninits=true,      % Use initials for first names (A. B. Smith)
-  terseinits=true       % No periods in initials (AB Smith not A.B. Smith)
-]{biblatex}
-\addbibresource{references.bib}  % Bibliography file
+% Bibliography (natbib + BibTeX, matching main.tex). The bibliography
+% itself is emitted by \bibliographystyle/\bibliography in the document
+% body (see supplement.tex), processed by BibTeX rather than biber.
+\usepackage[authoryear]{natbib}
 
 % Hyperlinks (must be near end of preamble)
 \usepackage[colorlinks=true,citecolor=blue,linkcolor=blue,urlcolor=blue]{hyperref}

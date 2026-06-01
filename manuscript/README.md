@@ -6,7 +6,7 @@ This directory contains the LaTeX source files for the paper, optimized for bioR
 
 - **main.tex**: Main manuscript text
 - **supplement.tex**: Supplementary materials
-- **preamble.tex**: Shared package configuration (included by both main and supplement)
+- **preamble.tex**: Package configuration used by `supplement.tex` (`main.tex` is self-contained with its own inline preamble)
 - **references.bib**: Bibliography database
 - **.latexmkrc**: Build configuration for latexmk
 - **Makefile**: Convenient build commands
@@ -57,15 +57,15 @@ latexmk -pvc main.tex
 ```bash
 cd manuscript
 
-# Build main manuscript (using modern biblatex + biber)
+# Build main manuscript (natbib + BibTeX; main.tex is self-contained)
 pdflatex main.tex
-biber main          # Modern bibliography processor (not bibtex)
+bibtex main          # main.tex uses natbib/\bibliography, processed by BibTeX
 pdflatex main.tex
 pdflatex main.tex
 
-# Build supplement
+# Build supplement (natbib + BibTeX, via preamble.tex)
 pdflatex supplement.tex
-biber supplement
+bibtex supplement
 pdflatex supplement.tex
 pdflatex supplement.tex
 ```
@@ -128,13 +128,17 @@ To disable for final version, comment out in both files:
 % \linenumbers
 ```
 
-### Shared Preamble
+### Preamble
 
-Both `main.tex` and `supplement.tex` use `preamble.tex` for consistent formatting:
+`supplement.tex` pulls in shared package configuration via `preamble.tex`:
 
 ```latex
 \input{preamble}
 ```
+
+`main.tex` is self-contained: it carries its own inline preamble rather than
+`\input{preamble}`, so its packages and bibliography setup are defined directly
+in the file.
 
 ## Output
 

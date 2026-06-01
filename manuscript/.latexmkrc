@@ -4,8 +4,9 @@
 # Generate PDF using pdflatex
 $pdf_mode = 1;
 
-# Use biber for bibliography (modern biblatex backend)
-$biber = 'biber %O %S';
+# Bibliography: both main.tex and supplement.tex use natbib, so latexmk
+# auto-detects and runs BibTeX (no biber/biblatex). Left to latexmk's
+# default bibtex handling.
 
 # pdflatex command with options
 $pdflatex = 'pdflatex -interaction=nonstopmode -synctex=1 %O %S';
