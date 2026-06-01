@@ -473,7 +473,9 @@ def test_compute_hpd_region() -> None:
 
 ### Coverage
 
-- Aim for >90% code coverage
+- Aim for >90% coverage on the core modules (analysis, simulation, style,
+  plotting); the suite is ~81% overall because the interactive GUI and
+  real-data plotting modules are exercised less
 - Focus on edge cases: empty arrays, NaN values, zero sums
 - Test both 1D and 2D spatial arrays
 

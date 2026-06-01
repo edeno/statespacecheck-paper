@@ -408,7 +408,7 @@ uv run ruff format . && uv run ruff check . && uv run mypy src/ && uv run pytest
 - **Docstrings**: NumPy format with shape specifications
 - **Type hints**: Full mypy strict mode compliance
 - **Style**: ruff for formatting and linting (100 char line length)
-- **Testing**: pytest with >90% coverage target
+- **Testing**: pytest; core modules (analysis, simulation, style, plotting) kept >90% covered, ~81% overall (the interactive GUI and real-data plotting modules are lower)
 - **No `# type: ignore`**: Fix type issues by refactoring, not suppressing
 
 ### Adding New Functionality
