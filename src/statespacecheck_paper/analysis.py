@@ -884,7 +884,7 @@ def decode_and_diagnostics(
     **Algorithm**:
     1. Initialize with flat prior at t=0
     2. For each timestep t:
-       a. Predict: prior = post[t-1] @ transition_matrix
+       a. Predict: prior = transition_matrix @ post[t-1]
        b. Likelihood: compute P(spikes[t] | position) for all cells
        c. Diagnostics: compare prior vs. combined likelihood
        d. Update: post[t] = normalize(prior * combined_likelihood)
@@ -1046,7 +1046,12 @@ def decode_and_diagnostics(
         current_transition = transition_matrix
         if window is not None and window.transition_matrix is not None:
             current_transition = window.transition_matrix
-        prior = normalize(posterior[t - 1] @ current_transition)  # (n_bins,)
+        # ``current_transition`` is column-stochastic: column j is the
+        # distribution over next states given current state j (see
+        # ``gaussian_transition_matrix``). The predictive marginal is therefore
+        # ``T @ post``, not ``post @ T`` — the two differ near the track
+        # boundaries where column normalization breaks the kernel's symmetry.
+        prior = normalize(current_transition @ posterior[t - 1])  # (n_bins,)
         predictive_posterior[t] = prior  # stored for p-value computation
 
         # Per-cell rate table for this step. The baseline Gaussian-PF

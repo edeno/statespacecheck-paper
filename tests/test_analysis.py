@@ -26,7 +26,7 @@ from statespacecheck_paper.analysis import (
     transform_metrics,
 )
 from statespacecheck_paper.figure03_demo import PHASE_LABELS, SimulationResult
-from statespacecheck_paper.simulation import gaussian_transition_matrix
+from statespacecheck_paper.simulation import gaussian_transition_matrix, normalize
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -402,6 +402,48 @@ class TestDecodeAndDiagnostics:
             "alt rates produced no in-window change in per_spike_likelihood; "
             "the schedule may be near-noop."
         )
+
+    def test_predictive_uses_column_stochastic_orientation(self) -> None:
+        """The one-step predictive must marginalize as ``T @ post`` for the
+        column-stochastic transition built by ``gaussian_transition_matrix``
+        (column j is the distribution over next states given current state j).
+
+        With a uniform prior at t=0 and an *asymmetric* transition, the
+        correct orientation yields a predictive proportional to the row sums
+        of ``T``; the transposed orientation (``post @ T``) would instead
+        leave the uniform prior unchanged because the columns sum to 1. The
+        symmetric fixtures used elsewhere cannot tell these apart, so this
+        pins the orientation directly.
+        """
+        # Asymmetric but column-stochastic transition on a 3-bin grid.
+        transition = np.array(
+            [
+                [0.8, 0.1, 0.0],
+                [0.2, 0.6, 0.3],
+                [0.0, 0.3, 0.7],
+            ]
+        )
+        np.testing.assert_allclose(transition.sum(axis=0), 1.0)  # column-stochastic
+        assert not np.allclose(transition, transition.T)  # genuinely asymmetric
+
+        n_time = 3
+        result = decode_and_diagnostics(
+            spikes=np.zeros((n_time, 1), dtype=int),
+            xs=np.array([0.0, 1.0, 2.0]),
+            transition_matrix=transition,
+            pf_centers=np.array([1.0]),
+            pf_width=1.0,
+            rate_scale=0.1,
+        )
+
+        # post[0] is the flat prior; predictive[1] = normalize(T @ post[0]).
+        expected = normalize(transition @ result.posterior[0])
+        np.testing.assert_allclose(result.predictive[1], expected, atol=1e-12)
+
+        # The transposed orientation would return the uniform prior unchanged;
+        # confirm the predictive actually moved so the check above is
+        # discriminating rather than vacuous.
+        assert not np.allclose(result.predictive[1], result.posterior[0])
 
 
 # ---------------------------------------------------------------------------
@@ -1329,9 +1371,17 @@ class TestLogSpaceReferenceComparison:
 
         spikes = decoder_inputs.spikes
         xs = decoder_inputs.xs
-        transition = decoder_inputs.transition_matrix
         n_time, _ = spikes.shape
         n_bins = xs.size
+
+        # Use an *asymmetric* column-stochastic transition (upward drift) so
+        # the reference is a genuine orientation guard. The fixture's
+        # ``_diag_dominant_transition`` is symmetric, so ``T @ post`` and
+        # ``post @ T`` coincide and a production regression to the wrong
+        # orientation would slip through. With this matrix the two differ.
+        transition = np.eye(n_bins) * 0.7 + np.eye(n_bins, k=-1) * 0.3
+        transition /= transition.sum(axis=0, keepdims=True)  # column-stochastic
+        assert not np.allclose(transition, transition.T)  # genuinely asymmetric
 
         # Reference: linear-space prior, log-space combined likelihood,
         # softmax-shift normalization. No reset-to-uniform branch.
@@ -1344,7 +1394,11 @@ class TestLogSpaceReferenceComparison:
         ref_post = np.zeros((n_time, n_bins))
         ref_post[0] = np.ones(n_bins) / n_bins
         for t in range(1, n_time):
-            prior = ref_post[t - 1] @ transition
+            # ``transition`` is column-stochastic (column j = P(next | current
+            # = j)), so the predictive marginal is ``T @ post``. This mirrors
+            # the production convention and keeps the reference an independent
+            # check of orientation, not just of the log-space arithmetic.
+            prior = transition @ ref_post[t - 1]
             prior = prior / prior.sum()
             log_lik = _poisson.logpmf(spikes[t][None, :], rates).sum(axis=1)
             ll_max = float(np.max(log_lik))
@@ -1354,5 +1408,5 @@ class TestLogSpaceReferenceComparison:
             assert norm > 0
             ref_post[t] = weighted / norm
 
-        result = decoder_inputs.call()
+        result = decoder_inputs.call(transition_matrix=transition)
         np.testing.assert_allclose(result.posterior, ref_post, rtol=1e-10, atol=1e-12)

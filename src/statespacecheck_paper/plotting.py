@@ -469,7 +469,10 @@ def plot_misfit_examples(
         else:
             transition_matrix = gaussian_transition_matrix(xs, params.sigx_pred)
 
-        prior = normalize(prev_post @ transition_matrix)
+        # Column-stochastic transition (see ``gaussian_transition_matrix``):
+        # the predictive marginal is ``T @ post``. Mirrors the decoder in
+        # ``decode_and_diagnostics``.
+        prior = normalize(transition_matrix @ prev_post)
 
         active_remap = bnd[PhaseBoundary.REMAP_START] <= example_time < bnd[PhaseBoundary.REMAP_END]
         current_pf_centers = get_remapped_pf_centers(
