@@ -1018,7 +1018,15 @@ def plot_combined_diagnostics(
     ax_hpdo.axhline(
         thresholds.hpd_overlap, color=COLORS["threshold"], linewidth=1.2, alpha=0.7, zorder=10
     )
+    # Symlog y-scale with a tight linthresh expands the worst-fit floor
+    # near 0 (routed through log10(1 + y/linthresh)) instead of
+    # compressing it onto the bottom spine. ylim dips slightly below 0 so
+    # y=0 markers float above the spine (symlog is symmetric around 0).
+    ax_hpdo.set_yscale("symlog", linthresh=0.01, linscale=1.0)
+    ax_hpdo.set_yticks([0.0, 0.01, 0.1, 0.5, 1.0])
+    ax_hpdo.set_yticklabels(["0", "0.01", "0.1", "0.5", "1"])
     ax_hpdo.set_xlim(0, n_time)
+    ax_hpdo.set_ylim(-0.005, 1.0)
     ax_hpdo.set_ylabel("HPD Overlap", fontsize=7, labelpad=7)
     ax_hpdo.tick_params(labelsize=6, labelbottom=False)
     # Add directional indicator and threshold annotation

@@ -880,6 +880,15 @@ def plot_per_cell_diagnostic_scatter(
             color=COLORS["threshold"],
         )
 
+    # HPD overlap: symlog y-scale (matching Figure 3) so the worst-fit
+    # floor near 0 is expanded instead of compressed onto the bottom
+    # spine.
+    if metric_name == "hpd_overlap":
+        ax.set_yscale("symlog", linthresh=0.01, linscale=1.0)
+        ax.set_yticks([0.0, 0.01, 0.1, 0.5, 1.0])
+        ax.set_yticklabels(["0", "0.01", "0.1", "0.5", "1"])
+        ax.set_ylim(-0.005, 1.0)
+
     ax.set_xlim(time_arr.min(), time_arr.max())
     ax.set_ylabel(metric_name if ylabel is None else ylabel, fontsize=7, labelpad=7)
 
