@@ -912,3 +912,108 @@ def compute_model_diagnostics(
     )
 
     return diagnostics
+
+
+@dataclasses.dataclass(frozen=True)
+class FlagConfusion:
+    """Per-spike flag agreement between two decoders for one diagnostic metric.
+
+    A spike is "flagged" when its per-spike diagnostic crosses ``threshold`` in
+    the direction of worse fit. The four counts partition every spike event
+    (finite in both models) by whether model A and/or model B flags it.
+    ``a_only`` is the rescue quadrant: spikes flagged by model A but not model B.
+
+    Attributes
+    ----------
+    metric : str
+        Diagnostic name (e.g. ``"hpd_overlap"``).
+    threshold : float
+        Flag threshold applied to the raw per-spike diagnostic.
+    n : int
+        Number of spike events finite in both models.
+    both, a_only, b_only, neither : int
+        Counts of spikes flagged by both decoders, by model A only, by model B
+        only, and by neither. They sum to ``n``.
+    """
+
+    metric: str
+    threshold: float
+    n: int
+    both: int
+    a_only: int
+    b_only: int
+    neither: int
+
+    @property
+    def rescue_rate(self) -> float:
+        """Fraction of model-A-flagged spikes that model B does not flag.
+
+        Returns ``nan`` when model A flags no spikes.
+        """
+        a_flagged = self.a_only + self.both
+        return self.a_only / a_flagged if a_flagged else float("nan")
+
+
+def compute_flag_confusion(
+    diagnostics_a: PerCellDiagnostics,
+    diagnostics_b: PerCellDiagnostics,
+    metric: str,
+    threshold: float,
+    *,
+    worse_when: Literal["below", "above"],
+) -> FlagConfusion:
+    """Tabulate per-spike flag agreement between two decoders for one metric.
+
+    Parameters
+    ----------
+    diagnostics_a, diagnostics_b : PerCellDiagnostics
+        Per-spike diagnostics for the two decoders, carrying the same spike
+        events in the same order (e.g. Continuous vs Continuous--Fragmented).
+    metric : str
+        Diagnostic base name; the per-spike array ``event_{metric}`` is used.
+    threshold : float
+        Flag threshold applied to the raw per-spike diagnostic.
+    worse_when : {"below", "above"}
+        Whether values below or above ``threshold`` indicate worse fit (i.e.
+        a flag). HPD overlap and the predictive p-value use ``"below"``; the
+        KL divergence uses ``"above"``.
+
+    Returns
+    -------
+    FlagConfusion
+        The 2x2 flag agreement (``a`` = model A, ``b`` = model B).
+
+    Raises
+    ------
+    ValueError
+        If the two diagnostics carry different numbers of spike events, or if
+        ``worse_when`` is not ``"below"`` or ``"above"``.
+    """
+    if worse_when not in ("below", "above"):
+        raise ValueError(f"worse_when must be 'below' or 'above', got {worse_when!r}")
+
+    event_key = f"event_{metric}"
+    a = np.asarray(getattr(diagnostics_a, event_key), dtype=np.float64)
+    b = np.asarray(getattr(diagnostics_b, event_key), dtype=np.float64)
+    if a.shape != b.shape:
+        raise ValueError(
+            f"diagnostics_a[{event_key!r}] and diagnostics_b[{event_key!r}] must carry "
+            f"the same set of spike events in the same order; got {a.shape} vs {b.shape}."
+        )
+
+    finite = np.isfinite(a) & np.isfinite(b)
+    a, b = a[finite], b[finite]
+    if worse_when == "below":
+        flag_a, flag_b = a < threshold, b < threshold
+    else:
+        flag_a, flag_b = a > threshold, b > threshold
+
+    return FlagConfusion(
+        metric=metric,
+        threshold=float(threshold),
+        n=int(a.size),
+        both=int(np.sum(flag_a & flag_b)),
+        a_only=int(np.sum(flag_a & ~flag_b)),
+        b_only=int(np.sum(~flag_a & flag_b)),
+        neither=int(np.sum(~flag_a & ~flag_b)),
+    )

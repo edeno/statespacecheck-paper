@@ -17,7 +17,7 @@ import argparse
 import dataclasses
 import warnings
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import joblib
 import matplotlib.pyplot as plt
@@ -28,6 +28,7 @@ from statespacecheck_paper.analysis import PerCellDiagnostics
 from statespacecheck_paper.load_local_data import load_neural_recording_from_files
 from statespacecheck_paper.paths import ANIMAL_DATE_EPOCH, DATA_PATH
 from statespacecheck_paper.real_data_analysis import (
+    compute_flag_confusion,
     compute_model_diagnostics,
     create_decoder_environment,
     extract_place_fields,
@@ -216,6 +217,29 @@ def run_demo(*, use_cache: bool = True) -> None:
         "kl_divergence": 4.52,
         "spike_prob": 0.05,
     }
+
+    # Per-spike flag agreement between the two decoders at these thresholds.
+    # "Cont-only" is the rescue quadrant (flagged by Continuous but not by
+    # Continuous-Fragmented); "rescue" is its fraction of all Continuous flags.
+    metric_directions: dict[str, Literal["below", "above"]] = {
+        "hpd_overlap": "below",
+        "kl_divergence": "above",
+        "spike_prob": "below",
+    }
+    print("\n=== Flag agreement: Continuous (A) vs Cont-Frag (B) ===")
+    for metric, worse_when in metric_directions.items():
+        conf = compute_flag_confusion(
+            continuous_diagnostics,
+            contfrag_diagnostics,
+            metric,
+            diagnostic_thresholds[metric],
+            worse_when=worse_when,
+        )
+        print(
+            f"  {metric}: n={conf.n:,} both={conf.both:,} cont-only={conf.a_only:,} "
+            f"cf-only={conf.b_only:,} neither={conf.neither:,} "
+            f"rescue={100 * conf.rescue_rate:.1f}%"
+        )
 
     # Define time slices
     context_slice = slice(

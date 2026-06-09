@@ -13,6 +13,7 @@ import xarray as xr
 
 from statespacecheck_paper.analysis import PerCellDiagnostics
 from statespacecheck_paper.real_data_analysis import (
+    compute_flag_confusion,
     compute_per_cell_diagnostics,
     compute_running_average,
     extract_place_fields,
@@ -551,3 +552,73 @@ class TestPlotPerCellDiagnosticScatterRunningAverage:
         wrong = np.mean(-np.log(np.maximum(spike_probs, 1e-10)), axis=1)
         assert not np.allclose(y_actual, wrong, rtol=1e-3)
         plt.close(fig)
+
+
+def _diag_from_events(
+    *,
+    hpd: np.ndarray | None = None,
+    kl: np.ndarray | None = None,
+    sp: np.ndarray | None = None,
+) -> PerCellDiagnostics:
+    """Minimal ``PerCellDiagnostics`` carrying only the per-spike event arrays.
+
+    ``compute_flag_confusion`` reads a single ``event_*`` array; the rest of the
+    dataclass is required by the constructor but unused here.
+    """
+    present = [a for a in (hpd, kl, sp) if a is not None]
+    n = present[0].shape[0]
+    zeros = np.zeros(n)
+    return PerCellDiagnostics(
+        event_time_ind=np.zeros(n, dtype=np.intp),
+        event_cell_ind=np.zeros(n, dtype=np.intp),
+        event_hpd_overlap=hpd if hpd is not None else zeros,
+        event_kl_divergence=kl if kl is not None else zeros,
+        event_spike_prob=sp if sp is not None else zeros,
+        hpd_overlap=None,
+        kl_divergence=None,
+        spike_prob=None,
+        per_spike_likelihood=None,
+    )
+
+
+class TestComputeFlagConfusion:
+    def test_below_direction_counts_and_rescue_rate(self) -> None:
+        a = _diag_from_events(hpd=np.array([0.01, 0.02, 0.10, 0.20, 0.03]))
+        b = _diag_from_events(hpd=np.array([0.01, 0.20, 0.02, 0.20, 0.20]))
+        conf = compute_flag_confusion(a, b, "hpd_overlap", 0.05, worse_when="below")
+        assert (conf.n, conf.both, conf.a_only, conf.b_only, conf.neither) == (5, 1, 2, 1, 1)
+        assert conf.both + conf.a_only + conf.b_only + conf.neither == conf.n
+        assert conf.rescue_rate == pytest.approx(2 / 3)
+
+    def test_above_direction(self) -> None:
+        a = _diag_from_events(kl=np.array([5.0, 6.0, 1.0, 2.0]))
+        b = _diag_from_events(kl=np.array([5.0, 1.0, 7.0, 1.0]))
+        conf = compute_flag_confusion(a, b, "kl_divergence", 4.0, worse_when="above")
+        assert (conf.both, conf.a_only, conf.b_only, conf.neither) == (1, 1, 1, 1)
+        assert conf.rescue_rate == pytest.approx(0.5)
+
+    def test_nan_events_are_dropped(self) -> None:
+        a = _diag_from_events(hpd=np.array([0.01, np.nan, 0.02]))
+        b = _diag_from_events(hpd=np.array([0.20, 0.01, 0.02]))
+        conf = compute_flag_confusion(a, b, "hpd_overlap", 0.05, worse_when="below")
+        # The NaN spike is dropped; remaining A=[0.01, 0.02], B=[0.20, 0.02].
+        assert (conf.n, conf.both, conf.a_only, conf.b_only, conf.neither) == (2, 1, 1, 0, 0)
+
+    def test_rescue_rate_nan_when_a_flags_nothing(self) -> None:
+        a = _diag_from_events(hpd=np.array([0.5, 0.6]))  # none below 0.05
+        b = _diag_from_events(hpd=np.array([0.01, 0.6]))
+        conf = compute_flag_confusion(a, b, "hpd_overlap", 0.05, worse_when="below")
+        assert conf.a_only == 0 and conf.both == 0
+        assert np.isnan(conf.rescue_rate)
+
+    def test_rejects_bad_direction(self) -> None:
+        a = _diag_from_events(hpd=np.array([0.1]))
+        bad: Any = "sideways"
+        with pytest.raises(ValueError, match="worse_when"):
+            compute_flag_confusion(a, a, "hpd_overlap", 0.05, worse_when=bad)
+
+    def test_rejects_length_mismatch(self) -> None:
+        a = _diag_from_events(hpd=np.array([0.1, 0.2]))
+        b = _diag_from_events(hpd=np.array([0.1]))
+        with pytest.raises(ValueError, match="same set of spike events"):
+            compute_flag_confusion(a, b, "hpd_overlap", 0.05, worse_when="below")
