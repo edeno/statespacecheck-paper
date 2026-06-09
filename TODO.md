@@ -51,6 +51,26 @@ log switch, and the best-practices / grammar-and-argument reviews.
   statistic is renamed `D_{k,j}` → `p_{k,j}` (it is a p-value, avoiding the clash
   with `D_{\mathrm{KL}}`).
 
+- [ ] **14. `Ref2015a` is likely a swapped citation (High).** It is cited in the
+  Introduction for "some state-space models smooth emotional movement into a
+  low-dimensional trajectory," but `Ref2015a` (Deng et al., *Clusterless decoding of
+  position from multiunit activity using a marked point process filter*, Neural
+  Comput. 2015) is about spatial-position decoding with no affective content. The
+  intended reference is probably `Ref2024a` (Vinograd et al., affective line-attractor,
+  Nature 2024), already in the bib. Verify and swap.
+
+- [ ] **15. `Ref2007` metadata is wrong** in `references.bib` (Bayarri & Castellanos,
+  "Bayesian Checking of the Second Levels of Hierarchical Models"). The entry has
+  `journal = {Institute of Mathematical Statistics}` and `pages = {363--367}`; the
+  correct venue is *Statistical Science* 22(3):322--343, 2007 (DOI 10.1214/07-STS235).
+  Fix the journal, volume/number, and pages.
+
+- [ ] **16. Bibliography cleanup.** `Ref2014c` (Newman et al., *Modelling Population
+  Dynamics*) is a Springer book but is entered as `@article` with the series name as
+  the journal — fix the entry type. Also prune the ~43 uncited entries and the
+  confusing near-duplicate keys (`Ref2014c` / `Ref2014b` / `Ref2014c_archer`,
+  `Ref2024a` / `Ref2024a_chu`) before submission.
+
 ## Done
 
 - [x] **Threshold description (Simulation Results).** Resolved. Verified against
