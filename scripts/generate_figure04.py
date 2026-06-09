@@ -277,7 +277,7 @@ def run_demo(*, use_cache: bool = True) -> None:
 
     # Two-row figure: decoding panels on top, track+hexbin row on bottom.
     fig = plt.figure(figsize=(10.0, 9.5), dpi=450, constrained_layout=True)
-    subfigs_rows = fig.subfigures(2, 1, height_ratios=[6.5, 3.0], hspace=0.04)
+    subfigs_rows = fig.subfigures(2, 1, height_ratios=[6.5, 2.6], hspace=0.0)
 
     # Top row: three columns (a) context, (b) Continuous detail, (c) ContFrag detail
     subfigs = subfigs_rows[0].subfigures(1, 3, width_ratios=[3, 2, 2], wspace=0.03)
