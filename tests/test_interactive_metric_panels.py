@@ -85,7 +85,7 @@ def test_three_metric_panels_constructed(tmp_path: Path) -> None:
         ds.close()
 
 
-def test_metric_panel_displays_neglog10_for_spike_prob(tmp_path: Path) -> None:
+def test_metric_panel_displays_neglog_for_spike_prob(tmp_path: Path) -> None:
     _build_cache(tmp_path / "cache")
     app, viewer, ds = _make_viewer(tmp_path / "cache")
     try:
@@ -97,13 +97,13 @@ def test_metric_panel_displays_neglog10_for_spike_prob(tmp_path: Path) -> None:
         x_data, y_data = sp_panel._scatter.getData()  # noqa: SLF001
         # All displayed values are non-negative (since spike_prob is in (0,1]).
         assert (y_data >= 0).all()
-        # Compare against the raw event values: y == -log10(raw).
+        # Compare against the raw event values: y == -log(raw) (natural log).
         sl = viewer.slice_panel._buffer_slice  # noqa: SLF001
         events = ds.events_in_window(sl)
         if not events.empty:
             np.testing.assert_array_almost_equal(
                 np.asarray(y_data, dtype=np.float64),
-                -np.log10(np.maximum(events["event_spike_prob"].to_numpy(), 1e-12)),
+                -np.log(np.maximum(events["event_spike_prob"].to_numpy(), 1e-12)),
                 decimal=4,
             )
     finally:

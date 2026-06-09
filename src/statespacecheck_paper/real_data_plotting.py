@@ -673,7 +673,7 @@ def plot_per_cell_diagnostic_scatter(
     Each point represents one cell at one time point. Values are scattered
     to show the distribution of diagnostics across cells.
 
-    For spike_prob, values are transformed to -log10 scale to match Figure 3
+    For spike_prob, values are transformed to -log(p) (natural log) scale to match Figure 3
     visualization where higher values indicate worse fit.
 
     Parameters
@@ -746,12 +746,12 @@ def plot_per_cell_diagnostic_scatter(
         None if event_metric_values is None else np.asarray(event_metric_values).copy()
     )
 
-    # Transform spike_prob to -log10 scale (matching Figure 3)
+    # Transform spike_prob to -log(p) (natural log) scale (matching Figure 3)
     # Higher values indicate worse fit (low probability)
     if metric_name == "spike_prob":
-        metric = -np.log10(np.maximum(metric, 1e-10))
+        metric = -np.log(np.maximum(metric, 1e-10))
         if threshold is not None:
-            threshold = -np.log10(max(threshold, 1e-10))
+            threshold = -np.log(max(threshold, 1e-10))
 
     n_time, n_cells = metric.shape
 
@@ -763,7 +763,7 @@ def plot_per_cell_diagnostic_scatter(
         x_positions_arr = event_times_arr[event_mask]
         y_values_arr = raw_event_metric_values[event_mask]
         if metric_name == "spike_prob":
-            y_values_arr = -np.log10(np.maximum(y_values_arr, 1e-10))
+            y_values_arr = -np.log(np.maximum(y_values_arr, 1e-10))
         valid = ~np.isnan(y_values_arr)
         x_positions_arr = x_positions_arr[valid]
         y_values_arr = y_values_arr[valid]
@@ -837,7 +837,7 @@ def plot_per_cell_diagnostic_scatter(
 
         # Transform running average if needed (same as scatter points)
         if metric_name == "spike_prob":
-            running_avg = -np.log10(np.maximum(running_avg, 1e-10))
+            running_avg = -np.log(np.maximum(running_avg, 1e-10))
 
         # Determine line color (darker version of scatter color if not specified)
         line_color: str | tuple[float, ...]
@@ -1360,7 +1360,7 @@ def plot_single_model_diagnostics(
     - Row 2: Spike raster (sorted by place field peak)
     - Row 3: HPD overlap scatter
     - Row 4: KL divergence scatter
-    - Row 5: Spike probability scatter (-log10 scale)
+    - Row 5: Spike probability scatter (-log(p), natural log scale)
 
     Parameters
     ----------
@@ -1588,7 +1588,7 @@ def plot_per_spike_metric_hexbin_row(
         ``(n_spikes,)``).
     axes : Sequence[matplotlib.axes.Axes]
         Three axes, one per metric (HPD overlap, KL divergence,
-        ``-log10(p)``).
+        ``-log(p)`` natural log).
     model_a_name, model_b_name : str
         Axis labels for each decoder.
     """
@@ -1598,7 +1598,7 @@ def plot_per_spike_metric_hexbin_row(
     metric_specs = [
         ("event_hpd_overlap", "HPD overlap", COLORS["hpd_overlap"], False),
         ("event_kl_divergence", "KL divergence", COLORS["kl_divergence"], False),
-        ("event_spike_prob", r"$-\log_{10}(p)$", COLORS["metric_combined"], True),
+        ("event_spike_prob", r"$-\log(p)$", COLORS["metric_combined"], True),
     ]
 
     for ax, (key, title, color, log_transform) in zip(axes, metric_specs, strict=True):
@@ -1611,8 +1611,8 @@ def plot_per_spike_metric_hexbin_row(
                 f"got shapes {data_a.shape} vs {data_b.shape}."
             )
         if log_transform:
-            data_a = -np.log10(np.maximum(data_a, 1e-10))
-            data_b = -np.log10(np.maximum(data_b, 1e-10))
+            data_a = -np.log(np.maximum(data_a, 1e-10))
+            data_b = -np.log(np.maximum(data_b, 1e-10))
 
         valid = np.isfinite(data_a) & np.isfinite(data_b)
         data_a = data_a[valid]

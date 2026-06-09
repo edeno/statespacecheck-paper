@@ -1572,7 +1572,7 @@ def transform_metrics(
     **Transformations**:
     - HPD overlap: -log10(HPDO + eps1) - emphasizes low values (worse fit)
     - KL divergence: sqrt(KL) - compresses high values
-    - spike_prob: -log10(spikeProb + eps2) - emphasizes low values (worse fit)
+    - spike_prob: -log(spikeProb + eps2) (natural log) - emphasizes low values (worse fit)
 
     The same transformations are applied to the threshold values.
 
@@ -1616,7 +1616,7 @@ def transform_metrics(
     >>> transformed.kl_divergence  # sqrt(KL)
     array([[1., 2.],
            [3., 4.]])
-    >>> np.allclose(transformed.spike_prob_threshold, -np.log10(0.05 + 1e-10))
+    >>> np.allclose(transformed.spike_prob_threshold, -np.log(0.05 + 1e-10))
     True
     """
 
@@ -1626,7 +1626,7 @@ def transform_metrics(
 
     hpd_overlap_transformed = -np.log10(np.maximum(_get("hpd_overlap") + eps1, 1e-10))
     kl_divergence_transformed = np.sqrt(_get("kl_divergence"))
-    spike_prob_transformed = -np.log10(np.maximum(_get("spike_prob") + eps2, 1e-10))
+    spike_prob_transformed = -np.log(np.maximum(_get("spike_prob") + eps2, 1e-10))
 
     return Transformed(
         hpd_overlap=hpd_overlap_transformed,
@@ -1634,5 +1634,5 @@ def transform_metrics(
         spike_prob=spike_prob_transformed,
         hpd_overlap_threshold=-np.log10(max(thresholds.hpd_overlap + eps1, 1e-10)),
         kl_divergence_threshold=np.sqrt(thresholds.kl_divergence),
-        spike_prob_threshold=-np.log10(max(thresholds.spike_prob + eps2, 1e-10)),
+        spike_prob_threshold=-np.log(max(thresholds.spike_prob + eps2, 1e-10)),
     )

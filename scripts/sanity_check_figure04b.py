@@ -84,10 +84,10 @@ def find_representative_windows(
     for metric in metrics:
         diff = getattr(contfrag_diagnostics, metric) - getattr(continuous_diagnostics, metric)
 
-        # Transform spike_prob to -log10 scale for consistency with 4b
+        # Transform spike_prob to -log(p) (natural log) scale for consistency with 4b
         if metric == "spike_prob":
-            a = -np.log10(np.maximum(getattr(continuous_diagnostics, metric), 1e-10))
-            b = -np.log10(np.maximum(getattr(contfrag_diagnostics, metric), 1e-10))
+            a = -np.log(np.maximum(getattr(continuous_diagnostics, metric), 1e-10))
+            b = -np.log(np.maximum(getattr(contfrag_diagnostics, metric), 1e-10))
             diff = b - a
 
         # Median across cells at each time point

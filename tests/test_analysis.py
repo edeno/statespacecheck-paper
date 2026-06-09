@@ -633,7 +633,7 @@ class TestTransformMetrics:
             transformed.hpd_overlap, -np.log10(metrics["hpd_overlap"] + eps1)
         )
         np.testing.assert_allclose(transformed.kl_divergence, np.sqrt(metrics["kl_divergence"]))
-        np.testing.assert_allclose(transformed.spike_prob, -np.log10(metrics["spike_prob"] + eps2))
+        np.testing.assert_allclose(transformed.spike_prob, -np.log(metrics["spike_prob"] + eps2))
         assert transformed.hpd_overlap_threshold == pytest.approx(
             -np.log10(thresholds.hpd_overlap + eps1)
         )
@@ -641,7 +641,7 @@ class TestTransformMetrics:
             np.sqrt(thresholds.kl_divergence)
         )
         assert transformed.spike_prob_threshold == pytest.approx(
-            -np.log10(thresholds.spike_prob + eps2)
+            -np.log(thresholds.spike_prob + eps2)
         )
 
     def test_nan_inputs_propagate_to_outputs(self) -> None:

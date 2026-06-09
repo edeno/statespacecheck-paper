@@ -520,8 +520,8 @@ class TestPlotPerCellDiagnosticScatterRunningAverage:
         assert not np.allclose(_line_y(0.05), _line_y(0.2))
 
     def test_spike_prob_running_average_uses_raw_then_transforms(self) -> None:
-        """Critical correctness: -log10(mean(p)) != mean(-log10(p)). Running
-        average must average raw probabilities first, then take -log10."""
+        """Critical correctness: -log(mean(p)) != mean(-log(p)). Running
+        average must average raw probabilities first, then take -log."""
         spike_probs = np.array(
             [
                 [0.01, 0.99],  # mean(raw) = 0.5
@@ -543,11 +543,11 @@ class TestPlotPerCellDiagnosticScatterRunningAverage:
         )
         y_actual = np.asarray(ax.lines[0].get_ydata())
 
-        # Correct path: average raw, then -log10.
-        expected = -np.log10(np.maximum(np.mean(spike_probs, axis=1), 1e-10))
+        # Correct path: average raw, then -log (natural log).
+        expected = -np.log(np.maximum(np.mean(spike_probs, axis=1), 1e-10))
         np.testing.assert_allclose(y_actual, expected, rtol=1e-3)
 
-        # Wrong path: -log10 first, then average. Different on rows 0 and 1.
-        wrong = np.mean(-np.log10(np.maximum(spike_probs, 1e-10)), axis=1)
+        # Wrong path: -log first, then average. Different on rows 0 and 1.
+        wrong = np.mean(-np.log(np.maximum(spike_probs, 1e-10)), axis=1)
         assert not np.allclose(y_actual, wrong, rtol=1e-3)
         plt.close(fig)

@@ -299,8 +299,8 @@ def test_plot_combined_diagnostics_uses_event_diagnostics_for_scatter() -> None:
 
         spike_prob_offsets = fig.axes[5].collections[0].get_offsets()
         np.testing.assert_array_equal(spike_prob_offsets[:, 0], [10, 10])
-        # Plotted as -log10(spike_prob); 0.1 -> 1.0, 0.01 -> 2.0.
-        np.testing.assert_allclose(spike_prob_offsets[:, 1], [1.0, 2.0])
+        # Plotted as -log(spike_prob) (natural log); 0.1 -> -ln(0.1), 0.01 -> -ln(0.01).
+        np.testing.assert_allclose(spike_prob_offsets[:, 1], [-np.log(0.1), -np.log(0.01)])
     finally:
         plt.close(fig)
 

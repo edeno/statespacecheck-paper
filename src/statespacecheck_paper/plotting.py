@@ -1074,10 +1074,11 @@ def plot_combined_diagnostics(
         color=COLORS["threshold"],
     )
 
-    # Spike probability: transform to -log10(p) so higher values indicate worse fit
-    # This makes interpretation consistent with KL divergence (higher = worse)
-    spike_prob_transformed = -np.log10(np.maximum(spike_prob_values, 1e-10))
-    threshold_transformed = -np.log10(np.maximum(thresholds.spike_prob, 1e-10))
+    # Spike probability: transform to -log(p) (natural log) so higher values indicate
+    # worse fit. This makes interpretation consistent with KL divergence (higher = worse)
+    # and with the manuscript convention (-log(0.05) ~ 3.0).
+    spike_prob_transformed = -np.log(np.maximum(spike_prob_values, 1e-10))
+    threshold_transformed = -np.log(np.maximum(thresholds.spike_prob, 1e-10))
     ax_spike.scatter(
         spike_prob_time_ind,
         spike_prob_transformed,
@@ -1095,7 +1096,7 @@ def plot_combined_diagnostics(
         label="Threshold",
     )
     ax_spike.set_xlim(0, n_time)
-    ax_spike.set_ylabel(r"$-\log_{10}(p)$", fontsize=7, labelpad=7)
+    ax_spike.set_ylabel(r"$-\log(p)$", fontsize=7, labelpad=7)
     ax_spike.set_xlabel("Time (a.u.)", fontsize=7, labelpad=7)
     ax_spike.tick_params(labelsize=7)
     # Add directional indicator (higher values now indicate misfit after log transform)
@@ -1258,7 +1259,7 @@ def plot_combined_diagnostics(
     ax_summary.imshow(norm_frac, cmap="YlOrRd", aspect="auto", vmin=0, vmax=1)
 
     # Metric labels
-    metric_labels = ["HPD\nOverlap", "KL\nDivergence", r"$-\log_{10}(p)$"]
+    metric_labels = ["HPD\nOverlap", "KL\nDivergence", r"$-\log(p)$"]
     ax_summary.set_yticks(range(3))
     ax_summary.set_yticklabels(metric_labels, fontsize=6)
 

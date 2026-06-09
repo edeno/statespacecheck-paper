@@ -6,7 +6,7 @@ This module owns the per-row plot widgets the viewer composes:
   the left-hand time axis.
 - ``RasterPanel`` — sorted spike raster.
 - ``MetricPanel`` — per-spike scatter for one of HPD overlap,
-  KL divergence, or ``-log10(spike_prob)``.
+  KL divergence, or ``-log(spike_prob)``.
 - ``SlicePanel`` — the right-hand stacked slice column with the
   population-likelihood plot and a pool of per-cell-likelihood rows.
 
@@ -94,7 +94,7 @@ METRIC_COLORS: dict[MetricName, tuple[int, int, int]] = {
 METRIC_TITLES: dict[MetricName, str] = {
     "event_hpd_overlap": "HPD overlap",
     "event_kl_divergence": "KL divergence",
-    "event_spike_prob": "-log10(p)",
+    "event_spike_prob": "-log(p)",
 }
 
 # Slice-panel y-range hard limits. All curves in the slice column are
@@ -534,10 +534,10 @@ class MetricPanel(pg.PlotWidget):
 
         # Threshold horizontal line for the two metrics that have one
         # in the existing Figure 4 (HPD overlap = 0.05, spike_prob =
-        # 0.05 ⇒ -log10(0.05) ≈ 1.30 on this axis).
+        # 0.05 ⇒ -log(0.05) ≈ 3.0 on this axis).
         self._threshold_line: pg.InfiniteLine | None = None
         if threshold is not None:
-            disp = -np.log10(threshold) if metric == "event_spike_prob" else threshold
+            disp = -np.log(threshold) if metric == "event_spike_prob" else threshold
             self._threshold_line = pg.InfiniteLine(
                 pos=float(disp),
                 angle=0,
@@ -627,14 +627,14 @@ class MetricPanel(pg.PlotWidget):
             return
         self._pin_line.setPos(relative_time)
         self._pin_line.setVisible(True)
-        disp = -np.log10(metric_value) if self._metric == "event_spike_prob" else metric_value
+        disp = -np.log(metric_value) if self._metric == "event_spike_prob" else metric_value
         self._pin_dot.setData(x=[relative_time], y=[float(disp)])
         self._pin_dot.setVisible(True)
 
     def _display_values(self, raw: NDArray[np.float32]) -> NDArray[np.float32]:
         if self._metric == "event_spike_prob":
             safe = np.maximum(raw, 1e-12, dtype=np.float32)
-            return np.asarray(-np.log10(safe), dtype=np.float32)
+            return np.asarray(-np.log(safe), dtype=np.float32)
         return np.asarray(raw, dtype=np.float32)
 
     def _handle_click(self, _scatter: pg.ScatterPlotItem, points: Any) -> None:
