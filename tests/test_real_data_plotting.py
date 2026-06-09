@@ -166,3 +166,45 @@ class TestPlotPerSpikeMetricHexbinRow:
         with pytest.raises(ValueError, match="axes must have length 3"):
             plot_per_spike_metric_hexbin_row(diag_a, diag_b, axes)
         plt.close(fig)
+
+    def test_thresholds_draw_dotted_lines_and_rescue_patch(
+        self,
+        paired_diagnostics: tuple[PerCellDiagnostics, PerCellDiagnostics],
+    ) -> None:
+        """Passing ``thresholds`` adds two dotted threshold lines (one per
+        axis) and one shaded rescue-quadrant rectangle to every panel.
+        """
+        from matplotlib.patches import Rectangle
+
+        diag_a, diag_b = paired_diagnostics
+        thresholds = {"hpd_overlap": 0.05, "kl_divergence": 4.52, "spike_prob": 0.05}
+
+        fig, axes = plt.subplots(1, 3)
+        plot_per_spike_metric_hexbin_row(diag_a, diag_b, axes, thresholds=thresholds)
+
+        for ax in axes:
+            dotted = [ln for ln in ax.lines if ln.get_linestyle() in (":", "dotted")]
+            assert len(dotted) >= 2, (
+                f"{ax.get_title()!r}: expected 2 dotted threshold lines, got {len(dotted)}"
+            )
+            rects = [p for p in ax.patches if isinstance(p, Rectangle)]
+            assert rects, f"{ax.get_title()!r}: no shaded rescue-quadrant patch"
+        plt.close(fig)
+
+    def test_no_thresholds_leaves_panels_unshaded(
+        self,
+        paired_diagnostics: tuple[PerCellDiagnostics, PerCellDiagnostics],
+    ) -> None:
+        """Without ``thresholds`` (the default), no dotted lines or rescue
+        patches are drawn — only the dashed identity line per panel.
+        """
+        from matplotlib.patches import Rectangle
+
+        diag_a, diag_b = paired_diagnostics
+        fig, axes = plt.subplots(1, 3)
+        plot_per_spike_metric_hexbin_row(diag_a, diag_b, axes)
+
+        for ax in axes:
+            assert not [ln for ln in ax.lines if ln.get_linestyle() in (":", "dotted")]
+            assert not [p for p in ax.patches if isinstance(p, Rectangle)]
+        plt.close(fig)

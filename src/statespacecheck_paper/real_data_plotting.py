@@ -28,6 +28,7 @@ import pandas as pd
 import xarray as xr
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
+from matplotlib.patches import Rectangle
 from numpy.typing import NDArray
 from scipy.ndimage import label
 
@@ -1566,6 +1567,7 @@ def plot_per_spike_metric_hexbin_row(
     *,
     model_a_name: str = "Continuous",
     model_b_name: str = "Cont-Frag",
+    thresholds: dict[str, float] | None = None,
 ) -> None:
     """Plot a 1x3 row of hexbin densities comparing per-spike diagnostics between two decoders.
 
@@ -1591,17 +1593,36 @@ def plot_per_spike_metric_hexbin_row(
         ``-log(p)`` natural log).
     model_a_name, model_b_name : str
         Axis labels for each decoder.
+    thresholds : dict[str, float], optional
+        Per-metric flag thresholds keyed by ``hpd_overlap``, ``kl_divergence``,
+        ``spike_prob`` (raw values; the ``spike_prob`` cutoff is transformed to
+        the ``-log(p)`` axis). When given, each panel draws dotted threshold
+        lines on both axes and lightly shades the quadrant of spikes flagged by
+        model A but not model B. Metrics absent from the dict get no lines.
     """
     if len(axes) != 3:
         raise ValueError(f"axes must have length 3, got {len(axes)}")
 
+    # (event key, title, color, log_transform, threshold key, worse-fit direction).
+    # "direction" is relative to the plotted axis: HPD overlap flags low values
+    # ("below"); KL divergence and the (log-transformed) predictive p-value flag
+    # high values ("above").
     metric_specs = [
-        ("event_hpd_overlap", "HPD overlap", COLORS["hpd_overlap"], False),
-        ("event_kl_divergence", "KL divergence", COLORS["kl_divergence"], False),
-        ("event_spike_prob", r"$-\log(p)$", COLORS["metric_combined"], True),
+        ("event_hpd_overlap", "HPD overlap", COLORS["hpd_overlap"], False, "hpd_overlap", "below"),
+        (
+            "event_kl_divergence",
+            "KL divergence",
+            COLORS["kl_divergence"],
+            False,
+            "kl_divergence",
+            "above",
+        ),
+        ("event_spike_prob", r"$-\log(p)$", COLORS["metric_combined"], True, "spike_prob", "above"),
     ]
 
-    for ax, (key, title, color, log_transform) in zip(axes, metric_specs, strict=True):
+    for ax, (key, title, color, log_transform, thr_key, direction) in zip(
+        axes, metric_specs, strict=True
+    ):
         data_a = np.asarray(getattr(diagnostics_a, key), dtype=np.float64)
         data_b = np.asarray(getattr(diagnostics_b, key), dtype=np.float64)
         if data_a.shape != data_b.shape:
@@ -1638,6 +1659,77 @@ def plot_per_spike_metric_hexbin_row(
         margin = (lims[1] - lims[0]) * 0.05
         padded_lims = (lims[0] - margin, lims[1] + margin)
         ax.plot(padded_lims, padded_lims, color=COLORS["threshold"], lw=0.8, ls="--", alpha=0.7)
+
+        # Per-metric flag threshold: dotted lines on both axes (same scalar on
+        # x=model A and y=model B), plus light shading of the "rescue" quadrant —
+        # spikes flagged by model A (Continuous) but not model B (Cont-Frag).
+        thr_raw = thresholds.get(thr_key) if thresholds else None
+        if thr_raw is not None:
+            thr = -np.log(max(thr_raw, 1e-10)) if log_transform else float(thr_raw)
+            lo, hi = padded_lims
+            if direction == "below":
+                # Flagged below threshold: A flagged (x < thr), B not (y > thr).
+                rect_xy, rect_w, rect_h = (lo, thr), thr - lo, hi - thr
+            else:
+                # Flagged above threshold: A flagged (x > thr), B not (y < thr).
+                rect_xy, rect_w, rect_h = (thr, lo), hi - thr, thr - lo
+            # Dotted threshold cross spanning the panel (reads the cutoff on each axis).
+            ax.axvline(thr, color=COLORS["threshold"], lw=0.8, ls=":", alpha=0.7, zorder=2)
+            ax.axhline(thr, color=COLORS["threshold"], lw=0.8, ls=":", alpha=0.7, zorder=2)
+            # Accent-outlined callout box framing the "rescue" quadrant: spikes
+            # flagged by model A but not model B. A solid coloured border reads as
+            # "look here", unlike a muted gray fill.
+            rescue_accent = "#D55E00"  # Wong vermillion, distinct from the metric colours
+            ax.add_patch(
+                Rectangle(
+                    rect_xy,
+                    rect_w,
+                    rect_h,
+                    facecolor=mcolors.to_rgba(rescue_accent, 0.07),
+                    edgecolor=rescue_accent,
+                    linewidth=1.4,
+                    zorder=4,
+                )
+            )
+            label = f"flagged by\n{model_a_name} only"
+            label_bbox = {
+                "boxstyle": "round,pad=0.15",
+                "facecolor": "white",
+                "edgecolor": "none",
+                "alpha": 0.7,
+            }
+            if direction == "below":
+                # Rescue box is a tall left strip (HPD overlap) full of points;
+                # place the label above the panel so it does not cover the data.
+                ax.text(
+                    0.02,
+                    1.02,
+                    label,
+                    transform=ax.transAxes,
+                    ha="left",
+                    va="bottom",
+                    fontsize=5.0,
+                    color=rescue_accent,
+                    fontstyle="italic",
+                    zorder=5,
+                    clip_on=False,
+                )
+            else:
+                # Rescue box is in the lower-right (KL, -log(p)); place the label
+                # at the bottom edge of the box, in the sparse far corner.
+                ax.text(
+                    rect_xy[0] + rect_w / 2.0,
+                    rect_xy[1],
+                    label,
+                    ha="center",
+                    va="bottom",
+                    fontsize=5.0,
+                    color=rescue_accent,
+                    fontstyle="italic",
+                    zorder=5,
+                    bbox=label_bbox,
+                )
+
         ax.set_xlim(padded_lims)
         ax.set_ylim(padded_lims)
         ax.set_aspect("equal", adjustable="box")
