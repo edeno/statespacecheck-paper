@@ -119,5 +119,7 @@ if __name__ == "__main__":
     #   params = DecodeParams(
     #       phase_boundaries=(600, 900, 1100, 1400, 1600, 1900, 2100, 2400),
     #   )
-    params = DecodeParams()
+    # drift_momentum=0.88 (vs the 0.8 default) makes the drift misfit a bit
+    # larger/faster so it is more visible in the figure.
+    params = DecodeParams(drift_momentum=0.88)
     run_demo(params)
