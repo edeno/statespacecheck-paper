@@ -13,10 +13,13 @@ Requires:
 
 from __future__ import annotations
 
+import argparse
 import dataclasses
 import warnings
+from pathlib import Path
 from typing import Any
 
+import joblib
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.transforms import blended_transform_factory
@@ -43,6 +46,17 @@ from statespacecheck_paper.style import save_figure, set_figure_defaults
 # -----------------------------
 
 __all__ = ["ANIMAL_DATE_EPOCH", "DATA_PATH"]
+
+
+def _fig4_cache_path() -> Path:
+    """Path for the cached Figure-4 decoder outputs (under data/intermediates).
+
+    A single joblib bundle is used rather than netCDF because the decoder
+    results carry a ``state_bins`` MultiIndex coordinate, which netCDF cannot
+    serialize; joblib (pickle) preserves it exactly.
+    """
+    return DATA_PATH / "intermediates" / f"{ANIMAL_DATE_EPOCH}_fig4_cache.joblib"
+
 
 # Time window for Figure 4a (context view)
 # Shows ~20 seconds encompassing running and immobility at reward well
@@ -80,75 +94,107 @@ def diagnostic_event_mean(diagnostics: PerCellDiagnostics, metric: str) -> float
     return float(np.nanmean(getattr(diagnostics, event_key)))
 
 
-def run_demo() -> None:
+def run_demo(*, use_cache: bool = True) -> None:
     """Run the full Figure 4 generation pipeline.
 
     Loads data, fits Continuous and ContFrag decoder models, computes
     diagnostics, and generates Figure 4 with context (a), Continuous
     detail (b), and ContFrag detail (c) panels.
+
+    Parameters
+    ----------
+    use_cache : bool, default True
+        When True and a complete cache of decoder outputs exists under
+        ``data/intermediates``, load it and skip the expensive fit/decode
+        step. When False (``--force-recompute``), always recompute and
+        overwrite the cache. Fitting + decoding both models takes several
+        minutes; figure-only edits (styling, thresholds) reuse the cache.
     """
     # Load data
     print("Loading data...")
     data = load_neural_recording_from_files(DATA_PATH, ANIMAL_DATE_EPOCH)
     print(f"  Loaded {len(data['spike_times'])} cells")
 
-    # Create environment
-    env = create_decoder_environment(
-        track_graph=data["track_graph"],
-        edge_order=data["linear_edge_order"],
-        edge_spacing=data["linear_edge_spacing"],
-    )
-
-    # Prepare training data
+    # Data the figure needs regardless of cache state.
     position_info = data["position_info"]
     time = position_info.index.values
     position = position_info[["head_position_x", "head_position_y"]].values
     linear_position = position_info["linear_position"].values
     spike_times_list: list[Any] = list(data["spike_times"])
 
-    # Fit both models
-    print("Fitting models...")
-    continuous_model, contfrag_model = fit_decoder_models(
-        position=position,
-        spike_times=spike_times_list,
-        time=time,
-        environment=env,
-    )
-
-    # Decode all time points with both models
-    print(f"Decoding {len(time)} time points...")
-    decode_outputs = ["filter", "predictive_posterior", "log_likelihood"]
-    continuous_results = continuous_model.predict(
-        spike_times=spike_times_list,
-        time=time,
-        return_outputs=decode_outputs,
-    )
-    contfrag_results = contfrag_model.predict(
-        spike_times=spike_times_list,
-        time=time,
-        return_outputs=decode_outputs,
-    )
-
-    # Get spike counts for all time
-    spike_counts = get_spike_counts(spike_times_list, time)
-
-    # Compute diagnostics for both models
-    print("Computing diagnostics...")
-    continuous_diagnostics = compute_model_diagnostics(
-        continuous_model, continuous_results, spike_counts, time, spike_times=spike_times_list
-    )
-    contfrag_diagnostics = compute_model_diagnostics(
-        contfrag_model, contfrag_results, spike_counts, time, spike_times=spike_times_list
-    )
-
-    # Extract place fields for raster sorting (use continuous model)
-    place_fields, position_bins = extract_place_fields(continuous_model)
-    if np.any(np.all(np.isnan(place_fields), axis=1)):
-        warnings.warn(
-            "Some cells have all-NaN place fields; peak positions may be incorrect",
-            stacklevel=2,
+    # The expensive decoder outputs (fit + decode + diagnostics) are cached so
+    # that figure-only changes can be previewed without re-running the models.
+    cache_path = _fig4_cache_path()
+    if use_cache and cache_path.exists():
+        print("Loading cached decoder outputs (use --force-recompute to rebuild)...")
+        bundle = joblib.load(cache_path)
+        continuous_results = bundle["continuous_results"]
+        contfrag_results = bundle["contfrag_results"]
+        continuous_diagnostics = bundle["continuous_diagnostics"]
+        contfrag_diagnostics = bundle["contfrag_diagnostics"]
+        spike_counts = bundle["spike_counts"]
+        place_field_peaks = bundle["place_field_peaks"]
+    else:
+        # Environment is only needed to fit the decoders.
+        env = create_decoder_environment(
+            track_graph=data["track_graph"],
+            edge_order=data["linear_edge_order"],
+            edge_spacing=data["linear_edge_spacing"],
         )
-    place_field_peaks = position_bins[np.nanargmax(place_fields, axis=1)]
+
+        print("Fitting models...")
+        continuous_model, contfrag_model = fit_decoder_models(
+            position=position,
+            spike_times=spike_times_list,
+            time=time,
+            environment=env,
+        )
+
+        print(f"Decoding {len(time)} time points...")
+        decode_outputs = ["filter", "predictive_posterior", "log_likelihood"]
+        continuous_results = continuous_model.predict(
+            spike_times=spike_times_list,
+            time=time,
+            return_outputs=decode_outputs,
+        )
+        contfrag_results = contfrag_model.predict(
+            spike_times=spike_times_list,
+            time=time,
+            return_outputs=decode_outputs,
+        )
+
+        spike_counts = get_spike_counts(spike_times_list, time)
+
+        print("Computing diagnostics...")
+        continuous_diagnostics = compute_model_diagnostics(
+            continuous_model, continuous_results, spike_counts, time, spike_times=spike_times_list
+        )
+        contfrag_diagnostics = compute_model_diagnostics(
+            contfrag_model, contfrag_results, spike_counts, time, spike_times=spike_times_list
+        )
+
+        # Extract place fields for raster sorting (use continuous model).
+        place_fields, position_bins = extract_place_fields(continuous_model)
+        if np.any(np.all(np.isnan(place_fields), axis=1)):
+            warnings.warn(
+                "Some cells have all-NaN place fields; peak positions may be incorrect",
+                stacklevel=2,
+            )
+        place_field_peaks = position_bins[np.nanargmax(place_fields, axis=1)]
+
+        print("Caching decoder outputs to data/intermediates ...")
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        joblib.dump(
+            {
+                "continuous_results": continuous_results,
+                "contfrag_results": contfrag_results,
+                "continuous_diagnostics": continuous_diagnostics,
+                "contfrag_diagnostics": contfrag_diagnostics,
+                "spike_counts": spike_counts,
+                "place_field_peaks": place_field_peaks,
+            },
+            cache_path,
+        )
 
     # Print summary
     print("\n=== Diagnostic Summary (all time points) ===")
@@ -161,9 +207,13 @@ def run_demo() -> None:
     print("\nGenerating Figure 4...")
     set_figure_defaults(context="paper")
 
-    # Diagnostic thresholds
+    # Diagnostic thresholds. HPD overlap and the predictive p-value use fixed
+    # cutoffs of 0.05. The KL divergence has no natural fixed cutoff, so we reuse
+    # the threshold from the Figure 3 simulation: the 99th percentile of the KL
+    # divergence over the matched-model baseline window (seed=1), which is ~4.52.
     diagnostic_thresholds = {
         "hpd_overlap": 0.05,
+        "kl_divergence": 4.52,
         "spike_prob": 0.05,
     }
 
@@ -337,6 +387,7 @@ def run_demo() -> None:
         axes_hexbin,
         model_a_name="Continuous",
         model_b_name="Cont-Frag",
+        thresholds=diagnostic_thresholds,
     )
     axes_hexbin[0].text(
         -0.18,
@@ -355,4 +406,14 @@ def run_demo() -> None:
 
 
 if __name__ == "__main__":
-    run_demo()
+    parser = argparse.ArgumentParser(description="Generate Figure 4.")
+    parser.add_argument(
+        "--force-recompute",
+        action="store_true",
+        help=(
+            "Re-fit and re-decode both models instead of loading the cached "
+            "decoder outputs under data/intermediates (overwrites the cache)."
+        ),
+    )
+    args = parser.parse_args()
+    run_demo(use_cache=not args.force_recompute)
