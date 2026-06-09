@@ -172,16 +172,20 @@ def plot_track_graph_2d(
                 node1_pos[0],
                 node1_pos[1],
                 color=edge_color,
-                s=30,
+                s=45,
                 zorder=10,
+                edgecolors="black",
+                linewidths=0.5,
             )
         if node2 in reward_well_nodes:
             ax.scatter(
                 node2_pos[0],
                 node2_pos[1],
                 color=edge_color,
-                s=30,
+                s=45,
                 zorder=10,
+                edgecolors="black",
+                linewidths=0.5,
             )
 
     add_scalebar(ax, scalebar_length, scalebar_label)

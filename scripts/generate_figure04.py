@@ -385,11 +385,17 @@ def run_demo(*, use_cache: bool = True) -> None:
     # Bottom row: 2D track layout (d) and whole-session metric hexbins (e)
     subfigs_bot = subfigs_rows[1].subfigures(1, 2, width_ratios=[2.5, 7], wspace=0.05)
     ax_track = subfigs_bot[0].subplots()
+    # Reward wells sit at the arm tips, i.e. the degree-1 (leaf) nodes of the
+    # track graph. Mark them so the 2D layout connects to the linearized axis
+    # used in panels (a)-(c).
+    track_graph = data["track_graph"]
+    reward_well_nodes = [n for n in track_graph.nodes if track_graph.degree(n) == 1]
     plot_track_graph_2d(
-        track_graph=data["track_graph"],
+        track_graph=track_graph,
         position_info=position_info,
         ax=ax_track,
         edge_order=data["linear_edge_order"],
+        reward_well_nodes=reward_well_nodes,
         scalebar_length=20,
         scalebar_label="20 cm",
     )
