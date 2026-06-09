@@ -9,16 +9,19 @@ log switch, and the best-practices / grammar-and-argument reviews.
 - [ ] **1. Regenerate Figure 4.** The figure code is now base-e (`-log(p)`, natural
   log), but the committed image `manuscript/figures/main/figure04.{pdf,png}` was last
   built under base-10 and still shows `-log10(p)`. Regenerate on a machine with the
-  hippocampal data:
+  hippocampal data (now present locally in `data/`, matching the default
+  `DATA_PATH` and `ANIMAL_DATE_EPOCH`, so no env vars are needed):
+
   ```bash
   uv run python scripts/generate_figure04.py
   ```
-  (Set `STATESPACECHECK_DATA_PATH` / `STATESPACECHECK_ANIMAL_DATE_EPOCH` if not default.)
+
   Until then the Figure 4 image is inconsistent with its caption.
 
-- [ ] **2. Add two missing citations** to `manuscript/references.bib`: `wilson1994`
+- [x] **2. Add two missing citations** to `manuscript/references.bib`: `wilson1994`
   and `karlsson2009` (cited in the Data-analysis-results subsection for immobility
-  replay; currently render as `??`).
+  replay). Done in commit `934643f`; the build now resolves both (0 undefined
+  citations).
 
 - [ ] **3. Verify the real-data counts.** Fig 4 caption says "203 simultaneously
   recorded cells"; the Methods text says "Twenty-three tetrodes." Confirm the two are
@@ -42,20 +45,18 @@ log switch, and the best-practices / grammar-and-argument reviews.
     citations are weak authorities for naming standard divergences; consider a
     standard reference (e.g. Cover & Thomas, `Ref1999a`, currently unused in the bib).
 
-- [ ] **13. Equation (4) notation.**
-  - Make the sampling distribution explicit in `\Pr`, e.g.
-    `\Pr_{\widetilde{y} \sim f_{\mathrm{pred}}}(\cdots)`, so the probability's sample
-    space is unambiguous.
-  - Consider renaming the predictive-check statistic `D_{k,j}` to avoid the letter
-    clash with the KL divergence `D_{\mathrm{KL}}` (it is interpreted as a p-value).
+- [x] **13. Equation (4) notation.** Done. The sampling distribution is now explicit
+  (`\Pr_{\widetilde{y}_{k,j} \sim f_{\mathrm{pred}}}`), and the predictive-check
+  statistic is renamed `D_{k,j}` → `p_{k,j}` (it is a p-value, avoiding the clash
+  with `D_{\mathrm{KL}}`).
 
-## Notes (verified, not yet edited in prose)
+## Done
 
-- **Threshold description (red-draft sentence in Simulation Results).** Verified
-  against `compute_thresholds` (`src/statespacecheck_paper/analysis.py`): the current
-  wording "empirical 99% interval for that metric" is inaccurate. The code uses:
-  HPD overlap = 1st percentile of baseline (flag if ≤), KL divergence = 99th
-  percentile of baseline (flag if ≥), predictive p-value = **fixed 0.05 cutoff**
-  (flag if ≤, not data-derived). In Figure 3 the baseline is the opening baseline
-  window only (steps 0–6000), not all recovery windows. Use accurate per-metric
-  wording when finalizing that red-draft sentence.
+- [x] **Threshold description (Simulation Results).** Resolved. Verified against
+  `compute_thresholds` (`src/statespacecheck_paper/analysis.py`) and rewrote the prose
+  (removing the red draft): HPD overlap = 1st percentile of the initial baseline
+  (flag if ≤), KL divergence = 99th percentile of the same baseline (flag if ≥),
+  predictive p-value = fixed 0.05 cutoff (flag if ≤, not data-derived). Also fixed the
+  Figure 3b "empirical 99% interval" sentence. Removed the inaccurate blue/red
+  spike-coloring claim — Figure 3 plots single-color scatter with a horizontal
+  threshold line.
