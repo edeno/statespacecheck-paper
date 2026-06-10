@@ -52,10 +52,8 @@ _FIGURE_CONTRACT = [
         [
             "DATA_PATH",
             "ANIMAL_DATE_EPOCH",
-            "FIGURE_4A_CONTEXT_CENTER",
-            "FIGURE_4A_CONTEXT_HALF_WIDTH",
-            "FIGURE_4B_DETAIL_CENTER",
-            "FIGURE_4B_DETAIL_HALF_WIDTH",
+            "DETAIL_CENTER",
+            "DETAIL_HALF_WIDTH",
             "create_decoder_environment",
             "fit_decoder_models",
             "get_spike_counts",

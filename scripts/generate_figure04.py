@@ -2,9 +2,8 @@
 
 This script generates Figure 4, which shows per-cell diagnostic metrics
 for decoder models on real neural recording data from hippocampus.
-Panel (a) shows a longer context window with surrounding run periods,
-panel (b) shows a zoomed-in detail view with the Continuous decoder, and
-panel (c) shows the same detail view with the Continuous-Fragmented decoder.
+Panel (a) shows a detail view with the Continuous decoder and panel (b)
+shows the same detail view with the Continuous-Fragmented decoder.
 
 Requires:
 - non_local_detector package for decoder models
@@ -58,15 +57,10 @@ def _fig4_cache_path() -> Path:
     return DATA_PATH / "intermediates" / f"{ANIMAL_DATE_EPOCH}_fig4_cache.joblib"
 
 
-# Time window for Figure 4a (context view)
-# Shows ~20 seconds encompassing running and immobility at reward well
-FIGURE_4A_CONTEXT_CENTER = 190000  # Time index for context center
-FIGURE_4A_CONTEXT_HALF_WIDTH = 5000  # Half-width in time points (~20 seconds)
-
-# Time window for Figure 4b/c (detail view)
+# Time window for Figure 4a/b (detail view)
 # Centered on a period of clear diagnostic activity at reward well
-FIGURE_4B_DETAIL_CENTER = 193069  # Time index with KL spike during immobility
-FIGURE_4B_DETAIL_HALF_WIDTH = 500  # Half-width in time points (~2 seconds at 500 Hz)
+DETAIL_CENTER = 193069  # Time index with KL spike during immobility
+DETAIL_HALF_WIDTH = 500  # Half-width in time points (~2 seconds at 500 Hz)
 
 
 def shift_diagnostic_event_times(
@@ -98,8 +92,8 @@ def run_demo(*, use_cache: bool = True) -> None:
     """Run the full Figure 4 generation pipeline.
 
     Loads data, fits Continuous and ContFrag decoder models, computes
-    diagnostics, and generates Figure 4 with context (a), Continuous
-    detail (b), and ContFrag detail (c) panels.
+    diagnostics, and generates Figure 4 with Continuous detail (a) and
+    ContFrag detail (b) panels.
 
     Parameters
     ----------
@@ -208,12 +202,10 @@ def run_demo(*, use_cache: bool = True) -> None:
     set_figure_defaults(context="paper")
 
     # Diagnostic thresholds. HPD overlap and the predictive p-value use fixed
-    # cutoffs of 0.05. The KL divergence has no natural fixed cutoff, so we reuse
-    # the threshold from the Figure 3 simulation: the 99th percentile of the KL
-    # divergence over the matched-model baseline window (seed=1), which is ~4.52.
+    # cutoffs of 0.05. The KL divergence has no natural fixed cutoff, so it is
+    # shown without a threshold line or a flagged-region callout.
     diagnostic_thresholds = {
         "hpd_overlap": 0.05,
-        "kl_divergence": 4.52,
         "spike_prob": 0.05,
     }
 
@@ -222,7 +214,6 @@ def run_demo(*, use_cache: bool = True) -> None:
     # Continuous-Fragmented); "rescue" is its fraction of all Continuous flags.
     metric_directions: dict[str, Literal["below", "above"]] = {
         "hpd_overlap": "below",
-        "kl_divergence": "above",
         "spike_prob": "below",
     }
     print("\n=== Flag agreement: Continuous (A) vs Cont-Frag (B) ===")
@@ -240,19 +231,15 @@ def run_demo(*, use_cache: bool = True) -> None:
             f"rescue={100 * conf.rescue_rate:.1f}%"
         )
 
-    # Define time slices
-    context_slice = slice(
-        FIGURE_4A_CONTEXT_CENTER - FIGURE_4A_CONTEXT_HALF_WIDTH,
-        FIGURE_4A_CONTEXT_CENTER + FIGURE_4A_CONTEXT_HALF_WIDTH,
-    )
+    # Define the detail-window time slice shared by both decoder panels.
     detail_slice = slice(
-        FIGURE_4B_DETAIL_CENTER - FIGURE_4B_DETAIL_HALF_WIDTH,
-        FIGURE_4B_DETAIL_CENTER + FIGURE_4B_DETAIL_HALF_WIDTH,
+        DETAIL_CENTER - DETAIL_HALF_WIDTH,
+        DETAIL_CENTER + DETAIL_HALF_WIDTH,
     )
 
-    # Convert time to relative seconds from start of context window
+    # Convert time to relative seconds from start of the detail window
     time_arr = np.asarray(time, dtype=np.float64)
-    time_offset = time_arr[context_slice.start]
+    time_offset = time_arr[detail_slice.start]
     time_relative = time_arr - time_offset
 
     # Shift xarray time coordinates to relative seconds
@@ -274,12 +261,11 @@ def run_demo(*, use_cache: bool = True) -> None:
         time_offset,
     )
 
-    # Two-row figure: decoding panels on top, track+hexbin row on bottom.
-    fig = plt.figure(figsize=(10.0, 9.5), dpi=450, constrained_layout=True)
-    subfigs_rows = fig.subfigures(2, 1, height_ratios=[6.5, 2.6], hspace=0.0)
-
-    # Top row: three columns (a) context, (b) Continuous detail, (c) ContFrag detail
-    subfigs = subfigs_rows[0].subfigures(1, 3, width_ratios=[3, 2, 2], wspace=0.03)
+    # Two-row figure: (a)/(b) detail zooms on top, (c) track + (d) hexbins on the
+    # bottom. The detail zooms place the Continuous and Continuous-Fragmented
+    # decoders side by side over the same time window for direct comparison.
+    fig = plt.figure(figsize=(9.5, 8.0), dpi=450, constrained_layout=True)
+    subfigs_rows = fig.subfigures(2, 1, height_ratios=[5.0, 2.6], hspace=0.02)
 
     # Shared plotting kwargs for detail panels
     detail_kwargs: dict[str, Any] = dict(
@@ -293,65 +279,41 @@ def run_demo(*, use_cache: bool = True) -> None:
         edge_spacing=data["linear_edge_spacing"],
     )
 
-    # Panel (a): context view (wider time window, Continuous model)
+    # Top row: (a) Continuous and (b) ContFrag detail zooms, side by side
+    subfigs_top = subfigs_rows[0].subfigures(1, 2, width_ratios=[1, 1], wspace=0.03)
+
+    # Panel (a): Continuous detail view
     _, axes_a = plot_single_model_diagnostics(
         time_relative,
         linear_position,
         continuous_results,
         continuous_diagnostics_relative,
-        spike_times=spike_times_relative,
-        spike_counts=spike_counts,
-        place_field_peaks=place_field_peaks,
-        time_slice_ind=context_slice,
         model_name="Continuous Model",
-        thresholds=diagnostic_thresholds,
-        track_graph=data["track_graph"],
-        edge_order=data["linear_edge_order"],
-        edge_spacing=data["linear_edge_spacing"],
-        fig=subfigs[0],
-    )
-
-    # Highlight the detail window region in panel (a) across every row. Draw the
-    # band on top with a low alpha so it stays visible over the predictive and
-    # likelihood heatmaps, while still letting the underlying data show through.
-    detail_start = time_relative[detail_slice.start]
-    detail_end = time_relative[detail_slice.stop - 1]
-    for ax in axes_a:
-        ax.axvspan(detail_start, detail_end, alpha=0.2, color="gray", zorder=4)
-
-    # Panel (b): Continuous detail view
-    _, axes_b = plot_single_model_diagnostics(
-        time_relative,
-        linear_position,
-        continuous_results,
-        continuous_diagnostics_relative,
-        model_name="Continuous Model",
-        fig=subfigs[1],
+        fig=subfigs_top[0],
         **detail_kwargs,
     )
 
-    # Panel (c): ContFrag detail view
-    _, axes_c = plot_single_model_diagnostics(
+    # Panel (b): ContFrag detail view
+    _, axes_b = plot_single_model_diagnostics(
         time_relative,
         linear_position,
         contfrag_results,
         contfrag_diagnostics_relative,
         model_name="Cont.-Frag. Model",
-        fig=subfigs[2],
+        fig=subfigs_top[1],
         **detail_kwargs,
     )
 
     # Match y-axis limits between detail panels for direct comparison
     for i in range(6):
+        ylim_a = axes_a[i].get_ylim()
         ylim_b = axes_b[i].get_ylim()
-        ylim_c = axes_c[i].get_ylim()
-        shared_ylim = (min(ylim_b[0], ylim_c[0]), max(ylim_b[1], ylim_c[1]))
+        shared_ylim = (min(ylim_a[0], ylim_b[0]), max(ylim_a[1], ylim_b[1]))
+        axes_a[i].set_ylim(shared_ylim)
         axes_b[i].set_ylim(shared_ylim)
-        axes_c[i].set_ylim(shared_ylim)
 
-    # Panel labels - place in axes coordinates on the predictive row of each
-    # top-row column.
-    for axes, label in [(axes_a, "a"), (axes_b, "b"), (axes_c, "c")]:
+    # Panel labels - place in axes coordinates on the predictive row of each.
+    for axes, label in [(axes_a, "a"), (axes_b, "b")]:
         axes[0].text(
             -0.05,
             1.15,
@@ -363,12 +325,12 @@ def run_demo(*, use_cache: bool = True) -> None:
             ha="right",
         )
 
-    # Bottom row: 2D track layout (d) and whole-session metric hexbins (e)
+    # Bottom row: 2D track layout (c) and whole-session metric hexbins (d)
     subfigs_bot = subfigs_rows[1].subfigures(1, 2, width_ratios=[2.5, 7], wspace=0.05)
     ax_track = subfigs_bot[0].subplots()
     # Reward wells sit at the arm tips, i.e. the degree-1 (leaf) nodes of the
     # track graph. Mark them so the 2D layout connects to the linearized axis
-    # used in panels (a)-(c).
+    # used in panels (a)-(b).
     track_graph = data["track_graph"]
     reward_well_nodes = [n for n in track_graph.nodes if track_graph.degree(n) == 1]
     plot_track_graph_2d(
@@ -383,7 +345,7 @@ def run_demo(*, use_cache: bool = True) -> None:
     ax_track.text(
         -0.05,
         1.05,
-        "d",
+        "c",
         fontsize=8,
         fontweight="bold",
         transform=ax_track.transAxes,
@@ -403,7 +365,7 @@ def run_demo(*, use_cache: bool = True) -> None:
     axes_hexbin[0].text(
         -0.18,
         1.10,
-        "e",
+        "d",
         fontsize=8,
         fontweight="bold",
         transform=axes_hexbin[0].transAxes,
