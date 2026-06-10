@@ -22,7 +22,6 @@ from typing import Any, Literal
 import joblib
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.transforms import blended_transform_factory
 
 from statespacecheck_paper.analysis import PerCellDiagnostics
 from statespacecheck_paper.load_local_data import load_neural_recording_from_files
@@ -304,7 +303,7 @@ def run_demo(*, use_cache: bool = True) -> None:
         spike_counts=spike_counts,
         place_field_peaks=place_field_peaks,
         time_slice_ind=context_slice,
-        model_name="",
+        model_name="Continuous Model",
         thresholds=diagnostic_thresholds,
         track_graph=data["track_graph"],
         edge_order=data["linear_edge_order"],
@@ -312,11 +311,13 @@ def run_demo(*, use_cache: bool = True) -> None:
         fig=subfigs[0],
     )
 
-    # Highlight the detail window region in panel (a)
+    # Highlight the detail window region in panel (a) across every row. Draw the
+    # band on top with a low alpha so it stays visible over the predictive and
+    # likelihood heatmaps, while still letting the underlying data show through.
     detail_start = time_relative[detail_slice.start]
     detail_end = time_relative[detail_slice.stop - 1]
     for ax in axes_a:
-        ax.axvspan(detail_start, detail_end, alpha=0.15, color="gray", zorder=0)
+        ax.axvspan(detail_start, detail_end, alpha=0.2, color="gray", zorder=4)
 
     # Panel (b): Continuous detail view
     _, axes_b = plot_single_model_diagnostics(
@@ -324,7 +325,7 @@ def run_demo(*, use_cache: bool = True) -> None:
         linear_position,
         continuous_results,
         continuous_diagnostics_relative,
-        model_name="Continuous",
+        model_name="Continuous Model",
         fig=subfigs[1],
         **detail_kwargs,
     )
@@ -335,7 +336,7 @@ def run_demo(*, use_cache: bool = True) -> None:
         linear_position,
         contfrag_results,
         contfrag_diagnostics_relative,
-        model_name="Cont-Frag",
+        model_name="Cont.-Frag. Model",
         fig=subfigs[2],
         **detail_kwargs,
     )
@@ -347,26 +348,6 @@ def run_demo(*, use_cache: bool = True) -> None:
         shared_ylim = (min(ylim_b[0], ylim_c[0]), max(ylim_b[1], ylim_c[1]))
         axes_b[i].set_ylim(shared_ylim)
         axes_c[i].set_ylim(shared_ylim)
-
-    # Annotate behavioral states on context panel (top of predictive row)
-    behavioral_periods = [
-        (0.5, "Run"),
-        (4.5, "Immobile"),
-        (9.5, "Run"),
-        (15.0, "Immobile"),
-    ]
-    ax_top = axes_a[0]
-    for t_center, label in behavioral_periods:
-        ax_top.text(
-            t_center,
-            1.05,
-            label,
-            transform=blended_transform_factory(ax_top.transData, ax_top.transAxes),
-            fontsize=6,
-            ha="center",
-            va="bottom",
-            fontstyle="italic",
-        )
 
     # Panel labels - place in axes coordinates on the predictive row of each
     # top-row column.

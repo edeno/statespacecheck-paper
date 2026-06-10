@@ -1440,7 +1440,17 @@ def plot_single_model_diagnostics(
     axes[0].set_ylabel("Predictive", fontsize=7, labelpad=7)
     axes[0].set_xlabel("")
     axes[0].tick_params(labelsize=6, labelbottom=False)
-    axes[0].legend(loc="upper left", fontsize=6, frameon=False)
+    # Self-label the position trace in its own color instead of a legend.
+    axes[0].text(
+        0.02,
+        0.95,
+        "Animal Position",
+        transform=axes[0].transAxes,
+        fontsize=6,
+        color=COLORS["ground_truth"],
+        va="top",
+        ha="left",
+    )
 
     # Row 1: Likelihood overlay at spike times
     ax_lik = axes[1]
