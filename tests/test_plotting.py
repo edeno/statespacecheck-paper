@@ -246,6 +246,46 @@ def test_plot_combined_diagnostics_runs(
         plt.close(fig)
 
 
+def test_plot_combined_diagnostics_renders_precomputed_summary(
+    thresholds_default: Thresholds,
+) -> None:
+    """When an across-realization median array is supplied, the panel-(b)
+    heatmap renders those values (with the median title) instead of
+    recomputing from the single displayed realization."""
+    rng = np.random.default_rng(0)
+    n_time, n_bins, n_cells = 3500, 30, 5
+    x_true = rng.uniform(0, n_bins - 1, n_time)
+    bundle = _combined_metrics(rng, n_time, n_bins, n_cells)
+    params = _params_for_short_run(n_time, n_cells)
+
+    median = np.array(
+        [
+            [1.0, 60.0, 1.0, 10.0, 0.0],
+            [1.0, 60.0, 1.0, 8.0, 17.0],
+            [3.0, 64.0, 2.0, 14.0, 0.0],
+        ]
+    )
+
+    fig = plot_combined_diagnostics(
+        x_true,
+        bundle["spikes"],
+        bundle["metrics"],
+        thresholds_default,
+        params,
+        np.linspace(0, 1, n_cells),
+        summary_median=median,
+    )
+    try:
+        # The summary axis is the last one added; its title flags the median
+        # mode and at least one cell shows the supplied median.
+        summary_ax = fig.axes[-1]
+        assert "median across realizations" in summary_ax.get_title()
+        cell_texts = {t.get_text() for t in summary_ax.texts}
+        assert "60%" in cell_texts  # supplied remap median
+    finally:
+        plt.close(fig)
+
+
 def test_plot_combined_diagnostics_uses_event_diagnostics_for_scatter() -> None:
     """When duplicate spike events fall in one bin, scatter plots must
     show each event independently — not collapse to the matrix value."""

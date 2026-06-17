@@ -25,8 +25,13 @@ from statespacecheck_paper.analysis import (
     MisfitSchedule,
     MisfitWindow,
     PhaseBoundary,
+    Thresholds,
+    compute_thresholds,
     decode_and_diagnostics,
+    extract_phase_flag_values,
+    flag_fractions_from_values,
     get_remapped_pf_centers,
+    summary_phase_windows,
 )
 from statespacecheck_paper.simulation import (
     gaussian_transition_matrix,
@@ -311,4 +316,133 @@ def run_figure03_simulation(
         metrics=metrics,
         phase_labels=tuple(phase_labels),
         phase_boundaries=tuple(boundaries),
+    )
+
+
+@dataclass(frozen=True)
+class StableSummary:
+    """Stabilized Figure-3 thresholds and per-phase flag fractions.
+
+    Aggregates ``n_realizations`` independent realizations of the figure-3
+    simulation so the Figure-3b heatmap and its flag thresholds no longer
+    depend on a single noisy run (a single run's KL 99th-percentile
+    threshold varies ~17% across seeds).
+
+    - ``thresholds`` are computed from the per-spike baseline diagnostics
+      pooled across all realizations — a far more stable estimate of the
+      baseline interval than one run's quantile.
+    - ``frac_median`` is the median, across realizations, of the percent of
+      spike events flagged in each phase column by each metric (each
+      realization scored against the shared pooled-baseline ``thresholds``).
+      The median is used in place of the mean because the remapping column
+      is strongly trajectory-dependent and skewed across realizations.
+
+    Parameters
+    ----------
+    thresholds : Thresholds
+        Pooled-baseline flag thresholds.
+    frac_median : np.ndarray, shape (3, n_columns)
+        Median percent flagged. Rows follow
+        :data:`statespacecheck_paper.analysis.SUMMARY_FLAG_METRICS`;
+        columns follow
+        :func:`statespacecheck_paper.analysis.summary_phase_windows`.
+    n_realizations : int
+        Number of realizations aggregated.
+
+    Raises
+    ------
+    ValueError
+        If ``frac_median`` is not 2-D, or ``n_realizations`` is not positive.
+    """
+
+    thresholds: Thresholds
+    frac_median: NDArray[np.floating]
+    n_realizations: int
+
+    def __post_init__(self) -> None:
+        if self.n_realizations < 1:
+            raise ValueError(f"n_realizations must be >= 1; got {self.n_realizations}")
+        if self.frac_median.ndim != 2:
+            raise ValueError(
+                f"StableSummary.frac_median must be 2-D (n_metrics, n_columns); "
+                f"got shape {self.frac_median.shape}"
+            )
+        self.frac_median.setflags(write=False)
+
+
+def estimate_stable_summary(
+    params: DecodeParams,
+    *,
+    n_realizations: int = 100,
+    base_seed: int | None = None,
+) -> StableSummary:
+    """Pool many realizations into stable Figure-3 thresholds and fractions.
+
+    Runs ``n_realizations`` independent realizations of the figure-3
+    simulation (seeds ``base_seed, base_seed + 1, ...``), pools their
+    per-spike *baseline-window* diagnostics to compute the flag
+    thresholds, then scores every realization's per-phase flag fractions
+    against those shared thresholds and returns the across-realization
+    median. A single pass holds only the finite per-spike values (not the
+    dense ``Diagnostics``) per realization, so memory stays bounded even at
+    large ``n_realizations``.
+
+    Parameters
+    ----------
+    params : DecodeParams
+        Simulation configuration. ``params.pf_centers`` must be set
+        (the dataclass initializes it by default).
+    n_realizations : int, default 100
+        Number of independent realizations to aggregate. Must be >= 1.
+    base_seed : int, optional
+        First seed; subsequent realizations use consecutive seeds. If
+        ``None``, uses ``params.base_seed`` so the canonical displayed run
+        (seed ``params.base_seed``) is one of the aggregated realizations.
+
+    Returns
+    -------
+    StableSummary
+        Pooled thresholds and mean/SD per-phase flag fractions.
+
+    Raises
+    ------
+    ValueError
+        If ``n_realizations < 1``.
+    """
+    if n_realizations < 1:
+        raise ValueError(f"n_realizations must be >= 1; got {n_realizations}")
+
+    base = params.base_seed if base_seed is None else base_seed
+    baseline_end = params.phase_boundaries[PhaseBoundary.REMAP_START]
+    windows = summary_phase_windows(params)
+
+    # ``compute_thresholds`` reads only hpd_overlap and kl_divergence (the
+    # spike_prob threshold is the fixed 0.05 cutoff), but pool all three so
+    # the dict is a faithful baseline sample if that ever changes.
+    baseline_keys = ("hpd_overlap", "kl_divergence", "spike_prob")
+    baseline_values: dict[str, list[NDArray[np.floating]]] = {key: [] for key in baseline_keys}
+    per_realization_values: list[list[list[NDArray[np.floating]]]] = []
+
+    for offset in range(n_realizations):
+        sim = run_figure03_simulation(params, seed=base + offset)
+        metrics = sim.metrics
+        for key in baseline_keys:
+            baseline_slice = np.asarray(getattr(metrics, key))[:baseline_end].ravel()
+            baseline_values[key].append(baseline_slice[np.isfinite(baseline_slice)])
+        per_realization_values.append(extract_phase_flag_values(metrics, windows))
+
+    pooled_baseline = {key: np.concatenate(vals) for key, vals in baseline_values.items()}
+    thresholds = compute_thresholds(
+        pooled_baseline, baseline_end=pooled_baseline["hpd_overlap"].shape[0]
+    )
+
+    # (n_realizations, n_metrics, n_columns) flag-fraction stack.
+    frac = np.stack(
+        [flag_fractions_from_values(values, thresholds) for values in per_realization_values],
+        axis=0,
+    )
+    return StableSummary(
+        thresholds=thresholds,
+        frac_median=np.median(frac, axis=0),
+        n_realizations=n_realizations,
     )

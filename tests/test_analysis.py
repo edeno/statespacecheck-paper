@@ -18,11 +18,16 @@ from statespacecheck_paper.analysis import (
     Thresholds,
     Transformed,
     _condition_on,
+    _flag_fraction,
     compute_per_cell_diagnostics_from_rates,
+    compute_phase_flag_fractions,
     compute_thresholds,
     decode_and_diagnostics,
+    extract_phase_flag_values,
+    flag_fractions_from_values,
     get_remapped_pf_centers,
     likelihood_grid_for_counts,
+    summary_phase_windows,
     transform_metrics,
 )
 from statespacecheck_paper.figure03_demo import PHASE_LABELS, SimulationResult
@@ -576,6 +581,112 @@ class TestComputeThresholds:
         assert thresholds.hpd_overlap == pytest.approx(from_dict.hpd_overlap)
         assert thresholds.kl_divergence == pytest.approx(from_dict.kl_divergence)
         assert thresholds.spike_prob == from_dict.spike_prob
+
+
+# ---------------------------------------------------------------------------
+# Figure-3 summary heatmap helpers (phase windows + flag fractions)
+# ---------------------------------------------------------------------------
+
+
+class TestSummaryFlagFractions:
+    """The summary-heatmap helpers are the single source of truth shared by
+    the single-run renderer and the multi-realization averaging path; these
+    tests pin the column layout and the flag-fraction arithmetic."""
+
+    @staticmethod
+    def _params() -> DecodeParams:
+        # Tiny strictly-increasing ladder so windows map to known slices.
+        return DecodeParams(phase_boundaries=(6, 10, 14, 18, 22, 26, 30, 32))
+
+    def test_summary_phase_windows_structure(self) -> None:
+        cols = summary_phase_windows(self._params())
+        assert [c.label for c in cols] == [
+            "Well-\nspecified",
+            "Remap",
+            "History-\ndep.",
+            "Drift",
+            "Wide dyn.\nnoise",
+        ]
+        assert [c.component for c in cols] == [
+            "—",
+            "Observation",
+            "Observation",
+            "Transition",
+            "Transition",
+        ]
+        # Well-specified concatenates the three clean-recovery windows.
+        assert cols[0].slices == ((10, 14), (18, 22), (26, 30))
+        assert cols[1].slices == ((6, 10),)
+        assert cols[4].slices == ((30, 32),)
+
+    @pytest.mark.parametrize(
+        ("direction", "expected"),
+        [("below", 100.0 * 2 / 3), ("above", 100.0 * 2 / 3)],
+    )
+    def test_flag_fraction_directions(self, direction: str, expected: float) -> None:
+        vals = np.array([0.0, 0.5, 1.0])
+        # below: {0.0, 0.5} <= 0.5 ; above: {0.5, 1.0} >= 0.5 — both 2/3.
+        assert _flag_fraction(vals, 0.5, direction) == pytest.approx(expected)
+
+    def test_flag_fraction_empty_is_zero(self) -> None:
+        assert _flag_fraction(np.array([]), 0.5, "below") == 0.0
+
+    def test_flag_fraction_bad_direction_raises(self) -> None:
+        with pytest.raises(ValueError, match="direction"):
+            _flag_fraction(np.array([1.0]), 0.5, "sideways")
+
+    def test_compute_phase_flag_fractions_isolates_remap(self) -> None:
+        """A KL spike confined to the remap window must flag 100% in the
+        remap column and 0% elsewhere; HPD/spike-prob rows that never cross
+        their thresholds must be 0% everywhere."""
+        params = self._params()
+        n_time = params.phase_boundaries[PhaseBoundary.WIDE_DYNAMICS_END]
+        n_cells = 1
+        kl = np.zeros((n_time, n_cells))
+        kl[6:10] = 10.0  # high only inside the remap window [6, 10)
+        metrics: dict[str, np.ndarray] = {
+            "hpd_overlap": np.ones((n_time, n_cells)),  # never below 0.5
+            "kl_divergence": kl,
+            "spike_prob": np.ones((n_time, n_cells)),  # never below 0.05
+        }
+        thresholds = Thresholds(hpd_overlap=0.5, kl_divergence=5.0, spike_prob=0.05)
+        windows = summary_phase_windows(params)
+        frac = compute_phase_flag_fractions(metrics, thresholds, windows)
+
+        assert frac.shape == (3, 5)
+        # KL row (index 1): only the remap column (index 1) flags.
+        assert frac[1, 1] == pytest.approx(100.0)
+        assert np.allclose(np.delete(frac[1], 1), 0.0)
+        # HPD (0) and spike-prob (2) rows never cross their thresholds.
+        assert np.allclose(frac[0], 0.0)
+        assert np.allclose(frac[2], 0.0)
+
+    def test_extract_drops_nan_and_matches_compute(self) -> None:
+        """``extract_phase_flag_values`` strips NaNs, and the two-step
+        extract→flag path agrees with the one-shot wrapper."""
+        params = self._params()
+        n_time = params.phase_boundaries[PhaseBoundary.WIDE_DYNAMICS_END]
+        rng = np.random.default_rng(0)
+        kl = rng.uniform(0.0, 10.0, (n_time, 2))
+        kl[::3] = np.nan  # "no spike" entries
+        metrics: dict[str, np.ndarray] = {
+            "hpd_overlap": rng.uniform(0.0, 1.0, (n_time, 2)),
+            "kl_divergence": kl,
+            "spike_prob": rng.uniform(0.0, 1.0, (n_time, 2)),
+        }
+        thresholds = Thresholds(hpd_overlap=0.3, kl_divergence=5.0, spike_prob=0.2)
+        windows = summary_phase_windows(params)
+
+        values = extract_phase_flag_values(metrics, windows)
+        # No NaNs survive extraction.
+        for per_metric in values:
+            for arr in per_metric:
+                assert np.all(np.isfinite(arr))
+
+        np.testing.assert_allclose(
+            flag_fractions_from_values(values, thresholds),
+            compute_phase_flag_fractions(metrics, thresholds, windows),
+        )
 
 
 class TestThresholdsInvariants:

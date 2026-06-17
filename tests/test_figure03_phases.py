@@ -20,10 +20,12 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from statespacecheck_paper.analysis import DecodeParams, PhaseBoundary
+from statespacecheck_paper.analysis import DecodeParams, PhaseBoundary, Thresholds
 from statespacecheck_paper.figure03_demo import (
     PHASE_LABELS,
     SimulationResult,
+    StableSummary,
+    estimate_stable_summary,
     run_figure03_simulation,
 )
 
@@ -186,3 +188,65 @@ def test_drift_phase_inflates_kl(sim: SimulationResult) -> None:
         f"drift phase should inflate KL by >1.2x baseline; "
         f"got base={base_kl:.3f}, drift={drift_kl:.3f}"
     )
+
+
+# ---------------------------------------------------------------------------
+# estimate_stable_summary: pooled thresholds + median/IQR per-phase fractions
+# ---------------------------------------------------------------------------
+
+
+class TestEstimateStableSummary:
+    def test_shapes_and_determinism(self) -> None:
+        """The summary is (3 metrics x 5 columns), fractions are percentages,
+        and the same seeds reproduce the same result."""
+        params = _moderate_params()
+        summary = estimate_stable_summary(params, n_realizations=3, base_seed=0)
+
+        assert isinstance(summary, StableSummary)
+        assert summary.n_realizations == 3
+        assert summary.frac_median.shape == (3, 5)
+        # Percentages in [0, 100].
+        assert np.all(summary.frac_median >= 0.0)
+        assert np.all(summary.frac_median <= 100.0)
+        # Threshold is a valid, finite Thresholds with the fixed p-value cutoff.
+        assert summary.thresholds.spike_prob == 0.05
+        assert np.isfinite(summary.thresholds.kl_divergence)
+
+        repeat = estimate_stable_summary(params, n_realizations=3, base_seed=0)
+        np.testing.assert_array_equal(summary.frac_median, repeat.frac_median)
+        assert summary.thresholds.kl_divergence == repeat.thresholds.kl_divergence
+
+    def test_remap_column_is_most_flagged(self) -> None:
+        """Scientific regression guard: across realizations, the remap column
+        (index 1) is flagged far more than the well-specified column (index 0)
+        for every metric — the headline 'all three detect remap' result, now
+        on a stabilized median."""
+        summary = estimate_stable_summary(_moderate_params(), n_realizations=5, base_seed=0)
+        for row in range(3):
+            assert summary.frac_median[row, 1] > summary.frac_median[row, 0]
+
+    def test_rejects_nonpositive_realizations(self) -> None:
+        with pytest.raises(ValueError, match="n_realizations"):
+            estimate_stable_summary(_moderate_params(), n_realizations=0)
+
+
+class TestStableSummaryInvariants:
+    @staticmethod
+    def _thresholds() -> Thresholds:
+        return Thresholds(hpd_overlap=0.5, kl_divergence=1.0, spike_prob=0.05)
+
+    def test_non_2d_median_raises(self) -> None:
+        with pytest.raises(ValueError, match="frac_median"):
+            StableSummary(
+                thresholds=self._thresholds(),
+                frac_median=np.zeros(5),
+                n_realizations=2,
+            )
+
+    def test_nonpositive_realizations_raises(self) -> None:
+        with pytest.raises(ValueError, match="n_realizations"):
+            StableSummary(
+                thresholds=self._thresholds(),
+                frac_median=np.zeros((3, 5)),
+                n_realizations=0,
+            )

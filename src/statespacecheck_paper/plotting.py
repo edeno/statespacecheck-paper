@@ -30,8 +30,10 @@ from statespacecheck_paper.analysis import (
     Diagnostics,
     PhaseBoundary,
     Thresholds,
+    compute_phase_flag_fractions,
     get_remapped_pf_centers,
     likelihood_grid_for_counts,
+    summary_phase_windows,
 )
 from statespacecheck_paper.simulation import (
     gaussian_transition_matrix,
@@ -864,6 +866,7 @@ def plot_combined_diagnostics(
     thresholds: Thresholds,
     params: DecodeParams,
     placefield_centers: NDArray[np.floating],
+    summary_median: NDArray[np.floating] | None = None,
 ) -> Figure:
     """Create comprehensive time-series diagnostics figure.
 
@@ -885,6 +888,13 @@ def plot_combined_diagnostics(
         Decoding parameters containing timeline structure.
     placefield_centers : NDArray, shape (n_cells,)
         Place field centers for each cell (used for spike raster sorting).
+    summary_median : NDArray, shape (3, n_columns), optional
+        Pre-computed across-realization median percent flagged for the
+        panel-(b) heatmap (rows follow
+        :data:`statespacecheck_paper.analysis.SUMMARY_FLAG_METRICS`,
+        columns follow :func:`statespacecheck_paper.analysis.summary_phase_windows`).
+        When ``None``, the heatmap is computed from the single ``metrics``
+        realization shown in panel (a) instead.
 
     Returns
     -------
@@ -1188,68 +1198,28 @@ def plot_combined_diagnostics(
         ha="right",
     )
 
-    # Phase windows for summary computation. Each entry is
-    # ``(label, [(t0, t1), ...])`` — a list of (start, end) slices so a
-    # single column can aggregate multiple disjoint windows (used by the
-    # "Well-specified" column, which concatenates the three recovery windows
-    # for an out-of-sample false-positive rate against the matched misfit
-    # columns).
-    phase_windows: list[tuple[str, list[tuple[int, int]]]] = [
-        (
-            "Well-\nspecified",
-            [
-                (t_remap_end, t_recovery1_end),
-                (t_hist_dep_end, t_recovery2_end),
-                (t_drift_end, t_recovery3_end),
-            ],
-        ),
-        ("Remap", [(t_remap_start, t_remap_end)]),
-        ("History-\ndep.", [(t_recovery1_end, t_hist_dep_end)]),
-        ("Drift", [(t_recovery2_end, t_drift_end)]),
-        ("Wide dyn.\nnoise", [(t_recovery3_end, t_wide_dynamics_end)]),
-    ]
-    component_labels = [
-        "—",  # Well-specified (no induced misfit)
-        "Observation",  # Remap
-        "Observation",  # History-dependent firing
-        "Transition",  # Drift
-        "Transition",  # Wide dynamics noise
-    ]
-
-    # Use the same thresholds as the time-series panels above
-    hpd_thr = thresholds.hpd_overlap
-    kl_thr = thresholds.kl_divergence
-    sp_thr = thresholds.spike_prob
-
-    # Compute fraction exceeding threshold per phase (non-NaN only).
+    # Phase columns + per-metric flag logic come from the single source of
+    # truth in analysis.py so the heatmap and the multi-realization
+    # averaging path (estimate_stable_summary) cannot drift apart.
     #
-    # Floor-effect caveat for HPD overlap: ``hpd_thr`` is the 1st-percentile
-    # of baseline HPDO. With our default place-field geometry, baseline HPDOs
-    # are tightly concentrated near 1.0 and a substantial fraction of baseline
-    # events achieve HPDO == 0.0 exactly (single-bin disjoint distributions).
-    # That pushes the 1st-percentile threshold to 0.0, and ``valid <= 0.0``
-    # then degenerates to ``valid == 0.0``. The row is still informative —
-    # exact-zero overlap is genuine inconsistency — but the % is a count of
-    # disjoint-HPD events rather than a graded "below baseline" rate.
-    # Re-evaluate if PF geometry changes enough to shift the 1st percentile
-    # above 0.
-    frac_data = np.zeros((3, len(phase_windows)))
-    for j, (_name, slices) in enumerate(phase_windows):
-        for i, (metric_key, thr_val, direction) in enumerate(
-            [
-                ("hpd_overlap", hpd_thr, "below"),
-                ("kl_divergence", kl_thr, "above"),
-                ("spike_prob", sp_thr, "below"),
-            ]
-        ):
-            full = getattr(metrics, metric_key)
-            vals = np.concatenate([full[t0:t1] for t0, t1 in slices])
-            valid = vals[~np.isnan(vals)]
-            if len(valid) > 0:
-                if direction == "below":
-                    frac_data[i, j] = 100 * np.mean(valid <= thr_val)
-                else:
-                    frac_data[i, j] = 100 * np.mean(valid >= thr_val)
+    # Floor-effect caveat for HPD overlap: its threshold is the
+    # 1st-percentile of baseline HPDO. With our default place-field
+    # geometry, baseline HPDOs are tightly concentrated near 1.0 and a
+    # substantial fraction of baseline events achieve HPDO == 0.0 exactly
+    # (single-bin disjoint distributions). That pushes the 1st-percentile
+    # threshold to 0.0, so the row counts exact-zero-overlap events rather
+    # than a graded "below baseline" rate — still informative, but
+    # re-evaluate if PF geometry shifts the 1st percentile above 0.
+    windows = summary_phase_windows(params)
+    component_labels = [col.component for col in windows]
+
+    # When pre-computed across-realization quantiles are supplied, plot the
+    # stabilized median (with IQR annotations); otherwise fall back to the
+    # single realization shown in panel (a).
+    if summary_median is not None:
+        frac_data = np.asarray(summary_median, dtype=float)
+    else:
+        frac_data = compute_phase_flag_fractions(metrics, thresholds, windows)
 
     # Normalize for color mapping
     max_frac = np.nanmax(frac_data)
@@ -1264,13 +1234,13 @@ def plot_combined_diagnostics(
     ax_summary.set_yticklabels(metric_labels, fontsize=6)
 
     # Phase labels on top
-    ax_summary.set_xticks(range(len(phase_windows)))
-    ax_summary.set_xticklabels([name for name, _ in phase_windows], fontsize=6)
+    ax_summary.set_xticks(range(len(windows)))
+    ax_summary.set_xticklabels([col.label for col in windows], fontsize=6)
     ax_summary.tick_params(top=True, bottom=False, labeltop=True, labelbottom=False)
 
-    # Value annotations inside cells
+    # Value annotations inside cells.
     for i in range(3):
-        for j in range(len(phase_windows)):
+        for j in range(len(windows)):
             val = frac_data[i, j]
             color = "white" if norm_frac[i, j] > 0.55 else "black"
             weight = "bold" if norm_frac[i, j] > 0.7 else "normal"
@@ -1285,13 +1255,15 @@ def plot_combined_diagnostics(
                 fontweight=weight,
             )
 
-    # Component attribution below heatmap
+    # Component attribution just below the heatmap (box bottom edge is at
+    # y=2.5; place the row close to it rather than a full cell-height down).
+    component_row_y = 3.0
     component_color = {"Observation": "#E69F00", "Transition": "#0072B2"}
     for j, comp in enumerate(component_labels):
         color = component_color.get(comp, "0.4")
         ax_summary.text(
             j,
-            3.5,
+            component_row_y,
             comp,
             ha="center",
             va="center",
@@ -1301,7 +1273,7 @@ def plot_combined_diagnostics(
         )
     ax_summary.text(
         -1.4,
-        3.5,
+        component_row_y,
         "Known\ncomponent:",
         ha="center",
         va="center",
@@ -1311,8 +1283,11 @@ def plot_combined_diagnostics(
     )
 
     # Title
+    summary_title = "% of spike events flagged as poor fit"
+    if summary_median is not None:
+        summary_title += " (median across realizations)"
     ax_summary.set_title(
-        "% of spike events exceeding baseline threshold",
+        summary_title,
         fontsize=7,
         pad=15,
         loc="center",

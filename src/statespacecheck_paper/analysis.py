@@ -1490,6 +1490,229 @@ def compute_thresholds(
     )
 
 
+# -----------------------------
+# Figure-3 summary heatmap (per-phase flag fractions)
+# -----------------------------
+
+# Ordered metric flag specification for the Figure-3b summary heatmap.
+# Each entry is ``(metric attribute name, flag direction)``. ``"below"``
+# flags values at or below the threshold (worse fit for the HPD overlap
+# and the predictive p-value); ``"above"`` flags values at or above it
+# (worse fit for the KL divergence). The order fixes the heatmap's row
+# order and is shared by the single-run renderer and the
+# multi-realization averaging path so the two cannot drift apart.
+SUMMARY_FLAG_METRICS: tuple[tuple[str, str], ...] = (
+    ("hpd_overlap", "below"),
+    ("kl_divergence", "above"),
+    ("spike_prob", "below"),
+)
+
+
+@dataclass(frozen=True)
+class SummaryColumn:
+    """One column of the Figure-3b summary heatmap.
+
+    Parameters
+    ----------
+    label : str
+        Column header (may contain a newline for a two-line label).
+    slices : tuple of (int, int)
+        Half-open ``[t0, t1)`` time-step windows aggregated into this
+        column. The well-specified column concatenates the three
+        clean-recovery windows, so this is a tuple of pairs rather than a
+        single pair.
+    component : str
+        Model component the column's misfit perturbs (``"Observation"``,
+        ``"Transition"``, or ``"—"`` for the well-specified column). Shown
+        in the attribution row beneath the heatmap.
+    """
+
+    label: str
+    slices: tuple[tuple[int, int], ...]
+    component: str
+
+
+def summary_phase_windows(params: DecodeParams) -> list[SummaryColumn]:
+    """Phase columns for the Figure-3b summary heatmap.
+
+    Single source of truth for the heatmap's columns, shared by the
+    single-run renderer (:func:`compute_phase_flag_fractions`, called from
+    ``plot_combined_diagnostics``) and the multi-realization averaging
+    path (:func:`statespacecheck_paper.figure03_demo.estimate_stable_summary`)
+    so the column order, time windows, and component labels cannot drift
+    out of sync.
+
+    The first column ("Well-specified") aggregates the three clean-recovery
+    windows into an out-of-sample false-positive rate against the matched
+    misfit columns.
+
+    Parameters
+    ----------
+    params : DecodeParams
+        Provides the phase-boundary ladder.
+
+    Returns
+    -------
+    list of SummaryColumn
+        Five columns in heatmap order: well-specified, remap,
+        history-dependent firing, drift, wide-dynamics noise.
+    """
+    bnd = params.phase_boundaries
+    t_remap_start = bnd[PhaseBoundary.REMAP_START]
+    t_remap_end = bnd[PhaseBoundary.REMAP_END]
+    t_recovery1_end = bnd[PhaseBoundary.RECOVERY1_END]
+    t_hist_dep_end = bnd[PhaseBoundary.HIST_DEP_END]
+    t_recovery2_end = bnd[PhaseBoundary.RECOVERY2_END]
+    t_drift_end = bnd[PhaseBoundary.DRIFT_END]
+    t_recovery3_end = bnd[PhaseBoundary.RECOVERY3_END]
+    t_wide_dynamics_end = bnd[PhaseBoundary.WIDE_DYNAMICS_END]
+    return [
+        SummaryColumn(
+            "Well-\nspecified",
+            (
+                (t_remap_end, t_recovery1_end),
+                (t_hist_dep_end, t_recovery2_end),
+                (t_drift_end, t_recovery3_end),
+            ),
+            "—",
+        ),
+        SummaryColumn("Remap", ((t_remap_start, t_remap_end),), "Observation"),
+        SummaryColumn("History-\ndep.", ((t_recovery1_end, t_hist_dep_end),), "Observation"),
+        SummaryColumn("Drift", ((t_recovery2_end, t_drift_end),), "Transition"),
+        SummaryColumn("Wide dyn.\nnoise", ((t_recovery3_end, t_wide_dynamics_end),), "Transition"),
+    ]
+
+
+def _flag_fraction(values: NDArray[np.floating], threshold: float, direction: str) -> float:
+    """Percent of ``values`` flagged as poor fit at ``threshold``.
+
+    Parameters
+    ----------
+    values : np.ndarray, shape (n,)
+        Finite per-spike diagnostic values (NaNs must already be removed).
+    threshold : float
+        Flag threshold.
+    direction : {"below", "above"}
+        ``"below"`` flags ``values <= threshold``; ``"above"`` flags
+        ``values >= threshold``.
+
+    Returns
+    -------
+    float
+        Percent (0–100) of values flagged. ``0.0`` for an empty input.
+    """
+    if values.size == 0:
+        return 0.0
+    if direction == "below":
+        flagged = float(np.mean(values <= threshold))
+    elif direction == "above":
+        flagged = float(np.mean(values >= threshold))
+    else:
+        raise ValueError(f"direction must be 'below' or 'above'; got {direction!r}")
+    return 100.0 * flagged
+
+
+def extract_phase_flag_values(
+    metrics: Diagnostics | Mapping[str, NDArray[np.floating]],
+    windows: list[SummaryColumn],
+) -> list[list[NDArray[np.floating]]]:
+    """Collect finite per-spike diagnostic values per metric per column.
+
+    Parameters
+    ----------
+    metrics : Diagnostics or Mapping[str, NDArray]
+        Source of the dense ``(n_time, n_cells)`` ``hpd_overlap`` /
+        ``kl_divergence`` / ``spike_prob`` matrices (NaN where no spike).
+    windows : list of SummaryColumn
+        Heatmap columns from :func:`summary_phase_windows`.
+
+    Returns
+    -------
+    list of list of np.ndarray
+        Nested list indexed ``[metric_index][column_index]``; each leaf is
+        a 1-D array of the non-NaN diagnostic values for that metric
+        inside that column's time windows. Metric order follows
+        :data:`SUMMARY_FLAG_METRICS`.
+    """
+
+    def _get(name: str) -> NDArray[np.floating]:
+        arr = getattr(metrics, name) if isinstance(metrics, Diagnostics) else metrics[name]
+        return cast("NDArray[np.floating]", arr)
+
+    out: list[list[NDArray[np.floating]]] = []
+    for metric_key, _direction in SUMMARY_FLAG_METRICS:
+        full = _get(metric_key)
+        per_window: list[NDArray[np.floating]] = []
+        for col in windows:
+            vals = np.concatenate([full[t0:t1] for t0, t1 in col.slices])
+            per_window.append(vals[~np.isnan(vals)])
+        out.append(per_window)
+    return out
+
+
+def flag_fractions_from_values(
+    values: list[list[NDArray[np.floating]]],
+    thresholds: Thresholds,
+) -> NDArray[np.floating]:
+    """Percent flagged per metric per column from pre-extracted values.
+
+    Splitting this out from :func:`compute_phase_flag_fractions` lets the
+    multi-realization averaging path
+    (:func:`statespacecheck_paper.figure03_demo.estimate_stable_summary`)
+    extract each realization's per-column values once and apply a
+    pooled-baseline threshold afterwards, without holding a full
+    ``Diagnostics`` per realization in memory.
+
+    Parameters
+    ----------
+    values : list of list of np.ndarray
+        Nested ``[metric_index][column_index]`` finite values, as returned
+        by :func:`extract_phase_flag_values`.
+    thresholds : Thresholds
+        Flag thresholds (one per metric).
+
+    Returns
+    -------
+    np.ndarray, shape (3, n_columns)
+        Percent (0–100) flagged. Rows follow :data:`SUMMARY_FLAG_METRICS`.
+    """
+    n_columns = len(values[0]) if values else 0
+    frac = np.zeros((len(SUMMARY_FLAG_METRICS), n_columns))
+    for i, (metric_key, direction) in enumerate(SUMMARY_FLAG_METRICS):
+        threshold = float(getattr(thresholds, metric_key))
+        for j in range(n_columns):
+            frac[i, j] = _flag_fraction(values[i][j], threshold, direction)
+    return frac
+
+
+def compute_phase_flag_fractions(
+    metrics: Diagnostics | Mapping[str, NDArray[np.floating]],
+    thresholds: Thresholds,
+    windows: list[SummaryColumn],
+) -> NDArray[np.floating]:
+    """Percent of spike events flagged per metric per phase column.
+
+    Convenience wrapper around :func:`extract_phase_flag_values` +
+    :func:`flag_fractions_from_values` for the single-realization renderer.
+
+    Parameters
+    ----------
+    metrics : Diagnostics or Mapping[str, NDArray]
+        Diagnostic matrices for a single realization.
+    thresholds : Thresholds
+        Flag thresholds (one per metric).
+    windows : list of SummaryColumn
+        Heatmap columns from :func:`summary_phase_windows`.
+
+    Returns
+    -------
+    np.ndarray, shape (3, n_columns)
+        Percent (0–100) flagged. Rows follow :data:`SUMMARY_FLAG_METRICS`;
+        columns follow ``windows``.
+    """
+    return flag_fractions_from_values(extract_phase_flag_values(metrics, windows), thresholds)
+
+
 @dataclass(frozen=True)
 class Transformed:
     """Transformed diagnostic metrics and thresholds.
