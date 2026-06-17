@@ -29,6 +29,23 @@ log switch, and the best-practices / grammar-and-argument reviews.
   - Still TODO: surface the cell count in the Methods text (currently only in the
     Fig 4 caption).
 
+
+- [x] **4. Alter Figure3b.** Done. Panel 3b is now pooled over **100 independent
+  realizations** of the simulation via `estimate_stable_summary`
+  (`src/statespacecheck_paper/figure03_demo.py`): the flag thresholds come from the
+  baseline windows pooled across all 100 runs (KL 99th-pct dropped 4.52→4.08; the
+  single-seed estimate varied ~17% seed-to-seed), and each cell reports the
+  **median** percent flagged across realizations (per a request to make the
+  fractions, not just the threshold, the priority). Surfaced a finding: the remap
+  column is strongly trajectory-dependent (median 66–70%, but varies widely
+  run-to-run); the old single-seed figure showed ~79%, near the high end. Panel 3a
+  still shows the single seed-1 realization with the stabilized threshold line.
+  Caption + body text (`main.tex` lines ~215/221/223) updated, incl. wide-dynamics
+  KL 11%→median 14%. Figure regenerated and `main.pdf` rebuilt (0 undefined
+  refs/citations).
+
+- Work on Intro promises
+
 ## Red TODO placeholders left in main.tex
 
 - [ ] **4. Spike-sorting methods.** Resolve `\textcolor{red}{[Add spike sorting
@@ -81,3 +98,11 @@ log switch, and the best-practices / grammar-and-argument reviews.
   Figure 3b "empirical 99% interval" sentence. Removed the inaccurate blue/red
   spike-coloring claim — Figure 3 plots single-color scatter with a horizontal
   threshold line.
+
+errors that lead to incorrect state estimates, vs ones that show up on classic goodness of fit
+
+## Possible journals
+PLOS Comp Bio
+NBDT
+Neural Comp
+IEEE Biomedical Engineering
