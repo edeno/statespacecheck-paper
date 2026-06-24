@@ -385,7 +385,7 @@ def create_distribution_comparison_panel(
     ax.set_xlim(float(x[0]), float(x[-1]))
     ax.set_ylim(-0.1, 0.30)  # Room for sub-panel titles
     if title:
-        ax.set_title(title, fontsize=7, fontweight="normal", pad=2)
+        ax.set_title(title, fontsize=8, fontweight="normal", pad=2)
 
     ax.axis("off")
 
@@ -398,7 +398,7 @@ def create_distribution_comparison_panel(
             "Predictive",
             ha="center",
             va="bottom",
-            fontsize=5,
+            fontsize=8,
             color=color_predictive,
         )
         ax.text(
@@ -407,7 +407,7 @@ def create_distribution_comparison_panel(
             "Likelihood",
             ha="center",
             va="bottom",
-            fontsize=5,
+            fontsize=8,
             color=color_likelihood,
         )
 
@@ -562,15 +562,15 @@ def plot_misfit_examples(
                 ax1.lines[0].remove()  # Remove the unscaled plot
                 ax1.set_ylabel(
                     f"Predictive (×10$^{{{prior_order}}}$)",
-                    fontsize=7,
+                    fontsize=8,
                     color=COLORS["predictive"],
                     labelpad=3,
                 )
             else:
-                ax1.set_ylabel("Predictive", fontsize=7, color=COLORS["predictive"], labelpad=3)
+                ax1.set_ylabel("Predictive", fontsize=8, color=COLORS["predictive"], labelpad=3)
         else:
-            ax1.set_ylabel("Predictive", fontsize=7, color=COLORS["predictive"], labelpad=3)
-        ax1.tick_params(axis="y", labelcolor=COLORS["predictive"], labelsize=6)
+            ax1.set_ylabel("Predictive", fontsize=8, color=COLORS["predictive"], labelpad=3)
+        ax1.tick_params(axis="y", labelcolor=COLORS["predictive"], labelsize=8)
         ax1.set_ylim(0, None)
 
         # Plot likelihood on right axis - solid line
@@ -590,7 +590,7 @@ def plot_misfit_examples(
                 )
                 ax2.set_ylabel(
                     f"Likelihood (×10$^{{{likelihood_order}}}$)",
-                    fontsize=7,
+                    fontsize=8,
                     color=COLORS["likelihood"],
                     labelpad=3,
                 )
@@ -603,7 +603,7 @@ def plot_misfit_examples(
                     alpha=0.9,
                     label="Likelihood",
                 )
-                ax2.set_ylabel("Likelihood", fontsize=7, color=COLORS["likelihood"], labelpad=3)
+                ax2.set_ylabel("Likelihood", fontsize=8, color=COLORS["likelihood"], labelpad=3)
         else:
             line2 = ax2.plot(
                 xs,
@@ -613,8 +613,8 @@ def plot_misfit_examples(
                 alpha=0.9,
                 label="Likelihood",
             )
-            ax2.set_ylabel("Likelihood", fontsize=7, color=COLORS["likelihood"], labelpad=3)
-        ax2.tick_params(axis="y", labelcolor=COLORS["likelihood"], labelsize=6)
+            ax2.set_ylabel("Likelihood", fontsize=8, color=COLORS["likelihood"], labelpad=3)
+        ax2.tick_params(axis="y", labelcolor=COLORS["likelihood"], labelsize=8)
         ax2.set_ylim(0, None)
 
         # Add true position line
@@ -636,16 +636,16 @@ def plot_misfit_examples(
         else:
             sp_str = f"{spike_prob_val:.2g}"
             title_text = f"{phase_name}\nHPD: {hpdo_val:.2g}  KL: {kl_val:.2g}  SP: {sp_str}"
-        ax1.set_title(title_text, fontsize=7, pad=5, fontweight="bold")
+        ax1.set_title(title_text, fontsize=8, pad=5, fontweight="bold")
 
-        ax1.tick_params(axis="x", labelsize=6)
-        ax1.set_xlabel("Position", fontsize=7, labelpad=3)
+        ax1.tick_params(axis="x", labelsize=8)
+        ax1.set_xlabel("Position", fontsize=8, labelpad=3)
 
         # Add legend to first panel only
         if phase_idx == 0:
             lines = line1 + line2
             labels = [str(line.get_label()) for line in lines]
-            ax1.legend(lines, labels, fontsize=5, loc="lower right", frameon=False)
+            ax1.legend(lines, labels, fontsize=8, loc="lower right", frameon=False)
 
     return fig
 
@@ -909,7 +909,7 @@ def _plot_spike_count_raster(
     n_time, n_cells = spikes_sorted.shape
     ax.set_xlim(0, n_time)
     ax.set_ylim(-0.5, n_cells - 0.5)
-    ax.set_ylabel("Neuron", fontsize=7, labelpad=7)
+    ax.set_ylabel("Neuron", fontsize=8, labelpad=7)
 
 
 def _add_figure3_row_label(ax: Axes, label: str) -> None:
@@ -919,7 +919,7 @@ def _add_figure3_row_label(ax: Axes, label: str) -> None:
         0.5,
         label,
         transform=ax.transAxes,
-        fontsize=7,
+        fontsize=8,
         va="center",
         ha="left",
         rotation=270,
@@ -949,7 +949,7 @@ def _add_figure3_threshold_label(ax: Axes, threshold: float) -> None:
         threshold,
         "Threshold",
         transform=ax.get_yaxis_transform(),
-        fontsize=6,
+        fontsize=8,
         va="center",
         ha="left",
         color=COLORS["threshold"],
@@ -964,7 +964,7 @@ def _add_figure3_worse_fit_label(ax: Axes, label: str) -> None:
         0.5,
         label,
         transform=ax.transAxes,
-        fontsize=6,
+        fontsize=8,
         va="center",
         ha="left",
     )
@@ -978,14 +978,14 @@ def _plot_figure3_predictive_row(
 ) -> None:
     """Plot Figure 3's predictive row with a direct true-position label."""
     _plot_timeseries_heatmap(ax, predictive, x_true)
-    ax.set_ylabel("Position (a.u.)", fontsize=7, labelpad=7)
-    ax.tick_params(labelsize=6, labelbottom=False)
+    ax.set_ylabel("Position (a.u.)", fontsize=8, labelpad=7)
+    ax.tick_params(labelsize=8, labelbottom=False)
     true_position_label = ax.text(
         0.02,
         0.90,
         "True position",
         transform=ax.transAxes,
-        fontsize=6,
+        fontsize=8,
         color=COLORS["ground_truth"],
         va="top",
         ha="left",
@@ -1007,8 +1007,8 @@ def _plot_figure3_likelihood_row(
         metrics.event_time_ind,
         x_true=x_true,
     )
-    ax.set_ylabel("Position (a.u.)", fontsize=7, labelpad=7)
-    ax.tick_params(labelsize=6, labelbottom=False)
+    ax.set_ylabel("Position (a.u.)", fontsize=8, labelpad=7)
+    ax.tick_params(labelsize=8, labelbottom=False)
     _add_figure3_row_label(ax, "Likelihood")
 
 
@@ -1019,7 +1019,7 @@ def _plot_figure3_raster_row(
 ) -> None:
     """Plot Figure 3's spike-count raster row."""
     _plot_spike_count_raster(ax, spikes, placefield_centers)
-    ax.tick_params(labelsize=6, labelbottom=False)
+    ax.tick_params(labelsize=8, labelbottom=False)
     _add_figure3_row_label(ax, "Spikes")
 
 
@@ -1066,12 +1066,12 @@ def _plot_figure3_diagnostic_row(
         ax.set_ylim(-0.005, 1.0)
 
     ax.set_xlim(0, n_time)
-    ax.set_ylabel(spec.ylabel, fontsize=7, labelpad=7)
+    ax.set_ylabel(spec.ylabel, fontsize=8, labelpad=7)
     if show_xlabel:
-        ax.set_xlabel("Time (a.u.)", fontsize=7, labelpad=7)
-        ax.tick_params(labelsize=7)
+        ax.set_xlabel("Time (a.u.)", fontsize=8, labelpad=7)
+        ax.tick_params(labelsize=8)
     else:
-        ax.tick_params(labelsize=6, labelbottom=False)
+        ax.tick_params(labelsize=8, labelbottom=False)
 
     _add_figure3_worse_fit_label(ax, spec.worse_fit_direction)
     _add_figure3_threshold_label(ax, plot_threshold)
@@ -1102,7 +1102,7 @@ def _add_figure3_phase_labels(ax: Axes, params: DecodeParams) -> None:
             phase_label_y,
             label_text,
             transform=ax.get_xaxis_transform(),
-            fontsize=6,
+            fontsize=8,
             ha="center",
             va="bottom",
             style="italic",
@@ -1132,10 +1132,10 @@ def _plot_figure3_summary_heatmap(
 
     metric_labels = ["HPD\noverlap", "KL\ndiv.", "−log(p)"]
     ax.set_yticks(range(3))
-    ax.set_yticklabels(metric_labels, fontsize=6)
+    ax.set_yticklabels(metric_labels, fontsize=8)
 
     ax.set_xticks(range(len(windows)))
-    ax.set_xticklabels([col.label for col in windows], fontsize=6)
+    ax.set_xticklabels([col.label for col in windows], fontsize=8)
     ax.tick_params(top=True, bottom=False, labeltop=True, labelbottom=False)
 
     for row_idx in range(3):
@@ -1149,7 +1149,7 @@ def _plot_figure3_summary_heatmap(
                 f"{val:.0f}%",
                 ha="center",
                 va="center",
-                fontsize=6,
+                fontsize=8,
                 color=color,
                 fontweight=weight,
             )
@@ -1165,7 +1165,7 @@ def _plot_figure3_summary_heatmap(
             comp,
             ha="center",
             va="center",
-            fontsize=5.5,
+            fontsize=8,
             fontstyle="italic",
             color=color,
         )
@@ -1177,7 +1177,7 @@ def _plot_figure3_summary_heatmap(
         transform=ax.get_yaxis_transform(),
         ha="right",
         va="center",
-        fontsize=5.5,
+        fontsize=8,
         color="0.4",
         fontstyle="italic",
     )
@@ -1188,7 +1188,7 @@ def _plot_figure3_summary_heatmap(
         summary_title += " (median across realizations)"
     title = ax.set_title(
         summary_title,
-        fontsize=7,
+        fontsize=8,
         pad=8,
         loc="center",
     )

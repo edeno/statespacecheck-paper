@@ -151,7 +151,7 @@ def draw_arrow(
             label,
             ha="center",
             va="bottom",
-            fontsize=7,
+            fontsize=8,
             style="italic",
         )
 
@@ -168,9 +168,9 @@ def draw_distribution_inset(
     color: str,
     label: str | None = None,
     label_color: str | None = None,
-    label_size: int = 6,
+    label_size: int = 8,
     title: str | None = None,
-    title_size: int = 6,
+    title_size: int = 8,
 ) -> None:
     """Draw a small distribution plot as an inset.
 
@@ -197,11 +197,11 @@ def draw_distribution_inset(
         Label below distribution (e.g., math notation).
     label_color : str | None, optional
         Color for label. Defaults to distribution color.
-    label_size : int, default 6
+    label_size : int, default 8
         Font size for label.
     title : str | None, optional
         Title above distribution.
-    title_size : int, default 6
+    title_size : int, default 8
         Font size for title.
 
     Examples
@@ -340,7 +340,7 @@ def draw_spikes_inset(
         ha="center",
         va="top",
         transform=inset.transAxes,
-        fontsize=6,
+        fontsize=8,
     )
 
 
@@ -475,7 +475,7 @@ def draw_graphical_model(
         "Transition",
         ha="center",
         va="bottom",
-        fontsize=6,
+        fontsize=8,
         color="#666666",
     )
     ax.text(
@@ -484,7 +484,7 @@ def draw_graphical_model(
         r"$p(x_t|x_{t-1})$",
         ha="center",
         va="top",
-        fontsize=6,
+        fontsize=8,
         color="#666666",
     )
 
@@ -505,7 +505,7 @@ def draw_graphical_model(
         "Likelihood\n" + r"$p(y_t|x_t)$",
         ha="left",
         va="center",
-        fontsize=6,
+        fontsize=8,
         color=COLORS["likelihood"],
         linespacing=1.0,
     )
@@ -532,7 +532,7 @@ def draw_graphical_model(
         "Latent\nstates",
         ha="left",
         va="center",
-        fontsize=7,
+        fontsize=8,
         fontstyle="italic",
     )
     ax.text(
@@ -541,7 +541,7 @@ def draw_graphical_model(
         "Observations",
         ha="left",
         va="center",
-        fontsize=7,
+        fontsize=8,
         fontstyle="italic",
     )
 
@@ -552,7 +552,7 @@ def draw_graphical_model(
         "Previous\nPosterior",
         ha="center",
         va="bottom",
-        fontsize=6,
+        fontsize=8,
         color=COLORS["posterior"],
     )
     ax.text(
@@ -561,7 +561,7 @@ def draw_graphical_model(
         "Current\nPosterior",
         ha="center",
         va="bottom",
-        fontsize=6,
+        fontsize=8,
         color=COLORS["posterior"],
     )
 
@@ -595,7 +595,7 @@ def draw_graphical_model(
         r"Time $\rightarrow$",
         ha="left",
         va="center",
-        fontsize=6,
+        fontsize=8,
         fontstyle="italic",
         color="#666666",
     )
@@ -658,7 +658,7 @@ def draw_equation_boxes(ax: Axes) -> None:
         std=8,
         color=COLORS["posterior"],
         label=r"$p(x_{t-1}|y_{1:t-1})$",
-        label_size=5,
+        label_size=8,
         title="Previous\nPosterior",
     )
 
@@ -680,7 +680,7 @@ def draw_equation_boxes(ax: Axes) -> None:
         "Convolve",
         ha="center",
         va="bottom",
-        fontsize=5,
+        fontsize=8,
         color="#666666",
     )
 
@@ -694,7 +694,7 @@ def draw_equation_boxes(ax: Axes) -> None:
         std=10,
         color="#666666",
         label=r"$p(x_t|x_{t-1})$",
-        label_size=5,
+        label_size=8,
         title="Transition",
     )
 
@@ -718,7 +718,7 @@ def draw_equation_boxes(ax: Axes) -> None:
         std=12,
         color=COLORS["predictive"],
         label=r"$p(x_t|y_{1:t-1})$",
-        label_size=5,
+        label_size=8,
         title="Predictive\nDistribution",
     )
 
@@ -729,7 +729,7 @@ def draw_equation_boxes(ax: Axes) -> None:
         "1. Prediction",
         ha="left",
         va="center",
-        fontsize=7,
+        fontsize=8,
         color=COLORS["predictive"],
         fontweight="bold",
     )
@@ -760,7 +760,7 @@ def draw_equation_boxes(ax: Axes) -> None:
         std=12,
         color=COLORS["predictive"],
         label=r"$p(x_t|y_{1:t-1})$",
-        label_size=5,
+        label_size=8,
         title="Predictive\nDistribution",
     )
 
@@ -782,7 +782,7 @@ def draw_equation_boxes(ax: Axes) -> None:
         "Mult.",
         ha="center",
         va="bottom",
-        fontsize=5,
+        fontsize=8,
         color="#666666",
     )
 
@@ -796,7 +796,7 @@ def draw_equation_boxes(ax: Axes) -> None:
         std=10,
         color=COLORS["likelihood"],
         label=r"$p(x_t|y_t)$",
-        label_size=5,
+        label_size=8,
         title="Likelihood",
     )
 
@@ -820,7 +820,7 @@ def draw_equation_boxes(ax: Axes) -> None:
         std=7,
         color=COLORS["posterior"],
         label=r"$p(x_t|y_{1:t})$",
-        label_size=5,
+        label_size=8,
         title="Current\nPosterior",
     )
 
@@ -831,7 +831,7 @@ def draw_equation_boxes(ax: Axes) -> None:
         "2. Update",
         ha="left",
         va="center",
-        fontsize=7,
+        fontsize=8,
         color=COLORS["posterior"],
         fontweight="bold",
     )
@@ -871,7 +871,7 @@ def draw_equation_boxes(ax: Axes) -> None:
         "Each\ntime $t$",
         ha="right",
         va="center",
-        fontsize=6,
+        fontsize=8,
         fontweight="bold",
         color="#666666",
     )

@@ -22,6 +22,8 @@ from __future__ import annotations
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.patches import Rectangle
+from matplotlib.transforms import Bbox
 
 from statespacecheck_paper.figure02_panels import (
     create_shared_example,
@@ -36,6 +38,40 @@ from statespacecheck_paper.figure02_panels import (
     plot_ppc_panel_i,
 )
 from statespacecheck_paper.style import save_figure, set_figure_defaults
+
+
+def _add_column_group_backplates(
+    fig: plt.Figure,
+    axes: dict[str, plt.Axes],
+) -> None:
+    """Add subtle column backplates so each metric reads as one group."""
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    to_figure = fig.transFigure.inverted()
+    column_groups = (
+        ("A", "D", "G", "J"),
+        ("B", "E", "H", "K"),
+        ("C", "F", "I", "L"),
+    )
+
+    for keys in column_groups:
+        bboxes = [axes[key].get_tightbbox(renderer).transformed(to_figure) for key in keys]
+        bbox = Bbox.union(bboxes)
+        x_pad = 0.010
+        y_pad = 0.008
+        fig.add_artist(
+            Rectangle(
+                (bbox.x0 - x_pad, bbox.y0 - y_pad),
+                bbox.width + 2 * x_pad,
+                bbox.height + 2 * y_pad,
+                transform=fig.transFigure,
+                facecolor="#F8F9FB",
+                edgecolor="#D9DEE7",
+                linewidth=0.5,
+                zorder=-1,
+                clip_on=False,
+            )
+        )
 
 
 def create_figure() -> None:
@@ -57,11 +93,11 @@ def create_figure() -> None:
         """
     fig, axes = plt.subplot_mosaic(
         layout,
-        figsize=(7.0, 5.5),
+        figsize=(7.15, 7.0),
         width_ratios=[1, 1, 0.2, 1, 1, 0.2, 1, 1],
         height_ratios=[1, 1, 1, 0.35],
         dpi=450,
-        constrained_layout={"h_pad": 0.08, "w_pad": 0.04},
+        constrained_layout={"h_pad": 0.10, "w_pad": 0.04},
     )
 
     # KL Divergence column (A, D, G)
@@ -153,6 +189,16 @@ def create_figure() -> None:
             va="bottom",
             ha="right",
         )
+
+    # The 8 pt legends/titles need clear space above the data. Expand the
+    # y-limits of the distribution panels (the formula and HPD-bar panels are
+    # excluded) so the corner-anchored legends no longer sit on the curves;
+    # the data-max y-tick stays put, the extra room opens up above it.
+    for key in ("A", "B", "C", "F", "I"):
+        lo, hi = axes[key].get_ylim()
+        axes[key].set_ylim(lo, hi * 1.28)
+
+    _add_column_group_backplates(fig, axes)
 
     save_figure("manuscript/figures/main/figure02")
     print("\nFigure 2 saved to manuscript/figures/main/figure02.{pdf,png}")

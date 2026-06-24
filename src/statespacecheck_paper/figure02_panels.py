@@ -167,20 +167,20 @@ def plot_kl_panel_a(ax: Axes, data: dict[str, Any]) -> None:
     ax.plot(x, like, color=COLORS["likelihood"], linewidth=1.5, label="Likelihood")
     ax.fill_between(x, like, alpha=0.3, color=COLORS["likelihood"])
 
-    ax.set_xlabel("Latent state (a.u.)", fontsize=7, labelpad=8)
-    ax.set_ylabel("Probability", fontsize=7, labelpad=8)
-    ax.legend(fontsize=5, frameon=False, loc="upper right")
+    ax.set_xlabel("Latent state (a.u.)", fontsize=8, labelpad=8)
+    ax.set_ylabel("Probability", fontsize=8, labelpad=8)
+    ax.legend(fontsize=8, frameon=False, loc="upper right")
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     ax.set_xlim(0, 100)
     ax.set_ylim(bottom=0)
     # Minimal x-ticks: first and last only
     ax.set_xticks([0, 100])
-    ax.set_xticklabels(["0", "100"], fontsize=5)
+    ax.set_xticklabels(["0", "100"], fontsize=8)
     # Minimal y-ticks: first and last only
     y_max = ax.get_ylim()[1]
     ax.set_yticks([0, y_max])
-    ax.set_yticklabels(["0", f"{y_max:.2f}"], fontsize=5)
+    ax.set_yticklabels(["0", f"{y_max:.2f}"], fontsize=8)
 
 
 def plot_kl_panel_b(ax: Axes, data: dict[str, Any]) -> None:
@@ -213,19 +213,19 @@ def plot_kl_panel_b(ax: Axes, data: dict[str, Any]) -> None:
         color=COLORS["likelihood"],
     )
 
-    ax.set_xlabel("Latent state (a.u.)", fontsize=7, labelpad=8)
-    ax.set_ylabel(r"$\log(\mathrm{pred}) - \log(\mathrm{like})$", fontsize=6, labelpad=8)
-    ax.set_title("Log Ratio", fontsize=6, pad=4)
+    ax.set_xlabel("Latent state (a.u.)", fontsize=8, labelpad=8)
+    ax.set_ylabel(r"$\log(\mathrm{pred}) - \log(\mathrm{like})$", fontsize=8, labelpad=8)
+    ax.set_title("Log Ratio", fontsize=8, pad=4)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     ax.set_xlim(0, 100)
     # Minimal x-ticks: first and last only
     ax.set_xticks([0, 100])
-    ax.set_xticklabels(["0", "100"], fontsize=5)
+    ax.set_xticklabels(["0", "100"], fontsize=8)
     # Minimal y-ticks: first and last only
     y_min, y_max = ax.get_ylim()
     ax.set_yticks([y_min, 0, y_max])
-    ax.set_yticklabels([f"{y_min:.0f}", "0", f"{y_max:.0f}"], fontsize=5)
+    ax.set_yticklabels([f"{y_min:.0f}", "0", f"{y_max:.0f}"], fontsize=8)
 
 
 def plot_kl_panel_c(ax: Axes, data: dict[str, Any]) -> None:
@@ -241,23 +241,23 @@ def plot_kl_panel_c(ax: Axes, data: dict[str, Any]) -> None:
     ax.fill_between(x, pointwise_kl, alpha=0.3, color=COLORS["kl_divergence"])
     ax.axhline(0, color=COLORS["reference"], linestyle="--", linewidth=0.8, alpha=0.7)
 
-    ax.set_xlabel("Latent state (a.u.)", fontsize=7, labelpad=8)
+    ax.set_xlabel("Latent state (a.u.)", fontsize=8, labelpad=8)
     ax.set_ylabel(
         r"$\mathrm{pred} \cdot [\log(\mathrm{pred}) - \log(\mathrm{like})]$",
-        fontsize=6,
+        fontsize=8,
         labelpad=8,
     )
-    ax.set_title("Pointwise KL: pred × log ratio", fontsize=6, pad=4)
+    ax.set_title("Pointwise KL: pred × log ratio", fontsize=8, pad=4)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     ax.set_xlim(0, 100)
     # Minimal x-ticks: first and last only
     ax.set_xticks([0, 100])
-    ax.set_xticklabels(["0", "100"], fontsize=5)
+    ax.set_xticklabels(["0", "100"], fontsize=8)
     # Minimal y-ticks: first and last only
     y_min, y_max = ax.get_ylim()
     ax.set_yticks([y_min, 0, y_max])
-    ax.set_yticklabels([f"{y_min:.3f}", "0", f"{y_max:.3f}"], fontsize=5)
+    ax.set_yticklabels([f"{y_min:.3f}", "0", f"{y_max:.3f}"], fontsize=8)
 
 
 # =============================================================================
@@ -306,28 +306,28 @@ def plot_hpd_panel_d(ax: Axes, data: dict[str, Any]) -> None:
         95,
         hpd_threshold,
         "95% threshold",
-        fontsize=5,
+        fontsize=8,
         ha="right",
         va="bottom",
         color=COLORS["predictive"],
         alpha=0.8,
     )
 
-    ax.set_xlabel("Latent state (a.u.)", fontsize=7, labelpad=8)
-    ax.set_ylabel("Probability", fontsize=7, labelpad=8)
-    ax.set_title(r"Predictive HPD ($H_{\mathrm{pred}}$)", fontsize=6, pad=4)
-    ax.legend(fontsize=5, frameon=False, loc="upper right")
+    ax.set_xlabel("Latent state (a.u.)", fontsize=8, labelpad=8)
+    ax.set_ylabel("Probability", fontsize=8, labelpad=8)
+    ax.set_title(r"Predictive HPD ($H_{\mathrm{pred}}$)", fontsize=8, pad=4)
+    ax.legend(fontsize=8, frameon=False, loc="upper right")
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     ax.set_xlim(0, 100)
     ax.set_ylim(bottom=0)
     # Minimal x-ticks: first and last only
     ax.set_xticks([0, 100])
-    ax.set_xticklabels(["0", "100"], fontsize=5)
+    ax.set_xticklabels(["0", "100"], fontsize=8)
     # Minimal y-ticks: first and last only
     y_max = ax.get_ylim()[1]
     ax.set_yticks([0, y_max])
-    ax.set_yticklabels(["0", f"{y_max:.2f}"], fontsize=5)
+    ax.set_yticklabels(["0", f"{y_max:.2f}"], fontsize=8)
 
 
 def plot_hpd_panel_e(ax: Axes, data: dict[str, Any]) -> None:
@@ -371,28 +371,37 @@ def plot_hpd_panel_e(ax: Axes, data: dict[str, Any]) -> None:
         5,
         hpd_threshold,
         "95% threshold",
-        fontsize=5,
+        fontsize=8,
         ha="left",
         va="bottom",
         color=COLORS["likelihood"],
         alpha=0.8,
     )
 
-    ax.set_xlabel("Latent state (a.u.)", fontsize=7, labelpad=8)
-    ax.set_ylabel("Probability", fontsize=7, labelpad=8)
-    ax.set_title(r"Likelihood HPD ($H_{\mathrm{like}}$)", fontsize=6, pad=4)
-    ax.legend(fontsize=5, frameon=False, loc="upper right")
+    ax.set_xlabel("Latent state (a.u.)", fontsize=8, labelpad=8)
+    ax.set_ylabel("Probability", fontsize=8, labelpad=8)
+    ax.set_title(r"Likelihood HPD ($H_{\mathrm{like}}$)", fontsize=8, pad=4)
+    # Curve peaks center-right, so keep the legend in the empty upper-left,
+    # tucked against the probability axis.
+    ax.legend(
+        fontsize=8,
+        frameon=False,
+        loc="upper left",
+        handlelength=1.2,
+        handletextpad=0.4,
+        borderaxespad=0.2,
+    )
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     ax.set_xlim(0, 100)
     ax.set_ylim(bottom=0)
     # Minimal x-ticks: first and last only
     ax.set_xticks([0, 100])
-    ax.set_xticklabels(["0", "100"], fontsize=5)
+    ax.set_xticklabels(["0", "100"], fontsize=8)
     # Minimal y-ticks: first and last only
     y_max = ax.get_ylim()[1]
     ax.set_yticks([0, y_max])
-    ax.set_yticklabels(["0", f"{y_max:.2f}"], fontsize=5)
+    ax.set_yticklabels(["0", f"{y_max:.2f}"], fontsize=8)
 
 
 def plot_hpd_panel_f(ax: Axes, data: dict[str, Any]) -> tuple[float, float, float]:
@@ -468,7 +477,7 @@ def plot_hpd_panel_f(ax: Axes, data: dict[str, Any]) -> tuple[float, float, floa
         pred_center,
         0.84,
         rf"|$H_{{\mathrm{{pred}}}}$| = {pred_hpd_size:.1f}",
-        fontsize=6,
+        fontsize=8,
         ha="center",
         va="bottom",
         color=COLORS["predictive"],
@@ -477,7 +486,7 @@ def plot_hpd_panel_f(ax: Axes, data: dict[str, Any]) -> tuple[float, float, floa
         like_center,
         0.54,
         rf"|$H_{{\mathrm{{like}}}}$| = {like_hpd_size:.1f}",
-        fontsize=6,
+        fontsize=8,
         ha="center",
         va="bottom",
         color=COLORS["likelihood"],
@@ -486,14 +495,14 @@ def plot_hpd_panel_f(ax: Axes, data: dict[str, Any]) -> tuple[float, float, floa
         inter_center,
         0.24,
         rf"|$H_{{\mathrm{{pred}}}} \cap H_{{\mathrm{{like}}}}$| = {intersection_size:.1f}",
-        fontsize=6,
+        fontsize=8,
         ha="center",
         va="bottom",
         color=COLORS["hpd_overlap"],
     )
 
-    ax.set_xlabel("Latent state (a.u.)", fontsize=7, labelpad=8)
-    ax.set_ylabel("", fontsize=7, labelpad=8)  # No y-label needed
+    ax.set_xlabel("Latent state (a.u.)", fontsize=8, labelpad=8)
+    ax.set_ylabel("", fontsize=8, labelpad=8)  # No y-label needed
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     ax.spines["left"].set_visible(False)
@@ -504,13 +513,13 @@ def plot_hpd_panel_f(ax: Axes, data: dict[str, Any]) -> tuple[float, float, floa
     # Descriptive labels with formula notation
     ax.set_yticklabels(
         [r"Pred. HPD ($H_{\mathrm{pred}}$)", r"Like. HPD ($H_{\mathrm{like}}$)", r"Intersection"],
-        fontsize=5,
+        fontsize=8,
     )
 
     ax.tick_params(axis="y", length=0)  # Hide tick marks
     # Minimal x-ticks: first and last only
     ax.set_xticks([0, 100])
-    ax.set_xticklabels(["0", "100"], fontsize=5)
+    ax.set_xticklabels(["0", "100"], fontsize=8)
 
     return pred_hpd_size, like_hpd_size, intersection_size
 
@@ -553,20 +562,29 @@ def plot_ppc_panel_g(ax: Axes, data: dict[str, Any]) -> None:
     # Single legend entry summarises the fan.
     ax.scatter([], [], color=colors[len(colors) // 2], s=30, label="Samples")
 
-    ax.set_xlabel("Latent state (a.u.)", fontsize=7, labelpad=8)
-    ax.set_ylabel("Probability", fontsize=7, labelpad=8)
-    ax.legend(fontsize=5, frameon=False, loc="upper right")
+    ax.set_xlabel("Latent state (a.u.)", fontsize=8, labelpad=8)
+    ax.set_ylabel("Probability", fontsize=8, labelpad=8)
+    # Sample fan sits center-left; push the legend into the far upper-right
+    # with a short handle so its left edge clears the markers.
+    ax.legend(
+        fontsize=8,
+        frameon=False,
+        loc="upper right",
+        handlelength=1.0,
+        handletextpad=0.4,
+        borderaxespad=0.0,
+    )
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     ax.set_xlim(0, 100)
     ax.set_ylim(bottom=0)
     # Minimal x-ticks: first and last only
     ax.set_xticks([0, 100])
-    ax.set_xticklabels(["0", "100"], fontsize=5)
+    ax.set_xticklabels(["0", "100"], fontsize=8)
     # Minimal y-ticks: first and last only
     y_max = ax.get_ylim()[1]
     ax.set_yticks([0, y_max])
-    ax.set_yticklabels(["0", f"{y_max:.2f}"], fontsize=5)
+    ax.set_yticklabels(["0", f"{y_max:.2f}"], fontsize=8)
 
 
 def plot_ppc_panel_h(ax: Axes, data: dict[str, Any]) -> None:
@@ -654,25 +672,34 @@ def plot_ppc_panel_h(ax: Axes, data: dict[str, Any]) -> None:
         label=r"Obs. $\tilde{y}$",
     )
 
-    ax.legend(fontsize=5, frameon=False, loc="upper right")
-    ax.set_xlabel("Latent state (a.u.)", fontsize=7, labelpad=8)
-    ax.set_ylabel("Probability", fontsize=7, labelpad=8)
+    # Curves spread across the panel; push the legend into the far
+    # upper-right with a short handle so it clears the curves and markers.
+    ax.legend(
+        fontsize=8,
+        frameon=False,
+        loc="upper right",
+        handlelength=1.3,
+        handletextpad=0.4,
+        borderaxespad=0.0,
+    )
+    ax.set_xlabel("Latent state (a.u.)", fontsize=8, labelpad=8)
+    ax.set_ylabel("Probability", fontsize=8, labelpad=8)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     ax.set_xlim(0, 100)
     ax.set_ylim(bottom=0)
     ax.set_xticks([0, 100])
-    ax.set_xticklabels(["0", "100"], fontsize=5)
+    ax.set_xticklabels(["0", "100"], fontsize=8)
     y_max = ax.get_ylim()[1]
     ax.set_yticks([0, y_max])
-    ax.set_yticklabels(["0", f"{y_max:.2f}"], fontsize=5)
+    ax.set_yticklabels(["0", f"{y_max:.2f}"], fontsize=8)
 
     ax.text(
         0.5,
         1.02,
         "Simulated obs. likelihoods",
         transform=ax.transAxes,
-        fontsize=6,
+        fontsize=8,
         ha="center",
         va="bottom",
         style="italic",
@@ -708,16 +735,16 @@ def plot_ppc_panel_i(ax: Axes, data: dict[str, Any]) -> None:
         label="Observed",
     )
 
-    ax.set_xlabel("Log pred. density", fontsize=7, labelpad=8)
-    ax.set_ylabel("Density", fontsize=7, labelpad=8)
-    ax.legend(fontsize=5, frameon=False, loc="upper left")
+    ax.set_xlabel("Log pred. density", fontsize=8, labelpad=8)
+    ax.set_ylabel("Density", fontsize=8, labelpad=8)
+    ax.legend(fontsize=8, frameon=False, loc="upper left")
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     # Minimal x-ticks: first and last only
     x_min, x_max = ax.get_xlim()
     ax.set_xticks([x_min, x_max])
-    ax.set_xticklabels([f"{x_min:.0f}", f"{x_max:.0f}"], fontsize=5)
+    ax.set_xticklabels([f"{x_min:.0f}", f"{x_max:.0f}"], fontsize=8)
     # Minimal y-ticks: first and last only
     y_max = ax.get_ylim()[1]
     ax.set_yticks([0, y_max])
-    ax.set_yticklabels(["0", f"{y_max:.1f}"], fontsize=5)
+    ax.set_yticklabels(["0", f"{y_max:.1f}"], fontsize=8)

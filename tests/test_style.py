@@ -22,12 +22,13 @@ WidthType = Literal["single", "double", "full"]
 # also documents the contract.
 _CONTEXT_FONT_SIZES = {
     "paper": {
-        "font.size": 7,
-        "axes.labelsize": 7,
-        "axes.titlesize": 8,
-        "xtick.labelsize": 6,
-        "ytick.labelsize": 6,
-        "legend.fontsize": 6,
+        # PLOS requires all in-figure text in the 8-12 pt range.
+        "font.size": 8,
+        "axes.labelsize": 8,
+        "axes.titlesize": 9,
+        "xtick.labelsize": 8,
+        "ytick.labelsize": 8,
+        "legend.fontsize": 8,
     },
     "presentation": {
         "font.size": 12,

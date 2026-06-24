@@ -52,7 +52,7 @@ def add_scalebar(
     label: str,
     loc: str = "lower right",
     pad: float = 0.1,
-    fontsize: int = 7,
+    fontsize: int = 8,
 ) -> None:
     """Add a scale bar to an axes.
 
@@ -883,7 +883,7 @@ def plot_per_cell_diagnostic_scatter(
             threshold,
             "Threshold",
             transform=ax.get_yaxis_transform(),
-            fontsize=6,
+            fontsize=8,
             va="center",
             ha="left",
             color=COLORS["threshold"],
@@ -900,15 +900,15 @@ def plot_per_cell_diagnostic_scatter(
         ax.set_ylim(-0.005, 1.0)
 
     ax.set_xlim(time_arr.min(), time_arr.max())
-    ax.set_ylabel(metric_name if ylabel is None else ylabel, fontsize=7, labelpad=7)
+    ax.set_ylabel(metric_name if ylabel is None else ylabel, fontsize=8, labelpad=7)
 
     if show_xlabel:
-        ax.set_xlabel("Time (s)", fontsize=7, labelpad=7)
-        ax.tick_params(labelsize=6)
+        ax.set_xlabel("Time (s)", fontsize=8, labelpad=7)
+        ax.tick_params(labelsize=8)
     else:
-        ax.tick_params(labelsize=6, labelbottom=False)
+        ax.tick_params(labelsize=8, labelbottom=False)
     if metric_name == "hpd_overlap":
-        ax.tick_params(axis="y", labelsize=5.5, pad=1)
+        ax.tick_params(axis="y", labelsize=8, pad=1)
 
     return ax
 
@@ -1150,12 +1150,12 @@ def plot_model_comparison_with_posterior(
             show_position=True,
             cmap=CMAP_POSTERIOR,
         )
-        ax.set_title(model_name, fontsize=7)
-        ax.set_ylabel("Predictive" if col == 0 else "", fontsize=7, labelpad=7)
+        ax.set_title(model_name, fontsize=8)
+        ax.set_ylabel("Predictive" if col == 0 else "", fontsize=8, labelpad=7)
         ax.set_xlabel("")
-        ax.tick_params(labelsize=6, labelbottom=False)
+        ax.tick_params(labelsize=8, labelbottom=False)
         if col == 0:
-            ax.legend(loc="upper left", fontsize=6, frameon=False)
+            ax.legend(loc="upper left", fontsize=8, frameon=False)
 
     # --- Row 1: Likelihood overlay (predictive underlay + likelihood at spike times) ---
     for col, (results, _model_name) in enumerate(
@@ -1245,9 +1245,9 @@ def plot_model_comparison_with_posterior(
         )
 
         ax.set_title("")
-        ax.set_ylabel("Likelihood" if col == 0 else "", fontsize=7, labelpad=7)
+        ax.set_ylabel("Likelihood" if col == 0 else "", fontsize=8, labelpad=7)
         ax.set_xlabel("")
-        ax.tick_params(labelsize=6, labelbottom=False)
+        ax.tick_params(labelsize=8, labelbottom=False)
 
     # Add 1D track graph on right edge (right column, predictive and likelihood rows)
     if track_graph is not None:
@@ -1287,9 +1287,9 @@ def plot_model_comparison_with_posterior(
                 ax=ax,
                 sort_order=sort_order,
             )
-            ax.set_ylabel("Neuron" if col == 0 else "", fontsize=7, labelpad=7)
+            ax.set_ylabel("Neuron" if col == 0 else "", fontsize=8, labelpad=7)
             ax.set_xlabel("")
-            ax.tick_params(labelsize=6, labelbottom=False)
+            ax.tick_params(labelsize=8, labelbottom=False)
 
     # Rows 3-5: Diagnostic scatter plots
     for i, spec in enumerate(METRIC_SPECS):
@@ -1334,7 +1334,7 @@ def plot_model_comparison_with_posterior(
             0.5,
             spec.worse_fit_direction,
             transform=axes[row, 1].transAxes,
-            fontsize=6,
+            fontsize=8,
             va="center",
             ha="left",
         )
@@ -1444,17 +1444,17 @@ def plot_single_model_diagnostics(
         show_position=True,
         cmap=CMAP_POSTERIOR,
     )
-    axes[0].set_title(model_name, fontsize=7)
-    axes[0].set_ylabel("Predictive", fontsize=7, labelpad=7)
+    axes[0].set_title(model_name, fontsize=8)
+    axes[0].set_ylabel("Predictive", fontsize=8, labelpad=7)
     axes[0].set_xlabel("")
-    axes[0].tick_params(labelsize=6, labelbottom=False)
+    axes[0].tick_params(labelsize=8, labelbottom=False)
     # Self-label the position trace in its own color instead of a legend.
     animal_position_label = axes[0].text(
         0.02,
         0.90,
         "Animal Position",
         transform=axes[0].transAxes,
-        fontsize=5.8,
+        fontsize=8,
         fontweight="normal",
         color=COLORS["ground_truth"],
         alpha=0.85,
@@ -1525,9 +1525,9 @@ def plot_single_model_diagnostics(
         s=1,
         alpha=0.85,
     )
-    ax_lik.set_ylabel("Likelihood", fontsize=7, labelpad=7)
+    ax_lik.set_ylabel("Likelihood", fontsize=8, labelpad=7)
     ax_lik.set_xlabel("")
-    ax_lik.tick_params(labelsize=6, labelbottom=False)
+    ax_lik.tick_params(labelsize=8, labelbottom=False)
 
     # 1D track graph on right edge of predictive and likelihood rows
     if track_graph is not None:
@@ -1551,9 +1551,9 @@ def plot_single_model_diagnostics(
         sliced_time = time_arr[time_slice_ind]
         time_slice = slice(float(sliced_time[0]), float(sliced_time[-1]))
         plot_raster(spike_times, time_slice, ax=axes[2], sort_order=sort_order)
-        axes[2].set_ylabel("Neuron", fontsize=7, labelpad=7)
+        axes[2].set_ylabel("Neuron", fontsize=8, labelpad=7)
         axes[2].set_xlabel("")
-        axes[2].tick_params(labelsize=6, labelbottom=False)
+        axes[2].tick_params(labelsize=8, labelbottom=False)
 
     # Rows 3-5: Diagnostic scatters
     for i, spec in enumerate(METRIC_SPECS):
@@ -1584,7 +1584,7 @@ def plot_single_model_diagnostics(
             worse_fit_y,
             spec.worse_fit_direction,
             transform=axes[row].transAxes,
-            fontsize=6,
+            fontsize=8,
             va="center",
             ha="left",
         )
@@ -1740,14 +1740,15 @@ def plot_per_spike_metric_hexbin_row(
             if direction == "below":
                 # Rescue box is a tall left strip (HPD overlap) full of points;
                 # place the label above the panel so it does not cover the data.
+                # Sit it above the centered panel title so the two do not collide.
                 ax.text(
                     -0.02,
-                    1.02,
+                    1.16,
                     label,
                     transform=ax.transAxes,
                     ha="left",
                     va="bottom",
-                    fontsize=6.0,
+                    fontsize=8,
                     color=rescue_accent,
                     fontstyle="italic",
                     zorder=5,
@@ -1762,7 +1763,7 @@ def plot_per_spike_metric_hexbin_row(
                     label,
                     ha="center",
                     va="bottom",
-                    fontsize=6.0,
+                    fontsize=8,
                     color=rescue_accent,
                     fontstyle="italic",
                     zorder=5,
@@ -1773,10 +1774,10 @@ def plot_per_spike_metric_hexbin_row(
         ax.set_ylim(padded_lims)
         ax.set_aspect("equal", adjustable="box")
 
-        ax.set_xlabel(model_a_name, fontsize=7, labelpad=4)
-        ax.set_ylabel(model_b_name if panel_idx == 0 else "", fontsize=7, labelpad=4)
-        ax.set_title(title, fontsize=7)
-        ax.tick_params(labelsize=6)
+        ax.set_xlabel(model_a_name, fontsize=8, labelpad=4)
+        ax.set_ylabel(model_b_name if panel_idx == 0 else "", fontsize=8, labelpad=4)
+        ax.set_title(title, fontsize=8)
+        ax.tick_params(labelsize=8)
 
         if key == "event_kl_divergence":
             ax.text(
@@ -1784,7 +1785,7 @@ def plot_per_spike_metric_hexbin_row(
                 0.98,
                 f"n={len(data_a):,}",
                 transform=ax.transAxes,
-                fontsize=6.5,
+                fontsize=8,
                 va="top",
                 ha="left",
                 color="0.4",
@@ -1807,8 +1808,8 @@ def plot_per_spike_metric_hexbin_row(
             pad=colorbar_pad,
             shrink=0.64,
         )
-        cbar.set_label("Spike events per hex", fontsize=6.5, labelpad=4)
+        cbar.set_label("Spike events per hex", fontsize=8, labelpad=4)
         count_ticks = [tick for tick in (1, 10, 100, 1000, 10000, 100000) if tick <= max_count]
         cbar.set_ticks(count_ticks)
         cbar.set_ticklabels([f"{tick:,}" for tick in count_ticks])
-        cbar.ax.tick_params(labelsize=6, width=0.5, length=2)
+        cbar.ax.tick_params(labelsize=8, width=0.5, length=2)

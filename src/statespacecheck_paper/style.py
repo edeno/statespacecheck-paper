@@ -221,7 +221,7 @@ def set_figure_defaults(context: Literal["paper", "presentation", "poster"] = "p
 
     Notes
     -----
-    - Font sizes for "paper" context meet Nature/Science minimums (5-7pt)
+    - Font sizes for "paper" context meet the PLOS 8-12 pt in-figure range
     - TrueType font embedding (fonttype 42) required for journal submission
     - Uses Arial font family (widely available and accepted by journals)
     - Sets thin line widths (0.5pt) for professional appearance
@@ -242,12 +242,13 @@ def set_figure_defaults(context: Literal["paper", "presentation", "poster"] = "p
     # Font sizes for different contexts
     font_sizes = {
         "paper": {
-            "font.size": 7,
-            "axes.labelsize": 7,
-            "axes.titlesize": 8,
-            "xtick.labelsize": 6,
-            "ytick.labelsize": 6,
-            "legend.fontsize": 6,
+            # PLOS requires 8-12 pt for all in-figure text; 8 pt is the floor.
+            "font.size": 8,
+            "axes.labelsize": 8,
+            "axes.titlesize": 9,
+            "xtick.labelsize": 8,
+            "ytick.labelsize": 8,
+            "legend.fontsize": 8,
         },
         "presentation": {
             "font.size": 12,

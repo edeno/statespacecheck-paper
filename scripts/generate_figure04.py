@@ -140,8 +140,7 @@ def _axes_tight_bbox_inches(fig: Any, *, pad_inches: float = 0.05) -> Bbox:
         bbox
         for ax in fig.axes
         if ax.get_visible()
-        if (bbox := ax.get_tightbbox(renderer)) is not None
-        and np.isfinite(bbox.extents).all()
+        if (bbox := ax.get_tightbbox(renderer)) is not None and np.isfinite(bbox.extents).all()
     ]
     if not bboxes:
         return fig.bbox_inches
@@ -359,7 +358,7 @@ def run_demo(*, use_cache: bool = True) -> None:
         fig=subfigs_top[1],
         **detail_kwargs,
     )
-    axes_a[3].set_ylabel("HPD\noverlap", fontsize=7, labelpad=7)
+    axes_a[3].set_ylabel("HPD\noverlap", fontsize=8, labelpad=7)
 
     # Panel (b): ContFrag detail view
     _, axes_b = plot_single_model_diagnostics(

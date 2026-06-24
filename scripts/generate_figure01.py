@@ -144,7 +144,7 @@ def create_figure() -> None:
         "Latent state",
         ha="center",
         va="top",
-        fontsize=7,
+        fontsize=8,
     )
 
     # Add panel labels (a, b, c) - now consistent since all panels use set_title()
