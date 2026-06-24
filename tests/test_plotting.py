@@ -10,6 +10,15 @@ import pytest
 
 from statespacecheck_paper.analysis import DecodeParams, Diagnostics, Thresholds
 from statespacecheck_paper.plotting import (
+    FIGURE3_PANEL_LABEL_GID,
+    FIGURE3_PHASE_LABEL_GID,
+    FIGURE3_SUMMARY_CELL_LABEL_GID,
+    FIGURE3_SUMMARY_KNOWN_COMPONENT_LABEL_GID,
+    FIGURE3_SUMMARY_TITLE_GID,
+    FIGURE3_THRESHOLD_LABEL_GID,
+    FIGURE3_THRESHOLD_LINE_GID,
+    FIGURE3_TRUE_POSITION_LABEL_GID,
+    FIGURE3_WORSE_FIT_LABEL_GID,
     compute_hpd_region,
     create_distribution_comparison_panel,
     extract_contiguous_regions,
@@ -282,6 +291,45 @@ def test_plot_combined_diagnostics_renders_precomputed_summary(
         assert "median across realizations" in summary_ax.get_title()
         cell_texts = {t.get_text() for t in summary_ax.texts}
         assert "60%" in cell_texts  # supplied remap median
+    finally:
+        plt.close(fig)
+
+
+def test_plot_combined_diagnostics_tags_figure3_annotations(
+    thresholds_default: Thresholds,
+) -> None:
+    """Figure 3 annotations should be targetable by semantic artist ids."""
+    rng = np.random.default_rng(1)
+    n_time, n_bins, n_cells = 3500, 30, 5
+    x_true = rng.uniform(0, n_bins - 1, n_time)
+    bundle = _combined_metrics(rng, n_time, n_bins, n_cells)
+    params = _params_for_short_run(n_time, n_cells)
+
+    fig = plot_combined_diagnostics(
+        x_true,
+        bundle["spikes"],
+        bundle["metrics"],
+        thresholds_default,
+        params,
+        np.linspace(0, 1, n_cells),
+    )
+    try:
+        texts = [text for ax in fig.axes for text in ax.texts]
+        lines = [line for ax in fig.axes for line in ax.lines]
+
+        assert sum(text.get_gid() == FIGURE3_PANEL_LABEL_GID for text in texts) == 2
+        phase_labels = [text for text in texts if text.get_gid() == FIGURE3_PHASE_LABEL_GID]
+        assert len(phase_labels) == 4
+        assert {text.get_position()[1] for text in phase_labels} == {
+            phase_labels[0].get_position()[1]
+        }
+        assert sum(text.get_gid() == FIGURE3_THRESHOLD_LABEL_GID for text in texts) == 3
+        assert sum(text.get_gid() == FIGURE3_WORSE_FIT_LABEL_GID for text in texts) == 3
+        assert any(text.get_gid() == FIGURE3_TRUE_POSITION_LABEL_GID for text in texts)
+        assert any(text.get_gid() == FIGURE3_SUMMARY_KNOWN_COMPONENT_LABEL_GID for text in texts)
+        assert sum(text.get_gid() == FIGURE3_SUMMARY_CELL_LABEL_GID for text in texts) == 15
+        assert any(ax.title.get_gid() == FIGURE3_SUMMARY_TITLE_GID for ax in fig.axes)
+        assert sum(line.get_gid() == FIGURE3_THRESHOLD_LINE_GID for line in lines) == 3
     finally:
         plt.close(fig)
 

@@ -145,6 +145,15 @@ def test_save_figure_close_false_keeps_figure_open(tmp_path: Path) -> None:
     plt.close(fig)
 
 
+def test_save_figure_accepts_explicit_figure(tmp_path: Path) -> None:
+    """The optional ``fig`` argument saves that figure without pyplot globals."""
+    fig = _make_simple_figure()
+    save_figure(tmp_path / "explicit_figure", fig=fig)
+    assert (tmp_path / "explicit_figure.pdf").exists()
+    assert (tmp_path / "explicit_figure.png").exists()
+    assert not plt.fignum_exists(fig.number)
+
+
 @pytest.mark.parametrize(
     ("width_type", "expected_width"),
     [("single", 3.5), ("double", 7.0), ("full", 7.0)],
