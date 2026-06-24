@@ -911,7 +911,7 @@ def plot_combined_diagnostics(
     """
     # Calculate figure size
     fig_width = 7.0  # Full page width
-    fig_height = 8.8
+    fig_height = 7.6
 
     fig = plt.figure(figsize=(fig_width, fig_height), dpi=450)
 
@@ -921,7 +921,7 @@ def plot_combined_diagnostics(
         1,
         figure=fig,
         height_ratios=[5.3, 1.2],
-        hspace=0.35,
+        hspace=0.25,
         left=0.08,
         right=0.93,
         top=0.97,
@@ -933,7 +933,7 @@ def plot_combined_diagnostics(
         6,
         1,
         height_ratios=[1.2, 1.2, 0.8, 0.7, 0.7, 0.7],
-        hspace=0.12,
+        hspace=0.08,
     )
 
     gs_summary = gs_outer[1]
