@@ -29,7 +29,7 @@ from statespacecheck_paper.plotting import plot_combined_diagnostics
 from statespacecheck_paper.simulation import (
     simulate_walk,  # noqa: F401 — re-exported public surface
 )
-from statespacecheck_paper.style import save_figure
+from statespacecheck_paper.style import save_figure, set_figure_defaults
 
 # Number of independent realizations pooled to stabilize the panel-(b)
 # summary. A single run's flag thresholds and per-phase fractions are
@@ -114,7 +114,8 @@ def run_demo(params: DecodeParams) -> None:
     # Plot combined diagnostics figure. Panel (a) shows the single seed-1
     # realization; panel (b) shows the pooled median fractions scored
     # against the pooled-baseline thresholds.
-    plot_combined_diagnostics(
+    set_figure_defaults(context="paper")
+    fig = plot_combined_diagnostics(
         x_true,
         spikes.astype(np.float64),
         metrics,
@@ -124,8 +125,7 @@ def run_demo(params: DecodeParams) -> None:
         summary_median=summary.frac_median,
     )
 
-    # Save figure (uses plt.gcf() to get current figure)
-    save_figure("manuscript/figures/main/figure03", close=False)
+    save_figure("manuscript/figures/main/figure03", close=True, fig=fig)
     print(
         f"\nFigure 3 saved to manuscript/figures/main/figure03.{{pdf,png}} "
         f"(panel b pooled over {N_REALIZATIONS} realizations)"

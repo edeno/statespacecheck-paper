@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Literal
 
 import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
 
 # Wong colorblind-friendly palette
 # Reference: Wong, B. (2011). Points of view: Color blindness.
@@ -286,6 +287,7 @@ def save_figure(
     dpi: int = 450,
     close: bool = True,
     bbox_inches: object = "tight",
+    fig: Figure | None = None,
 ) -> None:
     """Save figure as both PDF and PNG with journal-quality resolution.
 
@@ -306,6 +308,9 @@ def save_figure(
         Bounding box passed through to ``matplotlib.pyplot.savefig``. The
         default preserves the existing tight-save behavior; callers can pass a
         precomputed ``matplotlib.transforms.Bbox`` for custom cropping.
+    fig : matplotlib.figure.Figure, optional
+        Explicit figure to save. When omitted, saves the current pyplot figure
+        for backward compatibility.
 
     Returns
     -------
@@ -342,13 +347,17 @@ def save_figure(
 
     pdf_path = path.with_suffix(".pdf")
     png_path = path.with_suffix(".png")
-    plt.savefig(pdf_path, dpi=dpi, bbox_inches=bbox_inches)
-    plt.savefig(png_path, dpi=dpi, bbox_inches=bbox_inches)
+    if fig is None:
+        plt.savefig(pdf_path, dpi=dpi, bbox_inches=bbox_inches)
+        plt.savefig(png_path, dpi=dpi, bbox_inches=bbox_inches)
+    else:
+        fig.savefig(pdf_path, dpi=dpi, bbox_inches=bbox_inches)
+        fig.savefig(png_path, dpi=dpi, bbox_inches=bbox_inches)
 
     print(f"Saved {pdf_path} and {png_path}")
 
     if close:
-        plt.close()
+        plt.close(fig)
 
 
 def get_figure_size(

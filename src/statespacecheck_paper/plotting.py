@@ -16,13 +16,14 @@ Examples
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib import gridspec
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.image import AxesImage
-from matplotlib.lines import Line2D
 from numpy.typing import NDArray
 
 from statespacecheck_paper.analysis import (
@@ -41,6 +42,58 @@ from statespacecheck_paper.simulation import (
     softmax_with_shift,
 )
 from statespacecheck_paper.style import CMAP_LIKELIHOOD, CMAP_POSTERIOR, COLORS
+
+FIGURE3_PANEL_LABEL_GID = "figure3-panel-label"
+FIGURE3_PHASE_LABEL_GID = "figure3-phase-label"
+FIGURE3_ROW_LABEL_GID = "figure3-row-label"
+FIGURE3_THRESHOLD_LABEL_GID = "figure3-threshold-label"
+FIGURE3_THRESHOLD_LINE_GID = "figure3-threshold-line"
+FIGURE3_TRUE_POSITION_LABEL_GID = "figure3-true-position-label"
+FIGURE3_WORSE_FIT_LABEL_GID = "figure3-worse-fit-label"
+FIGURE3_SUMMARY_CELL_LABEL_GID = "figure3-summary-cell-label"
+FIGURE3_SUMMARY_COMPONENT_LABEL_GID = "figure3-summary-component-label"
+FIGURE3_SUMMARY_KNOWN_COMPONENT_LABEL_GID = "figure3-summary-known-component-label"
+FIGURE3_SUMMARY_TITLE_GID = "figure3-summary-title"
+
+
+@dataclass(frozen=True)
+class DiagnosticRowSpec:
+    """Display and transform metadata for one Figure 3 diagnostic row."""
+
+    event_attr: str
+    threshold_attr: str
+    ylabel: str
+    color: str
+    worse_fit_direction: str
+    log_transform: bool = False
+    symlog_hpd: bool = False
+
+
+FIGURE3_DIAGNOSTIC_ROW_SPECS: tuple[DiagnosticRowSpec, ...] = (
+    DiagnosticRowSpec(
+        "event_hpd_overlap",
+        "hpd_overlap",
+        "HPD overlap",
+        COLORS["hpd_overlap"],
+        "↓ Worse fit",
+        symlog_hpd=True,
+    ),
+    DiagnosticRowSpec(
+        "event_kl_divergence",
+        "kl_divergence",
+        "KL div.",
+        COLORS["kl_divergence"],
+        "↑ Worse fit",
+    ),
+    DiagnosticRowSpec(
+        "event_spike_prob",
+        "spike_prob",
+        "−log(p)",
+        COLORS["metric_combined"],
+        "↑ Worse fit",
+        log_transform=True,
+    ),
+)
 
 
 def add_phase_boundaries(
@@ -859,6 +912,289 @@ def _plot_spike_count_raster(
     ax.set_ylabel("Neuron", fontsize=7, labelpad=7)
 
 
+def _add_figure3_row_label(ax: Axes, label: str) -> None:
+    """Add the right-side row label used in Figure 3 panel (a)."""
+    row_label = ax.text(
+        1.01,
+        0.5,
+        label,
+        transform=ax.transAxes,
+        fontsize=7,
+        va="center",
+        ha="left",
+        rotation=270,
+    )
+    row_label.set_gid(FIGURE3_ROW_LABEL_GID)
+
+
+def _add_figure3_panel_label(ax: Axes, label: str, *, y: float) -> None:
+    """Add a panel letter with a stable semantic artist id."""
+    panel_label = ax.text(
+        -0.05,
+        y,
+        label,
+        fontsize=8,
+        fontweight="bold",
+        transform=ax.transAxes,
+        va="top",
+        ha="right",
+    )
+    panel_label.set_gid(FIGURE3_PANEL_LABEL_GID)
+
+
+def _add_figure3_threshold_label(ax: Axes, threshold: float) -> None:
+    """Label a diagnostic threshold line at the right edge of an axis."""
+    threshold_label = ax.text(
+        1.01,
+        threshold,
+        "Threshold",
+        transform=ax.get_yaxis_transform(),
+        fontsize=6,
+        va="center",
+        ha="left",
+        color=COLORS["threshold"],
+    )
+    threshold_label.set_gid(FIGURE3_THRESHOLD_LABEL_GID)
+
+
+def _add_figure3_worse_fit_label(ax: Axes, label: str) -> None:
+    """Add the right-side direction-of-worse-fit annotation."""
+    worse_fit_label = ax.text(
+        1.01,
+        0.5,
+        label,
+        transform=ax.transAxes,
+        fontsize=6,
+        va="center",
+        ha="left",
+    )
+    worse_fit_label.set_gid(FIGURE3_WORSE_FIT_LABEL_GID)
+
+
+def _plot_figure3_predictive_row(
+    ax: Axes,
+    predictive: NDArray[np.floating],
+    x_true: NDArray[np.floating],
+) -> None:
+    """Plot Figure 3's predictive row with a direct true-position label."""
+    _plot_timeseries_heatmap(ax, predictive, x_true)
+    ax.set_ylabel("Position (a.u.)", fontsize=7, labelpad=7)
+    ax.tick_params(labelsize=6, labelbottom=False)
+    true_position_label = ax.text(
+        0.02,
+        0.90,
+        "True position",
+        transform=ax.transAxes,
+        fontsize=6,
+        color=COLORS["ground_truth"],
+        va="top",
+        ha="left",
+    )
+    true_position_label.set_gid(FIGURE3_TRUE_POSITION_LABEL_GID)
+    _add_figure3_row_label(ax, "Predictive")
+
+
+def _plot_figure3_likelihood_row(
+    ax: Axes,
+    metrics: Diagnostics,
+    x_true: NDArray[np.floating],
+) -> None:
+    """Plot Figure 3's per-spike likelihood row."""
+    _plot_likelihood_overlay(
+        ax,
+        metrics.predictive,
+        metrics.per_spike_likelihood,
+        metrics.event_time_ind,
+        x_true=x_true,
+    )
+    ax.set_ylabel("Position (a.u.)", fontsize=7, labelpad=7)
+    ax.tick_params(labelsize=6, labelbottom=False)
+    _add_figure3_row_label(ax, "Likelihood")
+
+
+def _plot_figure3_raster_row(
+    ax: Axes,
+    spikes: NDArray[np.floating],
+    placefield_centers: NDArray[np.floating],
+) -> None:
+    """Plot Figure 3's spike-count raster row."""
+    _plot_spike_count_raster(ax, spikes, placefield_centers)
+    ax.tick_params(labelsize=6, labelbottom=False)
+    _add_figure3_row_label(ax, "Spikes")
+
+
+def _plot_figure3_diagnostic_row(
+    ax: Axes,
+    time_ind: NDArray[np.integer],
+    values: NDArray[np.floating],
+    threshold: float,
+    spec: DiagnosticRowSpec,
+    *,
+    n_time: int,
+    show_xlabel: bool,
+) -> None:
+    """Plot one Figure 3 diagnostic event row."""
+    plot_values = np.asarray(values, dtype=float)
+    plot_threshold = float(threshold)
+    if spec.log_transform:
+        plot_values = -np.log(np.maximum(plot_values, 1e-10))
+        plot_threshold = -np.log(np.maximum(plot_threshold, 1e-10))
+
+    ax.scatter(
+        time_ind,
+        plot_values,
+        s=0.8,
+        alpha=0.6,
+        c=spec.color,
+        rasterized=True,
+    )
+    threshold_line = ax.axhline(
+        plot_threshold,
+        color=COLORS["threshold"],
+        linewidth=1.2,
+        alpha=0.7,
+        zorder=10,
+    )
+    threshold_line.set_gid(FIGURE3_THRESHOLD_LINE_GID)
+
+    if spec.symlog_hpd:
+        # Symlog y-scale expands the worst-fit floor near 0 instead of
+        # compressing it onto the bottom spine.
+        ax.set_yscale("symlog", linthresh=0.01, linscale=1.0)
+        ax.set_yticks([0.0, 0.01, 0.1, 0.5, 1.0])
+        ax.set_yticklabels(["0", "0.01", "0.1", "0.5", "1"])
+        ax.set_ylim(-0.005, 1.0)
+
+    ax.set_xlim(0, n_time)
+    ax.set_ylabel(spec.ylabel, fontsize=7, labelpad=7)
+    if show_xlabel:
+        ax.set_xlabel("Time (a.u.)", fontsize=7, labelpad=7)
+        ax.tick_params(labelsize=7)
+    else:
+        ax.tick_params(labelsize=6, labelbottom=False)
+
+    _add_figure3_worse_fit_label(ax, spec.worse_fit_direction)
+    _add_figure3_threshold_label(ax, plot_threshold)
+
+
+def _add_figure3_phase_labels(ax: Axes, params: DecodeParams) -> None:
+    """Add staggered misfit labels above Figure 3 panel (a)."""
+    bnd = params.phase_boundaries
+    t_remap_start = bnd[PhaseBoundary.REMAP_START]
+    t_remap_end = bnd[PhaseBoundary.REMAP_END]
+    t_recovery1_end = bnd[PhaseBoundary.RECOVERY1_END]
+    t_hist_dep_end = bnd[PhaseBoundary.HIST_DEP_END]
+    t_recovery2_end = bnd[PhaseBoundary.RECOVERY2_END]
+    t_drift_end = bnd[PhaseBoundary.DRIFT_END]
+    t_recovery3_end = bnd[PhaseBoundary.RECOVERY3_END]
+    t_wide_dynamics_end = bnd[PhaseBoundary.WIDE_DYNAMICS_END]
+
+    phase_label_y = 1.04
+    phase_labels_info: list[tuple[float, str]] = [
+        ((t_remap_start + t_remap_end) / 2, "Remap"),
+        ((t_recovery1_end + t_hist_dep_end) / 2, "History-dep."),
+        ((t_recovery2_end + t_drift_end) / 2, "Drift"),
+        ((t_recovery3_end + t_wide_dynamics_end) / 2, "Wide dyn. noise"),
+    ]
+    for x_pos, label_text in phase_labels_info:
+        phase_label = ax.text(
+            x_pos,
+            phase_label_y,
+            label_text,
+            transform=ax.get_xaxis_transform(),
+            fontsize=6,
+            ha="center",
+            va="bottom",
+            style="italic",
+        )
+        phase_label.set_gid(FIGURE3_PHASE_LABEL_GID)
+
+
+def _plot_figure3_summary_heatmap(
+    ax: Axes,
+    metrics: Diagnostics,
+    thresholds: Thresholds,
+    params: DecodeParams,
+    summary_median: NDArray[np.floating] | None,
+) -> None:
+    """Plot Figure 3 panel (b), the phase-by-metric flagged fraction heatmap."""
+    windows = summary_phase_windows(params)
+    component_labels = [col.component for col in windows]
+
+    if summary_median is not None:
+        frac_data = np.asarray(summary_median, dtype=float)
+    else:
+        frac_data = compute_phase_flag_fractions(metrics, thresholds, windows)
+
+    max_frac = np.nanmax(frac_data)
+    norm_frac = frac_data / max_frac if max_frac > 0 else frac_data
+    ax.imshow(norm_frac, cmap="YlOrRd", aspect="auto", vmin=0, vmax=1)
+
+    metric_labels = ["HPD\noverlap", "KL\ndiv.", "−log(p)"]
+    ax.set_yticks(range(3))
+    ax.set_yticklabels(metric_labels, fontsize=6)
+
+    ax.set_xticks(range(len(windows)))
+    ax.set_xticklabels([col.label for col in windows], fontsize=6)
+    ax.tick_params(top=True, bottom=False, labeltop=True, labelbottom=False)
+
+    for row_idx in range(3):
+        for col_idx in range(len(windows)):
+            val = frac_data[row_idx, col_idx]
+            color = "white" if norm_frac[row_idx, col_idx] > 0.55 else "black"
+            weight = "bold" if norm_frac[row_idx, col_idx] > 0.7 else "normal"
+            cell_label = ax.text(
+                col_idx,
+                row_idx,
+                f"{val:.0f}%",
+                ha="center",
+                va="center",
+                fontsize=6,
+                color=color,
+                fontweight=weight,
+            )
+            cell_label.set_gid(FIGURE3_SUMMARY_CELL_LABEL_GID)
+
+    component_row_y = 3.0
+    component_color = {"Observation": "#E69F00", "Transition": "#0072B2"}
+    for col_idx, comp in enumerate(component_labels):
+        color = component_color.get(comp, "0.4")
+        component_label = ax.text(
+            col_idx,
+            component_row_y,
+            comp,
+            ha="center",
+            va="center",
+            fontsize=5.5,
+            fontstyle="italic",
+            color=color,
+        )
+        component_label.set_gid(FIGURE3_SUMMARY_COMPONENT_LABEL_GID)
+    known_component_label = ax.text(
+        -0.04,
+        component_row_y,
+        "Known\ncomponent:",
+        transform=ax.get_yaxis_transform(),
+        ha="right",
+        va="center",
+        fontsize=5.5,
+        color="0.4",
+        fontstyle="italic",
+    )
+    known_component_label.set_gid(FIGURE3_SUMMARY_KNOWN_COMPONENT_LABEL_GID)
+
+    summary_title = "% of spike events flagged as poor fit"
+    if summary_median is not None:
+        summary_title += " (median across realizations)"
+    title = ax.set_title(
+        summary_title,
+        fontsize=7,
+        pad=8,
+        loc="center",
+    )
+    title.set_gid(FIGURE3_SUMMARY_TITLE_GID)
+
+
 def plot_combined_diagnostics(
     x_true: NDArray[np.floating],
     spikes: NDArray[np.floating],
@@ -909,10 +1245,8 @@ def plot_combined_diagnostics(
     >>> # See tests/test_plotting.py for a worked Diagnostics fixture
     >>> # and how to plumb it into plot_combined_diagnostics.
     """
-    # Calculate figure size
-    fig_width = 7.0  # Full page width
-    fig_height = 7.6
-
+    fig_width = 6.85  # Full page width; tight PDF stays within ~183 mm.
+    fig_height = 7.0
     fig = plt.figure(figsize=(fig_width, fig_height), dpi=450)
 
     # Outer grid: time-series block on top, summary heatmap on bottom.
@@ -921,14 +1255,13 @@ def plot_combined_diagnostics(
         1,
         figure=fig,
         height_ratios=[5.3, 1.2],
-        hspace=0.25,
+        hspace=0.34,
         left=0.08,
         right=0.93,
         top=0.97,
         bottom=0.06,
     )
 
-    # Inner grid for time-series panels (6 rows)
     gs = gs_outer[0].subgridspec(
         6,
         1,
@@ -938,359 +1271,48 @@ def plot_combined_diagnostics(
 
     gs_summary = gs_outer[1]
 
-    # ===== TOP SECTION: Time-Series Diagnostics =====
-
     n_time = metrics.posterior.shape[0]
-
-    # Create time-series axes with shared x-axis
-    # Order: Predictive -> Likelihood -> Raster -> HPD -> KL -> Spike
     ax_pred = fig.add_subplot(gs[0])
     ax_like = fig.add_subplot(gs[1], sharex=ax_pred)
     ax_raster = fig.add_subplot(gs[2], sharex=ax_pred)
-    ax_hpdo = fig.add_subplot(gs[3], sharex=ax_pred)
-    ax_kl = fig.add_subplot(gs[4], sharex=ax_pred)
-    ax_spike = fig.add_subplot(gs[5], sharex=ax_pred)
+    diagnostic_axes = [fig.add_subplot(gs[i], sharex=ax_pred) for i in range(3, 6)]
 
-    # Predictive heatmap
-    _plot_timeseries_heatmap(ax_pred, metrics.predictive, x_true)
-    ax_pred.set_ylabel("Position (a.u.)", fontsize=7, labelpad=7)
-    ax_pred.tick_params(labelsize=6, labelbottom=False)
-    ax_pred.legend(
-        [Line2D([0], [0], color=COLORS["ground_truth"], linewidth=1.0)],
-        ["True position"],
-        loc="upper left",
-        fontsize=6,
-        frameon=False,
-    )
-    # Add label "Predictive" on right side
-    ax_pred.text(
-        1.01,
-        0.5,
-        "Predictive",
-        transform=ax_pred.transAxes,
-        fontsize=7,
-        va="center",
-        ha="left",
-        rotation=270,
-    )
+    _plot_figure3_predictive_row(ax_pred, metrics.predictive, x_true)
+    _plot_figure3_likelihood_row(ax_like, metrics, x_true)
+    _plot_figure3_raster_row(ax_raster, spikes, placefield_centers)
 
-    # Likelihood overlay: per-spike likelihood bars at spike times
-    _plot_likelihood_overlay(
-        ax_like,
-        metrics.predictive,
-        metrics.per_spike_likelihood,
-        metrics.event_time_ind,
-        x_true=x_true,
-    )
-    ax_like.set_ylabel("Position (a.u.)", fontsize=7, labelpad=7)
-    ax_like.tick_params(labelsize=6, labelbottom=False)
-    ax_like.text(
-        1.01,
-        0.5,
-        "Likelihood",
-        transform=ax_like.transAxes,
-        fontsize=7,
-        va="center",
-        ha="left",
-        rotation=270,
-    )
-
-    # Spike raster (sorted by place field peak)
-    _plot_spike_count_raster(ax_raster, spikes, placefield_centers)
-    ax_raster.tick_params(labelsize=6, labelbottom=False)
-    ax_raster.text(
-        1.01,
-        0.5,
-        "Spikes",
-        transform=ax_raster.transAxes,
-        fontsize=7,
-        va="center",
-        ha="left",
-        rotation=270,
-    )
-
-    # Use per-spike event arrays so repeated spikes in the same
-    # (time, cell) bin show up as distinct diagnostic events.
     event_time_ind = metrics.event_time_ind
-    hpd_time_ind, hpd_values = event_time_ind, metrics.event_hpd_overlap
-    kl_time_ind, kl_values = event_time_ind, metrics.event_kl_divergence
-    spike_prob_time_ind, spike_prob_values = event_time_ind, metrics.event_spike_prob
-
-    # HPDO
-    ax_hpdo.scatter(
-        hpd_time_ind,
-        hpd_values,
-        s=0.8,
-        alpha=0.6,
-        c=COLORS["hpd_overlap"],
-        rasterized=True,
-    )
-    ax_hpdo.axhline(
-        thresholds.hpd_overlap, color=COLORS["threshold"], linewidth=1.2, alpha=0.7, zorder=10
-    )
-    # Symlog y-scale with a tight linthresh expands the worst-fit floor
-    # near 0 (routed through log10(1 + y/linthresh)) instead of
-    # compressing it onto the bottom spine. ylim dips slightly below 0 so
-    # y=0 markers float above the spine (symlog is symmetric around 0).
-    ax_hpdo.set_yscale("symlog", linthresh=0.01, linscale=1.0)
-    ax_hpdo.set_yticks([0.0, 0.01, 0.1, 0.5, 1.0])
-    ax_hpdo.set_yticklabels(["0", "0.01", "0.1", "0.5", "1"])
-    ax_hpdo.set_xlim(0, n_time)
-    ax_hpdo.set_ylim(-0.005, 1.0)
-    ax_hpdo.set_ylabel("HPD Overlap", fontsize=7, labelpad=7)
-    ax_hpdo.tick_params(labelsize=6, labelbottom=False)
-    # Add directional indicator and threshold annotation
-    ax_hpdo.text(
-        1.01, 0.5, "↓ Worse fit", transform=ax_hpdo.transAxes, fontsize=6, va="center", ha="left"
-    )
-    ax_hpdo.text(
-        1.01,
-        thresholds.hpd_overlap,
-        "Threshold",
-        transform=ax_hpdo.get_yaxis_transform(),
-        fontsize=6,
-        va="center",
-        ha="left",
-        color=COLORS["threshold"],
-    )
-
-    # KL Divergence
-    ax_kl.scatter(
-        kl_time_ind,
-        kl_values,
-        s=0.8,
-        alpha=0.6,
-        c=COLORS["kl_divergence"],
-        rasterized=True,
-    )
-    ax_kl.axhline(
-        thresholds.kl_divergence, color=COLORS["threshold"], linewidth=1.2, alpha=0.7, zorder=10
-    )
-    ax_kl.set_xlim(0, n_time)
-    ax_kl.set_ylabel("KL Divergence", fontsize=7, labelpad=7)
-    ax_kl.tick_params(labelsize=6, labelbottom=False)
-    # Add directional indicator and threshold annotation
-    ax_kl.text(
-        1.01, 0.5, "↑ Worse fit", transform=ax_kl.transAxes, fontsize=6, va="center", ha="left"
-    )
-    ax_kl.text(
-        1.01,
-        thresholds.kl_divergence,
-        "Threshold",
-        transform=ax_kl.get_yaxis_transform(),
-        fontsize=6,
-        va="center",
-        ha="left",
-        color=COLORS["threshold"],
-    )
-
-    # Spike probability: transform to -log(p) (natural log) so higher values indicate
-    # worse fit. This makes interpretation consistent with KL divergence (higher = worse)
-    # and with the manuscript convention (-log(0.05) ~ 3.0).
-    spike_prob_transformed = -np.log(np.maximum(spike_prob_values, 1e-10))
-    threshold_transformed = -np.log(np.maximum(thresholds.spike_prob, 1e-10))
-    ax_spike.scatter(
-        spike_prob_time_ind,
-        spike_prob_transformed,
-        s=0.8,
-        alpha=0.6,
-        c=COLORS["metric_combined"],
-        rasterized=True,
-    )
-    ax_spike.axhline(
-        threshold_transformed,
-        color=COLORS["threshold"],
-        linewidth=1.2,
-        alpha=0.7,
-        zorder=10,
-        label="Threshold",
-    )
-    ax_spike.set_xlim(0, n_time)
-    ax_spike.set_ylabel(r"$-\log(p)$", fontsize=7, labelpad=7)
-    ax_spike.set_xlabel("Time (a.u.)", fontsize=7, labelpad=7)
-    ax_spike.tick_params(labelsize=7)
-    # Add directional indicator (higher values now indicate misfit after log transform)
-    ax_spike.text(
-        1.01,
-        0.5,
-        "↑ Worse fit",
-        transform=ax_spike.transAxes,
-        fontsize=6,
-        va="center",
-        ha="left",
-    )
-    ax_spike.text(
-        1.01,
-        threshold_transformed,
-        "Threshold",
-        transform=ax_spike.get_yaxis_transform(),
-        fontsize=6,
-        va="center",
-        ha="left",
-        color=COLORS["threshold"],
-    )
-
-    # Add phase boundaries to all time-series panels.
-    tseries_boundaries = tuple(params.phase_boundaries)
-
-    # Add phase boundaries with matching colors to all panels
-    add_phase_boundaries(
-        [ax_pred, ax_like, ax_raster, ax_hpdo, ax_kl, ax_spike],
-        tseries_boundaries,
-        alpha=0.15,
-    )
-
-    # Add phase labels above top panel. Stagger vertical positions so the
-    # narrow wide-dynamics phase (~2k timesteps) doesn't crowd its
-    # neighbours.
-    bnd = params.phase_boundaries
-    t_remap_start = bnd[PhaseBoundary.REMAP_START]
-    t_remap_end = bnd[PhaseBoundary.REMAP_END]
-    t_recovery1_end = bnd[PhaseBoundary.RECOVERY1_END]
-    t_hist_dep_end = bnd[PhaseBoundary.HIST_DEP_END]
-    t_recovery2_end = bnd[PhaseBoundary.RECOVERY2_END]
-    t_drift_end = bnd[PhaseBoundary.DRIFT_END]
-    t_recovery3_end = bnd[PhaseBoundary.RECOVERY3_END]
-    t_wide_dynamics_end = bnd[PhaseBoundary.WIDE_DYNAMICS_END]
-
-    phase_labels_info: list[tuple[float, str, float]] = [
-        ((t_remap_start + t_remap_end) / 2, "Remap", 1.02),
-        ((t_recovery1_end + t_hist_dep_end) / 2, "History-dep.", 1.07),
-        ((t_recovery2_end + t_drift_end) / 2, "Drift", 1.02),
-        ((t_recovery3_end + t_wide_dynamics_end) / 2, "Wide dyn. noise", 1.07),
-    ]
-    for x_pos, label_text, y_pos in phase_labels_info:
-        ax_pred.text(
-            x_pos,
-            y_pos,
-            label_text,
-            transform=ax_pred.get_xaxis_transform(),
-            fontsize=6,
-            ha="center",
-            va="bottom",
-            style="italic",
+    for row_idx, (ax, spec) in enumerate(
+        zip(diagnostic_axes, FIGURE3_DIAGNOSTIC_ROW_SPECS, strict=True)
+    ):
+        _plot_figure3_diagnostic_row(
+            ax,
+            event_time_ind,
+            getattr(metrics, spec.event_attr),
+            getattr(thresholds, spec.threshold_attr),
+            spec,
+            n_time=n_time,
+            show_xlabel=row_idx == len(FIGURE3_DIAGNOSTIC_ROW_SPECS) - 1,
         )
 
-    # Panel label (a) for time-series
-    ax_pred.text(
-        -0.05,
-        1.15,
-        "a",
-        fontsize=8,
-        fontweight="bold",
-        transform=ax_pred.transAxes,
-        va="top",
-        ha="right",
+    time_series_axes = [ax_pred, ax_like, ax_raster, *diagnostic_axes]
+    add_phase_boundaries(
+        time_series_axes,
+        tuple(params.phase_boundaries),
+        alpha=0.15,
     )
+    _add_figure3_phase_labels(ax_pred, params)
+    _add_figure3_panel_label(ax_pred, "a", y=1.15)
 
     # ===== SUMMARY HEATMAP: % exceeding baseline threshold per phase =====
     ax_summary = fig.add_subplot(gs_summary)
-
-    # Panel label (b) for summary
-    ax_summary.text(
-        -0.05,
-        1.25,
-        "b",
-        fontsize=8,
-        fontweight="bold",
-        transform=ax_summary.transAxes,
-        va="top",
-        ha="right",
-    )
-
-    # Phase columns + per-metric flag logic come from the single source of
-    # truth in analysis.py so the heatmap and the multi-realization
-    # averaging path (estimate_stable_summary) cannot drift apart.
-    #
-    # Floor-effect caveat for HPD overlap: its threshold is the
-    # 1st-percentile of baseline HPDO. With our default place-field
-    # geometry, baseline HPDOs are tightly concentrated near 1.0 and a
-    # substantial fraction of baseline events achieve HPDO == 0.0 exactly
-    # (single-bin disjoint distributions). That pushes the 1st-percentile
-    # threshold to 0.0, so the row counts exact-zero-overlap events rather
-    # than a graded "below baseline" rate — still informative, but
-    # re-evaluate if PF geometry shifts the 1st percentile above 0.
-    windows = summary_phase_windows(params)
-    component_labels = [col.component for col in windows]
-
-    # When pre-computed across-realization quantiles are supplied, plot the
-    # stabilized median (with IQR annotations); otherwise fall back to the
-    # single realization shown in panel (a).
-    if summary_median is not None:
-        frac_data = np.asarray(summary_median, dtype=float)
-    else:
-        frac_data = compute_phase_flag_fractions(metrics, thresholds, windows)
-
-    # Normalize for color mapping
-    max_frac = np.nanmax(frac_data)
-    norm_frac = frac_data / max_frac if max_frac > 0 else frac_data
-
-    # Plot heatmap
-    ax_summary.imshow(norm_frac, cmap="YlOrRd", aspect="auto", vmin=0, vmax=1)
-
-    # Metric labels
-    metric_labels = ["HPD\nOverlap", "KL\nDivergence", r"$-\log(p)$"]
-    ax_summary.set_yticks(range(3))
-    ax_summary.set_yticklabels(metric_labels, fontsize=6)
-
-    # Phase labels on top
-    ax_summary.set_xticks(range(len(windows)))
-    ax_summary.set_xticklabels([col.label for col in windows], fontsize=6)
-    ax_summary.tick_params(top=True, bottom=False, labeltop=True, labelbottom=False)
-
-    # Value annotations inside cells.
-    for i in range(3):
-        for j in range(len(windows)):
-            val = frac_data[i, j]
-            color = "white" if norm_frac[i, j] > 0.55 else "black"
-            weight = "bold" if norm_frac[i, j] > 0.7 else "normal"
-            ax_summary.text(
-                j,
-                i,
-                f"{val:.0f}%",
-                ha="center",
-                va="center",
-                fontsize=6,
-                color=color,
-                fontweight=weight,
-            )
-
-    # Component attribution just below the heatmap (box bottom edge is at
-    # y=2.5; place the row close to it rather than a full cell-height down).
-    component_row_y = 3.0
-    component_color = {"Observation": "#E69F00", "Transition": "#0072B2"}
-    for j, comp in enumerate(component_labels):
-        color = component_color.get(comp, "0.4")
-        ax_summary.text(
-            j,
-            component_row_y,
-            comp,
-            ha="center",
-            va="center",
-            fontsize=5.5,
-            fontstyle="italic",
-            color=color,
-        )
-    ax_summary.text(
-        -1.4,
-        component_row_y,
-        "Known\ncomponent:",
-        ha="center",
-        va="center",
-        fontsize=5.5,
-        color="0.4",
-        fontstyle="italic",
-    )
-
-    # Title
-    summary_title = "% of spike events flagged as poor fit"
-    if summary_median is not None:
-        summary_title += " (median across realizations)"
-    ax_summary.set_title(
-        summary_title,
-        fontsize=7,
-        pad=15,
-        loc="center",
+    _add_figure3_panel_label(ax_summary, "b", y=1.25)
+    _plot_figure3_summary_heatmap(
+        ax_summary,
+        metrics,
+        thresholds,
+        params,
+        summary_median,
     )
 
     return fig
