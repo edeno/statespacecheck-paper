@@ -890,8 +890,8 @@ def plot_per_cell_diagnostic_scatter(
     # spine.
     if metric_name == "hpd_overlap":
         ax.set_yscale("symlog", linthresh=0.01, linscale=1.0)
-        ax.set_yticks([0.0, 0.01, 0.1, 0.5, 1.0])
-        ax.set_yticklabels(["0", "0.01", "0.1", "0.5", "1"])
+        ax.set_yticks([0.0, 0.1, 1.0])
+        ax.set_yticklabels(["0", "0.1", "1"])
         ax.set_ylim(-0.005, 1.0)
 
     ax.set_xlim(time_arr.min(), time_arr.max())
@@ -902,6 +902,8 @@ def plot_per_cell_diagnostic_scatter(
         ax.tick_params(labelsize=6)
     else:
         ax.tick_params(labelsize=6, labelbottom=False)
+    if metric_name == "hpd_overlap":
+        ax.tick_params(axis="y", labelsize=5.5, pad=1)
 
     return ax
 
@@ -1443,13 +1445,16 @@ def plot_single_model_diagnostics(
     # Self-label the position trace in its own color instead of a legend.
     axes[0].text(
         0.02,
-        0.95,
+        0.90,
         "Animal Position",
         transform=axes[0].transAxes,
-        fontsize=6,
+        fontsize=5.8,
+        fontweight="normal",
         color=COLORS["ground_truth"],
+        alpha=0.85,
         va="top",
         ha="left",
+        bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.45, "pad": 0.15},
     )
 
     # Row 1: Likelihood overlay at spike times
@@ -1561,9 +1566,15 @@ def plot_single_model_diagnostics(
             show_running_average=show_running_average,
             running_average_window=running_average_window,
         )
+        if spec.name == "hpd_overlap":
+            worse_fit_y = 0.28
+        elif spec.name == "spike_prob":
+            worse_fit_y = 0.68
+        else:
+            worse_fit_y = 0.5
         axes[row].text(
             1.01,
-            0.5,
+            worse_fit_y,
             spec.worse_fit_direction,
             transform=axes[row].transAxes,
             fontsize=6,
@@ -1582,6 +1593,7 @@ def plot_per_spike_metric_hexbin_row(
     model_a_name: str = "Continuous",
     model_b_name: str = "Cont-Frag",
     thresholds: dict[str, float] | None = None,
+    colorbar_pad: float = 0.02,
 ) -> None:
     """Plot a 1x3 row of hexbin densities comparing per-spike diagnostics between two decoders.
 
@@ -1613,6 +1625,9 @@ def plot_per_spike_metric_hexbin_row(
         the ``-log(p)`` axis). When given, each panel draws dotted threshold
         lines on both axes and lightly shades the quadrant of spikes flagged by
         model A but not model B. Metrics absent from the dict get no lines.
+    colorbar_pad : float, default 0.02
+        Fractional padding between the rightmost panel and shared count
+        colorbar.
     """
     if len(axes) != 3:
         raise ValueError(f"axes must have length 3, got {len(axes)}")
@@ -1634,8 +1649,9 @@ def plot_per_spike_metric_hexbin_row(
         ("event_spike_prob", r"$-\log(p)$", COLORS["metric_combined"], True, "spike_prob", "above"),
     ]
 
-    for ax, (key, title, color, log_transform, thr_key, direction) in zip(
-        axes, metric_specs, strict=True
+    hex_artists = []
+    for panel_idx, (ax, (key, title, color, log_transform, thr_key, direction)) in enumerate(
+        zip(axes, metric_specs, strict=True)
     ):
         data_a = np.asarray(getattr(diagnostics_a, key), dtype=np.float64)
         data_b = np.asarray(getattr(diagnostics_b, key), dtype=np.float64)
@@ -1654,15 +1670,15 @@ def plot_per_spike_metric_hexbin_row(
         data_b = data_b[valid]
 
         cmap = mcolors.LinearSegmentedColormap.from_list("custom", ["white", color])
-        ax.hexbin(
+        hb = ax.hexbin(
             data_a,
             data_b,
             gridsize=40,
             cmap=cmap,
-            bins="log",
             mincnt=1,
             rasterized=True,
         )
+        hex_artists.append(hb)
 
         # Identity line — span the actual data range so the visual
         # agreement reference doesn't depend on matplotlib's autoscale.
@@ -1716,13 +1732,13 @@ def plot_per_spike_metric_hexbin_row(
                 # Rescue box is a tall left strip (HPD overlap) full of points;
                 # place the label above the panel so it does not cover the data.
                 ax.text(
-                    0.02,
+                    -0.02,
                     1.02,
                     label,
                     transform=ax.transAxes,
                     ha="left",
                     va="bottom",
-                    fontsize=5.0,
+                    fontsize=6.0,
                     color=rescue_accent,
                     fontstyle="italic",
                     zorder=5,
@@ -1737,7 +1753,7 @@ def plot_per_spike_metric_hexbin_row(
                     label,
                     ha="center",
                     va="bottom",
-                    fontsize=5.0,
+                    fontsize=6.0,
                     color=rescue_accent,
                     fontstyle="italic",
                     zorder=5,
@@ -1749,17 +1765,41 @@ def plot_per_spike_metric_hexbin_row(
         ax.set_aspect("equal", adjustable="box")
 
         ax.set_xlabel(model_a_name, fontsize=7, labelpad=4)
-        ax.set_ylabel(model_b_name, fontsize=7, labelpad=4)
+        ax.set_ylabel(model_b_name if panel_idx == 0 else "", fontsize=7, labelpad=4)
         ax.set_title(title, fontsize=7)
         ax.tick_params(labelsize=6)
 
-        ax.text(
-            0.02,
-            0.98,
-            f"n={len(data_a):,}",
-            transform=ax.transAxes,
-            fontsize=6,
-            va="top",
-            ha="left",
-            color="0.4",
+        if key == "event_kl_divergence":
+            ax.text(
+                0.02,
+                0.98,
+                f"n={len(data_a):,}",
+                transform=ax.transAxes,
+                fontsize=6.5,
+                va="top",
+                ha="left",
+                color="0.4",
+            )
+
+    if hex_artists:
+        max_count = max(float(np.nanmax(hb.get_array())) for hb in hex_artists)
+        if max_count <= 1:
+            max_count = 10
+        shared_norm = mcolors.LogNorm(vmin=1, vmax=max_count)
+        for hb in hex_artists:
+            hb.set_norm(shared_norm)
+
+        count_mappable = matplotlib.cm.ScalarMappable(norm=shared_norm, cmap="Greys")
+        count_mappable.set_array([])
+        cbar = axes[-1].figure.colorbar(
+            count_mappable,
+            ax=list(axes),
+            fraction=0.025,
+            pad=colorbar_pad,
+            shrink=0.64,
         )
+        cbar.set_label("Spike events per hex", fontsize=6.5, labelpad=4)
+        count_ticks = [tick for tick in (1, 10, 100, 1000, 10000, 100000) if tick <= max_count]
+        cbar.set_ticks(count_ticks)
+        cbar.set_ticklabels([f"{tick:,}" for tick in count_ticks])
+        cbar.ax.tick_params(labelsize=6, width=0.5, length=2)

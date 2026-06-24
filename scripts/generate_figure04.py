@@ -261,10 +261,9 @@ def run_demo(*, use_cache: bool = True) -> None:
         time_offset,
     )
 
-    # Two-row figure: (a)/(b) detail zooms on top, (c) track + (d) hexbins on the
-    # bottom. The detail zooms place the Continuous and Continuous-Fragmented
-    # decoders side by side over the same time window for direct comparison.
-    fig = plt.figure(figsize=(9.5, 8.0), dpi=450, constrained_layout=True)
+    # Two-row figure: (a)/(b) detail zooms with a track inset on top, and
+    # (c) whole-session metric hexbins on the bottom.
+    fig = plt.figure(figsize=(7.2, 6.1), dpi=450, constrained_layout=True)
     subfigs_rows = fig.subfigures(2, 1, height_ratios=[5.0, 2.6], hspace=0.02)
 
     # Shared plotting kwargs for detail panels
@@ -279,8 +278,14 @@ def run_demo(*, use_cache: bool = True) -> None:
         edge_spacing=data["linear_edge_spacing"],
     )
 
-    # Top row: (a) Continuous and (b) ContFrag detail zooms, side by side
-    subfigs_top = subfigs_rows[0].subfigures(1, 2, width_ratios=[1, 1], wspace=0.03)
+    # Top row: (a) Continuous and (b) ContFrag detail zooms, side by side,
+    # with a small unlettered track inset on the right for spatial context.
+    subfigs_top = subfigs_rows[0].subfigures(
+        1,
+        5,
+        width_ratios=[0.055, 1.0, 1.07, 0.42, 0.04],
+        wspace=0.005,
+    )
 
     # Panel (a): Continuous detail view
     _, axes_a = plot_single_model_diagnostics(
@@ -289,9 +294,10 @@ def run_demo(*, use_cache: bool = True) -> None:
         continuous_results,
         continuous_diagnostics_relative,
         model_name="Continuous Model",
-        fig=subfigs_top[0],
+        fig=subfigs_top[1],
         **detail_kwargs,
     )
+    axes_a[3].set_ylabel("HPD\noverlap", fontsize=7, labelpad=7)
 
     # Panel (b): ContFrag detail view
     _, axes_b = plot_single_model_diagnostics(
@@ -300,7 +306,7 @@ def run_demo(*, use_cache: bool = True) -> None:
         contfrag_results,
         contfrag_diagnostics_relative,
         model_name="Cont.-Frag. Model",
-        fig=subfigs_top[1],
+        fig=subfigs_top[2],
         **detail_kwargs,
     )
 
@@ -312,11 +318,28 @@ def run_demo(*, use_cache: bool = True) -> None:
         axes_a[i].set_ylim(shared_ylim)
         axes_b[i].set_ylim(shared_ylim)
 
+    # Panel (b) repeats the row scales from panel (a), so keep only the
+    # model-specific data and title on the right stack.
+    for ax in axes_b:
+        ax.set_ylabel("")
+        ax.tick_params(axis="y", left=False, labelleft=False)
+    for text in axes_b[0].texts:
+        if text.get_text() == "Animal Position":
+            text.set_visible(False)
+
+    # Keep threshold / worse-fit row annotations only on panel (b), where they
+    # read as shared labels for both model stacks.
+    for ax in axes_a[3:]:
+        for text in ax.texts:
+            if text.get_text() == "Threshold" or "Worse fit" in text.get_text():
+                text.set_visible(False)
+
     # Panel labels - place in axes coordinates on the predictive row of each.
+    panel_label_x = {"a": -0.115, "b": -0.05}
     for axes, label in [(axes_a, "a"), (axes_b, "b")]:
         axes[0].text(
-            -0.05,
-            1.15,
+            panel_label_x[label],
+            1.24,
             label,
             fontsize=8,
             fontweight="bold",
@@ -325,9 +348,15 @@ def run_demo(*, use_cache: bool = True) -> None:
             ha="right",
         )
 
-    # Bottom row: 2D track layout (c) and whole-session metric hexbins (d)
-    subfigs_bot = subfigs_rows[1].subfigures(1, 2, width_ratios=[2.5, 7], wspace=0.05)
-    ax_track = subfigs_bot[0].subplots()
+    # Unlettered track inset beside panels (a) and (b). Use the same row
+    # rhythm as the detail stacks and place it beside the likelihood row.
+    track_gs = subfigs_top[3].add_gridspec(
+        6,
+        3,
+        height_ratios=[2, 2, 1.5, 1, 1, 1],
+        width_ratios=[0.01, 0.68, 0.31],
+    )
+    ax_track = subfigs_top[3].add_subplot(track_gs[1, 1])
     # Reward wells sit at the arm tips, i.e. the degree-1 (leaf) nodes of the
     # track graph. Mark them so the 2D layout connects to the linearized axis
     # used in panels (a)-(b).
@@ -342,18 +371,71 @@ def run_demo(*, use_cache: bool = True) -> None:
         scalebar_length=20,
         scalebar_label="20 cm",
     )
-    ax_track.text(
-        -0.05,
-        1.05,
-        "c",
-        fontsize=8,
-        fontweight="bold",
-        transform=ax_track.transAxes,
-        va="top",
-        ha="right",
+    ax_track.set_anchor("W")
+    # ``add_scalebar`` appends the scale bar as the final line. Move the bar
+    # and label together so the label clears the nearby reward-well marker.
+    scale_bar_shift = 22.0
+    scale_bar_drop = 5.0
+    scale_bar_line = ax_track.lines[-1]
+    scale_bar_line.set_xdata(np.asarray(scale_bar_line.get_xdata()) + scale_bar_shift)
+    scale_bar_line.set_ydata(np.asarray(scale_bar_line.get_ydata()) - scale_bar_drop)
+    scale_bar_line.set_linewidth(2.0)
+    for text in ax_track.texts:
+        if text.get_text() == "20 cm":
+            x_pos, y_pos = text.get_position()
+            text.set_position((x_pos + scale_bar_shift + 10, y_pos - 4 - scale_bar_drop))
+            text.set_fontsize(8.5)
+            text.set_clip_on(False)
+
+    # Align the track diagram itself with the shared right-side diagnostic
+    # annotations: the diagram's left edge should begin where the annotation
+    # text ends.
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    annotation_bboxes = [
+        text.get_window_extent(renderer)
+        for ax in axes_b[3:]
+        for text in ax.texts
+        if text.get_visible()
+        and (text.get_text() == "Threshold" or "Worse fit" in text.get_text())
+    ]
+    track_bboxes = []
+    for artist in [*ax_track.lines, *ax_track.collections, *ax_track.texts]:
+        if not artist.get_visible():
+            continue
+        bbox = artist.get_window_extent(renderer)
+        if np.isfinite([bbox.x0, bbox.x1, bbox.y0, bbox.y1]).all():
+            track_bboxes.append(bbox)
+    if annotation_bboxes and track_bboxes:
+        annotation_right = max(bbox.x1 for bbox in annotation_bboxes)
+        track_left = min(bbox.x0 for bbox in track_bboxes)
+        pos = ax_track.get_position()
+        ax_track.set_in_layout(False)
+        # The trajectory line's vector bbox extends slightly farther left than
+        # the visually salient rendered diagram, so add a small pixel-level
+        # correction measured on the exported PNG.
+        visual_edge_correction_px = 7.0
+        track_shift = (
+            annotation_right - track_left + visual_edge_correction_px
+        ) / ax_track.figure.bbox.width
+        ax_track.set_position(
+            [pos.x0 + track_shift, pos.y0, pos.width, pos.height]
+        )
+    track_size_scale = 1.10
+    pos = ax_track.get_position()
+    ax_track.set_position(
+        [
+            pos.x0,
+            pos.y0 - pos.height * (track_size_scale - 1) / 2,
+            pos.width * track_size_scale,
+            pos.height * track_size_scale,
+        ]
     )
 
-    axes_hexbin = subfigs_bot[1].subplots(1, 3)
+    # Bottom row: whole-session metric hexbins.
+    subfigs_bot = subfigs_rows[1].subfigures(1, 3, width_ratios=[0.16, 7, 0.16], wspace=0.015)
+    axes_hexbin = subfigs_bot[1].subplots(1, 3, gridspec_kw={"wspace": -0.02})
+    axes_before_hexbin = tuple(fig.axes)
     plot_per_spike_metric_hexbin_row(
         continuous_diagnostics,
         contfrag_diagnostics,
@@ -361,11 +443,67 @@ def run_demo(*, use_cache: bool = True) -> None:
         model_a_name="Continuous",
         model_b_name="Cont-Frag",
         thresholds=diagnostic_thresholds,
+        colorbar_pad=0.006,
     )
+    for ax, anchor in zip(axes_hexbin, ("E", "C", "W"), strict=True):
+        ax.set_anchor(anchor)
+    hexbin_colorbar_axes = [ax for ax in fig.axes if ax not in axes_before_hexbin]
+    fig.canvas.draw()
+    hexbin_positions = [ax.get_position() for ax in axes_hexbin]
+    panel_width = min(pos.width for pos in hexbin_positions)
+    panel_height = min(pos.height for pos in hexbin_positions)
+    panel_gap = min(
+        hexbin_positions[1].x0 - hexbin_positions[0].x1,
+        hexbin_positions[2].x0 - hexbin_positions[1].x1,
+    )
+    panel_gap = max(panel_gap, 0.0)
+    panel_left = hexbin_positions[0].x0
+    panel_bottom = hexbin_positions[0].y0
+    for panel_idx, ax in enumerate(axes_hexbin):
+        ax.set_position(
+            [
+                panel_left + panel_idx * (panel_width + panel_gap),
+                panel_bottom,
+                panel_width,
+                panel_height,
+            ]
+        )
+    if hexbin_colorbar_axes:
+        colorbar_ax = hexbin_colorbar_axes[-1]
+        colorbar_pos = colorbar_ax.get_position()
+        colorbar_gap = max(panel_gap * 0.5, 0.006)
+        colorbar_ax.set_position(
+            [
+                axes_hexbin[-1].get_position().x1 + colorbar_gap,
+                colorbar_pos.y0,
+                colorbar_pos.width,
+                colorbar_pos.height,
+            ]
+        )
+    fig.set_constrained_layout(False)
+    if hexbin_colorbar_axes:
+        fig.canvas.draw()
+        renderer = fig.canvas.get_renderer()
+        colorbar_label_bbox = hexbin_colorbar_axes[-1].yaxis.label.get_window_extent(renderer)
+        track_bboxes = []
+        for artist in [*ax_track.lines, *ax_track.collections, *ax_track.texts]:
+            if not artist.get_visible():
+                continue
+            bbox = artist.get_window_extent(renderer)
+            if np.isfinite([bbox.x0, bbox.x1, bbox.y0, bbox.y1]).all():
+                track_bboxes.append(bbox)
+        if track_bboxes:
+            target_right = colorbar_label_bbox.x1
+            track_right = max(bbox.x1 for bbox in track_bboxes)
+            pos = ax_track.get_position()
+            track_shift = (target_right - track_right) / ax_track.figure.bbox.width
+            ax_track.set_position(
+                [pos.x0 + track_shift, pos.y0, pos.width, pos.height]
+            )
     axes_hexbin[0].text(
         -0.18,
         1.10,
-        "d",
+        "c",
         fontsize=8,
         fontweight="bold",
         transform=axes_hexbin[0].transAxes,

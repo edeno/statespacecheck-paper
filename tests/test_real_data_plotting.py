@@ -90,13 +90,15 @@ class TestPlotPerSpikeMetricHexbinRow:
 
         plt.close(fig)
 
-    def test_drops_nans_from_count_annotation(
+    def test_kl_panel_count_annotation_drops_nans(
         self,
         paired_diagnostics: tuple[PerCellDiagnostics, PerCellDiagnostics],
     ) -> None:
-        """``n=...`` annotation reports the count of finite-in-both events,
-        not the raw input length. Introduces 5 NaNs into each metric's
-        arrays so the count should drop by exactly 5 in each panel.
+        """The KL panel's ``n=...`` annotation reports finite-in-both events,
+        not the raw input length.
+
+        Introduces 5 NaNs into each metric's arrays so the count should drop by
+        exactly 5 in the one panel that carries the shared annotation.
         """
         diag_a, diag_b = paired_diagnostics
         n_total = diag_a.event_hpd_overlap.size
@@ -124,17 +126,17 @@ class TestPlotPerSpikeMetricHexbinRow:
         # ("n = 45" or "n=45_000") doesn't break the test. The
         # behavioural contract is the integer in the annotation.
         pattern = re.compile(r"n\s*=\s*([\d,_]+)")
+        panel_counts = {}
         for ax in axes:
-            counts = [
+            panel_counts[ax.get_title()] = [
                 int(m.group(1).replace(",", "").replace("_", ""))
                 for t in ax.texts
                 for m in [pattern.match(t.get_text())]
                 if m is not None
             ]
-            assert counts, f"axis {ax.get_title()!r} has no n= annotation"
-            assert expected_count in counts, (
-                f"axis {ax.get_title()!r} reports {counts}; expected {expected_count}"
-            )
+        assert panel_counts["HPD overlap"] == []
+        assert panel_counts["KL divergence"] == [expected_count]
+        assert panel_counts[r"$-\log(p)$"] == []
 
         plt.close(fig)
 
