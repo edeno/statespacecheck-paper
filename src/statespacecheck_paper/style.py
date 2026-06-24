@@ -285,6 +285,7 @@ def save_figure(
     name: str | Path,
     dpi: int = 450,
     close: bool = True,
+    bbox_inches: object = "tight",
 ) -> None:
     """Save figure as both PDF and PNG with journal-quality resolution.
 
@@ -301,6 +302,10 @@ def save_figure(
         (Nature requires 300-600 dpi for final figures).
     close : bool, default True
         If True, close the figure after saving to free memory.
+    bbox_inches : object, default "tight"
+        Bounding box passed through to ``matplotlib.pyplot.savefig``. The
+        default preserves the existing tight-save behavior; callers can pass a
+        precomputed ``matplotlib.transforms.Bbox`` for custom cropping.
 
     Returns
     -------
@@ -337,8 +342,8 @@ def save_figure(
 
     pdf_path = path.with_suffix(".pdf")
     png_path = path.with_suffix(".png")
-    plt.savefig(pdf_path, dpi=dpi, bbox_inches="tight")
-    plt.savefig(png_path, dpi=dpi, bbox_inches="tight")
+    plt.savefig(pdf_path, dpi=dpi, bbox_inches=bbox_inches)
+    plt.savefig(png_path, dpi=dpi, bbox_inches=bbox_inches)
 
     print(f"Saved {pdf_path} and {png_path}")
 

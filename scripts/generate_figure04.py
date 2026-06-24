@@ -21,6 +21,7 @@ from typing import Any, Literal
 import joblib
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.transforms import Bbox
 
 from statespacecheck_paper.analysis import PerCellDiagnostics
 from statespacecheck_paper.load_local_data import load_neural_recording_from_files
@@ -34,6 +35,9 @@ from statespacecheck_paper.real_data_analysis import (
     get_spike_counts,
 )
 from statespacecheck_paper.real_data_plotting import (
+    ANIMAL_POSITION_LABEL_GID,
+    THRESHOLD_LABEL_GID,
+    WORSE_FIT_LABEL_GID,
     plot_per_spike_metric_hexbin_row,
     plot_single_model_diagnostics,
     plot_track_graph_2d,
@@ -61,6 +65,7 @@ def _fig4_cache_path() -> Path:
 # Centered on a period of clear diagnostic activity at reward well
 DETAIL_CENTER = 193069  # Time index with KL spike during immobility
 DETAIL_HALF_WIDTH = 500  # Half-width in time points (~2 seconds at 500 Hz)
+DIAGNOSTIC_ANNOTATION_GIDS = {THRESHOLD_LABEL_GID, WORSE_FIT_LABEL_GID}
 
 
 def shift_diagnostic_event_times(
@@ -86,6 +91,63 @@ def diagnostic_event_mean(diagnostics: PerCellDiagnostics, metric: str) -> float
     if not hasattr(diagnostics, event_key):
         raise KeyError(f"Missing per-spike diagnostic array: {event_key}")
     return float(np.nanmean(getattr(diagnostics, event_key)))
+
+
+def _visible_artist_bboxes(artists: list[Any], renderer: Any) -> list[Any]:
+    """Return finite window extents for visible artists."""
+    bboxes = []
+    for artist in artists:
+        if not artist.get_visible():
+            continue
+        bbox = artist.get_window_extent(renderer)
+        if np.isfinite([bbox.x0, bbox.x1, bbox.y0, bbox.y1]).all():
+            bboxes.append(bbox)
+    return bboxes
+
+
+def _axis_content_artists(ax: Any) -> list[Any]:
+    """Return plotted artists that define an axis's visible content bounds."""
+    return [*ax.lines, *ax.collections, *ax.texts]
+
+
+def _shift_axis_to_artist_edge(
+    ax: Any,
+    artists: list[Any],
+    renderer: Any,
+    *,
+    target_px: float,
+    edge: Literal["left", "right"],
+    correction_px: float = 0.0,
+) -> None:
+    """Shift an axis horizontally so its visible content edge matches a target."""
+    bboxes = _visible_artist_bboxes(artists, renderer)
+    if not bboxes:
+        return
+
+    content_edge_px = (
+        min(bbox.x0 for bbox in bboxes) if edge == "left" else max(bbox.x1 for bbox in bboxes)
+    )
+    pos = ax.get_position()
+    shift = (target_px - content_edge_px + correction_px) / ax.figure.bbox.width
+    ax.set_position([pos.x0 + shift, pos.y0, pos.width, pos.height])
+
+
+def _axes_tight_bbox_inches(fig: Any, *, pad_inches: float = 0.05) -> Bbox:
+    """Return a figure bbox cropped to the union of visible axes."""
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    bboxes = [
+        bbox
+        for ax in fig.axes
+        if ax.get_visible()
+        if (bbox := ax.get_tightbbox(renderer)) is not None
+        and np.isfinite(bbox.extents).all()
+    ]
+    if not bboxes:
+        return fig.bbox_inches
+
+    bbox_inches = Bbox.union(bboxes).transformed(fig.dpi_scale_trans.inverted())
+    return bbox_inches.padded(pad_inches)
 
 
 def run_demo(*, use_cache: bool = True) -> None:
@@ -324,14 +386,14 @@ def run_demo(*, use_cache: bool = True) -> None:
         ax.set_ylabel("")
         ax.tick_params(axis="y", left=False, labelleft=False)
     for text in axes_b[0].texts:
-        if text.get_text() == "Animal Position":
+        if text.get_gid() == ANIMAL_POSITION_LABEL_GID:
             text.set_visible(False)
 
     # Keep threshold / worse-fit row annotations only on panel (b), where they
     # read as shared labels for both model stacks.
     for ax in axes_a[3:]:
         for text in ax.texts:
-            if text.get_text() == "Threshold" or "Worse fit" in text.get_text():
+            if text.get_gid() in DIAGNOSTIC_ANNOTATION_GIDS:
                 text.set_visible(False)
 
     # Panel labels - place in axes coordinates on the predictive row of each.
@@ -392,34 +454,27 @@ def run_demo(*, use_cache: bool = True) -> None:
     # text ends.
     fig.canvas.draw()
     renderer = fig.canvas.get_renderer()
-    annotation_bboxes = [
-        text.get_window_extent(renderer)
+    annotation_texts = [
+        text
         for ax in axes_b[3:]
         for text in ax.texts
-        if text.get_visible()
-        and (text.get_text() == "Threshold" or "Worse fit" in text.get_text())
+        if text.get_gid() in DIAGNOSTIC_ANNOTATION_GIDS
     ]
-    track_bboxes = []
-    for artist in [*ax_track.lines, *ax_track.collections, *ax_track.texts]:
-        if not artist.get_visible():
-            continue
-        bbox = artist.get_window_extent(renderer)
-        if np.isfinite([bbox.x0, bbox.x1, bbox.y0, bbox.y1]).all():
-            track_bboxes.append(bbox)
-    if annotation_bboxes and track_bboxes:
+    annotation_bboxes = _visible_artist_bboxes(annotation_texts, renderer)
+    if annotation_bboxes:
         annotation_right = max(bbox.x1 for bbox in annotation_bboxes)
-        track_left = min(bbox.x0 for bbox in track_bboxes)
-        pos = ax_track.get_position()
         ax_track.set_in_layout(False)
         # The trajectory line's vector bbox extends slightly farther left than
         # the visually salient rendered diagram, so add a small pixel-level
         # correction measured on the exported PNG.
         visual_edge_correction_px = 7.0
-        track_shift = (
-            annotation_right - track_left + visual_edge_correction_px
-        ) / ax_track.figure.bbox.width
-        ax_track.set_position(
-            [pos.x0 + track_shift, pos.y0, pos.width, pos.height]
+        _shift_axis_to_artist_edge(
+            ax_track,
+            _axis_content_artists(ax_track),
+            renderer,
+            target_px=annotation_right,
+            edge="left",
+            correction_px=visual_edge_correction_px,
         )
     track_size_scale = 1.10
     pos = ax_track.get_position()
@@ -485,21 +540,13 @@ def run_demo(*, use_cache: bool = True) -> None:
         fig.canvas.draw()
         renderer = fig.canvas.get_renderer()
         colorbar_label_bbox = hexbin_colorbar_axes[-1].yaxis.label.get_window_extent(renderer)
-        track_bboxes = []
-        for artist in [*ax_track.lines, *ax_track.collections, *ax_track.texts]:
-            if not artist.get_visible():
-                continue
-            bbox = artist.get_window_extent(renderer)
-            if np.isfinite([bbox.x0, bbox.x1, bbox.y0, bbox.y1]).all():
-                track_bboxes.append(bbox)
-        if track_bboxes:
-            target_right = colorbar_label_bbox.x1
-            track_right = max(bbox.x1 for bbox in track_bboxes)
-            pos = ax_track.get_position()
-            track_shift = (target_right - track_right) / ax_track.figure.bbox.width
-            ax_track.set_position(
-                [pos.x0 + track_shift, pos.y0, pos.width, pos.height]
-            )
+        _shift_axis_to_artist_edge(
+            ax_track,
+            _axis_content_artists(ax_track),
+            renderer,
+            target_px=colorbar_label_bbox.x1,
+            edge="right",
+        )
     axes_hexbin[0].text(
         -0.18,
         1.10,
@@ -511,7 +558,8 @@ def run_demo(*, use_cache: bool = True) -> None:
         ha="right",
     )
 
-    save_figure("manuscript/figures/main/figure04", close=True)
+    side_tight_bbox = _axes_tight_bbox_inches(fig, pad_inches=0.05)
+    save_figure("manuscript/figures/main/figure04", close=True, bbox_inches=side_tight_bbox)
     print("Saved manuscript/figures/main/figure04.{pdf,png}")
     print("\nFigure 4 complete!")
 

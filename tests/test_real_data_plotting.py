@@ -1,7 +1,7 @@
 """Tests for plotting helpers in ``real_data_plotting``.
 
-Currently focused on ``plot_per_spike_metric_hexbin_row`` — the Figure 4(e)
-panel introduced on this branch — which had no direct coverage before.
+Currently focused on ``plot_per_spike_metric_hexbin_row`` — the Figure 4(c)
+whole-session comparison panel — which had no direct coverage before.
 """
 
 from __future__ import annotations

@@ -41,6 +41,10 @@ from statespacecheck_paper.style import (
     METRIC_SPECS,
 )
 
+ANIMAL_POSITION_LABEL_GID = "animal-position-label"
+THRESHOLD_LABEL_GID = "threshold-label"
+WORSE_FIT_LABEL_GID = "worse-fit-label"
+
 
 def add_scalebar(
     ax: Axes,
@@ -874,7 +878,7 @@ def plot_per_cell_diagnostic_scatter(
             zorder=10,
         )
         # Add threshold annotation on right side
-        ax.text(
+        threshold_label = ax.text(
             1.01,
             threshold,
             "Threshold",
@@ -884,6 +888,7 @@ def plot_per_cell_diagnostic_scatter(
             ha="left",
             color=COLORS["threshold"],
         )
+        threshold_label.set_gid(THRESHOLD_LABEL_GID)
 
     # HPD overlap: symlog y-scale (matching Figure 3) so the worst-fit
     # floor near 0 is expanded instead of compressed onto the bottom
@@ -1324,7 +1329,7 @@ def plot_model_comparison_with_posterior(
         )
 
         # Add direction indicator on right side of right column (matching Figure 3)
-        axes[row, 1].text(
+        worse_fit_label = axes[row, 1].text(
             1.01,
             0.5,
             spec.worse_fit_direction,
@@ -1333,6 +1338,7 @@ def plot_model_comparison_with_posterior(
             va="center",
             ha="left",
         )
+        worse_fit_label.set_gid(WORSE_FIT_LABEL_GID)
 
     # Hide y-tick labels on right column (since y-axes are shared within rows)
     for row in range(6):
@@ -1443,7 +1449,7 @@ def plot_single_model_diagnostics(
     axes[0].set_xlabel("")
     axes[0].tick_params(labelsize=6, labelbottom=False)
     # Self-label the position trace in its own color instead of a legend.
-    axes[0].text(
+    animal_position_label = axes[0].text(
         0.02,
         0.90,
         "Animal Position",
@@ -1456,6 +1462,7 @@ def plot_single_model_diagnostics(
         ha="left",
         bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.45, "pad": 0.15},
     )
+    animal_position_label.set_gid(ANIMAL_POSITION_LABEL_GID)
 
     # Row 1: Likelihood overlay at spike times
     ax_lik = axes[1]
@@ -1572,7 +1579,7 @@ def plot_single_model_diagnostics(
             worse_fit_y = 0.68
         else:
             worse_fit_y = 0.5
-        axes[row].text(
+        worse_fit_label = axes[row].text(
             1.01,
             worse_fit_y,
             spec.worse_fit_direction,
@@ -1581,6 +1588,7 @@ def plot_single_model_diagnostics(
             va="center",
             ha="left",
         )
+        worse_fit_label.set_gid(WORSE_FIT_LABEL_GID)
 
     return fig, axes
 
@@ -1721,7 +1729,8 @@ def plot_per_spike_metric_hexbin_row(
                     zorder=4,
                 )
             )
-            label = f"flagged by\n{model_a_name} only"
+            callout_model_a_name = "Cont." if model_a_name == "Continuous" else model_a_name
+            label = f"flagged by\n{callout_model_a_name} only"
             label_bbox = {
                 "boxstyle": "round,pad=0.15",
                 "facecolor": "white",
