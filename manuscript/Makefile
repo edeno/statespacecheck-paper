@@ -1,12 +1,11 @@
-.PHONY: all clean main supplement view help
+.PHONY: all clean main view help
 
 # Default target
-all: main.pdf supplement.pdf
+all: main.pdf
 
-# Convenience aliases so `make main` / `make supplement` build the PDFs
-# (the phony names in .PHONY would otherwise be no-op targets).
+# Convenience alias so `make main` builds the PDF
+# (the phony name in .PHONY would otherwise be a no-op target).
 main: main.pdf
-supplement: supplement.pdf
 
 # Figures bundled into the manuscript; changing any should force a rebuild.
 FIGURES := $(wildcard figures/main/*.pdf figures/supplementary/*.pdf)
@@ -14,10 +13,6 @@ FIGURES := $(wildcard figures/main/*.pdf figures/supplementary/*.pdf)
 # Build main manuscript (self-contained: own preamble + embedded bibliography)
 main.pdf: main.tex references.bib $(FIGURES)
 	latexmk -pdf main.tex
-
-# Build supplement
-supplement.pdf: supplement.tex preamble.tex references.bib
-	latexmk -pdf supplement.tex
 
 # Clean all build artifacts
 clean:
@@ -31,9 +26,8 @@ view: main.pdf
 # Show available targets
 help:
 	@echo "Available targets:"
-	@echo "  make          - Build both main.pdf and supplement.pdf"
+	@echo "  make          - Build main.pdf"
 	@echo "  make main     - Build main.pdf only"
-	@echo "  make supplement - Build supplement.pdf only"
 	@echo "  make clean    - Remove all build artifacts"
 	@echo "  make view     - Open main.pdf"
 	@echo "  make help     - Show this help message"

@@ -4,9 +4,7 @@ This directory contains the LaTeX source files for the paper, optimized for bioR
 
 ## Files
 
-- **main.tex**: Main manuscript text
-- **supplement.tex**: Supplementary materials
-- **preamble.tex**: Package configuration used by `supplement.tex` (`main.tex` is self-contained with its own inline preamble)
+- **main.tex**: Main manuscript text (self-contained, with its own inline preamble)
 - **references.bib**: Bibliography database
 - **.latexmkrc**: Build configuration for latexmk
 - **Makefile**: Convenient build commands
@@ -18,14 +16,8 @@ This directory contains the LaTeX source files for the paper, optimized for bioR
 ```bash
 cd manuscript
 
-# Build both main and supplement
+# Build the main manuscript
 make
-
-# Build only main manuscript
-make main
-
-# Build only supplement
-make supplement
 
 # Clean all build artifacts
 make clean
@@ -41,9 +33,6 @@ cd manuscript
 
 # Build main manuscript
 latexmk -pdf main.tex
-
-# Build supplement
-latexmk -pdf supplement.tex
 
 # Clean build artifacts
 latexmk -C
@@ -62,12 +51,6 @@ pdflatex main.tex
 bibtex main          # main.tex uses natbib/\bibliography, processed by BibTeX
 pdflatex main.tex
 pdflatex main.tex
-
-# Build supplement (natbib + BibTeX, via preamble.tex)
-pdflatex supplement.tex
-bibtex supplement
-pdflatex supplement.tex
-pdflatex supplement.tex
 ```
 
 ## Figures
@@ -110,7 +93,6 @@ make
 4. **Package for submission**:
    - bioRxiv accepts PDF uploads directly
    - Optionally include source files (.tex, .bib, figures/)
-   - Include `preamble.tex` if submitting LaTeX source
 
 ## Features
 
@@ -119,10 +101,10 @@ make
 Line numbers are enabled by default for peer review:
 
 ```latex
-\linenumbers  % in main.tex and supplement.tex
+\linenumbers  % in main.tex
 ```
 
-To disable for final version, comment out in both files:
+To disable for final version, comment it out:
 
 ```latex
 % \linenumbers
@@ -130,22 +112,14 @@ To disable for final version, comment out in both files:
 
 ### Preamble
 
-`supplement.tex` pulls in shared package configuration via `preamble.tex`:
-
-```latex
-\input{preamble}
-```
-
-`main.tex` is self-contained: it carries its own inline preamble rather than
-`\input{preamble}`, so its packages and bibliography setup are defined directly
-in the file.
+`main.tex` is self-contained: it carries its own inline preamble, so its
+packages and bibliography setup are defined directly in the file.
 
 ## Output
 
-Compiled PDFs are created in this directory:
+The compiled PDF is created in this directory:
 
 - `main.pdf` - Main manuscript
-- `supplement.pdf` - Supplementary materials
 
 Build artifacts (`.aux`, `.bbl`, `.log`, etc.) are ignored by Git (see `.gitignore`).
 
