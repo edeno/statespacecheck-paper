@@ -31,8 +31,8 @@ statespacecheck-paper/
 │   ├── generate_figure03.py    # Figure 3: Per-cell diagnostics across 4 simulated misfit scenarios
 │   └── generate_all_figures.py # Master script to generate all figures
 ├── manuscript/                  # LaTeX source files + bundled figures (Overleaf-ready)
-│   ├── main.tex                 # Self-contained (own inline preamble + embedded bibliography)
-│   ├── references.bib
+│   ├── main.tex                 # Self-contained (own inline preamble)
+│   ├── Local-GoF-Paper.bib      # Bibliography (BibTeX, from Zotero); built with plos2025.bst
 │   ├── README.md
 │   └── figures/                # Generated figure outputs
 │       ├── main/               # Main text figures (PDF + PNG)

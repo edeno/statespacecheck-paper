@@ -11,7 +11,7 @@ main: main.pdf
 FIGURES := $(wildcard figures/main/*.pdf figures/supplementary/*.pdf)
 
 # Build main manuscript (self-contained: own preamble + embedded bibliography)
-main.pdf: main.tex references.bib $(FIGURES)
+main.pdf: main.tex Local-GoF-Paper.bib $(FIGURES)
 	latexmk -pdf main.tex
 
 # Clean all build artifacts

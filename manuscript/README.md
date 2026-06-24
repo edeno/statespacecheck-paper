@@ -5,7 +5,8 @@ This directory contains the LaTeX source files for the paper, optimized for bioR
 ## Files
 
 - **main.tex**: Main manuscript text (self-contained, with its own inline preamble)
-- **references.bib**: Bibliography database
+- **Local-GoF-Paper.bib**: Bibliography database (BibTeX, exported from Zotero/Better BibTeX)
+- **plos2025.bst**: PLOS numbered-Vancouver BibTeX style used by `main.tex`
 - **.latexmkrc**: Build configuration for latexmk
 - **Makefile**: Convenient build commands
 
@@ -46,9 +47,9 @@ latexmk -pvc main.tex
 ```bash
 cd manuscript
 
-# Build main manuscript (natbib + BibTeX; main.tex is self-contained)
+# Build main manuscript (cite + BibTeX, plos2025.bst; main.tex is self-contained)
 pdflatex main.tex
-bibtex main          # main.tex uses natbib/\bibliography, processed by BibTeX
+bibtex main          # processes \bibliography with the plos2025 style
 pdflatex main.tex
 pdflatex main.tex
 ```
