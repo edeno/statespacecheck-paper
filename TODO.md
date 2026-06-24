@@ -23,6 +23,7 @@ Open follow-ups for **"Local goodness-of-fit measures for neural decoding"**
 
 - [ ] Discussion: "HPD overlap … consistently maintaining lower error rates across various conditions" overstates — no formal error-rate comparison was run.
 - [ ] Discussion closing ("empower us … deepen our understanding") is generic.
+- [ ] Tighten Figure 3 caption (make shorter)
 
 ## Possible journals
 
