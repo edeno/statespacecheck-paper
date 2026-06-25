@@ -1792,7 +1792,12 @@ def plot_per_spike_metric_hexbin_row(
             )
 
     if hex_artists:
-        max_count = max(float(np.nanmax(hb.get_array())) for hb in hex_artists)
+        # get_array() is typed Optional; filter None (never occurs for a drawn
+        # hexbin) so the max is over concrete arrays without a type: ignore.
+        counts = [
+            float(np.nanmax(arr)) for hb in hex_artists if (arr := hb.get_array()) is not None
+        ]
+        max_count = max(counts) if counts else 1.0
         if max_count <= 1:
             max_count = 10
         shared_norm = mcolors.LogNorm(vmin=1, vmax=max_count)

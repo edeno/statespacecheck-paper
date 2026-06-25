@@ -227,3 +227,6 @@ manuscript/old/
 #   (statespacecheck_paper.interactive.cache); reproducible from source,
 #   so the binary zarr/parquet/npz artifacts are not version-controlled.
 caches/
+
+# Stray figure outputs if a generate_figureXX.py is run from inside scripts/
+scripts/figures/

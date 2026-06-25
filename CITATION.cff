@@ -16,12 +16,14 @@ authors:
     affiliation: "Department of Mathematics and Statistics, Boston University"
   - family-names: Comrie
     given-names: Alison E.
-    affiliation: "HHMI Janelia Research Campus"
+    affiliation: "Howard Hughes Medical Institute, Janelia Research Campus"
   - family-names: Frank
     given-names: Loren M.
     affiliation: >-
-      Departments of Physiology and Psychiatry, UCSF; Kavli Institute
-      for Fundamental Neuroscience, UCSF; HHMI, UCSF
+      Departments of Physiology and Psychiatry, University of California, San
+      Francisco; Kavli Institute for Fundamental Neuroscience, University of
+      California, San Francisco; Howard Hughes Medical Institute, University of
+      California, San Francisco
   - family-names: Eden
     given-names: Uri T.
     email: tzvi@bu.edu
@@ -30,7 +32,9 @@ authors:
     given-names: Eric L.
     email: eric.denovellis@ucsf.edu
     affiliation: >-
-      Departments of Physiology and Psychiatry, UCSF; HHMI, UCSF
+      Departments of Physiology and Psychiatry, University of California, San
+      Francisco; Howard Hughes Medical Institute, University of California, San
+      Francisco
 preferred-citation:
   type: article
   title: "Local goodness-of-fit measures for neural decoding"
