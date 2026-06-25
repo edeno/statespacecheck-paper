@@ -181,9 +181,9 @@ if __name__ == "__main__":
 
 Tests are organized by module (regenerate exact percentages with `uv run pytest --cov --cov-report=term-missing | tail -1`):
 
-- **test_style.py**: Style utilities (100% coverage)
+- **test_style.py**: Style utilities (98% coverage)
 - **test_simulation.py**: Simulation functions (100% coverage)
-- **test_analysis.py**: Analysis functions (100% coverage)
+- **test_analysis.py**: Analysis functions (98% coverage)
 - **test_plotting.py**: Plotting functions (96% coverage)
 - **test_figures.py**: Integration tests for figure scripts
 - **test_properties.py**: Property-based tests using Hypothesis

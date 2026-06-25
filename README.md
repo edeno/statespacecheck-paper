@@ -13,7 +13,7 @@ This is a **paper/research repository** (not a library). The code is organized i
 - **`manuscript/figures/`**: Generated figure outputs (PDF and PNG)
   - `manuscript/figures/main/`: Main text figures
   - `manuscript/figures/supplementary/`: Supplementary figures
-- **`tests/`**: Comprehensive test suite (326 tests)
+- **`tests/`**: Comprehensive test suite (351 tests)
 - **`notebooks/`**: Jupyter notebooks for exploration
 
 **For developers**: See [CLAUDE.md](CLAUDE.md) for detailed development guide including module organization, coding standards, and where to add new functionality.
@@ -352,7 +352,7 @@ uv pip install -e ".[dev]"
 ### Running Tests
 
 ```bash
-# Run all tests with coverage (326 tests)
+# Run all tests with coverage (351 tests)
 uv run pytest
 
 # Run specific module tests
@@ -430,7 +430,7 @@ See [CLAUDE.md](CLAUDE.md) for detailed guidance on:
 
 ## Scientific Context
 
-This package implements goodness-of-fit diagnostics for state space models used in neuroscience. The methods are based on the principle that a well-specified model should have consistent posterior and likelihood distributions. Large divergences or low overlap indicate:
+The `statespacecheck` package implements goodness-of-fit diagnostics for state space models used in neuroscience, and this repository demonstrates and applies them. The methods are based on the principle that a well-specified model should have consistent posterior and likelihood distributions. Large divergences or low overlap indicate:
 
 1. **Prior issues**: State transition model too rigid or misspecified
 2. **Observation model issues**: Tuning curves or noise assumptions incorrect

@@ -1,7 +1,7 @@
 """statespacecheck-paper: Source code and supplementary materials.
 
 This package contains analysis code, figure generation utilities, and examples
-for the paper "Goodness-of-fit diagnostics for state space models in neuroscience".
+for the paper "Local goodness-of-fit measures for neural decoding".
 """
 
 from statespacecheck_paper.style import CMAP_DIAGNOSTIC, CMAP_POSTERIOR, COLORS, WONG
