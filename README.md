@@ -451,4 +451,9 @@ A machine-readable citation in CFF format is also provided in
 
 ## License
 
-MIT License - see LICENSE file for details.
+This repository is dual-licensed:
+
+- **Code** (analysis, scripts, figure-generation pipeline, tests): MIT License — see [LICENSE](LICENSE).
+- **Manuscript text and figures** (everything under `manuscript/`, including `manuscript/figures/`): Creative Commons Attribution 4.0 International (CC BY 4.0) — see [manuscript/LICENSE](manuscript/LICENSE).
+
+This split keeps the code permissively reusable while licensing the paper content under CC BY 4.0.
