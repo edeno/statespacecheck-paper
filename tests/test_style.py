@@ -22,7 +22,7 @@ WidthType = Literal["single", "double", "full"]
 # also documents the contract.
 _CONTEXT_FONT_SIZES = {
     "paper": {
-        # PLOS requires all in-figure text in the 8-12 pt range.
+        # Journal figure standards require all in-figure text in the 8-12 pt range.
         "font.size": 8,
         "axes.labelsize": 8,
         "axes.titlesize": 9,
