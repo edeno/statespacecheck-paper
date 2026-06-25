@@ -376,6 +376,14 @@ uv run python scripts/generate_figure02.py
 # Outputs saved to manuscript/figures/main/ directory as PDF and PNG (450 DPI)
 ```
 
+**Reproducibility.** Figures 1–3 are fully reproducible from source: they run a
+seeded simulation (`np.random.seed`/`np.random.default_rng`) and need no external
+data. Figure 4 uses the real hippocampal recording of [Comrie et al.
+2024](https://doi.org/10.1101/2024.09.23.613567), which is **not** included in
+this repository (large; see the Data Availability statement in the manuscript for
+how to obtain it). Place the data under `data/` (or set `STATESPACECHECK_DATA_PATH`)
+before running `generate_figure04.py`.
+
 ### Code Quality
 
 ```bash

@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "statespacecheck-paper"
 version = "0.1.0"
-description = "Source code and supplementary materials for the paper 'Goodness-of-fit diagnostics for state space models in neuroscience'"
+description = "Source code and supplementary materials for the paper 'Local goodness-of-fit measures for neural decoding'"
 authors = [
     { name = "Eric Denovellis", email = "eric.denovellis@ucsf.edu" },
     { name = "Sirui Zeng", email = "zengsr@bu.edu" },
@@ -53,6 +53,10 @@ interactive = [
     "zarr>=2.16,<3",
     "pyarrow>=14",
 ]
+
+[project.urls]
+Repository = "https://github.com/edeno/statespacecheck-paper"
+Issues = "https://github.com/edeno/statespacecheck-paper/issues"
 
 [tool.hatch.metadata]
 allow-direct-references = true
