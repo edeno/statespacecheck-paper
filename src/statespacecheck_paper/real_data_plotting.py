@@ -1033,8 +1033,8 @@ def plot_model_comparison_with_posterior(
     - Row 1: Likelihood p(y_t | x_t) with animal position overlay (only at spike times)
     - Row 2: Spike raster (cells sorted by place field peak)
     - Row 3: HPD overlap scatter
-    - Row 4: KL divergence scatter
-    - Row 5: Spike probability scatter
+    - Row 4: Spike probability scatter (-log(p))
+    - Row 5: KL divergence scatter
 
     Parameters
     ----------
@@ -1119,11 +1119,11 @@ def plot_model_comparison_with_posterior(
     axes[3, 0] = fig.add_subplot(gs[3, 0], sharex=axes[0, 0])
     axes[3, 1] = fig.add_subplot(gs[3, 1], sharex=axes[0, 0], sharey=axes[3, 0])
 
-    # Row 4: KL divergence (share y within row, share x with row 0)
+    # Row 4: Spike probability (share y within row, share x with row 0)
     axes[4, 0] = fig.add_subplot(gs[4, 0], sharex=axes[0, 0])
     axes[4, 1] = fig.add_subplot(gs[4, 1], sharex=axes[0, 0], sharey=axes[4, 0])
 
-    # Row 5: Spike probability (share y within row, share x with row 0)
+    # Row 5: KL divergence (share y within row, share x with row 0)
     axes[5, 0] = fig.add_subplot(gs[5, 0], sharex=axes[0, 0])
     axes[5, 1] = fig.add_subplot(gs[5, 1], sharex=axes[0, 0], sharey=axes[5, 0])
 
@@ -1372,8 +1372,8 @@ def plot_single_model_diagnostics(
     - Row 1: Likelihood at spike times with position overlay
     - Row 2: Spike raster (sorted by place field peak)
     - Row 3: HPD overlap scatter
-    - Row 4: KL divergence scatter
-    - Row 5: Spike probability scatter (-log(p), natural log scale)
+    - Row 4: Spike probability scatter (-log(p), natural log scale)
+    - Row 5: KL divergence scatter
 
     Parameters
     ----------
@@ -1623,8 +1623,8 @@ def plot_per_spike_metric_hexbin_row(
         ``event_kl_divergence``, ``event_spike_prob`` (each shape
         ``(n_spikes,)``).
     axes : Sequence[matplotlib.axes.Axes]
-        Three axes, one per metric (HPD overlap, KL divergence,
-        ``-log(p)`` natural log).
+        Three axes, one per metric (HPD overlap, ``-log(p)`` natural
+        log, KL divergence).
     model_a_name, model_b_name : str
         Axis labels for each decoder.
     thresholds : dict[str, float], optional

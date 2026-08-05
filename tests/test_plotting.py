@@ -382,7 +382,7 @@ def test_plot_combined_diagnostics_uses_event_diagnostics_for_scatter() -> None:
     )
     try:
         # Diagnostic rows are ordered HPD (axis 3), -log(p) (axis 4),
-        # KL (axis 5); axes 0-2 are the posterior/likelihood/raster stack.
+        # KL (axis 5); axes 0-2 are the predictive/likelihood/raster stack.
         hpd_offsets = fig.axes[3].collections[0].get_offsets()
         np.testing.assert_array_equal(hpd_offsets[:, 0], [10, 10])
         np.testing.assert_allclose(hpd_offsets[:, 1], [0.25, 0.75])

@@ -1206,8 +1206,8 @@ def plot_combined_diagnostics(
 ) -> Figure:
     """Create comprehensive time-series diagnostics figure.
 
-    Layout: 6 time-series panels (predictive, likelihood, raster, HPDO, KL,
-    spike prob) with shared x-axis and phase boundary overlays.
+    Layout: 6 time-series panels (predictive, likelihood, raster, HPDO,
+    spike prob, KL) with shared x-axis and phase boundary overlays.
 
     Parameters
     ----------
