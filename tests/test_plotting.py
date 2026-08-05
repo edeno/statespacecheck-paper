@@ -381,11 +381,13 @@ def test_plot_combined_diagnostics_uses_event_diagnostics_for_scatter() -> None:
         placefield_centers=np.linspace(0, 1, n_cells),
     )
     try:
+        # Diagnostic rows are ordered HPD (axis 3), -log(p) (axis 4),
+        # KL (axis 5); axes 0-2 are the posterior/likelihood/raster stack.
         hpd_offsets = fig.axes[3].collections[0].get_offsets()
         np.testing.assert_array_equal(hpd_offsets[:, 0], [10, 10])
         np.testing.assert_allclose(hpd_offsets[:, 1], [0.25, 0.75])
 
-        spike_prob_offsets = fig.axes[5].collections[0].get_offsets()
+        spike_prob_offsets = fig.axes[4].collections[0].get_offsets()
         np.testing.assert_array_equal(spike_prob_offsets[:, 0], [10, 10])
         # Plotted as -log(spike_prob) (natural log); 0.1 -> -ln(0.1), 0.01 -> -ln(0.01).
         np.testing.assert_allclose(spike_prob_offsets[:, 1], [-np.log(0.1), -np.log(0.01)])

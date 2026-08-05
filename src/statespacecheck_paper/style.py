@@ -194,8 +194,8 @@ class MetricSpec:
 
 METRIC_SPECS: tuple[MetricSpec, ...] = (
     MetricSpec("hpd_overlap", "HPD overlap", COLORS["hpd_overlap"], "↓ Worse fit"),
-    MetricSpec("kl_divergence", "KL div.", COLORS["kl_divergence"], "↑ Worse fit"),
     MetricSpec("spike_prob", r"$-\log(p)$", COLORS["metric_combined"], "↑ Worse fit"),
+    MetricSpec("kl_divergence", "KL div.", COLORS["kl_divergence"], "↑ Worse fit"),
 )
 METRIC_NAMES: tuple[MetricName, ...] = tuple(s.name for s in METRIC_SPECS)
 

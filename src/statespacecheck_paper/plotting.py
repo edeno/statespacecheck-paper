@@ -79,19 +79,19 @@ FIGURE3_DIAGNOSTIC_ROW_SPECS: tuple[DiagnosticRowSpec, ...] = (
         symlog_hpd=True,
     ),
     DiagnosticRowSpec(
-        "event_kl_divergence",
-        "kl_divergence",
-        "KL div.",
-        COLORS["kl_divergence"],
-        "↑ Worse fit",
-    ),
-    DiagnosticRowSpec(
         "event_spike_prob",
         "spike_prob",
         "−log(p)",
         COLORS["metric_combined"],
         "↑ Worse fit",
         log_transform=True,
+    ),
+    DiagnosticRowSpec(
+        "event_kl_divergence",
+        "kl_divergence",
+        "KL div.",
+        COLORS["kl_divergence"],
+        "↑ Worse fit",
     ),
 )
 
@@ -1130,7 +1130,7 @@ def _plot_figure3_summary_heatmap(
     norm_frac = frac_data / max_frac if max_frac > 0 else frac_data
     ax.imshow(norm_frac, cmap="YlOrRd", aspect="auto", vmin=0, vmax=1)
 
-    metric_labels = ["HPD\noverlap", "KL\ndiv.", "−log(p)"]
+    metric_labels = ["HPD\noverlap", "−log(p)", "KL\ndiv."]
     ax.set_yticks(range(3))
     ax.set_yticklabels(metric_labels, fontsize=8)
 

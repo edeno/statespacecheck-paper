@@ -272,8 +272,8 @@ class DecoderViewer(QtWidgets.QMainWindow):
         # defaults at scripts/generate_figure04.py.
         self.metric_panels: dict[str, MetricPanel] = {
             "event_hpd_overlap": MetricPanel(metric="event_hpd_overlap", threshold=0.05),
-            "event_kl_divergence": MetricPanel(metric="event_kl_divergence", threshold=None),
             "event_spike_prob": MetricPanel(metric="event_spike_prob", threshold=0.05),
+            "event_kl_divergence": MetricPanel(metric="event_kl_divergence", threshold=None),
         }
         self.slice_panel = SlicePanel(
             position_bins=ds.position_grid_full,
@@ -356,8 +356,8 @@ class DecoderViewer(QtWidgets.QMainWindow):
         time_axis_layout.addWidget(self.raster_panel, stretch=1)
         for metric in (
             "event_hpd_overlap",
-            "event_kl_divergence",
             "event_spike_prob",
+            "event_kl_divergence",
         ):
             time_axis_layout.addWidget(self.metric_panels[metric], stretch=1)
 

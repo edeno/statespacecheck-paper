@@ -638,7 +638,10 @@ class TestSummaryFlagFractions:
     def test_compute_phase_flag_fractions_isolates_remap(self) -> None:
         """A KL spike confined to the remap window must flag 100% in the
         remap column and 0% elsewhere; HPD/spike-prob rows that never cross
-        their thresholds must be 0% everywhere."""
+        their thresholds must be 0% everywhere.
+
+        Row order follows ``SUMMARY_FLAG_METRICS``: HPD (0), spike-prob (1),
+        KL (2)."""
         params = self._params()
         n_time = params.phase_boundaries[PhaseBoundary.WIDE_DYNAMICS_END]
         n_cells = 1
@@ -654,12 +657,12 @@ class TestSummaryFlagFractions:
         frac = compute_phase_flag_fractions(metrics, thresholds, windows)
 
         assert frac.shape == (3, 5)
-        # KL row (index 1): only the remap column (index 1) flags.
-        assert frac[1, 1] == pytest.approx(100.0)
-        assert np.allclose(np.delete(frac[1], 1), 0.0)
-        # HPD (0) and spike-prob (2) rows never cross their thresholds.
+        # KL row (index 2): only the remap column (index 1) flags.
+        assert frac[2, 1] == pytest.approx(100.0)
+        assert np.allclose(np.delete(frac[2], 1), 0.0)
+        # HPD (0) and spike-prob (1) rows never cross their thresholds.
         assert np.allclose(frac[0], 0.0)
-        assert np.allclose(frac[2], 0.0)
+        assert np.allclose(frac[1], 0.0)
 
     def test_extract_drops_nan_and_matches_compute(self) -> None:
         """``extract_phase_flag_values`` strips NaNs, and the two-step

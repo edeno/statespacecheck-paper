@@ -1503,8 +1503,8 @@ def compute_thresholds(
 # multi-realization averaging path so the two cannot drift apart.
 SUMMARY_FLAG_METRICS: tuple[tuple[str, str], ...] = (
     ("hpd_overlap", "below"),
-    ("kl_divergence", "above"),
     ("spike_prob", "below"),
+    ("kl_divergence", "above"),
 )
 
 

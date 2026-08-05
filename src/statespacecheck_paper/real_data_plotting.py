@@ -1646,6 +1646,7 @@ def plot_per_spike_metric_hexbin_row(
     # high values ("above").
     metric_specs = [
         ("event_hpd_overlap", "HPD overlap", COLORS["hpd_overlap"], False, "hpd_overlap", "below"),
+        ("event_spike_prob", r"$-\log(p)$", COLORS["metric_combined"], True, "spike_prob", "above"),
         (
             "event_kl_divergence",
             "KL divergence",
@@ -1654,7 +1655,6 @@ def plot_per_spike_metric_hexbin_row(
             "kl_divergence",
             "above",
         ),
-        ("event_spike_prob", r"$-\log(p)$", COLORS["metric_combined"], True, "spike_prob", "above"),
     ]
 
     hex_artists = []
