@@ -4,7 +4,7 @@
 
 This repository contains the source code and supplementary materials for the paper **"Local goodness-of-fit measures for neural decoding"**. It includes analysis scripts, figure generation code, and examples demonstrating the `statespacecheck` package.
 
-**Scientific Context**: State space models are widely used in neuroscience to relate neural activity to latent dynamic brain states. This paper introduces diagnostics (KL divergence and HPD overlap) to assess model goodness-of-fit by examining consistency between posterior distributions and component likelihood distributions.
+**Scientific Context**: State space models are widely used in neuroscience to relate neural activity to latent dynamic brain states. This paper introduces diagnostics (HPD overlap, a rank-based predictive check, and KL divergence) to assess model goodness-of-fit by examining consistency between posterior distributions and component likelihood distributions.
 
 **Repository Type**: This is a paper/research repository, not a library. The focus is on reproducible analysis, figure generation, and demonstrating the `statespacecheck` package capabilities.
 

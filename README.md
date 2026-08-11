@@ -29,8 +29,9 @@ The posterior distribution combines information from both models, weighing curre
 
 ## Features
 
-- **KL Divergence**: Measure information divergence between posterior and likelihood distributions at each time point
 - **HPD Overlap**: Compute spatial overlap between highest posterior density regions
+- **Predictive Check**: Rank-based predictive p-value (−log p) for each spike observation
+- **KL Divergence**: Measure information divergence between posterior and likelihood distributions at each time point
 - **Vectorized Operations**: Efficient NumPy-based implementation with no Python loops
 - **Flexible Dimensionality**: Supports both 1D `(n_time, n_position_bins)` and 2D `(n_time, n_x_bins, n_y_bins)` spatial arrays
 - **Robust Edge Case Handling**: Proper treatment of NaN values, zero sums, and empty distributions

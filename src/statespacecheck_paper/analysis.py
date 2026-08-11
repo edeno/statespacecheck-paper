@@ -1,7 +1,7 @@
 """Analysis functions for state space model diagnostics.
 
 This module contains the core analysis logic for running Bayesian decoders and computing
-diagnostic metrics (KL divergence, HPD overlap, spike probability) to assess model
+diagnostic metrics (HPD overlap, spike probability, KL divergence) to assess model
 goodness-of-fit.
 
 **Key Components**:
