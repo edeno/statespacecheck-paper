@@ -128,7 +128,7 @@ COLORS: dict[str, str] = {
     # Baseline / clean-recovery — no manipulation.
     "phase_baseline": "#FFFFFF",  # White
     #
-    # Remap misfit — a subset of cells use swapped place-field identities.
+    # Remap misfit — all cells use a fixed, spatially incoherent permutation.
     "phase_remap": "#FFF0D6",  # Light orange (from WONG[1])
     #
     # History-dependent firing misfit — refractory + bursting spike trains.

@@ -204,14 +204,25 @@ class TestGetRemappedPfCenters:
         result = get_remapped_pf_centers(pf_centers, ((0, 1), (1, 0)), active=True)
         np.testing.assert_array_equal(result, [10.0, 0.0, 20.0, 30.0])
 
-    def test_default_bidirectional_swap_pattern(self) -> None:
-        """The DecodeParams default is six bidirectional swaps; verify the
-        full pattern preserves the swap semantics across all 10 cells."""
-        pf_centers = np.arange(10) * 10.0
-        remap_from_to = ((0, 9), (1, 8), (2, 7), (9, 0), (8, 1), (7, 2))
-        result = get_remapped_pf_centers(pf_centers, remap_from_to, active=True)
-        expected = np.array([90.0, 80.0, 70.0, 30.0, 40.0, 50.0, 60.0, 20.0, 10.0, 0.0])
-        np.testing.assert_array_equal(result, expected)
+    def test_default_global_remap_is_complete_and_well_separated(self) -> None:
+        """Every default cell is remapped exactly once and moves at least
+        three center spacings, as required by the Figure 3 positive control.
+        """
+        params = DecodeParams()
+        assert params.pf_centers is not None
+        mapping = np.asarray(params.remap_from_to, dtype=int)
+        n_cells = params.pf_centers.size
+
+        np.testing.assert_array_equal(np.sort(mapping[:, 0]), np.arange(n_cells))
+        np.testing.assert_array_equal(np.sort(mapping[:, 1]), np.arange(n_cells))
+        assert np.all(np.abs(mapping[:, 0] - mapping[:, 1]) >= 3)
+
+        result = get_remapped_pf_centers(
+            params.pf_centers,
+            params.remap_from_to,
+            active=True,
+        )
+        np.testing.assert_array_equal(result, params.pf_centers[mapping[:, 1]])
 
 
 # ---------------------------------------------------------------------------
@@ -1056,23 +1067,46 @@ class TestConditionOn:
         # Uniform fallback, properly normalized.
         np.testing.assert_allclose(new_probs, 1.0 / n_bins, rtol=1e-12)
         np.testing.assert_allclose(new_probs.sum(), 1.0, rtol=1e-12)
-        # Underflow signal is exactly -inf so callers can ``== -np.inf``.
+        # Zero-probability signal is exactly -inf so callers can compare directly.
         assert log_norm == -np.inf
 
-    def test_handles_prior_likelihood_disjoint(self) -> None:
-        """A finite but vanishingly small overlap also takes the
-        fallback path: ``weighted.sum() < eps`` triggers the explicit
-        uniform reset. Prior concentrated at one end, likelihood at the
-        other.
-        """
+    def test_retains_tiny_finite_prior_likelihood_overlap(self) -> None:
+        """A tiny but finite overlap is a valid Bayesian update, not a
+        numerical-underflow condition that permits a uniform reset."""
         n_bins = 8
         prior = np.zeros(n_bins)
         prior[0] = 1.0
         ll = np.full(n_bins, -1000.0)
         ll[-1] = 0.0  # likelihood mass at the opposite end of the grid
         new_probs, log_norm = _condition_on(prior, ll)
-        np.testing.assert_allclose(new_probs, 1.0 / n_bins, rtol=1e-12)
+        np.testing.assert_array_equal(new_probs, prior)
+        assert log_norm == pytest.approx(-1000.0)
+
+    def test_exactly_disjoint_support_uses_zero_probability_fallback(self) -> None:
+        """Fallback is reserved for exact zero joint support."""
+        n_bins = 4
+        prior = np.array([1.0, 0.0, 0.0, 0.0])
+        ll = np.array([-np.inf, 0.0, -1.0, -2.0])
+        new_probs, log_norm = _condition_on(prior, ll)
+        np.testing.assert_allclose(new_probs, 1.0 / n_bins)
         assert log_norm == -np.inf
+
+    @pytest.mark.parametrize(
+        "prior,ll",
+        [
+            (np.array([np.nan, 1.0]), np.zeros(2)),
+            (np.array([-1.0, 2.0]), np.zeros(2)),
+            (np.array([0.0, 0.0]), np.zeros(2)),
+            (np.array([0.5, 0.5]), np.array([0.0, np.nan])),
+        ],
+    )
+    def test_invalid_inputs_do_not_silently_become_uniform(
+        self,
+        prior: np.ndarray,
+        ll: np.ndarray,
+    ) -> None:
+        with pytest.raises(ValueError, match="finite nonnegative 1D distribution"):
+            _condition_on(prior, ll)
 
     def test_extreme_loglik_does_not_underflow(self) -> None:
         """Likelihoods with -800 magnitude (would underflow exp(-800)
@@ -1100,9 +1134,10 @@ class TestDecodeAndDiagnosticsLogSpace:
 
     The previous implementation reset the posterior to uniform when
     ``prior * combined_likelihood`` underflowed to zero. The log-space
-    rewrite removes that branch; the failure mode it guarded against
-    cannot occur. These tests pin that property so a future refactor
-    can't silently reintroduce the reset.
+    rewrite removes that branch; the finite-overlap numerical-underflow
+    failure mode cannot occur. An exactly impossible observation retains
+    a separately tested fallback. These tests pin that distinction so a
+    future refactor cannot silently reintroduce the arbitrary reset.
     """
 
     def test_posterior_sums_to_one_at_every_step(self) -> None:
@@ -1122,7 +1157,7 @@ class TestDecodeAndDiagnosticsLogSpace:
         np.testing.assert_allclose(posterior.sum(axis=1), 1.0, rtol=1e-10, atol=1e-12)
 
     def test_extreme_prior_likelihood_mismatch_yields_meaningful_posterior(self) -> None:
-        """Stress test for the underflow regime: place a narrow prior at
+        """Stress test for an extreme but finite overlap: place a narrow prior at
         one end of the grid then drive the decoder with spikes whose
         place-field rate is concentrated at the *other* end.
 
@@ -1173,10 +1208,10 @@ class TestDecodeAndDiagnosticsLogSpace:
             f"under sustained firing at PF centers (88, 92)."
         )
 
-    def test_underflow_emits_summary_warning(self) -> None:
+    def test_impossible_observation_emits_summary_warning(self) -> None:
         """The per-step ``_condition_on`` ``-inf`` path is covered by
         ``TestConditionOn``; the *summary* warning emitted post-loop
-        is not asserted anywhere. Force the underflow regime via a
+        is not asserted anywhere. Force an impossible observation via a
         place-field center so far from the decoder grid that every
         bin's rate underflows to 0.0."""
         n_time, n_cells, n_bins = 8, 1, 21
@@ -1189,7 +1224,7 @@ class TestDecodeAndDiagnosticsLogSpace:
 
         with pytest.warns(
             RuntimeWarning,
-            match=r"prior/likelihood overlap underflowed at \d+ timestep",
+            match=r"observation had zero probability on the prior support at \d+ timestep",
         ):
             decode_and_diagnostics(
                 spikes, xs, transition_matrix, pf_centers, pf_width=5.0, rate_scale=1.0

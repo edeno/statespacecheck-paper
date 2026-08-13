@@ -139,8 +139,8 @@ def run_figure03_simulation(
     Phases (in order, with their misfit class):
 
     1. Clean Baseline
-    2. **Remap Misfit** (observation: wrong place-field identities for
-       a subset of cells)
+    2. **Remap Misfit** (observation: all place-field identities undergo
+       one fixed, spatially incoherent permutation)
     3. Clean Recovery
     4. **History-Dependent Firing Misfit** (observation: spikes
        generated with hard refractory + bursting; decoder still
@@ -404,7 +404,7 @@ def estimate_stable_summary(
     Returns
     -------
     StableSummary
-        Pooled thresholds and mean/SD per-phase flag fractions.
+        Pooled thresholds and median per-phase flag fractions.
 
     Raises
     ------

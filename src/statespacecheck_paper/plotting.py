@@ -1068,7 +1068,7 @@ def _plot_figure3_diagnostic_row(
     ax.set_xlim(0, n_time)
     ax.set_ylabel(spec.ylabel, fontsize=8, labelpad=7)
     if show_xlabel:
-        ax.set_xlabel("Time (a.u.)", fontsize=8, labelpad=7)
+        ax.set_xlabel("Time (ms)", fontsize=8, labelpad=7)
         ax.tick_params(labelsize=8)
     else:
         ax.tick_params(labelsize=8, labelbottom=False)

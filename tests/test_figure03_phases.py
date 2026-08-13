@@ -265,7 +265,7 @@ def test_drift_phase_inflates_kl(sim: SimulationResult) -> None:
 
 
 # ---------------------------------------------------------------------------
-# estimate_stable_summary: pooled thresholds + median/IQR per-phase fractions
+# estimate_stable_summary: pooled thresholds + median per-phase fractions
 # ---------------------------------------------------------------------------
 
 

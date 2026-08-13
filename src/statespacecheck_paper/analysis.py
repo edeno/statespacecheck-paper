@@ -45,6 +45,7 @@ from typing import cast
 import numpy as np
 import statespacecheck as ssc
 from numpy.typing import NDArray
+from scipy.special import logsumexp
 from scipy.stats import poisson
 
 from statespacecheck_paper.simulation import (
@@ -60,32 +61,27 @@ from statespacecheck_paper.simulation import (
 # scratch array, ~600 MB peak with three live (pred / rates / lik).
 _PER_SPIKE_BATCH = 50_000
 
-# Sentinel for ``_condition_on`` underflow steps.
+# Sentinel for observations with no finite joint prior-likelihood mass.
 _NEG_INF = float("-inf")
 
 
 def _condition_on(
     probs: NDArray[np.floating],
     ll: NDArray[np.floating],
-    eps: float = 1e-15,
 ) -> tuple[NDArray[np.floating], float]:
     """Bayesian update: multiply prior by emission likelihood, normalize.
 
     Adapted from ``non_local_detector.core._condition_on`` (which itself
-    is adapted from ``dynamax``). The log-sum-exp shift of subtracting
-    ``ll.max()`` before exponentiation makes ``exp(ll - ll_max)`` peak
-    at 1, keeping the posterior update numerically stable even when
-    individual cell likelihoods would have underflowed in linear space.
+    is adapted from ``dynamax``). The update is evaluated as
+    ``log(probs) + ll`` and normalized with log-sum-exp, so a small but
+    representable overlap between prior and likelihood is retained rather
+    than being replaced by an arbitrary probability cutoff.
 
-    Underflow regime: when the prior and likelihood are essentially
-    disjoint (``weighted.sum() < eps``), the marginal likelihood
-    underflows and the returned posterior would be a meaningless
-    near-zero vector. Rather than propagate that into the next step's
-    predict-and-update (where it would silently become uniform via the
-    eps clamp in :func:`statespacecheck_paper.simulation.normalize`),
-    this function explicitly returns a uniform posterior and
-    ``log_norm = -inf``. Callers should treat ``log_norm == -inf`` as
-    the signal to flag the step.
+    If every joint log-weight is ``-inf``, the observation has zero
+    probability everywhere under the prior and the Bayesian posterior is
+    undefined. In that degenerate case, this function explicitly returns a
+    uniform posterior and ``log_norm = -inf``. Callers should treat
+    ``log_norm == -inf`` as the signal to flag the step.
 
     Parameters
     ----------
@@ -93,29 +89,38 @@ def _condition_on(
         Linear-space prior, must sum to 1.
     ll : np.ndarray, shape (n_bins,)
         Log-likelihood of the observation at each bin (unnormalized).
-    eps : float, default 1e-15
-        Underflow threshold on ``weighted.sum()``; below this the
-        uniform fallback path runs.
 
     Returns
     -------
     new_probs : np.ndarray, shape (n_bins,)
         Posterior; sums to 1. Equals ``1/n_bins`` everywhere when the
-        underflow fallback runs.
+        zero-probability fallback runs.
     log_norm : float
         Log marginal likelihood for this step (``log p(obs | past)``).
-        ``-inf`` when the underflow fallback runs.
+        ``-inf`` when the zero-probability fallback runs.
     """
     n_bins = probs.size
-    ll_max = float(np.max(ll))
-    if not np.isfinite(ll_max):
+    if (
+        probs.ndim != 1
+        or ll.shape != probs.shape
+        or not np.all(np.isfinite(probs))
+        or np.any(probs < 0.0)
+        or not np.isclose(float(probs.sum()), 1.0)
+        or np.any(np.isnan(ll))
+        or np.any(np.isposinf(ll))
+    ):
+        raise ValueError(
+            "probs must be a finite nonnegative 1D distribution and ll must "
+            "have the same shape with no NaN or +inf values"
+        )
+    with np.errstate(divide="ignore", invalid="ignore"):
+        log_joint = np.log(probs) + ll
+    log_norm = float(logsumexp(log_joint))
+    if np.isneginf(log_norm):
         return np.full(n_bins, 1.0 / n_bins), _NEG_INF
-    weighted = probs * np.exp(ll - ll_max)
-    norm = float(weighted.sum())
-    if norm < eps:
-        return np.full(n_bins, 1.0 / n_bins), _NEG_INF
-    new_probs = weighted / norm
-    log_norm = float(np.log(norm)) + ll_max
+    if not np.isfinite(log_norm):
+        raise ValueError("Prior and log-likelihood produced a nonfinite joint log-normalizer")
+    new_probs = np.exp(log_joint - log_norm)
     return new_probs, log_norm
 
 
@@ -220,7 +225,8 @@ class DecodeParams:
         Random seed for reproducibility.
     remap_from_to : tuple of (int, int) pairs, default see source
         Specification of which cells get remapped during the remap
-        window. Default is six bidirectional swaps across the track.
+        window. By default, all eleven cells participate in one fixed
+        permutation that moves every field by at least three center spacings.
 
     Examples
     --------
@@ -255,9 +261,10 @@ class DecodeParams:
     base_seed: int = 1
     # Global-remapping model: a fixed random permutation (derangement) of
     # the eleven place-field centers, so each cell ``src`` adopts cell
-    # ``dst``'s center. Chosen as the first RNG seed whose permutation
-    # displaces every field by >=3 positions, so no cell keeps a field near
-    # its original location. The scramble is spatially *incoherent*: because
+    # ``dst``'s center. Chosen using the first NumPy default_rng seed (737)
+    # whose permutation displaces every field by >=3 positions, so no cell
+    # keeps a field near its original location. The scramble is spatially
+    # *incoherent*: because
     # the decoder's diagnostics judge each spike against this same remapped
     # likelihood (not the true fields), the misfit surfaces only through the
     # genuine conflict between the smooth-motion prior and the scattered
@@ -975,13 +982,12 @@ def decode_and_diagnostics(
     so individual bins still underflow to zero in linear space but the
     row as a whole remains a proper probability distribution.
 
-    When the prior and combined likelihood have no meaningful overlap
-    (``weighted.sum() < eps`` inside ``_condition_on``), the helper
-    falls back to a uniform posterior and signals via
-    ``log_norm = -inf``. This function counts such steps and emits a
-    single summary ``RuntimeWarning`` at the end so the situation is
-    visible. Diagnostics at flagged steps reference a uniform
-    predictive; consumers should mask them out if needed.
+    When the observation has zero probability at every state with nonzero
+    prior mass, :func:`_condition_on` falls back to a uniform posterior and
+    signals via ``log_norm = -inf``. This function counts such steps and
+    emits a single summary ``RuntimeWarning`` at the end so the situation is
+    visible. The reset affects the following predictive distribution;
+    consumers should inspect or mask downstream events if this occurs.
 
     Examples
     --------
@@ -1040,13 +1046,12 @@ def decode_and_diagnostics(
     # covered by a misfit window whose ``decoder_rates`` is set.
     rates = placefield_rates(xs, pf_centers, pf_width, rate_scale)
 
-    # Track timesteps where _condition_on fell back to uniform (prior and
-    # likelihood had essentially no overlap). The fallback keeps the
-    # filter alive but the diagnostics at those steps are computed
-    # against a uniform predictive; report a summary at the end so the
-    # caller can mask them out if desired.
-    n_underflow_steps = 0
-    first_underflow_t = -1
+    # Track timesteps where _condition_on fell back to uniform because the
+    # observation had zero probability on the prior's support. The fallback
+    # keeps the filter alive; report a summary at the end so callers can
+    # inspect or mask downstream events if desired.
+    n_zero_support_steps = 0
+    first_zero_support_t = -1
 
     for t in range(1, n_time):
         window = misfit_schedule.window_at(t)
@@ -1080,8 +1085,8 @@ def decode_and_diagnostics(
         # product in linear space).
         log_lik_combined = log_lik_per_cell.sum(axis=1)  # (n_bins,)
 
-        # Stored combined likelihood: same shift-and-normalize math as
-        # _condition_on, factored into the shared helper.
+        # Normalize the stored combined likelihood independently with a
+        # max-shifted softmax for display.
         combined_likelihood_all[t] = softmax_with_shift(log_lik_combined)
 
         # Spike-only likelihood: product over only cells that fired.
@@ -1093,23 +1098,24 @@ def decode_and_diagnostics(
 
         # Posterior update via the _condition_on pattern (dynamax /
         # non_local_detector). ``log_norm = -inf`` flags steps where the
-        # prior and likelihood had no meaningful overlap; the helper
+        # observation has zero probability on the prior's support; the helper
         # explicitly returns a uniform posterior in that case and we
         # surface the count post-loop rather than letting the situation
         # silently propagate.
         posterior[t], log_norm = _condition_on(prior, log_lik_combined)
         if log_norm == _NEG_INF:
-            if n_underflow_steps == 0:
-                first_underflow_t = t
-            n_underflow_steps += 1
+            if n_zero_support_steps == 0:
+                first_zero_support_t = t
+            n_zero_support_steps += 1
 
-    if n_underflow_steps > 0:
+    if n_zero_support_steps > 0:
         warnings.warn(
-            f"decode_and_diagnostics: prior/likelihood overlap underflowed at "
-            f"{n_underflow_steps} timestep(s); first at t={first_underflow_t}. "
-            f"Posterior was reset to uniform at those steps; downstream "
-            f"per-spike diagnostics computed at those times reference a "
-            f"uniform predictive and should be interpreted accordingly.",
+            f"decode_and_diagnostics: observation had zero probability on "
+            f"the prior support at "
+            f"{n_zero_support_steps} timestep(s); first at t={first_zero_support_t}. "
+            f"Posterior was reset to uniform at those steps; subsequent "
+            f"predictive distributions and diagnostics should be interpreted "
+            f"accordingly.",
             RuntimeWarning,
             stacklevel=2,
         )

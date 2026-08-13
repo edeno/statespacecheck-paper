@@ -65,8 +65,9 @@ def run_demo(params: DecodeParams) -> None:
     clean-recovery or baseline window):
 
     1. Clean baseline (0 - T_remap_start): Model fits well.
-    2. Remap misfit (T_remap_start - T_remap_end): A subset of cells use
-       swapped place-field identities — an observation-model misfit.
+    2. Remap misfit (T_remap_start - T_remap_end): All cells use one fixed,
+       spatially incoherent permutation of place-field identities — an
+       observation-model misfit.
     3. Clean recovery (T_remap_end - T_recovery1_end).
     4. History-dependent firing misfit (T_recovery1_end - T_hist_dep_end):
        Spikes are generated with a hard refractory period plus bursting;
@@ -108,7 +109,7 @@ def run_demo(params: DecodeParams) -> None:
     assert pf_centers is not None, "pf_centers must be initialized"
 
     # Pool many realizations for a stable threshold (from the pooled
-    # clean-baseline windows) and a stable median [IQR] panel-(b) summary.
+    # clean-baseline windows) and a stable median panel-(b) summary.
     summary = estimate_stable_summary(params, n_realizations=N_REALIZATIONS)
     print(f"Pooled thresholds: {summary.thresholds}")
     print(

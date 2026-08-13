@@ -251,6 +251,7 @@ def test_plot_combined_diagnostics_runs(
     )
     try:
         assert isinstance(fig, plt.Figure)
+        assert fig.axes[5].get_xlabel() == "Time (ms)"
     finally:
         plt.close(fig)
 
