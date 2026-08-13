@@ -250,14 +250,34 @@ def _write_place_fields(
     interior_mask: NDArray[np.bool_],
     position_bins: NDArray[np.float64],
     place_field_peaks: NDArray[np.float64],
+    event_likelihood: NDArray[np.floating] | None = None,
 ) -> None:
-    np.savez(
-        out_path,
-        place_fields=place_fields.astype(np.float32),
-        interior_mask=interior_mask,
-        position_bins=position_bins.astype(np.float64),
-        place_field_peaks=place_field_peaks.astype(np.float64),
-    )
+    # ``np.savez`` uses each keyword as the archive member name, so the
+    # arrays must be passed as literal keywords. Unpacking an array-valued
+    # ``**dict`` instead trips mypy, whose ``savez`` stub reserves an
+    # ``allow_pickle: bool`` keyword a ``**dict`` value could collide with.
+    # Two explicit calls keep the optional ``event_likelihood`` member
+    # without that unpacking.
+    place_fields32 = place_fields.astype(np.float32)
+    position_bins64 = position_bins.astype(np.float64)
+    place_field_peaks64 = place_field_peaks.astype(np.float64)
+    if event_likelihood is None:
+        np.savez(
+            out_path,
+            place_fields=place_fields32,
+            interior_mask=interior_mask,
+            position_bins=position_bins64,
+            place_field_peaks=place_field_peaks64,
+        )
+    else:
+        np.savez(
+            out_path,
+            place_fields=place_fields32,
+            interior_mask=interior_mask,
+            position_bins=position_bins64,
+            place_field_peaks=place_field_peaks64,
+            event_likelihood=np.asarray(event_likelihood, dtype=np.float32),
+        )
 
 
 def _write_meta(
@@ -628,17 +648,20 @@ def build_simulated_cache(
     spike_time_ind = np.asarray(metrics.event_time_ind, dtype=np.intp)
     spike_cell_ind = np.asarray(metrics.event_cell_ind, dtype=np.intp)
     event_times = time_arr[spike_time_ind]
+    event_order = np.argsort(event_times, kind="stable")
     events_df = pd.DataFrame(
         {
-            "time": event_times.astype(np.float64),
-            "cell_id": spike_cell_ind.astype(np.int32),
-            "event_hpd_overlap": np.asarray(metrics.event_hpd_overlap, dtype=np.float32),
-            "event_kl_divergence": np.asarray(metrics.event_kl_divergence, dtype=np.float32),
-            "event_spike_prob": np.asarray(metrics.event_spike_prob, dtype=np.float32),
+            "time": event_times[event_order].astype(np.float64),
+            "cell_id": spike_cell_ind[event_order].astype(np.int32),
+            "event_hpd_overlap": np.asarray(
+                metrics.event_hpd_overlap[event_order], dtype=np.float32
+            ),
+            "event_kl_divergence": np.asarray(
+                metrics.event_kl_divergence[event_order], dtype=np.float32
+            ),
+            "event_spike_prob": np.asarray(metrics.event_spike_prob[event_order], dtype=np.float32),
         }
     )
-    events_df.sort_values("time", kind="mergesort", inplace=True)
-    events_df.reset_index(drop=True, inplace=True)
     events_df.to_parquet(paths["events"], engine="pyarrow", compression="zstd")
 
     # Place-fields sidecar. ``placefield_rates`` returns
@@ -655,6 +678,7 @@ def build_simulated_cache(
         interior_mask=interior_mask,
         position_bins=xs,
         place_field_peaks=pf_centers,
+        event_likelihood=np.asarray(metrics.per_spike_likelihood[event_order]),
     )
 
     _write_meta(

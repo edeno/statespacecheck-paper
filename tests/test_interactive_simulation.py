@@ -134,6 +134,35 @@ def test_simulated_cache_log_likelihood_round_trips(tmp_path: Path) -> None:
     np.testing.assert_allclose(lik_recovered, sim_lik_peak_normed, atol=1e-4, rtol=1e-3)
 
 
+def test_simulated_event_likelihood_round_trips_in_event_order(tmp_path: Path) -> None:
+    """The viewer sidecar retains the decoder likelihood for every event."""
+    from statespacecheck_paper.figure03_demo import run_figure03_simulation
+    from statespacecheck_paper.interactive.data_source import DecoderDataSource
+
+    params = _tiny_params()
+    sim = run_figure03_simulation(params, seed=0)
+    _build_simulated(tmp_path)
+    ds = DecoderDataSource.for_simulation(tmp_path)
+    try:
+        assert ds.event_likelihood is not None
+        assert ds.event_likelihood.flags.writeable is False
+        event_times = sim.metrics.event_time_ind.astype(np.float64) * 0.002
+        event_order = np.argsort(event_times, kind="stable")
+        np.testing.assert_allclose(
+            ds.event_likelihood,
+            sim.metrics.per_spike_likelihood[event_order].astype(np.float32),
+        )
+
+        remap_start, remap_end = params.phase_boundaries[:2]
+        in_remap = (ds.event_time_idx >= remap_start) & (ds.event_time_idx < remap_end)
+        assert in_remap.any(), "tiny simulation produced no remap-window events"
+        remap_rows = np.flatnonzero(in_remap)
+        static_rows = ds.place_fields[ds.event_cell_ids[remap_rows]]
+        assert not np.allclose(ds.event_likelihood[remap_rows], static_rows)
+    finally:
+        ds.close()
+
+
 # ---------------------------------------------------------------------------
 # Viewer wiring
 # ---------------------------------------------------------------------------
@@ -214,6 +243,55 @@ def test_simulated_viewer_loads_window(tmp_path: Path) -> None:
         viewer.set_center_time(float(ds.events.iloc[0]["time"]))
         viewer._update_slice_panel_at_center()  # noqa: SLF001
         assert sp._n_active_per_cell_rows >= 1  # noqa: SLF001
+    finally:
+        viewer.close()
+        ds.close()
+
+
+def test_simulated_viewer_uses_event_likelihood_in_remap(tmp_path: Path) -> None:
+    """Per-cell rows show the active remapped likelihood, not baseline PFs."""
+    from PySide6 import QtWidgets
+
+    from statespacecheck_paper.interactive.data_source import DecoderDataSource
+    from statespacecheck_paper.interactive.viewer import DecoderViewer
+
+    params = _tiny_params()
+    _build_simulated(tmp_path)
+    _ = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ds = DecoderDataSource.for_simulation(tmp_path)
+    viewer = DecoderViewer(ds)
+    try:
+        remap_start, remap_end = params.phase_boundaries[:2]
+        candidates = np.flatnonzero(
+            (ds.event_time_idx >= remap_start) & (ds.event_time_idx < remap_end)
+        )
+        candidates = candidates[
+            np.array(
+                [
+                    not np.allclose(
+                        ds.event_likelihood_at(int(i), int(ds.event_cell_ids[i])),
+                        ds.place_fields[int(ds.event_cell_ids[i])],
+                    )
+                    for i in candidates
+                ]
+            )
+        ]
+        assert candidates.size > 0, "tiny simulation produced no visibly remapped event"
+        event_idx = int(candidates[0])
+        t_idx = int(ds.event_time_idx[event_idx])
+        cell_id = int(ds.event_cell_ids[event_idx])
+        i0, i1 = ds.event_indices_at(t_idx)
+        first_event = next(i for i in range(i0, i1) if int(ds.event_cell_ids[i]) == cell_id)
+
+        rows, _ = viewer._per_cell_slices_at(t_idx)  # noqa: SLF001
+        row = next(item for item in rows if item.cell_id == cell_id)
+        expected = ds.event_likelihood_at(first_event, cell_id)[: ds.n_interior]
+        expected = expected / expected.max()
+        np.testing.assert_allclose(row.place_field_norm[ds.interior_mask], expected)
+
+        static = ds.place_fields[cell_id, : ds.n_interior]
+        static = static / static.max()
+        assert not np.allclose(expected, static)
     finally:
         viewer.close()
         ds.close()

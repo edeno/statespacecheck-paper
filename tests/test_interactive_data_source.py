@@ -75,6 +75,23 @@ def test_public_arrays_are_write_protected(synthetic_cache: Path) -> None:
         src.close()
 
 
+def test_static_cache_event_likelihood_falls_back_to_place_field(
+    synthetic_cache: Path,
+) -> None:
+    """Legacy/real caches without event rows retain the static-PF behavior."""
+    src = DecoderDataSource(synthetic_cache, model="continuous")
+    try:
+        assert src.event_likelihood is None
+        event_idx = 0
+        cell_id = int(src.event_cell_ids[event_idx])
+        np.testing.assert_array_equal(
+            src.event_likelihood_at(event_idx, cell_id),
+            src.place_fields[cell_id],
+        )
+    finally:
+        src.close()
+
+
 def test_window_indices_clamps_and_returns_nonempty(synthetic_cache: Path) -> None:
     with DecoderDataSource(synthetic_cache, model="continuous") as src:
         # Center inside the session, narrow window.

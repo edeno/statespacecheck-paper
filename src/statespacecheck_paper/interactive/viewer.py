@@ -679,11 +679,11 @@ class DecoderViewer(QtWidgets.QMainWindow):
         truncated list plus the unique total so the panel can show a
         ``(+K more)`` indicator.
 
-        Each row's ``place_field_norm`` is the cell's first-state
-        place-field tuning embedded into the full per-state position
-        grid (non-interior bins stay at zero), normalized to its own
-        peak so it sits on a [0, 1] axis alongside the predictive
-        overlay.
+        Each row's ``place_field_norm`` is the event likelihood when the
+        cache provides one, otherwise the cell's first-state place field.
+        It is embedded into the full per-state position grid (non-interior
+        bins stay at zero) and normalized to its own peak so it sits on a
+        [0, 1] axis alongside the predictive overlay.
         """
         ds = self._ds
         i0, i1 = ds.event_indices_at(t_idx)
@@ -709,7 +709,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
         for cell_id in kept:
             first_event = seen[cell_id]
             n_spikes = int(count_by_cell[cell_id])
-            pf = ds.place_fields[cell_id, :n_interior]
+            pf = ds.event_likelihood_at(first_event, cell_id)[:n_interior]
             peak = float(pf.max())
             pf_norm_interior = (pf / peak).astype(np.float32, copy=False) if peak > 0 else pf
             curve = np.zeros(ds.n_position_full, dtype=np.float32)
