@@ -253,16 +253,28 @@ class DecodeParams:
     rate_scale: float = 5.0
 
     base_seed: int = 1
-    # Six bidirectional swaps so the remap window is unambiguous: every
-    # remapped cell has another cell whose PF center it adopts, and that
-    # cell adopts its center. Cell 0↔9, 1↔8, 2↔7 — three swap pairs.
+    # Global-remapping model: a fixed random permutation (derangement) of
+    # the eleven place-field centers, so each cell ``src`` adopts cell
+    # ``dst``'s center. Chosen as the first RNG seed whose permutation
+    # displaces every field by >=3 positions, so no cell keeps a field near
+    # its original location. The scramble is spatially *incoherent*: because
+    # the decoder's diagnostics judge each spike against this same remapped
+    # likelihood (not the true fields), the misfit surfaces only through the
+    # genuine conflict between the smooth-motion prior and the scattered
+    # per-spike likelihoods — a coherent remap (e.g. a pure reflection)
+    # would be self-consistent and correctly go undetected.
     remap_from_to: tuple[tuple[int, int], ...] | tuple[int, int] = (
-        (0, 9),
-        (1, 8),
-        (2, 7),
-        (9, 0),
-        (8, 1),
-        (7, 2),
+        (0, 7),
+        (1, 10),
+        (2, 9),
+        (3, 0),
+        (4, 8),
+        (5, 2),
+        (6, 3),
+        (7, 1),
+        (8, 4),
+        (9, 6),
+        (10, 5),
     )
 
     def __post_init__(self) -> None:
@@ -323,10 +335,9 @@ class MisfitWindow:
         (used by the wide-dynamics-noise misfit).
     decoder_rates : np.ndarray, shape (n_bins, n_cells), optional
         Replaces the baseline Gaussian place-field rate table used to
-        form the posterior-update likelihood (and the displayed per-spike
-        likelihood). Used by the remap misfit (remapped place fields).
-        Diagnostics continue to judge spikes against the model's
-        intended Gaussian PFs, so the mismatch surfaces.
+        form the posterior-update likelihood, the per-spike diagnostics,
+        and the displayed per-spike likelihood. Used by the remap misfit
+        (remapped place fields).
 
     Raises
     ------
@@ -348,8 +359,8 @@ class MisfitWindow:
 
     Examples
     --------
-    Remap-style misfit — decoder uses an alternate rate table, diagnostic
-    still references the original Gaussian PFs so the mismatch surfaces:
+    Remap-style misfit — the decoder and its diagnostics use an alternate
+    rate table inside the window:
 
     >>> import numpy as np
     >>> remapped = np.full((5, 3), 0.1)
@@ -1026,8 +1037,7 @@ def decode_and_diagnostics(
     combined_likelihood_all[0] = normalize(np.ones(n_bins))  # Flat at t=0
 
     # Baseline per-cell Poisson rate table. Used at every timestep not
-    # covered by a misfit window whose ``decoder_rates`` is set, and as
-    # the default diagnostic rate table.
+    # covered by a misfit window whose ``decoder_rates`` is set.
     rates = placefield_rates(xs, pf_centers, pf_width, rate_scale)
 
     # Track timesteps where _condition_on fell back to uniform (prior and
@@ -1111,13 +1121,11 @@ def decode_and_diagnostics(
     spike_time_ind = np.repeat(spike_time_ind, spike_counts_at_events)
     spike_cell_ind = np.repeat(spike_cell_ind, spike_counts_at_events)
     spike_time_ind = spike_time_ind + 1  # Adjust for offset from [1:]
-    n_spikes = len(spike_time_ind)
 
-    # Diagnostics. Every spike event is judged against the baseline
-    # Gaussian-PF ``rates`` — the model's intended likelihood. During
-    # remapping the decoder updates the posterior with remapped fields
-    # but the diagnostic still references the original fields, so the
-    # mismatch surfaces.
+    # Compute the baseline diagnostics first. Events inside a window with
+    # ``decoder_rates`` are overwritten below using that same rate table,
+    # keeping the posterior update, per-event diagnostics, and displayed
+    # likelihood on one internally consistent decoder model.
     diagnostics = compute_per_cell_diagnostics_from_rates(
         predictive_posterior,
         rates,
@@ -1126,42 +1134,60 @@ def decode_and_diagnostics(
         coverage=0.95,
     )
 
-    # Per-spike likelihoods from the DECODER's actual rate table — for
-    # display in the likelihood panel. Baseline Gaussian-PF rates, then
-    # each misfit window with ``decoder_rates`` set overwrites its own
-    # (disjoint) events with that table.
-    decoder_per_spike_lik: NDArray[np.floating] = np.zeros((n_spikes, n_bins))
-    if n_spikes > 0:
-        rates_orig = rates[:, spike_cell_ind].T  # (n_spikes, n_bins)
-        decoder_per_spike_lik = normalize(poisson.pmf(k=1, mu=rates_orig), axis=1)
-
-        for window in misfit_schedule.windows:
-            if window.decoder_rates is None:
-                continue
-            in_window = (spike_time_ind >= window.start) & (spike_time_ind < window.end)
-            if np.any(in_window):
-                cell_rates = window.decoder_rates[:, spike_cell_ind[in_window]].T
-                decoder_per_spike_lik[in_window] = normalize(
-                    poisson.pmf(k=1, mu=cell_rates), axis=1
-                )
-
     assert diagnostics.hpd_overlap is not None  # called with include_dense_matrices=True
     assert diagnostics.kl_divergence is not None
     assert diagnostics.spike_prob is not None
+    assert diagnostics.per_spike_likelihood is not None
+
+    hpd_overlap = diagnostics.hpd_overlap.copy()
+    kl_divergence = diagnostics.kl_divergence.copy()
+    spike_prob = diagnostics.spike_prob.copy()
+    event_hpd_overlap = diagnostics.event_hpd_overlap.copy()
+    event_kl_divergence = diagnostics.event_kl_divergence.copy()
+    event_spike_prob = diagnostics.event_spike_prob.copy()
+    decoder_per_spike_lik = diagnostics.per_spike_likelihood.copy()
+
+    for window in misfit_schedule.windows:
+        if window.decoder_rates is None:
+            continue
+        in_window = (spike_time_ind >= window.start) & (spike_time_ind < window.end)
+        if not np.any(in_window):
+            continue
+
+        window_diagnostics = compute_per_cell_diagnostics_from_rates(
+            predictive_posterior,
+            window.decoder_rates,
+            spike_time_ind[in_window],
+            spike_cell_ind[in_window],
+            coverage=0.95,
+        )
+        assert window_diagnostics.per_spike_likelihood is not None
+
+        event_hpd_overlap[in_window] = window_diagnostics.event_hpd_overlap
+        event_kl_divergence[in_window] = window_diagnostics.event_kl_divergence
+        event_spike_prob[in_window] = window_diagnostics.event_spike_prob
+        decoder_per_spike_lik[in_window] = window_diagnostics.per_spike_likelihood
+
+        window_times = spike_time_ind[in_window]
+        window_cells = spike_cell_ind[in_window]
+        hpd_overlap[window_times, window_cells] = window_diagnostics.event_hpd_overlap
+        kl_divergence[window_times, window_cells] = window_diagnostics.event_kl_divergence
+        spike_prob[window_times, window_cells] = window_diagnostics.event_spike_prob
+
     return Diagnostics(
         posterior=posterior,
         predictive=predictive_posterior,
         likelihood=combined_likelihood_all,
         spike_likelihood=spike_likelihood_all,
-        hpd_overlap=diagnostics.hpd_overlap,
-        kl_divergence=diagnostics.kl_divergence,
-        spike_prob=diagnostics.spike_prob,
+        hpd_overlap=hpd_overlap,
+        kl_divergence=kl_divergence,
+        spike_prob=spike_prob,
         per_spike_likelihood=decoder_per_spike_lik,
         event_time_ind=diagnostics.event_time_ind,
         event_cell_ind=diagnostics.event_cell_ind,
-        event_hpd_overlap=diagnostics.event_hpd_overlap,
-        event_kl_divergence=diagnostics.event_kl_divergence,
-        event_spike_prob=diagnostics.event_spike_prob,
+        event_hpd_overlap=event_hpd_overlap,
+        event_kl_divergence=event_kl_divergence,
+        event_spike_prob=event_spike_prob,
     )
 
 

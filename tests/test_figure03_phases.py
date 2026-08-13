@@ -2,7 +2,8 @@
 
 These tests verify the scientific claims of the figure-3 simulation:
 
-- The remap phase flags all three metrics (regression guard).
+- The remap phase diagnostics use the decoder's remapped likelihood,
+  rather than an oracle baseline rate table.
 - The wide-dynamics-noise phase inflates KL while HPD overlap and the
   rank-based p-value stay near baseline (the headline KL false-positive
   case).
@@ -19,8 +20,15 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+import statespacecheck as ssc
 
-from statespacecheck_paper.analysis import DecodeParams, PhaseBoundary, Thresholds
+from statespacecheck_paper.analysis import (
+    DecodeParams,
+    PhaseBoundary,
+    Thresholds,
+    compute_per_cell_diagnostics_from_rates,
+    get_remapped_pf_centers,
+)
 from statespacecheck_paper.figure03_demo import (
     PHASE_LABELS,
     SimulationResult,
@@ -28,6 +36,7 @@ from statespacecheck_paper.figure03_demo import (
     estimate_stable_summary,
     run_figure03_simulation,
 )
+from statespacecheck_paper.simulation import placefield_rates
 
 
 def _moderate_params() -> DecodeParams:
@@ -89,23 +98,88 @@ def test_phase_labels_and_boundaries(sim: SimulationResult) -> None:
     assert x_true.shape[0] == end
 
 
-def test_remap_phase_flags_all_three(sim: SimulationResult) -> None:
-    """Regression guard: the remap phase is a strong, unambiguous misfit —
-    all three metrics move far from baseline, not merely in the right
-    direction. Magnitude bounds (not bare inequalities) so a remap that
-    barely perturbed the metrics would fail.
+def test_remap_phase_uses_decoder_likelihood(sim: SimulationResult) -> None:
+    """Remap diagnostics must use the same remapped rates as the decoder.
+
+    This guards against combining the decoder's predictive distribution
+    with unavailable baseline/oracle place fields during the remap window.
     """
-    medians = _per_phase_medians(sim)
-    base_kl, _, _ = medians["Clean Baseline"]
-    remap_kl, remap_hpd, remap_sp = medians["Remap Misfit"]
-    # KL inflates by at least 5x (observed ~30x at the test scale).
-    assert remap_kl > 5 * base_kl, (
-        f"remap KL should be >5x baseline; got base={base_kl:.3f}, remap={remap_kl:.3f}"
+    params = sim.params
+    assert params.pf_centers is not None
+    start = params.phase_boundaries[PhaseBoundary.REMAP_START]
+    end = params.phase_boundaries[PhaseBoundary.REMAP_END]
+    in_window = (sim.metrics.event_time_ind >= start) & (sim.metrics.event_time_ind < end)
+    assert in_window.any(), "test simulation produced no remap-window spike events"
+
+    remapped_rates = placefield_rates(
+        sim.xs,
+        get_remapped_pf_centers(params.pf_centers, params.remap_from_to, active=True),
+        params.pf_width,
+        params.rate_scale,
     )
-    # HPD overlap collapses toward zero (observed ~0.0).
-    assert remap_hpd < 0.5, f"remap HPDO should collapse below 0.5; got {remap_hpd:.3f}"
-    # Rank-based p-value collapses toward zero (observed ~0.0).
-    assert remap_sp < 0.2, f"remap spike_prob should collapse below 0.2; got {remap_sp:.3f}"
+    expected = compute_per_cell_diagnostics_from_rates(
+        sim.metrics.predictive,
+        remapped_rates,
+        sim.metrics.event_time_ind[in_window],
+        sim.metrics.event_cell_ind[in_window],
+    )
+    assert expected.per_spike_likelihood is not None
+
+    np.testing.assert_allclose(
+        sim.metrics.per_spike_likelihood[in_window],
+        expected.per_spike_likelihood,
+    )
+    predictive = sim.metrics.predictive[sim.metrics.event_time_ind[in_window]]
+    np.testing.assert_allclose(
+        sim.metrics.event_hpd_overlap[in_window],
+        ssc.hpd_overlap(
+            predictive,
+            sim.metrics.per_spike_likelihood[in_window],
+            coverage=0.95,
+        ),
+        err_msg="remap HPD was not computed from the displayed event likelihood",
+    )
+    np.testing.assert_allclose(
+        sim.metrics.event_kl_divergence[in_window],
+        ssc.kl_divergence(
+            predictive,
+            sim.metrics.per_spike_likelihood[in_window],
+        ),
+        err_msg="remap KL was not computed from the displayed event likelihood",
+    )
+    for name in (
+        "event_hpd_overlap",
+        "event_kl_divergence",
+        "event_spike_prob",
+    ):
+        np.testing.assert_allclose(
+            getattr(sim.metrics, name)[in_window],
+            getattr(expected, name),
+            err_msg=f"remap-window {name} did not use decoder rates",
+        )
+
+    # Confirm that this fixture distinguishes decoder-rate diagnostics from
+    # the old oracle computation based on the unperturbed place fields.
+    baseline_rates = placefield_rates(
+        sim.xs,
+        params.pf_centers,
+        params.pf_width,
+        params.rate_scale,
+    )
+    oracle = compute_per_cell_diagnostics_from_rates(
+        sim.metrics.predictive,
+        baseline_rates,
+        sim.metrics.event_time_ind[in_window],
+        sim.metrics.event_cell_ind[in_window],
+    )
+    for name in (
+        "event_hpd_overlap",
+        "event_kl_divergence",
+        "event_spike_prob",
+    ):
+        assert not np.allclose(getattr(expected, name), getattr(oracle, name)), (
+            f"test fixture does not distinguish decoder and oracle values for {name}"
+        )
 
 
 def test_wide_dynamics_noise_phase_dissociates_kl_from_hpd(
@@ -224,6 +298,32 @@ class TestEstimateStableSummary:
         summary = estimate_stable_summary(_moderate_params(), n_realizations=5, base_seed=0)
         for row in range(3):
             assert summary.frac_median[row, 1] > summary.frac_median[row, 0]
+
+    def test_remap_is_strongly_flagged_by_all_three(self) -> None:
+        """Magnitude guard (replaces the removed single-realization
+        ``test_remap_phase_flags_all_three``): the incoherent random-remap is
+        the headline positive control, so every metric must flag it well
+        above both the well-specified baseline and the drift misfit.
+
+        A near-noop remap, or a spatially *coherent* remap (e.g. a pure
+        reflection) — which is self-consistent under the decoder's own
+        likelihood and correctly undetectable — would fail here. The
+        percentages are smaller than the full-length figure (~37--43%)
+        because ``_moderate_params`` uses short windows the trajectory only
+        partly explores; bounds are set against the observed deterministic
+        values (remap ~[15, 20, 14]% vs well ~[4, 5, 3]%, drift ~[3, 5, 1]%).
+        """
+        summary = estimate_stable_summary(_moderate_params(), n_realizations=5, base_seed=0)
+        well = summary.frac_median[:, 0]
+        remap = summary.frac_median[:, 1]
+        drift = summary.frac_median[:, 3]
+        assert np.all(remap > 10.0), f"remap should flag >10% for every metric; got {remap}"
+        assert np.all(remap > 2.0 * well), (
+            f"remap should flag >2x the well-specified baseline; got remap={remap}, well={well}"
+        )
+        assert np.all(remap > drift), (
+            f"remap should flag more than drift for every metric; got remap={remap}, drift={drift}"
+        )
 
     def test_rejects_nonpositive_realizations(self) -> None:
         with pytest.raises(ValueError, match="n_realizations"):

@@ -213,8 +213,8 @@ def run_figure03_simulation(
     _add_phase(x, _spikes_position_tuned(x))
 
     # 2. Remap misfit — the spike *generation* is normal position-tuned;
-    #    the decoder is the one that uses remapped PF centers during this
-    #    window (via ``MisfitWindow`` below).
+    #    the decoder is the one that uses randomly scrambled PF centers
+    #    during this window (via ``MisfitWindow`` below).
     n = bnd[PhaseBoundary.REMAP_END] - bnd[PhaseBoundary.REMAP_START]
     x = _walk(n, params.sigx_pred)
     _add_phase(x, _spikes_position_tuned(x))
@@ -271,9 +271,11 @@ def run_figure03_simulation(
     spikes = np.vstack([p_s for _, p_s in phases])
 
     # The two decoder-side misfits as a single schedule:
-    # - Remap: the decoder's posterior update uses remapped place-field
-    #   centers (``decoder_rates``); diagnostics always reference the
-    #   original Gaussian fields, so the mismatch surfaces.
+    # - Remap: the decoder's posterior update uses randomly scrambled
+    #   place-field centers (``decoder_rates``), and the diagnostics use
+    #   that same decoder likelihood — so the misfit surfaces from the
+    #   scramble's spatial incoherence, not from any reference to the
+    #   true (unpermuted) fields.
     # - Wide dynamics noise: an inflated transition matrix only.
     remapped_rates = placefield_rates(
         xs,

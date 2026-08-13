@@ -110,6 +110,12 @@ def run_demo(params: DecodeParams) -> None:
     # Pool many realizations for a stable threshold (from the pooled
     # clean-baseline windows) and a stable median [IQR] panel-(b) summary.
     summary = estimate_stable_summary(params, n_realizations=N_REALIZATIONS)
+    print(f"Pooled thresholds: {summary.thresholds}")
+    print(
+        "Median flag percentages [HPD, predictive p, KL] x "
+        "[well-specified, remap, history, drift, wide dynamics]:\n"
+        f"{np.array2string(summary.frac_median, precision=3)}"
+    )
 
     # Plot combined diagnostics figure. Panel (a) shows the single seed-1
     # realization; panel (b) shows the pooled median fractions scored

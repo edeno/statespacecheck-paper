@@ -31,7 +31,11 @@ from statespacecheck_paper.analysis import (
     transform_metrics,
 )
 from statespacecheck_paper.figure03_demo import PHASE_LABELS, SimulationResult
-from statespacecheck_paper.simulation import gaussian_transition_matrix, normalize
+from statespacecheck_paper.simulation import (
+    gaussian_transition_matrix,
+    normalize,
+    placefield_rates,
+)
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -364,49 +368,124 @@ class TestDecodeAndDiagnostics:
             atol=1e-6,
         ), f"transition_matrix in {window} did not change predictive — schedule ignored?"
 
-    def test_alt_rates_used_only_inside_window(self, decoder_inputs: DecoderInputs) -> None:
+    def test_alt_rates_used_only_inside_window(self) -> None:
         """A :class:`MisfitWindow` with ``decoder_rates`` must change
-        the per-spike likelihood inside the window and leave it
-        untouched outside. Compared against a baseline run so a
-        regression that ignored the schedule cannot pass on output
-        shape alone.
+        every per-spike diagnostic inside the window and leave it
+        untouched outside. The in-window values are checked directly
+        against the shared diagnostic routine evaluated with the alternate
+        table, preventing a regression to oracle baseline rates.
         """
-        # Flat-rate table that's clearly different from the Gaussian-PF
-        # baseline — used here only to exercise the schedule plumbing.
-        alt_rates = np.full((decoder_inputs.xs.size, 3), 0.05)
-        window = (3, 7)
+        xs = np.arange(5, dtype=float)
+        pf_centers = np.array([0.0, 2.0, 4.0])
+        pf_width = 0.45
+        rate_scale = 2.0
+        spikes = np.zeros((6, 3), dtype=int)
+        for time_ind, cell_ind in ((1, 0), (2, 0), (3, 1), (4, 2), (5, 0)):
+            spikes[time_ind, cell_ind] = 1
+
+        baseline_rates = placefield_rates(xs, pf_centers, pf_width, rate_scale)
+        alt_rates = placefield_rates(
+            xs,
+            np.array([4.0, 0.0, 2.0]),
+            pf_width,
+            rate_scale,
+        )
+        window = (2, 4)
         schedule = MisfitSchedule((MisfitWindow(window[0], window[1], decoder_rates=alt_rates),))
 
-        baseline = decoder_inputs.call()
-        with_alt = decoder_inputs.call(misfit_schedule=schedule)
+        with_alt = decode_and_diagnostics(
+            spikes=spikes,
+            xs=xs,
+            transition_matrix=np.eye(xs.size),
+            pf_centers=pf_centers,
+            pf_width=pf_width,
+            rate_scale=rate_scale,
+            misfit_schedule=schedule,
+        )
 
         evt_t = with_alt.event_time_ind
-        # Events strictly before the window are unaffected — the filter
-        # state has not diverged yet. (Events *after* the window
-        # legitimately differ: the in-window posterior updates carry
-        # forward, so we do not check those.)
-        before = evt_t < window[0]
         inside = (evt_t >= window[0]) & (evt_t < window[1])
+        outside = ~inside
 
-        # Pre-window per-spike likelihood is bit-identical: the
-        # likelihood panel reads from the decoder's rate table and is
-        # untouched by the schedule outside the window.
-        np.testing.assert_array_equal(
-            baseline.per_spike_likelihood[before],
-            with_alt.per_spike_likelihood[before],
-            err_msg="pre-window per_spike_likelihood differs — schedule leaked outside window",
-        )
-
-        # At least one in-window event's per-spike likelihood
-        # row differs from the baseline. The schedule swaps the
-        # decoder's rate table in-window, so the displayed likelihood
-        # must change.
+        # The in-window metrics and displayed likelihood must all be the
+        # values obtained from the decoder's active rate table.
         assert inside.any(), "test fixture produced no in-window spike events"
-        diff = with_alt.per_spike_likelihood[inside] - baseline.per_spike_likelihood[inside]
-        assert np.any(np.abs(diff) > 0.0), (
-            "alt rates produced no in-window change in per_spike_likelihood; "
-            "the schedule may be near-noop."
+        expected = compute_per_cell_diagnostics_from_rates(
+            with_alt.predictive,
+            alt_rates,
+            with_alt.event_time_ind[inside],
+            with_alt.event_cell_ind[inside],
         )
+        assert expected.per_spike_likelihood is not None
+        np.testing.assert_allclose(
+            with_alt.per_spike_likelihood[inside],
+            expected.per_spike_likelihood,
+        )
+        for name in (
+            "event_hpd_overlap",
+            "event_kl_divergence",
+            "event_spike_prob",
+        ):
+            np.testing.assert_allclose(
+                getattr(with_alt, name)[inside],
+                getattr(expected, name),
+                err_msg=f"in-window {name} was not computed from decoder_rates",
+            )
+
+        expected_outside = compute_per_cell_diagnostics_from_rates(
+            with_alt.predictive,
+            baseline_rates,
+            with_alt.event_time_ind[outside],
+            with_alt.event_cell_ind[outside],
+        )
+        assert expected_outside.per_spike_likelihood is not None
+        np.testing.assert_allclose(
+            with_alt.per_spike_likelihood[outside],
+            expected_outside.per_spike_likelihood,
+        )
+        for name in (
+            "event_hpd_overlap",
+            "event_kl_divergence",
+            "event_spike_prob",
+        ):
+            np.testing.assert_allclose(
+                getattr(with_alt, name)[outside],
+                getattr(expected_outside, name),
+                err_msg=f"out-of-window {name} did not use baseline rates",
+            )
+
+        # The fixture independently distinguishes decoder and oracle rates
+        # for every output, rather than relying on one metric to change.
+        oracle = compute_per_cell_diagnostics_from_rates(
+            with_alt.predictive,
+            baseline_rates,
+            with_alt.event_time_ind[inside],
+            with_alt.event_cell_ind[inside],
+        )
+        for name in (
+            "event_hpd_overlap",
+            "event_kl_divergence",
+            "event_spike_prob",
+            "per_spike_likelihood",
+        ):
+            assert not np.allclose(getattr(expected, name), getattr(oracle, name)), (
+                f"test fixture does not distinguish decoder and oracle values for {name}"
+            )
+
+        # Dense per-cell matrices mirror the event arrays after the window
+        # overwrite. The one-event-per-coordinate fixture makes this exact.
+        for dense_name, event_name in (
+            ("hpd_overlap", "event_hpd_overlap"),
+            ("kl_divergence", "event_kl_divergence"),
+            ("spike_prob", "event_spike_prob"),
+        ):
+            np.testing.assert_allclose(
+                getattr(with_alt, dense_name)[
+                    with_alt.event_time_ind,
+                    with_alt.event_cell_ind,
+                ],
+                getattr(with_alt, event_name),
+            )
 
     def test_predictive_uses_column_stochastic_orientation(self) -> None:
         """The one-step predictive must marginalize as ``T @ post`` for the
