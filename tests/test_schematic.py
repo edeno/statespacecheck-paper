@@ -226,16 +226,24 @@ class TestDrawGraphicalModel:
         # Layout depends on these specific limits — change is a regression.
         assert ax.get_xlim() == (-0.5, 7.5)
         assert ax.get_ylim() == (2.7, 6.4)
+        labels = {text.get_text() for text in ax.texts}
+        assert "Previous\nState" in labels
+        assert "Current\nState" in labels
+        assert "Previous\nPosterior" not in labels
+        assert "Current\nPosterior" not in labels
 
 
 class TestDrawEquationBoxes:
     def test_creates_patches_text_and_pins_layout(self, sized_axes: tuple[Figure, Axes]) -> None:
         """Single call exercises content + layout pin (see graphical-model
         rationale)."""
-        _, ax = sized_axes
+        fig, ax = sized_axes
         draw_equation_boxes(ax)
         assert len(ax.patches) > 0
         assert len(ax.texts) > 0
         assert ax.get_xlim() == (-0.5, 7.5)
         assert ax.get_ylim() == (-0.85, 2.45)
         assert ax.get_title() == "Recursive Estimation Algorithm"
+        labels = {text.get_text() for child_ax in fig.axes for text in child_ax.texts}
+        assert r"$p(y_t|x_t)$" in labels
+        assert r"$p(x_t|y_t)$" not in labels
