@@ -3,7 +3,7 @@
 The figure-3 demo simulates a hippocampal-style decoder under a
 sequence of misfit conditions (remap, history-dependent firing, drift) and
 two specificity controls (a replay event embedded in clean-recovery 2 and a
-final sparse reward-cell epoch). The simulation pipeline drives both
+final sparse-population epoch). The simulation pipeline drives both
 ``scripts/generate_figure03.py`` and
 ``statespacecheck_paper.interactive.cache.build_simulated_cache``;
 both call ``run_figure03_simulation`` so the figure and the
@@ -56,7 +56,7 @@ PHASE_LABELS: tuple[str, ...] = (
     "Clean Recovery",
     "Drift Misfit",
     "Clean Recovery",
-    "Sparse Reward Cell",
+    "Sparse Population",
 )
 
 
@@ -85,9 +85,9 @@ class SimulationResult:
     # are coerced in __post_init__.
     phase_labels: tuple[str, ...]
     phase_boundaries: tuple[int, ...]
-    # Fixed reward-place-cell center; lets the raster sort all 12 cells by
+    # Fixed sparse-population field centers; let the raster sort all cells by
     # location without deriving a field center from the realized trajectory.
-    reward_cell_center: float = 0.0
+    sparse_cell_centers: tuple[float, ...] = ()
 
     def __post_init__(self) -> None:
         """Enforce length and timeline-consistency invariants.
@@ -161,12 +161,13 @@ def run_figure03_simulation(
        at AR(1) coefficient ``params.drift_momentum``; decoder assumes
        memoryless walk)
     7. Clean Recovery
-    8. **Sparse Reward Cell** (control: the ordinary ensemble is quiet while
-       a pre-existing, sharply tuned reward-place cell fires intermittently.
-       The prediction spreads between isolated spikes, and each spike's
-       narrow likelihood remains contained within it. KL responds to the
-       concentration difference while HPD overlap and the rank-based p-value
-       remain consistent.)
+    8. **Sparse Population** (control: the ordinary ensemble is quiet while a
+       small population of pre-existing, sharply tuned cells clustered at one
+       location fires sparsely — each an independent Poisson process, the
+       decoder's rates matching exactly. The prediction spreads between the
+       isolated spikes, and each spike's narrow likelihood remains contained
+       within it. KL responds to the concentration difference while HPD overlap
+       and the rank-based p-value remain consistent.)
 
     Parameters
     ----------
@@ -301,10 +302,10 @@ def run_figure03_simulation(
     _add_phase(x, _spikes_position_tuned(x))
 
     # 7. Clean recovery 3. During the final part of this otherwise matched
-    #    phase, the animal approaches the fixed reward location so the sparse
-    #    reward-cell control begins without a position jump.
+    #    phase, the animal approaches the fixed sparse-population location so
+    #    the sparse-population control begins without a position jump.
     n = bnd[PhaseBoundary.RECOVERY3_END] - bnd[PhaseBoundary.DRIFT_END]
-    approach_steps = min(params.reward_approach_steps, n)
+    approach_steps = min(params.sparse_approach_steps, n)
     walk_steps = n - approach_steps
     if walk_steps > 0:
         x_walk = _walk(walk_steps, params.sigx_pred)
@@ -317,7 +318,7 @@ def run_figure03_simulation(
         # duplicates, the preceding sample.
         x_approach = np.linspace(
             approach_start,
-            params.reward_position,
+            params.sparse_position,
             approach_steps + 1,
         )[1:]
     else:
@@ -325,14 +326,14 @@ def run_figure03_simulation(
     x = np.concatenate([x_walk, x_approach])
     _add_phase(x, _spikes_position_tuned(x))
 
-    # 8. Sparse Reward Cell — the animal remains at the reward while the
-    #    ordinary ensemble becomes quiet. The baseline transition is still
-    #    used, so the prediction spreads naturally between isolated spikes.
-    #    A narrow reward-cell likelihood falls inside that prediction: HPD
+    # 8. Sparse Population — the animal remains immobile at the location while
+    #    the ordinary ensemble becomes quiet. The baseline transition is still
+    #    used, so the prediction spreads naturally between the isolated spikes.
+    #    Each sparse cell's narrow likelihood falls inside that prediction: HPD
     #    overlap and predictive p remain good, while KL responds to their
     #    concentration difference.
-    n = bnd[PhaseBoundary.SPARSE_REWARD_END] - bnd[PhaseBoundary.RECOVERY3_END]
-    x = np.full(n, params.reward_position, dtype=float)
+    n = bnd[PhaseBoundary.SPARSE_POP_END] - bnd[PhaseBoundary.RECOVERY3_END]
+    x = np.full(n, params.sparse_position, dtype=float)
     sparse_normal_spikes = simulate_spikes_position_tuned(
         x,
         pf_centers,
@@ -345,49 +346,59 @@ def run_figure03_simulation(
     x_true = np.concatenate([p_x for p_x, _ in phases], axis=0)
     spikes = np.vstack([p_s for _, p_s in phases])  # (n_time, n_normal_cells)
 
-    # Twelfth cell: a pre-existing, sharply tuned reward-place cell at a fixed
-    # location. It has a small baseline gain, then becomes active during the
-    # sparse window. Use a phase-specific RNG stream so upstream changes do not
-    # silently alter the illustrative spike train while retaining seed-to-seed
-    # variability in the pooled summary.
+    # Sparse population: a small set of pre-existing, sharply tuned cells
+    # clustered around a fixed location. Each is an independent Poisson process
+    # with a small baseline gain that rises to full rate during the sparse
+    # window. Per-cell rates are sized so the population's *aggregate* rate
+    # stays sparse (~5 Hz); a higher aggregate would shorten the gaps between
+    # spikes and let the prediction re-concentrate. Use a phase-specific RNG
+    # stream so upstream changes do not silently alter the illustrative spike
+    # train while retaining seed-to-seed variability in the pooled summary.
     w0 = bnd[PhaseBoundary.RECOVERY3_END]
-    w1 = bnd[PhaseBoundary.SPARSE_REWARD_END]
-    reward_cell_center = np.array([params.reward_position], dtype=float)
-    reward_cell_scale = (
-        params.reward_cell_peak_rate * np.sqrt(2.0 * np.pi) * params.reward_cell_width
+    w1 = bnd[PhaseBoundary.SPARSE_POP_END]
+    if params.n_sparse_cells == 1:
+        center_offsets = np.zeros(1, dtype=float)
+    else:
+        center_offsets = np.linspace(
+            -params.sparse_field_spread, params.sparse_field_spread, params.n_sparse_cells
+        )
+    sparse_centers = params.sparse_position + center_offsets
+    sparse_cell_scale = (
+        params.sparse_cell_peak_rate * np.sqrt(2.0 * np.pi) * params.sparse_cell_width
     )
-    reward_rng = np.random.default_rng(np.random.SeedSequence([base_seed, 12]))
-    reward_cell_spikes = np.zeros((x_true.shape[0], 1), dtype=spikes.dtype)
-    reward_cell_spikes[:w0, 0] = simulate_spikes_position_tuned(
+    sparse_rng = np.random.default_rng(np.random.SeedSequence([base_seed, 12]))
+    sparse_cell_spikes = np.zeros((x_true.shape[0], sparse_centers.size), dtype=spikes.dtype)
+    sparse_cell_spikes[:w0] = simulate_spikes_position_tuned(
         x_true[:w0],
-        reward_cell_center,
-        params.reward_cell_width,
-        reward_cell_scale * params.reward_cell_baseline_gain,
-        reward_rng,
-    )[:, 0]
-    reward_cell_spikes[w0:w1, 0] = simulate_spikes_position_tuned(
-        x_true[w0:w1],
-        reward_cell_center,
-        params.reward_cell_width,
-        reward_cell_scale,
-        reward_rng,
-    )[:, 0]
-    spikes = np.hstack([spikes, reward_cell_spikes])  # (n_time, n_normal_cells + 1)
-
-    # Per-cell decoder rate tables. The decoder knows the reward cell's small
-    # baseline gain and the low-activity regime; the final phase therefore
-    # tests metric behavior under a consistent model rather than creating an
-    # impossible observation.
-    normal_rates = placefield_rates(xs, pf_centers, params.pf_width, params.rate_scale)
-    reward_cell_rates = placefield_rates(
-        xs,
-        reward_cell_center,
-        params.reward_cell_width,
-        reward_cell_scale,
+        sparse_centers,
+        params.sparse_cell_width,
+        sparse_cell_scale * params.sparse_cell_baseline_gain,
+        sparse_rng,
     )
-    baseline_reward_rates = params.reward_cell_baseline_gain * reward_cell_rates
-    base_rates = np.hstack([normal_rates, baseline_reward_rates])
-    sparse_rates = np.hstack([params.sparse_ensemble_rate_scale * normal_rates, reward_cell_rates])
+    sparse_cell_spikes[w0:w1] = simulate_spikes_position_tuned(
+        x_true[w0:w1],
+        sparse_centers,
+        params.sparse_cell_width,
+        sparse_cell_scale,
+        sparse_rng,
+    )
+    # (n_time, n_normal_cells + n_sparse_cells)
+    spikes = np.hstack([spikes, sparse_cell_spikes])
+
+    # Per-cell decoder rate tables. The decoder knows the sparse population's
+    # small baseline gain and the low-activity regime; the final phase
+    # therefore tests metric behavior under a consistent model rather than
+    # creating an impossible observation.
+    normal_rates = placefield_rates(xs, pf_centers, params.pf_width, params.rate_scale)
+    sparse_cell_rates = placefield_rates(
+        xs,
+        sparse_centers,
+        params.sparse_cell_width,
+        sparse_cell_scale,
+    )
+    baseline_sparse_rates = params.sparse_cell_baseline_gain * sparse_cell_rates
+    base_rates = np.hstack([normal_rates, baseline_sparse_rates])
+    sparse_rates = np.hstack([params.sparse_ensemble_rate_scale * normal_rates, sparse_cell_rates])
 
     # Three decoder-rate windows share one schedule:
     # - Remap: the posterior update uses randomly scrambled place-field
@@ -399,8 +410,8 @@ def run_figure03_simulation(
     #   elevated rate so the replay is a correctly-specified observation model
     #   (the decoded state simply tracks the replayed trajectory rather than
     #   the animal's position — not a fit failure).
-    # - Sparse reward cell: the decoder uses the correctly scaled quiet
-    #   ensemble and active reward-cell rates.
+    # - Sparse population: the decoder uses the correctly scaled quiet
+    #   ensemble and active sparse-population rates.
     remapped_rates = np.hstack(
         [
             placefield_rates(
@@ -409,13 +420,13 @@ def run_figure03_simulation(
                 params.pf_width,
                 params.rate_scale,
             ),
-            baseline_reward_rates,
+            baseline_sparse_rates,
         ]
     )
     replay_rates = np.hstack(
         [
             placefield_rates(xs, pf_centers, params.pf_width, params.replay_rate_scale),
-            baseline_reward_rates,
+            baseline_sparse_rates,
         ]
     )
     replay_r0, replay_r1 = replay_window(params)
@@ -460,7 +471,7 @@ def run_figure03_simulation(
         metrics=metrics,
         phase_labels=tuple(phase_labels),
         phase_boundaries=tuple(boundaries),
-        reward_cell_center=float(reward_cell_center[0]),
+        sparse_cell_centers=tuple(float(c) for c in sparse_centers),
     )
 
 

@@ -44,7 +44,7 @@ def run_demo(params: DecodeParams) -> None:
     """Run the full diagnostic demonstration with multiple simulation phases.
 
     Generates Figure 3: a Bayesian decoder stepped through three model-misfit
-    conditions and a sparse reward-cell control, separated by clean-recovery
+    conditions and a sparse-population control, separated by clean-recovery
     windows, chosen to span the
     metric-disagreement space (which misfits each of HPD overlap, KL
     divergence, and the rank-based predictive p-value detects vs. misses).
@@ -62,7 +62,7 @@ def run_demo(params: DecodeParams) -> None:
 
     Notes
     -----
-    The simulation includes 8 phases (3 misfits and a sparse-activity
+    The simulation includes 8 phases (3 misfits and a sparse-population
     control, each preceded by a clean-recovery or baseline window):
 
     1. Clean baseline (0 - T_remap_start): Model fits well.
@@ -80,11 +80,11 @@ def run_demo(params: DecodeParams) -> None:
        persistent velocity (AR(1), drift_momentum); the decoder assumes a
        memoryless random walk.
     7. Clean recovery (T_drift_end - T_recovery3_end).
-    8. Sparse reward cell (T_recovery3_end - T_sparse_reward_end): The
-       animal remains at a fixed reward site, the ordinary place-cell
-       ensemble becomes quiet, and a narrow, pre-existing reward-site cell
-       fires intermittently. The decoder knows this low-activity regime.
-       Between isolated spikes its prediction diffuses; each reward-cell
+    8. Sparse population (T_recovery3_end - T_sparse_pop_end): The animal
+       remains immobile at a fixed location, the ordinary place-cell ensemble
+       becomes quiet, and a small population of narrow, pre-existing cells
+       clustered there fires sparsely. The decoder knows this low-activity
+       regime. Between isolated spikes its prediction diffuses; each sparse
        spike sharply concentrates that otherwise plausible prediction, so
        KL can respond while HPD overlap and the rank-based p-value do not.
 
@@ -111,9 +111,9 @@ def run_demo(params: DecodeParams) -> None:
     # signature is satisfied without a cast.
     pf_centers = params.pf_centers
     assert pf_centers is not None, "pf_centers must be initialized"
-    # The simulation appends a narrow reward-site cell; the raster sorts all
-    # cells by field center.
-    raster_centers = np.append(pf_centers, sim.reward_cell_center)
+    # The simulation appends a narrow sparse-population of cells; the raster
+    # sorts all cells by field center.
+    raster_centers = np.append(pf_centers, np.asarray(sim.sparse_cell_centers))
 
     # Pool many realizations for a stable threshold (from the pooled
     # clean-baseline windows) and a stable median panel-(b) summary.
@@ -121,7 +121,7 @@ def run_demo(params: DecodeParams) -> None:
     print(f"Pooled thresholds: {summary.thresholds}")
     print(
         "Median flag percentages [HPD, predictive p, KL] x "
-        "[well-specified, replay, remap, history, drift, sparse reward cell]:\n"
+        "[well-specified, replay, remap, history, drift, sparse population]:\n"
         f"{np.array2string(summary.frac_median, precision=3)}"
     )
 

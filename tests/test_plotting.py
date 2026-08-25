@@ -115,7 +115,7 @@ def _bidirectional_remap(n_cells: int) -> tuple[tuple[int, int], ...]:
 def _params_for_short_run(n_time: int, n_cells: int, sigx_pred: float = 0.5) -> DecodeParams:
     """DecodeParams with phase boundaries scaled to fit ``n_time``.
 
-    Distributes the 8 phase boundaries (3 misfits and a sparse reward-cell
+    Distributes the 8 phase boundaries (3 misfits and a sparse-population
     control, with recovery between) so every highlighted window has at least
     a few timesteps. ``n_time``
     needs to be large enough that ``phase_boundaries[REMAP_START] - 1000``
@@ -266,7 +266,7 @@ def test_plot_combined_diagnostics_renders_precomputed_summary(
     bundle = _combined_metrics(rng, n_time, n_bins, n_cells)
     params = _params_for_short_run(n_time, n_cells)
 
-    # Columns: well-specified, replay, remap, history, drift, sparse reward.
+    # Columns: well-specified, replay, remap, history, drift, sparse population.
     median = np.array(
         [
             [1.0, 4.0, 60.0, 1.0, 10.0, 0.0],

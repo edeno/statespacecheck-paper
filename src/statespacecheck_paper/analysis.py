@@ -145,7 +145,7 @@ class PhaseBoundary(IntEnum):
     RECOVERY2_END = 4  # end of clean recovery 2
     DRIFT_END = 5  # end of drift misfit
     RECOVERY3_END = 6  # end of clean recovery 3
-    SPARSE_REWARD_END = 7  # end of sparse reward-cell control
+    SPARSE_POP_END = 7  # end of sparse-population control
 
 
 # Default phase ladder in 1-ms steps. Used as the default of
@@ -185,7 +185,7 @@ class DecodeParams:
     - 18k–22k: Clean recovery
     - 22k–26k: Drift misfit (4 s)
     - 26k–30k: Clean recovery
-    - 30k–32k: Sparse reward-cell control (2 s)
+    - 30k–32k: Sparse-population control (2 s)
 
     Parameters
     ----------
@@ -222,27 +222,41 @@ class DecodeParams:
         Specification of which cells get remapped during the remap
         window. By default, all eleven cells participate in one fixed
         permutation that moves every field by at least three center spacings.
-    reward_position : float, default 30.0
-        Fixed reward-site position in the final control phase.
-    reward_approach_steps : int, default 1000
+    sparse_position : float, default 30.0
+        Fixed location where the sparse population is active in the final
+        control phase.
+    sparse_approach_steps : int, default 1000
         Number of steps at the end of clean recovery 3 used for a gradual
-        approach to the reward site.
+        approach to ``sparse_position``.
     sparse_ensemble_rate_scale : float, default 0.0
         Multiplicative rate applied to the eleven ordinary place cells during
-        reward consumption. Zero represents a silent ordinary ensemble.
-    reward_cell_width : float, default 2.0
-        Standard deviation, in position units, of the narrow reward field.
-    reward_cell_peak_rate : float, default 0.005
-        Reward-cell peak firing rate in spikes per 1-ms step (5 Hz).
-    reward_cell_baseline_gain : float, default 0.01
-        Fraction of the active reward-cell rate used before the final control.
+        the sparse-population control. Zero represents a silent ordinary
+        ensemble.
+    n_sparse_cells : int, default 5
+        Number of narrow cells forming the sparse population clustered at
+        ``sparse_position``.
+    sparse_field_spread : float, default 1.5
+        Half-range (position units) over which the ``n_sparse_cells`` field
+        centers are spread symmetrically about ``sparse_position``. Zero
+        stacks all centers at ``sparse_position``.
+    sparse_cell_width : float, default 2.0
+        Standard deviation, in position units, of each narrow sparse-population
+        field.
+    sparse_cell_peak_rate : float, default 0.001
+        Per-cell peak firing rate in spikes per 1-ms step (1 Hz). Sized so the
+        population's *aggregate* rate stays ~5 Hz: with more cells firing, a
+        higher aggregate rate would shorten the gaps between spikes and let the
+        prediction re-concentrate, suppressing the KL response that the sparse,
+        immobile regime is meant to illustrate.
+    sparse_cell_baseline_gain : float, default 0.01
+        Fraction of the active per-cell rate used before the final control.
 
     Examples
     --------
     >>> params = DecodeParams()
     >>> params.phase_boundaries[PhaseBoundary.REMAP_START]
     6000
-    >>> params.phase_boundaries[PhaseBoundary.SPARSE_REWARD_END]
+    >>> params.phase_boundaries[PhaseBoundary.SPARSE_POP_END]
     32000
     >>> params.pf_centers
     array([  0.,  10.,  20.,  30.,  40.,  50.,  60.,  70.,  80.,  90., 100.])
@@ -305,20 +319,23 @@ class DecodeParams:
     replay_speed: float = 0.5
     replay_rate_scale: float = 20.0
 
-    # Sparse reward-cell control. The animal approaches a fixed reward
-    # location at the end of clean recovery 3, then remains there while the
-    # ordinary ensemble becomes quiet. A pre-existing, sharply tuned reward
-    # cell increases from a small baseline gain to its full rate. With little
-    # intervening population information, the predictive spreads between its
-    # isolated spikes; each spike supplies a narrow likelihood contained in
-    # that broad prediction. This is a correctly modeled observation regime,
-    # not a transition-model perturbation.
-    reward_position: float = 30.0
-    reward_approach_steps: int = 1_000
+    # Sparse-population control. The animal approaches a fixed location at the
+    # end of clean recovery 3, then remains there (immobile) while the ordinary
+    # ensemble becomes quiet. A small population of narrow, sharply tuned cells
+    # clustered at that location fires sparsely, each cell an independent
+    # Poisson process increasing from a small baseline gain to its full rate.
+    # With little intervening population information, the predictive spreads
+    # between the isolated spikes; each spike supplies a narrow likelihood
+    # contained in that broad prediction. This is a correctly modeled,
+    # low-activity observation regime, not a transition-model perturbation.
+    sparse_position: float = 30.0
+    sparse_approach_steps: int = 1_000
     sparse_ensemble_rate_scale: float = 0.0
-    reward_cell_width: float = 2.0
-    reward_cell_peak_rate: float = 0.005  # spikes/ms = 5 Hz at field center
-    reward_cell_baseline_gain: float = 0.01
+    n_sparse_cells: int = 5
+    sparse_field_spread: float = 1.5
+    sparse_cell_width: float = 2.0
+    sparse_cell_peak_rate: float = 0.001  # spikes/ms = 1 Hz/cell (~5 Hz aggregate)
+    sparse_cell_baseline_gain: float = 0.01
 
     def __post_init__(self) -> None:
         """Validate the timeline and initialize ``pf_centers`` if not provided.
@@ -359,30 +376,37 @@ class DecodeParams:
         # it silently corrupts every downstream decoder call.
         self.pf_centers.setflags(write=False)
 
-        if not (self.xs_min <= self.reward_position <= self.xs_max):
+        if not (self.xs_min <= self.sparse_position <= self.xs_max):
             raise ValueError(
-                f"reward_position must lie in [{self.xs_min}, {self.xs_max}]; "
-                f"got {self.reward_position}."
+                f"sparse_position must lie in [{self.xs_min}, {self.xs_max}]; "
+                f"got {self.sparse_position}."
             )
-        if self.reward_approach_steps < 0:
+        if self.sparse_approach_steps < 0:
             raise ValueError(
-                f"reward_approach_steps must be non-negative; got {self.reward_approach_steps}."
+                f"sparse_approach_steps must be non-negative; got {self.sparse_approach_steps}."
             )
         if not (0.0 <= self.sparse_ensemble_rate_scale <= 1.0):
             raise ValueError(
                 "sparse_ensemble_rate_scale must lie in [0, 1]; "
                 f"got {self.sparse_ensemble_rate_scale}."
             )
-        if not np.isfinite(self.reward_cell_width) or self.reward_cell_width <= 0.0:
-            raise ValueError(f"reward_cell_width must be positive; got {self.reward_cell_width}.")
-        if not np.isfinite(self.reward_cell_peak_rate) or self.reward_cell_peak_rate <= 0.0:
+        if self.n_sparse_cells < 1:
+            raise ValueError(f"n_sparse_cells must be >= 1; got {self.n_sparse_cells}.")
+        if not np.isfinite(self.sparse_field_spread) or self.sparse_field_spread < 0.0:
             raise ValueError(
-                f"reward_cell_peak_rate must be positive; got {self.reward_cell_peak_rate}."
+                f"sparse_field_spread must be finite and non-negative; "
+                f"got {self.sparse_field_spread}."
             )
-        if not (0.0 <= self.reward_cell_baseline_gain <= 1.0):
+        if not np.isfinite(self.sparse_cell_width) or self.sparse_cell_width <= 0.0:
+            raise ValueError(f"sparse_cell_width must be positive; got {self.sparse_cell_width}.")
+        if not np.isfinite(self.sparse_cell_peak_rate) or self.sparse_cell_peak_rate <= 0.0:
             raise ValueError(
-                "reward_cell_baseline_gain must lie in [0, 1]; "
-                f"got {self.reward_cell_baseline_gain}."
+                f"sparse_cell_peak_rate must be positive; got {self.sparse_cell_peak_rate}."
+            )
+        if not (0.0 <= self.sparse_cell_baseline_gain <= 1.0):
+            raise ValueError(
+                "sparse_cell_baseline_gain must lie in [0, 1]; "
+                f"got {self.sparse_cell_baseline_gain}."
             )
         # Replay sub-window fractions must be ordered inside [0, 1]; an equal
         # or reversed pair silently empties/reverses the Replay window and
@@ -1003,7 +1027,7 @@ def decode_and_diagnostics(
         Scaling factor for firing rates.
     misfit_schedule : MisfitSchedule, optional
         Decoder-side rate or transition regimes, such as remapping and the
-        sparse reward-cell control.
+        sparse-population control.
         Each :class:`MisfitWindow` swaps the transition matrix and/or
         the per-cell rate table for its interval. Defaults to an empty
         schedule: a clean decode with no
@@ -1012,7 +1036,8 @@ def decode_and_diagnostics(
         Random number generator (reserved for future use).
     base_rates : np.ndarray, shape (n_bins, n_cells), optional
         Baseline per-cell Poisson rate table. Supply this when cells do not
-        share one place-field width and scale, as in Figure 3's reward cell.
+        share one place-field width and scale, as in Figure 3's sparse
+        population.
         If omitted, rates are built from ``pf_centers``, ``pf_width``, and
         ``rate_scale``.
 
@@ -1127,8 +1152,9 @@ def decode_and_diagnostics(
     # covered by a misfit window whose ``decoder_rates`` is set. Callers
     # can inject ``base_rates`` directly when the decoder's cell set does
     # not reduce to one shared Gaussian width/scale — e.g. the figure-3
-    # simulation adds a narrow 12th reward cell with a small baseline rate
-    # that increases during a correctly modeled sparse-activity window.
+    # simulation appends a narrow sparse-population of cells with a small
+    # baseline rate that increases during a correctly modeled, low-activity
+    # window.
     if base_rates is not None:
         rates = np.asarray(base_rates, dtype=float)
         if rates.shape != (n_bins, n_cells):
@@ -1714,7 +1740,7 @@ def summary_phase_windows(params: DecodeParams) -> list[SummaryColumn]:
     -------
     list of SummaryColumn
         Six columns in heatmap order: well-specified, replay, remap,
-        history-dependent firing, drift, sparse reward cell.
+        history-dependent firing, drift, sparse population.
     """
     bnd = params.phase_boundaries
     t_remap_start = bnd[PhaseBoundary.REMAP_START]
@@ -1724,7 +1750,7 @@ def summary_phase_windows(params: DecodeParams) -> list[SummaryColumn]:
     t_recovery2_end = bnd[PhaseBoundary.RECOVERY2_END]
     t_drift_end = bnd[PhaseBoundary.DRIFT_END]
     t_recovery3_end = bnd[PhaseBoundary.RECOVERY3_END]
-    t_sparse_reward_end = bnd[PhaseBoundary.SPARSE_REWARD_END]
+    t_sparse_pop_end = bnd[PhaseBoundary.SPARSE_POP_END]
     # The replay event sits inside clean-recovery 2; carve it out of the
     # well-specified pool (it is scored in its own column) so its spikes
     # neither define the baseline thresholds nor dilute the false-positive
@@ -1746,8 +1772,8 @@ def summary_phase_windows(params: DecodeParams) -> list[SummaryColumn]:
         SummaryColumn("History-\ndep.", ((t_recovery1_end, t_hist_dep_end),), "Observation"),
         SummaryColumn("Drift", ((t_recovery2_end, t_drift_end),), "Transition"),
         SummaryColumn(
-            "Sparse reward\ncell",
-            ((t_recovery3_end, t_sparse_reward_end),),
+            "Sparse\npopulation",
+            ((t_recovery3_end, t_sparse_pop_end),),
             "—",
         ),
     ]

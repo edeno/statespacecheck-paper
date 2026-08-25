@@ -108,7 +108,7 @@ def add_phase_boundaries(
         indexed by :class:`statespacecheck_paper.analysis.PhaseBoundary`
         (``REMAP_START``, ``REMAP_END``, ``RECOVERY1_END``,
         ``HIST_DEP_END``, ``RECOVERY2_END``, ``DRIFT_END``,
-        ``RECOVERY3_END``, ``SPARSE_REWARD_END``). Shorter tuples (down
+        ``RECOVERY3_END``, ``SPARSE_POP_END``). Shorter tuples (down
         to 2 elements) are accepted and produce a partial shading; only
         the misfit windows whose pair of boundary entries is present
         are drawn.
@@ -159,7 +159,7 @@ def add_phase_boundaries(
                 phase_boundaries[6],
                 phase_boundaries[7],
                 COLORS["metric_combined"],
-                "Sparse reward cell",
+                "Sparse population",
             )
         )
     # The replay band (in clean-recovery 2) is not a misfit; shade it in a
@@ -426,7 +426,7 @@ def plot_misfit_examples(
 
     Finds an illustrative time point in each non-baseline phase and shows the
     distributions. Also includes a baseline example with good fit. Shows five
-    columns: baseline, three misfit types, and the sparse reward-cell control.
+    columns: baseline, three misfit types, and the sparse-population control.
 
     Parameters
     ----------
@@ -446,7 +446,7 @@ def plot_misfit_examples(
     -------
     fig : matplotlib.figure.Figure
         Figure showing distribution comparisons for the baseline, three
-        misfit types, and the sparse reward-cell control.
+        misfit types, and the sparse-population control.
 
     Examples
     --------
@@ -468,16 +468,14 @@ def plot_misfit_examples(
     remap_window = slice(bnd[PhaseBoundary.REMAP_START], bnd[PhaseBoundary.REMAP_END])
     hist_dep_window = slice(bnd[PhaseBoundary.RECOVERY1_END], bnd[PhaseBoundary.HIST_DEP_END])
     drift_window = slice(bnd[PhaseBoundary.RECOVERY2_END], bnd[PhaseBoundary.DRIFT_END])
-    sparse_reward_window = slice(
-        bnd[PhaseBoundary.RECOVERY3_END], bnd[PhaseBoundary.SPARSE_REWARD_END]
-    )
+    sparse_pop_window = slice(bnd[PhaseBoundary.RECOVERY3_END], bnd[PhaseBoundary.SPARSE_POP_END])
 
     phases = [
         ("Baseline", baseline_window, True),
         ("Remap", remap_window, False),
         ("History-dep.", hist_dep_window, False),
         ("Drift", drift_window, False),
-        ("Sparse reward cell", sparse_reward_window, False),
+        ("Sparse population", sparse_pop_window, False),
     ]
 
     # Publication quality: 450 DPI, single row with one column per phase
@@ -507,7 +505,7 @@ def plot_misfit_examples(
 
         # Use the exact distributions retained by the decoder. This keeps the
         # illustration faithful to phase-specific rate tables (remapped fields
-        # and the correctly modeled sparse reward-cell regime).
+        # and the correctly modeled sparse-population regime).
         prior = metrics.predictive[example_time]
         combined_likelihood = metrics.likelihood[example_time]
 
@@ -1055,7 +1053,7 @@ def _add_figure3_phase_labels(ax: Axes, params: DecodeParams) -> None:
     t_recovery2_end = bnd[PhaseBoundary.RECOVERY2_END]
     t_drift_end = bnd[PhaseBoundary.DRIFT_END]
     t_recovery3_end = bnd[PhaseBoundary.RECOVERY3_END]
-    t_sparse_reward_end = bnd[PhaseBoundary.SPARSE_REWARD_END]
+    t_sparse_pop_end = bnd[PhaseBoundary.SPARSE_POP_END]
 
     r0, r1 = replay_window(params)
     phase_label_y = 1.04
@@ -1064,7 +1062,7 @@ def _add_figure3_phase_labels(ax: Axes, params: DecodeParams) -> None:
         ((r0 + r1) / 2, "Replay"),
         ((t_recovery1_end + t_hist_dep_end) / 2, "History-dep."),
         ((t_recovery2_end + t_drift_end) / 2, "Drift"),
-        ((t_recovery3_end + t_sparse_reward_end) / 2, "Sparse reward cell"),
+        ((t_recovery3_end + t_sparse_pop_end) / 2, "Sparse population"),
     ]
     for x_pos, label_text in phase_labels_info:
         phase_label = ax.text(

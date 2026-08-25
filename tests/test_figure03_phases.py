@@ -4,9 +4,9 @@ These tests verify the scientific claims of the figure-3 simulation:
 
 - The remap phase diagnostics use the decoder's remapped likelihood,
   rather than an oracle baseline rate table.
-- In the sparse reward-cell control, isolated spikes from a narrow reward-site
-  cell elevate KL while HPD overlap and the rank-based p-value remain
-  consistent.
+- In the sparse-population control, isolated spikes from a small population of
+  narrow cells clustered at one location elevate KL while HPD overlap and the
+  rank-based p-value remain consistent.
 - The history-dependent firing phase produces per-spike metrics
   comparable to baseline — i.e., the per-spike spatial diagnostics
   largely *miss* a purely temporal misspecification (the deliberate
@@ -75,7 +75,7 @@ def sim() -> SimulationResult:
 
 def test_phase_labels_and_boundaries(sim: SimulationResult) -> None:
     """``run_figure03_simulation`` emits every canonical phase in order
-    and a timeline that ends at the SPARSE_REWARD_END boundary.
+    and a timeline that ends at the SPARSE_POP_END boundary.
     """
     params = sim.params
     # The simulation must emit exactly the canonical phase set, in order.
@@ -87,11 +87,11 @@ def test_phase_labels_and_boundaries(sim: SimulationResult) -> None:
         "Remap Misfit",
         "History-Dependent Firing",
         "Drift Misfit",
-        "Sparse Reward Cell",
+        "Sparse Population",
     ):
         assert PHASE_LABELS.count(misfit) == 1
     boundaries = np.asarray(sim.phase_boundaries)
-    end = params.phase_boundaries[PhaseBoundary.SPARSE_REWARD_END]
+    end = params.phase_boundaries[PhaseBoundary.SPARSE_POP_END]
     assert boundaries[-1] == end
     assert np.all(np.diff(boundaries) > 0)
     x_true = np.asarray(sim.x_true)
@@ -117,14 +117,14 @@ def test_remap_phase_uses_decoder_likelihood(sim: SimulationResult) -> None:
         params.pf_width,
         params.rate_scale,
     )
-    reward_scale = params.reward_cell_peak_rate * np.sqrt(2.0 * np.pi) * params.reward_cell_width
-    baseline_reward_rates = params.reward_cell_baseline_gain * placefield_rates(
+    sparse_scale = params.sparse_cell_peak_rate * np.sqrt(2.0 * np.pi) * params.sparse_cell_width
+    baseline_sparse_rates = params.sparse_cell_baseline_gain * placefield_rates(
         sim.xs,
-        np.array([params.reward_position]),
-        params.reward_cell_width,
-        reward_scale,
+        np.asarray(sim.sparse_cell_centers),
+        params.sparse_cell_width,
+        sparse_scale,
     )
-    remapped_rates = np.hstack([remapped_normal_rates, baseline_reward_rates])
+    remapped_rates = np.hstack([remapped_normal_rates, baseline_sparse_rates])
     expected = compute_per_cell_diagnostics_from_rates(
         sim.metrics.predictive,
         remapped_rates,
@@ -176,7 +176,7 @@ def test_remap_phase_uses_decoder_likelihood(sim: SimulationResult) -> None:
                 params.pf_width,
                 params.rate_scale,
             ),
-            baseline_reward_rates,
+            baseline_sparse_rates,
         ]
     )
     oracle = compute_per_cell_diagnostics_from_rates(
@@ -195,61 +195,70 @@ def test_remap_phase_uses_decoder_likelihood(sim: SimulationResult) -> None:
         )
 
 
-def test_sparse_reward_cell_dissociates_kl_from_other_metrics(
+def test_sparse_population_dissociates_kl_from_other_metrics(
     sim: SimulationResult,
 ) -> None:
-    """Load-bearing: isolated reward-cell spikes elevate KL while HPD
+    """Load-bearing: isolated sparse-population spikes elevate KL while HPD
     overlap and the predictive p-value remain consistent.
     """
     medians = _per_phase_medians(sim)
     base_kl, base_hpd, _ = medians["Clean Baseline"]
-    reward_kl, reward_hpd, reward_p = medians["Sparse Reward Cell"]
+    sparse_kl, sparse_hpd, sparse_p = medians["Sparse Population"]
 
-    assert reward_kl > 3 * base_kl, (
-        "sparse reward-cell spikes should inflate KL by >3x; "
-        f"got base={base_kl:.3f}, reward={reward_kl:.3f}"
+    assert sparse_kl > 3 * base_kl, (
+        "sparse-population spikes should inflate KL by >3x; "
+        f"got base={base_kl:.3f}, sparse={sparse_kl:.3f}"
     )
-    assert reward_hpd >= 0.9 * base_hpd, (
-        "sparse reward-cell spikes should preserve HPD overlap; "
-        f"got base={base_hpd:.3f}, reward={reward_hpd:.3f}"
+    assert sparse_hpd >= 0.9 * base_hpd, (
+        "sparse-population spikes should preserve HPD overlap; "
+        f"got base={base_hpd:.3f}, sparse={sparse_hpd:.3f}"
     )
-    assert reward_p > 0.95, f"reward-cell predictive p-values should stay high; got {reward_p:.3f}"
+    # The rank-based p-value stays consistent: well clear of the 0.05 flag
+    # threshold (the panel-(b) column test pins the ~0% flag rate directly).
+    assert sparse_p > 0.2, (
+        "sparse-population rank-based p-values should stay well above the 0.05 "
+        f"flag threshold; got {sparse_p:.3f}"
+    )
 
 
-def test_sparse_reward_cell_is_a_correctly_modeled_low_activity_regime(
+def test_sparse_population_is_a_correctly_modeled_low_activity_regime(
     sim: SimulationResult,
 ) -> None:
-    """The last phase is a fixed reward stop, not a transition perturbation.
+    """The last phase is a fixed immobile stop, not a transition perturbation.
 
-    The ordinary ensemble is quiet, the reward-site cell fires, and both its
+    The ordinary ensemble is quiet, the sparse population fires, and both its
     likelihood and the decoder prediction use the declared model. This pins
     the KL dissociation to sparse information rather than hidden mismatch.
     """
     params = sim.params
     w0 = params.phase_boundaries[PhaseBoundary.RECOVERY3_END]
-    w1 = params.phase_boundaries[PhaseBoundary.SPARSE_REWARD_END]
-    reward_cell = sim.spikes.shape[1] - 1
-    np.testing.assert_allclose(sim.x_true[w0:w1], params.reward_position)
-    assert sim.spikes[w0:w1, :reward_cell].sum() == 0
-    assert sim.spikes[w0:w1, reward_cell].sum() > 0
-    assert sim.reward_cell_center == params.reward_position
+    w1 = params.phase_boundaries[PhaseBoundary.SPARSE_POP_END]
+    n_sparse = len(sim.sparse_cell_centers)
+    n_normal = sim.spikes.shape[1] - n_sparse
+    np.testing.assert_allclose(sim.x_true[w0:w1], params.sparse_position)
+    # The ordinary ensemble is silent; only the sparse-population cells fire.
+    assert sim.spikes[w0:w1, :n_normal].sum() == 0
+    assert sim.spikes[w0:w1, n_normal:].sum() > 0
+    assert n_sparse == params.n_sparse_cells
 
     in_window = (sim.metrics.event_time_ind >= w0) & (sim.metrics.event_time_ind < w1)
-    assert in_window.any(), "the reward cell produced no sparse-window diagnostic events"
-    assert np.all(sim.metrics.event_cell_ind[in_window] == reward_cell)
+    assert in_window.any(), "the sparse population produced no sparse-window diagnostic events"
+    assert np.all(sim.metrics.event_cell_ind[in_window] >= n_normal)
 
-    reward_scale = params.reward_cell_peak_rate * np.sqrt(2.0 * np.pi) * params.reward_cell_width
-    reward_rates = placefield_rates(
+    sparse_scale = params.sparse_cell_peak_rate * np.sqrt(2.0 * np.pi) * params.sparse_cell_width
+    sparse_rates = placefield_rates(
         sim.xs,
-        np.array([params.reward_position]),
-        params.reward_cell_width,
-        reward_scale,
+        np.asarray(sim.sparse_cell_centers),
+        params.sparse_cell_width,
+        sparse_scale,
     )
     expected = compute_per_cell_diagnostics_from_rates(
         sim.metrics.predictive,
-        reward_rates,
+        sparse_rates,
         sim.metrics.event_time_ind[in_window],
-        np.zeros(in_window.sum(), dtype=np.intp),
+        # Re-index the sparse-cell columns to 0..n_sparse-1 for the K-column
+        # sparse rate table.
+        (sim.metrics.event_cell_ind[in_window] - n_normal).astype(np.intp),
     )
     np.testing.assert_allclose(
         sim.metrics.per_spike_likelihood[in_window],
@@ -335,7 +344,7 @@ def test_drift_phase_inflates_kl(sim: SimulationResult) -> None:
 class TestEstimateStableSummary:
     def test_shapes_and_determinism(self) -> None:
         """The summary is (3 metrics x 6 columns: well-specified, replay,
-        remap, history, drift, sparse reward), fractions are percentages, and the same
+        remap, history, drift, sparse population), fractions are percentages, and the same
         seeds reproduce the same result."""
         params = _moderate_params()
         summary = estimate_stable_summary(params, n_realizations=3, base_seed=0)
@@ -376,10 +385,10 @@ class TestEstimateStableSummary:
             f"replay must flag far less than the remap misfit; got replay={replay}, remap={remap}"
         )
 
-    def test_sparse_reward_column_flags_kl_only(self) -> None:
+    def test_sparse_population_column_flags_kl_only(self) -> None:
         """Headline panel-(b) claim, guarded on the flag-fraction columns the
-        figure actually shows (rows HPD, predictive-p, KL): the sparse
-        reward-cell control (column 5) elevates KL well above the
+        figure actually shows (rows HPD, predictive-p, KL): the sparse-
+        population control (column 5) elevates KL well above the
         well-specified baseline while HPD overlap and the rank-based
         predictive p-value flag ~no spikes. A threshold-calibration
         regression that started flagging HPD/p there, or dropped the KL rate,
@@ -388,12 +397,14 @@ class TestEstimateStableSummary:
         summary = estimate_stable_summary(_moderate_params(), n_realizations=5, base_seed=0)
         sparse = summary.frac_median[:, 5]  # [HPD, predictive-p, KL]
         well = summary.frac_median[:, 0]
-        assert sparse[2] > 15.0, f"sparse-reward KL should be clearly elevated; got {sparse[2]}"
+        assert sparse[2] > 15.0, f"sparse-population KL should be clearly elevated; got {sparse[2]}"
         assert sparse[2] > 2.0 * well[2], (
-            f"sparse-reward KL should exceed 2x the baseline; got KL={sparse[2]}, well_KL={well[2]}"
+            f"sparse-population KL should exceed 2x the baseline; "
+            f"got KL={sparse[2]}, well_KL={well[2]}"
         )
         assert sparse[0] < 2.0 and sparse[1] < 2.0, (
-            f"HPD overlap and predictive-p must not flag the sparse-reward control; got {sparse}"
+            "HPD overlap and predictive-p must not flag the sparse-population control; "
+            f"got {sparse}"
         )
 
     def test_history_dependent_column_is_missed(self) -> None:

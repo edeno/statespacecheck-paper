@@ -600,10 +600,10 @@ def build_simulated_cache(
     n_time = x_true.shape[0]
     n_bins = xs.shape[0]
     n_cells = int(spikes.shape[1])
-    # The simulation appends a narrow reward-site cell; include it in the
-    # cache's cell set and sort it at its fixed reward position.
+    # The simulation appends a narrow sparse-population of cells; include them
+    # in the cache's cell set and sort them at their fixed field centers.
     pf_centers = np.asarray(params_used.pf_centers, dtype=np.float64)
-    pf_centers_full = np.append(pf_centers, np.float64(sim.reward_cell_center))
+    pf_centers_full = np.append(pf_centers, np.asarray(sim.sparse_cell_centers, dtype=np.float64))
     if pf_centers_full.shape[0] != n_cells:
         raise ValueError(f"pf_centers length {pf_centers_full.shape[0]} != n_cells={n_cells}")
 
@@ -669,19 +669,19 @@ def build_simulated_cache(
     events_df.to_parquet(paths["events"], engine="pyarrow", compression="zstd")
 
     # Place-fields sidecar. The 11 normal cells (shared width) plus the narrow
-    # reward-site cell (its own width and peak rate). ``placefield_rates`` returns
-    # ``(n_bins, n_cells)``; the viewer expects ``(n_cells, n_bins)``.
+    # sparse-population cells (their own width and peak rate). ``placefield_rates``
+    # returns ``(n_bins, n_cells)``; the viewer expects ``(n_cells, n_bins)``.
     normal_rates = placefield_rates(xs, pf_centers, params_used.pf_width, params_used.rate_scale)
-    reward_cell_scale = (
-        params_used.reward_cell_peak_rate * np.sqrt(2.0 * np.pi) * params_used.reward_cell_width
+    sparse_cell_scale = (
+        params_used.sparse_cell_peak_rate * np.sqrt(2.0 * np.pi) * params_used.sparse_cell_width
     )
-    reward_rates = placefield_rates(
+    sparse_rates = placefield_rates(
         xs,
-        np.array([sim.reward_cell_center]),
-        params_used.reward_cell_width,
-        reward_cell_scale,
+        np.asarray(sim.sparse_cell_centers, dtype=np.float64),
+        params_used.sparse_cell_width,
+        sparse_cell_scale,
     )
-    rates = np.asarray(np.hstack([normal_rates, reward_rates]), dtype=np.float64)
+    rates = np.asarray(np.hstack([normal_rates, sparse_rates]), dtype=np.float64)
     place_fields = rates.T  # (n_cells, n_bins)
     interior_mask = np.ones(n_bins, dtype=bool)
     _write_place_fields(

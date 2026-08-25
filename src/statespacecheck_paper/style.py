@@ -137,9 +137,9 @@ COLORS: dict[str, str] = {
     # Drift misfit — persistent-velocity trajectory vs. memoryless decoder.
     "phase_drift": "#D6E8FF",  # Light blue (from WONG[5])
     #
-    # Sparse reward-cell control — quiet ensemble plus intermittent firing
-    # from a narrow reward-site cell.
-    "phase_sparse_reward": "#E8E1F2",  # Light purple (from WONG[7])
+    # Sparse-population control — quiet ensemble plus sparse firing from a
+    # small population of narrow cells clustered at one location.
+    "phase_sparse_pop": "#E8E1F2",  # Light purple (from WONG[7])
     #
     # Replay event (in clean-recovery 2) — immobile animal, decoded
     # trajectory sweeps the track; not a misspecification.

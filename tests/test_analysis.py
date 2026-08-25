@@ -696,7 +696,7 @@ class TestSummaryFlagFractions:
             "Remap",
             "History-\ndep.",
             "Drift",
-            "Sparse reward\ncell",
+            "Sparse\npopulation",
         ]
         assert [c.component for c in cols] == [
             "—",
@@ -711,7 +711,7 @@ class TestSummaryFlagFractions:
         assert cols[0].slices == ((10, 14), (18, 19), (21, 22), (26, 30))
         assert cols[1].slices == ((19, 21),)  # Replay
         assert cols[2].slices == ((6, 10),)  # Remap
-        assert cols[5].slices == ((30, 32),)  # Sparse reward cell
+        assert cols[5].slices == ((30, 32),)  # Sparse population
 
     @pytest.mark.parametrize(
         ("direction", "expected"),
@@ -736,9 +736,9 @@ class TestSummaryFlagFractions:
 
         Row order follows ``SUMMARY_FLAG_METRICS``: HPD (0), spike-prob (1),
         KL (2). Column order: well-specified (0), replay (1), remap (2),
-        history (3), drift (4), sparse reward (5)."""
+        history (3), drift (4), sparse population (5)."""
         params = self._params()
-        n_time = params.phase_boundaries[PhaseBoundary.SPARSE_REWARD_END]
+        n_time = params.phase_boundaries[PhaseBoundary.SPARSE_POP_END]
         # One spike event per time step; KL high only inside remap [6, 10).
         event_time = np.arange(n_time, dtype=np.intp)
         event_kl = np.zeros(n_time)
@@ -765,7 +765,7 @@ class TestSummaryFlagFractions:
         """``extract_phase_flag_values`` strips NaNs, and the two-step
         extract→flag path agrees with the one-shot wrapper."""
         params = self._params()
-        n_time = params.phase_boundaries[PhaseBoundary.SPARSE_REWARD_END]
+        n_time = params.phase_boundaries[PhaseBoundary.SPARSE_POP_END]
         rng = np.random.default_rng(0)
         n_events = 2 * n_time
         event_time = rng.integers(0, n_time, n_events).astype(np.intp)
@@ -1350,7 +1350,7 @@ class TestDecodeParamsPhaseBoundaries:
             (PhaseBoundary.RECOVERY2_END, 4),
             (PhaseBoundary.DRIFT_END, 5),
             (PhaseBoundary.RECOVERY3_END, 6),
-            (PhaseBoundary.SPARSE_REWARD_END, 7),
+            (PhaseBoundary.SPARSE_POP_END, 7),
         ],
     )
     def test_phase_boundary_enum_indexes_into_tuple(
@@ -1363,16 +1363,19 @@ class TestDecodeParamsPhaseBoundaries:
     @pytest.mark.parametrize(
         ("kwargs", "match"),
         [
-            ({"reward_position": -1.0}, "reward_position"),
-            ({"reward_approach_steps": -1}, "reward_approach_steps"),
+            ({"sparse_position": -1.0}, "sparse_position"),
+            ({"sparse_approach_steps": -1}, "sparse_approach_steps"),
             ({"sparse_ensemble_rate_scale": 1.1}, "sparse_ensemble_rate_scale"),
-            ({"reward_cell_width": 0.0}, "reward_cell_width"),
-            ({"reward_cell_width": np.nan}, "reward_cell_width"),
-            ({"reward_cell_peak_rate": 0.0}, "reward_cell_peak_rate"),
-            ({"reward_cell_baseline_gain": -0.1}, "reward_cell_baseline_gain"),
+            ({"n_sparse_cells": 0}, "n_sparse_cells"),
+            ({"sparse_field_spread": -1.0}, "sparse_field_spread"),
+            ({"sparse_field_spread": np.nan}, "sparse_field_spread"),
+            ({"sparse_cell_width": 0.0}, "sparse_cell_width"),
+            ({"sparse_cell_width": np.nan}, "sparse_cell_width"),
+            ({"sparse_cell_peak_rate": 0.0}, "sparse_cell_peak_rate"),
+            ({"sparse_cell_baseline_gain": -0.1}, "sparse_cell_baseline_gain"),
         ],
     )
-    def test_sparse_reward_parameters_reject_invalid_values(
+    def test_sparse_population_parameters_reject_invalid_values(
         self,
         kwargs: dict[str, float | int],
         match: str,
