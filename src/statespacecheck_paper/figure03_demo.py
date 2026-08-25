@@ -89,11 +89,6 @@ class SimulationResult:
     # location without deriving a field center from the realized trajectory.
     reward_cell_center: float = 0.0
 
-    @property
-    def new_cell_center(self) -> float:
-        """Backward-compatible alias for the former trajectory-derived cell."""
-        return self.reward_cell_center
-
     def __post_init__(self) -> None:
         """Enforce length and timeline-consistency invariants.
 
@@ -394,13 +389,18 @@ def run_figure03_simulation(
     base_rates = np.hstack([normal_rates, baseline_reward_rates])
     sparse_rates = np.hstack([params.sparse_ensemble_rate_scale * normal_rates, reward_cell_rates])
 
-    # Remap and the sparse observation regime share one schedule:
+    # Three decoder-rate windows share one schedule:
     # - Remap: the posterior update uses randomly scrambled place-field
     #   centers (``decoder_rates``); its diagnostics use that same likelihood,
     #   so the misfit surfaces from the scramble's spatial incoherence, not
     #   from any reference to the true fields.
-    # - Sparse reward cell: the transition remains unchanged; the decoder uses
-    #   the correctly scaled quiet ensemble and active reward-cell rates.
+    # - Replay: the ensemble fires at the elevated ``replay_rate_scale`` to
+    #   densely sample the swept trajectory; the decoder is given that same
+    #   elevated rate so the replay is a correctly-specified observation model
+    #   (the decoded state simply tracks the replayed trajectory rather than
+    #   the animal's position — not a fit failure).
+    # - Sparse reward cell: the decoder uses the correctly scaled quiet
+    #   ensemble and active reward-cell rates.
     remapped_rates = np.hstack(
         [
             placefield_rates(
@@ -412,12 +412,24 @@ def run_figure03_simulation(
             baseline_reward_rates,
         ]
     )
+    replay_rates = np.hstack(
+        [
+            placefield_rates(xs, pf_centers, params.pf_width, params.replay_rate_scale),
+            baseline_reward_rates,
+        ]
+    )
+    replay_r0, replay_r1 = replay_window(params)
     misfit_schedule = MisfitSchedule(
         (
             MisfitWindow(
                 bnd[PhaseBoundary.REMAP_START],
                 bnd[PhaseBoundary.REMAP_END],
                 decoder_rates=remapped_rates,
+            ),
+            MisfitWindow(
+                replay_r0,
+                replay_r1,
+                decoder_rates=replay_rates,
             ),
             MisfitWindow(
                 w0,
@@ -551,7 +563,9 @@ def estimate_stable_summary(
 
     # ``compute_thresholds`` reads only hpd_overlap and kl_divergence (the
     # spike_prob threshold is the fixed 0.05 cutoff), but pool all three so
-    # the dict is a faithful baseline sample if that ever changes.
+    # the dict is a faithful baseline sample if that ever changes. Pool the
+    # per-*event* baseline values (one per spike event), matching the
+    # event-based phase fractions from ``extract_phase_flag_values``.
     baseline_keys = ("hpd_overlap", "kl_divergence", "spike_prob")
     baseline_values: dict[str, list[NDArray[np.floating]]] = {key: [] for key in baseline_keys}
     per_realization_values: list[list[list[NDArray[np.floating]]]] = []
@@ -559,9 +573,10 @@ def estimate_stable_summary(
     for offset in range(n_realizations):
         sim = run_figure03_simulation(params, seed=base + offset)
         metrics = sim.metrics
+        base_mask = np.asarray(metrics.event_time_ind) < baseline_end
         for key in baseline_keys:
-            baseline_slice = np.asarray(getattr(metrics, key))[:baseline_end].ravel()
-            baseline_values[key].append(baseline_slice[np.isfinite(baseline_slice)])
+            ev = np.asarray(getattr(metrics, "event_" + key), dtype=float)[base_mask]
+            baseline_values[key].append(ev[np.isfinite(ev)])
         per_realization_values.append(extract_phase_flag_values(metrics, windows))
 
     pooled_baseline = {key: np.concatenate(vals) for key, vals in baseline_values.items()}

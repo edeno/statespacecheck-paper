@@ -146,8 +146,6 @@ class PhaseBoundary(IntEnum):
     DRIFT_END = 5  # end of drift misfit
     RECOVERY3_END = 6  # end of clean recovery 3
     SPARSE_REWARD_END = 7  # end of sparse reward-cell control
-    # Backward-compatible alias for code that indexed the former final phase.
-    WIDE_DYNAMICS_END = 7
 
 
 # Default phase ladder in 1-ms steps. Used as the default of
@@ -386,6 +384,19 @@ class DecodeParams:
                 "reward_cell_baseline_gain must lie in [0, 1]; "
                 f"got {self.reward_cell_baseline_gain}."
             )
+        # Replay sub-window fractions must be ordered inside [0, 1]; an equal
+        # or reversed pair silently empties/reverses the Replay window and
+        # overlaps the well-specified baseline pool it is carved out of.
+        if not (0.0 <= self.replay_frac_start < self.replay_frac_end <= 1.0):
+            raise ValueError(
+                "replay_frac_start/replay_frac_end must satisfy "
+                "0 <= start < end <= 1; got "
+                f"start={self.replay_frac_start}, end={self.replay_frac_end}."
+            )
+        if not (np.isfinite(self.replay_speed) and self.replay_speed > 0.0):
+            raise ValueError(f"replay_speed must be positive; got {self.replay_speed}.")
+        if not (np.isfinite(self.replay_rate_scale) and self.replay_rate_scale > 0.0):
+            raise ValueError(f"replay_rate_scale must be positive; got {self.replay_rate_scale}.")
 
 
 @dataclass(frozen=True)
@@ -1125,6 +1136,11 @@ def decode_and_diagnostics(
                 f"base_rates shape {rates.shape} does not match the decoder grid "
                 f"(n_bins={n_bins}, n_cells={n_cells})."
             )
+        # Reject invalid rate tables up front (as ``MisfitWindow.decoder_rates``
+        # does), rather than letting a negative/nonfinite rate surface as an
+        # opaque Poisson error or a silent NaN deep in the filter loop.
+        if not (np.all(np.isfinite(rates)) and np.all(rates >= 0.0)):
+            raise ValueError("base_rates must contain only finite, non-negative rates.")
     else:
         rates = placefield_rates(xs, pf_centers, pf_width, rate_scale)
 
@@ -1767,16 +1783,24 @@ def _flag_fraction(values: NDArray[np.floating], threshold: float, direction: st
 
 
 def extract_phase_flag_values(
-    metrics: Diagnostics | Mapping[str, NDArray[np.floating]],
+    metrics: Diagnostics | Mapping[str, NDArray[np.floating] | NDArray[np.intp]],
     windows: list[SummaryColumn],
 ) -> list[list[NDArray[np.floating]]]:
-    """Collect finite per-spike diagnostic values per metric per column.
+    """Collect finite per-spike-event diagnostic values per metric per column.
+
+    Works on the **per-event** arrays (``event_time_ind`` /
+    ``event_hpd_overlap`` / ``event_kl_divergence`` / ``event_spike_prob``),
+    one value per spike event, so that a bin with several spikes from one
+    cell contributes several values — matching the "percentage of spike
+    events" the figure reports. (The dense ``(n_time, n_cells)`` matrices
+    would collapse a multi-spike bin to a single value.)
 
     Parameters
     ----------
     metrics : Diagnostics or Mapping[str, NDArray]
-        Source of the dense ``(n_time, n_cells)`` ``hpd_overlap`` /
-        ``kl_divergence`` / ``spike_prob`` matrices (NaN where no spike).
+        Source of the per-event arrays ``event_time_ind`` (int) and
+        ``event_{hpd_overlap,kl_divergence,spike_prob}`` (float), each of
+        shape ``(n_events,)``.
     windows : list of SummaryColumn
         Heatmap columns from :func:`summary_phase_windows`.
 
@@ -1784,21 +1808,25 @@ def extract_phase_flag_values(
     -------
     list of list of np.ndarray
         Nested list indexed ``[metric_index][column_index]``; each leaf is
-        a 1-D array of the non-NaN diagnostic values for that metric
-        inside that column's time windows. Metric order follows
-        :data:`SUMMARY_FLAG_METRICS`.
+        a 1-D array of the non-NaN per-event values for that metric whose
+        event time falls inside that column's half-open time windows. Metric
+        order follows :data:`SUMMARY_FLAG_METRICS`.
     """
 
-    def _get(name: str) -> NDArray[np.floating]:
+    def _get(name: str) -> NDArray[np.generic]:
         arr = getattr(metrics, name) if isinstance(metrics, Diagnostics) else metrics[name]
-        return cast("NDArray[np.floating]", arr)
+        return cast("NDArray[np.generic]", arr)
 
+    event_time = np.asarray(_get("event_time_ind"))
     out: list[list[NDArray[np.floating]]] = []
     for metric_key, _direction in SUMMARY_FLAG_METRICS:
-        full = _get(metric_key)
+        ev = np.asarray(_get("event_" + metric_key), dtype=float)
         per_window: list[NDArray[np.floating]] = []
         for col in windows:
-            vals = np.concatenate([full[t0:t1] for t0, t1 in col.slices])
+            mask = np.zeros(event_time.shape, dtype=bool)
+            for t0, t1 in col.slices:
+                mask |= (event_time >= t0) & (event_time < t1)
+            vals = ev[mask]
             per_window.append(vals[~np.isnan(vals)])
         out.append(per_window)
     return out

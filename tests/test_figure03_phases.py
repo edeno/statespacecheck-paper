@@ -376,6 +376,38 @@ class TestEstimateStableSummary:
             f"replay must flag far less than the remap misfit; got replay={replay}, remap={remap}"
         )
 
+    def test_sparse_reward_column_flags_kl_only(self) -> None:
+        """Headline panel-(b) claim, guarded on the flag-fraction columns the
+        figure actually shows (rows HPD, predictive-p, KL): the sparse
+        reward-cell control (column 5) elevates KL well above the
+        well-specified baseline while HPD overlap and the rank-based
+        predictive p-value flag ~no spikes. A threshold-calibration
+        regression that started flagging HPD/p there, or dropped the KL rate,
+        would fail here even though the per-event-median guard stays green.
+        """
+        summary = estimate_stable_summary(_moderate_params(), n_realizations=5, base_seed=0)
+        sparse = summary.frac_median[:, 5]  # [HPD, predictive-p, KL]
+        well = summary.frac_median[:, 0]
+        assert sparse[2] > 15.0, f"sparse-reward KL should be clearly elevated; got {sparse[2]}"
+        assert sparse[2] > 2.0 * well[2], (
+            f"sparse-reward KL should exceed 2x the baseline; got KL={sparse[2]}, well_KL={well[2]}"
+        )
+        assert sparse[0] < 2.0 and sparse[1] < 2.0, (
+            f"HPD overlap and predictive-p must not flag the sparse-reward control; got {sparse}"
+        )
+
+    def test_history_dependent_column_is_missed(self) -> None:
+        """Panel-(b) guard: the history-dependent (temporal) misfit is missed
+        by all three per-spike spatial diagnostics (column 3 stays low on the
+        flag-fraction columns, not merely at the per-event median)."""
+        summary = estimate_stable_summary(_moderate_params(), n_realizations=5, base_seed=0)
+        hist = summary.frac_median[:, 3]
+        well = summary.frac_median[:, 0]
+        assert np.all(hist < 5.0), f"history-dependent phase should stay near zero; got {hist}"
+        assert np.all(hist <= well), (
+            f"history-dependent flags should not exceed the baseline; got hist={hist}, well={well}"
+        )
+
     def test_remap_is_strongly_flagged_by_all_three(self) -> None:
         """Magnitude guard (replaces the removed single-realization
         ``test_remap_phase_flags_all_three``): the incoherent random-remap is

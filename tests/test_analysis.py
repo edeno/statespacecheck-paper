@@ -739,13 +739,15 @@ class TestSummaryFlagFractions:
         history (3), drift (4), sparse reward (5)."""
         params = self._params()
         n_time = params.phase_boundaries[PhaseBoundary.SPARSE_REWARD_END]
-        n_cells = 1
-        kl = np.zeros((n_time, n_cells))
-        kl[6:10] = 10.0  # high only inside the remap window [6, 10)
+        # One spike event per time step; KL high only inside remap [6, 10).
+        event_time = np.arange(n_time, dtype=np.intp)
+        event_kl = np.zeros(n_time)
+        event_kl[6:10] = 10.0
         metrics: dict[str, np.ndarray] = {
-            "hpd_overlap": np.ones((n_time, n_cells)),  # never below 0.5
-            "kl_divergence": kl,
-            "spike_prob": np.ones((n_time, n_cells)),  # never below 0.05
+            "event_time_ind": event_time,
+            "event_hpd_overlap": np.ones(n_time),  # never below 0.5
+            "event_kl_divergence": event_kl,
+            "event_spike_prob": np.ones(n_time),  # never below 0.05
         }
         thresholds = Thresholds(hpd_overlap=0.5, kl_divergence=5.0, spike_prob=0.05)
         windows = summary_phase_windows(params)
@@ -765,12 +767,15 @@ class TestSummaryFlagFractions:
         params = self._params()
         n_time = params.phase_boundaries[PhaseBoundary.SPARSE_REWARD_END]
         rng = np.random.default_rng(0)
-        kl = rng.uniform(0.0, 10.0, (n_time, 2))
-        kl[::3] = np.nan  # "no spike" entries
+        n_events = 2 * n_time
+        event_time = rng.integers(0, n_time, n_events).astype(np.intp)
+        kl = rng.uniform(0.0, 10.0, n_events)
+        kl[::3] = np.nan  # defensive: NaN per-event values must be stripped
         metrics: dict[str, np.ndarray] = {
-            "hpd_overlap": rng.uniform(0.0, 1.0, (n_time, 2)),
-            "kl_divergence": kl,
-            "spike_prob": rng.uniform(0.0, 1.0, (n_time, 2)),
+            "event_time_ind": event_time,
+            "event_hpd_overlap": rng.uniform(0.0, 1.0, n_events),
+            "event_kl_divergence": kl,
+            "event_spike_prob": rng.uniform(0.0, 1.0, n_events),
         }
         thresholds = Thresholds(hpd_overlap=0.3, kl_divergence=5.0, spike_prob=0.2)
         windows = summary_phase_windows(params)

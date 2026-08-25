@@ -116,6 +116,9 @@ def add_phase_boundaries(
         If True, add labels for legend on first axis.
     alpha : float, default 0.15
         Alpha (transparency) for phase boundaries.
+    replay : tuple[int, int] or None, default None
+        Half-open ``[start, end)`` step bounds of the replay control band
+        (shaded in a distinct, non-misfit color) when provided.
 
     Returns
     -------
@@ -418,9 +421,6 @@ def plot_misfit_examples(
     spikes: NDArray[np.floating],
     metrics: Diagnostics,
     params: DecodeParams,
-    placefield_centers: NDArray[np.floating],
-    placefield_width: float,
-    rate_scale: float,
 ) -> Figure:
     """Plot examples of high misfit moments for each scenario.
 
@@ -441,12 +441,6 @@ def plot_misfit_examples(
         Metrics 'hpd_overlap', 'kl_divergence', 'spike_prob' have shape (n_time, n_cells).
     params : DecodeParams
         Decoding parameters containing timeline structure.
-    pf_centers : NDArray, shape (n_cells,)
-        Place field centers for each cell.
-    pf_width : float
-        Width of place fields (sigma).
-    rate_scale : float
-        Scaling factor for firing rates.
 
     Returns
     -------

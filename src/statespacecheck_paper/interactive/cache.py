@@ -566,10 +566,11 @@ def build_simulated_cache(
     -----
     The simulation's ``metrics["likelihood"]`` is the *normalized linear*
     combined likelihood. The viewer's worker exponentiates the cache's
-    ``log_likelihood`` back, so this builder writes
-    ``log_likelihood = log(max(likelihood, 1e-12))`` — true log space.
-    Without the ``log``, the worker would ``exp`` an already-normalized
-    distribution and the likelihood panel would visually flatten.
+    ``log_likelihood`` back, so this builder writes ``log_likelihood =
+    log(likelihood)`` — true log space, with no clamp (exact-zero bins
+    become ``-inf``, which the worker handles). Without the ``log``, the
+    worker would ``exp`` an already-normalized distribution and the
+    likelihood panel would visually flatten.
 
     No ``acausal_posterior`` is written: the simulation only forward-
     filters, so the smoothed-overlay control is honestly disabled by

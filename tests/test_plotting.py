@@ -214,9 +214,6 @@ def test_plot_misfit_examples_runs(rng: np.random.Generator) -> None:
         spikes.astype(np.float64),
         metrics,
         params,
-        np.linspace(0, 1, n_cells),
-        0.1,
-        5.0,
     )
     try:
         assert isinstance(fig, plt.Figure)
