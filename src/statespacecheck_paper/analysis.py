@@ -145,7 +145,9 @@ class PhaseBoundary(IntEnum):
     RECOVERY2_END = 4  # end of clean recovery 2
     DRIFT_END = 5  # end of drift misfit
     RECOVERY3_END = 6  # end of clean recovery 3
-    WIDE_DYNAMICS_END = 7  # end of wide-dynamics-noise misfit
+    SPARSE_REWARD_END = 7  # end of sparse reward-cell control
+    # Backward-compatible alias for code that indexed the former final phase.
+    WIDE_DYNAMICS_END = 7
 
 
 # Default phase ladder in 1-ms steps. Used as the default of
@@ -168,9 +170,10 @@ _DEFAULT_PHASE_BOUNDARIES: tuple[int, ...] = (
 class DecodeParams:
     """Parameters for the figure-3 decoding simulation.
 
-    The simulation walks through four misfit conditions separated by
-    clean-recovery windows. Time steps are 1 ms by convention — the
-    simulation math itself is dt-agnostic, but the default parameters
+    The simulation walks through three misfit conditions and one sparse-
+    activity control, separated by clean-recovery windows. Time steps are
+    1 ms by convention — the simulation math itself is dt-agnostic, but the
+    default parameters
     (`rate_scale=5.0`, refractory and burst windows in
     ``simulate_spikes_history_dependent``) are tuned for that mapping
     and yield hippocampally-realistic spike rates and timescales.
@@ -184,7 +187,7 @@ class DecodeParams:
     - 18k–22k: Clean recovery
     - 22k–26k: Drift misfit (4 s)
     - 26k–30k: Clean recovery
-    - 30k–32k: Wide-dynamics-noise misfit (2 s)
+    - 30k–32k: Sparse reward-cell control (2 s)
 
     Parameters
     ----------
@@ -198,12 +201,6 @@ class DecodeParams:
         only makes sense over the full ladder.
     sigx_pred : float, default 0.5
         Decoder's baseline dynamics standard deviation.
-    sigx_wide_dynamics : float, default 20.0
-        Inflated decoder transition std for the wide-dynamics-noise
-        misfit (40× baseline). Engineered to be wide enough that the
-        decoder's predictive covers most of the track and the
-        per-spike likelihood (narrow at the firing cell's PF) sits
-        cleanly inside it.
     drift_momentum : float, default 0.8
         AR(1) coefficient on the animal's velocity during the drift
         misfit phase. The true trajectory is
@@ -227,13 +224,27 @@ class DecodeParams:
         Specification of which cells get remapped during the remap
         window. By default, all eleven cells participate in one fixed
         permutation that moves every field by at least three center spacings.
+    reward_position : float, default 30.0
+        Fixed reward-site position in the final control phase.
+    reward_approach_steps : int, default 1000
+        Number of steps at the end of clean recovery 3 used for a gradual
+        approach to the reward site.
+    sparse_ensemble_rate_scale : float, default 0.0
+        Multiplicative rate applied to the eleven ordinary place cells during
+        reward consumption. Zero represents a silent ordinary ensemble.
+    reward_cell_width : float, default 2.0
+        Standard deviation, in position units, of the narrow reward field.
+    reward_cell_peak_rate : float, default 0.005
+        Reward-cell peak firing rate in spikes per 1-ms step (5 Hz).
+    reward_cell_baseline_gain : float, default 0.01
+        Fraction of the active reward-cell rate used before the final control.
 
     Examples
     --------
     >>> params = DecodeParams()
     >>> params.phase_boundaries[PhaseBoundary.REMAP_START]
     6000
-    >>> params.phase_boundaries[PhaseBoundary.WIDE_DYNAMICS_END]
+    >>> params.phase_boundaries[PhaseBoundary.SPARSE_REWARD_END]
     32000
     >>> params.pf_centers
     array([  0.,  10.,  20.,  30.,  40.,  50.,  60.,  70.,  80.,  90., 100.])
@@ -245,7 +256,6 @@ class DecodeParams:
 
     # Decoder & dynamics parameters
     sigx_pred: float = 0.5  # baseline dynamics std
-    sigx_wide_dynamics: float = 20.0  # 40× baseline — wide-dynamics-noise phase
     drift_momentum: float = 0.8  # AR(1) coefficient for drift-misfit trajectory
 
     # Position grid
@@ -283,6 +293,34 @@ class DecodeParams:
         (9, 6),
         (10, 5),
     )
+
+    # Replay event embedded in the second clean-recovery window. The animal
+    # is immobile while a coherent trajectory sweeps the track; the decoder
+    # tracks the sweep, so the decoded position departs from the true
+    # (fixed) position without any diagnostic flagging it -- replay is not a
+    # misspecification. The sweep occupies the fractional sub-window
+    # ``[replay_frac_start, replay_frac_end)`` of clean-recovery 2, moves at
+    # ``replay_speed`` a.u./step (slow enough for the narrow transition to
+    # track), and fires at an elevated ``replay_rate_scale``.
+    replay_frac_start: float = 0.25
+    replay_frac_end: float = 0.75
+    replay_speed: float = 0.5
+    replay_rate_scale: float = 20.0
+
+    # Sparse reward-cell control. The animal approaches a fixed reward
+    # location at the end of clean recovery 3, then remains there while the
+    # ordinary ensemble becomes quiet. A pre-existing, sharply tuned reward
+    # cell increases from a small baseline gain to its full rate. With little
+    # intervening population information, the predictive spreads between its
+    # isolated spikes; each spike supplies a narrow likelihood contained in
+    # that broad prediction. This is a correctly modeled observation regime,
+    # not a transition-model perturbation.
+    reward_position: float = 30.0
+    reward_approach_steps: int = 1_000
+    sparse_ensemble_rate_scale: float = 0.0
+    reward_cell_width: float = 2.0
+    reward_cell_peak_rate: float = 0.005  # spikes/ms = 5 Hz at field center
+    reward_cell_baseline_gain: float = 0.01
 
     def __post_init__(self) -> None:
         """Validate the timeline and initialize ``pf_centers`` if not provided.
@@ -323,6 +361,32 @@ class DecodeParams:
         # it silently corrupts every downstream decoder call.
         self.pf_centers.setflags(write=False)
 
+        if not (self.xs_min <= self.reward_position <= self.xs_max):
+            raise ValueError(
+                f"reward_position must lie in [{self.xs_min}, {self.xs_max}]; "
+                f"got {self.reward_position}."
+            )
+        if self.reward_approach_steps < 0:
+            raise ValueError(
+                f"reward_approach_steps must be non-negative; got {self.reward_approach_steps}."
+            )
+        if not (0.0 <= self.sparse_ensemble_rate_scale <= 1.0):
+            raise ValueError(
+                "sparse_ensemble_rate_scale must lie in [0, 1]; "
+                f"got {self.sparse_ensemble_rate_scale}."
+            )
+        if not np.isfinite(self.reward_cell_width) or self.reward_cell_width <= 0.0:
+            raise ValueError(f"reward_cell_width must be positive; got {self.reward_cell_width}.")
+        if not np.isfinite(self.reward_cell_peak_rate) or self.reward_cell_peak_rate <= 0.0:
+            raise ValueError(
+                f"reward_cell_peak_rate must be positive; got {self.reward_cell_peak_rate}."
+            )
+        if not (0.0 <= self.reward_cell_baseline_gain <= 1.0):
+            raise ValueError(
+                "reward_cell_baseline_gain must lie in [0, 1]; "
+                f"got {self.reward_cell_baseline_gain}."
+            )
+
 
 @dataclass(frozen=True)
 class MisfitWindow:
@@ -338,8 +402,7 @@ class MisfitWindow:
         Half-open time-step bounds ``[start, end)``. ``start < end`` is
         required.
     transition_matrix : np.ndarray, shape (n_bins, n_bins), optional
-        Replaces the baseline transition matrix in the predict step
-        (used by the wide-dynamics-noise misfit).
+        Replaces the baseline transition matrix in the predict step.
     decoder_rates : np.ndarray, shape (n_bins, n_cells), optional
         Replaces the baseline Gaussian place-field rate table used to
         form the posterior-update likelihood, the per-spike diagnostics,
@@ -893,6 +956,7 @@ def decode_and_diagnostics(
     rate_scale: float,
     misfit_schedule: MisfitSchedule | None = None,
     rng: np.random.Generator | None = None,
+    base_rates: NDArray[np.floating] | None = None,
 ) -> Diagnostics:
     """Run the Bayesian filter with per-time, per-cell diagnostics.
 
@@ -927,13 +991,19 @@ def decode_and_diagnostics(
     rate_scale : float
         Scaling factor for firing rates.
     misfit_schedule : MisfitSchedule, optional
-        Decoder-side misfit windows — remapping and wide-dynamics noise.
+        Decoder-side rate or transition regimes, such as remapping and the
+        sparse reward-cell control.
         Each :class:`MisfitWindow` swaps the transition matrix and/or
         the per-cell rate table for its interval. Defaults to an empty
         schedule: a clean decode with no
         misfits (the real-data decoding case).
     rng : np.random.Generator | None, optional
         Random number generator (reserved for future use).
+    base_rates : np.ndarray, shape (n_bins, n_cells), optional
+        Baseline per-cell Poisson rate table. Supply this when cells do not
+        share one place-field width and scale, as in Figure 3's reward cell.
+        If omitted, rates are built from ``pf_centers``, ``pf_width``, and
+        ``rate_scale``.
 
     Returns
     -------
@@ -1043,8 +1113,20 @@ def decode_and_diagnostics(
     combined_likelihood_all[0] = normalize(np.ones(n_bins))  # Flat at t=0
 
     # Baseline per-cell Poisson rate table. Used at every timestep not
-    # covered by a misfit window whose ``decoder_rates`` is set.
-    rates = placefield_rates(xs, pf_centers, pf_width, rate_scale)
+    # covered by a misfit window whose ``decoder_rates`` is set. Callers
+    # can inject ``base_rates`` directly when the decoder's cell set does
+    # not reduce to one shared Gaussian width/scale — e.g. the figure-3
+    # simulation adds a narrow 12th reward cell with a small baseline rate
+    # that increases during a correctly modeled sparse-activity window.
+    if base_rates is not None:
+        rates = np.asarray(base_rates, dtype=float)
+        if rates.shape != (n_bins, n_cells):
+            raise ValueError(
+                f"base_rates shape {rates.shape} does not match the decoder grid "
+                f"(n_bins={n_bins}, n_cells={n_cells})."
+            )
+    else:
+        rates = placefield_rates(xs, pf_centers, pf_width, rate_scale)
 
     # Track timesteps where _condition_on fell back to uniform because the
     # observation had zero probability on the prior's support. The fallback
@@ -1564,6 +1646,34 @@ class SummaryColumn:
     component: str
 
 
+def replay_window(params: DecodeParams) -> tuple[int, int]:
+    """Global ``[start, end)`` step bounds of the replay sub-window.
+
+    The replay event lives inside clean-recovery 2, spanning the fractional
+    sub-window ``[replay_frac_start, replay_frac_end)`` of that phase.
+    Deterministic from the phase ladder and the replay fractions so
+    ``run_figure03_simulation`` and the figure-3b summary columns stay in
+    sync.
+
+    Parameters
+    ----------
+    params : DecodeParams
+        Provides the phase-boundary ladder and replay fractions.
+
+    Returns
+    -------
+    tuple of (int, int)
+        Half-open ``[start, end)`` global step indices of the replay sweep.
+    """
+    bnd = params.phase_boundaries
+    start = bnd[PhaseBoundary.HIST_DEP_END]
+    end = bnd[PhaseBoundary.RECOVERY2_END]
+    n = end - start
+    r0 = start + int(round(n * params.replay_frac_start))
+    r1 = start + int(round(n * params.replay_frac_end))
+    return r0, r1
+
+
 def summary_phase_windows(params: DecodeParams) -> list[SummaryColumn]:
     """Phase columns for the Figure-3b summary heatmap.
 
@@ -1574,9 +1684,10 @@ def summary_phase_windows(params: DecodeParams) -> list[SummaryColumn]:
     so the column order, time windows, and component labels cannot drift
     out of sync.
 
-    The first column ("Well-specified") aggregates the three clean-recovery
-    windows into an out-of-sample false-positive rate against the matched
-    misfit columns.
+    The first column ("Well-specified") aggregates the clean-recovery
+    windows (with the replay sub-window carved out) into an out-of-sample
+    false-positive rate against the matched misfit columns. The "Replay"
+    column scores the replay event, which is not a misspecification.
 
     Parameters
     ----------
@@ -1586,8 +1697,8 @@ def summary_phase_windows(params: DecodeParams) -> list[SummaryColumn]:
     Returns
     -------
     list of SummaryColumn
-        Five columns in heatmap order: well-specified, remap,
-        history-dependent firing, drift, wide-dynamics noise.
+        Six columns in heatmap order: well-specified, replay, remap,
+        history-dependent firing, drift, sparse reward cell.
     """
     bnd = params.phase_boundaries
     t_remap_start = bnd[PhaseBoundary.REMAP_START]
@@ -1597,21 +1708,32 @@ def summary_phase_windows(params: DecodeParams) -> list[SummaryColumn]:
     t_recovery2_end = bnd[PhaseBoundary.RECOVERY2_END]
     t_drift_end = bnd[PhaseBoundary.DRIFT_END]
     t_recovery3_end = bnd[PhaseBoundary.RECOVERY3_END]
-    t_wide_dynamics_end = bnd[PhaseBoundary.WIDE_DYNAMICS_END]
+    t_sparse_reward_end = bnd[PhaseBoundary.SPARSE_REWARD_END]
+    # The replay event sits inside clean-recovery 2; carve it out of the
+    # well-specified pool (it is scored in its own column) so its spikes
+    # neither define the baseline thresholds nor dilute the false-positive
+    # rate.
+    r0, r1 = replay_window(params)
     return [
         SummaryColumn(
             "Well-\nspecified",
             (
                 (t_remap_end, t_recovery1_end),
-                (t_hist_dep_end, t_recovery2_end),
+                (t_hist_dep_end, r0),
+                (r1, t_recovery2_end),
                 (t_drift_end, t_recovery3_end),
             ),
             "—",
         ),
+        SummaryColumn("Replay", ((r0, r1),), "—"),
         SummaryColumn("Remap", ((t_remap_start, t_remap_end),), "Observation"),
         SummaryColumn("History-\ndep.", ((t_recovery1_end, t_hist_dep_end),), "Observation"),
         SummaryColumn("Drift", ((t_recovery2_end, t_drift_end),), "Transition"),
-        SummaryColumn("Wide dyn.\nnoise", ((t_recovery3_end, t_wide_dynamics_end),), "Transition"),
+        SummaryColumn(
+            "Sparse reward\ncell",
+            ((t_recovery3_end, t_sparse_reward_end),),
+            "—",
+        ),
     ]
 
 

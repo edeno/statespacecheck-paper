@@ -115,8 +115,9 @@ def _bidirectional_remap(n_cells: int) -> tuple[tuple[int, int], ...]:
 def _params_for_short_run(n_time: int, n_cells: int, sigx_pred: float = 0.5) -> DecodeParams:
     """DecodeParams with phase boundaries scaled to fit ``n_time``.
 
-    Distributes the 8 phase boundaries (4 misfits with recovery between
-    each) so every misfit window has at least a few timesteps. ``n_time``
+    Distributes the 8 phase boundaries (3 misfits and a sparse reward-cell
+    control, with recovery between) so every highlighted window has at least
+    a few timesteps. ``n_time``
     needs to be large enough that ``phase_boundaries[REMAP_START] - 1000``
     is positive (some downstream helpers index a 1000-timestep baseline
     preamble).
@@ -268,11 +269,12 @@ def test_plot_combined_diagnostics_renders_precomputed_summary(
     bundle = _combined_metrics(rng, n_time, n_bins, n_cells)
     params = _params_for_short_run(n_time, n_cells)
 
+    # Columns: well-specified, replay, remap, history, drift, sparse reward.
     median = np.array(
         [
-            [1.0, 60.0, 1.0, 10.0, 0.0],
-            [1.0, 60.0, 1.0, 8.0, 17.0],
-            [3.0, 64.0, 2.0, 14.0, 0.0],
+            [1.0, 4.0, 60.0, 1.0, 10.0, 0.0],
+            [1.0, 4.0, 60.0, 1.0, 8.0, 17.0],
+            [3.0, 2.0, 64.0, 2.0, 14.0, 0.0],
         ]
     )
 
@@ -320,7 +322,7 @@ def test_plot_combined_diagnostics_tags_figure3_annotations(
 
         assert sum(text.get_gid() == FIGURE3_PANEL_LABEL_GID for text in texts) == 2
         phase_labels = [text for text in texts if text.get_gid() == FIGURE3_PHASE_LABEL_GID]
-        assert len(phase_labels) == 4
+        assert len(phase_labels) == 5
         assert {text.get_position()[1] for text in phase_labels} == {
             phase_labels[0].get_position()[1]
         }
@@ -328,7 +330,7 @@ def test_plot_combined_diagnostics_tags_figure3_annotations(
         assert sum(text.get_gid() == FIGURE3_WORSE_FIT_LABEL_GID for text in texts) == 3
         assert any(text.get_gid() == FIGURE3_TRUE_POSITION_LABEL_GID for text in texts)
         assert any(text.get_gid() == FIGURE3_SUMMARY_KNOWN_COMPONENT_LABEL_GID for text in texts)
-        assert sum(text.get_gid() == FIGURE3_SUMMARY_CELL_LABEL_GID for text in texts) == 15
+        assert sum(text.get_gid() == FIGURE3_SUMMARY_CELL_LABEL_GID for text in texts) == 18
         assert any(ax.title.get_gid() == FIGURE3_SUMMARY_TITLE_GID for ax in fig.axes)
         assert sum(line.get_gid() == FIGURE3_THRESHOLD_LINE_GID for line in lines) == 3
     finally:

@@ -32,14 +32,8 @@ from statespacecheck_paper.analysis import (
     PhaseBoundary,
     Thresholds,
     compute_phase_flag_fractions,
-    get_remapped_pf_centers,
-    likelihood_grid_for_counts,
+    replay_window,
     summary_phase_windows,
-)
-from statespacecheck_paper.simulation import (
-    gaussian_transition_matrix,
-    normalize,
-    softmax_with_shift,
 )
 from statespacecheck_paper.style import CMAP_LIKELIHOOD, CMAP_POSTERIOR, COLORS
 
@@ -101,6 +95,7 @@ def add_phase_boundaries(
     phase_boundaries: tuple[int, ...],
     include_labels: bool = False,
     alpha: float = 0.15,
+    replay: tuple[int, int] | None = None,
 ) -> None:
     """Add colored phase boundaries to multiple axes.
 
@@ -113,7 +108,7 @@ def add_phase_boundaries(
         indexed by :class:`statespacecheck_paper.analysis.PhaseBoundary`
         (``REMAP_START``, ``REMAP_END``, ``RECOVERY1_END``,
         ``HIST_DEP_END``, ``RECOVERY2_END``, ``DRIFT_END``,
-        ``RECOVERY3_END``, ``WIDE_DYNAMICS_END``). Shorter tuples (down
+        ``RECOVERY3_END``, ``SPARSE_REWARD_END``). Shorter tuples (down
         to 2 elements) are accepted and produce a partial shading; only
         the misfit windows whose pair of boundary entries is present
         are drawn.
@@ -161,9 +156,14 @@ def add_phase_boundaries(
                 phase_boundaries[6],
                 phase_boundaries[7],
                 COLORS["metric_combined"],
-                "Wide dynamics noise",
+                "Sparse reward cell",
             )
         )
+    # The replay band (in clean-recovery 2) is not a misfit; shade it in a
+    # distinct color so the reader can see the decoded-vs-true divergence is
+    # a deliberate, non-flagged event.
+    if replay is not None:
+        misfit_specs.append((replay[0], replay[1], COLORS["phase_replay"], "Replay"))
     phases = misfit_specs
 
     for ax_idx, ax in enumerate(axes):
@@ -424,9 +424,9 @@ def plot_misfit_examples(
 ) -> Figure:
     """Plot examples of high misfit moments for each scenario.
 
-    Finds the worst time point in each misfit phase and shows the distributions.
-    Also includes a baseline example with good fit.
-    Shows 5 columns: baseline + 4 misfit types.
+    Finds an illustrative time point in each non-baseline phase and shows the
+    distributions. Also includes a baseline example with good fit. Shows five
+    columns: baseline, three misfit types, and the sparse reward-cell control.
 
     Parameters
     ----------
@@ -451,7 +451,8 @@ def plot_misfit_examples(
     Returns
     -------
     fig : matplotlib.figure.Figure
-        Figure showing distribution comparisons for baseline and four misfit types.
+        Figure showing distribution comparisons for the baseline, three
+        misfit types, and the sparse reward-cell control.
 
     Examples
     --------
@@ -473,8 +474,8 @@ def plot_misfit_examples(
     remap_window = slice(bnd[PhaseBoundary.REMAP_START], bnd[PhaseBoundary.REMAP_END])
     hist_dep_window = slice(bnd[PhaseBoundary.RECOVERY1_END], bnd[PhaseBoundary.HIST_DEP_END])
     drift_window = slice(bnd[PhaseBoundary.RECOVERY2_END], bnd[PhaseBoundary.DRIFT_END])
-    wide_dynamics_window = slice(
-        bnd[PhaseBoundary.RECOVERY3_END], bnd[PhaseBoundary.WIDE_DYNAMICS_END]
+    sparse_reward_window = slice(
+        bnd[PhaseBoundary.RECOVERY3_END], bnd[PhaseBoundary.SPARSE_REWARD_END]
     )
 
     phases = [
@@ -482,7 +483,7 @@ def plot_misfit_examples(
         ("Remap", remap_window, False),
         ("History-dep.", hist_dep_window, False),
         ("Drift", drift_window, False),
-        ("Wide dyn. noise", wide_dynamics_window, False),
+        ("Sparse reward cell", sparse_reward_window, False),
     ]
 
     # Publication quality: 450 DPI, single row with one column per phase
@@ -510,38 +511,11 @@ def plot_misfit_examples(
             example_idx_in_phase = np.nanargmin(valid_hpdo)  # Worst fit with spikes
         example_time = phase_slice.start + example_idx_in_phase
 
-        if example_time > 0:
-            prev_post = metrics.posterior[example_time - 1]
-        else:
-            prev_post = np.ones_like(xs) / len(xs)
-
-        # Select appropriate transition matrix (half-open intervals [start, end)
-        # to match decode_and_diagnostics). Only the wide-dynamics-noise
-        # window uses an alternate transition matrix; all other phases use
-        # the baseline.
-        if bnd[PhaseBoundary.RECOVERY3_END] <= example_time < bnd[PhaseBoundary.WIDE_DYNAMICS_END]:
-            transition_matrix = gaussian_transition_matrix(xs, params.sigx_wide_dynamics)
-        else:
-            transition_matrix = gaussian_transition_matrix(xs, params.sigx_pred)
-
-        # Column-stochastic transition (see ``gaussian_transition_matrix``):
-        # the predictive marginal is ``T @ post``. Mirrors the decoder in
-        # ``decode_and_diagnostics``.
-        prior = normalize(transition_matrix @ prev_post)
-
-        active_remap = bnd[PhaseBoundary.REMAP_START] <= example_time < bnd[PhaseBoundary.REMAP_END]
-        current_pf_centers = get_remapped_pf_centers(
-            placefield_centers, params.remap_from_to, active_remap
-        )
-        likelihood = likelihood_grid_for_counts(
-            xs, current_pf_centers, placefield_width, rate_scale, spikes[example_time]
-        )
-
-        # Combine per-cell normalized likelihoods across cells in log-space.
-        # The linear-space ``np.prod(likelihood, axis=1)`` underflows once
-        # n_cells * log(peak) crosses the float64 floor (~700).
-        log_lik = np.log(np.maximum(likelihood, np.finfo(likelihood.dtype).tiny))
-        combined_likelihood = softmax_with_shift(log_lik.sum(axis=1))
+        # Use the exact distributions retained by the decoder. This keeps the
+        # illustration faithful to phase-specific rate tables (remapped fields
+        # and the correctly modeled sparse reward-cell regime).
+        prior = metrics.predictive[example_time]
+        combined_likelihood = metrics.likelihood[example_time]
 
         ax1 = axes[phase_idx]
         ax2 = ax1.twinx()
@@ -1087,14 +1061,16 @@ def _add_figure3_phase_labels(ax: Axes, params: DecodeParams) -> None:
     t_recovery2_end = bnd[PhaseBoundary.RECOVERY2_END]
     t_drift_end = bnd[PhaseBoundary.DRIFT_END]
     t_recovery3_end = bnd[PhaseBoundary.RECOVERY3_END]
-    t_wide_dynamics_end = bnd[PhaseBoundary.WIDE_DYNAMICS_END]
+    t_sparse_reward_end = bnd[PhaseBoundary.SPARSE_REWARD_END]
 
+    r0, r1 = replay_window(params)
     phase_label_y = 1.04
     phase_labels_info: list[tuple[float, str]] = [
         ((t_remap_start + t_remap_end) / 2, "Remap"),
+        ((r0 + r1) / 2, "Replay"),
         ((t_recovery1_end + t_hist_dep_end) / 2, "History-dep."),
         ((t_recovery2_end + t_drift_end) / 2, "Drift"),
-        ((t_recovery3_end + t_wide_dynamics_end) / 2, "Wide dyn. noise"),
+        ((t_recovery3_end + t_sparse_reward_end) / 2, "Sparse reward cell"),
     ]
     for x_pos, label_text in phase_labels_info:
         phase_label = ax.text(
@@ -1300,6 +1276,7 @@ def plot_combined_diagnostics(
         time_series_axes,
         tuple(params.phase_boundaries),
         alpha=0.15,
+        replay=replay_window(params),
     )
     _add_figure3_phase_labels(ax_pred, params)
     _add_figure3_panel_label(ax_pred, "a", y=1.15)

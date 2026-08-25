@@ -1,8 +1,9 @@
 """Reusable figure-3 simulation driver.
 
 The figure-3 demo simulates a hippocampal-style decoder under a
-sequence of misfit conditions (remap, history-dependent firing,
-drift, wide-dynamics noise). The simulation pipeline drives both
+sequence of misfit conditions (remap, history-dependent firing, drift) and
+two specificity controls (a replay event embedded in clean-recovery 2 and a
+final sparse reward-cell epoch). The simulation pipeline drives both
 ``scripts/generate_figure03.py`` and
 ``statespacecheck_paper.interactive.cache.build_simulated_cache``;
 both call ``run_figure03_simulation`` so the figure and the
@@ -31,6 +32,7 @@ from statespacecheck_paper.analysis import (
     extract_phase_flag_values,
     flag_fractions_from_values,
     get_remapped_pf_centers,
+    replay_window,
     summary_phase_windows,
 )
 from statespacecheck_paper.simulation import (
@@ -54,7 +56,7 @@ PHASE_LABELS: tuple[str, ...] = (
     "Clean Recovery",
     "Drift Misfit",
     "Clean Recovery",
-    "Wide Dynamics Noise",
+    "Sparse Reward Cell",
 )
 
 
@@ -83,6 +85,14 @@ class SimulationResult:
     # are coerced in __post_init__.
     phase_labels: tuple[str, ...]
     phase_boundaries: tuple[int, ...]
+    # Fixed reward-place-cell center; lets the raster sort all 12 cells by
+    # location without deriving a field center from the realized trajectory.
+    reward_cell_center: float = 0.0
+
+    @property
+    def new_cell_center(self) -> float:
+        """Backward-compatible alias for the former trajectory-derived cell."""
+        return self.reward_cell_center
 
     def __post_init__(self) -> None:
         """Enforce length and timeline-consistency invariants.
@@ -147,15 +157,21 @@ def run_figure03_simulation(
        assumes Poisson. Per-spike spatial likelihood is unchanged,
        so the per-spike diagnostics largely miss this — deliberate
        demonstration of the spatial-only nature of the metrics.)
-    5. Clean Recovery
+    5. Clean Recovery (contains the **Replay control**: an out-and-back
+       trajectory sweep while the animal is immobile. The decoder tracks the
+       sweep, so the decoded position departs from the true fixed position
+       yet stays consistent with each spike's likelihood — a benign
+       decoded-vs-true divergence that none of the metrics should flag.)
     6. **Drift Misfit** (transition: trajectory has persistent velocity
        at AR(1) coefficient ``params.drift_momentum``; decoder assumes
        memoryless walk)
     7. Clean Recovery
-    8. **Wide Dynamics Noise** (transition: decoder uses inflated
-       transition matrix ``sigx_wide_dynamics ~ 40× baseline``;
-       engineered to inflate KL while HPD overlap and the rank-based
-       p-value stay near baseline — the KL false-positive case)
+    8. **Sparse Reward Cell** (control: the ordinary ensemble is quiet while
+       a pre-existing, sharply tuned reward-place cell fires intermittently.
+       The prediction spreads between isolated spikes, and each spike's
+       narrow likelihood remains contained within it. KL responds to the
+       concentration difference while HPD overlap and the rank-based p-value
+       remain consistent.)
 
     Parameters
     ----------
@@ -184,7 +200,6 @@ def run_figure03_simulation(
 
     xs = np.arange(params.xs_min, params.xs_max + params.xs_step, params.xs_step, dtype=float)
     transition_matrix = gaussian_transition_matrix(xs, params.sigx_pred)
-    transition_matrix_inflated = gaussian_transition_matrix(xs, params.sigx_wide_dynamics)
 
     phases: list[tuple[NDArray[np.floating], NDArray[np.int_]]] = []
     phase_labels: list[str] = []
@@ -236,10 +251,47 @@ def run_figure03_simulation(
     sp = simulate_spikes_history_dependent(x, pf_centers, params.pf_width, params.rate_scale, rng)
     _add_phase(x, sp)
 
-    # 5. Clean recovery 2
+    # 5. Clean recovery 2 — with a replay event. The animal is immobile
+    #    (true position held fixed) while a coherent trajectory sweeps the
+    #    track out-and-back at ``replay_speed`` a.u./step (slow enough for
+    #    the narrow transition to track). The decoder follows the sweep, so
+    #    the *decoded* position departs from the fixed true position while
+    #    every metric stays at baseline — a decoded-vs-true divergence is not
+    #    a model misspecification. Spikes during the sweep fire at the
+    #    elevated ``replay_rate_scale`` to densely sample the trajectory.
     n = bnd[PhaseBoundary.RECOVERY2_END] - bnd[PhaseBoundary.HIST_DEP_END]
-    x = _walk(n, params.sigx_pred)
-    _add_phase(x, _spikes_position_tuned(x))
+    # Local (within-phase) replay bounds derived from the shared global
+    # ``replay_window`` helper, so the sweep and the figure-3b Replay column
+    # cover exactly the same steps.
+    r0_global, r1_global = replay_window(params)
+    r0 = r0_global - bnd[PhaseBoundary.HIST_DEP_END]
+    r1 = r1_global - bnd[PhaseBoundary.HIST_DEP_END]
+    x_pre = _walk(r0, params.sigx_pred)
+    x_still = float(x_pre[-1]) if r0 > 0 else x_last
+    replay_len = r1 - r0
+    # Out-and-back sweep that returns to ``x_still`` so the animal's real
+    # position resumes continuously after the replay (no boundary jump to
+    # flag). The forward ramp reflects off the track ends; the reversed ramp
+    # retraces it back to the start.
+    half = (replay_len + 1) // 2
+    ramp = reflect_into_interval(
+        x_still + params.replay_speed * np.arange(half),
+        float(params.xs_min),
+        float(params.xs_max),
+    )
+    x_sweep = np.concatenate([ramp, ramp[::-1]])[:replay_len]
+    x_post = simulate_walk(n - r1, params.sigx_pred, x_still, params.xs_min, params.xs_max, rng)
+    x_rec2 = np.concatenate([x_pre, np.full(replay_len, x_still), x_post])
+    sp_rec2 = np.vstack(
+        [
+            _spikes_position_tuned(x_pre),
+            simulate_spikes_position_tuned(
+                x_sweep, pf_centers, params.pf_width, params.replay_rate_scale, rng
+            ),
+            _spikes_position_tuned(x_post),
+        ]
+    )
+    _add_phase(x_rec2, sp_rec2)
 
     # 6. Drift Misfit — persistent-velocity walk; decoder assumes memoryless.
     n = bnd[PhaseBoundary.DRIFT_END] - bnd[PhaseBoundary.RECOVERY2_END]
@@ -253,35 +305,112 @@ def run_figure03_simulation(
     x = reflect_into_interval(x_mom, float(params.xs_min), float(params.xs_max))
     _add_phase(x, _spikes_position_tuned(x))
 
-    # 7. Clean recovery 3
+    # 7. Clean recovery 3. During the final part of this otherwise matched
+    #    phase, the animal approaches the fixed reward location so the sparse
+    #    reward-cell control begins without a position jump.
     n = bnd[PhaseBoundary.RECOVERY3_END] - bnd[PhaseBoundary.DRIFT_END]
-    x = _walk(n, params.sigx_pred)
+    approach_steps = min(params.reward_approach_steps, n)
+    walk_steps = n - approach_steps
+    if walk_steps > 0:
+        x_walk = _walk(walk_steps, params.sigx_pred)
+        approach_start = float(x_walk[-1])
+    else:
+        x_walk = np.empty(0, dtype=float)
+        approach_start = x_last
+    if approach_steps > 0:
+        # Drop the first point so the approach continues from, rather than
+        # duplicates, the preceding sample.
+        x_approach = np.linspace(
+            approach_start,
+            params.reward_position,
+            approach_steps + 1,
+        )[1:]
+    else:
+        x_approach = np.empty(0, dtype=float)
+    x = np.concatenate([x_walk, x_approach])
     _add_phase(x, _spikes_position_tuned(x))
 
-    # 8. Wide Dynamics Noise — decoder applies an inflated transition matrix
-    #    (~40× baseline). Predictive becomes wide; per-spike likelihoods stay
-    #    narrow at the firing cell's PF -> KL inflates strongly while HPD
-    #    overlap and the rank-based p-value stay near baseline (KL
-    #    false-positive case).
-    n = bnd[PhaseBoundary.WIDE_DYNAMICS_END] - bnd[PhaseBoundary.RECOVERY3_END]
-    x = _walk(n, params.sigx_pred)
-    _add_phase(x, _spikes_position_tuned(x))
+    # 8. Sparse Reward Cell — the animal remains at the reward while the
+    #    ordinary ensemble becomes quiet. The baseline transition is still
+    #    used, so the prediction spreads naturally between isolated spikes.
+    #    A narrow reward-cell likelihood falls inside that prediction: HPD
+    #    overlap and predictive p remain good, while KL responds to their
+    #    concentration difference.
+    n = bnd[PhaseBoundary.SPARSE_REWARD_END] - bnd[PhaseBoundary.RECOVERY3_END]
+    x = np.full(n, params.reward_position, dtype=float)
+    sparse_normal_spikes = simulate_spikes_position_tuned(
+        x,
+        pf_centers,
+        params.pf_width,
+        params.rate_scale * params.sparse_ensemble_rate_scale,
+        rng,
+    )
+    _add_phase(x, sparse_normal_spikes)
 
     x_true = np.concatenate([p_x for p_x, _ in phases], axis=0)
-    spikes = np.vstack([p_s for _, p_s in phases])
+    spikes = np.vstack([p_s for _, p_s in phases])  # (n_time, n_normal_cells)
 
-    # The two decoder-side misfits as a single schedule:
-    # - Remap: the decoder's posterior update uses randomly scrambled
-    #   place-field centers (``decoder_rates``), and the diagnostics use
-    #   that same decoder likelihood — so the misfit surfaces from the
-    #   scramble's spatial incoherence, not from any reference to the
-    #   true (unpermuted) fields.
-    # - Wide dynamics noise: an inflated transition matrix only.
-    remapped_rates = placefield_rates(
+    # Twelfth cell: a pre-existing, sharply tuned reward-place cell at a fixed
+    # location. It has a small baseline gain, then becomes active during the
+    # sparse window. Use a phase-specific RNG stream so upstream changes do not
+    # silently alter the illustrative spike train while retaining seed-to-seed
+    # variability in the pooled summary.
+    w0 = bnd[PhaseBoundary.RECOVERY3_END]
+    w1 = bnd[PhaseBoundary.SPARSE_REWARD_END]
+    reward_cell_center = np.array([params.reward_position], dtype=float)
+    reward_cell_scale = (
+        params.reward_cell_peak_rate * np.sqrt(2.0 * np.pi) * params.reward_cell_width
+    )
+    reward_rng = np.random.default_rng(np.random.SeedSequence([base_seed, 12]))
+    reward_cell_spikes = np.zeros((x_true.shape[0], 1), dtype=spikes.dtype)
+    reward_cell_spikes[:w0, 0] = simulate_spikes_position_tuned(
+        x_true[:w0],
+        reward_cell_center,
+        params.reward_cell_width,
+        reward_cell_scale * params.reward_cell_baseline_gain,
+        reward_rng,
+    )[:, 0]
+    reward_cell_spikes[w0:w1, 0] = simulate_spikes_position_tuned(
+        x_true[w0:w1],
+        reward_cell_center,
+        params.reward_cell_width,
+        reward_cell_scale,
+        reward_rng,
+    )[:, 0]
+    spikes = np.hstack([spikes, reward_cell_spikes])  # (n_time, n_normal_cells + 1)
+
+    # Per-cell decoder rate tables. The decoder knows the reward cell's small
+    # baseline gain and the low-activity regime; the final phase therefore
+    # tests metric behavior under a consistent model rather than creating an
+    # impossible observation.
+    normal_rates = placefield_rates(xs, pf_centers, params.pf_width, params.rate_scale)
+    reward_cell_rates = placefield_rates(
         xs,
-        get_remapped_pf_centers(pf_centers, params.remap_from_to, active=True),
-        params.pf_width,
-        params.rate_scale,
+        reward_cell_center,
+        params.reward_cell_width,
+        reward_cell_scale,
+    )
+    baseline_reward_rates = params.reward_cell_baseline_gain * reward_cell_rates
+    base_rates = np.hstack([normal_rates, baseline_reward_rates])
+    sparse_rates = np.hstack([params.sparse_ensemble_rate_scale * normal_rates, reward_cell_rates])
+
+    # Remap and the sparse observation regime share one schedule:
+    # - Remap: the posterior update uses randomly scrambled place-field
+    #   centers (``decoder_rates``); its diagnostics use that same likelihood,
+    #   so the misfit surfaces from the scramble's spatial incoherence, not
+    #   from any reference to the true fields.
+    # - Sparse reward cell: the transition remains unchanged; the decoder uses
+    #   the correctly scaled quiet ensemble and active reward-cell rates.
+    remapped_rates = np.hstack(
+        [
+            placefield_rates(
+                xs,
+                get_remapped_pf_centers(pf_centers, params.remap_from_to, active=True),
+                params.pf_width,
+                params.rate_scale,
+            ),
+            baseline_reward_rates,
+        ]
     )
     misfit_schedule = MisfitSchedule(
         (
@@ -291,9 +420,9 @@ def run_figure03_simulation(
                 decoder_rates=remapped_rates,
             ),
             MisfitWindow(
-                bnd[PhaseBoundary.RECOVERY3_END],
-                bnd[PhaseBoundary.WIDE_DYNAMICS_END],
-                transition_matrix=transition_matrix_inflated,
+                w0,
+                w1,
+                decoder_rates=sparse_rates,
             ),
         )
     )
@@ -306,6 +435,7 @@ def run_figure03_simulation(
         pf_width=params.pf_width,
         rate_scale=params.rate_scale,
         misfit_schedule=misfit_schedule,
+        base_rates=base_rates,
     )
 
     boundaries = np.cumsum([len(p_x) for p_x, _ in phases]).tolist()
@@ -318,6 +448,7 @@ def run_figure03_simulation(
         metrics=metrics,
         phase_labels=tuple(phase_labels),
         phase_boundaries=tuple(boundaries),
+        reward_cell_center=float(reward_cell_center[0]),
     )
 
 

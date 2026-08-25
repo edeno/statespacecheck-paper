@@ -62,7 +62,7 @@ statespacecheck-paper/
 
 - **generate_figure01.py**: Figure 1 orchestration - schematic and distributions
 - **generate_figure02.py**: Figure 2 orchestration - diagnostic demonstrations (per-panel renderers live in `figure02_panels.py`)
-- **generate_figure03.py**: Figure 3 orchestration - per-cell diagnostics across an 8-phase simulation (4 misfit scenarios separated by clean-recovery windows): remap, history-dependent firing, drift, and wide-dynamics noise. The scenarios are chosen to span the metric-disagreement space - e.g. wide-dynamics noise inflates KL while HPD overlap and the rank-based p-value stay near baseline, and history-dependent firing is largely missed by all three per-spike spatial diagnostics. Figure 3 has two panels: a time-series block and a per-phase summary heatmap.
+- **generate_figure03.py**: Figure 3 orchestration - per-cell diagnostics across an 8-phase simulation (3 misfit scenarios plus two specificity controls - a replay event and a sparse reward-cell epoch - separated by clean-recovery windows): remap, history-dependent firing, drift, plus replay and sparse reward-site activity. The scenarios are chosen to span the metric-disagreement space - e.g. an intermittent, narrow reward-place cell can elevate KL while HPD overlap and the rank-based p-value stay near baseline, and history-dependent firing is largely missed by all three per-spike spatial diagnostics. Figure 3 has two panels: a time-series block and a per-phase summary heatmap.
 - **generate_all_figures.py**: Master script to generate all figures
 
 ## Repository Structure

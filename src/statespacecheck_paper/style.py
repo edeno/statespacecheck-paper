@@ -137,10 +137,13 @@ COLORS: dict[str, str] = {
     # Drift misfit — persistent-velocity trajectory vs. memoryless decoder.
     "phase_drift": "#D6E8FF",  # Light blue (from WONG[5])
     #
-    # Wide-dynamics-noise misfit — decoder uses an inflated transition matrix;
-    # engineered to inflate KL while HPD overlap and the rank-based p-value
-    # stay near baseline (the KL false-positive case).
-    "phase_wide_dynamics": "#E8E1F2",  # Light purple (from WONG[7])
+    # Sparse reward-cell control — quiet ensemble plus intermittent firing
+    # from a narrow reward-site cell.
+    "phase_sparse_reward": "#E8E1F2",  # Light purple (from WONG[7])
+    #
+    # Replay event (in clean-recovery 2) — immobile animal, decoded
+    # trajectory sweeps the track; not a misspecification.
+    "phase_replay": "#009E73",  # Vivid green (WONG[3]); marks the replay band
     #
     # -------------------------------------------------------------------------
     # Heatmap Colormaps

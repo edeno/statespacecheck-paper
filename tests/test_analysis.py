@@ -692,22 +692,26 @@ class TestSummaryFlagFractions:
         cols = summary_phase_windows(self._params())
         assert [c.label for c in cols] == [
             "Well-\nspecified",
+            "Replay",
             "Remap",
             "History-\ndep.",
             "Drift",
-            "Wide dyn.\nnoise",
+            "Sparse reward\ncell",
         ]
         assert [c.component for c in cols] == [
+            "—",
             "—",
             "Observation",
             "Observation",
             "Transition",
-            "Transition",
+            "—",
         ]
-        # Well-specified concatenates the three clean-recovery windows.
-        assert cols[0].slices == ((10, 14), (18, 22), (26, 30))
-        assert cols[1].slices == ((6, 10),)
-        assert cols[4].slices == ((30, 32),)
+        # Well-specified concatenates the clean-recovery windows, with the
+        # replay sub-window (19, 21) carved out of clean-recovery 2 (18, 22).
+        assert cols[0].slices == ((10, 14), (18, 19), (21, 22), (26, 30))
+        assert cols[1].slices == ((19, 21),)  # Replay
+        assert cols[2].slices == ((6, 10),)  # Remap
+        assert cols[5].slices == ((30, 32),)  # Sparse reward cell
 
     @pytest.mark.parametrize(
         ("direction", "expected"),
@@ -731,9 +735,10 @@ class TestSummaryFlagFractions:
         their thresholds must be 0% everywhere.
 
         Row order follows ``SUMMARY_FLAG_METRICS``: HPD (0), spike-prob (1),
-        KL (2)."""
+        KL (2). Column order: well-specified (0), replay (1), remap (2),
+        history (3), drift (4), sparse reward (5)."""
         params = self._params()
-        n_time = params.phase_boundaries[PhaseBoundary.WIDE_DYNAMICS_END]
+        n_time = params.phase_boundaries[PhaseBoundary.SPARSE_REWARD_END]
         n_cells = 1
         kl = np.zeros((n_time, n_cells))
         kl[6:10] = 10.0  # high only inside the remap window [6, 10)
@@ -746,10 +751,10 @@ class TestSummaryFlagFractions:
         windows = summary_phase_windows(params)
         frac = compute_phase_flag_fractions(metrics, thresholds, windows)
 
-        assert frac.shape == (3, 5)
-        # KL row (index 2): only the remap column (index 1) flags.
-        assert frac[2, 1] == pytest.approx(100.0)
-        assert np.allclose(np.delete(frac[2], 1), 0.0)
+        assert frac.shape == (3, 6)
+        # KL row (index 2): only the remap column (index 2) flags.
+        assert frac[2, 2] == pytest.approx(100.0)
+        assert np.allclose(np.delete(frac[2], 2), 0.0)
         # HPD (0) and spike-prob (1) rows never cross their thresholds.
         assert np.allclose(frac[0], 0.0)
         assert np.allclose(frac[1], 0.0)
@@ -758,7 +763,7 @@ class TestSummaryFlagFractions:
         """``extract_phase_flag_values`` strips NaNs, and the two-step
         extract→flag path agrees with the one-shot wrapper."""
         params = self._params()
-        n_time = params.phase_boundaries[PhaseBoundary.WIDE_DYNAMICS_END]
+        n_time = params.phase_boundaries[PhaseBoundary.SPARSE_REWARD_END]
         rng = np.random.default_rng(0)
         kl = rng.uniform(0.0, 10.0, (n_time, 2))
         kl[::3] = np.nan  # "no spike" entries
@@ -1340,7 +1345,7 @@ class TestDecodeParamsPhaseBoundaries:
             (PhaseBoundary.RECOVERY2_END, 4),
             (PhaseBoundary.DRIFT_END, 5),
             (PhaseBoundary.RECOVERY3_END, 6),
-            (PhaseBoundary.WIDE_DYNAMICS_END, 7),
+            (PhaseBoundary.SPARSE_REWARD_END, 7),
         ],
     )
     def test_phase_boundary_enum_indexes_into_tuple(
@@ -1349,6 +1354,26 @@ class TestDecodeParamsPhaseBoundaries:
         boundaries = (100, 200, 300, 400, 500, 600, 700, 800)
         params = DecodeParams(phase_boundaries=boundaries)
         assert params.phase_boundaries[member] == boundaries[index]
+
+    @pytest.mark.parametrize(
+        ("kwargs", "match"),
+        [
+            ({"reward_position": -1.0}, "reward_position"),
+            ({"reward_approach_steps": -1}, "reward_approach_steps"),
+            ({"sparse_ensemble_rate_scale": 1.1}, "sparse_ensemble_rate_scale"),
+            ({"reward_cell_width": 0.0}, "reward_cell_width"),
+            ({"reward_cell_width": np.nan}, "reward_cell_width"),
+            ({"reward_cell_peak_rate": 0.0}, "reward_cell_peak_rate"),
+            ({"reward_cell_baseline_gain": -0.1}, "reward_cell_baseline_gain"),
+        ],
+    )
+    def test_sparse_reward_parameters_reject_invalid_values(
+        self,
+        kwargs: dict[str, float | int],
+        match: str,
+    ) -> None:
+        with pytest.raises(ValueError, match=match):
+            DecodeParams(**kwargs)
 
 
 class TestMisfitWindowTightening:
