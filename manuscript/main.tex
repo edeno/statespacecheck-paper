@@ -149,12 +149,19 @@ The HPD overlap compares two distributions of the state: one based on the accumu
 
 Predictive checks for spiking data can be challenging to implement, since within sufficiently short intervals, a spike is typically less probable than no spike. One possible approach is to consider spike patterns over longer fixed intervals in which multiple spikes are expected. Here, we take a simpler approach of focusing only on spike times and measuring the likelihood that an observed spike comes from a particular neuron (for spike-sorted models) or has a particular set of waveform features (for clusterless models).
 
-In particular, let $y_{k,j}$ be the identity of the neuron (spike-sorted model) or a spike waveform feature (clusterless model) for the $j$th spike occurring in the $k$th time bin. We define the predictive distribution of the observation based on the state model as
+In particular, let $S_{k,j}=1$ indicate that the $j$th spike in the $k$th time bin occurred, and let $y_{k,j}$ denote its mark: the identity of the neuron for a spike-sorted model or a waveform feature for a clusterless model. Because the analysis is conditioned on a spike event, the relevant observation distribution is the distribution of its mark given that a spike occurred. For a spike-sorted model with conditional intensity $\lambda_c(x_k)$ for neuron $c$, this distribution is
+\begin{equation}
+    \label{eq:conditional_cell_identity}
+    q_c(x_k)
+    = p(y_{k,j}=c \mid x_k, S_{k,j}=1)
+    = \frac{\lambda_c(x_k)}{\sum_{d=1}^{C} \lambda_d(x_k)}.
+\end{equation}
+The corresponding clusterless quantity is the conditional density of the waveform mark given a spike. We define the predictive distribution of the mark based on the state model as
 \begin{equation}
     \label{eq:fpred}
-    f_{\mathrm{pred}}(y_{k,j}) = \int p(y_{k,j} \mid x_k) \, p(x_k \mid y_{1:k-1}) \, dx_k,
+    f_{\mathrm{pred}}(y_{k,j}) = \int p(y_{k,j} \mid x_k, S_{k,j}=1) \, p(x_k \mid y_{1:k-1}) \, dx_k,
 \end{equation}
-where $p(y_{k,j} \mid x_k)$ is the observation process and $p(x_k \mid y_{1:k-1})$ is the one-step prediction distribution of the current state given all previous spikes. We can sample new observations $\widetilde{y}_{k,j}$ from this predictive distribution, and compute the probability that the observed spike is at least as likely as the sampled spike:
+where $p(y_{k,j} \mid x_k, S_{k,j}=1)$ is the conditional mark distribution (Eq.~\eqref{eq:conditional_cell_identity} for spike-sorted data) and $p(x_k \mid y_{1:k-1})$ is the one-step prediction distribution of the current state given all previous spikes. We can sample new observations $\widetilde{y}_{k,j}$ from this predictive distribution, and compute the probability that the observed spike is at least as likely as the sampled spike:
 \begin{equation}
     \label{eq:predictive_application}
     p_{k,j} = \Pr_{\widetilde{y}_{k,j} \sim f_{\mathrm{pred}}}\!\left( \log f_{\mathrm{pred}}(y_{k,j}) \geq \log f_{\mathrm{pred}}(\widetilde{y}_{k,j}) \right).
