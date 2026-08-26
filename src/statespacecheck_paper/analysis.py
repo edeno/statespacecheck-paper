@@ -867,6 +867,11 @@ def normalized_single_spike_likelihood(
     of the simulation and real-data figures. Sharing this definition keeps the
     plotted likelihood identical to the one the diagnostics consume.
 
+    A row whose rate is effectively zero at every position (a cell that is
+    silent over the whole grid) carries no positional information; it is
+    returned as a uniform distribution rather than the sub-normalized row a
+    divide-by-near-zero would produce, so every row sums to exactly 1.
+
     Parameters
     ----------
     rates : np.ndarray, shape (..., n_bins)
@@ -876,9 +881,14 @@ def normalized_single_spike_likelihood(
     Returns
     -------
     likelihood : np.ndarray, shape (..., n_bins)
-        Normalized single-spike likelihood over position.
+        Normalized single-spike likelihood over position; each row sums to 1.
     """
-    return normalize(poisson.pmf(k=1, mu=rates), axis=-1)
+    pmf = poisson.pmf(k=1, mu=rates)
+    row_sums = pmf.sum(axis=-1, keepdims=True)
+    n_bins = pmf.shape[-1]
+    degenerate = row_sums <= 1e-12
+    safe_sums = np.where(degenerate, 1.0, row_sums)
+    return np.where(degenerate, 1.0 / n_bins, pmf / safe_sums)
 
 
 def likelihood_grid_for_counts(

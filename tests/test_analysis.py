@@ -1676,3 +1676,30 @@ class TestLogSpaceReferenceComparison:
 
         result = decoder_inputs.call(transition_matrix=transition)
         np.testing.assert_allclose(result.posterior, ref_post, rtol=1e-10, atol=1e-12)
+
+
+class TestNormalizedSingleSpikeLikelihood:
+    def test_matches_normalized_poisson_and_rows_sum_to_one(self) -> None:
+        from scipy.stats import poisson
+
+        from statespacecheck_paper.analysis import normalized_single_spike_likelihood
+
+        rates = np.array([[2.0, 0.5, 1.0], [0.1, 0.4, 0.2]])
+        out = normalized_single_spike_likelihood(rates)
+
+        pmf = poisson.pmf(k=1, mu=rates)
+        expected = pmf / pmf.sum(axis=-1, keepdims=True)
+        np.testing.assert_allclose(out, expected)
+        np.testing.assert_allclose(out.sum(axis=-1), 1.0)
+
+    def test_degenerate_zero_rate_row_is_uniform(self) -> None:
+        from statespacecheck_paper.analysis import normalized_single_spike_likelihood
+
+        rates = np.array([[2.0, 0.5, 1.0], [0.0, 0.0, 0.0]])
+        out = normalized_single_spike_likelihood(rates)
+
+        # The all-zero-rate row carries no positional information -> uniform,
+        # and still sums to exactly 1 (not the sub-normalized near-zero row a
+        # raw divide would give).
+        np.testing.assert_allclose(out[1], np.full(3, 1.0 / 3.0))
+        np.testing.assert_allclose(out.sum(axis=-1), 1.0)
