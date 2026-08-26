@@ -1061,9 +1061,9 @@ def compute_flag_confusion(
     threshold : float
         Flag threshold applied to the raw per-spike diagnostic.
     worse_when : {"below", "above"}
-        Whether values below or above ``threshold`` indicate worse fit (i.e.
-        a flag). HPD overlap and the predictive p-value use ``"below"``; the
-        KL divergence uses ``"above"``.
+        Whether values at or below, or at or above, ``threshold`` indicate
+        worse fit (i.e. a flag). HPD overlap and the predictive p-value use
+        ``"below"``; the KL divergence uses ``"above"``.
 
     Returns
     -------
@@ -1091,9 +1091,9 @@ def compute_flag_confusion(
     finite = np.isfinite(a) & np.isfinite(b)
     a, b = a[finite], b[finite]
     if worse_when == "below":
-        flag_a, flag_b = a < threshold, b < threshold
+        flag_a, flag_b = a <= threshold, b <= threshold
     else:
-        flag_a, flag_b = a > threshold, b > threshold
+        flag_a, flag_b = a >= threshold, b >= threshold
 
     return FlagConfusion(
         metric=metric,

@@ -698,6 +698,17 @@ class TestComputeFlagConfusion:
         assert (conf.both, conf.a_only, conf.b_only, conf.neither) == (1, 1, 1, 1)
         assert conf.rescue_rate == pytest.approx(0.5)
 
+    def test_threshold_values_are_inclusive(self) -> None:
+        hpd_a = _diag_from_events(hpd=np.array([0.05, 0.10]))
+        hpd_b = _diag_from_events(hpd=np.array([0.10, 0.05]))
+        hpd_conf = compute_flag_confusion(hpd_a, hpd_b, "hpd_overlap", 0.05, worse_when="below")
+        assert (hpd_conf.a_only, hpd_conf.b_only) == (1, 1)
+
+        kl_a = _diag_from_events(kl=np.array([4.0, 3.0]))
+        kl_b = _diag_from_events(kl=np.array([3.0, 4.0]))
+        kl_conf = compute_flag_confusion(kl_a, kl_b, "kl_divergence", 4.0, worse_when="above")
+        assert (kl_conf.a_only, kl_conf.b_only) == (1, 1)
+
     def test_nan_events_are_dropped(self) -> None:
         a = _diag_from_events(hpd=np.array([0.01, np.nan, 0.02]))
         b = _diag_from_events(hpd=np.array([0.20, 0.01, 0.02]))
@@ -706,7 +717,7 @@ class TestComputeFlagConfusion:
         assert (conf.n, conf.both, conf.a_only, conf.b_only, conf.neither) == (2, 1, 1, 0, 0)
 
     def test_rescue_rate_nan_when_a_flags_nothing(self) -> None:
-        a = _diag_from_events(hpd=np.array([0.5, 0.6]))  # none below 0.05
+        a = _diag_from_events(hpd=np.array([0.5, 0.6]))  # none at or below 0.05
         b = _diag_from_events(hpd=np.array([0.01, 0.6]))
         conf = compute_flag_confusion(a, b, "hpd_overlap", 0.05, worse_when="below")
         assert conf.a_only == 0 and conf.both == 0
