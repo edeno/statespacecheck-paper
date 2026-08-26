@@ -399,6 +399,32 @@ class TestMeanPerSpikeLikelihoodByTime:
         np.testing.assert_allclose(mean_lik[0], expected)
         assert not np.allclose(mean_lik[0], place_fields[0] / place_fields[0].sum())
 
+    def test_matches_diagnostics_per_spike_likelihood(self) -> None:
+        # Parity across the two entry points that both claim to plot/consume
+        # the same per-spike likelihood: the plotting helper (place fields,
+        # (n_cells, n_bins)) and the diagnostics (rates, (n_bins, n_cells)).
+        from statespacecheck_paper.analysis import (
+            compute_per_cell_diagnostics_from_rates,
+        )
+        from statespacecheck_paper.real_data_analysis import (
+            mean_per_spike_likelihood_by_time,
+        )
+
+        place_fields = np.array([[2.0, 0.5, 1.0], [0.1, 0.4, 0.3]])  # (n_cells, n_bins)
+        spike_counts = np.array([[0, 1]], dtype=np.int64)  # one spike from cell 1 at t=0
+        mean_lik, _ = mean_per_spike_likelihood_by_time(spike_counts, place_fields)
+
+        predictive = np.full((1, 3), 1.0 / 3.0)
+        diag = compute_per_cell_diagnostics_from_rates(
+            predictive,
+            place_fields.T,
+            np.array([0], dtype=np.intp),
+            np.array([1], dtype=np.intp),
+            include_dense_matrices=True,
+        )
+        assert diag.per_spike_likelihood is not None
+        np.testing.assert_allclose(mean_lik[0], diag.per_spike_likelihood[0])
+
 
 # ---------------------------------------------------------------------------
 # position-marginal model diagnostics
@@ -495,6 +521,27 @@ class TestComputeModelDiagnostics:
         model.is_track_interior_state_bins_ = np.ones(6, dtype=bool)
 
         with pytest.raises(ValueError, match="likelihood differs"):
+            extract_shared_position_place_fields(model)
+
+    def test_rejects_state_dependent_interior_mask(self) -> None:
+        # Same place fields and grid across states, but the track-interior
+        # mask differs per state -> the shared position marginal is ill-defined
+        # and must be rejected rather than silently reshaped into a wrong mask.
+        position_bins = np.array([0.0, 1.0, 2.0])
+        place_fields = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+        model = MagicMock()
+        model.observation_models = [
+            MagicMock(environment_name="", encoding_group=0),
+            MagicMock(environment_name="", encoding_group=0),
+        ]
+        model.encoding_model_ = {("", 0): {"place_fields": place_fields}}
+        environment = MagicMock()
+        environment.place_bin_centers_ = position_bins[:, np.newaxis]
+        model.environments = [environment]
+        # State 0 interior [T, F, T]; state 1 interior [T, T, F] -> differ.
+        model.is_track_interior_state_bins_ = np.array([True, False, True, True, True, False])
+
+        with pytest.raises(ValueError, match="interior mask differs"):
             extract_shared_position_place_fields(model)
 
 

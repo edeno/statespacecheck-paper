@@ -763,7 +763,16 @@ def get_state_marginalized_posterior(
                 "duplicate (state, position) entries) and cannot be "
                 f"marginalized. Underlying error: {e}"
             ) from e
-        marginalized = unstacked.sum("state") if "state" in unstacked.dims else unstacked
+        # ``skipna=False``: if the per-state interior masks differed, unstack
+        # would back-fill missing (state, position) cells with NaN, and a
+        # skipna sum would silently produce an asymmetric marginal that still
+        # looks like a distribution. Callers pair this with
+        # ``extract_shared_position_place_fields`` (which rejects state-varying
+        # masks), but this keeps the marginal honest even without that guard.
+        if "state" in unstacked.dims:
+            marginalized = unstacked.sum("state", skipna=False)
+        else:
+            marginalized = unstacked
         posterior: NDArray[np.float64] = np.asarray(marginalized.values)
     else:
         # Single-state model: no states to sum over.

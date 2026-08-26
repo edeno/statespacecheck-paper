@@ -867,28 +867,32 @@ def normalized_single_spike_likelihood(
     of the simulation and real-data figures. Sharing this definition keeps the
     plotted likelihood identical to the one the diagnostics consume.
 
-    A row whose rate is effectively zero at every position (a cell that is
-    silent over the whole grid) carries no positional information; it is
-    returned as a uniform distribution rather than the sub-normalized row a
-    divide-by-near-zero would produce, so every row sums to exactly 1.
+    Normalization is done in log space (``poisson.logpmf`` + ``logsumexp``) so
+    that rows with tiny but nonzero rates keep their correct shape: e.g. rates
+    ``[1e-20, 2e-20, 4e-20]`` normalize to ``[1/7, 2/7, 4/7]`` rather than
+    collapsing to uniform. A row is treated as degenerate only when the rate is
+    zero at *every* position (``logpmf`` all ``-inf``); such a row carries no
+    positional information and is returned uniform, so every row sums to 1.
 
     Parameters
     ----------
     rates : np.ndarray, shape (..., n_bins)
-        Position-dependent firing rate (expected spikes per bin) for one or
-        more spikes/cells. Normalization is over the last axis.
+        Position-dependent expected spike count per bin (Poisson ``mu``) for
+        one or more spikes/cells. Normalization is over the last axis.
 
     Returns
     -------
     likelihood : np.ndarray, shape (..., n_bins)
         Normalized single-spike likelihood over position; each row sums to 1.
     """
-    pmf = poisson.pmf(k=1, mu=rates)
-    row_sums = pmf.sum(axis=-1, keepdims=True)
-    n_bins = pmf.shape[-1]
-    degenerate = row_sums <= 1e-12
-    safe_sums = np.where(degenerate, 1.0, row_sums)
-    return np.where(degenerate, 1.0 / n_bins, pmf / safe_sums)
+    logpmf = poisson.logpmf(k=1, mu=rates)
+    log_norm = logsumexp(logpmf, axis=-1, keepdims=True)
+    # ``log_norm`` is ``-inf`` only when every bin's rate is exactly zero.
+    degenerate = np.isneginf(log_norm)
+    n_bins = logpmf.shape[-1]
+    safe_log_norm = np.where(degenerate, 0.0, log_norm)
+    likelihood = np.exp(logpmf - safe_log_norm)
+    return np.where(degenerate, 1.0 / n_bins, likelihood)
 
 
 def likelihood_grid_for_counts(
@@ -1464,9 +1468,11 @@ def compute_per_cell_diagnostics_from_rates(
         # warning and produce a non-discriminative near-zero row in
         # ``cell_fraction_per_bin``. Use a uniform ``1/n_cells`` fallback
         # so the rank statistic (and therefore ``event_spike_prob``)
-        # treats those bins as non-informative. Note this branch does
-        # not protect ``event_hpd_overlap`` / ``event_kl_divergence``,
-        # which consume the per-cell Poisson ``lik_chunk`` directly.
+        # treats those bins as non-informative. This fallback is specific to
+        # the rank statistic; ``event_hpd_overlap`` / ``event_kl_divergence``
+        # consume ``lik_chunk``, whose normalization is handled by
+        # ``normalized_single_spike_likelihood`` (uniform only when a cell's
+        # rate is zero at every position).
         row_sums = rates.sum(axis=1, keepdims=True)
         zero_rows = row_sums.squeeze(-1) <= 1e-12
         safe_row_sums = np.where(row_sums > 1e-12, row_sums, 1.0)

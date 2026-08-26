@@ -424,9 +424,10 @@ def plot_misfit_examples(
 ) -> Figure:
     """Plot examples of high misfit moments for each scenario.
 
-    Finds an illustrative time point in each non-baseline phase and shows the
-    distributions. Also includes a baseline example with good fit. Shows five
-    columns: baseline, three misfit types, and the sparse-population control.
+    Finds the worst-fit spiking time point (lowest mean HPD overlap) in each
+    non-baseline phase and shows the distributions. Also includes a baseline
+    example with good fit. Shows five columns: baseline, three misfit types,
+    and the sparse-population control.
 
     Parameters
     ----------

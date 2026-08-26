@@ -1703,3 +1703,15 @@ class TestNormalizedSingleSpikeLikelihood:
         # raw divide would give).
         np.testing.assert_allclose(out[1], np.full(3, 1.0 / 3.0))
         np.testing.assert_allclose(out.sum(axis=-1), 1.0)
+
+    def test_tiny_but_informative_rates_keep_their_shape(self) -> None:
+        from statespacecheck_paper.analysis import normalized_single_spike_likelihood
+
+        # Rates far below any absolute threshold still have a well-defined
+        # shape: they must normalize to their ratio, not collapse to uniform.
+        rates = np.array([[1e-20, 2e-20, 4e-20]])
+        out = normalized_single_spike_likelihood(rates)
+
+        expected = np.array([1.0, 2.0, 4.0]) / 7.0
+        np.testing.assert_allclose(out[0], expected, rtol=1e-6)
+        assert not np.allclose(out[0], np.full(3, 1.0 / 3.0))

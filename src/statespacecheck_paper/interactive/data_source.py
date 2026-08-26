@@ -449,8 +449,11 @@ class DecoderDataSource:
         """Return the likelihood curve associated with one event.
 
         Simulation caches store the exact event likelihood so windows with
-        time-varying decoder rates remain faithful. Older and real-data
-        caches fall back to the firing cell's static place field.
+        time-varying decoder rates remain faithful. Older and real-data caches
+        fall back to the firing cell's static place field, normalized into the
+        same single-spike ``Poisson(k=1, mu=rate)`` likelihood the diagnostics
+        use (a raw place field would differ by the ``exp(-rate)`` factor and
+        peak-normalization in the viewer would not remove it).
         """
         if not 0 <= event_idx < len(self.events):
             raise IndexError(f"event_idx {event_idx} out of range [0, {len(self.events)})")
@@ -458,7 +461,12 @@ class DecoderDataSource:
             raise IndexError(f"cell_id {cell_id} out of range [0, {self.n_cells})")
         if self.event_likelihood is not None:
             return np.asarray(self.event_likelihood[event_idx], dtype=np.float32)
-        return np.asarray(self.place_fields[cell_id], dtype=np.float32)
+        from statespacecheck_paper.analysis import normalized_single_spike_likelihood
+
+        likelihood = normalized_single_spike_likelihood(
+            np.asarray(self.place_fields[cell_id], dtype=np.float64)
+        )
+        return np.asarray(likelihood, dtype=np.float32)
 
     # ------------------------------------------------------------------
     # Hot-path readers
