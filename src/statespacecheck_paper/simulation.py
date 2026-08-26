@@ -284,7 +284,7 @@ def predictive_mark_probabilities(
     prior: NDArray[np.floating],
     mark_intensities: NDArray[np.floating],
 ) -> NDArray[np.floating]:
-    """Compute the predictive mark distribution conditional on an event.
+    """Compute the predictive mark distribution for a randomly selected event.
 
     Raw mark intensities are first averaged over the predictive state
     distribution and the resulting expected intensities are then normalized
@@ -308,7 +308,7 @@ def predictive_mark_probabilities(
     Returns
     -------
     mark_probabilities : np.ndarray, shape (n_marks,) or (n_time, n_marks)
-        Predictive mark probabilities conditional on an event. If the total
+        Predictive mark probabilities for a randomly selected event. If the total
         predictive event intensity is exactly zero, the conditional mark
         distribution is undefined; by convention this function returns a
         uniform distribution for that row.

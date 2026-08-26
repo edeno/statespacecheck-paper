@@ -210,7 +210,7 @@ class TestSpikeProbRank:
 
     def test_integrates_raw_intensities_before_normalizing(self) -> None:
         """Population intensity varies by state, so averaging conditional
-        cell fractions would give [0.7, 0.3]. The event-conditioned
+        cell fractions would give [0.7, 0.3]. The event-weighted
         predictive distribution must instead be [5/6, 1/6].
         """
         prior = np.array([0.5, 0.5])

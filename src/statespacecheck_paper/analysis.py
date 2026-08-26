@@ -1430,7 +1430,7 @@ def compute_per_cell_diagnostics_from_rates(
     observed spike contributes one event to the returned event arrays.
 
     The predictive cell distribution used by ``event_spike_prob`` is
-    event-conditioned: raw cell intensities are averaged over the predictive
+    event-weighted: raw cell intensities are averaged over the predictive
     state distribution and the resulting expected intensities are normalized
     across cells. Normalizing across cells at each state before averaging would
     omit the state-dependent total event intensity.

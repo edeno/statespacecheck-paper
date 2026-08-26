@@ -84,9 +84,10 @@ def create_shared_example(rng: np.random.Generator) -> dict[str, Any]:
 
     # Simulate the reference distribution per the predictive-check
     # definition in eq:fpred / eq:predictive_application. This schematic
-    # assumes constant total event intensity, so the event-conditioned state
+    # assumes constant total event intensity, so the event-weighted state
     # distribution equals ``predictive``:
-    # 1. Sample state x_s ~ predictive(x) = predictive(x | event).
+    # 1. Sample state x_s from the event-weighted distribution, which here
+    #    equals predictive(x).
     # 2. Sample observation y_tilde ~ p(y | x_s) = N(x_s, like_std^2).
     # 3. Compute log f_pred(y_tilde) = log integral predictive(x) * p(y_tilde | x) dx.
     simulated_log_pred_values = np.zeros(n_mc_samples)
