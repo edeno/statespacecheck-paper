@@ -124,7 +124,7 @@ In the analyses here, ``local'' refers to evaluating the diagnostic at an indivi
 \subsection*{Local goodness-of-fit measures}\label{sec:metrics}
 In this section, we introduce three classes of metrics designed to characterize the local goodness-of-fit of the state-space model.
 
-All three metrics are evaluated at the level of individual spike events. Let $S_{k,j}=1$ indicate that the $j$th spike in time bin $k$ occurred, and let $y_{k,j}$ denote the mark of that event: the neuron identity for a spike-sorted model or the waveform features for a clusterless model. For the spike-sorted models analyzed here, HPD overlap and KL divergence compare the one-step predictive density
+All three metrics are evaluated at the level of individual spike events. Let $y_{k,j}$ denote the mark of the $j$th spike event in time bin $k$: the neuron identity for a spike-sorted model or the waveform features for a clusterless model. For the spike-sorted models analyzed here, HPD overlap and KL divergence compare the one-step predictive density
 \begin{equation*}
     P_k(x_k) = p(x_k \mid y_{1:k-1})
 \end{equation*}
@@ -156,20 +156,20 @@ The HPD overlap compares two distributions of the state: one based on the accumu
 
 Predictive checks for spiking data can be challenging to implement, since within sufficiently short intervals, a spike is typically less probable than no spike. One possible approach is to consider spike patterns over longer fixed intervals in which multiple spikes are expected. Here, we take a simpler approach of focusing only on spike times and measuring the likelihood that an observed spike comes from a particular neuron (for spike-sorted models) or has a particular set of waveform features (for clusterless models).
 
-Using the event notation introduced above, the relevant observation distribution is the distribution of the spike's mark given that a spike occurred. For a spike-sorted model with expected bin count $\lambda_c(x_k)$ for neuron $c$, this distribution is
+Using the event notation introduced above, the relevant observation distribution is the distribution of the spike's mark for an event drawn from the model-implied marked point process. Because the diagnostic is evaluated once for each spike event, its predictive reference distribution corresponds to selecting an event rather than selecting a time bin that contains one or more events. For a spike-sorted model, let $\Lambda(x_k)=\sum_{d=1}^{C}\lambda_d(x_k)$ denote the total expected population count in the bin. Under the one-step predictive distribution $P_k$, the expected number of events associated with a state region $dx_k$ is proportional to $\Lambda(x_k)P_k(x_k)\,dx_k$. The latent state associated with a randomly selected predicted event therefore has the event-weighted distribution
 \begin{equation}
-    \label{eq:conditional_cell_identity}
-    \pi_c(x_k)
-    = p(y_{k,j}=c \mid x_k, S_{k,j}=1)
-    = \frac{\lambda_c(x_k)}{\sum_{d=1}^{C} \lambda_d(x_k)}.
-\end{equation}
-Let $\Lambda(x_k)=\sum_{d=1}^{C}\lambda_d(x_k)$ denote the total population intensity. At a known spike time, observing that a spike occurred also provides information about the latent state: states with higher total intensity are more likely to have generated the event. The appropriate state distribution for predicting its mark is therefore
-\begin{equation}
-    \label{eq:event_conditioned_predictive}
+    \label{eq:event_weighted_predictive}
     P_k^{\mathrm{event}}(x_k)
     = \frac{\Lambda(x_k)P_k(x_k)}{\int \Lambda(u)P_k(u)\,du}.
 \end{equation}
-Consequently, the predictive probability of cell identity is obtained by integrating the raw cell intensities over the one-step prediction distribution and then normalizing across cells:
+At states where $\Lambda(x_k)>0$, the probability that the event came from neuron $c$ is
+\begin{equation}
+    \label{eq:conditional_cell_identity}
+    \pi_c(x_k)
+    = \frac{\lambda_c(x_k)}{\Lambda(x_k)}.
+\end{equation}
+States where $\Lambda(x_k)=0$ receive zero mass under $P_k^{\mathrm{event}}$.
+Combining the event-weighted state distribution with the conditional cell-identity distribution gives the predictive probability of cell identity:
 \begin{equation}
     \label{eq:fpred_sorted}
     f_{\mathrm{pred}}(c)
@@ -177,9 +177,8 @@ Consequently, the predictive probability of cell identity is obtained by integra
     = \frac{\int \lambda_c(x_k)P_k(x_k)\,dx_k}
     {\sum_{d=1}^{C}\int \lambda_d(x_k)P_k(x_k)\,dx_k}.
 \end{equation}
-The order of these operations matters: averaging the state-conditional fractions $\pi_c(x_k)$ directly under $P_k$ is generally different and is equivalent only when $\Lambda(x_k)$ is constant over the support of $P_k$.
 
-For a clusterless model, let $\lambda(y,x_k)$ be the marked intensity density for waveform mark $y$, so that $\Lambda(x_k)=\int \lambda(v,x_k)\,dv$. The corresponding predictive mark density is
+For a clusterless model, let $\lambda(y,x_k)$ be the expected event count per bin and unit mark volume at waveform mark $y$, so that $\Lambda(x_k)=\int \lambda(v,x_k)\,dv$ is again the total expected event count in the bin. The corresponding predictive mark density is
 \begin{equation}
     \label{eq:fpred}
     f_{\mathrm{pred}}(y)
@@ -191,11 +190,19 @@ Equation~\eqref{eq:fpred_sorted} is the discrete spike-sorted form of Eq.~\eqref
     \label{eq:predictive_application}
     p_{k,j} = \Pr_{\widetilde{y}_{k,j} \sim f_{\mathrm{pred}}}\!\left( \log f_{\mathrm{pred}}(y_{k,j}) \geq \log f_{\mathrm{pred}}(\widetilde{y}_{k,j}) \right).
 \end{equation}
-For the spike-sorted models considered here, $\widetilde{y}_{k,j}$ takes one of a finite set of values---the identities of the recorded neurons. We therefore compute $p_{k,j}$ exactly by summing $f_{\mathrm{pred}}$ over all cell outcomes at least as unlikely as the observed spike; this exact calculation is used in this paper. The same probability could instead be approximated by Monte Carlo for a continuous or otherwise intractable mark space: draw $x_k$ from the event-conditioned distribution $P_k^{\mathrm{event}}$, draw a replicated mark conditional on that state and an event, and compute the fraction whose predictive density is less than or equal to that of the observed mark. Equivalently, one may simulate from the full state-dependent point process and retain the marks of generated events. Drawing states directly from $P_k$ and then conditioning the mark on an event would omit the total-intensity weighting in Eq.~\eqref{eq:event_conditioned_predictive}. Because $p_{k,j}$ ranks the observed spike against this predictive distribution of possible spikes, we refer to it as the \emph{rank-based predictive $p$-value}.
+For the spike-sorted models considered here, $\widetilde{y}_{k,j}$ takes one of a finite set of values---the identities of the recorded neurons. We compute Eq.~\eqref{eq:predictive_application} exactly as
+\begin{equation}
+    \label{eq:predictive_application_sorted}
+    p_{k,j}
+    = \sum_{\substack{c \in \{1,\ldots,C\}:\\
+        f_{\mathrm{pred}}(c) \leq f_{\mathrm{pred}}(y_{k,j})}}
+        f_{\mathrm{pred}}(c),
+\end{equation}
+which sums the predictive probabilities of all cell identities at least as unlikely as the observed identity. The same probability could instead be approximated by Monte Carlo for a continuous or otherwise intractable mark space: draw $x_k$ from the event-weighted distribution $P_k^{\mathrm{event}}$, draw a replicated mark conditional on that state and an event, and compute the fraction whose predictive density is less than or equal to that of the observed mark. Equivalently, one may simulate from the full state-dependent point process and retain the marks of generated events. Because $p_{k,j}$ ranks the observed spike against this predictive distribution of possible spikes, we refer to it as the \emph{rank-based predictive $p$-value}.
 
-Fig~\ref{fig:metrics}b illustrates the sampling interpretation of a predictive $p$-value. Values of the state are sampled from the event-conditioned predictive distribution (top), each of which is used to sample a mark that could accompany the event (middle). The predictive density of the observed mark is then ranked against the densities of the replicated marks (bottom). In the schematic, the total event intensity is constant, so the event-conditioned state distribution equals the one-step prediction distribution. Although this diagram shows the Monte Carlo construction, the spike-sorted results in this paper use the equivalent exact finite sum. High $p$-values suggest that the observed spike is consistent with the predictive distribution of spikes and a $p$-value near zero suggests that the observed spike is unexpected based on the predictive distribution computed from the past spiking and the model.
+Fig~\ref{fig:metrics}b illustrates the sampling interpretation of a predictive $p$-value. Values of the state are sampled from the event-weighted predictive distribution (top), each of which is used to sample a mark that could accompany the event (middle). The predictive density of the observed mark is then ranked against the densities of the replicated marks (bottom). In the schematic, the total expected event count is constant across state, so the event-weighted state distribution equals the one-step prediction distribution. Although this diagram shows the Monte Carlo construction, the spike-sorted results in this paper use the equivalent exact finite sum. High $p$-values suggest that the observed spike is consistent with the predictive distribution of spikes and a $p$-value near zero suggests that the observed spike is unexpected based on the predictive distribution computed from the past spiking and the model.
 
-While the HPD overlap ratio was explicitly designed to satisfy our definition of consistency between the predictive distribution and the rescaled likelihood in the state space, the predictive check inherits the same consistency property, even though it operates on the observations directly, through the marginalization in Eq.~\eqref{eq:fpred}. We expect to see large $p$-values when these distributions match, but also when either distribution is narrower than the other as long as they point to overlapping regions of the state space. In the common case that the predictive distribution of the state is narrow relative to the likelihood, the predictive distribution of observations will be concentrated on the spikes that occur at the confidently predicted location, and the observed spike will have appreciable likelihood at that location. The observed spike is among those that the model anticipates and should therefore lead to a high $p$-value. In the less common case that the likelihood is narrow relative to the predictive distribution of the state, the predictive distribution of the observations will also be broad and will assign appreciable probability to a wide range of spikes. The observed spike is likely to fall within this anticipated range, so the $p$-value should also be high. A low $p$-value should arise only when the observed spike is specifically unlikely relative to what the model anticipates, which corresponds to the likelihood concentrating in a region the accumulated past deems improbable.
+While the HPD overlap ratio explicitly assesses our definition of consistency in the state space, the predictive check probes a related notion in the observation space through the marginalization in Eq.~\eqref{eq:fpred}. When the observation model is sufficiently informative about the state, we expect large $p$-values when the predictive distribution and likelihood match, but also when either distribution is narrower than the other as long as they point to overlapping regions of the state space. This correspondence is not guaranteed: marginalization can map distinct state distributions to similar mark distributions, so a high predictive $p$-value does not by itself establish that the state distributions overlap. In the common case that the predictive distribution of the state is narrow relative to the likelihood, the predictive distribution of observations will be concentrated on the spikes that occur at the confidently predicted location, and the observed spike will have appreciable likelihood at that location. The observed spike is among those that the model anticipates and should therefore lead to a high $p$-value. In the less common case that the likelihood is narrow relative to the predictive distribution of the state, the predictive distribution of the observations will also be broad and will assign appreciable probability to a wide range of spikes. The observed spike is likely to fall within this anticipated range, so the $p$-value should also be high. A low $p$-value tends to arise when the observed spike is specifically unlikely relative to what the model anticipates, which corresponds to the likelihood concentrating in a region the accumulated past deems improbable.
 
 \subsubsection*{KL divergence}\label{sec:kl}
 
@@ -209,7 +216,7 @@ where $P_k$ and $Q_{k,j}$ are the distributions defined above. This definition m
 \begin{figure}[htbp]
     \centering
     \includegraphics[width=\textwidth]{figures/main/figure02.pdf}
-    \caption{Computation of the three local goodness-of-fit metrics. \textbf{(a)} For HPD overlap, high-density regions are computed for the predictive distribution (top) and the normalized one-spike likelihood (middle). The volume of their intersection is then divided by the volume of the smaller region (bottom). \textbf{(b)} The conceptual sampling construction for the predictive check: state values are sampled from the predictive distribution (top), and each sampled state is used to generate the identity of a neuron that could have produced the spike (middle). The metric is the probability that the log predictive probability of the observed spike is greater than or equal to that of a replicated spike (bottom); for the finite spike-sorted observation spaces analyzed here, this probability is evaluated exactly rather than by sampling. \textbf{(c)} The KL divergence compares the predictive distribution (blue) and the one-spike likelihood (orange) (top) by computing the difference in their log density (middle) and computing its expectation with respect to the predictive distribution (bottom).}
+    \caption{Computation of the three local goodness-of-fit metrics. \textbf{(a)} For HPD overlap, high-density regions are computed for the predictive distribution (top) and the normalized one-spike likelihood (middle). The volume of their intersection is then divided by the volume of the smaller region (bottom). \textbf{(b)} The conceptual sampling construction for the predictive check: state values are sampled from the event-weighted predictive distribution (top), and each sampled state is used to generate a mark that could accompany the event (middle). The total expected event count is constant across state in this schematic, so the event-weighted and ordinary one-step predictive distributions coincide. The metric is the probability that the log predictive density of the observed mark is greater than or equal to that of a replicated mark (bottom); for the finite spike-sorted observation spaces analyzed here, this probability is evaluated exactly rather than by sampling. \textbf{(c)} The KL divergence compares the predictive distribution (blue) and the one-spike likelihood (orange) (top) by computing the difference in their log density (middle) and computing its expectation with respect to the predictive distribution (bottom).}
     \label{fig:metrics}
 \end{figure}
 
