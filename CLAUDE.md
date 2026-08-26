@@ -32,7 +32,7 @@ statespacecheck-paper/
 │   └── generate_all_figures.py # Master script to generate all figures
 ├── manuscript/                  # LaTeX source files + bundled figures (Overleaf-ready)
 │   ├── main.tex                 # Self-contained (own inline preamble)
-│   ├── Local-GoF-Paper.bib      # Bibliography (BibTeX, from Zotero); built with plos2025.bst
+│   ├── Local-GoF-Paper.bib      # Bibliography (BibTeX, from Zotero); built with iopart-num.bst
 │   ├── README.md
 │   └── figures/                # Generated figure outputs
 │       ├── main/               # Main text figures (PDF + PNG)

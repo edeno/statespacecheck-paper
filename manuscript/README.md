@@ -6,7 +6,7 @@ This directory contains the LaTeX source files for the paper, optimized for bioR
 
 - **main.tex**: Main manuscript text (self-contained, with its own inline preamble)
 - **Local-GoF-Paper.bib**: Bibliography database (BibTeX, exported from Zotero/Better BibTeX)
-- **plos2025.bst**: numbered-Vancouver BibTeX style used by `main.tex`
+- Bibliography style: `iopart-num` (IOP numbered/Vancouver), used by `main.tex` via `\bibliographystyle{iopart-num}`. It ships with TeX Live / Overleaf, so it is not vendored in this directory.
 - **.latexmkrc**: Build configuration for latexmk
 - **Makefile**: Convenient build commands
 - **LICENSE**: Creative Commons Attribution 4.0 (CC BY 4.0) — covers the manuscript text and figures in this directory
@@ -48,9 +48,9 @@ latexmk -pvc main.tex
 ```bash
 cd manuscript
 
-# Build main manuscript (cite + BibTeX, plos2025.bst; main.tex is self-contained)
+# Build main manuscript (cite + BibTeX, iopart-num style; main.tex is self-contained)
 pdflatex main.tex
-bibtex main          # processes \bibliography with the plos2025 style
+bibtex main          # processes \bibliography with the iopart-num style
 pdflatex main.tex
 pdflatex main.tex
 ```
