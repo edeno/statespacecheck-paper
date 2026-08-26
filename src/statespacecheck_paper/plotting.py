@@ -182,7 +182,7 @@ def add_phase_boundaries(
 
 
 def compute_hpd_region(x: np.ndarray, pdf: np.ndarray, coverage: float = 0.95) -> np.ndarray:
-    """Compute highest posterior density region for given coverage.
+    """Compute highest probability-density region for given coverage.
 
     Parameters
     ----------
@@ -943,14 +943,14 @@ def _plot_figure3_predictive_row(
     predictive: NDArray[np.floating],
     x_true: NDArray[np.floating],
 ) -> None:
-    """Plot Figure 3's predictive row with a direct true-position label."""
+    """Plot Figure 3's predictive row with a direct physical-position label."""
     _plot_timeseries_heatmap(ax, predictive, x_true)
     ax.set_ylabel("Position (a.u.)", fontsize=8, labelpad=7)
     ax.tick_params(labelsize=8, labelbottom=False)
     true_position_label = ax.text(
         0.02,
         0.90,
-        "True position",
+        "Physical position",
         transform=ax.transAxes,
         fontsize=8,
         color=COLORS["ground_truth"],

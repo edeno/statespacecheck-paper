@@ -213,9 +213,9 @@ class DecodeParams:
     pf_centers : NDArray[np.floating] | None
         Place-field center positions; defaults to ``np.arange(0, 101, 10)``.
     rate_scale : float, default 5.0
-        Peak Poisson rate scale (spikes/step at the cell's PF center).
-        At 1 ms/step the default gives ~200 Hz peak — within the
-        plausible range for hippocampal pyramidal cells.
+        Scale factor multiplying the normalized Gaussian place-field density.
+        With the default field width and a 1-ms step, a value of 5.0 gives a
+        peak rate of approximately 200 Hz.
     base_seed : int, default 1
         Random seed for reproducibility.
     remap_from_to : tuple of (int, int) pairs, default see source

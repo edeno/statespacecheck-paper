@@ -281,10 +281,10 @@ def run_figure03_simulation(
     _add_phase(x, sp)
 
     # 5. Clean recovery 2 — with a replay event. The animal is immobile
-    #    (true position held fixed) while a coherent trajectory sweeps the
-    #    track in one out-and-back sweep. The decoder follows the sweep, so
-    #    the *decoded* position departs from the fixed true position while
-    #    every metric stays at baseline — a decoded-vs-true divergence is not
+    #    (physical position held fixed) while a coherent represented trajectory
+    #    sweeps the track in one out-and-back sweep. The decoder follows the sweep, so
+    #    the *decoded* position departs from the fixed physical position while
+    #    every metric stays at baseline — a decoded-vs-physical divergence is not
     #    a model misspecification. Spikes during the sweep fire at the
     #    elevated ``replay_rate_scale`` to densely sample the trajectory.
     n = bnd[PhaseBoundary.RECOVERY2_END] - bnd[PhaseBoundary.HIST_DEP_END]
