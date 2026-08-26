@@ -29,16 +29,8 @@
 \renewcommand{\figurename}{Fig}
 \interfootnotelinepenalty=10000
 
-% --- Line numbers (courtesy for preprint readers / reviewers) ---
-\usepackage{lineno}
-\linenumbers
-
-% --- Bibliography (numbered Vancouver via plos2025.bst) ---
+% --- Bibliography (numbered, IOP style via iopart-num.bst) ---
 \usepackage{cite}
-% Remove brackets from the reference-list numbering.
-\makeatletter
-\renewcommand{\@biblabel}[1]{\quad#1.}
-\makeatother
 
 % --- Cross-references by name (for unnumbered section headings) ---
 \usepackage{nameref}
@@ -82,6 +74,15 @@
     \noindent\textsuperscript{5}Howard Hughes Medical Institute, Janelia Research Campus, Ashburn, VA, USA
 
     \noindent\textsuperscript{*}Corresponding author. Email: \href{mailto:eric.denovellis@ucsf.edu}{eric.denovellis@ucsf.edu}
+    \par}
+
+{\footnotesize
+    \noindent\textbf{ORCID iDs:}
+    Sirui Zeng \href{https://orcid.org/0009-0001-4056-552X}{0009-0001-4056-552X};
+    Alison E. Comrie \href{https://orcid.org/0000-0002-2251-4892}{0000-0002-2251-4892};
+    Loren M. Frank \href{https://orcid.org/0000-0002-1752-5677}{0000-0002-1752-5677};
+    Uri T. Eden \href{https://orcid.org/0000-0002-2058-3691}{0000-0002-2058-3691};
+    Eric L. Denovellis \href{https://orcid.org/0000-0003-4606-087X}{0000-0003-4606-087X}.
     \par}
 
 \vspace{0.5em}
@@ -293,15 +294,13 @@ The hippocampal recording analyzed here was originally reported by Comrie et al.
 \section*{Code availability}
 All simulation, analysis, and figure-generation code is publicly available at \url{https://github.com/edeno/statespacecheck-paper}. \textcolor{red}{[TODO: Add the archival DOI (e.g., Zenodo) for the tagged release used in this paper.]}
 
-\section*{Ethics statement}
-\textcolor{red}{[TODO: Add animal ethics approval information for the rat hippocampal recording, including the approving institutional committee and protocol or permit number.]}
-All animal procedures were approved by the Institutional Animal Care and Use Committee at the University of California, San Francisco.
+\section*{Ethical statement}
+All animal procedures were approved by the Institutional Animal Care and Use Committee at the University of California, San Francisco \textcolor{red}{[TODO: add the IACUC protocol or permit number]}.
 
-\section*{Financial disclosure}
-\textcolor{red}{[TODO: Add all funding sources and grant numbers. State whether the funders had any role in study design, data collection and analysis, decision to publish, or preparation of the manuscript.]}
+\section*{Acknowledgements}
+This work was supported by the National Institutes of Health (R01MH136875 to L.M.F.), the Simons Collaboration on the Global Brain (521921 and 542981 to L.M.F.), and the Howard Hughes Medical Institute (L.M.F.). A.E.C.\ was supported by the National Science Foundation Graduate Research Fellowship Program (1650113), the National Institutes of Health (F31MH124366), and the UCSF Jonas Cohler Discovery Fellowship. \textcolor{red}{[TODO: add funding for U.T.\ Eden and any support for S.\ Zeng and E.L.\ Denovellis, and state whether the funders had any role in study design, data collection and analysis, decision to publish, or preparation of the manuscript.]}
 
-\section*{Competing interests}
-The authors have declared that no competing interests exist.
+The authors declare that they have no competing interests.
 
 \section*{Author contributions}
 
@@ -319,13 +318,7 @@ The authors have declared that no competing interests exist.
 
 
 
-\bibliographystyle{plos2025}
-% plos2025.bst prints DOIs as literal text, so a DOI containing an underscore
-% (e.g. 10.1162/NECO_a_00744) would be read as a math subscript. Make "_"
-% printable just around the bibliography (the .bbl contains no math).
-\begingroup
-\catcode`\_=12
+\bibliographystyle{iopart-num}
 \bibliography{Local-GoF-Paper}
-\endgroup
 
 \end{document}
