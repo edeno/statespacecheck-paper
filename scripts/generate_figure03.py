@@ -43,8 +43,9 @@ N_REALIZATIONS = 100
 def run_demo(params: DecodeParams) -> None:
     """Run the full diagnostic demonstration with multiple simulation phases.
 
-    Generates Figure 3: a Bayesian decoder stepped through five model-misfit
-    conditions separated by clean-recovery windows, chosen to span the
+    Generates Figure 3: a Bayesian decoder stepped through three model-misfit
+    conditions and a sparse-population control, separated by clean-recovery
+    windows, chosen to span the
     metric-disagreement space (which misfits each of HPD overlap, KL
     divergence, and the rank-based predictive p-value detects vs. misses).
 
@@ -61,12 +62,13 @@ def run_demo(params: DecodeParams) -> None:
 
     Notes
     -----
-    The simulation includes 8 phases (4 misfits, each preceded by a
-    clean-recovery or baseline window):
+    The simulation includes 8 phases (3 misfits and a sparse-population
+    control, each preceded by a clean-recovery or baseline window):
 
     1. Clean baseline (0 - T_remap_start): Model fits well.
-    2. Remap misfit (T_remap_start - T_remap_end): A subset of cells use
-       swapped place-field identities — an observation-model misfit.
+    2. Remap misfit (T_remap_start - T_remap_end): All cells use one fixed,
+       spatially incoherent permutation of place-field identities — an
+       observation-model misfit.
     3. Clean recovery (T_remap_end - T_recovery1_end).
     4. History-dependent firing misfit (T_recovery1_end - T_hist_dep_end):
        Spikes are generated with a hard refractory period plus bursting;
@@ -78,10 +80,13 @@ def run_demo(params: DecodeParams) -> None:
        persistent velocity (AR(1), drift_momentum); the decoder assumes a
        memoryless random walk.
     7. Clean recovery (T_drift_end - T_recovery3_end).
-    8. Wide dynamics noise (T_recovery3_end - T_wide_dynamics_end): The
-       decoder applies an inflated transition matrix; engineered to
-       inflate KL while HPD overlap and the rank-based p-value stay near
-       baseline (the KL false-positive case).
+    8. Sparse population (T_recovery3_end - T_sparse_pop_end): The animal
+       remains immobile at a fixed location, the ordinary place-cell ensemble
+       becomes quiet, and a small population of narrow, pre-existing cells
+       clustered there fires sparsely. The decoder knows this low-activity
+       regime. Between isolated spikes its prediction diffuses; each sparse
+       spike sharply concentrates that otherwise plausible prediction, so
+       KL can respond while HPD overlap and the rank-based p-value do not.
 
     Figure 3 has two panels: panel (a) is a time-series block (predictive,
     likelihood, raster, and the three diagnostics over time) for a single
@@ -106,10 +111,19 @@ def run_demo(params: DecodeParams) -> None:
     # signature is satisfied without a cast.
     pf_centers = params.pf_centers
     assert pf_centers is not None, "pf_centers must be initialized"
+    # The simulation appends a narrow sparse-population of cells; the raster
+    # sorts all cells by field center.
+    raster_centers = np.append(pf_centers, np.asarray(sim.sparse_cell_centers))
 
     # Pool many realizations for a stable threshold (from the pooled
-    # clean-baseline windows) and a stable median [IQR] panel-(b) summary.
+    # clean-baseline windows) and a stable median panel-(b) summary.
     summary = estimate_stable_summary(params, n_realizations=N_REALIZATIONS)
+    print(f"Pooled thresholds: {summary.thresholds}")
+    print(
+        "Median flag percentages [HPD, predictive p, KL] x "
+        "[well-specified, remap, history, replay, drift, sparse population]:\n"
+        f"{np.array2string(summary.frac_median, precision=3)}"
+    )
 
     # Plot combined diagnostics figure. Panel (a) shows the single seed-1
     # realization; panel (b) shows the pooled median fractions scored
@@ -121,7 +135,7 @@ def run_demo(params: DecodeParams) -> None:
         metrics,
         summary.thresholds,
         params,
-        pf_centers,
+        raster_centers,
         summary_median=summary.frac_median,
     )
 
@@ -136,7 +150,7 @@ if __name__ == "__main__":
     # Full-size run (~32k 1-ms steps). To prototype quickly, shrink the
     # timeline by passing a smaller ``phase_boundaries`` tuple, e.g.:
     #   params = DecodeParams(
-    #       phase_boundaries=(600, 900, 1100, 1400, 1600, 1900, 2100, 2400),
+    #       phase_boundaries=(600, 900, 1100, 1400, 1600, 1900, 2100, 3100),
     #   )
     # drift_momentum=0.88 (vs the 0.8 default) makes the drift misfit a bit
     # larger/faster so it is more visible in the figure.

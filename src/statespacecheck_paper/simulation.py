@@ -257,7 +257,7 @@ def placefield_rates(
     width : float
         Standard deviation of Gaussian place field.
     scale : float
-        Peak firing rate (scales the Gaussian).
+        Scale factor multiplying the normalized Gaussian place-field density.
 
     Returns
     -------
@@ -456,7 +456,7 @@ def simulate_spikes_position_tuned(
     pf_width : float
         Standard deviation of Gaussian place field.
     rate_scale : float
-        Peak firing rate (scales the Gaussian).
+        Scale factor multiplying the normalized Gaussian place-field density.
     rng : np.random.Generator
         Random number generator for reproducibility.
 
@@ -568,7 +568,7 @@ def simulate_spikes_history_dependent(
     pf_width : float
         Standard deviation of the Gaussian place field.
     rate_scale : float
-        Peak firing rate (scales the Gaussian).
+        Scale factor multiplying the normalized Gaussian place-field density.
     rng : np.random.Generator
         Random number generator for reproducibility.
     refractory_steps : int, optional

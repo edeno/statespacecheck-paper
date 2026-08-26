@@ -128,7 +128,7 @@ COLORS: dict[str, str] = {
     # Baseline / clean-recovery — no manipulation.
     "phase_baseline": "#FFFFFF",  # White
     #
-    # Remap misfit — a subset of cells use swapped place-field identities.
+    # Remap misfit — all cells use a fixed, spatially incoherent permutation.
     "phase_remap": "#FFF0D6",  # Light orange (from WONG[1])
     #
     # History-dependent firing misfit — refractory + bursting spike trains.
@@ -137,10 +137,13 @@ COLORS: dict[str, str] = {
     # Drift misfit — persistent-velocity trajectory vs. memoryless decoder.
     "phase_drift": "#D6E8FF",  # Light blue (from WONG[5])
     #
-    # Wide-dynamics-noise misfit — decoder uses an inflated transition matrix;
-    # engineered to inflate KL while HPD overlap and the rank-based p-value
-    # stay near baseline (the KL false-positive case).
-    "phase_wide_dynamics": "#E8E1F2",  # Light purple (from WONG[7])
+    # Sparse-population control — quiet ensemble plus sparse firing from a
+    # small population of narrow cells clustered at one location.
+    "phase_sparse_pop": "#E8E1F2",  # Light purple (from WONG[7])
+    #
+    # Replay event (in clean-recovery 2) — immobile animal, decoded
+    # trajectory sweeps the track; not a misspecification.
+    "phase_replay": "#009E73",  # Vivid green (WONG[3]); marks the replay band
     #
     # -------------------------------------------------------------------------
     # Heatmap Colormaps
@@ -194,8 +197,8 @@ class MetricSpec:
 
 METRIC_SPECS: tuple[MetricSpec, ...] = (
     MetricSpec("hpd_overlap", "HPD overlap", COLORS["hpd_overlap"], "↓ Worse fit"),
-    MetricSpec("kl_divergence", "KL div.", COLORS["kl_divergence"], "↑ Worse fit"),
     MetricSpec("spike_prob", r"$-\log(p)$", COLORS["metric_combined"], "↑ Worse fit"),
+    MetricSpec("kl_divergence", "KL div.", COLORS["kl_divergence"], "↑ Worse fit"),
 )
 METRIC_NAMES: tuple[MetricName, ...] = tuple(s.name for s in METRIC_SPECS)
 

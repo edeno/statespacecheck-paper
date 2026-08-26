@@ -51,9 +51,8 @@ class TestNormalize:
 
 
 class TestSoftmaxWithShift:
-    """The all-``-inf`` fallback is load-bearing in the decoder pipeline:
-    ``_condition_on`` relies on it for the "all bins underflowed in
-    linear space" case and would otherwise return NaN."""
+    """The all-``-inf`` fallback keeps stored/display likelihood rows finite
+    when the observation has zero probability over the entire grid."""
 
     def test_all_neg_inf_returns_uniform(self) -> None:
         """Sole direct cover for the ``not np.isfinite(lmax)`` branch.

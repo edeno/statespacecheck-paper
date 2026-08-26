@@ -4,7 +4,7 @@
 
 This repository contains the source code and supplementary materials for the paper **"Local goodness-of-fit measures for neural decoding"**. It includes analysis scripts, figure generation code, and examples demonstrating the `statespacecheck` package.
 
-**Scientific Context**: State space models are widely used in neuroscience to relate neural activity to latent dynamic brain states. This paper introduces diagnostics (KL divergence and HPD overlap) to assess model goodness-of-fit by examining consistency between posterior distributions and component likelihood distributions.
+**Scientific Context**: State space models are widely used in neuroscience to relate neural activity to latent dynamic brain states. This paper introduces diagnostics (HPD overlap, a rank-based predictive check, and KL divergence) to assess model goodness-of-fit by examining consistency between posterior distributions and component likelihood distributions.
 
 **Repository Type**: This is a paper/research repository, not a library. The focus is on reproducible analysis, figure generation, and demonstrating the `statespacecheck` package capabilities.
 
@@ -32,7 +32,7 @@ statespacecheck-paper/
 │   └── generate_all_figures.py # Master script to generate all figures
 ├── manuscript/                  # LaTeX source files + bundled figures (Overleaf-ready)
 │   ├── main.tex                 # Self-contained (own inline preamble)
-│   ├── Local-GoF-Paper.bib      # Bibliography (BibTeX, from Zotero); built with plos2025.bst
+│   ├── Local-GoF-Paper.bib      # Bibliography (BibTeX, from Zotero); built with iopart-num.bst
 │   ├── README.md
 │   └── figures/                # Generated figure outputs
 │       ├── main/               # Main text figures (PDF + PNG)
@@ -62,7 +62,7 @@ statespacecheck-paper/
 
 - **generate_figure01.py**: Figure 1 orchestration - schematic and distributions
 - **generate_figure02.py**: Figure 2 orchestration - diagnostic demonstrations (per-panel renderers live in `figure02_panels.py`)
-- **generate_figure03.py**: Figure 3 orchestration - per-cell diagnostics across an 8-phase simulation (4 misfit scenarios separated by clean-recovery windows): remap, history-dependent firing, drift, and wide-dynamics noise. The scenarios are chosen to span the metric-disagreement space - e.g. wide-dynamics noise inflates KL while HPD overlap and the rank-based p-value stay near baseline, and history-dependent firing is largely missed by all three per-spike spatial diagnostics. Figure 3 has two panels: a time-series block and a per-phase summary heatmap.
+- **generate_figure03.py**: Figure 3 orchestration - per-cell diagnostics across an 8-phase simulation (3 misfit scenarios plus two specificity controls - a replay event and a sparse-population epoch - separated by clean-recovery windows): remap, history-dependent firing, drift, plus replay and a sparse population of narrow cells firing during immobility. The scenarios are chosen to span the metric-disagreement space - e.g. a small population of narrow cells firing sparsely at one location during immobility can elevate KL while HPD overlap and the rank-based p-value stay near baseline, and history-dependent firing is largely missed by all three per-spike spatial diagnostics. Figure 3 has two panels: a time-series block and a per-phase summary heatmap.
 - **generate_all_figures.py**: Master script to generate all figures
 
 ## Repository Structure

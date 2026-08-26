@@ -1,7 +1,7 @@
 """Analysis functions for state space model diagnostics.
 
 This module contains the core analysis logic for running Bayesian decoders and computing
-diagnostic metrics (KL divergence, HPD overlap, spike probability) to assess model
+diagnostic metrics (HPD overlap, spike probability, KL divergence) to assess model
 goodness-of-fit.
 
 **Key Components**:
@@ -45,6 +45,7 @@ from typing import cast
 import numpy as np
 import statespacecheck as ssc
 from numpy.typing import NDArray
+from scipy.special import logsumexp
 from scipy.stats import poisson
 
 from statespacecheck_paper.simulation import (
@@ -60,32 +61,27 @@ from statespacecheck_paper.simulation import (
 # scratch array, ~600 MB peak with three live (pred / rates / lik).
 _PER_SPIKE_BATCH = 50_000
 
-# Sentinel for ``_condition_on`` underflow steps.
+# Sentinel for observations with no finite joint prior-likelihood mass.
 _NEG_INF = float("-inf")
 
 
 def _condition_on(
     probs: NDArray[np.floating],
     ll: NDArray[np.floating],
-    eps: float = 1e-15,
 ) -> tuple[NDArray[np.floating], float]:
     """Bayesian update: multiply prior by emission likelihood, normalize.
 
     Adapted from ``non_local_detector.core._condition_on`` (which itself
-    is adapted from ``dynamax``). The log-sum-exp shift of subtracting
-    ``ll.max()`` before exponentiation makes ``exp(ll - ll_max)`` peak
-    at 1, keeping the posterior update numerically stable even when
-    individual cell likelihoods would have underflowed in linear space.
+    is adapted from ``dynamax``). The update is evaluated as
+    ``log(probs) + ll`` and normalized with log-sum-exp, so a small but
+    representable overlap between prior and likelihood is retained rather
+    than being replaced by an arbitrary probability cutoff.
 
-    Underflow regime: when the prior and likelihood are essentially
-    disjoint (``weighted.sum() < eps``), the marginal likelihood
-    underflows and the returned posterior would be a meaningless
-    near-zero vector. Rather than propagate that into the next step's
-    predict-and-update (where it would silently become uniform via the
-    eps clamp in :func:`statespacecheck_paper.simulation.normalize`),
-    this function explicitly returns a uniform posterior and
-    ``log_norm = -inf``. Callers should treat ``log_norm == -inf`` as
-    the signal to flag the step.
+    If every joint log-weight is ``-inf``, the observation has zero
+    probability everywhere under the prior and the Bayesian posterior is
+    undefined. In that degenerate case, this function explicitly returns a
+    uniform posterior and ``log_norm = -inf``. Callers should treat
+    ``log_norm == -inf`` as the signal to flag the step.
 
     Parameters
     ----------
@@ -93,29 +89,38 @@ def _condition_on(
         Linear-space prior, must sum to 1.
     ll : np.ndarray, shape (n_bins,)
         Log-likelihood of the observation at each bin (unnormalized).
-    eps : float, default 1e-15
-        Underflow threshold on ``weighted.sum()``; below this the
-        uniform fallback path runs.
 
     Returns
     -------
     new_probs : np.ndarray, shape (n_bins,)
         Posterior; sums to 1. Equals ``1/n_bins`` everywhere when the
-        underflow fallback runs.
+        zero-probability fallback runs.
     log_norm : float
         Log marginal likelihood for this step (``log p(obs | past)``).
-        ``-inf`` when the underflow fallback runs.
+        ``-inf`` when the zero-probability fallback runs.
     """
     n_bins = probs.size
-    ll_max = float(np.max(ll))
-    if not np.isfinite(ll_max):
+    if (
+        probs.ndim != 1
+        or ll.shape != probs.shape
+        or not np.all(np.isfinite(probs))
+        or np.any(probs < 0.0)
+        or not np.isclose(float(probs.sum()), 1.0)
+        or np.any(np.isnan(ll))
+        or np.any(np.isposinf(ll))
+    ):
+        raise ValueError(
+            "probs must be a finite nonnegative 1D distribution and ll must "
+            "have the same shape with no NaN or +inf values"
+        )
+    with np.errstate(divide="ignore", invalid="ignore"):
+        log_joint = np.log(probs) + ll
+    log_norm = float(logsumexp(log_joint))
+    if np.isneginf(log_norm):
         return np.full(n_bins, 1.0 / n_bins), _NEG_INF
-    weighted = probs * np.exp(ll - ll_max)
-    norm = float(weighted.sum())
-    if norm < eps:
-        return np.full(n_bins, 1.0 / n_bins), _NEG_INF
-    new_probs = weighted / norm
-    log_norm = float(np.log(norm)) + ll_max
+    if not np.isfinite(log_norm):
+        raise ValueError("Prior and log-likelihood produced a nonfinite joint log-normalizer")
+    new_probs = np.exp(log_joint - log_norm)
     return new_probs, log_norm
 
 
@@ -140,7 +145,7 @@ class PhaseBoundary(IntEnum):
     RECOVERY2_END = 4  # end of clean recovery 2
     DRIFT_END = 5  # end of drift misfit
     RECOVERY3_END = 6  # end of clean recovery 3
-    WIDE_DYNAMICS_END = 7  # end of wide-dynamics-noise misfit
+    SPARSE_POP_END = 7  # end of sparse-population control
 
 
 # Default phase ladder in 1-ms steps. Used as the default of
@@ -163,9 +168,10 @@ _DEFAULT_PHASE_BOUNDARIES: tuple[int, ...] = (
 class DecodeParams:
     """Parameters for the figure-3 decoding simulation.
 
-    The simulation walks through four misfit conditions separated by
-    clean-recovery windows. Time steps are 1 ms by convention — the
-    simulation math itself is dt-agnostic, but the default parameters
+    The simulation walks through three misfit conditions and one sparse-
+    activity control, separated by clean-recovery windows. Time steps are
+    1 ms by convention — the simulation math itself is dt-agnostic, but the
+    default parameters
     (`rate_scale=5.0`, refractory and burst windows in
     ``simulate_spikes_history_dependent``) are tuned for that mapping
     and yield hippocampally-realistic spike rates and timescales.
@@ -179,7 +185,7 @@ class DecodeParams:
     - 18k–22k: Clean recovery
     - 22k–26k: Drift misfit (4 s)
     - 26k–30k: Clean recovery
-    - 30k–32k: Wide-dynamics-noise misfit (2 s)
+    - 30k–32k: Sparse-population control (2 s)
 
     Parameters
     ----------
@@ -193,12 +199,6 @@ class DecodeParams:
         only makes sense over the full ladder.
     sigx_pred : float, default 0.5
         Decoder's baseline dynamics standard deviation.
-    sigx_wide_dynamics : float, default 20.0
-        Inflated decoder transition std for the wide-dynamics-noise
-        misfit (40× baseline). Engineered to be wide enough that the
-        decoder's predictive covers most of the track and the
-        per-spike likelihood (narrow at the firing cell's PF) sits
-        cleanly inside it.
     drift_momentum : float, default 0.8
         AR(1) coefficient on the animal's velocity during the drift
         misfit phase. The true trajectory is
@@ -213,21 +213,50 @@ class DecodeParams:
     pf_centers : NDArray[np.floating] | None
         Place-field center positions; defaults to ``np.arange(0, 101, 10)``.
     rate_scale : float, default 5.0
-        Peak Poisson rate scale (spikes/step at the cell's PF center).
-        At 1 ms/step the default gives ~200 Hz peak — within the
-        plausible range for hippocampal pyramidal cells.
+        Scale factor multiplying the normalized Gaussian place-field density.
+        With the default field width and a 1-ms step, a value of 5.0 gives a
+        peak rate of approximately 200 Hz.
     base_seed : int, default 1
         Random seed for reproducibility.
     remap_from_to : tuple of (int, int) pairs, default see source
         Specification of which cells get remapped during the remap
-        window. Default is six bidirectional swaps across the track.
+        window. By default, all eleven cells participate in one fixed
+        permutation that moves every field by at least three center spacings.
+    sparse_position : float, default 30.0
+        Fixed location where the sparse population is active in the final
+        control phase.
+    sparse_approach_steps : int, default 1000
+        Number of steps at the end of clean recovery 3 used for a gradual
+        approach to ``sparse_position``.
+    sparse_ensemble_rate_scale : float, default 0.0
+        Multiplicative rate applied to the eleven ordinary place cells during
+        the sparse-population control. Zero represents a silent ordinary
+        ensemble.
+    n_sparse_cells : int, default 5
+        Number of narrow cells forming the sparse population clustered at
+        ``sparse_position``.
+    sparse_field_spread : float, default 1.5
+        Half-range (position units) over which the ``n_sparse_cells`` field
+        centers are spread symmetrically about ``sparse_position``. Zero
+        stacks all centers at ``sparse_position``.
+    sparse_cell_width : float, default 2.0
+        Standard deviation, in position units, of each narrow sparse-population
+        field.
+    sparse_cell_peak_rate : float, default 0.001
+        Per-cell peak firing rate in spikes per 1-ms step (1 Hz). Sized so the
+        population's *aggregate* rate stays ~5 Hz: with more cells firing, a
+        higher aggregate rate would shorten the gaps between spikes and let the
+        prediction re-concentrate, suppressing the KL response that the sparse,
+        immobile regime is meant to illustrate.
+    sparse_cell_baseline_gain : float, default 0.01
+        Fraction of the active per-cell rate used before the final control.
 
     Examples
     --------
     >>> params = DecodeParams()
     >>> params.phase_boundaries[PhaseBoundary.REMAP_START]
     6000
-    >>> params.phase_boundaries[PhaseBoundary.WIDE_DYNAMICS_END]
+    >>> params.phase_boundaries[PhaseBoundary.SPARSE_POP_END]
     32000
     >>> params.pf_centers
     array([  0.,  10.,  20.,  30.,  40.,  50.,  60.,  70.,  80.,  90., 100.])
@@ -239,7 +268,6 @@ class DecodeParams:
 
     # Decoder & dynamics parameters
     sigx_pred: float = 0.5  # baseline dynamics std
-    sigx_wide_dynamics: float = 20.0  # 40× baseline — wide-dynamics-noise phase
     drift_momentum: float = 0.8  # AR(1) coefficient for drift-misfit trajectory
 
     # Position grid
@@ -253,17 +281,62 @@ class DecodeParams:
     rate_scale: float = 5.0
 
     base_seed: int = 1
-    # Six bidirectional swaps so the remap window is unambiguous: every
-    # remapped cell has another cell whose PF center it adopts, and that
-    # cell adopts its center. Cell 0↔9, 1↔8, 2↔7 — three swap pairs.
+    # Global-remapping model: a fixed random permutation (derangement) of
+    # the eleven place-field centers, so each cell ``src`` adopts cell
+    # ``dst``'s center. Chosen using the first NumPy default_rng seed (737)
+    # whose permutation displaces every field by >=3 positions, so no cell
+    # keeps a field near its original location. The scramble is spatially
+    # *incoherent*: because
+    # the decoder's diagnostics judge each spike against this same remapped
+    # likelihood (not the true fields), the misfit surfaces only through the
+    # genuine conflict between the smooth-motion prior and the scattered
+    # per-spike likelihoods — a coherent remap (e.g. a pure reflection)
+    # would be self-consistent and correctly go undetected.
     remap_from_to: tuple[tuple[int, int], ...] | tuple[int, int] = (
-        (0, 9),
-        (1, 8),
-        (2, 7),
-        (9, 0),
-        (8, 1),
-        (7, 2),
+        (0, 7),
+        (1, 10),
+        (2, 9),
+        (3, 0),
+        (4, 8),
+        (5, 2),
+        (6, 3),
+        (7, 1),
+        (8, 4),
+        (9, 6),
+        (10, 5),
     )
+
+    # Replay event embedded in the second clean-recovery window. The animal
+    # is immobile while a coherent trajectory sweeps the track; the decoder
+    # tracks the sweep, so the decoded position departs from the true
+    # (fixed) position without any diagnostic flagging it -- replay is not a
+    # misspecification. The sweep occupies the fractional sub-window
+    # ``[replay_frac_start, replay_frac_end)`` of clean-recovery 2 and fires
+    # at an elevated ``replay_rate_scale``. The trajectory makes one sweep
+    # toward the farther track end, capped at ``replay_speed`` per step, and
+    # returns to its starting position.
+    replay_frac_start: float = 0.25
+    replay_frac_end: float = 0.75
+    replay_speed: float = 0.5
+    replay_rate_scale: float = 20.0
+
+    # Sparse-population control. The animal approaches a fixed location at the
+    # end of clean recovery 3, then remains there (immobile) while the ordinary
+    # ensemble becomes quiet. A small population of narrow, sharply tuned cells
+    # clustered at that location fires sparsely, each cell an independent
+    # Poisson process increasing from a small baseline gain to its full rate.
+    # With little intervening population information, the predictive spreads
+    # between the isolated spikes; each spike supplies a narrow likelihood
+    # contained in that broad prediction. This is a correctly modeled,
+    # low-activity observation regime, not a transition-model perturbation.
+    sparse_position: float = 30.0
+    sparse_approach_steps: int = 1_000
+    sparse_ensemble_rate_scale: float = 0.0
+    n_sparse_cells: int = 5
+    sparse_field_spread: float = 1.5
+    sparse_cell_width: float = 2.0
+    sparse_cell_peak_rate: float = 0.001  # spikes/ms = 1 Hz/cell (~5 Hz aggregate)
+    sparse_cell_baseline_gain: float = 0.01
 
     def __post_init__(self) -> None:
         """Validate the timeline and initialize ``pf_centers`` if not provided.
@@ -304,6 +377,52 @@ class DecodeParams:
         # it silently corrupts every downstream decoder call.
         self.pf_centers.setflags(write=False)
 
+        if not (self.xs_min <= self.sparse_position <= self.xs_max):
+            raise ValueError(
+                f"sparse_position must lie in [{self.xs_min}, {self.xs_max}]; "
+                f"got {self.sparse_position}."
+            )
+        if self.sparse_approach_steps < 0:
+            raise ValueError(
+                f"sparse_approach_steps must be non-negative; got {self.sparse_approach_steps}."
+            )
+        if not (0.0 <= self.sparse_ensemble_rate_scale <= 1.0):
+            raise ValueError(
+                "sparse_ensemble_rate_scale must lie in [0, 1]; "
+                f"got {self.sparse_ensemble_rate_scale}."
+            )
+        if self.n_sparse_cells < 1:
+            raise ValueError(f"n_sparse_cells must be >= 1; got {self.n_sparse_cells}.")
+        if not np.isfinite(self.sparse_field_spread) or self.sparse_field_spread < 0.0:
+            raise ValueError(
+                f"sparse_field_spread must be finite and non-negative; "
+                f"got {self.sparse_field_spread}."
+            )
+        if not np.isfinite(self.sparse_cell_width) or self.sparse_cell_width <= 0.0:
+            raise ValueError(f"sparse_cell_width must be positive; got {self.sparse_cell_width}.")
+        if not np.isfinite(self.sparse_cell_peak_rate) or self.sparse_cell_peak_rate <= 0.0:
+            raise ValueError(
+                f"sparse_cell_peak_rate must be positive; got {self.sparse_cell_peak_rate}."
+            )
+        if not (0.0 <= self.sparse_cell_baseline_gain <= 1.0):
+            raise ValueError(
+                "sparse_cell_baseline_gain must lie in [0, 1]; "
+                f"got {self.sparse_cell_baseline_gain}."
+            )
+        # Replay sub-window fractions must be ordered inside [0, 1]; an equal
+        # or reversed pair silently empties/reverses the Replay window and
+        # overlaps the well-specified baseline pool it is carved out of.
+        if not (0.0 <= self.replay_frac_start < self.replay_frac_end <= 1.0):
+            raise ValueError(
+                "replay_frac_start/replay_frac_end must satisfy "
+                "0 <= start < end <= 1; got "
+                f"start={self.replay_frac_start}, end={self.replay_frac_end}."
+            )
+        if not (np.isfinite(self.replay_speed) and self.replay_speed > 0.0):
+            raise ValueError(f"replay_speed must be positive; got {self.replay_speed}.")
+        if not (np.isfinite(self.replay_rate_scale) and self.replay_rate_scale > 0.0):
+            raise ValueError(f"replay_rate_scale must be positive; got {self.replay_rate_scale}.")
+
 
 @dataclass(frozen=True)
 class MisfitWindow:
@@ -319,14 +438,12 @@ class MisfitWindow:
         Half-open time-step bounds ``[start, end)``. ``start < end`` is
         required.
     transition_matrix : np.ndarray, shape (n_bins, n_bins), optional
-        Replaces the baseline transition matrix in the predict step
-        (used by the wide-dynamics-noise misfit).
+        Replaces the baseline transition matrix in the predict step.
     decoder_rates : np.ndarray, shape (n_bins, n_cells), optional
         Replaces the baseline Gaussian place-field rate table used to
-        form the posterior-update likelihood (and the displayed per-spike
-        likelihood). Used by the remap misfit (remapped place fields).
-        Diagnostics continue to judge spikes against the model's
-        intended Gaussian PFs, so the mismatch surfaces.
+        form the posterior-update likelihood, the per-spike diagnostics,
+        and the displayed per-spike likelihood. Used by the remap misfit
+        (remapped place fields).
 
     Raises
     ------
@@ -348,8 +465,8 @@ class MisfitWindow:
 
     Examples
     --------
-    Remap-style misfit — decoder uses an alternate rate table, diagnostic
-    still references the original Gaussian PFs so the mismatch surfaces:
+    Remap-style misfit — the decoder and its diagnostics use an alternate
+    rate table inside the window:
 
     >>> import numpy as np
     >>> remapped = np.full((5, 3), 0.1)
@@ -738,6 +855,46 @@ class Diagnostics:
 # -----------------------------
 
 
+def normalized_single_spike_likelihood(
+    rates: NDArray[np.floating],
+) -> NDArray[np.floating]:
+    """Normalized one-spike Poisson likelihood over position.
+
+    For position-dependent rates ``rates`` (expected spikes per bin), returns
+    ``Poisson(k=1, mu=rates)`` normalized to sum to 1 over the last axis. This
+    is the per-spike observation likelihood the diagnostics compare against
+    the predictive distribution, and the quantity shown in the likelihood row
+    of the simulation and real-data figures. Sharing this definition keeps the
+    plotted likelihood identical to the one the diagnostics consume.
+
+    Normalization is done in log space (``poisson.logpmf`` + ``logsumexp``) so
+    that rows with tiny but nonzero rates keep their correct shape: e.g. rates
+    ``[1e-20, 2e-20, 4e-20]`` normalize to ``[1/7, 2/7, 4/7]`` rather than
+    collapsing to uniform. A row is treated as degenerate only when the rate is
+    zero at *every* position (``logpmf`` all ``-inf``); such a row carries no
+    positional information and is returned uniform, so every row sums to 1.
+
+    Parameters
+    ----------
+    rates : np.ndarray, shape (..., n_bins)
+        Position-dependent expected spike count per bin (Poisson ``mu``) for
+        one or more spikes/cells. Normalization is over the last axis.
+
+    Returns
+    -------
+    likelihood : np.ndarray, shape (..., n_bins)
+        Normalized single-spike likelihood over position; each row sums to 1.
+    """
+    logpmf = poisson.logpmf(k=1, mu=rates)
+    log_norm = logsumexp(logpmf, axis=-1, keepdims=True)
+    # ``log_norm`` is ``-inf`` only when every bin's rate is exactly zero.
+    degenerate = np.isneginf(log_norm)
+    n_bins = logpmf.shape[-1]
+    safe_log_norm = np.where(degenerate, 0.0, log_norm)
+    likelihood = np.exp(logpmf - safe_log_norm)
+    return np.where(degenerate, 1.0 / n_bins, likelihood)
+
+
 def likelihood_grid_for_counts(
     xs: NDArray[np.floating],
     pf_centers: NDArray[np.floating],
@@ -875,6 +1032,7 @@ def decode_and_diagnostics(
     rate_scale: float,
     misfit_schedule: MisfitSchedule | None = None,
     rng: np.random.Generator | None = None,
+    base_rates: NDArray[np.floating] | None = None,
 ) -> Diagnostics:
     """Run the Bayesian filter with per-time, per-cell diagnostics.
 
@@ -909,13 +1067,20 @@ def decode_and_diagnostics(
     rate_scale : float
         Scaling factor for firing rates.
     misfit_schedule : MisfitSchedule, optional
-        Decoder-side misfit windows — remapping and wide-dynamics noise.
+        Decoder-side rate or transition regimes, such as remapping and the
+        sparse-population control.
         Each :class:`MisfitWindow` swaps the transition matrix and/or
         the per-cell rate table for its interval. Defaults to an empty
         schedule: a clean decode with no
         misfits (the real-data decoding case).
     rng : np.random.Generator | None, optional
         Random number generator (reserved for future use).
+    base_rates : np.ndarray, shape (n_bins, n_cells), optional
+        Baseline per-cell Poisson rate table. Supply this when cells do not
+        share one place-field width and scale, as in Figure 3's sparse
+        population.
+        If omitted, rates are built from ``pf_centers``, ``pf_width``, and
+        ``rate_scale``.
 
     Returns
     -------
@@ -964,13 +1129,12 @@ def decode_and_diagnostics(
     so individual bins still underflow to zero in linear space but the
     row as a whole remains a proper probability distribution.
 
-    When the prior and combined likelihood have no meaningful overlap
-    (``weighted.sum() < eps`` inside ``_condition_on``), the helper
-    falls back to a uniform posterior and signals via
-    ``log_norm = -inf``. This function counts such steps and emits a
-    single summary ``RuntimeWarning`` at the end so the situation is
-    visible. Diagnostics at flagged steps reference a uniform
-    predictive; consumers should mask them out if needed.
+    When the observation has zero probability at every state with nonzero
+    prior mass, :func:`_condition_on` falls back to a uniform posterior and
+    signals via ``log_norm = -inf``. This function counts such steps and
+    emits a single summary ``RuntimeWarning`` at the end so the situation is
+    visible. The reset affects the following predictive distribution;
+    consumers should inspect or mask downstream events if this occurs.
 
     Examples
     --------
@@ -1026,17 +1190,33 @@ def decode_and_diagnostics(
     combined_likelihood_all[0] = normalize(np.ones(n_bins))  # Flat at t=0
 
     # Baseline per-cell Poisson rate table. Used at every timestep not
-    # covered by a misfit window whose ``decoder_rates`` is set, and as
-    # the default diagnostic rate table.
-    rates = placefield_rates(xs, pf_centers, pf_width, rate_scale)
+    # covered by a misfit window whose ``decoder_rates`` is set. Callers
+    # can inject ``base_rates`` directly when the decoder's cell set does
+    # not reduce to one shared Gaussian width/scale — e.g. the figure-3
+    # simulation appends a narrow sparse-population of cells with a small
+    # baseline rate that increases during a correctly modeled, low-activity
+    # window.
+    if base_rates is not None:
+        rates = np.asarray(base_rates, dtype=float)
+        if rates.shape != (n_bins, n_cells):
+            raise ValueError(
+                f"base_rates shape {rates.shape} does not match the decoder grid "
+                f"(n_bins={n_bins}, n_cells={n_cells})."
+            )
+        # Reject invalid rate tables up front (as ``MisfitWindow.decoder_rates``
+        # does), rather than letting a negative/nonfinite rate surface as an
+        # opaque Poisson error or a silent NaN deep in the filter loop.
+        if not (np.all(np.isfinite(rates)) and np.all(rates >= 0.0)):
+            raise ValueError("base_rates must contain only finite, non-negative rates.")
+    else:
+        rates = placefield_rates(xs, pf_centers, pf_width, rate_scale)
 
-    # Track timesteps where _condition_on fell back to uniform (prior and
-    # likelihood had essentially no overlap). The fallback keeps the
-    # filter alive but the diagnostics at those steps are computed
-    # against a uniform predictive; report a summary at the end so the
-    # caller can mask them out if desired.
-    n_underflow_steps = 0
-    first_underflow_t = -1
+    # Track timesteps where _condition_on fell back to uniform because the
+    # observation had zero probability on the prior's support. The fallback
+    # keeps the filter alive; report a summary at the end so callers can
+    # inspect or mask downstream events if desired.
+    n_zero_support_steps = 0
+    first_zero_support_t = -1
 
     for t in range(1, n_time):
         window = misfit_schedule.window_at(t)
@@ -1070,8 +1250,8 @@ def decode_and_diagnostics(
         # product in linear space).
         log_lik_combined = log_lik_per_cell.sum(axis=1)  # (n_bins,)
 
-        # Stored combined likelihood: same shift-and-normalize math as
-        # _condition_on, factored into the shared helper.
+        # Normalize the stored combined likelihood independently with a
+        # max-shifted softmax for display.
         combined_likelihood_all[t] = softmax_with_shift(log_lik_combined)
 
         # Spike-only likelihood: product over only cells that fired.
@@ -1083,23 +1263,24 @@ def decode_and_diagnostics(
 
         # Posterior update via the _condition_on pattern (dynamax /
         # non_local_detector). ``log_norm = -inf`` flags steps where the
-        # prior and likelihood had no meaningful overlap; the helper
+        # observation has zero probability on the prior's support; the helper
         # explicitly returns a uniform posterior in that case and we
         # surface the count post-loop rather than letting the situation
         # silently propagate.
         posterior[t], log_norm = _condition_on(prior, log_lik_combined)
         if log_norm == _NEG_INF:
-            if n_underflow_steps == 0:
-                first_underflow_t = t
-            n_underflow_steps += 1
+            if n_zero_support_steps == 0:
+                first_zero_support_t = t
+            n_zero_support_steps += 1
 
-    if n_underflow_steps > 0:
+    if n_zero_support_steps > 0:
         warnings.warn(
-            f"decode_and_diagnostics: prior/likelihood overlap underflowed at "
-            f"{n_underflow_steps} timestep(s); first at t={first_underflow_t}. "
-            f"Posterior was reset to uniform at those steps; downstream "
-            f"per-spike diagnostics computed at those times reference a "
-            f"uniform predictive and should be interpreted accordingly.",
+            f"decode_and_diagnostics: observation had zero probability on "
+            f"the prior support at "
+            f"{n_zero_support_steps} timestep(s); first at t={first_zero_support_t}. "
+            f"Posterior was reset to uniform at those steps; subsequent "
+            f"predictive distributions and diagnostics should be interpreted "
+            f"accordingly.",
             RuntimeWarning,
             stacklevel=2,
         )
@@ -1111,13 +1292,11 @@ def decode_and_diagnostics(
     spike_time_ind = np.repeat(spike_time_ind, spike_counts_at_events)
     spike_cell_ind = np.repeat(spike_cell_ind, spike_counts_at_events)
     spike_time_ind = spike_time_ind + 1  # Adjust for offset from [1:]
-    n_spikes = len(spike_time_ind)
 
-    # Diagnostics. Every spike event is judged against the baseline
-    # Gaussian-PF ``rates`` — the model's intended likelihood. During
-    # remapping the decoder updates the posterior with remapped fields
-    # but the diagnostic still references the original fields, so the
-    # mismatch surfaces.
+    # Compute the baseline diagnostics first. Events inside a window with
+    # ``decoder_rates`` are overwritten below using that same rate table,
+    # keeping the posterior update, per-event diagnostics, and displayed
+    # likelihood on one internally consistent decoder model.
     diagnostics = compute_per_cell_diagnostics_from_rates(
         predictive_posterior,
         rates,
@@ -1126,42 +1305,60 @@ def decode_and_diagnostics(
         coverage=0.95,
     )
 
-    # Per-spike likelihoods from the DECODER's actual rate table — for
-    # display in the likelihood panel. Baseline Gaussian-PF rates, then
-    # each misfit window with ``decoder_rates`` set overwrites its own
-    # (disjoint) events with that table.
-    decoder_per_spike_lik: NDArray[np.floating] = np.zeros((n_spikes, n_bins))
-    if n_spikes > 0:
-        rates_orig = rates[:, spike_cell_ind].T  # (n_spikes, n_bins)
-        decoder_per_spike_lik = normalize(poisson.pmf(k=1, mu=rates_orig), axis=1)
-
-        for window in misfit_schedule.windows:
-            if window.decoder_rates is None:
-                continue
-            in_window = (spike_time_ind >= window.start) & (spike_time_ind < window.end)
-            if np.any(in_window):
-                cell_rates = window.decoder_rates[:, spike_cell_ind[in_window]].T
-                decoder_per_spike_lik[in_window] = normalize(
-                    poisson.pmf(k=1, mu=cell_rates), axis=1
-                )
-
     assert diagnostics.hpd_overlap is not None  # called with include_dense_matrices=True
     assert diagnostics.kl_divergence is not None
     assert diagnostics.spike_prob is not None
+    assert diagnostics.per_spike_likelihood is not None
+
+    hpd_overlap = diagnostics.hpd_overlap.copy()
+    kl_divergence = diagnostics.kl_divergence.copy()
+    spike_prob = diagnostics.spike_prob.copy()
+    event_hpd_overlap = diagnostics.event_hpd_overlap.copy()
+    event_kl_divergence = diagnostics.event_kl_divergence.copy()
+    event_spike_prob = diagnostics.event_spike_prob.copy()
+    decoder_per_spike_lik = diagnostics.per_spike_likelihood.copy()
+
+    for window in misfit_schedule.windows:
+        if window.decoder_rates is None:
+            continue
+        in_window = (spike_time_ind >= window.start) & (spike_time_ind < window.end)
+        if not np.any(in_window):
+            continue
+
+        window_diagnostics = compute_per_cell_diagnostics_from_rates(
+            predictive_posterior,
+            window.decoder_rates,
+            spike_time_ind[in_window],
+            spike_cell_ind[in_window],
+            coverage=0.95,
+        )
+        assert window_diagnostics.per_spike_likelihood is not None
+
+        event_hpd_overlap[in_window] = window_diagnostics.event_hpd_overlap
+        event_kl_divergence[in_window] = window_diagnostics.event_kl_divergence
+        event_spike_prob[in_window] = window_diagnostics.event_spike_prob
+        decoder_per_spike_lik[in_window] = window_diagnostics.per_spike_likelihood
+
+        window_times = spike_time_ind[in_window]
+        window_cells = spike_cell_ind[in_window]
+        hpd_overlap[window_times, window_cells] = window_diagnostics.event_hpd_overlap
+        kl_divergence[window_times, window_cells] = window_diagnostics.event_kl_divergence
+        spike_prob[window_times, window_cells] = window_diagnostics.event_spike_prob
+
     return Diagnostics(
         posterior=posterior,
         predictive=predictive_posterior,
         likelihood=combined_likelihood_all,
         spike_likelihood=spike_likelihood_all,
-        hpd_overlap=diagnostics.hpd_overlap,
-        kl_divergence=diagnostics.kl_divergence,
-        spike_prob=diagnostics.spike_prob,
+        hpd_overlap=hpd_overlap,
+        kl_divergence=kl_divergence,
+        spike_prob=spike_prob,
         per_spike_likelihood=decoder_per_spike_lik,
         event_time_ind=diagnostics.event_time_ind,
         event_cell_ind=diagnostics.event_cell_ind,
-        event_hpd_overlap=diagnostics.event_hpd_overlap,
-        event_kl_divergence=diagnostics.event_kl_divergence,
-        event_spike_prob=diagnostics.event_spike_prob,
+        event_hpd_overlap=event_hpd_overlap,
+        event_kl_divergence=event_kl_divergence,
+        event_spike_prob=event_spike_prob,
     )
 
 
@@ -1271,9 +1468,11 @@ def compute_per_cell_diagnostics_from_rates(
         # warning and produce a non-discriminative near-zero row in
         # ``cell_fraction_per_bin``. Use a uniform ``1/n_cells`` fallback
         # so the rank statistic (and therefore ``event_spike_prob``)
-        # treats those bins as non-informative. Note this branch does
-        # not protect ``event_hpd_overlap`` / ``event_kl_divergence``,
-        # which consume the per-cell Poisson ``lik_chunk`` directly.
+        # treats those bins as non-informative. This fallback is specific to
+        # the rank statistic; ``event_hpd_overlap`` / ``event_kl_divergence``
+        # consume ``lik_chunk``, whose normalization is handled by
+        # ``normalized_single_spike_likelihood`` (uniform only when a cell's
+        # rate is zero at every position).
         row_sums = rates.sum(axis=1, keepdims=True)
         zero_rows = row_sums.squeeze(-1) <= 1e-12
         safe_row_sums = np.where(row_sums > 1e-12, row_sums, 1.0)
@@ -1290,7 +1489,7 @@ def compute_per_cell_diagnostics_from_rates(
             # (chunk, n_bins) gathers + Poisson lik for this batch only.
             pred_chunk = predictive_posterior[sti]
             rates_chunk = rates[:, sci].T
-            lik_chunk = normalize(poisson.pmf(k=1, mu=rates_chunk), axis=1)
+            lik_chunk = normalized_single_spike_likelihood(rates_chunk)
 
             event_hpd_overlap[start:stop] = ssc.hpd_overlap(
                 pred_chunk, lik_chunk, coverage=coverage
@@ -1503,8 +1702,8 @@ def compute_thresholds(
 # multi-realization averaging path so the two cannot drift apart.
 SUMMARY_FLAG_METRICS: tuple[tuple[str, str], ...] = (
     ("hpd_overlap", "below"),
-    ("kl_divergence", "above"),
     ("spike_prob", "below"),
+    ("kl_divergence", "above"),
 )
 
 
@@ -1532,6 +1731,42 @@ class SummaryColumn:
     component: str
 
 
+def replay_window(params: DecodeParams) -> tuple[int, int]:
+    """Global ``[start, end)`` step bounds of the replay sub-window.
+
+    The replay event lives inside clean-recovery 2, spanning the fractional
+    sub-window ``[replay_frac_start, replay_frac_end)`` of that phase.
+    Deterministic from the phase ladder and the replay fractions so
+    ``run_figure03_simulation`` and the figure-3b summary columns stay in
+    sync.
+
+    Parameters
+    ----------
+    params : DecodeParams
+        Provides the phase-boundary ladder and replay fractions.
+
+    Returns
+    -------
+    tuple of (int, int)
+        Half-open ``[start, end)`` global step indices of the replay sweep.
+    """
+    bnd = params.phase_boundaries
+    start = bnd[PhaseBoundary.HIST_DEP_END]
+    end = bnd[PhaseBoundary.RECOVERY2_END]
+    n = end - start
+    r0 = start + int(round(n * params.replay_frac_start))
+    r1 = start + int(round(n * params.replay_frac_end))
+    # Ordered floating-point fractions can still collapse to the same integer
+    # step after rounding. A genuine out-and-back trajectory needs at least a
+    # start, a turn, and a return sample.
+    if not (start <= r0 < r1 <= end) or r1 - r0 < 3:
+        raise ValueError(
+            "Replay fractions must resolve to a window of at least 3 steps "
+            f"inside clean-recovery 2; got [{r0}, {r1}) within [{start}, {end})."
+        )
+    return r0, r1
+
+
 def summary_phase_windows(params: DecodeParams) -> list[SummaryColumn]:
     """Phase columns for the Figure-3b summary heatmap.
 
@@ -1542,9 +1777,10 @@ def summary_phase_windows(params: DecodeParams) -> list[SummaryColumn]:
     so the column order, time windows, and component labels cannot drift
     out of sync.
 
-    The first column ("Well-specified") aggregates the three clean-recovery
-    windows into an out-of-sample false-positive rate against the matched
-    misfit columns.
+    The first column ("Well-specified") aggregates the clean-recovery
+    windows (with the replay sub-window carved out) into an out-of-sample
+    false-positive rate against the matched misfit columns. The "Replay"
+    column scores the replay event, which is not a misspecification.
 
     Parameters
     ----------
@@ -1554,8 +1790,10 @@ def summary_phase_windows(params: DecodeParams) -> list[SummaryColumn]:
     Returns
     -------
     list of SummaryColumn
-        Five columns in heatmap order: well-specified, remap,
-        history-dependent firing, drift, wide-dynamics noise.
+        Six columns in heatmap order: well-specified, remap,
+        history-dependent firing, replay, drift, sparse population. After
+        the pooled reference column, the conditions follow their chronology
+        in Figure 3a.
     """
     bnd = params.phase_boundaries
     t_remap_start = bnd[PhaseBoundary.REMAP_START]
@@ -1565,21 +1803,32 @@ def summary_phase_windows(params: DecodeParams) -> list[SummaryColumn]:
     t_recovery2_end = bnd[PhaseBoundary.RECOVERY2_END]
     t_drift_end = bnd[PhaseBoundary.DRIFT_END]
     t_recovery3_end = bnd[PhaseBoundary.RECOVERY3_END]
-    t_wide_dynamics_end = bnd[PhaseBoundary.WIDE_DYNAMICS_END]
+    t_sparse_pop_end = bnd[PhaseBoundary.SPARSE_POP_END]
+    # The replay event sits inside clean-recovery 2; carve it out of the
+    # well-specified pool (it is scored in its own column) so its spikes
+    # neither define the baseline thresholds nor dilute the false-positive
+    # rate.
+    r0, r1 = replay_window(params)
     return [
         SummaryColumn(
             "Well-\nspecified",
             (
                 (t_remap_end, t_recovery1_end),
-                (t_hist_dep_end, t_recovery2_end),
+                (t_hist_dep_end, r0),
+                (r1, t_recovery2_end),
                 (t_drift_end, t_recovery3_end),
             ),
             "—",
         ),
         SummaryColumn("Remap", ((t_remap_start, t_remap_end),), "Observation"),
         SummaryColumn("History-\ndep.", ((t_recovery1_end, t_hist_dep_end),), "Observation"),
+        SummaryColumn("Replay", ((r0, r1),), "—"),
         SummaryColumn("Drift", ((t_recovery2_end, t_drift_end),), "Transition"),
-        SummaryColumn("Wide dyn.\nnoise", ((t_recovery3_end, t_wide_dynamics_end),), "Transition"),
+        SummaryColumn(
+            "Sparse\npopulation",
+            ((t_recovery3_end, t_sparse_pop_end),),
+            "—",
+        ),
     ]
 
 
@@ -1613,16 +1862,24 @@ def _flag_fraction(values: NDArray[np.floating], threshold: float, direction: st
 
 
 def extract_phase_flag_values(
-    metrics: Diagnostics | Mapping[str, NDArray[np.floating]],
+    metrics: Diagnostics | Mapping[str, NDArray[np.floating] | NDArray[np.intp]],
     windows: list[SummaryColumn],
 ) -> list[list[NDArray[np.floating]]]:
-    """Collect finite per-spike diagnostic values per metric per column.
+    """Collect finite per-spike-event diagnostic values per metric per column.
+
+    Works on the **per-event** arrays (``event_time_ind`` /
+    ``event_hpd_overlap`` / ``event_kl_divergence`` / ``event_spike_prob``),
+    one value per spike event, so that a bin with several spikes from one
+    cell contributes several values — matching the "percentage of spike
+    events" the figure reports. (The dense ``(n_time, n_cells)`` matrices
+    would collapse a multi-spike bin to a single value.)
 
     Parameters
     ----------
     metrics : Diagnostics or Mapping[str, NDArray]
-        Source of the dense ``(n_time, n_cells)`` ``hpd_overlap`` /
-        ``kl_divergence`` / ``spike_prob`` matrices (NaN where no spike).
+        Source of the per-event arrays ``event_time_ind`` (int) and
+        ``event_{hpd_overlap,kl_divergence,spike_prob}`` (float), each of
+        shape ``(n_events,)``.
     windows : list of SummaryColumn
         Heatmap columns from :func:`summary_phase_windows`.
 
@@ -1630,21 +1887,25 @@ def extract_phase_flag_values(
     -------
     list of list of np.ndarray
         Nested list indexed ``[metric_index][column_index]``; each leaf is
-        a 1-D array of the non-NaN diagnostic values for that metric
-        inside that column's time windows. Metric order follows
-        :data:`SUMMARY_FLAG_METRICS`.
+        a 1-D array of the non-NaN per-event values for that metric whose
+        event time falls inside that column's half-open time windows. Metric
+        order follows :data:`SUMMARY_FLAG_METRICS`.
     """
 
-    def _get(name: str) -> NDArray[np.floating]:
+    def _get(name: str) -> NDArray[np.generic]:
         arr = getattr(metrics, name) if isinstance(metrics, Diagnostics) else metrics[name]
-        return cast("NDArray[np.floating]", arr)
+        return cast("NDArray[np.generic]", arr)
 
+    event_time = np.asarray(_get("event_time_ind"))
     out: list[list[NDArray[np.floating]]] = []
     for metric_key, _direction in SUMMARY_FLAG_METRICS:
-        full = _get(metric_key)
+        ev = np.asarray(_get("event_" + metric_key), dtype=float)
         per_window: list[NDArray[np.floating]] = []
         for col in windows:
-            vals = np.concatenate([full[t0:t1] for t0, t1 in col.slices])
+            mask = np.zeros(event_time.shape, dtype=bool)
+            for t0, t1 in col.slices:
+                mask |= (event_time >= t0) & (event_time < t1)
+            vals = ev[mask]
             per_window.append(vals[~np.isnan(vals)])
         out.append(per_window)
     return out

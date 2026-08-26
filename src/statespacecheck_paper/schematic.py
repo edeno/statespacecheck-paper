@@ -545,24 +545,24 @@ def draw_graphical_model(
         fontstyle="italic",
     )
 
-    # Labels above nodes
+    # Labels above latent-state nodes
     ax.text(
         x_prev_pos[0],
         y_latent + 0.45,
-        "Previous\nPosterior",
+        "Previous\nState",
         ha="center",
         va="bottom",
         fontsize=8,
-        color=COLORS["posterior"],
+        color="black",
     )
     ax.text(
         x_curr_pos[0],
         y_latent + 0.45,
-        "Current\nPosterior",
+        "Current\nState",
         ha="center",
         va="bottom",
         fontsize=8,
-        color=COLORS["posterior"],
+        color="black",
     )
 
     # Spike rasters below observations
@@ -795,7 +795,7 @@ def draw_equation_boxes(ax: Axes) -> None:
         mean=50,
         std=10,
         color=COLORS["likelihood"],
-        label=r"$p(x_t|y_t)$",
+        label=r"$p(y_t|x_t)$",
         label_size=8,
         title="Likelihood",
     )

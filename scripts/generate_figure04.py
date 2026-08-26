@@ -31,6 +31,7 @@ from statespacecheck_paper.real_data_analysis import (
     compute_model_diagnostics,
     create_decoder_environment,
     extract_place_fields,
+    extract_shared_position_place_fields,
     fit_decoder_models,
     get_spike_counts,
 )
@@ -66,6 +67,7 @@ def _fig4_cache_path() -> Path:
 DETAIL_CENTER = 193069  # Time index with KL spike during immobility
 DETAIL_HALF_WIDTH = 500  # Half-width in time points (~2 seconds at 500 Hz)
 DIAGNOSTIC_ANNOTATION_GIDS = {THRESHOLD_LABEL_GID, WORSE_FIT_LABEL_GID}
+FIG4_CACHE_SCHEMA_VERSION = 3
 
 
 def shift_diagnostic_event_times(
@@ -183,12 +185,20 @@ def run_demo(*, use_cache: bool = True) -> None:
     if use_cache and cache_path.exists():
         print("Loading cached decoder outputs (use --force-recompute to rebuild)...")
         bundle = joblib.load(cache_path)
+        if bundle.get("schema_version") != FIG4_CACHE_SCHEMA_VERSION:
+            raise RuntimeError(
+                "The Figure 4 cache predates the current diagnostics/likelihood "
+                "schema. Rebuild it with scripts/generate_figure04.py "
+                "--force-recompute."
+            )
         continuous_results = bundle["continuous_results"]
         contfrag_results = bundle["contfrag_results"]
         continuous_diagnostics = bundle["continuous_diagnostics"]
         contfrag_diagnostics = bundle["contfrag_diagnostics"]
         spike_counts = bundle["spike_counts"]
         place_field_peaks = bundle["place_field_peaks"]
+        diagnostic_place_fields = bundle["diagnostic_place_fields"]
+        diagnostic_position_bins = bundle["diagnostic_position_bins"]
     else:
         # Environment is only needed to fit the decoders.
         env = create_decoder_environment(
@@ -237,16 +247,37 @@ def run_demo(*, use_cache: bool = True) -> None:
             )
         place_field_peaks = position_bins[np.nanargmax(place_fields, axis=1)]
 
+        # Shared interior place fields for the mean per-spike likelihood row.
+        # The row is meant to be identical across decoders, so verify the two
+        # models agree on both fields and grid before storing a single copy.
+        diagnostic_place_fields, diagnostic_position_bins = extract_shared_position_place_fields(
+            continuous_model
+        )
+        contfrag_place_fields, contfrag_position_bins = extract_shared_position_place_fields(
+            contfrag_model
+        )
+        if not np.allclose(
+            diagnostic_place_fields, contfrag_place_fields, equal_nan=True
+        ) or not np.allclose(diagnostic_position_bins, contfrag_position_bins, equal_nan=True):
+            raise ValueError(
+                "Continuous and Continuous--Fragmented place fields or position "
+                "grids differ; the shared likelihood row would misrepresent one "
+                "of the decoders."
+            )
+
         print("Caching decoder outputs to data/intermediates ...")
         cache_path.parent.mkdir(parents=True, exist_ok=True)
         joblib.dump(
             {
+                "schema_version": FIG4_CACHE_SCHEMA_VERSION,
                 "continuous_results": continuous_results,
                 "contfrag_results": contfrag_results,
                 "continuous_diagnostics": continuous_diagnostics,
                 "contfrag_diagnostics": contfrag_diagnostics,
                 "spike_counts": spike_counts,
                 "place_field_peaks": place_field_peaks,
+                "diagnostic_place_fields": diagnostic_place_fields,
+                "diagnostic_position_bins": diagnostic_position_bins,
             },
             cache_path,
         )
@@ -332,6 +363,8 @@ def run_demo(*, use_cache: bool = True) -> None:
         spike_times=spike_times_relative,
         spike_counts=spike_counts,
         place_field_peaks=place_field_peaks,
+        place_fields=diagnostic_place_fields,
+        position_bins=diagnostic_position_bins,
         time_slice_ind=detail_slice,
         thresholds=diagnostic_thresholds,
         track_graph=data["track_graph"],

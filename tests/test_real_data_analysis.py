@@ -11,12 +11,15 @@ import pandas as pd
 import pytest
 import xarray as xr
 
+import statespacecheck_paper.real_data_analysis as real_data_analysis
 from statespacecheck_paper.analysis import PerCellDiagnostics
 from statespacecheck_paper.real_data_analysis import (
     compute_flag_confusion,
+    compute_model_diagnostics,
     compute_per_cell_diagnostics,
     compute_running_average,
     extract_place_fields,
+    extract_shared_position_place_fields,
     find_sustained_low_overlap,
     gaussian_smooth,
     get_multiunit_population_firing_rate,
@@ -360,6 +363,188 @@ class TestGetStateMarginalizedPosterior:
             get_state_marginalized_posterior(results, "predictive")
 
 
+class TestMeanPerSpikeLikelihoodByTime:
+    def test_averages_normalized_fields_weighted_by_spike_count(self) -> None:
+        from statespacecheck_paper.real_data_analysis import (
+            mean_per_spike_likelihood_by_time,
+        )
+
+        # cell 0 concentrates at bin 0, cell 1 at bin 2 (unnormalized).
+        place_fields = np.array([[2.0, 0.0, 0.0], [0.0, 0.0, 4.0]])
+        spike_counts = np.array([[1, 0], [1, 1], [0, 0]], dtype=np.int64)
+
+        mean_lik, has_spikes = mean_per_spike_likelihood_by_time(spike_counts, place_fields)
+
+        expected = np.array([[1.0, 0.0, 0.0], [0.5, 0.0, 0.5], [0.0, 0.0, 0.0]])
+        np.testing.assert_allclose(mean_lik, expected)
+        np.testing.assert_array_equal(has_spikes, np.array([True, True, False]))
+
+    def test_uses_normalized_poisson_likelihood_not_raw_rate(self) -> None:
+        from scipy.stats import poisson
+
+        from statespacecheck_paper.real_data_analysis import (
+            mean_per_spike_likelihood_by_time,
+        )
+
+        # One cell, two bins, with rates large enough that the Poisson
+        # exp(-rate) factor matters. Raw-rate normalization would give
+        # [0.8, 0.2]; the diagnostics normalize Poisson(k=1, mu=rate).
+        place_fields = np.array([[2.0, 0.5]])
+        spike_counts = np.array([[1]], dtype=np.int64)
+
+        mean_lik, _ = mean_per_spike_likelihood_by_time(spike_counts, place_fields)
+
+        pmf = poisson.pmf(k=1, mu=place_fields[0])
+        expected = pmf / pmf.sum()
+        np.testing.assert_allclose(mean_lik[0], expected)
+        assert not np.allclose(mean_lik[0], place_fields[0] / place_fields[0].sum())
+
+    def test_matches_diagnostics_per_spike_likelihood(self) -> None:
+        # Parity across the two entry points that both claim to plot/consume
+        # the same per-spike likelihood: the plotting helper (place fields,
+        # (n_cells, n_bins)) and the diagnostics (rates, (n_bins, n_cells)).
+        from statespacecheck_paper.analysis import (
+            compute_per_cell_diagnostics_from_rates,
+        )
+        from statespacecheck_paper.real_data_analysis import (
+            mean_per_spike_likelihood_by_time,
+        )
+
+        place_fields = np.array([[2.0, 0.5, 1.0], [0.1, 0.4, 0.3]])  # (n_cells, n_bins)
+        spike_counts = np.array([[0, 1]], dtype=np.int64)  # one spike from cell 1 at t=0
+        mean_lik, _ = mean_per_spike_likelihood_by_time(spike_counts, place_fields)
+
+        predictive = np.full((1, 3), 1.0 / 3.0)
+        diag = compute_per_cell_diagnostics_from_rates(
+            predictive,
+            place_fields.T,
+            np.array([0], dtype=np.intp),
+            np.array([1], dtype=np.intp),
+            include_dense_matrices=True,
+        )
+        assert diag.per_spike_likelihood is not None
+        np.testing.assert_allclose(mean_lik[0], diag.per_spike_likelihood[0])
+
+
+# ---------------------------------------------------------------------------
+# position-marginal model diagnostics
+# ---------------------------------------------------------------------------
+
+
+def _two_state_model(
+    place_fields: np.ndarray,
+    position_bins: np.ndarray,
+    interior_mask: np.ndarray,
+) -> MagicMock:
+    model = MagicMock()
+    model.observation_models = [
+        MagicMock(environment_name="", encoding_group=0),
+        MagicMock(environment_name="", encoding_group=0),
+    ]
+    model.encoding_model_ = {("", 0): {"place_fields": place_fields}}
+    environment = MagicMock()
+    environment.place_bin_centers_ = position_bins[:, np.newaxis]
+    model.environments = [environment]
+    model.is_track_interior_state_bins_ = np.tile(interior_mask, 2)
+    return model
+
+
+class TestComputeModelDiagnostics:
+    def test_marginalizes_state_and_uses_one_shared_place_field_copy(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        position_bins = np.array([0.0, 1.0, 2.0])
+        interior_mask = np.array([True, False, True])
+        place_fields = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+        model = _two_state_model(place_fields, position_bins, interior_mask)
+
+        posterior_per_state = np.array(
+            [
+                [[0.10, np.nan, 0.20], [0.30, np.nan, 0.40]],
+                [[0.25, np.nan, 0.15], [0.35, np.nan, 0.25]],
+            ]
+        )
+        state_bins = pd.MultiIndex.from_product(
+            [["Continuous", "Fragmented"], position_bins],
+            names=["state", "position"],
+        )
+        results = _xarray_results(
+            posterior_per_state.reshape(2, -1),
+            "predictive_posterior",
+            state_bins=state_bins,
+        )
+
+        captured: dict[str, Any] = {}
+        sentinel = MagicMock()
+
+        def _capture(
+            predictive_posterior: np.ndarray,
+            spike_counts: np.ndarray,
+            diagnostic_place_fields: np.ndarray,
+            **kwargs: Any,
+        ) -> MagicMock:
+            captured["predictive"] = predictive_posterior
+            captured["place_fields"] = diagnostic_place_fields
+            captured["kwargs"] = kwargs
+            return sentinel
+
+        monkeypatch.setattr(real_data_analysis, "compute_per_cell_diagnostics", _capture)
+        spike_counts = np.zeros((2, 2), dtype=np.int64)
+        time = np.array([0.0, 0.002])
+        result = compute_model_diagnostics(model, results, spike_counts, time)
+
+        assert result is sentinel
+        np.testing.assert_allclose(
+            captured["predictive"],
+            posterior_per_state[:, :, interior_mask].sum(axis=1),
+        )
+        np.testing.assert_allclose(captured["place_fields"], place_fields[:, interior_mask])
+        assert captured["kwargs"]["time"] is time
+
+    def test_rejects_state_specific_observation_likelihoods(self) -> None:
+        position_bins = np.array([0.0, 1.0, 2.0])
+        model = MagicMock()
+        model.observation_models = [
+            MagicMock(environment_name="", encoding_group=0),
+            MagicMock(environment_name="", encoding_group=1),
+        ]
+        model.encoding_model_ = {
+            ("", 0): {"place_fields": np.ones((2, 3))},
+            ("", 1): {"place_fields": np.full((2, 3), 2.0)},
+        }
+        environments = []
+        for _ in range(2):
+            environment = MagicMock()
+            environment.place_bin_centers_ = position_bins[:, np.newaxis]
+            environments.append(environment)
+        model.environments = environments
+        model.is_track_interior_state_bins_ = np.ones(6, dtype=bool)
+
+        with pytest.raises(ValueError, match="likelihood differs"):
+            extract_shared_position_place_fields(model)
+
+    def test_rejects_state_dependent_interior_mask(self) -> None:
+        # Same place fields and grid across states, but the track-interior
+        # mask differs per state -> the shared position marginal is ill-defined
+        # and must be rejected rather than silently reshaped into a wrong mask.
+        position_bins = np.array([0.0, 1.0, 2.0])
+        place_fields = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+        model = MagicMock()
+        model.observation_models = [
+            MagicMock(environment_name="", encoding_group=0),
+            MagicMock(environment_name="", encoding_group=0),
+        ]
+        model.encoding_model_ = {("", 0): {"place_fields": place_fields}}
+        environment = MagicMock()
+        environment.place_bin_centers_ = position_bins[:, np.newaxis]
+        model.environments = [environment]
+        # State 0 interior [T, F, T]; state 1 interior [T, T, F] -> differ.
+        model.is_track_interior_state_bins_ = np.array([True, False, True, True, True, False])
+
+        with pytest.raises(ValueError, match="interior mask differs"):
+            extract_shared_position_place_fields(model)
+
+
 # ---------------------------------------------------------------------------
 # plot_per_cell_diagnostic_scatter (spike-time alignment behavior)
 # ---------------------------------------------------------------------------
@@ -597,6 +782,17 @@ class TestComputeFlagConfusion:
         assert (conf.both, conf.a_only, conf.b_only, conf.neither) == (1, 1, 1, 1)
         assert conf.rescue_rate == pytest.approx(0.5)
 
+    def test_threshold_values_are_inclusive(self) -> None:
+        hpd_a = _diag_from_events(hpd=np.array([0.05, 0.10]))
+        hpd_b = _diag_from_events(hpd=np.array([0.10, 0.05]))
+        hpd_conf = compute_flag_confusion(hpd_a, hpd_b, "hpd_overlap", 0.05, worse_when="below")
+        assert (hpd_conf.a_only, hpd_conf.b_only) == (1, 1)
+
+        kl_a = _diag_from_events(kl=np.array([4.0, 3.0]))
+        kl_b = _diag_from_events(kl=np.array([3.0, 4.0]))
+        kl_conf = compute_flag_confusion(kl_a, kl_b, "kl_divergence", 4.0, worse_when="above")
+        assert (kl_conf.a_only, kl_conf.b_only) == (1, 1)
+
     def test_nan_events_are_dropped(self) -> None:
         a = _diag_from_events(hpd=np.array([0.01, np.nan, 0.02]))
         b = _diag_from_events(hpd=np.array([0.20, 0.01, 0.02]))
@@ -605,7 +801,7 @@ class TestComputeFlagConfusion:
         assert (conf.n, conf.both, conf.a_only, conf.b_only, conf.neither) == (2, 1, 1, 0, 0)
 
     def test_rescue_rate_nan_when_a_flags_nothing(self) -> None:
-        a = _diag_from_events(hpd=np.array([0.5, 0.6]))  # none below 0.05
+        a = _diag_from_events(hpd=np.array([0.5, 0.6]))  # none at or below 0.05
         b = _diag_from_events(hpd=np.array([0.01, 0.6]))
         conf = compute_flag_confusion(a, b, "hpd_overlap", 0.05, worse_when="below")
         assert conf.a_only == 0 and conf.both == 0

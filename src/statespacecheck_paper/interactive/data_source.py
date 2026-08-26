@@ -127,7 +127,9 @@ class DecoderDataSource:
     * ``place_fields .npz``: ``place_fields`` f32 ``(n_cells, n_state_bins)``,
       ``position_bins`` f64 ``(n_interior,)``,
       ``place_field_peaks`` f64 ``(n_cells,)``,
-      ``interior_mask`` bool ``(n_state_bins // n_states,)``.
+      ``interior_mask`` bool ``(n_state_bins // n_states,)``, and optional
+      ``event_likelihood`` f32 ``(n_events, n_state_bins)`` for caches with
+      time-varying event likelihoods.
     * ``events .parquet``: ``time`` f64, ``cell_id`` i32,
       ``event_hpd_overlap`` f32, ``event_kl_divergence`` f32,
       ``event_spike_prob`` f32 — sorted by ``time``.
@@ -160,6 +162,10 @@ class DecoderDataSource:
         Per-state interior position grid (1D, identical across states).
     place_field_peaks : np.ndarray, shape (n_cells,), float64
         Place-field peak position for each cell, used to sort the raster.
+    event_likelihood : np.ndarray, shape (n_events, n_state_bins), float32, optional
+        Exact normalized likelihood for each event. Present in the simulation
+        cache so remap-window slices use the decoder's active place fields;
+        ``None`` for legacy and real-data caches with static place fields.
     spike_times : list[np.ndarray]
         Per-cell spike-time arrays (float64).
     events : pandas.DataFrame
@@ -227,6 +233,11 @@ class DecoderDataSource:
         self.place_fields = _readonly(np.asarray(pfs["place_fields"], dtype=np.float32))
         self.position_bins = _readonly(np.asarray(pfs["position_bins"], dtype=np.float64))
         self.place_field_peaks = _readonly(np.asarray(pfs["place_field_peaks"], dtype=np.float64))
+        event_likelihood = (
+            np.asarray(pfs["event_likelihood"], dtype=np.float32)
+            if "event_likelihood" in pfs.files
+            else None
+        )
 
         spike_arr = np.load(self._layout.spike_times, allow_pickle=True)
         if spike_arr.dtype != object:
@@ -237,7 +248,13 @@ class DecoderDataSource:
 
         self.events: pd.DataFrame = pd.read_parquet(self._layout.events)
         if not self.events["time"].is_monotonic_increasing:
-            self.events = self.events.sort_values("time", kind="mergesort").reset_index(drop=True)
+            event_order = np.argsort(self.events["time"].to_numpy(), kind="stable")
+            self.events = self.events.iloc[event_order].reset_index(drop=True)
+            if event_likelihood is not None:
+                event_likelihood = event_likelihood[event_order]
+        self.event_likelihood: NDArray[np.float32] | None = (
+            _readonly(event_likelihood) if event_likelihood is not None else None
+        )
 
         # Pre-extracted NumPy copies of the events frame. The viewer's
         # per-tick live readout indexes these directly to avoid the
@@ -336,6 +353,12 @@ class DecoderDataSource:
                 f"got [{self.events['cell_id'].min()}, "
                 f"{self.events['cell_id'].max()}]"
             )
+        if self.event_likelihood is not None:
+            expected_shape = (len(self.events), self.place_fields.shape[1])
+            if self.event_likelihood.shape != expected_shape:
+                raise ValueError(
+                    f"event_likelihood shape {self.event_likelihood.shape} != {expected_shape}"
+                )
         # The hot-path window slicer assumes ``time`` is monotonic
         # non-decreasing — a backwards entry would silently scramble
         # ``searchsorted`` lookups.
@@ -421,6 +444,29 @@ class DecoderDataSource:
         if i1 <= i0:
             return np.empty(0, dtype=np.int32)
         return np.unique(self.event_cell_ids[i0:i1])
+
+    def event_likelihood_at(self, event_idx: int, cell_id: int) -> NDArray[np.float32]:
+        """Return the likelihood curve associated with one event.
+
+        Simulation caches store the exact event likelihood so windows with
+        time-varying decoder rates remain faithful. Older and real-data caches
+        fall back to the firing cell's static place field, normalized into the
+        same single-spike ``Poisson(k=1, mu=rate)`` likelihood the diagnostics
+        use (a raw place field would differ by the ``exp(-rate)`` factor and
+        peak-normalization in the viewer would not remove it).
+        """
+        if not 0 <= event_idx < len(self.events):
+            raise IndexError(f"event_idx {event_idx} out of range [0, {len(self.events)})")
+        if not 0 <= cell_id < self.n_cells:
+            raise IndexError(f"cell_id {cell_id} out of range [0, {self.n_cells})")
+        if self.event_likelihood is not None:
+            return np.asarray(self.event_likelihood[event_idx], dtype=np.float32)
+        from statespacecheck_paper.analysis import normalized_single_spike_likelihood
+
+        likelihood = normalized_single_spike_likelihood(
+            np.asarray(self.place_fields[cell_id], dtype=np.float64)
+        )
+        return np.asarray(likelihood, dtype=np.float32)
 
     # ------------------------------------------------------------------
     # Hot-path readers

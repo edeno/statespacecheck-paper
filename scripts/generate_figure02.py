@@ -1,7 +1,7 @@
 """Create Figure 2: Diagnostic Metrics for State Space Models.
 
-This figure explains the three diagnostic metrics (KL divergence, HPD overlap,
-and predictive checks) using a shared synthetic example.
+This figure explains the three diagnostic metrics (HPD overlap, predictive
+checks, and KL divergence) using a shared synthetic example.
 
 Layout (3 columns x 4 rows):
     Row 1: Input distributions for each metric
@@ -9,10 +9,14 @@ Layout (3 columns x 4 rows):
     Row 3: Final result
     Row 4: Formula with computed value
 
-Columns (single panel label per column):
-    a = KL Divergence mechanics
-    b = HPD Overlap mechanics
-    c = Predictive Check mechanics
+Columns (single panel label per column, left to right):
+    a = HPD Overlap mechanics
+    b = Predictive Check mechanics
+    c = KL Divergence mechanics
+
+Panels are wired to the fixed axis keys A/D/G/J (KL), B/E/H/K (HPD), and
+C/F/I/L (Predictive); the mosaic layout string positions those columns so
+the on-page order reads HPD, Predictive, KL.
 
 Per-panel renderers live in :mod:`statespacecheck_paper.figure02_panels`.
 This script handles layout, panel labels, formula row, and saving.
@@ -86,10 +90,10 @@ def create_figure() -> None:
     # columns visually separate the metrics without splitting them
     # across subfigures.
     layout = """
-        AA.BB.CC
-        DD.EE.FF
-        GG.HH.II
-        JJ.KK.LL
+        BB.CC.AA
+        EE.FF.DD
+        HH.II.GG
+        KK.LL.JJ
         """
     fig, axes = plt.subplot_mosaic(
         layout,
@@ -177,7 +181,9 @@ def create_figure() -> None:
         va="center",
     )
 
-    for label, ax_key in zip(["a", "b", "c"], ["A", "B", "C"], strict=True):
+    # Physical column order (left->right) is HPD (B), Predictive (C), KL (A);
+    # place the panel letters a/b/c in that reading order.
+    for label, ax_key in zip(["a", "b", "c"], ["B", "C", "A"], strict=True):
         ax = axes[ax_key]
         ax.text(
             -0.15,

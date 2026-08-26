@@ -250,14 +250,34 @@ def _write_place_fields(
     interior_mask: NDArray[np.bool_],
     position_bins: NDArray[np.float64],
     place_field_peaks: NDArray[np.float64],
+    event_likelihood: NDArray[np.floating] | None = None,
 ) -> None:
-    np.savez(
-        out_path,
-        place_fields=place_fields.astype(np.float32),
-        interior_mask=interior_mask,
-        position_bins=position_bins.astype(np.float64),
-        place_field_peaks=place_field_peaks.astype(np.float64),
-    )
+    # ``np.savez`` uses each keyword as the archive member name, so the
+    # arrays must be passed as literal keywords. Unpacking an array-valued
+    # ``**dict`` instead trips mypy, whose ``savez`` stub reserves an
+    # ``allow_pickle: bool`` keyword a ``**dict`` value could collide with.
+    # Two explicit calls keep the optional ``event_likelihood`` member
+    # without that unpacking.
+    place_fields32 = place_fields.astype(np.float32)
+    position_bins64 = position_bins.astype(np.float64)
+    place_field_peaks64 = place_field_peaks.astype(np.float64)
+    if event_likelihood is None:
+        np.savez(
+            out_path,
+            place_fields=place_fields32,
+            interior_mask=interior_mask,
+            position_bins=position_bins64,
+            place_field_peaks=place_field_peaks64,
+        )
+    else:
+        np.savez(
+            out_path,
+            place_fields=place_fields32,
+            interior_mask=interior_mask,
+            position_bins=position_bins64,
+            place_field_peaks=place_field_peaks64,
+            event_likelihood=np.asarray(event_likelihood, dtype=np.float32),
+        )
 
 
 def _write_meta(
@@ -338,7 +358,9 @@ def build_model_cache(
     from statespacecheck_paper.real_data_analysis import (
         compute_per_cell_diagnostics,
         extract_place_fields_concat,
+        extract_shared_position_place_fields,
         get_spike_counts,
+        get_state_marginalized_posterior,
     )
 
     with xr.open_dataset(inputs.results_nc) as ds:
@@ -357,8 +379,11 @@ def build_model_cache(
         position_coord = np.asarray(ds["position"].values, dtype=np.float64)
         position_grid_full = np.unique(position_coord)
 
-        predictive_interior = np.asarray(
-            ds["predictive_posterior"].dropna(dim="state_bins").values,
+        joint_interior_bins = int(
+            ds["predictive_posterior"].dropna(dim="state_bins").sizes["state_bins"]
+        )
+        diagnostic_predictive = np.asarray(
+            get_state_marginalized_posterior(_restore_state_bins_index(ds), "predictive"),
             dtype=np.float64,
         )
 
@@ -376,11 +401,11 @@ def build_model_cache(
         )
     place_fields = place_fields_full[:, interior_mask]
 
-    if place_fields.shape[1] != predictive_interior.shape[1]:
+    if place_fields.shape[1] != joint_interior_bins:
         raise ValueError(
             f"Place-field interior bin count ({place_fields.shape[1]}) does not "
             f"match predictive_posterior interior bin count "
-            f"({predictive_interior.shape[1]})"
+            f"({joint_interior_bins})"
         )
 
     # Per-state interior position grid for raster sorting and the slice
@@ -408,6 +433,23 @@ def build_model_cache(
         )
     position_bins = position_grid_full[interior_mask_per_state]
     place_fields_per_state = place_fields[:, :n_interior_per_state]
+    diagnostic_place_fields, diagnostic_position_bins = extract_shared_position_place_fields(
+        fitted_model
+    )
+    if not np.allclose(diagnostic_position_bins, position_bins, equal_nan=True):
+        raise ValueError(
+            "Shared diagnostic position grid does not match the viewer's per-state position grid."
+        )
+    if not np.allclose(diagnostic_place_fields, place_fields_per_state, equal_nan=True):
+        raise ValueError(
+            "Shared diagnostic place fields do not match the viewer's per-state place fields."
+        )
+    if diagnostic_predictive.shape[1] != diagnostic_place_fields.shape[1]:
+        raise ValueError(
+            f"Position-marginal predictive posterior has "
+            f"{diagnostic_predictive.shape[1]} bins but the shared observation "
+            f"likelihood has {diagnostic_place_fields.shape[1]}."
+        )
     with np.errstate(invalid="ignore"):
         peak_idx = np.nanargmax(place_fields_per_state, axis=1)
     place_field_peaks = position_bins[peak_idx]
@@ -417,9 +459,9 @@ def build_model_cache(
     # ``include_dense_matrices=False`` skips the (n_time, n_cells) matrix
     # allocations + scatters, which on real data are hundreds of MB.
     diagnostics = compute_per_cell_diagnostics(
-        predictive_interior,
+        diagnostic_predictive,
         spike_counts,
-        place_fields,
+        diagnostic_place_fields,
         spike_times=spike_times,
         time=time_arr,
         include_dense_matrices=False,
@@ -546,10 +588,11 @@ def build_simulated_cache(
     -----
     The simulation's ``metrics["likelihood"]`` is the *normalized linear*
     combined likelihood. The viewer's worker exponentiates the cache's
-    ``log_likelihood`` back, so this builder writes
-    ``log_likelihood = log(max(likelihood, 1e-12))`` — true log space.
-    Without the ``log``, the worker would ``exp`` an already-normalized
-    distribution and the likelihood panel would visually flatten.
+    ``log_likelihood`` back, so this builder writes ``log_likelihood =
+    log(likelihood)`` — true log space, with no clamp (exact-zero bins
+    become ``-inf``, which the worker handles). Without the ``log``, the
+    worker would ``exp`` an already-normalized distribution and the
+    likelihood panel would visually flatten.
 
     No ``acausal_posterior`` is written: the simulation only forward-
     filters, so the smoothed-overlay control is honestly disabled by
@@ -579,9 +622,12 @@ def build_simulated_cache(
     n_time = x_true.shape[0]
     n_bins = xs.shape[0]
     n_cells = int(spikes.shape[1])
+    # The simulation appends a narrow sparse-population of cells; include them
+    # in the cache's cell set and sort them at their fixed field centers.
     pf_centers = np.asarray(params_used.pf_centers, dtype=np.float64)
-    if pf_centers.shape[0] != n_cells:
-        raise ValueError(f"pf_centers length {pf_centers.shape[0]} != n_cells={n_cells}")
+    pf_centers_full = np.append(pf_centers, np.asarray(sim.sparse_cell_centers, dtype=np.float64))
+    if pf_centers_full.shape[0] != n_cells:
+        raise ValueError(f"pf_centers length {pf_centers_full.shape[0]} != n_cells={n_cells}")
 
     time_arr = (np.arange(n_time, dtype=np.float64) * _SIMULATED_DT).astype(np.float64)
 
@@ -628,25 +674,36 @@ def build_simulated_cache(
     spike_time_ind = np.asarray(metrics.event_time_ind, dtype=np.intp)
     spike_cell_ind = np.asarray(metrics.event_cell_ind, dtype=np.intp)
     event_times = time_arr[spike_time_ind]
+    event_order = np.argsort(event_times, kind="stable")
     events_df = pd.DataFrame(
         {
-            "time": event_times.astype(np.float64),
-            "cell_id": spike_cell_ind.astype(np.int32),
-            "event_hpd_overlap": np.asarray(metrics.event_hpd_overlap, dtype=np.float32),
-            "event_kl_divergence": np.asarray(metrics.event_kl_divergence, dtype=np.float32),
-            "event_spike_prob": np.asarray(metrics.event_spike_prob, dtype=np.float32),
+            "time": event_times[event_order].astype(np.float64),
+            "cell_id": spike_cell_ind[event_order].astype(np.int32),
+            "event_hpd_overlap": np.asarray(
+                metrics.event_hpd_overlap[event_order], dtype=np.float32
+            ),
+            "event_kl_divergence": np.asarray(
+                metrics.event_kl_divergence[event_order], dtype=np.float32
+            ),
+            "event_spike_prob": np.asarray(metrics.event_spike_prob[event_order], dtype=np.float32),
         }
     )
-    events_df.sort_values("time", kind="mergesort", inplace=True)
-    events_df.reset_index(drop=True, inplace=True)
     events_df.to_parquet(paths["events"], engine="pyarrow", compression="zstd")
 
-    # Place-fields sidecar. ``placefield_rates`` returns
-    # ``(n_bins, n_cells)``; the viewer expects ``(n_cells, n_bins)``.
-    rates = np.asarray(
-        placefield_rates(xs, pf_centers, params_used.pf_width, params_used.rate_scale),
-        dtype=np.float64,
+    # Place-fields sidecar. The 11 normal cells (shared width) plus the narrow
+    # sparse-population cells (their own width and peak rate). ``placefield_rates``
+    # returns ``(n_bins, n_cells)``; the viewer expects ``(n_cells, n_bins)``.
+    normal_rates = placefield_rates(xs, pf_centers, params_used.pf_width, params_used.rate_scale)
+    sparse_cell_scale = (
+        params_used.sparse_cell_peak_rate * np.sqrt(2.0 * np.pi) * params_used.sparse_cell_width
     )
+    sparse_rates = placefield_rates(
+        xs,
+        np.asarray(sim.sparse_cell_centers, dtype=np.float64),
+        params_used.sparse_cell_width,
+        sparse_cell_scale,
+    )
+    rates = np.asarray(np.hstack([normal_rates, sparse_rates]), dtype=np.float64)
     place_fields = rates.T  # (n_cells, n_bins)
     interior_mask = np.ones(n_bins, dtype=bool)
     _write_place_fields(
@@ -654,7 +711,8 @@ def build_simulated_cache(
         place_fields=place_fields,
         interior_mask=interior_mask,
         position_bins=xs,
-        place_field_peaks=pf_centers,
+        place_field_peaks=pf_centers_full,
+        event_likelihood=np.asarray(metrics.per_spike_likelihood[event_order]),
     )
 
     _write_meta(

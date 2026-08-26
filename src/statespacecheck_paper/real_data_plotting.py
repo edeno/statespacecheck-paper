@@ -1033,8 +1033,8 @@ def plot_model_comparison_with_posterior(
     - Row 1: Likelihood p(y_t | x_t) with animal position overlay (only at spike times)
     - Row 2: Spike raster (cells sorted by place field peak)
     - Row 3: HPD overlap scatter
-    - Row 4: KL divergence scatter
-    - Row 5: Spike probability scatter
+    - Row 4: Spike probability scatter (-log(p))
+    - Row 5: KL divergence scatter
 
     Parameters
     ----------
@@ -1119,11 +1119,11 @@ def plot_model_comparison_with_posterior(
     axes[3, 0] = fig.add_subplot(gs[3, 0], sharex=axes[0, 0])
     axes[3, 1] = fig.add_subplot(gs[3, 1], sharex=axes[0, 0], sharey=axes[3, 0])
 
-    # Row 4: KL divergence (share y within row, share x with row 0)
+    # Row 4: Spike probability (share y within row, share x with row 0)
     axes[4, 0] = fig.add_subplot(gs[4, 0], sharex=axes[0, 0])
     axes[4, 1] = fig.add_subplot(gs[4, 1], sharex=axes[0, 0], sharey=axes[4, 0])
 
-    # Row 5: Spike probability (share y within row, share x with row 0)
+    # Row 5: KL divergence (share y within row, share x with row 0)
     axes[5, 0] = fig.add_subplot(gs[5, 0], sharex=axes[0, 0])
     axes[5, 1] = fig.add_subplot(gs[5, 1], sharex=axes[0, 0], sharey=axes[5, 0])
 
@@ -1355,6 +1355,8 @@ def plot_single_model_diagnostics(
     spike_times: list[NDArray[np.float64]] | None = None,
     spike_counts: NDArray[np.int64] | None = None,
     place_field_peaks: NDArray[np.float64] | None = None,
+    place_fields: NDArray[np.float64] | None = None,
+    position_bins: NDArray[np.float64] | None = None,
     time_slice_ind: slice | None = None,
     model_name: str = "Continuous",
     thresholds: dict[str, float] | None = None,
@@ -1372,8 +1374,8 @@ def plot_single_model_diagnostics(
     - Row 1: Likelihood at spike times with position overlay
     - Row 2: Spike raster (sorted by place field peak)
     - Row 3: HPD overlap scatter
-    - Row 4: KL divergence scatter
-    - Row 5: Spike probability scatter (-log(p), natural log scale)
+    - Row 4: Spike probability scatter (-log(p), natural log scale)
+    - Row 5: KL divergence scatter
 
     Parameters
     ----------
@@ -1391,6 +1393,13 @@ def plot_single_model_diagnostics(
         Spike count matrix.
     place_field_peaks : np.ndarray, shape (n_cells,), optional
         Place field peak positions for raster sorting.
+    place_fields : np.ndarray, shape (n_cells, n_bins), optional
+        Per-cell place fields over the interior position grid. When supplied
+        with ``spike_counts`` and ``position_bins``, the likelihood row shows
+        the mean normalized per-spike likelihood (as in the simulation
+        figure) instead of the decoder's combined likelihood.
+    position_bins : np.ndarray, shape (n_bins,), optional
+        Interior position-bin centers matching the columns of ``place_fields``.
     time_slice_ind : slice, optional
         Time slice to plot. If None, plots all time points.
     model_name : str, default "Continuous"
@@ -1468,7 +1477,39 @@ def plot_single_model_diagnostics(
     ax_lik = axes[1]
     ax_lik.set_facecolor("black")
 
-    if "log_likelihood" in results:
+    if place_fields is not None and spike_counts is not None and position_bins is not None:
+        # Match the simulation figure: show the mean normalized per-spike
+        # likelihood over position. This is the observation quantity the
+        # per-spike diagnostics below operate on, and it is identical across
+        # decoders that share place fields (unlike the decoder's combined
+        # likelihood, which lives on the joint state-by-position space).
+        from statespacecheck_paper.real_data_analysis import (
+            mean_per_spike_likelihood_by_time,
+        )
+
+        # Slice to the plotted window first; the full session is ~700k bins,
+        # so computing over all of it would allocate multi-GB intermediates
+        # for a ~1000-bin plot.
+        counts_win = spike_counts[time_slice_ind]
+        lik_np, has_spk_slice = mean_per_spike_likelihood_by_time(counts_win, place_fields)
+
+        time_win = np.asarray(time)[time_slice_ind]
+        pos = np.asarray(position_bins, dtype=np.float64)
+        t0, t1 = float(time_win[0]), float(time_win[-1])
+        p0, p1 = float(pos[0]), float(pos[-1])
+        dt = (t1 - t0) / max(len(time_win) - 1, 1) / 2
+        dp = (p1 - p0) / max(len(pos) - 1, 1) / 2
+        extent = (t0 - dt, t1 + dt, p0 - dp, p1 + dp)
+
+        plot_likelihood_columns(
+            ax_lik,
+            lik_np,
+            has_spk_slice,
+            n_time=len(time_win),
+            extent=extent,
+            cmap=CMAP_LIKELIHOOD,
+        )
+    elif "log_likelihood" in results:
         lik_da = xr.apply_ufunc(np.exp, results["log_likelihood"]).dropna("state_bins", how="all")
         # See ``plot_model_comparison_with_posterior`` above for the
         # MultiIndex-vs-Index rationale; the overlay needs a position
@@ -1623,8 +1664,8 @@ def plot_per_spike_metric_hexbin_row(
         ``event_kl_divergence``, ``event_spike_prob`` (each shape
         ``(n_spikes,)``).
     axes : Sequence[matplotlib.axes.Axes]
-        Three axes, one per metric (HPD overlap, KL divergence,
-        ``-log(p)`` natural log).
+        Three axes, one per metric (HPD overlap, ``-log(p)`` natural
+        log, KL divergence).
     model_a_name, model_b_name : str
         Axis labels for each decoder.
     thresholds : dict[str, float], optional
@@ -1646,6 +1687,7 @@ def plot_per_spike_metric_hexbin_row(
     # high values ("above").
     metric_specs = [
         ("event_hpd_overlap", "HPD overlap", COLORS["hpd_overlap"], False, "hpd_overlap", "below"),
+        ("event_spike_prob", r"$-\log(p)$", COLORS["metric_combined"], True, "spike_prob", "above"),
         (
             "event_kl_divergence",
             "KL divergence",
@@ -1654,7 +1696,6 @@ def plot_per_spike_metric_hexbin_row(
             "kl_divergence",
             "above",
         ),
-        ("event_spike_prob", r"$-\log(p)$", COLORS["metric_combined"], True, "spike_prob", "above"),
     ]
 
     hex_artists = []

@@ -31,7 +31,11 @@ from statespacecheck_paper.analysis import (
     transform_metrics,
 )
 from statespacecheck_paper.figure03_demo import PHASE_LABELS, SimulationResult
-from statespacecheck_paper.simulation import gaussian_transition_matrix, normalize
+from statespacecheck_paper.simulation import (
+    gaussian_transition_matrix,
+    normalize,
+    placefield_rates,
+)
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -200,14 +204,25 @@ class TestGetRemappedPfCenters:
         result = get_remapped_pf_centers(pf_centers, ((0, 1), (1, 0)), active=True)
         np.testing.assert_array_equal(result, [10.0, 0.0, 20.0, 30.0])
 
-    def test_default_bidirectional_swap_pattern(self) -> None:
-        """The DecodeParams default is six bidirectional swaps; verify the
-        full pattern preserves the swap semantics across all 10 cells."""
-        pf_centers = np.arange(10) * 10.0
-        remap_from_to = ((0, 9), (1, 8), (2, 7), (9, 0), (8, 1), (7, 2))
-        result = get_remapped_pf_centers(pf_centers, remap_from_to, active=True)
-        expected = np.array([90.0, 80.0, 70.0, 30.0, 40.0, 50.0, 60.0, 20.0, 10.0, 0.0])
-        np.testing.assert_array_equal(result, expected)
+    def test_default_global_remap_is_complete_and_well_separated(self) -> None:
+        """Every default cell is remapped exactly once and moves at least
+        three center spacings, as required by the Figure 3 positive control.
+        """
+        params = DecodeParams()
+        assert params.pf_centers is not None
+        mapping = np.asarray(params.remap_from_to, dtype=int)
+        n_cells = params.pf_centers.size
+
+        np.testing.assert_array_equal(np.sort(mapping[:, 0]), np.arange(n_cells))
+        np.testing.assert_array_equal(np.sort(mapping[:, 1]), np.arange(n_cells))
+        assert np.all(np.abs(mapping[:, 0] - mapping[:, 1]) >= 3)
+
+        result = get_remapped_pf_centers(
+            params.pf_centers,
+            params.remap_from_to,
+            active=True,
+        )
+        np.testing.assert_array_equal(result, params.pf_centers[mapping[:, 1]])
 
 
 # ---------------------------------------------------------------------------
@@ -364,49 +379,124 @@ class TestDecodeAndDiagnostics:
             atol=1e-6,
         ), f"transition_matrix in {window} did not change predictive — schedule ignored?"
 
-    def test_alt_rates_used_only_inside_window(self, decoder_inputs: DecoderInputs) -> None:
+    def test_alt_rates_used_only_inside_window(self) -> None:
         """A :class:`MisfitWindow` with ``decoder_rates`` must change
-        the per-spike likelihood inside the window and leave it
-        untouched outside. Compared against a baseline run so a
-        regression that ignored the schedule cannot pass on output
-        shape alone.
+        every per-spike diagnostic inside the window and leave it
+        untouched outside. The in-window values are checked directly
+        against the shared diagnostic routine evaluated with the alternate
+        table, preventing a regression to oracle baseline rates.
         """
-        # Flat-rate table that's clearly different from the Gaussian-PF
-        # baseline — used here only to exercise the schedule plumbing.
-        alt_rates = np.full((decoder_inputs.xs.size, 3), 0.05)
-        window = (3, 7)
+        xs = np.arange(5, dtype=float)
+        pf_centers = np.array([0.0, 2.0, 4.0])
+        pf_width = 0.45
+        rate_scale = 2.0
+        spikes = np.zeros((6, 3), dtype=int)
+        for time_ind, cell_ind in ((1, 0), (2, 0), (3, 1), (4, 2), (5, 0)):
+            spikes[time_ind, cell_ind] = 1
+
+        baseline_rates = placefield_rates(xs, pf_centers, pf_width, rate_scale)
+        alt_rates = placefield_rates(
+            xs,
+            np.array([4.0, 0.0, 2.0]),
+            pf_width,
+            rate_scale,
+        )
+        window = (2, 4)
         schedule = MisfitSchedule((MisfitWindow(window[0], window[1], decoder_rates=alt_rates),))
 
-        baseline = decoder_inputs.call()
-        with_alt = decoder_inputs.call(misfit_schedule=schedule)
+        with_alt = decode_and_diagnostics(
+            spikes=spikes,
+            xs=xs,
+            transition_matrix=np.eye(xs.size),
+            pf_centers=pf_centers,
+            pf_width=pf_width,
+            rate_scale=rate_scale,
+            misfit_schedule=schedule,
+        )
 
         evt_t = with_alt.event_time_ind
-        # Events strictly before the window are unaffected — the filter
-        # state has not diverged yet. (Events *after* the window
-        # legitimately differ: the in-window posterior updates carry
-        # forward, so we do not check those.)
-        before = evt_t < window[0]
         inside = (evt_t >= window[0]) & (evt_t < window[1])
+        outside = ~inside
 
-        # Pre-window per-spike likelihood is bit-identical: the
-        # likelihood panel reads from the decoder's rate table and is
-        # untouched by the schedule outside the window.
-        np.testing.assert_array_equal(
-            baseline.per_spike_likelihood[before],
-            with_alt.per_spike_likelihood[before],
-            err_msg="pre-window per_spike_likelihood differs — schedule leaked outside window",
-        )
-
-        # At least one in-window event's per-spike likelihood
-        # row differs from the baseline. The schedule swaps the
-        # decoder's rate table in-window, so the displayed likelihood
-        # must change.
+        # The in-window metrics and displayed likelihood must all be the
+        # values obtained from the decoder's active rate table.
         assert inside.any(), "test fixture produced no in-window spike events"
-        diff = with_alt.per_spike_likelihood[inside] - baseline.per_spike_likelihood[inside]
-        assert np.any(np.abs(diff) > 0.0), (
-            "alt rates produced no in-window change in per_spike_likelihood; "
-            "the schedule may be near-noop."
+        expected = compute_per_cell_diagnostics_from_rates(
+            with_alt.predictive,
+            alt_rates,
+            with_alt.event_time_ind[inside],
+            with_alt.event_cell_ind[inside],
         )
+        assert expected.per_spike_likelihood is not None
+        np.testing.assert_allclose(
+            with_alt.per_spike_likelihood[inside],
+            expected.per_spike_likelihood,
+        )
+        for name in (
+            "event_hpd_overlap",
+            "event_kl_divergence",
+            "event_spike_prob",
+        ):
+            np.testing.assert_allclose(
+                getattr(with_alt, name)[inside],
+                getattr(expected, name),
+                err_msg=f"in-window {name} was not computed from decoder_rates",
+            )
+
+        expected_outside = compute_per_cell_diagnostics_from_rates(
+            with_alt.predictive,
+            baseline_rates,
+            with_alt.event_time_ind[outside],
+            with_alt.event_cell_ind[outside],
+        )
+        assert expected_outside.per_spike_likelihood is not None
+        np.testing.assert_allclose(
+            with_alt.per_spike_likelihood[outside],
+            expected_outside.per_spike_likelihood,
+        )
+        for name in (
+            "event_hpd_overlap",
+            "event_kl_divergence",
+            "event_spike_prob",
+        ):
+            np.testing.assert_allclose(
+                getattr(with_alt, name)[outside],
+                getattr(expected_outside, name),
+                err_msg=f"out-of-window {name} did not use baseline rates",
+            )
+
+        # The fixture independently distinguishes decoder and oracle rates
+        # for every output, rather than relying on one metric to change.
+        oracle = compute_per_cell_diagnostics_from_rates(
+            with_alt.predictive,
+            baseline_rates,
+            with_alt.event_time_ind[inside],
+            with_alt.event_cell_ind[inside],
+        )
+        for name in (
+            "event_hpd_overlap",
+            "event_kl_divergence",
+            "event_spike_prob",
+            "per_spike_likelihood",
+        ):
+            assert not np.allclose(getattr(expected, name), getattr(oracle, name)), (
+                f"test fixture does not distinguish decoder and oracle values for {name}"
+            )
+
+        # Dense per-cell matrices mirror the event arrays after the window
+        # overwrite. The one-event-per-coordinate fixture makes this exact.
+        for dense_name, event_name in (
+            ("hpd_overlap", "event_hpd_overlap"),
+            ("kl_divergence", "event_kl_divergence"),
+            ("spike_prob", "event_spike_prob"),
+        ):
+            np.testing.assert_allclose(
+                getattr(with_alt, dense_name)[
+                    with_alt.event_time_ind,
+                    with_alt.event_cell_ind,
+                ],
+                getattr(with_alt, event_name),
+            )
 
     def test_predictive_uses_column_stochastic_orientation(self) -> None:
         """The one-step predictive must marginalize as ``T @ post`` for the
@@ -596,7 +686,7 @@ class TestSummaryFlagFractions:
     @staticmethod
     def _params() -> DecodeParams:
         # Tiny strictly-increasing ladder so windows map to known slices.
-        return DecodeParams(phase_boundaries=(6, 10, 14, 18, 22, 26, 30, 32))
+        return DecodeParams(phase_boundaries=(6, 10, 14, 18, 26, 30, 34, 36))
 
     def test_summary_phase_windows_structure(self) -> None:
         cols = summary_phase_windows(self._params())
@@ -604,20 +694,29 @@ class TestSummaryFlagFractions:
             "Well-\nspecified",
             "Remap",
             "History-\ndep.",
+            "Replay",
             "Drift",
-            "Wide dyn.\nnoise",
+            "Sparse\npopulation",
         ]
         assert [c.component for c in cols] == [
             "—",
             "Observation",
             "Observation",
+            "—",
             "Transition",
-            "Transition",
+            "—",
         ]
-        # Well-specified concatenates the three clean-recovery windows.
-        assert cols[0].slices == ((10, 14), (18, 22), (26, 30))
-        assert cols[1].slices == ((6, 10),)
-        assert cols[4].slices == ((30, 32),)
+        # Well-specified concatenates the clean-recovery windows, with the
+        # replay sub-window (20, 24) carved out of clean-recovery 2 (18, 26).
+        assert cols[0].slices == ((10, 14), (18, 20), (24, 26), (30, 34))
+        assert cols[1].slices == ((6, 10),)  # Remap
+        assert cols[3].slices == ((20, 24),)  # Replay
+        assert cols[5].slices == ((34, 36),)  # Sparse population
+
+    def test_replay_window_rejects_fractions_that_round_to_empty(self) -> None:
+        params = DecodeParams(replay_frac_start=0.25001, replay_frac_end=0.25002)
+        with pytest.raises(ValueError, match="at least 3 steps"):
+            summary_phase_windows(params)
 
     @pytest.mark.parametrize(
         ("direction", "expected"),
@@ -638,41 +737,50 @@ class TestSummaryFlagFractions:
     def test_compute_phase_flag_fractions_isolates_remap(self) -> None:
         """A KL spike confined to the remap window must flag 100% in the
         remap column and 0% elsewhere; HPD/spike-prob rows that never cross
-        their thresholds must be 0% everywhere."""
+        their thresholds must be 0% everywhere.
+
+        Row order follows ``SUMMARY_FLAG_METRICS``: HPD (0), spike-prob (1),
+        KL (2). Column order: well-specified (0), remap (1), history (2),
+        replay (3), drift (4), sparse population (5)."""
         params = self._params()
-        n_time = params.phase_boundaries[PhaseBoundary.WIDE_DYNAMICS_END]
-        n_cells = 1
-        kl = np.zeros((n_time, n_cells))
-        kl[6:10] = 10.0  # high only inside the remap window [6, 10)
+        n_time = params.phase_boundaries[PhaseBoundary.SPARSE_POP_END]
+        # One spike event per time step; KL high only inside remap [6, 10).
+        event_time = np.arange(n_time, dtype=np.intp)
+        event_kl = np.zeros(n_time)
+        event_kl[6:10] = 10.0
         metrics: dict[str, np.ndarray] = {
-            "hpd_overlap": np.ones((n_time, n_cells)),  # never below 0.5
-            "kl_divergence": kl,
-            "spike_prob": np.ones((n_time, n_cells)),  # never below 0.05
+            "event_time_ind": event_time,
+            "event_hpd_overlap": np.ones(n_time),  # never below 0.5
+            "event_kl_divergence": event_kl,
+            "event_spike_prob": np.ones(n_time),  # never below 0.05
         }
         thresholds = Thresholds(hpd_overlap=0.5, kl_divergence=5.0, spike_prob=0.05)
         windows = summary_phase_windows(params)
         frac = compute_phase_flag_fractions(metrics, thresholds, windows)
 
-        assert frac.shape == (3, 5)
-        # KL row (index 1): only the remap column (index 1) flags.
-        assert frac[1, 1] == pytest.approx(100.0)
-        assert np.allclose(np.delete(frac[1], 1), 0.0)
-        # HPD (0) and spike-prob (2) rows never cross their thresholds.
+        assert frac.shape == (3, 6)
+        # KL row (index 2): only the remap column (index 1) flags.
+        assert frac[2, 1] == pytest.approx(100.0)
+        assert np.allclose(np.delete(frac[2], 1), 0.0)
+        # HPD (0) and spike-prob (1) rows never cross their thresholds.
         assert np.allclose(frac[0], 0.0)
-        assert np.allclose(frac[2], 0.0)
+        assert np.allclose(frac[1], 0.0)
 
     def test_extract_drops_nan_and_matches_compute(self) -> None:
         """``extract_phase_flag_values`` strips NaNs, and the two-step
         extract→flag path agrees with the one-shot wrapper."""
         params = self._params()
-        n_time = params.phase_boundaries[PhaseBoundary.WIDE_DYNAMICS_END]
+        n_time = params.phase_boundaries[PhaseBoundary.SPARSE_POP_END]
         rng = np.random.default_rng(0)
-        kl = rng.uniform(0.0, 10.0, (n_time, 2))
-        kl[::3] = np.nan  # "no spike" entries
+        n_events = 2 * n_time
+        event_time = rng.integers(0, n_time, n_events).astype(np.intp)
+        kl = rng.uniform(0.0, 10.0, n_events)
+        kl[::3] = np.nan  # defensive: NaN per-event values must be stripped
         metrics: dict[str, np.ndarray] = {
-            "hpd_overlap": rng.uniform(0.0, 1.0, (n_time, 2)),
-            "kl_divergence": kl,
-            "spike_prob": rng.uniform(0.0, 1.0, (n_time, 2)),
+            "event_time_ind": event_time,
+            "event_hpd_overlap": rng.uniform(0.0, 1.0, n_events),
+            "event_kl_divergence": kl,
+            "event_spike_prob": rng.uniform(0.0, 1.0, n_events),
         }
         thresholds = Thresholds(hpd_overlap=0.3, kl_divergence=5.0, spike_prob=0.2)
         windows = summary_phase_windows(params)
@@ -974,23 +1082,46 @@ class TestConditionOn:
         # Uniform fallback, properly normalized.
         np.testing.assert_allclose(new_probs, 1.0 / n_bins, rtol=1e-12)
         np.testing.assert_allclose(new_probs.sum(), 1.0, rtol=1e-12)
-        # Underflow signal is exactly -inf so callers can ``== -np.inf``.
+        # Zero-probability signal is exactly -inf so callers can compare directly.
         assert log_norm == -np.inf
 
-    def test_handles_prior_likelihood_disjoint(self) -> None:
-        """A finite but vanishingly small overlap also takes the
-        fallback path: ``weighted.sum() < eps`` triggers the explicit
-        uniform reset. Prior concentrated at one end, likelihood at the
-        other.
-        """
+    def test_retains_tiny_finite_prior_likelihood_overlap(self) -> None:
+        """A tiny but finite overlap is a valid Bayesian update, not a
+        numerical-underflow condition that permits a uniform reset."""
         n_bins = 8
         prior = np.zeros(n_bins)
         prior[0] = 1.0
         ll = np.full(n_bins, -1000.0)
         ll[-1] = 0.0  # likelihood mass at the opposite end of the grid
         new_probs, log_norm = _condition_on(prior, ll)
-        np.testing.assert_allclose(new_probs, 1.0 / n_bins, rtol=1e-12)
+        np.testing.assert_array_equal(new_probs, prior)
+        assert log_norm == pytest.approx(-1000.0)
+
+    def test_exactly_disjoint_support_uses_zero_probability_fallback(self) -> None:
+        """Fallback is reserved for exact zero joint support."""
+        n_bins = 4
+        prior = np.array([1.0, 0.0, 0.0, 0.0])
+        ll = np.array([-np.inf, 0.0, -1.0, -2.0])
+        new_probs, log_norm = _condition_on(prior, ll)
+        np.testing.assert_allclose(new_probs, 1.0 / n_bins)
         assert log_norm == -np.inf
+
+    @pytest.mark.parametrize(
+        "prior,ll",
+        [
+            (np.array([np.nan, 1.0]), np.zeros(2)),
+            (np.array([-1.0, 2.0]), np.zeros(2)),
+            (np.array([0.0, 0.0]), np.zeros(2)),
+            (np.array([0.5, 0.5]), np.array([0.0, np.nan])),
+        ],
+    )
+    def test_invalid_inputs_do_not_silently_become_uniform(
+        self,
+        prior: np.ndarray,
+        ll: np.ndarray,
+    ) -> None:
+        with pytest.raises(ValueError, match="finite nonnegative 1D distribution"):
+            _condition_on(prior, ll)
 
     def test_extreme_loglik_does_not_underflow(self) -> None:
         """Likelihoods with -800 magnitude (would underflow exp(-800)
@@ -1018,9 +1149,10 @@ class TestDecodeAndDiagnosticsLogSpace:
 
     The previous implementation reset the posterior to uniform when
     ``prior * combined_likelihood`` underflowed to zero. The log-space
-    rewrite removes that branch; the failure mode it guarded against
-    cannot occur. These tests pin that property so a future refactor
-    can't silently reintroduce the reset.
+    rewrite removes that branch; the finite-overlap numerical-underflow
+    failure mode cannot occur. An exactly impossible observation retains
+    a separately tested fallback. These tests pin that distinction so a
+    future refactor cannot silently reintroduce the arbitrary reset.
     """
 
     def test_posterior_sums_to_one_at_every_step(self) -> None:
@@ -1040,7 +1172,7 @@ class TestDecodeAndDiagnosticsLogSpace:
         np.testing.assert_allclose(posterior.sum(axis=1), 1.0, rtol=1e-10, atol=1e-12)
 
     def test_extreme_prior_likelihood_mismatch_yields_meaningful_posterior(self) -> None:
-        """Stress test for the underflow regime: place a narrow prior at
+        """Stress test for an extreme but finite overlap: place a narrow prior at
         one end of the grid then drive the decoder with spikes whose
         place-field rate is concentrated at the *other* end.
 
@@ -1091,10 +1223,10 @@ class TestDecodeAndDiagnosticsLogSpace:
             f"under sustained firing at PF centers (88, 92)."
         )
 
-    def test_underflow_emits_summary_warning(self) -> None:
+    def test_impossible_observation_emits_summary_warning(self) -> None:
         """The per-step ``_condition_on`` ``-inf`` path is covered by
         ``TestConditionOn``; the *summary* warning emitted post-loop
-        is not asserted anywhere. Force the underflow regime via a
+        is not asserted anywhere. Force an impossible observation via a
         place-field center so far from the decoder grid that every
         bin's rate underflows to 0.0."""
         n_time, n_cells, n_bins = 8, 1, 21
@@ -1107,7 +1239,7 @@ class TestDecodeAndDiagnosticsLogSpace:
 
         with pytest.warns(
             RuntimeWarning,
-            match=r"prior/likelihood overlap underflowed at \d+ timestep",
+            match=r"observation had zero probability on the prior support at \d+ timestep",
         ):
             decode_and_diagnostics(
                 spikes, xs, transition_matrix, pf_centers, pf_width=5.0, rate_scale=1.0
@@ -1223,7 +1355,7 @@ class TestDecodeParamsPhaseBoundaries:
             (PhaseBoundary.RECOVERY2_END, 4),
             (PhaseBoundary.DRIFT_END, 5),
             (PhaseBoundary.RECOVERY3_END, 6),
-            (PhaseBoundary.WIDE_DYNAMICS_END, 7),
+            (PhaseBoundary.SPARSE_POP_END, 7),
         ],
     )
     def test_phase_boundary_enum_indexes_into_tuple(
@@ -1232,6 +1364,29 @@ class TestDecodeParamsPhaseBoundaries:
         boundaries = (100, 200, 300, 400, 500, 600, 700, 800)
         params = DecodeParams(phase_boundaries=boundaries)
         assert params.phase_boundaries[member] == boundaries[index]
+
+    @pytest.mark.parametrize(
+        ("kwargs", "match"),
+        [
+            ({"sparse_position": -1.0}, "sparse_position"),
+            ({"sparse_approach_steps": -1}, "sparse_approach_steps"),
+            ({"sparse_ensemble_rate_scale": 1.1}, "sparse_ensemble_rate_scale"),
+            ({"n_sparse_cells": 0}, "n_sparse_cells"),
+            ({"sparse_field_spread": -1.0}, "sparse_field_spread"),
+            ({"sparse_field_spread": np.nan}, "sparse_field_spread"),
+            ({"sparse_cell_width": 0.0}, "sparse_cell_width"),
+            ({"sparse_cell_width": np.nan}, "sparse_cell_width"),
+            ({"sparse_cell_peak_rate": 0.0}, "sparse_cell_peak_rate"),
+            ({"sparse_cell_baseline_gain": -0.1}, "sparse_cell_baseline_gain"),
+        ],
+    )
+    def test_sparse_population_parameters_reject_invalid_values(
+        self,
+        kwargs: dict[str, float | int],
+        match: str,
+    ) -> None:
+        with pytest.raises(ValueError, match=match):
+            DecodeParams(**kwargs)
 
 
 class TestMisfitWindowTightening:
@@ -1521,3 +1676,42 @@ class TestLogSpaceReferenceComparison:
 
         result = decoder_inputs.call(transition_matrix=transition)
         np.testing.assert_allclose(result.posterior, ref_post, rtol=1e-10, atol=1e-12)
+
+
+class TestNormalizedSingleSpikeLikelihood:
+    def test_matches_normalized_poisson_and_rows_sum_to_one(self) -> None:
+        from scipy.stats import poisson
+
+        from statespacecheck_paper.analysis import normalized_single_spike_likelihood
+
+        rates = np.array([[2.0, 0.5, 1.0], [0.1, 0.4, 0.2]])
+        out = normalized_single_spike_likelihood(rates)
+
+        pmf = poisson.pmf(k=1, mu=rates)
+        expected = pmf / pmf.sum(axis=-1, keepdims=True)
+        np.testing.assert_allclose(out, expected)
+        np.testing.assert_allclose(out.sum(axis=-1), 1.0)
+
+    def test_degenerate_zero_rate_row_is_uniform(self) -> None:
+        from statespacecheck_paper.analysis import normalized_single_spike_likelihood
+
+        rates = np.array([[2.0, 0.5, 1.0], [0.0, 0.0, 0.0]])
+        out = normalized_single_spike_likelihood(rates)
+
+        # The all-zero-rate row carries no positional information -> uniform,
+        # and still sums to exactly 1 (not the sub-normalized near-zero row a
+        # raw divide would give).
+        np.testing.assert_allclose(out[1], np.full(3, 1.0 / 3.0))
+        np.testing.assert_allclose(out.sum(axis=-1), 1.0)
+
+    def test_tiny_but_informative_rates_keep_their_shape(self) -> None:
+        from statespacecheck_paper.analysis import normalized_single_spike_likelihood
+
+        # Rates far below any absolute threshold still have a well-defined
+        # shape: they must normalize to their ratio, not collapse to uniform.
+        rates = np.array([[1e-20, 2e-20, 4e-20]])
+        out = normalized_single_spike_likelihood(rates)
+
+        expected = np.array([1.0, 2.0, 4.0]) / 7.0
+        np.testing.assert_allclose(out[0], expected, rtol=1e-6)
+        assert not np.allclose(out[0], np.full(3, 1.0 / 3.0))
