@@ -1252,47 +1252,44 @@ class TestDecodeAndDiagnosticsLogSpace:
 
 
 class TestComputePerCellDiagnosticsFromRates:
-    """Direct tests for the per-cell diagnostics helper. The
-    zero-rate-row uniform-fallback branch fills ``1/n_cells`` on bins
-    where every cell's expected rate is zero (sparse real-data
-    coverage); only ``event_spike_prob`` depends on it.
-    """
+    """Direct tests for the per-cell diagnostics helper."""
 
-    def test_zero_rate_row_yields_uniform_rank(self) -> None:
-        """With one zero-rate row and otherwise-constant rates, every
-        cell becomes indistinguishable in rank-contribution — so
-        ``event_spike_prob`` is exactly 1.0 (max rank, all cells tied).
-        Reverting the uniform fallback lets the zero row reach
-        ``normalize`` and produces a non-uniform contribution column;
-        ``event_spike_prob`` drops to a strictly-less-than-1 value.
+    def test_integrates_raw_rates_before_normalizing(self) -> None:
+        """Regression test for the original MATLAB normalization-order bug.
+
+        Averaging state-conditional cell fractions would assign the less
+        likely cell rank 0.3. Conditioning the latent state on an event by
+        integrating raw rates first gives the correct rank 1/6.
         """
-        n_time, n_bins, n_cells = 10, 5, 3
-        rng = np.random.default_rng(0)
-        predictive = rng.dirichlet(np.ones(n_bins), size=n_time)
-
-        rates = np.full((n_bins, n_cells), 0.5)
-        rates[2, :] = 0.0  # the previously-broken path
-
-        spike_time_ind = np.array([0, 1, 5], dtype=np.intp)
-        spike_cell_ind = np.array([0, 1, 2], dtype=np.intp)
+        predictive = np.array([[0.5, 0.5], [0.5, 0.5]])
+        rates = np.array([[9.0, 1.0], [1.0, 1.0]])
+        spike_time_ind = np.array([0, 1], dtype=np.intp)
+        spike_cell_ind = np.array([0, 1], dtype=np.intp)
 
         result = compute_per_cell_diagnostics_from_rates(
             predictive, rates, spike_time_ind, spike_cell_ind, coverage=0.95
         )
-        # The uniform fallback makes every cell contribute equally;
-        # max rank = 1.0 for every event. Without the fix, the zero
-        # row produces a [0, 0, 0] cell_fraction column and the
-        # downstream rank computation yields ~0.6-0.99 instead.
+        np.testing.assert_allclose(result.event_spike_prob, [1.0, 1.0 / 6.0])
+
+    def test_zero_rate_row_contributes_no_event_mass(self) -> None:
+        """A state with zero population rate contributes no mass after
+        conditioning on an event; equal rates elsewhere keep cells tied.
+        """
+        predictive = np.array([[0.2, 0.5, 0.3]])
+        rates = np.array([[0.5, 0.5], [0.0, 0.0], [0.5, 0.5]])
+        result = compute_per_cell_diagnostics_from_rates(
+            predictive,
+            rates,
+            np.array([0], dtype=np.intp),
+            np.array([0], dtype=np.intp),
+            coverage=0.95,
+        )
         np.testing.assert_allclose(result.event_spike_prob, 1.0, atol=1e-12)
 
     def test_fully_degenerate_rates_yield_uniform_rank(self) -> None:
-        """Pathological case: every rate row is zero. With the uniform
-        fallback every bin in ``cell_fraction_per_bin`` becomes
-        ``1/n_cells``, so the rank statistic gives 1.0 (uniform tie).
-        Reverting the fallback lets normalize's eps-clamp produce a
-        zero ``cell_fraction``; the rank then yields exactly 0.0,
-        which would be silently indistinguishable from a real
-        "spike fully predicted" outcome on a healthy bin.
+        """When the conditional mark distribution is undefined because
+        total intensity is zero, the documented uniform fallback gives
+        every cell the maximal tied rank.
         """
         n_time, n_bins, n_cells = 5, 3, 2
         predictive = np.full((n_time, n_bins), 1.0 / n_bins)

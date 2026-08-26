@@ -67,7 +67,7 @@ def _fig4_cache_path() -> Path:
 DETAIL_CENTER = 193069  # Time index with KL spike during immobility
 DETAIL_HALF_WIDTH = 500  # Half-width in time points (~2 seconds at 500 Hz)
 DIAGNOSTIC_ANNOTATION_GIDS = {THRESHOLD_LABEL_GID, WORSE_FIT_LABEL_GID}
-FIG4_CACHE_SCHEMA_VERSION = 3
+FIG4_CACHE_SCHEMA_VERSION = 4
 
 
 def shift_diagnostic_event_times(

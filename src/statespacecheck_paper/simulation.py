@@ -280,11 +280,78 @@ def placefield_rates(
     return result
 
 
+def predictive_mark_probabilities(
+    prior: NDArray[np.floating],
+    mark_intensities: NDArray[np.floating],
+) -> NDArray[np.floating]:
+    """Compute the predictive mark distribution conditional on an event.
+
+    Raw mark intensities are first averaged over the predictive state
+    distribution and the resulting expected intensities are then normalized
+    across marks. For discrete marks ``c``, this evaluates
+
+    ``q[c] = sum_x prior[x] * intensity[x, c] / sum_d sum_x prior[x] * intensity[x, d]``.
+
+    Normalizing at each state before averaging would instead integrate the
+    state-conditional mark distribution against the unconditioned state
+    distribution. That omits the event-rate weighting of the latent state and
+    is only equivalent when total event intensity is constant across states.
+
+    Parameters
+    ----------
+    prior : np.ndarray, shape (n_bins,) or (n_time, n_bins)
+        Predictive probability distribution over state bins.
+    mark_intensities : np.ndarray, shape (n_bins, n_marks)
+        Nonnegative event intensities (or expected event counts per bin) for
+        every state and discrete mark.
+
+    Returns
+    -------
+    mark_probabilities : np.ndarray, shape (n_marks,) or (n_time, n_marks)
+        Predictive mark probabilities conditional on an event. If the total
+        predictive event intensity is exactly zero, the conditional mark
+        distribution is undefined; by convention this function returns a
+        uniform distribution for that row.
+    """
+    if prior.ndim not in (1, 2):
+        raise ValueError("prior must have shape (n_bins,) or (n_time, n_bins)")
+    if mark_intensities.ndim != 2 or mark_intensities.shape[0] != prior.shape[-1]:
+        raise ValueError("mark_intensities must have shape (n_bins, n_marks)")
+    if mark_intensities.shape[1] == 0:
+        raise ValueError("mark_intensities must contain at least one mark")
+    if not np.all(np.isfinite(prior)) or np.any(prior < 0.0):
+        raise ValueError("prior must contain finite nonnegative values")
+    if not np.all(np.isfinite(mark_intensities)) or np.any(mark_intensities < 0.0):
+        raise ValueError("mark_intensities must contain finite nonnegative values")
+
+    expected_intensities: NDArray[np.floating] = prior @ mark_intensities
+    n_marks = mark_intensities.shape[1]
+
+    if expected_intensities.ndim == 1:
+        total_intensity = float(expected_intensities.sum())
+        if total_intensity == 0.0:
+            return np.full(n_marks, 1.0 / n_marks, dtype=expected_intensities.dtype)
+        mark_probabilities: NDArray[np.floating] = expected_intensities / total_intensity
+        return mark_probabilities
+
+    total_intensity = expected_intensities.sum(axis=1, keepdims=True)
+    mark_probabilities = np.divide(
+        expected_intensities,
+        total_intensity,
+        out=np.zeros_like(expected_intensities),
+        where=total_intensity > 0.0,
+    )
+    zero_total = total_intensity[:, 0] == 0.0
+    if zero_total.any():
+        mark_probabilities[zero_total] = 1.0 / n_marks
+    return mark_probabilities
+
+
 def spike_prob_rank(
     prior: NDArray[np.floating],
-    cell_fraction_per_bin: NDArray[np.floating],
+    mark_intensities: NDArray[np.floating],
 ) -> NDArray[np.floating]:
-    """Compute cumulative probability mass of cells with low expected contribution.
+    """Compute cumulative predictive mass of marks with low probability.
 
     This function computes the probability ranking for each neuron based on its
     expected contribution to the likelihood. For each cell, it computes the
@@ -297,8 +364,10 @@ def spike_prob_rank(
     prior : np.ndarray, shape (n_bins,) or (n_time, n_bins)
         Prior probability distribution over position bins. Can be a single
         distribution or batched over time.
-    cell_fraction_per_bin : np.ndarray, shape (n_bins, n_cells)
-        Normalized firing rate fractions where each row sums to 1.
+    mark_intensities : np.ndarray, shape (n_bins, n_cells)
+        Nonnegative event intensities (or expected event counts per bin) for
+        every position and cell. These must be raw intensities, not
+        statewise-normalized cell fractions.
 
     Returns
     -------
@@ -312,11 +381,8 @@ def spike_prob_rank(
     Compute spike probability ranks for a single timestep:
 
     >>> prior = np.array([0.5, 0.3, 0.2])
-    >>> cell_fraction_per_bin = np.array([[0.6, 0.2], [0.3, 0.5], [0.1, 0.3]])
-    >>> cell_fraction_per_bin = cell_fraction_per_bin / cell_fraction_per_bin.sum(
-    ...     axis=0, keepdims=True
-    ... )
-    >>> ranks = spike_prob_rank(prior, cell_fraction_per_bin)
+    >>> mark_intensities = np.array([[0.6, 0.2], [0.3, 0.5], [0.1, 0.3]])
+    >>> ranks = spike_prob_rank(prior, mark_intensities)
     >>> ranks.shape
     (2,)
     >>> bool((ranks >= 0.0).all() and (ranks <= 1.0).all())
@@ -325,7 +391,7 @@ def spike_prob_rank(
     Compute spike probability ranks for multiple timesteps (batched):
 
     >>> prior_batched = np.array([[0.5, 0.3, 0.2], [0.2, 0.5, 0.3]])
-    >>> ranks_batched = spike_prob_rank(prior_batched, cell_fraction_per_bin)
+    >>> ranks_batched = spike_prob_rank(prior_batched, mark_intensities)
     >>> ranks_batched.shape
     (2, 2)
 
@@ -337,15 +403,17 @@ def spike_prob_rank(
 
         rank[j] = sum over i of contrib[i] where contrib[i] <= contrib[j]
 
-    ``contrib`` is the per-cell expected contribution under the
-    predictive prior; with probabilities summing to 1, ``rank[j] = 1.0``
+    ``contrib`` is the predictive cell probability conditional on a spike,
+    computed by averaging raw intensities over the predictive state
+    distribution and then normalizing across cells. With probabilities
+    summing to 1, ``rank[j] = 1.0``
     means cell ``j`` has the highest expected contribution (no other
     cell is more likely to fire), and ``rank[j] ≈ 0`` means cell ``j``
     is unusually unlikely under the prior given the observed spike.
     """
-    # prior @ cell_fraction_per_bin gives expected contribution per cell
+    # Integrate raw intensities over state before normalizing across marks.
     # Shape: (n_cells,) for 1D prior, (n_time, n_cells) for 2D prior
-    contrib: NDArray[np.floating] = prior @ cell_fraction_per_bin
+    contrib = predictive_mark_probabilities(prior, mark_intensities)
 
     # Comparison tolerance for the rank mask. The matmul above sums
     # ``n_bins`` floating-point products in BLAS-defined order, which
@@ -358,7 +426,8 @@ def spike_prob_rank(
     # affecting genuine differences in real-world non-uniform inputs.
     eps = np.finfo(contrib.dtype).eps
     n_terms = max(1, prior.shape[-1])
-    rank_atol = float(eps * n_terms * 16) * float(np.max(contrib))
+    max_contrib = float(np.max(contrib)) if contrib.size else 0.0
+    rank_atol = float(eps * n_terms * 16) * max_contrib
 
     if contrib.ndim == 1:
         # Single timestep: (n_cells,)

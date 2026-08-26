@@ -10,6 +10,7 @@ from statespacecheck_paper.simulation import (
     gaussian_transition_matrix,
     normalize,
     placefield_rates,
+    predictive_mark_probabilities,
     reflect_into_interval,
     safe_log,
     simulate_spikes_flat_rate,
@@ -195,21 +196,37 @@ class TestPlacefieldRates:
 # ---------------------------------------------------------------------------
 
 
-def _normalize_lambda(lam: np.ndarray) -> np.ndarray:
-    return lam / lam.sum(axis=0, keepdims=True)
-
-
 class TestSpikeProbRank:
     def test_single_timestep_shape(self) -> None:
         prior = np.array([0.5, 0.3, 0.2])
-        lam = _normalize_lambda(np.array([[0.6, 0.2], [0.3, 0.5], [0.1, 0.3]]))
+        lam = np.array([[0.6, 0.2], [0.3, 0.5], [0.1, 0.3]])
         assert spike_prob_rank(prior, lam).shape == (2,)
 
     def test_values_in_unit_range(self) -> None:
         prior = np.array([0.5, 0.3, 0.2])
-        lam = _normalize_lambda(np.array([[0.6, 0.2], [0.3, 0.5], [0.1, 0.3]]))
+        lam = np.array([[0.6, 0.2], [0.3, 0.5], [0.1, 0.3]])
         result = spike_prob_rank(prior, lam)
         assert ((result >= 0.0) & (result <= 1.0)).all()
+
+    def test_integrates_raw_intensities_before_normalizing(self) -> None:
+        """Population intensity varies by state, so averaging conditional
+        cell fractions would give [0.7, 0.3]. The event-conditioned
+        predictive distribution must instead be [5/6, 1/6].
+        """
+        prior = np.array([0.5, 0.5])
+        rates = np.array([[9.0, 1.0], [1.0, 1.0]])
+
+        mark_probs = predictive_mark_probabilities(prior, rates)
+        ranks = spike_prob_rank(prior, rates)
+
+        assert_allclose(mark_probs, [5.0 / 6.0, 1.0 / 6.0])
+        assert_allclose(ranks, [1.0, 1.0 / 6.0])
+
+    def test_global_intensity_scale_does_not_change_distribution(self) -> None:
+        prior = np.array([0.5, 0.3, 0.2])
+        rates = np.array([[0.6, 0.2], [0.3, 0.5], [0.1, 0.3]])
+        baseline = predictive_mark_probabilities(prior, rates)
+        assert_allclose(predictive_mark_probabilities(prior, 17.0 * rates), baseline)
 
     def test_uniform_contribution_yields_equal_ranks(self) -> None:
         n_bins, n_cells = 10, 5
@@ -229,11 +246,17 @@ class TestSpikeProbRank:
         """Batched and looped paths must produce identical results."""
         n_time, n_bins, n_cells = 10, 5, 3
         prior = rng.dirichlet(np.ones(n_bins), size=n_time)
-        lam = _normalize_lambda(rng.random((n_bins, n_cells)))
+        lam = rng.random((n_bins, n_cells))
 
         batched = spike_prob_rank(prior, lam)
         looped = np.stack([spike_prob_rank(prior[t], lam) for t in range(n_time)])
         assert_allclose(batched, looped)
+
+    def test_zero_total_intensity_uses_uniform_fallback(self) -> None:
+        prior = np.array([0.5, 0.5])
+        rates = np.zeros((2, 3))
+        assert_allclose(predictive_mark_probabilities(prior, rates), np.full(3, 1.0 / 3.0))
+        assert_allclose(spike_prob_rank(prior, rates), np.ones(3))
 
 
 # ---------------------------------------------------------------------------

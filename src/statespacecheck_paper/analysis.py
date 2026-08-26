@@ -51,6 +51,7 @@ from scipy.stats import poisson
 from statespacecheck_paper.simulation import (
     normalize,
     placefield_rates,
+    predictive_mark_probabilities,
     softmax_with_shift,
 )
 
@@ -1427,6 +1428,12 @@ def compute_per_cell_diagnostics_from_rates(
     multiple spikes occur in the same time/cell bin, callers should pass
     repeated entries in ``spike_time_ind`` and ``spike_cell_ind`` so each
     observed spike contributes one event to the returned event arrays.
+
+    The predictive cell distribution used by ``event_spike_prob`` is
+    event-conditioned: raw cell intensities are averaged over the predictive
+    state distribution and the resulting expected intensities are normalized
+    across cells. Normalizing across cells at each state before averaging would
+    omit the state-dependent total event intensity.
     """
     n_time, n_bins = predictive_posterior.shape
     n_cells = rates.shape[1]
@@ -1462,23 +1469,6 @@ def compute_per_cell_diagnostics_from_rates(
         # computing it per event (not vectorized over unique times)
         # bounds the rank computation's working set to
         # ``B × n_cells``.
-        # ``cell_fraction_per_bin[x, c] = p(cell c | bin x, spike happened)``.
-        # Bins where every cell has zero rate (sparse real-data coverage
-        # away from any PF) would trigger ``normalize``'s near-zero
-        # warning and produce a non-discriminative near-zero row in
-        # ``cell_fraction_per_bin``. Use a uniform ``1/n_cells`` fallback
-        # so the rank statistic (and therefore ``event_spike_prob``)
-        # treats those bins as non-informative. This fallback is specific to
-        # the rank statistic; ``event_hpd_overlap`` / ``event_kl_divergence``
-        # consume ``lik_chunk``, whose normalization is handled by
-        # ``normalized_single_spike_likelihood`` (uniform only when a cell's
-        # rate is zero at every position).
-        row_sums = rates.sum(axis=1, keepdims=True)
-        zero_rows = row_sums.squeeze(-1) <= 1e-12
-        safe_row_sums = np.where(row_sums > 1e-12, row_sums, 1.0)
-        cell_fraction_per_bin = rates / safe_row_sums  # (n_bins, n_cells)
-        if zero_rows.any():
-            cell_fraction_per_bin[zero_rows] = 1.0 / rates.shape[1]
         batch = max(1, _PER_SPIKE_BATCH)
         for start in range(0, n_spikes, batch):
             stop = min(start + batch, n_spikes)
@@ -1497,14 +1487,16 @@ def compute_per_cell_diagnostics_from_rates(
             event_kl_divergence[start:stop] = ssc.kl_divergence(pred_chunk, lik_chunk)
 
             # Per-event spike-prob rank: contrib[k, j] is cell ``j``'s
-            # expected contribution at this event's time, target is
-            # the contribution of *this event's cell*, and the rank is
-            # the cumulative mass of cells with weakly smaller contrib.
+            # predictive probability conditional on an event. It is computed
+            # by integrating raw cell intensities over the predictive state
+            # distribution and only then normalizing across cells. The target
+            # is the probability of this event's cell, and the rank is the
+            # cumulative mass of cells with weakly smaller probability.
             # The ``rank_atol`` slack on the ``<=`` comparison absorbs
             # BLAS reduction-order FP noise so equal contributions
             # yield equal ranks across platforms (matches the same
             # tolerance pattern in ``simulation.spike_prob_rank``).
-            contrib_chunk = pred_chunk @ cell_fraction_per_bin  # (B, n_cells)
+            contrib_chunk = predictive_mark_probabilities(pred_chunk, rates)
             target_contrib = contrib_chunk[np.arange(chunk_size), sci]  # (B,)
             rank_atol = (
                 float(np.finfo(contrib_chunk.dtype).eps * n_bins * 16)
