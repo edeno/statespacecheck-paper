@@ -89,7 +89,6 @@ make
 
 3. **Review output**:
    - Check `main.pdf` for proper formatting
-   - Verify line numbers are present (for peer review)
    - Ensure all figures appear correctly
 
 4. **Package for submission**:
@@ -97,20 +96,6 @@ make
    - Optionally include source files (.tex, .bib, figures/)
 
 ## Features
-
-### Line Numbers
-
-Line numbers are enabled by default for peer review:
-
-```latex
-\linenumbers  % in main.tex
-```
-
-To disable for final version, comment it out:
-
-```latex
-% \linenumbers
-```
 
 ### Preamble
 
