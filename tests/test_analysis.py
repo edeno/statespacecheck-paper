@@ -686,32 +686,37 @@ class TestSummaryFlagFractions:
     @staticmethod
     def _params() -> DecodeParams:
         # Tiny strictly-increasing ladder so windows map to known slices.
-        return DecodeParams(phase_boundaries=(6, 10, 14, 18, 22, 26, 30, 32))
+        return DecodeParams(phase_boundaries=(6, 10, 14, 18, 26, 30, 34, 36))
 
     def test_summary_phase_windows_structure(self) -> None:
         cols = summary_phase_windows(self._params())
         assert [c.label for c in cols] == [
             "Well-\nspecified",
-            "Replay",
             "Remap",
             "History-\ndep.",
+            "Replay",
             "Drift",
             "Sparse\npopulation",
         ]
         assert [c.component for c in cols] == [
             "—",
+            "Observation",
+            "Observation",
             "—",
-            "Observation",
-            "Observation",
             "Transition",
             "—",
         ]
         # Well-specified concatenates the clean-recovery windows, with the
-        # replay sub-window (19, 21) carved out of clean-recovery 2 (18, 22).
-        assert cols[0].slices == ((10, 14), (18, 19), (21, 22), (26, 30))
-        assert cols[1].slices == ((19, 21),)  # Replay
-        assert cols[2].slices == ((6, 10),)  # Remap
-        assert cols[5].slices == ((30, 32),)  # Sparse population
+        # replay sub-window (20, 24) carved out of clean-recovery 2 (18, 26).
+        assert cols[0].slices == ((10, 14), (18, 20), (24, 26), (30, 34))
+        assert cols[1].slices == ((6, 10),)  # Remap
+        assert cols[3].slices == ((20, 24),)  # Replay
+        assert cols[5].slices == ((34, 36),)  # Sparse population
+
+    def test_replay_window_rejects_fractions_that_round_to_empty(self) -> None:
+        params = DecodeParams(replay_frac_start=0.25001, replay_frac_end=0.25002)
+        with pytest.raises(ValueError, match="at least 3 steps"):
+            summary_phase_windows(params)
 
     @pytest.mark.parametrize(
         ("direction", "expected"),
@@ -735,8 +740,8 @@ class TestSummaryFlagFractions:
         their thresholds must be 0% everywhere.
 
         Row order follows ``SUMMARY_FLAG_METRICS``: HPD (0), spike-prob (1),
-        KL (2). Column order: well-specified (0), replay (1), remap (2),
-        history (3), drift (4), sparse population (5)."""
+        KL (2). Column order: well-specified (0), remap (1), history (2),
+        replay (3), drift (4), sparse population (5)."""
         params = self._params()
         n_time = params.phase_boundaries[PhaseBoundary.SPARSE_POP_END]
         # One spike event per time step; KL high only inside remap [6, 10).
@@ -754,9 +759,9 @@ class TestSummaryFlagFractions:
         frac = compute_phase_flag_fractions(metrics, thresholds, windows)
 
         assert frac.shape == (3, 6)
-        # KL row (index 2): only the remap column (index 2) flags.
-        assert frac[2, 2] == pytest.approx(100.0)
-        assert np.allclose(np.delete(frac[2], 2), 0.0)
+        # KL row (index 2): only the remap column (index 1) flags.
+        assert frac[2, 1] == pytest.approx(100.0)
+        assert np.allclose(np.delete(frac[2], 1), 0.0)
         # HPD (0) and spike-prob (1) rows never cross their thresholds.
         assert np.allclose(frac[0], 0.0)
         assert np.allclose(frac[1], 0.0)

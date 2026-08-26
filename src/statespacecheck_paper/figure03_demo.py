@@ -60,6 +60,39 @@ PHASE_LABELS: tuple[str, ...] = (
 )
 
 
+def _single_out_and_back_sweep(
+    start: float,
+    n_steps: int,
+    lower: float,
+    upper: float,
+    max_speed: float,
+) -> NDArray[np.floating]:
+    """Construct one speed-capped sweep toward the farther endpoint and back."""
+    if n_steps < 3:
+        raise ValueError(f"An out-and-back sweep requires at least 3 steps; got {n_steps}.")
+    if not lower <= start <= upper:
+        raise ValueError(f"Sweep start {start} lies outside [{lower}, {upper}].")
+    if not np.isfinite(max_speed) or max_speed <= 0.0:
+        raise ValueError(f"Sweep max_speed must be positive; got {max_speed}.")
+
+    farther_endpoint = upper if upper - start >= start - lower else lower
+    direction = 1.0 if farther_endpoint > start else -1.0
+    distance_to_endpoint = abs(farther_endpoint - start)
+    # The shorter leg in an even-length sweep has one fewer transition.
+    # Limit the excursion by that leg so neither direction exceeds max_speed.
+    transitions_per_leg = (n_steps - 1) // 2
+    excursion = min(distance_to_endpoint, max_speed * transitions_per_leg)
+    turning_point = start + direction * excursion
+    # Both legs include the turning point; drop its duplicate when joining.
+    # Splitting this way preserves exactly ``n_steps`` samples and includes
+    # the start, turning point, and final return for odd or even lengths.
+    n_out = n_steps // 2 + 1
+    n_back = n_steps - n_out + 1
+    outbound = np.linspace(start, turning_point, n_out)
+    inbound = np.linspace(turning_point, start, n_back)
+    return np.concatenate([outbound, inbound[1:]])
+
+
 @dataclass(frozen=True)
 class SimulationResult:
     """Result of :func:`run_figure03_simulation`.
@@ -249,8 +282,7 @@ def run_figure03_simulation(
 
     # 5. Clean recovery 2 — with a replay event. The animal is immobile
     #    (true position held fixed) while a coherent trajectory sweeps the
-    #    track out-and-back at ``replay_speed`` a.u./step (slow enough for
-    #    the narrow transition to track). The decoder follows the sweep, so
+    #    track in one out-and-back sweep. The decoder follows the sweep, so
     #    the *decoded* position departs from the fixed true position while
     #    every metric stays at baseline — a decoded-vs-true divergence is not
     #    a model misspecification. Spikes during the sweep fire at the
@@ -265,17 +297,16 @@ def run_figure03_simulation(
     x_pre = _walk(r0, params.sigx_pred)
     x_still = float(x_pre[-1]) if r0 > 0 else x_last
     replay_len = r1 - r0
-    # Out-and-back sweep that returns to ``x_still`` so the animal's real
-    # position resumes continuously after the replay (no boundary jump to
-    # flag). The forward ramp reflects off the track ends; the reversed ramp
-    # retraces it back to the start.
-    half = (replay_len + 1) // 2
-    ramp = reflect_into_interval(
-        x_still + params.replay_speed * np.arange(half),
+    # One outbound leg toward the farther track end and one return to ``x_still``.
+    # Ending at the starting represented position lets ordinary post-replay
+    # activity resume without an artificial decoder-reset conflict.
+    x_sweep = _single_out_and_back_sweep(
+        x_still,
+        replay_len,
         float(params.xs_min),
         float(params.xs_max),
+        params.replay_speed,
     )
-    x_sweep = np.concatenate([ramp, ramp[::-1]])[:replay_len]
     x_post = simulate_walk(n - r1, params.sigx_pred, x_still, params.xs_min, params.xs_max, rng)
     x_rec2 = np.concatenate([x_pre, np.full(replay_len, x_still), x_post])
     sp_rec2 = np.vstack(

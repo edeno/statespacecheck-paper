@@ -33,6 +33,7 @@ from statespacecheck_paper.figure03_demo import (
     PHASE_LABELS,
     SimulationResult,
     StableSummary,
+    _single_out_and_back_sweep,
     estimate_stable_summary,
     run_figure03_simulation,
 )
@@ -96,6 +97,39 @@ def test_phase_labels_and_boundaries(sim: SimulationResult) -> None:
     assert np.all(np.diff(boundaries) > 0)
     x_true = np.asarray(sim.x_true)
     assert x_true.shape[0] == end
+
+
+@pytest.mark.parametrize(
+    ("start", "expected_endpoint"),
+    [(20.0, 100.0), (80.0, 0.0)],
+)
+def test_replay_is_one_out_and_back_sweep(start: float, expected_endpoint: float) -> None:
+    """Replay visits the farther endpoint once and returns without oscillating."""
+    sweep = _single_out_and_back_sweep(start, 2_000, 0.0, 100.0, 0.5)
+
+    assert sweep.shape == (2_000,)
+    assert sweep[0] == pytest.approx(start)
+    assert sweep[-1] == pytest.approx(start)
+    turn = int(np.argmax(sweep) if expected_endpoint == 100.0 else np.argmin(sweep))
+    assert sweep[turn] == pytest.approx(expected_endpoint)
+
+    outbound_diff = np.diff(sweep[: turn + 1])
+    inbound_diff = np.diff(sweep[turn:])
+    if expected_endpoint == 100.0:
+        assert np.all(outbound_diff >= 0.0)
+        assert np.all(inbound_diff <= 0.0)
+    else:
+        assert np.all(outbound_diff <= 0.0)
+        assert np.all(inbound_diff >= 0.0)
+
+
+def test_short_replay_sweep_respects_speed_cap() -> None:
+    """Short custom timelines make a smaller excursion instead of moving too fast."""
+    sweep = _single_out_and_back_sweep(20.0, 100, 0.0, 100.0, 0.5)
+
+    assert sweep.max() < 100.0
+    assert np.max(np.abs(np.diff(sweep))) <= 0.5 + np.finfo(float).eps
+    assert sweep[-1] == pytest.approx(sweep[0])
 
 
 def test_remap_phase_uses_decoder_likelihood(sim: SimulationResult) -> None:
@@ -343,9 +377,9 @@ def test_drift_phase_inflates_kl(sim: SimulationResult) -> None:
 
 class TestEstimateStableSummary:
     def test_shapes_and_determinism(self) -> None:
-        """The summary is (3 metrics x 6 columns: well-specified, replay,
-        remap, history, drift, sparse population), fractions are percentages, and the same
-        seeds reproduce the same result."""
+        """The summary is (3 metrics x 6 columns: well-specified, remap,
+        history, replay, drift, sparse population), fractions are percentages,
+        and the same seeds reproduce the same result."""
         params = _moderate_params()
         summary = estimate_stable_summary(params, n_realizations=3, base_seed=0)
 
@@ -365,21 +399,21 @@ class TestEstimateStableSummary:
 
     def test_remap_column_is_most_flagged(self) -> None:
         """Scientific regression guard: across realizations, the remap column
-        (index 2) is flagged far more than the well-specified column (index 0)
+        (index 1) is flagged far more than the well-specified column (index 0)
         for every metric — the headline 'all three detect remap' result, now
         on a stabilized median."""
         summary = estimate_stable_summary(_moderate_params(), n_realizations=5, base_seed=0)
         for row in range(3):
-            assert summary.frac_median[row, 2] > summary.frac_median[row, 0]
+            assert summary.frac_median[row, 1] > summary.frac_median[row, 0]
 
     def test_replay_is_not_flagged(self) -> None:
-        """Scientific claim: the replay event (column 1) is *not* a
+        """Scientific claim: the replay event (column 3) is *not* a
         misspecification. The decoder tracks the swept trajectory, so every
         metric stays low — far below the remap positive control — even though
         the decoded position departs from the (fixed) true position."""
         summary = estimate_stable_summary(_moderate_params(), n_realizations=5, base_seed=0)
-        replay = summary.frac_median[:, 1]
-        remap = summary.frac_median[:, 2]
+        replay = summary.frac_median[:, 3]
+        remap = summary.frac_median[:, 1]
         assert np.all(replay < 15.0), f"replay should stay low; got {replay}"
         assert np.all(replay < 0.5 * remap), (
             f"replay must flag far less than the remap misfit; got replay={replay}, remap={remap}"
@@ -409,10 +443,10 @@ class TestEstimateStableSummary:
 
     def test_history_dependent_column_is_missed(self) -> None:
         """Panel-(b) guard: the history-dependent (temporal) misfit is missed
-        by all three per-spike spatial diagnostics (column 3 stays low on the
+        by all three per-spike spatial diagnostics (column 2 stays low on the
         flag-fraction columns, not merely at the per-event median)."""
         summary = estimate_stable_summary(_moderate_params(), n_realizations=5, base_seed=0)
-        hist = summary.frac_median[:, 3]
+        hist = summary.frac_median[:, 2]
         well = summary.frac_median[:, 0]
         assert np.all(hist < 5.0), f"history-dependent phase should stay near zero; got {hist}"
         assert np.all(hist <= well), (
@@ -435,7 +469,7 @@ class TestEstimateStableSummary:
         """
         summary = estimate_stable_summary(_moderate_params(), n_realizations=5, base_seed=0)
         well = summary.frac_median[:, 0]
-        remap = summary.frac_median[:, 2]
+        remap = summary.frac_median[:, 1]
         drift = summary.frac_median[:, 4]
         assert np.all(remap > 10.0), f"remap should flag >10% for every metric; got {remap}"
         assert np.all(remap > 2.0 * well), (

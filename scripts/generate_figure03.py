@@ -121,7 +121,7 @@ def run_demo(params: DecodeParams) -> None:
     print(f"Pooled thresholds: {summary.thresholds}")
     print(
         "Median flag percentages [HPD, predictive p, KL] x "
-        "[well-specified, replay, remap, history, drift, sparse population]:\n"
+        "[well-specified, remap, history, replay, drift, sparse population]:\n"
         f"{np.array2string(summary.frac_median, precision=3)}"
     )
 

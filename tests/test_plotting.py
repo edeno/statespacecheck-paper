@@ -266,12 +266,12 @@ def test_plot_combined_diagnostics_renders_precomputed_summary(
     bundle = _combined_metrics(rng, n_time, n_bins, n_cells)
     params = _params_for_short_run(n_time, n_cells)
 
-    # Columns: well-specified, replay, remap, history, drift, sparse population.
+    # Columns: well-specified, remap, history, replay, drift, sparse population.
     median = np.array(
         [
-            [1.0, 4.0, 60.0, 1.0, 10.0, 0.0],
-            [1.0, 4.0, 60.0, 1.0, 8.0, 17.0],
-            [3.0, 2.0, 64.0, 2.0, 14.0, 0.0],
+            [1.0, 60.0, 1.0, 4.0, 10.0, 0.0],
+            [1.0, 60.0, 1.0, 4.0, 8.0, 17.0],
+            [3.0, 64.0, 2.0, 2.0, 14.0, 0.0],
         ]
     )
 

@@ -311,9 +311,10 @@ class DecodeParams:
     # tracks the sweep, so the decoded position departs from the true
     # (fixed) position without any diagnostic flagging it -- replay is not a
     # misspecification. The sweep occupies the fractional sub-window
-    # ``[replay_frac_start, replay_frac_end)`` of clean-recovery 2, moves at
-    # ``replay_speed`` a.u./step (slow enough for the narrow transition to
-    # track), and fires at an elevated ``replay_rate_scale``.
+    # ``[replay_frac_start, replay_frac_end)`` of clean-recovery 2 and fires
+    # at an elevated ``replay_rate_scale``. The trajectory makes one sweep
+    # toward the farther track end, capped at ``replay_speed`` per step, and
+    # returns to its starting position.
     replay_frac_start: float = 0.25
     replay_frac_end: float = 0.75
     replay_speed: float = 0.5
@@ -1713,6 +1714,14 @@ def replay_window(params: DecodeParams) -> tuple[int, int]:
     n = end - start
     r0 = start + int(round(n * params.replay_frac_start))
     r1 = start + int(round(n * params.replay_frac_end))
+    # Ordered floating-point fractions can still collapse to the same integer
+    # step after rounding. A genuine out-and-back trajectory needs at least a
+    # start, a turn, and a return sample.
+    if not (start <= r0 < r1 <= end) or r1 - r0 < 3:
+        raise ValueError(
+            "Replay fractions must resolve to a window of at least 3 steps "
+            f"inside clean-recovery 2; got [{r0}, {r1}) within [{start}, {end})."
+        )
     return r0, r1
 
 
@@ -1739,8 +1748,10 @@ def summary_phase_windows(params: DecodeParams) -> list[SummaryColumn]:
     Returns
     -------
     list of SummaryColumn
-        Six columns in heatmap order: well-specified, replay, remap,
-        history-dependent firing, drift, sparse population.
+        Six columns in heatmap order: well-specified, remap,
+        history-dependent firing, replay, drift, sparse population. After
+        the pooled reference column, the conditions follow their chronology
+        in Figure 3a.
     """
     bnd = params.phase_boundaries
     t_remap_start = bnd[PhaseBoundary.REMAP_START]
@@ -1767,9 +1778,9 @@ def summary_phase_windows(params: DecodeParams) -> list[SummaryColumn]:
             ),
             "—",
         ),
-        SummaryColumn("Replay", ((r0, r1),), "—"),
         SummaryColumn("Remap", ((t_remap_start, t_remap_end),), "Observation"),
         SummaryColumn("History-\ndep.", ((t_recovery1_end, t_hist_dep_end),), "Observation"),
+        SummaryColumn("Replay", ((r0, r1),), "—"),
         SummaryColumn("Drift", ((t_recovery2_end, t_drift_end),), "Transition"),
         SummaryColumn(
             "Sparse\npopulation",
