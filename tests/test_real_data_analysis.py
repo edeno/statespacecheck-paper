@@ -363,6 +363,23 @@ class TestGetStateMarginalizedPosterior:
             get_state_marginalized_posterior(results, "predictive")
 
 
+class TestMeanPerSpikeLikelihoodByTime:
+    def test_averages_normalized_fields_weighted_by_spike_count(self) -> None:
+        from statespacecheck_paper.real_data_analysis import (
+            mean_per_spike_likelihood_by_time,
+        )
+
+        # cell 0 concentrates at bin 0, cell 1 at bin 2 (unnormalized).
+        place_fields = np.array([[2.0, 0.0, 0.0], [0.0, 0.0, 4.0]])
+        spike_counts = np.array([[1, 0], [1, 1], [0, 0]], dtype=np.int64)
+
+        mean_lik, has_spikes = mean_per_spike_likelihood_by_time(spike_counts, place_fields)
+
+        expected = np.array([[1.0, 0.0, 0.0], [0.5, 0.0, 0.5], [0.0, 0.0, 0.0]])
+        np.testing.assert_allclose(mean_lik, expected)
+        np.testing.assert_array_equal(has_spikes, np.array([True, True, False]))
+
+
 # ---------------------------------------------------------------------------
 # position-marginal model diagnostics
 # ---------------------------------------------------------------------------

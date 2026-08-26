@@ -936,6 +936,52 @@ def get_spike_counts(
     return spike_counts
 
 
+def mean_per_spike_likelihood_by_time(
+    spike_counts: NDArray[np.int64],
+    place_fields: NDArray[np.float64],
+) -> tuple[NDArray[np.float64], NDArray[np.bool_]]:
+    """Mean normalized per-spike likelihood in each time bin.
+
+    Each cell's place field is normalized over position to give the
+    single-spike observation likelihood as a function of position. In every
+    time bin the normalized fields of the spiking cells are averaged, weighted
+    by spike count, so a bin with several spikes contributes the mean of their
+    normalized likelihoods. This is the same quantity plotted in the
+    simulation figure's likelihood row (see
+    :func:`statespacecheck_paper.plotting.plot_per_cell_diagnostics`), and it
+    depends only on the observation model, so it is identical across decoders
+    that share place fields.
+
+    Parameters
+    ----------
+    spike_counts : np.ndarray, shape (n_time, n_cells)
+        Spike count per cell per time bin. Columns must be in the same cell
+        order as the rows of ``place_fields``.
+    place_fields : np.ndarray, shape (n_cells, n_bins)
+        Per-cell place fields (expected spikes per bin) over the position grid.
+
+    Returns
+    -------
+    mean_likelihood : np.ndarray, shape (n_time, n_bins)
+        Mean normalized per-spike likelihood over position in each time bin.
+        Rows for time bins with no spikes are all zero.
+    has_spikes : np.ndarray, shape (n_time,)
+        True in time bins containing at least one spike.
+    """
+    pf = np.asarray(place_fields, dtype=np.float64)
+    pf_sum = pf.sum(axis=1, keepdims=True)
+    pf_norm = np.divide(pf, pf_sum, out=np.zeros_like(pf), where=pf_sum > 0)
+
+    counts = np.asarray(spike_counts, dtype=np.float64)
+    n_per_bin = counts.sum(axis=1)
+    has_spikes = n_per_bin > 0
+
+    weighted = counts @ pf_norm
+    mean_likelihood = np.zeros_like(weighted)
+    mean_likelihood[has_spikes] = weighted[has_spikes] / n_per_bin[has_spikes, np.newaxis]
+    return mean_likelihood, has_spikes
+
+
 def compute_model_diagnostics(
     model: Any,
     results: Any,

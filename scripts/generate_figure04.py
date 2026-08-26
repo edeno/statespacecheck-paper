@@ -31,6 +31,7 @@ from statespacecheck_paper.real_data_analysis import (
     compute_model_diagnostics,
     create_decoder_environment,
     extract_place_fields,
+    extract_shared_position_place_fields,
     fit_decoder_models,
     get_spike_counts,
 )
@@ -66,7 +67,7 @@ def _fig4_cache_path() -> Path:
 DETAIL_CENTER = 193069  # Time index with KL spike during immobility
 DETAIL_HALF_WIDTH = 500  # Half-width in time points (~2 seconds at 500 Hz)
 DIAGNOSTIC_ANNOTATION_GIDS = {THRESHOLD_LABEL_GID, WORSE_FIT_LABEL_GID}
-FIG4_CACHE_SCHEMA_VERSION = 2
+FIG4_CACHE_SCHEMA_VERSION = 3
 
 
 def shift_diagnostic_event_times(
@@ -186,8 +187,9 @@ def run_demo(*, use_cache: bool = True) -> None:
         bundle = joblib.load(cache_path)
         if bundle.get("schema_version") != FIG4_CACHE_SCHEMA_VERSION:
             raise RuntimeError(
-                "The Figure 4 cache predates position-marginal diagnostics. "
-                "Rebuild it with scripts/generate_figure04.py --force-recompute."
+                "The Figure 4 cache predates the current diagnostics/likelihood "
+                "schema. Rebuild it with scripts/generate_figure04.py "
+                "--force-recompute."
             )
         continuous_results = bundle["continuous_results"]
         contfrag_results = bundle["contfrag_results"]
@@ -195,6 +197,8 @@ def run_demo(*, use_cache: bool = True) -> None:
         contfrag_diagnostics = bundle["contfrag_diagnostics"]
         spike_counts = bundle["spike_counts"]
         place_field_peaks = bundle["place_field_peaks"]
+        diagnostic_place_fields = bundle["diagnostic_place_fields"]
+        diagnostic_position_bins = bundle["diagnostic_position_bins"]
     else:
         # Environment is only needed to fit the decoders.
         env = create_decoder_environment(
@@ -243,6 +247,12 @@ def run_demo(*, use_cache: bool = True) -> None:
             )
         place_field_peaks = position_bins[np.nanargmax(place_fields, axis=1)]
 
+        # Shared interior place fields used for the mean per-spike likelihood
+        # row (identical across decoders, so the continuous model suffices).
+        diagnostic_place_fields, diagnostic_position_bins = extract_shared_position_place_fields(
+            continuous_model
+        )
+
         print("Caching decoder outputs to data/intermediates ...")
         cache_path.parent.mkdir(parents=True, exist_ok=True)
         joblib.dump(
@@ -254,6 +264,8 @@ def run_demo(*, use_cache: bool = True) -> None:
                 "contfrag_diagnostics": contfrag_diagnostics,
                 "spike_counts": spike_counts,
                 "place_field_peaks": place_field_peaks,
+                "diagnostic_place_fields": diagnostic_place_fields,
+                "diagnostic_position_bins": diagnostic_position_bins,
             },
             cache_path,
         )
@@ -339,6 +351,8 @@ def run_demo(*, use_cache: bool = True) -> None:
         spike_times=spike_times_relative,
         spike_counts=spike_counts,
         place_field_peaks=place_field_peaks,
+        place_fields=diagnostic_place_fields,
+        position_bins=diagnostic_position_bins,
         time_slice_ind=detail_slice,
         thresholds=diagnostic_thresholds,
         track_graph=data["track_graph"],

@@ -1355,6 +1355,8 @@ def plot_single_model_diagnostics(
     spike_times: list[NDArray[np.float64]] | None = None,
     spike_counts: NDArray[np.int64] | None = None,
     place_field_peaks: NDArray[np.float64] | None = None,
+    place_fields: NDArray[np.float64] | None = None,
+    position_bins: NDArray[np.float64] | None = None,
     time_slice_ind: slice | None = None,
     model_name: str = "Continuous",
     thresholds: dict[str, float] | None = None,
@@ -1391,6 +1393,13 @@ def plot_single_model_diagnostics(
         Spike count matrix.
     place_field_peaks : np.ndarray, shape (n_cells,), optional
         Place field peak positions for raster sorting.
+    place_fields : np.ndarray, shape (n_cells, n_bins), optional
+        Per-cell place fields over the interior position grid. When supplied
+        with ``spike_counts`` and ``position_bins``, the likelihood row shows
+        the mean normalized per-spike likelihood (as in the simulation
+        figure) instead of the decoder's combined likelihood.
+    position_bins : np.ndarray, shape (n_bins,), optional
+        Interior position-bin centers matching the columns of ``place_fields``.
     time_slice_ind : slice, optional
         Time slice to plot. If None, plots all time points.
     model_name : str, default "Continuous"
@@ -1468,7 +1477,37 @@ def plot_single_model_diagnostics(
     ax_lik = axes[1]
     ax_lik.set_facecolor("black")
 
-    if "log_likelihood" in results:
+    if place_fields is not None and spike_counts is not None and position_bins is not None:
+        # Match the simulation figure: show the mean normalized per-spike
+        # likelihood over position. This is the observation quantity the
+        # per-spike diagnostics below operate on, and it is identical across
+        # decoders that share place fields (unlike the decoder's combined
+        # likelihood, which lives on the joint state-by-position space).
+        from statespacecheck_paper.real_data_analysis import (
+            mean_per_spike_likelihood_by_time,
+        )
+
+        mean_lik, has_spikes_lik = mean_per_spike_likelihood_by_time(spike_counts, place_fields)
+        lik_np = mean_lik[time_slice_ind]
+        has_spk_slice = has_spikes_lik[time_slice_ind]
+
+        time_win = np.asarray(time)[time_slice_ind]
+        pos = np.asarray(position_bins, dtype=np.float64)
+        t0, t1 = float(time_win[0]), float(time_win[-1])
+        p0, p1 = float(pos[0]), float(pos[-1])
+        dt = (t1 - t0) / max(len(time_win) - 1, 1) / 2
+        dp = (p1 - p0) / max(len(pos) - 1, 1) / 2
+        extent = (t0 - dt, t1 + dt, p0 - dp, p1 + dp)
+
+        plot_likelihood_columns(
+            ax_lik,
+            lik_np,
+            has_spk_slice,
+            n_time=len(time_win),
+            extent=extent,
+            cmap=CMAP_LIKELIHOOD,
+        )
+    elif "log_likelihood" in results:
         lik_da = xr.apply_ufunc(np.exp, results["log_likelihood"]).dropna("state_bins", how="all")
         # See ``plot_model_comparison_with_posterior`` above for the
         # MultiIndex-vs-Index rationale; the overlay needs a position
