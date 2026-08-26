@@ -379,6 +379,26 @@ class TestMeanPerSpikeLikelihoodByTime:
         np.testing.assert_allclose(mean_lik, expected)
         np.testing.assert_array_equal(has_spikes, np.array([True, True, False]))
 
+    def test_uses_normalized_poisson_likelihood_not_raw_rate(self) -> None:
+        from scipy.stats import poisson
+
+        from statespacecheck_paper.real_data_analysis import (
+            mean_per_spike_likelihood_by_time,
+        )
+
+        # One cell, two bins, with rates large enough that the Poisson
+        # exp(-rate) factor matters. Raw-rate normalization would give
+        # [0.8, 0.2]; the diagnostics normalize Poisson(k=1, mu=rate).
+        place_fields = np.array([[2.0, 0.5]])
+        spike_counts = np.array([[1]], dtype=np.int64)
+
+        mean_lik, _ = mean_per_spike_likelihood_by_time(spike_counts, place_fields)
+
+        pmf = poisson.pmf(k=1, mu=place_fields[0])
+        expected = pmf / pmf.sum()
+        np.testing.assert_allclose(mean_lik[0], expected)
+        assert not np.allclose(mean_lik[0], place_fields[0] / place_fields[0].sum())
+
 
 # ---------------------------------------------------------------------------
 # position-marginal model diagnostics

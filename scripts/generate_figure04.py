@@ -247,11 +247,23 @@ def run_demo(*, use_cache: bool = True) -> None:
             )
         place_field_peaks = position_bins[np.nanargmax(place_fields, axis=1)]
 
-        # Shared interior place fields used for the mean per-spike likelihood
-        # row (identical across decoders, so the continuous model suffices).
+        # Shared interior place fields for the mean per-spike likelihood row.
+        # The row is meant to be identical across decoders, so verify the two
+        # models agree on both fields and grid before storing a single copy.
         diagnostic_place_fields, diagnostic_position_bins = extract_shared_position_place_fields(
             continuous_model
         )
+        contfrag_place_fields, contfrag_position_bins = extract_shared_position_place_fields(
+            contfrag_model
+        )
+        if not np.allclose(
+            diagnostic_place_fields, contfrag_place_fields, equal_nan=True
+        ) or not np.allclose(diagnostic_position_bins, contfrag_position_bins, equal_nan=True):
+            raise ValueError(
+                "Continuous and Continuous--Fragmented place fields or position "
+                "grids differ; the shared likelihood row would misrepresent one "
+                "of the decoders."
+            )
 
         print("Caching decoder outputs to data/intermediates ...")
         cache_path.parent.mkdir(parents=True, exist_ok=True)

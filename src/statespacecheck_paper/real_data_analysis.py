@@ -39,6 +39,7 @@ from scipy.ndimage import gaussian_filter1d, label, uniform_filter1d
 from statespacecheck_paper.analysis import (
     PerCellDiagnostics,
     compute_per_cell_diagnostics_from_rates,
+    normalized_single_spike_likelihood,
 )
 
 
@@ -942,15 +943,15 @@ def mean_per_spike_likelihood_by_time(
 ) -> tuple[NDArray[np.float64], NDArray[np.bool_]]:
     """Mean normalized per-spike likelihood in each time bin.
 
-    Each cell's place field is normalized over position to give the
-    single-spike observation likelihood as a function of position. In every
-    time bin the normalized fields of the spiking cells are averaged, weighted
-    by spike count, so a bin with several spikes contributes the mean of their
-    normalized likelihoods. This is the same quantity plotted in the
-    simulation figure's likelihood row (see
-    :func:`statespacecheck_paper.plotting.plot_per_cell_diagnostics`), and it
-    depends only on the observation model, so it is identical across decoders
-    that share place fields.
+    Each cell's place field is turned into the normalized one-spike Poisson
+    likelihood over position via
+    :func:`statespacecheck_paper.analysis.normalized_single_spike_likelihood`
+    --- the exact quantity the diagnostics compare against the predictive
+    distribution. In every time bin the normalized likelihoods of the spiking
+    cells are averaged, weighted by spike count, so a bin with several spikes
+    contributes the mean of their normalized likelihoods. This matches the
+    simulation figure's likelihood row, and it depends only on the observation
+    model, so it is identical across decoders that share place fields.
 
     Parameters
     ----------
@@ -969,8 +970,7 @@ def mean_per_spike_likelihood_by_time(
         True in time bins containing at least one spike.
     """
     pf = np.asarray(place_fields, dtype=np.float64)
-    pf_sum = pf.sum(axis=1, keepdims=True)
-    pf_norm = np.divide(pf, pf_sum, out=np.zeros_like(pf), where=pf_sum > 0)
+    pf_norm = normalized_single_spike_likelihood(pf)
 
     counts = np.asarray(spike_counts, dtype=np.float64)
     n_per_bin = counts.sum(axis=1)

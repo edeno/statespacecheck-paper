@@ -1487,9 +1487,11 @@ def plot_single_model_diagnostics(
             mean_per_spike_likelihood_by_time,
         )
 
-        mean_lik, has_spikes_lik = mean_per_spike_likelihood_by_time(spike_counts, place_fields)
-        lik_np = mean_lik[time_slice_ind]
-        has_spk_slice = has_spikes_lik[time_slice_ind]
+        # Slice to the plotted window first; the full session is ~700k bins,
+        # so computing over all of it would allocate multi-GB intermediates
+        # for a ~1000-bin plot.
+        counts_win = spike_counts[time_slice_ind]
+        lik_np, has_spk_slice = mean_per_spike_likelihood_by_time(counts_win, place_fields)
 
         time_win = np.asarray(time)[time_slice_ind]
         pos = np.asarray(position_bins, dtype=np.float64)

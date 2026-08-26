@@ -855,6 +855,32 @@ class Diagnostics:
 # -----------------------------
 
 
+def normalized_single_spike_likelihood(
+    rates: NDArray[np.floating],
+) -> NDArray[np.floating]:
+    """Normalized one-spike Poisson likelihood over position.
+
+    For position-dependent rates ``rates`` (expected spikes per bin), returns
+    ``Poisson(k=1, mu=rates)`` normalized to sum to 1 over the last axis. This
+    is the per-spike observation likelihood the diagnostics compare against
+    the predictive distribution, and the quantity shown in the likelihood row
+    of the simulation and real-data figures. Sharing this definition keeps the
+    plotted likelihood identical to the one the diagnostics consume.
+
+    Parameters
+    ----------
+    rates : np.ndarray, shape (..., n_bins)
+        Position-dependent firing rate (expected spikes per bin) for one or
+        more spikes/cells. Normalization is over the last axis.
+
+    Returns
+    -------
+    likelihood : np.ndarray, shape (..., n_bins)
+        Normalized single-spike likelihood over position.
+    """
+    return normalize(poisson.pmf(k=1, mu=rates), axis=-1)
+
+
 def likelihood_grid_for_counts(
     xs: NDArray[np.floating],
     pf_centers: NDArray[np.floating],
@@ -1447,7 +1473,7 @@ def compute_per_cell_diagnostics_from_rates(
             # (chunk, n_bins) gathers + Poisson lik for this batch only.
             pred_chunk = predictive_posterior[sti]
             rates_chunk = rates[:, sci].T
-            lik_chunk = normalize(poisson.pmf(k=1, mu=rates_chunk), axis=1)
+            lik_chunk = normalized_single_spike_likelihood(rates_chunk)
 
             event_hpd_overlap[start:stop] = ssc.hpd_overlap(
                 pred_chunk, lik_chunk, coverage=coverage
