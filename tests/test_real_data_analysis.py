@@ -11,12 +11,15 @@ import pandas as pd
 import pytest
 import xarray as xr
 
+import statespacecheck_paper.real_data_analysis as real_data_analysis
 from statespacecheck_paper.analysis import PerCellDiagnostics
 from statespacecheck_paper.real_data_analysis import (
     compute_flag_confusion,
+    compute_model_diagnostics,
     compute_per_cell_diagnostics,
     compute_running_average,
     extract_place_fields,
+    extract_shared_position_place_fields,
     find_sustained_low_overlap,
     gaussian_smooth,
     get_multiunit_population_firing_rate,
@@ -358,6 +361,104 @@ class TestGetStateMarginalizedPosterior:
         )
         with pytest.raises(ValueError, match="Failed to unstack"):
             get_state_marginalized_posterior(results, "predictive")
+
+
+# ---------------------------------------------------------------------------
+# position-marginal model diagnostics
+# ---------------------------------------------------------------------------
+
+
+def _two_state_model(
+    place_fields: np.ndarray,
+    position_bins: np.ndarray,
+    interior_mask: np.ndarray,
+) -> MagicMock:
+    model = MagicMock()
+    model.observation_models = [
+        MagicMock(environment_name="", encoding_group=0),
+        MagicMock(environment_name="", encoding_group=0),
+    ]
+    model.encoding_model_ = {("", 0): {"place_fields": place_fields}}
+    environment = MagicMock()
+    environment.place_bin_centers_ = position_bins[:, np.newaxis]
+    model.environments = [environment]
+    model.is_track_interior_state_bins_ = np.tile(interior_mask, 2)
+    return model
+
+
+class TestComputeModelDiagnostics:
+    def test_marginalizes_state_and_uses_one_shared_place_field_copy(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        position_bins = np.array([0.0, 1.0, 2.0])
+        interior_mask = np.array([True, False, True])
+        place_fields = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+        model = _two_state_model(place_fields, position_bins, interior_mask)
+
+        posterior_per_state = np.array(
+            [
+                [[0.10, np.nan, 0.20], [0.30, np.nan, 0.40]],
+                [[0.25, np.nan, 0.15], [0.35, np.nan, 0.25]],
+            ]
+        )
+        state_bins = pd.MultiIndex.from_product(
+            [["Continuous", "Fragmented"], position_bins],
+            names=["state", "position"],
+        )
+        results = _xarray_results(
+            posterior_per_state.reshape(2, -1),
+            "predictive_posterior",
+            state_bins=state_bins,
+        )
+
+        captured: dict[str, Any] = {}
+        sentinel = MagicMock()
+
+        def _capture(
+            predictive_posterior: np.ndarray,
+            spike_counts: np.ndarray,
+            diagnostic_place_fields: np.ndarray,
+            **kwargs: Any,
+        ) -> MagicMock:
+            captured["predictive"] = predictive_posterior
+            captured["place_fields"] = diagnostic_place_fields
+            captured["kwargs"] = kwargs
+            return sentinel
+
+        monkeypatch.setattr(real_data_analysis, "compute_per_cell_diagnostics", _capture)
+        spike_counts = np.zeros((2, 2), dtype=np.int64)
+        time = np.array([0.0, 0.002])
+        result = compute_model_diagnostics(model, results, spike_counts, time)
+
+        assert result is sentinel
+        np.testing.assert_allclose(
+            captured["predictive"],
+            posterior_per_state[:, :, interior_mask].sum(axis=1),
+        )
+        np.testing.assert_allclose(captured["place_fields"], place_fields[:, interior_mask])
+        assert captured["kwargs"]["time"] is time
+
+    def test_rejects_state_specific_observation_likelihoods(self) -> None:
+        position_bins = np.array([0.0, 1.0, 2.0])
+        model = MagicMock()
+        model.observation_models = [
+            MagicMock(environment_name="", encoding_group=0),
+            MagicMock(environment_name="", encoding_group=1),
+        ]
+        model.encoding_model_ = {
+            ("", 0): {"place_fields": np.ones((2, 3))},
+            ("", 1): {"place_fields": np.full((2, 3), 2.0)},
+        }
+        environments = []
+        for _ in range(2):
+            environment = MagicMock()
+            environment.place_bin_centers_ = position_bins[:, np.newaxis]
+            environments.append(environment)
+        model.environments = environments
+        model.is_track_interior_state_bins_ = np.ones(6, dtype=bool)
+
+        with pytest.raises(ValueError, match="likelihood differs"):
+            extract_shared_position_place_fields(model)
 
 
 # ---------------------------------------------------------------------------

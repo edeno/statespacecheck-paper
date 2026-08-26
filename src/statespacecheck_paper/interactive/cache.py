@@ -358,7 +358,9 @@ def build_model_cache(
     from statespacecheck_paper.real_data_analysis import (
         compute_per_cell_diagnostics,
         extract_place_fields_concat,
+        extract_shared_position_place_fields,
         get_spike_counts,
+        get_state_marginalized_posterior,
     )
 
     with xr.open_dataset(inputs.results_nc) as ds:
@@ -377,8 +379,11 @@ def build_model_cache(
         position_coord = np.asarray(ds["position"].values, dtype=np.float64)
         position_grid_full = np.unique(position_coord)
 
-        predictive_interior = np.asarray(
-            ds["predictive_posterior"].dropna(dim="state_bins").values,
+        joint_interior_bins = int(
+            ds["predictive_posterior"].dropna(dim="state_bins").sizes["state_bins"]
+        )
+        diagnostic_predictive = np.asarray(
+            get_state_marginalized_posterior(_restore_state_bins_index(ds), "predictive"),
             dtype=np.float64,
         )
 
@@ -396,11 +401,11 @@ def build_model_cache(
         )
     place_fields = place_fields_full[:, interior_mask]
 
-    if place_fields.shape[1] != predictive_interior.shape[1]:
+    if place_fields.shape[1] != joint_interior_bins:
         raise ValueError(
             f"Place-field interior bin count ({place_fields.shape[1]}) does not "
             f"match predictive_posterior interior bin count "
-            f"({predictive_interior.shape[1]})"
+            f"({joint_interior_bins})"
         )
 
     # Per-state interior position grid for raster sorting and the slice
@@ -428,6 +433,23 @@ def build_model_cache(
         )
     position_bins = position_grid_full[interior_mask_per_state]
     place_fields_per_state = place_fields[:, :n_interior_per_state]
+    diagnostic_place_fields, diagnostic_position_bins = extract_shared_position_place_fields(
+        fitted_model
+    )
+    if not np.allclose(diagnostic_position_bins, position_bins, equal_nan=True):
+        raise ValueError(
+            "Shared diagnostic position grid does not match the viewer's per-state position grid."
+        )
+    if not np.allclose(diagnostic_place_fields, place_fields_per_state, equal_nan=True):
+        raise ValueError(
+            "Shared diagnostic place fields do not match the viewer's per-state place fields."
+        )
+    if diagnostic_predictive.shape[1] != diagnostic_place_fields.shape[1]:
+        raise ValueError(
+            f"Position-marginal predictive posterior has "
+            f"{diagnostic_predictive.shape[1]} bins but the shared observation "
+            f"likelihood has {diagnostic_place_fields.shape[1]}."
+        )
     with np.errstate(invalid="ignore"):
         peak_idx = np.nanargmax(place_fields_per_state, axis=1)
     place_field_peaks = position_bins[peak_idx]
@@ -437,9 +459,9 @@ def build_model_cache(
     # ``include_dense_matrices=False`` skips the (n_time, n_cells) matrix
     # allocations + scatters, which on real data are hundreds of MB.
     diagnostics = compute_per_cell_diagnostics(
-        predictive_interior,
+        diagnostic_predictive,
         spike_counts,
-        place_fields,
+        diagnostic_place_fields,
         spike_times=spike_times,
         time=time_arr,
         include_dense_matrices=False,

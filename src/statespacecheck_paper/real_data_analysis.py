@@ -469,9 +469,10 @@ def extract_place_fields_concat(
     ``is_track_interior_state_bins_`` mask. Callers that only need
     the interior bins do ``place_fields[:, interior_mask]``.
 
-    Used by both ``compute_model_diagnostics`` (interior-only) and
-    the interactive cache builder (which keeps both so the viewer
-    can reconstruct the non-interior NaN columns).
+    Used by the interactive cache builder, which keeps both arrays so the
+    viewer can reconstruct the non-interior NaN columns. Diagnostics that
+    compare models with different numbers of discrete states should instead
+    use :func:`extract_shared_position_place_fields`.
     """
     place_fields = np.concatenate(
         [
@@ -486,6 +487,92 @@ def extract_place_fields_concat(
     )
     interior_mask: NDArray[np.bool_] = np.asarray(model.is_track_interior_state_bins_, dtype=bool)
     return place_fields, interior_mask
+
+
+def extract_shared_position_place_fields(
+    model: Any,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Extract one shared observation likelihood over interior positions.
+
+    Multi-state decoders can repeat the same position-dependent observation
+    model once per discrete state. Those repeated columns belong in the joint
+    decoder state space, but not in diagnostics intended to compare the neural
+    evidence about position across models with different numbers of states.
+    This helper verifies that all discrete states share the same place fields
+    and position grid, then returns exactly one copy restricted to track
+    interior bins.
+
+    Raises
+    ------
+    ValueError
+        If the model has no observation models, different observation
+        likelihoods or position grids across states, or inconsistent track
+        interior masks. In those cases there is no single shared positional
+        likelihood to use after marginalizing the discrete state.
+    """
+    observation_models = list(model.observation_models)
+    if not observation_models:
+        raise ValueError("Decoder model has no observation models.")
+
+    first = observation_models[0]
+    place_fields, position_bins = extract_place_fields(
+        model,
+        environment_name=first.environment_name,
+        encoding_group=first.encoding_group,
+    )
+    place_fields = np.asarray(place_fields, dtype=np.float64)
+    position_bins = np.asarray(position_bins, dtype=np.float64).reshape(-1)
+
+    for observation_model in observation_models[1:]:
+        candidate_fields, candidate_bins = extract_place_fields(
+            model,
+            environment_name=observation_model.environment_name,
+            encoding_group=observation_model.encoding_group,
+        )
+        candidate_fields = np.asarray(candidate_fields, dtype=np.float64)
+        candidate_bins = np.asarray(candidate_bins, dtype=np.float64).reshape(-1)
+        if candidate_fields.shape != place_fields.shape or not np.allclose(
+            candidate_fields, place_fields, equal_nan=True
+        ):
+            raise ValueError(
+                "Cannot compute position-marginal diagnostics because the "
+                "observation likelihood differs across discrete states."
+            )
+        if candidate_bins.shape != position_bins.shape or not np.allclose(
+            candidate_bins, position_bins, equal_nan=True
+        ):
+            raise ValueError(
+                "Cannot compute position-marginal diagnostics because the "
+                "position grid differs across discrete states."
+            )
+
+    n_positions = position_bins.size
+    if place_fields.shape[1] != n_positions:
+        raise ValueError(
+            f"Place fields have {place_fields.shape[1]} bins but the position "
+            f"grid has {n_positions}."
+        )
+
+    interior_mask = np.asarray(model.is_track_interior_state_bins_, dtype=bool).reshape(-1)
+    if interior_mask.size % n_positions != 0:
+        raise ValueError(
+            f"Interior mask has {interior_mask.size} bins, which is not "
+            f"divisible by the {n_positions}-bin position grid."
+        )
+    state_masks = interior_mask.reshape(-1, n_positions)
+    if state_masks.shape[0] != len(observation_models):
+        raise ValueError(
+            f"Interior mask represents {state_masks.shape[0]} states but the "
+            f"model has {len(observation_models)} observation models."
+        )
+    if not np.all(state_masks == state_masks[0]):
+        raise ValueError(
+            "Cannot compute position-marginal diagnostics because the track "
+            "interior mask differs across discrete states."
+        )
+
+    position_mask = state_masks[0]
+    return place_fields[:, position_mask], position_bins[position_mask]
 
 
 def compute_per_cell_diagnostics(
@@ -858,9 +945,11 @@ def compute_model_diagnostics(
 ) -> PerCellDiagnostics:
     """Compute per-cell diagnostics for a fitted decoder model.
 
-    This is a convenience function that chains together extract_place_fields,
-    compute_per_cell_likelihood, get_state_marginalized_posterior, and
-    compute_per_cell_diagnostics.
+    The decoder itself may operate over a joint discrete-state-by-position
+    space. For diagnostics, the predictive posterior is marginalized over the
+    discrete state and compared with one shared position-dependent observation
+    likelihood. This makes the metric domain identical for models with
+    different numbers of discrete states.
 
     Parameters
     ----------
@@ -889,17 +978,15 @@ def compute_model_diagnostics(
     >>> # diagnostics = compute_model_diagnostics(model, results, spike_counts, time)
     >>> # diagnostics.hpd_overlap.shape  # (n_time, n_cells)
     """
-    # Extract place fields concatenated across observation models (one
-    # per state for multi-state classifiers) and filter to interior bins.
-    # ``predictive_posterior.dropna(state_bins)`` below produces a matching
-    # interior-only column count because the model uses one
-    # ``is_track_interior_state_bins_`` mask consistently across the
-    # encoding model and ``predict()`` output.
-    place_fields_full, interior_mask = extract_place_fields_concat(model)
-    place_fields = place_fields_full[:, interior_mask]
+    place_fields, _ = extract_shared_position_place_fields(model)
+    predictive_posterior = get_state_marginalized_posterior(results, "predictive")
 
-    # Get predictive posterior, dropping NaN state bins (non-interior bins)
-    predictive_posterior = results.predictive_posterior.dropna(dim="state_bins").values
+    if predictive_posterior.shape[1] != place_fields.shape[1]:
+        raise ValueError(
+            f"Position-marginal predictive posterior has "
+            f"{predictive_posterior.shape[1]} bins but the shared observation "
+            f"likelihood has {place_fields.shape[1]}."
+        )
 
     # Compute diagnostics using actual spike counts
     # place_fields are already in spikes per time bin from non_local_detector
