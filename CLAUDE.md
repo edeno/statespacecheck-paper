@@ -92,7 +92,6 @@ The repository follows a clean separation between **reusable code** (in `src/`) 
 - `gaussian_transition_matrix(n_bins, sigma)`: Random walk transition matrix
 - `safe_log(x, eps=1e-10)`: Numerically stable logarithm
 - `placefield_rates(position_bins, centers, scale)`: Gaussian place fields
-- `spike_prob_rank(rates)`: Cumulative probability ranking
 - `simulate_walk(n_time, transition_matrix, x0, rng)`: Random walk simulation
 - `simulate_spikes_position_tuned(position, placefield_rates, rng)`: Position-tuned Poisson spikes
 
