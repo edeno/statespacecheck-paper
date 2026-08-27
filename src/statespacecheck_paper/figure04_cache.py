@@ -13,6 +13,7 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import json
+import warnings
 from collections.abc import Mapping
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
@@ -101,14 +102,25 @@ def load_figure04_cache(path: Path, expected_fingerprint: str) -> dict[str, obje
     valid load returns only the payload mapping (the eight
     :data:`_FIGURE04_CACHE_PAYLOAD_KEYS`).
 
-    Deserialization errors are caught only around ``joblib.load`` so a corrupt
-    file is treated as a miss; validation/programming errors are not swallowed.
+    Any failure to read/unpickle the file is treated as a miss, but a
+    ``RuntimeWarning`` is emitted so the cause is visible instead of a silent,
+    repeating recompute. This deliberately includes the case where an older
+    cache references a since-renamed or removed pickled class (which raises
+    ``ModuleNotFoundError`` / ``AttributeError`` inside ``joblib.load``): the run
+    still proceeds by recomputing, and the recompute overwrites the stale cache
+    so the next run loads cleanly.
     """
     if not path.exists():
         return None
     try:
         cached = joblib.load(path)
-    except Exception:
+    except Exception as exc:
+        warnings.warn(
+            f"Figure-4 cache at {path} could not be read ({exc!r}); treating it "
+            "as a miss and recomputing (the recompute will overwrite it).",
+            RuntimeWarning,
+            stacklevel=2,
+        )
         return None
     if not isinstance(cached, Mapping):
         return None

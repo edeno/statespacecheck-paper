@@ -26,6 +26,7 @@ from numpy.typing import NDArray
 
 from statespacecheck_paper.diagnostics import SpikeEventDiagnostics
 from statespacecheck_paper.figure04_cache import (
+    _FIGURE04_CACHE_PAYLOAD_KEYS,
     Figure4Paths,
     compute_figure04_cache_fingerprint,
     load_figure04_cache,
@@ -44,19 +45,6 @@ from statespacecheck_paper.real_data_analysis import (
     extract_shared_position_place_fields,
     fit_decoder_models,
     get_spike_counts,
-)
-
-# Serialized decode-payload keys (kept for on-disk schema compatibility; the
-# ``contfrag_*`` spellings are historical).
-_CACHE_PAYLOAD_KEYS = (
-    "continuous_results",
-    "contfrag_results",
-    "continuous_diagnostics",
-    "contfrag_diagnostics",
-    "spike_counts",
-    "place_field_peaks",
-    "diagnostic_place_fields",
-    "diagnostic_position_bins",
 )
 
 
@@ -127,14 +115,14 @@ class Figure4DecodeResults:
     @classmethod
     def from_cache_payload(cls, payload: Mapping[str, object]) -> Figure4DecodeResults:
         """Build from the serialized cache payload (the ``contfrag_*`` keys)."""
-        missing = [key for key in _CACHE_PAYLOAD_KEYS if key not in payload]
+        missing = [key for key in _FIGURE04_CACHE_PAYLOAD_KEYS if key not in payload]
         if missing:
             raise ValueError(f"decode payload missing keys: {missing}")
         return cls(
-            continuous_results=cast_dataset(payload["continuous_results"]),
-            continuous_fragmented_results=cast_dataset(payload["contfrag_results"]),
-            continuous_diagnostics=cast_diagnostics(payload["continuous_diagnostics"]),
-            continuous_fragmented_diagnostics=cast_diagnostics(payload["contfrag_diagnostics"]),
+            continuous_results=_cast_dataset(payload["continuous_results"]),
+            continuous_fragmented_results=_cast_dataset(payload["contfrag_results"]),
+            continuous_diagnostics=_cast_diagnostics(payload["continuous_diagnostics"]),
+            continuous_fragmented_diagnostics=_cast_diagnostics(payload["contfrag_diagnostics"]),
             spike_counts=np.asarray(payload["spike_counts"], dtype=np.int64),
             place_field_peaks=np.asarray(payload["place_field_peaks"], dtype=np.float64),
             diagnostic_place_fields=np.asarray(
@@ -159,14 +147,14 @@ class Figure4DecodeResults:
         }
 
 
-def cast_dataset(value: object) -> xr.Dataset:
+def _cast_dataset(value: object) -> xr.Dataset:
     """Narrow a cache-payload value to ``xr.Dataset`` (fails clearly otherwise)."""
     if not isinstance(value, xr.Dataset):
         raise TypeError(f"expected xr.Dataset decode result; got {type(value).__name__}")
     return value
 
 
-def cast_diagnostics(value: object) -> SpikeEventDiagnostics:
+def _cast_diagnostics(value: object) -> SpikeEventDiagnostics:
     """Narrow a cache-payload value to ``SpikeEventDiagnostics`` (fails otherwise)."""
     if not isinstance(value, SpikeEventDiagnostics):
         raise TypeError(f"expected SpikeEventDiagnostics; got {type(value).__name__}")

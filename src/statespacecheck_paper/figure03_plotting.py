@@ -691,7 +691,7 @@ def compose_figure03(
     spike_counts : NDArray, shape (n_time, n_cells)
         Spike counts for each cell at each time point.
     diagnostics : dict[str, NDArray]
-        Dictionary containing diagnostic diagnostics from decode_with_diagnostics.
+        Dictionary containing diagnostic metrics from ``decode_with_diagnostics``.
         Metrics 'hpd_overlap', 'kl_divergence', 'predictive_pvalue' have shape (n_time, n_cells).
     diagnostic_thresholds : DiagnosticThresholds
         Threshold values for each diagnostic.

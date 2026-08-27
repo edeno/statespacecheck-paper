@@ -555,7 +555,7 @@ def compute_per_cell_diagnostics(
     multiple event rows rather than being collapsed into one binned count.
 
     This function delegates to ``compute_spike_event_diagnostics_from_rates`` in
-    ``analysis.py`` to ensure identical computation for simulated and real data.
+    ``diagnostics.py`` to ensure identical computation for simulated and real data.
 
     Examples
     --------

@@ -18,6 +18,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.figure import Figure
 from matplotlib.transforms import Bbox
+from numpy.typing import NDArray
 
 from statespacecheck_paper.diagnostics import SpikeEventDiagnostics
 from statespacecheck_paper.figure04_workflow import Figure4RenderData
@@ -347,7 +348,9 @@ def compose_figure04(
     )
 
     # Shift spike times to relative seconds
-    spike_times_relative: list[Any] = [st - time_offset for st in render_data.recording.spike_times]
+    spike_times_relative: list[NDArray[np.floating]] = [
+        st - time_offset for st in render_data.recording.spike_times
+    ]
     continuous_diagnostics_relative = _shift_diagnostic_event_times(
         render_data.decode_results.continuous_diagnostics,
         time_offset,

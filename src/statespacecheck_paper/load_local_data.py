@@ -30,7 +30,9 @@ class NeuralRecordingData:
     contained ``position_info`` DataFrame and ``track_graph`` are treated as
     read-only by convention (Python does not deep-freeze them), while the
     per-cell spike-time arrays are copied to ``float64`` and marked read-only at
-    construction, so they are genuinely immutable.
+    construction, so they are genuinely immutable. Validation runs once at
+    construction: mutating ``position_info`` / ``track_graph`` in place afterward
+    (via a retained external reference) can void the checked invariants.
 
     Units follow the export: the ``position_info`` time index and the spike
     times are in seconds; ``head_position_x`` / ``head_position_y`` /

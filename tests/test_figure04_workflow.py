@@ -13,7 +13,7 @@ import xarray as xr
 
 from statespacecheck_paper import figure04_cache, figure04_workflow
 from statespacecheck_paper.diagnostics import SpikeEventDiagnostics
-from statespacecheck_paper.figure04_cache import Figure4Paths
+from statespacecheck_paper.figure04_cache import _FIGURE04_CACHE_PAYLOAD_KEYS, Figure4Paths
 from statespacecheck_paper.figure04_workflow import (
     Figure4DecodeResults,
     compute_mean_spike_event_diagnostic,
@@ -97,6 +97,13 @@ class TestFigure4DecodeResults:
         assert rebuilt.continuous_fragmented_results is decode.continuous_fragmented_results
         assert rebuilt.continuous_fragmented_diagnostics is decode.continuous_fragmented_diagnostics
         np.testing.assert_array_equal(rebuilt.spike_counts, decode.spike_counts)
+
+    def test_payload_keys_match_cache_module_source_of_truth(self) -> None:
+        # Guard against drift between the on-disk key list (owned by
+        # figure04_cache) and the field->key mapping in to_cache_payload.
+        assert set(_synthetic_decode_results().to_cache_payload().keys()) == set(
+            _FIGURE04_CACHE_PAYLOAD_KEYS
+        )
 
     def test_from_cache_payload_rejects_missing_key(self) -> None:
         payload = _synthetic_decode_results().to_cache_payload()
