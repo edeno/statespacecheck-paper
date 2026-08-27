@@ -34,8 +34,11 @@ from statespacecheck_paper.figure03_demo import (
     SimulationResult,
     StableSummary,
     _single_out_and_back_sweep,
+    build_figure03_rate_tables,
     estimate_stable_summary,
     run_figure03_simulation,
+    simulate_drift_phase,
+    simulate_sparse_approach_phase,
 )
 from statespacecheck_paper.simulation import gaussian_transition_matrix, placefield_rates
 
@@ -130,6 +133,37 @@ def test_short_replay_sweep_respects_speed_cap() -> None:
     assert sweep.max() < 100.0
     assert np.max(np.abs(np.diff(sweep))) <= 0.5 + np.finfo(float).eps
     assert sweep[-1] == pytest.approx(sweep[0])
+
+
+def test_replay_generative_and_decoder_share_tuning_model(sim: SimulationResult) -> None:
+    """Replay is a correctly-specified observation model.
+
+    The generative sweep spikes fire at the elevated ``replay_rate_scale``
+    through the ordinary position-tuning model; the decoder's replay-window
+    rate table must use the *same* tuning model (centers, width) and the
+    *same* elevated scale. The invariant is this parameterization
+    equivalence, not array equality of the continuous sweep evaluation
+    against the grid rate table. When both match, the decoded state simply
+    tracks the replayed trajectory and no metric flags a misfit.
+    """
+    params = sim.params
+    assert params.pf_centers is not None
+    rate_tables = build_figure03_rate_tables(
+        sim.xs, params.pf_centers, np.asarray(sim.sparse_cell_centers), params
+    )
+    n_normal = len(params.pf_centers)
+    decoder_replay_normal = rate_tables.replay_rates[:, :n_normal]
+    generative_replay = placefield_rates(
+        sim.xs, params.pf_centers, params.pf_width, params.replay_rate_scale
+    )
+    np.testing.assert_allclose(decoder_replay_normal, generative_replay)
+    # The elevated replay scale is genuinely above the ordinary rate scale,
+    # so this equivalence is not vacuously true at the baseline rate.
+    baseline_normal = placefield_rates(
+        sim.xs, params.pf_centers, params.pf_width, params.rate_scale
+    )
+    assert params.replay_rate_scale > params.rate_scale
+    assert decoder_replay_normal.max() > baseline_normal.max()
 
 
 def test_remap_phase_uses_decoder_likelihood(sim: SimulationResult) -> None:
@@ -310,6 +344,28 @@ def test_sparse_population_is_a_correctly_modeled_low_activity_regime(
         expected_predictive,
     )
 
+    # Parameterization equivalence: the decoder's sparse rate tables use the
+    # same centers/width/scale as the generative model (``sparse_rates``),
+    # with the declared baseline gain below the window and the full elevated
+    # rate within it. The gain is intentionally nonzero, so this is a
+    # rate-regime check (low baseline vs elevated), not a zero-count check.
+    rate_tables = build_figure03_rate_tables(
+        sim.xs, params.pf_centers, np.asarray(sim.sparse_cell_centers), params
+    )
+    decoder_elevated_sparse = rate_tables.sparse_rates[:, n_normal:]
+    decoder_baseline_sparse = rate_tables.base_rates[:, n_normal:]
+    np.testing.assert_allclose(decoder_elevated_sparse, sparse_rates)
+    np.testing.assert_allclose(
+        decoder_baseline_sparse, params.sparse_cell_baseline_gain * sparse_rates
+    )
+    np.testing.assert_allclose(rate_tables.baseline_sparse_rates, decoder_baseline_sparse)
+    # Rate regime: the baseline gain is < 1, so out-of-window rates are
+    # uniformly below the elevated in-window peak.
+    assert params.sparse_cell_baseline_gain < 1.0
+    peak = float(sparse_rates.max())
+    assert float(decoder_baseline_sparse.max()) < peak
+    assert float(decoder_elevated_sparse.max()) == pytest.approx(peak)
+
 
 def test_history_dependent_firing_per_spike_metrics_near_baseline(
     sim: SimulationResult,
@@ -368,6 +424,37 @@ def test_drift_phase_inflates_kl(sim: SimulationResult) -> None:
         f"drift phase should inflate KL by >1.2x baseline; "
         f"got base={base_kl:.3f}, drift={drift_kl:.3f}"
     )
+
+
+def test_simulate_drift_phase() -> None:
+    """The drift trajectory starts at ``x_last``, stays on the track, and is
+    reproducible under a fixed seed."""
+    params = DecodeParams()
+    x = simulate_drift_phase(500, x_last=40.0, params=params, rng=np.random.default_rng(0))
+
+    assert x.shape == (500,)
+    assert x[0] == pytest.approx(40.0)
+    assert np.all(x >= params.xs_min) and np.all(x <= params.xs_max)
+
+    repeat = simulate_drift_phase(500, x_last=40.0, params=params, rng=np.random.default_rng(0))
+    np.testing.assert_array_equal(x, repeat)
+
+
+def test_simulate_sparse_approach_phase() -> None:
+    """The approach ends exactly at ``params.sparse_position``, stays on the
+    track, and is reproducible under a fixed seed."""
+    params = DecodeParams()  # sparse_approach_steps=1000
+    n = 1500
+    x = simulate_sparse_approach_phase(n, x_last=10.0, params=params, rng=np.random.default_rng(0))
+
+    assert x.shape == (n,)
+    assert x[-1] == pytest.approx(params.sparse_position)
+    assert np.all(x >= params.xs_min) and np.all(x <= params.xs_max)
+
+    repeat = simulate_sparse_approach_phase(
+        n, x_last=10.0, params=params, rng=np.random.default_rng(0)
+    )
+    np.testing.assert_array_equal(x, repeat)
 
 
 # ---------------------------------------------------------------------------
