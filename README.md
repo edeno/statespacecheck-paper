@@ -18,6 +18,37 @@ This is a **paper/research repository** (not a library). The code is organized i
 
 **For developers**: See [CLAUDE.md](CLAUDE.md) for detailed development guide including module organization, coding standards, and where to add new functionality.
 
+## Reproducing the paper figures
+
+Each main-text figure is produced by exactly one script in `scripts/`. Figures 1–3
+are fully self-contained (a fixed-seed simulation, no external data); Figure 4
+additionally needs the real hippocampal dataset.
+
+| Figure | Entry point | Input | Output | Data requirement |
+| --- | --- | --- | --- | --- |
+| 1 | `scripts/generate_figure01.py` | simulated | PDF + PNG | none |
+| 2 | `scripts/generate_figure02.py` | simulated | PDF + PNG | none |
+| 3 | `scripts/generate_figure03.py` | simulated | PDF + PNG | none |
+| 4 | `scripts/generate_figure04.py` | derived real data | PDF + PNG | documented dataset (see below) |
+
+```bash
+# Reproduce the locked environment, then regenerate every figure:
+uv sync --frozen
+uv run python scripts/generate_all_figures.py
+# Outputs land in manuscript/figures/main/ as PDF + PNG (450 DPI).
+```
+
+Figures 1–3 reproduce deterministically from the seeded simulation. **Figure 4**
+uses the real hippocampal recording of [Comrie et al. 2024](https://doi.org/10.1101/2024.09.23.613567),
+which is **not** included here (large; see the manuscript's Data Availability
+statement for how to obtain it). Place the export under `data/` (or set
+`STATESPACECHECK_DATA_PATH`) before running `generate_figure04.py`; the decode is
+cached under `data/` on first run.
+
+The `statespacecheck` package this paper *demonstrates* is a separate dependency —
+its API is shown below under [Using the statespacecheck package](#using-the-statespacecheck-package),
+which is for using the library, not for reproducing these figures.
+
 ## Overview
 
 State space models are powerful tools for relating neural activity to latent dynamic brain states (e.g., memory, attention, spatial navigation). The core assumption is that complex, high-dimensional neural activity can be related to low-dimensional latent states through:
@@ -73,12 +104,21 @@ All functions expect **discrete probability distributions** represented as histo
 
 ## Installation
 
+For **exact reproduction** (the environment CI uses), sync the locked
+dependencies — this installs the precise pinned versions from `uv.lock`:
+
+```bash
+uv sync --frozen
+```
+
+For **development** (an editable install you can modify), use:
+
 ```bash
 # Using uv (recommended)
-uv pip install -e .
+uv pip install -e ".[dev]"
 
 # Using pip
-pip install -e .
+pip install -e ".[dev]"
 ```
 
 ### Optional extras
@@ -123,7 +163,11 @@ This project may include dependencies installed directly from GitHub repositorie
 
 **Important**: `uv` uses a lock file (`uv.lock`) to ensure reproducible installs. When a GitHub dependency is updated upstream, you must explicitly update the lock file—`uv` will not automatically fetch the latest commit.
 
-## Quick Start
+## Using the `statespacecheck` package
+
+The examples below show the external `statespacecheck` library that this paper
+demonstrates — how to call its diagnostics on your own data. To reproduce the
+paper's figures instead, see [Reproducing the paper figures](#reproducing-the-paper-figures) above.
 
 ### Basic Example
 
@@ -220,8 +264,9 @@ Two dataset kinds are supported:
 - **Real-data decoder caches** (`continuous` / `contfrag` models from
   fitted `non_local_detector` decoders).
 - **Figure-3 simulation cache** — the simulated demonstration with
-  baseline / remap / history-dependent-firing / drift /
-  wide-dynamics-noise phases.
+  baseline / remap / history-dependent-firing / drift phases plus the
+  replay and sparse-population specificity controls (clean-recovery
+  windows between).
 
 ### Build a cache
 
@@ -369,24 +414,21 @@ open htmlcov/index.html
 
 ### Generating Figures
 
+See [Reproducing the paper figures](#reproducing-the-paper-figures) for the
+figure→entry-point→data table and the Figure-4 data requirement.
+
 ```bash
 # Generate all figures
 uv run python scripts/generate_all_figures.py
 
-# Or generate individual figures
-uv run python scripts/generate_figure01.py
-uv run python scripts/generate_figure02.py
+# Or generate an individual figure (one per main-text figure)
+uv run python scripts/generate_figure01.py   # Fig 1  (simulated)
+uv run python scripts/generate_figure02.py   # Fig 2  (simulated)
+uv run python scripts/generate_figure03.py   # Fig 3  (simulated)
+uv run python scripts/generate_figure04.py   # Fig 4  (needs the real dataset)
 
 # Outputs saved to manuscript/figures/main/ directory as PDF and PNG (450 DPI)
 ```
-
-**Reproducibility.** Figures 1–3 are fully reproducible from source: they run a
-seeded simulation (`np.random.default_rng`) and need no external
-data. Figure 4 uses the real hippocampal recording of [Comrie et al.
-2024](https://doi.org/10.1101/2024.09.23.613567), which is **not** included in
-this repository (large; see the Data Availability statement in the manuscript for
-how to obtain it). Place the data under `data/` (or set `STATESPACECHECK_DATA_PATH`)
-before running `generate_figure04.py`.
 
 ### Code Quality
 
