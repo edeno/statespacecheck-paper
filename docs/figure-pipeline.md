@@ -184,15 +184,18 @@ median_flag_percentages=…)` returns a `matplotlib` `Figure` → `save_figure` 
   `figure04_generation.generate_figure04(*, use_cache)`.
 - **Configuration:** `Figure4Config` (in `figure04_decoder.py`) plus the fixed
   `FIGURE4_DIAGNOSTIC_THRESHOLDS = {"hpd_overlap": 0.05, "predictive_pvalue": 0.05}`
-  in `figure04_generation.py`. `Figure4Config` is split into an executable
-  `Figure4DecoderConfig` — `position_std`, `block_size`, `position_bin_size_cm`,
+  in `figure04_generation.py`. `Figure4Config` is split into three scoped parts:
+  a `Figure4DecoderConfig` — `position_std`, `position_bin_size_cm`,
   `sampling_frequency_hz`, threaded into environment/model construction so they
-  genuinely drive the decode — and a `Figure4Provenance` holding the
+  genuinely drive the decode; a `Figure4Provenance` holding the
   `non_local_detector`-default decode-shaping values (`movement_var`, the ContFrag
   transition/initial-condition/concentration/regularization, and the dependency
-  version). The provenance values are recorded and drift-guard pinned but not
-  injected, because faithfully injecting them would rebuild the nested transition
-  grid and hit the concentration-default split — see the `Figure4Config` docstring.
+  version), recorded and drift-guard pinned but not injected (faithfully injecting
+  them would rebuild the nested transition grid and hit the concentration-default
+  split); and a `Figure4ExecutionConfig` holding `block_size`, a performance/memory
+  knob that does **not** change the decode result (the KDE density is identical for
+  any `block_size`) and is therefore excluded from the cache fingerprint. See the
+  `Figure4Config` docstring.
 - **Computation (reading order):**
   `figure04_generation` (recipe) → `figure04_workflow.prepare_figure04_render_data`
   (loads the recording, loads a fingerprint-matching cache or fits/decodes via
@@ -223,7 +226,10 @@ median_flag_percentages=…)` returns a `matplotlib` `Figure` → `save_figure` 
 - **Output:** `manuscript/figures/main/figure04.{pdf,png}`.
 - **Tests:** `tests/test_figure04_decoder.py::TestFigure4ConfigMatchesManuscript`
   (config matches the manuscript decoder parameters);
-  `tests/test_figure04_{cache,workflow,layout,generation}.py`;
+  `tests/test_figure04_{cache,workflow,layout,generation}.py` (orchestration);
+  `tests/test_figure04_{diagnostics,place_fields}.py` (the analysis leaves) and
+  `tests/test_figure04_{plot_primitives,track_plots,panels}.py` (the plotting
+  leaves — panels covers both composite figures and the extracted row renderers);
   `tests/test_load_local_data.py` (the `NeuralRecordingData` contract).
 
 ### Figure-4 traceability walkthrough (following the typed returns)

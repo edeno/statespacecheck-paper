@@ -108,10 +108,12 @@ def _installed_non_local_detector_version() -> str:
 def compute_figure04_cache_fingerprint(config: Figure4Config, paths: Figure4Paths) -> str:
     """Provenance fingerprint gating the Figure-4 cache.
 
-    Hashes the schema version, the manuscript decoder parameters
-    (:class:`Figure4Config`), the input-data identifier *and the content hashes
-    of the pre-exported input files*, and the *installed* ``non_local_detector``
-    revision. Any change forces a recompute; the cached bundle stores this
+    Hashes the schema version, the decode-affecting parameters (the
+    :class:`Figure4Config` ``decoder`` and ``provenance`` parts -- but **not**
+    ``execution``, which is performance-only and leaves the decode identical),
+    the input-data identifier *and the content hashes of the pre-exported input
+    files*, and the *installed* ``non_local_detector`` revision. Any change forces
+    a recompute; the cached bundle stores this
     fingerprint so a stale cache cannot silently produce a figure that no longer
     matches the current method, input data, or dependency. Hashing the file
     contents (not just ``animal_date_epoch``) is what makes replacing an export
@@ -121,9 +123,16 @@ def compute_figure04_cache_fingerprint(config: Figure4Config, paths: Figure4Path
     Bumping :data:`FIGURE04_CACHE_SCHEMA_VERSION` remains the manual override ---
     it is part of the hashed payload, so a bump invalidates every existing cache.
     """
+    # Hash only the parameters that change the decode result: the decoder-science
+    # config and the recorded provenance. ``config.execution`` (block_size) is a
+    # performance-only knob that leaves the decode identical, so it is
+    # deliberately excluded -- changing it must not invalidate a cached decode.
     payload = {
         "schema_version": FIGURE04_CACHE_SCHEMA_VERSION,
-        "config": dataclasses.asdict(config),
+        "config": {
+            "decoder": dataclasses.asdict(config.decoder),
+            "provenance": dataclasses.asdict(config.provenance),
+        },
         "animal_date_epoch": paths.animal_date_epoch,
         "export_checksums": _export_file_checksums(paths),
         "non_local_detector_version": _installed_non_local_detector_version(),

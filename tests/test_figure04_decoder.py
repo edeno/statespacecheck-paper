@@ -35,7 +35,7 @@ class TestFigure4ConfigMatchesManuscript:
         # which is exactly the equivalence this guard pins.
         config = figure04_decoder.Figure4Config()
         env = Environment(place_bin_size=config.decoder.position_bin_size_cm)
-        return figure04_decoder.build_decoder_models(env, config.decoder)
+        return figure04_decoder.build_decoder_models(env, config.decoder, config.execution)
 
     def test_continuous_observation_and_transition(self) -> None:
         from non_local_detector.continuous_state_transitions import RandomWalk

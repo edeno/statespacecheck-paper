@@ -136,6 +136,21 @@ def test_fingerprint_changes_with_config_and_dependency(
     assert compute_figure04_cache_fingerprint(config, paths) != fp1
 
 
+def test_fingerprint_unchanged_when_block_size_changes(tmp_path: Path) -> None:
+    # block_size (Figure4ExecutionConfig) is a performance-only knob that leaves
+    # the decode result identical, so it must NOT be hashed into the fingerprint:
+    # changing it must not invalidate a cached decode.
+    paths = Figure4Paths(data_path=tmp_path, animal_date_epoch="epoch_x")
+    config = Figure4Config()
+    fp = compute_figure04_cache_fingerprint(config, paths)
+
+    changed = dataclasses.replace(
+        config,
+        execution=dataclasses.replace(config.execution, block_size=config.execution.block_size * 2),
+    )
+    assert compute_figure04_cache_fingerprint(changed, paths) == fp
+
+
 def test_fingerprint_changes_when_export_file_content_changes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -71,18 +71,17 @@ class Figure4DecoderConfig:
     """Figure-4 decoder parameters that the construction code actually injects.
 
     Every field here is threaded into :func:`create_decoder_environment` /
-    :func:`build_decoder_models` and therefore genuinely controls the fitted
-    models: changing one changes the decode. Contrast :class:`Figure4Provenance`,
-    whose values are ``non_local_detector`` defaults that are *recorded* (and
-    drift-guard pinned) but deliberately **not** injected.
+    :func:`build_decoder_models` and genuinely controls the *scientific result*:
+    changing one changes the decode. Contrast :class:`Figure4ExecutionConfig`
+    (performance-only knobs that do not change the result) and
+    :class:`Figure4Provenance` (``non_local_detector`` defaults that are
+    *recorded* and drift-guard pinned but deliberately **not** injected).
 
     Attributes
     ----------
     position_std : float
         Sorted-spikes KDE positional bandwidth, ``sqrt(12.5) ~= 3.54 cm``
         (``sorted_spikes_algorithm_params["position_std"]``).
-    block_size : int
-        KDE block size (``sorted_spikes_algorithm_params["block_size"]``).
     position_bin_size_cm : float
         Environment ``place_bin_size``, ``2 cm``.
     sampling_frequency_hz : float
@@ -90,7 +89,6 @@ class Figure4DecoderConfig:
     """
 
     position_std: float = float(np.sqrt(12.5))
-    block_size: int = 10000
     position_bin_size_cm: float = 2.0
     sampling_frequency_hz: float = 500.0
 
@@ -98,6 +96,26 @@ class Figure4DecoderConfig:
     def time_bin_size_ms(self) -> float:
         """Spike time-bin size in milliseconds (``1000 / sampling_frequency``)."""
         return 1000.0 / self.sampling_frequency_hz
+
+
+@dataclasses.dataclass(frozen=True)
+class Figure4ExecutionConfig:
+    """Figure-4 decoder execution knobs that do **not** change the decode result.
+
+    These tune memory/performance only, so they are deliberately **not** hashed
+    into the cache fingerprint: changing one must not invalidate a cached decode.
+
+    Attributes
+    ----------
+    block_size : int
+        KDE evaluation batch size (``sorted_spikes_algorithm_params["block_size"]``).
+        ``non_local_detector`` partitions the KDE evaluation points into blocks of
+        this size purely to bound memory; the density it returns is identical for
+        any ``block_size`` (verified byte-identical for ``7`` vs ``100000``).
+        Larger uses more memory and can be faster; smaller uses less.
+    """
+
+    block_size: int = 10000
 
 
 @dataclasses.dataclass(frozen=True)
@@ -147,40 +165,48 @@ class Figure4Provenance:
 class Figure4Config:
     """Full Figure-4 decode configuration: injected knobs + recorded provenance.
 
-    Split into two clearly-scoped parts so a reader can tell which parameters
-    actually drive construction (:attr:`decoder`) from those recorded for
-    provenance and pinned by the drift guard but not injected
-    (:attr:`provenance`). Both parts are hashed into the Figure-4 cache
-    fingerprint (via :func:`dataclasses.asdict`, which recurses), so changing any
-    value -- injected or recorded -- invalidates the cache.
+    Split into clearly-scoped parts so a reader can tell which parameters drive
+    the scientific result (:attr:`decoder`), which are recorded-but-not-injected
+    provenance (:attr:`provenance`), and which are performance-only
+    (:attr:`execution`). The cache fingerprint hashes :attr:`decoder` and
+    :attr:`provenance` -- changing either invalidates the cache -- but **not**
+    :attr:`execution`, whose values do not change the decode result (see
+    :func:`figure04_cache.compute_figure04_cache_fingerprint`).
 
     Attributes
     ----------
     decoder : Figure4DecoderConfig
-        Parameters the construction code injects (they control the decode).
+        Parameters the construction code injects that control the decode result.
     provenance : Figure4Provenance
         ``non_local_detector`` defaults recorded and drift-guard pinned, but not
         injected.
+    execution : Figure4ExecutionConfig
+        Performance/memory knobs that do not change the decode result and are not
+        hashed into the fingerprint.
     """
 
     decoder: Figure4DecoderConfig = dataclasses.field(default_factory=Figure4DecoderConfig)
     provenance: Figure4Provenance = dataclasses.field(default_factory=Figure4Provenance)
+    execution: Figure4ExecutionConfig = dataclasses.field(default_factory=Figure4ExecutionConfig)
 
 
 def build_decoder_models(
-    environment: Any, decoder_config: Figure4DecoderConfig | None = None
+    environment: Any,
+    decoder_config: Figure4DecoderConfig | None = None,
+    execution_config: Figure4ExecutionConfig | None = None,
 ) -> tuple[Any, Any]:
     """Construct the (unfitted) Continuous and ContFrag decoder models.
 
     This holds the single source of decoder *construction* used by both
     :func:`fit_decoder_models` and the config drift guard. The
-    :class:`Figure4DecoderConfig` values (``position_std``, ``block_size``,
-    ``sampling_frequency_hz``) are injected here; ``movement_var``, the
-    mode-transition matrix, the mode initial conditions, and the
-    discrete-transition concentration / regularization all come from
-    ``non_local_detector`` class defaults (see :class:`Figure4Provenance` for why
-    they are pinned rather than injected). The drift guard inspects the resolved
-    attributes of these objects, so it never needs real data or a fit.
+    :class:`Figure4DecoderConfig` values (``position_std``,
+    ``sampling_frequency_hz``) and the :class:`Figure4ExecutionConfig`
+    ``block_size`` are injected here; ``movement_var``, the mode-transition
+    matrix, the mode initial conditions, and the discrete-transition
+    concentration / regularization all come from ``non_local_detector`` class
+    defaults (see :class:`Figure4Provenance` for why they are pinned rather than
+    injected). The drift guard inspects the resolved attributes of these objects,
+    so it never needs real data or a fit.
 
     Parameters
     ----------
@@ -190,6 +216,9 @@ def build_decoder_models(
     decoder_config : Figure4DecoderConfig, optional
         Injected decoder parameters. Defaults to :class:`Figure4DecoderConfig`
         (the manuscript values, which equal the ``non_local_detector`` defaults).
+    execution_config : Figure4ExecutionConfig, optional
+        Performance-only parameters (``block_size``). Defaults to
+        :class:`Figure4ExecutionConfig`. Does not change the decode result.
 
     Returns
     -------
@@ -215,9 +244,11 @@ def build_decoder_models(
 
     if decoder_config is None:
         decoder_config = Figure4DecoderConfig()
+    if execution_config is None:
+        execution_config = Figure4ExecutionConfig()
 
     sorted_spikes_algorithm_params = {
-        "block_size": decoder_config.block_size,
+        "block_size": execution_config.block_size,
         "position_std": decoder_config.position_std,
     }
     continuous_model = SortedSpikesDecoder(
@@ -239,6 +270,7 @@ def fit_decoder_models(
     time: NDArray[np.float64],
     environment: Any,
     decoder_config: Figure4DecoderConfig | None = None,
+    execution_config: Figure4ExecutionConfig | None = None,
 ) -> tuple[Any, Any]:
     """Fit Continuous and ContFrag decoder models.
 
@@ -256,6 +288,9 @@ def fit_decoder_models(
     decoder_config : Figure4DecoderConfig, optional
         Injected decoder parameters passed to :func:`build_decoder_models`.
         Defaults to :class:`Figure4DecoderConfig`.
+    execution_config : Figure4ExecutionConfig, optional
+        Performance-only parameters passed to :func:`build_decoder_models`.
+        Defaults to :class:`Figure4ExecutionConfig`.
 
     Returns
     -------
@@ -276,7 +311,9 @@ def fit_decoder_models(
     >>> #     position, spike_times, time, environment
     >>> # )
     """
-    continuous_model, contfrag_model = build_decoder_models(environment, decoder_config)
+    continuous_model, contfrag_model = build_decoder_models(
+        environment, decoder_config, execution_config
+    )
 
     # Ensure position is 2D (n_time, 1) for the decoder
     position_2d = position.reshape(-1, 1) if position.ndim == 1 else position
