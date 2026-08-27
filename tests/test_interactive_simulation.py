@@ -84,9 +84,10 @@ def test_simulated_cache_loader_metadata(tmp_path: Path) -> None:
         # Single state, all bins interior.
         assert ds.n_states == 1
         assert ds.n_interior == ds.position_bins.shape[0]
-        # ``time`` grid is ``np.arange(n_time) * 0.002``.
+        # ``time`` grid is ``np.arange(n_time) * 0.001`` (1 ms/step, matching
+        # the manuscript / Figure3Config convention).
         assert ds.n_time > 0
-        np.testing.assert_allclose(ds.time[1] - ds.time[0], 0.002, atol=1e-12)
+        np.testing.assert_allclose(ds.time[1] - ds.time[0], 0.001, atol=1e-12)
     finally:
         ds.close()
 
@@ -146,7 +147,7 @@ def test_simulated_event_likelihood_round_trips_in_event_order(tmp_path: Path) -
     try:
         assert ds.event_likelihood is not None
         assert ds.event_likelihood.flags.writeable is False
-        event_times = sim.diagnostics.event_time_ind.astype(np.float64) * 0.002
+        event_times = sim.diagnostics.event_time_ind.astype(np.float64) * 0.001
         event_order = np.argsort(event_times, kind="stable")
         np.testing.assert_allclose(
             ds.event_likelihood,

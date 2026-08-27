@@ -541,11 +541,14 @@ def build_model_cache(
 # ---------------------------------------------------------------------------
 
 # 1 sample = ``_SIMULATED_DT`` seconds when written to the simulation
-# meta sidecar. The figure-3 simulation is unitless (each time index is
-# one decoder step). We pick 2 ms so the viewer's window-width slider
-# (0.1 s – 60 s) maps to 50 – 30 000 simulation samples, matching the
-# ``dt = 1/500 Hz`` cadence the figure-4 cache uses.
-_SIMULATED_DT = 0.002
+# meta sidecar. The figure-3 simulation is dt-agnostic (each time index is
+# one decoder step), but the manuscript and ``Figure3Config`` fix the step at
+# 1 ms by convention: main.tex calibrates 0.20 spikes/step as ~200 Hz and
+# ``Figure3Config`` sizes 0.001 spikes/step as 1 Hz, both of which hold only at
+# 1 ms/step. Use the same 1 ms here so the viewer's time axis, event times, and
+# window-width slider match the manuscript timebase. (The figure-4 real-data
+# cache is a genuinely different 2 ms / 500 Hz cadence and is unaffected.)
+_SIMULATED_DT = 0.001
 
 
 def build_simulated_cache(
