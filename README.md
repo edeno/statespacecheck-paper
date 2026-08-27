@@ -24,6 +24,10 @@ Each main-text figure is produced by exactly one script in `scripts/`. Figures 1
 are fully self-contained (a fixed-seed simulation, no external data); Figure 4
 additionally needs the real hippocampal dataset.
 
+For the full manuscript-to-figure map — each figure's entry point, configuration,
+module reading order, data boundary, output, and guarding tests — see
+[docs/figure-pipeline.md](docs/figure-pipeline.md).
+
 | Figure | Entry point | Input | Output | Data requirement |
 | --- | --- | --- | --- | --- |
 | 1 | `scripts/generate_figure01.py` | simulated | PDF + PNG | none |
