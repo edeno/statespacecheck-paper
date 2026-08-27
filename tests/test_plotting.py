@@ -23,7 +23,6 @@ from statespacecheck_paper.plotting import (
     create_distribution_comparison_panel,
     extract_contiguous_regions,
     plot_combined_diagnostics,
-    plot_misfit_examples,
 )
 
 # ---------------------------------------------------------------------------
@@ -191,34 +190,6 @@ class TestComputeHpdRegion:
         pdf = np.exp(-0.5 * x**2) / np.sqrt(2 * np.pi)
         mask = compute_hpd_region(x, pdf, coverage=0.999)
         assert mask.shape == x.shape
-
-
-# ---------------------------------------------------------------------------
-# plot_misfit_examples
-# ---------------------------------------------------------------------------
-
-
-def test_plot_misfit_examples_runs(rng: np.random.Generator) -> None:
-    """Smoke test on a dataset large enough to satisfy the baseline window
-    (the function indexes ``slice(1000, phase_boundaries[REMAP_START] - 1000)``)."""
-    n_time, n_bins, n_cells = 6000, 50, 10
-    xs = np.linspace(0, 1, n_bins)
-    x_true = rng.uniform(0, n_bins - 1, n_time)
-    spikes = rng.poisson(0.5, (n_time, n_cells))
-    bundle = _combined_metrics(rng, n_time, n_bins, n_cells)
-    metrics = bundle["metrics"]
-    params = _params_for_short_run(n_time, n_cells)
-    fig = plot_misfit_examples(
-        xs,
-        x_true,
-        spikes.astype(np.float64),
-        metrics,
-        params,
-    )
-    try:
-        assert isinstance(fig, plt.Figure)
-    finally:
-        plt.close(fig)
 
 
 # ---------------------------------------------------------------------------

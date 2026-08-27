@@ -20,9 +20,7 @@ from statespacecheck_paper.real_data_analysis import (
     compute_running_average,
     extract_place_fields,
     extract_shared_position_place_fields,
-    find_sustained_low_overlap,
     gaussian_smooth,
-    get_multiunit_population_firing_rate,
     get_state_marginalized_posterior,
 )
 from statespacecheck_paper.real_data_plotting import (
@@ -110,7 +108,7 @@ def _xarray_results(
 
 
 # ---------------------------------------------------------------------------
-# gaussian_smooth, get_multiunit_population_firing_rate
+# gaussian_smooth
 # ---------------------------------------------------------------------------
 
 
@@ -124,45 +122,6 @@ class TestGaussianSmooth:
         data = rng.standard_normal(1000)
         result = gaussian_smooth(data, sigma=0.02, sampling_frequency=500)
         assert result.var() < data.var()
-
-
-def test_get_multiunit_population_firing_rate_collapses_cell_dim(
-    rng: np.random.Generator,
-) -> None:
-    """Collapses (n_time, n_cells) multiunit array to (n_time,)."""
-    multiunit = rng.poisson(0.1, size=(1000, 50)).astype(np.float64)
-    result = get_multiunit_population_firing_rate(
-        multiunit, sampling_frequency=500, smoothing_sigma=0.015
-    )
-    assert result.shape == (1000,)
-
-
-# ---------------------------------------------------------------------------
-# find_sustained_low_overlap
-# ---------------------------------------------------------------------------
-
-
-class TestFindSustainedLowOverlap:
-    def test_returns_list(self, rng: np.random.Generator) -> None:
-        result = find_sustained_low_overlap(rng.random(1000), threshold=0.3)
-        assert isinstance(result, list)
-
-    def test_finds_clearly_below_threshold_region(self) -> None:
-        hpd_overlap = np.ones(1000)
-        hpd_overlap[200:300] = 0.1
-        result = find_sustained_low_overlap(
-            hpd_overlap, threshold=0.5, min_duration=0.05, sampling_frequency=1000
-        )
-        assert len(result) >= 1
-        start, end = result[0]
-        assert 150 < start < 250
-        assert 250 < end < 350
-
-    def test_returns_empty_when_nothing_below_threshold(self) -> None:
-        """Edge case: no low-overlap regions => empty list, not error."""
-        hpd_overlap = np.ones(1000) * 0.8
-        result = find_sustained_low_overlap(hpd_overlap, threshold=0.5)
-        assert result == []
 
 
 # ---------------------------------------------------------------------------

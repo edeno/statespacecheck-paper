@@ -13,7 +13,7 @@ This is a **paper/research repository** (not a library). The code is organized i
 - **`manuscript/figures/`**: Generated figure outputs (PDF and PNG)
   - `manuscript/figures/main/`: Main text figures
   - `manuscript/figures/supplementary/`: Supplementary figures
-- **`tests/`**: Comprehensive test suite (351 tests)
+- **`tests/`**: Comprehensive test suite (run `uv run pytest`)
 - **`notebooks/`**: Jupyter notebooks for exploration
 
 **For developers**: See [CLAUDE.md](CLAUDE.md) for detailed development guide including module organization, coding standards, and where to add new functionality.
@@ -353,11 +353,14 @@ uv pip install -e ".[dev]"
 ### Running Tests
 
 ```bash
-# Run all tests with coverage (351 tests)
+# Run all tests
 uv run pytest
 
 # Run specific module tests
 uv run pytest tests/test_simulation.py -v
+
+# Run with coverage (report the exact totals from the summary line)
+uv run pytest --cov --cov-report=term-missing
 
 # Generate HTML coverage report
 uv run pytest --cov --cov-report=html
@@ -378,7 +381,7 @@ uv run python scripts/generate_figure02.py
 ```
 
 **Reproducibility.** Figures 1–3 are fully reproducible from source: they run a
-seeded simulation (`np.random.seed`/`np.random.default_rng`) and need no external
+seeded simulation (`np.random.default_rng`) and need no external
 data. Figure 4 uses the real hippocampal recording of [Comrie et al.
 2024](https://doi.org/10.1101/2024.09.23.613567), which is **not** included in
 this repository (large; see the Data Availability statement in the manuscript for
@@ -407,7 +410,13 @@ uv run ruff format . && uv run ruff check . && uv run mypy src/ && uv run pytest
 - **`simulation.py`**: Simulation utilities (random walks, spikes, place fields)
 - **`analysis.py`**: Analysis logic (decoder, diagnostics, thresholds)
 - **`plotting.py`**: Reusable plotting functions (HPD regions, diagnostic plots)
+- **`schematic.py`**: Graphical-model and Bayesian-equation diagrams (Figure 1)
+- **`figure02_panels.py`**: Per-panel renderers for Figure 2
+- **`figure03_demo.py`**: Figure-3 simulation + decoder pipeline
+- **`real_data_analysis.py`**: Figure-4 real-data decoder + diagnostics
+- **`real_data_plotting.py`**: Figure-4 plotting helpers
 - **`load_local_data.py`**: Real data loading utilities
+- **`paths.py`**: Shared `DATA_PATH` / `ANIMAL_DATE_EPOCH` constants (env-overridable)
 
 ### Standards
 

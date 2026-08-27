@@ -106,43 +106,11 @@ COLORS: dict[str, str] = {
     "metric_combined": "#CC79A7",  # WONG[7] Reddish Purple
     #
     # -------------------------------------------------------------------------
-    # KL Decomposition (for mechanics figures)
+    # Figure-3 Replay Band
     # -------------------------------------------------------------------------
-    # Positive log ratio: posterior > likelihood (model expects more)
-    "kl_positive": "#009E73",  # WONG[3] Bluish Green
-    #
-    # Negative log ratio: posterior < likelihood (model expects less)
-    "kl_negative": "#0072B2",  # WONG[5] Blue
-    #
-    # Pointwise KL contribution
-    "kl_pointwise": "#56B4E9",  # WONG[2] Sky Blue
-    #
-    # -------------------------------------------------------------------------
-    # Figure-3 Phase Backgrounds (very light, ~15% saturation)
-    # -------------------------------------------------------------------------
-    # Subtle background fills, one per figure-3 misfit phase. Derived from
-    # WONG colors but lightened so they don't compete with data. Keys match
-    # the misfit phases produced by
-    # ``statespacecheck_paper.figure03_demo.run_figure03_simulation``.
-    #
-    # Baseline / clean-recovery — no manipulation.
-    "phase_baseline": "#FFFFFF",  # White
-    #
-    # Remap misfit — all cells use a fixed, spatially incoherent permutation.
-    "phase_remap": "#FFF0D6",  # Light orange (from WONG[1])
-    #
-    # History-dependent firing misfit — refractory + bursting spike trains.
-    "phase_history_dependent": "#E8E8E8",  # Light gray (neutral)
-    #
-    # Drift misfit — persistent-velocity trajectory vs. memoryless decoder.
-    "phase_drift": "#D6E8FF",  # Light blue (from WONG[5])
-    #
-    # Sparse-population control — quiet ensemble plus sparse firing from a
-    # small population of narrow cells clustered at one location.
-    "phase_sparse_pop": "#E8E1F2",  # Light purple (from WONG[7])
-    #
     # Replay event (in clean-recovery 2) — immobile animal, decoded
-    # trajectory sweeps the track; not a misspecification.
+    # trajectory sweeps the track; not a misspecification. Used to mark
+    # the replay band in the Figure-3 time series.
     "phase_replay": "#009E73",  # Vivid green (WONG[3]); marks the replay band
     #
     # -------------------------------------------------------------------------
@@ -155,12 +123,6 @@ COLORS: dict[str, str] = {
 CMAP_POSTERIOR = "bone_r"  # Reversed bone for posterior/predictive heatmaps
 CMAP_LIKELIHOOD = "inferno"  # Warm colormap for likelihood overlay at spike times
 CMAP_DIAGNOSTIC = "bone_r"  # Same as posterior for diagnostic heatmaps
-
-# Convenience aliases for common use cases
-COLORS["prior"] = COLORS["predictive"]  # Alias: prior = predictive
-COLORS["one_step"] = COLORS["predictive"]  # Alias: one-step prediction
-COLORS["observation"] = COLORS["likelihood"]  # Alias: observation evidence
-COLORS["true_position"] = COLORS["ground_truth"]  # Alias: true position
 
 
 def hex_to_rgb(hex_str: str) -> tuple[int, int, int]:

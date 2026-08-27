@@ -9,7 +9,7 @@ Key Components
 - **Boundary conditions**: Reflecting boundary conditions for random walks
 - **Transition matrices**: Gaussian transition matrices for state space models
 - **Place fields**: Gaussian place field models for spatial tuning
-- **Spike generation**: Poisson spike generation for position-tuned and flat-rate neurons
+- **Spike generation**: Poisson spike generation for position-tuned neurons
 - **Likelihood computation**: Functions for computing spike probability rankings
 
 Examples
@@ -551,45 +551,6 @@ def simulate_spikes_position_tuned(
     lam = norm.pdf(x[:, None], loc=pf_centers[None, :], scale=pf_width) * rate_scale
     spikes: NDArray[np.int_] = rng.poisson(lam)
     return spikes
-
-
-def simulate_spikes_flat_rate(
-    n_time: int, n_cells: int, rate: float, rng: np.random.Generator
-) -> NDArray[np.int_]:
-    """Simulate Poisson spikes with flat (non-position-tuned) firing rate.
-
-    Generates spike counts from Poisson distribution with constant firing rate
-    across all positions. Useful for simulating background activity or
-    non-spatial neurons.
-
-    Parameters
-    ----------
-    n_time : int
-        Number of time steps.
-    n_cells : int
-        Number of neurons.
-    rate : float
-        Constant firing rate (spikes per time bin).
-    rng : np.random.Generator
-        Random number generator for reproducibility.
-
-    Returns
-    -------
-    spikes : np.ndarray, shape (n_time, n_cells)
-        Spike counts for each time step and neuron (non-negative integers).
-
-    Examples
-    --------
-    Simulate flat-rate spikes:
-
-    >>> rng = np.random.default_rng(42)
-    >>> spikes = simulate_spikes_flat_rate(100, 5, rate=0.1, rng=rng)
-    >>> spikes.shape
-    (100, 5)
-    >>> bool((spikes >= 0).all())
-    True
-    """
-    return rng.poisson(rate, size=(n_time, n_cells))
 
 
 def simulate_spikes_history_dependent(

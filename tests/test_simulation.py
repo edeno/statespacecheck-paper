@@ -13,7 +13,6 @@ from statespacecheck_paper.simulation import (
     predictive_mark_probabilities,
     reflect_into_interval,
     safe_log,
-    simulate_spikes_flat_rate,
     simulate_spikes_history_dependent,
     simulate_spikes_position_tuned,
     simulate_walk,
@@ -363,34 +362,6 @@ class TestSimulateSpikesPositionTuned:
             rng=np.random.default_rng(42),
         )
         assert_array_equal(a, b)
-
-
-# ---------------------------------------------------------------------------
-# simulate_spikes_flat_rate
-# ---------------------------------------------------------------------------
-
-
-class TestSimulateSpikesFlatRate:
-    def test_shape_and_dtype(self, rng: np.random.Generator) -> None:
-        result = simulate_spikes_flat_rate(100, 5, rate=0.1, rng=rng)
-        assert result.shape == (100, 5)
-        assert (result >= 0).all()
-        assert np.issubdtype(result.dtype, np.integer)
-
-    def test_mean_close_to_specified_rate(self, rng: np.random.Generator) -> None:
-        rate = 2.0
-        result = simulate_spikes_flat_rate(10000, 10, rate=rate, rng=rng)
-        assert_allclose(result.mean(), rate, rtol=0.1)
-
-    def test_reproducible_with_same_seed(self) -> None:
-        a = simulate_spikes_flat_rate(100, 5, rate=0.1, rng=np.random.default_rng(42))
-        b = simulate_spikes_flat_rate(100, 5, rate=0.1, rng=np.random.default_rng(42))
-        assert_array_equal(a, b)
-
-    def test_zero_rate_yields_no_spikes(self, rng: np.random.Generator) -> None:
-        """Edge case: rate=0 must produce only zeros."""
-        result = simulate_spikes_flat_rate(100, 5, rate=0.0, rng=rng)
-        assert (result == 0).all()
 
 
 # ---------------------------------------------------------------------------

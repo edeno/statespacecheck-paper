@@ -2,16 +2,6 @@
 
 This module provides specialized plotting functions for visualizing neural decoding
 results, HPD overlap diagnostics, and model checking on real experimental data.
-
-Examples
---------
->>> import numpy as np
->>> import matplotlib.pyplot as plt
->>> from statespacecheck_paper.real_data_plotting import plot_overlap_trace
->>> time = np.linspace(0, 10, 1000)
->>> overlap = np.random.rand(1000)
->>> fig, ax = plt.subplots()
->>> plot_overlap_trace(time, slice(0, 500), overlap, ax=ax)
 """
 
 from __future__ import annotations
@@ -30,7 +20,6 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.patches import Rectangle
 from numpy.typing import NDArray
-from scipy.ndimage import label
 
 from statespacecheck_paper.analysis import PerCellDiagnostics
 from statespacecheck_paper.plotting import plot_likelihood_columns
@@ -400,268 +389,6 @@ def plot_raster(
     ax.set_xlabel("Time")
 
 
-def plot_posterior(
-    posterior: xr.DataArray,
-    time: NDArray[np.float64] | pd.Index,
-    position: NDArray[np.float64],
-    time_slice_ind: slice,
-    ax: Axes | None = None,
-    title: str | None = None,
-    scatter_kwargs: dict[str, Any] | None = None,
-    **plot_kwargs: Any,
-) -> Any:
-    """Plot posterior probability as an image with position trace overlay.
-
-    Parameters
-    ----------
-    posterior : xr.DataArray
-        Posterior distribution over state bins and time.
-    time : np.ndarray or pd.Index
-        Time values.
-    position : np.ndarray, shape (n_time,)
-        Actual position values.
-    time_slice_ind : slice
-        Time slice indices to plot.
-    ax : plt.Axes, optional
-        Axes to plot on. If None, uses current axes.
-    title : str, optional
-        Title for the plot.
-    scatter_kwargs : dict, optional
-        Keyword arguments for position scatter plot.
-    **plot_kwargs
-        Additional arguments passed to posterior.plot().
-
-    Returns
-    -------
-    im : matplotlib artist
-        The plot artist (QuadMesh, AxesImage, etc.) returned by xarray.plot().
-
-    Examples
-    --------
-    >>> import xarray as xr
-    >>> posterior = xr.DataArray(
-    ...     np.random.rand(100, 50),
-    ...     dims=["time", "position"],
-    ...     coords={"time": np.arange(100), "position": np.arange(50)}
-    ... )
-    >>> time = np.arange(100)
-    >>> position = np.random.randint(0, 50, 100)
-    >>> im = plot_posterior(posterior, time, position, slice(0, 50))
-    """
-    if ax is None:
-        ax = plt.gca()
-
-    im = (
-        posterior.isel(time=time_slice_ind)
-        .unstack("state_bins")
-        .sum("state")
-        .plot(
-            x="time",
-            y="position",
-            ax=ax,
-            add_colorbar=False,
-            robust=True,
-            cmap=CMAP_POSTERIOR,
-            rasterized=True,
-            **plot_kwargs,
-        )
-    )
-
-    if scatter_kwargs is None:
-        scatter_kwargs = {
-            "color": COLORS["ground_truth"],
-            "s": 1,
-            "rasterized": True,
-            "clip_on": False,
-        }
-
-    ax.scatter(
-        time[time_slice_ind],
-        position[time_slice_ind],
-        **scatter_kwargs,
-    )
-
-    if title:
-        ax.set_title(title)
-    ax.set_ylabel("Position")
-
-    return im
-
-
-def plot_overlap_regions(
-    ax: Axes,
-    time: NDArray[np.float64] | pd.Index,
-    time_slice_ind: slice,
-    hpd_overlap: NDArray[np.float64],
-    threshold: float = 0.2,
-    color: str = "tab:blue",
-    alpha: float = 0.5,
-) -> None:
-    """Highlight regions where HPD overlap is below threshold.
-
-    Parameters
-    ----------
-    ax : plt.Axes
-        Axes to plot on.
-    time : np.ndarray or pd.Index
-        Time values.
-    time_slice_ind : slice
-        Time slice indices to plot.
-    hpd_overlap : np.ndarray, shape (n_time,)
-        HPD overlap values.
-    threshold : float, default=0.2
-        Threshold below which to highlight regions.
-    color : str, default="tab:blue"
-        Color for highlighted regions.
-    alpha : float, default=0.5
-        Transparency of highlighted regions.
-
-    Examples
-    --------
-    >>> import matplotlib.pyplot as plt
-    >>> fig, ax = plt.subplots()
-    >>> time = np.linspace(0, 10, 1000)
-    >>> overlap = np.random.rand(1000)
-    >>> plot_overlap_regions(ax, time, slice(0, 500), overlap, threshold=0.3)
-    """
-    labels_array, n_labels = label(hpd_overlap[time_slice_ind] < threshold)
-
-    for label_id in range(1, n_labels + 1):
-        bad_overlap_ind = np.where(labels_array == label_id)[0]
-        ax.axvspan(
-            time[time_slice_ind][bad_overlap_ind[0]],
-            time[time_slice_ind][bad_overlap_ind[-1]],
-            color=color,
-            alpha=alpha,
-        )
-
-
-def plot_overlap_trace(
-    time: NDArray[np.float64] | pd.Index,
-    time_slice_ind: slice,
-    overlaps: NDArray[np.float64] | list[NDArray[np.float64]],
-    labels: str | list[str] | None = None,
-    ax: Axes | None = None,
-    **plot_kwargs: Any,
-) -> None:
-    """Plot HPD overlap traces over time.
-
-    Parameters
-    ----------
-    time : np.ndarray or pd.Index
-        Time values.
-    time_slice_ind : slice
-        Time slice indices to plot.
-    overlaps : np.ndarray or list[np.ndarray]
-        HPD overlap values. Can be single array or list of arrays.
-    labels : str or list[str], optional
-        Legend labels for each trace.
-    ax : plt.Axes, optional
-        Axes to plot on. If None, uses current axes.
-    **plot_kwargs
-        Additional arguments passed to ax.plot().
-
-    Examples
-    --------
-    >>> time = np.linspace(0, 10, 1000)
-    >>> overlap1 = np.random.rand(1000)
-    >>> overlap2 = np.random.rand(1000)
-    >>> plot_overlap_trace(
-    ...     time, slice(0, 500), [overlap1, overlap2],
-    ...     labels=["Model 1", "Model 2"]
-    ... )
-    """
-    if ax is None:
-        ax = plt.gca()
-
-    if isinstance(overlaps, list | tuple):
-        # Handle labels - create None list if labels not provided
-        if labels is None:
-            labels_list: list[str | None] = [None] * len(overlaps)
-        elif isinstance(labels, str):
-            labels_list = [labels]
-        else:
-            labels_list = list(labels)  # Convert to list to satisfy type checker
-
-        for overlap, label in zip(overlaps, labels_list, strict=False):
-            ax.plot(
-                time[time_slice_ind],
-                overlap[time_slice_ind],
-                label=label,
-                **plot_kwargs,
-            )
-    else:
-        ax.plot(
-            time[time_slice_ind],
-            overlaps[time_slice_ind],
-            label=labels,
-            **plot_kwargs,
-        )
-
-    if labels:
-        ax.legend()
-    ax.set_ylabel("HPD Overlap")
-    ax.set_xlabel("Time")
-
-
-def plot_acausal_state_prob(
-    results: xr.Dataset,
-    time_slice_ind: slice,
-    ax: Axes | None = None,
-    title: str | None = None,
-    **plot_kwargs: Any,
-) -> Any:
-    """Plot acausal state probabilities over time.
-
-    Parameters
-    ----------
-    results : xr.Dataset
-        Dataset containing acausal_state_probabilities.
-    time_slice_ind : slice
-        Time slice indices to plot.
-    ax : plt.Axes, optional
-        Axes to plot on. If None, uses current axes.
-    title : str, optional
-        Title for the plot.
-    **plot_kwargs
-        Additional arguments passed to plot().
-
-    Returns
-    -------
-    im : plot object
-        The plot object from xarray.
-
-    Examples
-    --------
-    >>> import xarray as xr
-    >>> results = xr.Dataset({
-    ...     "acausal_state_probabilities": xr.DataArray(
-    ...         np.random.rand(100, 2),
-    ...         dims=["time", "states"],
-    ...         coords={"time": np.arange(100), "states": ["A", "B"]}
-    ...     )
-    ... })
-    >>> plot_acausal_state_prob(results, slice(0, 50))
-    """
-    if ax is None:
-        ax = plt.gca()
-
-    im = results.acausal_state_probabilities.isel(time=time_slice_ind).plot(
-        x="time",
-        hue="states",
-        ax=ax,
-        rasterized=True,
-        **plot_kwargs,
-    )
-
-    ax.set_ylim((0.0, 1.05))
-    if title:
-        ax.set_title(title)
-    ax.set_ylabel("State Prob.")
-
-    return im
-
-
 def plot_per_cell_diagnostic_scatter(
     time: NDArray[np.float64] | pd.Index,
     diagnostics: PerCellDiagnostics,
@@ -689,8 +416,10 @@ def plot_per_cell_diagnostic_scatter(
     ----------
     time : np.ndarray or pd.Index
         Time values (bin centers/starts).
-    diagnostics : dict[str, np.ndarray]
-        Dictionary with diagnostic arrays, each with shape (n_time, n_cells).
+    diagnostics : PerCellDiagnostics
+        Per-cell diagnostics dataclass. The dense ``hpd_overlap``,
+        ``kl_divergence``, and ``spike_prob`` attributes (each shape
+        (n_time, n_cells)) supply the scattered values.
     time_slice_ind : slice, optional
         Time slice indices to plot. If None, plots all time points.
     threshold : float, optional
@@ -699,7 +428,7 @@ def plot_per_cell_diagnostic_scatter(
     ax : plt.Axes, optional
         Axes to plot on. If None, uses current axes.
     metric_name : str, default "hpd_overlap"
-        Key in diagnostics dict to plot.
+        Attribute of ``diagnostics`` to plot.
     color : str, default "steelblue"
         Color for scatter points.
     ylabel : str, optional
@@ -1047,10 +776,11 @@ def plot_model_comparison_with_posterior(
         and log_likelihood.
     results_b : xr.Dataset
         Decoding results for model B with same outputs.
-    diagnostics_a : dict[str, np.ndarray]
-        Diagnostics for model A with keys 'hpd_overlap', 'kl_divergence', 'spike_prob'.
-    diagnostics_b : dict[str, np.ndarray]
-        Diagnostics for model B with same keys.
+    diagnostics_a : PerCellDiagnostics
+        Per-cell diagnostics for model A, supplying the dense ``hpd_overlap``,
+        ``kl_divergence``, and ``spike_prob`` matrices.
+    diagnostics_b : PerCellDiagnostics
+        Per-cell diagnostics for model B with the same attributes.
     spike_times : list[np.ndarray], optional
         List of spike time arrays, one per neuron. Required for raster plot.
     spike_counts : np.ndarray, shape (n_time, n_cells), optional
@@ -1385,8 +1115,9 @@ def plot_single_model_diagnostics(
         Animal position values.
     results : xr.Dataset
         Decoding results with predictive_posterior and log_likelihood.
-    diagnostics : dict[str, np.ndarray]
-        Diagnostics with keys 'hpd_overlap', 'kl_divergence', 'spike_prob'.
+    diagnostics : PerCellDiagnostics
+        Per-cell diagnostics supplying the dense ``hpd_overlap``,
+        ``kl_divergence``, and ``spike_prob`` matrices.
     spike_times : list[np.ndarray], optional
         List of spike time arrays, one per neuron.
     spike_counts : np.ndarray, shape (n_time, n_cells), optional
@@ -1659,10 +1390,10 @@ def plot_per_spike_metric_hexbin_row(
 
     Parameters
     ----------
-    diagnostics_a, diagnostics_b : Mapping[str, np.ndarray]
-        Per-spike diagnostic dicts with keys ``event_hpd_overlap``,
-        ``event_kl_divergence``, ``event_spike_prob`` (each shape
-        ``(n_spikes,)``).
+    diagnostics_a, diagnostics_b : PerCellDiagnostics
+        Per-cell diagnostics whose per-spike ``event_hpd_overlap``,
+        ``event_kl_divergence``, ``event_spike_prob`` attributes (each
+        shape ``(n_spikes,)``) supply the hexbin values.
     axes : Sequence[matplotlib.axes.Axes]
         Three axes, one per metric (HPD overlap, ``-log(p)`` natural
         log, KL divergence).

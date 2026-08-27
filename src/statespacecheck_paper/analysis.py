@@ -6,13 +6,10 @@ goodness-of-fit.
 
 **Key Components**:
 - **DecodeParams**: Parameter container for decoding simulations
-- **likelihood_grid_for_counts**: Compute Poisson likelihood for spike counts
 - **get_remapped_pf_centers**: Apply place field center remapping
 - **decode_and_diagnostics**: Main decoder with diagnostic computation
 - **Thresholds**: Container for diagnostic threshold values
 - **compute_thresholds**: Compute thresholds from baseline period
-- **Transformed**: Container for transformed diagnostic metrics
-- **transform_metrics**: Apply transformations for better visualization
 
 **Example**:
 
@@ -896,68 +893,6 @@ def normalized_single_spike_likelihood(
     return np.where(degenerate, 1.0 / n_bins, likelihood)
 
 
-def likelihood_grid_for_counts(
-    xs: NDArray[np.floating],
-    pf_centers: NDArray[np.floating],
-    pf_width: float,
-    rate_scale: float,
-    counts: NDArray[np.int_],
-) -> NDArray[np.floating]:
-    """Compute likelihood grid for spike counts.
-
-    Computes the Poisson likelihood P(counts[cell] | position=xs[bin]) for each
-    spatial bin and cell. The likelihood is normalized per cell (over bins) to
-    form a proper probability distribution.
-
-    Parameters
-    ----------
-    xs : np.ndarray, shape (n_bins,)
-        Position grid (spatial bins).
-    pf_centers : np.ndarray, shape (n_cells,)
-        Place field center positions for each cell.
-    pf_width : float
-        Width (standard deviation) of Gaussian place fields.
-    rate_scale : float
-        Scaling factor for firing rates.
-    counts : np.ndarray, shape (n_cells,)
-        Observed spike counts for each cell at current time.
-
-    Returns
-    -------
-    likelihood_grid : np.ndarray, shape (n_bins, n_cells)
-        Normalized likelihood P(counts | position) for each bin and cell.
-        Normalized per cell (columns sum to 1).
-
-    Notes
-    -----
-    The likelihood is computed as:
-    L_grid[bin, cell] ∝ P(counts[cell] | position=xs[bin])
-
-    Uses Poisson distribution with rate λ = placefield_rates(xs, pf_centers, ...)
-
-    Examples
-    --------
-    >>> import numpy as np
-    >>> xs = np.linspace(0, 100, 21)
-    >>> pf_centers = np.array([25.0, 50.0, 75.0])
-    >>> pf_width = 5.0
-    >>> rate_scale = 0.1
-    >>> counts = np.array([2, 1, 3])
-    >>> likelihood = likelihood_grid_for_counts(xs, pf_centers, pf_width, rate_scale, counts)
-    >>> likelihood.shape
-    (21, 3)
-    >>> np.allclose(np.sum(likelihood, axis=0), 1.0)  # Normalized per cell
-    True
-    """
-    rates = placefield_rates(xs, pf_centers, pf_width, rate_scale)  # (n_bins, n_cells)
-    # Poisson PMF per bin, per cell for this time's counts
-    # counts is (n_cells,), rates is (n_bins, n_cells)
-    likelihood_grid: NDArray[np.floating] = poisson.pmf(counts[None, :], rates)
-    # Avoid degenerate zeros; normalize per cell (over bins) to a proper density on xs
-    likelihood_grid = normalize(likelihood_grid, axis=0)
-    return likelihood_grid
-
-
 def get_remapped_pf_centers(
     pf_centers: NDArray[np.floating],
     remap_from_to: tuple[tuple[int, int], ...] | tuple[int, int],
@@ -1395,31 +1330,32 @@ def compute_per_cell_diagnostics_from_rates(
     coverage : float, default 0.95
         Coverage probability for HPD region computation.
     include_dense_matrices : bool, default True
-        If True (default), also return the (n_time, n_cells) ``hpd_overlap``,
+        If True (default), also populate the (n_time, n_cells) ``hpd_overlap``,
         ``kl_divergence``, ``spike_prob`` matrices and the (n_spikes, n_bins)
-        ``per_spike_likelihood``. If False, those four keys are omitted from
-        the result dict and the matching allocations / scatters are skipped
-        — useful for callers that only need the per-spike event arrays
+        ``per_spike_likelihood`` on the returned dataclass. If False, those four
+        attributes are left ``None`` and the matching allocations / scatters are
+        skipped — useful for callers that only need the per-spike event arrays
         (the cache builder is the canonical example), since for real
         recordings the dense matrices can be hundreds of MB.
 
     Returns
     -------
-    diagnostics : dict[str, np.ndarray]
-        Always contains:
+    diagnostics : PerCellDiagnostics
+        Frozen dataclass (see :class:`PerCellDiagnostics`) whose per-event
+        arrays are always populated:
 
-        - 'spike_time_ind' / 'event_time_ind': shape (n_spikes,)
-        - 'spike_cell_ind' / 'event_cell_ind': shape (n_spikes,)
-        - 'event_hpd_overlap': shape (n_spikes,), per-spike HPD overlap
-        - 'event_kl_divergence': shape (n_spikes,), per-spike KL divergence
-        - 'event_spike_prob': shape (n_spikes,), per-spike spike probability
+        - ``event_time_ind`` / ``event_cell_ind``: shape (n_spikes,)
+        - ``event_hpd_overlap``: shape (n_spikes,), per-spike HPD overlap
+        - ``event_kl_divergence``: shape (n_spikes,), per-spike KL divergence
+        - ``event_spike_prob``: shape (n_spikes,), per-spike spike probability
 
-        If ``include_dense_matrices`` (the default), additionally:
+        If ``include_dense_matrices`` (the default), the optional dense
+        attributes are also populated (otherwise each is ``None``):
 
-        - 'hpd_overlap': shape (n_time, n_cells), NaN where no spike
-        - 'kl_divergence': shape (n_time, n_cells), NaN where no spike
-        - 'spike_prob': shape (n_time, n_cells), NaN where no spike
-        - 'per_spike_likelihood': shape (n_spikes, n_bins), normalized
+        - ``hpd_overlap``: shape (n_time, n_cells), NaN where no spike
+        - ``kl_divergence``: shape (n_time, n_cells), NaN where no spike
+        - ``spike_prob``: shape (n_time, n_cells), NaN where no spike
+        - ``per_spike_likelihood``: shape (n_spikes, n_bins), normalized
           likelihood distribution for each individual spike event
 
     Notes
@@ -1964,151 +1900,3 @@ def compute_phase_flag_fractions(
         columns follow ``windows``.
     """
     return flag_fractions_from_values(extract_phase_flag_values(metrics, windows), thresholds)
-
-
-@dataclass(frozen=True)
-class Transformed:
-    """Transformed diagnostic metrics and thresholds.
-
-    Transformations applied to improve visualization dynamic range:
-    ``-log10(HPDO + eps1)``, ``sqrt(KL)``, ``-log10(spikeProb + eps2)``.
-    The three metric arrays must share ``(n_time, n_cells)`` — downstream
-    heatmaps stack them and a shape mismatch would silently misalign
-    cells against threshold rows. Construction-time check + write-protect
-    catch both classes of regression.
-
-    Parameters
-    ----------
-    hpd_overlap : np.ndarray, shape (n_time, n_cells)
-        Transformed HPD overlap values: ``-log10(HPDO + eps1)``.
-    kl_divergence : np.ndarray, shape (n_time, n_cells)
-        Transformed KL divergence values: ``sqrt(KL)``.
-    spike_prob : np.ndarray, shape (n_time, n_cells)
-        Transformed spike probability values: ``-log10(spikeProb + eps2)``.
-    hpd_overlap_threshold : float
-        Transformed HPD overlap threshold.
-    kl_divergence_threshold : float
-        Transformed KL divergence threshold.
-    spike_prob_threshold : float
-        Transformed spike probability threshold.
-
-    Raises
-    ------
-    ValueError
-        If the three metric arrays don't share a shape.
-
-    Examples
-    --------
-    >>> import numpy as np
-    >>> transformed = Transformed(
-    ...     hpd_overlap=np.array([[1.0, 2.0], [3.0, 4.0]]),
-    ...     kl_divergence=np.array([[0.5, 1.0], [1.5, 2.0]]),
-    ...     spike_prob=np.array([[0.1, 0.5], [0.9, 1.2]]),
-    ...     hpd_overlap_threshold=1.5,
-    ...     kl_divergence_threshold=1.0,
-    ...     spike_prob_threshold=23.0,
-    ... )
-    >>> transformed.hpd_overlap_threshold
-    1.5
-    """
-
-    hpd_overlap: NDArray[np.floating]
-    kl_divergence: NDArray[np.floating]
-    spike_prob: NDArray[np.floating]
-    hpd_overlap_threshold: float
-    kl_divergence_threshold: float
-    spike_prob_threshold: float
-
-    def __post_init__(self) -> None:
-        shape = self.hpd_overlap.shape
-        if self.kl_divergence.shape != shape:
-            raise ValueError(
-                f"Transformed.kl_divergence shape {self.kl_divergence.shape} "
-                f"does not match hpd_overlap shape {shape}"
-            )
-        if self.spike_prob.shape != shape:
-            raise ValueError(
-                f"Transformed.spike_prob shape {self.spike_prob.shape} "
-                f"does not match hpd_overlap shape {shape}"
-            )
-        # Write-protect the metric arrays. ``frozen=True`` blocks
-        # rebinding the field, not mutation through the bound ndarray.
-        for name in ("hpd_overlap", "kl_divergence", "spike_prob"):
-            getattr(self, name).setflags(write=False)
-
-
-def transform_metrics(
-    metrics: Diagnostics | Mapping[str, NDArray[np.floating]],
-    thresholds: Thresholds,
-    eps1: float = 1e-2,
-    eps2: float = 1e-10,
-) -> Transformed:
-    """Apply transformations to metrics for better visualization.
-
-    **Transformations**:
-    - HPD overlap: -log10(HPDO + eps1) - emphasizes low values (worse fit)
-    - KL divergence: sqrt(KL) - compresses high values
-    - spike_prob: -log(spikeProb + eps2) (natural log) - emphasizes low values (worse fit)
-
-    The same transformations are applied to the threshold values.
-
-    Parameters
-    ----------
-    metrics : dict[str, NDArray]
-        Dictionary containing diagnostic metrics:
-        - 'hpd_overlap' : np.ndarray, shape (n_time, n_cells)
-        - 'kl_divergence' : np.ndarray, shape (n_time, n_cells)
-        - 'spike_prob' : np.ndarray, shape (n_time, n_cells)
-    thresholds : Thresholds
-        Threshold values for each diagnostic metric.
-    eps1 : float, default 1e-2
-        Small constant added before log transform for HPD overlap.
-    eps2 : float, default 1e-10
-        Small constant added before log transform for spike_prob.
-
-    Returns
-    -------
-    transformed : Transformed
-        Transformed diagnostic metrics and thresholds.
-
-    Notes
-    -----
-    NaN values in input metrics are preserved in the output.
-
-    Examples
-    --------
-    >>> import numpy as np
-    >>> metrics = {
-    ...     'hpd_overlap': np.array([[0.5, 0.8], [0.9, 0.7]]),
-    ...     'kl_divergence': np.array([[1.0, 4.0], [9.0, 16.0]]),
-    ...     'spike_prob': np.array([[0.1, 0.5], [0.01, 0.05]]),
-    ... }
-    >>> thresholds = Thresholds(
-    ...     hpd_overlap=0.6,
-    ...     kl_divergence=5.0,
-    ...     spike_prob=0.05,
-    ... )
-    >>> transformed = transform_metrics(metrics, thresholds)
-    >>> transformed.kl_divergence  # sqrt(KL)
-    array([[1., 2.],
-           [3., 4.]])
-    >>> np.allclose(transformed.spike_prob_threshold, -np.log(0.05 + 1e-10))
-    True
-    """
-
-    def _get(name: str) -> NDArray[np.floating]:
-        arr = getattr(metrics, name) if isinstance(metrics, Diagnostics) else metrics[name]
-        return cast("NDArray[np.floating]", arr)
-
-    hpd_overlap_transformed = -np.log10(np.maximum(_get("hpd_overlap") + eps1, 1e-10))
-    kl_divergence_transformed = np.sqrt(_get("kl_divergence"))
-    spike_prob_transformed = -np.log(np.maximum(_get("spike_prob") + eps2, 1e-10))
-
-    return Transformed(
-        hpd_overlap=hpd_overlap_transformed,
-        kl_divergence=kl_divergence_transformed,
-        spike_prob=spike_prob_transformed,
-        hpd_overlap_threshold=-np.log10(max(thresholds.hpd_overlap + eps1, 1e-10)),
-        kl_divergence_threshold=np.sqrt(thresholds.kl_divergence),
-        spike_prob_threshold=-np.log(max(thresholds.spike_prob + eps2, 1e-10)),
-    )

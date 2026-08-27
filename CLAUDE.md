@@ -24,12 +24,15 @@ statespacecheck-paper/
 │   ├── figure03_demo.py        # Figure-3 simulation + decoder pipeline
 │   ├── real_data_analysis.py   # Figure-4 decoder + diagnostics
 │   ├── real_data_plotting.py   # Figure-4 plotting helpers
-│   └── schematic.py            # Graphical model and equation diagrams
-├── scripts/                     # Figure generation scripts
+│   ├── schematic.py            # Graphical model and equation diagrams
+│   └── interactive/            # pyqtgraph interactive diagnostic viewer (app, panels, cache)
+├── scripts/                     # Figure generation + exploratory scripts
 │   ├── generate_figure01.py    # Figure 1: Schematic and distribution comparisons
 │   ├── generate_figure02.py    # Figure 2: Diagnostic demonstrations
-│   ├── generate_figure03.py    # Figure 3: Per-cell diagnostics across 4 simulated misfit scenarios
-│   └── generate_all_figures.py # Master script to generate all figures
+│   ├── generate_figure03.py    # Figure 3: Per-cell diagnostics across 8-phase simulation
+│   ├── generate_figure04.py    # Figure 4: Real-data decoder + diagnostics
+│   ├── generate_all_figures.py # Master script to generate all figures
+│   └── ...                     # Exploratory: sanity_check_figure04*.py, find_*.py, benchmark_*.py
 ├── manuscript/                  # LaTeX source files + bundled figures (Overleaf-ready)
 │   ├── main.tex                 # Self-contained (own inline preamble)
 │   ├── Local-GoF-Paper.bib      # Bibliography (BibTeX, from Zotero); built with iopart-num.bst
@@ -92,18 +95,16 @@ The repository follows a clean separation between **reusable code** (in `src/`) 
 - `spike_prob_rank(rates)`: Cumulative probability ranking
 - `simulate_walk(n_time, transition_matrix, x0, rng)`: Random walk simulation
 - `simulate_spikes_position_tuned(position, placefield_rates, rng)`: Position-tuned Poisson spikes
-- `simulate_spikes_flat_rate(n_time, n_cells, rate, rng)`: Constant-rate Poisson spikes
 
 **3. analysis.py** - Bayesian Decoding and Diagnostics
 
 - `DecodeParams`: Dataclass for decoder configuration (timeline, cells, remapping)
 - `Thresholds`: Dataclass for diagnostic thresholds
-- `Transformed`: Dataclass for transformed diagnostics
-- `likelihood_grid_for_counts(counts, placefield_rates)`: Poisson likelihood computation
+- `PerCellDiagnostics`: Dataclass returned by the per-cell diagnostic computation
 - `get_remapped_pf_centers(params)`: Compute remapped place field centers
 - `decode_and_diagnostics(spikes, params)`: Main decoder with KL/HPD diagnostics
+- `compute_per_cell_diagnostics_from_rates(...)`: Per-spike HPD/KL/rank diagnostics
 - `compute_thresholds(baseline_period, quantiles)`: Compute baseline thresholds
-- `transform_metrics(diagnostics, thresholds, eps)`: Transform for visualization
 
 **4. plotting.py** - Reusable Plotting Functions
 
@@ -111,9 +112,7 @@ The repository follows a clean separation between **reusable code** (in `src/`) 
 - `add_phase_boundaries(ax, params)`: Add vertical lines at phase transitions
 - `extract_contiguous_regions(mask)`: Find contiguous True regions in boolean array
 - `create_distribution_comparison_panel(...)`: Create comparison panels for Figure 1
-- `plot_original(diagnostics, params, thresholds)`: Original diagnostic metrics plot
-- `plot_transformed(transformed, params, thresholds)`: Transformed metrics plot
-- `plot_misfit_examples(diagnostics, x_true, params)`: Example misfit periods
+- `plot_likelihood_columns(...)`: Shared likelihood-column rendering primitive
 - `plot_combined_diagnostics(diagnostics, x_true, spikes, params)`: Comprehensive visualization
 
 **5. schematic.py** - Graphical Model Diagrams
@@ -265,8 +264,11 @@ uv run jupyter lab
 
 **All analysis must be reproducible**:
 
-- Set random seeds explicitly: `np.random.seed(42)`
-- Pin dependency versions in pyproject.toml
+- Seed explicitly with the modern Generator API: `rng = np.random.default_rng(seed)`
+  (thread `rng`/`SeedSequence` through functions rather than the legacy global
+  `np.random.seed`), matching the repo's actual practice
+- Reproduce the locked environment with `uv sync --frozen` (pins come from `uv.lock`
+  alongside `pyproject.toml`)
 - Document data sources and preprocessing steps
 - Save intermediate results when computation is expensive
 
@@ -292,7 +294,10 @@ uv run jupyter lab
 **When working with temporal data**:
 
 - Arrays should be `(n_time, ...)` with time as first dimension
-- Use vectorized operations, avoid Python loops
+- Use vectorized operations, avoid Python loops — with the legitimate exception of
+  inherently-sequential recursions (e.g. the Bayesian filter's `for t` loop in
+  `analysis.decode_and_diagnostics`, where step `t` depends on step `t-1`); those
+  are not a defect to be vectorized away
 - Handle NaN values properly (mark invalid spatial bins)
 - Document expected array shapes in docstrings
 

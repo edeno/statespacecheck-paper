@@ -16,7 +16,6 @@ from statespacecheck_paper.analysis import (
     PerCellDiagnostics,
     PhaseBoundary,
     Thresholds,
-    Transformed,
     _condition_on,
     _flag_fraction,
     compute_per_cell_diagnostics_from_rates,
@@ -26,9 +25,7 @@ from statespacecheck_paper.analysis import (
     extract_phase_flag_values,
     flag_fractions_from_values,
     get_remapped_pf_centers,
-    likelihood_grid_for_counts,
     summary_phase_windows,
-    transform_metrics,
 )
 from statespacecheck_paper.figure03_demo import PHASE_LABELS, SimulationResult
 from statespacecheck_paper.simulation import (
@@ -140,36 +137,6 @@ class TestDecodeParams:
         )
         assert params.phase_boundaries[PhaseBoundary.REMAP_START] == 1000
         assert params.phase_boundaries[PhaseBoundary.REMAP_END] == 2000
-
-
-# ---------------------------------------------------------------------------
-# likelihood_grid_for_counts
-# ---------------------------------------------------------------------------
-
-
-class TestLikelihoodGridForCounts:
-    @pytest.fixture
-    def grid_args(self) -> dict[str, Any]:
-        return {
-            "xs": np.linspace(0, 100, 21),
-            "pf_centers": np.array([25.0, 50.0, 75.0]),
-            "pf_width": 5.0,
-            "rate_scale": 0.1,
-        }
-
-    def test_shape_matches_n_bins_and_n_cells(self, grid_args: dict) -> None:
-        likelihood = likelihood_grid_for_counts(counts=np.array([2, 1, 3]), **grid_args)
-        assert likelihood.shape == (21, 3)
-
-    def test_normalized_per_cell(self, grid_args: dict) -> None:
-        likelihood = likelihood_grid_for_counts(counts=np.array([2, 1, 3]), **grid_args)
-        np.testing.assert_allclose(likelihood.sum(axis=0), 1.0, rtol=1e-5)
-
-    def test_zero_counts_still_normalized(self, grid_args: dict) -> None:
-        """Zero spikes shouldn't produce NaN/Inf or break normalization."""
-        likelihood = likelihood_grid_for_counts(counts=np.zeros(3, dtype=int), **grid_args)
-        assert np.isfinite(likelihood).all()
-        np.testing.assert_allclose(likelihood.sum(axis=0), 1.0, rtol=1e-5)
 
 
 # ---------------------------------------------------------------------------
@@ -829,120 +796,6 @@ class TestThresholdsInvariants:
         t: Any = Thresholds(hpd_overlap=0.5, kl_divergence=0.0, spike_prob=0.05)
         with pytest.raises(FrozenInstanceError):
             t.hpd_overlap = 0.7
-
-
-# ---------------------------------------------------------------------------
-# Transformed / transform_metrics
-# ---------------------------------------------------------------------------
-
-
-class TestTransformMetrics:
-    def test_transformations_match_documented_formulas(self) -> None:
-        metrics = {
-            "hpd_overlap": np.array([[0.5, 0.8], [0.9, 0.7]]),
-            "kl_divergence": np.array([[1.0, 4.0], [9.0, 16.0]]),
-            "spike_prob": np.array([[0.1, 0.5], [0.01, 0.05]]),
-        }
-        thresholds = Thresholds(hpd_overlap=0.6, kl_divergence=5.0, spike_prob=0.05)
-        eps1, eps2 = 1e-2, 1e-10
-
-        transformed = transform_metrics(metrics, thresholds, eps1=eps1, eps2=eps2)
-
-        np.testing.assert_allclose(
-            transformed.hpd_overlap, -np.log10(metrics["hpd_overlap"] + eps1)
-        )
-        np.testing.assert_allclose(transformed.kl_divergence, np.sqrt(metrics["kl_divergence"]))
-        np.testing.assert_allclose(transformed.spike_prob, -np.log(metrics["spike_prob"] + eps2))
-        assert transformed.hpd_overlap_threshold == pytest.approx(
-            -np.log10(thresholds.hpd_overlap + eps1)
-        )
-        assert transformed.kl_divergence_threshold == pytest.approx(
-            np.sqrt(thresholds.kl_divergence)
-        )
-        assert transformed.spike_prob_threshold == pytest.approx(
-            -np.log(thresholds.spike_prob + eps2)
-        )
-
-    def test_nan_inputs_propagate_to_outputs(self) -> None:
-        """NaNs in metrics must remain NaN after transformation."""
-        nan_mask = np.array([[False, True], [False, False]])
-        metrics = {
-            "hpd_overlap": np.where(nan_mask, np.nan, 0.5),
-            "kl_divergence": np.where(nan_mask, np.nan, 1.0),
-            "spike_prob": np.where(nan_mask, np.nan, 0.05),
-        }
-        thresholds = Thresholds(hpd_overlap=0.6, kl_divergence=5.0, spike_prob=0.05)
-        transformed = transform_metrics(metrics, thresholds)
-        assert np.array_equal(np.isnan(transformed.hpd_overlap), nan_mask)
-        assert np.array_equal(np.isnan(transformed.kl_divergence), nan_mask)
-        assert np.array_equal(np.isnan(transformed.spike_prob), nan_mask)
-
-    def test_default_eps_yields_finite_outputs(self) -> None:
-        metrics = {
-            "hpd_overlap": np.array([[0.5, 0.8]]),
-            "kl_divergence": np.array([[1.0, 4.0]]),
-            "spike_prob": np.array([[0.1, 0.05]]),
-        }
-        thresholds = Thresholds(hpd_overlap=0.6, kl_divergence=5.0, spike_prob=0.05)
-        transformed = transform_metrics(metrics, thresholds)
-        assert np.isfinite(transformed.hpd_overlap).all()
-        assert np.isfinite(transformed.kl_divergence).all()
-        assert np.isfinite(transformed.spike_prob).all()
-
-
-class TestTransformedDataclass:
-    def test_construction_preserves_arrays_and_thresholds(self) -> None:
-        hpd_overlap = np.array([[1.0, 2.0]])
-        transformed = Transformed(
-            hpd_overlap=hpd_overlap,
-            kl_divergence=hpd_overlap.copy(),
-            spike_prob=hpd_overlap.copy(),
-            hpd_overlap_threshold=1.5,
-            kl_divergence_threshold=1.0,
-            spike_prob_threshold=3.0,
-        )
-        np.testing.assert_array_equal(transformed.hpd_overlap, hpd_overlap)
-        assert transformed.hpd_overlap_threshold == 1.5
-        assert transformed.kl_divergence_threshold == 1.0
-        assert transformed.spike_prob_threshold == 3.0
-
-    def test_kl_shape_mismatch_raises(self) -> None:
-        """Downstream heatmaps stack the three metric arrays; a shape
-        mismatch would silently misalign cells against threshold rows."""
-        with pytest.raises(ValueError, match="kl_divergence shape"):
-            Transformed(
-                hpd_overlap=np.zeros((4, 3)),
-                kl_divergence=np.zeros((4, 2)),  # wrong shape
-                spike_prob=np.zeros((4, 3)),
-                hpd_overlap_threshold=0.0,
-                kl_divergence_threshold=0.0,
-                spike_prob_threshold=0.0,
-            )
-
-    def test_spike_prob_shape_mismatch_raises(self) -> None:
-        with pytest.raises(ValueError, match="spike_prob shape"):
-            Transformed(
-                hpd_overlap=np.zeros((4, 3)),
-                kl_divergence=np.zeros((4, 3)),
-                spike_prob=np.zeros((3, 3)),  # wrong leading dim
-                hpd_overlap_threshold=0.0,
-                kl_divergence_threshold=0.0,
-                spike_prob_threshold=0.0,
-            )
-
-    def test_arrays_are_write_protected(self) -> None:
-        transformed = Transformed(
-            hpd_overlap=np.zeros((2, 2)),
-            kl_divergence=np.zeros((2, 2)),
-            spike_prob=np.zeros((2, 2)),
-            hpd_overlap_threshold=0.0,
-            kl_divergence_threshold=0.0,
-            spike_prob_threshold=0.0,
-        )
-        for name in ("hpd_overlap", "kl_divergence", "spike_prob"):
-            assert getattr(transformed, name).flags.writeable is False
-        with pytest.raises(ValueError, match="read-only|assignment destination"):
-            transformed.hpd_overlap[0, 0] = 1.0
 
 
 class TestDiagnosticsInvariants:

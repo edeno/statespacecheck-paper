@@ -1,6 +1,6 @@
 """Per-panel renderers for Figure 2.
 
-This module owns the 11 ``plot_*_panel_*`` helpers and the
+This module owns the 9 ``plot_*_panel_*`` helpers and the
 two shared helpers (``create_shared_example`` and ``_showcase_colors``)
 that the figure-2 script composes. The script-level
 ``scripts/generate_figure02.py`` orchestrates layout, panel labels,
