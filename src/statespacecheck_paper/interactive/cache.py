@@ -358,7 +358,7 @@ def build_model_cache(
 
     from statespacecheck_paper.load_local_data import load_neural_recording_from_files
     from statespacecheck_paper.real_data_analysis import (
-        compute_per_cell_diagnostics,
+        compute_spike_event_diagnostics,
         extract_place_fields_concat,
         extract_shared_position_place_fields,
         get_spike_counts,
@@ -460,7 +460,7 @@ def build_model_cache(
     # The cache only consumes the per-spike ``event_*`` arrays;
     # ``include_dense_matrices=False`` skips the (n_time, n_cells) matrix
     # allocations + scatters, which on real data are hundreds of MB.
-    diagnostics = compute_per_cell_diagnostics(
+    diagnostics = compute_spike_event_diagnostics(
         diagnostic_predictive,
         spike_counts,
         diagnostic_place_fields,
@@ -468,7 +468,7 @@ def build_model_cache(
         time=time_arr,
         include_dense_matrices=False,
     )
-    # ``compute_per_cell_diagnostics`` already returns ``event_cell_ind``
+    # ``compute_spike_event_diagnostics`` already returns ``event_cell_ind``
     # in the same order as the per-spike diagnostic arrays — no need to
     # re-derive it via ``_get_spike_events_from_spike_times``.
     events_df = _events_dataframe(diagnostics, n_cells=n_cells)

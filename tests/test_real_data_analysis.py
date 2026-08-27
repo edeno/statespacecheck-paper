@@ -16,8 +16,8 @@ from statespacecheck_paper.diagnostics import SpikeEventDiagnostics
 from statespacecheck_paper.real_data_analysis import (
     compute_flag_confusion,
     compute_model_diagnostics,
-    compute_per_cell_diagnostics,
     compute_running_average,
+    compute_spike_event_diagnostics,
     extract_place_fields,
     extract_shared_position_place_fields,
     gaussian_smooth,
@@ -75,7 +75,7 @@ def _diagnostics_from_metric(
 
 @pytest.fixture
 def per_cell_setup(rng: np.random.Generator) -> dict[str, Any]:
-    """Standard inputs for ``compute_per_cell_diagnostics``."""
+    """Standard inputs for ``compute_spike_event_diagnostics``."""
     n_time, n_bins, n_cells = 100, 50, 10
     return {
         "n_time": n_time,
@@ -167,13 +167,13 @@ class TestExtractPlaceFields:
 
 
 # ---------------------------------------------------------------------------
-# compute_per_cell_diagnostics
+# compute_spike_event_diagnostics
 # ---------------------------------------------------------------------------
 
 
 class TestComputePerCellDiagnostics:
     def test_shapes_and_keys(self, per_cell_setup: dict) -> None:
-        result = compute_per_cell_diagnostics(
+        result = compute_spike_event_diagnostics(
             per_cell_setup["predictive"],
             per_cell_setup["spike_counts"],
             per_cell_setup["place_fields"],
@@ -184,7 +184,7 @@ class TestComputePerCellDiagnostics:
             assert arr.shape == (per_cell_setup["n_time"], per_cell_setup["n_cells"])
 
     def test_nan_exactly_where_no_spikes(self, per_cell_setup: dict) -> None:
-        result = compute_per_cell_diagnostics(
+        result = compute_spike_event_diagnostics(
             per_cell_setup["predictive"],
             per_cell_setup["spike_counts"],
             per_cell_setup["place_fields"],
@@ -210,7 +210,7 @@ class TestComputePerCellDiagnostics:
         place_fields = place_fields * 10 + 0.1
         spike_counts = np.ones((n_time, n_cells), dtype=np.int64)
 
-        result = compute_per_cell_diagnostics(predictive, spike_counts, place_fields)
+        result = compute_spike_event_diagnostics(predictive, spike_counts, place_fields)
         arr = getattr(result, metric)
         assert arr is not None
         valid = arr[~np.isnan(arr)]
@@ -226,7 +226,7 @@ class TestComputePerCellDiagnostics:
         spike_counts[[2, 7], 1] = 1
         spike_counts[15, 2] = 1
 
-        result = compute_per_cell_diagnostics(predictive, spike_counts, place_fields)
+        result = compute_spike_event_diagnostics(predictive, spike_counts, place_fields)
         # Diagnostics finite at spike times, NaN elsewhere — single check.
         assert result.hpd_overlap is not None
         np.testing.assert_array_equal(np.isnan(result.hpd_overlap), spike_counts == 0)
@@ -242,7 +242,7 @@ class TestComputePerCellDiagnostics:
         spike_counts = np.zeros((n_time, n_cells), dtype=np.int64)
         spike_counts[1, 0] = 2
 
-        result = compute_per_cell_diagnostics(
+        result = compute_spike_event_diagnostics(
             predictive,
             spike_counts,
             place_fields,
@@ -447,7 +447,7 @@ class TestComputeModelDiagnostics:
             captured["kwargs"] = kwargs
             return sentinel
 
-        monkeypatch.setattr(real_data_analysis, "compute_per_cell_diagnostics", _capture)
+        monkeypatch.setattr(real_data_analysis, "compute_spike_event_diagnostics", _capture)
         spike_counts = np.zeros((2, 2), dtype=np.int64)
         time = np.array([0.0, 0.002])
         result = compute_model_diagnostics(model, results, spike_counts, time)
@@ -797,10 +797,14 @@ class TestFigure4ConfigMatchesManuscript:
         pytest.importorskip("non_local_detector")
         from non_local_detector.environment import Environment
 
-        # A default Environment reproduces create_decoder_environment's place
-        # bin size: that function passes only the track graph / edge order /
-        # spacing, so place_bin_size falls back to the class default.
-        return real_data_analysis.build_decoder_models(Environment())
+        # Exercise the real injection path: the workflow builds the Environment
+        # with place_bin_size from the config and passes the decoder config into
+        # build_decoder_models. The injected values equal the non_local_detector
+        # defaults, so the resolved attributes checked below are unchanged --
+        # which is exactly the equivalence this guard pins.
+        config = real_data_analysis.Figure4Config()
+        env = Environment(place_bin_size=config.decoder.position_bin_size_cm)
+        return real_data_analysis.build_decoder_models(env, config.decoder)
 
     def test_continuous_observation_and_transition(self) -> None:
         from non_local_detector.continuous_state_transitions import RandomWalk
@@ -810,15 +814,15 @@ class TestFigure4ConfigMatchesManuscript:
 
         # main.tex:294 -- sorted-spikes KDE positional bandwidth sqrt(12.5).
         assert continuous_model.sorted_spikes_algorithm_params["position_std"] == pytest.approx(
-            config.position_std
+            config.decoder.position_std
         )
-        assert config.position_std == pytest.approx(float(np.sqrt(12.5)))
+        assert config.decoder.position_std == pytest.approx(float(np.sqrt(12.5)))
 
         # main.tex:294 -- zero-mean Gaussian random walk, movement_var = 6.0 cm^2.
         random_walk = continuous_model.continuous_transition_types[0][0]
         assert isinstance(random_walk, RandomWalk)
-        assert random_walk.movement_var == pytest.approx(config.movement_var)
-        assert config.movement_var == pytest.approx(6.0)
+        assert random_walk.movement_var == pytest.approx(config.provenance.movement_var)
+        assert config.provenance.movement_var == pytest.approx(6.0)
 
     def test_contfrag_discrete_dynamics(self) -> None:
         from non_local_detector.continuous_state_transitions import RandomWalk
@@ -831,7 +835,7 @@ class TestFigure4ConfigMatchesManuscript:
         # same random walk (movement_var = 6.0).
         random_walk = contfrag_model.continuous_transition_types[0][0]
         assert isinstance(random_walk, RandomWalk)
-        assert random_walk.movement_var == pytest.approx(config.movement_var)
+        assert random_walk.movement_var == pytest.approx(config.provenance.movement_var)
 
         # main.tex:294 -- mode-transition matrix [[0.98, 0.02], [0.02, 0.98]],
         # i.e. a stationary diagonal (0.98, 0.98).
@@ -839,13 +843,13 @@ class TestFigure4ConfigMatchesManuscript:
         assert isinstance(discrete_transition_type, DiscreteStationaryDiagonal)
         np.testing.assert_array_equal(
             np.asarray(discrete_transition_type.diagonal_values, dtype=float),
-            np.asarray(config.contfrag_diagonal_values, dtype=float),
+            np.asarray(config.provenance.contfrag_diagonal_values, dtype=float),
         )
 
         # main.tex:294 -- Continuous / Fragmented modes initialized at (0.5, 0.5).
         np.testing.assert_array_equal(
             np.asarray(contfrag_model.discrete_initial_conditions, dtype=float),
-            np.asarray(config.contfrag_discrete_initial_conditions, dtype=float),
+            np.asarray(config.provenance.contfrag_discrete_initial_conditions, dtype=float),
         )
 
     def test_unprinted_effective_defaults(self) -> None:
@@ -855,15 +859,15 @@ class TestFigure4ConfigMatchesManuscript:
         config = real_data_analysis.Figure4Config()
 
         assert contfrag_model.discrete_transition_concentration == pytest.approx(
-            config.discrete_transition_concentration
+            config.provenance.discrete_transition_concentration
         )
-        assert config.discrete_transition_concentration == pytest.approx(1.1)
+        assert config.provenance.discrete_transition_concentration == pytest.approx(1.1)
 
         for model in (continuous_model, contfrag_model):
             assert model.discrete_transition_regularization == pytest.approx(
-                config.discrete_transition_regularization
+                config.provenance.discrete_transition_regularization
             )
-        assert config.discrete_transition_regularization == pytest.approx(1e-10)
+        assert config.provenance.discrete_transition_regularization == pytest.approx(1e-10)
 
     def test_binning_values_the_code_uses(self) -> None:
         """Position bin size (from the Environment) and time bin size (from the
@@ -874,17 +878,17 @@ class TestFigure4ConfigMatchesManuscript:
         # main.tex:294 -- ~2 cm spatial bins.
         for model in (continuous_model, contfrag_model):
             assert model.environments[0].place_bin_size == pytest.approx(
-                config.position_bin_size_cm
+                config.decoder.position_bin_size_cm
             )
-        assert config.position_bin_size_cm == pytest.approx(2.0)
+        assert config.decoder.position_bin_size_cm == pytest.approx(2.0)
 
         # main.tex:294 -- 2 ms spike bins == 500 Hz sampling frequency.
         for model in (continuous_model, contfrag_model):
-            assert model.sampling_frequency == pytest.approx(config.sampling_frequency_hz)
-        assert config.sampling_frequency_hz == pytest.approx(500.0)
-        assert config.time_bin_size_ms == pytest.approx(2.0)
+            assert model.sampling_frequency == pytest.approx(config.decoder.sampling_frequency_hz)
+        assert config.decoder.sampling_frequency_hz == pytest.approx(500.0)
+        assert config.decoder.time_bin_size_ms == pytest.approx(2.0)
 
     def test_config_records_manuscript_dependency_version(self) -> None:
         """The provenance string must match the manuscript-stated version."""
         config = real_data_analysis.Figure4Config()
-        assert config.non_local_detector_version == "0.6.10.dev214+g956fdccaf"
+        assert config.provenance.non_local_detector_version == "0.6.10.dev214+g956fdccaf"

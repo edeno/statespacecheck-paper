@@ -263,7 +263,12 @@ class TestPrepareRenderData:
         prepare_figure04_render_data(config, paths, use_cache=True)
         assert calls["n"] == 1  # cache hit
 
-        changed = dataclasses.replace(config, movement_var=config.movement_var + 1.0)
+        changed = dataclasses.replace(
+            config,
+            provenance=dataclasses.replace(
+                config.provenance, movement_var=config.provenance.movement_var + 1.0
+            ),
+        )
         prepare_figure04_render_data(changed, paths, use_cache=True)
         assert calls["n"] == 2  # fingerprint mismatch -> recompute
 

@@ -9,7 +9,7 @@ per-cell diagnostic computations for model checking.
 - **gaussian_smooth**: Apply 1D Gaussian convolution
 - **compute_running_average**: Compute running average of per-cell diagnostics
 - **extract_place_fields**: Extract place fields from fitted decoder model
-- **compute_per_cell_diagnostics**: Compute HPD overlap, KL divergence, spike prob
+- **compute_spike_event_diagnostics**: Compute HPD overlap, KL divergence, predictive p-value
 - **get_state_marginalized_posterior**: Extract state-marginalized posterior
 - **fit_decoder_models**: Fit the Continuous / ContFrag decoder models
 - **compute_model_diagnostics**: End-to-end decode + diagnostics for a fitted model
@@ -481,7 +481,7 @@ def extract_shared_position_place_fields(
     return place_fields[:, position_mask], position_bins[position_mask]
 
 
-def compute_per_cell_diagnostics(
+def compute_spike_event_diagnostics(
     predictive_posterior: NDArray[np.float64],
     spike_counts: NDArray[np.int64],
     place_fields: NDArray[np.float64],
@@ -564,7 +564,7 @@ def compute_per_cell_diagnostics(
     >>> predictive = np.random.dirichlet(np.ones(n_bins), size=n_time)
     >>> place_fields = np.random.rand(n_cells, n_bins) * 10
     >>> spike_counts = np.random.poisson(0.5, (n_time, n_cells))
-    >>> diagnostics = compute_per_cell_diagnostics(
+    >>> diagnostics = compute_spike_event_diagnostics(
     ...     predictive, spike_counts, place_fields
     ... )
     >>> diagnostics.hpd_overlap.shape
@@ -695,6 +695,7 @@ def create_decoder_environment(
     track_graph: Any,
     edge_order: list[tuple[Any, Any]],
     edge_spacing: float | list[float],
+    place_bin_size: float = 2.0,
 ) -> Any:
     """Create track environment for decoder models.
 
@@ -706,6 +707,10 @@ def create_decoder_environment(
         Edge ordering for linearization.
     edge_spacing : float or list[float]
         Spacing between nodes.
+    place_bin_size : float, default 2.0
+        Spatial bin size in cm (Environment ``place_bin_size``). The default
+        equals ``non_local_detector``'s own default and
+        :attr:`Figure4DecoderConfig.position_bin_size_cm`.
 
     Returns
     -------
@@ -733,61 +738,37 @@ def create_decoder_environment(
         track_graph=track_graph,
         edge_order=edge_order,
         edge_spacing=edge_spacing,
+        place_bin_size=place_bin_size,
     )
 
 
 @dataclasses.dataclass(frozen=True)
-class Figure4Config:
-    """Manuscript-stated Figure-4 decoder parameters (see ``main.tex:294``).
+class Figure4DecoderConfig:
+    """Figure-4 decoder parameters that the construction code actually injects.
 
-    This dataclass records the decoder configuration for two purposes only:
-    (1) provenance -- it is hashed into the Figure-4 cache fingerprint so a
-    changed parameter or dependency invalidates the cache; and (2) the drift
-    guard -- ``tests/test_real_data_analysis.py::test_figure4_config_matches_manuscript``
-    asserts that the *resolved* attributes of the models built by
-    :func:`build_decoder_models` equal these values.
-
-    It does **not** retune the decoder. :func:`fit_decoder_models` continues to
-    construct the models from ``non_local_detector`` defaults (only
-    ``position_std`` and ``block_size`` are set explicitly); every other value
-    below is a class default that the drift guard pins so a future dependency
-    bump that silently changes it fails loudly.
+    Every field here is threaded into :func:`create_decoder_environment` /
+    :func:`build_decoder_models` and therefore genuinely controls the fitted
+    models: changing one changes the decode. Contrast :class:`Figure4Provenance`,
+    whose values are ``non_local_detector`` defaults that are *recorded* (and
+    drift-guard pinned) but deliberately **not** injected.
 
     Attributes
     ----------
     position_std : float
-        Sorted-spikes KDE positional bandwidth, ``sqrt(12.5) ~= 3.54 cm``.
+        Sorted-spikes KDE positional bandwidth, ``sqrt(12.5) ~= 3.54 cm``
+        (``sorted_spikes_algorithm_params["position_std"]``).
     block_size : int
-        KDE block size (set explicitly alongside ``position_std``).
-    movement_var : float
-        Random-walk position-transition variance, ``6.0 cm^2``.
-    contfrag_diagonal_values : tuple[float, float]
-        ContFrag ``DiscreteStationaryDiagonal`` diagonal ``(0.98, 0.98)``
-        (mode-transition matrix ``[[0.98, 0.02], [0.02, 0.98]]``).
-    contfrag_discrete_initial_conditions : tuple[float, float]
-        ContFrag mode initial conditions ``(0.5, 0.5)``.
-    discrete_transition_concentration : float
-        ContFrag Dirichlet concentration (unprinted effective default ``1.1``).
-    discrete_transition_regularization : float
-        Discrete-transition regularization (unprinted default ``1e-10``).
+        KDE block size (``sorted_spikes_algorithm_params["block_size"]``).
     position_bin_size_cm : float
         Environment ``place_bin_size``, ``2 cm``.
     sampling_frequency_hz : float
-        Decoder sampling frequency ``500 Hz`` (i.e. ``2 ms`` spike bins).
-    non_local_detector_version : str
-        Manuscript-stated ``non_local_detector`` version, for provenance.
+        Decoder ``sampling_frequency`` ``500 Hz`` (i.e. ``2 ms`` spike bins).
     """
 
     position_std: float = float(np.sqrt(12.5))
     block_size: int = 10000
-    movement_var: float = 6.0
-    contfrag_diagonal_values: tuple[float, float] = (0.98, 0.98)
-    contfrag_discrete_initial_conditions: tuple[float, float] = (0.5, 0.5)
-    discrete_transition_concentration: float = 1.1
-    discrete_transition_regularization: float = 1e-10
     position_bin_size_cm: float = 2.0
     sampling_frequency_hz: float = 500.0
-    non_local_detector_version: str = "0.6.10.dev214+g956fdccaf"
 
     @property
     def time_bin_size_ms(self) -> float:
@@ -795,21 +776,96 @@ class Figure4Config:
         return 1000.0 / self.sampling_frequency_hz
 
 
-def build_decoder_models(environment: Any) -> tuple[Any, Any]:
+@dataclasses.dataclass(frozen=True)
+class Figure4Provenance:
+    """Figure-4 decode parameters recorded for provenance but **not** injected.
+
+    These are ``non_local_detector`` class defaults that shape the decode. The
+    code deliberately relies on those defaults rather than passing them
+    explicitly: faithfully injecting them would require rebuilding the nested
+    ``continuous_transition_types`` grid (a mix of ``RandomWalk`` and ``Uniform``)
+    and would hit the concentration-default split (``1.0`` for the continuous
+    decoder, ``1.1`` for the ContFrag classifier) -- either of which risks
+    silently changing the published decode. Instead they are pinned by
+    ``tests/test_real_data_analysis.py::TestFigure4ConfigMatchesManuscript``,
+    which asserts the *resolved* model attributes still equal these values, so a
+    dependency bump that moves a default fails loudly. They are also hashed into
+    the cache fingerprint, so a recorded value changing invalidates the cache.
+
+    Attributes
+    ----------
+    movement_var : float
+        Random-walk position-transition variance, ``6.0 cm^2`` (``RandomWalk``
+        default).
+    contfrag_diagonal_values : tuple[float, float]
+        ContFrag ``DiscreteStationaryDiagonal`` diagonal ``(0.98, 0.98)``
+        (mode-transition matrix ``[[0.98, 0.02], [0.02, 0.98]]``).
+    contfrag_discrete_initial_conditions : tuple[float, float]
+        ContFrag mode initial conditions ``(0.5, 0.5)``.
+    discrete_transition_concentration : float
+        ContFrag Dirichlet concentration (unprinted effective default ``1.1``;
+        the continuous decoder's own default is ``1.0``).
+    discrete_transition_regularization : float
+        Discrete-transition regularization (unprinted default ``1e-10``).
+    non_local_detector_version : str
+        Manuscript-stated ``non_local_detector`` version, for provenance.
+    """
+
+    movement_var: float = 6.0
+    contfrag_diagonal_values: tuple[float, float] = (0.98, 0.98)
+    contfrag_discrete_initial_conditions: tuple[float, float] = (0.5, 0.5)
+    discrete_transition_concentration: float = 1.1
+    discrete_transition_regularization: float = 1e-10
+    non_local_detector_version: str = "0.6.10.dev214+g956fdccaf"
+
+
+@dataclasses.dataclass(frozen=True)
+class Figure4Config:
+    """Full Figure-4 decode configuration: injected knobs + recorded provenance.
+
+    Split into two clearly-scoped parts so a reader can tell which parameters
+    actually drive construction (:attr:`decoder`) from those recorded for
+    provenance and pinned by the drift guard but not injected
+    (:attr:`provenance`). Both parts are hashed into the Figure-4 cache
+    fingerprint (via :func:`dataclasses.asdict`, which recurses), so changing any
+    value -- injected or recorded -- invalidates the cache.
+
+    Attributes
+    ----------
+    decoder : Figure4DecoderConfig
+        Parameters the construction code injects (they control the decode).
+    provenance : Figure4Provenance
+        ``non_local_detector`` defaults recorded and drift-guard pinned, but not
+        injected.
+    """
+
+    decoder: Figure4DecoderConfig = dataclasses.field(default_factory=Figure4DecoderConfig)
+    provenance: Figure4Provenance = dataclasses.field(default_factory=Figure4Provenance)
+
+
+def build_decoder_models(
+    environment: Any, decoder_config: Figure4DecoderConfig | None = None
+) -> tuple[Any, Any]:
     """Construct the (unfitted) Continuous and ContFrag decoder models.
 
     This holds the single source of decoder *construction* used by both
-    :func:`fit_decoder_models` and the config drift guard. Only ``position_std``
-    and ``block_size`` are set explicitly; ``movement_var``, the mode-transition
-    matrix, the mode initial conditions, the discrete-transition concentration
-    and regularization, and the position bin size all come from
-    ``non_local_detector`` class defaults. The drift guard inspects the resolved
+    :func:`fit_decoder_models` and the config drift guard. The
+    :class:`Figure4DecoderConfig` values (``position_std``, ``block_size``,
+    ``sampling_frequency_hz``) are injected here; ``movement_var``, the
+    mode-transition matrix, the mode initial conditions, and the
+    discrete-transition concentration / regularization all come from
+    ``non_local_detector`` class defaults (see :class:`Figure4Provenance` for why
+    they are pinned rather than injected). The drift guard inspects the resolved
     attributes of these objects, so it never needs real data or a fit.
 
     Parameters
     ----------
     environment : Environment
-        Track environment object.
+        Track environment object. Its ``place_bin_size`` is set by
+        :func:`create_decoder_environment` from the same config.
+    decoder_config : Figure4DecoderConfig, optional
+        Injected decoder parameters. Defaults to :class:`Figure4DecoderConfig`
+        (the manuscript values, which equal the ``non_local_detector`` defaults).
 
     Returns
     -------
@@ -833,17 +889,22 @@ def build_decoder_models(environment: Any) -> tuple[Any, Any]:
             "non_local_detector package required. Install with: pip install non_local_detector"
         ) from e
 
+    if decoder_config is None:
+        decoder_config = Figure4DecoderConfig()
+
     sorted_spikes_algorithm_params = {
-        "block_size": 10000,
-        "position_std": np.sqrt(12.5),
+        "block_size": decoder_config.block_size,
+        "position_std": decoder_config.position_std,
     }
     continuous_model = SortedSpikesDecoder(
         environments=[environment],
         sorted_spikes_algorithm_params=sorted_spikes_algorithm_params,
+        sampling_frequency=decoder_config.sampling_frequency_hz,
     )
     contfrag_model = ContFragSortedSpikesClassifier(
         environments=[environment],
         sorted_spikes_algorithm_params=sorted_spikes_algorithm_params,
+        sampling_frequency=decoder_config.sampling_frequency_hz,
     )
     return continuous_model, contfrag_model
 
@@ -853,6 +914,7 @@ def fit_decoder_models(
     spike_times: list[NDArray[np.float64]],
     time: NDArray[np.float64],
     environment: Any,
+    decoder_config: Figure4DecoderConfig | None = None,
 ) -> tuple[Any, Any]:
     """Fit Continuous and ContFrag decoder models.
 
@@ -867,6 +929,9 @@ def fit_decoder_models(
         Time values corresponding to position.
     environment : Environment
         Track environment object.
+    decoder_config : Figure4DecoderConfig, optional
+        Injected decoder parameters passed to :func:`build_decoder_models`.
+        Defaults to :class:`Figure4DecoderConfig`.
 
     Returns
     -------
@@ -887,7 +952,7 @@ def fit_decoder_models(
     >>> #     position, spike_times, time, environment
     >>> # )
     """
-    continuous_model, contfrag_model = build_decoder_models(environment)
+    continuous_model, contfrag_model = build_decoder_models(environment, decoder_config)
 
     # Ensure position is 2D (n_time, 1) for the decoder
     position_2d = position.reshape(-1, 1) if position.ndim == 1 else position
@@ -1017,7 +1082,7 @@ def compute_model_diagnostics(
     Returns
     -------
     diagnostics : SpikeEventDiagnostics
-        See :func:`compute_per_cell_diagnostics` for the schema. The
+        See :func:`compute_spike_event_diagnostics` for the schema. The
         ``event_time`` field carries either the original ``spike_times``
         (when supplied) or the decoder-grid time at each event's index.
 
@@ -1039,7 +1104,7 @@ def compute_model_diagnostics(
 
     # Compute diagnostics using actual spike counts
     # place_fields are already in spikes per time bin from non_local_detector
-    diagnostics = compute_per_cell_diagnostics(
+    diagnostics = compute_spike_event_diagnostics(
         predictive_posterior,
         spike_counts,
         place_fields,

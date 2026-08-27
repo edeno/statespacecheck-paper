@@ -82,7 +82,7 @@ statespacecheck-paper/
 - **figure03_plotting.py**: Figure-3 rendering (`compose_figure03` + the time-series/heatmap panels)
 - **plotting.py**: Reusable plotting functions (HPD regions, diagnostic plots)
 - **schematic.py**: Graphical model diagrams and Bayesian equation boxes for Figure 1
-- **figure04_cache.py / figure04_workflow.py / figure04_layout.py / figure04_generation.py**: Figure-4 family — cache I/O, the load/decode/summary workflow (`Figure4RenderData`), artist arrangement (`compose_figure04`), and the generation recipe (`generate_figure04`). `Figure4Config` stays in `real_data_analysis.py`; making it executable (`Figure4DecoderConfig` + `Figure4Provenance`) is a deferred follow-up.
+- **figure04_cache.py / figure04_workflow.py / figure04_layout.py / figure04_generation.py**: Figure-4 family — cache I/O, the load/decode/summary workflow (`Figure4RenderData`), artist arrangement (`compose_figure04`), and the generation recipe (`generate_figure04`). `Figure4Config` (in `real_data_analysis.py`) is split into an executable `Figure4DecoderConfig` (threaded into decoder construction — `position_std`, `block_size`, `position_bin_size_cm`, `sampling_frequency_hz`) and a `Figure4Provenance` (nld-default values — `movement_var`, ContFrag transition/initial-condition/concentration/regularization — recorded and drift-guard pinned, but not injected because faithfully injecting them would rebuild the nested transition grid and risk changing the decode).
 - **load_local_data.py**: `load_neural_recording_from_files` → validated `NeuralRecordingData` (typed input contract)
 - **paths.py**: Shared `DATA_PATH` / `ANIMAL_DATE_EPOCH` constants (env-overridable)
 

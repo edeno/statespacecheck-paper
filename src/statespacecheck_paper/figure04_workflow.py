@@ -38,6 +38,7 @@ from statespacecheck_paper.load_local_data import (
 )
 from statespacecheck_paper.real_data_analysis import (
     Figure4Config,
+    Figure4DecoderConfig,
     compute_flag_confusion,
     compute_model_diagnostics,
     create_decoder_environment,
@@ -258,6 +259,7 @@ def _compute_figure04_decode_results(
     *,
     time: NDArray[np.float64],
     head_position: NDArray[np.float64],
+    decoder_config: Figure4DecoderConfig,
 ) -> Figure4DecodeResults:
     """Fit both decoders, decode, and compute the cacheable decode results."""
     spike_times_list = list(recording.spike_times)  # non_local_detector wants a list
@@ -267,6 +269,7 @@ def _compute_figure04_decode_results(
         track_graph=recording.track_graph,
         edge_order=list(recording.linear_edge_order),
         edge_spacing=recording.linear_edge_spacing,
+        place_bin_size=decoder_config.position_bin_size_cm,
     )
 
     print("Fitting models...")
@@ -275,6 +278,7 @@ def _compute_figure04_decode_results(
         spike_times=spike_times_list,
         time=time,
         environment=env,
+        decoder_config=decoder_config,
     )
 
     print(f"Decoding {len(time)} time points...")
@@ -394,7 +398,10 @@ def prepare_figure04_render_data(
 
     if decode_results is None:
         decode_results = _compute_figure04_decode_results(
-            recording, time=time, head_position=head_position
+            recording,
+            time=time,
+            head_position=head_position,
+            decoder_config=config.decoder,
         )
         print("Caching decoder outputs to data/intermediates ...")
         save_figure04_cache(

@@ -124,7 +124,12 @@ def test_fingerprint_changes_with_config_and_dependency(
     fp1 = compute_figure04_cache_fingerprint(config, paths)
     assert compute_figure04_cache_fingerprint(config, paths) == fp1  # deterministic
 
-    changed = dataclasses.replace(config, movement_var=config.movement_var + 1.0)
+    changed = dataclasses.replace(
+        config,
+        provenance=dataclasses.replace(
+            config.provenance, movement_var=config.provenance.movement_var + 1.0
+        ),
+    )
     assert compute_figure04_cache_fingerprint(changed, paths) != fp1
 
     monkeypatch.setattr(figure04_cache, "_installed_non_local_detector_version", lambda: "2.0.0")
