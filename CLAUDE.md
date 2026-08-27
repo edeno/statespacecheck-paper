@@ -83,7 +83,7 @@ statespacecheck-paper/
 - **plotting.py**: Reusable plotting functions (HPD regions, diagnostic plots)
 - **schematic.py**: Graphical model diagrams and Bayesian equation boxes for Figure 1
 - **figure04_cache.py / figure04_workflow.py / figure04_layout.py / figure04_generation.py**: Figure-4 family — cache I/O, the load/decode/summary workflow (`Figure4RenderData`), artist arrangement (`compose_figure04`), and the generation recipe (`generate_figure04`). `Figure4Config` stays in `real_data_analysis.py`; making it executable (`Figure4DecoderConfig` + `Figure4Provenance`) is a deferred follow-up.
-- **load_local_data.py**: Data loading utilities for real datasets
+- **load_local_data.py**: `load_neural_recording_from_files` → validated `NeuralRecordingData` (typed input contract)
 - **paths.py**: Shared `DATA_PATH` / `ANIMAL_DATE_EPOCH` constants (env-overridable)
 
 **Figure Scripts** (in `scripts/`):

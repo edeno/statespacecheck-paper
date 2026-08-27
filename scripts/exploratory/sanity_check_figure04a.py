@@ -592,20 +592,20 @@ def main() -> None:
     # Load data
     print("Loading data...")
     data = load_neural_recording_from_files(DATA_PATH, ANIMAL_DATE_EPOCH)
-    print(f"  Loaded {len(data['spike_times'])} cells")
+    print(f"  Loaded {len(data.spike_times)} cells")
 
     # Create environment
     env = create_decoder_environment(
-        track_graph=data["track_graph"],
-        edge_order=data["linear_edge_order"],
-        edge_spacing=data["linear_edge_spacing"],
+        track_graph=data.track_graph,
+        edge_order=data.linear_edge_order,
+        edge_spacing=data.linear_edge_spacing,
     )
 
-    position_info = data["position_info"]
+    position_info = data.position_info
     time = position_info.index.values
     position = position_info[["head_position_x", "head_position_y"]].values
     linear_position: NDArray[np.float64] = position_info["linear_position"].values
-    spike_times_list: list[Any] = list(data["spike_times"])
+    spike_times_list: list[Any] = list(data.spike_times)
 
     # Fit models
     print("Fitting models...")
@@ -703,9 +703,9 @@ def main() -> None:
     # Generate plots for both models
     print(f"\nGenerating sanity check plots ({suffix})...")
     # Track graph info for x-axis visualization
-    track_graph = data["track_graph"]
-    edge_order = data["linear_edge_order"]
-    edge_spacing = data["linear_edge_spacing"]
+    track_graph = data.track_graph
+    edge_order = data.linear_edge_order
+    edge_spacing = data.linear_edge_spacing
 
     generate_sanity_plots(
         model=continuous_model,

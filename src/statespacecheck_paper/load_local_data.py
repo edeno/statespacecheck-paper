@@ -1,26 +1,114 @@
 """Load neural recording data from local files without database dependencies.
 
 This module provides file-based data loading without requiring Spyglass database
-connections. Useful for working with pre-exported datasets.
+connections. Useful for working with pre-exported datasets. The loader returns a
+validated :class:`NeuralRecordingData` so downstream code reads documented
+attributes instead of an undiscoverable ``dict[str, Any]``.
 """
 
 from __future__ import annotations
 
+import dataclasses
+from collections.abc import Hashable
 from pathlib import Path
-from typing import Any
 
 import joblib
+import networkx as nx
+import numpy as np
 import pandas as pd
+from numpy.typing import NDArray
+
+# Position columns every downstream consumer relies on (centimeters).
+_REQUIRED_POSITION_COLUMNS = ("head_position_x", "head_position_y", "linear_position")
+
+
+@dataclasses.dataclass(frozen=True)
+class NeuralRecordingData:
+    """Validated neural-recording session loaded from pre-exported files.
+
+    A frozen wrapper around the pre-exported recording. It is *shallow*: the
+    contained ``position_info`` DataFrame and ``track_graph`` are treated as
+    read-only by convention (Python does not deep-freeze them), while the
+    per-cell spike-time arrays are copied to ``float64`` and marked read-only at
+    construction, so they are genuinely immutable.
+
+    Units follow the export: the ``position_info`` time index and the spike
+    times are in seconds; ``head_position_x`` / ``head_position_y`` /
+    ``linear_position`` and ``linear_edge_spacing`` are in centimeters.
+
+    Parameters
+    ----------
+    position_info : pd.DataFrame
+        Time-indexed position data. Must be nonempty, carry the columns
+        ``head_position_x``, ``head_position_y``, ``linear_position`` (numeric,
+        finite), and have a numeric, finite, strictly increasing, unique index.
+    spike_times : tuple of np.ndarray, shape (n_spikes,)
+        Per-cell spike times (seconds). Each array is 1-D, finite, and
+        nondecreasing.
+    track_graph : networkx.Graph
+        Track environment structure.
+    linear_edge_order : tuple of (Hashable, Hashable)
+        Edge ordering for linearization; each edge must exist in ``track_graph``.
+    linear_edge_spacing : float
+        Spacing between linearized edges (centimeters); finite and nonnegative.
+    """
+
+    position_info: pd.DataFrame
+    spike_times: tuple[NDArray[np.float64], ...]
+    track_graph: nx.Graph
+    linear_edge_order: tuple[tuple[Hashable, Hashable], ...]
+    linear_edge_spacing: float
+
+    def __post_init__(self) -> None:
+        if len(self.position_info) == 0:
+            raise ValueError("position_info must be nonempty")
+        missing = [c for c in _REQUIRED_POSITION_COLUMNS if c not in self.position_info.columns]
+        if missing:
+            raise ValueError(f"position_info missing required columns: {missing}")
+        for col in _REQUIRED_POSITION_COLUMNS:
+            values = self.position_info[col].to_numpy()
+            if not np.issubdtype(values.dtype, np.number) or not np.all(np.isfinite(values)):
+                raise ValueError(f"position_info column {col!r} must be numeric and finite")
+
+        index = self.position_info.index.to_numpy()
+        if not np.issubdtype(index.dtype, np.number) or not np.all(np.isfinite(index)):
+            raise ValueError("position_info index must be numeric and finite")
+        if not np.all(np.diff(index) > 0):
+            raise ValueError("position_info index must be strictly increasing (and unique)")
+
+        # Copy each spike array to float64, validate, and mark read-only.
+        copied: list[NDArray[np.float64]] = []
+        for i, raw in enumerate(self.spike_times):
+            arr = np.asarray(raw, dtype=np.float64)
+            if arr.ndim != 1:
+                raise ValueError(f"spike_times[{i}] must be 1-D; got shape {arr.shape}")
+            if not np.all(np.isfinite(arr)):
+                raise ValueError(f"spike_times[{i}] must be finite")
+            if np.any(np.diff(arr) < 0):
+                raise ValueError(f"spike_times[{i}] must be nondecreasing")
+            arr.setflags(write=False)
+            copied.append(arr)
+        object.__setattr__(self, "spike_times", tuple(copied))
+
+        edge_order = tuple(tuple(edge) for edge in self.linear_edge_order)
+        for edge in edge_order:
+            if len(edge) != 2:
+                raise ValueError(f"linear_edge_order items must be 2-node edges; got {edge!r}")
+            if not self.track_graph.has_edge(*edge):
+                raise ValueError(f"linear_edge_order edge {edge!r} is not in track_graph")
+        object.__setattr__(self, "linear_edge_order", edge_order)
+
+        spacing = float(self.linear_edge_spacing)
+        if not np.isfinite(spacing) or spacing < 0.0:
+            raise ValueError(f"linear_edge_spacing must be finite and nonnegative; got {spacing}")
+        object.__setattr__(self, "linear_edge_spacing", spacing)
 
 
 def load_neural_recording_from_files(
     data_path: str | Path,
     animal_date_epoch: str,
-) -> dict[str, Any]:
-    """Load neural recording data from local pickle/joblib files.
-
-    Alternative data loading function for pre-exported datasets stored as
-    local files. Useful for sharing datasets or working without database access.
+) -> NeuralRecordingData:
+    """Load a neural recording session from local pickle/joblib files.
 
     Parameters
     ----------
@@ -31,26 +119,8 @@ def load_neural_recording_from_files(
 
     Returns
     -------
-    data : dict
-        Dataset dictionary with keys:
-        - "position_info" : pd.DataFrame
-            Time-indexed position data.
-        - "spike_times" : list[np.ndarray]
-            Spike times for each unit/tetrode.
-        - "track_graph" : networkx.Graph
-            Track environment structure.
-        - "linear_edge_order" : list[tuple]
-            Edge ordering for linearization.
-        - "linear_edge_spacing" : float or list[float]
-            Spacing between nodes.
-
-    Examples
-    --------
-    >>> data = load_neural_recording_from_files(
-    ...     "data/", "j1620210710_02_r1"
-    ... )
-    >>> position = data["position_info"]
-    >>> spikes = data["spike_times"]
+    NeuralRecordingData
+        Validated recording session (see the class for the field contract).
 
     Notes
     -----
@@ -69,10 +139,10 @@ def load_neural_recording_from_files(
     linear_edge_order = joblib.load(data_path / f"{animal_date_epoch}_linear_edge_order.pkl")
     linear_edge_spacing = joblib.load(data_path / f"{animal_date_epoch}_linear_edge_spacing.pkl")
 
-    return {
-        "position_info": position_info,
-        "spike_times": spike_times,
-        "track_graph": track_graph,
-        "linear_edge_order": linear_edge_order,
-        "linear_edge_spacing": linear_edge_spacing,
-    }
+    return NeuralRecordingData(
+        position_info=position_info,
+        spike_times=tuple(np.asarray(st, dtype=np.float64) for st in spike_times),
+        track_graph=track_graph,
+        linear_edge_order=tuple(tuple(edge) for edge in linear_edge_order),
+        linear_edge_spacing=linear_edge_spacing,
+    )

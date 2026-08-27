@@ -153,13 +153,13 @@ def _place_track_inset(
     # Reward wells sit at the arm tips, i.e. the degree-1 (leaf) nodes of the
     # track graph. Mark them so the 2D layout connects to the linearized axis
     # used in panels (a)-(b).
-    track_graph = render_data.track_graph
+    track_graph = render_data.recording.track_graph
     reward_well_nodes = [n for n in track_graph.nodes if track_graph.degree(n) == 1]
     plot_track_graph_2d(
         track_graph=track_graph,
-        position_info=render_data.position_info,
+        position_info=render_data.recording.position_info,
         ax=ax_track,
-        edge_order=render_data.edge_order,
+        edge_order=cast("list[tuple[int, int]]", list(render_data.recording.linear_edge_order)),
         reward_well_nodes=reward_well_nodes,
         scalebar_length=20,
         scalebar_label="20 cm",
@@ -239,8 +239,8 @@ def _layout_hexbin_row(
     axes_hexbin = subfigs_bot[1].subplots(1, 3, gridspec_kw={"wspace": -0.02})
     axes_before_hexbin = tuple(fig.axes)
     plot_per_spike_metric_hexbin_row(
-        render_data.continuous_diagnostics,
-        render_data.continuous_fragmented_diagnostics,
+        render_data.decode_results.continuous_diagnostics,
+        render_data.decode_results.continuous_fragmented_diagnostics,
         axes_hexbin,
         model_a_name="Continuous",
         model_b_name="Cont-Frag",
@@ -338,21 +338,22 @@ def compose_figure04(
     time_relative = time_arr - time_offset
 
     # Shift xarray time coordinates to relative seconds
-    continuous_results = render_data.continuous_results.assign_coords(
-        time=render_data.continuous_results.coords["time"].values - time_offset
+    continuous_results = render_data.decode_results.continuous_results.assign_coords(
+        time=render_data.decode_results.continuous_results.coords["time"].values - time_offset
     )
-    contfrag_results = render_data.continuous_fragmented_results.assign_coords(
-        time=render_data.continuous_fragmented_results.coords["time"].values - time_offset
+    contfrag_results = render_data.decode_results.continuous_fragmented_results.assign_coords(
+        time=render_data.decode_results.continuous_fragmented_results.coords["time"].values
+        - time_offset
     )
 
     # Shift spike times to relative seconds
-    spike_times_relative: list[Any] = [st - time_offset for st in render_data.spike_times_list]
+    spike_times_relative: list[Any] = [st - time_offset for st in render_data.recording.spike_times]
     continuous_diagnostics_relative = _shift_diagnostic_event_times(
-        render_data.continuous_diagnostics,
+        render_data.decode_results.continuous_diagnostics,
         time_offset,
     )
     contfrag_diagnostics_relative = _shift_diagnostic_event_times(
-        render_data.continuous_fragmented_diagnostics,
+        render_data.decode_results.continuous_fragmented_diagnostics,
         time_offset,
     )
 
@@ -364,15 +365,15 @@ def compose_figure04(
     # Shared plotting kwargs for detail panels
     detail_kwargs: dict[str, Any] = dict(
         spike_times=spike_times_relative,
-        spike_counts=render_data.spike_counts,
-        place_field_peaks=render_data.place_field_peaks,
-        place_fields=render_data.diagnostic_place_fields,
-        position_bins=render_data.diagnostic_position_bins,
+        spike_counts=render_data.decode_results.spike_counts,
+        place_field_peaks=render_data.decode_results.place_field_peaks,
+        place_fields=render_data.decode_results.diagnostic_place_fields,
+        position_bins=render_data.decode_results.diagnostic_position_bins,
         time_slice_ind=detail_slice,
         thresholds=thresholds_dict,
-        track_graph=render_data.track_graph,
-        edge_order=render_data.edge_order,
-        edge_spacing=render_data.edge_spacing,
+        track_graph=render_data.recording.track_graph,
+        edge_order=render_data.recording.linear_edge_order,
+        edge_spacing=render_data.recording.linear_edge_spacing,
     )
 
     # Top row: (a) Continuous and (b) ContFrag detail zooms, side by side,

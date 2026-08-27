@@ -390,7 +390,7 @@ def build_model_cache(
         )
 
     raw = load_neural_recording_from_files(raw_data_dir, animal_date_epoch)
-    spike_times: list[NDArray[np.float64]] = list(raw["spike_times"])
+    spike_times: list[NDArray[np.float64]] = list(raw.spike_times)
     n_cells = len(spike_times)
 
     fitted_model = joblib.load(inputs.model_pkl)
@@ -483,7 +483,7 @@ def build_model_cache(
     )
 
     # Meta + spike-times sidecars (model-independent; safe to overwrite).
-    position_info = raw["position_info"]
+    position_info = raw.position_info
     # The ``linear_position`` field on ``position_info`` was computed
     # with the data-loading pipeline's ``edge_spacing`` (15 cm on this
     # session), so its coordinate system spans 0 → ~608 cm.

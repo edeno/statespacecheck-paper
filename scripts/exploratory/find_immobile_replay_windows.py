@@ -457,9 +457,9 @@ def generate_preview_figures(
             time_slice_ind=time_slice_ind,
             model_a_name="Continuous",
             model_b_name="Continuous-Fragmented",
-            track_graph=data["track_graph"],
-            edge_order=data["linear_edge_order"],
-            edge_spacing=data["linear_edge_spacing"],
+            track_graph=data.track_graph,
+            edge_order=data.linear_edge_order,
+            edge_spacing=data.linear_edge_spacing,
             show_running_average=False,
         )
 
@@ -526,21 +526,21 @@ def main(
     # Load data
     print("Loading data...")
     data = load_neural_recording_from_files(DATA_PATH, ANIMAL_DATE_EPOCH)
-    print(f"  Loaded {len(data['spike_times'])} cells")
+    print(f"  Loaded {len(data.spike_times)} cells")
 
     # Create environment
     env = create_decoder_environment(
-        track_graph=data["track_graph"],
-        edge_order=data["linear_edge_order"],
-        edge_spacing=data["linear_edge_spacing"],
+        track_graph=data.track_graph,
+        edge_order=data.linear_edge_order,
+        edge_spacing=data.linear_edge_spacing,
     )
 
     # Prepare training data
-    position_info = data["position_info"]
+    position_info = data.position_info
     time = position_info.index.values
     position = position_info[["head_position_x", "head_position_y"]].values
     linear_position = position_info["linear_position"].values
-    spike_times_list: list[Any] = list(data["spike_times"])
+    spike_times_list: list[Any] = list(data.spike_times)
 
     # Fit models
     print("Fitting models...")

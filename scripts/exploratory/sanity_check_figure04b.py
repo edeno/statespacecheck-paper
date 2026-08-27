@@ -120,18 +120,18 @@ def run_sanity_check() -> None:
     # --- Data loading and model fitting (same as generate_figure04.py) ---
     print("Loading data...")
     data = load_neural_recording_from_files(DATA_PATH, ANIMAL_DATE_EPOCH)
-    print(f"  Loaded {len(data['spike_times'])} cells")
+    print(f"  Loaded {len(data.spike_times)} cells")
 
     env = create_decoder_environment(
-        track_graph=data["track_graph"],
-        edge_order=data["linear_edge_order"],
-        edge_spacing=data["linear_edge_spacing"],
+        track_graph=data.track_graph,
+        edge_order=data.linear_edge_order,
+        edge_spacing=data.linear_edge_spacing,
     )
 
-    position_info = data["position_info"]
+    position_info = data.position_info
     time = position_info.index.values
     position = position_info[["head_position_x", "head_position_y"]].values
-    spike_times_list: list[Any] = list(data["spike_times"])
+    spike_times_list: list[Any] = list(data.spike_times)
 
     print("Fitting models...")
     continuous_model, contfrag_model = fit_decoder_models(
@@ -222,9 +222,9 @@ def run_sanity_check() -> None:
                 time_slice_ind=time_slice_ind,
                 model_a_name="Continuous",
                 model_b_name="Continuous-Fragmented",
-                track_graph=data["track_graph"],
-                edge_order=data["linear_edge_order"],
-                edge_spacing=data["linear_edge_spacing"],
+                track_graph=data.track_graph,
+                edge_order=data.linear_edge_order,
+                edge_spacing=data.linear_edge_spacing,
                 show_running_average=False,
             )
 
