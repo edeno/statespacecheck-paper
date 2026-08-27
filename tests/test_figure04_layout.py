@@ -15,10 +15,10 @@ import networkx as nx  # noqa: E402
 import pandas as pd  # noqa: E402
 import xarray as xr  # noqa: E402
 
-import statespacecheck_paper.figure04_layout as figure04_layout  # noqa: E402
 from statespacecheck_paper.diagnostics import SpikeEventDiagnostics  # noqa: E402
 from statespacecheck_paper.figure04_layout import (  # noqa: E402
     Figure4Composition,
+    Figure4DetailWindow,
     _shift_diagnostic_event_times,
     compose_figure04,
 )
@@ -76,9 +76,35 @@ def test_figure4_composition_is_frozen_with_figure_and_bbox() -> None:
 
 def test_compose_figure04_signature() -> None:
     sig = inspect.signature(compose_figure04)
-    assert list(sig.parameters) == ["render_data", "diagnostic_thresholds"]
-    # ``diagnostic_thresholds`` is keyword-only.
-    assert sig.parameters["diagnostic_thresholds"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert list(sig.parameters) == ["render_data", "diagnostic_thresholds", "detail_window"]
+    for name in ("diagnostic_thresholds", "detail_window"):
+        assert sig.parameters[name].kind is inspect.Parameter.KEYWORD_ONLY
+
+
+class TestFigure4DetailWindow:
+    def test_converts_center_and_half_width_to_slice(self) -> None:
+        assert Figure4DetailWindow(center_index=20, half_width_samples=10).to_slice(40) == slice(
+            10, 30
+        )
+
+    @pytest.mark.parametrize(
+        ("center_index", "half_width_samples"),
+        [(-1, 10), (20, 0), (20, -1), (20.0, 10)],
+    )
+    def test_rejects_invalid_values(self, center_index: int, half_width_samples: int) -> None:
+        with pytest.raises(ValueError):
+            Figure4DetailWindow(
+                center_index=center_index,
+                half_width_samples=half_width_samples,
+            )
+
+    def test_rejects_window_outside_recording(self) -> None:
+        with pytest.raises(ValueError, match="outside the recording timeline"):
+            Figure4DetailWindow(center_index=5, half_width_samples=10).to_slice(40)
+
+    def test_rejects_invalid_recording_length(self) -> None:
+        with pytest.raises(ValueError, match="n_time_samples"):
+            Figure4DetailWindow(center_index=5, half_width_samples=2).to_slice(0)
 
 
 # ---------------------------------------------------------------------------
@@ -175,21 +201,15 @@ def _compose_render_data() -> Figure4RenderData:
     )
 
 
-def test_compose_figure04_produces_panels_and_finite_bbox(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_compose_figure04_produces_panels_and_finite_bbox() -> None:
     """End-to-end smoke test: with the detail window shrunk to the synthetic
     session, composition builds the a/b detail stacks, the c hexbin row, the
     track inset, and returns a finite tight bounding box."""
-    # The real detail window is centred at index ~193069; point it inside the
-    # 40-sample synthetic session instead.
-    monkeypatch.setattr(figure04_layout, "FIGURE4_DETAIL_CENTER_INDEX", 20)
-    monkeypatch.setattr(figure04_layout, "FIGURE4_DETAIL_HALF_WIDTH_SAMPLES", 10)
-
     render_data = _compose_render_data()
     result = compose_figure04(
         render_data,
         diagnostic_thresholds={"hpd_overlap": 0.05, "predictive_pvalue": 0.05},
+        detail_window=Figure4DetailWindow(center_index=20, half_width_samples=10),
     )
 
     assert isinstance(result, Figure4Composition)

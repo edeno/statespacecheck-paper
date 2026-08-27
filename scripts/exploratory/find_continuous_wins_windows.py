@@ -40,7 +40,7 @@ from statespacecheck_paper.figure04_diagnostics import (
     compute_model_diagnostics,
     compute_running_average,
 )
-from statespacecheck_paper.figure04_panels import plot_model_comparison_with_posterior
+from statespacecheck_paper.figure04_panels import plot_exploratory_model_comparison
 from statespacecheck_paper.figure04_place_fields import extract_place_fields
 from statespacecheck_paper.load_local_data import (
     NeuralRecordingData,
@@ -317,7 +317,7 @@ def generate_preview_figures(
         window_end = min(len(time), c.center_idx + WINDOW_HALF_WIDTH)
         time_slice_ind = slice(window_start, window_end)
 
-        fig, axes = plot_model_comparison_with_posterior(
+        fig, axes = plot_exploratory_model_comparison(
             time,
             linear_position,
             continuous_results,

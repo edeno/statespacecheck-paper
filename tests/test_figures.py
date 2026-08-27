@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import importlib
+import subprocess
 import sys
 from collections.abc import Iterator
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -31,8 +33,8 @@ def cleanup_sys_path() -> Iterator[None]:
 
 
 _FIGURE_CONTRACT = [
-    ("generate_figure01", "create_figure", ["COLORS", "save_figure"]),
-    ("generate_figure02", "create_figure", ["save_figure"]),
+    ("generate_figure01", "main", ["generate_figure01"]),
+    ("generate_figure02", "main", ["generate_figure02"]),
     ("generate_figure03", "main", ["generate_figure03"]),
     ("generate_figure04", "main", ["generate_figure04"]),
 ]
@@ -70,24 +72,24 @@ def test_figure02_create_shared_example_samples_y_tilde_with_noise() -> None:
     mean-prediction shortcut, so a regression that quietly reverted it
     would land silently.
     """
-    import generate_figure02
+    from statespacecheck_paper.figure02_panels import create_shared_example
 
     rng = np.random.default_rng(42)
-    data = generate_figure02.create_shared_example(rng)
+    data = create_shared_example(rng)
 
-    p_value = data["p_value"]
+    p_value = data.p_value
     assert 0.0 <= p_value <= 1.0, f"p_value out of [0, 1]: {p_value}"
 
-    observed = data["observed_log_pred"]
-    simulated = data["simulated_log_pred"]
+    observed = data.observed_log_pred
+    simulated = data.simulated_log_pred
     assert np.isfinite(observed), f"observed_log_pred is not finite: {observed}"
     assert np.all(np.isfinite(simulated)), (
         f"simulated_log_pred contains non-finite values: "
         f"{np.sum(~np.isfinite(simulated))} of {simulated.size}"
     )
 
-    positions = np.asarray(data["showcase_positions"])
-    y_tildes = np.asarray(data["showcase_y_tildes"])
+    positions = np.asarray(data.showcase_positions)
+    y_tildes = np.asarray(data.showcase_y_tildes)
     assert positions.shape == y_tildes.shape, (
         "showcase_positions and showcase_y_tildes must have the same shape"
     )
@@ -101,32 +103,33 @@ def test_figure02_create_shared_example_samples_y_tilde_with_noise() -> None:
         f"showcase_y_tildes equal showcase_positions (max |Δ| = {deltas.max():.3f}); "
         f"the y_tilde ~ N(x_s, like_std) draw step was skipped or shortcut."
     )
+    assert not data.predictive.flags.writeable
+    assert not data.showcase_likelihoods.flags.writeable
+    with pytest.raises(ValueError, match="p_value must lie"):
+        replace(data, p_value=float("nan"))
 
 
 def test_figure02_panels_module_is_load_bearing() -> None:
-    """After the figure-02 extraction, the script must import its panel
+    """After the figure-02 extraction, the generation recipe imports its panel
     renderers from ``statespacecheck_paper.figure02_panels``. A revert
     that inlined the panels back into the script would silently pass
     every other check; this test pins the architectural decision."""
-    import generate_figure02
+    import statespacecheck_paper.figure02_generation as figure02_generation
 
     panel_module = "statespacecheck_paper.figure02_panels"
     assert panel_module in sys.modules, (
-        f"generate_figure02 did not import {panel_module}; "
+        f"figure02_generation did not import {panel_module}; "
         f"the figure-02 extraction may have been undone."
     )
-    # And the script must re-export at least one panel symbol pulled
-    # from that module, so callers (e.g. notebook code in the repo)
-    # importing the script keep working.
-    assert hasattr(generate_figure02, "plot_kl_distributions"), (
-        "generate_figure02 must re-export plot_kl_distributions from figure02_panels"
+    assert hasattr(figure02_generation, "plot_kl_distributions"), (
+        "figure02_generation must compose renderers from figure02_panels"
     )
 
 
-def test_figure02_create_figure_invokes_all_panels(
+def test_figure02_generation_invokes_all_panels(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """End-to-end smoke test: ``create_figure`` must run the 9 panel
+    """End-to-end smoke test: ``generate_figure02`` runs all nine panel
     renderers + the 2 shared helpers without raising. Without this,
     any panel could ``raise`` on every invocation and only manual
     figure regeneration would notice — the existing tests don't
@@ -136,7 +139,7 @@ def test_figure02_create_figure_invokes_all_panels(
     real ``manuscript/figures/main/`` artifacts. The actual byte-
     identical check lives in the figure-3 SHA workflow.
     """
-    import generate_figure02
+    import statespacecheck_paper.figure02_generation as figure02_generation
 
     # Redirect ``save_figure`` to write into a tmp directory.
     out_dir = tmp_path / "fig02"
@@ -147,9 +150,57 @@ def test_figure02_create_figure_invokes_all_panels(
         target.with_suffix(".pdf").touch()
         target.with_suffix(".png").touch()
 
-    monkeypatch.setattr(generate_figure02, "save_figure", _save)
-    generate_figure02.create_figure()  # does not raise
+    monkeypatch.setattr(figure02_generation, "save_figure", _save)
+    figure02_generation.generate_figure02()  # does not raise
     # The redirected ``save_figure`` is called once; the smoke test's
     # job is to surface a panel-renderer regression, not to verify
     # disk-writing semantics.
     assert (out_dir / "figure02.png").exists()
+
+
+def test_figure01_composition_renders_content_in_every_panel() -> None:
+    """The Figure-1 recipe exposes its in-memory composition separately, and
+    every panel must actually draw something. A bare axis-count check would pass
+    even if the schematic, equation boxes, or a distribution panel silently
+    rendered blank (e.g. a renderer no-op'ing after a refactor)."""
+    import matplotlib.pyplot as plt
+
+    from statespacecheck_paper.figure01_generation import compose_figure01
+
+    fig = compose_figure01()
+    try:
+        axes = fig.axes
+        assert len(axes) >= 7
+
+        def _has_content(ax: object) -> bool:
+            return bool(ax.lines or ax.patches or ax.collections or ax.images or ax.texts)
+
+        blank = [i for i, ax in enumerate(axes) if not _has_content(ax)]
+        # At most one axis may be an empty layout container (the distribution-panel
+        # parent that only holds inset sub-axes); every actual panel must draw.
+        assert len(blank) <= 1, f"Figure-1 axes with no drawn content: {blank}"
+    finally:
+        plt.close(fig)
+
+
+def test_generate_all_runs_each_cli_in_a_normal_subprocess(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The all-figures command executes CLI files normally, never via ``exec``."""
+    import generate_all_figures
+
+    calls: list[list[str]] = []
+
+    def _run(command: list[str], *, check: bool) -> subprocess.CompletedProcess[str]:
+        calls.append(command)
+        assert check is False
+        return subprocess.CompletedProcess(command, returncode=0)
+
+    monkeypatch.setattr(generate_all_figures.subprocess, "run", _run)
+    assert generate_all_figures.main() == 0
+    assert [Path(command[1]).name for command in calls] == [
+        "generate_figure01.py",
+        "generate_figure02.py",
+        "generate_figure03.py",
+        "generate_figure04.py",
+    ]

@@ -1,7 +1,7 @@
 """Figure-4 layout: artist arrangement and render-only transformations.
 
-Owns everything about *how* Figure 4 looks — the detail-window constants, the
-pixel-nudge layout constants, the bbox/edge-alignment helpers, the track inset
+Owns everything about *how* Figure 4 looks — the validated detail-window
+contract, pixel-nudge layout constants, bbox/edge-alignment helpers, track inset
 and hexbin-row placement, and ``compose_figure04`` which assembles the two-row
 figure and returns it with the tight bounding box to crop to. It reads a
 :class:`Figure4RenderData` and imports only the render layers; it never loads
@@ -11,6 +11,7 @@ data, fits/decodes, reads the cache/config/paths, or saves.
 from __future__ import annotations
 
 import dataclasses
+import numbers
 from collections.abc import Mapping
 from typing import Any, Literal, cast
 
@@ -22,6 +23,7 @@ from numpy.typing import NDArray
 
 from statespacecheck_paper.diagnostics import SpikeEventDiagnostics
 from statespacecheck_paper.figure04_panels import (
+    ModelDiagnosticPanelData,
     plot_per_spike_metric_hexbin_row,
     plot_single_model_diagnostics,
 )
@@ -33,10 +35,6 @@ from statespacecheck_paper.figure04_plot_primitives import (
 from statespacecheck_paper.figure04_track_plots import plot_track_graph_2d
 from statespacecheck_paper.figure04_workflow import Figure4RenderData
 
-# Time window for Figure 4a/b (detail view)
-# Centered on a period of clear diagnostic activity at reward well
-FIGURE4_DETAIL_CENTER_INDEX = 193069  # Time index with KL spike during immobility
-FIGURE4_DETAIL_HALF_WIDTH_SAMPLES = 500  # Half-width in time points (~2 seconds at 500 Hz)
 FIGURE4_DIAGNOSTIC_ANNOTATION_GIDS = {THRESHOLD_LABEL_GID, WORSE_FIT_LABEL_GID}
 
 # --- Track-inset / hexbin pixel-nudge constants ---------------------------
@@ -317,10 +315,53 @@ class Figure4Composition:
     bbox_inches: Bbox
 
 
+def _is_integer(value: object) -> bool:
+    """True for Python and NumPy integers, excluding ``bool`` (an ``int`` subclass).
+
+    Using :class:`numbers.Integral` accepts ``np.int64`` etc. (common when an
+    index is derived from an array), which a strict ``type(x) is int`` check
+    would spuriously reject in this NumPy-heavy codebase.
+    """
+    return isinstance(value, numbers.Integral) and not isinstance(value, bool)
+
+
+@dataclasses.dataclass(frozen=True)
+class Figure4DetailWindow:
+    """Index window used for the side-by-side Figure-4 detail panels.
+
+    The canonical values live in :mod:`figure04_generation`; layout receives
+    them explicitly so tests and alternate recipes can select a scientifically
+    meaningful window without mutating module globals.
+    """
+
+    center_index: int
+    half_width_samples: int
+
+    def __post_init__(self) -> None:
+        if not _is_integer(self.center_index) or self.center_index < 0:
+            raise ValueError("center_index must be a non-negative integer")
+        if not _is_integer(self.half_width_samples) or self.half_width_samples <= 0:
+            raise ValueError("half_width_samples must be a positive integer")
+
+    def to_slice(self, n_time_samples: int) -> slice:
+        """Return the validated half-open slice for a recording timeline."""
+        if not _is_integer(n_time_samples) or n_time_samples <= 0:
+            raise ValueError("n_time_samples must be a positive integer")
+        start = self.center_index - self.half_width_samples
+        stop = self.center_index + self.half_width_samples
+        if start < 0 or stop > n_time_samples:
+            raise ValueError(
+                "detail window falls outside the recording timeline: "
+                f"slice({start}, {stop}) for {n_time_samples} samples"
+            )
+        return slice(start, stop)
+
+
 def compose_figure04(
     render_data: Figure4RenderData,
     *,
     diagnostic_thresholds: Mapping[str, float],
+    detail_window: Figure4DetailWindow,
 ) -> Figure4Composition:
     """Arrange the Figure-4 artists and return the figure + its tight bbox.
 
@@ -329,11 +370,8 @@ def compose_figure04(
     data, fits/decodes nothing, and reads no cache/config/paths.
     """
     thresholds_dict = dict(diagnostic_thresholds)
-    # Define the detail-window time slice shared by both decoder panels.
-    detail_slice = slice(
-        FIGURE4_DETAIL_CENTER_INDEX - FIGURE4_DETAIL_HALF_WIDTH_SAMPLES,
-        FIGURE4_DETAIL_CENTER_INDEX + FIGURE4_DETAIL_HALF_WIDTH_SAMPLES,
-    )
+    # Define the explicit detail-window time slice shared by both decoder panels.
+    detail_slice = detail_window.to_slice(render_data.time.size)
 
     # Convert time to relative seconds from start of the detail window
     time_arr = np.asarray(render_data.time, dtype=np.float64)
@@ -350,8 +388,8 @@ def compose_figure04(
     )
 
     # Shift spike times to relative seconds
-    spike_times_relative: list[NDArray[np.floating]] = [
-        st - time_offset for st in render_data.recording.spike_times
+    spike_times_relative: list[NDArray[np.float64]] = [
+        np.asarray(st - time_offset, dtype=np.float64) for st in render_data.recording.spike_times
     ]
     continuous_diagnostics_relative = _shift_diagnostic_event_times(
         render_data.decode_results.continuous_diagnostics,
@@ -367,15 +405,30 @@ def compose_figure04(
     fig = plt.figure(figsize=(7.2, 6.1), dpi=450, constrained_layout=True)
     subfigs_rows = fig.subfigures(2, 1, height_ratios=[5.0, 2.6], hspace=0.02)
 
-    # Shared plotting kwargs for detail panels
-    detail_kwargs: dict[str, Any] = dict(
+    continuous_panel_data = ModelDiagnosticPanelData(
+        time=time_relative,
+        position=render_data.linear_position,
+        results=continuous_results,
+        diagnostics=continuous_diagnostics_relative,
         spike_times=spike_times_relative,
         spike_counts=render_data.decode_results.spike_counts,
         place_field_peaks=render_data.decode_results.place_field_peaks,
         place_fields=render_data.decode_results.diagnostic_place_fields,
         position_bins=render_data.decode_results.diagnostic_position_bins,
-        time_slice_ind=detail_slice,
-        thresholds=thresholds_dict,
+        track_graph=render_data.recording.track_graph,
+        edge_order=render_data.recording.linear_edge_order,
+        edge_spacing=render_data.recording.linear_edge_spacing,
+    )
+    continuous_fragmented_panel_data = ModelDiagnosticPanelData(
+        time=time_relative,
+        position=render_data.linear_position,
+        results=contfrag_results,
+        diagnostics=contfrag_diagnostics_relative,
+        spike_times=spike_times_relative,
+        spike_counts=render_data.decode_results.spike_counts,
+        place_field_peaks=render_data.decode_results.place_field_peaks,
+        place_fields=render_data.decode_results.diagnostic_place_fields,
+        position_bins=render_data.decode_results.diagnostic_position_bins,
         track_graph=render_data.recording.track_graph,
         edge_order=render_data.recording.linear_edge_order,
         edge_spacing=render_data.recording.linear_edge_spacing,
@@ -392,25 +445,21 @@ def compose_figure04(
 
     # Panel (a): Continuous detail view
     _, axes_a = plot_single_model_diagnostics(
-        time_relative,
-        render_data.linear_position,
-        continuous_results,
-        continuous_diagnostics_relative,
+        continuous_panel_data,
+        time_slice_ind=detail_slice,
+        thresholds=thresholds_dict,
         model_name="Continuous Model",
         fig=subfigs_top[1],
-        **detail_kwargs,
     )
     axes_a[3].set_ylabel("HPD\noverlap", fontsize=8, labelpad=7)
 
     # Panel (b): ContFrag detail view
     _, axes_b = plot_single_model_diagnostics(
-        time_relative,
-        render_data.linear_position,
-        contfrag_results,
-        contfrag_diagnostics_relative,
+        continuous_fragmented_panel_data,
+        time_slice_ind=detail_slice,
+        thresholds=thresholds_dict,
         model_name="Cont.-Frag. Model",
         fig=subfigs_top[2],
-        **detail_kwargs,
     )
 
     # Match y-axis limits between detail panels for direct comparison

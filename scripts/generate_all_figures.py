@@ -5,9 +5,9 @@ This script runs all figure generation scripts in sequence and reports results.
 
 from __future__ import annotations
 
+import subprocess
 import sys
 import time
-import traceback
 from pathlib import Path
 
 
@@ -47,21 +47,27 @@ def main() -> int:
         print(f"Running {script_name}...")
         print(f"{'─' * 70}")
 
-        start_time = time.time()
+        start_time = time.perf_counter()
         try:
-            # Import and run the figure script
-            # Using exec to run the script in its own namespace
-            with open(script_path) as f:
-                code = compile(f.read(), script_path, "exec")
-                exec(code, {"__name__": "__main__"})
-            elapsed = time.time() - start_time
-            results.append((script_name, True, elapsed))
-            print(f"✅ {script_name} completed in {elapsed:.1f}s")
-        except Exception:
-            elapsed = time.time() - start_time
+            completed = subprocess.run(
+                [sys.executable, str(script_path)],
+                check=False,
+            )
+        except OSError as error:
+            elapsed = time.perf_counter() - start_time
             results.append((script_name, False, elapsed))
-            print(f"❌ {script_name} failed after {elapsed:.1f}s:")
-            traceback.print_exc()
+            print(f"❌ {script_name} could not start after {elapsed:.1f}s: {error}")
+            continue
+
+        elapsed = time.perf_counter() - start_time
+        succeeded = completed.returncode == 0
+        results.append((script_name, succeeded, elapsed))
+        if succeeded:
+            print(f"✅ {script_name} completed in {elapsed:.1f}s")
+        else:
+            print(
+                f"❌ {script_name} failed after {elapsed:.1f}s (exit code {completed.returncode})"
+            )
 
     # Print summary
     print("\n" + "=" * 70)

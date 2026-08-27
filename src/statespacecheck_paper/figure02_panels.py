@@ -1,19 +1,18 @@
 """Per-panel renderers for Figure 2.
 
-This module owns the 9 ``plot_*_panel_*`` helpers and the
-two shared helpers (``create_shared_example`` and ``_showcase_colors``)
-that the figure-2 script composes. The script-level
-``scripts/generate_figure02.py`` orchestrates layout, panel labels,
-and saving.
+This module owns the nine panel renderers, the typed
+``Figure2ExampleData`` contract, and the shared example/color helpers that
+``figure02_generation`` composes. The thin ``scripts/generate_figure02.py``
+module only invokes that generation recipe.
 
-Each panel function takes the matplotlib ``Axes`` to draw into plus
-the ``data`` dict produced by ``create_shared_example`` (so the three
-columns of Figure 2 are rendered against a single shared example).
+Each panel function takes the matplotlib ``Axes`` to draw into plus the typed
+``Figure2ExampleData`` produced by ``create_shared_example`` (so the three
+columns of Figure 2 are rendered against a single immutable example).
 """
 
 from __future__ import annotations
 
-from typing import Any
+import dataclasses
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -30,7 +29,95 @@ from statespacecheck_paper.style import COLORS
 # =============================================================================
 
 
-def create_shared_example(rng: np.random.Generator) -> dict[str, Any]:
+@dataclasses.dataclass(frozen=True)
+class Figure2ExampleData:
+    """Validated shared example used by every Figure-2 panel.
+
+    Named attributes replace the former ``dict[str, Any]`` boundary, making the
+    scientific quantities discoverable to readers and checkable by mypy. Array
+    fields are defensively copied and made read-only so all nine panels are
+    guaranteed to render the same immutable realization.
+    """
+
+    position_bins: NDArray[np.float64]
+    predictive: NDArray[np.float64]
+    likelihood: NDArray[np.float64]
+    kl_value: float
+    hpd_value: float
+    p_value: float
+    pred_mean: float
+    like_mean: float
+    pred_std: float
+    like_std: float
+    observed_log_pred: float
+    simulated_log_pred: NDArray[np.float64]
+    showcase_positions: NDArray[np.float64]
+    showcase_y_tildes: NDArray[np.float64]
+    showcase_likelihoods: NDArray[np.float64]
+
+    def __post_init__(self) -> None:
+        arrays = {
+            name: np.array(getattr(self, name), dtype=np.float64)
+            for name in (
+                "position_bins",
+                "predictive",
+                "likelihood",
+                "simulated_log_pred",
+                "showcase_positions",
+                "showcase_y_tildes",
+                "showcase_likelihoods",
+            )
+        }
+        n_bins = arrays["position_bins"].size
+        if arrays["position_bins"].ndim != 1 or n_bins < 2:
+            raise ValueError("position_bins must be a 1-D array with at least two bins")
+        if np.any(np.diff(arrays["position_bins"]) <= 0.0):
+            raise ValueError("position_bins must be strictly increasing")
+        for name in ("predictive", "likelihood"):
+            if arrays[name].shape != (n_bins,):
+                raise ValueError(f"{name} must have shape ({n_bins},); got {arrays[name].shape}")
+            if np.any(arrays[name] < 0.0) or not np.isclose(arrays[name].sum(), 1.0):
+                raise ValueError(f"{name} must be a normalized non-negative distribution")
+        if arrays["simulated_log_pred"].ndim != 1:
+            raise ValueError("simulated_log_pred must be 1-D")
+        n_showcase = arrays["showcase_positions"].size
+        if arrays["showcase_positions"].ndim != 1:
+            raise ValueError("showcase_positions must be 1-D")
+        if arrays["showcase_y_tildes"].shape != (n_showcase,):
+            raise ValueError(
+                "showcase_y_tildes must match showcase_positions; "
+                f"got {arrays['showcase_y_tildes'].shape} vs ({n_showcase},)"
+            )
+        if arrays["showcase_likelihoods"].shape != (n_showcase, n_bins):
+            raise ValueError(
+                "showcase_likelihoods must have shape "
+                f"({n_showcase}, {n_bins}); got {arrays['showcase_likelihoods'].shape}"
+            )
+        for name, array in arrays.items():
+            if not np.all(np.isfinite(array)):
+                raise ValueError(f"{name} must contain only finite values")
+        for name in ("kl_value", "hpd_value", "pred_mean", "like_mean", "observed_log_pred"):
+            if not np.isfinite(getattr(self, name)):
+                raise ValueError(f"{name} must be finite")
+        if self.kl_value < 0.0:
+            raise ValueError(f"kl_value must be non-negative; got {self.kl_value}")
+        if not 0.0 <= self.hpd_value <= 1.0:
+            raise ValueError(f"hpd_value must lie in [0, 1]; got {self.hpd_value}")
+        if not np.isfinite(self.p_value) or not 0.0 <= self.p_value <= 1.0:
+            raise ValueError(f"p_value must lie in [0, 1]; got {self.p_value}")
+        if (
+            not np.isfinite(self.pred_std)
+            or not np.isfinite(self.like_std)
+            or self.pred_std <= 0.0
+            or self.like_std <= 0.0
+        ):
+            raise ValueError("pred_std and like_std must be positive")
+        for name, array in arrays.items():
+            array.setflags(write=False)
+            object.__setattr__(self, name, array)
+
+
+def create_shared_example(rng: np.random.Generator) -> Figure2ExampleData:
     """Create shared example data for all three metrics.
 
     All metrics are computed exactly using the same distributions.
@@ -43,9 +130,9 @@ def create_shared_example(rng: np.random.Generator) -> dict[str, Any]:
 
     Returns
     -------
-    dict[str, Any]
-        Dictionary with predictive distribution, likelihood,
-        position bins, and precomputed metrics.
+    Figure2ExampleData
+        Typed shared distributions, predictive-check samples, and precomputed
+        diagnostic values used by all nine panels.
     """
     import statespacecheck as ssc
 
@@ -135,23 +222,23 @@ def create_shared_example(rng: np.random.Generator) -> dict[str, Any]:
         [normalize(norm.pdf(position_bins, loc=y, scale=like_std)) for y in showcase_y_tildes]
     )
 
-    return {
-        "position_bins": position_bins,
-        "predictive": predictive,
-        "likelihood": likelihood,
-        "kl_value": kl_value,
-        "hpd_value": hpd_value,
-        "p_value": p_value,
-        "pred_mean": pred_mean,
-        "like_mean": like_mean,
-        "pred_std": pred_std,
-        "like_std": like_std,
-        "observed_log_pred": observed_log_pred,
-        "simulated_log_pred": simulated_log_pred_values,
-        "showcase_positions": showcase_positions,
-        "showcase_y_tildes": showcase_y_tildes,
-        "showcase_likelihoods": showcase_likelihoods,
-    }
+    return Figure2ExampleData(
+        position_bins=position_bins,
+        predictive=np.asarray(predictive, dtype=np.float64),
+        likelihood=np.asarray(likelihood, dtype=np.float64),
+        kl_value=kl_value,
+        hpd_value=hpd_value,
+        p_value=p_value,
+        pred_mean=pred_mean,
+        like_mean=like_mean,
+        pred_std=pred_std,
+        like_std=like_std,
+        observed_log_pred=observed_log_pred,
+        simulated_log_pred=simulated_log_pred_values,
+        showcase_positions=showcase_positions,
+        showcase_y_tildes=showcase_y_tildes,
+        showcase_likelihoods=showcase_likelihoods,
+    )
 
 
 # =============================================================================
@@ -159,11 +246,11 @@ def create_shared_example(rng: np.random.Generator) -> dict[str, Any]:
 # =============================================================================
 
 
-def plot_kl_distributions(ax: Axes, data: dict[str, Any]) -> None:
+def plot_kl_distributions(ax: Axes, data: Figure2ExampleData) -> None:
     """Predictive and Likelihood distributions overlaid."""
-    x = data["position_bins"]
-    pred = data["predictive"]
-    like = data["likelihood"]
+    x = data.position_bins
+    pred = data.predictive
+    like = data.likelihood
 
     ax.plot(x, pred, color=COLORS["predictive"], linewidth=1.5, label="Predictive")
     ax.fill_between(x, pred, alpha=0.3, color=COLORS["predictive"])
@@ -186,11 +273,11 @@ def plot_kl_distributions(ax: Axes, data: dict[str, Any]) -> None:
     ax.set_yticklabels(["0", f"{y_max:.2f}"], fontsize=8)
 
 
-def plot_kl_log_ratio(ax: Axes, data: dict[str, Any]) -> None:
+def plot_kl_log_ratio(ax: Axes, data: Figure2ExampleData) -> None:
     """Log ratio = log(Predictive / Likelihood)."""
-    x = data["position_bins"]
-    pred = data["predictive"]
-    like = data["likelihood"]
+    x = data.position_bins
+    pred = data.predictive
+    like = data.likelihood
 
     log_ratio = safe_log(pred) - safe_log(like)
 
@@ -231,11 +318,11 @@ def plot_kl_log_ratio(ax: Axes, data: dict[str, Any]) -> None:
     ax.set_yticklabels([f"{y_min:.0f}", "0", f"{y_max:.0f}"], fontsize=8)
 
 
-def plot_kl_pointwise(ax: Axes, data: dict[str, Any]) -> None:
+def plot_kl_pointwise(ax: Axes, data: Figure2ExampleData) -> None:
     """Pointwise KL = Predictive * log(Pred/Lik)."""
-    x = data["position_bins"]
-    pred = data["predictive"]
-    like = data["likelihood"]
+    x = data.position_bins
+    pred = data.predictive
+    like = data.likelihood
 
     log_ratio = safe_log(pred) - safe_log(like)
     pointwise_kl = pred * log_ratio
@@ -268,13 +355,13 @@ def plot_kl_pointwise(ax: Axes, data: dict[str, Any]) -> None:
 # =============================================================================
 
 
-def plot_hpd_predictive(ax: Axes, data: dict[str, Any]) -> None:
+def plot_hpd_predictive(ax: Axes, data: Figure2ExampleData) -> None:
     """Predictive distribution with 95% HPD region shaded.
 
     Uses consistent HPD visual scheme: shaded region under curve within HPD.
     """
-    x = data["position_bins"]
-    pred = data["predictive"]
+    x = data.position_bins
+    pred = data.predictive
     coverage = 0.95
 
     hpd_mask = compute_hpd_region(x, pred, coverage)
@@ -333,13 +420,13 @@ def plot_hpd_predictive(ax: Axes, data: dict[str, Any]) -> None:
     ax.set_yticklabels(["0", f"{y_max:.2f}"], fontsize=8)
 
 
-def plot_hpd_likelihood(ax: Axes, data: dict[str, Any]) -> None:
+def plot_hpd_likelihood(ax: Axes, data: Figure2ExampleData) -> None:
     """Likelihood distribution with 95% HPD region shaded.
 
     Uses consistent HPD visual scheme: shaded region under curve within HPD.
     """
-    x = data["position_bins"]
-    like = data["likelihood"]
+    x = data.position_bins
+    like = data.likelihood
     coverage = 0.95
 
     hpd_mask = compute_hpd_region(x, like, coverage)
@@ -407,7 +494,7 @@ def plot_hpd_likelihood(ax: Axes, data: dict[str, Any]) -> None:
     ax.set_yticklabels(["0", f"{y_max:.2f}"], fontsize=8)
 
 
-def plot_hpd_intersection(ax: Axes, data: dict[str, Any]) -> tuple[float, float, float]:
+def plot_hpd_intersection(ax: Axes, data: Figure2ExampleData) -> tuple[float, float, float]:
     """HPD intersection region.
 
     Shows HPD regions as thick horizontal lines at different y-levels.
@@ -420,9 +507,9 @@ def plot_hpd_intersection(ax: Axes, data: dict[str, Any]) -> tuple[float, float,
     tuple[float, float, float]
         (pred_hpd_size, like_hpd_size, intersection_size) for use in formula.
     """
-    x = data["position_bins"]
-    pred = data["predictive"]
-    like = data["likelihood"]
+    x = data.position_bins
+    pred = data.predictive
+    like = data.likelihood
     coverage = 0.95
     dx = x[1] - x[0]
 
@@ -542,15 +629,15 @@ def _showcase_colors(n: int) -> NDArray[np.float64]:
     return cmap(np.linspace(0.15, 0.85, n))
 
 
-def plot_ppc_predictive_fan(ax: Axes, data: dict[str, Any]) -> None:
+def plot_ppc_predictive_fan(ax: Axes, data: Figure2ExampleData) -> None:
     """Predictive distribution with a fan of sampled positions.
 
     Each colored marker is one draw from the predictive that flows into
     the corresponding simulated observation likelihood plotted in panel H.
     """
-    x = data["position_bins"]
-    pred = data["predictive"]
-    positions = data["showcase_positions"]
+    x = data.position_bins
+    pred = data.predictive
+    positions = data.showcase_positions
     colors = _showcase_colors(len(positions))
 
     ax.plot(x, pred, color=COLORS["predictive"], linewidth=1.5, label="Predictive")
@@ -590,7 +677,7 @@ def plot_ppc_predictive_fan(ax: Axes, data: dict[str, Any]) -> None:
     ax.set_yticklabels(["0", f"{y_max:.2f}"], fontsize=8)
 
 
-def plot_ppc_likelihood_fan(ax: Axes, data: dict[str, Any]) -> None:
+def plot_ppc_likelihood_fan(ax: Axes, data: Figure2ExampleData) -> None:
     """Fan of simulated observation likelihoods.
 
     For each state sample drawn from the predictive (panel G), the
@@ -605,11 +692,11 @@ def plot_ppc_likelihood_fan(ax: Axes, data: dict[str, Any]) -> None:
     up in panel I.
     """
 
-    x = data["position_bins"]
-    pred = data["predictive"]
-    positions = data["showcase_positions"]
-    y_tildes = data["showcase_y_tildes"]
-    likelihoods = data["showcase_likelihoods"]
+    x = data.position_bins
+    pred = data.predictive
+    positions = data.showcase_positions
+    y_tildes = data.showcase_y_tildes
+    likelihoods = data.showcase_likelihoods
     colors = _showcase_colors(len(positions))
 
     # Faint dashed predictive overlay so the reader sees what each
@@ -709,14 +796,14 @@ def plot_ppc_likelihood_fan(ax: Axes, data: dict[str, Any]) -> None:
     )
 
 
-def plot_ppc_density_histogram(ax: Axes, data: dict[str, Any]) -> None:
+def plot_ppc_density_histogram(ax: Axes, data: Figure2ExampleData) -> None:
     """Histogram of observed vs simulated log predictive density.
 
     Uses the exact Monte Carlo samples computed in create_shared_example().
     """
     # Use exact values from Monte Carlo simulation
-    simulated_log_pred = data["simulated_log_pred"]
-    observed_log_pred = data["observed_log_pred"]
+    simulated_log_pred = data.simulated_log_pred
+    observed_log_pred = data.observed_log_pred
 
     # Histogram of simulated values (from predictive distribution)
     ax.hist(

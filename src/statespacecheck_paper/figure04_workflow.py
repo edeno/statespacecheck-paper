@@ -4,7 +4,7 @@ Assembles everything the Figure-4 render needs. Inputs are pre-exported derived
 data (a :class:`~statespacecheck_paper.load_local_data.NeuralRecordingData`),
 not a raw-data pipeline, so this is a *workflow*: load the fresh recording, load
 a fingerprint-matching decode cache or fit + decode both models and cache the
-result, compute the per-spike diagnostics, and calculate/print the manuscript
+result, compute the per-spike diagnostics, and calculate the manuscript
 summary scalars.
 
 The in-memory decode results are a typed :class:`Figure4DecodeResults` whose
@@ -43,6 +43,7 @@ from statespacecheck_paper.figure04_decoder import (
     validate_provenance_defaults,
 )
 from statespacecheck_paper.figure04_diagnostics import (
+    FlagConfusion,
     compute_flag_confusion,
     compute_model_diagnostics,
 )
@@ -279,6 +280,35 @@ def compute_mean_spike_event_diagnostic(diagnostics: SpikeEventDiagnostics, metr
     return float(np.nanmean(getattr(diagnostics, event_key)))
 
 
+@dataclasses.dataclass(frozen=True)
+class Figure4DiagnosticMeans:
+    """Whole-session mean of each per-spike diagnostic for one decoder."""
+
+    hpd_overlap: float
+    kl_divergence: float
+    predictive_pvalue: float
+
+
+@dataclasses.dataclass(frozen=True)
+class Figure4Summary:
+    """Manuscript-facing Figure-4 scalars, independent of output formatting."""
+
+    continuous: Figure4DiagnosticMeans
+    continuous_fragmented: Figure4DiagnosticMeans
+    flag_confusions: tuple[FlagConfusion, ...]
+
+
+def _compute_diagnostic_means(
+    diagnostics: SpikeEventDiagnostics,
+) -> Figure4DiagnosticMeans:
+    """Compute the three manuscript diagnostic means for one decoder."""
+    return Figure4DiagnosticMeans(
+        hpd_overlap=compute_mean_spike_event_diagnostic(diagnostics, "hpd_overlap"),
+        kl_divergence=compute_mean_spike_event_diagnostic(diagnostics, "kl_divergence"),
+        predictive_pvalue=compute_mean_spike_event_diagnostic(diagnostics, "predictive_pvalue"),
+    )
+
+
 def _compute_figure04_decode_results(
     recording: NeuralRecordingData,
     *,
@@ -452,40 +482,66 @@ def prepare_figure04_render_data(
     )
 
 
-def print_figure04_summary(
+def compute_figure04_summary(
     render_data: Figure4RenderData,
-    thresholds: dict[str, float],
-    metric_directions: dict[str, Literal["below", "above"]],
-) -> None:
-    """Print the whole-session diagnostic event-means and flag-agreement counts.
+    thresholds: Mapping[str, float],
+    metric_directions: Mapping[str, Literal["below", "above"]],
+) -> Figure4Summary:
+    """Compute whole-session event means and two-decoder flag agreement.
 
     These scalars can appear in the manuscript text, so their computation must
     stay identical to the cached decode; the render layer never alters them.
     """
     decode = render_data.decode_results
-    print("\n=== Diagnostic Summary (all time points) ===")
-    for name, diag in [
-        ("Continuous", decode.continuous_diagnostics),
-        ("ContFrag", decode.continuous_fragmented_diagnostics),
-    ]:
-        print(f"\n{name}:")
-        for metric in ["hpd_overlap", "kl_divergence", "predictive_pvalue"]:
-            print(f"  {metric}: {compute_mean_spike_event_diagnostic(diag, metric):.4f}")
+    missing_thresholds = set(metric_directions) - set(thresholds)
+    if missing_thresholds:
+        raise ValueError(
+            f"metric_directions contains metrics without thresholds: {sorted(missing_thresholds)}"
+        )
 
-    # Per-spike flag agreement between the two decoders at these thresholds.
-    # "Cont-only" is the rescue quadrant (flagged by Continuous but not by
-    # Continuous-Fragmented); "rescue" is its fraction of all Continuous flags.
-    print("\n=== Flag agreement: Continuous (A) vs Cont-Frag (B) ===")
+    flag_confusions = []
     for metric, worse_when in metric_directions.items():
-        conf = compute_flag_confusion(
-            decode.continuous_diagnostics,
-            decode.continuous_fragmented_diagnostics,
-            metric,
-            thresholds[metric],
-            worse_when=worse_when,
+        flag_confusions.append(
+            compute_flag_confusion(
+                decode.continuous_diagnostics,
+                decode.continuous_fragmented_diagnostics,
+                metric,
+                thresholds[metric],
+                worse_when=worse_when,
+            )
         )
-        print(
-            f"  {metric}: n={conf.n:,} both={conf.both:,} cont-only={conf.a_only:,} "
-            f"cf-only={conf.b_only:,} neither={conf.neither:,} "
-            f"rescue={100 * conf.rescue_rate:.1f}%"
+
+    return Figure4Summary(
+        continuous=_compute_diagnostic_means(decode.continuous_diagnostics),
+        continuous_fragmented=_compute_diagnostic_means(decode.continuous_fragmented_diagnostics),
+        flag_confusions=tuple(flag_confusions),
+    )
+
+
+def format_figure04_summary(summary: Figure4Summary) -> str:
+    """Format a computed Figure-4 summary for command-line output."""
+    lines = ["=== Diagnostic Summary (all time points) ==="]
+    for model_name, means in (
+        ("Continuous", summary.continuous),
+        ("ContFrag", summary.continuous_fragmented),
+    ):
+        lines.extend(
+            [
+                "",
+                f"{model_name}:",
+                f"  hpd_overlap: {means.hpd_overlap:.4f}",
+                f"  kl_divergence: {means.kl_divergence:.4f}",
+                f"  predictive_pvalue: {means.predictive_pvalue:.4f}",
+            ]
         )
+
+    # "cont-only" is the rescue quadrant: flagged by Continuous but not by
+    # Continuous-Fragmented. Rescue rate is its fraction of Continuous flags.
+    lines.extend(["", "=== Flag agreement: Continuous (A) vs Cont-Frag (B) ==="])
+    for confusion in summary.flag_confusions:
+        lines.append(
+            f"  {confusion.metric}: n={confusion.n:,} both={confusion.both:,} "
+            f"cont-only={confusion.a_only:,} cf-only={confusion.b_only:,} "
+            f"neither={confusion.neither:,} rescue={100 * confusion.rescue_rate:.1f}%"
+        )
+    return "\n".join(lines)

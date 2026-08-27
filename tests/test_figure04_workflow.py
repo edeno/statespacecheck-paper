@@ -18,7 +18,10 @@ from statespacecheck_paper.figure04_decoder import Figure4Config
 from statespacecheck_paper.figure04_workflow import (
     Figure4DecodeResults,
     Figure4RenderData,
+    Figure4Summary,
+    compute_figure04_summary,
     compute_mean_spike_event_diagnostic,
+    format_figure04_summary,
     prepare_figure04_render_data,
 )
 from statespacecheck_paper.load_local_data import NeuralRecordingData
@@ -110,6 +113,67 @@ class TestComputeMeanSpikeEventDiagnostic:
     def test_raises_when_event_array_missing(self) -> None:
         with pytest.raises(KeyError, match="event_made_up_metric"):
             compute_mean_spike_event_diagnostic(_diagnostics(np.array([0.5])), "made_up_metric")
+
+
+class TestFigure4Summary:
+    def _render_data(self) -> Figure4RenderData:
+        decode = dataclasses.replace(
+            _synthetic_decode_results(),
+            continuous_diagnostics=_diagnostics(np.array([0.01, 0.20])),
+            continuous_fragmented_diagnostics=_diagnostics(np.array([0.40, 0.20])),
+        )
+        return Figure4RenderData(
+            recording=_synthetic_recording(),
+            time=np.arange(8, dtype=float),
+            head_position=np.zeros((8, 2)),
+            linear_position=np.zeros(8),
+            decode_results=decode,
+        )
+
+    def test_computes_typed_means_and_flag_counts(self) -> None:
+        summary = compute_figure04_summary(
+            self._render_data(),
+            thresholds={"hpd_overlap": 0.05},
+            metric_directions={"hpd_overlap": "below"},
+        )
+
+        assert isinstance(summary, Figure4Summary)
+        assert summary.continuous.hpd_overlap == pytest.approx(0.105)
+        assert summary.continuous_fragmented.hpd_overlap == pytest.approx(0.30)
+        assert len(summary.flag_confusions) == 1
+        confusion = summary.flag_confusions[0]
+        assert (
+            confusion.n,
+            confusion.both,
+            confusion.a_only,
+            confusion.b_only,
+            confusion.neither,
+        ) == (
+            2,
+            0,
+            1,
+            0,
+            1,
+        )
+
+    def test_formatter_does_not_recompute(self) -> None:
+        summary = compute_figure04_summary(
+            self._render_data(),
+            thresholds={"hpd_overlap": 0.05},
+            metric_directions={"hpd_overlap": "below"},
+        )
+        text = format_figure04_summary(summary)
+        assert "Continuous:" in text
+        assert "hpd_overlap: 0.1050" in text
+        assert "cont-only=1" in text
+
+    def test_requires_threshold_for_every_direction(self) -> None:
+        with pytest.raises(ValueError, match="without thresholds"):
+            compute_figure04_summary(
+                self._render_data(),
+                thresholds={},
+                metric_directions={"hpd_overlap": "below"},
+            )
 
 
 class TestFigure4DecodeResults:

@@ -21,11 +21,14 @@ statespacecheck-paper/
 │   ├── diagnostics.py          # Shared goodness-of-fit diagnostics (leaf layer)
 │   ├── decoding.py             # General Bayesian decoder + override mechanism
 │   ├── plotting.py             # Generic plotting utilities (HPD, likelihood cols, Fig-1 panel)
-│   ├── figure02_panels.py      # Figure-2 per-panel renderers
+│   ├── figure01_generation.py  # Figure-1 composition + save recipe
+│   ├── figure02_panels.py      # Figure-2 typed example + panel renderers
+│   ├── figure02_generation.py  # Figure-2 semantic layout + save recipe
 │   ├── figure03_protocol.py    # Figure-3 config (Figure3Config) + phase ladder
 │   ├── figure03_simulation.py  # Figure-3 phased simulation + decode
 │   ├── figure03_summary.py     # Figure-3b per-condition flag-percentage summary
 │   ├── figure03_plotting.py    # Figure-3 rendering (compose_figure03 + panels)
+│   ├── figure03_generation.py  # Figure-3 simulation/summary/render/save recipe
 │   ├── figure04_decoder.py     # Figure-4 decoder construction + config (Figure4Config lives here)
 │   ├── figure04_place_fields.py # Figure-4 place-field / marginalized-posterior extraction
 │   ├── figure04_diagnostics.py # Figure-4 real-data goodness-of-fit diagnostics
@@ -85,10 +88,12 @@ statespacecheck-paper/
 - **simulation.py**: Simulation functions (random walks, spike generation, place fields)
 - **diagnostics.py**: Shared goodness-of-fit diagnostics — the dependency-graph leaf (per-spike-event HPD/KL/rank containers + computation, single-spike likelihood, predictive-mark probabilities, baseline thresholds)
 - **decoding.py**: General Bayesian decoder `decode_with_diagnostics` + per-window override mechanism (`DecoderOverrideWindow`/`DecoderOverrideSchedule`); depends only on `diagnostics` + `simulation`
+- **figure01_generation.py / figure02_panels.py / figure02_generation.py**: Testable composition/generation recipes for Figures 1–2; Figure 2 uses a typed immutable shared example and semantic layout identifiers
 - **figure03_protocol.py**: Immutable Figure-3 configuration (`Figure3Config`), phase-ladder enum (`PhaseBoundary`), and replay-window helper — a leaf module
 - **figure03_simulation.py**: Figure-3 phased simulation (`run_figure03_simulation` → `Figure3SimulationResult`), phase simulators, rate tables, place-field remapping
 - **figure03_summary.py**: Figure-3b per-condition flag-percentage summary (`build_summary_conditions`, `estimate_realization_summary` → `Figure3RealizationSummary`)
 - **figure03_plotting.py**: Figure-3 rendering (`compose_figure03` + the time-series/heatmap panels)
+- **figure03_generation.py**: Figure-3 simulation → pooled summary → composition → save recipe (`generate_figure03`)
 - **plotting.py**: Reusable plotting functions (HPD regions, diagnostic plots)
 - **schematic.py**: Graphical model diagrams and Bayesian equation boxes for Figure 1
 - **figure04_decoder.py / figure04_place_fields.py / figure04_diagnostics.py**: Figure-4 analysis layers — decoder construction + config, place-field / marginalized-posterior extraction, and the real-data goodness-of-fit diagnostics. `Figure4Config` (in `figure04_decoder.py`) is split into an executable `Figure4DecoderConfig` (threaded into decoder construction — `position_std`, `block_size`, `position_bin_size_cm`, `sampling_frequency_hz`) and a `Figure4Provenance` (nld-default values — `movement_var`, ContFrag transition/initial-condition/concentration/regularization — recorded and drift-guard pinned, but not injected because faithfully injecting them would rebuild the nested transition grid and risk changing the decode).
@@ -99,9 +104,7 @@ statespacecheck-paper/
 
 **Figure Scripts** (in `scripts/`):
 
-- **generate_figure01.py**: Figure 1 orchestration - schematic and distributions
-- **generate_figure02.py**: Figure 2 orchestration - diagnostic demonstrations (per-panel renderers live in `figure02_panels.py`)
-- **generate_figure03.py**: Figure 3 orchestration - per-cell diagnostics across an 8-phase simulation (3 misfit scenarios plus two specificity controls - a replay event and a sparse-population epoch - separated by clean-recovery windows): remap, history-dependent firing, drift, plus replay and a sparse population of narrow cells firing during immobility. The scenarios are chosen to span the metric-disagreement space - e.g. a small population of narrow cells firing sparsely at one location during immobility can elevate KL while HPD overlap and the rank-based p-value stay near baseline, and history-dependent firing is largely missed by all three per-spike spatial diagnostics. Figure 3 has two panels: a time-series block and a per-phase summary heatmap.
+- **generate_figure01.py / generate_figure02.py / generate_figure03.py / generate_figure04.py**: Thin CLI adapters; the scientific recipes live in the corresponding `figureNN_generation.py` modules
 - **generate_all_figures.py**: Master script to generate all figures
 
 ## Repository Structure
@@ -186,43 +189,21 @@ The repository follows a clean separation between **reusable code** (in `src/`) 
 
 ### Figure Scripts
 
-Figure scripts (in `scripts/`) are thin orchestration layers that:
-
-1. Import from shared modules
-2. Set up simulation/analysis parameters
-3. Run simulations/analyses
-4. Generate and save figures
+Figure scripts (in `scripts/`) are thin command-line adapters. Scientific
+orchestration lives in `src/statespacecheck_paper/figureNN_generation.py`, where
+each recipe can be imported and tested without executing source text.
 
 **Example structure**:
 
 ```python
-from statespacecheck_paper.style import WONG, set_figure_defaults, save_figure
-from statespacecheck_paper.simulation import simulate_walk, simulate_spikes_position_tuned
-from statespacecheck_paper.decoding import decode_with_diagnostics
-from statespacecheck_paper.figure03_protocol import Figure3Config
+from statespacecheck_paper.figure01_generation import generate_figure01
 
-def create_figure():
-    """Generate Figure X showing..."""
-    set_figure_defaults()
-
-    # Setup parameters
-    config = Figure3Config(...)
-
-    # Run simulation
-    true_position = simulate_walk(...)
-    spike_counts = simulate_spikes_position_tuned(...)
-
-    # Run analysis
-    results = decode_with_diagnostics(spike_counts, ...)
-
-    # Create plots (Figure-3 family; other figures have their own compose_* entry point)
-    fig = compose_figure03(true_position, spike_counts, results, ...)
-
-    # Save to manuscript/figures/main/
-    save_figure("manuscript/figures/main/figureX")
+def main() -> None:
+    """Generate the canonical Figure 1 artifacts."""
+    generate_figure01()
 
 if __name__ == "__main__":
-    create_figure()
+    main()
 ```
 
 ### Testing Structure

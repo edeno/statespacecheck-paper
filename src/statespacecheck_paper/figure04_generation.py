@@ -14,10 +14,11 @@ from typing import Literal
 
 from statespacecheck_paper.figure04_cache import Figure4Paths
 from statespacecheck_paper.figure04_decoder import Figure4Config
-from statespacecheck_paper.figure04_layout import compose_figure04
+from statespacecheck_paper.figure04_layout import Figure4DetailWindow, compose_figure04
 from statespacecheck_paper.figure04_workflow import (
+    compute_figure04_summary,
+    format_figure04_summary,
     prepare_figure04_render_data,
-    print_figure04_summary,
 )
 from statespacecheck_paper.paths import ANIMAL_DATE_EPOCH, DATA_PATH
 from statespacecheck_paper.style import save_figure, set_figure_defaults
@@ -33,6 +34,12 @@ FIGURE4_METRIC_DIRECTIONS: dict[str, Literal["below", "above"]] = {
     "hpd_overlap": "below",
     "predictive_pvalue": "below",
 }
+# Manuscript detail view: a KL-divergence spike during immobility at a reward
+# well, shown with 500 samples on either side (~2 seconds total at 500 Hz).
+FIGURE4_DETAIL_WINDOW = Figure4DetailWindow(
+    center_index=193_069,
+    half_width_samples=500,
+)
 
 
 def generate_figure04(*, use_cache: bool = True) -> None:
@@ -53,11 +60,20 @@ def generate_figure04(*, use_cache: bool = True) -> None:
     paths = Figure4Paths(data_path=DATA_PATH, animal_date_epoch=ANIMAL_DATE_EPOCH)
     render_data = prepare_figure04_render_data(config, paths, use_cache=use_cache)
 
-    print_figure04_summary(render_data, FIGURE4_DIAGNOSTIC_THRESHOLDS, FIGURE4_METRIC_DIRECTIONS)
+    summary = compute_figure04_summary(
+        render_data,
+        FIGURE4_DIAGNOSTIC_THRESHOLDS,
+        FIGURE4_METRIC_DIRECTIONS,
+    )
+    print(f"\n{format_figure04_summary(summary)}")
 
     print("\nGenerating Figure 4...")
     set_figure_defaults(context="paper")
-    composition = compose_figure04(render_data, diagnostic_thresholds=FIGURE4_DIAGNOSTIC_THRESHOLDS)
+    composition = compose_figure04(
+        render_data,
+        diagnostic_thresholds=FIGURE4_DIAGNOSTIC_THRESHOLDS,
+        detail_window=FIGURE4_DETAIL_WINDOW,
+    )
     save_figure(
         "manuscript/figures/main/figure04",
         close=True,

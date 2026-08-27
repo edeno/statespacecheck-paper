@@ -4,12 +4,12 @@ The figure-3 demo simulates a hippocampal-style decoder under a
 sequence of misfit conditions (remap, history-dependent firing, drift) and
 two specificity controls (a replay event embedded in clean-recovery 2 and a
 final sparse-population epoch). The simulation pipeline drives both
-``scripts/generate_figure03.py`` and
+``statespacecheck_paper.figure03_generation`` and
 ``statespacecheck_paper.interactive.cache.build_simulated_cache``;
 both call ``run_figure03_simulation`` so the figure and the
 interactive viewer's simulated cache stay byte-identical.
 
-The figure-generation script extends this with diagnostic threshold
+The figure-generation recipe extends this with diagnostic threshold
 computation + plotting.
 """
 

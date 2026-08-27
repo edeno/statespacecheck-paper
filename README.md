@@ -9,7 +9,7 @@ This repository contains the source code and supplementary materials for the pap
 This is a **paper/research repository** (not a library). The code is organized into:
 
 - **`src/statespacecheck_paper/`**: Reusable modules (styling, simulation, analysis, plotting)
-- **`scripts/`**: Canonical figure-generation scripts (thin orchestration layers); non-canonical scaffolding lives in `scripts/exploratory/`
+- **`scripts/`**: Thin CLI adapters for the importable figure-generation recipes; non-canonical scaffolding lives in `scripts/exploratory/`
 - **`manuscript/figures/`**: Generated figure outputs (PDF and PNG)
   - `manuscript/figures/main/`: Main text figures
   - `manuscript/figures/supplementary/`: Supplementary figures
@@ -458,10 +458,11 @@ uv run ruff format . && uv run ruff check . && uv run mypy src/ && uv run pytest
 - **`decoding.py`**: General Bayesian decoder (`decode_with_diagnostics`)
 - **`plotting.py`**: Reusable plotting functions (HPD regions, diagnostic plots)
 - **`schematic.py`**: Graphical-model and Bayesian-equation diagrams (Figure 1)
-- **`figure02_panels.py`**: Per-panel renderers for Figure 2
-- **`figure03_{protocol,simulation,summary,plotting}.py`**: Figure-3 protocol, simulation, per-phase summary, and plotting
+- **`figure01_generation.py` / `figure02_{panels,generation}.py`**: Testable composition and generation recipes for Figures 1–2
+- **`figure03_{protocol,simulation,summary,plotting,generation}.py`**: Figure-3 protocol, simulation, per-phase summary, plotting, and generation recipe
 - **`figure04_{decoder,place_fields,diagnostics}.py`**: Figure-4 real-data decoder construction/config, place-field extraction, and diagnostics
 - **`figure04_{plot_primitives,track_plots,panels}.py`**: Figure-4 plotting helpers, track-graph rendering, and raster/diagnostic panels
+- **`figure04_{cache,workflow,layout,generation}.py`**: Figure-4 cache, analysis workflow, composition, and generation recipe
 - **`load_local_data.py`**: Real data loading utilities
 - **`paths.py`**: Shared `DATA_PATH` / `ANIMAL_DATE_EPOCH` constants (env-overridable)
 

@@ -26,7 +26,8 @@ families**:
   `decode_with_diagnostics` + its per-window override mechanism), and
   `diagnostics` (the HPD-overlap / rank-based predictive-p-value / KL-divergence
   computation and containers). `diagnostics` is the dependency-graph leaf.
-- **Per-figure families**: `figure03_{protocol,simulation,summary,plotting}` and
+- **Per-figure families**: `figure01_generation`,
+  `figure02_{panels,generation}`, `figure03_{protocol,simulation,summary,plotting,generation}` and
   `figure04_{cache,workflow,layout,generation}`. Each figure is a small set of
   single-responsibility modules rather than one monolith, so an outside reader
   can follow the scientific workflow (configure → simulate/load → decode →
@@ -43,7 +44,8 @@ figure03_protocol      → (leaf; no sibling paper module)
 figure03_simulation    → figure03_protocol, decoding, diagnostics, simulation
 figure03_summary       → figure03_protocol, figure03_simulation, diagnostics
 figure03_plotting      → figure03_protocol, figure03_summary, diagnostics, plotting, style
-generate_figure03.py   → figure03_protocol, figure03_simulation, figure03_summary, figure03_plotting, style
+figure03_generation    → figure03_protocol, figure03_simulation, figure03_summary, figure03_plotting, style
+generate_figure03.py   → figure03_generation
 
 figure04_decoder       → (leaf; nld construction + Figure4Config)
 figure04_place_fields  → (leaf; place-field / marginalized-posterior extraction)
@@ -53,7 +55,7 @@ figure04_track_plots   → figure04_plot_primitives
 figure04_panels        → diagnostics, figure04_diagnostics, figure04_plot_primitives, figure04_track_plots, plotting, style
 figure04_cache         → figure04_decoder (Figure4Config only)
 figure04_workflow      → figure04_cache, figure04_decoder, figure04_diagnostics, figure04_place_fields, diagnostics, load_local_data
-figure04_layout        → figure04_workflow, diagnostics, figure04_panels, figure04_plot_primitives, figure04_track_plots, style
+figure04_layout        → figure04_workflow, diagnostics, figure04_panels, figure04_plot_primitives, figure04_track_plots
 figure04_generation    → figure04_workflow, figure04_layout, figure04_cache, figure04_decoder, paths, style
 generate_figure04.py   → figure04_generation
 ```
@@ -75,8 +77,10 @@ Start from the four `scripts/generate_figureNN.py` entry points.
   no external data).
 - **Manuscript:** the state-space-model schematic and the
   predictive-vs-likelihood distribution comparisons in the Introduction/Methods.
-- **Entry point:** `scripts/generate_figure01.py::create_figure`.
-- **Configuration:** named constants / function arguments inside the script and
+- **Entry point:** `scripts/generate_figure01.py::main`, which calls
+  `figure01_generation.generate_figure01`; the separately testable
+  `compose_figure01` returns the in-memory figure.
+- **Configuration:** named constants / function arguments inside the generation recipe and
   `schematic.py`; no config dataclass.
 - **Computation:** `schematic.py` (graphical model + equation boxes) and
   `plotting.create_distribution_comparison_panel` / `compute_hpd_region`.
@@ -85,18 +89,29 @@ Start from the four `scripts/generate_figureNN.py` entry points.
   contract); `tests/test_plotting.py::TestComputeHpdRegion`,
   `TestCreateDistributionComparisonPanel`.
 
+Trace: `generate_figure01` → `compose_figure01` → semantic axes
+(`graphical_model`, `filtering_equations`, and four named consistency cases) →
+the `schematic` / `plotting` renderers → `save_figure`.
+
 ## Figure 2 — Diagnostic demonstrations
 
 - **Reproduction:** `uv run python scripts/generate_figure02.py` (simulated).
 - **Manuscript:** the worked demonstrations of the three diagnostics.
-- **Entry point:** `scripts/generate_figure02.py::create_figure`.
-- **Configuration:** named constants / arguments in the script; per-panel
+- **Entry point:** `scripts/generate_figure02.py::main`, which calls
+  `figure02_generation.generate_figure02`; `compose_figure02` accepts an
+  injectable random generator and returns the in-memory figure.
+- **Configuration:** named constants / arguments in the generation recipe; per-panel
   renderers live in `figure02_panels.py`.
 - **Computation:** `figure02_panels.py` → `plotting.plot_likelihood_columns`
   and the `diagnostics` computations.
 - **Output:** `manuscript/figures/main/figure02.{pdf,png}`.
 - **Tests:** `tests/test_figures.py` (the figure-2 panel/MC-loop tests);
   `tests/test_diagnostics.py`.
+
+Trace: `create_shared_example(rng)` returns one immutable
+`Figure2ExampleData` whose named arrays/scalars feed all nine renderers →
+`compose_figure02` arranges semantic mosaic axes such as `hpd_predictive`,
+`predictive_histogram`, and `kl_pointwise` → `generate_figure02` saves it.
 
 ## Figure 3 — Per-spike diagnostics across an 8-phase simulation
 
@@ -106,9 +121,10 @@ Start from the four `scripts/generate_figureNN.py` entry points.
   diagnostic detects vs. misses across three misfit conditions and two
   specificity controls.
 - **Entry point:** `scripts/generate_figure03.py::main` (the CLI), which calls
-  the scientific orchestrator `generate_figure03(config, *, n_realizations)`.
+  the scientific orchestrator
+  `figure03_generation.generate_figure03(config, *, n_realizations)`.
 - **Configuration:** `Figure3Config` (frozen; in `figure03_protocol.py`).
-  `main()` uses the canonical `Figure3Config(drift_momentum=0.88)` and
+  the generation recipe uses the canonical `Figure3Config(drift_momentum=0.88)` and
   `N_REALIZATIONS = 100`; both values are load-bearing for the published PNG.
 - **Computation (reading order):**
   `figure03_protocol` (config + phase ladder) →
@@ -184,7 +200,11 @@ median_flag_percentages=…)` returns a `matplotlib` `Figure` → `save_figure` 
   `figure04_generation.generate_figure04(*, use_cache)`.
 - **Configuration:** `Figure4Config` (in `figure04_decoder.py`) plus the fixed
   `FIGURE4_DIAGNOSTIC_THRESHOLDS = {"hpd_overlap": 0.05, "predictive_pvalue": 0.05}`
-  in `figure04_generation.py`. `Figure4Config` is split into three scoped parts:
+  and `FIGURE4_DETAIL_WINDOW = Figure4DetailWindow(center_index=193069,
+  half_width_samples=500)` in `figure04_generation.py`. The explicit detail
+  window centers the manuscript panels on a KL-divergence spike during
+  immobility at a reward well and spans about two seconds total. `Figure4Config`
+  is split into three scoped parts:
   a `Figure4DecoderConfig` — `position_std`, `position_bin_size_cm`,
   `sampling_frequency_hz`, threaded into environment/model construction so they
   genuinely drive the decode; a `Figure4Provenance` holding the
@@ -200,6 +220,7 @@ median_flag_percentages=…)` returns a `matplotlib` `Figure` → `save_figure` 
   `figure04_generation` (recipe) → `figure04_workflow.prepare_figure04_render_data`
   (loads the recording, loads a fingerprint-matching cache or fits/decodes via
   `figure04_decoder`/`figure04_place_fields`, computes `figure04_diagnostics`) →
+  `figure04_workflow.compute_figure04_summary` (typed manuscript scalars) →
   `figure04_layout.compose_figure04`
   (artist arrangement) → `save_figure`.
 - **Intermediate data — the honest boundary.** Figure 4 is reproduced **from
@@ -239,8 +260,11 @@ loads a `NeuralRecordingData` and returns a `Figure4RenderData`
 (`.recording`, `.time`, `.head_position`, `.linear_position`,
 `.decode_results: Figure4DecodeResults`) — the decode results come from a
 fingerprint-matching cache (`Figure4DecodeResults.from_cache_payload`) or a fresh
-fit/decode (`_compute_figure04_decode_results`) → `print_figure04_summary`
-(manuscript scalars) → `compose_figure04(render_data, diagnostic_thresholds=…)`
+fit/decode (`_compute_figure04_decode_results`) → `compute_figure04_summary`
+returns a `Figure4Summary` (per-decoder `Figure4DiagnosticMeans` plus typed
+`FlagConfusion` counts) → `format_figure04_summary` handles CLI text separately
+→ `compose_figure04(render_data, diagnostic_thresholds=…,
+detail_window=Figure4DetailWindow(…))`
 returns a `Figure4Composition` (`.figure`, `.bbox_inches`) → `save_figure` writes
 `figure04.{pdf,png}` with that custom crop.
 

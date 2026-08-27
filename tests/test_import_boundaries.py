@@ -79,6 +79,32 @@ def test_figure03_family_dependency_edges_are_acyclic() -> None:
             prefix + "plotting",
             prefix + "style",
         },
+        "figure03_generation.py": {
+            prefix + "figure03_plotting",
+            prefix + "figure03_protocol",
+            prefix + "figure03_simulation",
+            prefix + "figure03_summary",
+            prefix + "style",
+        },
+    }
+    for module_file, permitted in allowed.items():
+        assert _sibling_module_imports(module_file) <= permitted, module_file
+
+
+def test_figure01_and_figure02_generation_dependencies_are_explicit() -> None:
+    """The early figures keep composition in package recipes and leave their
+    scripts as CLI adapters."""
+    prefix = "statespacecheck_paper."
+    allowed = {
+        "figure01_generation.py": {
+            prefix + "plotting",
+            prefix + "schematic",
+            prefix + "style",
+        },
+        "figure02_generation.py": {
+            prefix + "figure02_panels",
+            prefix + "style",
+        },
     }
     for module_file, permitted in allowed.items():
         assert _sibling_module_imports(module_file) <= permitted, module_file

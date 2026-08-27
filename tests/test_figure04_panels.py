@@ -22,13 +22,14 @@ from matplotlib.lines import Line2D  # noqa: E402
 
 from statespacecheck_paper.diagnostics import SpikeEventDiagnostics  # noqa: E402
 from statespacecheck_paper.figure04_panels import (  # noqa: E402
+    ModelDiagnosticPanelData,
     _draw_decoder_likelihood_image,
     _draw_predictive_heatmap_row,
     _draw_track_graph_edges,
-    plot_model_comparison_with_posterior,
-    plot_per_cell_diagnostic_scatter,
+    plot_exploratory_model_comparison,
     plot_per_spike_metric_hexbin_row,
     plot_single_model_diagnostics,
+    plot_spike_event_diagnostic_scatter,
 )
 
 # ---------------------------------------------------------------------------
@@ -229,7 +230,7 @@ class TestPlotPerSpikeMetricHexbinRow:
 
 
 # ---------------------------------------------------------------------------
-# plot_per_cell_diagnostic_scatter (spike-time alignment behavior)
+# plot_spike_event_diagnostic_scatter (spike-time alignment behavior)
 # ---------------------------------------------------------------------------
 
 
@@ -279,7 +280,7 @@ def _scatter_offsets(ax: plt.Axes) -> np.ndarray:
     return np.asarray(offsets)[~mask.any(axis=1)]
 
 
-class TestPlotPerCellDiagnosticScatter:
+class TestPlotSpikeEventDiagnosticScatter:
     def test_with_spike_times_aligns_at_actual_spike_times(self) -> None:
         """``spike_times`` shifts scatter dots to the actual spike instants
         instead of the bin starts (which are 100ms apart here)."""
@@ -291,7 +292,7 @@ class TestPlotPerCellDiagnosticScatter:
         diagnostics = _diagnostics_from_metric("hpd_overlap", hpd)
 
         fig, ax = plt.subplots()
-        plot_per_cell_diagnostic_scatter(
+        plot_spike_event_diagnostic_scatter(
             time,
             diagnostics,
             ax=ax,
@@ -319,7 +320,7 @@ class TestPlotPerCellDiagnosticScatter:
         )
 
         fig, ax = plt.subplots()
-        plot_per_cell_diagnostic_scatter(time, diagnostics, ax=ax)
+        plot_spike_event_diagnostic_scatter(time, diagnostics, ax=ax)
         offsets = _scatter_offsets(ax)
         np.testing.assert_allclose(offsets[:, 0], [0.151, 0.157])
         np.testing.assert_allclose(offsets[:, 1], [0.8, 0.6])
@@ -334,24 +335,26 @@ class TestPlotPerCellDiagnosticScatter:
         diagnostics = _diagnostics_from_metric("hpd_overlap", hpd)
 
         fig, ax = plt.subplots()
-        plot_per_cell_diagnostic_scatter(time, diagnostics, ax=ax, spike_times=None)
+        plot_spike_event_diagnostic_scatter(time, diagnostics, ax=ax, spike_times=None)
         offsets = _scatter_offsets(ax)
         np.testing.assert_allclose(sorted(offsets[:, 0]), [0.1, 0.3])
         plt.close(fig)
 
 
-class TestPlotPerCellDiagnosticScatterRunningAverage:
+class TestPlotSpikeEventDiagnosticScatterRunningAverage:
     def test_running_average_adds_a_line_to_axis(self, rng: np.random.Generator) -> None:
         time = np.linspace(0.0, 1.0, 100)
         diagnostics = _diagnostics_from_metric("hpd_overlap", rng.random((100, 10)))
 
         fig_off, ax_off = plt.subplots()
-        plot_per_cell_diagnostic_scatter(time, diagnostics, ax=ax_off, show_running_average=False)
+        plot_spike_event_diagnostic_scatter(
+            time, diagnostics, ax=ax_off, show_running_average=False
+        )
         n_off = len(ax_off.lines)
         plt.close(fig_off)
 
         fig_on, ax_on = plt.subplots()
-        plot_per_cell_diagnostic_scatter(time, diagnostics, ax=ax_on, show_running_average=True)
+        plot_spike_event_diagnostic_scatter(time, diagnostics, ax=ax_on, show_running_average=True)
         assert len(ax_on.lines) == n_off + 1
         plt.close(fig_on)
 
@@ -361,7 +364,7 @@ class TestPlotPerCellDiagnosticScatterRunningAverage:
 
         def _line_y(window: float) -> np.ndarray:
             fig, ax = plt.subplots()
-            plot_per_cell_diagnostic_scatter(
+            plot_spike_event_diagnostic_scatter(
                 time,
                 diagnostics,
                 ax=ax,
@@ -388,7 +391,7 @@ class TestPlotPerCellDiagnosticScatterRunningAverage:
         diagnostics = _diagnostics_from_metric("predictive_pvalue", predictive_pvalues)
 
         fig, ax = plt.subplots()
-        plot_per_cell_diagnostic_scatter(
+        plot_spike_event_diagnostic_scatter(
             time,
             diagnostics,
             ax=ax,
@@ -477,10 +480,10 @@ def _panel_inputs() -> dict:
     }
 
 
-class TestPlotModelComparisonWithPosterior:
+class TestPlotExploratoryModelComparison:
     def test_renders_six_by_two_grid_with_all_rows(self) -> None:
         c = _panel_inputs()
-        fig, axes = plot_model_comparison_with_posterior(
+        fig, axes = plot_exploratory_model_comparison(
             c["time"],
             c["position"],
             _multistate_results(1),
@@ -507,23 +510,35 @@ class TestPlotSingleModelDiagnostics:
     def test_renders_six_rows_with_place_field_likelihood(self) -> None:
         c = _panel_inputs()
         rng = np.random.default_rng(9)
-        fig, axes = plot_single_model_diagnostics(
-            c["time"],
-            c["position"],
-            _multistate_results(5),
-            _dense_diagnostics(6),
+        panel_data = ModelDiagnosticPanelData(
+            time=c["time"],
+            position=c["position"],
+            results=_multistate_results(5),
+            diagnostics=_dense_diagnostics(6),
             spike_times=c["spike_times"],
             spike_counts=c["spike_counts"],
             place_field_peaks=c["place_field_peaks"],
             place_fields=rng.random((_N_CELLS, _N_POS)) * 10 + 0.1,
             position_bins=np.linspace(0.0, 100.0, _N_POS),
-            thresholds={"hpd_overlap": 0.05},
             track_graph=_linear_track_graph(),
             edge_order=[(i, i + 1) for i in range(5)],
+        )
+        fig, axes = plot_single_model_diagnostics(
+            panel_data,
+            thresholds={"hpd_overlap": 0.05},
         )
         assert axes.shape == (6,)
         assert axes[0].images or axes[0].collections
         plt.close(fig)
+
+    def test_panel_data_rejects_misaligned_position(self) -> None:
+        with pytest.raises(ValueError, match="position must match"):
+            ModelDiagnosticPanelData(
+                time=np.arange(_N_TIME, dtype=float),
+                position=np.zeros(_N_TIME - 1),
+                results=_multistate_results(5),
+                diagnostics=_dense_diagnostics(6),
+            )
 
 
 class TestExtractedRowRenderers:
@@ -568,3 +583,106 @@ class TestExtractedRowRenderers:
         )
         assert ax0.lines and ax1.lines
         plt.close(fig)
+
+
+# ---------------------------------------------------------------------------
+# ModelDiagnosticPanelData validation
+# ---------------------------------------------------------------------------
+
+
+def _diag_all_dense_none() -> SpikeEventDiagnostics:
+    """Diagnostics with the dense matrices absent (event arrays only)."""
+    n = 5
+    return SpikeEventDiagnostics(
+        event_time_ind=np.zeros(n, dtype=np.intp),
+        event_cell_ind=np.zeros(n, dtype=np.intp),
+        event_hpd_overlap=np.zeros(n),
+        event_kl_divergence=np.zeros(n),
+        event_predictive_pvalue=np.zeros(n),
+        hpd_overlap=None,
+        kl_divergence=None,
+        predictive_pvalue=None,
+        per_spike_likelihood=None,
+    )
+
+
+def _diag_wrong_time_rows() -> SpikeEventDiagnostics:
+    """Diagnostics whose dense matrices have one too many time rows."""
+    n = 5
+    bad = (_N_TIME + 1, _N_CELLS)
+    return SpikeEventDiagnostics(
+        event_time_ind=np.zeros(n, dtype=np.intp),
+        event_cell_ind=np.zeros(n, dtype=np.intp),
+        event_hpd_overlap=np.zeros(n),
+        event_kl_divergence=np.zeros(n),
+        event_predictive_pvalue=np.zeros(n),
+        hpd_overlap=np.zeros(bad),
+        kl_divergence=np.zeros(bad),
+        predictive_pvalue=np.zeros(bad),
+        per_spike_likelihood=np.zeros((n, _N_POS)),
+    )
+
+
+def _valid_panel_kwargs() -> dict:
+    c = _panel_inputs()
+    rng = np.random.default_rng(0)
+    return {
+        "time": c["time"],
+        "position": c["position"],
+        "results": _multistate_results(1),
+        "diagnostics": _dense_diagnostics(2),
+        "spike_times": c["spike_times"],
+        "spike_counts": c["spike_counts"],
+        "place_field_peaks": c["place_field_peaks"],
+        "place_fields": rng.random((_N_CELLS, _N_POS)) * 10 + 0.1,
+        "position_bins": np.linspace(0.0, 100.0, _N_POS),
+        "track_graph": _linear_track_graph(),
+        "edge_order": [(i, i + 1) for i in range(5)],
+    }
+
+
+class TestModelDiagnosticPanelDataValidation:
+    def test_valid_kwargs_construct(self) -> None:
+        # The baseline the rejection cases mutate must itself be valid.
+        ModelDiagnosticPanelData(**_valid_panel_kwargs())
+
+    @pytest.mark.parametrize(
+        "override, match",
+        [
+            ({"time": np.zeros((_N_TIME, 2))}, "time must be 1-D"),
+            ({"diagnostics": _diag_all_dense_none()}, "must include the dense"),
+            ({"diagnostics": _diag_wrong_time_rows()}, "one row per time sample"),
+            (
+                {"spike_counts": np.zeros((_N_TIME, _N_CELLS + 1), dtype=np.int64)},
+                "spike_counts must have shape",
+            ),
+            ({"spike_times": [np.array([0.1])] * (_N_CELLS - 1)}, "spike_times must contain"),
+            ({"place_field_peaks": np.zeros(_N_CELLS + 1)}, "place_field_peaks must have shape"),
+            ({"position_bins": None}, "must be provided together"),
+            ({"place_fields": np.zeros((_N_CELLS, _N_POS + 1))}, "place_fields must have shape"),
+            (
+                {"results": _multistate_results(1).drop_vars("predictive_posterior")},
+                "predictive_posterior",
+            ),
+            (
+                {"results": _multistate_results(1).isel(time=slice(0, _N_TIME - 1))},
+                "results 'time' dimension",
+            ),
+            ({"track_graph": None}, "edge_order requires track_graph"),
+        ],
+    )
+    def test_rejects_invalid(self, override: dict, match: str) -> None:
+        kwargs = _valid_panel_kwargs()
+        kwargs.update(override)
+        with pytest.raises(ValueError, match=match):
+            ModelDiagnosticPanelData(**kwargs)
+
+
+def test_exploratory_comparison_alias_is_pinned() -> None:
+    # Retained so pre-rename notebooks (notebooks/archive/fig4.ipynb) keep working.
+    from statespacecheck_paper import figure04_panels
+
+    assert (
+        figure04_panels.plot_model_comparison_with_posterior
+        is figure04_panels.plot_exploratory_model_comparison
+    )

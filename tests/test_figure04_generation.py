@@ -42,8 +42,15 @@ def test_generation_passes_figure_and_bbox_to_save(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(
         figure04_generation, "prepare_figure04_render_data", lambda *a, **k: object()
     )
-    monkeypatch.setattr(figure04_generation, "print_figure04_summary", lambda *a, **k: None)
-    monkeypatch.setattr(figure04_generation, "compose_figure04", lambda *a, **k: composition)
+    monkeypatch.setattr(figure04_generation, "compute_figure04_summary", lambda *a, **k: object())
+    monkeypatch.setattr(figure04_generation, "format_figure04_summary", lambda *a, **k: "summary")
+    composed: dict[str, Any] = {}
+
+    def _compose(*args: Any, **kwargs: Any) -> Figure4Composition:
+        composed.update(args=args, kwargs=kwargs)
+        return composition
+
+    monkeypatch.setattr(figure04_generation, "compose_figure04", _compose)
     monkeypatch.setattr(figure04_generation, "set_figure_defaults", lambda *a, **k: None)
 
     saved: dict[str, Any] = {}
@@ -57,6 +64,7 @@ def test_generation_passes_figure_and_bbox_to_save(monkeypatch: pytest.MonkeyPat
     assert saved["kwargs"]["fig"] is fig
     assert saved["kwargs"]["bbox_inches"] is composition.bbox_inches
     assert saved["kwargs"]["close"] is True
+    assert composed["kwargs"]["detail_window"] is figure04_generation.FIGURE4_DETAIL_WINDOW
 
 
 def test_cli_force_recompute_forwards_use_cache(

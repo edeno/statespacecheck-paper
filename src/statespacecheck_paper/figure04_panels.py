@@ -1,13 +1,15 @@
 """Raster and diagnostic panels.
 
-The composite Figure-4 panels: the spike raster, the per-cell diagnostic scatter,
-the two-model and single-model posterior/likelihood/raster/diagnostic figures,
-and the per-spike metric hexbin comparison row.
+The canonical Figure-4 panels: spike raster, spike-event diagnostic scatter,
+single-model posterior/likelihood/raster/diagnostic stack, and per-spike metric
+hexbin comparison row. The module also retains the explicitly named
+``plot_exploratory_model_comparison`` used by window-selection scripts.
 """
 
 from __future__ import annotations
 
-from collections.abc import Hashable, Sequence
+import dataclasses
+from collections.abc import Hashable, Mapping, Sequence
 from typing import Any
 
 import matplotlib
@@ -44,6 +46,136 @@ from statespacecheck_paper.style import (
     COLORS,
     METRIC_SPECS,
 )
+
+
+@dataclasses.dataclass(frozen=True)
+class ModelDiagnosticPanelData:
+    """Scientific data required to render one model's diagnostic stack.
+
+    Grouping these related values gives callers one discoverable, typed
+    boundary instead of an error-prone sequence of positional arrays. The
+    wrapper is frozen, while the potentially large arrays and xarray dataset
+    are treated as read-only by convention rather than copied. Shape
+    consistency across all inputs is validated at construction.
+
+    Attributes
+    ----------
+    time : np.ndarray or pd.Index, shape (n_time,)
+        Time values (bin centers/starts).
+    position : np.ndarray, shape (n_time,)
+        Animal position aligned to ``time``.
+    results : xr.Dataset
+        Decoder outputs carrying a ``predictive_posterior`` variable on a
+        ``time`` dimension of length ``n_time`` (and optionally
+        ``log_likelihood``); sliced on the same timeline as ``diagnostics``.
+    diagnostics : SpikeEventDiagnostics
+        Per-spike diagnostics whose dense ``hpd_overlap`` / ``predictive_pvalue``
+        / ``kl_divergence`` matrices are ``(n_time, n_cells)``.
+    spike_times : list[np.ndarray], optional
+        One spike-time array per cell (length ``n_cells``).
+    spike_counts : np.ndarray, shape (n_time, n_cells), optional
+    place_field_peaks : np.ndarray, shape (n_cells,), optional
+    place_fields : np.ndarray, shape (n_cells, n_position_bins), optional
+        Supplied together with ``spike_counts`` and ``position_bins``.
+    position_bins : np.ndarray, shape (n_position_bins,), optional
+    track_graph : networkx.Graph, optional
+        Required when ``edge_order`` is given (the linearized-track overlay).
+    edge_order : sequence of (node, node), optional
+    edge_spacing : float or list of float, default 0.0
+    """
+
+    time: NDArray[np.float64] | pd.Index
+    position: NDArray[np.float64]
+    results: xr.Dataset
+    diagnostics: SpikeEventDiagnostics
+    spike_times: list[NDArray[np.float64]] | None = None
+    spike_counts: NDArray[np.int64] | None = None
+    place_field_peaks: NDArray[np.float64] | None = None
+    place_fields: NDArray[np.float64] | None = None
+    position_bins: NDArray[np.float64] | None = None
+    track_graph: nx.Graph | None = None
+    edge_order: Sequence[tuple[Hashable, Hashable]] | None = None
+    edge_spacing: float | list[float] = 0.0
+
+    def __post_init__(self) -> None:
+        time = np.asarray(self.time)
+        position = np.asarray(self.position)
+        if time.ndim != 1:
+            raise ValueError(f"time must be 1-D; got {time.shape}")
+        if position.shape != time.shape:
+            raise ValueError(
+                f"position must match the time shape {time.shape}; got {position.shape}"
+            )
+
+        dense_shapes = {
+            name: None if (value := getattr(self.diagnostics, name)) is None else value.shape
+            for name in ("hpd_overlap", "predictive_pvalue", "kl_divergence")
+        }
+        if any(shape is None for shape in dense_shapes.values()):
+            raise ValueError(
+                "diagnostics must include the dense hpd_overlap, predictive_pvalue, "
+                "and kl_divergence matrices"
+            )
+        if len(set(dense_shapes.values())) != 1:
+            raise ValueError(f"diagnostic matrices must share one shape; got {dense_shapes}")
+        diagnostic_shape = next(iter(dense_shapes.values()))
+        if (
+            diagnostic_shape is None
+            or len(diagnostic_shape) != 2
+            or diagnostic_shape[0] != time.size
+        ):
+            raise ValueError(
+                "diagnostic matrices must have one row per time sample; "
+                f"got {diagnostic_shape} for {time.size} samples"
+            )
+        n_cells = diagnostic_shape[1]
+
+        # The posterior/likelihood heatmap rows are sliced by the same detail
+        # window as the diagnostic scatter rows, so ``results`` must live on the
+        # same timeline. Validating the largest scientific input here prevents a
+        # posterior that is silently misaligned with the per-spike diagnostics.
+        if "predictive_posterior" not in self.results:
+            raise ValueError("results must contain a 'predictive_posterior' variable")
+        results_n_time = self.results.sizes.get("time")
+        if results_n_time != time.size:
+            raise ValueError(
+                f"results 'time' dimension ({results_n_time}) must match the time array "
+                f"length ({time.size}); the posterior and diagnostic rows share one timeline."
+            )
+
+        if self.spike_counts is not None and self.spike_counts.shape != (time.size, n_cells):
+            raise ValueError(
+                f"spike_counts must have shape ({time.size}, {n_cells}); "
+                f"got {self.spike_counts.shape}"
+            )
+        if self.spike_times is not None and len(self.spike_times) != n_cells:
+            raise ValueError(
+                f"spike_times must contain {n_cells} cells; got {len(self.spike_times)}"
+            )
+        if self.place_field_peaks is not None and self.place_field_peaks.shape != (n_cells,):
+            raise ValueError(
+                f"place_field_peaks must have shape ({n_cells},); "
+                f"got {self.place_field_peaks.shape}"
+            )
+
+        likelihood_inputs = (self.spike_counts, self.place_fields, self.position_bins)
+        if self.place_fields is not None or self.position_bins is not None:
+            if any(value is None for value in likelihood_inputs):
+                raise ValueError(
+                    "spike_counts, place_fields, and position_bins must be provided together"
+                )
+            assert self.place_fields is not None
+            assert self.position_bins is not None
+            if self.place_fields.shape != (n_cells, self.position_bins.size):
+                raise ValueError(
+                    "place_fields must have shape "
+                    f"({n_cells}, {self.position_bins.size}); got {self.place_fields.shape}"
+                )
+
+        # The linearized-track overlay needs the graph; edge_order without it
+        # would be silently ignored.
+        if self.edge_order is not None and self.track_graph is None:
+            raise ValueError("edge_order requires track_graph; got track_graph=None")
 
 
 def plot_raster(
@@ -105,7 +237,7 @@ def plot_raster(
     ax.set_xlabel("Time")
 
 
-def plot_per_cell_diagnostic_scatter(
+def plot_spike_event_diagnostic_scatter(
     time: NDArray[np.float64] | pd.Index,
     diagnostics: SpikeEventDiagnostics,
     time_slice_ind: slice | None = None,
@@ -120,10 +252,11 @@ def plot_per_cell_diagnostic_scatter(
     running_average_window: float = 0.050,
     running_average_color: str | None = None,
 ) -> Axes:
-    """Plot per-cell diagnostic metric as scatter plot over time.
+    """Plot a diagnostic value for each spike event over time.
 
-    Each point represents one cell at one time point. Values are scattered
-    to show the distribution of diagnostics across cells.
+    Each point is one spike event (one cell firing at one time bin); points
+    are scattered to show the distribution of the diagnostic across the spike
+    events at each time.
 
     For predictive_pvalue, values are transformed to -log(p) (natural log) scale to match Figure 3
     visualization where higher values indicate worse fit.
@@ -133,7 +266,7 @@ def plot_per_cell_diagnostic_scatter(
     time : np.ndarray or pd.Index
         Time values (bin centers/starts).
     diagnostics : SpikeEventDiagnostics
-        Per-cell diagnostics dataclass. The dense ``hpd_overlap``,
+        Per-spike-event diagnostics dataclass. The dense ``hpd_overlap``,
         ``kl_divergence``, and ``predictive_pvalue`` attributes (each shape
         (n_time, n_cells)) supply the scattered values.
     time_slice_ind : slice, optional
@@ -183,7 +316,7 @@ def plot_per_cell_diagnostic_scatter(
     >>> diagnostics = compute_spike_event_diagnostics(
     ...     predictive, spike_counts, place_fields
     ... )
-    >>> ax = plot_per_cell_diagnostic_scatter(np.arange(n_time), diagnostics)
+    >>> ax = plot_spike_event_diagnostic_scatter(np.arange(n_time), diagnostics)
     """
     if ax is None:
         ax = plt.gca()
@@ -481,7 +614,7 @@ def _draw_track_graph_edges(
         )
 
 
-def plot_model_comparison_with_posterior(
+def plot_exploratory_model_comparison(
     time: NDArray[np.float64] | pd.Index,
     position: NDArray[np.float64],
     results_a: xr.Dataset,
@@ -503,7 +636,7 @@ def plot_model_comparison_with_posterior(
     running_average_window: float = 0.050,
     fig: Figure | None = None,
 ) -> tuple[Figure, NDArray[np.object_]]:
-    """Create model comparison with predictive, likelihood, raster, and diagnostics.
+    """Create an exploratory two-model comparison for window selection.
 
     Creates a 6x2 grid with:
     - Row 0: Predictive posterior p(x_t | y_{1:t-1}) with animal position overlay
@@ -525,10 +658,10 @@ def plot_model_comparison_with_posterior(
     results_b : xr.Dataset
         Decoding results for model B with same outputs.
     diagnostics_a : SpikeEventDiagnostics
-        Per-cell diagnostics for model A, supplying the dense ``hpd_overlap``,
+        Per-spike-event diagnostics for model A, supplying the dense ``hpd_overlap``,
         ``kl_divergence``, and ``predictive_pvalue`` matrices.
     diagnostics_b : SpikeEventDiagnostics
-        Per-cell diagnostics for model B with the same attributes.
+        Per-spike-event diagnostics for model B with the same attributes.
     spike_times : list[np.ndarray], optional
         List of spike time arrays, one per neuron. Required for raster plot.
     spike_counts : np.ndarray, shape (n_time, n_cells), optional
@@ -567,7 +700,7 @@ def plot_model_comparison_with_posterior(
     Examples
     --------
     >>> # Requires xr.Dataset from non_local_detector
-    >>> # fig, axes = plot_model_comparison_with_posterior(
+    >>> # fig, axes = plot_exploratory_model_comparison(
     >>> #     time, position, results_a, results_b, diagnostics_a, diagnostics_b,
     >>> #     spike_times=spike_times, spike_counts=spike_counts, place_field_peaks=pf_peaks
     >>> # )
@@ -711,7 +844,7 @@ def plot_model_comparison_with_posterior(
         threshold = thresholds.get(spec.name) if thresholds else None
 
         # Model A (left column)
-        plot_per_cell_diagnostic_scatter(
+        plot_spike_event_diagnostic_scatter(
             time,
             diagnostics_a,
             time_slice_ind=time_slice_ind,
@@ -727,7 +860,7 @@ def plot_model_comparison_with_posterior(
         )
 
         # Model B (right column)
-        plot_per_cell_diagnostic_scatter(
+        plot_spike_event_diagnostic_scatter(
             time,
             diagnostics_b,
             time_slice_ind=time_slice_ind,
@@ -761,22 +894,18 @@ def plot_model_comparison_with_posterior(
     return fig, axes
 
 
+# Compatibility name for existing notebooks. Canonical Figure 4 uses
+# ``plot_single_model_diagnostics`` via ``figure04_layout``; this two-column
+# comparison exists only for exploratory window-selection scripts.
+plot_model_comparison_with_posterior = plot_exploratory_model_comparison
+
+
 def plot_single_model_diagnostics(
-    time: NDArray[np.float64] | pd.Index,
-    position: NDArray[np.float64],
-    results: xr.Dataset,
-    diagnostics: SpikeEventDiagnostics,
-    spike_times: list[NDArray[np.float64]] | None = None,
-    spike_counts: NDArray[np.int64] | None = None,
-    place_field_peaks: NDArray[np.float64] | None = None,
-    place_fields: NDArray[np.float64] | None = None,
-    position_bins: NDArray[np.float64] | None = None,
+    data: ModelDiagnosticPanelData,
+    *,
     time_slice_ind: slice | None = None,
     model_name: str = "Continuous",
-    thresholds: dict[str, float] | None = None,
-    track_graph: nx.Graph | None = None,
-    edge_order: Sequence[tuple[Hashable, Hashable]] | None = None,
-    edge_spacing: float | list[float] = 0.0,
+    thresholds: Mapping[str, float] | None = None,
     show_running_average: bool = False,
     running_average_window: float = 0.050,
     fig: Figure | None = None,
@@ -793,40 +922,17 @@ def plot_single_model_diagnostics(
 
     Parameters
     ----------
-    time : np.ndarray or pd.Index
-        Time values.
-    position : np.ndarray, shape (n_time,)
-        Animal position values.
-    results : xr.Dataset
-        Decoding results with predictive_posterior and log_likelihood.
-    diagnostics : SpikeEventDiagnostics
-        Per-cell diagnostics supplying the dense ``hpd_overlap``,
-        ``kl_divergence``, and ``predictive_pvalue`` matrices.
-    spike_times : list[np.ndarray], optional
-        List of spike time arrays, one per neuron.
-    spike_counts : np.ndarray, shape (n_time, n_cells), optional
-        Spike count matrix.
-    place_field_peaks : np.ndarray, shape (n_cells,), optional
-        Place field peak positions for raster sorting.
-    place_fields : np.ndarray, shape (n_cells, n_bins), optional
-        Per-cell place fields over the interior position grid. When supplied
-        with ``spike_counts`` and ``position_bins``, the likelihood row shows
-        the mean normalized per-spike likelihood (as in the simulation
-        figure) instead of the decoder's combined likelihood.
-    position_bins : np.ndarray, shape (n_bins,), optional
-        Interior position-bin centers matching the columns of ``place_fields``.
+    data : ModelDiagnosticPanelData
+        Named model outputs, diagnostics, observations, and track geometry.
+        When its ``spike_counts``, ``place_fields``, and ``position_bins`` are
+        present, the likelihood row shows the mean normalized per-spike
+        likelihood used by the diagnostic calculation.
     time_slice_ind : slice, optional
         Time slice to plot. If None, plots all time points.
     model_name : str, default "Continuous"
         Model name for title.
     thresholds : dict[str, float], optional
         Thresholds for horizontal lines on diagnostic plots.
-    track_graph : nx.Graph, optional
-        Track graph for 1D linearized track visualization.
-    edge_order : list[tuple[int, int]], optional
-        Order of edges for linearization.
-    edge_spacing : float or list[float], default 0.0
-        Spacing between edges.
     show_running_average : bool, default False
         If True, overlay a running average on diagnostic scatters.
     running_average_window : float, default 0.050
@@ -841,6 +947,16 @@ def plot_single_model_diagnostics(
     axes : np.ndarray[plt.Axes]
         Array of axes objects with shape (6,).
     """
+    time = data.time
+    position = data.position
+    results = data.results
+    diagnostics = data.diagnostics
+    spike_times = data.spike_times
+    spike_counts = data.spike_counts
+    place_field_peaks = data.place_field_peaks
+    place_fields = data.place_fields
+    position_bins = data.position_bins
+
     if fig is None:
         fig = plt.figure(figsize=(7.0, 8.0), constrained_layout=True)
     gs = fig.add_gridspec(6, 1, height_ratios=[2, 2, 1.5, 1, 1, 1])
@@ -914,12 +1030,12 @@ def plot_single_model_diagnostics(
     ax_lik.tick_params(labelsize=8, labelbottom=False)
 
     # 1D track graph on right edge of predictive and likelihood rows
-    if track_graph is not None:
+    if data.track_graph is not None:
         _draw_track_graph_edges(
             [axes[0], axes[1]],
-            track_graph,
-            edge_order,
-            edge_spacing,
+            data.track_graph,
+            data.edge_order,
+            data.edge_spacing,
             time,
             time_slice_ind,
         )
@@ -938,7 +1054,7 @@ def plot_single_model_diagnostics(
     for i, spec in enumerate(METRIC_SPECS):
         row = i + 3
         threshold = thresholds.get(spec.name) if thresholds else None
-        plot_per_cell_diagnostic_scatter(
+        plot_spike_event_diagnostic_scatter(
             time,
             diagnostics,
             time_slice_ind=time_slice_ind,
@@ -998,7 +1114,7 @@ def plot_per_spike_metric_hexbin_row(
     Parameters
     ----------
     diagnostics_a, diagnostics_b : SpikeEventDiagnostics
-        Per-cell diagnostics whose per-spike ``event_hpd_overlap``,
+        Per-spike-event diagnostics whose ``event_hpd_overlap``,
         ``event_kl_divergence``, ``event_predictive_pvalue`` attributes (each
         shape ``(n_spikes,)``) supply the hexbin values.
     axes : Sequence[matplotlib.axes.Axes]
