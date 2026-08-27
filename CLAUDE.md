@@ -114,16 +114,16 @@ The repository follows a clean separation between **reusable code** (in `src/`) 
 
 - `normalize(x, axis=-1, eps=1e-10)`: Safe array normalization
 - `reflect_into_interval(x, xmin, xmax)`: Reflecting boundary conditions
-- `gaussian_transition_matrix(n_bins, sigma)`: Random walk transition matrix
+- `gaussian_transition_matrix(position_bins, step_std)`: Random walk transition matrix
 - `safe_log(x, eps=1e-10)`: Numerically stable logarithm
-- `placefield_rates(position_bins, centers, scale)`: Gaussian place fields
-- `simulate_walk(n_time, transition_matrix, x0, rng)`: Random walk simulation
-- `simulate_spikes_position_tuned(position, placefield_rates, rng)`: Position-tuned Poisson spikes
+- `place_field_rates(position_bins, centers, scale)`: Gaussian place fields
+- `simulate_walk(n_time_steps, step_std, initial_position, position_min, position_max, rng)`: Random walk simulation
+- `simulate_spikes_position_tuned(position, place_field_centers, place_field_std, place_field_rate_scale, rng)`: Position-tuned Poisson spikes
 
 **3. diagnostics.py** - Shared Goodness-of-Fit Diagnostics (leaf layer)
 
 - `SpikeEventDiagnostics`: Dataclass returned by the per-spike-event diagnostic computation
-- `DecodingDiagnostics`: Dataclass returned by `decode_and_diagnostics`
+- `DecodingDiagnostics`: Dataclass returned by `decode_with_diagnostics`
 - `DiagnosticThresholds`: Dataclass for diagnostic thresholds
 - `compute_spike_event_diagnostics_from_rates(...)`: Per-spike HPD/KL/rank diagnostics
 - `compute_normalized_spike_likelihood(firing_rates)`: Normalized single-spike Poisson likelihood
@@ -137,18 +137,19 @@ The repository follows a clean separation between **reusable code** (in `src/`) 
 
 **5. figure03_protocol.py / figure03_simulation.py / figure03_summary.py / figure03_plotting.py** - Figure-3 Family
 
-- `DecodeParams`: Dataclass for the figure-3 decoding simulation (timeline, cells, remapping)
-- `get_remapped_pf_centers(params)`: Compute remapped place field centers
-- `summary_phase_windows` / `compute_phase_flag_fractions`: Figure-3b per-phase flag summary
+- `Figure3Config`: Frozen dataclass for the figure-3 simulation protocol (timeline, cells, remapping)
+- `remap_place_field_centers(...)`: Compute remapped place field centers
+- `build_summary_conditions(config)` / `compute_condition_flag_percentages(...)`: Figure-3b per-phase flag summary
+- `compose_figure03(...)`: Assemble the Figure-3 time-series + summary figure
 
 **6. plotting.py** - Reusable Plotting Functions
 
 - `compute_hpd_region(distribution, coverage)`: Highest posterior density region mask
-- `add_phase_boundaries(ax, params)`: Add vertical lines at phase transitions
 - `extract_contiguous_regions(mask)`: Find contiguous True regions in boolean array
 - `create_distribution_comparison_panel(...)`: Create comparison panels for Figure 1
 - `plot_likelihood_columns(...)`: Shared likelihood-column rendering primitive
-- `plot_combined_diagnostics(diagnostics, x_true, spikes, params)`: Comprehensive visualization
+
+(`add_phase_boundaries` and the Figure-3 composition now live in `figure03_plotting.py`.)
 
 **7. schematic.py** - Graphical Model Diagrams
 
@@ -203,8 +204,8 @@ def create_figure():
     # Run analysis
     results = decode_with_diagnostics(spike_counts, ...)
 
-    # Create plots
-    fig, axes = plot_combined_diagnostics(results, x_true, spikes, params)
+    # Create plots (Figure-3 family; other figures have their own compose_* entry point)
+    fig = compose_figure03(true_position, spike_counts, results, ...)
 
     # Save to manuscript/figures/main/
     save_figure("manuscript/figures/main/figureX")
@@ -333,7 +334,7 @@ uv run jupyter lab
 - Arrays should be `(n_time, ...)` with time as first dimension
 - Use vectorized operations, avoid Python loops — with the legitimate exception of
   inherently-sequential recursions (e.g. the Bayesian filter's `for t` loop in
-  `analysis.decode_and_diagnostics`, where step `t` depends on step `t-1`); those
+  `decoding.decode_with_diagnostics`, where step `t` depends on step `t-1`); those
   are not a defect to be vectorized away
 - Handle NaN values properly (mark invalid spatial bins)
 - Document expected array shapes in docstrings
@@ -528,7 +529,7 @@ The repository uses a modular approach where reusable code lives in `src/` and f
 
 1. **Extract reusable components** to appropriate modules:
    - Simulation logic → `simulation.py`
-   - Analysis logic → `analysis.py`
+   - Diagnostics → `diagnostics.py`; decoder → `decoding.py`
    - Plotting functions → `plotting.py`
    - Write tests for each component
 

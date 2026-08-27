@@ -454,11 +454,12 @@ uv run ruff format . && uv run ruff check . && uv run mypy src/ && uv run pytest
 
 - **`style.py`**: Shared styling (WONG palette, figure defaults, save functions)
 - **`simulation.py`**: Simulation utilities (random walks, spikes, place fields)
-- **`analysis.py`**: Analysis logic (decoder, diagnostics, thresholds)
+- **`diagnostics.py`**: Goodness-of-fit diagnostics (HPD overlap, rank-based predictive p-value, KL); leaf layer
+- **`decoding.py`**: General Bayesian decoder (`decode_with_diagnostics`)
 - **`plotting.py`**: Reusable plotting functions (HPD regions, diagnostic plots)
 - **`schematic.py`**: Graphical-model and Bayesian-equation diagrams (Figure 1)
 - **`figure02_panels.py`**: Per-panel renderers for Figure 2
-- **`figure03_demo.py`**: Figure-3 simulation + decoder pipeline
+- **`figure03_{protocol,simulation,summary,plotting}.py`**: Figure-3 protocol, simulation, per-phase summary, and plotting
 - **`real_data_analysis.py`**: Figure-4 real-data decoder + diagnostics
 - **`real_data_plotting.py`**: Figure-4 plotting helpers
 - **`load_local_data.py`**: Real data loading utilities

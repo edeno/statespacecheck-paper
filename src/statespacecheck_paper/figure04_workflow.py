@@ -80,14 +80,16 @@ class Figure4DecodeResults:
     diagnostic_position_bins: NDArray[np.float64]
 
     def __post_init__(self) -> None:
-        spike_counts = np.asarray(self.spike_counts, dtype=np.int64)
-        place_field_peaks = np.asarray(self.place_field_peaks, dtype=np.float64)
-        diagnostic_place_fields = np.asarray(self.diagnostic_place_fields, dtype=np.float64)
-        diagnostic_position_bins = np.asarray(self.diagnostic_position_bins, dtype=np.float64)
+        # Unconditional copies (``np.array``, not ``np.asarray``): otherwise the
+        # subsequent ``setflags(write=False)`` would freeze a caller-owned array.
+        spike_counts = np.array(self.spike_counts, dtype=np.int64)
+        place_field_peaks = np.array(self.place_field_peaks, dtype=np.float64)
+        diagnostic_place_fields = np.array(self.diagnostic_place_fields, dtype=np.float64)
+        diagnostic_position_bins = np.array(self.diagnostic_position_bins, dtype=np.float64)
 
         if spike_counts.ndim != 2:
             raise ValueError(f"spike_counts must be (n_time, n_cells); got {spike_counts.shape}")
-        n_cells = spike_counts.shape[1]
+        n_time, n_cells = spike_counts.shape
         if place_field_peaks.shape != (n_cells,):
             raise ValueError(
                 f"place_field_peaks must be ({n_cells},); got {place_field_peaks.shape}"
@@ -103,6 +105,38 @@ class Figure4DecodeResults:
                 f"diagnostic_position_bins must be ({n_bins},); "
                 f"got {diagnostic_position_bins.shape}"
             )
+
+        # Tie the decode timelines together: both decoder result datasets and
+        # both per-spike diagnostics must live on the same ``n_time`` grid as
+        # ``spike_counts``, so an inconsistent bundle is rejected at construction
+        # rather than silently misaligning Figure 4.
+        for name, dataset in (
+            ("continuous_results", self.continuous_results),
+            ("continuous_fragmented_results", self.continuous_fragmented_results),
+        ):
+            dataset_n_time = dataset.sizes.get("time")
+            if dataset_n_time is not None and dataset_n_time != n_time:
+                raise ValueError(
+                    f"{name} has {dataset_n_time} time samples but spike_counts has "
+                    f"{n_time}; the decode timelines must match."
+                )
+        for name, diagnostics in (
+            ("continuous_diagnostics", self.continuous_diagnostics),
+            ("continuous_fragmented_diagnostics", self.continuous_fragmented_diagnostics),
+        ):
+            time_ind = diagnostics.event_time_ind
+            cell_ind = diagnostics.event_cell_ind
+            if time_ind.size and (time_ind.min() < 0 or time_ind.max() >= n_time):
+                raise ValueError(
+                    f"{name}.event_time_ind falls outside [0, {n_time}); the "
+                    "diagnostics do not match the spike_counts timeline."
+                )
+            if cell_ind.size and (cell_ind.min() < 0 or cell_ind.max() >= n_cells):
+                raise ValueError(
+                    f"{name}.event_cell_ind falls outside [0, {n_cells}); the "
+                    "diagnostics do not match the spike_counts cell count."
+                )
+
         for name, arr in (
             ("spike_counts", spike_counts),
             ("place_field_peaks", place_field_peaks),
@@ -168,8 +202,10 @@ class Figure4RenderData:
     The position/track data is always loaded fresh (:class:`NeuralRecordingData`,
     cheap, never cached); the decode results are the expensive cacheable content
     (:class:`Figure4DecodeResults`). The three per-time arrays derived from the
-    recording are copied and marked read-only at construction and must share
-    ``n_time``.
+    recording are copied and marked read-only at construction, must share a
+    single 1-D ``n_time``, and that ``n_time`` must match the decode timeline
+    (``decode_results.spike_counts.shape[0]``) so a cached decode cannot pair
+    with a differently sized fresh recording.
     """
 
     recording: NeuralRecordingData
@@ -179,14 +215,27 @@ class Figure4RenderData:
     decode_results: Figure4DecodeResults
 
     def __post_init__(self) -> None:
-        time = np.asarray(self.time, dtype=np.float64)
-        head_position = np.asarray(self.head_position, dtype=np.float64)
-        linear_position = np.asarray(self.linear_position, dtype=np.float64)
+        # Unconditional copies (see Figure4DecodeResults) so freezing cannot
+        # reach back into a caller-owned array.
+        time = np.array(self.time, dtype=np.float64)
+        head_position = np.array(self.head_position, dtype=np.float64)
+        linear_position = np.array(self.linear_position, dtype=np.float64)
+        if time.ndim != 1:
+            raise ValueError(f"time must be 1-D (n_time,); got shape {time.shape}")
         n_time = time.shape[0]
         if head_position.shape != (n_time, 2):
             raise ValueError(f"head_position must be ({n_time}, 2); got {head_position.shape}")
         if linear_position.shape != (n_time,):
             raise ValueError(f"linear_position must be ({n_time},); got {linear_position.shape}")
+        # The decode results must have been produced on this same recording
+        # timeline; a cached decode of a different-length session would otherwise
+        # silently pair with the freshly loaded position data.
+        decode_n_time = self.decode_results.spike_counts.shape[0]
+        if decode_n_time != n_time:
+            raise ValueError(
+                f"decode_results timeline ({decode_n_time}) does not match the "
+                f"recording timeline ({n_time}); they must be the same session."
+            )
         for name, arr in (
             ("time", time),
             ("head_position", head_position),

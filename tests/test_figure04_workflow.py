@@ -16,6 +16,7 @@ from statespacecheck_paper.diagnostics import SpikeEventDiagnostics
 from statespacecheck_paper.figure04_cache import _FIGURE04_CACHE_PAYLOAD_KEYS, Figure4Paths
 from statespacecheck_paper.figure04_workflow import (
     Figure4DecodeResults,
+    Figure4RenderData,
     compute_mean_spike_event_diagnostic,
     prepare_figure04_render_data,
 )
@@ -29,6 +30,23 @@ def _diagnostics(event_hpd_overlap: np.ndarray) -> SpikeEventDiagnostics:
         event_time_ind=np.zeros(n_spikes, dtype=np.intp),
         event_cell_ind=np.zeros(n_spikes, dtype=np.intp),
         event_hpd_overlap=event_hpd_overlap,
+        event_kl_divergence=np.zeros(n_spikes),
+        event_predictive_pvalue=np.zeros(n_spikes),
+        hpd_overlap=None,
+        kl_divergence=None,
+        predictive_pvalue=None,
+        per_spike_likelihood=None,
+        event_time=None,
+    )
+
+
+def _diagnostics_at(time_ind: list[int], cell_ind: list[int]) -> SpikeEventDiagnostics:
+    """Diagnostics whose per-spike event indices are placed explicitly."""
+    n_spikes = len(time_ind)
+    return SpikeEventDiagnostics(
+        event_time_ind=np.asarray(time_ind, dtype=np.intp),
+        event_cell_ind=np.asarray(cell_ind, dtype=np.intp),
+        event_hpd_overlap=np.full(n_spikes, 0.5),
         event_kl_divergence=np.zeros(n_spikes),
         event_predictive_pvalue=np.zeros(n_spikes),
         hpd_overlap=None,
@@ -134,6 +152,85 @@ class TestFigure4DecodeResults:
         decode = _synthetic_decode_results()
         with pytest.raises(ValueError, match="read-only|write"):
             decode.spike_counts[0, 0] = 1
+
+    def test_copies_input_arrays_and_leaves_caller_writable(self) -> None:
+        # Freezing must not reach back into a caller-owned array, and the stored
+        # copy must be isolated from later mutation of that array.
+        spike_counts = np.zeros((8, 2), dtype=np.int64)
+        decode = Figure4DecodeResults(
+            continuous_results=xr.Dataset({"filter": ("time", np.zeros(8))}),
+            continuous_fragmented_results=xr.Dataset({"filter": ("time", np.zeros(8))}),
+            continuous_diagnostics=_diagnostics(np.array([0.5])),
+            continuous_fragmented_diagnostics=_diagnostics(np.array([0.5])),
+            spike_counts=spike_counts,
+            place_field_peaks=np.zeros(2),
+            diagnostic_place_fields=np.zeros((2, 4)),
+            diagnostic_position_bins=np.arange(4.0),
+        )
+        assert spike_counts.flags.writeable  # caller's array untouched
+        spike_counts[0, 0] = 7
+        assert decode.spike_counts[0, 0] == 0  # stored copy isolated
+        assert not decode.spike_counts.flags.writeable
+
+    def test_rejects_dataset_timeline_mismatch(self) -> None:
+        with pytest.raises(ValueError, match="decode timelines must match"):
+            Figure4DecodeResults(
+                continuous_results=xr.Dataset({"filter": ("time", np.zeros(3))}),
+                continuous_fragmented_results=xr.Dataset({"filter": ("time", np.zeros(8))}),
+                continuous_diagnostics=_diagnostics(np.array([0.5])),
+                continuous_fragmented_diagnostics=_diagnostics(np.array([0.5])),
+                spike_counts=np.zeros((8, 2), dtype=np.int64),  # 8 != dataset's 3
+                place_field_peaks=np.zeros(2),
+                diagnostic_place_fields=np.zeros((2, 4)),
+                diagnostic_position_bins=np.arange(4.0),
+            )
+
+    def test_rejects_diagnostic_event_index_out_of_range(self) -> None:
+        with pytest.raises(ValueError, match="event_time_ind falls outside"):
+            Figure4DecodeResults(
+                continuous_results=xr.Dataset({"filter": ("time", np.zeros(8))}),
+                continuous_fragmented_results=xr.Dataset({"filter": ("time", np.zeros(8))}),
+                continuous_diagnostics=_diagnostics_at([99], [0]),  # 99 >= n_time 8
+                continuous_fragmented_diagnostics=_diagnostics(np.array([0.5])),
+                spike_counts=np.zeros((8, 2), dtype=np.int64),
+                place_field_peaks=np.zeros(2),
+                diagnostic_place_fields=np.zeros((2, 4)),
+                diagnostic_position_bins=np.arange(4.0),
+            )
+
+
+class TestFigure4RenderData:
+    def _render_data(
+        self,
+        *,
+        time: np.ndarray,
+        decode_results: Figure4DecodeResults | None = None,
+    ) -> Figure4RenderData:
+        n_time = time.shape[0]
+        return Figure4RenderData(
+            recording=_synthetic_recording(),
+            time=time,
+            head_position=np.zeros((n_time, 2)),
+            linear_position=np.zeros(n_time),
+            decode_results=decode_results or _synthetic_decode_results(),
+        )
+
+    def test_rejects_non_1d_time(self) -> None:
+        with pytest.raises(ValueError, match="time must be 1-D"):
+            self._render_data(time=np.zeros((8, 1)))
+
+    def test_rejects_decode_timeline_mismatch(self) -> None:
+        # time has 3 samples; the synthetic decode results have 8.
+        with pytest.raises(ValueError, match="does not match the recording timeline"):
+            self._render_data(time=np.zeros(3))
+
+    def test_copies_derived_arrays_and_leaves_caller_writable(self) -> None:
+        time = np.linspace(0.0, 1.0, 8)
+        render = self._render_data(time=time)
+        assert time.flags.writeable  # caller's array untouched
+        assert not render.time.flags.writeable
+        time[0] = 99.0
+        assert render.time[0] == 0.0  # stored copy isolated
 
 
 class TestPrepareRenderData:

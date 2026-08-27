@@ -39,6 +39,40 @@ _FIGURE04_CACHE_PAYLOAD_KEYS = (
     "diagnostic_position_bins",
 )
 
+# The pre-exported input files, keyed on the same ``{epoch}`` prefix as the
+# loader (see ``load_local_data.load_neural_recording_from_files``). Their
+# content hashes go into the fingerprint so that replacing an export under the
+# same epoch invalidates the cache instead of silently reusing a decode of the
+# old data.
+_EXPORT_FILE_SUFFIXES = (
+    "_position_info.pkl",
+    "_HPC_spike_times.pkl",
+    "_track_graph.pkl",
+    "_linear_edge_order.pkl",
+    "_linear_edge_spacing.pkl",
+)
+
+
+def _export_file_checksums(paths: Figure4Paths) -> dict[str, str | None]:
+    """sha256 of each pre-exported input file (``None`` when a file is absent).
+
+    A missing file hashes to ``None`` rather than raising, so the fingerprint
+    stays well-defined for synthetic/test paths that have no real exports; a
+    real run hashes the actual bytes so any data-content change invalidates.
+    """
+    checksums: dict[str, str | None] = {}
+    for suffix in _EXPORT_FILE_SUFFIXES:
+        file_path = paths.data_path / f"{paths.animal_date_epoch}{suffix}"
+        if not file_path.exists():
+            checksums[suffix] = None
+            continue
+        digest = hashlib.sha256()
+        with open(file_path, "rb") as handle:
+            for chunk in iter(lambda: handle.read(1 << 20), b""):
+                digest.update(chunk)
+        checksums[suffix] = digest.hexdigest()
+    return checksums
+
 
 @dataclasses.dataclass(frozen=True)
 class Figure4Paths:
@@ -75,10 +109,14 @@ def compute_figure04_cache_fingerprint(config: Figure4Config, paths: Figure4Path
     """Provenance fingerprint gating the Figure-4 cache.
 
     Hashes the schema version, the manuscript decoder parameters
-    (:class:`Figure4Config`), the input-data identifier, and the *installed*
-    ``non_local_detector`` revision. Any change forces a recompute; the cached
-    bundle stores this fingerprint so a stale cache cannot silently produce a
-    figure that no longer matches the current method or dependency.
+    (:class:`Figure4Config`), the input-data identifier *and the content hashes
+    of the pre-exported input files*, and the *installed* ``non_local_detector``
+    revision. Any change forces a recompute; the cached bundle stores this
+    fingerprint so a stale cache cannot silently produce a figure that no longer
+    matches the current method, input data, or dependency. Hashing the file
+    contents (not just ``animal_date_epoch``) is what makes replacing an export
+    under the same epoch invalidate the cache rather than reuse a decode of the
+    old bytes.
 
     Bumping :data:`FIGURE04_CACHE_SCHEMA_VERSION` remains the manual override ---
     it is part of the hashed payload, so a bump invalidates every existing cache.
@@ -87,6 +125,7 @@ def compute_figure04_cache_fingerprint(config: Figure4Config, paths: Figure4Path
         "schema_version": FIGURE04_CACHE_SCHEMA_VERSION,
         "config": dataclasses.asdict(config),
         "animal_date_epoch": paths.animal_date_epoch,
+        "export_checksums": _export_file_checksums(paths),
         "non_local_detector_version": _installed_non_local_detector_version(),
     }
     blob = json.dumps(payload, sort_keys=True, default=str).encode()

@@ -542,7 +542,7 @@ def decode_with_diagnostics(
     >>> n_time, n_cells, n_bins = 10, 3, 21
     >>> spike_counts = np.random.poisson(1.0, size=(n_time, n_cells))
     >>> position_bins = np.linspace(0, 100, n_bins)
-    >>> transition_matrix = gaussian_transition_matrix(position_bins, sig=0.5)
+    >>> transition_matrix = gaussian_transition_matrix(position_bins, step_std=0.5)
     >>> place_field_centers = np.array([25.0, 50.0, 75.0])
     >>> place_field_std = 5.0
     >>> place_field_rate_scale = 0.1

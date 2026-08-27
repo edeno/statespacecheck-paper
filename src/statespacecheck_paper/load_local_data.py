@@ -78,10 +78,14 @@ class NeuralRecordingData:
         if not np.all(np.diff(index) > 0):
             raise ValueError("position_info index must be strictly increasing (and unique)")
 
-        # Copy each spike array to float64, validate, and mark read-only.
+        # Copy each spike array to float64, validate, and mark read-only. The
+        # copy is unconditional (``np.array``, not ``np.asarray``): asarray would
+        # alias a caller array that is already float64, and the subsequent
+        # ``setflags(write=False)`` would then silently freeze the caller's own
+        # array (and leave our "immutable" copy re-enable-able through it).
         copied: list[NDArray[np.float64]] = []
         for i, raw in enumerate(self.spike_times):
-            arr = np.asarray(raw, dtype=np.float64)
+            arr = np.array(raw, dtype=np.float64)
             if arr.ndim != 1:
                 raise ValueError(f"spike_times[{i}] must be 1-D; got shape {arr.shape}")
             if not np.all(np.isfinite(arr)):

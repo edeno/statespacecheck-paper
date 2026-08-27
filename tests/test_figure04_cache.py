@@ -129,3 +129,21 @@ def test_fingerprint_changes_with_config_and_dependency(
 
     monkeypatch.setattr(figure04_cache, "_installed_non_local_detector_version", lambda: "2.0.0")
     assert compute_figure04_cache_fingerprint(config, paths) != fp1
+
+
+def test_fingerprint_changes_when_export_file_content_changes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Replacing an export under the same epoch must invalidate the cache: the
+    # fingerprint hashes the file contents, not just ``animal_date_epoch``.
+    paths = Figure4Paths(data_path=tmp_path, animal_date_epoch="epoch_x")
+    config = Figure4Config()
+    monkeypatch.setattr(figure04_cache, "_installed_non_local_detector_version", lambda: "1.0.0")
+
+    export = tmp_path / "epoch_x_position_info.pkl"
+    export.write_bytes(b"original")
+    fp_original = compute_figure04_cache_fingerprint(config, paths)
+    assert compute_figure04_cache_fingerprint(config, paths) == fp_original  # deterministic
+
+    export.write_bytes(b"REPLACED with different data")
+    assert compute_figure04_cache_fingerprint(config, paths) != fp_original

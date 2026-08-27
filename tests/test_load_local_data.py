@@ -87,3 +87,14 @@ def test_spike_arrays_are_read_only() -> None:
     recording = _recording()
     with pytest.raises(ValueError, match="read-only|write"):
         recording.spike_times[0][0] = 99.0
+
+
+def test_spike_arrays_are_copied_and_leave_caller_writable() -> None:
+    # A float64 input array must not be frozen in place, and the stored copy
+    # must be isolated from later mutation of the caller's array.
+    caller_array = np.array([0.001, 0.005], dtype=np.float64)
+    recording = _recording(spike_times=(caller_array,))
+    assert caller_array.flags.writeable  # caller's array untouched by freezing
+    caller_array[0] = 99.0
+    assert recording.spike_times[0][0] == 0.001  # stored copy isolated
+    assert not recording.spike_times[0].flags.writeable
