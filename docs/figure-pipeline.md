@@ -173,18 +173,26 @@ median_flag_percentages=…)` returns a `matplotlib` `Figure` → `save_figure` 
 - **Reproduction:** `uv run python scripts/generate_figure04.py`. Add
   `--force-recompute` to re-fit and re-decode both models instead of loading the
   cached decoder outputs (this overwrites the cache; a config / data /
-  `non_local_detector` change invalidates the cache automatically).
+  `non_local_detector` change invalidates the cache automatically). The cache
+  fingerprint (`figure04_cache.compute_figure04_cache_fingerprint`) hashes the
+  schema version, the full `Figure4Config`, the installed `non_local_detector`
+  version, and the **content hashes of all five input exports** — so replacing an
+  export under the same `animal_date_epoch` invalidates the cache too.
 - **Manuscript:** the real hippocampal-recording panels comparing the Continuous
   and Continuous-Fragmented decoders (and the whole-session hexbin summary).
 - **Entry point:** `scripts/generate_figure04.py::main` (the CLI), which calls
   `figure04_generation.generate_figure04(*, use_cache)`.
 - **Configuration:** `Figure4Config` (in `figure04_decoder.py`) plus the fixed
   `FIGURE4_DIAGNOSTIC_THRESHOLDS = {"hpd_overlap": 0.05, "predictive_pvalue": 0.05}`
-  in `figure04_generation.py`. **Known limitation:** `Figure4Config` currently
-  guards provenance and the default drift, but does not yet drive every decoder
-  constructor argument; making it fully executable (`Figure4DecoderConfig` +
-  `Figure4Provenance`) is deferred follow-up work — see the `Figure4Config`
-  docstring.
+  in `figure04_generation.py`. `Figure4Config` is split into an executable
+  `Figure4DecoderConfig` — `position_std`, `block_size`, `position_bin_size_cm`,
+  `sampling_frequency_hz`, threaded into environment/model construction so they
+  genuinely drive the decode — and a `Figure4Provenance` holding the
+  `non_local_detector`-default decode-shaping values (`movement_var`, the ContFrag
+  transition/initial-condition/concentration/regularization, and the dependency
+  version). The provenance values are recorded and drift-guard pinned but not
+  injected, because faithfully injecting them would rebuild the nested transition
+  grid and hit the concentration-default split — see the `Figure4Config` docstring.
 - **Computation (reading order):**
   `figure04_generation` (recipe) → `figure04_workflow.prepare_figure04_render_data`
   (loads the recording, loads a fingerprint-matching cache or fits/decodes via

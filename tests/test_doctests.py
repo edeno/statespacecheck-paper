@@ -30,6 +30,8 @@ _DOCTEST_MODULES = [
     "statespacecheck_paper.figure03_simulation",
     "statespacecheck_paper.figure03_summary",
     "statespacecheck_paper.figure03_plotting",
+    "statespacecheck_paper.figure04_diagnostics",
+    "statespacecheck_paper.figure04_panels",
 ]
 
 

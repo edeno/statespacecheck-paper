@@ -12,29 +12,29 @@ import pandas as pd  # noqa: E402
 import xarray as xr  # noqa: E402
 
 from statespacecheck_paper.figure04_plot_primitives import (  # noqa: E402
-    _decoder_likelihood_to_columns,
-    _halfpixel_extent,
-    _neglog,
+    compute_half_pixel_extent,
+    decoder_likelihood_to_columns,
+    negative_log_pvalue,
 )
 
 
 class TestNeglog:
     def test_matches_maximum_floor_elementwise(self) -> None:
-        """``_neglog`` equals ``-log(max(x, eps))`` on every element, including
+        """``negative_log_pvalue`` equals ``-log(max(x, eps))`` on every element, including
         values at or below the floor where the ``eps`` clamp dominates."""
         x = np.array([1.0, 0.5, 0.1, 1e-10, 1e-12, 0.0])
         expected = -np.log(np.maximum(x, 1e-10))
-        np.testing.assert_array_equal(_neglog(x), expected)
+        np.testing.assert_array_equal(negative_log_pvalue(x), expected)
 
     def test_respects_custom_eps(self) -> None:
         x = np.array([1.0, 1e-4, 0.0])
         expected = -np.log(np.maximum(x, 1e-3))
-        np.testing.assert_array_equal(_neglog(x, eps=1e-3), expected)
+        np.testing.assert_array_equal(negative_log_pvalue(x, eps=1e-3), expected)
 
     def test_scalar_threshold_transform(self) -> None:
         """The scalar overload (used on flag thresholds) floors identically."""
-        assert _neglog(0.2) == -np.log(max(0.2, 1e-10))
-        assert _neglog(0.0) == -np.log(1e-10)
+        assert negative_log_pvalue(0.2) == -np.log(max(0.2, 1e-10))
+        assert negative_log_pvalue(0.0) == -np.log(1e-10)
 
 
 class TestHalfpixelExtent:
@@ -51,16 +51,16 @@ class TestHalfpixelExtent:
         dp = (p1 - p0) / max(len(pos_coords) - 1, 1) / 2
         expected = (t0 - dt, t1 + dt, p0 - dp, p1 + dp)
 
-        assert _halfpixel_extent(time_coords, pos_coords) == expected
+        assert compute_half_pixel_extent(time_coords, pos_coords) == expected
         assert expected == (-0.5, 3.5, 9.0, 15.0)
 
     def test_raises_on_single_time_coordinate(self) -> None:
         with pytest.raises(ValueError, match=">=2 coordinates"):
-            _halfpixel_extent(np.array([1.0]), np.array([10.0, 12.0]))
+            compute_half_pixel_extent(np.array([1.0]), np.array([10.0, 12.0]))
 
     def test_raises_on_single_position_coordinate(self) -> None:
         with pytest.raises(ValueError, match=">=2 coordinates"):
-            _halfpixel_extent(np.array([0.0, 1.0]), np.array([10.0]))
+            compute_half_pixel_extent(np.array([0.0, 1.0]), np.array([10.0]))
 
 
 def _decoder_results(
@@ -87,7 +87,7 @@ class TestDecoderLikelihoodToColumns:
         """Reproduces ``exp -> unstack -> sum(state) -> isel`` columns plus the
         time/position coordinate arrays used to build the imshow extent."""
         results = _decoder_results()
-        lik_np, time_coords, pos_coords = _decoder_likelihood_to_columns(results, slice(None))
+        lik_np, time_coords, pos_coords = decoder_likelihood_to_columns(results, slice(None))
 
         n_time, n_states, n_pos = 5, 2, 3
         raw = results["log_likelihood"].values  # (n_time, n_states * n_pos)
@@ -99,8 +99,8 @@ class TestDecoderLikelihoodToColumns:
 
     def test_honors_time_slice(self) -> None:
         results = _decoder_results()
-        lik_full, time_full, _ = _decoder_likelihood_to_columns(results, slice(None))
-        lik_win, time_win, _ = _decoder_likelihood_to_columns(results, slice(1, 3))
+        lik_full, time_full, _ = decoder_likelihood_to_columns(results, slice(None))
+        lik_win, time_win, _ = decoder_likelihood_to_columns(results, slice(1, 3))
 
         assert lik_win.shape == (2, 3)
         np.testing.assert_allclose(lik_win, lik_full[1:3])
@@ -116,4 +116,4 @@ class TestDecoderLikelihoodToColumns:
         )
         results = xr.Dataset({"log_likelihood": da})
         with pytest.raises(NotImplementedError, match="MultiIndex"):
-            _decoder_likelihood_to_columns(results, slice(None))
+            decoder_likelihood_to_columns(results, slice(None))

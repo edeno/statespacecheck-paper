@@ -23,14 +23,18 @@ from matplotlib.patches import Rectangle
 from numpy.typing import NDArray
 
 from statespacecheck_paper.diagnostics import SpikeEventDiagnostics
+from statespacecheck_paper.figure04_diagnostics import (
+    compute_running_average,
+    mean_per_spike_likelihood_by_time,
+)
 from statespacecheck_paper.figure04_plot_primitives import (
     ANIMAL_POSITION_LABEL_GID,
     THRESHOLD_LABEL_GID,
     WORSE_FIT_LABEL_GID,
-    _decoder_likelihood_to_columns,
-    _halfpixel_extent,
-    _neglog,
-    _plot_distribution_heatmap,
+    compute_half_pixel_extent,
+    decoder_likelihood_to_columns,
+    negative_log_pvalue,
+    plot_distribution_heatmap,
 )
 from statespacecheck_paper.figure04_track_plots import plot_track_graph_1d
 from statespacecheck_paper.plotting import plot_likelihood_columns
@@ -169,9 +173,17 @@ def plot_per_cell_diagnostic_scatter(
     Examples
     --------
     >>> import numpy as np
-    >>> time = np.linspace(0, 10, 100)
-    >>> diagnostics = {"hpd_overlap": np.random.rand(100, 10)}
-    >>> ax = plot_per_cell_diagnostic_scatter(time, diagnostics)
+    >>> from statespacecheck_paper.figure04_diagnostics import (
+    ...     compute_spike_event_diagnostics,
+    ... )
+    >>> n_time, n_bins, n_cells = 100, 50, 10
+    >>> predictive = np.random.dirichlet(np.ones(n_bins), size=n_time)
+    >>> place_fields = np.random.rand(n_cells, n_bins) * 10
+    >>> spike_counts = np.random.poisson(0.5, (n_time, n_cells))
+    >>> diagnostics = compute_spike_event_diagnostics(
+    ...     predictive, spike_counts, place_fields
+    ... )
+    >>> ax = plot_per_cell_diagnostic_scatter(np.arange(n_time), diagnostics)
     """
     if ax is None:
         ax = plt.gca()
@@ -199,9 +211,9 @@ def plot_per_cell_diagnostic_scatter(
     # Transform predictive_pvalue to -log(p) (natural log) scale (matching Figure 3)
     # Higher values indicate worse fit (low probability)
     if metric_name == "predictive_pvalue":
-        metric = _neglog(metric)
+        metric = negative_log_pvalue(metric)
         if threshold is not None:
-            threshold = _neglog(threshold)
+            threshold = negative_log_pvalue(threshold)
 
     n_time, n_cells = metric.shape
 
@@ -213,7 +225,7 @@ def plot_per_cell_diagnostic_scatter(
         x_positions_arr = event_times_arr[event_mask]
         y_values_arr = raw_event_metric_values[event_mask]
         if metric_name == "predictive_pvalue":
-            y_values_arr = _neglog(y_values_arr)
+            y_values_arr = negative_log_pvalue(y_values_arr)
         valid = ~np.isnan(y_values_arr)
         x_positions_arr = x_positions_arr[valid]
         y_values_arr = y_values_arr[valid]
@@ -265,8 +277,6 @@ def plot_per_cell_diagnostic_scatter(
 
     # Add running average line if requested
     if show_running_average:
-        from statespacecheck_paper.figure04_diagnostics import compute_running_average
-
         # Compute running average on RAW values (before transformation)
         # per manuscript formula, then transform for display
         if event_times is not None and raw_event_metric_values is not None:
@@ -287,7 +297,7 @@ def plot_per_cell_diagnostic_scatter(
 
         # Transform running average if needed (same as scatter points)
         if metric_name == "predictive_pvalue":
-            running_avg = _neglog(running_avg)
+            running_avg = negative_log_pvalue(running_avg)
 
         # Determine line color (darker version of scatter color if not specified)
         line_color: str | tuple[float, ...]
@@ -492,7 +502,7 @@ def plot_model_comparison_with_posterior(
         [(results_a, model_a_name), (results_b, model_b_name)]
     ):
         ax = axes[0, col]
-        _plot_distribution_heatmap(
+        plot_distribution_heatmap(
             ax=ax,
             distribution_da=results.predictive_posterior,
             time=time,
@@ -515,7 +525,7 @@ def plot_model_comparison_with_posterior(
         ax = axes[1, col]
 
         # Step 1: Plot predictive as faint underlay using xarray (handles coordinates)
-        _plot_distribution_heatmap(
+        plot_distribution_heatmap(
             ax=ax,
             distribution_da=results.predictive_posterior,
             time=time,
@@ -533,10 +543,8 @@ def plot_model_comparison_with_posterior(
             # Decoder likelihood on the joint state-by-position space
             # (marginalized over state), unlike the place-field per-spike
             # likelihood; a single-state model has no position axis and raises.
-            lik_np, time_coords, pos_coords = _decoder_likelihood_to_columns(
-                results, time_slice_ind
-            )
-            extent = _halfpixel_extent(time_coords, pos_coords)
+            lik_np, time_coords, pos_coords = decoder_likelihood_to_columns(results, time_slice_ind)
+            extent = compute_half_pixel_extent(time_coords, pos_coords)
 
             has_spk_slice = (
                 has_spikes_mask[time_slice_ind]
@@ -764,7 +772,7 @@ def plot_single_model_diagnostics(
         has_spikes_mask = spike_counts.sum(axis=1) > 0
 
     # Row 0: Predictive posterior
-    _plot_distribution_heatmap(
+    plot_distribution_heatmap(
         ax=axes[0],
         distribution_da=results.predictive_posterior,
         time=time,
@@ -803,10 +811,6 @@ def plot_single_model_diagnostics(
         # per-spike diagnostics below operate on, and it is identical across
         # decoders that share place fields (unlike the decoder's combined
         # likelihood, which lives on the joint state-by-position space).
-        from statespacecheck_paper.figure04_diagnostics import (
-            mean_per_spike_likelihood_by_time,
-        )
-
         # Slice to the plotted window first; the full session is ~700k bins,
         # so computing over all of it would allocate multi-GB intermediates
         # for a ~1000-bin plot.
@@ -815,7 +819,7 @@ def plot_single_model_diagnostics(
 
         time_win = np.asarray(time)[time_slice_ind]
         pos = np.asarray(position_bins, dtype=np.float64)
-        extent = _halfpixel_extent(time_win, pos)
+        extent = compute_half_pixel_extent(time_win, pos)
 
         plot_likelihood_columns(
             ax_lik,
@@ -829,8 +833,8 @@ def plot_single_model_diagnostics(
         # Decoder-likelihood fallback (no place fields supplied): marginalized
         # over state on the joint state-by-position space, unlike the
         # place-field per-spike likelihood above. Single-state data raises.
-        lik_np, time_coords, pos_coords = _decoder_likelihood_to_columns(results, time_slice_ind)
-        extent = _halfpixel_extent(time_coords, pos_coords)
+        lik_np, time_coords, pos_coords = decoder_likelihood_to_columns(results, time_slice_ind)
+        extent = compute_half_pixel_extent(time_coords, pos_coords)
 
         has_spk_slice = (
             has_spikes_mask[time_slice_ind]
@@ -1008,8 +1012,8 @@ def plot_per_spike_metric_hexbin_row(
                 f"got shapes {data_a.shape} vs {data_b.shape}."
             )
         if log_transform:
-            data_a = _neglog(data_a)
-            data_b = _neglog(data_b)
+            data_a = negative_log_pvalue(data_a)
+            data_b = negative_log_pvalue(data_b)
 
         valid = np.isfinite(data_a) & np.isfinite(data_b)
         data_a = data_a[valid]
@@ -1041,7 +1045,7 @@ def plot_per_spike_metric_hexbin_row(
         # spikes flagged by model A (Continuous) but not model B (Cont-Frag).
         thr_raw = thresholds.get(thr_key) if thresholds else None
         if thr_raw is not None:
-            thr = _neglog(thr_raw) if log_transform else float(thr_raw)
+            thr = negative_log_pvalue(thr_raw) if log_transform else float(thr_raw)
             lo, hi = padded_lims
             if direction == "below":
                 # Flagged below threshold: A flagged (x < thr), B not (y > thr).

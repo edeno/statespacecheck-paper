@@ -27,14 +27,16 @@ WORSE_FIT_LABEL_GID = "worse-fit-label"
 
 
 @overload
-def _neglog(x: NDArray[np.float64], eps: float = ...) -> NDArray[np.float64]: ...
+def negative_log_pvalue(x: NDArray[np.float64], eps: float = ...) -> NDArray[np.float64]: ...
 
 
 @overload
-def _neglog(x: float, eps: float = ...) -> np.float64: ...
+def negative_log_pvalue(x: float, eps: float = ...) -> np.float64: ...
 
 
-def _neglog(x: NDArray[np.float64] | float, eps: float = 1e-10) -> NDArray[np.float64] | np.float64:
+def negative_log_pvalue(
+    x: NDArray[np.float64] | float, eps: float = 1e-10
+) -> NDArray[np.float64] | np.float64:
     """Return ``-log(max(x, eps))``, the predictive-p-value display transform.
 
     Predictive p-values are shown on a ``-log(p)`` scale (natural log, matching
@@ -57,7 +59,7 @@ def _neglog(x: NDArray[np.float64] | float, eps: float = 1e-10) -> NDArray[np.fl
     return cast("NDArray[np.float64] | np.float64", -np.log(np.maximum(x, eps)))
 
 
-def _halfpixel_extent(
+def compute_half_pixel_extent(
     time_coords: NDArray[np.float64], pos_coords: NDArray[np.float64]
 ) -> tuple[float, float, float, float]:
     """Return an ``imshow`` extent padded by half a bin on each side.
@@ -86,7 +88,7 @@ def _halfpixel_extent(
     """
     if len(time_coords) < 2 or len(pos_coords) < 2:
         raise ValueError(
-            "_halfpixel_extent needs >=2 coordinates along each axis to infer "
+            "compute_half_pixel_extent needs >=2 coordinates along each axis to infer "
             f"a bin width; got {len(time_coords)} time and {len(pos_coords)} "
             "position coordinates."
         )
@@ -97,7 +99,7 @@ def _halfpixel_extent(
     return (t0 - dt, t1 + dt, p0 - dp, p1 + dp)
 
 
-def _decoder_likelihood_to_columns(
+def decoder_likelihood_to_columns(
     results: xr.Dataset, time_slice_ind: slice
 ) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
     """Convert a decoder ``log_likelihood`` to per-time position columns.
@@ -206,7 +208,7 @@ def add_scalebar(
     )
 
 
-def _plot_distribution_heatmap(
+def plot_distribution_heatmap(
     ax: Axes,
     distribution_da: xr.DataArray,
     time: NDArray[np.float64] | pd.Index,
