@@ -7,7 +7,7 @@ results, HPD overlap diagnostics, and model checking on real experimental data.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, cast, overload
 
 import matplotlib
 import matplotlib.colors as mcolors
@@ -33,6 +33,135 @@ from statespacecheck_paper.style import (
 ANIMAL_POSITION_LABEL_GID = "animal-position-label"
 THRESHOLD_LABEL_GID = "threshold-label"
 WORSE_FIT_LABEL_GID = "worse-fit-label"
+
+
+@overload
+def _neglog(x: NDArray[np.float64], eps: float = ...) -> NDArray[np.float64]: ...
+
+
+@overload
+def _neglog(x: float, eps: float = ...) -> np.float64: ...
+
+
+def _neglog(x: NDArray[np.float64] | float, eps: float = 1e-10) -> NDArray[np.float64] | np.float64:
+    """Return ``-log(max(x, eps))``, the spike-probability display transform.
+
+    Spike probabilities are shown on a ``-log(p)`` scale (natural log, matching
+    Figure 3) so that higher values indicate worse fit. The ``eps`` floor keeps
+    zero probabilities finite. Accepts either a probability array (returns an
+    array) or a scalar threshold (returns a scalar).
+
+    Parameters
+    ----------
+    x : NDArray[np.float64] or float
+        Probability value(s) to transform.
+    eps : float, default 1e-10
+        Lower floor applied before the logarithm.
+
+    Returns
+    -------
+    NDArray[np.float64] or np.float64
+        ``-log(max(x, eps))`` with the same shape as ``x``.
+    """
+    return cast("NDArray[np.float64] | np.float64", -np.log(np.maximum(x, eps)))
+
+
+def _halfpixel_extent(
+    time_coords: NDArray[np.float64], pos_coords: NDArray[np.float64]
+) -> tuple[float, float, float, float]:
+    """Return an ``imshow`` extent padded by half a bin on each side.
+
+    Produces ``(t_lo, t_hi, p_lo, p_hi)`` so that ``imshow`` centres pixels on
+    their time/position coordinates. Requires at least two coordinates along
+    each axis: a single coordinate has no inferable bin width, so this raises
+    rather than silently emitting a zero-width extent.
+
+    Parameters
+    ----------
+    time_coords : NDArray[np.float64], shape (n_time,)
+        Monotonic time coordinates of the pixel grid.
+    pos_coords : NDArray[np.float64], shape (n_position,)
+        Monotonic position coordinates of the pixel grid.
+
+    Returns
+    -------
+    tuple[float, float, float, float]
+        ``(t0 - dt, t1 + dt, p0 - dp, p1 + dp)`` half-pixel extent.
+
+    Raises
+    ------
+    ValueError
+        If either coordinate array has fewer than two elements.
+    """
+    if len(time_coords) < 2 or len(pos_coords) < 2:
+        raise ValueError(
+            "_halfpixel_extent needs >=2 coordinates along each axis to infer "
+            f"a bin width; got {len(time_coords)} time and {len(pos_coords)} "
+            "position coordinates."
+        )
+    t0, t1 = float(time_coords[0]), float(time_coords[-1])
+    p0, p1 = float(pos_coords[0]), float(pos_coords[-1])
+    dt = (t1 - t0) / (len(time_coords) - 1) / 2
+    dp = (p1 - p0) / (len(pos_coords) - 1) / 2
+    return (t0 - dt, t1 + dt, p0 - dp, p1 + dp)
+
+
+def _decoder_likelihood_to_columns(
+    results: xr.Dataset, time_slice_ind: slice
+) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
+    """Convert a decoder ``log_likelihood`` to per-time position columns.
+
+    Applies ``exp`` to ``results["log_likelihood"]``, drops all-NaN state bins,
+    unstacks the ``(state, position)`` MultiIndex, marginalizes over ``state``,
+    and slices to the plotted time window. Returns the likelihood image plus its
+    time and position coordinate arrays (for the ``imshow`` extent).
+
+    This is the *decoder* likelihood on the joint state-by-position space; the
+    place-field per-spike likelihood path is handled separately by its caller.
+
+    Parameters
+    ----------
+    results : xr.Dataset
+        Decoding results carrying ``log_likelihood`` with a ``(state, position)``
+        MultiIndex on ``state_bins``.
+    time_slice_ind : slice
+        Time window to render.
+
+    Returns
+    -------
+    tuple[NDArray, NDArray, NDArray]
+        ``(likelihood, time_coords, pos_coords)`` for the sliced window.
+
+    Raises
+    ------
+    NotImplementedError
+        If ``state_bins`` is not a ``(state, position)`` MultiIndex.
+    ValueError
+        If the MultiIndex cannot be unstacked.
+    """
+    lik_da = xr.apply_ufunc(np.exp, results["log_likelihood"]).dropna("state_bins", how="all")
+    state_bins_index = lik_da.indexes["state_bins"]
+    if not isinstance(state_bins_index, pd.MultiIndex):
+        raise NotImplementedError(
+            "Likelihood overlay requires a (state, position) MultiIndex on "
+            "state_bins; single-state data has no separate position axis and "
+            "cannot be rendered."
+        )
+    try:
+        lik_unstacked = lik_da.unstack("state_bins")
+    except (ValueError, KeyError) as e:
+        raise ValueError(
+            "Failed to unstack state_bins MultiIndex on the likelihood overlay; "
+            "the index is malformed and cannot be marginalized. "
+            f"Underlying error: {e}"
+        ) from e
+    if "state" in lik_unstacked.dims:
+        lik_unstacked = lik_unstacked.sum("state")
+    lik_sliced = lik_unstacked.isel(time=time_slice_ind)
+    lik_np = np.asarray(lik_sliced.values)
+    time_coords = np.asarray(lik_sliced.coords["time"].values)
+    pos_coords = np.asarray(lik_sliced.coords["position"].values)
+    return lik_np, time_coords, pos_coords
 
 
 def add_scalebar(
@@ -487,9 +616,9 @@ def plot_per_cell_diagnostic_scatter(
     # Transform spike_prob to -log(p) (natural log) scale (matching Figure 3)
     # Higher values indicate worse fit (low probability)
     if metric_name == "spike_prob":
-        metric = -np.log(np.maximum(metric, 1e-10))
+        metric = _neglog(metric)
         if threshold is not None:
-            threshold = -np.log(max(threshold, 1e-10))
+            threshold = _neglog(threshold)
 
     n_time, n_cells = metric.shape
 
@@ -501,7 +630,7 @@ def plot_per_cell_diagnostic_scatter(
         x_positions_arr = event_times_arr[event_mask]
         y_values_arr = raw_event_metric_values[event_mask]
         if metric_name == "spike_prob":
-            y_values_arr = -np.log(np.maximum(y_values_arr, 1e-10))
+            y_values_arr = _neglog(y_values_arr)
         valid = ~np.isnan(y_values_arr)
         x_positions_arr = x_positions_arr[valid]
         y_values_arr = y_values_arr[valid]
@@ -575,7 +704,7 @@ def plot_per_cell_diagnostic_scatter(
 
         # Transform running average if needed (same as scatter points)
         if metric_name == "spike_prob":
-            running_avg = -np.log(np.maximum(running_avg, 1e-10))
+            running_avg = _neglog(running_avg)
 
         # Determine line color (darker version of scatter color if not specified)
         line_color: str | tuple[float, ...]
@@ -909,45 +1038,13 @@ def plot_model_comparison_with_posterior(
 
         # Step 2: Overlay likelihood at spike times using shared column renderer
         if "log_likelihood" in results:
-            lik_da = xr.apply_ufunc(np.exp, results["log_likelihood"]).dropna(
-                "state_bins", how="all"
+            # Decoder likelihood on the joint state-by-position space
+            # (marginalized over state), unlike the place-field per-spike
+            # likelihood; a single-state model has no position axis and raises.
+            lik_np, time_coords, pos_coords = _decoder_likelihood_to_columns(
+                results, time_slice_ind
             )
-            # The likelihood overlay needs a ``position`` coordinate
-            # downstream (``pos_coords = lik_sliced.coords["position"]``).
-            # Multi-state models supply it via the (state, position)
-            # MultiIndex. Single-state data has no separate position
-            # axis and cannot be rendered as a 2D overlay — refuse
-            # rather than die deep inside matplotlib on a missing coord.
-            state_bins_index = lik_da.indexes["state_bins"]
-            if not isinstance(state_bins_index, pd.MultiIndex):
-                raise NotImplementedError(
-                    "Likelihood overlay requires a (state, position) "
-                    "MultiIndex on state_bins; single-state data has "
-                    "no separate position axis and cannot be rendered."
-                )
-            try:
-                lik_unstacked = lik_da.unstack("state_bins")
-            except (ValueError, KeyError) as e:
-                raise ValueError(
-                    "Failed to unstack state_bins MultiIndex on the "
-                    "likelihood overlay; the index is malformed and "
-                    f"cannot be marginalized. Underlying error: {e}"
-                ) from e
-            if "state" in lik_unstacked.dims:
-                lik_unstacked = lik_unstacked.sum("state")
-            lik_sliced = lik_unstacked.isel(time=time_slice_ind)
-
-            lik_np = lik_sliced.values  # (n_time_slice, n_position)
-
-            # Get coordinate arrays for extent
-            time_coords = lik_sliced.coords["time"].values
-            pos_coords = lik_sliced.coords["position"].values
-            t0, t1 = float(time_coords[0]), float(time_coords[-1])
-            p0, p1 = float(pos_coords[0]), float(pos_coords[-1])
-            # Half-pixel padding for imshow extent
-            dt = (t1 - t0) / max(len(time_coords) - 1, 1) / 2
-            dp = (p1 - p0) / max(len(pos_coords) - 1, 1) / 2
-            extent = (t0 - dt, t1 + dt, p0 - dp, p1 + dp)
+            extent = _halfpixel_extent(time_coords, pos_coords)
 
             has_spk_slice = (
                 has_spikes_mask[time_slice_ind]
@@ -1226,11 +1323,7 @@ def plot_single_model_diagnostics(
 
         time_win = np.asarray(time)[time_slice_ind]
         pos = np.asarray(position_bins, dtype=np.float64)
-        t0, t1 = float(time_win[0]), float(time_win[-1])
-        p0, p1 = float(pos[0]), float(pos[-1])
-        dt = (t1 - t0) / max(len(time_win) - 1, 1) / 2
-        dp = (p1 - p0) / max(len(pos) - 1, 1) / 2
-        extent = (t0 - dt, t1 + dt, p0 - dp, p1 + dp)
+        extent = _halfpixel_extent(time_win, pos)
 
         plot_likelihood_columns(
             ax_lik,
@@ -1241,37 +1334,11 @@ def plot_single_model_diagnostics(
             cmap=CMAP_LIKELIHOOD,
         )
     elif "log_likelihood" in results:
-        lik_da = xr.apply_ufunc(np.exp, results["log_likelihood"]).dropna("state_bins", how="all")
-        # See ``plot_model_comparison_with_posterior`` above for the
-        # MultiIndex-vs-Index rationale; the overlay needs a position
-        # coord that single-state data cannot supply.
-        state_bins_index = lik_da.indexes["state_bins"]
-        if not isinstance(state_bins_index, pd.MultiIndex):
-            raise NotImplementedError(
-                "Likelihood overlay requires a (state, position) "
-                "MultiIndex on state_bins; single-state data has no "
-                "separate position axis and cannot be rendered."
-            )
-        try:
-            lik_unstacked = lik_da.unstack("state_bins")
-        except (ValueError, KeyError) as e:
-            raise ValueError(
-                "Failed to unstack state_bins MultiIndex on the "
-                "likelihood overlay; the index is malformed and "
-                f"cannot be marginalized. Underlying error: {e}"
-            ) from e
-        if "state" in lik_unstacked.dims:
-            lik_unstacked = lik_unstacked.sum("state")
-        lik_sliced = lik_unstacked.isel(time=time_slice_ind)
-
-        lik_np = lik_sliced.values
-        time_coords = lik_sliced.coords["time"].values
-        pos_coords = lik_sliced.coords["position"].values
-        t0, t1 = float(time_coords[0]), float(time_coords[-1])
-        p0, p1 = float(pos_coords[0]), float(pos_coords[-1])
-        dt = (t1 - t0) / max(len(time_coords) - 1, 1) / 2
-        dp = (p1 - p0) / max(len(pos_coords) - 1, 1) / 2
-        extent = (t0 - dt, t1 + dt, p0 - dp, p1 + dp)
+        # Decoder-likelihood fallback (no place fields supplied): marginalized
+        # over state on the joint state-by-position space, unlike the
+        # place-field per-spike likelihood above. Single-state data raises.
+        lik_np, time_coords, pos_coords = _decoder_likelihood_to_columns(results, time_slice_ind)
+        extent = _halfpixel_extent(time_coords, pos_coords)
 
         has_spk_slice = (
             has_spikes_mask[time_slice_ind]
@@ -1442,8 +1509,8 @@ def plot_per_spike_metric_hexbin_row(
                 f"got shapes {data_a.shape} vs {data_b.shape}."
             )
         if log_transform:
-            data_a = -np.log(np.maximum(data_a, 1e-10))
-            data_b = -np.log(np.maximum(data_b, 1e-10))
+            data_a = _neglog(data_a)
+            data_b = _neglog(data_b)
 
         valid = np.isfinite(data_a) & np.isfinite(data_b)
         data_a = data_a[valid]
@@ -1475,7 +1542,7 @@ def plot_per_spike_metric_hexbin_row(
         # spikes flagged by model A (Continuous) but not model B (Cont-Frag).
         thr_raw = thresholds.get(thr_key) if thresholds else None
         if thr_raw is not None:
-            thr = -np.log(max(thr_raw, 1e-10)) if log_transform else float(thr_raw)
+            thr = _neglog(thr_raw) if log_transform else float(thr_raw)
             lo, hi = padded_lims
             if direction == "below":
                 # Flagged below threshold: A flagged (x < thr), B not (y > thr).
