@@ -736,6 +736,118 @@ def create_decoder_environment(
     )
 
 
+@dataclasses.dataclass(frozen=True)
+class Figure4Config:
+    """Manuscript-stated Figure-4 decoder parameters (see ``main.tex:294``).
+
+    This dataclass records the decoder configuration for two purposes only:
+    (1) provenance -- it is hashed into the Figure-4 cache fingerprint so a
+    changed parameter or dependency invalidates the cache; and (2) the drift
+    guard -- ``tests/test_real_data_analysis.py::test_figure4_config_matches_manuscript``
+    asserts that the *resolved* attributes of the models built by
+    :func:`build_decoder_models` equal these values.
+
+    It does **not** retune the decoder. :func:`fit_decoder_models` continues to
+    construct the models from ``non_local_detector`` defaults (only
+    ``position_std`` and ``block_size`` are set explicitly); every other value
+    below is a class default that the drift guard pins so a future dependency
+    bump that silently changes it fails loudly.
+
+    Attributes
+    ----------
+    position_std : float
+        Sorted-spikes KDE positional bandwidth, ``sqrt(12.5) ~= 3.54 cm``.
+    block_size : int
+        KDE block size (set explicitly alongside ``position_std``).
+    movement_var : float
+        Random-walk position-transition variance, ``6.0 cm^2``.
+    contfrag_diagonal_values : tuple[float, float]
+        ContFrag ``DiscreteStationaryDiagonal`` diagonal ``(0.98, 0.98)``
+        (mode-transition matrix ``[[0.98, 0.02], [0.02, 0.98]]``).
+    contfrag_discrete_initial_conditions : tuple[float, float]
+        ContFrag mode initial conditions ``(0.5, 0.5)``.
+    discrete_transition_concentration : float
+        ContFrag Dirichlet concentration (unprinted effective default ``1.1``).
+    discrete_transition_regularization : float
+        Discrete-transition regularization (unprinted default ``1e-10``).
+    position_bin_size_cm : float
+        Environment ``place_bin_size``, ``2 cm``.
+    sampling_frequency_hz : float
+        Decoder sampling frequency ``500 Hz`` (i.e. ``2 ms`` spike bins).
+    non_local_detector_version : str
+        Manuscript-stated ``non_local_detector`` version, for provenance.
+    """
+
+    position_std: float = float(np.sqrt(12.5))
+    block_size: int = 10000
+    movement_var: float = 6.0
+    contfrag_diagonal_values: tuple[float, float] = (0.98, 0.98)
+    contfrag_discrete_initial_conditions: tuple[float, float] = (0.5, 0.5)
+    discrete_transition_concentration: float = 1.1
+    discrete_transition_regularization: float = 1e-10
+    position_bin_size_cm: float = 2.0
+    sampling_frequency_hz: float = 500.0
+    non_local_detector_version: str = "0.6.10.dev214+g956fdccaf"
+
+    @property
+    def time_bin_size_ms(self) -> float:
+        """Spike time-bin size in milliseconds (``1000 / sampling_frequency``)."""
+        return 1000.0 / self.sampling_frequency_hz
+
+
+def build_decoder_models(environment: Any) -> tuple[Any, Any]:
+    """Construct the (unfitted) Continuous and ContFrag decoder models.
+
+    This holds the single source of decoder *construction* used by both
+    :func:`fit_decoder_models` and the config drift guard. Only ``position_std``
+    and ``block_size`` are set explicitly; ``movement_var``, the mode-transition
+    matrix, the mode initial conditions, the discrete-transition concentration
+    and regularization, and the position bin size all come from
+    ``non_local_detector`` class defaults. The drift guard inspects the resolved
+    attributes of these objects, so it never needs real data or a fit.
+
+    Parameters
+    ----------
+    environment : Environment
+        Track environment object.
+
+    Returns
+    -------
+    continuous_model : SortedSpikesDecoder
+        Unfitted continuous decoder model.
+    contfrag_model : ContFragSortedSpikesClassifier
+        Unfitted continuous-fragmented decoder model.
+
+    Raises
+    ------
+    ImportError
+        If non_local_detector package is not available.
+    """
+    try:
+        from non_local_detector import (
+            ContFragSortedSpikesClassifier,
+            SortedSpikesDecoder,
+        )
+    except ImportError as e:
+        raise ImportError(
+            "non_local_detector package required. Install with: pip install non_local_detector"
+        ) from e
+
+    sorted_spikes_algorithm_params = {
+        "block_size": 10000,
+        "position_std": np.sqrt(12.5),
+    }
+    continuous_model = SortedSpikesDecoder(
+        environments=[environment],
+        sorted_spikes_algorithm_params=sorted_spikes_algorithm_params,
+    )
+    contfrag_model = ContFragSortedSpikesClassifier(
+        environments=[environment],
+        sorted_spikes_algorithm_params=sorted_spikes_algorithm_params,
+    )
+    return continuous_model, contfrag_model
+
+
 def fit_decoder_models(
     position: NDArray[np.float64],
     spike_times: list[NDArray[np.float64]],
@@ -775,35 +887,12 @@ def fit_decoder_models(
     >>> #     position, spike_times, time, environment
     >>> # )
     """
-    try:
-        from non_local_detector import (
-            ContFragSortedSpikesClassifier,
-            SortedSpikesDecoder,
-        )
-    except ImportError as e:
-        raise ImportError(
-            "non_local_detector package required. Install with: pip install non_local_detector"
-        ) from e
+    continuous_model, contfrag_model = build_decoder_models(environment)
 
     # Ensure position is 2D (n_time, 1) for the decoder
     position_2d = position.reshape(-1, 1) if position.ndim == 1 else position
 
-    # Fit Continuous model
-    sorted_spikes_algorithm_params = {
-        "block_size": 10000,
-        "position_std": np.sqrt(12.5),
-    }
-    continuous_model = SortedSpikesDecoder(
-        environments=[environment],
-        sorted_spikes_algorithm_params=sorted_spikes_algorithm_params,
-    )
     continuous_model.fit(position=position_2d, spike_times=spike_times, position_time=time)
-
-    # Fit ContFrag model
-    contfrag_model = ContFragSortedSpikesClassifier(
-        environments=[environment],
-        sorted_spikes_algorithm_params=sorted_spikes_algorithm_params,
-    )
     contfrag_model.fit(position=position_2d, spike_times=spike_times, position_time=time)
 
     return continuous_model, contfrag_model

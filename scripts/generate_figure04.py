@@ -14,7 +14,10 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import hashlib
+import json
 import warnings
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any, Literal
 
@@ -22,11 +25,13 @@ import joblib
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.transforms import Bbox
+from numpy.typing import NDArray
 
 from statespacecheck_paper.analysis import PerCellDiagnostics
 from statespacecheck_paper.load_local_data import load_neural_recording_from_files
 from statespacecheck_paper.paths import ANIMAL_DATE_EPOCH, DATA_PATH
 from statespacecheck_paper.real_data_analysis import (
+    Figure4Config,
     compute_flag_confusion,
     compute_model_diagnostics,
     create_decoder_environment,
@@ -52,22 +57,112 @@ from statespacecheck_paper.style import save_figure, set_figure_defaults
 __all__ = ["ANIMAL_DATE_EPOCH", "DATA_PATH"]
 
 
-def _fig4_cache_path() -> Path:
-    """Path for the cached Figure-4 decoder outputs (under data/intermediates).
-
-    A single joblib bundle is used rather than netCDF because the decoder
-    results carry a ``state_bins`` MultiIndex coordinate, which netCDF cannot
-    serialize; joblib (pickle) preserves it exactly.
-    """
-    return DATA_PATH / "intermediates" / f"{ANIMAL_DATE_EPOCH}_fig4_cache.joblib"
-
-
 # Time window for Figure 4a/b (detail view)
 # Centered on a period of clear diagnostic activity at reward well
 DETAIL_CENTER = 193069  # Time index with KL spike during immobility
 DETAIL_HALF_WIDTH = 500  # Half-width in time points (~2 seconds at 500 Hz)
 DIAGNOSTIC_ANNOTATION_GIDS = {THRESHOLD_LABEL_GID, WORSE_FIT_LABEL_GID}
 FIG4_CACHE_SCHEMA_VERSION = 4
+
+# --- Track-inset / hexbin pixel-nudge constants ---------------------------
+# Empirically measured on the exported PNG at the current figure size (7.2 x
+# 6.1 in) and DPI (450). They tune only artist placement, never any decoded or
+# diagnostic value; changing the figure size or DPI would require re-measuring.
+#
+# ``add_scalebar`` appends the scale bar as the final line; SCALE_BAR_SHIFT /
+# SCALE_BAR_DROP move the bar and its label together so the label clears the
+# nearby reward-well marker.
+SCALE_BAR_SHIFT = 22.0
+SCALE_BAR_DROP = 5.0
+# The trajectory line's vector bbox extends slightly farther left than the
+# visually salient rendered diagram, so the track inset's left edge is nudged
+# right by this many pixels when aligning it to the diagnostic annotations.
+VISUAL_EDGE_CORRECTION_PX = 7.0
+# Enlarge the track inset about its center for legibility.
+TRACK_SIZE_SCALE = 1.10
+
+
+@dataclasses.dataclass(frozen=True)
+class Fig4Paths:
+    """Injected data-location identifiers for the Figure-4 pipeline.
+
+    Threaded into :func:`_load_or_compute_fig4_bundle` instead of reading the
+    module-global ``DATA_PATH`` / ``ANIMAL_DATE_EPOCH`` so the compute/load
+    layer is testable with synthetic inputs and a temporary cache directory.
+    """
+
+    data_path: Path
+    animal_date_epoch: str
+
+    @property
+    def cache_path(self) -> Path:
+        """Path for the cached Figure-4 decoder outputs (under data/intermediates).
+
+        A single joblib bundle is used rather than netCDF because the decoder
+        results carry a ``state_bins`` MultiIndex coordinate, which netCDF cannot
+        serialize; joblib (pickle) preserves it exactly.
+        """
+        return self.data_path / "intermediates" / f"{self.animal_date_epoch}_fig4_cache.joblib"
+
+
+@dataclasses.dataclass(frozen=True)
+class Fig4Bundle:
+    """Everything the Figure-4 render needs: fresh track data + decode payload.
+
+    The decode payload (results / diagnostics / spike counts / place fields) is
+    the expensive, cacheable content. The position/track data is always loaded
+    fresh from :class:`Fig4Paths` (it is cheap and never cached), then combined
+    with the decode payload here so the render reads a single object.
+    """
+
+    # Position / track data (always loaded fresh; not cached)
+    position_info: Any
+    time: NDArray[np.float64]
+    position: NDArray[np.float64]
+    linear_position: NDArray[np.float64]
+    spike_times_list: list[Any]
+    track_graph: Any
+    edge_order: Any
+    edge_spacing: Any
+    # Decode payload (cached or recomputed)
+    continuous_results: Any
+    contfrag_results: Any
+    continuous_diagnostics: PerCellDiagnostics
+    contfrag_diagnostics: PerCellDiagnostics
+    spike_counts: NDArray[np.int64]
+    place_field_peaks: NDArray[np.float64]
+    diagnostic_place_fields: NDArray[np.float64]
+    diagnostic_position_bins: NDArray[np.float64]
+
+
+def _installed_non_local_detector_version() -> str:
+    """Return the installed ``non_local_detector`` version, or ``"unknown"``."""
+    try:
+        return version("non_local_detector")
+    except PackageNotFoundError:
+        return "unknown"
+
+
+def fig4_cache_fingerprint(config: Figure4Config, paths: Fig4Paths) -> str:
+    """Provenance fingerprint gating the Figure-4 cache.
+
+    Hashes the schema version, the manuscript decoder parameters
+    (:class:`Figure4Config`), the input-data identifier, and the *installed*
+    ``non_local_detector`` revision. Any change forces a recompute; the cached
+    bundle stores this fingerprint so a stale cache cannot silently produce a
+    figure that no longer matches the current method or dependency.
+
+    Bumping :data:`FIG4_CACHE_SCHEMA_VERSION` remains the manual override --- it
+    is part of the hashed payload, so a bump invalidates every existing cache.
+    """
+    payload = {
+        "schema_version": FIG4_CACHE_SCHEMA_VERSION,
+        "config": dataclasses.asdict(config),
+        "animal_date_epoch": paths.animal_date_epoch,
+        "non_local_detector_version": _installed_non_local_detector_version(),
+    }
+    blob = json.dumps(payload, sort_keys=True, default=str).encode()
+    return hashlib.sha256(blob).hexdigest()
 
 
 def shift_diagnostic_event_times(
@@ -151,170 +246,215 @@ def _axes_tight_bbox_inches(fig: Any, *, pad_inches: float = 0.05) -> Bbox:
     return bbox_inches.padded(pad_inches)
 
 
-def run_demo(*, use_cache: bool = True) -> None:
-    """Run the full Figure 4 generation pipeline.
+def _compute_fig4_decode_payload(
+    *,
+    position: NDArray[np.float64],
+    spike_times_list: list[Any],
+    time: NDArray[np.float64],
+    track_graph: Any,
+    edge_order: Any,
+    edge_spacing: Any,
+) -> dict[str, Any]:
+    """Fit both decoders, decode, and compute the cacheable decode payload.
 
-    Loads data, fits Continuous and ContFrag decoder models, computes
-    diagnostics, and generates Figure 4 with Continuous detail (a) and
-    ContFrag detail (b) panels.
+    Returns exactly the keys stored in (and loaded from) the Figure-4 cache.
+    """
+    # Environment is only needed to fit the decoders.
+    env = create_decoder_environment(
+        track_graph=track_graph,
+        edge_order=edge_order,
+        edge_spacing=edge_spacing,
+    )
+
+    print("Fitting models...")
+    continuous_model, contfrag_model = fit_decoder_models(
+        position=position,
+        spike_times=spike_times_list,
+        time=time,
+        environment=env,
+    )
+
+    print(f"Decoding {len(time)} time points...")
+    decode_outputs = ["filter", "predictive_posterior", "log_likelihood"]
+    continuous_results = continuous_model.predict(
+        spike_times=spike_times_list,
+        time=time,
+        return_outputs=decode_outputs,
+    )
+    contfrag_results = contfrag_model.predict(
+        spike_times=spike_times_list,
+        time=time,
+        return_outputs=decode_outputs,
+    )
+
+    spike_counts = get_spike_counts(spike_times_list, time)
+
+    print("Computing diagnostics...")
+    continuous_diagnostics = compute_model_diagnostics(
+        continuous_model, continuous_results, spike_counts, time, spike_times=spike_times_list
+    )
+    contfrag_diagnostics = compute_model_diagnostics(
+        contfrag_model, contfrag_results, spike_counts, time, spike_times=spike_times_list
+    )
+
+    # Extract place fields for raster sorting (use continuous model).
+    place_fields, position_bins = extract_place_fields(continuous_model)
+    if np.any(np.all(np.isnan(place_fields), axis=1)):
+        warnings.warn(
+            "Some cells have all-NaN place fields; peak positions may be incorrect",
+            stacklevel=2,
+        )
+    place_field_peaks = position_bins[np.nanargmax(place_fields, axis=1)]
+
+    # Shared interior place fields for the mean per-spike likelihood row.
+    # The row is meant to be identical across decoders, so verify the two
+    # models agree on both fields and grid before storing a single copy.
+    diagnostic_place_fields, diagnostic_position_bins = extract_shared_position_place_fields(
+        continuous_model
+    )
+    contfrag_place_fields, contfrag_position_bins = extract_shared_position_place_fields(
+        contfrag_model
+    )
+    if not np.allclose(
+        diagnostic_place_fields, contfrag_place_fields, equal_nan=True
+    ) or not np.allclose(diagnostic_position_bins, contfrag_position_bins, equal_nan=True):
+        raise ValueError(
+            "Continuous and Continuous--Fragmented place fields or position "
+            "grids differ; the shared likelihood row would misrepresent one "
+            "of the decoders."
+        )
+
+    return {
+        "continuous_results": continuous_results,
+        "contfrag_results": contfrag_results,
+        "continuous_diagnostics": continuous_diagnostics,
+        "contfrag_diagnostics": contfrag_diagnostics,
+        "spike_counts": spike_counts,
+        "place_field_peaks": place_field_peaks,
+        "diagnostic_place_fields": diagnostic_place_fields,
+        "diagnostic_position_bins": diagnostic_position_bins,
+    }
+
+
+def _load_or_compute_fig4_bundle(
+    config: Figure4Config,
+    paths: Fig4Paths,
+    *,
+    use_cache: bool = True,
+) -> Fig4Bundle:
+    """Assemble the Figure-4 bundle: fresh track data + cached-or-computed decode.
+
+    Reads only the injected ``config`` and ``paths`` (never the module-global
+    ``DATA_PATH`` / ``ANIMAL_DATE_EPOCH``), so it is exercisable with synthetic
+    inputs and a temporary cache directory. The cache is keyed on
+    :func:`fig4_cache_fingerprint`; a config / data / dependency change forces a
+    recompute. The position/track data is always loaded fresh (it is cheap and
+    never cached).
 
     Parameters
     ----------
+    config : Figure4Config
+        Decoder configuration; hashed into the cache fingerprint.
+    paths : Fig4Paths
+        Injected data-location identifiers.
     use_cache : bool, default True
-        When True and a complete cache of decoder outputs exists under
-        ``data/intermediates``, load it and skip the expensive fit/decode
-        step. When False (``--force-recompute``), always recompute and
-        overwrite the cache. Fitting + decoding both models takes several
-        minutes; figure-only edits (styling, thresholds) reuse the cache.
+        When True and a fingerprint-matching cache exists, load it instead of
+        recomputing. When False, always recompute and overwrite the cache.
     """
-    # Load data
     print("Loading data...")
-    data = load_neural_recording_from_files(DATA_PATH, ANIMAL_DATE_EPOCH)
+    data = load_neural_recording_from_files(paths.data_path, paths.animal_date_epoch)
     print(f"  Loaded {len(data['spike_times'])} cells")
 
-    # Data the figure needs regardless of cache state.
     position_info = data["position_info"]
-    time = position_info.index.values
-    position = position_info[["head_position_x", "head_position_y"]].values
-    linear_position = position_info["linear_position"].values
-    spike_times_list: list[Any] = list(data["spike_times"])
+    render_data: dict[str, Any] = dict(
+        position_info=position_info,
+        time=position_info.index.values,
+        position=position_info[["head_position_x", "head_position_y"]].values,
+        linear_position=position_info["linear_position"].values,
+        spike_times_list=list(data["spike_times"]),
+        track_graph=data["track_graph"],
+        edge_order=data["linear_edge_order"],
+        edge_spacing=data["linear_edge_spacing"],
+    )
 
-    # The expensive decoder outputs (fit + decode + diagnostics) are cached so
-    # that figure-only changes can be previewed without re-running the models.
-    cache_path = _fig4_cache_path()
+    cache_path = paths.cache_path
+    expected_fingerprint = fig4_cache_fingerprint(config, paths)
     if use_cache and cache_path.exists():
         print("Loading cached decoder outputs (use --force-recompute to rebuild)...")
-        bundle = joblib.load(cache_path)
-        if bundle.get("schema_version") != FIG4_CACHE_SCHEMA_VERSION:
-            raise RuntimeError(
-                "The Figure 4 cache predates the current diagnostics/likelihood "
-                "schema. Rebuild it with scripts/generate_figure04.py "
-                "--force-recompute."
-            )
-        continuous_results = bundle["continuous_results"]
-        contfrag_results = bundle["contfrag_results"]
-        continuous_diagnostics = bundle["continuous_diagnostics"]
-        contfrag_diagnostics = bundle["contfrag_diagnostics"]
-        spike_counts = bundle["spike_counts"]
-        place_field_peaks = bundle["place_field_peaks"]
-        diagnostic_place_fields = bundle["diagnostic_place_fields"]
-        diagnostic_position_bins = bundle["diagnostic_position_bins"]
-    else:
-        # Environment is only needed to fit the decoders.
-        env = create_decoder_environment(
-            track_graph=data["track_graph"],
-            edge_order=data["linear_edge_order"],
-            edge_spacing=data["linear_edge_spacing"],
+        cached = joblib.load(cache_path)
+        if cached.get("fingerprint") == expected_fingerprint:
+            payload = {key: cached[key] for key in _FIG4_PAYLOAD_KEYS}
+            return Fig4Bundle(**render_data, **payload)
+        print(
+            "  Cache fingerprint mismatch (config, data, or non_local_detector "
+            "version changed, or a pre-fingerprint cache); recomputing."
         )
 
-        print("Fitting models...")
-        continuous_model, contfrag_model = fit_decoder_models(
-            position=position,
-            spike_times=spike_times_list,
-            time=time,
-            environment=env,
-        )
+    payload = _compute_fig4_decode_payload(
+        position=render_data["position"],
+        spike_times_list=render_data["spike_times_list"],
+        time=render_data["time"],
+        track_graph=render_data["track_graph"],
+        edge_order=render_data["edge_order"],
+        edge_spacing=render_data["edge_spacing"],
+    )
 
-        print(f"Decoding {len(time)} time points...")
-        decode_outputs = ["filter", "predictive_posterior", "log_likelihood"]
-        continuous_results = continuous_model.predict(
-            spike_times=spike_times_list,
-            time=time,
-            return_outputs=decode_outputs,
-        )
-        contfrag_results = contfrag_model.predict(
-            spike_times=spike_times_list,
-            time=time,
-            return_outputs=decode_outputs,
-        )
+    print("Caching decoder outputs to data/intermediates ...")
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    joblib.dump(
+        {
+            "schema_version": FIG4_CACHE_SCHEMA_VERSION,
+            "fingerprint": expected_fingerprint,
+            **payload,
+        },
+        cache_path,
+    )
 
-        spike_counts = get_spike_counts(spike_times_list, time)
+    return Fig4Bundle(**render_data, **payload)
 
-        print("Computing diagnostics...")
-        continuous_diagnostics = compute_model_diagnostics(
-            continuous_model, continuous_results, spike_counts, time, spike_times=spike_times_list
-        )
-        contfrag_diagnostics = compute_model_diagnostics(
-            contfrag_model, contfrag_results, spike_counts, time, spike_times=spike_times_list
-        )
 
-        # Extract place fields for raster sorting (use continuous model).
-        place_fields, position_bins = extract_place_fields(continuous_model)
-        if np.any(np.all(np.isnan(place_fields), axis=1)):
-            warnings.warn(
-                "Some cells have all-NaN place fields; peak positions may be incorrect",
-                stacklevel=2,
-            )
-        place_field_peaks = position_bins[np.nanargmax(place_fields, axis=1)]
+# The decode payload keys shared by the cache dict and :class:`Fig4Bundle`.
+_FIG4_PAYLOAD_KEYS = (
+    "continuous_results",
+    "contfrag_results",
+    "continuous_diagnostics",
+    "contfrag_diagnostics",
+    "spike_counts",
+    "place_field_peaks",
+    "diagnostic_place_fields",
+    "diagnostic_position_bins",
+)
 
-        # Shared interior place fields for the mean per-spike likelihood row.
-        # The row is meant to be identical across decoders, so verify the two
-        # models agree on both fields and grid before storing a single copy.
-        diagnostic_place_fields, diagnostic_position_bins = extract_shared_position_place_fields(
-            continuous_model
-        )
-        contfrag_place_fields, contfrag_position_bins = extract_shared_position_place_fields(
-            contfrag_model
-        )
-        if not np.allclose(
-            diagnostic_place_fields, contfrag_place_fields, equal_nan=True
-        ) or not np.allclose(diagnostic_position_bins, contfrag_position_bins, equal_nan=True):
-            raise ValueError(
-                "Continuous and Continuous--Fragmented place fields or position "
-                "grids differ; the shared likelihood row would misrepresent one "
-                "of the decoders."
-            )
 
-        print("Caching decoder outputs to data/intermediates ...")
-        cache_path.parent.mkdir(parents=True, exist_ok=True)
-        joblib.dump(
-            {
-                "schema_version": FIG4_CACHE_SCHEMA_VERSION,
-                "continuous_results": continuous_results,
-                "contfrag_results": contfrag_results,
-                "continuous_diagnostics": continuous_diagnostics,
-                "contfrag_diagnostics": contfrag_diagnostics,
-                "spike_counts": spike_counts,
-                "place_field_peaks": place_field_peaks,
-                "diagnostic_place_fields": diagnostic_place_fields,
-                "diagnostic_position_bins": diagnostic_position_bins,
-            },
-            cache_path,
-        )
+def _print_fig4_summary(
+    bundle: Fig4Bundle,
+    thresholds: dict[str, float],
+    metric_directions: dict[str, Literal["below", "above"]],
+) -> None:
+    """Print the whole-session diagnostic event-means and flag-agreement counts.
 
-    # Print summary
+    These scalars can appear in the manuscript text, so their computation must
+    stay identical to the cached decode; the render layer never alters them.
+    """
     print("\n=== Diagnostic Summary (all time points) ===")
-    for name, diag in [("Continuous", continuous_diagnostics), ("ContFrag", contfrag_diagnostics)]:
+    for name, diag in [
+        ("Continuous", bundle.continuous_diagnostics),
+        ("ContFrag", bundle.contfrag_diagnostics),
+    ]:
         print(f"\n{name}:")
         for metric in ["hpd_overlap", "kl_divergence", "spike_prob"]:
             print(f"  {metric}: {diagnostic_event_mean(diag, metric):.4f}")
 
-    # Generate Figure 4
-    print("\nGenerating Figure 4...")
-    set_figure_defaults(context="paper")
-
-    # Diagnostic thresholds. HPD overlap and the predictive p-value use fixed
-    # cutoffs of 0.05. The KL divergence has no natural fixed cutoff, so it is
-    # shown without a threshold line or a flagged-region callout.
-    diagnostic_thresholds = {
-        "hpd_overlap": 0.05,
-        "spike_prob": 0.05,
-    }
-
     # Per-spike flag agreement between the two decoders at these thresholds.
     # "Cont-only" is the rescue quadrant (flagged by Continuous but not by
     # Continuous-Fragmented); "rescue" is its fraction of all Continuous flags.
-    metric_directions: dict[str, Literal["below", "above"]] = {
-        "hpd_overlap": "below",
-        "spike_prob": "below",
-    }
     print("\n=== Flag agreement: Continuous (A) vs Cont-Frag (B) ===")
     for metric, worse_when in metric_directions.items():
         conf = compute_flag_confusion(
-            continuous_diagnostics,
-            contfrag_diagnostics,
+            bundle.continuous_diagnostics,
+            bundle.contfrag_diagnostics,
             metric,
-            diagnostic_thresholds[metric],
+            thresholds[metric],
             worse_when=worse_when,
         )
         print(
@@ -323,161 +463,54 @@ def run_demo(*, use_cache: bool = True) -> None:
             f"rescue={100 * conf.rescue_rate:.1f}%"
         )
 
-    # Define the detail-window time slice shared by both decoder panels.
-    detail_slice = slice(
-        DETAIL_CENTER - DETAIL_HALF_WIDTH,
-        DETAIL_CENTER + DETAIL_HALF_WIDTH,
-    )
 
-    # Convert time to relative seconds from start of the detail window
-    time_arr = np.asarray(time, dtype=np.float64)
-    time_offset = time_arr[detail_slice.start]
-    time_relative = time_arr - time_offset
+def _place_track_inset(
+    track_subfig: Any,
+    fig: Any,
+    bundle: Fig4Bundle,
+    axes_b: Any,
+) -> Any:
+    """Draw the unlettered 2D track inset and align it to the diagnostic labels.
 
-    # Shift xarray time coordinates to relative seconds
-    continuous_results = continuous_results.assign_coords(
-        time=continuous_results.coords["time"].values - time_offset
-    )
-    contfrag_results = contfrag_results.assign_coords(
-        time=contfrag_results.coords["time"].values - time_offset
-    )
-
-    # Shift spike times to relative seconds
-    spike_times_relative: list[Any] = [st - time_offset for st in spike_times_list]
-    continuous_diagnostics_relative = shift_diagnostic_event_times(
-        continuous_diagnostics,
-        time_offset,
-    )
-    contfrag_diagnostics_relative = shift_diagnostic_event_times(
-        contfrag_diagnostics,
-        time_offset,
-    )
-
-    # Two-row figure: (a)/(b) detail zooms with a track inset on top, and
-    # (c) whole-session metric hexbins on the bottom.
-    fig = plt.figure(figsize=(7.2, 6.1), dpi=450, constrained_layout=True)
-    subfigs_rows = fig.subfigures(2, 1, height_ratios=[5.0, 2.6], hspace=0.02)
-
-    # Shared plotting kwargs for detail panels
-    detail_kwargs: dict[str, Any] = dict(
-        spike_times=spike_times_relative,
-        spike_counts=spike_counts,
-        place_field_peaks=place_field_peaks,
-        place_fields=diagnostic_place_fields,
-        position_bins=diagnostic_position_bins,
-        time_slice_ind=detail_slice,
-        thresholds=diagnostic_thresholds,
-        track_graph=data["track_graph"],
-        edge_order=data["linear_edge_order"],
-        edge_spacing=data["linear_edge_spacing"],
-    )
-
-    # Top row: (a) Continuous and (b) ContFrag detail zooms, side by side,
-    # with a small unlettered track inset on the right for spatial context.
-    subfigs_top = subfigs_rows[0].subfigures(
-        1,
-        5,
-        width_ratios=[0.055, 1.0, 1.07, 0.42, 0.04],
-        wspace=0.005,
-    )
-
-    # Panel (a): Continuous detail view
-    _, axes_a = plot_single_model_diagnostics(
-        time_relative,
-        linear_position,
-        continuous_results,
-        continuous_diagnostics_relative,
-        model_name="Continuous Model",
-        fig=subfigs_top[1],
-        **detail_kwargs,
-    )
-    axes_a[3].set_ylabel("HPD\noverlap", fontsize=8, labelpad=7)
-
-    # Panel (b): ContFrag detail view
-    _, axes_b = plot_single_model_diagnostics(
-        time_relative,
-        linear_position,
-        contfrag_results,
-        contfrag_diagnostics_relative,
-        model_name="Cont.-Frag. Model",
-        fig=subfigs_top[2],
-        **detail_kwargs,
-    )
-
-    # Match y-axis limits between detail panels for direct comparison
-    for i in range(6):
-        ylim_a = axes_a[i].get_ylim()
-        ylim_b = axes_b[i].get_ylim()
-        shared_ylim = (min(ylim_a[0], ylim_b[0]), max(ylim_a[1], ylim_b[1]))
-        axes_a[i].set_ylim(shared_ylim)
-        axes_b[i].set_ylim(shared_ylim)
-
-    # Panel (b) repeats the row scales from panel (a), so keep only the
-    # model-specific data and title on the right stack.
-    for ax in axes_b:
-        ax.set_ylabel("")
-        ax.tick_params(axis="y", left=False, labelleft=False)
-    for text in axes_b[0].texts:
-        if text.get_gid() == ANIMAL_POSITION_LABEL_GID:
-            text.set_visible(False)
-
-    # Keep threshold / worse-fit row annotations only on panel (b), where they
-    # read as shared labels for both model stacks.
-    for ax in axes_a[3:]:
-        for text in ax.texts:
-            if text.get_gid() in DIAGNOSTIC_ANNOTATION_GIDS:
-                text.set_visible(False)
-
-    # Panel labels - place in axes coordinates on the predictive row of each.
-    panel_label_x = {"a": -0.115, "b": -0.05}
-    for axes, label in [(axes_a, "a"), (axes_b, "b")]:
-        axes[0].text(
-            panel_label_x[label],
-            1.24,
-            label,
-            fontsize=8,
-            fontweight="bold",
-            transform=axes[0].transAxes,
-            va="top",
-            ha="right",
-        )
-
+    Pixel-nudging is confined here and to the module-level ``SCALE_BAR_*`` /
+    ``VISUAL_EDGE_CORRECTION_PX`` / ``TRACK_SIZE_SCALE`` constants (measured at
+    the current figure size and DPI). Returns the inset axis so the hexbin
+    layout can later align its right edge to the colorbar label.
+    """
     # Unlettered track inset beside panels (a) and (b). Use the same row
     # rhythm as the detail stacks and place it beside the likelihood row.
-    track_gs = subfigs_top[3].add_gridspec(
+    track_gs = track_subfig.add_gridspec(
         6,
         3,
         height_ratios=[2, 2, 1.5, 1, 1, 1],
         width_ratios=[0.01, 0.68, 0.31],
     )
-    ax_track = subfigs_top[3].add_subplot(track_gs[1, 1])
+    ax_track = track_subfig.add_subplot(track_gs[1, 1])
     # Reward wells sit at the arm tips, i.e. the degree-1 (leaf) nodes of the
     # track graph. Mark them so the 2D layout connects to the linearized axis
     # used in panels (a)-(b).
-    track_graph = data["track_graph"]
+    track_graph = bundle.track_graph
     reward_well_nodes = [n for n in track_graph.nodes if track_graph.degree(n) == 1]
     plot_track_graph_2d(
         track_graph=track_graph,
-        position_info=position_info,
+        position_info=bundle.position_info,
         ax=ax_track,
-        edge_order=data["linear_edge_order"],
+        edge_order=bundle.edge_order,
         reward_well_nodes=reward_well_nodes,
         scalebar_length=20,
         scalebar_label="20 cm",
     )
     ax_track.set_anchor("W")
-    # ``add_scalebar`` appends the scale bar as the final line. Move the bar
-    # and label together so the label clears the nearby reward-well marker.
-    scale_bar_shift = 22.0
-    scale_bar_drop = 5.0
+    # Move the scale bar and its label together so the label clears the nearby
+    # reward-well marker.
     scale_bar_line = ax_track.lines[-1]
-    scale_bar_line.set_xdata(np.asarray(scale_bar_line.get_xdata()) + scale_bar_shift)
-    scale_bar_line.set_ydata(np.asarray(scale_bar_line.get_ydata()) - scale_bar_drop)
+    scale_bar_line.set_xdata(np.asarray(scale_bar_line.get_xdata()) + SCALE_BAR_SHIFT)
+    scale_bar_line.set_ydata(np.asarray(scale_bar_line.get_ydata()) - SCALE_BAR_DROP)
     scale_bar_line.set_linewidth(2.0)
     for text in ax_track.texts:
         if text.get_text() == "20 cm":
             x_pos, y_pos = text.get_position()
-            text.set_position((x_pos + scale_bar_shift + 10, y_pos - 4 - scale_bar_drop))
+            text.set_position((x_pos + SCALE_BAR_SHIFT + 10, y_pos - 4 - SCALE_BAR_DROP))
             text.set_fontsize(8.5)
             text.set_clip_on(False)
 
@@ -496,40 +529,49 @@ def run_demo(*, use_cache: bool = True) -> None:
     if annotation_bboxes:
         annotation_right = max(bbox.x1 for bbox in annotation_bboxes)
         ax_track.set_in_layout(False)
-        # The trajectory line's vector bbox extends slightly farther left than
-        # the visually salient rendered diagram, so add a small pixel-level
-        # correction measured on the exported PNG.
-        visual_edge_correction_px = 7.0
         _shift_axis_to_artist_edge(
             ax_track,
             _axis_content_artists(ax_track),
             renderer,
             target_px=annotation_right,
             edge="left",
-            correction_px=visual_edge_correction_px,
+            correction_px=VISUAL_EDGE_CORRECTION_PX,
         )
-    track_size_scale = 1.10
     pos = ax_track.get_position()
     ax_track.set_position(
         [
             pos.x0,
-            pos.y0 - pos.height * (track_size_scale - 1) / 2,
-            pos.width * track_size_scale,
-            pos.height * track_size_scale,
+            pos.y0 - pos.height * (TRACK_SIZE_SCALE - 1) / 2,
+            pos.width * TRACK_SIZE_SCALE,
+            pos.height * TRACK_SIZE_SCALE,
         ]
     )
+    return ax_track
 
-    # Bottom row: whole-session metric hexbins.
-    subfigs_bot = subfigs_rows[1].subfigures(1, 3, width_ratios=[0.16, 7, 0.16], wspace=0.015)
+
+def _layout_hexbin_row(
+    bottom_subfig: Any,
+    fig: Any,
+    bundle: Fig4Bundle,
+    thresholds: dict[str, float],
+    ax_track: Any,
+) -> None:
+    """Render and hand-place the whole-session metric hexbin row and colorbar.
+
+    The subplot-grid rhythm and colorbar spacing are nudged in figure
+    coordinates here; the final step aligns the track inset's right edge to the
+    colorbar label so the two rows share a right margin.
+    """
+    subfigs_bot = bottom_subfig.subfigures(1, 3, width_ratios=[0.16, 7, 0.16], wspace=0.015)
     axes_hexbin = subfigs_bot[1].subplots(1, 3, gridspec_kw={"wspace": -0.02})
     axes_before_hexbin = tuple(fig.axes)
     plot_per_spike_metric_hexbin_row(
-        continuous_diagnostics,
-        contfrag_diagnostics,
+        bundle.continuous_diagnostics,
+        bundle.contfrag_diagnostics,
         axes_hexbin,
         model_a_name="Continuous",
         model_b_name="Cont-Frag",
-        thresholds=diagnostic_thresholds,
+        thresholds=thresholds,
         colorbar_pad=0.006,
     )
     for ax, anchor in zip(axes_hexbin, ("E", "C", "W"), strict=True):
@@ -589,6 +631,173 @@ def run_demo(*, use_cache: bool = True) -> None:
         va="top",
         ha="right",
     )
+
+
+def run_demo(*, use_cache: bool = True) -> None:
+    """Run the full Figure 4 generation pipeline.
+
+    A linear sequence: build the :class:`Figure4Config` and :class:`Fig4Paths`,
+    assemble the :class:`Fig4Bundle` (cached-or-computed decode payload + fresh
+    track data), print the summary scalars, render the detail stacks, place the
+    track inset, lay out the hexbin row, and save.
+
+    Parameters
+    ----------
+    use_cache : bool, default True
+        When True and a fingerprint-matching cache of decoder outputs exists
+        under ``data/intermediates``, load it and skip the expensive fit/decode
+        step. When False (``--force-recompute``), always recompute and
+        overwrite the cache. A config / data / ``non_local_detector`` change
+        invalidates the cache automatically. Fitting + decoding both models
+        takes several minutes; figure-only edits (styling, thresholds) reuse
+        the cache.
+    """
+    # Compute or load the expensive decode payload and bundle it with the
+    # freshly-loaded position/track data.
+    config = Figure4Config()
+    paths = Fig4Paths(data_path=DATA_PATH, animal_date_epoch=ANIMAL_DATE_EPOCH)
+    bundle = _load_or_compute_fig4_bundle(config, paths, use_cache=use_cache)
+
+    # Diagnostic thresholds. HPD overlap and the predictive p-value use fixed
+    # cutoffs of 0.05. The KL divergence has no natural fixed cutoff, so it is
+    # shown without a threshold line or a flagged-region callout.
+    diagnostic_thresholds = {
+        "hpd_overlap": 0.05,
+        "spike_prob": 0.05,
+    }
+    metric_directions: dict[str, Literal["below", "above"]] = {
+        "hpd_overlap": "below",
+        "spike_prob": "below",
+    }
+    _print_fig4_summary(bundle, diagnostic_thresholds, metric_directions)
+
+    # Generate Figure 4
+    print("\nGenerating Figure 4...")
+    set_figure_defaults(context="paper")
+
+    # Define the detail-window time slice shared by both decoder panels.
+    detail_slice = slice(
+        DETAIL_CENTER - DETAIL_HALF_WIDTH,
+        DETAIL_CENTER + DETAIL_HALF_WIDTH,
+    )
+
+    # Convert time to relative seconds from start of the detail window
+    time_arr = np.asarray(bundle.time, dtype=np.float64)
+    time_offset = time_arr[detail_slice.start]
+    time_relative = time_arr - time_offset
+
+    # Shift xarray time coordinates to relative seconds
+    continuous_results = bundle.continuous_results.assign_coords(
+        time=bundle.continuous_results.coords["time"].values - time_offset
+    )
+    contfrag_results = bundle.contfrag_results.assign_coords(
+        time=bundle.contfrag_results.coords["time"].values - time_offset
+    )
+
+    # Shift spike times to relative seconds
+    spike_times_relative: list[Any] = [st - time_offset for st in bundle.spike_times_list]
+    continuous_diagnostics_relative = shift_diagnostic_event_times(
+        bundle.continuous_diagnostics,
+        time_offset,
+    )
+    contfrag_diagnostics_relative = shift_diagnostic_event_times(
+        bundle.contfrag_diagnostics,
+        time_offset,
+    )
+
+    # Two-row figure: (a)/(b) detail zooms with a track inset on top, and
+    # (c) whole-session metric hexbins on the bottom.
+    fig = plt.figure(figsize=(7.2, 6.1), dpi=450, constrained_layout=True)
+    subfigs_rows = fig.subfigures(2, 1, height_ratios=[5.0, 2.6], hspace=0.02)
+
+    # Shared plotting kwargs for detail panels
+    detail_kwargs: dict[str, Any] = dict(
+        spike_times=spike_times_relative,
+        spike_counts=bundle.spike_counts,
+        place_field_peaks=bundle.place_field_peaks,
+        place_fields=bundle.diagnostic_place_fields,
+        position_bins=bundle.diagnostic_position_bins,
+        time_slice_ind=detail_slice,
+        thresholds=diagnostic_thresholds,
+        track_graph=bundle.track_graph,
+        edge_order=bundle.edge_order,
+        edge_spacing=bundle.edge_spacing,
+    )
+
+    # Top row: (a) Continuous and (b) ContFrag detail zooms, side by side,
+    # with a small unlettered track inset on the right for spatial context.
+    subfigs_top = subfigs_rows[0].subfigures(
+        1,
+        5,
+        width_ratios=[0.055, 1.0, 1.07, 0.42, 0.04],
+        wspace=0.005,
+    )
+
+    # Panel (a): Continuous detail view
+    _, axes_a = plot_single_model_diagnostics(
+        time_relative,
+        bundle.linear_position,
+        continuous_results,
+        continuous_diagnostics_relative,
+        model_name="Continuous Model",
+        fig=subfigs_top[1],
+        **detail_kwargs,
+    )
+    axes_a[3].set_ylabel("HPD\noverlap", fontsize=8, labelpad=7)
+
+    # Panel (b): ContFrag detail view
+    _, axes_b = plot_single_model_diagnostics(
+        time_relative,
+        bundle.linear_position,
+        contfrag_results,
+        contfrag_diagnostics_relative,
+        model_name="Cont.-Frag. Model",
+        fig=subfigs_top[2],
+        **detail_kwargs,
+    )
+
+    # Match y-axis limits between detail panels for direct comparison
+    for i in range(6):
+        ylim_a = axes_a[i].get_ylim()
+        ylim_b = axes_b[i].get_ylim()
+        shared_ylim = (min(ylim_a[0], ylim_b[0]), max(ylim_a[1], ylim_b[1]))
+        axes_a[i].set_ylim(shared_ylim)
+        axes_b[i].set_ylim(shared_ylim)
+
+    # Panel (b) repeats the row scales from panel (a), so keep only the
+    # model-specific data and title on the right stack.
+    for ax in axes_b:
+        ax.set_ylabel("")
+        ax.tick_params(axis="y", left=False, labelleft=False)
+    for text in axes_b[0].texts:
+        if text.get_gid() == ANIMAL_POSITION_LABEL_GID:
+            text.set_visible(False)
+
+    # Keep threshold / worse-fit row annotations only on panel (b), where they
+    # read as shared labels for both model stacks.
+    for ax in axes_a[3:]:
+        for text in ax.texts:
+            if text.get_gid() in DIAGNOSTIC_ANNOTATION_GIDS:
+                text.set_visible(False)
+
+    # Panel labels - place in axes coordinates on the predictive row of each.
+    panel_label_x = {"a": -0.115, "b": -0.05}
+    for axes, label in [(axes_a, "a"), (axes_b, "b")]:
+        axes[0].text(
+            panel_label_x[label],
+            1.24,
+            label,
+            fontsize=8,
+            fontweight="bold",
+            transform=axes[0].transAxes,
+            va="top",
+            ha="right",
+        )
+
+    # Unlettered track inset beside panels (a) and (b), then the whole-session
+    # metric hexbin row underneath.
+    ax_track = _place_track_inset(subfigs_top[3], fig, bundle, axes_b)
+    _layout_hexbin_row(subfigs_rows[1], fig, bundle, diagnostic_thresholds, ax_track)
 
     side_tight_bbox = _axes_tight_bbox_inches(fig, pad_inches=0.05)
     save_figure("manuscript/figures/main/figure04", close=True, bbox_inches=side_tight_bbox)
