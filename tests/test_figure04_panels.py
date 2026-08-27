@@ -14,13 +14,21 @@ import pytest
 matplotlib.use("Agg")  # noqa: E402
 
 import matplotlib.pyplot as plt  # noqa: E402
+import networkx as nx  # noqa: E402
+import pandas as pd  # noqa: E402
+import xarray as xr  # noqa: E402
 from matplotlib.collections import PolyCollection  # noqa: E402
 from matplotlib.lines import Line2D  # noqa: E402
 
 from statespacecheck_paper.diagnostics import SpikeEventDiagnostics  # noqa: E402
 from statespacecheck_paper.figure04_panels import (  # noqa: E402
+    _draw_decoder_likelihood_image,
+    _draw_predictive_heatmap_row,
+    _draw_track_graph_edges,
+    plot_model_comparison_with_posterior,
     plot_per_cell_diagnostic_scatter,
     plot_per_spike_metric_hexbin_row,
+    plot_single_model_diagnostics,
 )
 
 # ---------------------------------------------------------------------------
@@ -397,4 +405,166 @@ class TestPlotPerCellDiagnosticScatterRunningAverage:
         # Wrong path: -log first, then average. Different on rows 0 and 1.
         wrong = np.mean(-np.log(np.maximum(predictive_pvalues, 1e-10)), axis=1)
         assert not np.allclose(y_actual, wrong, rtol=1e-3)
+        plt.close(fig)
+
+
+# ---------------------------------------------------------------------------
+# Composite panels + extracted row renderers
+# ---------------------------------------------------------------------------
+
+_N_TIME, _N_CELLS, _N_POS = 20, 6, 10
+_STATES = ("Continuous", "Fragmented")
+
+
+def _multistate_results(seed: int) -> xr.Dataset:
+    """Synthetic decoder results with a (state, position) MultiIndex."""
+    rng = np.random.default_rng(seed)
+    pos = np.linspace(0.0, 100.0, _N_POS)
+    state_bins = pd.MultiIndex.from_product([list(_STATES), pos], names=["state", "position"])
+    time = np.arange(_N_TIME, dtype=float)
+    n_sb = len(state_bins)
+
+    def _da(a: np.ndarray) -> xr.DataArray:
+        return xr.DataArray(
+            a, dims=("time", "state_bins"), coords={"time": time, "state_bins": state_bins}
+        )
+
+    return xr.Dataset(
+        {
+            "predictive_posterior": _da(rng.dirichlet(np.ones(n_sb), size=_N_TIME)),
+            "log_likelihood": _da(rng.normal(size=(_N_TIME, n_sb))),
+        }
+    )
+
+
+def _dense_diagnostics(seed: int) -> SpikeEventDiagnostics:
+    """SpikeEventDiagnostics with dense (n_time, n_cells) metric matrices."""
+    rng = np.random.default_rng(seed)
+    n_spk = 15
+    return SpikeEventDiagnostics(
+        event_time_ind=rng.integers(0, _N_TIME, n_spk).astype(np.intp),
+        event_cell_ind=rng.integers(0, _N_CELLS, n_spk).astype(np.intp),
+        event_hpd_overlap=rng.uniform(0, 1, n_spk),
+        event_kl_divergence=rng.gamma(2.0, 0.5, n_spk),
+        event_predictive_pvalue=rng.uniform(0.01, 1, n_spk),
+        hpd_overlap=rng.uniform(0, 1, (_N_TIME, _N_CELLS)),
+        kl_divergence=rng.gamma(2.0, 0.5, (_N_TIME, _N_CELLS)),
+        predictive_pvalue=rng.uniform(0.01, 1, (_N_TIME, _N_CELLS)),
+        per_spike_likelihood=rng.uniform(0, 1, (n_spk, _N_POS)),
+        event_time=rng.uniform(0, _N_TIME, n_spk),
+    )
+
+
+def _linear_track_graph() -> nx.Graph:
+    g = nx.Graph()
+    for i in range(6):
+        g.add_node(i, pos=(float(i), 0.0))
+    for i in range(5):
+        g.add_edge(i, i + 1, distance=1.0)
+    return g
+
+
+def _panel_inputs() -> dict:
+    rng = np.random.default_rng(7)
+    return {
+        "time": np.arange(_N_TIME, dtype=float),
+        "position": np.linspace(10.0, 90.0, _N_TIME),
+        "spike_times": [
+            np.sort(rng.uniform(0, _N_TIME, rng.integers(3, 8))) for _ in range(_N_CELLS)
+        ],
+        "spike_counts": rng.poisson(0.4, (_N_TIME, _N_CELLS)).astype(np.int64),
+        "place_field_peaks": np.linspace(5.0, 95.0, _N_CELLS),
+    }
+
+
+class TestPlotModelComparisonWithPosterior:
+    def test_renders_six_by_two_grid_with_all_rows(self) -> None:
+        c = _panel_inputs()
+        fig, axes = plot_model_comparison_with_posterior(
+            c["time"],
+            c["position"],
+            _multistate_results(1),
+            _multistate_results(2),
+            _dense_diagnostics(3),
+            _dense_diagnostics(4),
+            spike_times=c["spike_times"],
+            spike_counts=c["spike_counts"],
+            place_field_peaks=c["place_field_peaks"],
+            thresholds={"hpd_overlap": 0.05, "predictive_pvalue": 0.05},
+            track_graph=_linear_track_graph(),
+            edge_order=[(i, i + 1) for i in range(5)],
+            show_running_average=True,
+        )
+        assert axes.shape == (6, 2)
+        # Predictive heatmap row draws a pcolormesh (collections).
+        assert axes[0, 0].collections
+        # Raster row draws eventplot line collections.
+        assert axes[2, 0].collections
+        plt.close(fig)
+
+
+class TestPlotSingleModelDiagnostics:
+    def test_renders_six_rows_with_place_field_likelihood(self) -> None:
+        c = _panel_inputs()
+        rng = np.random.default_rng(9)
+        fig, axes = plot_single_model_diagnostics(
+            c["time"],
+            c["position"],
+            _multistate_results(5),
+            _dense_diagnostics(6),
+            spike_times=c["spike_times"],
+            spike_counts=c["spike_counts"],
+            place_field_peaks=c["place_field_peaks"],
+            place_fields=rng.random((_N_CELLS, _N_POS)) * 10 + 0.1,
+            position_bins=np.linspace(0.0, 100.0, _N_POS),
+            thresholds={"hpd_overlap": 0.05},
+            track_graph=_linear_track_graph(),
+            edge_order=[(i, i + 1) for i in range(5)],
+        )
+        assert axes.shape == (6,)
+        assert axes[0].images or axes[0].collections
+        plt.close(fig)
+
+
+class TestExtractedRowRenderers:
+    def test_predictive_row_sets_title_and_ylabel(self) -> None:
+        fig, ax = plt.subplots()
+        _draw_predictive_heatmap_row(
+            ax,
+            _multistate_results(1),
+            np.arange(_N_TIME, dtype=float),
+            np.linspace(0.0, 100.0, _N_TIME),
+            slice(None),
+            title="ModelX",
+            ylabel="Predictive",
+        )
+        assert ax.get_title() == "ModelX"
+        assert ax.get_ylabel() == "Predictive"
+        plt.close(fig)
+
+    def test_decoder_likelihood_image_is_noop_without_log_likelihood(self) -> None:
+        results = _multistate_results(1).drop_vars("log_likelihood")
+        fig, ax = plt.subplots()
+        before = len(ax.images) + len(ax.collections)
+        _draw_decoder_likelihood_image(ax, results, slice(None), None)
+        assert len(ax.images) + len(ax.collections) == before
+        plt.close(fig)
+
+    def test_decoder_likelihood_image_draws_when_present(self) -> None:
+        fig, ax = plt.subplots()
+        _draw_decoder_likelihood_image(ax, _multistate_results(1), slice(None), None)
+        assert ax.images or ax.collections
+        plt.close(fig)
+
+    def test_track_graph_edges_draw_lines_on_each_axis(self) -> None:
+        fig, (ax0, ax1) = plt.subplots(1, 2)
+        _draw_track_graph_edges(
+            [ax0, ax1],
+            _linear_track_graph(),
+            [(i, i + 1) for i in range(5)],
+            0.0,
+            np.arange(_N_TIME, dtype=float),
+            slice(None),
+        )
+        assert ax0.lines and ax1.lines
         plt.close(fig)

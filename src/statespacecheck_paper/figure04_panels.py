@@ -364,6 +364,123 @@ def plot_per_cell_diagnostic_scatter(
     return ax
 
 
+def _draw_predictive_heatmap_row(
+    ax: Axes,
+    results: xr.Dataset,
+    time: NDArray[np.float64] | pd.Index,
+    position: NDArray[np.float64],
+    time_slice_ind: slice,
+    *,
+    title: str,
+    ylabel: str,
+) -> None:
+    """Draw one predictive-posterior heatmap row (heatmap + standard labels).
+
+    Shared by the comparison (per column) and single-model composites; the
+    per-composite legend / "Animal Position" annotation is added by the caller.
+    """
+    plot_distribution_heatmap(
+        ax=ax,
+        distribution_da=results.predictive_posterior,
+        time=time,
+        position=position,
+        time_slice_ind=time_slice_ind,
+        show_position=True,
+        cmap=CMAP_POSTERIOR,
+    )
+    ax.set_title(title, fontsize=8)
+    ax.set_ylabel(ylabel, fontsize=8, labelpad=7)
+    ax.set_xlabel("")
+    ax.tick_params(labelsize=8, labelbottom=False)
+
+
+def _draw_decoder_likelihood_image(
+    ax: Axes,
+    results: xr.Dataset,
+    time_slice_ind: slice,
+    has_spikes_mask: NDArray[np.bool_] | None,
+) -> None:
+    """Overlay the decoder likelihood (marginalized over state) at spike times.
+
+    The decoder likelihood lives on the joint state-by-position space; a
+    single-state model has no position axis and
+    :func:`decoder_likelihood_to_columns` raises. No-op when the results carry
+    no ``log_likelihood``.
+    """
+    if "log_likelihood" not in results:
+        return
+    lik_np, time_coords, pos_coords = decoder_likelihood_to_columns(results, time_slice_ind)
+    extent = compute_half_pixel_extent(time_coords, pos_coords)
+    has_spk_slice = (
+        has_spikes_mask[time_slice_ind]
+        if has_spikes_mask is not None
+        else np.ones(lik_np.shape[0], dtype=bool)
+    )
+    plot_likelihood_columns(
+        ax,
+        lik_np,
+        has_spk_slice,
+        n_time=len(time_coords),
+        extent=extent,
+        cmap=CMAP_LIKELIHOOD,
+    )
+
+
+def _draw_place_field_likelihood_image(
+    ax: Axes,
+    time: NDArray[np.float64] | pd.Index,
+    spike_counts: NDArray[np.int64],
+    place_fields: NDArray[np.float64],
+    position_bins: NDArray[np.float64],
+    time_slice_ind: slice,
+) -> None:
+    """Overlay the mean normalized per-spike likelihood over position.
+
+    This is the observation quantity the per-spike diagnostics operate on, and
+    it is identical across decoders that share place fields (unlike the decoder's
+    combined likelihood). Slices to the plotted window first: the full session is
+    ~700k bins, so computing over all of it would allocate multi-GB intermediates
+    for a ~1000-bin plot.
+    """
+    counts_win = spike_counts[time_slice_ind]
+    lik_np, has_spk_slice = mean_per_spike_likelihood_by_time(counts_win, place_fields)
+    time_win = np.asarray(time)[time_slice_ind]
+    pos = np.asarray(position_bins, dtype=np.float64)
+    extent = compute_half_pixel_extent(time_win, pos)
+    plot_likelihood_columns(
+        ax,
+        lik_np,
+        has_spk_slice,
+        n_time=len(time_win),
+        extent=extent,
+        cmap=CMAP_LIKELIHOOD,
+    )
+
+
+def _draw_track_graph_edges(
+    axes_pair: list[Axes],
+    track_graph: nx.Graph,
+    edge_order: Sequence[tuple[Hashable, Hashable]] | None,
+    edge_spacing: float | list[float],
+    time: NDArray[np.float64] | pd.Index,
+    time_slice_ind: slice,
+) -> None:
+    """Draw the 1D linearized track graph on the right edge of two rows."""
+    time_arr = np.asarray(time)
+    x_pos = float(time_arr[time_slice_ind][-1])
+    for ax in axes_pair:
+        plot_track_graph_1d(
+            track_graph,
+            ax=ax,
+            edge_order=edge_order,
+            edge_spacing=edge_spacing,
+            other_axis_start=x_pos,
+            edge_linewidth=3,
+            reward_well_size=20,
+            reward_well_nodes=list(range(6)),
+        )
+
+
 def plot_model_comparison_with_posterior(
     time: NDArray[np.float64] | pd.Index,
     position: NDArray[np.float64],
@@ -502,19 +619,15 @@ def plot_model_comparison_with_posterior(
         [(results_a, model_a_name), (results_b, model_b_name)]
     ):
         ax = axes[0, col]
-        plot_distribution_heatmap(
-            ax=ax,
-            distribution_da=results.predictive_posterior,
-            time=time,
-            position=position,
-            time_slice_ind=time_slice_ind,
-            show_position=True,
-            cmap=CMAP_POSTERIOR,
+        _draw_predictive_heatmap_row(
+            ax,
+            results,
+            time,
+            position,
+            time_slice_ind,
+            title=model_name,
+            ylabel="Predictive" if col == 0 else "",
         )
-        ax.set_title(model_name, fontsize=8)
-        ax.set_ylabel("Predictive" if col == 0 else "", fontsize=8, labelpad=7)
-        ax.set_xlabel("")
-        ax.tick_params(labelsize=8, labelbottom=False)
         if col == 0:
             ax.legend(loc="upper left", fontsize=8, frameon=False)
 
@@ -538,28 +651,8 @@ def plot_model_comparison_with_posterior(
         for artist in list(ax.images) + list(ax.collections):
             artist.set_alpha(0.35)
 
-        # Step 2: Overlay likelihood at spike times using shared column renderer
-        if "log_likelihood" in results:
-            # Decoder likelihood on the joint state-by-position space
-            # (marginalized over state), unlike the place-field per-spike
-            # likelihood; a single-state model has no position axis and raises.
-            lik_np, time_coords, pos_coords = decoder_likelihood_to_columns(results, time_slice_ind)
-            extent = compute_half_pixel_extent(time_coords, pos_coords)
-
-            has_spk_slice = (
-                has_spikes_mask[time_slice_ind]
-                if has_spikes_mask is not None
-                else np.ones(lik_np.shape[0], dtype=bool)
-            )
-
-            plot_likelihood_columns(
-                ax,
-                lik_np,
-                has_spk_slice,
-                n_time=len(time_coords),
-                extent=extent,
-                cmap=CMAP_LIKELIHOOD,
-            )
+        # Step 2: Overlay the decoder likelihood at spike times.
+        _draw_decoder_likelihood_image(ax, results, time_slice_ind, has_spikes_mask)
 
         # Position overlay
         time_arr = np.asarray(time)
@@ -578,20 +671,14 @@ def plot_model_comparison_with_posterior(
 
     # Add 1D track graph on right edge (right column, predictive and likelihood rows)
     if track_graph is not None:
-        time_arr = np.asarray(time)
-        sliced_time = time_arr[time_slice_ind]
-        x_pos = float(sliced_time[-1])
-        for row_idx in range(2):
-            plot_track_graph_1d(
-                track_graph,
-                ax=axes[row_idx, 1],
-                edge_order=edge_order,
-                edge_spacing=edge_spacing,
-                other_axis_start=x_pos,
-                edge_linewidth=3,
-                reward_well_size=20,
-                reward_well_nodes=list(range(6)),
-            )
+        _draw_track_graph_edges(
+            [axes[0, 1], axes[1, 1]],
+            track_graph,
+            edge_order,
+            edge_spacing,
+            time,
+            time_slice_ind,
+        )
 
     # Row 2: Spike raster (both columns show same raster, sorted by place field peak)
     if spike_times is not None:
@@ -772,19 +859,15 @@ def plot_single_model_diagnostics(
         has_spikes_mask = spike_counts.sum(axis=1) > 0
 
     # Row 0: Predictive posterior
-    plot_distribution_heatmap(
-        ax=axes[0],
-        distribution_da=results.predictive_posterior,
-        time=time,
-        position=position,
-        time_slice_ind=time_slice_ind,
-        show_position=True,
-        cmap=CMAP_POSTERIOR,
+    _draw_predictive_heatmap_row(
+        axes[0],
+        results,
+        time,
+        position,
+        time_slice_ind,
+        title=model_name,
+        ylabel="Predictive",
     )
-    axes[0].set_title(model_name, fontsize=8)
-    axes[0].set_ylabel("Predictive", fontsize=8, labelpad=7)
-    axes[0].set_xlabel("")
-    axes[0].tick_params(labelsize=8, labelbottom=False)
     # Self-label the position trace in its own color instead of a legend.
     animal_position_label = axes[0].text(
         0.02,
@@ -806,50 +889,16 @@ def plot_single_model_diagnostics(
     ax_lik.set_facecolor("black")
 
     if place_fields is not None and spike_counts is not None and position_bins is not None:
-        # Match the simulation figure: show the mean normalized per-spike
-        # likelihood over position. This is the observation quantity the
-        # per-spike diagnostics below operate on, and it is identical across
-        # decoders that share place fields (unlike the decoder's combined
-        # likelihood, which lives on the joint state-by-position space).
-        # Slice to the plotted window first; the full session is ~700k bins,
-        # so computing over all of it would allocate multi-GB intermediates
-        # for a ~1000-bin plot.
-        counts_win = spike_counts[time_slice_ind]
-        lik_np, has_spk_slice = mean_per_spike_likelihood_by_time(counts_win, place_fields)
-
-        time_win = np.asarray(time)[time_slice_ind]
-        pos = np.asarray(position_bins, dtype=np.float64)
-        extent = compute_half_pixel_extent(time_win, pos)
-
-        plot_likelihood_columns(
-            ax_lik,
-            lik_np,
-            has_spk_slice,
-            n_time=len(time_win),
-            extent=extent,
-            cmap=CMAP_LIKELIHOOD,
+        # Match the simulation figure: the mean normalized per-spike likelihood
+        # over position (the observation quantity the per-spike diagnostics
+        # operate on), identical across decoders that share place fields.
+        _draw_place_field_likelihood_image(
+            ax_lik, time, spike_counts, place_fields, position_bins, time_slice_ind
         )
     elif "log_likelihood" in results:
         # Decoder-likelihood fallback (no place fields supplied): marginalized
-        # over state on the joint state-by-position space, unlike the
-        # place-field per-spike likelihood above. Single-state data raises.
-        lik_np, time_coords, pos_coords = decoder_likelihood_to_columns(results, time_slice_ind)
-        extent = compute_half_pixel_extent(time_coords, pos_coords)
-
-        has_spk_slice = (
-            has_spikes_mask[time_slice_ind]
-            if has_spikes_mask is not None
-            else np.ones(lik_np.shape[0], dtype=bool)
-        )
-
-        plot_likelihood_columns(
-            ax_lik,
-            lik_np,
-            has_spk_slice,
-            n_time=len(time_coords),
-            extent=extent,
-            cmap=CMAP_LIKELIHOOD,
-        )
+        # over state on the joint state-by-position space.
+        _draw_decoder_likelihood_image(ax_lik, results, time_slice_ind, has_spikes_mask)
 
     # Position overlay
     time_arr = np.asarray(time)
@@ -866,19 +915,14 @@ def plot_single_model_diagnostics(
 
     # 1D track graph on right edge of predictive and likelihood rows
     if track_graph is not None:
-        sliced_time = time_arr[time_slice_ind]
-        x_pos = float(sliced_time[-1])
-        for row_idx in range(2):
-            plot_track_graph_1d(
-                track_graph,
-                ax=axes[row_idx],
-                edge_order=edge_order,
-                edge_spacing=edge_spacing,
-                other_axis_start=x_pos,
-                edge_linewidth=3,
-                reward_well_size=20,
-                reward_well_nodes=list(range(6)),
-            )
+        _draw_track_graph_edges(
+            [axes[0], axes[1]],
+            track_graph,
+            edge_order,
+            edge_spacing,
+            time,
+            time_slice_ind,
+        )
 
     # Row 2: Spike raster
     if spike_times is not None:
