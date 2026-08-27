@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from typing import Any
 
 import numpy as np
@@ -123,3 +124,103 @@ class TestFigure4ConfigMatchesManuscript:
         """The provenance string must match the manuscript-stated version."""
         config = figure04_decoder.Figure4Config()
         assert config.provenance.non_local_detector_version == "0.6.10.dev214+g956fdccaf"
+
+
+class TestConfigValueValidation:
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {"position_std": 0.0},
+            {"position_std": -1.0},
+            {"position_std": float("nan")},
+            {"position_bin_size_cm": 0.0},
+            {"sampling_frequency_hz": -5.0},
+            {"sampling_frequency_hz": float("inf")},
+        ],
+    )
+    def test_decoder_config_rejects_nonpositive_or_nonfinite(self, kwargs: dict) -> None:
+        with pytest.raises(ValueError, match="must be finite and positive"):
+            figure04_decoder.Figure4DecoderConfig(**kwargs)
+
+    @pytest.mark.parametrize("block_size", [0, -1])
+    def test_execution_config_rejects_nonpositive_block_size(self, block_size: int) -> None:
+        with pytest.raises(ValueError, match="block_size must be a positive integer"):
+            figure04_decoder.Figure4ExecutionConfig(block_size=block_size)
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {"movement_var": 0.0},
+            {"discrete_transition_concentration": -1.0},
+            {"discrete_transition_regularization": 0.0},
+            {"contfrag_diagonal_values": (1.2, 0.98)},
+            {"contfrag_discrete_initial_conditions": (-0.1, 1.1)},
+            {"non_local_detector_version": ""},
+        ],
+    )
+    def test_provenance_rejects_invalid(self, kwargs: dict) -> None:
+        with pytest.raises(ValueError):
+            figure04_decoder.Figure4Provenance(**kwargs)
+
+
+class TestNonDefaultPropagation:
+    """Non-default config values must flow through to the built models (guarding
+    against the injection being accidentally hardcoded)."""
+
+    @staticmethod
+    def _models(decoder: Any = None, execution: Any = None) -> tuple[Any, Any]:
+        pytest.importorskip("non_local_detector")
+        from non_local_detector.environment import Environment
+
+        decoder = decoder or figure04_decoder.Figure4DecoderConfig()
+        env = Environment(place_bin_size=decoder.position_bin_size_cm)
+        return figure04_decoder.build_decoder_models(env, decoder, execution)
+
+    def test_position_std_propagates(self) -> None:
+        cont, cf = self._models(figure04_decoder.Figure4DecoderConfig(position_std=5.0))
+        assert cont.sorted_spikes_algorithm_params["position_std"] == pytest.approx(5.0)
+        assert cf.sorted_spikes_algorithm_params["position_std"] == pytest.approx(5.0)
+
+    def test_block_size_propagates(self) -> None:
+        cont, _ = self._models(execution=figure04_decoder.Figure4ExecutionConfig(block_size=1234))
+        assert cont.sorted_spikes_algorithm_params["block_size"] == 1234
+
+    def test_sampling_frequency_propagates(self) -> None:
+        cont, cf = self._models(figure04_decoder.Figure4DecoderConfig(sampling_frequency_hz=250.0))
+        assert cont.sampling_frequency == pytest.approx(250.0)
+        assert cf.sampling_frequency == pytest.approx(250.0)
+
+    def test_position_bin_size_propagates_via_environment(self) -> None:
+        pytest.importorskip("non_local_detector")
+        env = figure04_decoder.create_decoder_environment(
+            track_graph=None, edge_order=[], edge_spacing=0.0, place_bin_size=3.0
+        )
+        assert env.place_bin_size == pytest.approx(3.0)
+
+
+class TestValidateProvenanceDefaults:
+    @staticmethod
+    def _models() -> tuple[Any, Any]:
+        pytest.importorskip("non_local_detector")
+        from non_local_detector.environment import Environment
+
+        return figure04_decoder.build_decoder_models(Environment())
+
+    def test_passes_for_recorded_defaults(self) -> None:
+        cont, cf = self._models()
+        # nld defaults still match Figure4Provenance -> no raise.
+        figure04_decoder.validate_provenance_defaults(cont, cf)
+
+    def test_raises_on_scalar_drift(self) -> None:
+        cont, cf = self._models()
+        drifted = dataclasses.replace(figure04_decoder.Figure4Provenance(), movement_var=999.0)
+        with pytest.raises(ValueError, match="default drift"):
+            figure04_decoder.validate_provenance_defaults(cont, cf, drifted)
+
+    def test_raises_on_array_drift(self) -> None:
+        cont, cf = self._models()
+        drifted = dataclasses.replace(
+            figure04_decoder.Figure4Provenance(), contfrag_diagonal_values=(0.5, 0.5)
+        )
+        with pytest.raises(ValueError, match="default drift"):
+            figure04_decoder.validate_provenance_defaults(cont, cf, drifted)

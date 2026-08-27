@@ -92,6 +92,17 @@ class Figure4DecoderConfig:
     position_bin_size_cm: float = 2.0
     sampling_frequency_hz: float = 500.0
 
+    def __post_init__(self) -> None:
+        for name, value in (
+            ("position_std", self.position_std),
+            ("position_bin_size_cm", self.position_bin_size_cm),
+            ("sampling_frequency_hz", self.sampling_frequency_hz),
+        ):
+            if not np.isfinite(value) or value <= 0.0:
+                raise ValueError(
+                    f"Figure4DecoderConfig.{name} must be finite and positive; got {value!r}"
+                )
+
     @property
     def time_bin_size_ms(self) -> float:
         """Spike time-bin size in milliseconds (``1000 / sampling_frequency``)."""
@@ -117,6 +128,13 @@ class Figure4ExecutionConfig:
 
     block_size: int = 10000
 
+    def __post_init__(self) -> None:
+        if self.block_size <= 0:
+            raise ValueError(
+                f"Figure4ExecutionConfig.block_size must be a positive integer; "
+                f"got {self.block_size!r}"
+            )
+
 
 @dataclasses.dataclass(frozen=True)
 class Figure4Provenance:
@@ -128,11 +146,13 @@ class Figure4Provenance:
     ``continuous_transition_types`` grid (a mix of ``RandomWalk`` and ``Uniform``)
     and would hit the concentration-default split (``1.0`` for the continuous
     decoder, ``1.1`` for the ContFrag classifier) -- either of which risks
-    silently changing the published decode. Instead they are pinned by
-    ``tests/test_figure04_decoder.py::TestFigure4ConfigMatchesManuscript``,
-    which asserts the *resolved* model attributes still equal these values, so a
-    dependency bump that moves a default fails loudly. They are also hashed into
-    the cache fingerprint, so a recorded value changing invalidates the cache.
+    silently changing the published decode. Instead they are pinned two ways:
+    ``tests/test_figure04_decoder.py::TestFigure4ConfigMatchesManuscript`` asserts
+    the *resolved* model attributes equal these values, and
+    :func:`validate_provenance_defaults` re-checks them at decode time (runtime),
+    so a dependency bump that moves a default fails loudly either way. They are
+    also hashed into the cache fingerprint, so a recorded value changing
+    invalidates the cache.
 
     Attributes
     ----------
@@ -159,6 +179,33 @@ class Figure4Provenance:
     discrete_transition_concentration: float = 1.1
     discrete_transition_regularization: float = 1e-10
     non_local_detector_version: str = "0.6.10.dev214+g956fdccaf"
+
+    def __post_init__(self) -> None:
+        for name, value in (
+            ("movement_var", self.movement_var),
+            ("discrete_transition_concentration", self.discrete_transition_concentration),
+            ("discrete_transition_regularization", self.discrete_transition_regularization),
+        ):
+            if not np.isfinite(value) or value <= 0.0:
+                raise ValueError(
+                    f"Figure4Provenance.{name} must be finite and positive; got {value!r}"
+                )
+        for name, pair in (
+            ("contfrag_diagonal_values", self.contfrag_diagonal_values),
+            ("contfrag_discrete_initial_conditions", self.contfrag_discrete_initial_conditions),
+        ):
+            arr = np.asarray(pair, dtype=float)
+            if (
+                arr.shape != (2,)
+                or not np.all(np.isfinite(arr))
+                or np.any((arr < 0.0) | (arr > 1.0))
+            ):
+                raise ValueError(
+                    f"Figure4Provenance.{name} must be two finite probabilities in [0, 1]; "
+                    f"got {pair!r}"
+                )
+        if not self.non_local_detector_version:
+            raise ValueError("Figure4Provenance.non_local_detector_version must be non-empty")
 
 
 @dataclasses.dataclass(frozen=True)
@@ -262,6 +309,88 @@ def build_decoder_models(
         sampling_frequency=decoder_config.sampling_frequency_hz,
     )
     return continuous_model, contfrag_model
+
+
+def validate_provenance_defaults(
+    continuous_model: Any,
+    contfrag_model: Any,
+    provenance: Figure4Provenance | None = None,
+) -> None:
+    """Assert the built models still carry the recorded ``non_local_detector`` defaults.
+
+    :class:`Figure4Provenance` records nld class defaults that shape the decode but
+    are deliberately not injected (see its docstring). A dependency bump could
+    silently change one, producing a different published figure. This checks the
+    *resolved* model attributes against the recorded values and raises at decode
+    time (runtime), rather than relying only on the drift-guard test, so an
+    unintended dependency change fails loudly instead of silently.
+
+    Raises
+    ------
+    ValueError
+        If any resolved model attribute diverges from the recorded provenance.
+    """
+    if provenance is None:
+        provenance = Figure4Provenance()
+
+    scalar_checks: tuple[tuple[str, Any, float], ...] = (
+        (
+            "continuous movement_var",
+            continuous_model.continuous_transition_types[0][0].movement_var,
+            provenance.movement_var,
+        ),
+        (
+            "contfrag movement_var",
+            contfrag_model.continuous_transition_types[0][0].movement_var,
+            provenance.movement_var,
+        ),
+        (
+            "contfrag discrete_transition_concentration",
+            contfrag_model.discrete_transition_concentration,
+            provenance.discrete_transition_concentration,
+        ),
+        (
+            "continuous discrete_transition_regularization",
+            continuous_model.discrete_transition_regularization,
+            provenance.discrete_transition_regularization,
+        ),
+        (
+            "contfrag discrete_transition_regularization",
+            contfrag_model.discrete_transition_regularization,
+            provenance.discrete_transition_regularization,
+        ),
+    )
+    for label, resolved, expected in scalar_checks:
+        if not np.isclose(float(resolved), float(expected)):
+            raise ValueError(
+                f"non_local_detector default drift: {label} resolved to {resolved!r} but "
+                f"Figure4Provenance records {expected!r}. A dependency change moved a "
+                "decode-shaping default; update Figure4Provenance (and re-verify Figure 4) "
+                "if this is intentional."
+            )
+
+    array_checks: tuple[tuple[str, Any, tuple[float, float]], ...] = (
+        (
+            "contfrag discrete_transition_type.diagonal_values",
+            contfrag_model.discrete_transition_type.diagonal_values,
+            provenance.contfrag_diagonal_values,
+        ),
+        (
+            "contfrag discrete_initial_conditions",
+            contfrag_model.discrete_initial_conditions,
+            provenance.contfrag_discrete_initial_conditions,
+        ),
+    )
+    for label, resolved, expected_pair in array_checks:
+        if not np.allclose(
+            np.asarray(resolved, dtype=float), np.asarray(expected_pair, dtype=float)
+        ):
+            raise ValueError(
+                f"non_local_detector default drift: {label} resolved to "
+                f"{np.asarray(resolved)!r} but Figure4Provenance records {expected_pair!r}. "
+                "A dependency change moved a decode-shaping default; update "
+                "Figure4Provenance (and re-verify Figure 4) if this is intentional."
+            )
 
 
 def fit_decoder_models(

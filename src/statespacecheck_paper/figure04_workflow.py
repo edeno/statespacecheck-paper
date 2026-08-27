@@ -36,9 +36,11 @@ from statespacecheck_paper.figure04_decoder import (
     Figure4Config,
     Figure4DecoderConfig,
     Figure4ExecutionConfig,
+    Figure4Provenance,
     create_decoder_environment,
     fit_decoder_models,
     get_spike_counts,
+    validate_provenance_defaults,
 )
 from statespacecheck_paper.figure04_diagnostics import (
     compute_flag_confusion,
@@ -115,17 +117,35 @@ class Figure4DecodeResults:
         # Tie the decode timelines together: both decoder result datasets and
         # both per-spike diagnostics must live on the same ``n_time`` grid as
         # ``spike_counts``, so an inconsistent bundle is rejected at construction
-        # rather than silently misaligning Figure 4.
+        # rather than silently misaligning Figure 4. Require the actual ``time``
+        # coordinate (not just a matching length) -- ``compose_figure04`` reads
+        # it, and comparing the two decoders' coordinates catches a bundle that
+        # pairs decodes from different windows even when the lengths agree.
+        result_time_coords: dict[str, NDArray[np.float64]] = {}
         for name, dataset in (
             ("continuous_results", self.continuous_results),
             ("continuous_fragmented_results", self.continuous_fragmented_results),
         ):
-            dataset_n_time = dataset.sizes.get("time")
-            if dataset_n_time is not None and dataset_n_time != n_time:
+            if "time" not in dataset.coords:
                 raise ValueError(
-                    f"{name} has {dataset_n_time} time samples but spike_counts has "
-                    f"{n_time}; the decode timelines must match."
+                    f"{name} must carry a 'time' coordinate; the decode timeline "
+                    "cannot be verified without it."
                 )
+            dataset_time = np.asarray(dataset.coords["time"].values, dtype=np.float64)
+            if dataset_time.shape != (n_time,):
+                raise ValueError(
+                    f"{name} has {dataset_time.shape[0]} time samples but spike_counts "
+                    f"has {n_time}; the decode timelines must match."
+                )
+            result_time_coords[name] = dataset_time
+        if not np.array_equal(
+            result_time_coords["continuous_results"],
+            result_time_coords["continuous_fragmented_results"],
+        ):
+            raise ValueError(
+                "continuous_results and continuous_fragmented_results have different "
+                "'time' coordinates; the two decoders must share one timeline."
+            )
         for name, diagnostics in (
             ("continuous_diagnostics", self.continuous_diagnostics),
             ("continuous_fragmented_diagnostics", self.continuous_fragmented_diagnostics),
@@ -266,6 +286,7 @@ def _compute_figure04_decode_results(
     head_position: NDArray[np.float64],
     decoder_config: Figure4DecoderConfig,
     execution_config: Figure4ExecutionConfig,
+    provenance: Figure4Provenance,
 ) -> Figure4DecodeResults:
     """Fit both decoders, decode, and compute the cacheable decode results."""
     spike_times_list = list(recording.spike_times)  # non_local_detector wants a list
@@ -287,6 +308,11 @@ def _compute_figure04_decode_results(
         decoder_config=decoder_config,
         execution_config=execution_config,
     )
+
+    # Runtime guard: the non_local_detector defaults recorded as provenance shape
+    # the decode but are not injected, so a dependency bump could silently change
+    # them. Fail loudly here rather than produce a different published figure.
+    validate_provenance_defaults(continuous_model, continuous_fragmented_model, provenance)
 
     print(f"Decoding {len(time)} time points...")
     decode_outputs = ["filter", "predictive_posterior", "log_likelihood"]
@@ -410,6 +436,7 @@ def prepare_figure04_render_data(
             head_position=head_position,
             decoder_config=config.decoder,
             execution_config=config.execution,
+            provenance=config.provenance,
         )
         print("Caching decoder outputs to data/intermediates ...")
         save_figure04_cache(

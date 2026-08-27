@@ -78,11 +78,19 @@ def _synthetic_recording() -> NeuralRecordingData:
     )
 
 
+def _ds(values: np.ndarray) -> xr.Dataset:
+    """A tiny decoder-result Dataset carrying a ``time`` coordinate."""
+    return xr.Dataset(
+        {"filter": ("time", values)},
+        coords={"time": np.arange(len(values), dtype=float)},
+    )
+
+
 def _synthetic_decode_results() -> Figure4DecodeResults:
     n_time, n_cells, n_bins = 8, 2, 4
     return Figure4DecodeResults(
-        continuous_results=xr.Dataset({"filter": ("time", np.zeros(n_time))}),
-        continuous_fragmented_results=xr.Dataset({"filter": ("time", np.ones(n_time))}),
+        continuous_results=_ds(np.zeros(n_time)),
+        continuous_fragmented_results=_ds(np.ones(n_time)),
         continuous_diagnostics=_diagnostics(np.array([0.5])),
         continuous_fragmented_diagnostics=_diagnostics(np.array([0.5, 0.5])),
         spike_counts=np.zeros((n_time, n_cells), dtype=np.int64),
@@ -158,8 +166,8 @@ class TestFigure4DecodeResults:
         # copy must be isolated from later mutation of that array.
         spike_counts = np.zeros((8, 2), dtype=np.int64)
         decode = Figure4DecodeResults(
-            continuous_results=xr.Dataset({"filter": ("time", np.zeros(8))}),
-            continuous_fragmented_results=xr.Dataset({"filter": ("time", np.zeros(8))}),
+            continuous_results=_ds(np.zeros(8)),
+            continuous_fragmented_results=_ds(np.zeros(8)),
             continuous_diagnostics=_diagnostics(np.array([0.5])),
             continuous_fragmented_diagnostics=_diagnostics(np.array([0.5])),
             spike_counts=spike_counts,
@@ -175,8 +183,8 @@ class TestFigure4DecodeResults:
     def test_rejects_dataset_timeline_mismatch(self) -> None:
         with pytest.raises(ValueError, match="decode timelines must match"):
             Figure4DecodeResults(
-                continuous_results=xr.Dataset({"filter": ("time", np.zeros(3))}),
-                continuous_fragmented_results=xr.Dataset({"filter": ("time", np.zeros(8))}),
+                continuous_results=_ds(np.zeros(3)),
+                continuous_fragmented_results=_ds(np.zeros(8)),
                 continuous_diagnostics=_diagnostics(np.array([0.5])),
                 continuous_fragmented_diagnostics=_diagnostics(np.array([0.5])),
                 spike_counts=np.zeros((8, 2), dtype=np.int64),  # 8 != dataset's 3
@@ -185,11 +193,47 @@ class TestFigure4DecodeResults:
                 diagnostic_position_bins=np.arange(4.0),
             )
 
+    def test_rejects_dataset_without_time_coordinate(self) -> None:
+        # A time *dimension* is not enough; compose_figure04 reads the ``time``
+        # coordinate, so require it at construction.
+        with pytest.raises(ValueError, match="must carry a 'time' coordinate"):
+            Figure4DecodeResults(
+                continuous_results=xr.Dataset({"filter": ("time", np.zeros(8))}),
+                continuous_fragmented_results=_ds(np.zeros(8)),
+                continuous_diagnostics=_diagnostics(np.array([0.5])),
+                continuous_fragmented_diagnostics=_diagnostics(np.array([0.5])),
+                spike_counts=np.zeros((8, 2), dtype=np.int64),
+                place_field_peaks=np.zeros(2),
+                diagnostic_place_fields=np.zeros((2, 4)),
+                diagnostic_position_bins=np.arange(4.0),
+            )
+
+    def test_rejects_mismatched_time_coordinates(self) -> None:
+        # Same length, different coordinate values: the two decoders were run on
+        # different windows. A length-only check would miss this.
+        with pytest.raises(ValueError, match="different 'time' coordinates"):
+            Figure4DecodeResults(
+                continuous_results=xr.Dataset(
+                    {"filter": ("time", np.zeros(8))},
+                    coords={"time": np.arange(8, dtype=float)},
+                ),
+                continuous_fragmented_results=xr.Dataset(
+                    {"filter": ("time", np.zeros(8))},
+                    coords={"time": np.arange(8, dtype=float) + 100.0},
+                ),
+                continuous_diagnostics=_diagnostics(np.array([0.5])),
+                continuous_fragmented_diagnostics=_diagnostics(np.array([0.5])),
+                spike_counts=np.zeros((8, 2), dtype=np.int64),
+                place_field_peaks=np.zeros(2),
+                diagnostic_place_fields=np.zeros((2, 4)),
+                diagnostic_position_bins=np.arange(4.0),
+            )
+
     def test_rejects_diagnostic_event_index_out_of_range(self) -> None:
         with pytest.raises(ValueError, match="event_time_ind falls outside"):
             Figure4DecodeResults(
-                continuous_results=xr.Dataset({"filter": ("time", np.zeros(8))}),
-                continuous_fragmented_results=xr.Dataset({"filter": ("time", np.zeros(8))}),
+                continuous_results=_ds(np.zeros(8)),
+                continuous_fragmented_results=_ds(np.zeros(8)),
                 continuous_diagnostics=_diagnostics_at([99], [0]),  # 99 >= n_time 8
                 continuous_fragmented_diagnostics=_diagnostics(np.array([0.5])),
                 spike_counts=np.zeros((8, 2), dtype=np.int64),
