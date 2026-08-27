@@ -64,8 +64,6 @@ generate_figure04.py   → figure04_generation
 
 - **`interactive/`** — an optional pyqtgraph viewer that consumes the same
   diagnostic results but produces no manuscript figure.
-- **`scripts/exploratory/`** — window-finding and sanity-check workflows, not
-  canonical generators.
 
 Start from the four `scripts/generate_figureNN.py` entry points.
 

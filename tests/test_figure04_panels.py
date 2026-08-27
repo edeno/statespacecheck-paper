@@ -21,14 +21,11 @@ from matplotlib.collections import PolyCollection  # noqa: E402
 from matplotlib.lines import Line2D  # noqa: E402
 
 from statespacecheck_paper.diagnostics import SpikeEventDiagnostics  # noqa: E402
-from statespacecheck_paper.figure04_exploratory import (  # noqa: E402
-    plot_exploratory_model_comparison,
-)
 from statespacecheck_paper.figure04_panels import (  # noqa: E402
     ModelDiagnosticPanelData,
-    draw_decoder_likelihood_image,
-    draw_predictive_heatmap_row,
-    draw_track_graph_edges,
+    _draw_decoder_likelihood_image,
+    _draw_predictive_heatmap_row,
+    _draw_track_graph_edges,
     plot_per_spike_metric_hexbin_row,
     plot_single_model_diagnostics,
     plot_spike_event_diagnostic_scatter,
@@ -482,32 +479,6 @@ def _panel_inputs() -> dict:
     }
 
 
-class TestPlotExploratoryModelComparison:
-    def test_renders_six_by_two_grid_with_all_rows(self) -> None:
-        c = _panel_inputs()
-        fig, axes = plot_exploratory_model_comparison(
-            c["time"],
-            c["position"],
-            _multistate_results(1),
-            _multistate_results(2),
-            _dense_diagnostics(3),
-            _dense_diagnostics(4),
-            spike_times=c["spike_times"],
-            spike_counts=c["spike_counts"],
-            place_field_peaks=c["place_field_peaks"],
-            thresholds={"hpd_overlap": 0.05, "predictive_pvalue": 0.05},
-            track_graph=_linear_track_graph(),
-            edge_order=[(i, i + 1) for i in range(5)],
-            show_running_average=True,
-        )
-        assert axes.shape == (6, 2)
-        # Predictive heatmap row draws a pcolormesh (collections).
-        assert axes[0, 0].collections
-        # Raster row draws eventplot line collections.
-        assert axes[2, 0].collections
-        plt.close(fig)
-
-
 class TestPlotSingleModelDiagnostics:
     def test_renders_six_rows_with_place_field_likelihood(self) -> None:
         c = _panel_inputs()
@@ -546,7 +517,7 @@ class TestPlotSingleModelDiagnostics:
 class TestExtractedRowRenderers:
     def test_predictive_row_sets_title_and_ylabel(self) -> None:
         fig, ax = plt.subplots()
-        draw_predictive_heatmap_row(
+        _draw_predictive_heatmap_row(
             ax,
             _multistate_results(1),
             np.arange(_N_TIME, dtype=float),
@@ -563,19 +534,19 @@ class TestExtractedRowRenderers:
         results = _multistate_results(1).drop_vars("log_likelihood")
         fig, ax = plt.subplots()
         before = len(ax.images) + len(ax.collections)
-        draw_decoder_likelihood_image(ax, results, slice(None), None)
+        _draw_decoder_likelihood_image(ax, results, slice(None), None)
         assert len(ax.images) + len(ax.collections) == before
         plt.close(fig)
 
     def test_decoder_likelihood_image_draws_when_present(self) -> None:
         fig, ax = plt.subplots()
-        draw_decoder_likelihood_image(ax, _multistate_results(1), slice(None), None)
+        _draw_decoder_likelihood_image(ax, _multistate_results(1), slice(None), None)
         assert ax.images or ax.collections
         plt.close(fig)
 
     def test_track_graph_edges_draw_lines_on_each_axis(self) -> None:
         fig, (ax0, ax1) = plt.subplots(1, 2)
-        draw_track_graph_edges(
+        _draw_track_graph_edges(
             [ax0, ax1],
             _linear_track_graph(),
             [(i, i + 1) for i in range(5)],
@@ -690,16 +661,6 @@ class TestModelDiagnosticPanelDataValidation:
         kwargs.update(override)
         with pytest.raises(ValueError, match=match):
             ModelDiagnosticPanelData(**kwargs)
-
-
-def test_exploratory_comparison_alias_is_pinned() -> None:
-    # Retained so pre-rename notebooks (notebooks/archive/fig4.ipynb) keep working.
-    from statespacecheck_paper import figure04_exploratory
-
-    assert (
-        figure04_exploratory.plot_model_comparison_with_posterior
-        is figure04_exploratory.plot_exploratory_model_comparison
-    )
 
 
 def test_scatter_event_time_ind_keeps_repeated_events_distinct() -> None:

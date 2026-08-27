@@ -194,65 +194,6 @@ def compute_running_average(
     return running_avg, time.copy()
 
 
-RUNNING_AVG_WINDOW: float = 0.020
-
-
-def compute_event_hpd_overlap(
-    diagnostics: SpikeEventDiagnostics,
-    time: NDArray[np.float64],
-    start_idx: int,
-    end_idx: int,
-    running_avg_window: float = RUNNING_AVG_WINDOW,
-) -> float:
-    """Compute mean running-averaged HPD overlap for an event window.
-
-    Parameters
-    ----------
-    diagnostics : SpikeEventDiagnostics
-        Must have ``hpd_overlap`` populated (``include_dense_matrices=True``).
-    time : np.ndarray, shape (n_time,)
-        Time values for each bin.
-    start_idx, end_idx : int
-        Event boundaries (inclusive).
-    running_avg_window : float, default :data:`RUNNING_AVG_WINDOW`
-        Window size for running average, in seconds.
-
-    Returns
-    -------
-    float
-        Mean running-averaged HPD overlap over the event window.
-    """
-    window_slice = slice(start_idx, end_idx + 1)
-    window_time = time[window_slice]
-    if diagnostics.hpd_overlap is None:
-        raise ValueError(
-            "compute_event_hpd_overlap requires dense ``hpd_overlap`` "
-            "(re-run with ``include_dense_matrices=True``)."
-        )
-    metric_data = diagnostics.hpd_overlap[window_slice]
-
-    event_times = diagnostics.event_time
-    event_values = diagnostics.event_hpd_overlap
-    if event_times is not None and event_values is not None:
-        event_times = np.asarray(event_times)
-        time_start = time[start_idx]
-        time_end = time[end_idx]
-        event_mask = (event_times >= time_start) & (event_times <= time_end)
-        running_avg, _ = compute_running_average(
-            metric_data,
-            window_time,
-            window_size=running_avg_window,
-            event_times=event_times[event_mask],
-            event_values=np.asarray(event_values)[event_mask],
-        )
-    else:
-        running_avg, _ = compute_running_average(
-            metric_data, window_time, window_size=running_avg_window
-        )
-
-    return float(np.nanmean(running_avg))
-
-
 def _get_spike_events_from_counts(
     spike_counts: NDArray[np.int64],
     time: NDArray[np.float64] | None = None,

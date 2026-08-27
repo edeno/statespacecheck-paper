@@ -9,12 +9,11 @@ This repository contains the source code and supplementary materials for the pap
 This is a **paper/research repository** (not a library). The code is organized into:
 
 - **`src/statespacecheck_paper/`**: Reusable modules (styling, simulation, analysis, plotting)
-- **`scripts/`**: Thin CLI adapters for the importable figure-generation recipes; non-canonical scaffolding lives in `scripts/exploratory/`
+- **`scripts/`**: Thin CLI adapters for the importable figure-generation recipes
 - **`manuscript/figures/`**: Generated figure outputs (PDF and PNG)
   - `manuscript/figures/main/`: Main text figures
   - `manuscript/figures/supplementary/`: Supplementary figures
 - **`tests/`**: Comprehensive test suite (run `uv run pytest`)
-- **`notebooks/archive/`**: Archived exploratory notebooks (development scratch — may use outdated APIs; not part of the figure pipeline)
 
 **For developers**: See [CLAUDE.md](CLAUDE.md) for detailed development guide including module organization, coding standards, and where to add new functionality.
 

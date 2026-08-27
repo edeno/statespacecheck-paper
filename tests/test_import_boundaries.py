@@ -137,12 +137,6 @@ def test_figure04_family_dependency_edges_are_acyclic() -> None:
             prefix + "plotting",
             prefix + "style",
         },
-        "figure04_exploratory.py": {
-            prefix + "diagnostics",
-            prefix + "figure04_panels",
-            prefix + "figure04_plot_primitives",
-            prefix + "style",
-        },
         "figure04_cache.py": {prefix + "figure04_decoder"},
         "figure04_workflow.py": {
             prefix + "figure04_cache",

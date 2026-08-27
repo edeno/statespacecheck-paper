@@ -35,21 +35,18 @@ statespacecheck-paper/
 │   ├── figure04_plot_primitives.py # Figure-4 shared low-level plotting helpers (GIDs, extents)
 │   ├── figure04_track_plots.py # Figure-4 track-graph rendering (1D/2D)
 │   ├── figure04_panels.py      # Figure-4 raster + diagnostic panels
-│   ├── figure04_exploratory.py # Exploratory two-column model comparison (window-selection scripts only)
 │   ├── figure04_cache.py       # Figure-4 decode-cache paths, fingerprint, I/O
 │   ├── figure04_workflow.py    # Figure-4 load/fit/decode/cache + summary (Figure4RenderData)
 │   ├── figure04_layout.py      # Figure-4 artist arrangement (compose_figure04)
 │   ├── figure04_generation.py  # Figure-4 generation recipe (generate_figure04)
 │   ├── schematic.py            # Graphical model and equation diagrams
 │   └── interactive/            # pyqtgraph interactive diagnostic viewer (app, panels, cache)
-├── scripts/                     # Figure generation + exploratory scripts
+├── scripts/                     # Thin CLI adapters for the figure-generation recipes
 │   ├── generate_figure01.py    # Figure 1: Schematic and distribution comparisons
 │   ├── generate_figure02.py    # Figure 2: Diagnostic demonstrations
 │   ├── generate_figure03.py    # Figure 3: Per-cell diagnostics across 8-phase simulation
 │   ├── generate_figure04.py    # Figure 4: Real-data decoder + diagnostics
-│   ├── generate_all_figures.py # Master script to generate all figures
-│   └── exploratory/            # Non-canonical scaffolding (sanity checks, window
-│                               # selection, viewer benchmark) — see exploratory/README.md
+│   └── generate_all_figures.py # Master script to generate all figures
 ├── manuscript/                  # LaTeX source files + bundled figures (Overleaf-ready)
 │   ├── main.tex                 # Self-contained (own inline preamble)
 │   ├── Local-GoF-Paper.bib      # Bibliography (BibTeX, from Zotero); built with iopart-num.bst
@@ -57,7 +54,6 @@ statespacecheck-paper/
 │   └── figures/                # Generated figure outputs
 │       ├── main/               # Main text figures (PDF + PNG)
 │       └── supplementary/      # Supplementary figures (PDF + PNG)
-├── notebooks/archive/           # Archived exploratory notebooks (dev scratch, not the pipeline)
 └── tests/                       # Test suite (unit + property-based + integration)
     ├── test_style.py
     ├── test_simulation.py
@@ -184,9 +180,8 @@ The repository follows a clean separation between **reusable code** (in `src/`) 
 - `DATA_PATH`: default `<repo>/data`; override via `STATESPACECHECK_DATA_PATH`.
 - `ANIMAL_DATE_EPOCH`: default `j1620210710_02_r1`; override via
   `STATESPACECHECK_ANIMAL_DATE_EPOCH`.
-- Imported by `scripts/generate_figure04.py` and the four
-  `scripts/exploratory/` sanity-check / window-finder scripts so they share one
-  source of truth.
+- Imported by `scripts/generate_figure04.py` so the data-location identifiers
+  have one source of truth.
 
 ### Figure Scripts
 
@@ -317,7 +312,6 @@ uv run jupyter lab
 ### 3. Clean Separation of Concerns
 
 - **src/statespacecheck_paper/**: Reusable functions, well-tested
-- **notebooks/archive/**: Archived exploratory analysis, can be messy (each carries an archived-notebook banner; not part of the reproducible pipeline)
 - **scripts/**: Production scripts to generate final figures/results
 
 ### 4. Time-Resolved Diagnostics

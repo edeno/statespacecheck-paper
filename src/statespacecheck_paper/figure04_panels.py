@@ -2,8 +2,7 @@
 
 The canonical Figure-4 panels: spike raster, spike-event diagnostic scatter,
 single-model posterior/likelihood/raster/diagnostic stack, and per-spike metric
-hexbin comparison row. The exploratory two-column model comparison lives in
-:mod:`statespacecheck_paper.figure04_exploratory`.
+hexbin comparison row.
 """
 
 from __future__ import annotations
@@ -540,7 +539,7 @@ def plot_spike_event_diagnostic_scatter(
     return ax
 
 
-def draw_predictive_heatmap_row(
+def _draw_predictive_heatmap_row(
     ax: Axes,
     results: xr.Dataset,
     time: NDArray[np.float64] | pd.Index,
@@ -570,7 +569,7 @@ def draw_predictive_heatmap_row(
     ax.tick_params(labelsize=8, labelbottom=False)
 
 
-def draw_decoder_likelihood_image(
+def _draw_decoder_likelihood_image(
     ax: Axes,
     results: xr.Dataset,
     time_slice_ind: slice,
@@ -633,7 +632,7 @@ def _draw_place_field_likelihood_image(
     )
 
 
-def draw_track_graph_edges(
+def _draw_track_graph_edges(
     axes_pair: list[Axes],
     track_graph: nx.Graph,
     edge_order: Sequence[tuple[Hashable, Hashable]] | None,
@@ -732,7 +731,7 @@ def plot_single_model_diagnostics(
         has_spikes_mask = spike_counts.sum(axis=1) > 0
 
     # Row 0: Predictive posterior
-    draw_predictive_heatmap_row(
+    _draw_predictive_heatmap_row(
         axes[0],
         results,
         time,
@@ -771,7 +770,7 @@ def plot_single_model_diagnostics(
     elif "log_likelihood" in results:
         # Decoder-likelihood fallback (no place fields supplied): marginalized
         # over state on the joint state-by-position space.
-        draw_decoder_likelihood_image(ax_lik, results, time_slice_ind, has_spikes_mask)
+        _draw_decoder_likelihood_image(ax_lik, results, time_slice_ind, has_spikes_mask)
 
     # Position overlay
     time_arr = np.asarray(time)
@@ -788,7 +787,7 @@ def plot_single_model_diagnostics(
 
     # 1D track graph on right edge of predictive and likelihood rows
     if data.track_graph is not None:
-        draw_track_graph_edges(
+        _draw_track_graph_edges(
             [axes[0], axes[1]],
             data.track_graph,
             data.edge_order,
