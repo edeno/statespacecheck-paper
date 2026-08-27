@@ -403,6 +403,6 @@ class TestSpikeEventPredictivePvalueRankTolerance:
         assert ranks.shape == (n_time,)
         # Rank is a cumulative probability mass: bounded in [0, 1], allowing the
         # tiny FP overshoot above 1 the reduction can produce for the top cell
-        # (matches the tolerance in test_real_data_analysis).
+        # (matches the tolerance in test_figure04_diagnostics).
         assert np.all(ranks >= 0.0)
         assert np.all(ranks <= 1.0 + 1e-9)

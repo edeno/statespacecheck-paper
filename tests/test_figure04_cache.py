@@ -18,7 +18,7 @@ from statespacecheck_paper.figure04_cache import (
     load_figure04_cache,
     save_figure04_cache,
 )
-from statespacecheck_paper.real_data_analysis import Figure4Config
+from statespacecheck_paper.figure04_decoder import Figure4Config
 
 
 def _payload() -> dict[str, Any]:

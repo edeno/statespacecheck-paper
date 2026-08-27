@@ -45,10 +45,16 @@ figure03_summary       → figure03_protocol, figure03_simulation, diagnostics
 figure03_plotting      → figure03_protocol, figure03_summary, diagnostics, plotting, style
 generate_figure03.py   → figure03_protocol, figure03_simulation, figure03_summary, figure03_plotting, style
 
-figure04_cache         → real_data_analysis (Figure4Config only)
-figure04_workflow      → figure04_cache, real_data_analysis, diagnostics, load_local_data
-figure04_layout        → figure04_workflow, diagnostics, real_data_plotting, style
-figure04_generation    → figure04_workflow, figure04_layout, figure04_cache, real_data_analysis, paths, style
+figure04_decoder       → (leaf; nld construction + Figure4Config)
+figure04_place_fields  → (leaf; place-field / marginalized-posterior extraction)
+figure04_diagnostics   → diagnostics, figure04_place_fields
+figure04_plot_primitives → style
+figure04_track_plots   → figure04_plot_primitives
+figure04_panels        → diagnostics, figure04_diagnostics, figure04_plot_primitives, figure04_track_plots, plotting, style
+figure04_cache         → figure04_decoder (Figure4Config only)
+figure04_workflow      → figure04_cache, figure04_decoder, figure04_diagnostics, figure04_place_fields, diagnostics, load_local_data
+figure04_layout        → figure04_workflow, diagnostics, figure04_panels, figure04_plot_primitives, figure04_track_plots, style
+figure04_generation    → figure04_workflow, figure04_layout, figure04_cache, figure04_decoder, paths, style
 generate_figure04.py   → figure04_generation
 ```
 
@@ -172,7 +178,7 @@ median_flag_percentages=…)` returns a `matplotlib` `Figure` → `save_figure` 
   and Continuous-Fragmented decoders (and the whole-session hexbin summary).
 - **Entry point:** `scripts/generate_figure04.py::main` (the CLI), which calls
   `figure04_generation.generate_figure04(*, use_cache)`.
-- **Configuration:** `Figure4Config` (in `real_data_analysis.py`) plus the fixed
+- **Configuration:** `Figure4Config` (in `figure04_decoder.py`) plus the fixed
   `FIGURE4_DIAGNOSTIC_THRESHOLDS = {"hpd_overlap": 0.05, "predictive_pvalue": 0.05}`
   in `figure04_generation.py`. **Known limitation:** `Figure4Config` currently
   guards provenance and the default drift, but does not yet drive every decoder
@@ -182,7 +188,8 @@ median_flag_percentages=…)` returns a `matplotlib` `Figure` → `save_figure` 
 - **Computation (reading order):**
   `figure04_generation` (recipe) → `figure04_workflow.prepare_figure04_render_data`
   (loads the recording, loads a fingerprint-matching cache or fits/decodes via
-  `real_data_analysis`, computes `diagnostics`) → `figure04_layout.compose_figure04`
+  `figure04_decoder`/`figure04_place_fields`, computes `figure04_diagnostics`) →
+  `figure04_layout.compose_figure04`
   (artist arrangement) → `save_figure`.
 - **Intermediate data — the honest boundary.** Figure 4 is reproduced **from
   pre-exported derived inputs onward**, not from raw acquisition. The loader
@@ -206,7 +213,7 @@ median_flag_percentages=…)` returns a `matplotlib` `Figure` → `save_figure` 
   gated by a provenance fingerprint (schema version + `Figure4Config` +
   data identifier + installed `non_local_detector` version).
 - **Output:** `manuscript/figures/main/figure04.{pdf,png}`.
-- **Tests:** `tests/test_real_data_analysis.py::TestFigure4ConfigMatchesManuscript`
+- **Tests:** `tests/test_figure04_decoder.py::TestFigure4ConfigMatchesManuscript`
   (config matches the manuscript decoder parameters);
   `tests/test_figure04_{cache,workflow,layout,generation}.py`;
   `tests/test_load_local_data.py` (the `NeuralRecordingData` contract).

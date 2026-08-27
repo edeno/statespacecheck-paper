@@ -26,8 +26,12 @@ statespacecheck-paper/
 │   ├── figure03_simulation.py  # Figure-3 phased simulation + decode
 │   ├── figure03_summary.py     # Figure-3b per-condition flag-percentage summary
 │   ├── figure03_plotting.py    # Figure-3 rendering (compose_figure03 + panels)
-│   ├── real_data_analysis.py   # Figure-4 decoder + diagnostics (Figure4Config lives here)
-│   ├── real_data_plotting.py   # Figure-4 plotting helpers
+│   ├── figure04_decoder.py     # Figure-4 decoder construction + config (Figure4Config lives here)
+│   ├── figure04_place_fields.py # Figure-4 place-field / marginalized-posterior extraction
+│   ├── figure04_diagnostics.py # Figure-4 real-data goodness-of-fit diagnostics
+│   ├── figure04_plot_primitives.py # Figure-4 shared low-level plotting helpers (GIDs, extents)
+│   ├── figure04_track_plots.py # Figure-4 track-graph rendering (1D/2D)
+│   ├── figure04_panels.py      # Figure-4 raster + diagnostic panels
 │   ├── figure04_cache.py       # Figure-4 decode-cache paths, fingerprint, I/O
 │   ├── figure04_workflow.py    # Figure-4 load/fit/decode/cache + summary (Figure4RenderData)
 │   ├── figure04_layout.py      # Figure-4 artist arrangement (compose_figure04)
@@ -60,6 +64,11 @@ statespacecheck-paper/
     ├── test_figure03_summary.py
     ├── test_figure03_plotting.py
     ├── test_figure03_phases.py
+    ├── test_figure04_decoder.py
+    ├── test_figure04_place_fields.py
+    ├── test_figure04_diagnostics.py
+    ├── test_figure04_plot_primitives.py
+    ├── test_figure04_panels.py
     ├── test_figure04_cache.py
     ├── test_figure04_workflow.py
     ├── test_figure04_layout.py
@@ -82,7 +91,9 @@ statespacecheck-paper/
 - **figure03_plotting.py**: Figure-3 rendering (`compose_figure03` + the time-series/heatmap panels)
 - **plotting.py**: Reusable plotting functions (HPD regions, diagnostic plots)
 - **schematic.py**: Graphical model diagrams and Bayesian equation boxes for Figure 1
-- **figure04_cache.py / figure04_workflow.py / figure04_layout.py / figure04_generation.py**: Figure-4 family — cache I/O, the load/decode/summary workflow (`Figure4RenderData`), artist arrangement (`compose_figure04`), and the generation recipe (`generate_figure04`). `Figure4Config` (in `real_data_analysis.py`) is split into an executable `Figure4DecoderConfig` (threaded into decoder construction — `position_std`, `block_size`, `position_bin_size_cm`, `sampling_frequency_hz`) and a `Figure4Provenance` (nld-default values — `movement_var`, ContFrag transition/initial-condition/concentration/regularization — recorded and drift-guard pinned, but not injected because faithfully injecting them would rebuild the nested transition grid and risk changing the decode).
+- **figure04_decoder.py / figure04_place_fields.py / figure04_diagnostics.py**: Figure-4 analysis layers — decoder construction + config, place-field / marginalized-posterior extraction, and the real-data goodness-of-fit diagnostics. `Figure4Config` (in `figure04_decoder.py`) is split into an executable `Figure4DecoderConfig` (threaded into decoder construction — `position_std`, `block_size`, `position_bin_size_cm`, `sampling_frequency_hz`) and a `Figure4Provenance` (nld-default values — `movement_var`, ContFrag transition/initial-condition/concentration/regularization — recorded and drift-guard pinned, but not injected because faithfully injecting them would rebuild the nested transition grid and risk changing the decode).
+- **figure04_plot_primitives.py / figure04_track_plots.py / figure04_panels.py**: Figure-4 plotting layers — shared low-level helpers (GID constants, `-log(p)` transform, imshow extents, distribution heatmap), track-graph rendering, and the raster + diagnostic panels.
+- **figure04_cache.py / figure04_workflow.py / figure04_layout.py / figure04_generation.py**: Figure-4 family — cache I/O, the load/decode/summary workflow (`Figure4RenderData`), artist arrangement (`compose_figure04`), and the generation recipe (`generate_figure04`).
 - **load_local_data.py**: `load_neural_recording_from_files` → validated `NeuralRecordingData` (typed input contract)
 - **paths.py**: Shared `DATA_PATH` / `ANIMAL_DATE_EPOCH` constants (env-overridable)
 

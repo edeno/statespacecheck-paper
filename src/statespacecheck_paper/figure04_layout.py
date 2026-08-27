@@ -21,15 +21,17 @@ from matplotlib.transforms import Bbox
 from numpy.typing import NDArray
 
 from statespacecheck_paper.diagnostics import SpikeEventDiagnostics
-from statespacecheck_paper.figure04_workflow import Figure4RenderData
-from statespacecheck_paper.real_data_plotting import (
+from statespacecheck_paper.figure04_panels import (
+    plot_per_spike_metric_hexbin_row,
+    plot_single_model_diagnostics,
+)
+from statespacecheck_paper.figure04_plot_primitives import (
     ANIMAL_POSITION_LABEL_GID,
     THRESHOLD_LABEL_GID,
     WORSE_FIT_LABEL_GID,
-    plot_per_spike_metric_hexbin_row,
-    plot_single_model_diagnostics,
-    plot_track_graph_2d,
 )
+from statespacecheck_paper.figure04_track_plots import plot_track_graph_2d
+from statespacecheck_paper.figure04_workflow import Figure4RenderData
 
 # Time window for Figure 4a/b (detail view)
 # Centered on a period of clear diagnostic activity at reward well

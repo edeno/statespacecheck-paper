@@ -29,16 +29,16 @@ from numpy.typing import NDArray
 from scipy.stats import poisson
 
 from statespacecheck_paper.diagnostics import SpikeEventDiagnostics
-from statespacecheck_paper.load_local_data import load_neural_recording_from_files
-from statespacecheck_paper.paths import ANIMAL_DATE_EPOCH, DATA_PATH
-from statespacecheck_paper.plotting import compute_hpd_region
-from statespacecheck_paper.real_data_analysis import (
-    compute_model_diagnostics,
+from statespacecheck_paper.figure04_decoder import (
     create_decoder_environment,
-    extract_place_fields,
     fit_decoder_models,
     get_spike_counts,
 )
+from statespacecheck_paper.figure04_diagnostics import compute_model_diagnostics
+from statespacecheck_paper.figure04_place_fields import extract_place_fields
+from statespacecheck_paper.load_local_data import load_neural_recording_from_files
+from statespacecheck_paper.paths import ANIMAL_DATE_EPOCH, DATA_PATH
+from statespacecheck_paper.plotting import compute_hpd_region
 from statespacecheck_paper.simulation import normalize
 from statespacecheck_paper.style import COLORS, set_figure_defaults
 

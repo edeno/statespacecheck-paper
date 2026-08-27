@@ -13,13 +13,13 @@ from __future__ import annotations
 from typing import Literal
 
 from statespacecheck_paper.figure04_cache import Figure4Paths
+from statespacecheck_paper.figure04_decoder import Figure4Config
 from statespacecheck_paper.figure04_layout import compose_figure04
 from statespacecheck_paper.figure04_workflow import (
     prepare_figure04_render_data,
     print_figure04_summary,
 )
 from statespacecheck_paper.paths import ANIMAL_DATE_EPOCH, DATA_PATH
-from statespacecheck_paper.real_data_analysis import Figure4Config
 from statespacecheck_paper.style import save_figure, set_figure_defaults
 
 # Diagnostic thresholds. HPD overlap and the predictive p-value use fixed

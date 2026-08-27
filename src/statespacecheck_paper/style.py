@@ -148,7 +148,7 @@ class MetricSpec:
 
     Centralizing this collapses the parallel ``(metric, ylabel, color,
     worse_fit_direction)`` arrays previously repeated in the two
-    per-cell-scatter helpers in ``real_data_plotting``.
+    per-cell-scatter helpers in ``figure04_panels``.
     """
 
     name: MetricName

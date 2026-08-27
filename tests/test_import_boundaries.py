@@ -87,26 +87,51 @@ def test_figure03_family_dependency_edges_are_acyclic() -> None:
 def test_figure04_family_dependency_edges_are_acyclic() -> None:
     """The Figure-4 family is layered cache < workflow < layout < generation:
     cache imports no other Figure-4 module; workflow imports cache; layout
-    imports workflow (never cache/config/paths); generation ties them together."""
+    imports workflow (never cache/config/paths); generation ties them together.
+
+    The analysis and plotting leaves (``figure04_decoder`` /
+    ``figure04_place_fields`` < ``figure04_diagnostics`` and
+    ``figure04_plot_primitives`` < ``figure04_track_plots`` < ``figure04_panels``)
+    sit below this layering."""
     prefix = "statespacecheck_paper."
     allowed = {
-        "figure04_cache.py": {prefix + "real_data_analysis"},
+        "figure04_decoder.py": set(),
+        "figure04_place_fields.py": set(),
+        "figure04_diagnostics.py": {
+            prefix + "diagnostics",
+            prefix + "figure04_place_fields",
+        },
+        "figure04_plot_primitives.py": {prefix + "style"},
+        "figure04_track_plots.py": {prefix + "figure04_plot_primitives"},
+        "figure04_panels.py": {
+            prefix + "diagnostics",
+            prefix + "figure04_diagnostics",
+            prefix + "figure04_plot_primitives",
+            prefix + "figure04_track_plots",
+            prefix + "plotting",
+            prefix + "style",
+        },
+        "figure04_cache.py": {prefix + "figure04_decoder"},
         "figure04_workflow.py": {
             prefix + "figure04_cache",
-            prefix + "real_data_analysis",
+            prefix + "figure04_decoder",
+            prefix + "figure04_diagnostics",
+            prefix + "figure04_place_fields",
             prefix + "diagnostics",
             prefix + "load_local_data",
         },
         "figure04_layout.py": {
             prefix + "figure04_workflow",
             prefix + "diagnostics",
-            prefix + "real_data_plotting",
+            prefix + "figure04_panels",
+            prefix + "figure04_plot_primitives",
+            prefix + "figure04_track_plots",
         },
         "figure04_generation.py": {
             prefix + "figure04_cache",
             prefix + "figure04_workflow",
             prefix + "figure04_layout",
-            prefix + "real_data_analysis",
+            prefix + "figure04_decoder",
             prefix + "paths",
             prefix + "style",
         },

@@ -14,6 +14,7 @@ import xarray as xr
 from statespacecheck_paper import figure04_cache, figure04_workflow
 from statespacecheck_paper.diagnostics import SpikeEventDiagnostics
 from statespacecheck_paper.figure04_cache import _FIGURE04_CACHE_PAYLOAD_KEYS, Figure4Paths
+from statespacecheck_paper.figure04_decoder import Figure4Config
 from statespacecheck_paper.figure04_workflow import (
     Figure4DecodeResults,
     Figure4RenderData,
@@ -21,7 +22,6 @@ from statespacecheck_paper.figure04_workflow import (
     prepare_figure04_render_data,
 )
 from statespacecheck_paper.load_local_data import NeuralRecordingData
-from statespacecheck_paper.real_data_analysis import Figure4Config
 
 
 def _diagnostics(event_hpd_overlap: np.ndarray) -> SpikeEventDiagnostics:

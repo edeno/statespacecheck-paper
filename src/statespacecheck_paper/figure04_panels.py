@@ -1,13 +1,14 @@
-"""Plotting utilities for real neural data analysis.
+"""Raster and diagnostic panels.
 
-This module provides specialized plotting functions for visualizing neural decoding
-results, HPD overlap diagnostics, and model checking on real experimental data.
+The composite Figure-4 panels: the spike raster, the per-cell diagnostic scatter,
+the two-model and single-model posterior/likelihood/raster/diagnostic figures,
+and the per-spike metric hexbin comparison row.
 """
 
 from __future__ import annotations
 
 from collections.abc import Hashable, Sequence
-from typing import Any, cast, overload
+from typing import Any
 
 import matplotlib
 import matplotlib.colors as mcolors
@@ -22,6 +23,16 @@ from matplotlib.patches import Rectangle
 from numpy.typing import NDArray
 
 from statespacecheck_paper.diagnostics import SpikeEventDiagnostics
+from statespacecheck_paper.figure04_plot_primitives import (
+    ANIMAL_POSITION_LABEL_GID,
+    THRESHOLD_LABEL_GID,
+    WORSE_FIT_LABEL_GID,
+    _decoder_likelihood_to_columns,
+    _halfpixel_extent,
+    _neglog,
+    _plot_distribution_heatmap,
+)
+from statespacecheck_paper.figure04_track_plots import plot_track_graph_1d
 from statespacecheck_paper.plotting import plot_likelihood_columns
 from statespacecheck_paper.style import (
     CMAP_LIKELIHOOD,
@@ -29,434 +40,6 @@ from statespacecheck_paper.style import (
     COLORS,
     METRIC_SPECS,
 )
-
-ANIMAL_POSITION_LABEL_GID = "animal-position-label"
-THRESHOLD_LABEL_GID = "threshold-label"
-WORSE_FIT_LABEL_GID = "worse-fit-label"
-
-
-@overload
-def _neglog(x: NDArray[np.float64], eps: float = ...) -> NDArray[np.float64]: ...
-
-
-@overload
-def _neglog(x: float, eps: float = ...) -> np.float64: ...
-
-
-def _neglog(x: NDArray[np.float64] | float, eps: float = 1e-10) -> NDArray[np.float64] | np.float64:
-    """Return ``-log(max(x, eps))``, the predictive-p-value display transform.
-
-    Predictive p-values are shown on a ``-log(p)`` scale (natural log, matching
-    Figure 3) so that higher values indicate worse fit. The ``eps`` floor keeps
-    zero p-values finite. Accepts either a p-value array (returns an
-    array) or a scalar threshold (returns a scalar).
-
-    Parameters
-    ----------
-    x : NDArray[np.float64] or float
-        Probability value(s) to transform.
-    eps : float, default 1e-10
-        Lower floor applied before the logarithm.
-
-    Returns
-    -------
-    NDArray[np.float64] or np.float64
-        ``-log(max(x, eps))`` with the same shape as ``x``.
-    """
-    return cast("NDArray[np.float64] | np.float64", -np.log(np.maximum(x, eps)))
-
-
-def _halfpixel_extent(
-    time_coords: NDArray[np.float64], pos_coords: NDArray[np.float64]
-) -> tuple[float, float, float, float]:
-    """Return an ``imshow`` extent padded by half a bin on each side.
-
-    Produces ``(t_lo, t_hi, p_lo, p_hi)`` so that ``imshow`` centres pixels on
-    their time/position coordinates. Requires at least two coordinates along
-    each axis: a single coordinate has no inferable bin width, so this raises
-    rather than silently emitting a zero-width extent.
-
-    Parameters
-    ----------
-    time_coords : NDArray[np.float64], shape (n_time,)
-        Monotonic time coordinates of the pixel grid.
-    pos_coords : NDArray[np.float64], shape (n_position,)
-        Monotonic position coordinates of the pixel grid.
-
-    Returns
-    -------
-    tuple[float, float, float, float]
-        ``(t0 - dt, t1 + dt, p0 - dp, p1 + dp)`` half-pixel extent.
-
-    Raises
-    ------
-    ValueError
-        If either coordinate array has fewer than two elements.
-    """
-    if len(time_coords) < 2 or len(pos_coords) < 2:
-        raise ValueError(
-            "_halfpixel_extent needs >=2 coordinates along each axis to infer "
-            f"a bin width; got {len(time_coords)} time and {len(pos_coords)} "
-            "position coordinates."
-        )
-    t0, t1 = float(time_coords[0]), float(time_coords[-1])
-    p0, p1 = float(pos_coords[0]), float(pos_coords[-1])
-    dt = (t1 - t0) / (len(time_coords) - 1) / 2
-    dp = (p1 - p0) / (len(pos_coords) - 1) / 2
-    return (t0 - dt, t1 + dt, p0 - dp, p1 + dp)
-
-
-def _decoder_likelihood_to_columns(
-    results: xr.Dataset, time_slice_ind: slice
-) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
-    """Convert a decoder ``log_likelihood`` to per-time position columns.
-
-    Applies ``exp`` to ``results["log_likelihood"]``, drops all-NaN state bins,
-    unstacks the ``(state, position)`` MultiIndex, marginalizes over ``state``,
-    and slices to the plotted time window. Returns the likelihood image plus its
-    time and position coordinate arrays (for the ``imshow`` extent).
-
-    This is the *decoder* likelihood on the joint state-by-position space; the
-    place-field per-spike likelihood path is handled separately by its caller.
-
-    Parameters
-    ----------
-    results : xr.Dataset
-        Decoding results carrying ``log_likelihood`` with a ``(state, position)``
-        MultiIndex on ``state_bins``.
-    time_slice_ind : slice
-        Time window to render.
-
-    Returns
-    -------
-    tuple[NDArray, NDArray, NDArray]
-        ``(likelihood, time_coords, pos_coords)`` for the sliced window.
-
-    Raises
-    ------
-    NotImplementedError
-        If ``state_bins`` is not a ``(state, position)`` MultiIndex.
-    ValueError
-        If the MultiIndex cannot be unstacked.
-    """
-    lik_da = xr.apply_ufunc(np.exp, results["log_likelihood"]).dropna("state_bins", how="all")
-    state_bins_index = lik_da.indexes["state_bins"]
-    if not isinstance(state_bins_index, pd.MultiIndex):
-        raise NotImplementedError(
-            "Likelihood overlay requires a (state, position) MultiIndex on "
-            "state_bins; single-state data has no separate position axis and "
-            "cannot be rendered."
-        )
-    try:
-        lik_unstacked = lik_da.unstack("state_bins")
-    except (ValueError, KeyError) as e:
-        raise ValueError(
-            "Failed to unstack state_bins MultiIndex on the likelihood overlay; "
-            "the index is malformed and cannot be marginalized. "
-            f"Underlying error: {e}"
-        ) from e
-    if "state" in lik_unstacked.dims:
-        lik_unstacked = lik_unstacked.sum("state")
-    lik_sliced = lik_unstacked.isel(time=time_slice_ind)
-    lik_np = np.asarray(lik_sliced.values)
-    time_coords = np.asarray(lik_sliced.coords["time"].values)
-    pos_coords = np.asarray(lik_sliced.coords["position"].values)
-    return lik_np, time_coords, pos_coords
-
-
-def add_scalebar(
-    ax: Axes,
-    length: float,
-    label: str,
-    loc: str = "lower right",
-    pad: float = 0.1,
-    fontsize: int = 8,
-) -> None:
-    """Add a scale bar to an axes.
-
-    Parameters
-    ----------
-    ax : Axes
-        The axes to add the scale bar to.
-    length : float
-        Length of the scale bar in data units.
-    label : str
-        Label text for the scale bar.
-    loc : str, default "lower right"
-        Location for the scale bar.
-    pad : float, default 0.1
-        Padding from edges as fraction of axes size.
-    fontsize : int, default 7
-        Font size for the label.
-    """
-    xlim = ax.get_xlim()
-    ylim = ax.get_ylim()
-    x_range = xlim[1] - xlim[0]
-    y_range = ylim[1] - ylim[0]
-
-    if "right" in loc:
-        x_start = xlim[1] - pad * x_range - length
-    else:
-        x_start = xlim[0] + pad * x_range
-
-    if "lower" in loc:
-        y_pos = ylim[0] + pad * y_range
-    else:
-        y_pos = ylim[1] - pad * y_range
-
-    ax.plot([x_start, x_start + length], [y_pos, y_pos], "k-", linewidth=2, clip_on=False)
-    ax.text(
-        x_start + length / 2,
-        y_pos - 0.03 * y_range,
-        label,
-        ha="center",
-        va="top",
-        fontsize=fontsize,
-    )
-
-
-def plot_track_graph_2d(
-    track_graph: nx.Graph,
-    position_info: pd.DataFrame,
-    ax: Axes | None = None,
-    edge_order: Sequence[tuple[Hashable, Hashable]] | None = None,
-    reward_well_nodes: list[int] | None = None,
-    edge_colors: NDArray[np.float64] | None = None,
-    position_names: tuple[str, str] = ("head_position_x", "head_position_y"),
-    scalebar_length: float = 20,
-    scalebar_label: str = "20 cm",
-    show_trajectory: bool = True,
-) -> Axes:
-    """Plot 2D track graph with optional position trajectory overlay.
-
-    Parameters
-    ----------
-    track_graph : networkx.Graph
-        Track graph with nodes containing 'pos' attributes.
-    position_info : pandas.DataFrame
-        DataFrame containing position columns for trajectory overlay.
-    ax : Axes, optional
-        Axes to plot on. If None, uses current axes.
-    edge_order : list of tuple of int, optional
-        Order of edges. If None, uses graph's natural edge order.
-    reward_well_nodes : list of int, optional
-        Node indices that are reward wells (marked with scatter points).
-    edge_colors : ndarray, optional
-        Array of colors for each edge. If None, uses tab10 colormap.
-    position_names : tuple of str, optional
-        Column names for (x, y) position in position_info.
-    scalebar_length : float, optional
-        Length of scale bar in data units, by default 20.
-    scalebar_label : str, optional
-        Label for scale bar, by default "20 cm".
-    show_trajectory : bool, default True
-        Whether to show the position trajectory.
-
-    Returns
-    -------
-    ax : Axes
-        The axes object.
-    """
-    if ax is None:
-        ax = plt.gca()
-    if reward_well_nodes is None:
-        reward_well_nodes = []
-    if edge_colors is None:
-        cmap = matplotlib.colormaps.get_cmap("tab10")
-        edge_colors = np.array([cmap(i) for i in range(10)])
-    if edge_order is None:
-        edge_order = list(track_graph.edges)
-
-    # Plot trajectory
-    if show_trajectory:
-        ax.plot(
-            position_info[position_names[0]],
-            position_info[position_names[1]],
-            color="lightgrey",
-            alpha=0.7,
-            linewidth=0.5,
-            rasterized=True,
-        )
-
-    # Plot track graph edges
-    for edge_ind, (node1, node2) in enumerate(edge_order):
-        edge_color = edge_colors[edge_ind % len(edge_colors)]
-        node1_pos = track_graph.nodes[node1]["pos"]
-        node2_pos = track_graph.nodes[node2]["pos"]
-        ax.plot(
-            [node1_pos[0], node2_pos[0]],
-            [node1_pos[1], node2_pos[1]],
-            linewidth=2,
-            color=edge_color,
-        )
-        if node1 in reward_well_nodes:
-            ax.scatter(
-                node1_pos[0],
-                node1_pos[1],
-                color=edge_color,
-                s=45,
-                zorder=10,
-                edgecolors="black",
-                linewidths=0.5,
-            )
-        if node2 in reward_well_nodes:
-            ax.scatter(
-                node2_pos[0],
-                node2_pos[1],
-                color=edge_color,
-                s=45,
-                zorder=10,
-                edgecolors="black",
-                linewidths=0.5,
-            )
-
-    add_scalebar(ax, scalebar_length, scalebar_label)
-    ax.set_aspect("equal", adjustable="box")
-    ax.axis("off")
-
-    return ax
-
-
-def plot_track_graph_1d(
-    track_graph: nx.Graph,
-    ax: Axes,
-    edge_order: Sequence[tuple[Hashable, Hashable]] | None = None,
-    edge_spacing: float | list[float] = 0.0,
-    reward_well_nodes: list[int] | None = None,
-    other_axis_start: float = 0,
-    edge_colors: NDArray[np.float64] | None = None,
-    reward_well_size: int = 10,
-    edge_linewidth: int = 2,
-    orientation: str = "vertical",
-) -> None:
-    """Plot track graph as 1D linearized representation.
-
-    Draws the track graph edges as line segments positioned sequentially
-    to show the linearized track structure. Default is vertical orientation
-    (position on y-axis). Use orientation="horizontal" for position on x-axis.
-
-    Parameters
-    ----------
-    track_graph : networkx.Graph
-        Track graph with edges containing 'distance' attributes (in cm).
-    ax : Axes
-        Axes to plot on.
-    edge_order : list of tuple of int, optional
-        Order of edges for linearization. If None, uses graph's natural edge order.
-    edge_spacing : float or list of float, optional
-        Spacing between edges in cm. By default 0.0.
-    reward_well_nodes : list of int, optional
-        Node indices that are reward wells (marked with scatter points).
-    other_axis_start : float, optional
-        Position on the non-position axis (x for vertical, y for horizontal).
-    edge_colors : ndarray, optional
-        Array of RGB colors for each edge. If None, uses tab10 colormap.
-    reward_well_size : int, optional
-        Marker size for reward well points, by default 10.
-    edge_linewidth : int, optional
-        Line width for edge segments, by default 2.
-    orientation : str, default "vertical"
-        Orientation of the track. "vertical" places position on y-axis,
-        "horizontal" places position on x-axis.
-    """
-    if edge_order is None:
-        edge_order = list(track_graph.edges)
-    if reward_well_nodes is None:
-        reward_well_nodes = []
-    if edge_colors is None:
-        cmap = matplotlib.colormaps.get_cmap("tab10")
-        edge_colors = np.array([cmap(i) for i in range(10)])
-
-    n_edges = len(edge_order)
-    if isinstance(edge_spacing, int | float):
-        edge_spacing_list = [float(edge_spacing)] * (n_edges - 1)
-    else:
-        edge_spacing_list = list(edge_spacing)
-
-    start_node_linear_position = 0.0
-
-    for edge_ind, edge in enumerate(edge_order):
-        edge_color = edge_colors[edge_ind % len(edge_colors)]
-        end_node_linear_position = start_node_linear_position + track_graph.edges[edge]["distance"]
-
-        if orientation == "vertical":
-            # Position on y-axis, other_axis_start is x-position
-            ax.plot(
-                (other_axis_start, other_axis_start),
-                (start_node_linear_position, end_node_linear_position),
-                color=edge_color,
-                clip_on=False,
-                zorder=7,
-                linewidth=edge_linewidth,
-            )
-            scatter_x, scatter_y_start, scatter_y_end = (
-                other_axis_start,
-                start_node_linear_position,
-                end_node_linear_position,
-            )
-        else:
-            # Position on x-axis, other_axis_start is y-position
-            ax.plot(
-                (start_node_linear_position, end_node_linear_position),
-                (other_axis_start, other_axis_start),
-                color=edge_color,
-                clip_on=False,
-                zorder=7,
-                linewidth=edge_linewidth,
-                solid_capstyle="butt",
-            )
-            scatter_x_start, scatter_x_end, scatter_y = (
-                start_node_linear_position,
-                end_node_linear_position,
-                other_axis_start,
-            )
-
-        if edge[0] in reward_well_nodes:
-            if orientation == "vertical":
-                ax.scatter(
-                    scatter_x,
-                    scatter_y_start,
-                    color=edge_color,
-                    s=reward_well_size,
-                    zorder=10,
-                    clip_on=False,
-                )
-            else:
-                ax.scatter(
-                    scatter_x_start,
-                    scatter_y,
-                    color=edge_color,
-                    s=reward_well_size,
-                    zorder=10,
-                    clip_on=False,
-                )
-        if edge[1] in reward_well_nodes:
-            if orientation == "vertical":
-                ax.scatter(
-                    scatter_x,
-                    scatter_y_end,
-                    color=edge_color,
-                    s=reward_well_size,
-                    zorder=10,
-                    clip_on=False,
-                )
-            else:
-                ax.scatter(
-                    scatter_x_end,
-                    scatter_y,
-                    color=edge_color,
-                    s=reward_well_size,
-                    zorder=10,
-                    clip_on=False,
-                )
-
-        # Update position for next edge (skip spacing on last edge)
-        if edge_ind < len(edge_spacing_list):
-            start_node_linear_position += (
-                track_graph.edges[edge]["distance"] + edge_spacing_list[edge_ind]
-            )
-        else:
-            start_node_linear_position += track_graph.edges[edge]["distance"]
 
 
 def plot_raster(
@@ -682,7 +265,7 @@ def plot_per_cell_diagnostic_scatter(
 
     # Add running average line if requested
     if show_running_average:
-        from statespacecheck_paper.real_data_analysis import compute_running_average
+        from statespacecheck_paper.figure04_diagnostics import compute_running_average
 
         # Compute running average on RAW values (before transformation)
         # per manuscript formula, then transform for display
@@ -769,97 +352,6 @@ def plot_per_cell_diagnostic_scatter(
         ax.tick_params(axis="y", labelsize=8, pad=1)
 
     return ax
-
-
-def _plot_distribution_heatmap(
-    ax: Axes,
-    distribution_da: xr.DataArray,
-    time: NDArray[np.float64] | pd.Index,
-    position: NDArray[np.float64],
-    time_slice_ind: slice,
-    show_position: bool = True,
-    cmap: str = CMAP_POSTERIOR,
-) -> None:
-    """Plot a distribution heatmap with optional position overlay.
-
-    Parameters
-    ----------
-    ax : Axes
-        The axes to plot on.
-    distribution_da : xr.DataArray
-        Distribution data array with state_bins dimension.
-    time : np.ndarray or pd.Index
-        Time values.
-    position : np.ndarray, shape (n_time,)
-        Animal position values.
-    time_slice_ind : slice
-        Time slice indices to plot.
-    show_position : bool, default True
-        Whether to show position overlay.
-    cmap : str, default CMAP_POSTERIOR
-        Colormap for the heatmap.
-    """
-    # Drop NaN bins (spatial bins that are always NaN)
-    distribution_da = distribution_da.dropna("state_bins", how="all")
-
-    # Plot distribution heatmap. Multi-state models encode
-    # (state, position) in state_bins as a MultiIndex; single-state
-    # models leave it as a plain Index without a separate ``position``
-    # coord. Branch on the index type so a malformed MultiIndex fails
-    # loud, and single-state data plots against state_bins directly
-    # rather than dying inside xarray on a missing ``position``.
-    if isinstance(distribution_da.indexes["state_bins"], pd.MultiIndex):
-        try:
-            unstacked = distribution_da.unstack("state_bins")
-        except (ValueError, KeyError, TypeError) as e:
-            raise ValueError(
-                "Failed to unstack state_bins MultiIndex on the "
-                "distribution heatmap; the index is malformed and cannot "
-                f"be marginalized. Underlying error: {e}"
-            ) from e
-        marginalized = unstacked.sum("state") if "state" in unstacked.dims else unstacked
-        sliced_data = marginalized.isel(time=time_slice_ind)
-        if sliced_data.notnull().any():
-            sliced_data.plot(
-                x="time",
-                y="position",
-                ax=ax,
-                add_colorbar=False,
-                robust=True,
-                cmap=cmap,
-                rasterized=True,
-            )
-        else:
-            # No data to plot — set axes to the requested slice anyway.
-            time_arr = np.asarray(time)
-            ax.set_xlim(time_arr[time_slice_ind].min(), time_arr[time_slice_ind].max())
-    else:
-        # Single-state model: no separate ``position`` axis. Plot
-        # against the state_bins axis directly so the figure still
-        # renders something meaningful.
-        sliced_data = distribution_da.isel(time=time_slice_ind)
-        if sliced_data.notnull().any():
-            sliced_data.plot(
-                x="time",
-                ax=ax,
-                add_colorbar=False,
-                robust=True,
-                cmap=cmap,
-                rasterized=True,
-            )
-
-    # Overlay animal position
-    if show_position:
-        time_arr = np.asarray(time)
-        ax.scatter(
-            time_arr[time_slice_ind],
-            position[time_slice_ind],
-            c=COLORS["ground_truth"],
-            s=1,
-            alpha=0.85,
-            rasterized=True,
-            label="True position",
-        )
 
 
 def plot_model_comparison_with_posterior(
@@ -1311,7 +803,7 @@ def plot_single_model_diagnostics(
         # per-spike diagnostics below operate on, and it is identical across
         # decoders that share place fields (unlike the decoder's combined
         # likelihood, which lives on the joint state-by-position space).
-        from statespacecheck_paper.real_data_analysis import (
+        from statespacecheck_paper.figure04_diagnostics import (
             mean_per_spike_likelihood_by_time,
         )
 
@@ -1452,7 +944,7 @@ def plot_per_spike_metric_hexbin_row(
     Both diagnostics dicts must carry the same set of per-spike events
     in the same order (i.e. ``event_*`` arrays produced from the same
     spike trains by
-    :func:`statespacecheck_paper.real_data_analysis.compute_model_diagnostics`).
+    :func:`statespacecheck_paper.figure04_diagnostics.compute_model_diagnostics`).
     Raises ``ValueError`` if shapes differ for any of the three metrics.
 
     Parameters

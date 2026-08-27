@@ -154,9 +154,9 @@ def _extract_place_fields_concat(model: Any) -> tuple[NDArray[np.float64], NDArr
 
     Kept for back-compat with any external script that imported the
     underscore-private name; new code should use
-    ``real_data_analysis.extract_place_fields_concat`` directly.
+    ``figure04_place_fields.extract_place_fields_concat`` directly.
     """
-    from statespacecheck_paper.real_data_analysis import (  # noqa: PLC0415
+    from statespacecheck_paper.figure04_place_fields import (  # noqa: PLC0415
         extract_place_fields_concat,
     )
 
@@ -356,14 +356,14 @@ def build_model_cache(
         if not path.exists():
             raise FileNotFoundError(f"Required input missing: {path}")
 
-    from statespacecheck_paper.load_local_data import load_neural_recording_from_files
-    from statespacecheck_paper.real_data_analysis import (
-        compute_spike_event_diagnostics,
+    from statespacecheck_paper.figure04_decoder import get_spike_counts
+    from statespacecheck_paper.figure04_diagnostics import compute_spike_event_diagnostics
+    from statespacecheck_paper.figure04_place_fields import (
         extract_place_fields_concat,
         extract_shared_position_place_fields,
-        get_spike_counts,
         get_state_marginalized_posterior,
     )
+    from statespacecheck_paper.load_local_data import load_neural_recording_from_files
 
     with xr.open_dataset(inputs.results_nc) as ds:
         zarr_shapes = _write_zarr_store(

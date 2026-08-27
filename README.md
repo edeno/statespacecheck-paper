@@ -460,8 +460,8 @@ uv run ruff format . && uv run ruff check . && uv run mypy src/ && uv run pytest
 - **`schematic.py`**: Graphical-model and Bayesian-equation diagrams (Figure 1)
 - **`figure02_panels.py`**: Per-panel renderers for Figure 2
 - **`figure03_{protocol,simulation,summary,plotting}.py`**: Figure-3 protocol, simulation, per-phase summary, and plotting
-- **`real_data_analysis.py`**: Figure-4 real-data decoder + diagnostics
-- **`real_data_plotting.py`**: Figure-4 plotting helpers
+- **`figure04_{decoder,place_fields,diagnostics}.py`**: Figure-4 real-data decoder construction/config, place-field extraction, and diagnostics
+- **`figure04_{plot_primitives,track_plots,panels}.py`**: Figure-4 plotting helpers, track-graph rendering, and raster/diagnostic panels
 - **`load_local_data.py`**: Real data loading utilities
 - **`paths.py`**: Shared `DATA_PATH` / `ANIMAL_DATE_EPOCH` constants (env-overridable)
 

@@ -5,7 +5,7 @@ its results are cached to a single joblib bundle under ``data/intermediates``.
 This module owns the cache location (:class:`Figure4Paths`), the provenance
 fingerprint that gates a stale cache (:func:`compute_figure04_cache_fingerprint`),
 and the load/save helpers with explicit invalid-cache behavior. It imports only
-``Figure4Config`` from :mod:`real_data_analysis`.
+``Figure4Config`` from :mod:`figure04_decoder`.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from pathlib import Path
 
 import joblib
 
-from statespacecheck_paper.real_data_analysis import Figure4Config
+from statespacecheck_paper.figure04_decoder import Figure4Config
 
 FIGURE04_CACHE_SCHEMA_VERSION = 4
 

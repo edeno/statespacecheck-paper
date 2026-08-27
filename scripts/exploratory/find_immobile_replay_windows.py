@@ -31,20 +31,22 @@ from scipy.ndimage import label
 from scipy.stats import zscore
 
 from statespacecheck_paper.diagnostics import SpikeEventDiagnostics
+from statespacecheck_paper.figure04_decoder import (
+    create_decoder_environment,
+    fit_decoder_models,
+    get_spike_counts,
+)
+from statespacecheck_paper.figure04_diagnostics import (
+    compute_event_hpd_overlap,
+    compute_model_diagnostics,
+)
+from statespacecheck_paper.figure04_panels import plot_model_comparison_with_posterior
+from statespacecheck_paper.figure04_place_fields import extract_place_fields
 from statespacecheck_paper.load_local_data import (
     NeuralRecordingData,
     load_neural_recording_from_files,
 )
 from statespacecheck_paper.paths import ANIMAL_DATE_EPOCH, DATA_PATH
-from statespacecheck_paper.real_data_analysis import (
-    compute_event_hpd_overlap,
-    compute_model_diagnostics,
-    create_decoder_environment,
-    extract_place_fields,
-    fit_decoder_models,
-    get_spike_counts,
-)
-from statespacecheck_paper.real_data_plotting import plot_model_comparison_with_posterior
 from statespacecheck_paper.style import save_figure, set_figure_defaults
 
 # -----------------------------

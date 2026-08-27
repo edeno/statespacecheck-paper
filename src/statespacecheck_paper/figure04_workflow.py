@@ -32,20 +32,24 @@ from statespacecheck_paper.figure04_cache import (
     load_figure04_cache,
     save_figure04_cache,
 )
+from statespacecheck_paper.figure04_decoder import (
+    Figure4Config,
+    Figure4DecoderConfig,
+    create_decoder_environment,
+    fit_decoder_models,
+    get_spike_counts,
+)
+from statespacecheck_paper.figure04_diagnostics import (
+    compute_flag_confusion,
+    compute_model_diagnostics,
+)
+from statespacecheck_paper.figure04_place_fields import (
+    extract_place_fields,
+    extract_shared_position_place_fields,
+)
 from statespacecheck_paper.load_local_data import (
     NeuralRecordingData,
     load_neural_recording_from_files,
-)
-from statespacecheck_paper.real_data_analysis import (
-    Figure4Config,
-    Figure4DecoderConfig,
-    compute_flag_confusion,
-    compute_model_diagnostics,
-    create_decoder_environment,
-    extract_place_fields,
-    extract_shared_position_place_fields,
-    fit_decoder_models,
-    get_spike_counts,
 )
 
 
