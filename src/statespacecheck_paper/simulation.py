@@ -10,7 +10,7 @@ Key Components
 - **Transition matrices**: Gaussian transition matrices for state space models
 - **Place fields**: Gaussian place field models for spatial tuning
 - **Spike generation**: Poisson spike generation for position-tuned neurons
-- **Likelihood computation**: place-field rates and predictive cell probabilities
+- **Place-field rates**: Gaussian place-field firing-rate tables
 
 Examples
 --------
@@ -278,73 +278,6 @@ def placefield_rates(
     """
     result: NDArray[np.floating] = norm.pdf(xs[:, None], loc=centers[None, :], scale=width) * scale
     return result
-
-
-def predictive_mark_probabilities(
-    prior: NDArray[np.floating],
-    mark_intensities: NDArray[np.floating],
-) -> NDArray[np.floating]:
-    """Compute the predictive mark distribution for a randomly selected event.
-
-    Raw mark intensities are first averaged over the predictive state
-    distribution and the resulting expected intensities are then normalized
-    across marks. For discrete marks ``c``, this evaluates
-
-    ``q[c] = sum_x prior[x] * intensity[x, c] / sum_d sum_x prior[x] * intensity[x, d]``.
-
-    Normalizing at each state before averaging would instead integrate the
-    state-conditional mark distribution against the unconditioned state
-    distribution. That omits the event-rate weighting of the latent state and
-    is only equivalent when total event intensity is constant across states.
-
-    Parameters
-    ----------
-    prior : np.ndarray, shape (n_bins,) or (n_time, n_bins)
-        Predictive probability distribution over state bins.
-    mark_intensities : np.ndarray, shape (n_bins, n_marks)
-        Nonnegative event intensities (or expected event counts per bin) for
-        every state and discrete mark.
-
-    Returns
-    -------
-    mark_probabilities : np.ndarray, shape (n_marks,) or (n_time, n_marks)
-        Predictive mark probabilities for a randomly selected event. If the total
-        predictive event intensity is exactly zero, the conditional mark
-        distribution is undefined; by convention this function returns a
-        uniform distribution for that row.
-    """
-    if prior.ndim not in (1, 2):
-        raise ValueError("prior must have shape (n_bins,) or (n_time, n_bins)")
-    if mark_intensities.ndim != 2 or mark_intensities.shape[0] != prior.shape[-1]:
-        raise ValueError("mark_intensities must have shape (n_bins, n_marks)")
-    if mark_intensities.shape[1] == 0:
-        raise ValueError("mark_intensities must contain at least one mark")
-    if not np.all(np.isfinite(prior)) or np.any(prior < 0.0):
-        raise ValueError("prior must contain finite nonnegative values")
-    if not np.all(np.isfinite(mark_intensities)) or np.any(mark_intensities < 0.0):
-        raise ValueError("mark_intensities must contain finite nonnegative values")
-
-    expected_intensities: NDArray[np.floating] = prior @ mark_intensities
-    n_marks = mark_intensities.shape[1]
-
-    if expected_intensities.ndim == 1:
-        total_intensity = float(expected_intensities.sum())
-        if total_intensity == 0.0:
-            return np.full(n_marks, 1.0 / n_marks, dtype=expected_intensities.dtype)
-        mark_probabilities: NDArray[np.floating] = expected_intensities / total_intensity
-        return mark_probabilities
-
-    total_intensity = expected_intensities.sum(axis=1, keepdims=True)
-    mark_probabilities = np.divide(
-        expected_intensities,
-        total_intensity,
-        out=np.zeros_like(expected_intensities),
-        where=total_intensity > 0.0,
-    )
-    zero_total = total_intensity[:, 0] == 0.0
-    if zero_total.any():
-        mark_probabilities[zero_total] = 1.0 / n_marks
-    return mark_probabilities
 
 
 def simulate_walk(

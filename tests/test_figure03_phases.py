@@ -25,9 +25,11 @@ import statespacecheck as ssc
 from statespacecheck_paper.analysis import (
     DecodeParams,
     PhaseBoundary,
-    Thresholds,
-    compute_per_cell_diagnostics_from_rates,
     get_remapped_pf_centers,
+)
+from statespacecheck_paper.diagnostics import (
+    DiagnosticThresholds,
+    compute_spike_event_diagnostics_from_rates,
 )
 from statespacecheck_paper.figure03_demo import (
     PHASE_LABELS,
@@ -193,7 +195,7 @@ def test_remap_phase_uses_decoder_likelihood(sim: SimulationResult) -> None:
         sparse_scale,
     )
     remapped_rates = np.hstack([remapped_normal_rates, baseline_sparse_rates])
-    expected = compute_per_cell_diagnostics_from_rates(
+    expected = compute_spike_event_diagnostics_from_rates(
         sim.metrics.predictive,
         remapped_rates,
         sim.metrics.event_time_ind[in_window],
@@ -247,7 +249,7 @@ def test_remap_phase_uses_decoder_likelihood(sim: SimulationResult) -> None:
             baseline_sparse_rates,
         ]
     )
-    oracle = compute_per_cell_diagnostics_from_rates(
+    oracle = compute_spike_event_diagnostics_from_rates(
         sim.metrics.predictive,
         baseline_rates,
         sim.metrics.event_time_ind[in_window],
@@ -320,7 +322,7 @@ def test_sparse_population_is_a_correctly_modeled_low_activity_regime(
         params.sparse_cell_width,
         sparse_scale,
     )
-    expected = compute_per_cell_diagnostics_from_rates(
+    expected = compute_spike_event_diagnostics_from_rates(
         sim.metrics.predictive,
         sparse_rates,
         sim.metrics.event_time_ind[in_window],
@@ -476,7 +478,7 @@ class TestEstimateStableSummary:
         # Percentages in [0, 100].
         assert np.all(summary.frac_median >= 0.0)
         assert np.all(summary.frac_median <= 100.0)
-        # Threshold is a valid, finite Thresholds with the fixed p-value cutoff.
+        # Threshold is a valid, finite DiagnosticThresholds with the fixed p-value cutoff.
         assert summary.thresholds.predictive_pvalue == 0.05
         assert np.isfinite(summary.thresholds.kl_divergence)
 
@@ -573,8 +575,8 @@ class TestEstimateStableSummary:
 
 class TestStableSummaryInvariants:
     @staticmethod
-    def _thresholds() -> Thresholds:
-        return Thresholds(hpd_overlap=0.5, kl_divergence=1.0, predictive_pvalue=0.05)
+    def _thresholds() -> DiagnosticThresholds:
+        return DiagnosticThresholds(hpd_overlap=0.5, kl_divergence=1.0, predictive_pvalue=0.05)
 
     def test_non_2d_median_raises(self) -> None:
         with pytest.raises(ValueError, match="frac_median"):

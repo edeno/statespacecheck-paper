@@ -12,7 +12,7 @@ import pytest
 import xarray as xr
 
 import statespacecheck_paper.real_data_analysis as real_data_analysis
-from statespacecheck_paper.analysis import PerCellDiagnostics
+from statespacecheck_paper.diagnostics import SpikeEventDiagnostics
 from statespacecheck_paper.real_data_analysis import (
     compute_flag_confusion,
     compute_model_diagnostics,
@@ -34,8 +34,8 @@ def _diagnostics_from_metric(
     *,
     event_time: np.ndarray | None = None,
     event_values: np.ndarray | None = None,
-) -> PerCellDiagnostics:
-    """Build a ``PerCellDiagnostics`` from a single (n_time, n_cells) metric.
+) -> SpikeEventDiagnostics:
+    """Build a ``SpikeEventDiagnostics`` from a single (n_time, n_cells) metric.
 
     Other metric fields are filled with NaN/zeros matching shape; the
     scatter helper under test only consumes the named metric plus the
@@ -54,7 +54,7 @@ def _diagnostics_from_metric(
             return event_values
         return blank_evt
 
-    return PerCellDiagnostics(
+    return SpikeEventDiagnostics(
         event_time_ind=np.zeros(n_spikes, dtype=np.intp),
         event_cell_ind=np.zeros(n_spikes, dtype=np.intp),
         event_hpd_overlap=_named_evt("event_hpd_overlap"),
@@ -362,8 +362,8 @@ class TestMeanPerSpikeLikelihoodByTime:
         # Parity across the two entry points that both claim to plot/consume
         # the same per-spike likelihood: the plotting helper (place fields,
         # (n_cells, n_bins)) and the diagnostics (rates, (n_bins, n_cells)).
-        from statespacecheck_paper.analysis import (
-            compute_per_cell_diagnostics_from_rates,
+        from statespacecheck_paper.diagnostics import (
+            compute_spike_event_diagnostics_from_rates,
         )
         from statespacecheck_paper.real_data_analysis import (
             mean_per_spike_likelihood_by_time,
@@ -374,7 +374,7 @@ class TestMeanPerSpikeLikelihoodByTime:
         mean_lik, _ = mean_per_spike_likelihood_by_time(spike_counts, place_fields)
 
         predictive = np.full((1, 3), 1.0 / 3.0)
-        diag = compute_per_cell_diagnostics_from_rates(
+        diag = compute_spike_event_diagnostics_from_rates(
             predictive,
             place_fields.T,
             np.array([0], dtype=np.intp),
@@ -703,8 +703,8 @@ def _diag_from_events(
     hpd: np.ndarray | None = None,
     kl: np.ndarray | None = None,
     sp: np.ndarray | None = None,
-) -> PerCellDiagnostics:
-    """Minimal ``PerCellDiagnostics`` carrying only the per-spike event arrays.
+) -> SpikeEventDiagnostics:
+    """Minimal ``SpikeEventDiagnostics`` carrying only the per-spike event arrays.
 
     ``compute_flag_confusion`` reads a single ``event_*`` array; the rest of the
     dataclass is required by the constructor but unused here.
@@ -712,7 +712,7 @@ def _diag_from_events(
     present = [a for a in (hpd, kl, sp) if a is not None]
     n = present[0].shape[0]
     zeros = np.zeros(n)
-    return PerCellDiagnostics(
+    return SpikeEventDiagnostics(
         event_time_ind=np.zeros(n, dtype=np.intp),
         event_cell_ind=np.zeros(n, dtype=np.intp),
         event_hpd_overlap=hpd if hpd is not None else zeros,

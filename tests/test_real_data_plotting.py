@@ -18,7 +18,7 @@ import xarray as xr  # noqa: E402
 from matplotlib.collections import PolyCollection  # noqa: E402
 from matplotlib.lines import Line2D  # noqa: E402
 
-from statespacecheck_paper.analysis import PerCellDiagnostics  # noqa: E402
+from statespacecheck_paper.diagnostics import SpikeEventDiagnostics  # noqa: E402
 from statespacecheck_paper.real_data_plotting import (  # noqa: E402
     _decoder_likelihood_to_columns,
     _halfpixel_extent,
@@ -27,14 +27,16 @@ from statespacecheck_paper.real_data_plotting import (  # noqa: E402
 )
 
 
-def _per_spike_diagnostics(hpd: np.ndarray, kl: np.ndarray, sp: np.ndarray) -> PerCellDiagnostics:
-    """Build a ``PerCellDiagnostics`` from per-spike metric arrays only.
+def _per_spike_diagnostics(
+    hpd: np.ndarray, kl: np.ndarray, sp: np.ndarray
+) -> SpikeEventDiagnostics:
+    """Build a ``SpikeEventDiagnostics`` from per-spike metric arrays only.
 
     The hexbin helper consumes the three ``event_*`` arrays; the rest
     of the dataclass is required by the constructor but unused here.
     """
     n_spikes = hpd.shape[0]
-    return PerCellDiagnostics(
+    return SpikeEventDiagnostics(
         event_time_ind=np.zeros(n_spikes, dtype=np.intp),
         event_cell_ind=np.zeros(n_spikes, dtype=np.intp),
         event_hpd_overlap=hpd,
@@ -48,8 +50,8 @@ def _per_spike_diagnostics(hpd: np.ndarray, kl: np.ndarray, sp: np.ndarray) -> P
 
 
 @pytest.fixture
-def paired_diagnostics() -> tuple[PerCellDiagnostics, PerCellDiagnostics]:
-    """Two ``PerCellDiagnostics`` with 50 matched spike events each.
+def paired_diagnostics() -> tuple[SpikeEventDiagnostics, SpikeEventDiagnostics]:
+    """Two ``SpikeEventDiagnostics`` with 50 matched spike events each.
 
     Synthesized in-test so the helper is exercised without requiring real-data
     fixtures. Same n_spikes so the same-length contract in
@@ -74,7 +76,7 @@ def paired_diagnostics() -> tuple[PerCellDiagnostics, PerCellDiagnostics]:
 class TestPlotPerSpikeMetricHexbinRow:
     def test_renders_three_panels_with_hexbin_and_identity_line(
         self,
-        paired_diagnostics: tuple[PerCellDiagnostics, PerCellDiagnostics],
+        paired_diagnostics: tuple[SpikeEventDiagnostics, SpikeEventDiagnostics],
     ) -> None:
         """Every panel must carry a hexbin (PolyCollection) and an identity
         Line2D — the two load-bearing visual elements of the comparison.
@@ -97,7 +99,7 @@ class TestPlotPerSpikeMetricHexbinRow:
 
     def test_kl_panel_count_annotation_drops_nans(
         self,
-        paired_diagnostics: tuple[PerCellDiagnostics, PerCellDiagnostics],
+        paired_diagnostics: tuple[SpikeEventDiagnostics, SpikeEventDiagnostics],
     ) -> None:
         """The KL panel's ``n=...`` annotation reports finite-in-both events,
         not the raw input length.
@@ -112,7 +114,7 @@ class TestPlotPerSpikeMetricHexbinRow:
         # Same-position NaNs across the two arrays so the mask is unambiguous.
         nan_positions = [0, 7, 13, 24, 41]
 
-        def with_nans(d: PerCellDiagnostics) -> PerCellDiagnostics:
+        def with_nans(d: SpikeEventDiagnostics) -> SpikeEventDiagnostics:
             hpd = d.event_hpd_overlap.copy()
             kl = d.event_kl_divergence.copy()
             sp = d.event_predictive_pvalue.copy()
@@ -147,7 +149,7 @@ class TestPlotPerSpikeMetricHexbinRow:
 
     def test_validates_same_length(
         self,
-        paired_diagnostics: tuple[PerCellDiagnostics, PerCellDiagnostics],
+        paired_diagnostics: tuple[SpikeEventDiagnostics, SpikeEventDiagnostics],
     ) -> None:
         """Mismatched-shape inputs must raise — the helper would otherwise
         produce a plausible-looking hexbin on misaligned arrays.
@@ -165,7 +167,7 @@ class TestPlotPerSpikeMetricHexbinRow:
 
     def test_rejects_wrong_axes_count(
         self,
-        paired_diagnostics: tuple[PerCellDiagnostics, PerCellDiagnostics],
+        paired_diagnostics: tuple[SpikeEventDiagnostics, SpikeEventDiagnostics],
     ) -> None:
         """The helper expects exactly three axes (one per metric)."""
         diag_a, diag_b = paired_diagnostics
@@ -176,7 +178,7 @@ class TestPlotPerSpikeMetricHexbinRow:
 
     def test_thresholds_draw_dotted_lines_and_rescue_patch(
         self,
-        paired_diagnostics: tuple[PerCellDiagnostics, PerCellDiagnostics],
+        paired_diagnostics: tuple[SpikeEventDiagnostics, SpikeEventDiagnostics],
     ) -> None:
         """Passing ``thresholds`` adds two dotted threshold lines (one per
         axis) and one shaded rescue-quadrant rectangle to every panel.
@@ -200,7 +202,7 @@ class TestPlotPerSpikeMetricHexbinRow:
 
     def test_no_thresholds_leaves_panels_unshaded(
         self,
-        paired_diagnostics: tuple[PerCellDiagnostics, PerCellDiagnostics],
+        paired_diagnostics: tuple[SpikeEventDiagnostics, SpikeEventDiagnostics],
     ) -> None:
         """Without ``thresholds`` (the default), no dotted lines or rescue
         patches are drawn — only the dashed identity line per panel.

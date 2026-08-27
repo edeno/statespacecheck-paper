@@ -28,13 +28,12 @@ from numpy.typing import NDArray
 
 from statespacecheck_paper.analysis import (
     DecodeParams,
-    Diagnostics,
     PhaseBoundary,
-    Thresholds,
     compute_phase_flag_fractions,
     replay_window,
     summary_phase_windows,
 )
+from statespacecheck_paper.diagnostics import DecodingDiagnostics, DiagnosticThresholds
 from statespacecheck_paper.style import CMAP_LIKELIHOOD, CMAP_POSTERIOR, COLORS
 
 FIGURE3_PANEL_LABEL_GID = "figure3-panel-label"
@@ -761,7 +760,7 @@ def _plot_figure3_predictive_row(
 
 def _plot_figure3_likelihood_row(
     ax: Axes,
-    metrics: Diagnostics,
+    metrics: DecodingDiagnostics,
     x_true: NDArray[np.floating],
 ) -> None:
     """Plot Figure 3's per-spike likelihood row."""
@@ -879,8 +878,8 @@ def _add_figure3_phase_labels(ax: Axes, params: DecodeParams) -> None:
 
 def _plot_figure3_summary_heatmap(
     ax: Axes,
-    metrics: Diagnostics,
-    thresholds: Thresholds,
+    metrics: DecodingDiagnostics,
+    thresholds: DiagnosticThresholds,
     params: DecodeParams,
     summary_median: NDArray[np.floating] | None,
 ) -> None:
@@ -965,8 +964,8 @@ def _plot_figure3_summary_heatmap(
 def plot_combined_diagnostics(
     x_true: NDArray[np.floating],
     spikes: NDArray[np.floating],
-    metrics: Diagnostics,
-    thresholds: Thresholds,
+    metrics: DecodingDiagnostics,
+    thresholds: DiagnosticThresholds,
     params: DecodeParams,
     placefield_centers: NDArray[np.floating],
     summary_median: NDArray[np.floating] | None = None,
@@ -985,7 +984,7 @@ def plot_combined_diagnostics(
     metrics : dict[str, NDArray]
         Dictionary containing diagnostic metrics from decode_and_diagnostics.
         Metrics 'hpd_overlap', 'kl_divergence', 'predictive_pvalue' have shape (n_time, n_cells).
-    thresholds : Thresholds
+    thresholds : DiagnosticThresholds
         Threshold values for each diagnostic.
     params : DecodeParams
         Decoding parameters containing timeline structure.
@@ -1006,10 +1005,9 @@ def plot_combined_diagnostics(
 
     Examples
     --------
-    >>> from statespacecheck_paper.analysis import (
-    ...     DecodeParams, Diagnostics, Thresholds, decode_and_diagnostics,
-    ... )
-    >>> # See tests/test_plotting.py for a worked Diagnostics fixture
+    >>> from statespacecheck_paper.analysis import DecodeParams, decode_and_diagnostics
+    >>> from statespacecheck_paper.diagnostics import DecodingDiagnostics, DiagnosticThresholds
+    >>> # See tests/test_plotting.py for a worked DecodingDiagnostics fixture
     >>> # and how to plumb it into plot_combined_diagnostics.
     """
     fig_width = 6.85  # Full page width; tight PDF stays within ~183 mm.

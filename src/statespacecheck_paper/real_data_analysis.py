@@ -35,10 +35,10 @@ import xarray as xr
 from numpy.typing import NDArray
 from scipy.ndimage import gaussian_filter1d, uniform_filter1d
 
-from statespacecheck_paper.analysis import (
-    PerCellDiagnostics,
-    compute_per_cell_diagnostics_from_rates,
-    normalized_single_spike_likelihood,
+from statespacecheck_paper.diagnostics import (
+    SpikeEventDiagnostics,
+    compute_normalized_spike_likelihood,
+    compute_spike_event_diagnostics_from_rates,
 )
 
 
@@ -204,7 +204,7 @@ RUNNING_AVG_WINDOW: float = 0.020
 
 
 def compute_event_hpd_overlap(
-    diagnostics: PerCellDiagnostics,
+    diagnostics: SpikeEventDiagnostics,
     time: NDArray[np.float64],
     start_idx: int,
     end_idx: int,
@@ -214,7 +214,7 @@ def compute_event_hpd_overlap(
 
     Parameters
     ----------
-    diagnostics : PerCellDiagnostics
+    diagnostics : SpikeEventDiagnostics
         Must have ``hpd_overlap`` populated (``include_dense_matrices=True``).
     time : np.ndarray, shape (n_time,)
         Time values for each bin.
@@ -489,7 +489,7 @@ def compute_per_cell_diagnostics(
     spike_times: list[NDArray[np.float64]] | None = None,
     time: NDArray[np.float64] | None = None,
     include_dense_matrices: bool = True,
-) -> PerCellDiagnostics:
+) -> SpikeEventDiagnostics:
     """Compute per-cell diagnostic metrics for model checking.
 
     Computes HPD overlap, KL divergence, and predictive p-value ranking for each
@@ -515,14 +515,14 @@ def compute_per_cell_diagnostics(
         Decoder time grid used to map spike timestamps to predictive posterior
         rows. Required when ``spike_times`` is supplied.
     include_dense_matrices : bool, default True
-        Forwarded to ``compute_per_cell_diagnostics_from_rates``. Set False
+        Forwarded to ``compute_spike_event_diagnostics_from_rates``. Set False
         when only the per-spike event arrays are needed (avoids the
         ``(n_time, n_cells)`` allocations, which can be hundreds of MB
         for full-session real-data builds).
 
     Returns
     -------
-    diagnostics : PerCellDiagnostics
+    diagnostics : SpikeEventDiagnostics
         Always populated:
 
         - ``event_time_ind`` (n_spikes,) and ``event_cell_ind`` (n_spikes,):
@@ -546,7 +546,7 @@ def compute_per_cell_diagnostics(
 
         When ``include_dense_matrices=False`` those four dense fields
         are ``None`` together (the all-or-nothing invariant in
-        ``PerCellDiagnostics.__post_init__``).
+        ``SpikeEventDiagnostics.__post_init__``).
 
     Notes
     -----
@@ -554,7 +554,7 @@ def compute_per_cell_diagnostics(
     Multiple spikes from the same cell in the same decoder bin contribute
     multiple event rows rather than being collapsed into one binned count.
 
-    This function delegates to ``compute_per_cell_diagnostics_from_rates`` in
+    This function delegates to ``compute_spike_event_diagnostics_from_rates`` in
     ``analysis.py`` to ensure identical computation for simulated and real data.
 
     Examples
@@ -587,7 +587,7 @@ def compute_per_cell_diagnostics(
             time,
         )
 
-    result = compute_per_cell_diagnostics_from_rates(
+    result = compute_spike_event_diagnostics_from_rates(
         predictive_posterior,
         place_fields.T,  # (n_bins, n_cells)
         spike_time_ind.astype(np.intp),
@@ -948,7 +948,7 @@ def mean_per_spike_likelihood_by_time(
 
     Each cell's place field is turned into the normalized one-spike Poisson
     likelihood over position via
-    :func:`statespacecheck_paper.analysis.normalized_single_spike_likelihood`
+    :func:`statespacecheck_paper.diagnostics.compute_normalized_spike_likelihood`
     --- the exact quantity the diagnostics compare against the predictive
     distribution. In every time bin the normalized likelihoods of the spiking
     cells are averaged, weighted by spike count, so a bin with several spikes
@@ -973,7 +973,7 @@ def mean_per_spike_likelihood_by_time(
         True in time bins containing at least one spike.
     """
     pf = np.asarray(place_fields, dtype=np.float64)
-    pf_norm = normalized_single_spike_likelihood(pf)
+    pf_norm = compute_normalized_spike_likelihood(pf)
 
     counts = np.asarray(spike_counts, dtype=np.float64)
     n_per_bin = counts.sum(axis=1)
@@ -991,7 +991,7 @@ def compute_model_diagnostics(
     spike_counts: NDArray[np.int64],
     time: NDArray[np.float64],
     spike_times: list[NDArray[np.float64]] | None = None,
-) -> PerCellDiagnostics:
+) -> SpikeEventDiagnostics:
     """Compute per-cell diagnostics for a fitted decoder model.
 
     The decoder itself may operate over a joint discrete-state-by-position
@@ -1016,7 +1016,7 @@ def compute_model_diagnostics(
 
     Returns
     -------
-    diagnostics : PerCellDiagnostics
+    diagnostics : SpikeEventDiagnostics
         See :func:`compute_per_cell_diagnostics` for the schema. The
         ``event_time`` field carries either the original ``spike_times``
         (when supplied) or the decoder-grid time at each event's index.
@@ -1091,8 +1091,8 @@ class FlagConfusion:
 
 
 def compute_flag_confusion(
-    diagnostics_a: PerCellDiagnostics,
-    diagnostics_b: PerCellDiagnostics,
+    diagnostics_a: SpikeEventDiagnostics,
+    diagnostics_b: SpikeEventDiagnostics,
     metric: str,
     threshold: float,
     *,
@@ -1102,7 +1102,7 @@ def compute_flag_confusion(
 
     Parameters
     ----------
-    diagnostics_a, diagnostics_b : PerCellDiagnostics
+    diagnostics_a, diagnostics_b : SpikeEventDiagnostics
         Per-spike diagnostics for the two decoders, carrying the same spike
         events in the same order (e.g. Continuous vs Continuous--Fragmented).
     metric : str

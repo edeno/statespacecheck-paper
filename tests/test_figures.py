@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from statespacecheck_paper.analysis import PerCellDiagnostics
+from statespacecheck_paper.diagnostics import SpikeEventDiagnostics
 
 # Add scripts directory to path so we can import the figure scripts.
 SCRIPTS_DIR = Path(__file__).parent.parent / "scripts"
@@ -101,9 +101,9 @@ def _make_per_cell_diagnostics(
     *,
     event_time: np.ndarray | None,
     event_hpd_overlap: np.ndarray,
-) -> PerCellDiagnostics:
+) -> SpikeEventDiagnostics:
     n_spikes = event_hpd_overlap.shape[0]
-    return PerCellDiagnostics(
+    return SpikeEventDiagnostics(
         event_time_ind=np.zeros(n_spikes, dtype=np.intp),
         event_cell_ind=np.zeros(n_spikes, dtype=np.intp),
         event_hpd_overlap=event_hpd_overlap,

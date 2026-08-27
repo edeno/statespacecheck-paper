@@ -15,7 +15,7 @@ from typing import Any
 
 import numpy as np
 
-from statespacecheck_paper.analysis import PerCellDiagnostics
+from statespacecheck_paper.diagnostics import SpikeEventDiagnostics
 from statespacecheck_paper.load_local_data import load_neural_recording_from_files
 from statespacecheck_paper.paths import ANIMAL_DATE_EPOCH, DATA_PATH
 from statespacecheck_paper.real_data_analysis import (
@@ -36,8 +36,8 @@ HALF_WIDTH = 50  # Same as Figure 4a
 
 
 def find_representative_windows(
-    continuous_diagnostics: PerCellDiagnostics,
-    contfrag_diagnostics: PerCellDiagnostics,
+    continuous_diagnostics: SpikeEventDiagnostics,
+    contfrag_diagnostics: SpikeEventDiagnostics,
     half_width: int = HALF_WIDTH,
     quantiles: tuple[float, ...] = (0.05, 0.50, 0.95),
 ) -> dict[str, list[tuple[str, int, slice]]]:

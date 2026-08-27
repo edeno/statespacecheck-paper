@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
@@ -10,24 +9,23 @@ import pytest
 
 from statespacecheck_paper.analysis import (
     DecodeParams,
-    Diagnostics,
     MisfitSchedule,
     MisfitWindow,
-    PerCellDiagnostics,
     PhaseBoundary,
-    Thresholds,
     _condition_on,
-    _event_predictive_pvalue_rank,
     _flag_fraction,
     _resolve_base_rates,
-    compute_per_cell_diagnostics_from_rates,
     compute_phase_flag_fractions,
-    compute_thresholds,
     decode_and_diagnostics,
     extract_phase_flag_values,
     flag_fractions_from_values,
     get_remapped_pf_centers,
     summary_phase_windows,
+)
+from statespacecheck_paper.diagnostics import (
+    DecodingDiagnostics,
+    DiagnosticThresholds,
+    compute_spike_event_diagnostics_from_rates,
 )
 from statespacecheck_paper.figure03_demo import PHASE_LABELS, SimulationResult
 from statespacecheck_paper.simulation import (
@@ -36,46 +34,20 @@ from statespacecheck_paper.simulation import (
     placefield_rates,
 )
 
+from ._decoder_inputs import DecoderInputs, _diag_dominant_transition
+
 # ---------------------------------------------------------------------------
 # Shared fixtures
 # ---------------------------------------------------------------------------
 
 
-@dataclass(frozen=True)
-class DecoderInputs:
-    """Bundle of inputs for ``decode_and_diagnostics``."""
-
-    spikes: np.ndarray
-    xs: np.ndarray
-    transition_matrix: np.ndarray
-    pf_centers: np.ndarray
-    pf_width: float
-    rate_scale: float
-
-    def call(self, **overrides: Any) -> Diagnostics:
-        kwargs: dict[str, Any] = {
-            "spikes": self.spikes,
-            "xs": self.xs,
-            "transition_matrix": self.transition_matrix,
-            "pf_centers": self.pf_centers,
-            "pf_width": self.pf_width,
-            "rate_scale": self.rate_scale,
-        }
-        kwargs.update(overrides)
-        return decode_and_diagnostics(**kwargs)
-
-
-def _diag_dominant_transition(n_bins: int, peak: float = 0.9) -> np.ndarray:
-    return np.eye(n_bins) * peak + (1.0 - peak) / n_bins
-
-
 def _zero_diagnostics(
     *, n_time: int, n_bins: int, n_cells: int = 1, n_spikes: int = 0
-) -> Diagnostics:
-    """Construct a well-shaped all-zero/empty ``Diagnostics`` for tests
+) -> DecodingDiagnostics:
+    """Construct a well-shaped all-zero/empty ``DecodingDiagnostics`` for tests
     that only need a valid placeholder, not real diagnostic content."""
     posterior = np.full((n_time, n_bins), 1.0 / n_bins)
-    return Diagnostics(
+    return DecodingDiagnostics(
         posterior=posterior,
         predictive=posterior.copy(),
         likelihood=posterior.copy(),
@@ -90,32 +62,6 @@ def _zero_diagnostics(
         event_predictive_pvalue=np.zeros(n_spikes),
         per_spike_likelihood=np.zeros((n_spikes, n_bins)),
     )
-
-
-@pytest.fixture
-def decoder_inputs() -> DecoderInputs:
-    """Small reproducible decoder problem with no misfit schedule."""
-    rng = np.random.default_rng(42)
-    n_time, n_cells, n_bins = 10, 3, 21
-    return DecoderInputs(
-        spikes=rng.poisson(1.0, size=(n_time, n_cells)),
-        xs=np.linspace(0, 100, n_bins),
-        transition_matrix=_diag_dominant_transition(n_bins),
-        pf_centers=np.array([25.0, 50.0, 75.0]),
-        pf_width=5.0,
-        rate_scale=0.1,
-    )
-
-
-@pytest.fixture
-def metrics_2d() -> dict[str, np.ndarray]:
-    """Standard (n_time, n_cells) metrics dict for transform/threshold tests."""
-    rng = np.random.default_rng(42)
-    return {
-        "hpd_overlap": rng.uniform(0.5, 1.0, (100, 5)),
-        "kl_divergence": rng.uniform(0.0, 2.0, (100, 5)),
-        "predictive_pvalue": rng.uniform(0.0, 1.0, (100, 5)),
-    }
 
 
 # ---------------------------------------------------------------------------
@@ -242,7 +188,7 @@ class TestDecodeAndDiagnostics:
             assert np.all(np.isnan(getattr(result, key)[0]))
 
     def test_nan_pattern_matches_spike_pattern(self) -> None:
-        """Diagnostics are NaN exactly where a cell has no spike at that time."""
+        """DecodingDiagnostics are NaN exactly where a cell has no spike at that time."""
         n_bins = 11
         spikes = np.array([[1, 0], [0, 1], [1, 1], [0, 0], [2, 2]])
         xs = np.linspace(0, 100, n_bins)
@@ -255,7 +201,7 @@ class TestDecodeAndDiagnostics:
             rate_scale=0.1,
         )
 
-        # Diagnostics NaN at (t, cell) iff cell has no spike at that t,
+        # DecodingDiagnostics NaN at (t, cell) iff cell has no spike at that t,
         # plus all of t=0 (no prior available).
         no_spike = spikes == 0
         no_spike[0] = True
@@ -390,7 +336,7 @@ class TestDecodeAndDiagnostics:
         # The in-window metrics and displayed likelihood must all be the
         # values obtained from the decoder's active rate table.
         assert inside.any(), "test fixture produced no in-window spike events"
-        expected = compute_per_cell_diagnostics_from_rates(
+        expected = compute_spike_event_diagnostics_from_rates(
             with_alt.predictive,
             alt_rates,
             with_alt.event_time_ind[inside],
@@ -412,7 +358,7 @@ class TestDecodeAndDiagnostics:
                 err_msg=f"in-window {name} was not computed from decoder_rates",
             )
 
-        expected_outside = compute_per_cell_diagnostics_from_rates(
+        expected_outside = compute_spike_event_diagnostics_from_rates(
             with_alt.predictive,
             baseline_rates,
             with_alt.event_time_ind[outside],
@@ -436,7 +382,7 @@ class TestDecodeAndDiagnostics:
 
         # The fixture independently distinguishes decoder and oracle rates
         # for every output, rather than relying on one metric to change.
-        oracle = compute_per_cell_diagnostics_from_rates(
+        oracle = compute_spike_event_diagnostics_from_rates(
             with_alt.predictive,
             baseline_rates,
             with_alt.event_time_ind[inside],
@@ -561,88 +507,6 @@ class TestMisfitSchedule:
 
 
 # ---------------------------------------------------------------------------
-# Thresholds / compute_thresholds
-# ---------------------------------------------------------------------------
-
-
-class TestComputeThresholds:
-    def test_thresholds_match_quantile_definitions(self, metrics_2d: dict[str, np.ndarray]) -> None:
-        baseline_end = 50
-        thresholds = compute_thresholds(metrics_2d, baseline_end=baseline_end)
-
-        expected_hpdo = np.nanquantile(metrics_2d["hpd_overlap"][:baseline_end].ravel(), 0.01)
-        expected_kl = np.nanquantile(metrics_2d["kl_divergence"][:baseline_end].ravel(), 0.99)
-        assert thresholds.hpd_overlap == pytest.approx(expected_hpdo)
-        assert thresholds.kl_divergence == pytest.approx(expected_kl)
-        # predictive_pvalue is a fixed rank-statistic cutoff, not data-driven.
-        assert thresholds.predictive_pvalue == 0.05
-
-    def test_handles_partial_nan_baseline(self) -> None:
-        """NaNs in the baseline must be ignored, not propagate to thresholds."""
-        n_time, n_cells = 20, 3
-        hpdo = np.full((n_time, n_cells), 0.8)
-        hpdo[:5] = np.nan
-        metrics: dict[str, np.ndarray] = {
-            "hpd_overlap": hpdo,
-            "kl_divergence": np.full((n_time, n_cells), 1.0),
-            "predictive_pvalue": np.full((n_time, n_cells), 0.5),
-        }
-        thresholds = compute_thresholds(metrics, baseline_end=10)
-        assert not np.isnan(thresholds.hpd_overlap)
-        assert not np.isnan(thresholds.kl_divergence)
-
-    def test_baseline_end_is_keyword_only(self, metrics_2d: dict[str, np.ndarray]) -> None:
-        """Passing baseline_end positionally must fail — the argument is
-        keyword-only so callers can't accidentally omit it via the prior
-        ``None`` default that silently used the whole recording."""
-        # Cast to Any to probe the runtime contract without the static
-        # type checker rejecting the deliberately-wrong call.
-        unchecked: Any = compute_thresholds
-        with pytest.raises(TypeError, match="positional"):
-            unchecked(metrics_2d, 50)
-
-    def test_all_nan_hpd_baseline_raises(self) -> None:
-        """An all-NaN baseline slice would produce a NaN threshold and
-        every downstream ``metric < threshold`` comparison would silently
-        evaluate False. Raise instead."""
-        n_time, n_cells = 20, 3
-        metrics: dict[str, np.ndarray] = {
-            "hpd_overlap": np.full((n_time, n_cells), np.nan),
-            "kl_divergence": np.full((n_time, n_cells), 1.0),
-            "predictive_pvalue": np.full((n_time, n_cells), 0.5),
-        }
-        with pytest.raises(ValueError, match="hpd_overlap baseline slice"):
-            compute_thresholds(metrics, baseline_end=10)
-
-    def test_all_nan_kl_baseline_raises(self) -> None:
-        n_time, n_cells = 20, 3
-        metrics: dict[str, np.ndarray] = {
-            "hpd_overlap": np.full((n_time, n_cells), 0.8),
-            "kl_divergence": np.full((n_time, n_cells), np.nan),
-            "predictive_pvalue": np.full((n_time, n_cells), 0.5),
-        }
-        with pytest.raises(ValueError, match="kl_divergence baseline slice"):
-            compute_thresholds(metrics, baseline_end=10)
-
-    def test_accepts_diagnostics_object(self, decoder_inputs: DecoderInputs) -> None:
-        """``compute_thresholds`` accepts either a ``Diagnostics`` or a
-        plain dict (union back-compat for synthetic test fixtures). Pin
-        the Diagnostics branch so it stays exercised."""
-        diagnostics = decoder_inputs.call()
-        thresholds = compute_thresholds(diagnostics, baseline_end=5)
-        # Same call shape with a dict — results must agree.
-        as_dict = {
-            "hpd_overlap": diagnostics.hpd_overlap,
-            "kl_divergence": diagnostics.kl_divergence,
-            "predictive_pvalue": diagnostics.predictive_pvalue,
-        }
-        from_dict = compute_thresholds(as_dict, baseline_end=5)
-        assert thresholds.hpd_overlap == pytest.approx(from_dict.hpd_overlap)
-        assert thresholds.kl_divergence == pytest.approx(from_dict.kl_divergence)
-        assert thresholds.predictive_pvalue == from_dict.predictive_pvalue
-
-
-# ---------------------------------------------------------------------------
 # Figure-3 summary heatmap helpers (phase windows + flag fractions)
 # ---------------------------------------------------------------------------
 
@@ -723,7 +587,9 @@ class TestSummaryFlagFractions:
             "event_kl_divergence": event_kl,
             "event_predictive_pvalue": np.ones(n_time),  # never below 0.05
         }
-        thresholds = Thresholds(hpd_overlap=0.5, kl_divergence=5.0, predictive_pvalue=0.05)
+        thresholds = DiagnosticThresholds(
+            hpd_overlap=0.5, kl_divergence=5.0, predictive_pvalue=0.05
+        )
         windows = summary_phase_windows(params)
         frac = compute_phase_flag_fractions(metrics, thresholds, windows)
 
@@ -751,7 +617,7 @@ class TestSummaryFlagFractions:
             "event_kl_divergence": kl,
             "event_predictive_pvalue": rng.uniform(0.0, 1.0, n_events),
         }
-        thresholds = Thresholds(hpd_overlap=0.3, kl_divergence=5.0, predictive_pvalue=0.2)
+        thresholds = DiagnosticThresholds(hpd_overlap=0.3, kl_divergence=5.0, predictive_pvalue=0.2)
         windows = summary_phase_windows(params)
 
         values = extract_phase_flag_values(metrics, windows)
@@ -764,132 +630,6 @@ class TestSummaryFlagFractions:
             flag_fractions_from_values(values, thresholds),
             compute_phase_flag_fractions(metrics, thresholds, windows),
         )
-
-
-class TestThresholdsInvariants:
-    """Range validation at construction. Reverting any branch lets a
-    NaN or out-of-range threshold slip through and silently make
-    downstream ``metric < threshold`` comparisons evaluate False."""
-
-    @pytest.mark.parametrize("bad", [-0.01, 1.01, float("nan")])
-    def test_hpd_overlap_out_of_range_raises(self, bad: float) -> None:
-        with pytest.raises(ValueError, match=r"hpd_overlap must lie in \[0, 1\]"):
-            Thresholds(hpd_overlap=bad, kl_divergence=0.0, predictive_pvalue=0.05)
-
-    @pytest.mark.parametrize("bad", [-0.01, float("nan"), float("inf")])
-    def test_kl_divergence_non_finite_or_negative_raises(self, bad: float) -> None:
-        with pytest.raises(ValueError, match=r"kl_divergence must be finite and non-negative"):
-            Thresholds(hpd_overlap=0.5, kl_divergence=bad, predictive_pvalue=0.05)
-
-    @pytest.mark.parametrize("bad", [-0.01, 1.01, float("nan")])
-    def test_predictive_pvalue_out_of_range_raises(self, bad: float) -> None:
-        with pytest.raises(ValueError, match=r"predictive_pvalue must lie in \[0, 1\]"):
-            Thresholds(hpd_overlap=0.5, kl_divergence=0.0, predictive_pvalue=bad)
-
-    def test_boundary_values_accepted(self) -> None:
-        """The closed-interval boundaries [0, 1] must construct cleanly."""
-        Thresholds(hpd_overlap=0.0, kl_divergence=0.0, predictive_pvalue=0.0)
-        Thresholds(hpd_overlap=1.0, kl_divergence=0.0, predictive_pvalue=1.0)
-
-    def test_is_frozen(self) -> None:
-        """Frozen so a downstream consumer cannot rebind a field mid-pipeline."""
-        from dataclasses import FrozenInstanceError
-
-        t: Any = Thresholds(hpd_overlap=0.5, kl_divergence=0.0, predictive_pvalue=0.05)
-        with pytest.raises(FrozenInstanceError):
-            t.hpd_overlap = 0.7
-
-
-class TestDiagnosticsInvariants:
-    """``Diagnostics.__post_init__`` validates shape and value ranges
-    on every field. Exercise the most-likely-to-regress branches
-    directly so a future "loosen the check" change fails here, not
-    later as a NaN downstream."""
-
-    def _kwargs(
-        self, *, n_time: int = 4, n_bins: int = 3, n_cells: int = 2, n_spikes: int = 1
-    ) -> dict[str, np.ndarray]:
-        posterior = np.full((n_time, n_bins), 1.0 / n_bins)
-        return dict(
-            posterior=posterior,
-            predictive=posterior.copy(),
-            likelihood=posterior.copy(),
-            spike_likelihood=posterior.copy(),
-            hpd_overlap=np.zeros((n_time, n_cells)),
-            kl_divergence=np.zeros((n_time, n_cells)),
-            predictive_pvalue=np.zeros((n_time, n_cells)),
-            event_time_ind=np.zeros(n_spikes, dtype=np.intp),
-            event_cell_ind=np.zeros(n_spikes, dtype=np.intp),
-            event_hpd_overlap=np.zeros(n_spikes),
-            event_kl_divergence=np.zeros(n_spikes),
-            event_predictive_pvalue=np.zeros(n_spikes),
-            per_spike_likelihood=np.zeros((n_spikes, n_bins)),
-        )
-
-    def test_predictive_shape_mismatch_raises(self) -> None:
-        kwargs = self._kwargs(n_time=4, n_bins=3)
-        kwargs["predictive"] = np.zeros((5, 3))  # wrong leading dim
-        with pytest.raises(ValueError, match=r"Diagnostics\.predictive shape"):
-            Diagnostics(**kwargs)
-
-    def test_per_event_shape_mismatch_raises(self) -> None:
-        kwargs = self._kwargs(n_spikes=3)
-        kwargs["event_kl_divergence"] = np.zeros(4)  # wrong leading dim
-        with pytest.raises(ValueError, match=r"Diagnostics\.event_kl_divergence shape"):
-            Diagnostics(**kwargs)
-
-    def test_posterior_must_be_2d(self) -> None:
-        kwargs = self._kwargs()
-        kwargs["posterior"] = np.zeros(12)  # 1-D
-        with pytest.raises(ValueError, match=r"Diagnostics\.posterior must be 2-D"):
-            Diagnostics(**kwargs)
-
-    def test_hpd_overlap_out_of_range_raises(self) -> None:
-        """A buggy decoder shipping ``hpd_overlap > 1`` is caught at the
-        producer boundary, not silently propagated into HPD overlap
-        statistics that look fine at first glance."""
-        kwargs = self._kwargs()
-        kwargs["hpd_overlap"] = np.full((4, 2), 1.5)
-        with pytest.raises(ValueError, match=r"Diagnostics\.hpd_overlap: values above 1"):
-            Diagnostics(**kwargs)
-
-    def test_kl_divergence_negative_raises(self) -> None:
-        kwargs = self._kwargs()
-        kwargs["kl_divergence"] = np.full((4, 2), -0.5)
-        with pytest.raises(ValueError, match=r"Diagnostics\.kl_divergence: values below 0"):
-            Diagnostics(**kwargs)
-
-    def test_nan_in_dense_field_is_allowed(self) -> None:
-        """NaN at (t, cell) without a spike is legitimate; the range
-        check must let it through."""
-        kwargs = self._kwargs()
-        kwargs["hpd_overlap"][0, :] = np.nan
-        kwargs["kl_divergence"][0, :] = np.nan
-        kwargs["predictive_pvalue"][0, :] = np.nan
-        Diagnostics(**kwargs)  # does not raise
-
-
-class TestPerCellDiagnosticsInvariants:
-    """All-or-nothing on the dense matrices is the load-bearing
-    invariant of ``PerCellDiagnostics``; cover it directly so a
-    future caller can't supply ``hpd_overlap`` without
-    ``kl_divergence`` and have downstream code mistake the
-    None as "include_dense_matrices=False"."""
-
-    def test_partial_dense_matrices_rejected(self) -> None:
-        n_spikes, n_time, n_cells, n_bins = 2, 4, 2, 3
-        with pytest.raises(ValueError, match="all-or-nothing"):
-            PerCellDiagnostics(
-                event_time_ind=np.zeros(n_spikes, dtype=np.intp),
-                event_cell_ind=np.zeros(n_spikes, dtype=np.intp),
-                event_hpd_overlap=np.zeros(n_spikes),
-                event_kl_divergence=np.zeros(n_spikes),
-                event_predictive_pvalue=np.zeros(n_spikes),
-                hpd_overlap=np.zeros((n_time, n_cells)),
-                kl_divergence=None,  # only some dense matrices supplied
-                predictive_pvalue=np.zeros((n_time, n_cells)),
-                per_spike_likelihood=np.zeros((n_spikes, n_bins)),
-            )
 
 
 # ---------------------------------------------------------------------------
@@ -1099,62 +839,6 @@ class TestDecodeAndDiagnosticsLogSpace:
             decode_and_diagnostics(
                 spikes, xs, transition_matrix, pf_centers, pf_width=5.0, rate_scale=1.0
             )
-
-
-# ---------------------------------------------------------------------------
-# compute_per_cell_diagnostics_from_rates
-# ---------------------------------------------------------------------------
-
-
-class TestComputePerCellDiagnosticsFromRates:
-    """Direct tests for the per-cell diagnostics helper."""
-
-    def test_integrates_raw_rates_before_normalizing(self) -> None:
-        """Regression test for the original MATLAB normalization-order bug.
-
-        Averaging state-conditional cell fractions would assign the less
-        likely cell rank 0.3. Conditioning the latent state on an event by
-        integrating raw rates first gives the correct rank 1/6.
-        """
-        predictive = np.array([[0.5, 0.5], [0.5, 0.5]])
-        rates = np.array([[9.0, 1.0], [1.0, 1.0]])
-        spike_time_ind = np.array([0, 1], dtype=np.intp)
-        spike_cell_ind = np.array([0, 1], dtype=np.intp)
-
-        result = compute_per_cell_diagnostics_from_rates(
-            predictive, rates, spike_time_ind, spike_cell_ind, coverage=0.95
-        )
-        np.testing.assert_allclose(result.event_predictive_pvalue, [1.0, 1.0 / 6.0])
-
-    def test_zero_rate_row_contributes_no_event_mass(self) -> None:
-        """A state with zero population rate contributes no mass after
-        conditioning on an event; equal rates elsewhere keep cells tied.
-        """
-        predictive = np.array([[0.2, 0.5, 0.3]])
-        rates = np.array([[0.5, 0.5], [0.0, 0.0], [0.5, 0.5]])
-        result = compute_per_cell_diagnostics_from_rates(
-            predictive,
-            rates,
-            np.array([0], dtype=np.intp),
-            np.array([0], dtype=np.intp),
-            coverage=0.95,
-        )
-        np.testing.assert_allclose(result.event_predictive_pvalue, 1.0, atol=1e-12)
-
-    def test_fully_degenerate_rates_yield_uniform_rank(self) -> None:
-        """When the conditional mark distribution is undefined because
-        total intensity is zero, the documented uniform fallback gives
-        every cell the maximal tied rank.
-        """
-        n_time, n_bins, n_cells = 5, 3, 2
-        predictive = np.full((n_time, n_bins), 1.0 / n_bins)
-        rates = np.zeros((n_bins, n_cells))
-        spike_time_ind = np.array([0], dtype=np.intp)
-        spike_cell_ind = np.array([0], dtype=np.intp)
-        result = compute_per_cell_diagnostics_from_rates(
-            predictive, rates, spike_time_ind, spike_cell_ind, coverage=0.95
-        )
-        np.testing.assert_allclose(result.event_predictive_pvalue, 1.0, atol=1e-12)
 
 
 # ---------------------------------------------------------------------------
@@ -1374,14 +1058,14 @@ class TestSimulationResultDataclass:
             )
 
     def test_metrics_timeline_mismatch_against_x_true_raises(self) -> None:
-        """``SimulationResult.__post_init__`` rejects a ``Diagnostics``
+        """``SimulationResult.__post_init__`` rejects a ``DecodingDiagnostics``
         whose ``posterior`` timeline doesn't match ``x_true``. The
-        ``Diagnostics`` dataclass itself enforces internal-shape
+        ``DecodingDiagnostics`` dataclass itself enforces internal-shape
         consistency; this test pins the cross-check against the outer
         timeline that only ``SimulationResult`` can see."""
         n_bins = 5
         n_time = 10
-        # A perfectly-shaped Diagnostics with the wrong leading dim.
+        # A perfectly-shaped DecodingDiagnostics with the wrong leading dim.
         bad_metrics = _zero_diagnostics(n_time=n_time + 1, n_bins=n_bins)
         with pytest.raises(ValueError, match=r"metrics.posterior leading dim"):
             SimulationResult(
@@ -1530,47 +1214,8 @@ class TestLogSpaceReferenceComparison:
         np.testing.assert_allclose(result.posterior, ref_post, rtol=1e-10, atol=1e-12)
 
 
-class TestNormalizedSingleSpikeLikelihood:
-    def test_matches_normalized_poisson_and_rows_sum_to_one(self) -> None:
-        from scipy.stats import poisson
-
-        from statespacecheck_paper.analysis import normalized_single_spike_likelihood
-
-        rates = np.array([[2.0, 0.5, 1.0], [0.1, 0.4, 0.2]])
-        out = normalized_single_spike_likelihood(rates)
-
-        pmf = poisson.pmf(k=1, mu=rates)
-        expected = pmf / pmf.sum(axis=-1, keepdims=True)
-        np.testing.assert_allclose(out, expected)
-        np.testing.assert_allclose(out.sum(axis=-1), 1.0)
-
-    def test_degenerate_zero_rate_row_is_uniform(self) -> None:
-        from statespacecheck_paper.analysis import normalized_single_spike_likelihood
-
-        rates = np.array([[2.0, 0.5, 1.0], [0.0, 0.0, 0.0]])
-        out = normalized_single_spike_likelihood(rates)
-
-        # The all-zero-rate row carries no positional information -> uniform,
-        # and still sums to exactly 1 (not the sub-normalized near-zero row a
-        # raw divide would give).
-        np.testing.assert_allclose(out[1], np.full(3, 1.0 / 3.0))
-        np.testing.assert_allclose(out.sum(axis=-1), 1.0)
-
-    def test_tiny_but_informative_rates_keep_their_shape(self) -> None:
-        from statespacecheck_paper.analysis import normalized_single_spike_likelihood
-
-        # Rates far below any absolute threshold still have a well-defined
-        # shape: they must normalize to their ratio, not collapse to uniform.
-        rates = np.array([[1e-20, 2e-20, 4e-20]])
-        out = normalized_single_spike_likelihood(rates)
-
-        expected = np.array([1.0, 2.0, 4.0]) / 7.0
-        np.testing.assert_allclose(out[0], expected, rtol=1e-6)
-        assert not np.allclose(out[0], np.full(3, 1.0 / 3.0))
-
-
 # ---------------------------------------------------------------------------
-# _resolve_base_rates and _event_predictive_pvalue_rank (Phase-1 extracted helpers)
+# _resolve_base_rates
 # ---------------------------------------------------------------------------
 
 
@@ -1610,48 +1255,3 @@ class TestResolveBaseRates:
         built = _resolve_base_rates(None, xs, pf_centers, 5.0, 0.1, n_bins=5, n_cells=2)
         assert built.shape == (5, 2)
         assert np.array_equal(built, placefield_rates(xs, pf_centers, 5.0, 0.1))
-
-
-class TestEventSpikeProbRankTolerance:
-    def test_sub_atol_tie_does_not_flip_rank(self) -> None:
-        """Two cells whose predictive contributions differ by less than the
-        ``rank_atol`` slack must receive the *same* rank. A one-hot predictive
-        row lets the contributions be set directly via the rate table; the pair
-        at 0.30 and 0.30 + delta (delta < rank_atol) is bracketed by a clearly
-        larger and a clearly smaller cell, so without the tolerance the two
-        events would land on different ranks (0.35 vs 0.65+delta) instead of
-        tying.
-        """
-        n_bins, n_cells = 4, 4
-        delta = 1e-15  # below rank_atol ~ eps*n_bins*16*max_contrib ~ 5e-15
-        contributions = np.array([0.05, 0.30, 0.30 + delta, 0.35 - delta])
-        # rank_atol must exceed the near-tie gap for the tie to hold.
-        rank_atol = float(np.finfo(float).eps * n_bins * 16) * float(contributions.max())
-        assert delta < rank_atol
-
-        rates = np.zeros((n_bins, n_cells))
-        rates[0] = contributions  # only bin 0 carries intensity
-        pred = np.zeros((2, n_bins))
-        pred[:, 0] = 1.0  # both events sit on bin 0 -> identical contributions
-        cell_ind = np.array([1, 2], dtype=np.intp)  # near-tied pair (0.30, 0.30+delta)
-
-        ranks = _event_predictive_pvalue_rank(pred, rates, cell_ind)
-
-        assert ranks[0] == ranks[1]  # the sub-atol difference does not flip rank
-        assert 0.0 < ranks[0] < 1.0  # discriminating: neither everything nor nothing
-
-    def test_values_in_unit_range(self) -> None:
-        rng = np.random.default_rng(1)
-        n_time, n_bins, n_cells = 30, 12, 5
-        pred = rng.dirichlet(np.ones(n_bins), size=n_time)
-        rates = rng.random((n_bins, n_cells))
-        cell_ind = rng.integers(0, n_cells, size=n_time).astype(np.intp)
-
-        ranks = _event_predictive_pvalue_rank(pred, rates, cell_ind)
-
-        assert ranks.shape == (n_time,)
-        # Rank is a cumulative probability mass: bounded in [0, 1], allowing the
-        # tiny FP overshoot above 1 the reduction can produce for the top cell
-        # (matches the tolerance in test_real_data_analysis).
-        assert np.all(ranks >= 0.0)
-        assert np.all(ranks <= 1.0 + 1e-9)

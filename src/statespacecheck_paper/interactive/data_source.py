@@ -461,9 +461,9 @@ class DecoderDataSource:
             raise IndexError(f"cell_id {cell_id} out of range [0, {self.n_cells})")
         if self.event_likelihood is not None:
             return np.asarray(self.event_likelihood[event_idx], dtype=np.float32)
-        from statespacecheck_paper.analysis import normalized_single_spike_likelihood
+        from statespacecheck_paper.diagnostics import compute_normalized_spike_likelihood
 
-        likelihood = normalized_single_spike_likelihood(
+        likelihood = compute_normalized_spike_likelihood(
             np.asarray(self.place_fields[cell_id], dtype=np.float64)
         )
         return np.asarray(likelihood, dtype=np.float32)

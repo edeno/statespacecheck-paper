@@ -10,7 +10,6 @@ from statespacecheck_paper.simulation import (
     gaussian_transition_matrix,
     normalize,
     placefield_rates,
-    predictive_mark_probabilities,
     reflect_into_interval,
     safe_log,
     simulate_spikes_history_dependent,
@@ -187,36 +186,6 @@ class TestPlacefieldRates:
         """Edge case: no cells -> shape (n_bins, 0) without error."""
         rates = placefield_rates(np.linspace(0, 10, 11), np.array([]), width=1.0, scale=1.0)
         assert rates.shape == (11, 0)
-
-
-# ---------------------------------------------------------------------------
-# predictive_mark_probabilities
-# ---------------------------------------------------------------------------
-
-
-class TestPredictiveMarkProbabilities:
-    def test_integrates_raw_intensities_before_normalizing(self) -> None:
-        """Population intensity varies by state, so averaging conditional
-        cell fractions would give [0.7, 0.3]. The event-weighted
-        predictive distribution must instead be [5/6, 1/6].
-        """
-        prior = np.array([0.5, 0.5])
-        rates = np.array([[9.0, 1.0], [1.0, 1.0]])
-
-        mark_probs = predictive_mark_probabilities(prior, rates)
-
-        assert_allclose(mark_probs, [5.0 / 6.0, 1.0 / 6.0])
-
-    def test_global_intensity_scale_does_not_change_distribution(self) -> None:
-        prior = np.array([0.5, 0.3, 0.2])
-        rates = np.array([[0.6, 0.2], [0.3, 0.5], [0.1, 0.3]])
-        baseline = predictive_mark_probabilities(prior, rates)
-        assert_allclose(predictive_mark_probabilities(prior, 17.0 * rates), baseline)
-
-    def test_zero_total_intensity_uses_uniform_fallback(self) -> None:
-        prior = np.array([0.5, 0.5])
-        rates = np.zeros((2, 3))
-        assert_allclose(predictive_mark_probabilities(prior, rates), np.full(3, 1.0 / 3.0))
 
 
 # ---------------------------------------------------------------------------

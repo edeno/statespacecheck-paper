@@ -18,7 +18,8 @@ statespacecheck-paper/
 │   ├── paths.py                # DATA_PATH + ANIMAL_DATE_EPOCH constants
 │   ├── style.py                # Figure styling (colors, defaults, save)
 │   ├── simulation.py           # Simulation utilities
-│   ├── analysis.py             # Analysis logic and diagnostics
+│   ├── diagnostics.py          # Shared goodness-of-fit diagnostics (leaf layer)
+│   ├── analysis.py             # Decoder + figure-3 params/summary logic
 │   ├── plotting.py             # Plotting utilities
 │   ├── figure02_panels.py      # Figure-2 per-panel renderers
 │   ├── figure03_demo.py        # Figure-3 simulation + decoder pipeline
@@ -45,6 +46,7 @@ statespacecheck-paper/
 └── tests/                       # Test suite (unit + property-based + integration)
     ├── test_style.py
     ├── test_simulation.py
+    ├── test_diagnostics.py
     ├── test_analysis.py
     ├── test_plotting.py
     ├── test_schematic.py       # Tests for schematic module
@@ -56,7 +58,8 @@ statespacecheck-paper/
 
 - **style.py**: Shared styling utilities (WONG palette, COLORS dict, figure defaults, save function)
 - **simulation.py**: Simulation functions (random walks, spike generation, place fields)
-- **analysis.py**: Analysis logic (decoder, diagnostics, thresholds, transformations)
+- **diagnostics.py**: Shared goodness-of-fit diagnostics — the dependency-graph leaf (per-spike-event HPD/KL/rank containers + computation, single-spike likelihood, predictive-mark probabilities, baseline thresholds)
+- **analysis.py**: Decoder (`decode_and_diagnostics`) plus figure-3 decode params and summary-flag logic
 - **plotting.py**: Reusable plotting functions (HPD regions, diagnostic plots)
 - **schematic.py**: Graphical model diagrams and Bayesian equation boxes for Figure 1
 - **load_local_data.py**: Data loading utilities for real datasets
@@ -96,17 +99,23 @@ The repository follows a clean separation between **reusable code** (in `src/`) 
 - `simulate_walk(n_time, transition_matrix, x0, rng)`: Random walk simulation
 - `simulate_spikes_position_tuned(position, placefield_rates, rng)`: Position-tuned Poisson spikes
 
-**3. analysis.py** - Bayesian Decoding and Diagnostics
+**3. diagnostics.py** - Shared Goodness-of-Fit Diagnostics (leaf layer)
+
+- `SpikeEventDiagnostics`: Dataclass returned by the per-spike-event diagnostic computation
+- `DecodingDiagnostics`: Dataclass returned by `decode_and_diagnostics`
+- `DiagnosticThresholds`: Dataclass for diagnostic thresholds
+- `compute_spike_event_diagnostics_from_rates(...)`: Per-spike HPD/KL/rank diagnostics
+- `compute_normalized_spike_likelihood(firing_rates)`: Normalized single-spike Poisson likelihood
+- `compute_predictive_mark_probabilities(predictive_distribution, mark_intensities)`: Predictive mark distribution (moved here from `simulation.py`)
+- `compute_baseline_diagnostic_thresholds(diagnostics, *, baseline_end_index)`: Compute baseline thresholds
+
+**4. analysis.py** - Bayesian Decoding
 
 - `DecodeParams`: Dataclass for decoder configuration (timeline, cells, remapping)
-- `Thresholds`: Dataclass for diagnostic thresholds
-- `PerCellDiagnostics`: Dataclass returned by the per-cell diagnostic computation
 - `get_remapped_pf_centers(params)`: Compute remapped place field centers
-- `decode_and_diagnostics(spikes, params)`: Main decoder with KL/HPD diagnostics
-- `compute_per_cell_diagnostics_from_rates(...)`: Per-spike HPD/KL/rank diagnostics
-- `compute_thresholds(baseline_period, quantiles)`: Compute baseline thresholds
+- `decode_and_diagnostics(spikes, params)`: Main decoder with KL/HPD diagnostics (returns `DecodingDiagnostics`)
 
-**4. plotting.py** - Reusable Plotting Functions
+**5. plotting.py** - Reusable Plotting Functions
 
 - `compute_hpd_region(distribution, coverage)`: Highest posterior density region mask
 - `add_phase_boundaries(ax, params)`: Add vertical lines at phase transitions
@@ -115,20 +124,20 @@ The repository follows a clean separation between **reusable code** (in `src/`) 
 - `plot_likelihood_columns(...)`: Shared likelihood-column rendering primitive
 - `plot_combined_diagnostics(diagnostics, x_true, spikes, params)`: Comprehensive visualization
 
-**5. schematic.py** - Graphical Model Diagrams
+**6. schematic.py** - Graphical Model Diagrams
 
 - `draw_graphical_model(ax)`: Draw state space model graphical representation
 - `draw_equation_boxes(ax)`: Draw Bayesian filtering equations
 - Used by Figure 1 to create schematic overview
 
-**6. load_local_data.py** - Real Data Loading
+**7. load_local_data.py** - Real Data Loading
 
 - `load_neural_recording_from_files(data_path, animal_date_epoch)`: loads
   position info, spike times, track graph, and linear edge data from
   pre-exported pickle files in the supplied data directory. No Spyglass
   database connection required.
 
-**7. paths.py** - Shared Data Identifiers
+**8. paths.py** - Shared Data Identifiers
 
 - `DATA_PATH`: default `<repo>/data`; override via `STATESPACECHECK_DATA_PATH`.
 - `ANIMAL_DATE_EPOCH`: default `j1620210710_02_r1`; override via

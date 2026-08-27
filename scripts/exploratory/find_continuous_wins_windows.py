@@ -28,7 +28,7 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.ndimage import label
 
-from statespacecheck_paper.analysis import PerCellDiagnostics
+from statespacecheck_paper.diagnostics import SpikeEventDiagnostics
 from statespacecheck_paper.load_local_data import load_neural_recording_from_files
 from statespacecheck_paper.paths import ANIMAL_DATE_EPOCH, DATA_PATH
 from statespacecheck_paper.real_data_analysis import (
@@ -83,8 +83,8 @@ class ContinuousWinsCandidate:
 
 
 def find_continuous_better_periods(
-    continuous_diagnostics: PerCellDiagnostics,
-    contfrag_diagnostics: PerCellDiagnostics,
+    continuous_diagnostics: SpikeEventDiagnostics,
+    contfrag_diagnostics: SpikeEventDiagnostics,
     time: NDArray[np.float64],
     min_hpd_diff: float = MIN_HPD_DIFF,
     min_duration_bins: int = MIN_DURATION_BINS,
@@ -177,8 +177,8 @@ def score_continuous_wins(
     time: NDArray[np.float64],
     speed: NDArray[np.float64],
     spike_counts: NDArray[np.int64],
-    continuous_diagnostics: PerCellDiagnostics,
-    contfrag_diagnostics: PerCellDiagnostics,
+    continuous_diagnostics: SpikeEventDiagnostics,
+    contfrag_diagnostics: SpikeEventDiagnostics,
     min_spikes: int = MIN_SPIKES,
 ) -> list[ContinuousWinsCandidate]:
     """Score candidate events by how much Continuous outperforms Cont-Frag.
@@ -273,8 +273,8 @@ def generate_preview_figures(
     linear_position: NDArray[np.float64],
     continuous_results: Any,
     contfrag_results: Any,
-    continuous_diagnostics: PerCellDiagnostics,
-    contfrag_diagnostics: PerCellDiagnostics,
+    continuous_diagnostics: SpikeEventDiagnostics,
+    contfrag_diagnostics: SpikeEventDiagnostics,
     spike_times: list[NDArray[np.float64]],
     spike_counts: NDArray[np.int64],
     place_field_peaks: NDArray[np.float64],

@@ -20,7 +20,7 @@ import pandas as pd
 import pytest
 import xarray as xr
 
-from statespacecheck_paper.analysis import PerCellDiagnostics
+from statespacecheck_paper.diagnostics import SpikeEventDiagnostics
 from statespacecheck_paper.interactive import cache as cache_mod
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -86,9 +86,9 @@ def _per_spike(
     event_hpd_overlap: np.ndarray,
     event_kl_divergence: np.ndarray,
     event_predictive_pvalue: np.ndarray,
-) -> PerCellDiagnostics:
+) -> SpikeEventDiagnostics:
     n_spikes = event_time.shape[0]
-    return PerCellDiagnostics(
+    return SpikeEventDiagnostics(
         event_time_ind=np.zeros(n_spikes, dtype=np.intp),
         event_cell_ind=event_cell_ind.astype(np.intp),
         event_hpd_overlap=event_hpd_overlap,

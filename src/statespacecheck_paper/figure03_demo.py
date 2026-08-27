@@ -22,18 +22,20 @@ from numpy.typing import NDArray
 
 from statespacecheck_paper.analysis import (
     DecodeParams,
-    Diagnostics,
     MisfitSchedule,
     MisfitWindow,
     PhaseBoundary,
-    Thresholds,
-    compute_thresholds,
     decode_and_diagnostics,
     extract_phase_flag_values,
     flag_fractions_from_values,
     get_remapped_pf_centers,
     replay_window,
     summary_phase_windows,
+)
+from statespacecheck_paper.diagnostics import (
+    DecodingDiagnostics,
+    DiagnosticThresholds,
+    compute_baseline_diagnostic_thresholds,
 )
 from statespacecheck_paper.simulation import (
     gaussian_transition_matrix,
@@ -112,7 +114,7 @@ class SimulationResult:
     xs: NDArray[np.floating]
     x_true: NDArray[np.floating]
     spikes: NDArray[np.int_]
-    metrics: Diagnostics
+    metrics: DecodingDiagnostics
     # Sequence fields are declared as tuple so ``frozen=True``'s
     # immutability extends to the contents — list would leave
     # ``sim.phase_labels.append(...)`` and ``sim.phase_boundaries[-1] = 9999``
@@ -159,8 +161,8 @@ class SimulationResult:
                 f"final phase boundary ({self.phase_boundaries[-1]}) must "
                 f"equal x_true timeline ({n_time})."
             )
-        # ``Diagnostics.__post_init__`` enforces shape agreement across
-        # its own fields; cross-check that ``Diagnostics``'s leading dim
+        # ``DecodingDiagnostics.__post_init__`` enforces shape agreement across
+        # its own fields; cross-check that ``DecodingDiagnostics``'s leading dim
         # matches the ``x_true`` timeline supplied here.
         if self.metrics.posterior.shape[0] != n_time:
             raise ValueError(
@@ -697,7 +699,7 @@ class StableSummary:
 
     Parameters
     ----------
-    thresholds : Thresholds
+    thresholds : DiagnosticThresholds
         Pooled-baseline flag thresholds.
     frac_median : np.ndarray, shape (3, n_columns)
         Median percent flagged. Rows follow
@@ -713,7 +715,7 @@ class StableSummary:
         If ``frac_median`` is not 2-D, or ``n_realizations`` is not positive.
     """
 
-    thresholds: Thresholds
+    thresholds: DiagnosticThresholds
     frac_median: NDArray[np.floating]
     n_realizations: int
 
@@ -742,7 +744,7 @@ def estimate_stable_summary(
     thresholds, then scores every realization's per-phase flag fractions
     against those shared thresholds and returns the across-realization
     median. A single pass holds only the finite per-spike values (not the
-    dense ``Diagnostics``) per realization, so memory stays bounded even at
+    dense ``DecodingDiagnostics``) per realization, so memory stays bounded even at
     large ``n_realizations``.
 
     Parameters
@@ -774,7 +776,7 @@ def estimate_stable_summary(
     baseline_end = params.phase_boundaries[PhaseBoundary.REMAP_START]
     windows = summary_phase_windows(params)
 
-    # ``compute_thresholds`` reads only hpd_overlap and kl_divergence (the
+    # ``compute_baseline_diagnostic_thresholds`` reads only hpd_overlap and kl_divergence (the
     # predictive_pvalue threshold is the fixed 0.05 cutoff), but pool all three so
     # the dict is a faithful baseline sample if that ever changes. Pool the
     # per-*event* baseline values (one per spike event), matching the
@@ -793,8 +795,8 @@ def estimate_stable_summary(
         per_realization_values.append(extract_phase_flag_values(metrics, windows))
 
     pooled_baseline = {key: np.concatenate(vals) for key, vals in baseline_values.items()}
-    thresholds = compute_thresholds(
-        pooled_baseline, baseline_end=pooled_baseline["hpd_overlap"].shape[0]
+    thresholds = compute_baseline_diagnostic_thresholds(
+        pooled_baseline, baseline_end_index=pooled_baseline["hpd_overlap"].shape[0]
     )
 
     # (n_realizations, n_metrics, n_columns) flag-fraction stack.

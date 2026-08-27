@@ -36,7 +36,7 @@ import pandas as pd
 import xarray as xr
 from numpy.typing import NDArray
 
-from statespacecheck_paper.analysis import PerCellDiagnostics
+from statespacecheck_paper.diagnostics import SpikeEventDiagnostics
 
 ModelName = Literal["continuous", "contfrag"]
 MODEL_NAMES: tuple[ModelName, ...] = ("continuous", "contfrag")
@@ -164,13 +164,13 @@ def _extract_place_fields_concat(model: Any) -> tuple[NDArray[np.float64], NDArr
 
 
 def _events_dataframe(
-    diagnostics: PerCellDiagnostics,
+    diagnostics: SpikeEventDiagnostics,
     n_cells: int,
 ) -> pd.DataFrame:
     """Convert per-spike diagnostic arrays into a sorted Parquet-friendly frame."""
     if diagnostics.event_time is None:
         raise ValueError(
-            "PerCellDiagnostics.event_time is required when building the cache "
+            "SpikeEventDiagnostics.event_time is required when building the cache "
             "events frame; the simulated path leaves it None."
         )
 
@@ -671,7 +671,7 @@ def build_simulated_cache(
     # Events table. ``event_time_ind`` / ``event_cell_ind`` from
     # ``decode_and_diagnostics`` are already expanded for multi-count
     # bins (a bin with ``k`` spikes contributes ``k`` events) and
-    # ``compute_per_cell_diagnostics_from_rates`` returns per-event
+    # ``compute_spike_event_diagnostics_from_rates`` returns per-event
     # diagnostics in the same order.
     spike_time_ind = np.asarray(metrics.event_time_ind, dtype=np.intp)
     spike_cell_ind = np.asarray(metrics.event_cell_ind, dtype=np.intp)

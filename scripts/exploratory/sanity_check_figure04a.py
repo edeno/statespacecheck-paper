@@ -27,7 +27,7 @@ from matplotlib.figure import Figure
 from numpy.typing import NDArray
 from scipy.stats import poisson
 
-from statespacecheck_paper.analysis import PerCellDiagnostics
+from statespacecheck_paper.diagnostics import SpikeEventDiagnostics
 from statespacecheck_paper.load_local_data import load_neural_recording_from_files
 from statespacecheck_paper.paths import ANIMAL_DATE_EPOCH, DATA_PATH
 from statespacecheck_paper.plotting import compute_hpd_region
@@ -387,7 +387,7 @@ def _select_spikes(
 
 
 def _select_spikes_joint(
-    diagnostics: PerCellDiagnostics,
+    diagnostics: SpikeEventDiagnostics,
     spike_time_ind: NDArray[np.intp],
     spike_cell_ind: NDArray[np.intp],
     primary_metric: str,
@@ -440,7 +440,7 @@ def generate_sanity_plots(
     model: Any,
     results: Any,
     spike_counts: NDArray[np.int64],
-    diagnostics: PerCellDiagnostics,
+    diagnostics: SpikeEventDiagnostics,
     linear_position: NDArray[np.float64],
     model_name: str,
     output_dir: Path,
@@ -532,7 +532,7 @@ def generate_sanity_plots(
         rate = place_fields[c_idx]  # (n_bins,) un-normalized rate
 
         # Poisson likelihood P(k=1 | lambda), normalized over bins
-        # (matches analysis.py:compute_per_cell_diagnostics_from_rates)
+        # (matches diagnostics.py:compute_spike_event_diagnostics_from_rates)
         lik_raw = poisson.pmf(k=1, mu=rate)  # (n_bins,)
         lik_norm = normalize(lik_raw, axis=0)  # normalize over bins
 

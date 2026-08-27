@@ -80,14 +80,14 @@ def test_static_cache_event_likelihood_falls_back_to_normalized_place_field(
 ) -> None:
     """Legacy/real caches without event rows fall back to the same normalized
     single-spike likelihood the diagnostics use, not the raw place field."""
-    from statespacecheck_paper.analysis import normalized_single_spike_likelihood
+    from statespacecheck_paper.diagnostics import compute_normalized_spike_likelihood
 
     src = DecoderDataSource(synthetic_cache, model="continuous")
     try:
         assert src.event_likelihood is None
         event_idx = 0
         cell_id = int(src.event_cell_ids[event_idx])
-        expected = normalized_single_spike_likelihood(
+        expected = compute_normalized_spike_likelihood(
             np.asarray(src.place_fields[cell_id], dtype=np.float64)
         )
         np.testing.assert_allclose(

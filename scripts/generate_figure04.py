@@ -27,7 +27,7 @@ import numpy as np
 from matplotlib.transforms import Bbox
 from numpy.typing import NDArray
 
-from statespacecheck_paper.analysis import PerCellDiagnostics
+from statespacecheck_paper.diagnostics import SpikeEventDiagnostics
 from statespacecheck_paper.load_local_data import load_neural_recording_from_files
 from statespacecheck_paper.paths import ANIMAL_DATE_EPOCH, DATA_PATH
 from statespacecheck_paper.real_data_analysis import (
@@ -127,8 +127,8 @@ class Fig4Bundle:
     # Decode payload (cached or recomputed)
     continuous_results: Any
     contfrag_results: Any
-    continuous_diagnostics: PerCellDiagnostics
-    contfrag_diagnostics: PerCellDiagnostics
+    continuous_diagnostics: SpikeEventDiagnostics
+    contfrag_diagnostics: SpikeEventDiagnostics
     spike_counts: NDArray[np.int64]
     place_field_peaks: NDArray[np.float64]
     diagnostic_place_fields: NDArray[np.float64]
@@ -166,9 +166,9 @@ def fig4_cache_fingerprint(config: Figure4Config, paths: Fig4Paths) -> str:
 
 
 def shift_diagnostic_event_times(
-    diagnostics: PerCellDiagnostics,
+    diagnostics: SpikeEventDiagnostics,
     time_offset: float,
-) -> PerCellDiagnostics:
+) -> SpikeEventDiagnostics:
     """Return diagnostics with event timestamps shifted by ``time_offset``.
 
     Returns the original instance unchanged when ``event_time`` is
@@ -182,7 +182,7 @@ def shift_diagnostic_event_times(
     )
 
 
-def diagnostic_event_mean(diagnostics: PerCellDiagnostics, metric: str) -> float:
+def diagnostic_event_mean(diagnostics: SpikeEventDiagnostics, metric: str) -> float:
     """Return the per-spike mean for a diagnostic metric."""
     event_key = f"event_{metric}"
     if not hasattr(diagnostics, event_key):

@@ -30,7 +30,7 @@ from numpy.typing import NDArray
 from scipy.ndimage import label
 from scipy.stats import zscore
 
-from statespacecheck_paper.analysis import PerCellDiagnostics
+from statespacecheck_paper.diagnostics import SpikeEventDiagnostics
 from statespacecheck_paper.load_local_data import load_neural_recording_from_files
 from statespacecheck_paper.paths import ANIMAL_DATE_EPOCH, DATA_PATH
 from statespacecheck_paper.real_data_analysis import (
@@ -197,7 +197,7 @@ def find_immobile_high_activity_periods(
 
 
 def find_poor_diagnostic_periods(
-    diagnostics: PerCellDiagnostics,
+    diagnostics: SpikeEventDiagnostics,
     metric_name: str = DIAGNOSTIC_METRIC,
     cell_threshold: float = CELL_THRESHOLD,
     min_disagreeing_cells: int = MIN_DISAGREEING_CELLS,
@@ -211,7 +211,7 @@ def find_poor_diagnostic_periods(
 
     Parameters
     ----------
-    diagnostics : PerCellDiagnostics
+    diagnostics : SpikeEventDiagnostics
         Diagnostics with per-cell metrics, each shape (n_time, n_cells).
     metric_name : str
         Which metric to threshold ('hpd_overlap', 'kl_divergence', 'predictive_pvalue').
@@ -272,8 +272,8 @@ def score_replay_candidates(
     periods: list[tuple[int, int]],
     time: NDArray[np.float64],
     spike_counts: NDArray[np.int64],
-    continuous_diagnostics: PerCellDiagnostics,
-    contfrag_diagnostics: PerCellDiagnostics,
+    continuous_diagnostics: SpikeEventDiagnostics,
+    contfrag_diagnostics: SpikeEventDiagnostics,
     speed: NDArray[np.float64] | None = None,
     z_multiunit: NDArray[np.float64] | None = None,
     min_spikes: int = MIN_SPIKES,
@@ -410,8 +410,8 @@ def generate_preview_figures(
     linear_position: NDArray[np.float64],
     continuous_results: Any,
     contfrag_results: Any,
-    continuous_diagnostics: PerCellDiagnostics,
-    contfrag_diagnostics: PerCellDiagnostics,
+    continuous_diagnostics: SpikeEventDiagnostics,
+    contfrag_diagnostics: SpikeEventDiagnostics,
     spike_times: list[NDArray[np.float64]],
     spike_counts: NDArray[np.int64],
     place_field_peaks: NDArray[np.float64],

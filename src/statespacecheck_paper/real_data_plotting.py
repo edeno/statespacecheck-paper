@@ -21,7 +21,7 @@ from matplotlib.figure import Figure
 from matplotlib.patches import Rectangle
 from numpy.typing import NDArray
 
-from statespacecheck_paper.analysis import PerCellDiagnostics
+from statespacecheck_paper.diagnostics import SpikeEventDiagnostics
 from statespacecheck_paper.plotting import plot_likelihood_columns
 from statespacecheck_paper.style import (
     CMAP_LIKELIHOOD,
@@ -520,7 +520,7 @@ def plot_raster(
 
 def plot_per_cell_diagnostic_scatter(
     time: NDArray[np.float64] | pd.Index,
-    diagnostics: PerCellDiagnostics,
+    diagnostics: SpikeEventDiagnostics,
     time_slice_ind: slice | None = None,
     threshold: float | None = None,
     ax: Axes | None = None,
@@ -545,7 +545,7 @@ def plot_per_cell_diagnostic_scatter(
     ----------
     time : np.ndarray or pd.Index
         Time values (bin centers/starts).
-    diagnostics : PerCellDiagnostics
+    diagnostics : SpikeEventDiagnostics
         Per-cell diagnostics dataclass. The dense ``hpd_overlap``,
         ``kl_divergence``, and ``predictive_pvalue`` attributes (each shape
         (n_time, n_cells)) supply the scattered values.
@@ -602,7 +602,7 @@ def plot_per_cell_diagnostic_scatter(
 
     event_times = diagnostics.event_time
     # No default: the three ``event_*`` fields are required on
-    # PerCellDiagnostics; an unexpected metric_name must fail loud.
+    # SpikeEventDiagnostics; an unexpected metric_name must fail loud.
     event_metric_values = getattr(diagnostics, f"event_{metric_name}")
 
     # Store raw metric for running average computation (before transformation)
@@ -867,8 +867,8 @@ def plot_model_comparison_with_posterior(
     position: NDArray[np.float64],
     results_a: xr.Dataset,
     results_b: xr.Dataset,
-    diagnostics_a: PerCellDiagnostics,
-    diagnostics_b: PerCellDiagnostics,
+    diagnostics_a: SpikeEventDiagnostics,
+    diagnostics_b: SpikeEventDiagnostics,
     spike_times: list[NDArray[np.float64]] | None = None,
     spike_counts: NDArray[np.int64] | None = None,
     place_field_peaks: NDArray[np.float64] | None = None,
@@ -905,10 +905,10 @@ def plot_model_comparison_with_posterior(
         and log_likelihood.
     results_b : xr.Dataset
         Decoding results for model B with same outputs.
-    diagnostics_a : PerCellDiagnostics
+    diagnostics_a : SpikeEventDiagnostics
         Per-cell diagnostics for model A, supplying the dense ``hpd_overlap``,
         ``kl_divergence``, and ``predictive_pvalue`` matrices.
-    diagnostics_b : PerCellDiagnostics
+    diagnostics_b : SpikeEventDiagnostics
         Per-cell diagnostics for model B with the same attributes.
     spike_times : list[np.ndarray], optional
         List of spike time arrays, one per neuron. Required for raster plot.
@@ -1178,7 +1178,7 @@ def plot_single_model_diagnostics(
     time: NDArray[np.float64] | pd.Index,
     position: NDArray[np.float64],
     results: xr.Dataset,
-    diagnostics: PerCellDiagnostics,
+    diagnostics: SpikeEventDiagnostics,
     spike_times: list[NDArray[np.float64]] | None = None,
     spike_counts: NDArray[np.int64] | None = None,
     place_field_peaks: NDArray[np.float64] | None = None,
@@ -1212,7 +1212,7 @@ def plot_single_model_diagnostics(
         Animal position values.
     results : xr.Dataset
         Decoding results with predictive_posterior and log_likelihood.
-    diagnostics : PerCellDiagnostics
+    diagnostics : SpikeEventDiagnostics
         Per-cell diagnostics supplying the dense ``hpd_overlap``,
         ``kl_divergence``, and ``predictive_pvalue`` matrices.
     spike_times : list[np.ndarray], optional
@@ -1433,8 +1433,8 @@ def plot_single_model_diagnostics(
 
 
 def plot_per_spike_metric_hexbin_row(
-    diagnostics_a: PerCellDiagnostics,
-    diagnostics_b: PerCellDiagnostics,
+    diagnostics_a: SpikeEventDiagnostics,
+    diagnostics_b: SpikeEventDiagnostics,
     axes: Sequence[Axes],
     *,
     model_a_name: str = "Continuous",
@@ -1457,7 +1457,7 @@ def plot_per_spike_metric_hexbin_row(
 
     Parameters
     ----------
-    diagnostics_a, diagnostics_b : PerCellDiagnostics
+    diagnostics_a, diagnostics_b : SpikeEventDiagnostics
         Per-cell diagnostics whose per-spike ``event_hpd_overlap``,
         ``event_kl_divergence``, ``event_predictive_pvalue`` attributes (each
         shape ``(n_spikes,)``) supply the hexbin values.

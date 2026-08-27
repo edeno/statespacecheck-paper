@@ -8,7 +8,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
-from statespacecheck_paper.analysis import DecodeParams, Diagnostics, Thresholds
+from statespacecheck_paper.analysis import DecodeParams
+from statespacecheck_paper.diagnostics import DecodingDiagnostics, DiagnosticThresholds
 from statespacecheck_paper.plotting import (
     FIGURE3_PANEL_LABEL_GID,
     FIGURE3_PHASE_LABEL_GID,
@@ -63,14 +64,14 @@ def small_metrics(rng: np.random.Generator) -> dict[str, Any]:
 
 
 @pytest.fixture
-def thresholds_default() -> Thresholds:
-    return Thresholds(hpd_overlap=0.8, kl_divergence=2.0, predictive_pvalue=0.05)
+def thresholds_default() -> DiagnosticThresholds:
+    return DiagnosticThresholds(hpd_overlap=0.8, kl_divergence=2.0, predictive_pvalue=0.05)
 
 
 def _combined_metrics(
     rng: np.random.Generator, n_time: int, n_bins: int, n_cells: int
 ) -> dict[str, Any]:
-    """Build the full ``Diagnostics`` accepted by ``plot_combined_diagnostics``."""
+    """Build the full ``DecodingDiagnostics`` accepted by ``plot_combined_diagnostics``."""
     spikes = rng.poisson(0.5, (n_time, n_cells))
     spike_lik = np.full((n_time, n_bins), np.nan)
     has_spk = spikes.sum(axis=1) > 0
@@ -83,7 +84,7 @@ def _combined_metrics(
     per_spike_lik = rng.dirichlet(np.ones(n_bins), size=n_spikes)[: len(spike_time_ind)]
 
     per_cell = _per_cell_metrics(rng, n_time, n_cells)
-    diagnostics = Diagnostics(
+    diagnostics = DecodingDiagnostics(
         posterior=rng.dirichlet(np.ones(n_bins), size=n_time),
         predictive=rng.dirichlet(np.ones(n_bins), size=n_time),
         likelihood=rng.dirichlet(np.ones(n_bins), size=n_time),
@@ -203,7 +204,7 @@ class TestComputeHpdRegion:
     ids=["large", "small"],
 )
 def test_plot_combined_diagnostics_runs(
-    n_time: int, n_bins: int, n_cells: int, thresholds_default: Thresholds
+    n_time: int, n_bins: int, n_cells: int, thresholds_default: DiagnosticThresholds
 ) -> None:
     rng = np.random.default_rng(42)
     x_true = rng.uniform(0, n_bins - 1, n_time)
@@ -226,7 +227,7 @@ def test_plot_combined_diagnostics_runs(
 
 
 def test_plot_combined_diagnostics_renders_precomputed_summary(
-    thresholds_default: Thresholds,
+    thresholds_default: DiagnosticThresholds,
 ) -> None:
     """When an across-realization median array is supplied, the panel-(b)
     heatmap renders those values (with the median title) instead of
@@ -267,7 +268,7 @@ def test_plot_combined_diagnostics_renders_precomputed_summary(
 
 
 def test_plot_combined_diagnostics_tags_figure3_annotations(
-    thresholds_default: Thresholds,
+    thresholds_default: DiagnosticThresholds,
 ) -> None:
     """Figure 3 annotations should be targetable by semantic artist ids."""
     rng = np.random.default_rng(1)
@@ -324,7 +325,7 @@ def test_plot_combined_diagnostics_uses_event_diagnostics_for_scatter() -> None:
     kl[10, 0] = 2.0
     sp[10, 0] = 0.05
 
-    metrics = Diagnostics(
+    metrics = DecodingDiagnostics(
         posterior=rng.dirichlet(np.ones(n_bins), size=n_time),
         predictive=rng.dirichlet(np.ones(n_bins), size=n_time),
         likelihood=rng.dirichlet(np.ones(n_bins), size=n_time),
@@ -340,7 +341,7 @@ def test_plot_combined_diagnostics_uses_event_diagnostics_for_scatter() -> None:
         per_spike_likelihood=per_spike_lik,
     )
 
-    thresholds = Thresholds(hpd_overlap=0.8, kl_divergence=2.0, predictive_pvalue=0.05)
+    thresholds = DiagnosticThresholds(hpd_overlap=0.8, kl_divergence=2.0, predictive_pvalue=0.05)
     params = _params_for_short_run(n_time, n_cells)
 
     fig = plot_combined_diagnostics(
