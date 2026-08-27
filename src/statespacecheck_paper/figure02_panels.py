@@ -45,10 +45,6 @@ class Figure2ExampleData:
     kl_value: float
     hpd_value: float
     p_value: float
-    pred_mean: float
-    like_mean: float
-    pred_std: float
-    like_std: float
     observed_log_pred: float
     simulated_log_pred: NDArray[np.float64]
     showcase_positions: NDArray[np.float64]
@@ -96,7 +92,7 @@ class Figure2ExampleData:
         for name, array in arrays.items():
             if not np.all(np.isfinite(array)):
                 raise ValueError(f"{name} must contain only finite values")
-        for name in ("kl_value", "hpd_value", "pred_mean", "like_mean", "observed_log_pred"):
+        for name in ("kl_value", "hpd_value", "observed_log_pred"):
             if not np.isfinite(getattr(self, name)):
                 raise ValueError(f"{name} must be finite")
         if self.kl_value < 0.0:
@@ -105,13 +101,6 @@ class Figure2ExampleData:
             raise ValueError(f"hpd_value must lie in [0, 1]; got {self.hpd_value}")
         if not np.isfinite(self.p_value) or not 0.0 <= self.p_value <= 1.0:
             raise ValueError(f"p_value must lie in [0, 1]; got {self.p_value}")
-        if (
-            not np.isfinite(self.pred_std)
-            or not np.isfinite(self.like_std)
-            or self.pred_std <= 0.0
-            or self.like_std <= 0.0
-        ):
-            raise ValueError("pred_std and like_std must be positive")
         for name, array in arrays.items():
             array.setflags(write=False)
             object.__setattr__(self, name, array)
@@ -229,10 +218,6 @@ def create_shared_example(rng: np.random.Generator) -> Figure2ExampleData:
         kl_value=kl_value,
         hpd_value=hpd_value,
         p_value=p_value,
-        pred_mean=pred_mean,
-        like_mean=like_mean,
-        pred_std=pred_std,
-        like_std=like_std,
         observed_log_pred=observed_log_pred,
         simulated_log_pred=simulated_log_pred_values,
         showcase_positions=showcase_positions,

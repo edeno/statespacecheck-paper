@@ -136,8 +136,8 @@ def test_figure02_generation_invokes_all_panels(
     invoke the entry point.
 
     Redirect the figure write to a tmp_path so we don't touch the
-    real ``manuscript/figures/main/`` artifacts. The actual byte-
-    identical check lives in the figure-3 SHA workflow.
+    real ``manuscript/figures/main/`` artifacts. This is a run-without-raising
+    smoke test; it does not assert byte-identical figure output.
     """
     import statespacecheck_paper.figure02_generation as figure02_generation
 

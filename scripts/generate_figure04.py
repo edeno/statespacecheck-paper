@@ -1,6 +1,6 @@
 """Generate Figure 4: real hippocampal-data decoder diagnostics (CLI).
 
-Figure 4 shows per-cell diagnostic metrics for the Continuous and
+Figure 4 shows per-spike-event diagnostic metrics for the Continuous and
 Continuous-Fragmented decoders on real neural recording data. The scientific
 recipe lives in
 :func:`statespacecheck_paper.figure04_generation.generate_figure04`; this script

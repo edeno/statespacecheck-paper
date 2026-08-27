@@ -1,7 +1,7 @@
 """Tests for Figure-4 raster and diagnostic panels.
 
 Covers ``plot_per_spike_metric_hexbin_row`` — the Figure 4(c) whole-session
-comparison panel — and the per-cell diagnostic scatter's spike-time alignment
+comparison panel — and the spike-event diagnostic scatter's spike-time alignment
 and running-average behavior.
 """
 
@@ -21,12 +21,14 @@ from matplotlib.collections import PolyCollection  # noqa: E402
 from matplotlib.lines import Line2D  # noqa: E402
 
 from statespacecheck_paper.diagnostics import SpikeEventDiagnostics  # noqa: E402
+from statespacecheck_paper.figure04_exploratory import (  # noqa: E402
+    plot_exploratory_model_comparison,
+)
 from statespacecheck_paper.figure04_panels import (  # noqa: E402
     ModelDiagnosticPanelData,
-    _draw_decoder_likelihood_image,
-    _draw_predictive_heatmap_row,
-    _draw_track_graph_edges,
-    plot_exploratory_model_comparison,
+    draw_decoder_likelihood_image,
+    draw_predictive_heatmap_row,
+    draw_track_graph_edges,
     plot_per_spike_metric_hexbin_row,
     plot_single_model_diagnostics,
     plot_spike_event_diagnostic_scatter,
@@ -544,7 +546,7 @@ class TestPlotSingleModelDiagnostics:
 class TestExtractedRowRenderers:
     def test_predictive_row_sets_title_and_ylabel(self) -> None:
         fig, ax = plt.subplots()
-        _draw_predictive_heatmap_row(
+        draw_predictive_heatmap_row(
             ax,
             _multistate_results(1),
             np.arange(_N_TIME, dtype=float),
@@ -561,19 +563,19 @@ class TestExtractedRowRenderers:
         results = _multistate_results(1).drop_vars("log_likelihood")
         fig, ax = plt.subplots()
         before = len(ax.images) + len(ax.collections)
-        _draw_decoder_likelihood_image(ax, results, slice(None), None)
+        draw_decoder_likelihood_image(ax, results, slice(None), None)
         assert len(ax.images) + len(ax.collections) == before
         plt.close(fig)
 
     def test_decoder_likelihood_image_draws_when_present(self) -> None:
         fig, ax = plt.subplots()
-        _draw_decoder_likelihood_image(ax, _multistate_results(1), slice(None), None)
+        draw_decoder_likelihood_image(ax, _multistate_results(1), slice(None), None)
         assert ax.images or ax.collections
         plt.close(fig)
 
     def test_track_graph_edges_draw_lines_on_each_axis(self) -> None:
         fig, (ax0, ax1) = plt.subplots(1, 2)
-        _draw_track_graph_edges(
+        draw_track_graph_edges(
             [ax0, ax1],
             _linear_track_graph(),
             [(i, i + 1) for i in range(5)],
@@ -665,8 +667,20 @@ class TestModelDiagnosticPanelDataValidation:
                 "predictive_posterior",
             ),
             (
+                {"results": _multistate_results(1).rename({"time": "sample"})},
+                "'time' and 'state_bins' dimensions",
+            ),
+            (
                 {"results": _multistate_results(1).isel(time=slice(0, _N_TIME - 1))},
-                "results 'time' dimension",
+                "coordinate must equal",
+            ),
+            (
+                {
+                    "results": _multistate_results(1).assign_coords(
+                        time=np.arange(_N_TIME, dtype=float) + 100.0
+                    )
+                },
+                "coordinate must equal",
             ),
             ({"track_graph": None}, "edge_order requires track_graph"),
         ],
@@ -680,9 +694,36 @@ class TestModelDiagnosticPanelDataValidation:
 
 def test_exploratory_comparison_alias_is_pinned() -> None:
     # Retained so pre-rename notebooks (notebooks/archive/fig4.ipynb) keep working.
-    from statespacecheck_paper import figure04_panels
+    from statespacecheck_paper import figure04_exploratory
 
     assert (
-        figure04_panels.plot_model_comparison_with_posterior
-        is figure04_panels.plot_exploratory_model_comparison
+        figure04_exploratory.plot_model_comparison_with_posterior
+        is figure04_exploratory.plot_exploratory_model_comparison
     )
+
+
+def test_scatter_event_time_ind_keeps_repeated_events_distinct() -> None:
+    """Without wall-clock event_time or spike_times, two events in the same
+    (time bin, cell) must produce two scatter points via event_time_ind, not one
+    collapsed dense-matrix observation."""
+    time = np.linspace(0.0, 0.9, 10)
+    n_time, n_cells, n_spk = 10, 2, 2
+    diagnostics = SpikeEventDiagnostics(
+        event_time_ind=np.array([5, 5], dtype=np.intp),
+        event_cell_ind=np.array([0, 0], dtype=np.intp),
+        event_hpd_overlap=np.array([0.8, 0.4]),
+        event_kl_divergence=np.zeros(n_spk),
+        event_predictive_pvalue=np.zeros(n_spk),
+        hpd_overlap=np.full((n_time, n_cells), np.nan),
+        kl_divergence=np.full((n_time, n_cells), np.nan),
+        predictive_pvalue=np.full((n_time, n_cells), np.nan),
+        per_spike_likelihood=np.zeros((n_spk, 1)),
+        event_time=None,
+    )
+    fig, ax = plt.subplots()
+    plot_spike_event_diagnostic_scatter(time, diagnostics, ax=ax)
+    offsets = _scatter_offsets(ax)
+    assert offsets.shape[0] == 2  # two distinct events, not one
+    np.testing.assert_allclose(sorted(offsets[:, 0]), [0.5, 0.5])  # both at time[5]
+    np.testing.assert_allclose(sorted(offsets[:, 1]), [0.4, 0.8])
+    plt.close(fig)

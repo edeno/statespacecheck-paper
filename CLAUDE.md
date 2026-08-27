@@ -35,6 +35,7 @@ statespacecheck-paper/
 │   ├── figure04_plot_primitives.py # Figure-4 shared low-level plotting helpers (GIDs, extents)
 │   ├── figure04_track_plots.py # Figure-4 track-graph rendering (1D/2D)
 │   ├── figure04_panels.py      # Figure-4 raster + diagnostic panels
+│   ├── figure04_exploratory.py # Exploratory two-column model comparison (window-selection scripts only)
 │   ├── figure04_cache.py       # Figure-4 decode-cache paths, fingerprint, I/O
 │   ├── figure04_workflow.py    # Figure-4 load/fit/decode/cache + summary (Figure4RenderData)
 │   ├── figure04_layout.py      # Figure-4 artist arrangement (compose_figure04)

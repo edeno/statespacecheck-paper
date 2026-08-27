@@ -2,8 +2,8 @@
 
 The canonical Figure-4 panels: spike raster, spike-event diagnostic scatter,
 single-model posterior/likelihood/raster/diagnostic stack, and per-spike metric
-hexbin comparison row. The module also retains the explicitly named
-``plot_exploratory_model_comparison`` used by window-selection scripts.
+hexbin comparison row. The exploratory two-column model comparison lives in
+:mod:`statespacecheck_paper.figure04_exploratory`.
 """
 
 from __future__ import annotations
@@ -131,16 +131,30 @@ class ModelDiagnosticPanelData:
         n_cells = diagnostic_shape[1]
 
         # The posterior/likelihood heatmap rows are sliced by the same detail
-        # window as the diagnostic scatter rows, so ``results`` must live on the
-        # same timeline. Validating the largest scientific input here prevents a
-        # posterior that is silently misaligned with the per-spike diagnostics.
+        # window as the diagnostic scatter rows, so the posterior must live on
+        # the same timeline. Validate the variable, its dimensions, and the exact
+        # time coordinate -- a matching length alone would still accept a shifted
+        # timeline or a posterior indexed by an unrelated dimension, silently
+        # misaligning (or hiding) the heatmap.
         if "predictive_posterior" not in self.results:
             raise ValueError("results must contain a 'predictive_posterior' variable")
-        results_n_time = self.results.sizes.get("time")
-        if results_n_time != time.size:
+        posterior = self.results["predictive_posterior"]
+        if "time" not in posterior.dims or "state_bins" not in posterior.dims:
             raise ValueError(
-                f"results 'time' dimension ({results_n_time}) must match the time array "
-                f"length ({time.size}); the posterior and diagnostic rows share one timeline."
+                "results.predictive_posterior must have 'time' and 'state_bins' "
+                f"dimensions; got {tuple(posterior.dims)}"
+            )
+        if "time" not in posterior.coords:
+            raise ValueError("results.predictive_posterior must carry a 'time' coordinate")
+        posterior_time = np.asarray(posterior.coords["time"].values, dtype=np.float64)
+        panel_time = np.asarray(self.time, dtype=np.float64)
+        if posterior_time.shape != panel_time.shape or not np.array_equal(
+            posterior_time, panel_time
+        ):
+            raise ValueError(
+                "results.predictive_posterior 'time' coordinate must equal the panel "
+                "'time' array; the posterior heatmap would otherwise be misaligned with "
+                "the per-spike diagnostics."
             )
 
         if self.spike_counts is not None and self.spike_counts.shape != (time.size, n_cells):
@@ -393,8 +407,24 @@ def plot_spike_event_diagnostic_scatter(
 
         x_positions_arr = np.array(x_positions)
         y_values_arr = np.array(y_values)
+    elif diagnostics.event_time_ind.size:
+        # No wall-clock event_time and no spike_times, but per-event arrays are
+        # present: map each event to its time bin via ``event_time_ind`` so
+        # repeated events in the same (time bin, cell) stay distinct points.
+        # Flattening the dense (n_time, n_cells) matrix (below) would collapse
+        # them into one observation and under-weight the running average.
+        event_bin_times = np.asarray(time)[diagnostics.event_time_ind]
+        in_window = (event_bin_times >= time_arr.min()) & (event_bin_times < time_arr.max())
+        x_positions_arr = event_bin_times[in_window]
+        y_values_arr = np.asarray(event_metric_values)[in_window]
+        if metric_name == "predictive_pvalue":
+            y_values_arr = negative_log_pvalue(y_values_arr)
+        valid = ~np.isnan(y_values_arr)
+        x_positions_arr = x_positions_arr[valid]
+        y_values_arr = y_values_arr[valid]
     else:
-        # Original behavior: use time bin values for x-positions
+        # Legacy dense-only data (no per-event arrays): use the dense
+        # (n_time, n_cells) matrix, one point per (time bin, cell).
         time_indices = np.tile(time_arr[:, np.newaxis], (1, n_cells))
         x_positions_arr = time_indices.ravel()
         y_values_arr = metric.ravel()
@@ -421,6 +451,19 @@ def plot_spike_event_diagnostic_scatter(
                 time_arr,
                 window_size=running_average_window,
                 event_times=event_times_arr[event_mask],
+                event_values=raw_event_metric_values[event_mask],
+            )
+        elif diagnostics.event_time_ind.size and raw_event_metric_values is not None:
+            # Match the scatter's event_time_ind path so every event is weighted,
+            # rather than the collapsing dense fallback.
+            event_bin_times = np.asarray(time)[diagnostics.event_time_ind]
+            time_min, time_max = time_arr.min(), time_arr.max()
+            event_mask = (event_bin_times >= time_min) & (event_bin_times < time_max)
+            running_avg, _ = compute_running_average(
+                raw_metric,
+                time_arr,
+                window_size=running_average_window,
+                event_times=event_bin_times[event_mask],
                 event_values=raw_event_metric_values[event_mask],
             )
         else:
@@ -497,7 +540,7 @@ def plot_spike_event_diagnostic_scatter(
     return ax
 
 
-def _draw_predictive_heatmap_row(
+def draw_predictive_heatmap_row(
     ax: Axes,
     results: xr.Dataset,
     time: NDArray[np.float64] | pd.Index,
@@ -527,7 +570,7 @@ def _draw_predictive_heatmap_row(
     ax.tick_params(labelsize=8, labelbottom=False)
 
 
-def _draw_decoder_likelihood_image(
+def draw_decoder_likelihood_image(
     ax: Axes,
     results: xr.Dataset,
     time_slice_ind: slice,
@@ -590,7 +633,7 @@ def _draw_place_field_likelihood_image(
     )
 
 
-def _draw_track_graph_edges(
+def draw_track_graph_edges(
     axes_pair: list[Axes],
     track_graph: nx.Graph,
     edge_order: Sequence[tuple[Hashable, Hashable]] | None,
@@ -612,292 +655,6 @@ def _draw_track_graph_edges(
             reward_well_size=20,
             reward_well_nodes=list(range(6)),
         )
-
-
-def plot_exploratory_model_comparison(
-    time: NDArray[np.float64] | pd.Index,
-    position: NDArray[np.float64],
-    results_a: xr.Dataset,
-    results_b: xr.Dataset,
-    diagnostics_a: SpikeEventDiagnostics,
-    diagnostics_b: SpikeEventDiagnostics,
-    spike_times: list[NDArray[np.float64]] | None = None,
-    spike_counts: NDArray[np.int64] | None = None,
-    place_field_peaks: NDArray[np.float64] | None = None,
-    time_slice_ind: slice | None = None,
-    model_a_name: str = "Continuous",
-    model_b_name: str = "Continuous-Fragmented",
-    thresholds: dict[str, float] | None = None,
-    figsize: tuple[float, float] = (7.0, 11.0),
-    track_graph: nx.Graph | None = None,
-    edge_order: Sequence[tuple[Hashable, Hashable]] | None = None,
-    edge_spacing: float | list[float] = 0.0,
-    show_running_average: bool = False,
-    running_average_window: float = 0.050,
-    fig: Figure | None = None,
-) -> tuple[Figure, NDArray[np.object_]]:
-    """Create an exploratory two-model comparison for window selection.
-
-    Creates a 6x2 grid with:
-    - Row 0: Predictive posterior p(x_t | y_{1:t-1}) with animal position overlay
-    - Row 1: Likelihood p(y_t | x_t) with animal position overlay (only at spike times)
-    - Row 2: Spike raster (cells sorted by place field peak)
-    - Row 3: HPD overlap scatter
-    - Row 4: Predictive p-value scatter (-log(p))
-    - Row 5: KL divergence scatter
-
-    Parameters
-    ----------
-    time : np.ndarray or pd.Index
-        Time values.
-    position : np.ndarray, shape (n_time,)
-        Animal position values.
-    results_a : xr.Dataset
-        Decoding results for model A with causal_posterior, predictive_posterior,
-        and log_likelihood.
-    results_b : xr.Dataset
-        Decoding results for model B with same outputs.
-    diagnostics_a : SpikeEventDiagnostics
-        Per-spike-event diagnostics for model A, supplying the dense ``hpd_overlap``,
-        ``kl_divergence``, and ``predictive_pvalue`` matrices.
-    diagnostics_b : SpikeEventDiagnostics
-        Per-spike-event diagnostics for model B with the same attributes.
-    spike_times : list[np.ndarray], optional
-        List of spike time arrays, one per neuron. Required for raster plot.
-    spike_counts : np.ndarray, shape (n_time, n_cells), optional
-        Spike count matrix. If provided, likelihood is only shown at times with spikes.
-    place_field_peaks : np.ndarray, shape (n_cells,), optional
-        Position of place field peak for each cell, used for sorting raster.
-        If None, cells are plotted in original order.
-    time_slice_ind : slice, optional
-        Time slice indices to plot. If None, plots all time points.
-    model_a_name : str, default "Continuous"
-        Name for model A (column title).
-    model_b_name : str, default "Continuous-Fragmented"
-        Name for model B (column title).
-    thresholds : dict[str, float], optional
-        Thresholds for each metric to draw as horizontal lines.
-    figsize : tuple[float, float], default (7.0, 11.0)
-        Figure size in inches.
-    track_graph : nx.Graph, optional
-        Track graph for 1D linearized track visualization.
-    edge_order : list[tuple[int, int]], optional
-        Order of edges for linearization.
-    edge_spacing : float or list[float], default 0.0
-        Spacing between edges.
-    show_running_average : bool, default False
-        If True, overlay a running average line on diagnostic scatter plots.
-    running_average_window : float, default 0.050
-        Size of the sliding window in seconds for the running average.
-
-    Returns
-    -------
-    fig : matplotlib.figure.Figure
-        The figure object.
-    axes : np.ndarray[plt.Axes]
-        Array of axes objects with shape (6, 2).
-
-    Examples
-    --------
-    >>> # Requires xr.Dataset from non_local_detector
-    >>> # fig, axes = plot_exploratory_model_comparison(
-    >>> #     time, position, results_a, results_b, diagnostics_a, diagnostics_b,
-    >>> #     spike_times=spike_times, spike_counts=spike_counts, place_field_peaks=pf_peaks
-    >>> # )
-    """
-    # Create 6x2 grid: predictive + likelihood + raster + 3 diagnostics
-    # Use gridspec to manually share y-axes within each row
-    if fig is None:
-        fig = plt.figure(figsize=figsize, constrained_layout=True)
-    gs = fig.add_gridspec(6, 2, height_ratios=[2, 2, 1.5, 1, 1, 1])
-
-    # Create axes with shared x and shared y within each row
-    axes = np.empty((6, 2), dtype=object)
-
-    # Row 0: Predictive posterior heatmaps (share y within row)
-    axes[0, 0] = fig.add_subplot(gs[0, 0])
-    axes[0, 1] = fig.add_subplot(gs[0, 1], sharex=axes[0, 0], sharey=axes[0, 0])
-
-    # Row 1: Likelihood heatmaps (share y within row, share x with row 0)
-    axes[1, 0] = fig.add_subplot(gs[1, 0], sharex=axes[0, 0], sharey=axes[0, 0])
-    axes[1, 1] = fig.add_subplot(gs[1, 1], sharex=axes[0, 0], sharey=axes[0, 0])
-
-    # Row 2: Spike raster (share y within row, share x with row 0)
-    axes[2, 0] = fig.add_subplot(gs[2, 0], sharex=axes[0, 0])
-    axes[2, 1] = fig.add_subplot(gs[2, 1], sharex=axes[0, 0], sharey=axes[2, 0])
-
-    # Row 3: HPD overlap (share y within row, share x with row 0)
-    axes[3, 0] = fig.add_subplot(gs[3, 0], sharex=axes[0, 0])
-    axes[3, 1] = fig.add_subplot(gs[3, 1], sharex=axes[0, 0], sharey=axes[3, 0])
-
-    # Row 4: Predictive p-value (share y within row, share x with row 0)
-    axes[4, 0] = fig.add_subplot(gs[4, 0], sharex=axes[0, 0])
-    axes[4, 1] = fig.add_subplot(gs[4, 1], sharex=axes[0, 0], sharey=axes[4, 0])
-
-    # Row 5: KL divergence (share y within row, share x with row 0)
-    axes[5, 0] = fig.add_subplot(gs[5, 0], sharex=axes[0, 0])
-    axes[5, 1] = fig.add_subplot(gs[5, 1], sharex=axes[0, 0], sharey=axes[5, 0])
-
-    if time_slice_ind is None:
-        time_slice_ind = slice(None)
-
-    # Compute mask for times with spikes (for likelihood plotting)
-    has_spikes_mask: NDArray[np.bool_] | None = None
-    if spike_counts is not None:
-        # Sum across cells to get total spikes per time point
-        has_spikes_mask = spike_counts.sum(axis=1) > 0
-
-    # --- Row 0: Predictive posterior ---
-    for col, (results, model_name) in enumerate(
-        [(results_a, model_a_name), (results_b, model_b_name)]
-    ):
-        ax = axes[0, col]
-        _draw_predictive_heatmap_row(
-            ax,
-            results,
-            time,
-            position,
-            time_slice_ind,
-            title=model_name,
-            ylabel="Predictive" if col == 0 else "",
-        )
-        if col == 0:
-            ax.legend(loc="upper left", fontsize=8, frameon=False)
-
-    # --- Row 1: Likelihood overlay (predictive underlay + likelihood at spike times) ---
-    for col, (results, _model_name) in enumerate(
-        [(results_a, model_a_name), (results_b, model_b_name)]
-    ):
-        ax = axes[1, col]
-
-        # Step 1: Plot predictive as faint underlay using xarray (handles coordinates)
-        plot_distribution_heatmap(
-            ax=ax,
-            distribution_da=results.predictive_posterior,
-            time=time,
-            position=position,
-            time_slice_ind=time_slice_ind,
-            show_position=False,
-            cmap=CMAP_POSTERIOR,
-        )
-        # Reduce underlay opacity (xarray .plot() uses pcolormesh -> collections)
-        for artist in list(ax.images) + list(ax.collections):
-            artist.set_alpha(0.35)
-
-        # Step 2: Overlay the decoder likelihood at spike times.
-        _draw_decoder_likelihood_image(ax, results, time_slice_ind, has_spikes_mask)
-
-        # Position overlay
-        time_arr = np.asarray(time)
-        ax.scatter(
-            time_arr[time_slice_ind],
-            position[time_slice_ind],
-            c=COLORS["ground_truth"],
-            s=1,
-            alpha=0.85,
-        )
-
-        ax.set_title("")
-        ax.set_ylabel("Likelihood" if col == 0 else "", fontsize=8, labelpad=7)
-        ax.set_xlabel("")
-        ax.tick_params(labelsize=8, labelbottom=False)
-
-    # Add 1D track graph on right edge (right column, predictive and likelihood rows)
-    if track_graph is not None:
-        _draw_track_graph_edges(
-            [axes[0, 1], axes[1, 1]],
-            track_graph,
-            edge_order,
-            edge_spacing,
-            time,
-            time_slice_ind,
-        )
-
-    # Row 2: Spike raster (both columns show same raster, sorted by place field peak)
-    if spike_times is not None:
-        # Compute sort order by place field peak position
-        if place_field_peaks is not None:
-            sort_order = np.argsort(place_field_peaks)
-        else:
-            sort_order = None
-
-        # Get time slice for raster (convert index slice to time values)
-        time_arr = np.asarray(time)
-        sliced_time = time_arr[time_slice_ind]
-        time_slice = slice(float(sliced_time[0]), float(sliced_time[-1]))
-
-        for col in range(2):
-            ax = axes[2, col]
-            plot_raster(
-                spike_times,
-                time_slice,
-                ax=ax,
-                sort_order=sort_order,
-            )
-            ax.set_ylabel("Neuron" if col == 0 else "", fontsize=8, labelpad=7)
-            ax.set_xlabel("")
-            ax.tick_params(labelsize=8, labelbottom=False)
-
-    # Rows 3-5: Diagnostic scatter plots
-    for i, spec in enumerate(METRIC_SPECS):
-        row = i + 3  # Offset by 3 for distribution and raster rows
-        threshold = thresholds.get(spec.name) if thresholds else None
-
-        # Model A (left column)
-        plot_spike_event_diagnostic_scatter(
-            time,
-            diagnostics_a,
-            time_slice_ind=time_slice_ind,
-            threshold=threshold,
-            ax=axes[row, 0],
-            metric_name=spec.name,
-            color=spec.color,
-            ylabel=spec.ylabel,
-            show_xlabel=(i == 2),
-            spike_times=spike_times,
-            show_running_average=show_running_average,
-            running_average_window=running_average_window,
-        )
-
-        # Model B (right column)
-        plot_spike_event_diagnostic_scatter(
-            time,
-            diagnostics_b,
-            time_slice_ind=time_slice_ind,
-            threshold=threshold,
-            ax=axes[row, 1],
-            metric_name=spec.name,
-            color=spec.color,
-            ylabel="",  # Left column has ylabel
-            show_xlabel=(i == 2),
-            spike_times=spike_times,
-            show_running_average=show_running_average,
-            running_average_window=running_average_window,
-        )
-
-        # Add direction indicator on right side of right column (matching Figure 3)
-        worse_fit_label = axes[row, 1].text(
-            1.01,
-            0.5,
-            spec.worse_fit_direction,
-            transform=axes[row, 1].transAxes,
-            fontsize=8,
-            va="center",
-            ha="left",
-        )
-        worse_fit_label.set_gid(WORSE_FIT_LABEL_GID)
-
-    # Hide y-tick labels on right column (since y-axes are shared within rows)
-    for row in range(6):
-        axes[row, 1].tick_params(labelleft=False)
-
-    return fig, axes
-
-
-# Compatibility name for existing notebooks. Canonical Figure 4 uses
-# ``plot_single_model_diagnostics`` via ``figure04_layout``; this two-column
-# comparison exists only for exploratory window-selection scripts.
-plot_model_comparison_with_posterior = plot_exploratory_model_comparison
 
 
 def plot_single_model_diagnostics(
@@ -975,7 +732,7 @@ def plot_single_model_diagnostics(
         has_spikes_mask = spike_counts.sum(axis=1) > 0
 
     # Row 0: Predictive posterior
-    _draw_predictive_heatmap_row(
+    draw_predictive_heatmap_row(
         axes[0],
         results,
         time,
@@ -1014,7 +771,7 @@ def plot_single_model_diagnostics(
     elif "log_likelihood" in results:
         # Decoder-likelihood fallback (no place fields supplied): marginalized
         # over state on the joint state-by-position space.
-        _draw_decoder_likelihood_image(ax_lik, results, time_slice_ind, has_spikes_mask)
+        draw_decoder_likelihood_image(ax_lik, results, time_slice_ind, has_spikes_mask)
 
     # Position overlay
     time_arr = np.asarray(time)
@@ -1031,7 +788,7 @@ def plot_single_model_diagnostics(
 
     # 1D track graph on right edge of predictive and likelihood rows
     if data.track_graph is not None:
-        _draw_track_graph_edges(
+        draw_track_graph_edges(
             [axes[0], axes[1]],
             data.track_graph,
             data.edge_order,

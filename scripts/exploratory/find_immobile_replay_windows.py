@@ -40,7 +40,7 @@ from statespacecheck_paper.figure04_diagnostics import (
     compute_event_hpd_overlap,
     compute_model_diagnostics,
 )
-from statespacecheck_paper.figure04_panels import plot_exploratory_model_comparison
+from statespacecheck_paper.figure04_exploratory import plot_exploratory_model_comparison
 from statespacecheck_paper.figure04_place_fields import extract_place_fields
 from statespacecheck_paper.load_local_data import (
     NeuralRecordingData,

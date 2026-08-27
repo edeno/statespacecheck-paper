@@ -22,9 +22,7 @@ from statespacecheck_paper.figure04_decoder import (
     get_spike_counts,
 )
 from statespacecheck_paper.figure04_diagnostics import compute_model_diagnostics
-from statespacecheck_paper.figure04_panels import (
-    plot_exploratory_model_comparison,
-)
+from statespacecheck_paper.figure04_exploratory import plot_exploratory_model_comparison
 from statespacecheck_paper.figure04_place_fields import extract_place_fields
 from statespacecheck_paper.load_local_data import load_neural_recording_from_files
 from statespacecheck_paper.paths import ANIMAL_DATE_EPOCH, DATA_PATH
