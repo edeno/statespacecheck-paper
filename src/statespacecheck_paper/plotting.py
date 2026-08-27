@@ -982,7 +982,7 @@ def plot_combined_diagnostics(
     spikes : NDArray, shape (n_time, n_cells)
         Spike counts for each cell at each time point.
     metrics : dict[str, NDArray]
-        Dictionary containing diagnostic metrics from decode_and_diagnostics.
+        Dictionary containing diagnostic metrics from decode_with_diagnostics.
         Metrics 'hpd_overlap', 'kl_divergence', 'predictive_pvalue' have shape (n_time, n_cells).
     thresholds : DiagnosticThresholds
         Threshold values for each diagnostic.
@@ -1005,7 +1005,8 @@ def plot_combined_diagnostics(
 
     Examples
     --------
-    >>> from statespacecheck_paper.analysis import DecodeParams, decode_and_diagnostics
+    >>> from statespacecheck_paper.analysis import DecodeParams
+    >>> from statespacecheck_paper.decoding import decode_with_diagnostics
     >>> from statespacecheck_paper.diagnostics import DecodingDiagnostics, DiagnosticThresholds
     >>> # See tests/test_plotting.py for a worked DecodingDiagnostics fixture
     >>> # and how to plumb it into plot_combined_diagnostics.

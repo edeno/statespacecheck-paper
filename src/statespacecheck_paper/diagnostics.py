@@ -170,7 +170,7 @@ class SpikeEventDiagnostics:
 
 @dataclass(frozen=True)
 class DecodingDiagnostics:
-    """Return of :func:`decode_and_diagnostics`.
+    """Return of :func:`decode_with_diagnostics`.
 
     Frozen so downstream code cannot rebind fields; arrays are
     write-protected so it cannot mutate them in place either.
@@ -187,7 +187,7 @@ class DecodingDiagnostics:
         Per-event diagnostic values.
     per_spike_likelihood : np.ndarray, shape (n_spikes, n_bins)
         Per-spike normalized likelihood as seen by the decoder
-        (uses ``decoder_rates`` inside misfit windows where set).
+        (uses ``firing_rate_table`` inside override windows where set).
 
     Raises
     ------
@@ -691,7 +691,7 @@ def compute_baseline_diagnostic_thresholds(
     ----------
     diagnostics : DecodingDiagnostics or Mapping[str, NDArray]
         Either a :class:`DecodingDiagnostics` (the typical caller, produced by
-        :func:`decode_and_diagnostics`) or a plain dict with keys
+        :func:`decode_with_diagnostics`) or a plain dict with keys
         ``hpd_overlap``, ``kl_divergence``, ``predictive_pvalue`` — the dict
         form is retained so synthetic test fixtures don't need to
         construct a full ``DecodingDiagnostics``.

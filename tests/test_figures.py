@@ -45,7 +45,7 @@ _FIGURE_CONTRACT = [
         [
             "DecodeParams",
             "simulate_walk",
-            "decode_and_diagnostics",
+            "decode_with_diagnostics",
             "plot_combined_diagnostics",
         ],
     ),

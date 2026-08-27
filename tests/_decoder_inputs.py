@@ -1,11 +1,11 @@
 """Shared decoder-test inputs used across the split analysis test modules.
 
-``DecoderInputs`` bundles a small reproducible ``decode_and_diagnostics``
+``DecoderInputs`` bundles a small reproducible ``decode_with_diagnostics``
 problem; ``_diag_dominant_transition`` builds a symmetric near-identity
 transition matrix. Both are imported by the test modules that split out of the
-old ``test_analysis.py`` (decoding, diagnostics, figure-3). The ``decoder_inputs``
-fixture in ``conftest.py`` wraps ``DecoderInputs`` so it is available by name to
-every test module without an import.
+old ``test_analysis.py`` (decoding, figure-3). The ``decoder_inputs`` fixture in
+``conftest.py`` wraps ``DecoderInputs`` so it is available by name to every test
+module without an import.
 """
 
 from __future__ import annotations
@@ -15,32 +15,32 @@ from typing import Any
 
 import numpy as np
 
-from statespacecheck_paper.analysis import decode_and_diagnostics
+from statespacecheck_paper.decoding import decode_with_diagnostics
 from statespacecheck_paper.diagnostics import DecodingDiagnostics
 
 
 @dataclass
 class DecoderInputs:
-    """Bundle of inputs for ``decode_and_diagnostics``."""
+    """Bundle of inputs for ``decode_with_diagnostics``."""
 
-    spikes: np.ndarray
-    xs: np.ndarray
+    spike_counts: np.ndarray
+    position_bins: np.ndarray
     transition_matrix: np.ndarray
-    pf_centers: np.ndarray
-    pf_width: float
-    rate_scale: float
+    place_field_centers: np.ndarray
+    place_field_std: float
+    place_field_rate_scale: float
 
     def call(self, **overrides: Any) -> DecodingDiagnostics:
         kwargs: dict[str, Any] = {
-            "spikes": self.spikes,
-            "xs": self.xs,
+            "spike_counts": self.spike_counts,
+            "position_bins": self.position_bins,
             "transition_matrix": self.transition_matrix,
-            "pf_centers": self.pf_centers,
-            "pf_width": self.pf_width,
-            "rate_scale": self.rate_scale,
+            "place_field_centers": self.place_field_centers,
+            "place_field_std": self.place_field_std,
+            "place_field_rate_scale": self.place_field_rate_scale,
         }
         kwargs.update(overrides)
-        return decode_and_diagnostics(**kwargs)
+        return decode_with_diagnostics(**kwargs)
 
 
 def _diag_dominant_transition(n_bins: int, peak: float = 0.9) -> np.ndarray:
@@ -48,14 +48,14 @@ def _diag_dominant_transition(n_bins: int, peak: float = 0.9) -> np.ndarray:
 
 
 def make_decoder_inputs() -> DecoderInputs:
-    """Small reproducible decoder problem with no misfit schedule."""
+    """Small reproducible decoder problem with no override schedule."""
     rng = np.random.default_rng(42)
     n_time, n_cells, n_bins = 10, 3, 21
     return DecoderInputs(
-        spikes=rng.poisson(1.0, size=(n_time, n_cells)),
-        xs=np.linspace(0, 100, n_bins),
+        spike_counts=rng.poisson(1.0, size=(n_time, n_cells)),
+        position_bins=np.linspace(0, 100, n_bins),
         transition_matrix=_diag_dominant_transition(n_bins),
-        pf_centers=np.array([25.0, 50.0, 75.0]),
-        pf_width=5.0,
-        rate_scale=0.1,
+        place_field_centers=np.array([25.0, 50.0, 75.0]),
+        place_field_std=5.0,
+        place_field_rate_scale=0.1,
     )

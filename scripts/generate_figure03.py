@@ -14,12 +14,12 @@ from __future__ import annotations
 
 import numpy as np
 
-# ``decode_and_diagnostics`` and ``simulate_walk`` are re-exported as part of
+# ``decode_with_diagnostics`` and ``simulate_walk`` are re-exported as part of
 # this script's public surface — tests/test_figures.py asserts they are
 # accessible at module level.
-from statespacecheck_paper.analysis import (
-    DecodeParams,
-    decode_and_diagnostics,  # noqa: F401 — re-exported public surface
+from statespacecheck_paper.analysis import DecodeParams
+from statespacecheck_paper.decoding import (
+    decode_with_diagnostics,  # noqa: F401 — re-exported public surface
 )
 from statespacecheck_paper.figure03_demo import (
     estimate_stable_summary,

@@ -669,7 +669,7 @@ def build_simulated_cache(
     _write_zarr_store(ds=ds, out_dir=paths["zarr"], time_chunk=time_chunk)
 
     # Events table. ``event_time_ind`` / ``event_cell_ind`` from
-    # ``decode_and_diagnostics`` are already expanded for multi-count
+    # ``decode_with_diagnostics`` are already expanded for multi-count
     # bins (a bin with ``k`` spikes contributes ``k`` events) and
     # ``compute_spike_event_diagnostics_from_rates`` returns per-event
     # diagnostics in the same order.

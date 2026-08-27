@@ -22,15 +22,17 @@ from numpy.typing import NDArray
 
 from statespacecheck_paper.analysis import (
     DecodeParams,
-    MisfitSchedule,
-    MisfitWindow,
     PhaseBoundary,
-    decode_and_diagnostics,
     extract_phase_flag_values,
     flag_fractions_from_values,
     get_remapped_pf_centers,
     replay_window,
     summary_phase_windows,
+)
+from statespacecheck_paper.decoding import (
+    DecoderOverrideSchedule,
+    DecoderOverrideWindow,
+    decode_with_diagnostics,
 )
 from statespacecheck_paper.diagnostics import (
     DecodingDiagnostics,
@@ -177,7 +179,7 @@ class Figure3RateTables:
 
     Each table stacks the eleven ordinary place cells with the sparse
     population (``n_normal_cells + n_sparse_cells`` columns), so it plugs
-    directly into ``decode_and_diagnostics`` / ``MisfitWindow`` without
+    directly into ``decode_with_diagnostics`` / ``DecoderOverrideWindow`` without
     further reshaping.
 
     Attributes
@@ -571,7 +573,7 @@ def run_figure03_simulation(
 
     # 2. Remap misfit — spike *generation* is normal position-tuned; only the
     #    decoder uses randomly scrambled PF centers during this window (via
-    #    ``MisfitWindow`` below).
+    #    ``DecoderOverrideWindow`` below).
     n = bnd[PhaseBoundary.REMAP_END] - bnd[PhaseBoundary.REMAP_START]
     x = _walk(n, x_last)
     x_last = _record_phase(phases, phase_labels, "Remap Misfit", x, _spikes(x))
@@ -634,35 +636,35 @@ def run_figure03_simulation(
     rate_tables = build_figure03_rate_tables(xs, pf_centers, sparse_centers, params)
 
     replay_r0, replay_r1 = replay_window(params)
-    misfit_schedule = MisfitSchedule(
+    override_schedule = DecoderOverrideSchedule(
         (
-            MisfitWindow(
+            DecoderOverrideWindow(
                 bnd[PhaseBoundary.REMAP_START],
                 bnd[PhaseBoundary.REMAP_END],
-                decoder_rates=rate_tables.remapped_rates,
+                firing_rate_table=rate_tables.remapped_rates,
             ),
-            MisfitWindow(
+            DecoderOverrideWindow(
                 replay_r0,
                 replay_r1,
-                decoder_rates=rate_tables.replay_rates,
+                firing_rate_table=rate_tables.replay_rates,
             ),
-            MisfitWindow(
+            DecoderOverrideWindow(
                 w0,
                 w1,
-                decoder_rates=rate_tables.sparse_rates,
+                firing_rate_table=rate_tables.sparse_rates,
             ),
         )
     )
 
-    metrics = decode_and_diagnostics(
-        spikes=spikes,
-        xs=xs,
+    metrics = decode_with_diagnostics(
+        spike_counts=spikes,
+        position_bins=xs,
         transition_matrix=transition_matrix,
-        pf_centers=pf_centers,
-        pf_width=params.pf_width,
-        rate_scale=params.rate_scale,
-        misfit_schedule=misfit_schedule,
-        base_rates=rate_tables.base_rates,
+        place_field_centers=pf_centers,
+        place_field_std=params.pf_width,
+        place_field_rate_scale=params.rate_scale,
+        override_schedule=override_schedule,
+        baseline_firing_rates=rate_tables.base_rates,
     )
 
     boundaries = np.cumsum([len(p_x) for p_x, _ in phases]).tolist()

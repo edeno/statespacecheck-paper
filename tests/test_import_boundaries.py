@@ -36,3 +36,14 @@ def test_diagnostics_imports_no_sibling_paper_module() -> None:
     """The diagnostics layer is a leaf: it imports numpy/scipy and the external
     ``statespacecheck`` package only, never a sibling paper module."""
     assert _sibling_module_imports("diagnostics.py") == set()
+
+
+def test_decoding_imports_only_diagnostics_and_simulation() -> None:
+    """The general decoder depends only on the ``diagnostics`` and general
+    ``simulation`` layers — never on ``analysis`` or a figure-specific module."""
+    imported = _sibling_module_imports("decoding.py")
+    assert imported <= {
+        "statespacecheck_paper.diagnostics",
+        "statespacecheck_paper.simulation",
+    }
+    assert not any("figure03" in module or module.endswith(".analysis") for module in imported)

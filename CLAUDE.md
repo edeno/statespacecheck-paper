@@ -19,7 +19,8 @@ statespacecheck-paper/
 │   ├── style.py                # Figure styling (colors, defaults, save)
 │   ├── simulation.py           # Simulation utilities
 │   ├── diagnostics.py          # Shared goodness-of-fit diagnostics (leaf layer)
-│   ├── analysis.py             # Decoder + figure-3 params/summary logic
+│   ├── decoding.py             # General Bayesian decoder + override mechanism
+│   ├── analysis.py             # Figure-3 params/remap + summary-flag logic
 │   ├── plotting.py             # Plotting utilities
 │   ├── figure02_panels.py      # Figure-2 per-panel renderers
 │   ├── figure03_demo.py        # Figure-3 simulation + decoder pipeline
@@ -47,6 +48,7 @@ statespacecheck-paper/
     ├── test_style.py
     ├── test_simulation.py
     ├── test_diagnostics.py
+    ├── test_decoding.py
     ├── test_analysis.py
     ├── test_plotting.py
     ├── test_schematic.py       # Tests for schematic module
@@ -59,7 +61,8 @@ statespacecheck-paper/
 - **style.py**: Shared styling utilities (WONG palette, COLORS dict, figure defaults, save function)
 - **simulation.py**: Simulation functions (random walks, spike generation, place fields)
 - **diagnostics.py**: Shared goodness-of-fit diagnostics — the dependency-graph leaf (per-spike-event HPD/KL/rank containers + computation, single-spike likelihood, predictive-mark probabilities, baseline thresholds)
-- **analysis.py**: Decoder (`decode_and_diagnostics`) plus figure-3 decode params and summary-flag logic
+- **decoding.py**: General Bayesian decoder `decode_with_diagnostics` + per-window override mechanism (`DecoderOverrideWindow`/`DecoderOverrideSchedule`); depends only on `diagnostics` + `simulation`
+- **analysis.py**: Figure-3 decode params (`DecodeParams`), place-field remapping, and Figure-3b summary-flag logic
 - **plotting.py**: Reusable plotting functions (HPD regions, diagnostic plots)
 - **schematic.py**: Graphical model diagrams and Bayesian equation boxes for Figure 1
 - **load_local_data.py**: Data loading utilities for real datasets
@@ -109,13 +112,18 @@ The repository follows a clean separation between **reusable code** (in `src/`) 
 - `compute_predictive_mark_probabilities(predictive_distribution, mark_intensities)`: Predictive mark distribution (moved here from `simulation.py`)
 - `compute_baseline_diagnostic_thresholds(diagnostics, *, baseline_end_index)`: Compute baseline thresholds
 
-**4. analysis.py** - Bayesian Decoding
+**4. decoding.py** - General Bayesian Decoder
 
-- `DecodeParams`: Dataclass for decoder configuration (timeline, cells, remapping)
+- `decode_with_diagnostics(spike_counts, position_bins, transition_matrix, place_field_centers, place_field_std, place_field_rate_scale, override_schedule=None, baseline_firing_rates=None)`: Bayesian filter returning `DecodingDiagnostics`
+- `DecoderOverrideWindow` / `DecoderOverrideSchedule`: Optional per-window transition/firing-rate overrides (used by Figure 3)
+
+**5. analysis.py** - Figure-3 Params + Summary Logic
+
+- `DecodeParams`: Dataclass for the figure-3 decoding simulation (timeline, cells, remapping)
 - `get_remapped_pf_centers(params)`: Compute remapped place field centers
-- `decode_and_diagnostics(spikes, params)`: Main decoder with KL/HPD diagnostics (returns `DecodingDiagnostics`)
+- `summary_phase_windows` / `compute_phase_flag_fractions`: Figure-3b per-phase flag summary
 
-**5. plotting.py** - Reusable Plotting Functions
+**6. plotting.py** - Reusable Plotting Functions
 
 - `compute_hpd_region(distribution, coverage)`: Highest posterior density region mask
 - `add_phase_boundaries(ax, params)`: Add vertical lines at phase transitions
@@ -124,20 +132,20 @@ The repository follows a clean separation between **reusable code** (in `src/`) 
 - `plot_likelihood_columns(...)`: Shared likelihood-column rendering primitive
 - `plot_combined_diagnostics(diagnostics, x_true, spikes, params)`: Comprehensive visualization
 
-**6. schematic.py** - Graphical Model Diagrams
+**7. schematic.py** - Graphical Model Diagrams
 
 - `draw_graphical_model(ax)`: Draw state space model graphical representation
 - `draw_equation_boxes(ax)`: Draw Bayesian filtering equations
 - Used by Figure 1 to create schematic overview
 
-**7. load_local_data.py** - Real Data Loading
+**8. load_local_data.py** - Real Data Loading
 
 - `load_neural_recording_from_files(data_path, animal_date_epoch)`: loads
   position info, spike times, track graph, and linear edge data from
   pre-exported pickle files in the supplied data directory. No Spyglass
   database connection required.
 
-**8. paths.py** - Shared Data Identifiers
+**9. paths.py** - Shared Data Identifiers
 
 - `DATA_PATH`: default `<repo>/data`; override via `STATESPACECHECK_DATA_PATH`.
 - `ANIMAL_DATE_EPOCH`: default `j1620210710_02_r1`; override via

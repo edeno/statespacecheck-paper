@@ -71,7 +71,7 @@ def create_shared_example(rng: np.random.Generator) -> dict[str, Any]:
     hpd_value = float(ssc.hpd_overlap(predictive[np.newaxis, :], likelihood[np.newaxis, :])[0])
 
     # Compute exact p-value using Monte Carlo sampling
-    # This mirrors the approach in analysis.py decode_and_diagnostics
+    # This mirrors the approach in decoding.py decode_with_diagnostics
     n_mc_samples = 1000
 
     # Observed log predictive density: log(integral of predictive * likelihood)
