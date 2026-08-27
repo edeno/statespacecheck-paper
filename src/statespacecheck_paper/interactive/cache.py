@@ -149,20 +149,6 @@ def _restore_state_bins_index(ds: xr.Dataset) -> xr.Dataset:
     return ds
 
 
-def _extract_place_fields_concat(model: Any) -> tuple[NDArray[np.float64], NDArray[np.bool_]]:
-    """Thin re-export of the shared place-field concat helper.
-
-    Kept for back-compat with any external script that imported the
-    underscore-private name; new code should use
-    ``figure04_place_fields.extract_place_fields_concat`` directly.
-    """
-    from statespacecheck_paper.figure04_place_fields import (  # noqa: PLC0415
-        extract_place_fields_concat,
-    )
-
-    return extract_place_fields_concat(model)
-
-
 def _events_dataframe(
     diagnostics: SpikeEventDiagnostics,
     n_cells: int,

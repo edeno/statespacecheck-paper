@@ -1,14 +1,13 @@
 """Shared low-level Figure-4 plotting helpers.
 
 Small building blocks used across the Figure-4 track, raster, and diagnostic
-panels: the annotation GID constants, the ``-log(p)`` display transform, the
-half-pixel ``imshow`` extent, the decoder-likelihood-to-columns conversion, the
-scale-bar drawer, and the distribution heatmap renderer.
+panels: the annotation GID constants, the half-pixel ``imshow`` extent, the
+decoder-likelihood-to-columns conversion, the scale-bar drawer, and the
+distribution heatmap renderer. The shared ``-log(p)`` display transform lives in
+:mod:`plotting` (``negative_log_pvalue``).
 """
 
 from __future__ import annotations
-
-from typing import cast, overload
 
 import numpy as np
 import pandas as pd
@@ -24,39 +23,6 @@ from statespacecheck_paper.style import (
 ANIMAL_POSITION_LABEL_GID = "animal-position-label"
 THRESHOLD_LABEL_GID = "threshold-label"
 WORSE_FIT_LABEL_GID = "worse-fit-label"
-
-
-@overload
-def negative_log_pvalue(x: NDArray[np.float64], eps: float = ...) -> NDArray[np.float64]: ...
-
-
-@overload
-def negative_log_pvalue(x: float, eps: float = ...) -> np.float64: ...
-
-
-def negative_log_pvalue(
-    x: NDArray[np.float64] | float, eps: float = 1e-10
-) -> NDArray[np.float64] | np.float64:
-    """Return ``-log(max(x, eps))``, the predictive-p-value display transform.
-
-    Predictive p-values are shown on a ``-log(p)`` scale (natural log, matching
-    Figure 3) so that higher values indicate worse fit. The ``eps`` floor keeps
-    zero p-values finite. Accepts either a p-value array (returns an
-    array) or a scalar threshold (returns a scalar).
-
-    Parameters
-    ----------
-    x : NDArray[np.float64] or float
-        Probability value(s) to transform.
-    eps : float, default 1e-10
-        Lower floor applied before the logarithm.
-
-    Returns
-    -------
-    NDArray[np.float64] or np.float64
-        ``-log(max(x, eps))`` with the same shape as ``x``.
-    """
-    return cast("NDArray[np.float64] | np.float64", -np.log(np.maximum(x, eps)))
 
 
 def compute_half_pixel_extent(

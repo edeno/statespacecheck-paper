@@ -16,12 +16,47 @@ Examples
 
 from __future__ import annotations
 
+from typing import cast, overload
+
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.axes import Axes
 from numpy.typing import NDArray
 
 from statespacecheck_paper.style import CMAP_LIKELIHOOD
+
+
+@overload
+def negative_log_pvalue(x: NDArray[np.float64], eps: float = ...) -> NDArray[np.float64]: ...
+
+
+@overload
+def negative_log_pvalue(x: float, eps: float = ...) -> np.float64: ...
+
+
+def negative_log_pvalue(
+    x: NDArray[np.float64] | float, eps: float = 1e-10
+) -> NDArray[np.float64] | np.float64:
+    """Return ``-log(max(x, eps))``, the predictive-p-value display transform.
+
+    Predictive p-values are shown on a ``-log(p)`` scale (natural log) so that
+    higher values indicate worse fit; Figures 3 and 4 share this transform. The
+    ``eps`` floor keeps zero p-values finite. Accepts either a p-value array
+    (returns an array) or a scalar threshold (returns a scalar).
+
+    Parameters
+    ----------
+    x : NDArray[np.float64] or float
+        Probability value(s) to transform.
+    eps : float, default 1e-10
+        Lower floor applied before the logarithm.
+
+    Returns
+    -------
+    NDArray[np.float64] or np.float64
+        ``-log(max(x, eps))`` with the same shape as ``x``.
+    """
+    return cast("NDArray[np.float64] | np.float64", -np.log(np.maximum(x, eps)))
 
 
 def compute_hpd_region(x: np.ndarray, pdf: np.ndarray, coverage: float = 0.95) -> np.ndarray:

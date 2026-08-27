@@ -137,7 +137,10 @@ def test_figure04_family_dependency_edges_are_acyclic() -> None:
             prefix + "plotting",
             prefix + "style",
         },
-        "figure04_cache.py": {prefix + "figure04_decoder"},
+        "figure04_cache.py": {
+            prefix + "figure04_decoder",
+            prefix + "load_local_data",
+        },
         "figure04_workflow.py": {
             prefix + "figure04_cache",
             prefix + "figure04_decoder",

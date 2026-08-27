@@ -4,8 +4,9 @@ The Figure-4 decode (fit + decode both models + diagnostics) is expensive, so
 its results are cached to a single joblib bundle under ``data/intermediates``.
 This module owns the cache location (:class:`Figure4Paths`), the provenance
 fingerprint that gates a stale cache (:func:`compute_figure04_cache_fingerprint`),
-and the load/save helpers with explicit invalid-cache behavior. It imports only
-``Figure4Config`` from :mod:`figure04_decoder`.
+and the load/save helpers with explicit invalid-cache behavior. It imports
+``Figure4Config`` from :mod:`figure04_decoder` and the input-file suffix list
+(``EXPORT_FILE_SUFFIXES``) from :mod:`load_local_data`, whose loader owns it.
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ from pathlib import Path
 import joblib
 
 from statespacecheck_paper.figure04_decoder import Figure4Config
+from statespacecheck_paper.load_local_data import EXPORT_FILE_SUFFIXES
 
 FIGURE04_CACHE_SCHEMA_VERSION = 4
 
@@ -39,18 +41,10 @@ _FIGURE04_CACHE_PAYLOAD_KEYS = (
     "diagnostic_position_bins",
 )
 
-# The pre-exported input files, keyed on the same ``{epoch}`` prefix as the
-# loader (see ``load_local_data.load_neural_recording_from_files``). Their
-# content hashes go into the fingerprint so that replacing an export under the
-# same epoch invalidates the cache instead of silently reusing a decode of the
-# old data.
-_EXPORT_FILE_SUFFIXES = (
-    "_position_info.pkl",
-    "_HPC_spike_times.pkl",
-    "_track_graph.pkl",
-    "_linear_edge_order.pkl",
-    "_linear_edge_spacing.pkl",
-)
+# The pre-exported input files are named by ``load_local_data`` (which owns
+# ``EXPORT_FILE_SUFFIXES``); their content hashes go into the fingerprint so that
+# replacing an export under the same ``{epoch}`` prefix invalidates the cache
+# instead of silently reusing a decode of the old data.
 
 
 def _export_file_checksums(paths: Figure4Paths) -> dict[str, str | None]:
@@ -61,7 +55,7 @@ def _export_file_checksums(paths: Figure4Paths) -> dict[str, str | None]:
     real run hashes the actual bytes so any data-content change invalidates.
     """
     checksums: dict[str, str | None] = {}
-    for suffix in _EXPORT_FILE_SUFFIXES:
+    for suffix in EXPORT_FILE_SUFFIXES:
         file_path = paths.data_path / f"{paths.animal_date_epoch}{suffix}"
         if not file_path.exists():
             checksums[suffix] = None

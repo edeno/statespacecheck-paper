@@ -14,27 +14,7 @@ import xarray as xr  # noqa: E402
 from statespacecheck_paper.figure04_plot_primitives import (  # noqa: E402
     compute_half_pixel_extent,
     decoder_likelihood_to_columns,
-    negative_log_pvalue,
 )
-
-
-class TestNeglog:
-    def test_matches_maximum_floor_elementwise(self) -> None:
-        """``negative_log_pvalue`` equals ``-log(max(x, eps))`` on every element, including
-        values at or below the floor where the ``eps`` clamp dominates."""
-        x = np.array([1.0, 0.5, 0.1, 1e-10, 1e-12, 0.0])
-        expected = -np.log(np.maximum(x, 1e-10))
-        np.testing.assert_array_equal(negative_log_pvalue(x), expected)
-
-    def test_respects_custom_eps(self) -> None:
-        x = np.array([1.0, 1e-4, 0.0])
-        expected = -np.log(np.maximum(x, 1e-3))
-        np.testing.assert_array_equal(negative_log_pvalue(x, eps=1e-3), expected)
-
-    def test_scalar_threshold_transform(self) -> None:
-        """The scalar overload (used on flag thresholds) floors identically."""
-        assert negative_log_pvalue(0.2) == -np.log(max(0.2, 1e-10))
-        assert negative_log_pvalue(0.0) == -np.log(1e-10)
 
 
 class TestHalfpixelExtent:

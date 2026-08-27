@@ -34,11 +34,10 @@ from statespacecheck_paper.figure04_plot_primitives import (
     WORSE_FIT_LABEL_GID,
     compute_half_pixel_extent,
     decoder_likelihood_to_columns,
-    negative_log_pvalue,
     plot_distribution_heatmap,
 )
 from statespacecheck_paper.figure04_track_plots import plot_track_graph_1d
-from statespacecheck_paper.plotting import plot_likelihood_columns
+from statespacecheck_paper.plotting import negative_log_pvalue, plot_likelihood_columns
 from statespacecheck_paper.style import (
     CMAP_LIKELIHOOD,
     CMAP_POSTERIOR,

@@ -30,7 +30,7 @@ from statespacecheck_paper.figure03_summary import (
     build_summary_conditions,
     compute_condition_flag_percentages,
 )
-from statespacecheck_paper.plotting import plot_likelihood_columns
+from statespacecheck_paper.plotting import negative_log_pvalue, plot_likelihood_columns
 from statespacecheck_paper.style import CMAP_LIKELIHOOD, CMAP_POSTERIOR, COLORS
 
 FIGURE3_PANEL_LABEL_GID = "figure3-panel-label"
@@ -508,8 +508,8 @@ def _plot_figure3_diagnostic_row(
     plot_values = np.asarray(values, dtype=float)
     plot_threshold = float(threshold)
     if spec.log_transform:
-        plot_values = -np.log(np.maximum(plot_values, 1e-10))
-        plot_threshold = -np.log(np.maximum(plot_threshold, 1e-10))
+        plot_values = negative_log_pvalue(plot_values)
+        plot_threshold = float(negative_log_pvalue(plot_threshold))
 
     ax.scatter(
         time_ind,

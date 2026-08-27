@@ -21,6 +21,24 @@ from numpy.typing import NDArray
 # Position columns every downstream consumer relies on (centimeters).
 _REQUIRED_POSITION_COLUMNS = ("head_position_x", "head_position_y", "linear_position")
 
+# File-name suffixes (after the ``{animal_date_epoch}`` prefix) of the pre-exported
+# pickles this loader reads. This module owns the list so the Figure-4 decode cache
+# can hash exactly these files; keep it in sync with the reads in
+# ``load_neural_recording_from_files``.
+_POSITION_INFO_SUFFIX = "_position_info.pkl"
+_SPIKE_TIMES_SUFFIX = "_HPC_spike_times.pkl"
+_TRACK_GRAPH_SUFFIX = "_track_graph.pkl"
+_LINEAR_EDGE_ORDER_SUFFIX = "_linear_edge_order.pkl"
+_LINEAR_EDGE_SPACING_SUFFIX = "_linear_edge_spacing.pkl"
+
+EXPORT_FILE_SUFFIXES = (
+    _POSITION_INFO_SUFFIX,
+    _SPIKE_TIMES_SUFFIX,
+    _TRACK_GRAPH_SUFFIX,
+    _LINEAR_EDGE_ORDER_SUFFIX,
+    _LINEAR_EDGE_SPACING_SUFFIX,
+)
+
 
 @dataclasses.dataclass(frozen=True)
 class NeuralRecordingData:
@@ -139,11 +157,13 @@ def load_neural_recording_from_files(
     """
     data_path = Path(data_path)
 
-    position_info = pd.read_pickle(data_path / f"{animal_date_epoch}_position_info.pkl")
-    spike_times = joblib.load(data_path / f"{animal_date_epoch}_HPC_spike_times.pkl")
-    track_graph = joblib.load(data_path / f"{animal_date_epoch}_track_graph.pkl")
-    linear_edge_order = joblib.load(data_path / f"{animal_date_epoch}_linear_edge_order.pkl")
-    linear_edge_spacing = joblib.load(data_path / f"{animal_date_epoch}_linear_edge_spacing.pkl")
+    position_info = pd.read_pickle(data_path / f"{animal_date_epoch}{_POSITION_INFO_SUFFIX}")
+    spike_times = joblib.load(data_path / f"{animal_date_epoch}{_SPIKE_TIMES_SUFFIX}")
+    track_graph = joblib.load(data_path / f"{animal_date_epoch}{_TRACK_GRAPH_SUFFIX}")
+    linear_edge_order = joblib.load(data_path / f"{animal_date_epoch}{_LINEAR_EDGE_ORDER_SUFFIX}")
+    linear_edge_spacing = joblib.load(
+        data_path / f"{animal_date_epoch}{_LINEAR_EDGE_SPACING_SUFFIX}"
+    )
 
     return NeuralRecordingData(
         position_info=position_info,

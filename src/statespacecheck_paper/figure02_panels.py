@@ -13,6 +13,7 @@ columns of Figure 2 are rendered against a single immutable example).
 from __future__ import annotations
 
 import dataclasses
+from typing import Any, Literal
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -340,58 +341,56 @@ def plot_kl_pointwise(ax: Axes, data: Figure2ExampleData) -> None:
 # =============================================================================
 
 
-def plot_hpd_predictive(ax: Axes, data: Figure2ExampleData) -> None:
-    """Predictive distribution with 95% HPD region shaded.
+def _plot_hpd_panel(
+    ax: Axes,
+    x: NDArray[np.float64],
+    dist: NDArray[np.float64],
+    *,
+    color: str,
+    title: str,
+    label_x: float,
+    label_ha: Literal["left", "right"],
+    legend_kwargs: dict[str, Any],
+) -> None:
+    """Render one 95% HPD distribution panel (predictive or likelihood column).
 
-    Uses consistent HPD visual scheme: shaded region under curve within HPD.
+    Draws the distribution line, shades the 95% HPD region under it, marks the
+    HPD density threshold with a dashed line + label, and applies the shared
+    Figure-2 panel styling. Only the color, title, threshold-label placement,
+    and legend keywords differ between the two columns.
     """
-    x = data.position_bins
-    pred = data.predictive
     coverage = 0.95
+    hpd_mask = compute_hpd_region(x, dist, coverage)
 
-    hpd_mask = compute_hpd_region(x, pred, coverage)
+    # HPD threshold is the minimum density value inside the HPD region.
+    hpd_threshold = np.min(dist[hpd_mask])
 
-    # Compute HPD threshold (minimum density value in HPD region)
-    hpd_threshold = np.min(pred[hpd_mask])
-
-    # Plot full distribution as line
-    ax.plot(x, pred, color=COLORS["predictive"], linewidth=1.2)
-
-    # Shade HPD region under curve (consistent scheme)
+    ax.plot(x, dist, color=color, linewidth=1.2)
     ax.fill_between(
         x,
         0,
-        pred,
+        dist,
         where=list(hpd_mask),
         alpha=0.35,
-        color=COLORS["predictive"],
+        color=color,
         label="95% HPD",
     )
-
-    # Add 95% HPD threshold as dashed line with label
-    ax.axhline(
-        hpd_threshold,
-        color=COLORS["predictive"],
-        linestyle="--",
-        linewidth=0.8,
-        alpha=0.7,
-    )
-    # Label the threshold line
+    ax.axhline(hpd_threshold, color=color, linestyle="--", linewidth=0.8, alpha=0.7)
     ax.text(
-        95,
+        label_x,
         hpd_threshold,
         "95% threshold",
         fontsize=8,
-        ha="right",
+        ha=label_ha,
         va="bottom",
-        color=COLORS["predictive"],
+        color=color,
         alpha=0.8,
     )
 
     ax.set_xlabel("Latent state (a.u.)", fontsize=8, labelpad=8)
     ax.set_ylabel("Probability", fontsize=8, labelpad=8)
-    ax.set_title(r"Predictive HPD ($H_{\mathrm{pred}}$)", fontsize=8, pad=4)
-    ax.legend(fontsize=8, frameon=False, loc="upper right")
+    ax.set_title(title, fontsize=8, pad=4)
+    ax.legend(fontsize=8, frameon=False, **legend_kwargs)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     ax.set_xlim(0, 100)
@@ -403,80 +402,41 @@ def plot_hpd_predictive(ax: Axes, data: Figure2ExampleData) -> None:
     y_max = ax.get_ylim()[1]
     ax.set_yticks([0, y_max])
     ax.set_yticklabels(["0", f"{y_max:.2f}"], fontsize=8)
+
+
+def plot_hpd_predictive(ax: Axes, data: Figure2ExampleData) -> None:
+    """Predictive distribution with 95% HPD region shaded."""
+    _plot_hpd_panel(
+        ax,
+        data.position_bins,
+        data.predictive,
+        color=COLORS["predictive"],
+        title=r"Predictive HPD ($H_{\mathrm{pred}}$)",
+        label_x=95,
+        label_ha="right",
+        legend_kwargs={"loc": "upper right"},
+    )
 
 
 def plot_hpd_likelihood(ax: Axes, data: Figure2ExampleData) -> None:
-    """Likelihood distribution with 95% HPD region shaded.
-
-    Uses consistent HPD visual scheme: shaded region under curve within HPD.
-    """
-    x = data.position_bins
-    like = data.likelihood
-    coverage = 0.95
-
-    hpd_mask = compute_hpd_region(x, like, coverage)
-
-    # Compute HPD threshold (minimum density value in HPD region)
-    hpd_threshold = np.min(like[hpd_mask])
-
-    # Plot full distribution as line
-    ax.plot(x, like, color=COLORS["likelihood"], linewidth=1.2)
-
-    # Shade HPD region under curve (consistent scheme)
-    ax.fill_between(
-        x,
-        0,
-        like,
-        where=list(hpd_mask),
-        alpha=0.35,
+    """Likelihood distribution with 95% HPD region shaded."""
+    # Curve peaks center-right, so the threshold label sits on the left and the
+    # legend is tucked into the empty upper-left corner against the y-axis.
+    _plot_hpd_panel(
+        ax,
+        data.position_bins,
+        data.likelihood,
         color=COLORS["likelihood"],
-        label="95% HPD",
+        title=r"Likelihood HPD ($H_{\mathrm{like}}$)",
+        label_x=5,
+        label_ha="left",
+        legend_kwargs={
+            "loc": "upper left",
+            "handlelength": 1.2,
+            "handletextpad": 0.4,
+            "borderaxespad": 0.2,
+        },
     )
-
-    # Add 95% HPD threshold as dashed line with label
-    ax.axhline(
-        hpd_threshold,
-        color=COLORS["likelihood"],
-        linestyle="--",
-        linewidth=0.8,
-        alpha=0.7,
-    )
-    # Label the threshold line (on left side to avoid distribution)
-    ax.text(
-        5,
-        hpd_threshold,
-        "95% threshold",
-        fontsize=8,
-        ha="left",
-        va="bottom",
-        color=COLORS["likelihood"],
-        alpha=0.8,
-    )
-
-    ax.set_xlabel("Latent state (a.u.)", fontsize=8, labelpad=8)
-    ax.set_ylabel("Probability", fontsize=8, labelpad=8)
-    ax.set_title(r"Likelihood HPD ($H_{\mathrm{like}}$)", fontsize=8, pad=4)
-    # Curve peaks center-right, so keep the legend in the empty upper-left,
-    # tucked against the probability axis.
-    ax.legend(
-        fontsize=8,
-        frameon=False,
-        loc="upper left",
-        handlelength=1.2,
-        handletextpad=0.4,
-        borderaxespad=0.2,
-    )
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    ax.set_xlim(0, 100)
-    ax.set_ylim(bottom=0)
-    # Minimal x-ticks: first and last only
-    ax.set_xticks([0, 100])
-    ax.set_xticklabels(["0", "100"], fontsize=8)
-    # Minimal y-ticks: first and last only
-    y_max = ax.get_ylim()[1]
-    ax.set_yticks([0, y_max])
-    ax.set_yticklabels(["0", f"{y_max:.2f}"], fontsize=8)
 
 
 def plot_hpd_intersection(ax: Axes, data: Figure2ExampleData) -> tuple[float, float, float]:
