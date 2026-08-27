@@ -959,6 +959,149 @@ def get_remapped_pf_centers(
     return pf_centers
 
 
+def _resolve_base_rates(
+    base_rates: NDArray[np.floating] | None,
+    xs: NDArray[np.floating],
+    pf_centers: NDArray[np.floating],
+    pf_width: float,
+    rate_scale: float,
+    n_bins: int,
+    n_cells: int,
+) -> NDArray[np.floating]:
+    """Build or validate the baseline ``(n_bins, n_cells)`` Poisson rate table.
+
+    When ``base_rates`` is supplied it is validated against the decoder grid and
+    rejected if it is the wrong shape or holds any negative / non-finite rate
+    (mirroring ``MisfitWindow.decoder_rates`` validation), so a bad table fails
+    loudly here rather than surfacing as an opaque Poisson error or a silent NaN
+    deep in the filter loop. When omitted, the table is built from the Gaussian
+    place-field parameters.
+    """
+    if base_rates is not None:
+        rates = np.asarray(base_rates, dtype=float)
+        if rates.shape != (n_bins, n_cells):
+            raise ValueError(
+                f"base_rates shape {rates.shape} does not match the decoder grid "
+                f"(n_bins={n_bins}, n_cells={n_cells})."
+            )
+        # Reject invalid rate tables up front (as ``MisfitWindow.decoder_rates``
+        # does), rather than letting a negative/nonfinite rate surface as an
+        # opaque Poisson error or a silent NaN deep in the filter loop.
+        if not (np.all(np.isfinite(rates)) and np.all(rates >= 0.0)):
+            raise ValueError("base_rates must contain only finite, non-negative rates.")
+        return rates
+    return placefield_rates(xs, pf_centers, pf_width, rate_scale)
+
+
+def _expand_spike_events(
+    spikes: NDArray[np.int_],
+) -> tuple[NDArray[np.intp], NDArray[np.intp]]:
+    """Expand a ``(n_time, n_cells)`` spike-count matrix into per-event indices.
+
+    Excludes ``t=0`` (which has no valid prior) and expands multiplicities: a
+    bin with count ``k`` contributes ``k`` repeated events. The returned time
+    indices carry the ``+1`` offset that undoes the ``spikes[1:]`` slice.
+    """
+    spike_time_ind, spike_cell_ind = np.nonzero(spikes[1:])
+    spike_counts_at_events = spikes[1:][spike_time_ind, spike_cell_ind].astype(np.intp)
+    spike_time_ind = np.repeat(spike_time_ind, spike_counts_at_events)
+    spike_cell_ind = np.repeat(spike_cell_ind, spike_counts_at_events)
+    spike_time_ind = spike_time_ind + 1  # Adjust for offset from [1:]
+    return spike_time_ind, spike_cell_ind
+
+
+def _step_observation_model(
+    window: MisfitWindow | None,
+    base_transition: NDArray[np.floating],
+    base_rates: NDArray[np.floating],
+) -> tuple[NDArray[np.floating], NDArray[np.floating]]:
+    """Select the transition matrix and rate table for one filter step.
+
+    Pure per-step *selector*: returns the baseline transition matrix and rate
+    table unless the active misfit ``window`` overrides either. It performs
+    neither the predictive matmul nor the predictive-posterior store — those
+    are the recursion itself and stay in ``decode_and_diagnostics``.
+    """
+    transition_t = base_transition
+    if window is not None and window.transition_matrix is not None:
+        transition_t = window.transition_matrix
+    rates_t = base_rates
+    if window is not None and window.decoder_rates is not None:
+        rates_t = window.decoder_rates
+    return transition_t, rates_t
+
+
+def _apply_window_rate_overrides(
+    diagnostics: PerCellDiagnostics,
+    predictive_posterior: NDArray[np.floating],
+    windows: tuple[MisfitWindow, ...],
+    spike_time_ind: NDArray[np.intp],
+    spike_cell_ind: NDArray[np.intp],
+    coverage: float = 0.95,
+) -> PerCellDiagnostics:
+    """Overwrite per-event / dense diagnostics inside each rate-override window.
+
+    The baseline ``diagnostics`` were computed against the decoder's default
+    rate table. For every misfit window that swaps ``decoder_rates``, the events
+    falling inside it are recomputed against that window's table so the
+    posterior update, per-event diagnostics, and displayed likelihood stay on
+    one internally consistent decoder model. The base diagnostics' seven arrays
+    are copied first, so this mutates copies and leaves the passed-in dataclass
+    untouched; the returned dataclass is assembled from the mutated copies.
+    """
+    assert diagnostics.hpd_overlap is not None
+    assert diagnostics.kl_divergence is not None
+    assert diagnostics.spike_prob is not None
+    assert diagnostics.per_spike_likelihood is not None
+
+    hpd_overlap = diagnostics.hpd_overlap.copy()
+    kl_divergence = diagnostics.kl_divergence.copy()
+    spike_prob = diagnostics.spike_prob.copy()
+    event_hpd_overlap = diagnostics.event_hpd_overlap.copy()
+    event_kl_divergence = diagnostics.event_kl_divergence.copy()
+    event_spike_prob = diagnostics.event_spike_prob.copy()
+    decoder_per_spike_lik = diagnostics.per_spike_likelihood.copy()
+
+    for window in windows:
+        if window.decoder_rates is None:
+            continue
+        in_window = (spike_time_ind >= window.start) & (spike_time_ind < window.end)
+        if not np.any(in_window):
+            continue
+
+        window_diagnostics = compute_per_cell_diagnostics_from_rates(
+            predictive_posterior,
+            window.decoder_rates,
+            spike_time_ind[in_window],
+            spike_cell_ind[in_window],
+            coverage=coverage,
+        )
+        assert window_diagnostics.per_spike_likelihood is not None
+
+        event_hpd_overlap[in_window] = window_diagnostics.event_hpd_overlap
+        event_kl_divergence[in_window] = window_diagnostics.event_kl_divergence
+        event_spike_prob[in_window] = window_diagnostics.event_spike_prob
+        decoder_per_spike_lik[in_window] = window_diagnostics.per_spike_likelihood
+
+        window_times = spike_time_ind[in_window]
+        window_cells = spike_cell_ind[in_window]
+        hpd_overlap[window_times, window_cells] = window_diagnostics.event_hpd_overlap
+        kl_divergence[window_times, window_cells] = window_diagnostics.event_kl_divergence
+        spike_prob[window_times, window_cells] = window_diagnostics.event_spike_prob
+
+    return PerCellDiagnostics(
+        event_time_ind=diagnostics.event_time_ind,
+        event_cell_ind=diagnostics.event_cell_ind,
+        event_hpd_overlap=event_hpd_overlap,
+        event_kl_divergence=event_kl_divergence,
+        event_spike_prob=event_spike_prob,
+        hpd_overlap=hpd_overlap,
+        kl_divergence=kl_divergence,
+        spike_prob=spike_prob,
+        per_spike_likelihood=decoder_per_spike_lik,
+    )
+
+
 def decode_and_diagnostics(
     spikes: NDArray[np.int_],
     xs: NDArray[np.floating],
@@ -967,7 +1110,6 @@ def decode_and_diagnostics(
     pf_width: float,
     rate_scale: float,
     misfit_schedule: MisfitSchedule | None = None,
-    rng: np.random.Generator | None = None,
     base_rates: NDArray[np.floating] | None = None,
 ) -> Diagnostics:
     """Run the Bayesian filter with per-time, per-cell diagnostics.
@@ -1009,8 +1151,6 @@ def decode_and_diagnostics(
         the per-cell rate table for its interval. Defaults to an empty
         schedule: a clean decode with no
         misfits (the real-data decoding case).
-    rng : np.random.Generator | None, optional
-        Random number generator (reserved for future use).
     base_rates : np.ndarray, shape (n_bins, n_cells), optional
         Baseline per-cell Poisson rate table. Supply this when cells do not
         share one place-field width and scale, as in Figure 3's sparse
@@ -1098,9 +1238,6 @@ def decode_and_diagnostics(
     n_time = spikes.shape[0]
     n_bins = xs.size
 
-    # rng parameter reserved for future use
-    _ = rng
-
     if misfit_schedule is None:
         misfit_schedule = MisfitSchedule()
 
@@ -1132,20 +1269,7 @@ def decode_and_diagnostics(
     # simulation appends a narrow sparse-population of cells with a small
     # baseline rate that increases during a correctly modeled, low-activity
     # window.
-    if base_rates is not None:
-        rates = np.asarray(base_rates, dtype=float)
-        if rates.shape != (n_bins, n_cells):
-            raise ValueError(
-                f"base_rates shape {rates.shape} does not match the decoder grid "
-                f"(n_bins={n_bins}, n_cells={n_cells})."
-            )
-        # Reject invalid rate tables up front (as ``MisfitWindow.decoder_rates``
-        # does), rather than letting a negative/nonfinite rate surface as an
-        # opaque Poisson error or a silent NaN deep in the filter loop.
-        if not (np.all(np.isfinite(rates)) and np.all(rates >= 0.0)):
-            raise ValueError("base_rates must contain only finite, non-negative rates.")
-    else:
-        rates = placefield_rates(xs, pf_centers, pf_width, rate_scale)
+    rates = _resolve_base_rates(base_rates, xs, pf_centers, pf_width, rate_scale, n_bins, n_cells)
 
     # Track timesteps where _condition_on fell back to uniform because the
     # observation had zero probability on the prior's support. The fallback
@@ -1157,11 +1281,12 @@ def decode_and_diagnostics(
     for t in range(1, n_time):
         window = misfit_schedule.window_at(t)
 
-        # Predict — baseline transition unless the active misfit window
-        # overrides it.
-        current_transition = transition_matrix
-        if window is not None and window.transition_matrix is not None:
-            current_transition = window.transition_matrix
+        # Select this step's transition matrix and per-cell rate table —
+        # the baseline pair unless the active misfit window overrides either.
+        # The predictive matmul and predictive-posterior store below are the
+        # recursion itself and stay in the loop.
+        current_transition, rates_t = _step_observation_model(window, transition_matrix, rates)
+
         # ``current_transition`` is column-stochastic: column j is the
         # distribution over next states given current state j (see
         # ``gaussian_transition_matrix``). The predictive marginal is therefore
@@ -1169,13 +1294,6 @@ def decode_and_diagnostics(
         # boundaries where column normalization breaks the kernel's symmetry.
         prior = normalize(current_transition @ posterior[t - 1])  # (n_bins,)
         predictive_posterior[t] = prior  # stored for p-value computation
-
-        # Per-cell rate table for this step. The baseline Gaussian-PF
-        # table unless the active misfit window overrides it (e.g.
-        # remapped table).
-        rates_t = rates
-        if window is not None and window.decoder_rates is not None:
-            rates_t = window.decoder_rates
 
         # Per-cell log-likelihoods. Log-space avoids underflow when
         # ``n_cells * log(peak)`` crosses the float64 floor (~700) —
@@ -1223,11 +1341,7 @@ def decode_and_diagnostics(
 
     # Find all spike events (excluding t=0 which has no valid prior). Count
     # matrices are expanded so a bin with count k contributes k spike events.
-    spike_time_ind, spike_cell_ind = np.nonzero(spikes[1:])
-    spike_counts_at_events = spikes[1:][spike_time_ind, spike_cell_ind].astype(np.intp)
-    spike_time_ind = np.repeat(spike_time_ind, spike_counts_at_events)
-    spike_cell_ind = np.repeat(spike_cell_ind, spike_counts_at_events)
-    spike_time_ind = spike_time_ind + 1  # Adjust for offset from [1:]
+    spike_time_ind, spike_cell_ind = _expand_spike_events(spikes)
 
     # Compute the baseline diagnostics first. Events inside a window with
     # ``decoder_rates`` are overwritten below using that same rate table,
@@ -1241,66 +1355,94 @@ def decode_and_diagnostics(
         coverage=0.95,
     )
 
-    assert diagnostics.hpd_overlap is not None  # called with include_dense_matrices=True
-    assert diagnostics.kl_divergence is not None
-    assert diagnostics.spike_prob is not None
-    assert diagnostics.per_spike_likelihood is not None
-
-    hpd_overlap = diagnostics.hpd_overlap.copy()
-    kl_divergence = diagnostics.kl_divergence.copy()
-    spike_prob = diagnostics.spike_prob.copy()
-    event_hpd_overlap = diagnostics.event_hpd_overlap.copy()
-    event_kl_divergence = diagnostics.event_kl_divergence.copy()
-    event_spike_prob = diagnostics.event_spike_prob.copy()
-    decoder_per_spike_lik = diagnostics.per_spike_likelihood.copy()
-
-    for window in misfit_schedule.windows:
-        if window.decoder_rates is None:
-            continue
-        in_window = (spike_time_ind >= window.start) & (spike_time_ind < window.end)
-        if not np.any(in_window):
-            continue
-
-        window_diagnostics = compute_per_cell_diagnostics_from_rates(
-            predictive_posterior,
-            window.decoder_rates,
-            spike_time_ind[in_window],
-            spike_cell_ind[in_window],
-            coverage=0.95,
-        )
-        assert window_diagnostics.per_spike_likelihood is not None
-
-        event_hpd_overlap[in_window] = window_diagnostics.event_hpd_overlap
-        event_kl_divergence[in_window] = window_diagnostics.event_kl_divergence
-        event_spike_prob[in_window] = window_diagnostics.event_spike_prob
-        decoder_per_spike_lik[in_window] = window_diagnostics.per_spike_likelihood
-
-        window_times = spike_time_ind[in_window]
-        window_cells = spike_cell_ind[in_window]
-        hpd_overlap[window_times, window_cells] = window_diagnostics.event_hpd_overlap
-        kl_divergence[window_times, window_cells] = window_diagnostics.event_kl_divergence
-        spike_prob[window_times, window_cells] = window_diagnostics.event_spike_prob
+    overridden = _apply_window_rate_overrides(
+        diagnostics,
+        predictive_posterior,
+        misfit_schedule.windows,
+        spike_time_ind,
+        spike_cell_ind,
+    )
+    assert overridden.hpd_overlap is not None  # dense matrices requested above
+    assert overridden.kl_divergence is not None
+    assert overridden.spike_prob is not None
+    assert overridden.per_spike_likelihood is not None
 
     return Diagnostics(
         posterior=posterior,
         predictive=predictive_posterior,
         likelihood=combined_likelihood_all,
         spike_likelihood=spike_likelihood_all,
-        hpd_overlap=hpd_overlap,
-        kl_divergence=kl_divergence,
-        spike_prob=spike_prob,
-        per_spike_likelihood=decoder_per_spike_lik,
-        event_time_ind=diagnostics.event_time_ind,
-        event_cell_ind=diagnostics.event_cell_ind,
-        event_hpd_overlap=event_hpd_overlap,
-        event_kl_divergence=event_kl_divergence,
-        event_spike_prob=event_spike_prob,
+        hpd_overlap=overridden.hpd_overlap,
+        kl_divergence=overridden.kl_divergence,
+        spike_prob=overridden.spike_prob,
+        per_spike_likelihood=overridden.per_spike_likelihood,
+        event_time_ind=overridden.event_time_ind,
+        event_cell_ind=overridden.event_cell_ind,
+        event_hpd_overlap=overridden.event_hpd_overlap,
+        event_kl_divergence=overridden.event_kl_divergence,
+        event_spike_prob=overridden.event_spike_prob,
     )
 
 
 # -----------------------------
 # Per-cell diagnostics (shared logic)
 # -----------------------------
+
+
+def _event_spike_prob_rank(
+    pred_chunk: NDArray[np.floating],
+    rates: NDArray[np.floating],
+    cell_ind: NDArray[np.intp],
+) -> NDArray[np.floating]:
+    """Per-event spike-probability rank for one batch of spike events.
+
+    For each event the rank is the cumulative predictive mass of cells whose
+    expected contribution is ``<=`` the firing cell's contribution:
+
+        rank[k] = sum_j contrib[k, j] where contrib[k, j] <= contrib[k, cell_ind[k]]
+
+    ``contrib`` is the predictive cell probability conditional on an event,
+    obtained by integrating the raw cell intensities in ``rates`` over the
+    predictive state distribution and then normalizing across cells (via
+    :func:`predictive_mark_probabilities` on the **full** ``(n_bins, n_cells)``
+    table, so every cell competes for the rank, not just the firing one). The
+    ``rank_atol`` slack on the ``<=`` comparison absorbs BLAS reduction-order
+    floating-point noise so equal contributions yield equal ranks across
+    platforms.
+
+    This is the memory-lean, per-event specialization used inside the chunked
+    real-data loop: it materializes only ``(n_events, n_cells)`` working arrays.
+    It is deliberately distinct from the general all-cells rank that lived in
+    ``simulation.spike_prob_rank`` (removed as it had no production caller),
+    which built a batched ``(n_time, n_cells, n_cells)`` mask; the two are not
+    merged because their memory profiles and indexing differ.
+
+    Parameters
+    ----------
+    pred_chunk : np.ndarray, shape (n_events, n_bins)
+        Predictive state distribution gathered at each event's time bin.
+    rates : np.ndarray, shape (n_bins, n_cells)
+        Expected spike rate at each position for each cell.
+    cell_ind : np.ndarray, shape (n_events,)
+        Firing cell index for each event.
+
+    Returns
+    -------
+    np.ndarray, shape (n_events,)
+        Per-event rank in ``[0, 1]``.
+    """
+    n_bins = rates.shape[0]
+    contrib_chunk = predictive_mark_probabilities(pred_chunk, rates)
+    chunk_size = pred_chunk.shape[0]
+    target_contrib = contrib_chunk[np.arange(chunk_size), cell_ind]  # (n_events,)
+    rank_atol = (
+        float(np.finfo(contrib_chunk.dtype).eps * n_bins * 16) * float(np.max(contrib_chunk))
+        if contrib_chunk.size
+        else 0.0
+    )
+    rank_mask = contrib_chunk <= target_contrib[:, None] + rank_atol
+    result: NDArray[np.floating] = (contrib_chunk * rank_mask).sum(axis=1)
+    return result
 
 
 def compute_per_cell_diagnostics_from_rates(
@@ -1410,7 +1552,6 @@ def compute_per_cell_diagnostics_from_rates(
             stop = min(start + batch, n_spikes)
             sti = spike_time_ind[start:stop]
             sci = spike_cell_ind[start:stop]
-            chunk_size = stop - start
 
             # (chunk, n_bins) gathers + Poisson lik for this batch only.
             pred_chunk = predictive_posterior[sti]
@@ -1422,26 +1563,9 @@ def compute_per_cell_diagnostics_from_rates(
             )
             event_kl_divergence[start:stop] = ssc.kl_divergence(pred_chunk, lik_chunk)
 
-            # Per-event spike-prob rank: contrib[k, j] is cell ``j``'s
-            # predictive probability conditional on an event. It is computed
-            # by integrating raw cell intensities over the predictive state
-            # distribution and only then normalizing across cells. The target
-            # is the probability of this event's cell, and the rank is the
-            # cumulative mass of cells with weakly smaller probability.
-            # The ``rank_atol`` slack on the ``<=`` comparison absorbs
-            # BLAS reduction-order FP noise so equal contributions
-            # yield equal ranks across platforms (matches the same
-            # tolerance pattern in ``simulation.spike_prob_rank``).
-            contrib_chunk = predictive_mark_probabilities(pred_chunk, rates)
-            target_contrib = contrib_chunk[np.arange(chunk_size), sci]  # (B,)
-            rank_atol = (
-                float(np.finfo(contrib_chunk.dtype).eps * n_bins * 16)
-                * float(np.max(contrib_chunk))
-                if contrib_chunk.size
-                else 0.0
-            )
-            rank_mask = contrib_chunk <= target_contrib[:, None] + rank_atol
-            event_spike_prob[start:stop] = (contrib_chunk * rank_mask).sum(axis=1)
+            # Per-event spike-prob rank over the full cell set, with a
+            # reduction-order tolerance for cross-platform reproducibility.
+            event_spike_prob[start:stop] = _event_spike_prob_rank(pred_chunk, rates, sci)
 
             if per_spike_likelihood is not None:
                 per_spike_likelihood[start:stop] = lik_chunk

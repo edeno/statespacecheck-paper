@@ -17,7 +17,6 @@ from statespacecheck_paper.simulation import (
     simulate_spikes_position_tuned,
     simulate_walk,
     softmax_with_shift,
-    spike_prob_rank,
 )
 
 # ---------------------------------------------------------------------------
@@ -191,22 +190,11 @@ class TestPlacefieldRates:
 
 
 # ---------------------------------------------------------------------------
-# spike_prob_rank
+# predictive_mark_probabilities
 # ---------------------------------------------------------------------------
 
 
-class TestSpikeProbRank:
-    def test_single_timestep_shape(self) -> None:
-        prior = np.array([0.5, 0.3, 0.2])
-        lam = np.array([[0.6, 0.2], [0.3, 0.5], [0.1, 0.3]])
-        assert spike_prob_rank(prior, lam).shape == (2,)
-
-    def test_values_in_unit_range(self) -> None:
-        prior = np.array([0.5, 0.3, 0.2])
-        lam = np.array([[0.6, 0.2], [0.3, 0.5], [0.1, 0.3]])
-        result = spike_prob_rank(prior, lam)
-        assert ((result >= 0.0) & (result <= 1.0)).all()
-
+class TestPredictiveMarkProbabilities:
     def test_integrates_raw_intensities_before_normalizing(self) -> None:
         """Population intensity varies by state, so averaging conditional
         cell fractions would give [0.7, 0.3]. The event-weighted
@@ -216,10 +204,8 @@ class TestSpikeProbRank:
         rates = np.array([[9.0, 1.0], [1.0, 1.0]])
 
         mark_probs = predictive_mark_probabilities(prior, rates)
-        ranks = spike_prob_rank(prior, rates)
 
         assert_allclose(mark_probs, [5.0 / 6.0, 1.0 / 6.0])
-        assert_allclose(ranks, [1.0, 1.0 / 6.0])
 
     def test_global_intensity_scale_does_not_change_distribution(self) -> None:
         prior = np.array([0.5, 0.3, 0.2])
@@ -227,35 +213,10 @@ class TestSpikeProbRank:
         baseline = predictive_mark_probabilities(prior, rates)
         assert_allclose(predictive_mark_probabilities(prior, 17.0 * rates), baseline)
 
-    def test_uniform_contribution_yields_equal_ranks(self) -> None:
-        n_bins, n_cells = 10, 5
-        prior = np.ones(n_bins) / n_bins
-        lam = np.ones((n_bins, n_cells)) / n_bins
-        result = spike_prob_rank(prior, lam)
-        # All cells equal => all ranks equal.
-        assert_allclose(result, result[0])
-
-    def test_batched_shape(self, rng: np.random.Generator) -> None:
-        n_time, n_bins, n_cells = 10, 5, 3
-        prior = rng.dirichlet(np.ones(n_bins), size=n_time)
-        lam = np.ones((n_bins, n_cells)) / n_bins
-        assert spike_prob_rank(prior, lam).shape == (n_time, n_cells)
-
-    def test_batched_matches_per_timestep_loop(self, rng: np.random.Generator) -> None:
-        """Batched and looped paths must produce identical results."""
-        n_time, n_bins, n_cells = 10, 5, 3
-        prior = rng.dirichlet(np.ones(n_bins), size=n_time)
-        lam = rng.random((n_bins, n_cells))
-
-        batched = spike_prob_rank(prior, lam)
-        looped = np.stack([spike_prob_rank(prior[t], lam) for t in range(n_time)])
-        assert_allclose(batched, looped)
-
     def test_zero_total_intensity_uses_uniform_fallback(self) -> None:
         prior = np.array([0.5, 0.5])
         rates = np.zeros((2, 3))
         assert_allclose(predictive_mark_probabilities(prior, rates), np.full(3, 1.0 / 3.0))
-        assert_allclose(spike_prob_rank(prior, rates), np.ones(3))
 
 
 # ---------------------------------------------------------------------------

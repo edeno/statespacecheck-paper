@@ -17,7 +17,9 @@ from statespacecheck_paper.analysis import (
     PhaseBoundary,
     Thresholds,
     _condition_on,
+    _event_spike_prob_rank,
     _flag_fraction,
+    _resolve_base_rates,
     compute_per_cell_diagnostics_from_rates,
     compute_phase_flag_fractions,
     compute_thresholds,
@@ -1565,3 +1567,91 @@ class TestNormalizedSingleSpikeLikelihood:
         expected = np.array([1.0, 2.0, 4.0]) / 7.0
         np.testing.assert_allclose(out[0], expected, rtol=1e-6)
         assert not np.allclose(out[0], np.full(3, 1.0 / 3.0))
+
+
+# ---------------------------------------------------------------------------
+# _resolve_base_rates and _event_spike_prob_rank (Phase-1 extracted helpers)
+# ---------------------------------------------------------------------------
+
+
+class TestResolveBaseRates:
+    def test_wrong_shape_raises(self) -> None:
+        xs = np.linspace(0, 100, 5)
+        pf_centers = np.array([25.0, 75.0])
+        with pytest.raises(ValueError, match="does not match the decoder grid"):
+            _resolve_base_rates(np.ones((4, 2)), xs, pf_centers, 5.0, 0.1, n_bins=5, n_cells=2)
+
+    def test_negative_rate_raises(self) -> None:
+        xs = np.linspace(0, 100, 5)
+        pf_centers = np.array([25.0, 75.0])
+        bad = np.ones((5, 2))
+        bad[0, 0] = -1.0
+        with pytest.raises(ValueError, match="finite, non-negative"):
+            _resolve_base_rates(bad, xs, pf_centers, 5.0, 0.1, n_bins=5, n_cells=2)
+
+    def test_nonfinite_rate_raises(self) -> None:
+        xs = np.linspace(0, 100, 5)
+        pf_centers = np.array([25.0, 75.0])
+        bad = np.ones((5, 2))
+        bad[1, 1] = np.inf
+        with pytest.raises(ValueError, match="finite, non-negative"):
+            _resolve_base_rates(bad, xs, pf_centers, 5.0, 0.1, n_bins=5, n_cells=2)
+
+    def test_valid_table_returned_unchanged(self) -> None:
+        xs = np.linspace(0, 100, 5)
+        pf_centers = np.array([25.0, 75.0])
+        good = np.abs(np.random.default_rng(0).random((5, 2)))
+        out = _resolve_base_rates(good, xs, pf_centers, 5.0, 0.1, n_bins=5, n_cells=2)
+        assert np.array_equal(out, good)
+
+    def test_none_builds_from_place_fields(self) -> None:
+        xs = np.linspace(0, 100, 5)
+        pf_centers = np.array([25.0, 75.0])
+        built = _resolve_base_rates(None, xs, pf_centers, 5.0, 0.1, n_bins=5, n_cells=2)
+        assert built.shape == (5, 2)
+        assert np.array_equal(built, placefield_rates(xs, pf_centers, 5.0, 0.1))
+
+
+class TestEventSpikeProbRankTolerance:
+    def test_sub_atol_tie_does_not_flip_rank(self) -> None:
+        """Two cells whose predictive contributions differ by less than the
+        ``rank_atol`` slack must receive the *same* rank. A one-hot predictive
+        row lets the contributions be set directly via the rate table; the pair
+        at 0.30 and 0.30 + delta (delta < rank_atol) is bracketed by a clearly
+        larger and a clearly smaller cell, so without the tolerance the two
+        events would land on different ranks (0.35 vs 0.65+delta) instead of
+        tying.
+        """
+        n_bins, n_cells = 4, 4
+        delta = 1e-15  # below rank_atol ~ eps*n_bins*16*max_contrib ~ 5e-15
+        contributions = np.array([0.05, 0.30, 0.30 + delta, 0.35 - delta])
+        # rank_atol must exceed the near-tie gap for the tie to hold.
+        rank_atol = float(np.finfo(float).eps * n_bins * 16) * float(contributions.max())
+        assert delta < rank_atol
+
+        rates = np.zeros((n_bins, n_cells))
+        rates[0] = contributions  # only bin 0 carries intensity
+        pred = np.zeros((2, n_bins))
+        pred[:, 0] = 1.0  # both events sit on bin 0 -> identical contributions
+        cell_ind = np.array([1, 2], dtype=np.intp)  # near-tied pair (0.30, 0.30+delta)
+
+        ranks = _event_spike_prob_rank(pred, rates, cell_ind)
+
+        assert ranks[0] == ranks[1]  # the sub-atol difference does not flip rank
+        assert 0.0 < ranks[0] < 1.0  # discriminating: neither everything nor nothing
+
+    def test_values_in_unit_range(self) -> None:
+        rng = np.random.default_rng(1)
+        n_time, n_bins, n_cells = 30, 12, 5
+        pred = rng.dirichlet(np.ones(n_bins), size=n_time)
+        rates = rng.random((n_bins, n_cells))
+        cell_ind = rng.integers(0, n_cells, size=n_time).astype(np.intp)
+
+        ranks = _event_spike_prob_rank(pred, rates, cell_ind)
+
+        assert ranks.shape == (n_time,)
+        # Rank is a cumulative probability mass: bounded in [0, 1], allowing the
+        # tiny FP overshoot above 1 the reduction can produce for the top cell
+        # (matches the tolerance in test_real_data_analysis).
+        assert np.all(ranks >= 0.0)
+        assert np.all(ranks <= 1.0 + 1e-9)

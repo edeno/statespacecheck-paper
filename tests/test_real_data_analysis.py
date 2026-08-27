@@ -203,7 +203,7 @@ class TestComputePerCellDiagnostics:
         floating-point overshoot above 1 for spike_prob)."""
         n_time, n_bins, n_cells = 100, 50, 10
         predictive = rng.dirichlet(np.ones(n_bins), size=n_time)
-        # Gaussian place fields ensure spike_prob_rank stays well-defined.
+        # Gaussian place fields ensure the event spike-prob rank stays well-defined.
         place_fields = np.zeros((n_cells, n_bins))
         for j, center in enumerate(np.linspace(5, n_bins - 5, n_cells)):
             place_fields[j] = np.exp(-0.5 * ((np.arange(n_bins) - center) / 5) ** 2)
