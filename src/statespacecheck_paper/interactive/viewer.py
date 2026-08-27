@@ -272,7 +272,9 @@ class DecoderViewer(QtWidgets.QMainWindow):
         # defaults at scripts/generate_figure04.py.
         self.metric_panels: dict[str, MetricPanel] = {
             "event_hpd_overlap": MetricPanel(metric="event_hpd_overlap", threshold=0.05),
-            "event_spike_prob": MetricPanel(metric="event_spike_prob", threshold=0.05),
+            "event_predictive_pvalue": MetricPanel(
+                metric="event_predictive_pvalue", threshold=0.05
+            ),
             "event_kl_divergence": MetricPanel(metric="event_kl_divergence", threshold=None),
         }
         self.slice_panel = SlicePanel(
@@ -356,7 +358,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
         time_axis_layout.addWidget(self.raster_panel, stretch=1)
         for metric in (
             "event_hpd_overlap",
-            "event_spike_prob",
+            "event_predictive_pvalue",
             "event_kl_divergence",
         ):
             time_axis_layout.addWidget(self.metric_panels[metric], stretch=1)
@@ -720,7 +722,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
                     place_field_norm=curve,
                     hpd=float(ds.event_hpd_overlap[first_event]),
                     kl=float(ds.event_kl_divergence[first_event]),
-                    spike_prob=float(ds.event_spike_prob[first_event]),
+                    predictive_pvalue=float(ds.event_predictive_pvalue[first_event]),
                     n_spikes=n_spikes,
                     is_pinned=(pinned_cell_id is not None and cell_id == pinned_cell_id),
                 )
@@ -824,7 +826,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
             f"t={float(event['time']):.3f}  cell={cell_id}\n"
             f"HPD={float(event['event_hpd_overlap']):.3f}  "
             f"KL={float(event['event_kl_divergence']):.3f}  "
-            f"p={float(event['event_spike_prob']):.3f}"
+            f"p={float(event['event_predictive_pvalue']):.3f}"
         )
         self.slice_panel.update_pinned_event(
             place_field_row=None,

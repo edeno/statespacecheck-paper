@@ -492,7 +492,7 @@ def compute_per_cell_diagnostics(
 ) -> PerCellDiagnostics:
     """Compute per-cell diagnostic metrics for model checking.
 
-    Computes HPD overlap, KL divergence, and spike probability ranking for each
+    Computes HPD overlap, KL divergence, and predictive p-value ranking for each
     spike event. Matrix outputs are retained for backward-compatible plotting,
     and event arrays preserve one row per spike with exact timestamps when
     ``spike_times`` and ``time`` are supplied.
@@ -527,7 +527,7 @@ def compute_per_cell_diagnostics(
 
         - ``event_time_ind`` (n_spikes,) and ``event_cell_ind`` (n_spikes,):
           decoder-bin and cell indices per spike event.
-        - ``event_hpd_overlap``, ``event_kl_divergence``, ``event_spike_prob``:
+        - ``event_hpd_overlap``, ``event_kl_divergence``, ``event_predictive_pvalue``:
           shape (n_spikes,), one value per spike event.
 
         Optionally populated:
@@ -538,7 +538,7 @@ def compute_per_cell_diagnostics(
 
         When ``include_dense_matrices`` (the default), additionally:
 
-        - ``hpd_overlap``, ``kl_divergence``, ``spike_prob``: shape
+        - ``hpd_overlap``, ``kl_divergence``, ``predictive_pvalue``: shape
           (n_time, n_cells), NaN where the cell has no spike at that
           timestep.
         - ``per_spike_likelihood``: shape (n_spikes, n_bins), normalized

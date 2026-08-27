@@ -186,7 +186,9 @@ def _events_dataframe(
             "cell_id": cell_id,
             "event_hpd_overlap": np.asarray(diagnostics.event_hpd_overlap, dtype=np.float32),
             "event_kl_divergence": np.asarray(diagnostics.event_kl_divergence, dtype=np.float32),
-            "event_spike_prob": np.asarray(diagnostics.event_spike_prob, dtype=np.float32),
+            "event_predictive_pvalue": np.asarray(
+                diagnostics.event_predictive_pvalue, dtype=np.float32
+            ),
         }
     )
     df.sort_values("time", kind="mergesort", inplace=True)
@@ -685,7 +687,9 @@ def build_simulated_cache(
             "event_kl_divergence": np.asarray(
                 metrics.event_kl_divergence[event_order], dtype=np.float32
             ),
-            "event_spike_prob": np.asarray(metrics.event_spike_prob[event_order], dtype=np.float32),
+            "event_predictive_pvalue": np.asarray(
+                metrics.event_predictive_pvalue[event_order], dtype=np.float32
+            ),
         }
     )
     events_df.to_parquet(paths["events"], engine="pyarrow", compression="zstd")

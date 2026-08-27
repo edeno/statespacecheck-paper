@@ -64,7 +64,7 @@ def test_public_arrays_are_write_protected(synthetic_cache: Path) -> None:
             "event_cell_ids",
             "event_hpd_overlap",
             "event_kl_divergence",
-            "event_spike_prob",
+            "event_predictive_pvalue",
         ):
             arr = getattr(src, name)
             assert arr.flags.writeable is False, f"{name} is not write-protected"

@@ -17,7 +17,7 @@ from statespacecheck_paper.analysis import (
     PhaseBoundary,
     Thresholds,
     _condition_on,
-    _event_spike_prob_rank,
+    _event_predictive_pvalue_rank,
     _flag_fraction,
     _resolve_base_rates,
     compute_per_cell_diagnostics_from_rates,
@@ -82,12 +82,12 @@ def _zero_diagnostics(
         spike_likelihood=posterior.copy(),
         hpd_overlap=np.zeros((n_time, n_cells)),
         kl_divergence=np.zeros((n_time, n_cells)),
-        spike_prob=np.zeros((n_time, n_cells)),
+        predictive_pvalue=np.zeros((n_time, n_cells)),
         event_time_ind=np.zeros(n_spikes, dtype=np.intp),
         event_cell_ind=np.zeros(n_spikes, dtype=np.intp),
         event_hpd_overlap=np.zeros(n_spikes),
         event_kl_divergence=np.zeros(n_spikes),
-        event_spike_prob=np.zeros(n_spikes),
+        event_predictive_pvalue=np.zeros(n_spikes),
         per_spike_likelihood=np.zeros((n_spikes, n_bins)),
     )
 
@@ -114,7 +114,7 @@ def metrics_2d() -> dict[str, np.ndarray]:
     return {
         "hpd_overlap": rng.uniform(0.5, 1.0, (100, 5)),
         "kl_divergence": rng.uniform(0.0, 2.0, (100, 5)),
-        "spike_prob": rng.uniform(0.0, 1.0, (100, 5)),
+        "predictive_pvalue": rng.uniform(0.0, 1.0, (100, 5)),
     }
 
 
@@ -222,14 +222,14 @@ class TestDecodeAndDiagnostics:
             # Per-cell metric matrices.
             "hpd_overlap": (n_time, n_cells),
             "kl_divergence": (n_time, n_cells),
-            "spike_prob": (n_time, n_cells),
+            "predictive_pvalue": (n_time, n_cells),
             # Per-spike-event arrays (count expansion in src/.../analysis.py:584).
             "per_spike_likelihood": (n_events, n_bins),
             "event_time_ind": (n_events,),
             "event_cell_ind": (n_events,),
             "event_hpd_overlap": (n_events,),
             "event_kl_divergence": (n_events,),
-            "event_spike_prob": (n_events,),
+            "event_predictive_pvalue": (n_events,),
         }
         for name, shape in expected_shapes.items():
             arr = getattr(result, name)
@@ -238,7 +238,7 @@ class TestDecodeAndDiagnostics:
     def test_t0_diagnostics_are_nan(self, decoder_inputs: DecoderInputs) -> None:
         """No prior exists at t=0, so all diagnostics are NaN."""
         result = decoder_inputs.call()
-        for key in ("hpd_overlap", "kl_divergence", "spike_prob"):
+        for key in ("hpd_overlap", "kl_divergence", "predictive_pvalue"):
             assert np.all(np.isnan(getattr(result, key)[0]))
 
     def test_nan_pattern_matches_spike_pattern(self) -> None:
@@ -259,7 +259,7 @@ class TestDecodeAndDiagnostics:
         # plus all of t=0 (no prior available).
         no_spike = spikes == 0
         no_spike[0] = True
-        for key in ("hpd_overlap", "kl_divergence", "spike_prob"):
+        for key in ("hpd_overlap", "kl_divergence", "predictive_pvalue"):
             np.testing.assert_array_equal(np.isnan(getattr(result, key)), no_spike)
 
     def test_count_greater_than_one_expands_to_multiple_events(self) -> None:
@@ -300,7 +300,7 @@ class TestDecodeAndDiagnostics:
         )
         assert np.all(np.isnan(result.hpd_overlap))
         assert np.all(np.isnan(result.kl_divergence))
-        assert np.all(np.isnan(result.spike_prob))
+        assert np.all(np.isnan(result.predictive_pvalue))
         assert result.event_time_ind.shape == (0,)
         assert result.event_cell_ind.shape == (0,)
         assert result.event_kl_divergence.shape == (0,)
@@ -404,7 +404,7 @@ class TestDecodeAndDiagnostics:
         for name in (
             "event_hpd_overlap",
             "event_kl_divergence",
-            "event_spike_prob",
+            "event_predictive_pvalue",
         ):
             np.testing.assert_allclose(
                 getattr(with_alt, name)[inside],
@@ -426,7 +426,7 @@ class TestDecodeAndDiagnostics:
         for name in (
             "event_hpd_overlap",
             "event_kl_divergence",
-            "event_spike_prob",
+            "event_predictive_pvalue",
         ):
             np.testing.assert_allclose(
                 getattr(with_alt, name)[outside],
@@ -445,7 +445,7 @@ class TestDecodeAndDiagnostics:
         for name in (
             "event_hpd_overlap",
             "event_kl_divergence",
-            "event_spike_prob",
+            "event_predictive_pvalue",
             "per_spike_likelihood",
         ):
             assert not np.allclose(getattr(expected, name), getattr(oracle, name)), (
@@ -457,7 +457,7 @@ class TestDecodeAndDiagnostics:
         for dense_name, event_name in (
             ("hpd_overlap", "event_hpd_overlap"),
             ("kl_divergence", "event_kl_divergence"),
-            ("spike_prob", "event_spike_prob"),
+            ("predictive_pvalue", "event_predictive_pvalue"),
         ):
             np.testing.assert_allclose(
                 getattr(with_alt, dense_name)[
@@ -574,8 +574,8 @@ class TestComputeThresholds:
         expected_kl = np.nanquantile(metrics_2d["kl_divergence"][:baseline_end].ravel(), 0.99)
         assert thresholds.hpd_overlap == pytest.approx(expected_hpdo)
         assert thresholds.kl_divergence == pytest.approx(expected_kl)
-        # spike_prob is a fixed rank-statistic cutoff, not data-driven.
-        assert thresholds.spike_prob == 0.05
+        # predictive_pvalue is a fixed rank-statistic cutoff, not data-driven.
+        assert thresholds.predictive_pvalue == 0.05
 
     def test_handles_partial_nan_baseline(self) -> None:
         """NaNs in the baseline must be ignored, not propagate to thresholds."""
@@ -585,7 +585,7 @@ class TestComputeThresholds:
         metrics: dict[str, np.ndarray] = {
             "hpd_overlap": hpdo,
             "kl_divergence": np.full((n_time, n_cells), 1.0),
-            "spike_prob": np.full((n_time, n_cells), 0.5),
+            "predictive_pvalue": np.full((n_time, n_cells), 0.5),
         }
         thresholds = compute_thresholds(metrics, baseline_end=10)
         assert not np.isnan(thresholds.hpd_overlap)
@@ -609,7 +609,7 @@ class TestComputeThresholds:
         metrics: dict[str, np.ndarray] = {
             "hpd_overlap": np.full((n_time, n_cells), np.nan),
             "kl_divergence": np.full((n_time, n_cells), 1.0),
-            "spike_prob": np.full((n_time, n_cells), 0.5),
+            "predictive_pvalue": np.full((n_time, n_cells), 0.5),
         }
         with pytest.raises(ValueError, match="hpd_overlap baseline slice"):
             compute_thresholds(metrics, baseline_end=10)
@@ -619,7 +619,7 @@ class TestComputeThresholds:
         metrics: dict[str, np.ndarray] = {
             "hpd_overlap": np.full((n_time, n_cells), 0.8),
             "kl_divergence": np.full((n_time, n_cells), np.nan),
-            "spike_prob": np.full((n_time, n_cells), 0.5),
+            "predictive_pvalue": np.full((n_time, n_cells), 0.5),
         }
         with pytest.raises(ValueError, match="kl_divergence baseline slice"):
             compute_thresholds(metrics, baseline_end=10)
@@ -634,12 +634,12 @@ class TestComputeThresholds:
         as_dict = {
             "hpd_overlap": diagnostics.hpd_overlap,
             "kl_divergence": diagnostics.kl_divergence,
-            "spike_prob": diagnostics.spike_prob,
+            "predictive_pvalue": diagnostics.predictive_pvalue,
         }
         from_dict = compute_thresholds(as_dict, baseline_end=5)
         assert thresholds.hpd_overlap == pytest.approx(from_dict.hpd_overlap)
         assert thresholds.kl_divergence == pytest.approx(from_dict.kl_divergence)
-        assert thresholds.spike_prob == from_dict.spike_prob
+        assert thresholds.predictive_pvalue == from_dict.predictive_pvalue
 
 
 # ---------------------------------------------------------------------------
@@ -721,9 +721,9 @@ class TestSummaryFlagFractions:
             "event_time_ind": event_time,
             "event_hpd_overlap": np.ones(n_time),  # never below 0.5
             "event_kl_divergence": event_kl,
-            "event_spike_prob": np.ones(n_time),  # never below 0.05
+            "event_predictive_pvalue": np.ones(n_time),  # never below 0.05
         }
-        thresholds = Thresholds(hpd_overlap=0.5, kl_divergence=5.0, spike_prob=0.05)
+        thresholds = Thresholds(hpd_overlap=0.5, kl_divergence=5.0, predictive_pvalue=0.05)
         windows = summary_phase_windows(params)
         frac = compute_phase_flag_fractions(metrics, thresholds, windows)
 
@@ -749,9 +749,9 @@ class TestSummaryFlagFractions:
             "event_time_ind": event_time,
             "event_hpd_overlap": rng.uniform(0.0, 1.0, n_events),
             "event_kl_divergence": kl,
-            "event_spike_prob": rng.uniform(0.0, 1.0, n_events),
+            "event_predictive_pvalue": rng.uniform(0.0, 1.0, n_events),
         }
-        thresholds = Thresholds(hpd_overlap=0.3, kl_divergence=5.0, spike_prob=0.2)
+        thresholds = Thresholds(hpd_overlap=0.3, kl_divergence=5.0, predictive_pvalue=0.2)
         windows = summary_phase_windows(params)
 
         values = extract_phase_flag_values(metrics, windows)
@@ -774,28 +774,28 @@ class TestThresholdsInvariants:
     @pytest.mark.parametrize("bad", [-0.01, 1.01, float("nan")])
     def test_hpd_overlap_out_of_range_raises(self, bad: float) -> None:
         with pytest.raises(ValueError, match=r"hpd_overlap must lie in \[0, 1\]"):
-            Thresholds(hpd_overlap=bad, kl_divergence=0.0, spike_prob=0.05)
+            Thresholds(hpd_overlap=bad, kl_divergence=0.0, predictive_pvalue=0.05)
 
     @pytest.mark.parametrize("bad", [-0.01, float("nan"), float("inf")])
     def test_kl_divergence_non_finite_or_negative_raises(self, bad: float) -> None:
         with pytest.raises(ValueError, match=r"kl_divergence must be finite and non-negative"):
-            Thresholds(hpd_overlap=0.5, kl_divergence=bad, spike_prob=0.05)
+            Thresholds(hpd_overlap=0.5, kl_divergence=bad, predictive_pvalue=0.05)
 
     @pytest.mark.parametrize("bad", [-0.01, 1.01, float("nan")])
-    def test_spike_prob_out_of_range_raises(self, bad: float) -> None:
-        with pytest.raises(ValueError, match=r"spike_prob must lie in \[0, 1\]"):
-            Thresholds(hpd_overlap=0.5, kl_divergence=0.0, spike_prob=bad)
+    def test_predictive_pvalue_out_of_range_raises(self, bad: float) -> None:
+        with pytest.raises(ValueError, match=r"predictive_pvalue must lie in \[0, 1\]"):
+            Thresholds(hpd_overlap=0.5, kl_divergence=0.0, predictive_pvalue=bad)
 
     def test_boundary_values_accepted(self) -> None:
         """The closed-interval boundaries [0, 1] must construct cleanly."""
-        Thresholds(hpd_overlap=0.0, kl_divergence=0.0, spike_prob=0.0)
-        Thresholds(hpd_overlap=1.0, kl_divergence=0.0, spike_prob=1.0)
+        Thresholds(hpd_overlap=0.0, kl_divergence=0.0, predictive_pvalue=0.0)
+        Thresholds(hpd_overlap=1.0, kl_divergence=0.0, predictive_pvalue=1.0)
 
     def test_is_frozen(self) -> None:
         """Frozen so a downstream consumer cannot rebind a field mid-pipeline."""
         from dataclasses import FrozenInstanceError
 
-        t: Any = Thresholds(hpd_overlap=0.5, kl_divergence=0.0, spike_prob=0.05)
+        t: Any = Thresholds(hpd_overlap=0.5, kl_divergence=0.0, predictive_pvalue=0.05)
         with pytest.raises(FrozenInstanceError):
             t.hpd_overlap = 0.7
 
@@ -817,12 +817,12 @@ class TestDiagnosticsInvariants:
             spike_likelihood=posterior.copy(),
             hpd_overlap=np.zeros((n_time, n_cells)),
             kl_divergence=np.zeros((n_time, n_cells)),
-            spike_prob=np.zeros((n_time, n_cells)),
+            predictive_pvalue=np.zeros((n_time, n_cells)),
             event_time_ind=np.zeros(n_spikes, dtype=np.intp),
             event_cell_ind=np.zeros(n_spikes, dtype=np.intp),
             event_hpd_overlap=np.zeros(n_spikes),
             event_kl_divergence=np.zeros(n_spikes),
-            event_spike_prob=np.zeros(n_spikes),
+            event_predictive_pvalue=np.zeros(n_spikes),
             per_spike_likelihood=np.zeros((n_spikes, n_bins)),
         )
 
@@ -865,7 +865,7 @@ class TestDiagnosticsInvariants:
         kwargs = self._kwargs()
         kwargs["hpd_overlap"][0, :] = np.nan
         kwargs["kl_divergence"][0, :] = np.nan
-        kwargs["spike_prob"][0, :] = np.nan
+        kwargs["predictive_pvalue"][0, :] = np.nan
         Diagnostics(**kwargs)  # does not raise
 
 
@@ -884,10 +884,10 @@ class TestPerCellDiagnosticsInvariants:
                 event_cell_ind=np.zeros(n_spikes, dtype=np.intp),
                 event_hpd_overlap=np.zeros(n_spikes),
                 event_kl_divergence=np.zeros(n_spikes),
-                event_spike_prob=np.zeros(n_spikes),
+                event_predictive_pvalue=np.zeros(n_spikes),
                 hpd_overlap=np.zeros((n_time, n_cells)),
                 kl_divergence=None,  # only some dense matrices supplied
-                spike_prob=np.zeros((n_time, n_cells)),
+                predictive_pvalue=np.zeros((n_time, n_cells)),
                 per_spike_likelihood=np.zeros((n_spikes, n_bins)),
             )
 
@@ -1124,7 +1124,7 @@ class TestComputePerCellDiagnosticsFromRates:
         result = compute_per_cell_diagnostics_from_rates(
             predictive, rates, spike_time_ind, spike_cell_ind, coverage=0.95
         )
-        np.testing.assert_allclose(result.event_spike_prob, [1.0, 1.0 / 6.0])
+        np.testing.assert_allclose(result.event_predictive_pvalue, [1.0, 1.0 / 6.0])
 
     def test_zero_rate_row_contributes_no_event_mass(self) -> None:
         """A state with zero population rate contributes no mass after
@@ -1139,7 +1139,7 @@ class TestComputePerCellDiagnosticsFromRates:
             np.array([0], dtype=np.intp),
             coverage=0.95,
         )
-        np.testing.assert_allclose(result.event_spike_prob, 1.0, atol=1e-12)
+        np.testing.assert_allclose(result.event_predictive_pvalue, 1.0, atol=1e-12)
 
     def test_fully_degenerate_rates_yield_uniform_rank(self) -> None:
         """When the conditional mark distribution is undefined because
@@ -1154,7 +1154,7 @@ class TestComputePerCellDiagnosticsFromRates:
         result = compute_per_cell_diagnostics_from_rates(
             predictive, rates, spike_time_ind, spike_cell_ind, coverage=0.95
         )
-        np.testing.assert_allclose(result.event_spike_prob, 1.0, atol=1e-12)
+        np.testing.assert_allclose(result.event_predictive_pvalue, 1.0, atol=1e-12)
 
 
 # ---------------------------------------------------------------------------
@@ -1570,7 +1570,7 @@ class TestNormalizedSingleSpikeLikelihood:
 
 
 # ---------------------------------------------------------------------------
-# _resolve_base_rates and _event_spike_prob_rank (Phase-1 extracted helpers)
+# _resolve_base_rates and _event_predictive_pvalue_rank (Phase-1 extracted helpers)
 # ---------------------------------------------------------------------------
 
 
@@ -1635,7 +1635,7 @@ class TestEventSpikeProbRankTolerance:
         pred[:, 0] = 1.0  # both events sit on bin 0 -> identical contributions
         cell_ind = np.array([1, 2], dtype=np.intp)  # near-tied pair (0.30, 0.30+delta)
 
-        ranks = _event_spike_prob_rank(pred, rates, cell_ind)
+        ranks = _event_predictive_pvalue_rank(pred, rates, cell_ind)
 
         assert ranks[0] == ranks[1]  # the sub-atol difference does not flip rank
         assert 0.0 < ranks[0] < 1.0  # discriminating: neither everything nor nothing
@@ -1647,7 +1647,7 @@ class TestEventSpikeProbRankTolerance:
         rates = rng.random((n_bins, n_cells))
         cell_ind = rng.integers(0, n_cells, size=n_time).astype(np.intp)
 
-        ranks = _event_spike_prob_rank(pred, rates, cell_ind)
+        ranks = _event_predictive_pvalue_rank(pred, rates, cell_ind)
 
         assert ranks.shape == (n_time,)
         # Rank is a cumulative probability mass: bounded in [0, 1], allowing the

@@ -206,7 +206,7 @@ def find_poor_diagnostic_periods(
     """Find contiguous periods where multiple cells flag poor model fit.
 
     For each time bin, counts cells whose diagnostic metric crosses a threshold
-    (below for HPD overlap/spike_prob, above for KL divergence). Periods where
+    (below for HPD overlap/predictive_pvalue, above for KL divergence). Periods where
     the count meets or exceeds ``min_disagreeing_cells`` are returned.
 
     Parameters
@@ -214,7 +214,7 @@ def find_poor_diagnostic_periods(
     diagnostics : PerCellDiagnostics
         Diagnostics with per-cell metrics, each shape (n_time, n_cells).
     metric_name : str
-        Which metric to threshold ('hpd_overlap', 'kl_divergence', 'spike_prob').
+        Which metric to threshold ('hpd_overlap', 'kl_divergence', 'predictive_pvalue').
     cell_threshold : float
         Per-cell threshold for flagging disagreement.
     min_disagreeing_cells : int
@@ -710,7 +710,7 @@ if __name__ == "__main__":
         "--diagnostic-metric",
         type=str,
         default=DIAGNOSTIC_METRIC,
-        choices=["hpd_overlap", "kl_divergence", "spike_prob"],
+        choices=["hpd_overlap", "kl_divergence", "predictive_pvalue"],
         help=f"Metric to use in diagnostic mode. Default: {DIAGNOSTIC_METRIC}",
     )
     parser.add_argument(

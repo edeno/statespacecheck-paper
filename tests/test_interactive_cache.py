@@ -85,7 +85,7 @@ def _per_spike(
     event_cell_ind: np.ndarray,
     event_hpd_overlap: np.ndarray,
     event_kl_divergence: np.ndarray,
-    event_spike_prob: np.ndarray,
+    event_predictive_pvalue: np.ndarray,
 ) -> PerCellDiagnostics:
     n_spikes = event_time.shape[0]
     return PerCellDiagnostics(
@@ -93,10 +93,10 @@ def _per_spike(
         event_cell_ind=event_cell_ind.astype(np.intp),
         event_hpd_overlap=event_hpd_overlap,
         event_kl_divergence=event_kl_divergence,
-        event_spike_prob=event_spike_prob,
+        event_predictive_pvalue=event_predictive_pvalue,
         hpd_overlap=None,
         kl_divergence=None,
-        spike_prob=None,
+        predictive_pvalue=None,
         per_spike_likelihood=None,
         event_time=event_time,
     )
@@ -108,7 +108,7 @@ def test_events_dataframe_sorts_by_time_and_validates_cell_id() -> None:
         event_cell_ind=np.array([0, 2, 1], dtype=np.int64),
         event_hpd_overlap=np.array([0.1, 0.2, 0.3], dtype=np.float32),
         event_kl_divergence=np.array([1.0, 2.0, 3.0], dtype=np.float32),
-        event_spike_prob=np.array([0.5, 0.4, 0.3], dtype=np.float32),
+        event_predictive_pvalue=np.array([0.5, 0.4, 0.3], dtype=np.float32),
     )
     df = cache_mod._events_dataframe(diagnostics, n_cells=3)
     assert list(df.columns) == [
@@ -116,7 +116,7 @@ def test_events_dataframe_sorts_by_time_and_validates_cell_id() -> None:
         "cell_id",
         "event_hpd_overlap",
         "event_kl_divergence",
-        "event_spike_prob",
+        "event_predictive_pvalue",
     ]
     assert df["time"].tolist() == [1.0, 2.0, 3.0]
     assert df["cell_id"].tolist() == [2, 0, 1]
@@ -129,7 +129,7 @@ def test_events_dataframe_rejects_out_of_range_cell_id() -> None:
         event_cell_ind=np.array([5], dtype=np.int64),
         event_hpd_overlap=np.array([0.0], dtype=np.float32),
         event_kl_divergence=np.array([0.0], dtype=np.float32),
-        event_spike_prob=np.array([0.0], dtype=np.float32),
+        event_predictive_pvalue=np.array([0.0], dtype=np.float32),
     )
     with pytest.raises(ValueError, match="event_cell_ind out of range"):
         cache_mod._events_dataframe(diagnostics, n_cells=3)

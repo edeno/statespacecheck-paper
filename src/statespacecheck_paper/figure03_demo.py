@@ -775,11 +775,11 @@ def estimate_stable_summary(
     windows = summary_phase_windows(params)
 
     # ``compute_thresholds`` reads only hpd_overlap and kl_divergence (the
-    # spike_prob threshold is the fixed 0.05 cutoff), but pool all three so
+    # predictive_pvalue threshold is the fixed 0.05 cutoff), but pool all three so
     # the dict is a faithful baseline sample if that ever changes. Pool the
     # per-*event* baseline values (one per spike event), matching the
     # event-based phase fractions from ``extract_phase_flag_values``.
-    baseline_keys = ("hpd_overlap", "kl_divergence", "spike_prob")
+    baseline_keys = ("hpd_overlap", "kl_divergence", "predictive_pvalue")
     baseline_values: dict[str, list[NDArray[np.floating]]] = {key: [] for key in baseline_keys}
     per_realization_values: list[list[list[NDArray[np.floating]]]] = []
 

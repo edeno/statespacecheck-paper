@@ -59,10 +59,10 @@ def _diagnostics_from_metric(
         event_cell_ind=np.zeros(n_spikes, dtype=np.intp),
         event_hpd_overlap=_named_evt("event_hpd_overlap"),
         event_kl_divergence=_named_evt("event_kl_divergence"),
-        event_spike_prob=_named_evt("event_spike_prob"),
+        event_predictive_pvalue=_named_evt("event_predictive_pvalue"),
         hpd_overlap=_named("hpd_overlap", metric),
         kl_divergence=_named("kl_divergence", metric),
-        spike_prob=_named("spike_prob", metric),
+        predictive_pvalue=_named("predictive_pvalue", metric),
         per_spike_likelihood=np.zeros((n_spikes, 1)),
         event_time=event_time,
     )
@@ -178,7 +178,7 @@ class TestComputePerCellDiagnostics:
             per_cell_setup["spike_counts"],
             per_cell_setup["place_fields"],
         )
-        for key in ("hpd_overlap", "kl_divergence", "spike_prob"):
+        for key in ("hpd_overlap", "kl_divergence", "predictive_pvalue"):
             arr = getattr(result, key)
             assert arr is not None
             assert arr.shape == (per_cell_setup["n_time"], per_cell_setup["n_cells"])
@@ -190,17 +190,17 @@ class TestComputePerCellDiagnostics:
             per_cell_setup["place_fields"],
         )
         no_spike = per_cell_setup["spike_counts"] == 0
-        for key in ("hpd_overlap", "kl_divergence", "spike_prob"):
+        for key in ("hpd_overlap", "kl_divergence", "predictive_pvalue"):
             arr = getattr(result, key)
             assert arr is not None
             assert np.all(np.isnan(arr[no_spike]))
 
-    @pytest.mark.parametrize("metric", ["hpd_overlap", "spike_prob"])
+    @pytest.mark.parametrize("metric", ["hpd_overlap", "predictive_pvalue"])
     def test_metric_in_unit_range_with_gaussian_place_fields(
         self, rng: np.random.Generator, metric: str
     ) -> None:
-        """HPD overlap and spike_prob are bounded in [0, 1] (allowing tiny
-        floating-point overshoot above 1 for spike_prob)."""
+        """HPD overlap and predictive_pvalue are bounded in [0, 1] (allowing tiny
+        floating-point overshoot above 1 for predictive_pvalue)."""
         n_time, n_bins, n_cells = 100, 50, 10
         predictive = rng.dirichlet(np.ones(n_bins), size=n_time)
         # Gaussian place fields ensure the event spike-prob rank stays well-defined.
@@ -255,7 +255,7 @@ class TestComputePerCellDiagnostics:
         np.testing.assert_allclose(result.event_time, [1.10, 1.20])
         np.testing.assert_array_equal(result.event_time_ind, [1, 1])
         np.testing.assert_array_equal(result.event_cell_ind, [0, 0])
-        for event_key in ("event_hpd_overlap", "event_kl_divergence", "event_spike_prob"):
+        for event_key in ("event_hpd_overlap", "event_kl_divergence", "event_predictive_pvalue"):
             assert getattr(result, event_key).shape == (2,)
         np.testing.assert_allclose(
             result.event_kl_divergence,
@@ -664,10 +664,10 @@ class TestPlotPerCellDiagnosticScatterRunningAverage:
 
         assert not np.allclose(_line_y(0.05), _line_y(0.2))
 
-    def test_spike_prob_running_average_uses_raw_then_transforms(self) -> None:
+    def test_predictive_pvalue_running_average_uses_raw_then_transforms(self) -> None:
         """Critical correctness: -log(mean(p)) != mean(-log(p)). Running
         average must average raw probabilities first, then take -log."""
-        spike_probs = np.array(
+        predictive_pvalues = np.array(
             [
                 [0.01, 0.99],  # mean(raw) = 0.5
                 [0.1, 0.9],  # mean(raw) = 0.5
@@ -675,25 +675,25 @@ class TestPlotPerCellDiagnosticScatterRunningAverage:
             ]
         )
         time = np.linspace(0, 0.2, 3)
-        diagnostics = _diagnostics_from_metric("spike_prob", spike_probs)
+        diagnostics = _diagnostics_from_metric("predictive_pvalue", predictive_pvalues)
 
         fig, ax = plt.subplots()
         plot_per_cell_diagnostic_scatter(
             time,
             diagnostics,
             ax=ax,
-            metric_name="spike_prob",
+            metric_name="predictive_pvalue",
             show_running_average=True,
             running_average_window=0.01,
         )
         y_actual = np.asarray(ax.lines[0].get_ydata())
 
         # Correct path: average raw, then -log (natural log).
-        expected = -np.log(np.maximum(np.mean(spike_probs, axis=1), 1e-10))
+        expected = -np.log(np.maximum(np.mean(predictive_pvalues, axis=1), 1e-10))
         np.testing.assert_allclose(y_actual, expected, rtol=1e-3)
 
         # Wrong path: -log first, then average. Different on rows 0 and 1.
-        wrong = np.mean(-np.log(np.maximum(spike_probs, 1e-10)), axis=1)
+        wrong = np.mean(-np.log(np.maximum(predictive_pvalues, 1e-10)), axis=1)
         assert not np.allclose(y_actual, wrong, rtol=1e-3)
         plt.close(fig)
 
@@ -717,10 +717,10 @@ def _diag_from_events(
         event_cell_ind=np.zeros(n, dtype=np.intp),
         event_hpd_overlap=hpd if hpd is not None else zeros,
         event_kl_divergence=kl if kl is not None else zeros,
-        event_spike_prob=sp if sp is not None else zeros,
+        event_predictive_pvalue=sp if sp is not None else zeros,
         hpd_overlap=None,
         kl_divergence=None,
-        spike_prob=None,
+        predictive_pvalue=None,
         per_spike_likelihood=None,
     )
 

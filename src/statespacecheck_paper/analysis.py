@@ -1,7 +1,7 @@
 """Analysis functions for state space model diagnostics.
 
 This module contains the core analysis logic for running Bayesian decoders and computing
-diagnostic metrics (HPD overlap, spike probability, KL divergence) to assess model
+diagnostic metrics (HPD overlap, predictive p-value, KL divergence) to assess model
 goodness-of-fit.
 
 **Key Components**:
@@ -609,7 +609,7 @@ class MisfitSchedule:
 
 # Per-event metric field names — shared by ``PerCellDiagnostics`` and
 # ``Diagnostics`` shape-validation loops.
-_PER_EVENT_METRIC_NAMES = ("event_hpd_overlap", "event_kl_divergence", "event_spike_prob")
+_PER_EVENT_METRIC_NAMES = ("event_hpd_overlap", "event_kl_divergence", "event_predictive_pvalue")
 
 
 def _check_range(
@@ -654,9 +654,9 @@ class PerCellDiagnostics:
     ----------
     event_time_ind, event_cell_ind : np.ndarray, shape (n_spikes,)
         Time-bin index and cell index for each spike event.
-    event_hpd_overlap, event_kl_divergence, event_spike_prob : np.ndarray, shape (n_spikes,)
+    event_hpd_overlap, event_kl_divergence, event_predictive_pvalue : np.ndarray, shape (n_spikes,)
         Per-event diagnostic values.
-    hpd_overlap, kl_divergence, spike_prob : np.ndarray, shape (n_time, n_cells), optional
+    hpd_overlap, kl_divergence, predictive_pvalue : np.ndarray, shape (n_time, n_cells), optional
         Dense scattered matrices; ``NaN`` where no spike occurred. ``None`` when
         the producer was called with ``include_dense_matrices=False``.
     per_spike_likelihood : np.ndarray, shape (n_spikes, n_bins), optional
@@ -673,10 +673,10 @@ class PerCellDiagnostics:
     event_cell_ind: NDArray[np.intp]
     event_hpd_overlap: NDArray[np.floating]
     event_kl_divergence: NDArray[np.floating]
-    event_spike_prob: NDArray[np.floating]
+    event_predictive_pvalue: NDArray[np.floating]
     hpd_overlap: NDArray[np.floating] | None
     kl_divergence: NDArray[np.floating] | None
-    spike_prob: NDArray[np.floating] | None
+    predictive_pvalue: NDArray[np.floating] | None
     per_spike_likelihood: NDArray[np.floating] | None
     # Real-data path supplies wall-clock spike times alongside the
     # bin indices; simulated paths leave this ``None``.
@@ -688,7 +688,7 @@ class PerCellDiagnostics:
             "event_cell_ind",
             "event_hpd_overlap",
             "event_kl_divergence",
-            "event_spike_prob",
+            "event_predictive_pvalue",
         ):
             arr = getattr(self, name)
             if arr.shape != (n_spikes,):
@@ -698,7 +698,7 @@ class PerCellDiagnostics:
                 f"PerCellDiagnostics.event_time shape {self.event_time.shape} != ({n_spikes},)"
             )
         # Dense matrices are an all-or-nothing group.
-        dense_names = ("hpd_overlap", "kl_divergence", "spike_prob", "per_spike_likelihood")
+        dense_names = ("hpd_overlap", "kl_divergence", "predictive_pvalue", "per_spike_likelihood")
         dense_provided = [getattr(self, n) is not None for n in dense_names]
         if any(dense_provided) and not all(dense_provided):
             missing = [n for n, p in zip(dense_names, dense_provided, strict=True) if not p]
@@ -707,16 +707,17 @@ class PerCellDiagnostics:
             )
         if self.hpd_overlap is not None:
             assert self.kl_divergence is not None  # narrowed by all-or-nothing
-            assert self.spike_prob is not None
+            assert self.predictive_pvalue is not None
             assert self.per_spike_likelihood is not None
             n_time, n_cells = self.hpd_overlap.shape
             if self.kl_divergence.shape != (n_time, n_cells):
                 raise ValueError(
                     f"kl_divergence shape {self.kl_divergence.shape} != ({n_time}, {n_cells})"
                 )
-            if self.spike_prob.shape != (n_time, n_cells):
+            if self.predictive_pvalue.shape != (n_time, n_cells):
                 raise ValueError(
-                    f"spike_prob shape {self.spike_prob.shape} != ({n_time}, {n_cells})"
+                    "predictive_pvalue shape "
+                    f"{self.predictive_pvalue.shape} != ({n_time}, {n_cells})"
                 )
             if self.per_spike_likelihood.shape[0] != n_spikes:
                 raise ValueError(
@@ -747,11 +748,11 @@ class Diagnostics:
     ----------
     posterior, predictive, likelihood, spike_likelihood : np.ndarray, shape (n_time, n_bins)
         Dense distributions over position.
-    hpd_overlap, kl_divergence, spike_prob : np.ndarray, shape (n_time, n_cells)
+    hpd_overlap, kl_divergence, predictive_pvalue : np.ndarray, shape (n_time, n_cells)
         Dense per-cell diagnostic matrices; ``NaN`` where no spike.
     event_time_ind, event_cell_ind : np.ndarray, shape (n_spikes,)
         Time-bin / cell index for each spike event.
-    event_hpd_overlap, event_kl_divergence, event_spike_prob : np.ndarray, shape (n_spikes,)
+    event_hpd_overlap, event_kl_divergence, event_predictive_pvalue : np.ndarray, shape (n_spikes,)
         Per-event diagnostic values.
     per_spike_likelihood : np.ndarray, shape (n_spikes, n_bins)
         Per-spike normalized likelihood as seen by the decoder
@@ -774,12 +775,12 @@ class Diagnostics:
     spike_likelihood: NDArray[np.floating]
     hpd_overlap: NDArray[np.floating]
     kl_divergence: NDArray[np.floating]
-    spike_prob: NDArray[np.floating]
+    predictive_pvalue: NDArray[np.floating]
     event_time_ind: NDArray[np.intp]
     event_cell_ind: NDArray[np.intp]
     event_hpd_overlap: NDArray[np.floating]
     event_kl_divergence: NDArray[np.floating]
-    event_spike_prob: NDArray[np.floating]
+    event_predictive_pvalue: NDArray[np.floating]
     per_spike_likelihood: NDArray[np.floating]
 
     def __post_init__(self) -> None:
@@ -802,7 +803,7 @@ class Diagnostics:
             if arr.shape != (n_time, n_bins):
                 raise ValueError(f"Diagnostics.{name} shape {arr.shape} != ({n_time}, {n_bins})")
         n_cells = self.hpd_overlap.shape[1]
-        for name in ("kl_divergence", "spike_prob"):
+        for name in ("kl_divergence", "predictive_pvalue"):
             arr = getattr(self, name)
             if arr.shape != (n_time, n_cells):
                 raise ValueError(f"Diagnostics.{name} shape {arr.shape} != ({n_time}, {n_cells})")
@@ -826,10 +827,12 @@ class Diagnostics:
         # out-of-range values that only surface much later (e.g., as a NaN
         # ``Thresholds`` or a misleading hexbin).
         _check_range(self.hpd_overlap, "Diagnostics.hpd_overlap", lo=0.0, hi=1.0)
-        _check_range(self.spike_prob, "Diagnostics.spike_prob", lo=0.0, hi=1.0)
+        _check_range(self.predictive_pvalue, "Diagnostics.predictive_pvalue", lo=0.0, hi=1.0)
         _check_range(self.kl_divergence, "Diagnostics.kl_divergence", lo=0.0, hi=None)
         _check_range(self.event_hpd_overlap, "Diagnostics.event_hpd_overlap", lo=0.0, hi=1.0)
-        _check_range(self.event_spike_prob, "Diagnostics.event_spike_prob", lo=0.0, hi=1.0)
+        _check_range(
+            self.event_predictive_pvalue, "Diagnostics.event_predictive_pvalue", lo=0.0, hi=1.0
+        )
         _check_range(self.event_kl_divergence, "Diagnostics.event_kl_divergence", lo=0.0, hi=None)
         # Write-protect every backing buffer.
         for name in (
@@ -839,7 +842,7 @@ class Diagnostics:
             "spike_likelihood",
             "hpd_overlap",
             "kl_divergence",
-            "spike_prob",
+            "predictive_pvalue",
             "event_time_ind",
             "event_cell_ind",
             *_PER_EVENT_METRIC_NAMES,
@@ -1051,15 +1054,15 @@ def _apply_window_rate_overrides(
     """
     assert diagnostics.hpd_overlap is not None
     assert diagnostics.kl_divergence is not None
-    assert diagnostics.spike_prob is not None
+    assert diagnostics.predictive_pvalue is not None
     assert diagnostics.per_spike_likelihood is not None
 
     hpd_overlap = diagnostics.hpd_overlap.copy()
     kl_divergence = diagnostics.kl_divergence.copy()
-    spike_prob = diagnostics.spike_prob.copy()
+    predictive_pvalue = diagnostics.predictive_pvalue.copy()
     event_hpd_overlap = diagnostics.event_hpd_overlap.copy()
     event_kl_divergence = diagnostics.event_kl_divergence.copy()
-    event_spike_prob = diagnostics.event_spike_prob.copy()
+    event_predictive_pvalue = diagnostics.event_predictive_pvalue.copy()
     decoder_per_spike_lik = diagnostics.per_spike_likelihood.copy()
 
     for window in windows:
@@ -1080,24 +1083,24 @@ def _apply_window_rate_overrides(
 
         event_hpd_overlap[in_window] = window_diagnostics.event_hpd_overlap
         event_kl_divergence[in_window] = window_diagnostics.event_kl_divergence
-        event_spike_prob[in_window] = window_diagnostics.event_spike_prob
+        event_predictive_pvalue[in_window] = window_diagnostics.event_predictive_pvalue
         decoder_per_spike_lik[in_window] = window_diagnostics.per_spike_likelihood
 
         window_times = spike_time_ind[in_window]
         window_cells = spike_cell_ind[in_window]
         hpd_overlap[window_times, window_cells] = window_diagnostics.event_hpd_overlap
         kl_divergence[window_times, window_cells] = window_diagnostics.event_kl_divergence
-        spike_prob[window_times, window_cells] = window_diagnostics.event_spike_prob
+        predictive_pvalue[window_times, window_cells] = window_diagnostics.event_predictive_pvalue
 
     return PerCellDiagnostics(
         event_time_ind=diagnostics.event_time_ind,
         event_cell_ind=diagnostics.event_cell_ind,
         event_hpd_overlap=event_hpd_overlap,
         event_kl_divergence=event_kl_divergence,
-        event_spike_prob=event_spike_prob,
+        event_predictive_pvalue=event_predictive_pvalue,
         hpd_overlap=hpd_overlap,
         kl_divergence=kl_divergence,
-        spike_prob=spike_prob,
+        predictive_pvalue=predictive_pvalue,
         per_spike_likelihood=decoder_per_spike_lik,
     )
 
@@ -1128,7 +1131,7 @@ def decode_and_diagnostics(
     **Diagnostics**:
     - HPD overlap: overlap between prior and combined likelihood HPD regions
     - KL divergence: divergence from prior to combined likelihood
-    - Spike probability: cumulative probability mass for low-contribution cells
+    - Predictive p-value: cumulative probability mass for low-contribution cells
 
     Parameters
     ----------
@@ -1172,13 +1175,13 @@ def decode_and_diagnostics(
             cells; NaN where no spikes).
 
         Dense ``(n_time, n_cells)`` per-cell diagnostic matrices
-            ``hpd_overlap``, ``kl_divergence``, ``spike_prob``. NaN at
+            ``hpd_overlap``, ``kl_divergence``, ``predictive_pvalue``. NaN at
             t=0 and at any (t, cell) without a spike.
 
         Per-spike-event arrays of shape ``(n_spikes,)``
             ``event_time_ind`` (time bin), ``event_cell_ind`` (cell
             index), and ``event_hpd_overlap`` / ``event_kl_divergence``
-            / ``event_spike_prob`` (the dense matrices scattered to one
+            / ``event_predictive_pvalue`` (the dense matrices scattered to one
             value per event). Spike-count > 1 in a bin produces that
             many repeated events. The legacy ``spike_time_ind`` /
             ``spike_cell_ind`` aliases were removed; use the
@@ -1364,7 +1367,7 @@ def decode_and_diagnostics(
     )
     assert overridden.hpd_overlap is not None  # dense matrices requested above
     assert overridden.kl_divergence is not None
-    assert overridden.spike_prob is not None
+    assert overridden.predictive_pvalue is not None
     assert overridden.per_spike_likelihood is not None
 
     return Diagnostics(
@@ -1374,13 +1377,13 @@ def decode_and_diagnostics(
         spike_likelihood=spike_likelihood_all,
         hpd_overlap=overridden.hpd_overlap,
         kl_divergence=overridden.kl_divergence,
-        spike_prob=overridden.spike_prob,
+        predictive_pvalue=overridden.predictive_pvalue,
         per_spike_likelihood=overridden.per_spike_likelihood,
         event_time_ind=overridden.event_time_ind,
         event_cell_ind=overridden.event_cell_ind,
         event_hpd_overlap=overridden.event_hpd_overlap,
         event_kl_divergence=overridden.event_kl_divergence,
-        event_spike_prob=overridden.event_spike_prob,
+        event_predictive_pvalue=overridden.event_predictive_pvalue,
     )
 
 
@@ -1389,7 +1392,7 @@ def decode_and_diagnostics(
 # -----------------------------
 
 
-def _event_spike_prob_rank(
+def _event_predictive_pvalue_rank(
     pred_chunk: NDArray[np.floating],
     rates: NDArray[np.floating],
     cell_ind: NDArray[np.intp],
@@ -1456,7 +1459,7 @@ def compute_per_cell_diagnostics_from_rates(
     """Compute per-cell diagnostic metrics at spike times.
 
     This is the core computation shared by both simulated and real data analysis.
-    It computes HPD overlap, KL divergence, and spike probability ranking for
+    It computes HPD overlap, KL divergence, and predictive p-value ranking for
     each spike event, assuming each spike represents exactly one spike (k=1).
 
     Parameters
@@ -1473,7 +1476,7 @@ def compute_per_cell_diagnostics_from_rates(
         Coverage probability for HPD region computation.
     include_dense_matrices : bool, default True
         If True (default), also populate the (n_time, n_cells) ``hpd_overlap``,
-        ``kl_divergence``, ``spike_prob`` matrices and the (n_spikes, n_bins)
+        ``kl_divergence``, ``predictive_pvalue`` matrices and the (n_spikes, n_bins)
         ``per_spike_likelihood`` on the returned dataclass. If False, those four
         attributes are left ``None`` and the matching allocations / scatters are
         skipped — useful for callers that only need the per-spike event arrays
@@ -1489,14 +1492,14 @@ def compute_per_cell_diagnostics_from_rates(
         - ``event_time_ind`` / ``event_cell_ind``: shape (n_spikes,)
         - ``event_hpd_overlap``: shape (n_spikes,), per-spike HPD overlap
         - ``event_kl_divergence``: shape (n_spikes,), per-spike KL divergence
-        - ``event_spike_prob``: shape (n_spikes,), per-spike spike probability
+        - ``event_predictive_pvalue``: shape (n_spikes,), per-spike predictive p-value
 
         If ``include_dense_matrices`` (the default), the optional dense
         attributes are also populated (otherwise each is ``None``):
 
         - ``hpd_overlap``: shape (n_time, n_cells), NaN where no spike
         - ``kl_divergence``: shape (n_time, n_cells), NaN where no spike
-        - ``spike_prob``: shape (n_time, n_cells), NaN where no spike
+        - ``predictive_pvalue``: shape (n_time, n_cells), NaN where no spike
         - ``per_spike_likelihood``: shape (n_spikes, n_bins), normalized
           likelihood distribution for each individual spike event
 
@@ -1507,7 +1510,7 @@ def compute_per_cell_diagnostics_from_rates(
     repeated entries in ``spike_time_ind`` and ``spike_cell_ind`` so each
     observed spike contributes one event to the returned event arrays.
 
-    The predictive cell distribution used by ``event_spike_prob`` is
+    The predictive cell distribution used by ``event_predictive_pvalue`` is
     event-weighted: raw cell intensities are averaged over the predictive
     state distribution and the resulting expected intensities are normalized
     across cells. Normalizing across cells at each state before averaging would
@@ -1519,19 +1522,19 @@ def compute_per_cell_diagnostics_from_rates(
 
     event_hpd_overlap: NDArray[np.floating] = np.empty(n_spikes)
     event_kl_divergence: NDArray[np.floating] = np.empty(n_spikes)
-    event_spike_prob: NDArray[np.floating] = np.empty(n_spikes)
+    event_predictive_pvalue: NDArray[np.floating] = np.empty(n_spikes)
 
     # Dense (n_time, n_cells) matrices are only allocated when requested;
     # for real recordings with millions of time bins they can dwarf the
     # rest of the working set, so the cache builder opts out.
     hpd_overlap: NDArray[np.floating] | None = None
     kl_divergence: NDArray[np.floating] | None = None
-    spike_prob: NDArray[np.floating] | None = None
+    predictive_pvalue: NDArray[np.floating] | None = None
     per_spike_likelihood: NDArray[np.floating] | None = None
     if include_dense_matrices:
         hpd_overlap = np.full((n_time, n_cells), np.nan)
         kl_divergence = np.full((n_time, n_cells), np.nan)
-        spike_prob = np.full((n_time, n_cells), np.nan)
+        predictive_pvalue = np.full((n_time, n_cells), np.nan)
         per_spike_likelihood = np.empty((n_spikes, n_bins))
 
     if n_spikes > 0:
@@ -1542,7 +1545,7 @@ def compute_per_cell_diagnostics_from_rates(
         # blows the working set even when ``include_dense_matrices=False``
         # skips the (n_time, n_cells) outputs. Process in chunks to
         # bound peak memory to ``_PER_SPIKE_BATCH × n_bins × 8 B`` per
-        # scratch array. ``spike_prob`` is the per-event rank
+        # scratch array. ``predictive_pvalue`` is the per-event rank
         # ``sum_i contrib[i] where contrib[i] <= contrib[j]``;
         # computing it per event (not vectorized over unique times)
         # bounds the rank computation's working set to
@@ -1565,7 +1568,9 @@ def compute_per_cell_diagnostics_from_rates(
 
             # Per-event spike-prob rank over the full cell set, with a
             # reduction-order tolerance for cross-platform reproducibility.
-            event_spike_prob[start:stop] = _event_spike_prob_rank(pred_chunk, rates, sci)
+            event_predictive_pvalue[start:stop] = _event_predictive_pvalue_rank(
+                pred_chunk, rates, sci
+            )
 
             if per_spike_likelihood is not None:
                 per_spike_likelihood[start:stop] = lik_chunk
@@ -1574,18 +1579,18 @@ def compute_per_cell_diagnostics_from_rates(
             hpd_overlap[spike_time_ind, spike_cell_ind] = event_hpd_overlap
         if kl_divergence is not None:
             kl_divergence[spike_time_ind, spike_cell_ind] = event_kl_divergence
-        if spike_prob is not None:
-            spike_prob[spike_time_ind, spike_cell_ind] = event_spike_prob
+        if predictive_pvalue is not None:
+            predictive_pvalue[spike_time_ind, spike_cell_ind] = event_predictive_pvalue
 
     return PerCellDiagnostics(
         event_time_ind=spike_time_ind,
         event_cell_ind=spike_cell_ind,
         event_hpd_overlap=event_hpd_overlap,
         event_kl_divergence=event_kl_divergence,
-        event_spike_prob=event_spike_prob,
+        event_predictive_pvalue=event_predictive_pvalue,
         hpd_overlap=hpd_overlap,
         kl_divergence=kl_divergence,
-        spike_prob=spike_prob,
+        predictive_pvalue=predictive_pvalue,
         per_spike_likelihood=per_spike_likelihood,
     )
 
@@ -1611,7 +1616,7 @@ class Thresholds:
     kl_divergence : float
         KL divergence threshold; must be non-negative finite. Higher
         values indicate worse fit.
-    spike_prob : float
+    predictive_pvalue : float
         Spike-probability threshold; must lie in ``[0, 1]``. Defaulted
         to 0.05 by :func:`compute_thresholds`. Lower values indicate
         misfit.
@@ -1629,7 +1634,7 @@ class Thresholds:
     >>> thresholds = Thresholds(
     ...     hpd_overlap=0.5,
     ...     kl_divergence=2.0,
-    ...     spike_prob=0.05,
+    ...     predictive_pvalue=0.05,
     ... )
     >>> thresholds.hpd_overlap
     0.5
@@ -1637,7 +1642,7 @@ class Thresholds:
 
     hpd_overlap: float
     kl_divergence: float
-    spike_prob: float
+    predictive_pvalue: float
 
     def __post_init__(self) -> None:
         if not (0.0 <= self.hpd_overlap <= 1.0):
@@ -1647,8 +1652,10 @@ class Thresholds:
                 f"Thresholds.kl_divergence must be finite and non-negative; "
                 f"got {self.kl_divergence}"
             )
-        if not (0.0 <= self.spike_prob <= 1.0):
-            raise ValueError(f"Thresholds.spike_prob must lie in [0, 1]; got {self.spike_prob}")
+        if not (0.0 <= self.predictive_pvalue <= 1.0):
+            raise ValueError(
+                f"Thresholds.predictive_pvalue must lie in [0, 1]; got {self.predictive_pvalue}"
+            )
 
 
 def compute_thresholds(
@@ -1664,14 +1671,14 @@ def compute_thresholds(
 
     - HPD overlap threshold: 1st percentile (low values indicate misfit)
     - KL divergence threshold: 99th percentile (high values indicate misfit)
-    - spike_prob threshold: fixed at 0.05 (a conventional rank-statistic cutoff)
+    - predictive_pvalue threshold: fixed at 0.05 (a conventional rank-statistic cutoff)
 
     Parameters
     ----------
     metrics : Diagnostics or Mapping[str, NDArray]
         Either a :class:`Diagnostics` (the typical caller, produced by
         :func:`decode_and_diagnostics`) or a plain dict with keys
-        ``hpd_overlap``, ``kl_divergence``, ``spike_prob`` — the dict
+        ``hpd_overlap``, ``kl_divergence``, ``predictive_pvalue`` — the dict
         form is retained so synthetic test fixtures don't need to
         construct a full ``Diagnostics``.
     baseline_end : int, keyword-only
@@ -1699,10 +1706,10 @@ def compute_thresholds(
     >>> metrics = {
     ...     'hpd_overlap': rng.uniform(0.5, 1.0, (100, 5)),
     ...     'kl_divergence': rng.uniform(0.0, 2.0, (100, 5)),
-    ...     'spike_prob': rng.uniform(0.0, 1.0, (100, 5)),
+    ...     'predictive_pvalue': rng.uniform(0.0, 1.0, (100, 5)),
     ... }
     >>> thresholds = compute_thresholds(metrics, baseline_end=50)
-    >>> thresholds.spike_prob  # Fixed at 0.05
+    >>> thresholds.predictive_pvalue  # Fixed at 0.05
     0.05
     """
 
@@ -1732,12 +1739,12 @@ def compute_thresholds(
     kl_divergence_threshold = float(np.nanquantile(kl_baseline, 0.99))
 
     # Fixed rank-statistic cutoff; not derived from the data.
-    spike_prob_threshold = 0.05
+    predictive_pvalue_threshold = 0.05
 
     return Thresholds(
         hpd_overlap=hpd_overlap_threshold,
         kl_divergence=kl_divergence_threshold,
-        spike_prob=spike_prob_threshold,
+        predictive_pvalue=predictive_pvalue_threshold,
     )
 
 
@@ -1754,7 +1761,7 @@ def compute_thresholds(
 # multi-realization averaging path so the two cannot drift apart.
 SUMMARY_FLAG_METRICS: tuple[tuple[str, str], ...] = (
     ("hpd_overlap", "below"),
-    ("spike_prob", "below"),
+    ("predictive_pvalue", "below"),
     ("kl_divergence", "above"),
 )
 
@@ -1920,7 +1927,7 @@ def extract_phase_flag_values(
     """Collect finite per-spike-event diagnostic values per metric per column.
 
     Works on the **per-event** arrays (``event_time_ind`` /
-    ``event_hpd_overlap`` / ``event_kl_divergence`` / ``event_spike_prob``),
+    ``event_hpd_overlap`` / ``event_kl_divergence`` / ``event_predictive_pvalue``),
     one value per spike event, so that a bin with several spikes from one
     cell contributes several values — matching the "percentage of spike
     events" the figure reports. (The dense ``(n_time, n_cells)`` matrices
@@ -1930,7 +1937,7 @@ def extract_phase_flag_values(
     ----------
     metrics : Diagnostics or Mapping[str, NDArray]
         Source of the per-event arrays ``event_time_ind`` (int) and
-        ``event_{hpd_overlap,kl_divergence,spike_prob}`` (float), each of
+        ``event_{hpd_overlap,kl_divergence,predictive_pvalue}`` (float), each of
         shape ``(n_events,)``.
     windows : list of SummaryColumn
         Heatmap columns from :func:`summary_phase_windows`.

@@ -74,18 +74,18 @@ def test_three_metric_panels_constructed(tmp_path: Path) -> None:
         assert set(viewer.metric_panels.keys()) == {
             "event_hpd_overlap",
             "event_kl_divergence",
-            "event_spike_prob",
+            "event_predictive_pvalue",
         }
         # Spike-prob panel has its threshold line; KL has none.
         assert viewer.metric_panels["event_hpd_overlap"]._threshold_line is not None  # noqa: SLF001
-        assert viewer.metric_panels["event_spike_prob"]._threshold_line is not None  # noqa: SLF001
+        assert viewer.metric_panels["event_predictive_pvalue"]._threshold_line is not None  # noqa: SLF001
         assert viewer.metric_panels["event_kl_divergence"]._threshold_line is None  # noqa: SLF001
     finally:
         viewer.close()
         ds.close()
 
 
-def test_metric_panel_displays_neglog_for_spike_prob(tmp_path: Path) -> None:
+def test_metric_panel_displays_neglog_for_predictive_pvalue(tmp_path: Path) -> None:
     _build_cache(tmp_path / "cache")
     app, viewer, ds = _make_viewer(tmp_path / "cache")
     try:
@@ -93,9 +93,9 @@ def test_metric_panel_displays_neglog_for_spike_prob(tmp_path: Path) -> None:
         viewer.force_reload_now()
         assert _wait_for_request(app, viewer, target)
 
-        sp_panel = viewer.metric_panels["event_spike_prob"]
+        sp_panel = viewer.metric_panels["event_predictive_pvalue"]
         x_data, y_data = sp_panel._scatter.getData()  # noqa: SLF001
-        # All displayed values are non-negative (since spike_prob is in (0,1]).
+        # All displayed values are non-negative (since predictive_pvalue is in (0,1]).
         assert (y_data >= 0).all()
         # Compare against the raw event values: y == -log(raw) (natural log).
         sl = viewer.slice_panel._buffer_slice  # noqa: SLF001
@@ -103,7 +103,7 @@ def test_metric_panel_displays_neglog_for_spike_prob(tmp_path: Path) -> None:
         if not events.empty:
             np.testing.assert_array_almost_equal(
                 np.asarray(y_data, dtype=np.float64),
-                -np.log(np.maximum(events["event_spike_prob"].to_numpy(), 1e-12)),
+                -np.log(np.maximum(events["event_predictive_pvalue"].to_numpy(), 1e-12)),
                 decimal=4,
             )
     finally:

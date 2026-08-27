@@ -538,7 +538,7 @@ def plot_per_cell_diagnostic_scatter(
     Each point represents one cell at one time point. Values are scattered
     to show the distribution of diagnostics across cells.
 
-    For spike_prob, values are transformed to -log(p) (natural log) scale to match Figure 3
+    For predictive_pvalue, values are transformed to -log(p) (natural log) scale to match Figure 3
     visualization where higher values indicate worse fit.
 
     Parameters
@@ -547,12 +547,12 @@ def plot_per_cell_diagnostic_scatter(
         Time values (bin centers/starts).
     diagnostics : PerCellDiagnostics
         Per-cell diagnostics dataclass. The dense ``hpd_overlap``,
-        ``kl_divergence``, and ``spike_prob`` attributes (each shape
+        ``kl_divergence``, and ``predictive_pvalue`` attributes (each shape
         (n_time, n_cells)) supply the scattered values.
     time_slice_ind : slice, optional
         Time slice indices to plot. If None, plots all time points.
     threshold : float, optional
-        Threshold to draw as horizontal line. For spike_prob, this should be
+        Threshold to draw as horizontal line. For predictive_pvalue, this should be
         the raw threshold value (e.g., 0.05) which will be transformed.
     ax : plt.Axes, optional
         Axes to plot on. If None, uses current axes.
@@ -613,9 +613,9 @@ def plot_per_cell_diagnostic_scatter(
         None if event_metric_values is None else np.asarray(event_metric_values).copy()
     )
 
-    # Transform spike_prob to -log(p) (natural log) scale (matching Figure 3)
+    # Transform predictive_pvalue to -log(p) (natural log) scale (matching Figure 3)
     # Higher values indicate worse fit (low probability)
-    if metric_name == "spike_prob":
+    if metric_name == "predictive_pvalue":
         metric = _neglog(metric)
         if threshold is not None:
             threshold = _neglog(threshold)
@@ -629,7 +629,7 @@ def plot_per_cell_diagnostic_scatter(
 
         x_positions_arr = event_times_arr[event_mask]
         y_values_arr = raw_event_metric_values[event_mask]
-        if metric_name == "spike_prob":
+        if metric_name == "predictive_pvalue":
             y_values_arr = _neglog(y_values_arr)
         valid = ~np.isnan(y_values_arr)
         x_positions_arr = x_positions_arr[valid]
@@ -703,7 +703,7 @@ def plot_per_cell_diagnostic_scatter(
             )
 
         # Transform running average if needed (same as scatter points)
-        if metric_name == "spike_prob":
+        if metric_name == "predictive_pvalue":
             running_avg = _neglog(running_avg)
 
         # Determine line color (darker version of scatter color if not specified)
@@ -891,7 +891,7 @@ def plot_model_comparison_with_posterior(
     - Row 1: Likelihood p(y_t | x_t) with animal position overlay (only at spike times)
     - Row 2: Spike raster (cells sorted by place field peak)
     - Row 3: HPD overlap scatter
-    - Row 4: Spike probability scatter (-log(p))
+    - Row 4: Predictive p-value scatter (-log(p))
     - Row 5: KL divergence scatter
 
     Parameters
@@ -907,7 +907,7 @@ def plot_model_comparison_with_posterior(
         Decoding results for model B with same outputs.
     diagnostics_a : PerCellDiagnostics
         Per-cell diagnostics for model A, supplying the dense ``hpd_overlap``,
-        ``kl_divergence``, and ``spike_prob`` matrices.
+        ``kl_divergence``, and ``predictive_pvalue`` matrices.
     diagnostics_b : PerCellDiagnostics
         Per-cell diagnostics for model B with the same attributes.
     spike_times : list[np.ndarray], optional
@@ -978,7 +978,7 @@ def plot_model_comparison_with_posterior(
     axes[3, 0] = fig.add_subplot(gs[3, 0], sharex=axes[0, 0])
     axes[3, 1] = fig.add_subplot(gs[3, 1], sharex=axes[0, 0], sharey=axes[3, 0])
 
-    # Row 4: Spike probability (share y within row, share x with row 0)
+    # Row 4: Predictive p-value (share y within row, share x with row 0)
     axes[4, 0] = fig.add_subplot(gs[4, 0], sharex=axes[0, 0])
     axes[4, 1] = fig.add_subplot(gs[4, 1], sharex=axes[0, 0], sharey=axes[4, 0])
 
@@ -1201,7 +1201,7 @@ def plot_single_model_diagnostics(
     - Row 1: Likelihood at spike times with position overlay
     - Row 2: Spike raster (sorted by place field peak)
     - Row 3: HPD overlap scatter
-    - Row 4: Spike probability scatter (-log(p), natural log scale)
+    - Row 4: Predictive p-value scatter (-log(p), natural log scale)
     - Row 5: KL divergence scatter
 
     Parameters
@@ -1214,7 +1214,7 @@ def plot_single_model_diagnostics(
         Decoding results with predictive_posterior and log_likelihood.
     diagnostics : PerCellDiagnostics
         Per-cell diagnostics supplying the dense ``hpd_overlap``,
-        ``kl_divergence``, and ``spike_prob`` matrices.
+        ``kl_divergence``, and ``predictive_pvalue`` matrices.
     spike_times : list[np.ndarray], optional
         List of spike time arrays, one per neuron.
     spike_counts : np.ndarray, shape (n_time, n_cells), optional
@@ -1414,7 +1414,7 @@ def plot_single_model_diagnostics(
         )
         if spec.name == "hpd_overlap":
             worse_fit_y = 0.28
-        elif spec.name == "spike_prob":
+        elif spec.name == "predictive_pvalue":
             worse_fit_y = 0.68
         else:
             worse_fit_y = 0.5
@@ -1459,7 +1459,7 @@ def plot_per_spike_metric_hexbin_row(
     ----------
     diagnostics_a, diagnostics_b : PerCellDiagnostics
         Per-cell diagnostics whose per-spike ``event_hpd_overlap``,
-        ``event_kl_divergence``, ``event_spike_prob`` attributes (each
+        ``event_kl_divergence``, ``event_predictive_pvalue`` attributes (each
         shape ``(n_spikes,)``) supply the hexbin values.
     axes : Sequence[matplotlib.axes.Axes]
         Three axes, one per metric (HPD overlap, ``-log(p)`` natural
@@ -1468,7 +1468,7 @@ def plot_per_spike_metric_hexbin_row(
         Axis labels for each decoder.
     thresholds : dict[str, float], optional
         Per-metric flag thresholds keyed by ``hpd_overlap``, ``kl_divergence``,
-        ``spike_prob`` (raw values; the ``spike_prob`` cutoff is transformed to
+        ``predictive_pvalue`` (raw values; the ``predictive_pvalue`` cutoff is transformed to
         the ``-log(p)`` axis). When given, each panel draws dotted threshold
         lines on both axes and lightly shades the quadrant of spikes flagged by
         model A but not model B. Metrics absent from the dict get no lines.
@@ -1485,7 +1485,14 @@ def plot_per_spike_metric_hexbin_row(
     # high values ("above").
     metric_specs = [
         ("event_hpd_overlap", "HPD overlap", COLORS["hpd_overlap"], False, "hpd_overlap", "below"),
-        ("event_spike_prob", r"$-\log(p)$", COLORS["metric_combined"], True, "spike_prob", "above"),
+        (
+            "event_predictive_pvalue",
+            r"$-\log(p)$",
+            COLORS["metric_combined"],
+            True,
+            "predictive_pvalue",
+            "above",
+        ),
         (
             "event_kl_divergence",
             "KL divergence",

@@ -61,15 +61,15 @@ def find_representative_windows(
     -------
     windows : dict mapping metric name to list of (label, center_idx, slice).
     """
-    metrics = ["hpd_overlap", "kl_divergence", "spike_prob"]
+    metrics = ["hpd_overlap", "kl_divergence", "predictive_pvalue"]
     # For labeling: which direction is "B better"
     # HPD: higher is better, so positive diff = B better
     # KL: lower is better, so negative diff = B better
-    # spike_prob: lower is better, so negative diff = B better
+    # predictive_pvalue: lower is better, so negative diff = B better
     labels_by_quantile = {
         "hpd_overlap": {0.05: "Cont better", 0.50: "Similar", 0.95: "ContFrag better"},
         "kl_divergence": {0.05: "ContFrag better", 0.50: "Similar", 0.95: "Cont better"},
-        "spike_prob": {0.05: "ContFrag better", 0.50: "Similar", 0.95: "Cont better"},
+        "predictive_pvalue": {0.05: "ContFrag better", 0.50: "Similar", 0.95: "Cont better"},
     }
 
     # Dense matrices populated by the producer; narrow away the Optional.
@@ -84,8 +84,8 @@ def find_representative_windows(
     for metric in metrics:
         diff = getattr(contfrag_diagnostics, metric) - getattr(continuous_diagnostics, metric)
 
-        # Transform spike_prob to -log(p) (natural log) scale for consistency with 4b
-        if metric == "spike_prob":
+        # Transform predictive_pvalue to -log(p) (natural log) scale for consistency with 4b
+        if metric == "predictive_pvalue":
             a = -np.log(np.maximum(getattr(continuous_diagnostics, metric), 1e-10))
             b = -np.log(np.maximum(getattr(contfrag_diagnostics, metric), 1e-10))
             diff = b - a

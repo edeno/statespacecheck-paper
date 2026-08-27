@@ -67,7 +67,7 @@ def _per_phase_medians(
             continue
         kl = float(np.nanmedian(metrics.event_kl_divergence[mask]))
         hpd = float(np.nanmedian(metrics.event_hpd_overlap[mask]))
-        sp = float(np.nanmedian(metrics.event_spike_prob[mask]))
+        sp = float(np.nanmedian(metrics.event_predictive_pvalue[mask]))
         out[label] = (kl, hpd, sp)
     return out
 
@@ -226,7 +226,7 @@ def test_remap_phase_uses_decoder_likelihood(sim: SimulationResult) -> None:
     for name in (
         "event_hpd_overlap",
         "event_kl_divergence",
-        "event_spike_prob",
+        "event_predictive_pvalue",
     ):
         np.testing.assert_allclose(
             getattr(sim.metrics, name)[in_window],
@@ -256,7 +256,7 @@ def test_remap_phase_uses_decoder_likelihood(sim: SimulationResult) -> None:
     for name in (
         "event_hpd_overlap",
         "event_kl_divergence",
-        "event_spike_prob",
+        "event_predictive_pvalue",
     ):
         assert not np.allclose(getattr(expected, name), getattr(oracle, name)), (
             f"test fixture does not distinguish decoder and oracle values for {name}"
@@ -396,10 +396,10 @@ def test_history_dependent_firing_per_spike_metrics_near_baseline(
         "per-spike HPDO in the history-dependent phase should stay within "
         f"10% of baseline; got baseline={base_hpd:.3f}, hist-dep={hd_hpd:.3f}"
     )
-    # spike_prob stays in a band around baseline (neither collapsing like
+    # predictive_pvalue stays in a band around baseline (neither collapsing like
     # remap nor spuriously inflating).
     assert 0.5 * base_sp < hd_sp < 1.5 * base_sp, (
-        "per-spike spike_prob in the history-dependent phase should stay "
+        "per-spike predictive_pvalue in the history-dependent phase should stay "
         f"within +/-50% of baseline; got baseline={base_sp:.3f}, "
         f"hist-dep={hd_sp:.3f}"
     )
@@ -477,7 +477,7 @@ class TestEstimateStableSummary:
         assert np.all(summary.frac_median >= 0.0)
         assert np.all(summary.frac_median <= 100.0)
         # Threshold is a valid, finite Thresholds with the fixed p-value cutoff.
-        assert summary.thresholds.spike_prob == 0.05
+        assert summary.thresholds.predictive_pvalue == 0.05
         assert np.isfinite(summary.thresholds.kl_divergence)
 
         repeat = estimate_stable_summary(params, n_realizations=3, base_seed=0)
@@ -574,7 +574,7 @@ class TestEstimateStableSummary:
 class TestStableSummaryInvariants:
     @staticmethod
     def _thresholds() -> Thresholds:
-        return Thresholds(hpd_overlap=0.5, kl_divergence=1.0, spike_prob=0.05)
+        return Thresholds(hpd_overlap=0.5, kl_divergence=1.0, predictive_pvalue=0.05)
 
     def test_non_2d_median_raises(self) -> None:
         with pytest.raises(ValueError, match="frac_median"):

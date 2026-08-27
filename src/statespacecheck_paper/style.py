@@ -139,7 +139,7 @@ def hex_to_rgb(hex_str: str) -> tuple[int, int, int]:
     return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
 
 
-MetricName = Literal["hpd_overlap", "kl_divergence", "spike_prob"]
+MetricName = Literal["hpd_overlap", "kl_divergence", "predictive_pvalue"]
 
 
 @dataclass(frozen=True)
@@ -159,7 +159,7 @@ class MetricSpec:
 
 METRIC_SPECS: tuple[MetricSpec, ...] = (
     MetricSpec("hpd_overlap", "HPD overlap", COLORS["hpd_overlap"], "↓ Worse fit"),
-    MetricSpec("spike_prob", r"$-\log(p)$", COLORS["metric_combined"], "↑ Worse fit"),
+    MetricSpec("predictive_pvalue", r"$-\log(p)$", COLORS["metric_combined"], "↑ Worse fit"),
     MetricSpec("kl_divergence", "KL div.", COLORS["kl_divergence"], "↑ Worse fit"),
 )
 METRIC_NAMES: tuple[MetricName, ...] = tuple(s.name for s in METRIC_SPECS)

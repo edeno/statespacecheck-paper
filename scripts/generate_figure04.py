@@ -442,7 +442,7 @@ def _print_fig4_summary(
         ("ContFrag", bundle.contfrag_diagnostics),
     ]:
         print(f"\n{name}:")
-        for metric in ["hpd_overlap", "kl_divergence", "spike_prob"]:
+        for metric in ["hpd_overlap", "kl_divergence", "predictive_pvalue"]:
             print(f"  {metric}: {diagnostic_event_mean(diag, metric):.4f}")
 
     # Per-spike flag agreement between the two decoders at these thresholds.
@@ -663,11 +663,11 @@ def run_demo(*, use_cache: bool = True) -> None:
     # shown without a threshold line or a flagged-region callout.
     diagnostic_thresholds = {
         "hpd_overlap": 0.05,
-        "spike_prob": 0.05,
+        "predictive_pvalue": 0.05,
     }
     metric_directions: dict[str, Literal["below", "above"]] = {
         "hpd_overlap": "below",
-        "spike_prob": "below",
+        "predictive_pvalue": "below",
     }
     _print_fig4_summary(bundle, diagnostic_thresholds, metric_directions)
 

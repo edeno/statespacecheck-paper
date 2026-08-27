@@ -132,7 +132,7 @@ class DecoderDataSource:
       time-varying event likelihoods.
     * ``events .parquet``: ``time`` f64, ``cell_id`` i32,
       ``event_hpd_overlap`` f32, ``event_kl_divergence`` f32,
-      ``event_spike_prob`` f32 — sorted by ``time``.
+      ``event_predictive_pvalue`` f32 — sorted by ``time``.
     * ``spike_times .npy``: object-dtype array length ``n_cells``,
       each entry an f64 array of spike timestamps.
     * ``Zarr``: ``predictive_posterior`` (n_time, n_state_bins) f32,
@@ -171,7 +171,7 @@ class DecoderDataSource:
     events : pandas.DataFrame
         Sorted event table with columns ``time`` (f64), ``cell_id`` (i32),
         ``event_hpd_overlap`` (f32), ``event_kl_divergence`` (f32),
-        ``event_spike_prob`` (f32). Indexed by row position.
+        ``event_predictive_pvalue`` (f32). Indexed by row position.
     n_cells : int
     n_time : int
     n_states : int
@@ -270,8 +270,8 @@ class DecoderDataSource:
         self.event_kl_divergence = _readonly(
             self.events["event_kl_divergence"].to_numpy(dtype=np.float32)
         )
-        self.event_spike_prob = _readonly(
-            self.events["event_spike_prob"].to_numpy(dtype=np.float32)
+        self.event_predictive_pvalue = _readonly(
+            self.events["event_predictive_pvalue"].to_numpy(dtype=np.float32)
         )
 
         self._validate_consistency()
@@ -429,7 +429,7 @@ class DecoderDataSource:
 
         Both endpoints index into the precomputed event-column views
         (``event_times``, ``event_cell_ids``, ``event_hpd_overlap``,
-        ``event_kl_divergence``, ``event_spike_prob``). ``i1 <= i0``
+        ``event_kl_divergence``, ``event_predictive_pvalue``). ``i1 <= i0``
         means no events landed in this bin.
         """
         if self.event_time_idx.size == 0:

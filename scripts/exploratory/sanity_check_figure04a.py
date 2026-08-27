@@ -6,7 +6,7 @@ For each spike event in the Figure 4a time window, plots:
 - Un-normalized place field rate curve
 
 Annotated with true position, metric values (HPD overlap, KL divergence,
-spike probability rank).  Produces plots for both Continuous and Cont-Frag
+predictive p-value rank).  Produces plots for both Continuous and Cont-Frag
 models, saved into separate folders under manuscript/figures/preview/sanity_check_4a/.
 
 Spikes are sampled at quantiles of KL divergence so the output covers the
@@ -214,7 +214,7 @@ def plot_spike_sanity(
     kl_val : float
         KL divergence metric value.
     sp_val : float
-        Spike probability rank value.
+        Predictive p-value rank value.
     time_idx : int
         Global time index for this spike.
     cell_idx : int
@@ -460,7 +460,7 @@ def generate_sanity_plots(
     model : fitted decoder model
     results : xr.Dataset from model.predict()
     spike_counts : (n_time, n_cells)
-    diagnostics : dict with hpd_overlap, kl_divergence, spike_prob
+    diagnostics : dict with hpd_overlap, kl_divergence, predictive_pvalue
     linear_position : (n_time,) true position in physical units (cm)
     model_name : label for titles
     output_dir : where to save PNGs
@@ -525,7 +525,7 @@ def generate_sanity_plots(
     # below.
     assert diagnostics.hpd_overlap is not None
     assert diagnostics.kl_divergence is not None
-    assert diagnostics.spike_prob is not None
+    assert diagnostics.predictive_pvalue is not None
 
     for t_idx, c_idx in zip(sel_t, sel_c, strict=True):
         pred = predictive_posterior[t_idx]
@@ -538,7 +538,7 @@ def generate_sanity_plots(
 
         hpd_val = float(diagnostics.hpd_overlap[t_idx, c_idx])
         kl_val = float(diagnostics.kl_divergence[t_idx, c_idx])
-        sp_val = float(diagnostics.spike_prob[t_idx, c_idx])
+        sp_val = float(diagnostics.predictive_pvalue[t_idx, c_idx])
 
         true_pos = float(linear_position[t_idx])
         true_pos_indices = _find_true_pos_bin_indices(true_pos, position_bins, n_bins_per_state)

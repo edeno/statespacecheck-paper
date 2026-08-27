@@ -6,7 +6,7 @@ This module owns the per-row plot widgets the viewer composes:
   the left-hand time axis.
 - ``RasterPanel`` — sorted spike raster.
 - ``MetricPanel`` — per-spike scatter for one of HPD overlap,
-  KL divergence, or ``-log(spike_prob)``.
+  KL divergence, or ``-log(predictive_pvalue)``.
 - ``SlicePanel`` — the right-hand stacked slice column with the
   population-likelihood plot and a pool of per-cell-likelihood rows.
 
@@ -84,17 +84,17 @@ _PER_CELL_PALETTE: tuple[tuple[int, int, int], ...] = (
     (227, 49, 165),  # magenta
 )
 
-MetricName = Literal["event_hpd_overlap", "event_kl_divergence", "event_spike_prob"]
+MetricName = Literal["event_hpd_overlap", "event_kl_divergence", "event_predictive_pvalue"]
 
 METRIC_COLORS: dict[MetricName, tuple[int, int, int]] = {
     "event_hpd_overlap": hex_to_rgb(COLORS["hpd_overlap"]),  # WONG[2] Sky Blue
     "event_kl_divergence": hex_to_rgb(COLORS["kl_divergence"]),  # WONG[3] Bluish Green
-    "event_spike_prob": hex_to_rgb(COLORS["metric_combined"]),  # WONG[7] Reddish Purple
+    "event_predictive_pvalue": hex_to_rgb(COLORS["metric_combined"]),  # WONG[7] Reddish Purple
 }
 METRIC_TITLES: dict[MetricName, str] = {
     "event_hpd_overlap": "HPD overlap",
     "event_kl_divergence": "KL divergence",
-    "event_spike_prob": "-log(p)",
+    "event_predictive_pvalue": "-log(p)",
 }
 
 # Slice-panel y-range hard limits. All curves in the slice column are
@@ -533,11 +533,11 @@ class MetricPanel(pg.PlotWidget):
         self.addItem(self._scatter)
 
         # Threshold horizontal line for the two metrics that have one
-        # in the existing Figure 4 (HPD overlap = 0.05, spike_prob =
+        # in the existing Figure 4 (HPD overlap = 0.05, predictive_pvalue =
         # 0.05 ⇒ -log(0.05) ≈ 3.0 on this axis).
         self._threshold_line: pg.InfiniteLine | None = None
         if threshold is not None:
-            disp = -np.log(threshold) if metric == "event_spike_prob" else threshold
+            disp = -np.log(threshold) if metric == "event_predictive_pvalue" else threshold
             self._threshold_line = pg.InfiniteLine(
                 pos=float(disp),
                 angle=0,
@@ -627,12 +627,12 @@ class MetricPanel(pg.PlotWidget):
             return
         self._pin_line.setPos(relative_time)
         self._pin_line.setVisible(True)
-        disp = -np.log(metric_value) if self._metric == "event_spike_prob" else metric_value
+        disp = -np.log(metric_value) if self._metric == "event_predictive_pvalue" else metric_value
         self._pin_dot.setData(x=[relative_time], y=[float(disp)])
         self._pin_dot.setVisible(True)
 
     def _display_values(self, raw: NDArray[np.float32]) -> NDArray[np.float32]:
-        if self._metric == "event_spike_prob":
+        if self._metric == "event_predictive_pvalue":
             safe = np.maximum(raw, 1e-12, dtype=np.float32)
             return np.asarray(-np.log(safe), dtype=np.float32)
         return np.asarray(raw, dtype=np.float32)
@@ -667,7 +667,7 @@ class CellSlice:
     place_field_norm: NDArray[np.float32]
     hpd: float
     kl: float
-    spike_prob: float
+    predictive_pvalue: float
     n_spikes: int
     is_pinned: bool
 
@@ -679,16 +679,15 @@ class CellSlice:
             raise ValueError(f"CellSlice.cell_id must be non-negative; got {self.cell_id}")
         if self.n_spikes < 0:
             raise ValueError(f"CellSlice.n_spikes must be non-negative; got {self.n_spikes}")
-        # ``hpd`` and ``spike_prob`` are probabilities; ``kl`` is a
+        # ``hpd`` and ``predictive_pvalue`` are probabilities; ``kl`` is a
         # non-negative divergence. NaN can legitimately appear when a
         # cell has no spikes in the window, so allow NaN here but
         # otherwise require the documented ranges.
         if not np.isnan(self.hpd) and not (0.0 <= self.hpd <= 1.0):
             raise ValueError(f"CellSlice.hpd must lie in [0, 1] or be NaN; got {self.hpd}")
-        if not np.isnan(self.spike_prob) and not (0.0 <= self.spike_prob <= 1.0):
-            raise ValueError(
-                f"CellSlice.spike_prob must lie in [0, 1] or be NaN; got {self.spike_prob}"
-            )
+        pv = self.predictive_pvalue
+        if not np.isnan(pv) and not (0.0 <= pv <= 1.0):
+            raise ValueError(f"CellSlice.predictive_pvalue must lie in [0, 1] or be NaN; got {pv}")
         if not np.isnan(self.kl) and self.kl < 0.0:
             raise ValueError(f"CellSlice.kl must be non-negative or NaN; got {self.kl}")
 
@@ -1169,7 +1168,7 @@ class SlicePanel(QtWidgets.QWidget):
             pin_str = "  ★" if cs.is_pinned else ""
             row.header.setText(
                 f"Cell {cs.cell_id:>3d}{pin_str}   "
-                f"HPD={cs.hpd:.3f}  KL={cs.kl:.3f}  p={cs.spike_prob:.3g}{n_spikes_str}"
+                f"HPD={cs.hpd:.3f}  KL={cs.kl:.3f}  p={cs.predictive_pvalue:.3g}{n_spikes_str}"
             )
             row.header.setStyleSheet(
                 _SLICE_CELL_HEADER_PINNED_STYLE if cs.is_pinned else _SLICE_CELL_HEADER_STYLE

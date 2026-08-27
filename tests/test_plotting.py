@@ -44,7 +44,7 @@ def _per_cell_metrics(rng: np.random.Generator, n_time: int, n_cells: int) -> di
     return {
         "hpd_overlap": rng.uniform(0, 1, (n_time, n_cells)),
         "kl_divergence": rng.uniform(0, 5, (n_time, n_cells)),
-        "spike_prob": rng.uniform(0, 1, (n_time, n_cells)),
+        "predictive_pvalue": rng.uniform(0, 1, (n_time, n_cells)),
     }
 
 
@@ -64,7 +64,7 @@ def small_metrics(rng: np.random.Generator) -> dict[str, Any]:
 
 @pytest.fixture
 def thresholds_default() -> Thresholds:
-    return Thresholds(hpd_overlap=0.8, kl_divergence=2.0, spike_prob=0.05)
+    return Thresholds(hpd_overlap=0.8, kl_divergence=2.0, predictive_pvalue=0.05)
 
 
 def _combined_metrics(
@@ -90,12 +90,12 @@ def _combined_metrics(
         spike_likelihood=spike_lik,
         hpd_overlap=per_cell["hpd_overlap"],
         kl_divergence=per_cell["kl_divergence"],
-        spike_prob=per_cell["spike_prob"],
+        predictive_pvalue=per_cell["predictive_pvalue"],
         event_time_ind=spike_time_ind,
         event_cell_ind=spike_cell_ind,
         event_hpd_overlap=rng.uniform(0, 1, len(spike_time_ind)),
         event_kl_divergence=rng.uniform(0, 5, len(spike_time_ind)),
-        event_spike_prob=rng.uniform(0, 1, len(spike_time_ind)),
+        event_predictive_pvalue=rng.uniform(0, 1, len(spike_time_ind)),
         per_spike_likelihood=per_spike_lik,
     )
     return {"spikes": spikes, "metrics": diagnostics}
@@ -331,16 +331,16 @@ def test_plot_combined_diagnostics_uses_event_diagnostics_for_scatter() -> None:
         spike_likelihood=spike_lik,
         hpd_overlap=hpd,
         kl_divergence=kl,
-        spike_prob=sp,
+        predictive_pvalue=sp,
         event_time_ind=np.array([10, 10], dtype=np.intp),
         event_cell_ind=np.array([0, 0], dtype=np.intp),
         event_hpd_overlap=np.array([0.25, 0.75]),
         event_kl_divergence=np.array([1.0, 3.0]),
-        event_spike_prob=np.array([0.1, 0.01]),
+        event_predictive_pvalue=np.array([0.1, 0.01]),
         per_spike_likelihood=per_spike_lik,
     )
 
-    thresholds = Thresholds(hpd_overlap=0.8, kl_divergence=2.0, spike_prob=0.05)
+    thresholds = Thresholds(hpd_overlap=0.8, kl_divergence=2.0, predictive_pvalue=0.05)
     params = _params_for_short_run(n_time, n_cells)
 
     fig = plot_combined_diagnostics(
@@ -358,10 +358,10 @@ def test_plot_combined_diagnostics_uses_event_diagnostics_for_scatter() -> None:
         np.testing.assert_array_equal(hpd_offsets[:, 0], [10, 10])
         np.testing.assert_allclose(hpd_offsets[:, 1], [0.25, 0.75])
 
-        spike_prob_offsets = fig.axes[4].collections[0].get_offsets()
-        np.testing.assert_array_equal(spike_prob_offsets[:, 0], [10, 10])
-        # Plotted as -log(spike_prob) (natural log); 0.1 -> -ln(0.1), 0.01 -> -ln(0.01).
-        np.testing.assert_allclose(spike_prob_offsets[:, 1], [-np.log(0.1), -np.log(0.01)])
+        predictive_pvalue_offsets = fig.axes[4].collections[0].get_offsets()
+        np.testing.assert_array_equal(predictive_pvalue_offsets[:, 0], [10, 10])
+        # Plotted as -log(predictive_pvalue) (natural log); 0.1 -> -ln(0.1), 0.01 -> -ln(0.01).
+        np.testing.assert_allclose(predictive_pvalue_offsets[:, 1], [-np.log(0.1), -np.log(0.01)])
     finally:
         plt.close(fig)
 

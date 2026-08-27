@@ -108,10 +108,10 @@ def _make_per_cell_diagnostics(
         event_cell_ind=np.zeros(n_spikes, dtype=np.intp),
         event_hpd_overlap=event_hpd_overlap,
         event_kl_divergence=np.zeros(n_spikes),
-        event_spike_prob=np.zeros(n_spikes),
+        event_predictive_pvalue=np.zeros(n_spikes),
         hpd_overlap=None,
         kl_divergence=None,
-        spike_prob=None,
+        predictive_pvalue=None,
         per_spike_likelihood=None,
         event_time=event_time,
     )

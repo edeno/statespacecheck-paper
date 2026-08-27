@@ -73,8 +73,8 @@ FIGURE3_DIAGNOSTIC_ROW_SPECS: tuple[DiagnosticRowSpec, ...] = (
         symlog_hpd=True,
     ),
     DiagnosticRowSpec(
-        "event_spike_prob",
-        "spike_prob",
+        "event_predictive_pvalue",
+        "predictive_pvalue",
         "−log(p)",
         COLORS["metric_combined"],
         "↑ Worse fit",
@@ -984,7 +984,7 @@ def plot_combined_diagnostics(
         Spike counts for each cell at each time point.
     metrics : dict[str, NDArray]
         Dictionary containing diagnostic metrics from decode_and_diagnostics.
-        Metrics 'hpd_overlap', 'kl_divergence', 'spike_prob' have shape (n_time, n_cells).
+        Metrics 'hpd_overlap', 'kl_divergence', 'predictive_pvalue' have shape (n_time, n_cells).
     thresholds : Thresholds
         Threshold values for each diagnostic.
     params : DecodeParams

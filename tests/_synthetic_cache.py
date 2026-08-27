@@ -53,7 +53,7 @@ def build_synthetic_cache(
     n_spikes_per_cell : int
         Per-cell spike count for the events table.
     p_min : float
-        Lower bound for the synthetic ``event_spike_prob`` column.
+        Lower bound for the synthetic ``event_predictive_pvalue`` column.
     seed : int
         RNG seed for reproducibility.
     with_acausal : bool, default True
@@ -138,7 +138,7 @@ def build_synthetic_cache(
             "cell_id",
             "event_hpd_overlap",
             "event_kl_divergence",
-            "event_spike_prob",
+            "event_predictive_pvalue",
         ],
     ).astype(
         {
@@ -146,7 +146,7 @@ def build_synthetic_cache(
             "cell_id": np.int32,
             "event_hpd_overlap": np.float32,
             "event_kl_divergence": np.float32,
-            "event_spike_prob": np.float32,
+            "event_predictive_pvalue": np.float32,
         }
     )
     events.to_parquet(paths["events"], engine="pyarrow", compression="zstd")

@@ -39,10 +39,10 @@ def _per_spike_diagnostics(hpd: np.ndarray, kl: np.ndarray, sp: np.ndarray) -> P
         event_cell_ind=np.zeros(n_spikes, dtype=np.intp),
         event_hpd_overlap=hpd,
         event_kl_divergence=kl,
-        event_spike_prob=sp,
+        event_predictive_pvalue=sp,
         hpd_overlap=None,
         kl_divergence=None,
-        spike_prob=None,
+        predictive_pvalue=None,
         per_spike_likelihood=None,
     )
 
@@ -115,7 +115,7 @@ class TestPlotPerSpikeMetricHexbinRow:
         def with_nans(d: PerCellDiagnostics) -> PerCellDiagnostics:
             hpd = d.event_hpd_overlap.copy()
             kl = d.event_kl_divergence.copy()
-            sp = d.event_spike_prob.copy()
+            sp = d.event_predictive_pvalue.copy()
             for arr in (hpd, kl, sp):
                 arr[nan_positions] = np.nan
             return _per_spike_diagnostics(hpd, kl, sp)
@@ -156,7 +156,7 @@ class TestPlotPerSpikeMetricHexbinRow:
         diag_b_short = _per_spike_diagnostics(
             diag_b.event_hpd_overlap[:25],
             diag_b.event_kl_divergence[:25],
-            diag_b.event_spike_prob[:25],
+            diag_b.event_predictive_pvalue[:25],
         )
         fig, axes = plt.subplots(1, 3)
         with pytest.raises(ValueError, match="same set of spike events"):
@@ -184,7 +184,7 @@ class TestPlotPerSpikeMetricHexbinRow:
         from matplotlib.patches import Rectangle
 
         diag_a, diag_b = paired_diagnostics
-        thresholds = {"hpd_overlap": 0.05, "kl_divergence": 4.52, "spike_prob": 0.05}
+        thresholds = {"hpd_overlap": 0.05, "kl_divergence": 4.52, "predictive_pvalue": 0.05}
 
         fig, axes = plt.subplots(1, 3)
         plot_per_spike_metric_hexbin_row(diag_a, diag_b, axes, thresholds=thresholds)
