@@ -295,7 +295,11 @@ def generate_preview_figures(
     """
     if output_dir is None:
         output_dir = (
-            Path(__file__).parent.parent / "manuscript" / "figures" / "preview" / "continuous_wins"
+            Path(__file__).resolve().parents[2]
+            / "manuscript"
+            / "figures"
+            / "preview"
+            / "continuous_wins"
         )
 
     output_dir.mkdir(parents=True, exist_ok=True)

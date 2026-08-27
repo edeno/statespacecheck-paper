@@ -54,7 +54,7 @@ WINDOW_HALF_WIDTH = 50
 N_QUANTILE_SPIKES = 20
 
 OUTPUT_ROOT = (
-    Path(__file__).parent.parent / "manuscript" / "figures" / "preview" / "sanity_check_4a"
+    Path(__file__).resolve().parents[2] / "manuscript" / "figures" / "preview" / "sanity_check_4a"
 )
 
 

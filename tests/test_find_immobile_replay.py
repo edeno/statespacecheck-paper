@@ -15,7 +15,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-SCRIPTS_DIR = Path(__file__).parent.parent / "scripts"
+SCRIPTS_DIR = Path(__file__).parent.parent / "scripts" / "exploratory"
 sys.path.insert(0, str(SCRIPTS_DIR))
 try:
     find_immobile_replay = importlib.import_module("find_immobile_replay_windows")

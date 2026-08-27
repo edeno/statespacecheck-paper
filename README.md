@@ -9,7 +9,7 @@ This repository contains the source code and supplementary materials for the pap
 This is a **paper/research repository** (not a library). The code is organized into:
 
 - **`src/statespacecheck_paper/`**: Reusable modules (styling, simulation, analysis, plotting)
-- **`scripts/`**: Figure generation scripts (thin orchestration layers)
+- **`scripts/`**: Canonical figure-generation scripts (thin orchestration layers); non-canonical scaffolding lives in `scripts/exploratory/`
 - **`manuscript/figures/`**: Generated figure outputs (PDF and PNG)
   - `manuscript/figures/main/`: Main text figures
   - `manuscript/figures/supplementary/`: Supplementary figures

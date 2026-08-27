@@ -32,7 +32,8 @@ statespacecheck-paper/
 │   ├── generate_figure03.py    # Figure 3: Per-cell diagnostics across 8-phase simulation
 │   ├── generate_figure04.py    # Figure 4: Real-data decoder + diagnostics
 │   ├── generate_all_figures.py # Master script to generate all figures
-│   └── ...                     # Exploratory: sanity_check_figure04*.py, find_*.py, benchmark_*.py
+│   └── exploratory/            # Non-canonical scaffolding (sanity checks, window
+│                               # selection, viewer benchmark) — see exploratory/README.md
 ├── manuscript/                  # LaTeX source files + bundled figures (Overleaf-ready)
 │   ├── main.tex                 # Self-contained (own inline preamble)
 │   ├── Local-GoF-Paper.bib      # Bibliography (BibTeX, from Zotero); built with iopart-num.bst
@@ -133,7 +134,8 @@ The repository follows a clean separation between **reusable code** (in `src/`) 
 - `ANIMAL_DATE_EPOCH`: default `j1620210710_02_r1`; override via
   `STATESPACECHECK_ANIMAL_DATE_EPOCH`.
 - Imported by `scripts/generate_figure04.py` and the four
-  `sanity_check_*` / `find_*` scripts so they share one source of truth.
+  `scripts/exploratory/` sanity-check / window-finder scripts so they share one
+  source of truth.
 
 ### Figure Scripts
 

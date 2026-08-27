@@ -41,7 +41,7 @@ import numpy as np
 
 from statespacecheck_paper.interactive.cache import ModelName
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _percentile(values: list[float], pct: float) -> float:
