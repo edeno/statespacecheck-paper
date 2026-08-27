@@ -20,7 +20,7 @@ from statespacecheck_paper.diagnostics import (
 from statespacecheck_paper.simulation import (
     gaussian_transition_matrix,
     normalize,
-    placefield_rates,
+    place_field_rates,
 )
 
 from ._decoder_inputs import DecoderInputs, _diag_dominant_transition
@@ -190,10 +190,10 @@ class TestDecodeWithDiagnostics:
         for time_ind, cell_ind in ((1, 0), (2, 0), (3, 1), (4, 2), (5, 0)):
             spike_counts[time_ind, cell_ind] = 1
 
-        baseline_rates = placefield_rates(
+        baseline_rates = place_field_rates(
             position_bins, place_field_centers, place_field_std, place_field_rate_scale
         )
-        alt_rates = placefield_rates(
+        alt_rates = place_field_rates(
             position_bins,
             np.array([4.0, 0.0, 2.0]),
             place_field_std,
@@ -509,7 +509,7 @@ class TestDecodeWithDiagnosticsLogSpace:
         n_time, n_cells, n_bins = 50, 3, 21
         spike_counts = rng.poisson(1.0, size=(n_time, n_cells))
         position_bins = np.linspace(0.0, 100.0, n_bins)
-        transition_matrix = gaussian_transition_matrix(position_bins, sig=2.0)
+        transition_matrix = gaussian_transition_matrix(position_bins, step_std=2.0)
         place_field_centers = np.array([25.0, 50.0, 75.0])
         results = decode_with_diagnostics(
             spike_counts,
@@ -535,7 +535,7 @@ class TestDecodeWithDiagnosticsLogSpace:
         n_time, n_cells, n_bins = 30, 2, 51
         position_bins = np.linspace(0.0, 100.0, n_bins)
         # Narrow transition kernel so the prior stays concentrated.
-        transition_matrix = gaussian_transition_matrix(position_bins, sig=0.5)
+        transition_matrix = gaussian_transition_matrix(position_bins, step_std=0.5)
         # Two cells with place fields at x≈90 — far from the
         # bias-initialized posterior which mostly accumulates near 0.
         place_field_centers = np.array([88.0, 92.0])
@@ -587,7 +587,7 @@ class TestDecodeWithDiagnosticsLogSpace:
         bin's rate underflows to 0.0."""
         n_time, n_cells, n_bins = 8, 1, 21
         position_bins = np.linspace(0.0, 100.0, n_bins)
-        transition_matrix = gaussian_transition_matrix(position_bins, sig=2.0)
+        transition_matrix = gaussian_transition_matrix(position_bins, step_std=2.0)
         # PF center so far from position_bins that exp(-d^2 / 2*place_field_std^2)
         # underflows to exactly 0.0 — every bin's rate is 0.0.
         place_field_centers = np.array([1e6])
@@ -743,7 +743,7 @@ class TestLogSpaceReferenceComparison:
     ) -> None:
         from scipy.stats import poisson as _poisson
 
-        from statespacecheck_paper.simulation import placefield_rates
+        from statespacecheck_paper.simulation import place_field_rates
 
         spike_counts = decoder_inputs.spike_counts
         position_bins = decoder_inputs.position_bins
@@ -761,7 +761,7 @@ class TestLogSpaceReferenceComparison:
 
         # Reference: linear-space prior, log-space combined likelihood,
         # softmax-shift normalization. No reset-to-uniform branch.
-        rates = placefield_rates(
+        rates = place_field_rates(
             position_bins,
             decoder_inputs.place_field_centers,
             decoder_inputs.place_field_std,
@@ -833,7 +833,9 @@ class TestResolveBaselineFiringRates:
             None, position_bins, place_field_centers, 5.0, 0.1, n_bins=5, n_cells=2
         )
         assert built.shape == (5, 2)
-        assert np.array_equal(built, placefield_rates(position_bins, place_field_centers, 5.0, 0.1))
+        assert np.array_equal(
+            built, place_field_rates(position_bins, place_field_centers, 5.0, 0.1)
+        )
 
 
 class TestDecoderApiContract:

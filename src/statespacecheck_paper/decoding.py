@@ -27,7 +27,7 @@ from statespacecheck_paper.diagnostics import (
 )
 from statespacecheck_paper.simulation import (
     normalize,
-    placefield_rates,
+    place_field_rates,
     softmax_with_shift,
 )
 
@@ -310,7 +310,7 @@ def _resolve_baseline_firing_rates(
         if not (np.all(np.isfinite(rates)) and np.all(rates >= 0.0)):
             raise ValueError("baseline_firing_rates must contain only finite, non-negative rates.")
         return rates
-    return placefield_rates(
+    return place_field_rates(
         position_bins, place_field_centers, place_field_std, place_field_rate_scale
     )
 

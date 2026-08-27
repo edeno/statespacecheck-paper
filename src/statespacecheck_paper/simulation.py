@@ -18,8 +18,8 @@ Simulate a random walk with reflecting boundaries:
 
 >>> import numpy as np
 >>> rng = np.random.default_rng(42)
->>> walk = simulate_walk(n_time=100, sig=1.0, x0=50.0,
-...                      xs_min=0.0, xs_max=100.0, rng=rng)
+>>> walk = simulate_walk(n_time_steps=100, step_std=1.0, initial_position=50.0,
+...                      position_min=0.0, position_max=100.0, rng=rng)
 >>> walk.shape
 (100,)
 >>> bool((walk >= 0.0).all() and (walk <= 100.0).all())
@@ -28,9 +28,9 @@ True
 Generate position-tuned spikes:
 
 >>> x = np.linspace(0, 100, 100)
->>> pf_centers = np.array([25.0, 50.0, 75.0])
->>> spikes = simulate_spikes_position_tuned(x, pf_centers, pf_width=5.0,
-...                                         rate_scale=0.1, rng=rng)
+>>> place_field_centers = np.array([25.0, 50.0, 75.0])
+>>> spikes = simulate_spikes_position_tuned(x, place_field_centers, place_field_std=5.0,
+...                                         place_field_rate_scale=0.1, rng=rng)
 >>> spikes.shape
 (100, 3)
 """
@@ -171,7 +171,9 @@ def reflect_into_interval(
     return result
 
 
-def gaussian_transition_matrix(xs: NDArray[np.floating], sig: float) -> NDArray[np.floating]:
+def gaussian_transition_matrix(
+    position_bins: NDArray[np.floating], step_std: float
+) -> NDArray[np.floating]:
     """Compute one-step Gaussian transition matrix for random walk.
 
     Computes transition probabilities for Gaussian random walk on discrete grid.
@@ -180,9 +182,9 @@ def gaussian_transition_matrix(xs: NDArray[np.floating], sig: float) -> NDArray[
 
     Parameters
     ----------
-    xs : np.ndarray, shape (n_bins,)
+    position_bins : np.ndarray, shape (n_bins,)
         Grid of position values.
-    sig : float
+    step_std : float
         Standard deviation of Gaussian transition kernel.
 
     Returns
@@ -195,15 +197,15 @@ def gaussian_transition_matrix(xs: NDArray[np.floating], sig: float) -> NDArray[
     --------
     Create transition matrix for 3-state system:
 
-    >>> xs = np.array([0.0, 1.0, 2.0])
-    >>> matrix = gaussian_transition_matrix(xs, sig=1.0)
+    >>> position_bins = np.array([0.0, 1.0, 2.0])
+    >>> matrix = gaussian_transition_matrix(position_bins, step_std=1.0)
     >>> matrix.shape
     (3, 3)
     >>> np.allclose(matrix.sum(axis=0), 1.0)  # Columns sum to 1
     True
     """
-    diff = xs[:, None] - xs[None, :]
-    matrix = norm.pdf(diff, loc=0.0, scale=sig)
+    diff = position_bins[:, None] - position_bins[None, :]
+    matrix = norm.pdf(diff, loc=0.0, scale=step_std)
     # Normalize columns in-place to avoid copy
     col_sums = matrix.sum(axis=0, keepdims=True)
     col_sums = np.maximum(col_sums, 1e-12)
@@ -239,24 +241,27 @@ def safe_log(x: NDArray[np.floating], eps: float = 1e-12) -> NDArray[np.floating
     return result
 
 
-def placefield_rates(
-    xs: NDArray[np.floating], centers: NDArray[np.floating], width: float, scale: float
+def place_field_rates(
+    position_bins: NDArray[np.floating],
+    place_field_centers: NDArray[np.floating],
+    place_field_std: float,
+    place_field_rate_scale: float,
 ) -> NDArray[np.floating]:
     """Compute Gaussian place field firing rates.
 
     Computes firing rate for each neuron at each position using Gaussian place
     field model. Each neuron has a place field centered at one location with
-    specified width.
+    specified place_field_std.
 
     Parameters
     ----------
-    xs : np.ndarray, shape (n_bins,)
-        Position bin centers.
-    centers : np.ndarray, shape (n_cells,)
+    position_bins : np.ndarray, shape (n_bins,)
+        Position bin place_field_centers.
+    place_field_centers : np.ndarray, shape (n_cells,)
         Place field center for each neuron.
-    width : float
+    place_field_std : float
         Standard deviation of Gaussian place field.
-    scale : float
+    place_field_rate_scale : float
         Scale factor multiplying the normalized Gaussian place-field density.
 
     Returns
@@ -268,58 +273,65 @@ def placefield_rates(
     --------
     Compute place field rates for 3 neurons:
 
-    >>> xs = np.linspace(0, 10, 11)
-    >>> centers = np.array([2.0, 5.0, 8.0])
-    >>> rates = placefield_rates(xs, centers, width=1.0, scale=1.0)
+    >>> position_bins = np.linspace(0, 10, 11)
+    >>> place_field_centers = np.array([2.0, 5.0, 8.0])
+    >>> rates = place_field_rates(
+    ...     position_bins, place_field_centers, place_field_std=1.0, place_field_rate_scale=1.0
+    ... )
     >>> rates.shape
     (11, 3)
     >>> rates.max(axis=0).round(3)  # Peak at each center
     array([0.399, 0.399, 0.399])
     """
-    result: NDArray[np.floating] = norm.pdf(xs[:, None], loc=centers[None, :], scale=width) * scale
+    result: NDArray[np.floating] = (
+        norm.pdf(position_bins[:, None], loc=place_field_centers[None, :], scale=place_field_std)
+        * place_field_rate_scale
+    )
     return result
 
 
 def simulate_walk(
-    n_time: int,
-    sig: float,
-    x0: float,
-    xs_min: float,
-    xs_max: float,
+    n_time_steps: int,
+    step_std: float,
+    initial_position: float,
+    position_min: float,
+    position_max: float,
     rng: np.random.Generator,
 ) -> NDArray[np.floating]:
     """Simulate random walk with reflecting boundary conditions.
 
     Simulates a Gaussian random walk on continuous space with reflecting
-    boundaries. The walk starts at x0 and takes steps drawn from a Gaussian
-    distribution with standard deviation sig.
+    boundaries. The walk starts at initial_position and takes steps drawn from a Gaussian
+    distribution with standard deviation step_std.
 
     Parameters
     ----------
-    n_time : int
+    n_time_steps : int
         Number of time steps to simulate.
-    sig : float
+    step_std : float
         Standard deviation of step size distribution.
-    x0 : float
+    initial_position : float
         Initial position.
-    xs_min : float
+    position_min : float
         Lower boundary (reflecting).
-    xs_max : float
+    position_max : float
         Upper boundary (reflecting).
     rng : np.random.Generator
         Random number generator for reproducibility.
 
     Returns
     -------
-    trajectory : np.ndarray, shape (n_time,)
-        Simulated trajectory with all values in [xs_min, xs_max].
+    trajectory : np.ndarray, shape (n_time_steps,)
+        Simulated trajectory with all values in [position_min, position_max].
 
     Examples
     --------
     Simulate a 100-step random walk:
 
     >>> rng = np.random.default_rng(42)
-    >>> walk = simulate_walk(100, sig=1.0, x0=50.0, xs_min=0.0, xs_max=100.0, rng=rng)
+    >>> walk = simulate_walk(
+    ...     100, step_std=1.0, initial_position=50.0, position_min=0.0, position_max=100.0, rng=rng
+    ... )
     >>> walk.shape
     (100,)
     >>> bool((walk >= 0.0).all() and (walk <= 100.0).all())
@@ -328,20 +340,22 @@ def simulate_walk(
     With zero step size, trajectory is constant:
 
     >>> rng = np.random.default_rng(42)
-    >>> walk = simulate_walk(10, sig=0.0, x0=50.0, xs_min=0.0, xs_max=100.0, rng=rng)
+    >>> walk = simulate_walk(
+    ...     10, step_std=0.0, initial_position=50.0, position_min=0.0, position_max=100.0, rng=rng
+    ... )
     >>> np.allclose(walk, 50.0)
     True
     """
-    steps = rng.normal(loc=0.0, scale=sig, size=n_time)
-    x = x0 + np.cumsum(steps)
-    return reflect_into_interval(x, xs_min, xs_max)
+    steps = rng.normal(loc=0.0, scale=step_std, size=n_time_steps)
+    x = initial_position + np.cumsum(steps)
+    return reflect_into_interval(x, position_min, position_max)
 
 
 def simulate_spikes_position_tuned(
-    x: NDArray[np.floating],
-    pf_centers: NDArray[np.floating],
-    pf_width: float,
-    rate_scale: float,
+    position: NDArray[np.floating],
+    place_field_centers: NDArray[np.floating],
+    place_field_std: float,
+    place_field_rate_scale: float,
     rng: np.random.Generator,
 ) -> NDArray[np.int_]:
     """Simulate Poisson spikes for position-tuned neurons.
@@ -352,13 +366,13 @@ def simulate_spikes_position_tuned(
 
     Parameters
     ----------
-    x : np.ndarray, shape (n_time,)
+    position : np.ndarray, shape (n_time,)
         Position at each time step.
-    pf_centers : np.ndarray, shape (n_cells,)
+    place_field_centers : np.ndarray, shape (n_cells,)
         Place field center for each neuron.
-    pf_width : float
+    place_field_std : float
         Standard deviation of Gaussian place field.
-    rate_scale : float
+    place_field_rate_scale : float
         Scale factor multiplying the normalized Gaussian place-field density.
     rng : np.random.Generator
         Random number generator for reproducibility.
@@ -373,25 +387,28 @@ def simulate_spikes_position_tuned(
     Simulate spikes for 3 neurons:
 
     >>> rng = np.random.default_rng(42)
-    >>> x = np.linspace(0, 100, 100)
-    >>> pf_centers = np.array([25.0, 50.0, 75.0])
-    >>> spikes = simulate_spikes_position_tuned(x, pf_centers, pf_width=5.0,
-    ...                                         rate_scale=0.1, rng=rng)
+    >>> position = np.linspace(0, 100, 100)
+    >>> place_field_centers = np.array([25.0, 50.0, 75.0])
+    >>> spikes = simulate_spikes_position_tuned(position, place_field_centers, place_field_std=5.0,
+    ...                                         place_field_rate_scale=0.1, rng=rng)
     >>> spikes.shape
     (100, 3)
     >>> bool((spikes >= 0).all())
     True
     """
-    lam = norm.pdf(x[:, None], loc=pf_centers[None, :], scale=pf_width) * rate_scale
+    lam = (
+        norm.pdf(position[:, None], loc=place_field_centers[None, :], scale=place_field_std)
+        * place_field_rate_scale
+    )
     spikes: NDArray[np.int_] = rng.poisson(lam)
     return spikes
 
 
 def simulate_spikes_history_dependent(
-    x: NDArray[np.floating],
-    pf_centers: NDArray[np.floating],
-    pf_width: float,
-    rate_scale: float,
+    position: NDArray[np.floating],
+    place_field_centers: NDArray[np.floating],
+    place_field_std: float,
+    place_field_rate_scale: float,
     rng: np.random.Generator,
     *,
     refractory_steps: int = 1,
@@ -419,19 +436,19 @@ def simulate_spikes_history_dependent(
     The Poisson assumption is violated by this generator: the
     spike-spike correlations introduced by the burst window create a
     joint distribution that is not memoryless. Per-spike spatial
-    likelihoods (which evaluate ``Poisson(k=1 | rate(x))``) are
+    likelihoods (which evaluate ``Poisson(k=1 | rate(position))``) are
     unchanged for any individual spike — the misfit is in the
     *temporal* joint distribution, not the per-step marginal.
 
     Parameters
     ----------
-    x : np.ndarray, shape (n_time,)
+    position : np.ndarray, shape (n_time,)
         Position at each time step.
-    pf_centers : np.ndarray, shape (n_cells,)
+    place_field_centers : np.ndarray, shape (n_cells,)
         Place field centers for each cell.
-    pf_width : float
+    place_field_std : float
         Standard deviation of the Gaussian place field.
-    rate_scale : float
+    place_field_rate_scale : float
         Scale factor multiplying the normalized Gaussian place-field density.
     rng : np.random.Generator
         Random number generator for reproducibility.
@@ -473,10 +490,10 @@ def simulate_spikes_history_dependent(
     Examples
     --------
     >>> rng = np.random.default_rng(0)
-    >>> x = np.linspace(0, 100, 200)
-    >>> pf_centers = np.array([20.0, 50.0, 80.0])
+    >>> position = np.linspace(0, 100, 200)
+    >>> place_field_centers = np.array([20.0, 50.0, 80.0])
     >>> spikes = simulate_spikes_history_dependent(
-    ...     x, pf_centers, pf_width=10.0, rate_scale=5.0, rng=rng
+    ...     position, place_field_centers, place_field_std=10.0, place_field_rate_scale=5.0, rng=rng
     ... )
     >>> spikes.shape
     (200, 3)
@@ -495,10 +512,12 @@ def simulate_spikes_history_dependent(
     if burst_factor <= 0:
         raise ValueError(f"burst_factor must be positive, got {burst_factor}")
 
-    n_time = x.shape[0]
-    n_cells = pf_centers.shape[0]
+    n_time = position.shape[0]
+    n_cells = place_field_centers.shape[0]
     # (n_time, n_cells) Gaussian place-field rate at each step's position.
-    base_rates = placefield_rates(x, pf_centers, pf_width, rate_scale)
+    base_rates = place_field_rates(
+        position, place_field_centers, place_field_std, place_field_rate_scale
+    )
 
     spikes = np.zeros((n_time, n_cells), dtype=np.int_)
     # ``steps_since_spike[c]`` = number of steps since cell ``c`` last fired.

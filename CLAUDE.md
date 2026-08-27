@@ -20,10 +20,12 @@ statespacecheck-paper/
 │   ├── simulation.py           # Simulation utilities
 │   ├── diagnostics.py          # Shared goodness-of-fit diagnostics (leaf layer)
 │   ├── decoding.py             # General Bayesian decoder + override mechanism
-│   ├── analysis.py             # Figure-3 params/remap + summary-flag logic
-│   ├── plotting.py             # Plotting utilities
+│   ├── plotting.py             # Generic plotting utilities (HPD, likelihood cols, Fig-1 panel)
 │   ├── figure02_panels.py      # Figure-2 per-panel renderers
-│   ├── figure03_demo.py        # Figure-3 simulation + decoder pipeline
+│   ├── figure03_protocol.py    # Figure-3 config (Figure3Config) + phase ladder
+│   ├── figure03_simulation.py  # Figure-3 phased simulation + decode
+│   ├── figure03_summary.py     # Figure-3b per-condition flag-percentage summary
+│   ├── figure03_plotting.py    # Figure-3 rendering (compose_figure03 + panels)
 │   ├── real_data_analysis.py   # Figure-4 decoder + diagnostics
 │   ├── real_data_plotting.py   # Figure-4 plotting helpers
 │   ├── schematic.py            # Graphical model and equation diagrams
@@ -49,7 +51,11 @@ statespacecheck-paper/
     ├── test_simulation.py
     ├── test_diagnostics.py
     ├── test_decoding.py
-    ├── test_analysis.py
+    ├── test_figure03_protocol.py
+    ├── test_figure03_simulation.py
+    ├── test_figure03_summary.py
+    ├── test_figure03_plotting.py
+    ├── test_figure03_phases.py
     ├── test_plotting.py
     ├── test_schematic.py       # Tests for schematic module
     ├── test_figures.py         # Integration tests
@@ -62,7 +68,10 @@ statespacecheck-paper/
 - **simulation.py**: Simulation functions (random walks, spike generation, place fields)
 - **diagnostics.py**: Shared goodness-of-fit diagnostics — the dependency-graph leaf (per-spike-event HPD/KL/rank containers + computation, single-spike likelihood, predictive-mark probabilities, baseline thresholds)
 - **decoding.py**: General Bayesian decoder `decode_with_diagnostics` + per-window override mechanism (`DecoderOverrideWindow`/`DecoderOverrideSchedule`); depends only on `diagnostics` + `simulation`
-- **analysis.py**: Figure-3 decode params (`DecodeParams`), place-field remapping, and Figure-3b summary-flag logic
+- **figure03_protocol.py**: Immutable Figure-3 configuration (`Figure3Config`), phase-ladder enum (`PhaseBoundary`), and replay-window helper — a leaf module
+- **figure03_simulation.py**: Figure-3 phased simulation (`run_figure03_simulation` → `Figure3SimulationResult`), phase simulators, rate tables, place-field remapping
+- **figure03_summary.py**: Figure-3b per-condition flag-percentage summary (`build_summary_conditions`, `estimate_realization_summary` → `Figure3RealizationSummary`)
+- **figure03_plotting.py**: Figure-3 rendering (`compose_figure03` + the time-series/heatmap panels)
 - **plotting.py**: Reusable plotting functions (HPD regions, diagnostic plots)
 - **schematic.py**: Graphical model diagrams and Bayesian equation boxes for Figure 1
 - **load_local_data.py**: Data loading utilities for real datasets
@@ -117,7 +126,7 @@ The repository follows a clean separation between **reusable code** (in `src/`) 
 - `decode_with_diagnostics(spike_counts, position_bins, transition_matrix, place_field_centers, place_field_std, place_field_rate_scale, override_schedule=None, baseline_firing_rates=None)`: Bayesian filter returning `DecodingDiagnostics`
 - `DecoderOverrideWindow` / `DecoderOverrideSchedule`: Optional per-window transition/firing-rate overrides (used by Figure 3)
 
-**5. analysis.py** - Figure-3 Params + Summary Logic
+**5. figure03_protocol.py / figure03_simulation.py / figure03_summary.py / figure03_plotting.py** - Figure-3 Family
 
 - `DecodeParams`: Dataclass for the figure-3 decoding simulation (timeline, cells, remapping)
 - `get_remapped_pf_centers(params)`: Compute remapped place field centers
@@ -168,21 +177,22 @@ Figure scripts (in `scripts/`) are thin orchestration layers that:
 ```python
 from statespacecheck_paper.style import WONG, set_figure_defaults, save_figure
 from statespacecheck_paper.simulation import simulate_walk, simulate_spikes_position_tuned
-from statespacecheck_paper.analysis import decode_and_diagnostics, DecodeParams
+from statespacecheck_paper.decoding import decode_with_diagnostics
+from statespacecheck_paper.figure03_protocol import Figure3Config
 
 def create_figure():
     """Generate Figure X showing..."""
     set_figure_defaults()
 
     # Setup parameters
-    params = DecodeParams(...)
+    config = Figure3Config(...)
 
     # Run simulation
-    x_true = simulate_walk(...)
-    spikes = simulate_spikes_position_tuned(...)
+    true_position = simulate_walk(...)
+    spike_counts = simulate_spikes_position_tuned(...)
 
     # Run analysis
-    results = decode_and_diagnostics(spikes, params)
+    results = decode_with_diagnostics(spike_counts, ...)
 
     # Create plots
     fig, axes = plot_combined_diagnostics(results, x_true, spikes, params)
@@ -200,7 +210,7 @@ Tests are organized by module (regenerate exact percentages with `uv run pytest 
 
 - **test_style.py**: Style utilities (98% coverage)
 - **test_simulation.py**: Simulation functions (100% coverage)
-- **test_analysis.py**: Analysis functions (98% coverage)
+- **test_figure03_*.py**: Figure-3 protocol/simulation/summary/plotting + phases + contracts
 - **test_plotting.py**: Plotting functions (96% coverage)
 - **test_figures.py**: Integration tests for figure scripts
 - **test_properties.py**: Property-based tests using Hypothesis
@@ -349,7 +359,7 @@ When adding new features, follow these guidelines:
 - Utility functions for simulation (normalize, boundary conditions)
 - Functions should be pure (no side effects) and reproducible (use `rng` parameter)
 
-**Adding analysis functions** → `src/statespacecheck_paper/analysis.py`
+**Adding diagnostic/decoder functions** → `src/statespacecheck_paper/diagnostics.py` or `decoding.py`; **Figure-3 code** → the `figure03_*` family
 
 - Decoder logic, filtering algorithms
 - Diagnostic computations (KL divergence, HPD overlap)

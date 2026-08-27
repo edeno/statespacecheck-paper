@@ -9,7 +9,7 @@ from numpy.testing import assert_allclose, assert_array_equal
 from statespacecheck_paper.simulation import (
     gaussian_transition_matrix,
     normalize,
-    placefield_rates,
+    place_field_rates,
     reflect_into_interval,
     safe_log,
     simulate_spikes_history_dependent,
@@ -113,27 +113,27 @@ class TestReflectIntoInterval:
 
 class TestGaussianTransitionMatrix:
     def test_shape(self) -> None:
-        matrix = gaussian_transition_matrix(np.array([0.0, 1.0, 2.0]), sig=1.0)
+        matrix = gaussian_transition_matrix(np.array([0.0, 1.0, 2.0]), step_std=1.0)
         assert matrix.shape == (3, 3)
 
     def test_columns_sum_to_one(self) -> None:
-        matrix = gaussian_transition_matrix(np.linspace(0, 10, 11), sig=1.0)
+        matrix = gaussian_transition_matrix(np.linspace(0, 10, 11), step_std=1.0)
         assert_allclose(matrix.sum(axis=0), np.ones(11), rtol=1e-10)
 
     def test_diagonal_dominant_for_small_sigma(self) -> None:
-        matrix = gaussian_transition_matrix(np.array([0.0, 1.0, 2.0]), sig=0.1)
+        matrix = gaussian_transition_matrix(np.array([0.0, 1.0, 2.0]), step_std=0.1)
         for i in range(3):
             assert matrix[i, i] == matrix[:, i].max()
 
     def test_larger_sigma_spreads_probability(self) -> None:
         xs = np.array([0.0, 1.0, 2.0])
-        narrow = gaussian_transition_matrix(xs, sig=0.1)
-        wide = gaussian_transition_matrix(xs, sig=2.0)
+        narrow = gaussian_transition_matrix(xs, step_std=0.1)
+        wide = gaussian_transition_matrix(xs, step_std=2.0)
         assert narrow[0, 0] > wide[0, 0]
 
     def test_single_bin_is_identity(self) -> None:
         """Edge case: single-bin grid yields a 1x1 matrix that sums to 1."""
-        matrix = gaussian_transition_matrix(np.array([0.0]), sig=1.0)
+        matrix = gaussian_transition_matrix(np.array([0.0]), step_std=1.0)
         assert matrix.shape == (1, 1)
         assert matrix[0, 0] == pytest.approx(1.0)
 
@@ -158,33 +158,40 @@ class TestSafeLog:
 
 
 # ---------------------------------------------------------------------------
-# placefield_rates
+# place_field_rates
 # ---------------------------------------------------------------------------
 
 
-class TestPlacefieldRates:
+class TestPlaceFieldRates:
     def test_shape(self) -> None:
-        rates = placefield_rates(
-            np.linspace(0, 10, 11), np.array([2.0, 5.0, 8.0]), width=1.0, scale=1.0
+        rates = place_field_rates(
+            np.linspace(0, 10, 11),
+            np.array([2.0, 5.0, 8.0]),
+            place_field_std=1.0,
+            place_field_rate_scale=1.0,
         )
         assert rates.shape == (11, 3)
 
     def test_peak_is_at_place_field_center(self) -> None:
         xs = np.linspace(0, 10, 101)
-        rates = placefield_rates(xs, np.array([5.0]), width=1.0, scale=1.0)
+        rates = place_field_rates(
+            xs, np.array([5.0]), place_field_std=1.0, place_field_rate_scale=1.0
+        )
         center_idx = int(np.argmin(np.abs(xs - 5.0)))
         assert rates[center_idx, 0] == rates[:, 0].max()
 
     def test_scale_multiplies_rates(self) -> None:
         xs = np.linspace(0, 10, 11)
         centers = np.array([5.0])
-        baseline = placefield_rates(xs, centers, width=1.0, scale=1.0)
-        doubled = placefield_rates(xs, centers, width=1.0, scale=2.0)
+        baseline = place_field_rates(xs, centers, place_field_std=1.0, place_field_rate_scale=1.0)
+        doubled = place_field_rates(xs, centers, place_field_std=1.0, place_field_rate_scale=2.0)
         assert_allclose(doubled, 2.0 * baseline)
 
     def test_empty_centers_yields_empty_columns(self) -> None:
         """Edge case: no cells -> shape (n_bins, 0) without error."""
-        rates = placefield_rates(np.linspace(0, 10, 11), np.array([]), width=1.0, scale=1.0)
+        rates = place_field_rates(
+            np.linspace(0, 10, 11), np.array([]), place_field_std=1.0, place_field_rate_scale=1.0
+        )
         assert rates.shape == (11, 0)
 
 
@@ -195,51 +202,57 @@ class TestPlacefieldRates:
 
 class TestSimulateWalk:
     def test_shape(self, rng: np.random.Generator) -> None:
-        result = simulate_walk(100, sig=1.0, x0=50.0, xs_min=0.0, xs_max=100.0, rng=rng)
+        result = simulate_walk(
+            100, step_std=1.0, initial_position=50.0, position_min=0.0, position_max=100.0, rng=rng
+        )
         assert result.shape == (100,)
 
     def test_respects_boundaries_under_large_steps(self, rng: np.random.Generator) -> None:
-        result = simulate_walk(1000, sig=5.0, x0=50.0, xs_min=0.0, xs_max=100.0, rng=rng)
+        result = simulate_walk(
+            1000, step_std=5.0, initial_position=50.0, position_min=0.0, position_max=100.0, rng=rng
+        )
         assert ((result >= 0.0) & (result <= 100.0)).all()
 
     def test_reproducible_with_same_seed(self) -> None:
         a = simulate_walk(
-            n_time=100,
-            sig=1.0,
-            x0=50.0,
-            xs_min=0.0,
-            xs_max=100.0,
+            n_time_steps=100,
+            step_std=1.0,
+            initial_position=50.0,
+            position_min=0.0,
+            position_max=100.0,
             rng=np.random.default_rng(42),
         )
         b = simulate_walk(
-            n_time=100,
-            sig=1.0,
-            x0=50.0,
-            xs_min=0.0,
-            xs_max=100.0,
+            n_time_steps=100,
+            step_std=1.0,
+            initial_position=50.0,
+            position_min=0.0,
+            position_max=100.0,
             rng=np.random.default_rng(42),
         )
         assert_array_equal(a, b)
 
     def test_zero_step_size_stays_at_initial(self, rng: np.random.Generator) -> None:
-        result = simulate_walk(100, sig=0.0, x0=50.0, xs_min=0.0, xs_max=100.0, rng=rng)
+        result = simulate_walk(
+            100, step_std=0.0, initial_position=50.0, position_min=0.0, position_max=100.0, rng=rng
+        )
         assert_allclose(result, 50.0)
 
     def test_larger_sigma_increases_variance(self) -> None:
         narrow = simulate_walk(
             1000,
-            sig=0.5,
-            x0=50.0,
-            xs_min=0.0,
-            xs_max=100.0,
+            step_std=0.5,
+            initial_position=50.0,
+            position_min=0.0,
+            position_max=100.0,
             rng=np.random.default_rng(42),
         )
         wide = simulate_walk(
             1000,
-            sig=5.0,
-            x0=50.0,
-            xs_min=0.0,
-            xs_max=100.0,
+            step_std=5.0,
+            initial_position=50.0,
+            position_min=0.0,
+            position_max=100.0,
             rng=np.random.default_rng(43),
         )
         assert wide.std() > narrow.std()
@@ -255,8 +268,8 @@ class TestSimulateSpikesPositionTuned:
         result = simulate_spikes_position_tuned(
             np.linspace(0, 100, 100),
             np.array([25.0, 50.0, 75.0]),
-            pf_width=5.0,
-            rate_scale=0.1,
+            place_field_std=5.0,
+            place_field_rate_scale=0.1,
             rng=rng,
         )
         assert result.shape == (100, 3)
@@ -268,7 +281,7 @@ class TestSimulateSpikesPositionTuned:
         rng = np.random.default_rng(42)
         x = np.linspace(0, 100, 10000)
         result = simulate_spikes_position_tuned(
-            x, np.array([50.0]), pf_width=5.0, rate_scale=1.0, rng=rng
+            x, np.array([50.0]), place_field_std=5.0, place_field_rate_scale=1.0, rng=rng
         )
         near = result[np.abs(x - 50.0) < 10.0, 0].mean()
         far = result[np.abs(x - 50.0) > 40.0, 0].mean()
@@ -276,19 +289,19 @@ class TestSimulateSpikesPositionTuned:
 
     def test_reproducible_with_same_seed(self) -> None:
         x = np.linspace(0, 100, 100)
-        pf_centers = np.array([50.0])
+        place_field_centers = np.array([50.0])
         a = simulate_spikes_position_tuned(
             x,
-            pf_centers,
-            pf_width=5.0,
-            rate_scale=0.1,
+            place_field_centers,
+            place_field_std=5.0,
+            place_field_rate_scale=0.1,
             rng=np.random.default_rng(42),
         )
         b = simulate_spikes_position_tuned(
             x,
-            pf_centers,
-            pf_width=5.0,
-            rate_scale=0.1,
+            place_field_centers,
+            place_field_std=5.0,
+            place_field_rate_scale=0.1,
             rng=np.random.default_rng(42),
         )
         assert_array_equal(a, b)
@@ -317,7 +330,7 @@ class TestSimulateSpikesHistoryDependent:
         x = np.full(2000, 50.0)  # parked on cell 1's PF center
         pf = np.array([20.0, 50.0, 80.0])
         spikes = simulate_spikes_history_dependent(
-            x, pf, pf_width=10.0, rate_scale=50.0, rng=rng, refractory_steps=1
+            x, pf, place_field_std=10.0, place_field_rate_scale=50.0, rng=rng, refractory_steps=1
         )
         fired = spikes > 0
         adjacent = fired[1:] & fired[:-1]
@@ -330,7 +343,7 @@ class TestSimulateSpikesHistoryDependent:
         x = np.full(3000, 50.0)
         pf = np.array([50.0])
         spikes = simulate_spikes_history_dependent(
-            x, pf, pf_width=10.0, rate_scale=50.0, rng=rng, refractory_steps=3
+            x, pf, place_field_std=10.0, place_field_rate_scale=50.0, rng=rng, refractory_steps=3
         )
         spike_steps = np.flatnonzero(spikes[:, 0] > 0)
         if spike_steps.size > 1:
@@ -344,8 +357,8 @@ class TestSimulateSpikesHistoryDependent:
         spikes = simulate_spikes_history_dependent(
             x,
             pf,
-            pf_width=10.0,
-            rate_scale=5.0,
+            place_field_std=10.0,
+            place_field_rate_scale=5.0,
             rng=rng,
             refractory_steps=1,
             burst_window=(2, 10),

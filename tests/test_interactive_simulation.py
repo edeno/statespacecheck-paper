@@ -44,10 +44,10 @@ def _qt_offscreen() -> None:
 
 
 def _tiny_params():
-    """``DecodeParams`` shrunk so the simulation runs fast in tests."""
-    from statespacecheck_paper.analysis import DecodeParams
+    """``Figure3Config`` shrunk so the simulation runs fast in tests."""
+    from statespacecheck_paper.figure03_protocol import Figure3Config
 
-    return DecodeParams(
+    return Figure3Config(
         phase_boundaries=(200, 300, 400, 500, 600, 700, 800, 900),
     )
 
@@ -108,7 +108,7 @@ def test_simulated_cache_log_likelihood_round_trips(tmp_path: Path) -> None:
     """
     import zarr
 
-    from statespacecheck_paper.figure03_demo import run_figure03_simulation
+    from statespacecheck_paper.figure03_simulation import run_figure03_simulation
     from statespacecheck_paper.interactive.cache import simulated_cache_paths
 
     sim = run_figure03_simulation(_tiny_params(), seed=0)
@@ -125,7 +125,7 @@ def test_simulated_cache_log_likelihood_round_trips(tmp_path: Path) -> None:
 
     # Reference: the simulation's normalised linear likelihood,
     # peak-normalised the same way the worker output is.
-    sim_lik = np.asarray(sim.metrics.likelihood, dtype=np.float64)
+    sim_lik = np.asarray(sim.diagnostics.likelihood, dtype=np.float64)
     sim_peak = sim_lik.max(axis=1, keepdims=True)
     sim_peak = np.where(sim_peak > 0, sim_peak, 1.0)
     sim_lik_peak_normed = (sim_lik / sim_peak).astype(np.float32)
@@ -136,7 +136,7 @@ def test_simulated_cache_log_likelihood_round_trips(tmp_path: Path) -> None:
 
 def test_simulated_event_likelihood_round_trips_in_event_order(tmp_path: Path) -> None:
     """The viewer sidecar retains the decoder likelihood for every event."""
-    from statespacecheck_paper.figure03_demo import run_figure03_simulation
+    from statespacecheck_paper.figure03_simulation import run_figure03_simulation
     from statespacecheck_paper.interactive.data_source import DecoderDataSource
 
     params = _tiny_params()
@@ -146,11 +146,11 @@ def test_simulated_event_likelihood_round_trips_in_event_order(tmp_path: Path) -
     try:
         assert ds.event_likelihood is not None
         assert ds.event_likelihood.flags.writeable is False
-        event_times = sim.metrics.event_time_ind.astype(np.float64) * 0.002
+        event_times = sim.diagnostics.event_time_ind.astype(np.float64) * 0.002
         event_order = np.argsort(event_times, kind="stable")
         np.testing.assert_allclose(
             ds.event_likelihood,
-            sim.metrics.per_spike_likelihood[event_order].astype(np.float32),
+            sim.diagnostics.per_spike_likelihood[event_order].astype(np.float32),
         )
 
         remap_start, remap_end = params.phase_boundaries[:2]

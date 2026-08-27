@@ -22,43 +22,45 @@ import numpy as np
 import pytest
 import statespacecheck as ssc
 
-from statespacecheck_paper.analysis import (
-    DecodeParams,
-    PhaseBoundary,
-    get_remapped_pf_centers,
-)
 from statespacecheck_paper.diagnostics import (
     DiagnosticThresholds,
     compute_spike_event_diagnostics_from_rates,
 )
-from statespacecheck_paper.figure03_demo import (
+from statespacecheck_paper.figure03_protocol import (
     PHASE_LABELS,
-    SimulationResult,
-    StableSummary,
+    Figure3Config,
+    PhaseBoundary,
+)
+from statespacecheck_paper.figure03_simulation import (
+    Figure3SimulationResult,
     _single_out_and_back_sweep,
     build_figure03_rate_tables,
-    estimate_stable_summary,
+    remap_place_field_centers,
     run_figure03_simulation,
     simulate_drift_phase,
     simulate_sparse_approach_phase,
 )
-from statespacecheck_paper.simulation import gaussian_transition_matrix, placefield_rates
+from statespacecheck_paper.figure03_summary import (
+    Figure3RealizationSummary,
+    estimate_realization_summary,
+)
+from statespacecheck_paper.simulation import gaussian_transition_matrix, place_field_rates
 
 
-def _moderate_params() -> DecodeParams:
+def _moderate_params() -> Figure3Config:
     """Phase sizes large enough for per-phase medians to be stable but
     small enough to keep the test fast (~3 s on a laptop).
     """
-    return DecodeParams(
+    return Figure3Config(
         phase_boundaries=(600, 900, 1100, 1400, 1600, 1900, 2100, 3100),
     )
 
 
 def _per_phase_medians(
-    sim: SimulationResult,
+    sim: Figure3SimulationResult,
 ) -> dict[str, tuple[float, float, float]]:
     """Return (kl_med, hpd_med, sp_med) per phase label."""
-    metrics = sim.metrics
+    metrics = sim.diagnostics
     boundaries = np.asarray(sim.phase_boundaries)
     labels = sim.phase_labels
     event_phase = np.searchsorted(boundaries, metrics.event_time_ind, side="right")
@@ -75,15 +77,15 @@ def _per_phase_medians(
 
 
 @pytest.fixture(scope="module")
-def sim() -> SimulationResult:
+def sim() -> Figure3SimulationResult:
     return run_figure03_simulation(_moderate_params(), seed=0)
 
 
-def test_phase_labels_and_boundaries(sim: SimulationResult) -> None:
+def test_phase_labels_and_boundaries(sim: Figure3SimulationResult) -> None:
     """``run_figure03_simulation`` emits every canonical phase in order
     and a timeline that ends at the SPARSE_POP_END boundary.
     """
-    params = sim.params
+    params = sim.config
     # The simulation must emit exactly the canonical phase set, in order.
     assert sim.phase_labels == PHASE_LABELS
     # Sanity-check the canonical set itself: 8 phases, with each expected
@@ -100,7 +102,7 @@ def test_phase_labels_and_boundaries(sim: SimulationResult) -> None:
     end = params.phase_boundaries[PhaseBoundary.SPARSE_POP_END]
     assert boundaries[-1] == end
     assert np.all(np.diff(boundaries) > 0)
-    x_true = np.asarray(sim.x_true)
+    x_true = np.asarray(sim.true_position)
     assert x_true.shape[0] == end
 
 
@@ -137,10 +139,10 @@ def test_short_replay_sweep_respects_speed_cap() -> None:
     assert sweep[-1] == pytest.approx(sweep[0])
 
 
-def test_replay_generative_and_decoder_share_tuning_model(sim: SimulationResult) -> None:
+def test_replay_generative_and_decoder_share_tuning_model(sim: Figure3SimulationResult) -> None:
     """Replay is a correctly-specified observation model.
 
-    The generative sweep spikes fire at the elevated ``replay_rate_scale``
+    The generative sweep spikes fire at the elevated ``replay_place_field_rate_scale``
     through the ordinary position-tuning model; the decoder's replay-window
     rate table must use the *same* tuning model (centers, width) and the
     *same* elevated scale. The invariant is this parameterization
@@ -148,80 +150,93 @@ def test_replay_generative_and_decoder_share_tuning_model(sim: SimulationResult)
     against the grid rate table. When both match, the decoded state simply
     tracks the replayed trajectory and no metric flags a misfit.
     """
-    params = sim.params
-    assert params.pf_centers is not None
+    params = sim.config
+    assert params.place_field_centers is not None
     rate_tables = build_figure03_rate_tables(
-        sim.xs, params.pf_centers, np.asarray(sim.sparse_cell_centers), params
+        sim.position_bins,
+        params.place_field_centers,
+        np.asarray(sim.sparse_place_field_centers),
+        params,
     )
-    n_normal = len(params.pf_centers)
-    decoder_replay_normal = rate_tables.replay_rates[:, :n_normal]
-    generative_replay = placefield_rates(
-        sim.xs, params.pf_centers, params.pf_width, params.replay_rate_scale
+    n_normal = len(params.place_field_centers)
+    decoder_replay_normal = rate_tables.replay_firing_rates[:, :n_normal]
+    generative_replay = place_field_rates(
+        sim.position_bins,
+        params.place_field_centers,
+        params.place_field_std,
+        params.replay_place_field_rate_scale,
     )
     np.testing.assert_allclose(decoder_replay_normal, generative_replay)
     # The elevated replay scale is genuinely above the ordinary rate scale,
     # so this equivalence is not vacuously true at the baseline rate.
-    baseline_normal = placefield_rates(
-        sim.xs, params.pf_centers, params.pf_width, params.rate_scale
+    baseline_normal = place_field_rates(
+        sim.position_bins,
+        params.place_field_centers,
+        params.place_field_std,
+        params.place_field_rate_scale,
     )
-    assert params.replay_rate_scale > params.rate_scale
+    assert params.replay_place_field_rate_scale > params.place_field_rate_scale
     assert decoder_replay_normal.max() > baseline_normal.max()
 
 
-def test_remap_phase_uses_decoder_likelihood(sim: SimulationResult) -> None:
+def test_remap_phase_uses_decoder_likelihood(sim: Figure3SimulationResult) -> None:
     """Remap diagnostics must use the same remapped rates as the decoder.
 
     This guards against combining the decoder's predictive distribution
     with unavailable baseline/oracle place fields during the remap window.
     """
-    params = sim.params
-    assert params.pf_centers is not None
+    params = sim.config
+    assert params.place_field_centers is not None
     start = params.phase_boundaries[PhaseBoundary.REMAP_START]
     end = params.phase_boundaries[PhaseBoundary.REMAP_END]
-    in_window = (sim.metrics.event_time_ind >= start) & (sim.metrics.event_time_ind < end)
+    in_window = (sim.diagnostics.event_time_ind >= start) & (sim.diagnostics.event_time_ind < end)
     assert in_window.any(), "test simulation produced no remap-window spike events"
 
-    remapped_normal_rates = placefield_rates(
-        sim.xs,
-        get_remapped_pf_centers(params.pf_centers, params.remap_from_to, active=True),
-        params.pf_width,
-        params.rate_scale,
+    remapped_normal_rates = place_field_rates(
+        sim.position_bins,
+        remap_place_field_centers(
+            params.place_field_centers, params.place_field_remapping, active=True
+        ),
+        params.place_field_std,
+        params.place_field_rate_scale,
     )
-    sparse_scale = params.sparse_cell_peak_rate * np.sqrt(2.0 * np.pi) * params.sparse_cell_width
-    baseline_sparse_rates = params.sparse_cell_baseline_gain * placefield_rates(
-        sim.xs,
-        np.asarray(sim.sparse_cell_centers),
-        params.sparse_cell_width,
+    sparse_scale = (
+        params.sparse_cell_peak_rate_per_step * np.sqrt(2.0 * np.pi) * params.sparse_place_field_std
+    )
+    baseline_sparse_firing_rates = params.sparse_cell_baseline_rate_fraction * place_field_rates(
+        sim.position_bins,
+        np.asarray(sim.sparse_place_field_centers),
+        params.sparse_place_field_std,
         sparse_scale,
     )
-    remapped_rates = np.hstack([remapped_normal_rates, baseline_sparse_rates])
+    remapped_firing_rates = np.hstack([remapped_normal_rates, baseline_sparse_firing_rates])
     expected = compute_spike_event_diagnostics_from_rates(
-        sim.metrics.predictive,
-        remapped_rates,
-        sim.metrics.event_time_ind[in_window],
-        sim.metrics.event_cell_ind[in_window],
+        sim.diagnostics.predictive,
+        remapped_firing_rates,
+        sim.diagnostics.event_time_ind[in_window],
+        sim.diagnostics.event_cell_ind[in_window],
     )
     assert expected.per_spike_likelihood is not None
 
     np.testing.assert_allclose(
-        sim.metrics.per_spike_likelihood[in_window],
+        sim.diagnostics.per_spike_likelihood[in_window],
         expected.per_spike_likelihood,
     )
-    predictive = sim.metrics.predictive[sim.metrics.event_time_ind[in_window]]
+    predictive = sim.diagnostics.predictive[sim.diagnostics.event_time_ind[in_window]]
     np.testing.assert_allclose(
-        sim.metrics.event_hpd_overlap[in_window],
+        sim.diagnostics.event_hpd_overlap[in_window],
         ssc.hpd_overlap(
             predictive,
-            sim.metrics.per_spike_likelihood[in_window],
+            sim.diagnostics.per_spike_likelihood[in_window],
             coverage=0.95,
         ),
         err_msg="remap HPD was not computed from the displayed event likelihood",
     )
     np.testing.assert_allclose(
-        sim.metrics.event_kl_divergence[in_window],
+        sim.diagnostics.event_kl_divergence[in_window],
         ssc.kl_divergence(
             predictive,
-            sim.metrics.per_spike_likelihood[in_window],
+            sim.diagnostics.per_spike_likelihood[in_window],
         ),
         err_msg="remap KL was not computed from the displayed event likelihood",
     )
@@ -231,7 +246,7 @@ def test_remap_phase_uses_decoder_likelihood(sim: SimulationResult) -> None:
         "event_predictive_pvalue",
     ):
         np.testing.assert_allclose(
-            getattr(sim.metrics, name)[in_window],
+            getattr(sim.diagnostics, name)[in_window],
             getattr(expected, name),
             err_msg=f"remap-window {name} did not use decoder rates",
         )
@@ -240,20 +255,20 @@ def test_remap_phase_uses_decoder_likelihood(sim: SimulationResult) -> None:
     # the old oracle computation based on the unperturbed place fields.
     baseline_rates = np.hstack(
         [
-            placefield_rates(
-                sim.xs,
-                params.pf_centers,
-                params.pf_width,
-                params.rate_scale,
+            place_field_rates(
+                sim.position_bins,
+                params.place_field_centers,
+                params.place_field_std,
+                params.place_field_rate_scale,
             ),
-            baseline_sparse_rates,
+            baseline_sparse_firing_rates,
         ]
     )
     oracle = compute_spike_event_diagnostics_from_rates(
-        sim.metrics.predictive,
+        sim.diagnostics.predictive,
         baseline_rates,
-        sim.metrics.event_time_ind[in_window],
-        sim.metrics.event_cell_ind[in_window],
+        sim.diagnostics.event_time_ind[in_window],
+        sim.diagnostics.event_cell_ind[in_window],
     )
     for name in (
         "event_hpd_overlap",
@@ -266,7 +281,7 @@ def test_remap_phase_uses_decoder_likelihood(sim: SimulationResult) -> None:
 
 
 def test_sparse_population_dissociates_kl_from_other_metrics(
-    sim: SimulationResult,
+    sim: Figure3SimulationResult,
 ) -> None:
     """Load-bearing: isolated sparse-population spikes elevate KL while HPD
     overlap and the predictive p-value remain consistent.
@@ -292,7 +307,7 @@ def test_sparse_population_dissociates_kl_from_other_metrics(
 
 
 def test_sparse_population_is_a_correctly_modeled_low_activity_regime(
-    sim: SimulationResult,
+    sim: Figure3SimulationResult,
 ) -> None:
     """The last phase is a fixed immobile stop, not a transition perturbation.
 
@@ -300,77 +315,83 @@ def test_sparse_population_is_a_correctly_modeled_low_activity_regime(
     likelihood and the decoder prediction use the declared model. This pins
     the KL dissociation to sparse information rather than hidden mismatch.
     """
-    params = sim.params
+    params = sim.config
     w0 = params.phase_boundaries[PhaseBoundary.RECOVERY3_END]
     w1 = params.phase_boundaries[PhaseBoundary.SPARSE_POP_END]
-    n_sparse = len(sim.sparse_cell_centers)
-    n_normal = sim.spikes.shape[1] - n_sparse
-    np.testing.assert_allclose(sim.x_true[w0:w1], params.sparse_position)
+    n_sparse = len(sim.sparse_place_field_centers)
+    n_normal = sim.spike_counts.shape[1] - n_sparse
+    np.testing.assert_allclose(sim.true_position[w0:w1], params.sparse_position)
     # The ordinary ensemble is silent; only the sparse-population cells fire.
-    assert sim.spikes[w0:w1, :n_normal].sum() == 0
-    assert sim.spikes[w0:w1, n_normal:].sum() > 0
-    assert n_sparse == params.n_sparse_cells
+    assert sim.spike_counts[w0:w1, :n_normal].sum() == 0
+    assert sim.spike_counts[w0:w1, n_normal:].sum() > 0
+    assert n_sparse == params.sparse_cell_count
 
-    in_window = (sim.metrics.event_time_ind >= w0) & (sim.metrics.event_time_ind < w1)
+    in_window = (sim.diagnostics.event_time_ind >= w0) & (sim.diagnostics.event_time_ind < w1)
     assert in_window.any(), "the sparse population produced no sparse-window diagnostic events"
-    assert np.all(sim.metrics.event_cell_ind[in_window] >= n_normal)
+    assert np.all(sim.diagnostics.event_cell_ind[in_window] >= n_normal)
 
-    sparse_scale = params.sparse_cell_peak_rate * np.sqrt(2.0 * np.pi) * params.sparse_cell_width
-    sparse_rates = placefield_rates(
-        sim.xs,
-        np.asarray(sim.sparse_cell_centers),
-        params.sparse_cell_width,
+    sparse_scale = (
+        params.sparse_cell_peak_rate_per_step * np.sqrt(2.0 * np.pi) * params.sparse_place_field_std
+    )
+    sparse_population_firing_rates = place_field_rates(
+        sim.position_bins,
+        np.asarray(sim.sparse_place_field_centers),
+        params.sparse_place_field_std,
         sparse_scale,
     )
     expected = compute_spike_event_diagnostics_from_rates(
-        sim.metrics.predictive,
-        sparse_rates,
-        sim.metrics.event_time_ind[in_window],
+        sim.diagnostics.predictive,
+        sparse_population_firing_rates,
+        sim.diagnostics.event_time_ind[in_window],
         # Re-index the sparse-cell columns to 0..n_sparse-1 for the K-column
         # sparse rate table.
-        (sim.metrics.event_cell_ind[in_window] - n_normal).astype(np.intp),
+        (sim.diagnostics.event_cell_ind[in_window] - n_normal).astype(np.intp),
     )
     np.testing.assert_allclose(
-        sim.metrics.per_spike_likelihood[in_window],
+        sim.diagnostics.per_spike_likelihood[in_window],
         expected.per_spike_likelihood,
     )
 
     # No phase-specific transition is introduced: the stored prediction is
     # exactly the standard transition applied to the preceding posterior.
-    event_time = int(sim.metrics.event_time_ind[np.flatnonzero(in_window)[0]])
-    transition = gaussian_transition_matrix(sim.xs, params.sigx_pred)
-    expected_predictive = transition @ sim.metrics.posterior[event_time - 1]
+    event_time = int(sim.diagnostics.event_time_ind[np.flatnonzero(in_window)[0]])
+    transition = gaussian_transition_matrix(sim.position_bins, params.prediction_step_std)
+    expected_predictive = transition @ sim.diagnostics.posterior[event_time - 1]
     expected_predictive /= expected_predictive.sum()
     np.testing.assert_allclose(
-        sim.metrics.predictive[event_time],
+        sim.diagnostics.predictive[event_time],
         expected_predictive,
     )
 
     # Parameterization equivalence: the decoder's sparse rate tables use the
-    # same centers/width/scale as the generative model (``sparse_rates``),
+    # same centers/width/scale as the generative model (``sparse_population_firing_rates``),
     # with the declared baseline gain below the window and the full elevated
     # rate within it. The gain is intentionally nonzero, so this is a
     # rate-regime check (low baseline vs elevated), not a zero-count check.
     rate_tables = build_figure03_rate_tables(
-        sim.xs, params.pf_centers, np.asarray(sim.sparse_cell_centers), params
+        sim.position_bins,
+        params.place_field_centers,
+        np.asarray(sim.sparse_place_field_centers),
+        params,
     )
-    decoder_elevated_sparse = rate_tables.sparse_rates[:, n_normal:]
-    decoder_baseline_sparse = rate_tables.base_rates[:, n_normal:]
-    np.testing.assert_allclose(decoder_elevated_sparse, sparse_rates)
+    decoder_elevated_sparse = rate_tables.sparse_population_firing_rates[:, n_normal:]
+    decoder_baseline_sparse = rate_tables.baseline_firing_rates[:, n_normal:]
+    np.testing.assert_allclose(decoder_elevated_sparse, sparse_population_firing_rates)
     np.testing.assert_allclose(
-        decoder_baseline_sparse, params.sparse_cell_baseline_gain * sparse_rates
+        decoder_baseline_sparse,
+        params.sparse_cell_baseline_rate_fraction * sparse_population_firing_rates,
     )
-    np.testing.assert_allclose(rate_tables.baseline_sparse_rates, decoder_baseline_sparse)
+    np.testing.assert_allclose(rate_tables.baseline_sparse_firing_rates, decoder_baseline_sparse)
     # Rate regime: the baseline gain is < 1, so out-of-window rates are
     # uniformly below the elevated in-window peak.
-    assert params.sparse_cell_baseline_gain < 1.0
-    peak = float(sparse_rates.max())
+    assert params.sparse_cell_baseline_rate_fraction < 1.0
+    peak = float(sparse_population_firing_rates.max())
     assert float(decoder_baseline_sparse.max()) < peak
     assert float(decoder_elevated_sparse.max()) == pytest.approx(peak)
 
 
 def test_history_dependent_firing_per_spike_metrics_near_baseline(
-    sim: SimulationResult,
+    sim: Figure3SimulationResult,
 ) -> None:
     """Load-bearing scientific claim: per-spike spatial diagnostics
     largely *miss* temporal (history-dependent) misspecification.
@@ -407,7 +428,7 @@ def test_history_dependent_firing_per_spike_metrics_near_baseline(
     )
 
 
-def test_drift_phase_inflates_kl(sim: SimulationResult) -> None:
+def test_drift_phase_inflates_kl(sim: Figure3SimulationResult) -> None:
     """The drift misfit (persistent-velocity trajectory vs. memoryless
     decoder) must produce a meaningfully larger per-spike KL than
     baseline. With the wiggly phase removed, this and the sparse-reward
@@ -431,78 +452,87 @@ def test_drift_phase_inflates_kl(sim: SimulationResult) -> None:
 def test_simulate_drift_phase() -> None:
     """The drift trajectory starts at ``x_last``, stays on the track, and is
     reproducible under a fixed seed."""
-    params = DecodeParams()
-    x = simulate_drift_phase(500, x_last=40.0, params=params, rng=np.random.default_rng(0))
+    params = Figure3Config()
+    x = simulate_drift_phase(500, x_last=40.0, config=params, rng=np.random.default_rng(0))
 
     assert x.shape == (500,)
     assert x[0] == pytest.approx(40.0)
-    assert np.all(x >= params.xs_min) and np.all(x <= params.xs_max)
+    assert np.all(x >= params.position_min) and np.all(x <= params.position_max)
 
-    repeat = simulate_drift_phase(500, x_last=40.0, params=params, rng=np.random.default_rng(0))
+    repeat = simulate_drift_phase(500, x_last=40.0, config=params, rng=np.random.default_rng(0))
     np.testing.assert_array_equal(x, repeat)
 
 
 def test_simulate_sparse_approach_phase() -> None:
     """The approach ends exactly at ``params.sparse_position``, stays on the
     track, and is reproducible under a fixed seed."""
-    params = DecodeParams()  # sparse_approach_steps=1000
+    params = Figure3Config()  # sparse_approach_duration_steps=1000
     n = 1500
-    x = simulate_sparse_approach_phase(n, x_last=10.0, params=params, rng=np.random.default_rng(0))
+    x = simulate_sparse_approach_phase(n, x_last=10.0, config=params, rng=np.random.default_rng(0))
 
     assert x.shape == (n,)
     assert x[-1] == pytest.approx(params.sparse_position)
-    assert np.all(x >= params.xs_min) and np.all(x <= params.xs_max)
+    assert np.all(x >= params.position_min) and np.all(x <= params.position_max)
 
     repeat = simulate_sparse_approach_phase(
-        n, x_last=10.0, params=params, rng=np.random.default_rng(0)
+        n, x_last=10.0, config=params, rng=np.random.default_rng(0)
     )
     np.testing.assert_array_equal(x, repeat)
 
 
 # ---------------------------------------------------------------------------
-# estimate_stable_summary: pooled thresholds + median per-phase fractions
+# estimate_realization_summary: pooled thresholds + median per-phase fractions
 # ---------------------------------------------------------------------------
 
 
-class TestEstimateStableSummary:
+class TestEstimateRealizationSummary:
     def test_shapes_and_determinism(self) -> None:
         """The summary is (3 metrics x 6 columns: well-specified, remap,
         history, replay, drift, sparse population), fractions are percentages,
         and the same seeds reproduce the same result."""
         params = _moderate_params()
-        summary = estimate_stable_summary(params, n_realizations=3, base_seed=0)
+        summary = estimate_realization_summary(params, n_realizations=3, first_random_seed=0)
 
-        assert isinstance(summary, StableSummary)
+        assert isinstance(summary, Figure3RealizationSummary)
         assert summary.n_realizations == 3
-        assert summary.frac_median.shape == (3, 6)
+        assert summary.median_flag_percentages.shape == (3, 6)
         # Percentages in [0, 100].
-        assert np.all(summary.frac_median >= 0.0)
-        assert np.all(summary.frac_median <= 100.0)
+        assert np.all(summary.median_flag_percentages >= 0.0)
+        assert np.all(summary.median_flag_percentages <= 100.0)
         # Threshold is a valid, finite DiagnosticThresholds with the fixed p-value cutoff.
-        assert summary.thresholds.predictive_pvalue == 0.05
-        assert np.isfinite(summary.thresholds.kl_divergence)
+        assert summary.diagnostic_thresholds.predictive_pvalue == 0.05
+        assert np.isfinite(summary.diagnostic_thresholds.kl_divergence)
 
-        repeat = estimate_stable_summary(params, n_realizations=3, base_seed=0)
-        np.testing.assert_array_equal(summary.frac_median, repeat.frac_median)
-        assert summary.thresholds.kl_divergence == repeat.thresholds.kl_divergence
+        repeat = estimate_realization_summary(params, n_realizations=3, first_random_seed=0)
+        np.testing.assert_array_equal(
+            summary.median_flag_percentages, repeat.median_flag_percentages
+        )
+        assert (
+            summary.diagnostic_thresholds.kl_divergence
+            == repeat.diagnostic_thresholds.kl_divergence
+        )
 
     def test_remap_column_is_most_flagged(self) -> None:
         """Scientific regression guard: across realizations, the remap column
         (index 1) is flagged far more than the well-specified column (index 0)
         for every metric — the headline 'all three detect remap' result, now
         on a stabilized median."""
-        summary = estimate_stable_summary(_moderate_params(), n_realizations=5, base_seed=0)
+        summary = estimate_realization_summary(
+            _moderate_params(), n_realizations=5, first_random_seed=0
+        )
         for row in range(3):
-            assert summary.frac_median[row, 1] > summary.frac_median[row, 0]
+            assert summary.median_flag_percentages[row, 1] > summary.median_flag_percentages[row, 0]
 
     def test_replay_is_not_flagged(self) -> None:
         """Scientific claim: the replay event (column 3) is *not* a
         misspecification. The decoder tracks the swept trajectory, so every
         metric stays low — far below the remap positive control — even though
         the decoded position departs from the (fixed) true position."""
-        summary = estimate_stable_summary(_moderate_params(), n_realizations=5, base_seed=0)
-        replay = summary.frac_median[:, 3]
-        remap = summary.frac_median[:, 1]
+        summary = estimate_realization_summary(
+            _moderate_params(), n_realizations=5, first_random_seed=0
+        )
+        replay = summary.median_flag_percentages[:, 3]
+        remap = summary.median_flag_percentages[:, 1]
         assert np.all(replay < 15.0), f"replay should stay low; got {replay}"
         assert np.all(replay < 0.5 * remap), (
             f"replay must flag far less than the remap misfit; got replay={replay}, remap={remap}"
@@ -517,9 +547,11 @@ class TestEstimateStableSummary:
         regression that started flagging HPD/p there, or dropped the KL rate,
         would fail here even though the per-event-median guard stays green.
         """
-        summary = estimate_stable_summary(_moderate_params(), n_realizations=5, base_seed=0)
-        sparse = summary.frac_median[:, 5]  # [HPD, predictive-p, KL]
-        well = summary.frac_median[:, 0]
+        summary = estimate_realization_summary(
+            _moderate_params(), n_realizations=5, first_random_seed=0
+        )
+        sparse = summary.median_flag_percentages[:, 5]  # [HPD, predictive-p, KL]
+        well = summary.median_flag_percentages[:, 0]
         assert sparse[2] > 15.0, f"sparse-population KL should be clearly elevated; got {sparse[2]}"
         assert sparse[2] > 2.0 * well[2], (
             f"sparse-population KL should exceed 2x the baseline; "
@@ -534,9 +566,11 @@ class TestEstimateStableSummary:
         """Panel-(b) guard: the history-dependent (temporal) misfit is missed
         by all three per-spike spatial diagnostics (column 2 stays low on the
         flag-fraction columns, not merely at the per-event median)."""
-        summary = estimate_stable_summary(_moderate_params(), n_realizations=5, base_seed=0)
-        hist = summary.frac_median[:, 2]
-        well = summary.frac_median[:, 0]
+        summary = estimate_realization_summary(
+            _moderate_params(), n_realizations=5, first_random_seed=0
+        )
+        hist = summary.median_flag_percentages[:, 2]
+        well = summary.median_flag_percentages[:, 0]
         assert np.all(hist < 5.0), f"history-dependent phase should stay near zero; got {hist}"
         assert np.all(hist <= well), (
             f"history-dependent flags should not exceed the baseline; got hist={hist}, well={well}"
@@ -556,10 +590,12 @@ class TestEstimateStableSummary:
         partly explores; bounds are set against the observed deterministic
         values (remap ~[15, 20, 14]% vs well ~[4, 5, 3]%, drift ~[3, 5, 1]%).
         """
-        summary = estimate_stable_summary(_moderate_params(), n_realizations=5, base_seed=0)
-        well = summary.frac_median[:, 0]
-        remap = summary.frac_median[:, 1]
-        drift = summary.frac_median[:, 4]
+        summary = estimate_realization_summary(
+            _moderate_params(), n_realizations=5, first_random_seed=0
+        )
+        well = summary.median_flag_percentages[:, 0]
+        remap = summary.median_flag_percentages[:, 1]
+        drift = summary.median_flag_percentages[:, 4]
         assert np.all(remap > 10.0), f"remap should flag >10% for every metric; got {remap}"
         assert np.all(remap > 2.0 * well), (
             f"remap should flag >2x the well-specified baseline; got remap={remap}, well={well}"
@@ -570,26 +606,26 @@ class TestEstimateStableSummary:
 
     def test_rejects_nonpositive_realizations(self) -> None:
         with pytest.raises(ValueError, match="n_realizations"):
-            estimate_stable_summary(_moderate_params(), n_realizations=0)
+            estimate_realization_summary(_moderate_params(), n_realizations=0)
 
 
-class TestStableSummaryInvariants:
+class TestFigure3RealizationSummaryInvariants:
     @staticmethod
     def _thresholds() -> DiagnosticThresholds:
         return DiagnosticThresholds(hpd_overlap=0.5, kl_divergence=1.0, predictive_pvalue=0.05)
 
     def test_non_2d_median_raises(self) -> None:
-        with pytest.raises(ValueError, match="frac_median"):
-            StableSummary(
-                thresholds=self._thresholds(),
-                frac_median=np.zeros(5),
+        with pytest.raises(ValueError, match="median_flag_percentages"):
+            Figure3RealizationSummary(
+                diagnostic_thresholds=self._thresholds(),
+                median_flag_percentages=np.zeros(5),
                 n_realizations=2,
             )
 
     def test_nonpositive_realizations_raises(self) -> None:
         with pytest.raises(ValueError, match="n_realizations"):
-            StableSummary(
-                thresholds=self._thresholds(),
-                frac_median=np.zeros((3, 5)),
+            Figure3RealizationSummary(
+                diagnostic_thresholds=self._thresholds(),
+                median_flag_percentages=np.zeros((3, 5)),
                 n_realizations=0,
             )

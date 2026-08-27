@@ -21,11 +21,13 @@ import pytest
 
 # Modules whose docstring examples are executed and checked.
 _DOCTEST_MODULES = [
-    "statespacecheck_paper.analysis",
     "statespacecheck_paper.simulation",
     "statespacecheck_paper.style",
     "statespacecheck_paper.plotting",
-    "statespacecheck_paper.figure03_demo",
+    "statespacecheck_paper.figure03_protocol",
+    "statespacecheck_paper.figure03_simulation",
+    "statespacecheck_paper.figure03_summary",
+    "statespacecheck_paper.figure03_plotting",
 ]
 
 

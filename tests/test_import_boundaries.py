@@ -47,3 +47,38 @@ def test_decoding_imports_only_diagnostics_and_simulation() -> None:
         "statespacecheck_paper.simulation",
     }
     assert not any("figure03" in module or module.endswith(".analysis") for module in imported)
+
+
+def test_figure03_protocol_is_a_leaf() -> None:
+    """The Figure-3 protocol (config + phase ladder) imports no sibling module."""
+    assert _sibling_module_imports("figure03_protocol.py") == set()
+
+
+def test_figure03_family_dependency_edges_are_acyclic() -> None:
+    """Each Figure-3 family module imports only from its allowed lower layers,
+    keeping the dependency graph acyclic (protocol < simulation < summary <
+    plotting, all above the general decoding/diagnostics/simulation layers)."""
+    prefix = "statespacecheck_paper."
+    allowed = {
+        "figure03_protocol.py": set(),
+        "figure03_simulation.py": {
+            prefix + "figure03_protocol",
+            prefix + "decoding",
+            prefix + "diagnostics",
+            prefix + "simulation",
+        },
+        "figure03_summary.py": {
+            prefix + "figure03_protocol",
+            prefix + "figure03_simulation",
+            prefix + "diagnostics",
+        },
+        "figure03_plotting.py": {
+            prefix + "figure03_protocol",
+            prefix + "figure03_summary",
+            prefix + "diagnostics",
+            prefix + "plotting",
+            prefix + "style",
+        },
+    }
+    for module_file, permitted in allowed.items():
+        assert _sibling_module_imports(module_file) <= permitted, module_file

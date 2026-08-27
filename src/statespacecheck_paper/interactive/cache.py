@@ -571,10 +571,10 @@ def build_simulated_cache(
     ----------
     cache_dir : Path
         Output directory.
-    params : DecodeParams, optional
-        Simulation configuration. ``None`` ⇒ default ``DecodeParams()``.
+    params : Figure3Config, optional
+        Simulation configuration. ``None`` ⇒ default ``Figure3Config()``.
     seed : int, optional
-        Override ``params.base_seed`` for the run.
+        Override ``params.random_seed`` for the run.
     time_chunk : int
         Zarr chunk size along the time axis.
     force : bool
@@ -602,10 +602,10 @@ def build_simulated_cache(
     """
     # Imported here so the cache module doesn't pull simulation
     # machinery on every figure-4 cache build.
-    from statespacecheck_paper.figure03_demo import (  # noqa: PLC0415
+    from statespacecheck_paper.figure03_simulation import (  # noqa: PLC0415
         run_figure03_simulation,
     )
-    from statespacecheck_paper.simulation import placefield_rates  # noqa: PLC0415
+    from statespacecheck_paper.simulation import place_field_rates  # noqa: PLC0415
 
     cache_dir = Path(cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -615,19 +615,21 @@ def build_simulated_cache(
         raise FileExistsError(f"{paths['zarr']} already exists; pass force=True to overwrite.")
 
     sim = run_figure03_simulation(params, seed=seed)
-    params_used = sim.params
-    xs: NDArray[np.float64] = np.asarray(sim.xs, dtype=np.float64)
-    x_true: NDArray[np.float64] = np.asarray(sim.x_true, dtype=np.float64)
-    spikes: NDArray[np.int_] = np.asarray(sim.spikes, dtype=np.int_)
-    metrics = sim.metrics
+    params_used = sim.config
+    xs: NDArray[np.float64] = np.asarray(sim.position_bins, dtype=np.float64)
+    x_true: NDArray[np.float64] = np.asarray(sim.true_position, dtype=np.float64)
+    spikes: NDArray[np.int_] = np.asarray(sim.spike_counts, dtype=np.int_)
+    metrics = sim.diagnostics
 
     n_time = x_true.shape[0]
     n_bins = xs.shape[0]
     n_cells = int(spikes.shape[1])
     # The simulation appends a narrow sparse-population of cells; include them
     # in the cache's cell set and sort them at their fixed field centers.
-    pf_centers = np.asarray(params_used.pf_centers, dtype=np.float64)
-    pf_centers_full = np.append(pf_centers, np.asarray(sim.sparse_cell_centers, dtype=np.float64))
+    pf_centers = np.asarray(params_used.place_field_centers, dtype=np.float64)
+    pf_centers_full = np.append(
+        pf_centers, np.asarray(sim.sparse_place_field_centers, dtype=np.float64)
+    )
     if pf_centers_full.shape[0] != n_cells:
         raise ValueError(f"pf_centers length {pf_centers_full.shape[0]} != n_cells={n_cells}")
 
@@ -695,16 +697,20 @@ def build_simulated_cache(
     events_df.to_parquet(paths["events"], engine="pyarrow", compression="zstd")
 
     # Place-fields sidecar. The 11 normal cells (shared width) plus the narrow
-    # sparse-population cells (their own width and peak rate). ``placefield_rates``
+    # sparse-population cells (their own width and peak rate). ``place_field_rates``
     # returns ``(n_bins, n_cells)``; the viewer expects ``(n_cells, n_bins)``.
-    normal_rates = placefield_rates(xs, pf_centers, params_used.pf_width, params_used.rate_scale)
-    sparse_cell_scale = (
-        params_used.sparse_cell_peak_rate * np.sqrt(2.0 * np.pi) * params_used.sparse_cell_width
+    normal_rates = place_field_rates(
+        xs, pf_centers, params_used.place_field_std, params_used.place_field_rate_scale
     )
-    sparse_rates = placefield_rates(
+    sparse_cell_scale = (
+        params_used.sparse_cell_peak_rate_per_step
+        * np.sqrt(2.0 * np.pi)
+        * params_used.sparse_place_field_std
+    )
+    sparse_rates = place_field_rates(
         xs,
-        np.asarray(sim.sparse_cell_centers, dtype=np.float64),
-        params_used.sparse_cell_width,
+        np.asarray(sim.sparse_place_field_centers, dtype=np.float64),
+        params_used.sparse_place_field_std,
         sparse_cell_scale,
     )
     rates = np.asarray(np.hstack([normal_rates, sparse_rates]), dtype=np.float64)
@@ -879,7 +885,7 @@ def main(argv: list[str] | None = None) -> int:
         "--seed",
         type=int,
         default=None,
-        help="Override DecodeParams.base_seed for stochastic draws.",
+        help="Override Figure3Config.random_seed for stochastic draws.",
     )
     build_sim.add_argument(
         "--time-chunk",
