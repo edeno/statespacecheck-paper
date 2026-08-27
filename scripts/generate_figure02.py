@@ -31,15 +31,15 @@ from matplotlib.transforms import Bbox
 
 from statespacecheck_paper.figure02_panels import (
     create_shared_example,
-    plot_hpd_panel_d,
-    plot_hpd_panel_e,
-    plot_hpd_panel_f,
-    plot_kl_panel_a,
-    plot_kl_panel_b,
-    plot_kl_panel_c,
-    plot_ppc_panel_g,
-    plot_ppc_panel_h,
-    plot_ppc_panel_i,
+    plot_hpd_intersection,
+    plot_hpd_likelihood,
+    plot_hpd_predictive,
+    plot_kl_distributions,
+    plot_kl_log_ratio,
+    plot_kl_pointwise,
+    plot_ppc_density_histogram,
+    plot_ppc_likelihood_fan,
+    plot_ppc_predictive_fan,
 )
 from statespacecheck_paper.style import save_figure, set_figure_defaults
 
@@ -105,19 +105,19 @@ def create_figure() -> None:
     )
 
     # KL Divergence column (A, D, G)
-    plot_kl_panel_a(axes["A"], data)
-    plot_kl_panel_b(axes["D"], data)
-    plot_kl_panel_c(axes["G"], data)
+    plot_kl_distributions(axes["A"], data)
+    plot_kl_log_ratio(axes["D"], data)
+    plot_kl_pointwise(axes["G"], data)
 
     # HPD Overlap column (B, E, H)
-    plot_hpd_panel_d(axes["B"], data)
-    plot_hpd_panel_e(axes["E"], data)
-    hpd_sizes = plot_hpd_panel_f(axes["H"], data)
+    plot_hpd_predictive(axes["B"], data)
+    plot_hpd_likelihood(axes["E"], data)
+    hpd_sizes = plot_hpd_intersection(axes["H"], data)
 
     # Predictive Check column (C, F, I)
-    plot_ppc_panel_g(axes["C"], data)
-    plot_ppc_panel_h(axes["F"], data)
-    plot_ppc_panel_i(axes["I"], data)
+    plot_ppc_predictive_fan(axes["C"], data)
+    plot_ppc_likelihood_fan(axes["F"], data)
+    plot_ppc_density_histogram(axes["I"], data)
 
     column_titles = [("A", "KL Divergence"), ("B", "HPD Overlap"), ("C", "Predictive Check")]
     for ax_key, col_title in column_titles:

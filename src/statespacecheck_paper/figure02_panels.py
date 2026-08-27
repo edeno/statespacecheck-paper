@@ -155,12 +155,12 @@ def create_shared_example(rng: np.random.Generator) -> dict[str, Any]:
 
 
 # =============================================================================
-# KL Divergence Panels (A, B, C)
+# KL Divergence column
 # =============================================================================
 
 
-def plot_kl_panel_a(ax: Axes, data: dict[str, Any]) -> None:
-    """Panel A: Predictive and Likelihood distributions overlaid."""
+def plot_kl_distributions(ax: Axes, data: dict[str, Any]) -> None:
+    """Predictive and Likelihood distributions overlaid."""
     x = data["position_bins"]
     pred = data["predictive"]
     like = data["likelihood"]
@@ -186,8 +186,8 @@ def plot_kl_panel_a(ax: Axes, data: dict[str, Any]) -> None:
     ax.set_yticklabels(["0", f"{y_max:.2f}"], fontsize=8)
 
 
-def plot_kl_panel_b(ax: Axes, data: dict[str, Any]) -> None:
-    """Panel B: Log ratio = log(Predictive / Likelihood)."""
+def plot_kl_log_ratio(ax: Axes, data: dict[str, Any]) -> None:
+    """Log ratio = log(Predictive / Likelihood)."""
     x = data["position_bins"]
     pred = data["predictive"]
     like = data["likelihood"]
@@ -231,8 +231,8 @@ def plot_kl_panel_b(ax: Axes, data: dict[str, Any]) -> None:
     ax.set_yticklabels([f"{y_min:.0f}", "0", f"{y_max:.0f}"], fontsize=8)
 
 
-def plot_kl_panel_c(ax: Axes, data: dict[str, Any]) -> None:
-    """Panel C: Pointwise KL = Predictive * log(Pred/Lik)."""
+def plot_kl_pointwise(ax: Axes, data: dict[str, Any]) -> None:
+    """Pointwise KL = Predictive * log(Pred/Lik)."""
     x = data["position_bins"]
     pred = data["predictive"]
     like = data["likelihood"]
@@ -264,12 +264,12 @@ def plot_kl_panel_c(ax: Axes, data: dict[str, Any]) -> None:
 
 
 # =============================================================================
-# HPD Overlap Panels (D, E, F)
+# HPD Overlap column
 # =============================================================================
 
 
-def plot_hpd_panel_d(ax: Axes, data: dict[str, Any]) -> None:
-    """Panel D: Predictive distribution with 95% HPD region shaded.
+def plot_hpd_predictive(ax: Axes, data: dict[str, Any]) -> None:
+    """Predictive distribution with 95% HPD region shaded.
 
     Uses consistent HPD visual scheme: shaded region under curve within HPD.
     """
@@ -333,8 +333,8 @@ def plot_hpd_panel_d(ax: Axes, data: dict[str, Any]) -> None:
     ax.set_yticklabels(["0", f"{y_max:.2f}"], fontsize=8)
 
 
-def plot_hpd_panel_e(ax: Axes, data: dict[str, Any]) -> None:
-    """Panel E: Likelihood distribution with 95% HPD region shaded.
+def plot_hpd_likelihood(ax: Axes, data: dict[str, Any]) -> None:
+    """Likelihood distribution with 95% HPD region shaded.
 
     Uses consistent HPD visual scheme: shaded region under curve within HPD.
     """
@@ -407,8 +407,8 @@ def plot_hpd_panel_e(ax: Axes, data: dict[str, Any]) -> None:
     ax.set_yticklabels(["0", f"{y_max:.2f}"], fontsize=8)
 
 
-def plot_hpd_panel_f(ax: Axes, data: dict[str, Any]) -> tuple[float, float, float]:
-    """Panel F: HPD intersection region.
+def plot_hpd_intersection(ax: Axes, data: dict[str, Any]) -> tuple[float, float, float]:
+    """HPD intersection region.
 
     Shows HPD regions as thick horizontal lines at different y-levels.
     Order: Pred HPD (top), Lik HPD (middle), Overlap (bottom) to match panels above.
@@ -528,7 +528,7 @@ def plot_hpd_panel_f(ax: Axes, data: dict[str, Any]) -> tuple[float, float, floa
 
 
 # =============================================================================
-# Predictive Check Panels (G, H, I)
+# Predictive Check column
 # =============================================================================
 
 
@@ -542,8 +542,8 @@ def _showcase_colors(n: int) -> NDArray[np.float64]:
     return cmap(np.linspace(0.15, 0.85, n))
 
 
-def plot_ppc_panel_g(ax: Axes, data: dict[str, Any]) -> None:
-    """Panel G: Predictive distribution with a fan of sampled positions.
+def plot_ppc_predictive_fan(ax: Axes, data: dict[str, Any]) -> None:
+    """Predictive distribution with a fan of sampled positions.
 
     Each colored marker is one draw from the predictive that flows into
     the corresponding simulated observation likelihood plotted in panel H.
@@ -590,8 +590,8 @@ def plot_ppc_panel_g(ax: Axes, data: dict[str, Any]) -> None:
     ax.set_yticklabels(["0", f"{y_max:.2f}"], fontsize=8)
 
 
-def plot_ppc_panel_h(ax: Axes, data: dict[str, Any]) -> None:
-    """Panel H: Fan of simulated observation likelihoods.
+def plot_ppc_likelihood_fan(ax: Axes, data: dict[str, Any]) -> None:
+    """Fan of simulated observation likelihoods.
 
     For each state sample drawn from the predictive (panel G), the
     Monte Carlo loop draws an observation y_tilde ~ p(y | x_s) and
@@ -709,8 +709,8 @@ def plot_ppc_panel_h(ax: Axes, data: dict[str, Any]) -> None:
     )
 
 
-def plot_ppc_panel_i(ax: Axes, data: dict[str, Any]) -> None:
-    """Panel I: Histogram of observed vs simulated log predictive density.
+def plot_ppc_density_histogram(ax: Axes, data: dict[str, Any]) -> None:
+    """Histogram of observed vs simulated log predictive density.
 
     Uses the exact Monte Carlo samples computed in create_shared_example().
     """

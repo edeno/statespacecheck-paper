@@ -364,8 +364,8 @@ def test_figure02_panels_module_is_load_bearing() -> None:
     # And the script must re-export at least one panel symbol pulled
     # from that module, so callers (e.g. notebook code in the repo)
     # importing the script keep working.
-    assert hasattr(generate_figure02, "plot_kl_panel_a"), (
-        "generate_figure02 must re-export plot_kl_panel_a from figure02_panels"
+    assert hasattr(generate_figure02, "plot_kl_distributions"), (
+        "generate_figure02 must re-export plot_kl_distributions from figure02_panels"
     )
 
 
