@@ -41,7 +41,7 @@ statespacecheck-paper/
 │   └── figures/                # Generated figure outputs
 │       ├── main/               # Main text figures (PDF + PNG)
 │       └── supplementary/      # Supplementary figures (PDF + PNG)
-├── notebooks/                   # Jupyter notebooks for exploration
+├── notebooks/archive/           # Archived exploratory notebooks (dev scratch, not the pipeline)
 └── tests/                       # Test suite (unit + property-based + integration)
     ├── test_style.py
     ├── test_simulation.py
@@ -287,7 +287,7 @@ uv run jupyter lab
 ### 3. Clean Separation of Concerns
 
 - **src/statespacecheck_paper/**: Reusable functions, well-tested
-- **notebooks/**: Exploratory analysis, can be messy
+- **notebooks/archive/**: Archived exploratory analysis, can be messy (each carries an archived-notebook banner; not part of the reproducible pipeline)
 - **scripts/**: Production scripts to generate final figures/results
 
 ### 4. Time-Resolved Diagnostics

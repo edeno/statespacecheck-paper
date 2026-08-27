@@ -14,7 +14,7 @@ This is a **paper/research repository** (not a library). The code is organized i
   - `manuscript/figures/main/`: Main text figures
   - `manuscript/figures/supplementary/`: Supplementary figures
 - **`tests/`**: Comprehensive test suite (run `uv run pytest`)
-- **`notebooks/`**: Jupyter notebooks for exploration
+- **`notebooks/archive/`**: Archived exploratory notebooks (development scratch — may use outdated APIs; not part of the figure pipeline)
 
 **For developers**: See [CLAUDE.md](CLAUDE.md) for detailed development guide including module organization, coding standards, and where to add new functionality.
 
