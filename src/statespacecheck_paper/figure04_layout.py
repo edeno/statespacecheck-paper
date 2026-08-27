@@ -160,7 +160,7 @@ def _place_track_inset(
         track_graph=track_graph,
         position_info=render_data.recording.position_info,
         ax=ax_track,
-        edge_order=cast("list[tuple[int, int]]", list(render_data.recording.linear_edge_order)),
+        edge_order=render_data.recording.linear_edge_order,
         reward_well_nodes=reward_well_nodes,
         scalebar_length=20,
         scalebar_label="20 cm",

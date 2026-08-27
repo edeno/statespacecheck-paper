@@ -1,6 +1,6 @@
 """Sanity check for Figure 4b: sample time windows from different metric regions.
 
-For each metric (HPD overlap, KL divergence, spike prob), finds time windows where
+For each metric (HPD overlap, KL divergence, predictive p-value), finds time windows where
 the model difference falls at different quantiles (Continuous better, similar,
 Continuous-Fragmented better) and generates Figure 4a-style diagnostic panels.
 
@@ -124,7 +124,7 @@ def run_sanity_check() -> None:
 
     env = create_decoder_environment(
         track_graph=data.track_graph,
-        edge_order=data.linear_edge_order,
+        edge_order=list(data.linear_edge_order),
         edge_spacing=data.linear_edge_spacing,
     )
 
@@ -223,7 +223,7 @@ def run_sanity_check() -> None:
                 model_a_name="Continuous",
                 model_b_name="Continuous-Fragmented",
                 track_graph=data.track_graph,
-                edge_order=data.linear_edge_order,
+                edge_order=list(data.linear_edge_order),
                 edge_spacing=data.linear_edge_spacing,
                 show_running_average=False,
             )

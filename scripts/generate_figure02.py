@@ -26,6 +26,8 @@ from __future__ import annotations
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.axes import Axes
+from matplotlib.figure import Figure
 from matplotlib.patches import Rectangle
 from matplotlib.transforms import Bbox
 
@@ -45,12 +47,11 @@ from statespacecheck_paper.style import save_figure, set_figure_defaults
 
 
 def _add_column_group_backplates(
-    fig: plt.Figure,
-    axes: dict[str, plt.Axes],
+    fig: Figure,
+    axes: dict[str, Axes],
 ) -> None:
     """Add subtle column backplates so each metric reads as one group."""
     fig.canvas.draw()
-    renderer = fig.canvas.get_renderer()
     to_figure = fig.transFigure.inverted()
     column_groups = (
         ("A", "D", "G", "J"),
@@ -59,7 +60,15 @@ def _add_column_group_backplates(
     )
 
     for keys in column_groups:
-        bboxes = [axes[key].get_tightbbox(renderer).transformed(to_figure) for key in keys]
+        # get_tightbbox() uses the figure's renderer after the draw above; it
+        # can return None for an empty axes, so skip those.
+        bboxes = [
+            bbox.transformed(to_figure)
+            for key in keys
+            if (bbox := axes[key].get_tightbbox()) is not None
+        ]
+        if not bboxes:
+            continue
         bbox = Bbox.union(bboxes)
         x_pad = 0.010
         y_pad = 0.008

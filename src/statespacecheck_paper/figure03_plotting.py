@@ -682,7 +682,7 @@ def compose_figure03(
     """Create comprehensive time-series diagnostics figure.
 
     Layout: 6 time-series panels (predictive, likelihood, raster, HPDO,
-    spike prob, KL) with shared x-axis and phase boundary overlays.
+    predictive p-value, KL) with shared x-axis and phase boundary overlays.
 
     Parameters
     ----------

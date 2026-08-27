@@ -6,7 +6,7 @@ results, HPD overlap diagnostics, and model checking on real experimental data.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Hashable, Sequence
 from typing import Any, cast, overload
 
 import matplotlib
@@ -44,11 +44,11 @@ def _neglog(x: float, eps: float = ...) -> np.float64: ...
 
 
 def _neglog(x: NDArray[np.float64] | float, eps: float = 1e-10) -> NDArray[np.float64] | np.float64:
-    """Return ``-log(max(x, eps))``, the spike-probability display transform.
+    """Return ``-log(max(x, eps))``, the predictive-p-value display transform.
 
-    Spike probabilities are shown on a ``-log(p)`` scale (natural log, matching
+    Predictive p-values are shown on a ``-log(p)`` scale (natural log, matching
     Figure 3) so that higher values indicate worse fit. The ``eps`` floor keeps
-    zero probabilities finite. Accepts either a probability array (returns an
+    zero p-values finite. Accepts either a p-value array (returns an
     array) or a scalar threshold (returns a scalar).
 
     Parameters
@@ -219,7 +219,7 @@ def plot_track_graph_2d(
     track_graph: nx.Graph,
     position_info: pd.DataFrame,
     ax: Axes | None = None,
-    edge_order: list[tuple[int, int]] | None = None,
+    edge_order: Sequence[tuple[Hashable, Hashable]] | None = None,
     reward_well_nodes: list[int] | None = None,
     edge_colors: NDArray[np.float64] | None = None,
     position_names: tuple[str, str] = ("head_position_x", "head_position_y"),
@@ -320,7 +320,7 @@ def plot_track_graph_2d(
 def plot_track_graph_1d(
     track_graph: nx.Graph,
     ax: Axes,
-    edge_order: list[tuple[int, int]] | None = None,
+    edge_order: Sequence[tuple[Hashable, Hashable]] | None = None,
     edge_spacing: float | list[float] = 0.0,
     reward_well_nodes: list[int] | None = None,
     other_axis_start: float = 0,
@@ -878,7 +878,7 @@ def plot_model_comparison_with_posterior(
     thresholds: dict[str, float] | None = None,
     figsize: tuple[float, float] = (7.0, 11.0),
     track_graph: nx.Graph | None = None,
-    edge_order: list[tuple[int, int]] | None = None,
+    edge_order: Sequence[tuple[Hashable, Hashable]] | None = None,
     edge_spacing: float | list[float] = 0.0,
     show_running_average: bool = False,
     running_average_window: float = 0.050,
@@ -1188,7 +1188,7 @@ def plot_single_model_diagnostics(
     model_name: str = "Continuous",
     thresholds: dict[str, float] | None = None,
     track_graph: nx.Graph | None = None,
-    edge_order: list[tuple[int, int]] | None = None,
+    edge_order: Sequence[tuple[Hashable, Hashable]] | None = None,
     edge_spacing: float | list[float] = 0.0,
     show_running_average: bool = False,
     running_average_window: float = 0.050,

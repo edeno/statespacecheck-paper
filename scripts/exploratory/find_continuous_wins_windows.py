@@ -29,7 +29,10 @@ from numpy.typing import NDArray
 from scipy.ndimage import label
 
 from statespacecheck_paper.diagnostics import SpikeEventDiagnostics
-from statespacecheck_paper.load_local_data import load_neural_recording_from_files
+from statespacecheck_paper.load_local_data import (
+    NeuralRecordingData,
+    load_neural_recording_from_files,
+)
 from statespacecheck_paper.paths import ANIMAL_DATE_EPOCH, DATA_PATH
 from statespacecheck_paper.real_data_analysis import (
     RUNNING_AVG_WINDOW,
@@ -278,7 +281,7 @@ def generate_preview_figures(
     spike_times: list[NDArray[np.float64]],
     spike_counts: NDArray[np.int64],
     place_field_peaks: NDArray[np.float64],
-    data: dict[str, Any],
+    data: NeuralRecordingData,
     n_top: int = N_TOP_CANDIDATES,
     output_dir: Path | None = None,
 ) -> None:
@@ -326,7 +329,7 @@ def generate_preview_figures(
             model_a_name="Continuous",
             model_b_name="Continuous-Fragmented",
             track_graph=data.track_graph,
-            edge_order=data.linear_edge_order,
+            edge_order=list(data.linear_edge_order),
             edge_spacing=data.linear_edge_spacing,
             show_running_average=True,
             running_average_window=0.020,
@@ -378,7 +381,7 @@ def main(
     # Create environment
     env = create_decoder_environment(
         track_graph=data.track_graph,
-        edge_order=data.linear_edge_order,
+        edge_order=list(data.linear_edge_order),
         edge_spacing=data.linear_edge_spacing,
     )
 

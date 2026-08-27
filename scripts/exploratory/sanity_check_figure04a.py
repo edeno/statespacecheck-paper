@@ -16,6 +16,7 @@ full range from best to worst model fit.
 from __future__ import annotations
 
 import warnings
+from collections.abc import Hashable
 from pathlib import Path
 from typing import Any, Literal
 
@@ -95,7 +96,7 @@ def _add_state_boundary(
 def _draw_track_on_axis(
     ax: Axes,
     track_graph: nx.Graph,
-    edge_order: list[tuple[int, int]],
+    edge_order: list[tuple[Hashable, Hashable]],
     edge_spacing: float | list[float],
     position_bins: NDArray[np.float64],
     n_bins_per_state: int | None,
@@ -190,7 +191,7 @@ def plot_spike_sanity(
     n_bins_per_state: int | None = None,
     state_labels: list[str] | None = None,
     track_graph: nx.Graph | None = None,
-    edge_order: list[tuple[int, int]] | None = None,
+    edge_order: list[tuple[Hashable, Hashable]] | None = None,
     edge_spacing: float | list[float] = 0.0,
     position_bins: NDArray[np.float64] | None = None,
 ) -> Figure:
@@ -285,7 +286,7 @@ def plot_spike_sanity(
 
     fig.suptitle(
         f"{model_name}  |  t={time_idx}  cell={cell_idx}\n"
-        f"HPD overlap={hpd_val:.4f}   KL={kl_val:.4f}   spike prob={sp_val:.4f}",
+        f"HPD overlap={hpd_val:.4f}   KL={kl_val:.4f}   predictive p-value={sp_val:.4f}",
         fontsize=9,
     )
 
@@ -450,7 +451,7 @@ def generate_sanity_plots(
     filter_metric: str | None = None,
     filter_quantile_range: tuple[float, float] = (0.0, 1.0),
     track_graph: nx.Graph | None = None,
-    edge_order: list[tuple[int, int]] | None = None,
+    edge_order: list[tuple[Hashable, Hashable]] | None = None,
     edge_spacing: float | list[float] = 0.0,
 ) -> None:
     """Generate per-spike sanity check plots for one model.
@@ -597,7 +598,7 @@ def main() -> None:
     # Create environment
     env = create_decoder_environment(
         track_graph=data.track_graph,
-        edge_order=data.linear_edge_order,
+        edge_order=list(data.linear_edge_order),
         edge_spacing=data.linear_edge_spacing,
     )
 
@@ -704,7 +705,7 @@ def main() -> None:
     print(f"\nGenerating sanity check plots ({suffix})...")
     # Track graph info for x-axis visualization
     track_graph = data.track_graph
-    edge_order = data.linear_edge_order
+    edge_order = list(data.linear_edge_order)
     edge_spacing = data.linear_edge_spacing
 
     generate_sanity_plots(
