@@ -26,8 +26,12 @@ statespacecheck-paper/
 │   ├── figure03_simulation.py  # Figure-3 phased simulation + decode
 │   ├── figure03_summary.py     # Figure-3b per-condition flag-percentage summary
 │   ├── figure03_plotting.py    # Figure-3 rendering (compose_figure03 + panels)
-│   ├── real_data_analysis.py   # Figure-4 decoder + diagnostics
+│   ├── real_data_analysis.py   # Figure-4 decoder + diagnostics (Figure4Config lives here)
 │   ├── real_data_plotting.py   # Figure-4 plotting helpers
+│   ├── figure04_cache.py       # Figure-4 decode-cache paths, fingerprint, I/O
+│   ├── figure04_workflow.py    # Figure-4 load/fit/decode/cache + summary (Figure4RenderData)
+│   ├── figure04_layout.py      # Figure-4 artist arrangement (compose_figure04)
+│   ├── figure04_generation.py  # Figure-4 generation recipe (generate_figure04)
 │   ├── schematic.py            # Graphical model and equation diagrams
 │   └── interactive/            # pyqtgraph interactive diagnostic viewer (app, panels, cache)
 ├── scripts/                     # Figure generation + exploratory scripts
@@ -56,6 +60,10 @@ statespacecheck-paper/
     ├── test_figure03_summary.py
     ├── test_figure03_plotting.py
     ├── test_figure03_phases.py
+    ├── test_figure04_cache.py
+    ├── test_figure04_workflow.py
+    ├── test_figure04_layout.py
+    ├── test_figure04_generation.py
     ├── test_plotting.py
     ├── test_schematic.py       # Tests for schematic module
     ├── test_figures.py         # Integration tests
@@ -74,6 +82,7 @@ statespacecheck-paper/
 - **figure03_plotting.py**: Figure-3 rendering (`compose_figure03` + the time-series/heatmap panels)
 - **plotting.py**: Reusable plotting functions (HPD regions, diagnostic plots)
 - **schematic.py**: Graphical model diagrams and Bayesian equation boxes for Figure 1
+- **figure04_cache.py / figure04_workflow.py / figure04_layout.py / figure04_generation.py**: Figure-4 family — cache I/O, the load/decode/summary workflow (`Figure4RenderData`), artist arrangement (`compose_figure04`), and the generation recipe (`generate_figure04`). `Figure4Config` stays in `real_data_analysis.py`; making it executable (`Figure4DecoderConfig` + `Figure4Provenance`) is a deferred follow-up.
 - **load_local_data.py**: Data loading utilities for real datasets
 - **paths.py**: Shared `DATA_PATH` / `ANIMAL_DATE_EPOCH` constants (env-overridable)
 

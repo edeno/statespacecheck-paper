@@ -82,3 +82,38 @@ def test_figure03_family_dependency_edges_are_acyclic() -> None:
     }
     for module_file, permitted in allowed.items():
         assert _sibling_module_imports(module_file) <= permitted, module_file
+
+
+def test_figure04_family_dependency_edges_are_acyclic() -> None:
+    """The Figure-4 family is layered cache < workflow < layout < generation:
+    cache imports no other Figure-4 module; workflow imports cache; layout
+    imports workflow (never cache/config/paths); generation ties them together."""
+    prefix = "statespacecheck_paper."
+    allowed = {
+        "figure04_cache.py": {prefix + "real_data_analysis"},
+        "figure04_workflow.py": {
+            prefix + "figure04_cache",
+            prefix + "real_data_analysis",
+            prefix + "diagnostics",
+            prefix + "load_local_data",
+        },
+        "figure04_layout.py": {
+            prefix + "figure04_workflow",
+            prefix + "diagnostics",
+            prefix + "real_data_plotting",
+        },
+        "figure04_generation.py": {
+            prefix + "figure04_cache",
+            prefix + "figure04_workflow",
+            prefix + "figure04_layout",
+            prefix + "real_data_analysis",
+            prefix + "paths",
+            prefix + "style",
+        },
+    }
+    for module_file, permitted in allowed.items():
+        assert _sibling_module_imports(module_file) <= permitted, module_file
+    # Layout must not reach into cache/config/paths.
+    layout = _sibling_module_imports("figure04_layout.py")
+    assert prefix + "figure04_cache" not in layout
+    assert prefix + "figure04_generation" not in layout
