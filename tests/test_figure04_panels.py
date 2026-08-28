@@ -23,7 +23,6 @@ from matplotlib.lines import Line2D  # noqa: E402
 from statespacecheck_paper.diagnostics import SpikeEventDiagnostics  # noqa: E402
 from statespacecheck_paper.figure04_panels import (  # noqa: E402
     ModelDiagnosticPanelData,
-    _draw_decoder_likelihood_image,
     _draw_predictive_heatmap_row,
     _draw_track_graph_edges,
     plot_per_spike_metric_hexbin_row,
@@ -74,7 +73,7 @@ def paired_diagnostics() -> tuple[SpikeEventDiagnostics, SpikeEventDiagnostics]:
     hpd_b = np.clip(hpd_a + rng.normal(0.0, 0.05, n_spikes), 0.0, 1.0)
 
     kl_a = rng.gamma(2.0, 0.5, n_spikes)
-    kl_b = kl_a + rng.normal(0.0, 0.1, n_spikes)
+    kl_b = np.clip(kl_a + rng.normal(0.0, 0.1, n_spikes), 0.0, None)
 
     sp_a = rng.uniform(0.01, 1.0, n_spikes)
     sp_b = np.clip(sp_a + rng.normal(0.0, 0.02, n_spikes), 1e-3, 1.0)
@@ -106,55 +105,15 @@ class TestPlotPerSpikeMetricHexbinRow:
 
         plt.close(fig)
 
-    def test_kl_panel_count_annotation_drops_nans(
+    def test_nan_event_is_rejected_before_plotting(
         self,
         paired_diagnostics: tuple[SpikeEventDiagnostics, SpikeEventDiagnostics],
     ) -> None:
-        """The KL panel's ``n=...`` annotation reports finite-in-both events,
-        not the raw input length.
-
-        Introduces 5 NaNs into each metric's arrays so the count should drop by
-        exactly 5 in the one panel that carries the shared annotation.
-        """
-        diag_a, diag_b = paired_diagnostics
-        n_total = diag_a.event_hpd_overlap.size
-        n_nans = 5
-
-        # Same-position NaNs across the two arrays so the mask is unambiguous.
-        nan_positions = [0, 7, 13, 24, 41]
-
-        def with_nans(d: SpikeEventDiagnostics) -> SpikeEventDiagnostics:
-            hpd = d.event_hpd_overlap.copy()
-            kl = d.event_kl_divergence.copy()
-            sp = d.event_predictive_pvalue.copy()
-            for arr in (hpd, kl, sp):
-                arr[nan_positions] = np.nan
-            return _per_spike_diagnostics(hpd, kl, sp)
-
-        fig, axes = plt.subplots(1, 3)
-        plot_per_spike_metric_hexbin_row(with_nans(diag_a), with_nans(diag_b), axes)
-
-        import re
-
-        expected_count = n_total - n_nans
-        # Match any ``n=<digits>`` (with or without thousands separator
-        # and surrounding whitespace) so a cosmetic format change
-        # ("n = 45" or "n=45_000") doesn't break the test. The
-        # behavioural contract is the integer in the annotation.
-        pattern = re.compile(r"n\s*=\s*([\d,_]+)")
-        panel_counts = {}
-        for ax in axes:
-            panel_counts[ax.get_title()] = [
-                int(m.group(1).replace(",", "").replace("_", ""))
-                for t in ax.texts
-                for m in [pattern.match(t.get_text())]
-                if m is not None
-            ]
-        assert panel_counts["HPD overlap"] == []
-        assert panel_counts["KL divergence"] == [expected_count]
-        assert panel_counts[r"$-\log(p)$"] == []
-
-        plt.close(fig)
+        diag_a, _diag_b = paired_diagnostics
+        hpd = diag_a.event_hpd_overlap.copy()
+        hpd[0] = np.nan
+        with pytest.raises(ValueError, match="required per-event value"):
+            _per_spike_diagnostics(hpd, diag_a.event_kl_divergence, diag_a.event_predictive_pvalue)
 
     def test_validates_same_length(
         self,
@@ -248,7 +207,13 @@ def _diagnostics_from_metric(
     """
     n_time, n_cells = metric.shape
     blank_2d = np.full((n_time, n_cells), np.nan)
-    n_spikes = 0 if event_time is None else event_time.shape[0]
+    if event_values is None:
+        event_time_ind, event_cell_ind = np.nonzero(~np.isnan(metric))
+        event_values = metric[event_time_ind, event_cell_ind]
+    else:
+        event_time_ind = np.zeros(event_values.size, dtype=np.intp)
+        event_cell_ind = np.zeros(event_values.size, dtype=np.intp)
+    n_spikes = event_values.shape[0]
     blank_evt = np.zeros(n_spikes)
 
     def _named(name: str, value: np.ndarray) -> np.ndarray:
@@ -260,8 +225,8 @@ def _diagnostics_from_metric(
         return blank_evt
 
     return SpikeEventDiagnostics(
-        event_time_ind=np.zeros(n_spikes, dtype=np.intp),
-        event_cell_ind=np.zeros(n_spikes, dtype=np.intp),
+        event_time_ind=np.asarray(event_time_ind, dtype=np.intp),
+        event_cell_ind=np.asarray(event_cell_ind, dtype=np.intp),
         event_hpd_overlap=_named_evt("event_hpd_overlap"),
         event_kl_divergence=_named_evt("event_kl_divergence"),
         event_predictive_pvalue=_named_evt("event_predictive_pvalue"),
@@ -280,31 +245,6 @@ def _scatter_offsets(ax: plt.Axes) -> np.ndarray:
 
 
 class TestPlotSpikeEventDiagnosticScatter:
-    def test_with_spike_times_aligns_at_actual_spike_times(self) -> None:
-        """``spike_times`` shifts scatter dots to the actual spike instants
-        instead of the bin starts (which are 100ms apart here)."""
-        time = np.linspace(0.0, 0.9, 10)
-        hpd = np.full((10, 3), np.nan)
-        hpd[1, 0] = 0.8
-        hpd[3, 1] = 0.6
-        hpd[5, 2] = 0.4
-        diagnostics = _diagnostics_from_metric("hpd_overlap", hpd)
-
-        fig, ax = plt.subplots()
-        plot_spike_event_diagnostic_scatter(
-            time,
-            diagnostics,
-            ax=ax,
-            spike_times=[
-                np.array([0.15]),
-                np.array([0.35]),
-                np.array([0.55]),
-            ],
-        )
-        offsets = _scatter_offsets(ax)
-        np.testing.assert_allclose(sorted(offsets[:, 0]), [0.15, 0.35, 0.55])
-        plt.close(fig)
-
     def test_event_diagnostics_plot_at_exact_event_times(self) -> None:
         """When ``event_*`` arrays are present, scatter uses their times
         directly with no bin lookup."""
@@ -334,7 +274,7 @@ class TestPlotSpikeEventDiagnosticScatter:
         diagnostics = _diagnostics_from_metric("hpd_overlap", hpd)
 
         fig, ax = plt.subplots()
-        plot_spike_event_diagnostic_scatter(time, diagnostics, ax=ax, spike_times=None)
+        plot_spike_event_diagnostic_scatter(time, diagnostics, ax=ax)
         offsets = _scatter_offsets(ax)
         np.testing.assert_allclose(sorted(offsets[:, 0]), [0.1, 0.3])
         plt.close(fig)
@@ -401,11 +341,11 @@ class TestPlotSpikeEventDiagnosticScatterRunningAverage:
         y_actual = np.asarray(ax.lines[0].get_ydata())
 
         # Correct path: average raw, then -log (natural log).
-        expected = -np.log(np.maximum(np.mean(predictive_pvalues, axis=1), 1e-10))
+        expected = -np.log(np.mean(predictive_pvalues, axis=1))
         np.testing.assert_allclose(y_actual, expected, rtol=1e-3)
 
         # Wrong path: -log first, then average. Different on rows 0 and 1.
-        wrong = np.mean(-np.log(np.maximum(predictive_pvalues, 1e-10)), axis=1)
+        wrong = np.mean(-np.log(predictive_pvalues), axis=1)
         assert not np.allclose(y_actual, wrong, rtol=1e-3)
         plt.close(fig)
 
@@ -505,13 +445,10 @@ class TestPlotSingleModelDiagnostics:
         plt.close(fig)
 
     def test_panel_data_rejects_misaligned_position(self) -> None:
+        kwargs = _valid_panel_kwargs()
+        kwargs["position"] = np.zeros(_N_TIME - 1)
         with pytest.raises(ValueError, match="position must match"):
-            ModelDiagnosticPanelData(
-                time=np.arange(_N_TIME, dtype=float),
-                position=np.zeros(_N_TIME - 1),
-                results=_multistate_results(5),
-                diagnostics=_dense_diagnostics(6),
-            )
+            ModelDiagnosticPanelData(**kwargs)
 
 
 class TestExtractedRowRenderers:
@@ -528,20 +465,6 @@ class TestExtractedRowRenderers:
         )
         assert ax.get_title() == "ModelX"
         assert ax.get_ylabel() == "Predictive"
-        plt.close(fig)
-
-    def test_decoder_likelihood_image_is_noop_without_log_likelihood(self) -> None:
-        results = _multistate_results(1).drop_vars("log_likelihood")
-        fig, ax = plt.subplots()
-        before = len(ax.images) + len(ax.collections)
-        _draw_decoder_likelihood_image(ax, results, slice(None), None)
-        assert len(ax.images) + len(ax.collections) == before
-        plt.close(fig)
-
-    def test_decoder_likelihood_image_draws_when_present(self) -> None:
-        fig, ax = plt.subplots()
-        _draw_decoder_likelihood_image(ax, _multistate_results(1), slice(None), None)
-        assert ax.images or ax.collections
         plt.close(fig)
 
     def test_track_graph_edges_draw_lines_on_each_axis(self) -> None:
@@ -631,7 +554,7 @@ class TestModelDiagnosticPanelDataValidation:
             ),
             ({"spike_times": [np.array([0.1])] * (_N_CELLS - 1)}, "spike_times must contain"),
             ({"place_field_peaks": np.zeros(_N_CELLS + 1)}, "place_field_peaks must have shape"),
-            ({"position_bins": None}, "must be provided together"),
+            ({"position_bins": None}, "required"),
             ({"place_fields": np.zeros((_N_CELLS, _N_POS + 1))}, "place_fields must have shape"),
             (
                 {"results": _multistate_results(1).drop_vars("predictive_posterior")},
@@ -653,7 +576,7 @@ class TestModelDiagnosticPanelDataValidation:
                 },
                 "coordinate must equal",
             ),
-            ({"track_graph": None}, "edge_order requires track_graph"),
+            ({"track_graph": None}, "required"),
         ],
     )
     def test_rejects_invalid(self, override: dict, match: str) -> None:

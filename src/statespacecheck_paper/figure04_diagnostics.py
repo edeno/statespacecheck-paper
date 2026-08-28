@@ -23,7 +23,7 @@ from typing import Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
-from scipy.ndimage import gaussian_filter1d, uniform_filter1d
+from scipy.ndimage import gaussian_filter1d
 
 from statespacecheck_paper.diagnostics import (
     SpikeEventDiagnostics,
@@ -85,13 +85,12 @@ def gaussian_smooth(
 
 
 def compute_running_average(
-    metric: NDArray[np.floating],
-    time: NDArray[np.float64],
+    event_times: NDArray[np.floating],
+    event_values: NDArray[np.floating],
+    evaluation_time: NDArray[np.float64],
     window_size: float = 0.050,
-    event_times: NDArray[np.floating] | None = None,
-    event_values: NDArray[np.floating] | None = None,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """Compute running average of per-cell diagnostic metric over time.
+    """Compute the manuscript's event-weighted running diagnostic average.
 
     Implements the event-weighted average formula from the manuscript:
 
@@ -104,18 +103,14 @@ def compute_running_average(
 
     Parameters
     ----------
-    metric : np.ndarray, shape (n_time, n_cells)
-        Per-cell diagnostic metric values. NaN where cell has no spike.
-    time : np.ndarray, shape (n_time,)
-        Time values for each bin.
+    event_times : np.ndarray, shape (n_events,)
+        Exact event times, or decoder-bin times indexed once per event.
+    event_values : np.ndarray, shape (n_events,)
+        Diagnostic value for every event.
+    evaluation_time : np.ndarray, shape (n_time,)
+        Time coordinates at which to evaluate the sliding-window average.
     window_size : float, default 0.050
-        Size of the sliding window in seconds.
-    event_times : np.ndarray, shape (n_events,), optional
-        Exact event times. If provided with ``event_values``, the running
-        average is computed directly over events instead of bin/cell matrix
-        entries.
-    event_values : np.ndarray, shape (n_events,), optional
-        Diagnostic values for each event.
+        Width of the centered sliding window in seconds.
 
     Returns
     -------
@@ -123,75 +118,58 @@ def compute_running_average(
         Running average of the metric over time. NaN where no events fall
         within the window.
     time_out : np.ndarray, shape (n_time,)
-        Time values (same as input, for convenience).
+        ``evaluation_time`` (returned for convenience).
 
     Notes
     -----
-    The implementation computes sum(values) and count(events) per time bin,
-    then applies a boxcar filter to both before dividing. This is equivalent
-    to the event-weighted sliding window average but runs in O(n) time.
-    Edge effects are handled by ``uniform_filter1d(mode="constant")``, which
-    zero-pads outside the array. Bins with no events in the window produce NaN.
+    Events are sorted once, then cumulative sums and ``searchsorted`` evaluate
+    each centered window in O(n log n). Bins with no events produce NaN.
 
     Examples
     --------
     >>> import numpy as np
-    >>> n_time, n_cells = 100, 10
-    >>> metric = np.random.rand(n_time, n_cells)
-    >>> metric[::2, :] = np.nan  # Sparse spikes
-    >>> time = np.linspace(0, 1, n_time)
-    >>> running_avg, time_out = compute_running_average(metric, time, window_size=0.1)
+    >>> time = np.linspace(0, 1, 100)
+    >>> event_times = np.array([0.1, 0.12, 0.8])
+    >>> event_values = np.array([0.2, 0.4, 0.9])
+    >>> running_avg, time_out = compute_running_average(
+    ...     event_times, event_values, time, window_size=0.1
+    ... )
     >>> running_avg.shape
     (100,)
     """
-    n_time_pts = len(time)
+    event_times = np.asarray(event_times, dtype=np.float64)
+    event_values = np.asarray(event_values, dtype=np.float64)
+    evaluation_time = np.asarray(evaluation_time, dtype=np.float64)
+    if event_times.ndim != 1 or event_values.shape != event_times.shape:
+        raise ValueError("event_times and event_values must be matching 1-D arrays")
+    if evaluation_time.ndim != 1:
+        raise ValueError("evaluation_time must be a 1-D array")
+    if not np.isfinite(window_size) or window_size <= 0.0:
+        raise ValueError(f"window_size must be positive and finite; got {window_size}")
+    if not np.all(np.isfinite(event_times)) or not np.all(np.isfinite(event_values)):
+        raise ValueError("Every spike event must have a finite time and diagnostic value")
+    if not np.all(np.isfinite(evaluation_time)):
+        raise ValueError("evaluation_time must contain only finite values")
 
-    if event_times is not None and event_values is not None:
-        event_times = np.asarray(event_times, dtype=np.float64)
-        event_values = np.asarray(event_values, dtype=np.float64)
+    n_time_pts = evaluation_time.size
+    if event_times.size == 0:
+        return np.full(n_time_pts, np.nan), evaluation_time.copy()
 
-        valid_events = ~np.isnan(event_values)
-        event_times = event_times[valid_events]
-        event_values = event_values[valid_events]
+    sort_ind = np.argsort(event_times)
+    sorted_times = event_times[sort_ind]
+    sorted_values = event_values[sort_ind]
+    cumsum = np.concatenate(([0.0], np.cumsum(sorted_values)))
 
-        if len(event_times) == 0:
-            return np.full(n_time_pts, np.nan), time.copy()
-
-        sort_ind = np.argsort(event_times)
-        sorted_times = event_times[sort_ind]
-        sorted_values = event_values[sort_ind]
-        cumsum = np.concatenate(([0.0], np.cumsum(sorted_values)))
-
-        half_window = window_size / 2.0
-        starts = np.searchsorted(sorted_times, time - half_window, side="left")
-        stops = np.searchsorted(sorted_times, time + half_window, side="right")
-        counts = stops - starts
-        sums = cumsum[stops] - cumsum[starts]
-
-        running_avg = np.full(n_time_pts, np.nan)
-        has_events = counts > 0
-        running_avg[has_events] = sums[has_events] / counts[has_events]
-
-        return running_avg, time.copy()
-
-    event_values = np.where(np.isnan(metric), 0.0, metric)
-    event_counts = np.where(np.isnan(metric), 0.0, 1.0)
-    bin_sum = event_values.sum(axis=1)  # (n_time,)
-    bin_count = event_counts.sum(axis=1)  # (n_time,)
-
-    dt = float(np.median(np.diff(time))) if len(time) > 1 else 1.0
-    window_bins = max(1, int(np.round(window_size / dt)))
-
-    # Zero-pad mode rather than nearest-value so edge bins have fewer
-    # events instead of inflated counts from extended-value extension.
-    windowed_sum = uniform_filter1d(bin_sum, size=window_bins, mode="constant")
-    windowed_count = uniform_filter1d(bin_count, size=window_bins, mode="constant")
+    half_window = window_size / 2.0
+    starts = np.searchsorted(sorted_times, evaluation_time - half_window, side="left")
+    stops = np.searchsorted(sorted_times, evaluation_time + half_window, side="right")
+    counts = stops - starts
+    sums = cumsum[stops] - cumsum[starts]
 
     running_avg = np.full(n_time_pts, np.nan)
-    has_events = windowed_count > 0
-    running_avg[has_events] = windowed_sum[has_events] / windowed_count[has_events]
-
-    return running_avg, time.copy()
+    has_events = counts > 0
+    running_avg[has_events] = sums[has_events] / counts[has_events]
+    return running_avg, evaluation_time.copy()
 
 
 def _get_spike_events_from_counts(
@@ -478,8 +456,8 @@ class FlagConfusion:
     """Per-spike flag agreement between two decoders for one diagnostic metric.
 
     A spike is "flagged" when its per-spike diagnostic crosses ``threshold`` in
-    the direction of worse fit. The four counts partition every spike event
-    (finite in both models) by whether model A and/or model B flags it.
+    the direction of worse fit. The four counts partition every aligned spike
+    event by whether model A and/or model B flags it.
     ``a_only`` is the rescue quadrant: spikes flagged by model A but not model B.
 
     Attributes
@@ -489,7 +467,7 @@ class FlagConfusion:
     threshold : float
         Flag threshold applied to the raw per-spike diagnostic.
     n : int
-        Number of spike events finite in both models.
+        Number of aligned spike events.
     both, a_only, b_only, neither : int
         Counts of spikes flagged by both decoders, by model A only, by model B
         only, and by neither. They sum to ``n``.
@@ -559,9 +537,25 @@ def compute_flag_confusion(
             f"diagnostics_a[{event_key!r}] and diagnostics_b[{event_key!r}] must carry "
             f"the same set of spike events in the same order; got {a.shape} vs {b.shape}."
         )
+    if not np.array_equal(diagnostics_a.event_time_ind, diagnostics_b.event_time_ind) or not (
+        np.array_equal(diagnostics_a.event_cell_ind, diagnostics_b.event_cell_ind)
+    ):
+        raise ValueError(
+            "diagnostics_a and diagnostics_b must carry identical event_time_ind and "
+            "event_cell_ind arrays in the same order"
+        )
+    # Belt-and-suspenders: SpikeEventDiagnostics.__post_init__ already rejects
+    # NaN/-inf in the event arrays, so this cannot fire for a constructed
+    # dataclass. Kept as a cheap guard in case a metric ever names an
+    # unvalidated event array.
+    if (
+        np.any(np.isnan(a))
+        or np.any(np.isnan(b))
+        or np.any(np.isneginf(a))
+        or np.any(np.isneginf(b))
+    ):
+        raise ValueError(f"{event_key} contains an undefined per-event value")
 
-    finite = np.isfinite(a) & np.isfinite(b)
-    a, b = a[finite], b[finite]
     if worse_when == "below":
         flag_a, flag_b = a <= threshold, b <= threshold
     else:

@@ -182,11 +182,18 @@ def _compose_recording() -> NeuralRecordingData:
 
 def _compose_render_data() -> Figure4RenderData:
     rng = np.random.default_rng(3)
+    continuous_diagnostics = _compose_diagnostics(3)
+    continuous_fragmented_diagnostics = dataclasses.replace(
+        _compose_diagnostics(4),
+        event_time_ind=continuous_diagnostics.event_time_ind,
+        event_cell_ind=continuous_diagnostics.event_cell_ind,
+        event_time=continuous_diagnostics.event_time,
+    )
     decode = Figure4DecodeResults(
         continuous_results=_compose_results(1),
         continuous_fragmented_results=_compose_results(2),
-        continuous_diagnostics=_compose_diagnostics(3),
-        continuous_fragmented_diagnostics=_compose_diagnostics(4),
+        continuous_diagnostics=continuous_diagnostics,
+        continuous_fragmented_diagnostics=continuous_fragmented_diagnostics,
         spike_counts=rng.poisson(0.4, (_N_TIME, _N_CELLS)).astype(np.int64),
         place_field_peaks=np.linspace(5.0, 95.0, _N_CELLS),
         diagnostic_place_fields=rng.random((_N_CELLS, _N_POS)) * 10 + 0.1,

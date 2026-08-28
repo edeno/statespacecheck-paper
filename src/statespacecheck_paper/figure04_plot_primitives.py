@@ -65,64 +65,6 @@ def compute_half_pixel_extent(
     return (t0 - dt, t1 + dt, p0 - dp, p1 + dp)
 
 
-def decoder_likelihood_to_columns(
-    results: xr.Dataset, time_slice_ind: slice
-) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
-    """Convert a decoder ``log_likelihood`` to per-time position columns.
-
-    Applies ``exp`` to ``results["log_likelihood"]``, drops all-NaN state bins,
-    unstacks the ``(state, position)`` MultiIndex, marginalizes over ``state``,
-    and slices to the plotted time window. Returns the likelihood image plus its
-    time and position coordinate arrays (for the ``imshow`` extent).
-
-    This is the *decoder* likelihood on the joint state-by-position space; the
-    place-field per-spike likelihood path is handled separately by its caller.
-
-    Parameters
-    ----------
-    results : xr.Dataset
-        Decoding results carrying ``log_likelihood`` with a ``(state, position)``
-        MultiIndex on ``state_bins``.
-    time_slice_ind : slice
-        Time window to render.
-
-    Returns
-    -------
-    tuple[NDArray, NDArray, NDArray]
-        ``(likelihood, time_coords, pos_coords)`` for the sliced window.
-
-    Raises
-    ------
-    NotImplementedError
-        If ``state_bins`` is not a ``(state, position)`` MultiIndex.
-    ValueError
-        If the MultiIndex cannot be unstacked.
-    """
-    lik_da = xr.apply_ufunc(np.exp, results["log_likelihood"]).dropna("state_bins", how="all")
-    state_bins_index = lik_da.indexes["state_bins"]
-    if not isinstance(state_bins_index, pd.MultiIndex):
-        raise NotImplementedError(
-            "Likelihood overlay requires a (state, position) MultiIndex on "
-            "state_bins; single-state data has no separate position axis and "
-            "cannot be rendered."
-        )
-    try:
-        lik_unstacked = lik_da.unstack("state_bins")
-    except (ValueError, KeyError) as e:
-        raise ValueError(
-            "Failed to unstack state_bins MultiIndex on the likelihood overlay; "
-            "the index is malformed and cannot be marginalized. "
-            f"Underlying error: {e}"
-        ) from e
-    if "state" in lik_unstacked.dims:
-        lik_unstacked = lik_unstacked.sum("state")
-    lik_sliced = lik_unstacked.isel(time=time_slice_ind)
-    lik_np = np.asarray(lik_sliced.values)
-    time_coords = np.asarray(lik_sliced.coords["time"].values)
-    pos_coords = np.asarray(lik_sliced.coords["position"].values)
-    return lik_np, time_coords, pos_coords
-
-
 def add_scalebar(
     ax: Axes,
     length: float,
@@ -220,7 +162,9 @@ def plot_distribution_heatmap(
                 "distribution heatmap; the index is malformed and cannot "
                 f"be marginalized. Underlying error: {e}"
             ) from e
-        marginalized = unstacked.sum("state") if "state" in unstacked.dims else unstacked
+        marginalized = (
+            unstacked.sum("state", skipna=False) if "state" in unstacked.dims else unstacked
+        )
         sliced_data = marginalized.isel(time=time_slice_ind)
         if sliced_data.notnull().any():
             sliced_data.plot(
@@ -233,9 +177,7 @@ def plot_distribution_heatmap(
                 rasterized=True,
             )
         else:
-            # No data to plot — set axes to the requested slice anyway.
-            time_arr = np.asarray(time)
-            ax.set_xlim(time_arr[time_slice_ind].min(), time_arr[time_slice_ind].max())
+            raise ValueError("Predictive-posterior slice contains no plottable values")
     else:
         # Single-state model: no separate ``position`` axis. Plot
         # against the state_bins axis directly so the figure still
@@ -250,6 +192,8 @@ def plot_distribution_heatmap(
                 cmap=cmap,
                 rasterized=True,
             )
+        else:
+            raise ValueError("Predictive-posterior slice contains no plottable values")
 
     # Overlay animal position
     if show_position:

@@ -319,48 +319,48 @@ class TestComputeModelDiagnostics:
 
 
 class TestComputeRunningAverage:
-    def test_output_shape_collapses_cells(self, rng: np.random.Generator) -> None:
-        n_time, n_cells = 100, 10
-        metric = rng.random((n_time, n_cells))
+    def test_output_shape_matches_evaluation_time(self, rng: np.random.Generator) -> None:
+        n_time = 100
         time = np.linspace(0, 1, n_time)
-        running_avg, time_out = compute_running_average(metric, time, window_size=0.1)
+        event_times = rng.uniform(0, 1, 200)
+        event_values = rng.random(200)
+        running_avg, time_out = compute_running_average(
+            event_times, event_values, time, window_size=0.1
+        )
         assert running_avg.shape == (n_time,)
         np.testing.assert_array_equal(time_out, time)
 
-    def test_partial_nan_input_yields_finite_output(self, rng: np.random.Generator) -> None:
-        n_time, n_cells = 100, 10
-        metric = rng.random((n_time, n_cells))
-        metric[::2] = np.nan
+    def test_nan_event_value_raises(self) -> None:
+        n_time = 100
         time = np.linspace(0, 1, n_time)
-        running_avg, _ = compute_running_average(metric, time, window_size=0.1)
-        assert not np.any(np.isnan(running_avg))
+        with pytest.raises(ValueError, match="Every spike event"):
+            compute_running_average(
+                np.array([0.2, 0.4]), np.array([1.0, np.nan]), time, window_size=0.1
+            )
 
-    def test_all_nan_input_yields_all_nan_output(self) -> None:
-        """All-NaN must propagate, not be silently filled with zeros."""
-        n_time, n_cells = 100, 10
-        metric = np.full((n_time, n_cells), np.nan)
+    def test_no_events_yields_all_nan_output(self) -> None:
+        n_time = 100
         time = np.linspace(0, 1, n_time)
-        running_avg, _ = compute_running_average(metric, time, window_size=0.1)
+        running_avg, _ = compute_running_average(np.array([]), np.array([]), time, window_size=0.1)
         assert np.all(np.isnan(running_avg))
 
     def test_larger_window_smooths_more(self, rng: np.random.Generator) -> None:
-        n_time, n_cells = 1000, 10
-        metric = rng.random((n_time, n_cells))
+        n_time = 1000
         time = np.linspace(0, 1, n_time)
-        small, _ = compute_running_average(metric, time, window_size=0.01)
-        large, _ = compute_running_average(metric, time, window_size=0.1)
-        assert large.var() < small.var()
+        event_times = time.copy()
+        event_values = rng.random(n_time)
+        small, _ = compute_running_average(event_times, event_values, time, window_size=0.01)
+        large, _ = compute_running_average(event_times, event_values, time, window_size=0.1)
+        assert np.nanvar(large) < np.nanvar(small)
 
     def test_event_inputs_count_duplicates_at_same_time(self) -> None:
         """Two events at the same time both contribute to the running mean."""
-        metric = np.full((3, 1), np.nan)
         time = np.array([0.0, 1.0, 2.0])
         running_avg, _ = compute_running_average(
-            metric,
+            np.array([1.0, 1.0]),
+            np.array([1.0, 3.0]),
             time,
             window_size=0.1,
-            event_times=np.array([1.0, 1.0]),
-            event_values=np.array([1.0, 3.0]),
         )
         assert np.isnan(running_avg[0])
         assert running_avg[1] == 2.0
@@ -426,12 +426,9 @@ class TestComputeFlagConfusion:
         kl_conf = compute_flag_confusion(kl_a, kl_b, "kl_divergence", 4.0, worse_when="above")
         assert (kl_conf.a_only, kl_conf.b_only) == (1, 1)
 
-    def test_nan_events_are_dropped(self) -> None:
-        a = _diag_from_events(hpd=np.array([0.01, np.nan, 0.02]))
-        b = _diag_from_events(hpd=np.array([0.20, 0.01, 0.02]))
-        conf = compute_flag_confusion(a, b, "hpd_overlap", 0.05, worse_when="below")
-        # The NaN spike is dropped; remaining A=[0.01, 0.02], B=[0.20, 0.02].
-        assert (conf.n, conf.both, conf.a_only, conf.b_only, conf.neither) == (2, 1, 1, 0, 0)
+    def test_nan_event_is_rejected_at_construction(self) -> None:
+        with pytest.raises(ValueError, match="required per-event value"):
+            _diag_from_events(hpd=np.array([0.01, np.nan, 0.02]))
 
     def test_rescue_rate_nan_when_a_flags_nothing(self) -> None:
         a = _diag_from_events(hpd=np.array([0.5, 0.6]))  # none at or below 0.05

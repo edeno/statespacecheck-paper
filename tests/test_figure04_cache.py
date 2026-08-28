@@ -40,6 +40,17 @@ def test_cache_path_uses_injected_identifiers(tmp_path: Path) -> None:
     assert paths.cache_path == tmp_path / "intermediates" / "epoch_x_fig4_cache.joblib"
 
 
+def test_missing_decoder_version_rejects_unknown_provenance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def missing_version(_name: str) -> str:
+        raise figure04_cache.PackageNotFoundError
+
+    monkeypatch.setattr(figure04_cache, "version", missing_version)
+    with pytest.raises(RuntimeError, match="Cannot fingerprint Figure 4"):
+        figure04_cache._installed_non_local_detector_version()
+
+
 def test_round_trip(tmp_path: Path) -> None:
     path = tmp_path / "intermediates" / "c.joblib"
     payload = _payload()

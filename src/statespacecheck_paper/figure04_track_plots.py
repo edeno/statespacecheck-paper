@@ -22,8 +22,8 @@ from statespacecheck_paper.figure04_plot_primitives import add_scalebar
 def plot_track_graph_2d(
     track_graph: nx.Graph,
     position_info: pd.DataFrame,
+    edge_order: Sequence[tuple[Hashable, Hashable]],
     ax: Axes | None = None,
-    edge_order: Sequence[tuple[Hashable, Hashable]] | None = None,
     reward_well_nodes: list[int] | None = None,
     edge_colors: NDArray[np.float64] | None = None,
     position_names: tuple[str, str] = ("head_position_x", "head_position_y"),
@@ -41,8 +41,8 @@ def plot_track_graph_2d(
         DataFrame containing position columns for trajectory overlay.
     ax : Axes, optional
         Axes to plot on. If None, uses current axes.
-    edge_order : list of tuple of int, optional
-        Order of edges. If None, uses graph's natural edge order.
+    edge_order : sequence of tuple
+        Explicit edge order shared with the scientific linearization.
     reward_well_nodes : list of int, optional
         Node indices that are reward wells (marked with scatter points).
     edge_colors : ndarray, optional
@@ -68,9 +68,6 @@ def plot_track_graph_2d(
     if edge_colors is None:
         cmap = matplotlib.colormaps.get_cmap("tab10")
         edge_colors = np.array([cmap(i) for i in range(10)])
-    if edge_order is None:
-        edge_order = list(track_graph.edges)
-
     # Plot trajectory
     if show_trajectory:
         ax.plot(
@@ -124,7 +121,7 @@ def plot_track_graph_2d(
 def plot_track_graph_1d(
     track_graph: nx.Graph,
     ax: Axes,
-    edge_order: Sequence[tuple[Hashable, Hashable]] | None = None,
+    edge_order: Sequence[tuple[Hashable, Hashable]],
     edge_spacing: float | list[float] = 0.0,
     reward_well_nodes: list[int] | None = None,
     other_axis_start: float = 0,
@@ -145,8 +142,8 @@ def plot_track_graph_1d(
         Track graph with edges containing 'distance' attributes (in cm).
     ax : Axes
         Axes to plot on.
-    edge_order : list of tuple of int, optional
-        Order of edges for linearization. If None, uses graph's natural edge order.
+    edge_order : sequence of tuple
+        Explicit edge order for the scientific linearization.
     edge_spacing : float or list of float, optional
         Spacing between edges in cm. By default 0.0.
     reward_well_nodes : list of int, optional
@@ -163,8 +160,6 @@ def plot_track_graph_1d(
         Orientation of the track. "vertical" places position on y-axis,
         "horizontal" places position on x-axis.
     """
-    if edge_order is None:
-        edge_order = list(track_graph.edges)
     if reward_well_nodes is None:
         reward_well_nodes = []
     if edge_colors is None:

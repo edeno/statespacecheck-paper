@@ -277,7 +277,12 @@ def compute_mean_spike_event_diagnostic(diagnostics: SpikeEventDiagnostics, metr
     event_key = f"event_{metric}"
     if not hasattr(diagnostics, event_key):
         raise KeyError(f"Missing per-spike diagnostic array: {event_key}")
-    return float(np.nanmean(getattr(diagnostics, event_key)))
+    values = np.asarray(getattr(diagnostics, event_key), dtype=np.float64)
+    if values.size == 0:
+        raise ValueError(f"Cannot compute {event_key} mean: no spike events are present")
+    if np.any(np.isnan(values)) or np.any(np.isneginf(values)):
+        raise ValueError(f"Cannot compute {event_key} mean: undefined event value present")
+    return float(np.mean(values))
 
 
 @dataclasses.dataclass(frozen=True)

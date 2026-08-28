@@ -8,12 +8,8 @@ import pytest
 
 matplotlib.use("Agg")  # noqa: E402
 
-import pandas as pd  # noqa: E402
-import xarray as xr  # noqa: E402
-
 from statespacecheck_paper.figure04_plot_primitives import (  # noqa: E402
     compute_half_pixel_extent,
-    decoder_likelihood_to_columns,
 )
 
 
@@ -41,59 +37,3 @@ class TestHalfpixelExtent:
     def test_raises_on_single_position_coordinate(self) -> None:
         with pytest.raises(ValueError, match=">=2 coordinates"):
             compute_half_pixel_extent(np.array([0.0, 1.0]), np.array([10.0]))
-
-
-def _decoder_results(
-    n_time: int = 5,
-    states: tuple[str, ...] = ("s0", "s1"),
-    positions: tuple[float, ...] = (0.0, 2.0, 4.0),
-) -> xr.Dataset:
-    """Build a synthetic decoder result with a ``(state, position)`` MultiIndex."""
-    pos = np.array(positions)
-    state_bins = pd.MultiIndex.from_product([list(states), pos], names=["state", "position"])
-    rng = np.random.default_rng(0)
-    log_lik = rng.normal(size=(n_time, len(state_bins)))
-    time = 10.0 + 0.002 * np.arange(n_time)
-    da = xr.DataArray(
-        log_lik,
-        dims=("time", "state_bins"),
-        coords={"time": time, "state_bins": state_bins},
-    )
-    return xr.Dataset({"log_likelihood": da})
-
-
-class TestDecoderLikelihoodToColumns:
-    def test_marginalizes_state_and_returns_coords(self) -> None:
-        """Reproduces ``exp -> unstack -> sum(state) -> isel`` columns plus the
-        time/position coordinate arrays used to build the imshow extent."""
-        results = _decoder_results()
-        lik_np, time_coords, pos_coords = decoder_likelihood_to_columns(results, slice(None))
-
-        n_time, n_states, n_pos = 5, 2, 3
-        raw = results["log_likelihood"].values  # (n_time, n_states * n_pos)
-        expected = np.exp(raw).reshape(n_time, n_states, n_pos).sum(axis=1)
-
-        np.testing.assert_allclose(lik_np, expected)
-        np.testing.assert_array_equal(pos_coords, np.array([0.0, 2.0, 4.0]))
-        np.testing.assert_allclose(time_coords, 10.0 + 0.002 * np.arange(n_time))
-
-    def test_honors_time_slice(self) -> None:
-        results = _decoder_results()
-        lik_full, time_full, _ = decoder_likelihood_to_columns(results, slice(None))
-        lik_win, time_win, _ = decoder_likelihood_to_columns(results, slice(1, 3))
-
-        assert lik_win.shape == (2, 3)
-        np.testing.assert_allclose(lik_win, lik_full[1:3])
-        np.testing.assert_allclose(time_win, time_full[1:3])
-
-    def test_single_state_index_raises(self) -> None:
-        """Data without a (state, position) MultiIndex has no position axis."""
-        n_time = 4
-        da = xr.DataArray(
-            np.random.default_rng(0).normal(size=(n_time, 3)),
-            dims=("time", "state_bins"),
-            coords={"time": np.arange(n_time, dtype=float), "state_bins": [0, 1, 2]},
-        )
-        results = xr.Dataset({"log_likelihood": da})
-        with pytest.raises(NotImplementedError, match="MultiIndex"):
-            decoder_likelihood_to_columns(results, slice(None))

@@ -33,7 +33,6 @@ from statespacecheck_paper.figure04_plot_primitives import (
     THRESHOLD_LABEL_GID,
     WORSE_FIT_LABEL_GID,
     compute_half_pixel_extent,
-    decoder_likelihood_to_columns,
     plot_distribution_heatmap,
 )
 from statespacecheck_paper.figure04_track_plots import plot_track_graph_1d
@@ -69,16 +68,15 @@ class ModelDiagnosticPanelData:
     diagnostics : SpikeEventDiagnostics
         Per-spike diagnostics whose dense ``hpd_overlap`` / ``predictive_pvalue``
         / ``kl_divergence`` matrices are ``(n_time, n_cells)``.
-    spike_times : list[np.ndarray], optional
+    spike_times : list[np.ndarray]
         One spike-time array per cell (length ``n_cells``).
-    spike_counts : np.ndarray, shape (n_time, n_cells), optional
-    place_field_peaks : np.ndarray, shape (n_cells,), optional
-    place_fields : np.ndarray, shape (n_cells, n_position_bins), optional
-        Supplied together with ``spike_counts`` and ``position_bins``.
-    position_bins : np.ndarray, shape (n_position_bins,), optional
-    track_graph : networkx.Graph, optional
-        Required when ``edge_order`` is given (the linearized-track overlay).
-    edge_order : sequence of (node, node), optional
+    spike_counts : np.ndarray, shape (n_time, n_cells)
+    place_field_peaks : np.ndarray, shape (n_cells,)
+    place_fields : np.ndarray, shape (n_cells, n_position_bins)
+    position_bins : np.ndarray, shape (n_position_bins,)
+    track_graph : networkx.Graph
+    edge_order : sequence of (node, node)
+        Explicit order used for the scientific linearization.
     edge_spacing : float or list of float, default 0.0
     """
 
@@ -86,16 +84,28 @@ class ModelDiagnosticPanelData:
     position: NDArray[np.float64]
     results: xr.Dataset
     diagnostics: SpikeEventDiagnostics
-    spike_times: list[NDArray[np.float64]] | None = None
-    spike_counts: NDArray[np.int64] | None = None
-    place_field_peaks: NDArray[np.float64] | None = None
-    place_fields: NDArray[np.float64] | None = None
-    position_bins: NDArray[np.float64] | None = None
-    track_graph: nx.Graph | None = None
-    edge_order: Sequence[tuple[Hashable, Hashable]] | None = None
+    spike_times: list[NDArray[np.float64]]
+    spike_counts: NDArray[np.int64]
+    place_field_peaks: NDArray[np.float64]
+    place_fields: NDArray[np.float64]
+    position_bins: NDArray[np.float64]
+    track_graph: nx.Graph
+    edge_order: Sequence[tuple[Hashable, Hashable]]
     edge_spacing: float | list[float] = 0.0
 
     def __post_init__(self) -> None:
+        required_fields = (
+            "spike_times",
+            "spike_counts",
+            "place_field_peaks",
+            "place_fields",
+            "position_bins",
+            "track_graph",
+            "edge_order",
+        )
+        missing = [name for name in required_fields if getattr(self, name) is None]
+        if missing:
+            raise ValueError(f"ModelDiagnosticPanelData required fields are missing: {missing}")
         time = np.asarray(self.time)
         position = np.asarray(self.position)
         if time.ndim != 1:
@@ -155,39 +165,41 @@ class ModelDiagnosticPanelData:
                 "the per-spike diagnostics."
             )
 
-        if self.spike_counts is not None and self.spike_counts.shape != (time.size, n_cells):
+        if self.spike_counts.shape != (time.size, n_cells):
             raise ValueError(
                 f"spike_counts must have shape ({time.size}, {n_cells}); "
                 f"got {self.spike_counts.shape}"
             )
-        if self.spike_times is not None and len(self.spike_times) != n_cells:
+        if np.any(self.spike_counts < 0):
+            raise ValueError("spike_counts must be non-negative")
+        if len(self.spike_times) != n_cells:
             raise ValueError(
                 f"spike_times must contain {n_cells} cells; got {len(self.spike_times)}"
             )
-        if self.place_field_peaks is not None and self.place_field_peaks.shape != (n_cells,):
+        if self.place_field_peaks.shape != (n_cells,):
             raise ValueError(
                 f"place_field_peaks must have shape ({n_cells},); "
                 f"got {self.place_field_peaks.shape}"
             )
+        if not np.all(np.isfinite(self.place_field_peaks)):
+            raise ValueError("place_field_peaks must contain only finite values")
 
-        likelihood_inputs = (self.spike_counts, self.place_fields, self.position_bins)
-        if self.place_fields is not None or self.position_bins is not None:
-            if any(value is None for value in likelihood_inputs):
-                raise ValueError(
-                    "spike_counts, place_fields, and position_bins must be provided together"
-                )
-            assert self.place_fields is not None
-            assert self.position_bins is not None
-            if self.place_fields.shape != (n_cells, self.position_bins.size):
-                raise ValueError(
-                    "place_fields must have shape "
-                    f"({n_cells}, {self.position_bins.size}); got {self.place_fields.shape}"
-                )
-
-        # The linearized-track overlay needs the graph; edge_order without it
-        # would be silently ignored.
-        if self.edge_order is not None and self.track_graph is None:
-            raise ValueError("edge_order requires track_graph; got track_graph=None")
+        if self.position_bins.ndim != 1 or self.position_bins.size < 2:
+            raise ValueError("position_bins must be a 1-D array with at least two bins")
+        if self.place_fields.shape != (n_cells, self.position_bins.size):
+            raise ValueError(
+                "place_fields must have shape "
+                f"({n_cells}, {self.position_bins.size}); got {self.place_fields.shape}"
+            )
+        if not np.all(np.isfinite(self.place_fields)) or np.any(self.place_fields < 0.0):
+            raise ValueError("place_fields must contain only finite nonnegative rates")
+        if not np.all(np.isfinite(self.position_bins)) or np.any(np.diff(self.position_bins) <= 0):
+            raise ValueError("position_bins must be finite and strictly increasing")
+        if len(self.edge_order) == 0:
+            raise ValueError("edge_order must explicitly contain the linearized track edges")
+        missing_edges = [edge for edge in self.edge_order if not self.track_graph.has_edge(*edge)]
+        if missing_edges:
+            raise ValueError(f"edge_order contains edges absent from track_graph: {missing_edges}")
 
 
 def plot_raster(
@@ -259,7 +271,6 @@ def plot_spike_event_diagnostic_scatter(
     color: str = "steelblue",
     ylabel: str | None = None,
     show_xlabel: bool = True,
-    spike_times: list[NDArray[np.float64]] | None = None,
     show_running_average: bool = False,
     running_average_window: float = 0.050,
     running_average_color: str | None = None,
@@ -278,9 +289,8 @@ def plot_spike_event_diagnostic_scatter(
     time : np.ndarray or pd.Index
         Time values (bin centers/starts).
     diagnostics : SpikeEventDiagnostics
-        Per-spike-event diagnostics dataclass. The dense ``hpd_overlap``,
-        ``kl_divergence``, and ``predictive_pvalue`` attributes (each shape
-        (n_time, n_cells)) supply the scattered values.
+        Per-spike-event diagnostics dataclass. The required ``event_*`` arrays
+        supply one value per plotted spike.
     time_slice_ind : slice, optional
         Time slice indices to plot. If None, plots all time points.
     threshold : float, optional
@@ -296,10 +306,6 @@ def plot_spike_event_diagnostic_scatter(
         Y-axis label. If None, uses metric_name.
     show_xlabel : bool, default True
         Whether to show "Time" xlabel.
-    spike_times : list[np.ndarray], optional
-        List of spike time arrays, one per cell. If provided, diagnostic
-        points are plotted at actual spike times instead of bin values,
-        aligning them with raster plots.
     show_running_average : bool, default False
         If True, overlay a running average line on top of the scatter plot.
         The running average is computed as the weighted mean over a sliding
@@ -333,99 +339,38 @@ def plot_spike_event_diagnostic_scatter(
     if ax is None:
         ax = plt.gca()
 
-    metric = np.asarray(getattr(diagnostics, metric_name)).copy()
-    time_arr = np.asarray(time)
+    full_time = np.asarray(time, dtype=np.float64)
+    if full_time.ndim != 1:
+        raise ValueError(f"time must be 1-D; got shape {full_time.shape}")
+    selected_indices = np.arange(full_time.size)[
+        slice(None) if time_slice_ind is None else time_slice_ind
+    ]
+    if selected_indices.size == 0:
+        raise ValueError("time_slice_ind selects no time samples")
+    time_arr = full_time[selected_indices]
 
-    if time_slice_ind is not None:
-        time_arr = time_arr[time_slice_ind]
-        metric = metric[time_slice_ind]
+    event_time_ind = np.asarray(diagnostics.event_time_ind, dtype=np.intp)
+    if np.any(event_time_ind >= full_time.size):
+        raise ValueError("diagnostics.event_time_ind contains an index outside the time array")
+    event_metric_values = np.asarray(getattr(diagnostics, f"event_{metric_name}"), dtype=np.float64)
+    if not np.all(np.isfinite(event_metric_values)):
+        raise ValueError(f"event_{metric_name} contains a non-finite value that cannot be plotted")
 
-    event_times = diagnostics.event_time
-    # No default: the three ``event_*`` fields are required on
-    # SpikeEventDiagnostics; an unexpected metric_name must fail loud.
-    event_metric_values = getattr(diagnostics, f"event_{metric_name}")
-
-    # Store raw metric for running average computation (before transformation)
-    # The running average should be computed on raw values per manuscript formula:
-    # D = sum(metric_k * I(t_k in window)) / sum(I(t_k in window))
-    raw_metric = metric.copy()
-    raw_event_metric_values = (
-        None if event_metric_values is None else np.asarray(event_metric_values).copy()
+    selected_time_mask = np.zeros(full_time.size, dtype=bool)
+    selected_time_mask[selected_indices] = True
+    event_mask = selected_time_mask[event_time_ind]
+    all_event_times = (
+        np.asarray(diagnostics.event_time, dtype=np.float64)
+        if diagnostics.event_time is not None
+        else full_time[event_time_ind]
     )
-
-    # Transform predictive_pvalue to -log(p) (natural log) scale (matching Figure 3)
-    # Higher values indicate worse fit (low probability)
-    if metric_name == "predictive_pvalue":
-        metric = negative_log_pvalue(metric)
-        if threshold is not None:
-            threshold = negative_log_pvalue(threshold)
-
-    n_time, n_cells = metric.shape
-
-    if event_times is not None and raw_event_metric_values is not None:
-        event_times_arr = np.asarray(event_times)
-        time_min, time_max = time_arr.min(), time_arr.max()
-        event_mask = (event_times_arr >= time_min) & (event_times_arr < time_max)
-
-        x_positions_arr = event_times_arr[event_mask]
-        y_values_arr = raw_event_metric_values[event_mask]
-        if metric_name == "predictive_pvalue":
-            y_values_arr = negative_log_pvalue(y_values_arr)
-        valid = ~np.isnan(y_values_arr)
-        x_positions_arr = x_positions_arr[valid]
-        y_values_arr = y_values_arr[valid]
-    elif spike_times is not None:
-        # Use actual spike times for x-positions to align with raster
-        # Find the time range for filtering spikes
-        time_min, time_max = time_arr.min(), time_arr.max()
-
-        # Collect (spike_time, diagnostic_value) pairs for all non-NaN diagnostics
-        x_positions = []
-        y_values = []
-
-        for cell_idx in range(n_cells):
-            cell_spike_times = spike_times[cell_idx]
-            # Filter to spikes within the time window
-            mask = (cell_spike_times >= time_min) & (cell_spike_times < time_max)
-            cell_spikes_in_window = cell_spike_times[mask]
-
-            # For each spike, find which time bin it falls into
-            # Use searchsorted to find bin indices
-            # Spikes are binned into time[i] if time[i] <= spike < time[i+1]
-            bin_indices = np.searchsorted(time_arr, cell_spikes_in_window, side="right") - 1
-            # Clamp to valid range
-            bin_indices = np.clip(bin_indices, 0, n_time - 1)
-
-            # Get diagnostic values at those bins for this cell
-            for spike_t, bin_idx in zip(cell_spikes_in_window, bin_indices, strict=True):
-                diag_val = metric[bin_idx, cell_idx]
-                if not np.isnan(diag_val):
-                    x_positions.append(spike_t)
-                    y_values.append(diag_val)
-
-        x_positions_arr = np.array(x_positions)
-        y_values_arr = np.array(y_values)
-    elif diagnostics.event_time_ind.size:
-        # No wall-clock event_time and no spike_times, but per-event arrays are
-        # present: map each event to its time bin via ``event_time_ind`` so
-        # repeated events in the same (time bin, cell) stay distinct points.
-        # Flattening the dense (n_time, n_cells) matrix (below) would collapse
-        # them into one observation and under-weight the running average.
-        event_bin_times = np.asarray(time)[diagnostics.event_time_ind]
-        in_window = (event_bin_times >= time_arr.min()) & (event_bin_times < time_arr.max())
-        x_positions_arr = event_bin_times[in_window]
-        y_values_arr = np.asarray(event_metric_values)[in_window]
-        if metric_name == "predictive_pvalue":
-            y_values_arr = negative_log_pvalue(y_values_arr)
-        valid = ~np.isnan(y_values_arr)
-        x_positions_arr = x_positions_arr[valid]
-        y_values_arr = y_values_arr[valid]
-    else:
-        # Legacy dense-only data (no per-event arrays): use the dense
-        # (n_time, n_cells) matrix, one point per (time bin, cell).
-        time_indices = np.tile(time_arr[:, np.newaxis], (1, n_cells))
-        x_positions_arr = time_indices.ravel()
-        y_values_arr = metric.ravel()
+    x_positions_arr = all_event_times[event_mask]
+    raw_y_values = event_metric_values[event_mask]
+    y_values_arr = (
+        negative_log_pvalue(raw_y_values) if metric_name == "predictive_pvalue" else raw_y_values
+    )
+    if threshold is not None and metric_name == "predictive_pvalue":
+        threshold = float(negative_log_pvalue(threshold))
 
     ax.scatter(
         x_positions_arr,
@@ -438,36 +383,14 @@ def plot_spike_event_diagnostic_scatter(
 
     # Add running average line if requested
     if show_running_average:
-        # Compute running average on RAW values (before transformation)
-        # per manuscript formula, then transform for display
-        if event_times is not None and raw_event_metric_values is not None:
-            event_times_arr = np.asarray(event_times)
-            time_min, time_max = time_arr.min(), time_arr.max()
-            event_mask = (event_times_arr >= time_min) & (event_times_arr < time_max)
-            running_avg, _ = compute_running_average(
-                raw_metric,
-                time_arr,
-                window_size=running_average_window,
-                event_times=event_times_arr[event_mask],
-                event_values=raw_event_metric_values[event_mask],
-            )
-        elif diagnostics.event_time_ind.size and raw_event_metric_values is not None:
-            # Match the scatter's event_time_ind path so every event is weighted,
-            # rather than the collapsing dense fallback.
-            event_bin_times = np.asarray(time)[diagnostics.event_time_ind]
-            time_min, time_max = time_arr.min(), time_arr.max()
-            event_mask = (event_bin_times >= time_min) & (event_bin_times < time_max)
-            running_avg, _ = compute_running_average(
-                raw_metric,
-                time_arr,
-                window_size=running_average_window,
-                event_times=event_bin_times[event_mask],
-                event_values=raw_event_metric_values[event_mask],
-            )
-        else:
-            running_avg, _ = compute_running_average(
-                raw_metric, time_arr, window_size=running_average_window
-            )
+        # Compute on raw per-event values exactly as specified in the
+        # manuscript, then apply the display transform to the average.
+        running_avg, _ = compute_running_average(
+            x_positions_arr,
+            raw_y_values,
+            time_arr,
+            window_size=running_average_window,
+        )
 
         # Transform running average if needed (same as scatter points)
         if metric_name == "predictive_pvalue":
@@ -568,38 +491,6 @@ def _draw_predictive_heatmap_row(
     ax.tick_params(labelsize=8, labelbottom=False)
 
 
-def _draw_decoder_likelihood_image(
-    ax: Axes,
-    results: xr.Dataset,
-    time_slice_ind: slice,
-    has_spikes_mask: NDArray[np.bool_] | None,
-) -> None:
-    """Overlay the decoder likelihood (marginalized over state) at spike times.
-
-    The decoder likelihood lives on the joint state-by-position space; a
-    single-state model has no position axis and
-    :func:`decoder_likelihood_to_columns` raises. No-op when the results carry
-    no ``log_likelihood``.
-    """
-    if "log_likelihood" not in results:
-        return
-    lik_np, time_coords, pos_coords = decoder_likelihood_to_columns(results, time_slice_ind)
-    extent = compute_half_pixel_extent(time_coords, pos_coords)
-    has_spk_slice = (
-        has_spikes_mask[time_slice_ind]
-        if has_spikes_mask is not None
-        else np.ones(lik_np.shape[0], dtype=bool)
-    )
-    plot_likelihood_columns(
-        ax,
-        lik_np,
-        has_spk_slice,
-        n_time=len(time_coords),
-        extent=extent,
-        cmap=CMAP_LIKELIHOOD,
-    )
-
-
 def _draw_place_field_likelihood_image(
     ax: Axes,
     time: NDArray[np.float64] | pd.Index,
@@ -634,7 +525,7 @@ def _draw_place_field_likelihood_image(
 def _draw_track_graph_edges(
     axes_pair: list[Axes],
     track_graph: nx.Graph,
-    edge_order: Sequence[tuple[Hashable, Hashable]] | None,
+    edge_order: Sequence[tuple[Hashable, Hashable]],
     edge_spacing: float | list[float],
     time: NDArray[np.float64] | pd.Index,
     time_slice_ind: slice,
@@ -679,9 +570,8 @@ def plot_single_model_diagnostics(
     ----------
     data : ModelDiagnosticPanelData
         Named model outputs, diagnostics, observations, and track geometry.
-        When its ``spike_counts``, ``place_fields``, and ``position_bins`` are
-        present, the likelihood row shows the mean normalized per-spike
-        likelihood used by the diagnostic calculation.
+        The likelihood row shows the mean normalized per-spike likelihood used
+        by the diagnostic calculation.
     time_slice_ind : slice, optional
         Time slice to plot. If None, plots all time points.
     model_name : str, default "Continuous"
@@ -724,11 +614,6 @@ def plot_single_model_diagnostics(
     if time_slice_ind is None:
         time_slice_ind = slice(None)
 
-    # Mask for times with spikes
-    has_spikes_mask: NDArray[np.bool_] | None = None
-    if spike_counts is not None:
-        has_spikes_mask = spike_counts.sum(axis=1) > 0
-
     # Row 0: Predictive posterior
     _draw_predictive_heatmap_row(
         axes[0],
@@ -759,17 +644,11 @@ def plot_single_model_diagnostics(
     ax_lik = axes[1]
     ax_lik.set_facecolor("black")
 
-    if place_fields is not None and spike_counts is not None and position_bins is not None:
-        # Match the simulation figure: the mean normalized per-spike likelihood
-        # over position (the observation quantity the per-spike diagnostics
-        # operate on), identical across decoders that share place fields.
-        _draw_place_field_likelihood_image(
-            ax_lik, time, spike_counts, place_fields, position_bins, time_slice_ind
-        )
-    elif "log_likelihood" in results:
-        # Decoder-likelihood fallback (no place fields supplied): marginalized
-        # over state on the joint state-by-position space.
-        _draw_decoder_likelihood_image(ax_lik, results, time_slice_ind, has_spikes_mask)
+    # Match the simulation figure: plot the observation likelihood used by the
+    # diagnostics, never the decoder's different combined likelihood.
+    _draw_place_field_likelihood_image(
+        ax_lik, time, spike_counts, place_fields, position_bins, time_slice_ind
+    )
 
     # Position overlay
     time_arr = np.asarray(time)
@@ -785,25 +664,23 @@ def plot_single_model_diagnostics(
     ax_lik.tick_params(labelsize=8, labelbottom=False)
 
     # 1D track graph on right edge of predictive and likelihood rows
-    if data.track_graph is not None:
-        _draw_track_graph_edges(
-            [axes[0], axes[1]],
-            data.track_graph,
-            data.edge_order,
-            data.edge_spacing,
-            time,
-            time_slice_ind,
-        )
+    _draw_track_graph_edges(
+        [axes[0], axes[1]],
+        data.track_graph,
+        data.edge_order,
+        data.edge_spacing,
+        time,
+        time_slice_ind,
+    )
 
     # Row 2: Spike raster
-    if spike_times is not None:
-        sort_order = np.argsort(place_field_peaks) if place_field_peaks is not None else None
-        sliced_time = time_arr[time_slice_ind]
-        time_slice = slice(float(sliced_time[0]), float(sliced_time[-1]))
-        plot_raster(spike_times, time_slice, ax=axes[2], sort_order=sort_order)
-        axes[2].set_ylabel("Neuron", fontsize=8, labelpad=7)
-        axes[2].set_xlabel("")
-        axes[2].tick_params(labelsize=8, labelbottom=False)
+    sort_order = np.argsort(place_field_peaks)
+    sliced_time = time_arr[time_slice_ind]
+    time_slice = slice(float(sliced_time[0]), float(sliced_time[-1]))
+    plot_raster(spike_times, time_slice, ax=axes[2], sort_order=sort_order)
+    axes[2].set_ylabel("Neuron", fontsize=8, labelpad=7)
+    axes[2].set_xlabel("")
+    axes[2].tick_params(labelsize=8, labelbottom=False)
 
     # Rows 3-5: Diagnostic scatters
     for i, spec in enumerate(METRIC_SPECS):
@@ -819,7 +696,6 @@ def plot_single_model_diagnostics(
             color=spec.color,
             ylabel=spec.ylabel,
             show_xlabel=(i == 2),
-            spike_times=spike_times,
             show_running_average=show_running_average,
             running_average_window=running_average_window,
         )
@@ -889,6 +765,17 @@ def plot_per_spike_metric_hexbin_row(
     """
     if len(axes) != 3:
         raise ValueError(f"axes must have length 3, got {len(axes)}")
+    if diagnostics_a.event_time_ind.shape != diagnostics_b.event_time_ind.shape:
+        raise ValueError(
+            "diagnostics_a and diagnostics_b must carry the same set of spike events "
+            "in the same order"
+        )
+    if not np.array_equal(diagnostics_a.event_time_ind, diagnostics_b.event_time_ind) or not (
+        np.array_equal(diagnostics_a.event_cell_ind, diagnostics_b.event_cell_ind)
+    ):
+        raise ValueError(
+            "diagnostics_a and diagnostics_b must carry identical spike events in the same order"
+        )
 
     # (event key, title, color, log_transform, threshold key, worse-fit direction).
     # "direction" is relative to the plotted axis: HPD overlap flags low values
@@ -929,10 +816,12 @@ def plot_per_spike_metric_hexbin_row(
         if log_transform:
             data_a = negative_log_pvalue(data_a)
             data_b = negative_log_pvalue(data_b)
-
-        valid = np.isfinite(data_a) & np.isfinite(data_b)
-        data_a = data_a[valid]
-        data_b = data_b[valid]
+        if data_a.size == 0:
+            raise ValueError(f"Cannot plot {key}: no spike events are present")
+        if not np.all(np.isfinite(data_a)) or not np.all(np.isfinite(data_b)):
+            raise ValueError(
+                f"Cannot plot {key}: every aligned spike event must have a finite value"
+            )
 
         cmap = mcolors.LinearSegmentedColormap.from_list("custom", ["white", color])
         hb = ax.hexbin(
@@ -948,7 +837,7 @@ def plot_per_spike_metric_hexbin_row(
         # Identity line — span the actual data range so the visual
         # agreement reference doesn't depend on matplotlib's autoscale.
         combined = np.concatenate([data_a, data_b])
-        lims = (float(np.nanmin(combined)), float(np.nanmax(combined)))
+        lims = (float(np.min(combined)), float(np.max(combined)))
         # Pad limits so hexbins centred on the data extrema (e.g. at 0)
         # render fully instead of being clipped at the axis spine.
         margin = (lims[1] - lims[0]) * 0.05

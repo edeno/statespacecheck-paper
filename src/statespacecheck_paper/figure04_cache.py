@@ -92,11 +92,14 @@ class Figure4Paths:
 
 
 def _installed_non_local_detector_version() -> str:
-    """Return the installed ``non_local_detector`` version, or ``"unknown"``."""
+    """Return the installed ``non_local_detector`` version for provenance."""
     try:
         return version("non_local_detector")
-    except PackageNotFoundError:
-        return "unknown"
+    except PackageNotFoundError as exc:
+        raise RuntimeError(
+            "Cannot fingerprint Figure 4 without an installed non_local_detector "
+            "distribution; an 'unknown' provenance value could accept the wrong cache."
+        ) from exc
 
 
 def compute_figure04_cache_fingerprint(config: Figure4Config, paths: Figure4Paths) -> str:
