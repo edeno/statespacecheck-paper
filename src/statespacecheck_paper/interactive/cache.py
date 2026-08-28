@@ -1,4 +1,4 @@
-"""Build the on-disk caches used by the interactive viewer.
+r"""Build the on-disk caches used by the interactive viewer.
 
 For Figure 4, the cache reformats the canonical decode bundle produced by
 ``generate_figure04.py`` into a layout that supports fast windowed reads:
@@ -6,8 +6,8 @@ For Figure 4, the cache reformats the canonical decode bundle produced by
 - A Zarr store per model with chunked posterior / log-likelihood arrays
   (chunked along time, full position axis per chunk).
 - A Parquet event table with one row per spike, sorted by time, holding
-  the per-spike diagnostic metrics (HPD overlap, KL divergence, spike
-  probability) plus the cell index.
+  the per-spike diagnostic metrics (HPD overlap, KL divergence, predictive
+  p-value) plus the cell index.
 - A small ``.npz`` sidecar with the time grid, animal linear position,
   per-cell place fields, and place-field peak positions.
 - A ``.npy`` sidecar with the per-cell spike-time arrays used by
@@ -161,8 +161,9 @@ def _write_zarr_store(
 ) -> dict[str, tuple[int, ...]]:
     """Stream the decoder NetCDF into a chunked Zarr store.
 
-    Writes ``predictive_posterior``, ``log_likelihood``, and
-    ``acausal_state_probabilities`` (when present), chunked at
+    Writes ``predictive_posterior``, ``log_likelihood``, and — when
+    present — ``acausal_posterior`` (the smoothed distribution powering
+    the slice-panel overlay) and ``acausal_state_probabilities``, chunked at
     ``time_chunk`` along the time axis so the viewer's window reads
     only touch one or two chunks. ``xarray.to_zarr`` streams chunk
     by chunk, so peak in-memory cost is bounded by the chunk size,

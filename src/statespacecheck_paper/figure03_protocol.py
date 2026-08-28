@@ -58,8 +58,10 @@ _DEFAULT_PHASE_BOUNDARIES: tuple[int, ...] = (
 class Figure3Config:
     """Parameters for the figure-3 decoding simulation.
 
-    The simulation walks through three misfit conditions and one sparse-
-    activity control, separated by clean-recovery windows. Time steps are
+    The simulation walks through three misfit conditions plus two
+    specificity controls — a replay event embedded in the second clean-
+    recovery window and a sparse-population epoch — separated by
+    clean-recovery windows. Time steps are
     1 ms by convention — the simulation math itself is dt-agnostic, but the
     default parameters
     (`place_field_rate_scale=5.0`, refractory and burst windows in
@@ -72,7 +74,8 @@ class Figure3Config:
     - 6k–10k: Remap misfit (4 s)
     - 10k–14k: Clean recovery
     - 14k–18k: History-dependent firing misfit (4 s)
-    - 18k–22k: Clean recovery
+    - 18k–22k: Clean recovery, with the replay control occupying the
+      ``[replay_start_fraction, replay_end_fraction)`` sub-window
     - 22k–26k: Drift misfit (4 s)
     - 26k–30k: Clean recovery
     - 30k–32k: Sparse-population control (2 s)
@@ -112,6 +115,15 @@ class Figure3Config:
         Specification of which cells get remapped during the remap
         window. By default, all eleven cells participate in one fixed
         permutation that moves every field by at least three center spacings.
+    replay_start_fraction, replay_end_fraction : float, default 0.25, 0.75
+        Fractional bounds of the replay sub-window within clean-recovery 2.
+        The coherent sweep fires over ``[replay_start_fraction,
+        replay_end_fraction)``.
+    replay_speed_per_step : float, default 0.5
+        Maximum per-step displacement of the replay trajectory as it sweeps
+        toward the farther track end and returns.
+    replay_place_field_rate_scale : float, default 20.0
+        Elevated place-field rate scale applied during the replay sweep.
     sparse_position : float, default 30.0
         Fixed location where the sparse population is active in the final
         control phase.

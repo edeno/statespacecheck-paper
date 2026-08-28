@@ -211,7 +211,8 @@ def create_shared_example(rng: np.random.Generator) -> Figure2ExampleData:
     # P-value: proportion of simulated values <= observed value
     p_value = float(np.mean(simulated_log_pred_values <= observed_log_pred))
 
-    # Showcase samples for the predictive-check schematic (panels G and H).
+    # Showcase samples for the predictive-check schematic (the
+    # ``predictive_simulations`` fan and ``predictive_histogram`` panels).
     # State positions are picked at evenly-spaced quantiles of the predictive
     # CDF so the displayed fan spans the predictive's support rather than
     # clustering near the peak. For each state, a simulated observation
@@ -643,7 +644,6 @@ def plot_ppc_likelihood_fan(ax: Axes, data: Figure2ExampleData) -> None:
     multiplied by when computing the log predictive density that ends
     up in the predictive-density histogram.
     """
-
     x = data.position_bins
     pred = data.predictive
     positions = data.showcase_positions

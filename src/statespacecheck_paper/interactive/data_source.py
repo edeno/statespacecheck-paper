@@ -67,6 +67,7 @@ class CacheLayout:
 
     @classmethod
     def for_model(cls, cache_dir: Path, model: ModelName) -> CacheLayout:
+        """Resolve the cache + sidecar paths for a real-data model cache."""
         paths = cache_mod.cache_paths(cache_dir, model)
         return cls(
             zarr=paths["zarr"],
@@ -78,6 +79,7 @@ class CacheLayout:
 
     @classmethod
     def for_simulation(cls, cache_dir: Path) -> CacheLayout:
+        """Resolve the cache + sidecar paths for the simulation cache."""
         paths = cache_mod.simulated_cache_paths(cache_dir)
         return cls(
             zarr=paths["zarr"],
@@ -88,6 +90,7 @@ class CacheLayout:
         )
 
     def assert_exists(self) -> None:
+        """Raise ``FileNotFoundError`` if any resolved cache artifact is missing."""
         for label, path in (
             ("zarr", self.zarr),
             ("events", self.events),
@@ -129,7 +132,7 @@ class DecoderDataSource:
       ``position_bins`` f64 ``(n_interior,)``,
       ``place_field_peaks`` f64 ``(n_cells,)``,
       ``interior_mask`` bool ``(n_state_bins // n_states,)``, and optional
-      ``event_likelihood`` f32 ``(n_events, n_state_bins)`` for caches with
+      ``event_likelihood`` f32 ``(n_events, n_interior)`` for caches with
       time-varying event likelihoods.
     * ``events .parquet``: ``time`` f64, ``cell_id`` i32,
       ``event_hpd_overlap`` f32, ``event_kl_divergence`` f32,
@@ -163,8 +166,9 @@ class DecoderDataSource:
         Per-state interior position grid (1D, identical across states).
     place_field_peaks : np.ndarray, shape (n_cells,), float64
         Place-field peak position for each cell, used to sort the raster.
-    event_likelihood : np.ndarray, shape (n_events, n_state_bins), float32, optional
-        Exact normalized likelihood for each event. Present in the simulation
+    event_likelihood : np.ndarray, shape (n_events, n_interior), float32, optional
+        Exact normalized likelihood for each event, on the interior position
+        grid. Present in the simulation
         cache so remap-window slices use the decoder's active place fields;
         ``None`` for legacy and real-data caches with static place fields.
     spike_times : list[np.ndarray]

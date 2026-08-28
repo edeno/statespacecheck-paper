@@ -49,6 +49,7 @@ def negative_log_pvalue(
     ----------
     x : NDArray[np.float64] or float
         Probability value(s) to transform.
+
     Returns
     -------
     NDArray[np.float64] or np.float64
@@ -337,6 +338,11 @@ def plot_likelihood_columns(
         integer bin indices (0, n_time-1, 0, n_bins-1).
     cmap : str, default CMAP_LIKELIHOOD
         Colormap for the likelihood columns.
+
+    Raises
+    ------
+    ValueError
+        If any rendered likelihood row contains NaN/infinity or negative values.
     """
     n_bins = likelihood.shape[1]
     cmap_obj = plt.colormaps[cmap]

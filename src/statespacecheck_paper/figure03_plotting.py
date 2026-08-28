@@ -71,10 +71,13 @@ FIGURE3_SUMMARY_TITLE_GID = "figure3-summary-title"
 
 @dataclass(frozen=True)
 class DiagnosticRowSpec:
-    """One Figure 3 diagnostic row: a shared :class:`MetricSpec` plus Figure 3's
-    own plain-text y-axis label (``MetricSpec.ylabel`` uses LaTeX). Color,
-    transform, symlog axis, worse-fit arrow, event attribute, and threshold key
-    all come from ``metric``."""
+    """One Figure 3 diagnostic row.
+
+    Pairs a shared :class:`MetricSpec` with Figure 3's own plain-text y-axis
+    label (``MetricSpec.ylabel`` uses LaTeX). Color, transform, symlog axis,
+    worse-fit arrow, event attribute, and threshold key all come from
+    ``metric``.
+    """
 
     metric: MetricSpec
     ylabel: str

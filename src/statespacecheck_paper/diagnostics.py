@@ -387,7 +387,7 @@ class DecodingDiagnostics:
 def compute_normalized_spike_likelihood(
     firing_rates: NDArray[np.floating],
 ) -> NDArray[np.floating]:
-    """Normalized one-spike Poisson likelihood over position.
+    """Compute the normalized one-spike Poisson likelihood over position.
 
     For position-dependent rates ``firing_rates`` (expected spikes per bin),
     returns ``Poisson(k=1, mu=firing_rates)`` normalized to sum to 1 over the
@@ -805,10 +805,11 @@ def compute_baseline_diagnostic_thresholds(
     ----------
     diagnostics : DecodingDiagnostics or Mapping[str, NDArray]
         Either a :class:`DecodingDiagnostics` (the typical caller, produced by
-        :func:`decode_with_diagnostics`) or a plain dict with keys
-        ``hpd_overlap``, ``kl_divergence``, ``predictive_pvalue`` — the dict
+        :func:`decode_with_diagnostics`) or a plain dict — the dict
         form is retained so synthetic test fixtures don't need to
-        construct a full ``DecodingDiagnostics``.
+        construct a full ``DecodingDiagnostics``. Only ``hpd_overlap`` and
+        ``kl_divergence`` are read; the ``predictive_pvalue`` threshold is a
+        fixed constant (0.05) and is not derived from the input.
     baseline_end_index : int, keyword-only
         Index marking end of baseline period (exclusive). Required —
         silently slicing the whole recording would contaminate
@@ -825,7 +826,9 @@ def compute_baseline_diagnostic_thresholds(
     ValueError
         If the baseline slice of ``hpd_overlap`` or ``kl_divergence``
         contains no finite values (thresholds would be NaN and
-        downstream comparisons would silently evaluate False).
+        downstream comparisons would silently evaluate False), or if the
+        slice contains infinity (a finite empirical threshold cannot be
+        estimated).
 
     Examples
     --------

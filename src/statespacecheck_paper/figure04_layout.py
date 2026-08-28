@@ -316,7 +316,7 @@ class Figure4Composition:
 
 
 def _is_integer(value: object) -> bool:
-    """True for Python and NumPy integers, excluding ``bool`` (an ``int`` subclass).
+    """Return True for Python and NumPy integers, excluding ``bool`` (an ``int`` subclass).
 
     Using :class:`numbers.Integral` accepts ``np.int64`` etc. (common when an
     index is derived from an array), which a strict ``type(x) is int`` check

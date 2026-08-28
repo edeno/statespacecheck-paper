@@ -68,11 +68,12 @@ def build_summary_conditions(config: Figure3Config) -> list[Figure3SummaryCondit
     """Phase columns for the Figure-3b summary heatmap.
 
     Single source of truth for the heatmap's columns, shared by the
-    single-run renderer (:func:`compute_condition_flag_percentages`, called from
-    ``compose_figure03``) and the multi-realization averaging
+    single-run flag-percentage helper (:func:`compute_condition_flag_percentages`)
+    and the multi-realization averaging
     path (:func:`statespacecheck_paper.figure03_summary.estimate_realization_summary`)
     so the column order, time windows, and component labels cannot drift
-    out of sync.
+    out of sync. ``compose_figure03`` renders from precomputed
+    ``median_flag_percentages`` rather than calling either helper directly.
 
     The first column ("Well-specified") aggregates the clean-recovery
     conditions (with the replay sub-window carved out) into an out-of-sample

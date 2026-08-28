@@ -78,6 +78,22 @@ def launch(
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Launch the interactive viewer from the command line.
+
+    Parses ``argv`` (defaulting to ``sys.argv``), opens either a real-data
+    model cache (``--model``) or the simulation cache (``--simulation``) from
+    ``--cache-dir``, and runs the Qt event loop.
+
+    Parameters
+    ----------
+    argv : list of str, optional
+        Command-line arguments; defaults to ``sys.argv[1:]`` when ``None``.
+
+    Returns
+    -------
+    int
+        Process exit code (0 on clean exit).
+    """
     parser = argparse.ArgumentParser(prog="statespacecheck_paper.interactive")
     parser.add_argument("--cache-dir", required=True, help="Cache directory.")
     target = parser.add_mutually_exclusive_group()

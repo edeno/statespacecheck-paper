@@ -49,6 +49,22 @@ def softmax_with_shift(ll: NDArray[np.floating]) -> NDArray[np.floating]:
     is exactly 1 and the rest are bounded in (0, 1]. The result sums
     to 1. An observation whose log-likelihood is ``-inf`` everywhere is
     undefined and raises instead of being replaced by a uniform distribution.
+
+    Parameters
+    ----------
+    ll : np.ndarray
+        Log-likelihood values to normalize into a probability distribution.
+
+    Returns
+    -------
+    np.ndarray
+        Normalized probabilities, same shape as ``ll``, summing to 1.
+
+    Raises
+    ------
+    ValueError
+        If ``ll`` is empty, contains NaN or ``+inf``, is ``-inf`` everywhere
+        (zero likelihood under every state), or yields an invalid weight sum.
     """
     if ll.size == 0:
         raise ValueError("ll must contain at least one value")
@@ -77,6 +93,7 @@ def normalize(p: NDArray[np.floating], axis: int | None = None) -> NDArray[np.fl
         Array to normalize.
     axis : int or None, optional
         Axis along which to normalize. If None, normalizes entire array.
+
     Returns
     -------
     normalized : np.ndarray

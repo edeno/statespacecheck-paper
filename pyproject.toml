@@ -75,7 +75,13 @@ select = [
     "UP",  # pyupgrade
     "B",   # flake8-bugbear
     "NPY", # numpy-specific rules
+    "D",   # pydocstyle (NumPy convention; enforces docstring format)
 ]
+# ``D105`` (undocumented magic method) is intentionally not enforced:
+# documenting dunders (``__eq__``, ``__repr__``, ``__post_init__``, ...)
+# adds noise without conveying anything the signature doesn't. NumPy
+# convention already exempts ``__init__`` (D107).
+ignore = ["D105"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "numpy"
@@ -84,8 +90,9 @@ convention = "numpy"
 # Notebooks have cell-based imports and exploration code
 "notebooks/*.py" = ["E402", "F401", "F541"]
 "notebooks/*.ipynb" = ["E402", "F401", "F821", "E501"]
-# Tests use legacy numpy random for simplicity
-"tests/*.py" = ["NPY002"]
+# Tests use legacy numpy random for simplicity; test functions are
+# self-describing by name, so docstrings (``D``) aren't required.
+"tests/*.py" = ["NPY002", "D"]
 
 [tool.mypy]
 python_version = "3.10"

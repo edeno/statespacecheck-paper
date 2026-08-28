@@ -61,6 +61,7 @@ def _condition_on(
         Posterior; sums to 1.
     log_norm : float
         Log marginal likelihood for this step (``log p(obs | past)``).
+
     Raises
     ------
     ValueError
@@ -542,13 +543,18 @@ def decode_with_diagnostics(
     2. For each timestep t:
        a. Predict: prior = transition_matrix @ post[t-1]
        b. Likelihood: compute P(spike_counts[t] | position) for all cells
-       c. Diagnostic metrics: compare prior vs. combined likelihood
+       c. Diagnostic metrics: compare the predictive posterior against each
+          firing cell's own single-spike likelihood
        d. Update: post[t] = normalize(prior * combined_likelihood)
 
-    **Diagnostic metrics**:
-    - HPD overlap: overlap between prior and combined likelihood HPD regions
-    - KL divergence: divergence from prior to combined likelihood
-    - Predictive p-value: cumulative probability mass for low-contribution cells
+    **Diagnostic metrics** (computed per firing cell, not against the combined
+    all-cell likelihood):
+    - HPD overlap: overlap between the predictive-posterior HPD region and the
+      firing cell's single-spike likelihood HPD region
+    - KL divergence: divergence from the predictive posterior to the firing
+      cell's single-spike likelihood
+    - Predictive p-value: rank of the firing cell's spike-position probability
+      among all cells (flags low-contribution cells)
 
     Parameters
     ----------

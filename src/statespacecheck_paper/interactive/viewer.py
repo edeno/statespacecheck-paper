@@ -58,9 +58,10 @@ SLIDER_RESOLUTION = 100_000  # subdivides the full session into this many ticks
 # can resolve both 0.1 s and 60 s endpoints with reasonable granularity.
 WINDOW_SLIDER_RESOLUTION = 1000
 
-# Reset shortcut targets (matches the Figure 4a context window from
-# scripts/generate_figure04.py via ``index 190000`` at the decoder
-# sampling rate of 500 Hz, ~20 s wide).
+# Reset shortcut width. Re-centers near the Figure-4 detail region
+# (``center_index=193_069`` in figure04_generation.py, ~27% into the
+# session) but shows a wider 20 s context than the figure's ~2 s zoom so
+# the viewer lands with surrounding context rather than the tight crop.
 RESET_WINDOW_SECONDS = 20.0
 
 # Auto-scroll defaults.
@@ -549,7 +550,9 @@ class DecoderViewer(QtWidgets.QMainWindow):
         outer.addWidget(controls)
 
     def _wire_click_handlers(self) -> None:
-        """Connect raster + metric ``sigClicked`` to the pin-and-recenter path,
+        """Wire panel click signals to their handlers.
+
+        Connects raster + metric ``sigClicked`` to the pin-and-recenter path,
         and every time-axis panel's empty-space click to a plain recenter.
         """
         self.raster_panel.set_click_handler(self._handle_event_click)
@@ -1182,10 +1185,10 @@ class DecoderViewer(QtWidgets.QMainWindow):
 
     @QtCore.Slot()
     def _reset_view(self) -> None:
-        # Match the Figure 4a context window: 20 s wide, centered near the
-        # session midpoint (the Figure 4 default uses index 190000 of a
-        # 709321-point session ~ 27% in, but for synthetic / shorter
-        # sessions we pick the geometric default of mid-session).
+        # Reset to a 20 s window centered ~a quarter into the session. The
+        # Figure 4 detail region sits at index 193069 of a 709321-point
+        # session (~27% in); ``n_time // 4`` (25%) is a size-agnostic default
+        # that lands nearby and stays valid for synthetic / shorter sessions.
         mid_idx = max(0, min(self._ds.n_time - 1, self._ds.n_time // 4))
         target_t = float(self._ds.time[mid_idx])
         self._set_window_seconds(RESET_WINDOW_SECONDS)

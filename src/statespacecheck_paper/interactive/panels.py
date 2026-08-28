@@ -345,6 +345,7 @@ class PosteriorPanel(_BaseHeatmapPanel):
         time_end: float,
         post: NDArray[np.float32],
     ) -> None:
+        """Redraw the posterior heatmap for the given time window."""
         arr = post
         if self._n_states > 1:
             n_visible = arr.shape[0]
@@ -366,6 +367,7 @@ class LikelihoodPanel(_BaseHeatmapPanel):
         time_end: float,
         likelihood: NDArray[np.float32],
     ) -> None:
+        """Redraw the likelihood heatmap for the given time window."""
         lik = likelihood
         if self._n_states > 1:
             n_visible = lik.shape[0]
@@ -481,6 +483,7 @@ class RasterPanel(pg.PlotWidget):
         self._center_bin_band.setRegion([left_rel, right_rel])
 
     def set_click_handler(self, handler: Callable[[int], None]) -> None:
+        """Register a callback invoked with the clicked item's integer id."""
         self._on_click = handler
 
     def update_window(
@@ -492,6 +495,7 @@ class RasterPanel(pg.PlotWidget):
         time_offset: float,
         global_event_indices: NDArray[np.int64] | None = None,
     ) -> None:
+        """Redraw the spike raster for the given time window."""
         if global_event_indices is None:
             self._window_event_indices = np.empty(0, dtype=np.int64)
         else:
@@ -510,6 +514,7 @@ class RasterPanel(pg.PlotWidget):
         relative_time: float | None,
         cell_id: int | None,
     ) -> None:
+        """Pin (or clear) the highlighted spike at the given relative time and cell."""
         if relative_time is None or cell_id is None:
             self._pin_line.setVisible(False)
             self._pin_dot.setVisible(False)
@@ -605,9 +610,11 @@ class MetricPanel(pg.PlotWidget):
 
     @property
     def metric(self) -> str:
+        """Name of the diagnostic metric this panel displays."""
         return self._metric
 
     def set_click_handler(self, handler: Callable[[int], None]) -> None:
+        """Register a callback invoked with the clicked item's integer id."""
         self._on_click = handler
 
     def update_active_bin_band(self, left_rel: float, right_rel: float) -> None:
@@ -623,6 +630,7 @@ class MetricPanel(pg.PlotWidget):
         time_offset: float,
         global_event_indices: NDArray[np.int64],
     ) -> None:
+        """Redraw the metric time series for the given time window."""
         self._window_event_indices = np.asarray(global_event_indices, dtype=np.int64)
         if events_time.size == 0:
             self._scatter.setData(x=[], y=[], data=[])
@@ -637,6 +645,7 @@ class MetricPanel(pg.PlotWidget):
         relative_time: float | None,
         metric_value: float | None,
     ) -> None:
+        """Pin (or clear) the highlighted event at the given relative time and value."""
         if relative_time is None or metric_value is None:
             self._pin_line.setVisible(False)
             self._pin_dot.setVisible(False)
@@ -952,6 +961,11 @@ class SlicePanel(QtWidgets.QWidget):
         *,
         acausal: NDArray[np.float32] | None = None,
     ) -> None:
+        """Cache the window's posterior/likelihood (and optional smoothed) arrays.
+
+        The cached buffer lets :meth:`update_for_index` redraw a single sample
+        without re-slicing the full window on every cursor move.
+        """
         self._buffer_slice = sl
         self._buffer_post = post
         self._buffer_lik = lik
@@ -989,6 +1003,7 @@ class SlicePanel(QtWidgets.QWidget):
 
     @property
     def overlay_choice(self) -> OverlayChoice:
+        """Currently selected distribution overlay (predictive / filtered / smoothed)."""
         return self._overlay_choice
 
     def _uniform_x_for(self, real_cm: float) -> float:
@@ -1004,6 +1019,7 @@ class SlicePanel(QtWidgets.QWidget):
         return float(np.interp(real_cm, self._position_bins, self._position_bins_uniform))
 
     def update_for_index(self, t_idx: int, true_position: float) -> None:
+        """Redraw the slice plots for sample ``t_idx`` from the cached window buffer."""
         sl = self._buffer_slice
         post = self._buffer_post
         lik = self._buffer_lik
@@ -1097,6 +1113,7 @@ class SlicePanel(QtWidgets.QWidget):
         return np.asarray(collapsed, dtype=np.float32)
 
     def set_live_readout(self, text: str | None) -> None:
+        """Set the live-readout label text (cleared when ``text`` is None)."""
         self._readout_label.setText(text or "")
 
     # ------------------------------------------------------------------
@@ -1104,6 +1121,7 @@ class SlicePanel(QtWidgets.QWidget):
     # ------------------------------------------------------------------
 
     def set_per_cell_visible(self, visible: bool) -> None:
+        """Show or hide the per-cell slice rows."""
         self._per_cell_visible = bool(visible)
         for i, row in enumerate(self._per_cell_rows):
             row.container.setVisible(self._per_cell_visible and i < self._n_active_per_cell_rows)
@@ -1163,6 +1181,7 @@ class SlicePanel(QtWidgets.QWidget):
         )
 
     def set_per_cell_slices(self, slices: list[CellSlice], total_in_bin: int | None = None) -> None:
+        """Populate the per-cell slice rows from ``slices``."""
         n = len(slices)
         for i, cs in enumerate(slices):
             row = self._ensure_row(i)
@@ -1213,4 +1232,5 @@ class SlicePanel(QtWidgets.QWidget):
         self._annotation.setVisible(True)
 
     def is_pin_displayed(self) -> bool:
+        """Return whether a pinned-event annotation is currently shown."""
         return bool(self._annotation.text())

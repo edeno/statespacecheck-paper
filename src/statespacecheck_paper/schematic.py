@@ -690,7 +690,7 @@ def draw_equation_boxes(ax: Axes) -> None:
     """Draw the Bayesian filtering equation boxes.
 
     Draws two equation boxes showing:
-    1. Prediction: Previous Posterior * Transition = Predictive
+    1. Prediction: Previous Posterior (convolved with) Transition = Predictive
     2. Update: Predictive x Likelihood = Current Posterior
 
     Parameters

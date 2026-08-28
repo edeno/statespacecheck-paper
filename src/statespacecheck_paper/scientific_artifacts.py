@@ -45,6 +45,22 @@ def scientific_source_provenance(repo_root: Path | None = None) -> ScientificSou
     in relative-path order. It deliberately excludes generated artifacts, tests,
     timestamps, and absolute paths, so it is stable across clean checkouts while
     changing whenever the package implementation changes.
+
+    Parameters
+    ----------
+    repo_root : Path, optional
+        Repository root. Defaults to the checkout inferred from this module's
+        location.
+
+    Returns
+    -------
+    ScientificSourceProvenance
+        Package version, source-tree SHA-256, and ``uv.lock`` SHA-256.
+
+    Raises
+    ------
+    FileNotFoundError
+        If no package source files are found, or ``uv.lock`` is missing.
     """
     root = Path(__file__).resolve().parents[2] if repo_root is None else Path(repo_root)
     package_root = root / "src" / "statespacecheck_paper"
@@ -75,7 +91,26 @@ def inclusive_flag_rules(
     thresholds: Mapping[str, float],
     directions: Mapping[str, FlagDirection],
 ) -> dict[str, dict[str, float | str]]:
-    """Bind each diagnostic threshold to its exact inclusive comparison rule."""
+    """Bind each diagnostic threshold to its exact inclusive comparison rule.
+
+    Parameters
+    ----------
+    thresholds : Mapping[str, float]
+        Per-metric threshold values.
+    directions : Mapping[str, FlagDirection]
+        Per-metric flag direction (``"below"`` or ``"above"``), mapped to an
+        inclusive comparison operator.
+
+    Returns
+    -------
+    dict[str, dict[str, float | str]]
+        Per-metric rule with ``comparison`` operator name and ``threshold``.
+
+    Raises
+    ------
+    ValueError
+        If ``thresholds`` and ``directions`` do not name the same metrics.
+    """
     missing_thresholds = set(directions) - set(thresholds)
     missing_directions = set(thresholds) - set(directions)
     if missing_thresholds or missing_directions:
@@ -123,6 +158,26 @@ def write_json_artifact(path: Path | str, payload: Mapping[str, object]) -> Path
     The file contains no timestamp or other run-specific metadata, so identical
     scientific inputs produce byte-identical output. ``allow_nan=False`` makes
     undefined reported values fail loudly instead of emitting non-standard JSON.
+
+    Parameters
+    ----------
+    path : Path or str
+        Destination path; parent directories are created as needed.
+    payload : Mapping[str, object]
+        Values to serialize, coerced to strict JSON via :func:`_jsonable`.
+
+    Returns
+    -------
+    Path
+        The path written.
+
+    Raises
+    ------
+    TypeError
+        If ``payload`` contains a non-string mapping key or a value with no
+        JSON representation.
+    ValueError
+        If a floating-point value is NaN or infinite (``allow_nan=False``).
     """
     output_path = Path(path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
