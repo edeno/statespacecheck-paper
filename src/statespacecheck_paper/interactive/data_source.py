@@ -108,9 +108,9 @@ class DecoderDataSource:
 
     The data source serves two distinct dataset kinds:
 
-    * **Real-data decoder caches** (``dataset_kind == "model"``) — built
-      by ``cache.build`` from a fitted ``SortedSpikesDecoder`` /
-      ``ContFragSortedSpikesClassifier``. The viewer can swap between
+    * **Real-data decoder caches** (``dataset_kind == "model"``) — derived
+      by ``cache.build`` from the canonical Figure 4 workflow/cache. The viewer
+      can swap between
       ``"continuous"`` and ``"contfrag"`` if both caches are present
       in ``cache_dir``. Use ``DecoderDataSource.for_model`` (or the
       legacy ``DecoderDataSource(cache_dir, model)``) to load.
@@ -124,7 +124,8 @@ class DecoderDataSource:
 
     * ``meta``: ``time`` f64 ``(n_time,)``, ``linear_position`` f64
       ``(n_time,)``, ``n_cells`` i64.
-    * ``place_fields .npz``: ``place_fields`` f32 ``(n_cells, n_state_bins)``,
+    * ``place_fields .npz``: shared positional ``place_fields`` f32
+      ``(n_cells, n_interior)``,
       ``position_bins`` f64 ``(n_interior,)``,
       ``place_field_peaks`` f64 ``(n_cells,)``,
       ``interior_mask`` bool ``(n_state_bins // n_states,)``, and optional
@@ -155,9 +156,9 @@ class DecoderDataSource:
         Decoder time grid (absolute seconds).
     linear_position : np.ndarray, shape (n_time,), float64
         Animal linear position at each decoder time bin.
-    place_fields : np.ndarray, shape (n_cells, n_states * n_interior), float32
-        Place-field firing rates (interior bins only, concatenated
-        across states for multi-state classifiers).
+    place_fields : np.ndarray, shape (n_cells, n_interior), float32
+        Shared positional place-field firing rates on the interior grid. The
+        observation model is identical across the discrete ContFrag states.
     position_bins : np.ndarray, shape (n_interior,), float64
         Per-state interior position grid (1D, identical across states).
     place_field_peaks : np.ndarray, shape (n_cells,), float64
@@ -180,7 +181,7 @@ class DecoderDataSource:
     n_interior : int
         Number of interior position bins per state.
     n_state_bins : int
-        Total interior state bins across states (``n_states * n_interior``).
+        Total full-grid state bins in the Zarr arrays.
     """
 
     POSTERIOR_VAR = "predictive_posterior"

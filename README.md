@@ -274,12 +274,11 @@ Two dataset kinds are supported:
 ### Build a cache
 
 ```bash
-# Real data (figure 4): builds figure04_continuous.zarr +
-# figure04_contfrag.zarr and shared sidecars from the decoder
-# intermediates.
+# Real data (figure 4): derives figure04_continuous.zarr +
+# figure04_contfrag.zarr and shared sidecars from the same canonical
+# {epoch}_fig4_cache.joblib bundle used by the static figure.
 uv run python -m statespacecheck_paper.interactive.cache build \
     --data-dir data \
-    --intermediates-dir data/intermediates \
     --cache-dir data/cache \
     --model both
 

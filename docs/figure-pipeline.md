@@ -270,7 +270,12 @@ returns a `Figure4Summary` (per-decoder `Figure4DiagnosticMeans` plus typed
 → `compose_figure04(render_data, diagnostic_thresholds=…,
 detail_window=Figure4DetailWindow(…))`
 returns a `Figure4Composition` (`.figure`, `.bbox_inches`) → `save_figure` writes
-`figure04.{pdf,png}` with that custom crop.
+`figure04.{pdf,png}` with that custom crop, while `write_json_artifact` writes the
+typed summary to `figure04_summary.json`.
+
+The optional interactive viewer derives its Zarr/Parquet/NPZ layout from this
+same `Figure4RenderData` via `interactive.cache.build_figure04_viewer_cache`.
+It does not require a second set of NetCDF results or fitted-model pickles.
 
 ### Manuscript ↔ code vocabulary (Figure 4)
 

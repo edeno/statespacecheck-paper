@@ -1,7 +1,7 @@
-"""Build the on-disk cache used by the Figure 4 interactive viewer.
+"""Build the on-disk caches used by the interactive viewer.
 
-The cache reformats the pre-computed decoder outputs in
-``data/intermediates/`` into a layout that supports fast windowed reads:
+For Figure 4, the cache reformats the canonical decode bundle produced by
+``generate_figure04.py`` into a layout that supports fast windowed reads:
 
 - A Zarr store per model with chunked posterior / log-likelihood arrays
   (chunked along time, full position axis per chunk).
@@ -10,7 +10,7 @@ The cache reformats the pre-computed decoder outputs in
   probability) plus the cell index.
 - A small ``.npz`` sidecar with the time grid, animal linear position,
   per-cell place fields, and place-field peak positions.
-- A second ``.npz`` sidecar with the per-cell spike-time arrays used by
+- A ``.npy`` sidecar with the per-cell spike-time arrays used by
   the raster panel.
 
 Usage::
@@ -25,12 +25,10 @@ from __future__ import annotations
 
 import argparse
 import shutil
-import sys
-from dataclasses import dataclass
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal
 
-import joblib
 import numpy as np
 import pandas as pd
 import xarray as xr
@@ -38,50 +36,21 @@ from numpy.typing import NDArray
 
 from statespacecheck_paper.diagnostics import SpikeEventDiagnostics
 
+if TYPE_CHECKING:
+    from statespacecheck_paper.figure04_workflow import Figure4RenderData
+
 ModelName = Literal["continuous", "contfrag"]
 MODEL_NAMES: tuple[ModelName, ...] = ("continuous", "contfrag")
 
 DEFAULT_TIME_CHUNK = 8192
 
 
-@dataclass(frozen=True)
-class ModelPaths:
-    """File paths for one model's pre-computed inputs.
-
-    Attributes
-    ----------
-    results_nc : Path
-        NetCDF file with decoder outputs (predictive_posterior,
-        log_likelihood, acausal_state_probabilities).
-    model_pkl : Path
-        Joblib pickle of the fitted decoder model.
-    """
-
-    results_nc: Path
-    model_pkl: Path
-
-
-def model_paths(intermediates_dir: Path, model: ModelName) -> ModelPaths:
-    """Return canonical input paths for ``model`` under ``intermediates_dir``."""
-    if model == "continuous":
-        return ModelPaths(
-            results_nc=intermediates_dir / "cont_results.nc",
-            model_pkl=intermediates_dir / "cont_model.pkl",
-        )
-    if model == "contfrag":
-        return ModelPaths(
-            results_nc=intermediates_dir / "cont_frag_results.nc",
-            model_pkl=intermediates_dir / "cont_frag_model.pkl",
-        )
-    raise ValueError(f"Unknown model: {model!r}")
-
-
 def cache_paths(cache_dir: Path, model: ModelName) -> dict[str, Path]:
     """Return the on-disk cache layout for ``model`` under ``cache_dir``.
 
     Real-data caches are figure-4 specific (the ``figure04_`` prefix
-    is meaningful — these files come out of the
-    ``cont_results.nc`` / ``cont_frag_results.nc`` decoder runs).
+    is meaningful — these files are derived from the canonical Figure 4
+    joblib decode bundle).
     Simulated-data caches use a separate filename layout via
     ``simulated_cache_paths``.
     """
@@ -137,28 +106,30 @@ def simulated_spike_times_path(cache_dir: Path) -> Path:
     return cache_dir / "simulation_spike_times.npy"
 
 
-def _restore_state_bins_index(ds: xr.Dataset) -> xr.Dataset:
-    """Re-attach the ``(state, position)`` MultiIndex on ``state_bins``.
-
-    NetCDF round-trip drops the MultiIndex but preserves ``state`` and
-    ``position`` as non-dim coords on ``state_bins``. Restoring it lets
-    callers ``unstack("state_bins")`` and group by state cleanly.
-    """
-    if "state" in ds.coords and "position" in ds.coords:
-        return cast(xr.Dataset, ds.set_index(state_bins=["state", "position"]))
-    return ds
-
-
 def _events_dataframe(
     diagnostics: SpikeEventDiagnostics,
     n_cells: int,
+    *,
+    time: NDArray[np.float64] | None = None,
 ) -> pd.DataFrame:
     """Convert per-spike diagnostic arrays into a sorted Parquet-friendly frame."""
-    if diagnostics.event_time is None:
-        raise ValueError(
-            "SpikeEventDiagnostics.event_time is required when building the cache "
-            "events frame; the simulated path leaves it None."
-        )
+    event_time = diagnostics.event_time
+    if event_time is None:
+        if time is None:
+            raise ValueError(
+                "SpikeEventDiagnostics.event_time or an explicit decoder time grid "
+                "is required when building the cache events frame."
+            )
+        event_time_ind = np.asarray(diagnostics.event_time_ind, dtype=np.intp)
+        if event_time_ind.size and (
+            event_time_ind.min() < 0 or event_time_ind.max() >= time.shape[0]
+        ):
+            raise ValueError(
+                "event_time_ind falls outside the supplied decoder time grid: "
+                f"valid [0, {time.shape[0]}), got "
+                f"[{event_time_ind.min()}, {event_time_ind.max()}]"
+            )
+        event_time = time[event_time_ind]
 
     cell_id = np.asarray(diagnostics.event_cell_ind, dtype=np.int32)
     if cell_id.size and (cell_id.min() < 0 or cell_id.max() >= n_cells):
@@ -168,7 +139,7 @@ def _events_dataframe(
 
     df = pd.DataFrame(
         {
-            "time": np.asarray(diagnostics.event_time, dtype=np.float64),
+            "time": np.asarray(event_time, dtype=np.float64),
             "cell_id": cell_id,
             "event_hpd_overlap": np.asarray(diagnostics.event_hpd_overlap, dtype=np.float32),
             "event_kl_divergence": np.asarray(diagnostics.event_kl_divergence, dtype=np.float32),
@@ -218,7 +189,15 @@ def _write_zarr_store(
     if "acausal_state_probabilities" in ds.data_vars:
         keep_vars.append("acausal_state_probabilities")
 
-    base = ds[keep_vars].chunk({"time": time_chunk})
+    base = ds[keep_vars]
+    # The canonical joblib cache preserves xarray's ``state_bins`` MultiIndex,
+    # while Zarr cannot serialize a pandas MultiIndex directly. Flatten it back
+    # to ordinary ``state`` / ``position`` coordinates, matching the layout the
+    # viewer already reads, and give ``state_bins`` a simple integer coordinate.
+    if isinstance(base.indexes.get("state_bins"), pd.MultiIndex):
+        base = base.reset_index("state_bins")
+        base = base.assign_coords(state_bins=np.arange(base.sizes["state_bins"], dtype=np.int64))
+    base = base.chunk({"time": time_chunk})
 
     # Cast object-dtype string coords to fixed-width unicode so xarray
     # does not have to load them into memory to infer length on write.
@@ -295,234 +274,195 @@ def _write_spike_times(
     np.save(out_path, container, allow_pickle=True)
 
 
-def build_model_cache(
-    *,
+def _figure04_model_inputs(
+    render_data: Figure4RenderData,
     model: ModelName,
-    intermediates_dir: Path,
-    raw_data_dir: Path,
+) -> tuple[xr.Dataset, SpikeEventDiagnostics]:
+    """Return the canonical result dataset and diagnostics for one model."""
+    decode = render_data.decode_results
+    if model == "continuous":
+        return decode.continuous_results, decode.continuous_diagnostics
+    if model == "contfrag":
+        return (
+            decode.continuous_fragmented_results,
+            decode.continuous_fragmented_diagnostics,
+        )
+    raise ValueError(f"Unknown model: {model!r}")
+
+
+def _position_grid_and_interior_mask(
+    results: xr.Dataset,
+    diagnostic_position_bins: NDArray[np.float64],
+) -> tuple[NDArray[np.float64], NDArray[np.bool_], int]:
+    """Match the shared diagnostic grid to a decoder result's full state axis."""
+    if "position" not in results.coords:
+        raise ValueError("Figure 4 decoder results must carry a 'position' coordinate")
+    if "predictive_posterior" not in results:
+        raise ValueError("Figure 4 decoder results are missing 'predictive_posterior'")
+
+    position_coord = np.asarray(results.coords["position"].values, dtype=np.float64)
+    position_grid_full = np.unique(position_coord)
+    if position_grid_full.size == 0:
+        raise ValueError("Figure 4 decoder position grid is empty")
+
+    interior_bins = np.asarray(diagnostic_position_bins, dtype=np.float64)
+    matches = np.isclose(
+        position_grid_full[:, np.newaxis],
+        interior_bins[np.newaxis, :],
+        rtol=1e-10,
+        atol=1e-12,
+    )
+    matches_per_bin = matches.sum(axis=0)
+    if np.any(matches_per_bin != 1):
+        raise ValueError(
+            "Each diagnostic position bin must match exactly one decoder position "
+            f"bin; match counts were {matches_per_bin.tolist()}."
+        )
+    interior_mask = np.any(matches, axis=1)
+    if not np.allclose(position_grid_full[interior_mask], interior_bins):
+        raise ValueError(
+            "Diagnostic position bins are not in the same order as the decoder position coordinate."
+        )
+
+    n_state_bins = int(results["predictive_posterior"].sizes["state_bins"])
+    if n_state_bins % position_grid_full.size:
+        raise ValueError(
+            f"Decoder state axis ({n_state_bins}) is not divisible by the "
+            f"position-grid size ({position_grid_full.size})."
+        )
+    n_states = n_state_bins // position_grid_full.size
+    return position_grid_full, interior_mask, n_states
+
+
+def _write_figure04_model_cache(
+    *,
+    render_data: Figure4RenderData,
+    model: ModelName,
     cache_dir: Path,
-    animal_date_epoch: str,
-    time_chunk: int = DEFAULT_TIME_CHUNK,
-    force: bool = False,
+    time_chunk: int,
 ) -> dict[str, Any]:
-    """Build the full cache for one model.
-
-    Parameters
-    ----------
-    model : {"continuous", "contfrag"}
-        Which decoder model to cache.
-    intermediates_dir : Path
-        Directory containing ``cont_results.nc``, ``cont_frag_results.nc``,
-        and the matching fitted-model pickles.
-    raw_data_dir : Path
-        Directory with the raw data files (position info, per-cell spike
-        times) for ``animal_date_epoch``.
-    cache_dir : Path
-        Output directory for the cache (created if missing).
-    animal_date_epoch : str
-        Identifier passed to ``load_neural_recording_from_files``.
-    time_chunk : int, default 8192
-        Zarr chunk size along the time axis (~16 s at 500 Hz).
-    force : bool, default False
-        If False, raises if the model's Zarr store already exists.
-
-    Returns
-    -------
-    info : dict
-        Diagnostic shape/count info, suitable for human inspection or
-        smoke tests.
-    """
-    cache_dir.mkdir(parents=True, exist_ok=True)
+    """Write one viewer model from the canonical Figure 4 render data."""
+    results, diagnostics = _figure04_model_inputs(render_data, model)
     paths = cache_paths(cache_dir, model)
-    if not force and paths["zarr"].exists():
-        raise FileExistsError(f"{paths['zarr']} already exists; pass --force to overwrite.")
-
-    inputs = model_paths(intermediates_dir, model)
-    for path in (inputs.results_nc, inputs.model_pkl):
-        if not path.exists():
-            raise FileNotFoundError(f"Required input missing: {path}")
-
-    from statespacecheck_paper.figure04_decoder import get_spike_counts
-    from statespacecheck_paper.figure04_diagnostics import compute_spike_event_diagnostics
-    from statespacecheck_paper.figure04_place_fields import (
-        extract_place_fields_concat,
-        extract_shared_position_place_fields,
-        get_state_marginalized_posterior,
+    zarr_shapes = _write_zarr_store(
+        ds=results,
+        out_dir=paths["zarr"],
+        time_chunk=time_chunk,
     )
-    from statespacecheck_paper.load_local_data import load_neural_recording_from_files
 
-    with xr.open_dataset(inputs.results_nc) as ds:
-        zarr_shapes = _write_zarr_store(
-            ds=ds,
-            out_dir=paths["zarr"],
-            time_chunk=time_chunk,
-        )
-
-        time_arr: NDArray[np.float64] = np.asarray(ds["time"].values, dtype=np.float64)
-        n_time = time_arr.shape[0]
-
-        # ``position`` is a non-dim coord on ``state_bins`` and repeats
-        # across states for multi-state classifiers. The unique sorted
-        # values are the underlying 1D position grid.
-        position_coord = np.asarray(ds["position"].values, dtype=np.float64)
-        position_grid_full = np.unique(position_coord)
-
-        joint_interior_bins = int(
-            ds["predictive_posterior"].dropna(dim="state_bins").sizes["state_bins"]
-        )
-        diagnostic_predictive = np.asarray(
-            get_state_marginalized_posterior(_restore_state_bins_index(ds), "predictive"),
-            dtype=np.float64,
-        )
-
-    raw = load_neural_recording_from_files(raw_data_dir, animal_date_epoch)
-    spike_times: list[NDArray[np.float64]] = list(raw.spike_times)
-    n_cells = len(spike_times)
-
-    fitted_model = joblib.load(inputs.model_pkl)
-
-    place_fields_full, interior_mask = extract_place_fields_concat(fitted_model)
-    if place_fields_full.shape[0] != n_cells:
+    decode = render_data.decode_results
+    position_bins = np.asarray(decode.diagnostic_position_bins, dtype=np.float64)
+    _, interior_mask, n_states = _position_grid_and_interior_mask(results, position_bins)
+    place_fields = np.asarray(decode.diagnostic_place_fields, dtype=np.float64)
+    n_cells = int(decode.spike_counts.shape[1])
+    if place_fields.shape != (n_cells, position_bins.size):
         raise ValueError(
-            f"Place fields cell count ({place_fields_full.shape[0]}) "
-            f"!= raw spike-times cell count ({n_cells})"
-        )
-    place_fields = place_fields_full[:, interior_mask]
-
-    if place_fields.shape[1] != joint_interior_bins:
-        raise ValueError(
-            f"Place-field interior bin count ({place_fields.shape[1]}) does not "
-            f"match predictive_posterior interior bin count "
-            f"({joint_interior_bins})"
+            "Shared Figure 4 place fields must have shape "
+            f"({n_cells}, {position_bins.size}); got {place_fields.shape}."
         )
 
-    # Per-state interior position grid for raster sorting and the slice
-    # panel. The full state-bin count is ``n_states * len(position_grid_full)``;
-    # after the interior mask, it is ``n_states * n_interior_per_state``.
-    # The interior mask is identical across states (it depends on position,
-    # not state), so the first state's slice gives the canonical 1D grid.
-    n_pos_full = position_grid_full.shape[0]
-    n_states = place_fields_full.shape[1] // n_pos_full
-    if n_states * n_pos_full != place_fields_full.shape[1]:
-        raise ValueError(
-            f"place_fields_full shape {place_fields_full.shape} not divisible by "
-            f"n_pos_full={n_pos_full}"
-        )
-    n_interior_per_state = place_fields.shape[1] // n_states
-    if n_interior_per_state * n_states != place_fields.shape[1]:
-        raise ValueError(
-            f"interior place_fields shape {place_fields.shape} not divisible by n_states={n_states}"
-        )
-    interior_mask_per_state = interior_mask.reshape(n_states, n_pos_full)[0]
-    if not np.array_equal(interior_mask_per_state, interior_mask.reshape(n_states, n_pos_full)[-1]):
-        raise ValueError(
-            "Interior mask is not identical across states; per-state slicing "
-            "would produce inconsistent place-field grids."
-        )
-    position_bins = position_grid_full[interior_mask_per_state]
-    place_fields_per_state = place_fields[:, :n_interior_per_state]
-    diagnostic_place_fields, diagnostic_position_bins = extract_shared_position_place_fields(
-        fitted_model
+    events_df = _events_dataframe(
+        diagnostics,
+        n_cells=n_cells,
+        time=np.asarray(render_data.time, dtype=np.float64),
     )
-    if not np.allclose(diagnostic_position_bins, position_bins, equal_nan=True):
-        raise ValueError(
-            "Shared diagnostic position grid does not match the viewer's per-state position grid."
-        )
-    if not np.allclose(diagnostic_place_fields, place_fields_per_state, equal_nan=True):
-        raise ValueError(
-            "Shared diagnostic place fields do not match the viewer's per-state place fields."
-        )
-    if diagnostic_predictive.shape[1] != diagnostic_place_fields.shape[1]:
-        raise ValueError(
-            f"Position-marginal predictive posterior has "
-            f"{diagnostic_predictive.shape[1]} bins but the shared observation "
-            f"likelihood has {diagnostic_place_fields.shape[1]}."
-        )
-    with np.errstate(invalid="ignore"):
-        peak_idx = np.nanargmax(place_fields_per_state, axis=1)
-    place_field_peaks = position_bins[peak_idx]
-
-    spike_counts = get_spike_counts(spike_times, time_arr)
-    # The cache only consumes the per-spike ``event_*`` arrays;
-    # ``include_dense_matrices=False`` skips the (n_time, n_cells) matrix
-    # allocations + scatters, which on real data are hundreds of MB.
-    diagnostics = compute_spike_event_diagnostics(
-        diagnostic_predictive,
-        spike_counts,
-        diagnostic_place_fields,
-        spike_times=spike_times,
-        time=time_arr,
-        include_dense_matrices=False,
-    )
-    # ``compute_spike_event_diagnostics`` already returns ``event_cell_ind``
-    # in the same order as the per-spike diagnostic arrays — no need to
-    # re-derive it via ``_get_spike_events_from_spike_times``.
-    events_df = _events_dataframe(diagnostics, n_cells=n_cells)
     events_df.to_parquet(paths["events"], engine="pyarrow", compression="zstd")
-
     _write_place_fields(
         out_path=paths["place_fields"],
         place_fields=place_fields,
         interior_mask=interior_mask,
         position_bins=position_bins,
-        place_field_peaks=place_field_peaks,
+        place_field_peaks=np.asarray(decode.place_field_peaks, dtype=np.float64),
     )
 
-    # Meta + spike-times sidecars (model-independent; safe to overwrite).
-    position_info = raw.position_info
-    # The ``linear_position`` field on ``position_info`` was computed
-    # with the data-loading pipeline's ``edge_spacing`` (15 cm on this
-    # session), so its coordinate system spans 0 → ~608 cm.
-    # The fitted decoder, however, was created with ``edge_spacing=1.5``
-    # (see ``scripts/run_decoding.py``), so its bin centers only span
-    # 0 → ~500 cm. Plotting the position-pkl ``linear_position`` over
-    # the decoder's heatmap therefore offsets the trajectory from the
-    # underlying probability mass by ~100 cm. Re-linearize the 2-D
-    # position using the *decoder's* track graph + edge ordering +
-    # edge spacing so the saved trajectory shares one coordinate
-    # system with ``predictive_posterior``.
-    from track_linearization import get_linearized_position  # noqa: PLC0415
+    return {
+        "model": model,
+        "n_time": int(decode.spike_counts.shape[0]),
+        "n_cells": n_cells,
+        "n_states": n_states,
+        "n_state_bins_full_res": int(zarr_shapes["predictive_posterior"][1]),
+        "n_position_bins": int(position_bins.size),
+        "n_events": int(len(events_df)),
+        "zarr_shapes": {key: list(shape) for key, shape in zarr_shapes.items()},
+        "cache_paths": {key: str(path) for key, path in paths.items()},
+    }
 
-    decoder_env = fitted_model.environments[0]
-    pos_2d = position_info[["head_position_x", "head_position_y"]].to_numpy()
-    linear_position = np.asarray(
-        get_linearized_position(
-            position=pos_2d,
-            track_graph=decoder_env.track_graph,
-            edge_order=decoder_env.edge_order,
-            edge_spacing=decoder_env.edge_spacing,
-        )["linear_position"].values,
-        dtype=np.float64,
-    )
-    if linear_position.shape[0] != n_time:
+
+def build_figure04_viewer_cache(
+    *,
+    render_data: Figure4RenderData,
+    cache_dir: Path,
+    models: Sequence[ModelName] = MODEL_NAMES,
+    time_chunk: int = DEFAULT_TIME_CHUNK,
+    force: bool = False,
+) -> dict[ModelName, dict[str, Any]]:
+    """Derive viewer artifacts from the canonical Figure 4 workflow output.
+
+    The input is the same Figure4RenderData used to render the static figure.
+    In the normal CLI path it is loaded from the epoch's fig4_cache.joblib by
+    prepare_figure04_render_data. This keeps the viewer and paper on one
+    decode/diagnostic source of truth and eliminates the former dependency on
+    separately produced NetCDF results and fitted-model pickles.
+    """
+    selected = tuple(models)
+    if not selected:
+        raise ValueError("models must contain at least one Figure 4 model")
+    if len(set(selected)) != len(selected):
+        raise ValueError(f"models contains duplicates: {selected!r}")
+    unknown = [model for model in selected if model not in MODEL_NAMES]
+    if unknown:
+        raise ValueError(f"Unknown Figure 4 models: {unknown!r}")
+
+    cache_dir = Path(cache_dir)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    if not force:
+        existing = [
+            cache_paths(cache_dir, model)["zarr"]
+            for model in selected
+            if cache_paths(cache_dir, model)["zarr"].exists()
+        ]
+        if existing:
+            raise FileExistsError(
+                f"{existing[0]} already exists; pass --force to overwrite viewer artifacts."
+            )
+
+    summaries: dict[ModelName, dict[str, Any]] = {}
+    for model in selected:
+        summaries[model] = _write_figure04_model_cache(
+            render_data=render_data,
+            model=model,
+            cache_dir=cache_dir,
+            time_chunk=time_chunk,
+        )
+
+    decode = render_data.decode_results
+    n_cells = int(decode.spike_counts.shape[1])
+    spike_times = [
+        np.asarray(cell_spike_times, dtype=np.float64)
+        for cell_spike_times in render_data.recording.spike_times
+    ]
+    if len(spike_times) != n_cells:
         raise ValueError(
-            f"linear_position has {linear_position.shape[0]} samples but "
-            f"decoder time grid has {n_time} samples"
+            f"Recording has {len(spike_times)} spike-time arrays but the decode "
+            f"has {n_cells} cells."
         )
     _write_meta(
         out_path=meta_path(cache_dir),
-        time=time_arr,
-        linear_position=linear_position,
+        time=np.asarray(render_data.time, dtype=np.float64),
+        linear_position=np.asarray(render_data.linear_position, dtype=np.float64),
         n_cells=n_cells,
     )
-    _write_spike_times(out_path=spike_times_path(cache_dir), spike_times=spike_times)
+    _write_spike_times(
+        out_path=spike_times_path(cache_dir),
+        spike_times=spike_times,
+    )
 
-    info: dict[str, Any] = {
-        "model": model,
-        "n_time": int(n_time),
-        "n_cells": int(n_cells),
-        "n_state_bins_full_res": int(zarr_shapes["predictive_posterior"][1]),
-        "n_position_bins": int(position_bins.shape[0]),
-        "n_events": int(len(events_df)),
-        "zarr_shapes": {k: list(v) for k, v in zarr_shapes.items()},
-        "cache_paths": {k: str(v) for k, v in paths.items()},
-        "meta_path": str(meta_path(cache_dir)),
-        "spike_times_path": str(spike_times_path(cache_dir)),
-    }
-    return info
+    for info in summaries.values():
+        info["meta_path"] = str(meta_path(cache_dir))
+        info["spike_times_path"] = str(spike_times_path(cache_dir))
+    return summaries
 
 
-# ---------------------------------------------------------------------------
 # Simulated-dataset cache builder
 # ---------------------------------------------------------------------------
 
@@ -771,8 +711,7 @@ def _build_simulated_command(args: argparse.Namespace) -> int:
 
 def _build_command(args: argparse.Namespace) -> int:
     """CLI entry point for ``cache build``."""
-    intermediates_dir = Path(args.intermediates_dir).expanduser().resolve()
-    raw_data_dir = Path(args.data_dir).expanduser().resolve()
+    data_dir = Path(args.data_dir).expanduser().resolve()
     cache_dir = Path(args.cache_dir).expanduser().resolve()
 
     if args.model == "both":
@@ -780,36 +719,44 @@ def _build_command(args: argparse.Namespace) -> int:
     else:
         models = (args.model,)
 
-    summaries: list[dict[str, Any]] = []
-    for model in models:
-        print(f"[cache] Building cache for model={model} ...", flush=True)
-        info = build_model_cache(
-            model=model,
-            intermediates_dir=intermediates_dir,
-            raw_data_dir=raw_data_dir,
-            cache_dir=cache_dir,
-            animal_date_epoch=args.animal_date_epoch,
-            time_chunk=args.time_chunk,
-            force=args.force,
-        )
-        summaries.append(info)
+    # Lazy imports keep the figure-3 simulation cache command independent of
+    # the real-data decoder stack.
+    from statespacecheck_paper.figure04_cache import (  # noqa: PLC0415
+        Figure4Paths,
+    )
+    from statespacecheck_paper.figure04_decoder import (  # noqa: PLC0415
+        Figure4Config,
+    )
+    from statespacecheck_paper.figure04_workflow import (  # noqa: PLC0415
+        prepare_figure04_render_data,
+    )
+
+    figure4_paths = Figure4Paths(
+        data_path=data_dir,
+        animal_date_epoch=args.animal_date_epoch,
+    )
+    print(
+        f"[cache] Loading canonical Figure 4 workflow data from {figure4_paths.cache_path} ...",
+        flush=True,
+    )
+    render_data = prepare_figure04_render_data(
+        Figure4Config(),
+        figure4_paths,
+        use_cache=not args.force_recompute,
+    )
+    summaries = build_figure04_viewer_cache(
+        render_data=render_data,
+        cache_dir=cache_dir,
+        models=models,
+        time_chunk=args.time_chunk,
+        force=args.force,
+    )
+    for model, info in summaries.items():
         print(
             f"[cache] {model}: n_time={info['n_time']} n_cells={info['n_cells']} "
             f"n_state_bins={info['n_state_bins_full_res']} n_events={info['n_events']}",
             flush=True,
         )
-
-    # Cross-model sanity check: n_time and n_cells must agree.
-    if len(summaries) > 1:
-        ref = summaries[0]
-        for other in summaries[1:]:
-            if other["n_time"] != ref["n_time"] or other["n_cells"] != ref["n_cells"]:
-                print(
-                    "[cache] WARNING: n_time/n_cells differ across models; "
-                    "the meta sidecar reflects the last model written.",
-                    file=sys.stderr,
-                )
-                break
 
     print("[cache] Done.")
     return 0
@@ -830,12 +777,10 @@ def main(argv: list[str] | None = None) -> int:
     build.add_argument(
         "--data-dir",
         required=True,
-        help="Directory with raw data pickles (position_info, spike_times, ...).",
-    )
-    build.add_argument(
-        "--intermediates-dir",
-        default=None,
-        help="Directory with cont_*.nc and *_model.pkl. Defaults to <data-dir>/intermediates.",
+        help=(
+            "Figure 4 data directory. Must contain the exported recording inputs "
+            "and the canonical intermediates/{epoch}_fig4_cache.joblib bundle."
+        ),
     )
     build.add_argument(
         "--cache-dir",
@@ -856,7 +801,15 @@ def main(argv: list[str] | None = None) -> int:
     build.add_argument(
         "--force",
         action="store_true",
-        help="Overwrite existing cache directories.",
+        help="Overwrite existing viewer cache directories.",
+    )
+    build.add_argument(
+        "--force-recompute",
+        action="store_true",
+        help=(
+            "Re-fit and re-decode Figure 4 instead of loading its canonical "
+            "joblib cache. This also overwrites that canonical cache."
+        ),
     )
     build.set_defaults(func=_build_command)
 
@@ -890,8 +843,6 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
     if args.command == "build":
-        if args.intermediates_dir is None:
-            args.intermediates_dir = str(Path(args.data_dir) / "intermediates")
         if args.cache_dir is None:
             args.cache_dir = str(Path(args.data_dir) / "cache")
     return int(args.func(args))
