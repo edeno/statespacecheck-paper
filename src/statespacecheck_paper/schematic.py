@@ -7,6 +7,8 @@ These are used to create publication-quality schematic diagrams.
 
 from __future__ import annotations
 
+from typing import NamedTuple
+
 import numpy as np
 from matplotlib.axes import Axes
 from matplotlib.patches import Circle, FancyArrowPatch, FancyBboxPatch
@@ -591,6 +593,99 @@ def draw_graphical_model(
     )
 
 
+class _InsetSpec(NamedTuple):
+    """One distribution inset in a filtering-equation row."""
+
+    mean: float
+    std: float
+    color: str
+    label: str
+    title: str
+
+
+def _draw_equation_row(
+    ax: Axes,
+    *,
+    y: float,
+    step_number: int,
+    step_name: str,
+    step_color: str,
+    left: _InsetSpec,
+    operator: str,
+    operator_label: str,
+    operator_size: float,
+    middle: _InsetSpec,
+    result: _InsetSpec,
+    box_center_x: float,
+    box_width: float,
+) -> None:
+    """Draw one ``left <operator> middle = result`` row of the algorithm box.
+
+    The prediction and update steps share this exact layout — background box,
+    three distribution insets, an operator symbol with a caption, an equals
+    sign, and a numbered step label. Only the y position, the step label, the
+    operator, and the three :class:`_InsetSpec` distributions differ between
+    them.
+    """
+    center_y = y + 0.2
+    # Offset that shifts the equation elements right to make room for labels.
+    eq_offset = 0.8
+
+    draw_equation_box(
+        ax,
+        center=(box_center_x, center_y),
+        width=box_width,
+        height=1.4,
+        edgecolor="#CCCCCC",
+        facecolor="#F9F9F9",
+    )
+
+    for spec, x in ((left, 1.3), (middle, 3.3), (result, 5.5)):
+        draw_distribution_inset(
+            ax,
+            center=(x + eq_offset, center_y),
+            width=0.9,
+            height=0.5,
+            mean=spec.mean,
+            std=spec.std,
+            color=spec.color,
+            label=spec.label,
+            label_size=8,
+            title=spec.title,
+        )
+
+    operator_x = 2.3 + eq_offset
+    ax.text(
+        operator_x,
+        center_y,
+        operator,
+        ha="center",
+        va="center",
+        fontsize=operator_size,
+        fontweight="bold",
+    )
+    ax.text(
+        operator_x,
+        y + 0.55,
+        operator_label,
+        ha="center",
+        va="bottom",
+        color="#666666",
+    )
+
+    ax.text(4.3 + eq_offset, center_y, "=", ha="center", va="center", fontsize=14)
+
+    ax.text(
+        0.2,
+        center_y,
+        f"{step_number}. {step_name}",
+        ha="left",
+        va="center",
+        color=step_color,
+        fontweight="bold",
+    )
+
+
 def draw_equation_boxes(ax: Axes) -> None:
     """Draw the Bayesian filtering equation boxes.
 
@@ -614,212 +709,80 @@ def draw_equation_boxes(ax: Axes) -> None:
     ax.set_ylim(-0.85, 2.45)  # Content from ~-0.7 to ~2.3, with room for title
     ax.axis("off")
 
-    # ==========================================================================
-    # EQUATION 1: [Prev Posterior] * T = [Predictive]
-    # ==========================================================================
-
-    y_eq1 = 1.4
-    box_height = 1.4
-
-    # Box dimensions aligned with graphical model
+    # Box dimensions aligned with graphical model. Both equation rows share the
+    # same width/center; only their y position, step label, operator, and the
+    # three distribution insets differ.
     box_right_edge = 7.15
     box_left_edge = 0.0
     box_width = box_right_edge - box_left_edge
     box_center_x = (box_left_edge + box_right_edge) / 2
-    draw_equation_box(
-        ax,
-        center=(box_center_x, y_eq1 + 0.2),
-        width=box_width,
-        height=box_height,
-        edgecolor="#CCCCCC",
-        facecolor="#F9F9F9",
-    )
 
-    # Offset to shift equation elements right to make room for labels
-    eq_offset = 0.8
-
-    # Distribution 1: Previous Posterior
-    draw_distribution_inset(
-        ax,
-        center=(1.3 + eq_offset, y_eq1 + 0.2),
-        width=0.9,
-        height=0.5,
-        mean=40,
-        std=8,
-        color=COLORS["posterior"],
-        label=r"$p(x_{t-1}|y_{1:t-1})$",
-        label_size=8,
-        title="Previous\nPosterior",
-    )
-
-    # Operation symbol: convolution
-    conv_x = 2.3 + eq_offset
-    ax.text(
-        conv_x,
-        y_eq1 + 0.2,
-        r"$\circledast$",
-        ha="center",
-        va="center",
-        fontsize=16,
-        fontweight="bold",
-    )
-    # Label for convolution
-    ax.text(
-        conv_x,
-        y_eq1 + 0.55,
-        "Convolve",
-        ha="center",
-        va="bottom",
-        color="#666666",
-    )
-
-    # Transition distribution (gray for fixed model component)
-    draw_distribution_inset(
-        ax,
-        center=(3.3 + eq_offset, y_eq1 + 0.2),
-        width=0.9,
-        height=0.5,
-        mean=45,
-        std=10,
-        color="#666666",
-        label=r"$p(x_t|x_{t-1})$",
-        label_size=8,
-        title="Transition",
-    )
-
-    # Equals
-    ax.text(
-        4.3 + eq_offset,
-        y_eq1 + 0.2,
-        "=",
-        ha="center",
-        va="center",
-        fontsize=14,
-    )
-
-    # Distribution 3: Predictive
-    draw_distribution_inset(
-        ax,
-        center=(5.5 + eq_offset, y_eq1 + 0.2),
-        width=0.9,
-        height=0.5,
-        mean=45,
-        std=12,
-        color=COLORS["predictive"],
-        label=r"$p(x_t|y_{1:t-1})$",
-        label_size=8,
-        title="Predictive\nDistribution",
-    )
-
-    # Step label
-    ax.text(
-        0.2,
-        y_eq1 + 0.2,
-        "1. Prediction",
-        ha="left",
-        va="center",
-        color=COLORS["predictive"],
-        fontweight="bold",
-    )
-
-    # ==========================================================================
-    # EQUATION 2: [Predictive] x [Likelihood] = [Current Posterior]
-    # ==========================================================================
-
+    y_eq1 = 1.4
     y_eq2 = -0.25
-    box_height_eq2 = 1.4
 
-    draw_equation_box(
-        ax,
-        center=(box_center_x, y_eq2 + 0.2),
-        width=box_width,
-        height=box_height_eq2,
-        edgecolor="#CCCCCC",
-        facecolor="#F9F9F9",
-    )
-
-    # Distribution 1: Predictive (repeated from equation 1)
-    draw_distribution_inset(
-        ax,
-        center=(1.3 + eq_offset, y_eq2 + 0.2),
-        width=0.9,
-        height=0.5,
+    # The predictive distribution is the output of step 1 and the first input of
+    # step 2; use one spec so the two rows stay identical by construction.
+    predictive_inset = _InsetSpec(
         mean=45,
         std=12,
         color=COLORS["predictive"],
         label=r"$p(x_t|y_{1:t-1})$",
-        label_size=8,
         title="Predictive\nDistribution",
     )
 
-    # Operation symbol: multiplication
-    mult_x = 2.3 + eq_offset
-    ax.text(
-        mult_x,
-        y_eq2 + 0.2,
-        r"$\times$",
-        ha="center",
-        va="center",
-        fontsize=14,
-        fontweight="bold",
-    )
-    # Label for multiplication
-    ax.text(
-        mult_x,
-        y_eq2 + 0.55,
-        "Mult.",
-        ha="center",
-        va="bottom",
-        color="#666666",
-    )
-
-    # Distribution 2: Likelihood
-    draw_distribution_inset(
+    _draw_equation_row(
         ax,
-        center=(3.3 + eq_offset, y_eq2 + 0.2),
-        width=0.9,
-        height=0.5,
-        mean=50,
-        std=10,
-        color=COLORS["likelihood"],
-        label=r"$p(y_t|x_t)$",
-        label_size=8,
-        title="Likelihood",
+        y=y_eq1,
+        step_number=1,
+        step_name="Prediction",
+        step_color=COLORS["predictive"],
+        left=_InsetSpec(
+            mean=40,
+            std=8,
+            color=COLORS["posterior"],
+            label=r"$p(x_{t-1}|y_{1:t-1})$",
+            title="Previous\nPosterior",
+        ),
+        operator=r"$\circledast$",
+        operator_label="Convolve",
+        operator_size=16,
+        middle=_InsetSpec(
+            mean=45,
+            std=10,
+            color="#666666",
+            label=r"$p(x_t|x_{t-1})$",
+            title="Transition",
+        ),
+        result=predictive_inset,
+        box_center_x=box_center_x,
+        box_width=box_width,
     )
-
-    # Equals
-    ax.text(
-        4.3 + eq_offset,
-        y_eq2 + 0.2,
-        "=",
-        ha="center",
-        va="center",
-        fontsize=14,
-    )
-
-    # Distribution 3: Current Posterior
-    draw_distribution_inset(
+    _draw_equation_row(
         ax,
-        center=(5.5 + eq_offset, y_eq2 + 0.2),
-        width=0.9,
-        height=0.5,
-        mean=48,
-        std=7,
-        color=COLORS["posterior"],
-        label=r"$p(x_t|y_{1:t})$",
-        label_size=8,
-        title="Current\nPosterior",
-    )
-
-    # Step label
-    ax.text(
-        0.2,
-        y_eq2 + 0.2,
-        "2. Update",
-        ha="left",
-        va="center",
-        color=COLORS["posterior"],
-        fontweight="bold",
+        y=y_eq2,
+        step_number=2,
+        step_name="Update",
+        step_color=COLORS["posterior"],
+        left=predictive_inset,
+        operator=r"$\times$",
+        operator_label="Mult.",
+        operator_size=14,
+        middle=_InsetSpec(
+            mean=50,
+            std=10,
+            color=COLORS["likelihood"],
+            label=r"$p(y_t|x_t)$",
+            title="Likelihood",
+        ),
+        result=_InsetSpec(
+            mean=48,
+            std=7,
+            color=COLORS["posterior"],
+            label=r"$p(x_t|y_{1:t})$",
+            title="Current\nPosterior",
+        ),
+        box_center_x=box_center_x,
+        box_width=box_width,
     )
 
     # ==========================================================================
