@@ -299,7 +299,6 @@ def _layout_hexbin_row(
         -0.18,
         1.10,
         "c",
-        fontsize=8,
         fontweight="bold",
         transform=axes_hexbin[0].transAxes,
         va="top",
@@ -451,7 +450,7 @@ def compose_figure04(
         model_name="Continuous Model",
         fig=subfigs_top[1],
     )
-    axes_a[3].set_ylabel("HPD\noverlap", fontsize=8, labelpad=7)
+    axes_a[3].set_ylabel("HPD\noverlap", labelpad=7)
 
     # Panel (b): ContFrag detail view
     _, axes_b = plot_single_model_diagnostics(
@@ -493,7 +492,6 @@ def compose_figure04(
             panel_label_x[label],
             1.24,
             label,
-            fontsize=8,
             fontweight="bold",
             transform=axes[0].transAxes,
             va="top",

@@ -431,7 +431,6 @@ def plot_spike_event_diagnostic_scatter(
             threshold,
             "Threshold",
             transform=ax.get_yaxis_transform(),
-            fontsize=8,
             va="center",
             ha="left",
             color=COLORS["threshold"],
@@ -448,10 +447,10 @@ def plot_spike_event_diagnostic_scatter(
         ax.set_ylim(-0.005, 1.0)
 
     ax.set_xlim(time_arr.min(), time_arr.max())
-    ax.set_ylabel(metric_name if ylabel is None else ylabel, fontsize=8, labelpad=7)
+    ax.set_ylabel(metric_name if ylabel is None else ylabel, labelpad=7)
 
     if show_xlabel:
-        ax.set_xlabel("Time (s)", fontsize=8, labelpad=7)
+        ax.set_xlabel("Time (s)", labelpad=7)
         ax.tick_params(labelsize=8)
     else:
         ax.tick_params(labelsize=8, labelbottom=False)
@@ -486,7 +485,7 @@ def _draw_predictive_heatmap_row(
         cmap=CMAP_POSTERIOR,
     )
     ax.set_title(title, fontsize=8)
-    ax.set_ylabel(ylabel, fontsize=8, labelpad=7)
+    ax.set_ylabel(ylabel, labelpad=7)
     ax.set_xlabel("")
     ax.tick_params(labelsize=8, labelbottom=False)
 
@@ -630,7 +629,6 @@ def plot_single_model_diagnostics(
         0.90,
         "Animal Position",
         transform=axes[0].transAxes,
-        fontsize=8,
         fontweight="normal",
         color=COLORS["ground_truth"],
         alpha=0.85,
@@ -659,7 +657,7 @@ def plot_single_model_diagnostics(
         s=1,
         alpha=0.85,
     )
-    ax_lik.set_ylabel("Likelihood", fontsize=8, labelpad=7)
+    ax_lik.set_ylabel("Likelihood", labelpad=7)
     ax_lik.set_xlabel("")
     ax_lik.tick_params(labelsize=8, labelbottom=False)
 
@@ -678,7 +676,7 @@ def plot_single_model_diagnostics(
     sliced_time = time_arr[time_slice_ind]
     time_slice = slice(float(sliced_time[0]), float(sliced_time[-1]))
     plot_raster(spike_times, time_slice, ax=axes[2], sort_order=sort_order)
-    axes[2].set_ylabel("Neuron", fontsize=8, labelpad=7)
+    axes[2].set_ylabel("Neuron", labelpad=7)
     axes[2].set_xlabel("")
     axes[2].tick_params(labelsize=8, labelbottom=False)
 
@@ -710,7 +708,6 @@ def plot_single_model_diagnostics(
             worse_fit_y,
             spec.worse_fit_direction,
             transform=axes[row].transAxes,
-            fontsize=8,
             va="center",
             ha="left",
         )
@@ -894,7 +891,6 @@ def plot_per_spike_metric_hexbin_row(
                     transform=ax.transAxes,
                     ha="left",
                     va="bottom",
-                    fontsize=8,
                     color=rescue_accent,
                     fontstyle="italic",
                     zorder=5,
@@ -909,7 +905,6 @@ def plot_per_spike_metric_hexbin_row(
                     label,
                     ha="center",
                     va="bottom",
-                    fontsize=8,
                     color=rescue_accent,
                     fontstyle="italic",
                     zorder=5,
@@ -920,8 +915,8 @@ def plot_per_spike_metric_hexbin_row(
         ax.set_ylim(padded_lims)
         ax.set_aspect("equal", adjustable="box")
 
-        ax.set_xlabel(model_a_name, fontsize=8, labelpad=4)
-        ax.set_ylabel(model_b_name if panel_idx == 0 else "", fontsize=8, labelpad=4)
+        ax.set_xlabel(model_a_name, labelpad=4)
+        ax.set_ylabel(model_b_name if panel_idx == 0 else "", labelpad=4)
         ax.set_title(title, fontsize=8)
         ax.tick_params(labelsize=8)
 
@@ -931,7 +926,6 @@ def plot_per_spike_metric_hexbin_row(
                 0.98,
                 f"n={len(data_a):,}",
                 transform=ax.transAxes,
-                fontsize=8,
                 va="top",
                 ha="left",
                 color="0.4",
@@ -959,7 +953,7 @@ def plot_per_spike_metric_hexbin_row(
             pad=colorbar_pad,
             shrink=0.64,
         )
-        cbar.set_label("Spike events per hex", fontsize=8, labelpad=4)
+        cbar.set_label("Spike events per hex", labelpad=4)
         count_ticks = [tick for tick in (1, 10, 100, 1000, 10000, 100000) if tick <= max_count]
         cbar.set_ticks(count_ticks)
         cbar.set_ticklabels([f"{tick:,}" for tick in count_ticks])

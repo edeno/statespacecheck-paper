@@ -377,7 +377,7 @@ def _plot_spike_count_raster(
     n_time, n_cells = spikes_sorted.shape
     ax.set_xlim(0, n_time)
     ax.set_ylim(-0.5, n_cells - 0.5)
-    ax.set_ylabel("Neuron", fontsize=8, labelpad=7)
+    ax.set_ylabel("Neuron", labelpad=7)
 
 
 def _add_figure3_row_label(ax: Axes, label: str) -> None:
@@ -387,7 +387,6 @@ def _add_figure3_row_label(ax: Axes, label: str) -> None:
         0.5,
         label,
         transform=ax.transAxes,
-        fontsize=8,
         va="center",
         ha="left",
         rotation=270,
@@ -401,7 +400,6 @@ def _add_figure3_panel_label(ax: Axes, label: str, *, y: float) -> None:
         -0.05,
         y,
         label,
-        fontsize=8,
         fontweight="bold",
         transform=ax.transAxes,
         va="top",
@@ -417,7 +415,6 @@ def _add_figure3_threshold_label(ax: Axes, threshold: float) -> None:
         threshold,
         "Threshold",
         transform=ax.get_yaxis_transform(),
-        fontsize=8,
         va="center",
         ha="left",
         color=COLORS["threshold"],
@@ -432,7 +429,6 @@ def _add_figure3_worse_fit_label(ax: Axes, label: str) -> None:
         0.5,
         label,
         transform=ax.transAxes,
-        fontsize=8,
         va="center",
         ha="left",
     )
@@ -446,14 +442,13 @@ def _plot_figure3_predictive_row(
 ) -> None:
     """Plot Figure 3's predictive row with a direct physical-position label."""
     _plot_timeseries_heatmap(ax, predictive, true_position)
-    ax.set_ylabel("Position (a.u.)", fontsize=8, labelpad=7)
+    ax.set_ylabel("Position (a.u.)", labelpad=7)
     ax.tick_params(labelsize=8, labelbottom=False)
     true_position_label = ax.text(
         0.02,
         0.90,
         "Physical position",
         transform=ax.transAxes,
-        fontsize=8,
         color=COLORS["ground_truth"],
         va="top",
         ha="left",
@@ -475,7 +470,7 @@ def _plot_figure3_likelihood_row(
         diagnostics.event_time_ind,
         true_position=true_position,
     )
-    ax.set_ylabel("Position (a.u.)", fontsize=8, labelpad=7)
+    ax.set_ylabel("Position (a.u.)", labelpad=7)
     ax.tick_params(labelsize=8, labelbottom=False)
     _add_figure3_row_label(ax, "Likelihood")
 
@@ -534,9 +529,9 @@ def _plot_figure3_diagnostic_row(
         ax.set_ylim(-0.005, 1.0)
 
     ax.set_xlim(0, n_time)
-    ax.set_ylabel(spec.ylabel, fontsize=8, labelpad=7)
+    ax.set_ylabel(spec.ylabel, labelpad=7)
     if show_xlabel:
-        ax.set_xlabel("Time (ms)", fontsize=8, labelpad=7)
+        ax.set_xlabel("Time (ms)", labelpad=7)
         ax.tick_params(labelsize=8)
     else:
         ax.tick_params(labelsize=8, labelbottom=False)
@@ -572,7 +567,6 @@ def _add_figure3_phase_labels(ax: Axes, config: Figure3Config) -> None:
             phase_label_y,
             label_text,
             transform=ax.get_xaxis_transform(),
-            fontsize=8,
             ha="center",
             va="bottom",
             style="italic",
@@ -604,10 +598,10 @@ def _plot_figure3_summary_heatmap(
 
     metric_labels = ["HPD\noverlap", "−log(p)", "KL\ndiv."]
     ax.set_yticks(range(3))
-    ax.set_yticklabels(metric_labels, fontsize=8)
+    ax.set_yticklabels(metric_labels)
 
     ax.set_xticks(range(len(conditions)))
-    ax.set_xticklabels([col.label for col in conditions], fontsize=8)
+    ax.set_xticklabels([col.label for col in conditions])
     ax.tick_params(top=True, bottom=False, labeltop=True, labelbottom=False)
 
     for row_idx in range(3):
@@ -621,7 +615,6 @@ def _plot_figure3_summary_heatmap(
                 f"{val:.0f}%",
                 ha="center",
                 va="center",
-                fontsize=8,
                 color=color,
                 fontweight=weight,
             )
@@ -637,7 +630,6 @@ def _plot_figure3_summary_heatmap(
             comp,
             ha="center",
             va="center",
-            fontsize=8,
             fontstyle="italic",
             color=color,
         )
@@ -649,7 +641,6 @@ def _plot_figure3_summary_heatmap(
         transform=ax.get_yaxis_transform(),
         ha="right",
         va="center",
-        fontsize=8,
         color="0.4",
         fontstyle="italic",
     )

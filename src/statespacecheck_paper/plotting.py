@@ -293,7 +293,6 @@ def create_distribution_comparison_panel(
             "Predictive",
             ha="center",
             va="bottom",
-            fontsize=8,
             color=color_predictive,
         )
         ax.text(
@@ -302,7 +301,6 @@ def create_distribution_comparison_panel(
             "Likelihood",
             ha="center",
             va="bottom",
-            fontsize=8,
             color=color_likelihood,
         )
 

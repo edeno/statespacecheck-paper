@@ -151,7 +151,6 @@ def draw_arrow(
             label,
             ha="center",
             va="bottom",
-            fontsize=8,
             style="italic",
         )
 
@@ -340,7 +339,6 @@ def draw_spikes_inset(
         ha="center",
         va="top",
         transform=inset.transAxes,
-        fontsize=8,
     )
 
 
@@ -475,7 +473,6 @@ def draw_graphical_model(
         "Transition",
         ha="center",
         va="bottom",
-        fontsize=8,
         color="#666666",
     )
     ax.text(
@@ -484,7 +481,6 @@ def draw_graphical_model(
         r"$p(x_t|x_{t-1})$",
         ha="center",
         va="top",
-        fontsize=8,
         color="#666666",
     )
 
@@ -505,7 +501,6 @@ def draw_graphical_model(
         "Likelihood\n" + r"$p(y_t|x_t)$",
         ha="left",
         va="center",
-        fontsize=8,
         color=COLORS["likelihood"],
         linespacing=1.0,
     )
@@ -532,7 +527,6 @@ def draw_graphical_model(
         "Latent\nstates",
         ha="left",
         va="center",
-        fontsize=8,
         fontstyle="italic",
     )
     ax.text(
@@ -541,7 +535,6 @@ def draw_graphical_model(
         "Observations",
         ha="left",
         va="center",
-        fontsize=8,
         fontstyle="italic",
     )
 
@@ -552,7 +545,6 @@ def draw_graphical_model(
         "Previous\nState",
         ha="center",
         va="bottom",
-        fontsize=8,
         color="black",
     )
     ax.text(
@@ -561,7 +553,6 @@ def draw_graphical_model(
         "Current\nState",
         ha="center",
         va="bottom",
-        fontsize=8,
         color="black",
     )
 
@@ -595,7 +586,6 @@ def draw_graphical_model(
         r"Time $\rightarrow$",
         ha="left",
         va="center",
-        fontsize=8,
         fontstyle="italic",
         color="#666666",
     )
@@ -680,7 +670,6 @@ def draw_equation_boxes(ax: Axes) -> None:
         "Convolve",
         ha="center",
         va="bottom",
-        fontsize=8,
         color="#666666",
     )
 
@@ -729,7 +718,6 @@ def draw_equation_boxes(ax: Axes) -> None:
         "1. Prediction",
         ha="left",
         va="center",
-        fontsize=8,
         color=COLORS["predictive"],
         fontweight="bold",
     )
@@ -782,7 +770,6 @@ def draw_equation_boxes(ax: Axes) -> None:
         "Mult.",
         ha="center",
         va="bottom",
-        fontsize=8,
         color="#666666",
     )
 
@@ -831,7 +818,6 @@ def draw_equation_boxes(ax: Axes) -> None:
         "2. Update",
         ha="left",
         va="center",
-        fontsize=8,
         color=COLORS["posterior"],
         fontweight="bold",
     )
@@ -871,7 +857,6 @@ def draw_equation_boxes(ax: Axes) -> None:
         "Each\ntime $t$",
         ha="right",
         va="center",
-        fontsize=8,
         fontweight="bold",
         color="#666666",
     )
