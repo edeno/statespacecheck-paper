@@ -1,2 +1,10 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Files hashed by the reproducibility fingerprint
+# (statespacecheck_paper.scientific_artifacts). Force LF on every checkout so
+# the byte-hash is identical across platforms — belt-and-suspenders alongside
+# the in-code CRLF->LF normalization, and so Windows checkouts (core.autocrlf)
+# don't silently diverge.
+*.py text eol=lf
+uv.lock text eol=lf

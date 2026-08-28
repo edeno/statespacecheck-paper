@@ -72,3 +72,26 @@ def test_scientific_source_provenance_tracks_source_and_lockfile(tmp_path: Path)
     lockfile.write_text("version = 2\n", encoding="utf-8")
     lock_changed = scientific_source_provenance(tmp_path)
     assert lock_changed["uv_lock_sha256"] != original["uv_lock_sha256"]
+
+
+def test_scientific_source_provenance_is_line_ending_independent(tmp_path: Path) -> None:
+    """CRLF and LF checkouts of identical content must produce identical digests.
+
+    Guards against the Windows-only regression where ``text=auto`` checks files
+    out as CRLF, so hashing raw bytes yielded a different fingerprint per
+    platform and broke the summary round-trip tests on Windows only.
+    """
+    package = tmp_path / "src" / "statespacecheck_paper"
+    package.mkdir(parents=True)
+    # Write raw bytes so the line endings are exactly as specified, mimicking a
+    # checkout rather than relying on the platform's text-mode translation.
+    (package / "analysis.py").write_bytes(b"VALUE = 1\nOTHER = 2\n")
+    (tmp_path / "uv.lock").write_bytes(b"version = 1\npackage = 'x'\n")
+    lf = scientific_source_provenance(tmp_path)
+
+    (package / "analysis.py").write_bytes(b"VALUE = 1\r\nOTHER = 2\r\n")
+    (tmp_path / "uv.lock").write_bytes(b"version = 1\r\npackage = 'x'\r\n")
+    crlf = scientific_source_provenance(tmp_path)
+
+    assert crlf["source_tree_sha256"] == lf["source_tree_sha256"]
+    assert crlf["uv_lock_sha256"] == lf["uv_lock_sha256"]

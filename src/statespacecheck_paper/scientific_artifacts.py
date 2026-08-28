@@ -29,13 +29,22 @@ _INCLUSIVE_FLAG_OPERATORS: dict[FlagDirection, str] = {
 }
 
 
-def _sha256_file(path: Path) -> str:
-    """Return the SHA-256 digest of one file without loading it all at once."""
-    digest = hashlib.sha256()
-    with open(path, "rb") as handle:
-        for chunk in iter(lambda: handle.read(1 << 20), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+def _normalized_text_bytes(path: Path) -> bytes:
+    """Read a text file's bytes with line endings normalized to LF.
+
+    The provenance digests must fingerprint *content*, not the line-ending
+    encoding the file happens to be checked out with. Git's ``text=auto``
+    yields CRLF on a Windows checkout (``core.autocrlf=true``) and LF
+    elsewhere, so hashing raw bytes would make the same source produce
+    different digests per platform. Normalizing CRLF (and lone CR) to LF
+    makes the digest stable across checkouts.
+    """
+    return path.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+
+
+def _sha256_normalized_text(path: Path) -> str:
+    """Return the SHA-256 digest of a text file with line endings normalized to LF."""
+    return hashlib.sha256(_normalized_text_bytes(path)).hexdigest()
 
 
 def scientific_source_provenance(repo_root: Path | None = None) -> ScientificSourceProvenance:
@@ -44,7 +53,9 @@ def scientific_source_provenance(repo_root: Path | None = None) -> ScientificSou
     The source digest covers every Python module under ``src/statespacecheck_paper``
     in relative-path order. It deliberately excludes generated artifacts, tests,
     timestamps, and absolute paths, so it is stable across clean checkouts while
-    changing whenever the package implementation changes.
+    changing whenever the package implementation changes. File line endings are
+    normalized to LF before hashing so the digest fingerprints content rather
+    than the CRLF/LF encoding a platform checks the file out with.
 
     Parameters
     ----------
@@ -73,7 +84,7 @@ def scientific_source_provenance(repo_root: Path | None = None) -> ScientificSou
         relative_path = source_path.relative_to(root).as_posix()
         source_digest.update(relative_path.encode("utf-8"))
         source_digest.update(b"\0")
-        source_digest.update(source_path.read_bytes())
+        source_digest.update(_normalized_text_bytes(source_path))
         source_digest.update(b"\0")
 
     lock_path = root / "uv.lock"
@@ -83,7 +94,7 @@ def scientific_source_provenance(repo_root: Path | None = None) -> ScientificSou
     return {
         "statespacecheck_paper_version": version("statespacecheck-paper"),
         "source_tree_sha256": source_digest.hexdigest(),
-        "uv_lock_sha256": _sha256_file(lock_path),
+        "uv_lock_sha256": _sha256_normalized_text(lock_path),
     }
 
 
