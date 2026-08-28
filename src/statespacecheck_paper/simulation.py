@@ -37,8 +37,6 @@ Generate position-tuned spikes:
 
 from __future__ import annotations
 
-import warnings
-
 import numpy as np
 from numpy.typing import NDArray
 from scipy.stats import norm
@@ -49,22 +47,29 @@ def softmax_with_shift(ll: NDArray[np.floating]) -> NDArray[np.floating]:
 
     Subtracts ``ll.max()`` before exponentiation so the largest entry
     is exactly 1 and the rest are bounded in (0, 1]. The result sums
-    to 1. Falls back to a uniform distribution if every entry is
-    ``-inf`` (degenerate observation that ``scipy.special.softmax``
-    would return as NaN for).
+    to 1. An observation whose log-likelihood is ``-inf`` everywhere is
+    undefined and raises instead of being replaced by a uniform distribution.
     """
+    if ll.size == 0:
+        raise ValueError("ll must contain at least one value")
+    if np.any(np.isnan(ll)) or np.any(np.isposinf(ll)):
+        raise ValueError("ll must not contain NaN or +inf values")
     lmax = float(np.max(ll))
-    if not np.isfinite(lmax):
-        return np.full(ll.size, 1.0 / ll.size)
+    if np.isneginf(lmax):
+        raise ValueError(
+            "Cannot normalize log-likelihood: every value is -inf, so the "
+            "observation has zero likelihood under every state."
+        )
     weighted = np.exp(ll - lmax)
-    normalized: NDArray[np.floating] = weighted / weighted.sum()
+    total = float(weighted.sum())
+    if not np.isfinite(total) or total <= 0.0:
+        raise ValueError("Cannot normalize log-likelihood: exponential weights have invalid sum")
+    normalized: NDArray[np.floating] = weighted / total
     return normalized
 
 
-def normalize(
-    p: NDArray[np.floating], axis: int | None = None, eps: float = 1e-12
-) -> NDArray[np.floating]:
-    """Normalize array to sum to 1 along specified axis with numerical safety.
+def normalize(p: NDArray[np.floating], axis: int | None = None) -> NDArray[np.floating]:
+    """Normalize a finite, nonnegative array along the specified axis.
 
     Parameters
     ----------
@@ -72,26 +77,16 @@ def normalize(
         Array to normalize.
     axis : int or None, optional
         Axis along which to normalize. If None, normalizes entire array.
-    eps : float, default 1e-12
-        Small epsilon to prevent division by zero.
-
     Returns
     -------
     normalized : np.ndarray
         Normalized array with same shape as input, where sum along axis equals 1.
 
-    Notes
-    -----
-    When the input sum falls below ``eps`` along one or more axes, the
-    function emits a ``RuntimeWarning`` and returns a near-zero non-
-    normalized result (``p / eps``). All-zero input usually signals an
-    upstream bug — a cell with zero rate everywhere on the analyzed
-    bins, or a likelihood that fully decoupled from the data — and
-    consumers downstream (``hpd_overlap``, ``kl_divergence``) will
-    silently treat the result as a probability distribution despite it
-    not summing to 1. The warning makes the situation visible so a
-    failing run leaves a paper trail in the test log instead of
-    plausible-looking-but-wrong scientific output.
+    Raises
+    ------
+    ValueError
+        If ``p`` is empty, contains a non-finite or negative value, or has
+        zero total mass along any normalized slice.
 
     Examples
     --------
@@ -111,17 +106,18 @@ def normalize(
     >>> np.allclose(result.sum(axis=0), [1.0, 1.0])
     True
     """
+    p = np.asarray(p)
+    if p.size == 0:
+        raise ValueError("p must contain at least one value")
+    if not np.all(np.isfinite(p)) or np.any(p < 0.0):
+        raise ValueError("p must contain only finite nonnegative values")
     s: NDArray[np.floating] = np.sum(p, axis=axis, keepdims=True)
-    if np.any(s < eps):
-        warnings.warn(
-            "normalize: input sum fell below eps along one or more axes; "
-            "result will be near-zero and is not a proper probability "
-            "distribution. Filter all-zero rows upstream if this is "
-            "expected, or investigate the source if not.",
-            RuntimeWarning,
-            stacklevel=2,
+    if np.any(s <= 0.0):
+        bad = np.flatnonzero(np.asarray(s).reshape(-1) <= 0.0)
+        raise ValueError(
+            "Cannot normalize zero total mass; invalid flattened slice indices: "
+            f"{bad[:10].tolist()}"
         )
-    s = np.maximum(s, eps)
     result: NDArray[np.floating] = p / s
     return result
 
@@ -204,40 +200,19 @@ def gaussian_transition_matrix(
     >>> np.allclose(matrix.sum(axis=0), 1.0)  # Columns sum to 1
     True
     """
+    position_bins = np.asarray(position_bins)
+    if position_bins.ndim != 1 or position_bins.size == 0:
+        raise ValueError("position_bins must be a non-empty 1-D array")
+    if not np.all(np.isfinite(position_bins)):
+        raise ValueError("position_bins must contain only finite values")
+    if not np.isfinite(step_std) or step_std <= 0.0:
+        raise ValueError(f"step_std must be positive and finite; got {step_std}")
     diff = position_bins[:, None] - position_bins[None, :]
     matrix = norm.pdf(diff, loc=0.0, scale=step_std)
-    # Normalize columns in-place to avoid copy
     col_sums = matrix.sum(axis=0, keepdims=True)
-    col_sums = np.maximum(col_sums, 1e-12)
+    if not np.all(np.isfinite(col_sums)) or np.any(col_sums <= 0.0):
+        raise ValueError("Gaussian transition kernel has a non-positive or non-finite column sum")
     result: NDArray[np.floating] = matrix / col_sums
-    return result
-
-
-def safe_log(x: NDArray[np.floating], eps: float = 1e-12) -> NDArray[np.floating]:
-    """Compute log(x) with numerical safety to avoid log(0).
-
-    Parameters
-    ----------
-    x : np.ndarray
-        Array of values.
-    eps : float, default 1e-12
-        Small epsilon added to prevent log(0).
-
-    Returns
-    -------
-    log_x : np.ndarray
-        Array of log values with same shape as input.
-
-    Examples
-    --------
-    Safe log handles zeros:
-
-    >>> x = np.array([0.0, 1.0, 2.0])
-    >>> result = safe_log(x)
-    >>> bool(np.isfinite(result).all())  # No -inf values
-    True
-    """
-    result: NDArray[np.floating] = np.log(np.maximum(x, eps))
     return result
 
 

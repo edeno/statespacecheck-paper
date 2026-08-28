@@ -11,7 +11,6 @@ from statespacecheck_paper.simulation import (
     normalize,
     place_field_rates,
     reflect_into_interval,
-    safe_log,
     simulate_spikes_history_dependent,
     simulate_spikes_position_tuned,
     simulate_walk,
@@ -35,12 +34,18 @@ class TestNormalize:
         result = normalize(p, axis=axis)
         assert_allclose(result.sum(axis=axis), [1.0, 1.0])
 
-    def test_normalize_zeros_uses_eps_to_avoid_nan_and_warns(self) -> None:
-        """Zero-sum input must produce finite output (uses eps internally) and
-        must emit a RuntimeWarning so the situation isn't silent."""
-        with pytest.warns(RuntimeWarning, match="normalize: input sum"):
-            result = normalize(np.zeros(5))
-        assert np.isfinite(result).all()
+    def test_normalize_zeros_raises(self) -> None:
+        """Zero mass has no normalized distribution and must fail explicitly."""
+        with pytest.raises(ValueError, match="zero total mass"):
+            normalize(np.zeros(5))
+
+    @pytest.mark.parametrize(
+        "bad", [np.array([1.0, -0.5, 2.0]), np.array([1.0, np.nan]), np.array([1.0, np.inf])]
+    )
+    def test_normalize_nonfinite_or_negative_raises(self, bad: np.ndarray) -> None:
+        """A probability array must be finite and nonnegative before normalizing."""
+        with pytest.raises(ValueError, match="finite nonnegative"):
+            normalize(bad)
 
 
 # ---------------------------------------------------------------------------
@@ -49,18 +54,21 @@ class TestNormalize:
 
 
 class TestSoftmaxWithShift:
-    """The all-``-inf`` fallback keeps stored/display likelihood rows finite
-    when the observation has zero probability over the entire grid."""
+    """Log-likelihood normalization must preserve supported states."""
 
-    def test_all_neg_inf_returns_uniform(self) -> None:
-        """Sole direct cover for the ``not np.isfinite(lmax)`` branch.
-        Reverting the branch makes ``softmax_with_shift`` return NaN
-        on all-``-inf`` input (``exp(-inf - -inf) = exp(nan)``)."""
+    def test_all_neg_inf_raises(self) -> None:
+        """An observation unsupported by every state is undefined."""
         ll = np.full(8, -np.inf)
-        result = softmax_with_shift(ll)
-        assert result.shape == (8,)
-        assert_allclose(result, np.full(8, 1.0 / 8))
-        assert_allclose(result.sum(), 1.0)
+        with pytest.raises(ValueError, match="every value is -inf"):
+            softmax_with_shift(ll)
+
+    @pytest.mark.parametrize("bad_value", [np.nan, np.inf])
+    def test_nan_or_posinf_input_raises(self, bad_value: float) -> None:
+        """NaN or +inf log-likelihood entries are not valid observations."""
+        ll = np.zeros(8)
+        ll[2] = bad_value
+        with pytest.raises(ValueError, match="NaN or"):
+            softmax_with_shift(ll)
 
     def test_single_finite_entry_concentrates_mass(self) -> None:
         """Contract test for the normal (shift-applied) path on input
@@ -137,24 +145,24 @@ class TestGaussianTransitionMatrix:
         assert matrix.shape == (1, 1)
         assert matrix[0, 0] == pytest.approx(1.0)
 
+    @pytest.mark.parametrize("bad_std", [0.0, -1.0, np.inf, np.nan])
+    def test_nonpositive_or_nonfinite_step_std_raises(self, bad_std: float) -> None:
+        """A Gaussian kernel needs a positive, finite spread."""
+        with pytest.raises(ValueError, match="step_std must be positive and finite"):
+            gaussian_transition_matrix(np.array([0.0, 1.0, 2.0]), step_std=bad_std)
 
-# ---------------------------------------------------------------------------
-# safe_log
-# ---------------------------------------------------------------------------
+    def test_empty_position_bins_raises(self) -> None:
+        with pytest.raises(ValueError, match="non-empty 1-D array"):
+            gaussian_transition_matrix(np.array([]), step_std=1.0)
 
+    def test_non_1d_position_bins_raises(self) -> None:
+        with pytest.raises(ValueError, match="non-empty 1-D array"):
+            gaussian_transition_matrix(np.zeros((2, 2)), step_std=1.0)
 
-class TestSafeLog:
-    def test_matches_log_for_positive_values(self) -> None:
-        x = np.array([1.0, 2.0, np.e])
-        assert_allclose(safe_log(x), np.log(x))
-
-    def test_zero_yields_finite_log_eps(self) -> None:
-        result = safe_log(np.array([0.0, 1.0, 2.0]))
-        assert np.isfinite(result).all()
-
-    @pytest.mark.parametrize("eps", [1e-6, 1e-12])
-    def test_zero_uses_eps(self, eps: float) -> None:
-        assert_allclose(safe_log(np.array([0.0]), eps=eps), np.log(eps))
+    @pytest.mark.parametrize("bad_bins", [np.array([0.0, np.nan]), np.array([0.0, np.inf])])
+    def test_nonfinite_position_bins_raises(self, bad_bins: np.ndarray) -> None:
+        with pytest.raises(ValueError, match="position_bins must contain only finite"):
+            gaussian_transition_matrix(bad_bins, step_std=1.0)
 
 
 # ---------------------------------------------------------------------------

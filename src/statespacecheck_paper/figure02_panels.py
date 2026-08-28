@@ -22,7 +22,7 @@ from numpy.typing import NDArray
 from scipy.stats import norm
 
 from statespacecheck_paper.plotting import compute_hpd_region
-from statespacecheck_paper.simulation import normalize, safe_log
+from statespacecheck_paper.simulation import normalize
 from statespacecheck_paper.style import COLORS
 
 # =============================================================================
@@ -265,7 +265,7 @@ def plot_kl_log_ratio(ax: Axes, data: Figure2ExampleData) -> None:
     pred = data.predictive
     like = data.likelihood
 
-    log_ratio = safe_log(pred) - safe_log(like)
+    log_ratio = np.log(pred) - np.log(like)
 
     ax.plot(x, log_ratio, color="gray", linewidth=1.5)
     ax.axhline(0, color=COLORS["reference"], linestyle="--", linewidth=0.8, alpha=0.7)
@@ -310,7 +310,7 @@ def plot_kl_pointwise(ax: Axes, data: Figure2ExampleData) -> None:
     pred = data.predictive
     like = data.likelihood
 
-    log_ratio = safe_log(pred) - safe_log(like)
+    log_ratio = np.log(pred) - np.log(like)
     pointwise_kl = pred * log_ratio
 
     ax.plot(x, pointwise_kl, color=COLORS["kl_divergence"], linewidth=1.5)

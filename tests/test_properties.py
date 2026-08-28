@@ -7,6 +7,7 @@ For extreme edge cases, see the comprehensive unit tests.
 from __future__ import annotations
 
 import numpy as np
+import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 from hypothesis.extra.numpy import arrays
@@ -48,6 +49,10 @@ class TestNormalizeProperties:
     )
     def test_normalize_produces_nonnegative_values(self, arr: np.ndarray) -> None:
         """Property: normalized array has all non-negative values."""
+        if arr.sum() == 0.0:
+            with pytest.raises(ValueError, match="zero total mass"):
+                normalize(arr)
+            return
         result = normalize(arr)
 
         # All values should be >= 0
