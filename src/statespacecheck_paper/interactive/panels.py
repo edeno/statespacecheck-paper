@@ -373,6 +373,31 @@ class LikelihoodPanel(_BaseHeatmapPanel):
         self.update_window(time_start, time_end, lik)
 
 
+def _dispatch_scatter_click(
+    on_click: Callable[[int], None] | None,
+    window_event_indices: NDArray[np.int64],
+    points: Any,
+) -> None:
+    """Route a ``ScatterPlotItem.sigClicked`` signal to the global event index.
+
+    ``sigClicked`` emits ``points`` as either a Python list of ``SpotItem`` or
+    (on some pyqtgraph builds) a numpy object-dtype array; ``not points`` raises
+    on the array form, so use ``len`` for both. The clicked spot carries its
+    window-local index in ``spot.data()``, which maps back through
+    ``window_event_indices`` to the global event index.
+    """
+    if on_click is None or len(points) == 0:
+        return
+    spot = points[0]
+    try:
+        local_idx = int(spot.data())
+    except (TypeError, ValueError):
+        return
+    if not 0 <= local_idx < window_event_indices.shape[0]:
+        return
+    on_click(int(window_event_indices[local_idx]))
+
+
 class RasterPanel(pg.PlotWidget):
     """Spike raster sorted by place-field peak position."""
 
@@ -496,20 +521,7 @@ class RasterPanel(pg.PlotWidget):
         self._pin_dot.setVisible(True)
 
     def _handle_click(self, _scatter: pg.ScatterPlotItem, points: Any) -> None:
-        # ``ScatterPlotItem.sigClicked`` emits ``points`` as either a
-        # Python list of ``SpotItem`` or (on some pyqtgraph builds) a
-        # numpy object-dtype array. ``not points`` raises on the array
-        # form; use ``len`` for both.
-        if self._on_click is None or len(points) == 0:
-            return
-        spot = points[0]
-        try:
-            local_idx = int(spot.data())
-        except (TypeError, ValueError):
-            return
-        if not 0 <= local_idx < self._window_event_indices.shape[0]:
-            return
-        self._on_click(int(self._window_event_indices[local_idx]))
+        _dispatch_scatter_click(self._on_click, self._window_event_indices, points)
 
 
 class MetricPanel(pg.PlotWidget):
@@ -571,17 +583,16 @@ class MetricPanel(pg.PlotWidget):
         )
         self.addItem(self._center_line)
 
-        pin_rgb = (rgb[0], rgb[1], rgb[2])
         self._pin_line = pg.InfiniteLine(
             angle=90,
-            pen=pg.mkPen(pin_rgb, width=2),
+            pen=pg.mkPen(rgb, width=2),
             movable=False,
         )
         self._pin_line.setVisible(False)
         self.addItem(self._pin_line)
         self._pin_dot = pg.ScatterPlotItem(
             pen=pg.mkPen("k", width=1),
-            brush=pg.mkBrush(*pin_rgb, 255),
+            brush=pg.mkBrush(*rgb, 255),
             size=10,
             pxMode=True,
         )
@@ -646,20 +657,7 @@ class MetricPanel(pg.PlotWidget):
         return np.asarray(raw, dtype=np.float32)
 
     def _handle_click(self, _scatter: pg.ScatterPlotItem, points: Any) -> None:
-        # ``ScatterPlotItem.sigClicked`` emits ``points`` as either a
-        # Python list of ``SpotItem`` or (on some pyqtgraph builds) a
-        # numpy object-dtype array. ``not points`` raises on the array
-        # form; use ``len`` for both.
-        if self._on_click is None or len(points) == 0:
-            return
-        spot = points[0]
-        try:
-            local_idx = int(spot.data())
-        except (TypeError, ValueError):
-            return
-        if not 0 <= local_idx < self._window_event_indices.shape[0]:
-            return
-        self._on_click(int(self._window_event_indices[local_idx]))
+        _dispatch_scatter_click(self._on_click, self._window_event_indices, points)
 
 
 # ---------------------------------------------------------------------------
@@ -1021,11 +1019,10 @@ class SlicePanel(QtWidgets.QWidget):
             post_row, lik_row, acausal_row = self._row_provider(t_idx)
         else:
             return
+        post_row_collapsed = self._collapse_row(post_row)
         if self._n_states > 1:
-            post_row_collapsed = post_row.reshape(self._n_states, self._n_pos).sum(axis=0)
             lik_rs = lik_row.reshape(self._n_states, self._n_pos)
         else:
-            post_row_collapsed = post_row
             lik_rs = lik_row[None, :]
 
         # Predictive (always used for per-cell row overlays).
@@ -1040,7 +1037,6 @@ class SlicePanel(QtWidgets.QWidget):
             post_row=post_row,
             lik_row=lik_row,
             acausal_row=acausal_row,
-            post_row_collapsed=post_row_collapsed,
         )
         self._lik_overlay_curve.setData(self._position_bins_uniform, self._top_overlay_norm)
 
@@ -1062,13 +1058,18 @@ class SlicePanel(QtWidgets.QWidget):
             row.predictive_curve.setData(self._position_bins_uniform, self._predictive_norm)
             row.true_position_line.setPos(true_x)
 
+    def _collapse_row(self, row: NDArray[np.float32]) -> NDArray[np.float32]:
+        """Sum a single ``(n_states * n_pos,)`` row over states to ``(n_pos,)``."""
+        if self._n_states > 1:
+            return np.asarray(row.reshape(self._n_states, self._n_pos).sum(axis=0))
+        return row
+
     def _compute_top_overlay(
         self,
         *,
         post_row: NDArray[np.float32],
         lik_row: NDArray[np.float32],
         acausal_row: NDArray[np.float32] | None,
-        post_row_collapsed: NDArray[np.float32],
     ) -> NDArray[np.float32]:
         """Build the peak-normalized overlay for the top plot."""
         choice = self._overlay_choice
@@ -1081,10 +1082,7 @@ class SlicePanel(QtWidgets.QWidget):
             total = float(filtered_full.sum())
             if total > 0:
                 filtered_full = filtered_full / total
-            if self._n_states > 1:
-                collapsed = filtered_full.reshape(self._n_states, self._n_pos).sum(axis=0)
-            else:
-                collapsed = filtered_full
+            collapsed = self._collapse_row(filtered_full)
         else:
             # ``acausal_row`` is a probability over state_bins from the
             # decoder's smoother; just collapse states for the visual.
@@ -1092,10 +1090,7 @@ class SlicePanel(QtWidgets.QWidget):
                 raise ValueError(
                     "Smoothed overlay was selected but acausal_posterior is unavailable"
                 )
-            if self._n_states > 1:
-                collapsed = acausal_row.reshape(self._n_states, self._n_pos).sum(axis=0)
-            else:
-                collapsed = acausal_row
+            collapsed = self._collapse_row(acausal_row)
         peak = float(collapsed.max())
         if peak > 0:
             return np.asarray(collapsed / peak, dtype=np.float32)

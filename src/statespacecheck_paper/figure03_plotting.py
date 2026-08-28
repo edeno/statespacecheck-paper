@@ -259,7 +259,7 @@ def _plot_likelihood_overlay(
     spike_time_ind: NDArray[np.intp],
     true_position: NDArray[np.floating] | None = None,
     cmap_overlay: str = CMAP_LIKELIHOOD,
-) -> AxesImage:
+) -> None:
     """Plot per-spike likelihood distributions at spike times.
 
     Aggregates per-spike likelihoods into per-timestep distributions and renders
@@ -279,11 +279,6 @@ def _plot_likelihood_overlay(
         True position to overlay.
     cmap_overlay : str, default CMAP_LIKELIHOOD
         Colormap for the likelihood columns.
-
-    Returns
-    -------
-    im : AxesImage
-        A placeholder image object.
     """
     n_time, n_bins = predictive.shape
 
@@ -313,16 +308,6 @@ def _plot_likelihood_overlay(
 
     ax.set_xlim(0, n_time - 1)
     ax.set_ylim(0, n_bins - 1)
-
-    # Return a dummy AxesImage for API compatibility
-    im = ax.imshow(
-        np.zeros((1, 1)),
-        aspect="auto",
-        origin="lower",
-        extent=(0, n_time - 1, 0, n_bins - 1),
-        alpha=0.0,
-    )
-    return im
 
 
 def _plot_spike_count_raster(

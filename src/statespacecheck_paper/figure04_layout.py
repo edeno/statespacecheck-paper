@@ -17,6 +17,7 @@ from typing import Any, Literal, cast
 
 import matplotlib.pyplot as plt
 import numpy as np
+import xarray as xr
 from matplotlib.figure import Figure
 from matplotlib.transforms import Bbox
 from numpy.typing import NDArray
@@ -404,34 +405,28 @@ def compose_figure04(
     fig = plt.figure(figsize=(7.2, 6.1), dpi=450, constrained_layout=True)
     subfigs_rows = fig.subfigures(2, 1, height_ratios=[5.0, 2.6], hspace=0.02)
 
-    continuous_panel_data = ModelDiagnosticPanelData(
-        time=time_relative,
-        position=render_data.linear_position,
-        results=continuous_results,
-        diagnostics=continuous_diagnostics_relative,
-        spike_times=spike_times_relative,
-        spike_counts=render_data.decode_results.spike_counts,
-        place_field_peaks=render_data.decode_results.place_field_peaks,
-        place_fields=render_data.decode_results.diagnostic_place_fields,
-        position_bins=render_data.decode_results.diagnostic_position_bins,
-        track_graph=render_data.recording.track_graph,
-        edge_order=render_data.recording.linear_edge_order,
-        edge_spacing=render_data.recording.linear_edge_spacing,
-    )
-    continuous_fragmented_panel_data = ModelDiagnosticPanelData(
-        time=time_relative,
-        position=render_data.linear_position,
-        results=contfrag_results,
-        diagnostics=contfrag_diagnostics_relative,
-        spike_times=spike_times_relative,
-        spike_counts=render_data.decode_results.spike_counts,
-        place_field_peaks=render_data.decode_results.place_field_peaks,
-        place_fields=render_data.decode_results.diagnostic_place_fields,
-        position_bins=render_data.decode_results.diagnostic_position_bins,
-        track_graph=render_data.recording.track_graph,
-        edge_order=render_data.recording.linear_edge_order,
-        edge_spacing=render_data.recording.linear_edge_spacing,
-    )
+    def _panel_data(
+        results: xr.Dataset, diagnostics: SpikeEventDiagnostics
+    ) -> ModelDiagnosticPanelData:
+        # The two decode models share every field except their own results and
+        # diagnostics.
+        return ModelDiagnosticPanelData(
+            time=time_relative,
+            position=render_data.linear_position,
+            results=results,
+            diagnostics=diagnostics,
+            spike_times=spike_times_relative,
+            spike_counts=render_data.decode_results.spike_counts,
+            place_field_peaks=render_data.decode_results.place_field_peaks,
+            place_fields=render_data.decode_results.diagnostic_place_fields,
+            position_bins=render_data.decode_results.diagnostic_position_bins,
+            track_graph=render_data.recording.track_graph,
+            edge_order=render_data.recording.linear_edge_order,
+            edge_spacing=render_data.recording.linear_edge_spacing,
+        )
+
+    continuous_panel_data = _panel_data(continuous_results, continuous_diagnostics_relative)
+    continuous_fragmented_panel_data = _panel_data(contfrag_results, contfrag_diagnostics_relative)
 
     # Top row: (a) Continuous and (b) ContFrag detail zooms, side by side,
     # with a small unlettered track inset on the right for spatial context.

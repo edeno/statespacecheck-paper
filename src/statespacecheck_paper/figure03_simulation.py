@@ -34,6 +34,7 @@ from statespacecheck_paper.figure03_protocol import (
 )
 from statespacecheck_paper.simulation import (
     gaussian_transition_matrix,
+    peak_rate_to_place_field_scale,
     place_field_rates,
     reflect_into_interval,
     simulate_spikes_history_dependent,
@@ -469,8 +470,8 @@ def build_sparse_population(
             config.sparse_cell_count,
         )
     sparse_centers = config.sparse_position + center_offsets
-    sparse_cell_scale = (
-        config.sparse_cell_peak_rate_per_step * np.sqrt(2.0 * np.pi) * config.sparse_place_field_std
+    sparse_cell_scale = peak_rate_to_place_field_scale(
+        config.sparse_cell_peak_rate_per_step, config.sparse_place_field_std
     )
     sparse_rng = np.random.default_rng(np.random.SeedSequence([random_seed, 12]))
     # Draw the baseline window first (matching the original stream order),
@@ -520,8 +521,8 @@ def build_figure03_rate_tables(
     normal_rates = place_field_rates(
         position_bins, place_field_centers, config.place_field_std, config.place_field_rate_scale
     )
-    sparse_cell_scale = (
-        config.sparse_cell_peak_rate_per_step * np.sqrt(2.0 * np.pi) * config.sparse_place_field_std
+    sparse_cell_scale = peak_rate_to_place_field_scale(
+        config.sparse_cell_peak_rate_per_step, config.sparse_place_field_std
     )
     sparse_cell_rates = place_field_rates(
         position_bins,

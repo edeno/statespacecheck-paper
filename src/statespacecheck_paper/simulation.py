@@ -276,6 +276,29 @@ def place_field_rates(
     return result
 
 
+def peak_rate_to_place_field_scale(peak_rate_per_step: float, place_field_std: float) -> float:
+    """Convert a desired peak firing rate to the ``place_field_rate_scale`` argument.
+
+    ``place_field_rates`` multiplies a normalized Gaussian density (peaking at
+    ``1 / (place_field_std * sqrt(2 * pi))`` at the field center) by
+    ``place_field_rate_scale``. This is its inverse: the scale that makes the
+    field peak at ``peak_rate_per_step``.
+
+    Parameters
+    ----------
+    peak_rate_per_step : float
+        Target firing rate at the place-field center (spikes per time step).
+    place_field_std : float
+        Standard deviation of the Gaussian place field.
+
+    Returns
+    -------
+    place_field_rate_scale : float
+        Scale factor to pass to ``place_field_rates`` for the given peak rate.
+    """
+    return float(peak_rate_per_step * np.sqrt(2.0 * np.pi) * place_field_std)
+
+
 def simulate_walk(
     n_time_steps: int,
     step_std: float,
