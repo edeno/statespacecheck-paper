@@ -7,6 +7,7 @@ abstract: >-
   HPD overlap, predictive checks) for Bayesian state space decoders
   used in systems neuroscience.
 type: software
+version: "0.1.0"
 license: MIT
 repository-code: "https://github.com/edeno/statespacecheck-paper"
 authors:

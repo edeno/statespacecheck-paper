@@ -123,8 +123,9 @@ Trace: `create_shared_example(rng)` returns one immutable
   the scientific orchestrator
   `figure03_generation.generate_figure03(config, *, n_realizations)`.
 - **Configuration:** `Figure3Config` (frozen; in `figure03_protocol.py`).
-  the generation recipe uses the canonical `Figure3Config(drift_momentum=0.88)` and
-  `N_REALIZATIONS = 100`; both values are load-bearing for the published PNG.
+  the generation recipe uses the default `Figure3Config()` (whose canonical
+  `drift_momentum` is `0.88`) and `N_REALIZATIONS = 100`; both values are
+  load-bearing for the published PNG.
 - **Computation (reading order):**
   `figure03_protocol` (config + phase ladder) →
   `figure03_simulation.run_figure03_simulation` (drives the 8-phase trajectory,

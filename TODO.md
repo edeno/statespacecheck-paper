@@ -5,19 +5,24 @@ Open follow-ups for **"Local goodness-of-fit measures for neural decoding"**
 
 ## Red placeholders in main.tex
 
-- [ ] **Funding** — fill `\textcolor{red}{[TODO: funding sources / grant numbers]}` in Acknowledgments.
-- [x] **MountainSort4 citation** — add Chung et al. 2017, *Neuron* 95(6):1381–1394 to `references.bib`; replace the red `[cite: …]` in §4.1 with `\citep{...}`.
+- [ ] **Archival DOI** — fill `\textcolor{red}{[TODO: Add the archival DOI (e.g., Zenodo) ...]}` in Data/Code Availability (`main.tex:351`).
+- [ ] **Funding** — fill the remaining `\textcolor{red}{[TODO: add funding for U.T. Eden and any support for S. Zeng and E.L. Denovellis]}` in Acknowledgments (`main.tex:357`). NIH/SCGB/HHMI (L.M.F.) and NSF/NIH/UCSF (A.E.C.) are already filled in.
+- [x] **MountainSort4 citation** — add Chung et al. 2017, *Neuron* 95(6):1381–1394 to the bibliography; replace the red `[cite: …]` in §4.1 with `\citep{...}`.
 
 ## Citations
 
-- [x] **Intro examples (line ~92) — verify/swap.** `Ref2015a` ("emotional movement") is a clusterless position-decoding paper, likely meant to be `Ref2024a`; `Ref2022b` ("locally anchored map") and `Ref2018`+`Ref2025a` ("affective trajectories and LFP") also read off. (All from draft-import commit `789e26f`.)
-- [ ] **`Ref2007` metadata wrong** — fix to *Statistical Science* 22(3):322–343, 2007 (DOI 10.1214/07-STS235).
-- [ ] **Divergence-naming cites** — `Ref2023b` (TV) and `Ref2018d` (Pearson χ²) are weak authorities; consider Cover & Thomas (`Ref1999a`, already in bib).
+> The bibliography (`manuscript/Local-GoF-Paper.bib`) was re-exported with
+> descriptive Better BibTeX keys; the old `RefYYYY[a-z]` keys below no longer
+> exist. Open items are re-anchored to the current keys.
+
+- [x] **Intro examples (line ~92) — verify/swap.** Draft-import placeholders (former `Ref2015a`/`Ref2022b`/`Ref2018`/`Ref2025a`, commit `789e26f`) reconciled during the re-export.
+- [x] **Bayarri & Castellanos 2007 metadata** — `bayarriBayesianCheckingSecond2007` now carries *Statist. Sci.* 22(3), 2007; verified against the re-exported entry.
+- [ ] **Divergence-naming cites** — reassess whether `bhattacharyyaTotalVariationDistance2024` (TV) and `crackNoteKarlPearsons2018` (Pearson χ²) are strong enough authorities. Note: Cover & Thomas is **not** currently in the bib (only `kullbackInformationSufficiency1951` and `Hastieelementsstatisticallearning2009`); add it if that's the intended reference.
 
 ## Bibliography cleanup
 
-- [x] Fix `Ref2014c` entry type (`@article` with series-as-journal → `@book`/`@incollection`).
-- [x] Prune uncited entries and near-duplicate keys (`Ref2014c_archer`, `Ref2024a`/`Ref2024a_chu`).
+- [x] Fix the series-as-journal entry type (`@article` → `@book`/`@incollection`).
+- [x] Prune uncited entries and near-duplicate keys during the re-export.
 
 
 ## Cover Letter
