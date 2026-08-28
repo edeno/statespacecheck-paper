@@ -12,6 +12,7 @@ import os
 import time
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from ._synthetic_cache import build_synthetic_cache
@@ -37,6 +38,39 @@ pytestmark = pytest.mark.skipif(
 
 def _build_synthetic_cache(cache_dir: Path) -> None:
     build_synthetic_cache(cache_dir, n_spikes_per_cell=20)
+
+
+def test_structural_padding_helper_fills_only_non_interior_bins() -> None:
+    from statespacecheck_paper.interactive.viewer import _replace_structural_padding
+
+    values = np.array([[np.nan, 0.2, 0.8, np.nan]], dtype=np.float32)
+    mask = np.array([False, True, True, False])
+    result = _replace_structural_padding(values, mask, fill_value=0.0, name="predictive_posterior")
+    np.testing.assert_array_equal(result, np.array([[0.0, 0.2, 0.8, 0.0]], dtype=np.float32))
+
+
+@pytest.mark.parametrize(
+    "values,match",
+    [
+        (np.array([[np.nan, np.nan, 0.8, np.nan]], dtype=np.float32), "inside"),
+        (np.array([[0.0, 0.2, 0.8, np.nan]], dtype=np.float32), "outside"),
+    ],
+)
+def test_structural_padding_helper_rejects_unexpected_values(
+    values: np.ndarray, match: str
+) -> None:
+    from statespacecheck_paper.interactive.viewer import _replace_structural_padding
+
+    mask = np.array([False, True, True, False])
+    with pytest.raises(ValueError, match=match):
+        _replace_structural_padding(values, mask, fill_value=0.0, name="predictive_posterior")
+
+
+def test_relative_likelihood_rejects_all_impossible_row() -> None:
+    from statespacecheck_paper.interactive.viewer import _relative_likelihood_from_log
+
+    with pytest.raises(ValueError, match="no supported state"):
+        _relative_likelihood_from_log(np.full((1, 4), -np.inf, dtype=np.float32))
 
 
 @pytest.fixture(scope="module", autouse=True)

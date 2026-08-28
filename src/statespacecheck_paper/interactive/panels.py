@@ -31,6 +31,7 @@ import pyqtgraph as pg
 from numpy.typing import NDArray
 from PySide6 import QtCore, QtWidgets
 
+from statespacecheck_paper.plotting import negative_log_pvalue
 from statespacecheck_paper.style import COLORS, WONG, hex_to_rgb
 
 # Top-plot overlay choices: which derived distribution the slice
@@ -391,7 +392,9 @@ class RasterPanel(pg.PlotWidget):
         self.getPlotItem().setTitle("Raster")
 
         self._n_cells = int(n_cells)
-        order = np.argsort(np.nan_to_num(place_field_peaks, nan=np.inf))
+        if not np.all(np.isfinite(place_field_peaks)):
+            raise ValueError("place_field_peaks must be finite to define the raster order")
+        order = np.argsort(place_field_peaks)
         rank = np.empty_like(order)
         rank[order] = np.arange(order.size)
         self._cell_rank = rank
@@ -537,7 +540,9 @@ class MetricPanel(pg.PlotWidget):
         # 0.05 ⇒ -log(0.05) ≈ 3.0 on this axis).
         self._threshold_line: pg.InfiniteLine | None = None
         if threshold is not None:
-            disp = -np.log(threshold) if metric == "event_predictive_pvalue" else threshold
+            disp = (
+                negative_log_pvalue(threshold) if metric == "event_predictive_pvalue" else threshold
+            )
             self._threshold_line = pg.InfiniteLine(
                 pos=float(disp),
                 angle=0,
@@ -627,14 +632,17 @@ class MetricPanel(pg.PlotWidget):
             return
         self._pin_line.setPos(relative_time)
         self._pin_line.setVisible(True)
-        disp = -np.log(metric_value) if self._metric == "event_predictive_pvalue" else metric_value
+        disp = (
+            negative_log_pvalue(metric_value)
+            if self._metric == "event_predictive_pvalue"
+            else metric_value
+        )
         self._pin_dot.setData(x=[relative_time], y=[float(disp)])
         self._pin_dot.setVisible(True)
 
     def _display_values(self, raw: NDArray[np.float32]) -> NDArray[np.float32]:
         if self._metric == "event_predictive_pvalue":
-            safe = np.maximum(raw, 1e-12, dtype=np.float32)
-            return np.asarray(-np.log(safe), dtype=np.float32)
+            return np.asarray(negative_log_pvalue(raw), dtype=np.float32)
         return np.asarray(raw, dtype=np.float32)
 
     def _handle_click(self, _scatter: pg.ScatterPlotItem, points: Any) -> None:
@@ -907,9 +915,8 @@ class SlicePanel(QtWidgets.QWidget):
         self._buffer_lik: NDArray[np.float32] | None = None
         self._buffer_acausal: NDArray[np.float32] | None = None
         # Row provider returns ``(post, lik, acausal)`` for a single
-        # ``t_idx``. ``acausal`` may be ``None`` for caches that don't
-        # have the smoothed posterior; the panel falls back to
-        # predictive in that case.
+        # ``t_idx``. ``acausal`` may be ``None`` only for caches where the
+        # smoothed overlay choice is disabled.
         self._row_provider: (
             Callable[
                 [int],
@@ -1065,7 +1072,7 @@ class SlicePanel(QtWidgets.QWidget):
     ) -> NDArray[np.float32]:
         """Build the peak-normalized overlay for the top plot."""
         choice = self._overlay_choice
-        if choice == "predictive" or (choice == "smoothed" and acausal_row is None):
+        if choice == "predictive":
             return np.asarray(self._predictive_norm, dtype=np.float32)
         if choice == "filtered":
             # Bayesian filtered: ``predictive × likelihood``, normalized
@@ -1081,7 +1088,10 @@ class SlicePanel(QtWidgets.QWidget):
         else:
             # ``acausal_row`` is a probability over state_bins from the
             # decoder's smoother; just collapse states for the visual.
-            assert acausal_row is not None
+            if acausal_row is None:
+                raise ValueError(
+                    "Smoothed overlay was selected but acausal_posterior is unavailable"
+                )
             if self._n_states > 1:
                 collapsed = acausal_row.reshape(self._n_states, self._n_pos).sum(axis=0)
             else:

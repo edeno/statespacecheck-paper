@@ -296,3 +296,17 @@ def test_simulated_viewer_uses_event_likelihood_in_remap(tmp_path: Path) -> None
     finally:
         viewer.close()
         ds.close()
+
+
+def test_simulation_cache_missing_event_likelihood_raises(tmp_path: Path) -> None:
+    """Static place fields cannot replace phase-specific simulation likelihoods."""
+    from statespacecheck_paper.interactive.data_source import DecoderDataSource
+
+    _build_simulated(tmp_path)
+    ds = DecoderDataSource.for_simulation(tmp_path)
+    try:
+        ds.event_likelihood = None
+        with pytest.raises(ValueError, match="missing event_likelihood"):
+            ds.event_likelihood_at(0, int(ds.event_cell_ids[0]))
+    finally:
+        ds.close()

@@ -75,11 +75,10 @@ def test_public_arrays_are_write_protected(synthetic_cache: Path) -> None:
         src.close()
 
 
-def test_static_cache_event_likelihood_falls_back_to_normalized_place_field(
+def test_static_model_event_likelihood_is_computed_from_normalized_place_field(
     synthetic_cache: Path,
 ) -> None:
-    """Legacy/real caches without event rows fall back to the same normalized
-    single-spike likelihood the diagnostics use, not the raw place field."""
+    """Static real models use the same one-spike likelihood as diagnostics."""
     from statespacecheck_paper.diagnostics import compute_normalized_spike_likelihood
 
     src = DecoderDataSource(synthetic_cache, model="continuous")

@@ -398,11 +398,8 @@ def test_filtered_overlay_matches_predictive_times_likelihood(tmp_path: Path) ->
         ds.close()
 
 
-def test_smoothed_overlay_reload_populates_buffer_acausal(tmp_path: Path) -> None:
-    """The worker only loads ``acausal_posterior`` when the slice panel's
-    overlay is ``smoothed``. Switching from predictive to smoothed must
-    trigger a fresh window load that populates the buffer.
-    """
+def test_smoothed_overlay_is_loaded_in_the_committed_buffer(tmp_path: Path) -> None:
+    """Switching labels must not wait on or substitute data from another read."""
     _build_cache(tmp_path / "cache", n_states=1)
     app, viewer, ds = _make_viewer(tmp_path / "cache")
     try:
@@ -411,20 +408,22 @@ def test_smoothed_overlay_reload_populates_buffer_acausal(tmp_path: Path) -> Non
         assert _wait_for_request(app, viewer, target)
 
         sp = viewer.slice_panel
-        # Default overlay is predictive ⇒ buffer should not have acausal.
+        # The acausal row is committed alongside predictive even though the
+        # default visible overlay is predictive.
         assert sp.overlay_choice == "predictive"
-        assert sp._buffer_acausal is None  # noqa: SLF001
+        assert sp._buffer_acausal is not None  # noqa: SLF001
 
         smoothed_idx = next(
             i
             for i in range(viewer._overlay_combo.count())  # noqa: SLF001
             if viewer._overlay_combo.itemData(i) == "smoothed"  # noqa: SLF001
         )
-        target = viewer._next_request_id  # noqa: SLF001
+        request_id_before_switch = viewer._next_request_id  # noqa: SLF001
         viewer._overlay_combo.setCurrentIndex(smoothed_idx)  # noqa: SLF001
-        assert _wait_for_request(app, viewer, target + 1)
+        app.processEvents()
 
         assert sp.overlay_choice == "smoothed"
+        assert viewer._next_request_id == request_id_before_switch  # noqa: SLF001
         assert sp._buffer_acausal is not None  # noqa: SLF001
         assert sp._buffer_acausal.shape == sp._buffer_post.shape  # noqa: SLF001
     finally:

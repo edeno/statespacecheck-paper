@@ -316,14 +316,21 @@ class DecoderDataSource:
             per_state, self.n_position_full
         )[0].copy()
         self.n_states: int = max(1, self.n_state_bins // max(self.n_position_full, 1))
+        self.state_interior_mask: NDArray[np.bool_] = _readonly(
+            np.tile(self.interior_mask, self.n_states)
+        )
+        if self.state_interior_mask.shape != (self.n_state_bins,):
+            raise ValueError(
+                "Expanded interior mask does not match the decoder state axis: "
+                f"{self.state_interior_mask.shape} vs ({self.n_state_bins},)"
+            )
 
         # Direct zarr arrays for the hot path.
         self._post_arr: zarr.Array = self._zarr_group[self.POSTERIOR_VAR]
         self._loglik_arr: zarr.Array = self._zarr_group[self.LIKELIHOOD_VAR]
-        # ``acausal_posterior`` (smoothed distribution) is only present
-        # in caches built after the smoothed-overlay feature landed.
-        # Older caches do not have it and the slice panel falls back
-        # to the predictive overlay only.
+        # ``acausal_posterior`` (smoothed distribution) is optional. The viewer
+        # disables the smoothed choice when it is absent; it never substitutes
+        # a predictive distribution under the smoothed label.
         self._acausal_arr: zarr.Array | None = (
             self._zarr_group[self.ACAUSAL_VAR] if self.ACAUSAL_VAR in self._zarr_group else None
         )
@@ -338,6 +345,14 @@ class DecoderDataSource:
         if self.place_fields.shape[0] != n_cells:
             raise ValueError(
                 f"place_fields cell count {self.place_fields.shape[0]} != n_cells={n_cells}"
+            )
+        if not np.all(np.isfinite(self.place_fields)) or np.any(self.place_fields < 0.0):
+            raise ValueError("place_fields must contain only finite nonnegative rates")
+        if np.any(np.all(self.place_fields == 0.0, axis=1)):
+            bad = np.flatnonzero(np.all(self.place_fields == 0.0, axis=1))
+            raise ValueError(
+                "place_fields contains cells with zero rate at every modeled position: "
+                f"{bad[:10].tolist()}"
             )
         if len(self.spike_times) != n_cells:
             raise ValueError(f"spike_times length {len(self.spike_times)} != n_cells={n_cells}")
@@ -372,14 +387,17 @@ class DecoderDataSource:
         if self.position_bins.size and self.place_field_peaks.size:
             pos_min = float(self.position_bins.min())
             pos_max = float(self.position_bins.max())
-            finite_peaks = self.place_field_peaks[np.isfinite(self.place_field_peaks)]
-            if finite_peaks.size and (
-                float(finite_peaks.min()) < pos_min or float(finite_peaks.max()) > pos_max
+            if not np.all(np.isfinite(self.place_field_peaks)):
+                raise ValueError("place_field_peaks must contain only finite values")
+            if (
+                float(self.place_field_peaks.min()) < pos_min
+                or float(self.place_field_peaks.max()) > pos_max
             ):
                 raise ValueError(
                     f"place_field_peaks fall outside position_bins range "
                     f"[{pos_min}, {pos_max}]; got "
-                    f"[{float(finite_peaks.min())}, {float(finite_peaks.max())}]"
+                    f"[{float(self.place_field_peaks.min())}, "
+                    f"{float(self.place_field_peaks.max())}]"
                 )
 
     # ------------------------------------------------------------------
@@ -448,12 +466,11 @@ class DecoderDataSource:
     def event_likelihood_at(self, event_idx: int, cell_id: int) -> NDArray[np.float32]:
         """Return the likelihood curve associated with one event.
 
-        Simulation caches store the exact event likelihood so windows with
-        time-varying decoder rates remain faithful. Older and real-data caches
-        fall back to the firing cell's static place field, normalized into the
-        same single-spike ``Poisson(k=1, mu=rate)`` likelihood the diagnostics
-        use (a raw place field would differ by the ``exp(-rate)`` factor and
-        peak-normalization in the viewer would not remove it).
+        Simulation caches must store the exact event likelihood because their
+        decoder rates vary by phase. Real-data models use a static observation
+        model, so their event likelihood is computed directly from the firing
+        cell's stored place field using the same one-spike Poisson definition as
+        the diagnostics.
         """
         if not 0 <= event_idx < len(self.events):
             raise IndexError(f"event_idx {event_idx} out of range [0, {len(self.events)})")
@@ -461,6 +478,11 @@ class DecoderDataSource:
             raise IndexError(f"cell_id {cell_id} out of range [0, {self.n_cells})")
         if self.event_likelihood is not None:
             return np.asarray(self.event_likelihood[event_idx], dtype=np.float32)
+        if self.dataset_kind == "simulation":
+            raise ValueError(
+                "Simulation cache is missing event_likelihood; reconstructing it from "
+                "static place fields would be wrong in time-varying protocol phases."
+            )
         from statespacecheck_paper.diagnostics import compute_normalized_spike_likelihood
 
         likelihood = compute_normalized_spike_likelihood(

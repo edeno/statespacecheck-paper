@@ -92,6 +92,66 @@ def _nearest_index(sorted_arr: NDArray[np.float64], value: float) -> int:
     return i
 
 
+def _replace_structural_padding(
+    values: NDArray[np.float32],
+    state_interior_mask: NDArray[np.bool_],
+    *,
+    fill_value: float,
+    name: str,
+    allow_negative_infinity: bool = False,
+) -> NDArray[np.float32]:
+    """Replace only documented non-interior NaNs after validating the data.
+
+    Decoder caches represent position bins outside the environment with NaN.
+    Those structural entries must be finite for pyqtgraph, but a blanket
+    ``nan_to_num`` would also conceal corruption inside the modeled state
+    space. This helper verifies both regions before filling only the padding.
+    """
+    array = np.asarray(values, dtype=np.float32)
+    mask = np.asarray(state_interior_mask, dtype=bool)
+    if array.ndim not in (1, 2) or array.shape[-1] != mask.size:
+        raise ValueError(
+            f"{name} must be 1-D or 2-D with {mask.size} state bins; got {array.shape}"
+        )
+    interior = array[..., mask]
+    invalid_interior = np.isnan(interior) | np.isposinf(interior)
+    if not allow_negative_infinity:
+        invalid_interior |= np.isneginf(interior)
+    if np.any(invalid_interior):
+        raise ValueError(f"{name} contains an invalid value inside the modeled state space")
+    padding = array[..., ~mask]
+    if padding.size and not np.all(np.isnan(padding)):
+        raise ValueError(
+            f"{name} contains non-NaN values outside the modeled state space; "
+            "the cache padding contract is inconsistent"
+        )
+    result: NDArray[np.float32] = np.array(array, dtype=np.float32, copy=True)
+    result[..., ~mask] = fill_value
+    return result
+
+
+def _relative_likelihood_from_log(
+    log_likelihood: NDArray[np.float32],
+) -> NDArray[np.float32]:
+    """Exponentiate log likelihood after rejecting all-impossible rows."""
+    if log_likelihood.size == 0:
+        empty: NDArray[np.float32] = np.array(log_likelihood, dtype=np.float32, copy=True)
+        return empty
+    row_max = np.max(log_likelihood, axis=-1, keepdims=True)
+    impossible = np.isneginf(row_max).reshape(-1)
+    if np.any(impossible):
+        bad = np.flatnonzero(impossible)
+        raise ValueError(
+            f"log_likelihood has no supported state in flattened row(s) {bad[:10].tolist()}"
+        )
+    likelihood: NDArray[np.float32] = np.asarray(
+        np.exp(log_likelihood - row_max, dtype=np.float32), dtype=np.float32
+    )
+    if not np.all(np.isfinite(likelihood)):
+        raise ValueError("Exponentiated likelihood contains a non-finite value")
+    return likelihood
+
+
 @dataclass(frozen=True)
 class ViewState:
     """Immutable snapshot of the viewer's current request.
@@ -105,10 +165,9 @@ class ViewState:
     request_id: int
     t_center: float
     t_width: float
-    # Skip the acausal load on the worker when the slice panel is not
-    # using the smoothed overlay — for the default predictive overlay
-    # we save one full Zarr read per window dispatch (≈ a third of the
-    # load cost on this cache).
+    # Load the acausal posterior into the same committed window buffer when the
+    # cache provides it, so switching overlays cannot show predictive data under
+    # a smoothed label while another read is pending.
     load_acausal: bool
 
     def __post_init__(self) -> None:
@@ -158,26 +217,25 @@ class _WindowLoadWorker(QtCore.QRunnable):
         loglik = self._ds.load_likelihood(sl)
         acausal = self._ds.load_acausal(sl) if self._state.load_acausal else None
 
-        # NaN-clean non-interior bins so the heatmap's level
-        # computation never sees all-NaN rows.
-        if post.size:
-            np.nan_to_num(post, copy=False, nan=0.0)
-        if loglik.size:
-            np.nan_to_num(loglik, copy=False, nan=-np.inf)
-        if acausal is not None and acausal.size:
-            np.nan_to_num(acausal, copy=False, nan=0.0)
+        mask = self._ds.state_interior_mask
+        post = _replace_structural_padding(post, mask, fill_value=0.0, name="predictive_posterior")
+        loglik = _replace_structural_padding(
+            loglik,
+            mask,
+            fill_value=-np.inf,
+            name="log_likelihood",
+            allow_negative_infinity=True,
+        )
+        if acausal is not None:
+            acausal = _replace_structural_padding(
+                acausal, mask, fill_value=0.0, name="acausal_posterior"
+            )
 
         # Convert log-likelihood -> normalized linear likelihood here
         # on the worker thread so the main thread does not pay
         # ``np.exp`` per committed update. Subtract the per-row max
         # first to avoid float32 overflow.
-        if loglik.size:
-            row_max = loglik.max(axis=1, keepdims=True)
-            row_max = np.where(np.isfinite(row_max), row_max, 0.0)
-            lik = np.exp(loglik - row_max, dtype=np.float32)
-            np.nan_to_num(lik, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
-        else:
-            lik = loglik
+        lik = _relative_likelihood_from_log(loglik)
         self._signals.finished.emit(self._state.request_id, sl, post, lik, acausal)
 
 
@@ -313,24 +371,32 @@ class DecoderViewer(QtWidgets.QMainWindow):
         Mirrors the per-window normalization the worker thread does in
         ``_WindowLoadWorker.run`` so the slice panel sees the same kind
         of arrays whether the row came from the buffered window or
-        from this fallback path. Returns ``(post, lik, acausal)``;
+        from this direct-read path. Returns ``(post, lik, acausal)``;
         ``acausal`` is ``None`` for older caches without
         ``acausal_posterior``.
         """
         ds = self._ds
-        post_row = ds.slice_at_index(t_idx, which="posterior").copy()
-        loglik_row = ds.slice_at_index(t_idx, which="likelihood").copy()
-        np.nan_to_num(post_row, copy=False, nan=0.0)
-        np.nan_to_num(loglik_row, copy=False, nan=-np.inf)
-        if loglik_row.size:
-            row_max = float(loglik_row.max()) if np.isfinite(loglik_row.max()) else 0.0
-            lik_row = np.exp(loglik_row - row_max, dtype=np.float32)
-            np.nan_to_num(lik_row, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
-        else:
-            lik_row = loglik_row.astype(np.float32, copy=False)
+        post_row = _replace_structural_padding(
+            ds.slice_at_index(t_idx, which="posterior"),
+            ds.state_interior_mask,
+            fill_value=0.0,
+            name="predictive_posterior",
+        )
+        loglik_row = _replace_structural_padding(
+            ds.slice_at_index(t_idx, which="likelihood"),
+            ds.state_interior_mask,
+            fill_value=-np.inf,
+            name="log_likelihood",
+            allow_negative_infinity=True,
+        )
+        lik_row = _relative_likelihood_from_log(loglik_row)
         if ds.has_acausal:
-            acausal_row = ds.slice_at_index(t_idx, which="acausal").copy()
-            np.nan_to_num(acausal_row, copy=False, nan=0.0)
+            acausal_row = _replace_structural_padding(
+                ds.slice_at_index(t_idx, which="acausal"),
+                ds.state_interior_mask,
+                fill_value=0.0,
+                name="acausal_posterior",
+            )
         else:
             acausal_row = None
         return post_row, lik_row, acausal_row
@@ -585,23 +651,10 @@ class DecoderViewer(QtWidgets.QMainWindow):
         choice = self._overlay_combo.itemData(index)
         if choice is None:
             return
-        prev_choice = self.slice_panel.overlay_choice
         self.slice_panel.set_overlay_choice(cast(OverlayChoice, choice))
         # Refresh the slice immediately so the new overlay appears
         # without waiting for a slider tick.
         self._update_slice_panel_at_center()
-        # The worker only loads ``acausal_posterior`` when the current
-        # overlay is ``smoothed`` (saving one Zarr read per window on
-        # the default predictive path). Switching into ``smoothed``
-        # therefore needs a fresh window load to populate the buffer
-        # — without it the slice would silently fall back to predictive.
-        if (
-            self._ds.has_acausal
-            and choice == "smoothed"
-            and prev_choice != "smoothed"
-            and self.slice_panel._buffer_acausal is None  # noqa: SLF001
-        ):
-            self.force_reload_now()
 
     @QtCore.Slot(int)
     def _on_window_slider_changed(self, value: int) -> None:
@@ -980,7 +1033,10 @@ class DecoderViewer(QtWidgets.QMainWindow):
             request_id=self._next_request_id,
             t_center=self._t_center,
             t_width=self._window_seconds,
-            load_acausal=(self._ds.has_acausal and self.slice_panel.overlay_choice == "smoothed"),
+            # Keep the smoothed distribution in the same committed buffer as
+            # the predictive distribution so changing the label never exposes
+            # a transient substitution.
+            load_acausal=self._ds.has_acausal,
         )
         worker = _WindowLoadWorker(self._ds, state, self._load_signals)
         self._thread_pool.start(worker)
@@ -1203,8 +1259,8 @@ class DecoderViewer(QtWidgets.QMainWindow):
         if 0 <= speed_index < self._speed_combo.count():
             self._speed_combo.setCurrentIndex(speed_index)
         self._per_cell_checkbox.setChecked(per_cell_on)
-        # Restore overlay choice; falls back to predictive if the
-        # new model's cache lacks acausal_posterior.
+        # Restore the choice when it exists in the new model. Otherwise select
+        # the explicitly labeled predictive option; smoothed is disabled.
         if overlay_choice == "smoothed" and not self._ds.has_acausal:
             overlay_choice = "predictive"
         self._overlay_combo.setCurrentIndex(OVERLAY_CHOICES.index(overlay_choice))

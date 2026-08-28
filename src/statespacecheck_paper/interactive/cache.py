@@ -627,9 +627,8 @@ def build_simulated_cache(
     # log_likelihood: true log space. ``metrics["likelihood"]`` is a
     # normalized linear distribution per row; we take ``log`` directly
     # — bins with exact-zero likelihood become ``-inf`` and the
-    # viewer's worker handles those (``np.where(np.isfinite(row_max),
-    # row_max, 0.0)`` for the per-row shift, then
-    # ``np.nan_to_num(neginf=0.0)`` after ``exp``). A blanket clamp
+    # viewer preserves them as zero relative likelihood after a finite
+    # per-row shift. A row with no supported state raises. A blanket clamp
     # at e.g. ``1e-12`` distorts rows whose peak is smaller than the
     # clamp (rare but real for very-flat simulated likelihoods at
     # misfit times — the clamp would round those rows to a uniform
