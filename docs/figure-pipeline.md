@@ -242,7 +242,8 @@ and their configuration to `figure03_summary.json`.
 
   The raw-recording → these-five-exports step (DANDI / Spyglass / MountainSort /
   linearization) is **not implemented in this repository**; obtain the recording
-  per the manuscript's Data Availability statement
+  from the DANDI Archive as dandiset
+  [001942](https://dandiarchive.org/dandiset/001942)
   ([Comrie et al. 2024](https://doi.org/10.1101/2024.09.23.613567)) and place the
   exports under `data/` (or set `STATESPACECHECK_DATA_PATH`). The expensive decode
   is cached as a single joblib bundle under `data/intermediates/{epoch}_fig4_cache.joblib`,
