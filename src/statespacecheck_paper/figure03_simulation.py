@@ -615,8 +615,10 @@ def run_figure03_simulation(
     -------
     Figure3SimulationResult
         Dataclass with attributes ``config``, ``position_bins``, ``true_position``,
-        ``spike_counts``, ``diagnostics``, ``phase_labels``, ``phase_boundaries``.
-        Access via attribute (``sim.diagnostics``), not subscript.
+        ``spike_counts``, ``diagnostics``, ``phase_labels``, ``phase_boundaries``,
+        and ``sparse_place_field_centers`` (fixed centers for the appended
+        sparse-population cells). Access via attribute (``sim.diagnostics``),
+        not subscript.
     """
     if config is None:
         config = Figure3Config()

@@ -584,7 +584,7 @@ def plot_ppc_predictive_fan(ax: Axes, data: Figure2ExampleData) -> None:
     """Predictive distribution with a fan of sampled positions.
 
     Each colored marker is one draw from the predictive that flows into
-    the corresponding simulated observation likelihood plotted in panel H.
+    the corresponding simulated observation likelihood plotted in the simulated-likelihood panel.
     """
     x = data.position_bins
     pred = data.predictive
@@ -595,7 +595,7 @@ def plot_ppc_predictive_fan(ax: Axes, data: Figure2ExampleData) -> None:
     ax.fill_between(x, pred, alpha=0.3, color=COLORS["predictive"])
 
     # Each sampled state is shown as a colored tick + dot on the predictive
-    # so the matching simulated likelihood in panel H can be read off by colour.
+    # so the matching curve in the simulated-likelihood panel can be read off by colour.
     sample_indices = np.argmin(np.abs(x[None, :] - positions[:, None]), axis=1)
     for pos, idx, color in zip(positions, sample_indices, colors, strict=True):
         ax.axvline(pos, color=color, linestyle="-", linewidth=1.0, alpha=0.7)
@@ -630,16 +630,16 @@ def plot_ppc_predictive_fan(ax: Axes, data: Figure2ExampleData) -> None:
 def plot_ppc_likelihood_fan(ax: Axes, data: Figure2ExampleData) -> None:
     """Fan of simulated observation likelihoods.
 
-    For each state sample drawn from the predictive (panel G), the
+    For each state sample drawn from the predictive (the predictive-distribution panel), the
     Monte Carlo loop draws an observation y_tilde ~ p(y | x_s) and
     constructs the corresponding observation likelihood p(y_tilde | x).
     This panel shows that fan of likelihood curves, colored to match
-    the samples in panel G. Per-curve markers distinguish the state
+    the samples in the predictive-distribution panel. Per-curve markers distinguish the state
     sample (dotted line at x_s) from the drawn observation (triangle
     at the curve peak, at y_tilde). A faint dashed copy of the
     predictive is overlaid so the reader can see what the curves get
     multiplied by when computing the log predictive density that ends
-    up in panel I.
+    up in the predictive-density histogram.
     """
 
     x = data.position_bins
@@ -650,7 +650,7 @@ def plot_ppc_likelihood_fan(ax: Axes, data: Figure2ExampleData) -> None:
     colors = _showcase_colors(len(positions))
 
     # Faint dashed predictive overlay so the reader sees what each
-    # simulated likelihood gets weighted by when integrated into panel I.
+    # simulated likelihood gets weighted by when integrated into the predictive-density histogram.
     ax.plot(
         x,
         pred,
@@ -664,11 +664,11 @@ def plot_ppc_likelihood_fan(ax: Axes, data: Figure2ExampleData) -> None:
         ax.plot(x, lik, color=color, linewidth=1.0, alpha=0.85)
         ax.fill_between(x, lik, color=color, alpha=0.12)
         # Dotted vertical at the originating state sample x_s — lines up
-        # with the dot at the same color in panel G.
+        # with the dot at the same color in the predictive-distribution panel.
         ax.axvline(pos, color=color, linestyle=":", linewidth=0.8, alpha=0.5)
         # Downward triangle at the curve peak marks the drawn observation
         # y_tilde. Distinct from the dot symbol used for state samples in
-        # panel G so the two quantities are never conflated.
+        # the predictive-distribution panel so the two quantities are never conflated.
         peak_idx = int(np.argmin(np.abs(x - y_t)))
         ax.scatter(
             [x[peak_idx]],

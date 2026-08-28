@@ -39,10 +39,10 @@ def plot_track_graph_2d(
         Track graph with nodes containing 'pos' attributes.
     position_info : pandas.DataFrame
         DataFrame containing position columns for trajectory overlay.
-    ax : Axes, optional
-        Axes to plot on. If None, uses current axes.
     edge_order : sequence of tuple
         Explicit edge order shared with the scientific linearization.
+    ax : Axes, optional
+        Axes to plot on. If None, uses current axes.
     reward_well_nodes : list of int, optional
         Node indices that are reward wells (marked with scatter points).
     edge_colors : ndarray, optional

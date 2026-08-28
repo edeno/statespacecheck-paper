@@ -86,7 +86,7 @@ def add_scalebar(
         Location for the scale bar.
     pad : float, default 0.1
         Padding from edges as fraction of axes size.
-    fontsize : int, default 7
+    fontsize : int, default 8
         Font size for the label.
     """
     xlim = ax.get_xlim()

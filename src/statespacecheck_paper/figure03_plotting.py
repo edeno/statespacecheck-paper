@@ -675,9 +675,12 @@ def compose_figure03(
         True position at each time point.
     spike_counts : NDArray, shape (n_time, n_cells)
         Spike counts for each cell at each time point.
-    diagnostics : dict[str, NDArray]
-        Dictionary containing diagnostic metrics from ``decode_with_diagnostics``.
-        Metrics 'hpd_overlap', 'kl_divergence', 'predictive_pvalue' have shape (n_time, n_cells).
+    diagnostics : DecodingDiagnostics
+        Diagnostic bundle from ``decode_with_diagnostics``. The panels read its
+        dense ``(n_time, n_cells)`` metric matrices (``hpd_overlap``,
+        ``kl_divergence``, ``predictive_pvalue``) and its per-event
+        ``(n_events,)`` arrays (``event_time_ind``, ``event_cell_ind``, and the
+        matching ``event_*`` metric values).
     diagnostic_thresholds : DiagnosticThresholds
         Threshold values for each diagnostic.
     config : Figure3Config
