@@ -99,6 +99,9 @@ class SpikeEventDiagnostics:
         the producer was called with ``include_dense_matrices=False``.
     per_spike_likelihood : np.ndarray, shape (n_spikes, n_bins), optional
         Per-spike normalized likelihood. ``None`` when ``include_dense_matrices=False``.
+    event_time : np.ndarray, shape (n_spikes,), optional
+        Wall-clock spike time for each event. Populated by the real-data path;
+        ``None`` for simulated paths that carry only bin indices.
 
     Raises
     ------

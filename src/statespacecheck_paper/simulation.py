@@ -242,7 +242,7 @@ def place_field_rates(
     Parameters
     ----------
     position_bins : np.ndarray, shape (n_bins,)
-        Position bin place_field_centers.
+        Position bin centers.
     place_field_centers : np.ndarray, shape (n_cells,)
         Place field center for each neuron.
     place_field_std : float

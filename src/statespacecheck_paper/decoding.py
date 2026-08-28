@@ -521,7 +521,7 @@ def decode_with_diagnostics(
     run in log-space via the :func:`_condition_on` pattern adapted from
     ``dynamax`` / ``non_local_detector.core``. The posterior update
     itself cannot underflow on the inner step (it uses an explicit
-    log-sum-exp shift). The stored ``combined_likelihood`` and
+    log-sum-exp shift). The stored ``likelihood`` and
     ``spike_likelihood`` arrays are renormalized after the same shift,
     so individual bins still underflow to zero in linear space but the
     row as a whole remains a proper probability distribution.
