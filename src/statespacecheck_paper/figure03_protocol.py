@@ -89,7 +89,7 @@ class Figure3Config:
         only makes sense over the full ladder.
     prediction_step_std : float, default 0.5
         Decoder's baseline dynamics standard deviation.
-    drift_momentum : float, default 0.8
+    drift_momentum : float, default 0.88
         AR(1) coefficient on the animal's velocity during the drift
         misfit phase. The true trajectory is
         ``x[t] = x[t-1] + v[t]`` with
@@ -158,7 +158,7 @@ class Figure3Config:
 
     # Decoder & dynamics parameters
     prediction_step_std: float = 0.5  # baseline dynamics std
-    drift_momentum: float = 0.8  # AR(1) coefficient for drift-misfit trajectory
+    drift_momentum: float = 0.88  # AR(1) coefficient for drift-misfit trajectory
 
     # Position grid
     position_min: int = 0

@@ -114,7 +114,7 @@ def generate_figure03(
         ``manuscript/figures/main``.
     """
     if config is None:
-        config = Figure3Config(drift_momentum=0.88)
+        config = Figure3Config()
 
     simulation_result = run_figure03_simulation(config)
 
