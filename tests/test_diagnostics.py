@@ -57,10 +57,19 @@ class TestComputePredictiveMarkProbabilities:
         baseline = compute_predictive_mark_probabilities(prior, rates)
         assert_allclose(compute_predictive_mark_probabilities(prior, 17.0 * rates), baseline)
 
-    def test_zero_total_intensity_uses_uniform_fallback(self) -> None:
+    def test_zero_total_intensity_raises(self) -> None:
         prior = np.array([0.5, 0.5])
         rates = np.zeros((2, 3))
-        assert_allclose(compute_predictive_mark_probabilities(prior, rates), np.full(3, 1.0 / 3.0))
+        with pytest.raises(ValueError, match="total event intensity is zero"):
+            compute_predictive_mark_probabilities(prior, rates)
+
+    def test_zero_total_intensity_row_raises_in_time_series(self) -> None:
+        """A per-time predictive with a zero-intensity row is undefined for that row."""
+        # Row 1 places all mass on bin 1, whose mark intensities are all zero.
+        predictive = np.array([[1.0, 0.0], [0.0, 1.0]])  # (n_time, n_bins)
+        rates = np.array([[1.0, 1.0, 1.0], [0.0, 0.0, 0.0]])  # (n_bins, n_marks)
+        with pytest.raises(ValueError, match="zero total"):
+            compute_predictive_mark_probabilities(predictive, rates)
 
 
 # ---------------------------------------------------------------------------
@@ -314,20 +323,17 @@ class TestComputeSpikeEventDiagnosticsFromRates:
         )
         np.testing.assert_allclose(result.event_predictive_pvalue, 1.0, atol=1e-12)
 
-    def test_fully_degenerate_rates_yield_uniform_rank(self) -> None:
-        """When the conditional mark distribution is undefined because
-        total intensity is zero, the documented uniform fallback gives
-        every cell the maximal tied rank.
-        """
+    def test_fully_degenerate_rates_raise(self) -> None:
+        """An observed spike is impossible under an all-zero rate table."""
         n_time, n_bins, n_cells = 5, 3, 2
         predictive = np.full((n_time, n_bins), 1.0 / n_bins)
         rates = np.zeros((n_bins, n_cells))
         spike_time_ind = np.array([0], dtype=np.intp)
         spike_cell_ind = np.array([0], dtype=np.intp)
-        result = compute_spike_event_diagnostics_from_rates(
-            predictive, rates, spike_time_ind, spike_cell_ind, coverage=0.95
-        )
-        np.testing.assert_allclose(result.event_predictive_pvalue, 1.0, atol=1e-12)
+        with pytest.raises(ValueError, match="zero at every position"):
+            compute_spike_event_diagnostics_from_rates(
+                predictive, rates, spike_time_ind, spike_cell_ind, coverage=0.95
+            )
 
 
 class TestComputeNormalizedSpikeLikelihood:
@@ -342,15 +348,10 @@ class TestComputeNormalizedSpikeLikelihood:
         np.testing.assert_allclose(out, expected)
         np.testing.assert_allclose(out.sum(axis=-1), 1.0)
 
-    def test_degenerate_zero_rate_row_is_uniform(self) -> None:
+    def test_degenerate_zero_rate_row_raises(self) -> None:
         rates = np.array([[2.0, 0.5, 1.0], [0.0, 0.0, 0.0]])
-        out = compute_normalized_spike_likelihood(rates)
-
-        # The all-zero-rate row carries no positional information -> uniform,
-        # and still sums to exactly 1 (not the sub-normalized near-zero row a
-        # raw divide would give).
-        np.testing.assert_allclose(out[1], np.full(3, 1.0 / 3.0))
-        np.testing.assert_allclose(out.sum(axis=-1), 1.0)
+        with pytest.raises(ValueError, match="zero at every position"):
+            compute_normalized_spike_likelihood(rates)
 
     def test_tiny_but_informative_rates_keep_their_shape(self) -> None:
         # Rates far below any absolute threshold still have a well-defined

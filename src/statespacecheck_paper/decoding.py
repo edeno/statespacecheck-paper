@@ -12,7 +12,6 @@ diagnostics via :mod:`statespacecheck_paper.diagnostics`, and returns a
 
 from __future__ import annotations
 
-import warnings
 from dataclasses import dataclass
 
 import numpy as np
@@ -31,9 +30,6 @@ from statespacecheck_paper.simulation import (
     softmax_with_shift,
 )
 
-# Sentinel for observations with no finite joint prior-likelihood mass.
-_NEG_INF = float("-inf")
-
 
 def _condition_on(
     probs: NDArray[np.floating],
@@ -48,10 +44,8 @@ def _condition_on(
     than being replaced by an arbitrary probability cutoff.
 
     If every joint log-weight is ``-inf``, the observation has zero
-    probability everywhere under the prior and the Bayesian posterior is
-    undefined. In that degenerate case, this function explicitly returns a
-    uniform posterior and ``log_norm = -inf``. Callers should treat
-    ``log_norm == -inf`` as the signal to flag the step.
+    probability under the prior and the Bayesian posterior is undefined. That
+    condition raises instead of silently resetting the scientific state.
 
     Parameters
     ----------
@@ -63,13 +57,15 @@ def _condition_on(
     Returns
     -------
     new_probs : np.ndarray, shape (n_bins,)
-        Posterior; sums to 1. Equals ``1/n_bins`` everywhere when the
-        zero-probability fallback runs.
+        Posterior; sums to 1.
     log_norm : float
         Log marginal likelihood for this step (``log p(obs | past)``).
-        ``-inf`` when the zero-probability fallback runs.
+    Raises
+    ------
+    ValueError
+        If the inputs violate their probability contracts or the observation
+        has zero probability on the prior support.
     """
-    n_bins = probs.size
     if (
         probs.ndim != 1
         or ll.shape != probs.shape
@@ -87,7 +83,10 @@ def _condition_on(
         log_joint = np.log(probs) + ll
     log_norm = float(logsumexp(log_joint))
     if np.isneginf(log_norm):
-        return np.full(n_bins, 1.0 / n_bins), _NEG_INF
+        raise ValueError(
+            "Bayesian update is undefined: the observation has zero likelihood "
+            "at every state with positive prior probability."
+        )
     if not np.isfinite(log_norm):
         raise ValueError("Prior and log-likelihood produced a nonfinite joint log-normalizer")
     new_probs = np.exp(log_joint - log_norm)
@@ -528,11 +527,9 @@ def decode_with_diagnostics(
     row as a whole remains a proper probability distribution.
 
     When the observation has zero probability at every state with nonzero
-    prior mass, :func:`_condition_on` falls back to a uniform posterior and
-    signals via ``log_norm = -inf``. This function counts such steps and
-    emits a single summary ``RuntimeWarning`` at the end so the situation is
-    visible. The reset affects the following predictive distribution;
-    consumers should inspect or mask downstream events if this occurs.
+    prior mass, :func:`_condition_on` raises. Continuing from an invented
+    posterior would change the following predictive distribution and every
+    downstream diagnostic.
 
     Examples
     --------
@@ -606,13 +603,6 @@ def decode_with_diagnostics(
         n_cells,
     )
 
-    # Track timesteps where _condition_on fell back to uniform because the
-    # observation had zero probability on the prior's support. The fallback
-    # keeps the filter alive; report a summary at the end so callers can
-    # inspect or mask downstream events if desired.
-    n_zero_support_steps = 0
-    first_zero_support_t = -1
-
     for t in range(1, n_time):
         window = override_schedule.window_at(t)
 
@@ -653,28 +643,10 @@ def decode_with_diagnostics(
             )
 
         # Posterior update via the _condition_on pattern (dynamax /
-        # non_local_detector). ``log_norm = -inf`` flags steps where the
-        # observation has zero probability on the prior's support; the helper
-        # explicitly returns a uniform posterior in that case and we
-        # surface the count post-loop rather than letting the situation
-        # silently propagate.
-        posterior[t], log_norm = _condition_on(prior, log_lik_combined)
-        if log_norm == _NEG_INF:
-            if n_zero_support_steps == 0:
-                first_zero_support_t = t
-            n_zero_support_steps += 1
-
-    if n_zero_support_steps > 0:
-        warnings.warn(
-            f"decode_with_diagnostics: observation had zero probability on "
-            f"the prior support at "
-            f"{n_zero_support_steps} timestep(s); first at t={first_zero_support_t}. "
-            f"Posterior was reset to uniform at those steps; subsequent "
-            f"predictive distributions and diagnostics should be interpreted "
-            f"accordingly.",
-            RuntimeWarning,
-            stacklevel=2,
-        )
+        # non_local_detector). An impossible observation raises at this exact
+        # timestep rather than resetting the posterior and changing every
+        # downstream scientific quantity.
+        posterior[t], _log_norm = _condition_on(prior, log_lik_combined)
 
     # Find all spike events (excluding t=0 which has no valid prior). Count
     # matrices are expanded so a bin with count k contributes k spike events.

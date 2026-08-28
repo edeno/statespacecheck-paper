@@ -413,23 +413,13 @@ class TestConditionOn:
 
         np.testing.assert_allclose(log_norm, logsumexp(ll) - np.log(n_bins), rtol=1e-12)
 
-    def test_handles_all_neg_inf_loglik(self) -> None:
-        """All ``-inf`` likelihoods are a degenerate observation: the
-        model assigns zero probability to the spike everywhere on the
-        grid. The helper falls back to a uniform posterior and signals
-        the situation via ``log_norm = -inf``; the caller in
-        ``decode_with_diagnostics`` then surfaces the count via a
-        ``RuntimeWarning``.
-        """
+    def test_all_neg_inf_loglik_raises(self) -> None:
+        """No supported state means the Bayesian update is undefined."""
         n_bins = 5
         prior = np.full(n_bins, 1.0 / n_bins)
         ll = np.full(n_bins, -np.inf)
-        new_probs, log_norm = _condition_on(prior, ll)
-        # Uniform fallback, properly normalized.
-        np.testing.assert_allclose(new_probs, 1.0 / n_bins, rtol=1e-12)
-        np.testing.assert_allclose(new_probs.sum(), 1.0, rtol=1e-12)
-        # Zero-probability signal is exactly -inf so callers can compare directly.
-        assert log_norm == -np.inf
+        with pytest.raises(ValueError, match="zero likelihood"):
+            _condition_on(prior, ll)
 
     def test_retains_tiny_finite_prior_likelihood_overlap(self) -> None:
         """A tiny but finite overlap is a valid Bayesian update, not a
@@ -443,14 +433,12 @@ class TestConditionOn:
         np.testing.assert_array_equal(new_probs, prior)
         assert log_norm == pytest.approx(-1000.0)
 
-    def test_exactly_disjoint_support_uses_zero_probability_fallback(self) -> None:
-        """Fallback is reserved for exact zero joint support."""
-        n_bins = 4
+    def test_exactly_disjoint_support_raises(self) -> None:
+        """Exact zero joint support has no posterior distribution."""
         prior = np.array([1.0, 0.0, 0.0, 0.0])
         ll = np.array([-np.inf, 0.0, -1.0, -2.0])
-        new_probs, log_norm = _condition_on(prior, ll)
-        np.testing.assert_allclose(new_probs, 1.0 / n_bins)
-        assert log_norm == -np.inf
+        with pytest.raises(ValueError, match="zero likelihood"):
+            _condition_on(prior, ll)
 
     @pytest.mark.parametrize(
         "prior,ll",
@@ -579,12 +567,8 @@ class TestDecodeWithDiagnosticsLogSpace:
             f"under sustained firing at PF centers (88, 92)."
         )
 
-    def test_impossible_observation_emits_summary_warning(self) -> None:
-        """The per-step ``_condition_on`` ``-inf`` path is covered by
-        ``TestConditionOn``; the *summary* warning emitted post-loop
-        is not asserted anywhere. Force an impossible observation via a
-        place-field center so far from the decoder grid that every
-        bin's rate underflows to 0.0."""
+    def test_impossible_observation_raises(self) -> None:
+        """The decoder must stop at an observation unsupported everywhere."""
         n_time, n_cells, n_bins = 8, 1, 21
         position_bins = np.linspace(0.0, 100.0, n_bins)
         transition_matrix = gaussian_transition_matrix(position_bins, step_std=2.0)
@@ -593,10 +577,7 @@ class TestDecodeWithDiagnosticsLogSpace:
         place_field_centers = np.array([1e6])
         spike_counts = np.ones((n_time, n_cells), dtype=np.int_)
 
-        with pytest.warns(
-            RuntimeWarning,
-            match=r"observation had zero probability on the prior support at \d+ timestep",
-        ):
+        with pytest.raises(ValueError, match="every value is -inf"):
             decode_with_diagnostics(
                 spike_counts,
                 position_bins,

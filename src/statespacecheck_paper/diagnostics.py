@@ -49,22 +49,29 @@ def _validate_diagnostic_range(
     *,
     lo: float,
     hi: float | None,
+    allow_nan: bool,
+    allow_positive_infinity: bool = False,
     atol: float = 1e-9,
 ) -> None:
-    """Raise ``ValueError`` if any non-NaN entry of ``arr`` falls outside
-    ``[lo - atol, hi + atol]``.
+    """Validate missingness, infinities, and the scientific metric range.
 
-    NaN is treated as legitimate (the dense diagnostic matrices encode
-    "no spike at this (t, cell)" as NaN). ``atol`` absorbs FP overshoot
-    from the cumulative-sum spike-prob computation (where a rank can
-    summed-float-error to 1.0000000000000002). Used by ``DecodingDiagnostics``
-    ``__post_init__`` to catch buggy decoder output at the producer
-    boundary, not deep in a summary downstream.
+    Dense matrices may opt into NaN because they encode "no spike at this
+    (t, cell)" structurally. Per-event arrays may not: every row represents an
+    observed spike and must carry a value. KL divergence may opt into positive
+    infinity, which is a meaningful result for disjoint support; negative
+    infinity is never valid. ``atol`` absorbs harmless floating-point range
+    overshoot at the producer boundary.
     """
-    finite = np.isfinite(arr)
-    if not np.any(finite):
+    if not allow_nan and np.any(np.isnan(arr)):
+        raise ValueError(f"{name}: NaN found in a required per-event value")
+    if np.any(np.isneginf(arr)):
+        raise ValueError(f"{name}: -inf is not a valid diagnostic value")
+    if not allow_positive_infinity and np.any(np.isposinf(arr)):
+        raise ValueError(f"{name}: +inf is not permitted for this diagnostic")
+    present = ~np.isnan(arr)
+    if not np.any(present):
         return
-    valid = arr[finite]
+    valid = arr[present]
     if np.any(valid < lo - atol):
         raise ValueError(f"{name}: values below {lo} found (min={float(valid.min())})")
     if hi is not None and np.any(valid > hi + atol):
@@ -128,6 +135,10 @@ class SpikeEventDiagnostics:
             raise ValueError(
                 f"SpikeEventDiagnostics.event_time shape {self.event_time.shape} != ({n_spikes},)"
             )
+        if np.any(self.event_time_ind < 0) or np.any(self.event_cell_ind < 0):
+            raise ValueError("SpikeEventDiagnostics event indices must be non-negative")
+        if self.event_time is not None and not np.all(np.isfinite(self.event_time)):
+            raise ValueError("SpikeEventDiagnostics.event_time must contain only finite values")
         # Dense matrices are an all-or-nothing group.
         dense_names = ("hpd_overlap", "kl_divergence", "predictive_pvalue", "per_spike_likelihood")
         dense_provided = [getattr(self, n) is not None for n in dense_names]
@@ -155,6 +166,53 @@ class SpikeEventDiagnostics:
                     f"per_spike_likelihood leading dim {self.per_spike_likelihood.shape[0]} "
                     f"!= n_spikes={n_spikes}"
                 )
+        _validate_diagnostic_range(
+            self.event_hpd_overlap,
+            "SpikeEventDiagnostics.event_hpd_overlap",
+            lo=0.0,
+            hi=1.0,
+            allow_nan=False,
+        )
+        _validate_diagnostic_range(
+            self.event_predictive_pvalue,
+            "SpikeEventDiagnostics.event_predictive_pvalue",
+            lo=0.0,
+            hi=1.0,
+            allow_nan=False,
+        )
+        _validate_diagnostic_range(
+            self.event_kl_divergence,
+            "SpikeEventDiagnostics.event_kl_divergence",
+            lo=0.0,
+            hi=None,
+            allow_nan=False,
+            allow_positive_infinity=True,
+        )
+        if self.hpd_overlap is not None:
+            assert self.kl_divergence is not None
+            assert self.predictive_pvalue is not None
+            _validate_diagnostic_range(
+                self.hpd_overlap,
+                "SpikeEventDiagnostics.hpd_overlap",
+                lo=0.0,
+                hi=1.0,
+                allow_nan=True,
+            )
+            _validate_diagnostic_range(
+                self.predictive_pvalue,
+                "SpikeEventDiagnostics.predictive_pvalue",
+                lo=0.0,
+                hi=1.0,
+                allow_nan=True,
+            )
+            _validate_diagnostic_range(
+                self.kl_divergence,
+                "SpikeEventDiagnostics.kl_divergence",
+                lo=0.0,
+                hi=None,
+                allow_nan=True,
+                allow_positive_infinity=True,
+            )
         # Write-protect everything that's not None.
         for name in (
             "event_time_ind",
@@ -263,25 +321,48 @@ class DecodingDiagnostics:
         # out-of-range values that only surface much later (e.g., as a NaN
         # ``DiagnosticThresholds`` or a misleading hexbin).
         _validate_diagnostic_range(
-            self.hpd_overlap, "DecodingDiagnostics.hpd_overlap", lo=0.0, hi=1.0
+            self.hpd_overlap,
+            "DecodingDiagnostics.hpd_overlap",
+            lo=0.0,
+            hi=1.0,
+            allow_nan=True,
         )
         _validate_diagnostic_range(
-            self.predictive_pvalue, "DecodingDiagnostics.predictive_pvalue", lo=0.0, hi=1.0
+            self.predictive_pvalue,
+            "DecodingDiagnostics.predictive_pvalue",
+            lo=0.0,
+            hi=1.0,
+            allow_nan=True,
         )
         _validate_diagnostic_range(
-            self.kl_divergence, "DecodingDiagnostics.kl_divergence", lo=0.0, hi=None
+            self.kl_divergence,
+            "DecodingDiagnostics.kl_divergence",
+            lo=0.0,
+            hi=None,
+            allow_nan=True,
+            allow_positive_infinity=True,
         )
         _validate_diagnostic_range(
-            self.event_hpd_overlap, "DecodingDiagnostics.event_hpd_overlap", lo=0.0, hi=1.0
+            self.event_hpd_overlap,
+            "DecodingDiagnostics.event_hpd_overlap",
+            lo=0.0,
+            hi=1.0,
+            allow_nan=False,
         )
         _validate_diagnostic_range(
             self.event_predictive_pvalue,
             "DecodingDiagnostics.event_predictive_pvalue",
             lo=0.0,
             hi=1.0,
+            allow_nan=False,
         )
         _validate_diagnostic_range(
-            self.event_kl_divergence, "DecodingDiagnostics.event_kl_divergence", lo=0.0, hi=None
+            self.event_kl_divergence,
+            "DecodingDiagnostics.event_kl_divergence",
+            lo=0.0,
+            hi=None,
+            allow_nan=False,
+            allow_positive_infinity=True,
         )
         # Write-protect every backing buffer.
         for name in (
@@ -316,9 +397,8 @@ def compute_normalized_spike_likelihood(
     Normalization is done in log space (``poisson.logpmf`` + ``logsumexp``) so
     that rows with tiny but nonzero rates keep their correct shape: e.g. rates
     ``[1e-20, 2e-20, 4e-20]`` normalize to ``[1/7, 2/7, 4/7]`` rather than
-    collapsing to uniform. A row is treated as degenerate only when the rate is
-    zero at *every* position (``logpmf`` all ``-inf``); such a row carries no
-    positional information and is returned uniform, so every row sums to 1.
+    collapsing to uniform. A row with zero rate at every position has no
+    defined one-spike likelihood and raises rather than being assigned a shape.
 
     Parameters
     ----------
@@ -331,14 +411,23 @@ def compute_normalized_spike_likelihood(
     likelihood : np.ndarray, shape (..., n_bins)
         Normalized single-spike likelihood over position; each row sums to 1.
     """
+    firing_rates = np.asarray(firing_rates)
+    if firing_rates.ndim < 1 or firing_rates.shape[-1] == 0:
+        raise ValueError("firing_rates must have a non-empty position axis")
+    if not np.all(np.isfinite(firing_rates)) or np.any(firing_rates < 0.0):
+        raise ValueError("firing_rates must contain only finite nonnegative values")
     logpmf = poisson.logpmf(k=1, mu=firing_rates)
     log_norm = logsumexp(logpmf, axis=-1, keepdims=True)
-    # ``log_norm`` is ``-inf`` only when every bin's rate is exactly zero.
     degenerate = np.isneginf(log_norm)
-    n_bins = logpmf.shape[-1]
-    safe_log_norm = np.where(degenerate, 0.0, log_norm)
-    likelihood = np.exp(logpmf - safe_log_norm)
-    return np.where(degenerate, 1.0 / n_bins, likelihood)
+    if np.any(degenerate):
+        bad = np.flatnonzero(degenerate.reshape(-1))
+        raise ValueError(
+            "Cannot compute a one-spike likelihood for firing-rate rows that "
+            "are zero at every position; invalid flattened row indices: "
+            f"{bad[:10].tolist()}"
+        )
+    likelihood: NDArray[np.floating] = np.exp(logpmf - log_norm)
+    return likelihood
 
 
 def compute_predictive_mark_probabilities(
@@ -369,10 +458,14 @@ def compute_predictive_mark_probabilities(
     Returns
     -------
     mark_probabilities : np.ndarray, shape (n_marks,) or (n_time, n_marks)
-        Predictive mark probabilities for a randomly selected event. If the total
-        predictive event intensity is exactly zero, the conditional mark
-        distribution is undefined; by convention this function returns a
-        uniform distribution for that row.
+        Predictive mark probabilities for a randomly selected event.
+
+    Raises
+    ------
+    ValueError
+        If an input violates its shape/value contract, or if any row has zero
+        predictive event intensity (for which the conditional mark distribution
+        is undefined).
     """
     if predictive_distribution.ndim not in (1, 2):
         raise ValueError("predictive_distribution must have shape (n_bins,) or (n_time, n_bins)")
@@ -386,25 +479,24 @@ def compute_predictive_mark_probabilities(
         raise ValueError("mark_intensities must contain finite nonnegative values")
 
     expected_intensities: NDArray[np.floating] = predictive_distribution @ mark_intensities
-    n_marks = mark_intensities.shape[1]
-
     if expected_intensities.ndim == 1:
         total_intensity = float(expected_intensities.sum())
-        if total_intensity == 0.0:
-            return np.full(n_marks, 1.0 / n_marks, dtype=expected_intensities.dtype)
+        if total_intensity <= 0.0:
+            raise ValueError(
+                "Predictive mark distribution is undefined because total event intensity is zero"
+            )
         mark_probabilities: NDArray[np.floating] = expected_intensities / total_intensity
         return mark_probabilities
 
     total_intensity = expected_intensities.sum(axis=1, keepdims=True)
-    mark_probabilities = np.divide(
-        expected_intensities,
-        total_intensity,
-        out=np.zeros_like(expected_intensities),
-        where=total_intensity > 0.0,
-    )
     zero_total = total_intensity[:, 0] == 0.0
     if zero_total.any():
-        mark_probabilities[zero_total] = 1.0 / n_marks
+        bad = np.flatnonzero(zero_total)
+        raise ValueError(
+            "Predictive mark distribution is undefined for rows with zero total "
+            f"event intensity; row indices: {bad[:10].tolist()}"
+        )
+    mark_probabilities = expected_intensities / total_intensity
     return mark_probabilities
 
 
@@ -461,6 +553,9 @@ def _compute_spike_event_predictive_pvalue_rank(
     )
     rank_mask = contrib_chunk <= target_contrib[:, None] + rank_atol
     result: NDArray[np.floating] = (contrib_chunk * rank_mask).sum(axis=1)
+    # Summation may overshoot one by a few ulps; pin only that representational
+    # error at the mathematical boundary so display code can enforce [0, 1].
+    np.minimum(result, 1.0, out=result)
     return result
 
 
@@ -739,6 +834,10 @@ def compute_baseline_diagnostic_thresholds(
     # returns ``np.floating``; cast to plain ``float`` to match the
     # ``DiagnosticThresholds`` dataclass signature.
     hpd_baseline = _get("hpd_overlap")[:baseline_end_index].ravel()
+    if np.any(np.isinf(hpd_baseline)):
+        raise ValueError(
+            "compute_baseline_diagnostic_thresholds: hpd_overlap baseline contains infinity"
+        )
     if not np.any(np.isfinite(hpd_baseline)):
         raise ValueError(
             "compute_baseline_diagnostic_thresholds: hpd_overlap baseline slice "
@@ -748,6 +847,11 @@ def compute_baseline_diagnostic_thresholds(
     hpd_overlap_threshold = float(np.nanquantile(hpd_baseline, 0.01))
 
     kl_baseline = _get("kl_divergence")[:baseline_end_index].ravel()
+    if np.any(np.isinf(kl_baseline)):
+        raise ValueError(
+            "compute_baseline_diagnostic_thresholds: kl_divergence baseline contains infinity; "
+            "a finite empirical threshold cannot be estimated"
+        )
     if not np.any(np.isfinite(kl_baseline)):
         raise ValueError(
             "compute_baseline_diagnostic_thresholds: kl_divergence baseline slice "
