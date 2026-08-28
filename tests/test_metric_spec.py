@@ -1,15 +1,4 @@
-"""Drift guards tying the shared ``MetricSpec`` display metadata to the raw
-per-metric flag directions that live in the lower Figure-3/Figure-4 layers.
-
-``MetricSpec`` (in ``style``) owns the *display*-axis metadata: the worse-fit
-direction on the plotted axis, the display transform, and the symlog choice.
-The *raw*-value flag directions used for flagging and the reported-statistics
-JSON live in ``figure03_summary.SUMMARY_FLAG_METRICS`` and
-``figure04_generation.FIGURE4_METRIC_DIRECTIONS`` -- deliberately below ``style``
-in the dependency graph, so they cannot import it. These tests keep the two in
-sync (the direction can only differ through the display transform) without
-introducing that import edge.
-"""
+"""Guard shared metric display metadata against raw flag-direction drift."""
 
 from __future__ import annotations
 
