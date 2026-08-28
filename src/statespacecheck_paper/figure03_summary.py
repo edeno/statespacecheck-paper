@@ -137,7 +137,7 @@ def _flag_percentage(values: NDArray[np.floating], threshold: float, direction: 
     Parameters
     ----------
     values : np.ndarray, shape (n,)
-        Finite per-spike diagnostic values (NaNs must already be removed).
+        Per-spike diagnostic values. Every event must carry a value.
     threshold : float
         Flag threshold.
     direction : {"below", "above"}
@@ -147,10 +147,12 @@ def _flag_percentage(values: NDArray[np.floating], threshold: float, direction: 
     Returns
     -------
     float
-        Percent (0–100) of values flagged. ``0.0`` for an empty input.
+        Percent (0–100) of values flagged.
     """
     if values.size == 0:
-        return 0.0
+        raise ValueError("Cannot compute a flag percentage for a condition with no spike events")
+    if np.any(np.isnan(values)) or np.any(np.isneginf(values)):
+        raise ValueError("Per-event diagnostic values must not contain NaN or -inf")
     if direction == "below":
         flagged = float(np.mean(values <= threshold))
     elif direction == "above":
@@ -164,7 +166,7 @@ def extract_condition_flag_values(
     diagnostics: DecodingDiagnostics | Mapping[str, NDArray[np.floating] | NDArray[np.intp]],
     conditions: list[Figure3SummaryCondition],
 ) -> list[list[NDArray[np.floating]]]:
-    """Collect finite per-spike-event diagnostic values per metric per column.
+    """Collect per-spike-event diagnostic values per metric per column.
 
     Works on the **per-event** arrays (``event_time_ind`` /
     ``event_hpd_overlap`` / ``event_kl_divergence`` / ``event_predictive_pvalue``),
@@ -186,7 +188,7 @@ def extract_condition_flag_values(
     -------
     list of list of np.ndarray
         Nested list indexed ``[metric_index][column_index]``; each leaf is
-        a 1-D array of the non-NaN per-event values for that metric whose
+        a 1-D array of the per-event values for that metric whose
         event time falls inside that column's half-open time windows. Metric
         order follows :data:`SUMMARY_FLAG_METRICS`.
     """
@@ -209,7 +211,11 @@ def extract_condition_flag_values(
             for t0, t1 in col.step_windows:
                 mask |= (event_time >= t0) & (event_time < t1)
             vals = ev[mask]
-            per_window.append(vals[~np.isnan(vals)])
+            if np.any(np.isnan(vals)) or np.any(np.isneginf(vals)):
+                raise ValueError(
+                    f"event_{metric_key} contains an undefined value in condition {col.label!r}"
+                )
+            per_window.append(vals)
         out.append(per_window)
     return out
 
@@ -392,7 +398,12 @@ def estimate_realization_summary(
         base_mask = np.asarray(diagnostics.event_time_ind) < baseline_end
         for key in baseline_keys:
             ev = np.asarray(getattr(diagnostics, "event_" + key), dtype=float)[base_mask]
-            baseline_values[key].append(ev[np.isfinite(ev)])
+            if not np.all(np.isfinite(ev)):
+                raise ValueError(
+                    f"Baseline event_{key} contains a non-finite value in realization "
+                    f"seed {base + offset}; pooled thresholds would be undefined."
+                )
+            baseline_values[key].append(ev)
         per_realization_values.append(extract_condition_flag_values(diagnostics, conditions))
 
     pooled_baseline = {key: np.concatenate(vals) for key, vals in baseline_values.items()}

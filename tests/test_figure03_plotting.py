@@ -145,6 +145,7 @@ def test_compose_figure03_runs(
         thresholds_default,
         params,
         np.linspace(0, 1, n_cells),
+        median_flag_percentages=np.zeros((3, 6)),
     )
     try:
         assert isinstance(fig, plt.Figure)
@@ -211,6 +212,7 @@ def test_compose_figure03_tags_figure3_annotations(
         thresholds_default,
         params,
         np.linspace(0, 1, n_cells),
+        median_flag_percentages=np.zeros((3, 6)),
     )
     try:
         texts = [text for ax in fig.axes for text in ax.texts]
@@ -278,6 +280,7 @@ def test_compose_figure03_uses_event_diagnostics_for_scatter() -> None:
         thresholds,
         params,
         place_field_centers=np.linspace(0, 1, n_cells),
+        median_flag_percentages=np.zeros((3, 6)),
     )
     try:
         # Diagnostic rows are ordered HPD (axis 3), -log(p) (axis 4),

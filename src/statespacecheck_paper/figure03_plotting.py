@@ -26,10 +26,7 @@ from statespacecheck_paper.figure03_protocol import (
     PhaseBoundary,
     compute_replay_step_window,
 )
-from statespacecheck_paper.figure03_summary import (
-    build_summary_conditions,
-    compute_condition_flag_percentages,
-)
+from statespacecheck_paper.figure03_summary import SUMMARY_FLAG_METRICS, build_summary_conditions
 from statespacecheck_paper.plotting import negative_log_pvalue, plot_likelihood_columns
 from statespacecheck_paper.style import CMAP_LIKELIHOOD, CMAP_POSTERIOR, COLORS
 
@@ -585,21 +582,21 @@ def _add_figure3_phase_labels(ax: Axes, config: Figure3Config) -> None:
 
 def _plot_figure3_summary_heatmap(
     ax: Axes,
-    diagnostics: DecodingDiagnostics,
-    diagnostic_thresholds: DiagnosticThresholds,
     config: Figure3Config,
-    median_flag_percentages: NDArray[np.floating] | None,
+    median_flag_percentages: NDArray[np.floating],
 ) -> None:
-    """Plot Figure 3 panel (b), the phase-by-metric flagged fraction heatmap."""
+    """Plot the across-realization phase-by-metric flag percentages."""
     conditions = build_summary_conditions(config)
     component_labels = [col.model_component for col in conditions]
 
-    if median_flag_percentages is not None:
-        frac_data = np.asarray(median_flag_percentages, dtype=float)
-    else:
-        frac_data = compute_condition_flag_percentages(
-            diagnostics, diagnostic_thresholds, conditions
+    frac_data = np.asarray(median_flag_percentages, dtype=float)
+    expected_shape = (len(SUMMARY_FLAG_METRICS), len(conditions))
+    if frac_data.shape != expected_shape:
+        raise ValueError(
+            f"median_flag_percentages must have shape {expected_shape}; got {frac_data.shape}"
         )
+    if not np.all(np.isfinite(frac_data)) or np.any((frac_data < 0.0) | (frac_data > 100.0)):
+        raise ValueError("median_flag_percentages must contain finite percentages in [0, 100]")
 
     max_frac = np.nanmax(frac_data)
     norm_frac = frac_data / max_frac if max_frac > 0 else frac_data
@@ -658,11 +655,8 @@ def _plot_figure3_summary_heatmap(
     )
     known_component_label.set_gid(FIGURE3_SUMMARY_KNOWN_COMPONENT_LABEL_GID)
 
-    summary_title = "% of spike events flagged as poor fit"
-    if median_flag_percentages is not None:
-        summary_title += " (median across realizations)"
     title = ax.set_title(
-        summary_title,
+        "% of spike events flagged as poor fit (median across realizations)",
         fontsize=8,
         pad=8,
         loc="center",
@@ -677,7 +671,7 @@ def compose_figure03(
     diagnostic_thresholds: DiagnosticThresholds,
     config: Figure3Config,
     place_field_centers: NDArray[np.floating],
-    median_flag_percentages: NDArray[np.floating] | None = None,
+    median_flag_percentages: NDArray[np.floating],
 ) -> Figure:
     """Create comprehensive time-series diagnostics figure.
 
@@ -699,13 +693,13 @@ def compose_figure03(
         Decoding parameters containing timeline structure.
     place_field_centers : NDArray, shape (n_cells,)
         Place field centers for each cell (used for spike raster sorting).
-    median_flag_percentages : NDArray, shape (3, n_columns), optional
+    median_flag_percentages : NDArray, shape (3, n_columns)
         Pre-computed across-realization median percent flagged for the
         panel-(b) heatmap (rows follow
         :data:`statespacecheck_paper.figure03_summary.SUMMARY_FLAG_METRICS`,
         columns follow :func:`statespacecheck_paper.figure03_summary.build_summary_conditions`).
-        When ``None``, the heatmap is computed from the single ``diagnostics``
-        realization shown in panel (a) instead.
+        This stabilized summary is deliberately required: substituting the
+        displayed realization would change the meaning of panel (b).
 
     Returns
     -------
@@ -785,8 +779,6 @@ def compose_figure03(
     _add_figure3_panel_label(ax_summary, "b", y=1.25)
     _plot_figure3_summary_heatmap(
         ax_summary,
-        diagnostics,
-        diagnostic_thresholds,
         config,
         median_flag_percentages,
     )

@@ -12,7 +12,6 @@ from statespacecheck_paper.figure03_summary import (
     build_summary_conditions,
     compute_condition_flag_percentages,
     extract_condition_flag_values,
-    flag_percentages_from_values,
 )
 
 
@@ -65,8 +64,9 @@ class TestSummaryFlagPercentages:
         # below: {0.0, 0.5} <= 0.5 ; above: {0.5, 1.0} >= 0.5 — both 2/3.
         assert _flag_percentage(vals, 0.5, direction) == pytest.approx(expected)
 
-    def test_flag_fraction_empty_is_zero(self) -> None:
-        assert _flag_percentage(np.array([]), 0.5, "below") == 0.0
+    def test_flag_fraction_empty_raises(self) -> None:
+        with pytest.raises(ValueError, match="no spike events"):
+            _flag_percentage(np.array([]), 0.5, "below")
 
     def test_flag_fraction_bad_direction_raises(self) -> None:
         with pytest.raises(ValueError, match="direction"):
@@ -106,32 +106,22 @@ class TestSummaryFlagPercentages:
         assert np.allclose(frac[0], 0.0)
         assert np.allclose(frac[1], 0.0)
 
-    def test_extract_drops_nan_and_matches_compute(self) -> None:
-        """``extract_condition_flag_values`` strips NaNs, and the two-step
-        extract→flag path agrees with the one-shot wrapper."""
+    def test_extract_rejects_nan_event_value(self) -> None:
+        """Every event must remain represented in condition summaries."""
         params = self._params()
         n_time = params.phase_boundaries[PhaseBoundary.SPARSE_POP_END]
         rng = np.random.default_rng(0)
         n_events = 2 * n_time
         event_time = rng.integers(0, n_time, n_events).astype(np.intp)
         kl = rng.uniform(0.0, 10.0, n_events)
-        kl[::3] = np.nan  # defensive: NaN per-event values must be stripped
+        kl[::3] = np.nan
         metrics: dict[str, np.ndarray] = {
             "event_time_ind": event_time,
             "event_hpd_overlap": rng.uniform(0.0, 1.0, n_events),
             "event_kl_divergence": kl,
             "event_predictive_pvalue": rng.uniform(0.0, 1.0, n_events),
         }
-        thresholds = DiagnosticThresholds(hpd_overlap=0.3, kl_divergence=5.0, predictive_pvalue=0.2)
         conditions = build_summary_conditions(params)
 
-        values = extract_condition_flag_values(metrics, conditions)
-        # No NaNs survive extraction.
-        for per_metric in values:
-            for arr in per_metric:
-                assert np.all(np.isfinite(arr))
-
-        np.testing.assert_allclose(
-            flag_percentages_from_values(values, thresholds),
-            compute_condition_flag_percentages(metrics, thresholds, conditions),
-        )
+        with pytest.raises(ValueError, match="undefined value"):
+            extract_condition_flag_values(metrics, conditions)
