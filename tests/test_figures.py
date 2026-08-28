@@ -11,6 +11,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from scipy.stats import norm
 
 # Add scripts directory to path so we can import the figure scripts.
 SCRIPTS_DIR = Path(__file__).parent.parent / "scripts"
@@ -87,6 +88,18 @@ def test_figure02_create_shared_example_samples_y_tilde_with_noise() -> None:
         f"simulated_log_pred contains non-finite values: "
         f"{np.sum(~np.isfinite(simulated))} of {simulated.size}"
     )
+
+    # The observed predictive density is the raw observation-model mixture
+    # Σ_x P(x) p(y=60 | x), not an inner product with a likelihood normalized
+    # across x. This differs near a finite grid boundary and guards the units of
+    # the predictive check even though the plotted HPD/KL likelihood is normalized.
+    raw_observation_density = norm.pdf(
+        data.position_bins,
+        loc=60.0,
+        scale=12.0,
+    )
+    expected_observed = np.log(np.sum(data.predictive * raw_observation_density))
+    assert observed == pytest.approx(expected_observed, rel=1e-13)
 
     positions = np.asarray(data.showcase_positions)
     y_tildes = np.asarray(data.showcase_y_tildes)

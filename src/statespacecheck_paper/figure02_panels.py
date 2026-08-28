@@ -110,8 +110,9 @@ class Figure2ExampleData:
 def create_shared_example(rng: np.random.Generator) -> Figure2ExampleData:
     """Create shared example data for all three metrics.
 
-    All metrics are computed exactly using the same distributions.
-    The predictive check p-value is computed via Monte Carlo sampling.
+    All metrics use the same distributions. HPD overlap and KL divergence are
+    computed directly; the predictive-check p-value is a fixed-seed Monte Carlo
+    estimate.
 
     Parameters
     ----------
@@ -129,8 +130,6 @@ def create_shared_example(rng: np.random.Generator) -> Figure2ExampleData:
     # Position grid
     n_bins = 200
     position_bins = np.linspace(0, 100, n_bins)
-    dx = position_bins[1] - position_bins[0]
-
     # Predictive distribution: centered at 35, narrower (more certain)
     # Likelihood: centered at 60, broader (less certain)
     # Different widths make the min() in HPD overlap formula more meaningful
@@ -140,24 +139,34 @@ def create_shared_example(rng: np.random.Generator) -> Figure2ExampleData:
     predictive = norm.pdf(position_bins, loc=pred_mean, scale=pred_std)
     predictive = normalize(predictive)
 
-    likelihood = norm.pdf(position_bins, loc=like_mean, scale=like_std)
-    likelihood = normalize(likelihood)
+    # The Gaussian has two distinct roles in the schematic. HPD/KL require a
+    # likelihood normalized across state, while f_pred(y) requires the raw
+    # observation density p(y | x). Keep both explicitly: normalizing p(y | x)
+    # over x would add a y-dependent boundary correction.
+    observed_conditional_density = norm.pdf(
+        position_bins,
+        loc=like_mean,
+        scale=like_std,
+    )
+    likelihood = normalize(observed_conditional_density)
 
     # Compute KL divergence and HPD overlap using statespacecheck
     kl_value = float(ssc.kl_divergence(predictive[np.newaxis, :], likelihood[np.newaxis, :])[0])
     hpd_value = float(ssc.hpd_overlap(predictive[np.newaxis, :], likelihood[np.newaxis, :])[0])
 
-    # Compute exact p-value using Monte Carlo sampling
+    # Estimate the p-value using Monte Carlo sampling.
     # This mirrors the approach in decoding.py decode_with_diagnostics
     n_mc_samples = 1000
 
-    # Observed log predictive density: log(integral of predictive * likelihood)
+    # Observed log predictive density under the predictive-state mixture.
     # This is log p(y | y_{1:t-1}) = log sum_x p(x_t | y_{1:t-1}) p(y_t | x_t).
     # If the overlap underflows for some pathological draw, np.log emits a
     # RuntimeWarning and yields -inf rather than the previous behaviour of
     # mapping zero to log(1e-300) ≈ -690, which would silently turn the
     # p-value into a tie count between observed and simulated underflows.
-    observed_log_pred = float(np.log(np.sum(predictive * likelihood) * dx))
+    # ``predictive`` is discrete probability mass over the grid, so the
+    # predictive observation density is the mixture sum Σ_x P(x) p(y | x).
+    observed_log_pred = float(np.log(np.sum(predictive * observed_conditional_density)))
 
     # Simulate the reference distribution per the predictive-check
     # definition in eq:fpred / eq:predictive_application. This schematic
@@ -166,7 +175,7 @@ def create_shared_example(rng: np.random.Generator) -> Figure2ExampleData:
     # 1. Sample state x_s from the event-weighted distribution, which here
     #    equals predictive(x).
     # 2. Sample observation y_tilde ~ p(y | x_s) = N(x_s, like_std^2).
-    # 3. Compute log f_pred(y_tilde) = log integral predictive(x) * p(y_tilde | x) dx.
+    # 3. Compute log f_pred(y_tilde) from the predictive-state mixture.
     simulated_log_pred_values = np.zeros(n_mc_samples)
 
     cumsum = np.cumsum(predictive)
@@ -185,14 +194,17 @@ def create_shared_example(rng: np.random.Generator) -> Figure2ExampleData:
         y_tilde = float(rng.normal(loc=sampled_pos, scale=like_std))
 
         # Simulated likelihood as a function of x: p(y_tilde | x) = N(y_tilde; x, like_std).
-        simulated_likelihood = norm.pdf(position_bins, loc=y_tilde, scale=like_std)
-        simulated_likelihood = normalize(simulated_likelihood)
+        simulated_conditional_density = norm.pdf(
+            position_bins,
+            loc=y_tilde,
+            scale=like_std,
+        )
 
         # Compute log predictive density for this simulated observation.
         # Lets np.log handle underflow with -inf + RuntimeWarning rather
         # than masking it with a +1e-300 shift (see observed_log_pred above
         # for the rationale).
-        simulated_log_pred_values[i] = np.log(np.sum(predictive * simulated_likelihood) * dx)
+        simulated_log_pred_values[i] = np.log(np.sum(predictive * simulated_conditional_density))
 
     # P-value: proportion of simulated values <= observed value
     p_value = float(np.mean(simulated_log_pred_values <= observed_log_pred))
