@@ -23,12 +23,21 @@ rather than relying on a single noisy run.
 
 from __future__ import annotations
 
+import dataclasses
+from pathlib import Path
+
 import numpy as np
 
 from statespacecheck_paper.figure03_plotting import compose_figure03
 from statespacecheck_paper.figure03_protocol import Figure3Config
 from statespacecheck_paper.figure03_simulation import run_figure03_simulation
-from statespacecheck_paper.figure03_summary import estimate_realization_summary
+from statespacecheck_paper.figure03_summary import (
+    SUMMARY_FLAG_METRICS,
+    Figure3RealizationSummary,
+    build_summary_conditions,
+    estimate_realization_summary,
+)
+from statespacecheck_paper.scientific_artifacts import write_json_artifact
 from statespacecheck_paper.style import save_figure, set_figure_defaults
 
 # Number of independent realizations pooled to stabilize the panel-(b)
@@ -38,6 +47,47 @@ from statespacecheck_paper.style import save_figure, set_figure_defaults
 # realizations gives a stable threshold and a median per-phase summary.
 # The seed-1 realization shown in panel (a) is one of these.
 N_REALIZATIONS = 100
+FIGURE03_SUMMARY_PATH = Path("manuscript/figures/main/figure03_summary.json")
+FIGURE03_CONDITION_IDS = (
+    "well_specified",
+    "remap",
+    "history_dependent",
+    "replay",
+    "drift",
+    "sparse_population",
+)
+
+
+def figure03_summary_payload(
+    config: Figure3Config,
+    summary: Figure3RealizationSummary,
+) -> dict[str, object]:
+    """Return the canonical Figure 3 reported statistics as JSON-ready data."""
+    conditions = build_summary_conditions(config)
+    if len(conditions) != len(FIGURE03_CONDITION_IDS):
+        raise ValueError(
+            "Figure 3 condition identifiers are out of sync with "
+            f"build_summary_conditions: {len(FIGURE03_CONDITION_IDS)} IDs for "
+            f"{len(conditions)} conditions."
+        )
+    first_seed = config.random_seed
+    return {
+        "schema_version": 1,
+        "figure": "figure03",
+        "configuration": dataclasses.asdict(config),
+        "realizations": {
+            "count": summary.n_realizations,
+            "first_seed": first_seed,
+            "last_seed": first_seed + summary.n_realizations - 1,
+        },
+        "diagnostic_thresholds": dataclasses.asdict(summary.diagnostic_thresholds),
+        "metric_order": [metric for metric, _ in SUMMARY_FLAG_METRICS],
+        "metric_flag_directions": {metric: direction for metric, direction in SUMMARY_FLAG_METRICS},
+        "condition_order": list(FIGURE03_CONDITION_IDS),
+        "condition_labels": [condition.label.replace("\n", "") for condition in conditions],
+        "median_flag_percentages": summary.median_flag_percentages,
+        "percentage_unit": "percent_of_spike_events",
+    }
 
 
 def generate_figure03(
@@ -60,7 +110,8 @@ def generate_figure03(
     Returns
     -------
     None
-        Saves the figure to ``manuscript/figures/main/figure03.{pdf,png}``.
+        Saves ``figure03.{pdf,png}`` and ``figure03_summary.json`` under
+        ``manuscript/figures/main``.
     """
     if config is None:
         config = Figure3Config(drift_momentum=0.88)
@@ -84,6 +135,11 @@ def generate_figure03(
         "[well-specified, remap, history, replay, drift, sparse population]:\n"
         f"{np.array2string(realization_summary.median_flag_percentages, precision=3)}"
     )
+    summary_path = write_json_artifact(
+        FIGURE03_SUMMARY_PATH,
+        figure03_summary_payload(config, realization_summary),
+    )
+    print(f"Saved canonical statistics to {summary_path}")
 
     # Panel (a) shows the single seed-1 realization; panel (b) shows the
     # pooled median percentages scored against the pooled-baseline thresholds.

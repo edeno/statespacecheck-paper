@@ -1,0 +1,77 @@
+{
+  "configuration": {
+    "decoder": {
+      "position_bin_size_cm": 2.0,
+      "position_std": 3.5355339059327378,
+      "sampling_frequency_hz": 500.0
+    },
+    "execution": {
+      "block_size": 10000
+    },
+    "provenance": {
+      "contfrag_diagonal_values": [
+        0.98,
+        0.98
+      ],
+      "contfrag_discrete_initial_conditions": [
+        0.5,
+        0.5
+      ],
+      "discrete_transition_concentration": 1.1,
+      "discrete_transition_regularization": 1e-10,
+      "movement_var": 6.0,
+      "non_local_detector_version": "0.6.10.dev214+g956fdccaf"
+    }
+  },
+  "dataset": {
+    "animal_date_epoch": "j1620210710_02_r1"
+  },
+  "detail_window": {
+    "center_index": 193069,
+    "half_width_samples": 500
+  },
+  "diagnostic_means": {
+    "continuous": {
+      "hpd_overlap": 0.8363245225528076,
+      "kl_divergence": 3.0032265820064956,
+      "predictive_pvalue": 0.5246446577216307
+    },
+    "continuous_fragmented": {
+      "hpd_overlap": 0.8825526231644693,
+      "kl_divergence": 2.1714257820288547,
+      "predictive_pvalue": 0.5282150835361257
+    }
+  },
+  "diagnostic_thresholds": {
+    "hpd_overlap": 0.05,
+    "predictive_pvalue": 0.05
+  },
+  "figure": "figure04",
+  "flag_confusions": [
+    {
+      "a_only": 16881,
+      "b_only": 173,
+      "both": 1456,
+      "metric": "hpd_overlap",
+      "n": 870018,
+      "neither": 851508,
+      "rescue_rate": 0.9205976986420897,
+      "threshold": 0.05
+    },
+    {
+      "a_only": 9373,
+      "b_only": 1706,
+      "both": 24581,
+      "metric": "predictive_pvalue",
+      "n": 870018,
+      "neither": 834358,
+      "rescue_rate": 0.2760499499322613,
+      "threshold": 0.05
+    }
+  ],
+  "metric_flag_directions": {
+    "hpd_overlap": "below",
+    "predictive_pvalue": "below"
+  },
+  "schema_version": 1
+}

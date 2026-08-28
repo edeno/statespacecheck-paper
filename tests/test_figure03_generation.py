@@ -11,7 +11,9 @@ import pytest
 from matplotlib.figure import Figure
 
 from statespacecheck_paper import figure03_generation
+from statespacecheck_paper.diagnostics import DiagnosticThresholds
 from statespacecheck_paper.figure03_protocol import Figure3Config
+from statespacecheck_paper.figure03_summary import Figure3RealizationSummary
 
 
 def test_generation_threads_one_config_through_simulation_summary_and_plot(
@@ -25,9 +27,14 @@ def test_generation_threads_one_config_through_simulation_summary_and_plot(
         diagnostics=object(),
         sparse_place_field_centers=np.array([0.5]),
     )
-    realization_summary = SimpleNamespace(
-        diagnostic_thresholds={"hpd_overlap": 0.05},
+    realization_summary = Figure3RealizationSummary(
+        diagnostic_thresholds=DiagnosticThresholds(
+            hpd_overlap=0.05,
+            kl_divergence=2.0,
+            predictive_pvalue=0.05,
+        ),
         median_flag_percentages=np.zeros((3, 6)),
+        n_realizations=7,
     )
 
     seen: dict[str, Any] = {}
@@ -59,6 +66,11 @@ def test_generation_threads_one_config_through_simulation_summary_and_plot(
         "save_figure",
         lambda *args, **kwargs: seen.update(save_args=args, save_kwargs=kwargs),
     )
+    monkeypatch.setattr(
+        figure03_generation,
+        "write_json_artifact",
+        lambda path, payload: (seen.update(summary_path=path, summary_payload=payload) or path),
+    )
 
     figure03_generation.generate_figure03(config, n_realizations=7)
     plt.close(fig)
@@ -69,6 +81,8 @@ def test_generation_threads_one_config_through_simulation_summary_and_plot(
     assert seen["compose_kwargs"]["config"] is config
     assert seen["save_kwargs"]["fig"] is fig
     assert seen["save_kwargs"]["close"] is True
+    assert seen["summary_path"] == figure03_generation.FIGURE03_SUMMARY_PATH
+    assert seen["summary_payload"]["realizations"]["count"] == 7
 
 
 def test_default_recipe_uses_manuscript_drift_momentum(

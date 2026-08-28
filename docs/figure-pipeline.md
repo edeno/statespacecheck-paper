@@ -39,12 +39,13 @@ families**:
 diagnostics            → (external statespacecheck only; leaf)
 decoding               → diagnostics, simulation
 simulation             → (numpy/scipy only)
+scientific_artifacts   → (standard library + numpy only)
 
 figure03_protocol      → (leaf; no sibling paper module)
 figure03_simulation    → figure03_protocol, decoding, diagnostics, simulation
 figure03_summary       → figure03_protocol, figure03_simulation, diagnostics
 figure03_plotting      → figure03_protocol, figure03_summary, diagnostics, plotting, style
-figure03_generation    → figure03_protocol, figure03_simulation, figure03_summary, figure03_plotting, style
+figure03_generation    → figure03_protocol, figure03_simulation, figure03_summary, figure03_plotting, scientific_artifacts, style
 generate_figure03.py   → figure03_generation
 
 figure04_decoder       → (leaf; nld construction + Figure4Config)
@@ -56,7 +57,7 @@ figure04_panels        → diagnostics, figure04_diagnostics, figure04_plot_prim
 figure04_cache         → figure04_decoder (Figure4Config only)
 figure04_workflow      → figure04_cache, figure04_decoder, figure04_diagnostics, figure04_place_fields, diagnostics, load_local_data
 figure04_layout        → figure04_workflow, diagnostics, figure04_panels, figure04_plot_primitives, figure04_track_plots
-figure04_generation    → figure04_workflow, figure04_layout, figure04_cache, figure04_decoder, paths, style
+figure04_generation    → figure04_workflow, figure04_layout, figure04_cache, figure04_decoder, paths, scientific_artifacts, style
 generate_figure04.py   → figure04_generation
 ```
 
@@ -132,7 +133,9 @@ Trace: `create_shared_example(rng)` returns one immutable
   thresholds + median flag percentages) →
   `figure03_plotting.compose_figure03` (the time-series panel + the panel-(b)
   heatmap).
-- **Output:** `manuscript/figures/main/figure03.{pdf,png}`.
+- **Output:** `manuscript/figures/main/figure03.{pdf,png}` plus
+  `figure03_summary.json`, containing the full configuration, seed range,
+  thresholds, metric/condition order, and reported percentage matrix.
 - **Tests:** `tests/test_figure03_phases.py` (the higher-level scientific
   contract, including the control-integrity checks that the replay and
   sparse-population controls carry no hidden misfit);
@@ -165,7 +168,8 @@ returns a `Figure3RealizationSummary` (`.diagnostic_thresholds: DiagnosticThresh
 `.median_flag_percentages`) → `compose_figure03(true_position=…, spike_counts=…,
 diagnostics=…, diagnostic_thresholds=…, config=…, place_field_centers=…,
 median_flag_percentages=…)` returns a `matplotlib` `Figure` → `save_figure` writes
-`figure03.{pdf,png}`.
+`figure03.{pdf,png}` while `write_json_artifact` writes the same summary values
+and their configuration to `figure03_summary.json`.
 
 ### Manuscript ↔ code vocabulary (Figure 3)
 
@@ -242,7 +246,9 @@ median_flag_percentages=…)` returns a `matplotlib` `Figure` → `save_figure` 
   is cached as a single joblib bundle under `data/intermediates/{epoch}_fig4_cache.joblib`,
   gated by a provenance fingerprint (schema version + `Figure4Config` +
   data identifier + installed `non_local_detector` version).
-- **Output:** `manuscript/figures/main/figure04.{pdf,png}`.
+- **Output:** `manuscript/figures/main/figure04.{pdf,png}` plus
+  `figure04_summary.json`, containing configuration and dataset identifiers,
+  thresholds, whole-session means, flag-confusion counts, and rescue rates.
 - **Tests:** `tests/test_figure04_decoder.py::TestFigure4ConfigMatchesManuscript`
   (config matches the manuscript decoder parameters);
   `tests/test_figure04_{cache,workflow,layout,generation}.py` (orchestration);

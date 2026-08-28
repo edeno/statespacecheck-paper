@@ -2,25 +2,31 @@
 
 A short, readable orchestration of the Figure-4 modules: build the canonical
 :class:`Figure4Config` and :class:`Figure4Paths`, prepare the render data
-(cached-or-computed decode + fresh track data), print the manuscript summary
-scalars, compose the figure, and save it with the composition's tight bounding
-box. Uses the fixed diagnostic thresholds (HPD overlap and the predictive
+(cached-or-computed decode + fresh track data), print and serialize the
+manuscript summary scalars, compose the figure, and save it with the
+composition's tight bounding box. Uses the fixed diagnostic thresholds (HPD
+overlap and the predictive
 p-value at 0.05; KL has no natural fixed cutoff and is shown without one).
 """
 
 from __future__ import annotations
 
+import dataclasses
+import math
+from pathlib import Path
 from typing import Literal
 
 from statespacecheck_paper.figure04_cache import Figure4Paths
 from statespacecheck_paper.figure04_decoder import Figure4Config
 from statespacecheck_paper.figure04_layout import Figure4DetailWindow, compose_figure04
 from statespacecheck_paper.figure04_workflow import (
+    Figure4Summary,
     compute_figure04_summary,
     format_figure04_summary,
     prepare_figure04_render_data,
 )
 from statespacecheck_paper.paths import ANIMAL_DATE_EPOCH, DATA_PATH
+from statespacecheck_paper.scientific_artifacts import write_json_artifact
 from statespacecheck_paper.style import save_figure, set_figure_defaults
 
 # Diagnostic thresholds. HPD overlap and the predictive p-value use fixed
@@ -40,6 +46,39 @@ FIGURE4_DETAIL_WINDOW = Figure4DetailWindow(
     center_index=193_069,
     half_width_samples=500,
 )
+FIGURE04_SUMMARY_PATH = Path("manuscript/figures/main/figure04_summary.json")
+
+
+def figure04_summary_payload(
+    *,
+    config: Figure4Config,
+    paths: Figure4Paths,
+    summary: Figure4Summary,
+) -> dict[str, object]:
+    """Return the canonical Figure 4 reported statistics as JSON-ready data."""
+    confusions: list[dict[str, object]] = []
+    for confusion in summary.flag_confusions:
+        rescue_rate = confusion.rescue_rate
+        confusions.append(
+            {
+                **dataclasses.asdict(confusion),
+                "rescue_rate": rescue_rate if math.isfinite(rescue_rate) else None,
+            }
+        )
+    return {
+        "schema_version": 1,
+        "figure": "figure04",
+        "dataset": {"animal_date_epoch": paths.animal_date_epoch},
+        "configuration": dataclasses.asdict(config),
+        "diagnostic_thresholds": dict(FIGURE4_DIAGNOSTIC_THRESHOLDS),
+        "metric_flag_directions": dict(FIGURE4_METRIC_DIRECTIONS),
+        "detail_window": dataclasses.asdict(FIGURE4_DETAIL_WINDOW),
+        "diagnostic_means": {
+            "continuous": dataclasses.asdict(summary.continuous),
+            "continuous_fragmented": dataclasses.asdict(summary.continuous_fragmented),
+        },
+        "flag_confusions": confusions,
+    }
 
 
 def generate_figure04(*, use_cache: bool = True) -> None:
@@ -66,6 +105,11 @@ def generate_figure04(*, use_cache: bool = True) -> None:
         FIGURE4_METRIC_DIRECTIONS,
     )
     print(f"\n{format_figure04_summary(summary)}")
+    summary_path = write_json_artifact(
+        FIGURE04_SUMMARY_PATH,
+        figure04_summary_payload(config=config, paths=paths, summary=summary),
+    )
+    print(f"Saved canonical statistics to {summary_path}")
 
     print("\nGenerating Figure 4...")
     set_figure_defaults(context="paper")

@@ -84,6 +84,7 @@ def test_figure03_family_dependency_edges_are_acyclic() -> None:
             prefix + "figure03_protocol",
             prefix + "figure03_simulation",
             prefix + "figure03_summary",
+            prefix + "scientific_artifacts",
             prefix + "style",
         },
     }
@@ -162,6 +163,7 @@ def test_figure04_family_dependency_edges_are_acyclic() -> None:
             prefix + "figure04_layout",
             prefix + "figure04_decoder",
             prefix + "paths",
+            prefix + "scientific_artifacts",
             prefix + "style",
         },
     }

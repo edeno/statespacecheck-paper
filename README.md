@@ -31,14 +31,14 @@ module reading order, data boundary, output, and guarding tests — see
 | --- | --- | --- | --- | --- |
 | 1 | `scripts/generate_figure01.py` | simulated | PDF + PNG | none |
 | 2 | `scripts/generate_figure02.py` | simulated | PDF + PNG | none |
-| 3 | `scripts/generate_figure03.py` | simulated | PDF + PNG | none |
-| 4 | `scripts/generate_figure04.py` | derived real data | PDF + PNG | documented dataset (see below) |
+| 3 | `scripts/generate_figure03.py` | simulated | PDF + PNG + summary JSON | none |
+| 4 | `scripts/generate_figure04.py` | derived real data | PDF + PNG + summary JSON | documented dataset (see below) |
 
 ```bash
 # Reproduce the locked environment, then regenerate every figure:
 uv sync --frozen
 uv run python scripts/generate_all_figures.py
-# Outputs land in manuscript/figures/main/ as PDF + PNG (450 DPI).
+# Outputs land in manuscript/figures/main/ (figures at 450 DPI).
 ```
 
 Figures 1–3 reproduce deterministically from the seeded simulation. **Figure 4**
