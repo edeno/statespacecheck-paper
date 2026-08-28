@@ -71,6 +71,20 @@ class TestComputePredictiveMarkProbabilities:
         with pytest.raises(ValueError, match="zero total"):
             compute_predictive_mark_probabilities(predictive, rates)
 
+    def test_nonfinite_total_after_reduction_raises(self) -> None:
+        """Finite expected intensities must not normalize by an overflowed sum."""
+        prior = np.array([0.5, 0.5])
+        rates = np.full((2, 2), 1e308)
+        with pytest.raises(ValueError, match="total event intensity is non-finite"):
+            compute_predictive_mark_probabilities(prior, rates)
+
+    def test_nonfinite_expected_intensity_after_matrix_product_raises(self) -> None:
+        """Overflow during state integration must fail before normalization."""
+        predictive = np.array([[1.0, 1.0]])
+        rates = np.full((2, 1), 1e308)
+        with pytest.raises(ValueError, match="expected mark intensities are non-finite"):
+            compute_predictive_mark_probabilities(predictive, rates)
+
 
 # ---------------------------------------------------------------------------
 # DiagnosticThresholds / compute_baseline_diagnostic_thresholds

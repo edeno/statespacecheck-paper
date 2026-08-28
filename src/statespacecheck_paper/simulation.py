@@ -111,7 +111,18 @@ def normalize(p: NDArray[np.floating], axis: int | None = None) -> NDArray[np.fl
         raise ValueError("p must contain at least one value")
     if not np.all(np.isfinite(p)) or np.any(p < 0.0):
         raise ValueError("p must contain only finite nonnegative values")
-    s: NDArray[np.floating] = np.sum(p, axis=axis, keepdims=True)
+    # Finite inputs can still overflow during the reduction (for example,
+    # ``[1e308, 1e308]``). Suppress NumPy's generic warning so we can raise a
+    # precise contract error instead of returning a zero-mass result from
+    # division by infinity.
+    with np.errstate(over="ignore", invalid="ignore"):
+        s: NDArray[np.floating] = np.sum(p, axis=axis, keepdims=True)
+    if np.any(~np.isfinite(s)):
+        bad = np.flatnonzero(~np.isfinite(np.asarray(s).reshape(-1)))
+        raise ValueError(
+            "Cannot normalize non-finite total mass; invalid flattened slice indices: "
+            f"{bad[:10].tolist()}"
+        )
     if np.any(s <= 0.0):
         bad = np.flatnonzero(np.asarray(s).reshape(-1) <= 0.0)
         raise ValueError(

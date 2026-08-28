@@ -478,9 +478,18 @@ def compute_predictive_mark_probabilities(
     if not np.all(np.isfinite(mark_intensities)) or np.any(mark_intensities < 0.0):
         raise ValueError("mark_intensities must contain finite nonnegative values")
 
-    expected_intensities: NDArray[np.floating] = predictive_distribution @ mark_intensities
+    # Finite inputs can overflow in the matrix product or the subsequent
+    # across-mark reduction. Convert those arithmetic failures into explicit
+    # contract errors rather than returning zeros from division by infinity.
+    with np.errstate(over="ignore", invalid="ignore"):
+        expected_intensities: NDArray[np.floating] = predictive_distribution @ mark_intensities
+    if not np.all(np.isfinite(expected_intensities)):
+        raise ValueError("Predictive expected mark intensities are non-finite after integration")
     if expected_intensities.ndim == 1:
-        total_intensity = float(expected_intensities.sum())
+        with np.errstate(over="ignore", invalid="ignore"):
+            total_intensity = float(expected_intensities.sum())
+        if not np.isfinite(total_intensity):
+            raise ValueError("Predictive total event intensity is non-finite")
         if total_intensity <= 0.0:
             raise ValueError(
                 "Predictive mark distribution is undefined because total event intensity is zero"
@@ -488,7 +497,14 @@ def compute_predictive_mark_probabilities(
         mark_probabilities: NDArray[np.floating] = expected_intensities / total_intensity
         return mark_probabilities
 
-    total_intensity = expected_intensities.sum(axis=1, keepdims=True)
+    with np.errstate(over="ignore", invalid="ignore"):
+        total_intensity = expected_intensities.sum(axis=1, keepdims=True)
+    nonfinite_total = ~np.isfinite(total_intensity[:, 0])
+    if nonfinite_total.any():
+        bad = np.flatnonzero(nonfinite_total)
+        raise ValueError(
+            f"Predictive total event intensity is non-finite for row indices: {bad[:10].tolist()}"
+        )
     zero_total = total_intensity[:, 0] == 0.0
     if zero_total.any():
         bad = np.flatnonzero(zero_total)

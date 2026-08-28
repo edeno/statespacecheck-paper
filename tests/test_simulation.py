@@ -39,6 +39,11 @@ class TestNormalize:
         with pytest.raises(ValueError, match="zero total mass"):
             normalize(np.zeros(5))
 
+    def test_normalize_reduction_overflow_raises(self) -> None:
+        """Finite inputs whose sum overflows must not produce zero mass."""
+        with pytest.raises(ValueError, match="non-finite total mass"):
+            normalize(np.array([1e308, 1e308]))
+
     @pytest.mark.parametrize(
         "bad", [np.array([1.0, -0.5, 2.0]), np.array([1.0, np.nan]), np.array([1.0, np.inf])]
     )
