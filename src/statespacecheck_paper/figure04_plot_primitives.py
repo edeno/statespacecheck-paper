@@ -2,9 +2,8 @@
 
 Small building blocks used across the Figure-4 track, raster, and diagnostic
 panels: the annotation GID constants, the half-pixel ``imshow`` extent, the
-decoder-likelihood-to-columns conversion, the scale-bar drawer, and the
-distribution heatmap renderer. The shared ``-log(p)`` display transform lives in
-:mod:`plotting` (``negative_log_pvalue``).
+scale-bar drawer, and the distribution heatmap renderer. The shared ``-log(p)``
+display transform lives in :mod:`plotting` (``negative_log_pvalue``).
 """
 
 from __future__ import annotations
