@@ -27,8 +27,9 @@ from numpy.typing import NDArray
 from statespacecheck_paper.diagnostics import SpikeEventDiagnostics
 from statespacecheck_paper.figure04_cache import (
     _FIGURE04_CACHE_PAYLOAD_KEYS,
+    Figure4CacheProvenance,
     Figure4Paths,
-    compute_figure04_cache_fingerprint,
+    compute_figure04_cache_provenance,
     load_figure04_cache,
     save_figure04_cache,
 )
@@ -228,7 +229,9 @@ class Figure4RenderData:
 
     The position/track data is always loaded fresh (:class:`NeuralRecordingData`,
     cheap, never cached); the decode results are the expensive cacheable content
-    (:class:`Figure4DecodeResults`). The three per-time arrays derived from the
+    (:class:`Figure4DecodeResults`). ``cache_provenance`` records the exact
+    cache fingerprint, input checksums, and decoder dependency version used to
+    produce those results. The three per-time arrays derived from the
     recording are copied and marked read-only at construction, must share a
     single 1-D ``n_time``, and that ``n_time`` must match the decode timeline
     (``decode_results.spike_counts.shape[0]``) so a cached decode cannot pair
@@ -240,6 +243,7 @@ class Figure4RenderData:
     head_position: NDArray[np.float64]
     linear_position: NDArray[np.float64]
     decode_results: Figure4DecodeResults
+    cache_provenance: Figure4CacheProvenance | None = None
 
     def __post_init__(self) -> None:
         # Unconditional copies (see Figure4DecodeResults) so freezing cannot
@@ -428,7 +432,7 @@ def prepare_figure04_render_data(
     Reads only the injected ``config`` and ``paths`` (never the module-global
     ``DATA_PATH`` / ``ANIMAL_DATE_EPOCH``), so it is exercisable with synthetic
     inputs and a temporary cache directory. The cache is keyed on
-    :func:`compute_figure04_cache_fingerprint`; a config / data / dependency
+    :func:`compute_figure04_cache_provenance`; a config / data / dependency
     change forces a recompute. The recording is always loaded fresh (it is cheap
     and never cached).
 
@@ -451,7 +455,8 @@ def prepare_figure04_render_data(
     head_position = position_info[["head_position_x", "head_position_y"]].to_numpy(dtype=np.float64)
     linear_position = position_info["linear_position"].to_numpy(dtype=np.float64)
 
-    expected_fingerprint = compute_figure04_cache_fingerprint(config, paths)
+    cache_provenance = compute_figure04_cache_provenance(config, paths)
+    expected_fingerprint = cache_provenance.fingerprint_sha256
     decode_results: Figure4DecodeResults | None = None
     if use_cache:
         print("Loading cached decoder outputs (use --force-recompute to rebuild)...")
@@ -484,6 +489,7 @@ def prepare_figure04_render_data(
         head_position=head_position,
         linear_position=linear_position,
         decode_results=decode_results,
+        cache_provenance=cache_provenance,
     )
 
 

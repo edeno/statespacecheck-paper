@@ -16,7 +16,7 @@ import math
 from pathlib import Path
 from typing import Literal
 
-from statespacecheck_paper.figure04_cache import Figure4Paths
+from statespacecheck_paper.figure04_cache import Figure4CacheProvenance, Figure4Paths
 from statespacecheck_paper.figure04_decoder import Figure4Config
 from statespacecheck_paper.figure04_layout import Figure4DetailWindow, compose_figure04
 from statespacecheck_paper.figure04_workflow import (
@@ -26,7 +26,11 @@ from statespacecheck_paper.figure04_workflow import (
     prepare_figure04_render_data,
 )
 from statespacecheck_paper.paths import ANIMAL_DATE_EPOCH, DATA_PATH
-from statespacecheck_paper.scientific_artifacts import write_json_artifact
+from statespacecheck_paper.scientific_artifacts import (
+    inclusive_flag_rules,
+    scientific_source_provenance,
+    write_json_artifact,
+)
 from statespacecheck_paper.style import save_figure, set_figure_defaults
 
 # Diagnostic thresholds. HPD overlap and the predictive p-value use fixed
@@ -54,8 +58,14 @@ def figure04_summary_payload(
     config: Figure4Config,
     paths: Figure4Paths,
     summary: Figure4Summary,
+    cache_provenance: Figure4CacheProvenance,
 ) -> dict[str, object]:
     """Return the canonical Figure 4 reported statistics as JSON-ready data."""
+    if cache_provenance.animal_date_epoch != paths.animal_date_epoch:
+        raise ValueError(
+            "Figure 4 cache provenance identifies a different dataset: "
+            f"{cache_provenance.animal_date_epoch!r} != {paths.animal_date_epoch!r}."
+        )
     confusions: list[dict[str, object]] = []
     for confusion in summary.flag_confusions:
         rescue_rate = confusion.rescue_rate
@@ -66,18 +76,24 @@ def figure04_summary_payload(
             }
         )
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "figure": "figure04",
         "dataset": {"animal_date_epoch": paths.animal_date_epoch},
         "configuration": dataclasses.asdict(config),
-        "diagnostic_thresholds": dict(FIGURE4_DIAGNOSTIC_THRESHOLDS),
-        "metric_flag_directions": dict(FIGURE4_METRIC_DIRECTIONS),
+        "flag_rules": inclusive_flag_rules(
+            FIGURE4_DIAGNOSTIC_THRESHOLDS,
+            FIGURE4_METRIC_DIRECTIONS,
+        ),
         "detail_window": dataclasses.asdict(FIGURE4_DETAIL_WINDOW),
         "diagnostic_means": {
             "continuous": dataclasses.asdict(summary.continuous),
             "continuous_fragmented": dataclasses.asdict(summary.continuous_fragmented),
         },
         "flag_confusions": confusions,
+        "provenance": {
+            "source": scientific_source_provenance(),
+            "figure04_decode_cache": cache_provenance.artifact_payload(),
+        },
     }
 
 
@@ -98,6 +114,11 @@ def generate_figure04(*, use_cache: bool = True) -> None:
     config = Figure4Config()
     paths = Figure4Paths(data_path=DATA_PATH, animal_date_epoch=ANIMAL_DATE_EPOCH)
     render_data = prepare_figure04_render_data(config, paths, use_cache=use_cache)
+    if render_data.cache_provenance is None:
+        raise RuntimeError(
+            "Figure 4 render data lacks cache provenance; refusing to write a "
+            "canonical summary without input identities."
+        )
 
     summary = compute_figure04_summary(
         render_data,
@@ -107,7 +128,12 @@ def generate_figure04(*, use_cache: bool = True) -> None:
     print(f"\n{format_figure04_summary(summary)}")
     summary_path = write_json_artifact(
         FIGURE04_SUMMARY_PATH,
-        figure04_summary_payload(config=config, paths=paths, summary=summary),
+        figure04_summary_payload(
+            config=config,
+            paths=paths,
+            summary=summary,
+            cache_provenance=render_data.cache_provenance,
+        ),
     )
     print(f"Saved canonical statistics to {summary_path}")
 

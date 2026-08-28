@@ -34,6 +34,13 @@ module reading order, data boundary, output, and guarding tests — see
 | 3 | `scripts/generate_figure03.py` | simulated | PDF + PNG + summary JSON | none |
 | 4 | `scripts/generate_figure04.py` | derived real data | PDF + PNG + summary JSON | documented dataset (see below) |
 
+The Figure 3 and 4 summary JSON files are reproducibility artifacts, not merely
+copies of console output. Schema version 2 records each flag threshold together
+with its exact inclusive comparison operator, plus hashes of the scientific
+source tree and `uv.lock`. Figure 4 additionally records the decode-cache
+fingerprint, installed decoder version, and SHA-256 checksum of each of its five
+derived input exports. See [the schema notes](docs/figure-pipeline.md#machine-readable-summary-schema).
+
 ```bash
 # Reproduce the locked environment, then regenerate every figure:
 uv sync --frozen

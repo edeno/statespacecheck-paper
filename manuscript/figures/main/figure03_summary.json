@@ -106,12 +106,21 @@
     "sparse_place_field_std": 2.0,
     "sparse_position": 30.0
   },
-  "diagnostic_thresholds": {
-    "hpd_overlap": 0.0,
-    "kl_divergence": 4.003728364400552,
-    "predictive_pvalue": 0.05
-  },
   "figure": "figure03",
+  "flag_rules": {
+    "hpd_overlap": {
+      "comparison": "less_than_or_equal",
+      "threshold": 0.0
+    },
+    "kl_divergence": {
+      "comparison": "greater_than_or_equal",
+      "threshold": 4.003728364400552
+    },
+    "predictive_pvalue": {
+      "comparison": "less_than_or_equal",
+      "threshold": 0.05
+    }
+  },
   "median_flag_percentages": [
     [
       1.5123686453394405,
@@ -138,21 +147,23 @@
       44.94949494949495
     ]
   ],
-  "metric_flag_directions": {
-    "hpd_overlap": "below",
-    "kl_divergence": "above",
-    "predictive_pvalue": "below"
-  },
   "metric_order": [
     "hpd_overlap",
     "predictive_pvalue",
     "kl_divergence"
   ],
   "percentage_unit": "percent_of_spike_events",
+  "provenance": {
+    "source": {
+      "source_tree_sha256": "64c22fd45c91c01afbbe7a1cf040cba3992b4efd6c09726f6444573671ff94ae",
+      "statespacecheck_paper_version": "0.1.0",
+      "uv_lock_sha256": "1e593807ad3ef1fe385bc7351056221b966552819319d83a376572cdd319cf78"
+    }
+  },
   "realizations": {
     "count": 100,
     "first_seed": 1,
     "last_seed": 100
   },
-  "schema_version": 1
+  "schema_version": 2
 }

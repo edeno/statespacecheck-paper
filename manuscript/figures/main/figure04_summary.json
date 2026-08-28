@@ -42,10 +42,6 @@
       "predictive_pvalue": 0.5282150835361257
     }
   },
-  "diagnostic_thresholds": {
-    "hpd_overlap": 0.05,
-    "predictive_pvalue": 0.05
-  },
   "figure": "figure04",
   "flag_confusions": [
     {
@@ -69,9 +65,34 @@
       "threshold": 0.05
     }
   ],
-  "metric_flag_directions": {
-    "hpd_overlap": "below",
-    "predictive_pvalue": "below"
+  "flag_rules": {
+    "hpd_overlap": {
+      "comparison": "less_than_or_equal",
+      "threshold": 0.05
+    },
+    "predictive_pvalue": {
+      "comparison": "less_than_or_equal",
+      "threshold": 0.05
+    }
   },
-  "schema_version": 1
+  "provenance": {
+    "figure04_decode_cache": {
+      "export_file_sha256": {
+        "j1620210710_02_r1_HPC_spike_times.pkl": "2d3e87fddf2e76237d5cbcd8773fb754d873b96dd41820f4c6a07b0fc9802905",
+        "j1620210710_02_r1_linear_edge_order.pkl": "ccdd3cf89080a08d6b670c77eb635174fb801c44cb040e4f6aba7c3da5967646",
+        "j1620210710_02_r1_linear_edge_spacing.pkl": "10fe7c1a5cf8e7ec589293a3ce47a20764bc918c193ae6736a1e3df783c83c8e",
+        "j1620210710_02_r1_position_info.pkl": "8c96c7ace899db447d546e63a4e196188f14ab81ed66ec39c7939954b3775927",
+        "j1620210710_02_r1_track_graph.pkl": "147bfb7edb0e100cb56a09a00bca8104e789b5f462c970789ddd5d5adb45b84f"
+      },
+      "fingerprint_sha256": "51dfb24b670e334a00d4421d8200ff272758674a7a2f015a6e9abcc1e30f2258",
+      "non_local_detector_version": "0.6.10.dev214+g956fdccaf",
+      "schema_version": 4
+    },
+    "source": {
+      "source_tree_sha256": "64c22fd45c91c01afbbe7a1cf040cba3992b4efd6c09726f6444573671ff94ae",
+      "statespacecheck_paper_version": "0.1.0",
+      "uv_lock_sha256": "1e593807ad3ef1fe385bc7351056221b966552819319d83a376572cdd319cf78"
+    }
+  },
+  "schema_version": 2
 }

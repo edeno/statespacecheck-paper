@@ -4,7 +4,9 @@ The Figure-4 decode (fit + decode both models + diagnostics) is expensive, so
 its results are cached to a single joblib bundle under ``data/intermediates``.
 This module owns the cache location (:class:`Figure4Paths`), the provenance
 fingerprint that gates a stale cache (:func:`compute_figure04_cache_fingerprint`),
-and the load/save helpers with explicit invalid-cache behavior. It imports
+the corresponding machine-readable input provenance
+(:func:`compute_figure04_cache_provenance`), and the load/save helpers with
+explicit invalid-cache behavior. It imports
 ``Figure4Config`` from :mod:`figure04_decoder` and the input-file suffix list
 (``EXPORT_FILE_SUFFIXES``) from :mod:`load_local_data`, whose loader owns it.
 """
@@ -18,6 +20,7 @@ import warnings
 from collections.abc import Mapping
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
+from typing import TypedDict
 
 import joblib
 
@@ -40,6 +43,16 @@ _FIGURE04_CACHE_PAYLOAD_KEYS = (
     "diagnostic_place_fields",
     "diagnostic_position_bins",
 )
+
+
+class Figure4CacheArtifactProvenance(TypedDict):
+    """Path-independent cache and input identities stored in the summary."""
+
+    schema_version: int
+    fingerprint_sha256: str
+    non_local_detector_version: str
+    export_file_sha256: dict[str, str | None]
+
 
 # The pre-exported input files are named by ``load_local_data`` (which owns
 # ``EXPORT_FILE_SUFFIXES``); their content hashes go into the fingerprint so that
@@ -66,6 +79,48 @@ def _export_file_checksums(paths: Figure4Paths) -> dict[str, str | None]:
                 digest.update(chunk)
         checksums[suffix] = digest.hexdigest()
     return checksums
+
+
+@dataclasses.dataclass(frozen=True)
+class Figure4CacheProvenance:
+    """Identity of the validated Figure-4 decode cache and its exported inputs."""
+
+    fingerprint_sha256: str
+    schema_version: int
+    animal_date_epoch: str
+    export_checksums: tuple[tuple[str, str | None], ...]
+    non_local_detector_version: str
+
+    def artifact_payload(
+        self, *, require_complete_inputs: bool = True
+    ) -> Figure4CacheArtifactProvenance:
+        """Return path-independent cache provenance for a summary artifact."""
+        checksum_by_suffix = dict(self.export_checksums)
+        if len(checksum_by_suffix) != len(self.export_checksums):
+            raise ValueError("Figure 4 provenance contains duplicate export suffixes.")
+        missing_suffixes = set(EXPORT_FILE_SUFFIXES) - set(checksum_by_suffix)
+        unexpected_suffixes = set(checksum_by_suffix) - set(EXPORT_FILE_SUFFIXES)
+        if missing_suffixes or unexpected_suffixes:
+            raise ValueError(
+                "Figure 4 provenance must identify the canonical input exports; "
+                f"missing {sorted(missing_suffixes)}, unexpected {sorted(unexpected_suffixes)}."
+            )
+        export_file_sha256 = {
+            f"{self.animal_date_epoch}{suffix}": checksum
+            for suffix, checksum in checksum_by_suffix.items()
+        }
+        missing = [name for name, checksum in export_file_sha256.items() if checksum is None]
+        if require_complete_inputs and missing:
+            raise ValueError(
+                "Canonical Figure 4 provenance requires every exported input; "
+                f"missing checksums for {missing}."
+            )
+        return {
+            "schema_version": self.schema_version,
+            "fingerprint_sha256": self.fingerprint_sha256,
+            "non_local_detector_version": self.non_local_detector_version,
+            "export_file_sha256": export_file_sha256,
+        }
 
 
 @dataclasses.dataclass(frozen=True)
@@ -102,8 +157,11 @@ def _installed_non_local_detector_version() -> str:
         ) from exc
 
 
-def compute_figure04_cache_fingerprint(config: Figure4Config, paths: Figure4Paths) -> str:
-    """Provenance fingerprint gating the Figure-4 cache.
+def compute_figure04_cache_provenance(
+    config: Figure4Config,
+    paths: Figure4Paths,
+) -> Figure4CacheProvenance:
+    """Return the fingerprint and its path-independent provenance components.
 
     Hashes the schema version, the decode-affecting parameters (the
     :class:`Figure4Config` ``decoder`` and ``provenance`` parts -- but **not**
@@ -124,18 +182,34 @@ def compute_figure04_cache_fingerprint(config: Figure4Config, paths: Figure4Path
     # config and the recorded provenance. ``config.execution`` (block_size) is a
     # performance-only knob that leaves the decode identical, so it is
     # deliberately excluded -- changing it must not invalidate a cached decode.
-    payload = {
+    export_checksums = _export_file_checksums(paths)
+    non_local_detector_version = _installed_non_local_detector_version()
+    fingerprint_payload = {
         "schema_version": FIGURE04_CACHE_SCHEMA_VERSION,
         "config": {
             "decoder": dataclasses.asdict(config.decoder),
             "provenance": dataclasses.asdict(config.provenance),
         },
         "animal_date_epoch": paths.animal_date_epoch,
-        "export_checksums": _export_file_checksums(paths),
-        "non_local_detector_version": _installed_non_local_detector_version(),
+        "export_checksums": export_checksums,
+        "non_local_detector_version": non_local_detector_version,
     }
-    blob = json.dumps(payload, sort_keys=True, default=str).encode()
-    return hashlib.sha256(blob).hexdigest()
+    blob = json.dumps(fingerprint_payload, sort_keys=True, default=str).encode()
+    return Figure4CacheProvenance(
+        fingerprint_sha256=hashlib.sha256(blob).hexdigest(),
+        schema_version=FIGURE04_CACHE_SCHEMA_VERSION,
+        animal_date_epoch=paths.animal_date_epoch,
+        export_checksums=tuple(export_checksums.items()),
+        non_local_detector_version=non_local_detector_version,
+    )
+
+
+def compute_figure04_cache_fingerprint(config: Figure4Config, paths: Figure4Paths) -> str:
+    """Return the provenance fingerprint gating the Figure-4 decode cache.
+
+    See :func:`compute_figure04_cache_provenance` for the fingerprint inputs.
+    """
+    return compute_figure04_cache_provenance(config, paths).fingerprint_sha256
 
 
 def load_figure04_cache(path: Path, expected_fingerprint: str) -> dict[str, object] | None:

@@ -135,7 +135,8 @@ Trace: `create_shared_example(rng)` returns one immutable
   heatmap).
 - **Output:** `manuscript/figures/main/figure03.{pdf,png}` plus
   `figure03_summary.json`, containing the full configuration, seed range,
-  thresholds, metric/condition order, and reported percentage matrix.
+  explicit inclusive flag rules, metric/condition order, reported percentage
+  matrix, and source/dependency-lock provenance.
 - **Tests:** `tests/test_figure03_phases.py` (the higher-level scientific
   contract, including the control-integrity checks that the replay and
   sparse-population controls carry no hidden misfit);
@@ -192,7 +193,7 @@ and their configuration to `figure03_summary.json`.
   `--force-recompute` to re-fit and re-decode both models instead of loading the
   cached decoder outputs (this overwrites the cache; a config / data /
   `non_local_detector` change invalidates the cache automatically). The cache
-  fingerprint (`figure04_cache.compute_figure04_cache_fingerprint`) hashes the
+  fingerprint (`figure04_cache.compute_figure04_cache_provenance`) hashes the
   schema version, the full `Figure4Config`, the installed `non_local_detector`
   version, and the **content hashes of all five input exports** — so replacing an
   export under the same `animal_date_epoch` invalidates the cache too.
@@ -248,7 +249,9 @@ and their configuration to `figure03_summary.json`.
   data identifier + installed `non_local_detector` version).
 - **Output:** `manuscript/figures/main/figure04.{pdf,png}` plus
   `figure04_summary.json`, containing configuration and dataset identifiers,
-  thresholds, whole-session means, flag-confusion counts, and rescue rates.
+  explicit inclusive flag rules, whole-session means, flag-confusion counts,
+  rescue rates, source/dependency-lock provenance, the decode-cache fingerprint,
+  and SHA-256 checksums for all five input exports.
 - **Tests:** `tests/test_figure04_decoder.py::TestFigure4ConfigMatchesManuscript`
   (config matches the manuscript decoder parameters);
   `tests/test_figure04_{cache,workflow,layout,generation}.py` (orchestration);
@@ -276,6 +279,28 @@ typed summary to `figure04_summary.json`.
 The optional interactive viewer derives its Zarr/Parquet/NPZ layout from this
 same `Figure4RenderData` via `interactive.cache.build_figure04_viewer_cache`.
 It does not require a second set of NetCDF results or fitted-model pickles.
+
+## Machine-readable summary schema
+
+`figure03_summary.json` and `figure04_summary.json` use schema version 2. The
+`flag_rules` object binds each numeric threshold to its executable semantics:
+`less_than_or_equal` means a value is flagged when `value <= threshold`, and
+`greater_than_or_equal` means it is flagged when `value >= threshold`. Keeping
+the operator and threshold in one record prevents consumers from guessing
+whether a boundary is strict or inclusive.
+
+Both summaries contain `provenance.source`, with the installed
+`statespacecheck-paper` version, a deterministic SHA-256 digest of every Python
+file under `src/statespacecheck_paper`, and the SHA-256 digest of `uv.lock`.
+The digest excludes timestamps, generated outputs, and absolute paths, so clean
+checkouts of identical source produce the same identity.
+
+Figure 4 also contains `provenance.figure04_decode_cache`. Its fingerprint is
+the same identity used to accept or reject the expensive decoder cache, and the
+record includes the installed `non_local_detector` version plus the content
+SHA-256 of each of the five named exports. Canonical artifact generation fails
+if any input checksum is missing. Thus a summary can be traced to the exact
+derived inputs even when those large files are distributed separately.
 
 ### Manuscript ↔ code vocabulary (Figure 4)
 

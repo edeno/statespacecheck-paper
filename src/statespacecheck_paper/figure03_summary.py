@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import cast
+from typing import Literal, cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -33,7 +33,7 @@ from statespacecheck_paper.figure03_protocol import (
 )
 from statespacecheck_paper.figure03_simulation import run_figure03_simulation
 
-SUMMARY_FLAG_METRICS: tuple[tuple[str, str], ...] = (
+SUMMARY_FLAG_METRICS: tuple[tuple[str, Literal["below", "above"]], ...] = (
     ("hpd_overlap", "below"),
     ("predictive_pvalue", "below"),
     ("kl_divergence", "above"),

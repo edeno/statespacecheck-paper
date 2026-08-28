@@ -3,14 +3,19 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import numpy as np
 import pytest
 
-from statespacecheck_paper.scientific_artifacts import write_json_artifact
+from statespacecheck_paper.scientific_artifacts import (
+    inclusive_flag_rules,
+    scientific_source_provenance,
+    write_json_artifact,
+)
 
 
-def test_write_json_artifact_is_deterministic_and_converts_numpy(tmp_path) -> None:
+def test_write_json_artifact_is_deterministic_and_converts_numpy(tmp_path: Path) -> None:
     path = tmp_path / "summary.json"
     payload = {
         "z": np.array([1.5, 2.5]),
@@ -26,6 +31,44 @@ def test_write_json_artifact_is_deterministic_and_converts_numpy(tmp_path) -> No
     assert json.loads(first) == {"a": {"count": 3}, "z": [1.5, 2.5]}
 
 
-def test_write_json_artifact_rejects_nonfinite_reported_values(tmp_path) -> None:
+def test_write_json_artifact_rejects_nonfinite_reported_values(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="Out of range float values"):
         write_json_artifact(tmp_path / "bad.json", {"reported_mean": np.nan})
+
+
+def test_inclusive_flag_rules_store_exact_comparison_semantics() -> None:
+    assert inclusive_flag_rules(
+        {"low": 0.05, "high": 2.0},
+        {"low": "below", "high": "above"},
+    ) == {
+        "low": {"comparison": "less_than_or_equal", "threshold": 0.05},
+        "high": {"comparison": "greater_than_or_equal", "threshold": 2.0},
+    }
+
+
+def test_inclusive_flag_rules_reject_mismatched_metrics() -> None:
+    with pytest.raises(ValueError, match="same metrics"):
+        inclusive_flag_rules({"hpd": 0.05}, {"kl": "above"})
+
+
+def test_scientific_source_provenance_tracks_source_and_lockfile(tmp_path: Path) -> None:
+    package = tmp_path / "src" / "statespacecheck_paper"
+    package.mkdir(parents=True)
+    source = package / "analysis.py"
+    source.write_text("VALUE = 1\n", encoding="utf-8")
+    lockfile = tmp_path / "uv.lock"
+    lockfile.write_text("version = 1\n", encoding="utf-8")
+
+    original = scientific_source_provenance(tmp_path)
+    assert original == scientific_source_provenance(tmp_path)
+    assert len(original["source_tree_sha256"]) == 64
+    assert len(original["uv_lock_sha256"]) == 64
+
+    source.write_text("VALUE = 2\n", encoding="utf-8")
+    source_changed = scientific_source_provenance(tmp_path)
+    assert source_changed["source_tree_sha256"] != original["source_tree_sha256"]
+    assert source_changed["uv_lock_sha256"] == original["uv_lock_sha256"]
+
+    lockfile.write_text("version = 2\n", encoding="utf-8")
+    lock_changed = scientific_source_provenance(tmp_path)
+    assert lock_changed["uv_lock_sha256"] != original["uv_lock_sha256"]

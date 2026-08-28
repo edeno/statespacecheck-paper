@@ -37,7 +37,11 @@ from statespacecheck_paper.figure03_summary import (
     build_summary_conditions,
     estimate_realization_summary,
 )
-from statespacecheck_paper.scientific_artifacts import write_json_artifact
+from statespacecheck_paper.scientific_artifacts import (
+    inclusive_flag_rules,
+    scientific_source_provenance,
+    write_json_artifact,
+)
 from statespacecheck_paper.style import save_figure, set_figure_defaults
 
 # Number of independent realizations pooled to stabilize the panel-(b)
@@ -58,6 +62,11 @@ FIGURE03_CONDITION_IDS = (
 )
 
 
+def _plain_condition_label(label: str) -> str:
+    """Flatten a plotting label while preserving hyphenated line breaks."""
+    return label.replace("-\n", "-").replace("\n", " ")
+
+
 def figure03_summary_payload(
     config: Figure3Config,
     summary: Figure3RealizationSummary,
@@ -71,8 +80,10 @@ def figure03_summary_payload(
             f"{len(conditions)} conditions."
         )
     first_seed = config.random_seed
+    thresholds = dataclasses.asdict(summary.diagnostic_thresholds)
+    directions = {metric: direction for metric, direction in SUMMARY_FLAG_METRICS}
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "figure": "figure03",
         "configuration": dataclasses.asdict(config),
         "realizations": {
@@ -80,13 +91,13 @@ def figure03_summary_payload(
             "first_seed": first_seed,
             "last_seed": first_seed + summary.n_realizations - 1,
         },
-        "diagnostic_thresholds": dataclasses.asdict(summary.diagnostic_thresholds),
         "metric_order": [metric for metric, _ in SUMMARY_FLAG_METRICS],
-        "metric_flag_directions": {metric: direction for metric, direction in SUMMARY_FLAG_METRICS},
+        "flag_rules": inclusive_flag_rules(thresholds, directions),
         "condition_order": list(FIGURE03_CONDITION_IDS),
-        "condition_labels": [condition.label.replace("\n", "") for condition in conditions],
+        "condition_labels": [_plain_condition_label(condition.label) for condition in conditions],
         "median_flag_percentages": summary.median_flag_percentages,
         "percentage_unit": "percent_of_spike_events",
+        "provenance": {"source": scientific_source_provenance()},
     }
 
 

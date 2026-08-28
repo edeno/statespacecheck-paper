@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+from importlib.metadata import PackageNotFoundError
 from pathlib import Path
 from typing import Any
 
@@ -13,12 +14,15 @@ import pytest
 from statespacecheck_paper import figure04_cache
 from statespacecheck_paper.figure04_cache import (
     FIGURE04_CACHE_SCHEMA_VERSION,
+    Figure4CacheProvenance,
     Figure4Paths,
     compute_figure04_cache_fingerprint,
+    compute_figure04_cache_provenance,
     load_figure04_cache,
     save_figure04_cache,
 )
 from statespacecheck_paper.figure04_decoder import Figure4Config
+from statespacecheck_paper.load_local_data import EXPORT_FILE_SUFFIXES
 
 
 def _payload() -> dict[str, Any]:
@@ -44,7 +48,7 @@ def test_missing_decoder_version_rejects_unknown_provenance(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def missing_version(_name: str) -> str:
-        raise figure04_cache.PackageNotFoundError
+        raise PackageNotFoundError
 
     monkeypatch.setattr(figure04_cache, "version", missing_version)
     with pytest.raises(RuntimeError, match="Cannot fingerprint Figure 4"):
@@ -178,3 +182,37 @@ def test_fingerprint_changes_when_export_file_content_changes(
 
     export.write_bytes(b"REPLACED with different data")
     assert compute_figure04_cache_fingerprint(config, paths) != fp_original
+
+
+def test_cache_provenance_serializes_complete_path_independent_inputs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    paths = Figure4Paths(data_path=tmp_path, animal_date_epoch="epoch_x")
+    for suffix in EXPORT_FILE_SUFFIXES:
+        (tmp_path / f"epoch_x{suffix}").write_bytes(suffix.encode())
+    monkeypatch.setattr(figure04_cache, "_installed_non_local_detector_version", lambda: "1.2.3")
+
+    provenance = compute_figure04_cache_provenance(Figure4Config(), paths)
+    payload = provenance.artifact_payload()
+
+    assert provenance.fingerprint_sha256 == compute_figure04_cache_fingerprint(
+        Figure4Config(), paths
+    )
+    assert payload["schema_version"] == FIGURE04_CACHE_SCHEMA_VERSION
+    assert payload["non_local_detector_version"] == "1.2.3"
+    assert set(payload["export_file_sha256"]) == {
+        f"epoch_x{suffix}" for suffix in EXPORT_FILE_SUFFIXES
+    }
+    assert str(tmp_path) not in repr(payload)
+
+
+def test_cache_provenance_rejects_missing_canonical_input_checksum() -> None:
+    provenance = Figure4CacheProvenance(
+        fingerprint_sha256="f" * 64,
+        schema_version=FIGURE04_CACHE_SCHEMA_VERSION,
+        animal_date_epoch="epoch_x",
+        export_checksums=tuple((suffix, None) for suffix in EXPORT_FILE_SUFFIXES),
+        non_local_detector_version="1.2.3",
+    )
+    with pytest.raises(ValueError, match="requires every exported input"):
+        provenance.artifact_payload()

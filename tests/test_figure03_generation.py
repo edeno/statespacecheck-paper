@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -99,3 +99,45 @@ def test_default_recipe_uses_manuscript_drift_momentum(
     with pytest.raises(RuntimeError, match="stop after config"):
         figure03_generation.generate_figure03(n_realizations=1)
     assert seen["config"].drift_momentum == pytest.approx(0.88)
+
+
+def test_summary_payload_preserves_labels_rules_and_source_provenance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    summary = Figure3RealizationSummary(
+        diagnostic_thresholds=DiagnosticThresholds(
+            hpd_overlap=0.0,
+            kl_divergence=2.0,
+            predictive_pvalue=0.05,
+        ),
+        median_flag_percentages=np.zeros((3, 6)),
+        n_realizations=2,
+    )
+    source = {
+        "statespacecheck_paper_version": "test",
+        "source_tree_sha256": "a" * 64,
+        "uv_lock_sha256": "b" * 64,
+    }
+    monkeypatch.setattr(figure03_generation, "scientific_source_provenance", lambda: source)
+
+    payload = cast(
+        dict[str, Any],
+        figure03_generation.figure03_summary_payload(Figure3Config(), summary),
+    )
+    flag_rules = cast(dict[str, dict[str, str | float]], payload["flag_rules"])
+
+    assert payload["schema_version"] == 2
+    assert payload["condition_labels"] == [
+        "Well-specified",
+        "Remap",
+        "History-dep.",
+        "Replay",
+        "Drift",
+        "Sparse population",
+    ]
+    assert flag_rules == {
+        "hpd_overlap": {"comparison": "less_than_or_equal", "threshold": 0.0},
+        "predictive_pvalue": {"comparison": "less_than_or_equal", "threshold": 0.05},
+        "kl_divergence": {"comparison": "greater_than_or_equal", "threshold": 2.0},
+    }
+    assert payload["provenance"] == {"source": source}
