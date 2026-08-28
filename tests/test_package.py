@@ -8,11 +8,6 @@ import statespacecheck_paper
 
 
 def test_version_is_exposed_as_pep440_string() -> None:
-    """``__version__`` is part of the public API: importable, non-empty,
-    and a PEP 440-shaped string. Pinning the exact value here would just
-    be a tautology with ``pyproject.toml``; pinning the *shape* catches
-    regressions like dropping the attribute, returning ``None``, or
-    accidentally setting it to a tuple."""
     version = statespacecheck_paper.__version__
     assert isinstance(version, str)
     assert version, "__version__ must not be empty"
