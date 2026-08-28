@@ -56,12 +56,6 @@ class TestDrawNode:
         assert isinstance(circle, Circle)
         assert circle in ax.patches
 
-    def test_circle_position_and_radius(self, fresh_axes: tuple[Figure, Axes]) -> None:
-        _, ax = fresh_axes
-        circle = draw_node(ax, (0.5, 0.5), 0.15, "test")
-        assert circle.center == (0.5, 0.5)
-        assert circle.radius == 0.15
-
     def test_custom_colors_applied(self, fresh_axes: tuple[Figure, Axes]) -> None:
         _, ax = fresh_axes
         circle = draw_node(

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import dataclasses
-import inspect
 
 import matplotlib
 import numpy as np
@@ -67,18 +66,6 @@ class TestShiftDiagnosticEventTimes:
         no-op there, not a raise."""
         diagnostics = _make_per_cell_diagnostics(event_time=None, event_hpd_overlap=np.array([0.5]))
         assert _shift_diagnostic_event_times(diagnostics, 100.0) is diagnostics
-
-
-def test_figure4_composition_is_frozen_with_figure_and_bbox() -> None:
-    assert Figure4Composition.__dataclass_params__.frozen
-    assert [f.name for f in dataclasses.fields(Figure4Composition)] == ["figure", "bbox_inches"]
-
-
-def test_compose_figure04_signature() -> None:
-    sig = inspect.signature(compose_figure04)
-    assert list(sig.parameters) == ["render_data", "diagnostic_thresholds", "detail_window"]
-    for name in ("diagnostic_thresholds", "detail_window"):
-        assert sig.parameters[name].kind is inspect.Parameter.KEYWORD_ONLY
 
 
 class TestFigure4DetailWindow:

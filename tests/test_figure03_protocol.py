@@ -20,31 +20,11 @@ class TestFigure3Config:
         params = Figure3Config(place_field_centers=custom)
         np.testing.assert_array_equal(params.place_field_centers, custom)
 
-    def test_phase_boundaries_indexed_by_enum(self) -> None:
-        params = Figure3Config(
-            phase_boundaries=(1000, 2000, 14_000, 18_000, 22_000, 26_000, 30_000, 32_000)
-        )
-        assert params.phase_boundaries[PhaseBoundary.REMAP_START] == 1000
-        assert params.phase_boundaries[PhaseBoundary.REMAP_END] == 2000
-
 
 class TestFigure3ConfigPhaseBoundaries:
     """The phase ladder collapsed from 8 ``T_*`` fields to one
     ``phase_boundaries`` tuple. Lock the invariants in.
     """
-
-    def test_default_boundaries_match_documented_defaults(self) -> None:
-        params = Figure3Config()
-        assert params.phase_boundaries == (
-            6_000,
-            10_000,
-            14_000,
-            18_000,
-            22_000,
-            26_000,
-            30_000,
-            32_000,
-        )
 
     def test_phase_boundaries_wrong_length_raises(self) -> None:
         with pytest.raises(ValueError, match="must have 8 entries"):

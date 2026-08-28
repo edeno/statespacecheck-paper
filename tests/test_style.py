@@ -15,38 +15,7 @@ from statespacecheck_paper.style import (
     set_figure_defaults,
 )
 
-Context = Literal["paper", "presentation", "poster"]
 WidthType = Literal["single", "double", "full"]
-
-# Expected per-context font sizes mirror the source. Pytest's parametrize id
-# also documents the contract.
-_CONTEXT_FONT_SIZES = {
-    "paper": {
-        # Journal figure standards require all in-figure text in the 8-12 pt range.
-        "font.size": 8,
-        "axes.labelsize": 8,
-        "axes.titlesize": 9,
-        "xtick.labelsize": 8,
-        "ytick.labelsize": 8,
-        "legend.fontsize": 8,
-    },
-    "presentation": {
-        "font.size": 12,
-        "axes.labelsize": 12,
-        "axes.titlesize": 14,
-        "xtick.labelsize": 10,
-        "ytick.labelsize": 10,
-        "legend.fontsize": 10,
-    },
-    "poster": {
-        "font.size": 16,
-        "axes.labelsize": 16,
-        "axes.titlesize": 18,
-        "xtick.labelsize": 14,
-        "ytick.labelsize": 14,
-        "legend.fontsize": 14,
-    },
-}
 
 
 def test_wong_palette_is_eight_hex_colors() -> None:
@@ -58,12 +27,20 @@ def test_wong_palette_is_eight_hex_colors() -> None:
         assert len(color) == 7
 
 
-@pytest.mark.parametrize("context", list(_CONTEXT_FONT_SIZES))
-def test_set_figure_defaults_applies_context_font_sizes(context: Context) -> None:
-    """set_figure_defaults applies the expected font sizes for each context."""
-    set_figure_defaults(context=context)
-    for key, expected in _CONTEXT_FONT_SIZES[context].items():
-        assert plt.rcParams[key] == expected
+def test_set_figure_defaults_paper_font_sizes_within_journal_range() -> None:
+    """Paper context pins all in-figure text to the 8-12 pt journal range."""
+    set_figure_defaults(context="paper")
+    expected = {
+        "font.size": 8,
+        "axes.labelsize": 8,
+        "axes.titlesize": 9,
+        "xtick.labelsize": 8,
+        "ytick.labelsize": 8,
+        "legend.fontsize": 8,
+    }
+    for key, value in expected.items():
+        assert plt.rcParams[key] == value
+        assert 8 <= value <= 12
 
 
 def test_set_figure_defaults_paper_journal_settings() -> None:

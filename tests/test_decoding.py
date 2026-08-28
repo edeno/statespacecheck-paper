@@ -615,9 +615,7 @@ class TestDecoderOverrideWindowTightening:
     def test_caller_array_not_mutated_by_construction(self) -> None:
         """Defensive copy: caller's original array stays writable."""
         rates = np.full((5, 3), 0.1)
-        original_id = id(rates)
         DecoderOverrideWindow(10, 20, firing_rate_table=rates)
-        assert id(rates) == original_id
         assert rates.flags.writeable is True
 
     def test_validate_against_accepts_matching_shape(self) -> None:

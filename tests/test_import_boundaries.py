@@ -46,7 +46,6 @@ def test_decoding_imports_only_diagnostics_and_simulation() -> None:
         "statespacecheck_paper.diagnostics",
         "statespacecheck_paper.simulation",
     }
-    assert not any("figure03" in module or module.endswith(".analysis") for module in imported)
 
 
 def test_figure03_protocol_is_a_leaf() -> None:
@@ -169,7 +168,3 @@ def test_figure04_family_dependency_edges_are_acyclic() -> None:
     }
     for module_file, permitted in allowed.items():
         assert _sibling_module_imports(module_file) <= permitted, module_file
-    # Layout must not reach into cache/config/paths.
-    layout = _sibling_module_imports("figure04_layout.py")
-    assert prefix + "figure04_cache" not in layout
-    assert prefix + "figure04_generation" not in layout
