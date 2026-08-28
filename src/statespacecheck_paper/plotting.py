@@ -16,7 +16,7 @@ Examples
 
 from __future__ import annotations
 
-from typing import cast, overload
+from typing import overload
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -27,36 +27,50 @@ from statespacecheck_paper.style import CMAP_LIKELIHOOD
 
 
 @overload
-def negative_log_pvalue(x: NDArray[np.float64], eps: float = ...) -> NDArray[np.float64]: ...
+def negative_log_pvalue(x: NDArray[np.floating]) -> NDArray[np.float64]: ...
 
 
 @overload
-def negative_log_pvalue(x: float, eps: float = ...) -> np.float64: ...
+def negative_log_pvalue(x: float) -> np.float64: ...
 
 
 def negative_log_pvalue(
-    x: NDArray[np.float64] | float, eps: float = 1e-10
+    x: NDArray[np.floating] | float,
 ) -> NDArray[np.float64] | np.float64:
-    """Return ``-log(max(x, eps))``, the predictive-p-value display transform.
+    """Return the exact natural-log display transform ``-log(p)``.
 
     Predictive p-values are shown on a ``-log(p)`` scale (natural log) so that
-    higher values indicate worse fit; Figures 3 and 4 share this transform. The
-    ``eps`` floor keeps zero p-values finite. Accepts either a p-value array
-    (returns an array) or a scalar threshold (returns a scalar).
+    higher values indicate worse fit; Figures 3, 4, and the interactive viewer
+    share this transform. NaN is preserved as structural missingness. A zero
+    p-value cannot be represented on a finite log axis and raises instead of
+    being silently capped.
 
     Parameters
     ----------
     x : NDArray[np.float64] or float
         Probability value(s) to transform.
-    eps : float, default 1e-10
-        Lower floor applied before the logarithm.
-
     Returns
     -------
     NDArray[np.float64] or np.float64
-        ``-log(max(x, eps))`` with the same shape as ``x``.
+        ``-log(x)`` with the same shape as ``x``.
+
+    Raises
+    ------
+    ValueError
+        If a present value is not in ``(0, 1]``.
     """
-    return cast("NDArray[np.float64] | np.float64", -np.log(np.maximum(x, eps)))
+    values = np.asarray(x, dtype=np.float64)
+    present = ~np.isnan(values)
+    if np.any(~np.isfinite(values[present])) or np.any(values[present] <= 0.0):
+        raise ValueError("Predictive p-values must be finite and strictly positive for -log(p)")
+    if np.any(values[present] > 1.0 + 1e-9):
+        raise ValueError("Predictive p-values must not exceed 1")
+    # Only correct floating-point overshoot within the validated tolerance.
+    values = np.minimum(values, 1.0)
+    transformed = -np.log(values)
+    if np.isscalar(x):
+        return np.float64(transformed)
+    return transformed
 
 
 def compute_hpd_region(x: np.ndarray, pdf: np.ndarray, coverage: float = 0.95) -> np.ndarray:
@@ -342,12 +356,15 @@ def plot_likelihood_columns(
     spike_times = np.where(has_spikes)[0]
     for idx in spike_times:
         lik_row = likelihood[idx]
-        # Row-normalize to [0, 1]. A flat-or-degenerate likelihood
-        # (rmax == rmin, or both NaN) is still real information —
-        # render at mid-color rather than silently dropping the column,
-        # which would be indistinguishable from "no spike at this time".
-        rmin, rmax = float(np.nanmin(lik_row)), float(np.nanmax(lik_row))
-        if not np.isfinite(rmax) or rmax <= rmin:
+        if not np.all(np.isfinite(lik_row)):
+            raise ValueError(f"likelihood row {idx} contains NaN or infinity")
+        if np.any(lik_row < 0.0):
+            raise ValueError(f"likelihood row {idx} contains negative values")
+        # A finite flat likelihood is meaningful: every position has equal
+        # support, so use the colormap midpoint without inventing spatial
+        # structure. Undefined rows fail above.
+        rmin, rmax = float(np.min(lik_row)), float(np.max(lik_row))
+        if rmax == rmin:
             normed = np.full_like(lik_row, 0.5)
         else:
             normed = (lik_row - rmin) / (rmax - rmin)
