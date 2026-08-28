@@ -28,7 +28,13 @@ from statespacecheck_paper.figure03_protocol import (
 )
 from statespacecheck_paper.figure03_summary import SUMMARY_FLAG_METRICS, build_summary_conditions
 from statespacecheck_paper.plotting import negative_log_pvalue, plot_likelihood_columns
-from statespacecheck_paper.style import CMAP_LIKELIHOOD, CMAP_POSTERIOR, COLORS
+from statespacecheck_paper.style import (
+    CMAP_LIKELIHOOD,
+    CMAP_POSTERIOR,
+    COLORS,
+    METRIC_SPECS,
+    MetricSpec,
+)
 
 FIGURE3_PANEL_LABEL_GID = "figure3-panel-label"
 
@@ -65,41 +71,20 @@ FIGURE3_SUMMARY_TITLE_GID = "figure3-summary-title"
 
 @dataclass(frozen=True)
 class DiagnosticRowSpec:
-    """Display and transform metadata for one Figure 3 diagnostic row."""
+    """One Figure 3 diagnostic row: a shared :class:`MetricSpec` plus Figure 3's
+    own plain-text y-axis label (``MetricSpec.ylabel`` uses LaTeX). Color,
+    transform, symlog axis, worse-fit arrow, event attribute, and threshold key
+    all come from ``metric``."""
 
-    event_attr: str
-    threshold_attr: str
+    metric: MetricSpec
     ylabel: str
-    color: str
-    worse_fit_direction: str
-    log_transform: bool = False
-    symlog_hpd: bool = False
 
 
-FIGURE3_DIAGNOSTIC_ROW_SPECS: tuple[DiagnosticRowSpec, ...] = (
-    DiagnosticRowSpec(
-        "event_hpd_overlap",
-        "hpd_overlap",
-        "HPD overlap",
-        COLORS["hpd_overlap"],
-        "↓ Worse fit",
-        symlog_hpd=True,
-    ),
-    DiagnosticRowSpec(
-        "event_predictive_pvalue",
-        "predictive_pvalue",
-        "−log(p)",
-        COLORS["metric_combined"],
-        "↑ Worse fit",
-        log_transform=True,
-    ),
-    DiagnosticRowSpec(
-        "event_kl_divergence",
-        "kl_divergence",
-        "KL div.",
-        COLORS["kl_divergence"],
-        "↑ Worse fit",
-    ),
+# Figure 3 renders the predictive p-value axis label as plain "−log(p)" rather
+# than the shared LaTeX "$-\log(p)$"; the other two match MetricSpec.ylabel.
+FIGURE3_DIAGNOSTIC_ROW_SPECS: tuple[DiagnosticRowSpec, ...] = tuple(
+    DiagnosticRowSpec(metric=spec, ylabel=ylabel)
+    for spec, ylabel in zip(METRIC_SPECS, ("HPD overlap", "−log(p)", "KL div."), strict=True)
 )
 
 
@@ -484,7 +469,7 @@ def _plot_figure3_diagnostic_row(
     """Plot one Figure 3 diagnostic event row."""
     plot_values = np.asarray(values, dtype=float)
     plot_threshold = float(threshold)
-    if spec.log_transform:
+    if spec.metric.display_transform == "neg_log_p":
         plot_values = negative_log_pvalue(plot_values)
         plot_threshold = float(negative_log_pvalue(plot_threshold))
 
@@ -493,7 +478,7 @@ def _plot_figure3_diagnostic_row(
         plot_values,
         s=0.8,
         alpha=0.6,
-        c=spec.color,
+        c=spec.metric.color,
         rasterized=True,
     )
     threshold_line = ax.axhline(
@@ -505,7 +490,7 @@ def _plot_figure3_diagnostic_row(
     )
     threshold_line.set_gid(FIGURE3_THRESHOLD_LINE_GID)
 
-    if spec.symlog_hpd:
+    if spec.metric.symlog_axis:
         # Symlog y-scale expands the worst-fit floor near 0 instead of
         # compressing it onto the bottom spine.
         ax.set_yscale("symlog", linthresh=0.01, linscale=1.0)
@@ -521,7 +506,7 @@ def _plot_figure3_diagnostic_row(
     else:
         ax.tick_params(labelsize=8, labelbottom=False)
 
-    _add_figure3_worse_fit_label(ax, spec.worse_fit_direction)
+    _add_figure3_worse_fit_label(ax, spec.metric.worse_fit_direction)
     _add_figure3_threshold_label(ax, plot_threshold)
 
 
@@ -736,8 +721,8 @@ def compose_figure03(
         _plot_figure3_diagnostic_row(
             ax,
             event_time_ind,
-            getattr(diagnostics, spec.event_attr),
-            getattr(diagnostic_thresholds, spec.threshold_attr),
+            getattr(diagnostics, spec.metric.event_attr),
+            getattr(diagnostic_thresholds, spec.metric.name),
             spec,
             n_time=n_time,
             show_xlabel=row_idx == len(FIGURE3_DIAGNOSTIC_ROW_SPECS) - 1,

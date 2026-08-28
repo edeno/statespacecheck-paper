@@ -41,6 +41,7 @@ from statespacecheck_paper.style import (
     CMAP_LIKELIHOOD,
     CMAP_POSTERIOR,
     COLORS,
+    METRIC_SPEC_BY_NAME,
     METRIC_SPECS,
 )
 
@@ -366,10 +367,10 @@ def plot_spike_event_diagnostic_scatter(
     )
     x_positions_arr = all_event_times[event_mask]
     raw_y_values = event_metric_values[event_mask]
-    y_values_arr = (
-        negative_log_pvalue(raw_y_values) if metric_name == "predictive_pvalue" else raw_y_values
-    )
-    if threshold is not None and metric_name == "predictive_pvalue":
+    spec = METRIC_SPEC_BY_NAME.get(metric_name)
+    use_neg_log = spec is not None and spec.display_transform == "neg_log_p"
+    y_values_arr = negative_log_pvalue(raw_y_values) if use_neg_log else raw_y_values
+    if threshold is not None and use_neg_log:
         threshold = float(negative_log_pvalue(threshold))
 
     ax.scatter(
@@ -393,7 +394,7 @@ def plot_spike_event_diagnostic_scatter(
         )
 
         # Transform running average if needed (same as scatter points)
-        if metric_name == "predictive_pvalue":
+        if use_neg_log:
             running_avg = negative_log_pvalue(running_avg)
 
         # Determine line color (darker version of scatter color if not specified)
@@ -440,7 +441,7 @@ def plot_spike_event_diagnostic_scatter(
     # HPD overlap: symlog y-scale (matching Figure 3) so the worst-fit
     # floor near 0 is expanded instead of compressed onto the bottom
     # spine.
-    if metric_name == "hpd_overlap":
+    if spec is not None and spec.symlog_axis:
         ax.set_yscale("symlog", linthresh=0.01, linscale=1.0)
         ax.set_yticks([0.0, 0.1, 1.0])
         ax.set_yticklabels(["0", "0.1", "1"])
@@ -774,34 +775,23 @@ def plot_per_spike_metric_hexbin_row(
             "diagnostics_a and diagnostics_b must carry identical spike events in the same order"
         )
 
-    # (event key, title, color, log_transform, threshold key, worse-fit direction).
-    # "direction" is relative to the plotted axis: HPD overlap flags low values
-    # ("below"); KL divergence and the (log-transformed) predictive p-value flag
-    # high values ("above").
-    metric_specs = [
-        ("event_hpd_overlap", "HPD overlap", COLORS["hpd_overlap"], False, "hpd_overlap", "below"),
-        (
-            "event_predictive_pvalue",
-            r"$-\log(p)$",
-            COLORS["metric_combined"],
-            True,
-            "predictive_pvalue",
-            "above",
-        ),
-        (
-            "event_kl_divergence",
-            "KL divergence",
-            COLORS["kl_divergence"],
-            False,
-            "kl_divergence",
-            "above",
-        ),
-    ]
+    # Event attr, colour, display transform, threshold key, and plotted worse-fit
+    # direction all come from the shared MetricSpec. Only the panel title differs
+    # from MetricSpec.ylabel here ("KL divergence" vs the scatter's "KL div."),
+    # so it stays a local per-panel override. ``plotted_worse`` is relative to the
+    # plotted axis: HPD overlap flags low values ("below"); KL divergence and the
+    # (log-transformed) predictive p-value flag high values ("above").
+    hexbin_titles = ("HPD overlap", r"$-\log(p)$", "KL divergence")
 
     hex_artists = []
-    for panel_idx, (ax, (key, title, color, log_transform, thr_key, direction)) in enumerate(
-        zip(axes, metric_specs, strict=True)
+    for panel_idx, (ax, spec, title) in enumerate(
+        zip(axes, METRIC_SPECS, hexbin_titles, strict=True)
     ):
+        key = spec.event_attr
+        color = spec.color
+        log_transform = spec.display_transform == "neg_log_p"
+        thr_key = spec.name
+        direction = spec.plotted_worse
         data_a = np.asarray(getattr(diagnostics_a, key), dtype=np.float64)
         data_b = np.asarray(getattr(diagnostics_b, key), dtype=np.float64)
         if data_a.shape != data_b.shape:

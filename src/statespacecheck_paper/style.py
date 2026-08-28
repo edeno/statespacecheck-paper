@@ -142,27 +142,58 @@ def hex_to_rgb(hex_str: str) -> tuple[int, int, int]:
 MetricName = Literal["hpd_overlap", "kl_divergence", "predictive_pvalue"]
 
 
+DisplayTransform = Literal["identity", "neg_log_p"]
+PlottedWorseDirection = Literal["below", "above"]
+
+
 @dataclass(frozen=True)
 class MetricSpec:
     """Display metadata for one diagnostic metric.
 
-    Centralizing this collapses the parallel ``(metric, ylabel, color,
-    worse_fit_direction)`` arrays previously repeated in the two
-    per-cell-scatter helpers in ``figure04_panels``.
+    Single source of truth for how each metric is rendered and flagged on a
+    plotted axis, collapsing the parallel ``(metric, color, transform,
+    direction)`` tables and ``metric == "..."`` special cases that were
+    otherwise repeated across ``figure03_plotting``, ``figure04_panels``, and
+    the interactive viewer.
+
+    ``plotted_worse`` is the worse-fit direction **on the plotted axis** (after
+    ``display_transform``), so it drives both the ``worse_fit_direction`` arrow
+    and the hexbin "rescue" quadrant. ``ylabel`` is the canonical LaTeX axis
+    label; a few consumers (Figure 3's diagnostic rows, the pyqtgraph viewer)
+    render their own plain-text variant instead.
     """
 
     name: MetricName
     ylabel: str
     color: str
-    worse_fit_direction: str
+    plotted_worse: PlottedWorseDirection
+    display_transform: DisplayTransform = "identity"
+    symlog_axis: bool = False
+
+    @property
+    def event_attr(self) -> str:
+        """Name of the per-spike-event attribute on ``SpikeEventDiagnostics``."""
+        return f"event_{self.name}"
+
+    @property
+    def worse_fit_direction(self) -> str:
+        """Worse-fit arrow annotation for the plotted axis."""
+        return "↓ Worse fit" if self.plotted_worse == "below" else "↑ Worse fit"
 
 
 METRIC_SPECS: tuple[MetricSpec, ...] = (
-    MetricSpec("hpd_overlap", "HPD overlap", COLORS["hpd_overlap"], "↓ Worse fit"),
-    MetricSpec("predictive_pvalue", r"$-\log(p)$", COLORS["metric_combined"], "↑ Worse fit"),
-    MetricSpec("kl_divergence", "KL div.", COLORS["kl_divergence"], "↑ Worse fit"),
+    MetricSpec("hpd_overlap", "HPD overlap", COLORS["hpd_overlap"], "below", symlog_axis=True),
+    MetricSpec(
+        "predictive_pvalue",
+        r"$-\log(p)$",
+        COLORS["metric_combined"],
+        "above",
+        display_transform="neg_log_p",
+    ),
+    MetricSpec("kl_divergence", "KL div.", COLORS["kl_divergence"], "above"),
 )
 METRIC_NAMES: tuple[MetricName, ...] = tuple(s.name for s in METRIC_SPECS)
+METRIC_SPEC_BY_NAME: dict[str, MetricSpec] = {s.name: s for s in METRIC_SPECS}
 
 
 def set_figure_defaults(context: Literal["paper", "presentation", "poster"] = "paper") -> None:
