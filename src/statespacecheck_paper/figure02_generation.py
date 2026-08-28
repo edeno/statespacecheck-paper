@@ -25,6 +25,7 @@ This module handles layout, panel labels, formula row, and saving.
 from __future__ import annotations
 
 from collections.abc import Hashable, Mapping
+from typing import cast
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -32,6 +33,7 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.patches import Rectangle
 from matplotlib.transforms import Bbox
+from matplotlib.typing import HashableList
 
 from statespacecheck_paper.figure02_panels import (
     create_shared_example,
@@ -157,7 +159,10 @@ def compose_figure02(rng: np.random.Generator | None = None) -> Figure:
         ],
     ]
     fig, axes = plt.subplot_mosaic(
-        layout,  # type: ignore[arg-type]  # matplotlib stub rejects its documented nested-list form
+        # matplotlib's stub types the mosaic as ``list[HashableList[Hashable]]``;
+        # a plain nested string list is the documented form but needs a cast to
+        # satisfy list invariance.
+        cast("list[HashableList[Hashable]]", layout),
         figsize=(7.15, 7.0),
         width_ratios=[1, 1, 0.2, 1, 1, 0.2, 1, 1],
         height_ratios=[1, 1, 1, 0.35],
