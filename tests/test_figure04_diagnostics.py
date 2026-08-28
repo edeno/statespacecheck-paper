@@ -163,9 +163,15 @@ class TestComputePerCellDiagnostics:
 
         assert result.event_time is not None
         assert result.kl_divergence is not None
+        assert result.per_spike_likelihood is not None
         np.testing.assert_allclose(result.event_time, [1.10, 1.20])
         np.testing.assert_array_equal(result.event_time_ind, [1, 1])
         np.testing.assert_array_equal(result.event_cell_ind, [0, 0])
+        expected_likelihood = place_fields[0] / place_fields[0].sum()
+        np.testing.assert_allclose(
+            result.per_spike_likelihood,
+            np.repeat(expected_likelihood[np.newaxis], 2, axis=0),
+        )
         for event_key in ("event_hpd_overlap", "event_kl_divergence", "event_predictive_pvalue"):
             assert getattr(result, event_key).shape == (2,)
         np.testing.assert_allclose(
@@ -190,25 +196,21 @@ class TestMeanPerSpikeLikelihoodByTime:
         np.testing.assert_allclose(mean_lik, expected)
         np.testing.assert_array_equal(has_spikes, np.array([True, True, False]))
 
-    def test_uses_normalized_poisson_likelihood_not_raw_rate(self) -> None:
-        from scipy.stats import poisson
-
+    def test_uses_normalized_event_intensity(self) -> None:
         from statespacecheck_paper.figure04_diagnostics import (
             mean_per_spike_likelihood_by_time,
         )
 
-        # One cell, two bins, with rates large enough that the Poisson
-        # exp(-rate) factor matters. Raw-rate normalization would give
-        # [0.8, 0.2]; the diagnostics normalize Poisson(k=1, mu=rate).
+        # One selected event contributes its mark intensity. The Poisson
+        # exposure factor belongs to the full cell-bin count likelihood and
+        # must not be attached to the event.
         place_fields = np.array([[2.0, 0.5]])
         spike_counts = np.array([[1]], dtype=np.int64)
 
         mean_lik, _ = mean_per_spike_likelihood_by_time(spike_counts, place_fields)
 
-        pmf = poisson.pmf(k=1, mu=place_fields[0])
-        expected = pmf / pmf.sum()
+        expected = place_fields[0] / place_fields[0].sum()
         np.testing.assert_allclose(mean_lik[0], expected)
-        assert not np.allclose(mean_lik[0], place_fields[0] / place_fields[0].sum())
 
     def test_matches_diagnostics_per_spike_likelihood(self) -> None:
         # Parity across the two entry points that both claim to plot/consume

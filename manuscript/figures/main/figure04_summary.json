@@ -32,26 +32,26 @@
   },
   "diagnostic_means": {
     "continuous": {
-      "hpd_overlap": 0.8363245225528076,
-      "kl_divergence": 3.0032265820064956,
+      "hpd_overlap": 0.8312001903462088,
+      "kl_divergence": 3.014811995428145,
       "predictive_pvalue": 0.5246446577216307
     },
     "continuous_fragmented": {
-      "hpd_overlap": 0.8825526231644693,
-      "kl_divergence": 2.1714257820288547,
+      "hpd_overlap": 0.8796289443321372,
+      "kl_divergence": 2.181671977920981,
       "predictive_pvalue": 0.5282150835361257
     }
   },
   "figure": "figure04",
   "flag_confusions": [
     {
-      "a_only": 16881,
-      "b_only": 173,
-      "both": 1456,
+      "a_only": 17289,
+      "b_only": 176,
+      "both": 1501,
       "metric": "hpd_overlap",
       "n": 870018,
-      "neither": 851508,
-      "rescue_rate": 0.9205976986420897,
+      "neither": 851052,
+      "rescue_rate": 0.9201170835550825,
       "threshold": 0.05
     },
     {
@@ -84,12 +84,12 @@
         "j1620210710_02_r1_position_info.pkl": "8c96c7ace899db447d546e63a4e196188f14ab81ed66ec39c7939954b3775927",
         "j1620210710_02_r1_track_graph.pkl": "147bfb7edb0e100cb56a09a00bca8104e789b5f462c970789ddd5d5adb45b84f"
       },
-      "fingerprint_sha256": "51dfb24b670e334a00d4421d8200ff272758674a7a2f015a6e9abcc1e30f2258",
+      "fingerprint_sha256": "c30cead62c324b70d84b581f88c58277e4fd24af627f96b9ef74029538bd85d0",
       "non_local_detector_version": "0.6.10.dev214+g956fdccaf",
-      "schema_version": 4
+      "schema_version": 5
     },
     "source": {
-      "source_tree_sha256": "75587c4b7639d887df7fa5db12ef06b5db6599542306ff60f8d242973f858270",
+      "source_tree_sha256": "4735142877032c498ee0b29633cd3bba2cdf45adfecb85be981cad88c5691de9",
       "statespacecheck_paper_version": "0.1.0",
       "uv_lock_sha256": "1e593807ad3ef1fe385bc7351056221b966552819319d83a376572cdd319cf78"
     }

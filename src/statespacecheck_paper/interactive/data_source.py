@@ -474,8 +474,8 @@ class DecoderDataSource:
         Simulation caches must store the exact event likelihood because their
         decoder rates vary by phase. Real-data models use a static observation
         model, so their event likelihood is computed directly from the firing
-        cell's stored place field using the same one-spike Poisson definition as
-        the diagnostics.
+        cell's stored place field using the same normalized event-intensity
+        definition as the diagnostics.
         """
         if not 0 <= event_idx < len(self.events):
             raise IndexError(f"event_idx {event_idx} out of range [0, {len(self.events)})")
@@ -488,9 +488,9 @@ class DecoderDataSource:
                 "Simulation cache is missing event_likelihood; reconstructing it from "
                 "static place fields would be wrong in time-varying protocol phases."
             )
-        from statespacecheck_paper.diagnostics import compute_normalized_spike_likelihood
+        from statespacecheck_paper.diagnostics import compute_normalized_event_likelihood
 
-        likelihood = compute_normalized_spike_likelihood(
+        likelihood = compute_normalized_event_likelihood(
             np.asarray(self.place_fields[cell_id], dtype=np.float64)
         )
         return np.asarray(likelihood, dtype=np.float32)

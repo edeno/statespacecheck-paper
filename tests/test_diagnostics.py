@@ -14,7 +14,7 @@ from statespacecheck_paper.diagnostics import (
     SpikeEventDiagnostics,
     _compute_spike_event_predictive_pvalue_rank,
     compute_baseline_diagnostic_thresholds,
-    compute_normalized_spike_likelihood,
+    compute_normalized_event_likelihood,
     compute_predictive_mark_probabilities,
     compute_spike_event_diagnostics_from_rates,
 )
@@ -350,28 +350,31 @@ class TestComputeSpikeEventDiagnosticsFromRates:
             )
 
 
-class TestComputeNormalizedSpikeLikelihood:
-    def test_matches_normalized_poisson_and_rows_sum_to_one(self) -> None:
-        from scipy.stats import poisson
-
+class TestComputeNormalizedEventLikelihood:
+    def test_matches_normalized_intensity_and_rows_sum_to_one(self) -> None:
         rates = np.array([[2.0, 0.5, 1.0], [0.1, 0.4, 0.2]])
-        out = compute_normalized_spike_likelihood(rates)
+        out = compute_normalized_event_likelihood(rates)
 
-        pmf = poisson.pmf(k=1, mu=rates)
-        expected = pmf / pmf.sum(axis=-1, keepdims=True)
+        expected = rates / rates.sum(axis=-1, keepdims=True)
         np.testing.assert_allclose(out, expected)
         np.testing.assert_allclose(out.sum(axis=-1), 1.0)
+
+    def test_global_intensity_scale_does_not_change_event_likelihood(self) -> None:
+        rates = np.array([[2.0, 0.5, 1.0], [0.1, 0.4, 0.2]])
+        expected = compute_normalized_event_likelihood(rates)
+
+        np.testing.assert_allclose(compute_normalized_event_likelihood(17.0 * rates), expected)
 
     def test_degenerate_zero_rate_row_raises(self) -> None:
         rates = np.array([[2.0, 0.5, 1.0], [0.0, 0.0, 0.0]])
         with pytest.raises(ValueError, match="zero at every position"):
-            compute_normalized_spike_likelihood(rates)
+            compute_normalized_event_likelihood(rates)
 
     def test_tiny_but_informative_rates_keep_their_shape(self) -> None:
         # Rates far below any absolute threshold still have a well-defined
         # shape: they must normalize to their ratio, not collapse to uniform.
         rates = np.array([[1e-20, 2e-20, 4e-20]])
-        out = compute_normalized_spike_likelihood(rates)
+        out = compute_normalized_event_likelihood(rates)
 
         expected = np.array([1.0, 2.0, 4.0]) / 7.0
         np.testing.assert_allclose(out[0], expected, rtol=1e-6)

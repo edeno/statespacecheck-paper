@@ -583,7 +583,7 @@ def run_figure03_simulation(
     3. Clean Recovery
     4. **History-Dependent Firing Misfit** (observation: spike_counts
        generated with hard refractory + bursting; decoder still
-       assumes Poisson. Per-spike spatial likelihood is unchanged,
+       assumes Poisson. Per-event spatial likelihood is unchanged,
        so the per-spike diagnostics largely miss this — deliberate
        demonstration of the spatial-only nature of the diagnostics.)
     5. Clean Recovery (contains the **Replay control**: an out-and-back

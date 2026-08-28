@@ -2,7 +2,7 @@
 
 This module holds the general, figure-agnostic diagnostic layer: the per-spike
 diagnostic containers, the core per-spike-event computation (HPD overlap, KL
-divergence, and the rank-based predictive p-value), the single-spike likelihood
+divergence, and the rank-based predictive p-value), the single-event likelihood
 and predictive-mark calculations they build on, and the baseline-threshold
 estimation used to flag misfit.
 
@@ -14,7 +14,7 @@ leaf of the paper's dependency graph.
 - **SpikeEventDiagnostics**: per-spike-event diagnostic arrays (dense matrices optional)
 - **DecodingDiagnostics**: full decoder return with dense distributions + diagnostics
 - **compute_spike_event_diagnostics_from_rates**: the shared per-spike-event computation
-- **compute_normalized_spike_likelihood**: normalized one-spike Poisson likelihood
+- **compute_normalized_event_likelihood**: normalized single-event intensity likelihood
 - **compute_predictive_mark_probabilities**: predictive mark distribution for an event
 - **DiagnosticThresholds** / **compute_baseline_diagnostic_thresholds**: baseline flags
 """
@@ -29,7 +29,6 @@ import numpy as np
 import statespacecheck as ssc
 from numpy.typing import NDArray
 from scipy.special import logsumexp
-from scipy.stats import poisson
 
 # Spike-batch size for ``compute_spike_event_diagnostics_from_rates``.
 # Caps the (n_spikes, n_bins) scratch arrays at ``_PER_SPIKE_BATCH``
@@ -384,52 +383,59 @@ class DecodingDiagnostics:
             getattr(self, name).setflags(write=False)
 
 
-def compute_normalized_spike_likelihood(
-    firing_rates: NDArray[np.floating],
+def compute_normalized_event_likelihood(
+    event_intensities: NDArray[np.floating],
 ) -> NDArray[np.floating]:
-    """Compute the normalized one-spike Poisson likelihood over position.
+    """Compute the normalized single-event likelihood over position.
 
-    For position-dependent rates ``firing_rates`` (expected spikes per bin),
-    returns ``Poisson(k=1, mu=firing_rates)`` normalized to sum to 1 over the
-    last axis. This is the per-spike observation likelihood the diagnostics
+    For position-dependent intensities (or expected counts per bin), the
+    likelihood contribution of one selected event is proportional to its mark
+    intensity. This function normalizes that intensity to sum to 1 over the
+    last axis. It is the per-event observation likelihood the diagnostics
     compare against the predictive distribution, and the quantity shown in the
-    likelihood row of the simulation and real-data figures. Sharing this
-    definition keeps the plotted likelihood identical to the one the
-    diagnostics consume.
+    likelihood row of the simulation and real-data figures.
 
-    Normalization is done in log space (``poisson.logpmf`` + ``logsumexp``) so
-    that rows with tiny but nonzero rates keep their correct shape: e.g. rates
+    The Poisson exposure term is deliberately absent. In the full binned count
+    likelihood, ``exp(-sum_c lambda_c(x))`` is shared by the whole bin, while
+    each observed event contributes one factor ``lambda_mark(x)``. Attaching
+    ``Poisson(1; lambda) = lambda * exp(-lambda)`` to every event would duplicate
+    the exposure term when a bin contains multiple spikes and would not match
+    the event-conditioned predictive-mark diagnostic.
+
+    Normalization is done in log space (``log`` + ``logsumexp``) so rows with
+    tiny but nonzero intensities keep their correct shape: e.g. intensities
     ``[1e-20, 2e-20, 4e-20]`` normalize to ``[1/7, 2/7, 4/7]`` rather than
-    collapsing to uniform. A row with zero rate at every position has no
-    defined one-spike likelihood and raises rather than being assigned a shape.
+    collapsing to uniform. A row with zero intensity at every position has no
+    defined event likelihood and raises rather than being assigned a shape.
 
     Parameters
     ----------
-    firing_rates : np.ndarray, shape (..., n_bins)
-        Position-dependent expected spike count per bin (Poisson ``mu``) for
-        one or more spikes/cells. Normalization is over the last axis.
+    event_intensities : np.ndarray, shape (..., n_bins)
+        Position-dependent event intensities or expected counts per bin for one
+        or more events/marks. Normalization is over the last axis.
 
     Returns
     -------
     likelihood : np.ndarray, shape (..., n_bins)
-        Normalized single-spike likelihood over position; each row sums to 1.
+        Normalized single-event likelihood over position; each row sums to 1.
     """
-    firing_rates = np.asarray(firing_rates)
-    if firing_rates.ndim < 1 or firing_rates.shape[-1] == 0:
-        raise ValueError("firing_rates must have a non-empty position axis")
-    if not np.all(np.isfinite(firing_rates)) or np.any(firing_rates < 0.0):
-        raise ValueError("firing_rates must contain only finite nonnegative values")
-    logpmf = poisson.logpmf(k=1, mu=firing_rates)
-    log_norm = logsumexp(logpmf, axis=-1, keepdims=True)
+    event_intensities = np.asarray(event_intensities)
+    if event_intensities.ndim < 1 or event_intensities.shape[-1] == 0:
+        raise ValueError("event_intensities must have a non-empty position axis")
+    if not np.all(np.isfinite(event_intensities)) or np.any(event_intensities < 0.0):
+        raise ValueError("event_intensities must contain only finite nonnegative values")
+    with np.errstate(divide="ignore"):
+        log_intensity = np.log(event_intensities)
+    log_norm = logsumexp(log_intensity, axis=-1, keepdims=True)
     degenerate = np.isneginf(log_norm)
     if np.any(degenerate):
         bad = np.flatnonzero(degenerate.reshape(-1))
         raise ValueError(
-            "Cannot compute a one-spike likelihood for firing-rate rows that "
-            "are zero at every position; invalid flattened row indices: "
+            "Cannot compute an event likelihood for intensity rows that are "
+            "zero at every position; invalid flattened row indices: "
             f"{bad[:10].tolist()}"
         )
-    likelihood: NDArray[np.floating] = np.exp(logpmf - log_norm)
+    likelihood: NDArray[np.floating] = np.exp(log_intensity - log_norm)
     return likelihood
 
 
@@ -590,7 +596,7 @@ def compute_spike_event_diagnostics_from_rates(
 
     This is the core computation shared by both simulated and real data analysis.
     It computes HPD overlap, KL divergence, and predictive p-value ranking for
-    each spike event, assuming each spike represents exactly one spike (k=1).
+    each spike event using the firing cell's event-intensity factor.
 
     Parameters
     ----------
@@ -635,10 +641,12 @@ def compute_spike_event_diagnostics_from_rates(
 
     Notes
     -----
-    The likelihood P(k=1 | position) is computed for each spike event. If
-    multiple spikes occur in the same time/cell bin, callers should pass
-    repeated entries in ``spike_time_ind`` and ``spike_cell_ind`` so each
-    observed spike contributes one event to the returned event arrays.
+    Each event likelihood is the firing cell's intensity normalized over
+    position. If multiple spikes occur in the same time/cell bin, callers
+    should pass repeated entries in ``spike_time_ind`` and ``spike_cell_ind``
+    so every observed spike contributes one event to the returned arrays. Such
+    events have identical local diagnostics because the binned model holds the
+    predictive distribution and intensity table constant within the bin.
 
     The predictive cell distribution used by ``event_predictive_pvalue`` is
     event-weighted: raw cell intensities are averaged over the predictive
@@ -668,7 +676,7 @@ def compute_spike_event_diagnostics_from_rates(
         per_spike_likelihood = np.empty((n_spikes, n_bins))
 
     if n_spikes > 0:
-        # Per-spike Poisson-likelihood / HPD / KL / spike-prob all need
+        # Per-event likelihood / HPD / KL / predictive p-value all need
         # ``(S, n_bins)`` or ``(S, n_cells)`` working arrays. For
         # full-session real-data builds (~870 K spikes × 256 bins
         # × 8 B ≈ 1.8 GB *per array*) materializing them in one shot
@@ -686,10 +694,10 @@ def compute_spike_event_diagnostics_from_rates(
             sti = spike_time_ind[start:stop]
             sci = spike_cell_ind[start:stop]
 
-            # (chunk, n_bins) gathers + Poisson lik for this batch only.
+            # (chunk, n_bins) predictive + event-likelihood arrays for this batch only.
             pred_chunk = predictive_posterior[sti]
             rates_chunk = rates[:, sci].T
-            lik_chunk = compute_normalized_spike_likelihood(rates_chunk)
+            lik_chunk = compute_normalized_event_likelihood(rates_chunk)
 
             event_hpd_overlap[start:stop] = ssc.hpd_overlap(
                 pred_chunk, lik_chunk, coverage=coverage

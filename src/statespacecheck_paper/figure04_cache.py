@@ -27,7 +27,10 @@ import joblib
 from statespacecheck_paper.figure04_decoder import Figure4Config
 from statespacecheck_paper.load_local_data import EXPORT_FILE_SUFFIXES
 
-FIGURE04_CACHE_SCHEMA_VERSION = 4
+# Version 5 changes the cached HPD/KL event likelihood from normalized
+# Poisson(1; lambda) to normalized event intensity. The repository source is
+# not part of the cache fingerprint, so this explicit bump is required.
+FIGURE04_CACHE_SCHEMA_VERSION = 5
 
 # The decode payload keys shared by the cache dict and :class:`Figure4RenderData`.
 # These are the on-disk serialized keys and MUST NOT change without a schema bump

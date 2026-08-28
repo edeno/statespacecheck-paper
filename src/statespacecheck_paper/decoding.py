@@ -544,15 +544,15 @@ def decode_with_diagnostics(
        a. Predict: prior = transition_matrix @ post[t-1]
        b. Likelihood: compute P(spike_counts[t] | position) for all cells
        c. Diagnostic metrics: compare the predictive posterior against each
-          firing cell's own single-spike likelihood
+          firing cell's own single-event likelihood
        d. Update: post[t] = normalize(prior * combined_likelihood)
 
     **Diagnostic metrics** (computed per firing cell, not against the combined
     all-cell likelihood):
     - HPD overlap: overlap between the predictive-posterior HPD region and the
-      firing cell's single-spike likelihood HPD region
+      firing cell's single-event likelihood HPD region
     - KL divergence: divergence from the predictive posterior to the firing
-      cell's single-spike likelihood
+      cell's single-event likelihood
     - Predictive p-value: rank of the firing cell's spike-position probability
       among all cells (flags low-contribution cells)
 

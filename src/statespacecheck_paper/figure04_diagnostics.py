@@ -27,7 +27,7 @@ from scipy.ndimage import gaussian_filter1d
 
 from statespacecheck_paper.diagnostics import (
     SpikeEventDiagnostics,
-    compute_normalized_spike_likelihood,
+    compute_normalized_event_likelihood,
     compute_spike_event_diagnostics_from_rates,
 )
 from statespacecheck_paper.figure04_place_fields import (
@@ -284,7 +284,7 @@ def compute_spike_event_diagnostics(
           (n_time, n_cells), NaN where the cell has no spike at that
           timestep.
         - ``per_spike_likelihood``: shape (n_spikes, n_bins), normalized
-          per-event Poisson likelihood.
+          per-event intensity likelihood.
 
         When ``include_dense_matrices=False`` those four dense fields
         are ``None`` together (the all-or-nothing invariant in
@@ -292,7 +292,8 @@ def compute_spike_event_diagnostics(
 
     Notes
     -----
-    The likelihood P(k=1 | position) is computed once for each observed spike.
+    The normalized event-intensity likelihood is computed once for each
+    observed spike.
     Multiple spikes from the same cell in the same decoder bin contribute
     multiple event rows rather than being collapsed into one binned count.
 
@@ -347,9 +348,9 @@ def mean_per_spike_likelihood_by_time(
 ) -> tuple[NDArray[np.float64], NDArray[np.bool_]]:
     """Mean normalized per-spike likelihood in each time bin.
 
-    Each cell's place field is turned into the normalized one-spike Poisson
+    Each cell's place field is turned into the normalized single-event
     likelihood over position via
-    :func:`statespacecheck_paper.diagnostics.compute_normalized_spike_likelihood`
+    :func:`statespacecheck_paper.diagnostics.compute_normalized_event_likelihood`
     --- the exact quantity the diagnostics compare against the predictive
     distribution. In every time bin the normalized likelihoods of the spiking
     cells are averaged, weighted by spike count, so a bin with several spikes
@@ -374,7 +375,7 @@ def mean_per_spike_likelihood_by_time(
         True in time bins containing at least one spike.
     """
     pf = np.asarray(place_fields, dtype=np.float64)
-    pf_norm = compute_normalized_spike_likelihood(pf)
+    pf_norm = compute_normalized_event_likelihood(pf)
 
     counts = np.asarray(spike_counts, dtype=np.float64)
     n_per_bin = counts.sum(axis=1)

@@ -67,9 +67,9 @@ def test_figure03_reported_statistics_match_canonical_run(tmp_path: Path) -> Non
         np.asarray(payload["median_flag_percentages"]),
         np.array(
             [
-                [1.512, 39.413, 0.938, 1.150, 9.877, 0.000],
+                [1.766, 40.799, 1.192, 2.083, 10.733, 0.000],
                 [2.761, 43.026, 1.764, 2.723, 13.741, 0.000],
-                [1.184, 36.771, 0.672, 0.820, 8.532, 44.949],
+                [1.178, 36.771, 0.668, 1.301, 8.532, 42.857],
             ]
         ),
         atol=5e-4,
@@ -79,7 +79,7 @@ def test_figure03_reported_statistics_match_canonical_run(tmp_path: Path) -> Non
         "hpd_overlap": {"comparison": "less_than_or_equal", "threshold": 0.0},
         "kl_divergence": {
             "comparison": "greater_than_or_equal",
-            "threshold": 4.003728364400552,
+            "threshold": 4.13792649205148,
         },
         "predictive_pvalue": {
             "comparison": "less_than_or_equal",
@@ -108,14 +108,14 @@ def test_figure04_reported_statistics_counts_partition_events(tmp_path: Path) ->
     assert payload["dataset"] == {"animal_date_epoch": "j1620210710_02_r1"}
     assert payload["diagnostic_means"]["continuous"] == pytest.approx(
         {
-            "hpd_overlap": 0.8363245225528076,
-            "kl_divergence": 3.0032265820064956,
+            "hpd_overlap": 0.8312001903462088,
+            "kl_divergence": 3.014811995428145,
             "predictive_pvalue": 0.5246446577216307,
         }
     )
 
     expected = {
-        "hpd_overlap": (870_018, 1_456, 16_881, 173, 851_508),
+        "hpd_overlap": (870_018, 1_501, 17_289, 176, 851_052),
         "predictive_pvalue": (870_018, 24_581, 9_373, 1_706, 834_358),
     }
     for confusion in payload["flag_confusions"]:

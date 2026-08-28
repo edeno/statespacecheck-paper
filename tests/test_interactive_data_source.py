@@ -78,15 +78,15 @@ def test_public_arrays_are_write_protected(synthetic_cache: Path) -> None:
 def test_static_model_event_likelihood_is_computed_from_normalized_place_field(
     synthetic_cache: Path,
 ) -> None:
-    """Static real models use the same one-spike likelihood as diagnostics."""
-    from statespacecheck_paper.diagnostics import compute_normalized_spike_likelihood
+    """Static real models use the same event likelihood as diagnostics."""
+    from statespacecheck_paper.diagnostics import compute_normalized_event_likelihood
 
     src = DecoderDataSource(synthetic_cache, model="continuous")
     try:
         assert src.event_likelihood is None
         event_idx = 0
         cell_id = int(src.event_cell_ids[event_idx])
-        expected = compute_normalized_spike_likelihood(
+        expected = compute_normalized_event_likelihood(
             np.asarray(src.place_fields[cell_id], dtype=np.float64)
         )
         np.testing.assert_allclose(

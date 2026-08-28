@@ -461,9 +461,9 @@ def simulate_spikes_history_dependent(
 
     The Poisson assumption is violated by this generator: the
     spike-spike correlations introduced by the burst window create a
-    joint distribution that is not memoryless. Per-spike spatial
-    likelihoods (which evaluate ``Poisson(k=1 | rate(position))``) are
-    unchanged for any individual spike — the misfit is in the
+    joint distribution that is not memoryless. Per-event spatial likelihoods
+    (which normalize ``rate(position)`` over position) are unchanged for any
+    individual spike — the misfit is in the
     *temporal* joint distribution, not the per-step marginal.
 
     Parameters

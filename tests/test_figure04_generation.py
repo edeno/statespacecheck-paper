@@ -12,7 +12,11 @@ from typing import Any, cast
 import pytest
 
 from statespacecheck_paper import figure04_generation
-from statespacecheck_paper.figure04_cache import Figure4CacheProvenance, Figure4Paths
+from statespacecheck_paper.figure04_cache import (
+    FIGURE04_CACHE_SCHEMA_VERSION,
+    Figure4CacheProvenance,
+    Figure4Paths,
+)
 from statespacecheck_paper.figure04_decoder import Figure4Config
 from statespacecheck_paper.figure04_diagnostics import FlagConfusion
 from statespacecheck_paper.figure04_layout import Figure4Composition
@@ -107,7 +111,7 @@ def test_summary_payload_contains_reported_counts_rates_and_provenance(
     summary = Figure4Summary(means_a, means_b, (confusion,))
     cache_provenance = Figure4CacheProvenance(
         fingerprint_sha256="c" * 64,
-        schema_version=4,
+        schema_version=FIGURE04_CACHE_SCHEMA_VERSION,
         animal_date_epoch="epoch_x",
         export_checksums=tuple((suffix, "d" * 64) for suffix in EXPORT_FILE_SUFFIXES),
         non_local_detector_version="1.2.3",
