@@ -13,6 +13,7 @@ diagnostics via :mod:`statespacecheck_paper.diagnostics`, and returns a
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import NamedTuple
 
 import numpy as np
 from numpy.typing import NDArray
@@ -423,6 +424,104 @@ def _apply_window_rate_overrides(
     )
 
 
+class FilterStep(NamedTuple):
+    """One timestep of the Bayesian filter recursion.
+
+    Attributes
+    ----------
+    prior : np.ndarray, shape (n_bins,)
+        Predictive distribution ``p(x_t | y_{1:t-1})``.
+    posterior : np.ndarray, shape (n_bins,)
+        Filtered posterior ``p(x_t | y_{1:t})``.
+    combined_likelihood : np.ndarray, shape (n_bins,)
+        Normalized combined likelihood over all cells (display normalization).
+    spike_likelihood : np.ndarray, shape (n_bins,)
+        Normalized likelihood over only the cells that fired this step; all-NaN
+        when no cell fired.
+    """
+
+    prior: NDArray[np.floating]
+    posterior: NDArray[np.floating]
+    combined_likelihood: NDArray[np.floating]
+    spike_likelihood: NDArray[np.floating]
+
+
+def filter_step(
+    previous_posterior: NDArray[np.floating],
+    spike_counts_t: NDArray[np.int_],
+    current_transition: NDArray[np.floating],
+    rates_t: NDArray[np.floating],
+) -> FilterStep:
+    """Advance the Bayesian filter by one timestep.
+
+    This is the scientifically load-bearing recursion of
+    :func:`decode_with_diagnostics`, extracted so a single predict/update step
+    can be exercised in isolation. It is pure: given the previous posterior and
+    this step's decoder components, it returns the predictive prior, the updated
+    posterior, and the two displayed likelihood rows without touching any
+    preallocated output buffers.
+
+    Parameters
+    ----------
+    previous_posterior : np.ndarray, shape (n_bins,)
+        Filtered posterior ``p(x_{t-1} | y_{1:t-1})`` from the previous step.
+    spike_counts_t : np.ndarray, shape (n_cells,)
+        Spike counts observed at this timestep.
+    current_transition : np.ndarray, shape (n_bins, n_bins)
+        Column-stochastic transition matrix for this step.
+    rates_t : np.ndarray, shape (n_bins, n_cells)
+        Per-cell Poisson rate table for this step.
+
+    Returns
+    -------
+    step : FilterStep
+        The prior, posterior, combined likelihood, and spike-only likelihood
+        (all shape ``(n_bins,)``).
+
+    Raises
+    ------
+    ValueError
+        Propagated from :func:`_condition_on` when the observation has zero
+        probability at every state with nonzero prior mass.
+    """
+    # ``current_transition`` is column-stochastic: column j is the distribution
+    # over next states given current state j (see ``gaussian_transition_matrix``).
+    # The predictive marginal is therefore ``T @ post``, not ``post @ T`` — the
+    # two differ near the track boundaries where column normalization breaks the
+    # kernel's symmetry.
+    prior = normalize(current_transition @ previous_posterior)
+
+    # Per-cell log-likelihoods. Log-space avoids underflow when
+    # ``n_cells * log(peak)`` crosses the float64 floor (~700) — likely on
+    # real-data sessions with many sparsely-firing cells.
+    log_lik_per_cell = poisson.logpmf(spike_counts_t[None, :], rates_t)  # (n_bins, n_cells)
+
+    # Combined log-likelihood across cells (sum in log space = product in linear
+    # space), normalized independently with a max-shifted softmax for display.
+    log_lik_combined = log_lik_per_cell.sum(axis=1)  # (n_bins,)
+    combined_likelihood = softmax_with_shift(log_lik_combined)
+
+    # Spike-only likelihood: product over only the cells that fired. Stays NaN
+    # at times with no spikes.
+    spike_likelihood: NDArray[np.floating] = np.full(prior.shape, np.nan)
+    spiking_mask = spike_counts_t > 0
+    if np.any(spiking_mask):
+        spike_likelihood = softmax_with_shift(log_lik_per_cell[:, spiking_mask].sum(axis=1))
+
+    # Posterior update via the _condition_on pattern (dynamax /
+    # non_local_detector). An impossible observation raises at this exact
+    # timestep rather than resetting the posterior and changing every downstream
+    # scientific quantity.
+    posterior, _log_norm = _condition_on(prior, log_lik_combined)
+
+    return FilterStep(
+        prior=prior,
+        posterior=posterior,
+        combined_likelihood=combined_likelihood,
+        spike_likelihood=spike_likelihood,
+    )
+
+
 def decode_with_diagnostics(
     spike_counts: NDArray[np.int_],
     position_bins: NDArray[np.floating],
@@ -435,7 +534,7 @@ def decode_with_diagnostics(
 ) -> DecodingDiagnostics:
     """Run the Bayesian filter with per-time, per-cell diagnostics.
 
-    This function implements a Bayesian decoder for position from neural spike_counts,
+    This function implements a Bayesian decoder for position from neural spikes,
     computing diagnostic metrics at each timestep to assess model goodness-of-fit.
 
     **Algorithm**:
@@ -490,7 +589,7 @@ def decode_with_diagnostics(
             ahead, flat at t=0), ``likelihood`` (normalized combined
             likelihood from all cells, flat at t=0), and
             ``spike_likelihood`` (combined likelihood from only spiking
-            cells; NaN where no spike_counts).
+            cells; NaN where no cell fired).
 
         Dense ``(n_time, n_cells)`` per-cell diagnostic matrices
             ``hpd_overlap``, ``kl_divergence``, ``predictive_pvalue``. NaN at
@@ -608,45 +707,17 @@ def decode_with_diagnostics(
 
         # Select this step's transition matrix and per-cell rate table —
         # the baseline pair unless the active misfit window overrides either.
-        # The predictive matmul and predictive-posterior store below are the
-        # recursion itself and stay in the loop.
         current_transition, rates_t = _select_decoder_components_for_step(
             window, transition_matrix, rates
         )
 
-        # ``current_transition`` is column-stochastic: column j is the
-        # distribution over next states given current state j (see
-        # ``gaussian_transition_matrix``). The predictive marginal is therefore
-        # ``T @ post``, not ``post @ T`` — the two differ near the track
-        # boundaries where column normalization breaks the kernel's symmetry.
-        prior = normalize(current_transition @ posterior[t - 1])  # (n_bins,)
-        predictive_posterior[t] = prior  # stored for p-value computation
-
-        # Per-cell log-likelihoods. Log-space avoids underflow when
-        # ``n_cells * log(peak)`` crosses the float64 floor (~700) —
-        # likely on real-data sessions with many sparsely-firing cells.
-        log_lik_per_cell = poisson.logpmf(spike_counts[t][None, :], rates_t)  # (n_bins, n_cells)
-
-        # Combined log-likelihood across cells (sum in log space =
-        # product in linear space).
-        log_lik_combined = log_lik_per_cell.sum(axis=1)  # (n_bins,)
-
-        # Normalize the stored combined likelihood independently with a
-        # max-shifted softmax for display.
-        combined_likelihood_all[t] = softmax_with_shift(log_lik_combined)
-
-        # Spike-only likelihood: product over only cells that fired.
-        spiking_mask = spike_counts[t] > 0
-        if np.any(spiking_mask):
-            spike_likelihood_all[t] = softmax_with_shift(
-                log_lik_per_cell[:, spiking_mask].sum(axis=1)
-            )
-
-        # Posterior update via the _condition_on pattern (dynamax /
-        # non_local_detector). An impossible observation raises at this exact
-        # timestep rather than resetting the posterior and changing every
-        # downstream scientific quantity.
-        posterior[t], _log_norm = _condition_on(prior, log_lik_combined)
+        # Advance the recursion one step; ``filter_step`` is unit-testable in
+        # isolation (see :func:`filter_step`).
+        step = filter_step(posterior[t - 1], spike_counts[t], current_transition, rates_t)
+        predictive_posterior[t] = step.prior  # stored for p-value computation
+        combined_likelihood_all[t] = step.combined_likelihood
+        spike_likelihood_all[t] = step.spike_likelihood
+        posterior[t] = step.posterior
 
     # Find all spike events (excluding t=0 which has no valid prior). Count
     # matrices are expanded so a bin with count k contributes k spike events.

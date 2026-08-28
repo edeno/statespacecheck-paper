@@ -10,9 +10,11 @@ import pytest
 from statespacecheck_paper.decoding import (
     DecoderOverrideSchedule,
     DecoderOverrideWindow,
+    FilterStep,
     _condition_on,
     _resolve_baseline_firing_rates,
     decode_with_diagnostics,
+    filter_step,
 )
 from statespacecheck_paper.diagnostics import (
     compute_spike_event_diagnostics_from_rates,
@@ -845,3 +847,88 @@ class TestDecoderApiContract:
         assert {"start", "end", "transition_matrix", "firing_rate_table"} <= names
         # Old field name must be gone.
         assert "decoder_rates" not in names
+
+
+class TestFilterStep:
+    """The extracted single-step recursion is exercisable in isolation."""
+
+    @staticmethod
+    def _rates(n_bins: int, n_cells: int) -> np.ndarray:
+        centers = np.linspace(20.0, 80.0, n_cells)
+        position_bins = np.linspace(0, 100, n_bins)
+        rates = place_field_rates(
+            position_bins,
+            centers,
+            place_field_std=5.0,
+            place_field_rate_scale=0.1,
+        )
+        return rates + 1e-3
+
+    def test_prior_and_posterior_are_normalized(self) -> None:
+        n_bins, n_cells = 21, 3
+        rng = np.random.default_rng(0)
+        previous = normalize(rng.random(n_bins))
+        transition = _diag_dominant_transition(n_bins)
+        rates = self._rates(n_bins, n_cells)
+
+        step = filter_step(previous, np.array([0, 1, 0]), transition, rates)
+
+        assert isinstance(step, FilterStep)
+        assert step.prior.shape == (n_bins,)
+        assert step.posterior.shape == (n_bins,)
+        np.testing.assert_allclose(step.prior.sum(), 1.0)
+        np.testing.assert_allclose(step.posterior.sum(), 1.0)
+        np.testing.assert_allclose(step.combined_likelihood.sum(), 1.0)
+
+    def test_predictive_uses_column_stochastic_orientation(self) -> None:
+        """The prior is ``T @ post``, not ``post @ T`` (asymmetric transition)."""
+        n_bins, n_cells = 5, 2
+        previous = np.zeros(n_bins)
+        previous[0] = 1.0
+        transition = np.zeros((n_bins, n_bins))
+        transition[1, 0] = 1.0  # column 0 (from state 0) sends all mass to state 1
+        for j in range(1, n_bins):
+            transition[j, j] = 1.0
+        rates = self._rates(n_bins, n_cells)
+
+        step = filter_step(previous, np.zeros(n_cells, dtype=int), transition, rates)
+
+        expected = transition @ previous
+        np.testing.assert_allclose(step.prior, expected)
+        assert step.prior[1] == pytest.approx(1.0)
+
+    def test_spike_likelihood_is_nan_without_spikes(self) -> None:
+        n_bins, n_cells = 21, 3
+        transition = _diag_dominant_transition(n_bins)
+        rates = self._rates(n_bins, n_cells)
+        previous = normalize(np.ones(n_bins))
+
+        silent = filter_step(previous, np.zeros(n_cells, dtype=int), transition, rates)
+        assert np.all(np.isnan(silent.spike_likelihood))
+
+        firing = filter_step(previous, np.array([0, 2, 0]), transition, rates)
+        assert np.all(np.isfinite(firing.spike_likelihood))
+        np.testing.assert_allclose(firing.spike_likelihood.sum(), 1.0)
+
+    def test_matches_first_step_of_full_decode(self, decoder_inputs: DecoderInputs) -> None:
+        """One ``filter_step`` reproduces the t=1 arrays of the full recursion."""
+        result = decoder_inputs.call()
+        rates = _resolve_baseline_firing_rates(
+            None,
+            decoder_inputs.position_bins,
+            decoder_inputs.place_field_centers,
+            decoder_inputs.place_field_std,
+            decoder_inputs.place_field_rate_scale,
+            decoder_inputs.position_bins.size,
+            decoder_inputs.spike_counts.shape[1],
+        )
+        step = filter_step(
+            result.posterior[0],
+            decoder_inputs.spike_counts[1],
+            decoder_inputs.transition_matrix,
+            rates,
+        )
+
+        np.testing.assert_array_equal(step.prior, result.predictive[1])
+        np.testing.assert_array_equal(step.posterior, result.posterior[1])
+        np.testing.assert_array_equal(step.combined_likelihood, result.likelihood[1])
