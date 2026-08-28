@@ -176,35 +176,37 @@ def create_shared_example(rng: np.random.Generator) -> Figure2ExampleData:
     #    equals predictive(x).
     # 2. Sample observation y_tilde ~ p(y | x_s) = N(x_s, like_std^2).
     # 3. Compute log f_pred(y_tilde) from the predictive-state mixture.
-    simulated_log_pred_values = np.zeros(n_mc_samples)
-
     cumsum = np.cumsum(predictive)
     cumsum = cumsum / cumsum[-1]  # Ensure sums to 1
 
+    # Draw the samples in the original interleaved order -- one state draw then
+    # one observation draw per sample -- so the random stream (and the showcase
+    # samples drawn from it afterward) is byte-for-byte unchanged. Only the
+    # per-sample state pick and the observation draw need the loop; the
+    # expensive likelihood evaluation is lifted out and vectorized below.
+    # ``rng.normal(loc, scale)`` draws a standard normal and returns
+    # ``loc + scale * z``, so pulling it out of the norm.pdf call does not alter
+    # the stream.
+    sampled_y_tildes = np.empty(n_mc_samples)
     for i in range(n_mc_samples):
-        # Sample state from the predictive distribution.
         u = rng.random()
-        sampled_idx = int(np.searchsorted(cumsum, u))
-        sampled_idx = min(sampled_idx, len(position_bins) - 1)
-        sampled_pos = position_bins[sampled_idx]
+        sampled_idx = min(int(np.searchsorted(cumsum, u)), len(position_bins) - 1)
+        sampled_y_tildes[i] = rng.normal(loc=position_bins[sampled_idx], scale=like_std)
 
-        # Sample a simulated observation y_tilde ~ p(y | x_s) = N(x_s, like_std^2).
-        # This is the step that makes the schematic match the manuscript's
-        # predictive-check algorithm rather than its mean-prediction shortcut.
-        y_tilde = float(rng.normal(loc=sampled_pos, scale=like_std))
-
-        # Simulated likelihood as a function of x: p(y_tilde | x) = N(y_tilde; x, like_std).
-        simulated_conditional_density = norm.pdf(
-            position_bins,
-            loc=y_tilde,
-            scale=like_std,
-        )
-
-        # Compute log predictive density for this simulated observation.
-        # Lets np.log handle underflow with -inf + RuntimeWarning rather
-        # than masking it with a +1e-300 shift (see observed_log_pred above
-        # for the rationale).
-        simulated_log_pred_values[i] = np.log(np.sum(predictive * simulated_conditional_density))
+    # Simulated likelihood p(y_tilde | x) = N(y_tilde; x, like_std) for every
+    # sample at once, as a (n_mc_samples, n_bins) matrix. The predictive-mixture
+    # sum over x is taken with ``np.sum`` along the bin axis so it matches the
+    # per-sample scalar sum it replaces. ``np.log`` then handles underflow with
+    # -inf + RuntimeWarning rather than masking it with a +1e-300 shift (see
+    # observed_log_pred above for the rationale).
+    simulated_conditional_density = norm.pdf(
+        position_bins[np.newaxis, :],
+        loc=sampled_y_tildes[:, np.newaxis],
+        scale=like_std,
+    )
+    simulated_log_pred_values = np.log(
+        np.sum(predictive[np.newaxis, :] * simulated_conditional_density, axis=1)
+    )
 
     # P-value: proportion of simulated values <= observed value
     p_value = float(np.mean(simulated_log_pred_values <= observed_log_pred))
