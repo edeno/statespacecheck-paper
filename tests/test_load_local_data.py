@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import networkx as nx
 import numpy as np
 import pandas as pd
 import pytest
 
-from statespacecheck_paper.load_local_data import NeuralRecordingData
+from statespacecheck_paper.load_local_data import (
+    NeuralRecordingData,
+    load_neural_recording_from_files,
+)
 
 
 def _position_info(n_time: int = 8) -> pd.DataFrame:
@@ -98,3 +103,15 @@ def test_spike_arrays_are_copied_and_leave_caller_writable() -> None:
     caller_array[0] = 99.0
     assert recording.spike_times[0][0] == 0.001  # stored copy isolated
     assert not recording.spike_times[0].flags.writeable
+
+
+def test_missing_directory_raises_actionable_error(tmp_path: Path) -> None:
+    with pytest.raises(FileNotFoundError, match="Data directory not found"):
+        load_neural_recording_from_files(tmp_path / "does_not_exist", "j1620210710_02_r1")
+
+
+def test_missing_export_files_lists_what_is_absent(tmp_path: Path) -> None:
+    # Directory exists but the exported pickles do not: the loader should name
+    # the missing files rather than surfacing a bare read_pickle traceback.
+    with pytest.raises(FileNotFoundError, match="Missing 5 expected export file"):
+        load_neural_recording_from_files(tmp_path, "j1620210710_02_r1")

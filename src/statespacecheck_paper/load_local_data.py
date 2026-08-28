@@ -154,8 +154,37 @@ def load_neural_recording_from_files(
     - {animal_date_epoch}_track_graph.pkl
     - {animal_date_epoch}_linear_edge_order.pkl
     - {animal_date_epoch}_linear_edge_spacing.pkl
+
+    Raises
+    ------
+    FileNotFoundError
+        If ``data_path`` or any expected export file is missing. This real
+        hippocampal recording is not distributed with the repository (see the
+        README); the error names what is missing and how to point the loader at
+        the data rather than surfacing a bare ``read_pickle`` traceback.
     """
     data_path = Path(data_path)
+
+    # Pre-flight check so a missing dataset yields one actionable message
+    # instead of an opaque traceback from the first ``read_pickle`` below.
+    if not data_path.is_dir():
+        raise FileNotFoundError(
+            f"Data directory not found: {data_path}. The real hippocampal recording is "
+            "not included in the repository (see the README); place the exported files "
+            "under this directory or set STATESPACECHECK_DATA_PATH to their location."
+        )
+    missing = [
+        f"{animal_date_epoch}{suffix}"
+        for suffix in EXPORT_FILE_SUFFIXES
+        if not (data_path / f"{animal_date_epoch}{suffix}").is_file()
+    ]
+    if missing:
+        raise FileNotFoundError(
+            f"Missing {len(missing)} expected export file(s) for '{animal_date_epoch}' in "
+            f"{data_path}: {missing}. This recording is not distributed with the repository "
+            "(see the README); check STATESPACECHECK_DATA_PATH and "
+            "STATESPACECHECK_ANIMAL_DATE_EPOCH."
+        )
 
     position_info = pd.read_pickle(data_path / f"{animal_date_epoch}{_POSITION_INFO_SUFFIX}")
     spike_times = joblib.load(data_path / f"{animal_date_epoch}{_SPIKE_TIMES_SUFFIX}")
