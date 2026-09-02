@@ -1,10 +1,8 @@
 {
   "accuracy_metric_order": [
-    "median_absolute_error",
-    "hpd95_coverage"
+    "median_absolute_error"
   ],
   "accuracy_units": {
-    "hpd95_coverage": "percent_of_time_steps",
     "median_absolute_error": "position_units"
   },
   "condition_labels": [
@@ -137,14 +135,6 @@
       36.3582737978805,
       7.9854867981466695,
       0.9895975413881715
-    ],
-    [
-      94.82499999999999,
-      3.1375,
-      94.05,
-      5.225,
-      35.037499999999994,
-      100.0
     ]
   ],
   "median_flag_percentages": [
@@ -181,7 +171,7 @@
   "percentage_unit": "percent_of_spike_events",
   "provenance": {
     "source": {
-      "source_tree_sha256": "aaa808577bffb8ae7268c952851c77302583a62d853ddab6350d1b1f1062e060",
+      "source_tree_sha256": "e2a90532690ac5ae6fc278493a755b38141a12df38b400e1be2ee5e64dec664c",
       "statespacecheck_paper_version": "0.1.0",
       "uv_lock_sha256": "1e593807ad3ef1fe385bc7351056221b966552819319d83a376572cdd319cf78"
     }

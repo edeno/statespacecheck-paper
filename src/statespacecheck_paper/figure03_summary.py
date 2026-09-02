@@ -19,7 +19,6 @@ from dataclasses import dataclass
 from typing import Literal, cast
 
 import numpy as np
-import statespacecheck as ssc
 from numpy.typing import NDArray
 
 from statespacecheck_paper.diagnostics import (
@@ -41,10 +40,9 @@ SUMMARY_FLAG_METRICS: tuple[tuple[str, Literal["below", "above"]], ...] = (
 )
 
 # Row order of the per-condition decoding-accuracy block beneath the flag
-# heatmap: median absolute error of the filtered-posterior mean (position
-# units) and the percent of time steps whose 95% HPD region of the filtered
-# posterior contains the true position bin.
-SUMMARY_ACCURACY_METRICS: tuple[str, ...] = ("median_absolute_error", "hpd95_coverage")
+# heatmap: currently the median absolute error of the filtered-posterior
+# mean (position units).
+SUMMARY_ACCURACY_METRICS: tuple[str, ...] = ("median_absolute_error",)
 
 
 @dataclass(frozen=True)
@@ -298,8 +296,6 @@ def compute_condition_decoding_accuracy(
     position_bins: NDArray[np.floating],
     true_position: NDArray[np.floating],
     conditions: list[Figure3SummaryCondition],
-    *,
-    coverage: float = 0.95,
 ) -> NDArray[np.floating]:
     """Per-condition decoding accuracy of the filtered posterior.
 
@@ -321,16 +317,13 @@ def compute_condition_decoding_accuracy(
         decoded-versus-physical gap by construction.
     conditions : list of Figure3SummaryCondition
         Heatmap columns from :func:`build_summary_conditions`.
-    coverage : float, default 0.95
-        HPD coverage used for the coverage row.
 
     Returns
     -------
-    np.ndarray, shape (2, n_columns)
-        Rows follow :data:`SUMMARY_ACCURACY_METRICS`: (0) median absolute
+    np.ndarray, shape (1, n_columns)
+        Rows follow :data:`SUMMARY_ACCURACY_METRICS`: the median absolute
         error between the posterior mean and ``true_position``, in position
-        units; (1) percent of time steps whose ``coverage`` HPD region
-        contains the bin nearest ``true_position``.
+        units.
 
     Raises
     ------
@@ -366,9 +359,6 @@ def compute_condition_decoding_accuracy(
 
     posterior_mean = (posterior @ position_bins) / mass
     abs_error = np.abs(posterior_mean - true_position)
-    in_hpd = ssc.highest_density_region(posterior, coverage=coverage)
-    true_bin = np.abs(position_bins[None, :] - true_position[:, None]).argmin(axis=1)
-    covered = in_hpd[np.arange(n_time), true_bin]
 
     out = np.zeros((len(SUMMARY_ACCURACY_METRICS), len(conditions)))
     for j, col in enumerate(conditions):
@@ -378,7 +368,6 @@ def compute_condition_decoding_accuracy(
         if not mask.any():
             raise ValueError(f"Condition {col.label!r} contains no time steps")
         out[0, j] = float(np.median(abs_error[mask]))
-        out[1, j] = 100.0 * float(np.mean(covered[mask]))
     return out
 
 
@@ -402,7 +391,7 @@ class Figure3RealizationSummary:
     - ``median_decoding_accuracy`` is the median, across realizations, of the
       per-column decoding accuracy from
       :func:`compute_condition_decoding_accuracy`, so the flag percentages can
-      be read against ground-truth decoding error and coverage.
+      be read against ground-truth decoding error.
 
     Parameters
     ----------
@@ -413,7 +402,7 @@ class Figure3RealizationSummary:
         :data:`statespacecheck_paper.figure03_summary.SUMMARY_FLAG_METRICS`;
         columns follow
         :func:`statespacecheck_paper.figure03_summary.build_summary_conditions`.
-    median_decoding_accuracy : np.ndarray, shape (2, n_columns)
+    median_decoding_accuracy : np.ndarray, shape (1, n_columns)
         Median decoding accuracy. Rows follow
         :data:`statespacecheck_paper.figure03_summary.SUMMARY_ACCURACY_METRICS`;
         columns match ``median_flag_percentages``.
@@ -424,7 +413,7 @@ class Figure3RealizationSummary:
     ------
     ValueError
         If ``median_flag_percentages`` is not 2-D, ``median_decoding_accuracy``
-        is not ``(2, n_columns)``, or ``n_realizations`` is not positive.
+        is not ``(1, n_columns)``, or ``n_realizations`` is not positive.
     """
 
     diagnostic_thresholds: DiagnosticThresholds

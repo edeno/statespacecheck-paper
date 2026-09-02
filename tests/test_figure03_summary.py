@@ -132,8 +132,7 @@ class TestSummaryFlagPercentages:
 class TestConditionDecodingAccuracy:
     """Per-phase decoding accuracy of the filtered posterior against the
     stored true position: median absolute error of the posterior mean (row
-    0, position units) and 95% HPD coverage of the true bin (row 1,
-    percent). Columns follow ``build_summary_conditions``."""
+    0, position units). Columns follow ``build_summary_conditions``."""
 
     @staticmethod
     def _params() -> Figure3Config:
@@ -146,9 +145,9 @@ class TestConditionDecodingAccuracy:
         return posterior
 
     def test_metric_order(self) -> None:
-        assert SUMMARY_ACCURACY_METRICS == ("median_absolute_error", "hpd95_coverage")
+        assert SUMMARY_ACCURACY_METRICS == ("median_absolute_error",)
 
-    def test_perfect_decoder_has_zero_error_and_full_coverage(self) -> None:
+    def test_perfect_decoder_has_zero_error(self) -> None:
         params = self._params()
         n_time = params.phase_boundaries[PhaseBoundary.SPARSE_POP_END]
         position_bins = np.arange(10, dtype=float)
@@ -160,14 +159,12 @@ class TestConditionDecodingAccuracy:
             posterior, position_bins, position_bins[true_bin], conditions
         )
 
-        assert accuracy.shape == (2, 6)
+        assert accuracy.shape == (1, 6)
         assert np.allclose(accuracy[0], 0.0)
-        assert np.allclose(accuracy[1], 100.0)
 
     def test_shift_confined_to_remap_window(self) -> None:
         """A posterior displaced by two bins only inside remap [6, 10) must
-        give error 2 and zero coverage in the remap column and perfect
-        accuracy elsewhere."""
+        give a two-bin error in the remap column and zero error elsewhere."""
         params = self._params()
         n_time = params.phase_boundaries[PhaseBoundary.SPARSE_POP_END]
         position_bins = np.arange(0.0, 20.0, 2.0)  # bin width 2 a.u.
@@ -182,12 +179,10 @@ class TestConditionDecodingAccuracy:
         )
 
         assert accuracy[0, 1] == pytest.approx(4.0)  # two bins of 2 a.u.
-        assert accuracy[1, 1] == pytest.approx(0.0)
         assert np.allclose(np.delete(accuracy[0], 1), 0.0)
-        assert np.allclose(np.delete(accuracy[1], 1), 100.0)
 
-    def test_true_position_off_grid_snaps_to_nearest_bin_for_coverage(self) -> None:
-        """Coverage uses the nearest bin; error uses the continuous position."""
+    def test_error_uses_continuous_true_position(self) -> None:
+        """The error is measured against the continuous position, not its bin."""
         params = self._params()
         n_time = params.phase_boundaries[PhaseBoundary.SPARSE_POP_END]
         position_bins = np.arange(10, dtype=float)
@@ -200,7 +195,6 @@ class TestConditionDecodingAccuracy:
         )
 
         assert np.allclose(accuracy[0], 0.3)
-        assert np.allclose(accuracy[1], 100.0)
 
     def test_shape_mismatch_raises(self) -> None:
         params = self._params()

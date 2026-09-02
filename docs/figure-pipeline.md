@@ -137,8 +137,8 @@ Trace: `create_shared_example(rng)` returns one immutable
 - **Output:** `manuscript/figures/main/figure03.{pdf,png}` plus
   `figure03_summary.json`, containing the full configuration, seed range,
   explicit inclusive flag rules, metric/condition order, reported percentage
-  matrix, per-condition decoding accuracy (median absolute error and 95% HPD
-  coverage), and source/dependency-lock provenance.
+  matrix, per-condition decoding accuracy (median absolute error), and
+  source/dependency-lock provenance.
 - **Tests:** `tests/test_figure03_phases.py` (the higher-level scientific
   contract, including the control-integrity checks that the replay and
   sparse-population controls carry no hidden misfit);
@@ -287,11 +287,10 @@ It does not require a second set of NetCDF results or fitted-model pickles.
 
 `figure03_summary.json` uses schema version 3 and `figure04_summary.json`
 schema version 2. Schema 3 adds the Figure-3 decoding-accuracy block:
-`accuracy_metric_order` (`median_absolute_error`, `hpd95_coverage`),
-`accuracy_units`, and `median_decoding_accuracy`, a `(2, n_conditions)` matrix
-of the across-realization median absolute error of the filtered-posterior mean
-(position units) and 95% HPD coverage of the true position (percent of time
-steps), in the same column order as `median_flag_percentages`. The
+`accuracy_metric_order` (`median_absolute_error`), `accuracy_units`, and
+`median_decoding_accuracy`, a `(1, n_conditions)` matrix of the
+across-realization median absolute error of the filtered-posterior mean
+(position units), in the same column order as `median_flag_percentages`. The
 `flag_rules` object binds each numeric threshold to its executable semantics:
 `less_than_or_equal` means a value is flagged when `value <= threshold`, and
 `greater_than_or_equal` means it is flagged when `value >= threshold`. Keeping

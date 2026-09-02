@@ -71,8 +71,8 @@ FIGURE3_SUMMARY_KNOWN_COMPONENT_LABEL_GID = "figure3-summary-known-model_compone
 
 
 FIGURE3_SUMMARY_TITLE_GID = "figure3-summary-title"
-# Per-condition decoding-accuracy rows (median absolute error, 95% HPD
-# coverage) rendered as text beneath the flag heatmap, plus their row headers.
+# Per-condition decoding-accuracy row (median absolute error) rendered as text
+# beneath the flag heatmap, plus its row header.
 FIGURE3_SUMMARY_ACCURACY_CELL_LABEL_GID = "figure3-summary-accuracy-cell-label"
 FIGURE3_SUMMARY_ACCURACY_HEADER_GID = "figure3-summary-accuracy-header"
 
@@ -566,11 +566,10 @@ def _plot_figure3_summary_heatmap(
 ) -> None:
     """Plot the across-realization phase-by-metric flag percentages.
 
-    Two plain-text rows beneath the heatmap report the per-condition decoding
-    accuracy (median absolute error in position units and 95% HPD coverage
-    in percent) so each flag percentage can be read against ground truth.
-    They are not colour-mapped because their units differ from the flag
-    percentages.
+    A plain-text row beneath the heatmap reports the per-condition decoding
+    accuracy (median absolute error in position units) so each flag
+    percentage can be read against ground truth. It is not colour-mapped
+    because its units differ from the flag percentages.
     """
     conditions = build_summary_conditions(config)
     component_labels = [col.model_component for col in conditions]
@@ -591,10 +590,8 @@ def _plot_figure3_summary_heatmap(
             f"median_decoding_accuracy must have shape {expected_accuracy_shape}; "
             f"got {accuracy.shape}"
         )
-    if not np.all(np.isfinite(accuracy)) or np.any(accuracy[0] < 0.0):
-        raise ValueError("median_decoding_accuracy must be finite with non-negative error")
-    if np.any((accuracy[1] < 0.0) | (accuracy[1] > 100.0)):
-        raise ValueError("median_decoding_accuracy coverage row must lie in [0, 100]")
+    if not np.all(np.isfinite(accuracy)) or np.any(accuracy < 0.0):
+        raise ValueError("median_decoding_accuracy must be finite and non-negative")
 
     max_frac = np.nanmax(frac_data)
     norm_frac = frac_data / max_frac if max_frac > 0 else frac_data
@@ -624,10 +621,10 @@ def _plot_figure3_summary_heatmap(
             )
             cell_label.set_gid(FIGURE3_SUMMARY_CELL_LABEL_GID)
 
-    # Decoding-accuracy rows sit directly beneath the heatmap; the known
-    # component row follows them.
-    accuracy_headers = ("Median |error|\n(a.u.):", "95% HPD\ncoverage:")
-    accuracy_formats = ("{:.1f}", "{:.0f}%")
+    # The decoding-accuracy row sits directly beneath the heatmap; the known
+    # component row follows it.
+    accuracy_headers = ("Median |error|\n(a.u.):",)
+    accuracy_formats = ("{:.1f}",)
     for row_offset, (header, fmt) in enumerate(
         zip(accuracy_headers, accuracy_formats, strict=True)
     ):
@@ -729,11 +726,11 @@ def compose_figure03(
         columns follow :func:`statespacecheck_paper.figure03_summary.build_summary_conditions`).
         This stabilized summary is deliberately required: substituting the
         displayed realization would change the meaning of panel (b).
-    median_decoding_accuracy : NDArray, shape (2, n_columns)
+    median_decoding_accuracy : NDArray, shape (1, n_columns)
         Median per-condition decoding accuracy (rows follow
         :data:`statespacecheck_paper.figure03_summary.SUMMARY_ACCURACY_METRICS`:
-        median absolute error in position units, then 95% HPD coverage in
-        percent), rendered as text rows beneath the panel-(b) heatmap.
+        median absolute error in position units), rendered as a text row
+        beneath the panel-(b) heatmap.
 
     Returns
     -------
@@ -749,10 +746,10 @@ def compose_figure03(
     >>> # and how to plumb it into compose_figure03.
     """
     fig_width = 6.85  # Full page width; tight PDF stays within ~183 mm.
-    # Extra height (and bottom margin) holds the two accuracy rows and the
+    # Extra height (and bottom margin) holds the accuracy row and the
     # known-component row beneath the panel-(b) heatmap; the plotted area
     # above them is unchanged.
-    fig_height = 7.8
+    fig_height = 7.4
     fig = plt.figure(figsize=(fig_width, fig_height), dpi=450)
 
     # Outer grid: time-series block on top, summary heatmap on bottom.
@@ -765,7 +762,7 @@ def compose_figure03(
         left=0.08,
         right=0.93,
         top=0.97,
-        bottom=0.155,
+        bottom=0.11,
     )
 
     gs = gs_outer[0].subgridspec(

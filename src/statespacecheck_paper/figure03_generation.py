@@ -99,10 +99,7 @@ def figure03_summary_payload(
         "median_flag_percentages": summary.median_flag_percentages,
         "percentage_unit": "percent_of_spike_events",
         "accuracy_metric_order": list(SUMMARY_ACCURACY_METRICS),
-        "accuracy_units": {
-            "median_absolute_error": "position_units",
-            "hpd95_coverage": "percent_of_time_steps",
-        },
+        "accuracy_units": {"median_absolute_error": "position_units"},
         "median_decoding_accuracy": summary.median_decoding_accuracy,
         "provenance": {"source": scientific_source_provenance()},
     }
@@ -154,7 +151,7 @@ def generate_figure03(
         f"{np.array2string(realization_summary.median_flag_percentages, precision=3)}"
     )
     print(
-        "Median decoding accuracy [median |error| (a.u.), 95% HPD coverage (%)] x "
+        "Median decoding accuracy [median |error| (a.u.)] x "
         "[well-specified, remap, history, replay, drift, sparse population]:\n"
         f"{np.array2string(realization_summary.median_decoding_accuracy, precision=3)}"
     )
