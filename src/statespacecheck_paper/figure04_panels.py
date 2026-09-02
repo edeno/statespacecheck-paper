@@ -622,7 +622,7 @@ def plot_single_model_diagnostics(
         position,
         time_slice_ind,
         title=model_name,
-        ylabel="Predictive",
+        ylabel="Predictive\nposition (cm)",
     )
     # Self-label the position trace in its own color instead of a legend.
     animal_position_label = axes[0].text(
@@ -658,7 +658,7 @@ def plot_single_model_diagnostics(
         s=1,
         alpha=0.85,
     )
-    ax_lik.set_ylabel("Likelihood", labelpad=7)
+    ax_lik.set_ylabel("Likelihood\nposition (cm)", labelpad=7)
     ax_lik.set_xlabel("")
     ax_lik.tick_params(labelsize=8, labelbottom=False)
 
