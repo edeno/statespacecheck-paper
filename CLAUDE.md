@@ -27,7 +27,7 @@ The module graph is a DAG enforced in CI; `diagnostics.py` is the leaf.
 Key modules and the rationale that the source alone won't tell you:
 
 - **diagnostics.py** — shared goodness-of-fit diagnostics; the dependency-graph
-  **leaf** (per-spike-event HPD/KL/rank computation, single-spike likelihood,
+  **leaf** (per-spike-event HPD/KL/rank computation, single-event likelihood,
   predictive-mark probabilities, baseline thresholds).
 - **decoding.py** — general Bayesian decoder `decode_with_diagnostics` + the
   per-window override mechanism (`DecoderOverrideWindow`/`DecoderOverrideSchedule`,
