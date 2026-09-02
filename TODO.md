@@ -6,7 +6,7 @@ Open follow-ups for **"Local goodness-of-fit measures for neural decoding"**
 ## Red placeholders in main.tex
 
 - [ ] **Archival DOI** — fill `\textcolor{red}{[TODO: Add the archival DOI (e.g., Zenodo) ...]}` in Data/Code Availability (`main.tex:351`).
-- [ ] **Funding** — fill the remaining `\textcolor{red}{[TODO: add funding for U.T. Eden and any support for S. Zeng and E.L. Denovellis]}` in Acknowledgments (`main.tex:357`). NIH/SCGB/HHMI (L.M.F.) and NSF/NIH/UCSF (A.E.C.) are already filled in.
+- [x] **Funding** — fill the remaining `\textcolor{red}{[TODO: add funding for U.T. Eden and any support for S. Zeng and E.L. Denovellis]}` in Acknowledgments (`main.tex:357`). NIH/SCGB/HHMI (L.M.F.) and NSF/NIH/UCSF (A.E.C.) are already filled in.
 - [x] **MountainSort4 citation** — add Chung et al. 2017, *Neuron* 95(6):1381–1394 to the bibliography; replace the red `[cite: …]` in §4.1 with `\citep{...}`.
 
 ## Citations
@@ -23,11 +23,3 @@ Open follow-ups for **"Local goodness-of-fit measures for neural decoding"**
 
 - [x] Fix the series-as-journal entry type (`@article` → `@book`/`@incollection`).
 - [x] Prune uncited entries and near-duplicate keys during the re-export.
-
-
-## Cover Letter
-- [ ] Create an overleaf cover letter
-
-## Possible journals
-
-*PLOS Comp Bio* ·  Neural Comp · IEEE Biomedical Engineering  · NBDT · Journal of Neural Engineering  ·  J Neurosci Methods
