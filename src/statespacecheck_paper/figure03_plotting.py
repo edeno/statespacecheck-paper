@@ -497,9 +497,12 @@ def _plot_figure3_diagnostic_row(
         # Symlog y-scale expands the worst-fit floor near 0 instead of
         # compressing it onto the bottom spine.
         ax.set_yscale("symlog", linthresh=0.01, linscale=1.0)
-        ax.set_yticks([0.0, 0.01, 0.1, 0.5, 1.0])
-        ax.set_yticklabels(["0", "0.01", "0.1", "0.5", "1"])
-        ax.set_ylim(-0.005, 1.0)
+        ax.set_yticks([0.0, 0.01, 0.1, 1.0])
+        ax.set_yticklabels(["0", "0.01", "0.1", "1"])
+        # Headroom above 1 keeps the "1" tick label (and the dense band of
+        # fully nested HPD regions at overlap = 1) clear of the raster
+        # panel that abuts this axis from above.
+        ax.set_ylim(-0.005, 1.6)
 
     ax.set_xlim(0, n_time)
     ax.set_ylabel(spec.ylabel, labelpad=7)
