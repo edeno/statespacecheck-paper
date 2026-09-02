@@ -34,6 +34,7 @@ def test_generation_threads_one_config_through_simulation_summary_and_plot(
             predictive_pvalue=0.05,
         ),
         median_flag_percentages=np.zeros((3, 6)),
+        median_decoding_accuracy=np.zeros((2, 6)),
         n_realizations=7,
     )
 
@@ -111,6 +112,7 @@ def test_summary_payload_preserves_labels_rules_and_source_provenance(
             predictive_pvalue=0.05,
         ),
         median_flag_percentages=np.zeros((3, 6)),
+        median_decoding_accuracy=np.zeros((2, 6)),
         n_realizations=2,
     )
     source = {
@@ -126,7 +128,9 @@ def test_summary_payload_preserves_labels_rules_and_source_provenance(
     )
     flag_rules = cast(dict[str, dict[str, str | float]], payload["flag_rules"])
 
-    assert payload["schema_version"] == 2
+    assert payload["schema_version"] == 3
+    assert payload["accuracy_metric_order"] == ["median_absolute_error", "hpd95_coverage"]
+    assert np.asarray(payload["median_decoding_accuracy"]).shape == (2, 6)
     assert payload["condition_labels"] == [
         "Well-specified",
         "Remap",

@@ -44,7 +44,7 @@ def _round_trip_live_payload(tmp_path: Path, payload: dict[str, object]) -> dict
 def test_figure03_reported_statistics_match_canonical_run(tmp_path: Path) -> None:
     payload = _load("figure03_summary.json")
 
-    assert payload["schema_version"] == 2
+    assert payload["schema_version"] == 3
     assert payload["realizations"] == {
         "count": 100,
         "first_seed": 1,
@@ -75,6 +75,18 @@ def test_figure03_reported_statistics_match_canonical_run(tmp_path: Path) -> Non
         atol=5e-4,
         rtol=0.0,
     )
+    assert payload["accuracy_metric_order"] == ["median_absolute_error", "hpd95_coverage"]
+    np.testing.assert_allclose(
+        np.asarray(payload["median_decoding_accuracy"]),
+        np.array(
+            [
+                [1.792, 42.169, 1.678, 36.358, 7.985, 0.990],
+                [94.825, 3.138, 94.050, 5.225, 35.037, 100.000],
+            ]
+        ),
+        atol=5e-4,
+        rtol=0.0,
+    )
     assert payload["flag_rules"] == {
         "hpd_overlap": {"comparison": "less_than_or_equal", "threshold": 0.0},
         "kl_divergence": {
@@ -95,6 +107,7 @@ def test_figure03_reported_statistics_match_canonical_run(tmp_path: Path) -> Non
             predictive_pvalue=payload["flag_rules"]["predictive_pvalue"]["threshold"],
         ),
         median_flag_percentages=np.asarray(payload["median_flag_percentages"]),
+        median_decoding_accuracy=np.asarray(payload["median_decoding_accuracy"]),
         n_realizations=payload["realizations"]["count"],
     )
     live = figure03_summary_payload(Figure3Config(), summary)

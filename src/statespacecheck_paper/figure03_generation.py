@@ -32,6 +32,7 @@ from statespacecheck_paper.figure03_plotting import compose_figure03
 from statespacecheck_paper.figure03_protocol import Figure3Config
 from statespacecheck_paper.figure03_simulation import run_figure03_simulation
 from statespacecheck_paper.figure03_summary import (
+    SUMMARY_ACCURACY_METRICS,
     SUMMARY_FLAG_METRICS,
     Figure3RealizationSummary,
     build_summary_conditions,
@@ -83,7 +84,7 @@ def figure03_summary_payload(
     thresholds = dataclasses.asdict(summary.diagnostic_thresholds)
     directions = {metric: direction for metric, direction in SUMMARY_FLAG_METRICS}
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "figure": "figure03",
         "configuration": dataclasses.asdict(config),
         "realizations": {
@@ -97,6 +98,12 @@ def figure03_summary_payload(
         "condition_labels": [_plain_condition_label(condition.label) for condition in conditions],
         "median_flag_percentages": summary.median_flag_percentages,
         "percentage_unit": "percent_of_spike_events",
+        "accuracy_metric_order": list(SUMMARY_ACCURACY_METRICS),
+        "accuracy_units": {
+            "median_absolute_error": "position_units",
+            "hpd95_coverage": "percent_of_time_steps",
+        },
+        "median_decoding_accuracy": summary.median_decoding_accuracy,
         "provenance": {"source": scientific_source_provenance()},
     }
 
@@ -146,6 +153,11 @@ def generate_figure03(
         "[well-specified, remap, history, replay, drift, sparse population]:\n"
         f"{np.array2string(realization_summary.median_flag_percentages, precision=3)}"
     )
+    print(
+        "Median decoding accuracy [median |error| (a.u.), 95% HPD coverage (%)] x "
+        "[well-specified, remap, history, replay, drift, sparse population]:\n"
+        f"{np.array2string(realization_summary.median_decoding_accuracy, precision=3)}"
+    )
     summary_path = write_json_artifact(
         FIGURE03_SUMMARY_PATH,
         figure03_summary_payload(config, realization_summary),
@@ -163,6 +175,7 @@ def generate_figure03(
         config=config,
         place_field_centers=raster_place_field_centers,
         median_flag_percentages=realization_summary.median_flag_percentages,
+        median_decoding_accuracy=realization_summary.median_decoding_accuracy,
     )
 
     save_figure("manuscript/figures/main/figure03", close=True, fig=fig)

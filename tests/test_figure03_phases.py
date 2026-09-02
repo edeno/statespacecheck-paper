@@ -496,6 +496,12 @@ class TestEstimateRealizationSummary:
         assert isinstance(summary, Figure3RealizationSummary)
         assert summary.n_realizations == 3
         assert summary.median_flag_percentages.shape == (3, 6)
+        assert summary.median_decoding_accuracy.shape == (2, 6)
+        assert np.all(summary.median_decoding_accuracy[0] >= 0.0)
+        assert np.all(
+            (summary.median_decoding_accuracy[1] >= 0.0)
+            & (summary.median_decoding_accuracy[1] <= 100.0)
+        )
         # Percentages in [0, 100].
         assert np.all(summary.median_flag_percentages >= 0.0)
         assert np.all(summary.median_flag_percentages <= 100.0)
@@ -619,6 +625,16 @@ class TestFigure3RealizationSummaryInvariants:
             Figure3RealizationSummary(
                 diagnostic_thresholds=self._thresholds(),
                 median_flag_percentages=np.zeros(5),
+                median_decoding_accuracy=np.zeros((2, 5)),
+                n_realizations=2,
+            )
+
+    def test_accuracy_column_mismatch_raises(self) -> None:
+        with pytest.raises(ValueError, match="median_decoding_accuracy"):
+            Figure3RealizationSummary(
+                diagnostic_thresholds=self._thresholds(),
+                median_flag_percentages=np.zeros((3, 5)),
+                median_decoding_accuracy=np.zeros((2, 4)),
                 n_realizations=2,
             )
 
@@ -627,5 +643,6 @@ class TestFigure3RealizationSummaryInvariants:
             Figure3RealizationSummary(
                 diagnostic_thresholds=self._thresholds(),
                 median_flag_percentages=np.zeros((3, 5)),
+                median_decoding_accuracy=np.zeros((2, 5)),
                 n_realizations=0,
             )
