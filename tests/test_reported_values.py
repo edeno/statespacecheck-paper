@@ -100,6 +100,15 @@ def test_asymmetric_mode_parameters_are_reported_independently() -> None:
     assert values["RecModeFragmentedStay"] == "0.80"
 
 
+def test_non_integral_burst_factor_is_not_silently_rounded() -> None:
+    """The spelled-out prose cannot faithfully represent a fractional factor."""
+    figure03 = copy.deepcopy(_load("figure03_summary.json"))
+    figure03["configuration"]["history_burst_factor"] = 3.4
+
+    with pytest.raises(ValueError, match="not exact"):
+        render_macro_file(figure03, _load("figure04_summary.json"))
+
+
 def test_macro_names_are_unique() -> None:
     """A duplicated name would make ``\\newcommand`` abort the LaTeX build."""
     text = COMMITTED_MACRO_FILE.read_text(encoding="utf-8")

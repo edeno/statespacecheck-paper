@@ -479,6 +479,10 @@ def _simulation_configuration(payload: dict[str, Any]) -> list[MacroDefinition]:
     # The replay sweep occupies a fractional sub-window of clean recovery 2.
     recovery_two_start, recovery_two_end = boundaries[3], boundaries[4]
     recovery_two_span = recovery_two_end - recovery_two_start
+    # The prose spells this value as "threefold", so a fractional factor
+    # cannot be represented faithfully. Reuse the exact-value guard rather
+    # than silently rounding a valid simulation setting to a different value.
+    burst_factor_word = cardinal_word(int(_exact(config["history_burst_factor"])))
 
     def replay_bound(fraction: float) -> int:
         return int(round(recovery_two_start + fraction * recovery_two_span))
@@ -602,7 +606,7 @@ def _simulation_configuration(payload: dict[str, Any]) -> list[MacroDefinition]:
         ),
         MacroDefinition(
             "SimBurstFactorWord",
-            cardinal_word(round(config["history_burst_factor"])),
+            burst_factor_word,
             "history_burst_factor",
         ),
     ]
