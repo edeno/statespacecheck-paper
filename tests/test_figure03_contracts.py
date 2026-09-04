@@ -30,6 +30,9 @@ def test_figure3_config_is_frozen_with_exact_fields() -> None:
         "phase_boundaries",
         "prediction_step_std",
         "drift_momentum",
+        "history_refractory_steps",
+        "history_burst_window",
+        "history_burst_factor",
         "position_min",
         "position_max",
         "position_bin_size",
@@ -81,5 +84,8 @@ def test_summary_condition_and_realization_summary_fields() -> None:
     assert _field_names(Figure3RealizationSummary) == [
         "diagnostic_thresholds",
         "median_flag_percentages",
+        "median_decoding_accuracy",
+        "flag_percentage_standard_errors",
+        "decoding_accuracy_standard_errors",
         "n_realizations",
     ]

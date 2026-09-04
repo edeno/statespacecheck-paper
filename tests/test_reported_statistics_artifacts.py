@@ -44,7 +44,7 @@ def _round_trip_live_payload(tmp_path: Path, payload: dict[str, object]) -> dict
 def test_figure03_reported_statistics_match_canonical_run(tmp_path: Path) -> None:
     payload = _load("figure03_summary.json")
 
-    assert payload["schema_version"] == 2
+    assert payload["schema_version"] == 5
     assert payload["realizations"] == {
         "count": 100,
         "first_seed": 1,
@@ -75,6 +75,13 @@ def test_figure03_reported_statistics_match_canonical_run(tmp_path: Path) -> Non
         atol=5e-4,
         rtol=0.0,
     )
+    assert payload["accuracy_metric_order"] == ["median_absolute_error"]
+    np.testing.assert_allclose(
+        np.asarray(payload["median_decoding_accuracy"]),
+        np.array([[1.792, 42.169, 1.678, 36.358, 7.985, 0.990]]),
+        atol=5e-4,
+        rtol=0.0,
+    )
     assert payload["flag_rules"] == {
         "hpd_overlap": {"comparison": "less_than_or_equal", "threshold": 0.0},
         "kl_divergence": {
@@ -87,6 +94,30 @@ def test_figure03_reported_statistics_match_canonical_run(tmp_path: Path) -> Non
         },
     }
     assert payload["condition_labels"][-1] == "Sparse population"
+    # Dispersion is published because it sets the manuscript's printed precision.
+    assert payload["standard_error_method"] == "order_statistic_interval_95"
+    flag_errors = np.asarray(payload["median_flag_percentage_standard_errors"])
+    accuracy_errors = np.asarray(payload["median_decoding_accuracy_standard_errors"])
+    assert flag_errors.shape == np.asarray(payload["median_flag_percentages"]).shape
+    assert accuracy_errors.shape == np.asarray(payload["median_decoding_accuracy"]).shape
+    assert np.all(flag_errors >= 0.0) and np.all(accuracy_errors >= 0.0)
+    # The remap column is trajectory-dependent, so its median is the least
+    # certain of the flag percentages by an order of magnitude.
+    remap = payload["condition_order"].index("remap")
+    assert np.all(flag_errors[:, remap] > 1.0)
+    # The Methods quote the rule behind the thresholds, not just their values.
+    assert payload["threshold_provenance"] == {
+        "baseline_end_index": 6000,
+        "hpd_overlap": {"rule": "pooled_baseline_quantile", "quantile": 0.01},
+        "kl_divergence": {"rule": "pooled_baseline_quantile", "quantile": 0.99},
+        "predictive_pvalue": {"rule": "fixed_cutoff", "cutoff": 0.05},
+    }
+    # The history-dependence misfit parameters the Methods report, at 1 ms/step:
+    # a 1 ms hard refractory, a 2-10 ms burst window, a threefold rate increase.
+    configuration = payload["configuration"]
+    assert configuration["history_refractory_steps"] == 1
+    assert configuration["history_burst_window"] == [2, 10]
+    assert configuration["history_burst_factor"] == 3.0
 
     summary = Figure3RealizationSummary(
         diagnostic_thresholds=DiagnosticThresholds(
@@ -95,6 +126,13 @@ def test_figure03_reported_statistics_match_canonical_run(tmp_path: Path) -> Non
             predictive_pvalue=payload["flag_rules"]["predictive_pvalue"]["threshold"],
         ),
         median_flag_percentages=np.asarray(payload["median_flag_percentages"]),
+        median_decoding_accuracy=np.asarray(payload["median_decoding_accuracy"]),
+        flag_percentage_standard_errors=np.asarray(
+            payload["median_flag_percentage_standard_errors"]
+        ),
+        decoding_accuracy_standard_errors=np.asarray(
+            payload["median_decoding_accuracy_standard_errors"]
+        ),
         n_realizations=payload["realizations"]["count"],
     )
     live = figure03_summary_payload(Figure3Config(), summary)
@@ -104,8 +142,12 @@ def test_figure03_reported_statistics_match_canonical_run(tmp_path: Path) -> Non
 def test_figure04_reported_statistics_counts_partition_events(tmp_path: Path) -> None:
     payload = _load("figure04_summary.json")
 
-    assert payload["schema_version"] == 2
-    assert payload["dataset"] == {"animal_date_epoch": "j1620210710_02_r1"}
+    assert payload["schema_version"] == 3
+    # 203 units is the count reported in the Figure-4 caption.
+    assert payload["dataset"] == {
+        "animal_date_epoch": "j1620210710_02_r1",
+        "n_units": 203,
+    }
     assert payload["diagnostic_means"]["continuous"] == pytest.approx(
         {
             "hpd_overlap": 0.8312001903462088,
@@ -171,6 +213,7 @@ def test_figure04_reported_statistics_counts_partition_events(tmp_path: Path) ->
             )
             for item in payload["flag_confusions"]
         ),
+        n_units=payload["dataset"]["n_units"],
     )
     live = figure04_summary_payload(
         config=Figure4Config(),

@@ -300,11 +300,17 @@ class Figure4DiagnosticMeans:
 
 @dataclasses.dataclass(frozen=True)
 class Figure4Summary:
-    """Manuscript-facing Figure-4 scalars, independent of output formatting."""
+    """Manuscript-facing Figure-4 scalars, independent of output formatting.
+
+    ``n_units`` is the number of simultaneously recorded units the decoders
+    were fit on — reported in the figure caption, so it is carried here
+    rather than recounted at render time.
+    """
 
     continuous: Figure4DiagnosticMeans
     continuous_fragmented: Figure4DiagnosticMeans
     flag_confusions: tuple[FlagConfusion, ...]
+    n_units: int
 
 
 def _compute_diagnostic_means(
@@ -526,12 +532,13 @@ def compute_figure04_summary(
         continuous=_compute_diagnostic_means(decode.continuous_diagnostics),
         continuous_fragmented=_compute_diagnostic_means(decode.continuous_fragmented_diagnostics),
         flag_confusions=tuple(flag_confusions),
+        n_units=int(decode.spike_counts.shape[1]),
     )
 
 
 def format_figure04_summary(summary: Figure4Summary) -> str:
     """Format a computed Figure-4 summary for command-line output."""
-    lines = ["=== Diagnostic Summary (all time points) ==="]
+    lines = [f"=== Diagnostic Summary ({summary.n_units} units, all time points) ==="]
     for model_name, means in (
         ("Continuous", summary.continuous),
         ("ContFrag", summary.continuous_fragmented),

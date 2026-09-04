@@ -41,6 +41,15 @@ _PER_SPIKE_BATCH = 50_000
 # ``DecodingDiagnostics`` shape-validation loops.
 _PER_EVENT_METRIC_NAMES = ("event_hpd_overlap", "event_kl_divergence", "event_predictive_pvalue")
 
+# Baseline-threshold definitions used by ``compute_baseline_diagnostic_thresholds``.
+# Named (rather than inlined at the ``nanquantile`` calls) because the manuscript
+# reports the percentile levels themselves, and the figure summaries record these
+# constants alongside the threshold values they produce — so a change to the rule
+# cannot silently move a published number.
+BASELINE_HPD_OVERLAP_QUANTILE = 0.01
+BASELINE_KL_DIVERGENCE_QUANTILE = 0.99
+FIXED_PREDICTIVE_PVALUE_CUTOFF = 0.05
+
 
 def _validate_diagnostic_range(
     arr: NDArray[np.floating],
@@ -874,7 +883,7 @@ def compute_baseline_diagnostic_thresholds(
             f"(:{baseline_end_index}) contains no finite values; threshold "
             "would be NaN."
         )
-    hpd_overlap_threshold = float(np.nanquantile(hpd_baseline, 0.01))
+    hpd_overlap_threshold = float(np.nanquantile(hpd_baseline, BASELINE_HPD_OVERLAP_QUANTILE))
 
     kl_baseline = _get("kl_divergence")[:baseline_end_index].ravel()
     if np.any(np.isinf(kl_baseline)):
@@ -888,10 +897,10 @@ def compute_baseline_diagnostic_thresholds(
             f"(:{baseline_end_index}) contains no finite values; threshold "
             "would be NaN."
         )
-    kl_divergence_threshold = float(np.nanquantile(kl_baseline, 0.99))
+    kl_divergence_threshold = float(np.nanquantile(kl_baseline, BASELINE_KL_DIVERGENCE_QUANTILE))
 
     # Fixed rank-statistic cutoff; not derived from the data.
-    predictive_pvalue_threshold = 0.05
+    predictive_pvalue_threshold = FIXED_PREDICTIVE_PVALUE_CUTOFF
 
     return DiagnosticThresholds(
         hpd_overlap=hpd_overlap_threshold,

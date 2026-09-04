@@ -32,8 +32,10 @@ from statespacecheck_paper.figure03_plotting import compose_figure03
 from statespacecheck_paper.figure03_protocol import Figure3Config
 from statespacecheck_paper.figure03_simulation import run_figure03_simulation
 from statespacecheck_paper.figure03_summary import (
+    SUMMARY_ACCURACY_METRICS,
     SUMMARY_FLAG_METRICS,
     Figure3RealizationSummary,
+    baseline_threshold_provenance,
     build_summary_conditions,
     estimate_realization_summary,
 )
@@ -83,7 +85,7 @@ def figure03_summary_payload(
     thresholds = dataclasses.asdict(summary.diagnostic_thresholds)
     directions = {metric: direction for metric, direction in SUMMARY_FLAG_METRICS}
     return {
-        "schema_version": 2,
+        "schema_version": 5,
         "figure": "figure03",
         "configuration": dataclasses.asdict(config),
         "realizations": {
@@ -93,10 +95,20 @@ def figure03_summary_payload(
         },
         "metric_order": [metric for metric, _ in SUMMARY_FLAG_METRICS],
         "flag_rules": inclusive_flag_rules(thresholds, directions),
+        "threshold_provenance": baseline_threshold_provenance(config),
         "condition_order": list(FIGURE03_CONDITION_IDS),
         "condition_labels": [_plain_condition_label(condition.label) for condition in conditions],
         "median_flag_percentages": summary.median_flag_percentages,
         "percentage_unit": "percent_of_spike_events",
+        "accuracy_metric_order": list(SUMMARY_ACCURACY_METRICS),
+        "accuracy_units": {"median_absolute_error": "position_units"},
+        "median_decoding_accuracy": summary.median_decoding_accuracy,
+        # Published so the manuscript's printed precision is derivable rather
+        # than chosen: each value is reported to the decimal place of its own
+        # standard error. See figure03_summary.median_standard_error.
+        "standard_error_method": "order_statistic_interval_95",
+        "median_flag_percentage_standard_errors": summary.flag_percentage_standard_errors,
+        "median_decoding_accuracy_standard_errors": summary.decoding_accuracy_standard_errors,
         "provenance": {"source": scientific_source_provenance()},
     }
 
@@ -146,6 +158,11 @@ def generate_figure03(
         "[well-specified, remap, history, replay, drift, sparse population]:\n"
         f"{np.array2string(realization_summary.median_flag_percentages, precision=3)}"
     )
+    print(
+        "Median decoding accuracy [median |error| (a.u.)] x "
+        "[well-specified, remap, history, replay, drift, sparse population]:\n"
+        f"{np.array2string(realization_summary.median_decoding_accuracy, precision=3)}"
+    )
     summary_path = write_json_artifact(
         FIGURE03_SUMMARY_PATH,
         figure03_summary_payload(config, realization_summary),
@@ -163,6 +180,7 @@ def generate_figure03(
         config=config,
         place_field_centers=raster_place_field_centers,
         median_flag_percentages=realization_summary.median_flag_percentages,
+        median_decoding_accuracy=realization_summary.median_decoding_accuracy,
     )
 
     save_figure("manuscript/figures/main/figure03", close=True, fig=fig)

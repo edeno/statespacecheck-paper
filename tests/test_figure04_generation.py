@@ -108,7 +108,7 @@ def test_summary_payload_contains_reported_counts_rates_and_provenance(
         b_only=3,
         neither=77,
     )
-    summary = Figure4Summary(means_a, means_b, (confusion,))
+    summary = Figure4Summary(means_a, means_b, (confusion,), n_units=7)
     cache_provenance = Figure4CacheProvenance(
         fingerprint_sha256="c" * 64,
         schema_version=FIGURE04_CACHE_SCHEMA_VERSION,
@@ -134,8 +134,8 @@ def test_summary_payload_contains_reported_counts_rates_and_provenance(
     flag_rules = cast(dict[str, dict[str, str | float]], payload["flag_rules"])
     provenance = cast(dict[str, Any], payload["provenance"])
 
-    assert payload["schema_version"] == 2
-    assert payload["dataset"] == {"animal_date_epoch": "epoch_x"}
+    assert payload["schema_version"] == 3
+    assert payload["dataset"] == {"animal_date_epoch": "epoch_x", "n_units": 7}
     assert flag_rules["hpd_overlap"] == {
         "comparison": "less_than_or_equal",
         "threshold": 0.05,

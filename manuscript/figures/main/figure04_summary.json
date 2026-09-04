@@ -24,7 +24,8 @@
     }
   },
   "dataset": {
-    "animal_date_epoch": "j1620210710_02_r1"
+    "animal_date_epoch": "j1620210710_02_r1",
+    "n_units": 203
   },
   "detail_window": {
     "center_index": 193069,
@@ -89,10 +90,10 @@
       "schema_version": 5
     },
     "source": {
-      "source_tree_sha256": "1573e19126ef5d40902e7efe62700bb39c2c4c42e2dfa90e74db54aaadb2cd76",
+      "source_tree_sha256": "5a72e721a436f708346a817949fcaccc0c0901ecab62863df6cf1510a82e4574",
       "statespacecheck_paper_version": "0.1.0",
       "uv_lock_sha256": "1e593807ad3ef1fe385bc7351056221b966552819319d83a376572cdd319cf78"
     }
   },
-  "schema_version": 2
+  "schema_version": 3
 }
