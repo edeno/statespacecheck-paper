@@ -23,6 +23,12 @@
   ],
   "configuration": {
     "drift_momentum": 0.88,
+    "history_burst_factor": 3.0,
+    "history_burst_window": [
+      2,
+      10
+    ],
+    "history_refractory_steps": 1,
     "phase_boundaries": [
       6000,
       10000,
@@ -171,7 +177,7 @@
   "percentage_unit": "percent_of_spike_events",
   "provenance": {
     "source": {
-      "source_tree_sha256": "e2a90532690ac5ae6fc278493a755b38141a12df38b400e1be2ee5e64dec664c",
+      "source_tree_sha256": "ef4c2fe519b006a97593a5c5f1a7e1ab780a4a77cead59ba9c99d9120f51c0c6",
       "statespacecheck_paper_version": "0.1.0",
       "uv_lock_sha256": "1e593807ad3ef1fe385bc7351056221b966552819319d83a376572cdd319cf78"
     }
@@ -181,5 +187,20 @@
     "first_seed": 1,
     "last_seed": 100
   },
-  "schema_version": 3
+  "schema_version": 4,
+  "threshold_provenance": {
+    "baseline_end_index": 6000,
+    "hpd_overlap": {
+      "quantile": 0.01,
+      "rule": "pooled_baseline_quantile"
+    },
+    "kl_divergence": {
+      "quantile": 0.99,
+      "rule": "pooled_baseline_quantile"
+    },
+    "predictive_pvalue": {
+      "cutoff": 0.05,
+      "rule": "fixed_cutoff"
+    }
+  }
 }

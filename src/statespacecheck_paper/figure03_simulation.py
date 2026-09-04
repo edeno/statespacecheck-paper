@@ -293,7 +293,14 @@ def simulate_history_dependent_phase(
         n, config.prediction_step_std, x_last, config.position_min, config.position_max, rng
     )
     sp = simulate_spikes_history_dependent(
-        x, place_field_centers, config.place_field_std, config.place_field_rate_scale, rng
+        x,
+        place_field_centers,
+        config.place_field_std,
+        config.place_field_rate_scale,
+        rng,
+        refractory_steps=config.history_refractory_steps,
+        burst_window=config.history_burst_window,
+        burst_factor=config.history_burst_factor,
     )
     return x, sp
 

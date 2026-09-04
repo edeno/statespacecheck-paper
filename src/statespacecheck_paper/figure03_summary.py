@@ -22,6 +22,9 @@ import numpy as np
 from numpy.typing import NDArray
 
 from statespacecheck_paper.diagnostics import (
+    BASELINE_HPD_OVERLAP_QUANTILE,
+    BASELINE_KL_DIVERGENCE_QUANTILE,
+    FIXED_PREDICTIVE_PVALUE_CUTOFF,
     DecodingDiagnostics,
     DiagnosticThresholds,
     compute_baseline_diagnostic_thresholds,
@@ -439,6 +442,47 @@ class Figure3RealizationSummary:
             )
         self.median_flag_percentages.setflags(write=False)
         self.median_decoding_accuracy.setflags(write=False)
+
+
+def baseline_threshold_provenance(config: Figure3Config) -> dict[str, object]:
+    """Describe the rule that produced the Figure-3 flag thresholds.
+
+    :func:`estimate_realization_summary` reports threshold *values*; the
+    manuscript quotes the rule behind them (1st / 99th percentile of the
+    pooled opening baseline, plus the fixed predictive-p-value cutoff). This
+    returns that rule in machine-readable form, reading the same constants
+    and the same baseline boundary the estimate uses, so the two cannot drift.
+
+    Parameters
+    ----------
+    config : Figure3Config
+        Configuration whose phase ladder defines the baseline window.
+
+    Returns
+    -------
+    dict[str, object]
+        ``baseline_end_index`` plus one entry per flag metric.
+
+    Examples
+    --------
+    >>> baseline_threshold_provenance(Figure3Config())["baseline_end_index"]
+    6000
+    """
+    return {
+        "baseline_end_index": int(config.phase_boundaries[PhaseBoundary.REMAP_START]),
+        "hpd_overlap": {
+            "rule": "pooled_baseline_quantile",
+            "quantile": BASELINE_HPD_OVERLAP_QUANTILE,
+        },
+        "kl_divergence": {
+            "rule": "pooled_baseline_quantile",
+            "quantile": BASELINE_KL_DIVERGENCE_QUANTILE,
+        },
+        "predictive_pvalue": {
+            "rule": "fixed_cutoff",
+            "cutoff": FIXED_PREDICTIVE_PVALUE_CUTOFF,
+        },
+    }
 
 
 def estimate_realization_summary(

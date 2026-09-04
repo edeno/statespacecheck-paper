@@ -128,7 +128,7 @@ def test_summary_payload_preserves_labels_rules_and_source_provenance(
     )
     flag_rules = cast(dict[str, dict[str, str | float]], payload["flag_rules"])
 
-    assert payload["schema_version"] == 3
+    assert payload["schema_version"] == 4
     assert payload["accuracy_metric_order"] == ["median_absolute_error"]
     assert np.asarray(payload["median_decoding_accuracy"]).shape == (1, 6)
     assert payload["condition_labels"] == [
@@ -143,5 +143,13 @@ def test_summary_payload_preserves_labels_rules_and_source_provenance(
         "hpd_overlap": {"comparison": "less_than_or_equal", "threshold": 0.0},
         "predictive_pvalue": {"comparison": "less_than_or_equal", "threshold": 0.05},
         "kl_divergence": {"comparison": "greater_than_or_equal", "threshold": 2.0},
+    }
+    # The thresholds are numbers; this block records the rule that produced
+    # them, which the Methods text quotes as 1st / 99th percentiles.
+    assert payload["threshold_provenance"] == {
+        "baseline_end_index": 6000,
+        "hpd_overlap": {"rule": "pooled_baseline_quantile", "quantile": 0.01},
+        "kl_divergence": {"rule": "pooled_baseline_quantile", "quantile": 0.99},
+        "predictive_pvalue": {"rule": "fixed_cutoff", "cutoff": 0.05},
     }
     assert payload["provenance"] == {"source": source}

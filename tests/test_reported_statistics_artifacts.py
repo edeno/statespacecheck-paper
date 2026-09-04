@@ -44,7 +44,7 @@ def _round_trip_live_payload(tmp_path: Path, payload: dict[str, object]) -> dict
 def test_figure03_reported_statistics_match_canonical_run(tmp_path: Path) -> None:
     payload = _load("figure03_summary.json")
 
-    assert payload["schema_version"] == 3
+    assert payload["schema_version"] == 4
     assert payload["realizations"] == {
         "count": 100,
         "first_seed": 1,
@@ -94,6 +94,19 @@ def test_figure03_reported_statistics_match_canonical_run(tmp_path: Path) -> Non
         },
     }
     assert payload["condition_labels"][-1] == "Sparse population"
+    # The Methods quote the rule behind the thresholds, not just their values.
+    assert payload["threshold_provenance"] == {
+        "baseline_end_index": 6000,
+        "hpd_overlap": {"rule": "pooled_baseline_quantile", "quantile": 0.01},
+        "kl_divergence": {"rule": "pooled_baseline_quantile", "quantile": 0.99},
+        "predictive_pvalue": {"rule": "fixed_cutoff", "cutoff": 0.05},
+    }
+    # The history-dependence misfit parameters the Methods report, at 1 ms/step:
+    # a 1 ms hard refractory, a 2-10 ms burst window, a threefold rate increase.
+    configuration = payload["configuration"]
+    assert configuration["history_refractory_steps"] == 1
+    assert configuration["history_burst_window"] == [2, 10]
+    assert configuration["history_burst_factor"] == 3.0
 
     summary = Figure3RealizationSummary(
         diagnostic_thresholds=DiagnosticThresholds(
@@ -112,8 +125,12 @@ def test_figure03_reported_statistics_match_canonical_run(tmp_path: Path) -> Non
 def test_figure04_reported_statistics_counts_partition_events(tmp_path: Path) -> None:
     payload = _load("figure04_summary.json")
 
-    assert payload["schema_version"] == 2
-    assert payload["dataset"] == {"animal_date_epoch": "j1620210710_02_r1"}
+    assert payload["schema_version"] == 3
+    # 203 units is the count reported in the Figure-4 caption.
+    assert payload["dataset"] == {
+        "animal_date_epoch": "j1620210710_02_r1",
+        "n_units": 203,
+    }
     assert payload["diagnostic_means"]["continuous"] == pytest.approx(
         {
             "hpd_overlap": 0.8312001903462088,
@@ -179,6 +196,7 @@ def test_figure04_reported_statistics_counts_partition_events(tmp_path: Path) ->
             )
             for item in payload["flag_confusions"]
         ),
+        n_units=payload["dataset"]["n_units"],
     )
     live = figure04_summary_payload(
         config=Figure4Config(),

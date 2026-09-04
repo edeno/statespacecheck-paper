@@ -35,6 +35,7 @@ from statespacecheck_paper.figure03_summary import (
     SUMMARY_ACCURACY_METRICS,
     SUMMARY_FLAG_METRICS,
     Figure3RealizationSummary,
+    baseline_threshold_provenance,
     build_summary_conditions,
     estimate_realization_summary,
 )
@@ -84,7 +85,7 @@ def figure03_summary_payload(
     thresholds = dataclasses.asdict(summary.diagnostic_thresholds)
     directions = {metric: direction for metric, direction in SUMMARY_FLAG_METRICS}
     return {
-        "schema_version": 3,
+        "schema_version": 4,
         "figure": "figure03",
         "configuration": dataclasses.asdict(config),
         "realizations": {
@@ -94,6 +95,7 @@ def figure03_summary_payload(
         },
         "metric_order": [metric for metric, _ in SUMMARY_FLAG_METRICS],
         "flag_rules": inclusive_flag_rules(thresholds, directions),
+        "threshold_provenance": baseline_threshold_provenance(config),
         "condition_order": list(FIGURE03_CONDITION_IDS),
         "condition_labels": [_plain_condition_label(condition.label) for condition in conditions],
         "median_flag_percentages": summary.median_flag_percentages,
