@@ -3,7 +3,7 @@
 % Every value below is read from the canonical figure summaries:
 %   figures/main/figure03_summary.json (schema 5)
 %   figures/main/figure04_summary.json (schema 3)
-% source_tree_sha256: 5a72e721a436f708346a817949fcaccc0c0901ecab62863df6cf1510a82e4574
+% source_tree_sha256: a0808bb90e6462d403914a1243ce28719fcbad3590462276f4989adfeb473961
 %
 % Regenerate with: uv run python scripts/emit_reported_values.py
 
@@ -85,9 +85,12 @@
 \newcommand{\RecPositionStdVariance}{12.5}             % configuration.decoder.position_std squared
 \newcommand{\RecPositionStdCm}{3.5}                    % configuration.decoder.position_std [2 s.f.]
 \newcommand{\RecMovementVar}{6.0}                      % configuration.provenance.movement_var
-\newcommand{\RecModeInitial}{0.5}                      % configuration.provenance.contfrag_discrete_initial_conditions
-\newcommand{\RecModeDiagonal}{0.98}                    % configuration.provenance.contfrag_diagonal_values
-\newcommand{\RecModeOffDiagonal}{0.02}                 % 1 - configuration.provenance.contfrag_diagonal_values
+\newcommand{\RecModeContinuousInitial}{0.5}            % configuration.provenance.contfrag_discrete_initial_conditions[0]
+\newcommand{\RecModeFragmentedInitial}{0.5}            % configuration.provenance.contfrag_discrete_initial_conditions[1]
+\newcommand{\RecModeContinuousStay}{0.98}              % configuration.provenance.contfrag_diagonal_values[0]
+\newcommand{\RecModeContinuousToFragmented}{0.02}      % 1 - configuration.provenance.contfrag_diagonal_values[0]
+\newcommand{\RecModeFragmentedToContinuous}{0.02}      % 1 - configuration.provenance.contfrag_diagonal_values[1]
+\newcommand{\RecModeFragmentedStay}{0.98}              % configuration.provenance.contfrag_diagonal_values[1]
 \newcommand{\RecNldVersion}{0.6.10.dev214+g956fdccaf}  % configuration.provenance.non_local_detector_version
 \newcommand{\RecHpdCutoff}{0.05}                       % flag_rules.hpd_overlap.threshold
 \newcommand{\RecPredictiveCutoff}{0.05}                % flag_rules.predictive_pvalue.threshold

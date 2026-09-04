@@ -9,6 +9,7 @@ file fails here rather than silently leaving a stale number in the paper.
 
 from __future__ import annotations
 
+import copy
 import re
 from pathlib import Path
 
@@ -79,6 +80,24 @@ def test_macro_values_round_trip_the_canonical_statistics() -> None:
     assert values["RecHpdFlaggedContinuous"] == str(hpd["a_only"] + hpd["both"])
     hpd_decimals = _decimals_for_standard_error(_rescue_rate_standard_error(hpd))
     assert values["RecHpdRescuedPercent"] == f"{100 * hpd['rescue_rate']:.{hpd_decimals}f}"
+
+
+def test_asymmetric_mode_parameters_are_reported_independently() -> None:
+    """Each mode keeps its own initial and transition probability."""
+    figure03 = _load("figure03_summary.json")
+    figure04 = copy.deepcopy(_load("figure04_summary.json"))
+    provenance = figure04["configuration"]["provenance"]
+    provenance["contfrag_discrete_initial_conditions"] = [0.6, 0.4]
+    provenance["contfrag_diagonal_values"] = [0.9, 0.8]
+
+    values = _macro_values(render_macro_file(figure03, figure04))
+
+    assert values["RecModeContinuousInitial"] == "0.6"
+    assert values["RecModeFragmentedInitial"] == "0.4"
+    assert values["RecModeContinuousStay"] == "0.90"
+    assert values["RecModeContinuousToFragmented"] == "0.10"
+    assert values["RecModeFragmentedToContinuous"] == "0.20"
+    assert values["RecModeFragmentedStay"] == "0.80"
 
 
 def test_macro_names_are_unique() -> None:
