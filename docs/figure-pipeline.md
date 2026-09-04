@@ -13,6 +13,7 @@ All commands are run from the repository root in the locked environment:
 uv sync --frozen
 uv run python scripts/generate_figureNN.py     # one figure
 uv run python scripts/generate_all_figures.py  # all four
+uv run python scripts/emit_reported_values.py  # refresh the manuscript's numbers
 # Outputs land in manuscript/figures/main/figureNN.{pdf,png} at 450 DPI.
 ```
 
@@ -285,12 +286,15 @@ It does not require a second set of NetCDF results or fitted-model pickles.
 
 ## Machine-readable summary schema
 
-`figure03_summary.json` uses schema version 3 and `figure04_summary.json`
-schema version 2. Schema 3 adds the Figure-3 decoding-accuracy block:
+`figure03_summary.json` uses schema version 5 and `figure04_summary.json`
+uses schema version 3. The Figure-3 schema includes the decoding-accuracy block:
 `accuracy_metric_order` (`median_absolute_error`), `accuracy_units`, and
 `median_decoding_accuracy`, a `(1, n_conditions)` matrix of the
 across-realization median absolute error of the filtered-posterior mean
-(position units), in the same column order as `median_flag_percentages`. The
+(position units), in the same column order as `median_flag_percentages`. It also
+records the order-statistic standard errors that determine reported precision
+and the baseline-threshold provenance quoted in the Methods. The Figure-4
+schema records `dataset.n_units` alongside the recording identifier. The
 `flag_rules` object binds each numeric threshold to its executable semantics:
 `less_than_or_equal` means a value is flagged when `value <= threshold`, and
 `greater_than_or_equal` means it is flagged when `value >= threshold`. Keeping
@@ -317,3 +321,34 @@ The decoder-parameter names deliberately match the manuscript and the external
 and the Methods) keep their manuscript spellings rather than being renamed. The
 three diagnostic quantities are the same `event_hpd_overlap` /
 `event_predictive_pvalue` / `event_kl_divergence` as in Figure 3.
+
+## From summary to prose: the reported-value macros
+
+The manuscript quotes no analysis number as a literal. `main.tex` inputs
+`manuscript/reported_values.tex`, a generated file of `\newcommand` definitions
+(`\Sim...` for the Figure-3 simulation, `\Rec...` for the Figure-4 recording),
+so the chain runs **code → summary JSON → macro file → prose** with a test on
+each link. `scripts/emit_reported_values.py` (recipe:
+`statespacecheck_paper.reported_values`) reads only the two committed summaries,
+so a number can reach the paper only by first being recorded as an artifact.
+
+Precision is part of what the emitter decides, and it follows how each quantity
+was obtained rather than a uniform digit count:
+
+- **Estimates** print to the decimal place of their own standard error rounded
+  to one significant figure (`_from_standard_error`). Figure-3 errors come from
+  `figure03_summary.median_standard_error`, a deterministic order-statistic
+  interval — never a bootstrap, whose Monte-Carlo noise would land in a
+  published digit count; Figure-4 rescue rates use the binomial error of their
+  stored counts. These errors span a factor of ~500, so digit counts differ
+  between quantities by design.
+- **Exact counts and configured constants** carry no error, so significant-figure
+  rounding does not apply: `_exact` prints them in full and raises if the
+  requested precision would lose information.
+- **Constants the text hedges with "approximately"** are exact functions of
+  chosen parameters, so their digits are a presentation choice (`_significant`).
+
+`tests/test_reported_values.py` holds the guards: the committed macro file must
+byte-match a fresh render of the committed summaries, every macro must actually
+appear in `main.tex`, and each mode or condition must keep its own value rather
+than borrowing a neighbour's.

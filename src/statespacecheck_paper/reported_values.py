@@ -7,8 +7,8 @@ canonical figure summaries (``figure03_summary.json`` /
 from the artifacts the way hand-typed numbers can.
 
 Rounding and derivation happen here, in Python, rather than in the document:
-the manuscript says "42.2 a.u." where the summary holds ``42.16926259332958``,
-and "92%" where it holds ``0.9201170835550825``. Ranges such as the remap
+the manuscript says "42 a.u." where the summary holds ``42.16926259332958``,
+and "92.0%" where it holds ``0.9201170835550825``. Ranges such as the remap
 flag percentages are emitted as separate ``\dots Min`` / ``\dots Max`` macros
 so the en-dash stays in the prose.
 
@@ -21,7 +21,7 @@ should not print to the same number of digits.
 rates) are reported to the decimal place of their own standard error rounded
 to one significant figure, by :func:`_from_standard_error`. Those errors span
 a factor of ~500 across the reported quantities, so the digit counts differ:
-a remap flag percentage with an SE of 3.4 points earns whole percents, while a
+a remap flag percentage with an SE of 4.1 points earns whole percents, while a
 history-dependence one with an SE of 0.05 earns two decimals. The Figure-3
 errors are published in the summary (see
 ``figure03_summary.median_standard_error``) rather than chosen here; the
