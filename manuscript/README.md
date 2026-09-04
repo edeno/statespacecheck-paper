@@ -5,6 +5,10 @@ This directory contains the LaTeX source files for the paper, optimized for bioR
 ## Files
 
 - **main.tex**: Main manuscript text (self-contained, with its own inline preamble)
+- **reported_values.tex**: Generated `\newcommand` definitions for every number
+  the text quotes from the analysis; `main.tex` inputs it. Do not edit by hand —
+  regenerate with `uv run python scripts/emit_reported_values.py` after the
+  figure summaries change (a test fails if it is stale).
 - **Local-GoF-Paper.bib**: Bibliography database (BibTeX, exported from Zotero/Better BibTeX)
 - Bibliography style: `iopart-num` (IOP numbered/Vancouver), used by `main.tex` via `\bibliographystyle{iopart-num}`. It ships with TeX Live / Overleaf, so it is not vendored in this directory.
 - **.latexmkrc**: Build configuration for latexmk
@@ -68,6 +72,7 @@ Generate figures before building the manuscript:
 ```bash
 cd ..
 python scripts/generate_all_figures.py
+python scripts/emit_reported_values.py   # refresh reported_values.tex
 cd manuscript
 make
 ```

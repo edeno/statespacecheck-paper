@@ -622,6 +622,8 @@ class TestFigure3RealizationSummaryInvariants:
                 diagnostic_thresholds=self._thresholds(),
                 median_flag_percentages=np.zeros(5),
                 median_decoding_accuracy=np.zeros((1, 5)),
+                flag_percentage_standard_errors=np.zeros(5),
+                decoding_accuracy_standard_errors=np.zeros((1, 5)),
                 n_realizations=2,
             )
 
@@ -631,6 +633,8 @@ class TestFigure3RealizationSummaryInvariants:
                 diagnostic_thresholds=self._thresholds(),
                 median_flag_percentages=np.zeros((3, 5)),
                 median_decoding_accuracy=np.zeros((1, 4)),
+                flag_percentage_standard_errors=np.zeros((3, 5)),
+                decoding_accuracy_standard_errors=np.zeros((1, 4)),
                 n_realizations=2,
             )
 
@@ -640,5 +644,7 @@ class TestFigure3RealizationSummaryInvariants:
                 diagnostic_thresholds=self._thresholds(),
                 median_flag_percentages=np.zeros((3, 5)),
                 median_decoding_accuracy=np.zeros((1, 5)),
+                flag_percentage_standard_errors=np.zeros((3, 5)),
+                decoding_accuracy_standard_errors=np.zeros((1, 5)),
                 n_realizations=0,
             )

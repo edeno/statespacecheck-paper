@@ -85,5 +85,7 @@ def test_summary_condition_and_realization_summary_fields() -> None:
         "diagnostic_thresholds",
         "median_flag_percentages",
         "median_decoding_accuracy",
+        "flag_percentage_standard_errors",
+        "decoding_accuracy_standard_errors",
         "n_realizations",
     ]

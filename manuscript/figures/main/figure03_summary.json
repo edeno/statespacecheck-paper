@@ -143,6 +143,42 @@
       0.9895975413881715
     ]
   ],
+  "median_decoding_accuracy_standard_errors": [
+    [
+      0.006618273013607371,
+      2.2990407870257834,
+      0.023308491316745793,
+      1.1899507098648754,
+      0.08281026476552521,
+      0.04860915493102461
+    ]
+  ],
+  "median_flag_percentage_standard_errors": [
+    [
+      0.05048649836912283,
+      4.1475083447209835,
+      0.06174124425947939,
+      0.021953357450817085,
+      0.11636604849408648,
+      0.0
+    ],
+    [
+      0.04197393934623608,
+      4.046057912736994,
+      0.056010679495494556,
+      0.04383603544411572,
+      0.15499731150322552,
+      0.0
+    ],
+    [
+      0.02603911341402492,
+      4.144560084672166,
+      0.03826585549239169,
+      0.02158086677332552,
+      0.13210409846905946,
+      2.5510204081632653
+    ]
+  ],
   "median_flag_percentages": [
     [
       1.7656218623792888,
@@ -177,7 +213,7 @@
   "percentage_unit": "percent_of_spike_events",
   "provenance": {
     "source": {
-      "source_tree_sha256": "ef4c2fe519b006a97593a5c5f1a7e1ab780a4a77cead59ba9c99d9120f51c0c6",
+      "source_tree_sha256": "5a72e721a436f708346a817949fcaccc0c0901ecab62863df6cf1510a82e4574",
       "statespacecheck_paper_version": "0.1.0",
       "uv_lock_sha256": "1e593807ad3ef1fe385bc7351056221b966552819319d83a376572cdd319cf78"
     }
@@ -187,7 +223,8 @@
     "first_seed": 1,
     "last_seed": 100
   },
-  "schema_version": 4,
+  "schema_version": 5,
+  "standard_error_method": "order_statistic_interval_95",
   "threshold_provenance": {
     "baseline_end_index": 6000,
     "hpd_overlap": {

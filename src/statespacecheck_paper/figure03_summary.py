@@ -374,6 +374,61 @@ def compute_condition_decoding_accuracy(
     return out
 
 
+def median_standard_error(samples: NDArray[np.floating], axis: int = 0) -> NDArray[np.floating]:
+    """Return the standard error of a median, from the order-statistic interval.
+
+    The reported medians set how many digits the manuscript prints, so this
+    estimate must be deterministic: a bootstrap would put Monte-Carlo noise
+    into a published digit count. The distribution-free interval over order
+    statistics needs no resampling and no normality assumption, which matters
+    here because the remap column is strongly right-skewed across
+    realizations.
+
+    For ``n`` samples the 95% interval for the median runs between order
+    statistics ``k`` and ``n - k + 1`` with ``k = floor(n / 2 - z sqrt(n) / 2)``
+    (``z = 1.96``); the returned standard error is that interval's half-width
+    divided by ``z``. Order-statistic discreteness makes this mildly
+    conservative --- about 0.15 for a standard normal at ``n = 100`` against
+    the asymptotic 0.125 --- which errs toward printing fewer digits.
+
+    Parameters
+    ----------
+    samples : np.ndarray
+        Sample values; ``axis`` indexes the realizations.
+    axis : int, default 0
+        Axis to reduce.
+
+    Returns
+    -------
+    standard_error : np.ndarray
+        Standard error of the median, with ``axis`` removed. Zero where every
+        sample is identical (a column no realization ever flags).
+
+    Notes
+    -----
+    Below roughly eight samples the order-statistic bounds collapse onto the
+    extremes and the result is the sample range over ``2 z`` --- a crude but
+    conservative over-estimate rather than an error, so small-``n`` callers
+    (the fast test fixtures) still get a usable, precision-losing number.
+
+    Examples
+    --------
+    >>> rng = np.random.default_rng(0)
+    >>> se = median_standard_error(rng.normal(size=(1000, 2)))
+    >>> bool(np.all(se < 0.1))
+    True
+    """
+    n_samples = samples.shape[axis]
+    z = 1.96
+    # Convert the 1-based order statistics to 0-based indices, clipped so a
+    # small sample cannot index outside the array.
+    lower = max(int(np.floor(n_samples / 2 - z * np.sqrt(n_samples) / 2)) - 1, 0)
+    upper = min(n_samples - lower - 1, n_samples - 1)
+    ordered = np.sort(samples, axis=axis)
+    interval = np.take(ordered, upper, axis=axis) - np.take(ordered, lower, axis=axis)
+    return np.asarray(interval / (2.0 * z), dtype=float)
+
+
 @dataclass(frozen=True)
 class Figure3RealizationSummary:
     """Stabilized Figure-3 diagnostic_thresholds and per-phase flag fractions.
@@ -409,6 +464,12 @@ class Figure3RealizationSummary:
         Median decoding accuracy. Rows follow
         :data:`statespacecheck_paper.figure03_summary.SUMMARY_ACCURACY_METRICS`;
         columns match ``median_flag_percentages``.
+    flag_percentage_standard_errors : np.ndarray, shape (3, n_columns)
+        Standard error of each median flag percentage across realizations, from
+        :func:`median_standard_error`. These set how many digits the manuscript
+        prints for each value, so they are published alongside the medians.
+    decoding_accuracy_standard_errors : np.ndarray, shape (1, n_columns)
+        Standard error of each median decoding accuracy, same convention.
     n_realizations : int
         Number of realizations aggregated.
 
@@ -422,6 +483,8 @@ class Figure3RealizationSummary:
     diagnostic_thresholds: DiagnosticThresholds
     median_flag_percentages: NDArray[np.floating]
     median_decoding_accuracy: NDArray[np.floating]
+    flag_percentage_standard_errors: NDArray[np.floating]
+    decoding_accuracy_standard_errors: NDArray[np.floating]
     n_realizations: int
 
     def __post_init__(self) -> None:
@@ -440,6 +503,24 @@ class Figure3RealizationSummary:
                 f"{expected} to match median_flag_percentages; "
                 f"got shape {self.median_decoding_accuracy.shape}"
             )
+        for errors, medians, name in (
+            (
+                self.flag_percentage_standard_errors,
+                self.median_flag_percentages,
+                "flag_percentage_standard_errors",
+            ),
+            (
+                self.decoding_accuracy_standard_errors,
+                self.median_decoding_accuracy,
+                "decoding_accuracy_standard_errors",
+            ),
+        ):
+            if errors.shape != medians.shape:
+                raise ValueError(
+                    f"Figure3RealizationSummary.{name} must match its medians; "
+                    f"got {errors.shape} vs {medians.shape}"
+                )
+            errors.setflags(write=False)
         self.median_flag_percentages.setflags(write=False)
         self.median_decoding_accuracy.setflags(write=False)
 
@@ -574,9 +655,12 @@ def estimate_realization_summary(
         ],
         axis=0,
     )
+    accuracy = np.stack(per_realization_accuracy, axis=0)
     return Figure3RealizationSummary(
         diagnostic_thresholds=diagnostic_thresholds,
         median_flag_percentages=np.median(frac, axis=0),
-        median_decoding_accuracy=np.median(np.stack(per_realization_accuracy, axis=0), axis=0),
+        median_decoding_accuracy=np.median(accuracy, axis=0),
+        flag_percentage_standard_errors=median_standard_error(frac),
+        decoding_accuracy_standard_errors=median_standard_error(accuracy),
         n_realizations=n_realizations,
     )

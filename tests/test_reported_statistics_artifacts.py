@@ -44,7 +44,7 @@ def _round_trip_live_payload(tmp_path: Path, payload: dict[str, object]) -> dict
 def test_figure03_reported_statistics_match_canonical_run(tmp_path: Path) -> None:
     payload = _load("figure03_summary.json")
 
-    assert payload["schema_version"] == 4
+    assert payload["schema_version"] == 5
     assert payload["realizations"] == {
         "count": 100,
         "first_seed": 1,
@@ -94,6 +94,17 @@ def test_figure03_reported_statistics_match_canonical_run(tmp_path: Path) -> Non
         },
     }
     assert payload["condition_labels"][-1] == "Sparse population"
+    # Dispersion is published because it sets the manuscript's printed precision.
+    assert payload["standard_error_method"] == "order_statistic_interval_95"
+    flag_errors = np.asarray(payload["median_flag_percentage_standard_errors"])
+    accuracy_errors = np.asarray(payload["median_decoding_accuracy_standard_errors"])
+    assert flag_errors.shape == np.asarray(payload["median_flag_percentages"]).shape
+    assert accuracy_errors.shape == np.asarray(payload["median_decoding_accuracy"]).shape
+    assert np.all(flag_errors >= 0.0) and np.all(accuracy_errors >= 0.0)
+    # The remap column is trajectory-dependent, so its median is the least
+    # certain of the flag percentages by an order of magnitude.
+    remap = payload["condition_order"].index("remap")
+    assert np.all(flag_errors[:, remap] > 1.0)
     # The Methods quote the rule behind the thresholds, not just their values.
     assert payload["threshold_provenance"] == {
         "baseline_end_index": 6000,
@@ -116,6 +127,12 @@ def test_figure03_reported_statistics_match_canonical_run(tmp_path: Path) -> Non
         ),
         median_flag_percentages=np.asarray(payload["median_flag_percentages"]),
         median_decoding_accuracy=np.asarray(payload["median_decoding_accuracy"]),
+        flag_percentage_standard_errors=np.asarray(
+            payload["median_flag_percentage_standard_errors"]
+        ),
+        decoding_accuracy_standard_errors=np.asarray(
+            payload["median_decoding_accuracy_standard_errors"]
+        ),
         n_realizations=payload["realizations"]["count"],
     )
     live = figure03_summary_payload(Figure3Config(), summary)

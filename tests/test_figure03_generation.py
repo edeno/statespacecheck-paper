@@ -35,6 +35,8 @@ def test_generation_threads_one_config_through_simulation_summary_and_plot(
         ),
         median_flag_percentages=np.zeros((3, 6)),
         median_decoding_accuracy=np.zeros((1, 6)),
+        flag_percentage_standard_errors=np.ones((3, 6)),
+        decoding_accuracy_standard_errors=np.ones((1, 6)),
         n_realizations=7,
     )
 
@@ -113,6 +115,8 @@ def test_summary_payload_preserves_labels_rules_and_source_provenance(
         ),
         median_flag_percentages=np.zeros((3, 6)),
         median_decoding_accuracy=np.zeros((1, 6)),
+        flag_percentage_standard_errors=np.ones((3, 6)),
+        decoding_accuracy_standard_errors=np.ones((1, 6)),
         n_realizations=2,
     )
     source = {
@@ -128,7 +132,7 @@ def test_summary_payload_preserves_labels_rules_and_source_provenance(
     )
     flag_rules = cast(dict[str, dict[str, str | float]], payload["flag_rules"])
 
-    assert payload["schema_version"] == 4
+    assert payload["schema_version"] == 5
     assert payload["accuracy_metric_order"] == ["median_absolute_error"]
     assert np.asarray(payload["median_decoding_accuracy"]).shape == (1, 6)
     assert payload["condition_labels"] == [
