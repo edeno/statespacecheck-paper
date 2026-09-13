@@ -205,8 +205,8 @@ def _exact(value: float, decimals: int = 0) -> str:
     """
     if abs(value - round(value, decimals)) > _EXACTNESS_TOLERANCE * max(1.0, abs(value)):
         raise ValueError(
-            f"{value} is not exact to {decimals} decimal(s); use _rounded if the "
-            "manuscript intends an approximation, or print more digits."
+            f"{value} is not exact to {decimals} decimal(s); use _from_standard_error "
+            "for an estimate or _significant for a hedged constant, or print more digits."
         )
     return f"{value:.{decimals}f}"
 
