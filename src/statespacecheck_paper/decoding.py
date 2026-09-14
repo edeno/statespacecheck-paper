@@ -4,10 +4,14 @@ This module holds the figure-agnostic decoder — the Bayesian filter
 (``decode_with_diagnostics``) and its optional per-window override mechanism
 (``DecoderOverrideWindow`` / ``DecoderOverrideSchedule``). It takes scientific
 primitives (spike counts, a position grid, a transition matrix, and place-field
-parameters or an explicit baseline firing-rate table), computes the per-spike
+parameters or an explicit baseline expected-count table), computes the per-spike
 diagnostics via :mod:`statespacecheck_paper.diagnostics`, and returns a
 ``DecodingDiagnostics``. It depends only on ``diagnostics`` and the general
 ``simulation`` primitives — no figure-specific module.
+
+Tables named ``firing_rates`` or ``firing_rate_table`` contain Poisson means
+per time step, ``m = lambda * dt``, rather than rates in Hz. The filter uses
+these expected counts directly, without another bin-width conversion.
 """
 
 from __future__ import annotations
@@ -114,7 +118,7 @@ class DecoderOverrideWindow:
         Replaces the baseline Gaussian place-field rate table used to
         form the posterior-update likelihood, the per-spike diagnostics,
         and the displayed per-spike likelihood. Used by the remap misfit
-        (remapped place fields).
+        (remapped place fields). Entries are expected counts per time step.
 
     Raises
     ------
@@ -569,7 +573,7 @@ def decode_with_diagnostics(
     place_field_std : float
         Width (standard deviation) of Gaussian place fields.
     place_field_rate_scale : float
-        Scaling factor for firing rates.
+        Scale multiplying the Gaussian field to give expected counts per step.
     override_schedule : DecoderOverrideSchedule, optional
         Decoder-side rate or transition regimes, such as remapping and the
         sparse-population control.
@@ -578,9 +582,9 @@ def decode_with_diagnostics(
         schedule: a clean decode with no
         misfits (the real-data decoding case).
     baseline_firing_rates : np.ndarray, shape (n_bins, n_cells), optional
-        Baseline per-cell Poisson rate table. Supply this when cells do not
-        share one place-field width and scale, as in Figure 3's sparse
-        population.
+        Baseline per-cell Poisson means (expected counts per time step, not Hz).
+        Supply this when cells do not share one place-field width and scale,
+        as in Figure 3's sparse population.
         If omitted, rates are built from ``place_field_centers``, ``place_field_std``, and
         ``place_field_rate_scale``.
 

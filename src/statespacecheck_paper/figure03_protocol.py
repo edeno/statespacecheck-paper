@@ -64,8 +64,8 @@ class Figure3Config:
     clean-recovery windows. Time steps are
     1 ms by convention — the simulation math itself is dt-agnostic, but the
     default parameters
-    (`place_field_rate_scale=5.0`, refractory and burst windows in
-    ``simulate_spikes_history_dependent``) are tuned for that mapping
+    (`place_field_rate_scale=5.0`, `history_refractory_steps`,
+    `history_burst_window`) are tuned for that mapping
     and yield hippocampally-realistic spike rates and timescales.
 
     **Timeline Structure** (default; all indices in 1-ms steps):
@@ -99,6 +99,17 @@ class Figure3Config:
         ``v[t] = drift_momentum * v[t-1] + N(0, prediction_step_std)``. The
         decoder assumes ``x[t] = x[t-1] + N(0, prediction_step_std)`` (no
         persistent velocity).
+    history_refractory_steps : int, default 1
+        Hard-refractory length, in steps, during the history-dependence
+        misfit: a cell that just fired is silenced for this many steps.
+        At 1 ms/step this is the 1 ms refractory period reported in the
+        Methods.
+    history_burst_window : tuple of int, default (2, 10)
+        Inclusive ``(start, end)`` step offsets after a spike over which the
+        cell's rate is multiplied by ``history_burst_factor`` — the 2–10 ms
+        burst window at 1 ms/step.
+    history_burst_factor : float, default 3.0
+        Rate multiplier applied inside ``history_burst_window``.
     position_min, position_max, position_bin_size : int
         Position grid bounds and step.
     place_field_std : float, default 10.0
@@ -171,6 +182,15 @@ class Figure3Config:
     # Decoder & dynamics parameters
     prediction_step_std: float = 0.5  # baseline dynamics std
     drift_momentum: float = 0.88  # AR(1) coefficient for drift-misfit trajectory
+
+    # History-dependence misfit: hard refractory + post-spike burst window.
+    # At the 1-ms step these are the 1 ms refractory, 2-10 ms burst window,
+    # and threefold rate increase reported in the Methods. They live on the
+    # config (rather than as ``simulate_spikes_history_dependent`` defaults)
+    # so the published summary records the values the figure actually used.
+    history_refractory_steps: int = 1
+    history_burst_window: tuple[int, int] = (2, 10)
+    history_burst_factor: float = 3.0
 
     # Position grid
     position_min: int = 0

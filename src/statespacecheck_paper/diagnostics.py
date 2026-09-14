@@ -41,6 +41,15 @@ _PER_SPIKE_BATCH = 50_000
 # ``DecodingDiagnostics`` shape-validation loops.
 _PER_EVENT_METRIC_NAMES = ("event_hpd_overlap", "event_kl_divergence", "event_predictive_pvalue")
 
+# Baseline-threshold definitions used by ``compute_baseline_diagnostic_thresholds``.
+# Named (rather than inlined at the ``nanquantile`` calls) because the manuscript
+# reports the percentile levels themselves, and the figure summaries record these
+# constants alongside the threshold values they produce — so a change to the rule
+# cannot silently move a published number.
+BASELINE_HPD_OVERLAP_QUANTILE = 0.01
+BASELINE_KL_DIVERGENCE_QUANTILE = 0.99
+FIXED_PREDICTIVE_PVALUE_CUTOFF = 0.05
+
 
 def _validate_diagnostic_range(
     arr: NDArray[np.floating],
@@ -396,9 +405,11 @@ def compute_normalized_event_likelihood(
     likelihood row of the simulation and real-data figures.
 
     The Poisson exposure term is deliberately absent. In the full binned count
-    likelihood, ``exp(-sum_c lambda_c(x))`` is shared by the whole bin, while
-    each observed event contributes one factor ``lambda_mark(x)``. Attaching
-    ``Poisson(1; lambda) = lambda * exp(-lambda)`` to every event would duplicate
+    likelihood, ``exp(-sum_c m_c(x))`` is shared by the whole bin, where
+    ``m_c(x) = lambda_c(x) * dt`` is the expected count and ``lambda_c`` is a
+    rate. Each observed event contributes one factor ``m_mark(x)``. The common
+    bin width ``dt`` cancels on normalization over position. Attaching
+    ``Poisson(1; m) = m * exp(-m)`` to every event would duplicate
     the exposure term when a bin contains multiple spikes and would not match
     the event-conditioned predictive-mark diagnostic.
 
@@ -874,7 +885,7 @@ def compute_baseline_diagnostic_thresholds(
             f"(:{baseline_end_index}) contains no finite values; threshold "
             "would be NaN."
         )
-    hpd_overlap_threshold = float(np.nanquantile(hpd_baseline, 0.01))
+    hpd_overlap_threshold = float(np.nanquantile(hpd_baseline, BASELINE_HPD_OVERLAP_QUANTILE))
 
     kl_baseline = _get("kl_divergence")[:baseline_end_index].ravel()
     if np.any(np.isinf(kl_baseline)):
@@ -888,10 +899,10 @@ def compute_baseline_diagnostic_thresholds(
             f"(:{baseline_end_index}) contains no finite values; threshold "
             "would be NaN."
         )
-    kl_divergence_threshold = float(np.nanquantile(kl_baseline, 0.99))
+    kl_divergence_threshold = float(np.nanquantile(kl_baseline, BASELINE_KL_DIVERGENCE_QUANTILE))
 
     # Fixed rank-statistic cutoff; not derived from the data.
-    predictive_pvalue_threshold = 0.05
+    predictive_pvalue_threshold = FIXED_PREDICTIVE_PVALUE_CUTOFF
 
     return DiagnosticThresholds(
         hpd_overlap=hpd_overlap_threshold,

@@ -4,7 +4,7 @@
 # Generate PDF using pdflatex
 $pdf_mode = 1;
 
-# Bibliography: main.tex uses natbib, so latexmk auto-detects and runs
+# Bibliography: main.tex uses cite + \bibliography, so latexmk detects and runs
 # BibTeX (no biber/biblatex). Left to latexmk's default bibtex handling.
 
 # pdflatex command with options

@@ -76,9 +76,12 @@ def figure04_summary_payload(
             }
         )
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "figure": "figure04",
-        "dataset": {"animal_date_epoch": paths.animal_date_epoch},
+        "dataset": {
+            "animal_date_epoch": paths.animal_date_epoch,
+            "n_units": summary.n_units,
+        },
         "configuration": dataclasses.asdict(config),
         "flag_rules": inclusive_flag_rules(
             FIGURE4_DIAGNOSTIC_THRESHOLDS,
