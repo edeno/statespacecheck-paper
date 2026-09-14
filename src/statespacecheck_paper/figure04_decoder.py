@@ -209,16 +209,56 @@ class Figure4Provenance:
 
 
 @dataclasses.dataclass(frozen=True)
+class Figure4DiagnosticsConfig:
+    """Figure-4 per-spike diagnostic settings, applied to the cached decode.
+
+    These do not change the fitted models or their predictive distributions;
+    they control how the per-spike diagnostics are computed from them. They are
+    hashed into the *diagnostics* cache fingerprint (not the decode
+    fingerprint), so changing one recomputes the diagnostics from the cached
+    predictions without refitting.
+
+    Attributes
+    ----------
+    hpd_coverage : float
+        Coverage probability of the HPD regions compared by the HPD-overlap
+        diagnostic (``0.95`` in the manuscript).
+    event_selection : str
+        Which spike events are diagnosed. ``"all_spikes_in_recording"`` means
+        every spike of every unit whose timestamp lies within the decoded
+        time grid; no behavioral, unit-quality, or training/validation mask is
+        applied. Recorded so the cache identity states the selection rule.
+    """
+
+    hpd_coverage: float = 0.95
+    event_selection: str = "all_spikes_in_recording"
+
+    def __post_init__(self) -> None:
+        if not (0.0 < self.hpd_coverage < 1.0):
+            raise ValueError(
+                f"Figure4DiagnosticsConfig.hpd_coverage must lie in (0, 1); "
+                f"got {self.hpd_coverage!r}"
+            )
+        if self.event_selection != "all_spikes_in_recording":
+            raise ValueError(
+                "Figure4DiagnosticsConfig.event_selection must be "
+                f"'all_spikes_in_recording'; got {self.event_selection!r}"
+            )
+
+
+@dataclasses.dataclass(frozen=True)
 class Figure4Config:
-    """Full Figure-4 decode configuration: injected knobs + recorded provenance.
+    """Full Figure-4 configuration: injected knobs, provenance, and diagnostics.
 
     Split into clearly-scoped parts so a reader can tell which parameters drive
-    the scientific result (:attr:`decoder`), which are recorded-but-not-injected
-    provenance (:attr:`provenance`), and which are performance-only
-    (:attr:`execution`). The cache fingerprint hashes :attr:`decoder` and
-    :attr:`provenance` -- changing either invalidates the cache -- but **not**
-    :attr:`execution`, whose values do not change the decode result (see
-    :func:`figure04_cache.compute_figure04_cache_fingerprint`).
+    the fitted decode (:attr:`decoder`), which are recorded-but-not-injected
+    provenance (:attr:`provenance`), which are performance-only
+    (:attr:`execution`), and which shape only the per-spike diagnostics
+    (:attr:`diagnostics`). The decode cache fingerprint hashes :attr:`decoder`
+    and :attr:`provenance` -- changing either invalidates the cached decode --
+    but **not** :attr:`execution`, whose values do not change the decode result,
+    nor :attr:`diagnostics`, which is hashed into the separate diagnostics
+    fingerprint (see :mod:`statespacecheck_paper.figure04_cache`).
 
     Attributes
     ----------
@@ -230,11 +270,16 @@ class Figure4Config:
     execution : Figure4ExecutionConfig
         Performance/memory knobs that do not change the decode result and are not
         hashed into the fingerprint.
+    diagnostics : Figure4DiagnosticsConfig
+        Per-spike diagnostic settings applied to the cached decode.
     """
 
     decoder: Figure4DecoderConfig = dataclasses.field(default_factory=Figure4DecoderConfig)
     provenance: Figure4Provenance = dataclasses.field(default_factory=Figure4Provenance)
     execution: Figure4ExecutionConfig = dataclasses.field(default_factory=Figure4ExecutionConfig)
+    diagnostics: Figure4DiagnosticsConfig = dataclasses.field(
+        default_factory=Figure4DiagnosticsConfig
+    )
 
 
 def build_decoder_models(

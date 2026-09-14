@@ -4,8 +4,11 @@ Assembles everything the Figure-4 render needs. Inputs are pre-exported derived
 data (a :class:`~statespacecheck_paper.load_local_data.NeuralRecordingData`),
 not a raw-data pipeline, so this is a *workflow*: load the fresh recording, load
 a fingerprint-matching decode cache or fit + decode both models and cache the
-result, compute the per-spike diagnostics, and calculate the manuscript
-summary scalars.
+result, load a matching diagnostics cache or compute the per-spike diagnostics
+from the cached predictions and cache those, and calculate the manuscript
+summary scalars. Both models are fitted on the full recording and their
+diagnostics are computed on that same recording; no training/validation split
+is applied.
 
 The in-memory decode results are a typed :class:`Figure4DecodeResults` whose
 fields spell out ``continuous_fragmented_*``; the on-disk cache keys stay
@@ -27,15 +30,20 @@ from numpy.typing import NDArray
 from statespacecheck_paper.diagnostics import SpikeEventDiagnostics
 from statespacecheck_paper.figure04_cache import (
     _FIGURE04_CACHE_PAYLOAD_KEYS,
+    _FIGURE04_DECODE_PAYLOAD_KEYS,
+    _FIGURE04_DIAGNOSTICS_PAYLOAD_KEYS,
     Figure4CacheProvenance,
     Figure4Paths,
     compute_figure04_cache_provenance,
     load_figure04_cache,
+    load_figure04_diagnostics_cache,
     save_figure04_cache,
+    save_figure04_diagnostics_cache,
 )
 from statespacecheck_paper.figure04_decoder import (
     Figure4Config,
     Figure4DecoderConfig,
+    Figure4DiagnosticsConfig,
     Figure4ExecutionConfig,
     Figure4Provenance,
     create_decoder_environment,
@@ -46,7 +54,7 @@ from statespacecheck_paper.figure04_decoder import (
 from statespacecheck_paper.figure04_diagnostics import (
     FlagConfusion,
     compute_flag_confusion,
-    compute_model_diagnostics,
+    compute_results_diagnostics,
 )
 from statespacecheck_paper.figure04_place_fields import (
     extract_place_fields,
@@ -197,15 +205,24 @@ class Figure4DecodeResults:
 
     def to_cache_payload(self) -> dict[str, object]:
         """Return the serialized cache payload (mapping fields to ``contfrag_*``)."""
+        return {**self.to_decode_payload(), **self.to_diagnostics_payload()}
+
+    def to_decode_payload(self) -> dict[str, object]:
+        """Return the serialized *decode* payload (the expensive fitted part)."""
         return {
             "continuous_results": self.continuous_results,
             "contfrag_results": self.continuous_fragmented_results,
-            "continuous_diagnostics": self.continuous_diagnostics,
-            "contfrag_diagnostics": self.continuous_fragmented_diagnostics,
             "spike_counts": self.spike_counts,
             "place_field_peaks": self.place_field_peaks,
             "diagnostic_place_fields": self.diagnostic_place_fields,
             "diagnostic_position_bins": self.diagnostic_position_bins,
+        }
+
+    def to_diagnostics_payload(self) -> dict[str, object]:
+        """Return the serialized *diagnostics* payload (derived from the decode)."""
+        return {
+            "continuous_diagnostics": self.continuous_diagnostics,
+            "contfrag_diagnostics": self.continuous_fragmented_diagnostics,
         }
 
 
@@ -324,7 +341,7 @@ def _compute_diagnostic_means(
     )
 
 
-def _compute_figure04_decode_results(
+def _fit_and_decode(
     recording: NeuralRecordingData,
     *,
     time: NDArray[np.float64],
@@ -332,8 +349,13 @@ def _compute_figure04_decode_results(
     decoder_config: Figure4DecoderConfig,
     execution_config: Figure4ExecutionConfig,
     provenance: Figure4Provenance,
-) -> Figure4DecodeResults:
-    """Fit both decoders, decode, and compute the cacheable decode results."""
+) -> dict[str, object]:
+    """Fit both decoders on the full recording, decode it, and return the decode payload.
+
+    Both models are fitted with every position sample and every spike in the
+    supplied recording (no training mask), then decode that same recording.
+    The returned mapping carries exactly the decode-cache keys.
+    """
     spike_times_list = list(recording.spike_times)  # non_local_detector wants a list
 
     # Environment is only needed to fit the decoders.
@@ -374,18 +396,6 @@ def _compute_figure04_decode_results(
 
     spike_counts = get_spike_counts(spike_times_list, time)
 
-    print("Computing diagnostics...")
-    continuous_diagnostics = compute_model_diagnostics(
-        continuous_model, continuous_results, spike_counts, time, spike_times=spike_times_list
-    )
-    continuous_fragmented_diagnostics = compute_model_diagnostics(
-        continuous_fragmented_model,
-        continuous_fragmented_results,
-        spike_counts,
-        time,
-        spike_times=spike_times_list,
-    )
-
     # Extract place fields for raster sorting (use continuous model).
     place_fields, position_bins = extract_place_fields(continuous_model)
     if np.any(np.all(np.isnan(place_fields), axis=1)):
@@ -415,16 +425,52 @@ def _compute_figure04_decode_results(
             "of the decoders."
         )
 
-    return Figure4DecodeResults(
-        continuous_results=continuous_results,
-        continuous_fragmented_results=continuous_fragmented_results,
-        continuous_diagnostics=continuous_diagnostics,
-        continuous_fragmented_diagnostics=continuous_fragmented_diagnostics,
-        spike_counts=spike_counts,
-        place_field_peaks=place_field_peaks,
-        diagnostic_place_fields=diagnostic_place_fields,
-        diagnostic_position_bins=diagnostic_position_bins,
-    )
+    return {
+        "continuous_results": continuous_results,
+        "contfrag_results": continuous_fragmented_results,
+        "spike_counts": spike_counts,
+        "place_field_peaks": place_field_peaks,
+        "diagnostic_place_fields": diagnostic_place_fields,
+        "diagnostic_position_bins": diagnostic_position_bins,
+    }
+
+
+def _compute_diagnostics_payload(
+    decode_payload: Mapping[str, object],
+    *,
+    recording: NeuralRecordingData,
+    time: NDArray[np.float64],
+    diagnostics_config: Figure4DiagnosticsConfig,
+) -> dict[str, object]:
+    """Compute both models' per-spike diagnostics from a decode payload.
+
+    Uses the cached shared interior place fields and each model's cached
+    predictive distributions, so no fitted model object is needed. Every
+    spike of every unit inside the decoded time grid is diagnosed (the
+    ``all_spikes_in_recording`` selection rule). The returned mapping carries
+    exactly the diagnostics-cache keys.
+    """
+    missing = [key for key in _FIGURE04_DECODE_PAYLOAD_KEYS if key not in decode_payload]
+    if missing:
+        raise ValueError(f"decode payload missing keys: {missing}")
+    spike_times_list = list(recording.spike_times)
+    spike_counts = np.asarray(decode_payload["spike_counts"], dtype=np.int64)
+    place_fields = np.asarray(decode_payload["diagnostic_place_fields"], dtype=np.float64)
+    payload: dict[str, object] = {}
+    for decode_key, diagnostics_key in (
+        ("continuous_results", "continuous_diagnostics"),
+        ("contfrag_results", "contfrag_diagnostics"),
+    ):
+        print(f"Computing diagnostics ({diagnostics_key}) ...")
+        payload[diagnostics_key] = compute_results_diagnostics(
+            _cast_dataset(decode_payload[decode_key]),
+            place_fields,
+            spike_counts,
+            time,
+            spike_times_list,
+            coverage=diagnostics_config.hpd_coverage,
+        )
+    return payload
 
 
 def prepare_figure04_render_data(
@@ -437,20 +483,23 @@ def prepare_figure04_render_data(
 
     Reads only the injected ``config`` and ``paths`` (never the module-global
     ``DATA_PATH`` / ``ANIMAL_DATE_EPOCH``), so it is exercisable with synthetic
-    inputs and a temporary cache directory. The cache is keyed on
-    :func:`compute_figure04_cache_provenance`; a config / data / dependency
-    change forces a recompute. The recording is always loaded fresh (it is cheap
-    and never cached).
+    inputs and a temporary cache directory. The decode cache is keyed on the
+    decode fingerprint of :func:`compute_figure04_cache_provenance` (a decoder
+    config / data / ``non_local_detector`` change refits); the diagnostics cache
+    is keyed on that fingerprint plus the diagnostics fingerprint (a diagnostic
+    configuration or implementation change recomputes only the diagnostics
+    from the cached predictions). The recording is always loaded fresh (it is
+    cheap and never cached).
 
     Parameters
     ----------
     config : Figure4Config
-        Decoder configuration; hashed into the cache fingerprint.
+        Decoder and diagnostics configuration; hashed into the fingerprints.
     paths : Figure4Paths
         Injected data-location identifiers.
     use_cache : bool, default True
-        When True and a fingerprint-matching cache exists, load it instead of
-        recomputing. When False, always recompute and overwrite the cache.
+        When True and fingerprint-matching caches exist, load them instead of
+        recomputing. When False, refit, recompute, and overwrite both caches.
     """
     print("Loading data...")
     recording = load_neural_recording_from_files(paths.data_path, paths.animal_date_epoch)
@@ -463,20 +512,19 @@ def prepare_figure04_render_data(
 
     cache_provenance = compute_figure04_cache_provenance(config, paths)
     expected_fingerprint = cache_provenance.fingerprint_sha256
-    decode_results: Figure4DecodeResults | None = None
+    expected_diagnostics_fingerprint = cache_provenance.diagnostics_fingerprint_sha256
+
+    decode_payload: dict[str, object] | None = None
     if use_cache:
         print("Loading cached decoder outputs (use --force-recompute to rebuild)...")
-        payload = load_figure04_cache(paths.cache_path, expected_fingerprint)
-        if payload is None:
+        decode_payload = load_figure04_cache(paths.cache_path, expected_fingerprint)
+        if decode_payload is None:
             print(
-                "  No matching cache (absent, unreadable, or fingerprint mismatch "
-                "from a config / data / non_local_detector change); recomputing."
+                "  No matching decode cache (absent, unreadable, or fingerprint mismatch "
+                "from a config / data / non_local_detector change); refitting."
             )
-        else:
-            decode_results = Figure4DecodeResults.from_cache_payload(payload)
-
-    if decode_results is None:
-        decode_results = _compute_figure04_decode_results(
+    if decode_payload is None:
+        decode_payload = _fit_and_decode(
             recording,
             time=time,
             head_position=head_position,
@@ -485,9 +533,42 @@ def prepare_figure04_render_data(
             provenance=config.provenance,
         )
         print("Caching decoder outputs to data/intermediates ...")
-        save_figure04_cache(
-            paths.cache_path, expected_fingerprint, decode_results.to_cache_payload()
+        save_figure04_cache(paths.cache_path, expected_fingerprint, decode_payload)
+
+    diagnostics_payload: dict[str, object] | None = None
+    if use_cache:
+        diagnostics_payload = load_figure04_diagnostics_cache(
+            paths.diagnostics_cache_path,
+            expected_fingerprint,
+            expected_diagnostics_fingerprint,
         )
+        if diagnostics_payload is None:
+            print(
+                "  No matching diagnostics cache (absent, unreadable, or fingerprint "
+                "mismatch from a diagnostics config / implementation / decode change); "
+                "recomputing diagnostics from the cached predictions."
+            )
+    if diagnostics_payload is None:
+        diagnostics_payload = _compute_diagnostics_payload(
+            decode_payload,
+            recording=recording,
+            time=time,
+            diagnostics_config=config.diagnostics,
+        )
+        print("Caching per-spike diagnostics to data/intermediates ...")
+        save_figure04_diagnostics_cache(
+            paths.diagnostics_cache_path,
+            expected_fingerprint,
+            expected_diagnostics_fingerprint,
+            diagnostics_payload,
+        )
+
+    decode_results = Figure4DecodeResults.from_cache_payload(
+        {
+            **{key: decode_payload[key] for key in _FIGURE04_DECODE_PAYLOAD_KEYS},
+            **{key: diagnostics_payload[key] for key in _FIGURE04_DIAGNOSTICS_PAYLOAD_KEYS},
+        }
+    )
 
     return Figure4RenderData(
         recording=recording,
