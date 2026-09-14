@@ -396,12 +396,79 @@ def mean_per_spike_likelihood_by_time(
     return mean_likelihood, has_spikes
 
 
+def compute_results_diagnostics(
+    results: Any,
+    place_fields: NDArray[np.float64],
+    spike_counts: NDArray[np.int64],
+    time: NDArray[np.float64],
+    spike_times: list[NDArray[np.float64]] | None = None,
+    *,
+    coverage: float = 0.95,
+    include_dense_matrices: bool = False,
+) -> SpikeEventDiagnostics:
+    """Compute per-spike diagnostics from decode outputs and shared place fields.
+
+    This is the model-free form of :func:`compute_model_diagnostics`: it takes
+    the decoder's ``predict`` output and the one shared position-dependent
+    observation likelihood (already restricted to track-interior bins), so the
+    diagnostics can be (re)computed from a cached decode without the fitted
+    model object. The predictive posterior is marginalized over any discrete
+    dynamics mode before comparison, so models with different numbers of
+    modes are diagnosed over the same position grid.
+
+    Parameters
+    ----------
+    results : xr.Dataset
+        Decoding results from ``model.predict()``.
+    place_fields : np.ndarray, shape (n_cells, n_bins)
+        Shared interior place fields (expected spikes per bin), as returned by
+        :func:`~figure04_place_fields.extract_shared_position_place_fields`.
+    spike_counts : np.ndarray, shape (n_time, n_cells)
+        Spike count matrix.
+    time : np.ndarray, shape (n_time,)
+        Decoder time grid.
+    spike_times : list of np.ndarray, optional
+        Exact spike timestamps for each cell. If supplied, diagnostics are
+        computed as one event per spike instead of one event per nonzero bin.
+    coverage : float, default 0.95
+        HPD-region coverage used by the HPD-overlap diagnostic.
+    include_dense_matrices : bool, default False
+        Forwarded to :func:`compute_spike_event_diagnostics`. The dense
+        ``(n_time, n_cells)`` matrices are hundreds of MB for a full recording
+        and no production consumer reads them, so they are off by default.
+
+    Returns
+    -------
+    diagnostics : SpikeEventDiagnostics
+        See :func:`compute_spike_event_diagnostics` for the schema.
+    """
+    predictive_posterior = get_state_marginalized_posterior(results, "predictive")
+    place_fields = np.asarray(place_fields, dtype=np.float64)
+    if predictive_posterior.shape[1] != place_fields.shape[1]:
+        raise ValueError(
+            f"Position-marginal predictive posterior has "
+            f"{predictive_posterior.shape[1]} bins but the shared observation "
+            f"likelihood has {place_fields.shape[1]}."
+        )
+    return compute_spike_event_diagnostics(
+        predictive_posterior,
+        spike_counts,
+        place_fields,
+        coverage=coverage,
+        spike_times=spike_times,
+        time=time,
+        include_dense_matrices=include_dense_matrices,
+    )
+
+
 def compute_model_diagnostics(
     model: Any,
     results: Any,
     spike_counts: NDArray[np.int64],
     time: NDArray[np.float64],
     spike_times: list[NDArray[np.float64]] | None = None,
+    *,
+    coverage: float = 0.95,
 ) -> SpikeEventDiagnostics:
     """Compute per-cell diagnostics for a fitted decoder model.
 
@@ -424,13 +491,16 @@ def compute_model_diagnostics(
     spike_times : list of np.ndarray, optional
         Exact spike timestamps for each cell. If supplied, diagnostics are
         computed as one event per spike instead of one event per nonzero bin.
+    coverage : float, default 0.95
+        HPD-region coverage used by the HPD-overlap diagnostic.
 
     Returns
     -------
     diagnostics : SpikeEventDiagnostics
         See :func:`compute_spike_event_diagnostics` for the schema. The
         ``event_time`` field carries either the original ``spike_times``
-        (when supplied) or the decoder-grid time at each event's index.
+        (when supplied) or the decoder-grid time at each event's index. The
+        dense matrices are populated for this model-level entry point.
 
     Examples
     --------
@@ -439,26 +509,15 @@ def compute_model_diagnostics(
     >>> # diagnostics.hpd_overlap.shape  # (n_time, n_cells)
     """
     place_fields, _ = extract_shared_position_place_fields(model)
-    predictive_posterior = get_state_marginalized_posterior(results, "predictive")
-
-    if predictive_posterior.shape[1] != place_fields.shape[1]:
-        raise ValueError(
-            f"Position-marginal predictive posterior has "
-            f"{predictive_posterior.shape[1]} bins but the shared observation "
-            f"likelihood has {place_fields.shape[1]}."
-        )
-
-    # Compute diagnostics using actual spike counts
-    # place_fields are already in spikes per time bin from non_local_detector
-    diagnostics = compute_spike_event_diagnostics(
-        predictive_posterior,
-        spike_counts,
+    return compute_results_diagnostics(
+        results,
         place_fields,
-        spike_times=spike_times,
-        time=time,
+        spike_counts,
+        time,
+        spike_times,
+        coverage=coverage,
+        include_dense_matrices=True,
     )
-
-    return diagnostics
 
 
 @dataclasses.dataclass(frozen=True)

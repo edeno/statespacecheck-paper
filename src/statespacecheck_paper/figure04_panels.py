@@ -67,8 +67,8 @@ class ModelDiagnosticPanelData:
         ``time`` dimension of length ``n_time`` (and optionally
         ``log_likelihood``); sliced on the same timeline as ``diagnostics``.
     diagnostics : SpikeEventDiagnostics
-        Per-spike diagnostics whose dense ``hpd_overlap`` / ``predictive_pvalue``
-        / ``kl_divergence`` matrices are ``(n_time, n_cells)``.
+        Per-spike diagnostics on this window's timeline (the per-event arrays
+        are rendered; dense matrices, if present, must be ``(n_time, n_cells)``).
     spike_times : list[np.ndarray]
         One spike-time array per cell (length ``n_cells``).
     spike_counts : np.ndarray, shape (n_time, n_cells)
@@ -116,28 +116,25 @@ class ModelDiagnosticPanelData:
                 f"position must match the time shape {time.shape}; got {position.shape}"
             )
 
-        dense_shapes = {
-            name: None if (value := getattr(self.diagnostics, name)) is None else value.shape
-            for name in ("hpd_overlap", "predictive_pvalue", "kl_divergence")
-        }
-        if any(shape is None for shape in dense_shapes.values()):
+        # The rows render from the per-event arrays; the cell count comes from
+        # ``spike_counts``. Dense ``(n_time, n_cells)`` matrices are optional
+        # (the cached diagnostics omit them) and are only checked for shape
+        # when present.
+        if self.spike_counts.ndim != 2:
             raise ValueError(
-                "diagnostics must include the dense hpd_overlap, predictive_pvalue, "
-                "and kl_divergence matrices"
+                f"spike_counts must be (n_time, n_cells); got {self.spike_counts.shape}"
             )
-        if len(set(dense_shapes.values())) != 1:
-            raise ValueError(f"diagnostic matrices must share one shape; got {dense_shapes}")
-        diagnostic_shape = next(iter(dense_shapes.values()))
-        if (
-            diagnostic_shape is None
-            or len(diagnostic_shape) != 2
-            or diagnostic_shape[0] != time.size
-        ):
-            raise ValueError(
-                "diagnostic matrices must have one row per time sample; "
-                f"got {diagnostic_shape} for {time.size} samples"
-            )
-        n_cells = diagnostic_shape[1]
+        n_cells = self.spike_counts.shape[1]
+        for name in ("hpd_overlap", "predictive_pvalue", "kl_divergence"):
+            dense = getattr(self.diagnostics, name)
+            if dense is not None and dense.shape != (time.size, n_cells):
+                raise ValueError(
+                    f"diagnostics.{name} must have shape ({time.size}, {n_cells}) when "
+                    f"present; got {dense.shape}"
+                )
+        event_time_ind = np.asarray(self.diagnostics.event_time_ind)
+        if event_time_ind.size and (event_time_ind.min() < 0 or event_time_ind.max() >= time.size):
+            raise ValueError(f"diagnostics.event_time_ind must index the {time.size} time samples")
 
         # The posterior/likelihood heatmap rows are sliced by the same detail
         # window as the diagnostic scatter rows, so the posterior must live on

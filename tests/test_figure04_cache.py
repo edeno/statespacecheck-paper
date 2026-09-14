@@ -14,24 +14,27 @@ import pytest
 from statespacecheck_paper import figure04_cache
 from statespacecheck_paper.figure04_cache import (
     FIGURE04_CACHE_SCHEMA_VERSION,
+    FIGURE04_DIAGNOSTICS_SCHEMA_VERSION,
     Figure4CacheProvenance,
     Figure4Paths,
     compute_figure04_cache_fingerprint,
     compute_figure04_cache_provenance,
+    compute_figure04_diagnostics_fingerprint,
+    executable_source_digest,
     load_figure04_cache,
+    load_figure04_diagnostics_cache,
     save_figure04_cache,
+    save_figure04_diagnostics_cache,
 )
-from statespacecheck_paper.figure04_decoder import Figure4Config
+from statespacecheck_paper.figure04_decoder import Figure4Config, Figure4DiagnosticsConfig
 from statespacecheck_paper.load_local_data import EXPORT_FILE_SUFFIXES
 
 
 def _payload() -> dict[str, Any]:
-    """A joblib-serializable decode payload matching the cache keys."""
+    """A joblib-serializable *decode* payload matching the decode-cache keys."""
     return {
         "continuous_results": np.zeros(3),
         "contfrag_results": np.ones(3),
-        "continuous_diagnostics": {"tag": "cont"},
-        "contfrag_diagnostics": {"tag": "cf"},
         "spike_counts": np.zeros((8, 2), dtype=np.int64),
         "place_field_peaks": np.zeros(2),
         "diagnostic_place_fields": np.zeros((2, 4)),
@@ -39,9 +42,18 @@ def _payload() -> dict[str, Any]:
     }
 
 
+def _diagnostics_payload() -> dict[str, Any]:
+    """A joblib-serializable *diagnostics* payload matching the diagnostics-cache keys."""
+    return {"continuous_diagnostics": {"tag": "cont"}, "contfrag_diagnostics": {"tag": "cf"}}
+
+
 def test_cache_path_uses_injected_identifiers(tmp_path: Path) -> None:
     paths = Figure4Paths(data_path=tmp_path, animal_date_epoch="epoch_x")
     assert paths.cache_path == tmp_path / "intermediates" / "epoch_x_fig4_cache.joblib"
+    assert (
+        paths.diagnostics_cache_path
+        == tmp_path / "intermediates" / "epoch_x_fig4_diagnostics.joblib"
+    )
 
 
 def test_missing_decoder_version_rejects_unknown_provenance(
@@ -63,6 +75,77 @@ def test_round_trip(tmp_path: Path) -> None:
     assert loaded is not None
     assert set(loaded.keys()) == set(payload.keys())
     np.testing.assert_array_equal(loaded["contfrag_results"], payload["contfrag_results"])
+    assert not path.with_name(path.name + ".tmp").exists()
+
+
+def test_legacy_bundle_with_embedded_diagnostics_serves_decode_payload(tmp_path: Path) -> None:
+    """A pre-split bundle (decode + diagnostics keys) is accepted as a decode cache.
+
+    Its embedded diagnostics are dropped from the returned payload: the
+    separate diagnostics bundle is the only diagnostics source.
+    """
+    path = tmp_path / "c.joblib"
+    joblib.dump(
+        {
+            "schema_version": FIGURE04_CACHE_SCHEMA_VERSION,
+            "fingerprint": "fp",
+            **_payload(),
+            **_diagnostics_payload(),
+        },
+        path,
+    )
+    loaded = load_figure04_cache(path, "fp")
+    assert loaded is not None
+    assert set(loaded.keys()) == set(_payload().keys())
+
+
+def test_diagnostics_cache_round_trip_and_misses(tmp_path: Path) -> None:
+    path = tmp_path / "intermediates" / "d.joblib"
+    save_figure04_diagnostics_cache(path, "fp1", "dfp1", _diagnostics_payload())
+    loaded = load_figure04_diagnostics_cache(path, "fp1", "dfp1")
+    assert loaded is not None
+    assert set(loaded.keys()) == set(_diagnostics_payload().keys())
+    # Both fingerprints gate the bundle: a decode change or a diagnostics change misses.
+    assert load_figure04_diagnostics_cache(path, "fp2", "dfp1") is None
+    assert load_figure04_diagnostics_cache(path, "fp1", "dfp2") is None
+    assert load_figure04_diagnostics_cache(tmp_path / "nope.joblib", "fp1", "dfp1") is None
+    joblib.dump(
+        {
+            "diagnostics_schema_version": FIGURE04_DIAGNOSTICS_SCHEMA_VERSION + 1,
+            "fingerprint": "fp1",
+            "diagnostics_fingerprint": "dfp1",
+            **_diagnostics_payload(),
+        },
+        path,
+    )
+    assert load_figure04_diagnostics_cache(path, "fp1", "dfp1") is None
+
+
+def test_diagnostics_save_rejects_wrong_payload_keys(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="payload keys"):
+        save_figure04_diagnostics_cache(tmp_path / "d.joblib", "fp", "dfp", _payload())
+
+
+def test_diagnostics_fingerprint_tracks_config_and_executable_source(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    base = compute_figure04_diagnostics_fingerprint(Figure4DiagnosticsConfig())
+    assert base == compute_figure04_diagnostics_fingerprint(Figure4DiagnosticsConfig())
+    changed = compute_figure04_diagnostics_fingerprint(Figure4DiagnosticsConfig(hpd_coverage=0.8))
+    assert changed != base
+    monkeypatch.setattr(figure04_cache, "_installed_statespacecheck_version", lambda: "9.9.9")
+    assert compute_figure04_diagnostics_fingerprint(Figure4DiagnosticsConfig()) != base
+
+    # The executable-source digest ignores docstrings and comments but not code.
+    a = tmp_path / "a.py"
+    a.write_text(
+        '"""Doc."""\n\n\ndef f(x):\n    """Inner doc."""\n    # comment\n    return x + 1\n'
+    )
+    digest_a = executable_source_digest((a,))
+    a.write_text('"""Other doc."""\n\n\ndef f(x):\n    """Changed."""\n    return x + 1\n')
+    assert executable_source_digest((a,)) == digest_a
+    a.write_text('"""Doc."""\n\n\ndef f(x):\n    return x + 2\n')
+    assert executable_source_digest((a,)) != digest_a
 
 
 def test_miss_when_absent(tmp_path: Path) -> None:
@@ -203,6 +286,14 @@ def test_cache_provenance_serializes_complete_path_independent_inputs(
     assert set(payload["export_file_sha256"]) == {
         f"epoch_x{suffix}" for suffix in EXPORT_FILE_SUFFIXES
     }
+    assert payload["diagnostics_schema_version"] == FIGURE04_DIAGNOSTICS_SCHEMA_VERSION
+    assert payload["diagnostics_fingerprint_sha256"] == compute_figure04_diagnostics_fingerprint(
+        Figure4DiagnosticsConfig()
+    )
+    assert payload["diagnostics_config"] == {
+        "hpd_coverage": 0.95,
+        "event_selection": "all_spikes_in_recording",
+    }
     assert str(tmp_path) not in repr(payload)
 
 
@@ -213,6 +304,10 @@ def test_cache_provenance_rejects_missing_canonical_input_checksum() -> None:
         animal_date_epoch="epoch_x",
         export_checksums=tuple((suffix, None) for suffix in EXPORT_FILE_SUFFIXES),
         non_local_detector_version="1.2.3",
+        diagnostics_fingerprint_sha256="d" * 64,
+        diagnostics_schema_version=FIGURE04_DIAGNOSTICS_SCHEMA_VERSION,
+        statespacecheck_version="0.1.0",
+        diagnostics_config=Figure4DiagnosticsConfig(),
     )
     with pytest.raises(ValueError, match="requires every exported input"):
         provenance.artifact_payload()

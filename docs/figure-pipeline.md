@@ -60,7 +60,7 @@ figure04_diagnostics   → diagnostics, figure04_place_fields
 figure04_plot_primitives → style
 figure04_track_plots   → figure04_plot_primitives
 figure04_panels        → diagnostics, figure04_diagnostics, figure04_plot_primitives, figure04_track_plots, plotting, style
-figure04_cache         → figure04_decoder (Figure4Config only)
+figure04_cache         → figure04_decoder (Figure4Config, Figure4DiagnosticsConfig), load_local_data
 figure04_workflow      → figure04_cache, figure04_decoder, figure04_diagnostics, figure04_place_fields, diagnostics, load_local_data
 figure04_layout        → figure04_workflow, diagnostics, figure04_panels, figure04_plot_primitives, figure04_track_plots
 figure04_generation    → figure04_workflow, figure04_layout, figure04_cache, figure04_decoder, paths, scientific_artifacts, style
@@ -229,6 +229,15 @@ $\Lambda(x)$.
   data identifier, the installed `non_local_detector`
   version, and the **content hashes of all five input exports** — so replacing an
   export under the same `animal_date_epoch` invalidates the cache too.
+  The per-spike diagnostics are cached separately, keyed by the decode
+  fingerprint plus a diagnostics fingerprint
+  (`figure04_cache.compute_figure04_diagnostics_fingerprint`): the
+  `Figure4DiagnosticsConfig`, the installed `statespacecheck` version, and a
+  digest of the docstring-stripped syntax trees of `diagnostics.py`,
+  `figure04_diagnostics.py`, and `figure04_place_fields.py`. A diagnostics
+  change therefore recomputes only the diagnostics from the cached predictions
+  (about a minute); it never refits or rewrites the decode bundle. Docstring and
+  comment edits invalidate neither cache.
 - **Manuscript:** the real hippocampal-recording panels comparing the Continuous
   and Continuous-Fragmented decoders (and the whole-session hexbin summary).
 - **Entry point:** `scripts/generate_figure04.py::main` (the CLI), which calls
@@ -249,8 +258,10 @@ $\Lambda(x)$.
   them would rebuild the nested transition grid and hit the concentration-default
   split); and a `Figure4ExecutionConfig` holding `block_size`, a performance/memory
   knob that does **not** change the decode result (the KDE density is identical for
-  any `block_size`) and is therefore excluded from the cache fingerprint. See the
-  `Figure4Config` docstring.
+  any `block_size`) and is therefore excluded from the cache fingerprint. The
+  per-spike diagnostic settings (`hpd_coverage`, `event_selection`) live in a
+  separate `Figure4DiagnosticsConfig`, hashed into the diagnostics fingerprint
+  only. See the `Figure4Config` docstring.
 - **Computation (reading order):**
   `figure04_generation` (recipe) → `figure04_workflow.prepare_figure04_render_data`
   (loads the recording, loads a fingerprint-matching cache or fits/decodes via
@@ -277,13 +288,16 @@ $\Lambda(x)$.
   [001942](https://dandiarchive.org/dandiset/001942)
   ([Comrie et al. 2024](https://doi.org/10.1101/2024.09.23.613567)) and place the
   exports under `data/` (or set `STATESPACECHECK_DATA_PATH`). The expensive decode
-  is cached as a single joblib bundle under `data/intermediates/{epoch}_fig4_cache.joblib`,
-  gated by the provenance fingerprint described above. Execution-only settings
-  are excluded; all five input-content hashes are included.
+  is cached under `data/intermediates/` as two joblib bundles: the ~19 GB decode
+  bundle `{epoch}_fig4_cache.joblib` (memory-mapped on load) and the diagnostics
+  bundle `{epoch}_fig4_diagnostics.joblib`, each gated by the fingerprints
+  described above. Writes go to a temporary sibling and are renamed into place,
+  so a memory-mapped bundle is never overwritten in place. Execution-only
+  settings are excluded; all five input-content hashes are included.
 - **Output:** `manuscript/figures/main/figure04.{pdf,png}` plus
   `figure04_summary.json`, containing configuration and dataset identifiers,
   explicit inclusive flag rules, whole-session means, flag-confusion counts,
-  rescue rates, source/dependency-lock provenance, the decode-cache fingerprint,
+  rescue rates, source/dependency-lock provenance, the decode- and diagnostics-cache fingerprints,
   and SHA-256 checksums for all five input exports.
 - **Tests:** `tests/test_figure04_decoder.py::TestFigure4ConfigMatchesManuscript`
   (config matches the manuscript decoder parameters);
@@ -350,9 +364,12 @@ fields, and rerun `uv run python scripts/emit_reported_values.py`. If scientific
 code or inputs changed, regenerate the affected figures and summaries through
 their canonical entry points instead of relabeling existing results.
 
-Figure 4 also contains `provenance.figure04_decode_cache`. Its fingerprint is
-the same identity used to accept or reject the expensive decoder cache, and the
-record includes the installed `non_local_detector` version plus the content
+Figure 4 also contains `provenance.figure04_decode_cache`. Its
+`fingerprint_sha256` is the same identity used to accept or reject the
+expensive decoder cache, `diagnostics_fingerprint_sha256` the identity of the
+diagnostics cache (recorded with the diagnostics configuration and the
+installed `statespacecheck` version), and the record includes the installed
+`non_local_detector` version plus the content
 SHA-256 of each of the five named exports. Canonical artifact generation fails
 if any input checksum is missing. Thus a summary can be traced to the exact
 derived inputs even when those large files are distributed separately.

@@ -42,7 +42,12 @@ Key modules and the rationale that the source alone won't tell you:
   values — `movement_var`, ContFrag transition/initial-condition/concentration/
   regularization — recorded and drift-guard pinned but **not injected**, because
   faithfully injecting them would rebuild the nested transition grid and risk
-  changing the decode).
+  changing the decode), plus a `Figure4DiagnosticsConfig` that keys the separate
+  diagnostics cache. The ~19 GB decode bundle is memory-mapped on load and never
+  rewritten by a diagnostics change; the diagnostics bundle is keyed by the
+  decode fingerprint plus a digest of the diagnostic modules' executable syntax
+  trees, so a diagnostics edit recomputes diagnostics (about a minute) rather
+  than refitting.
 - **load_local_data.py** — `load_neural_recording_from_files` → validated
   `NeuralRecordingData`; loads from pre-exported pickles, no Spyglass DB needed.
 - **paths.py** — `DATA_PATH` / `ANIMAL_DATE_EPOCH` constants, env-overridable via

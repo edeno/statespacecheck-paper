@@ -14,10 +14,11 @@ import pytest
 from statespacecheck_paper import figure04_generation
 from statespacecheck_paper.figure04_cache import (
     FIGURE04_CACHE_SCHEMA_VERSION,
+    FIGURE04_DIAGNOSTICS_SCHEMA_VERSION,
     Figure4CacheProvenance,
     Figure4Paths,
 )
-from statespacecheck_paper.figure04_decoder import Figure4Config
+from statespacecheck_paper.figure04_decoder import Figure4Config, Figure4DiagnosticsConfig
 from statespacecheck_paper.figure04_diagnostics import FlagConfusion
 from statespacecheck_paper.figure04_layout import Figure4Composition
 from statespacecheck_paper.figure04_workflow import (
@@ -115,6 +116,10 @@ def test_summary_payload_contains_reported_counts_rates_and_provenance(
         animal_date_epoch="epoch_x",
         export_checksums=tuple((suffix, "d" * 64) for suffix in EXPORT_FILE_SUFFIXES),
         non_local_detector_version="1.2.3",
+        diagnostics_fingerprint_sha256="e" * 64,
+        diagnostics_schema_version=FIGURE04_DIAGNOSTICS_SCHEMA_VERSION,
+        statespacecheck_version="0.1.0",
+        diagnostics_config=Figure4DiagnosticsConfig(),
     )
     source = {
         "statespacecheck_paper_version": "test",
@@ -134,7 +139,7 @@ def test_summary_payload_contains_reported_counts_rates_and_provenance(
     flag_rules = cast(dict[str, dict[str, str | float]], payload["flag_rules"])
     provenance = cast(dict[str, Any], payload["provenance"])
 
-    assert payload["schema_version"] == 3
+    assert payload["schema_version"] == 4
     assert payload["dataset"] == {"animal_date_epoch": "epoch_x", "n_units": 7}
     assert flag_rules["hpd_overlap"] == {
         "comparison": "less_than_or_equal",
@@ -154,6 +159,8 @@ def test_summary_payload_contains_reported_counts_rates_and_provenance(
     assert provenance["source"] == source
     decode_provenance = provenance["figure04_decode_cache"]
     assert decode_provenance["fingerprint_sha256"] == "c" * 64
+    assert decode_provenance["diagnostics_fingerprint_sha256"] == "e" * 64
+    assert decode_provenance["diagnostics_config"]["hpd_coverage"] == 0.95
     assert set(decode_provenance["export_file_sha256"]) == {
         f"epoch_x{suffix}" for suffix in EXPORT_FILE_SUFFIXES
     }

@@ -353,24 +353,38 @@ class TestPrepareRenderData:
             "load_neural_recording_from_files",
             lambda *a, **k: _synthetic_recording(),
         )
-        calls = {"n": 0}
+        calls = {"fit": 0, "diagnostics": 0}
 
-        def fake_compute(*a: object, **k: object) -> Figure4DecodeResults:
-            calls["n"] += 1
-            return _synthetic_decode_results()
+        def fake_fit(*a: object, **k: object) -> dict[str, object]:
+            calls["fit"] += 1
+            return _synthetic_decode_results().to_decode_payload()
 
-        monkeypatch.setattr(figure04_workflow, "_compute_figure04_decode_results", fake_compute)
+        def fake_diagnostics(*a: object, **k: object) -> dict[str, object]:
+            calls["diagnostics"] += 1
+            return _synthetic_decode_results().to_diagnostics_payload()
+
+        monkeypatch.setattr(figure04_workflow, "_fit_and_decode", fake_fit)
+        monkeypatch.setattr(figure04_workflow, "_compute_diagnostics_payload", fake_diagnostics)
 
         paths = Figure4Paths(data_path=tmp_path, animal_date_epoch="synthetic_epoch")
         config = Figure4Config()
 
         prepare_figure04_render_data(config, paths, use_cache=True)
-        assert calls["n"] == 1
+        assert calls == {"fit": 1, "diagnostics": 1}
         assert paths.cache_path.exists()
+        assert paths.diagnostics_cache_path.exists()
 
         prepare_figure04_render_data(config, paths, use_cache=True)
-        assert calls["n"] == 1  # cache hit
+        assert calls == {"fit": 1, "diagnostics": 1}  # both caches hit
 
+        # A diagnostics-only change recomputes the diagnostics, not the fit.
+        diag_changed = dataclasses.replace(
+            config, diagnostics=dataclasses.replace(config.diagnostics, hpd_coverage=0.8)
+        )
+        prepare_figure04_render_data(diag_changed, paths, use_cache=True)
+        assert calls == {"fit": 1, "diagnostics": 2}
+
+        # A decode-affecting change refits and (necessarily) recomputes diagnostics.
         changed = dataclasses.replace(
             config,
             provenance=dataclasses.replace(
@@ -378,7 +392,11 @@ class TestPrepareRenderData:
             ),
         )
         prepare_figure04_render_data(changed, paths, use_cache=True)
-        assert calls["n"] == 2  # fingerprint mismatch -> recompute
+        assert calls == {"fit": 2, "diagnostics": 3}
+
+        # use_cache=False refits and recomputes even with matching caches.
+        prepare_figure04_render_data(changed, paths, use_cache=False)
+        assert calls == {"fit": 3, "diagnostics": 4}
 
     def test_cache_invalidates_on_dependency_change(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
@@ -390,11 +408,16 @@ class TestPrepareRenderData:
         )
         calls = {"n": 0}
 
-        def fake_compute(*a: object, **k: object) -> Figure4DecodeResults:
+        def fake_fit(*a: object, **k: object) -> dict[str, object]:
             calls["n"] += 1
-            return _synthetic_decode_results()
+            return _synthetic_decode_results().to_decode_payload()
 
-        monkeypatch.setattr(figure04_workflow, "_compute_figure04_decode_results", fake_compute)
+        monkeypatch.setattr(figure04_workflow, "_fit_and_decode", fake_fit)
+        monkeypatch.setattr(
+            figure04_workflow,
+            "_compute_diagnostics_payload",
+            lambda *a, **k: _synthetic_decode_results().to_diagnostics_payload(),
+        )
         monkeypatch.setattr(
             figure04_cache, "_installed_non_local_detector_version", lambda: "1.0.0"
         )
@@ -423,8 +446,13 @@ class TestPrepareRenderData:
         monkeypatch.setattr(figure04_workflow, "load_neural_recording_from_files", spy_load)
         monkeypatch.setattr(
             figure04_workflow,
-            "_compute_figure04_decode_results",
-            lambda *a, **k: _synthetic_decode_results(),
+            "_fit_and_decode",
+            lambda *a, **k: _synthetic_decode_results().to_decode_payload(),
+        )
+        monkeypatch.setattr(
+            figure04_workflow,
+            "_compute_diagnostics_payload",
+            lambda *a, **k: _synthetic_decode_results().to_diagnostics_payload(),
         )
 
         injected = Figure4Paths(data_path=tmp_path, animal_date_epoch="injected_epoch")
