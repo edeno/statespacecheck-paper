@@ -233,7 +233,8 @@ def _significant(value: float, digits: int) -> str:
     Parameters
     ----------
     value : float
-        Value to render; must be non-zero.
+        Value to render. Zero prints as ``"0"``: it has no significant
+        figures, and a decoding error of exactly zero is a valid summary.
     digits : int
         Significant figures to keep.
 
@@ -248,9 +249,17 @@ def _significant(value: float, digits: int) -> str:
     '200'
     >>> _significant(0.19947114020071638, 2)
     '0.20'
+    >>> _significant(0.999, 2), _significant(9.99, 2), _significant(0.0, 2)
+    ('1.0', '10', '0')
     """
+    if value == 0.0:
+        return "0"
     exponent = math.floor(math.log10(abs(value)))
     rounded = round(value, -(exponent - digits + 1))
+    # Rounding can carry across a power of ten (0.999 -> 1.0, 9.99 -> 10);
+    # the decimal count must follow the rounded value's exponent, or the
+    # output shows one significant figure too many.
+    exponent = math.floor(math.log10(abs(rounded)))
     return f"{rounded:.{max(0, digits - 1 - exponent)}f}"
 
 

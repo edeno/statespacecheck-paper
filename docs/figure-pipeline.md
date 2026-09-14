@@ -292,7 +292,8 @@ uses schema version 3. The Figure-3 schema includes the decoding-accuracy block:
 `median_decoding_accuracy`, a `(1, n_conditions)` matrix of the
 across-realization median absolute error of the filtered-posterior mean
 (position units), in the same column order as `median_flag_percentages`. It also
-records the order-statistic standard errors that determine reported precision
+records approximate across-realization standard errors of the medians (an
+order-statistic interval, for the reader; they do not set reported precision)
 and the baseline-threshold provenance quoted in the Methods. The Figure-4
 schema records `dataset.n_units` alongside the recording identifier. The
 `flag_rules` object binds each numeric threshold to its executable semantics:

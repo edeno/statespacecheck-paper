@@ -110,6 +110,17 @@ def test_fractional_percentile_is_not_silently_rounded(quantile: float) -> None:
         render_macro_file(figure03, _load("figure04_summary.json"))
 
 
+def test_zero_decoding_error_renders() -> None:
+    """A perfectly decoded phase must not abort the emit."""
+    figure03 = copy.deepcopy(_load("figure03_summary.json"))
+    well_specified = figure03["condition_order"].index("well_specified")
+    figure03["median_decoding_accuracy"][0][well_specified] = 0.0
+
+    values = _macro_values(render_macro_file(figure03, _load("figure04_summary.json")))
+
+    assert values["SimWellSpecifiedError"] == "0"
+
+
 def test_macro_names_are_unique() -> None:
     """A duplicated name would make ``\\newcommand`` abort the LaTeX build."""
     text = COMMITTED_MACRO_FILE.read_text(encoding="utf-8")
@@ -146,6 +157,11 @@ def test_exact_rejects_precision_loss() -> None:
         (199.47114020071638, 2, "200"),
         (0.19947114020071638, 2, "0.20"),
         (3.5355339059327378, 3, "3.54"),
+        # Rounding across a power of ten must not add a significant figure.
+        (0.999, 2, "1.0"),
+        (9.99, 2, "10"),
+        # Zero has no significant figures and is a valid decoding error.
+        (0.0, 2, "0"),
     ],
 )
 def test_significant_figures_follow_the_hedged_claims(
