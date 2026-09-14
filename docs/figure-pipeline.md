@@ -332,21 +332,11 @@ each link. `scripts/emit_reported_values.py` (recipe:
 `statespacecheck_paper.reported_values`) reads only the two committed summaries,
 so a number can reach the paper only by first being recorded as an artifact.
 
-Precision is part of what the emitter decides, and it follows how each quantity
-was obtained rather than a uniform digit count:
-
-- **Estimates** print to the decimal place of their own standard error rounded
-  to one significant figure (`_from_standard_error`). Figure-3 errors come from
-  `figure03_summary.median_standard_error`, a deterministic order-statistic
-  interval — never a bootstrap, whose Monte-Carlo noise would land in a
-  published digit count; Figure-4 rescue rates use the binomial error of their
-  stored counts. These errors span a factor of ~500, so digit counts differ
-  between quantities by design.
-- **Exact counts and configured constants** carry no error, so significant-figure
-  rounding does not apply: `_exact` prints them in full and raises if the
-  requested precision would lose information.
-- **Constants the text hedges with "approximately"** are exact functions of
-  chosen parameters, so their digits are a presentation choice (`_significant`).
+Printed precision follows the reporting policy stated once, in the
+`statespacecheck_paper.reported_values` module docstring. Machine-readable
+summaries retain full numerical precision; the Figure-3 summary also publishes
+approximate across-realization standard errors of its medians for the reader,
+which play no part in formatting.
 
 `tests/test_reported_values.py` holds the guards: the committed macro file must
 byte-match a fresh render of the committed summaries, every macro must actually

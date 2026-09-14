@@ -103,9 +103,10 @@ def figure03_summary_payload(
         "accuracy_metric_order": list(SUMMARY_ACCURACY_METRICS),
         "accuracy_units": {"median_absolute_error": "position_units"},
         "median_decoding_accuracy": summary.median_decoding_accuracy,
-        # Published so the manuscript's printed precision is derivable rather
-        # than chosen: each value is reported to the decimal place of its own
-        # standard error. See figure03_summary.median_standard_error.
+        # Approximate across-realization standard errors, conditional on this
+        # configuration. Published as data about how variable each median is;
+        # they do not set the manuscript's printed precision, which follows the
+        # policy in reported_values. See figure03_summary.median_standard_error.
         "standard_error_method": "order_statistic_interval_95",
         "median_flag_percentage_standard_errors": summary.flag_percentage_standard_errors,
         "median_decoding_accuracy_standard_errors": summary.decoding_accuracy_standard_errors,

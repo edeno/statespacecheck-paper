@@ -377,19 +377,22 @@ def compute_condition_decoding_accuracy(
 def median_standard_error(samples: NDArray[np.floating], axis: int = 0) -> NDArray[np.floating]:
     """Return the standard error of a median, from the order-statistic interval.
 
-    The reported medians set how many digits the manuscript prints, so this
-    estimate must be deterministic: a bootstrap would put Monte-Carlo noise
-    into a published digit count. The distribution-free interval over order
-    statistics needs no resampling and no normality assumption, which matters
-    here because the remap column is strongly right-skewed across
-    realizations.
+    This is an *approximate* standard error, and it is conditional on the
+    simulation setup: it describes how much the median of these
+    ``n_realizations`` seeds would move under a rerun with different seeds,
+    for this configuration, and nothing beyond that. It is published in the
+    summary so a reader can see how variable each median is across
+    realizations; it does not control how the manuscript prints the value.
 
+    The estimate is deterministic (no bootstrap resampling, so the artifact
+    is reproducible byte-for-byte) and distribution-free, which matters here
+    because the remap column is strongly right-skewed across realizations.
     For ``n`` samples the 95% interval for the median runs between order
     statistics ``k`` and ``n - k + 1`` with ``k = floor(n / 2 - z sqrt(n) / 2)``
-    (``z = 1.96``); the returned standard error is that interval's half-width
-    divided by ``z``. Order-statistic discreteness makes this mildly
-    conservative --- about 0.15 for a standard normal at ``n = 100`` against
-    the asymptotic 0.125 --- which errs toward printing fewer digits.
+    (``z = 1.96``); the returned value is that interval's half-width divided
+    by ``z``. Order-statistic discreteness makes it mildly conservative ---
+    about 0.15 for a standard normal at ``n = 100`` against the asymptotic
+    0.125.
 
     Parameters
     ----------
@@ -465,11 +468,14 @@ class Figure3RealizationSummary:
         :data:`statespacecheck_paper.figure03_summary.SUMMARY_ACCURACY_METRICS`;
         columns match ``median_flag_percentages``.
     flag_percentage_standard_errors : np.ndarray, shape (3, n_columns)
-        Standard error of each median flag percentage across realizations, from
-        :func:`median_standard_error`. These set how many digits the manuscript
-        prints for each value, so they are published alongside the medians.
+        Approximate standard error of each median flag percentage across
+        realizations, from :func:`median_standard_error`. Published as data
+        about realization-to-realization variability under this configuration;
+        the manuscript's printed precision is a documented policy, not derived
+        from these.
     decoding_accuracy_standard_errors : np.ndarray, shape (1, n_columns)
-        Standard error of each median decoding accuracy, same convention.
+        Approximate standard error of each median decoding accuracy, same
+        convention.
     n_realizations : int
         Number of realizations aggregated.
 

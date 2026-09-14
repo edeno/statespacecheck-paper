@@ -3,31 +3,31 @@
 % Every value below is read from the canonical figure summaries:
 %   figures/main/figure03_summary.json (schema 5)
 %   figures/main/figure04_summary.json (schema 3)
-% source_tree_sha256: 388beaaa4dd841b8f4b0d508231d279617095390bcecd7ec60f7b3892c473616
+% source_tree_sha256: fd0ba44f9add9a9f1be31b07388d6cfb271658e280194045118eabedc4b4e564
 %
 % Regenerate with: uv run python scripts/emit_reported_values.py
 
 % --- Simulation study (Figure 3) --- computed from the simulated data
-\newcommand{\SimNRealizations}{100}         % realizations.count
-\newcommand{\SimRemapFlagMin}{37}           % min over metrics of median_flag_percentages[:, remap] [SE 4.14]
-\newcommand{\SimRemapFlagMax}{43}           % max over metrics of median_flag_percentages[:, remap] [SE 4.14]
-\newcommand{\SimHistoryFlagMin}{0.67}       % min over metrics of median_flag_percentages[:, history_dependent] [SE 0.056]
-\newcommand{\SimHistoryFlagMax}{1.76}       % max over metrics of median_flag_percentages[:, history_dependent] [SE 0.056]
-\newcommand{\SimReplayFlagMin}{1.30}        % min over metrics of median_flag_percentages[:, replay] [SE 0.0438]
-\newcommand{\SimReplayFlagMax}{2.72}        % max over metrics of median_flag_percentages[:, replay] [SE 0.0438]
-\newcommand{\SimDriftFlagMin}{8.5}          % min over metrics of median_flag_percentages[:, drift] [SE 0.155]
-\newcommand{\SimDriftFlagMax}{13.7}         % max over metrics of median_flag_percentages[:, drift] [SE 0.155]
-\newcommand{\SimSparseKlFlag}{43}           % median_flag_percentages[kl_divergence, sparse_population] [SE 2.55]
-\newcommand{\SimWellSpecifiedError}{1.792}  % median_decoding_accuracy[median_absolute_error, well_specified] [SE 0.00662]
-\newcommand{\SimRemapError}{42}             % median_decoding_accuracy[median_absolute_error, remap] [SE 2.3]
-\newcommand{\SimHistoryError}{1.68}         % median_decoding_accuracy[median_absolute_error, history_dependent] [SE 0.0233]
-\newcommand{\SimReplayError}{36}            % median_decoding_accuracy[median_absolute_error, replay] [SE 1.19]
-\newcommand{\SimDriftError}{7.99}           % median_decoding_accuracy[median_absolute_error, drift] [SE 0.0828]
-\newcommand{\SimSparseError}{0.99}          % median_decoding_accuracy[median_absolute_error, sparse_population] [SE 0.0486]
-\newcommand{\SimHpdPercentile}{1st}         % threshold_provenance.hpd_overlap.quantile
-\newcommand{\SimKlPercentile}{99th}         % threshold_provenance.kl_divergence.quantile
-\newcommand{\SimPredictiveCutoff}{0.05}     % threshold_provenance.predictive_pvalue.cutoff
-\newcommand{\SimBaselineEnd}{6000}          % threshold_provenance.baseline_end_index
+\newcommand{\SimNRealizations}{100}       % realizations.count
+\newcommand{\SimRemapFlagMin}{37}         % min over metrics of median_flag_percentages[:, remap]
+\newcommand{\SimRemapFlagMax}{43}         % max over metrics of median_flag_percentages[:, remap]
+\newcommand{\SimHistoryFlagMin}{1}        % min over metrics of median_flag_percentages[:, history_dependent]
+\newcommand{\SimHistoryFlagMax}{2}        % max over metrics of median_flag_percentages[:, history_dependent]
+\newcommand{\SimReplayFlagMin}{1}         % min over metrics of median_flag_percentages[:, replay]
+\newcommand{\SimReplayFlagMax}{3}         % max over metrics of median_flag_percentages[:, replay]
+\newcommand{\SimDriftFlagMin}{9}          % min over metrics of median_flag_percentages[:, drift]
+\newcommand{\SimDriftFlagMax}{14}         % max over metrics of median_flag_percentages[:, drift]
+\newcommand{\SimSparseKlFlag}{43}         % median_flag_percentages[kl_divergence, sparse_population]
+\newcommand{\SimWellSpecifiedError}{1.8}  % median_decoding_accuracy[median_absolute_error, well_specified]
+\newcommand{\SimRemapError}{42}           % median_decoding_accuracy[median_absolute_error, remap]
+\newcommand{\SimHistoryError}{1.7}        % median_decoding_accuracy[median_absolute_error, history_dependent]
+\newcommand{\SimReplayError}{36}          % median_decoding_accuracy[median_absolute_error, replay]
+\newcommand{\SimDriftError}{8.0}          % median_decoding_accuracy[median_absolute_error, drift]
+\newcommand{\SimSparseError}{0.99}        % median_decoding_accuracy[median_absolute_error, sparse_population]
+\newcommand{\SimHpdPercentile}{1st}       % threshold_provenance.hpd_overlap.quantile
+\newcommand{\SimKlPercentile}{99th}       % threshold_provenance.kl_divergence.quantile
+\newcommand{\SimPredictiveCutoff}{0.05}   % threshold_provenance.predictive_pvalue.cutoff
+\newcommand{\SimBaselineEnd}{6000}        % threshold_provenance.baseline_end_index
 
 % --- Simulation study (Figure 3) --- recorded configuration
 \newcommand{\SimTrackLength}{100}              % position_max
@@ -37,8 +37,8 @@
 \newcommand{\SimPlaceFieldSpacing}{10}         % place_field_centers spacing
 \newcommand{\SimPlaceFieldStd}{10}             % place_field_std
 \newcommand{\SimRateScale}{5}                  % place_field_rate_scale
-\newcommand{\SimPeakCountPerStep}{0.20}        % place_field_rate_scale / (place_field_std * sqrt(2 pi)) [2 s.f.]
-\newcommand{\SimPeakRateHz}{200}               % peak expected count per step at 1 ms/step, in Hz [2 s.f.]
+\newcommand{\SimPeakCountPerStep}{0.20}        % place_field_rate_scale / (place_field_std * sqrt(2 pi))
+\newcommand{\SimPeakRateHz}{200}               % peak expected count per step at 1 ms/step, in Hz
 \newcommand{\SimPredictionStepStd}{0.5}        % prediction_step_std
 \newcommand{\SimNSparseCellsWord}{five}        % sparse_cell_count
 \newcommand{\SimNSparseCellsWordCap}{Five}     % sparse_cell_count, sentence-initial
@@ -72,18 +72,18 @@
 \newcommand{\RecNUnits}{203}                     % dataset.n_units
 \newcommand{\RecHpdFlaggedContinuous}{18790}     % flag_confusions[hpd_overlap]: a_only + both
 \newcommand{\RecHpdRescued}{17289}               % flag_confusions[hpd_overlap].a_only
-\newcommand{\RecHpdRescuedPercent}{92.0}         % flag_confusions[hpd_overlap].rescue_rate, percent [SE 0.198]
+\newcommand{\RecHpdRescuedPercent}{92}           % flag_confusions[hpd_overlap].rescue_rate
 \newcommand{\RecHpdNewlyFlagged}{176}            % flag_confusions[hpd_overlap].b_only
 \newcommand{\RecPvalueFlaggedContinuous}{33954}  % flag_confusions[predictive_pvalue]: a_only + both
 \newcommand{\RecPvalueRescued}{9373}             % flag_confusions[predictive_pvalue].a_only
-\newcommand{\RecPvalueRescuedPercent}{27.6}      % flag_confusions[predictive_pvalue].rescue_rate, percent [SE 0.243]
+\newcommand{\RecPvalueRescuedPercent}{28}        % flag_confusions[predictive_pvalue].rescue_rate
 \newcommand{\RecPvalueNewlyFlagged}{1706}        % flag_confusions[predictive_pvalue].b_only
 
 % --- Hippocampal recording (Figure 4) --- recorded configuration
 \newcommand{\RecPositionBinSizeCm}{2}                  % configuration.decoder.position_bin_size_cm
 \newcommand{\RecTimeBinMs}{2}                          % 1 / configuration.decoder.sampling_frequency_hz
 \newcommand{\RecPositionStdVariance}{12.5}             % configuration.decoder.position_std squared
-\newcommand{\RecPositionStdCm}{3.5}                    % configuration.decoder.position_std [2 s.f.]
+\newcommand{\RecPositionStdCm}{3.5}                    % configuration.decoder.position_std
 \newcommand{\RecMovementVar}{6.0}                      % configuration.provenance.movement_var
 \newcommand{\RecModeContinuousInitial}{0.5}            % configuration.provenance.contfrag_discrete_initial_conditions[0]
 \newcommand{\RecModeFragmentedInitial}{0.5}            % configuration.provenance.contfrag_discrete_initial_conditions[1]

@@ -8,41 +8,32 @@ from the artifacts the way hand-typed numbers can.
 
 Rounding and derivation happen here, in Python, rather than in the document:
 the manuscript says "42 a.u." where the summary holds ``42.16926259332958``,
-and "92.0%" where it holds ``0.9201170835550825``. Ranges such as the remap
+and "92%" where it holds ``0.9201170835550825``. Ranges such as the remap
 flag percentages are emitted as separate ``\dots Min`` / ``\dots Max`` macros
 so the en-dash stays in the prose.
 
-Printed precision follows how each quantity was obtained, because the three
-kinds of number here have three different error structures. Consistency is in
-the *rule*, not in the digit count --- quantities with different uncertainties
-should not print to the same number of digits.
+**Reporting policy.** Decoding errors are reported to two significant figures,
+and flag and rescue percentages to the nearest whole percent. Exact counts and
+configured parameters are reported without approximation. Machine-readable
+summaries retain full numerical precision.
 
-**Estimates** (the Figure-3 medians over realizations, the Figure-4 rescue
-rates) are reported to the decimal place of their own standard error rounded
-to one significant figure, by :func:`_from_standard_error`. Those errors span
-a factor of ~500 across the reported quantities, so the digit counts differ:
-a remap flag percentage with an SE of 4.1 points earns whole percents, while a
-history-dependence one with an SE of 0.05 earns two decimals. The Figure-3
-errors are published in the summary (see
-``figure03_summary.median_standard_error``) rather than chosen here; the
-Figure-4 ones follow from the stored counts.
+Rounding is a communication choice, not a statement about uncertainty: each
+rule preserves the distinctions the prose draws with the number. Decoding
+errors are compared as ratios ("four times the well-specified value", "one
+fifth of a place-field width"), which two significant figures support; flag
+percentages are compared as substantial, low, or modest, which whole percents
+support; rescue rates are descriptive of this recording and appear next to
+their exact counts. Constants the text hedges with "approximately" (199.47 Hz,
+sqrt(12.5) cm) are exact functions of chosen parameters and are shown to two
+significant figures. Where variability matters to a claim it belongs in the
+text or a figure, not in the digit count; the Figure-3 summary publishes
+approximate across-realization standard errors for that purpose, and they play
+no part in formatting.
 
-**Exact counts and configured constants** (17,289 spikes, 203 units,
-``movement_var = 6.0``, a 6000-step boundary) are not estimates and carry no
-error at all, so significant-figure rounding does not apply. :func:`_exact`
-prints them in full and *raises* if the requested precision would lose
-information, so a configuration change from ``0.88`` to ``0.875`` fails the
-emit rather than quietly printing ``0.88``.
-
-**Derived constants the text hedges with "approximately"** (199.47 Hz,
-sqrt(12.5) cm) are exact functions of chosen parameters, so their digits are a
-presentation choice with no uncertainty behind them: :func:`_significant`
-renders them to :data:`SIGNIFICANT_FIGURES`. Working in significant figures
-rather than decimal places matters here --- 199.47 Hz is 199 to zero decimals
-but 200 to two significant figures, which is what the manuscript prints.
-
-The per-macro comments in the generated file record each value's standard
-error, so the printed precision can be checked without rerunning anything.
+Exact counts and configured parameters go through :func:`_exact`, which prints
+them in full and *raises* if the requested precision would lose information,
+so a configuration change from ``0.88`` to ``0.875`` fails the emit rather
+than quietly printing ``0.88``.
 
 Macros are prefixed ``\Sim`` (simulation study, Figure 3) or ``\Rec``
 (hippocampal recording, Figure 4). ``\newcommand`` deliberately errors on a
@@ -170,10 +161,8 @@ def ordinal(value: int) -> str:
 # magnitude larger than this.
 _EXACTNESS_TOLERANCE = 1e-9
 
-# Significant figures for derived constants the manuscript hedges with
-# "approximately". These have no uncertainty --- they are exact functions of
-# chosen parameters --- so their precision is a readability choice, unlike the
-# estimates, whose digits come from their standard errors.
+# Significant figures for decoding errors and for the derived constants the
+# manuscript hedges with "approximately". Percentages use whole percents.
 SIGNIFICANT_FIGURES = 2
 
 
@@ -205,72 +194,31 @@ def _exact(value: float, decimals: int = 0) -> str:
     """
     if abs(value - round(value, decimals)) > _EXACTNESS_TOLERANCE * max(1.0, abs(value)):
         raise ValueError(
-            f"{value} is not exact to {decimals} decimal(s); use _from_standard_error "
-            "for an estimate or _significant for a hedged constant, or print more digits."
+            f"{value} is not exact to {decimals} decimal(s); use _significant or "
+            "_whole_percent for a summary statistic, or print more digits."
         )
     return f"{value:.{decimals}f}"
 
 
-def _decimals_for_standard_error(standard_error: float) -> int:
-    """Return the decimal place an estimate should be reported to.
-
-    The textbook rule: round the standard error to one significant figure and
-    report the estimate to that decimal place. A median flagged percentage with
-    an SE of 3.4 points earns whole percents; one with an SE of 0.05 earns two
-    decimals. Digit counts therefore differ between quantities because their
-    uncertainties differ, which is the point.
-
-    Parameters
-    ----------
-    standard_error : float
-        Standard error of the estimate; must be positive.
-
-    Returns
-    -------
-    int
-        Decimal places to print.
-
-    Raises
-    ------
-    ValueError
-        If ``standard_error`` is not positive. A zero standard error carries no
-        precision information, so the caller must decide what to print.
-
-    Examples
-    --------
-    >>> _decimals_for_standard_error(3.36), _decimals_for_standard_error(0.053)
-    (0, 2)
-    """
-    if not standard_error > 0.0:
-        raise ValueError(
-            f"standard_error must be positive to set a precision; got {standard_error}"
-        )
-    return max(0, -math.floor(math.log10(standard_error)))
-
-
-def _from_standard_error(value: float, standard_error: float) -> str:
-    """Render an estimate at the precision its standard error supports.
+def _whole_percent(value: float) -> str:
+    """Render a percentage to the nearest whole percent.
 
     Parameters
     ----------
     value : float
-        The estimate.
-    standard_error : float
-        Its standard error.
+        Percentage in ``[0, 100]``.
 
     Returns
     -------
     str
-        The formatted estimate.
+        The rounded percentage without a sign.
 
     Examples
     --------
-    >>> _from_standard_error(40.799, 3.36)
-    '41'
-    >>> _from_standard_error(1.764, 0.054)
-    '1.76'
+    >>> _whole_percent(36.77115625352582), _whole_percent(0.6675931668463562)
+    ('37', '1')
     """
-    return f"{value:.{_decimals_for_standard_error(standard_error)}f}"
+    return f"{value:.0f}"
 
 
 def _significant(value: float, digits: int) -> str:
@@ -313,11 +261,8 @@ def _load(path: Path) -> dict[str, Any]:
     return payload
 
 
-def _flag_percentage_range(
-    payload: dict[str, Any],
-    condition: str,
-) -> tuple[tuple[float, float], tuple[float, float]]:
-    """Return the min and max median flag percentage, each with its own error.
+def _flag_percentage_range(payload: dict[str, Any], condition: str) -> tuple[float, float]:
+    """Return the min and max median flag percentage across the three metrics.
 
     Parameters
     ----------
@@ -328,38 +273,28 @@ def _flag_percentage_range(
 
     Returns
     -------
-    low, high : tuple of float
-        ``(value, standard_error)`` for the smallest and largest of the three
-        diagnostic rows. The endpoints come from different metrics and so carry
-        different errors; the caller prints both at the coarser precision.
+    tuple of float
+        ``(minimum, maximum)`` over the three diagnostic rows.
     """
     column = payload["condition_order"].index(condition)
-    errors = payload["median_flag_percentage_standard_errors"]
-    pairs = [
-        (row[column], error_row[column])
-        for row, error_row in zip(payload["median_flag_percentages"], errors, strict=True)
-    ]
-    return min(pairs), max(pairs)
+    values = [row[column] for row in payload["median_flag_percentages"]]
+    return min(values), max(values)
 
 
-def _flag_percentage(payload: dict[str, Any], metric: str, condition: str) -> tuple[float, float]:
-    """Return one metric's median flag percentage and its standard error."""
+def _flag_percentage(payload: dict[str, Any], metric: str, condition: str) -> float:
+    """Return one metric's median flag percentage for one condition."""
     row = payload["metric_order"].index(metric)
     column = payload["condition_order"].index(condition)
-    return (
-        payload["median_flag_percentages"][row][column],
-        payload["median_flag_percentage_standard_errors"][row][column],
-    )
+    percentage: float = payload["median_flag_percentages"][row][column]
+    return percentage
 
 
-def _decoding_error(payload: dict[str, Any], condition: str) -> tuple[float, float]:
-    """Return the median absolute decoding error and its standard error."""
+def _decoding_error(payload: dict[str, Any], condition: str) -> float:
+    """Return the median absolute decoding error for one condition."""
     row = payload["accuracy_metric_order"].index("median_absolute_error")
     column = payload["condition_order"].index(condition)
-    return (
-        payload["median_decoding_accuracy"][row][column],
-        payload["median_decoding_accuracy_standard_errors"][row][column],
-    )
+    error: float = payload["median_decoding_accuracy"][row][column]
+    return error
 
 
 def _confusion(payload: dict[str, Any], metric: str) -> dict[str, Any]:
@@ -387,32 +322,27 @@ def _simulation_statistics(payload: dict[str, Any]) -> list[MacroDefinition]:
         ("SimReplayFlag", "replay"),
         ("SimDriftFlag", "drift"),
     ):
-        (low, low_error), (high, high_error) = _flag_percentage_range(payload, condition)
-        # A range prints at one precision: the coarser of its two endpoints.
-        shared_error = max(low_error, high_error)
+        low, high = _flag_percentage_range(payload, condition)
         macros.append(
             MacroDefinition(
                 f"{name}Min",
-                _from_standard_error(low, shared_error),
-                f"min over metrics of median_flag_percentages[:, {condition}]"
-                f" [SE {shared_error:.3g}]",
+                _whole_percent(low),
+                f"min over metrics of median_flag_percentages[:, {condition}]",
             )
         )
         macros.append(
             MacroDefinition(
                 f"{name}Max",
-                _from_standard_error(high, shared_error),
-                f"max over metrics of median_flag_percentages[:, {condition}]"
-                f" [SE {shared_error:.3g}]",
+                _whole_percent(high),
+                f"max over metrics of median_flag_percentages[:, {condition}]",
             )
         )
 
-    sparse_kl, sparse_kl_error = _flag_percentage(payload, "kl_divergence", "sparse_population")
     macros.append(
         MacroDefinition(
             "SimSparseKlFlag",
-            _from_standard_error(sparse_kl, sparse_kl_error),
-            f"median_flag_percentages[kl_divergence, sparse_population] [SE {sparse_kl_error:.3g}]",
+            _whole_percent(_flag_percentage(payload, "kl_divergence", "sparse_population")),
+            "median_flag_percentages[kl_divergence, sparse_population]",
         )
     )
 
@@ -424,12 +354,11 @@ def _simulation_statistics(payload: dict[str, Any]) -> list[MacroDefinition]:
         ("SimDriftError", "drift"),
         ("SimSparseError", "sparse_population"),
     ):
-        error, error_se = _decoding_error(payload, condition)
         macros.append(
             MacroDefinition(
                 name,
-                _from_standard_error(error, error_se),
-                f"median_decoding_accuracy[median_absolute_error, {condition}] [SE {error_se:.3g}]",
+                _significant(_decoding_error(payload, condition), SIGNIFICANT_FIGURES),
+                f"median_decoding_accuracy[median_absolute_error, {condition}]",
             )
         )
 
@@ -515,12 +444,12 @@ def _simulation_configuration(payload: dict[str, Any]) -> list[MacroDefinition]:
         MacroDefinition(
             "SimPeakCountPerStep",
             _significant(peak_count_per_step, SIGNIFICANT_FIGURES),
-            "place_field_rate_scale / (place_field_std * sqrt(2 pi)) [2 s.f.]",
+            "place_field_rate_scale / (place_field_std * sqrt(2 pi))",
         ),
         MacroDefinition(
             "SimPeakRateHz",
             _significant(peak_count_per_step * 1000.0, SIGNIFICANT_FIGURES),
-            "peak expected count per step at 1 ms/step, in Hz [2 s.f.]",
+            "peak expected count per step at 1 ms/step, in Hz",
         ),
         MacroDefinition(
             "SimPredictionStepStd",
@@ -617,36 +546,6 @@ def _simulation_configuration(payload: dict[str, Any]) -> list[MacroDefinition]:
     ]
 
 
-def _rescue_rate_standard_error(confusion: dict[str, Any]) -> float:
-    """Return the standard error, in percentage points, of a rescue rate.
-
-    The rescue rate is a proportion of the spikes the Continuous model flagged,
-    so its error follows the binomial form ``sqrt(p (1 - p) / n)``. Spike events
-    within a unit and across neighbouring time bins are not independent, so this
-    understates the true error; it is used only to set the printed precision,
-    where understating the error can at worst print one digit too many.
-
-    Parameters
-    ----------
-    confusion : dict
-        One ``flag_confusions`` entry from the Figure-4 summary.
-
-    Returns
-    -------
-    float
-        Standard error in percentage points.
-
-    Examples
-    --------
-    >>> round(_rescue_rate_standard_error(
-    ...     {"a_only": 17289, "both": 1501, "rescue_rate": 0.9201170835550825}), 3)
-    0.198
-    """
-    n_flagged = confusion["a_only"] + confusion["both"]
-    proportion = confusion["rescue_rate"]
-    return 100.0 * math.sqrt(proportion * (1.0 - proportion) / n_flagged)
-
-
 def _recording_statistics(payload: dict[str, Any]) -> list[MacroDefinition]:
     """Build the Figure-4 macros computed from the hippocampal recording."""
     macros = [
@@ -670,12 +569,8 @@ def _recording_statistics(payload: dict[str, Any]) -> list[MacroDefinition]:
                 ),
                 MacroDefinition(
                     f"{prefix}RescuedPercent",
-                    _from_standard_error(
-                        100.0 * confusion["rescue_rate"],
-                        _rescue_rate_standard_error(confusion),
-                    ),
-                    f"flag_confusions[{metric}].rescue_rate, percent "
-                    f"[SE {_rescue_rate_standard_error(confusion):.3g}]",
+                    _whole_percent(100.0 * confusion["rescue_rate"]),
+                    f"flag_confusions[{metric}].rescue_rate",
                 ),
                 MacroDefinition(
                     f"{prefix}NewlyFlagged",
@@ -714,7 +609,7 @@ def _recording_configuration(payload: dict[str, Any]) -> list[MacroDefinition]:
         MacroDefinition(
             "RecPositionStdCm",
             _significant(position_std, SIGNIFICANT_FIGURES),
-            "configuration.decoder.position_std [2 s.f.]",
+            "configuration.decoder.position_std",
         ),
         MacroDefinition(
             "RecMovementVar",

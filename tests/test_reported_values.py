@@ -17,11 +17,9 @@ import pytest
 
 from statespacecheck_paper.reported_values import (
     MACRO_FILE_PATH,
-    _decimals_for_standard_error,
     _exact,
-    _from_standard_error,
-    _rescue_rate_standard_error,
     _significant,
+    _whole_percent,
     cardinal_word,
     ordinal,
     render_macro_file,
@@ -61,25 +59,18 @@ def test_macro_values_round_trip_the_canonical_statistics() -> None:
 
     remap = figure03["condition_order"].index("remap")
     remap_percentages = [row[remap] for row in figure03["median_flag_percentages"]]
-    remap_errors = [row[remap] for row in figure03["median_flag_percentage_standard_errors"]]
-    decimals = _decimals_for_standard_error(max(remap_errors))
-    assert values["SimRemapFlagMin"] == f"{min(remap_percentages):.{decimals}f}"
-    assert values["SimRemapFlagMax"] == f"{max(remap_percentages):.{decimals}f}"
+    assert values["SimRemapFlagMin"] == f"{min(remap_percentages):.0f}"
+    assert values["SimRemapFlagMax"] == f"{max(remap_percentages):.0f}"
 
     accuracy = figure03["median_decoding_accuracy"][0]
-    accuracy_error = figure03["median_decoding_accuracy_standard_errors"][0]
-    assert (
-        values["SimRemapError"]
-        == f"{accuracy[remap]:.{_decimals_for_standard_error(accuracy_error[remap])}f}"
-    )
+    assert values["SimRemapError"] == _significant(accuracy[remap], 2)
     assert values["SimNRealizations"] == str(figure03["realizations"]["count"])
 
     assert values["RecNUnits"] == str(figure04["dataset"]["n_units"])
     hpd = next(item for item in figure04["flag_confusions"] if item["metric"] == "hpd_overlap")
     assert values["RecHpdRescued"] == str(hpd["a_only"])
     assert values["RecHpdFlaggedContinuous"] == str(hpd["a_only"] + hpd["both"])
-    hpd_decimals = _decimals_for_standard_error(_rescue_rate_standard_error(hpd))
-    assert values["RecHpdRescuedPercent"] == f"{100 * hpd['rescue_rate']:.{hpd_decimals}f}"
+    assert values["RecHpdRescuedPercent"] == f"{100 * hpd['rescue_rate']:.0f}"
 
 
 def test_asymmetric_mode_parameters_are_reported_independently() -> None:
@@ -163,34 +154,25 @@ def test_significant_figures_follow_the_hedged_claims(
     assert _significant(value, digits) == expected
 
 
-@pytest.mark.parametrize(
-    ("standard_error", "expected_decimals"),
-    [(4.14, 0), (2.55, 0), (0.155, 1), (0.056, 2), (0.00662, 3)],
-)
-def test_precision_follows_the_standard_error(
-    standard_error: float, expected_decimals: int
-) -> None:
-    """The digit count is the decimal place of the SE at one significant figure."""
-    assert _decimals_for_standard_error(standard_error) == expected_decimals
+def test_whole_percent_rounds_to_the_nearest_percent() -> None:
+    """Flag and rescue percentages report to whole percents by policy."""
+    assert _whole_percent(36.77115625352582) == "37"
+    assert _whole_percent(0.6675931668463562) == "1"
+    assert _whole_percent(27.60499499322613) == "28"
 
 
-def test_estimates_print_at_their_own_precision() -> None:
-    """Two estimates with different errors must not print to the same width."""
-    # Remap flag percentage: SE of ~4 points earns whole percents.
-    assert _from_standard_error(40.799, 4.14) == "41"
-    # History-dependence flag percentage: SE of ~0.06 earns two decimals.
-    assert _from_standard_error(1.764, 0.056) == "1.76"
-
-
-def test_zero_standard_error_is_rejected() -> None:
-    """A zero error carries no precision information; the caller must decide."""
-    with pytest.raises(ValueError, match="must be positive"):
-        _decimals_for_standard_error(0.0)
-
-
-def test_rescue_rate_standard_error_is_binomial() -> None:
-    confusion = {"a_only": 17289, "both": 1501, "rescue_rate": 0.9201170835550825}
-    assert _rescue_rate_standard_error(confusion) == pytest.approx(0.198, abs=5e-4)
+def test_published_standard_errors_do_not_set_precision() -> None:
+    """The Figure-3 SEs are data for the reader, not a formatting authority."""
+    figure03 = copy.deepcopy(_load("figure03_summary.json"))
+    figure04 = _load("figure04_summary.json")
+    baseline = _macro_values(render_macro_file(figure03, figure04))
+    # Shrink every published SE a thousandfold; no printed digit may change.
+    for key in (
+        "median_flag_percentage_standard_errors",
+        "median_decoding_accuracy_standard_errors",
+    ):
+        figure03[key] = [[value / 1000.0 for value in row] for row in figure03[key]]
+    assert _macro_values(render_macro_file(figure03, figure04)) == baseline
 
 
 def test_word_helpers() -> None:
