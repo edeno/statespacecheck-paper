@@ -43,13 +43,14 @@ diagnostics            → (external statespacecheck only; leaf)
 decoding               → diagnostics, simulation
 simulation             → (numpy/scipy only)
 scientific_artifacts   → (standard library + numpy only)
-reported_values        → (standard library only; reads summary JSONs)
+number_format          → (standard library only; leaf)
+reported_values        → number_format; reads summary JSONs
 emit_reported_values.py → reported_values
 
 figure03_protocol      → (leaf; no sibling paper module)
 figure03_simulation    → figure03_protocol, decoding, diagnostics, simulation
 figure03_summary       → figure03_protocol, figure03_simulation, diagnostics
-figure03_plotting      → figure03_protocol, figure03_summary, diagnostics, plotting, style
+figure03_plotting      → figure03_protocol, figure03_summary, diagnostics, number_format, plotting, style
 figure03_generation    → figure03_protocol, figure03_simulation, figure03_summary, figure03_plotting, scientific_artifacts, style
 generate_figure03.py   → figure03_generation
 
@@ -390,8 +391,10 @@ Prose precision follows the policy defined in the
 | Summary JSON values | Full numerical precision, retaining median SEs | Preserves the analysis detail |
 
 Decoding errors remain bare in the prose, without adding “about” before each
-value. The Figure-3 error row uses one decimal place; the two-significant-figure
-policy governs the prose. Neither a binomial SE nor the published median SEs
+value. Figure 3b's heatmap cells and error row round with the same two
+functions the emitter uses (`number_format.whole_percent` and
+`number_format.significant`), so a value cannot read differently in the panel
+and in the text beside it. Neither a binomial SE nor the published median SEs
 controls formatting. A distribution plot of the per-realization Figure-3
 results remains a [follow-up](../TODO.md).
 

@@ -15,11 +15,10 @@ from pathlib import Path
 
 import pytest
 
+from statespacecheck_paper.number_format import significant, whole_percent
 from statespacecheck_paper.reported_values import (
     MACRO_FILE_PATH,
     _exact,
-    _significant,
-    _whole_percent,
     cardinal_word,
     ordinal,
     render_macro_file,
@@ -63,7 +62,7 @@ def test_macro_values_round_trip_the_canonical_statistics() -> None:
     assert values["SimRemapFlagMax"] == f"{max(remap_percentages):.0f}"
 
     accuracy = figure03["median_decoding_accuracy"][0]
-    assert values["SimRemapError"] == _significant(accuracy[remap], 2)
+    assert values["SimRemapError"] == significant(accuracy[remap], 2)
     assert values["SimNRealizations"] == str(figure03["realizations"]["count"])
 
     assert values["RecNUnits"] == str(figure04["dataset"]["n_units"])
@@ -167,14 +166,14 @@ def test_exact_rejects_precision_loss() -> None:
 def test_significant_figures_follow_the_hedged_claims(
     value: float, digits: int, expected: str
 ) -> None:
-    assert _significant(value, digits) == expected
+    assert significant(value, digits) == expected
 
 
 def test_whole_percent_rounds_to_the_nearest_percent() -> None:
     """Flag and rescue percentages report to whole percents by policy."""
-    assert _whole_percent(36.77115625352582) == "37"
-    assert _whole_percent(0.6675931668463562) == "1"
-    assert _whole_percent(27.60499499322613) == "28"
+    assert whole_percent(36.77115625352582) == "37"
+    assert whole_percent(0.6675931668463562) == "1"
+    assert whole_percent(27.60499499322613) == "28"
 
 
 def test_published_standard_errors_do_not_set_precision() -> None:

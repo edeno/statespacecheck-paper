@@ -53,6 +53,9 @@ Key modules and the rationale that the source alone won't tell you:
 - **reported_values.py** — reads the Figure-3 and Figure-4 summary JSONs and
   emits `manuscript/reported_values.tex`. Its module docstring defines the prose
   reporting policy; standard errors in the summaries do not set printed digits.
+- **number_format.py** — the two rounding functions behind that policy
+  (`significant`, `whole_percent`), shared by the emitter and the Figure-3
+  summary panel so the figure and the prose cannot round a value differently.
 
 ## Development Commands
 

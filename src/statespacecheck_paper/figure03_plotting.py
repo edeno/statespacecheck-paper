@@ -31,6 +31,7 @@ from statespacecheck_paper.figure03_summary import (
     SUMMARY_FLAG_METRICS,
     build_summary_conditions,
 )
+from statespacecheck_paper.number_format import significant, whole_percent
 from statespacecheck_paper.plotting import negative_log_pvalue, plot_likelihood_columns
 from statespacecheck_paper.style import (
     CMAP_LIKELIHOOD,
@@ -613,7 +614,7 @@ def _plot_figure3_summary_heatmap(
             cell_label = ax.text(
                 col_idx,
                 row_idx,
-                f"{val:.0f}%",
+                f"{whole_percent(val)}%",
                 ha="center",
                 va="center",
                 color=color,
@@ -623,17 +624,16 @@ def _plot_figure3_summary_heatmap(
 
     # The decoding-accuracy row sits directly beneath the heatmap; the known
     # component row follows it.
+    # Both rows round with the same functions the manuscript prose uses, so a
+    # value cannot read differently in the panel and in the text beside it.
     accuracy_headers = ("Median |error|\n(a.u.):",)
-    accuracy_formats = ("{:.1f}",)
-    for row_offset, (header, fmt) in enumerate(
-        zip(accuracy_headers, accuracy_formats, strict=True)
-    ):
+    for row_offset, header in enumerate(accuracy_headers):
         row_y = 3.0 + row_offset
         for col_idx in range(len(conditions)):
             accuracy_label = ax.text(
                 col_idx,
                 row_y,
-                fmt.format(accuracy[row_offset, col_idx]),
+                significant(accuracy[row_offset, col_idx]),
                 ha="center",
                 va="center",
                 color="black",

@@ -75,6 +75,7 @@ def test_figure03_family_dependency_edges_are_acyclic() -> None:
             prefix + "figure03_protocol",
             prefix + "figure03_summary",
             prefix + "diagnostics",
+            prefix + "number_format",
             prefix + "plotting",
             prefix + "style",
         },

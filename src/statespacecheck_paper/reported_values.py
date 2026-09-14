@@ -41,8 +41,9 @@ Macros are prefixed ``\Sim`` (simulation study, Figure 3) or ``\Rec``
 name clash, so a collision with a package macro fails the build rather than
 silently redefining anything.
 
-This module reads the committed summary JSONs and imports no sibling paper
-module, so it stays a leaf of the dependency graph.
+This module reads the committed summary JSONs. Its only sibling import is
+``number_format``, the rounding shared with the Figure-3 summary panel, so
+the figure and the prose cannot round the same number differently.
 """
 
 from __future__ import annotations
@@ -52,6 +53,8 @@ import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from statespacecheck_paper.number_format import SIGNIFICANT_FIGURES, significant, whole_percent
 
 MACRO_FILE_PATH = Path("manuscript/reported_values.tex")
 FIGURE03_SUMMARY_PATH = Path("manuscript/figures/main/figure03_summary.json")
@@ -162,10 +165,6 @@ def ordinal(value: int) -> str:
 # magnitude larger than this.
 _EXACTNESS_TOLERANCE = 1e-9
 
-# Significant figures for decoding errors and for the derived constants the
-# manuscript hedges with "approximately". Percentages use whole percents.
-SIGNIFICANT_FIGURES = 2
-
 
 def _exact(value: float, decimals: int = 0) -> str:
     """Render a value the manuscript reports without approximation.
@@ -195,72 +194,10 @@ def _exact(value: float, decimals: int = 0) -> str:
     """
     if abs(value - round(value, decimals)) > _EXACTNESS_TOLERANCE * max(1.0, abs(value)):
         raise ValueError(
-            f"{value} is not exact to {decimals} decimal(s); use _significant or "
-            "_whole_percent for a summary statistic, or print more digits."
+            f"{value} is not exact to {decimals} decimal(s); use significant or "
+            "whole_percent for a summary statistic, or print more digits."
         )
     return f"{value:.{decimals}f}"
-
-
-def _whole_percent(value: float) -> str:
-    """Render a percentage to the nearest whole percent.
-
-    Parameters
-    ----------
-    value : float
-        Percentage in ``[0, 100]``.
-
-    Returns
-    -------
-    str
-        The rounded percentage without a sign.
-
-    Examples
-    --------
-    >>> _whole_percent(36.77115625352582), _whole_percent(0.6675931668463562)
-    ('37', '1')
-    """
-    return f"{value:.0f}"
-
-
-def _significant(value: float, digits: int) -> str:
-    """Render a value to a stated number of significant figures.
-
-    Used for decoding errors and derived constants that the manuscript
-    introduces with "approximately" or a tilde. For example, 42.169 renders
-    as 42 and 199.47 as 200 at two significant figures. The format preserves
-    trailing fractional zeros, as in 8.0, and uses plain decimal notation.
-
-    Parameters
-    ----------
-    value : float
-        Value to render. Zero prints as ``"0"``; a decoding error of exactly
-        zero is a valid summary.
-    digits : int
-        Significant figures to keep.
-
-    Returns
-    -------
-    str
-        The value in plain decimal notation.
-
-    Examples
-    --------
-    >>> _significant(199.47114020071638, 2)
-    '200'
-    >>> _significant(0.19947114020071638, 2)
-    '0.20'
-    >>> _significant(0.999, 2), _significant(9.99, 2), _significant(0.0, 2)
-    ('1.0', '10', '0')
-    """
-    if value == 0.0:
-        return "0"
-    exponent = math.floor(math.log10(abs(value)))
-    rounded = round(value, -(exponent - digits + 1))
-    # Rounding can carry across a power of ten (0.999 -> 1.0, 9.99 -> 10);
-    # the decimal count must follow the rounded value's exponent, or the
-    # output shows one significant figure too many.
-    exponent = math.floor(math.log10(abs(rounded)))
-    return f"{rounded:.{max(0, digits - 1 - exponent)}f}"
 
 
 def _load(path: Path) -> dict[str, Any]:
@@ -335,14 +272,14 @@ def _simulation_statistics(payload: dict[str, Any]) -> list[MacroDefinition]:
         macros.append(
             MacroDefinition(
                 f"{name}Min",
-                _whole_percent(low),
+                whole_percent(low),
                 f"min over metrics of median_flag_percentages[:, {condition}]",
             )
         )
         macros.append(
             MacroDefinition(
                 f"{name}Max",
-                _whole_percent(high),
+                whole_percent(high),
                 f"max over metrics of median_flag_percentages[:, {condition}]",
             )
         )
@@ -350,7 +287,7 @@ def _simulation_statistics(payload: dict[str, Any]) -> list[MacroDefinition]:
     macros.append(
         MacroDefinition(
             "SimSparseKlFlag",
-            _whole_percent(_flag_percentage(payload, "kl_divergence", "sparse_population")),
+            whole_percent(_flag_percentage(payload, "kl_divergence", "sparse_population")),
             "median_flag_percentages[kl_divergence, sparse_population]",
         )
     )
@@ -366,7 +303,7 @@ def _simulation_statistics(payload: dict[str, Any]) -> list[MacroDefinition]:
         macros.append(
             MacroDefinition(
                 name,
-                _significant(_decoding_error(payload, condition), SIGNIFICANT_FIGURES),
+                significant(_decoding_error(payload, condition), SIGNIFICANT_FIGURES),
                 f"median_decoding_accuracy[median_absolute_error, {condition}]",
             )
         )
@@ -452,12 +389,12 @@ def _simulation_configuration(payload: dict[str, Any]) -> list[MacroDefinition]:
         MacroDefinition("SimRateScale", _exact(rate_scale), "place_field_rate_scale"),
         MacroDefinition(
             "SimPeakCountPerStep",
-            _significant(peak_count_per_step, SIGNIFICANT_FIGURES),
+            significant(peak_count_per_step, SIGNIFICANT_FIGURES),
             "place_field_rate_scale / (place_field_std * sqrt(2 pi))",
         ),
         MacroDefinition(
             "SimPeakRateHz",
-            _significant(peak_count_per_step * 1000.0, SIGNIFICANT_FIGURES),
+            significant(peak_count_per_step * 1000.0, SIGNIFICANT_FIGURES),
             "peak expected count per step at 1 ms/step, in Hz",
         ),
         MacroDefinition(
@@ -578,7 +515,7 @@ def _recording_statistics(payload: dict[str, Any]) -> list[MacroDefinition]:
                 ),
                 MacroDefinition(
                     f"{prefix}RescuedPercent",
-                    _whole_percent(100.0 * confusion["rescue_rate"]),
+                    whole_percent(100.0 * confusion["rescue_rate"]),
                     f"flag_confusions[{metric}].rescue_rate",
                 ),
                 MacroDefinition(
@@ -617,7 +554,7 @@ def _recording_configuration(payload: dict[str, Any]) -> list[MacroDefinition]:
         ),
         MacroDefinition(
             "RecPositionStdCm",
-            _significant(position_std, SIGNIFICANT_FIGURES),
+            significant(position_std, SIGNIFICANT_FIGURES),
             "configuration.decoder.position_std",
         ),
         MacroDefinition(

@@ -186,7 +186,7 @@ def test_compose_figure03_renders_precomputed_summary(
         params,
         np.linspace(0, 1, n_cells),
         median_flag_percentages=median,
-        median_decoding_accuracy=np.array([[1.5, 20.0, 1.5, 30.0, 6.0, 0.5]]),
+        median_decoding_accuracy=np.array([[1.5, 20.16, 1.5, 30.0, 6.0, 0.5]]),
     )
     try:
         # The summary axis is the last one added; its title flags the median
@@ -195,7 +195,10 @@ def test_compose_figure03_renders_precomputed_summary(
         assert "median across realizations" in summary_ax.get_title()
         cell_texts = {t.get_text() for t in summary_ax.texts}
         assert "60%" in cell_texts  # supplied remap median
-        assert "20.0" in cell_texts  # supplied remap median absolute error
+        # The error row rounds with the prose's formatter: two significant
+        # figures, so 20.16 prints as "20", never "20.2" or "20.16".
+        assert "20" in cell_texts
+        assert "20.2" not in cell_texts and "20.16" not in cell_texts
     finally:
         plt.close(fig)
 
