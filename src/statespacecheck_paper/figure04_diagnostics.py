@@ -191,7 +191,17 @@ def _get_spike_events_from_spike_times(
     spike_times: list[NDArray[np.float64]],
     time: NDArray[np.float64],
 ) -> tuple[NDArray[np.intp], NDArray[np.intp], NDArray[np.float64]]:
-    """Map exact spike timestamps to predictive-posterior time indices."""
+    """Map exact spike timestamps to predictive-posterior time indices.
+
+    Uses the same bin assignment as the decoder's spike binning
+    (``non_local_detector.likelihoods.common.get_spikecount_per_time_bin``):
+    spikes within ``[time[0], time[-1]]`` are kept and assigned with
+    ``np.digitize(spike_times, time[1:-1])``, so a spike at or after
+    ``time[-2]`` -- including one exactly at the final timestamp -- falls in
+    the penultimate row, exactly where the decoder counted it. Per-event
+    diagnostics therefore compare each spike with the prediction the decoder
+    actually updated with that spike.
+    """
     time = np.asarray(time, dtype=np.float64)
     spike_time_inds = []
     spike_cell_inds = []
@@ -201,8 +211,7 @@ def _get_spike_events_from_spike_times(
         cell_spike_times = np.asarray(cell_spike_times, dtype=np.float64)
         in_bounds = (cell_spike_times >= time[0]) & (cell_spike_times <= time[-1])
         cell_event_times = cell_spike_times[in_bounds]
-        cell_time_inds = np.searchsorted(time, cell_event_times, side="right") - 1
-        cell_time_inds = np.clip(cell_time_inds, 0, len(time) - 1)
+        cell_time_inds = np.digitize(cell_event_times, time[1:-1])
 
         spike_time_inds.append(cell_time_inds.astype(np.intp))
         spike_cell_inds.append(np.full(len(cell_event_times), cell_ind, dtype=np.intp))
