@@ -36,7 +36,7 @@ def whole_percent(value: float) -> str:
     >>> whole_percent(36.77115625352582), whole_percent(0.6675931668463562)
     ('37', '1')
     """
-    return f"{value:.0f}"
+    return f"{float(value):.0f}"
 
 
 def significant(value: float, digits: int = SIGNIFICANT_FIGURES) -> str:
@@ -50,8 +50,8 @@ def significant(value: float, digits: int = SIGNIFICANT_FIGURES) -> str:
     Parameters
     ----------
     value : float
-        Value to render. Zero prints as ``"0"``; a decoding error of exactly
-        zero is a valid summary.
+        Value to render; NumPy scalars are accepted and converted. Zero prints
+        as ``"0"``; a decoding error of exactly zero is a valid summary.
     digits : int, default ``SIGNIFICANT_FIGURES``
         Significant figures to keep.
 
@@ -69,6 +69,11 @@ def significant(value: float, digits: int = SIGNIFICANT_FIGURES) -> str:
     >>> significant(0.999, 2), significant(9.99, 2), significant(0.0, 2)
     ('1.0', '10', '0')
     """
+    # The emitter passes Python floats and the figure code NumPy scalars, and
+    # round() differs between them: Python rounds the exact binary value
+    # (2.45 is stored just above 2.45, so it gives 2.5) while NumPy gives 2.4.
+    # Normalize first so both rendering paths print the same digits.
+    value = float(value)
     if value == 0.0:
         return "0"
     exponent = math.floor(math.log10(abs(value)))

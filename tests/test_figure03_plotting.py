@@ -186,7 +186,7 @@ def test_compose_figure03_renders_precomputed_summary(
         params,
         np.linspace(0, 1, n_cells),
         median_flag_percentages=median,
-        median_decoding_accuracy=np.array([[1.5, 20.16, 1.5, 30.0, 6.0, 0.5]]),
+        median_decoding_accuracy=np.array([[1.5, 20.16, 2.45, 30.0, 6.0, 0.5]]),
     )
     try:
         # The summary axis is the last one added; its title flags the median
@@ -199,6 +199,10 @@ def test_compose_figure03_renders_precomputed_summary(
         # figures, so 20.16 prints as "20", never "20.2" or "20.16".
         assert "20" in cell_texts
         assert "20.2" not in cell_texts and "20.16" not in cell_texts
+        # The row receives NumPy scalars; it must print what the prose prints
+        # for the same value (2.45 -> "2.5" through the shared formatter).
+        assert "2.5" in cell_texts
+        assert "2.4" not in cell_texts
     finally:
         plt.close(fig)
 

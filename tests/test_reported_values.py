@@ -13,6 +13,7 @@ import copy
 import re
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from statespacecheck_paper.number_format import significant, whole_percent
@@ -167,6 +168,18 @@ def test_significant_figures_follow_the_hedged_claims(
     value: float, digits: int, expected: str
 ) -> None:
     assert significant(value, digits) == expected
+
+
+def test_significant_agrees_across_python_and_numpy_scalars() -> None:
+    """The emitter passes floats and the figure passes NumPy scalars.
+
+    Python and NumPy round half-way binary values differently (2.45 gives 2.5
+    and 2.4 respectively), which once let the prose and Figure 3b disagree.
+    """
+    assert significant(2.45, 2) == "2.5"
+    assert significant(np.float64(2.45), 2) == "2.5"
+    assert significant(np.float32(2.45), 2) == "2.5"
+    assert whole_percent(np.float64(36.5)) == whole_percent(36.5)
 
 
 def test_whole_percent_rounds_to_the_nearest_percent() -> None:
