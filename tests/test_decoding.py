@@ -925,6 +925,7 @@ class TestDecoderApiContract:
             "override_schedule",
             "baseline_firing_rates",
             "initial_state_distribution",
+            "hpd_coverage",
         ]
 
     def test_decoder_override_window_fields(self) -> None:

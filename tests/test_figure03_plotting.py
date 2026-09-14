@@ -7,6 +7,7 @@ from typing import Any
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
+from matplotlib.collections import PathCollection
 
 from statespacecheck_paper.diagnostics import DecodingDiagnostics, DiagnosticThresholds
 from statespacecheck_paper.figure03_plotting import (
@@ -104,7 +105,7 @@ def _params_for_short_run(
 ) -> Figure3Config:
     """Figure3Config with phase boundaries scaled to fit ``n_time``.
 
-    Distributes the 8 phase boundaries (3 misfits and a sparse-population
+    Distributes the 10 phase boundaries (4 misfits and a sparse-population
     control, with recovery between) so every highlighted window has at least
     a few timesteps. ``n_time``
     needs to be large enough that ``phase_boundaries[REMAP_START] - 1000``
@@ -114,12 +115,14 @@ def _params_for_short_run(
     return Figure3Config(
         phase_boundaries=(
             int(n_time * 0.5),
-            int(n_time * 0.6),
-            int(n_time * 0.66),
-            int(n_time * 0.74),
-            int(n_time * 0.8),
-            int(n_time * 0.85),
+            int(n_time * 0.58),
+            int(n_time * 0.64),
+            int(n_time * 0.7),
+            int(n_time * 0.76),
+            int(n_time * 0.81),
+            int(n_time * 0.86),
             int(n_time * 0.9),
+            int(n_time * 0.94),
             int(n_time * 0.99),
         ),
         prediction_step_std=prediction_step_std,
@@ -147,8 +150,8 @@ def test_compose_figure03_runs(
         thresholds_default,
         params,
         np.linspace(0, 1, n_cells),
-        median_flag_percentages=np.zeros((3, 6)),
-        median_decoding_accuracy=np.zeros((1, 6)),
+        median_flag_percentages=np.zeros((3, 8)),
+        median_decoding_accuracy=np.zeros((4, 8)),
     )
     try:
         assert isinstance(fig, plt.Figure)
@@ -169,12 +172,20 @@ def test_compose_figure03_renders_precomputed_summary(
     bundle = _combined_metrics(rng, n_time, n_bins, n_cells)
     params = _params_for_short_run(n_time, n_cells)
 
-    # Columns: well-specified, remap, history, replay, drift, sparse population.
+    # Columns follow CONDITION_IDS (remap is column 2).
     median = np.array(
         [
-            [1.0, 60.0, 1.0, 4.0, 10.0, 0.0],
-            [1.0, 60.0, 1.0, 4.0, 8.0, 17.0],
-            [3.0, 64.0, 2.0, 2.0, 14.0, 0.0],
+            [1.0, 1.0, 60.0, 1.0, 4.0, 10.0, 2.0, 0.0],
+            [1.0, 1.0, 60.0, 1.0, 4.0, 8.0, 2.0, 17.0],
+            [3.0, 3.0, 64.0, 2.0, 2.0, 14.0, 2.0, 0.0],
+        ]
+    )
+    accuracy = np.array(
+        [
+            [1.5, 1.6, 20.16, 2.45, 30.0, 6.0, 40.0, 0.5],
+            [95.2, 94.0, 3.0, 94.0, 5.0, 40.0, 4.0, 98.0],
+            [11.0, 11.0, 11.0, 10.0, 8.0, 11.0, 11.0, 29.5],
+            [11.0, 11.0, 11.0, 11.0, 8.0, 11.0, 11.0, 30.0],
         ]
     )
 
@@ -186,12 +197,13 @@ def test_compose_figure03_renders_precomputed_summary(
         params,
         np.linspace(0, 1, n_cells),
         median_flag_percentages=median,
-        median_decoding_accuracy=np.array([[1.5, 20.16, 2.45, 30.0, 6.0, 0.5]]),
+        median_decoding_accuracy=accuracy,
+        flag_percentages_by_realization=np.repeat(median[None], 4, axis=0),
     )
     try:
-        # The summary axis is the last one added; its title flags the median
-        # mode and at least one cell shows the supplied median.
-        summary_ax = fig.axes[-1]
+        # The summary axis carries the median title and at least one cell
+        # shows the supplied median.
+        summary_ax = next(ax for ax in fig.axes if "median across" in ax.get_title())
         assert "median across realizations" in summary_ax.get_title()
         cell_texts = {t.get_text() for t in summary_ax.texts}
         assert "60%" in cell_texts  # supplied remap median
@@ -203,6 +215,16 @@ def test_compose_figure03_renders_precomputed_summary(
         # for the same value (2.45 -> "2.5" through the shared formatter).
         assert "2.5" in cell_texts
         assert "2.4" not in cell_texts
+        # Coverage rounds to a whole percent; region sizes print whole bins.
+        assert "95%" in cell_texts
+        assert "30" in cell_texts and "29.5" not in cell_texts
+        # Panel (c) draws one scatter collection per condition per metric.
+        dist_axes = [ax for ax in fig.axes if ax.get_ylabel().endswith("% flagged")]
+        assert len(dist_axes) == 3
+        # One scatter collection per condition (the median bars are LineCollections).
+        assert all(
+            sum(isinstance(c, PathCollection) for c in ax.collections) == 8 for ax in dist_axes
+        )
     finally:
         plt.close(fig)
 
@@ -224,8 +246,8 @@ def test_compose_figure03_tags_figure3_annotations(
         thresholds_default,
         params,
         np.linspace(0, 1, n_cells),
-        median_flag_percentages=np.zeros((3, 6)),
-        median_decoding_accuracy=np.zeros((1, 6)),
+        median_flag_percentages=np.zeros((3, 8)),
+        median_decoding_accuracy=np.zeros((4, 8)),
     )
     try:
         texts = [text for ax in fig.axes for text in ax.texts]
@@ -233,7 +255,7 @@ def test_compose_figure03_tags_figure3_annotations(
 
         assert sum(text.get_gid() == FIGURE3_PANEL_LABEL_GID for text in texts) == 2
         phase_labels = [text for text in texts if text.get_gid() == FIGURE3_PHASE_LABEL_GID]
-        assert len(phase_labels) == 5
+        assert len(phase_labels) == 7
         assert {text.get_position()[1] for text in phase_labels} == {
             phase_labels[0].get_position()[1]
         }
@@ -241,9 +263,11 @@ def test_compose_figure03_tags_figure3_annotations(
         assert sum(text.get_gid() == FIGURE3_WORSE_FIT_LABEL_GID for text in texts) == 3
         assert any(text.get_gid() == FIGURE3_TRUE_POSITION_LABEL_GID for text in texts)
         assert any(text.get_gid() == FIGURE3_SUMMARY_KNOWN_COMPONENT_LABEL_GID for text in texts)
-        assert sum(text.get_gid() == FIGURE3_SUMMARY_CELL_LABEL_GID for text in texts) == 18
-        assert sum(text.get_gid() == FIGURE3_SUMMARY_ACCURACY_CELL_LABEL_GID for text in texts) == 6
-        assert sum(text.get_gid() == FIGURE3_SUMMARY_ACCURACY_HEADER_GID for text in texts) == 1
+        assert sum(text.get_gid() == FIGURE3_SUMMARY_CELL_LABEL_GID for text in texts) == 24
+        assert (
+            sum(text.get_gid() == FIGURE3_SUMMARY_ACCURACY_CELL_LABEL_GID for text in texts) == 32
+        )
+        assert sum(text.get_gid() == FIGURE3_SUMMARY_ACCURACY_HEADER_GID for text in texts) == 4
         assert any(ax.title.get_gid() == FIGURE3_SUMMARY_TITLE_GID for ax in fig.axes)
         assert sum(line.get_gid() == FIGURE3_THRESHOLD_LINE_GID for line in lines) == 3
     finally:
@@ -295,8 +319,8 @@ def test_compose_figure03_uses_event_diagnostics_for_scatter() -> None:
         thresholds,
         params,
         place_field_centers=np.linspace(0, 1, n_cells),
-        median_flag_percentages=np.zeros((3, 6)),
-        median_decoding_accuracy=np.zeros((1, 6)),
+        median_flag_percentages=np.zeros((3, 8)),
+        median_decoding_accuracy=np.zeros((4, 8)),
     )
     try:
         # Diagnostic rows are ordered HPD (axis 3), -log(p) (axis 4),

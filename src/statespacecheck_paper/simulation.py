@@ -37,6 +37,8 @@ Generate position-tuned spikes:
 
 from __future__ import annotations
 
+from typing import Literal, overload
+
 import numpy as np
 from numpy.typing import NDArray
 from scipy.stats import norm
@@ -386,6 +388,74 @@ def simulate_walk(
     return reflect_into_interval(x, position_min, position_max)
 
 
+def simulate_discrete_walk(
+    transition_matrix: NDArray[np.floating],
+    n_time_steps: int,
+    initial_state_index: int,
+    rng: np.random.Generator,
+) -> NDArray[np.intp]:
+    """Sample a Markov chain on the grid from a column-stochastic transition matrix.
+
+    This is the generator that exactly matches a grid decoder: state ``j`` at
+    step ``t`` moves to state ``i`` at step ``t + 1`` with probability
+    ``transition_matrix[i, j]``, the same law the decoder's predict step uses.
+    The returned sequence starts with ``initial_state_index`` itself (no
+    transition is applied before the first sample), so a caller that draws the
+    initial state from the decoder's initial law obtains a trajectory whose
+    joint distribution is precisely the decoder's state model.
+
+    Parameters
+    ----------
+    transition_matrix : np.ndarray, shape (n_bins, n_bins)
+        Column-stochastic transition matrix (column ``j`` is the distribution
+        over next states given current state ``j``), e.g. from
+        :func:`gaussian_transition_matrix`.
+    n_time_steps : int
+        Number of samples to return (``>= 1``).
+    initial_state_index : int
+        Grid index of the first sample.
+    rng : np.random.Generator
+        Random number generator. Exactly ``n_time_steps - 1`` uniform draws
+        are consumed.
+
+    Returns
+    -------
+    state_index : np.ndarray, shape (n_time_steps,)
+        Grid indices; element 0 equals ``initial_state_index``.
+
+    Examples
+    --------
+    >>> rng = np.random.default_rng(0)
+    >>> bins = np.arange(5.0)
+    >>> matrix = gaussian_transition_matrix(bins, step_std=0.5)
+    >>> idx = simulate_discrete_walk(matrix, 10, 2, rng)
+    >>> idx.shape, int(idx[0])
+    ((10,), 2)
+    >>> bool(np.all((idx >= 0) & (idx < 5)))
+    True
+    """
+    matrix = np.asarray(transition_matrix, dtype=float)
+    n_bins = matrix.shape[0]
+    if matrix.ndim != 2 or matrix.shape[1] != n_bins:
+        raise ValueError("transition_matrix must be square")
+    if not np.allclose(matrix.sum(axis=0), 1.0) or np.any(matrix < 0.0):
+        raise ValueError("transition_matrix must be column-stochastic")
+    if n_time_steps < 1:
+        raise ValueError(f"n_time_steps must be >= 1; got {n_time_steps}")
+    if not 0 <= initial_state_index < n_bins:
+        raise ValueError(f"initial_state_index {initial_state_index} outside [0, {n_bins})")
+    # Inverse-CDF sampling: column j's cumulative distribution over next states.
+    cumulative = np.cumsum(matrix, axis=0)
+    cumulative[-1, :] = 1.0
+    uniforms = rng.random(n_time_steps - 1)
+    state_index = np.empty(n_time_steps, dtype=np.intp)
+    state_index[0] = initial_state_index
+    # Inherently sequential recursion: each step depends on the previous state.
+    for t in range(1, n_time_steps):
+        state_index[t] = np.searchsorted(cumulative[:, state_index[t - 1]], uniforms[t - 1])
+    return state_index
+
+
 def simulate_spikes_position_tuned(
     position: NDArray[np.floating],
     place_field_centers: NDArray[np.floating],
@@ -440,6 +510,36 @@ def simulate_spikes_position_tuned(
     return spikes
 
 
+@overload
+def simulate_spikes_history_dependent(
+    position: NDArray[np.floating],
+    place_field_centers: NDArray[np.floating],
+    place_field_std: float,
+    place_field_rate_scale: float,
+    rng: np.random.Generator,
+    *,
+    refractory_steps: int = ...,
+    burst_window: tuple[int, int] = ...,
+    burst_factor: float = ...,
+    return_conditional_means: Literal[False] = ...,
+) -> NDArray[np.int_]: ...
+
+
+@overload
+def simulate_spikes_history_dependent(
+    position: NDArray[np.floating],
+    place_field_centers: NDArray[np.floating],
+    place_field_std: float,
+    place_field_rate_scale: float,
+    rng: np.random.Generator,
+    *,
+    refractory_steps: int = ...,
+    burst_window: tuple[int, int] = ...,
+    burst_factor: float = ...,
+    return_conditional_means: Literal[True],
+) -> tuple[NDArray[np.int_], NDArray[np.floating]]: ...
+
+
 def simulate_spikes_history_dependent(
     position: NDArray[np.floating],
     place_field_centers: NDArray[np.floating],
@@ -450,7 +550,8 @@ def simulate_spikes_history_dependent(
     refractory_steps: int = 1,
     burst_window: tuple[int, int] = (2, 10),
     burst_factor: float = 3.0,
-) -> NDArray[np.int_]:
+    return_conditional_means: bool = False,
+) -> NDArray[np.int_] | tuple[NDArray[np.int_], NDArray[np.floating]]:
     """Position-tuned binned spike counts with history-modulated Poisson means.
 
     Generates per-step Poisson counts whose expected count is modulated by
@@ -508,11 +609,18 @@ def simulate_spikes_history_dependent(
     burst_factor : float, optional
         Multiplier on the base rate during the burst window. Must be
         positive. Defaults to 3.0.
+    return_conditional_means : bool, optional
+        If True, also return the Poisson mean actually used at every step
+        (the history-conditional expected count), which averages to the
+        process's marginal rate with far less noise than the counts.
 
     Returns
     -------
     spikes : np.ndarray, shape (n_time, n_cells)
         Spike counts (non-negative integers).
+    conditional_means : np.ndarray, shape (n_time, n_cells)
+        Only when ``return_conditional_means`` is True: the Poisson mean at
+        each step given the cell's realized history.
 
     Raises
     ------
@@ -565,6 +673,7 @@ def simulate_spikes_history_dependent(
     )
 
     spikes = np.zeros((n_time, n_cells), dtype=np.int_)
+    conditional_means = np.zeros((n_time, n_cells), dtype=float)
     # ``elapsed[c]`` = number of steps elapsed since cell ``c`` last fired,
     # evaluated *at the step being drawn* (1 on the step right after a spike).
     # Initialize beyond the burst window so every cell starts outside both
@@ -577,6 +686,7 @@ def simulate_spikes_history_dependent(
         in_burst = (elapsed >= burst_start) & (elapsed <= burst_end)
         rate[in_refractory] = 0.0
         rate[in_burst] *= burst_factor
+        conditional_means[t] = rate
 
         step_spikes = rng.poisson(rate)
         spikes[t] = step_spikes
@@ -585,4 +695,6 @@ def simulate_spikes_history_dependent(
         fired = step_spikes > 0
         elapsed = np.where(fired, 1, elapsed + 1)
 
+    if return_conditional_means:
+        return spikes, conditional_means
     return spikes

@@ -1,9 +1,17 @@
 """Reusable figure-3 simulation driver.
 
-The figure-3 demo simulates a hippocampal-style decoder under a
-sequence of misfit conditions (remap, history-dependent firing, drift) and
-two specificity controls (a replay event embedded in clean-recovery 2 and a
-final sparse-population epoch). The simulation pipeline drives both
+The figure-3 demo simulates a hippocampal-style decoder under a sequence of
+misfit conditions (an incoherent remap, history-dependent firing, drift, and a
+coherent reflected map) and two controls (a replay event embedded in
+clean-recovery 2 and a final matched low-information regime). Outside the
+perturbed windows the latent trajectory is drawn from the decoder's own
+discrete transition matrix (``trajectory_model="discrete_matched"``), so those
+windows are an exactly matched reference. The module also provides the
+standalone matched-null session used for independent threshold calibration
+(:func:`run_matched_null_simulation`) and the history-phase rate-matching
+calibration (:func:`estimate_history_rate_matching_gain`).
+
+The simulation pipeline drives both
 ``statespacecheck_paper.figure03_generation`` and
 ``statespacecheck_paper.interactive.cache.build_simulated_cache``;
 both call ``run_figure03_simulation`` so the figure and the
@@ -37,6 +45,7 @@ from statespacecheck_paper.simulation import (
     peak_rate_to_place_field_scale,
     place_field_rates,
     reflect_into_interval,
+    simulate_discrete_walk,
     simulate_spikes_history_dependent,
     simulate_spikes_position_tuned,
     simulate_walk,
@@ -109,6 +118,42 @@ def remap_place_field_centers(
     return place_field_centers
 
 
+def reflect_place_field_centers(
+    place_field_centers: NDArray[np.floating],
+    position_min: float,
+    position_max: float,
+) -> NDArray[np.floating]:
+    """Mirror every place-field center about the track midpoint.
+
+    This is the coherent wrong map used by the reflected-map misfit: cell
+    ``c``'s field moves to ``position_min + position_max - mu_c``, so the
+    decoder's map is a rigid reflection of the true one. Unlike the scrambled
+    remap, the reflected map preserves the spatial relations among fields;
+    the decoder therefore decodes a coherent (mirror-image) trajectory whose
+    internal prediction/likelihood agreement stays high while its position is
+    wrong.
+
+    Parameters
+    ----------
+    place_field_centers : np.ndarray, shape (n_cells,)
+        True field centers.
+    position_min, position_max : float
+        Track bounds.
+
+    Returns
+    -------
+    np.ndarray, shape (n_cells,)
+        Reflected centers.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> reflect_place_field_centers(np.array([0.0, 30.0, 100.0]), 0.0, 100.0)
+    array([100.,  70.,   0.])
+    """
+    return position_min + position_max - np.asarray(place_field_centers, dtype=float)
+
+
 def _single_out_and_back_sweep(
     start: float,
     n_steps: int,
@@ -160,6 +205,12 @@ class Figure3SimulationResult:
     true_position: NDArray[np.floating]
     spike_counts: NDArray[np.int_]
     diagnostics: DecodingDiagnostics
+    # The position the simulated ensemble represents. Equal to
+    # ``true_position`` (the physical position) everywhere except the replay
+    # sweep, where the ensemble represents the swept trajectory while the
+    # animal is immobile. Decoding accuracy against the represented trajectory
+    # is reported separately from the physical-position error.
+    represented_position: NDArray[np.floating]
     # Sequence fields are declared as tuple so ``frozen=True``'s
     # immutability extends to the contents — list would leave
     # ``sim.phase_labels.append(...)`` and ``sim.phase_boundaries[-1] = 9999``
@@ -202,6 +253,11 @@ class Figure3SimulationResult:
                 f"spike_counts timeline ({self.spike_counts.shape[0]}) must equal "
                 f"true_position timeline ({n_time})."
             )
+        if self.represented_position.shape != (n_time,):
+            raise ValueError(
+                f"represented_position shape {self.represented_position.shape} must equal "
+                f"true_position shape ({n_time},)."
+            )
         if self.phase_boundaries[-1] != n_time:
             raise ValueError(
                 f"final phase boundary ({self.phase_boundaries[-1]}) must "
@@ -237,6 +293,10 @@ class Figure3RateTables:
     replay_firing_rates : np.ndarray, shape (n_bins, n_cells)
         Replay-window rates: ordinary place fields at the elevated
         ``replay_place_field_rate_scale`` plus the baseline sparse population.
+    reflected_firing_rates : np.ndarray, shape (n_bins, n_cells)
+        Reflected-map-window rates: every ordinary field mirrored about the
+        track midpoint (a coherent wrong map) plus the baseline sparse
+        population.
     sparse_population_firing_rates : np.ndarray, shape (n_bins, n_cells)
         Sparse-window rates: the quiet ordinary ensemble
         (``sparse_control_ordinary_rate_scale``) plus the fully active sparse
@@ -249,26 +309,99 @@ class Figure3RateTables:
     baseline_firing_rates: NDArray[np.floating]
     remapped_firing_rates: NDArray[np.floating]
     replay_firing_rates: NDArray[np.floating]
+    reflected_firing_rates: NDArray[np.floating]
     sparse_population_firing_rates: NDArray[np.floating]
     baseline_sparse_firing_rates: NDArray[np.floating]
 
 
+class _TrajectorySampler:
+    """Draw unperturbed-phase trajectories under the configured trajectory model.
+
+    ``discrete_matched`` samples grid states from the decoder's own transition
+    matrix (an exact match to the decoder's state model); ``continuous_reflected``
+    keeps the approximate reflected continuous walk. Both consume the shared
+    ``rng`` so the draw order stays part of the reproducibility contract.
+    """
+
+    def __init__(
+        self,
+        config: Figure3Config,
+        position_bins: NDArray[np.floating],
+        transition_matrix: NDArray[np.floating],
+        rng: np.random.Generator,
+    ) -> None:
+        self.config = config
+        self.position_bins = position_bins
+        self.transition_matrix = transition_matrix
+        self.rng = rng
+
+    def nearest_bin_index(self, position: float) -> int:
+        """Grid index nearest to a (possibly off-grid) position."""
+        return int(np.argmin(np.abs(self.position_bins - position)))
+
+    def draw_initial_position(self) -> float:
+        """Draw the session's first position from the decoder's initial law.
+
+        Under ``discrete_matched`` this is a uniform draw over the grid (the
+        decoder's ``p(x_0)``); under ``continuous_reflected`` the legacy
+        convention starts the walk at ``position_min`` before its first
+        increment and draws nothing.
+        """
+        if self.config.trajectory_model == "discrete_matched":
+            return float(self.position_bins[self.rng.integers(self.position_bins.size)])
+        return float(self.config.position_min)
+
+    def walk(self, n: int, x_last: float, *, include_start: bool) -> NDArray[np.floating]:
+        """Sample ``n`` positions continuing the trajectory from ``x_last``.
+
+        With ``include_start=True`` the first returned sample *is* ``x_last``
+        (used for the session's opening phase, whose first sample is the
+        initial-law draw); otherwise every returned sample follows at least one
+        transition from ``x_last``, as when a phase continues an earlier one.
+        """
+        if n <= 0:
+            return np.empty(0, dtype=float)
+        if self.config.trajectory_model == "discrete_matched":
+            start_index = self.nearest_bin_index(x_last)
+            if include_start:
+                index = simulate_discrete_walk(self.transition_matrix, n, start_index, self.rng)
+            else:
+                index = simulate_discrete_walk(
+                    self.transition_matrix, n + 1, start_index, self.rng
+                )[1:]
+            return np.asarray(self.position_bins[index], dtype=float)
+        walk = simulate_walk(
+            n,
+            self.config.prediction_step_std,
+            x_last,
+            self.config.position_min,
+            self.config.position_max,
+            self.rng,
+        )
+        if include_start:
+            # The legacy continuous convention never returns its start; the
+            # opening sample is the first increment from ``x_last``.
+            return walk
+        return walk
+
+
 def _record_phase(
-    phases: list[tuple[NDArray[np.floating], NDArray[np.int_]]],
+    phases: list[tuple[NDArray[np.floating], NDArray[np.floating], NDArray[np.int_]]],
     phase_labels: list[str],
     label: str,
     x: NDArray[np.floating],
     sp: NDArray[np.int_],
+    represented: NDArray[np.floating] | None = None,
 ) -> float:
     """Append one phase with an explicit label; return its end position.
 
     The returned value is the next phase's starting position. ``x_last``
     trajectory continuity between phases is intentional and threaded
     explicitly by the caller, never inferred from phase order or a generic
-    accumulator.
+    accumulator. ``represented`` defaults to the physical trajectory ``x``.
     """
     phase_labels.append(label)
-    phases.append((x, sp))
+    phases.append((x, x if represented is None else represented, sp))
     return float(x[-1])
 
 
@@ -277,27 +410,26 @@ def simulate_history_dependent_phase(
     x_last: float,
     config: Figure3Config,
     place_field_centers: NDArray[np.floating],
-    rng: np.random.Generator,
+    sampler: _TrajectorySampler,
 ) -> tuple[NDArray[np.floating], NDArray[np.int_]]:
-    """History-dependent firing misfit: a normal walk with bursting spike_counts.
+    """History-dependent firing misfit: a matched walk with modulated spike counts.
 
-    Cells fire via ``simulate_spikes_history_dependent`` (hard refractory
-    plus a burst window); the decoder still treats every spike as an
-    independent Poisson draw, so the misfit lives in the temporal
-    correlations and is largely invisible to the per-spike spatial
-    diagnostics.
+    Cells fire via ``simulate_spikes_history_dependent`` (post-spike
+    suppression plus a burst window) with the generator's place-field scale
+    multiplied by ``config.history_rate_matching_gain`` so the phase's
+    marginal rate approximately matches the Poisson baseline; the decoder
+    still treats every spike as an independent Poisson draw at the baseline
+    rates, so the misfit is the temporal dependence.
 
     Draw order: the trajectory walk, then the history-dependent spike_counts.
     """
-    x = simulate_walk(
-        n, config.prediction_step_std, x_last, config.position_min, config.position_max, rng
-    )
+    x = sampler.walk(n, x_last, include_start=False)
     sp = simulate_spikes_history_dependent(
         x,
         place_field_centers,
         config.place_field_std,
-        config.place_field_rate_scale,
-        rng,
+        config.place_field_rate_scale * config.history_rate_matching_gain,
+        sampler.rng,
         refractory_steps=config.history_refractory_steps,
         burst_window=config.history_burst_window,
         burst_factor=config.history_burst_factor,
@@ -312,26 +444,28 @@ def simulate_replay_phase(
     x_last: float,
     config: Figure3Config,
     place_field_centers: NDArray[np.floating],
-    rng: np.random.Generator,
-) -> tuple[NDArray[np.floating], NDArray[np.int_]]:
+    sampler: _TrajectorySampler,
+) -> tuple[NDArray[np.floating], NDArray[np.floating], NDArray[np.int_]]:
     """Clean-recovery-2 window containing the replay control.
 
     The animal is immobile (physical position held fixed at ``x_still``)
     while a coherent represented trajectory sweeps the track once out and
     back over the sub-window ``[r0, r1)``. Spikes during the sweep fire at
-    the elevated ``replay_place_field_rate_scale``; before and after they are ordinary
-    position-tuned spike_counts.
+    the elevated ``replay_place_field_rate_scale`` (the decoder is given that
+    same elevated rate); before and after they are ordinary position-tuned
+    spike_counts. The sweep is a deterministic construction, not a draw from
+    the decoder's transition law, so the replay column is a control on the
+    diagnostics' response to a represented trajectory that departs from the
+    physical one, not a matched-null column.
 
     RNG-order contract: the shared ``rng`` draws BOTH walks (``x_pre``
-    then ``x_post``) before ANY spike_counts, matching the original ``vstack``
-    order. Reordering to walk -> spike -> walk -> spike would move the
-    ``x_post`` walk ahead of the ``x_pre`` spike_counts and shift every
-    downstream draw, changing Figure 3 and the interactive simulated
-    cache. Do not reorder.
+    then ``x_post``) before ANY spike_counts. Reordering would shift every
+    downstream draw, changing Figure 3 and the interactive simulated cache.
+
+    Returns the physical trajectory, the represented trajectory (equal to the
+    physical one outside the sweep), and the spike counts.
     """
-    x_pre = simulate_walk(
-        r0, config.prediction_step_std, x_last, config.position_min, config.position_max, rng
-    )
+    x_pre = sampler.walk(r0, x_last, include_start=False)
     x_still = float(x_pre[-1]) if r0 > 0 else x_last
     replay_len = r1 - r0
     # One outbound leg toward the farther track end and one return to
@@ -344,10 +478,9 @@ def simulate_replay_phase(
         config.replay_speed_per_step,
     )
     # Second walk drawn before any spike_counts (shared-rng draw-order contract).
-    x_post = simulate_walk(
-        n - r1, config.prediction_step_std, x_still, config.position_min, config.position_max, rng
-    )
+    x_post = sampler.walk(n - r1, x_still, include_start=False)
     x_rec2 = np.concatenate([x_pre, np.full(replay_len, x_still), x_post])
+    represented = np.concatenate([x_pre, x_sweep, x_post])
     sp_rec2 = np.vstack(
         [
             simulate_spikes_position_tuned(
@@ -355,25 +488,25 @@ def simulate_replay_phase(
                 place_field_centers,
                 config.place_field_std,
                 config.place_field_rate_scale,
-                rng,
+                sampler.rng,
             ),
             simulate_spikes_position_tuned(
                 x_sweep,
                 place_field_centers,
                 config.place_field_std,
                 config.replay_place_field_rate_scale,
-                rng,
+                sampler.rng,
             ),
             simulate_spikes_position_tuned(
                 x_post,
                 place_field_centers,
                 config.place_field_std,
                 config.place_field_rate_scale,
-                rng,
+                sampler.rng,
             ),
         ]
     )
-    return x_rec2, sp_rec2
+    return x_rec2, represented, sp_rec2
 
 
 def simulate_drift_phase(
@@ -386,9 +519,11 @@ def simulate_drift_phase(
 
     ``x[t] = x[t-1] + v[t]`` with
     ``v[t] = drift_momentum * v[t-1] + N(0, prediction_step_std)``; the decoder
-    assumes a memoryless walk. Returns the trajectory only; the caller
-    draws the position-tuned spike_counts from it, matching the original draw
-    order (drift steps, then spike_counts).
+    assumes a memoryless walk. The trajectory is continuous (reflected at the
+    track ends) rather than grid-valued, so decoding accuracy in this phase
+    maps the true position to its nearest grid cell. Returns the trajectory
+    only; the caller draws the position-tuned spike_counts from it, matching
+    the original draw order (drift steps, then spike_counts).
     """
     momentum = config.drift_momentum
     x_mom = np.zeros(n)
@@ -400,46 +535,29 @@ def simulate_drift_phase(
     return reflect_into_interval(x_mom, float(config.position_min), float(config.position_max))
 
 
-def simulate_sparse_approach_phase(
-    n: int,
-    x_last: float,
+def sparse_population_rates(
+    position_bins: NDArray[np.floating],
     config: Figure3Config,
-    rng: np.random.Generator,
-) -> NDArray[np.floating]:
-    """Clean-recovery-3 that ends by approaching ``config.sparse_position``.
+) -> tuple[NDArray[np.floating], NDArray[np.floating]]:
+    """Active-regime rate table of the sparse population and its field centers.
 
-    A normal walk for ``n - sparse_approach_duration_steps`` steps, then a smooth
-    ramp to ``config.sparse_position`` so the sparse-population control
-    begins without a position jump. Returns the trajectory only; the
-    caller draws the position-tuned spike_counts (original draw order: walk,
-    then spike_counts).
+    Each narrow cell peaks at ``sparse_cell_peak_rate_per_step`` times its own
+    entry of ``sparse_cell_rate_multipliers`` (heterogeneous gains).
+
+    Returns
+    -------
+    rates : np.ndarray, shape (n_bins, n_sparse_cells)
+        Expected counts per step at the full (active) rate.
+    centers : np.ndarray, shape (n_sparse_cells,)
+        Field centers.
     """
-    approach_steps = min(config.sparse_approach_duration_steps, n)
-    walk_steps = n - approach_steps
-    if walk_steps > 0:
-        x_walk = simulate_walk(
-            walk_steps,
-            config.prediction_step_std,
-            x_last,
-            config.position_min,
-            config.position_max,
-            rng,
-        )
-        approach_start = float(x_walk[-1])
-    else:
-        x_walk = np.empty(0, dtype=float)
-        approach_start = x_last
-    if approach_steps > 0:
-        # Drop the first point so the approach continues from, rather than
-        # duplicates, the preceding sample.
-        x_approach = np.linspace(
-            approach_start,
-            config.sparse_position,
-            approach_steps + 1,
-        )[1:]
-    else:
-        x_approach = np.empty(0, dtype=float)
-    return np.concatenate([x_walk, x_approach])
+    centers = np.asarray(config.sparse_place_field_centers, dtype=float)
+    multipliers = np.asarray(config.sparse_cell_rate_multipliers, dtype=float)
+    scale = peak_rate_to_place_field_scale(
+        config.sparse_cell_peak_rate_per_step, config.sparse_place_field_std
+    )
+    rates = place_field_rates(position_bins, centers, config.sparse_place_field_std, scale)
+    return rates * multipliers[None, :], centers
 
 
 def build_sparse_population(
@@ -451,57 +569,43 @@ def build_sparse_population(
 ) -> tuple[NDArray[np.int_], NDArray[np.floating]]:
     """Build the sparse-population spike columns and their field centers.
 
-    A small set of pre-existing, sharply tuned cells clustered around
-    ``config.sparse_position``, each an independent Poisson process. A
-    small baseline gain applies before ``w0``; the full rate applies
-    within ``[w0, w1)``; after ``w1`` the columns stay zero. Per-cell
-    rates are sized so the population's *aggregate* rate stays sparse.
+    A small set of pre-existing, sharply tuned cells spread along the track,
+    each an independent Poisson process with its own peak rate. A small
+    baseline gain applies before ``w0``; the full rate applies within
+    ``[w0, w1)``; after ``w1`` the columns stay zero.
 
     Uses an INDEPENDENT ``SeedSequence([random_seed, 12])`` stream so this
-    illustrative spike train is stable under upstream changes and its
-    extraction does not perturb the main ``rng`` draw order.
+    spike train is stable under upstream changes and its extraction does not
+    perturb the main ``rng`` draw order.
 
     Returns
     -------
-    sparse_cell_spikes : np.ndarray, shape (n_time, sparse_cell_count)
+    sparse_cell_spikes : np.ndarray, shape (n_time, n_sparse_cells)
         Spike counts for the sparse population.
-    sparse_centers : np.ndarray, shape (sparse_cell_count,)
+    sparse_centers : np.ndarray, shape (n_sparse_cells,)
         Fixed field centers of the sparse population.
     """
-    if config.sparse_cell_count == 1:
-        center_offsets = np.zeros(1, dtype=float)
-    else:
-        center_offsets = np.linspace(
-            -config.sparse_place_field_spread,
-            config.sparse_place_field_spread,
-            config.sparse_cell_count,
-        )
-    sparse_centers = config.sparse_position + center_offsets
-    sparse_cell_scale = peak_rate_to_place_field_scale(
+    centers = np.asarray(config.sparse_place_field_centers, dtype=float)
+    multipliers = np.asarray(config.sparse_cell_rate_multipliers, dtype=float)
+    scale = peak_rate_to_place_field_scale(
         config.sparse_cell_peak_rate_per_step, config.sparse_place_field_std
     )
     sparse_rng = np.random.default_rng(np.random.SeedSequence([random_seed, 12]))
-    # Draw the baseline window first (matching the original stream order),
-    # then the elevated window; leave post-``w1`` samples at zero.
-    baseline_block = simulate_spikes_position_tuned(
-        true_position[:w0],
-        sparse_centers,
-        config.sparse_place_field_std,
-        sparse_cell_scale * config.sparse_cell_baseline_rate_fraction,
-        sparse_rng,
-    )
-    sparse_cell_spikes = np.zeros(
-        (true_position.shape[0], sparse_centers.size), dtype=baseline_block.dtype
-    )
-    sparse_cell_spikes[:w0] = baseline_block
-    sparse_cell_spikes[w0:w1] = simulate_spikes_position_tuned(
-        true_position[w0:w1],
-        sparse_centers,
-        config.sparse_place_field_std,
-        sparse_cell_scale,
-        sparse_rng,
-    )
-    return sparse_cell_spikes, sparse_centers
+
+    def _draw(x: NDArray[np.floating], gain: float) -> NDArray[np.int_]:
+        means = (
+            place_field_rates(x, centers, config.sparse_place_field_std, scale * gain)
+            * multipliers[None, :]
+        )
+        drawn: NDArray[np.int_] = sparse_rng.poisson(means)
+        return drawn
+
+    # Draw the baseline window first, then the elevated window; leave
+    # post-``w1`` samples at zero.
+    sparse_cell_spikes = np.zeros((true_position.shape[0], centers.size), dtype=np.int_)
+    sparse_cell_spikes[:w0] = _draw(true_position[:w0], config.sparse_cell_baseline_rate_fraction)
+    sparse_cell_spikes[w0:w1] = _draw(true_position[w0:w1], 1.0)
+    return sparse_cell_spikes, centers
 
 
 def build_figure03_rate_tables(
@@ -510,11 +614,12 @@ def build_figure03_rate_tables(
     sparse_centers: NDArray[np.floating],
     config: Figure3Config,
 ) -> Figure3RateTables:
-    """Assemble the four figure-3 decoder rate tables.
+    """Assemble the five figure-3 decoder rate tables.
 
     The decoder knows the sparse population's small baseline gain and the
-    low-activity regime, so each misfit window tests metric behavior under
-    a consistent (correctly specified) model:
+    low-activity regime, so each control tests metric behavior under a
+    correctly specified observation model, while each misfit window
+    substitutes the decoder-side table that defines that misfit:
 
     - Remap: the posterior update uses randomly scrambled place-field
       centers; its diagnostics use that same likelihood, so the misfit
@@ -522,21 +627,17 @@ def build_figure03_rate_tables(
     - Replay: the ensemble fires at the elevated ``replay_place_field_rate_scale`` and
       the decoder is given that same elevated rate, so the replay is a
       correctly-specified observation model.
+    - Reflected map: every field mirrored about the track midpoint, a
+      coherent wrong map.
     - Sparse population: the decoder uses the correctly scaled quiet
-      ensemble and active sparse-population rates.
+      ensemble and the active heterogeneous sparse-population rates.
     """
     normal_rates = place_field_rates(
         position_bins, place_field_centers, config.place_field_std, config.place_field_rate_scale
     )
-    sparse_cell_scale = peak_rate_to_place_field_scale(
-        config.sparse_cell_peak_rate_per_step, config.sparse_place_field_std
-    )
-    sparse_cell_rates = place_field_rates(
-        position_bins,
-        sparse_centers,
-        config.sparse_place_field_std,
-        sparse_cell_scale,
-    )
+    sparse_cell_rates, config_centers = sparse_population_rates(position_bins, config)
+    if not np.array_equal(config_centers, np.asarray(sparse_centers, dtype=float)):
+        raise ValueError("sparse_centers must equal config.sparse_place_field_centers")
     baseline_sparse_firing_rates = config.sparse_cell_baseline_rate_fraction * sparse_cell_rates
     baseline_firing_rates = np.hstack([normal_rates, baseline_sparse_firing_rates])
     sparse_population_firing_rates = np.hstack(
@@ -566,12 +667,35 @@ def build_figure03_rate_tables(
             baseline_sparse_firing_rates,
         ]
     )
+    reflected_firing_rates = np.hstack(
+        [
+            place_field_rates(
+                position_bins,
+                reflect_place_field_centers(
+                    place_field_centers, float(config.position_min), float(config.position_max)
+                ),
+                config.place_field_std,
+                config.place_field_rate_scale,
+            ),
+            baseline_sparse_firing_rates,
+        ]
+    )
     return Figure3RateTables(
         baseline_firing_rates=baseline_firing_rates,
         remapped_firing_rates=remapped_firing_rates,
         replay_firing_rates=replay_firing_rates,
+        reflected_firing_rates=reflected_firing_rates,
         sparse_population_firing_rates=sparse_population_firing_rates,
         baseline_sparse_firing_rates=baseline_sparse_firing_rates,
+    )
+
+
+def _position_grid(config: Figure3Config) -> NDArray[np.floating]:
+    return np.arange(
+        config.position_min,
+        config.position_max + config.position_bin_size,
+        config.position_bin_size,
+        dtype=float,
     )
 
 
@@ -584,31 +708,32 @@ def run_figure03_simulation(
 
     Phases (in order, with their misfit class):
 
-    1. Clean Baseline
+    1. Matched-null baseline (trajectory drawn from the decoder's initial law
+       and transition matrix; Poisson spikes at the decoder's rates)
     2. **Remap Misfit** (observation: all place-field identities undergo
        one fixed, spatially incoherent permutation)
     3. Clean Recovery
     4. **History-Dependent Firing Misfit** (observation: spike_counts
-       generated with hard refractory + bursting; decoder still
-       assumes Poisson. Per-event spatial likelihood is unchanged,
-       so the per-spike diagnostics largely miss this — deliberate
-       demonstration of the spatial-only nature of the diagnostics.)
+       generated with post-spike suppression + bursting at a rate-matched
+       gain; decoder still assumes Poisson. Per-event spatial likelihood is
+       unchanged, so the per-spike diagnostics see only the temporal
+       dependence through the prediction.)
     5. Clean Recovery (contains the **Replay control**: an out-and-back
-       trajectory sweep while the animal is immobile. The decoder tracks the
-       sweep, so the decoded position departs from the true fixed position
-       yet stays consistent with each spike's likelihood — a benign
-       decoded-vs-true divergence that none of the diagnostics should flag.)
+       represented sweep while the animal is immobile. The decoder tracks the
+       sweep, so the decoded position departs from the physical position yet
+       stays consistent with each spike's likelihood.)
     6. **Drift Misfit** (transition: trajectory has persistent velocity
        at AR(1) coefficient ``config.drift_momentum``; decoder assumes
        memoryless walk)
     7. Clean Recovery
-    8. **Sparse Population** (control: the ordinary ensemble is quiet while a
-       small population of pre-existing, sharply tuned cells clustered at one
-       location fires sparsely — each an independent Poisson process, the
-       decoder's rates matching exactly. The prediction spreads between the
-       isolated spike_counts, and each spike's narrow likelihood remains contained
-       within it. KL responds to the concentration difference while HPD overlap
-       and the rank-based p-value remain consistent.)
+    8. **Reflected Map Misfit** (observation: every field mirrored about the
+       track midpoint -- a coherent wrong map whose decoded trajectory is
+       internally consistent but at the wrong location)
+    9. Clean Recovery
+    10. **Sparse Population** (control: the ordinary ensemble is quiet while a
+        small population of sharply tuned cells spread along the track fires
+        sparsely at heterogeneous rates; the trajectory still follows the
+        decoder's transition, so the regime is exactly matched.)
 
     Parameters
     ----------
@@ -623,10 +748,10 @@ def run_figure03_simulation(
     -------
     Figure3SimulationResult
         Dataclass with attributes ``config``, ``position_bins``, ``true_position``,
-        ``spike_counts``, ``diagnostics``, ``phase_labels``, ``phase_boundaries``,
-        and ``sparse_place_field_centers`` (fixed centers for the appended
-        sparse-population cells). Access via attribute (``sim.diagnostics``),
-        not subscript.
+        ``represented_position``, ``spike_counts``, ``diagnostics``,
+        ``phase_labels``, ``phase_boundaries``, and
+        ``sparse_place_field_centers``. Access via attribute
+        (``sim.diagnostics``), not subscript.
     """
     if config is None:
         config = Figure3Config()
@@ -637,54 +762,44 @@ def run_figure03_simulation(
         raise ValueError("config.place_field_centers must be initialized")
     place_field_centers = config.place_field_centers
 
-    position_bins = np.arange(
-        config.position_min,
-        config.position_max + config.position_bin_size,
-        config.position_bin_size,
-        dtype=float,
-    )
+    position_bins = _position_grid(config)
     transition_matrix = gaussian_transition_matrix(position_bins, config.prediction_step_std)
+    sampler = _TrajectorySampler(config, position_bins, transition_matrix, rng)
 
-    phases: list[tuple[NDArray[np.floating], NDArray[np.int_]]] = []
+    phases: list[tuple[NDArray[np.floating], NDArray[np.floating], NDArray[np.int_]]] = []
     phase_labels: list[str] = []
-    x_last: float = 0.0
     bnd = config.phase_boundaries
-
-    def _walk(n: int, x0: float) -> NDArray[np.floating]:
-        return simulate_walk(
-            n, config.prediction_step_std, x0, config.position_min, config.position_max, rng
-        )
 
     def _spikes(x: NDArray[np.floating]) -> NDArray[np.int_]:
         return simulate_spikes_position_tuned(
             x, place_field_centers, config.place_field_std, config.place_field_rate_scale, rng
         )
 
-    # The eight phases are a plainly-written ordered sequence; ``x_last``
+    # The ten phases are a plainly-written ordered sequence; ``x_last``
     # carries the trajectory's end position forward as the next phase's
     # start (continuity is intended and threaded explicitly).
 
-    # 1. Clean baseline
+    # 1. Matched-null baseline: first sample from the decoder's initial law.
     n = bnd[PhaseBoundary.REMAP_START]
-    x = _walk(n, x_last)
-    x_last = _record_phase(phases, phase_labels, "Clean Baseline", x, _spikes(x))
+    x = sampler.walk(n, sampler.draw_initial_position(), include_start=True)
+    x_last = _record_phase(phases, phase_labels, PHASE_LABELS[0], x, _spikes(x))
 
     # 2. Remap misfit — spike *generation* is normal position-tuned; only the
     #    decoder uses randomly scrambled PF centers during this window (via
     #    ``DecoderOverrideWindow`` below).
     n = bnd[PhaseBoundary.REMAP_END] - bnd[PhaseBoundary.REMAP_START]
-    x = _walk(n, x_last)
-    x_last = _record_phase(phases, phase_labels, "Remap Misfit", x, _spikes(x))
+    x = sampler.walk(n, x_last, include_start=False)
+    x_last = _record_phase(phases, phase_labels, PHASE_LABELS[1], x, _spikes(x))
 
     # 3. Clean recovery 1
     n = bnd[PhaseBoundary.RECOVERY1_END] - bnd[PhaseBoundary.REMAP_END]
-    x = _walk(n, x_last)
-    x_last = _record_phase(phases, phase_labels, "Clean Recovery", x, _spikes(x))
+    x = sampler.walk(n, x_last, include_start=False)
+    x_last = _record_phase(phases, phase_labels, PHASE_LABELS[2], x, _spikes(x))
 
     # 4. History-dependent firing misfit
     n = bnd[PhaseBoundary.HIST_DEP_END] - bnd[PhaseBoundary.RECOVERY1_END]
-    x, sp = simulate_history_dependent_phase(n, x_last, config, place_field_centers, rng)
-    x_last = _record_phase(phases, phase_labels, "History-Dependent Firing", x, sp)
+    x, sp = simulate_history_dependent_phase(n, x_last, config, place_field_centers, sampler)
+    x_last = _record_phase(phases, phase_labels, PHASE_LABELS[3], x, sp)
 
     # 5. Clean recovery 2 — with the embedded replay control. Local
     #    (within-phase) replay bounds derived from the shared global
@@ -694,25 +809,37 @@ def run_figure03_simulation(
     r0_global, r1_global = compute_replay_step_window(config)
     r0 = r0_global - bnd[PhaseBoundary.HIST_DEP_END]
     r1 = r1_global - bnd[PhaseBoundary.HIST_DEP_END]
-    x, sp = simulate_replay_phase(n, r0, r1, x_last, config, place_field_centers, rng)
-    x_last = _record_phase(phases, phase_labels, "Clean Recovery", x, sp)
+    x, represented, sp = simulate_replay_phase(
+        n, r0, r1, x_last, config, place_field_centers, sampler
+    )
+    x_last = _record_phase(phases, phase_labels, PHASE_LABELS[4], x, sp, represented)
 
     # 6. Drift misfit — persistent-velocity walk; decoder assumes memoryless.
     n = bnd[PhaseBoundary.DRIFT_END] - bnd[PhaseBoundary.RECOVERY2_END]
     x = simulate_drift_phase(n, x_last, config, rng)
-    x_last = _record_phase(phases, phase_labels, "Drift Misfit", x, _spikes(x))
+    x_last = _record_phase(phases, phase_labels, PHASE_LABELS[5], x, _spikes(x))
 
-    # 7. Clean recovery 3 — ends by approaching the sparse-population location.
+    # 7. Clean recovery 3 (the matched walk resumes from the nearest grid cell).
     n = bnd[PhaseBoundary.RECOVERY3_END] - bnd[PhaseBoundary.DRIFT_END]
-    x = simulate_sparse_approach_phase(n, x_last, config, rng)
-    x_last = _record_phase(phases, phase_labels, "Clean Recovery", x, _spikes(x))
+    x = sampler.walk(n, x_last, include_start=False)
+    x_last = _record_phase(phases, phase_labels, PHASE_LABELS[6], x, _spikes(x))
 
-    # 8. Sparse population — the animal remains immobile at the location while
-    #    the ordinary ensemble becomes quiet. The baseline transition is still
-    #    used, so the prediction spreads naturally between the isolated sparse
-    #    spike_counts (built below with an independent RNG stream).
-    n = bnd[PhaseBoundary.SPARSE_POP_END] - bnd[PhaseBoundary.RECOVERY3_END]
-    x = np.full(n, config.sparse_position, dtype=float)
+    # 8. Reflected-map misfit — generation is normal; the decoder mirrors the
+    #    map during this window (``DecoderOverrideWindow`` below).
+    n = bnd[PhaseBoundary.REFLECT_END] - bnd[PhaseBoundary.RECOVERY3_END]
+    x = sampler.walk(n, x_last, include_start=False)
+    x_last = _record_phase(phases, phase_labels, PHASE_LABELS[7], x, _spikes(x))
+
+    # 9. Clean recovery 4
+    n = bnd[PhaseBoundary.RECOVERY4_END] - bnd[PhaseBoundary.REFLECT_END]
+    x = sampler.walk(n, x_last, include_start=False)
+    x_last = _record_phase(phases, phase_labels, PHASE_LABELS[8], x, _spikes(x))
+
+    # 10. Sparse population — the trajectory keeps following the decoder's
+    #     transition while the ordinary ensemble becomes quiet; the sparse
+    #     cells' spikes are built below with an independent RNG stream.
+    n = bnd[PhaseBoundary.SPARSE_POP_END] - bnd[PhaseBoundary.RECOVERY4_END]
+    x = sampler.walk(n, x_last, include_start=False)
     sparse_normal_spikes = simulate_spikes_position_tuned(
         x,
         place_field_centers,
@@ -720,17 +847,18 @@ def run_figure03_simulation(
         config.place_field_rate_scale * config.sparse_control_ordinary_rate_scale,
         rng,
     )
-    _record_phase(phases, phase_labels, "Sparse Population", x, sparse_normal_spikes)
+    _record_phase(phases, phase_labels, PHASE_LABELS[9], x, sparse_normal_spikes)
 
-    true_position = np.concatenate([p_x for p_x, _ in phases], axis=0)
-    spike_counts = np.vstack([p_s for _, p_s in phases])  # (n_time, n_normal_cells)
+    true_position = np.concatenate([p_x for p_x, _, _ in phases], axis=0)
+    represented_position = np.concatenate([p_r for _, p_r, _ in phases], axis=0)
+    spike_counts = np.vstack([p_s for _, _, p_s in phases])  # (n_time, n_normal_cells)
 
-    w0 = bnd[PhaseBoundary.RECOVERY3_END]
+    w0 = bnd[PhaseBoundary.RECOVERY4_END]
     w1 = bnd[PhaseBoundary.SPARSE_POP_END]
     sparse_cell_spikes, sparse_centers = build_sparse_population(
-        true_position, config, random_seed, w0, w1
+        represented_position, config, random_seed, w0, w1
     )
-    # (n_time, n_normal_cells + sparse_cell_count)
+    # (n_time, n_normal_cells + n_sparse_cells)
     spike_counts = np.hstack([spike_counts, sparse_cell_spikes])
 
     rate_tables = build_figure03_rate_tables(
@@ -751,6 +879,11 @@ def run_figure03_simulation(
                 firing_rate_table=rate_tables.replay_firing_rates,
             ),
             DecoderOverrideWindow(
+                bnd[PhaseBoundary.RECOVERY3_END],
+                bnd[PhaseBoundary.REFLECT_END],
+                firing_rate_table=rate_tables.reflected_firing_rates,
+            ),
+            DecoderOverrideWindow(
                 w0,
                 w1,
                 firing_rate_table=rate_tables.sparse_population_firing_rates,
@@ -767,17 +900,215 @@ def run_figure03_simulation(
         place_field_rate_scale=config.place_field_rate_scale,
         override_schedule=override_schedule,
         baseline_firing_rates=rate_tables.baseline_firing_rates,
+        hpd_coverage=config.hpd_coverage,
     )
 
-    boundaries = np.cumsum([len(p_x) for p_x, _ in phases]).tolist()
+    boundaries = np.cumsum([len(p_x) for p_x, _, _ in phases]).tolist()
 
     return Figure3SimulationResult(
         config=config,
         position_bins=position_bins,
         true_position=true_position,
+        represented_position=represented_position,
         spike_counts=spike_counts,
         diagnostics=diagnostics,
         phase_labels=tuple(phase_labels),
         phase_boundaries=tuple(boundaries),
         sparse_place_field_centers=tuple(float(c) for c in sparse_centers),
     )
+
+
+@dataclass(frozen=True)
+class MatchedNullSimulationResult:
+    """Result of :func:`run_matched_null_simulation`.
+
+    Attributes
+    ----------
+    position_bins : np.ndarray, shape (n_bins,)
+    true_position : np.ndarray, shape (n_time,)
+        Grid-valued latent trajectory drawn from the decoder's own laws.
+    spike_counts : np.ndarray, shape (n_time, n_cells)
+    diagnostics : DecodingDiagnostics
+        Baseline-decoder output on this session (no override windows).
+    """
+
+    position_bins: NDArray[np.floating]
+    true_position: NDArray[np.floating]
+    spike_counts: NDArray[np.int_]
+    diagnostics: DecodingDiagnostics
+
+
+def run_matched_null_simulation(
+    config: Figure3Config,
+    *,
+    seed: int,
+    n_time_steps: int | None = None,
+) -> MatchedNullSimulationResult:
+    """Simulate and decode one session drawn exactly from the baseline decoder.
+
+    The latent trajectory starts from the decoder's uniform initial law and
+    follows its column-stochastic transition matrix; spikes are Poisson at the
+    decoder's baseline rate table (ordinary place cells plus the sparse
+    population at its baseline gain); the baseline decoder then filters the
+    session with no override windows. Every diagnostic value is therefore a
+    draw under a correctly specified model. These sessions provide the
+    *independent* calibration sample for the HPD/KL flag thresholds and the
+    realized null flag rates; they never share a seed with the evaluated
+    phased realizations.
+
+    Parameters
+    ----------
+    config : Figure3Config
+        Provides the grid, transition, place fields, sparse population, and
+        HPD coverage. ``trajectory_model`` is honored (``continuous_reflected``
+        gives the approximate legacy null for sensitivity checks).
+    seed : int
+        Random seed for this session.
+    n_time_steps : int, optional
+        Session length; defaults to the opening-baseline length
+        ``config.phase_boundaries[PhaseBoundary.REMAP_START]``.
+    """
+    if config.place_field_centers is None:
+        raise ValueError("config.place_field_centers must be initialized")
+    n = (
+        config.phase_boundaries[PhaseBoundary.REMAP_START]
+        if n_time_steps is None
+        else int(n_time_steps)
+    )
+    if n < 1:
+        raise ValueError(f"n_time_steps must be >= 1; got {n}")
+    rng = np.random.default_rng(seed)
+    position_bins = _position_grid(config)
+    transition_matrix = gaussian_transition_matrix(position_bins, config.prediction_step_std)
+    sampler = _TrajectorySampler(config, position_bins, transition_matrix, rng)
+    x = sampler.walk(n, sampler.draw_initial_position(), include_start=True)
+    spikes = simulate_spikes_position_tuned(
+        x,
+        config.place_field_centers,
+        config.place_field_std,
+        config.place_field_rate_scale,
+        rng,
+    )
+    sparse_spikes, sparse_centers = build_sparse_population(x, config, seed, n, n)
+    spike_counts = np.hstack([spikes, sparse_spikes])
+    rate_tables = build_figure03_rate_tables(
+        position_bins, config.place_field_centers, sparse_centers, config
+    )
+    diagnostics = decode_with_diagnostics(
+        spike_counts=spike_counts,
+        position_bins=position_bins,
+        transition_matrix=transition_matrix,
+        place_field_centers=config.place_field_centers,
+        place_field_std=config.place_field_std,
+        place_field_rate_scale=config.place_field_rate_scale,
+        baseline_firing_rates=rate_tables.baseline_firing_rates,
+        hpd_coverage=config.hpd_coverage,
+    )
+    return MatchedNullSimulationResult(
+        position_bins=position_bins,
+        true_position=x,
+        spike_counts=spike_counts,
+        diagnostics=diagnostics,
+    )
+
+
+def _history_phase_rate_ratio(
+    config: Figure3Config,
+    gain: float,
+    trajectories: list[NDArray[np.floating]],
+    seeds: list[int],
+) -> float:
+    """Ratio of the history process's marginal rate to the Poisson baseline.
+
+    Sums the history-conditional Poisson means actually used by the
+    generator (with the place-field scale multiplied by ``gain``) over the
+    supplied calibration trajectories, divided by the unmodulated Poisson
+    expected counts along the same trajectories.
+    """
+    assert config.place_field_centers is not None
+    modulated = 0.0
+    baseline = 0.0
+    for x, seed in zip(trajectories, seeds, strict=True):
+        rng = np.random.default_rng(np.random.SeedSequence([seed, 7]))
+        _, means = simulate_spikes_history_dependent(
+            x,
+            config.place_field_centers,
+            config.place_field_std,
+            config.place_field_rate_scale * gain,
+            rng,
+            refractory_steps=config.history_refractory_steps,
+            burst_window=config.history_burst_window,
+            burst_factor=config.history_burst_factor,
+            return_conditional_means=True,
+        )
+        modulated += float(means.sum())
+        baseline += float(
+            place_field_rates(
+                x, config.place_field_centers, config.place_field_std, config.place_field_rate_scale
+            ).sum()
+        )
+    return modulated / baseline
+
+
+def estimate_history_rate_matching_gain(
+    config: Figure3Config,
+    *,
+    n_calibration_seeds: int = 10,
+    first_seed: int = 5_001,
+    tolerance: float = 1e-3,
+) -> tuple[float, float]:
+    """Estimate the gain that matches the history process's marginal rate.
+
+    Draws ``n_calibration_seeds`` matched-null trajectories of the history
+    phase's length (independent of every evaluation seed), then bisects the
+    generator gain until the history-modulated process's summed conditional
+    Poisson means equal the unmodulated Poisson expected counts along the same
+    trajectories to within ``tolerance`` (relative). Using the conditional
+    means rather than sampled counts removes Poisson noise from the target,
+    so the estimate depends only on the history mechanism and the occupancy
+    of the calibration trajectories.
+
+    Returns
+    -------
+    gain : float
+        Estimated rate-matching gain.
+    achieved_ratio : float
+        Marginal-rate ratio (history / Poisson) realized at that gain on the
+        calibration trajectories; the residual mismatch is ``achieved_ratio - 1``.
+    """
+    if n_calibration_seeds < 1:
+        raise ValueError("n_calibration_seeds must be >= 1")
+    n_steps = (
+        config.phase_boundaries[PhaseBoundary.HIST_DEP_END]
+        - config.phase_boundaries[PhaseBoundary.RECOVERY1_END]
+    )
+    position_bins = _position_grid(config)
+    transition_matrix = gaussian_transition_matrix(position_bins, config.prediction_step_std)
+    seeds = [first_seed + k for k in range(n_calibration_seeds)]
+    trajectories: list[NDArray[np.floating]] = []
+    for seed in seeds:
+        sampler = _TrajectorySampler(
+            config, position_bins, transition_matrix, np.random.default_rng(seed)
+        )
+        trajectories.append(
+            sampler.walk(n_steps, sampler.draw_initial_position(), include_start=True)
+        )
+
+    def ratio(gain: float) -> float:
+        return _history_phase_rate_ratio(config, gain, trajectories, seeds)
+
+    lower, upper = 0.05, 1.0
+    if ratio(upper) < 1.0:
+        # The modulation lowers the rate at this configuration; no gain <= 1 matches.
+        return 1.0, ratio(1.0)
+    for _ in range(60):
+        mid = 0.5 * (lower + upper)
+        r = ratio(mid)
+        if abs(r - 1.0) <= tolerance:
+            return mid, r
+        if r > 1.0:
+            upper = mid
+        else:
+            lower = mid
+    mid = 0.5 * (lower + upper)
+    return mid, ratio(mid)

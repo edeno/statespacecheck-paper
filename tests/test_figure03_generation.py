@@ -13,7 +13,41 @@ from matplotlib.figure import Figure
 from statespacecheck_paper import figure03_generation
 from statespacecheck_paper.diagnostics import DiagnosticThresholds
 from statespacecheck_paper.figure03_protocol import Figure3Config
-from statespacecheck_paper.figure03_summary import Figure3RealizationSummary
+from statespacecheck_paper.figure03_summary import Figure3Calibration, Figure3RealizationSummary
+
+
+def _summary(n_realizations: int, n_columns: int = 8) -> Figure3RealizationSummary:
+    """A well-shaped placeholder summary with an independent calibration."""
+    calibration = Figure3Calibration(
+        diagnostic_thresholds=DiagnosticThresholds(
+            hpd_overlap=0.0, kl_divergence=2.0, predictive_pvalue=0.05
+        ),
+        n_calibration_realizations=3,
+        first_calibration_seed=1001,
+        calibration_steps_per_session=6000,
+        n_pooled_events=900,
+        pooled_null_flag_percentages=np.array([1.5, 2.6, 1.0]),
+        per_realization_null_flag_percentages=np.ones((3, 3)),
+        hpd_threshold_tie_percent=1.5,
+        rank_pvalue_tail_percentages=np.array([0.3, 2.6, 4.7]),
+    )
+    return Figure3RealizationSummary(
+        calibration=calibration,
+        median_flag_percentages=np.zeros((3, n_columns)),
+        flag_percentages_by_realization=np.zeros((n_realizations, 3, n_columns)),
+        event_counts_by_realization=np.ones((n_realizations, n_columns), dtype=int),
+        pooled_flag_percentages=np.zeros((3, n_columns)),
+        median_decoding_accuracy=np.zeros((4, n_columns)),
+        decoding_accuracy_by_realization=np.zeros((n_realizations, 4, n_columns)),
+        flag_percentage_standard_errors=np.ones((3, n_columns)),
+        decoding_accuracy_standard_errors=np.ones((4, n_columns)),
+        replay_represented_accuracy=np.zeros((n_realizations, 2)),
+        phase_spike_rates_by_realization=np.full((n_realizations, n_columns), 500.0),
+        sparse_cell_flag_percentages_by_realization=np.full((n_realizations, 3), np.nan),
+        sparse_cell_event_counts_by_realization=np.zeros(n_realizations, dtype=int),
+        matched_null_rank_pvalue_tail_percentages=np.array([0.3, 2.6, 4.7]),
+        n_realizations=n_realizations,
+    )
 
 
 def test_generation_threads_one_config_through_simulation_summary_and_plot(
@@ -23,22 +57,12 @@ def test_generation_threads_one_config_through_simulation_summary_and_plot(
     config = Figure3Config(drift_momentum=0.91)
     simulation_result = SimpleNamespace(
         true_position=np.zeros(5),
+        represented_position=np.zeros(5),
         spike_counts=np.zeros((5, 2), dtype=np.int64),
         diagnostics=object(),
         sparse_place_field_centers=np.array([0.5]),
     )
-    realization_summary = Figure3RealizationSummary(
-        diagnostic_thresholds=DiagnosticThresholds(
-            hpd_overlap=0.05,
-            kl_divergence=2.0,
-            predictive_pvalue=0.05,
-        ),
-        median_flag_percentages=np.zeros((3, 6)),
-        median_decoding_accuracy=np.zeros((1, 6)),
-        flag_percentage_standard_errors=np.ones((3, 6)),
-        decoding_accuracy_standard_errors=np.ones((1, 6)),
-        n_realizations=7,
-    )
+    realization_summary = _summary(7)
 
     seen: dict[str, Any] = {}
 
@@ -49,9 +73,22 @@ def test_generation_threads_one_config_through_simulation_summary_and_plot(
     monkeypatch.setattr(figure03_generation, "run_figure03_simulation", _simulate)
     monkeypatch.setattr(
         figure03_generation,
+        "estimate_calibration_thresholds",
+        lambda received, *, n_calibration_realizations, n_jobs: (
+            seen.update(
+                calibration_config=received,
+                n_calibration_realizations=n_calibration_realizations,
+            )
+            or realization_summary.calibration
+        ),
+    )
+    monkeypatch.setattr(
+        figure03_generation,
         "estimate_realization_summary",
-        lambda received, *, n_realizations: (
-            seen.update(summary_config=received, n_realizations=n_realizations)
+        lambda received, *, calibration, n_realizations, n_jobs: (
+            seen.update(
+                summary_config=received, n_realizations=n_realizations, calibration=calibration
+            )
             or realization_summary
         ),
     )
@@ -75,12 +112,16 @@ def test_generation_threads_one_config_through_simulation_summary_and_plot(
         lambda path, payload: (seen.update(summary_path=path, summary_payload=payload) or path),
     )
 
-    figure03_generation.generate_figure03(config, n_realizations=7)
+    figure03_generation.generate_figure03(config, n_realizations=7, n_calibration_realizations=3)
     plt.close(fig)
 
     assert seen["simulation_config"] is config
+    assert seen["calibration_config"] is config
     assert seen["summary_config"] is config
     assert seen["n_realizations"] == 7
+    assert seen["n_calibration_realizations"] == 3
+    assert seen["calibration"] is realization_summary.calibration
+    assert seen["compose_kwargs"]["flag_percentages_by_realization"].shape == (7, 3, 8)
     assert seen["compose_kwargs"]["config"] is config
     assert seen["save_kwargs"]["fig"] is fig
     assert seen["save_kwargs"]["close"] is True
@@ -107,18 +148,7 @@ def test_default_recipe_uses_manuscript_drift_momentum(
 def test_summary_payload_preserves_labels_rules_and_source_provenance(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    summary = Figure3RealizationSummary(
-        diagnostic_thresholds=DiagnosticThresholds(
-            hpd_overlap=0.0,
-            kl_divergence=2.0,
-            predictive_pvalue=0.05,
-        ),
-        median_flag_percentages=np.zeros((3, 6)),
-        median_decoding_accuracy=np.zeros((1, 6)),
-        flag_percentage_standard_errors=np.ones((3, 6)),
-        decoding_accuracy_standard_errors=np.ones((1, 6)),
-        n_realizations=2,
-    )
+    summary = _summary(2)
     source = {
         "statespacecheck_paper_version": "test",
         "source_tree_sha256": "a" * 64,
@@ -132,17 +162,34 @@ def test_summary_payload_preserves_labels_rules_and_source_provenance(
     )
     flag_rules = cast(dict[str, dict[str, str | float]], payload["flag_rules"])
 
-    assert payload["schema_version"] == 5
-    assert payload["accuracy_metric_order"] == ["median_absolute_error"]
-    assert np.asarray(payload["median_decoding_accuracy"]).shape == (1, 6)
+    assert payload["schema_version"] == 6
+    assert payload["accuracy_metric_order"] == [
+        "median_absolute_error",
+        "filtered_hpd_coverage_percent",
+        "median_filtered_hpd_size",
+        "median_predictive_hpd_size",
+    ]
+    assert np.asarray(payload["median_decoding_accuracy"]).shape == (4, 8)
     assert payload["condition_labels"] == [
-        "Well-specified",
+        "Matched null",
+        "Recovery",
         "Remap",
         "History-dep.",
         "Replay",
         "Drift",
+        "Reflected map",
         "Sparse population",
     ]
+    assert payload["calibration"]["count"] == 3
+    assert payload["calibration"]["first_seed"] == 1001
+    assert payload["calibration"]["pooled_null_flag_percentages"] == {
+        "hpd_overlap": 1.5,
+        "predictive_pvalue": 2.6,
+        "kl_divergence": 1.0,
+    }
+    # NaN per-realization entries (a realization with no sparse events) serialize as null.
+    sparse = cast(dict[str, Any], payload["sparse_population"])
+    assert sparse["sparse_cell_flag_percentages_by_realization"][0] == [None, None, None]
     assert flag_rules == {
         "hpd_overlap": {"comparison": "less_than_or_equal", "threshold": 0.0},
         "predictive_pvalue": {"comparison": "less_than_or_equal", "threshold": 0.05},
@@ -151,9 +198,10 @@ def test_summary_payload_preserves_labels_rules_and_source_provenance(
     # The thresholds are numbers; this block records the rule that produced
     # them, which the Methods text quotes as 1st / 99th percentiles.
     assert payload["threshold_provenance"] == {
-        "baseline_end_index": 6000,
-        "hpd_overlap": {"rule": "pooled_baseline_quantile", "quantile": 0.01},
-        "kl_divergence": {"rule": "pooled_baseline_quantile", "quantile": 0.99},
+        "calibration_steps_per_session": 6000,
+        "calibration_sample": "independent_matched_null_sessions",
+        "hpd_overlap": {"rule": "pooled_calibration_quantile", "quantile": 0.01},
+        "kl_divergence": {"rule": "pooled_calibration_quantile", "quantile": 0.99},
         "predictive_pvalue": {"rule": "fixed_cutoff", "cutoff": 0.05},
     }
     assert payload["provenance"] == {"source": source}

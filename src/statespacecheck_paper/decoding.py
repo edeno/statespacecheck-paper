@@ -574,6 +574,7 @@ def decode_with_diagnostics(
     override_schedule: DecoderOverrideSchedule | None = None,
     baseline_firing_rates: NDArray[np.floating] | None = None,
     initial_state_distribution: NDArray[np.floating] | None = None,
+    hpd_coverage: float = 0.95,
 ) -> DecodingDiagnostics:
     """Run the Bayesian filter with per-time, per-cell diagnostics.
 
@@ -636,6 +637,8 @@ def decode_with_diagnostics(
         The initial state law ``p(x_0)`` used as the ``t=0`` prediction. Must
         be a finite nonnegative distribution summing to 1. Defaults to the
         uniform distribution over ``position_bins``.
+    hpd_coverage : float, default 0.95
+        Coverage of the HPD regions compared by the HPD-overlap diagnostic.
 
     Returns
     -------
@@ -806,7 +809,7 @@ def decode_with_diagnostics(
         rates,
         spike_time_ind,
         spike_cell_ind,
-        coverage=0.95,
+        coverage=hpd_coverage,
     )
 
     overridden = _apply_window_rate_overrides(
@@ -815,6 +818,7 @@ def decode_with_diagnostics(
         override_schedule.windows,
         spike_time_ind,
         spike_cell_ind,
+        coverage=hpd_coverage,
     )
     assert overridden.hpd_overlap is not None  # dense matrices requested above
     assert overridden.kl_divergence is not None

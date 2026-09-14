@@ -48,7 +48,7 @@ def _tiny_params():
     from statespacecheck_paper.figure03_protocol import Figure3Config
 
     return Figure3Config(
-        phase_boundaries=(200, 300, 400, 500, 600, 700, 800, 900),
+        phase_boundaries=(200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100),
     )
 
 

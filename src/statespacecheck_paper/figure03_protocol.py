@@ -1,12 +1,15 @@
 """Figure-3 experimental protocol: phase ladder and immutable configuration.
 
-The figure-3 simulation walks a hippocampal-style decoder through three misfit
-conditions (remap, history-dependent firing, drift) and two specificity controls
-(a replay event embedded in clean-recovery 2, and a final sparse-population
-epoch), separated by clean-recovery windows. This module holds the immutable
-experimental configuration (:class:`Figure3Config`), the phase-transition index
-enum (:class:`PhaseBoundary`), the canonical ordered phase labels
-(:data:`PHASE_LABELS`), and the replay-window step-bound helper
+The figure-3 simulation walks a hippocampal-style decoder through four misfit
+conditions (an incoherent place-field remap, history-dependent firing, drift,
+and a coherent reflected map) and two controls (a replay event embedded in
+clean-recovery 2, and a final matched low-information regime), separated by
+clean-recovery windows. Outside the perturbed windows the latent trajectory is
+drawn from the decoder's own discrete transition matrix and initial law, so
+those windows are an exactly matched reference for the decoder. This module
+holds the immutable experimental configuration (:class:`Figure3Config`), the
+phase-transition index enum (:class:`PhaseBoundary`), the canonical ordered
+phase labels (:data:`PHASE_LABELS`), and the replay-window step-bound helper
 (:func:`compute_replay_step_window`). It imports no sibling paper module.
 """
 
@@ -14,28 +17,33 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import IntEnum
+from typing import Literal
 
 import numpy as np
 from numpy.typing import NDArray
+
+TrajectoryModel = Literal["discrete_matched", "continuous_reflected"]
 
 
 class PhaseBoundary(IntEnum):
     """Indices into :attr:`Figure3Config.phase_boundaries`.
 
     Each member is the position of one figure-3 phase transition in
-    the 8-tuple. Use as ``config.phase_boundaries[PhaseBoundary.REMAP_END]``
+    the 10-tuple. Use as ``config.phase_boundaries[PhaseBoundary.REMAP_END]``
     rather than indexing by literal integer, so a phase-ladder
     reshuffle stays compile-time-checkable.
     """
 
-    REMAP_START = 0  # end of clean baseline
+    REMAP_START = 0  # end of the opening matched-null baseline
     REMAP_END = 1  # end of remap misfit
     RECOVERY1_END = 2  # end of clean recovery 1
     HIST_DEP_END = 3  # end of history-dependent firing misfit
-    RECOVERY2_END = 4  # end of clean recovery 2
+    RECOVERY2_END = 4  # end of clean recovery 2 (contains the replay control)
     DRIFT_END = 5  # end of drift misfit
     RECOVERY3_END = 6  # end of clean recovery 3
-    SPARSE_POP_END = 7  # end of sparse-population control
+    REFLECT_END = 7  # end of the coherent reflected-map misfit
+    RECOVERY4_END = 8  # end of clean recovery 4
+    SPARSE_POP_END = 9  # end of the matched low-information (sparse) regime
 
 
 # Default phase ladder in 1-ms steps. Used as the default of
@@ -50,18 +58,32 @@ _DEFAULT_PHASE_BOUNDARIES: tuple[int, ...] = (
     22_000,
     26_000,
     30_000,
-    32_000,
+    34_000,
+    38_000,
+    42_000,
 )
+
+# History-dependence rate-matching gain. The refractory/burst modulation raises
+# a cell's marginal rate above its Poisson place-field mean (the burst window
+# outweighs the single suppressed step). Scaling the generator's place-field
+# rate by this gain brings the history-phase marginal rate back to the Poisson
+# baseline on average over matched-null calibration trajectories, so the
+# history condition perturbs the temporal structure of spiking rather than
+# its overall rate. The value was estimated by
+# ``figure03_calibration.estimate_history_rate_matching_gain`` on independent
+# calibration seeds and is pinned here (the calibration test re-derives it);
+# the residual per-phase rate difference is reported in the figure summary.
+DEFAULT_HISTORY_RATE_MATCHING_GAIN = 0.512
 
 
 @dataclass(frozen=True)
 class Figure3Config:
     """Parameters for the figure-3 decoding simulation.
 
-    The simulation walks through three misfit conditions plus two
-    specificity controls — a replay event embedded in the second clean-
-    recovery window and a sparse-population epoch — separated by
-    clean-recovery windows. Time steps are
+    The simulation walks through four misfit conditions plus two controls —
+    a replay event embedded in the second clean-recovery window and a final
+    matched low-information regime — separated by clean-recovery windows in
+    which the trajectory follows the decoder's own transition law. Time steps are
     1 ms by convention — the simulation math itself is dt-agnostic, but the
     default parameters
     (`place_field_rate_scale=5.0`, `history_refractory_steps`,
@@ -70,7 +92,8 @@ class Figure3Config:
 
     **Timeline Structure** (default; all indices in 1-ms steps):
 
-    - 0–6k: Clean baseline
+    - 0–6k: Matched-null baseline (trajectory drawn from the decoder's own
+      initial law and transition matrix)
     - 6k–10k: Remap misfit (4 s)
     - 10k–14k: Clean recovery
     - 14k–18k: History-dependent firing misfit (4 s)
@@ -78,7 +101,10 @@ class Figure3Config:
       ``[replay_start_fraction, replay_end_fraction)`` sub-window
     - 22k–26k: Drift misfit (4 s)
     - 26k–30k: Clean recovery
-    - 30k–32k: Sparse-population control (2 s)
+    - 30k–34k: Reflected-map misfit (4 s; a coherent wrong map)
+    - 34k–38k: Clean recovery
+    - 38k–42k: Matched low-information regime (4 s; quiet ordinary
+      ensemble, sparse narrow cells, trajectory still matched)
 
     Parameters
     ----------
@@ -90,6 +116,20 @@ class Figure3Config:
         whole tuple — partial overrides aren't supported because the
         invariant the dataclass enforces ("strictly increasing ladder")
         only makes sense over the full ladder.
+    trajectory_model : {"discrete_matched", "continuous_reflected"}
+        How the latent position evolves in the unperturbed phases.
+        ``"discrete_matched"`` (default) samples the position on the decoder's
+        grid from the decoder's own column-stochastic transition matrix
+        (:func:`~statespacecheck_paper.simulation.gaussian_transition_matrix`,
+        a truncated-and-renormalized Gaussian kernel) starting from the
+        decoder's uniform initial law, so the well-specified phases are an
+        *exactly* matched null. ``"continuous_reflected"`` retains the earlier
+        continuous Gaussian walk with reflecting boundaries, whose reflected
+        continuous increments only approximate the decoder's grid transition;
+        it is kept as an explicitly approximate benchmark for sensitivity
+        checks.
+    hpd_coverage : float, default 0.95
+        Coverage of the HPD regions compared by the HPD-overlap diagnostic.
     prediction_step_std : float, default 0.5
         Decoder's baseline dynamics standard deviation.
     drift_momentum : float, default 0.88
@@ -100,16 +140,23 @@ class Figure3Config:
         decoder assumes ``x[t] = x[t-1] + N(0, prediction_step_std)`` (no
         persistent velocity).
     history_refractory_steps : int, default 1
-        Hard-refractory length, in steps, during the history-dependence
-        misfit: a cell that just fired is silenced for this many steps.
-        At 1 ms/step this is the 1 ms refractory period reported in the
-        Methods.
+        Post-spike suppression length, in steps, during the history-dependence
+        misfit: a cell's Poisson mean is zero for this many steps after a
+        spike-containing step. At 1 ms/step this is the 1 ms suppressed step
+        reported in the Methods (a binned count process, not a hard
+        refractory point process; several spikes can share one step).
     history_burst_window : tuple of int, default (2, 10)
         Inclusive ``(start, end)`` step offsets after a spike over which the
         cell's rate is multiplied by ``history_burst_factor`` — the 2–10 ms
         burst window at 1 ms/step.
     history_burst_factor : float, default 3.0
         Rate multiplier applied inside ``history_burst_window``.
+    history_rate_matching_gain : float, default ``DEFAULT_HISTORY_RATE_MATCHING_GAIN``
+        Multiplies the generator's place-field rate during the history
+        phase so that the modulated process's marginal rate approximately
+        matches the unmodulated Poisson baseline. Set to ``1.0`` for the
+        unmatched process. The decoder always uses the unmodulated baseline
+        rates, so the misfit is the temporal dependence itself.
     position_min, position_max, position_bin_size : int
         Position grid bounds and step.
     place_field_std : float, default 10.0
@@ -126,6 +173,9 @@ class Figure3Config:
         Specification of which cells get remapped during the remap
         window. By default, all eleven cells participate in one fixed
         permutation that moves every field by at least three center spacings.
+        The reflected-map misfit needs no specification: the decoder mirrors
+        every center about the track midpoint
+        (``position_min + position_max - mu_c``), a coherent wrong map.
     replay_start_fraction, replay_end_fraction : float, default 0.25, 0.75
         Fractional bounds of the replay sub-window within clean-recovery 2.
         The coherent sweep fires over ``[replay_start_fraction,
@@ -135,34 +185,28 @@ class Figure3Config:
         toward the farther track end and returns.
     replay_place_field_rate_scale : float, default 20.0
         Elevated place-field rate scale applied during the replay sweep.
-    sparse_position : float, default 30.0
-        Fixed location where the sparse population is active in the final
-        control phase.
-    sparse_approach_duration_steps : int, default 1000
-        Number of steps at the end of clean recovery 3 used for a gradual
-        approach to ``sparse_position``.
     sparse_control_ordinary_rate_scale : float, default 0.0
         Multiplicative rate applied to the eleven ordinary place cells during
-        the sparse-population control. Zero represents a silent ordinary
-        ensemble.
-    sparse_cell_count : int, default 5
-        Number of narrow cells forming the sparse population clustered at
-        ``sparse_position``.
-    sparse_place_field_spread : float, default 1.5
-        Half-range (position units) over which the ``sparse_cell_count`` field
-        centers are spread symmetrically about ``sparse_position``. Zero
-        stacks all centers at ``sparse_position``.
+        the low-information regime, in both generation and decoding. Zero
+        represents a silent ordinary ensemble.
+    sparse_place_field_centers : tuple of float, default (0, 10, ..., 100)
+        Field centers of the narrow sparse-population cells, spread along the
+        track (one per ordinary field center) so the matched trajectory keeps
+        visiting them.
     sparse_place_field_std : float, default 2.0
         Standard deviation, in position units, of each narrow sparse-population
         field.
-    sparse_cell_peak_rate_per_step : float, default 0.001
-        Per-cell peak firing rate in spikes per 1-ms step (1 Hz). Sized so the
-        population's *aggregate* rate stays ~5 Hz: with more cells firing, a
-        higher aggregate rate would shorten the gaps between spikes and let the
-        prediction re-concentrate, suppressing the KL response that the sparse,
-        immobile regime is meant to illustrate.
+    sparse_cell_peak_rate_per_step : float, default 0.005
+        Reference per-cell peak firing rate in spikes per 1-ms step (5 Hz),
+        multiplied per cell by ``sparse_cell_rate_multipliers``. Sized so the
+        population's aggregate rate stays low (a few spikes per second) and
+        its spikes temporally isolated, letting the prediction spread between
+        them.
+    sparse_cell_rate_multipliers : tuple of float, default see source
+        Heterogeneous per-cell gains (0.5-2) on the reference peak rate, one
+        per sparse cell, so the active marks are not equally probable.
     sparse_cell_baseline_rate_fraction : float, default 0.01
-        Fraction of the active per-cell rate used before the final control.
+        Fraction of the active per-cell rate used before the final regime.
 
     Examples
     --------
@@ -170,7 +214,7 @@ class Figure3Config:
     >>> config.phase_boundaries[PhaseBoundary.REMAP_START]
     6000
     >>> config.phase_boundaries[PhaseBoundary.SPARSE_POP_END]
-    32000
+    42000
     >>> config.place_field_centers
     array([  0.,  10.,  20.,  30.,  40.,  50.,  60.,  70.,  80.,  90., 100.])
     """
@@ -179,18 +223,25 @@ class Figure3Config:
     # strictly increasing; validated in __post_init__.
     phase_boundaries: tuple[int, ...] = _DEFAULT_PHASE_BOUNDARIES
 
+    # Latent trajectory law in the unperturbed phases and HPD coverage.
+    trajectory_model: TrajectoryModel = "discrete_matched"
+    hpd_coverage: float = 0.95
+
     # Decoder & dynamics parameters
     prediction_step_std: float = 0.5  # baseline dynamics std
     drift_momentum: float = 0.88  # AR(1) coefficient for drift-misfit trajectory
 
-    # History-dependence misfit: hard refractory + post-spike burst window.
-    # At the 1-ms step these are the 1 ms refractory, 2-10 ms burst window,
-    # and threefold rate increase reported in the Methods. They live on the
-    # config (rather than as ``simulate_spikes_history_dependent`` defaults)
-    # so the published summary records the values the figure actually used.
+    # History-dependence misfit: post-spike suppression + burst window.
+    # At the 1-ms step these are the 1 ms suppressed step, 2-10 ms burst
+    # window, and threefold rate increase reported in the Methods. They live
+    # on the config (rather than as ``simulate_spikes_history_dependent``
+    # defaults) so the published summary records the values the figure
+    # actually used. ``history_rate_matching_gain`` rescales the generator so
+    # the phase's marginal rate matches the Poisson baseline on average.
     history_refractory_steps: int = 1
     history_burst_window: tuple[int, int] = (2, 10)
     history_burst_factor: float = 3.0
+    history_rate_matching_gain: float = DEFAULT_HISTORY_RATE_MATCHING_GAIN
 
     # Position grid
     position_min: int = 0
@@ -242,22 +293,33 @@ class Figure3Config:
     replay_speed_per_step: float = 0.5
     replay_place_field_rate_scale: float = 20.0
 
-    # Sparse-population control. The animal approaches a fixed location at the
-    # end of clean recovery 3, then remains there (immobile) while the ordinary
-    # ensemble becomes quiet. A small population of narrow, sharply tuned cells
-    # clustered at that location fires sparsely, each cell an independent
-    # Poisson process increasing from a small baseline gain to its full rate.
-    # With little intervening population information, the predictive spreads
-    # between the isolated spikes; each spike supplies a narrow likelihood
-    # contained in that broad prediction. This is a correctly modeled,
-    # low-activity observation regime, not a transition-model perturbation.
-    sparse_position: float = 30.0
-    sparse_approach_duration_steps: int = 1_000
+    # Matched low-information regime. The trajectory keeps following the
+    # decoder's transition matrix while the ordinary ensemble becomes quiet.
+    # A small population of narrow, sharply tuned cells spread along the
+    # track fires sparsely, each cell an independent Poisson process increasing
+    # from a small baseline gain to its full (heterogeneous) rate. With little
+    # intervening population information, the predictive spreads between the
+    # isolated spikes; each spike supplies a narrow likelihood inside that
+    # broad prediction. Both the transition and the observation model are the
+    # decoder's own, so any flag here is a false positive against a correct
+    # model.
     sparse_control_ordinary_rate_scale: float = 0.0
-    sparse_cell_count: int = 5
-    sparse_place_field_spread: float = 1.5
+    sparse_place_field_centers: tuple[float, ...] = tuple(float(c) for c in range(0, 101, 10))
     sparse_place_field_std: float = 2.0
-    sparse_cell_peak_rate_per_step: float = 0.001  # spikes/ms = 1 Hz/cell (~5 Hz aggregate)
+    sparse_cell_peak_rate_per_step: float = 0.005  # spikes/ms = 5 Hz reference peak
+    sparse_cell_rate_multipliers: tuple[float, ...] = (
+        0.5,
+        1.0,
+        2.0,
+        0.75,
+        1.5,
+        0.5,
+        1.0,
+        2.0,
+        0.75,
+        1.5,
+        1.0,
+    )
     sparse_cell_baseline_rate_fraction: float = 0.01
 
     def __post_init__(self) -> None:
@@ -302,28 +364,53 @@ class Figure3Config:
         centers.setflags(write=False)
         object.__setattr__(self, "place_field_centers", centers)
 
-        if not (self.position_min <= self.sparse_position <= self.position_max):
+        if self.trajectory_model not in ("discrete_matched", "continuous_reflected"):
             raise ValueError(
-                f"sparse_position must lie in [{self.position_min}, {self.position_max}]; "
-                f"got {self.sparse_position}."
+                "trajectory_model must be 'discrete_matched' or 'continuous_reflected'; "
+                f"got {self.trajectory_model!r}."
             )
-        if self.sparse_approach_duration_steps < 0:
+        if not (0.0 < self.hpd_coverage < 1.0):
+            raise ValueError(f"hpd_coverage must lie in (0, 1); got {self.hpd_coverage}.")
+        if not (
+            np.isfinite(self.history_rate_matching_gain) and self.history_rate_matching_gain > 0.0
+        ):
             raise ValueError(
-                f"sparse_approach_duration_steps must be non-negative; "
-                f"got {self.sparse_approach_duration_steps}."
+                "history_rate_matching_gain must be positive; "
+                f"got {self.history_rate_matching_gain}."
             )
         if not (0.0 <= self.sparse_control_ordinary_rate_scale <= 1.0):
             raise ValueError(
                 "sparse_control_ordinary_rate_scale must lie in [0, 1]; "
                 f"got {self.sparse_control_ordinary_rate_scale}."
             )
-        if self.sparse_cell_count < 1:
-            raise ValueError(f"sparse_cell_count must be >= 1; got {self.sparse_cell_count}.")
-        if not np.isfinite(self.sparse_place_field_spread) or self.sparse_place_field_spread < 0.0:
+        sparse_centers = np.asarray(self.sparse_place_field_centers, dtype=float)
+        if sparse_centers.ndim != 1 or sparse_centers.size < 1:
+            raise ValueError("sparse_place_field_centers must contain at least one center.")
+        if not np.all(np.isfinite(sparse_centers)) or np.any(
+            (sparse_centers < self.position_min) | (sparse_centers > self.position_max)
+        ):
             raise ValueError(
-                f"sparse_place_field_spread must be finite and non-negative; "
-                f"got {self.sparse_place_field_spread}."
+                "sparse_place_field_centers must lie in "
+                f"[{self.position_min}, {self.position_max}]; "
+                f"got {self.sparse_place_field_centers}."
             )
+        multipliers = np.asarray(self.sparse_cell_rate_multipliers, dtype=float)
+        if multipliers.shape != sparse_centers.shape:
+            raise ValueError(
+                "sparse_cell_rate_multipliers must have one entry per sparse cell; "
+                f"got {multipliers.size} for {sparse_centers.size} centers."
+            )
+        if not np.all(np.isfinite(multipliers)) or np.any(multipliers <= 0.0):
+            raise ValueError(
+                "sparse_cell_rate_multipliers must be positive; "
+                f"got {self.sparse_cell_rate_multipliers}."
+            )
+        object.__setattr__(
+            self, "sparse_place_field_centers", tuple(float(c) for c in sparse_centers)
+        )
+        object.__setattr__(
+            self, "sparse_cell_rate_multipliers", tuple(float(m) for m in multipliers)
+        )
         if not np.isfinite(self.sparse_place_field_std) or self.sparse_place_field_std <= 0.0:
             raise ValueError(
                 f"sparse_place_field_std must be positive; got {self.sparse_place_field_std}."
@@ -371,12 +458,14 @@ class Figure3Config:
 # tuple. Tests and downstream code import this tuple rather than re-typing
 # the strings.
 PHASE_LABELS: tuple[str, ...] = (
-    "Clean Baseline",
+    "Matched Null Baseline",
     "Remap Misfit",
     "Clean Recovery",
     "History-Dependent Firing",
     "Clean Recovery",
     "Drift Misfit",
+    "Clean Recovery",
+    "Reflected Map Misfit",
     "Clean Recovery",
     "Sparse Population",
 )

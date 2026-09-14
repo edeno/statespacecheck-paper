@@ -1,24 +1,29 @@
-"""Generate Figure 3: per-spike diagnostics across an 8-phase simulation.
+"""Generate Figure 3: per-spike diagnostics across a 10-phase simulation.
 
-Steps a Bayesian decoder through three model-misfit conditions (remap,
-history-dependent firing, drift) and two specificity controls (a replay event
-and a sparse-population epoch), separated by clean-recovery windows, chosen to
-span the metric-disagreement space (which misfits each of HPD overlap, KL
-divergence, and the rank-based predictive p-value detects vs. misses).
+Steps a Bayesian decoder through four model-misfit conditions (an incoherent
+remap, history-dependent firing, drift, a coherent reflected map) and two
+controls (a replay event and a matched low-information regime), separated by
+clean-recovery windows in which the latent trajectory follows the decoder's own
+transition law. The conditions span the metric-disagreement space (which
+interventions each of HPD overlap, the rank-based predictive p-value, and KL
+divergence flags, and at what rate under a matched null).
 
 The simulation + decode pipeline lives in
 :func:`statespacecheck_paper.figure03_simulation.run_figure03_simulation`; this
-module adds the pooled-realization threshold/summary estimate and the figure
-composition on top, so the same simulation arrays drive both the static figure
-here and the figure-3 simulation cache consumed by the interactive viewer.
+module adds the independently calibrated thresholds, the pooled-realization
+summary, and the figure composition on top, so the same simulation arrays drive
+both the static figure here and the figure-3 simulation cache consumed by the
+interactive viewer.
 
 Panel (a) is a time-series block for a single realization (seed
 ``config.random_seed``); panel (b) is a heatmap of the percent of spike events
-flagged per phase per metric, reported as the median across ``N_REALIZATIONS``
-independent realizations. Both the flag thresholds and the panel-(b)
-percentages are stabilized by pooling ``N_REALIZATIONS`` realizations via
-:func:`statespacecheck_paper.figure03_summary.estimate_realization_summary`,
-rather than relying on a single noisy run.
+flagged per condition per metric, reported as the median across
+``N_REALIZATIONS`` independent realizations, with the filtered-posterior
+accuracy rows beneath; panel (c) shows the paired per-realization distributions
+behind those medians. The flag thresholds are calibrated on
+``N_CALIBRATION_REALIZATIONS`` separate matched-null sessions
+(:func:`statespacecheck_paper.figure03_summary.estimate_calibration_thresholds`),
+never on the evaluated realizations.
 """
 
 from __future__ import annotations
@@ -32,11 +37,14 @@ from statespacecheck_paper.figure03_plotting import compose_figure03
 from statespacecheck_paper.figure03_protocol import Figure3Config
 from statespacecheck_paper.figure03_simulation import run_figure03_simulation
 from statespacecheck_paper.figure03_summary import (
+    CONDITION_IDS,
+    RANK_CALIBRATION_ALPHAS,
     SUMMARY_ACCURACY_METRICS,
     SUMMARY_FLAG_METRICS,
     Figure3RealizationSummary,
     baseline_threshold_provenance,
     build_summary_conditions,
+    estimate_calibration_thresholds,
     estimate_realization_summary,
 )
 from statespacecheck_paper.scientific_artifacts import (
@@ -46,22 +54,29 @@ from statespacecheck_paper.scientific_artifacts import (
 )
 from statespacecheck_paper.style import save_figure, set_figure_defaults
 
-# Number of independent realizations pooled to stabilize the panel-(b)
-# summary. A single run's flag thresholds and per-phase percentages are
-# noisy (the KL 99th-percentile threshold varies ~17% across seeds, and
-# the remap flag percentage swings with the trajectory); pooling many
-# realizations gives a stable threshold and a median per-phase summary.
+# Number of independent phased realizations pooled for the panel-(b)/(c)
+# summary. Per-condition percentages are trajectory-dependent (the remap
+# column swings with how much of the scrambled map the trajectory visits), so
+# the median and the full per-realization distribution are both reported.
 # The seed-1 realization shown in panel (a) is one of these.
 N_REALIZATIONS = 100
+# Number of independent matched-null sessions that calibrate the HPD and KL
+# thresholds. Their seeds are offset from the evaluated realizations so the
+# calibration sample never overlaps the evaluated data.
+N_CALIBRATION_REALIZATIONS = 100
+# Default parallelism for the simulation sweeps (each realization is an
+# independent process; -1 uses every core).
+DEFAULT_N_JOBS = -1
 FIGURE03_SUMMARY_PATH = Path("manuscript/figures/main/figure03_summary.json")
-FIGURE03_CONDITION_IDS = (
-    "well_specified",
-    "remap",
-    "history_dependent",
-    "replay",
-    "drift",
-    "sparse_population",
-)
+FIGURE03_CONDITION_IDS = CONDITION_IDS
+
+
+def _nan_to_none(values: np.ndarray) -> list[object]:
+    """Nested lists with NaN (a realization with no events) replaced by ``None``."""
+    array = np.asarray(values, dtype=float)
+    return [
+        _nan_to_none(row) if row.ndim else (None if np.isnan(row) else float(row)) for row in array
+    ]
 
 
 def _plain_condition_label(label: str) -> str:
@@ -75,17 +90,17 @@ def figure03_summary_payload(
 ) -> dict[str, object]:
     """Return the canonical Figure 3 reported statistics as JSON-ready data."""
     conditions = build_summary_conditions(config)
-    if len(conditions) != len(FIGURE03_CONDITION_IDS):
+    if [c.condition_id for c in conditions] != list(FIGURE03_CONDITION_IDS):
         raise ValueError(
-            "Figure 3 condition identifiers are out of sync with "
-            f"build_summary_conditions: {len(FIGURE03_CONDITION_IDS)} IDs for "
-            f"{len(conditions)} conditions."
+            "Figure 3 condition identifiers are out of sync with build_summary_conditions."
         )
     first_seed = config.random_seed
-    thresholds = dataclasses.asdict(summary.diagnostic_thresholds)
+    calibration = summary.calibration
+    thresholds = dataclasses.asdict(calibration.diagnostic_thresholds)
     directions = {metric: direction for metric, direction in SUMMARY_FLAG_METRICS}
+    metric_order = [metric for metric, _ in SUMMARY_FLAG_METRICS]
     return {
-        "schema_version": 5,
+        "schema_version": 6,
         "figure": "figure03",
         "configuration": dataclasses.asdict(config),
         "realizations": {
@@ -93,22 +108,78 @@ def figure03_summary_payload(
             "first_seed": first_seed,
             "last_seed": first_seed + summary.n_realizations - 1,
         },
-        "metric_order": [metric for metric, _ in SUMMARY_FLAG_METRICS],
+        "calibration": {
+            "count": calibration.n_calibration_realizations,
+            "first_seed": calibration.first_calibration_seed,
+            "last_seed": (
+                calibration.first_calibration_seed + calibration.n_calibration_realizations - 1
+            ),
+            "steps_per_session": calibration.calibration_steps_per_session,
+            "n_pooled_events": calibration.n_pooled_events,
+            "pooled_null_flag_percentages": dict(
+                zip(metric_order, calibration.pooled_null_flag_percentages, strict=True)
+            ),
+            "per_realization_null_flag_percentages": (
+                calibration.per_realization_null_flag_percentages
+            ),
+            "hpd_threshold_tie_percent": calibration.hpd_threshold_tie_percent,
+            "rank_pvalue_tail_alphas": list(RANK_CALIBRATION_ALPHAS),
+            "rank_pvalue_tail_percentages": calibration.rank_pvalue_tail_percentages,
+        },
+        "metric_order": metric_order,
         "flag_rules": inclusive_flag_rules(thresholds, directions),
         "threshold_provenance": baseline_threshold_provenance(config),
         "condition_order": list(FIGURE03_CONDITION_IDS),
         "condition_labels": [_plain_condition_label(condition.label) for condition in conditions],
+        "condition_model_components": [condition.model_component for condition in conditions],
         "median_flag_percentages": summary.median_flag_percentages,
+        "pooled_flag_percentages": summary.pooled_flag_percentages,
+        "flag_percentages_by_realization": _nan_to_none(summary.flag_percentages_by_realization),
+        "event_counts_by_realization": summary.event_counts_by_realization,
         "percentage_unit": "percent_of_spike_events",
         "accuracy_metric_order": list(SUMMARY_ACCURACY_METRICS),
-        "accuracy_units": {"median_absolute_error": "position_units"},
+        "accuracy_units": {
+            "median_absolute_error": "position_units",
+            "filtered_hpd_coverage_percent": "percent_of_time_steps",
+            "median_filtered_hpd_size": "position_bins",
+            "median_predictive_hpd_size": "position_bins",
+        },
         "median_decoding_accuracy": summary.median_decoding_accuracy,
+        "decoding_accuracy_by_realization": summary.decoding_accuracy_by_realization,
+        "replay_represented_accuracy": {
+            "metric_order": ["median_absolute_error", "filtered_hpd_coverage_percent"],
+            "by_realization": summary.replay_represented_accuracy,
+            "median": np.median(summary.replay_represented_accuracy, axis=0),
+        },
+        "phase_ordinary_spike_rates_hz": {
+            "by_realization": summary.phase_spike_rates_by_realization,
+            "median": np.median(summary.phase_spike_rates_by_realization, axis=0),
+        },
+        "sparse_population": {
+            "sparse_cell_flag_percentages_by_realization": _nan_to_none(
+                summary.sparse_cell_flag_percentages_by_realization
+            ),
+            "sparse_cell_event_counts_by_realization": (
+                summary.sparse_cell_event_counts_by_realization
+            ),
+            "median_sparse_cell_flag_percentages": _nan_to_none(
+                np.nanmedian(summary.sparse_cell_flag_percentages_by_realization, axis=0)
+            ),
+            "median_sparse_cell_event_count": float(
+                np.median(summary.sparse_cell_event_counts_by_realization)
+            ),
+        },
+        "matched_null_rank_pvalue_tail_percentages": (
+            summary.matched_null_rank_pvalue_tail_percentages
+        ),
         # Approximate across-realization standard errors, conditional on this
         # configuration. Published as data about how variable each median is;
         # they do not set the manuscript's printed precision, which follows the
         # policy in reported_values. See figure03_summary.median_standard_error.
         "standard_error_method": "order_statistic_interval_95",
-        "median_flag_percentage_standard_errors": summary.flag_percentage_standard_errors,
+        "median_flag_percentage_standard_errors": _nan_to_none(
+            summary.flag_percentage_standard_errors
+        ),
         "median_decoding_accuracy_standard_errors": summary.decoding_accuracy_standard_errors,
         "provenance": {"source": scientific_source_provenance()},
     }
@@ -118,60 +189,75 @@ def generate_figure03(
     config: Figure3Config | None = None,
     *,
     n_realizations: int = N_REALIZATIONS,
-) -> None:
-    """Run the figure-3 simulation + summary and save the composed figure.
+    n_calibration_realizations: int = N_CALIBRATION_REALIZATIONS,
+    n_jobs: int = DEFAULT_N_JOBS,
+    summary_path: Path = FIGURE03_SUMMARY_PATH,
+    figure_path: str = "manuscript/figures/main/figure03",
+) -> Figure3RealizationSummary:
+    """Run the figure-3 calibration, simulation, and summary; save the figure.
 
     Parameters
     ----------
     config : Figure3Config, optional
         Figure-3 experimental configuration (timeline, place fields, controls).
-        When omitted, uses the manuscript configuration with drift momentum
-        0.88.
+        When omitted, uses the manuscript configuration.
     n_realizations : int, default ``N_REALIZATIONS``
-        Independent realizations pooled for the panel-(b) thresholds and
-        median flag percentages.
+        Independent phased realizations pooled for panels (b) and (c).
+    n_calibration_realizations : int, default ``N_CALIBRATION_REALIZATIONS``
+        Independent matched-null sessions that calibrate the thresholds.
+    n_jobs : int, default ``DEFAULT_N_JOBS``
+        Parallel workers for the simulation sweeps.
+    summary_path, figure_path
+        Output locations (overridden by sensitivity recipes).
 
     Returns
     -------
-    None
-        Saves ``figure03.{pdf,png}`` and ``figure03_summary.json`` under
-        ``manuscript/figures/main``.
+    Figure3RealizationSummary
+        The summary written to ``summary_path`` (also used by sensitivity runs).
     """
     if config is None:
         config = Figure3Config()
 
     simulation_result = run_figure03_simulation(config)
 
-    # The simulation appends a narrow sparse-population of cells; the raster
-    # sorts all cells by field center.
+    # The simulation appends the sparse-population cells; the raster sorts
+    # all cells by field center.
     assert config.place_field_centers is not None, "place_field_centers must be initialized"
     raster_place_field_centers = np.append(
         config.place_field_centers,
         np.asarray(simulation_result.sparse_place_field_centers),
     )
 
-    # Pool many realizations for a stable threshold (from the pooled
-    # clean-baseline windows) and a stable median panel-(b) summary.
-    realization_summary = estimate_realization_summary(config, n_realizations=n_realizations)
-    print(f"Pooled thresholds: {realization_summary.diagnostic_thresholds}")
+    # Calibrate the thresholds on independent matched-null sessions, then
+    # score the phased realizations against them.
+    calibration = estimate_calibration_thresholds(
+        config, n_calibration_realizations=n_calibration_realizations, n_jobs=n_jobs
+    )
+    print(f"Calibrated thresholds: {calibration.diagnostic_thresholds}")
+    print(
+        "Realized pooled null flag percentages [HPD, predictive p, KL]: "
+        f"{np.array2string(calibration.pooled_null_flag_percentages, precision=3)}"
+    )
+    realization_summary = estimate_realization_summary(
+        config, calibration=calibration, n_realizations=n_realizations, n_jobs=n_jobs
+    )
     print(
         "Median flag percentages [HPD, predictive p, KL] x "
-        "[well-specified, remap, history, replay, drift, sparse population]:\n"
+        f"{list(FIGURE03_CONDITION_IDS)}:\n"
         f"{np.array2string(realization_summary.median_flag_percentages, precision=3)}"
     )
     print(
-        "Median decoding accuracy [median |error| (a.u.)] x "
-        "[well-specified, remap, history, replay, drift, sparse population]:\n"
+        f"Median decoding accuracy {list(SUMMARY_ACCURACY_METRICS)} x conditions:\n"
         f"{np.array2string(realization_summary.median_decoding_accuracy, precision=3)}"
     )
-    summary_path = write_json_artifact(
-        FIGURE03_SUMMARY_PATH,
+    written = write_json_artifact(
+        summary_path,
         figure03_summary_payload(config, realization_summary),
     )
-    print(f"Saved canonical statistics to {summary_path}")
+    print(f"Saved canonical statistics to {written}")
 
-    # Panel (a) shows the single seed-1 realization; panel (b) shows the
-    # pooled median percentages scored against the pooled-baseline thresholds.
+    # Panel (a) shows the single seed-1 realization; panels (b) and (c) show
+    # the pooled summary scored against the calibrated thresholds.
     set_figure_defaults(context="paper")
     fig = compose_figure03(
         true_position=simulation_result.true_position,
@@ -182,10 +268,14 @@ def generate_figure03(
         place_field_centers=raster_place_field_centers,
         median_flag_percentages=realization_summary.median_flag_percentages,
         median_decoding_accuracy=realization_summary.median_decoding_accuracy,
+        flag_percentages_by_realization=realization_summary.flag_percentages_by_realization,
+        represented_position=simulation_result.represented_position,
     )
 
-    save_figure("manuscript/figures/main/figure03", close=True, fig=fig)
+    save_figure(figure_path, close=True, fig=fig)
     print(
-        f"\nFigure 3 saved to manuscript/figures/main/figure03.{{pdf,png}} "
-        f"(panel b pooled over {n_realizations} realizations)"
+        f"\nFigure 3 saved to {figure_path}.{{pdf,png}} "
+        f"(panels b-c pooled over {n_realizations} realizations; thresholds calibrated on "
+        f"{n_calibration_realizations} matched-null sessions)"
     )
+    return realization_summary

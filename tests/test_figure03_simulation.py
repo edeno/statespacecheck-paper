@@ -99,10 +99,11 @@ class TestFigure3SimulationResultDataclass:
             config=Figure3Config(),
             position_bins=np.linspace(0.0, 100.0, n_bins),
             true_position=np.zeros(n_time),
+            represented_position=np.zeros(n_time),
             spike_counts=np.zeros((n_time, 1), dtype=np.int_),
             diagnostics=_zero_diagnostics(n_time=n_time, n_bins=n_bins),
             phase_labels=PHASE_LABELS,
-            phase_boundaries=(1, 2, 3, 4, 5, 6, 7, n_time),
+            phase_boundaries=(1, 2, 3, 4, 5, 6, 7, 8, 9, n_time),
         )
         # Sequence fields coerced to tuple by __post_init__.
         assert isinstance(sim.phase_labels, tuple)
@@ -120,10 +121,11 @@ class TestFigure3SimulationResultDataclass:
                 config=Figure3Config(),
                 position_bins=np.linspace(0.0, 100.0, n_bins),
                 true_position=np.zeros(n_time),
+                represented_position=np.zeros(n_time),
                 spike_counts=np.zeros((n_time, 1), dtype=np.int_),
                 diagnostics=_zero_diagnostics(n_time=n_time, n_bins=n_bins),
                 phase_labels=bogus_labels,
-                phase_boundaries=(1, 2, 3, 4, 5, 6, 7, n_time),
+                phase_boundaries=(1, 2, 3, 4, 5, 6, 7, 8, 9, n_time),
             )
 
     def test_phase_boundary_length_mismatch_raises(self) -> None:
@@ -134,6 +136,7 @@ class TestFigure3SimulationResultDataclass:
                 config=Figure3Config(),
                 position_bins=np.linspace(0.0, 100.0, n_bins),
                 true_position=np.zeros(n_time),
+                represented_position=np.zeros(n_time),
                 spike_counts=np.zeros((n_time, 1), dtype=np.int_),
                 diagnostics=_zero_diagnostics(n_time=n_time, n_bins=n_bins),
                 phase_labels=PHASE_LABELS,
@@ -148,10 +151,11 @@ class TestFigure3SimulationResultDataclass:
                 config=Figure3Config(),
                 position_bins=np.linspace(0.0, 100.0, n_bins),
                 true_position=np.zeros(n_time),
+                represented_position=np.zeros(n_time),
                 spike_counts=np.zeros((n_time + 1, 1), dtype=np.int_),  # off by one
                 diagnostics=_zero_diagnostics(n_time=n_time, n_bins=n_bins),
                 phase_labels=PHASE_LABELS,
-                phase_boundaries=(1, 2, 3, 4, 5, 6, 7, n_time),
+                phase_boundaries=(1, 2, 3, 4, 5, 6, 7, 8, 9, n_time),
             )
 
     def test_final_boundary_must_equal_timeline_length(self) -> None:
@@ -162,10 +166,11 @@ class TestFigure3SimulationResultDataclass:
                 config=Figure3Config(),
                 position_bins=np.linspace(0.0, 100.0, n_bins),
                 true_position=np.zeros(n_time),
+                represented_position=np.zeros(n_time),
                 spike_counts=np.zeros((n_time, 1), dtype=np.int_),
                 diagnostics=_zero_diagnostics(n_time=n_time, n_bins=n_bins),
                 phase_labels=PHASE_LABELS,
-                phase_boundaries=(1, 2, 3, 4, 5, 6, 7, n_time + 1),
+                phase_boundaries=(1, 2, 3, 4, 5, 6, 7, 8, 9, n_time + 1),
             )
 
     def test_metrics_timeline_mismatch_against_x_true_raises(self) -> None:
@@ -183,8 +188,9 @@ class TestFigure3SimulationResultDataclass:
                 config=Figure3Config(),
                 position_bins=np.linspace(0.0, 100.0, n_bins),
                 true_position=np.zeros(n_time),
+                represented_position=np.zeros(n_time),
                 spike_counts=np.zeros((n_time, 1), dtype=np.int_),
                 diagnostics=bad_metrics,
                 phase_labels=PHASE_LABELS,
-                phase_boundaries=(1, 2, 3, 4, 5, 6, 7, n_time),
+                phase_boundaries=(1, 2, 3, 4, 5, 6, 7, 8, 9, n_time),
             )

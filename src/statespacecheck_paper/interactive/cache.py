@@ -534,11 +534,9 @@ def build_simulated_cache(
     # machinery on every figure-4 cache build.
     from statespacecheck_paper.figure03_simulation import (  # noqa: PLC0415
         run_figure03_simulation,
+        sparse_population_rates,
     )
-    from statespacecheck_paper.simulation import (  # noqa: PLC0415
-        peak_rate_to_place_field_scale,
-        place_field_rates,
-    )
+    from statespacecheck_paper.simulation import place_field_rates  # noqa: PLC0415
 
     cache_dir = Path(cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -634,15 +632,7 @@ def build_simulated_cache(
     normal_rates = place_field_rates(
         xs, pf_centers, params_used.place_field_std, params_used.place_field_rate_scale
     )
-    sparse_cell_scale = peak_rate_to_place_field_scale(
-        params_used.sparse_cell_peak_rate_per_step, params_used.sparse_place_field_std
-    )
-    sparse_rates = place_field_rates(
-        xs,
-        np.asarray(sim.sparse_place_field_centers, dtype=np.float64),
-        params_used.sparse_place_field_std,
-        sparse_cell_scale,
-    )
+    sparse_rates, _ = sparse_population_rates(xs, params_used)
     rates = np.asarray(np.hstack([normal_rates, sparse_rates]), dtype=np.float64)
     place_fields = rates.T  # (n_cells, n_bins)
     interior_mask = np.ones(n_bins, dtype=bool)

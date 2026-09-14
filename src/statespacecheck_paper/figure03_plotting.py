@@ -114,14 +114,14 @@ def add_phase_boundaries(
     axes : list[plt.Axes]
         List of axes to add phase boundaries to.
     phase_boundaries : tuple[int, ...]
-        Phase boundary time points, in the canonical 8-element order
+        Phase boundary time points, in the canonical 10-element order
         indexed by :class:`statespacecheck_paper.figure03_protocol.PhaseBoundary`
         (``REMAP_START``, ``REMAP_END``, ``RECOVERY1_END``,
         ``HIST_DEP_END``, ``RECOVERY2_END``, ``DRIFT_END``,
-        ``RECOVERY3_END``, ``SPARSE_POP_END``). Shorter tuples (down
-        to 2 elements) are accepted and produce a partial shading; only
-        the misfit conditions whose pair of boundary entries is present
-        are drawn.
+        ``RECOVERY3_END``, ``REFLECT_END``, ``RECOVERY4_END``,
+        ``SPARSE_POP_END``). Shorter tuples (down to 2 elements) are
+        accepted and produce a partial shading; only the conditions whose
+        pair of boundary entries is present are drawn.
     include_labels : bool, default False
         If True, add labels for legend on first axis.
     alpha : float, default 0.15
@@ -138,7 +138,7 @@ def add_phase_boundaries(
     Examples
     --------
     >>> fig, axes = plt.subplots(4, 1)
-    >>> boundaries = (10, 20, 30, 40, 50, 60, 70, 80)
+    >>> boundaries = (10, 20, 30, 40, 50, 60, 70, 80, 90, 100)
     >>> add_phase_boundaries(axes, boundaries, include_labels=True)
     """
     # Saturated colors so axvspan at low alpha is still visible. We use
@@ -165,9 +165,13 @@ def add_phase_boundaries(
         )
     if n >= 8:
         misfit_specs.append(
+            (phase_boundaries[6], phase_boundaries[7], COLORS["kl_divergence"], "Reflected map")
+        )
+    if n >= 10:
+        misfit_specs.append(
             (
-                phase_boundaries[6],
-                phase_boundaries[7],
+                phase_boundaries[8],
+                phase_boundaries[9],
                 COLORS["metric_combined"],
                 "Sparse population",
             )
@@ -421,9 +425,27 @@ def _plot_figure3_predictive_row(
     ax: Axes,
     predictive: NDArray[np.floating],
     true_position: NDArray[np.floating],
+    represented_position: NDArray[np.floating] | None = None,
 ) -> None:
-    """Plot Figure 3's predictive row with a direct physical-position label."""
+    """Plot Figure 3's predictive row with physical (and represented) position overlays.
+
+    Where ``represented_position`` differs from ``true_position`` (the replay
+    sweep) it is drawn as a dashed line so the reader can see the trajectory
+    the ensemble represents while the animal is immobile.
+    """
     _plot_timeseries_heatmap(ax, predictive, true_position)
+    if represented_position is not None:
+        differs = ~np.isclose(represented_position, true_position)
+        if np.any(differs):
+            shown = np.where(differs, represented_position, np.nan)
+            ax.plot(
+                np.arange(shown.size),
+                shown,
+                color=COLORS["phase_replay"],
+                linewidth=0.9,
+                linestyle="--",
+                alpha=0.9,
+            )
     ax.set_ylabel("Position (a.u.)", labelpad=7)
     ax.tick_params(labelsize=8, labelbottom=False)
     true_position_label = ax.text(
@@ -436,6 +458,19 @@ def _plot_figure3_predictive_row(
         ha="left",
     )
     true_position_label.set_gid(FIGURE3_TRUE_POSITION_LABEL_GID)
+    if represented_position is not None and np.any(
+        ~np.isclose(represented_position, true_position)
+    ):
+        represented_label = ax.text(
+            0.98,
+            0.90,
+            "Represented (replay)",
+            transform=ax.transAxes,
+            color=COLORS["phase_replay"],
+            va="top",
+            ha="right",
+        )
+        represented_label.set_gid(FIGURE3_TRUE_POSITION_LABEL_GID)
     _add_figure3_row_label(ax, "Predictive")
 
 
@@ -535,16 +570,20 @@ def _add_figure3_phase_labels(ax: Axes, config: Figure3Config) -> None:
     t_recovery2_end = bnd[PhaseBoundary.RECOVERY2_END]
     t_drift_end = bnd[PhaseBoundary.DRIFT_END]
     t_recovery3_end = bnd[PhaseBoundary.RECOVERY3_END]
+    t_reflect_end = bnd[PhaseBoundary.REFLECT_END]
+    t_recovery4_end = bnd[PhaseBoundary.RECOVERY4_END]
     t_sparse_pop_end = bnd[PhaseBoundary.SPARSE_POP_END]
 
     r0, r1 = compute_replay_step_window(config)
     phase_label_y = 1.04
     phase_labels_info: list[tuple[float, str]] = [
+        (t_remap_start / 2, "Matched null"),
         ((t_remap_start + t_remap_end) / 2, "Remap"),
         ((r0 + r1) / 2, "Replay"),
         ((t_recovery1_end + t_hist_dep_end) / 2, "History-dep."),
         ((t_recovery2_end + t_drift_end) / 2, "Drift"),
-        ((t_recovery3_end + t_sparse_pop_end) / 2, "Sparse population"),
+        ((t_recovery3_end + t_reflect_end) / 2, "Reflected map"),
+        ((t_recovery4_end + t_sparse_pop_end) / 2, "Sparse pop."),
     ]
     for x_pos, label_text in phase_labels_info:
         phase_label = ax.text(
@@ -557,6 +596,11 @@ def _add_figure3_phase_labels(ax: Axes, config: Figure3Config) -> None:
             style="italic",
         )
         phase_label.set_gid(FIGURE3_PHASE_LABEL_GID)
+
+
+def _format_bin_count(value: float) -> str:
+    """Format a median region size in bins: whole numbers as integers, else 2 s.f."""
+    return str(int(round(value))) if float(value).is_integer() else significant(value)
 
 
 def _plot_figure3_summary_heatmap(
@@ -622,18 +666,30 @@ def _plot_figure3_summary_heatmap(
             )
             cell_label.set_gid(FIGURE3_SUMMARY_CELL_LABEL_GID)
 
-    # The decoding-accuracy row sits directly beneath the heatmap; the known
-    # component row follows it.
-    # Both rows round with the same functions the manuscript prose uses, so a
-    # value cannot read differently in the panel and in the text beside it.
-    accuracy_headers = ("Median |error|\n(a.u.):",)
+    # The decoding-accuracy rows sit directly beneath the heatmap; the known
+    # component row follows them. Every value rounds with the same functions
+    # the manuscript prose uses, so a value cannot read differently in the
+    # panel and in the text beside it.
+    accuracy_headers = (
+        "Median |error| (a.u.):",
+        "Filtered HPD coverage:",
+        "Filtered HPD size (bins):",
+        "Predictive HPD size (bins):",
+    )
+    accuracy_formatters = (
+        significant,
+        lambda v: f"{whole_percent(v)}%",
+        _format_bin_count,
+        _format_bin_count,
+    )
     for row_offset, header in enumerate(accuracy_headers):
         row_y = 3.0 + row_offset
+        formatter = accuracy_formatters[row_offset]
         for col_idx in range(len(conditions)):
             accuracy_label = ax.text(
                 col_idx,
                 row_y,
-                significant(accuracy[row_offset, col_idx]),
+                formatter(accuracy[row_offset, col_idx]),
                 ha="center",
                 va="center",
                 color="black",
@@ -680,10 +736,83 @@ def _plot_figure3_summary_heatmap(
     title = ax.set_title(
         "% of spike events flagged as poor fit (median across realizations)",
         fontsize=8,
-        pad=8,
+        pad=10,
         loc="center",
     )
     title.set_gid(FIGURE3_SUMMARY_TITLE_GID)
+
+
+FIGURE3_REALIZATION_POINT_GID = "figure3-realization-point"
+
+# Compact condition labels for the crowded panel-(c) axes.
+_SHORT_CONDITION_LABELS: dict[str, str] = {
+    "matched_null": "Null",
+    "recovery": "Recovery",
+    "remap": "Remap",
+    "history_dependent": "History",
+    "replay": "Replay",
+    "drift": "Drift",
+    "reflected_map": "Reflected",
+    "sparse_population": "Sparse",
+}
+
+
+def _plot_figure3_realization_distributions(
+    axes: list[Axes],
+    config: Figure3Config,
+    flag_percentages_by_realization: NDArray[np.floating],
+) -> None:
+    """Plot every realization's flag percentage per condition, one axis per metric.
+
+    Points are the individual realizations (horizontally jittered by a fixed
+    deterministic pattern); the bar marks the median. This is the paired
+    distribution behind the panel-(b) medians, so trajectory-dependent spread
+    (the remap column in particular) is visible rather than inferred.
+    """
+    conditions = build_summary_conditions(config)
+    values = np.asarray(flag_percentages_by_realization, dtype=float)
+    expected = (values.shape[0], len(SUMMARY_FLAG_METRICS), len(conditions))
+    if values.ndim != 3 or values.shape[1:] != expected[1:]:
+        raise ValueError(
+            "flag_percentages_by_realization must have shape "
+            f"(n_realizations, {expected[1]}, {expected[2]}); got {values.shape}"
+        )
+    n_realizations = values.shape[0]
+    jitter = np.linspace(-0.28, 0.28, n_realizations) if n_realizations > 1 else np.zeros(1)
+    for ax, spec, metric_values in zip(
+        axes, FIGURE3_DIAGNOSTIC_ROW_SPECS, np.moveaxis(values, 1, 0), strict=True
+    ):
+        for col_idx in range(len(conditions)):
+            column = metric_values[:, col_idx]
+            order = np.argsort(column, kind="stable")
+            points = ax.scatter(
+                col_idx + jitter,
+                column[order],
+                s=4,
+                color=spec.metric.color,
+                alpha=0.45,
+                linewidths=0,
+            )
+            points.set_gid(FIGURE3_REALIZATION_POINT_GID)
+            ax.hlines(
+                float(np.median(column)),
+                col_idx - 0.35,
+                col_idx + 0.35,
+                color="black",
+                linewidth=1.2,
+                zorder=3,
+            )
+        ax.set_xticks(range(len(conditions)))
+        ax.set_xticklabels(
+            [_SHORT_CONDITION_LABELS[col.condition_id] for col in conditions],
+            fontsize=6,
+            rotation=45,
+            ha="right",
+        )
+        ax.set_ylabel(f"{spec.ylabel}\n% flagged", fontsize=7)
+        ax.set_ylim(bottom=-2)
+        ax.tick_params(labelsize=6)
+        ax.spines[["top", "right"]].set_visible(False)
 
 
 def compose_figure03(
@@ -695,6 +824,8 @@ def compose_figure03(
     place_field_centers: NDArray[np.floating],
     median_flag_percentages: NDArray[np.floating],
     median_decoding_accuracy: NDArray[np.floating],
+    flag_percentages_by_realization: NDArray[np.floating] | None = None,
+    represented_position: NDArray[np.floating] | None = None,
 ) -> Figure:
     """Create comprehensive time-series diagnostics figure.
 
@@ -726,11 +857,18 @@ def compose_figure03(
         columns follow :func:`statespacecheck_paper.figure03_summary.build_summary_conditions`).
         This stabilized summary is deliberately required: substituting the
         displayed realization would change the meaning of panel (b).
-    median_decoding_accuracy : NDArray, shape (1, n_columns)
+    median_decoding_accuracy : NDArray, shape (4, n_columns)
         Median per-condition decoding accuracy (rows follow
         :data:`statespacecheck_paper.figure03_summary.SUMMARY_ACCURACY_METRICS`:
-        median absolute error in position units), rendered as a text row
-        beneath the panel-(b) heatmap.
+        median absolute error, filtered HPD coverage percent, filtered and
+        predictive HPD-region sizes), rendered as text rows beneath the
+        panel-(b) heatmap.
+    flag_percentages_by_realization : NDArray, shape (n_realizations, 3, n_columns), optional
+        Per-realization percentages behind the medians; when given, panel (c)
+        shows their paired distributions.
+    represented_position : NDArray, shape (n_time,), optional
+        Represented trajectory (differs from ``true_position`` during the
+        replay sweep), overlaid on the predictive row.
 
     Returns
     -------
@@ -746,23 +884,25 @@ def compose_figure03(
     >>> # and how to plumb it into compose_figure03.
     """
     fig_width = 6.85  # Full page width; tight PDF stays within ~183 mm.
-    # Extra height (and bottom margin) holds the accuracy row and the
-    # known-component row beneath the panel-(b) heatmap; the plotted area
-    # above them is unchanged.
-    fig_height = 7.4
+    # Height holds the time-series block, the panel-(b) heatmap with its four
+    # accuracy rows and the known-component row, and the panel-(c)
+    # per-realization distributions.
+    show_distributions = flag_percentages_by_realization is not None
+    fig_height = 10.4 if show_distributions else 8.4
     fig = plt.figure(figsize=(fig_width, fig_height), dpi=450)
 
-    # Outer grid: time-series block on top, summary heatmap on bottom.
+    # Outer grid: time-series block on top; summary heatmap (with the text
+    # rows beneath it occupying a spacer sub-slot) and distributions below.
     gs_outer = gridspec.GridSpec(
         2,
         1,
         figure=fig,
-        height_ratios=[5.3, 1.2],
-        hspace=0.34,
-        left=0.08,
+        height_ratios=[5.3, 4.3 if show_distributions else 2.6],
+        hspace=0.30,
+        left=0.10,
         right=0.93,
-        top=0.97,
-        bottom=0.11,
+        top=0.975,
+        bottom=0.06,
     )
 
     gs = gs_outer[0].subgridspec(
@@ -772,7 +912,16 @@ def compose_figure03(
         hspace=0.08,
     )
 
-    gs_summary = gs_outer[1]
+    # The heatmap's three metric rows take the top of the summary slot; the
+    # five text rows drawn beneath it (in data coordinates) fall into the
+    # spacer sub-slot so they cannot collide with panel (c).
+    if show_distributions:
+        gs_bottom = gs_outer[1].subgridspec(2, 1, height_ratios=[2.6, 1.4], hspace=0.45)
+        gs_summary_slot = gs_bottom[0]
+        gs_dist_slot = gs_bottom[1]
+    else:
+        gs_summary_slot = gs_outer[1]
+    gs_summary = gs_summary_slot.subgridspec(2, 1, height_ratios=[3.0, 5.0], hspace=0.0)[0]
 
     n_time = diagnostics.posterior.shape[0]
     ax_pred = fig.add_subplot(gs[0])
@@ -780,7 +929,9 @@ def compose_figure03(
     ax_raster = fig.add_subplot(gs[2], sharex=ax_pred)
     diagnostic_axes = [fig.add_subplot(gs[i], sharex=ax_pred) for i in range(3, 6)]
 
-    _plot_figure3_predictive_row(ax_pred, diagnostics.predictive, true_position)
+    _plot_figure3_predictive_row(
+        ax_pred, diagnostics.predictive, true_position, represented_position
+    )
     _plot_figure3_likelihood_row(ax_like, diagnostics, true_position)
     _plot_figure3_raster_row(ax_raster, spike_counts, place_field_centers)
 
@@ -808,7 +959,7 @@ def compose_figure03(
     _add_figure3_phase_labels(ax_pred, config)
     _add_figure3_panel_label(ax_pred, "a", y=1.15)
 
-    # ===== SUMMARY HEATMAP: % exceeding baseline threshold per phase =====
+    # ===== SUMMARY HEATMAP: % exceeding calibrated threshold per condition =====
     ax_summary = fig.add_subplot(gs_summary)
     _add_figure3_panel_label(ax_summary, "b", y=1.25)
     _plot_figure3_summary_heatmap(
@@ -817,5 +968,12 @@ def compose_figure03(
         median_flag_percentages,
         median_decoding_accuracy,
     )
+
+    # ===== PER-REALIZATION DISTRIBUTIONS behind the medians =====
+    if flag_percentages_by_realization is not None:
+        gs_dist = gs_dist_slot.subgridspec(1, 3, wspace=0.42)
+        dist_axes = [fig.add_subplot(gs_dist[i]) for i in range(3)]
+        _plot_figure3_realization_distributions(dist_axes, config, flag_percentages_by_realization)
+        _add_figure3_panel_label(dist_axes[0], "c", y=1.08)
 
     return fig

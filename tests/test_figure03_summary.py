@@ -8,6 +8,7 @@ import pytest
 from statespacecheck_paper.diagnostics import DiagnosticThresholds
 from statespacecheck_paper.figure03_protocol import Figure3Config, PhaseBoundary
 from statespacecheck_paper.figure03_summary import (
+    CONDITION_IDS,
     SUMMARY_ACCURACY_METRICS,
     _flag_percentage,
     build_summary_conditions,
@@ -25,32 +26,40 @@ class TestSummaryFlagPercentages:
     @staticmethod
     def _params() -> Figure3Config:
         # Tiny strictly-increasing ladder so conditions map to known slices.
-        return Figure3Config(phase_boundaries=(6, 10, 14, 18, 26, 30, 34, 36))
+        return Figure3Config(phase_boundaries=(6, 10, 14, 18, 26, 30, 34, 38, 42, 46))
 
     def test_summary_phase_windows_structure(self) -> None:
         cols = build_summary_conditions(self._params())
+        assert [c.condition_id for c in cols] == list(CONDITION_IDS)
         assert [c.label for c in cols] == [
-            "Well-\nspecified",
+            "Matched\nnull",
+            "Recovery",
             "Remap",
             "History-\ndep.",
             "Replay",
             "Drift",
+            "Reflected\nmap",
             "Sparse\npopulation",
         ]
         assert [c.model_component for c in cols] == [
+            "—",
             "—",
             "Observation",
             "Observation",
             "—",
             "Transition",
+            "Observation",
             "—",
         ]
-        # Well-specified concatenates the clean-recovery conditions, with the
-        # replay sub-window (20, 24) carved out of clean-recovery 2 (18, 26).
-        assert cols[0].step_windows == ((10, 14), (18, 20), (24, 26), (30, 34))
-        assert cols[1].step_windows == ((6, 10),)  # Remap
-        assert cols[3].step_windows == ((20, 24),)  # Replay
-        assert cols[5].step_windows == ((34, 36),)  # Sparse population
+        # The matched null is the opening baseline; recovery concatenates the
+        # clean-recovery windows, with the replay sub-window (20, 24) carved
+        # out of clean-recovery 2 (18, 26).
+        assert cols[0].step_windows == ((0, 6),)
+        assert cols[1].step_windows == ((10, 14), (18, 20), (24, 26), (30, 34), (38, 42))
+        assert cols[2].step_windows == ((6, 10),)  # Remap
+        assert cols[4].step_windows == ((20, 24),)  # Replay
+        assert cols[6].step_windows == ((34, 38),)  # Reflected map
+        assert cols[7].step_windows == ((42, 46),)  # Sparse population
 
     def test_replay_window_rejects_fractions_that_round_to_empty(self) -> None:
         params = Figure3Config(replay_start_fraction=0.25001, replay_end_fraction=0.25002)
@@ -69,6 +78,7 @@ class TestSummaryFlagPercentages:
     def test_flag_fraction_empty_raises(self) -> None:
         with pytest.raises(ValueError, match="no spike events"):
             _flag_percentage(np.array([]), 0.5, "below")
+        assert np.isnan(_flag_percentage(np.array([]), 0.5, "below", empty_value=np.nan))
 
     def test_flag_fraction_bad_direction_raises(self) -> None:
         with pytest.raises(ValueError, match="direction"):
@@ -80,8 +90,7 @@ class TestSummaryFlagPercentages:
         their thresholds must be 0% everywhere.
 
         Row order follows ``SUMMARY_FLAG_METRICS``: HPD (0), spike-prob (1),
-        KL (2). Column order: well-specified (0), remap (1), history (2),
-        replay (3), drift (4), sparse population (5)."""
+        KL (2). Column order follows ``CONDITION_IDS`` (remap is column 2)."""
         params = self._params()
         n_time = params.phase_boundaries[PhaseBoundary.SPARSE_POP_END]
         # One spike event per time step; KL high only inside remap [6, 10).
@@ -100,10 +109,11 @@ class TestSummaryFlagPercentages:
         conditions = build_summary_conditions(params)
         frac = compute_condition_flag_percentages(metrics, thresholds, conditions)
 
-        assert frac.shape == (3, 6)
-        # KL row (index 2): only the remap column (index 1) flags.
-        assert frac[2, 1] == pytest.approx(100.0)
-        assert np.allclose(np.delete(frac[2], 1), 0.0)
+        assert frac.shape == (3, 8)
+        # KL row (index 2): only the remap column flags.
+        remap = CONDITION_IDS.index("remap")
+        assert frac[2, remap] == pytest.approx(100.0)
+        assert np.allclose(np.delete(frac[2], remap), 0.0)
         # HPD (0) and spike-prob (1) rows never cross their thresholds.
         assert np.allclose(frac[0], 0.0)
         assert np.allclose(frac[1], 0.0)
@@ -136,7 +146,7 @@ class TestConditionDecodingAccuracy:
 
     @staticmethod
     def _params() -> Figure3Config:
-        return Figure3Config(phase_boundaries=(6, 10, 14, 18, 26, 30, 34, 36))
+        return Figure3Config(phase_boundaries=(6, 10, 14, 18, 26, 30, 34, 38, 42, 46))
 
     @staticmethod
     def _delta_posterior(bin_index: np.ndarray, n_bins: int) -> np.ndarray:
@@ -145,9 +155,14 @@ class TestConditionDecodingAccuracy:
         return posterior
 
     def test_metric_order(self) -> None:
-        assert SUMMARY_ACCURACY_METRICS == ("median_absolute_error",)
+        assert SUMMARY_ACCURACY_METRICS == (
+            "median_absolute_error",
+            "filtered_hpd_coverage_percent",
+            "median_filtered_hpd_size",
+            "median_predictive_hpd_size",
+        )
 
-    def test_perfect_decoder_has_zero_error(self) -> None:
+    def test_perfect_decoder_has_zero_error_full_coverage_and_unit_regions(self) -> None:
         params = self._params()
         n_time = params.phase_boundaries[PhaseBoundary.SPARSE_POP_END]
         position_bins = np.arange(10, dtype=float)
@@ -156,11 +171,47 @@ class TestConditionDecodingAccuracy:
         conditions = build_summary_conditions(params)
 
         accuracy = compute_condition_decoding_accuracy(
-            posterior, position_bins, position_bins[true_bin], conditions
+            posterior,
+            posterior,
+            position_bins,
+            position_bins[true_bin],
+            conditions,
+            hpd_coverage=0.95,
         )
 
-        assert accuracy.shape == (1, 6)
+        assert accuracy.shape == (4, 8)
         assert np.allclose(accuracy[0], 0.0)
+        assert np.allclose(accuracy[1], 100.0)  # every true bin inside its point-mass region
+        assert np.allclose(accuracy[2], 1.0) and np.allclose(accuracy[3], 1.0)
+
+    def test_coverage_and_region_size_follow_the_hpd_region(self) -> None:
+        """A two-bin posterior that never contains the truth has 0% coverage
+        and size 2; a broad predictive reports its own (larger) size."""
+        params = self._params()
+        n_time = params.phase_boundaries[PhaseBoundary.SPARSE_POP_END]
+        position_bins = np.arange(10, dtype=float)
+        posterior = np.zeros((n_time, 10))
+        posterior[:, 3] = 0.5
+        posterior[:, 4] = 0.5
+        predictive = np.full((n_time, 10), 0.1)
+        true_position = np.full(n_time, 8.0)
+        conditions = build_summary_conditions(params)
+        accuracy = compute_condition_decoding_accuracy(
+            posterior, predictive, position_bins, true_position, conditions, hpd_coverage=0.95
+        )
+        assert np.allclose(accuracy[1], 0.0)
+        assert np.allclose(accuracy[2], 2.0)
+        assert np.allclose(accuracy[3], 10.0)
+        # Off-grid truth maps to its nearest cell for the coverage check.
+        accuracy = compute_condition_decoding_accuracy(
+            posterior,
+            predictive,
+            position_bins,
+            np.full(n_time, 3.4),
+            conditions,
+            hpd_coverage=0.95,
+        )
+        assert np.allclose(accuracy[1], 100.0)
 
     def test_shift_confined_to_remap_window(self) -> None:
         """A posterior displaced by two bins only inside remap [6, 10) must
@@ -175,11 +226,17 @@ class TestConditionDecodingAccuracy:
         conditions = build_summary_conditions(params)
 
         accuracy = compute_condition_decoding_accuracy(
-            posterior, position_bins, position_bins[true_bin], conditions
+            posterior,
+            posterior,
+            position_bins,
+            position_bins[true_bin],
+            conditions,
+            hpd_coverage=0.95,
         )
 
-        assert accuracy[0, 1] == pytest.approx(4.0)  # two bins of 2 a.u.
-        assert np.allclose(np.delete(accuracy[0], 1), 0.0)
+        remap = CONDITION_IDS.index("remap")
+        assert accuracy[0, remap] == pytest.approx(4.0)  # two bins of 2 a.u.
+        assert np.allclose(np.delete(accuracy[0], remap), 0.0)
 
     def test_error_uses_continuous_true_position(self) -> None:
         """The error is measured against the continuous position, not its bin."""
@@ -191,7 +248,7 @@ class TestConditionDecodingAccuracy:
         conditions = build_summary_conditions(params)
 
         accuracy = compute_condition_decoding_accuracy(
-            posterior, position_bins, true_position, conditions
+            posterior, posterior, position_bins, true_position, conditions, hpd_coverage=0.95
         )
 
         assert np.allclose(accuracy[0], 0.3)
@@ -204,9 +261,28 @@ class TestConditionDecodingAccuracy:
         conditions = build_summary_conditions(params)
         with pytest.raises(ValueError, match="true_position"):
             compute_condition_decoding_accuracy(
-                posterior, position_bins, np.zeros(n_time - 1), conditions
+                posterior,
+                posterior,
+                position_bins,
+                np.zeros(n_time - 1),
+                conditions,
+                hpd_coverage=0.95,
             )
         with pytest.raises(ValueError, match="position_bins"):
             compute_condition_decoding_accuracy(
-                posterior, position_bins[:-1], np.zeros(n_time), conditions
+                posterior,
+                posterior,
+                position_bins[:-1],
+                np.zeros(n_time),
+                conditions,
+                hpd_coverage=0.95,
+            )
+        with pytest.raises(ValueError, match="predictive"):
+            compute_condition_decoding_accuracy(
+                posterior,
+                posterior[:-1],
+                position_bins,
+                np.zeros(n_time),
+                conditions,
+                hpd_coverage=0.95,
             )

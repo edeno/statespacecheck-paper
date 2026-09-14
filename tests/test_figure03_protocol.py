@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 import pytest
 
@@ -27,20 +29,20 @@ class TestFigure3ConfigPhaseBoundaries:
     """
 
     def test_phase_boundaries_wrong_length_raises(self) -> None:
-        with pytest.raises(ValueError, match="must have 8 entries"):
+        with pytest.raises(ValueError, match="must have 10 entries"):
             Figure3Config(phase_boundaries=(1, 2, 3))
 
     def test_phase_boundaries_non_monotonic_raises(self) -> None:
         with pytest.raises(ValueError, match="strictly increasing"):
             Figure3Config(
-                phase_boundaries=(100, 200, 200, 400, 500, 600, 700, 800),
+                phase_boundaries=(100, 200, 200, 400, 500, 600, 700, 800, 900, 1000),
             )
 
     def test_phase_boundaries_equal_consecutive_raises(self) -> None:
         """Equal consecutive entries (zero-width phase) must reject too."""
         with pytest.raises(ValueError, match="strictly increasing"):
             Figure3Config(
-                phase_boundaries=(100, 200, 300, 300, 500, 600, 700, 800),
+                phase_boundaries=(100, 200, 300, 300, 500, 600, 700, 800, 900, 1000),
             )
 
     @pytest.mark.parametrize(
@@ -53,25 +55,29 @@ class TestFigure3ConfigPhaseBoundaries:
             (PhaseBoundary.RECOVERY2_END, 4),
             (PhaseBoundary.DRIFT_END, 5),
             (PhaseBoundary.RECOVERY3_END, 6),
-            (PhaseBoundary.SPARSE_POP_END, 7),
+            (PhaseBoundary.REFLECT_END, 7),
+            (PhaseBoundary.RECOVERY4_END, 8),
+            (PhaseBoundary.SPARSE_POP_END, 9),
         ],
     )
     def test_phase_boundary_enum_indexes_into_tuple(
         self, member: PhaseBoundary, index: int
     ) -> None:
-        boundaries = (100, 200, 300, 400, 500, 600, 700, 800)
+        boundaries = (100, 200, 300, 400, 500, 600, 700, 800, 900, 1000)
         params = Figure3Config(phase_boundaries=boundaries)
         assert params.phase_boundaries[member] == boundaries[index]
 
     @pytest.mark.parametrize(
         ("kwargs", "match"),
         [
-            ({"sparse_position": -1.0}, "sparse_position"),
-            ({"sparse_approach_duration_steps": -1}, "sparse_approach_duration_steps"),
+            ({"sparse_place_field_centers": (-1.0,)}, "sparse_place_field_centers"),
+            ({"sparse_place_field_centers": ()}, "sparse_place_field_centers"),
             ({"sparse_control_ordinary_rate_scale": 1.1}, "sparse_control_ordinary_rate_scale"),
-            ({"sparse_cell_count": 0}, "sparse_cell_count"),
-            ({"sparse_place_field_spread": -1.0}, "sparse_place_field_spread"),
-            ({"sparse_place_field_spread": np.nan}, "sparse_place_field_spread"),
+            ({"sparse_cell_rate_multipliers": (1.0, 2.0)}, "sparse_cell_rate_multipliers"),
+            ({"sparse_cell_rate_multipliers": (0.0,) * 11}, "sparse_cell_rate_multipliers"),
+            ({"trajectory_model": "wobbly"}, "trajectory_model"),
+            ({"hpd_coverage": 1.0}, "hpd_coverage"),
+            ({"history_rate_matching_gain": 0.0}, "history_rate_matching_gain"),
             ({"sparse_place_field_std": 0.0}, "sparse_place_field_std"),
             ({"sparse_place_field_std": np.nan}, "sparse_place_field_std"),
             ({"sparse_cell_peak_rate_per_step": 0.0}, "sparse_cell_peak_rate_per_step"),
@@ -80,7 +86,7 @@ class TestFigure3ConfigPhaseBoundaries:
     )
     def test_sparse_population_parameters_reject_invalid_values(
         self,
-        kwargs: dict[str, float | int],
+        kwargs: dict[str, Any],
         match: str,
     ) -> None:
         with pytest.raises(ValueError, match=match):
