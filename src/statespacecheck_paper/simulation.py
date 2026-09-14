@@ -250,11 +250,13 @@ def place_field_rates(
     place_field_std: float,
     place_field_rate_scale: float,
 ) -> NDArray[np.floating]:
-    """Compute Gaussian place field firing rates.
+    """Compute scaled Gaussian place fields for each neuron and position.
 
-    Computes firing rate for each neuron at each position using Gaussian place
-    field model. Each neuron has a place field centered at one location with
-    specified place_field_std.
+    Each neuron has a Gaussian field centered at one location with the
+    specified ``place_field_std``. In the simulation and decoder, the returned
+    values are expected spike counts per step, ``m = lambda * dt``, and go
+    directly into the Poisson distribution. No bin-width conversion is applied
+    inside this function.
 
     Parameters
     ----------
@@ -270,7 +272,8 @@ def place_field_rates(
     Returns
     -------
     rates : np.ndarray, shape (n_bins, n_cells)
-        Firing rate for each position bin and neuron.
+        Scaled field for each position bin and neuron; expected counts per
+        step when using the simulation's place-field scale.
 
     Examples
     --------
@@ -386,9 +389,10 @@ def simulate_spikes_position_tuned(
 ) -> NDArray[np.int_]:
     """Simulate Poisson spikes for position-tuned neurons.
 
-    Generates spike counts from Poisson distribution with position-dependent
-    firing rates. Each neuron has a Gaussian place field determining its
-    firing rate at each position.
+    Generates spike counts from a Poisson distribution with position-dependent
+    expected counts per step, ``m = lambda * dt``. The scaled Gaussian field
+    supplies this mean directly; the function does not accept rates in Hz or
+    apply an additional bin-width conversion.
 
     Parameters
     ----------
@@ -443,8 +447,9 @@ def simulate_spikes_history_dependent(
 ) -> NDArray[np.int_]:
     """Position-tuned spikes with hippocampal-style refractory + bursting.
 
-    Generates per-step Poisson spikes whose rate is modulated by each cell's
-    own recent history:
+    Generates per-step Poisson spikes whose expected count is modulated by
+    each cell's own recent history. As in :func:`simulate_spikes_position_tuned`,
+    the scaled field supplies counts per step, not Hz:
 
     - Hard refractory: a cell that just fired cannot fire for the next
       ``refractory_steps`` steps (rate set to 0).

@@ -9,8 +9,8 @@ examples demonstrating the `statespacecheck` package.
 **Scientific context**: State space models relate neural activity to latent
 dynamic brain states. This paper introduces diagnostics — HPD overlap, a
 rank-based predictive check, and KL divergence — to assess goodness-of-fit by
-examining consistency between posterior distributions and component likelihood
-distributions.
+comparing one-step predictive state distributions with normalized single-event
+likelihoods and checking observed spike marks against their predictive distribution.
 
 **Repository type**: a paper/research repository, not a library. The focus is
 reproducible analysis and figure generation. Directory layout, module APIs, and
@@ -33,7 +33,7 @@ Key modules and the rationale that the source alone won't tell you:
   per-window override mechanism (`DecoderOverrideWindow`/`DecoderOverrideSchedule`,
   used by Figure 3); depends only on `diagnostics` + `simulation`.
 - **figure03_\*** family — protocol (`Figure3Config`, phase ladder) → phased
-  simulation → per-condition flag summary → plotting → generation recipe.
+  simulation → per-condition flag and decoding-error summary → plotting → generation recipe.
 - **figure04_\*** family — decoder + config, place-field/marginalized-posterior
   extraction, real-data diagnostics, plotting layers, cache I/O, workflow
   (`Figure4RenderData`), layout, generation recipe. `Figure4Config` (in
@@ -50,15 +50,24 @@ Key modules and the rationale that the source alone won't tell you:
 - **style.py / simulation.py / plotting.py / schematic.py** — styling (WONG
   palette), simulation primitives, reusable plotting (HPD regions, likelihood
   columns), and the Figure-1 graphical-model/equation diagrams.
+- **reported_values.py** — reads the Figure-3 and Figure-4 summary JSONs and
+  emits `manuscript/reported_values.tex`. Its module docstring defines the prose
+  reporting policy; standard errors in the summaries do not set printed digits.
 
 ## Development Commands
 
 **Always use `uv` for package management and work in the `.venv` environment.**
 Never install into a base/global environment. The standard `uv run ruff …`,
 `uv run mypy src/`, and `uv run pytest …` invocations apply; `pyproject.toml`
-holds the dependency and tooling config. Reproduce the locked environment with
-`uv sync --frozen`. For `uv` dependency-management workflows (GitHub deps, lock
-updates), the `astral:uv` skill has the details.
+holds the dependency and tooling config. Reproduce the analysis environment with
+`uv sync --frozen`; add `--extra dev --extra interactive` for the development
+and CI environment. See `README.md` for dependency and lock-update commands.
+
+After changing a figure summary, run `uv run python scripts/emit_reported_values.py`
+from the repository root, then `make -C manuscript`. The Makefile tracks the macro
+file as an input but does not regenerate it. Source docstrings and comments also
+contribute to the provenance hash; see `docs/figure-pipeline.md` for the artifact
+refresh procedure for documentation-only source changes.
 
 ## Key Design Principles
 
@@ -89,10 +98,14 @@ updates), the `astral:uv` skill has the details.
 
 - Spatial distributions — 1D: `(n_time, n_position_bins)`; 2D:
   `(n_time, n_x_bins, n_y_bins)`.
-- Neural data — spike counts: `(n_cells, n_time)`; place fields:
-  `(n_cells, n_bins)` or `(n_cells, n_x_bins, n_y_bins)`.
+- Neural data — spike counts: `(n_time, n_cells)`; the simulation's
+  `place_field_rates` table: `(n_bins, n_cells)`.
 - State-space outputs — predictive `p(x_t | y_{1:t-1})`, filtered
   `p(x_t | y_{1:t})`, smoothed `p(x_t | y_{1:T})`.
+- Manuscript rates are `lambda`; expected counts are `m = lambda * dt`.
+  Simulation Poisson inputs are counts per step, even where code names use
+  `rate`. Diagnostics normalize rates or expected counts with a common bin
+  width equivalently. Do not multiply simulation Poisson inputs by `dt` again.
 
 ## Where to Add New Functionality
 

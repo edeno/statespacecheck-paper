@@ -2,7 +2,7 @@
 
 **Local goodness-of-fit measures for neural decoding**
 
-This repository contains the source code and supplementary materials for the paper demonstrating `statespacecheck`, a package that provides tools to assess how well Bayesian state space models fit neural data by examining the consistency between posterior distributions and their component likelihood distributions. These diagnostics help identify issues with prior specification and model assumptions, enabling iterative model refinement.
+This repository contains the source code and supplementary materials for the paper demonstrating `statespacecheck`. The paper assesses local model fit by comparing one-step predictive state distributions with normalized single-event likelihoods and by checking each spike's mark against its predictive distribution. These diagnostics help identify issues with model assumptions, enabling iterative model refinement.
 
 ## Repository Structure
 
@@ -35,9 +35,11 @@ module reading order, data boundary, output, and guarding tests — see
 | 4 | `scripts/generate_figure04.py` | derived real data | PDF + PNG + summary JSON | documented dataset (see below) |
 
 The Figure 3 and 4 summary JSON files are reproducibility artifacts, not merely
-copies of console output. Schema version 2 records each flag threshold together
-with its exact inclusive comparison operator, plus hashes of the scientific
-source tree and `uv.lock`. Figure 4 additionally records the decode-cache
+copies of console output. Figure 3 uses schema version 5 and Figure 4 uses
+schema version 3. Both record each flag threshold with its exact inclusive
+comparison operator, plus hashes of the scientific source tree and `uv.lock`.
+Figure 3 includes per-condition decoding errors, approximate standard errors
+of its medians, and threshold provenance. Figure 4 records the unit count, decode-cache
 fingerprint, installed decoder version, and SHA-256 checksum of each of its five
 derived input exports. See [the schema notes](docs/figure-pipeline.md#machine-readable-summary-schema).
 
@@ -46,7 +48,14 @@ derived input exports. See [the schema notes](docs/figure-pipeline.md#machine-re
 uv sync --frozen
 uv run python scripts/generate_all_figures.py
 # Outputs land in manuscript/figures/main/ (figures at 450 DPI).
+uv run python scripts/emit_reported_values.py
+make -C manuscript
 ```
+
+The emitter reads the two summary JSONs and writes `manuscript/reported_values.tex`,
+which supplies the manuscript's reported values. Run it after regenerating either
+summary. It can also run directly from the committed summaries without rerunning
+the analyses. See [the reporting policy and artifact checks](docs/figure-pipeline.md#from-summary-to-prose-the-reported-value-macros).
 
 Figures 1–3 reproduce deterministically from the seeded simulation. **Figure 4**
 uses the real hippocampal recording of [Comrie et al. 2024](https://doi.org/10.1101/2024.09.23.613567),
@@ -73,7 +82,11 @@ State space models are powerful tools for relating neural activity to latent dyn
 1. **State transition model**: How latent states evolve over time
 2. **Observation model**: How neural activity relates to the current latent state
 
-The posterior distribution combines information from both models, weighing current data (normalized likelihood) against accumulated history (prediction distribution). When these distributions agree, the model's prior expectations and data-driven evidence are consistent. When they diverge, the mismatch reveals where and when the model fails to capture the structure of the data.
+The posterior distribution combines current observations with the prediction
+from accumulated history. The diagnostics examine how each spike agrees with
+that prediction. A discrepancy can identify model misfit, but it needs context:
+the replay and sparse-population controls in Figure 3 illustrate why decoding
+error and diagnostic flags need not imply the same problem.
 
 ## Installation
 
@@ -84,14 +97,10 @@ dependencies — this installs the precise pinned versions from `uv.lock`:
 uv sync --frozen
 ```
 
-For **development** (an editable install you can modify), use:
+For **development**, add the locked development tools to the editable install:
 
 ```bash
-# Using uv (recommended)
-uv pip install -e ".[dev]"
-
-# Using pip
-pip install -e ".[dev]"
+uv sync --frozen --extra dev
 ```
 
 ### Optional extras
@@ -99,10 +108,10 @@ pip install -e ".[dev]"
 ```bash
 # Interactive decoder viewer (pyqtgraph + PySide6 desktop app, plus
 # zarr / pyarrow for the on-disk cache it consumes).
-uv pip install -e ".[interactive]"
+uv sync --frozen --extra interactive
 
-# Development tools (ruff, mypy, pytest, hypothesis, jupyter).
-uv pip install -e ".[dev,interactive]"
+# Development tools plus the viewer dependencies (the CI environment).
+uv sync --frozen --extra dev --extra interactive
 ```
 
 ### Installing Dependencies from GitHub
@@ -228,16 +237,14 @@ This repository follows a modular architecture where reusable code lives in `src
 # Install UV package manager if needed
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Create virtual environment and install dependencies
-uv venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-uv pip install -e ".[dev]"
+# Create/sync .venv with the locked development and viewer dependencies
+uv sync --frozen --extra dev --extra interactive
 ```
 
 ### Running Tests
 
 ```bash
-# Run all tests
+# Run the default suite (slow tests are excluded)
 uv run pytest
 
 # Run specific module tests
@@ -267,6 +274,10 @@ uv run python scripts/generate_figure03.py   # Fig 3  (simulated)
 uv run python scripts/generate_figure04.py   # Fig 4  (needs the real dataset)
 
 # Outputs saved to manuscript/figures/main/ directory as PDF and PNG (450 DPI)
+
+# After changing either summary, refresh the prose values and rebuild:
+uv run python scripts/emit_reported_values.py
+make -C manuscript
 ```
 
 ### Code Quality
@@ -298,6 +309,7 @@ uv run ruff format . && uv run ruff check . && uv run mypy src/ && uv run pytest
 - **`figure04_{decoder,place_fields,diagnostics}.py`**: Figure-4 real-data decoder construction/config, place-field extraction, and diagnostics
 - **`figure04_{plot_primitives,track_plots,panels}.py`**: Figure-4 plotting helpers, track-graph rendering, and raster/diagnostic panels
 - **`figure04_{cache,workflow,layout,generation}.py`**: Figure-4 cache, analysis workflow, composition, and generation recipe
+- **`reported_values.py`**: Summary-to-LaTeX macro generation and the manuscript's reporting policy
 - **`load_local_data.py`**: Real data loading utilities
 - **`paths.py`**: Shared `DATA_PATH` / `ANIMAL_DATE_EPOCH` constants (env-overridable)
 

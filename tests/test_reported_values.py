@@ -1,9 +1,9 @@
 """Contracts for the LaTeX macro file the manuscript inputs.
 
 The committed ``manuscript/reported_values.tex`` is the last link in the chain
-from code to prose: the figure summaries are pinned against the pipeline by
-``test_reported_statistics_artifacts``, and this module pins the macro file
-against those summaries. A regenerated summary that never reaches the macro
+from code to prose: ``test_reported_statistics_artifacts`` checks the summaries'
+reference values, configuration, and provenance, and this module pins the macro
+file against those summaries. A regenerated summary that never reaches the macro
 file fails here rather than silently leaving a stale number in the paper.
 """
 
@@ -160,7 +160,7 @@ def test_exact_rejects_precision_loss() -> None:
         # Rounding across a power of ten must not add a significant figure.
         (0.999, 2, "1.0"),
         (9.99, 2, "10"),
-        # Zero has no significant figures and is a valid decoding error.
+        # Exactly zero is a valid decoding error and prints as "0".
         (0.0, 2, "0"),
     ],
 )

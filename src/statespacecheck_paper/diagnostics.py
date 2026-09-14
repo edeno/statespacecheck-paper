@@ -405,9 +405,11 @@ def compute_normalized_event_likelihood(
     likelihood row of the simulation and real-data figures.
 
     The Poisson exposure term is deliberately absent. In the full binned count
-    likelihood, ``exp(-sum_c lambda_c(x))`` is shared by the whole bin, while
-    each observed event contributes one factor ``lambda_mark(x)``. Attaching
-    ``Poisson(1; lambda) = lambda * exp(-lambda)`` to every event would duplicate
+    likelihood, ``exp(-sum_c m_c(x))`` is shared by the whole bin, where
+    ``m_c(x) = lambda_c(x) * dt`` is the expected count and ``lambda_c`` is a
+    rate. Each observed event contributes one factor ``m_mark(x)``. The common
+    bin width ``dt`` cancels on normalization over position. Attaching
+    ``Poisson(1; m) = m * exp(-m)`` to every event would duplicate
     the exposure term when a bin contains multiple spikes and would not match
     the event-conditioned predictive-mark diagnostic.
 

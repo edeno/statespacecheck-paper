@@ -1,7 +1,7 @@
 r"""Emit the manuscript's reported numbers as LaTeX macros.
 
-Every number the manuscript quotes from the analysis lives in one of the two
-canonical figure summaries (``figure03_summary.json`` /
+The manuscript's reported analysis statistics and configuration live in the
+two canonical figure summaries (``figure03_summary.json`` /
 ``figure04_summary.json``). This module turns those summaries into a file of
 ``\newcommand`` definitions that ``main.tex`` inputs, so the prose cannot drift
 from the artifacts the way hand-typed numbers can.
@@ -12,7 +12,7 @@ and "92%" where it holds ``0.9201170835550825``. Ranges such as the remap
 flag percentages are emitted as separate ``\dots Min`` / ``\dots Max`` macros
 so the en-dash stays in the prose.
 
-**Reporting policy.** Decoding errors are reported to two significant figures,
+**Prose reporting policy.** Decoding errors are reported to two significant figures,
 and flag and rescue percentages to the nearest whole percent. Exact counts and
 configured parameters are reported without approximation. Machine-readable
 summaries retain full numerical precision.
@@ -27,8 +27,9 @@ their exact counts. Constants the text hedges with "approximately" (199.47 Hz,
 sqrt(12.5) cm) are exact functions of chosen parameters and are shown to two
 significant figures. Where variability matters to a claim it belongs in the
 text or a figure, not in the digit count; the Figure-3 summary publishes
-approximate across-realization standard errors for that purpose, and they play
-no part in formatting.
+approximate standard errors of the aggregated medians, conditional on the
+simulation setup. These do not describe the spread of individual realizations
+and play no part in formatting.
 
 Exact counts and configured parameters go through :func:`_exact`, which prints
 them in full and *raises* if the requested precision would lose information,
@@ -224,17 +225,16 @@ def _whole_percent(value: float) -> str:
 def _significant(value: float, digits: int) -> str:
     """Render a value to a stated number of significant figures.
 
-    Used where the manuscript hedges with "approximately" or a tilde: those
-    claims are significant-figure statements, not fixed-decimal ones. Rounding
-    199.47 to zero decimals gives 199, but the manuscript's "approximately
-    200 Hz" is the correct two-significant-figure rendering -- so the choice of
-    formatter changes the printed number, not just its width.
+    Used for decoding errors and derived constants that the manuscript
+    introduces with "approximately" or a tilde. For example, 42.169 renders
+    as 42 and 199.47 as 200 at two significant figures. The format preserves
+    trailing fractional zeros, as in 8.0, and uses plain decimal notation.
 
     Parameters
     ----------
     value : float
-        Value to render. Zero prints as ``"0"``: it has no significant
-        figures, and a decoding error of exactly zero is a valid summary.
+        Value to render. Zero prints as ``"0"``; a decoding error of exactly
+        zero is a valid summary.
     digits : int
         Significant figures to keep.
 
@@ -371,9 +371,9 @@ def _simulation_statistics(payload: dict[str, Any]) -> list[MacroDefinition]:
             )
         )
 
-    # Thresholds: the HPD and KL cutoffs are estimated from the pooled baseline,
-    # so their percentile levels are themselves data-dependent choices. The
-    # prose writes them as ordinals ("1st percentile"), which has no faithful
+    # Thresholds: the HPD and KL cutoff values are estimated from the pooled
+    # baseline at fixed percentile levels. The prose writes those levels as
+    # ordinals ("1st percentile"), which has no faithful
     # form for a fractional level, so a configured 0.005 must fail the emit
     # rather than round to "0th".
     provenance = payload["threshold_provenance"]

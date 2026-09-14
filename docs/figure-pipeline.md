@@ -14,7 +14,9 @@ uv sync --frozen
 uv run python scripts/generate_figureNN.py     # one figure
 uv run python scripts/generate_all_figures.py  # all four
 uv run python scripts/emit_reported_values.py  # refresh the manuscript's numbers
-# Outputs land in manuscript/figures/main/figureNN.{pdf,png} at 450 DPI.
+make -C manuscript                           # build the paper
+# Figures: manuscript/figures/main/figureNN.{pdf,png} at 450 DPI.
+# Prose macros: manuscript/reported_values.tex; paper: manuscript/main.pdf.
 ```
 
 ## Architecture at a glance
@@ -41,6 +43,8 @@ diagnostics            → (external statespacecheck only; leaf)
 decoding               → diagnostics, simulation
 simulation             → (numpy/scipy only)
 scientific_artifacts   → (standard library + numpy only)
+reported_values        → (standard library only; reads summary JSONs)
+emit_reported_values.py → reported_values
 
 figure03_protocol      → (leaf; no sibling paper module)
 figure03_simulation    → figure03_protocol, decoding, diagnostics, simulation
@@ -134,7 +138,7 @@ Trace: `create_shared_example(rng)` returns one immutable
   `figure03_summary.estimate_realization_summary` (pools 100 realizations into
   thresholds, median flag percentages, and median decoding accuracy) →
   `figure03_plotting.compose_figure03` (the time-series panel + the panel-(b)
-  heatmap).
+  flag heatmap and decoding-error row).
 - **Output:** `manuscript/figures/main/figure03.{pdf,png}` plus
   `figure03_summary.json`, containing the full configuration, seed range,
   explicit inclusive flag rules, metric/condition order, reported percentage
@@ -169,9 +173,12 @@ dataclass for values rather than duplicating them here.
 `Figure3SimulationResult` (`.true_position`, `.spike_counts`, `.diagnostics: DecodingDiagnostics`,
 `.position_bins`, `.sparse_place_field_centers`) → `estimate_realization_summary(config, n_realizations=100)`
 returns a `Figure3RealizationSummary` (`.diagnostic_thresholds: DiagnosticThresholds`,
-`.median_flag_percentages`) → `compose_figure03(true_position=…, spike_counts=…,
+`.median_flag_percentages`, `.median_decoding_accuracy`,
+`.flag_percentage_standard_errors`, `.decoding_accuracy_standard_errors`) →
+`compose_figure03(true_position=…, spike_counts=…,
 diagnostics=…, diagnostic_thresholds=…, config=…, place_field_centers=…,
-median_flag_percentages=…)` returns a `matplotlib` `Figure` → `save_figure` writes
+median_flag_percentages=…, median_decoding_accuracy=…)` returns a `matplotlib`
+`Figure` → `save_figure` writes
 `figure03.{pdf,png}` while `write_json_artifact` writes the same summary values
 and their configuration to `figure03_summary.json`.
 
@@ -179,16 +186,36 @@ and their configuration to `figure03_summary.json`.
 
 | Code name | Manuscript notation | Meaning / shape |
 | --- | --- | --- |
-| `true_position` | $x_t$ | true position, shape `(n_time,)` |
+| `true_position` | $x_t$ outside replay; $z_t$ during replay | physical position, shape `(n_time,)`; decoding error is measured against this trajectory |
 | `position_bins` | discretized $x$ grid | position bin centers, shape `(n_bins,)` |
 | `spike_counts` | $y_{c,t}$ | integer spike counts, shape `(n_time, n_cells)` |
 | `place_field_centers` | $\mu_c$ | per-cell place-field centers, shape `(n_cells,)` |
 | `place_field_std` | $\sigma_\mathrm{pf}$ | Gaussian place-field standard deviation |
-| `place_field_rate_scale` | $\alpha$ | firing-rate scale on the normalized field |
+| `place_field_rate_scale` | $\alpha$ | expected-count scale multiplying the normalized Gaussian field |
 | `prediction_step_std` | $\sigma_\mathrm{pred}$ | decoder baseline dynamics standard deviation |
 | `event_hpd_overlap` | HPD overlap | per-spike prediction/likelihood HPD overlap |
 | `event_predictive_pvalue` | rank-based predictive $p$-value | per-spike rank statistic |
 | `event_kl_divergence` | KL divergence | per-spike prediction→likelihood KL |
+
+### Rates and expected counts
+
+The Methods distinguish the firing rate $\lambda_c(x)$ from the expected count
+$m_c(x)=\lambda_c(x)\Delta t$ in a bin of width $\Delta t$. The simulation's
+`place_field_rates` and decoder rate tables already contain these expected
+counts per step: they go directly into the Poisson distribution. In Figure 3,
+$\Delta t=1$ ms and $m_c(x)=\alpha\phi(x\mid\mu_c,\sigma_{\mathrm{pf}}^2)$.
+Convert to Hz by dividing by the bin width in seconds; do not multiply these
+Poisson inputs by the bin width again.
+
+In the likelihood factorization, the population exposure is
+$\exp[-\Lambda(x)\Delta t]$ and each event contributes
+$\lambda_c(x)\Delta t$, where $\Lambda$ is the total event rate. The common
+bin width cancels when normalizing a single-event likelihood over state and
+when forming the event-weighted predictive mark distribution. Thus the
+diagnostic normalization can use either rates or expected counts with a common
+bin width. The manuscript also states the corresponding clusterless convention:
+$\lambda(y,x)$ is a rate per unit mark volume, and its integral over marks is
+$\Lambda(x)$.
 
 ## Figure 4 — Real-data decoder diagnostics
 
@@ -197,7 +224,8 @@ and their configuration to `figure03_summary.json`.
   cached decoder outputs (this overwrites the cache; a config / data /
   `non_local_detector` change invalidates the cache automatically). The cache
   fingerprint (`figure04_cache.compute_figure04_cache_provenance`) hashes the
-  schema version, the full `Figure4Config`, the installed `non_local_detector`
+  schema version, the decoder and provenance parts of `Figure4Config`, the
+  data identifier, the installed `non_local_detector`
   version, and the **content hashes of all five input exports** — so replacing an
   export under the same `animal_date_epoch` invalidates the cache too.
 - **Manuscript:** the real hippocampal-recording panels comparing the Continuous
@@ -249,8 +277,8 @@ and their configuration to `figure03_summary.json`.
   ([Comrie et al. 2024](https://doi.org/10.1101/2024.09.23.613567)) and place the
   exports under `data/` (or set `STATESPACECHECK_DATA_PATH`). The expensive decode
   is cached as a single joblib bundle under `data/intermediates/{epoch}_fig4_cache.joblib`,
-  gated by a provenance fingerprint (schema version + `Figure4Config` +
-  data identifier + installed `non_local_detector` version).
+  gated by the provenance fingerprint described above. Execution-only settings
+  are excluded; all five input-content hashes are included.
 - **Output:** `manuscript/figures/main/figure04.{pdf,png}` plus
   `figure04_summary.json`, containing configuration and dataset identifiers,
   explicit inclusive flag rules, whole-session means, flag-confusion counts,
@@ -272,8 +300,8 @@ loads a `NeuralRecordingData` and returns a `Figure4RenderData`
 `.decode_results: Figure4DecodeResults`) — the decode results come from a
 fingerprint-matching cache (`Figure4DecodeResults.from_cache_payload`) or a fresh
 fit/decode (`_compute_figure04_decode_results`) → `compute_figure04_summary`
-returns a `Figure4Summary` (per-decoder `Figure4DiagnosticMeans` plus typed
-`FlagConfusion` counts) → `format_figure04_summary` handles CLI text separately
+returns a `Figure4Summary` (`.n_units`, per-decoder `Figure4DiagnosticMeans`, and
+typed `FlagConfusion` counts) → `format_figure04_summary` handles CLI text separately
 → `compose_figure04(render_data, diagnostic_thresholds=…,
 detail_window=Figure4DetailWindow(…))`
 returns a `Figure4Composition` (`.figure`, `.bbox_inches`) → `save_figure` writes
@@ -292,9 +320,13 @@ uses schema version 3. The Figure-3 schema includes the decoding-accuracy block:
 `median_decoding_accuracy`, a `(1, n_conditions)` matrix of the
 across-realization median absolute error of the filtered-posterior mean
 (position units), in the same column order as `median_flag_percentages`. It also
-records approximate across-realization standard errors of the medians (an
-order-statistic interval, for the reader; they do not set reported precision)
-and the baseline-threshold provenance quoted in the Methods. The Figure-4
+records `median_flag_percentage_standard_errors` and
+`median_decoding_accuracy_standard_errors`: approximate standard errors of the
+medians, estimated from order-statistic interval widths. These describe the
+uncertainty in the aggregated medians under repeated simulation with the same
+configuration, not the spread of individual realizations, and do not set
+reported precision. The summary also records the baseline-threshold provenance
+quoted in the Methods. The Figure-4
 schema records `dataset.n_units` alongside the recording identifier. The
 `flag_rules` object binds each numeric threshold to its executable semantics:
 `less_than_or_equal` means a value is flagged when `value <= threshold`, and
@@ -307,6 +339,15 @@ Both summaries contain `provenance.source`, with the installed
 file under `src/statespacecheck_paper`, and the SHA-256 digest of `uv.lock`.
 The digest excludes timestamps, generated outputs, and absolute paths, so clean
 checkouts of identical source produce the same identity.
+
+The source digest includes comments and docstrings. After a documentation-only
+source edit, verify that executable code is unchanged (for example, compare
+Python syntax trees with docstrings removed). Then refresh only
+`provenance.source` in both committed summaries using
+`scientific_source_provenance` and `write_json_artifact`, preserving all other
+fields, and rerun `uv run python scripts/emit_reported_values.py`. If scientific
+code or inputs changed, regenerate the affected figures and summaries through
+their canonical entry points instead of relabeling existing results.
 
 Figure 4 also contains `provenance.figure04_decode_cache`. Its fingerprint is
 the same identity used to accept or reject the expensive decoder cache, and the
@@ -325,21 +366,44 @@ three diagnostic quantities are the same `event_hpd_overlap` /
 
 ## From summary to prose: the reported-value macros
 
-The manuscript quotes no analysis number as a literal. `main.tex` inputs
+The manuscript's reported configuration and headline analysis statistics are
+generated from the summaries. `main.tex` inputs
 `manuscript/reported_values.tex`, a generated file of `\newcommand` definitions
 (`\Sim...` for the Figure-3 simulation, `\Rec...` for the Figure-4 recording),
-so the chain runs **code → summary JSON → macro file → prose** with a test on
-each link. `scripts/emit_reported_values.py` (recipe:
+so the chain runs **code → summary JSON → macro file → prose**.
+`scripts/emit_reported_values.py` (recipe:
 `statespacecheck_paper.reported_values`) reads only the two committed summaries,
-so a number can reach the paper only by first being recorded as an artifact.
+so these values reach the paper through an artifact. Upstream acquisition and
+sorting parameters, which have no artifact in this repository, remain stated
+directly in the Methods.
 
-Printed precision follows the reporting policy stated once, in the
-`statespacecheck_paper.reported_values` module docstring. Machine-readable
-summaries retain full numerical precision; the Figure-3 summary also publishes
-approximate across-realization standard errors of its medians for the reader,
-which play no part in formatting.
+Prose precision follows the policy defined in the
+[`reported_values` module docstring](../src/statespacecheck_paper/reported_values.py):
+
+| Quantity | Prose format | Purpose |
+| --- | --- | --- |
+| Decoding errors | Two significant figures | Supports the ratios discussed in the Results |
+| Flag percentages | Nearest whole percent | Supports comparisons described as substantial, low, or modest |
+| Rescue rates | Nearest whole percent, with exact counts alongside | Describes this recording |
+| Derived constants introduced with “approximately” | Two significant figures | Communicates their approximate scale |
+| Exact counts and configured parameters | In full | Preserves the specified count or setting |
+| Summary JSON values | Full numerical precision, retaining median SEs | Preserves the analysis detail |
+
+Decoding errors remain bare in the prose, without adding “about” before each
+value. The Figure-3 error row uses one decimal place; the two-significant-figure
+policy governs the prose. Neither a binomial SE nor the published median SEs
+controls formatting. A distribution plot of the per-realization Figure-3
+results remains a [follow-up](../TODO.md).
 
 `tests/test_reported_values.py` holds the guards: the committed macro file must
 byte-match a fresh render of the committed summaries, every macro must actually
 appear in `main.tex`, and each mode or condition must keep its own value rather
-than borrowing a neighbour's.
+than borrowing a neighbour's. Tests also cover zero and power-of-ten rounding,
+reject lossy rounding of exact parameters and percentile levels, and verify
+that changing SEs does not change the formatted values.
+
+`tests/test_reported_statistics_artifacts.py` checks the committed summaries'
+schemas, reference values, configuration, and provenance. These checks do not
+rerun the full scientific analyses. The manuscript Makefile tracks
+`reported_values.tex` as a build prerequisite but does not run the emitter;
+regenerate the macros explicitly after changing a summary.

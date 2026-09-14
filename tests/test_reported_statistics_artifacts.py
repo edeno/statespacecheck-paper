@@ -94,7 +94,7 @@ def test_figure03_reported_statistics_match_canonical_run(tmp_path: Path) -> Non
         },
     }
     assert payload["condition_labels"][-1] == "Sparse population"
-    # Dispersion is published because it sets the manuscript's printed precision.
+    # Approximate median uncertainty is retained independently of prose precision.
     assert payload["standard_error_method"] == "order_statistic_interval_95"
     flag_errors = np.asarray(payload["median_flag_percentage_standard_errors"])
     accuracy_errors = np.asarray(payload["median_decoding_accuracy_standard_errors"])

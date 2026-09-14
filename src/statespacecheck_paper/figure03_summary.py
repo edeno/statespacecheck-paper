@@ -1,11 +1,13 @@
-"""Figure-3b summary heatmap: per-condition diagnostic-flag percentages.
+"""Figure-3b summary: per-condition flag percentages and decoding errors.
 
 This module builds the Figure-3b summary: it groups spike-event diagnostics into
 the experimental *conditions* (well-specified, remap, history-dependent, replay,
 drift, sparse population), computes the percentage of spike events each metric
 flags as poor fit in each condition, and pools many independent realizations
-into stabilized thresholds and median per-condition flag percentages
-(:class:`Figure3RealizationSummary`). Percentages are on a 0-100 scale.
+into stabilized thresholds, median per-condition flag percentages, and median
+decoding errors (:class:`Figure3RealizationSummary`). The summary also records
+approximate standard errors of these medians. Percentages are on a 0-100 scale;
+decoding errors are in position units.
 
 It imports :mod:`figure03_protocol` (the config + replay window),
 :mod:`figure03_simulation` (``estimate_realization_summary`` runs the
@@ -375,24 +377,25 @@ def compute_condition_decoding_accuracy(
 
 
 def median_standard_error(samples: NDArray[np.floating], axis: int = 0) -> NDArray[np.floating]:
-    """Return the standard error of a median, from the order-statistic interval.
+    """Approximate a median's standard error from an order-statistic interval.
 
     This is an *approximate* standard error, and it is conditional on the
     simulation setup: it describes how much the median of these
     ``n_realizations`` seeds would move under a rerun with different seeds,
     for this configuration, and nothing beyond that. It is published in the
-    summary so a reader can see how variable each median is across
-    realizations; it does not control how the manuscript prints the value.
+    summary as uncertainty in the aggregated median, not as the spread of
+    individual realizations; it does not control how the manuscript prints
+    the value.
 
     The estimate is deterministic (no bootstrap resampling, so the artifact
-    is reproducible byte-for-byte) and distribution-free, which matters here
-    because the remap column is strongly right-skewed across realizations.
-    For ``n`` samples the 95% interval for the median runs between order
+    is reproducible byte-for-byte). The interval uses sample ranks without
+    fitting a distribution to the realization values. For ``n`` samples,
+    nominal 95% bounds for the median run between order
     statistics ``k`` and ``n - k + 1`` with ``k = floor(n / 2 - z sqrt(n) / 2)``
     (``z = 1.96``); the returned value is that interval's half-width divided
-    by ``z``. Order-statistic discreteness makes it mildly conservative ---
-    about 0.15 for a standard normal at ``n = 100`` against the asymptotic
-    0.125.
+    by ``z``. Converting interval width to an SE this way is a normal-scale
+    approximation; it is not an exact or guaranteed conservative SE for skewed
+    or discrete distributions.
 
     Parameters
     ----------
@@ -404,15 +407,17 @@ def median_standard_error(samples: NDArray[np.floating], axis: int = 0) -> NDArr
     Returns
     -------
     standard_error : np.ndarray
-        Standard error of the median, with ``axis`` removed. Zero where every
-        sample is identical (a column no realization ever flags).
+        Approximate standard error of the median, with ``axis`` removed.
+        Returns zero when the selected order statistics coincide, including
+        when every sample is identical; this does not establish zero
+        population uncertainty.
 
     Notes
     -----
     Below roughly eight samples the order-statistic bounds collapse onto the
-    extremes and the result is the sample range over ``2 z`` --- a crude but
-    conservative over-estimate rather than an error, so small-``n`` callers
-    (the fast test fixtures) still get a usable, precision-losing number.
+    extremes and the result is the sample range over ``2 z``. This is a coarse
+    fallback for small-``n`` callers such as the fast test fixtures, with no
+    guarantee of conservative uncertainty or nominal interval coverage.
 
     Examples
     --------
@@ -434,7 +439,7 @@ def median_standard_error(samples: NDArray[np.floating], axis: int = 0) -> NDArr
 
 @dataclass(frozen=True)
 class Figure3RealizationSummary:
-    """Stabilized Figure-3 diagnostic_thresholds and per-phase flag fractions.
+    """Figure-3 thresholds, per-condition median flags and errors, and median SEs.
 
     Aggregates ``n_realizations`` independent realizations of the figure-3
     simulation so the Figure-3b heatmap and its flag diagnostic_thresholds no longer
@@ -469,10 +474,10 @@ class Figure3RealizationSummary:
         columns match ``median_flag_percentages``.
     flag_percentage_standard_errors : np.ndarray, shape (3, n_columns)
         Approximate standard error of each median flag percentage across
-        realizations, from :func:`median_standard_error`. Published as data
-        about realization-to-realization variability under this configuration;
-        the manuscript's printed precision is a documented policy, not derived
-        from these.
+        realizations, from :func:`median_standard_error`. Describes uncertainty
+        in the aggregated median under this configuration, not the spread of
+        individual realizations. The manuscript's printed precision follows
+        the reporting policy independently of these SEs.
     decoding_accuracy_standard_errors : np.ndarray, shape (1, n_columns)
         Approximate standard error of each median decoding accuracy, same
         convention.

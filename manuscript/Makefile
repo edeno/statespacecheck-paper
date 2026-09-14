@@ -10,7 +10,7 @@ main: main.pdf
 # Figures bundled into the manuscript; changing any should force a rebuild.
 FIGURES := $(wildcard figures/main/*.pdf figures/supplementary/*.pdf)
 
-# Build main manuscript (self-contained: own preamble + embedded bibliography).
+# Build from the manuscript, generated number macros, bibliography, and figures.
 # reported_values.tex is generated and \input by main.tex; without it here a
 # regenerated number would leave make reporting "up to date" with a stale PDF.
 main.pdf: main.tex reported_values.tex Local-GoF-Paper.bib $(FIGURES)
