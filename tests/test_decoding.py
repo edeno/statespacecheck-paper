@@ -38,9 +38,9 @@ class TestDecodeWithDiagnostics:
         result = decoder_inputs.call()
         n_time, n_cells = decoder_inputs.spike_counts.shape
         n_bins = decoder_inputs.position_bins.size
-        # Events come from spike_counts[1:] (t=0 has no prior); count > 1 expands
-        # to that many events (src/.../analysis.py:583).
-        n_events = int(decoder_inputs.spike_counts[1:].sum())
+        # Every bin contributes events, including t=0 (predicted by the
+        # initial state law); count > 1 expands to that many events.
+        n_events = int(decoder_inputs.spike_counts.sum())
 
         expected_shapes = {
             # Distributions over position (time × bins).
@@ -64,11 +64,100 @@ class TestDecodeWithDiagnostics:
             arr = getattr(result, name)
             assert arr.shape == shape, f"{name} shape mismatch: got {arr.shape}, want {shape}"
 
-    def test_t0_diagnostics_are_nan(self, decoder_inputs: DecoderInputs) -> None:
-        """No prior exists at t=0, so all diagnostics are NaN."""
-        result = decoder_inputs.call()
-        for key in ("hpd_overlap", "kl_divergence", "predictive_pvalue"):
-            assert np.all(np.isnan(getattr(result, key)[0]))
+    def test_first_bin_is_assimilated_against_initial_state(self) -> None:
+        """The t=0 spikes update the initial state law and are diagnosed against it.
+
+        Direct Bayesian calculation on a 3-bin grid: with a uniform p(x_0) and
+        an informative first event from a cell that fires only at bin 2, the
+        t=0 posterior must concentrate on bin 2, the t=0 prediction must be the
+        initial law itself (no transition applied), and the event must appear
+        in the per-event arrays with a diagnostic computed against p(x_0).
+        """
+        from scipy.stats import poisson as _poisson
+
+        rates = np.array([[0.0, 0.5], [0.0, 0.5], [2.0, 0.5]])  # (n_bins=3, n_cells=2)
+        spike_counts = np.array([[1, 0], [0, 0], [0, 1]])
+        transition = _diag_dominant_transition(3)
+        result = decode_with_diagnostics(
+            spike_counts=spike_counts,
+            position_bins=np.array([0.0, 1.0, 2.0]),
+            transition_matrix=transition,
+            place_field_centers=np.array([2.0, 1.0]),
+            place_field_std=1.0,
+            place_field_rate_scale=1.0,
+            baseline_firing_rates=rates,
+        )
+        initial = np.ones(3) / 3
+        np.testing.assert_allclose(result.predictive[0], initial)
+        log_lik0 = _poisson.logpmf(spike_counts[0][None, :], rates).sum(axis=1)
+        expected_post0 = initial * np.exp(log_lik0)
+        expected_post0 /= expected_post0.sum()
+        np.testing.assert_allclose(result.posterior[0], expected_post0, atol=1e-12)
+        np.testing.assert_allclose(result.posterior[0], [0.0, 0.0, 1.0], atol=1e-12)
+
+        # The t=0 event is present and diagnosed against p(x_0): the event
+        # likelihood is a point mass at bin 2, inside the uniform 95% HPD
+        # region, so the overlap is 1, and the rank p-value is the inclusive
+        # tail of the event-weighted mark distribution under the uniform
+        # prediction (cell 0 is the more probable mark, so its p-value is 1).
+        np.testing.assert_array_equal(result.event_time_ind, [0, 2])
+        np.testing.assert_array_equal(result.event_cell_ind, [0, 1])
+        assert result.hpd_overlap[0, 0] == pytest.approx(1.0)
+        assert np.isnan(result.hpd_overlap[0, 1])
+        mark_probs = initial @ rates / (initial @ rates).sum()
+        expected_p = mark_probs[mark_probs <= mark_probs[0]].sum()
+        assert mark_probs[0] > mark_probs[1] and expected_p == pytest.approx(1.0)
+        assert result.predictive_pvalue[0, 0] == pytest.approx(expected_p)
+
+        # t=1 then predicts from that informative t=0 posterior, not from a
+        # flat prior: the prediction is T @ post[0].
+        np.testing.assert_allclose(
+            result.predictive[1], normalize(transition @ expected_post0), atol=1e-12
+        )
+
+    def test_zero_count_first_bin_updates_with_exposure(self) -> None:
+        """A silent first bin still updates p(x_0) when total rate varies over space.
+
+        With no spikes the Poisson likelihood is exp(-sum_c m_c(x)), so the
+        t=0 posterior must tilt toward bins with lower total expected count
+        rather than remain uniform.
+        """
+        rates = np.array([[0.1, 0.1], [1.0, 1.0], [3.0, 0.5]])  # total 0.2, 2.0, 3.5
+        spike_counts = np.zeros((2, 2), dtype=int)
+        result = decode_with_diagnostics(
+            spike_counts=spike_counts,
+            position_bins=np.array([0.0, 1.0, 2.0]),
+            transition_matrix=_diag_dominant_transition(3),
+            place_field_centers=np.array([0.0, 1.0]),
+            place_field_std=1.0,
+            place_field_rate_scale=1.0,
+            baseline_firing_rates=rates,
+        )
+        expected = np.exp(-rates.sum(axis=1)) / 3
+        expected /= expected.sum()
+        np.testing.assert_allclose(result.posterior[0], expected, atol=1e-12)
+        assert result.posterior[0, 0] > result.posterior[0, 1] > result.posterior[0, 2]
+        assert result.event_time_ind.shape == (0,)
+
+    def test_custom_initial_state_distribution(self) -> None:
+        """A supplied p(x_0) is used verbatim as the t=0 prediction; invalid laws raise."""
+        n_bins = 5
+        initial = np.array([0.5, 0.25, 0.125, 0.0625, 0.0625])
+        kwargs = dict(
+            spike_counts=np.zeros((3, 1), dtype=int),
+            position_bins=np.linspace(0, 100, n_bins),
+            transition_matrix=_diag_dominant_transition(n_bins),
+            place_field_centers=np.array([50.0]),
+            place_field_std=5.0,
+            place_field_rate_scale=0.0,
+        )
+        result = decode_with_diagnostics(**kwargs, initial_state_distribution=initial)
+        np.testing.assert_allclose(result.predictive[0], initial)
+        np.testing.assert_allclose(result.posterior[0], initial)
+        with pytest.raises(ValueError, match="initial_state_distribution"):
+            decode_with_diagnostics(**kwargs, initial_state_distribution=initial[:-1])
+        with pytest.raises(ValueError, match="initial_state_distribution"):
+            decode_with_diagnostics(**kwargs, initial_state_distribution=initial * 2.0)
 
     def test_nan_pattern_matches_spike_pattern(self) -> None:
         """DecodingDiagnostics are NaN exactly where a cell has no spike at that time."""
@@ -84,10 +173,9 @@ class TestDecodeWithDiagnostics:
             place_field_rate_scale=0.1,
         )
 
-        # DecodingDiagnostics NaN at (t, cell) iff cell has no spike at that t,
-        # plus all of t=0 (no prior available).
+        # DecodingDiagnostics NaN at (t, cell) iff cell has no spike at that t;
+        # t=0 is diagnosed against the initial state law like any other bin.
         no_spike = spike_counts == 0
-        no_spike[0] = True
         for key in ("hpd_overlap", "kl_divergence", "predictive_pvalue"):
             np.testing.assert_array_equal(np.isnan(getattr(result, key)), no_spike)
 
@@ -667,9 +755,6 @@ class TestStoredLikelihoodNormalization:
         spike_lik = result.spike_likelihood
         spike_counts = decoder_inputs.spike_counts
         spike_steps = np.where(spike_counts.sum(axis=1) > 0)[0]
-        # Skip t=0 which is a flat-initialized row, not a likelihood
-        # over any observation.
-        spike_steps = spike_steps[spike_steps > 0]
         assert spike_steps.size, "test fixture produced no spike_counts"
         sums = spike_lik[spike_steps].sum(axis=1)
         np.testing.assert_allclose(
@@ -749,14 +834,17 @@ class TestLogSpaceReferenceComparison:
             decoder_inputs.place_field_rate_scale,
         )
         ref_post = np.zeros((n_time, n_bins))
-        ref_post[0] = np.ones(n_bins) / n_bins
-        for t in range(1, n_time):
+        for t in range(n_time):
             # ``transition`` is column-stochastic (column j = P(next | current
             # = j)), so the predictive marginal is ``T @ post``. This mirrors
             # the production convention and keeps the reference an independent
-            # check of orientation, not just of the log-space arithmetic.
-            prior = transition @ ref_post[t - 1]
-            prior = prior / prior.sum()
+            # check of orientation, not just of the log-space arithmetic. At
+            # t=0 the prediction is the uniform initial law itself.
+            if t == 0:
+                prior = np.ones(n_bins) / n_bins
+            else:
+                prior = transition @ ref_post[t - 1]
+                prior = prior / prior.sum()
             log_lik = _poisson.logpmf(spike_counts[t][None, :], rates).sum(axis=1)
             ll_max = float(np.max(log_lik))
             assert np.isfinite(ll_max)
@@ -836,6 +924,7 @@ class TestDecoderApiContract:
             "place_field_rate_scale",
             "override_schedule",
             "baseline_firing_rates",
+            "initial_state_distribution",
         ]
 
     def test_decoder_override_window_fields(self) -> None:
