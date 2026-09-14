@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 import numpy as np
 import pytest
 from numpy.testing import assert_allclose, assert_array_equal
+from numpy.typing import NDArray
 
 from statespacecheck_paper.simulation import (
     gaussian_transition_matrix,
@@ -392,6 +395,64 @@ class TestSimulateSpikesHistoryDependent:
             f"burst-window firing {burst_rate:.4f} should exceed "
             f"far-from-spike firing {far_rate:.4f}"
         )
+
+    def test_conditional_rate_schedule_at_actual_elapsed_offsets(self) -> None:
+        """The refractory and burst multipliers apply at the stated elapsed offsets.
+
+        A recording generator forces exactly one spike at step 0 and then
+        reports the Poisson mean it was handed at every later step. With
+        ``refractory_steps=1`` and ``burst_window=(2, 10)`` the multiplier must
+        be 0 at offset 1, ``burst_factor`` at offsets 2-10 inclusive, and 1 at
+        offset 11 -- the offsets the Methods quote, measured from the spike.
+        """
+
+        class _Recorder:
+            def __init__(self) -> None:
+                self.rates: list[NDArray[np.floating]] = []
+
+            def poisson(self, rate: NDArray[np.floating]) -> NDArray[np.int_]:
+                self.rates.append(np.array(rate, dtype=float))
+                return np.full_like(rate, int(len(self.rates) == 1), dtype=np.int_)
+
+        recorder = _Recorder()
+        simulate_spikes_history_dependent(
+            np.zeros(14),
+            np.zeros(1),
+            10.0,
+            5.0,
+            cast(np.random.Generator, recorder),
+            refractory_steps=1,
+            burst_window=(2, 10),
+            burst_factor=3.0,
+        )
+        multipliers = np.array(recorder.rates).ravel() / recorder.rates[0][0]
+        expected = np.array([1.0, 0.0] + [3.0] * 9 + [1.0, 1.0, 1.0])
+        assert_array_equal(multipliers, expected)
+
+    def test_longer_refractory_and_late_burst_offsets(self) -> None:
+        """Offsets stay elapsed-time offsets for a 2-step refractory and (4, 5) burst."""
+
+        class _Recorder:
+            def __init__(self) -> None:
+                self.rates: list[NDArray[np.floating]] = []
+
+            def poisson(self, rate: NDArray[np.floating]) -> NDArray[np.int_]:
+                self.rates.append(np.array(rate, dtype=float))
+                return np.full_like(rate, int(len(self.rates) == 1), dtype=np.int_)
+
+        recorder = _Recorder()
+        simulate_spikes_history_dependent(
+            np.zeros(8),
+            np.zeros(1),
+            10.0,
+            5.0,
+            cast(np.random.Generator, recorder),
+            refractory_steps=2,
+            burst_window=(4, 5),
+            burst_factor=2.0,
+        )
+        multipliers = np.array(recorder.rates).ravel() / recorder.rates[0][0]
+        assert_array_equal(multipliers, [1.0, 0.0, 0.0, 1.0, 2.0, 2.0, 1.0, 1.0])
 
     def test_reproducible_with_same_seed(self) -> None:
         x = np.full(300, 50.0)

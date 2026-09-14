@@ -330,8 +330,12 @@ def simulate_walk(
     """Simulate random walk with reflecting boundary conditions.
 
     Simulates a Gaussian random walk on continuous space with reflecting
-    boundaries. The walk starts at initial_position and takes steps drawn from a Gaussian
-    distribution with standard deviation step_std.
+    boundaries. ``initial_position`` is the position *before* the first
+    increment: the walk draws ``n_time_steps`` Gaussian increments, so the
+    first returned sample is ``initial_position + step_1`` (reflected), not
+    ``initial_position`` itself. Callers that chain phases pass the previous
+    phase's last sample as ``initial_position``, which keeps the trajectory
+    continuous without repeating a sample at the phase boundary.
 
     Parameters
     ----------
@@ -340,7 +344,8 @@ def simulate_walk(
     step_std : float
         Standard deviation of step size distribution.
     initial_position : float
-        Initial position.
+        Position immediately before the first increment; it is not itself
+        returned.
     position_min : float
         Lower boundary (reflecting).
     position_max : float
@@ -352,6 +357,7 @@ def simulate_walk(
     -------
     trajectory : np.ndarray, shape (n_time_steps,)
         Simulated trajectory with all values in [position_min, position_max].
+        Element ``k`` is the position after ``k + 1`` increments.
 
     Examples
     --------
@@ -445,31 +451,39 @@ def simulate_spikes_history_dependent(
     burst_window: tuple[int, int] = (2, 10),
     burst_factor: float = 3.0,
 ) -> NDArray[np.int_]:
-    """Position-tuned spikes with hippocampal-style refractory + bursting.
+    """Position-tuned binned spike counts with history-modulated Poisson means.
 
-    Generates per-step Poisson spikes whose expected count is modulated by
+    Generates per-step Poisson counts whose expected count is modulated by
     each cell's own recent history. As in :func:`simulate_spikes_position_tuned`,
-    the scaled field supplies counts per step, not Hz:
+    the scaled field supplies counts per step, not Hz. Let ``d`` be the number
+    of steps elapsed since the cell's most recent step containing a spike
+    (``d = 1`` is the very next step):
 
-    - Hard refractory: a cell that just fired cannot fire for the next
-      ``refractory_steps`` steps (rate set to 0).
-    - Burst window: ``burst_window[0]`` to ``burst_window[1]`` steps after
-      a spike, the rate is multiplied by ``burst_factor``.
-    - Outside both windows, the rate is the standard Gaussian place-field
-      rate, same as :func:`simulate_spikes_position_tuned`.
+    - Post-spike suppression: for ``1 <= d <= refractory_steps`` the Poisson
+      mean is set to 0, so the cell is silent in those following steps.
+    - Burst window: for ``burst_window[0] <= d <= burst_window[1]`` the mean
+      is multiplied by ``burst_factor``.
+    - Otherwise the mean is the standard Gaussian place-field mean, as in
+      :func:`simulate_spikes_position_tuned`.
 
     At 1 ms / step (the default temporal interpretation of the figure-3
     simulation), the defaults ``refractory_steps=1`` and ``burst_window=(2,
-    10)`` correspond to a 1 ms hard refractory period followed by a
-    burst-prone window 2-10 ms post-spike, matching the rough phenomenology
-    of CA1 pyramidal cells.
+    10)`` suppress the 1 ms step following a spike and elevate the rate over
+    elapsed offsets 2-10 ms, matching the rough phenomenology of CA1
+    pyramidal-cell refractory and burst windows.
 
-    The Poisson assumption is violated by this generator: the
-    spike-spike correlations introduced by the burst window create a
-    joint distribution that is not memoryless. Per-event spatial likelihoods
-    (which normalize ``rate(position)`` over position) are unchanged for any
-    individual spike — the misfit is in the
-    *temporal* joint distribution, not the per-step marginal.
+    This is a *binned count process*, not a point process with a hard
+    refractory interval: within a single step ``rng.poisson`` can return more
+    than one spike for the same cell, so the suppression acts on the following
+    bin rather than enforcing a minimum inter-spike interval. The modulation
+    also changes the marginal firing rate: because the burst multiplier
+    exceeds 1 over a longer window than the single suppressed step, the mean
+    count per step at a fixed position is higher than the unmodulated
+    place-field mean. What is preserved is the *shape* of each event's
+    spatial intensity: every spike still carries the same normalized
+    ``rate(position)`` likelihood, so the misfit a Poisson decoder sees lies in
+    the temporal joint distribution and the overall rate, not in per-event
+    spatial information.
 
     Parameters
     ----------
@@ -484,13 +498,13 @@ def simulate_spikes_history_dependent(
     rng : np.random.Generator
         Random number generator for reproducibility.
     refractory_steps : int, optional
-        Number of steps after a spike during which the cell cannot fire.
-        Must be >= 1. Defaults to 1 (the immediately-following step is
-        suppressed).
+        Number of steps after a spike-containing step during which the cell's
+        Poisson mean is zero (elapsed offsets ``1..refractory_steps``). Must be
+        >= 1. Defaults to 1 (only the immediately-following step is suppressed).
     burst_window : tuple[int, int], optional
-        ``(start, end)`` step offsets after a spike during which the
-        rate is boosted. End is inclusive; must satisfy
-        ``0 <= start <= end``. Defaults to ``(2, 10)``.
+        ``(start, end)`` elapsed step offsets after a spike-containing step
+        during which the mean is multiplied by ``burst_factor``. Both ends are
+        inclusive; must satisfy ``0 <= start <= end``. Defaults to ``(2, 10)``.
     burst_factor : float, optional
         Multiplier on the base rate during the burst window. Must be
         positive. Defaults to 3.0.
@@ -513,10 +527,10 @@ def simulate_spikes_history_dependent(
     figure-3-scale runs (~40k timesteps, 11 cells) this is fast enough
     to be unnoticeable.
 
-    When ``burst_window`` overlaps the refractory region
-    (``burst_start < refractory_steps``), the refractory zero is applied
-    first, so the effective burst window is
-    ``[max(burst_start, refractory_steps), burst_end]``.
+    When ``burst_window`` overlaps the suppressed region
+    (``burst_start <= refractory_steps``), the zero is applied first, so the
+    effective burst window is ``[max(burst_start, refractory_steps + 1),
+    burst_end]``.
 
     Examples
     --------
@@ -551,22 +565,24 @@ def simulate_spikes_history_dependent(
     )
 
     spikes = np.zeros((n_time, n_cells), dtype=np.int_)
-    # ``steps_since_spike[c]`` = number of steps since cell ``c`` last fired.
-    # Initialize to ``burst_end + 1`` so every cell starts outside both
-    # the refractory and burst regimes.
-    steps_since_spike = np.full(n_cells, burst_end + 1, dtype=np.int64)
+    # ``elapsed[c]`` = number of steps elapsed since cell ``c`` last fired,
+    # evaluated *at the step being drawn* (1 on the step right after a spike).
+    # Initialize beyond the burst window so every cell starts outside both
+    # the suppressed and burst regimes.
+    elapsed = np.full(n_cells, burst_end + 1, dtype=np.int64)
 
     for t in range(n_time):
         rate = base_rates[t].copy()  # (n_cells,)
-        in_refractory = steps_since_spike < refractory_steps
-        in_burst = (steps_since_spike >= burst_start) & (steps_since_spike <= burst_end)
+        in_refractory = elapsed <= refractory_steps
+        in_burst = (elapsed >= burst_start) & (elapsed <= burst_end)
         rate[in_refractory] = 0.0
         rate[in_burst] *= burst_factor
 
         step_spikes = rng.poisson(rate)
         spikes[t] = step_spikes
-        # Cells that fired reset to 0; everyone else increments.
+        # A cell that fired is one step past its spike at the next draw;
+        # everyone else moves one step further from their last spike.
         fired = step_spikes > 0
-        steps_since_spike = np.where(fired, 0, steps_since_spike + 1)
+        elapsed = np.where(fired, 1, elapsed + 1)
 
     return spikes
