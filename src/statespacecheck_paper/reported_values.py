@@ -434,18 +434,23 @@ def _simulation_statistics(payload: dict[str, Any]) -> list[MacroDefinition]:
         )
 
     # Thresholds: the HPD and KL cutoffs are estimated from the pooled baseline,
-    # so their percentile levels are themselves data-dependent choices.
+    # so their percentile levels are themselves data-dependent choices. The
+    # prose writes them as ordinals ("1st percentile"), which has no faithful
+    # form for a fractional level, so a configured 0.005 must fail the emit
+    # rather than round to "0th".
     provenance = payload["threshold_provenance"]
+    hpd_percentile = int(_exact(100.0 * provenance["hpd_overlap"]["quantile"]))
+    kl_percentile = int(_exact(100.0 * provenance["kl_divergence"]["quantile"]))
     macros.extend(
         [
             MacroDefinition(
                 "SimHpdPercentile",
-                ordinal(round(provenance["hpd_overlap"]["quantile"] * 100)),
+                ordinal(hpd_percentile),
                 "threshold_provenance.hpd_overlap.quantile",
             ),
             MacroDefinition(
                 "SimKlPercentile",
-                ordinal(round(provenance["kl_divergence"]["quantile"] * 100)),
+                ordinal(kl_percentile),
                 "threshold_provenance.kl_divergence.quantile",
             ),
             MacroDefinition(

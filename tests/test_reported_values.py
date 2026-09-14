@@ -109,6 +109,16 @@ def test_non_integral_burst_factor_is_not_silently_rounded() -> None:
         render_macro_file(figure03, _load("figure04_summary.json"))
 
 
+@pytest.mark.parametrize("quantile", [0.005, 0.995])
+def test_fractional_percentile_is_not_silently_rounded(quantile: float) -> None:
+    """0.005 must not print as "0th": the ordinal prose has no form for it."""
+    figure03 = copy.deepcopy(_load("figure03_summary.json"))
+    figure03["threshold_provenance"]["hpd_overlap"]["quantile"] = quantile
+
+    with pytest.raises(ValueError, match="not exact"):
+        render_macro_file(figure03, _load("figure04_summary.json"))
+
+
 def test_macro_names_are_unique() -> None:
     """A duplicated name would make ``\\newcommand`` abort the LaTeX build."""
     text = COMMITTED_MACRO_FILE.read_text(encoding="utf-8")
