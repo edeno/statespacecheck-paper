@@ -662,10 +662,15 @@ class TestDecodeWithDiagnosticsLogSpace:
         n_time, n_cells, n_bins = 8, 1, 21
         position_bins = np.linspace(0.0, 100.0, n_bins)
         transition_matrix = gaussian_transition_matrix(position_bins, step_std=2.0)
-        # PF center so far from position_bins that exp(-d^2 / 2*place_field_std^2)
-        # underflows to exactly 0.0 — every bin's rate is 0.0.
-        place_field_centers = np.array([1e6])
+        # ``place_field_rates`` floors its table above zero, so a rate table
+        # that is exactly zero everywhere has to arrive through an override
+        # window: the cell then fires at every step under a model in which it
+        # can never fire.
+        place_field_centers = np.array([50.0])
         spike_counts = np.ones((n_time, n_cells), dtype=np.int_)
+        impossible = DecoderOverrideSchedule(
+            [DecoderOverrideWindow(0, n_time, firing_rate_table=np.zeros((n_bins, n_cells)))]
+        )
 
         with pytest.raises(ValueError, match="every value is -inf"):
             decode_with_diagnostics(
@@ -675,6 +680,7 @@ class TestDecodeWithDiagnosticsLogSpace:
                 place_field_centers,
                 place_field_std=5.0,
                 place_field_rate_scale=1.0,
+                override_schedule=impossible,
             )
 
 

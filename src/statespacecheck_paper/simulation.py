@@ -260,6 +260,13 @@ def place_field_rates(
     directly into the Poisson distribution. No bin-width conversion is applied
     inside this function.
 
+    Values that underflow to zero in double precision (a narrow field
+    evaluated far from its center) are floored at the smallest normal double
+    so that a spike's normalized likelihood keeps a positive tail everywhere
+    the Gaussian model does. Without the floor, a positive prediction mass
+    over an underflowed bin would make the KL divergence infinite even though
+    the exact Gaussian contribution there is far below machine precision.
+
     Parameters
     ----------
     position_bins : np.ndarray, shape (n_bins,)
@@ -295,6 +302,8 @@ def place_field_rates(
         norm.pdf(position_bins[:, None], loc=place_field_centers[None, :], scale=place_field_std)
         * place_field_rate_scale
     )
+    if place_field_rate_scale > 0.0:
+        result = np.maximum(result, np.finfo(float).tiny)
     return result
 
 
