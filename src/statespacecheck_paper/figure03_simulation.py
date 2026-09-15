@@ -699,10 +699,10 @@ def unclipped_event_kl_divergence(
     """Per-event KL divergence under the unclipped Gaussian observation model.
 
     :func:`~simulation.place_field_rates` clips each field below at the
-    smallest positive double, so the decoder's KL divergence is a lower bound
-    on the divergence from the exact Gaussian field wherever the prediction
-    has mass more than about 38 field widths from a field center. This
-    recomputes ``D_KL(P || Q)`` with ``log Q`` taken exactly
+    smallest positive double, so the decoder's KL divergence differs from the
+    divergence from the exact Gaussian field wherever the prediction has mass
+    more than about 38 field widths from a field center. This recomputes
+    ``D_KL(P || Q)`` with ``log Q`` taken exactly
     (:func:`~simulation.place_field_log_likelihood`) so the summary can
     report how far the clipped values sit from the exact ones. A cell's
     normalized single-event likelihood depends only on its field center and

@@ -104,7 +104,7 @@ def figure03_summary_payload(
     directions = {metric: direction for metric, direction in SUMMARY_FLAG_METRICS}
     metric_order = [metric for metric, _ in SUMMARY_FLAG_METRICS]
     return {
-        "schema_version": 7,
+        "schema_version": 8,
         "figure": "figure03",
         "configuration": dataclasses.asdict(config),
         "realizations": {
@@ -182,9 +182,10 @@ def figure03_summary_payload(
         # the decoder reports with the exact-Gaussian value over every event.
         "kl_clip_impact": {
             "definition": (
-                "place_field_rates clips fields at np.finfo(float).tiny; the reported KL "
-                "is a lower bound on the exact-Gaussian KL. Counts compare the two over "
-                "all events of all evaluated realizations at the calibrated KL threshold."
+                "place_field_rates clips fields at np.finfo(float).tiny, which changes the "
+                "reported KL where the prediction has mass on clipped bins. Counts compare "
+                "the clipped and exact-Gaussian values over all events of all evaluated "
+                "realizations at the calibrated KL threshold (inclusive rule)."
             ),
             "evaluation": dataclasses.asdict(summary.kl_clip_impact),
             "calibration": dataclasses.asdict(calibration.kl_clip_impact),

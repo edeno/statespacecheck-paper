@@ -362,7 +362,7 @@ class TestPlaceFieldLogLikelihood:
         log_lik = place_field_log_likelihood(bins, centers, np.array([10.0, 5.0]))
         assert_allclose(np.exp(log_lik).sum(axis=0), 1.0)
 
-    def test_clipped_kl_is_a_lower_bound_on_the_exact_gaussian_kl(self) -> None:
+    def test_clip_reduces_kl_far_from_a_narrow_field(self) -> None:
         """The clip caps ``-log Q`` at about 708 nats; the exact Gaussian keeps growing.
 
         A width-2 field at 0 evaluated at 100 has ``log Q = -1250``, so a
@@ -384,6 +384,27 @@ class TestPlaceFieldLogLikelihood:
         assert clipped_kl == pytest.approx(707.89, abs=0.05)
         assert exact_kl == pytest.approx(1251.10, abs=0.05)
         assert clipped_kl < exact_kl
+
+    def test_clipped_kl_is_not_a_bound_in_either_direction(self) -> None:
+        """Clipping renormalizes ``Q``: a prediction equal to the exact field gets positive KL.
+
+        With ``P`` equal to the unclipped normalized field the exact KL is 0,
+        but the clipped ``Q`` has moved mass onto the clipped bins, so the
+        clipped KL is positive. The summary therefore records the signed
+        range of the difference rather than assuming one direction.
+        """
+        import statespacecheck as ssc
+
+        bins = np.arange(0.0, 101.0)
+        centers = np.array([0.0])
+        # A scale just above the clip pushes most of the field onto the clip,
+        # so renormalization moves visible mass away from the field's center.
+        rates = place_field_rates(bins, centers, place_field_std=2.0, place_field_rate_scale=5e-307)
+        clipped_likelihood = (rates[:, 0] / rates[:, 0].sum())[None, :]
+        exact_likelihood = np.exp(place_field_log_likelihood(bins, centers, 2.0))[:, 0][None, :]
+        clipped_kl = float(ssc.kl_divergence(exact_likelihood, clipped_likelihood)[0])
+        assert clipped_kl > 1e-2
+        assert float(ssc.kl_divergence(exact_likelihood, exact_likelihood)[0]) == pytest.approx(0.0)
 
 
 # ---------------------------------------------------------------------------

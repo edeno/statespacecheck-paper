@@ -573,9 +573,11 @@ class KlClipImpact:
     """Effect of the clipped Gaussian observation model on the KL diagnostic.
 
     :func:`~simulation.place_field_rates` clips each field below at the
-    smallest positive double, so the KL divergence the decoder reports is a
-    lower bound on the exact-Gaussian value. These counts compare the two over
-    every event that enters a summary.
+    smallest positive double, which changes the KL divergence the decoder
+    reports wherever the prediction has mass on clipped bins (and, through
+    renormalization, slightly elsewhere). These counts compare the clipped
+    and exact-Gaussian values over every event that enters a summary; the
+    signed range of the difference is recorded rather than assumed.
 
     Parameters
     ----------
@@ -583,11 +585,12 @@ class KlClipImpact:
         Events compared.
     n_differing_events : int
         Events whose clipped and exact KL differ by more than ``1e-6`` nats.
-    max_difference : float
-        Largest ``exact - clipped`` difference (nats).
+    max_difference, min_difference : float
+        Largest and smallest signed ``exact - clipped`` difference (nats).
     n_flag_changes : int
-        Events whose KL flag decision (``> threshold``) differs between the
-        clipped and exact values.
+        Events whose KL flag decision (``>= threshold``, the inclusive rule
+        used by :func:`_flag_percentage`) differs between the clipped and
+        exact values.
     min_clipped_kl_among_differing : float or None
         Smallest clipped KL among the differing events (``None`` when there
         are none); read against the threshold to see how far those events
@@ -597,6 +600,7 @@ class KlClipImpact:
     n_events: int
     n_differing_events: int
     max_difference: float
+    min_difference: float
     n_flag_changes: int
     min_clipped_kl_among_differing: float | None
 
@@ -620,7 +624,8 @@ class KlClipImpact:
             n_events=int(clipped.size),
             n_differing_events=int(differing.sum()),
             max_difference=float(difference.max()) if clipped.size else 0.0,
-            n_flag_changes=int(np.sum((clipped > threshold) != (exact > threshold))),
+            min_difference=float(difference.min()) if clipped.size else 0.0,
+            n_flag_changes=int(np.sum((clipped >= threshold) != (exact >= threshold))),
             min_clipped_kl_among_differing=(
                 float(clipped[differing].min()) if differing.any() else None
             ),

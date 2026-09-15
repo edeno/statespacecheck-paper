@@ -365,8 +365,14 @@ def _simulation_statistics(payload: dict[str, Any]) -> list[MacroDefinition]:
             ),
             MacroDefinition(
                 "SimKlClipMaxDifference",
-                significant(clip["evaluation"]["max_difference"], SIGNIFICANT_FIGURES),
-                "kl_clip_impact.evaluation.max_difference (nats)",
+                significant(
+                    max(
+                        abs(clip["evaluation"]["max_difference"]),
+                        abs(clip["evaluation"]["min_difference"]),
+                    ),
+                    SIGNIFICANT_FIGURES,
+                ),
+                "max(|kl_clip_impact.evaluation.max_difference|, |min_difference|) (nats)",
             ),
             MacroDefinition(
                 "SimKlClipFlagChanges",

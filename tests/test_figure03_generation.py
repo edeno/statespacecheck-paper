@@ -23,6 +23,7 @@ _NO_CLIP_IMPACT = KlClipImpact(
     n_events=900,
     n_differing_events=0,
     max_difference=0.0,
+    min_difference=0.0,
     n_flag_changes=0,
     min_clipped_kl_among_differing=None,
 )
@@ -183,7 +184,7 @@ def test_summary_payload_preserves_labels_rules_and_source_provenance(
     )
     flag_rules = cast(dict[str, dict[str, str | float]], payload["flag_rules"])
 
-    assert payload["schema_version"] == 7
+    assert payload["schema_version"] == 8
     assert payload["accuracy_metric_order"] == [
         "median_absolute_error",
         "filtered_hpd_coverage_percent",

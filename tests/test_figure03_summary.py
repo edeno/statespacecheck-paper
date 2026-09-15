@@ -297,9 +297,20 @@ class TestKlClipImpact:
         assert impact.n_events == 4
         assert impact.n_differing_events == 2
         assert impact.max_difference == pytest.approx(2.0)
+        assert impact.min_difference == pytest.approx(0.0)
         # Only the 3 -> 5 event crosses the threshold.
         assert impact.n_flag_changes == 1
         assert impact.min_clipped_kl_among_differing == pytest.approx(3.0)
+
+    def test_flag_rule_is_inclusive_like_the_summary(self) -> None:
+        """A value exactly on the threshold is flagged (``>=``), so reaching it is a change."""
+        clipped = np.array([3.0, 4.0, 5.0])
+        exact = np.array([4.0, 3.0, 5.0])
+        impact = KlClipImpact.compare(clipped, exact, threshold=4.0)
+        assert impact.n_flag_changes == 2
+        # The signed range shows the direction of every difference.
+        assert impact.max_difference == pytest.approx(1.0)
+        assert impact.min_difference == pytest.approx(-1.0)
 
     def test_identical_arrays_report_no_impact(self) -> None:
         values = np.array([0.5, 2.0])

@@ -165,7 +165,7 @@ Trace: `create_shared_example(rng)` returns one immutable
   heatmap with accuracy rows, and the panel-(c) per-realization
   distributions).
 - **Output:** `manuscript/figures/main/figure03.{pdf,png}` plus
-  `figure03_summary.json` (schema 7), containing the full configuration, seed
+  `figure03_summary.json` (schema 8), containing the full configuration, seed
   ranges for evaluation and calibration, the calibration record, explicit
   inclusive flag rules, metric/condition order, median and pooled flag
   percentages, per-realization percentages and event counts, the four

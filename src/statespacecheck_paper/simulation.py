@@ -269,11 +269,12 @@ def place_field_rates(
     would make the KL divergence infinite. The clip is not innocuous for KL:
     ``D_KL(P || Q)`` weights ``-log Q(x)`` by the prediction ``P(x)``, so where
     the exact Gaussian has ``log Q(x) < -708`` the clipped model reports a
-    smaller divergence (the clipped KL is a lower bound on the exact-Gaussian
-    KL). :func:`place_field_log_likelihood` gives the unclipped normalized
+    much smaller divergence, and because the clip also renormalizes ``Q`` the
+    clipped value is not a bound in either direction in general.
+    :func:`place_field_log_likelihood` gives the unclipped normalized
     log-likelihood so that the effect of the clip can be measured; the
-    Figure-3 summary records, for every reported event, whether the clipped
-    and exact values differ and whether any flag decision changes.
+    Figure-3 summary records, for every reported event, the signed range of
+    the difference and whether any flag decision changes.
 
     Parameters
     ----------
