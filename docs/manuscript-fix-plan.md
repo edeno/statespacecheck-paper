@@ -232,9 +232,11 @@ Five issues raised on the branch, all fixed here:
    blocks. Seed 4's sparse spike at 32,129 ms goes from HPD 0 / KL 467 to
    HPD 1 / KL 0.30. Figure 3 and its sensitivity summaries were regenerated.
 2. **Rate clip under-states KL** — `place_field_rates` now documents the
-   clip as the observation model in use and states that the clipped KL is a
-   lower bound on the exact-Gaussian value (test: width-2 field at 0,
-   prediction at 100 → exact 1251.10 vs clipped 707.89). Rather than move
+   clip as the observation model in use and describes the reduction it
+   produces far from a narrow field (test: width-2 field at 0, prediction at
+   100 → exact 1251.10 vs clipped 707.89); it is not a bound in general
+   because the clip renormalizes $Q$ (test: a prediction equal to the
+   unclipped field has exact KL 0 but positive clipped KL). Rather than move
    the whole decoder to log-domain tables, the pipeline measures the clip's
    effect: `unclipped_event_kl_divergence` recomputes every event's exact KL
    and the summary records `kl_clip_impact` for the evaluated realizations
@@ -263,4 +265,23 @@ Five issues raised on the branch, all fixed here:
 The comparability caveat for the 50%/80% coverage rows (null HPD rates of
 about 38% and 11%) stands as written: the manuscript makes no claim of
 improved sensitivity at comparable false-positive rates.
+
+### Post-review fixes (third pass)
+
+1. **"Consistency is necessary for accuracy"** — replaced in the Discussion:
+   agreement does not establish accuracy and disagreement does not establish
+   an incorrect estimate. New last row of the counterexample table
+   (prediction 99.9% on the true state, spike from a neuron tuned to the
+   other state: HPD 0, p 0.041, KL 3.2, posterior 98% on the true state),
+   pinned by `tests/test_diagnostics.py`.
+2. **Clip audit used `>`** — `KlClipImpact.compare` now uses the inclusive
+   `>=` rule of the summary and serialized flag rules; a test places values
+   exactly on the threshold. Published counts unchanged (0 flag changes).
+3. **"Clipped KL is a lower bound"** — withdrawn everywhere (docstrings,
+   summary definition string, manuscript, this plan); the audit records the
+   signed range (`min_difference`, `max_difference`; schema 8) and the
+   manuscript quotes the largest absolute difference.
+4. The unbounded-growth remark in the Discussion is restricted to KL; bounded
+   $f$-divergences (total variation, Hellinger) stay finite but also increase
+   with the width ratio.
 
