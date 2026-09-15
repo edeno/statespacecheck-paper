@@ -424,3 +424,54 @@ class TestSpikeEventPredictivePvalueRankTolerance:
         # (matches the tolerance in test_figure04_diagnostics).
         assert np.all(ranks >= 0.0)
         assert np.all(ranks <= 1.0 + 1e-9)
+
+
+class TestManuscriptCounterexamples:
+    """The Methods' counterexample table (Table 1) is computed by this code.
+
+    Each case delimits what one diagnostic measures; if the implementation
+    ever changes these values the table's claims no longer hold.
+    """
+
+    def test_rare_mark_with_identical_state_distributions(self) -> None:
+        """Equal state distributions: HPD overlap 1 and KL 0, yet p = 0.01."""
+        prediction = np.array([0.1, 0.8, 0.1])
+        rates = prediction[:, None] * np.array([0.01, 0.99])[None, :]
+        d = compute_spike_event_diagnostics_from_rates(
+            prediction[None, :], rates, np.array([0]), np.array([0])
+        )
+        assert d.event_hpd_overlap[0] == pytest.approx(1.0)
+        assert d.event_kl_divergence[0] == pytest.approx(0.0, abs=1e-12)
+        assert d.event_predictive_pvalue[0] == pytest.approx(0.01)
+
+    def test_uniform_prediction_passes_hpd_overlap_for_every_spike(self) -> None:
+        """A uniform prediction's HPD region contains every bin: overlap 1, KL large."""
+        n_bins = 50
+        prediction = np.full((1, n_bins), 1.0 / n_bins)
+        field = np.exp(-0.5 * ((np.arange(n_bins) - 40) / 2.0) ** 2)
+        rates = field[:, None] * np.array([[1.0, 5.0]])
+        d = compute_spike_event_diagnostics_from_rates(
+            prediction, rates, np.array([0, 0]), np.array([0, 1])
+        )
+        np.testing.assert_allclose(d.event_hpd_overlap, 1.0)
+        assert np.all(d.event_kl_divergence > 10.0)
+        # The rarer of the two identically tuned cells is the only one that can be flagged.
+        assert d.event_predictive_pvalue[0] == pytest.approx(1.0 / 6.0)
+        assert d.event_predictive_pvalue[1] == pytest.approx(1.0)
+
+    def test_incompatible_joint_bin_events_pass_individually(self) -> None:
+        """Two spikes no single state explains each pass HPD and rank checks."""
+        prediction = np.array([[0.5, 0.5]])
+        rates = np.eye(2)
+        d = compute_spike_event_diagnostics_from_rates(
+            prediction, rates, np.array([0, 0]), np.array([0, 1])
+        )
+        np.testing.assert_allclose(d.event_hpd_overlap, 1.0)
+        np.testing.assert_allclose(d.event_predictive_pvalue, 1.0)
+        assert np.all(np.isinf(d.event_kl_divergence))
+        # With small off-field rates the divergence is finite but large.
+        rates_soft = np.array([[1.0, 1e-6], [1e-6, 1.0]])
+        d = compute_spike_event_diagnostics_from_rates(
+            prediction, rates_soft, np.array([0, 0]), np.array([0, 1])
+        )
+        assert np.all(np.isfinite(d.event_kl_divergence)) and np.all(d.event_kl_divergence > 5.0)
