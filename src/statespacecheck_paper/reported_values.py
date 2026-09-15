@@ -348,6 +348,39 @@ def _simulation_statistics(payload: dict[str, Any]) -> list[MacroDefinition]:
             "matched_null_rank_pvalue_tail_percentages at alphas 0.01, 0.05, 0.10",
         ),
     ]
+    # Effect of the clipped Gaussian observation model on the KL diagnostic,
+    # over every event of every evaluated realization and calibration session.
+    clip = payload["kl_clip_impact"]
+    macros.extend(
+        [
+            MacroDefinition(
+                "SimKlClipEvents",
+                _exact(clip["evaluation"]["n_events"]),
+                "kl_clip_impact.evaluation.n_events",
+            ),
+            MacroDefinition(
+                "SimKlClipDiffering",
+                _exact(clip["evaluation"]["n_differing_events"]),
+                "kl_clip_impact.evaluation.n_differing_events",
+            ),
+            MacroDefinition(
+                "SimKlClipMaxDifference",
+                significant(clip["evaluation"]["max_difference"], SIGNIFICANT_FIGURES),
+                "kl_clip_impact.evaluation.max_difference (nats)",
+            ),
+            MacroDefinition(
+                "SimKlClipFlagChanges",
+                _exact(clip["evaluation"]["n_flag_changes"]),
+                "kl_clip_impact.evaluation.n_flag_changes",
+            ),
+            MacroDefinition(
+                "SimKlClipNullDiffering",
+                _exact(clip["calibration"]["n_differing_events"]),
+                "kl_clip_impact.calibration.n_differing_events",
+            ),
+        ]
+    )
+
     for metric, stem in _METRIC_STEMS:
         macros.append(
             MacroDefinition(
@@ -868,6 +901,18 @@ def _sensitivity_macros(
                 row_value(settings["continuous_reflected_trajectory"], "hpd_overlap", "remap")
             ),
             "settings[continuous_reflected_trajectory].median_flag_percentages[hpd_overlap, remap]",
+        ),
+        MacroDefinition(
+            "SensContinuousSparseKl",
+            whole_percent(
+                row_value(
+                    settings["continuous_reflected_trajectory"],
+                    "kl_divergence",
+                    "sparse_population",
+                )
+            ),
+            "settings[continuous_reflected_trajectory]"
+            ".median_flag_percentages[kl_divergence, sparse_population]",
         ),
         MacroDefinition(
             "SensCoverageEightyNullHpd",
