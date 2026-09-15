@@ -100,6 +100,7 @@ def test_summary_condition_and_realization_summary_fields() -> None:
         "per_realization_null_flag_percentages",
         "hpd_threshold_tie_percent",
         "rank_pvalue_tail_percentages",
+        "kl_clip_impact",
     ]
     assert _field_names(Figure3RealizationSummary) == [
         "calibration",
@@ -117,4 +118,5 @@ def test_summary_condition_and_realization_summary_fields() -> None:
         "sparse_cell_event_counts_by_realization",
         "matched_null_rank_pvalue_tail_percentages",
         "n_realizations",
+        "kl_clip_impact",
     ]

@@ -43,6 +43,7 @@ from statespacecheck_paper.figure03_protocol import (
 from statespacecheck_paper.simulation import (
     gaussian_transition_matrix,
     peak_rate_to_place_field_scale,
+    place_field_log_likelihood,
     place_field_rates,
     reflect_into_interval,
     simulate_discrete_walk,
@@ -683,6 +684,90 @@ def build_figure03_rate_tables(
         sparse_population_firing_rates=sparse_population_firing_rates,
         baseline_sparse_firing_rates=baseline_sparse_firing_rates,
     )
+
+
+def unclipped_event_kl_divergence(
+    predictive: NDArray[np.floating],
+    event_time_ind: NDArray[np.integer],
+    event_cell_ind: NDArray[np.integer],
+    position_bins: NDArray[np.floating],
+    place_field_centers: NDArray[np.floating],
+    sparse_centers: NDArray[np.floating],
+    config: Figure3Config,
+    phase_boundaries: tuple[int, ...] | None = None,
+) -> NDArray[np.floating]:
+    """Per-event KL divergence under the unclipped Gaussian observation model.
+
+    :func:`~simulation.place_field_rates` clips each field below at the
+    smallest positive double, so the decoder's KL divergence is a lower bound
+    on the divergence from the exact Gaussian field wherever the prediction
+    has mass more than about 38 field widths from a field center. This
+    recomputes ``D_KL(P || Q)`` with ``log Q`` taken exactly
+    (:func:`~simulation.place_field_log_likelihood`) so the summary can
+    report how far the clipped values sit from the exact ones. A cell's
+    normalized single-event likelihood depends only on its field center and
+    width, so the map in force at each event (baseline, scrambled remap, or
+    reflected) is the only thing that varies between windows; rate scalings
+    (replay, sparse regime) do not change it.
+
+    Parameters
+    ----------
+    predictive : np.ndarray, shape (n_time, n_bins)
+        One-step predictive distributions.
+    event_time_ind, event_cell_ind : np.ndarray, shape (n_events,)
+        Event time-step and cell indices (cells ordered as in the rate
+        tables: ordinary cells then sparse cells).
+    position_bins : np.ndarray, shape (n_bins,)
+        Position grid.
+    place_field_centers, sparse_centers : np.ndarray
+        Ordinary and sparse field centers.
+    config : Figure3Config
+        Field widths, remapping, and track bounds.
+    phase_boundaries : tuple of int, optional
+        Session phase boundaries; when omitted (a matched-null session) the
+        baseline map applies to every event.
+
+    Returns
+    -------
+    np.ndarray, shape (n_events,)
+        Exact-Gaussian KL divergence for each event.
+    """
+    stds = np.r_[
+        np.full(place_field_centers.size, config.place_field_std),
+        np.full(sparse_centers.size, config.sparse_place_field_std),
+    ]
+    lo, hi = float(config.position_min), float(config.position_max)
+    tables = [
+        place_field_log_likelihood(position_bins, np.r_[place_field_centers, sparse_centers], stds),
+        place_field_log_likelihood(
+            position_bins,
+            np.r_[
+                remap_place_field_centers(
+                    place_field_centers, config.place_field_remapping, active=True
+                ),
+                sparse_centers,
+            ],
+            stds,
+        ),
+        place_field_log_likelihood(
+            position_bins,
+            reflect_place_field_centers(np.r_[place_field_centers, sparse_centers], lo, hi),
+            stds,
+        ),
+    ]
+    t = np.asarray(event_time_ind, dtype=np.intp)
+    c = np.asarray(event_cell_ind, dtype=np.intp)
+    table_index = np.zeros(t.size, dtype=np.intp)
+    if phase_boundaries is not None:
+        b = phase_boundaries
+        table_index[(t >= b[PhaseBoundary.REMAP_START]) & (t < b[PhaseBoundary.REMAP_END])] = 1
+        table_index[(t >= b[PhaseBoundary.RECOVERY3_END]) & (t < b[PhaseBoundary.REFLECT_END])] = 2
+    log_q = np.stack([tables[k][:, cell] for k, cell in zip(table_index, c, strict=True)])
+    p = np.asarray(predictive, dtype=float)[t]
+    with np.errstate(divide="ignore", invalid="ignore"):
+        p_log_p = np.where(p > 0.0, p * np.log(p), 0.0).sum(axis=1)
+    result: NDArray[np.floating] = p_log_p - np.where(p > 0.0, p * log_q, 0.0).sum(axis=1)
+    return result
 
 
 def _position_grid(config: Figure3Config) -> NDArray[np.floating]:

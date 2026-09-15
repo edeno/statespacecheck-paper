@@ -49,6 +49,7 @@ from statespacecheck_paper.figure03_simulation import (
     run_matched_null_simulation,
     simulate_drift_phase,
     sparse_population_rates,
+    unclipped_event_kl_divergence,
 )
 from statespacecheck_paper.figure03_summary import (
     CONDITION_IDS,
@@ -624,3 +625,32 @@ class TestFigure3RealizationSummaryInvariants:
     ) -> None:
         assert isinstance(summary.diagnostic_thresholds, DiagnosticThresholds)
         assert summary.diagnostic_thresholds == summary.calibration.diagnostic_thresholds
+
+
+def test_unclipped_kl_bounds_the_decoder_kl_from_above(sim: Figure3SimulationResult) -> None:
+    """The decoder's KL uses the clipped fields; the exact Gaussian value is never smaller.
+
+    Where no bin of the cell's field is clipped the two agree to rounding;
+    the summary's clip-impact record is built from exactly this comparison.
+    """
+    params = sim.config
+    assert params.place_field_centers is not None
+    d = sim.diagnostics
+    exact = unclipped_event_kl_divergence(
+        d.predictive,
+        d.event_time_ind,
+        d.event_cell_ind,
+        sim.position_bins,
+        np.asarray(params.place_field_centers, dtype=float),
+        np.asarray(sim.sparse_place_field_centers, dtype=float),
+        params,
+        sim.phase_boundaries,
+    )
+    assert exact.shape == d.event_kl_divergence.shape
+    assert np.all(np.isfinite(exact))
+    assert np.all(exact >= d.event_kl_divergence - 1e-9)
+    n_ordinary = len(params.place_field_centers)
+    # Ordinary fields are wide relative to the track, so none is clipped and
+    # every ordinary-cell event agrees exactly.
+    ordinary = d.event_cell_ind < n_ordinary
+    np.testing.assert_allclose(exact[ordinary], d.event_kl_divergence[ordinary], atol=1e-9)

@@ -10,6 +10,7 @@ from statespacecheck_paper.figure03_protocol import Figure3Config, PhaseBoundary
 from statespacecheck_paper.figure03_summary import (
     CONDITION_IDS,
     SUMMARY_ACCURACY_METRICS,
+    KlClipImpact,
     _flag_percentage,
     build_summary_conditions,
     compute_condition_decoding_accuracy,
@@ -286,3 +287,28 @@ class TestConditionDecodingAccuracy:
                 conditions,
                 hpd_coverage=0.95,
             )
+
+
+class TestKlClipImpact:
+    def test_counts_differing_events_and_flag_changes(self) -> None:
+        clipped = np.array([1.0, 5.0, 3.0, 10.0])
+        exact = np.array([1.0, 5.0 + 2.0, 3.0 + 2.0, 10.0 + 1e-9])
+        impact = KlClipImpact.compare(clipped, exact, threshold=4.0)
+        assert impact.n_events == 4
+        assert impact.n_differing_events == 2
+        assert impact.max_difference == pytest.approx(2.0)
+        # Only the 3 -> 5 event crosses the threshold.
+        assert impact.n_flag_changes == 1
+        assert impact.min_clipped_kl_among_differing == pytest.approx(3.0)
+
+    def test_identical_arrays_report_no_impact(self) -> None:
+        values = np.array([0.5, 2.0])
+        impact = KlClipImpact.compare(values, values.copy(), threshold=1.0)
+        assert impact.n_differing_events == 0
+        assert impact.n_flag_changes == 0
+        assert impact.max_difference == 0.0
+        assert impact.min_clipped_kl_among_differing is None
+
+    def test_shape_mismatch_is_rejected(self) -> None:
+        with pytest.raises(ValueError, match="same shape"):
+            KlClipImpact.compare(np.zeros(2), np.zeros(3), threshold=1.0)

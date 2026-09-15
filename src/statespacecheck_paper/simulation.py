@@ -41,6 +41,7 @@ from typing import Literal, overload
 
 import numpy as np
 from numpy.typing import NDArray
+from scipy.special import logsumexp
 from scipy.stats import norm
 
 
@@ -260,12 +261,19 @@ def place_field_rates(
     directly into the Poisson distribution. No bin-width conversion is applied
     inside this function.
 
-    Values that underflow to zero in double precision (a narrow field
-    evaluated far from its center) are floored at the smallest normal double
-    so that a spike's normalized likelihood keeps a positive tail everywhere
-    the Gaussian model does. Without the floor, a positive prediction mass
-    over an underflowed bin would make the KL divergence infinite even though
-    the exact Gaussian contribution there is far below machine precision.
+    The returned table is the Gaussian field **clipped below** at
+    ``np.finfo(float).tiny`` (about ``2e-308``, log about ``-708``). This is
+    the observation model the simulation and decoder actually use: a narrow
+    field evaluated far from its center underflows to exactly zero in double
+    precision, and a zero expected count where the prediction still has mass
+    would make the KL divergence infinite. The clip is not innocuous for KL:
+    ``D_KL(P || Q)`` weights ``-log Q(x)`` by the prediction ``P(x)``, so where
+    the exact Gaussian has ``log Q(x) < -708`` the clipped model reports a
+    smaller divergence (the clipped KL is a lower bound on the exact-Gaussian
+    KL). :func:`place_field_log_likelihood` gives the unclipped normalized
+    log-likelihood so that the effect of the clip can be measured; the
+    Figure-3 summary records, for every reported event, whether the clipped
+    and exact values differ and whether any flag decision changes.
 
     Parameters
     ----------
@@ -304,6 +312,42 @@ def place_field_rates(
     )
     if place_field_rate_scale > 0.0:
         result = np.maximum(result, np.finfo(float).tiny)
+    return result
+
+
+def place_field_log_likelihood(
+    position_bins: NDArray[np.floating],
+    place_field_centers: NDArray[np.floating],
+    place_field_std: float | NDArray[np.floating],
+) -> NDArray[np.floating]:
+    """Compute the unclipped normalized single-event log-likelihood of each field.
+
+    For a Gaussian field the normalized single-event likelihood over position
+    does not depend on the field's rate scale, so this is the exact log-domain
+    counterpart of ``compute_normalized_event_likelihood(place_field_rates(...).T)``
+    without the clip applied by :func:`place_field_rates`.
+
+    Parameters
+    ----------
+    position_bins : np.ndarray, shape (n_bins,)
+        Position bin centers.
+    place_field_centers : np.ndarray, shape (n_cells,)
+        Place field center for each neuron.
+    place_field_std : float or np.ndarray, shape (n_cells,)
+        Standard deviation of each Gaussian field (scalar or per cell).
+
+    Returns
+    -------
+    log_likelihood : np.ndarray, shape (n_bins, n_cells)
+        ``log`` of the normalized event likelihood; each column's
+        ``logsumexp`` over bins is 0.
+    """
+    log_density = norm.logpdf(
+        position_bins[:, None],
+        loc=np.asarray(place_field_centers, dtype=float)[None, :],
+        scale=np.asarray(place_field_std, dtype=float),
+    )
+    result: NDArray[np.floating] = log_density - logsumexp(log_density, axis=0, keepdims=True)
     return result
 
 

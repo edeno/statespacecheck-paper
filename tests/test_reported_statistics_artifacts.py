@@ -12,7 +12,11 @@ import pytest
 from statespacecheck_paper.diagnostics import DiagnosticThresholds
 from statespacecheck_paper.figure03_generation import figure03_summary_payload
 from statespacecheck_paper.figure03_protocol import Figure3Config
-from statespacecheck_paper.figure03_summary import Figure3Calibration, Figure3RealizationSummary
+from statespacecheck_paper.figure03_summary import (
+    Figure3Calibration,
+    Figure3RealizationSummary,
+    KlClipImpact,
+)
 from statespacecheck_paper.figure04_cache import Figure4CacheProvenance, Figure4Paths
 from statespacecheck_paper.figure04_decoder import Figure4Config, Figure4DiagnosticsConfig
 from statespacecheck_paper.figure04_diagnostics import FlagConfusion
@@ -53,7 +57,7 @@ def _round_trip_live_payload(tmp_path: Path, payload: dict[str, object]) -> dict
 def test_figure03_reported_statistics_match_canonical_run(tmp_path: Path) -> None:
     payload = _load("figure03_summary.json")
 
-    assert payload["schema_version"] == 6
+    assert payload["schema_version"] == 7
     assert payload["realizations"] == {"count": 100, "first_seed": 1, "last_seed": 100}
     calibration = payload["calibration"]
     assert calibration["count"] == 100
@@ -176,6 +180,7 @@ def test_figure03_reported_statistics_match_canonical_run(tmp_path: Path) -> Non
         ),
         hpd_threshold_tie_percent=calibration["hpd_threshold_tie_percent"],
         rank_pvalue_tail_percentages=np.asarray(calibration["rank_pvalue_tail_percentages"]),
+        kl_clip_impact=KlClipImpact(**calibration["kl_clip_impact"]),
     )
 
     def _nan(values: object) -> np.ndarray:
@@ -209,6 +214,7 @@ def test_figure03_reported_statistics_match_canonical_run(tmp_path: Path) -> Non
             payload["matched_null_rank_pvalue_tail_percentages"]
         ),
         n_realizations=payload["realizations"]["count"],
+        kl_clip_impact=KlClipImpact(**payload["kl_clip_impact"]["evaluation"]),
     )
     live = figure03_summary_payload(Figure3Config(), summary)
     assert _round_trip_live_payload(tmp_path, live) == payload

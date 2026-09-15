@@ -12,6 +12,7 @@ from numpy.typing import NDArray
 from statespacecheck_paper.simulation import (
     gaussian_transition_matrix,
     normalize,
+    place_field_log_likelihood,
     place_field_rates,
     reflect_into_interval,
     simulate_spikes_history_dependent,
@@ -347,6 +348,42 @@ def test_place_field_rates_floor_underflow_keeps_event_likelihood_positive() -> 
     # A zero scale is a genuinely silent cell and stays exactly zero.
     silent = place_field_rates(bins, np.array([0.0]), 2.0, 0.0)
     assert np.all(silent == 0.0)
+
+
+class TestPlaceFieldLogLikelihood:
+    def test_matches_normalized_clipped_rates_where_nothing_is_clipped(self) -> None:
+        bins = np.linspace(0.0, 100.0, 51)
+        centers = np.array([20.0, 55.0])
+        rates = place_field_rates(bins, centers, place_field_std=10.0, place_field_rate_scale=3.0)
+        assert np.all(rates > np.finfo(float).tiny)
+        expected = np.log(rates / rates.sum(axis=0, keepdims=True))
+        assert_allclose(place_field_log_likelihood(bins, centers, 10.0), expected, atol=1e-12)
+        # Each column is a normalized log-density.
+        log_lik = place_field_log_likelihood(bins, centers, np.array([10.0, 5.0]))
+        assert_allclose(np.exp(log_lik).sum(axis=0), 1.0)
+
+    def test_clipped_kl_is_a_lower_bound_on_the_exact_gaussian_kl(self) -> None:
+        """The clip caps ``-log Q`` at about 708 nats; the exact Gaussian keeps growing.
+
+        A width-2 field at 0 evaluated at 100 has ``log Q = -1250``, so a
+        prediction concentrated there has an exact KL of about 1251 nats while
+        the clipped model reports about 708. The clipped value is the one the
+        decoder uses; the Figure-3 summary records how often the two differ.
+        """
+        import statespacecheck as ssc
+
+        bins = np.arange(0.0, 101.0)
+        centers = np.array([0.0])
+        rates = place_field_rates(bins, centers, place_field_std=2.0, place_field_rate_scale=1.0)
+        clipped_likelihood = (rates[:, 0] / rates[:, 0].sum())[None, :]
+        prediction = np.zeros((1, bins.size))
+        prediction[0, 100] = 1.0
+        clipped_kl = float(ssc.kl_divergence(prediction, clipped_likelihood)[0])
+        # With a point mass, D_KL(P || Q) = -log Q(100).
+        exact_kl = -float(place_field_log_likelihood(bins, centers, 2.0)[100, 0])
+        assert clipped_kl == pytest.approx(707.89, abs=0.05)
+        assert exact_kl == pytest.approx(1251.10, abs=0.05)
+        assert clipped_kl < exact_kl
 
 
 # ---------------------------------------------------------------------------

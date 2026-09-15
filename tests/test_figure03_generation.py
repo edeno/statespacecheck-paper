@@ -13,7 +13,19 @@ from matplotlib.figure import Figure
 from statespacecheck_paper import figure03_generation
 from statespacecheck_paper.diagnostics import DiagnosticThresholds
 from statespacecheck_paper.figure03_protocol import Figure3Config
-from statespacecheck_paper.figure03_summary import Figure3Calibration, Figure3RealizationSummary
+from statespacecheck_paper.figure03_summary import (
+    Figure3Calibration,
+    Figure3RealizationSummary,
+    KlClipImpact,
+)
+
+_NO_CLIP_IMPACT = KlClipImpact(
+    n_events=900,
+    n_differing_events=0,
+    max_difference=0.0,
+    n_flag_changes=0,
+    min_clipped_kl_among_differing=None,
+)
 
 
 def _summary(n_realizations: int, n_columns: int = 8) -> Figure3RealizationSummary:
@@ -30,6 +42,7 @@ def _summary(n_realizations: int, n_columns: int = 8) -> Figure3RealizationSumma
         per_realization_null_flag_percentages=np.ones((3, 3)),
         hpd_threshold_tie_percent=1.5,
         rank_pvalue_tail_percentages=np.array([0.3, 2.6, 4.7]),
+        kl_clip_impact=_NO_CLIP_IMPACT,
     )
     return Figure3RealizationSummary(
         calibration=calibration,
@@ -47,6 +60,7 @@ def _summary(n_realizations: int, n_columns: int = 8) -> Figure3RealizationSumma
         sparse_cell_event_counts_by_realization=np.zeros(n_realizations, dtype=int),
         matched_null_rank_pvalue_tail_percentages=np.array([0.3, 2.6, 4.7]),
         n_realizations=n_realizations,
+        kl_clip_impact=_NO_CLIP_IMPACT,
     )
 
 
@@ -169,7 +183,7 @@ def test_summary_payload_preserves_labels_rules_and_source_provenance(
     )
     flag_rules = cast(dict[str, dict[str, str | float]], payload["flag_rules"])
 
-    assert payload["schema_version"] == 6
+    assert payload["schema_version"] == 7
     assert payload["accuracy_metric_order"] == [
         "median_absolute_error",
         "filtered_hpd_coverage_percent",

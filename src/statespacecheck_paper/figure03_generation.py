@@ -104,7 +104,7 @@ def figure03_summary_payload(
     directions = {metric: direction for metric, direction in SUMMARY_FLAG_METRICS}
     metric_order = [metric for metric, _ in SUMMARY_FLAG_METRICS]
     return {
-        "schema_version": 6,
+        "schema_version": 7,
         "figure": "figure03",
         "configuration": dataclasses.asdict(config),
         "realizations": {
@@ -129,6 +129,7 @@ def figure03_summary_payload(
             "hpd_threshold_tie_percent": calibration.hpd_threshold_tie_percent,
             "rank_pvalue_tail_alphas": list(RANK_CALIBRATION_ALPHAS),
             "rank_pvalue_tail_percentages": calibration.rank_pvalue_tail_percentages,
+            "kl_clip_impact": dataclasses.asdict(calibration.kl_clip_impact),
         },
         "metric_order": metric_order,
         "flag_rules": inclusive_flag_rules(thresholds, directions),
@@ -176,6 +177,18 @@ def figure03_summary_payload(
         "matched_null_rank_pvalue_tail_percentages": (
             summary.matched_null_rank_pvalue_tail_percentages
         ),
+        # The observation model clips each Gaussian field below at the
+        # smallest positive double; these counts compare the clipped KL that
+        # the decoder reports with the exact-Gaussian value over every event.
+        "kl_clip_impact": {
+            "definition": (
+                "place_field_rates clips fields at np.finfo(float).tiny; the reported KL "
+                "is a lower bound on the exact-Gaussian KL. Counts compare the two over "
+                "all events of all evaluated realizations at the calibrated KL threshold."
+            ),
+            "evaluation": dataclasses.asdict(summary.kl_clip_impact),
+            "calibration": dataclasses.asdict(calibration.kl_clip_impact),
+        },
         # Approximate across-realization standard errors, conditional on this
         # configuration. Published as data about how variable each median is;
         # they do not set the manuscript's printed precision, which follows the

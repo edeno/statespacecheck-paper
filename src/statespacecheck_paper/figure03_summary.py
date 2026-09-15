@@ -57,6 +57,7 @@ from statespacecheck_paper.figure03_protocol import (
 from statespacecheck_paper.figure03_simulation import (
     run_figure03_simulation,
     run_matched_null_simulation,
+    unclipped_event_kl_divergence,
 )
 
 SUMMARY_FLAG_METRICS: tuple[tuple[str, Literal["below", "above"]], ...] = (
@@ -568,6 +569,65 @@ def median_standard_error(samples: NDArray[np.floating], axis: int = 0) -> NDArr
 
 
 @dataclass(frozen=True)
+class KlClipImpact:
+    """Effect of the clipped Gaussian observation model on the KL diagnostic.
+
+    :func:`~simulation.place_field_rates` clips each field below at the
+    smallest positive double, so the KL divergence the decoder reports is a
+    lower bound on the exact-Gaussian value. These counts compare the two over
+    every event that enters a summary.
+
+    Parameters
+    ----------
+    n_events : int
+        Events compared.
+    n_differing_events : int
+        Events whose clipped and exact KL differ by more than ``1e-6`` nats.
+    max_difference : float
+        Largest ``exact - clipped`` difference (nats).
+    n_flag_changes : int
+        Events whose KL flag decision (``> threshold``) differs between the
+        clipped and exact values.
+    min_clipped_kl_among_differing : float or None
+        Smallest clipped KL among the differing events (``None`` when there
+        are none); read against the threshold to see how far those events
+        sit from the flag boundary.
+    """
+
+    n_events: int
+    n_differing_events: int
+    max_difference: float
+    n_flag_changes: int
+    min_clipped_kl_among_differing: float | None
+
+    @classmethod
+    def compare(
+        cls,
+        clipped: NDArray[np.floating],
+        exact: NDArray[np.floating],
+        threshold: float,
+        *,
+        tolerance: float = 1e-6,
+    ) -> KlClipImpact:
+        """Compare paired clipped and exact KL arrays at a flag threshold."""
+        clipped = np.asarray(clipped, dtype=float)
+        exact = np.asarray(exact, dtype=float)
+        if clipped.shape != exact.shape:
+            raise ValueError("clipped and exact KL arrays must have the same shape")
+        difference = exact - clipped
+        differing = np.abs(difference) > tolerance
+        return cls(
+            n_events=int(clipped.size),
+            n_differing_events=int(differing.sum()),
+            max_difference=float(difference.max()) if clipped.size else 0.0,
+            n_flag_changes=int(np.sum((clipped > threshold) != (exact > threshold))),
+            min_clipped_kl_among_differing=(
+                float(clipped[differing].min()) if differing.any() else None
+            ),
+        )
+
+
+@dataclass(frozen=True)
 class Figure3Calibration:
     """Thresholds and realized null behavior from independent matched-null sessions.
 
@@ -597,6 +657,9 @@ class Figure3Calibration:
         for each alpha in :data:`RANK_CALIBRATION_ALPHAS`; under the matched
         null this must not exceed ``100 * alpha`` beyond sampling error
         (super-uniformity).
+    kl_clip_impact : KlClipImpact
+        Clipped-versus-exact KL comparison over the pooled calibration events
+        at the derived KL threshold.
     """
 
     diagnostic_thresholds: DiagnosticThresholds
@@ -608,6 +671,7 @@ class Figure3Calibration:
     per_realization_null_flag_percentages: NDArray[np.floating]
     hpd_threshold_tie_percent: float
     rank_pvalue_tail_percentages: NDArray[np.floating]
+    kl_clip_impact: KlClipImpact
 
     def __post_init__(self) -> None:
         if self.n_calibration_realizations < 1:
@@ -647,6 +711,17 @@ def _calibration_session_values(
                 f"Calibration event_{key} contains a non-finite value in session seed {seed}; "
                 "pooled thresholds would be undefined."
             )
+    if config.place_field_centers is None:
+        raise ValueError("config.place_field_centers must be initialized")
+    values["kl_divergence_exact"] = unclipped_event_kl_divergence(
+        d.predictive,
+        d.event_time_ind,
+        d.event_cell_ind,
+        result.position_bins,
+        np.asarray(config.place_field_centers, dtype=float),
+        np.asarray(config.sparse_place_field_centers, dtype=float),
+        config,
+    )
     return values
 
 
@@ -724,6 +799,11 @@ def estimate_calibration_thresholds(
     rank_tails = np.array(
         [100.0 * float(np.mean(pooled["predictive_pvalue"] <= a)) for a in RANK_CALIBRATION_ALPHAS]
     )
+    kl_clip_impact = KlClipImpact.compare(
+        pooled["kl_divergence"],
+        np.concatenate([session["kl_divergence_exact"] for session in sessions]),
+        float(thresholds.kl_divergence),
+    )
     return Figure3Calibration(
         diagnostic_thresholds=thresholds,
         n_calibration_realizations=n_calibration_realizations,
@@ -734,6 +814,7 @@ def estimate_calibration_thresholds(
         per_realization_null_flag_percentages=per_realization,
         hpd_threshold_tie_percent=tie_percent,
         rank_pvalue_tail_percentages=rank_tails,
+        kl_clip_impact=kl_clip_impact,
     )
 
 
@@ -787,6 +868,9 @@ class Figure3RealizationSummary:
         ``<= alpha`` (out-of-sample super-uniformity check).
     n_realizations : int
         Number of realizations aggregated.
+    kl_clip_impact : KlClipImpact
+        Clipped-versus-exact KL comparison over every event of every
+        evaluated realization at the calibrated KL threshold.
     """
 
     calibration: Figure3Calibration
@@ -804,6 +888,7 @@ class Figure3RealizationSummary:
     sparse_cell_event_counts_by_realization: NDArray[np.integer]
     matched_null_rank_pvalue_tail_percentages: NDArray[np.floating]
     n_realizations: int
+    kl_clip_impact: KlClipImpact
 
     @property
     def diagnostic_thresholds(self) -> DiagnosticThresholds:
@@ -899,6 +984,8 @@ class _RealizationRecord:
     sparse_cell_values: list[NDArray[np.floating]]
     sparse_cell_event_count: int
     matched_null_pvalues: NDArray[np.floating]
+    kl_divergence: NDArray[np.floating]
+    kl_divergence_exact: NDArray[np.floating]
 
 
 def _summarize_realization(config: Figure3Config, seed: int) -> _RealizationRecord:
@@ -948,6 +1035,18 @@ def _summarize_realization(config: Figure3Config, seed: int) -> _RealizationReco
     ]
     null = next(c for c in conditions if c.condition_id == "matched_null")
     null_mask = _condition_event_mask(event_time, null)
+    if config.place_field_centers is None:
+        raise ValueError("config.place_field_centers must be initialized")
+    kl_exact = unclipped_event_kl_divergence(
+        d.predictive,
+        d.event_time_ind,
+        d.event_cell_ind,
+        sim.position_bins,
+        np.asarray(config.place_field_centers, dtype=float),
+        np.asarray(sim.sparse_place_field_centers, dtype=float),
+        config,
+        sim.phase_boundaries,
+    )
     return _RealizationRecord(
         condition_values=condition_values,
         accuracy=accuracy,
@@ -956,6 +1055,8 @@ def _summarize_realization(config: Figure3Config, seed: int) -> _RealizationReco
         sparse_cell_values=sparse_values,
         sparse_cell_event_count=int(sparse_mask.sum()),
         matched_null_pvalues=np.asarray(d.event_predictive_pvalue, dtype=float)[null_mask],
+        kl_divergence=np.asarray(d.event_kl_divergence, dtype=float),
+        kl_divergence_exact=kl_exact,
     )
 
 
@@ -1072,4 +1173,9 @@ def estimate_realization_summary(
         ),
         matched_null_rank_pvalue_tail_percentages=null_tails,
         n_realizations=n_realizations,
+        kl_clip_impact=KlClipImpact.compare(
+            np.concatenate([r.kl_divergence for r in records]),
+            np.concatenate([r.kl_divergence_exact for r in records]),
+            float(thresholds.kl_divergence),
+        ),
     )
