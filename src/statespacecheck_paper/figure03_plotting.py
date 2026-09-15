@@ -736,7 +736,7 @@ def _plot_figure3_summary_heatmap(
     title = ax.set_title(
         "% of spike events flagged as poor fit (median across realizations)",
         fontsize=8,
-        pad=10,
+        pad=22,
         loc="center",
     )
     title.set_gid(FIGURE3_SUMMARY_TITLE_GID)
@@ -764,8 +764,8 @@ def _plot_figure3_realization_distributions(
 ) -> None:
     """Plot every realization's flag percentage per condition, one axis per metric.
 
-    Points are the individual realizations (horizontally jittered by a fixed
-    deterministic pattern); the bar marks the median. This is the paired
+    Points are the individual realizations (horizontally jittered with a fixed
+    seed); the bar marks the median. This is the paired
     distribution behind the panel-(b) medians, so trajectory-dependent spread
     (the remap column in particular) is visible rather than inferred.
     """
@@ -778,16 +778,17 @@ def _plot_figure3_realization_distributions(
             f"(n_realizations, {expected[1]}, {expected[2]}); got {values.shape}"
         )
     n_realizations = values.shape[0]
-    jitter = np.linspace(-0.28, 0.28, n_realizations) if n_realizations > 1 else np.zeros(1)
+    # Fixed-seed horizontal jitter, independent of the values, so the points
+    # read as a swarm rather than a sorted curve; the figure stays deterministic.
+    jitter = np.random.default_rng(0).uniform(-0.28, 0.28, n_realizations)
     for ax, spec, metric_values in zip(
         axes, FIGURE3_DIAGNOSTIC_ROW_SPECS, np.moveaxis(values, 1, 0), strict=True
     ):
         for col_idx in range(len(conditions)):
             column = metric_values[:, col_idx]
-            order = np.argsort(column, kind="stable")
             points = ax.scatter(
                 col_idx + jitter,
-                column[order],
+                column,
                 s=4,
                 color=spec.metric.color,
                 alpha=0.45,
@@ -824,7 +825,6 @@ def compose_figure03(
     place_field_centers: NDArray[np.floating],
     median_flag_percentages: NDArray[np.floating],
     median_decoding_accuracy: NDArray[np.floating],
-    flag_percentages_by_realization: NDArray[np.floating] | None = None,
     represented_position: NDArray[np.floating] | None = None,
 ) -> Figure:
     """Create comprehensive time-series diagnostics figure.
@@ -863,9 +863,6 @@ def compose_figure03(
         median absolute error, filtered HPD coverage percent, filtered and
         predictive HPD-region sizes), rendered as text rows beneath the
         panel-(b) heatmap.
-    flag_percentages_by_realization : NDArray, shape (n_realizations, 3, n_columns), optional
-        Per-realization percentages behind the medians; when given, panel (c)
-        shows their paired distributions.
     represented_position : NDArray, shape (n_time,), optional
         Represented trajectory (differs from ``true_position`` during the
         replay sweep), overlaid on the predictive row.
@@ -884,25 +881,26 @@ def compose_figure03(
     >>> # and how to plumb it into compose_figure03.
     """
     fig_width = 6.85  # Full page width; tight PDF stays within ~183 mm.
-    # Height holds the time-series block, the panel-(b) heatmap with its four
-    # accuracy rows and the known-component row, and the panel-(c)
-    # per-realization distributions.
-    show_distributions = flag_percentages_by_realization is not None
-    fig_height = 10.4 if show_distributions else 8.4
+    # Height holds the time-series block and the panel-(b) heatmap with its
+    # four accuracy rows and the known-component row. The per-realization
+    # distributions behind the medians are a separate figure
+    # (:func:`compose_figure03_realizations`) so the main figure and its
+    # caption fit one page.
+    fig_height = 7.2
     fig = plt.figure(figsize=(fig_width, fig_height), dpi=450)
 
     # Outer grid: time-series block on top; summary heatmap (with the text
-    # rows beneath it occupying a spacer sub-slot) and distributions below.
+    # rows beneath it occupying a spacer sub-slot) below.
     gs_outer = gridspec.GridSpec(
         2,
         1,
         figure=fig,
-        height_ratios=[5.3, 4.3 if show_distributions else 2.6],
-        hspace=0.30,
+        height_ratios=[5.3, 2.6],
+        hspace=0.5,
         left=0.10,
         right=0.93,
         top=0.975,
-        bottom=0.06,
+        bottom=0.02,
     )
 
     gs = gs_outer[0].subgridspec(
@@ -914,14 +912,8 @@ def compose_figure03(
 
     # The heatmap's three metric rows take the top of the summary slot; the
     # five text rows drawn beneath it (in data coordinates) fall into the
-    # spacer sub-slot so they cannot collide with panel (c).
-    if show_distributions:
-        gs_bottom = gs_outer[1].subgridspec(2, 1, height_ratios=[2.6, 1.4], hspace=0.45)
-        gs_summary_slot = gs_bottom[0]
-        gs_dist_slot = gs_bottom[1]
-    else:
-        gs_summary_slot = gs_outer[1]
-    gs_summary = gs_summary_slot.subgridspec(2, 1, height_ratios=[3.0, 5.0], hspace=0.0)[0]
+    # spacer sub-slot so they stay inside the figure.
+    gs_summary = gs_outer[1].subgridspec(2, 1, height_ratios=[3.0, 5.0], hspace=0.0)[0]
 
     n_time = diagnostics.posterior.shape[0]
     ax_pred = fig.add_subplot(gs[0])
@@ -969,11 +961,32 @@ def compose_figure03(
         median_decoding_accuracy,
     )
 
-    # ===== PER-REALIZATION DISTRIBUTIONS behind the medians =====
-    if flag_percentages_by_realization is not None:
-        gs_dist = gs_dist_slot.subgridspec(1, 3, wspace=0.42)
-        dist_axes = [fig.add_subplot(gs_dist[i]) for i in range(3)]
-        _plot_figure3_realization_distributions(dist_axes, config, flag_percentages_by_realization)
-        _add_figure3_panel_label(dist_axes[0], "c", y=1.08)
+    return fig
 
+
+def compose_figure03_realizations(
+    config: Figure3Config,
+    flag_percentages_by_realization: NDArray[np.floating],
+) -> Figure:
+    """Create the supplementary figure of per-realization flag percentages.
+
+    One axis per metric; each shows every realization's percentage of flagged
+    events per condition with the median marked, i.e. the paired distributions
+    behind the Figure-3 panel-(b) medians.
+
+    Parameters
+    ----------
+    config : Figure3Config
+        Provides the condition columns.
+    flag_percentages_by_realization : NDArray, shape (n_realizations, 3, n_columns)
+        Per-realization percentages (NaN where a realization had no events).
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+    """
+    fig, axes = plt.subplots(1, 3, figsize=(6.85, 2.4), dpi=450, constrained_layout=True)
+    _plot_figure3_realization_distributions(list(axes), config, flag_percentages_by_realization)
+    for label, ax in zip("abc", axes, strict=True):
+        _add_figure3_panel_label(ax, label, y=1.04)
     return fig

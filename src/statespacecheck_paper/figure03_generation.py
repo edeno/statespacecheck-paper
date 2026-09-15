@@ -33,7 +33,10 @@ from pathlib import Path
 
 import numpy as np
 
-from statespacecheck_paper.figure03_plotting import compose_figure03
+from statespacecheck_paper.figure03_plotting import (
+    compose_figure03,
+    compose_figure03_realizations,
+)
 from statespacecheck_paper.figure03_protocol import Figure3Config
 from statespacecheck_paper.figure03_simulation import run_figure03_simulation
 from statespacecheck_paper.figure03_summary import (
@@ -68,6 +71,7 @@ N_CALIBRATION_REALIZATIONS = 100
 # independent process; -1 uses every core).
 DEFAULT_N_JOBS = -1
 FIGURE03_SUMMARY_PATH = Path("manuscript/figures/main/figure03_summary.json")
+FIGURE03_REALIZATIONS_FIGURE_PATH = "manuscript/figures/supplementary/figure03_realizations"
 FIGURE03_CONDITION_IDS = CONDITION_IDS
 
 
@@ -193,6 +197,7 @@ def generate_figure03(
     n_jobs: int = DEFAULT_N_JOBS,
     summary_path: Path = FIGURE03_SUMMARY_PATH,
     figure_path: str = "manuscript/figures/main/figure03",
+    realizations_figure_path: str = FIGURE03_REALIZATIONS_FIGURE_PATH,
 ) -> Figure3RealizationSummary:
     """Run the figure-3 calibration, simulation, and summary; save the figure.
 
@@ -207,8 +212,9 @@ def generate_figure03(
         Independent matched-null sessions that calibrate the thresholds.
     n_jobs : int, default ``DEFAULT_N_JOBS``
         Parallel workers for the simulation sweeps.
-    summary_path, figure_path
-        Output locations (overridden by sensitivity recipes).
+    summary_path, figure_path, realizations_figure_path
+        Output locations of the summary, the main figure, and the
+        supplementary per-realization figure.
 
     Returns
     -------
@@ -256,8 +262,8 @@ def generate_figure03(
     )
     print(f"Saved canonical statistics to {written}")
 
-    # Panel (a) shows the single seed-1 realization; panels (b) and (c) show
-    # the pooled summary scored against the calibrated thresholds.
+    # Panel (a) shows the single seed-1 realization; panel (b) shows the
+    # pooled summary scored against the calibrated thresholds.
     set_figure_defaults(context="paper")
     fig = compose_figure03(
         true_position=simulation_result.true_position,
@@ -268,11 +274,15 @@ def generate_figure03(
         place_field_centers=raster_place_field_centers,
         median_flag_percentages=realization_summary.median_flag_percentages,
         median_decoding_accuracy=realization_summary.median_decoding_accuracy,
-        flag_percentages_by_realization=realization_summary.flag_percentages_by_realization,
         represented_position=simulation_result.represented_position,
     )
-
     save_figure(figure_path, close=True, fig=fig)
+
+    # The paired per-realization distributions behind the medians.
+    realizations_fig = compose_figure03_realizations(
+        config, realization_summary.flag_percentages_by_realization
+    )
+    save_figure(realizations_figure_path, close=True, fig=realizations_fig)
     print(
         f"\nFigure 3 saved to {figure_path}.{{pdf,png}} "
         f"(panels b-c pooled over {n_realizations} realizations; thresholds calibrated on "

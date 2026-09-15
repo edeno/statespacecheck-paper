@@ -23,6 +23,7 @@ from statespacecheck_paper.figure03_plotting import (
     FIGURE3_TRUE_POSITION_LABEL_GID,
     FIGURE3_WORSE_FIT_LABEL_GID,
     compose_figure03,
+    compose_figure03_realizations,
 )
 from statespacecheck_paper.figure03_protocol import Figure3Config
 
@@ -198,7 +199,6 @@ def test_compose_figure03_renders_precomputed_summary(
         np.linspace(0, 1, n_cells),
         median_flag_percentages=median,
         median_decoding_accuracy=accuracy,
-        flag_percentages_by_realization=np.repeat(median[None], 4, axis=0),
     )
     try:
         # The summary axis carries the median title and at least one cell
@@ -218,15 +218,23 @@ def test_compose_figure03_renders_precomputed_summary(
         # Coverage rounds to a whole percent; region sizes print whole bins.
         assert "95%" in cell_texts
         assert "30" in cell_texts and "29.5" not in cell_texts
-        # Panel (c) draws one scatter collection per condition per metric.
-        dist_axes = [ax for ax in fig.axes if ax.get_ylabel().endswith("% flagged")]
+    finally:
+        plt.close(fig)
+
+    # The per-realization distributions are a separate figure: one axis per
+    # metric, one scatter collection per condition (the median bars are
+    # LineCollections), and NaN entries (no events) are dropped.
+    by_realization = np.repeat(median[None], 4, axis=0)
+    by_realization[0, :, -1] = np.nan
+    realizations_fig = compose_figure03_realizations(params, by_realization)
+    try:
+        dist_axes = [ax for ax in realizations_fig.axes if ax.get_ylabel().endswith("% flagged")]
         assert len(dist_axes) == 3
-        # One scatter collection per condition (the median bars are LineCollections).
         assert all(
             sum(isinstance(c, PathCollection) for c in ax.collections) == 8 for ax in dist_axes
         )
     finally:
-        plt.close(fig)
+        plt.close(realizations_fig)
 
 
 def test_compose_figure03_tags_figure3_annotations(

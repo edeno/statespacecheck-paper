@@ -101,6 +101,12 @@ def test_generation_threads_one_config_through_simulation_summary_and_plot(
         return fig
 
     monkeypatch.setattr(figure03_generation, "compose_figure03", _compose)
+
+    def _compose_realizations(received: Figure3Config, by_realization: Any) -> Figure:
+        seen["realizations_shape"] = by_realization.shape
+        return fig
+
+    monkeypatch.setattr(figure03_generation, "compose_figure03_realizations", _compose_realizations)
     monkeypatch.setattr(
         figure03_generation,
         "save_figure",
@@ -121,7 +127,8 @@ def test_generation_threads_one_config_through_simulation_summary_and_plot(
     assert seen["n_realizations"] == 7
     assert seen["n_calibration_realizations"] == 3
     assert seen["calibration"] is realization_summary.calibration
-    assert seen["compose_kwargs"]["flag_percentages_by_realization"].shape == (7, 3, 8)
+    assert "flag_percentages_by_realization" not in seen["compose_kwargs"]
+    assert seen["realizations_shape"] == (7, 3, 8)
     assert seen["compose_kwargs"]["config"] is config
     assert seen["save_kwargs"]["fig"] is fig
     assert seen["save_kwargs"]["close"] is True
