@@ -18,7 +18,8 @@ from numpy.typing import NDArray
 from statespacecheck_paper.figure04_broadening import BroadeningResults, Figure4BroadeningConfig
 from statespacecheck_paper.style import COLORS
 
-MODEL_LABELS = {"continuous": "Continuous", "continuous_fragmented": "Continuous–Fragmented"}
+# Short model names keep the below-axes legends narrower than their axes.
+MODEL_LABELS = {"continuous": "Cont.", "continuous_fragmented": "Cont.–Frag."}
 MODEL_COLORS = {"continuous": COLORS["predictive"], "continuous_fragmented": COLORS["likelihood"]}
 METRIC_LABELS = {"hpd_overlap": "HPD overlap", "predictive_pvalue": "Rank p-value"}
 
@@ -51,10 +52,19 @@ def plot_region_size_ecdf(ax: Axes, broadening: BroadeningResults, coverage: flo
             )
     x, y = _ecdf(arrays.likelihood_size)
     ax.step(x, y, where="post", color=COLORS["threshold"], linestyle=":", label="Likelihood")
-    ax.set_xlabel(f"{int(round(100 * coverage))}% HPD region size (position bins)")
+    ax.set_xlabel(f"{int(round(100 * coverage))}% HPD region size (bins)")
     ax.set_ylabel("Cumulative fraction of spike events")
     ax.set_ylim(0, 1)
-    ax.legend(fontsize=6, frameon=False, loc="lower right")
+    # Legends of the top row sit below their axes so none covers a curve.
+    ax.legend(
+        fontsize=5.5,
+        frameon=False,
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.28),
+        ncol=2,
+        columnspacing=0.8,
+        handletextpad=0.3,
+    )
 
 
 def plot_uniform_mixture_rescue(
@@ -75,7 +85,7 @@ def plot_uniform_mixture_rescue(
             markersize=3,
             color=COLORS["predictive"],
             linestyle=styles.get(key, "-"),
-            label=f"{int(round(100 * float(record['coverage'])))}% HPD, uniform mixture",
+            label=f"{int(round(100 * float(record['coverage'])))}% HPD, mixture",
         )
         rescue = record["rescue_fraction"]
         if rescue is not None:
@@ -84,12 +94,21 @@ def plot_uniform_mixture_rescue(
                 color=COLORS["likelihood"],
                 linestyle=styles.get(key, "-"),
                 linewidth=0.8,
-                label=f"{int(round(100 * float(record['coverage'])))}% HPD, Cont.–Frag. rescue",
+                label=f"{int(round(100 * float(record['coverage'])))}% HPD, Cont.–Frag.",
             )
-    ax.set_xlabel("Uniform weight $w$ added to the Continuous prediction")
+    ax.set_xlabel("Uniform weight $w$ added\nto the Continuous prediction")
     ax.set_ylabel("Fraction of original\nContinuous flags removed")
     ax.set_ylim(0, 1.02)
-    ax.legend(fontsize=5.5, frameon=False, loc="lower right")
+    # Anchored lower than the neighbours' legends to clear the two-line x-label.
+    ax.legend(
+        fontsize=5.5,
+        frameon=False,
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.36),
+        ncol=2,
+        columnspacing=0.8,
+        handletextpad=0.3,
+    )
 
 
 def plot_rate_vs_unit_flag_fraction(ax: Axes, rate_summary: dict[str, Any]) -> None:
@@ -189,10 +208,7 @@ def plot_behavior_strata(ax: Axes, rate_summary: dict[str, Any]) -> None:
         )
     ax.set_xticks(x)
     ax.set_xticklabels(
-        [
-            f"{METRIC_LABELS[m]}\n{'Cont.' if mo == 'continuous' else 'Cont.–Frag.'}"
-            for mo, m in combos
-        ],
+        [f"{METRIC_LABELS[m]}\n{MODEL_LABELS[mo]}" for mo, m in combos],
         fontsize=6,
     )
     ax.set_ylabel("% of spike events flagged")
