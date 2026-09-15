@@ -136,7 +136,7 @@
   "figure": "figure03_sensitivity",
   "provenance": {
     "source": {
-      "source_tree_sha256": "f6cc646bebe61f90e940353b53fe709de7c932c0d87d5e4acc00df9ac9ed53a7",
+      "source_tree_sha256": "3e2183e3832a69fbdb86363f2564a70150181fd77e05c70b518c15b37d66146a",
       "statespacecheck_paper_version": "0.1.0",
       "uv_lock_sha256": "1e593807ad3ef1fe385bc7351056221b966552819319d83a376572cdd319cf78"
     }
@@ -162,6 +162,7 @@
           "kl_clip_impact": {
             "max_difference": 7.105427357601002e-15,
             "min_clipped_kl_among_differing": null,
+            "min_difference": -8.881784197001252e-15,
             "n_differing_events": 0,
             "n_events": 279684,
             "n_flag_changes": 0
@@ -5767,6 +5768,7 @@
           "kl_clip_impact": {
             "max_difference": 8.881784197001252e-15,
             "min_clipped_kl_among_differing": null,
+            "min_difference": -8.881784197001252e-15,
             "n_differing_events": 0,
             "n_events": 289278,
             "n_flag_changes": 0
@@ -11372,6 +11374,7 @@
           "kl_clip_impact": {
             "max_difference": 8.881784197001252e-15,
             "min_clipped_kl_among_differing": null,
+            "min_difference": -8.881784197001252e-15,
             "n_differing_events": 0,
             "n_events": 289278,
             "n_flag_changes": 0
@@ -16977,6 +16980,7 @@
           "kl_clip_impact": {
             "max_difference": 8.881784197001252e-15,
             "min_clipped_kl_among_differing": null,
+            "min_difference": -5.329070518200751e-15,
             "n_differing_events": 0,
             "n_events": 289269,
             "n_flag_changes": 0
@@ -22582,6 +22586,7 @@
           "kl_clip_impact": {
             "max_difference": 8.881784197001252e-15,
             "min_clipped_kl_among_differing": null,
+            "min_difference": -8.881784197001252e-15,
             "n_differing_events": 0,
             "n_events": 289278,
             "n_flag_changes": 0
@@ -28187,6 +28192,7 @@
           "kl_clip_impact": {
             "max_difference": 8.881784197001252e-15,
             "min_clipped_kl_among_differing": null,
+            "min_difference": -8.881784197001252e-15,
             "n_differing_events": 0,
             "n_events": 289278,
             "n_flag_changes": 0
@@ -33792,6 +33798,7 @@
           "kl_clip_impact": {
             "max_difference": 8.881784197001252e-15,
             "min_clipped_kl_among_differing": null,
+            "min_difference": -8.881784197001252e-15,
             "n_differing_events": 0,
             "n_events": 289278,
             "n_flag_changes": 0
