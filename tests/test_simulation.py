@@ -323,6 +323,32 @@ class TestSimulateSpikesPositionTuned:
         assert_array_equal(a, b)
 
 
+def test_place_field_rates_floor_underflow_keeps_event_likelihood_positive() -> None:
+    """A narrow field evaluated far from its center must not underflow to zero.
+
+    With the floor, the normalized single-event likelihood keeps a positive
+    tail, so the KL divergence from a prediction with mass there is finite;
+    the floor only replaces values that are already below the smallest normal
+    double, so every representable value is unchanged.
+    """
+    import statespacecheck as ssc
+
+    bins = np.arange(0.0, 101.0)
+    rates = place_field_rates(
+        bins, np.array([0.0]), place_field_std=2.0, place_field_rate_scale=1.0
+    )
+    assert np.all(rates > 0.0)
+    assert rates[100, 0] == np.finfo(float).tiny
+    # Representable values are untouched.
+    assert rates[0, 0] == pytest.approx(1.0 / (2.0 * np.sqrt(2 * np.pi)))
+    prediction = np.full((1, bins.size), 1.0 / bins.size)
+    likelihood = (rates[:, 0] / rates[:, 0].sum())[None, :]
+    assert np.isfinite(ssc.kl_divergence(prediction, likelihood)[0])
+    # A zero scale is a genuinely silent cell and stays exactly zero.
+    silent = place_field_rates(bins, np.array([0.0]), 2.0, 0.0)
+    assert np.all(silent == 0.0)
+
+
 # ---------------------------------------------------------------------------
 # simulate_spikes_history_dependent
 # ---------------------------------------------------------------------------
