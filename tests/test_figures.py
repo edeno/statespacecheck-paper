@@ -215,5 +215,7 @@ def test_generate_all_runs_each_cli_in_a_normal_subprocess(
         "generate_figure01.py",
         "generate_figure02.py",
         "generate_figure03.py",
+        "generate_figure03_sensitivity.py",
         "generate_figure04.py",
+        "generate_figure04_supplement.py",
     ]

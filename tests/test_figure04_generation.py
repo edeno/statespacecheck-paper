@@ -139,7 +139,7 @@ def test_summary_payload_contains_reported_counts_rates_and_provenance(
     flag_rules = cast(dict[str, dict[str, str | float]], payload["flag_rules"])
     provenance = cast(dict[str, Any], payload["provenance"])
 
-    assert payload["schema_version"] == 3
+    assert payload["schema_version"] == 4
     assert payload["dataset"] == {"animal_date_epoch": "epoch_x", "n_units": 7}
     assert flag_rules["hpd_overlap"] == {
         "comparison": "less_than_or_equal",
