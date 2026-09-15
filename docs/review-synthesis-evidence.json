@@ -1,0 +1,622 @@
+{
+  "metadata": {
+    "review_date": "2026-09-14",
+    "revision": "8a72a4369e37a380e8df4f19771f7a95d3e65035",
+    "canonical_cache": "data/intermediates/j1620210710_02_r1_fig4_cache.joblib",
+    "cache_schema": 5,
+    "cache_fingerprint": "c30cead62c324b70d84b581f88c58277e4fd24af627f96b9ef74029538bd85d0",
+    "real_hpd_coverage": 0.95,
+    "real_flag_threshold": 0.05,
+    "low_unit_rate_threshold_hz": 0.1,
+    "unit_rate_definition": "Analyzed event count divided by supplied position-recording duration.",
+    "rate_correlation_population": "182 units with at least one analyzed event; excludes 21 zero-event units.",
+    "behavior_grouping": "head_speed at event_time_ind; immobile if speed < cutoff in cm/s.",
+    "quantile_probabilities_time": [
+      0,
+      0.01,
+      0.1,
+      0.25,
+      0.5,
+      0.75,
+      0.9,
+      0.99,
+      1
+    ],
+    "quantile_probabilities_event_and_rescue_mode_weights": [
+      0,
+      0.1,
+      0.5,
+      0.9,
+      1
+    ],
+    "quantile_probabilities_rescue_hpd_size": [
+      0,
+      0.1,
+      0.25,
+      0.5,
+      0.75,
+      0.9,
+      1
+    ],
+    "quantile_probabilities_sparse_counts": [
+      0,
+      0.25,
+      0.5,
+      0.75,
+      1
+    ],
+    "uniform_mixture_check": "At all original Continuous HPD-flagged events, replace predictive P with (1-w)P+wU over 248 valid position bins, retain observed-cell likelihood, and recompute statespacecheck.hpd_overlap. This is a diagnostic counterfactual, not a refitted alternative decoder.",
+    "sparse_scale_check": "Change sparse_control_ordinary_rate_scale in both generation and decoding; rerun complete simulation. Original sparse phase begins at index 30000.",
+    "extended_sparse_scope": "100 seeds: regenerate spike counts, omit decoding. 10 seeds: full simulation and decoding with ordinary scale 0.05.",
+    "timing_scope": "10000 random inputs, Dirichlet predictions, uniform random positive rate tables, one warm-up and seven timed repetitions; medians. Likelihood construction excluded. OPENBLAS_NUM_THREADS=1 and VECLIB_MAXIMUM_THREADS=1 requested. Not end-to-end decoder timings.",
+    "verification_scope": "Prior audit: 571 tests passed, 1 slow test deselected; diagnostic recomputation at 500 events per model matched canonical cache exactly. This follow-up adds targeted probes; no production source changed or real decoder refitted."
+  },
+  "real_data": {
+    "duration_seconds": 1418.6394970417023,
+    "n_units": 203,
+    "fragmented_prediction_quantiles_time": [
+      0.020639117807149887,
+      0.026295685023069382,
+      0.040341321378946304,
+      0.05146418511867523,
+      0.0883411318063736,
+      0.17716459929943085,
+      0.3519105315208435,
+      0.7057977795600897,
+      0.9732133150100708
+    ],
+    "uniform_mixture_quantiles_time": [
+      0.02065243199467659,
+      0.026426846534013747,
+      0.040765099227428436,
+      0.05211969092488289,
+      0.08976490795612335,
+      0.18043886125087738,
+      0.35882535576820374,
+      0.72009015083313,
+      1.0
+    ],
+    "fraction_times_fragment_probability_004_to_009": 0.4506253163236391,
+    "continuous": {
+      "n_spikes": 870018,
+      "flagged": 33954,
+      "rate_flag_spearman": -0.8635555941698257,
+      "low_rate_units": 106,
+      "always_flagged_units": 88,
+      "always_flagged_spikes": 5631,
+      "fraction_flags_from_always_flagged_units": 0.16584202155857924,
+      "low_rate_spikes": 2120,
+      "low_rate_flagged_spikes": 1811,
+      "fraction_flags_from_low_rate_units": 0.05333686752665371,
+      "marginal_only_flag_count": 42092,
+      "fraction_actual_flags_also_marginal_flagged": 0.5808741238145727,
+      "per_unit_count_range": [
+        0,
+        63589
+      ],
+      "behavior": {
+        "1.0": {
+          "immobile": {
+            "n": 96382,
+            "rank_flag_fraction": 0.04772675395820796,
+            "hpd_flag_fraction": 0.05055923305181465
+          },
+          "moving": {
+            "n": 773636,
+            "rank_flag_fraction": 0.037942908551308364,
+            "hpd_flag_fraction": 0.017989080135877855
+          }
+        },
+        "2.0": {
+          "immobile": {
+            "n": 178189,
+            "rank_flag_fraction": 0.044037510732985764,
+            "hpd_flag_fraction": 0.047769503167984555
+          },
+          "moving": {
+            "n": 691829,
+            "rank_flag_fraction": 0.03773620359944437,
+            "hpd_flag_fraction": 0.014856272286937958
+          }
+        },
+        "4.0": {
+          "immobile": {
+            "n": 258288,
+            "rank_flag_fraction": 0.04101622994486775,
+            "hpd_flag_fraction": 0.04405934460756984
+          },
+          "moving": {
+            "n": 611730,
+            "rank_flag_fraction": 0.03818678175011852,
+            "hpd_flag_fraction": 0.012113187190427149
+          }
+        },
+        "5.0": {
+          "immobile": {
+            "n": 284027,
+            "rank_flag_fraction": 0.040140550018132076,
+            "hpd_flag_fraction": 0.04317547275435082
+          },
+          "moving": {
+            "n": 585991,
+            "rank_flag_fraction": 0.03848693921920303,
+            "hpd_flag_fraction": 0.011138396323493022
+          }
+        },
+        "10.0": {
+          "immobile": {
+            "n": 376191,
+            "rank_flag_fraction": 0.03876222450829499,
+            "hpd_flag_fraction": 0.04053526001419492
+          },
+          "moving": {
+            "n": 493827,
+            "rank_flag_fraction": 0.039228312749201646,
+            "hpd_flag_fraction": 0.007170527330421382
+          }
+        }
+      },
+      "viewer_cache": {
+        "n": 870018,
+        "hpd_flag_fraction": 0.00755961370914165,
+        "canonical_hpd_flag_fraction": 0.02159725430968095,
+        "rank_flag_fraction": 0.038742876584162624,
+        "canonical_rank_flag_fraction": 0.039026778756301596,
+        "max_hpd_difference": 1.0,
+        "cell_ids_match": true,
+        "event_times_match": true
+      },
+      "active_units": 182,
+      "zero_event_units": 21,
+      "low_rate_active_units": 85
+    },
+    "contfrag": {
+      "n_spikes": 870018,
+      "flagged": 26287,
+      "rate_flag_spearman": -0.8764502999661248,
+      "low_rate_units": 106,
+      "always_flagged_units": 87,
+      "always_flagged_spikes": 5500,
+      "fraction_flags_from_always_flagged_units": 0.20922889641267547,
+      "low_rate_spikes": 2120,
+      "low_rate_flagged_spikes": 1811,
+      "fraction_flags_from_low_rate_units": 0.06889336934606459,
+      "marginal_only_flag_count": 42092,
+      "fraction_actual_flags_also_marginal_flagged": 0.6821242439228516,
+      "per_unit_count_range": [
+        0,
+        63589
+      ],
+      "behavior": {
+        "1.0": {
+          "immobile": {
+            "n": 96382,
+            "rank_flag_fraction": 0.036075200763628065,
+            "hpd_flag_fraction": 0.005779087381461268
+          },
+          "moving": {
+            "n": 773636,
+            "rank_flag_fraction": 0.029484150168813242,
+            "hpd_flag_fraction": 0.0014477092586177478
+          }
+        },
+        "2.0": {
+          "immobile": {
+            "n": 178189,
+            "rank_flag_fraction": 0.03313335840035019,
+            "hpd_flag_fraction": 0.005101324997614892
+          },
+          "moving": {
+            "n": 691829,
+            "rank_flag_fraction": 0.029462482781149678,
+            "hpd_flag_fraction": 0.0011101009064378626
+          }
+        },
+        "4.0": {
+          "immobile": {
+            "n": 258288,
+            "rank_flag_fraction": 0.031000278758595057,
+            "hpd_flag_fraction": 0.004390447872142725
+          },
+          "moving": {
+            "n": 611730,
+            "rank_flag_fraction": 0.029882464485966032,
+            "hpd_flag_fraction": 0.0008876465107155117
+          }
+        },
+        "5.0": {
+          "immobile": {
+            "n": 284027,
+            "rank_flag_fraction": 0.030321061025888385,
+            "hpd_flag_fraction": 0.004182700940403553
+          },
+          "moving": {
+            "n": 585991,
+            "rank_flag_fraction": 0.030162579288760406,
+            "hpd_flag_fraction": 0.0008344838060652808
+          }
+        },
+        "10.0": {
+          "immobile": {
+            "n": 376191,
+            "rank_flag_fraction": 0.02920325047648668,
+            "hpd_flag_fraction": 0.00355138746009341
+          },
+          "moving": {
+            "n": 493827,
+            "rank_flag_fraction": 0.0309845350699739,
+            "hpd_flag_fraction": 0.000690525224420698
+          }
+        }
+      },
+      "viewer_cache": {
+        "n": 870018,
+        "hpd_flag_fraction": 0.0005413681096253181,
+        "canonical_hpd_flag_fraction": 0.001927546326627725,
+        "rank_flag_fraction": 0.030676376810594725,
+        "canonical_rank_flag_fraction": 0.030214317404927256,
+        "max_hpd_difference": 1.0,
+        "cell_ids_match": true,
+        "event_times_match": true
+      },
+      "active_units": 182,
+      "zero_event_units": 21,
+      "low_rate_active_units": 85
+    },
+    "rescued_hpd": {
+      "n_events": 17289,
+      "predictive_f_quantiles": [
+        0.021245211362838745,
+        0.04684870317578316,
+        0.08541572093963623,
+        0.3966459035873415,
+        0.9703768491744995
+      ],
+      "uniform_weight_quantiles": [
+        0.021271152421832085,
+        0.047408051788806915,
+        0.08677855134010315,
+        0.40449271202087417,
+        0.9901764392852783
+      ],
+      "continuous": {
+        "position_bins": 248,
+        "hpd_size_quantiles": [
+          5.0,
+          7.0,
+          7.0,
+          8.0,
+          9.0,
+          11.0,
+          55.0
+        ]
+      },
+      "contfrag": {
+        "position_bins": 248,
+        "hpd_size_quantiles": [
+          7.0,
+          12.0,
+          45.0,
+          110.0,
+          179.0,
+          220.0,
+          248.0
+        ]
+      }
+    },
+    "fragmented_prediction_quantiles_event": [
+      0.020657304674386978,
+      0.044137872755527496,
+      0.11300639063119888,
+      0.41821539402008057,
+      0.9732133150100708
+    ],
+    "fragment_recurrence_max_difference": 5.364418029785156e-07,
+    "continuous_prediction_uniform_mixture_counterfactual": {
+      "0.02": {
+        "n_continuous_flags": 18790,
+        "n_rescued": 4643,
+        "rescue_fraction": 0.24709952102182012
+      },
+      "0.05": {
+        "n_continuous_flags": 18790,
+        "n_rescued": 14777,
+        "rescue_fraction": 0.786428951569984
+      },
+      "0.06": {
+        "n_continuous_flags": 18790,
+        "n_rescued": 17947,
+        "rescue_fraction": 0.9551357104843001
+      },
+      "0.088": {
+        "n_continuous_flags": 18790,
+        "n_rescued": 18755,
+        "rescue_fraction": 0.9981373070782331
+      },
+      "0.1": {
+        "n_continuous_flags": 18790,
+        "n_rescued": 18772,
+        "rescue_fraction": 0.9990420436402342
+      },
+      "0.2": {
+        "n_continuous_flags": 18790,
+        "n_rescued": 18788,
+        "rescue_fraction": 0.9998935604044704
+      }
+    },
+    "rank_changes_low_rate_units": {
+      "rescued": 9373,
+      "rescued_low_rate": 20,
+      "newly_flagged": 1706,
+      "newly_flagged_low_rate": 20
+    }
+  },
+  "simulation_and_timing": {
+    "replay": {
+      "n_steps": 2000,
+      "start": 22.577693944185626,
+      "max_actual_speed": 0.07749980586169158,
+      "speed_cap": 0.5,
+      "prediction_step_std": 0.5
+    },
+    "sparse": {
+      "0.0": {
+        "n_total": 10,
+        "n_sparse": 10,
+        "n_ordinary": 0,
+        "sparse_rank_flag_fraction": 0.0,
+        "all_rank_flag_fraction": 0.0,
+        "sparse_hpd_flag_fraction": 0.0,
+        "all_hpd_flag_fraction": 0.0,
+        "sparse_kl_flag_fraction": 0.4
+      },
+      "0.005": {
+        "n_total": 15,
+        "n_sparse": 10,
+        "n_ordinary": 5,
+        "sparse_rank_flag_fraction": 0.0,
+        "all_rank_flag_fraction": 0.0,
+        "sparse_hpd_flag_fraction": 0.0,
+        "all_hpd_flag_fraction": 0.0,
+        "sparse_kl_flag_fraction": 0.4
+      },
+      "0.01": {
+        "n_total": 16,
+        "n_sparse": 10,
+        "n_ordinary": 6,
+        "sparse_rank_flag_fraction": 0.2,
+        "all_rank_flag_fraction": 0.125,
+        "sparse_hpd_flag_fraction": 0.0,
+        "all_hpd_flag_fraction": 0.0,
+        "sparse_kl_flag_fraction": 0.4
+      },
+      "0.05": {
+        "n_total": 58,
+        "n_sparse": 10,
+        "n_ordinary": 48,
+        "sparse_rank_flag_fraction": 0.7,
+        "all_rank_flag_fraction": 0.13793103448275862,
+        "sparse_hpd_flag_fraction": 0.0,
+        "all_hpd_flag_fraction": 0.017241379310344827,
+        "sparse_kl_flag_fraction": 0.1
+      }
+    },
+    "change_diagnostic_rates_only": {
+      "sparse_rank_flag_fraction": 0.7
+    },
+    "sparse_event_counts_seeds_1_10": [
+      10,
+      6,
+      14,
+      10,
+      9,
+      12,
+      6,
+      8,
+      13,
+      6
+    ],
+    "rare_but_predicted_cell": {
+      "uniform_state_mean_rates": [
+        0.005,
+        100.000000005
+      ],
+      "pvalue": 1.0
+    },
+    "benchmark_10000_events_single_blas_thread": {
+      "101_bins_16_cells": {
+        "hpd_median_seconds": 0.030642166999314213,
+        "rank_median_seconds": 0.0007754580001346767
+      },
+      "248_bins_203_cells": {
+        "hpd_median_seconds": 0.08669158300017443,
+        "rank_median_seconds": 0.006597167000109039
+      }
+    }
+  },
+  "extended_sparse_checks": {
+    "sparse_spike_counts_seeds_1_100": [
+      10,
+      6,
+      14,
+      10,
+      9,
+      12,
+      6,
+      8,
+      13,
+      6,
+      10,
+      14,
+      11,
+      10,
+      9,
+      7,
+      9,
+      7,
+      6,
+      8,
+      5,
+      10,
+      7,
+      10,
+      12,
+      8,
+      7,
+      13,
+      6,
+      7,
+      11,
+      7,
+      18,
+      6,
+      5,
+      13,
+      14,
+      13,
+      6,
+      8,
+      10,
+      6,
+      13,
+      10,
+      7,
+      11,
+      9,
+      13,
+      16,
+      5,
+      11,
+      10,
+      10,
+      10,
+      7,
+      9,
+      10,
+      11,
+      5,
+      2,
+      9,
+      11,
+      7,
+      6,
+      8,
+      10,
+      8,
+      14,
+      5,
+      1,
+      13,
+      13,
+      8,
+      11,
+      15,
+      5,
+      12,
+      11,
+      5,
+      8,
+      6,
+      7,
+      9,
+      8,
+      12,
+      6,
+      10,
+      5,
+      6,
+      10,
+      12,
+      8,
+      9,
+      12,
+      11,
+      9,
+      15,
+      10,
+      11,
+      8
+    ],
+    "sparse_spike_count_quantiles": [
+      1.0,
+      7.0,
+      9.0,
+      11.0,
+      18.0
+    ],
+    "matched_ordinary_scale005_seeds_1_10": [
+      {
+        "seed": 1,
+        "n_sparse": 10,
+        "n_total": 58,
+        "sparse_flag_fraction": 0.7,
+        "all_flag_fraction": 0.13793103448275862
+      },
+      {
+        "seed": 2,
+        "n_sparse": 6,
+        "n_total": 55,
+        "sparse_flag_fraction": 0.8333333333333334,
+        "all_flag_fraction": 0.09090909090909091
+      },
+      {
+        "seed": 3,
+        "n_sparse": 14,
+        "n_total": 56,
+        "sparse_flag_fraction": 0.5,
+        "all_flag_fraction": 0.125
+      },
+      {
+        "seed": 4,
+        "n_sparse": 10,
+        "n_total": 59,
+        "sparse_flag_fraction": 0.6,
+        "all_flag_fraction": 0.1016949152542373
+      },
+      {
+        "seed": 5,
+        "n_sparse": 9,
+        "n_total": 71,
+        "sparse_flag_fraction": 0.5555555555555556,
+        "all_flag_fraction": 0.08450704225352113
+      },
+      {
+        "seed": 6,
+        "n_sparse": 12,
+        "n_total": 60,
+        "sparse_flag_fraction": 0.75,
+        "all_flag_fraction": 0.15
+      },
+      {
+        "seed": 7,
+        "n_sparse": 6,
+        "n_total": 56,
+        "sparse_flag_fraction": 0.8333333333333334,
+        "all_flag_fraction": 0.10714285714285714
+      },
+      {
+        "seed": 8,
+        "n_sparse": 8,
+        "n_total": 65,
+        "sparse_flag_fraction": 0.75,
+        "all_flag_fraction": 0.1076923076923077
+      },
+      {
+        "seed": 9,
+        "n_sparse": 13,
+        "n_total": 70,
+        "sparse_flag_fraction": 0.6153846153846154,
+        "all_flag_fraction": 0.12857142857142856
+      },
+      {
+        "seed": 10,
+        "n_sparse": 6,
+        "n_total": 53,
+        "sparse_flag_fraction": 0.6666666666666666,
+        "all_flag_fraction": 0.09433962264150944
+      }
+    ],
+    "median_sparse_flag_fraction_scale005": 0.6833333333333333,
+    "median_all_flag_fraction_scale005": 0.10741758241758242
+  }
+}
