@@ -136,7 +136,9 @@ bit-identical to the embedded legacy diagnostics.
 New module `figure04_broadening.py`, recipe `figure04_supplement_generation.py`,
 CLI `scripts/generate_figure04_supplement.py` (~6 min, bounded 50,000-event
 chunks) → `manuscript/figures/supplementary/figure04_supplement_summary.json`
-and `figure04_supplement.{pdf,png}` (Fig S2). Results:
+and `figure04_supplement.{pdf,png}` (Fig S2); `tests/test_figure04_broadening.py`
+covers the analyses on a synthetic decode whose cached diagnostics are
+computed from its own predictions. Results:
 
 - 95% predictive region sizes (median bins of 248): Continuous 13 all / 8 at
   rescued events; Continuous–Fragmented 144 / 110; likelihood 95% region 228 (8% of the track outside it).
