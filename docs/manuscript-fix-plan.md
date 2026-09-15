@@ -240,11 +240,10 @@ Five issues raised on the branch, all fixed here:
    and the summary records `kl_clip_impact` for the evaluated realizations
    and the calibration sessions (macros `SimKlClipEvents`,
    `SimKlClipDiffering`, `SimKlClipMaxDifference`, `SimKlClipFlagChanges`,
-   `SimKlClipNullDiffering`, quoted in the simulation Methods). Before the
-   reflection fix, 54 of 2,126,394 evaluated events differed (max 1.02 nats,
-   all with clipped KL ≥ 7.35 > threshold 4.22) and no flag decision changed;
-   no calibration event differed. The regenerated summary carries the
-   post-fix values.
+   `SimKlClipNullDiffering`, quoted in the simulation Methods). With the
+   reflection fix in place, 54 of 2,126,394 evaluated events differ (max
+   1.02 nats, all with clipped KL ≥ 7.35 > threshold 4.22), no flag decision
+   changes, and no calibration event differs.
 3. **Rank check described as nesting-tolerant** — the Introduction and
    Discussion now reserve the nesting-tolerant geometric criterion for HPD
    overlap and describe the rank check as predictive mark surprise, which
