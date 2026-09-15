@@ -427,6 +427,20 @@ class TestSpikeEventPredictivePvalueRankTolerance:
 
 
 class TestManuscriptCounterexamples:
+    def test_accurate_prediction_can_disagree_with_an_unusual_spike(self) -> None:
+        """Table row 5: HPD overlap 0 while the updated posterior stays on the true state."""
+        prediction = np.array([[0.999, 0.001]])
+        rates = np.array([[0.96, 0.04], [0.04, 0.96]])
+        d = compute_spike_event_diagnostics_from_rates(
+            prediction, rates, np.array([0]), np.array([1])
+        )
+        assert d.event_hpd_overlap[0] == 0.0
+        assert d.event_predictive_pvalue[0] == pytest.approx(0.041, abs=5e-4)
+        assert d.event_kl_divergence[0] == pytest.approx(3.2, abs=0.05)
+        posterior = prediction[0] * rates[:, 1]
+        posterior /= posterior.sum()
+        assert posterior[0] == pytest.approx(0.98, abs=5e-3)
+
     """The Methods' counterexample table (Table 1) is computed by this code.
 
     Each case delimits what one diagnostic measures; if the implementation
