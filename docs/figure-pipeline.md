@@ -12,10 +12,11 @@ All commands are run from the repository root in the locked environment:
 ```bash
 uv sync --frozen
 uv run python scripts/generate_figureNN.py     # one figure
-uv run python scripts/generate_all_figures.py  # all four
+uv run python scripts/generate_all_figures.py  # all figures + supplementary summaries
 uv run python scripts/emit_reported_values.py  # refresh the manuscript's numbers
 make -C manuscript                           # build the paper
-# Figures: manuscript/figures/main/figureNN.{pdf,png} at 450 DPI.
+# Figures: manuscript/figures/main/figureNN.{pdf,png} at 450 DPI;
+# supplementary figure and summaries under manuscript/figures/supplementary/.
 # Prose macros: manuscript/reported_values.tex; paper: manuscript/main.pdf.
 ```
 
@@ -30,11 +31,13 @@ families**:
   `diagnostics` (the HPD-overlap / rank-based predictive-p-value / KL-divergence
   computation and containers). `diagnostics` is the dependency-graph leaf.
 - **Per-figure families**: `figure01_generation`,
-  `figure02_{panels,generation}`, `figure03_{protocol,simulation,summary,plotting,generation}` and
-  `figure04_{cache,workflow,layout,generation}`. Each figure is a small set of
-  single-responsibility modules rather than one monolith, so an outside reader
-  can follow the scientific workflow (configure → simulate/load → decode →
-  diagnose → summarize → render).
+  `figure02_{panels,generation}`,
+  `figure03_{protocol,simulation,summary,plotting,generation,sensitivity}`,
+  `figure04_{cache,workflow,layout,generation}` and the Figure-4 supplement
+  (`figure04_{broadening,supplement_plotting,supplement_generation}`). Each
+  figure is a small set of single-responsibility modules rather than one
+  monolith, so an outside reader can follow the scientific workflow
+  (configure → simulate/load → decode → diagnose → summarize → render).
 
 ### Module dependency graph (acyclic)
 
@@ -52,7 +55,9 @@ figure03_simulation    → figure03_protocol, decoding, diagnostics, simulation
 figure03_summary       → figure03_protocol, figure03_simulation, diagnostics
 figure03_plotting      → figure03_protocol, figure03_summary, diagnostics, number_format, plotting, style
 figure03_generation    → figure03_protocol, figure03_simulation, figure03_summary, figure03_plotting, scientific_artifacts, style
+figure03_sensitivity   → figure03_generation, figure03_protocol, figure03_summary, scientific_artifacts
 generate_figure03.py   → figure03_generation
+generate_figure03_sensitivity.py → figure03_sensitivity
 
 figure04_decoder       → (leaf; nld construction + Figure4Config)
 figure04_place_fields  → (leaf; place-field / marginalized-posterior extraction)
@@ -65,6 +70,10 @@ figure04_workflow      → figure04_cache, figure04_decoder, figure04_diagnostic
 figure04_layout        → figure04_workflow, diagnostics, figure04_panels, figure04_plot_primitives, figure04_track_plots
 figure04_generation    → figure04_workflow, figure04_layout, figure04_cache, figure04_decoder, paths, scientific_artifacts, style
 generate_figure04.py   → figure04_generation
+figure04_broadening    → figure04_workflow, figure04_place_fields, diagnostics
+figure04_supplement_plotting   → figure04_broadening, style
+figure04_supplement_generation → figure04_broadening, figure04_supplement_plotting, figure04_workflow, figure04_cache, figure04_decoder, paths, scientific_artifacts, style
+generate_figure04_supplement.py → figure04_supplement_generation
 ```
 
 ### Not part of figure generation
@@ -118,68 +127,102 @@ Trace: `create_shared_example(rng)` returns one immutable
 `compose_figure02` arranges semantic mosaic axes such as `hpd_predictive`,
 `predictive_histogram`, and `kl_pointwise` → `generate_figure02` saves it.
 
-## Figure 3 — Per-spike diagnostics across an 8-phase simulation
+## Figure 3 — Per-spike diagnostics across a 10-phase simulation
 
 - **Reproduction:** `uv run python scripts/generate_figure03.py` (simulated,
-  deterministic under the fixed seed).
-- **Manuscript:** the simulation figure showing which model misfits each
-  diagnostic detects vs. misses across three misfit conditions and two
-  specificity controls.
+  deterministic under the fixed seeds; realizations run in parallel with
+  joblib). `uv run python scripts/generate_figure03_sensitivity.py` reruns the
+  pipeline for the sensitivity settings.
+- **Manuscript:** the simulation figure showing how each diagnostic responds
+  to four misfit conditions and two controls under a decoder whose model is
+  known exactly, with independently calibrated thresholds, realized null
+  rates, and the decoder's accuracy/coverage/region size per condition.
 - **Entry point:** `scripts/generate_figure03.py::main` (the CLI), which calls
   the scientific orchestrator
-  `figure03_generation.generate_figure03(config, *, n_realizations)`.
+  `figure03_generation.generate_figure03(config, *, n_realizations,
+  n_calibration_realizations, n_jobs)`.
 - **Configuration:** `Figure3Config` (frozen; in `figure03_protocol.py`).
-  the generation recipe uses the default `Figure3Config()` (whose canonical
-  `drift_momentum` is `0.88`) and `N_REALIZATIONS = 100`; both values are
-  load-bearing for the published PNG.
+  The generation recipe uses the default `Figure3Config()`: the exactly
+  matched discrete trajectory model, 95% HPD coverage, drift momentum `0.88`,
+  the pinned history rate-matching gain `DEFAULT_HISTORY_RATE_MATCHING_GAIN`,
+  and the spread, heterogeneous-rate sparse population; `N_REALIZATIONS = 100`
+  evaluated realizations (seeds 1–100) and `N_CALIBRATION_REALIZATIONS = 100`
+  matched-null calibration sessions (seeds 1001–1100). All are load-bearing
+  for the published PNG and summary.
 - **Computation (reading order):**
   `figure03_protocol` (config + phase ladder) →
-  `figure03_simulation.run_figure03_simulation` (drives the 8-phase trajectory,
-  calls `decoding.decode_with_diagnostics`, which calls `diagnostics`) →
-  `figure03_summary.estimate_realization_summary` (pools 100 realizations into
-  thresholds, median flag percentages, and median decoding accuracy) →
-  `figure03_plotting.compose_figure03` (the time-series panel + the panel-(b)
-  flag heatmap and decoding-error row).
+  `figure03_simulation.run_matched_null_simulation` (calibration sessions
+  drawn from the decoder's own initial law, transition matrix, and rate
+  tables) and `run_figure03_simulation` (the 10-phase session; both call
+  `decoding.decode_with_diagnostics`, which calls `diagnostics`) →
+  `figure03_summary.estimate_calibration_thresholds` (pooled calibration
+  quantiles, realized null rates, HPD tie fraction, rank-tail check) →
+  `figure03_summary.estimate_realization_summary` (per-condition flags,
+  per-realization distributions, accuracy/coverage/region sizes, replay
+  accuracy against the represented trajectory, per-phase spike rates,
+  sparse-cell denominators) →
+  `figure03_plotting.compose_figure03` (the time-series panel, the panel-(b)
+  heatmap with accuracy rows, and the panel-(c) per-realization
+  distributions).
 - **Output:** `manuscript/figures/main/figure03.{pdf,png}` plus
-  `figure03_summary.json`, containing the full configuration, seed range,
-  explicit inclusive flag rules, metric/condition order, reported percentage
-  matrix, per-condition decoding accuracy (median absolute error), and
-  source/dependency-lock provenance.
-- **Tests:** `tests/test_figure03_phases.py` (the higher-level scientific
-  contract, including the control-integrity checks that the replay and
-  sparse-population controls carry no hidden misfit);
-  `tests/test_figure03_{protocol,simulation,summary,plotting,contracts}.py`.
+  `figure03_summary.json` (schema 6), containing the full configuration, seed
+  ranges for evaluation and calibration, the calibration record, explicit
+  inclusive flag rules, metric/condition order, median and pooled flag
+  percentages, per-realization percentages and event counts, the four
+  accuracy rows (median and per realization), replay represented-trajectory
+  accuracy, per-phase ordinary spike rates, sparse-cell flags and counts, and
+  source/dependency-lock provenance. The sensitivity recipe writes
+  `manuscript/figures/supplementary/figure03_sensitivity_summary.json`
+  (schema 1) with a compact summary per setting.
+- **Tests:** `tests/test_figure03_phases.py` (the scientific contract: the
+  matched phases follow the decoder's transition on the grid, the reflected
+  map is coherent and unflagged but wrong, the sparse regime is matched and
+  KL-only, the history gain matches the marginal rate, calibration is
+  independent and the rank p-value is super-uniform);
+  `tests/test_figure03_{protocol,simulation,summary,plotting,contracts,generation}.py`.
 
 ### Figure-3 conditions (executable source of truth: `build_summary_conditions`)
 
 In heatmap order, each condition labeled by which part of the model it perturbs:
 
-1. **Well-specified** — pooled clean-recovery windows (out-of-sample
-   false-positive reference); *control*.
-2. **Remap** — scrambled place-field identities; *observation-model* misfit.
-3. **History-dependent firing** — refractory + bursting spikes; *observation
-   model* (temporal), largely missed by the per-spike spatial diagnostics.
-4. **Replay** — an out-and-back represented sweep while the animal is immobile;
-   *control* (benign decoded-vs-true divergence).
-5. **Drift** — AR(1) persistent-velocity trajectory; *transition-model* misfit.
-6. **Sparse population** — a quiet ordinary ensemble with a few narrow cells
-   firing sparsely; *control* (KL responds; HPD/rank-p stay near baseline).
+1. **Matched null** — the opening baseline, drawn exactly from the decoder's
+   initial law, transition matrix, and rate tables; *reference*.
+2. **Recovery** — the four clean-recovery windows pooled (replay carved out);
+   matched dynamics but each begins with a transient; *reference*.
+3. **Remap** — one fixed incoherent permutation of place-field identities;
+   *observation-model* misfit.
+4. **History-dependent firing** — post-spike suppression + bursting at a
+   rate-matched gain; *observation model* (temporal), largely missed by the
+   per-spike spatial diagnostics.
+5. **Replay** — a deterministic out-and-back represented sweep at a fourfold
+   rate gain (supplied to the decoder) while the animal is immobile;
+   *control* (accuracy is scored against both the physical and the
+   represented trajectory).
+6. **Drift** — AR(1) persistent-velocity trajectory; *transition-model* misfit.
+7. **Reflected map** — every field mirrored about the track midpoint, a
+   coherent wrong map; *observation-model* misfit that is near-null under
+   every diagnostic while the decode is a mirror image.
+8. **Sparse population** — matched trajectory with a quiet ordinary ensemble
+   and sparse narrow cells; *control* under an exactly correct model (KL
+   responds; HPD/rank-p rarely).
 
 The numeric phase boundaries live in `Figure3Config.phase_boundaries` — see that
 dataclass for values rather than duplicating them here.
 
 ### Figure-3 traceability walkthrough (following the typed returns)
 
-`Figure3Config` → `run_figure03_simulation(config)` returns a
-`Figure3SimulationResult` (`.true_position`, `.spike_counts`, `.diagnostics: DecodingDiagnostics`,
-`.position_bins`, `.sparse_place_field_centers`) → `estimate_realization_summary(config, n_realizations=100)`
-returns a `Figure3RealizationSummary` (`.diagnostic_thresholds: DiagnosticThresholds`,
-`.median_flag_percentages`, `.median_decoding_accuracy`,
-`.flag_percentage_standard_errors`, `.decoding_accuracy_standard_errors`) →
-`compose_figure03(true_position=…, spike_counts=…,
-diagnostics=…, diagnostic_thresholds=…, config=…, place_field_centers=…,
-median_flag_percentages=…, median_decoding_accuracy=…)` returns a `matplotlib`
-`Figure` → `save_figure` writes
+`Figure3Config` → `estimate_calibration_thresholds(config, n_calibration_realizations=100)`
+returns a `Figure3Calibration` (`.diagnostic_thresholds: DiagnosticThresholds`,
+`.pooled_null_flag_percentages`, `.rank_pvalue_tail_percentages`, ...) →
+`run_figure03_simulation(config)` returns a `Figure3SimulationResult`
+(`.true_position`, `.represented_position`, `.spike_counts`,
+`.diagnostics: DecodingDiagnostics`, `.position_bins`,
+`.sparse_place_field_centers`) → `estimate_realization_summary(config,
+calibration=…, n_realizations=100)` returns a `Figure3RealizationSummary`
+(`.median_flag_percentages`, `.flag_percentages_by_realization`,
+`.event_counts_by_realization`, `.pooled_flag_percentages`,
+`.median_decoding_accuracy`, `.replay_represented_accuracy`, ...) →
+`compose_figure03(...)` returns a `matplotlib` `Figure` → `save_figure` writes
 `figure03.{pdf,png}` while `write_json_artifact` writes the same summary values
 and their configuration to `figure03_summary.json`.
 
@@ -187,13 +230,17 @@ and their configuration to `figure03_summary.json`.
 
 | Code name | Manuscript notation | Meaning / shape |
 | --- | --- | --- |
-| `true_position` | $x_t$ outside replay; $z_t$ during replay | physical position, shape `(n_time,)`; decoding error is measured against this trajectory |
+| `true_position` | $x_t$ outside replay; $z_t$ during replay | physical position, shape `(n_time,)`; the physical-position decoding error is measured against this trajectory |
+| `represented_position` | $x_t$ | represented position, shape `(n_time,)`; equals `true_position` except during the replay sweep, where replay accuracy is measured against it |
 | `position_bins` | discretized $x$ grid | position bin centers, shape `(n_bins,)` |
 | `spike_counts` | $y_{c,t}$ | integer spike counts, shape `(n_time, n_cells)` |
 | `place_field_centers` | $\mu_c$ | per-cell place-field centers, shape `(n_cells,)` |
 | `place_field_std` | $\sigma_\mathrm{pf}$ | Gaussian place-field standard deviation |
 | `place_field_rate_scale` | $\alpha$ | expected-count scale multiplying the normalized Gaussian field |
 | `prediction_step_std` | $\sigma_\mathrm{pred}$ | decoder baseline dynamics standard deviation |
+| `trajectory_model` | matched discrete transition vs reflected walk | `"discrete_matched"` samples the decoder's own grid transition matrix (exact null); `"continuous_reflected"` is the approximate sensitivity benchmark |
+| `history_rate_matching_gain` | gain on $\alpha$ in the history window | rescales the history generator so its marginal rate matches the Poisson baseline |
+| `hpd_coverage` | $\alpha$ | HPD coverage of the regions the overlap compares |
 | `event_hpd_overlap` | HPD overlap | per-spike prediction/likelihood HPD overlap |
 | `event_predictive_pvalue` | rank-based predictive $p$-value | per-spike rank statistic |
 | `event_kl_divergence` | KL divergence | per-spike prediction→likelihood KL |
@@ -238,8 +285,9 @@ $\Lambda(x)$.
   and `FIGURE4_DETAIL_WINDOW = Figure4DetailWindow(center_index=193069,
   half_width_samples=500)` in `figure04_generation.py`. The explicit detail
   window centers the manuscript panels on a KL-divergence spike during
-  immobility at a reward well and spans about two seconds total. `Figure4Config`
-  is split into three scoped parts:
+  immobility at a reward well and spans about two seconds total; it was chosen
+  by hand as a candidate replay event, not an independently detected one.
+  `Figure4Config` is split into four scoped parts:
   a `Figure4DecoderConfig` — `position_std`, `position_bin_size_cm`,
   `sampling_frequency_hz`, threaded into environment/model construction so they
   genuinely drive the decode; a `Figure4Provenance` holding the
@@ -249,8 +297,12 @@ $\Lambda(x)$.
   them would rebuild the nested transition grid and hit the concentration-default
   split); and a `Figure4ExecutionConfig` holding `block_size`, a performance/memory
   knob that does **not** change the decode result (the KDE density is identical for
-  any `block_size`) and is therefore excluded from the cache fingerprint. See the
-  `Figure4Config` docstring.
+  any `block_size`) and is therefore excluded from the cache fingerprint; and a
+  `Figure4DiagnosticsConfig` (`hpd_coverage`, `event_selection`) hashed into the
+  diagnostics fingerprint only. See the `Figure4Config` docstring. The
+  supplement's analysis settings (uniform-mixture weights, coverage levels,
+  rate groups, speed cutoff) live in `Figure4BroadeningConfig`
+  (`figure04_broadening.py`).
 - **Computation (reading order):**
   `figure04_generation` (recipe) → `figure04_workflow.prepare_figure04_render_data`
   (loads the recording, loads a fingerprint-matching cache or fits/decodes via
@@ -312,30 +364,66 @@ typed summary to `figure04_summary.json`.
 The optional interactive viewer derives its Zarr/Parquet/NPZ layout from this
 same `Figure4RenderData` via `interactive.cache.build_figure04_viewer_cache`.
 It does not require a second set of NetCDF results or fitted-model pickles.
+Rebuild it (`--force`) whenever the diagnostics cache changes; the viewer
+artifacts carry no fingerprint of their own, so a stale build silently
+disagrees with the canonical summary.
+
+### Figure-4 supplement — broadening, coverage, rate, and behavior
+
+- **Reproduction:** `uv run python scripts/generate_figure04_supplement.py`
+  (reads the two Figure-4 caches; refits nothing; about six minutes).
+- **Computation:** `figure04_supplement_generation.generate_figure04_supplement`
+  → `prepare_figure04_render_data` (cached) →
+  `figure04_broadening.compute_region_size_and_broadening` (per-event 95/80/50%
+  predictive-region sizes for both models, likelihood region sizes, flags and
+  rescue at each coverage, and the uniform-mixture counterfactual
+  `(1 - w) P + w U` at each weight, all in bounded event chunks from the
+  memory-mapped predictions) and
+  `compute_rate_and_behavior_association` (per-unit session rates and flag
+  fractions, rate-group contributions, a constant mark-frequency baseline,
+  low-rate contributions to rescued/newly flagged rank events, and
+  immobile-versus-moving strata) →
+  `figure04_supplement_plotting.compose_figure04_supplement`.
+- **Output:** `manuscript/figures/supplementary/figure04_supplement.{pdf,png}`
+  and `figure04_supplement_summary.json` (schema 1), which also carries the
+  decode/diagnostics cache provenance.
+- **Interpretation guard:** the uniform mixture modifies the diagnostic's
+  input on the same events; it is not a refitted alternative decoder, and the
+  summary labels it as such.
 
 ## Machine-readable summary schema
 
-`figure03_summary.json` uses schema version 5 and `figure04_summary.json`
-uses schema version 3. The Figure-3 schema includes the decoding-accuracy block:
-`accuracy_metric_order` (`median_absolute_error`), `accuracy_units`, and
-`median_decoding_accuracy`, a `(1, n_conditions)` matrix of the
-across-realization median absolute error of the filtered-posterior mean
-(position units), in the same column order as `median_flag_percentages`. It also
+`figure03_summary.json` uses schema version 6, `figure04_summary.json` schema
+version 4, and the two supplementary summaries schema version 1. The Figure-3
+schema records the independent calibration (`calibration`: seeds, session
+length, pooled event count, realized null flag percentages pooled and per
+session, the HPD tie percentage, and rank-tail percentages at 0.01/0.05/0.10),
+the accuracy block (`accuracy_metric_order`: median absolute error, filtered
+95% HPD coverage percent, filtered and predictive HPD-region sizes;
+`median_decoding_accuracy` is `(4, n_conditions)` and
+`decoding_accuracy_by_realization` `(n_realizations, 4, n_conditions)`),
+`flag_percentages_by_realization` and `event_counts_by_realization` (the
+per-realization distributions and denominators behind the medians; a
+realization with no events in a column carries `null`),
+`pooled_flag_percentages` (event-weighted), `replay_represented_accuracy`,
+`phase_ordinary_spike_rates_hz`, the `sparse_population` block (sparse-cell
+denominators), and `matched_null_rank_pvalue_tail_percentages`. It also
 records `median_flag_percentage_standard_errors` and
 `median_decoding_accuracy_standard_errors`: approximate standard errors of the
 medians, estimated from order-statistic interval widths. These describe the
 uncertainty in the aggregated medians under repeated simulation with the same
-configuration, not the spread of individual realizations, and do not set
-reported precision. The summary also records the baseline-threshold provenance
-quoted in the Methods. The Figure-4
-schema records `dataset.n_units` alongside the recording identifier. The
+configuration, not the spread of individual realizations (which the
+per-realization arrays report directly), and do not set reported precision.
+The summary also records the calibration-threshold provenance quoted in the
+Methods. The Figure-4 schema records `dataset.n_units` alongside the recording
+identifier. The
 `flag_rules` object binds each numeric threshold to its executable semantics:
 `less_than_or_equal` means a value is flagged when `value <= threshold`, and
 `greater_than_or_equal` means it is flagged when `value >= threshold`. Keeping
 the operator and threshold in one record prevents consumers from guessing
 whether a boundary is strict or inclusive.
 
-Both summaries contain `provenance.source`, with the installed
+All summaries contain `provenance.source`, with the installed
 `statespacecheck-paper` version, a deterministic SHA-256 digest of every Python
 file under `src/statespacecheck_paper`, and the SHA-256 digest of `uv.lock`.
 The digest excludes timestamps, generated outputs, and absolute paths, so clean
@@ -344,18 +432,21 @@ checkouts of identical source produce the same identity.
 The source digest includes comments and docstrings. After a documentation-only
 source edit, verify that executable code is unchanged (for example, compare
 Python syntax trees with docstrings removed). Then refresh only
-`provenance.source` in both committed summaries using
+`provenance.source` in every committed summary using
 `scientific_source_provenance` and `write_json_artifact`, preserving all other
 fields, and rerun `uv run python scripts/emit_reported_values.py`. If scientific
 code or inputs changed, regenerate the affected figures and summaries through
 their canonical entry points instead of relabeling existing results.
 
-Figure 4 also contains `provenance.figure04_decode_cache`. Its fingerprint is
-the same identity used to accept or reject the expensive decoder cache, and the
-record includes the installed `non_local_detector` version plus the content
-SHA-256 of each of the five named exports. Canonical artifact generation fails
-if any input checksum is missing. Thus a summary can be traced to the exact
-derived inputs even when those large files are distributed separately.
+Figure 4 and its supplement also contain `provenance.figure04_decode_cache`.
+Its `fingerprint_sha256` is the same identity used to accept or reject the
+expensive decoder cache, `diagnostics_fingerprint_sha256` the identity of the
+diagnostics cache (with the diagnostics configuration and the installed
+`statespacecheck` version), and the record includes the installed
+`non_local_detector` version plus the content SHA-256 of each of the five
+named exports. Canonical artifact generation fails if any input checksum is
+missing. Thus a summary can be traced to the exact derived inputs even when
+those large files are distributed separately.
 
 ### Manuscript ↔ code vocabulary (Figure 4)
 
@@ -373,7 +464,7 @@ generated from the summaries. `main.tex` inputs
 (`\Sim...` for the Figure-3 simulation, `\Rec...` for the Figure-4 recording),
 so the chain runs **code → summary JSON → macro file → prose**.
 `scripts/emit_reported_values.py` (recipe:
-`statespacecheck_paper.reported_values`) reads only the two committed summaries,
+`statespacecheck_paper.reported_values`) reads only the four committed summaries,
 so these values reach the paper through an artifact. Upstream acquisition and
 sorting parameters, which have no artifact in this repository, remain stated
 directly in the Methods.
@@ -386,6 +477,8 @@ Prose precision follows the policy defined in the
 | Decoding errors | Two significant figures | Supports the ratios discussed in the Results |
 | Flag percentages | Nearest whole percent | Supports comparisons described as substantial, low, or modest |
 | Rescue rates | Nearest whole percent, with exact counts alongside | Describes this recording |
+| Realized null rates, rank tails, behavior-stratified flag rates, correlations | Two significant figures (correlations: two decimals) | Read against nominal levels such as 1% and 5%, so 1.6% must not print as 2% |
+| Sensitivity and coverage tables | Table rows emitted as one macro each | Keeps every cell on the artifact chain |
 | Derived constants introduced with “approximately” | Two significant figures | Communicates their approximate scale |
 | Exact counts and configured parameters | In full | Preserves the specified count or setting |
 | Summary JSON values | Full numerical precision, retaining median SEs | Preserves the analysis detail |

@@ -32,17 +32,34 @@ Key modules and the rationale that the source alone won't tell you:
 - **decoding.py** — general Bayesian decoder `decode_with_diagnostics` + the
   per-window override mechanism (`DecoderOverrideWindow`/`DecoderOverrideSchedule`,
   used by Figure 3); depends only on `diagnostics` + `simulation`.
-- **figure03_\*** family — protocol (`Figure3Config`, phase ladder) → phased
-  simulation → per-condition flag and decoding-error summary → plotting → generation recipe.
+- **figure03_\*** family — protocol (`Figure3Config`, 10-phase ladder) → phased
+  simulation plus the standalone matched-null session and the history
+  rate-matching calibration (`figure03_simulation`) → independent threshold
+  calibration and per-condition summary with per-realization distributions,
+  coverage, and region sizes (`figure03_summary`) → plotting → generation
+  recipe → sensitivity settings (`figure03_sensitivity`). Outside the perturbed
+  windows the trajectory is drawn from the decoder's own grid transition
+  matrix, so those windows are an exact null; thresholds are calibrated on
+  separate matched-null sessions whose seeds never overlap the evaluated
+  realizations. The pinned `DEFAULT_HISTORY_RATE_MATCHING_GAIN` is re-derived
+  by a test; re-estimate it if the history mechanism or rates change.
 - **figure04_\*** family — decoder + config, place-field/marginalized-posterior
   extraction, real-data diagnostics, plotting layers, cache I/O, workflow
-  (`Figure4RenderData`), layout, generation recipe. `Figure4Config` (in
-  `figure04_decoder.py`) is split into an executable `Figure4DecoderConfig`
-  (threaded into decoder construction) and a `Figure4Provenance` (nld-default
-  values — `movement_var`, ContFrag transition/initial-condition/concentration/
-  regularization — recorded and drift-guard pinned but **not injected**, because
-  faithfully injecting them would rebuild the nested transition grid and risk
-  changing the decode).
+  (`Figure4RenderData`), layout, generation recipe, and the supplement
+  (`figure04_broadening` analyses + `figure04_supplement_{plotting,generation}`).
+  `Figure4Config` (in `figure04_decoder.py`) is split into an executable
+  `Figure4DecoderConfig` (threaded into decoder construction), a
+  `Figure4Provenance` (nld-default values — `movement_var`, ContFrag
+  transition/initial-condition/concentration/regularization — recorded and
+  drift-guard pinned but **not injected**, because faithfully injecting them
+  would rebuild the nested transition grid and risk changing the decode), an
+  execution-only part, and a `Figure4DiagnosticsConfig` that keys the separate
+  diagnostics cache. The ~19 GB decode bundle is memory-mapped on load and
+  never rewritten by a diagnostics change; the diagnostics bundle is keyed by
+  the decode fingerprint plus a digest of the diagnostic modules' executable
+  syntax trees, so a diagnostics edit recomputes diagnostics (about a minute)
+  rather than refitting. Both models are fitted and checked on the full
+  recording by design; do not add training/validation splits to these checks.
 - **load_local_data.py** — `load_neural_recording_from_files` → validated
   `NeuralRecordingData`; loads from pre-exported pickles, no Spyglass DB needed.
 - **paths.py** — `DATA_PATH` / `ANIMAL_DATE_EPOCH` constants, env-overridable via
@@ -50,8 +67,10 @@ Key modules and the rationale that the source alone won't tell you:
 - **style.py / simulation.py / plotting.py / schematic.py** — styling (WONG
   palette), simulation primitives, reusable plotting (HPD regions, likelihood
   columns), and the Figure-1 graphical-model/equation diagrams.
-- **reported_values.py** — reads the Figure-3 and Figure-4 summary JSONs and
-  emits `manuscript/reported_values.tex`. Its module docstring defines the prose
+- **reported_values.py** — reads the Figure-3, Figure-4, Figure-4-supplement,
+  and Figure-3-sensitivity summary JSONs and emits
+  `manuscript/reported_values.tex`, including whole table rows for the
+  sensitivity and coverage tables. Its module docstring defines the prose
   reporting policy; standard errors in the summaries do not set printed digits.
 - **number_format.py** — the two rounding functions behind that policy
   (`significant`, `whole_percent`), shared by the emitter and the Figure-3

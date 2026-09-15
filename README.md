@@ -2,7 +2,7 @@
 
 **Local goodness-of-fit measures for neural decoding**
 
-This repository contains the source code and supplementary materials for the paper demonstrating `statespacecheck`. The paper assesses local model fit by comparing one-step predictive state distributions with normalized single-event likelihoods and by checking each spike's mark against its predictive distribution. These diagnostics help identify issues with model assumptions, enabling iterative model refinement.
+This repository contains the source code and supplementary materials for the paper demonstrating `statespacecheck`. The paper describes three local diagnostics evaluated at individual spikes: HPD overlap (a geometric relation between the one-step predictive state distribution and a spike's normalized single-event likelihood), a rank-based predictive check on the spike's identity (mark surprise under the model's predictive mark distribution), and KL divergence (distributional difference). Each identifies localized discrepancies of a stated kind; none certifies accurate or calibrated state inference. The paper characterizes what each does and does not detect in a simulation with an exactly matched null and in one hippocampal recording, including how much flag removal broadening a prediction can produce on its own.
 
 ## Repository Structure
 
@@ -32,16 +32,24 @@ module reading order, data boundary, output, and guarding tests — see
 | 1 | `scripts/generate_figure01.py` | simulated | PDF + PNG | none |
 | 2 | `scripts/generate_figure02.py` | simulated | PDF + PNG | none |
 | 3 | `scripts/generate_figure03.py` | simulated | PDF + PNG + summary JSON | none |
+| 3 (sensitivity) | `scripts/generate_figure03_sensitivity.py` | simulated | summary JSON (supplementary) | none |
 | 4 | `scripts/generate_figure04.py` | derived real data | PDF + PNG + summary JSON | documented dataset (see below) |
+| 4 (supplement) | `scripts/generate_figure04_supplement.py` | cached Figure-4 decode | PDF + PNG + summary JSON (supplementary) | the Figure-4 caches |
 
-The Figure 3 and 4 summary JSON files are reproducibility artifacts, not merely
-copies of console output. Figure 3 uses schema version 5 and Figure 4 uses
-schema version 3. Both record each flag threshold with its exact inclusive
-comparison operator, plus hashes of the scientific source tree and `uv.lock`.
-Figure 3 includes per-condition decoding errors, approximate standard errors
-of its medians, and threshold provenance. Figure 4 records the unit count, decode-cache
-fingerprint, installed decoder version, and SHA-256 checksum of each of its five
-derived input exports. See [the schema notes](docs/figure-pipeline.md#machine-readable-summary-schema).
+The summary JSON files are reproducibility artifacts, not merely copies of
+console output. Figure 3 uses schema version 6, Figure 4 schema version 4, and
+the two supplementary summaries schema version 1. All record each flag
+threshold with its exact inclusive comparison operator, plus hashes of the
+scientific source tree and `uv.lock`. Figure 3 records the independent
+matched-null calibration (seeds, pooled event count, realized null flag rates,
+rank-tail percentages), per-condition medians and per-realization
+distributions of flag percentages and event counts, filtered-posterior
+accuracy/coverage/region size, and predictive-region size. Figure 4 records the
+unit count, decode-cache and diagnostics-cache fingerprints, installed decoder
+and `statespacecheck` versions, and SHA-256 checksums of each of its five
+derived input exports; the supplement records predictive-region sizes, the
+uniform-mixture counterfactual, coverage sensitivity, and the firing-rate and
+behavior stratification. See [the schema notes](docs/figure-pipeline.md#machine-readable-summary-schema).
 
 ```bash
 # Reproduce the locked environment, then regenerate every figure:
@@ -52,8 +60,8 @@ uv run python scripts/emit_reported_values.py
 make -C manuscript
 ```
 
-The emitter reads the two summary JSONs and writes `manuscript/reported_values.tex`,
-which supplies the manuscript's reported values. Run it after regenerating either
+The emitter reads the four summary JSONs and writes `manuscript/reported_values.tex`,
+which supplies the manuscript's reported values. Run it after regenerating any
 summary. It can also run directly from the committed summaries without rerunning
 the analyses. See [the reporting policy and artifact checks](docs/figure-pipeline.md#from-summary-to-prose-the-reported-value-macros).
 
@@ -84,9 +92,13 @@ State space models are powerful tools for relating neural activity to latent dyn
 
 The posterior distribution combines current observations with the prediction
 from accumulated history. The diagnostics examine how each spike agrees with
-that prediction. A discrepancy can identify model misfit, but it needs context:
-the replay and sparse-population controls in Figure 3 illustrate why decoding
-error and diagnostic flags need not imply the same problem.
+that prediction. A discrepancy can identify model misfit, but it needs context,
+and the absence of discrepancies does not establish accuracy: in Figure 3 the
+coherent reflected-map misfit is decoded confidently at the wrong location with
+near-null flag rates, the sparse regime is flagged by KL divergence under an
+exactly correct model, and in Figure 4 adding a few percent of uniform mass to
+the Continuous model's predictions removes as many HPD flags as the fitted
+alternative model does.
 
 ## Installation
 
@@ -172,10 +184,10 @@ Two dataset kinds are supported:
 
 - **Real-data decoder caches** (`continuous` / `contfrag` models from
   fitted `non_local_detector` decoders).
-- **Figure-3 simulation cache** — the simulated demonstration with
-  baseline / remap / history-dependent-firing / drift phases plus the
-  replay and sparse-population specificity controls (clean-recovery
-  windows between).
+- **Figure-3 simulation cache** — the simulated demonstration with a
+  matched-null baseline, remap / history-dependent-firing / drift /
+  reflected-map misfits, and the replay and sparse-population controls
+  (clean-recovery windows between).
 
 ### Build a cache
 
@@ -271,11 +283,13 @@ uv run python scripts/generate_all_figures.py
 uv run python scripts/generate_figure01.py   # Fig 1  (simulated)
 uv run python scripts/generate_figure02.py   # Fig 2  (simulated)
 uv run python scripts/generate_figure03.py   # Fig 3  (simulated)
+uv run python scripts/generate_figure03_sensitivity.py   # Fig 3 sensitivity summary
 uv run python scripts/generate_figure04.py   # Fig 4  (needs the real dataset)
+uv run python scripts/generate_figure04_supplement.py    # Fig 4 supplement (from the caches)
 
 # Outputs saved to manuscript/figures/main/ directory as PDF and PNG (450 DPI)
 
-# After changing either summary, refresh the prose values and rebuild:
+# After changing any summary, refresh the prose values and rebuild:
 uv run python scripts/emit_reported_values.py
 make -C manuscript
 ```
@@ -305,10 +319,11 @@ uv run ruff format . && uv run ruff check . && uv run mypy src/ && uv run pytest
 - **`plotting.py`**: Reusable plotting functions (HPD regions, diagnostic plots)
 - **`schematic.py`**: Graphical-model and Bayesian-equation diagrams (Figure 1)
 - **`figure01_generation.py` / `figure02_{panels,generation}.py`**: Testable composition and generation recipes for Figures 1–2
-- **`figure03_{protocol,simulation,summary,plotting,generation}.py`**: Figure-3 protocol, simulation, per-phase summary, plotting, and generation recipe
+- **`figure03_{protocol,simulation,summary,plotting,generation,sensitivity}.py`**: Figure-3 protocol, simulation (matched-null generator, phased session, rate-matching calibration), calibration + per-condition summary, plotting, generation recipe, and sensitivity settings
 - **`figure04_{decoder,place_fields,diagnostics}.py`**: Figure-4 real-data decoder construction/config, place-field extraction, and diagnostics
 - **`figure04_{plot_primitives,track_plots,panels}.py`**: Figure-4 plotting helpers, track-graph rendering, and raster/diagnostic panels
-- **`figure04_{cache,workflow,layout,generation}.py`**: Figure-4 cache, analysis workflow, composition, and generation recipe
+- **`figure04_{cache,workflow,layout,generation}.py`**: Figure-4 decode/diagnostics caches, analysis workflow, composition, and generation recipe
+- **`figure04_{broadening,supplement_plotting,supplement_generation}.py`**: Figure-4 supplement analyses (region sizes, uniform-mixture counterfactual, coverage sensitivity, rate/behavior stratification), plotting, and recipe
 - **`reported_values.py`**: Summary-to-LaTeX macro generation and the manuscript's reporting policy
 - **`load_local_data.py`**: Real data loading utilities
 - **`paths.py`**: Shared `DATA_PATH` / `ANIMAL_DATE_EPOCH` constants (env-overridable)
@@ -335,16 +350,12 @@ See [CLAUDE.md](CLAUDE.md) for detailed guidance on:
 
 ## Scientific Context
 
-The `statespacecheck` package implements goodness-of-fit diagnostics for state space models used in neuroscience, and this repository demonstrates and applies them. The methods are based on the principle that a well-specified model should have consistent posterior and likelihood distributions. Large divergences or low overlap indicate:
-
-1. **Prior issues**: State transition model too rigid or misspecified
-2. **Observation model issues**: Tuning curves or noise assumptions incorrect
-3. **Model capacity**: Latent state dimensionality insufficient
+The `statespacecheck` package implements goodness-of-fit diagnostics for state space models used in neuroscience, and this repository demonstrates and applies them. The diagnostics compare each spike with the model's one-step prediction: HPD overlap asks whether the prediction's high-density region and the spike's normalized likelihood region overlap (a nesting-tolerant geometric criterion), the rank-based predictive check asks whether the spike's identity is improbable under the predictive mark distribution (which depends on firing rates as well as the state), and KL divergence asks how different the two state distributions are. A flagged spike localizes a discrepancy; attributing it to the transition model, the observation model, or unit definition needs additional evidence such as an alternative model or scientific context, and passing the checks does not establish that the decoded state is accurate or calibrated.
 
 These diagnostics complement but are distinct from:
 
-- **Cross-validation**: Measures predictive generalization to new data
-- **Permutation tests**: Assess whether model captures structure vs. random patterns
+- **Cross-validation and held-out predictive scores**: Measure predictive generalization; they can also be inspected locally, but they do not compare the prediction with an individual spike's likelihood.
+- **Time-rescaling and count checks for point processes**: Assess the exposure/rate structure that the per-event diagnostics here deliberately omit.
 
 ## Citation
 
