@@ -294,9 +294,10 @@ class Figure3RateTables:
         Replay-window rates: ordinary place fields at the elevated
         ``replay_place_field_rate_scale`` plus the baseline sparse population.
     reflected_firing_rates : np.ndarray, shape (n_bins, n_cells)
-        Reflected-map-window rates: every ordinary field mirrored about the
-        track midpoint (a coherent wrong map) plus the baseline sparse
-        population.
+        Reflected-map-window rates: the whole baseline map (ordinary fields
+        and the baseline sparse population alike) mirrored about the track
+        midpoint, i.e. ``baseline_firing_rates`` with its rows reversed; a
+        coherent wrong map.
     sparse_population_firing_rates : np.ndarray, shape (n_bins, n_cells)
         Sparse-window rates: the quiet ordinary ensemble
         (``sparse_control_ordinary_rate_scale``) plus the fully active sparse
@@ -667,19 +668,13 @@ def build_figure03_rate_tables(
             baseline_sparse_firing_rates,
         ]
     )
-    reflected_firing_rates = np.hstack(
-        [
-            place_field_rates(
-                position_bins,
-                reflect_place_field_centers(
-                    place_field_centers, float(config.position_min), float(config.position_max)
-                ),
-                config.place_field_std,
-                config.place_field_rate_scale,
-            ),
-            baseline_sparse_firing_rates,
-        ]
-    )
+    # The coherent wrong map is the whole baseline map reflected about the
+    # track midpoint, sparse cells included, so the decoder's exposure term is
+    # reflected too. On the symmetric grid, reflecting every field center is
+    # exactly reversing the rows of the rate table.
+    if not np.allclose(position_bins + position_bins[::-1], position_bins[0] + position_bins[-1]):
+        raise ValueError("Reflecting the rate table needs a grid symmetric about its midpoint.")
+    reflected_firing_rates = baseline_firing_rates[::-1].copy()
     return Figure3RateTables(
         baseline_firing_rates=baseline_firing_rates,
         remapped_firing_rates=remapped_firing_rates,

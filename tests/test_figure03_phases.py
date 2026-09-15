@@ -323,6 +323,23 @@ def test_reflected_map_is_coherent_and_uses_decoder_likelihood(
         np.asarray(sim.sparse_place_field_centers),
         params,
     )
+    # Reflection identity: the whole table is the baseline map mirrored, so
+    # the ordinary block equals fields placed at the reflected centers and the
+    # sparse block is mirrored as well (not left at its baseline layout).
+    n_normal = params.place_field_centers.size
+    np.testing.assert_allclose(
+        rate_tables.reflected_firing_rates[:, :n_normal],
+        place_field_rates(
+            sim.position_bins, reflected, params.place_field_std, params.place_field_rate_scale
+        ),
+    )
+    np.testing.assert_allclose(
+        rate_tables.reflected_firing_rates[:, n_normal:],
+        rate_tables.baseline_sparse_firing_rates[::-1],
+    )
+    assert not np.allclose(
+        rate_tables.reflected_firing_rates[:, n_normal:], rate_tables.baseline_sparse_firing_rates
+    )
     expected = compute_spike_event_diagnostics_from_rates(
         sim.diagnostics.predictive,
         rate_tables.reflected_firing_rates,
