@@ -260,7 +260,8 @@ def test_real_contfrag_cache_has_two_states() -> None:
         assert src.n_cells == 203
         assert src.n_states == 2
         assert src.n_state_bins == 512
-        # Place fields are concatenated across states.
-        assert src.place_fields.shape[1] == src.n_states * src.n_interior
+        # The observation model is shared across the two discrete states, so
+        # the place fields are positional only.
+        assert src.place_fields.shape == (src.n_cells, src.n_interior)
     finally:
         src.close()
