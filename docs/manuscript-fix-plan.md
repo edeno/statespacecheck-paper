@@ -220,3 +220,48 @@ procedure); the conditional extensions listed in `TODO.md` (uniform-jump
 transition control, parameter sweep, runtime study, additional recordings,
 parametric-bootstrap calibration of the fitted real-data procedure) were not
 started and the manuscript claims none of them.
+
+### Post-review fixes (14 September 2026, second pass)
+
+Five issues raised on the branch, all fixed here:
+
+1. **Reflected map did not mirror the sparse cells** — the reflected rate
+   table is now the entire baseline table with its rows reversed (exact
+   reflection on the symmetric grid), sparse cells and exposure term
+   included; `tests/test_figure03_phases.py` checks the identity for both
+   blocks. Seed 4's sparse spike at 32,129 ms goes from HPD 0 / KL 467 to
+   HPD 1 / KL 0.30. Figure 3 and its sensitivity summaries were regenerated.
+2. **Rate clip under-states KL** — `place_field_rates` now documents the
+   clip as the observation model in use and states that the clipped KL is a
+   lower bound on the exact-Gaussian value (test: width-2 field at 0,
+   prediction at 100 → exact 1251.10 vs clipped 707.89). Rather than move
+   the whole decoder to log-domain tables, the pipeline measures the clip's
+   effect: `unclipped_event_kl_divergence` recomputes every event's exact KL
+   and the summary records `kl_clip_impact` for the evaluated realizations
+   and the calibration sessions (macros `SimKlClipEvents`,
+   `SimKlClipDiffering`, `SimKlClipMaxDifference`, `SimKlClipFlagChanges`,
+   `SimKlClipNullDiffering`, quoted in the simulation Methods). Before the
+   reflection fix, 54 of 2,126,394 evaluated events differed (max 1.02 nats,
+   all with clipped KL ≥ 7.35 > threshold 4.22) and no flag decision changed;
+   no calibration event differed. The regenerated summary carries the
+   post-fix values.
+3. **Rank check described as nesting-tolerant** — the Introduction and
+   Discussion now reserve the nesting-tolerant geometric criterion for HPD
+   overlap and describe the rank check as predictive mark surprise, which
+   includes relative-rate effects.
+4. **"Rate errors cannot trigger flags"** — the Methods and Discussion now
+   say the diagnostics do not *directly* assess the exposure term and are not
+   comprehensive rate checks, and note that a common gain error reaches the
+   prediction through the filtering updates (HPD overlap 1 → 0 after a silent
+   bin in a two-state example).
+5. **Continuous-walk sensitivity explanation** — the text now states that
+   the alternative generator changes both the effective step and the
+   initialization (endpoint vs uniform), presents the larger-step account as
+   a hypothesis, and replaces "within about a percentage point" with the
+   actual values (null and drift within a fraction of a point; sparse KL
+   quoted via `\SensContinuousSparseKl`).
+
+The comparability caveat for the 50%/80% coverage rows (null HPD rates of
+about 38% and 11%) stands as written: the manuscript makes no claim of
+improved sensitivity at comparable false-positive rates.
+
