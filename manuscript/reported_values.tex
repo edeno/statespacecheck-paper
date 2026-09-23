@@ -3,7 +3,8 @@
 % Every value below is read from the canonical figure summaries:
 %   figures/main/figure03_summary.json (schema 5)
 %   figures/main/figure04_summary.json (schema 4)
-% source_tree_sha256: 2c2459d37c3e818bc68db10b3adfd8370cbd3aeedc65ed3d702350a76d7e76f4
+%   figures/supplementary/figure04_supplement_summary.json (schema 1)
+% source_tree_sha256: 9817c7142d087e1a66795bcd7dc12164bf8ac78375cec12d0e4d2346f6cbe9e0
 %
 % Regenerate with: uv run python scripts/emit_reported_values.py
 
@@ -78,6 +79,28 @@
 \newcommand{\RecPvalueRescued}{9373}             % flag_confusions[predictive_pvalue].a_only
 \newcommand{\RecPvalueRescuedPercent}{28}        % flag_confusions[predictive_pvalue].rescue_rate
 \newcommand{\RecPvalueNewlyFlagged}{1706}        % flag_confusions[predictive_pvalue].b_only
+
+% --- Hippocampal recording (Figure 4 supplement) --- computed from the recording
+\newcommand{\RecNPositionBins}{248}             % region_size_and_broadening.by_coverage[0.95].n_position_bins
+\newcommand{\RecContRegionAll}{13}              % median of by_coverage[0.95].continuous.region_size_all_events
+\newcommand{\RecContRegionRescued}{8}           % median of by_coverage[0.95].continuous.region_size_rescued_events
+\newcommand{\RecFragRegionAll}{144}             % median of by_coverage[0.95].continuous_fragmented.region_size_all_events
+\newcommand{\RecFragRegionRescued}{110}         % median of by_coverage[0.95].continuous_fragmented.region_size_rescued_events
+\newcommand{\RecLikelihoodRegion}{228}          % median of by_coverage[0.95].likelihood_region_size_all_events
+\newcommand{\RecMixWeightMin}{0.02}             % smallest uniform weight < 1
+\newcommand{\RecMixRemovedMin}{25}              % uniform_mixture[0.02].fraction_original_flags_removed
+\newcommand{\RecMixWeightMatch}{0.06}           % smallest weight removing >= the fitted HPD rescue rate
+\newcommand{\RecMixRemovedMatch}{95}            % uniform_mixture[0.06].fraction_original_flags_removed
+\newcommand{\RecCovEightyRescuedPercent}{41}    % by_coverage[0.8].rescue_fraction
+\newcommand{\RecCovFiftyRescuedPercent}{15}     % by_coverage[0.5].rescue_fraction
+\newcommand{\RecLowRateThresholdHz}{0.1}        % rate_and_behavior.low_rate_threshold_hz
+\newcommand{\RecUnderOneHzEventsPercent}{2.8}   % rate_groups below 1 Hz: fraction_of_events
+\newcommand{\RecUnderOneHzFlagsPvalueCont}{45}  % rate_groups below 1 Hz: continuous_predictive_pvalue_fraction_of_flags
+\newcommand{\RecSpeedCutoff}{4}                 % rate_and_behavior.behavior.speed_cutoff_cm_s
+\newcommand{\RecImmobileHpdCont}{4.4}           % behavior.immobile.continuous_hpd_overlap_flag_fraction
+\newcommand{\RecImmobilePvalueCont}{4.1}        % behavior.immobile.continuous_predictive_pvalue_flag_fraction
+\newcommand{\RecMovingHpdCont}{1.2}             % behavior.moving.continuous_hpd_overlap_flag_fraction
+\newcommand{\RecMovingPvalueCont}{3.8}          % behavior.moving.continuous_predictive_pvalue_flag_fraction
 
 % --- Hippocampal recording (Figure 4) --- recorded configuration
 \newcommand{\RecPositionBinSizeCm}{2}                  % configuration.decoder.position_bin_size_cm
