@@ -26,10 +26,17 @@ from statespacecheck_paper.scientific_artifacts import write_json_artifact
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FIGURE_DIR = REPO_ROOT / "manuscript" / "figures" / "main"
+SUPPLEMENTARY_DIR = REPO_ROOT / "manuscript" / "figures" / "supplementary"
 
 
 def _load(name: str) -> dict[str, Any]:
     with open(FIGURE_DIR / name, encoding="utf-8") as handle:
+        payload: dict[str, Any] = json.load(handle)
+    return payload
+
+
+def _load_supplementary(name: str) -> dict[str, Any]:
+    with open(SUPPLEMENTARY_DIR / name, encoding="utf-8") as handle:
         payload: dict[str, Any] = json.load(handle)
     return payload
 

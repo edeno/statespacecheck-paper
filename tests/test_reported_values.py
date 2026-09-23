@@ -16,7 +16,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from statespacecheck_paper.number_format import significant, whole_percent
+from statespacecheck_paper.number_format import SIGNIFICANT_FIGURES, significant, whole_percent
 from statespacecheck_paper.reported_values import (
     MACRO_FILE_PATH,
     _exact,
@@ -25,10 +25,17 @@ from statespacecheck_paper.reported_values import (
     render_macro_file,
     write_macro_file,
 )
-from tests.test_reported_statistics_artifacts import _load
+from tests.test_reported_statistics_artifacts import _load, _load_supplementary
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 COMMITTED_MACRO_FILE = REPO_ROOT / MACRO_FILE_PATH
+
+
+def _render(figure03: dict, figure04: dict) -> str:
+    """Render the macro file with the committed Figure-4 supplement summary."""
+    return render_macro_file(
+        figure03, figure04, _load_supplementary("figure04_supplement_summary.json")
+    )
 
 
 def _macro_values(text: str) -> dict[str, str]:
@@ -42,6 +49,8 @@ def test_committed_macro_file_matches_the_figure_summaries(tmp_path: Path) -> No
         tmp_path / "reported_values.tex",
         figure03_path=REPO_ROOT / "manuscript/figures/main/figure03_summary.json",
         figure04_path=REPO_ROOT / "manuscript/figures/main/figure04_summary.json",
+        figure04_supplement_path=REPO_ROOT
+        / "manuscript/figures/supplementary/figure04_supplement_summary.json",
     )
     assert regenerated.read_text(encoding="utf-8") == COMMITTED_MACRO_FILE.read_text(
         encoding="utf-8"
@@ -73,6 +82,39 @@ def test_macro_values_round_trip_the_canonical_statistics() -> None:
     assert values["RecHpdRescuedPercent"] == f"{100 * hpd['rescue_rate']:.0f}"
 
 
+def test_supplement_macros_carry_the_broadening_and_rate_statistics() -> None:
+    """The supplement's quoted numbers match its summary and the fitted rescue rate."""
+    values = _macro_values(COMMITTED_MACRO_FILE.read_text(encoding="utf-8"))
+    supplement = _load_supplementary("figure04_supplement_summary.json")
+    main = supplement["region_size_and_broadening"]["by_coverage"]["0.95"]
+    fitted_rescue = next(
+        item["rescue_rate"]
+        for item in _load("figure04_summary.json")["flag_confusions"]
+        if item["metric"] == "hpd_overlap"
+    )
+
+    rescued = main["continuous_fragmented"]["region_size_rescued_events"]
+    assert values["RecFragRegionRescued"] == _exact(
+        rescued["quantiles"][rescued["quantile_probabilities"].index(0.5)]
+    )
+    # "Match" is the smallest weight removing at least the fitted model's share
+    # of flags, so the text's comparison holds by construction.
+    mixtures = {
+        record["uniform_weight"]: record["fraction_original_flags_removed"]
+        for record in main["uniform_mixture"].values()
+        if record["uniform_weight"] < 1.0
+    }
+    match = float(values["RecMixWeightMatch"])
+    assert mixtures[match] >= fitted_rescue
+    assert all(removed < fitted_rescue for weight, removed in mixtures.items() if weight < match)
+    assert float(values["RecMixWeightMin"]) == min(mixtures)
+    assert values["RecMixRemovedMatch"] == whole_percent(100.0 * mixtures[match])
+    immobile = supplement["rate_and_behavior"]["behavior"]["immobile"]
+    assert values["RecImmobileHpdCont"] == significant(
+        100.0 * immobile["continuous_hpd_overlap_flag_fraction"], SIGNIFICANT_FIGURES
+    )
+
+
 def test_asymmetric_mode_parameters_are_reported_independently() -> None:
     """Each mode keeps its own initial and transition probability."""
     figure03 = _load("figure03_summary.json")
@@ -81,7 +123,7 @@ def test_asymmetric_mode_parameters_are_reported_independently() -> None:
     provenance["contfrag_discrete_initial_conditions"] = [0.6, 0.4]
     provenance["contfrag_diagonal_values"] = [0.9, 0.8]
 
-    values = _macro_values(render_macro_file(figure03, figure04))
+    values = _macro_values(_render(figure03, figure04))
 
     assert values["RecModeContinuousInitial"] == "0.6"
     assert values["RecModeFragmentedInitial"] == "0.4"
@@ -97,7 +139,7 @@ def test_non_integral_burst_factor_is_not_silently_rounded() -> None:
     figure03["configuration"]["history_burst_factor"] = 3.4
 
     with pytest.raises(ValueError, match="not exact"):
-        render_macro_file(figure03, _load("figure04_summary.json"))
+        _render(figure03, _load("figure04_summary.json"))
 
 
 @pytest.mark.parametrize("quantile", [0.005, 0.995])
@@ -107,7 +149,7 @@ def test_fractional_percentile_is_not_silently_rounded(quantile: float) -> None:
     figure03["threshold_provenance"]["hpd_overlap"]["quantile"] = quantile
 
     with pytest.raises(ValueError, match="not exact"):
-        render_macro_file(figure03, _load("figure04_summary.json"))
+        _render(figure03, _load("figure04_summary.json"))
 
 
 def test_zero_decoding_error_renders() -> None:
@@ -116,7 +158,7 @@ def test_zero_decoding_error_renders() -> None:
     well_specified = figure03["condition_order"].index("well_specified")
     figure03["median_decoding_accuracy"][0][well_specified] = 0.0
 
-    values = _macro_values(render_macro_file(figure03, _load("figure04_summary.json")))
+    values = _macro_values(_render(figure03, _load("figure04_summary.json")))
 
     assert values["SimWellSpecifiedError"] == "0"
 
@@ -193,14 +235,14 @@ def test_published_standard_errors_do_not_set_precision() -> None:
     """The Figure-3 SEs are data for the reader, not a formatting authority."""
     figure03 = copy.deepcopy(_load("figure03_summary.json"))
     figure04 = _load("figure04_summary.json")
-    baseline = _macro_values(render_macro_file(figure03, figure04))
+    baseline = _macro_values(_render(figure03, figure04))
     # Shrink every published SE a thousandfold; no printed digit may change.
     for key in (
         "median_flag_percentage_standard_errors",
         "median_decoding_accuracy_standard_errors",
     ):
         figure03[key] = [[value / 1000.0 for value in row] for row in figure03[key]]
-    assert _macro_values(render_macro_file(figure03, figure04)) == baseline
+    assert _macro_values(_render(figure03, figure04)) == baseline
 
 
 def test_word_helpers() -> None:
@@ -215,4 +257,4 @@ def test_render_is_deterministic() -> None:
     """Two renders of the same payloads agree byte for byte."""
     figure03 = _load("figure03_summary.json")
     figure04 = _load("figure04_summary.json")
-    assert render_macro_file(figure03, figure04) == render_macro_file(figure03, figure04)
+    assert _render(figure03, figure04) == _render(figure03, figure04)

@@ -1,8 +1,9 @@
 r"""Emit the manuscript's reported numbers as LaTeX macros.
 
 The manuscript's reported analysis statistics and configuration live in the
-two canonical figure summaries (``figure03_summary.json`` /
-``figure04_summary.json``). This module turns those summaries into a file of
+canonical figure summaries (``figure03_summary.json``,
+``figure04_summary.json``, and the Figure-4 supplement's
+``figure04_supplement_summary.json``). This module turns those summaries into a file of
 ``\newcommand`` definitions that ``main.tex`` inputs, so the prose cannot drift
 from the artifacts the way hand-typed numbers can.
 
@@ -59,6 +60,9 @@ from statespacecheck_paper.number_format import SIGNIFICANT_FIGURES, significant
 MACRO_FILE_PATH = Path("manuscript/reported_values.tex")
 FIGURE03_SUMMARY_PATH = Path("manuscript/figures/main/figure03_summary.json")
 FIGURE04_SUMMARY_PATH = Path("manuscript/figures/main/figure04_summary.json")
+FIGURE04_SUPPLEMENT_SUMMARY_PATH = Path(
+    "manuscript/figures/supplementary/figure04_supplement_summary.json"
+)
 
 # Spelled-out cardinals for the counts the manuscript writes as words
 # ("eleven place cells", "Five additional cells"). Only small counts appear,
@@ -528,6 +532,135 @@ def _recording_statistics(payload: dict[str, Any]) -> list[MacroDefinition]:
     return macros
 
 
+def _recording_supplement(
+    payload: dict[str, Any], figure04_payload: dict[str, Any]
+) -> list[MacroDefinition]:
+    """Build the macros computed by the Figure-4 supplement analyses.
+
+    The fitted model's HPD rescue rate comes from the Figure-4 summary, so the
+    uniform-mixture comparison is against the same number the Results quote.
+    """
+    broadening = payload["region_size_and_broadening"]
+    by_coverage = broadening["by_coverage"]
+    main = by_coverage["0.95"]
+
+    def median(record: dict[str, Any]) -> float:
+        """Return the stored median of a quantile record."""
+        value: float = record["quantiles"][record["quantile_probabilities"].index(0.5)]
+        return value
+
+    macros = [
+        MacroDefinition(
+            "RecNPositionBins",
+            _exact(main["n_position_bins"]),
+            "region_size_and_broadening.by_coverage[0.95].n_position_bins",
+        )
+    ]
+    for model, model_stem in (("continuous", "Cont"), ("continuous_fragmented", "Frag")):
+        for events, events_stem in (("all_events", "All"), ("rescued_events", "Rescued")):
+            macros.append(
+                MacroDefinition(
+                    f"Rec{model_stem}Region{events_stem}",
+                    _exact(median(main[model][f"region_size_{events}"])),
+                    f"median of by_coverage[0.95].{model}.region_size_{events}",
+                )
+            )
+    macros.append(
+        MacroDefinition(
+            "RecLikelihoodRegion",
+            _exact(median(main["likelihood_region_size_all_events"])),
+            "median of by_coverage[0.95].likelihood_region_size_all_events",
+        )
+    )
+
+    # The smallest mixture weight evaluated, and the smallest one that removes
+    # at least the share of flags the fitted Continuous--Fragmented model rescues.
+    mixtures = sorted(
+        (record for record in main["uniform_mixture"].values() if record["uniform_weight"] < 1.0),
+        key=lambda record: record["uniform_weight"],
+    )
+    fitted_rescue = _confusion(figure04_payload, "hpd_overlap")["rescue_rate"]
+    matching = next(
+        record for record in mixtures if record["fraction_original_flags_removed"] >= fitted_rescue
+    )
+    for stem, record, note in (
+        ("Min", mixtures[0], "smallest uniform weight < 1"),
+        ("Match", matching, "smallest weight removing >= the fitted HPD rescue rate"),
+    ):
+        macros.extend(
+            [
+                MacroDefinition(f"RecMixWeight{stem}", _exact(record["uniform_weight"], 2), note),
+                MacroDefinition(
+                    f"RecMixRemoved{stem}",
+                    whole_percent(100.0 * record["fraction_original_flags_removed"]),
+                    f"uniform_mixture[{record['uniform_weight']}].fraction_original_flags_removed",
+                ),
+            ]
+        )
+    for key, stem in (("0.8", "Eighty"), ("0.5", "Fifty")):
+        macros.append(
+            MacroDefinition(
+                f"RecCov{stem}RescuedPercent",
+                whole_percent(100.0 * by_coverage[key]["rescue_fraction"]),
+                f"by_coverage[{key}].rescue_fraction",
+            )
+        )
+
+    rate = payload["rate_and_behavior"]
+    # rate_groups follow rate_group_edges_hz: group i lies below edge i.
+    n_under_one_hz = payload["analysis_configuration"]["rate_group_edges_hz"].index(1.0) + 1
+    under_one_hz = rate["rate_groups"][:n_under_one_hz]
+    macros.extend(
+        [
+            MacroDefinition(
+                "RecLowRateThresholdHz",
+                _exact(rate["low_rate_threshold_hz"], 1),
+                "rate_and_behavior.low_rate_threshold_hz",
+            ),
+            MacroDefinition(
+                "RecUnderOneHzEventsPercent",
+                significant(
+                    100.0 * sum(group["fraction_of_events"] for group in under_one_hz),
+                    SIGNIFICANT_FIGURES,
+                ),
+                "rate_groups below 1 Hz: fraction_of_events",
+            ),
+            MacroDefinition(
+                "RecUnderOneHzFlagsPvalueCont",
+                whole_percent(
+                    100.0
+                    * sum(
+                        group["continuous_predictive_pvalue_fraction_of_flags"]
+                        for group in under_one_hz
+                    )
+                ),
+                "rate_groups below 1 Hz: continuous_predictive_pvalue_fraction_of_flags",
+            ),
+        ]
+    )
+    behavior = rate["behavior"]
+    macros.append(
+        MacroDefinition(
+            "RecSpeedCutoff",
+            _exact(behavior["speed_cutoff_cm_s"]),
+            "rate_and_behavior.behavior.speed_cutoff_cm_s",
+        )
+    )
+    for stratum, stratum_stem in (("immobile", "Immobile"), ("moving", "Moving")):
+        for metric, metric_stem in (("hpd_overlap", "Hpd"), ("predictive_pvalue", "Pvalue")):
+            macros.append(
+                MacroDefinition(
+                    f"Rec{stratum_stem}{metric_stem}Cont",
+                    significant(
+                        100.0 * behavior[stratum][f"continuous_{metric}_flag_fraction"],
+                        SIGNIFICANT_FIGURES,
+                    ),
+                    f"behavior.{stratum}.continuous_{metric}_flag_fraction",
+                )
+            )
+    return macros
+
+
 def _recording_configuration(payload: dict[str, Any]) -> list[MacroDefinition]:
     """Build the Figure-4 macros recording the decoder's chosen inputs."""
     decoder = payload["configuration"]["decoder"]
@@ -613,6 +746,7 @@ def _recording_configuration(payload: dict[str, Any]) -> list[MacroDefinition]:
 def render_macro_file(
     figure03_payload: dict[str, Any],
     figure04_payload: dict[str, Any],
+    figure04_supplement_payload: dict[str, Any],
 ) -> str:
     """Render the full ``reported_values.tex`` contents.
 
@@ -620,6 +754,8 @@ def render_macro_file(
     ----------
     figure03_payload, figure04_payload : dict
         Parsed contents of the two canonical figure summaries.
+    figure04_supplement_payload : dict
+        Parsed contents of the Figure-4 supplement summary.
 
     Returns
     -------
@@ -640,6 +776,10 @@ def render_macro_file(
             _recording_statistics(figure04_payload),
         ),
         (
+            "Hippocampal recording (Figure 4 supplement) --- computed from the recording",
+            _recording_supplement(figure04_supplement_payload, figure04_payload),
+        ),
+        (
             "Hippocampal recording (Figure 4) --- recorded configuration",
             _recording_configuration(figure04_payload),
         ),
@@ -651,6 +791,8 @@ def render_macro_file(
         "% Every value below is read from the canonical figure summaries:",
         f"%   figures/main/figure03_summary.json (schema {figure03_payload['schema_version']})",
         f"%   figures/main/figure04_summary.json (schema {figure04_payload['schema_version']})",
+        "%   figures/supplementary/figure04_supplement_summary.json "
+        f"(schema {figure04_supplement_payload['schema_version']})",
         f"% source_tree_sha256: {source_hash}",
         "%",
         "% Regenerate with: uv run python scripts/emit_reported_values.py",
@@ -669,6 +811,7 @@ def write_macro_file(
     *,
     figure03_path: Path = FIGURE03_SUMMARY_PATH,
     figure04_path: Path = FIGURE04_SUMMARY_PATH,
+    figure04_supplement_path: Path = FIGURE04_SUPPLEMENT_SUMMARY_PATH,
 ) -> Path:
     """Write ``reported_values.tex`` from the committed figure summaries.
 
@@ -676,7 +819,7 @@ def write_macro_file(
     ----------
     output_path : Path, default ``MACRO_FILE_PATH``
         Destination of the generated macro file.
-    figure03_path, figure04_path : Path
+    figure03_path, figure04_path, figure04_supplement_path : Path
         Canonical summary JSONs to read.
 
     Returns
@@ -684,6 +827,8 @@ def write_macro_file(
     Path
         The path written.
     """
-    text = render_macro_file(_load(figure03_path), _load(figure04_path))
+    text = render_macro_file(
+        _load(figure03_path), _load(figure04_path), _load(figure04_supplement_path)
+    )
     output_path.write_text(text, encoding="utf-8")
     return output_path
