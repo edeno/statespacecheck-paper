@@ -39,8 +39,8 @@ copies of console output. Figure 3 uses schema version 5 and Figure 4 uses
 schema version 3. Both record each flag threshold with its exact inclusive
 comparison operator, plus hashes of the scientific source tree and `uv.lock`.
 Figure 3 includes per-condition decoding errors, approximate standard errors
-of its medians, and threshold provenance. Figure 4 records the unit count, decode-cache
-fingerprint, installed decoder version, and SHA-256 checksum of each of its five
+of its medians, and threshold provenance. Figure 4 records the unit count, decode- and
+diagnostics-cache fingerprints, installed decoder version, and SHA-256 checksum of each of its five
 derived input exports. See [the schema notes](docs/figure-pipeline.md#machine-readable-summary-schema).
 
 ```bash

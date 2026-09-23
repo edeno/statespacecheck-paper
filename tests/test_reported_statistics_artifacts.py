@@ -14,7 +14,7 @@ from statespacecheck_paper.figure03_generation import figure03_summary_payload
 from statespacecheck_paper.figure03_protocol import Figure3Config
 from statespacecheck_paper.figure03_summary import Figure3RealizationSummary
 from statespacecheck_paper.figure04_cache import Figure4CacheProvenance, Figure4Paths
-from statespacecheck_paper.figure04_decoder import Figure4Config
+from statespacecheck_paper.figure04_decoder import Figure4Config, Figure4DiagnosticsConfig
 from statespacecheck_paper.figure04_diagnostics import FlagConfusion
 from statespacecheck_paper.figure04_generation import figure04_summary_payload
 from statespacecheck_paper.figure04_workflow import (
@@ -142,7 +142,7 @@ def test_figure03_reported_statistics_match_canonical_run(tmp_path: Path) -> Non
 def test_figure04_reported_statistics_counts_partition_events(tmp_path: Path) -> None:
     payload = _load("figure04_summary.json")
 
-    assert payload["schema_version"] == 3
+    assert payload["schema_version"] == 4
     # 203 units is the count reported in the Figure-4 caption.
     assert payload["dataset"] == {
         "animal_date_epoch": "j1620210710_02_r1",
@@ -196,6 +196,10 @@ def test_figure04_reported_statistics_counts_partition_events(tmp_path: Path) ->
             for suffix in EXPORT_FILE_SUFFIXES
         ),
         non_local_detector_version=cache_payload["non_local_detector_version"],
+        diagnostics_fingerprint_sha256=cache_payload["diagnostics_fingerprint_sha256"],
+        diagnostics_schema_version=cache_payload["diagnostics_schema_version"],
+        statespacecheck_version=cache_payload["statespacecheck_version"],
+        diagnostics_config=Figure4DiagnosticsConfig(**cache_payload["diagnostics_config"]),
     )
     means = payload["diagnostic_means"]
     summary = Figure4Summary(

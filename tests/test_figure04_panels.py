@@ -538,6 +538,12 @@ def _valid_panel_kwargs() -> dict:
 
 
 class TestModelDiagnosticPanelDataValidation:
+    def test_event_only_diagnostics_construct(self) -> None:
+        """The cached diagnostics omit the dense matrices; the panel renders from events."""
+        kwargs = _valid_panel_kwargs()
+        kwargs["diagnostics"] = _diag_all_dense_none()
+        ModelDiagnosticPanelData(**kwargs)
+
     def test_valid_kwargs_construct(self) -> None:
         # The baseline the rejection cases mutate must itself be valid.
         ModelDiagnosticPanelData(**_valid_panel_kwargs())
@@ -546,11 +552,10 @@ class TestModelDiagnosticPanelDataValidation:
         "override, match",
         [
             ({"time": np.zeros((_N_TIME, 2))}, "time must be 1-D"),
-            ({"diagnostics": _diag_all_dense_none()}, "must include the dense"),
-            ({"diagnostics": _diag_wrong_time_rows()}, "one row per time sample"),
+            ({"diagnostics": _diag_wrong_time_rows()}, "must have shape"),
             (
                 {"spike_counts": np.zeros((_N_TIME, _N_CELLS + 1), dtype=np.int64)},
-                "spike_counts must have shape",
+                "must have shape",
             ),
             ({"spike_times": [np.array([0.1])] * (_N_CELLS - 1)}, "spike_times must contain"),
             ({"place_field_peaks": np.zeros(_N_CELLS + 1)}, "place_field_peaks must have shape"),

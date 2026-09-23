@@ -76,7 +76,7 @@ def figure04_summary_payload(
             }
         )
     return {
-        "schema_version": 3,
+        "schema_version": 4,
         "figure": "figure04",
         "dataset": {
             "animal_date_epoch": paths.animal_date_epoch,
