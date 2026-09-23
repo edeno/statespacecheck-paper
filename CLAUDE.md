@@ -47,7 +47,8 @@ Key modules and the rationale that the source alone won't tell you:
   rewritten by a diagnostics change; the diagnostics bundle is keyed by the
   decode fingerprint plus a digest of the diagnostic modules' executable syntax
   trees, so a diagnostics edit recomputes diagnostics (about a minute) rather
-  than refitting.
+  than refitting. The supplement (`figure04_broadening` analyses +
+  `figure04_supplement_{plotting,generation}`) reads the same caches.
 - **load_local_data.py** — `load_neural_recording_from_files` → validated
   `NeuralRecordingData`; loads from pre-exported pickles, no Spyglass DB needed.
 - **paths.py** — `DATA_PATH` / `ANIMAL_DATE_EPOCH` constants, env-overridable via
@@ -55,7 +56,7 @@ Key modules and the rationale that the source alone won't tell you:
 - **style.py / simulation.py / plotting.py / schematic.py** — styling (WONG
   palette), simulation primitives, reusable plotting (HPD regions, likelihood
   columns), and the Figure-1 graphical-model/equation diagrams.
-- **reported_values.py** — reads the Figure-3 and Figure-4 summary JSONs and
+- **reported_values.py** — reads the Figure-3, Figure-4, and Figure-4-supplement summary JSONs and
   emits `manuscript/reported_values.tex`. Its module docstring defines the prose
   reporting policy; standard errors in the summaries do not set printed digits.
 - **number_format.py** — the two rounding functions behind that policy

@@ -1,6 +1,8 @@
-"""Generate all figures for the paper.
+"""Generate all figures and summaries for the paper.
 
-This script runs all figure generation scripts in sequence and reports results.
+This script runs every figure- and summary-generation script in sequence (main
+figures and the Figure-4 supplement) and reports results. Run
+``scripts/emit_reported_values.py`` afterwards.
 """
 
 from __future__ import annotations
@@ -28,6 +30,7 @@ def main() -> int:
         "generate_figure02.py",
         "generate_figure03.py",
         "generate_figure04.py",
+        "generate_figure04_supplement.py",
     ]
 
     print("=" * 70)

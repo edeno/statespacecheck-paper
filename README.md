@@ -47,12 +47,12 @@ derived input exports. See [the schema notes](docs/figure-pipeline.md#machine-re
 # Reproduce the locked environment, then regenerate every figure:
 uv sync --frozen
 uv run python scripts/generate_all_figures.py
-# Outputs land in manuscript/figures/main/ (figures at 450 DPI).
+# Outputs land in manuscript/figures/main/ and .../supplementary/ (450 DPI).
 uv run python scripts/emit_reported_values.py
 make -C manuscript
 ```
 
-The emitter reads the two summary JSONs and writes `manuscript/reported_values.tex`,
+The emitter reads the Figure 3, Figure 4, and Figure 4 supplement summary JSONs and writes `manuscript/reported_values.tex`,
 which supplies the manuscript's reported values. Run it after regenerating either
 summary. It can also run directly from the committed summaries without rerunning
 the analyses. See [the reporting policy and artifact checks](docs/figure-pipeline.md#from-summary-to-prose-the-reported-value-macros).
@@ -272,6 +272,7 @@ uv run python scripts/generate_figure01.py   # Fig 1  (simulated)
 uv run python scripts/generate_figure02.py   # Fig 2  (simulated)
 uv run python scripts/generate_figure03.py   # Fig 3  (simulated)
 uv run python scripts/generate_figure04.py   # Fig 4  (needs the real dataset)
+uv run python scripts/generate_figure04_supplement.py  # Fig S2 (reads the Fig 4 caches)
 
 # Outputs saved to manuscript/figures/main/ directory as PDF and PNG (450 DPI)
 
@@ -309,6 +310,7 @@ uv run ruff format . && uv run ruff check . && uv run mypy src/ && uv run pytest
 - **`figure04_{decoder,place_fields,diagnostics}.py`**: Figure-4 real-data decoder construction/config, place-field extraction, and diagnostics
 - **`figure04_{plot_primitives,track_plots,panels}.py`**: Figure-4 plotting helpers, track-graph rendering, and raster/diagnostic panels
 - **`figure04_{cache,workflow,layout,generation}.py`**: Figure-4 cache, analysis workflow, composition, and generation recipe
+- **`figure04_{broadening,supplement_plotting,supplement_generation}.py`**: Figure-4 supplement analyses (predictive-region sizes, uniform-mixture counterfactual, coverage, unit-rate and behavior strata), plotting, and generation recipe
 - **`reported_values.py`**: Summary-to-LaTeX macro generation and the manuscript's reporting policy
 - **`load_local_data.py`**: Real data loading utilities
 - **`paths.py`**: Shared `DATA_PATH` / `ANIMAL_DATE_EPOCH` constants (env-overridable)

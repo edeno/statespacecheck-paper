@@ -12,7 +12,7 @@ All commands are run from the repository root in the locked environment:
 ```bash
 uv sync --frozen
 uv run python scripts/generate_figureNN.py     # one figure
-uv run python scripts/generate_all_figures.py  # all four
+uv run python scripts/generate_all_figures.py  # all four + the Figure-4 supplement
 uv run python scripts/emit_reported_values.py  # refresh the manuscript's numbers
 make -C manuscript                           # build the paper
 # Figures: manuscript/figures/main/figureNN.{pdf,png} at 450 DPI.
@@ -31,7 +31,8 @@ families**:
   computation and containers). `diagnostics` is the dependency-graph leaf.
 - **Per-figure families**: `figure01_generation`,
   `figure02_{panels,generation}`, `figure03_{protocol,simulation,summary,plotting,generation}` and
-  `figure04_{cache,workflow,layout,generation}`. Each figure is a small set of
+  `figure04_{cache,workflow,layout,generation}` and the Figure-4 supplement
+  (`figure04_{broadening,supplement_plotting,supplement_generation}`). Each figure is a small set of
   single-responsibility modules rather than one monolith, so an outside reader
   can follow the scientific workflow (configure → simulate/load → decode →
   diagnose → summarize → render).
@@ -65,6 +66,10 @@ figure04_workflow      → figure04_cache, figure04_decoder, figure04_diagnostic
 figure04_layout        → figure04_workflow, diagnostics, figure04_panels, figure04_plot_primitives, figure04_track_plots
 figure04_generation    → figure04_workflow, figure04_layout, figure04_cache, figure04_decoder, paths, scientific_artifacts, style
 generate_figure04.py   → figure04_generation
+figure04_broadening    → diagnostics, figure04_place_fields, figure04_workflow
+figure04_supplement_plotting   → figure04_broadening, style
+figure04_supplement_generation → figure04_broadening, figure04_supplement_plotting, figure04_workflow, figure04_cache, figure04_decoder, paths, scientific_artifacts, style
+generate_figure04_supplement.py → figure04_supplement_generation
 ```
 
 ### Not part of figure generation
@@ -326,6 +331,31 @@ typed summary to `figure04_summary.json`.
 The optional interactive viewer derives its Zarr/Parquet/NPZ layout from this
 same `Figure4RenderData` via `interactive.cache.build_figure04_viewer_cache`.
 It does not require a second set of NetCDF results or fitted-model pickles.
+
+### Figure-4 supplement — broadening, coverage, rate, and behavior
+
+- **Reproduction:** `uv run python scripts/generate_figure04_supplement.py`
+  (reads the two Figure-4 caches; refits nothing; about six minutes).
+- **Computation:** `figure04_supplement_generation.generate_figure04_supplement`
+  → `prepare_figure04_render_data` (cached) →
+  `figure04_broadening.compute_region_size_and_broadening` (per-event 95/80/50%
+  predictive-region sizes for both models, likelihood region sizes, flags and
+  rescue at each coverage, and the uniform-mixture counterfactual
+  `(1 - w) P + w U` at each weight, all in bounded event chunks from the
+  memory-mapped predictions) and
+  `compute_rate_and_behavior_association` (per-unit session rates and flag
+  fractions, rate-group contributions, a constant mark-frequency baseline,
+  low-rate contributions to rescued/newly flagged rank events, and
+  immobile-versus-moving strata) →
+  `figure04_supplement_plotting.compose_figure04_supplement`. The analysis
+  settings (uniform-mixture weights, coverage levels, rate groups, speed
+  cutoff) live in `Figure4BroadeningConfig` (`figure04_broadening.py`).
+- **Output:** `manuscript/figures/supplementary/figure04_supplement.{pdf,png}`
+  and `figure04_supplement_summary.json` (schema 1), which also carries the
+  decode/diagnostics cache provenance.
+- **Interpretation guard:** the uniform mixture modifies the diagnostic's
+  input on the same events; it is not a refitted alternative decoder, and the
+  summary labels it as such.
 
 ## Machine-readable summary schema
 
