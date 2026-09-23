@@ -3,7 +3,7 @@
 % Every value below is read from the canonical figure summaries:
 %   figures/main/figure03_summary.json (schema 5)
 %   figures/main/figure04_summary.json (schema 3)
-% source_tree_sha256: ca88becba40aced0b8acab6c4e304f5ffc24db44c8291aa82ce8809e07f0559b
+% source_tree_sha256: 7214d10a2e62a253833698c6d607742ed50d60085aadea8c93780f20e33d186f
 %
 % Regenerate with: uv run python scripts/emit_reported_values.py
 
@@ -15,15 +15,15 @@
 \newcommand{\SimHistoryFlagMax}{2}        % max over metrics of median_flag_percentages[:, history_dependent]
 \newcommand{\SimReplayFlagMin}{1}         % min over metrics of median_flag_percentages[:, replay]
 \newcommand{\SimReplayFlagMax}{3}         % max over metrics of median_flag_percentages[:, replay]
-\newcommand{\SimDriftFlagMin}{9}          % min over metrics of median_flag_percentages[:, drift]
+\newcommand{\SimDriftFlagMin}{8}          % min over metrics of median_flag_percentages[:, drift]
 \newcommand{\SimDriftFlagMax}{14}         % max over metrics of median_flag_percentages[:, drift]
 \newcommand{\SimSparseKlFlag}{43}         % median_flag_percentages[kl_divergence, sparse_population]
 \newcommand{\SimWellSpecifiedError}{1.8}  % median_decoding_accuracy[median_absolute_error, well_specified]
 \newcommand{\SimRemapError}{42}           % median_decoding_accuracy[median_absolute_error, remap]
-\newcommand{\SimHistoryError}{1.7}        % median_decoding_accuracy[median_absolute_error, history_dependent]
+\newcommand{\SimHistoryError}{1.6}        % median_decoding_accuracy[median_absolute_error, history_dependent]
 \newcommand{\SimReplayError}{36}          % median_decoding_accuracy[median_absolute_error, replay]
 \newcommand{\SimDriftError}{8.0}          % median_decoding_accuracy[median_absolute_error, drift]
-\newcommand{\SimSparseError}{0.99}        % median_decoding_accuracy[median_absolute_error, sparse_population]
+\newcommand{\SimSparseError}{1.0}         % median_decoding_accuracy[median_absolute_error, sparse_population]
 \newcommand{\SimHpdPercentile}{1st}       % threshold_provenance.hpd_overlap.quantile
 \newcommand{\SimKlPercentile}{99th}       % threshold_provenance.kl_divergence.quantile
 \newcommand{\SimPredictiveCutoff}{0.05}   % threshold_provenance.predictive_pvalue.cutoff

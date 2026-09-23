@@ -67,9 +67,9 @@ def test_figure03_reported_statistics_match_canonical_run(tmp_path: Path) -> Non
         np.asarray(payload["median_flag_percentages"]),
         np.array(
             [
-                [1.766, 40.799, 1.192, 2.083, 10.733, 0.000],
-                [2.761, 43.026, 1.764, 2.723, 13.741, 0.000],
-                [1.178, 36.771, 0.668, 1.301, 8.532, 42.857],
+                [1.759, 40.799, 1.039, 2.162, 10.616, 0.000],
+                [2.783, 43.026, 1.533, 2.777, 13.726, 0.000],
+                [1.153, 36.771, 0.568, 1.310, 8.484, 42.857],
             ]
         ),
         atol=5e-4,
@@ -78,7 +78,7 @@ def test_figure03_reported_statistics_match_canonical_run(tmp_path: Path) -> Non
     assert payload["accuracy_metric_order"] == ["median_absolute_error"]
     np.testing.assert_allclose(
         np.asarray(payload["median_decoding_accuracy"]),
-        np.array([[1.792, 42.169, 1.678, 36.358, 7.985, 0.990]]),
+        np.array([[1.767, 42.169, 1.630, 36.039, 8.010, 1.028]]),
         atol=5e-4,
         rtol=0.0,
     )
@@ -86,7 +86,7 @@ def test_figure03_reported_statistics_match_canonical_run(tmp_path: Path) -> Non
         "hpd_overlap": {"comparison": "less_than_or_equal", "threshold": 0.0},
         "kl_divergence": {
             "comparison": "greater_than_or_equal",
-            "threshold": 4.13792649205148,
+            "threshold": 4.138232127925627,
         },
         "predictive_pvalue": {
             "comparison": "less_than_or_equal",
@@ -113,7 +113,7 @@ def test_figure03_reported_statistics_match_canonical_run(tmp_path: Path) -> Non
         "predictive_pvalue": {"rule": "fixed_cutoff", "cutoff": 0.05},
     }
     # The history-dependence misfit parameters the Methods report, at 1 ms/step:
-    # a 1 ms hard refractory, a 2-10 ms burst window, a threefold rate increase.
+    # 1 ms post-spike suppression, a 2-10 ms burst window, a threefold rate increase.
     configuration = payload["configuration"]
     assert configuration["history_refractory_steps"] == 1
     assert configuration["history_burst_window"] == [2, 10]
