@@ -281,8 +281,8 @@ def simulate_history_dependent_phase(
 ) -> tuple[NDArray[np.floating], NDArray[np.int_]]:
     """History-dependent firing misfit: a normal walk with bursting spike_counts.
 
-    Cells fire via ``simulate_spikes_history_dependent`` (hard refractory
-    plus a burst window); the decoder still treats every spike as an
+    Cells fire via ``simulate_spikes_history_dependent`` (post-spike
+    suppression plus a burst window); the decoder still treats every spike as an
     independent Poisson draw, so the misfit lives in the temporal
     correlations and is largely invisible to the per-spike spatial
     diagnostics.
@@ -589,7 +589,7 @@ def run_figure03_simulation(
        one fixed, spatially incoherent permutation)
     3. Clean Recovery
     4. **History-Dependent Firing Misfit** (observation: spike_counts
-       generated with hard refractory + bursting; decoder still
+       generated with post-spike suppression + bursting; decoder still
        assumes Poisson. Per-event spatial likelihood is unchanged,
        so the per-spike diagnostics largely miss this — deliberate
        demonstration of the spatial-only nature of the diagnostics.)

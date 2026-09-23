@@ -325,15 +325,14 @@ def _expand_spike_events(
 ) -> tuple[NDArray[np.intp], NDArray[np.intp]]:
     """Expand a ``(n_time, n_cells)`` spike-count matrix into per-event indices.
 
-    Excludes ``t=0`` (which has no valid prior) and expands multiplicities: a
-    bin with count ``k`` contributes ``k`` repeated events. The returned time
-    indices carry the ``+1`` offset that undoes the ``spike_counts[1:]`` slice.
+    Every bin, including ``t=0`` (whose prediction is the initial state
+    distribution), contributes events; a bin with count ``k`` contributes
+    ``k`` repeated events, in row-major ``(time, cell)`` order.
     """
-    spike_time_ind, spike_cell_ind = np.nonzero(spike_counts[1:])
-    spike_counts_at_events = spike_counts[1:][spike_time_ind, spike_cell_ind].astype(np.intp)
-    spike_time_ind = np.repeat(spike_time_ind, spike_counts_at_events)
-    spike_cell_ind = np.repeat(spike_cell_ind, spike_counts_at_events)
-    spike_time_ind = spike_time_ind + 1  # Adjust for offset from [1:]
+    spike_time_ind, spike_cell_ind = np.nonzero(spike_counts)
+    spike_counts_at_events = spike_counts[spike_time_ind, spike_cell_ind].astype(np.intp)
+    spike_time_ind = np.repeat(spike_time_ind, spike_counts_at_events).astype(np.intp)
+    spike_cell_ind = np.repeat(spike_cell_ind, spike_counts_at_events).astype(np.intp)
     return spike_time_ind, spike_cell_ind
 
 
@@ -451,13 +450,80 @@ class FilterStep(NamedTuple):
     spike_likelihood: NDArray[np.floating]
 
 
+def update_step(
+    prior: NDArray[np.floating],
+    spike_counts_t: NDArray[np.int_],
+    rates_t: NDArray[np.floating],
+) -> FilterStep:
+    """Assimilate one bin of spike counts into a given state distribution.
+
+    This is the observation half of the filter recursion: the caller supplies
+    the distribution ``p(x_t | y_{1:t-1})`` (the one-step prediction, or the
+    initial state distribution at ``t=0``) and this function multiplies in the
+    Poisson observation likelihood of ``spike_counts_t``. It is pure and is
+    shared by :func:`filter_step` (which first applies the transition) and by
+    the ``t=0`` update in :func:`decode_with_diagnostics`, so the first bin is
+    assimilated with exactly the same observation model as every later bin.
+
+    Parameters
+    ----------
+    prior : np.ndarray, shape (n_bins,)
+        Distribution of the state before seeing this bin's spikes.
+    spike_counts_t : np.ndarray, shape (n_cells,)
+        Spike counts observed at this timestep.
+    rates_t : np.ndarray, shape (n_bins, n_cells)
+        Per-cell Poisson mean (expected count per step) at every position.
+
+    Returns
+    -------
+    step : FilterStep
+        ``prior`` echoed back, the updated posterior, and the two displayed
+        likelihood rows (all shape ``(n_bins,)``).
+
+    Raises
+    ------
+    ValueError
+        Propagated from :func:`_condition_on` when the observation has zero
+        probability at every state with nonzero prior mass.
+    """
+    # Per-cell log-likelihoods. Log-space avoids underflow when
+    # ``n_cells * log(peak)`` crosses the float64 floor (~700) — likely on
+    # real-data sessions with many sparsely-firing cells.
+    log_lik_per_cell = poisson.logpmf(spike_counts_t[None, :], rates_t)  # (n_bins, n_cells)
+
+    # Combined log-likelihood across cells (sum in log space = product in linear
+    # space), normalized independently with a max-shifted softmax for display.
+    log_lik_combined = log_lik_per_cell.sum(axis=1)  # (n_bins,)
+    combined_likelihood = softmax_with_shift(log_lik_combined)
+
+    # Spike-only likelihood: product over only the cells that fired. Stays NaN
+    # at times with no spikes.
+    spike_likelihood: NDArray[np.floating] = np.full(prior.shape, np.nan)
+    spiking_mask = spike_counts_t > 0
+    if np.any(spiking_mask):
+        spike_likelihood = softmax_with_shift(log_lik_per_cell[:, spiking_mask].sum(axis=1))
+
+    # Posterior update via the _condition_on pattern (dynamax /
+    # non_local_detector). An impossible observation raises at this exact
+    # timestep rather than resetting the posterior and changing every downstream
+    # scientific quantity.
+    posterior, _log_norm = _condition_on(prior, log_lik_combined)
+
+    return FilterStep(
+        prior=prior,
+        posterior=posterior,
+        combined_likelihood=combined_likelihood,
+        spike_likelihood=spike_likelihood,
+    )
+
+
 def filter_step(
     previous_posterior: NDArray[np.floating],
     spike_counts_t: NDArray[np.int_],
     current_transition: NDArray[np.floating],
     rates_t: NDArray[np.floating],
 ) -> FilterStep:
-    """Advance the Bayesian filter by one timestep.
+    """Advance the Bayesian filter by one timestep (predict, then update).
 
     This is the scientifically load-bearing recursion of
     :func:`decode_with_diagnostics`, extracted so a single predict/update step
@@ -495,36 +561,7 @@ def filter_step(
     # two differ near the track boundaries where column normalization breaks the
     # kernel's symmetry.
     prior = normalize(current_transition @ previous_posterior)
-
-    # Per-cell log-likelihoods. Log-space avoids underflow when
-    # ``n_cells * log(peak)`` crosses the float64 floor (~700) — likely on
-    # real-data sessions with many sparsely-firing cells.
-    log_lik_per_cell = poisson.logpmf(spike_counts_t[None, :], rates_t)  # (n_bins, n_cells)
-
-    # Combined log-likelihood across cells (sum in log space = product in linear
-    # space), normalized independently with a max-shifted softmax for display.
-    log_lik_combined = log_lik_per_cell.sum(axis=1)  # (n_bins,)
-    combined_likelihood = softmax_with_shift(log_lik_combined)
-
-    # Spike-only likelihood: product over only the cells that fired. Stays NaN
-    # at times with no spikes.
-    spike_likelihood: NDArray[np.floating] = np.full(prior.shape, np.nan)
-    spiking_mask = spike_counts_t > 0
-    if np.any(spiking_mask):
-        spike_likelihood = softmax_with_shift(log_lik_per_cell[:, spiking_mask].sum(axis=1))
-
-    # Posterior update via the _condition_on pattern (dynamax /
-    # non_local_detector). An impossible observation raises at this exact
-    # timestep rather than resetting the posterior and changing every downstream
-    # scientific quantity.
-    posterior, _log_norm = _condition_on(prior, log_lik_combined)
-
-    return FilterStep(
-        prior=prior,
-        posterior=posterior,
-        combined_likelihood=combined_likelihood,
-        spike_likelihood=spike_likelihood,
-    )
+    return update_step(prior, spike_counts_t, rates_t)
 
 
 def decode_with_diagnostics(
@@ -536,20 +573,28 @@ def decode_with_diagnostics(
     place_field_rate_scale: float,
     override_schedule: DecoderOverrideSchedule | None = None,
     baseline_firing_rates: NDArray[np.floating] | None = None,
+    initial_state_distribution: NDArray[np.floating] | None = None,
 ) -> DecodingDiagnostics:
     """Run the Bayesian filter with per-time, per-cell diagnostics.
 
     This function implements a Bayesian decoder for position from neural spikes,
     computing diagnostic metrics at each timestep to assess model goodness-of-fit.
 
-    **Algorithm**:
-    1. Initialize with flat prior at t=0
-    2. For each timestep t:
-       a. Predict: prior = transition_matrix @ post[t-1]
-       b. Likelihood: compute P(spike_counts[t] | position) for all cells
-       c. Diagnostic metrics: compare the predictive posterior against each
-          firing cell's own single-event likelihood
-       d. Update: post[t] = normalize(prior * combined_likelihood)
+    **Algorithm** (time index ``t = 0, ..., n_time - 1``; bin ``t`` holds the
+    spikes ``y_t`` observed in that step):
+
+    1. ``t = 0``: the prediction is the initial state distribution
+       ``p(x_0)`` (uniform over the grid unless ``initial_state_distribution``
+       is given). It is *not* passed through the transition matrix. The first
+       bin's spikes are assimilated against it:
+       ``post[0] = normalize(p(x_0) * p(y_0 | x))``.
+    2. ``t >= 1``:
+       a. Predict: ``pred[t] = normalize(T_t @ post[t-1])`` where ``T_t`` is
+          this step's (possibly overridden) column-stochastic transition.
+       b. Likelihood: ``p(y_t | x)`` for all cells from this step's rate table.
+       c. Update: ``post[t] = normalize(pred[t] * p(y_t | x))``.
+    3. Diagnostics: every spike event in every bin, including ``t = 0``, is
+       compared against that bin's prediction (``pred[0] = p(x_0)``).
 
     **Diagnostic metrics** (computed per firing cell, not against the combined
     all-cell likelihood):
@@ -587,6 +632,10 @@ def decode_with_diagnostics(
         as in Figure 3's sparse population.
         If omitted, rates are built from ``place_field_centers``, ``place_field_std``, and
         ``place_field_rate_scale``.
+    initial_state_distribution : np.ndarray, shape (n_bins,), optional
+        The initial state law ``p(x_0)`` used as the ``t=0`` prediction. Must
+        be a finite nonnegative distribution summing to 1. Defaults to the
+        uniform distribution over ``position_bins``.
 
     Returns
     -------
@@ -596,14 +645,14 @@ def decode_with_diagnostics(
 
         Dense ``(n_time, n_bins)`` distributions
             ``posterior`` (filtered posterior), ``predictive`` (one-step
-            ahead, flat at t=0), ``likelihood`` (normalized combined
-            likelihood from all cells, flat at t=0), and
+            ahead; the initial state distribution at t=0), ``likelihood``
+            (normalized combined likelihood from all cells), and
             ``spike_likelihood`` (combined likelihood from only spiking
             cells; NaN where no cell fired).
 
         Dense ``(n_time, n_cells)`` per-cell diagnostic matrices
             ``hpd_overlap``, ``kl_divergence``, ``predictive_pvalue``. NaN at
-            t=0 and at any (t, cell) without a spike.
+            any (t, cell) without a spike.
 
         Per-spike-event arrays of shape ``(n_spikes,)``
             ``event_time_ind`` (time bin), ``event_cell_ind`` (cell
@@ -665,7 +714,7 @@ def decode_with_diagnostics(
     (10, 21)
     >>> results.hpd_overlap.shape  # Now per-cell
     (10, 3)
-    >>> bool(np.all(np.isnan(results.hpd_overlap[0])))  # t=0 has no prior
+    >>> bool(np.allclose(results.predictive[0], 1.0 / n_bins))  # t=0 prediction = p(x_0)
     True
     """
     n_time = spike_counts.shape[0]
@@ -689,11 +738,22 @@ def decode_with_diagnostics(
     # NaN at times with no spike_counts.
     spike_likelihood_all: NDArray[np.floating] = np.full((n_time, n_bins), np.nan)
 
-    # t=0: flat prior. Diagnostic values at t=0 are NaN (no posterior update
-    # has happened yet); downstream code masks those entries.
-    posterior[0] = normalize(np.ones(n_bins))
-    predictive_posterior[0] = posterior[0]  # At t=0, predictive = prior
-    combined_likelihood_all[0] = normalize(np.ones(n_bins))  # Flat at t=0
+    # Initial state law p(x_0): the t=0 prediction. It is not propagated
+    # through the transition matrix; the first bin's spikes update it directly.
+    if initial_state_distribution is None:
+        initial_state = normalize(np.ones(n_bins))
+    else:
+        initial_state = np.asarray(initial_state_distribution, dtype=float)
+        if (
+            initial_state.shape != (n_bins,)
+            or not np.all(np.isfinite(initial_state))
+            or np.any(initial_state < 0.0)
+            or not np.isclose(float(initial_state.sum()), 1.0)
+        ):
+            raise ValueError(
+                "initial_state_distribution must be a finite nonnegative distribution "
+                f"of shape ({n_bins},) summing to 1."
+            )
 
     # Baseline per-cell Poisson rate table. Used at every timestep not
     # covered by a misfit window whose ``firing_rate_table`` is set. Callers
@@ -712,7 +772,7 @@ def decode_with_diagnostics(
         n_cells,
     )
 
-    for t in range(1, n_time):
+    for t in range(n_time):
         window = override_schedule.window_at(t)
 
         # Select this step's transition matrix and per-cell rate table —
@@ -721,16 +781,20 @@ def decode_with_diagnostics(
             window, transition_matrix, rates
         )
 
-        # Advance the recursion one step; ``filter_step`` is unit-testable in
-        # isolation (see :func:`filter_step`).
-        step = filter_step(posterior[t - 1], spike_counts[t], current_transition, rates_t)
+        # Advance the recursion one step. At t=0 the prediction is p(x_0)
+        # itself (no transition), assimilated with the same observation
+        # model; afterwards ``filter_step`` predicts then updates.
+        if t == 0:
+            step = update_step(initial_state, spike_counts[0], rates_t)
+        else:
+            step = filter_step(posterior[t - 1], spike_counts[t], current_transition, rates_t)
         predictive_posterior[t] = step.prior  # stored for p-value computation
         combined_likelihood_all[t] = step.combined_likelihood
         spike_likelihood_all[t] = step.spike_likelihood
         posterior[t] = step.posterior
 
-    # Find all spike events (excluding t=0 which has no valid prior). Count
-    # matrices are expanded so a bin with count k contributes k spike events.
+    # Find all spike events (every bin, including t=0). Count matrices are
+    # expanded so a bin with count k contributes k spike events.
     spike_time_ind, spike_cell_ind = _expand_spike_events(spike_counts)
 
     # Compute the baseline diagnostics first. Events inside a window with

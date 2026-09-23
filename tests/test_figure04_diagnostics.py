@@ -142,6 +142,34 @@ class TestComputePerCellDiagnostics:
         assert result.hpd_overlap is not None
         np.testing.assert_array_equal(np.isnan(result.hpd_overlap), spike_counts == 0)
 
+    def test_event_binning_matches_decoder_bin_assignment(self) -> None:
+        """Exact spike timestamps map to the bins the decoder's binning uses.
+
+        ``non_local_detector`` assigns spikes with ``digitize(t, time[1:-1])``:
+        a spike before ``time[1]`` lands in row 0, an interior spike in the row
+        whose grid time is at or before it, and a spike at or after
+        ``time[-2]`` -- including one exactly at ``time[-1]`` -- in the
+        penultimate row. The per-event time indices must reproduce that
+        assignment so per-event counts equal the decoder's binned counts at
+        every boundary.
+        """
+        time = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
+        spikes = np.array([0.0, 0.5, 1.0, 1.5, 2.999, 3.0, 3.5, 4.0])
+        time_ind, cell_ind, event_time = figure04_diagnostics._get_spike_events_from_spike_times(
+            [spikes], time
+        )
+        np.testing.assert_array_equal(time_ind, [0, 0, 1, 1, 2, 3, 3, 3])
+        np.testing.assert_array_equal(cell_ind, 0)
+        np.testing.assert_allclose(event_time, spikes)
+        # Same assignment as the decoder's binned counts.
+        expected_counts = np.bincount(np.digitize(spikes, time[1:-1]), minlength=time.size)
+        np.testing.assert_array_equal(np.bincount(time_ind, minlength=time.size), expected_counts)
+        # Spikes outside [time[0], time[-1]] are excluded, as by the decoder.
+        time_ind, _, _ = figure04_diagnostics._get_spike_events_from_spike_times(
+            [np.array([-0.1, 4.1])], time
+        )
+        assert time_ind.shape == (0,)
+
     def test_duplicate_spikes_in_same_bin_are_separate_events(
         self, rng: np.random.Generator
     ) -> None:

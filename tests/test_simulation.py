@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 import numpy as np
 import pytest
 from numpy.testing import assert_allclose, assert_array_equal
+from numpy.typing import NDArray
 
 from statespacecheck_paper.simulation import (
     gaussian_transition_matrix,
@@ -320,6 +323,32 @@ class TestSimulateSpikesPositionTuned:
         assert_array_equal(a, b)
 
 
+def test_place_field_rates_floor_underflow_keeps_event_likelihood_positive() -> None:
+    """A narrow field evaluated far from its center must not underflow to zero.
+
+    With the floor, the normalized single-event likelihood keeps a positive
+    tail, so the KL divergence from a prediction with mass there is finite;
+    the floor only replaces values that are already below the smallest normal
+    double, so every representable value is unchanged.
+    """
+    import statespacecheck as ssc
+
+    bins = np.arange(0.0, 101.0)
+    rates = place_field_rates(
+        bins, np.array([0.0]), place_field_std=2.0, place_field_rate_scale=1.0
+    )
+    assert np.all(rates > 0.0)
+    assert rates[100, 0] == np.finfo(float).tiny
+    # Representable values are untouched.
+    assert rates[0, 0] == pytest.approx(1.0 / (2.0 * np.sqrt(2 * np.pi)))
+    prediction = np.full((1, bins.size), 1.0 / bins.size)
+    likelihood = (rates[:, 0] / rates[:, 0].sum())[None, :]
+    assert np.isfinite(ssc.kl_divergence(prediction, likelihood)[0])
+    # A zero scale is a genuinely silent cell and stays exactly zero.
+    silent = place_field_rates(bins, np.array([0.0]), 2.0, 0.0)
+    assert np.all(silent == 0.0)
+
+
 # ---------------------------------------------------------------------------
 # simulate_spikes_history_dependent
 # ---------------------------------------------------------------------------
@@ -392,6 +421,64 @@ class TestSimulateSpikesHistoryDependent:
             f"burst-window firing {burst_rate:.4f} should exceed "
             f"far-from-spike firing {far_rate:.4f}"
         )
+
+    def test_conditional_rate_schedule_at_actual_elapsed_offsets(self) -> None:
+        """The refractory and burst multipliers apply at the stated elapsed offsets.
+
+        A recording generator forces exactly one spike at step 0 and then
+        reports the Poisson mean it was handed at every later step. With
+        ``refractory_steps=1`` and ``burst_window=(2, 10)`` the multiplier must
+        be 0 at offset 1, ``burst_factor`` at offsets 2-10 inclusive, and 1 at
+        offset 11 -- the offsets the Methods quote, measured from the spike.
+        """
+
+        class _Recorder:
+            def __init__(self) -> None:
+                self.rates: list[NDArray[np.floating]] = []
+
+            def poisson(self, rate: NDArray[np.floating]) -> NDArray[np.int_]:
+                self.rates.append(np.array(rate, dtype=float))
+                return np.full_like(rate, int(len(self.rates) == 1), dtype=np.int_)
+
+        recorder = _Recorder()
+        simulate_spikes_history_dependent(
+            np.zeros(14),
+            np.zeros(1),
+            10.0,
+            5.0,
+            cast(np.random.Generator, recorder),
+            refractory_steps=1,
+            burst_window=(2, 10),
+            burst_factor=3.0,
+        )
+        multipliers = np.array(recorder.rates).ravel() / recorder.rates[0][0]
+        expected = np.array([1.0, 0.0] + [3.0] * 9 + [1.0, 1.0, 1.0])
+        assert_array_equal(multipliers, expected)
+
+    def test_longer_refractory_and_late_burst_offsets(self) -> None:
+        """Offsets stay elapsed-time offsets for a 2-step refractory and (4, 5) burst."""
+
+        class _Recorder:
+            def __init__(self) -> None:
+                self.rates: list[NDArray[np.floating]] = []
+
+            def poisson(self, rate: NDArray[np.floating]) -> NDArray[np.int_]:
+                self.rates.append(np.array(rate, dtype=float))
+                return np.full_like(rate, int(len(self.rates) == 1), dtype=np.int_)
+
+        recorder = _Recorder()
+        simulate_spikes_history_dependent(
+            np.zeros(8),
+            np.zeros(1),
+            10.0,
+            5.0,
+            cast(np.random.Generator, recorder),
+            refractory_steps=2,
+            burst_window=(4, 5),
+            burst_factor=2.0,
+        )
+        multipliers = np.array(recorder.rates).ravel() / recorder.rates[0][0]
+        assert_array_equal(multipliers, [1.0, 0.0, 0.0, 1.0, 2.0, 2.0, 1.0, 1.0])
 
     def test_reproducible_with_same_seed(self) -> None:
         x = np.full(300, 50.0)
