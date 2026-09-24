@@ -28,6 +28,7 @@ from statespacecheck_paper.spyglass_data import (
     compare_figure04_exports,
     declared_attribute_names,
     epoch_identifier,
+    export_file_paths,
     filter_spike_times,
     get_interpolated_position_info,
     get_patch_id,
@@ -95,11 +96,24 @@ def test_get_interpolated_position_info_interpolates_and_linearizes() -> None:
     np.testing.assert_array_equal(result["track_segment_id"], [0, 1])
 
 
+def test_get_interpolated_position_info_adds_edge_spacing() -> None:
+    track_graph = make_track_graph([(0.0, 0.0), (10.0, 0.0), (10.0, 10.0)], [(0, 1), (1, 2)])
+    position_info = pd.DataFrame(
+        {"head_position_x": [5.0, 10.0], "head_position_y": [0.0, 5.0]},
+        index=pd.Index([0.0, 1.0], name="time"),
+    )
+
+    result = get_interpolated_position_info(
+        position_info, position_info.index.to_numpy(), track_graph, [(0, 1), (1, 2)], 15
+    )
+
+    np.testing.assert_allclose(result["linear_position"], [5.0, 30.0])
+    # Onto its own timestamps (as the Figure-4 export does) the input is unchanged.
+    pd.testing.assert_frame_equal(result[list(position_info.columns)], position_info)
+
+
 def _inputs(spike_shift: float = 0.0) -> Figure4Inputs:
-    track_graph = nx.Graph()
-    track_graph.add_node(0, pos=(0.0, 0.0))
-    track_graph.add_node(1, pos=(10.0, 0.0))
-    track_graph.add_edge(0, 1, distance=10.0, edge_id=0)
+    track_graph = make_track_graph([(0.0, 0.0), (10.0, 0.0)], [(0, 1)])
     position_info = pd.DataFrame(
         {
             "head_position_x": np.linspace(0.0, 10.0, 5),
@@ -119,7 +133,8 @@ def _inputs(spike_shift: float = 0.0) -> Figure4Inputs:
 
 
 def test_written_exports_load_through_the_figure_loader(tmp_path: Path) -> None:
-    write_figure04_inputs(_inputs(), tmp_path, _EPOCH)
+    inputs = _inputs()
+    write_figure04_inputs(inputs, tmp_path, _EPOCH)
 
     recording = load_neural_recording_from_files(tmp_path, _EPOCH)
 
@@ -127,27 +142,75 @@ def test_written_exports_load_through_the_figure_loader(tmp_path: Path) -> None:
     assert recording.spike_times[1].shape == (0,)
     assert recording.linear_edge_order == ((0, 1),)
     assert recording.linear_edge_spacing == 15.0
-    pd.testing.assert_frame_equal(recording.position_info, _inputs().position_info)
+    pd.testing.assert_frame_equal(recording.position_info, inputs.position_info)
 
 
-def test_write_refuses_to_overwrite_unless_asked(tmp_path: Path) -> None:
-    write_figure04_inputs(_inputs(), tmp_path, _EPOCH)
+def test_write_refuses_if_any_export_exists_and_writes_nothing(tmp_path: Path) -> None:
+    existing = next(
+        p for p in export_file_paths(tmp_path, _EPOCH) if p.name.endswith("spacing.pkl")
+    )
+    existing.write_bytes(b"")
 
     with pytest.raises(FileExistsError, match="Refusing to overwrite"):
         write_figure04_inputs(_inputs(), tmp_path, _EPOCH)
-    write_figure04_inputs(_inputs(), tmp_path, _EPOCH, overwrite=True)
+    assert list(tmp_path.iterdir()) == [existing]
 
 
-def test_compare_flags_only_the_file_that_differs(tmp_path: Path) -> None:
+def test_write_overwrite_replaces_the_contents(tmp_path: Path) -> None:
+    write_figure04_inputs(_inputs(), tmp_path, _EPOCH)
+    write_figure04_inputs(_inputs(spike_shift=1e-3), tmp_path, _EPOCH, overwrite=True)
+
+    recording = load_neural_recording_from_files(tmp_path, _EPOCH)
+    np.testing.assert_array_equal(recording.spike_times[0], [0.001, 0.005])
+
+
+def test_compare_finds_no_difference_between_identical_exports(tmp_path: Path) -> None:
     write_figure04_inputs(_inputs(), tmp_path / "reference", _EPOCH)
     write_figure04_inputs(_inputs(), tmp_path / "same", _EPOCH)
-    write_figure04_inputs(_inputs(spike_shift=1e-9), tmp_path / "shifted", _EPOCH)
 
-    same = compare_figure04_exports(tmp_path / "reference", tmp_path / "same", _EPOCH)
-    shifted = compare_figure04_exports(tmp_path / "reference", tmp_path / "shifted", _EPOCH)
+    differences = compare_figure04_exports(tmp_path / "reference", tmp_path / "same", _EPOCH)
 
-    assert all(same.values())
-    assert shifted == {name: not name.endswith("_HPC_spike_times.pkl") for name in same}
+    assert len(differences) == 5
+    assert set(differences.values()) == {None}
+
+
+def _longer_edge(inputs: Figure4Inputs) -> Figure4Inputs:
+    track_graph = inputs.track_graph.copy()
+    track_graph.edges[0, 1]["distance"] = 10.5
+    return dataclasses.replace(inputs, track_graph=track_graph)
+
+
+_PERTURBATIONS = {
+    "_position_info.pkl": lambda inputs: dataclasses.replace(
+        inputs, position_info=inputs.position_info.astype({"patch_id": np.int32})
+    ),
+    "_HPC_spike_times.pkl": lambda inputs: _inputs(spike_shift=1e-9),
+    "_track_graph.pkl": _longer_edge,
+    "_linear_edge_order.pkl": lambda inputs: dataclasses.replace(
+        inputs, linear_edge_order=[(1, 0)]
+    ),
+    "_linear_edge_spacing.pkl": lambda inputs: dataclasses.replace(inputs, linear_edge_spacing=16),
+}
+
+
+@pytest.mark.parametrize("suffix", list(_PERTURBATIONS))
+def test_compare_flags_only_the_file_that_differs(tmp_path: Path, suffix: str) -> None:
+    write_figure04_inputs(_inputs(), tmp_path / "reference", _EPOCH)
+    write_figure04_inputs(_PERTURBATIONS[suffix](_inputs()), tmp_path / "changed", _EPOCH)
+
+    differences = compare_figure04_exports(tmp_path / "reference", tmp_path / "changed", _EPOCH)
+
+    assert {name for name, difference in differences.items() if difference} == {_EPOCH + suffix}
+
+
+def test_compare_flags_a_directed_graph(tmp_path: Path) -> None:
+    directed = dataclasses.replace(_inputs(), track_graph=nx.DiGraph(_inputs().track_graph))
+    write_figure04_inputs(_inputs(), tmp_path / "reference", _EPOCH)
+    write_figure04_inputs(directed, tmp_path / "changed", _EPOCH)
+
+    differences = compare_figure04_exports(tmp_path / "reference", tmp_path / "changed", _EPOCH)
+
+    assert differences[f"{_EPOCH}_track_graph.pkl"] == "Graph vs DiGraph"
 
 
 # --- Data checks -------------------------------------------------------------

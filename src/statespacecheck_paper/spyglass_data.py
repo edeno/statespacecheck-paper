@@ -444,13 +444,7 @@ def fetch_figure04_inputs(
     position = get_position_info(nwb_file_name, epoch_name, pos_name)
     position_time = position["position_info"].index.to_numpy()
     spike_times = filter_spike_times(get_hpc_sorted_spike_times(nwb_file_name), position_time)
-    return Figure4Inputs(
-        position_info=position["position_info"],
-        spike_times=spike_times,
-        track_graph=position["track_graph"],
-        linear_edge_order=position["linear_edge_order"],
-        linear_edge_spacing=position["linear_edge_spacing"],
-    )
+    return Figure4Inputs(spike_times=spike_times, **position)
 
 
 def export_file_paths(output_dir: str | Path, animal_date_epoch: str) -> tuple[Path, ...]:
@@ -581,11 +575,38 @@ def write_figure04_inputs(
     return paths
 
 
+def _position_difference(reference: pd.DataFrame, candidate: pd.DataFrame) -> str | None:
+    try:
+        pd.testing.assert_frame_equal(reference, candidate, check_exact=True)
+    except AssertionError as exc:
+        return "; ".join(line.strip() for line in str(exc).splitlines() if line.strip())
+    return None
+
+
+def _spike_times_difference(
+    reference: Sequence[NDArray[np.float64]], candidate: Sequence[NDArray[np.float64]]
+) -> str | None:
+    if len(reference) != len(candidate):
+        return f"{len(reference)} vs {len(candidate)} units"
+    for unit, (a, b) in enumerate(zip(reference, candidate, strict=True)):
+        if not np.array_equal(a, b):
+            return f"unit {unit} differs ({len(a)} vs {len(b)} spikes)"
+    return None
+
+
+def _graph_difference(reference: nx.Graph, candidate: nx.Graph) -> str | None:
+    if type(reference) is not type(candidate):
+        return f"{type(reference).__name__} vs {type(candidate).__name__}"
+    if not nx.utils.graphs_equal(reference, candidate):
+        return "nodes, edges, or their attributes differ"
+    return None
+
+
 def compare_figure04_exports(
     reference_dir: str | Path,
     candidate_dir: str | Path,
     animal_date_epoch: str,
-) -> dict[str, bool]:
+) -> dict[str, str | None]:
     """Compare two sets of export files by content.
 
     Files are read the way the loader reads them. Position must match exactly
@@ -604,41 +625,27 @@ def compare_figure04_exports(
 
     Returns
     -------
-    dict of str to bool
-        File name → whether the two files' contents are identical.
+    dict of str to str or None
+        File name → ``None`` if the two files' contents are identical, otherwise
+        a description of the first difference found.
     """
-    reference = export_file_paths(reference_dir, animal_date_epoch)
-    candidate = export_file_paths(candidate_dir, animal_date_epoch)
-    (ref_pos, ref_spikes, ref_graph, ref_order, ref_spacing) = reference
-    (new_pos, new_spikes, new_graph, new_order, new_spacing) = candidate
-
-    try:
-        pd.testing.assert_frame_equal(
-            pd.read_pickle(ref_pos), pd.read_pickle(new_pos), check_exact=True
-        )
-        position_equal = True
-    except AssertionError:
-        position_equal = False
-
-    ref_spike_times, new_spike_times = joblib.load(ref_spikes), joblib.load(new_spikes)
-    spikes_equal = len(ref_spike_times) == len(new_spike_times) and all(
-        np.array_equal(a, b) for a, b in zip(ref_spike_times, new_spike_times, strict=True)
+    ref_pos, ref_spikes, ref_graph, ref_order, ref_spacing = export_file_paths(
+        reference_dir, animal_date_epoch
     )
-
-    graph_a, graph_b = joblib.load(ref_graph), joblib.load(new_graph)
-    graph_equal = type(graph_a) is type(graph_b) and bool(nx.utils.graphs_equal(graph_a, graph_b))
-
-    order_equal = [tuple(edge) for edge in joblib.load(ref_order)] == [
-        tuple(edge) for edge in joblib.load(new_order)
-    ]
-    spacing_equal = bool(np.array_equal(joblib.load(ref_spacing), joblib.load(new_spacing)))
-
+    new_pos, new_spikes, new_graph, new_order, new_spacing = export_file_paths(
+        candidate_dir, animal_date_epoch
+    )
+    order_a = [tuple(edge) for edge in joblib.load(ref_order)]
+    order_b = [tuple(edge) for edge in joblib.load(new_order)]
+    spacing_a, spacing_b = joblib.load(ref_spacing), joblib.load(new_spacing)
     return {
-        ref_pos.name: position_equal,
-        ref_spikes.name: spikes_equal,
-        ref_graph.name: graph_equal,
-        ref_order.name: order_equal,
-        ref_spacing.name: spacing_equal,
+        ref_pos.name: _position_difference(pd.read_pickle(ref_pos), pd.read_pickle(new_pos)),
+        ref_spikes.name: _spike_times_difference(joblib.load(ref_spikes), joblib.load(new_spikes)),
+        ref_graph.name: _graph_difference(joblib.load(ref_graph), joblib.load(new_graph)),
+        ref_order.name: None if order_a == order_b else f"{order_a} vs {order_b}",
+        ref_spacing.name: (
+            None if np.array_equal(spacing_a, spacing_b) else f"{spacing_a!r} vs {spacing_b!r}"
+        ),
     }
 
 
@@ -663,10 +670,10 @@ def print_export_comparison(
     bool
         Whether every file is identical.
     """
-    matches = compare_figure04_exports(reference_dir, candidate_dir, animal_date_epoch)
-    for name, is_equal in matches.items():
-        print(f"{'identical' if is_equal else 'DIFFERENT'}  {name}")
-    return all(matches.values())
+    differences = compare_figure04_exports(reference_dir, candidate_dir, animal_date_epoch)
+    for name, difference in differences.items():
+        print(f"identical  {name}" if difference is None else f"DIFFERENT  {name}: {difference}")
+    return all(difference is None for difference in differences.values())
 
 
 # ``name [= default] : type`` lines of a DataJoint definition (not ``->`` or index lines).
