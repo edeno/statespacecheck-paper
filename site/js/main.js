@@ -61,7 +61,7 @@ async function main() {
     manifest = await loadJSON("data/manifest.json");
   } catch (error) {
     for (const [section, what] of [
-      [explainer.querySelector("#ft-chart"), "filter explainer"],
+      [explainer.querySelector("#ft-tracks"), "filter explainer"],
       [playground.querySelector("#pg-chart"), "playground"],
       [simulation.querySelector("#sc-view"), "simulation"],
       [recording.querySelector("#rp-view"), "recording"],
@@ -74,7 +74,7 @@ async function main() {
 
   loadJSON("data/filter.json")
     .then((data) => initExplainer(explainer, data, manifest))
-    .catch((error) => showError(explainer.querySelector("#ft-chart"), "filter explainer", error));
+    .catch((error) => showError(explainer.querySelector("#ft-tracks"), "filter explainer", error));
 
   loadJSON("data/playground.json")
     .then((data) => initPlayground(playground, data))
