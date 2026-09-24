@@ -49,8 +49,9 @@ Key modules and the rationale that the source alone won't tell you:
   trees, so a diagnostics edit recomputes diagnostics (about a minute) rather
   than refitting.
 - **load_local_data.py** — `load_neural_recording_from_files` → validated
-  `NeuralRecordingData`; loads from pre-exported pickles, no Spyglass DB needed.
-- **spyglass_data.py** — rebuilds those pickles from the lab's Spyglass database
+  `NeuralRecordingData`; loads the pre-exported `{epoch}_figure04_inputs.npz` (plain
+  arrays, no pickle; layout in `recording_arrays`), no Spyglass DB needed.
+- **spyglass_data.py** — rebuilds that file from the lab's Spyglass database
   (optional `spyglass` extra) and logs them in a Spyglass export. Keep every
   Spyglass import inside a function: importing the module must not connect to
   the database (a test enforces this). Nothing in figure generation imports it.

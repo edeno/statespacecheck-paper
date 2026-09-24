@@ -41,8 +41,8 @@ schema version 3. Both record each flag threshold with its exact inclusive
 comparison operator, plus hashes of the scientific source tree and `uv.lock`.
 Figure 3 includes per-condition decoding errors, approximate standard errors
 of its medians, and threshold provenance. Figure 4 records the unit count, decode- and
-diagnostics-cache fingerprints, installed decoder version, and SHA-256 checksum of each of its five
-derived input exports. See [the schema notes](docs/figure-pipeline.md#machine-readable-summary-schema).
+diagnostics-cache fingerprints, installed decoder version, and SHA-256 checksum of its derived
+input file. See [the schema notes](docs/figure-pipeline.md#machine-readable-summary-schema).
 
 ```bash
 # Reproduce the locked environment, then regenerate every figure:
@@ -60,16 +60,15 @@ the analyses. See [the reporting policy and artifact checks](docs/figure-pipelin
 
 Figures 1–3 reproduce deterministically from the seeded simulation. **Figure 4**
 uses the real hippocampal recording of [Comrie et al. 2024](https://doi.org/10.1101/2024.09.23.613567).
-It is **not** included here (large). The decoder consumes five derived exports
-(linearized position, spike times, track graph, edge order/spacing), not the raw
-NWB files. They come from the Frank-lab Spyglass database;
+It is **not** included here (large). The decoder consumes one derived input file,
+`{epoch}_figure04_inputs.npz` (linearized position, spike times, track graph, edge
+order/spacing), not the raw NWB files. It comes from the Frank-lab Spyglass database;
 [docs/data-lineage.md](docs/data-lineage.md) records the exact entries, how they
 were verified, and which of them are public. The raw recording is on the DANDI
 Archive as dandiset [001942](https://dandiarchive.org/dandiset/001942). On a lab
-server with database access, `scripts/fetch_figure04_inputs.py` rebuilds the
-exports (see
+server with database access, `scripts/fetch_figure04_inputs.py` rebuilds it (see
 [docs/figure-pipeline.md](docs/figure-pipeline.md#figure-4--real-data-decoder-diagnostics)
-for the export contract). Place the exports under `data/` (or set
+for the file layout). Place it under `data/` (or set
 `STATESPACECHECK_DATA_PATH`) before running `generate_figure04.py`; the decode is
 cached under `data/` on first run.
 

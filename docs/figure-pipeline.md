@@ -231,8 +231,8 @@ $\Lambda(x)$.
   fingerprint (`figure04_cache.compute_figure04_cache_provenance`) hashes the
   schema version, the decoder and provenance parts of `Figure4Config`, the
   data identifier, the installed `non_local_detector`
-  version, and the **content hashes of all five input exports** — so replacing an
-  export under the same `animal_date_epoch` invalidates the cache too.
+  version, and the **content hash of the input file** — so replacing it under the
+  same `animal_date_epoch` invalidates the cache too.
   The per-spike diagnostics are cached separately, keyed by the decode
   fingerprint plus a diagnostics fingerprint
   (`figure04_cache.compute_figure04_diagnostics_fingerprint`): the
@@ -275,39 +275,46 @@ $\Lambda(x)$.
   (artist arrangement) → `save_figure`.
 - **Intermediate data — the honest boundary.** Figure 4 is reproduced **from
   pre-exported derived inputs onward**, not from raw acquisition. The loader
-  `load_local_data.load_neural_recording_from_files` reads five files from the
-  data directory and returns a validated `NeuralRecordingData`:
+  `load_local_data.load_neural_recording_from_files` reads one file from the
+  data directory, `{epoch}_figure04_inputs.npz`, and returns a validated
+  `NeuralRecordingData`:
 
-  | File | `NeuralRecordingData` field | Contents |
+  | `NeuralRecordingData` field | Arrays in the `.npz` | Contents |
   | --- | --- | --- |
-  | `{epoch}_position_info.pkl` | `position_info` | time-indexed position DataFrame (seconds; positions in cm) |
-  | `{epoch}_HPC_spike_times.pkl` | `spike_times` | per-cell spike-time arrays (seconds) |
-  | `{epoch}_track_graph.pkl` | `track_graph` | `networkx` track-graph structure |
-  | `{epoch}_linear_edge_order.pkl` | `linear_edge_order` | linearization edge order |
-  | `{epoch}_linear_edge_spacing.pkl` | `linear_edge_spacing` | edge spacing (cm) |
+  | `position_info` | `position_time`, `position_columns`, `position/<column>` | time-indexed position (seconds; positions in cm) |
+  | `spike_times` | `spike_times`, `spike_offsets` | per-cell spike times (seconds), concatenated with per-cell offsets |
+  | `track_graph` | `track_nodes`, `track_node_positions`, `track_edges`, `track_edge_distance`, `track_edge_id` | track graph |
+  | `linear_edge_order` | `linear_edge_order` | linearization edge order |
+  | `linear_edge_spacing` | `linear_edge_spacing` | edge spacing (cm) |
 
-  The five exports come from the Frank-lab Spyglass database (the recording of
+  The file holds only numeric and string arrays, is read with
+  `allow_pickle=False`, and is written deterministically (same content, same
+  SHA-256); `load_local_data.recording_arrays` defines the layout. It replaces the
+  five pickles the recording was first exported as;
+  `scripts/convert_figure04_pickles.py` converts those and checks the result.
+
+  The input comes from the Frank-lab Spyglass database (the recording of
   [Comrie et al. 2024](https://doi.org/10.1101/2024.09.23.613567)).
   [data-lineage.md](data-lineage.md) records the exact Spyglass entries and
   processing steps, the verification against the files the figure used, and which
   of them are public (DANDI dandiset
   [001942](https://dandiarchive.org/dandiset/001942) has the raw recording).
-  `spyglass_data.py` rebuilds the exports from the database
+  `spyglass_data.py` rebuilds the input file from the database
   (`scripts/fetch_figure04_inputs.py`, read-only) and logs them in a Spyglass
   export (`scripts/spyglass_export_figure04.py`); both run on a lab server with
-  Spyglass and database access. Place the exports under `data/` (or set
+  Spyglass and database access. Place the input file under `data/` (or set
   `STATESPACECHECK_DATA_PATH`). The expensive decode
   is cached under `data/intermediates/` as two joblib bundles: the ~19 GB decode
   bundle `{epoch}_fig4_cache.joblib` (memory-mapped on load) and the diagnostics
   bundle `{epoch}_fig4_diagnostics.joblib`, each gated by the fingerprints
   described above. Writes go to a temporary sibling and are renamed into place,
   so a memory-mapped bundle is never overwritten in place. Execution-only
-  settings are excluded; all five input-content hashes are included.
+  settings are excluded; the input file's content hash is included.
 - **Output:** `manuscript/figures/main/figure04.{pdf,png}` plus
   `figure04_summary.json`, containing configuration and dataset identifiers,
   explicit inclusive flag rules, whole-session means, flag-confusion counts,
   rescue rates, source/dependency-lock provenance, the decode- and diagnostics-cache fingerprints,
-  and SHA-256 checksums for all five input exports.
+  and the SHA-256 checksum of the input file.
 - **Tests:** `tests/test_figure04_decoder.py::TestFigure4ConfigMatchesManuscript`
   (config matches the manuscript decoder parameters);
   `tests/test_figure04_{cache,workflow,layout,generation}.py` (orchestration);
@@ -383,8 +390,8 @@ expensive decoder cache, `diagnostics_fingerprint_sha256` the identity of the
 diagnostics cache (recorded with the diagnostics configuration and the
 installed `statespacecheck` version), and the record includes the installed
 `non_local_detector` version plus the content
-SHA-256 of each of the five named exports. Canonical artifact generation fails
-if any input checksum is missing. Thus a summary can be traced to the exact
+SHA-256 of the named input file. Canonical artifact generation fails
+if the input checksum is missing. Thus a summary can be traced to the exact
 derived inputs even when those large files are distributed separately.
 
 ### Manuscript ↔ code vocabulary (Figure 4)
