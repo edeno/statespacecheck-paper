@@ -90,8 +90,24 @@ function metricTrack(metric, series, rule, shading) {
     bottom: "0",
     height: 58,
     draw(context, width, height, xOf) {
-      const yOf = (v) => height - pad - ((metric.display(v) - lo) / (hi - lo)) * (height - 2 * pad);
+      const axis = metric.axis ?? ((v) => v);
+      const [aLo, aHi] = [axis(lo), axis(hi)];
+      const yOf = (v) =>
+        height - pad - ((axis(metric.display(v)) - aLo) / (aHi - aLo)) * (height - 2 * pad);
       if (shading) paintShading(context, shading, xOf, height, cssVar("--surface-sunken"));
+      for (const tick of metric.gridlines ?? []) {
+        const y = Math.round(yOf(tick)) + 0.5;
+        context.strokeStyle = cssVar("--grid");
+        context.lineWidth = 1;
+        context.beginPath();
+        context.moveTo(0, y);
+        context.lineTo(width, y);
+        context.stroke();
+        context.fillStyle = cssVar("--text-muted");
+        context.font = `9px ${cssVar("--font")}`;
+        context.textBaseline = "bottom";
+        context.fillText(String(tick), 2, y - 1);
+      }
       if (rule) paintThreshold(context, yOf(rule.threshold), width);
       const color = cssVar(metric.color.slice(4, -1));
       for (const s of series) paintDots(context, s.times, s.values, xOf, yOf, color, s.style);
