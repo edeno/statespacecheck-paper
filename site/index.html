@@ -149,7 +149,7 @@
               <span><i class="swatch" style="background: var(--position)"></i>Animal's position</span>
               <span><i class="swatch" style="background: var(--likelihood)"></i>Spike in this step</span>
               <span><i class="swatch" style="background: var(--predictive)"></i>Prediction P(x)</span>
-              <span><i class="swatch dashed"></i>Posterior the prediction spread from</span>
+              <span><i class="swatch dashed"></i>Earlier posterior the prediction spread from</span>
               <span><i class="swatch" style="background: var(--field)"></i>Place field of the cell that fired</span>
               <span><i class="swatch" style="background: var(--likelihood)"></i>Likelihood</span>
               <span><i class="swatch dashed muted"></i>exp(−Λ(x))</span>
@@ -186,8 +186,10 @@
             steps, than in the paper's simulation. The two distant
             spikes near the end were inserted into the simulated spike train. The prediction and
             posterior rows share one vertical scale, so a broader distribution is drawn lower; the
-            likelihood is scaled to its own maximum. Pause and click the tracks to jump to a time
-            step, or focus them and use ← →.
+            likelihood is scaled to its own maximum. At a spike, the dashed curve is the posterior
+            after the previous spike; at each no-spike step in between, the filter also multiplied
+            by the nearly flat exp(−Λ(x)), which is not drawn. Pause and click the tracks to jump
+            to a time step, or focus them and use ← →.
           </p>
         </div>
       </section>

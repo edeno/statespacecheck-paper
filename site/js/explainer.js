@@ -20,8 +20,11 @@ const STEPS_PER_SECOND = 20;
 const SPIKE_HOLD = 0.25;
 
 const SUBSCRIPTS = "₀₁₂₃₄₅₆₇₈₉";
+const SUPERSCRIPTS = "⁰¹²³⁴⁵⁶⁷⁸⁹";
 const fmt = (value) => value.toFixed(1);
 const subscript = (n) => String(n).replace(/\d/g, (d) => SUBSCRIPTS[Number(d)]);
+/** Exponent for a field raised to a spike count: "" for 1, "²" for 2, ... */
+const power = (n) => (n === 1 ? "" : String(n).replace(/\d/g, (d) => SUPERSCRIPTS[Number(d)]));
 
 function scaled(row, max) {
   return Array.from(row, (v) => (v / 255) * max);
@@ -63,7 +66,8 @@ export function initExplainer(root, data, manifest) {
     for (const s of spikeSteps) if (s < t) last = s;
     return last;
   };
-  const isConflict = (t) => (spikes.get(t) ?? []).some((s) => s.hpd === 0);
+  // The scripted inconsistent spikes; playback pauses there.
+  const isConflict = (t) => t === data.conflict_step;
 
   const playButton = root.querySelector("#ft-play");
   const nextButton = root.querySelector("#ft-next");
@@ -180,7 +184,8 @@ export function initExplainer(root, data, manifest) {
     const fired = spikes.get(t) ?? [];
     const cells = fired.map((s) => s.cell);
     const unique = [...new Set(cells)];
-    const plural = fired.length > 1;
+    const manyCells = unique.length > 1;
+    const manySpikes = fired.length > 1;
     const animal = `(the animal is at ${fmt(x[t])} a.u.)`;
     const last = lastSpikeBefore(t);
 
@@ -203,17 +208,23 @@ export function initExplainer(root, data, manifest) {
     const prediction =
       gap === 1
         ? `The prediction is the last posterior (dashed) spread by one step of the movement model (SD ${fmt(m.posterior_sd[last])} → ${fmt(m.predictive_sd[t])} a.u.).`
-        : `The prediction is the posterior after the last spike (dashed), ${gap} steps ago, spread by the movement model at every step since: SD ${fmt(m.posterior_sd[last])} a.u. then, ${fmt(m.predictive_sd[t])} a.u. now.`;
+        : `The prediction is the posterior after the last spike (dashed), ${gap} steps ago, spread by the movement model at every step since and multiplied at each of those steps by the nearly flat no-spike likelihood exp(−Λ(x)), which is not drawn: SD ${fmt(m.posterior_sd[last])} a.u. then, ${fmt(m.predictive_sd[t])} a.u. now.`;
     const offTarget =
       Math.abs(m.predictive_mean[t] - x[t]) > 2 * m.predictive_sd[t]
         ? ` It is centered at ${fmt(m.predictive_mean[t])} a.u., well away from the animal at ${fmt(x[t])} a.u.${t > data.conflict_step ? ", after the earlier conflict" : ""}.`
         : "";
-    const product = plural
-      ? "The likelihood is the product of their place fields times exp(−Λ(x))."
-      : `The likelihood is λ${subscript(cells[0] + 1)}(x)·exp(−Λ(x)).`;
-    const head = `Step ${t}: ${listCells(cells)} fire${plural ? "" : "s"}, with place field${unique.length > 1 ? "s" : ""} at ${unique.map((c) => centers[c]).join(" and ")} a.u. ${prediction}${offTarget} ${product}`;
+    const field = `λ${subscript(cells[0] + 1)}(x)`;
+    let product;
+    if (manyCells) product = "The likelihood is the product of their place fields times exp(−Λ(x)).";
+    else if (manySpikes) product = `The likelihood is ${field}${power(fired.length)}·exp(−Λ(x)), the field raised to the number of spikes.`;
+    else product = `The likelihood is ${field}·exp(−Λ(x)).`;
+    const head = `Step ${t}: ${listCells(cells)} fire${manyCells ? "" : "s"}, with place field${manyCells ? "s" : ""} at ${unique.map((c) => centers[c]).join(" and ")} a.u. ${prediction}${offTarget} ${product}`;
     if (!isConflict(t)) return `${head} The posterior: ${posteriorText}.`;
-    return `${head} The 95% regions of the prediction and of ${plural ? "each spike's likelihood" : "the spike's likelihood"} do not overlap: ${plural ? "these spikes are" : "the spike is"} inconsistent with the prediction. The posterior lands between the two: ${posteriorText}. On its own, it gives no sign of the disagreement; the diagnostics below detect it by comparing each spike's likelihood with the prediction.`;
+    // Described from each spike's HPD overlap, which the export pins at zero here.
+    const regions = `The ${Math.round(data.coverage * 100)}% regions of the prediction and of ${manySpikes ? "each spike's" : "the spike's"} likelihood`;
+    const overlaps = fired.map((s) => s.hpd.toFixed(2)).join(" and ");
+    const verdict = fired.every((s) => s.hpd === 0) ? "do not overlap" : "barely overlap";
+    return `${head} ${regions} ${verdict} (HPD overlap ${overlaps}): ${manySpikes ? "these spikes are" : "the spike is"} inconsistent with the prediction. The posterior lands between the two: ${posteriorText}. On its own, it gives no sign of the disagreement; the diagnostics below detect it by comparing each spike's likelihood with the prediction.`;
   }
 
   // ----------------------------------------------------------- Render
@@ -264,7 +275,7 @@ export function initExplainer(root, data, manifest) {
     stack.draw();
     stack.placeCursor(t + 0.5);
     caption.textContent = describe(frame !== null);
-    status.textContent = `Step ${t} of ${nSteps - 1} · ${fired.length ? `spike from ${listCells(fired.map((s) => s.cell))}` : "no spike"}`;
+    status.textContent = `Step ${t} of ${nSteps - 1} · ${fired.length ? `spike${fired.length > 1 ? "s" : ""} from ${listCells(fired.map((s) => s.cell))}` : "no spike"}`;
     nextButton.disabled = t === nSteps - 1;
   }
 
