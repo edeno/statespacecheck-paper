@@ -305,9 +305,28 @@
             We decoded <span data-macro="RecNUnits"></span> units recorded from rat hippocampus
             during a spatial foraging task
             (<a href="https://doi.org/10.1101/2024.09.23.613567">Comrie et al., 2024</a>) with two
-            models. The <strong>Continuous</strong> model assumes the represented position moves
-            smoothly; the <strong>Continuous–Fragmented</strong> model can also jump. This
-            two-second window contains a candidate replay event while the animal is still. The
+            models. They share an observation model, built from each unit's place field, and differ
+            in the prediction step: how they expect the represented position to move. The
+            <strong>Continuous</strong> model uses a random walk, so the represented position can
+            move only a short distance in each time bin. The
+            <strong>Continuous–Fragmented</strong> model follows a model structure we previously used
+            to capture replay and other nonlocal hippocampal representations
+            (<a href="https://doi.org/10.7554/eLife.64505">Denovellis et al., 2021</a>). It adds a
+            second, fragmented movement state: when the model is in, or switches into, that state,
+            its next position can be anywhere on the track with equal probability, regardless of the
+            current one. In each <span data-macro="RecTimeBinMs"></span> ms time bin the model
+            switches from continuous to fragmented with probability
+            <span data-macro="RecModeContinuousToFragmented"></span> and back with probability
+            <span data-macro="RecModeFragmentedToContinuous"></span>, inferring from the spikes which
+            state is active along with the position. A fragmented state suits the
+            hippocampus: while an animal is still, its hippocampal representation can jump to
+            distant locations, as in awake replay
+            (<a href="https://doi.org/10.1038/nn.2344">Karlsson &amp; Frank, 2009</a>). For the
+            diagnostics, the Continuous–Fragmented prediction is summed over its two states, so both
+            models are compared on the same position grid.
+          </p>
+          <p>
+            This two-second window contains a candidate replay event while the animal is still. The
             Continuous model's prediction cannot keep up with the rapidly moving representation, so
             many spikes are flagged. When the Continuous–Fragmented model switches to its fragmented
             state, its prediction becomes broad, the next spikes can move the estimate, and most of
@@ -368,10 +387,11 @@
             <li>
               <strong>Limitations.</strong> Per-spike checks assess the spatial information each
               spike carries; misfit in spike counts or timing, such as history-dependent firing,
-              calls for a complementary count- or time-rescaling diagnostic. A persistent lag behind
-              fast movement is only modestly flagged. HPD overlap and KL divergence are evaluated on a
-              grid over the state space, and the grid grows exponentially with the state's
-              dimension.
+              calls for a complementary count- or time-rescaling diagnostic
+              (<a href="https://doi.org/10.1007/s10827-018-0698-4">Tao et al., 2018</a>). A
+              persistent lag behind fast movement is only modestly flagged. HPD overlap and KL
+              divergence are evaluated on a grid over the state space, and the grid grows
+              exponentially with the state's dimension.
             </li>
           </ul>
         </div>
