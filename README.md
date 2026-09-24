@@ -14,6 +14,7 @@ This is a **paper/research repository** (not a library). The code is organized i
   - `manuscript/figures/main/`: Main text figures
   - `manuscript/figures/supplementary/`: Supplementary figures
 - **`tests/`**: Comprehensive test suite (run `uv run pytest`)
+- **`site/`**: The paper's interactive project website (GitHub Pages)
 
 **For developers**: See [CLAUDE.md](CLAUDE.md) for detailed development guide including module organization, coding standards, and where to add new functionality.
 
@@ -227,6 +228,41 @@ plot's blue overlay between predictive `p(x_t | y_{1:t-1})`, filtered
 Smoothed is only available for caches that include `acausal_posterior`
 (rebuild via `cache build --force` if the entry is greyed out).
 
+## Project website
+
+`site/` is a static page (plain HTML, CSS, and JavaScript; no build step) with
+four interactive explainers: a time stepper through a short spike train decoded
+by the paper's Bayesian filter, a playground that recomputes the three
+diagnostics as the reader moves a prediction, a player for the Figure-3
+simulation conditions, and the Figure-4 replay window under both decoders.
+
+- The players and every number in the page text come from the paper's pipeline
+  via `statespacecheck_paper.site_export`, which writes `site/data/*.json`. The
+  numbers are the same reported-value macros the manuscript uses.
+- The playground runs a JavaScript port of the per-spike diagnostics
+  (`site/js/metrics.js`). `site/tests/metrics.test.mjs` checks it against
+  reference cases computed by the Python implementation.
+
+```bash
+# Regenerate the page data after a figure summary or a diagnostic changes.
+# The Figure-4 window needs the real-data exports and decode cache; on a
+# machine without them add --skip-recording to keep the committed replay.json.
+uv run python scripts/export_site_data.py
+
+# Check the JavaScript diagnostics against the Python reference (Node 22+)
+make -C site test
+
+# Assemble the site (adds Figure 1 and the paper PDF, and writes the reported
+# numbers into the HTML) and preview it locally
+make -C site serve   # http://localhost:8000
+# If `node` is not on make's PATH (e.g., nvm loads lazily), pass the binary:
+make -C site serve NODE=/path/to/node
+```
+
+Every push to `main` deploys the site through `.github/workflows/pages.yml` once
+CI (including the website's staleness tests) passes on that commit. The
+repository's Pages source must be set to **GitHub Actions** (Settings → Pages).
+
 ## Development
 
 This repository follows a modular architecture where reusable code lives in `src/statespacecheck_paper/` and figure scripts orchestrate. See [CLAUDE.md](CLAUDE.md) for comprehensive development guide.
@@ -278,6 +314,7 @@ uv run python scripts/generate_figure04.py   # Fig 4  (needs the real dataset)
 # After changing either summary, refresh the prose values and rebuild:
 uv run python scripts/emit_reported_values.py
 make -C manuscript
+uv run python scripts/export_site_data.py   # the website's data
 ```
 
 ### Code Quality
@@ -310,6 +347,7 @@ uv run ruff format . && uv run ruff check . && uv run mypy src/ && uv run pytest
 - **`figure04_{plot_primitives,track_plots,panels}.py`**: Figure-4 plotting helpers, track-graph rendering, and raster/diagnostic panels
 - **`figure04_{cache,workflow,layout,generation}.py`**: Figure-4 cache, analysis workflow, composition, and generation recipe
 - **`reported_values.py`**: Summary-to-LaTeX macro generation and the manuscript's reporting policy
+- **`site_export.py`**: Data files for the project website (playground, simulation and replay players, parity fixture)
 - **`load_local_data.py`**: Real data loading utilities
 - **`paths.py`**: Shared `DATA_PATH` / `ANIMAL_DATE_EPOCH` constants (env-overridable)
 

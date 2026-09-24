@@ -19,7 +19,7 @@ _SRC = Path(statespacecheck_paper.__file__).resolve().parent
 
 def _sibling_module_imports(module_filename: str) -> set[str]:
     """Return the set of sibling ``statespacecheck_paper`` modules imported."""
-    tree = ast.parse((_SRC / module_filename).read_text())
+    tree = ast.parse((_SRC / module_filename).read_text(encoding="utf-8"))
     siblings: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom):
@@ -169,3 +169,42 @@ def test_figure04_family_dependency_edges_are_acyclic() -> None:
     }
     for module_file, permitted in allowed.items():
         assert _sibling_module_imports(module_file) <= permitted, module_file
+
+
+def test_site_export_depends_only_on_analysis_layers() -> None:
+    """The website export reads the figure pipelines' outputs and the reported
+    values; it sits above both figure families and nothing imports it."""
+    prefix = "statespacecheck_paper."
+    assert _sibling_module_imports("site_export.py") <= {
+        prefix + "decoding",
+        prefix + "diagnostics",
+        prefix + "figure03_generation",
+        prefix + "figure03_protocol",
+        prefix + "figure03_simulation",
+        prefix + "figure03_summary",
+        prefix + "figure04_cache",
+        prefix + "figure04_decoder",
+        prefix + "figure04_diagnostics",
+        prefix + "figure04_generation",
+        prefix + "figure04_layout",
+        prefix + "figure04_place_fields",
+        prefix + "figure04_workflow",
+        prefix + "number_format",
+        prefix + "paths",
+        prefix + "reported_values",
+        prefix + "simulation",
+        prefix + "style",
+    }
+    for path in sorted(_SRC.rglob("*.py")):
+        if path.name == "site_export.py":
+            continue
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.ImportFrom):
+                names = {alias.name for alias in node.names}
+                # Covers ``from statespacecheck_paper(.site_export) import ...``
+                # and the relative forms ``from . import site_export`` /
+                # ``from .site_export import ...``.
+                assert not (node.module or "").endswith("site_export"), path
+                assert "site_export" not in names, path
+            elif isinstance(node, ast.Import):
+                assert all(not a.name.endswith("site_export") for a in node.names), path

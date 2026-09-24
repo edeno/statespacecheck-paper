@@ -124,6 +124,10 @@ CMAP_POSTERIOR = "bone_r"  # Reversed bone for posterior/predictive heatmaps
 CMAP_LIKELIHOOD = "inferno"  # Warm colormap for likelihood overlay at spike times
 CMAP_DIAGNOSTIC = "bone_r"  # Same as posterior for diagnostic heatmaps
 
+# Top of the predictive heatmaps' color scale: this quantile of the plotted
+# distribution, for robustness to outliers. Figure 3a and the website share it.
+PREDICTIVE_VMAX_QUANTILE = 0.975
+
 
 def hex_to_rgb(hex_str: str) -> tuple[int, int, int]:
     """Convert a ``#RRGGBB`` color string to an ``(R, G, B)`` int tuple.

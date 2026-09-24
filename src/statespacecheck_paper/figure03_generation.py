@@ -30,11 +30,15 @@ import numpy as np
 
 from statespacecheck_paper.figure03_plotting import compose_figure03
 from statespacecheck_paper.figure03_protocol import Figure3Config
-from statespacecheck_paper.figure03_simulation import run_figure03_simulation
+from statespacecheck_paper.figure03_simulation import (
+    all_place_field_centers,
+    run_figure03_simulation,
+)
 from statespacecheck_paper.figure03_summary import (
     SUMMARY_ACCURACY_METRICS,
     SUMMARY_FLAG_METRICS,
     Figure3RealizationSummary,
+    Figure3SummaryCondition,
     baseline_threshold_provenance,
     build_summary_conditions,
     estimate_realization_summary,
@@ -69,11 +73,8 @@ def _plain_condition_label(label: str) -> str:
     return label.replace("-\n", "-").replace("\n", " ")
 
 
-def figure03_summary_payload(
-    config: Figure3Config,
-    summary: Figure3RealizationSummary,
-) -> dict[str, object]:
-    """Return the canonical Figure 3 reported statistics as JSON-ready data."""
+def conditions_by_id(config: Figure3Config) -> dict[str, Figure3SummaryCondition]:
+    """Pair each identifier in ``FIGURE03_CONDITION_IDS`` with its summary condition."""
     conditions = build_summary_conditions(config)
     if len(conditions) != len(FIGURE03_CONDITION_IDS):
         raise ValueError(
@@ -81,6 +82,15 @@ def figure03_summary_payload(
             f"build_summary_conditions: {len(FIGURE03_CONDITION_IDS)} IDs for "
             f"{len(conditions)} conditions."
         )
+    return dict(zip(FIGURE03_CONDITION_IDS, conditions, strict=True))
+
+
+def figure03_summary_payload(
+    config: Figure3Config,
+    summary: Figure3RealizationSummary,
+) -> dict[str, object]:
+    """Return the canonical Figure 3 reported statistics as JSON-ready data."""
+    conditions = conditions_by_id(config).values()
     first_seed = config.random_seed
     thresholds = dataclasses.asdict(summary.diagnostic_thresholds)
     directions = {metric: direction for metric, direction in SUMMARY_FLAG_METRICS}
@@ -144,10 +154,8 @@ def generate_figure03(
 
     # The simulation appends a narrow sparse-population of cells; the raster
     # sorts all cells by field center.
-    assert config.place_field_centers is not None, "place_field_centers must be initialized"
-    raster_place_field_centers = np.append(
-        config.place_field_centers,
-        np.asarray(simulation_result.sparse_place_field_centers),
+    raster_place_field_centers = all_place_field_centers(
+        config, simulation_result.sparse_place_field_centers
     )
 
     # Pool many realizations for a stable threshold (from the pooled

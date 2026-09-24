@@ -38,6 +38,7 @@ from statespacecheck_paper.style import (
     CMAP_POSTERIOR,
     COLORS,
     METRIC_SPECS,
+    PREDICTIVE_VMAX_QUANTILE,
     MetricSpec,
 )
 
@@ -196,7 +197,7 @@ def _plot_timeseries_heatmap(
     data: NDArray[np.floating],
     true_position: NDArray[np.floating] | None = None,
     cmap: str = CMAP_POSTERIOR,
-    vmax_quantile: float = 0.975,
+    vmax_quantile: float = PREDICTIVE_VMAX_QUANTILE,
 ) -> AxesImage:
     """Plot time x position heatmap with optional true position overlay.
 
@@ -210,7 +211,7 @@ def _plot_timeseries_heatmap(
         True position to overlay as a line.
     cmap : str, default CMAP_POSTERIOR
         Colormap for heatmap.
-    vmax_quantile : float, default 0.975
+    vmax_quantile : float, default ``PREDICTIVE_VMAX_QUANTILE``
         Quantile for vmax (for robustness to outliers).
 
     Returns

@@ -61,6 +61,10 @@ Key modules and the rationale that the source alone won't tell you:
 - **number_format.py** — the two rounding functions behind that policy
   (`significant`, `whole_percent`), shared by the emitter and the Figure-3
   summary panel so the figure and the prose cannot round a value differently.
+- **site_export.py** — writes `site/data/*.json` for the project website (top
+  of the DAG; nothing imports it). The site's playground runs a JavaScript port
+  of the per-spike diagnostics (`site/js/metrics.js`), held to the Python code by
+  a parity fixture and `make -C site test`; a diagnostics change needs a re-export.
 
 ## Development Commands
 
@@ -72,7 +76,9 @@ holds the dependency and tooling config. Reproduce the analysis environment with
 and CI environment. See `README.md` for dependency and lock-update commands.
 
 After changing a figure summary, run `uv run python scripts/emit_reported_values.py`
-from the repository root, then `make -C manuscript`. The Makefile tracks the macro
+from the repository root, then `make -C manuscript`, then
+`uv run python scripts/export_site_data.py` for the website's data (tests fail if
+stale; add `--skip-recording` without the Figure-4 data). The Makefile tracks the macro
 file as an input but does not regenerate it. Source docstrings and comments also
 contribute to the provenance hash; see `docs/figure-pipeline.md` for the artifact
 refresh procedure for documentation-only source changes.

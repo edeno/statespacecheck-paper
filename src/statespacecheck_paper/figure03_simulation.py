@@ -575,6 +575,29 @@ def build_figure03_rate_tables(
     )
 
 
+def all_place_field_centers(
+    config: Figure3Config, sparse_centers: NDArray[np.floating] | tuple[float, ...]
+) -> NDArray[np.float64]:
+    """Field centers of every decoded cell, shape (n_cells,).
+
+    The ordinary place cells come first, then the sparse population: the cell
+    order of the decoder's rate tables and of the simulated ``spike_counts``.
+
+    Parameters
+    ----------
+    config : Figure3Config
+        Supplies ``place_field_centers``.
+    sparse_centers : array-like, shape (sparse_cell_count,)
+        ``Figure3SimulationResult.sparse_place_field_centers``.
+    """
+    if config.place_field_centers is None:
+        raise ValueError("config.place_field_centers must be initialized")
+    return np.append(
+        np.asarray(config.place_field_centers, dtype=np.float64),
+        np.asarray(sparse_centers, dtype=np.float64),
+    )
+
+
 def run_figure03_simulation(
     config: Figure3Config | None = None,
     *,
@@ -637,12 +660,7 @@ def run_figure03_simulation(
         raise ValueError("config.place_field_centers must be initialized")
     place_field_centers = config.place_field_centers
 
-    position_bins = np.arange(
-        config.position_min,
-        config.position_max + config.position_bin_size,
-        config.position_bin_size,
-        dtype=float,
-    )
+    position_bins = config.position_bins
     transition_matrix = gaussian_transition_matrix(position_bins, config.prediction_step_std)
 
     phases: list[tuple[NDArray[np.floating], NDArray[np.int_]]] = []
