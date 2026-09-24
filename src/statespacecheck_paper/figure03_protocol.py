@@ -363,6 +363,21 @@ class Figure3Config:
                 f"got {self.replay_place_field_rate_scale}."
             )
 
+    @property
+    def position_bins(self) -> NDArray[np.float64]:
+        """The decoder's position grid, shape (n_bins,).
+
+        Bin centers from ``position_min`` to ``position_max`` inclusive, every
+        ``position_bin_size``. The simulation and the website's explainer and
+        playground all decode on this grid.
+        """
+        return np.arange(
+            self.position_min,
+            self.position_max + self.position_bin_size,
+            self.position_bin_size,
+            dtype=np.float64,
+        )
+
 
 # Canonical ordered phase labels — the public contract of
 # ``Figure3SimulationResult.phase_labels``. ``run_figure03_simulation`` passes each

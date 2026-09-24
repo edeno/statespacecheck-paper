@@ -288,16 +288,6 @@ def colormap_lut(name: str, n: int = COLORMAP_LUT_SIZE) -> list[str]:
     return [mpl.colors.to_hex(cmap(i)) for i in range(n)]
 
 
-def figure03_position_bins(config: Figure3Config) -> NDArray[np.float64]:
-    """Return the Figure-3 decoder's position grid, shape (n_bins,)."""
-    return np.arange(
-        config.position_min,
-        config.position_max + config.position_bin_size,
-        config.position_bin_size,
-        dtype=np.float64,
-    )
-
-
 # ---------------------------------------------------------------------------
 # Filter explainer
 # ---------------------------------------------------------------------------
@@ -400,7 +390,7 @@ def filter_explainer_sequence(
     if config.place_field_centers is None:
         raise ValueError("config.place_field_centers must be initialized")
     centers = np.asarray(config.place_field_centers, dtype=np.float64)
-    position_bins = figure03_position_bins(config)
+    position_bins = config.position_bins
     steps = np.arange(explainer.n_steps)
     middle = (explainer.run_low + explainer.run_high) / 2
     half_range = (explainer.run_high - explainer.run_low) / 2
@@ -594,7 +584,7 @@ def playground_ensembles(
     """
     if config.place_field_centers is None:
         raise ValueError("config.place_field_centers must be initialized")
-    position_bins = figure03_position_bins(config)
+    position_bins = config.position_bins
     sparse = np.asarray(sparse_centers, dtype=np.float64)
     tables = build_figure03_rate_tables(position_bins, config.place_field_centers, sparse, config)
     n_place_cells = len(config.place_field_centers)

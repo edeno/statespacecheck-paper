@@ -637,12 +637,7 @@ def run_figure03_simulation(
         raise ValueError("config.place_field_centers must be initialized")
     place_field_centers = config.place_field_centers
 
-    position_bins = np.arange(
-        config.position_min,
-        config.position_max + config.position_bin_size,
-        config.position_bin_size,
-        dtype=float,
-    )
+    position_bins = config.position_bins
     transition_matrix = gaussian_transition_matrix(position_bins, config.prediction_step_std)
 
     phases: list[tuple[NDArray[np.floating], NDArray[np.int_]]] = []
