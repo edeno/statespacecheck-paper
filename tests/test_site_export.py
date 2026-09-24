@@ -206,7 +206,9 @@ def test_filter_explainer_sequence_tells_the_story_on_the_page(
     at_conflict = decoded.event_time_ind == conflict
     np.testing.assert_array_equal(decoded.event_hpd_overlap[at_conflict], 0.0)
     # Elsewhere the spikes come from the model, so the decoder tracks the
-    # animal before the conflict and recovers by the end.
+    # animal before the conflict and recovers by the end: no later spike is
+    # inconsistent with the prediction, and playback pauses only at the conflict.
+    assert np.all(decoded.event_hpd_overlap[decoded.event_time_ind > conflict] > 0)
     mean = decoded.posterior @ sequence.position_bins
     assert np.median(np.abs(mean[:conflict] - sequence.true_position[:conflict])) < 5
     assert abs(mean[-1] - sequence.true_position[-1]) < 5
