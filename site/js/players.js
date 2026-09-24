@@ -288,8 +288,6 @@ export function initScenarios(root, manifest) {
   const view = root.querySelector("#sc-view");
   const text = root.querySelector("#sc-text");
   const cache = new Map();
-  const macros = manifest.macros;
-  const stepSeconds = Number(macros.SimDurationSeconds) / Number(macros.SimDurationSteps);
   const ids = manifest.scenarios.map((s) => s.condition_id);
   let active = null;
   let teardown = null;
@@ -352,7 +350,7 @@ export function initScenarios(root, manifest) {
     }
     if (active !== id) return;
     try {
-      teardown = renderScenario(view, cache.get(id), manifest, stepSeconds);
+      teardown = renderScenario(view, cache.get(id), manifest);
     } catch (error) {
       view.innerHTML = `<p class="error">Could not display this condition (${error.message}).</p>`;
       console.error(error);
@@ -364,12 +362,12 @@ export function initScenarios(root, manifest) {
   select(ids.includes(requested) ? requested : ids.includes("remap") ? "remap" : ids[0]);
 }
 
-function renderScenario(view, payload, manifest, stepSeconds) {
+function renderScenario(view, payload, manifest) {
   view.replaceChildren();
   const bins = payload.position_bins;
   const nBins = bins.length;
   const nSteps = payload.stop - payload.start;
-  const toSeconds = (step) => (payload.start + step) * stepSeconds;
+  const toSeconds = (step) => (payload.start + step) * payload.step_seconds;
   const range = [toSeconds(0), toSeconds(nSteps)];
   const events = payload.events;
   const eventTimes = events.t.map(toSeconds);

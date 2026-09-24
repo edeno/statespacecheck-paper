@@ -46,14 +46,14 @@ from statespacecheck_paper.diagnostics import (
     compute_normalized_event_likelihood,
     compute_spike_event_diagnostics_from_rates,
 )
-from statespacecheck_paper.figure03_generation import FIGURE03_CONDITION_IDS
-from statespacecheck_paper.figure03_protocol import Figure3Config
+from statespacecheck_paper.figure03_generation import FIGURE03_CONDITION_IDS, conditions_by_id
+from statespacecheck_paper.figure03_protocol import STEP_SECONDS, Figure3Config
 from statespacecheck_paper.figure03_simulation import (
     Figure3SimulationResult,
+    all_place_field_centers,
     build_figure03_rate_tables,
     run_figure03_simulation,
 )
-from statespacecheck_paper.figure03_summary import build_summary_conditions
 from statespacecheck_paper.figure04_cache import Figure4Paths
 from statespacecheck_paper.figure04_decoder import Figure4Config
 from statespacecheck_paper.figure04_diagnostics import mean_per_spike_likelihood_by_time
@@ -73,13 +73,15 @@ from statespacecheck_paper.simulation import (
     place_field_rates,
     simulate_spikes_position_tuned,
 )
-from statespacecheck_paper.style import CMAP_LIKELIHOOD, CMAP_POSTERIOR, MetricName
+from statespacecheck_paper.style import (
+    CMAP_LIKELIHOOD,
+    CMAP_POSTERIOR,
+    METRIC_NAMES,
+    PREDICTIVE_VMAX_QUANTILE,
+)
 
 SITE_DATA_DIR = Path("site/data")
 PARITY_FIXTURE_PATH = Path("site/tests/fixtures/metric_parity.json")
-
-# Per-event metric fields, in the order the site lists them.
-METRIC_FIELDS: tuple[MetricName, ...] = ("hpd_overlap", "predictive_pvalue", "kl_divergence")
 
 # Significant figures kept for per-event diagnostic values. Significant figures,
 # not decimal places, so a small predictive p-value keeps its magnitude.
@@ -91,11 +93,9 @@ COLORMAP_LUT_SIZE = 64
 # Probability mass of the HPD regions, as throughout the paper.
 HPD_COVERAGE = 0.95
 
-# Color scale of the predictive heatmaps, matching the paper's figures. Figure 3a
-# (figure03_plotting) spans 0 to the 97.5th percentile of the whole session;
-# Figure 4 (xarray's ``robust=True``) spans the 2nd to 98th percentiles of the
-# plotted window.
-FIGURE3_PREDICTIVE_VMAX_QUANTILE = 0.975
+# Color scale of the Figure-4 predictive heatmaps (xarray's ``robust=True``):
+# the 2nd to 98th percentiles of the plotted window. Figure 3's scale is
+# ``style.PREDICTIVE_VMAX_QUANTILE``, shared with ``figure03_plotting``.
 FIGURE4_PREDICTIVE_PERCENTILES = (2.0, 98.0)
 
 
@@ -201,21 +201,23 @@ def heatmap_payload(
     }
 
 
-def _rounded(values: NDArray[np.floating], decimals: int) -> list[float]:
-    """Round finite values for JSON, refusing NaN/inf (which JSON cannot hold)."""
+def _finite(values: NDArray[np.floating]) -> NDArray[np.float64]:
+    """Coerce to float64 for JSON, refusing NaN/inf (which JSON cannot hold)."""
     array = np.asarray(values, dtype=np.float64)
     if not np.all(np.isfinite(array)):
         raise ValueError("values must be finite to export as JSON")
-    rounded: list[float] = np.round(array, decimals).tolist()
+    return array
+
+
+def _rounded(values: NDArray[np.floating], decimals: int) -> list[float]:
+    """Round finite values to ``decimals`` places for JSON."""
+    rounded: list[float] = np.round(_finite(values), decimals).tolist()
     return rounded
 
 
 def _rounded_significant(values: NDArray[np.floating], digits: int) -> list[float]:
     """Round finite values to ``digits`` significant figures for JSON."""
-    array = np.asarray(values, dtype=np.float64)
-    if not np.all(np.isfinite(array)):
-        raise ValueError("values must be finite to export as JSON")
-    return [float(f"{value:.{digits}g}") for value in array.tolist()]
+    return [float(f"{value:.{digits}g}") for value in _finite(values).tolist()]
 
 
 def flag_events(values: NDArray[np.floating], rule: Mapping[str, Any]) -> NDArray[np.bool_]:
@@ -273,7 +275,7 @@ def _event_payload(
     """Per-event metric values and flags for the selected events."""
     payload: dict[str, Any] = {}
     flags: dict[str, list[bool]] = {}
-    for metric in METRIC_FIELDS:
+    for metric in METRIC_NAMES:
         values = np.asarray(getattr(diagnostics, f"event_{metric}"))[selection]
         payload[metric] = _rounded_significant(values, EVENT_VALUE_SIGNIFICANT_FIGURES)
         if metric in flag_rules:
@@ -567,8 +569,8 @@ class PlaygroundEnsemble:
 
 def playground_ensembles(
     config: Figure3Config, sparse_centers: NDArray[np.floating]
-) -> tuple[NDArray[np.float64], NDArray[np.float64], tuple[PlaygroundEnsemble, ...]]:
-    """Position grid, cell centers, and the two Figure-3 decoder rate tables.
+) -> tuple[PlaygroundEnsemble, ...]:
+    """Build the two Figure-3 decoder rate tables on ``config.position_bins``.
 
     Parameters
     ----------
@@ -579,21 +581,19 @@ def playground_ensembles(
 
     Returns
     -------
-    position_bins : np.ndarray, shape (n_bins,)
-    cell_centers : np.ndarray, shape (n_cells,)
-        Ordinary place-field centers followed by the sparse-population centers.
-    ensembles : tuple of PlaygroundEnsemble
-        Place cells, then the sparse epoch.
+    tuple of PlaygroundEnsemble
+        Place cells, then the sparse epoch. Cells are ordered as in
+        :func:`all_place_field_centers`.
     """
     if config.place_field_centers is None:
         raise ValueError("config.place_field_centers must be initialized")
-    position_bins = config.position_bins
     sparse = np.asarray(sparse_centers, dtype=np.float64)
-    tables = build_figure03_rate_tables(position_bins, config.place_field_centers, sparse, config)
+    tables = build_figure03_rate_tables(
+        config.position_bins, config.place_field_centers, sparse, config
+    )
     n_place_cells = len(config.place_field_centers)
     n_cells = n_place_cells + sparse.size
-    cell_centers = np.append(np.asarray(config.place_field_centers, dtype=np.float64), sparse)
-    ensembles = (
+    return (
         PlaygroundEnsemble(
             "place_cells",
             np.asarray(tables.baseline_firing_rates, dtype=np.float64),
@@ -605,7 +605,6 @@ def playground_ensembles(
             tuple(range(n_place_cells, n_cells)),
         ),
     )
-    return position_bins, cell_centers, ensembles
 
 
 def playground_payload(
@@ -624,17 +623,16 @@ def playground_payload(
     figure03_summary : mapping
         Parsed ``figure03_summary.json``; supplies the simulation flag rules.
     """
-    position_bins, cell_centers, ensembles = playground_ensembles(config, sparse_centers)
     return {
-        "position_bins": position_bins.tolist(),
-        "cell_centers": cell_centers.tolist(),
+        "position_bins": config.position_bins.tolist(),
+        "cell_centers": all_place_field_centers(config, sparse_centers).tolist(),
         "ensembles": [
             {
                 "ensemble_id": ensemble.ensemble_id,
                 "rates": ensemble.rates.tolist(),
                 "selectable_cells": list(ensemble.selectable_cells),
             }
-            for ensemble in ensembles
+            for ensemble in playground_ensembles(config, sparse_centers)
         ],
         "flag_rules": figure03_summary["flag_rules"],
         "coverage": HPD_COVERAGE,
@@ -653,7 +651,7 @@ def _single_event_diagnostics(
         coverage=HPD_COVERAGE,
         include_dense_matrices=False,
     )
-    return {metric: float(getattr(diagnostics, f"event_{metric}")[0]) for metric in METRIC_FIELDS}
+    return {metric: float(getattr(diagnostics, f"event_{metric}")[0]) for metric in METRIC_NAMES}
 
 
 def metric_parity_fixture(
@@ -674,7 +672,8 @@ def metric_parity_fixture(
         reproduce); ``predictives`` (every predictive tested); and ``cases``
         (predictive index, ensemble index, cell, expected diagnostics).
     """
-    position_bins, _, ensembles = playground_ensembles(config, sparse_centers)
+    position_bins = config.position_bins
+    ensembles = playground_ensembles(config, sparse_centers)
     n_bins = position_bins.size
     gaussian_cases = [
         {
@@ -722,17 +721,6 @@ def metric_parity_fixture(
 # ---------------------------------------------------------------------------
 
 
-def _all_cell_centers(sim: Figure3SimulationResult) -> NDArray[np.float64]:
-    """Field centers for every decoded cell (ordinary then sparse), for sorting."""
-    config = sim.config
-    if config.place_field_centers is None:
-        raise ValueError("config.place_field_centers must be initialized")
-    return np.append(
-        np.asarray(config.place_field_centers, dtype=np.float64),
-        np.asarray(sim.sparse_place_field_centers, dtype=np.float64),
-    )
-
-
 def scenario_payloads(
     sim: Figure3SimulationResult,
     figure03_summary: Mapping[str, Any],
@@ -758,9 +746,8 @@ def scenario_payloads(
     diagnostics = sim.diagnostics
     n_time = diagnostics.predictive.shape[0]
     position_bins = np.asarray(sim.position_bins, dtype=np.float64)
-    conditions = dict(
-        zip(FIGURE03_CONDITION_IDS, build_summary_conditions(sim.config), strict=True)
-    )
+    cell_centers = _rounded(all_place_field_centers(sim.config, sim.sparse_place_field_centers), 2)
+    conditions = conditions_by_id(sim.config)
     order = list(figure03_summary["condition_order"])
     metric_order = list(figure03_summary["metric_order"])
     flag_percentages = np.asarray(figure03_summary["median_flag_percentages"], dtype=np.float64)
@@ -768,16 +755,13 @@ def scenario_payloads(
     flag_rules = figure03_summary["flag_rules"]
     error_row = list(figure03_summary["accuracy_metric_order"]).index("median_absolute_error")
 
-    posterior = np.asarray(diagnostics.posterior, dtype=np.float64)
-    posterior_mean = (posterior @ position_bins) / posterior.sum(axis=1)
-
     event_time = np.asarray(diagnostics.event_time_ind)
     event_cell = np.asarray(diagnostics.event_cell_ind)
     per_spike_likelihood = np.asarray(diagnostics.per_spike_likelihood, dtype=np.float64)
 
     predictive_range = (
         0.0,
-        float(np.nanquantile(diagnostics.predictive, FIGURE3_PREDICTIVE_VMAX_QUANTILE)),
+        float(np.nanquantile(diagnostics.predictive, PREDICTIVE_VMAX_QUANTILE)),
     )
     payloads: dict[str, dict[str, Any]] = {}
     for window in windows:
@@ -791,10 +775,10 @@ def scenario_payloads(
         )
         payloads[window.condition_id] = {
             "condition_id": window.condition_id,
-            "label": figure03_summary["condition_labels"][column],
             "model_component": condition.model_component,
             "start": window.start,
             "stop": window.stop,
+            "step_seconds": STEP_SECONDS,
             "scored_windows": [
                 [max(t0, window.start), min(t1, window.stop)]
                 for t0, t1 in condition.step_windows
@@ -802,11 +786,10 @@ def scenario_payloads(
             ],
             "position_bins": position_bins.tolist(),
             "true_position": _rounded(sim.true_position[window.start : window.stop], 2),
-            "posterior_mean": _rounded(posterior_mean[window.start : window.stop], 2),
             "predictive": heatmap_payload(
                 diagnostics.predictive[window.start : window.stop], predictive_range
             ),
-            "cell_centers": _rounded(_all_cell_centers(sim), 2),
+            "cell_centers": cell_centers,
             "events": {
                 "t": (event_time[in_window] - window.start).tolist(),
                 "cell": event_cell[in_window].tolist(),
@@ -814,16 +797,11 @@ def scenario_payloads(
                 **_event_payload(diagnostics, in_window, flag_rules),
             },
             "likelihood_rows": encode_display_rows(likelihood_rows),
+            # Formatted with the manuscript's rounding policy.
             "summary": {
-                "median_flag_percent": {
-                    metric: float(flag_percentages[metric_order.index(metric), column])
-                    for metric in METRIC_FIELDS
-                },
-                "median_absolute_error": float(decoding_error[error_row, column]),
-                # Formatted with the manuscript's rounding policy.
                 "median_flag_percent_text": {
                     metric: whole_percent(flag_percentages[metric_order.index(metric), column])
-                    for metric in METRIC_FIELDS
+                    for metric in METRIC_NAMES
                 },
                 "median_absolute_error_text": significant(decoding_error[error_row, column]),
             },
@@ -944,10 +922,7 @@ def manifest_payload(
     }
     return {
         "macros": macros,
-        "flag_rules": {
-            "simulation": figure03_summary["flag_rules"],
-            "recording": figure04_summary["flag_rules"],
-        },
+        "flag_rules": {"simulation": figure03_summary["flag_rules"]},
         "colormaps": {
             "predictive": colormap_lut(CMAP_POSTERIOR),
             "likelihood": colormap_lut(CMAP_LIKELIHOOD),
@@ -972,20 +947,14 @@ def write_site_json(path: Path, payload: Mapping[str, Any]) -> Path:
     return path
 
 
-def export_site_data(
-    out_dir: Path = SITE_DATA_DIR,
-    *,
-    fixture_path: Path = PARITY_FIXTURE_PATH,
-    include_recording: bool = True,
-) -> list[Path]:
+def export_site_data(*, include_recording: bool = True) -> list[Path]:
     """Regenerate every website data file from the committed summaries.
+
+    Page data goes to ``SITE_DATA_DIR`` and the JavaScript parity fixture to
+    ``PARITY_FIXTURE_PATH``.
 
     Parameters
     ----------
-    out_dir : Path, default ``SITE_DATA_DIR``
-        Destination for the page data (manifest, playground, players).
-    fixture_path : Path, default ``PARITY_FIXTURE_PATH``
-        Destination for the JavaScript parity fixture.
     include_recording : bool, default True
         Also export the Figure-4 replay window. This needs the derived
         recording exports and the Figure-4 decode cache; pass False on a
@@ -1003,23 +972,25 @@ def export_site_data(
     sparse_centers = np.asarray(simulation.sparse_place_field_centers, dtype=np.float64)
     written = [
         write_site_json(
-            out_dir / "manifest.json", manifest_payload(figure03_summary, figure04_summary)
+            SITE_DATA_DIR / "manifest.json", manifest_payload(figure03_summary, figure04_summary)
         ),
         write_site_json(
-            out_dir / "playground.json",
+            SITE_DATA_DIR / "playground.json",
             playground_payload(config, sparse_centers, figure03_summary),
         ),
-        write_site_json(fixture_path, metric_parity_fixture(config, sparse_centers)),
-        write_site_json(out_dir / "filter.json", filter_explainer_payload(config)),
+        write_site_json(PARITY_FIXTURE_PATH, metric_parity_fixture(config, sparse_centers)),
+        write_site_json(SITE_DATA_DIR / "filter.json", filter_explainer_payload(config)),
     ]
     for condition_id, payload in scenario_payloads(simulation, figure03_summary).items():
-        written.append(write_site_json(out_dir / f"scenario_{condition_id}.json", payload))
+        written.append(write_site_json(SITE_DATA_DIR / f"scenario_{condition_id}.json", payload))
     if include_recording:
         render_data = prepare_figure04_render_data(
             Figure4Config(),
             Figure4Paths(data_path=DATA_PATH, animal_date_epoch=ANIMAL_DATE_EPOCH),
         )
         written.append(
-            write_site_json(out_dir / "replay.json", replay_payload(render_data, figure04_summary))
+            write_site_json(
+                SITE_DATA_DIR / "replay.json", replay_payload(render_data, figure04_summary)
+            )
         )
     return written

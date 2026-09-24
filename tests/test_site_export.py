@@ -15,27 +15,25 @@ from typing import Any
 
 import numpy as np
 import pytest
+from numpy.typing import NDArray
 
 from statespacecheck_paper.decoding import decode_with_diagnostics
 from statespacecheck_paper.diagnostics import (
     compute_normalized_event_likelihood,
     compute_spike_event_diagnostics_from_rates,
 )
-from statespacecheck_paper.figure03_generation import FIGURE03_CONDITION_IDS
-from statespacecheck_paper.figure03_protocol import Figure3Config
+from statespacecheck_paper.figure03_generation import FIGURE03_CONDITION_IDS, conditions_by_id
+from statespacecheck_paper.figure03_protocol import STEP_SECONDS, Figure3Config
 from statespacecheck_paper.figure03_simulation import (
     Figure3SimulationResult,
+    all_place_field_centers,
     build_figure03_rate_tables,
     run_figure03_simulation,
 )
-from statespacecheck_paper.figure03_summary import build_summary_conditions
 from statespacecheck_paper.figure04_diagnostics import mean_per_spike_likelihood_by_time
 from statespacecheck_paper.figure04_layout import Figure4DetailWindow
-from statespacecheck_paper.reported_values import (
-    FIGURE03_SUMMARY_PATH,
-    FIGURE04_SUMMARY_PATH,
-    macro_sections,
-)
+from statespacecheck_paper.number_format import significant, whole_percent
+from statespacecheck_paper.reported_values import FIGURE03_SUMMARY_PATH, FIGURE04_SUMMARY_PATH
 from statespacecheck_paper.simulation import gaussian_transition_matrix, place_field_rates
 from statespacecheck_paper.site_export import (
     FILTER_EXPLAINER,
@@ -56,7 +54,7 @@ from statespacecheck_paper.site_export import (
     replay_payload,
     scenario_payloads,
 )
-from statespacecheck_paper.style import COLORS, METRIC_SPECS
+from statespacecheck_paper.style import COLORS, METRIC_NAMES, METRIC_SPECS, PREDICTIVE_VMAX_QUANTILE
 from tests.test_figure04_layout import _compose_render_data
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -78,8 +76,23 @@ def figure04_summary() -> dict[str, Any]:
 
 
 @pytest.fixture(scope="module")
-def simulation() -> Figure3SimulationResult:
-    return run_figure03_simulation(Figure3Config())
+def config() -> Figure3Config:
+    return Figure3Config()
+
+
+@pytest.fixture(scope="module")
+def simulation(config: Figure3Config) -> Figure3SimulationResult:
+    return run_figure03_simulation(config)
+
+
+@pytest.fixture(scope="module")
+def sparse_centers(simulation: Figure3SimulationResult) -> NDArray[np.float64]:
+    return np.asarray(simulation.sparse_place_field_centers, dtype=np.float64)
+
+
+@pytest.fixture(scope="module")
+def parity_fixture(config: Figure3Config, sparse_centers: NDArray[np.float64]) -> dict[str, Any]:
+    return metric_parity_fixture(config, sparse_centers)
 
 
 @pytest.fixture(scope="module")
@@ -230,11 +243,13 @@ def test_gaussian_predictive_is_normalized_and_centered() -> None:
 
 def test_playground_ensembles_are_the_figure3_decoder_tables(
     simulation: Figure3SimulationResult,
+    config: Figure3Config,
+    sparse_centers: NDArray[np.float64],
 ) -> None:
-    config = Figure3Config()
     assert config.place_field_centers is not None
-    sparse_centers = np.asarray(simulation.sparse_place_field_centers)
-    position_bins, cell_centers, ensembles = playground_ensembles(config, sparse_centers)
+    ensembles = playground_ensembles(config, sparse_centers)
+    position_bins = config.position_bins
+    cell_centers = all_place_field_centers(config, sparse_centers)
     np.testing.assert_array_equal(position_bins, simulation.position_bins)
     tables = build_figure03_rate_tables(
         position_bins, config.place_field_centers, sparse_centers, config
@@ -253,23 +268,17 @@ def test_playground_ensembles_are_the_figure3_decoder_tables(
 
 
 def test_playground_payload_carries_simulation_flag_rules(
-    simulation: Figure3SimulationResult, figure03_summary: dict[str, Any]
+    config: Figure3Config, sparse_centers: NDArray[np.float64], figure03_summary: dict[str, Any]
 ) -> None:
-    payload = playground_payload(
-        Figure3Config(), np.asarray(simulation.sparse_place_field_centers), figure03_summary
-    )
+    payload = playground_payload(config, sparse_centers, figure03_summary)
     assert payload["flag_rules"] == figure03_summary["flag_rules"]
     assert [e["ensemble_id"] for e in payload["ensembles"]] == ["place_cells", "sparse_epoch"]
     for ensemble in payload["ensembles"]:
         assert len(ensemble["rates"]) == len(payload["position_bins"])
 
 
-def test_parity_fixture_matches_the_python_diagnostics(
-    simulation: Figure3SimulationResult,
-) -> None:
-    fixture = metric_parity_fixture(
-        Figure3Config(), np.asarray(simulation.sparse_place_field_centers)
-    )
+def test_parity_fixture_matches_the_python_diagnostics(parity_fixture: dict[str, Any]) -> None:
+    fixture = parity_fixture
     for case in fixture["cases"][::29]:
         diagnostics = compute_spike_event_diagnostics_from_rates(
             np.asarray(fixture["predictives"][case["predictive"]])[np.newaxis, :],
@@ -294,9 +303,10 @@ def test_parity_fixture_matches_the_python_diagnostics(
 # ---------------------------------------------------------------------------
 
 
-def test_scenario_windows_cover_every_condition_and_overlap_its_scored_steps() -> None:
-    config = Figure3Config()
-    conditions = dict(zip(FIGURE03_CONDITION_IDS, build_summary_conditions(config), strict=True))
+def test_scenario_windows_cover_every_condition_and_overlap_its_scored_steps(
+    config: Figure3Config,
+) -> None:
+    conditions = conditions_by_id(config)
     assert [window.condition_id for window in SCENARIO_WINDOWS] == list(FIGURE03_CONDITION_IDS)
     n_time = config.phase_boundaries[-1]
     for window in SCENARIO_WINDOWS:
@@ -324,7 +334,8 @@ def test_scenario_events_match_the_decoded_diagnostics(
             np.asarray(events["t"]) + window.start, diagnostics.event_time_ind[in_window]
         )
         np.testing.assert_array_equal(events["cell"], diagnostics.event_cell_ind[in_window])
-        for metric in ("hpd_overlap", "predictive_pvalue", "kl_divergence"):
+        assert payload["step_seconds"] == STEP_SECONDS
+        for metric in METRIC_NAMES:
             full = np.asarray(getattr(diagnostics, f"event_{metric}"))[in_window]
             np.testing.assert_allclose(events[metric], full, rtol=5e-4, atol=0)
             np.testing.assert_array_equal(
@@ -339,10 +350,10 @@ def test_scenario_events_match_the_decoded_diagnostics(
         np.testing.assert_array_equal(rows[events["likelihood_row"]], expected)
         predictive = decode_display_rows(payload["predictive"]["rows"], n_bins)
         assert predictive.shape == (window.stop - window.start, n_bins)
-        # One color scale for every window: Figure 3a's 0 to 97.5th percentile.
+        # One color scale for every window, the one Figure 3a uses.
         assert payload["predictive"]["range"] == [
             0.0,
-            float(np.nanquantile(diagnostics.predictive, 0.975)),
+            float(np.nanquantile(diagnostics.predictive, PREDICTIVE_VMAX_QUANTILE)),
         ]
         np.testing.assert_allclose(
             payload["predictive"]["row_max"],
@@ -355,17 +366,17 @@ def test_scenario_events_match_the_decoded_diagnostics(
 def test_scenario_summaries_come_from_the_figure_summary(
     scenarios: dict[str, dict[str, Any]], figure03_summary: dict[str, Any]
 ) -> None:
+    """The page quotes the summary's medians, rounded with the manuscript's policy."""
     metric_order = figure03_summary["metric_order"]
+    error_row = figure03_summary["accuracy_metric_order"].index("median_absolute_error")
     for column, condition_id in enumerate(figure03_summary["condition_order"]):
         summary = scenarios[condition_id]["summary"]
-        for metric, value in summary["median_flag_percent"].items():
+        assert set(summary["median_flag_percent_text"]) == set(METRIC_NAMES)
+        for metric, text in summary["median_flag_percent_text"].items():
             row = metric_order.index(metric)
-            assert value == figure03_summary["median_flag_percentages"][row][column]
-        assert (
-            summary["median_absolute_error"]
-            == figure03_summary["median_decoding_accuracy"][
-                figure03_summary["accuracy_metric_order"].index("median_absolute_error")
-            ][column]
+            assert text == whole_percent(figure03_summary["median_flag_percentages"][row][column])
+        assert summary["median_absolute_error_text"] == significant(
+            figure03_summary["median_decoding_accuracy"][error_row][column]
         )
 
 
@@ -454,19 +465,11 @@ def test_committed_manifest_matches_the_figure_summaries(
 ) -> None:
     committed = _load(SITE_DATA_DIR / "manifest.json")
     assert committed == manifest_payload(figure03_summary, figure04_summary)
-    macros = {
-        macro.name: macro.value
-        for _, section in macro_sections(figure03_summary, figure04_summary)
-        for macro in section
-    }
-    assert committed["macros"] == macros
 
 
-def test_committed_parity_fixture_is_current(simulation: Figure3SimulationResult) -> None:
+def test_committed_parity_fixture_is_current(parity_fixture: dict[str, Any]) -> None:
     committed = _load(PARITY_FIXTURE_PATH)
-    fresh = metric_parity_fixture(
-        Figure3Config(), np.asarray(simulation.sparse_place_field_centers)
-    )
+    fresh = parity_fixture
     np.testing.assert_allclose(committed["ensembles"], fresh["ensembles"], rtol=1e-12)
     np.testing.assert_allclose(committed["predictives"], fresh["predictives"], rtol=1e-12)
     assert len(committed["cases"]) == len(fresh["cases"])
@@ -488,11 +491,26 @@ def _assert_rows_close(committed: str, fresh: str, n_bins: int) -> None:
     assert np.abs(difference).max() <= 1
 
 
+def _assert_heatmap_close(committed: dict[str, Any], fresh: dict[str, Any], n_bins: int) -> None:
+    """A committed ``heatmap_payload`` matches a fresh one up to platform rounding."""
+    _assert_rows_close(committed["rows"], fresh["rows"], n_bins)
+    np.testing.assert_allclose(committed["row_max"], fresh["row_max"], rtol=1e-5)
+    np.testing.assert_allclose(committed["range"], fresh["range"], rtol=1e-9)
+
+
 def test_committed_scenarios_are_current(scenarios: dict[str, dict[str, Any]]) -> None:
     for condition_id, fresh in scenarios.items():
         committed = _load(SITE_DATA_DIR / f"scenario_{condition_id}.json")
+        assert committed.keys() == fresh.keys(), condition_id
         n_bins = len(fresh["position_bins"])
-        for key in ("start", "stop", "scored_windows", "summary", "label", "model_component"):
+        for key in (
+            "start",
+            "stop",
+            "step_seconds",
+            "scored_windows",
+            "summary",
+            "model_component",
+        ):
             assert committed[key] == fresh[key], (condition_id, key)
         for key in ("t", "cell", "likelihood_row", "flagged"):
             assert committed["events"][key] == fresh["events"][key], (condition_id, key)
@@ -500,15 +518,9 @@ def test_committed_scenarios_are_current(scenarios: dict[str, dict[str, Any]]) -
             np.testing.assert_allclose(
                 committed["events"][metric], fresh["events"][metric], rtol=1e-3
             )
-        for key in ("position_bins", "true_position", "posterior_mean", "cell_centers"):
+        for key in ("position_bins", "true_position", "cell_centers"):
             np.testing.assert_allclose(committed[key], fresh[key], atol=0.011)
-        np.testing.assert_allclose(
-            committed["predictive"]["row_max"], fresh["predictive"]["row_max"], rtol=1e-5
-        )
-        np.testing.assert_allclose(
-            committed["predictive"]["range"], fresh["predictive"]["range"], rtol=1e-9
-        )
-        _assert_rows_close(committed["predictive"]["rows"], fresh["predictive"]["rows"], n_bins)
+        _assert_heatmap_close(committed["predictive"], fresh["predictive"], n_bins)
         _assert_rows_close(committed["likelihood_rows"], fresh["likelihood_rows"], n_bins)
 
 
@@ -518,9 +530,7 @@ def test_committed_filter_data_is_current() -> None:
     assert committed.keys() == fresh.keys()
     n_bins = len(fresh["position_bins"])
     for key in ("predictive", "posterior", "place_fields"):
-        _assert_rows_close(committed[key]["rows"], fresh[key]["rows"], n_bins)
-        np.testing.assert_allclose(committed[key]["row_max"], fresh[key]["row_max"], rtol=1e-5)
-        np.testing.assert_allclose(committed[key]["range"], fresh[key]["range"], rtol=1e-9)
+        _assert_heatmap_close(committed[key], fresh[key], n_bins)
     _assert_rows_close(committed["likelihood"], fresh["likelihood"], n_bins)
     assert committed["events"]["t"] == fresh["events"]["t"]
     assert committed["events"]["cell"] == fresh["events"]["cell"]
@@ -536,12 +546,11 @@ def test_committed_filter_data_is_current() -> None:
 
 
 def test_committed_playground_is_current(
-    simulation: Figure3SimulationResult, figure03_summary: dict[str, Any]
+    config: Figure3Config, sparse_centers: NDArray[np.float64], figure03_summary: dict[str, Any]
 ) -> None:
     committed = _load(SITE_DATA_DIR / "playground.json")
-    fresh = playground_payload(
-        Figure3Config(), np.asarray(simulation.sparse_place_field_centers), figure03_summary
-    )
+    fresh = playground_payload(config, sparse_centers, figure03_summary)
+    assert committed.keys() == fresh.keys()
     for key in ("flag_rules", "coverage", "position_bins", "cell_centers"):
         assert committed[key] == fresh[key], key
     for old, new in zip(committed["ensembles"], fresh["ensembles"], strict=True):

@@ -54,6 +54,11 @@ _DEFAULT_PHASE_BOUNDARIES: tuple[int, ...] = (
 )
 
 
+# Length of one simulation step, in seconds: the Figure-3 timeline is in 1 ms
+# steps by convention (see ``Figure3Config``).
+STEP_SECONDS = 1e-3
+
+
 @dataclass(frozen=True)
 class Figure3Config:
     """Parameters for the figure-3 decoding simulation.
