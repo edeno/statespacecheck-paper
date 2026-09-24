@@ -46,7 +46,7 @@ export function initExplainer(root, data, manifest) {
   const predictive = decodeRows(data.predictive.rows, nBins);
   const posterior = decodeRows(data.posterior.rows, nBins);
   const likelihood = decodeRows(data.likelihood, nBins);
-  const fields = decodeRows(data.place_fields, nBins);
+  const fields = decodeRows(data.place_fields.rows, nBins);
   const sharedMax = data.posterior.range[1];
   const predictiveAt = (t) => scaled(predictive.row(t), data.predictive.row_max[t]);
   const posteriorAt = (t) => scaled(posterior.row(t), data.posterior.row_max[t]);
@@ -171,9 +171,8 @@ export function initExplainer(root, data, manifest) {
     likelihood: rowChart("#ft-likelihood", false),
     posterior: rowChart("#ft-posterior", true),
   };
-  // Each field row is scaled to its maximum; every field peaks at the same
-  // rate, so the fields share one scale.
-  const fieldRows = centers.map((_, c) => Array.from(fields.row(c)));
+  // Each field in expected spikes per step, drawn on the cells' shared scale.
+  const fieldRows = centers.map((_, c) => scaled(fields.row(c), data.place_fields.row_max[c]));
 
   // --------------------------------------------------------- Captions
 
@@ -243,7 +242,7 @@ export function initExplainer(root, data, manifest) {
           : { values: fieldRows[c], color: cssVar("--field-muted"), filled: false, width: 1 },
       ),
       marker,
-      scaleMax: 255,
+      scaleMax: data.place_fields.range[1],
     });
 
     const likelihoodSeries = [];

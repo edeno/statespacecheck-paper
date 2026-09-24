@@ -462,10 +462,13 @@ def filter_explainer_payload(
         ``posterior`` (display rows on one shared scale, see
         :func:`heatmap_payload`); ``likelihood`` (each step's normalized
         likelihood, the product of the fired cells' fields and the exposure
-        term, as display rows); ``place_fields`` (display rows, one per cell);
-        ``exposure`` (``exp(-Λ(x))``, scaled to its maximum, where ``Λ`` is the
-        cells' total expected count); ``moments`` (mean and SD of the
-        prediction and posterior at each step); and the sequence's parameters.
+        term, as display rows); ``place_fields`` (one row per cell with its
+        peak rate and the cells' shared range, see :func:`heatmap_payload`, so
+        the page draws the fields in expected spikes per step); ``exposure``
+        (``exp(-Λ(x))``, scaled to its maximum, where ``Λ`` is the cells' total
+        expected count); ``moments`` (mean and SD of the prediction and
+        posterior at each step); ``conflict_step``; and ``coverage``, the
+        probability mass of the HPD regions the page's captions name.
     """
     sequence = filter_explainer_sequence(config, explainer)
     decoded = sequence.decoded
@@ -492,7 +495,7 @@ def filter_explainer_payload(
         "predictive": heatmap_payload(predictive, shared_range),
         "posterior": heatmap_payload(posterior, shared_range),
         "likelihood": encode_display_rows(decoded.likelihood),
-        "place_fields": encode_display_rows(sequence.rates.T),
+        "place_fields": heatmap_payload(sequence.rates.T, (0.0, float(sequence.rates.max()))),
         "exposure": _rounded(exposure, 4),
         "moments": {
             "predictive_mean": _rounded(predictive_mean, 2),
@@ -501,8 +504,6 @@ def filter_explainer_payload(
             "posterior_sd": _rounded(posterior_sd, 2),
         },
         "conflict_step": explainer.conflict_step,
-        "step_std": explainer.step_std,
-        "peak_rate": float(sequence.rates.max()),
         "coverage": HPD_COVERAGE,
     }
 

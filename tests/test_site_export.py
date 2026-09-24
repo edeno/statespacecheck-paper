@@ -162,6 +162,14 @@ def test_filter_explainer_is_decoded_by_the_papers_filter(
         )
     # Both rows share one scale, so the page can compare their heights.
     assert payload["predictive"]["range"] == payload["posterior"]["range"]
+    # The fields ship with each cell's peak, so the page draws their true heights.
+    fields = payload["place_fields"]
+    np.testing.assert_array_equal(
+        decode_display_rows(fields["rows"], n_bins),
+        decode_display_rows(encode_display_rows(sequence.rates.T), n_bins),
+    )
+    np.testing.assert_allclose(fields["row_max"], sequence.rates.max(axis=0), rtol=1e-5)
+    assert fields["range"] == [0.0, sequence.rates.max()]
     assert payload["events"]["t"] == decoded.event_time_ind.tolist()
     assert payload["cell_centers"] == sorted(payload["cell_centers"])
 
@@ -507,12 +515,11 @@ def test_committed_filter_data_is_current() -> None:
     fresh = filter_explainer_payload(Figure3Config())
     assert committed.keys() == fresh.keys()
     n_bins = len(fresh["position_bins"])
-    for key in ("predictive", "posterior"):
+    for key in ("predictive", "posterior", "place_fields"):
         _assert_rows_close(committed[key]["rows"], fresh[key]["rows"], n_bins)
         np.testing.assert_allclose(committed[key]["row_max"], fresh[key]["row_max"], rtol=1e-5)
         np.testing.assert_allclose(committed[key]["range"], fresh[key]["range"], rtol=1e-9)
-    for key in ("likelihood", "place_fields"):
-        _assert_rows_close(committed[key], fresh[key], n_bins)
+    _assert_rows_close(committed["likelihood"], fresh["likelihood"], n_bins)
     assert committed["events"]["t"] == fresh["events"]["t"]
     assert committed["events"]["cell"] == fresh["events"]["cell"]
     np.testing.assert_allclose(
@@ -522,9 +529,8 @@ def test_committed_filter_data_is_current() -> None:
         np.testing.assert_allclose(committed["moments"][key], values, atol=0.011)
     for key in ("position_bins", "cell_centers", "true_position", "exposure"):
         np.testing.assert_allclose(committed[key], fresh[key], atol=0.011)
-    for key in ("conflict_step", "step_std", "coverage"):
+    for key in ("conflict_step", "coverage"):
         assert committed[key] == fresh[key], key
-    assert committed["peak_rate"] == pytest.approx(fresh["peak_rate"], rel=1e-12)
 
 
 def test_committed_playground_is_current(
