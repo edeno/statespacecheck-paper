@@ -1,8 +1,12 @@
 """Export compact data files for the project website's interactive explainer.
 
-The website (``site/``) is static HTML and JavaScript. It has three interactive
+The website (``site/``) is static HTML and JavaScript. It has four interactive
 pieces, and each reads data produced here from the paper's own pipeline:
 
+- **Filter explainer** — the reader steps in time through a short, scripted
+  spike train on the Figure-3 track, decoded by
+  :func:`statespacecheck_paper.decoding.decode_with_diagnostics`: the
+  prediction, each spike's place field and likelihood, and the posterior.
 - **Playground** — the reader moves a Gaussian predictive distribution over the
   Figure-3 track and picks which place cell fired; the browser recomputes the
   three per-spike diagnostics live with a JavaScript port of
@@ -36,7 +40,9 @@ import matplotlib as mpl
 import numpy as np
 from numpy.typing import NDArray
 
+from statespacecheck_paper.decoding import decode_with_diagnostics
 from statespacecheck_paper.diagnostics import (
+    DecodingDiagnostics,
     compute_normalized_event_likelihood,
     compute_spike_event_diagnostics_from_rates,
 )
@@ -61,6 +67,11 @@ from statespacecheck_paper.reported_values import (
     FIGURE03_SUMMARY_PATH,
     FIGURE04_SUMMARY_PATH,
     macro_sections,
+)
+from statespacecheck_paper.simulation import (
+    gaussian_transition_matrix,
+    place_field_rates,
+    simulate_spikes_position_tuned,
 )
 from statespacecheck_paper.style import CMAP_LIKELIHOOD, CMAP_POSTERIOR, MetricName
 
@@ -277,6 +288,233 @@ def colormap_lut(name: str, n: int = COLORMAP_LUT_SIZE) -> list[str]:
     return [mpl.colors.to_hex(cmap(i)) for i in range(n)]
 
 
+def figure03_position_bins(config: Figure3Config) -> NDArray[np.float64]:
+    """Return the Figure-3 decoder's position grid, shape (n_bins,)."""
+    return np.arange(
+        config.position_min,
+        config.position_max + config.position_bin_size,
+        config.position_bin_size,
+        dtype=np.float64,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Filter explainer
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class FilterExplainerConfig:
+    """The scripted spike train that the filter explainer steps through.
+
+    The explainer keeps the Figure-3 track and place fields. Its animal runs
+    smoothly up the track and back, from ``run_low`` to ``run_high`` and back
+    to ``run_low``, and its cells fire less often than in the simulation, so
+    the prediction visibly spreads between spikes. The decoder's movement
+    model is the simulation decoder's Gaussian random walk, which ignores the
+    animal's momentum, as decoders of this kind usually do. At
+    ``conflict_step`` the ordinary spikes are replaced by one spike from each
+    of the two cells whose fields are centered nearest to ``conflict_offset``
+    from the animal, on the side of the track with room.
+
+    Parameters
+    ----------
+    n_steps : int
+        Time steps in the sequence.
+    run_low, run_high : float
+        Ends of the animal's run, in position units.
+    step_std : float
+        Standard deviation of the decoder's random-walk step, in position
+        units per time step.
+    rate_scale : float
+        ``place_field_rate_scale`` of the cells: expected spikes per step.
+    seed : int
+        Seed of the spikes.
+    conflict_step : int
+        Time step of the inconsistent spikes.
+    conflict_offset : float
+        Distance from the animal (position units) of the inconsistent spikes'
+        place fields.
+    """
+
+    n_steps: int = 360
+    run_low: float = 25.0
+    run_high: float = 75.0
+    step_std: float = 2.0
+    rate_scale: float = 1.25
+    seed: int = 26
+    conflict_step: int = 288
+    conflict_offset: float = 45.0
+
+
+# A display choice, like ``SCENARIO_WINDOWS``: a seed whose sequence shows the
+# prediction spreading over a long gap, tracks the animal with no inconsistent
+# spike before the conflict, and recovers after it (checked by the test suite).
+FILTER_EXPLAINER = FilterExplainerConfig()
+
+
+@dataclass(frozen=True)
+class FilterExplainerSequence:
+    """A decoded explainer sequence.
+
+    Attributes
+    ----------
+    position_bins : np.ndarray, shape (n_bins,)
+    rates : np.ndarray, shape (n_bins, n_cells)
+        Expected spikes per step of each cell, for both simulation and decoding.
+    true_position : np.ndarray, shape (n_steps,)
+    spike_counts : np.ndarray, shape (n_steps, n_cells)
+    conflict_cells : tuple of int
+        The cells that fire at ``conflict_step``.
+    decoded : DecodingDiagnostics
+        Output of :func:`decode_with_diagnostics` for ``spike_counts``.
+    """
+
+    position_bins: NDArray[np.float64]
+    rates: NDArray[np.float64]
+    true_position: NDArray[np.float64]
+    spike_counts: NDArray[np.int_]
+    conflict_cells: tuple[int, ...]
+    decoded: DecodingDiagnostics
+
+
+def filter_explainer_sequence(
+    config: Figure3Config, explainer: FilterExplainerConfig = FILTER_EXPLAINER
+) -> FilterExplainerSequence:
+    """Simulate and decode the explainer's spike train.
+
+    The spikes come from the simulation's generator, given the smooth run. The
+    sequence is edited in two places: the first step holds one spike, from the
+    cell whose field is centered nearest the animal, so the demonstration opens
+    on a spike whose prediction is the flat initial distribution; and
+    ``conflict_step`` holds the inconsistent spikes described in
+    :class:`FilterExplainerConfig`.
+
+    Parameters
+    ----------
+    config : Figure3Config
+        Supplies the track and the place-field centers and width.
+    explainer : FilterExplainerConfig
+        Supplies the run, rates, movement model, and the scripted edits.
+    """
+    if config.place_field_centers is None:
+        raise ValueError("config.place_field_centers must be initialized")
+    centers = np.asarray(config.place_field_centers, dtype=np.float64)
+    position_bins = figure03_position_bins(config)
+    steps = np.arange(explainer.n_steps)
+    middle = (explainer.run_low + explainer.run_high) / 2
+    half_range = (explainer.run_high - explainer.run_low) / 2
+    position = middle - half_range * np.cos(2 * np.pi * steps / explainer.n_steps)
+    rng = np.random.default_rng(explainer.seed)
+    counts = simulate_spikes_position_tuned(
+        position, centers, config.place_field_std, explainer.rate_scale, rng
+    )
+    counts[0] = 0
+    counts[0, int(np.argmin(np.abs(centers - position[0])))] = 1
+    here = position[explainer.conflict_step]
+    midpoint = (config.position_min + config.position_max) / 2
+    target = (
+        here + explainer.conflict_offset if here <= midpoint else here - explainer.conflict_offset
+    )
+    conflict_cells = tuple(sorted(int(c) for c in np.argsort(np.abs(centers - target))[:2]))
+    counts[explainer.conflict_step] = 0
+    counts[explainer.conflict_step, list(conflict_cells)] = 1
+
+    rates = np.asarray(
+        place_field_rates(position_bins, centers, config.place_field_std, explainer.rate_scale),
+        dtype=np.float64,
+    )
+    decoded = decode_with_diagnostics(
+        counts,
+        position_bins,
+        gaussian_transition_matrix(position_bins, explainer.step_std),
+        centers,
+        config.place_field_std,
+        explainer.rate_scale,
+        baseline_firing_rates=rates,
+    )
+    return FilterExplainerSequence(
+        position_bins=position_bins,
+        rates=rates,
+        true_position=np.asarray(position, dtype=np.float64),
+        spike_counts=counts,
+        conflict_cells=conflict_cells,
+        decoded=decoded,
+    )
+
+
+def _moments(
+    distributions: NDArray[np.floating], position_bins: NDArray[np.floating]
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Mean and standard deviation of each row, shape (n_rows,) each."""
+    mean = np.asarray(distributions @ position_bins, dtype=np.float64)
+    variance = np.einsum("tb,tb->t", distributions, (position_bins[None, :] - mean[:, None]) ** 2)
+    return mean, np.sqrt(variance)
+
+
+def filter_explainer_payload(
+    config: Figure3Config, explainer: FilterExplainerConfig = FILTER_EXPLAINER
+) -> dict[str, Any]:
+    """Build the data for the filter explainer's time stepper.
+
+    Parameters
+    ----------
+    config : Figure3Config
+    explainer : FilterExplainerConfig
+
+    Returns
+    -------
+    dict
+        ``position_bins``, ``cell_centers``, ``true_position``; ``events``
+        (time step, cell, and HPD overlap of each spike); ``predictive`` and
+        ``posterior`` (display rows on one shared scale, see
+        :func:`heatmap_payload`); ``likelihood`` (each step's normalized
+        likelihood, the product of the fired cells' fields and the exposure
+        term, as display rows); ``place_fields`` (display rows, one per cell);
+        ``exposure`` (``exp(-Λ(x))``, scaled to its maximum, where ``Λ`` is the
+        cells' total expected count); ``moments`` (mean and SD of the
+        prediction and posterior at each step); and the sequence's parameters.
+    """
+    sequence = filter_explainer_sequence(config, explainer)
+    decoded = sequence.decoded
+    bins = sequence.position_bins
+    predictive = np.asarray(decoded.predictive, dtype=np.float64)
+    posterior = np.asarray(decoded.posterior, dtype=np.float64)
+    shared_range = (0.0, float(max(predictive.max(), posterior.max())))
+    # exp(-Λ(x)) relative to its maximum, where Λ is lowest.
+    total_rate = sequence.rates.sum(axis=1)
+    exposure = np.exp(-(total_rate - total_rate.min()))
+    predictive_mean, predictive_sd = _moments(predictive, bins)
+    posterior_mean, posterior_sd = _moments(posterior, bins)
+    return {
+        "position_bins": bins.tolist(),
+        "cell_centers": np.asarray(config.place_field_centers, dtype=np.float64).tolist(),
+        "true_position": _rounded(sequence.true_position, 2),
+        "events": {
+            "t": np.asarray(decoded.event_time_ind).tolist(),
+            "cell": np.asarray(decoded.event_cell_ind).tolist(),
+            "hpd_overlap": _rounded_significant(
+                decoded.event_hpd_overlap, EVENT_VALUE_SIGNIFICANT_FIGURES
+            ),
+        },
+        "predictive": heatmap_payload(predictive, shared_range),
+        "posterior": heatmap_payload(posterior, shared_range),
+        "likelihood": encode_display_rows(decoded.likelihood),
+        "place_fields": encode_display_rows(sequence.rates.T),
+        "exposure": _rounded(exposure, 4),
+        "moments": {
+            "predictive_mean": _rounded(predictive_mean, 2),
+            "predictive_sd": _rounded(predictive_sd, 2),
+            "posterior_mean": _rounded(posterior_mean, 2),
+            "posterior_sd": _rounded(posterior_sd, 2),
+        },
+        "conflict_step": explainer.conflict_step,
+        "step_std": explainer.step_std,
+        "peak_rate": float(sequence.rates.max()),
+        "coverage": HPD_COVERAGE,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Playground
 # ---------------------------------------------------------------------------
@@ -356,12 +594,7 @@ def playground_ensembles(
     """
     if config.place_field_centers is None:
         raise ValueError("config.place_field_centers must be initialized")
-    position_bins = np.arange(
-        config.position_min,
-        config.position_max + config.position_bin_size,
-        config.position_bin_size,
-        dtype=np.float64,
-    )
+    position_bins = figure03_position_bins(config)
     sparse = np.asarray(sparse_centers, dtype=np.float64)
     tables = build_figure03_rate_tables(position_bins, config.place_field_centers, sparse, config)
     n_place_cells = len(config.place_field_centers)
@@ -784,6 +1017,7 @@ def export_site_data(
             playground_payload(config, sparse_centers, figure03_summary),
         ),
         write_site_json(fixture_path, metric_parity_fixture(config, sparse_centers)),
+        write_site_json(out_dir / "filter.json", filter_explainer_payload(config)),
     ]
     for condition_id, payload in scenario_payloads(simulation, figure03_summary).items():
         written.append(write_site_json(out_dir / f"scenario_{condition_id}.json", payload))

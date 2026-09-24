@@ -1,9 +1,10 @@
 """Tests for the website data export (``statespacecheck_paper.site_export``).
 
-Covers the encoding helpers, the playground and parity-fixture builders, the
-Figure-3 scenario payloads (against the real seed-1 realization), the Figure-4
-replay payload (against synthetic render data), and that the committed files
-under ``site/`` are current with the committed figure summaries.
+Covers the encoding helpers, the filter explainer, the playground and
+parity-fixture builders, the Figure-3 scenario payloads (against the real seed-1
+realization), the Figure-4 replay payload (against synthetic render data), and
+that the committed files under ``site/`` are current with the committed figure
+summaries.
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from typing import Any
 import numpy as np
 import pytest
 
+from statespacecheck_paper.decoding import decode_with_diagnostics
 from statespacecheck_paper.diagnostics import (
     compute_normalized_event_likelihood,
     compute_spike_event_diagnostics_from_rates,
@@ -34,12 +36,17 @@ from statespacecheck_paper.reported_values import (
     FIGURE04_SUMMARY_PATH,
     macro_sections,
 )
+from statespacecheck_paper.simulation import gaussian_transition_matrix, place_field_rates
 from statespacecheck_paper.site_export import (
+    FILTER_EXPLAINER,
     PARITY_FIXTURE_PATH,
     SCENARIO_WINDOWS,
     SITE_DATA_DIR,
+    FilterExplainerSequence,
     decode_display_rows,
     encode_display_rows,
+    filter_explainer_payload,
+    filter_explainer_sequence,
     flag_events,
     gaussian_predictive,
     manifest_payload,
@@ -112,6 +119,90 @@ def test_flag_events_is_inclusive_in_both_directions() -> None:
     np.testing.assert_array_equal(flag_events(values, above), [False, True, True])
     with pytest.raises(ValueError, match="Unknown flag comparison"):
         flag_events(values, {"comparison": "equal", "threshold": 0.05})
+
+
+# ---------------------------------------------------------------------------
+# Filter explainer
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def explainer_sequence() -> FilterExplainerSequence:
+    return filter_explainer_sequence(Figure3Config())
+
+
+def test_filter_explainer_is_decoded_by_the_papers_filter(
+    explainer_sequence: FilterExplainerSequence,
+) -> None:
+    config = Figure3Config()
+    assert config.place_field_centers is not None
+    sequence = explainer_sequence
+    centers = np.asarray(config.place_field_centers)
+    rates = place_field_rates(
+        sequence.position_bins, centers, config.place_field_std, FILTER_EXPLAINER.rate_scale
+    )
+    np.testing.assert_array_equal(sequence.rates, rates)
+    decoded = decode_with_diagnostics(
+        sequence.spike_counts,
+        sequence.position_bins,
+        gaussian_transition_matrix(sequence.position_bins, FILTER_EXPLAINER.step_std),
+        centers,
+        config.place_field_std,
+        FILTER_EXPLAINER.rate_scale,
+        baseline_firing_rates=rates,
+    )
+    np.testing.assert_array_equal(sequence.decoded.predictive, decoded.predictive)
+    np.testing.assert_array_equal(sequence.decoded.posterior, decoded.posterior)
+
+    payload = filter_explainer_payload(config)
+    n_bins = sequence.position_bins.size
+    for key in ("predictive", "posterior"):
+        np.testing.assert_array_equal(
+            decode_display_rows(payload[key]["rows"], n_bins),
+            decode_display_rows(encode_display_rows(getattr(decoded, key)), n_bins),
+        )
+    # Both rows share one scale, so the page can compare their heights.
+    assert payload["predictive"]["range"] == payload["posterior"]["range"]
+    assert payload["events"]["t"] == decoded.event_time_ind.tolist()
+    assert payload["cell_centers"] == sorted(payload["cell_centers"])
+
+
+def test_filter_explainer_sequence_tells_the_story_on_the_page(
+    explainer_sequence: FilterExplainerSequence,
+) -> None:
+    """The page text describes this sequence: check the claims it makes."""
+    sequence = explainer_sequence
+    counts = sequence.spike_counts
+    decoded = sequence.decoded
+    centers = np.asarray(Figure3Config().place_field_centers)
+    # It opens on one spike, whose prediction is the flat initial distribution.
+    assert counts[0].sum() == 1
+    np.testing.assert_allclose(decoded.predictive[0], 1.0 / sequence.position_bins.size)
+    # The animal runs smoothly up the track and back.
+    position = sequence.true_position
+    assert position[0] == pytest.approx(FILTER_EXPLAINER.run_low)
+    assert position.max() == pytest.approx(FILTER_EXPLAINER.run_high, abs=1e-3)
+    assert np.abs(np.diff(position, n=2)).max() < 0.1
+    # The prediction visibly spreads over at least one long gap between spikes.
+    conflict = FILTER_EXPLAINER.conflict_step
+    spike_steps = np.flatnonzero(counts.sum(axis=1))
+    assert np.diff(spike_steps[spike_steps <= conflict]).max() >= 30
+    # Before the conflict, although the decoder ignores the animal's momentum,
+    # no spike is inconsistent with the prediction.
+    assert np.all(decoded.event_hpd_overlap[decoded.event_time_ind < conflict] > 0)
+    # Two cells whose fields lie far from the animal fire together, and each
+    # spike's likelihood is disjoint from the prediction.
+    assert counts[conflict].sum() == 2
+    assert np.all(
+        np.abs(centers[list(sequence.conflict_cells)] - sequence.true_position[conflict]) > 30
+    )
+    at_conflict = decoded.event_time_ind == conflict
+    np.testing.assert_array_equal(decoded.event_hpd_overlap[at_conflict], 0.0)
+    # Elsewhere the spikes come from the model, so the decoder tracks the
+    # animal before the conflict and recovers by the end.
+    mean = decoded.posterior @ sequence.position_bins
+    assert np.median(np.abs(mean[:conflict] - sequence.true_position[:conflict])) < 5
+    assert abs(mean[-1] - sequence.true_position[-1]) < 5
 
 
 # ---------------------------------------------------------------------------
@@ -410,6 +501,31 @@ def test_committed_scenarios_are_current(scenarios: dict[str, dict[str, Any]]) -
         )
         _assert_rows_close(committed["predictive"]["rows"], fresh["predictive"]["rows"], n_bins)
         _assert_rows_close(committed["likelihood_rows"], fresh["likelihood_rows"], n_bins)
+
+
+def test_committed_filter_data_is_current() -> None:
+    committed = _load(SITE_DATA_DIR / "filter.json")
+    fresh = filter_explainer_payload(Figure3Config())
+    assert committed.keys() == fresh.keys()
+    n_bins = len(fresh["position_bins"])
+    for key in ("predictive", "posterior"):
+        _assert_rows_close(committed[key]["rows"], fresh[key]["rows"], n_bins)
+        np.testing.assert_allclose(committed[key]["row_max"], fresh[key]["row_max"], rtol=1e-5)
+        np.testing.assert_allclose(committed[key]["range"], fresh[key]["range"], rtol=1e-9)
+    for key in ("likelihood", "place_fields"):
+        _assert_rows_close(committed[key], fresh[key], n_bins)
+    assert committed["events"]["t"] == fresh["events"]["t"]
+    assert committed["events"]["cell"] == fresh["events"]["cell"]
+    np.testing.assert_allclose(
+        committed["events"]["hpd_overlap"], fresh["events"]["hpd_overlap"], rtol=1e-3
+    )
+    for key, values in fresh["moments"].items():
+        np.testing.assert_allclose(committed["moments"][key], values, atol=0.011)
+    for key in ("position_bins", "cell_centers", "true_position", "exposure"):
+        np.testing.assert_allclose(committed[key], fresh[key], atol=0.011)
+    for key in ("conflict_step", "step_std", "coverage"):
+        assert committed[key] == fresh[key], key
+    assert committed["peak_rate"] == pytest.approx(fresh["peak_rate"], rel=1e-12)
 
 
 def test_committed_playground_is_current(

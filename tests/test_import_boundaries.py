@@ -176,6 +176,7 @@ def test_site_export_depends_only_on_analysis_layers() -> None:
     values; it sits above both figure families and nothing imports it."""
     prefix = "statespacecheck_paper."
     assert _sibling_module_imports("site_export.py") <= {
+        prefix + "decoding",
         prefix + "diagnostics",
         prefix + "figure03_generation",
         prefix + "figure03_protocol",
@@ -191,6 +192,7 @@ def test_site_export_depends_only_on_analysis_layers() -> None:
         prefix + "number_format",
         prefix + "paths",
         prefix + "reported_values",
+        prefix + "simulation",
         prefix + "style",
     }
     for path in sorted(_SRC.rglob("*.py")):
