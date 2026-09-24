@@ -251,13 +251,16 @@ uv run python scripts/export_site_data.py
 # Check the JavaScript diagnostics against the Python reference (Node 22+)
 make -C site test
 
-# Assemble the site (adds Figure 1 and the paper PDF) and preview it locally
+# Assemble the site (adds Figure 1 and the paper PDF, and writes the reported
+# numbers into the HTML) and preview it locally
 make -C site serve   # http://localhost:8000
+# If `node` is not on make's PATH (e.g., nvm loads lazily), pass the binary:
+make -C site serve NODE=/path/to/node
 ```
 
-Pushes to `main` that touch `site/`, `manuscript/main.pdf`, or Figure 1 deploy
-the site through `.github/workflows/pages.yml`. The repository's Pages source
-must be set to **GitHub Actions** (Settings → Pages).
+Every push to `main` deploys the site through `.github/workflows/pages.yml` once
+CI (including the website's staleness tests) passes on that commit. The
+repository's Pages source must be set to **GitHub Actions** (Settings → Pages).
 
 ## Development
 
