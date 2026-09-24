@@ -448,7 +448,7 @@ function renderScenario(view, payload, manifest, stepSeconds) {
   const legend = document.createElement("div");
   legend.className = "legend";
   legend.innerHTML = `
-    <span><i class="swatch" style="background:var(--position)"></i>Animal position</span>
+    <span><i class="swatch" style="background:var(--position)"></i>Animal's position</span>
     <span><i class="swatch dot" style="background:var(--text)"></i>Flagged spike (solid)</span>
     <span><i class="swatch dot" style="background:var(--text);opacity:.3"></i>Not flagged (faded)</span>
     <span><i class="swatch" style="background:var(--threshold)"></i>Flag threshold</span>
@@ -475,7 +475,7 @@ function renderScenario(view, payload, manifest, stepSeconds) {
   chartLegend.innerHTML = `
     <span><i class="swatch" style="background:var(--predictive)"></i>Prediction</span>
     <span><i class="swatch" style="background:var(--likelihood)"></i>Spike likelihood</span>
-    <span><i class="swatch" style="background:var(--position)"></i>Animal</span>`;
+    <span><i class="swatch" style="background:var(--position)"></i>Animal's position</span>`;
   const readouts = document.createElement("div");
   readouts.className = "readouts";
   const cards = Object.fromEntries(
@@ -669,7 +669,7 @@ export function renderReplay(root, payload, manifest) {
   const legend = document.createElement("div");
   legend.className = "legend";
   legend.innerHTML = `
-    <span><i class="swatch" style="background:var(--position)"></i>Animal position</span>
+    <span><i class="swatch" style="background:var(--position)"></i>Animal's position</span>
     <span><i class="swatch ring" style="border-color:var(--text)"></i>Continuous model</span>
     <span><i class="swatch dot" style="background:var(--text)"></i>Continuous–Fragmented model</span>
     <span><i class="swatch" style="background:var(--threshold)"></i>Flag threshold</span>`;
@@ -702,7 +702,7 @@ export function renderReplay(root, payload, manifest) {
   chartLegend.innerHTML = `
     <span><i class="swatch" style="background:var(--predictive)"></i>Prediction</span>
     <span><i class="swatch" style="background:var(--likelihood)"></i>Spike likelihood</span>
-    <span><i class="swatch" style="background:var(--position)"></i>Animal</span>`;
+    <span><i class="swatch" style="background:var(--position)"></i>Animal's position</span>`;
   detail.append(detailTitle, chartLegend);
   const charts = {};
   for (const model of MODELS) {

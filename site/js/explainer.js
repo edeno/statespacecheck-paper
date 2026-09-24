@@ -197,7 +197,7 @@ export function initExplainer(root, data, manifest) {
     const posteriorText = `mean ${fmt(m.posterior_mean[t])} a.u., SD ${fmt(m.posterior_sd[t])} a.u. ${animal}`;
     if (t === spikeSteps[0]) {
       const c = cells[0] + 1;
-      return `Step ${t}: ${listCells(cells)} fires. Before any spikes, the prediction is the decoder's initial distribution, flat across the track. A place field is a cell's expected spike count at each position; the field of the cell that fired is dark. The likelihood is the probability of what this step recorded at each position, a spike from cell ${c} and none from the others: λ${subscript(c)}(x)·exp(−Λ(x)), where Λ(x) is the expected spike count of all the cells and exp(−Λ(x)) (dashed) is the probability of no spikes. Multiplying the prediction by the likelihood and renormalizing gives the posterior; with a flat prediction it is the normalized likelihood: ${posteriorText}.`;
+      return `Step ${t}: ${listCells(cells)} fires. Before any spikes, the prediction is the decoder's initial distribution, flat across the track. The likelihood is the probability of what this step recorded at each position, a spike from cell ${c} and none from the others: λ${subscript(c)}(x)·exp(−Λ(x)), where Λ(x) is the expected spike count of all the cells and exp(−Λ(x)) (dashed) is the probability of no spikes. Multiplying the prediction by the likelihood and renormalizing gives the posterior; with a flat prediction it is the normalized likelihood: ${posteriorText}.`;
     }
 
     const gap = t - last;

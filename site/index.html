@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Local goodness-of-fit for neural decoding</title>
+    <title>Local goodness-of-fit measures for neural decoding</title>
     <meta
       name="description"
       content="Per-spike diagnostics that show when a neural decoder's state-space model conflicts with the data, with interactive examples from simulated and hippocampal recordings."
@@ -154,9 +154,10 @@
             λ<sub><i>c</i></sub>(<i>x</i>) and pulls the posterior toward that cell's field.
           </p>
           <p>
-            Play through a short simulated recording as the animal runs up the track and back. At
-            each spike, the four rows show the calculation: the prediction, the place field of the
-            cell that fired, the likelihood, and the posterior. Between spikes, the prediction and
+            Play through a short simulated recording as the animal runs up the track and back;
+            positions are in arbitrary units (a.u.). At every step, the four rows show the
+            calculation: the prediction, the cells' place fields with the one that fired
+            highlighted, the likelihood, and the posterior. Between spikes, the prediction and
             posterior spread out as the animal's position grows uncertain. Near the end, two cells
             whose fields lie far from the animal fire together, and playback pauses there.
           </p>
@@ -214,9 +215,11 @@
             At each spike, the decoder's <strong>prediction</strong> <i>P</i>(<i>x</i>) is its
             probability distribution over the latent state <i>x</i> (here, position) given all
             earlier spikes: the one-step predictive distribution. The spike's
-            <strong>likelihood</strong> <i>Q</i>(<i>x</i>) is how strongly that one spike, from its
-            cell's place field, supports each position, normalized to sum to one. Each diagnostic
-            compares <i>P</i> with <i>Q</i>, or with the spike itself. Two target consistency; KL
+            <strong>likelihood</strong> <i>Q</i>(<i>x</i>) is its cell's place field
+            λ<sub><i>c</i></sub>(<i>x</i>) normalized to sum to one: the factor that spike
+            contributed to the step's likelihood above, and how strongly that one spike supports
+            each position. Each diagnostic compares <i>P</i> with <i>Q</i>, or with the spike
+            itself. Two target consistency; KL
             divergence is included as the familiar reference that measures difference.
           </p>
           <div class="cards">
@@ -251,8 +254,8 @@
               </math>
               <p>
                 The predictive probability that a spike comes from cell <i>c</i>,
-                <i>f</i><sub>pred</sub>(<i>c</i>), averages each cell's firing rate over the
-                prediction and normalizes across cells. The p-value is the total predictive
+                <i>f</i><sub>pred</sub>(<i>c</i>), averages each cell's place field
+                λ<sub><i>c</i></sub>(<i>x</i>) over the prediction and normalizes across cells. The p-value is the total predictive
                 probability of every cell at least as unlikely as the one that fired, <i>y</i>. A
                 small value means the model did not expect this spike. We call it the predictive
                 p-value for short; the tracks below plot −log <i>p</i> (natural log), where
@@ -295,8 +298,7 @@
             The prediction aggregates many past spikes, while the likelihood comes from a single
             spike, so the two usually differ in shape and spread. What matters is whether they
             concentrate their probability in overlapping regions. Move the prediction, change its
-            spread, and choose which cell fired: the three diagnostics update as you go. Positions
-            are in arbitrary units (a.u.) along the simulated track.
+            spread, and choose which cell fired: the three diagnostics update as you go.
           </p>
           <div class="panel">
             <div class="row">
@@ -426,9 +428,9 @@
           </div>
           <p class="note">
             A <strong>rescued</strong> spike is flagged under the Continuous model but not under the
-            Continuous–Fragmented model: its likelihood now falls inside the Continuous–Fragmented
-            prediction's 95% region, which can be broad enough to allow a jump there. It does not
-            mean that the prediction was centered on the spike.
+            Continuous–Fragmented model: its likelihood's 95% region now overlaps the
+            Continuous–Fragmented prediction's, which can be broad enough to allow a jump there. It
+            does not mean that the prediction was centered on the spike.
           </p>
           <p>
             Across the whole session, HPD overlap flags
