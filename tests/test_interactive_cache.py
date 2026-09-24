@@ -283,21 +283,13 @@ def test_build_cli_loads_the_canonical_figure04_workflow(
 # ---------------------------------------------------------------------------
 
 FIGURE04_JOBLIB = INTERMEDIATES / f"{ANIMAL_DATE_EPOCH}_fig4_cache.joblib"
-RAW_SPIKES_PKL = RAW_DATA / f"{ANIMAL_DATE_EPOCH}_HPC_spike_times.pkl"
-RAW_POSITION_PKL = RAW_DATA / f"{ANIMAL_DATE_EPOCH}_position_info.pkl"
-RAW_TRACK_GRAPH = RAW_DATA / f"{ANIMAL_DATE_EPOCH}_track_graph.pkl"
-RAW_LINEAR_EDGE_ORDER = RAW_DATA / f"{ANIMAL_DATE_EPOCH}_linear_edge_order.pkl"
-RAW_LINEAR_EDGE_SPACING = RAW_DATA / f"{ANIMAL_DATE_EPOCH}_linear_edge_spacing.pkl"
+RAW_INPUTS = RAW_DATA / f"{ANIMAL_DATE_EPOCH}_figure04_inputs.npz"
 
 REAL_DATA_AVAILABLE = all(
     p.exists()
     for p in [
         FIGURE04_JOBLIB,
-        RAW_SPIKES_PKL,
-        RAW_POSITION_PKL,
-        RAW_TRACK_GRAPH,
-        RAW_LINEAR_EDGE_ORDER,
-        RAW_LINEAR_EDGE_SPACING,
+        RAW_INPUTS,
     ]
 )
 

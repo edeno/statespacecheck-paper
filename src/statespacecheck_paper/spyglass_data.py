@@ -1,12 +1,12 @@
-"""Rebuild the Figure-4 recording exports from the Frank-lab Spyglass database.
+"""Rebuild the Figure-4 recording input from the Frank-lab Spyglass database.
 
 :func:`statespacecheck_paper.load_local_data.load_neural_recording_from_files`
-reads five pre-exported files. This module is the upstream side of that
-boundary: it fetches the Spyglass entries those files were derived from and
-writes files in the same formats, so the exports can be regenerated, compared
-with the exports the figure used, and captured by a Spyglass export
-(``scripts/spyglass_export_figure04.py``). See ``docs/data-lineage.md`` for the
-entries, processing steps, and verification record.
+reads one pre-exported ``.npz`` file. This module is the upstream side of that
+boundary: it fetches the Spyglass entries the recording is derived from and
+writes that file, so it can be regenerated, compared with the one the figure
+used, and captured by a Spyglass export (``scripts/spyglass_export_figure04.py``).
+See ``docs/data-lineage.md`` for the entries, processing steps, and verification
+record.
 
 Position follows ``continuum-swr-replay``'s ``get_position_info``, and spike
 times follow the pattern of its sorted-unit loader. Where this module
@@ -22,20 +22,23 @@ machine with the lab's analysis store mounted.
 from __future__ import annotations
 
 import dataclasses
-import pickle
 import re
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from types import MappingProxyType
 from typing import TypedDict
 
-import joblib
 import networkx as nx
 import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
-from statespacecheck_paper.load_local_data import EXPORT_FILE_SUFFIXES, NeuralRecordingData
+from statespacecheck_paper.load_local_data import (
+    EXPORT_FILE_SUFFIXES,
+    NeuralRecordingData,
+    recording_arrays,
+    write_npz,
+)
 
 FIGURE04_NWB_FILE_NAME = "j1620210710_.nwb"
 FIGURE04_EPOCH_NAME = "02_r1"
@@ -67,10 +70,6 @@ TRACK_SEGMENT_TO_PATCH: Mapping[int, int] = MappingProxyType(
 )
 """Track segment (edge) ID → patch ID on the spatial-bandit track."""
 
-# Pickle protocol of the four non-DataFrame exports the figure used; position_info is
-# written by ``DataFrame.to_pickle`` at pandas' default protocol.
-PICKLE_PROTOCOL = 4
-
 
 class PositionInfoDict(TypedDict):
     """Position data and the track graph used to linearize it."""
@@ -83,11 +82,10 @@ class PositionInfoDict(TypedDict):
 
 @dataclasses.dataclass(frozen=True)
 class Figure4Inputs:
-    """The five Figure-4 inputs as fetched from Spyglass, before serialization.
+    """The five parts of the Figure-4 input as fetched from Spyglass, before writing.
 
     Values keep the types Spyglass returns (e.g. ``linear_edge_spacing`` is the
-    stored blob, an ``int`` for this track, and ``linear_edge_order`` a list) so
-    the written files match the originals; do not convert them.
+    stored blob, an ``int`` for this track); the writer encodes them, and
     :class:`~statespacecheck_paper.load_local_data.NeuralRecordingData`
     normalizes them on load.
 
@@ -432,7 +430,7 @@ def fetch_figure04_inputs(
     nwb_file_name: str = FIGURE04_NWB_FILE_NAME,
     epoch_name: str = FIGURE04_EPOCH_NAME,
 ) -> Figure4Inputs:
-    """Fetch the five Figure-4 inputs from Spyglass.
+    """Fetch the Figure-4 inputs from Spyglass.
 
     Parameters
     ----------
@@ -454,24 +452,23 @@ def fetch_figure04_inputs(
     return Figure4Inputs(spike_times=spike_times, **position)
 
 
-def export_file_paths(output_dir: str | Path, animal_date_epoch: str) -> tuple[Path, ...]:
-    """Return the five export paths, in ``EXPORT_FILE_SUFFIXES`` order.
+def export_file_path(output_dir: str | Path, animal_date_epoch: str) -> Path:
+    """Return the path of the ``.npz`` input file for an epoch.
 
     Parameters
     ----------
     output_dir : str or Path
-        Directory holding the exports.
+        Directory holding the file.
     animal_date_epoch : str
         Epoch identifier (see :func:`epoch_identifier`).
 
     Returns
     -------
-    tuple of Path
-        Position, spike times, track graph, edge order, edge spacing.
+    Path
+        ``{output_dir}/{animal_date_epoch}_figure04_inputs.npz``.
     """
-    return tuple(
-        Path(output_dir) / f"{animal_date_epoch}{suffix}" for suffix in EXPORT_FILE_SUFFIXES
-    )
+    (suffix,) = EXPORT_FILE_SUFFIXES
+    return Path(output_dir) / f"{animal_date_epoch}{suffix}"
 
 
 def check_output_paths(
@@ -481,18 +478,18 @@ def check_output_paths(
     reference_dir: str | Path | None = None,
     overwrite: bool = False,
 ) -> None:
-    """Check export destinations (and a comparison reference) before any work.
+    """Check the export destination (and a comparison reference) before any work.
 
     Parameters
     ----------
     output_dir : str or Path
-        Directory the exports will be written to.
+        Directory the input file will be written to.
     animal_date_epoch : str
         Epoch identifier used as the file-name prefix.
     reference_dir : str or Path, optional
-        Directory of reference exports the new files will be compared with.
+        Directory of the reference input file the new one will be compared with.
     overwrite : bool, optional
-        Whether existing files in ``output_dir`` may be replaced. Default False.
+        Whether an existing file in ``output_dir`` may be replaced. Default False.
 
     Raises
     ------
@@ -500,20 +497,19 @@ def check_output_paths(
         If ``reference_dir`` is ``output_dir``: the reference would be overwritten
         and then compared with itself.
     FileExistsError
-        If an export already exists in ``output_dir`` and ``overwrite`` is False.
+        If the input file already exists in ``output_dir`` and ``overwrite`` is False.
     FileNotFoundError
-        If a reference export is missing.
+        If the reference input file is missing.
     """
     if reference_dir is not None and Path(reference_dir).resolve() == Path(output_dir).resolve():
         raise ValueError(f"Output and reference directory are the same: {output_dir}")
-    existing = [str(p) for p in export_file_paths(output_dir, animal_date_epoch) if p.exists()]
-    if existing and not overwrite:
-        raise FileExistsError(f"Refusing to overwrite existing exports: {existing}")
+    output = export_file_path(output_dir, animal_date_epoch)
+    if output.exists() and not overwrite:
+        raise FileExistsError(f"Refusing to overwrite existing export: {output}")
     if reference_dir is not None:
-        reference = export_file_paths(reference_dir, animal_date_epoch)
-        missing = [str(p) for p in reference if not p.is_file()]
-        if missing:
-            raise FileNotFoundError(f"Missing reference exports: {missing}")
+        reference = export_file_path(reference_dir, animal_date_epoch)
+        if not reference.is_file():
+            raise FileNotFoundError(f"Missing reference export: {reference}")
 
 
 def write_figure04_inputs(
@@ -522,14 +518,12 @@ def write_figure04_inputs(
     animal_date_epoch: str,
     *,
     overwrite: bool = False,
-) -> tuple[Path, ...]:
-    """Write the five export files in the formats of the exports the figure used.
+) -> Path:
+    """Write the Figure-4 inputs as the ``.npz`` file the figure reads.
 
-    ``position_info`` is written with ``DataFrame.to_pickle`` and the other four
-    with ``pickle.dump`` at :data:`PICKLE_PROTOCOL`. The pickled bytes depend on
-    library versions, so compare regenerated files by content
-    (:func:`compare_figure04_exports`); checksums match only with the same
-    versions.
+    The inputs are validated with the loader's checks, encoded with
+    :func:`~statespacecheck_paper.load_local_data.recording_arrays`, and written
+    deterministically, so the same inputs always give the same SHA-256.
 
     Parameters
     ----------
@@ -540,25 +534,24 @@ def write_figure04_inputs(
     animal_date_epoch : str
         Epoch identifier used as the file-name prefix.
     overwrite : bool, optional
-        Replace existing files. Default False.
+        Replace an existing file. Default False.
 
     Returns
     -------
-    tuple of Path
-        The written paths, in ``EXPORT_FILE_SUFFIXES`` order.
+    Path
+        The written file.
 
     Raises
     ------
     FileExistsError
-        If a destination file exists and ``overwrite`` is False.
+        If the file exists and ``overwrite`` is False.
     ValueError
         If the inputs fail the loader's checks
-        (:class:`~statespacecheck_paper.load_local_data.NeuralRecordingData`);
-        nothing is written.
+        (:class:`~statespacecheck_paper.load_local_data.NeuralRecordingData`) or
+        cannot be encoded; nothing is written.
     """
     check_output_paths(output_dir, animal_date_epoch, overwrite=overwrite)
-    # Validate with the loader's contract before writing anything; the values
-    # written are the originals, not the normalized copies.
+    # Validate with the loader's contract before writing anything.
     NeuralRecordingData(
         position_info=inputs.position_info,
         spike_times=tuple(inputs.spike_times),
@@ -566,48 +559,26 @@ def write_figure04_inputs(
         linear_edge_order=tuple(inputs.linear_edge_order),
         linear_edge_spacing=inputs.linear_edge_spacing,
     )
-    paths = export_file_paths(output_dir, animal_date_epoch)
-    Path(output_dir).mkdir(parents=True, exist_ok=True)
-
-    position_path, *pickled_paths = paths
-    inputs.position_info.to_pickle(position_path)
-    pickled_values = (
+    arrays = recording_arrays(
+        inputs.position_info,
         inputs.spike_times,
         inputs.track_graph,
         inputs.linear_edge_order,
         inputs.linear_edge_spacing,
     )
-    for path, value in zip(pickled_paths, pickled_values, strict=True):
-        with path.open("wb") as f:
-            pickle.dump(value, f, protocol=PICKLE_PROTOCOL)
-    return paths
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+    return write_npz(export_file_path(output_dir, animal_date_epoch), arrays)
 
 
-def _position_difference(reference: pd.DataFrame, candidate: pd.DataFrame) -> str | None:
-    try:
-        pd.testing.assert_frame_equal(reference, candidate, check_exact=True)
-    except AssertionError as exc:
-        return "; ".join(line.strip() for line in str(exc).splitlines() if line.strip())
-    return None
-
-
-def _spike_times_difference(
-    reference: Sequence[NDArray[np.float64]], candidate: Sequence[NDArray[np.float64]]
-) -> str | None:
-    if len(reference) != len(candidate):
-        return f"{len(reference)} vs {len(candidate)} units"
-    for unit, (a, b) in enumerate(zip(reference, candidate, strict=True)):
-        if not np.array_equal(a, b):
-            return f"unit {unit} differs ({len(a)} vs {len(b)} spikes)"
-    return None
-
-
-def _graph_difference(reference: nx.Graph, candidate: nx.Graph) -> str | None:
-    if type(reference) is not type(candidate):
-        return f"{type(reference).__name__} vs {type(candidate).__name__}"
-    if not nx.utils.graphs_equal(reference, candidate):
-        return "nodes, edges, or their attributes differ"
-    return None
+def _array_difference(reference: NDArray[np.generic], candidate: NDArray[np.generic]) -> str | None:
+    if reference.dtype != candidate.dtype:
+        return f"dtype {reference.dtype} vs {candidate.dtype}"
+    if reference.shape != candidate.shape:
+        return f"shape {reference.shape} vs {candidate.shape}"
+    same = np.array_equal(
+        reference, candidate, equal_nan=np.issubdtype(reference.dtype, np.inexact)
+    )
+    return None if same else "values differ"
 
 
 def compare_figure04_exports(
@@ -615,46 +586,40 @@ def compare_figure04_exports(
     candidate_dir: str | Path,
     animal_date_epoch: str,
 ) -> dict[str, str | None]:
-    """Compare two sets of export files by content.
+    """Compare two ``.npz`` input files array by array.
 
-    Files are read the way the loader reads them. Position must match exactly
-    (values, dtypes, index, and columns); spike times array-by-array in order;
-    the track graph node-, edge-, and attribute-wise; edge order and spacing by
-    value.
+    Every array must match exactly in dtype, shape, and values (NaN equal to NaN).
 
     Parameters
     ----------
     reference_dir : str or Path
-        Directory with the reference exports (e.g. the ones the figure used).
+        Directory with the reference input file (e.g. the one the figure used).
     candidate_dir : str or Path
-        Directory with the exports to check.
+        Directory with the input file to check.
     animal_date_epoch : str
         Epoch identifier used as the file-name prefix.
 
     Returns
     -------
     dict of str to str or None
-        File name → ``None`` if the two files' contents are identical, otherwise
-        a description of the first difference found.
+        Array name → ``None`` if identical, otherwise what differs (including an
+        array present in only one file).
     """
-    ref_pos, ref_spikes, ref_graph, ref_order, ref_spacing = export_file_paths(
-        reference_dir, animal_date_epoch
-    )
-    new_pos, new_spikes, new_graph, new_order, new_spacing = export_file_paths(
-        candidate_dir, animal_date_epoch
-    )
-    order_a = [tuple(edge) for edge in joblib.load(ref_order)]
-    order_b = [tuple(edge) for edge in joblib.load(new_order)]
-    spacing_a, spacing_b = joblib.load(ref_spacing), joblib.load(new_spacing)
-    return {
-        ref_pos.name: _position_difference(pd.read_pickle(ref_pos), pd.read_pickle(new_pos)),
-        ref_spikes.name: _spike_times_difference(joblib.load(ref_spikes), joblib.load(new_spikes)),
-        ref_graph.name: _graph_difference(joblib.load(ref_graph), joblib.load(new_graph)),
-        ref_order.name: None if order_a == order_b else f"{order_a} vs {order_b}",
-        ref_spacing.name: (
-            None if np.array_equal(spacing_a, spacing_b) else f"{spacing_a!r} vs {spacing_b!r}"
-        ),
-    }
+    reference_path = export_file_path(reference_dir, animal_date_epoch)
+    candidate_path = export_file_path(candidate_dir, animal_date_epoch)
+    with (
+        np.load(reference_path, allow_pickle=False) as reference,
+        np.load(candidate_path, allow_pickle=False) as candidate,
+    ):
+        differences: dict[str, str | None] = {}
+        for name in sorted(set(reference.files) | set(candidate.files)):
+            if name not in candidate.files:
+                differences[name] = "only in the reference"
+            elif name not in reference.files:
+                differences[name] = "only in the candidate"
+            else:
+                differences[name] = _array_difference(reference[name], candidate[name])
+    return differences
 
 
 def print_export_comparison(
@@ -662,26 +627,29 @@ def print_export_comparison(
     candidate_dir: str | Path,
     animal_date_epoch: str,
 ) -> bool:
-    """Print :func:`compare_figure04_exports` one file per line.
+    """Print the arrays :func:`compare_figure04_exports` finds different.
 
     Parameters
     ----------
     reference_dir : str or Path
-        Directory with the reference exports.
+        Directory with the reference input file.
     candidate_dir : str or Path
-        Directory with the exports to check.
+        Directory with the input file to check.
     animal_date_epoch : str
         Epoch identifier used as the file-name prefix.
 
     Returns
     -------
     bool
-        Whether every file is identical.
+        Whether every array is identical.
     """
     differences = compare_figure04_exports(reference_dir, candidate_dir, animal_date_epoch)
-    for name, difference in differences.items():
-        print(f"identical  {name}" if difference is None else f"DIFFERENT  {name}: {difference}")
-    return all(difference is None for difference in differences.values())
+    different = {name: why for name, why in differences.items() if why is not None}
+    for name, why in different.items():
+        print(f"DIFFERENT  {name}: {why}")
+    if not different:
+        print(f"identical  all {len(differences)} arrays")
+    return not different
 
 
 # ``name [= default] : type`` lines of a DataJoint definition (not ``->`` or index lines).

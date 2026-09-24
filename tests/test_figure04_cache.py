@@ -258,7 +258,8 @@ def test_fingerprint_changes_when_export_file_content_changes(
     config = Figure4Config()
     monkeypatch.setattr(figure04_cache, "_installed_non_local_detector_version", lambda: "1.0.0")
 
-    export = tmp_path / "epoch_x_position_info.pkl"
+    (suffix,) = EXPORT_FILE_SUFFIXES
+    export = tmp_path / f"epoch_x{suffix}"
     export.write_bytes(b"original")
     fp_original = compute_figure04_cache_fingerprint(config, paths)
     assert compute_figure04_cache_fingerprint(config, paths) == fp_original  # deterministic
