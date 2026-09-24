@@ -3,6 +3,10 @@
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
+// A tap moves the cursor only if the pointer travelled less than this (px);
+// longer touch movements are scrolls.
+const TAP_SLOP = 10;
+
 export function cssVar(name) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
@@ -25,6 +29,26 @@ function niceTicks(min, max, target = 5) {
     ticks.push(Number(t.toFixed(10)));
   }
   return ticks;
+}
+
+function median(values) {
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length / 2)];
+}
+
+/** Call `onChange` whenever the device pixel ratio changes; returns a remover. */
+function watchPixelRatio(onChange) {
+  let query = null;
+  const handle = () => {
+    onChange();
+    listen();
+  };
+  const listen = () => {
+    query = window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+    query.addEventListener("change", handle, { once: true });
+  };
+  listen();
+  return () => query?.removeEventListener("change", handle);
 }
 
 // ---------------------------------------------------------------------------
@@ -52,12 +76,13 @@ export function heatmapBitmap(rows, lut, scale = null) {
   const context = canvas.getContext("2d");
   const image = context.createImageData(nRows, nBins);
   const colors = lut.map(hexToRgb);
+  const [low, high] = scale ? scale.range : [0, 1];
+  const span = high > low ? high - low : 1;
   for (let t = 0; t < nRows; t += 1) {
     const row = rows.row(t);
     const factor = scale ? scale.rowMax[t] / 255 : 1 / 255;
-    const [low, high] = scale ? scale.range : [0, 1];
     for (let b = 0; b < nBins; b += 1) {
-      const level = Math.min(1, Math.max(0, (row[b] * factor - low) / (high - low)));
+      const level = Math.min(1, Math.max(0, (row[b] * factor - low) / span));
       const color = colors[Math.round(level * (colors.length - 1))];
       const offset = ((nBins - 1 - b) * nRows + t) * 4;
       image.data[offset] = color[0];
@@ -79,10 +104,11 @@ export function heatmapBitmap(rows, lut, scale = null) {
  *
  * tracks: [{ label, top, bottom, height, draw(ctx, width, height, xOf) }]
  * range:  [t0, t1] in seconds.
- * onCursor(time) is called as the pointer moves; onStep(direction) on arrow keys.
+ * onCursor(time): mouse hover/press, or a tap (not a scroll) on touch screens.
+ * onKey(key): ArrowLeft/ArrowRight/Home/End while the stack has focus.
  */
 export class TrackStack {
-  constructor(container, { tracks, range, onCursor, onStep, ariaLabel }) {
+  constructor(container, { tracks, range, onCursor, onKey, ariaLabel }) {
     this.tracks = tracks;
     this.range = range;
     this.onCursor = onCursor;
@@ -112,25 +138,43 @@ export class TrackStack {
     this.root.appendChild(this.cursor);
     container.appendChild(this.root);
 
-    const plotArea = () => this.canvases[0].canvas.getBoundingClientRect();
     const timeAt = (clientX) => {
-      const rect = plotArea();
+      const rect = this.canvases[0].canvas.getBoundingClientRect();
       const fraction = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
       return this.range[0] + fraction * (this.range[1] - this.range[0]);
     };
-    this.root.addEventListener("pointermove", (event) => {
-      if (event.pointerType === "mouse" || event.buttons) this.onCursor(timeAt(event.clientX));
+    let touchStart = null;
+    this.root.addEventListener("pointerdown", (event) => {
+      if (event.pointerType === "touch") touchStart = { x: event.clientX, y: event.clientY };
+      else this.onCursor(timeAt(event.clientX));
     });
-    this.root.addEventListener("pointerdown", (event) => this.onCursor(timeAt(event.clientX)));
+    this.root.addEventListener("pointermove", (event) => {
+      if (event.pointerType !== "touch") this.onCursor(timeAt(event.clientX));
+    });
+    this.root.addEventListener("pointerup", (event) => {
+      if (event.pointerType !== "touch" || !touchStart) return;
+      const moved = Math.hypot(event.clientX - touchStart.x, event.clientY - touchStart.y);
+      touchStart = null;
+      if (moved < TAP_SLOP) this.onCursor(timeAt(event.clientX));
+    });
+    this.root.addEventListener("pointercancel", () => {
+      touchStart = null;
+    });
     this.root.addEventListener("keydown", (event) => {
-      if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
+      if (["ArrowRight", "ArrowLeft", "Home", "End"].includes(event.key)) {
         event.preventDefault();
-        onStep(event.key === "ArrowRight" ? 1 : -1);
+        onKey(event.key);
       }
     });
 
     this.resizeObserver = new ResizeObserver(() => this.draw());
     this.resizeObserver.observe(this.root);
+    this.stopWatchingRatio = watchPixelRatio(() => this.draw());
+  }
+
+  destroy() {
+    this.resizeObserver.disconnect();
+    this.stopWatchingRatio();
   }
 
   xOf(width) {
@@ -149,13 +193,13 @@ export class TrackStack {
       const context = canvas.getContext("2d");
       context.setTransform(ratio, 0, 0, ratio, 0, 0);
       context.clearRect(0, 0, width, height);
-      if (track.axis) this.drawAxis(context, width, height);
+      if (track.axis) this.drawAxis(context, width);
       else track.draw(context, width, height, this.xOf(width));
     }
     this.placeCursor(this.cursorTime);
   }
 
-  drawAxis(context, width, height) {
+  drawAxis(context, width) {
     const xOf = this.xOf(width);
     context.strokeStyle = cssVar("--border");
     context.fillStyle = cssVar("--text-muted");
@@ -280,30 +324,37 @@ export function paintDots(context, times, values, xOf, yOf, color, style) {
 
 /**
  * Prediction and spike likelihood over position, each scaled to its own
- * maximum, with optional HPD bands, a position marker, and a clickable strip
- * of place fields for choosing the firing cell.
+ * maximum, with optional HPD bands, a position marker, and a keyboard- and
+ * pointer-operable strip of place fields for choosing the firing cell.
+ *
+ * The SVG is laid out at its container's pixel width, so text keeps its CSS
+ * size on narrow screens. Curves and bands break across gaps in the position
+ * grid (e.g., between linearized track segments).
+ *
+ * cellStrip: { label, state() -> {rates, selectable, centers, selected},
+ *              onSelect(cell) }
  */
 export class DistributionChart {
-  constructor(container, { positionBins, xLabel, plotHeight = 150, cellStrip = null, width = 640 }) {
+  constructor(container, { positionBins, xLabel, plotHeight = 150, cellStrip = null }) {
+    this.container = container;
     this.bins = positionBins;
-    this.width = width;
-    this.margin = { left: 12, right: 12, top: 10 };
+    this.xLabel = xLabel;
     this.plotHeight = plotHeight;
+    this.cellStrip = cellStrip;
+    this.margin = { left: 12, right: 12, top: 10 };
     // Below the plot: two HPD bands, the axis, tick labels, and the axis title.
     this.axisBlock = 60;
     this.stripHeight = 34;
-    this.cellStrip = cellStrip;
-    const totalHeight =
-      this.margin.top + plotHeight + this.axisBlock + (cellStrip ? this.stripHeight + 30 : 0);
-    this.root = svg("svg", {
-      class: "dist-chart",
-      viewBox: `0 0 ${this.width} ${totalHeight}`,
-      role: "img",
-    });
-    container.appendChild(this.root);
     this.xMin = positionBins[0];
     this.xMax = positionBins[positionBins.length - 1];
+    const spacing = median(positionBins.slice(1).map((b, i) => b - positionBins[i]));
+    this.binWidth = spacing;
+    this.segmentStart = positionBins.map(
+      (b, i) => i === 0 || b - positionBins[i - 1] > 1.5 * spacing,
+    );
 
+    this.root = svg("svg", { class: "dist-chart", role: "img" });
+    container.appendChild(this.root);
     this.layers = {
       bands: svg("g", {}, this.root),
       areas: svg("g", {}, this.root),
@@ -311,7 +362,32 @@ export class DistributionChart {
       axis: svg("g", { class: "axis" }, this.root),
       cells: svg("g", {}, this.root),
     };
-    this.drawAxis(xLabel);
+    this.width = 0;
+    this.last = null;
+    this.cellKey = null;
+    this.resize();
+    this.resizeObserver = new ResizeObserver(() => this.resize());
+    this.resizeObserver.observe(container);
+  }
+
+  destroy() {
+    this.resizeObserver.disconnect();
+  }
+
+  resize() {
+    const width = Math.max(260, Math.round(this.container.clientWidth || 640));
+    if (width === this.width) return;
+    this.width = width;
+    const height =
+      this.margin.top +
+      this.plotHeight +
+      this.axisBlock +
+      (this.cellStrip ? this.stripHeight + 30 : 0);
+    this.root.setAttribute("viewBox", `0 0 ${width} ${height}`);
+    this.root.setAttribute("height", height);
+    this.drawAxis();
+    this.cellKey = null;
+    if (this.last) this.update(this.last);
   }
 
   x(value) {
@@ -319,17 +395,19 @@ export class DistributionChart {
     return left + ((value - this.xMin) / (this.xMax - this.xMin)) * (this.width - left - right);
   }
 
-  drawAxis(xLabel) {
+  drawAxis() {
+    this.layers.axis.replaceChildren();
     const y = this.margin.top + this.plotHeight + 22;
     svg("line", { x1: this.x(this.xMin), x2: this.x(this.xMax), y1: y, y2: y }, this.layers.axis);
-    for (const tick of niceTicks(this.xMin, this.xMax, 6)) {
+    const target = Math.max(3, Math.min(6, Math.floor(this.width / 80)));
+    for (const tick of niceTicks(this.xMin, this.xMax, target)) {
       svg("line", { x1: this.x(tick), x2: this.x(tick), y1: y, y2: y + 4 }, this.layers.axis);
       const label = svg("text", { x: this.x(tick), y: y + 16, "text-anchor": "middle" });
       label.textContent = String(tick);
       this.layers.axis.appendChild(label);
     }
     const title = svg("text", { x: this.width / 2, y: y + 32, "text-anchor": "middle" });
-    title.textContent = xLabel;
+    title.textContent = this.xLabel;
     this.layers.axis.appendChild(title);
   }
 
@@ -338,37 +416,69 @@ export class DistributionChart {
     const base = this.margin.top + this.plotHeight;
     const yOf = (v) => base - (max > 0 ? v / max : 0) * (this.plotHeight - 4);
     let d = "";
+    let segmentFirst = 0;
+    const closeSegment = (last) => {
+      if (!closed) return;
+      const right = this.x(this.bins[last]).toFixed(2);
+      const left = this.x(this.bins[segmentFirst]).toFixed(2);
+      d += `L${right},${base}L${left},${base}Z`;
+    };
     values.forEach((v, i) => {
-      d += `${i === 0 ? "M" : "L"}${this.x(this.bins[i]).toFixed(2)},${yOf(v).toFixed(2)}`;
+      if (this.segmentStart[i]) {
+        if (i > 0) closeSegment(i - 1);
+        segmentFirst = i;
+        d += "M";
+      } else {
+        d += "L";
+      }
+      d += `${this.x(this.bins[i]).toFixed(2)},${yOf(v).toFixed(2)}`;
     });
-    if (closed) {
-      d += `L${this.x(this.bins[this.bins.length - 1])},${base}L${this.x(this.bins[0])},${base}Z`;
-    }
+    closeSegment(values.length - 1);
     return d;
   }
 
+  /** One rect per contiguous run of in-region bins, so bands have no seams. */
+  drawBand(mask, color, y) {
+    const half = (this.x(this.bins[0] + this.binWidth) - this.x(this.bins[0])) / 2;
+    let start = null;
+    const close = (end) => {
+      const x0 = this.x(this.bins[start]) - half;
+      const x1 = this.x(this.bins[end]) + half;
+      svg("rect", { x: x0, y, width: x1 - x0, height: 5, fill: color }, this.layers.bands);
+      start = null;
+    };
+    for (let i = 0; i < mask.length; i += 1) {
+      if (start !== null && (!mask[i] || this.segmentStart[i])) close(i - 1);
+      if (mask[i] && start === null) start = i;
+    }
+    if (start !== null) close(mask.length - 1);
+  }
+
   /** series: [{values, color}], bands: [{mask, color}], marker: position | null */
-  update({ series, bands = [], marker = null, selectedCell = null, cellCenters = null }) {
+  update(state) {
+    this.last = state;
+    const { series, bands = [], marker = null } = state;
     for (const layer of ["bands", "areas", "marker"]) this.layers[layer].replaceChildren();
     for (const { values, color } of series) {
-      svg("path", { d: this.curvePath(values, true), fill: color, "fill-opacity": 0.12 }, this.layers.areas);
       svg(
         "path",
-        { d: this.curvePath(values, false), fill: "none", stroke: color, "stroke-width": 2, "stroke-linejoin": "round" },
+        { d: this.curvePath(values, true), fill: color, "fill-opacity": 0.12 },
+        this.layers.areas,
+      );
+      svg(
+        "path",
+        {
+          d: this.curvePath(values, false),
+          fill: "none",
+          stroke: color,
+          "stroke-width": 2,
+          "stroke-linejoin": "round",
+        },
         this.layers.areas,
       );
     }
-    const step = this.bins.length > 1 ? this.x(this.bins[1]) - this.x(this.bins[0]) : 1;
     bands.forEach(({ mask, color }, index) => {
-      const y = this.margin.top + this.plotHeight + 4 + index * 7;
-      mask.forEach((inside, i) => {
-        if (!inside) return;
-        svg(
-          "rect",
-          { x: this.x(this.bins[i]) - step / 2, y, width: step + 0.3, height: 5, fill: color },
-          this.layers.bands,
-        );
-      });
+      this.drawBand(mask, color, this.margin.top + this.plotHeight + 4 + index * 7);
     });
     if (marker !== null) {
       svg(
@@ -384,50 +494,88 @@ export class DistributionChart {
         this.layers.marker,
       );
     }
-    if (this.cellStrip && cellCenters) this.drawCells(selectedCell, cellCenters);
+    if (this.cellStrip) this.drawCells();
   }
 
-  drawCells(selectedCell, cellCenters) {
-    const { rates, selectable, onSelect } = this.cellStrip();
+  /** Build the cell radiogroup when the cell set or width changes; else restyle. */
+  drawCells() {
+    const { rates, selectable, centers, selected } = this.cellStrip.state();
+    const key = `${selectable.join(",")}@${this.width}`;
+    if (key !== this.cellKey) {
+      this.cellKey = key;
+      this.buildCells(rates, selectable, centers);
+    }
+    for (const { cell, rect, path } of this.cells) {
+      const isSelected = cell === selected;
+      rect.setAttribute("aria-checked", String(isSelected));
+      rect.setAttribute("tabindex", isSelected ? "0" : "-1");
+      path.setAttribute("stroke", isSelected ? cssVar("--likelihood") : cssVar("--curve-muted"));
+      path.setAttribute("stroke-width", isSelected ? 2.5 : 1.2);
+    }
+  }
+
+  buildCells(rates, selectable, centers) {
     this.layers.cells.replaceChildren();
     const top = this.margin.top + this.plotHeight + this.axisBlock + 22;
-    const stripHeight = this.stripHeight;
-    for (const cell of selectable) {
+    const caption = svg("text", { x: this.margin.left, y: top - 8 }, this.layers.cells);
+    caption.textContent = `${this.cellStrip.label}: click a field, or use the arrow keys`;
+    // Curves first, then the hit areas on top of them.
+    const curves = svg("g", { "pointer-events": "none" }, this.layers.cells);
+    const group = svg(
+      "g",
+      { role: "radiogroup", "aria-label": this.cellStrip.label },
+      this.layers.cells,
+    );
+    // Each hit area runs between the midpoints to the neighboring field
+    // centers, so closely spaced fields stay individually selectable.
+    const order = [...selectable].sort((a, b) => centers[a] - centers[b]);
+    const xs = order.map((cell) => this.x(centers[cell]));
+    const bounds = xs.map((x, i) => {
+      const gapLeft = i > 0 ? x - xs[i - 1] : null;
+      const gapRight = i < xs.length - 1 ? xs[i + 1] - x : null;
+      const outer = Math.min(24, (gapLeft ?? gapRight ?? 48) / 2);
+      return [x - (gapLeft === null ? outer : gapLeft / 2), x + (gapRight === null ? outer : gapRight / 2)];
+    });
+    this.cells = order.map((cell, i) => {
       const column = rates.map((row) => row[cell]);
       const max = Math.max(...column);
       let d = "";
-      column.forEach((v, i) => {
-        const y = top + stripHeight - (v / max) * stripHeight;
-        d += `${i === 0 ? "M" : "L"}${this.x(this.bins[i]).toFixed(1)},${y.toFixed(1)}`;
+      column.forEach((v, b) => {
+        const y = top + this.stripHeight - (v / max) * this.stripHeight;
+        d += `${b === 0 ? "M" : "L"}${this.x(this.bins[b]).toFixed(1)},${y.toFixed(1)}`;
       });
-      const group = svg("g", { class: "cell-hit", tabindex: 0, role: "button" }, this.layers.cells);
-      const title = svg("title", {}, group);
-      title.textContent = `Cell ${cell + 1}: field centered at ${cellCenters[cell]}`;
-      group.setAttribute("aria-label", title.textContent);
-      group.setAttribute("aria-pressed", String(cell === selectedCell));
-      const center = this.x(cellCenters[cell]);
-      svg("rect", { x: center - 12, y: top - 4, width: 24, height: stripHeight + 8, fill: "transparent" }, group);
-      svg(
-        "path",
+      const path = svg("path", { d, fill: "none" }, curves);
+      const [x0, x1] = bounds[i];
+      const label = `Cell ${cell + 1}, field centered at ${centers[cell]} a.u.`;
+      const rect = svg(
+        "rect",
         {
-          d,
-          fill: "none",
-          stroke: cell === selectedCell ? cssVar("--likelihood") : "#b5b5b1",
-          "stroke-width": cell === selectedCell ? 2.5 : 1.2,
+          class: "cell-hit",
+          x: x0,
+          y: top - 4,
+          width: Math.max(1, x1 - x0),
+          height: this.stripHeight + 8,
+          fill: "transparent",
+          role: "radio",
+          "aria-label": label,
         },
         group,
       );
-      const choose = () => onSelect(cell);
-      group.addEventListener("click", choose);
-      group.addEventListener("keydown", (event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          choose();
-        }
+      svg("title", {}, rect).textContent = label;
+      rect.addEventListener("click", () => this.cellStrip.onSelect(cell));
+      rect.addEventListener("keydown", (event) => {
+        const moves = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
+        let next = null;
+        if (event.key in moves) next = Math.min(order.length - 1, Math.max(0, i + moves[event.key]));
+        else if (event.key === "Home") next = 0;
+        else if (event.key === "End") next = order.length - 1;
+        else if (event.key === "Enter" || event.key === " ") next = i;
+        if (next === null) return;
+        event.preventDefault();
+        this.cellStrip.onSelect(order[next]);
+        this.cells[next].rect.focus();
       });
-    }
-    const caption = svg("text", { x: this.margin.left, y: top - 8 });
-    caption.textContent = "Place fields — click one to choose the cell that fired";
-    this.layers.cells.appendChild(caption);
+      return { cell, rect, path };
+    });
   }
 }

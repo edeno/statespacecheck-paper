@@ -27,16 +27,17 @@ export const METRICS = [
     axis: symlog,
     gridlines: [0.01, 0.1],
     displayLabel: "HPD overlap",
-    format: (v) => v.toFixed(2),
+    format: (v) => (Number.isFinite(v) ? v.toFixed(2) : "—"),
   },
   {
     name: "predictive_pvalue",
     label: "Predictive p-value",
     color: "var(--pvalue)",
-    // Plotted as −log(p), as in the paper's figures.
-    display: (v) => -Math.log(v),
+    // Plotted as −log(p) (natural log), as in the paper's figures. p > 0 by
+    // construction; the floor only guards the axis against a degenerate value.
+    display: (v) => -Math.log(Math.max(v, Number.MIN_VALUE)),
     displayLabel: "−log p",
-    format: (v) => (v >= 0.01 ? v.toFixed(2) : v.toExponential(1)),
+    format: (v) => (!Number.isFinite(v) ? "—" : v >= 0.01 ? v.toFixed(2) : v.toExponential(1)),
   },
   {
     name: "kl_divergence",
@@ -44,7 +45,7 @@ export const METRICS = [
     color: "var(--kl)",
     display: (v) => v,
     displayLabel: "KL (nats)",
-    format: (v) => (v >= 100 ? v.toFixed(0) : v.toFixed(2)),
+    format: (v) => (!Number.isFinite(v) ? "∞" : v >= 100 ? v.toFixed(0) : v.toFixed(2)),
   },
 ];
 
@@ -112,6 +113,19 @@ export function nearestIndex(sorted, value) {
 export function badge(flagged) {
   const span = document.createElement("span");
   span.className = `badge ${flagged ? "flagged" : "ok"}`;
-  span.textContent = flagged ? "⚑ flagged" : "✓ consistent";
+  // "Not flagged" rather than "consistent": KL divergence measures difference,
+  // and a high p-value does not by itself establish overlap.
+  span.textContent = flagged ? "⚑ flagged" : "✓ not flagged";
   return span;
+}
+
+/** A visually hidden live region; `say(text)` announces to screen readers. */
+export function liveRegion(container) {
+  const region = document.createElement("div");
+  region.className = "sr-only";
+  region.setAttribute("aria-live", "polite");
+  container.appendChild(region);
+  return (text) => {
+    region.textContent = text;
+  };
 }

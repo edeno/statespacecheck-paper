@@ -10,6 +10,9 @@ const PRESETS = {
   conflicting: { ensemble: "place_cells", mean: 25, std: 4, cell: 7 },
   nested: { ensemble: "place_cells", mean: 47, std: 1.5, cell: 5 },
   broad: { ensemble: "sparse_epoch", mean: 30, std: 15, cell: 13 },
+  // The sparse cells' fields nearly coincide, so which of them fired says
+  // little; the p-value misses a conflict that HPD overlap catches.
+  pvalueMiss: { ensemble: "sparse_epoch", mean: 50, std: 3, cell: 13 },
 };
 
 // The spread slider is logarithmic so both near-point and very broad
@@ -29,6 +32,10 @@ function verdict(flags) {
   }
   if (names.length === 1 && flags.kl_divergence) {
     return "Only KL divergence flags this spike. HPD overlap and the predictive check find it consistent; KL divergence responds to any difference between the two distributions, such as a difference in spread.";
+  }
+  if (flags.hpd_overlap && !flags.predictive_pvalue) {
+    const kl = flags.kl_divergence ? " KL divergence also flags it." : "";
+    return `HPD overlap flags this spike, but the predictive p-value does not. Averaged over the prediction, this cell is about as likely to fire as the others, so the spike does not look unusual among the cells even though its likelihood and the prediction do not overlap: a high p-value does not guarantee overlap.${kl}`;
   }
   return `Flagged by ${names.join(" and ")}.`;
 }
@@ -50,14 +57,19 @@ export function initPlayground(root, data) {
   const chart = new DistributionChart(root.querySelector("#pg-chart"), {
     positionBins: bins,
     xLabel: "Position (a.u.)",
-    cellStrip: () => ({
-      rates: ensembles[state.ensemble].rates,
-      selectable: ensembles[state.ensemble].selectable_cells,
+    cellStrip: {
+      label: "Cell that fired",
+      state: () => ({
+        rates: ensembles[state.ensemble].rates,
+        selectable: ensembles[state.ensemble].selectable_cells,
+        centers: data.cell_centers,
+        selected: state.cell,
+      }),
       onSelect: (cell) => {
         state.cell = cell;
         render();
       },
-    }),
+    },
   });
 
   const readouts = {};
@@ -74,10 +86,14 @@ export function initPlayground(root, data) {
   function render() {
     const ensemble = ensembles[state.ensemble];
     if (!ensemble.selectable_cells.includes(state.cell)) state.cell = ensemble.selectable_cells[0];
+    const meanText = `${state.mean.toFixed(1)} a.u.`;
+    const stdText = `${state.std.toFixed(state.std < 10 ? 1 : 0)} a.u.`;
     meanInput.value = state.mean;
     stdInput.value = stdToSlider(state.std);
-    meanOutput.textContent = `${state.mean.toFixed(1)} a.u.`;
-    stdOutput.textContent = `${state.std.toFixed(state.std < 10 ? 1 : 0)} a.u.`;
+    meanInput.setAttribute("aria-valuetext", meanText);
+    stdInput.setAttribute("aria-valuetext", stdText);
+    meanOutput.textContent = meanText;
+    stdOutput.textContent = stdText;
     cellOutput.textContent = `cell ${state.cell + 1}, field at ${data.cell_centers[state.cell]} a.u.`;
     for (const button of ensembleButtons) {
       button.setAttribute("aria-pressed", String(button.dataset.ensemble === state.ensemble));
@@ -94,8 +110,6 @@ export function initPlayground(root, data) {
         { mask: highestDensityRegion(predictive, data.coverage), color: cssVar("--predictive") },
         { mask: highestDensityRegion(result.likelihood, data.coverage), color: cssVar("--likelihood") },
       ],
-      selectedCell: state.cell,
-      cellCenters: data.cell_centers,
     });
 
     const flags = {};

@@ -14,8 +14,10 @@
       property="og:description"
       content="Per-spike diagnostics that show when a neural decoder's state-space model conflicts with the data."
     />
-    <meta property="og:image" content="figures/figure01.png" />
-    <meta name="twitter:card" content="summary_large_image" />
+    <meta property="og:url" content="https://edeno.github.io/statespacecheck-paper/" />
+    <meta property="og:image" content="https://edeno.github.io/statespacecheck-paper/figures/figure01.png" />
+    <meta name="twitter:card" content="summary" />
+    <link rel="canonical" href="https://edeno.github.io/statespacecheck-paper/" />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M2 26 C8 26 10 6 16 6 S24 26 30 26' fill='none' stroke='%230072B2' stroke-width='3'/%3E%3Cpath d='M2 26 C12 26 16 12 20 12 S26 26 30 26' fill='none' stroke='%23E69F00' stroke-width='3'/%3E%3C/svg%3E" />
     <link rel="stylesheet" href="css/style.css" />
     <script type="module" src="js/main.js"></script>
@@ -29,7 +31,7 @@
           <span class="author"><a href="https://orcid.org/0000-0002-2251-4892">Alison E. Comrie</a><sup>2</sup></span>
           <span class="author"><a href="https://orcid.org/0000-0002-1752-5677">Loren M. Frank</a><sup>3,4,5</sup></span>
           <span class="author"><a href="https://orcid.org/0000-0002-2058-3691">Uri T. Eden</a><sup>1</sup></span>
-          <span class="author"><a href="https://orcid.org/0000-0003-4606-087X">Eric L. Denovellis</a><sup>3,5</sup></span>
+          <span class="author"><a href="https://orcid.org/0000-0003-4606-087X">Eric L. Denovellis</a><sup>3,5,*</sup></span>
         </p>
         <p class="affiliations">
           <span><sup>1</sup>Department of Mathematics and Statistics, Boston University</span>
@@ -37,13 +39,15 @@
           <span><sup>3</sup>Departments of Physiology and Psychiatry, University of California, San Francisco</span>
           <span><sup>4</sup>Kavli Institute for Fundamental Neuroscience, University of California, San Francisco</span>
           <span><sup>5</sup>Howard Hughes Medical Institute, University of California, San Francisco</span>
+          <span><sup>*</sup>Corresponding author:
+            <a href="mailto:eric.denovellis@ucsf.edu">eric.denovellis@ucsf.edu</a></span>
         </p>
         <nav class="links" aria-label="Paper resources">
           <a class="button" href="paper.pdf">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h8l6 6v14H6zM13 3.5V9h5.5z" /></svg>
             Paper (PDF)
           </a>
-          <span class="button" aria-disabled="true" title="The preprint link will appear here once it is posted">
+          <span class="button" role="link" aria-disabled="true" title="The preprint link will appear here once it is posted">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v16H4zm3 4v2h10V8zm0 4v2h10v-2zm0 4v2h7v-2z" /></svg>
             bioRxiv (coming soon)
           </span>
@@ -70,15 +74,18 @@
             A state-space decoder combines what past spikes predict about a latent state with what
             the newest spike says. We check, spike by spike, whether these two sources of information
             point to overlapping regions of the state space. The result is analogous to a local,
-            time-resolved goodness-of-fit test: it shows <em>when</em> a decoding model fails and can
+            time-resolved goodness-of-fit test: it can show <em>when</em> a decoding model fails and
             suggest <em>which</em> of its assumptions is responsible.
           </p>
           <noscript>
-            <p class="note">The interactive examples on this page need JavaScript.</p>
+            <p class="note">The interactive examples on this page need JavaScript; the text does not.</p>
           </noscript>
           <figure class="teaser">
             <img
               src="figures/figure01.png"
+              width="2254"
+              height="2367"
+              decoding="async"
               alt="Schematic: a state-space model's graphical model, the filter recursion from prediction to posterior, and examples of consistent and inconsistent prediction and likelihood pairs."
             />
             <figcaption>
@@ -115,82 +122,22 @@
         </div>
       </section>
 
-      <section id="playground">
-        <div class="wrap">
-          <h2>Consistent is not the same as identical</h2>
-          <p>
-            The prediction aggregates many past spikes, while the likelihood comes from a single
-            spike, so the two usually differ in shape and spread. What matters is whether they
-            concentrate their probability in overlapping regions. Move the prediction, change its
-            spread, and choose which cell fired: the three diagnostics update as you go.
-          </p>
-          <div class="panel">
-            <div class="row">
-              <span class="row-label">Examples</span>
-              <div class="segmented">
-                <button class="chip" type="button" data-preset="consistent">Consistent</button>
-                <button class="chip" type="button" data-preset="conflicting">Conflicting</button>
-                <button class="chip" type="button" data-preset="nested">Narrow prediction</button>
-                <button class="chip" type="button" data-preset="broad">Broad prediction, narrow spike</button>
-              </div>
-            </div>
-            <div class="row">
-              <span class="row-label">Cells</span>
-              <div class="segmented">
-                <button class="chip" type="button" data-ensemble="place_cells">
-                  Place cells (σ = <span data-macro="SimPlaceFieldStd"></span> a.u.)
-                </button>
-                <button class="chip" type="button" data-ensemble="sparse_epoch">
-                  Sparse epoch (σ = <span data-macro="SimSparseFieldStd"></span> a.u.)
-                </button>
-              </div>
-            </div>
-            <div class="controls">
-              <div class="control">
-                <label for="pg-mean">Prediction center <output id="pg-mean-out"></output></label>
-                <input id="pg-mean" type="range" step="0.5" />
-              </div>
-              <div class="control">
-                <label for="pg-std">Prediction spread (SD) <output id="pg-std-out"></output></label>
-                <input id="pg-std" type="range" min="0" max="1000" step="1" />
-              </div>
-              <div class="control">
-                <label>Cell that fired <output id="pg-cell-out"></output></label>
-              </div>
-            </div>
-            <div class="legend">
-              <span><i class="swatch" style="background: var(--predictive)"></i>Prediction P(x)</span>
-              <span><i class="swatch" style="background: var(--likelihood)"></i>Spike likelihood Q(x)</span>
-              <span><i class="swatch band" style="background: var(--predictive)"></i>95% HPD region of P</span>
-              <span><i class="swatch band" style="background: var(--likelihood)"></i>95% HPD region of Q</span>
-            </div>
-            <div id="pg-chart"></div>
-            <div class="readouts" id="pg-readouts"></div>
-            <p class="verdict" id="pg-verdict" aria-live="polite"></p>
-          </div>
-          <p class="note">
-            The cells and rates are those of the paper's simulation:
-            <span data-macro="SimNPlaceCellsWord"></span> place cells with Gaussian fields, plus, in
-            the sparse epoch, <span data-macro="SimNSparseCellsWord"></span> narrow, rarely firing
-            cells near x = <span data-macro="SimSparsePosition"></span> a.u. while the ordinary
-            ensemble is quiet. Curves are scaled to their own maxima. Flag thresholds are the
-            simulation's. The diagnostics are computed in your browser by a port of the paper's code
-            that is tested against the Python implementation.
-          </p>
-        </div>
-      </section>
-
       <section id="diagnostics">
         <div class="wrap">
           <h2>Three diagnostics</h2>
           <p>
-            Each diagnostic compares the one-step prediction <i>P</i> with the normalized likelihood
-            <i>Q</i> of a single spike, or with the spike itself. Two target consistency; KL
+            At each spike, the decoder's <strong>prediction</strong> <i>P</i>(<i>x</i>) is its
+            probability distribution over the latent state <i>x</i> (here, position) given all
+            earlier spikes: the one-step predictive distribution. The spike's
+            <strong>likelihood</strong> <i>Q</i>(<i>x</i>) is how strongly that one spike, from its
+            cell's place field, supports each position, normalized to sum to one. Each diagnostic
+            compares <i>P</i> with <i>Q</i>, or with the spike itself. Two target consistency; KL
             divergence is included as the familiar reference that measures difference.
           </p>
           <div class="cards">
             <article class="card" style="--metric-color: var(--hpd)">
               <h3>HPD overlap</h3>
+              <p class="note">HPD: highest probability density.</p>
               <math display="block">
                 <mfrac>
                   <mrow><mo stretchy="false">|</mo><msub><mi>HPD</mi><mi>P</mi></msub><mo>∩</mo><msub><mi>HPD</mi><mi>Q</mi></msub><mo stretchy="false">|</mo></mrow>
@@ -222,7 +169,9 @@
                 <i>f</i><sub>pred</sub>(<i>c</i>), averages each cell's firing rate over the
                 prediction and normalizes across cells. The p-value is the total predictive
                 probability of every cell at least as unlikely as the one that fired, <i>y</i>. A
-                small value means the model did not expect this spike.
+                small value means the model did not expect this spike. We call it the predictive
+                p-value for short; the tracks below plot −log <i>p</i> (natural log), where
+                <i>p</i> = 0.05 is about 3.
               </p>
             </article>
             <article class="card" style="--metric-color: var(--kl)">
@@ -236,9 +185,9 @@
                 </mrow>
               </math>
               <p>
-                The most familiar way to compare two distributions. It measures difference, not
-                consistency: it grows whenever the prediction is broad relative to the spike's
-                likelihood, even when both agree about where the state is.
+                The most familiar way to compare two distributions, in nats (natural-log units). It
+                measures difference, not consistency: it grows whenever the prediction is broad
+                relative to the spike's likelihood, even when both agree about where the state is.
               </p>
             </article>
           </div>
@@ -247,7 +196,85 @@
             <span data-macro="SimHpdPercentile"></span> percentile, or KL divergence at or above its
             <span data-macro="SimKlPercentile"></span> percentile, in a well-specified baseline
             period; the p-value uses a fixed cutoff of
-            <span data-macro="SimPredictiveCutoff"></span>.
+            <span data-macro="SimPredictiveCutoff"></span>. That HPD-overlap percentile is exactly
+            0, so in the simulation and the playground HPD overlap flags only spikes whose 95%
+            region does not meet the prediction's at all.
+          </p>
+        </div>
+      </section>
+
+      <section id="playground">
+        <div class="wrap">
+          <h2>Consistent is not the same as identical</h2>
+          <p>
+            The prediction aggregates many past spikes, while the likelihood comes from a single
+            spike, so the two usually differ in shape and spread. What matters is whether they
+            concentrate their probability in overlapping regions. Move the prediction, change its
+            spread, and choose which cell fired: the three diagnostics update as you go. Positions
+            are in arbitrary units (a.u.) along the simulated track.
+          </p>
+          <div class="panel">
+            <div class="row">
+              <span class="row-label">Examples</span>
+              <div class="segmented">
+                <button class="chip" type="button" data-preset="consistent">Consistent</button>
+                <button class="chip" type="button" data-preset="conflicting">Conflicting</button>
+                <button class="chip" type="button" data-preset="nested">Narrow prediction</button>
+                <button class="chip" type="button" data-preset="broad">Broad prediction, narrow spike</button>
+                <button class="chip" type="button" data-preset="pvalueMiss">p-value misses a conflict</button>
+              </div>
+            </div>
+            <div class="row">
+              <span class="row-label">Cells</span>
+              <div class="segmented">
+                <button class="chip" type="button" data-ensemble="place_cells">
+                  Place cells (σ = <span data-macro="SimPlaceFieldStd"></span> a.u.)
+                </button>
+                <button class="chip" type="button" data-ensemble="sparse_epoch">
+                  Sparse epoch (σ = <span data-macro="SimSparseFieldStd"></span> a.u.)
+                </button>
+              </div>
+            </div>
+            <div class="controls">
+              <div class="control">
+                <div class="control-head">
+                  <label for="pg-mean">Prediction center</label>
+                  <output id="pg-mean-out" for="pg-mean"></output>
+                </div>
+                <input id="pg-mean" type="range" step="0.5" />
+              </div>
+              <div class="control">
+                <div class="control-head">
+                  <label for="pg-std">Prediction spread (SD)</label>
+                  <output id="pg-std-out" for="pg-std"></output>
+                </div>
+                <input id="pg-std" type="range" min="0" max="1000" step="1" />
+              </div>
+              <div class="control">
+                <div class="control-head">
+                  <span class="control-name">Cell that fired</span>
+                  <span id="pg-cell-out" aria-live="polite"></span>
+                </div>
+              </div>
+            </div>
+            <div class="legend">
+              <span><i class="swatch" style="background: var(--predictive)"></i>Prediction P(x)</span>
+              <span><i class="swatch" style="background: var(--likelihood)"></i>Spike likelihood Q(x)</span>
+              <span><i class="swatch band" style="background: var(--predictive)"></i>95% HPD region of P</span>
+              <span><i class="swatch band" style="background: var(--likelihood)"></i>95% HPD region of Q</span>
+            </div>
+            <div id="pg-chart"></div>
+            <div class="readouts" id="pg-readouts"></div>
+            <p class="verdict" id="pg-verdict" aria-live="polite"></p>
+          </div>
+          <p class="note">
+            The cells and rates are those of the paper's simulation:
+            <span data-macro="SimNPlaceCellsWord"></span> place cells with Gaussian fields, plus, in
+            the sparse epoch, <span data-macro="SimNSparseCellsWord"></span> narrow, rarely firing
+            cells near x = <span data-macro="SimSparsePosition"></span> a.u. while the ordinary
+            ensemble is quiet. Curves are scaled to their own maxima. Flag thresholds are the
+            simulation's. The diagnostics are computed in your browser by a port of the paper's code
+            that is tested against the Python implementation.
           </p>
         </div>
       </section>
@@ -260,12 +287,12 @@
             decoded them with a Bayesian filter for
             <span data-macro="SimDurationSeconds"></span> s. Three windows break the model on
             purpose; two controls contain unusual but internally consistent activity. Pick a
-            condition, then move across the tracks, press Play, or use the arrow keys to inspect
-            individual spikes.
+            condition, then hover over or tap the tracks, press Play, or click the tracks and use
+            the arrow keys to inspect individual spikes.
           </p>
           <div class="panel">
             <div class="segmented" id="sc-tabs" role="tablist" aria-label="Simulated condition"></div>
-            <p class="scenario-text" id="sc-text" aria-live="polite"></p>
+            <p class="scenario-text" id="sc-text"></p>
             <div id="sc-view"><p class="loading">Loading simulation…</p></div>
           </div>
         </div>
@@ -284,13 +311,21 @@
             Continuous model's prediction cannot keep up with the rapidly moving representation, so
             many spikes are flagged. When the Continuous–Fragmented model switches to its fragmented
             state, its prediction becomes broad, the next spikes can move the estimate, and most of
-            the HPD-overlap flags disappear. Spikes are flagged when HPD overlap is at or below
+            the HPD-overlap flags disappear. The recording has no known-good baseline period, so
+            fixed cutoffs are used: a spike is flagged when HPD overlap is at or below
             <span data-macro="RecHpdCutoff"></span> or the p-value at or below
             <span data-macro="RecPredictiveCutoff"></span>; KL divergence is not thresholded here.
+            Inspect spikes the same way as in the simulation.
           </p>
           <div class="panel">
             <div id="rp-view"><p class="loading">Loading recording…</p></div>
           </div>
+          <p class="note">
+            A <strong>rescued</strong> spike is flagged under the Continuous model but not under the
+            Continuous–Fragmented model: its likelihood now falls inside the Continuous–Fragmented
+            prediction's 95% region, which can be broad enough to allow a jump there. It does not
+            mean that the prediction was centered on the spike.
+          </p>
           <p>
             Across the whole session, HPD overlap flags
             <span data-macro="RecHpdFlaggedContinuous" data-format="count"></span> spikes under the
@@ -353,6 +388,7 @@
   year   = {2026},
   url    = {https://github.com/edeno/statespacecheck-paper}
 }</pre>
+          <p class="note">This entry will point to the preprint once it is posted.</p>
         </div>
       </section>
     </main>
@@ -366,10 +402,11 @@
           (1650113), and the UCSF Jonas Cohler Discovery Fellowship.
         </p>
         <p>
-          Text and figures: <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>.
-          Code: MIT. Every number and interactive example on this page is generated from the
-          paper's <a href="https://github.com/edeno/statespacecheck-paper">analysis code</a>.
-          Contact: <a href="mailto:eric.denovellis@ucsf.edu">Eric Denovellis</a>.
+          Paper text and figures:
+          <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Code and this site:
+          MIT. Every number and interactive example on this page is generated from the paper's
+          <a href="https://github.com/edeno/statespacecheck-paper">analysis code</a>. Contact:
+          <a href="mailto:eric.denovellis@ucsf.edu">Eric Denovellis</a>.
         </p>
       </div>
     </footer>

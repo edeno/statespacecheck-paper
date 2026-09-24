@@ -23,6 +23,8 @@
   --hpd: #56b4e9;
   --pvalue: #cc79a7;
   --kl: #009e73;
+  /* Unselected place fields: 3.4:1 against the panel, enough for graphics. */
+  --curve-muted: #858581;
 
   --flag-bg: #fdecea;
   --flag-text: #8a1c12;
@@ -226,17 +228,35 @@ figcaption {
   margin-bottom: 1rem;
 }
 
-.control label {
+.control-head {
   display: flex;
   justify-content: space-between;
+  gap: 0.5rem;
   font-size: 0.9rem;
+}
+
+.control-head label,
+.control-name {
   font-weight: 600;
 }
 
-.control output {
-  font-weight: 400;
+.control-head output,
+#pg-cell-out {
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 input[type="range"] {
@@ -275,10 +295,19 @@ input[type="range"] {
 .chip:focus-visible,
 .button:focus-visible,
 input:focus-visible,
-.stack:focus-visible,
-svg .cell-hit:focus-visible {
+.stack:focus-visible {
   outline: 2px solid var(--link);
   outline-offset: 2px;
+}
+
+/* The cell hit area outlines itself (SVG outline support varies). */
+.dist-chart .cell-hit:focus {
+  outline: none;
+}
+
+.dist-chart .cell-hit:focus-visible {
+  stroke: var(--link);
+  stroke-width: 2;
 }
 
 .row {
@@ -362,8 +391,8 @@ svg .cell-hit:focus-visible {
   cursor: pointer;
 }
 
-.dist-chart .cell-hit:hover path {
-  stroke: var(--text);
+.dist-chart .cell-hit:hover {
+  fill: rgb(0 0 0 / 4%);
 }
 
 /* --------------------------------------------------------- Metric readouts */
@@ -652,6 +681,12 @@ footer {
 
 /* ------------------------------------------------------------- Mobile */
 
+@media (max-width: 900px) {
+  .player-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 @media (max-width: 760px) {
   body {
     font-size: 16px;
@@ -659,10 +694,6 @@ footer {
 
   :root {
     --label-col: 84px;
-  }
-
-  .player-body {
-    grid-template-columns: minmax(0, 1fr);
   }
 
   section {

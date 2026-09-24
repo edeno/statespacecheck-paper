@@ -6,18 +6,40 @@ import {
   cssVar,
   DistributionChart,
   heatmapBitmap,
-  paintDots,
   paintColumns,
+  paintDots,
   paintHeatmap,
   paintPositionLine,
   paintShading,
   paintThreshold,
   TrackStack,
 } from "./charts.js";
-import { badge, decodeRows, describeRule, loadJSON, METRICS, nearestIndex } from "./data.js";
+import {
+  badge,
+  decodeRows,
+  describeRule,
+  liveRegion,
+  loadJSON,
+  METRICS,
+  nearestIndex,
+} from "./data.js";
 
 // Seconds of real time to play through one window.
 const PLAYBACK_SECONDS = 15;
+
+// Half-width (s) of the window used to find the peak of population firing,
+// which marks the replay event in the recording.
+const POPULATION_PEAK_HALF_WIDTH = 0.05;
+
+// Tab titles; the summaries abbreviate some condition labels for the figure.
+const SCENARIO_TITLES = {
+  well_specified: "Well-specified",
+  remap: "Remap",
+  history_dependent: "History-dependent firing",
+  replay: "Replay",
+  drift: "Drift",
+  sparse_population: "Sparse population",
+};
 
 const SCENARIO_TEXT = {
   well_specified:
@@ -35,11 +57,17 @@ const SCENARIO_TEXT = {
 };
 
 // Conditions whose flagged spikes are the point open on one; the rest open on
-// a typical, unflagged spike.
-const OPEN_ON_FLAGGED = new Set(["remap", "drift", "sparse_population"]);
+// a typical, unflagged spike (for drift, one the lagging prediction still fits).
+const OPEN_ON_FLAGGED = new Set(["remap", "sparse_population"]);
 
-const SCALE_NOTE =
-  "Prediction heatmaps use one color scale per panel, as in the paper's figures. Likelihood columns and the curves in the spike panel are each scaled to their own maximum.";
+const INTERACTION_HELP =
+  "Hover over or tap the tracks to inspect a spike, press Play, or focus the tracks (click or Tab) and use ← → to step between spikes (Home and End jump to the first and last).";
+
+const AXIS_HELP =
+  "HPD overlap is drawn on a symmetric-log axis (linear below 0.01, logarithmic above), as in the paper, so values near 0 separate from exact zeros. −log p is the negative natural log of the p-value (p = 0.05 is about 3). KL divergence is in nats (natural-log units). Dashed lines mark flag thresholds.";
+
+const SCALE_HELP =
+  "Darker prediction shading means higher probability, on one color scale per panel as in the paper's figures. The likelihood track is drawn only in time bins that contain spikes. Likelihood columns and the curves in the spike panel are each scaled to their own maximum.";
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -49,6 +77,12 @@ function normalizedRow(row) {
   let total = 0;
   for (const v of row) total += v;
   return Array.from(row, (v) => (total > 0 ? v / total : 0));
+}
+
+function argmax(values) {
+  let best = 0;
+  for (let i = 1; i < values.length; i += 1) if (values[i] > values[best]) best = i;
+  return best;
 }
 
 /** Map a position to the heatmap's y coordinate (bins drawn at equal heights). */
@@ -150,6 +184,13 @@ function readoutCard(metric, rule) {
   return card;
 }
 
+function note(text) {
+  const p = document.createElement("p");
+  p.className = "note";
+  p.textContent = text;
+  return p;
+}
+
 /** Play/pause and step buttons plus a time readout. */
 function transport(container, { onStep, onPlay }) {
   const bar = document.createElement("div");
@@ -158,7 +199,7 @@ function transport(container, { onStep, onPlay }) {
     <button class="chip" data-step="-1" type="button" aria-label="Previous spike">◀ Prev spike</button>
     <button class="chip" data-play type="button">▶ Play</button>
     <button class="chip" data-step="1" type="button" aria-label="Next spike">Next spike ▶</button>
-    <span class="time" aria-live="polite"></span>`;
+    <span class="time"></span>`;
   container.appendChild(bar);
   for (const button of bar.querySelectorAll("[data-step]")) {
     button.addEventListener("click", () => onStep(Number(button.dataset.step)));
@@ -190,7 +231,12 @@ function animate(range, from, setTime, onDone) {
   return () => cancelAnimationFrame(frame);
 }
 
-function wirePlayback(stack, range, eventTimes, select, controls) {
+/**
+ * Cursor and spike selection for one player. `select(index)` draws a spike;
+ * `announce(index)` is called only for discrete steps (buttons and keys), so
+ * screen readers are not flooded during hover or playback.
+ */
+function wirePlayback(stack, range, eventTimes, select, controls, announce) {
   let stop = null;
   let current = null;
   const setTime = (time) => {
@@ -198,7 +244,7 @@ function wirePlayback(stack, range, eventTimes, select, controls) {
     const index = nearestIndex(eventTimes, time);
     if (index !== current) {
       current = index;
-      select(index, time);
+      select(index);
     }
   };
   const halt = () => {
@@ -206,24 +252,31 @@ function wirePlayback(stack, range, eventTimes, select, controls) {
     stop = null;
     controls.play.textContent = "▶ Play";
   };
+  // Select by index, not time: spikes in one time bin share a time.
+  const selectIndex = (index, { speak = false } = {}) => {
+    halt();
+    current = index;
+    stack.placeCursor(eventTimes[index]);
+    select(index);
+    if (speak) announce(index);
+  };
+  const clamp = (index) => Math.min(eventTimes.length - 1, Math.max(0, index));
   return {
     setTime: (time) => {
       halt();
       setTime(time);
     },
-    // Select by index, not time: spikes in one time bin share a time.
-    selectIndex: (index) => {
-      halt();
-      current = index;
-      stack.placeCursor(eventTimes[index]);
-      select(index, eventTimes[index]);
-    },
-    step: (direction) => {
-      halt();
-      const next = Math.min(eventTimes.length - 1, Math.max(0, (current ?? -1) + direction));
-      current = next;
-      stack.placeCursor(eventTimes[next]);
-      select(next, eventTimes[next]);
+    selectIndex,
+    step: (direction) => selectIndex(clamp((current ?? -1) + direction), { speak: true }),
+    key: (key) => {
+      if (!eventTimes.length) return;
+      const target = {
+        ArrowRight: (current ?? -1) + 1,
+        ArrowLeft: (current ?? 1) - 1,
+        Home: 0,
+        End: eventTimes.length - 1,
+      }[key];
+      selectIndex(clamp(target), { speak: true });
     },
     toggle: () => {
       if (stop) {
@@ -237,6 +290,11 @@ function wirePlayback(stack, range, eventTimes, select, controls) {
   };
 }
 
+function flagSummary(index, flagsByMetric) {
+  const flagged = METRICS.filter((m) => flagsByMetric[m.name]?.[index]).map((m) => m.label);
+  return flagged.length ? `Flagged by ${flagged.join(", ")}.` : "Not flagged.";
+}
+
 // ---------------------------------------------------------------------------
 // Scenario player
 // ---------------------------------------------------------------------------
@@ -248,44 +306,77 @@ export function initScenarios(root, manifest) {
   const cache = new Map();
   const macros = manifest.macros;
   const stepSeconds = Number(macros.SimDurationSeconds) / Number(macros.SimDurationSteps);
+  const ids = manifest.scenarios.map((s) => s.condition_id);
   let active = null;
   let teardown = null;
 
-  for (const { condition_id: id, label } of manifest.scenarios) {
+  view.setAttribute("role", "tabpanel");
+  view.tabIndex = -1;
+  const buttons = manifest.scenarios.map(({ condition_id: id, label }) => {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "chip";
+    button.id = `sc-tab-${id}`;
     button.setAttribute("role", "tab");
+    button.setAttribute("aria-controls", view.id);
     button.dataset.condition = id;
-    button.textContent = label;
+    button.textContent = SCENARIO_TITLES[id] ?? label;
     button.addEventListener("click", () => select(id));
+    button.addEventListener("keydown", (event) => {
+      const i = ids.indexOf(id);
+      const target = {
+        ArrowRight: (i + 1) % ids.length,
+        ArrowLeft: (i - 1 + ids.length) % ids.length,
+        Home: 0,
+        End: ids.length - 1,
+      }[event.key];
+      if (target === undefined) return;
+      event.preventDefault();
+      select(ids[target]);
+      buttons[target].focus();
+    });
     tabs.appendChild(button);
-  }
+    return button;
+  });
 
   async function select(id) {
     active = id;
-    for (const button of tabs.children) {
-      button.setAttribute("aria-selected", String(button.dataset.condition === id));
+    // Stop the previous player before anything else can go wrong.
+    if (teardown) teardown();
+    teardown = null;
+    for (const button of buttons) {
+      const selected = button.dataset.condition === id;
+      button.setAttribute("aria-selected", String(selected));
+      button.tabIndex = selected ? 0 : -1;
     }
+    view.setAttribute("aria-labelledby", `sc-tab-${id}`);
     text.textContent = SCENARIO_TEXT[id] ?? "";
+    const url = new URL(window.location.href);
+    url.searchParams.set("condition", id);
+    window.history.replaceState(null, "", url);
     if (!cache.has(id)) {
       view.innerHTML = '<p class="loading">Loading simulation…</p>';
       const entry = manifest.scenarios.find((s) => s.condition_id === id);
       try {
         cache.set(id, await loadJSON(`data/${entry.file}`));
       } catch (error) {
-        view.innerHTML = `<p class="error">Could not load this condition (${error.message}).</p>`;
+        if (active === id) {
+          view.innerHTML = `<p class="error">Could not load this condition (${error.message}).</p>`;
+        }
         return;
       }
     }
     if (active !== id) return;
-    if (teardown) teardown();
-    teardown = renderScenario(view, cache.get(id), manifest, stepSeconds);
+    try {
+      teardown = renderScenario(view, cache.get(id), manifest, stepSeconds);
+    } catch (error) {
+      view.innerHTML = `<p class="error">Could not display this condition (${error.message}).</p>`;
+      console.error(error);
+    }
   }
 
   // ?condition=<id> links to one condition; otherwise start on remapping.
   const requested = new URLSearchParams(window.location.search).get("condition");
-  const ids = manifest.scenarios.map((s) => s.condition_id);
   select(ids.includes(requested) ? requested : ids.includes("remap") ? "remap" : ids[0]);
 }
 
@@ -318,9 +409,11 @@ function renderScenario(view, payload, manifest, stepSeconds) {
         `<div class="stat"><div class="label">${m.label}</div><div class="value">${summary.median_flag_percent_text[m.name]}% flagged</div></div>`,
     ).join("") +
     `<div class="stat"><div class="label">Decoding error</div><div class="value">${summary.median_absolute_error_text} a.u.</div></div>`;
-  const statsNote = document.createElement("p");
-  statsNote.className = "note";
-  statsNote.textContent = `Median percentage of spikes flagged by each diagnostic, and median decoding error, across ${manifest.macros.SimNRealizations} simulated sessions. Perturbed model component: ${payload.model_component === "—" ? "none" : payload.model_component.toLowerCase()}. Below: one session, shaded where the condition applies.`;
+  const component =
+    payload.model_component === "—" ? "none" : payload.model_component.toLowerCase();
+  const statsNote = note(
+    `Medians across ${manifest.macros.SimNRealizations} simulated sessions: the percentage of spikes each diagnostic flags, and the decoding error, the median absolute difference between the decoder's position estimate (the filtered posterior mean) and the true position. Perturbed model component: ${component}. Below: ${(range[1] - range[0]).toFixed(1)} s of one session, with the condition's time window shaded gray.`,
+  );
 
   // Mean normalized likelihood per spike-containing step, as in Figure 3a.
   const likelihoodSum = new Float64Array(nSteps * nBins);
@@ -335,7 +428,8 @@ function renderScenario(view, payload, manifest, stepSeconds) {
     let max = 0;
     for (let b = 0; b < nBins; b += 1) max = Math.max(max, likelihoodSum[t * nBins + b]);
     for (let b = 0; b < nBins; b += 1) {
-      likelihoodBytes[t * nBins + b] = max > 0 ? Math.round((likelihoodSum[t * nBins + b] / max) * 255) : 0;
+      likelihoodBytes[t * nBins + b] =
+        max > 0 ? Math.round((likelihoodSum[t * nBins + b] / max) * 255) : 0;
     }
   }
   const likelihoodMean = {
@@ -373,7 +467,8 @@ function renderScenario(view, payload, manifest, stepSeconds) {
     <span><i class="swatch" style="background:var(--position)"></i>Animal position</span>
     <span><i class="swatch dot" style="background:var(--text)"></i>Flagged spike (solid)</span>
     <span><i class="swatch dot" style="background:var(--text);opacity:.3"></i>Not flagged (faded)</span>
-    <span><i class="swatch" style="background:var(--threshold)"></i>Flag threshold</span>`;
+    <span><i class="swatch" style="background:var(--threshold)"></i>Flag threshold</span>
+    <span><i class="swatch band" style="background:var(--text-muted)"></i>Condition window</span>`;
 
   const body = document.createElement("div");
   body.className = "player-body";
@@ -381,10 +476,8 @@ function renderScenario(view, payload, manifest, stepSeconds) {
   const detail = document.createElement("div");
   detail.className = "detail";
   body.append(left, detail);
-  const scaleNote = document.createElement("p");
-  scaleNote.className = "note";
-  scaleNote.textContent = SCALE_NOTE;
-  view.append(stats, statsNote, legend, body, scaleNote);
+  view.append(stats, statsNote, legend, body, note(INTERACTION_HELP), note(AXIS_HELP), note(SCALE_HELP));
+  const say = liveRegion(view);
 
   const detailTitle = document.createElement("h3");
   const chartBox = document.createElement("div");
@@ -392,7 +485,6 @@ function renderScenario(view, payload, manifest, stepSeconds) {
     positionBins: bins,
     xLabel: "Position (a.u.)",
     plotHeight: 110,
-    width: 420,
   });
   const chartLegend = document.createElement("div");
   chartLegend.className = "legend";
@@ -411,18 +503,34 @@ function renderScenario(view, payload, manifest, stepSeconds) {
   );
   detail.append(detailTitle, chartLegend, chartBox, readouts);
 
+  function describeSpike(index) {
+    const cell = events.cell[index];
+    const likelihood = likelihoodRows.row(events.likelihood_row[index]);
+    const trueCenter = payload.cell_centers[cell];
+    // The decoder's field is where this spike's likelihood peaks; after
+    // remapping it differs from the field that generated the spike.
+    const decoderCenter = bins[argmax(likelihood)];
+    const field =
+      Math.abs(decoderCenter - trueCenter) > 1
+        ? `true field at ${trueCenter} a.u.; the decoder's remapped field at ${decoderCenter} a.u.`
+        : `field at ${trueCenter} a.u.`;
+    return `Spike at ${eventTimes[index].toFixed(3)} s — cell ${cell + 1} (${field})`;
+  }
+
   function selectEvent(index) {
     if (index < 0) {
       detailTitle.textContent = "No spikes in this window";
       return;
     }
     const t = events.t[index];
-    const cell = events.cell[index];
-    detailTitle.textContent = `Spike at ${eventTimes[index].toFixed(3)} s — cell ${cell + 1} (field at ${payload.cell_centers[cell]} a.u.)`;
+    detailTitle.textContent = describeSpike(index);
     chart.update({
       series: [
         { values: normalizedRow(predictive.row(t)), color: cssVar("--predictive") },
-        { values: normalizedRow(likelihoodRows.row(events.likelihood_row[index])), color: cssVar("--likelihood") },
+        {
+          values: normalizedRow(likelihoodRows.row(events.likelihood_row[index])),
+          color: cssVar("--likelihood"),
+        },
       ],
       marker: position[t],
     });
@@ -436,7 +544,7 @@ function renderScenario(view, payload, manifest, stepSeconds) {
   }
 
   const stack = new TrackStack(left, {
-    ariaLabel: "Simulation tracks. Use the left and right arrow keys to step between spikes.",
+    ariaLabel: "Simulation tracks. Use the arrow keys to step between spikes.",
     range,
     tracks: [
       heatmapTrack("Prediction", predictiveBitmap, 104),
@@ -452,24 +560,32 @@ function renderScenario(view, payload, manifest, stepSeconds) {
       ),
     ],
     onCursor: (time) => playback.setTime(time),
-    onStep: (direction) => playback.step(direction),
+    onKey: (key) => playback.key(key),
   });
   const controls = transport(left, {
     onStep: (direction) => playback.step(direction),
     onPlay: () => playback.toggle(),
   });
-  const playback = wirePlayback(stack, range, eventTimes, selectEvent, controls);
+  const playback = wirePlayback(stack, range, eventTimes, selectEvent, controls, (index) =>
+    say(`${describeSpike(index)}. ${flagSummary(index, rules)}`),
+  );
   stack.draw();
   // Open inside the condition's window on a flagged or a typical spike.
   const inCondition = (i) =>
-    payload.scored_windows.some(([a, b]) => events.t[i] + payload.start >= a && events.t[i] + payload.start < b);
+    payload.scored_windows.some(
+      ([a, b]) => events.t[i] + payload.start >= a && events.t[i] + payload.start < b,
+    );
   const anyFlag = (i) => METRICS.some((m) => rules[m.name][i]);
   const wantFlagged = OPEN_ON_FLAGGED.has(payload.condition_id);
   let initial = events.t.findIndex((_, i) => inCondition(i) && anyFlag(i) === wantFlagged);
   if (initial < 0) initial = Math.max(0, events.t.findIndex((_, i) => inCondition(i)));
   if (eventTimes.length) playback.selectIndex(initial);
   else selectEvent(-1);
-  return () => playback.halt();
+  return () => {
+    playback.halt();
+    stack.destroy();
+    chart.destroy();
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -480,6 +596,24 @@ const MODELS = [
   { id: "continuous", label: "Continuous", short: "Cont." },
   { id: "continuous_fragmented", label: "Continuous–Fragmented", short: "Cont.–Frag." },
 ];
+
+/** Time of peak population firing (all units), which marks the replay event. */
+function populationPeak(spikeTimes, range) {
+  const all = spikeTimes.flat().sort((a, b) => a - b);
+  let best = range[0];
+  let bestCount = -1;
+  let lo = 0;
+  let hi = 0;
+  for (let t = range[0]; t <= range[1]; t += 0.002) {
+    while (lo < all.length && all[lo] < t - POPULATION_PEAK_HALF_WIDTH) lo += 1;
+    while (hi < all.length && all[hi] <= t + POPULATION_PEAK_HALF_WIDTH) hi += 1;
+    if (hi - lo > bestCount) {
+      bestCount = hi - lo;
+      best = t;
+    }
+  }
+  return best;
+}
 
 export function renderReplay(root, payload, manifest) {
   const view = root.querySelector("#rp-view");
@@ -565,10 +699,18 @@ export function renderReplay(root, payload, manifest) {
   const countsWrap = document.createElement("div");
   countsWrap.className = "table-wrap";
   countsWrap.appendChild(counts);
-  const scaleNote = document.createElement("p");
-  scaleNote.className = "note";
-  scaleNote.textContent = SCALE_NOTE;
-  view.append(legend, body, countsWrap, scaleNote);
+  view.append(
+    legend,
+    body,
+    countsWrap,
+    note(INTERACTION_HELP),
+    note(
+      "Here the dots do not show flag status: open circles are the Continuous model and filled dots the Continuous–Fragmented model, and a spike is flagged when its marker lies beyond the dashed threshold. The Continuous–Fragmented prediction is summed over its Continuous and Fragmented states. Position is linearized distance along the maze (cm).",
+    ),
+    note(AXIS_HELP),
+    note(SCALE_HELP),
+  );
+  const say = liveRegion(view);
 
   const detailTitle = document.createElement("h3");
   const chartLegend = document.createElement("div");
@@ -589,7 +731,6 @@ export function renderReplay(root, payload, manifest) {
       positionBins: bins,
       xLabel: "Linearized position (cm)",
       plotHeight: 70,
-      width: 420,
     });
   }
   const table = document.createElement("table");
@@ -602,13 +743,20 @@ export function renderReplay(root, payload, manifest) {
   rescue.className = "note";
   detail.appendChild(rescue);
 
+  const isRescued = (metric, index) =>
+    payload.models.continuous.events.flagged[metric]?.[index] === true &&
+    payload.models.continuous_fragmented.events.flagged[metric]?.[index] === false;
+
+  function describeSpike(index) {
+    return `Spike at ${eventTimes[index].toFixed(3)} s — unit ${events.cell[index] + 1}`;
+  }
+
   function selectEvent(index) {
     if (index < 0) return;
-    const t = eventTimes[index];
     // The decoder bin that counted this spike; its prediction precedes the spike.
     const step = events.bin[index];
     const cell = events.cell[index];
-    detailTitle.textContent = `Spike at ${t.toFixed(3)} s — unit ${cell + 1}`;
+    detailTitle.textContent = describeSpike(index);
     for (const model of MODELS) {
       charts[model.id].update({
         series: [
@@ -620,34 +768,31 @@ export function renderReplay(root, payload, manifest) {
     }
     table.innerHTML = `<thead><tr><th></th>${MODELS.map((m) => `<th>${m.short}</th>`).join("")}</tr></thead>`;
     const tbody = document.createElement("tbody");
-    const rescued = [];
     for (const metric of METRICS) {
       const tr = document.createElement("tr");
       const name = document.createElement("td");
       name.textContent = metric.label;
       tr.appendChild(name);
-      const flags = [];
       for (const model of MODELS) {
         const modelEvents = payload.models[model.id].events;
         const td = document.createElement("td");
         const flagged = rules[metric.name] ? modelEvents.flagged[metric.name][index] : null;
-        flags.push(flagged);
         td.append(`${metric.format(modelEvents[metric.name][index])} `);
         if (flagged !== null) td.appendChild(badge(flagged));
         tr.appendChild(td);
       }
-      if (flags[0] === true && flags[1] === false) rescued.push(metric.label);
       tbody.appendChild(tr);
     }
     table.appendChild(tbody);
+    const rescued = METRICS.filter((m) => isRescued(m.name, index)).map((m) => m.label);
     rescue.textContent = rescued.length
-      ? `Rescued: flagged under the Continuous model but not once the model can jump (${rescued.join(", ")}).`
+      ? `Rescued (${rescued.join(", ")}): flagged under the Continuous model but not under the Continuous–Fragmented model.`
       : "";
-    controls.time.textContent = `${t.toFixed(3)} s`;
+    controls.time.textContent = `${eventTimes[index].toFixed(3)} s`;
   }
 
   const stack = new TrackStack(left, {
-    ariaLabel: "Hippocampal recording tracks. Use the left and right arrow keys to step between spikes.",
+    ariaLabel: "Hippocampal recording tracks. Use the arrow keys to step between spikes.",
     range,
     tracks: [
       heatmapTrack("Prediction: Continuous", predictiveBitmap("continuous"), 92),
@@ -662,16 +807,26 @@ export function renderReplay(root, payload, manifest) {
       ...METRICS.map((metric) => metricTrack(metric, seriesFor(metric.name), rules[metric.name], null)),
     ],
     onCursor: (t) => playback.setTime(t),
-    onStep: (direction) => playback.step(direction),
+    onKey: (key) => playback.key(key),
   });
   const controls = transport(left, {
     onStep: (direction) => playback.step(direction),
     onPlay: () => playback.toggle(),
   });
-  const playback = wirePlayback(stack, range, eventTimes, selectEvent, controls);
-  stack.draw();
-  const firstRescue = events.flagged.hpd_overlap.findIndex(
-    (flag, i) => flag && !payload.models.continuous_fragmented.events.flagged.hpd_overlap[i],
+  const flagsByMetric = Object.fromEntries(
+    METRICS.map((m) => [m.name, events.flagged[m.name] ?? []]),
   );
-  playback.selectIndex(Math.max(0, firstRescue));
+  const playback = wirePlayback(stack, range, eventTimes, selectEvent, controls, (index) =>
+    say(`${describeSpike(index)}. Continuous model: ${flagSummary(index, flagsByMetric)}`),
+  );
+  stack.draw();
+  // Open on the HPD-overlap rescue nearest the peak of population firing,
+  // i.e., inside the replay event.
+  const peak = populationPeak(payload.spike_times, range);
+  let initial = -1;
+  eventTimes.forEach((t, i) => {
+    if (!isRescued("hpd_overlap", i)) return;
+    if (initial < 0 || Math.abs(t - peak) < Math.abs(eventTimes[initial] - peak)) initial = i;
+  });
+  if (eventTimes.length) playback.selectIndex(Math.max(0, initial));
 }
