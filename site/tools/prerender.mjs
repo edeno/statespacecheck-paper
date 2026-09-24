@@ -5,6 +5,8 @@
 
 import { readFileSync, writeFileSync } from "node:fs";
 
+import { formatMacro } from "../js/data.js";
+
 const [htmlPath, manifestPath] = process.argv.slice(2);
 const { macros } = JSON.parse(readFileSync(manifestPath, "utf8"));
 const html = readFileSync(htmlPath, "utf8");
@@ -17,7 +19,7 @@ const filled = html.replace(
       unknown.add(name);
       return _;
     }
-    const value = count ? Number(macros[name]).toLocaleString("en-US") : macros[name];
+    const value = formatMacro(macros[name], count ? "count" : undefined);
     return `<span data-macro="${name}"${count ?? ""}>${value}</span>`;
   },
 );

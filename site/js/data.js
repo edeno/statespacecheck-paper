@@ -25,11 +25,13 @@ export const METRICS = [
     // paper's figures label it).
     worse: "lower",
     plottedWorse: "below",
-    color: "var(--hpd)",
+    color: "--hpd",
     display: (v) => v,
     // Plotted on a symlog axis, as in the paper's figures.
     axis: symlog,
     gridlines: [0.01, 0.1],
+    // Bounded, so its track always spans the whole range.
+    range: [0, 1],
     displayLabel: "HPD overlap",
     format: (v) => (Number.isFinite(v) ? v.toFixed(2) : "—"),
   },
@@ -38,7 +40,7 @@ export const METRICS = [
     label: "Predictive p-value",
     worse: "lower",
     plottedWorse: "above",
-    color: "var(--pvalue)",
+    color: "--pvalue",
     // Plotted as −log(p) (natural log), as in the paper's figures. p > 0 by
     // construction; the floor only guards the axis against a degenerate value.
     display: (v) => -Math.log(Math.max(v, Number.MIN_VALUE)),
@@ -50,7 +52,7 @@ export const METRICS = [
     label: "KL divergence",
     worse: "higher",
     plottedWorse: "above",
-    color: "var(--kl)",
+    color: "--kl",
     display: (v) => v,
     displayLabel: "KL (nats)",
     format: (v) => (!Number.isFinite(v) ? "∞" : v >= 100 ? v.toFixed(0) : v.toFixed(2)),
@@ -81,9 +83,26 @@ export function decodeRows(encoded, nBins) {
   };
 }
 
+/**
+ * Decode a site_export.heatmap_payload: rows scaled to their own maxima, each
+ * row's maximum, and the shared color range. `values(i)` recovers row `i` in
+ * the payload's units.
+ */
+export function decodeHeatmap(payload, nBins) {
+  const rows = decodeRows(payload.rows, nBins);
+  return {
+    ...rows,
+    rowMax: payload.row_max,
+    range: payload.range,
+    values(i) {
+      const factor = payload.row_max[i] / 255;
+      return Array.from(rows.row(i), (v) => v * factor);
+    },
+  };
+}
+
 /** Direction of worse fit in words, e.g. "lower = worse fit". */
-export function worseFit(metricName) {
-  const metric = METRICS.find((m) => m.name === metricName);
+export function worseFit(metric) {
   return `${metric.worse} = worse fit`;
 }
 
@@ -106,6 +125,11 @@ function flagRule(rule) {
   return `flagged if ${symbol} ${threshold}`;
 }
 
+/** Text for a reported value; `format` "count" adds thousands separators. */
+export function formatMacro(value, format) {
+  return format === "count" ? Number(value).toLocaleString("en-US") : value;
+}
+
 /** Fill every [data-macro] element with the manuscript's reported value. */
 export function fillMacros(root, macros) {
   for (const element of root.querySelectorAll("[data-macro]")) {
@@ -115,8 +139,7 @@ export function fillMacros(root, macros) {
       console.warn(`Unknown macro ${name}`);
       continue;
     }
-    element.textContent =
-      element.dataset.format === "count" ? Number(value).toLocaleString("en-US") : value;
+    element.textContent = formatMacro(value, element.dataset.format);
   }
 }
 
@@ -140,6 +163,24 @@ export function badge(flagged) {
   // and a high p-value does not by itself establish overlap.
   span.textContent = flagged ? "⚑ flagged" : "✓ not flagged";
   return span;
+}
+
+/**
+ * A metric readout: name and flag rule, plus a value cell that `set(value,
+ * flagged)` fills with the formatted value and its badge.
+ */
+export function readoutCard(metric, rule) {
+  const card = document.createElement("div");
+  card.className = "readout";
+  card.style.setProperty("--metric-color", `var(${metric.color})`);
+  card.innerHTML = `<div class="name">${metric.label}</div><div class="value"></div><div class="rule">${describeRule(metric, rule)}</div>`;
+  const value = card.querySelector(".value");
+  return {
+    element: card,
+    set(v, flagged) {
+      value.replaceChildren(`${metric.format(v)} `, badge(flagged));
+    },
+  };
 }
 
 /** A visually hidden live region; `say(text)` announces to screen readers. */

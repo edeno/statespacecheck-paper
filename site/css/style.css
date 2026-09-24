@@ -648,14 +648,28 @@ input:focus-visible,
   gap: 0.5rem;
 }
 
+/* In the detail panel the name and rule stack on the left, the value sits right. */
 .detail .readout {
   display: grid;
   grid-template-columns: 1fr auto;
-  align-items: baseline;
+  grid-template-areas:
+    "name value"
+    "rule value";
+  align-items: center;
+  column-gap: 0.6rem;
   padding: 0.45rem 0.7rem;
 }
 
+.detail .readout .name {
+  grid-area: name;
+}
+
+.detail .readout .rule {
+  grid-area: rule;
+}
+
 .detail .readout .value {
+  grid-area: value;
   font-size: 1.1rem;
 }
 

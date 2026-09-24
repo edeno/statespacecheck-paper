@@ -2,7 +2,7 @@
 // that fired, and watch the three per-spike diagnostics update.
 
 import { cssVar, DistributionChart } from "./charts.js";
-import { badge, describeRule, METRICS } from "./data.js";
+import { METRICS, readoutCard } from "./data.js";
 import { gaussianPredictive, highestDensityRegion, isFlagged, spikeDiagnostics } from "./metrics.js";
 
 const PRESETS = {
@@ -75,11 +75,8 @@ export function initPlayground(root, data) {
   const readouts = {};
   const readoutRoot = root.querySelector("#pg-readouts");
   for (const metric of METRICS) {
-    const card = document.createElement("div");
-    card.className = "readout";
-    card.style.setProperty("--metric-color", metric.color);
-    card.innerHTML = `<div class="name">${metric.label}</div><div class="value"></div><div class="rule">${describeRule(metric.name, data.flag_rules[metric.name])}</div>`;
-    readoutRoot.appendChild(card);
+    const card = readoutCard(metric, data.flag_rules[metric.name]);
+    readoutRoot.appendChild(card.element);
     readouts[metric.name] = card;
   }
 
@@ -116,8 +113,7 @@ export function initPlayground(root, data) {
     for (const metric of METRICS) {
       const value = result[metric.name];
       flags[metric.name] = isFlagged(value, data.flag_rules[metric.name]);
-      const valueBox = readouts[metric.name].querySelector(".value");
-      valueBox.replaceChildren(`${metric.format(value)} `, badge(flags[metric.name]));
+      readouts[metric.name].set(value, flags[metric.name]);
     }
     verdictBox.textContent = verdict(flags);
   }

@@ -12,7 +12,7 @@ import {
   positionScale,
   TrackStack,
 } from "./charts.js";
-import { decodeRows } from "./data.js";
+import { decodeHeatmap, decodeRows } from "./data.js";
 
 // Playback speed, and how long it lingers on a step with spikes (seconds).
 // Playback pauses by itself on the inconsistent spikes.
@@ -25,10 +25,6 @@ const fmt = (value) => value.toFixed(1);
 const subscript = (n) => String(n).replace(/\d/g, (d) => SUBSCRIPTS[Number(d)]);
 /** Exponent for a field raised to a spike count: "" for 1, "²" for 2, ... */
 const power = (n) => (n === 1 ? "" : String(n).replace(/\d/g, (d) => SUPERSCRIPTS[Number(d)]));
-
-function scaled(row, max) {
-  return Array.from(row, (v) => (v / 255) * max);
-}
 
 /** "cell 5", "cells 4 and 5", "cell 5 (twice)". */
 function listCells(cells) {
@@ -46,13 +42,11 @@ export function initExplainer(root, data, manifest) {
   const nSteps = data.true_position.length;
   const x = data.true_position;
   const m = data.moments;
-  const predictive = decodeRows(data.predictive.rows, nBins);
-  const posterior = decodeRows(data.posterior.rows, nBins);
+  const predictive = decodeHeatmap(data.predictive, nBins);
+  const posterior = decodeHeatmap(data.posterior, nBins);
   const likelihood = decodeRows(data.likelihood, nBins);
-  const fields = decodeRows(data.place_fields.rows, nBins);
-  const sharedMax = data.posterior.range[1];
-  const predictiveAt = (t) => scaled(predictive.row(t), data.predictive.row_max[t]);
-  const posteriorAt = (t) => scaled(posterior.row(t), data.posterior.row_max[t]);
+  const fields = decodeHeatmap(data.place_fields, nBins);
+  const sharedMax = posterior.range[1];
 
   // Spikes by time step; a cell repeats when it fires more than once.
   const spikes = new Map();
@@ -81,10 +75,7 @@ export function initExplainer(root, data, manifest) {
 
   // --------------------------------------------------------------- Tracks
 
-  const bitmap = heatmapBitmap(posterior, manifest.colormaps.predictive, {
-    rowMax: data.posterior.row_max,
-    range: data.posterior.range,
-  });
+  const bitmap = heatmapBitmap(posterior, manifest.colormaps.predictive);
   const stepCenters = Array.from({ length: nSteps }, (_, i) => i + 0.5);
 
   /** The whole run faintly, and the part already run in full color. */
@@ -172,7 +163,7 @@ export function initExplainer(root, data, manifest) {
     posterior: rowChart("#ft-posterior", true),
   };
   // Each field in expected spikes per step, drawn on the cells' shared scale.
-  const fieldRows = centers.map((_, c) => scaled(fields.row(c), data.place_fields.row_max[c]));
+  const fieldRows = centers.map((_, c) => fields.values(c));
 
   // --------------------------------------------------------- Captions
 
@@ -235,9 +226,9 @@ export function initExplainer(root, data, manifest) {
     const prediction = [];
     if (t > 0) {
       const from = fired.length ? lastSpikeBefore(t) : t - 1;
-      prediction.push({ values: posteriorAt(from), color: cssVar("--posterior"), dashed: true, filled: false });
+      prediction.push({ values: posterior.values(from), color: cssVar("--posterior"), dashed: true, filled: false });
     }
-    prediction.push({ values: predictiveAt(t), color: cssVar("--predictive") });
+    prediction.push({ values: predictive.values(t), color: cssVar("--predictive") });
     charts.prediction.update({ series: prediction, marker, scaleMax: sharedMax });
 
     // The fields that fired are drawn last, on top.
@@ -249,7 +240,7 @@ export function initExplainer(root, data, manifest) {
           : { values: fieldRows[c], color: cssVar("--field-muted"), filled: false, width: 1 },
       ),
       marker,
-      scaleMax: data.place_fields.range[1],
+      scaleMax: fields.range[1],
     });
 
     const likelihoodSeries = [];
@@ -263,7 +254,7 @@ export function initExplainer(root, data, manifest) {
       : "Likelihood of no spike, exp(−Λ(x))";
 
     charts.posterior.update({
-      series: [{ values: posteriorAt(t), color: cssVar("--posterior") }],
+      series: [{ values: posterior.values(t), color: cssVar("--posterior") }],
       marker,
       scaleMax: sharedMax,
     });

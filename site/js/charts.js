@@ -65,10 +65,11 @@ function hexToRgb(hex) {
  * an offscreen canvas: time on x, position on y (increasing upward).
  *
  * Without `scale`, each row is colored relative to its own maximum. With
- * `scale = {rowMax, range}`, values are recovered as row / 255 * rowMax[t]
- * and colored on the shared `range`, as in the paper's heatmaps.
+ * `scale = {rowMax, range}` (which a decodeHeatmap result carries itself),
+ * values are recovered as row / 255 * rowMax[t] and colored on the shared
+ * `range`, as in the paper's heatmaps.
  */
-export function heatmapBitmap(rows, lut, scale = null) {
+export function heatmapBitmap(rows, lut, scale = rows.range ? rows : null) {
   const { nRows, nBins } = rows;
   const canvas = document.createElement("canvas");
   canvas.width = nRows;
@@ -233,8 +234,7 @@ export class TrackStack {
       return;
     }
     const first = this.canvases[0].canvas;
-    const [t0, t1] = this.range;
-    const left = first.offsetLeft + ((time - t0) / (t1 - t0)) * first.clientWidth;
+    const left = first.offsetLeft + this.xOf(first.clientWidth)(time);
     this.cursor.style.left = `${left}px`;
     this.cursor.style.display = "block";
   }
