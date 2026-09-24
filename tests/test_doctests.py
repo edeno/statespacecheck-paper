@@ -32,6 +32,7 @@ _DOCTEST_MODULES = [
     "statespacecheck_paper.figure03_plotting",
     "statespacecheck_paper.figure04_diagnostics",
     "statespacecheck_paper.figure04_panels",
+    "statespacecheck_paper.spyglass_data",
 ]
 
 

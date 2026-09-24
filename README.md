@@ -59,14 +59,17 @@ summary. It can also run directly from the committed summaries without rerunning
 the analyses. See [the reporting policy and artifact checks](docs/figure-pipeline.md#from-summary-to-prose-the-reported-value-macros).
 
 Figures 1–3 reproduce deterministically from the seeded simulation. **Figure 4**
-uses the real hippocampal recording of [Comrie et al. 2024](https://doi.org/10.1101/2024.09.23.613567),
-available on the DANDI Archive as dandiset
-[001942](https://dandiarchive.org/dandiset/001942). It is **not** included here
-(large). Note that the decoder consumes five derived exports (linearized
-position, spike times, track graph, edge order/spacing), not the raw NWB files;
-the raw-recording → exports step is external to this repository — see
+uses the real hippocampal recording of [Comrie et al. 2024](https://doi.org/10.1101/2024.09.23.613567).
+It is **not** included here (large). The decoder consumes five derived exports
+(linearized position, spike times, track graph, edge order/spacing), not the raw
+NWB files. They come from the Frank-lab Spyglass database;
+[docs/data-lineage.md](docs/data-lineage.md) records the exact entries, how they
+were verified, and which of them are public. The raw recording is on the DANDI
+Archive as dandiset [001942](https://dandiarchive.org/dandiset/001942). On a lab
+server with database access, `scripts/fetch_figure04_inputs.py` rebuilds the
+exports (see
 [docs/figure-pipeline.md](docs/figure-pipeline.md#figure-4--real-data-decoder-diagnostics)
-for the export contract. Place the exports under `data/` (or set
+for the export contract). Place the exports under `data/` (or set
 `STATESPACECHECK_DATA_PATH`) before running `generate_figure04.py`; the decode is
 cached under `data/` on first run.
 
@@ -113,6 +116,12 @@ uv sync --frozen --extra interactive
 
 # Development tools plus the viewer dependencies (the CI environment).
 uv sync --frozen --extra dev --extra interactive
+
+# Spyglass (the locked version) for the code that rebuilds the Figure-4 inputs
+# from the lab database. Not needed for the figures. The rebuild was verified, and
+# the Spyglass export must run, with the lab's current Spyglass on a lab server;
+# see docs/data-lineage.md.
+uv sync --frozen --extra spyglass
 ```
 
 ### Installing Dependencies from GitHub
@@ -349,6 +358,7 @@ uv run ruff format . && uv run ruff check . && uv run mypy src/ && uv run pytest
 - **`reported_values.py`**: Summary-to-LaTeX macro generation and the manuscript's reporting policy
 - **`site_export.py`**: Data files for the project website (playground, simulation and replay players, parity fixture)
 - **`load_local_data.py`**: Real data loading utilities
+- **`spyglass_data.py`**: Rebuilds the Figure-4 input exports from Spyglass and logs them in a Spyglass export (optional `spyglass` extra; not used by figure generation)
 - **`paths.py`**: Shared `DATA_PATH` / `ANIMAL_DATE_EPOCH` constants (env-overridable)
 
 ### Standards

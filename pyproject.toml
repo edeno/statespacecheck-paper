@@ -33,7 +33,6 @@ dependencies = [
     "pandas>=2.0.0",
     "statespacecheck",
     "non_local_detector @ git+https://github.com/LorenFrankLab/non_local_detector.git",
-    "spyglass-neuro",
 ]
 
 [project.optional-dependencies]
@@ -52,6 +51,14 @@ interactive = [
     "PySide6>=6.6",
     "zarr>=2.16,<3",
     "pyarrow>=14",
+]
+# Spyglass for ``statespacecheck_paper.spyglass_data`` (rebuilding the Figure-4
+# inputs from the Frank-lab database); see docs/data-lineage.md. kachery-cloud is
+# only in Spyglass's test extra, but ``spyglass.spikesorting.v0`` imports it.
+spyglass = [
+    "spyglass-neuro",
+    "kachery-cloud",
+    "track-linearization",
 ]
 
 [project.urls]

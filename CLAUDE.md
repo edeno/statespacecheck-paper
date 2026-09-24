@@ -50,6 +50,11 @@ Key modules and the rationale that the source alone won't tell you:
   than refitting.
 - **load_local_data.py** — `load_neural_recording_from_files` → validated
   `NeuralRecordingData`; loads from pre-exported pickles, no Spyglass DB needed.
+- **spyglass_data.py** — rebuilds those pickles from the lab's Spyglass database
+  (optional `spyglass` extra) and logs them in a Spyglass export. Keep every
+  Spyglass import inside a function: importing the module must not connect to
+  the database (a test enforces this). Nothing in figure generation imports it.
+  The lineage record is `docs/data-lineage.md`.
 - **paths.py** — `DATA_PATH` / `ANIMAL_DATE_EPOCH` constants, env-overridable via
   `STATESPACECHECK_DATA_PATH` / `STATESPACECHECK_ANIMAL_DATE_EPOCH`.
 - **style.py / simulation.py / plotting.py / schematic.py** — styling (WONG
