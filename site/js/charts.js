@@ -7,8 +7,16 @@ const SVG_NS = "http://www.w3.org/2000/svg";
 // longer touch movements are scrolls.
 const TAP_SLOP = 10;
 
+// The stylesheet's tokens are fixed for the page's lifetime, so read each once.
+const cssVars = new Map();
+
 export function cssVar(name) {
-  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  let value = cssVars.get(name);
+  if (value === undefined) {
+    value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    cssVars.set(name, value);
+  }
+  return value;
 }
 
 function svg(tag, attributes = {}, parent = null) {
@@ -196,8 +204,11 @@ export class TrackStack {
       const height = track.height;
       if (width === 0) continue;
       const ratio = window.devicePixelRatio || 1;
-      canvas.width = Math.round(width * ratio);
-      canvas.height = Math.round(height * ratio);
+      // Assigning a canvas size reallocates its bitmap, so only do it on change.
+      const pixelWidth = Math.round(width * ratio);
+      const pixelHeight = Math.round(height * ratio);
+      if (canvas.width !== pixelWidth) canvas.width = pixelWidth;
+      if (canvas.height !== pixelHeight) canvas.height = pixelHeight;
       const context = canvas.getContext("2d");
       context.setTransform(ratio, 0, 0, ratio, 0, 0);
       context.clearRect(0, 0, width, height);
@@ -447,30 +458,32 @@ export class DistributionChart {
     this.layers.axis.appendChild(title);
   }
 
-  curvePath(values, closed, scaleMax = null) {
+  /** Path data for `values`: `open` traces the curve, `closed` also fills to the baseline. */
+  curvePaths(values, scaleMax = null) {
     const max = scaleMax ?? Math.max(...values);
     const base = this.margin.top + this.plotHeight;
     const yOf = (v) => base - (max > 0 ? v / max : 0) * (this.plotHeight - 4);
-    let d = "";
+    let open = "";
+    let closed = "";
     let segmentFirst = 0;
     const closeSegment = (last) => {
-      if (!closed) return;
       const right = this.x(this.bins[last]).toFixed(2);
       const left = this.x(this.bins[segmentFirst]).toFixed(2);
-      d += `L${right},${base}L${left},${base}Z`;
+      closed += `L${right},${base}L${left},${base}Z`;
     };
     values.forEach((v, i) => {
+      let point = "L";
       if (this.segmentStart[i]) {
         if (i > 0) closeSegment(i - 1);
         segmentFirst = i;
-        d += "M";
-      } else {
-        d += "L";
+        point = "M";
       }
-      d += `${this.x(this.bins[i]).toFixed(2)},${yOf(v).toFixed(2)}`;
+      point += `${this.x(this.bins[i]).toFixed(2)},${yOf(v).toFixed(2)}`;
+      open += point;
+      closed += point;
     });
     closeSegment(values.length - 1);
-    return d;
+    return { open, closed };
   }
 
   /** One rect per contiguous run of in-region bins, so bands have no seams. */
@@ -500,17 +513,12 @@ export class DistributionChart {
     const { series, bands = [], marker = null, scaleMax = null } = state;
     for (const layer of ["bands", "areas", "marker"]) this.layers[layer].replaceChildren();
     for (const { values, color, dashed = false, filled = true, width = 2 } of series) {
-      if (filled) {
-        svg(
-          "path",
-          { d: this.curvePath(values, true, scaleMax), fill: color, "fill-opacity": 0.12 },
-          this.layers.areas,
-        );
-      }
+      const { open, closed } = this.curvePaths(values, scaleMax);
+      if (filled) svg("path", { d: closed, fill: color, "fill-opacity": 0.12 }, this.layers.areas);
       svg(
         "path",
         {
-          d: this.curvePath(values, false, scaleMax),
+          d: open,
           fill: "none",
           stroke: color,
           "stroke-width": width,

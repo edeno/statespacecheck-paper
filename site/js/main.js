@@ -56,29 +56,24 @@ async function main() {
   const simulation = document.querySelector("#simulation");
   const recording = document.querySelector("#real-data");
 
+  // The three above-the-fold files are independent: request them together.
+  const manifestLoad = loadJSON("data/manifest.json");
+  Promise.all([loadJSON("data/filter.json"), manifestLoad])
+    .then(([data, manifest]) => initExplainer(explainer, data, manifest))
+    .catch((error) => showError(explainer.querySelector("#ft-tracks"), "filter explainer", error));
+  Promise.all([loadJSON("data/playground.json"), manifestLoad])
+    .then(([data]) => initPlayground(playground, data))
+    .catch((error) => showError(playground.querySelector("#pg-chart"), "playground", error));
+
   let manifest;
   try {
-    manifest = await loadJSON("data/manifest.json");
+    manifest = await manifestLoad;
   } catch (error) {
-    for (const [section, what] of [
-      [explainer.querySelector("#ft-tracks"), "filter explainer"],
-      [playground.querySelector("#pg-chart"), "playground"],
-      [simulation.querySelector("#sc-view"), "simulation"],
-      [recording.querySelector("#rp-view"), "recording"],
-    ]) {
-      showError(section, what, error);
-    }
+    showError(simulation.querySelector("#sc-view"), "simulation", error);
+    showError(recording.querySelector("#rp-view"), "recording", error);
     return;
   }
   fillMacros(document, manifest.macros);
-
-  loadJSON("data/filter.json")
-    .then((data) => initExplainer(explainer, data, manifest))
-    .catch((error) => showError(explainer.querySelector("#ft-tracks"), "filter explainer", error));
-
-  loadJSON("data/playground.json")
-    .then((data) => initPlayground(playground, data))
-    .catch((error) => showError(playground.querySelector("#pg-chart"), "playground", error));
 
   whenNear(simulation, () => initScenarios(simulation, manifest));
 
