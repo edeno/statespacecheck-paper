@@ -89,19 +89,15 @@
       "diagnostics_fingerprint_sha256": "4a00edb598979bad342201e1703101ad98ba78ae5e3aefc9f501ccd8d1bdcff6",
       "diagnostics_schema_version": 1,
       "export_file_sha256": {
-        "j1620210710_02_r1_HPC_spike_times.pkl": "2d3e87fddf2e76237d5cbcd8773fb754d873b96dd41820f4c6a07b0fc9802905",
-        "j1620210710_02_r1_linear_edge_order.pkl": "ccdd3cf89080a08d6b670c77eb635174fb801c44cb040e4f6aba7c3da5967646",
-        "j1620210710_02_r1_linear_edge_spacing.pkl": "10fe7c1a5cf8e7ec589293a3ce47a20764bc918c193ae6736a1e3df783c83c8e",
-        "j1620210710_02_r1_position_info.pkl": "8c96c7ace899db447d546e63a4e196188f14ab81ed66ec39c7939954b3775927",
-        "j1620210710_02_r1_track_graph.pkl": "147bfb7edb0e100cb56a09a00bca8104e789b5f462c970789ddd5d5adb45b84f"
+        "j1620210710_02_r1_figure04_inputs.npz": "60383b394b597e2900545548ecac7c53a8601038ace9dbeb42d7f9a5fe1c93b3"
       },
-      "fingerprint_sha256": "c30cead62c324b70d84b581f88c58277e4fd24af627f96b9ef74029538bd85d0",
+      "fingerprint_sha256": "a276d502417fa225dbf110b28dc239ca4ffe95db72fb96223732835493addcb8",
       "non_local_detector_version": "0.6.10.dev214+g956fdccaf",
       "schema_version": 5,
       "statespacecheck_version": "0.1.0"
     },
     "source": {
-      "source_tree_sha256": "37a9a7d7f3315385e140e9b15b92f6751e030e12322391d6e7e4e8a1acf28a0e",
+      "source_tree_sha256": "3c2bd1a9949b8bae0e2e3e10af5dc652d590761b1114de4ea0da79776b8491dd",
       "statespacecheck_paper_version": "0.1.0",
       "uv_lock_sha256": "6f956059b715174a32cb2aece6d39f4bfb724fd0c3fe6f1c4fa93e67623f20b4"
     }
