@@ -53,9 +53,11 @@ interactive = [
     "pyarrow>=14",
 ]
 # Spyglass for ``statespacecheck_paper.spyglass_data`` (rebuilding the Figure-4
-# inputs from the Frank-lab database); see docs/data-lineage.md.
+# inputs from the Frank-lab database); see docs/data-lineage.md. kachery-cloud is
+# only in Spyglass's test extra, but ``spyglass.spikesorting.v0`` imports it.
 spyglass = [
     "spyglass-neuro",
+    "kachery-cloud",
     "track-linearization",
 ]
 
