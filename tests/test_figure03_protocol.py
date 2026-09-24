@@ -20,6 +20,12 @@ class TestFigure3Config:
         params = Figure3Config(place_field_centers=custom)
         np.testing.assert_array_equal(params.place_field_centers, custom)
 
+    def test_position_bins_span_the_track_inclusively(self) -> None:
+        np.testing.assert_array_equal(Figure3Config().position_bins, np.arange(0.0, 101.0))
+        coarse = Figure3Config(position_min=10, position_max=50, position_bin_size=5)
+        np.testing.assert_array_equal(coarse.position_bins, np.arange(10.0, 51.0, 5.0))
+        assert coarse.position_bins.dtype == np.float64
+
 
 class TestFigure3ConfigPhaseBoundaries:
     """The phase ladder collapsed from 8 ``T_*`` fields to one

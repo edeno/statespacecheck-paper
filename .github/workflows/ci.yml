@@ -57,3 +57,17 @@ jobs:
         with:
           file: ./coverage.xml
           fail_ci_if_error: false
+
+  site:
+    # The website's JavaScript port of the diagnostics must match the Python
+    # implementation (site/tests/fixtures/metric_parity.json).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Run site tests
+        run: make -C site test

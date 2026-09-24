@@ -369,9 +369,13 @@ source edit, verify that executable code is unchanged (for example, compare
 Python syntax trees with docstrings removed). Then refresh only
 `provenance.source` in both committed summaries using
 `scientific_source_provenance` and `write_json_artifact`, preserving all other
-fields, and rerun `uv run python scripts/emit_reported_values.py`. If scientific
+fields, and rerun `uv run python scripts/emit_reported_values.py`. The same
+relabeling applies to executable edits confined to modules that no figure entry
+point imports (`reported_values`, `site_export`), provided the regenerated
+`reported_values.tex` is unchanged apart from its source hash. If scientific
 code or inputs changed, regenerate the affected figures and summaries through
-their canonical entry points instead of relabeling existing results.
+their canonical entry points instead of relabeling existing results, then
+re-export the website data (`uv run python scripts/export_site_data.py`).
 
 Figure 4 also contains `provenance.figure04_decode_cache`. Its
 `fingerprint_sha256` is the same identity used to accept or reject the

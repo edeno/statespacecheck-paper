@@ -54,6 +54,11 @@ _DEFAULT_PHASE_BOUNDARIES: tuple[int, ...] = (
 )
 
 
+# Length of one simulation step, in seconds: the Figure-3 timeline is in 1 ms
+# steps by convention (see ``Figure3Config``).
+STEP_SECONDS = 1e-3
+
+
 @dataclass(frozen=True)
 class Figure3Config:
     """Parameters for the figure-3 decoding simulation.
@@ -362,6 +367,21 @@ class Figure3Config:
                 f"replay_place_field_rate_scale must be positive; "
                 f"got {self.replay_place_field_rate_scale}."
             )
+
+    @property
+    def position_bins(self) -> NDArray[np.float64]:
+        """The decoder's position grid, shape (n_bins,).
+
+        Bin centers from ``position_min`` to ``position_max`` inclusive, every
+        ``position_bin_size``. The simulation and the website's explainer and
+        playground all decode on this grid.
+        """
+        return np.arange(
+            self.position_min,
+            self.position_max + self.position_bin_size,
+            self.position_bin_size,
+            dtype=np.float64,
+        )
 
 
 # Canonical ordered phase labels — the public contract of
