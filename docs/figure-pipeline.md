@@ -71,6 +71,10 @@ generate_figure04.py   → figure04_generation
 
 - **`interactive/`** — an optional pyqtgraph viewer that consumes the same
   diagnostic results but produces no manuscript figure.
+- **`spyglass_data.py`** (with `scripts/fetch_figure04_inputs.py` and
+  `scripts/spyglass_export_figure04.py`) — rebuilds and exports the Figure-4
+  input files from Spyglass. It runs upstream of `load_local_data` and nothing in
+  figure generation imports it. See [data-lineage.md](data-lineage.md).
 
 Start from the four `scripts/generate_figureNN.py` entry points.
 
@@ -282,12 +286,17 @@ $\Lambda(x)$.
   | `{epoch}_linear_edge_order.pkl` | `linear_edge_order` | linearization edge order |
   | `{epoch}_linear_edge_spacing.pkl` | `linear_edge_spacing` | edge spacing (cm) |
 
-  The raw-recording → these-five-exports step (DANDI / Spyglass / MountainSort /
-  linearization) is **not implemented in this repository**; obtain the recording
-  from the DANDI Archive as dandiset
-  [001942](https://dandiarchive.org/dandiset/001942)
-  ([Comrie et al. 2024](https://doi.org/10.1101/2024.09.23.613567)) and place the
-  exports under `data/` (or set `STATESPACECHECK_DATA_PATH`). The expensive decode
+  The five exports come from the Frank-lab Spyglass database (the recording of
+  [Comrie et al. 2024](https://doi.org/10.1101/2024.09.23.613567)).
+  [data-lineage.md](data-lineage.md) records the exact Spyglass entries and
+  processing steps, the verification against the files the figure used, and what
+  is public: DANDI dandiset [001942](https://dandiarchive.org/dandiset/001942) has
+  the raw recording and the position, but not the spike sorting used here.
+  `spyglass_data.py` rebuilds the exports from the database
+  (`scripts/fetch_figure04_inputs.py`, read-only) and logs them in a Spyglass
+  export (`scripts/spyglass_export_figure04.py`); both run on a lab server with
+  Spyglass and database access. Place the exports under `data/` (or set
+  `STATESPACECHECK_DATA_PATH`). The expensive decode
   is cached under `data/intermediates/` as two joblib bundles: the ~19 GB decode
   bundle `{epoch}_fig4_cache.joblib` (memory-mapped on load) and the diagnostics
   bundle `{epoch}_fig4_diagnostics.joblib`, each gated by the fingerprints
