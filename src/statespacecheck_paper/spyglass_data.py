@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import dataclasses
 import pickle
+import re
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from types import MappingProxyType
@@ -430,6 +431,48 @@ def export_file_paths(output_dir: str | Path, animal_date_epoch: str) -> tuple[P
     )
 
 
+def check_output_paths(
+    output_dir: str | Path,
+    animal_date_epoch: str,
+    *,
+    reference_dir: str | Path | None = None,
+    overwrite: bool = False,
+) -> None:
+    """Check export destinations (and a comparison reference) before any work.
+
+    Parameters
+    ----------
+    output_dir : str or Path
+        Directory the exports will be written to.
+    animal_date_epoch : str
+        Epoch identifier used as the file-name prefix.
+    reference_dir : str or Path, optional
+        Directory of reference exports the new files will be compared with.
+    overwrite : bool, optional
+        Whether existing files in ``output_dir`` may be replaced. Default False.
+
+    Raises
+    ------
+    ValueError
+        If ``reference_dir`` is ``output_dir``: the reference would be overwritten
+        and then compared with itself.
+    FileExistsError
+        If an export already exists in ``output_dir`` and ``overwrite`` is False.
+    FileNotFoundError
+        If a reference export is missing.
+    """
+    if reference_dir is not None and Path(reference_dir).resolve() == Path(output_dir).resolve():
+        raise ValueError(f"Output and reference directory are the same: {output_dir}")
+    existing = [str(p) for p in export_file_paths(output_dir, animal_date_epoch) if p.exists()]
+    if existing and not overwrite:
+        raise FileExistsError(f"Refusing to overwrite existing exports: {existing}")
+    if reference_dir is not None:
+        reference = export_file_paths(reference_dir, animal_date_epoch)
+        missing = [str(p) for p in reference if not p.is_file()]
+        if missing:
+            raise FileNotFoundError(f"Missing reference exports: {missing}")
+
+
 def write_figure04_inputs(
     inputs: Figure4Inputs,
     output_dir: str | Path,
@@ -465,10 +508,8 @@ def write_figure04_inputs(
     FileExistsError
         If a destination file exists and ``overwrite`` is False.
     """
+    check_output_paths(output_dir, animal_date_epoch, overwrite=overwrite)
     paths = export_file_paths(output_dir, animal_date_epoch)
-    existing = [str(p) for p in paths if p.exists()]
-    if existing and not overwrite:
-        raise FileExistsError(f"Refusing to overwrite existing exports: {existing}")
     Path(output_dir).mkdir(parents=True, exist_ok=True)
 
     position_path, *pickled_paths = paths
@@ -546,31 +587,102 @@ def compare_figure04_exports(
     }
 
 
-def check_export_tables_match_spyglass() -> None:
-    """Refuse to package exports with a Spyglass older than the database's tables.
+def print_export_comparison(
+    reference_dir: str | Path,
+    candidate_dir: str | Path,
+    animal_date_epoch: str,
+) -> bool:
+    """Print :func:`compare_figure04_exports` one file per line.
 
-    ``Export().populate_paper`` must come from a Spyglass version that knows every
-    column of the lab database's ``Export`` tables; an older one (e.g. the locked
-    0.5.5 against a database migrated for later versions) would write incomplete
-    rows. Read-only.
+    Parameters
+    ----------
+    reference_dir : str or Path
+        Directory with the reference exports.
+    candidate_dir : str or Path
+        Directory with the exports to check.
+    animal_date_epoch : str
+        Epoch identifier used as the file-name prefix.
+
+    Returns
+    -------
+    bool
+        Whether every file is identical.
+    """
+    matches = compare_figure04_exports(reference_dir, candidate_dir, animal_date_epoch)
+    for name, is_equal in matches.items():
+        print(f"{'identical' if is_equal else 'DIFFERENT'}  {name}")
+    return all(matches.values())
+
+
+# ``name [= default] : type`` lines of a DataJoint definition (not ``->`` or index lines).
+_ATTRIBUTE_LINE = re.compile(r"^\s*([a-z][a-z0-9_]*)\s*(?:=[^:#\n]*)?:", re.MULTILINE)
+
+
+def declared_attribute_names(definition: str) -> set[str]:
+    """Return the attribute names a DataJoint table definition declares directly.
+
+    Attributes inherited through ``->`` references are not included.
+
+    Parameters
+    ----------
+    definition : str
+        DataJoint table definition.
+
+    Returns
+    -------
+    set of str
+        Declared attribute names.
+
+    Examples
+    --------
+    >>> sorted(declared_attribute_names('''
+    ...     -> master
+    ...     table_id: int
+    ...     ---
+    ...     time=CURRENT_TIMESTAMP: timestamp  # when
+    ...     unique index (export_id, table_id)
+    ... '''))
+    ['table_id', 'time']
+    """
+    return set(_ATTRIBUTE_LINE.findall(definition))
+
+
+def check_export_tables_match_spyglass() -> None:
+    """Refuse to export with a Spyglass that does not declare the database's export columns.
+
+    The export tables of the lab database can be newer than the installed
+    Spyglass (the version in ``uv.lock`` is), and an older Spyglass would write
+    rows its successors do not expect. ``Export.make`` also requires packaging
+    with the same Spyglass ``x.y.z`` that logged the selection, so a selection
+    logged by a Spyglass that cannot package would be stranded. Run this before
+    logging as well as before packaging. Read-only.
 
     Raises
     ------
     RuntimeError
-        If a live ``Export`` column is missing from the installed table definitions.
+        If a secondary column of the database's ``ExportSelection`` or ``Export``
+        tables is not declared by the installed Spyglass.
     """
-    from spyglass.common.common_usage import Export
+    from spyglass.common.common_usage import Export, ExportSelection
 
+    tables = (
+        ExportSelection,
+        ExportSelection.Table,
+        ExportSelection.File,
+        Export,
+        Export.Table,
+        Export.File,
+    )
     unknown = [
         f"{table.full_table_name}.{name}"
-        for table in (Export, Export.Table, Export.File)
+        for table in tables
         for name in table.heading.secondary_attributes
-        if name not in table.definition
+        if name not in declared_attribute_names(table.definition)
     ]
     if unknown:
         raise RuntimeError(
-            f"Installed Spyglass predates the database's export tables (unknown columns: "
-            f"{unknown}); package the export with the lab's current Spyglass."
+            f"Installed Spyglass predates the database's export tables (undeclared columns: "
+            f"{unknown}); run the export with the lab's current Spyglass."
         )
 
 
@@ -584,7 +696,9 @@ def log_figure04_export(
 
     **Writes to the lab database**: ``ExportSelection.start_export`` inserts a
     selection entry, and every Spyglass fetch until ``stop_export`` is logged
-    against it. Packaging (``Export().populate_paper``) is a separate step.
+    against it. Before that, :func:`check_export_tables_match_spyglass` runs and
+    the ``paper_id`` is checked to be new. Packaging is
+    :func:`package_figure04_export`, which must use the same Spyglass version.
 
     Parameters
     ----------
@@ -604,20 +718,74 @@ def log_figure04_export(
 
     Raises
     ------
+    RuntimeError
+        From :func:`check_export_tables_match_spyglass`.
     ValueError
         If ``paper_id`` already has export selections. Re-starting an existing
         ``(paper_id, analysis_id)`` deletes its packaged ``Export`` entry, and
-        ``populate_paper`` replaces the paper's package, so this refuses rather
-        than overwrite a previous export.
+        packaging rebuilds the paper's one package from all of its selections, so
+        this refuses rather than change a previous export.
     """
     from spyglass.common.common_usage import ExportSelection
 
-    if len(ExportSelection & {"paper_id": paper_id}) > 0:
+    check_export_tables_match_spyglass()
+    selection = ExportSelection()
+    if len(selection & {"paper_id": paper_id}) > 0:
         raise ValueError(f"paper_id {paper_id!r} already has export selections; choose a new one")
 
-    selection = ExportSelection()
     selection.start_export(paper_id=paper_id, analysis_id=analysis_id)
     try:
         return fetch_figure04_inputs(nwb_file_name, epoch_name)
     finally:
         selection.stop_export()
+
+
+def describe_figure04_export(paper_id: str) -> list[str]:
+    """List the tables and files logged for an export (read-only).
+
+    Parameters
+    ----------
+    paper_id : str
+        Export paper ID.
+
+    Returns
+    -------
+    list of str
+        Printable lines: each logged table with its row count, then each file.
+    """
+    from spyglass.common.common_usage import ExportSelection
+
+    selection = ExportSelection()
+    tables = selection.preview_tables(paper_id=paper_id)
+    files = selection.list_file_paths({"paper_id": paper_id}, as_dict=False)
+    return [
+        "Logged tables:",
+        *(f"  {table.full_table_name}: {len(table)} rows" for table in tables),
+        "Logged files:",
+        *(f"  {path}" for path in sorted(files)),
+    ]
+
+
+def package_figure04_export(paper_id: str) -> None:
+    """Package a logged export with ``Export().populate_paper``.
+
+    **Writes to the lab database** (``Export`` entries listing the tables and
+    files) and to the Spyglass export directory (a ``mysqldump`` script
+    ``_ExportSQL_<paper_id>.sh``, the Spyglass version, and ``environment.yml``;
+    it may also create ``~/.my.cnf``). Running that script produces the SQL dump.
+
+    Parameters
+    ----------
+    paper_id : str
+        Export paper ID, logged with the installed Spyglass version.
+
+    Raises
+    ------
+    RuntimeError
+        From :func:`check_export_tables_match_spyglass`, or from Spyglass when
+        the selection was logged with a different Spyglass version.
+    """
+    from spyglass.common.common_usage import Export
+
+    check_export_tables_match_spyglass()
+    Export().populate_paper(paper_id=paper_id)

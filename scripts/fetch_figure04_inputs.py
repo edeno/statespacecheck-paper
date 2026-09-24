@@ -26,9 +26,10 @@ from pathlib import Path
 from statespacecheck_paper.spyglass_data import (
     FIGURE04_EPOCH_NAME,
     FIGURE04_NWB_FILE_NAME,
-    compare_figure04_exports,
+    check_output_paths,
     epoch_identifier,
     fetch_figure04_inputs,
+    print_export_comparison,
     write_figure04_inputs,
 )
 
@@ -48,6 +49,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     animal_date_epoch = epoch_identifier(args.nwb_file_name, args.epoch_name)
+    try:
+        check_output_paths(
+            args.output_dir,
+            animal_date_epoch,
+            reference_dir=args.compare_to,
+            overwrite=args.overwrite,
+        )
+    except (ValueError, OSError) as exc:
+        parser.error(str(exc))
+
     inputs = fetch_figure04_inputs(args.nwb_file_name, args.epoch_name)
     for path in write_figure04_inputs(
         inputs, args.output_dir, animal_date_epoch, overwrite=args.overwrite
@@ -56,10 +67,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.compare_to is None:
         return 0
-    matches = compare_figure04_exports(args.compare_to, args.output_dir, animal_date_epoch)
-    for name, is_equal in matches.items():
-        print(f"{'identical' if is_equal else 'DIFFERENT'}  {name}")
-    return 0 if all(matches.values()) else 1
+    return 0 if print_export_comparison(args.compare_to, args.output_dir, animal_date_epoch) else 1
 
 
 if __name__ == "__main__":

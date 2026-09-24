@@ -7,9 +7,11 @@ comparison) on simulated data.
 
 from __future__ import annotations
 
+import importlib.util
 import subprocess
 import sys
 from pathlib import Path
+from types import ModuleType, SimpleNamespace
 
 import networkx as nx
 import numpy as np
@@ -17,12 +19,16 @@ import pandas as pd
 import pytest
 from track_linearization import make_track_graph
 
+from statespacecheck_paper import spyglass_data
 from statespacecheck_paper.load_local_data import load_neural_recording_from_files
 from statespacecheck_paper.spyglass_data import (
     Figure4Inputs,
+    check_output_paths,
     compare_figure04_exports,
+    declared_attribute_names,
     filter_spike_times,
     get_interpolated_position_info,
+    log_figure04_export,
     write_figure04_inputs,
 )
 
@@ -139,3 +145,229 @@ def test_compare_flags_only_the_file_that_differs(tmp_path: Path) -> None:
 
     assert all(same.values())
     assert shifted == {name: not name.endswith("_HPC_spike_times.pkl") for name in same}
+
+
+# --- Path checks -------------------------------------------------------------
+
+
+def test_check_output_paths_rejects_reference_as_output(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="same"):
+        check_output_paths(tmp_path, _EPOCH, reference_dir=tmp_path / "sub" / "..", overwrite=True)
+
+
+def test_check_output_paths_rejects_existing_output_and_missing_reference(tmp_path: Path) -> None:
+    write_figure04_inputs(_inputs(), tmp_path / "out", _EPOCH)
+
+    with pytest.raises(FileExistsError):
+        check_output_paths(tmp_path / "out", _EPOCH)
+    with pytest.raises(FileNotFoundError, match="Missing reference"):
+        check_output_paths(tmp_path / "new", _EPOCH, reference_dir=tmp_path / "missing")
+    check_output_paths(tmp_path / "new", _EPOCH, reference_dir=tmp_path / "out")
+
+
+# --- Export guard and ordering (fake Spyglass export tables) -----------------
+
+
+def test_declared_attribute_names_ignores_references_indexes_and_comments() -> None:
+    definition = """
+    # table of logged restrictions
+    -> master
+    table_id: int
+    ---
+    table_name: varchar(128)
+    restriction = null: mediumblob  # the table's restriction
+    unique index (export_id, table_name)
+    """
+    assert declared_attribute_names(definition) == {"table_id", "table_name", "restriction"}
+
+
+def _fake_common_usage(
+    monkeypatch: pytest.MonkeyPatch,
+    calls: list[str],
+    *,
+    n_existing: int = 0,
+    undeclared: tuple[str, ...] = (),
+) -> None:
+    def table(
+        name: str, definition: str, secondary: tuple[str, ...] = (), **parts: object
+    ) -> SimpleNamespace:
+        return SimpleNamespace(
+            full_table_name=name,
+            definition=definition,
+            heading=SimpleNamespace(secondary_attributes=list(secondary)),
+            **parts,
+        )
+
+    class ExportSelection:
+        full_table_name = "export_selection"
+        definition = "export_id: int\n---\npaper_id: varchar(32)\n"
+        heading = SimpleNamespace(secondary_attributes=["paper_id", *undeclared])
+        Table = table("export_selection__table", "-> master\n")
+        File = table("export_selection__file", "-> master\n")
+
+        def __and__(self, restriction: object) -> list[None]:
+            calls.append("query")
+            return [None] * n_existing
+
+        def start_export(self, paper_id: str, analysis_id: str) -> None:
+            calls.append("start_export")
+
+        def stop_export(self) -> None:
+            calls.append("stop_export")
+
+    export = table(
+        "export",
+        "-> ExportSelection\n---\npaper_id: varchar(32)\n",
+        ("paper_id",),
+        Table=table("export__table", "-> master\n"),
+        File=table("export__file", "-> master\n"),
+    )
+    module = ModuleType("spyglass.common.common_usage")
+    module.__dict__.update(ExportSelection=ExportSelection, Export=export)
+    monkeypatch.setitem(sys.modules, "spyglass", ModuleType("spyglass"))
+    monkeypatch.setitem(sys.modules, "spyglass.common", ModuleType("spyglass.common"))
+    monkeypatch.setitem(sys.modules, "spyglass.common.common_usage", module)
+
+
+def test_log_export_refuses_undeclared_columns_before_writing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+    _fake_common_usage(monkeypatch, calls, undeclared=("included_nwb_file_names",))
+
+    with pytest.raises(RuntimeError, match="included_nwb_file_names"):
+        log_figure04_export("paper", "analysis")
+    assert calls == []
+
+
+def test_log_export_refuses_an_existing_paper_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[str] = []
+    _fake_common_usage(monkeypatch, calls, n_existing=1)
+
+    with pytest.raises(ValueError, match="already has export selections"):
+        log_figure04_export("paper", "analysis")
+    assert calls == ["query"]
+
+
+def test_log_export_stops_the_session_when_the_fetch_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+    _fake_common_usage(monkeypatch, calls)
+
+    def failing_fetch(*args: object) -> Figure4Inputs:
+        raise OSError("analysis file unavailable")
+
+    monkeypatch.setattr(spyglass_data, "fetch_figure04_inputs", failing_fetch)
+
+    with pytest.raises(OSError):
+        log_figure04_export("paper", "analysis")
+    assert calls == ["query", "start_export", "stop_export"]
+
+
+# --- Export script (database-bound helpers replaced) --------------------------
+
+
+def _load_script(name: str) -> ModuleType:
+    spec = importlib.util.spec_from_file_location(name, _REPO_ROOT / "scripts" / f"{name}.py")
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _export_script(monkeypatch: pytest.MonkeyPatch, calls: list[str], answer: str) -> ModuleType:
+    script = _load_script("spyglass_export_figure04")
+
+    def log(paper_id: str, analysis_id: str) -> Figure4Inputs:
+        calls.append("log")
+        return _inputs()
+
+    def package(paper_id: str) -> None:
+        calls.append("package")
+
+    def describe(paper_id: str) -> list[str]:
+        calls.append("describe")
+        return []
+
+    def ask(prompt: str) -> str:
+        calls.append("prompt")
+        return answer
+
+    monkeypatch.setattr(script, "version", lambda package_name: "0.0.0")
+    monkeypatch.setattr(script, "log_figure04_export", log)
+    monkeypatch.setattr(script, "package_figure04_export", package)
+    monkeypatch.setattr(script, "describe_figure04_export", describe)
+    monkeypatch.setattr("builtins.input", ask)
+    return script
+
+
+def _script_epoch() -> str:
+    return spyglass_data.epoch_identifier(
+        spyglass_data.FIGURE04_NWB_FILE_NAME, spyglass_data.FIGURE04_EPOCH_NAME
+    )
+
+
+def test_export_script_requires_compare_to_for_populate(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[str] = []
+    script = _export_script(monkeypatch, calls, "y")
+
+    with pytest.raises(SystemExit) as exc:
+        script.main(["--paper-id", "p", "--output-dir", "out", "--populate"])
+    assert exc.value.code == 2
+    assert calls == []
+
+
+def test_export_script_checks_paths_before_asking(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    calls: list[str] = []
+    script = _export_script(monkeypatch, calls, "y")
+    write_figure04_inputs(_inputs(), tmp_path / "used", _script_epoch())
+
+    with pytest.raises(SystemExit) as exc:
+        script.main(["--paper-id", "p", "--output-dir", str(tmp_path / "used")])
+    assert exc.value.code == 2
+    assert calls == []
+
+
+def test_export_script_writes_nothing_unless_confirmed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    calls: list[str] = []
+    script = _export_script(monkeypatch, calls, "n")
+
+    assert script.main(["--paper-id", "p", "--output-dir", str(tmp_path / "out")]) == 1
+    assert calls == ["prompt"]
+
+
+def test_export_script_does_not_package_a_mismatch(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    calls: list[str] = []
+    script = _export_script(monkeypatch, calls, "y")
+    write_figure04_inputs(_inputs(spike_shift=1e-9), tmp_path / "ref", _script_epoch())
+    args = ["--paper-id", "p", "--output-dir", str(tmp_path / "out")]
+
+    assert script.main([*args, "--compare-to", str(tmp_path / "ref"), "--populate"]) == 1
+    assert calls == ["prompt", "log"]
+
+
+def test_export_script_packages_a_verified_export(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    calls: list[str] = []
+    script = _export_script(monkeypatch, calls, "y")
+    write_figure04_inputs(_inputs(), tmp_path / "ref", _script_epoch())
+    args = ["--paper-id", "p", "--output-dir", str(tmp_path / "out")]
+
+    assert script.main([*args, "--compare-to", str(tmp_path / "ref"), "--populate"]) == 0
+    assert calls == ["prompt", "log", "describe", "package"]
+
+
+def test_fetch_script_refuses_to_compare_the_output_with_itself(tmp_path: Path) -> None:
+    script = _load_script("fetch_figure04_inputs")
+
+    with pytest.raises(SystemExit) as exc:
+        script.main(["--output-dir", str(tmp_path), "--compare-to", str(tmp_path), "--overwrite"])
+    assert exc.value.code == 2
