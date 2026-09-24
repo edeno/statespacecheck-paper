@@ -149,7 +149,6 @@ def test_filter_explainer_is_decoded_by_the_papers_filter(
         centers,
         config.place_field_std,
         FILTER_EXPLAINER.rate_scale,
-        baseline_firing_rates=rates,
     )
     np.testing.assert_array_equal(sequence.decoded.predictive, decoded.predictive)
     np.testing.assert_array_equal(sequence.decoded.posterior, decoded.posterior)

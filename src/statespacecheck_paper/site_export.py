@@ -317,7 +317,9 @@ class FilterExplainerConfig:
         Standard deviation of the decoder's random-walk step, in position
         units per time step.
     rate_scale : float
-        ``place_field_rate_scale`` of the cells: expected spikes per step.
+        ``place_field_rate_scale`` of the cells. It multiplies the unit-area
+        Gaussian place field, so a cell's peak expected count is
+        ``rate_scale / (place_field_std * sqrt(2 * pi))`` spikes per step.
     seed : int
         Seed of the spikes.
     conflict_step : int
@@ -351,7 +353,8 @@ class FilterExplainerSequence:
     ----------
     position_bins : np.ndarray, shape (n_bins,)
     rates : np.ndarray, shape (n_bins, n_cells)
-        Expected spikes per step of each cell, for both simulation and decoding.
+        Expected spikes per step of each cell: the table the decoder builds
+        from the same place-field parameters, kept for the page's field plots.
     true_position : np.ndarray, shape (n_steps,)
     spike_counts : np.ndarray, shape (n_steps, n_cells)
     conflict_cells : tuple of int
@@ -421,7 +424,6 @@ def filter_explainer_sequence(
         centers,
         config.place_field_std,
         explainer.rate_scale,
-        baseline_firing_rates=rates,
     )
     return FilterExplainerSequence(
         position_bins=position_bins,
