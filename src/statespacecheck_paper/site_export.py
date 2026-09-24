@@ -62,13 +62,7 @@ from statespacecheck_paper.reported_values import (
     FIGURE04_SUMMARY_PATH,
     macro_sections,
 )
-from statespacecheck_paper.style import (
-    CMAP_LIKELIHOOD,
-    CMAP_POSTERIOR,
-    COLORS,
-    METRIC_SPECS,
-    MetricName,
-)
+from statespacecheck_paper.style import CMAP_LIKELIHOOD, CMAP_POSTERIOR, MetricName
 
 SITE_DATA_DIR = Path("site/data")
 PARITY_FIXTURE_PATH = Path("site/tests/fixtures/metric_parity.json")
@@ -82,6 +76,9 @@ EVENT_VALUE_SIGNIFICANT_FIGURES = 4
 
 # Entries in each exported colormap lookup table.
 COLORMAP_LUT_SIZE = 64
+
+# Probability mass of the HPD regions, as throughout the paper.
+HPD_COVERAGE = 0.95
 
 # Color scale of the predictive heatmaps, matching the paper's figures. Figure 3a
 # (figure03_plotting) spans 0 to the 97.5th percentile of the whole session;
@@ -414,7 +411,7 @@ def playground_payload(
             for ensemble in ensembles
         ],
         "flag_rules": figure03_summary["flag_rules"],
-        "coverage": 0.95,
+        "coverage": HPD_COVERAGE,
     }
 
 
@@ -427,6 +424,7 @@ def _single_event_diagnostics(
         rates,
         np.array([0], dtype=np.intp),
         np.array([cell], dtype=np.intp),
+        coverage=HPD_COVERAGE,
         include_dense_matrices=False,
     )
     return {metric: float(getattr(diagnostics, f"event_{metric}")[0]) for metric in METRIC_FIELDS}
@@ -485,7 +483,7 @@ def metric_parity_fixture(
     ]
     return {
         "position_bins": position_bins.tolist(),
-        "coverage": 0.95,
+        "coverage": HPD_COVERAGE,
         "ensembles": [ensemble.rates.tolist() for ensemble in ensembles],
         "gaussian_cases": gaussian_cases,
         "predictives": [predictive.tolist() for predictive in predictives],
@@ -542,6 +540,7 @@ def scenario_payloads(
     flag_percentages = np.asarray(figure03_summary["median_flag_percentages"], dtype=np.float64)
     decoding_error = np.asarray(figure03_summary["median_decoding_accuracy"], dtype=np.float64)
     flag_rules = figure03_summary["flag_rules"]
+    error_row = list(figure03_summary["accuracy_metric_order"]).index("median_absolute_error")
 
     posterior = np.asarray(diagnostics.posterior, dtype=np.float64)
     posterior_mean = (posterior @ position_bins) / posterior.sum(axis=1)
@@ -594,13 +593,13 @@ def scenario_payloads(
                     metric: float(flag_percentages[metric_order.index(metric), column])
                     for metric in METRIC_FIELDS
                 },
-                "median_absolute_error": float(decoding_error[0, column]),
+                "median_absolute_error": float(decoding_error[error_row, column]),
                 # Formatted with the manuscript's rounding policy.
                 "median_flag_percent_text": {
                     metric: whole_percent(flag_percentages[metric_order.index(metric), column])
                     for metric in METRIC_FIELDS
                 },
-                "median_absolute_error_text": significant(decoding_error[0, column]),
+                "median_absolute_error_text": significant(decoding_error[error_row, column]),
             },
         }
     for condition_id in FIGURE03_CONDITION_IDS:
@@ -633,7 +632,13 @@ def replay_payload(
     window = detail_window.to_slice(render_data.time.size)
     decode = render_data.decode_results
     time = np.asarray(render_data.time, dtype=np.float64)
-    t0, t1 = float(time[window.start]), float(time[window.stop - 1])
+    # Decoder bins are left-closed; the window spans [time[start], time[stop]).
+    t0 = float(time[window.start])
+    t_end = (
+        float(time[window.stop])
+        if window.stop < time.size
+        else float(time[-1] + (time[-1] - time[-2]))
+    )
     place_fields = np.asarray(decode.diagnostic_place_fields, dtype=np.float64)
     mean_likelihood, has_spikes = mean_per_spike_likelihood_by_time(
         decode.spike_counts[window], place_fields
@@ -675,6 +680,7 @@ def replay_payload(
         }
 
     spike_times = render_data.recording.spike_times
+    decode_cache = figure04_summary["provenance"]["figure04_decode_cache"]
     unit_rank = np.argsort(np.argsort(decode.place_field_peaks))
     return {
         "time": _rounded(time[window] - t0, 4),
@@ -686,13 +692,13 @@ def replay_payload(
         "unit_likelihoods": encode_display_rows(compute_normalized_event_likelihood(place_fields)),
         "unit_rank": unit_rank.tolist(),
         "spike_times": [
-            _rounded(times[(times >= t0) & (times <= t1)] - t0, 4) for times in spike_times
+            _rounded(times[(times >= t0) & (times < t_end)] - t0, 4) for times in spike_times
         ],
         "models": models,
         "flag_rules": flag_rules,
-        "decode_cache_fingerprint": figure04_summary["provenance"]["figure04_decode_cache"][
-            "fingerprint_sha256"
-        ],
+        # Identify the decode and the diagnostics this window was exported from.
+        "decode_cache_fingerprint": decode_cache["fingerprint_sha256"],
+        "diagnostics_fingerprint": decode_cache["diagnostics_fingerprint_sha256"],
     }
 
 
@@ -704,19 +710,14 @@ def replay_payload(
 def manifest_payload(
     figure03_summary: dict[str, Any], figure04_summary: dict[str, Any]
 ) -> dict[str, Any]:
-    """Page-wide data: reported-value macros, metric styling, and provenance."""
+    """Page-wide data: reported-value macros, flag rules, colormaps, and conditions."""
     macros = {
         macro.name: macro.value
         for _, section in macro_sections(figure03_summary, figure04_summary)
         for macro in section
     }
-    metric_colors = {spec.name: spec.color for spec in METRIC_SPECS}
     return {
         "macros": macros,
-        "metric_colors": {metric: metric_colors[metric] for metric in METRIC_FIELDS},
-        "colors": {
-            key: COLORS[key] for key in ("predictive", "likelihood", "ground_truth", "posterior")
-        },
         "flag_rules": {
             "simulation": figure03_summary["flag_rules"],
             "recording": figure04_summary["flag_rules"],
@@ -735,14 +736,6 @@ def manifest_payload(
             }
             for window in SCENARIO_WINDOWS
         ],
-        "provenance": {
-            "figure03_source_tree_sha256": figure03_summary["provenance"]["source"][
-                "source_tree_sha256"
-            ],
-            "figure04_decode_cache_fingerprint": figure04_summary["provenance"][
-                "figure04_decode_cache"
-            ]["fingerprint_sha256"],
-        },
     }
 
 

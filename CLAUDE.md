@@ -77,7 +77,8 @@ and CI environment. See `README.md` for dependency and lock-update commands.
 
 After changing a figure summary, run `uv run python scripts/emit_reported_values.py`
 from the repository root, then `make -C manuscript`, then
-`uv run python scripts/export_site_data.py` (the website's data; tests fail if stale). The Makefile tracks the macro
+`uv run python scripts/export_site_data.py` for the website's data (tests fail if
+stale; add `--skip-recording` without the Figure-4 data). The Makefile tracks the macro
 file as an input but does not regenerate it. Source docstrings and comments also
 contribute to the provenance hash; see `docs/figure-pipeline.md` for the artifact
 refresh procedure for documentation-only source changes.

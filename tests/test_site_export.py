@@ -49,6 +49,7 @@ from statespacecheck_paper.site_export import (
     replay_payload,
     scenario_payloads,
 )
+from statespacecheck_paper.style import COLORS, METRIC_SPECS
 from tests.test_figure04_layout import _compose_render_data
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -134,6 +135,7 @@ def test_playground_ensembles_are_the_figure3_decoder_tables(
     assert config.place_field_centers is not None
     sparse_centers = np.asarray(simulation.sparse_place_field_centers)
     position_bins, cell_centers, ensembles = playground_ensembles(config, sparse_centers)
+    np.testing.assert_array_equal(position_bins, simulation.position_bins)
     tables = build_figure03_rate_tables(
         position_bins, config.place_field_centers, sparse_centers, config
     )
@@ -261,7 +263,9 @@ def test_scenario_summaries_come_from_the_figure_summary(
             assert value == figure03_summary["median_flag_percentages"][row][column]
         assert (
             summary["median_absolute_error"]
-            == figure03_summary["median_decoding_accuracy"][0][column]
+            == figure03_summary["median_decoding_accuracy"][
+                figure03_summary["accuracy_metric_order"].index("median_absolute_error")
+            ][column]
         )
 
 
@@ -277,7 +281,12 @@ def test_replay_payload_slices_both_models_to_the_detail_window() -> None:
             "hpd_overlap": {"comparison": "less_than_or_equal", "threshold": 0.05},
             "predictive_pvalue": {"comparison": "less_than_or_equal", "threshold": 0.05},
         },
-        "provenance": {"figure04_decode_cache": {"fingerprint_sha256": "abc"}},
+        "provenance": {
+            "figure04_decode_cache": {
+                "fingerprint_sha256": "abc",
+                "diagnostics_fingerprint_sha256": "def",
+            }
+        },
     }
     window = Figure4DetailWindow(center_index=20, half_width_samples=10)
     payload = replay_payload(render_data, summary, window)
@@ -327,6 +336,12 @@ def test_replay_payload_slices_both_models_to_the_detail_window() -> None:
     # Units are ranked by place-field peak.
     assert sorted(payload["unit_rank"]) == list(range(decode.place_field_peaks.size))
     assert payload["decode_cache_fingerprint"] == "abc"
+    assert payload["diagnostics_fingerprint"] == "def"
+    # The raster covers the same bins as the events: [time[start], time[stop]).
+    t_end = render_data.time[time_slice.stop]
+    for unit, times in enumerate(render_data.recording.spike_times):
+        in_bins = (times >= render_data.time[time_slice.start]) & (times < t_end)
+        assert len(payload["spike_times"][unit]) == int(in_bins.sum())
 
 
 # ---------------------------------------------------------------------------
@@ -365,20 +380,59 @@ def test_committed_parity_fixture_is_current(simulation: Figure3SimulationResult
             assert old["expected"][metric] == pytest.approx(value, rel=1e-9, abs=1e-12)
 
 
+def _assert_rows_close(committed: str, fresh: str, n_bins: int) -> None:
+    """Quantized rows may differ by one level across platforms, never more."""
+    difference = decode_display_rows(committed, n_bins).astype(int) - decode_display_rows(
+        fresh, n_bins
+    ).astype(int)
+    assert np.abs(difference).max() <= 1
+
+
 def test_committed_scenarios_are_current(scenarios: dict[str, dict[str, Any]]) -> None:
     for condition_id, fresh in scenarios.items():
         committed = _load(SITE_DATA_DIR / f"scenario_{condition_id}.json")
+        n_bins = len(fresh["position_bins"])
         for key in ("start", "stop", "scored_windows", "summary", "label", "model_component"):
             assert committed[key] == fresh[key], (condition_id, key)
-        assert committed["events"]["t"] == fresh["events"]["t"], condition_id
-        assert committed["events"]["cell"] == fresh["events"]["cell"], condition_id
-        assert committed["events"]["flagged"] == fresh["events"]["flagged"], condition_id
+        for key in ("t", "cell", "likelihood_row", "flagged"):
+            assert committed["events"][key] == fresh["events"][key], (condition_id, key)
+        for metric in ("hpd_overlap", "predictive_pvalue", "kl_divergence"):
+            np.testing.assert_allclose(
+                committed["events"][metric], fresh["events"][metric], rtol=1e-3
+            )
+        for key in ("position_bins", "true_position", "posterior_mean", "cell_centers"):
+            np.testing.assert_allclose(committed[key], fresh[key], atol=0.011)
+        np.testing.assert_allclose(
+            committed["predictive"]["row_max"], fresh["predictive"]["row_max"], rtol=1e-5
+        )
+        np.testing.assert_allclose(
+            committed["predictive"]["range"], fresh["predictive"]["range"], rtol=1e-9
+        )
+        _assert_rows_close(committed["predictive"]["rows"], fresh["predictive"]["rows"], n_bins)
+        _assert_rows_close(committed["likelihood_rows"], fresh["likelihood_rows"], n_bins)
+
+
+def test_committed_playground_is_current(
+    simulation: Figure3SimulationResult, figure03_summary: dict[str, Any]
+) -> None:
+    committed = _load(SITE_DATA_DIR / "playground.json")
+    fresh = playground_payload(
+        Figure3Config(), np.asarray(simulation.sparse_place_field_centers), figure03_summary
+    )
+    for key in ("flag_rules", "coverage", "position_bins", "cell_centers"):
+        assert committed[key] == fresh[key], key
+    for old, new in zip(committed["ensembles"], fresh["ensembles"], strict=True):
+        assert old["ensemble_id"] == new["ensemble_id"]
+        assert old["selectable_cells"] == new["selectable_cells"]
+        np.testing.assert_allclose(old["rates"], new["rates"], rtol=1e-12)
 
 
 def test_committed_replay_matches_the_figure4_decode(figure04_summary: dict[str, Any]) -> None:
     committed = _load(SITE_DATA_DIR / "replay.json")
-    fingerprint = figure04_summary["provenance"]["figure04_decode_cache"]["fingerprint_sha256"]
-    assert committed["decode_cache_fingerprint"] == fingerprint
+    decode_cache = figure04_summary["provenance"]["figure04_decode_cache"]
+    # A decoder or a diagnostics change must be followed by a re-export.
+    assert committed["decode_cache_fingerprint"] == decode_cache["fingerprint_sha256"]
+    assert committed["diagnostics_fingerprint"] == decode_cache["diagnostics_fingerprint_sha256"]
     assert committed["flag_rules"] == figure04_summary["flag_rules"]
     continuous, fragmented = (
         committed["models"][name]["events"] for name in ("continuous", "continuous_fragmented")
@@ -386,3 +440,33 @@ def test_committed_replay_matches_the_figure4_decode(figure04_summary: dict[str,
     # Both decoders are scored on the same spikes.
     assert continuous["t"] == fragmented["t"]
     assert continuous["cell"] == fragmented["cell"]
+
+
+def test_site_stylesheet_uses_the_paper_palette() -> None:
+    """The site's CSS color tokens match the figures' colors in ``style``."""
+    css = (REPO_ROOT / "site/css/style.css").read_text(encoding="utf-8").lower()
+    tokens = {
+        "--predictive": COLORS["predictive"],
+        "--likelihood": COLORS["likelihood"],
+        "--position": COLORS["ground_truth"],
+        "--threshold": COLORS["threshold"],
+        **{f"--{css_name}": spec.color for css_name, spec in _METRIC_CSS.items()},
+    }
+    for token, color in tokens.items():
+        assert f"{token}: {color.lower()};" in css, token
+
+
+_METRIC_CSS = {
+    css_name: next(spec for spec in METRIC_SPECS if spec.name == metric)
+    for css_name, metric in (
+        ("hpd", "hpd_overlap"),
+        ("pvalue", "predictive_pvalue"),
+        ("kl", "kl_divergence"),
+    )
+}
+
+
+def test_simulation_hpd_threshold_matches_the_page_text(figure03_summary: dict[str, Any]) -> None:
+    """site/index.html says the simulation's HPD cutoff flags only disjoint regions."""
+    rule = figure03_summary["flag_rules"]["hpd_overlap"]
+    assert rule == {"comparison": "less_than_or_equal", "threshold": 0.0}

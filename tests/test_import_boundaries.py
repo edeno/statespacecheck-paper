@@ -193,7 +193,16 @@ def test_site_export_depends_only_on_analysis_layers() -> None:
         prefix + "reported_values",
         prefix + "style",
     }
-    for module_file in sorted(p.name for p in _SRC.glob("*.py")):
-        if module_file != "site_export.py":
-            imported = _sibling_module_imports(module_file)
-            assert prefix + "site_export" not in imported, module_file
+    for path in sorted(_SRC.rglob("*.py")):
+        if path.name == "site_export.py":
+            continue
+        for node in ast.walk(ast.parse(path.read_text())):
+            if isinstance(node, ast.ImportFrom):
+                names = {alias.name for alias in node.names}
+                # Covers ``from statespacecheck_paper(.site_export) import ...``
+                # and the relative forms ``from . import site_export`` /
+                # ``from .site_export import ...``.
+                assert not (node.module or "").endswith("site_export"), path
+                assert "site_export" not in names, path
+            elif isinstance(node, ast.Import):
+                assert all(not a.name.endswith("site_export") for a in node.names), path
