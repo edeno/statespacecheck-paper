@@ -143,9 +143,6 @@ venv.bak/
 # Rope project settings
 .ropeproject
 
-# mkdocs documentation
-/site
-
 # mypy
 .mypy_cache/
 .dmypy.json
@@ -230,3 +227,9 @@ caches/
 
 # Stray figure outputs if a generate_figureXX.py is run from inside scripts/
 scripts/figures/
+
+# Assembled website (make -C site build)
+site/_build/
+
+# The website's page data is committed (uv run python scripts/export_site_data.py)
+!site/data/

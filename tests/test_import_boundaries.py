@@ -169,3 +169,31 @@ def test_figure04_family_dependency_edges_are_acyclic() -> None:
     }
     for module_file, permitted in allowed.items():
         assert _sibling_module_imports(module_file) <= permitted, module_file
+
+
+def test_site_export_depends_only_on_analysis_layers() -> None:
+    """The website export reads the figure pipelines' outputs and the reported
+    values; it sits above both figure families and nothing imports it."""
+    prefix = "statespacecheck_paper."
+    assert _sibling_module_imports("site_export.py") <= {
+        prefix + "diagnostics",
+        prefix + "figure03_generation",
+        prefix + "figure03_protocol",
+        prefix + "figure03_simulation",
+        prefix + "figure03_summary",
+        prefix + "figure04_cache",
+        prefix + "figure04_decoder",
+        prefix + "figure04_diagnostics",
+        prefix + "figure04_generation",
+        prefix + "figure04_layout",
+        prefix + "figure04_place_fields",
+        prefix + "figure04_workflow",
+        prefix + "number_format",
+        prefix + "paths",
+        prefix + "reported_values",
+        prefix + "style",
+    }
+    for module_file in sorted(p.name for p in _SRC.glob("*.py")):
+        if module_file != "site_export.py":
+            imported = _sibling_module_imports(module_file)
+            assert prefix + "site_export" not in imported, module_file
