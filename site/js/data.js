@@ -21,6 +21,10 @@ export const METRICS = [
   {
     name: "hpd_overlap",
     label: "HPD overlap",
+    // Direction of worse fit for the value, and on the plotted axis (as the
+    // paper's figures label it).
+    worse: "lower",
+    plottedWorse: "below",
     color: "var(--hpd)",
     display: (v) => v,
     // Plotted on a symlog axis, as in the paper's figures.
@@ -32,6 +36,8 @@ export const METRICS = [
   {
     name: "predictive_pvalue",
     label: "Predictive p-value",
+    worse: "lower",
+    plottedWorse: "above",
     color: "var(--pvalue)",
     // Plotted as −log(p) (natural log), as in the paper's figures. p > 0 by
     // construction; the floor only guards the axis against a degenerate value.
@@ -42,6 +48,8 @@ export const METRICS = [
   {
     name: "kl_divergence",
     label: "KL divergence",
+    worse: "higher",
+    plottedWorse: "above",
     color: "var(--kl)",
     display: (v) => v,
     displayLabel: "KL (nats)",
@@ -73,8 +81,23 @@ export function decodeRows(encoded, nBins) {
   };
 }
 
-/** Human-readable flag rule, e.g. "flagged if ≤ 0.05". */
+/** Direction of worse fit in words, e.g. "lower = worse fit". */
+export function worseFit(metricName) {
+  const metric = METRICS.find((m) => m.name === metricName);
+  return `${metric.worse} = worse fit`;
+}
+
+/** Arrow for the plotted axis, as in the paper's figures, e.g. "↓ worse fit". */
+export function plottedWorseFit(metric) {
+  return metric.plottedWorse === "below" ? "↓ worse fit" : "↑ worse fit";
+}
+
+/** Direction of worse fit plus the flag rule, e.g. "lower = worse fit; flagged if ≤ 0.05". */
 export function describeRule(metric, rule) {
+  return `${worseFit(metric)}; ${flagRule(rule)}`;
+}
+
+function flagRule(rule) {
   if (!rule) return "no fixed cutoff";
   const symbol = rule.comparison === "less_than_or_equal" ? "≤" : "≥";
   const threshold = Number.isInteger(rule.threshold)

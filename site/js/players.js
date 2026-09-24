@@ -22,6 +22,8 @@ import {
   loadJSON,
   METRICS,
   nearestIndex,
+  plottedWorseFit,
+  worseFit,
 } from "./data.js";
 
 // Seconds of real time to play through one window.
@@ -120,6 +122,7 @@ function metricTrack(metric, series, rule, shading) {
   const pad = 4;
   return {
     label: metric.displayLabel,
+    note: plottedWorseFit(metric),
     top: hi >= 10 ? hi.toFixed(0) : String(Number(hi.toFixed(1))),
     bottom: "0",
     height: 58,
@@ -771,7 +774,7 @@ export function renderReplay(root, payload, manifest) {
     for (const metric of METRICS) {
       const tr = document.createElement("tr");
       const name = document.createElement("td");
-      name.textContent = metric.label;
+      name.innerHTML = `${metric.label}<div class="rule">${worseFit(metric.name)}</div>`;
       tr.appendChild(name);
       for (const model of MODELS) {
         const modelEvents = payload.models[model.id].events;

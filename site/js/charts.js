@@ -102,7 +102,7 @@ export function heatmapBitmap(rows, lut, scale = null) {
 /**
  * A vertical stack of canvas tracks sharing one time axis and a cursor.
  *
- * tracks: [{ label, top, bottom, height, draw(ctx, width, height, xOf) }]
+ * tracks: [{ label, note?, top, bottom, height, draw(ctx, width, height, xOf) }]
  * range:  [t0, t1] in seconds.
  * onCursor(time): mouse hover/press, or a tap (not a scroll) on touch screens.
  * onKey(key): ArrowLeft/ArrowRight/Home/End while the stack has focus.
@@ -125,7 +125,8 @@ export class TrackStack {
       const label = document.createElement("div");
       label.className = "track-label";
       if (!track.axis) {
-        label.innerHTML = `<span>${track.top ?? ""}</span><span class="name">${track.label}</span><span>${track.bottom ?? ""}</span>`;
+        const note = track.note ? `<span class="direction">${track.note}</span>` : "";
+        label.innerHTML = `<span>${track.top ?? ""}</span><span><span class="name">${track.label}</span>${note}</span><span>${track.bottom ?? ""}</span>`;
       }
       const canvas = document.createElement("canvas");
       canvas.style.height = `${track.height}px`;

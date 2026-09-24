@@ -544,6 +544,18 @@ input:focus-visible,
   line-height: 1.15;
 }
 
+.track-label .direction {
+  display: block;
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.compare-table .rule {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
 .track-label .name {
   font-size: 0.8rem;
   font-weight: 600;
