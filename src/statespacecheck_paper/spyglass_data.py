@@ -4,19 +4,19 @@
 reads five pre-exported files. This module is the upstream side of that
 boundary: it fetches the Spyglass entries those files were derived from and
 writes files in the same formats, so the exports can be regenerated, compared
-against the committed checksums, and captured by a Spyglass export
+with the exports the figure used, and captured by a Spyglass export
 (``scripts/spyglass_export_figure04.py``). See ``docs/data-lineage.md`` for the
 entries, processing steps, and verification record.
 
-The fetch logic follows the ``continuum-swr-replay`` data loaders, which read
-the same tables for the same sessions. Where this module deliberately differs,
-the function docstring says so.
+Position follows ``continuum-swr-replay``'s ``get_position_info``, and spike
+times follow the pattern of its sorted-unit loader. Where this module
+deliberately differs, the function docstring says so.
 
 Spyglass is an optional dependency (``uv sync --extra spyglass``). Every
 Spyglass import is inside a function, so importing this module never connects
-to the database; the connection opens on the first fetch. Fetching position and
-spike times reads analysis NWB files, which requires a machine with the lab's
-analysis store mounted.
+to the database; importing Spyglass does, the first time a function here needs
+it. Fetching position and spike times reads analysis NWB files, which requires a
+machine with the lab's analysis store mounted.
 """
 
 from __future__ import annotations
@@ -53,7 +53,12 @@ HPC_SORTING_RESTRICTION: Mapping[str, str | int] = MappingProxyType(
         "curation_id": 1,
     }
 )
-"""v0 ``CuratedSpikeSorting`` entry (minus ``nwb_file_name``) for the HPC units."""
+"""v0 ``CuratedSpikeSorting`` restriction (minus ``nwb_file_name``) for the HPC units.
+
+It matches one entry per sort group; ``artifact_removed_interval_list_name``, the
+remaining key field, differs by sort group and is left free (a second match per
+sort group is refused).
+"""
 
 HPC_REGION_NAME = "hippocampus"
 
@@ -62,7 +67,8 @@ TRACK_SEGMENT_TO_PATCH: Mapping[int, int] = MappingProxyType(
 )
 """Track segment (edge) ID → patch ID on the spatial-bandit track."""
 
-# Pickle protocol of the committed exports (the default of the Python that wrote them).
+# Pickle protocol of the four non-DataFrame exports the figure used; position_info is
+# written by ``DataFrame.to_pickle`` at pandas' default protocol.
 PICKLE_PROTOCOL = 4
 
 
@@ -80,8 +86,9 @@ class Figure4Inputs:
     """The five Figure-4 inputs as fetched from Spyglass, before serialization.
 
     Values keep the types Spyglass returns (e.g. ``linear_edge_spacing`` is the
-    stored blob, an ``int`` for this track) so the written files match the
-    originals; :class:`~statespacecheck_paper.load_local_data.NeuralRecordingData`
+    stored blob, an ``int`` for this track, and ``linear_edge_order`` a list) so
+    the written files match the originals; do not convert them.
+    :class:`~statespacecheck_paper.load_local_data.NeuralRecordingData`
     normalizes them on load.
 
     Parameters
@@ -363,8 +370,9 @@ def get_hpc_sorted_spike_times(
         # e.g. a second artifact_removed_interval_list_name sorted with the same parameters
         raise ValueError(f"{restriction} matches more than one sort for some sort groups")
 
-    # One OR-list restriction, not chained ``&``: an active export logs each
-    # restriction separately and would widen a chained query to its union.
+    # Restrict once, with an OR-list: an active export logs every ``&`` separately
+    # and exports their union, so a broad first ``&`` (e.g. the whole session)
+    # would pull in all of the session's sort groups.
     sort_group_electrodes = SortGroup.SortGroupElectrode & [
         {"nwb_file_name": nwb_file_name, "sort_group_id": key["sort_group_id"]}
         for key in sort_group_keys
@@ -401,8 +409,7 @@ def filter_spike_times(
     """Restrict each unit's spikes to the position time range (inclusive).
 
     Same bounds as ``continuum-swr-replay``'s ``filter_spike_times``, but units
-    left with no spikes are kept, so the unit list stays aligned with the sort
-    (the Figure-4 export has 21 such units).
+    left with no spikes are kept, so the unit list stays aligned with the sort.
 
     Parameters
     ----------
@@ -516,12 +523,13 @@ def write_figure04_inputs(
     *,
     overwrite: bool = False,
 ) -> tuple[Path, ...]:
-    """Write the five export files in the formats the committed exports use.
+    """Write the five export files in the formats of the exports the figure used.
 
     ``position_info`` is written with ``DataFrame.to_pickle`` and the other four
-    with ``pickle.dump`` at :data:`PICKLE_PROTOCOL`. Library versions change the
-    pickled bytes, so compare regenerated files by content
-    (:func:`compare_figure04_exports`), not by checksum.
+    with ``pickle.dump`` at :data:`PICKLE_PROTOCOL`. The pickled bytes depend on
+    library versions, so compare regenerated files by content
+    (:func:`compare_figure04_exports`); checksums match only with the same
+    versions.
 
     Parameters
     ----------

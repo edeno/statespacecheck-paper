@@ -9,9 +9,11 @@ verified, and what is publicly available. The fetch code is
 
 ## The five files
 
-The SHA-256 values match `provenance.figure04_decode_cache.export_file_sha256` in
+The files are not in the repository (`data/` is ignored). The SHA-256 values below
+match `provenance.figure04_decode_cache.export_file_sha256` in
 `manuscript/figures/main/figure04_summary.json`, so these are the files the
-committed figure was made from. The earliest copy found is dated 2025-02-04.
+committed figure was made from. The earliest copy found (a local download) is dated
+2025-02-04.
 
 | File | SHA-256 |
 | --- | --- |
@@ -53,23 +55,26 @@ DLC alternative for this epoch.
 | `preproc_params_name` | `franklab_tetrode_hippocampus` |
 | `team_name` | `ac_em_xs` |
 | `sorter` / `sorter_params_name` | `mountainsort4` / `franklab_tetrode_hippocampus_30KHz` |
+| `artifact_removed_interval_list_name` | one per sort group, artifact parameters `ampl_2000_z_30_prop_075_1ms` |
 | `curation_id` | `1` |
 
 - 22 tetrode sort groups, all in `BrainRegion` "hippocampus" (11 left, 11 right).
   Sort groups 10, 21, and 22 have no units after curation.
-- Sorted 2022-07-18 to 2022-07-22. Curation 1 is an automatic curation of
-  curation 0 (description "auto curated"). It labeled 101 units `noise`/`reject`,
-  which excludes them. The remaining **203 units carry no label** (none is marked
-  `accept` or `mua`), so no manual curation was applied.
+- Sorted 2022-07-18 to 2022-07-22. Curation 1 is derived from curation 0 and
+  described as "auto curated"; no `AutomaticCuration` entry records the rule that
+  produced it. It labels 101 units `noise`/`reject`, and v0 `CuratedSpikeSorting`
+  drops units labelled `reject`. **The remaining 203 units carry no labels**
+  (none `accept` or `mua`): curation 1 has no manual labels.
 - The sort interval spans all run epochs. The export clips each unit to the first
   and last position timestamps (inclusive) and keeps units with no spikes in
   this epoch: **21 of the 203 units have no spikes**. 870,018 spikes remain, of
   11,394,298 over the whole sort interval.
-- Units are ordered by `sort_group_id`, then by each analysis file's units table.
+- Units are in `(sort_group_id, unit_id)` order; the fetch checks each analysis
+  file's units against `CuratedSpikeSorting.Unit`.
 
 ## Verification
 
-Checked on 2026-09-24 against the lab database (`lmf-db.cin.ucsf.edu`), reading only:
+Checked on 2026-09-24 against the Frank-lab database, reading only:
 
 | File | How it was checked | Result |
 | --- | --- | --- |
@@ -80,50 +85,64 @@ Checked on 2026-09-24 against the lab database (`lmf-db.cin.ucsf.edu`), reading 
 The code in this repository was then checked end to end. `scripts/fetch_figure04_inputs.py`
 ran on a lab server in a conda environment with Python 3.11.8, Spyglass
 0.5.6.dev16, NumPy 1.26.4, pandas 1.5.3, networkx 3.4, and track-linearization
-2.3.2. **All five files it wrote are byte-identical to the committed exports**
-(same SHA-256 as above).
+2.3.2. **All five files it wrote are byte-identical to the exports the figure
+used** (same SHA-256 as above). It was run again, on a second lab server, after
+the fetch gained its data checks (one sort per sort group, unit IDs per sort
+group, patch coverage, and the loader's checks before writing), with the same
+result.
 
 The script that originally wrote the files was not found in version control. The
-code here reproduces its output exactly. It follows the `continuum-swr-replay`
-data loaders, which read the same tables for this dataset, except that those
-loaders now drop units with no spikes.
+code here reproduces its output exactly. Position follows `continuum-swr-replay`'s
+`get_position_info`, and spike times follow the pattern of its sorted-unit loader;
+the differences (for example, units with no spikes are kept here) are listed in
+each function's docstring.
 
 ## Public availability
 
 DANDI dandiset [001942](https://dandiarchive.org/dandiset/001942) is the Spyglass
-export `comrie2026` (export 135; the same 154 files for this session). It contains
-the raw recording and the position analysis file above. **The HPC sorting above is
-not part of that export or of any other Spyglass export, and is not on DANDI.** The
-recording could be re-sorted from the raw data, but the exact units used in
-Figure 4 are available only from the lab database until they are exported.
+export `comrie2026` (export 135): for this session the export lists 154 files and
+the dandiset has 154 assets. It contains the raw recording and the position
+analysis file above. **The HPC sorting above is not part of that export or of any
+other Spyglass export, and is not on DANDI.** The recording could be re-sorted from
+the raw data, but the exact units used in Figure 4 are available only from the lab
+database until they are exported.
 
 ## Regenerating the files
 
 Both scripts need lab database credentials and a lab server with the analysis NWB
-store mounted. They were verified in a lab conda environment with the lab's current
-Spyglass, with this repository's `src/` on the import path; `REF` is a directory
-holding the five exports the figure used:
+store mounted. `REF` below is a directory holding the five exports the figure used;
+`--output-dir` must not already hold exports (the fetch script accepts
+`--overwrite`).
 
 ```bash
 # Read-only: rebuild the five files and compare them with the ones the figure used.
 PYTHONPATH=src python scripts/fetch_figure04_inputs.py \
     --output-dir /tmp/figure04_inputs --compare-to REF
 
-# Writes to the lab database: log the same fetches in a Spyglass export
-# (add --populate to package it). Asks for confirmation; refuses an existing paper_id.
+# Writes to the lab database: log the same fetches in a Spyglass export and
+# package it. Asks for confirmation; refuses an existing paper_id.
 PYTHONPATH=src python scripts/spyglass_export_figure04.py \
-    --paper-id <new-paper-id> --output-dir /tmp/figure04_export --compare-to REF
+    --paper-id <new-paper-id> --output-dir /tmp/figure04_export --compare-to REF --populate
 ```
 
-The `spyglass` extra (`uv sync --extra spyglass`) installs the Spyglass version in
-`uv.lock` (0.5.5). That version has not been checked end to end here, and it cannot
-package the export: the lab database's `Export` tables have a column 0.5.5 does not
-know about, so the export script refuses `--populate` with it.
+The fetch script was verified as shown, in a lab conda environment with the
+lab's Spyglass and this repository's `src/` on the import path. (That
+environment's pandas 1.5.3 is below this package's `pandas>=2.0`, so the package
+is not installed there.) The export script has not been run yet. Before it writes
+anything it checks the paths, asks for confirmation, and checks that the
+installed Spyglass declares every column of the database's export tables; the
+version in `uv.lock` does not, so the export must use the lab's current Spyglass.
+Spyglass also requires packaging with the same `x.y.z` version that logged the
+selection, which is why `--populate` packages in the same run and requires
+`--compare-to`.
+
+The `spyglass` extra (`uv sync --extra spyglass`) installs the Spyglass in
+`uv.lock`; it has not been used for a full fetch.
 
 `--compare-to` compares by content, because the pickled bytes depend on the
 pandas, NumPy, and networkx versions. With the versions listed under
 [Verification](#verification) the bytes match too. With NumPy 2 they cannot: the
-committed spike-time file refers to `numpy.core`, which NumPy 2 renamed.
+spike-time file the figure used refers to `numpy.core`, which NumPy 2 renamed.
 
 ## Open items
 

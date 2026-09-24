@@ -289,9 +289,9 @@ $\Lambda(x)$.
   The five exports come from the Frank-lab Spyglass database (the recording of
   [Comrie et al. 2024](https://doi.org/10.1101/2024.09.23.613567)).
   [data-lineage.md](data-lineage.md) records the exact Spyglass entries and
-  processing steps, the verification against the files the figure used, and what
-  is public: DANDI dandiset [001942](https://dandiarchive.org/dandiset/001942) has
-  the raw recording and the position, but not the spike sorting used here.
+  processing steps, the verification against the files the figure used, and which
+  of them are public (DANDI dandiset
+  [001942](https://dandiarchive.org/dandiset/001942) has the raw recording).
   `spyglass_data.py` rebuilds the exports from the database
   (`scripts/fetch_figure04_inputs.py`, read-only) and logs them in a Spyglass
   export (`scripts/spyglass_export_figure04.py`); both run on a lab server with
