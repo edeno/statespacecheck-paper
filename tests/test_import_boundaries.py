@@ -19,7 +19,7 @@ _SRC = Path(statespacecheck_paper.__file__).resolve().parent
 
 def _sibling_module_imports(module_filename: str) -> set[str]:
     """Return the set of sibling ``statespacecheck_paper`` modules imported."""
-    tree = ast.parse((_SRC / module_filename).read_text())
+    tree = ast.parse((_SRC / module_filename).read_text(encoding="utf-8"))
     siblings: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom):
@@ -198,7 +198,7 @@ def test_site_export_depends_only_on_analysis_layers() -> None:
     for path in sorted(_SRC.rglob("*.py")):
         if path.name == "site_export.py":
             continue
-        for node in ast.walk(ast.parse(path.read_text())):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
             if isinstance(node, ast.ImportFrom):
                 names = {alias.name for alias in node.names}
                 # Covers ``from statespacecheck_paper(.site_export) import ...``

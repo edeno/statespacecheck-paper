@@ -512,16 +512,26 @@ def test_committed_scenarios_are_current(scenarios: dict[str, dict[str, Any]]) -
             "model_component",
         ):
             assert committed[key] == fresh[key], (condition_id, key)
-        for key in ("t", "cell", "likelihood_row", "flagged"):
+        for key in ("t", "cell", "flagged"):
             assert committed["events"][key] == fresh["events"][key], (condition_id, key)
-        for metric in ("hpd_overlap", "predictive_pvalue", "kl_divergence"):
+        for metric in METRIC_NAMES:
             np.testing.assert_allclose(
                 committed["events"][metric], fresh["events"][metric], rtol=1e-3
             )
         for key in ("position_bins", "true_position", "cell_centers"):
             np.testing.assert_allclose(committed[key], fresh[key], atol=0.011)
         _assert_heatmap_close(committed["predictive"], fresh["predictive"], n_bins)
-        _assert_rows_close(committed["likelihood_rows"], fresh["likelihood_rows"], n_bins)
+        # The row table deduplicates float likelihoods, so rows that coincide on
+        # one platform can differ in the last bit on another, changing the table's
+        # length and every later index. Compare the row each event points to.
+        committed_rows, fresh_rows = (
+            decode_display_rows(payload["likelihood_rows"], n_bins)[
+                payload["events"]["likelihood_row"]
+            ].astype(int)
+            for payload in (committed, fresh)
+        )
+        assert committed_rows.shape == fresh_rows.shape, condition_id
+        assert np.abs(committed_rows - fresh_rows).max() <= 1, condition_id
 
 
 def test_committed_filter_data_is_current() -> None:
