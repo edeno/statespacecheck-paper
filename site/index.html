@@ -138,6 +138,22 @@
             spike, while the likelihood holds only the newest.
           </p>
           <p>
+            The likelihood comes from a Poisson model of firing. A cell's <strong>place
+            field</strong> λ<sub><i>c</i></sub>(<i>x</i>) is the number of spikes it is expected to
+            fire in one time step when the animal is at <i>x</i>; the paper writes this expected count
+            as a rate times the step length, λΔ<i>t</i>, and here the step length is folded in. Given
+            the position, each cell's spike count in a step is Poisson with that mean, independently
+            of the other cells. The probability of what a step recorded, at each position, is then the
+            product of λ<sub><i>c</i></sub>(<i>x</i>) over the spikes that occurred, times
+            exp(−Λ(<i>x</i>)), where Λ(<i>x</i>) = Σ<sub><i>c</i></sub> λ<sub><i>c</i></sub>(<i>x</i>)
+            is the expected count from all the cells together and exp(−Λ(<i>x</i>)) is the probability
+            that none of them fires. Factors that do not depend on <i>x</i>, such as 1/<i>n</i>!,
+            vanish when the posterior is renormalized. A step with no spikes contributes only
+            exp(−Λ(<i>x</i>)); because only a small fraction of a spike is expected per step, it is
+            nearly flat and barely moves the posterior. A spike from cell <i>c</i> multiplies in
+            λ<sub><i>c</i></sub>(<i>x</i>) and pulls the posterior toward that cell's field.
+          </p>
+          <p>
             Play through a short simulated recording as the animal runs up the track and back. At
             each spike, the four rows show the calculation: the prediction, the place field of the
             cell that fired, the likelihood, and the posterior. Between spikes, the prediction and
@@ -148,12 +164,9 @@
             <div class="legend">
               <span><i class="swatch" style="background: var(--position)"></i>Animal's position</span>
               <span><i class="swatch" style="background: var(--likelihood)"></i>Spike in this step</span>
-              <span><i class="swatch" style="background: var(--predictive)"></i>Prediction P(x)</span>
               <span><i class="swatch dashed"></i>Earlier posterior the prediction spread from</span>
-              <span><i class="swatch" style="background: var(--field)"></i>Place field of the cell that fired</span>
-              <span><i class="swatch" style="background: var(--likelihood)"></i>Likelihood</span>
-              <span><i class="swatch dashed muted"></i>exp(−Λ(x))</span>
-              <span><i class="swatch" style="background: var(--posterior)"></i>Posterior</span>
+              <span><i class="swatch" style="background: var(--field)"></i>Place field of the cell that fired (other fields faint)</span>
+              <span><i class="swatch dashed muted"></i>exp(−Λ(x)): probability that no cell fires</span>
             </div>
             <div class="player-body">
               <div>
