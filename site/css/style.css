@@ -1,0 +1,681 @@
+/* Project website for "Local goodness-of-fit measures for neural decoding".
+   Colors follow the paper's figures (statespacecheck_paper.style): Wong palette,
+   predictive blue, likelihood orange, animal position magenta. */
+
+:root {
+  color-scheme: light;
+
+  --surface: #ffffff;
+  --surface-muted: #f5f5f3;
+  --surface-sunken: #eeeeec;
+  --border: #dcdcd8;
+  --grid: #e6e6e3;
+
+  --text: #1b1b1b;
+  --text-secondary: #4a4a4a;
+  --text-muted: #6b6b6b;
+  --link: #005a8c;
+
+  --predictive: #0072b2;
+  --likelihood: #e69f00;
+  --position: #ff00ff;
+  --threshold: #666666;
+  --hpd: #56b4e9;
+  --pvalue: #cc79a7;
+  --kl: #009e73;
+
+  --flag-bg: #fdecea;
+  --flag-text: #8a1c12;
+  --ok-bg: #e8f3ec;
+  --ok-text: #1d5e36;
+
+  --radius: 6px;
+  --content: 960px;
+  --label-col: 118px;
+
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 17px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--link);
+}
+
+img {
+  max-width: 100%;
+  height: auto;
+}
+
+h1,
+h2,
+h3 {
+  line-height: 1.25;
+  text-wrap: balance;
+}
+
+h2 {
+  font-size: 1.6rem;
+  margin: 0 0 0.75rem;
+}
+
+h3 {
+  font-size: 1.1rem;
+  margin: 0 0 0.4rem;
+}
+
+p {
+  margin: 0 0 1rem;
+}
+
+.wrap {
+  max-width: var(--content);
+  margin: 0 auto;
+  padding: 0 16px;
+}
+
+section {
+  padding: 3rem 0;
+  border-top: 1px solid var(--grid);
+}
+
+.lede {
+  font-size: 1.15rem;
+  color: var(--text-secondary);
+}
+
+.note {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+/* ---------------------------------------------------------------- Header */
+
+.hero {
+  padding: 3.5rem 0 2.5rem;
+  text-align: center;
+}
+
+.hero h1 {
+  font-size: clamp(1.9rem, 4.5vw, 2.8rem);
+  margin: 0 0 1.25rem;
+  letter-spacing: -0.01em;
+}
+
+.authors {
+  font-size: 1.1rem;
+  margin: 0 0 0.4rem;
+}
+
+.authors .author {
+  white-space: nowrap;
+  margin: 0 0.35rem;
+}
+
+.authors a {
+  color: var(--text);
+  text-decoration: none;
+  border-bottom: 1px solid var(--border);
+}
+
+.authors a:hover {
+  border-bottom-color: var(--text);
+}
+
+.affiliations {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin: 0 auto 1.5rem;
+  max-width: 760px;
+}
+
+.affiliations span {
+  display: inline-block;
+  margin: 0 0.4rem;
+}
+
+.links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.6rem;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.5rem 1rem;
+  border-radius: 999px;
+  background: var(--text);
+  color: #ffffff;
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-decoration: none;
+  border: 1px solid var(--text);
+}
+
+.button:hover {
+  background: #3a3a3a;
+}
+
+.button[aria-disabled="true"] {
+  background: var(--surface);
+  color: var(--text-muted);
+  border-color: var(--border);
+  cursor: default;
+}
+
+.button svg {
+  width: 1em;
+  height: 1em;
+  fill: currentColor;
+}
+
+/* --------------------------------------------------------------- Figures */
+
+figure {
+  margin: 1.5rem 0 0;
+}
+
+figcaption {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  margin-top: 0.6rem;
+}
+
+.teaser img {
+  display: block;
+  margin: 0 auto;
+  max-width: 560px;
+  width: 100%;
+}
+
+/* -------------------------------------------------------------- Controls */
+
+.panel {
+  background: var(--surface-muted);
+  border: 1px solid var(--grid);
+  border-radius: 10px;
+  padding: 1.25rem;
+  margin-top: 1.25rem;
+}
+
+.controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.75rem 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.control label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.control output {
+  font-weight: 400;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+input[type="range"] {
+  width: 100%;
+  accent-color: var(--text);
+}
+
+.segmented {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.chip {
+  font: inherit;
+  font-size: 0.88rem;
+  padding: 0.3rem 0.8rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.chip:hover {
+  border-color: var(--text-muted);
+}
+
+.chip[aria-pressed="true"],
+.chip[aria-selected="true"] {
+  background: var(--text);
+  border-color: var(--text);
+  color: #ffffff;
+}
+
+.chip:focus-visible,
+.button:focus-visible,
+input:focus-visible,
+.stack:focus-visible,
+svg .cell-hit:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 2px;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  margin-bottom: 0.9rem;
+}
+
+.row-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+/* ---------------------------------------------------------------- Legend */
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 1.1rem;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin: 0.25rem 0 0.5rem;
+}
+
+.legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.swatch {
+  width: 18px;
+  height: 3px;
+  border-radius: 2px;
+  display: inline-block;
+}
+
+.swatch.dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+.swatch.ring {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: transparent !important;
+  border: 2px solid;
+}
+
+.swatch.band {
+  height: 8px;
+  opacity: 0.35;
+}
+
+/* ------------------------------------------------------ Distribution chart */
+
+.dist-chart {
+  width: 100%;
+  height: auto;
+  display: block;
+  overflow: visible;
+}
+
+.dist-chart text {
+  font-family: var(--font);
+  font-size: 12px;
+  fill: var(--text-muted);
+}
+
+.dist-chart .axis line,
+.dist-chart .axis path {
+  stroke: var(--border);
+}
+
+.dist-chart .cell-hit {
+  cursor: pointer;
+}
+
+.dist-chart .cell-hit:hover path {
+  stroke: var(--text);
+}
+
+/* --------------------------------------------------------- Metric readouts */
+
+.readouts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.readout {
+  background: var(--surface);
+  border: 1px solid var(--grid);
+  border-radius: var(--radius);
+  padding: 0.7rem 0.85rem;
+  border-top: 3px solid var(--metric-color, var(--border));
+}
+
+.readout .name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.readout .value {
+  font-size: 1.6rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.3;
+}
+
+.readout .rule {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.05rem 0.5rem;
+  border-radius: 999px;
+  vertical-align: middle;
+}
+
+.badge.flagged {
+  background: var(--flag-bg);
+  color: var(--flag-text);
+}
+
+.badge.ok {
+  background: var(--ok-bg);
+  color: var(--ok-text);
+}
+
+.verdict {
+  margin: 1rem 0 0;
+  padding: 0.7rem 0.9rem;
+  background: var(--surface);
+  border-left: 3px solid var(--text);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  font-size: 0.95rem;
+}
+
+.table-wrap {
+  overflow-x: auto;
+  margin-top: 1rem;
+}
+
+.compare-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+  background: var(--surface);
+  border-radius: var(--radius);
+}
+
+.compare-table th,
+.compare-table td {
+  text-align: left;
+  padding: 0.45rem 0.6rem;
+  border-bottom: 1px solid var(--grid);
+}
+
+.compare-table th {
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+/* ------------------------------------------------------ Diagnostic cards */
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem;
+  margin-top: 1.25rem;
+}
+
+.card {
+  border: 1px solid var(--grid);
+  border-radius: 10px;
+  padding: 1.1rem 1.1rem 0.6rem;
+  border-top: 4px solid var(--metric-color);
+}
+
+.card p {
+  font-size: 0.95rem;
+}
+
+.card math {
+  display: block;
+  margin: 0.6rem 0 0.9rem;
+  font-size: 1.05rem;
+  overflow-x: auto;
+}
+
+/* ----------------------------------------------------------- Track stack */
+
+.stack {
+  position: relative;
+  user-select: none;
+  touch-action: pan-y;
+  margin-top: 0.5rem;
+}
+
+.track {
+  display: grid;
+  /* minmax(0, …): a canvas's pixel size must not set the column's minimum. */
+  grid-template-columns: var(--label-col) minmax(0, 1fr);
+  align-items: stretch;
+}
+
+.track + .track {
+  margin-top: 4px;
+}
+
+.track-label {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding-right: 8px;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  text-align: right;
+  line-height: 1.15;
+}
+
+.track-label .name {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.track canvas {
+  width: 100%;
+  min-width: 0;
+  display: block;
+  cursor: crosshair;
+}
+
+.stack .cursor {
+  position: absolute;
+  top: 0;
+  bottom: 22px;
+  width: 0;
+  border-left: 1.5px solid var(--text);
+  pointer-events: none;
+  display: none;
+}
+
+.transport {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+  font-size: 0.88rem;
+  color: var(--text-secondary);
+}
+
+.transport .time {
+  font-variant-numeric: tabular-nums;
+  margin-left: auto;
+}
+
+.player-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+  gap: 1.25rem;
+  align-items: start;
+}
+
+.detail h3 {
+  font-size: 0.95rem;
+}
+
+.detail .readouts {
+  grid-template-columns: 1fr;
+  gap: 0.5rem;
+}
+
+.detail .readout {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: baseline;
+  padding: 0.45rem 0.7rem;
+}
+
+.detail .readout .value {
+  font-size: 1.1rem;
+}
+
+.stat-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.6rem;
+  margin: 0.75rem 0 0.25rem;
+}
+
+.stat {
+  background: var(--surface);
+  border: 1px solid var(--grid);
+  border-radius: var(--radius);
+  padding: 0.5rem 0.7rem;
+}
+
+.stat .label {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.stat .value {
+  font-size: 1.25rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.scenario-text {
+  min-height: 3.2em;
+}
+
+.loading {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.error {
+  color: var(--flag-text);
+}
+
+/* --------------------------------------------------------------- Lists */
+
+.takeaways {
+  padding-left: 1.2rem;
+}
+
+.takeaways li {
+  margin-bottom: 0.6rem;
+}
+
+pre.bibtex {
+  background: var(--surface-muted);
+  border: 1px solid var(--grid);
+  border-radius: var(--radius);
+  padding: 1rem;
+  overflow-x: auto;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+.copy {
+  float: right;
+}
+
+footer {
+  border-top: 1px solid var(--grid);
+  padding: 2rem 0 3rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+/* ------------------------------------------------------------- Mobile */
+
+@media (max-width: 760px) {
+  body {
+    font-size: 16px;
+  }
+
+  :root {
+    --label-col: 84px;
+  }
+
+  .player-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  section {
+    padding: 2.25rem 0;
+  }
+
+  .panel {
+    padding: 0.9rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
