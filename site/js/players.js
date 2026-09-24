@@ -12,6 +12,7 @@ import {
   paintPositionLine,
   paintShading,
   paintThreshold,
+  positionScale,
   TrackStack,
 } from "./charts.js";
 import {
@@ -85,26 +86,6 @@ function argmax(values) {
   let best = 0;
   for (let i = 1; i < values.length; i += 1) if (values[i] > values[best]) best = i;
   return best;
-}
-
-/** Map a position to the heatmap's y coordinate (bins drawn at equal heights). */
-function positionScale(bins, height) {
-  return (position) => height - ((fractionalIndex(bins, position) + 0.5) / bins.length) * height;
-}
-
-/** Position expressed in bin-index units, interpolating between bin centers. */
-function fractionalIndex(bins, value) {
-  const last = bins.length - 1;
-  if (value <= bins[0]) return 0;
-  if (value >= bins[last]) return last;
-  let lo = 0;
-  let hi = last;
-  while (hi - lo > 1) {
-    const mid = (lo + hi) >> 1;
-    if (bins[mid] <= value) lo = mid;
-    else hi = mid;
-  }
-  return lo + (value - bins[lo]) / (bins[hi] - bins[lo]);
 }
 
 function metricRange(metric, values, rule) {

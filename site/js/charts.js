@@ -103,15 +103,21 @@ export function heatmapBitmap(rows, lut, scale = null) {
  * A vertical stack of canvas tracks sharing one time axis and a cursor.
  *
  * tracks: [{ label, note?, top, bottom, height, draw(ctx, width, height, xOf) }]
- * range:  [t0, t1] in seconds.
- * onCursor(time): mouse hover/press, or a tap (not a scroll) on touch screens.
+ * range:  [t0, t1] in seconds (or the unit tickLabel names).
+ * onCursor(time): mouse hover (unless hover is false) or press, or a tap (not
+ *   a scroll) on touch screens.
  * onKey(key): ArrowLeft/ArrowRight/Home/End while the stack has focus.
+ * tickLabel(time): axis tick text; seconds by default.
  */
 export class TrackStack {
-  constructor(container, { tracks, range, onCursor, onKey, ariaLabel }) {
+  constructor(
+    container,
+    { tracks, range, onCursor, onKey, ariaLabel, hover = true, tickLabel = null },
+  ) {
     this.tracks = tracks;
     this.range = range;
     this.onCursor = onCursor;
+    this.tickLabel = tickLabel ?? ((t) => `${Number(t.toFixed(3))} s`);
     this.root = document.createElement("div");
     this.root.className = "stack";
     this.root.tabIndex = 0;
@@ -150,7 +156,7 @@ export class TrackStack {
       else this.onCursor(timeAt(event.clientX));
     });
     this.root.addEventListener("pointermove", (event) => {
-      if (event.pointerType !== "touch") this.onCursor(timeAt(event.clientX));
+      if (hover && event.pointerType !== "touch") this.onCursor(timeAt(event.clientX));
     });
     this.root.addEventListener("pointerup", (event) => {
       if (event.pointerType !== "touch" || !touchStart) return;
@@ -214,7 +220,7 @@ export class TrackStack {
       const x = Math.round(xOf(tick)) + 0.5;
       context.moveTo(x, 0);
       context.lineTo(x, 4);
-      const text = `${Number(tick.toFixed(3))} s`;
+      const text = this.tickLabel(tick);
       context.fillText(text, Math.min(width - 14, Math.max(14, x)), 6);
     }
     context.stroke();
@@ -237,6 +243,26 @@ export class TrackStack {
 // ---------------------------------------------------------------------------
 // Track painters
 // ---------------------------------------------------------------------------
+
+/** Position expressed in bin-index units, interpolating between bin centers. */
+function fractionalIndex(bins, value) {
+  const last = bins.length - 1;
+  if (value <= bins[0]) return 0;
+  if (value >= bins[last]) return last;
+  let lo = 0;
+  let hi = last;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (bins[mid] <= value) lo = mid;
+    else hi = mid;
+  }
+  return lo + (value - bins[lo]) / (bins[hi] - bins[lo]);
+}
+
+/** Map a position to a heatmap's y coordinate (bins drawn at equal heights). */
+export function positionScale(bins, height) {
+  return (position) => height - ((fractionalIndex(bins, position) + 0.5) / bins.length) * height;
+}
 
 export function paintHeatmap(context, bitmap, width, height) {
   context.imageSmoothingEnabled = true;
@@ -324,27 +350,31 @@ export function paintDots(context, times, values, xOf, yOf, color, style) {
 // ---------------------------------------------------------------------------
 
 /**
- * Prediction and spike likelihood over position, each scaled to its own
- * maximum, with optional HPD bands, a position marker, and a keyboard- and
- * pointer-operable strip of place fields for choosing the firing cell.
+ * Distributions over position (e.g., a prediction and a spike likelihood),
+ * each scaled to its own maximum unless a shared `scaleMax` is given, with
+ * optional HPD bands, a position marker, and a keyboard- and pointer-operable
+ * strip of place fields for choosing the firing cell.
  *
  * The SVG is laid out at its container's pixel width, so text keeps its CSS
  * size on narrow screens. Curves and bands break across gaps in the position
  * grid (e.g., between linearized track segments).
  *
+ * axis: false omits the position axis (for charts stacked above another).
+ *
  * cellStrip: { label, state() -> {rates, selectable, centers, selected},
  *              onSelect(cell) }
  */
 export class DistributionChart {
-  constructor(container, { positionBins, xLabel, plotHeight = 150, cellStrip = null }) {
+  constructor(container, { positionBins, xLabel, plotHeight = 150, cellStrip = null, axis = true }) {
     this.container = container;
     this.bins = positionBins;
     this.xLabel = xLabel;
     this.plotHeight = plotHeight;
     this.cellStrip = cellStrip;
+    this.showAxis = axis;
     this.margin = { left: 12, right: 12, top: 10 };
     // Below the plot: two HPD bands, the axis, tick labels, and the axis title.
-    this.axisBlock = 60;
+    this.axisBlock = axis ? 60 : 4;
     this.stripHeight = 34;
     this.xMin = positionBins[0];
     this.xMax = positionBins[positionBins.length - 1];
@@ -399,6 +429,11 @@ export class DistributionChart {
   drawAxis() {
     this.layers.axis.replaceChildren();
     const y = this.margin.top + this.plotHeight + 22;
+    if (!this.showAxis) {
+      const base = this.margin.top + this.plotHeight;
+      svg("line", { x1: this.x(this.xMin), x2: this.x(this.xMax), y1: base, y2: base }, this.layers.axis);
+      return;
+    }
     svg("line", { x1: this.x(this.xMin), x2: this.x(this.xMax), y1: y, y2: y }, this.layers.axis);
     const target = Math.max(3, Math.min(6, Math.floor(this.width / 80)));
     for (const tick of niceTicks(this.xMin, this.xMax, target)) {
@@ -412,8 +447,8 @@ export class DistributionChart {
     this.layers.axis.appendChild(title);
   }
 
-  curvePath(values, closed) {
-    const max = Math.max(...values);
+  curvePath(values, closed, scaleMax = null) {
+    const max = scaleMax ?? Math.max(...values);
     const base = this.margin.top + this.plotHeight;
     const yOf = (v) => base - (max > 0 ? v / max : 0) * (this.plotHeight - 4);
     let d = "";
@@ -455,25 +490,32 @@ export class DistributionChart {
     if (start !== null) close(mask.length - 1);
   }
 
-  /** series: [{values, color}], bands: [{mask, color}], marker: position | null */
+  /**
+   * series: [{values, color, dashed?, filled? (default true), width? (default 2)}],
+   * bands: [{mask, color}], marker: position | null,
+   * scaleMax: value drawn at full height for every series | null
+   */
   update(state) {
     this.last = state;
-    const { series, bands = [], marker = null } = state;
+    const { series, bands = [], marker = null, scaleMax = null } = state;
     for (const layer of ["bands", "areas", "marker"]) this.layers[layer].replaceChildren();
-    for (const { values, color } of series) {
-      svg(
-        "path",
-        { d: this.curvePath(values, true), fill: color, "fill-opacity": 0.12 },
-        this.layers.areas,
-      );
+    for (const { values, color, dashed = false, filled = true, width = 2 } of series) {
+      if (filled) {
+        svg(
+          "path",
+          { d: this.curvePath(values, true, scaleMax), fill: color, "fill-opacity": 0.12 },
+          this.layers.areas,
+        );
+      }
       svg(
         "path",
         {
-          d: this.curvePath(values, false),
+          d: this.curvePath(values, false, scaleMax),
           fill: "none",
           stroke: color,
-          "stroke-width": 2,
+          "stroke-width": width,
           "stroke-linejoin": "round",
+          ...(dashed ? { "stroke-dasharray": "5 4" } : {}),
         },
         this.layers.areas,
       );
