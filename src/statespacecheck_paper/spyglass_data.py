@@ -1,0 +1,623 @@
+"""Rebuild the Figure-4 recording exports from the Frank-lab Spyglass database.
+
+:func:`statespacecheck_paper.load_local_data.load_neural_recording_from_files`
+reads five pre-exported files. This module is the upstream side of that
+boundary: it fetches the Spyglass entries those files were derived from and
+writes files in the same formats, so the exports can be regenerated, compared
+against the committed checksums, and captured by a Spyglass export
+(``scripts/spyglass_export_figure04.py``). See ``docs/data-lineage.md`` for the
+entries, processing steps, and verification record.
+
+The fetch logic follows the ``continuum-swr-replay`` data loaders, which read
+the same tables for the same sessions. Where this module deliberately differs,
+the function docstring says so.
+
+Spyglass is an optional dependency (``uv sync --extra spyglass``). Every
+Spyglass import is inside a function, so importing this module never connects
+to the database; the connection opens on the first fetch. Fetching position and
+spike times reads analysis NWB files, which requires a machine with the lab's
+analysis store mounted.
+"""
+
+from __future__ import annotations
+
+import dataclasses
+import pickle
+from collections.abc import Mapping, Sequence
+from pathlib import Path
+from types import MappingProxyType
+from typing import TypedDict
+
+import joblib
+import networkx as nx
+import numpy as np
+import pandas as pd
+from numpy.typing import NDArray
+
+from statespacecheck_paper.load_local_data import EXPORT_FILE_SUFFIXES
+
+FIGURE04_NWB_FILE_NAME = "j1620210710_.nwb"
+FIGURE04_EPOCH_NAME = "02_r1"
+
+POSITION_INFO_PARAM_NAME = "default_decoding"
+LINEARIZATION_PARAM_NAME = "default"
+
+HPC_SORTING_RESTRICTION: Mapping[str, str | int] = MappingProxyType(
+    {
+        "sort_interval_name": "runs_noPrePostTrialTimes raw data valid times",
+        "preproc_params_name": "franklab_tetrode_hippocampus",
+        "team_name": "ac_em_xs",
+        "sorter": "mountainsort4",
+        "sorter_params_name": "franklab_tetrode_hippocampus_30KHz",
+        "curation_id": 1,
+    }
+)
+"""v0 ``CuratedSpikeSorting`` entry (minus ``nwb_file_name``) for the HPC units."""
+
+HPC_REGION_NAME = "hippocampus"
+
+TRACK_SEGMENT_TO_PATCH: Mapping[int, int] = MappingProxyType(
+    {0: 1, 1: 1, 6: 1, 2: 2, 3: 2, 7: 2, 4: 3, 5: 3, 8: 3}
+)
+"""Track segment (edge) ID → patch ID on the spatial-bandit track."""
+
+# Pickle protocol of the committed exports (the default of the Python that wrote them).
+PICKLE_PROTOCOL = 4
+
+
+class PositionInfoDict(TypedDict):
+    """Position data and the track graph used to linearize it."""
+
+    position_info: pd.DataFrame
+    track_graph: nx.Graph
+    linear_edge_order: list[tuple[int, int]]
+    linear_edge_spacing: float | list[float]
+
+
+@dataclasses.dataclass(frozen=True)
+class Figure4Inputs:
+    """The five Figure-4 inputs as fetched from Spyglass, before serialization.
+
+    Values keep the types Spyglass returns (e.g. ``linear_edge_spacing`` is the
+    stored blob, an ``int`` for this track) so the written files match the
+    originals; :class:`~statespacecheck_paper.load_local_data.NeuralRecordingData`
+    normalizes them on load.
+
+    Parameters
+    ----------
+    position_info : pd.DataFrame
+        Time-indexed (seconds) position with linearization and ``patch_id``.
+    spike_times : list of np.ndarray, shape (n_spikes,)
+        Per-unit spike times (seconds), in ``(sort_group_id, unit_id)`` order.
+    track_graph : networkx.Graph
+        Track graph used for linearization.
+    linear_edge_order : list of (int, int)
+        Edge order used for linearization.
+    linear_edge_spacing : float or list of float
+        Spacing between linearized edges (centimeters).
+    """
+
+    position_info: pd.DataFrame
+    spike_times: list[NDArray[np.float64]]
+    track_graph: nx.Graph
+    linear_edge_order: list[tuple[int, int]]
+    linear_edge_spacing: float | list[float]
+
+
+def epoch_identifier(nwb_file_name: str, epoch_name: str) -> str:
+    """Return the ``{animal}{date}_{epoch}`` identifier used in export file names.
+
+    Parameters
+    ----------
+    nwb_file_name : str
+        Spyglass NWB file name, e.g. ``"j1620210710_.nwb"``.
+    epoch_name : str
+        Epoch interval name, e.g. ``"02_r1"``.
+
+    Returns
+    -------
+    str
+        E.g. ``"j1620210710_02_r1"``.
+
+    Examples
+    --------
+    >>> epoch_identifier("j1620210710_.nwb", "02_r1")
+    'j1620210710_02_r1'
+    """
+    return f"{nwb_file_name.removesuffix('_.nwb')}_{epoch_name}"
+
+
+def get_position_interval_name(nwb_file_name: str, epoch_name: str) -> str:
+    """Map an epoch interval to its position interval via ``PositionIntervalMap``.
+
+    Parameters
+    ----------
+    nwb_file_name : str
+        Spyglass NWB file name.
+    epoch_name : str
+        Epoch interval name, e.g. ``"02_r1"``.
+
+    Returns
+    -------
+    str
+        Position interval name, e.g. ``"pos 1 valid times"``.
+    """
+    from spyglass.common import PositionIntervalMap
+
+    return str(
+        (
+            PositionIntervalMap & {"nwb_file_name": nwb_file_name, "interval_list_name": epoch_name}
+        ).fetch1("position_interval_name")
+    )
+
+
+def get_interpolated_position_info(
+    position_info: pd.DataFrame,
+    time: NDArray[np.float64],
+    track_graph: nx.Graph,
+    edge_order: list[tuple[int, int]],
+    edge_spacing: float | list[float],
+    position_columns: list[str] | None = None,
+) -> pd.DataFrame:
+    """Interpolate position onto new time points and add linearization.
+
+    Same algorithm as ``continuum-swr-replay``'s
+    ``data_loaders.position.get_interpolated_position_info``.
+
+    Parameters
+    ----------
+    position_info : pd.DataFrame
+        Position data with a time index (seconds) and x/y position columns.
+    time : np.ndarray, shape (n_time,)
+        Time points (seconds) of the output.
+    track_graph : networkx.Graph
+        Track graph.
+    edge_order : list of (int, int)
+        Edge order for linearization.
+    edge_spacing : float or list of float
+        Spacing between linearized edges (centimeters).
+    position_columns : list of str, optional
+        x and y position columns. Default ``["head_position_x", "head_position_y"]``.
+
+    Returns
+    -------
+    pd.DataFrame, shape (n_time, n_columns)
+        Interpolated ``position_info`` columns plus ``linear_position``,
+        ``track_segment_id``, ``projected_x_position``, and
+        ``projected_y_position``.
+    """
+    from track_linearization import get_linearized_position
+
+    if position_columns is None:
+        position_columns = ["head_position_x", "head_position_y"]
+
+    new_index = pd.Index(np.unique(np.concatenate((position_info.index, time))), name="time")
+    interpolated_position_info = (
+        position_info.reindex(index=new_index).interpolate(method="linear").reindex(index=time)
+    )
+    linear_position_info = get_linearized_position(
+        position=interpolated_position_info[position_columns].to_numpy(),
+        track_graph=track_graph,
+        edge_order=edge_order,
+        edge_spacing=edge_spacing,
+    ).set_index(interpolated_position_info.index)
+
+    return pd.concat((interpolated_position_info, linear_position_info), axis=1)
+
+
+def get_position_info(nwb_file_name: str, epoch_name: str, pos_name: str) -> PositionInfoDict:
+    """Fetch LED position for one epoch and linearize it onto the track graph.
+
+    Reads ``IntervalPositionInfo`` (``position_info_param_name="default_decoding"``:
+    smoothed LED position, upsampled to 500 Hz), drops NaN rows, trims to the
+    epoch's ``noPrePostTrialTimes`` interval, linearizes with the ``TrackGraph``
+    recorded by ``IntervalLinearizedPosition``, and adds ``patch_id``.
+
+    Unlike ``continuum-swr-replay``'s ``get_position_info``, this does not try
+    ``DLCPosV1`` first and does not fall back when an entry is missing. The
+    Figure-4 epoch has no DLC position, so that loader resolves to the same
+    ``IntervalPositionInfo`` entry; pinning the source keeps a later DLC run
+    from silently changing the export.
+
+    Parameters
+    ----------
+    nwb_file_name : str
+        Spyglass NWB file name.
+    epoch_name : str
+        Epoch interval name, e.g. ``"02_r1"``.
+    pos_name : str
+        Position interval name (see :func:`get_position_interval_name`).
+
+    Returns
+    -------
+    PositionInfoDict
+        ``position_info`` (time-indexed, seconds; positions in centimeters),
+        ``track_graph``, ``linear_edge_order``, ``linear_edge_spacing``.
+    """
+    from spyglass.common import IntervalList
+    from spyglass.common.common_position import IntervalPositionInfo
+    from spyglass.linearization.v0.main import IntervalLinearizedPosition, TrackGraph
+
+    position_key = {
+        "nwb_file_name": nwb_file_name,
+        "interval_list_name": pos_name,
+        "position_info_param_name": POSITION_INFO_PARAM_NAME,
+    }
+    linearization_key = {**position_key, "linearization_param_name": LINEARIZATION_PARAM_NAME}
+
+    track_graph_name = (IntervalLinearizedPosition & linearization_key).fetch1("track_graph_name")
+    track_graph_entry = TrackGraph & {"track_graph_name": track_graph_name}
+    track_graph = track_graph_entry.get_networkx_track_graph()
+    track_graph_params = track_graph_entry.fetch1()
+    linear_edge_order = track_graph_params["linear_edge_order"]
+    linear_edge_spacing = track_graph_params["linear_edge_spacing"]
+
+    position_info = (IntervalPositionInfo & position_key).fetch1_dataframe().dropna()
+    valid_times = (
+        IntervalList
+        & {
+            "nwb_file_name": nwb_file_name,
+            "interval_list_name": f"{epoch_name} noPrePostTrialTimes",
+        }
+    ).fetch1("valid_times")
+    position_info = position_info.loc[valid_times[0][0] : valid_times[-1][1]]
+
+    position_info = get_interpolated_position_info(
+        position_info,
+        position_info.index.to_numpy(),
+        track_graph,
+        linear_edge_order,
+        linear_edge_spacing,
+    )
+    position_info["patch_id"] = position_info["track_segment_id"].map(TRACK_SEGMENT_TO_PATCH)
+
+    return {
+        "position_info": position_info,
+        "track_graph": track_graph,
+        "linear_edge_order": linear_edge_order,
+        "linear_edge_spacing": linear_edge_spacing,
+    }
+
+
+def get_hpc_sorted_spike_times(
+    nwb_file_name: str,
+    sorting_restriction: Mapping[str, str | int] = HPC_SORTING_RESTRICTION,
+) -> list[NDArray[np.float64]]:
+    """Fetch curated hippocampal unit spike times from v0 ``CuratedSpikeSorting``.
+
+    Sort groups are read in ``sort_group_id`` order and units in the order of
+    each analysis file's units table. Sort groups whose curation left no units
+    contribute nothing.
+
+    Unlike ``continuum-swr-replay``'s ``get_pfc_spike_times``, the curation is
+    pinned (not the latest ``curation_id``), and the brain region is checked
+    against ``BrainRegion`` in the database instead of being selected from the
+    raw NWB file's electrode-group descriptions.
+
+    Parameters
+    ----------
+    nwb_file_name : str
+        Spyglass NWB file name.
+    sorting_restriction : Mapping
+        ``CuratedSpikeSorting`` restriction without ``nwb_file_name``.
+
+    Returns
+    -------
+    list of np.ndarray, shape (n_spikes,)
+        Spike times (seconds) for every unit of the sort, over the whole sort
+        interval.
+
+    Raises
+    ------
+    ValueError
+        If the sort is missing, any sort group lies outside the hippocampus, or
+        the fetched unit count differs from ``CuratedSpikeSorting.Unit``.
+    """
+    from spyglass.common import BrainRegion, ElectrodeGroup
+    from spyglass.spikesorting.v0 import CuratedSpikeSorting, SortGroup
+
+    restriction = {"nwb_file_name": nwb_file_name, **sorting_restriction}
+    sort_group_keys = (CuratedSpikeSorting & restriction).fetch("KEY", order_by="sort_group_id")
+    if len(sort_group_keys) == 0:
+        raise ValueError(f"No CuratedSpikeSorting entries match {restriction}")
+
+    # One OR-list restriction, not chained ``&``: an active export logs each
+    # restriction separately and would widen a chained query to its union.
+    sort_group_electrodes = SortGroup.SortGroupElectrode & [
+        {"nwb_file_name": nwb_file_name, "sort_group_id": key["sort_group_id"]}
+        for key in sort_group_keys
+    ]
+    region_names = set(
+        (sort_group_electrodes * ElectrodeGroup * BrainRegion.proj("region_name")).fetch(
+            "region_name"
+        )
+    )
+    if region_names != {HPC_REGION_NAME}:
+        raise ValueError(f"Sort groups span regions {sorted(region_names)}, not only hippocampus")
+
+    spike_times: list[NDArray[np.float64]] = []
+    for key in sort_group_keys:
+        nwb = (CuratedSpikeSorting & key).fetch_nwb()[0]
+        if "units" in nwb:
+            spike_times.extend(
+                np.asarray(st, dtype=np.float64) for st in nwb["units"]["spike_times"]
+            )
+
+    n_units = len(CuratedSpikeSorting.Unit & restriction)
+    if len(spike_times) != n_units:
+        raise ValueError(
+            f"Fetched {len(spike_times)} units but CuratedSpikeSorting.Unit has {n_units}"
+        )
+    return spike_times
+
+
+def filter_spike_times(
+    spike_times: Sequence[NDArray[np.float64]],
+    position_time: NDArray[np.float64],
+) -> list[NDArray[np.float64]]:
+    """Restrict each unit's spikes to the position time range (inclusive).
+
+    Same bounds as ``continuum-swr-replay``'s ``filter_spike_times``, but units
+    left with no spikes are kept, so the unit list stays aligned with the sort
+    (the Figure-4 export has 21 such units).
+
+    Parameters
+    ----------
+    spike_times : sequence of np.ndarray, shape (n_spikes,)
+        Per-unit spike times (seconds).
+    position_time : np.ndarray, shape (n_time,)
+        Position timestamps (seconds); only the first and last are used.
+
+    Returns
+    -------
+    list of np.ndarray, shape (n_spikes_in_range,)
+        Spikes with ``position_time[0] <= t <= position_time[-1]``, one array
+        per input unit.
+    """
+    start, end = position_time[0], position_time[-1]
+    return [st[(st >= start) & (st <= end)] for st in spike_times]
+
+
+def fetch_figure04_inputs(
+    nwb_file_name: str = FIGURE04_NWB_FILE_NAME,
+    epoch_name: str = FIGURE04_EPOCH_NAME,
+) -> Figure4Inputs:
+    """Fetch the five Figure-4 inputs from Spyglass.
+
+    Parameters
+    ----------
+    nwb_file_name : str, optional
+        Spyglass NWB file name. Default is the Figure-4 session.
+    epoch_name : str, optional
+        Epoch interval name. Default is the Figure-4 epoch.
+
+    Returns
+    -------
+    Figure4Inputs
+        Position, spike times clipped to the position time range, and the track
+        graph with its linearization parameters.
+    """
+    pos_name = get_position_interval_name(nwb_file_name, epoch_name)
+    position = get_position_info(nwb_file_name, epoch_name, pos_name)
+    position_time = position["position_info"].index.to_numpy()
+    spike_times = filter_spike_times(get_hpc_sorted_spike_times(nwb_file_name), position_time)
+    return Figure4Inputs(
+        position_info=position["position_info"],
+        spike_times=spike_times,
+        track_graph=position["track_graph"],
+        linear_edge_order=position["linear_edge_order"],
+        linear_edge_spacing=position["linear_edge_spacing"],
+    )
+
+
+def export_file_paths(output_dir: str | Path, animal_date_epoch: str) -> tuple[Path, ...]:
+    """Return the five export paths, in ``EXPORT_FILE_SUFFIXES`` order.
+
+    Parameters
+    ----------
+    output_dir : str or Path
+        Directory holding the exports.
+    animal_date_epoch : str
+        Epoch identifier (see :func:`epoch_identifier`).
+
+    Returns
+    -------
+    tuple of Path
+        Position, spike times, track graph, edge order, edge spacing.
+    """
+    return tuple(
+        Path(output_dir) / f"{animal_date_epoch}{suffix}" for suffix in EXPORT_FILE_SUFFIXES
+    )
+
+
+def write_figure04_inputs(
+    inputs: Figure4Inputs,
+    output_dir: str | Path,
+    animal_date_epoch: str,
+    *,
+    overwrite: bool = False,
+) -> tuple[Path, ...]:
+    """Write the five export files in the formats the committed exports use.
+
+    ``position_info`` is written with ``DataFrame.to_pickle`` and the other four
+    with ``pickle.dump`` at :data:`PICKLE_PROTOCOL`. Library versions change the
+    pickled bytes, so compare regenerated files by content
+    (:func:`compare_figure04_exports`), not by checksum.
+
+    Parameters
+    ----------
+    inputs : Figure4Inputs
+        Fetched inputs.
+    output_dir : str or Path
+        Destination directory (created if missing).
+    animal_date_epoch : str
+        Epoch identifier used as the file-name prefix.
+    overwrite : bool, optional
+        Replace existing files. Default False.
+
+    Returns
+    -------
+    tuple of Path
+        The written paths, in ``EXPORT_FILE_SUFFIXES`` order.
+
+    Raises
+    ------
+    FileExistsError
+        If a destination file exists and ``overwrite`` is False.
+    """
+    paths = export_file_paths(output_dir, animal_date_epoch)
+    existing = [str(p) for p in paths if p.exists()]
+    if existing and not overwrite:
+        raise FileExistsError(f"Refusing to overwrite existing exports: {existing}")
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+
+    position_path, *pickled_paths = paths
+    inputs.position_info.to_pickle(position_path)
+    pickled_values = (
+        inputs.spike_times,
+        inputs.track_graph,
+        inputs.linear_edge_order,
+        inputs.linear_edge_spacing,
+    )
+    for path, value in zip(pickled_paths, pickled_values, strict=True):
+        with path.open("wb") as f:
+            pickle.dump(value, f, protocol=PICKLE_PROTOCOL)
+    return paths
+
+
+def compare_figure04_exports(
+    reference_dir: str | Path,
+    candidate_dir: str | Path,
+    animal_date_epoch: str,
+) -> dict[str, bool]:
+    """Compare two sets of export files by content.
+
+    Files are read the way the loader reads them. Position must match exactly
+    (values, dtypes, index, and columns); spike times array-by-array in order;
+    the track graph node-, edge-, and attribute-wise; edge order and spacing by
+    value.
+
+    Parameters
+    ----------
+    reference_dir : str or Path
+        Directory with the reference exports (e.g. the ones the figure used).
+    candidate_dir : str or Path
+        Directory with the exports to check.
+    animal_date_epoch : str
+        Epoch identifier used as the file-name prefix.
+
+    Returns
+    -------
+    dict of str to bool
+        File name → whether the two files' contents are identical.
+    """
+    reference = export_file_paths(reference_dir, animal_date_epoch)
+    candidate = export_file_paths(candidate_dir, animal_date_epoch)
+    (ref_pos, ref_spikes, ref_graph, ref_order, ref_spacing) = reference
+    (new_pos, new_spikes, new_graph, new_order, new_spacing) = candidate
+
+    try:
+        pd.testing.assert_frame_equal(
+            pd.read_pickle(ref_pos), pd.read_pickle(new_pos), check_exact=True
+        )
+        position_equal = True
+    except AssertionError:
+        position_equal = False
+
+    ref_spike_times, new_spike_times = joblib.load(ref_spikes), joblib.load(new_spikes)
+    spikes_equal = len(ref_spike_times) == len(new_spike_times) and all(
+        np.array_equal(a, b) for a, b in zip(ref_spike_times, new_spike_times, strict=True)
+    )
+
+    graph_a, graph_b = joblib.load(ref_graph), joblib.load(new_graph)
+    graph_equal = type(graph_a) is type(graph_b) and bool(nx.utils.graphs_equal(graph_a, graph_b))
+
+    order_equal = [tuple(edge) for edge in joblib.load(ref_order)] == [
+        tuple(edge) for edge in joblib.load(new_order)
+    ]
+    spacing_equal = bool(np.array_equal(joblib.load(ref_spacing), joblib.load(new_spacing)))
+
+    return {
+        ref_pos.name: position_equal,
+        ref_spikes.name: spikes_equal,
+        ref_graph.name: graph_equal,
+        ref_order.name: order_equal,
+        ref_spacing.name: spacing_equal,
+    }
+
+
+def check_export_tables_match_spyglass() -> None:
+    """Refuse to package exports with a Spyglass older than the database's tables.
+
+    ``Export().populate_paper`` must come from a Spyglass version that knows every
+    column of the lab database's ``Export`` tables; an older one (e.g. the locked
+    0.5.5 against a database migrated for later versions) would write incomplete
+    rows. Read-only.
+
+    Raises
+    ------
+    RuntimeError
+        If a live ``Export`` column is missing from the installed table definitions.
+    """
+    from spyglass.common.common_usage import Export
+
+    unknown = [
+        f"{table.full_table_name}.{name}"
+        for table in (Export, Export.Table, Export.File)
+        for name in table.heading.secondary_attributes
+        if name not in table.definition
+    ]
+    if unknown:
+        raise RuntimeError(
+            f"Installed Spyglass predates the database's export tables (unknown columns: "
+            f"{unknown}); package the export with the lab's current Spyglass."
+        )
+
+
+def log_figure04_export(
+    paper_id: str,
+    analysis_id: str,
+    nwb_file_name: str = FIGURE04_NWB_FILE_NAME,
+    epoch_name: str = FIGURE04_EPOCH_NAME,
+) -> Figure4Inputs:
+    """Fetch the Figure-4 inputs inside a new Spyglass export session.
+
+    **Writes to the lab database**: ``ExportSelection.start_export`` inserts a
+    selection entry, and every Spyglass fetch until ``stop_export`` is logged
+    against it. Packaging (``Export().populate_paper``) is a separate step.
+
+    Parameters
+    ----------
+    paper_id : str
+        New export paper ID (at most 32 characters).
+    analysis_id : str
+        Analysis label within the paper (at most 32 characters).
+    nwb_file_name : str, optional
+        Spyglass NWB file name. Default is the Figure-4 session.
+    epoch_name : str, optional
+        Epoch interval name. Default is the Figure-4 epoch.
+
+    Returns
+    -------
+    Figure4Inputs
+        The inputs fetched while logging.
+
+    Raises
+    ------
+    ValueError
+        If ``paper_id`` already has export selections. Re-starting an existing
+        ``(paper_id, analysis_id)`` deletes its packaged ``Export`` entry, and
+        ``populate_paper`` replaces the paper's package, so this refuses rather
+        than overwrite a previous export.
+    """
+    from spyglass.common.common_usage import ExportSelection
+
+    if len(ExportSelection & {"paper_id": paper_id}) > 0:
+        raise ValueError(f"paper_id {paper_id!r} already has export selections; choose a new one")
+
+    selection = ExportSelection()
+    selection.start_export(paper_id=paper_id, analysis_id=analysis_id)
+    try:
+        return fetch_figure04_inputs(nwb_file_name, epoch_name)
+    finally:
+        selection.stop_export()
