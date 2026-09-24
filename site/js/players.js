@@ -47,7 +47,7 @@ const SCENARIO_TEXT = {
   well_specified:
     "Model and data agree. The few spikes flagged here show the false-positive rate that each threshold allows.",
   remap:
-    "The decoder evaluates spikes against a scrambled set of place fields, as after global remapping. The prediction and the spike likelihoods disagree about where the animal is, and all three diagnostics flag many spikes.",
+    "The decoder evaluates spikes against a scrambled set of place fields, as after global remapping, so within milliseconds its own estimate is pulled away from the animal. The diagnostics test consistency, not accuracy: a spike whose likelihood agrees with that wrong prediction is not flagged. But the scramble sends successive spikes to scattered places, so many spikes conflict with the prediction, and all three diagnostics flag them.",
   history_dependent:
     "Spikes are generated with refractoriness and bursting, but the decoder assumes Poisson firing. Each spike still carries the same spatial information, so decoding stays accurate and the diagnostics rarely flag: they test spatial consistency, not spike timing.",
   replay:
