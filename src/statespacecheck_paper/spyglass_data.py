@@ -35,7 +35,7 @@ import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
-from statespacecheck_paper.load_local_data import EXPORT_FILE_SUFFIXES
+from statespacecheck_paper.load_local_data import EXPORT_FILE_SUFFIXES, NeuralRecordingData
 
 FIGURE04_NWB_FILE_NAME = "j1620210710_.nwb"
 FIGURE04_EPOCH_NAME = "02_r1"
@@ -72,7 +72,7 @@ class PositionInfoDict(TypedDict):
     position_info: pd.DataFrame
     track_graph: nx.Graph
     linear_edge_order: list[tuple[int, int]]
-    linear_edge_spacing: float | list[float]
+    linear_edge_spacing: float
 
 
 @dataclasses.dataclass(frozen=True)
@@ -94,7 +94,7 @@ class Figure4Inputs:
         Track graph used for linearization.
     linear_edge_order : list of (int, int)
         Edge order used for linearization.
-    linear_edge_spacing : float or list of float
+    linear_edge_spacing : float
         Spacing between linearized edges (centimeters).
     """
 
@@ -102,7 +102,7 @@ class Figure4Inputs:
     spike_times: list[NDArray[np.float64]]
     track_graph: nx.Graph
     linear_edge_order: list[tuple[int, int]]
-    linear_edge_spacing: float | list[float]
+    linear_edge_spacing: float
 
 
 def epoch_identifier(nwb_file_name: str, epoch_name: str) -> str:
@@ -120,11 +120,19 @@ def epoch_identifier(nwb_file_name: str, epoch_name: str) -> str:
     str
         E.g. ``"j1620210710_02_r1"``.
 
+    Raises
+    ------
+    ValueError
+        If ``nwb_file_name`` does not end in ``"_.nwb"`` (Spyglass's name for its
+        copy of a raw NWB file).
+
     Examples
     --------
     >>> epoch_identifier("j1620210710_.nwb", "02_r1")
     'j1620210710_02_r1'
     """
+    if not nwb_file_name.endswith("_.nwb"):
+        raise ValueError(f"Expected a Spyglass NWB file name ending in '_.nwb': {nwb_file_name!r}")
     return f"{nwb_file_name.removesuffix('_.nwb')}_{epoch_name}"
 
 
@@ -206,6 +214,32 @@ def get_interpolated_position_info(
     return pd.concat((interpolated_position_info, linear_position_info), axis=1)
 
 
+def get_patch_id(track_segment_id: pd.Series) -> pd.Series:
+    """Map track segment IDs to patch IDs with :data:`TRACK_SEGMENT_TO_PATCH`.
+
+    Parameters
+    ----------
+    track_segment_id : pd.Series, shape (n_time,)
+        Track segment (edge) ID per sample.
+
+    Returns
+    -------
+    pd.Series, shape (n_time,)
+        Patch ID per sample.
+
+    Raises
+    ------
+    ValueError
+        If any segment (including a missing one) has no patch, instead of
+        silently producing NaN.
+    """
+    patch_id = track_segment_id.map(TRACK_SEGMENT_TO_PATCH)
+    if patch_id.isna().any():
+        unmapped = track_segment_id[patch_id.isna()].unique().tolist()
+        raise ValueError(f"Track segments without a patch: {unmapped}")
+    return patch_id
+
+
 def get_position_info(nwb_file_name: str, epoch_name: str, pos_name: str) -> PositionInfoDict:
     """Fetch LED position for one epoch and linearize it onto the track graph.
 
@@ -270,7 +304,7 @@ def get_position_info(nwb_file_name: str, epoch_name: str, pos_name: str) -> Pos
         linear_edge_order,
         linear_edge_spacing,
     )
-    position_info["patch_id"] = position_info["track_segment_id"].map(TRACK_SEGMENT_TO_PATCH)
+    position_info["patch_id"] = get_patch_id(position_info["track_segment_id"])
 
     return {
         "position_info": position_info,
@@ -286,14 +320,16 @@ def get_hpc_sorted_spike_times(
 ) -> list[NDArray[np.float64]]:
     """Fetch curated hippocampal unit spike times from v0 ``CuratedSpikeSorting``.
 
-    Sort groups are read in ``sort_group_id`` order and units in the order of
-    each analysis file's units table. Sort groups whose curation left no units
-    contribute nothing.
+    Units come in ``(sort_group_id, unit_id)`` order: each analysis file's units
+    are checked to be exactly the group's ``CuratedSpikeSorting.Unit`` entries,
+    in ascending ``unit_id``. Sort groups whose curation left no units contribute
+    nothing.
 
-    Unlike ``continuum-swr-replay``'s ``get_pfc_spike_times``, the curation is
-    pinned (not the latest ``curation_id``), and the brain region is checked
-    against ``BrainRegion`` in the database instead of being selected from the
-    raw NWB file's electrode-group descriptions.
+    Follows the pattern of ``continuum-swr-replay``'s sorted-unit loader
+    (``get_pfc_spike_times``), except that the curation is pinned (not the latest
+    ``curation_id``) and the brain region is checked against ``BrainRegion`` in
+    the database instead of being selected from the raw NWB file's
+    electrode-group descriptions.
 
     Parameters
     ----------
@@ -311,8 +347,9 @@ def get_hpc_sorted_spike_times(
     Raises
     ------
     ValueError
-        If the sort is missing, any sort group lies outside the hippocampus, or
-        the fetched unit count differs from ``CuratedSpikeSorting.Unit``.
+        If no sort matches, a sort group matches more than one sort, any sort
+        group lies outside the hippocampus, or an analysis file's units differ
+        from ``CuratedSpikeSorting.Unit``.
     """
     from spyglass.common import BrainRegion, ElectrodeGroup
     from spyglass.spikesorting.v0 import CuratedSpikeSorting, SortGroup
@@ -321,6 +358,10 @@ def get_hpc_sorted_spike_times(
     sort_group_keys = (CuratedSpikeSorting & restriction).fetch("KEY", order_by="sort_group_id")
     if len(sort_group_keys) == 0:
         raise ValueError(f"No CuratedSpikeSorting entries match {restriction}")
+    sort_group_ids = [key["sort_group_id"] for key in sort_group_keys]
+    if len(set(sort_group_ids)) != len(sort_group_ids):
+        # e.g. a second artifact_removed_interval_list_name sorted with the same parameters
+        raise ValueError(f"{restriction} matches more than one sort for some sort groups")
 
     # One OR-list restriction, not chained ``&``: an active export logs each
     # restriction separately and would widen a chained query to its union.
@@ -339,16 +380,17 @@ def get_hpc_sorted_spike_times(
     spike_times: list[NDArray[np.float64]] = []
     for key in sort_group_keys:
         nwb = (CuratedSpikeSorting & key).fetch_nwb()[0]
-        if "units" in nwb:
-            spike_times.extend(
-                np.asarray(st, dtype=np.float64) for st in nwb["units"]["spike_times"]
+        # No "units" entry when curation left the sort group empty.
+        units = nwb.get("units")
+        file_unit_ids = [] if units is None else [int(unit_id) for unit_id in units.index]
+        unit_ids = sorted(int(u) for u in (CuratedSpikeSorting.Unit & key).fetch("unit_id"))
+        if file_unit_ids != unit_ids:
+            raise ValueError(
+                f"Sort group {key['sort_group_id']}: analysis file units {file_unit_ids} "
+                f"differ from CuratedSpikeSorting.Unit {unit_ids} (or are out of order)"
             )
-
-    n_units = len(CuratedSpikeSorting.Unit & restriction)
-    if len(spike_times) != n_units:
-        raise ValueError(
-            f"Fetched {len(spike_times)} units but CuratedSpikeSorting.Unit has {n_units}"
-        )
+        if units is not None:
+            spike_times.extend(np.asarray(st, dtype=np.float64) for st in units["spike_times"])
     return spike_times
 
 
@@ -507,8 +549,21 @@ def write_figure04_inputs(
     ------
     FileExistsError
         If a destination file exists and ``overwrite`` is False.
+    ValueError
+        If the inputs fail the loader's checks
+        (:class:`~statespacecheck_paper.load_local_data.NeuralRecordingData`);
+        nothing is written.
     """
     check_output_paths(output_dir, animal_date_epoch, overwrite=overwrite)
+    # Validate with the loader's contract before writing anything; the values
+    # written are the originals, not the normalized copies.
+    NeuralRecordingData(
+        position_info=inputs.position_info,
+        spike_times=tuple(inputs.spike_times),
+        track_graph=inputs.track_graph,
+        linear_edge_order=tuple(inputs.linear_edge_order),
+        linear_edge_spacing=inputs.linear_edge_spacing,
+    )
     paths = export_file_paths(output_dir, animal_date_epoch)
     Path(output_dir).mkdir(parents=True, exist_ok=True)
 

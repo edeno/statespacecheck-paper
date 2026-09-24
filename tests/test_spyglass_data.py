@@ -7,6 +7,7 @@ comparison) on simulated data.
 
 from __future__ import annotations
 
+import dataclasses
 import importlib.util
 import subprocess
 import sys
@@ -26,8 +27,10 @@ from statespacecheck_paper.spyglass_data import (
     check_output_paths,
     compare_figure04_exports,
     declared_attribute_names,
+    epoch_identifier,
     filter_spike_times,
     get_interpolated_position_info,
+    get_patch_id,
     log_figure04_export,
     write_figure04_inputs,
 )
@@ -145,6 +148,32 @@ def test_compare_flags_only_the_file_that_differs(tmp_path: Path) -> None:
 
     assert all(same.values())
     assert shifted == {name: not name.endswith("_HPC_spike_times.pkl") for name in same}
+
+
+# --- Data checks -------------------------------------------------------------
+
+
+def test_epoch_identifier_rejects_names_without_the_spyglass_suffix() -> None:
+    with pytest.raises(ValueError, match="_.nwb"):
+        epoch_identifier("j1620210710.nwb", "02_r1")
+
+
+def test_get_patch_id_maps_segments_and_refuses_unmapped_ones() -> None:
+    patch_id = get_patch_id(pd.Series([0, 6, 3, 8]))
+
+    np.testing.assert_array_equal(patch_id, [1, 1, 2, 3])
+    with pytest.raises(ValueError, match="without a patch"):
+        get_patch_id(pd.Series([0, 99]))
+    with pytest.raises(ValueError, match="without a patch"):
+        get_patch_id(pd.Series([0.0, np.nan]))
+
+
+def test_write_refuses_inputs_the_loader_would_reject(tmp_path: Path) -> None:
+    unsorted = dataclasses.replace(_inputs(), spike_times=[np.array([0.004, 0.001])])
+
+    with pytest.raises(ValueError, match="nondecreasing"):
+        write_figure04_inputs(unsorted, tmp_path, _EPOCH)
+    assert list(tmp_path.iterdir()) == []
 
 
 # --- Path checks -------------------------------------------------------------
