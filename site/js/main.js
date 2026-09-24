@@ -1,6 +1,7 @@
 // Page entry point: fill reported numbers, then start the interactive pieces.
 
 import { fillMacros, loadJSON } from "./data.js";
+import { initExplainer } from "./explainer.js";
 import { initPlayground } from "./playground.js";
 import { initScenarios, renderReplay } from "./players.js";
 
@@ -50,6 +51,7 @@ function wireCopyButtons() {
 
 async function main() {
   wireCopyButtons();
+  const explainer = document.querySelector("#filter");
   const playground = document.querySelector("#playground");
   const simulation = document.querySelector("#simulation");
   const recording = document.querySelector("#real-data");
@@ -59,6 +61,7 @@ async function main() {
     manifest = await loadJSON("data/manifest.json");
   } catch (error) {
     for (const [section, what] of [
+      [explainer.querySelector("#ft-chart"), "filter explainer"],
       [playground.querySelector("#pg-chart"), "playground"],
       [simulation.querySelector("#sc-view"), "simulation"],
       [recording.querySelector("#rp-view"), "recording"],
@@ -68,6 +71,10 @@ async function main() {
     return;
   }
   fillMacros(document, manifest.macros);
+
+  loadJSON("data/filter.json")
+    .then((data) => initExplainer(explainer, data, manifest))
+    .catch((error) => showError(explainer.querySelector("#ft-chart"), "filter explainer", error));
 
   loadJSON("data/playground.json")
     .then((data) => initPlayground(playground, data))

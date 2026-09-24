@@ -1,6 +1,6 @@
 /* Project website for "Local goodness-of-fit measures for neural decoding".
    Colors follow the paper's figures (statespacecheck_paper.style): Wong palette,
-   predictive blue, likelihood orange, animal position magenta. */
+   predictive blue, likelihood orange, posterior black, animal position magenta. */
 
 :root {
   color-scheme: light;
@@ -18,6 +18,7 @@
 
   --predictive: #0072b2;
   --likelihood: #e69f00;
+  --posterior: #000000;
   --position: #ff00ff;
   --threshold: #666666;
   --hpd: #56b4e9;
@@ -25,6 +26,9 @@
   --kl: #009e73;
   /* Unselected place fields: 3.4:1 against the panel, enough for graphics. */
   --curve-muted: #858581;
+  /* Place fields in the filter explainer: the cell that fired, and the rest. */
+  --field: #4a4a4a;
+  --field-muted: #cfcfca;
 
   --flag-bg: #fdecea;
   --flag-text: #8a1c12;
@@ -285,6 +289,26 @@ input[type="range"] {
   border-color: var(--text-muted);
 }
 
+.chip.primary {
+  background: var(--text);
+  border-color: var(--text);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.chip.primary:hover {
+  background: #3a3a3a;
+}
+
+.chip:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.chip:disabled:hover {
+  border-color: var(--border);
+}
+
 .chip[aria-pressed="true"],
 .chip[aria-selected="true"] {
   background: var(--text);
@@ -365,6 +389,20 @@ input:focus-visible,
 .swatch.band {
   height: 8px;
   opacity: 0.35;
+}
+
+.swatch.dashed {
+  background: repeating-linear-gradient(90deg, var(--posterior) 0 5px, transparent 5px 8px);
+}
+
+.swatch.dashed.muted {
+  background: repeating-linear-gradient(90deg, var(--curve-muted) 0 5px, transparent 5px 8px);
+}
+
+/* ------------------------------------------------------ Filter explainer */
+
+#ft-caption {
+  min-height: 6.4em;
 }
 
 /* ------------------------------------------------------ Distribution chart */

@@ -231,7 +231,8 @@ Smoothed is only available for caches that include `acausal_posterior`
 ## Project website
 
 `site/` is a static page (plain HTML, CSS, and JavaScript; no build step) with
-three interactive explainers: a playground that recomputes the three
+four interactive explainers: a time stepper through a short spike train decoded
+by the paper's Bayesian filter, a playground that recomputes the three
 diagnostics as the reader moves a prediction, a player for the Figure-3
 simulation conditions, and the Figure-4 replay window under both decoders.
 

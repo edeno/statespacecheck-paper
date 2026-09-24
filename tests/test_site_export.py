@@ -564,6 +564,7 @@ def test_site_stylesheet_uses_the_paper_palette() -> None:
     tokens = {
         "--predictive": COLORS["predictive"],
         "--likelihood": COLORS["likelihood"],
+        "--posterior": COLORS["posterior"],
         "--position": COLORS["ground_truth"],
         "--threshold": COLORS["threshold"],
         **{f"--{css_name}": spec.color for css_name, spec in _METRIC_CSS.items()},
