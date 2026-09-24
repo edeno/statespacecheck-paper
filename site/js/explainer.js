@@ -147,12 +147,8 @@ export function initExplainer(root, data, manifest) {
     tracks: [posteriorTrack, rasterTrack],
     hover: false,
     tickLabel: (tick) => String(Math.round(tick)),
-    onCursor: (time) => {
-      stop();
-      go(Math.min(nSteps - 1, Math.max(0, Math.floor(time))));
-    },
+    onCursor: (time) => go(Math.min(nSteps - 1, Math.max(0, Math.floor(time)))),
     onKey: (key) => {
-      stop();
       if (key === "ArrowRight") go(Math.min(nSteps - 1, t + 1));
       else if (key === "ArrowLeft") go(Math.max(0, t - 1));
       else if (key === "Home") go(0);
@@ -181,6 +177,7 @@ export function initExplainer(root, data, manifest) {
   // --------------------------------------------------------- Captions
 
   function describe(playing) {
+    if (playing) return "Playing. Pause at any step to read what the filter does there.";
     const fired = spikes.get(t) ?? [];
     const cells = fired.map((s) => s.cell);
     const unique = [...new Set(cells)];
@@ -189,7 +186,6 @@ export function initExplainer(root, data, manifest) {
     const animal = `(the animal is at ${fmt(x[t])} a.u.)`;
     const last = lastSpikeBefore(t);
 
-    if (playing) return "Playing. Pause at any step to read what the filter does there.";
     if (!fired.length) {
       const spread = `SD ${fmt(m.posterior_sd[t - 1])} → ${fmt(m.predictive_sd[t])} a.u.`;
       if (last === t - 1) {
@@ -279,7 +275,9 @@ export function initExplainer(root, data, manifest) {
     nextButton.disabled = t === nSteps - 1;
   }
 
+  /** Show `step`, stopping playback if it is running. */
   function go(step) {
+    halt();
     t = step;
     render();
   }
@@ -288,12 +286,17 @@ export function initExplainer(root, data, manifest) {
 
   const holdAt = (step) => (spikes.has(step) ? SPIKE_HOLD : 1 / STEPS_PER_SECOND);
 
-  function stop() {
+  /** Cancel playback; the caller redraws. */
+  function halt() {
     if (frame === null) return;
     cancelAnimationFrame(frame);
     frame = null;
     playButton.textContent = "▶ Play";
     caption.setAttribute("aria-live", "polite");
+  }
+
+  function stop() {
+    halt();
     render();
   }
 
@@ -331,14 +334,8 @@ export function initExplainer(root, data, manifest) {
     if (frame !== null) stop();
     else play();
   });
-  nextButton.addEventListener("click", () => {
-    stop();
-    go(Math.min(nSteps - 1, t + 1));
-  });
-  restartButton.addEventListener("click", () => {
-    stop();
-    go(0);
-  });
+  nextButton.addEventListener("click", () => go(Math.min(nSteps - 1, t + 1)));
+  restartButton.addEventListener("click", () => go(0));
 
   render();
 }
