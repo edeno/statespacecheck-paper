@@ -148,6 +148,13 @@ follow_imports = "skip"
 # shows up as "Class cannot subclass Any" and ``@Slot``-decorated
 # methods register as untyped. Disable both checks for the modules
 # that touch Qt; this does not relax other strict checks.
+# The Spyglass pipeline's DataJoint tables subclass untyped Spyglass/DataJoint
+# classes and use the untyped ``@schema`` decorator.
+[[tool.mypy.overrides]]
+module = ["statespacecheck_paper.spyglass_pipeline"]
+disallow_subclassing_any = false
+disallow_untyped_decorators = false
+
 [[tool.mypy.overrides]]
 module = [
     "statespacecheck_paper.interactive.viewer",
