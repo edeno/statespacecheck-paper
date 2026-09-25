@@ -7,7 +7,10 @@ at a time. The figure pipeline itself (`scripts/generate_figure04.py`) does not 
 Spyglass; it reads the input file described in [data-lineage.md](data-lineage.md).
 The two paths are meant to give identical results, and `--step check` compares them.
 
-**Status (2026-09-24): code only. Nothing has been written to the lab database.**
+**Status (2026-09-24): the Figure-4 pipeline is code only; no pipeline tables
+have been populated.** An input-only export attempt created a partial
+`ExportSelection` entry that needs manual review; see
+[data-lineage.md](data-lineage.md#partial-export-selection-to-review-manually).
 Dry runs against the live database (read-only) resolve the position entry, the
 sort's 22 keys, and both decoding parameter sets; `sorted-spikes-group` correctly
 reports that the sort must be registered in `SpikeSortingOutput` first.
@@ -69,8 +72,10 @@ results, leaving scalar `states`, `environments`, and `encoding_groups` coordina
    of `state_bins`, including the scalar ones (`PandasMultiIndex only accepts
    1-dimensional variables`). Using only the one-dimensional coordinates works.
 
-No existing fix was found in either repository (searched 2026-09-24). Until one is
-released, the Continuous decode cannot go through `SortedSpikesDecodingV1`.
+Fixes are proposed in [Spyglass #1688](https://github.com/LorenFrankLab/spyglass/pull/1688)
+and [non_local_detector #49](https://github.com/LorenFrankLab/non_local_detector/pull/49).
+Until they are available in the pipeline environment, the Continuous decode
+cannot go through `SortedSpikesDecodingV1`.
 
 ## Environment
 
@@ -86,6 +91,22 @@ the pipeline needs the locked Spyglass upgraded once a release has the fix
 The input-file fetch (`scripts/fetch_figure04_inputs.py`) is lighter: it runs in a
 lab conda environment with the lab's Spyglass and this repository's `src/` on
 `PYTHONPATH`, without this package's other dependencies.
+
+The export logging issue found during the input-only export has an upstream fix
+proposed in [Spyglass #1689](https://github.com/LorenFrankLab/spyglass/pull/1689).
+This repository's export rehearsal independently refuses whole-table logs.
+
+## Xarray results in NWB
+
+Spyglass currently writes each decode as an external `.nc` file and stores its
+path in `SortedSpikesDecodingV1` or `ClusterlessDecodingV1`. The
+[`ndx-xarray` extension](https://github.com/rly/ndx-xarray) records a relative
+path to an external `.nc` file in NWB; it does not embed the xarray dataset.
+An integration PR would need to keep that file beside the NWB file during
+copy and export, and verify that loading it preserves the decoder's dimensions,
+coordinates, and results. The extension is not yet distributed on PyPI, according
+to its README. This is separate from the input-only export and can be pursued
+after the current pipeline and export are working.
 
 ## Next steps
 
