@@ -6,16 +6,12 @@ from typing import Any
 
 import numpy as np
 import pytest
-from numpy.testing import assert_allclose
 
 from statespacecheck_paper.diagnostics import (
     DecodingDiagnostics,
     DiagnosticThresholds,
     SpikeEventDiagnostics,
-    _compute_spike_event_predictive_pvalue_rank,
     compute_baseline_diagnostic_thresholds,
-    compute_normalized_event_likelihood,
-    compute_predictive_mark_probabilities,
     compute_spike_event_diagnostics_from_rates,
 )
 
@@ -31,59 +27,6 @@ def metrics_2d() -> dict[str, np.ndarray]:
         "kl_divergence": rng.uniform(0.0, 2.0, (100, 5)),
         "predictive_pvalue": rng.uniform(0.0, 1.0, (100, 5)),
     }
-
-
-# ---------------------------------------------------------------------------
-# predictive mark probabilities
-# ---------------------------------------------------------------------------
-
-
-class TestComputePredictiveMarkProbabilities:
-    def test_integrates_raw_intensities_before_normalizing(self) -> None:
-        """Population intensity varies by state, so averaging conditional
-        cell fractions would give [0.7, 0.3]. The event-weighted
-        predictive distribution must instead be [5/6, 1/6].
-        """
-        prior = np.array([0.5, 0.5])
-        rates = np.array([[9.0, 1.0], [1.0, 1.0]])
-
-        mark_probs = compute_predictive_mark_probabilities(prior, rates)
-
-        assert_allclose(mark_probs, [5.0 / 6.0, 1.0 / 6.0])
-
-    def test_global_intensity_scale_does_not_change_distribution(self) -> None:
-        prior = np.array([0.5, 0.3, 0.2])
-        rates = np.array([[0.6, 0.2], [0.3, 0.5], [0.1, 0.3]])
-        baseline = compute_predictive_mark_probabilities(prior, rates)
-        assert_allclose(compute_predictive_mark_probabilities(prior, 17.0 * rates), baseline)
-
-    def test_zero_total_intensity_raises(self) -> None:
-        prior = np.array([0.5, 0.5])
-        rates = np.zeros((2, 3))
-        with pytest.raises(ValueError, match="total event intensity is zero"):
-            compute_predictive_mark_probabilities(prior, rates)
-
-    def test_zero_total_intensity_row_raises_in_time_series(self) -> None:
-        """A per-time predictive with a zero-intensity row is undefined for that row."""
-        # Row 1 places all mass on bin 1, whose mark intensities are all zero.
-        predictive = np.array([[1.0, 0.0], [0.0, 1.0]])  # (n_time, n_bins)
-        rates = np.array([[1.0, 1.0, 1.0], [0.0, 0.0, 0.0]])  # (n_bins, n_marks)
-        with pytest.raises(ValueError, match="zero total"):
-            compute_predictive_mark_probabilities(predictive, rates)
-
-    def test_nonfinite_total_after_reduction_raises(self) -> None:
-        """Finite expected intensities must not normalize by an overflowed sum."""
-        prior = np.array([0.5, 0.5])
-        rates = np.full((2, 2), 1e308)
-        with pytest.raises(ValueError, match="total event intensity is non-finite"):
-            compute_predictive_mark_probabilities(prior, rates)
-
-    def test_nonfinite_expected_intensity_after_matrix_product_raises(self) -> None:
-        """Overflow during state integration must fail before normalization."""
-        predictive = np.array([[1.0, 1.0]])
-        rates = np.full((2, 1), 1e308)
-        with pytest.raises(ValueError, match="expected mark intensities are non-finite"):
-            compute_predictive_mark_probabilities(predictive, rates)
 
 
 # ---------------------------------------------------------------------------
@@ -344,83 +287,7 @@ class TestComputeSpikeEventDiagnosticsFromRates:
         rates = np.zeros((n_bins, n_cells))
         spike_time_ind = np.array([0], dtype=np.intp)
         spike_cell_ind = np.array([0], dtype=np.intp)
-        with pytest.raises(ValueError, match="zero at every position"):
+        with pytest.raises(ValueError, match="zero everywhere"):
             compute_spike_event_diagnostics_from_rates(
                 predictive, rates, spike_time_ind, spike_cell_ind, coverage=0.95
             )
-
-
-class TestComputeNormalizedEventLikelihood:
-    def test_matches_normalized_intensity_and_rows_sum_to_one(self) -> None:
-        rates = np.array([[2.0, 0.5, 1.0], [0.1, 0.4, 0.2]])
-        out = compute_normalized_event_likelihood(rates)
-
-        expected = rates / rates.sum(axis=-1, keepdims=True)
-        np.testing.assert_allclose(out, expected)
-        np.testing.assert_allclose(out.sum(axis=-1), 1.0)
-
-    def test_global_intensity_scale_does_not_change_event_likelihood(self) -> None:
-        rates = np.array([[2.0, 0.5, 1.0], [0.1, 0.4, 0.2]])
-        expected = compute_normalized_event_likelihood(rates)
-
-        np.testing.assert_allclose(compute_normalized_event_likelihood(17.0 * rates), expected)
-
-    def test_degenerate_zero_rate_row_raises(self) -> None:
-        rates = np.array([[2.0, 0.5, 1.0], [0.0, 0.0, 0.0]])
-        with pytest.raises(ValueError, match="zero at every position"):
-            compute_normalized_event_likelihood(rates)
-
-    def test_tiny_but_informative_rates_keep_their_shape(self) -> None:
-        # Rates far below any absolute threshold still have a well-defined
-        # shape: they must normalize to their ratio, not collapse to uniform.
-        rates = np.array([[1e-20, 2e-20, 4e-20]])
-        out = compute_normalized_event_likelihood(rates)
-
-        expected = np.array([1.0, 2.0, 4.0]) / 7.0
-        np.testing.assert_allclose(out[0], expected, rtol=1e-6)
-        assert not np.allclose(out[0], np.full(3, 1.0 / 3.0))
-
-
-class TestSpikeEventPredictivePvalueRankTolerance:
-    def test_sub_atol_tie_does_not_flip_rank(self) -> None:
-        """Two cells whose predictive contributions differ by less than the
-        ``rank_atol`` slack must receive the *same* rank. A one-hot predictive
-        row lets the contributions be set directly via the rate table; the pair
-        at 0.30 and 0.30 + delta (delta < rank_atol) is bracketed by a clearly
-        larger and a clearly smaller cell, so without the tolerance the two
-        events would land on different ranks (0.35 vs 0.65+delta) instead of
-        tying.
-        """
-        n_bins, n_cells = 4, 4
-        delta = 1e-15  # below rank_atol ~ eps*n_bins*16*max_contrib ~ 5e-15
-        contributions = np.array([0.05, 0.30, 0.30 + delta, 0.35 - delta])
-        # rank_atol must exceed the near-tie gap for the tie to hold.
-        rank_atol = float(np.finfo(float).eps * n_bins * 16) * float(contributions.max())
-        assert delta < rank_atol
-
-        rates = np.zeros((n_bins, n_cells))
-        rates[0] = contributions  # only bin 0 carries intensity
-        pred = np.zeros((2, n_bins))
-        pred[:, 0] = 1.0  # both events sit on bin 0 -> identical contributions
-        cell_ind = np.array([1, 2], dtype=np.intp)  # near-tied pair (0.30, 0.30+delta)
-
-        ranks = _compute_spike_event_predictive_pvalue_rank(pred, rates, cell_ind)
-
-        assert ranks[0] == ranks[1]  # the sub-atol difference does not flip rank
-        assert 0.0 < ranks[0] < 1.0  # discriminating: neither everything nor nothing
-
-    def test_values_in_unit_range(self) -> None:
-        rng = np.random.default_rng(1)
-        n_time, n_bins, n_cells = 30, 12, 5
-        pred = rng.dirichlet(np.ones(n_bins), size=n_time)
-        rates = rng.random((n_bins, n_cells))
-        cell_ind = rng.integers(0, n_cells, size=n_time).astype(np.intp)
-
-        ranks = _compute_spike_event_predictive_pvalue_rank(pred, rates, cell_ind)
-
-        assert ranks.shape == (n_time,)
-        # Rank is a cumulative probability mass: bounded in [0, 1], allowing the
-        # tiny FP overshoot above 1 the reduction can produce for the top cell
-        # (matches the tolerance in test_figure04_diagnostics).
-        assert np.all(ranks >= 0.0)
-        assert np.all(ranks <= 1.0 + 1e-9)

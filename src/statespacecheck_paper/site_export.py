@@ -38,12 +38,12 @@ from typing import Any, Protocol
 
 import matplotlib as mpl
 import numpy as np
+import statespacecheck as ssc
 from numpy.typing import NDArray
 
 from statespacecheck_paper.decoding import decode_with_diagnostics
 from statespacecheck_paper.diagnostics import (
     DecodingDiagnostics,
-    compute_normalized_event_likelihood,
     compute_spike_event_diagnostics_from_rates,
 )
 from statespacecheck_paper.figure03_generation import FIGURE03_CONDITION_IDS, conditions_by_id
@@ -893,7 +893,7 @@ def replay_payload(
         "likelihood": encode_display_rows(mean_likelihood),
         "has_spikes": has_spikes.tolist(),
         # Each unit's normalized single-event likelihood (one row per unit).
-        "unit_likelihoods": encode_display_rows(compute_normalized_event_likelihood(place_fields)),
+        "unit_likelihoods": encode_display_rows(ssc.event_likelihood(place_fields)),
         "unit_rank": unit_rank.tolist(),
         "spike_times": [
             _rounded(times[(times >= t0) & (times < t_end)] - t0, 4) for times in spike_times

@@ -27,8 +27,10 @@ families**:
 - **General layers** (reused by every figure): `simulation` (random walks,
   place-field rates, spike simulators), `decoding` (the Bayesian filter
   `decode_with_diagnostics` + its per-window override mechanism), and
-  `diagnostics` (the HPD-overlap / rank-based predictive-p-value / KL-divergence
-  computation and containers). `diagnostics` is the dependency-graph leaf.
+  `diagnostics` (containers and the paper's threshold rule around the
+  per-spike HPD-overlap / predictive-p-value / KL-divergence computation, which
+  lives in the external `statespacecheck` package). `diagnostics` is the
+  dependency-graph leaf.
 - **Per-figure families**: `figure01_generation`,
   `figure02_{panels,generation}`, `figure03_{protocol,simulation,summary,plotting,generation}` and
   `figure04_{cache,workflow,layout,generation}`. Each figure is a small set of

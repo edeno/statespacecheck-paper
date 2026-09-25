@@ -79,16 +79,16 @@ def test_static_model_event_likelihood_is_computed_from_normalized_place_field(
     synthetic_cache: Path,
 ) -> None:
     """Static real models use the same event likelihood as diagnostics."""
-    from statespacecheck_paper.diagnostics import compute_normalized_event_likelihood
+    import statespacecheck as ssc
 
     src = DecoderDataSource(synthetic_cache, model="continuous")
     try:
         assert src.event_likelihood is None
         event_idx = 0
         cell_id = int(src.event_cell_ids[event_idx])
-        expected = compute_normalized_event_likelihood(
-            np.asarray(src.place_fields[cell_id], dtype=np.float64)
-        )
+        expected = ssc.event_likelihood(
+            np.asarray(src.place_fields[cell_id], dtype=np.float64)[np.newaxis]
+        )[0]
         np.testing.assert_allclose(
             src.event_likelihood_at(event_idx, cell_id),
             expected.astype(np.float32),

@@ -26,9 +26,13 @@ The module graph is a DAG enforced in CI; `diagnostics.py` is the leaf.
 
 Key modules and the rationale that the source alone won't tell you:
 
-- **diagnostics.py** — shared goodness-of-fit diagnostics; the dependency-graph
-  **leaf** (per-spike-event HPD/KL/rank computation, single-event likelihood,
-  predictive-mark probabilities, baseline thresholds).
+- **diagnostics.py** — the paper's adapter to the external `statespacecheck`
+  package, which owns the per-spike computations (`event_diagnostics`,
+  `event_likelihood`, `predictive_mark_probabilities`, `mark_predictive_pvalue`,
+  `baseline_threshold`) so other projects can use them. This module keeps the
+  paper-side containers (`SpikeEventDiagnostics`, `DecodingDiagnostics`) and the
+  paper's threshold rule; it is the dependency-graph **leaf**. A change to the
+  diagnostics themselves belongs in `statespacecheck`, then a version bump here.
 - **decoding.py** — general Bayesian decoder `decode_with_diagnostics` + the
   per-window override mechanism (`DecoderOverrideWindow`/`DecoderOverrideSchedule`,
   used by Figure 3); depends only on `diagnostics` + `simulation`.

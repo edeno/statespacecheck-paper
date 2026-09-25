@@ -488,11 +488,11 @@ class DecoderDataSource:
                 "Simulation cache is missing event_likelihood; reconstructing it from "
                 "static place fields would be wrong in time-varying protocol phases."
             )
-        from statespacecheck_paper.diagnostics import compute_normalized_event_likelihood
+        import statespacecheck as ssc
 
-        likelihood = compute_normalized_event_likelihood(
-            np.asarray(self.place_fields[cell_id], dtype=np.float64)
-        )
+        likelihood = ssc.event_likelihood(
+            np.asarray(self.place_fields[cell_id], dtype=np.float64)[np.newaxis]
+        )[0]
         return np.asarray(likelihood, dtype=np.float32)
 
     # ------------------------------------------------------------------
