@@ -598,6 +598,11 @@ def _recording_configuration(payload: dict[str, Any]) -> list[MacroDefinition]:
             "configuration.provenance.non_local_detector_version",
         ),
         MacroDefinition(
+            "RecStatespacecheckVersion",
+            payload["provenance"]["figure04_decode_cache"]["statespacecheck_version"],
+            "provenance.figure04_decode_cache.statespacecheck_version",
+        ),
+        MacroDefinition(
             "RecHpdCutoff",
             _exact(flag_rules["hpd_overlap"]["threshold"], 2),
             "flag_rules.hpd_overlap.threshold",
