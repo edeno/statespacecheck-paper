@@ -3,14 +3,14 @@
 This module holds the general, figure-agnostic diagnostic layer: the per-spike
 diagnostic containers, the adapter from the paper's decoder outputs to the
 external ``statespacecheck`` package's per-event diagnostics (HPD overlap, KL
-divergence, and the exact predictive p-value), and the paper's baseline-threshold
+divergence, and the rank-based predictive p-value), and the paper's baseline-threshold
 rule used to flag misfit. The diagnostics themselves, including the single-event
 likelihood and predictive-mark calculations, live in ``statespacecheck`` so that
 other projects can use them directly.
 
-It depends only on ``numpy``/``scipy`` and the external ``statespacecheck``
-package — it imports no sibling ``statespacecheck_paper`` module, so it is the
-leaf of the paper's dependency graph.
+It depends only on ``numpy`` and the external ``statespacecheck`` package — it
+imports no sibling ``statespacecheck_paper`` module, so it is the leaf of the
+paper's dependency graph.
 
 **Key Components**:
 - **SpikeEventDiagnostics**: per-spike-event diagnostic arrays (dense matrices optional)
@@ -394,11 +394,11 @@ def compute_spike_event_diagnostics_from_rates(
 ) -> SpikeEventDiagnostics:
     """Compute per-cell diagnostic metrics at spike times.
 
-    This is the core computation shared by both simulated and real data analysis.
-    It delegates to :func:`statespacecheck.event_diagnostics`, which computes HPD
-    overlap, KL divergence, and the exact predictive p-value for each spike event
-    from the firing cell's normalized intensity, and optionally scatters the
-    results into dense per-(time, cell) matrices.
+    Paper-side entry point shared by the simulated and real-data analyses. It
+    delegates to :func:`statespacecheck.event_diagnostics`, which computes HPD
+    overlap, KL divergence, and the rank-based predictive p-value for each spike
+    event, and optionally scatters the results into dense per-(time, cell)
+    matrices.
 
     Parameters
     ----------
@@ -443,18 +443,10 @@ def compute_spike_event_diagnostics_from_rates(
 
     Notes
     -----
-    Each event likelihood is the firing cell's intensity normalized over
-    position (:func:`statespacecheck.event_likelihood`). If multiple spikes occur
-    in the same time/cell bin, callers should pass repeated entries in
+    If multiple spikes occur in the same time/cell bin, pass repeated entries in
     ``spike_time_ind`` and ``spike_cell_ind`` so every observed spike contributes
-    one event to the returned arrays. Such events have identical local
-    diagnostics because the binned model holds the predictive distribution and
-    intensity table constant within the bin.
-
-    The predictive cell distribution used by ``event_predictive_pvalue`` is
-    event-weighted (:func:`statespacecheck.predictive_mark_probabilities`): raw
-    cell intensities are averaged over the predictive state distribution and
-    then normalized across cells.
+    one event. See :func:`statespacecheck.event_diagnostics` for how each
+    diagnostic is computed.
     """
     events = ssc.event_diagnostics(
         predictive_posterior,
@@ -465,20 +457,13 @@ def compute_spike_event_diagnostics_from_rates(
         return_likelihood=include_dense_matrices,
     )
 
-    # Dense (n_time, n_cells) matrices are only allocated when requested;
-    # for real recordings with millions of time bins they can dwarf the
-    # rest of the working set, so the cache builder opts out.
-    hpd_overlap: NDArray[np.floating] | None = None
-    kl_divergence: NDArray[np.floating] | None = None
-    predictive_pvalue: NDArray[np.floating] | None = None
-    if include_dense_matrices:
-        dense_shape = (predictive_posterior.shape[0], rates.shape[1])
-        hpd_overlap = np.full(dense_shape, np.nan)
-        kl_divergence = np.full(dense_shape, np.nan)
-        predictive_pvalue = np.full(dense_shape, np.nan)
-        hpd_overlap[spike_time_ind, spike_cell_ind] = events.hpd_overlap
-        kl_divergence[spike_time_ind, spike_cell_ind] = events.kl_divergence
-        predictive_pvalue[spike_time_ind, spike_cell_ind] = events.predictive_pvalue
+    def _dense(values: NDArray[np.floating]) -> NDArray[np.floating] | None:
+        """Scatter per-event values into a NaN-filled (n_time, n_cells) matrix."""
+        if not include_dense_matrices:
+            return None
+        matrix = np.full((predictive_posterior.shape[0], rates.shape[1]), np.nan)
+        matrix[spike_time_ind, spike_cell_ind] = values
+        return matrix
 
     return SpikeEventDiagnostics(
         event_time_ind=spike_time_ind,
@@ -486,9 +471,9 @@ def compute_spike_event_diagnostics_from_rates(
         event_hpd_overlap=events.hpd_overlap,
         event_kl_divergence=events.kl_divergence,
         event_predictive_pvalue=events.predictive_pvalue,
-        hpd_overlap=hpd_overlap,
-        kl_divergence=kl_divergence,
-        predictive_pvalue=predictive_pvalue,
+        hpd_overlap=_dense(events.hpd_overlap),
+        kl_divergence=_dense(events.kl_divergence),
+        predictive_pvalue=_dense(events.predictive_pvalue),
         per_spike_likelihood=events.likelihood,
     )
 
@@ -510,7 +495,7 @@ class DiagnosticThresholds:
         KL divergence threshold; must be non-negative finite. Higher
         values indicate worse fit.
     predictive_pvalue : float
-        Spike-probability threshold; must lie in ``[0, 1]``. Defaulted
+        Predictive p-value threshold; must lie in ``[0, 1]``. Defaulted
         to 0.05 by :func:`compute_baseline_diagnostic_thresholds`. Lower
         values indicate misfit.
 
@@ -622,6 +607,7 @@ def compute_baseline_diagnostic_thresholds(
 
     def _threshold(name: str, quantile: float) -> float:
         try:
+            # float() because statespacecheck ships no py.typed, so mypy sees Any.
             return float(ssc.baseline_threshold(_get(name)[:baseline_end_index], quantile))
         except ValueError as err:
             raise ValueError(

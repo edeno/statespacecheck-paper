@@ -6,6 +6,7 @@ from typing import Any
 
 import numpy as np
 import pytest
+import statespacecheck as ssc
 
 from statespacecheck_paper.diagnostics import (
     DecodingDiagnostics,
@@ -246,48 +247,47 @@ class TestSpikeEventDiagnosticsInvariants:
 
 
 class TestComputeSpikeEventDiagnosticsFromRates:
-    """Direct tests for the per-spike-event diagnostics helper."""
+    """The adapter around ``statespacecheck.event_diagnostics``; the diagnostics
+    themselves are tested in the statespacecheck package."""
 
-    def test_integrates_raw_rates_before_normalizing(self) -> None:
-        """Regression test for the original MATLAB normalization-order bug.
+    @pytest.fixture
+    def inputs(self) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        rng = np.random.default_rng(0)
+        predictive = rng.dirichlet(np.ones(6), size=5)  # (n_time, n_bins)
+        rates = rng.random((6, 3)) + 0.1  # (n_bins, n_cells)
+        # Two spikes share (time 1, cell 2); time 3 has no spikes.
+        spike_time_ind = np.array([0, 1, 1, 4], dtype=np.intp)
+        spike_cell_ind = np.array([0, 2, 2, 1], dtype=np.intp)
+        return predictive, rates, spike_time_ind, spike_cell_ind
 
-        Averaging state-conditional cell fractions would assign the less
-        likely cell rank 0.3. Conditioning the latent state on an event by
-        integrating raw rates first gives the correct rank 1/6.
-        """
-        predictive = np.array([[0.5, 0.5], [0.5, 0.5]])
-        rates = np.array([[9.0, 1.0], [1.0, 1.0]])
-        spike_time_ind = np.array([0, 1], dtype=np.intp)
-        spike_cell_ind = np.array([0, 1], dtype=np.intp)
-
-        result = compute_spike_event_diagnostics_from_rates(
-            predictive, rates, spike_time_ind, spike_cell_ind, coverage=0.95
+    def test_matches_package_and_scatters_into_dense_matrices(
+        self, inputs: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]
+    ) -> None:
+        predictive, rates, time_ind, cell_ind = inputs
+        result = compute_spike_event_diagnostics_from_rates(predictive, rates, time_ind, cell_ind)
+        expected = ssc.event_diagnostics(
+            predictive, rates, time_ind, cell_ind, return_likelihood=True
         )
-        np.testing.assert_allclose(result.event_predictive_pvalue, [1.0, 1.0 / 6.0])
+        spiked = np.zeros((5, 3), dtype=bool)
+        spiked[time_ind, cell_ind] = True
+        for name in ("hpd_overlap", "kl_divergence", "predictive_pvalue"):
+            values = getattr(expected, name)
+            np.testing.assert_array_equal(getattr(result, f"event_{name}"), values)
+            dense = getattr(result, name)
+            assert dense.shape == (5, 3)
+            np.testing.assert_array_equal(dense[time_ind, cell_ind], values)
+            assert np.all(np.isnan(dense[~spiked]))
+        np.testing.assert_array_equal(result.per_spike_likelihood, expected.likelihood)
 
-    def test_zero_rate_row_contributes_no_event_mass(self) -> None:
-        """A state with zero population rate contributes no mass after
-        conditioning on an event; equal rates elsewhere keep cells tied.
-        """
-        predictive = np.array([[0.2, 0.5, 0.3]])
-        rates = np.array([[0.5, 0.5], [0.0, 0.0], [0.5, 0.5]])
+    def test_dense_matrices_omitted_on_request(
+        self, inputs: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]
+    ) -> None:
+        predictive, rates, time_ind, cell_ind = inputs
         result = compute_spike_event_diagnostics_from_rates(
-            predictive,
-            rates,
-            np.array([0], dtype=np.intp),
-            np.array([0], dtype=np.intp),
-            coverage=0.95,
+            predictive, rates, time_ind, cell_ind, include_dense_matrices=False
         )
-        np.testing.assert_allclose(result.event_predictive_pvalue, 1.0, atol=1e-12)
-
-    def test_fully_degenerate_rates_raise(self) -> None:
-        """An observed spike is impossible under an all-zero rate table."""
-        n_time, n_bins, n_cells = 5, 3, 2
-        predictive = np.full((n_time, n_bins), 1.0 / n_bins)
-        rates = np.zeros((n_bins, n_cells))
-        spike_time_ind = np.array([0], dtype=np.intp)
-        spike_cell_ind = np.array([0], dtype=np.intp)
-        with pytest.raises(ValueError, match="zero everywhere"):
-            compute_spike_event_diagnostics_from_rates(
-                predictive, rates, spike_time_ind, spike_cell_ind, coverage=0.95
-            )
+        assert result.hpd_overlap is None
+        assert result.kl_divergence is None
+        assert result.predictive_pvalue is None
+        assert result.per_spike_likelihood is None
+        assert result.event_hpd_overlap.shape == (4,)

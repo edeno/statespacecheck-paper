@@ -243,7 +243,7 @@ def compute_spike_event_diagnostics(
 ) -> SpikeEventDiagnostics:
     """Compute per-cell diagnostic metrics for model checking.
 
-    Computes HPD overlap, KL divergence, and predictive p-value ranking for each
+    Computes HPD overlap, KL divergence, and the rank-based predictive p-value for each
     spike event. Matrix outputs are retained for backward-compatible plotting,
     and event arrays preserve one row per spike with exact timestamps when
     ``spike_times`` and ``time`` are supplied.

@@ -10,9 +10,10 @@ pieces, and each reads data produced here from the paper's own pipeline:
 - **Playground** — the reader moves a Gaussian predictive distribution over the
   Figure-3 track and picks which place cell fired; the browser recomputes the
   three per-spike diagnostics live with a JavaScript port of
-  :func:`statespacecheck_paper.diagnostics.compute_spike_event_diagnostics_from_rates`.
-  :func:`metric_parity_fixture` writes reference cases computed by that Python
-  function, and ``site/tests/metrics.test.mjs`` checks the port against them.
+  :func:`statespacecheck.event_diagnostics`. :func:`metric_parity_fixture` writes
+  reference cases computed through the paper's
+  :func:`~statespacecheck_paper.diagnostics.compute_spike_event_diagnostics_from_rates`
+  wrapper of that function, and ``site/tests/metrics.test.mjs`` checks the port against them.
 - **Scenario player** — one display window per Figure-3 condition from the
   seed-``config.random_seed`` realization shown in Figure 3a.
 - **Replay comparison** — the Figure-4 detail window under both decoders.
