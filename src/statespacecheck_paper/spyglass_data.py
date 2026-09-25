@@ -328,7 +328,13 @@ def get_position_info(nwb_file_name: str, epoch_name: str, pos_name: str) -> Pos
     }
     track_graph, linear_edge_order, linear_edge_spacing = get_track_graph(nwb_file_name, pos_name)
 
-    position_info = (IntervalPositionInfo & position_key).fetch1_dataframe().dropna()
+    # What ``fetch1_dataframe`` does, without its ``ensure_single_entry()``: that
+    # restricts by ``True``, which a Spyglass export session logs as the whole
+    # table (see ``unrestricted_log_entries``).
+    position_entry = IntervalPositionInfo & position_key
+    if len(position_entry) != 1:
+        raise ValueError(f"Expected one IntervalPositionInfo entry for {position_key}")
+    position_info = IntervalPositionInfo._data_to_df(position_entry.fetch_nwb()[0]).dropna()
     valid_times = (
         IntervalList
         & {
@@ -863,6 +869,102 @@ def check_export_tables_match_spyglass() -> None:
         )
 
 
+def dry_run_figure04_export_log(
+    nwb_file_name: str = FIGURE04_NWB_FILE_NAME,
+    epoch_name: str = FIGURE04_EPOCH_NAME,
+) -> list[dict[str, str]]:
+    """Return what an export session would log for the Figure-4 fetch, writing nothing.
+
+    Runs :func:`fetch_figure04_inputs` with Spyglass export logging switched on
+    (a placeholder export ID) and the ``ExportSelection.Table`` / ``.File`` inserts
+    replaced by a recorder, then restores both. Reads the database and the analysis
+    files like a real fetch. This relies on how Spyglass logs exports; if nothing is
+    recorded, treat that as a changed mechanism, not as an empty export.
+
+    Parameters
+    ----------
+    nwb_file_name : str, optional
+        Spyglass NWB file name. Default is the Figure-4 session.
+    epoch_name : str, optional
+        Epoch interval name. Default is the Figure-4 epoch.
+
+    Returns
+    -------
+    list of dict of str to str
+        One entry per row that would be inserted: ``part`` (``"Table"`` or
+        ``"File"``) plus the row's fields (e.g. ``table_name`` and
+        ``restriction``, or ``analysis_file_name``).
+    """
+    import os
+
+    from spyglass.common.common_usage import ExportSelection
+    from spyglass.utils.mixins.export import EXPORT_ENV_VAR
+
+    recorded: list[dict[str, str]] = []
+
+    def recorder(part: str) -> Any:
+        def record(self: Any, rows: Any, *args: Any, **kwargs: Any) -> None:
+            rows = [rows] if isinstance(rows, Mapping) else list(rows)
+            recorded.extend({"part": part, **{k: str(v) for k, v in r.items()}} for r in rows)
+
+        return record
+
+    parts = {name: getattr(ExportSelection, name) for name in ("Table", "File")}
+    originals = {
+        (name, method): getattr(part, method)
+        for name, part in parts.items()
+        for method in ("insert", "insert1")
+    }
+    previous_export_id = os.environ.get(EXPORT_ENV_VAR)
+    try:
+        for (name, method), _ in originals.items():
+            setattr(parts[name], method, recorder(name))
+        os.environ[EXPORT_ENV_VAR] = "999999999"
+        fetch_figure04_inputs(nwb_file_name, epoch_name)
+    finally:
+        if previous_export_id is None:
+            os.environ.pop(EXPORT_ENV_VAR, None)
+        else:
+            os.environ[EXPORT_ENV_VAR] = previous_export_id
+        for (name, method), original in originals.items():
+            setattr(parts[name], method, original)
+    return recorded
+
+
+def unrestricted_log_entries(entries: Sequence[Mapping[str, str]]) -> list[str]:
+    """Return the tables an export log would include whole.
+
+    Spyglass's export logging records ``table & True`` (as in
+    ``ensure_single_entry()``, used by ``fetch1_dataframe``) as an unrestricted
+    fetch, and packaging then exports the entire table.
+
+    Parameters
+    ----------
+    entries : sequence of Mapping of str to str
+        Log rows, as returned by :func:`dry_run_figure04_export_log`.
+
+    Returns
+    -------
+    list of str
+        Names of tables with an unrestricted log entry.
+
+    Examples
+    --------
+    >>> unrestricted_log_entries([
+    ...     {"part": "Table", "table_name": "a", "restriction": "(True)"},
+    ...     {"part": "Table", "table_name": "b", "restriction": "(x=1)"},
+    ...     {"part": "File", "analysis_file_name": "f.nwb"},
+    ... ])
+    ['a']
+    """
+    return [
+        entry["table_name"]
+        for entry in entries
+        if entry.get("part") == "Table"
+        and entry.get("restriction", "").strip("() ") in ("", "True", "1")
+    ]
+
+
 def log_figure04_export(
     paper_id: str,
     analysis_id: str,
@@ -873,9 +975,11 @@ def log_figure04_export(
 
     **Writes to the lab database**: ``ExportSelection.start_export`` inserts a
     selection entry, and every Spyglass fetch until ``stop_export`` is logged
-    against it. Before that, :func:`check_export_tables_match_spyglass` runs and
-    the ``paper_id`` is checked to be new. Packaging is
-    :func:`package_figure04_export`, which must use the same Spyglass version.
+    against it. Before that, :func:`check_export_tables_match_spyglass` runs, the
+    ``paper_id`` is checked to be new, and the fetch is rehearsed with
+    :func:`dry_run_figure04_export_log` (refusing an export that would include a
+    whole table). Packaging is :func:`package_figure04_export`, which must use the
+    same Spyglass version.
 
     Parameters
     ----------
@@ -896,7 +1000,8 @@ def log_figure04_export(
     Raises
     ------
     RuntimeError
-        From :func:`check_export_tables_match_spyglass`.
+        From :func:`check_export_tables_match_spyglass`, or if the rehearsal
+        records nothing or an unrestricted table.
     ValueError
         If ``paper_id`` already has export selections. Re-starting an existing
         ``(paper_id, analysis_id)`` deletes its packaged ``Export`` entry, and
@@ -909,6 +1014,13 @@ def log_figure04_export(
     selection = ExportSelection()
     if len(selection & {"paper_id": paper_id}) > 0:
         raise ValueError(f"paper_id {paper_id!r} already has export selections; choose a new one")
+    # Rehearse the fetch with logging recorded, not written: this also imports every
+    # module the fetch needs, so nothing can fail for that reason mid-export.
+    rehearsal = dry_run_figure04_export_log(nwb_file_name, epoch_name)
+    if not rehearsal:
+        raise RuntimeError("The export rehearsal recorded nothing; Spyglass's logging changed")
+    if unrestricted := unrestricted_log_entries(rehearsal):
+        raise RuntimeError(f"The export would include whole tables: {sorted(set(unrestricted))}")
 
     selection.start_export(paper_id=paper_id, analysis_id=analysis_id)
     try:
