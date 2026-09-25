@@ -351,7 +351,9 @@ export function initScenarios(root, manifest) {
   const text = root.querySelector("#sc-text");
   const cache = new Map();
   const ids = manifest.scenarios.map((s) => s.condition_id);
-  let active = null;
+  // Each selection bumps the generation; a load that finishes after a newer
+  // selection (even of the same condition, A -> B -> A) is discarded.
+  let generation = 0;
   let teardown = null;
 
   view.setAttribute("role", "tabpanel");
@@ -384,7 +386,7 @@ export function initScenarios(root, manifest) {
   });
 
   async function select(id) {
-    active = id;
+    const request = ++generation;
     // Stop the previous player before anything else can go wrong.
     if (teardown) teardown();
     teardown = null;
@@ -404,13 +406,13 @@ export function initScenarios(root, manifest) {
       try {
         cache.set(id, await loadJSON(`data/${entry.file}`));
       } catch (error) {
-        if (active === id) {
+        if (request === generation) {
           view.innerHTML = `<p class="error">Could not load this condition (${error.message}).</p>`;
         }
         return;
       }
     }
-    if (active !== id) return;
+    if (request !== generation) return;
     try {
       teardown = renderScenario(view, cache.get(id), manifest);
     } catch (error) {
