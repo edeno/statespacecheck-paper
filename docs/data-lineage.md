@@ -1,19 +1,30 @@
 # Figure 4 data lineage
 
-Figure 4 reads five derived files for one recording epoch, `j1620210710_02_r1`
+Figure 4 reads one derived input file for one recording epoch, `j1620210710_02_r1`
 (rat j16, 2021-07-10, run epoch `02_r1`; the spatial-bandit data of
 [Comrie et al. 2024](https://doi.org/10.1101/2024.09.23.613567)). This page records
-which Frank-lab Spyglass database entries each file comes from, how that was
-verified, and what is publicly available. The fetch code is
+which Frank-lab Spyglass database entries it comes from, how that was verified,
+and what is publicly available. The fetch code is
 `src/statespacecheck_paper/spyglass_data.py`.
 
-## The five files
+## The input file
 
-The files are not in the repository (`data/` is ignored). The SHA-256 values below
-match `provenance.figure04_decode_cache.export_file_sha256` in
-`manuscript/figures/main/figure04_summary.json`, so these are the files the
-committed figure was made from. The earliest copy found (a local download) is dated
-2025-02-04.
+`j1620210710_02_r1_figure04_inputs.npz`, SHA-256
+`60383b394b597e2900545548ecac7c53a8601038ace9dbeb42d7f9a5fe1c93b3` (75.1 MB; not in
+the repository, `data/` is ignored). It matches
+`provenance.figure04_decode_cache.export_file_sha256` in
+`manuscript/figures/main/figure04_summary.json`. It holds only numeric and string
+arrays (loaded with `allow_pickle=False`) and is written deterministically, so the
+same content always has the same SHA-256; `load_local_data.recording_arrays`
+defines the layout.
+
+### Originally: five pickles
+
+The recording was first exported as five pickles (the earliest copy found, a local
+download, is dated 2025-02-04), and the figure was first made from them.
+`scripts/convert_figure04_pickles.py` converts them to the `.npz` above and checks
+that it loads back identical (values, dtypes, index, column order, every unit's
+spike times, and the track graph in the same node and edge order).
 
 | File | SHA-256 |
 | --- | --- |
@@ -85,11 +96,19 @@ Checked on 2026-09-24 against the Frank-lab database, reading only:
 The code in this repository was then checked end to end. `scripts/fetch_figure04_inputs.py`
 ran on a lab server in a conda environment with Python 3.11.8, Spyglass
 0.5.6.dev16, NumPy 1.26.4, pandas 1.5.3, networkx 3.4, and track-linearization
-2.3.2. **All five files it wrote are byte-identical to the exports the figure
-used** (same SHA-256 as above). It was run again, on a second lab server, after
-the fetch gained its data checks (one sort per sort group, unit IDs per sort
+2.3.2. **All five pickles it wrote were byte-identical to the ones the figure was
+made from** (same SHA-256 as above). It was run again, on a second lab server,
+after the fetch gained its data checks (one sort per sort group, unit IDs per sort
 group, patch coverage, and the loader's checks before writing), with the same
 result.
+
+After the switch to the `.npz`, the same script wrote the `.npz` directly on a lab
+server (NumPy 1.26), and it has **the same SHA-256 as the one converted from the
+pickles** on a laptop (NumPy 2.3). Figure 4 regenerated from the `.npz` gives an
+identical summary (every mean and flag count; only the provenance checksums and
+cache fingerprints change). The PNG matched the committed one pixel for pixel
+except that, in some renders, one panel title lands about a pixel differently (a
+rendering quirk, not a data difference), and the PDF renders to identical pixels.
 
 The script that originally wrote the files was not found in version control. The
 code here reproduces its output exactly. Position follows `continuum-swr-replay`'s
@@ -107,15 +126,14 @@ other Spyglass export, and is not on DANDI.** The recording could be re-sorted f
 the raw data, but the exact units used in Figure 4 are available only from the lab
 database until they are exported.
 
-## Regenerating the files
+## Regenerating the input file
 
 Both scripts need lab database credentials and a lab server with the analysis NWB
-store mounted. `REF` below is a directory holding the five exports the figure used;
-`--output-dir` must not already hold exports (the fetch script accepts
-`--overwrite`).
+store mounted. `REF` below is a directory holding the input file the figure used;
+`--output-dir` must not already hold one (the fetch script accepts `--overwrite`).
 
 ```bash
-# Read-only: rebuild the five files and compare them with the ones the figure used.
+# Read-only: rebuild the input file and compare it with the one the figure used.
 PYTHONPATH=src python scripts/fetch_figure04_inputs.py \
     --output-dir /tmp/figure04_inputs --compare-to REF
 
@@ -128,8 +146,8 @@ PYTHONPATH=src python scripts/spyglass_export_figure04.py \
 The fetch script was verified as shown, in a lab conda environment with the
 lab's Spyglass and this repository's `src/` on the import path. (That
 environment's pandas 1.5.3 is below this package's `pandas>=2.0`, so the package
-is not installed there.) The export script has not been run yet. Before it writes
-anything it checks the paths, asks for confirmation, and checks that the
+is not installed there.) Before the export script writes anything, it checks
+the paths, asks for confirmation, and checks that the
 installed Spyglass declares every column of the database's export tables; the
 version in `uv.lock` does not, so the export must use the lab's current Spyglass.
 Spyglass also requires packaging with the same `x.y.z` version that logged the
@@ -139,13 +157,40 @@ selection, which is why `--populate` packages in the same run and requires
 The `spyglass` extra (`uv sync --extra spyglass`) installs the Spyglass in
 `uv.lock`; it has not been used for a full fetch.
 
-`--compare-to` compares by content, because the pickled bytes depend on the
-pandas, NumPy, and networkx versions. With the versions listed under
-[Verification](#verification) the bytes match too. With NumPy 2 they cannot: the
-spike-time file the figure used refers to `numpy.core`, which NumPy 2 renamed.
+### Partial export selection to review manually
+
+An attempted input-only export on 2026-09-24 stopped before packaging because
+the server environment lacked `kachery_cloud`. A read-only inspection at the
+time found `ExportSelection` **export_id 137**, `paper_id`
+`denovellis2026_goodness_of_fit`, `analysis_id` `figure04_inputs`, and Spyglass
+version 0.6.0. It had 12 logged table entries and one logged analysis file,
+but no packaged `Export` entry. One logged restriction for
+`common_position.__interval_position_info` was `(True)`, which would include
+the whole table if packaged. These details come from that inspection and should
+be checked against the current database before any manual deletion. The partial
+selection has not been cleaned up by this repository's scripts.
+
+After replacing the `fetch1_dataframe()` call, the Figure-4 fetch was rehearsed
+on the lab server under `scripts/datajoint_read_only.py` on 2026-09-24. It
+would log 131 table restrictions and 23 files, with no unrestricted table
+entry. A separate guarded fetch rebuilt the `.npz` and matched the reference
+array by array (all 24 arrays). This verifies the input data and proposed log;
+it does not package an export or resolve selection 137.
+
+`--compare-to` compares array by array and names any array that differs. Because
+the file is written deterministically, a matching SHA-256 already means identical
+content.
+
+From the original pickles (no database needed):
+
+```bash
+uv run python scripts/convert_figure04_pickles.py --pickle-dir data --output-dir data
+```
 
 ## Open items
 
+- Run the Figure-4 Spyglass pipeline and its export; see
+  [spyglass-pipeline.md](spyglass-pipeline.md) for the steps, status, and blockers.
 - Run the Spyglass export for this paper (`scripts/spyglass_export_figure04.py`).
 - Make the HPC sorting publicly available, e.g. by adding the export's analysis
   files to DANDI.
