@@ -286,7 +286,7 @@ $\Lambda(x)$.
   linearization) is **not implemented in this repository**; obtain the recording
   from the DANDI Archive as dandiset
   [001942](https://dandiarchive.org/dandiset/001942)
-  ([Comrie et al. 2024](https://doi.org/10.1101/2024.09.23.613567)) and place the
+  ([Comrie et al. 2026](https://doi.org/10.1016/j.neuron.2026.08.023)) and place the
   exports under `data/` (or set `STATESPACECHECK_DATA_PATH`). The expensive decode
   is cached under `data/intermediates/` as two joblib bundles: the ~19 GB decode
   bundle `{epoch}_fig4_cache.joblib` (memory-mapped on load) and the diagnostics

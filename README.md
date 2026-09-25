@@ -59,7 +59,7 @@ summary. It can also run directly from the committed summaries without rerunning
 the analyses. See [the reporting policy and artifact checks](docs/figure-pipeline.md#from-summary-to-prose-the-reported-value-macros).
 
 Figures 1–3 reproduce deterministically from the seeded simulation. **Figure 4**
-uses the real hippocampal recording of [Comrie et al. 2024](https://doi.org/10.1101/2024.09.23.613567),
+uses the real hippocampal recording of [Comrie et al. 2026](https://doi.org/10.1016/j.neuron.2026.08.023),
 available on the DANDI Archive as dandiset
 [001942](https://dandiarchive.org/dandiset/001942). It is **not** included here
 (large). Note that the decoder consumes five derived exports (linearized
