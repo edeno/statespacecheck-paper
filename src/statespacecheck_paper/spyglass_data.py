@@ -26,11 +26,12 @@ import re
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from types import MappingProxyType
-from typing import TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict
 
 import networkx as nx
 import numpy as np
 import pandas as pd
+import xarray as xr
 from numpy.typing import NDArray
 
 from statespacecheck_paper.load_local_data import (
@@ -39,6 +40,10 @@ from statespacecheck_paper.load_local_data import (
     recording_arrays,
     write_npz,
 )
+
+if TYPE_CHECKING:
+    from statespacecheck_paper.diagnostics import SpikeEventDiagnostics
+    from statespacecheck_paper.figure04_workflow import Figure4Summary
 
 FIGURE04_NWB_FILE_NAME = "j1620210710_.nwb"
 FIGURE04_EPOCH_NAME = "02_r1"
@@ -245,6 +250,45 @@ def get_patch_id(track_segment_id: pd.Series) -> pd.Series:
     return patch_id
 
 
+def get_track_graph(
+    nwb_file_name: str, pos_name: str
+) -> tuple[nx.Graph, list[tuple[int, int]], float]:
+    """Fetch the track graph ``IntervalLinearizedPosition`` recorded for a position.
+
+    Parameters
+    ----------
+    nwb_file_name : str
+        Spyglass NWB file name.
+    pos_name : str
+        Position interval name (see :func:`get_position_interval_name`).
+
+    Returns
+    -------
+    track_graph : networkx.Graph
+        Track graph from ``TrackGraph``.
+    linear_edge_order : list of (int, int)
+        Edge order for linearization.
+    linear_edge_spacing : float
+        Spacing between linearized edges (centimeters), as stored.
+    """
+    from spyglass.linearization.v0.main import IntervalLinearizedPosition, TrackGraph
+
+    linearization_key = {
+        "nwb_file_name": nwb_file_name,
+        "interval_list_name": pos_name,
+        "position_info_param_name": POSITION_INFO_PARAM_NAME,
+        "linearization_param_name": LINEARIZATION_PARAM_NAME,
+    }
+    track_graph_name = (IntervalLinearizedPosition & linearization_key).fetch1("track_graph_name")
+    track_graph_entry = TrackGraph & {"track_graph_name": track_graph_name}
+    params = track_graph_entry.fetch1()
+    return (
+        track_graph_entry.get_networkx_track_graph(),
+        params["linear_edge_order"],
+        params["linear_edge_spacing"],
+    )
+
+
 def get_position_info(nwb_file_name: str, epoch_name: str, pos_name: str) -> PositionInfoDict:
     """Fetch LED position for one epoch and linearize it onto the track graph.
 
@@ -276,21 +320,13 @@ def get_position_info(nwb_file_name: str, epoch_name: str, pos_name: str) -> Pos
     """
     from spyglass.common import IntervalList
     from spyglass.common.common_position import IntervalPositionInfo
-    from spyglass.linearization.v0.main import IntervalLinearizedPosition, TrackGraph
 
     position_key = {
         "nwb_file_name": nwb_file_name,
         "interval_list_name": pos_name,
         "position_info_param_name": POSITION_INFO_PARAM_NAME,
     }
-    linearization_key = {**position_key, "linearization_param_name": LINEARIZATION_PARAM_NAME}
-
-    track_graph_name = (IntervalLinearizedPosition & linearization_key).fetch1("track_graph_name")
-    track_graph_entry = TrackGraph & {"track_graph_name": track_graph_name}
-    track_graph = track_graph_entry.get_networkx_track_graph()
-    track_graph_params = track_graph_entry.fetch1()
-    linear_edge_order = track_graph_params["linear_edge_order"]
-    linear_edge_spacing = track_graph_params["linear_edge_spacing"]
+    track_graph, linear_edge_order, linear_edge_spacing = get_track_graph(nwb_file_name, pos_name)
 
     position_info = (IntervalPositionInfo & position_key).fetch1_dataframe().dropna()
     valid_times = (
@@ -650,6 +686,109 @@ def print_export_comparison(
     if not different:
         print(f"identical  all {len(differences)} arrays")
     return not different
+
+
+def figure04_diagnostics_from_decodes(
+    continuous_model: Any,
+    contfrag_model: Any,
+    continuous_results: xr.Dataset,
+    contfrag_results: xr.Dataset,
+    spike_times: Sequence[NDArray[np.float64]],
+    *,
+    coverage: float,
+    thresholds: Mapping[str, float] | None = None,
+) -> tuple[SpikeEventDiagnostics, SpikeEventDiagnostics, Figure4Summary]:
+    """Compute Figure 4's per-spike diagnostics and summary from two stored decodes.
+
+    The same computation as the figure pipeline, applied to decodes made
+    elsewhere (e.g. by Spyglass ``SortedSpikesDecodingV1``): spikes are clipped to
+    the decoded time range, the per-spike likelihood uses the Continuous
+    decoder's place fields (which must equal the Continuous-Fragmented ones), and
+    the summary uses the Figure-4 flag thresholds.
+
+    Parameters
+    ----------
+    continuous_model, contfrag_model : non_local_detector model
+        Fitted Continuous and Continuous-Fragmented decoders.
+    continuous_results, contfrag_results : xr.Dataset
+        Their decodes over the same time bins; each must hold
+        ``predictive_posterior`` (request it with ``return_outputs``).
+    spike_times : sequence of np.ndarray, shape (n_spikes,)
+        Per-unit spike times (seconds), in the order the models were fitted with.
+        Checked against each unit's fitted mean rate, which assumes the models
+        were trained on every decoded time bin (as in Figure 4).
+    coverage : float
+        HPD coverage for the HPD-overlap diagnostic.
+    thresholds : Mapping of str to float, optional
+        Flag threshold per metric. Default: the Figure-4 thresholds.
+
+    Notes
+    -----
+    Needs the figure pipeline's dependencies (e.g. ``statespacecheck``); they are
+    imported here so the fetch functions above do not need them.
+
+    Returns
+    -------
+    continuous, contfrag : SpikeEventDiagnostics
+        Per-spike diagnostics of each decoder, on the same spikes.
+    summary : Figure4Summary
+        Whole-session event means and two-decoder flag agreement.
+
+    Raises
+    ------
+    ValueError
+        If a decode lacks ``predictive_posterior``, the decodes cover different
+        time bins, the spike trains do not match the fitted units (count or
+        order), or the two decoders' place fields differ.
+    """
+    from statespacecheck_paper.figure04_decoder import get_spike_counts
+    from statespacecheck_paper.figure04_diagnostics import compute_results_diagnostics
+    from statespacecheck_paper.figure04_generation import (
+        FIGURE4_DIAGNOSTIC_THRESHOLDS,
+        FIGURE4_METRIC_DIRECTIONS,
+    )
+    from statespacecheck_paper.figure04_place_fields import extract_shared_position_place_fields
+    from statespacecheck_paper.figure04_workflow import summarize_figure04_diagnostics
+
+    time = continuous_results["time"].to_numpy()
+    if not np.array_equal(time, contfrag_results["time"].to_numpy()):
+        raise ValueError("The two decodes cover different time bins")
+    for name, results in (("Continuous", continuous_results), ("ContFrag", contfrag_results)):
+        if "predictive_posterior" not in results:
+            raise ValueError(
+                f"The {name} decode has no predictive_posterior; decode with "
+                "return_outputs including 'predictive_posterior'"
+            )
+    spikes = filter_spike_times(spike_times, time)
+    expected_rates = np.array([len(st) for st in spikes]) / len(time)
+    for model in (continuous_model, contfrag_model):
+        (encoding_model,) = model.encoding_model_.values()
+        fitted_rates = np.asarray(encoding_model["mean_rates"])
+        if fitted_rates.shape != expected_rates.shape or not np.allclose(
+            fitted_rates, expected_rates, rtol=1e-6, atol=0.0
+        ):
+            raise ValueError("The spike trains do not match the fitted units (count or order)")
+    place_fields, position_bins = extract_shared_position_place_fields(continuous_model)
+    contfrag_fields, contfrag_bins = extract_shared_position_place_fields(contfrag_model)
+    if not np.allclose(place_fields, contfrag_fields, equal_nan=True) or not np.allclose(
+        position_bins, contfrag_bins, equal_nan=True
+    ):
+        raise ValueError("The Continuous and ContFrag place fields or position grids differ")
+    spike_counts = get_spike_counts(spikes, time)
+    continuous, contfrag = (
+        compute_results_diagnostics(
+            results, place_fields, spike_counts, time, spikes, coverage=coverage
+        )
+        for results in (continuous_results, contfrag_results)
+    )
+    summary = summarize_figure04_diagnostics(
+        continuous,
+        contfrag,
+        n_units=int(spike_counts.shape[1]),
+        thresholds=FIGURE4_DIAGNOSTIC_THRESHOLDS if thresholds is None else thresholds,
+        metric_directions=FIGURE4_METRIC_DIRECTIONS,
+    )
+    return continuous, contfrag, summary
 
 
 # ``name [= default] : type`` lines of a DataJoint definition (not ``->`` or index lines).

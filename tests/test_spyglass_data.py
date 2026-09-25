@@ -18,6 +18,7 @@ import networkx as nx
 import numpy as np
 import pandas as pd
 import pytest
+import xarray as xr
 from track_linearization import make_track_graph
 
 from statespacecheck_paper import spyglass_data
@@ -29,6 +30,7 @@ from statespacecheck_paper.spyglass_data import (
     declared_attribute_names,
     epoch_identifier,
     export_file_path,
+    figure04_diagnostics_from_decodes,
     filter_spike_times,
     get_interpolated_position_info,
     get_patch_id,
@@ -50,7 +52,15 @@ def test_importing_module_does_not_import_spyglass_or_datajoint() -> None:
     subprocess.run([sys.executable, "-c", code], check=True)
 
 
-@pytest.mark.parametrize("script", ["fetch_figure04_inputs.py", "spyglass_export_figure04.py"])
+@pytest.mark.parametrize(
+    "script",
+    [
+        "fetch_figure04_inputs.py",
+        "spyglass_export_figure04.py",
+        "spyglass_pipeline_figure04.py",
+        "convert_figure04_pickles.py",
+    ],
+)
 def test_script_help_does_not_import_spyglass_or_datajoint(script: str) -> None:
     path = str(_REPO_ROOT / "scripts" / script)
     code = (
@@ -464,3 +474,44 @@ def test_fetch_script_refuses_to_compare_the_output_with_itself(tmp_path: Path) 
     with pytest.raises(SystemExit) as exc:
         script.main(["--output-dir", str(tmp_path), "--compare-to", str(tmp_path), "--overwrite"])
     assert exc.value.code == 2
+
+
+# --- Diagnostics from stored decodes (input checks) -------------------------
+
+
+def _decode(time: np.ndarray, *, with_predictive: bool = True) -> xr.Dataset:
+    variables = {"acausal_posterior": (("time",), np.zeros(len(time)))}
+    if with_predictive:
+        variables["predictive_posterior"] = (("time",), np.zeros(len(time)))
+    return xr.Dataset(variables, coords={"time": time})
+
+
+def _fitted(mean_rates: list[float]) -> SimpleNamespace:
+    return SimpleNamespace(encoding_model_={("", 0): {"mean_rates": np.asarray(mean_rates)}})
+
+
+def test_diagnostics_from_decodes_refuses_mismatched_time_bins() -> None:
+    time = np.linspace(0.0, 1.0, 5)
+    with pytest.raises(ValueError, match="different time bins"):
+        figure04_diagnostics_from_decodes(
+            None, None, _decode(time), _decode(time + 1.0), [], coverage=0.95
+        )
+
+
+def test_diagnostics_from_decodes_requires_the_predictive_distribution() -> None:
+    time = np.linspace(0.0, 1.0, 5)
+    with pytest.raises(ValueError, match="predictive_posterior"):
+        figure04_diagnostics_from_decodes(
+            None, None, _decode(time), _decode(time, with_predictive=False), [], coverage=0.95
+        )
+
+
+def test_diagnostics_from_decodes_refuses_spikes_of_other_units() -> None:
+    time = np.linspace(0.0, 1.0, 5)
+    spike_times = [np.array([0.1, 0.2]), np.array([0.5])]
+    fitted = _fitted([2 / 5, 1 / 5])
+    swapped = [spike_times[1], spike_times[0]]
+    with pytest.raises(ValueError, match="do not match the fitted units"):
+        figure04_diagnostics_from_decodes(
+            fitted, fitted, _decode(time), _decode(time), swapped, coverage=0.95
+        )
