@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import dataclasses
 import importlib.util
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -35,6 +36,7 @@ from statespacecheck_paper.spyglass_data import (
     get_interpolated_position_info,
     get_patch_id,
     log_figure04_export,
+    unrestricted_log_entries,
     write_figure04_inputs,
 )
 
@@ -361,11 +363,96 @@ def test_log_export_stops_the_session_when_the_fetch_fails(
     def failing_fetch(*args: object) -> Figure4Inputs:
         raise OSError("analysis file unavailable")
 
+    monkeypatch.setattr(
+        spyglass_data,
+        "dry_run_figure04_export_log",
+        lambda *args: [{"part": "Table", "table_name": "position", "restriction": "(id=1)"}],
+    )
     monkeypatch.setattr(spyglass_data, "fetch_figure04_inputs", failing_fetch)
 
     with pytest.raises(OSError):
         log_figure04_export("paper", "analysis")
     assert calls == ["query", "start_export", "stop_export"]
+
+
+@pytest.mark.parametrize(
+    ("entries", "message"),
+    [
+        ([], "recorded nothing"),
+        ([{"part": "Table", "table_name": "position", "restriction": "(True)"}], "position"),
+    ],
+)
+def test_log_export_refuses_unsafe_rehearsal_before_writing(
+    monkeypatch: pytest.MonkeyPatch,
+    entries: list[dict[str, str]],
+    message: str,
+) -> None:
+    calls: list[str] = []
+    _fake_common_usage(monkeypatch, calls)
+    monkeypatch.setattr(spyglass_data, "dry_run_figure04_export_log", lambda *args: entries)
+
+    with pytest.raises(RuntimeError, match=message):
+        log_figure04_export("paper", "analysis")
+    assert calls == ["query"]
+
+
+@pytest.mark.parametrize("fetch_fails", [False, True])
+def test_export_rehearsal_records_without_inserting_and_restores_state(
+    monkeypatch: pytest.MonkeyPatch,
+    fetch_fails: bool,
+) -> None:
+    class Part:
+        def insert(self, rows: object) -> None:
+            raise AssertionError("Database insert called")
+
+        def insert1(self, row: object) -> None:
+            raise AssertionError("Database insert1 called")
+
+    class ExportSelection:
+        Table = type("Table", (Part,), {})
+        File = type("File", (Part,), {})
+
+    usage = ModuleType("spyglass.common.common_usage")
+    usage.__dict__["ExportSelection"] = ExportSelection
+    export = ModuleType("spyglass.utils.mixins.export")
+    export.__dict__["EXPORT_ENV_VAR"] = "SPYGLASS_EXPORT_ID"
+    for name in ("spyglass", "spyglass.common", "spyglass.utils", "spyglass.utils.mixins"):
+        monkeypatch.setitem(sys.modules, name, ModuleType(name))
+    monkeypatch.setitem(sys.modules, usage.__name__, usage)
+    monkeypatch.setitem(sys.modules, export.__name__, export)
+    monkeypatch.setenv("SPYGLASS_EXPORT_ID", "42")
+    original_insert = ExportSelection.Table.insert
+    original_insert1 = ExportSelection.File.insert1
+
+    def fetch(*args: object) -> None:
+        assert os.environ["SPYGLASS_EXPORT_ID"] == "999999999"
+        ExportSelection.Table().insert1({"table_name": "position", "restriction": "(id=1)"})
+        ExportSelection.File().insert([{"analysis_file_name": "analysis.nwb"}])
+        if fetch_fails:
+            raise OSError("analysis file unavailable")
+
+    monkeypatch.setattr(spyglass_data, "fetch_figure04_inputs", fetch)
+    if fetch_fails:
+        with pytest.raises(OSError, match="analysis file unavailable"):
+            spyglass_data.dry_run_figure04_export_log()
+    else:
+        assert spyglass_data.dry_run_figure04_export_log() == [
+            {"part": "Table", "table_name": "position", "restriction": "(id=1)"},
+            {"part": "File", "analysis_file_name": "analysis.nwb"},
+        ]
+    assert os.environ["SPYGLASS_EXPORT_ID"] == "42"
+    assert ExportSelection.Table.insert is original_insert
+    assert ExportSelection.File.insert1 is original_insert1
+
+
+def test_unrestricted_log_entries_ignores_restricted_tables_and_files() -> None:
+    assert unrestricted_log_entries(
+        [
+            {"part": "Table", "table_name": "whole", "restriction": "(True)"},
+            {"part": "Table", "table_name": "limited", "restriction": "(id=1)"},
+            {"part": "File", "analysis_file_name": "analysis.nwb"},
+        ]
+    ) == ["whole"]
 
 
 # --- Export script (database-bound helpers replaced) --------------------------

@@ -146,8 +146,8 @@ PYTHONPATH=src python scripts/spyglass_export_figure04.py \
 The fetch script was verified as shown, in a lab conda environment with the
 lab's Spyglass and this repository's `src/` on the import path. (That
 environment's pandas 1.5.3 is below this package's `pandas>=2.0`, so the package
-is not installed there.) The export script has not been run yet. Before it writes
-anything it checks the paths, asks for confirmation, and checks that the
+is not installed there.) Before the export script writes anything, it checks
+the paths, asks for confirmation, and checks that the
 installed Spyglass declares every column of the database's export tables; the
 version in `uv.lock` does not, so the export must use the lab's current Spyglass.
 Spyglass also requires packaging with the same `x.y.z` version that logged the
@@ -156,6 +156,26 @@ selection, which is why `--populate` packages in the same run and requires
 
 The `spyglass` extra (`uv sync --extra spyglass`) installs the Spyglass in
 `uv.lock`; it has not been used for a full fetch.
+
+### Partial export selection to review manually
+
+An attempted input-only export on 2026-09-24 stopped before packaging because
+the server environment lacked `kachery_cloud`. A read-only inspection at the
+time found `ExportSelection` **export_id 137**, `paper_id`
+`denovellis2026_goodness_of_fit`, `analysis_id` `figure04_inputs`, and Spyglass
+version 0.6.0. It had 12 logged table entries and one logged analysis file,
+but no packaged `Export` entry. One logged restriction for
+`common_position.__interval_position_info` was `(True)`, which would include
+the whole table if packaged. These details come from that inspection and should
+be checked against the current database before any manual deletion. The partial
+selection has not been cleaned up by this repository's scripts.
+
+After replacing the `fetch1_dataframe()` call, the Figure-4 fetch was rehearsed
+on the lab server under `scripts/datajoint_read_only.py` on 2026-09-24. It
+would log 131 table restrictions and 23 files, with no unrestricted table
+entry. A separate guarded fetch rebuilt the `.npz` and matched the reference
+array by array (all 24 arrays). This verifies the input data and proposed log;
+it does not package an export or resolve selection 137.
 
 `--compare-to` compares array by array and names any array that differs. Because
 the file is written deterministically, a matching SHA-256 already means identical
