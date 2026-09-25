@@ -28,10 +28,10 @@ Key modules and the rationale that the source alone won't tell you:
 
 - **diagnostics.py** — the paper's adapter to the external `statespacecheck`
   package, which owns the per-spike computations so other projects can use
-  them. This module keeps the
-  paper-side containers (`SpikeEventDiagnostics`, `DecodingDiagnostics`) and the
-  paper's threshold rule; it is the dependency-graph **leaf**. A change to the
-  diagnostics themselves belongs in `statespacecheck`, then a version bump here.
+  them. This module keeps the paper-side containers (`SpikeEventDiagnostics`,
+  `DecodingDiagnostics`) and the paper's threshold rule; it is the
+  dependency-graph **leaf**. A change to the diagnostics themselves belongs in
+  `statespacecheck`, then a version bump here.
 - **decoding.py** — general Bayesian decoder `decode_with_diagnostics` + the
   per-window override mechanism (`DecoderOverrideWindow`/`DecoderOverrideSchedule`,
   used by Figure 3); depends only on `diagnostics` + `simulation`.
