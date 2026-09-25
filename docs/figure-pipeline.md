@@ -352,7 +352,9 @@ the operator and threshold in one record prevents consumers from guessing
 whether a boundary is strict or inclusive.
 
 Both summaries contain `provenance.source`, with the installed
-`statespacecheck-paper` version, a deterministic SHA-256 digest of every Python
+`statespacecheck-paper` and `statespacecheck` versions (the diagnostics are
+computed in `statespacecheck`, outside the hashed source tree; the emitter
+refuses summaries that disagree on it), a deterministic SHA-256 digest of every Python
 file under `src/statespacecheck_paper`, and the SHA-256 digest of `uv.lock`.
 The digest excludes timestamps, generated outputs, and absolute paths, so clean
 checkouts of identical source produce the same identity.

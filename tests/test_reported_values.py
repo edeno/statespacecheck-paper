@@ -100,6 +100,20 @@ def test_non_integral_burst_factor_is_not_silently_rounded() -> None:
         render_macro_file(figure03, _load("figure04_summary.json"))
 
 
+@pytest.mark.parametrize(
+    "path",
+    [("source",), ("figure04_decode_cache",)],
+    ids=["figure04_source", "figure04_decode_cache"],
+)
+def test_mismatched_statespacecheck_versions_are_rejected(path: tuple[str]) -> None:
+    """The manuscript cites one statespacecheck version for both figures."""
+    figure04 = copy.deepcopy(_load("figure04_summary.json"))
+    figure04["provenance"][path[0]]["statespacecheck_version"] = "0.0.0"
+
+    with pytest.raises(ValueError, match="different statespacecheck versions"):
+        render_macro_file(_load("figure03_summary.json"), figure04)
+
+
 @pytest.mark.parametrize("quantile", [0.005, 0.995])
 def test_fractional_percentile_is_not_silently_rounded(quantile: float) -> None:
     """0.005 must not print as "0th": the ordinal prose has no form for it."""

@@ -3,9 +3,12 @@
 % Every value below is read from the canonical figure summaries:
 %   figures/main/figure03_summary.json (schema 5)
 %   figures/main/figure04_summary.json (schema 4)
-% source_tree_sha256: fe9b0609568072439404056ce1bcbaa041c91c76db2ef72ce3080d2d3f2af5da
+% source_tree_sha256: 8a31a38248b7c096d5c612b9e825ac539d2c304738a9e73a76240e2b433e0a20
 %
 % Regenerate with: uv run python scripts/emit_reported_values.py
+
+% --- Software
+\newcommand{\StatespacecheckVersion}{0.2.0}  % provenance.source.statespacecheck_version (both summaries)
 
 % --- Simulation study (Figure 3) --- computed from the simulated data
 \newcommand{\SimNRealizations}{100}       % realizations.count
@@ -92,6 +95,5 @@
 \newcommand{\RecModeFragmentedToContinuous}{0.02}      % 1 - configuration.provenance.contfrag_diagonal_values[1]
 \newcommand{\RecModeFragmentedStay}{0.98}              % configuration.provenance.contfrag_diagonal_values[1]
 \newcommand{\RecNldVersion}{0.6.10.dev214+g956fdccaf}  % configuration.provenance.non_local_detector_version
-\newcommand{\RecStatespacecheckVersion}{0.2.0}         % provenance.figure04_decode_cache.statespacecheck_version
 \newcommand{\RecHpdCutoff}{0.05}                       % flag_rules.hpd_overlap.threshold
 \newcommand{\RecPredictiveCutoff}{0.05}                % flag_rules.predictive_pvalue.threshold
