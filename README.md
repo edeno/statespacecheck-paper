@@ -260,7 +260,8 @@ make -C site serve NODE=/path/to/node
 ```
 
 Every push to `main` deploys the site through `.github/workflows/pages.yml` once
-CI (including the website's staleness tests) passes on that commit. The
+CI (including the website's staleness tests) passes on that commit; a CI run
+that finishes after `main` has moved on is not deployed. The
 repository's Pages source must be set to **GitHub Actions** (Settings → Pages).
 
 ## Development
