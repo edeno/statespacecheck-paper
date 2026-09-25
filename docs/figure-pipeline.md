@@ -71,10 +71,15 @@ generate_figure04.py   → figure04_generation
 
 - **`interactive/`** — an optional pyqtgraph viewer that consumes the same
   diagnostic results but produces no manuscript figure.
-- **`spyglass_data.py`** (with `scripts/fetch_figure04_inputs.py` and
-  `scripts/spyglass_export_figure04.py`) — rebuilds and exports the Figure-4
-  input files from Spyglass. It runs upstream of `load_local_data` and nothing in
-  figure generation imports it. See [data-lineage.md](data-lineage.md).
+- **`spyglass_data.py`** (with `scripts/fetch_figure04_inputs.py`,
+  `scripts/spyglass_export_figure04.py`, and `scripts/convert_figure04_pickles.py`)
+  — rebuilds and exports the Figure-4 input file from Spyglass. It runs upstream
+  of `load_local_data` and nothing in figure generation imports it. See
+  [data-lineage.md](data-lineage.md).
+- **`spyglass_pipeline.py`** (with `scripts/spyglass_pipeline_figure04.py`) — the
+  Figure-4 decode and diagnostics as a Spyglass pipeline, meant to reproduce this
+  figure's numbers inside the lab database. See
+  [spyglass-pipeline.md](spyglass-pipeline.md).
 
 Start from the four `scripts/generate_figureNN.py` entry points.
 

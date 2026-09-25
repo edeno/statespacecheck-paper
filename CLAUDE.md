@@ -52,10 +52,17 @@ Key modules and the rationale that the source alone won't tell you:
   `NeuralRecordingData`; loads the pre-exported `{epoch}_figure04_inputs.npz` (plain
   arrays, no pickle; layout in `recording_arrays`), no Spyglass DB needed.
 - **spyglass_data.py** — rebuilds that file from the lab's Spyglass database
-  (optional `spyglass` extra) and logs them in a Spyglass export. Keep every
-  Spyglass import inside a function: importing the module must not connect to
-  the database (a test enforces this). Nothing in figure generation imports it.
-  The lineage record is `docs/data-lineage.md`.
+  (optional `spyglass` extra), logs it in a Spyglass export, and computes the
+  Figure-4 diagnostics from decodes stored elsewhere
+  (`figure04_diagnostics_from_decodes`). Keep every Spyglass import inside a
+  function: importing the module must not connect to the database (a test
+  enforces this). Nothing in figure generation imports it. The lineage record is
+  `docs/data-lineage.md`.
+- **spyglass_pipeline.py** — the Figure-4 decode and diagnostics as a Spyglass
+  pipeline (existing decoding tables plus the custom schema
+  `edeno_statespacecheck`). Imports Spyglass at the top, so it connects to the
+  lab database on import; figure code and tests must never import it. See
+  `docs/spyglass-pipeline.md`.
 - **paths.py** — `DATA_PATH` / `ANIMAL_DATE_EPOCH` constants, env-overridable via
   `STATESPACECHECK_DATA_PATH` / `STATESPACECHECK_ANIMAL_DATE_EPOCH`.
 - **style.py / simulation.py / plotting.py / schematic.py** — styling (WONG
@@ -71,6 +78,18 @@ Key modules and the rationale that the source alone won't tell you:
   of the DAG; nothing imports it). The site's playground runs a JavaScript port
   of the per-spike diagnostics (`site/js/metrics.js`), held to the Python code by
   a parity fixture and `make -C site test`; a diagnostics change needs a re-export.
+
+## Lab database and Spyglass
+
+- **Never write to the lab's Spyglass database without the user's explicit
+  approval of that specific step** — inserts, `populate`, schema creation,
+  deletes, exports. The pipeline and export scripts dry-run or confirm first; keep
+  it that way.
+- Check Spyglass code against the live database read-only with
+  `scripts/datajoint_read_only.py <script> [args]`.
+- Analysis NWB files live only on the lab's storage: run fetches on a lab server,
+  not a laptop. Details, blockers, and status: `docs/spyglass-pipeline.md`;
+  data lineage and verification: `docs/data-lineage.md`.
 
 ## Development Commands
 

@@ -106,10 +106,9 @@ After the switch to the `.npz`, the same script wrote the `.npz` directly on a l
 server (NumPy 1.26), and it has **the same SHA-256 as the one converted from the
 pickles** on a laptop (NumPy 2.3). Figure 4 regenerated from the `.npz` gives an
 identical summary (every mean and flag count; only the provenance checksums and
-cache fingerprints change). The PNG from a cache-backed render is byte-identical to
-the committed one, and the PDF renders to identical pixels. (A render in the same
-process right after a fresh decode shifts one panel title by about a pixel; this is
-a rendering quirk, not a data difference.)
+cache fingerprints change). The PNG matched the committed one pixel for pixel
+except that, in some renders, one panel title lands about a pixel differently (a
+rendering quirk, not a data difference), and the PDF renders to identical pixels.
 
 The script that originally wrote the files was not found in version control. The
 code here reproduces its output exactly. Position follows `continuum-swr-replay`'s
@@ -170,6 +169,8 @@ uv run python scripts/convert_figure04_pickles.py --pickle-dir data --output-dir
 
 ## Open items
 
+- Run the Figure-4 Spyglass pipeline and its export; see
+  [spyglass-pipeline.md](spyglass-pipeline.md) for the steps, status, and blockers.
 - Run the Spyglass export for this paper (`scripts/spyglass_export_figure04.py`).
 - Make the HPC sorting publicly available, e.g. by adding the export's analysis
   files to DANDI.
