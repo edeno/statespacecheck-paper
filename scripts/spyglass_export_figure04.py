@@ -10,7 +10,7 @@ analysis NWB file the Figure-4 inputs came from:
 2. ``ExportSelection.start_export(paper_id, analysis_id)`` inserts a selection
    entry; each Spyglass fetch is logged against it until ``stop_export``.
 3. With ``--output-dir``/``--compare-to``, the fetched inputs are written and
-   compared with the exports the figure used.
+   compared with the input file the figure used.
 4. With ``--populate`` (which requires ``--compare-to``, and only if the
    comparison passed), ``Export().populate_paper`` packages the export: ``Export``
    entries in the database plus a ``mysqldump`` script in the Spyglass export
@@ -20,7 +20,7 @@ Refuses a ``paper_id`` that already has export selections. Run on a lab server
 (the fetches read analysis NWB files) in an environment with the lab's current
 Spyglass. See ``docs/data-lineage.md``.
 
-Example (``REF`` holds the exports the figure used)::
+Example (``REF`` holds the input file the figure used)::
 
     PYTHONPATH=src python scripts/spyglass_export_figure04.py \
         --paper-id <new-paper-id> --output-dir /tmp/figure04_export --compare-to REF --populate
@@ -52,8 +52,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--paper-id", required=True, help="New export paper ID (<= 32 chars).")
     parser.add_argument("--analysis-id", default="figure04_inputs", help="(<= 32 chars)")
-    parser.add_argument("--output-dir", type=Path, help="Write the fetched files here (new).")
-    parser.add_argument("--compare-to", type=Path, help="Compare written files to these exports.")
+    parser.add_argument("--output-dir", type=Path, help="Write the fetched input file here.")
+    parser.add_argument("--compare-to", type=Path, help="Compare the written file with this one.")
     parser.add_argument(
         "--populate", action="store_true", help="Package the export with populate_paper."
     )
@@ -88,7 +88,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.compare_to is not None and not print_export_comparison(
             args.compare_to, args.output_dir, animal_date_epoch
         ):
-            print(f"Logged fetches do not reproduce the reference exports. {leftover}, unpackaged.")
+            print(
+                f"Logged fetches do not reproduce the reference input file. {leftover}, unpackaged."
+            )
             return 1
         print("\n".join(describe_figure04_export(args.paper_id)))
         if args.populate:

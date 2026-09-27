@@ -1,12 +1,12 @@
-"""Rebuild the Figure-4 recording exports from the Frank-lab Spyglass database.
+"""Rebuild the Figure-4 recording input from the Frank-lab Spyglass database.
 
 :func:`statespacecheck_paper.load_local_data.load_neural_recording_from_files`
-reads five pre-exported files. This module is the upstream side of that
-boundary: it fetches the Spyglass entries those files were derived from and
-writes files in the same formats, so the exports can be regenerated, compared
-with the exports the figure used, and captured by a Spyglass export
-(``scripts/spyglass_export_figure04.py``). See ``docs/data-lineage.md`` for the
-entries, processing steps, and verification record.
+reads one pre-exported ``.npz`` file. This module is the upstream side of that
+boundary: it fetches the Spyglass entries the recording is derived from and
+writes that file, so it can be regenerated, compared with the one the figure
+used, and captured by a Spyglass export (``scripts/spyglass_export_figure04.py``).
+See ``docs/data-lineage.md`` for the entries, processing steps, and verification
+record.
 
 Position follows ``continuum-swr-replay``'s ``get_position_info``, and spike
 times follow the pattern of its sorted-unit loader. Where this module
@@ -22,20 +22,28 @@ machine with the lab's analysis store mounted.
 from __future__ import annotations
 
 import dataclasses
-import pickle
 import re
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from types import MappingProxyType
-from typing import TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict
 
-import joblib
 import networkx as nx
 import numpy as np
 import pandas as pd
+import xarray as xr
 from numpy.typing import NDArray
 
-from statespacecheck_paper.load_local_data import EXPORT_FILE_SUFFIXES, NeuralRecordingData
+from statespacecheck_paper.load_local_data import (
+    EXPORT_FILE_SUFFIXES,
+    NeuralRecordingData,
+    recording_arrays,
+    write_npz,
+)
+
+if TYPE_CHECKING:
+    from statespacecheck_paper.diagnostics import SpikeEventDiagnostics
+    from statespacecheck_paper.figure04_workflow import Figure4Summary
 
 FIGURE04_NWB_FILE_NAME = "j1620210710_.nwb"
 FIGURE04_EPOCH_NAME = "02_r1"
@@ -67,10 +75,6 @@ TRACK_SEGMENT_TO_PATCH: Mapping[int, int] = MappingProxyType(
 )
 """Track segment (edge) ID → patch ID on the spatial-bandit track."""
 
-# Pickle protocol of the four non-DataFrame exports the figure used; position_info is
-# written by ``DataFrame.to_pickle`` at pandas' default protocol.
-PICKLE_PROTOCOL = 4
-
 
 class PositionInfoDict(TypedDict):
     """Position data and the track graph used to linearize it."""
@@ -83,11 +87,10 @@ class PositionInfoDict(TypedDict):
 
 @dataclasses.dataclass(frozen=True)
 class Figure4Inputs:
-    """The five Figure-4 inputs as fetched from Spyglass, before serialization.
+    """The five parts of the Figure-4 input as fetched from Spyglass, before writing.
 
     Values keep the types Spyglass returns (e.g. ``linear_edge_spacing`` is the
-    stored blob, an ``int`` for this track, and ``linear_edge_order`` a list) so
-    the written files match the originals; do not convert them.
+    stored blob, an ``int`` for this track); the writer encodes them, and
     :class:`~statespacecheck_paper.load_local_data.NeuralRecordingData`
     normalizes them on load.
 
@@ -247,6 +250,45 @@ def get_patch_id(track_segment_id: pd.Series) -> pd.Series:
     return patch_id
 
 
+def get_track_graph(
+    nwb_file_name: str, pos_name: str
+) -> tuple[nx.Graph, list[tuple[int, int]], float]:
+    """Fetch the track graph ``IntervalLinearizedPosition`` recorded for a position.
+
+    Parameters
+    ----------
+    nwb_file_name : str
+        Spyglass NWB file name.
+    pos_name : str
+        Position interval name (see :func:`get_position_interval_name`).
+
+    Returns
+    -------
+    track_graph : networkx.Graph
+        Track graph from ``TrackGraph``.
+    linear_edge_order : list of (int, int)
+        Edge order for linearization.
+    linear_edge_spacing : float
+        Spacing between linearized edges (centimeters), as stored.
+    """
+    from spyglass.linearization.v0.main import IntervalLinearizedPosition, TrackGraph
+
+    linearization_key = {
+        "nwb_file_name": nwb_file_name,
+        "interval_list_name": pos_name,
+        "position_info_param_name": POSITION_INFO_PARAM_NAME,
+        "linearization_param_name": LINEARIZATION_PARAM_NAME,
+    }
+    track_graph_name = (IntervalLinearizedPosition & linearization_key).fetch1("track_graph_name")
+    track_graph_entry = TrackGraph & {"track_graph_name": track_graph_name}
+    params = track_graph_entry.fetch1()
+    return (
+        track_graph_entry.get_networkx_track_graph(),
+        params["linear_edge_order"],
+        params["linear_edge_spacing"],
+    )
+
+
 def get_position_info(nwb_file_name: str, epoch_name: str, pos_name: str) -> PositionInfoDict:
     """Fetch LED position for one epoch and linearize it onto the track graph.
 
@@ -278,23 +320,21 @@ def get_position_info(nwb_file_name: str, epoch_name: str, pos_name: str) -> Pos
     """
     from spyglass.common import IntervalList
     from spyglass.common.common_position import IntervalPositionInfo
-    from spyglass.linearization.v0.main import IntervalLinearizedPosition, TrackGraph
 
     position_key = {
         "nwb_file_name": nwb_file_name,
         "interval_list_name": pos_name,
         "position_info_param_name": POSITION_INFO_PARAM_NAME,
     }
-    linearization_key = {**position_key, "linearization_param_name": LINEARIZATION_PARAM_NAME}
+    track_graph, linear_edge_order, linear_edge_spacing = get_track_graph(nwb_file_name, pos_name)
 
-    track_graph_name = (IntervalLinearizedPosition & linearization_key).fetch1("track_graph_name")
-    track_graph_entry = TrackGraph & {"track_graph_name": track_graph_name}
-    track_graph = track_graph_entry.get_networkx_track_graph()
-    track_graph_params = track_graph_entry.fetch1()
-    linear_edge_order = track_graph_params["linear_edge_order"]
-    linear_edge_spacing = track_graph_params["linear_edge_spacing"]
-
-    position_info = (IntervalPositionInfo & position_key).fetch1_dataframe().dropna()
+    # What ``fetch1_dataframe`` does, without its ``ensure_single_entry()``: that
+    # restricts by ``True``, which a Spyglass export session logs as the whole
+    # table (see ``unrestricted_log_entries``).
+    position_entry = IntervalPositionInfo & position_key
+    if len(position_entry) != 1:
+        raise ValueError(f"Expected one IntervalPositionInfo entry for {position_key}")
+    position_info = IntervalPositionInfo._data_to_df(position_entry.fetch_nwb()[0]).dropna()
     valid_times = (
         IntervalList
         & {
@@ -432,7 +472,7 @@ def fetch_figure04_inputs(
     nwb_file_name: str = FIGURE04_NWB_FILE_NAME,
     epoch_name: str = FIGURE04_EPOCH_NAME,
 ) -> Figure4Inputs:
-    """Fetch the five Figure-4 inputs from Spyglass.
+    """Fetch the Figure-4 inputs from Spyglass.
 
     Parameters
     ----------
@@ -454,24 +494,23 @@ def fetch_figure04_inputs(
     return Figure4Inputs(spike_times=spike_times, **position)
 
 
-def export_file_paths(output_dir: str | Path, animal_date_epoch: str) -> tuple[Path, ...]:
-    """Return the five export paths, in ``EXPORT_FILE_SUFFIXES`` order.
+def export_file_path(output_dir: str | Path, animal_date_epoch: str) -> Path:
+    """Return the path of the ``.npz`` input file for an epoch.
 
     Parameters
     ----------
     output_dir : str or Path
-        Directory holding the exports.
+        Directory holding the file.
     animal_date_epoch : str
         Epoch identifier (see :func:`epoch_identifier`).
 
     Returns
     -------
-    tuple of Path
-        Position, spike times, track graph, edge order, edge spacing.
+    Path
+        ``{output_dir}/{animal_date_epoch}_figure04_inputs.npz``.
     """
-    return tuple(
-        Path(output_dir) / f"{animal_date_epoch}{suffix}" for suffix in EXPORT_FILE_SUFFIXES
-    )
+    (suffix,) = EXPORT_FILE_SUFFIXES
+    return Path(output_dir) / f"{animal_date_epoch}{suffix}"
 
 
 def check_output_paths(
@@ -481,18 +520,18 @@ def check_output_paths(
     reference_dir: str | Path | None = None,
     overwrite: bool = False,
 ) -> None:
-    """Check export destinations (and a comparison reference) before any work.
+    """Check the export destination (and a comparison reference) before any work.
 
     Parameters
     ----------
     output_dir : str or Path
-        Directory the exports will be written to.
+        Directory the input file will be written to.
     animal_date_epoch : str
         Epoch identifier used as the file-name prefix.
     reference_dir : str or Path, optional
-        Directory of reference exports the new files will be compared with.
+        Directory of the reference input file the new one will be compared with.
     overwrite : bool, optional
-        Whether existing files in ``output_dir`` may be replaced. Default False.
+        Whether an existing file in ``output_dir`` may be replaced. Default False.
 
     Raises
     ------
@@ -500,20 +539,19 @@ def check_output_paths(
         If ``reference_dir`` is ``output_dir``: the reference would be overwritten
         and then compared with itself.
     FileExistsError
-        If an export already exists in ``output_dir`` and ``overwrite`` is False.
+        If the input file already exists in ``output_dir`` and ``overwrite`` is False.
     FileNotFoundError
-        If a reference export is missing.
+        If the reference input file is missing.
     """
     if reference_dir is not None and Path(reference_dir).resolve() == Path(output_dir).resolve():
         raise ValueError(f"Output and reference directory are the same: {output_dir}")
-    existing = [str(p) for p in export_file_paths(output_dir, animal_date_epoch) if p.exists()]
-    if existing and not overwrite:
-        raise FileExistsError(f"Refusing to overwrite existing exports: {existing}")
+    output = export_file_path(output_dir, animal_date_epoch)
+    if output.exists() and not overwrite:
+        raise FileExistsError(f"Refusing to overwrite existing export: {output}")
     if reference_dir is not None:
-        reference = export_file_paths(reference_dir, animal_date_epoch)
-        missing = [str(p) for p in reference if not p.is_file()]
-        if missing:
-            raise FileNotFoundError(f"Missing reference exports: {missing}")
+        reference = export_file_path(reference_dir, animal_date_epoch)
+        if not reference.is_file():
+            raise FileNotFoundError(f"Missing reference export: {reference}")
 
 
 def write_figure04_inputs(
@@ -522,14 +560,12 @@ def write_figure04_inputs(
     animal_date_epoch: str,
     *,
     overwrite: bool = False,
-) -> tuple[Path, ...]:
-    """Write the five export files in the formats of the exports the figure used.
+) -> Path:
+    """Write the Figure-4 inputs as the ``.npz`` file the figure reads.
 
-    ``position_info`` is written with ``DataFrame.to_pickle`` and the other four
-    with ``pickle.dump`` at :data:`PICKLE_PROTOCOL`. The pickled bytes depend on
-    library versions, so compare regenerated files by content
-    (:func:`compare_figure04_exports`); checksums match only with the same
-    versions.
+    The inputs are validated with the loader's checks, encoded with
+    :func:`~statespacecheck_paper.load_local_data.recording_arrays`, and written
+    deterministically, so the same inputs always give the same SHA-256.
 
     Parameters
     ----------
@@ -540,25 +576,24 @@ def write_figure04_inputs(
     animal_date_epoch : str
         Epoch identifier used as the file-name prefix.
     overwrite : bool, optional
-        Replace existing files. Default False.
+        Replace an existing file. Default False.
 
     Returns
     -------
-    tuple of Path
-        The written paths, in ``EXPORT_FILE_SUFFIXES`` order.
+    Path
+        The written file.
 
     Raises
     ------
     FileExistsError
-        If a destination file exists and ``overwrite`` is False.
+        If the file exists and ``overwrite`` is False.
     ValueError
         If the inputs fail the loader's checks
-        (:class:`~statespacecheck_paper.load_local_data.NeuralRecordingData`);
-        nothing is written.
+        (:class:`~statespacecheck_paper.load_local_data.NeuralRecordingData`) or
+        cannot be encoded; nothing is written.
     """
     check_output_paths(output_dir, animal_date_epoch, overwrite=overwrite)
-    # Validate with the loader's contract before writing anything; the values
-    # written are the originals, not the normalized copies.
+    # Validate with the loader's contract before writing anything.
     NeuralRecordingData(
         position_info=inputs.position_info,
         spike_times=tuple(inputs.spike_times),
@@ -566,48 +601,26 @@ def write_figure04_inputs(
         linear_edge_order=tuple(inputs.linear_edge_order),
         linear_edge_spacing=inputs.linear_edge_spacing,
     )
-    paths = export_file_paths(output_dir, animal_date_epoch)
-    Path(output_dir).mkdir(parents=True, exist_ok=True)
-
-    position_path, *pickled_paths = paths
-    inputs.position_info.to_pickle(position_path)
-    pickled_values = (
+    arrays = recording_arrays(
+        inputs.position_info,
         inputs.spike_times,
         inputs.track_graph,
         inputs.linear_edge_order,
         inputs.linear_edge_spacing,
     )
-    for path, value in zip(pickled_paths, pickled_values, strict=True):
-        with path.open("wb") as f:
-            pickle.dump(value, f, protocol=PICKLE_PROTOCOL)
-    return paths
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+    return write_npz(export_file_path(output_dir, animal_date_epoch), arrays)
 
 
-def _position_difference(reference: pd.DataFrame, candidate: pd.DataFrame) -> str | None:
-    try:
-        pd.testing.assert_frame_equal(reference, candidate, check_exact=True)
-    except AssertionError as exc:
-        return "; ".join(line.strip() for line in str(exc).splitlines() if line.strip())
-    return None
-
-
-def _spike_times_difference(
-    reference: Sequence[NDArray[np.float64]], candidate: Sequence[NDArray[np.float64]]
-) -> str | None:
-    if len(reference) != len(candidate):
-        return f"{len(reference)} vs {len(candidate)} units"
-    for unit, (a, b) in enumerate(zip(reference, candidate, strict=True)):
-        if not np.array_equal(a, b):
-            return f"unit {unit} differs ({len(a)} vs {len(b)} spikes)"
-    return None
-
-
-def _graph_difference(reference: nx.Graph, candidate: nx.Graph) -> str | None:
-    if type(reference) is not type(candidate):
-        return f"{type(reference).__name__} vs {type(candidate).__name__}"
-    if not nx.utils.graphs_equal(reference, candidate):
-        return "nodes, edges, or their attributes differ"
-    return None
+def _array_difference(reference: NDArray[np.generic], candidate: NDArray[np.generic]) -> str | None:
+    if reference.dtype != candidate.dtype:
+        return f"dtype {reference.dtype} vs {candidate.dtype}"
+    if reference.shape != candidate.shape:
+        return f"shape {reference.shape} vs {candidate.shape}"
+    same = np.array_equal(
+        reference, candidate, equal_nan=np.issubdtype(reference.dtype, np.inexact)
+    )
+    return None if same else "values differ"
 
 
 def compare_figure04_exports(
@@ -615,46 +628,40 @@ def compare_figure04_exports(
     candidate_dir: str | Path,
     animal_date_epoch: str,
 ) -> dict[str, str | None]:
-    """Compare two sets of export files by content.
+    """Compare two ``.npz`` input files array by array.
 
-    Files are read the way the loader reads them. Position must match exactly
-    (values, dtypes, index, and columns); spike times array-by-array in order;
-    the track graph node-, edge-, and attribute-wise; edge order and spacing by
-    value.
+    Every array must match exactly in dtype, shape, and values (NaN equal to NaN).
 
     Parameters
     ----------
     reference_dir : str or Path
-        Directory with the reference exports (e.g. the ones the figure used).
+        Directory with the reference input file (e.g. the one the figure used).
     candidate_dir : str or Path
-        Directory with the exports to check.
+        Directory with the input file to check.
     animal_date_epoch : str
         Epoch identifier used as the file-name prefix.
 
     Returns
     -------
     dict of str to str or None
-        File name → ``None`` if the two files' contents are identical, otherwise
-        a description of the first difference found.
+        Array name → ``None`` if identical, otherwise what differs (including an
+        array present in only one file).
     """
-    ref_pos, ref_spikes, ref_graph, ref_order, ref_spacing = export_file_paths(
-        reference_dir, animal_date_epoch
-    )
-    new_pos, new_spikes, new_graph, new_order, new_spacing = export_file_paths(
-        candidate_dir, animal_date_epoch
-    )
-    order_a = [tuple(edge) for edge in joblib.load(ref_order)]
-    order_b = [tuple(edge) for edge in joblib.load(new_order)]
-    spacing_a, spacing_b = joblib.load(ref_spacing), joblib.load(new_spacing)
-    return {
-        ref_pos.name: _position_difference(pd.read_pickle(ref_pos), pd.read_pickle(new_pos)),
-        ref_spikes.name: _spike_times_difference(joblib.load(ref_spikes), joblib.load(new_spikes)),
-        ref_graph.name: _graph_difference(joblib.load(ref_graph), joblib.load(new_graph)),
-        ref_order.name: None if order_a == order_b else f"{order_a} vs {order_b}",
-        ref_spacing.name: (
-            None if np.array_equal(spacing_a, spacing_b) else f"{spacing_a!r} vs {spacing_b!r}"
-        ),
-    }
+    reference_path = export_file_path(reference_dir, animal_date_epoch)
+    candidate_path = export_file_path(candidate_dir, animal_date_epoch)
+    with (
+        np.load(reference_path, allow_pickle=False) as reference,
+        np.load(candidate_path, allow_pickle=False) as candidate,
+    ):
+        differences: dict[str, str | None] = {}
+        for name in sorted(set(reference.files) | set(candidate.files)):
+            if name not in candidate.files:
+                differences[name] = "only in the reference"
+            elif name not in reference.files:
+                differences[name] = "only in the candidate"
+            else:
+                differences[name] = _array_difference(reference[name], candidate[name])
+    return differences
 
 
 def print_export_comparison(
@@ -662,26 +669,132 @@ def print_export_comparison(
     candidate_dir: str | Path,
     animal_date_epoch: str,
 ) -> bool:
-    """Print :func:`compare_figure04_exports` one file per line.
+    """Print the arrays :func:`compare_figure04_exports` finds different.
 
     Parameters
     ----------
     reference_dir : str or Path
-        Directory with the reference exports.
+        Directory with the reference input file.
     candidate_dir : str or Path
-        Directory with the exports to check.
+        Directory with the input file to check.
     animal_date_epoch : str
         Epoch identifier used as the file-name prefix.
 
     Returns
     -------
     bool
-        Whether every file is identical.
+        Whether every array is identical.
     """
     differences = compare_figure04_exports(reference_dir, candidate_dir, animal_date_epoch)
-    for name, difference in differences.items():
-        print(f"identical  {name}" if difference is None else f"DIFFERENT  {name}: {difference}")
-    return all(difference is None for difference in differences.values())
+    different = {name: why for name, why in differences.items() if why is not None}
+    for name, why in different.items():
+        print(f"DIFFERENT  {name}: {why}")
+    if not different:
+        print(f"identical  all {len(differences)} arrays")
+    return not different
+
+
+def figure04_diagnostics_from_decodes(
+    continuous_model: Any,
+    contfrag_model: Any,
+    continuous_results: xr.Dataset,
+    contfrag_results: xr.Dataset,
+    spike_times: Sequence[NDArray[np.float64]],
+    *,
+    coverage: float,
+    thresholds: Mapping[str, float] | None = None,
+) -> tuple[SpikeEventDiagnostics, SpikeEventDiagnostics, Figure4Summary]:
+    """Compute Figure 4's per-spike diagnostics and summary from two stored decodes.
+
+    The same computation as the figure pipeline, applied to decodes made
+    elsewhere (e.g. by Spyglass ``SortedSpikesDecodingV1``): spikes are clipped to
+    the decoded time range, the per-spike likelihood uses the Continuous
+    decoder's place fields (which must equal the Continuous-Fragmented ones), and
+    the summary uses the Figure-4 flag thresholds.
+
+    Parameters
+    ----------
+    continuous_model, contfrag_model : non_local_detector model
+        Fitted Continuous and Continuous-Fragmented decoders.
+    continuous_results, contfrag_results : xr.Dataset
+        Their decodes over the same time bins; each must hold
+        ``predictive_posterior`` (request it with ``return_outputs``).
+    spike_times : sequence of np.ndarray, shape (n_spikes,)
+        Per-unit spike times (seconds), in the order the models were fitted with.
+        Checked against each unit's fitted mean rate, which assumes the models
+        were trained on every decoded time bin (as in Figure 4).
+    coverage : float
+        HPD coverage for the HPD-overlap diagnostic.
+    thresholds : Mapping of str to float, optional
+        Flag threshold per metric. Default: the Figure-4 thresholds.
+
+    Notes
+    -----
+    Needs the figure pipeline's dependencies (e.g. ``statespacecheck``); they are
+    imported here so the fetch functions above do not need them.
+
+    Returns
+    -------
+    continuous, contfrag : SpikeEventDiagnostics
+        Per-spike diagnostics of each decoder, on the same spikes.
+    summary : Figure4Summary
+        Whole-session event means and two-decoder flag agreement.
+
+    Raises
+    ------
+    ValueError
+        If a decode lacks ``predictive_posterior``, the decodes cover different
+        time bins, the spike trains do not match the fitted units (count or
+        order), or the two decoders' place fields differ.
+    """
+    from statespacecheck_paper.figure04_decoder import get_spike_counts
+    from statespacecheck_paper.figure04_diagnostics import compute_results_diagnostics
+    from statespacecheck_paper.figure04_generation import (
+        FIGURE4_DIAGNOSTIC_THRESHOLDS,
+        FIGURE4_METRIC_DIRECTIONS,
+    )
+    from statespacecheck_paper.figure04_place_fields import extract_shared_position_place_fields
+    from statespacecheck_paper.figure04_workflow import summarize_figure04_diagnostics
+
+    time = continuous_results["time"].to_numpy()
+    if not np.array_equal(time, contfrag_results["time"].to_numpy()):
+        raise ValueError("The two decodes cover different time bins")
+    for name, results in (("Continuous", continuous_results), ("ContFrag", contfrag_results)):
+        if "predictive_posterior" not in results:
+            raise ValueError(
+                f"The {name} decode has no predictive_posterior; decode with "
+                "return_outputs including 'predictive_posterior'"
+            )
+    spikes = filter_spike_times(spike_times, time)
+    expected_rates = np.array([len(st) for st in spikes]) / len(time)
+    for model in (continuous_model, contfrag_model):
+        (encoding_model,) = model.encoding_model_.values()
+        fitted_rates = np.asarray(encoding_model["mean_rates"])
+        if fitted_rates.shape != expected_rates.shape or not np.allclose(
+            fitted_rates, expected_rates, rtol=1e-6, atol=0.0
+        ):
+            raise ValueError("The spike trains do not match the fitted units (count or order)")
+    place_fields, position_bins = extract_shared_position_place_fields(continuous_model)
+    contfrag_fields, contfrag_bins = extract_shared_position_place_fields(contfrag_model)
+    if not np.allclose(place_fields, contfrag_fields, equal_nan=True) or not np.allclose(
+        position_bins, contfrag_bins, equal_nan=True
+    ):
+        raise ValueError("The Continuous and ContFrag place fields or position grids differ")
+    spike_counts = get_spike_counts(spikes, time)
+    continuous, contfrag = (
+        compute_results_diagnostics(
+            results, place_fields, spike_counts, time, spikes, coverage=coverage
+        )
+        for results in (continuous_results, contfrag_results)
+    )
+    summary = summarize_figure04_diagnostics(
+        continuous,
+        contfrag,
+        n_units=int(spike_counts.shape[1]),
+        thresholds=FIGURE4_DIAGNOSTIC_THRESHOLDS if thresholds is None else thresholds,
+        metric_directions=FIGURE4_METRIC_DIRECTIONS,
+    )
+    return continuous, contfrag, summary
 
 
 # ``name [= default] : type`` lines of a DataJoint definition (not ``->`` or index lines).
@@ -756,6 +869,102 @@ def check_export_tables_match_spyglass() -> None:
         )
 
 
+def dry_run_figure04_export_log(
+    nwb_file_name: str = FIGURE04_NWB_FILE_NAME,
+    epoch_name: str = FIGURE04_EPOCH_NAME,
+) -> list[dict[str, str]]:
+    """Return what an export session would log for the Figure-4 fetch, writing nothing.
+
+    Runs :func:`fetch_figure04_inputs` with Spyglass export logging switched on
+    (a placeholder export ID) and the ``ExportSelection.Table`` / ``.File`` inserts
+    replaced by a recorder, then restores both. Reads the database and the analysis
+    files like a real fetch. This relies on how Spyglass logs exports; if nothing is
+    recorded, treat that as a changed mechanism, not as an empty export.
+
+    Parameters
+    ----------
+    nwb_file_name : str, optional
+        Spyglass NWB file name. Default is the Figure-4 session.
+    epoch_name : str, optional
+        Epoch interval name. Default is the Figure-4 epoch.
+
+    Returns
+    -------
+    list of dict of str to str
+        One entry per row that would be inserted: ``part`` (``"Table"`` or
+        ``"File"``) plus the row's fields (e.g. ``table_name`` and
+        ``restriction``, or ``analysis_file_name``).
+    """
+    import os
+
+    from spyglass.common.common_usage import ExportSelection
+    from spyglass.utils.mixins.export import EXPORT_ENV_VAR
+
+    recorded: list[dict[str, str]] = []
+
+    def recorder(part: str) -> Any:
+        def record(self: Any, rows: Any, *args: Any, **kwargs: Any) -> None:
+            rows = [rows] if isinstance(rows, Mapping) else list(rows)
+            recorded.extend({"part": part, **{k: str(v) for k, v in r.items()}} for r in rows)
+
+        return record
+
+    parts = {name: getattr(ExportSelection, name) for name in ("Table", "File")}
+    originals = {
+        (name, method): getattr(part, method)
+        for name, part in parts.items()
+        for method in ("insert", "insert1")
+    }
+    previous_export_id = os.environ.get(EXPORT_ENV_VAR)
+    try:
+        for (name, method), _ in originals.items():
+            setattr(parts[name], method, recorder(name))
+        os.environ[EXPORT_ENV_VAR] = "999999999"
+        fetch_figure04_inputs(nwb_file_name, epoch_name)
+    finally:
+        if previous_export_id is None:
+            os.environ.pop(EXPORT_ENV_VAR, None)
+        else:
+            os.environ[EXPORT_ENV_VAR] = previous_export_id
+        for (name, method), original in originals.items():
+            setattr(parts[name], method, original)
+    return recorded
+
+
+def unrestricted_log_entries(entries: Sequence[Mapping[str, str]]) -> list[str]:
+    """Return the tables an export log would include whole.
+
+    Spyglass's export logging records ``table & True`` (as in
+    ``ensure_single_entry()``, used by ``fetch1_dataframe``) as an unrestricted
+    fetch, and packaging then exports the entire table.
+
+    Parameters
+    ----------
+    entries : sequence of Mapping of str to str
+        Log rows, as returned by :func:`dry_run_figure04_export_log`.
+
+    Returns
+    -------
+    list of str
+        Names of tables with an unrestricted log entry.
+
+    Examples
+    --------
+    >>> unrestricted_log_entries([
+    ...     {"part": "Table", "table_name": "a", "restriction": "(True)"},
+    ...     {"part": "Table", "table_name": "b", "restriction": "(x=1)"},
+    ...     {"part": "File", "analysis_file_name": "f.nwb"},
+    ... ])
+    ['a']
+    """
+    return [
+        entry["table_name"]
+        for entry in entries
+        if entry.get("part") == "Table"
+        and entry.get("restriction", "").strip("() ") in ("", "True", "1")
+    ]
+
+
 def log_figure04_export(
     paper_id: str,
     analysis_id: str,
@@ -766,9 +975,11 @@ def log_figure04_export(
 
     **Writes to the lab database**: ``ExportSelection.start_export`` inserts a
     selection entry, and every Spyglass fetch until ``stop_export`` is logged
-    against it. Before that, :func:`check_export_tables_match_spyglass` runs and
-    the ``paper_id`` is checked to be new. Packaging is
-    :func:`package_figure04_export`, which must use the same Spyglass version.
+    against it. Before that, :func:`check_export_tables_match_spyglass` runs, the
+    ``paper_id`` is checked to be new, and the fetch is rehearsed with
+    :func:`dry_run_figure04_export_log` (refusing an export that would include a
+    whole table). Packaging is :func:`package_figure04_export`, which must use the
+    same Spyglass version.
 
     Parameters
     ----------
@@ -789,7 +1000,8 @@ def log_figure04_export(
     Raises
     ------
     RuntimeError
-        From :func:`check_export_tables_match_spyglass`.
+        From :func:`check_export_tables_match_spyglass`, or if the rehearsal
+        records nothing or an unrestricted table.
     ValueError
         If ``paper_id`` already has export selections. Re-starting an existing
         ``(paper_id, analysis_id)`` deletes its packaged ``Export`` entry, and
@@ -802,6 +1014,13 @@ def log_figure04_export(
     selection = ExportSelection()
     if len(selection & {"paper_id": paper_id}) > 0:
         raise ValueError(f"paper_id {paper_id!r} already has export selections; choose a new one")
+    # Rehearse the fetch with logging recorded, not written: this also imports every
+    # module the fetch needs, so nothing can fail for that reason mid-export.
+    rehearsal = dry_run_figure04_export_log(nwb_file_name, epoch_name)
+    if not rehearsal:
+        raise RuntimeError("The export rehearsal recorded nothing; Spyglass's logging changed")
+    if unrestricted := unrestricted_log_entries(rehearsal):
+        raise RuntimeError(f"The export would include whole tables: {sorted(set(unrestricted))}")
 
     selection.start_export(paper_id=paper_id, analysis_id=analysis_id)
     try:

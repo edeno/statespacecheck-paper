@@ -1,16 +1,16 @@
-r"""Rebuild the five Figure-4 input exports from Spyglass (CLI; read-only).
+r"""Rebuild the Figure-4 input file from Spyglass (CLI; read-only).
 
-Fetches the Spyglass entries behind the Figure-4 recording and writes the five
-files that :func:`statespacecheck_paper.load_local_data.load_neural_recording_from_files`
-reads. With ``--compare-to``, checks the rebuilt files against a reference set
-(e.g. the ``data/`` exports the figure used) by content. The recipe lives in
+Fetches the Spyglass entries behind the Figure-4 recording and writes the
+``.npz`` file that :func:`statespacecheck_paper.load_local_data.load_neural_recording_from_files`
+reads. With ``--compare-to``, checks it array by array against a reference (e.g.
+the ``data/`` file the figure used). The recipe lives in
 :mod:`statespacecheck_paper.spyglass_data`; this script is the thin CLI wrapper.
 
 Requires Spyglass, lab database credentials, and the lab's analysis NWB store:
 run on a lab server in an environment with the lab's Spyglass. Only reads from
 the database. See ``docs/data-lineage.md``.
 
-Example (``REF`` holds the exports the figure used)::
+Example (``REF`` holds the input file the figure used)::
 
     PYTHONPATH=src python scripts/fetch_figure04_inputs.py \
         --output-dir /tmp/figure04_inputs --compare-to REF
@@ -35,15 +35,15 @@ from statespacecheck_paper.spyglass_data import (
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Fetch, write, and optionally compare the Figure-4 input exports."""
+    """Fetch, write, and optionally compare the Figure-4 input file."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--output-dir", type=Path, required=True, help="Where to write the files.")
+    parser.add_argument("--output-dir", type=Path, required=True, help="Where to write the file.")
     parser.add_argument(
         "--compare-to",
         type=Path,
-        help="Directory of reference exports to compare the rebuilt files against.",
+        help="Directory of the reference input file to compare the rebuilt one against.",
     )
-    parser.add_argument("--overwrite", action="store_true", help="Replace existing output files.")
+    parser.add_argument("--overwrite", action="store_true", help="Replace an existing output file.")
     parser.add_argument("--nwb-file-name", default=FIGURE04_NWB_FILE_NAME)
     parser.add_argument("--epoch-name", default=FIGURE04_EPOCH_NAME)
     args = parser.parse_args(argv)
@@ -60,10 +60,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error(str(exc))
 
     inputs = fetch_figure04_inputs(args.nwb_file_name, args.epoch_name)
-    for path in write_figure04_inputs(
+    path = write_figure04_inputs(
         inputs, args.output_dir, animal_date_epoch, overwrite=args.overwrite
-    ):
-        print(f"wrote {path}")
+    )
+    print(f"wrote {path}")
 
     if args.compare_to is None:
         return 0

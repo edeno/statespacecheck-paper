@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import dataclasses
 import importlib.util
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -18,6 +19,7 @@ import networkx as nx
 import numpy as np
 import pandas as pd
 import pytest
+import xarray as xr
 from track_linearization import make_track_graph
 
 from statespacecheck_paper import spyglass_data
@@ -28,11 +30,13 @@ from statespacecheck_paper.spyglass_data import (
     compare_figure04_exports,
     declared_attribute_names,
     epoch_identifier,
-    export_file_paths,
+    export_file_path,
+    figure04_diagnostics_from_decodes,
     filter_spike_times,
     get_interpolated_position_info,
     get_patch_id,
     log_figure04_export,
+    unrestricted_log_entries,
     write_figure04_inputs,
 )
 
@@ -50,7 +54,15 @@ def test_importing_module_does_not_import_spyglass_or_datajoint() -> None:
     subprocess.run([sys.executable, "-c", code], check=True)
 
 
-@pytest.mark.parametrize("script", ["fetch_figure04_inputs.py", "spyglass_export_figure04.py"])
+@pytest.mark.parametrize(
+    "script",
+    [
+        "fetch_figure04_inputs.py",
+        "spyglass_export_figure04.py",
+        "spyglass_pipeline_figure04.py",
+        "convert_figure04_pickles.py",
+    ],
+)
 def test_script_help_does_not_import_spyglass_or_datajoint(script: str) -> None:
     path = str(_REPO_ROOT / "scripts" / script)
     code = (
@@ -145,15 +157,13 @@ def test_written_exports_load_through_the_figure_loader(tmp_path: Path) -> None:
     pd.testing.assert_frame_equal(recording.position_info, inputs.position_info)
 
 
-def test_write_refuses_if_any_export_exists_and_writes_nothing(tmp_path: Path) -> None:
-    existing = next(
-        p for p in export_file_paths(tmp_path, _EPOCH) if p.name.endswith("spacing.pkl")
-    )
-    existing.write_bytes(b"")
+def test_write_refuses_an_existing_file_and_leaves_it(tmp_path: Path) -> None:
+    existing = export_file_path(tmp_path, _EPOCH)
+    existing.write_bytes(b"earlier")
 
     with pytest.raises(FileExistsError, match="Refusing to overwrite"):
         write_figure04_inputs(_inputs(), tmp_path, _EPOCH)
-    assert list(tmp_path.iterdir()) == [existing]
+    assert existing.read_bytes() == b"earlier"
 
 
 def test_write_overwrite_replaces_the_contents(tmp_path: Path) -> None:
@@ -161,7 +171,14 @@ def test_write_overwrite_replaces_the_contents(tmp_path: Path) -> None:
     write_figure04_inputs(_inputs(spike_shift=1e-3), tmp_path, _EPOCH, overwrite=True)
 
     recording = load_neural_recording_from_files(tmp_path, _EPOCH)
-    np.testing.assert_array_equal(recording.spike_times[0], [0.001, 0.005])
+    np.testing.assert_array_equal(recording.spike_times[0], [0.001, 0.004 + 1e-3])
+
+
+def test_write_is_deterministic(tmp_path: Path) -> None:
+    first = write_figure04_inputs(_inputs(), tmp_path / "a", _EPOCH)
+    second = write_figure04_inputs(_inputs(), tmp_path / "b", _EPOCH)
+
+    assert first.read_bytes() == second.read_bytes()
 
 
 def test_compare_finds_no_difference_between_identical_exports(tmp_path: Path) -> None:
@@ -170,7 +187,7 @@ def test_compare_finds_no_difference_between_identical_exports(tmp_path: Path) -
 
     differences = compare_figure04_exports(tmp_path / "reference", tmp_path / "same", _EPOCH)
 
-    assert len(differences) == 5
+    assert "spike_times" in differences and "position/head_position_x" in differences
     assert set(differences.values()) == {None}
 
 
@@ -181,36 +198,32 @@ def _longer_edge(inputs: Figure4Inputs) -> Figure4Inputs:
 
 
 _PERTURBATIONS = {
-    "_position_info.pkl": lambda inputs: dataclasses.replace(
+    "position/patch_id": lambda inputs: dataclasses.replace(
         inputs, position_info=inputs.position_info.astype({"patch_id": np.int32})
     ),
-    "_HPC_spike_times.pkl": lambda inputs: _inputs(spike_shift=1e-9),
-    "_track_graph.pkl": _longer_edge,
-    "_linear_edge_order.pkl": lambda inputs: dataclasses.replace(
-        inputs, linear_edge_order=[(1, 0)]
-    ),
-    "_linear_edge_spacing.pkl": lambda inputs: dataclasses.replace(inputs, linear_edge_spacing=16),
+    "spike_times": lambda inputs: _inputs(spike_shift=1e-9),
+    "track_edge_distance": _longer_edge,
+    "linear_edge_order": lambda inputs: dataclasses.replace(inputs, linear_edge_order=[(1, 0)]),
+    "linear_edge_spacing": lambda inputs: dataclasses.replace(inputs, linear_edge_spacing=16),
 }
 
 
-@pytest.mark.parametrize("suffix", list(_PERTURBATIONS))
-def test_compare_flags_only_the_file_that_differs(tmp_path: Path, suffix: str) -> None:
+@pytest.mark.parametrize("array_name", list(_PERTURBATIONS))
+def test_compare_flags_only_the_array_that_differs(tmp_path: Path, array_name: str) -> None:
     write_figure04_inputs(_inputs(), tmp_path / "reference", _EPOCH)
-    write_figure04_inputs(_PERTURBATIONS[suffix](_inputs()), tmp_path / "changed", _EPOCH)
+    write_figure04_inputs(_PERTURBATIONS[array_name](_inputs()), tmp_path / "changed", _EPOCH)
 
     differences = compare_figure04_exports(tmp_path / "reference", tmp_path / "changed", _EPOCH)
 
-    assert {name for name, difference in differences.items() if difference} == {_EPOCH + suffix}
+    assert {name for name, difference in differences.items() if difference} == {array_name}
 
 
-def test_compare_flags_a_directed_graph(tmp_path: Path) -> None:
+def test_write_refuses_a_directed_graph(tmp_path: Path) -> None:
     directed = dataclasses.replace(_inputs(), track_graph=nx.DiGraph(_inputs().track_graph))
-    write_figure04_inputs(_inputs(), tmp_path / "reference", _EPOCH)
-    write_figure04_inputs(directed, tmp_path / "changed", _EPOCH)
 
-    differences = compare_figure04_exports(tmp_path / "reference", tmp_path / "changed", _EPOCH)
-
-    assert differences[f"{_EPOCH}_track_graph.pkl"] == "Graph vs DiGraph"
+    with pytest.raises(ValueError, match="undirected"):
+        write_figure04_inputs(directed, tmp_path, _EPOCH)
+    assert list(tmp_path.iterdir()) == []
 
 
 # --- Data checks -------------------------------------------------------------
@@ -350,11 +363,96 @@ def test_log_export_stops_the_session_when_the_fetch_fails(
     def failing_fetch(*args: object) -> Figure4Inputs:
         raise OSError("analysis file unavailable")
 
+    monkeypatch.setattr(
+        spyglass_data,
+        "dry_run_figure04_export_log",
+        lambda *args: [{"part": "Table", "table_name": "position", "restriction": "(id=1)"}],
+    )
     monkeypatch.setattr(spyglass_data, "fetch_figure04_inputs", failing_fetch)
 
     with pytest.raises(OSError):
         log_figure04_export("paper", "analysis")
     assert calls == ["query", "start_export", "stop_export"]
+
+
+@pytest.mark.parametrize(
+    ("entries", "message"),
+    [
+        ([], "recorded nothing"),
+        ([{"part": "Table", "table_name": "position", "restriction": "(True)"}], "position"),
+    ],
+)
+def test_log_export_refuses_unsafe_rehearsal_before_writing(
+    monkeypatch: pytest.MonkeyPatch,
+    entries: list[dict[str, str]],
+    message: str,
+) -> None:
+    calls: list[str] = []
+    _fake_common_usage(monkeypatch, calls)
+    monkeypatch.setattr(spyglass_data, "dry_run_figure04_export_log", lambda *args: entries)
+
+    with pytest.raises(RuntimeError, match=message):
+        log_figure04_export("paper", "analysis")
+    assert calls == ["query"]
+
+
+@pytest.mark.parametrize("fetch_fails", [False, True])
+def test_export_rehearsal_records_without_inserting_and_restores_state(
+    monkeypatch: pytest.MonkeyPatch,
+    fetch_fails: bool,
+) -> None:
+    class Part:
+        def insert(self, rows: object) -> None:
+            raise AssertionError("Database insert called")
+
+        def insert1(self, row: object) -> None:
+            raise AssertionError("Database insert1 called")
+
+    class ExportSelection:
+        Table = type("Table", (Part,), {})
+        File = type("File", (Part,), {})
+
+    usage = ModuleType("spyglass.common.common_usage")
+    usage.__dict__["ExportSelection"] = ExportSelection
+    export = ModuleType("spyglass.utils.mixins.export")
+    export.__dict__["EXPORT_ENV_VAR"] = "SPYGLASS_EXPORT_ID"
+    for name in ("spyglass", "spyglass.common", "spyglass.utils", "spyglass.utils.mixins"):
+        monkeypatch.setitem(sys.modules, name, ModuleType(name))
+    monkeypatch.setitem(sys.modules, usage.__name__, usage)
+    monkeypatch.setitem(sys.modules, export.__name__, export)
+    monkeypatch.setenv("SPYGLASS_EXPORT_ID", "42")
+    original_insert = ExportSelection.Table.insert
+    original_insert1 = ExportSelection.File.insert1
+
+    def fetch(*args: object) -> None:
+        assert os.environ["SPYGLASS_EXPORT_ID"] == "999999999"
+        ExportSelection.Table().insert1({"table_name": "position", "restriction": "(id=1)"})
+        ExportSelection.File().insert([{"analysis_file_name": "analysis.nwb"}])
+        if fetch_fails:
+            raise OSError("analysis file unavailable")
+
+    monkeypatch.setattr(spyglass_data, "fetch_figure04_inputs", fetch)
+    if fetch_fails:
+        with pytest.raises(OSError, match="analysis file unavailable"):
+            spyglass_data.dry_run_figure04_export_log()
+    else:
+        assert spyglass_data.dry_run_figure04_export_log() == [
+            {"part": "Table", "table_name": "position", "restriction": "(id=1)"},
+            {"part": "File", "analysis_file_name": "analysis.nwb"},
+        ]
+    assert os.environ["SPYGLASS_EXPORT_ID"] == "42"
+    assert ExportSelection.Table.insert is original_insert
+    assert ExportSelection.File.insert1 is original_insert1
+
+
+def test_unrestricted_log_entries_ignores_restricted_tables_and_files() -> None:
+    assert unrestricted_log_entries(
+        [
+            {"part": "Table", "table_name": "whole", "restriction": "(True)"},
+            {"part": "Table", "table_name": "limited", "restriction": "(id=1)"},
+            {"part": "File", "analysis_file_name": "analysis.nwb"},
+        ]
+    ) == ["whole"]
 
 
 # --- Export script (database-bound helpers replaced) --------------------------
@@ -463,3 +561,44 @@ def test_fetch_script_refuses_to_compare_the_output_with_itself(tmp_path: Path) 
     with pytest.raises(SystemExit) as exc:
         script.main(["--output-dir", str(tmp_path), "--compare-to", str(tmp_path), "--overwrite"])
     assert exc.value.code == 2
+
+
+# --- Diagnostics from stored decodes (input checks) -------------------------
+
+
+def _decode(time: np.ndarray, *, with_predictive: bool = True) -> xr.Dataset:
+    variables = {"acausal_posterior": (("time",), np.zeros(len(time)))}
+    if with_predictive:
+        variables["predictive_posterior"] = (("time",), np.zeros(len(time)))
+    return xr.Dataset(variables, coords={"time": time})
+
+
+def _fitted(mean_rates: list[float]) -> SimpleNamespace:
+    return SimpleNamespace(encoding_model_={("", 0): {"mean_rates": np.asarray(mean_rates)}})
+
+
+def test_diagnostics_from_decodes_refuses_mismatched_time_bins() -> None:
+    time = np.linspace(0.0, 1.0, 5)
+    with pytest.raises(ValueError, match="different time bins"):
+        figure04_diagnostics_from_decodes(
+            None, None, _decode(time), _decode(time + 1.0), [], coverage=0.95
+        )
+
+
+def test_diagnostics_from_decodes_requires_the_predictive_distribution() -> None:
+    time = np.linspace(0.0, 1.0, 5)
+    with pytest.raises(ValueError, match="predictive_posterior"):
+        figure04_diagnostics_from_decodes(
+            None, None, _decode(time), _decode(time, with_predictive=False), [], coverage=0.95
+        )
+
+
+def test_diagnostics_from_decodes_refuses_spikes_of_other_units() -> None:
+    time = np.linspace(0.0, 1.0, 5)
+    spike_times = [np.array([0.1, 0.2]), np.array([0.5])]
+    fitted = _fitted([2 / 5, 1 / 5])
+    swapped = [spike_times[1], spike_times[0]]
+    with pytest.raises(ValueError, match="do not match the fitted units"):
+        figure04_diagnostics_from_decodes(
+            fitted, fitted, _decode(time), _decode(time), swapped, coverage=0.95
+        )

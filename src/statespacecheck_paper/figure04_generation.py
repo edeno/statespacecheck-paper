@@ -53,6 +53,38 @@ FIGURE4_DETAIL_WINDOW = Figure4DetailWindow(
 FIGURE04_SUMMARY_PATH = Path("manuscript/figures/main/figure04_summary.json")
 
 
+def figure04_reported_statistics(summary: Figure4Summary) -> dict[str, object]:
+    """Return the summary's reported statistics as they appear in the summary JSON.
+
+    Parameters
+    ----------
+    summary : Figure4Summary
+        Computed Figure-4 summary.
+
+    Returns
+    -------
+    dict
+        ``diagnostic_means`` (per decoder and metric) and ``flag_confusions``
+        (with ``rescue_rate``, ``None`` when undefined).
+    """
+    confusions: list[dict[str, object]] = []
+    for confusion in summary.flag_confusions:
+        rescue_rate = confusion.rescue_rate
+        confusions.append(
+            {
+                **dataclasses.asdict(confusion),
+                "rescue_rate": rescue_rate if math.isfinite(rescue_rate) else None,
+            }
+        )
+    return {
+        "diagnostic_means": {
+            "continuous": dataclasses.asdict(summary.continuous),
+            "continuous_fragmented": dataclasses.asdict(summary.continuous_fragmented),
+        },
+        "flag_confusions": confusions,
+    }
+
+
 def figure04_summary_payload(
     *,
     config: Figure4Config,
@@ -66,15 +98,7 @@ def figure04_summary_payload(
             "Figure 4 cache provenance identifies a different dataset: "
             f"{cache_provenance.animal_date_epoch!r} != {paths.animal_date_epoch!r}."
         )
-    confusions: list[dict[str, object]] = []
-    for confusion in summary.flag_confusions:
-        rescue_rate = confusion.rescue_rate
-        confusions.append(
-            {
-                **dataclasses.asdict(confusion),
-                "rescue_rate": rescue_rate if math.isfinite(rescue_rate) else None,
-            }
-        )
+    statistics = figure04_reported_statistics(summary)
     return {
         "schema_version": 4,
         "figure": "figure04",
@@ -88,11 +112,8 @@ def figure04_summary_payload(
             FIGURE4_METRIC_DIRECTIONS,
         ),
         "detail_window": dataclasses.asdict(FIGURE4_DETAIL_WINDOW),
-        "diagnostic_means": {
-            "continuous": dataclasses.asdict(summary.continuous),
-            "continuous_fragmented": dataclasses.asdict(summary.continuous_fragmented),
-        },
-        "flag_confusions": confusions,
+        "diagnostic_means": statistics["diagnostic_means"],
+        "flag_confusions": statistics["flag_confusions"],
         "provenance": {
             "source": scientific_source_provenance(),
             "figure04_decode_cache": cache_provenance.artifact_payload(),

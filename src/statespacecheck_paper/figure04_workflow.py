@@ -591,6 +591,45 @@ def compute_figure04_summary(
     stay identical to the cached decode; the render layer never alters them.
     """
     decode = render_data.decode_results
+    return summarize_figure04_diagnostics(
+        decode.continuous_diagnostics,
+        decode.continuous_fragmented_diagnostics,
+        n_units=int(decode.spike_counts.shape[1]),
+        thresholds=thresholds,
+        metric_directions=metric_directions,
+    )
+
+
+def summarize_figure04_diagnostics(
+    continuous_diagnostics: SpikeEventDiagnostics,
+    continuous_fragmented_diagnostics: SpikeEventDiagnostics,
+    *,
+    n_units: int,
+    thresholds: Mapping[str, float],
+    metric_directions: Mapping[str, Literal["below", "above"]],
+) -> Figure4Summary:
+    """Compute the Figure-4 summary from the two decoders' per-spike diagnostics.
+
+    The computation behind :func:`compute_figure04_summary`, usable without
+    render data (e.g. on decodes stored by the Spyglass pipeline).
+
+    Parameters
+    ----------
+    continuous_diagnostics, continuous_fragmented_diagnostics : SpikeEventDiagnostics
+        Per-spike diagnostics of the Continuous and Continuous-Fragmented decoders,
+        on the same spikes.
+    n_units : int
+        Number of units decoded.
+    thresholds : Mapping of str to float
+        Flag threshold per metric.
+    metric_directions : Mapping of str to {"below", "above"}
+        Which side of each threshold is flagged.
+
+    Returns
+    -------
+    Figure4Summary
+        Whole-session event means and two-decoder flag agreement.
+    """
     missing_thresholds = set(metric_directions) - set(thresholds)
     if missing_thresholds:
         raise ValueError(
@@ -601,8 +640,8 @@ def compute_figure04_summary(
     for metric, worse_when in metric_directions.items():
         flag_confusions.append(
             compute_flag_confusion(
-                decode.continuous_diagnostics,
-                decode.continuous_fragmented_diagnostics,
+                continuous_diagnostics,
+                continuous_fragmented_diagnostics,
                 metric,
                 thresholds[metric],
                 worse_when=worse_when,
@@ -610,10 +649,10 @@ def compute_figure04_summary(
         )
 
     return Figure4Summary(
-        continuous=_compute_diagnostic_means(decode.continuous_diagnostics),
-        continuous_fragmented=_compute_diagnostic_means(decode.continuous_fragmented_diagnostics),
+        continuous=_compute_diagnostic_means(continuous_diagnostics),
+        continuous_fragmented=_compute_diagnostic_means(continuous_fragmented_diagnostics),
         flag_confusions=tuple(flag_confusions),
-        n_units=int(decode.spike_counts.shape[1]),
+        n_units=n_units,
     )
 
 
