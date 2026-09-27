@@ -22,12 +22,12 @@ import dataclasses
 from typing import Any, Literal
 
 import numpy as np
+import statespacecheck as ssc
 from numpy.typing import NDArray
 from scipy.ndimage import gaussian_filter1d
 
 from statespacecheck_paper.diagnostics import (
     SpikeEventDiagnostics,
-    compute_normalized_event_likelihood,
     compute_spike_event_diagnostics_from_rates,
 )
 from statespacecheck_paper.figure04_place_fields import (
@@ -243,7 +243,7 @@ def compute_spike_event_diagnostics(
 ) -> SpikeEventDiagnostics:
     """Compute per-cell diagnostic metrics for model checking.
 
-    Computes HPD overlap, KL divergence, and predictive p-value ranking for each
+    Computes HPD overlap, KL divergence, and the rank-based predictive p-value for each
     spike event. Matrix outputs are retained for backward-compatible plotting,
     and event arrays preserve one row per spike with exact timestamps when
     ``spike_times`` and ``time`` are supplied.
@@ -359,7 +359,7 @@ def mean_per_spike_likelihood_by_time(
 
     Each cell's place field is turned into the normalized single-event
     likelihood over position via
-    :func:`statespacecheck_paper.diagnostics.compute_normalized_event_likelihood`
+    :func:`statespacecheck.event_likelihood`
     --- the exact quantity the diagnostics compare against the predictive
     distribution. In every time bin the normalized likelihoods of the spiking
     cells are averaged, weighted by spike count, so a bin with several spikes
@@ -384,7 +384,7 @@ def mean_per_spike_likelihood_by_time(
         True in time bins containing at least one spike.
     """
     pf = np.asarray(place_fields, dtype=np.float64)
-    pf_norm = compute_normalized_event_likelihood(pf)
+    pf_norm = ssc.event_likelihood(pf)
 
     counts = np.asarray(spike_counts, dtype=np.float64)
     n_per_bin = counts.sum(axis=1)

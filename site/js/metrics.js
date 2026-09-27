@@ -1,8 +1,8 @@
-// Per-spike goodness-of-fit diagnostics, ported from the paper's Python code.
+// Per-spike goodness-of-fit diagnostics, ported from the statespacecheck package.
 //
-// Mirrors statespacecheck_paper.diagnostics.compute_spike_event_diagnostics_from_rates
-// for a single spike event, using the external statespacecheck package's
-// highest_density_region / hpd_overlap / kl_divergence definitions.
+// Mirrors statespacecheck.event_diagnostics (called by the paper through
+// statespacecheck_paper.diagnostics.compute_spike_event_diagnostics_from_rates)
+// for a single spike event.
 // site/tests/metrics.test.mjs checks every function here against reference
 // values computed by the Python implementation (site/tests/fixtures/metric_parity.json).
 //

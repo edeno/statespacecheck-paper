@@ -151,16 +151,27 @@ This project may include dependencies installed directly from GitHub repositorie
 
 ## The `statespacecheck` package
 
-The diagnostics demonstrated here (KL divergence, HPD overlap, rank-based
-predictive check) are provided by the standalone
-[`statespacecheck`](https://github.com/edeno/statespacecheck) package, a
-dependency of this repository. Its API reference, terminology, and standalone
-usage examples live in its own
+The diagnostics demonstrated here (HPD overlap, the predictive check, and KL
+divergence) are provided by the standalone
+[`statespacecheck`](https://github.com/edeno/statespacecheck) package
+(`pip install statespacecheck`), a dependency of this repository. To apply them
+to your own decoder, use the package directly: `statespacecheck.event_diagnostics`
+takes a one-step predictive distribution, a table of per-unit intensities, and
+the time bin and unit of each spike, and returns all three diagnostics per spike.
+Its API reference, terminology, and usage examples live in its own
 [documentation](https://edeno.github.io/statespacecheck) — they are not
-duplicated here to avoid drift. This repository shows how the paper *applies*
-those diagnostics; for the decoder-integrated usage, see
-[`decoding.decode_with_diagnostics`](src/statespacecheck_paper/decoding.py) and
-the figure-generation modules.
+duplicated here to avoid drift.
+
+The boundary between the two repositories:
+
+- **`statespacecheck`** holds everything general: the distribution-level
+  diagnostics, the per-spike computations (single-spike likelihood, predictive
+  unit probabilities, exact predictive p-value), and threshold estimation.
+- **This repository** holds what is specific to the paper: the simulation
+  protocol and decoder used for Figure 3, the real-data decoding for Figure 4,
+  the paper's threshold choices, figure generation, the reported-value pipeline,
+  the interactive viewer, and the project website. For the decoder-integrated
+  usage, see [`decoding.decode_with_diagnostics`](src/statespacecheck_paper/decoding.py).
 
 ## Interactive viewer
 
@@ -341,7 +352,7 @@ uv run ruff format . && uv run ruff check . && uv run mypy src/ && uv run pytest
 
 - **`style.py`**: Shared styling (WONG palette, figure defaults, save functions)
 - **`simulation.py`**: Simulation utilities (random walks, spikes, place fields)
-- **`diagnostics.py`**: Goodness-of-fit diagnostics (HPD overlap, rank-based predictive p-value, KL); leaf layer
+- **`diagnostics.py`**: Adapter to `statespacecheck`'s per-spike diagnostics (HPD overlap, predictive p-value, KL), result containers, and the paper's threshold rule; leaf layer
 - **`decoding.py`**: General Bayesian decoder (`decode_with_diagnostics`)
 - **`plotting.py`**: Reusable plotting functions (HPD regions, diagnostic plots)
 - **`schematic.py`**: Graphical-model and Bayesian-equation diagrams (Figure 1)

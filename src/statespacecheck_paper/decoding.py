@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from typing import NamedTuple
 
 import numpy as np
+import statespacecheck as ssc
 from numpy.typing import NDArray
 from scipy.special import logsumexp
 from scipy.stats import poisson
@@ -395,25 +396,26 @@ def _apply_window_rate_overrides(
         if not np.any(in_window):
             continue
 
-        window_diagnostics = compute_spike_event_diagnostics_from_rates(
-            predictive_posterior,
-            window.firing_rate_table,
-            spike_time_ind[in_window],
-            spike_cell_ind[in_window],
-            coverage=coverage,
-        )
-        assert window_diagnostics.per_spike_likelihood is not None
-
-        event_hpd_overlap[in_window] = window_diagnostics.event_hpd_overlap
-        event_kl_divergence[in_window] = window_diagnostics.event_kl_divergence
-        event_predictive_pvalue[in_window] = window_diagnostics.event_predictive_pvalue
-        decoder_per_spike_lik[in_window] = window_diagnostics.per_spike_likelihood
-
         window_times = spike_time_ind[in_window]
         window_cells = spike_cell_ind[in_window]
-        hpd_overlap[window_times, window_cells] = window_diagnostics.event_hpd_overlap
-        kl_divergence[window_times, window_cells] = window_diagnostics.event_kl_divergence
-        predictive_pvalue[window_times, window_cells] = window_diagnostics.event_predictive_pvalue
+        window_events = ssc.event_diagnostics(
+            predictive_posterior,
+            window.firing_rate_table,
+            window_times,
+            window_cells,
+            coverage=coverage,
+            return_likelihood=True,
+        )
+        assert window_events.likelihood is not None
+
+        event_hpd_overlap[in_window] = window_events.hpd_overlap
+        event_kl_divergence[in_window] = window_events.kl_divergence
+        event_predictive_pvalue[in_window] = window_events.predictive_pvalue
+        decoder_per_spike_lik[in_window] = window_events.likelihood
+
+        hpd_overlap[window_times, window_cells] = window_events.hpd_overlap
+        kl_divergence[window_times, window_cells] = window_events.kl_divergence
+        predictive_pvalue[window_times, window_cells] = window_events.predictive_pvalue
 
     return SpikeEventDiagnostics(
         event_time_ind=diagnostics.event_time_ind,
@@ -602,8 +604,8 @@ def decode_with_diagnostics(
       firing cell's single-event likelihood HPD region
     - KL divergence: divergence from the predictive posterior to the firing
       cell's single-event likelihood
-    - Predictive p-value: rank of the firing cell's spike-position probability
-      among all cells (flags low-contribution cells)
+    - Predictive p-value: rank-based predictive p-value of the firing cell under
+      the event-weighted predictive distribution over cells, evaluated exactly
 
     Parameters
     ----------
