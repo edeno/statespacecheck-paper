@@ -10,9 +10,10 @@ pieces, and each reads data produced here from the paper's own pipeline:
 - **Playground** — the reader moves a Gaussian predictive distribution over the
   Figure-3 track and picks which place cell fired; the browser recomputes the
   three per-spike diagnostics live with a JavaScript port of
-  :func:`statespacecheck_paper.diagnostics.compute_spike_event_diagnostics_from_rates`.
-  :func:`metric_parity_fixture` writes reference cases computed by that Python
-  function, and ``site/tests/metrics.test.mjs`` checks the port against them.
+  :func:`statespacecheck.event_diagnostics`. :func:`metric_parity_fixture` writes
+  reference cases computed through the paper's
+  :func:`~statespacecheck_paper.diagnostics.compute_spike_event_diagnostics_from_rates`
+  wrapper of that function, and ``site/tests/metrics.test.mjs`` checks the port against them.
 - **Scenario player** — one display window per Figure-3 condition from the
   seed-``config.random_seed`` realization shown in Figure 3a.
 - **Replay comparison** — the Figure-4 detail window under both decoders.
@@ -38,12 +39,12 @@ from typing import Any, Protocol
 
 import matplotlib as mpl
 import numpy as np
+import statespacecheck as ssc
 from numpy.typing import NDArray
 
 from statespacecheck_paper.decoding import decode_with_diagnostics
 from statespacecheck_paper.diagnostics import (
     DecodingDiagnostics,
-    compute_normalized_event_likelihood,
     compute_spike_event_diagnostics_from_rates,
 )
 from statespacecheck_paper.figure03_generation import FIGURE03_CONDITION_IDS, conditions_by_id
@@ -893,7 +894,7 @@ def replay_payload(
         "likelihood": encode_display_rows(mean_likelihood),
         "has_spikes": has_spikes.tolist(),
         # Each unit's normalized single-event likelihood (one row per unit).
-        "unit_likelihoods": encode_display_rows(compute_normalized_event_likelihood(place_fields)),
+        "unit_likelihoods": encode_display_rows(ssc.event_likelihood(place_fields)),
         "unit_rank": unit_rank.tolist(),
         "spike_times": [
             _rounded(times[(times >= t0) & (times < t_end)] - t0, 4) for times in spike_times

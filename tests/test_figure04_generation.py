@@ -123,6 +123,7 @@ def test_summary_payload_contains_reported_counts_rates_and_provenance(
     )
     source = {
         "statespacecheck_paper_version": "test",
+        "statespacecheck_version": "test",
         "source_tree_sha256": "a" * 64,
         "uv_lock_sha256": "b" * 64,
     }

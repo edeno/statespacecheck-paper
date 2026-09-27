@@ -86,7 +86,7 @@
         "event_selection": "all_spikes_in_recording",
         "hpd_coverage": 0.95
       },
-      "diagnostics_fingerprint_sha256": "4a00edb598979bad342201e1703101ad98ba78ae5e3aefc9f501ccd8d1bdcff6",
+      "diagnostics_fingerprint_sha256": "7855b53ee24611e07e25400c63d667a2ad5813ca0535e69411844be4f56d5cf6",
       "diagnostics_schema_version": 1,
       "export_file_sha256": {
         "j1620210710_02_r1_HPC_spike_times.pkl": "2d3e87fddf2e76237d5cbcd8773fb754d873b96dd41820f4c6a07b0fc9802905",
@@ -98,12 +98,13 @@
       "fingerprint_sha256": "c30cead62c324b70d84b581f88c58277e4fd24af627f96b9ef74029538bd85d0",
       "non_local_detector_version": "0.6.10.dev214+g956fdccaf",
       "schema_version": 5,
-      "statespacecheck_version": "0.1.0"
+      "statespacecheck_version": "0.2.0"
     },
     "source": {
-      "source_tree_sha256": "37a9a7d7f3315385e140e9b15b92f6751e030e12322391d6e7e4e8a1acf28a0e",
+      "source_tree_sha256": "a8d81df98b74175742837d75fa01ad16d7edc670a0fcb00ff39aeb28692302bf",
       "statespacecheck_paper_version": "0.1.0",
-      "uv_lock_sha256": "6f956059b715174a32cb2aece6d39f4bfb724fd0c3fe6f1c4fa93e67623f20b4"
+      "statespacecheck_version": "0.2.0",
+      "uv_lock_sha256": "7576f157b742379e235db0bf974d321fd20df9f8656862fb8f8874e43b0b9dff"
     }
   },
   "schema_version": 4

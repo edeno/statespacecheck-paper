@@ -26,9 +26,12 @@ The module graph is a DAG enforced in CI; `diagnostics.py` is the leaf.
 
 Key modules and the rationale that the source alone won't tell you:
 
-- **diagnostics.py** — shared goodness-of-fit diagnostics; the dependency-graph
-  **leaf** (per-spike-event HPD/KL/rank computation, single-event likelihood,
-  predictive-mark probabilities, baseline thresholds).
+- **diagnostics.py** — the paper's adapter to the external `statespacecheck`
+  package, which owns the per-spike computations so other projects can use
+  them. This module keeps the paper-side containers (`SpikeEventDiagnostics`,
+  `DecodingDiagnostics`) and the paper's threshold rule; it is the
+  dependency-graph **leaf**. A change to the diagnostics themselves belongs in
+  `statespacecheck`, then a version bump here.
 - **decoding.py** — general Bayesian decoder `decode_with_diagnostics` + the
   per-window override mechanism (`DecoderOverrideWindow`/`DecoderOverrideSchedule`,
   used by Figure 3); depends only on `diagnostics` + `simulation`.
@@ -45,9 +48,9 @@ Key modules and the rationale that the source alone won't tell you:
   changing the decode), plus a `Figure4DiagnosticsConfig` that keys the separate
   diagnostics cache. The ~19 GB decode bundle is memory-mapped on load and never
   rewritten by a diagnostics change; the diagnostics bundle is keyed by the
-  decode fingerprint plus a digest of the diagnostic modules' executable syntax
-  trees, so a diagnostics edit recomputes diagnostics (about a minute) rather
-  than refitting.
+  decode fingerprint, the installed `statespacecheck` version, and a digest of
+  the diagnostic modules' executable syntax trees, so a diagnostics change
+  recomputes diagnostics (about a minute) rather than refitting.
 - **load_local_data.py** — `load_neural_recording_from_files` → validated
   `NeuralRecordingData`; loads from pre-exported pickles, no Spyglass DB needed.
 - **spyglass_data.py** — rebuilds those pickles from the lab's Spyglass database

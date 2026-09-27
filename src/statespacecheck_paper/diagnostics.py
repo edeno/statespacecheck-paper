@@ -1,21 +1,21 @@
 """Shared goodness-of-fit diagnostics for neural decoding.
 
 This module holds the general, figure-agnostic diagnostic layer: the per-spike
-diagnostic containers, the core per-spike-event computation (HPD overlap, KL
-divergence, and the rank-based predictive p-value), the single-event likelihood
-and predictive-mark calculations they build on, and the baseline-threshold
-estimation used to flag misfit.
+diagnostic containers, the adapter from the paper's decoder outputs to the
+external ``statespacecheck`` package's per-event diagnostics (HPD overlap, KL
+divergence, and the rank-based predictive p-value), and the paper's baseline-threshold
+rule used to flag misfit. The diagnostics themselves, including the single-event
+likelihood and predictive-mark calculations, live in ``statespacecheck`` so that
+other projects can use them directly.
 
-It depends only on ``numpy``/``scipy`` and the external ``statespacecheck``
-package — it imports no sibling ``statespacecheck_paper`` module, so it is the
-leaf of the paper's dependency graph.
+It depends only on ``numpy`` and the external ``statespacecheck`` package — it
+imports no sibling ``statespacecheck_paper`` module, so it is the leaf of the
+paper's dependency graph.
 
 **Key Components**:
 - **SpikeEventDiagnostics**: per-spike-event diagnostic arrays (dense matrices optional)
 - **DecodingDiagnostics**: full decoder return with dense distributions + diagnostics
-- **compute_spike_event_diagnostics_from_rates**: the shared per-spike-event computation
-- **compute_normalized_event_likelihood**: normalized single-event intensity likelihood
-- **compute_predictive_mark_probabilities**: predictive mark distribution for an event
+- **compute_spike_event_diagnostics_from_rates**: per-spike diagnostics via ``statespacecheck``
 - **DiagnosticThresholds** / **compute_baseline_diagnostic_thresholds**: baseline flags
 """
 
@@ -28,21 +28,13 @@ from typing import cast
 import numpy as np
 import statespacecheck as ssc
 from numpy.typing import NDArray
-from scipy.special import logsumexp
-
-# Spike-batch size for ``compute_spike_event_diagnostics_from_rates``.
-# Caps the (n_spikes, n_bins) scratch arrays at ``_PER_SPIKE_BATCH``
-# rows so full-session real-data builds (~870 K spikes) don't allocate
-# multi-GB working buffers. 50 K × 512 bins × float64 ≈ 200 MB per
-# scratch array, ~600 MB peak with three live (pred / rates / lik).
-_PER_SPIKE_BATCH = 50_000
 
 # Per-event metric field names — shared by ``SpikeEventDiagnostics`` and
 # ``DecodingDiagnostics`` shape-validation loops.
 _PER_EVENT_METRIC_NAMES = ("event_hpd_overlap", "event_kl_divergence", "event_predictive_pvalue")
 
 # Baseline-threshold definitions used by ``compute_baseline_diagnostic_thresholds``.
-# Named (rather than inlined at the ``nanquantile`` calls) because the manuscript
+# Named (rather than inlined at the quantile calls) because the manuscript
 # reports the percentile levels themselves, and the figure summaries record these
 # constants alongside the threshold values they produce — so a change to the rule
 # cannot silently move a published number.
@@ -392,209 +384,6 @@ class DecodingDiagnostics:
             getattr(self, name).setflags(write=False)
 
 
-def compute_normalized_event_likelihood(
-    event_intensities: NDArray[np.floating],
-) -> NDArray[np.floating]:
-    """Compute the normalized single-event likelihood over position.
-
-    For position-dependent intensities (or expected counts per bin), the
-    likelihood contribution of one selected event is proportional to its mark
-    intensity. This function normalizes that intensity to sum to 1 over the
-    last axis. It is the per-event observation likelihood the diagnostics
-    compare against the predictive distribution, and the quantity shown in the
-    likelihood row of the simulation and real-data figures.
-
-    The Poisson exposure term is deliberately absent. In the full binned count
-    likelihood, ``exp(-sum_c m_c(x))`` is shared by the whole bin, where
-    ``m_c(x) = lambda_c(x) * dt`` is the expected count and ``lambda_c`` is a
-    rate. Each observed event contributes one factor ``m_mark(x)``. The common
-    bin width ``dt`` cancels on normalization over position. Attaching
-    ``Poisson(1; m) = m * exp(-m)`` to every event would duplicate
-    the exposure term when a bin contains multiple spikes and would not match
-    the event-conditioned predictive-mark diagnostic.
-
-    Normalization is done in log space (``log`` + ``logsumexp``) so rows with
-    tiny but nonzero intensities keep their correct shape: e.g. intensities
-    ``[1e-20, 2e-20, 4e-20]`` normalize to ``[1/7, 2/7, 4/7]`` rather than
-    collapsing to uniform. A row with zero intensity at every position has no
-    defined event likelihood and raises rather than being assigned a shape.
-
-    Parameters
-    ----------
-    event_intensities : np.ndarray, shape (..., n_bins)
-        Position-dependent event intensities or expected counts per bin for one
-        or more events/marks. Normalization is over the last axis.
-
-    Returns
-    -------
-    likelihood : np.ndarray, shape (..., n_bins)
-        Normalized single-event likelihood over position; each row sums to 1.
-    """
-    event_intensities = np.asarray(event_intensities)
-    if event_intensities.ndim < 1 or event_intensities.shape[-1] == 0:
-        raise ValueError("event_intensities must have a non-empty position axis")
-    if not np.all(np.isfinite(event_intensities)) or np.any(event_intensities < 0.0):
-        raise ValueError("event_intensities must contain only finite nonnegative values")
-    with np.errstate(divide="ignore"):
-        log_intensity = np.log(event_intensities)
-    log_norm = logsumexp(log_intensity, axis=-1, keepdims=True)
-    degenerate = np.isneginf(log_norm)
-    if np.any(degenerate):
-        bad = np.flatnonzero(degenerate.reshape(-1))
-        raise ValueError(
-            "Cannot compute an event likelihood for intensity rows that are "
-            "zero at every position; invalid flattened row indices: "
-            f"{bad[:10].tolist()}"
-        )
-    likelihood: NDArray[np.floating] = np.exp(log_intensity - log_norm)
-    return likelihood
-
-
-def compute_predictive_mark_probabilities(
-    predictive_distribution: NDArray[np.floating],
-    mark_intensities: NDArray[np.floating],
-) -> NDArray[np.floating]:
-    """Compute the predictive mark distribution for a randomly selected event.
-
-    Raw mark intensities are first averaged over the predictive state
-    distribution and the resulting expected intensities are then normalized
-    across marks. For discrete marks ``c``, this evaluates
-
-    ``q[c] = sum_x p[x] * intensity[x, c] / sum_d sum_x p[x] * intensity[x, d]``.
-
-    Normalizing at each state before averaging would instead integrate the
-    state-conditional mark distribution against the unconditioned state
-    distribution. That omits the event-rate weighting of the latent state and
-    is only equivalent when total event intensity is constant across states.
-
-    Parameters
-    ----------
-    predictive_distribution : np.ndarray, shape (n_bins,) or (n_time, n_bins)
-        Predictive probability distribution over state bins.
-    mark_intensities : np.ndarray, shape (n_bins, n_marks)
-        Nonnegative event intensities (or expected event counts per bin) for
-        every state and discrete mark.
-
-    Returns
-    -------
-    mark_probabilities : np.ndarray, shape (n_marks,) or (n_time, n_marks)
-        Predictive mark probabilities for a randomly selected event.
-
-    Raises
-    ------
-    ValueError
-        If an input violates its shape/value contract, or if any row has zero
-        predictive event intensity (for which the conditional mark distribution
-        is undefined).
-    """
-    if predictive_distribution.ndim not in (1, 2):
-        raise ValueError("predictive_distribution must have shape (n_bins,) or (n_time, n_bins)")
-    if mark_intensities.ndim != 2 or mark_intensities.shape[0] != predictive_distribution.shape[-1]:
-        raise ValueError("mark_intensities must have shape (n_bins, n_marks)")
-    if mark_intensities.shape[1] == 0:
-        raise ValueError("mark_intensities must contain at least one mark")
-    if not np.all(np.isfinite(predictive_distribution)) or np.any(predictive_distribution < 0.0):
-        raise ValueError("predictive_distribution must contain finite nonnegative values")
-    if not np.all(np.isfinite(mark_intensities)) or np.any(mark_intensities < 0.0):
-        raise ValueError("mark_intensities must contain finite nonnegative values")
-
-    # Finite inputs can overflow in the matrix product or the subsequent
-    # across-mark reduction. Convert those arithmetic failures into explicit
-    # contract errors rather than returning zeros from division by infinity.
-    with np.errstate(over="ignore", invalid="ignore"):
-        expected_intensities: NDArray[np.floating] = predictive_distribution @ mark_intensities
-    if not np.all(np.isfinite(expected_intensities)):
-        raise ValueError("Predictive expected mark intensities are non-finite after integration")
-    if expected_intensities.ndim == 1:
-        with np.errstate(over="ignore", invalid="ignore"):
-            total_intensity = float(expected_intensities.sum())
-        if not np.isfinite(total_intensity):
-            raise ValueError("Predictive total event intensity is non-finite")
-        if total_intensity <= 0.0:
-            raise ValueError(
-                "Predictive mark distribution is undefined because total event intensity is zero"
-            )
-        mark_probabilities: NDArray[np.floating] = expected_intensities / total_intensity
-        return mark_probabilities
-
-    with np.errstate(over="ignore", invalid="ignore"):
-        total_intensity = expected_intensities.sum(axis=1, keepdims=True)
-    nonfinite_total = ~np.isfinite(total_intensity[:, 0])
-    if nonfinite_total.any():
-        bad = np.flatnonzero(nonfinite_total)
-        raise ValueError(
-            f"Predictive total event intensity is non-finite for row indices: {bad[:10].tolist()}"
-        )
-    zero_total = total_intensity[:, 0] == 0.0
-    if zero_total.any():
-        bad = np.flatnonzero(zero_total)
-        raise ValueError(
-            "Predictive mark distribution is undefined for rows with zero total "
-            f"event intensity; row indices: {bad[:10].tolist()}"
-        )
-    mark_probabilities = expected_intensities / total_intensity
-    return mark_probabilities
-
-
-def _compute_spike_event_predictive_pvalue_rank(
-    pred_chunk: NDArray[np.floating],
-    rates: NDArray[np.floating],
-    cell_ind: NDArray[np.intp],
-) -> NDArray[np.floating]:
-    """Per-event spike-probability rank for one batch of spike events.
-
-    For each event the rank is the cumulative predictive mass of cells whose
-    expected contribution is ``<=`` the firing cell's contribution:
-
-        rank[k] = sum_j contrib[k, j] where contrib[k, j] <= contrib[k, cell_ind[k]]
-
-    ``contrib`` is the predictive cell probability conditional on an event,
-    obtained by integrating the raw cell intensities in ``rates`` over the
-    predictive state distribution and then normalizing across cells (via
-    :func:`compute_predictive_mark_probabilities` on the **full**
-    ``(n_bins, n_cells)`` table, so every cell competes for the rank, not just
-    the firing one). The ``rank_atol`` slack on the ``<=`` comparison absorbs
-    BLAS reduction-order floating-point noise so equal contributions yield equal
-    ranks across platforms.
-
-    This is the memory-lean, per-event specialization used inside the chunked
-    real-data loop: it materializes only ``(n_events, n_cells)`` working arrays.
-    It is deliberately distinct from the general all-cells rank that lived in
-    ``simulation.spike_prob_rank`` (removed as it had no production caller),
-    which built a batched ``(n_time, n_cells, n_cells)`` mask; the two are not
-    merged because their memory profiles and indexing differ.
-
-    Parameters
-    ----------
-    pred_chunk : np.ndarray, shape (n_events, n_bins)
-        Predictive state distribution gathered at each event's time bin.
-    rates : np.ndarray, shape (n_bins, n_cells)
-        Expected spike rate at each position for each cell.
-    cell_ind : np.ndarray, shape (n_events,)
-        Firing cell index for each event.
-
-    Returns
-    -------
-    np.ndarray, shape (n_events,)
-        Per-event rank in ``[0, 1]``.
-    """
-    n_bins = rates.shape[0]
-    contrib_chunk = compute_predictive_mark_probabilities(pred_chunk, rates)
-    chunk_size = pred_chunk.shape[0]
-    target_contrib = contrib_chunk[np.arange(chunk_size), cell_ind]  # (n_events,)
-    rank_atol = (
-        float(np.finfo(contrib_chunk.dtype).eps * n_bins * 16) * float(np.max(contrib_chunk))
-        if contrib_chunk.size
-        else 0.0
-    )
-    rank_mask = contrib_chunk <= target_contrib[:, None] + rank_atol
-    result: NDArray[np.floating] = (contrib_chunk * rank_mask).sum(axis=1)
-    # Summation may overshoot one by a few ulps; pin only that representational
-    # error at the mathematical boundary so display code can enforce [0, 1].
-    np.minimum(result, 1.0, out=result)
-    return result
-
-
 def compute_spike_event_diagnostics_from_rates(
     predictive_posterior: NDArray[np.floating],
     rates: NDArray[np.floating],
@@ -605,9 +394,11 @@ def compute_spike_event_diagnostics_from_rates(
 ) -> SpikeEventDiagnostics:
     """Compute per-cell diagnostic metrics at spike times.
 
-    This is the core computation shared by both simulated and real data analysis.
-    It computes HPD overlap, KL divergence, and predictive p-value ranking for
-    each spike event using the firing cell's event-intensity factor.
+    Paper-side entry point shared by the simulated and real-data analyses. It
+    delegates to :func:`statespacecheck.event_diagnostics`, which computes HPD
+    overlap, KL divergence, and the rank-based predictive p-value for each spike
+    event, and optionally scatters the results into dense per-(time, cell)
+    matrices.
 
     Parameters
     ----------
@@ -652,95 +443,38 @@ def compute_spike_event_diagnostics_from_rates(
 
     Notes
     -----
-    Each event likelihood is the firing cell's intensity normalized over
-    position. If multiple spikes occur in the same time/cell bin, callers
-    should pass repeated entries in ``spike_time_ind`` and ``spike_cell_ind``
-    so every observed spike contributes one event to the returned arrays. Such
-    events have identical local diagnostics because the binned model holds the
-    predictive distribution and intensity table constant within the bin.
-
-    The predictive cell distribution used by ``event_predictive_pvalue`` is
-    event-weighted: raw cell intensities are averaged over the predictive
-    state distribution and the resulting expected intensities are normalized
-    across cells. Normalizing across cells at each state before averaging would
-    omit the state-dependent total event intensity.
+    If multiple spikes occur in the same time/cell bin, pass repeated entries in
+    ``spike_time_ind`` and ``spike_cell_ind`` so every observed spike contributes
+    one event. See :func:`statespacecheck.event_diagnostics` for how each
+    diagnostic is computed.
     """
-    n_time, n_bins = predictive_posterior.shape
-    n_cells = rates.shape[1]
-    n_spikes = len(spike_time_ind)
+    events = ssc.event_diagnostics(
+        predictive_posterior,
+        rates,
+        spike_time_ind,
+        spike_cell_ind,
+        coverage=coverage,
+        return_likelihood=include_dense_matrices,
+    )
 
-    event_hpd_overlap: NDArray[np.floating] = np.empty(n_spikes)
-    event_kl_divergence: NDArray[np.floating] = np.empty(n_spikes)
-    event_predictive_pvalue: NDArray[np.floating] = np.empty(n_spikes)
-
-    # Dense (n_time, n_cells) matrices are only allocated when requested;
-    # for real recordings with millions of time bins they can dwarf the
-    # rest of the working set, so the cache builder opts out.
-    hpd_overlap: NDArray[np.floating] | None = None
-    kl_divergence: NDArray[np.floating] | None = None
-    predictive_pvalue: NDArray[np.floating] | None = None
-    per_spike_likelihood: NDArray[np.floating] | None = None
-    if include_dense_matrices:
-        hpd_overlap = np.full((n_time, n_cells), np.nan)
-        kl_divergence = np.full((n_time, n_cells), np.nan)
-        predictive_pvalue = np.full((n_time, n_cells), np.nan)
-        per_spike_likelihood = np.empty((n_spikes, n_bins))
-
-    if n_spikes > 0:
-        # Per-event likelihood / HPD / KL / predictive p-value all need
-        # ``(S, n_bins)`` or ``(S, n_cells)`` working arrays. For
-        # full-session real-data builds (~870 K spikes × 256 bins
-        # × 8 B ≈ 1.8 GB *per array*) materializing them in one shot
-        # blows the working set even when ``include_dense_matrices=False``
-        # skips the (n_time, n_cells) outputs. Process in chunks to
-        # bound peak memory to ``_PER_SPIKE_BATCH × n_bins × 8 B`` per
-        # scratch array. ``predictive_pvalue`` is the per-event rank
-        # ``sum_i contrib[i] where contrib[i] <= contrib[j]``;
-        # computing it per event (not vectorized over unique times)
-        # bounds the rank computation's working set to
-        # ``B × n_cells``.
-        batch = max(1, _PER_SPIKE_BATCH)
-        for start in range(0, n_spikes, batch):
-            stop = min(start + batch, n_spikes)
-            sti = spike_time_ind[start:stop]
-            sci = spike_cell_ind[start:stop]
-
-            # (chunk, n_bins) predictive + event-likelihood arrays for this batch only.
-            pred_chunk = predictive_posterior[sti]
-            rates_chunk = rates[:, sci].T
-            lik_chunk = compute_normalized_event_likelihood(rates_chunk)
-
-            event_hpd_overlap[start:stop] = ssc.hpd_overlap(
-                pred_chunk, lik_chunk, coverage=coverage
-            )
-            event_kl_divergence[start:stop] = ssc.kl_divergence(pred_chunk, lik_chunk)
-
-            # Per-event spike-prob rank over the full cell set, with a
-            # reduction-order tolerance for cross-platform reproducibility.
-            event_predictive_pvalue[start:stop] = _compute_spike_event_predictive_pvalue_rank(
-                pred_chunk, rates, sci
-            )
-
-            if per_spike_likelihood is not None:
-                per_spike_likelihood[start:stop] = lik_chunk
-
-        if hpd_overlap is not None:
-            hpd_overlap[spike_time_ind, spike_cell_ind] = event_hpd_overlap
-        if kl_divergence is not None:
-            kl_divergence[spike_time_ind, spike_cell_ind] = event_kl_divergence
-        if predictive_pvalue is not None:
-            predictive_pvalue[spike_time_ind, spike_cell_ind] = event_predictive_pvalue
+    def _dense(values: NDArray[np.floating]) -> NDArray[np.floating] | None:
+        """Scatter per-event values into a NaN-filled (n_time, n_cells) matrix."""
+        if not include_dense_matrices:
+            return None
+        matrix = np.full((predictive_posterior.shape[0], rates.shape[1]), np.nan)
+        matrix[spike_time_ind, spike_cell_ind] = values
+        return matrix
 
     return SpikeEventDiagnostics(
         event_time_ind=spike_time_ind,
         event_cell_ind=spike_cell_ind,
-        event_hpd_overlap=event_hpd_overlap,
-        event_kl_divergence=event_kl_divergence,
-        event_predictive_pvalue=event_predictive_pvalue,
-        hpd_overlap=hpd_overlap,
-        kl_divergence=kl_divergence,
-        predictive_pvalue=predictive_pvalue,
-        per_spike_likelihood=per_spike_likelihood,
+        event_hpd_overlap=events.hpd_overlap,
+        event_kl_divergence=events.kl_divergence,
+        event_predictive_pvalue=events.predictive_pvalue,
+        hpd_overlap=_dense(events.hpd_overlap),
+        kl_divergence=_dense(events.kl_divergence),
+        predictive_pvalue=_dense(events.predictive_pvalue),
+        per_spike_likelihood=events.likelihood,
     )
 
 
@@ -761,7 +495,7 @@ class DiagnosticThresholds:
         KL divergence threshold; must be non-negative finite. Higher
         values indicate worse fit.
     predictive_pvalue : float
-        Spike-probability threshold; must lie in ``[0, 1]``. Defaulted
+        Predictive p-value threshold; must lie in ``[0, 1]``. Defaulted
         to 0.05 by :func:`compute_baseline_diagnostic_thresholds`. Lower
         values indicate misfit.
 
@@ -871,35 +605,18 @@ def compute_baseline_diagnostic_thresholds(
         )
         return cast("NDArray[np.floating]", arr)
 
-    # Flatten (n_time, n_cells) to 1D for quantile computation. ``np.nanquantile``
-    # returns ``np.floating``; cast to plain ``float`` to match the
-    # ``DiagnosticThresholds`` dataclass signature.
-    hpd_baseline = _get("hpd_overlap")[:baseline_end_index].ravel()
-    if np.any(np.isinf(hpd_baseline)):
-        raise ValueError(
-            "compute_baseline_diagnostic_thresholds: hpd_overlap baseline contains infinity"
-        )
-    if not np.any(np.isfinite(hpd_baseline)):
-        raise ValueError(
-            "compute_baseline_diagnostic_thresholds: hpd_overlap baseline slice "
-            f"(:{baseline_end_index}) contains no finite values; threshold "
-            "would be NaN."
-        )
-    hpd_overlap_threshold = float(np.nanquantile(hpd_baseline, BASELINE_HPD_OVERLAP_QUANTILE))
+    def _threshold(name: str, quantile: float) -> float:
+        try:
+            # float() because statespacecheck ships no py.typed, so mypy sees Any.
+            return float(ssc.baseline_threshold(_get(name)[:baseline_end_index], quantile))
+        except ValueError as err:
+            raise ValueError(
+                f"compute_baseline_diagnostic_thresholds: {name} baseline slice "
+                f"(:{baseline_end_index}): {err}"
+            ) from err
 
-    kl_baseline = _get("kl_divergence")[:baseline_end_index].ravel()
-    if np.any(np.isinf(kl_baseline)):
-        raise ValueError(
-            "compute_baseline_diagnostic_thresholds: kl_divergence baseline contains infinity; "
-            "a finite empirical threshold cannot be estimated"
-        )
-    if not np.any(np.isfinite(kl_baseline)):
-        raise ValueError(
-            "compute_baseline_diagnostic_thresholds: kl_divergence baseline slice "
-            f"(:{baseline_end_index}) contains no finite values; threshold "
-            "would be NaN."
-        )
-    kl_divergence_threshold = float(np.nanquantile(kl_baseline, BASELINE_KL_DIVERGENCE_QUANTILE))
+    hpd_overlap_threshold = _threshold("hpd_overlap", BASELINE_HPD_OVERLAP_QUANTILE)
+    kl_divergence_threshold = _threshold("kl_divergence", BASELINE_KL_DIVERGENCE_QUANTILE)
 
     # Fixed rank-statistic cutoff; not derived from the data.
     predictive_pvalue_threshold = FIXED_PREDICTIVE_PVALUE_CUTOFF

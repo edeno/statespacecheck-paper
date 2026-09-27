@@ -610,6 +610,42 @@ def _recording_configuration(payload: dict[str, Any]) -> list[MacroDefinition]:
     ]
 
 
+def _software_versions(
+    figure03_payload: dict[str, Any], figure04_payload: dict[str, Any]
+) -> list[MacroDefinition]:
+    """Build the macro for the ``statespacecheck`` version behind both figures.
+
+    Raises
+    ------
+    ValueError
+        If the two summaries, or the Figure-4 diagnostics cache, record
+        different ``statespacecheck`` versions, since the manuscript cites one.
+    """
+    recorded = {
+        "figure03 provenance.source": figure03_payload["provenance"]["source"][
+            "statespacecheck_version"
+        ],
+        "figure04 provenance.source": figure04_payload["provenance"]["source"][
+            "statespacecheck_version"
+        ],
+        "figure04 provenance.figure04_decode_cache": figure04_payload["provenance"][
+            "figure04_decode_cache"
+        ]["statespacecheck_version"],
+    }
+    if len(set(recorded.values())) != 1:
+        raise ValueError(
+            "The figure summaries record different statespacecheck versions; "
+            f"regenerate them in one environment: {recorded}"
+        )
+    return [
+        MacroDefinition(
+            "StatespacecheckVersion",
+            recorded["figure03 provenance.source"],
+            "provenance.source.statespacecheck_version (both summaries)",
+        )
+    ]
+
+
 def macro_sections(
     figure03_payload: dict[str, Any],
     figure04_payload: dict[str, Any],
@@ -630,6 +666,7 @@ def macro_sections(
         Section title and its macros, in file order.
     """
     return (
+        ("Software", _software_versions(figure03_payload, figure04_payload)),
         (
             "Simulation study (Figure 3) --- computed from the simulated data",
             _simulation_statistics(figure03_payload),

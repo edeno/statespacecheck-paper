@@ -19,6 +19,7 @@ class ScientificSourceProvenance(TypedDict):
     """Stable identities for the analysis source and locked environment."""
 
     statespacecheck_paper_version: str
+    statespacecheck_version: str
     source_tree_sha256: str
     uv_lock_sha256: str
 
@@ -66,7 +67,10 @@ def scientific_source_provenance(repo_root: Path | None = None) -> ScientificSou
     Returns
     -------
     ScientificSourceProvenance
-        Package version, source-tree SHA-256, and ``uv.lock`` SHA-256.
+        Installed ``statespacecheck-paper`` and ``statespacecheck`` versions,
+        source-tree SHA-256, and ``uv.lock`` SHA-256. The ``statespacecheck``
+        version is recorded separately because the diagnostics are computed
+        there, outside the hashed source tree.
 
     Raises
     ------
@@ -93,6 +97,7 @@ def scientific_source_provenance(repo_root: Path | None = None) -> ScientificSou
 
     return {
         "statespacecheck_paper_version": version("statespacecheck-paper"),
+        "statespacecheck_version": version("statespacecheck"),
         "source_tree_sha256": source_digest.hexdigest(),
         "uv_lock_sha256": _sha256_normalized_text(lock_path),
     }

@@ -15,13 +15,11 @@ from typing import Any
 
 import numpy as np
 import pytest
+import statespacecheck as ssc
 from numpy.typing import NDArray
 
 from statespacecheck_paper.decoding import decode_with_diagnostics
-from statespacecheck_paper.diagnostics import (
-    compute_normalized_event_likelihood,
-    compute_spike_event_diagnostics_from_rates,
-)
+from statespacecheck_paper.diagnostics import compute_spike_event_diagnostics_from_rates
 from statespacecheck_paper.figure03_generation import FIGURE03_CONDITION_IDS, conditions_by_id
 from statespacecheck_paper.figure03_protocol import STEP_SECONDS, Figure3Config
 from statespacecheck_paper.figure03_simulation import (
@@ -419,9 +417,7 @@ def test_replay_payload_slices_both_models_to_the_detail_window() -> None:
     np.testing.assert_array_equal(
         decode_display_rows(payload["unit_likelihoods"], n_bins),
         decode_display_rows(
-            encode_display_rows(
-                compute_normalized_event_likelihood(decode.diagnostic_place_fields)
-            ),
+            encode_display_rows(ssc.event_likelihood(decode.diagnostic_place_fields)),
             n_bins,
         ),
     )

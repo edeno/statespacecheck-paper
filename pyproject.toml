@@ -31,7 +31,7 @@ dependencies = [
     "matplotlib>=3.8.0",
     "seaborn>=0.13.0",
     "pandas>=2.0.0",
-    "statespacecheck",
+    "statespacecheck>=0.2.0",
     "non_local_detector @ git+https://github.com/LorenFrankLab/non_local_detector.git",
 ]
 

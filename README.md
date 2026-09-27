@@ -4,6 +4,9 @@
 
 This repository contains the source code and supplementary materials for the paper demonstrating `statespacecheck`. The paper assesses local model fit by comparing one-step predictive state distributions with normalized single-event likelihoods and by checking each spike's mark against its predictive distribution. These diagnostics help identify issues with model assumptions, enabling iterative model refinement.
 
+**Project website:** <https://edeno.github.io/statespacecheck-paper/> — an interactive
+walkthrough of the diagnostics and the paper's figures.
+
 ## Repository Structure
 
 This is a **paper/research repository** (not a library). The code is organized into:
@@ -59,7 +62,7 @@ summary. It can also run directly from the committed summaries without rerunning
 the analyses. See [the reporting policy and artifact checks](docs/figure-pipeline.md#from-summary-to-prose-the-reported-value-macros).
 
 Figures 1–3 reproduce deterministically from the seeded simulation. **Figure 4**
-uses the real hippocampal recording of [Comrie et al. 2024](https://doi.org/10.1101/2024.09.23.613567).
+uses the real hippocampal recording of [Comrie et al. 2026](https://doi.org/10.1016/j.neuron.2026.08.023).
 It is **not** included here (large). The decoder consumes five derived exports
 (linearized position, spike times, track graph, edge order/spacing), not the raw
 NWB files. They come from the Frank-lab Spyglass database;
@@ -157,16 +160,27 @@ This project may include dependencies installed directly from GitHub repositorie
 
 ## The `statespacecheck` package
 
-The diagnostics demonstrated here (KL divergence, HPD overlap, rank-based
-predictive check) are provided by the standalone
-[`statespacecheck`](https://github.com/edeno/statespacecheck) package, a
-dependency of this repository. Its API reference, terminology, and standalone
-usage examples live in its own
+The diagnostics demonstrated here (HPD overlap, the predictive check, and KL
+divergence) are provided by the standalone
+[`statespacecheck`](https://github.com/edeno/statespacecheck) package
+(`pip install statespacecheck`), a dependency of this repository. To apply them
+to your own decoder, use the package directly: `statespacecheck.event_diagnostics`
+takes a one-step predictive distribution, a table of per-unit intensities, and
+the time bin and unit of each spike, and returns all three diagnostics per spike.
+Its API reference, terminology, and usage examples live in its own
 [documentation](https://edeno.github.io/statespacecheck) — they are not
-duplicated here to avoid drift. This repository shows how the paper *applies*
-those diagnostics; for the decoder-integrated usage, see
-[`decoding.decode_with_diagnostics`](src/statespacecheck_paper/decoding.py) and
-the figure-generation modules.
+duplicated here to avoid drift.
+
+The boundary between the two repositories:
+
+- **`statespacecheck`** holds everything general: the distribution-level
+  diagnostics, the per-spike computations (single-spike likelihood, predictive
+  unit probabilities, exact predictive p-value), and threshold estimation.
+- **This repository** holds what is specific to the paper: the simulation
+  protocol and decoder used for Figure 3, the real-data decoding for Figure 4,
+  the paper's threshold choices, figure generation, the reported-value pipeline,
+  the interactive viewer, and the project website. For the decoder-integrated
+  usage, see [`decoding.decode_with_diagnostics`](src/statespacecheck_paper/decoding.py).
 
 ## Interactive viewer
 
@@ -269,7 +283,8 @@ make -C site serve NODE=/path/to/node
 ```
 
 Every push to `main` deploys the site through `.github/workflows/pages.yml` once
-CI (including the website's staleness tests) passes on that commit. The
+CI (including the website's staleness tests) passes on that commit; a CI run
+that finishes after `main` has moved on is not deployed. The
 repository's Pages source must be set to **GitHub Actions** (Settings → Pages).
 
 ## Development
@@ -346,7 +361,7 @@ uv run ruff format . && uv run ruff check . && uv run mypy src/ && uv run pytest
 
 - **`style.py`**: Shared styling (WONG palette, figure defaults, save functions)
 - **`simulation.py`**: Simulation utilities (random walks, spikes, place fields)
-- **`diagnostics.py`**: Goodness-of-fit diagnostics (HPD overlap, rank-based predictive p-value, KL); leaf layer
+- **`diagnostics.py`**: Adapter to `statespacecheck`'s per-spike diagnostics (HPD overlap, predictive p-value, KL), result containers, and the paper's threshold rule; leaf layer
 - **`decoding.py`**: General Bayesian decoder (`decode_with_diagnostics`)
 - **`plotting.py`**: Reusable plotting functions (HPD regions, diagnostic plots)
 - **`schematic.py`**: Graphical-model and Bayesian-equation diagrams (Figure 1)
