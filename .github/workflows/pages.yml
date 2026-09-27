@@ -21,8 +21,32 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  # A delayed or rerun CI build of an older commit would otherwise roll the
+  # site back, so deploy only a commit that is still main's tip. The `pages`
+  # concurrency group runs each workflow run (check and deploy) to completion
+  # before the next starts, so a newer deploy cannot land in between.
+  tip:
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    outputs:
+      current: ${{ steps.check.outputs.current }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE: ${{ github.event.workflow_run.head_sha || github.sha }}
+        run: |
+          tip=$(gh api "repos/${{ github.repository }}/commits/main" --jq .sha)
+          if [ "$CANDIDATE" = "$tip" ]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Skipping deploy of $CANDIDATE: main is now at $tip."
+            echo "current=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  deploy:
+    needs: tip
+    if: needs.tip.outputs.current == 'true'
     runs-on: ubuntu-latest
     environment:
       name: github-pages

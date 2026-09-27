@@ -2,7 +2,7 @@
 
 Figure 4 reads one derived input file for one recording epoch, `j1620210710_02_r1`
 (rat j16, 2021-07-10, run epoch `02_r1`; the spatial-bandit data of
-[Comrie et al. 2024](https://doi.org/10.1101/2024.09.23.613567)). This page records
+[Comrie et al. 2026](https://doi.org/10.1016/j.neuron.2026.08.023)). This page records
 which Frank-lab Spyglass database entries it comes from, how that was verified,
 and what is publicly available. The fetch code is
 `src/statespacecheck_paper/spyglass_data.py`.

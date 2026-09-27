@@ -27,8 +27,10 @@ families**:
 - **General layers** (reused by every figure): `simulation` (random walks,
   place-field rates, spike simulators), `decoding` (the Bayesian filter
   `decode_with_diagnostics` + its per-window override mechanism), and
-  `diagnostics` (the HPD-overlap / rank-based predictive-p-value / KL-divergence
-  computation and containers). `diagnostics` is the dependency-graph leaf.
+  `diagnostics` (containers and the paper's threshold rule around the
+  per-spike HPD-overlap / predictive-p-value / KL-divergence computation, which
+  lives in the external `statespacecheck` package). `diagnostics` is the
+  dependency-graph leaf.
 - **Per-figure families**: `figure01_generation`,
   `figure02_{panels,generation}`, `figure03_{protocol,simulation,summary,plotting,generation}` and
   `figure04_{cache,workflow,layout,generation}`. Each figure is a small set of
@@ -299,7 +301,7 @@ $\Lambda(x)$.
   `scripts/convert_figure04_pickles.py` converts those and checks the result.
 
   The input comes from the Frank-lab Spyglass database (the recording of
-  [Comrie et al. 2024](https://doi.org/10.1101/2024.09.23.613567)).
+  [Comrie et al. 2026](https://doi.org/10.1016/j.neuron.2026.08.023)).
   [data-lineage.md](data-lineage.md) records the exact Spyglass entries and
   processing steps, the verification against the files the figure used, and which
   of them are public (DANDI dandiset
@@ -371,7 +373,9 @@ the operator and threshold in one record prevents consumers from guessing
 whether a boundary is strict or inclusive.
 
 Both summaries contain `provenance.source`, with the installed
-`statespacecheck-paper` version, a deterministic SHA-256 digest of every Python
+`statespacecheck-paper` and `statespacecheck` versions (the diagnostics are
+computed in `statespacecheck`, outside the hashed source tree; the emitter
+refuses summaries that disagree on it), a deterministic SHA-256 digest of every Python
 file under `src/statespacecheck_paper`, and the SHA-256 digest of `uv.lock`.
 The digest excludes timestamps, generated outputs, and absolute paths, so clean
 checkouts of identical source produce the same identity.
