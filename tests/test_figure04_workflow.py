@@ -86,7 +86,7 @@ def _synthetic_recording() -> NeuralRecordingData:
 def _ds(values: np.ndarray) -> xr.Dataset:
     """A tiny decoder-result Dataset carrying a ``time`` coordinate."""
     return xr.Dataset(
-        {"filter": ("time", values)},
+        {"acausal_posterior": ("time", values)},
         coords={"time": np.arange(len(values), dtype=float)},
     )
 
@@ -264,7 +264,7 @@ class TestFigure4DecodeResults:
         # coordinate, so require it at construction.
         with pytest.raises(ValueError, match="must carry a 'time' coordinate"):
             Figure4DecodeResults(
-                continuous_results=xr.Dataset({"filter": ("time", np.zeros(8))}),
+                continuous_results=xr.Dataset({"acausal_posterior": ("time", np.zeros(8))}),
                 continuous_fragmented_results=_ds(np.zeros(8)),
                 continuous_diagnostics=_diagnostics(np.array([0.5])),
                 continuous_fragmented_diagnostics=_diagnostics(np.array([0.5])),
@@ -280,11 +280,11 @@ class TestFigure4DecodeResults:
         with pytest.raises(ValueError, match="different 'time' coordinates"):
             Figure4DecodeResults(
                 continuous_results=xr.Dataset(
-                    {"filter": ("time", np.zeros(8))},
+                    {"acausal_posterior": ("time", np.zeros(8))},
                     coords={"time": np.arange(8, dtype=float)},
                 ),
                 continuous_fragmented_results=xr.Dataset(
-                    {"filter": ("time", np.zeros(8))},
+                    {"acausal_posterior": ("time", np.zeros(8))},
                     coords={"time": np.arange(8, dtype=float) + 100.0},
                 ),
                 continuous_diagnostics=_diagnostics(np.array([0.5])),
@@ -465,7 +465,9 @@ class TestPrepareRenderData:
         # The recording and typed decode results are threaded through by attribute.
         assert render_data.recording.spike_times[0].shape == (2,)
         np.testing.assert_array_equal(
-            render_data.decode_results.continuous_fragmented_results["filter"].to_numpy(),
+            render_data.decode_results.continuous_fragmented_results[
+                "acausal_posterior"
+            ].to_numpy(),
             np.ones(8),
         )
         assert render_data.decode_results.spike_counts.shape == (8, 2)

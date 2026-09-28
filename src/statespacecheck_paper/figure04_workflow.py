@@ -74,7 +74,7 @@ class Figure4DecodeResults:
     Parameters
     ----------
     continuous_results, continuous_fragmented_results : xr.Dataset
-        Decoder outputs (filter / predictive / log-likelihood) per model.
+        Decoder outputs (smoothed and predictive posteriors, log-likelihood) per model.
     continuous_diagnostics, continuous_fragmented_diagnostics : SpikeEventDiagnostics
         Per-spike diagnostics per model.
     spike_counts : np.ndarray, shape (n_time, n_cells)
@@ -329,7 +329,9 @@ def _fit_and_decode(
     validate_provenance_defaults(continuous_model, continuous_fragmented_model, provenance)
 
     print(f"Decoding {len(time)} time points...")
-    decode_outputs = ["filter", "predictive_posterior", "log_likelihood"]
+    # The smoothed (acausal) posterior is always returned; the diagnostics and
+    # figure read only the prediction and the log-likelihood besides it.
+    decode_outputs = ["predictive_posterior", "log_likelihood"]
     continuous_results = continuous_model.predict(
         spike_times=spike_times_list,
         time=time,
