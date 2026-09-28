@@ -27,7 +27,6 @@ from statespacecheck_paper.decoding import (
 )
 from statespacecheck_paper.diagnostics import DecodingDiagnostics
 from statespacecheck_paper.figure03_protocol import (
-    PHASE_LABELS,
     Figure3Config,
     PhaseBoundary,
     compute_replay_step_window,
@@ -146,13 +145,9 @@ def _single_out_and_back_sweep(
 class Figure3SimulationResult:
     """Result of :func:`run_figure03_simulation`.
 
-    Promoted from ``TypedDict`` to frozen dataclass so the load-bearing
-    length invariants — one ``phase_labels`` entry per phase, boundaries
-    delimit those phases, ``spike_counts`` and ``true_position`` share the timeline,
-    and the final boundary equals the timeline length — are checked at
-    construction. Without this, adding or removing a phase silently
-    changes downstream lengths and the figure-3 pipeline would run with
-    miscounted indices.
+    A frozen dataclass so the timeline invariants — ``spike_counts``,
+    ``true_position``, and the diagnostics share one timeline — are checked
+    at construction. The phases are ``config.phase_boundaries``.
     """
 
     config: Figure3Config
@@ -160,52 +155,17 @@ class Figure3SimulationResult:
     true_position: NDArray[np.floating]
     spike_counts: NDArray[np.int_]
     diagnostics: DecodingDiagnostics
-    # Sequence fields are declared as tuple so ``frozen=True``'s
-    # immutability extends to the contents — list would leave
-    # ``sim.phase_labels.append(...)`` and ``sim.phase_boundaries[-1] = 9999``
-    # as silent invariant-breakers. Callers passing a list at construction
-    # are coerced in __post_init__.
-    phase_labels: tuple[str, ...]
-    phase_boundaries: tuple[int, ...]
     # Fixed sparse-population field centers; let the raster sort all cells by
     # location without deriving a field center from the realized trajectory.
     sparse_place_field_centers: tuple[float, ...] = ()
 
     def __post_init__(self) -> None:
-        """Enforce length and timeline-consistency invariants.
-
-        Also coerces the two sequence fields to tuple (in case the
-        caller supplied a list) and validates each diagnostics array shares
-        the spike timeline.
-        """
-        # Coerce list -> tuple so frozen=True's immutability extends to
-        # the contents. ``object.__setattr__`` because frozen blocks the
-        # normal binding.
-        if not isinstance(self.phase_labels, tuple):
-            object.__setattr__(self, "phase_labels", tuple(self.phase_labels))
-        if not isinstance(self.phase_boundaries, tuple):
-            object.__setattr__(self, "phase_boundaries", tuple(self.phase_boundaries))
-
-        if self.phase_labels != PHASE_LABELS:
-            raise ValueError(
-                f"phase_labels must equal PHASE_LABELS in order; "
-                f"got {list(self.phase_labels)!r} vs canonical {list(PHASE_LABELS)!r}"
-            )
-        if len(self.phase_boundaries) != len(self.phase_labels):
-            raise ValueError(
-                f"phase_boundaries length ({len(self.phase_boundaries)}) "
-                f"must equal phase_labels length ({len(self.phase_labels)})."
-            )
+        """Check that the spikes and diagnostics share the position timeline."""
         n_time = self.true_position.shape[0]
         if self.spike_counts.shape[0] != n_time:
             raise ValueError(
                 f"spike_counts timeline ({self.spike_counts.shape[0]}) must equal "
                 f"true_position timeline ({n_time})."
-            )
-        if self.phase_boundaries[-1] != n_time:
-            raise ValueError(
-                f"final phase boundary ({self.phase_boundaries[-1]}) must "
-                f"equal true_position timeline ({n_time})."
             )
         # ``DecodingDiagnostics.__post_init__`` enforces shape agreement across
         # its own fields; cross-check that ``DecodingDiagnostics``'s leading dim
@@ -241,33 +201,26 @@ class Figure3RateTables:
         Sparse-window rates: the quiet ordinary ensemble
         (``sparse_control_ordinary_rate_scale``) plus the fully active sparse
         population.
-    baseline_sparse_firing_rates : np.ndarray, shape (n_bins, sparse_cell_count)
-        Sparse-population columns at the baseline gain; the shared block
-        appended to ``baseline_firing_rates``/``remapped_firing_rates``/``replay_firing_rates``.
     """
 
     baseline_firing_rates: NDArray[np.floating]
     remapped_firing_rates: NDArray[np.floating]
     replay_firing_rates: NDArray[np.floating]
     sparse_population_firing_rates: NDArray[np.floating]
-    baseline_sparse_firing_rates: NDArray[np.floating]
 
 
 def _record_phase(
     phases: list[tuple[NDArray[np.floating], NDArray[np.int_]]],
-    phase_labels: list[str],
-    label: str,
     x: NDArray[np.floating],
     sp: NDArray[np.int_],
 ) -> float:
-    """Append one phase with an explicit label; return its end position.
+    """Append one phase; return its end position.
 
     The returned value is the next phase's starting position. ``x_last``
     trajectory continuity between phases is intentional and threaded
     explicitly by the caller, never inferred from phase order or a generic
     accumulator.
     """
-    phase_labels.append(label)
     phases.append((x, sp))
     return float(x[-1])
 
@@ -571,7 +524,6 @@ def build_figure03_rate_tables(
         remapped_firing_rates=remapped_firing_rates,
         replay_firing_rates=replay_firing_rates,
         sparse_population_firing_rates=sparse_population_firing_rates,
-        baseline_sparse_firing_rates=baseline_sparse_firing_rates,
     )
 
 
@@ -646,10 +598,10 @@ def run_figure03_simulation(
     -------
     Figure3SimulationResult
         Dataclass with attributes ``config``, ``position_bins``, ``true_position``,
-        ``spike_counts``, ``diagnostics``, ``phase_labels``, ``phase_boundaries``,
-        and ``sparse_place_field_centers`` (fixed centers for the appended
-        sparse-population cells). Access via attribute (``sim.diagnostics``),
-        not subscript.
+        ``spike_counts``, ``diagnostics``, and ``sparse_place_field_centers``
+        (fixed centers for the appended sparse-population cells). Access via
+        attribute (``sim.diagnostics``), not subscript. The phases are
+        delimited by ``config.phase_boundaries``.
     """
     if config is None:
         config = Figure3Config()
@@ -664,7 +616,6 @@ def run_figure03_simulation(
     transition_matrix = gaussian_transition_matrix(position_bins, config.prediction_step_std)
 
     phases: list[tuple[NDArray[np.floating], NDArray[np.int_]]] = []
-    phase_labels: list[str] = []
     x_last: float = 0.0
     bnd = config.phase_boundaries
 
@@ -685,24 +636,24 @@ def run_figure03_simulation(
     # 1. Clean baseline
     n = bnd[PhaseBoundary.REMAP_START]
     x = _walk(n, x_last)
-    x_last = _record_phase(phases, phase_labels, "Clean Baseline", x, _spikes(x))
+    x_last = _record_phase(phases, x, _spikes(x))
 
     # 2. Remap misfit — spike *generation* is normal position-tuned; only the
     #    decoder uses randomly scrambled PF centers during this window (via
     #    ``DecoderOverrideWindow`` below).
     n = bnd[PhaseBoundary.REMAP_END] - bnd[PhaseBoundary.REMAP_START]
     x = _walk(n, x_last)
-    x_last = _record_phase(phases, phase_labels, "Remap Misfit", x, _spikes(x))
+    x_last = _record_phase(phases, x, _spikes(x))
 
     # 3. Clean recovery 1
     n = bnd[PhaseBoundary.RECOVERY1_END] - bnd[PhaseBoundary.REMAP_END]
     x = _walk(n, x_last)
-    x_last = _record_phase(phases, phase_labels, "Clean Recovery", x, _spikes(x))
+    x_last = _record_phase(phases, x, _spikes(x))
 
     # 4. History-dependent firing misfit
     n = bnd[PhaseBoundary.HIST_DEP_END] - bnd[PhaseBoundary.RECOVERY1_END]
     x, sp = simulate_history_dependent_phase(n, x_last, config, place_field_centers, rng)
-    x_last = _record_phase(phases, phase_labels, "History-Dependent Firing", x, sp)
+    x_last = _record_phase(phases, x, sp)
 
     # 5. Clean recovery 2 — with the embedded replay control. Local
     #    (within-phase) replay bounds derived from the shared global
@@ -713,17 +664,17 @@ def run_figure03_simulation(
     r0 = r0_global - bnd[PhaseBoundary.HIST_DEP_END]
     r1 = r1_global - bnd[PhaseBoundary.HIST_DEP_END]
     x, sp = simulate_replay_phase(n, r0, r1, x_last, config, place_field_centers, rng)
-    x_last = _record_phase(phases, phase_labels, "Clean Recovery", x, sp)
+    x_last = _record_phase(phases, x, sp)
 
     # 6. Drift misfit — persistent-velocity walk; decoder assumes memoryless.
     n = bnd[PhaseBoundary.DRIFT_END] - bnd[PhaseBoundary.RECOVERY2_END]
     x = simulate_drift_phase(n, x_last, config, rng)
-    x_last = _record_phase(phases, phase_labels, "Drift Misfit", x, _spikes(x))
+    x_last = _record_phase(phases, x, _spikes(x))
 
     # 7. Clean recovery 3 — ends by approaching the sparse-population location.
     n = bnd[PhaseBoundary.RECOVERY3_END] - bnd[PhaseBoundary.DRIFT_END]
     x = simulate_sparse_approach_phase(n, x_last, config, rng)
-    x_last = _record_phase(phases, phase_labels, "Clean Recovery", x, _spikes(x))
+    x_last = _record_phase(phases, x, _spikes(x))
 
     # 8. Sparse population — the animal remains immobile at the location while
     #    the ordinary ensemble becomes quiet. The baseline transition is still
@@ -738,7 +689,7 @@ def run_figure03_simulation(
         config.place_field_rate_scale * config.sparse_control_ordinary_rate_scale,
         rng,
     )
-    _record_phase(phases, phase_labels, "Sparse Population", x, sparse_normal_spikes)
+    _record_phase(phases, x, sparse_normal_spikes)
 
     true_position = np.concatenate([p_x for p_x, _ in phases], axis=0)
     spike_counts = np.vstack([p_s for _, p_s in phases])  # (n_time, n_normal_cells)
@@ -787,15 +738,11 @@ def run_figure03_simulation(
         baseline_firing_rates=rate_tables.baseline_firing_rates,
     )
 
-    boundaries = np.cumsum([len(p_x) for p_x, _ in phases]).tolist()
-
     return Figure3SimulationResult(
         config=config,
         position_bins=position_bins,
         true_position=true_position,
         spike_counts=spike_counts,
         diagnostics=diagnostics,
-        phase_labels=tuple(phase_labels),
-        phase_boundaries=tuple(boundaries),
         sparse_place_field_centers=tuple(float(c) for c in sparse_centers),
     )

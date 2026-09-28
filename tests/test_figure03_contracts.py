@@ -63,8 +63,6 @@ def test_simulation_result_fields() -> None:
         "true_position",
         "spike_counts",
         "diagnostics",
-        "phase_labels",
-        "phase_boundaries",
         "sparse_place_field_centers",
     ]
 
@@ -75,7 +73,6 @@ def test_rate_tables_fields() -> None:
         "remapped_firing_rates",
         "replay_firing_rates",
         "sparse_population_firing_rates",
-        "baseline_sparse_firing_rates",
     ]
 
 
