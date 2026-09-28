@@ -115,6 +115,34 @@ def add_scalebar(
     )
 
 
+def _state_bins_with_any_value(
+    distribution_da: xr.DataArray, time_chunk: int = 16_384
+) -> NDArray[np.bool_]:
+    """Return which state bins hold a non-NaN value at any time.
+
+    Equivalent to the mask ``distribution_da.dropna("state_bins", how="all")``
+    keeps, but scanned in time chunks so a memory-mapped session is never
+    copied whole.
+
+    Parameters
+    ----------
+    distribution_da : xr.DataArray, dims (time, state_bins)
+        Distribution over state bins at each time.
+    time_chunk : int, default 16_384
+        Rows scanned per step.
+
+    Returns
+    -------
+    NDArray[np.bool_], shape (n_state_bins,)
+        True where the bin has at least one non-NaN value.
+    """
+    values = distribution_da.transpose("time", "state_bins").data
+    has_value = np.zeros(values.shape[1], dtype=bool)
+    for start in range(0, values.shape[0], time_chunk):
+        has_value |= ~np.isnan(values[start : start + time_chunk]).all(axis=0)
+    return has_value
+
+
 def plot_distribution_heatmap(
     ax: Axes,
     distribution_da: xr.DataArray,
@@ -143,8 +171,11 @@ def plot_distribution_heatmap(
     cmap : str, default CMAP_POSTERIOR
         Colormap for the heatmap.
     """
-    # Drop NaN bins (spatial bins that are always NaN)
-    distribution_da = distribution_da.dropna("state_bins", how="all")
+    # Drop NaN bins (spatial bins that are NaN at every time of the session),
+    # then keep only the plotted window: the session can be hundreds of
+    # thousands of memory-mapped rows, so no session-sized copy is made.
+    has_value = _state_bins_with_any_value(distribution_da)
+    window_da = distribution_da.isel(time=time_slice_ind, state_bins=has_value)
 
     # Plot distribution heatmap. Multi-state models encode
     # (state, position) in state_bins as a MultiIndex; single-state
@@ -152,9 +183,9 @@ def plot_distribution_heatmap(
     # coord. Branch on the index type so a malformed MultiIndex fails
     # loud, and single-state data plots against state_bins directly
     # rather than dying inside xarray on a missing ``position``.
-    if isinstance(distribution_da.indexes["state_bins"], pd.MultiIndex):
+    if isinstance(window_da.indexes["state_bins"], pd.MultiIndex):
         try:
-            unstacked = distribution_da.unstack("state_bins")
+            unstacked = window_da.unstack("state_bins")
         except (ValueError, KeyError, TypeError) as e:
             raise ValueError(
                 "Failed to unstack state_bins MultiIndex on the "
@@ -164,9 +195,8 @@ def plot_distribution_heatmap(
         marginalized = (
             unstacked.sum("state", skipna=False) if "state" in unstacked.dims else unstacked
         )
-        sliced_data = marginalized.isel(time=time_slice_ind)
-        if sliced_data.notnull().any():
-            sliced_data.plot(
+        if marginalized.notnull().any():
+            marginalized.plot(
                 x="time",
                 y="position",
                 ax=ax,
@@ -181,9 +211,8 @@ def plot_distribution_heatmap(
         # Single-state model: no separate ``position`` axis. Plot
         # against the state_bins axis directly so the figure still
         # renders something meaningful.
-        sliced_data = distribution_da.isel(time=time_slice_ind)
-        if sliced_data.notnull().any():
-            sliced_data.plot(
+        if window_da.notnull().any():
+            window_da.plot(
                 x="time",
                 ax=ax,
                 add_colorbar=False,
