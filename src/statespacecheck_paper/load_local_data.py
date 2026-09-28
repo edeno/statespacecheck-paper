@@ -313,6 +313,16 @@ def write_npz(path: str | Path, arrays: Mapping[str, NDArray[np.generic]]) -> Pa
     return path
 
 
+def _download_hint(data_path: Path, animal_date_epoch: str) -> str:
+    """Return a clause giving the download command for the published epoch, else ``""``."""
+    if f"{animal_date_epoch}{_INPUTS_SUFFIX}" != FIGURE04_INPUTS_FILE:
+        return ""
+    return (
+        "download it from Zenodo with `uv run python scripts/download_figure04_inputs.py "
+        f"--data-path {data_path}`, or "
+    )
+
+
 def load_neural_recording_from_files(
     data_path: str | Path,
     animal_date_epoch: str,
@@ -341,7 +351,8 @@ def load_neural_recording_from_files(
     FileNotFoundError
         If ``data_path`` or the input file is missing. This real hippocampal
         recording is not distributed with the repository (see the README); the
-        error names what is missing and how to point the loader at the data.
+        error names what is missing, how to point the loader at the data, and,
+        for the published epoch, the command that downloads it.
     """
     data_path = Path(data_path)
 
@@ -349,7 +360,8 @@ def load_neural_recording_from_files(
     if not data_path.is_dir():
         raise FileNotFoundError(
             f"Data directory not found: {data_path}. The real hippocampal recording is "
-            "not included in the repository (see the README); place the exported files "
+            "not included in the repository (see the README); "
+            f"{_download_hint(data_path, animal_date_epoch)}place the exported files "
             "under this directory or set STATESPACECHECK_DATA_PATH to their location."
         )
     missing = [
@@ -361,9 +373,8 @@ def load_neural_recording_from_files(
         raise FileNotFoundError(
             f"Missing {len(missing)} expected export file(s) for '{animal_date_epoch}' in "
             f"{data_path}: {missing}. This recording is not distributed with the repository "
-            "(see the README); download it with `uv run python "
-            "scripts/download_figure04_inputs.py`, or check STATESPACECHECK_DATA_PATH and "
-            "STATESPACECHECK_ANIMAL_DATE_EPOCH."
+            f"(see the README); {_download_hint(data_path, animal_date_epoch)}check "
+            "STATESPACECHECK_DATA_PATH and STATESPACECHECK_ANIMAL_DATE_EPOCH."
         )
 
     with np.load(data_path / f"{animal_date_epoch}{_INPUTS_SUFFIX}", allow_pickle=False) as arrays:

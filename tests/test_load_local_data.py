@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import pickle
+import re
 import shutil
 import stat
 import threading
@@ -127,9 +128,22 @@ def test_spike_arrays_are_copied_and_leave_caller_writable() -> None:
     assert not recording.spike_times[0].flags.writeable
 
 
+_PUBLISHED_EPOCH = FIGURE04_INPUTS_FILE.removesuffix("_figure04_inputs.npz")
+
+
+def _download_command(message: str) -> str | None:
+    """The download command a missing-data error suggests, if any."""
+    match = re.search(r"`uv run python (scripts/\S+\.py) --data-path (.+?)`", message)
+    return None if match is None else f"{match[1]} {match[2]}"
+
+
 def test_missing_directory_raises_actionable_error(tmp_path: Path) -> None:
-    with pytest.raises(FileNotFoundError, match="Data directory not found"):
-        load_neural_recording_from_files(tmp_path / "does_not_exist", "j1620210710_02_r1")
+    # On a fresh clone data/ does not exist (it is gitignored), so this is the
+    # error a new user sees first; it names the download into that directory.
+    data = tmp_path / "does_not_exist"
+    with pytest.raises(FileNotFoundError, match="Data directory not found") as error:
+        load_neural_recording_from_files(data, _PUBLISHED_EPOCH)
+    assert _download_command(str(error.value)) == f"scripts/download_figure04_inputs.py {data}"
 
 
 def test_missing_export_files_lists_what_is_absent(tmp_path: Path) -> None:
@@ -137,8 +151,23 @@ def test_missing_export_files_lists_what_is_absent(tmp_path: Path) -> None:
     # missing file rather than surfacing a bare np.load traceback.
     with pytest.raises(
         FileNotFoundError, match="Missing 1 expected export file.*_figure04_inputs.npz"
-    ):
-        load_neural_recording_from_files(tmp_path, "j1620210710_02_r1")
+    ) as error:
+        load_neural_recording_from_files(tmp_path, _PUBLISHED_EPOCH)
+    command = _download_command(str(error.value))
+    assert command == f"scripts/download_figure04_inputs.py {tmp_path}"
+    assert (Path(__file__).resolve().parents[1] / command.split()[0]).is_file()
+
+
+@pytest.mark.parametrize("directory_exists", [True, False])
+def test_download_is_not_suggested_for_another_epoch(
+    tmp_path: Path, directory_exists: bool
+) -> None:
+    """The download fetches only the published epoch, so it would not fix the error."""
+    data = tmp_path if directory_exists else tmp_path / "does_not_exist"
+    with pytest.raises(FileNotFoundError) as error:
+        load_neural_recording_from_files(data, "rat20200101_02_r1")
+    assert _download_command(str(error.value)) is None
+    assert "Zenodo" not in str(error.value)
 
 
 # --- .npz input file ----------------------------------------------------------
