@@ -110,9 +110,13 @@ def test_all_place_field_rates_match_decoder_tables_and_center_order() -> None:
     )
 
 
+# Phase boundaries ending at step 10, matching the tiny result timelines below.
+_TEN_STEP_CONFIG = Figure3Config(phase_boundaries=(1, 2, 3, 4, 5, 6, 7, 10))
+
+
 class TestFigure3SimulationResultDataclass:
-    """The ``TypedDict`` → frozen-dataclass conversion brought length
-    validation. Cover the success contract and the failure modes."""
+    """Construction checks that spikes, true position, and diagnostics share
+    one timeline ending at the final phase boundary."""
 
     def test_valid_construction_succeeds(self) -> None:
         """Happy path: a well-formed Figure3SimulationResult constructs cleanly
@@ -121,22 +125,33 @@ class TestFigure3SimulationResultDataclass:
         n_bins = 5
         n_time = 10
         sim = Figure3SimulationResult(
-            config=Figure3Config(),
+            config=_TEN_STEP_CONFIG,
             position_bins=np.linspace(0.0, 100.0, n_bins),
             true_position=np.zeros(n_time),
             spike_counts=np.zeros((n_time, 1), dtype=np.int_),
             diagnostics=_zero_diagnostics(n_time=n_time, n_bins=n_bins),
         )
-        # Attribute access works (the migration test).
         assert sim.position_bins.shape == (n_bins,)
         assert sim.true_position.shape == (n_time,)
+
+    def test_final_boundary_must_equal_timeline_length(self) -> None:
+        n_bins = 5
+        n_time = 11
+        with pytest.raises(ValueError, match="final phase boundary"):
+            Figure3SimulationResult(
+                config=_TEN_STEP_CONFIG,
+                position_bins=np.linspace(0.0, 100.0, n_bins),
+                true_position=np.zeros(n_time),
+                spike_counts=np.zeros((n_time, 1), dtype=np.int_),
+                diagnostics=_zero_diagnostics(n_time=n_time, n_bins=n_bins),
+            )
 
     def test_spikes_and_x_true_timeline_mismatch_raises(self) -> None:
         n_bins = 5
         n_time = 10
         with pytest.raises(ValueError, match="spike_counts timeline"):
             Figure3SimulationResult(
-                config=Figure3Config(),
+                config=_TEN_STEP_CONFIG,
                 position_bins=np.linspace(0.0, 100.0, n_bins),
                 true_position=np.zeros(n_time),
                 spike_counts=np.zeros((n_time + 1, 1), dtype=np.int_),  # off by one
@@ -155,7 +170,7 @@ class TestFigure3SimulationResultDataclass:
         bad_metrics = _zero_diagnostics(n_time=n_time + 1, n_bins=n_bins)
         with pytest.raises(ValueError, match=r"diagnostics.posterior leading dim"):
             Figure3SimulationResult(
-                config=Figure3Config(),
+                config=_TEN_STEP_CONFIG,
                 position_bins=np.linspace(0.0, 100.0, n_bins),
                 true_position=np.zeros(n_time),
                 spike_counts=np.zeros((n_time, 1), dtype=np.int_),

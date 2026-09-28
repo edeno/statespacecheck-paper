@@ -146,8 +146,10 @@ class Figure3SimulationResult:
     """Result of :func:`run_figure03_simulation`.
 
     A frozen dataclass so the timeline invariants — ``spike_counts``,
-    ``true_position``, and the diagnostics share one timeline — are checked
-    at construction. The phases are ``config.phase_boundaries``.
+    ``true_position``, and the diagnostics share one timeline, which ends at
+    the final ``config.phase_boundaries`` entry — are checked at construction.
+    Every per-phase summary indexes time through those boundaries, so a phase
+    simulated one step short or long would otherwise shift them silently.
     """
 
     config: Figure3Config
@@ -160,8 +162,13 @@ class Figure3SimulationResult:
     sparse_place_field_centers: tuple[float, ...] = ()
 
     def __post_init__(self) -> None:
-        """Check that the spikes and diagnostics share the position timeline."""
+        """Check that the spikes and diagnostics share the phases' timeline."""
         n_time = self.true_position.shape[0]
+        if self.config.phase_boundaries[-1] != n_time:
+            raise ValueError(
+                f"final phase boundary ({self.config.phase_boundaries[-1]}) must equal the "
+                f"true_position timeline ({n_time})."
+            )
         if self.spike_counts.shape[0] != n_time:
             raise ValueError(
                 f"spike_counts timeline ({self.spike_counts.shape[0]}) must equal "
