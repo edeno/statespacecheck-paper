@@ -25,6 +25,10 @@ from scipy.stats import norm
 from statespacecheck_paper.simulation import normalize
 from statespacecheck_paper.style import COLORS
 
+# Quantile of the simulated log predictive densities below which the
+# predictive-check histogram crops its sparse left tail
+HISTOGRAM_LOWER_QUANTILE = 0.001
+
 # =============================================================================
 # Shared Example Data
 # =============================================================================
@@ -720,16 +724,27 @@ def plot_ppc_density_histogram(ax: Axes, data: Figure2ExampleData) -> None:
     """Histogram of observed vs simulated log predictive density.
 
     Uses the exact Monte Carlo samples computed in create_shared_example().
+    The simulated values have a long, sparse left tail (replicated marks far
+    from the predictive), so the axis shows the samples above their
+    ``HISTOGRAM_LOWER_QUANTILE`` quantile, and always the observed value. Bar
+    heights are densities over all samples, so the bars' total area is the
+    fraction of samples shown.
     """
     # Use exact values from Monte Carlo simulation
     simulated_log_pred = data.simulated_log_pred
     observed_log_pred = data.observed_log_pred
 
+    n_bins = 30
+    lower = min(float(np.quantile(simulated_log_pred, HISTOGRAM_LOWER_QUANTILE)), observed_log_pred)
+    upper = max(float(np.max(simulated_log_pred)), observed_log_pred)
+    bin_width = (upper - lower) / n_bins
+
     # Histogram of simulated values (from predictive distribution)
     ax.hist(
         simulated_log_pred,
-        bins=30,
-        density=True,
+        bins=n_bins,
+        range=(lower, upper),
+        weights=np.full(simulated_log_pred.size, 1.0 / (simulated_log_pred.size * bin_width)),
         alpha=0.5,
         color=COLORS["predictive"],
         edgecolor="none",

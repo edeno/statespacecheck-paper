@@ -137,6 +137,41 @@ def test_figure02_create_shared_example_samples_y_tilde_with_noise() -> None:
         replace(data, p_value=float("nan"))
 
 
+@pytest.mark.parametrize("observed_in_tail", [False, True])
+def test_figure02_density_histogram_crops_the_sparse_tail(observed_in_tail: bool) -> None:
+    """The histogram drops the simulated values below the crop quantile but
+    keeps the observed value in view, and its bars stay densities over all
+    samples (their area is the fraction of samples shown)."""
+    import matplotlib.pyplot as plt
+
+    from statespacecheck_paper.figure02_panels import (
+        HISTOGRAM_LOWER_QUANTILE,
+        create_shared_example,
+        plot_ppc_density_histogram,
+    )
+
+    data = create_shared_example(np.random.default_rng(42))
+    simulated = data.simulated_log_pred
+    if observed_in_tail:
+        data = replace(data, observed_log_pred=float(simulated.min()) - 1.0)
+    lower = min(np.quantile(simulated, HISTOGRAM_LOWER_QUANTILE), data.observed_log_pred)
+
+    fig, ax = plt.subplots()
+    try:
+        plot_ppc_density_histogram(ax, data)
+        x_min, x_max = ax.get_xlim()
+        bars = ax.patches
+        area = sum(bar.get_width() * bar.get_height() for bar in bars)
+    finally:
+        plt.close(fig)
+
+    assert x_min <= data.observed_log_pred <= x_max
+    assert bars[0].get_x() == pytest.approx(lower)
+    if not observed_in_tail:
+        assert x_min > simulated.min(), "the sparse left tail was not cropped"
+    assert area == pytest.approx(np.mean(simulated >= lower))
+
+
 def test_figure02_panels_module_is_load_bearing() -> None:
     """After the figure-02 extraction, the generation recipe imports its panel
     renderers from ``statespacecheck_paper.figure02_panels``. A revert
