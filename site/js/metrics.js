@@ -103,6 +103,11 @@ export function klDivergence(predictive, likelihood) {
  * f_pred(c) = Σ_x P(x) λ_c(x) / Σ_d Σ_x P(x) λ_d(x).
  */
 export function predictiveCellProbabilities(predictive, rates) {
+  return cellProbabilitiesAndTotal(predictive, rates).probabilities;
+}
+
+/** The cell probabilities and the total expected intensity Σ_d Σ_x P(x) λ_d(x). */
+function cellProbabilitiesAndTotal(predictive, rates) {
   const nCells = rates[0].length;
   const expected = new Array(nCells).fill(0);
   for (let x = 0; x < predictive.length; x += 1) {
@@ -110,7 +115,7 @@ export function predictiveCellProbabilities(predictive, rates) {
   }
   const total = sum(expected);
   if (!(total > 0)) throw new RangeError("predictive event intensity is zero");
-  return expected.map((v) => v / total);
+  return { probabilities: expected.map((v) => v / total), total };
 }
 
 /**
@@ -123,12 +128,8 @@ export function predictiveCellProbabilities(predictive, rates) {
  * nBins * 1e-292; the page's intensities are never that small.
  */
 export function predictivePvalue(predictive, rates, cell) {
-  const probabilities = predictiveCellProbabilities(predictive, rates);
+  const { probabilities, total } = cellProbabilitiesAndTotal(predictive, rates);
   const nBins = predictive.length;
-  let total = 0;
-  for (let x = 0; x < nBins; x += 1) {
-    for (const rate of rates[x]) total += predictive[x] * rate;
-  }
   const bound =
     probabilities[cell] * (1 + FLOAT64_EPS * nBins * 16) +
     16 * (nBins * (Number.MIN_VALUE / total) + Number.MIN_VALUE);
