@@ -1,7 +1,7 @@
 """Download the Figure-4 input file from Zenodo and verify its SHA-256 (CLI).
 
-The file (75 MB) is version 1.0 of Zenodo record 10.5281/zenodo.23020757; the
-recipe lives in :func:`statespacecheck_paper.load_local_data.download_figure04_inputs`.
+The file (75 MB) is the published Figure-4 input; the recipe lives in
+:func:`statespacecheck_paper.figure04_download.download_figure04_inputs`.
 """
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ import argparse
 from collections.abc import Sequence
 from pathlib import Path
 
-from statespacecheck_paper.load_local_data import download_figure04_inputs
+from statespacecheck_paper.figure04_download import download_figure04_inputs
 from statespacecheck_paper.paths import DATA_PATH
 
 

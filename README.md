@@ -382,10 +382,11 @@ uv run ruff format . && uv run ruff check . && uv run mypy src/ && uv run pytest
 - **`figure04_{cache,workflow,layout,generation}.py`**: Figure-4 cache, analysis workflow, composition, and generation recipe
 - **`reported_values.py`**: Summary-to-LaTeX macro generation and the manuscript's reporting policy
 - **`site_export.py`**: Data files for the project website (playground, simulation and replay players, parity fixture)
-- **`load_local_data.py`**: Real data loading utilities, and the Zenodo download of the Figure-4 input
+- **`load_local_data.py`**: Real data loading utilities
+- **`figure04_download.py`**: Downloads the Figure-4 input file from Zenodo and checks its SHA-256
 - **`spyglass_data.py`**: Rebuilds the Figure-4 input file from Spyglass, logs it in a Spyglass export, and computes the Figure-4 diagnostics from stored decodes (optional `spyglass` extra; not used by figure generation)
 - **`spyglass_pipeline.py`**: The Figure-4 decode and diagnostics as a Spyglass pipeline; connects to the lab database on import (see [docs/spyglass-pipeline.md](docs/spyglass-pipeline.md))
-- **`paths.py`**: Shared `DATA_PATH` / `ANIMAL_DATE_EPOCH` constants (env-overridable)
+- **`paths.py`**: Shared `DATA_PATH` / `ANIMAL_DATE_EPOCH` constants (env-overridable), and the published Figure-4 input's epoch, DOI and SHA-256
 
 ### Standards
 
