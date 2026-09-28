@@ -284,7 +284,7 @@ def _layout_hexbin_row(
                 colorbar_pos.height,
             ]
         )
-    fig.set_constrained_layout(False)
+    fig.set_layout_engine("none")
     if hexbin_colorbar_axes:
         fig.canvas.draw()
         renderer = fig.canvas.get_renderer()

@@ -176,7 +176,8 @@ def test_miss_on_non_mapping(tmp_path: Path) -> None:
 def test_miss_on_unreadable(tmp_path: Path) -> None:
     path = tmp_path / "c.joblib"
     path.write_bytes(b"not a joblib file")
-    assert load_figure04_cache(path, "fp") is None
+    with pytest.warns(RuntimeWarning, match="could not be read"):
+        assert load_figure04_cache(path, "fp") is None
 
 
 def test_miss_on_missing_key(tmp_path: Path) -> None:
