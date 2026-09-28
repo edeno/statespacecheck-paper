@@ -47,7 +47,7 @@ make reproduce
 
 This installs the locked environment, downloads and verifies the 75 MB Figure 4
 input, generates all four figures, updates reported values, and builds the PDF.
-Figure 4 creates a decode cache of approximately 10 GB. See the
+Figure 4 creates a decode cache of approximately 8 GB. See the
 [requirements, timings, and individual commands](docs/reproduce.md) before running.
 
 The Figure 4 input is archived at

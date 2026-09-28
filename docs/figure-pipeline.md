@@ -316,7 +316,7 @@ $\Lambda(x)$.
   ([10.5281/zenodo.23020757](https://doi.org/10.5281/zenodo.23020757));
   `scripts/download_figure04_inputs.py` downloads it and checks its SHA-256.
   It downloads into `data/` by default; to use another directory, set
-  `STATESPACECHECK_DATA_PATH` (or pass `--data-path`). The expensive decode is cached under `data/intermediates/` as two joblib bundles: the ~10 GB decode
+  `STATESPACECHECK_DATA_PATH` (or pass `--data-path`). The expensive decode is cached under `data/intermediates/` as two joblib bundles: the ~8 GB decode
   bundle `{epoch}_fig4_cache.joblib` (memory-mapped on load) and the diagnostics
   bundle `{epoch}_fig4_diagnostics.joblib`, each gated by the fingerprints
   described above. Writes go to a temporary sibling and are renamed into place,
