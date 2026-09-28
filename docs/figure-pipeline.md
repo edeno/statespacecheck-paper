@@ -99,11 +99,11 @@ Start from the four `scripts/generate_figureNN.py` entry points.
 - **Configuration:** named constants / function arguments inside the generation recipe and
   `schematic.py`; no config dataclass.
 - **Computation:** `schematic.py` (graphical model + equation boxes) and
-  `plotting.create_distribution_comparison_panel` / `compute_hpd_region`.
+  `plotting.create_distribution_comparison_panel` (HPD regions from
+  `statespacecheck.highest_density_region`).
 - **Output:** `manuscript/figures/main/figure01.{pdf,png}`.
 - **Tests:** `tests/test_schematic.py`; `tests/test_figures.py` (entry-point
-  contract); `tests/test_plotting.py::TestComputeHpdRegion`,
-  `TestCreateDistributionComparisonPanel`.
+  contract); `tests/test_plotting.py::TestCreateDistributionComparisonPanel`.
 
 Trace: `generate_figure01` → `compose_figure01` → semantic axes
 (`graphical_model`, `filtering_equations`, and four named consistency cases) →

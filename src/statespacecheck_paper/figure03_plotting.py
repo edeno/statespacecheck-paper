@@ -4,8 +4,8 @@ This module composes Figure 3 from a simulation's decoded diagnostics: the
 per-metric time-series rows (predictive, likelihood, raster, HPD overlap,
 predictive p-value, KL divergence) with phase-boundary overlays, and the
 panel-(b) per-condition flag-percentage heatmap. ``compose_figure03`` is the
-public entry point. Generic renderers (``plot_likelihood_columns``,
-``compute_hpd_region``) stay in :mod:`plotting`.
+public entry point. Generic renderers (``plot_likelihood_columns``) stay in
+:mod:`plotting`.
 """
 
 from __future__ import annotations

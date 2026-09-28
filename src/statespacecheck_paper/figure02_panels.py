@@ -17,11 +17,11 @@ from typing import Any, Literal
 
 import matplotlib.pyplot as plt
 import numpy as np
+import statespacecheck as ssc
 from matplotlib.axes import Axes
 from numpy.typing import NDArray
 from scipy.stats import norm
 
-from statespacecheck_paper.plotting import compute_hpd_region
 from statespacecheck_paper.simulation import normalize
 from statespacecheck_paper.style import COLORS
 
@@ -125,8 +125,6 @@ def create_shared_example(rng: np.random.Generator) -> Figure2ExampleData:
         Typed shared distributions, predictive-check samples, and precomputed
         diagnostic values used by all nine panels.
     """
-    import statespacecheck as ssc
-
     # Position grid
     n_bins = 200
     position_bins = np.linspace(0, 100, n_bins)
@@ -346,7 +344,7 @@ def _plot_hpd_panel(
     and legend keywords differ between the two columns.
     """
     coverage = 0.95
-    hpd_mask = compute_hpd_region(x, dist, coverage)
+    hpd_mask = ssc.highest_density_region(dist[np.newaxis], coverage=coverage)[0]
 
     # HPD threshold is the minimum density value inside the HPD region.
     hpd_threshold = np.min(dist[hpd_mask])
@@ -443,8 +441,8 @@ def plot_hpd_intersection(ax: Axes, data: Figure2ExampleData) -> tuple[float, fl
     coverage = 0.95
     dx = x[1] - x[0]
 
-    pred_hpd = compute_hpd_region(x, pred, coverage)
-    like_hpd = compute_hpd_region(x, like, coverage)
+    pred_hpd = ssc.highest_density_region(pred[np.newaxis], coverage=coverage)[0]
+    like_hpd = ssc.highest_density_region(like[np.newaxis], coverage=coverage)[0]
     intersection = pred_hpd & like_hpd
 
     # Compute sizes for annotation
