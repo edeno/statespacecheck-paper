@@ -154,62 +154,32 @@ def create_shared_example(rng: np.random.Generator) -> Figure2ExampleData:
     kl_value = float(ssc.kl_divergence(predictive[np.newaxis, :], likelihood[np.newaxis, :])[0])
     hpd_value = float(ssc.hpd_overlap(predictive[np.newaxis, :], likelihood[np.newaxis, :])[0])
 
-    # Estimate the p-value using Monte Carlo sampling.
-    # This mirrors the approach in decoding.py decode_with_diagnostics
-    n_mc_samples = 1000
-
-    # Observed log predictive density under the predictive-state mixture.
-    # This is log p(y | y_{1:t-1}) = log sum_x p(x_t | y_{1:t-1}) p(y_t | x_t).
-    # If the overlap underflows for some pathological draw, np.log emits a
-    # RuntimeWarning and yields -inf rather than the previous behaviour of
-    # mapping zero to log(1e-300) ≈ -690, which would silently turn the
-    # p-value into a tie count between observed and simulated underflows.
-    # ``predictive`` is discrete probability mass over the grid, so the
-    # predictive observation density is the mixture sum Σ_x P(x) p(y | x).
-    observed_log_pred = float(np.log(np.sum(predictive * observed_conditional_density)))
-
-    # Simulate the reference distribution per the predictive-check
-    # definition in eq:fpred / eq:predictive_application. This schematic
-    # assumes constant total event intensity, so the event-weighted state
-    # distribution equals ``predictive``:
-    # 1. Sample state x_s from the event-weighted distribution, which here
-    #    equals predictive(x).
-    # 2. Sample observation y_tilde ~ p(y | x_s) = N(x_s, like_std^2).
-    # 3. Compute log f_pred(y_tilde) from the predictive-state mixture.
-    cumsum = np.cumsum(predictive)
-    cumsum = cumsum / cumsum[-1]  # Ensure sums to 1
-
-    # Draw the samples in the original interleaved order -- one state draw then
-    # one observation draw per sample -- so the random stream (and the showcase
-    # samples drawn from it afterward) is byte-for-byte unchanged. Only the
-    # per-sample state pick and the observation draw need the loop; the
-    # expensive likelihood evaluation is lifted out and vectorized below.
-    # ``rng.normal(loc, scale)`` draws a standard normal and returns
-    # ``loc + scale * z``, so pulling it out of the norm.pdf call does not alter
-    # the stream.
-    sampled_y_tildes = np.empty(n_mc_samples)
-    for i in range(n_mc_samples):
-        u = rng.random()
-        sampled_idx = min(int(np.searchsorted(cumsum, u)), len(position_bins) - 1)
-        sampled_y_tildes[i] = rng.normal(loc=position_bins[sampled_idx], scale=like_std)
-
-    # Simulated likelihood p(y_tilde | x) = N(y_tilde; x, like_std) for every
-    # sample at once, as a (n_mc_samples, n_bins) matrix. The predictive-mixture
-    # sum over x is taken with ``np.sum`` along the bin axis so it matches the
-    # per-sample scalar sum it replaces. ``np.log`` then handles underflow with
-    # -inf + RuntimeWarning rather than masking it with a +1e-300 shift (see
-    # observed_log_pred above for the rationale).
-    simulated_conditional_density = norm.pdf(
-        position_bins[np.newaxis, :],
-        loc=sampled_y_tildes[:, np.newaxis],
-        scale=like_std,
+    # Monte Carlo predictive p-value (eq:fpred / eq:predictive_application):
+    # each replicate draws a state from the event-weighted predictive
+    # distribution, then an observation y_tilde ~ N(x_s, like_std^2), and
+    # compares log f_pred(y_tilde) with log f_pred(y_obs). The total intensity
+    # is 1 at every state because N(y; x, like_std) integrates to 1 over y, so
+    # the event-weighted distribution equals ``predictive`` (the constant total
+    # intensity the schematic assumes).
+    model = ssc.MarkModel(
+        log_intensity=lambda y: norm.logpdf(
+            position_bins[np.newaxis, :], loc=y[:, :1], scale=like_std
+        ),
+        sample=lambda bins, g: g.normal(position_bins[bins], like_std)[:, np.newaxis],
+        ground_intensity=np.ones(n_bins),
     )
-    simulated_log_pred_values = np.log(
-        np.sum(predictive[np.newaxis, :] * simulated_conditional_density, axis=1)
+    check = ssc.monte_carlo_mark_pvalue(
+        predictive[np.newaxis, :],
+        model,
+        np.array([[like_mean]]),
+        n_samples=1000,
+        rng=rng,
+        return_samples=True,
     )
-
-    # P-value: proportion of simulated values <= observed value
-    p_value = float(np.mean(simulated_log_pred_values <= observed_log_pred))
+    p_value = float(check.pvalue[0])
+    observed_log_pred = float(check.observed_log_density[0])
+    assert check.simulated_log_density is not None  # return_samples=True
+    simulated_log_pred_values = check.simulated_log_density[0]
 
     # Showcase samples for the predictive-check schematic (the
     # ``predictive_simulations`` fan and ``predictive_histogram`` panels).
@@ -217,8 +187,10 @@ def create_shared_example(rng: np.random.Generator) -> Figure2ExampleData:
     # CDF so the displayed fan spans the predictive's support rather than
     # clustering near the peak. For each state, a simulated observation
     # y_tilde is then drawn from p(y | x_s) = N(x_s, like_std^2) -- the same
-    # step the Monte Carlo loop above uses -- and the simulated likelihood is
+    # step the Monte Carlo p-value takes -- and the simulated likelihood is
     # p(y_tilde | x) plotted as a function of x.
+    cumsum = np.cumsum(predictive)
+    cumsum = cumsum / cumsum[-1]  # Ensure sums to 1
     showcase_quantiles = np.array([0.10, 0.30, 0.50, 0.70, 0.90])
     showcase_idx = np.minimum(np.searchsorted(cumsum, showcase_quantiles), n_bins - 1)
     showcase_positions = position_bins[showcase_idx]
