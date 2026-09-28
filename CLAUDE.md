@@ -104,7 +104,8 @@ holds the dependency and tooling config. Reproduce the analysis environment with
 and CI environment. See `README.md` for dependency and lock-update commands.
 
 After changing a figure summary, run `uv run python scripts/emit_reported_values.py`
-from the repository root, then `make -C manuscript`, then
+from the repository root (it needs internet access: it looks up the cited
+statespacecheck version's DOI on Zenodo), then `make -C manuscript`, then
 `uv run python scripts/export_site_data.py` for the website's data (tests fail if
 stale; add `--skip-recording` without the Figure-4 data). The Makefile tracks the macro
 file as an input but does not regenerate it. Source docstrings and comments also

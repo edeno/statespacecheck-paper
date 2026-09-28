@@ -13,7 +13,7 @@ All commands are run from the repository root in the locked environment:
 uv sync --frozen
 uv run python scripts/generate_figureNN.py     # one figure
 uv run python scripts/generate_all_figures.py  # all four
-uv run python scripts/emit_reported_values.py  # refresh the manuscript's numbers
+uv run python scripts/emit_reported_values.py  # refresh the manuscript's numbers (needs internet)
 make -C manuscript                           # build the paper
 # Figures: manuscript/figures/main/figureNN.{pdf,png} at 450 DPI.
 # Prose macros: manuscript/reported_values.tex; paper: manuscript/main.pdf.

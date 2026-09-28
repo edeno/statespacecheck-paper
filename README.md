@@ -52,7 +52,7 @@ input file. See [the schema notes](docs/figure-pipeline.md#machine-readable-summ
 uv sync --frozen
 uv run python scripts/generate_all_figures.py
 # Outputs land in manuscript/figures/main/ (figures at 450 DPI).
-uv run python scripts/emit_reported_values.py
+uv run python scripts/emit_reported_values.py  # needs internet: looks up the statespacecheck DOI
 make -C manuscript
 ```
 
@@ -336,7 +336,8 @@ uv run python scripts/generate_figure04.py   # Fig 4  (needs the real dataset)
 
 # Outputs saved to manuscript/figures/main/ directory as PDF and PNG (450 DPI)
 
-# After changing either summary, refresh the prose values and rebuild:
+# After changing either summary, refresh the prose values and rebuild
+# (emitting looks up the statespacecheck DOI on Zenodo, so it needs internet):
 uv run python scripts/emit_reported_values.py
 make -C manuscript
 uv run python scripts/export_site_data.py   # the website's data

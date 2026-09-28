@@ -42,8 +42,9 @@ name clash, so a collision with a package macro fails the build rather than
 silently redefining anything.
 
 This module reads the committed summary JSONs; the one exception is the
-archived DOI of the cited ``statespacecheck`` version, from
-``STATESPACECHECK_DOIS``. Its only sibling import is
+archived DOI of the cited ``statespacecheck`` version, which
+:func:`write_macro_file` looks up on Zenodo (so emitting needs internet
+access). Its only sibling import is
 ``number_format``, the rounding shared with the Figure-3 summary panel, so
 the figure and the prose cannot round the same number differently.
 """
@@ -52,6 +53,8 @@ from __future__ import annotations
 
 import json
 import math
+import urllib.parse
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -60,9 +63,9 @@ from statespacecheck_paper.number_format import SIGNIFICANT_FIGURES, significant
 
 MACRO_FILE_PATH = Path("manuscript/reported_values.tex")
 
-# Zenodo DOI of each archived statespacecheck release the paper may cite. Add the
-# new version's DOI (from its Zenodo record) when moving to a new release.
-STATESPACECHECK_DOIS = {"0.3.0": "10.5281/zenodo.22999989"}
+# Zenodo record that groups every archived statespacecheck release (its concept
+# record); each release's own DOI is looked up under it by version
+STATESPACECHECK_ZENODO_CONCEPT_RECORD = "22999988"
 FIGURE03_SUMMARY_PATH = Path("manuscript/figures/main/figure03_summary.json")
 FIGURE04_SUMMARY_PATH = Path("manuscript/figures/main/figure04_summary.json")
 
@@ -616,17 +619,16 @@ def _recording_configuration(payload: dict[str, Any]) -> list[MacroDefinition]:
     ]
 
 
-def _software_versions(
+def statespacecheck_version(
     figure03_payload: dict[str, Any], figure04_payload: dict[str, Any]
-) -> list[MacroDefinition]:
-    """Build the macros for the ``statespacecheck`` version behind both figures and its DOI.
+) -> str:
+    """Return the ``statespacecheck`` version both figure summaries record.
 
     Raises
     ------
     ValueError
         If the two summaries, or the Figure-4 diagnostics cache, record
-        different ``statespacecheck`` versions, since the manuscript cites one,
-        or if that version has no archived DOI in ``STATESPACECHECK_DOIS``.
+        different ``statespacecheck`` versions, since the manuscript cites one.
     """
     recorded = {
         "figure03 provenance.source": figure03_payload["provenance"]["source"][
@@ -644,28 +646,69 @@ def _software_versions(
             "The figure summaries record different statespacecheck versions; "
             f"regenerate them in one environment: {recorded}"
         )
-    version = recorded["figure03 provenance.source"]
-    if version not in STATESPACECHECK_DOIS:
-        raise ValueError(
-            f"statespacecheck {version} has no archived DOI; add it to STATESPACECHECK_DOIS"
-        )
-    return [
-        MacroDefinition(
-            "StatespacecheckVersion",
-            version,
-            "provenance.source.statespacecheck_version (both summaries)",
-        ),
-        MacroDefinition(
-            "StatespacecheckDOI",
-            STATESPACECHECK_DOIS[version],
-            "Zenodo DOI of that version (STATESPACECHECK_DOIS)",
-        ),
+    version: str = recorded["figure03 provenance.source"]
+    return version
+
+
+def lookup_statespacecheck_doi(version: str) -> str:
+    """Look up the Zenodo DOI of a ``statespacecheck`` release (needs internet access).
+
+    Parameters
+    ----------
+    version : str
+        The release, e.g. ``"0.3.0"``.
+
+    Returns
+    -------
+    str
+        The DOI of that version's Zenodo record, e.g. ``"10.5281/zenodo.22999989"``.
+
+    Raises
+    ------
+    ValueError
+        If Zenodo has not archived that version (yet).
+    urllib.error.URLError
+        If Zenodo cannot be reached.
+    """
+    query = urllib.parse.urlencode(
+        {
+            "q": f"conceptrecid:{STATESPACECHECK_ZENODO_CONCEPT_RECORD} "
+            f'AND metadata.version:"v{version}"',
+            "all_versions": "true",
+        }
+    )
+    with urllib.request.urlopen(f"https://zenodo.org/api/records?{query}", timeout=30) as reply:
+        search = json.load(reply)
+    return doi_from_zenodo_search(search, version)
+
+
+def doi_from_zenodo_search(search: dict[str, Any], version: str) -> str:
+    """Return the DOI of ``version`` from a Zenodo records search reply.
+
+    Raises
+    ------
+    ValueError
+        If the reply has no record, or more than one, whose version is ``v{version}``.
+    """
+    records = [
+        record
+        for record in search["hits"]["hits"]
+        if record["metadata"].get("version") == f"v{version}"
     ]
+    if len(records) != 1:
+        raise ValueError(
+            f"Zenodo has {len(records)} archived records of statespacecheck {version} "
+            "(it archives a release some minutes after it is published)"
+        )
+    doi: str = records[0]["doi"]
+    return doi
 
 
 def macro_sections(
     figure03_payload: dict[str, Any],
     figure04_payload: dict[str, Any],
+    *,
+    statespacecheck_doi: str | None = None,
 ) -> tuple[tuple[str, list[MacroDefinition]], ...]:
     """Return every reported-value macro, grouped into titled sections.
 
@@ -676,14 +719,29 @@ def macro_sections(
     ----------
     figure03_payload, figure04_payload : dict
         Parsed contents of the two canonical figure summaries.
+    statespacecheck_doi : str, optional, keyword-only
+        Zenodo DOI of the recorded ``statespacecheck`` version
+        (:func:`lookup_statespacecheck_doi`); the manuscript cites it and the website
+        does not use it. Without it, no DOI macro is emitted.
 
     Returns
     -------
     tuple of (str, list of MacroDefinition)
         Section title and its macros, in file order.
     """
+    software = [
+        MacroDefinition(
+            "StatespacecheckVersion",
+            statespacecheck_version(figure03_payload, figure04_payload),
+            "provenance.source.statespacecheck_version (both summaries)",
+        )
+    ]
+    if statespacecheck_doi is not None:
+        software.append(
+            MacroDefinition("StatespacecheckDOI", statespacecheck_doi, "Zenodo DOI of that version")
+        )
     return (
-        ("Software", _software_versions(figure03_payload, figure04_payload)),
+        ("Software", software),
         (
             "Simulation study (Figure 3) --- computed from the simulated data",
             _simulation_statistics(figure03_payload),
@@ -706,6 +764,8 @@ def macro_sections(
 def render_macro_file(
     figure03_payload: dict[str, Any],
     figure04_payload: dict[str, Any],
+    *,
+    statespacecheck_doi: str,
 ) -> str:
     """Render the full ``reported_values.tex`` contents.
 
@@ -713,19 +773,24 @@ def render_macro_file(
     ----------
     figure03_payload, figure04_payload : dict
         Parsed contents of the two canonical figure summaries.
+    statespacecheck_doi : str, keyword-only
+        Zenodo DOI of the recorded ``statespacecheck`` version
+        (:func:`lookup_statespacecheck_doi`).
 
     Returns
     -------
     str
         File text, ending in a newline.
     """
-    sections = macro_sections(figure03_payload, figure04_payload)
+    sections = macro_sections(
+        figure03_payload, figure04_payload, statespacecheck_doi=statespacecheck_doi
+    )
     source_hash = figure03_payload["provenance"]["source"]["source_tree_sha256"]
     lines = [
         "% Generated by scripts/emit_reported_values.py --- do not edit by hand.",
         "%",
         "% Every value below is read from the canonical figure summaries",
-        "% (except \\StatespacecheckDOI, from reported_values.STATESPACECHECK_DOIS):",
+        "% (except \\StatespacecheckDOI, that version's DOI, looked up on Zenodo):",
         f"%   figures/main/figure03_summary.json (schema {figure03_payload['schema_version']})",
         f"%   figures/main/figure04_summary.json (schema {figure04_payload['schema_version']})",
         f"% source_tree_sha256: {source_hash}",
@@ -746,6 +811,7 @@ def write_macro_file(
     *,
     figure03_path: Path = FIGURE03_SUMMARY_PATH,
     figure04_path: Path = FIGURE04_SUMMARY_PATH,
+    statespacecheck_doi: str | None = None,
 ) -> Path:
     """Write ``reported_values.tex`` from the committed figure summaries.
 
@@ -755,12 +821,23 @@ def write_macro_file(
         Destination of the generated macro file.
     figure03_path, figure04_path : Path
         Canonical summary JSONs to read.
+    statespacecheck_doi : str, optional
+        Zenodo DOI of the recorded ``statespacecheck`` version. By default it is
+        looked up on Zenodo (:func:`lookup_statespacecheck_doi`), which needs internet
+        access.
 
     Returns
     -------
     Path
         The path written.
     """
-    text = render_macro_file(_load(figure03_path), _load(figure04_path))
+    figure03_payload, figure04_payload = _load(figure03_path), _load(figure04_path)
+    if statespacecheck_doi is None:
+        statespacecheck_doi = lookup_statespacecheck_doi(
+            statespacecheck_version(figure03_payload, figure04_payload)
+        )
+    text = render_macro_file(
+        figure03_payload, figure04_payload, statespacecheck_doi=statespacecheck_doi
+    )
     output_path.write_text(text, encoding="utf-8")
     return output_path

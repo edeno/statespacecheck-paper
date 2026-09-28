@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import copy
 import re
+import urllib.error
 from pathlib import Path
 
 import numpy as np
@@ -21,8 +22,11 @@ from statespacecheck_paper.reported_values import (
     MACRO_FILE_PATH,
     _exact,
     cardinal_word,
+    doi_from_zenodo_search,
+    lookup_statespacecheck_doi,
     ordinal,
     render_macro_file,
+    statespacecheck_version,
     write_macro_file,
 )
 from tests.test_reported_statistics_artifacts import _load
@@ -36,12 +40,19 @@ def _macro_values(text: str) -> dict[str, str]:
     return {name: value for name, value in re.findall(r"\\newcommand\{\\(\w+)\}\{([^}]*)\}", text)}
 
 
+# The DOI the committed macro file cites. Emitting looks it up on Zenodo; the
+# tests below take it from the committed file so they run offline, and
+# test_zenodo_lookup_gives_the_cited_doi checks it against Zenodo
+CITED_DOI = _macro_values(COMMITTED_MACRO_FILE.read_text(encoding="utf-8"))["StatespacecheckDOI"]
+
+
 def test_committed_macro_file_matches_the_figure_summaries(tmp_path: Path) -> None:
     """The committed macro file is exactly what the summaries generate now."""
     regenerated = write_macro_file(
         tmp_path / "reported_values.tex",
         figure03_path=REPO_ROOT / "manuscript/figures/main/figure03_summary.json",
         figure04_path=REPO_ROOT / "manuscript/figures/main/figure04_summary.json",
+        statespacecheck_doi=CITED_DOI,
     )
     assert regenerated.read_text(encoding="utf-8") == COMMITTED_MACRO_FILE.read_text(
         encoding="utf-8"
@@ -81,7 +92,7 @@ def test_asymmetric_mode_parameters_are_reported_independently() -> None:
     provenance["contfrag_discrete_initial_conditions"] = [0.6, 0.4]
     provenance["contfrag_diagonal_values"] = [0.9, 0.8]
 
-    values = _macro_values(render_macro_file(figure03, figure04))
+    values = _macro_values(render_macro_file(figure03, figure04, statespacecheck_doi=CITED_DOI))
 
     assert values["RecModeContinuousInitial"] == "0.6"
     assert values["RecModeFragmentedInitial"] == "0.4"
@@ -97,7 +108,7 @@ def test_non_integral_burst_factor_is_not_silently_rounded() -> None:
     figure03["configuration"]["history_burst_factor"] = 3.4
 
     with pytest.raises(ValueError, match="not exact"):
-        render_macro_file(figure03, _load("figure04_summary.json"))
+        render_macro_file(figure03, _load("figure04_summary.json"), statespacecheck_doi=CITED_DOI)
 
 
 @pytest.mark.parametrize(
@@ -111,19 +122,43 @@ def test_mismatched_statespacecheck_versions_are_rejected(path: tuple[str]) -> N
     figure04["provenance"][path[0]]["statespacecheck_version"] = "0.0.0"
 
     with pytest.raises(ValueError, match="different statespacecheck versions"):
-        render_macro_file(_load("figure03_summary.json"), figure04)
+        render_macro_file(_load("figure03_summary.json"), figure04, statespacecheck_doi=CITED_DOI)
 
 
-def test_statespacecheck_version_without_a_doi_is_rejected() -> None:
-    """The manuscript cites the archived release, so an unarchived version fails."""
-    figure03 = copy.deepcopy(_load("figure03_summary.json"))
-    figure04 = copy.deepcopy(_load("figure04_summary.json"))
-    for payload in (figure03, figure04):
-        payload["provenance"]["source"]["statespacecheck_version"] = "0.0.0"
-    figure04["provenance"]["figure04_decode_cache"]["statespacecheck_version"] = "0.0.0"
+def _zenodo_record(version: str, doi: str) -> dict[str, object]:
+    return {"doi": doi, "metadata": {"version": version}}
 
-    with pytest.raises(ValueError, match="no archived DOI"):
-        render_macro_file(figure03, figure04)
+
+def test_doi_is_taken_from_the_record_of_that_version() -> None:
+    search = {
+        "hits": {
+            "hits": [
+                _zenodo_record("v0.3.0", "10.5281/zenodo.1"),
+                _zenodo_record("v0.3.10", "10.5281/zenodo.2"),
+            ]
+        }
+    }
+    assert doi_from_zenodo_search(search, "0.3.0") == "10.5281/zenodo.1"
+
+
+@pytest.mark.parametrize("n_records", [0, 2])
+def test_version_without_exactly_one_zenodo_record_is_rejected(n_records: int) -> None:
+    """An unarchived version (or an ambiguous search) fails rather than citing a guess."""
+    search = {"hits": {"hits": [_zenodo_record("v0.3.1", "10.5281/zenodo.3")] * n_records}}
+    with pytest.raises(ValueError, match=f"{n_records} archived records"):
+        doi_from_zenodo_search(search, "0.3.1")
+
+
+def test_zenodo_lookup_gives_the_cited_doi() -> None:
+    """The DOI the manuscript cites is Zenodo's record of the recorded version."""
+    version = statespacecheck_version(
+        _load("figure03_summary.json"), _load("figure04_summary.json")
+    )
+    try:
+        doi = lookup_statespacecheck_doi(version)
+    except (urllib.error.URLError, TimeoutError) as err:  # offline, or Zenodo unavailable
+        pytest.skip(f"Zenodo cannot be reached: {err}")
+    assert doi == CITED_DOI
 
 
 @pytest.mark.parametrize("quantile", [0.005, 0.995])
@@ -133,7 +168,7 @@ def test_fractional_percentile_is_not_silently_rounded(quantile: float) -> None:
     figure03["threshold_provenance"]["hpd_overlap"]["quantile"] = quantile
 
     with pytest.raises(ValueError, match="not exact"):
-        render_macro_file(figure03, _load("figure04_summary.json"))
+        render_macro_file(figure03, _load("figure04_summary.json"), statespacecheck_doi=CITED_DOI)
 
 
 def test_zero_decoding_error_renders() -> None:
@@ -142,7 +177,9 @@ def test_zero_decoding_error_renders() -> None:
     well_specified = figure03["condition_order"].index("well_specified")
     figure03["median_decoding_accuracy"][0][well_specified] = 0.0
 
-    values = _macro_values(render_macro_file(figure03, _load("figure04_summary.json")))
+    values = _macro_values(
+        render_macro_file(figure03, _load("figure04_summary.json"), statespacecheck_doi=CITED_DOI)
+    )
 
     assert values["SimWellSpecifiedError"] == "0"
 
@@ -219,14 +256,17 @@ def test_published_standard_errors_do_not_set_precision() -> None:
     """The Figure-3 SEs are data for the reader, not a formatting authority."""
     figure03 = copy.deepcopy(_load("figure03_summary.json"))
     figure04 = _load("figure04_summary.json")
-    baseline = _macro_values(render_macro_file(figure03, figure04))
+    baseline = _macro_values(render_macro_file(figure03, figure04, statespacecheck_doi=CITED_DOI))
     # Shrink every published SE a thousandfold; no printed digit may change.
     for key in (
         "median_flag_percentage_standard_errors",
         "median_decoding_accuracy_standard_errors",
     ):
         figure03[key] = [[value / 1000.0 for value in row] for row in figure03[key]]
-    assert _macro_values(render_macro_file(figure03, figure04)) == baseline
+    assert (
+        _macro_values(render_macro_file(figure03, figure04, statespacecheck_doi=CITED_DOI))
+        == baseline
+    )
 
 
 def test_word_helpers() -> None:
@@ -241,4 +281,6 @@ def test_render_is_deterministic() -> None:
     """Two renders of the same payloads agree byte for byte."""
     figure03 = _load("figure03_summary.json")
     figure04 = _load("figure04_summary.json")
-    assert render_macro_file(figure03, figure04) == render_macro_file(figure03, figure04)
+    assert render_macro_file(
+        figure03, figure04, statespacecheck_doi=CITED_DOI
+    ) == render_macro_file(figure03, figure04, statespacecheck_doi=CITED_DOI)
