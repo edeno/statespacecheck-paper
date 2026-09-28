@@ -384,9 +384,9 @@ class Figure3Config:
         )
 
 
-# Canonical ordered phase names, one per segment that
-# ``Figure3Config.phase_boundaries`` delimits. Tests import this tuple rather
-# than re-typing the strings.
+# Canonical ordered phase names: ``PHASE_LABELS[i]`` names the phase that ends
+# at ``Figure3Config.phase_boundaries[i]`` (the first starts at step 0). Tests
+# import this tuple rather than re-typing the strings.
 PHASE_LABELS: tuple[str, ...] = (
     "Clean Baseline",
     "Remap Misfit",

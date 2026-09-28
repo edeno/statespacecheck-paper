@@ -37,16 +37,16 @@ families**:
 diagnostics            → (external statespacecheck only; leaf)
 decoding               → diagnostics, simulation
 simulation             → (numpy/scipy only)
-scientific_artifacts   → (standard library + numpy only)
+scientific_artifacts   → diagnostics, paths
 number_format          → (standard library only; leaf)
-reported_values        → number_format; reads summary JSONs
+reported_values        → number_format, paths; reads summary JSONs
 emit_reported_values.py → reported_values
 
 figure03_protocol      → (leaf; no sibling paper module)
 figure03_simulation    → figure03_protocol, decoding, diagnostics, simulation
 figure03_summary       → figure03_protocol, figure03_simulation, diagnostics
 figure03_plotting      → figure03_protocol, figure03_summary, diagnostics, number_format, plotting, style
-figure03_generation    → figure03_protocol, figure03_simulation, figure03_summary, figure03_plotting, scientific_artifacts, style
+figure03_generation    → figure03_protocol, figure03_simulation, figure03_summary, figure03_plotting, paths, scientific_artifacts, style
 generate_figure03.py   → figure03_generation
 
 figure04_decoder       → (leaf; nld construction + Figure4Config)
@@ -58,8 +58,8 @@ figure04_panels        → diagnostics, figure04_diagnostics, figure04_plot_prim
 figure04_cache         → figure04_decoder (Figure4Config, Figure4DiagnosticsConfig), load_local_data
 figure04_workflow      → figure04_cache, figure04_decoder, figure04_diagnostics, figure04_place_fields, diagnostics, load_local_data
 figure04_summary       → figure04_workflow, figure04_diagnostics, diagnostics
-figure04_layout        → figure04_workflow, diagnostics, figure04_panels, figure04_plot_primitives, figure04_track_plots, plotting
-figure04_generation    → figure04_workflow, figure04_summary, figure04_layout, figure04_cache, figure04_decoder, paths, scientific_artifacts, style
+figure04_layout        → figure04_workflow, diagnostics, figure04_panels, figure04_track_plots, plotting
+figure04_generation    → diagnostics, figure04_workflow, figure04_summary, figure04_layout, figure04_cache, figure04_decoder, paths, scientific_artifacts, style
 generate_figure04.py   → figure04_generation
 ```
 
@@ -102,7 +102,7 @@ Start from the four `scripts/generate_figureNN.py` entry points.
 
 Trace: `generate_figure01` → `compose_figure01` → semantic axes
 (`graphical_model`, `filtering_equations`, and four named consistency cases) →
-the `schematic` / `plotting` renderers → `save_figure`.
+the `schematic` renderers and `create_distribution_comparison_panel` → `save_figure`.
 
 ## Figure 2 — Diagnostic demonstrations
 
@@ -113,8 +113,7 @@ the `schematic` / `plotting` renderers → `save_figure`.
   injectable random generator and returns the in-memory figure.
 - **Configuration:** named constants / arguments in the generation recipe; per-panel
   renderers live in `figure02_panels.py`.
-- **Computation:** `figure02_panels.py` → `plotting.plot_likelihood_columns`;
-  the diagnostics, HPD regions and the Monte Carlo predictive p-value come from
+- **Computation:** `figure02_panels.py` draws the panels; the diagnostics, HPD regions and the Monte Carlo predictive p-value come from
   `statespacecheck` (`kl_divergence`, `hpd_overlap`, `highest_density_region`,
   `monte_carlo_mark_pvalue`).
 - **Output:** `manuscript/figures/main/figure02.{pdf,png}`.

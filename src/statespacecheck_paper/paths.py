@@ -1,8 +1,10 @@
 """Default paths and identifiers for the paper's analysis artifacts.
 
-These exist so the modules and scripts that read the Figure-4 input file
-(``{animal_date_epoch}_figure04_inputs.npz``) or the figure summaries don't
-each redeclare the same constants. Override ``DATA_PATH`` via the ``STATESPACECHECK_DATA_PATH``
+These exist so the package modules and scripts that read the Figure-4 input
+file (``{animal_date_epoch}_figure04_inputs.npz``) or the figure summaries don't
+each redeclare the same constants. (``scripts/spyglass_pipeline_figure04.py``
+anchors its own summary path to the repository root, since it imports no
+package module at startup.) Override ``DATA_PATH`` via the ``STATESPACECHECK_DATA_PATH``
 environment variable and ``ANIMAL_DATE_EPOCH`` via
 ``STATESPACECHECK_ANIMAL_DATE_EPOCH`` to run them against a different dataset
 without editing source.

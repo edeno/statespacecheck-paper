@@ -1,9 +1,10 @@
 """Shared low-level Figure-4 plotting helpers.
 
 Small building blocks used across the Figure-4 track, raster, and diagnostic
-panels: the annotation GID constants, the half-pixel ``imshow`` extent, the
+panels: the Animal-Position label GID, the half-pixel ``imshow`` extent, the
 scale-bar drawer, and the distribution heatmap renderer. The shared ``-log(p)``
-display transform lives in :mod:`plotting` (``negative_log_pvalue``).
+display transform and the diagnostic rows' threshold / worse-fit label GIDs
+live in :mod:`plotting`.
 """
 
 from __future__ import annotations

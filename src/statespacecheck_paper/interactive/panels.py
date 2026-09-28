@@ -91,7 +91,7 @@ MetricName = Literal["event_hpd_overlap", "event_kl_divergence", "event_predicti
 # here by the per-spike event attribute the viewer reads.
 _METRIC_SPEC_BY_EVENT_ATTR: dict[str, MetricSpec] = {s.event_attr: s for s in METRIC_SPECS}
 # Plain-text axis titles: pyqtgraph does not render the registry's LaTeX
-# ylabels, and the viewer has room to spell out "KL divergence".
+# p-value label, and the viewer has room to spell out "KL divergence".
 _METRIC_TITLES: dict[MetricName, str] = {
     "event_hpd_overlap": "HPD overlap",
     "event_kl_divergence": "KL divergence",

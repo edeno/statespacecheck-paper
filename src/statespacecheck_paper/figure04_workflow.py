@@ -342,8 +342,10 @@ def _fit_and_decode(
     validate_provenance_defaults(continuous_model, continuous_fragmented_model, provenance)
 
     print(f"Decoding {len(time)} time points...")
-    # The smoothed (acausal) posterior is always returned; the diagnostics and
-    # figure read only the prediction and the log-likelihood besides it.
+    # non_local_detector always returns the smoothed (acausal) posterior. The
+    # diagnostics, figure, and site export read the prediction; the viewer cache
+    # also reads the log-likelihood and the smoothed posterior. Nothing reads
+    # the causal "filter" output, so it is not requested.
     decode_outputs = ["predictive_posterior", "log_likelihood"]
     continuous_results = continuous_model.predict(
         spike_times=spike_times_list,

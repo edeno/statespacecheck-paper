@@ -211,7 +211,7 @@ def set_figure_defaults(context: Literal["paper", "presentation", "poster"] = "p
     ----------
     context : {"paper", "presentation", "poster"}, default "paper"
         Context for figure display:
-        - "paper": Small fonts (7pt base) for journal publications
+        - "paper": Small fonts (8pt base) for journal publications
         - "presentation": Medium fonts (12pt base) for talks/slides
         - "poster": Large fonts (16pt base) for conference posters
 

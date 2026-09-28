@@ -222,9 +222,9 @@ def marginalize_state_bins(distribution_da: xr.DataArray) -> xr.DataArray:
     # ``skipna=False``: if the per-state interior masks differed, unstack would
     # back-fill missing (state, position) cells with NaN, and a skipna sum would
     # silently produce an asymmetric marginal that still looks like a
-    # distribution. Callers pair this with ``extract_shared_position_place_fields``
-    # (which rejects state-varying masks), but this keeps the marginal honest
-    # even without that guard.
+    # distribution. ``get_state_marginalized_posterior``'s callers also pair this
+    # with ``extract_shared_position_place_fields`` (which rejects state-varying
+    # masks); the heatmap relies on this rule directly to draw such cells as NaN.
     if "state" in unstacked.dims:
         marginal: xr.DataArray = unstacked.sum("state", skipna=False)
         return marginal

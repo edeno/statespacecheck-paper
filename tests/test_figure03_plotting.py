@@ -317,7 +317,8 @@ def test_compose_figure03_uses_event_diagnostics_for_scatter() -> None:
             "−log(p)",
             "KL div.",
         ]
-        # Four misfit bands plus the replay band shade every time-series row.
+        # Four misfit bands plus the replay band shade every time-series row
+        # (checked on the KL row).
         assert len(fig.axes[5].patches) == 5
     finally:
         plt.close(fig)

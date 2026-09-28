@@ -5,7 +5,8 @@ diagnostics derived from it are comparatively cheap, so the two are cached in
 **separate** joblib bundles under ``data/intermediates``:
 
 - the *decode* bundle (``{epoch}_fig4_cache.joblib``) holds the fitted models'
-  predictive/filter outputs, spike counts, and place fields, gated by the
+  decoder outputs (smoothed and predictive posteriors, log-likelihood), spike
+  counts, and place fields, gated by the
   **decode fingerprint** (:func:`compute_figure04_cache_provenance`): schema,
   decode-affecting configuration, input-data identity and content hashes,
   executable source of the fitting/data-preparation modules, and the installed
@@ -47,8 +48,9 @@ from statespacecheck_paper.load_local_data import EXPORT_FILE_SUFFIXES, file_sha
 
 # Decode-bundle schema. Version 5 changed the cached HPD/KL event likelihood
 # from normalized Poisson(1; lambda) to normalized event intensity while the
-# diagnostics still lived in the decode bundle; the decode payload itself has
-# not changed since, so the decode fingerprint is unchanged by the split.
+# diagnostics still lived in the decode bundle. The decode payload did not
+# change with the split; later payload changes (dropping the unused causal
+# "filter" outputs) are invalidated by the decode-source digest, not a bump.
 FIGURE04_CACHE_SCHEMA_VERSION = 5
 
 # Diagnostics-bundle schema. Version 1 is the first separately cached

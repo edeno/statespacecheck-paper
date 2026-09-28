@@ -79,7 +79,9 @@ export function hpdOverlap(predictive, likelihood, coverage = 0.95) {
 
 /**
  * Plain array scaled to sum to 1, with non-finite values as 0; all zeros when
- * nothing positive remains. Accepts typed arrays (e.g. decoded uint8 rows).
+ * the cleaned values do not sum to a positive total. Accepts typed arrays (e.g.
+ * decoded uint8 rows), which must not be mapped in place: a Uint8Array.map
+ * would truncate every fraction to 0.
  */
 export function normalized(values) {
   const clean = Array.from(values, (v) => (Number.isFinite(v) ? v : 0));

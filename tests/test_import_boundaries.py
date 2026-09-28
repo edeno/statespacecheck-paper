@@ -3,8 +3,8 @@
 ``diagnostics.py`` is the leaf of the paper's dependency graph: it computes the
 goodness-of-fit diagnostics from primitives plus the external ``statespacecheck``
 package, so it must not import any sibling ``statespacecheck_paper`` module
-(``analysis``, the forthcoming ``decoding`` / ``figure03_*`` layers, plotting,
-etc.). Later phases extend this contract as modules move.
+(``decoding``, the ``figure0*`` layers, plotting, etc.). The tests below pin the
+allowed edges of the other layers.
 """
 
 from __future__ import annotations

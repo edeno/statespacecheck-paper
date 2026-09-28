@@ -6,8 +6,9 @@ two specificity controls (a replay event embedded in clean-recovery 2 and a
 final sparse-population epoch). The simulation pipeline drives both
 ``statespacecheck_paper.figure03_generation`` and
 ``statespacecheck_paper.interactive.cache.build_simulated_cache``;
-both call ``run_figure03_simulation`` so the figure and the
-interactive viewer's simulated cache stay byte-identical.
+both call ``run_figure03_simulation`` (and the cache the
+``all_place_field_centers`` / ``all_place_field_rates`` cell tables) so the
+figure and the interactive viewer's simulated cache stay byte-identical.
 
 The figure-generation recipe extends this with diagnostic threshold
 computation + plotting.
@@ -472,6 +473,17 @@ def _place_field_rate_blocks(
 ) -> tuple[NDArray[np.floating], NDArray[np.floating]]:
     """Return the ordinary and the full-gain sparse-population rate blocks.
 
+    Parameters
+    ----------
+    position_bins : np.ndarray, shape (n_bins,)
+        Position grid.
+    place_field_centers : np.ndarray, shape (n_normal_cells,)
+        Ordinary place-field centers.
+    sparse_centers : np.ndarray, shape (sparse_cell_count,)
+        Sparse-population field centers.
+    config : Figure3Config
+        Supplies the field widths and gains.
+
     Returns
     -------
     normal_rates : np.ndarray, shape (n_bins, n_normal_cells)
@@ -513,6 +525,16 @@ def all_place_field_rates(
         Position grid.
     sparse_centers : array-like, shape (sparse_cell_count,)
         ``Figure3SimulationResult.sparse_place_field_centers``.
+
+    Returns
+    -------
+    np.ndarray, shape (n_bins, n_normal_cells + sparse_cell_count)
+        Expected counts per step for each cell at each position.
+
+    Raises
+    ------
+    ValueError
+        If ``config.place_field_centers`` is not initialized.
     """
     if config.place_field_centers is None:
         raise ValueError("config.place_field_centers must be initialized")

@@ -1,4 +1,5 @@
-"""Tests for the NeuralRecordingData contract at the loader boundary."""
+"""Tests for the NeuralRecordingData contract, the ``.npz`` reader and writer, and
+the legacy pickle conversion."""
 
 from __future__ import annotations
 

@@ -1,7 +1,8 @@
-"""Plotting utilities for state space model diagnostics.
+"""Plotting helpers shared by more than one figure.
 
-This module provides functions for creating publication-ready figures showing
-diagnostic metrics and misfit examples for state space models.
+The ``-log(p)`` display transform, contiguous HPD-region extraction, the
+per-spike likelihood columns, and the per-spike diagnostic row with its artist
+GIDs.
 """
 
 from __future__ import annotations
@@ -233,9 +234,10 @@ def plot_event_metric_row(
     ylabel : str
         Row label.
     symlog_yticks : sequence of float
-        Ticks for a ``spec.symlog_axis`` row (labeled ``f"{tick:g}"``).
+        Ticks for a ``spec.symlog_axis`` row (labeled ``f"{tick:g}"``); ignored
+        for other rows.
     symlog_ylim : tuple of float
-        Vertical limits for a ``spec.symlog_axis`` row.
+        Vertical limits for a ``spec.symlog_axis`` row; ignored for other rows.
     worse_fit_y : float, default 0.5
         Height of the worse-fit label, in axes coordinates.
     show_annotations : bool, default True
