@@ -55,7 +55,7 @@ def _add_column_group_backplates(
     axes: Mapping[Hashable, Axes],
 ) -> None:
     """Add subtle column backplates so each metric reads as one group."""
-    fig.canvas.draw()
+    fig.draw_without_rendering()
     to_figure = fig.transFigure.inverted()
     column_groups = (
         ("hpd_predictive", "hpd_likelihood", "hpd_overlap", "hpd_formula"),
