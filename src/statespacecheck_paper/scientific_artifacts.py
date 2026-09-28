@@ -8,11 +8,11 @@ from collections.abc import Mapping, Sequence
 from enum import Enum
 from importlib.metadata import version
 from pathlib import Path
-from typing import Any, Literal, TypedDict
+from typing import Any, TypedDict
 
 import numpy as np
 
-FlagDirection = Literal["below", "above"]
+from statespacecheck_paper.diagnostics import INCLUSIVE_FLAG_COMPARISONS, FlagDirection
 
 
 class ScientificSourceProvenance(TypedDict):
@@ -22,12 +22,6 @@ class ScientificSourceProvenance(TypedDict):
     statespacecheck_version: str
     source_tree_sha256: str
     uv_lock_sha256: str
-
-
-_INCLUSIVE_FLAG_OPERATORS: dict[FlagDirection, str] = {
-    "below": "less_than_or_equal",
-    "above": "greater_than_or_equal",
-}
 
 
 def _normalized_text_bytes(path: Path) -> bytes:
@@ -137,7 +131,7 @@ def inclusive_flag_rules(
         )
     return {
         metric: {
-            "comparison": _INCLUSIVE_FLAG_OPERATORS[direction],
+            "comparison": INCLUSIVE_FLAG_COMPARISONS[direction],
             "threshold": float(thresholds[metric]),
         }
         for metric, direction in directions.items()
