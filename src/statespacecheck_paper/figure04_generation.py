@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import dataclasses
 import math
-from pathlib import Path
 
 from statespacecheck_paper.diagnostics import METRIC_FLAG_DIRECTIONS, FlagDirection
 from statespacecheck_paper.figure04_cache import Figure4CacheProvenance, Figure4Paths
@@ -25,7 +24,7 @@ from statespacecheck_paper.figure04_workflow import (
     format_figure04_summary,
     prepare_figure04_render_data,
 )
-from statespacecheck_paper.paths import ANIMAL_DATE_EPOCH, DATA_PATH
+from statespacecheck_paper.paths import ANIMAL_DATE_EPOCH, DATA_PATH, FIGURE04_SUMMARY_PATH
 from statespacecheck_paper.scientific_artifacts import (
     inclusive_flag_rules,
     scientific_source_provenance,
@@ -49,7 +48,6 @@ FIGURE4_DETAIL_WINDOW = Figure4DetailWindow(
     center_index=193_069,
     half_width_samples=500,
 )
-FIGURE04_SUMMARY_PATH = Path("manuscript/figures/main/figure04_summary.json")
 
 
 def figure04_reported_statistics(summary: Figure4Summary) -> dict[str, object]:

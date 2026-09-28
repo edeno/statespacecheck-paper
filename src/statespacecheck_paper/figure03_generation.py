@@ -24,7 +24,6 @@ rather than relying on a single noisy run.
 from __future__ import annotations
 
 import dataclasses
-from pathlib import Path
 
 import numpy as np
 
@@ -43,6 +42,7 @@ from statespacecheck_paper.figure03_summary import (
     build_summary_conditions,
     estimate_realization_summary,
 )
+from statespacecheck_paper.paths import FIGURE03_SUMMARY_PATH
 from statespacecheck_paper.scientific_artifacts import (
     inclusive_flag_rules,
     scientific_source_provenance,
@@ -57,7 +57,6 @@ from statespacecheck_paper.style import save_figure, set_figure_defaults
 # realizations gives a stable threshold and a median per-phase summary.
 # The seed-1 realization shown in panel (a) is one of these.
 N_REALIZATIONS = 100
-FIGURE03_SUMMARY_PATH = Path("manuscript/figures/main/figure03_summary.json")
 FIGURE03_CONDITION_IDS = (
     "well_specified",
     "remap",

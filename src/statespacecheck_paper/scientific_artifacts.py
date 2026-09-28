@@ -13,6 +13,7 @@ from typing import Any, TypedDict
 import numpy as np
 
 from statespacecheck_paper.diagnostics import INCLUSIVE_FLAG_COMPARISONS, FlagDirection
+from statespacecheck_paper.paths import REPO_ROOT
 
 
 class ScientificSourceProvenance(TypedDict):
@@ -71,7 +72,7 @@ def scientific_source_provenance(repo_root: Path | None = None) -> ScientificSou
     FileNotFoundError
         If no package source files are found, or ``uv.lock`` is missing.
     """
-    root = Path(__file__).resolve().parents[2] if repo_root is None else Path(repo_root)
+    root = REPO_ROOT if repo_root is None else Path(repo_root)
     package_root = root / "src" / "statespacecheck_paper"
     source_files = sorted(package_root.rglob("*.py"))
     if not source_files:

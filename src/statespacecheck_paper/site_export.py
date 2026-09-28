@@ -66,12 +66,13 @@ from statespacecheck_paper.figure04_layout import Figure4DetailWindow
 from statespacecheck_paper.figure04_place_fields import get_state_marginalized_posterior
 from statespacecheck_paper.figure04_workflow import Figure4RenderData, prepare_figure04_render_data
 from statespacecheck_paper.number_format import significant, whole_percent
-from statespacecheck_paper.paths import ANIMAL_DATE_EPOCH, DATA_PATH
-from statespacecheck_paper.reported_values import (
+from statespacecheck_paper.paths import (
+    ANIMAL_DATE_EPOCH,
+    DATA_PATH,
     FIGURE03_SUMMARY_PATH,
     FIGURE04_SUMMARY_PATH,
-    macro_sections,
 )
+from statespacecheck_paper.reported_values import macro_sections
 from statespacecheck_paper.simulation import (
     gaussian_transition_matrix,
     place_field_rates,

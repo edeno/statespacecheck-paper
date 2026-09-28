@@ -61,7 +61,11 @@ from pathlib import Path
 from typing import Any
 
 from statespacecheck_paper.number_format import SIGNIFICANT_FIGURES, significant, whole_percent
-from statespacecheck_paper.paths import FIGURE04_INPUTS_DOI
+from statespacecheck_paper.paths import (
+    FIGURE03_SUMMARY_PATH,
+    FIGURE04_INPUTS_DOI,
+    FIGURE04_SUMMARY_PATH,
+)
 
 MACRO_FILE_PATH = Path("manuscript/reported_values.tex")
 # This repository's citation metadata; its ``doi`` is the analysis code's Zenodo DOI
@@ -70,8 +74,6 @@ CITATION_PATH = Path("CITATION.cff")
 # Zenodo record that groups every archived statespacecheck release (its concept
 # record); each release's own DOI is looked up under it by version
 STATESPACECHECK_ZENODO_CONCEPT_RECORD = "22999988"
-FIGURE03_SUMMARY_PATH = Path("manuscript/figures/main/figure03_summary.json")
-FIGURE04_SUMMARY_PATH = Path("manuscript/figures/main/figure04_summary.json")
 
 # Spelled-out cardinals for the counts the manuscript writes as words
 # ("eleven place cells", "Five additional cells"). Only small counts appear,
