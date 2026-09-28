@@ -604,7 +604,7 @@ def plot_ppc_likelihood_fan(ax: Axes, data: Figure2ExampleData) -> None:
     """Fan of simulated observation likelihoods.
 
     For each state sample drawn from the predictive (the predictive-distribution panel), the
-    Monte Carlo loop draws an observation y_tilde ~ p(y | x_s) and
+    Monte Carlo p-value draws an observation y_tilde ~ p(y | x_s) and
     constructs the corresponding observation likelihood p(y_tilde | x).
     This panel shows that fan of likelihood curves, colored to match
     the samples in the predictive-distribution panel. Per-curve markers distinguish the state
