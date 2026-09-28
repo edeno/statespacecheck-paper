@@ -5,7 +5,8 @@ problem; ``_diag_dominant_transition`` builds a symmetric near-identity
 transition matrix. Both are imported by the test modules that split out of the
 old ``test_analysis.py`` (decoding, figure-3). The ``decoder_inputs`` fixture in
 ``conftest.py`` wraps ``DecoderInputs`` so it is available by name to every test
-module without an import.
+module without an import. ``xarray_results`` builds a Figure-4 decoder results
+dataset for the place-field and diagnostics tests.
 """
 
 from __future__ import annotations
@@ -14,6 +15,8 @@ from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
+import pandas as pd
+import xarray as xr
 
 from statespacecheck_paper.decoding import decode_with_diagnostics
 from statespacecheck_paper.diagnostics import DecodingDiagnostics
@@ -58,4 +61,27 @@ def make_decoder_inputs() -> DecoderInputs:
         place_field_centers=np.array([25.0, 50.0, 75.0]),
         place_field_std=5.0,
         place_field_rate_scale=0.1,
+    )
+
+
+def xarray_results(
+    posterior_data: np.ndarray,
+    name: str,
+    state_bins: pd.MultiIndex | np.ndarray | None = None,
+) -> xr.Dataset:
+    """Build a one-variable decoder results Dataset with the on-disk layout.
+
+    ``posterior_data`` has shape ``(n_time, n_state_bins)``.
+    """
+    n_time, n_state_bins = posterior_data.shape
+    if state_bins is None:
+        state_bins = np.arange(n_state_bins)
+    return xr.Dataset(
+        {
+            name: xr.DataArray(
+                posterior_data,
+                dims=["time", "state_bins"],
+                coords={"time": np.arange(n_time), "state_bins": state_bins},
+            )
+        }
     )

@@ -8,7 +8,6 @@ from unittest.mock import MagicMock
 import numpy as np
 import pandas as pd
 import pytest
-import xarray as xr
 
 import statespacecheck_paper.figure04_diagnostics as figure04_diagnostics
 from statespacecheck_paper.diagnostics import SpikeEventDiagnostics
@@ -18,26 +17,7 @@ from statespacecheck_paper.figure04_diagnostics import (
     compute_spike_event_diagnostics,
 )
 
-
-def _xarray_results(
-    posterior_data: np.ndarray,
-    name: str,
-    state_bins: pd.MultiIndex | np.ndarray | None = None,
-) -> xr.Dataset:
-    """Build a 2-variable Dataset matching the on-disk results layout."""
-    n_time, n_state_bins = posterior_data.shape
-    if state_bins is None:
-        state_bins = np.arange(n_state_bins)
-    return xr.Dataset(
-        {
-            name: xr.DataArray(
-                posterior_data,
-                dims=["time", "state_bins"],
-                coords={"time": np.arange(n_time), "state_bins": state_bins},
-            )
-        }
-    )
-
+from ._decoder_inputs import xarray_results
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -290,7 +270,7 @@ class TestComputeModelDiagnostics:
             [["Continuous", "Fragmented"], position_bins],
             names=["state", "position"],
         )
-        results = _xarray_results(
+        results = xarray_results(
             posterior_per_state.reshape(2, -1),
             "predictive_posterior",
             state_bins=state_bins,

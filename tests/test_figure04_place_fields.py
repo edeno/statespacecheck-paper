@@ -8,7 +8,6 @@ from unittest.mock import MagicMock
 import numpy as np
 import pandas as pd
 import pytest
-import xarray as xr
 
 from statespacecheck_paper.figure04_place_fields import (
     extract_place_fields,
@@ -16,26 +15,7 @@ from statespacecheck_paper.figure04_place_fields import (
     get_state_marginalized_posterior,
 )
 
-
-def _xarray_results(
-    posterior_data: np.ndarray,
-    name: str,
-    state_bins: pd.MultiIndex | np.ndarray | None = None,
-) -> xr.Dataset:
-    """Build a 2-variable Dataset matching the on-disk results layout."""
-    n_time, n_state_bins = posterior_data.shape
-    if state_bins is None:
-        state_bins = np.arange(n_state_bins)
-    return xr.Dataset(
-        {
-            name: xr.DataArray(
-                posterior_data,
-                dims=["time", "state_bins"],
-                coords={"time": np.arange(n_time), "state_bins": state_bins},
-            )
-        }
-    )
-
+from ._decoder_inputs import xarray_results
 
 # ---------------------------------------------------------------------------
 # extract_place_fields
@@ -94,7 +74,7 @@ class TestGetStateMarginalizedPosterior:
         """Single-state model: no states to marginalize, output equals input."""
         n_time, n_bins = 100, 50
         posterior_data = rng.dirichlet(np.ones(n_bins), size=n_time)
-        results = _xarray_results(posterior_data, f"{posterior_type}_posterior")
+        results = xarray_results(posterior_data, f"{posterior_type}_posterior")
         result = get_state_marginalized_posterior(results, posterior_type)
         assert result.shape == (n_time, n_bins)
         np.testing.assert_allclose(result, posterior_data)
@@ -109,7 +89,7 @@ class TestGetStateMarginalizedPosterior:
         states = ["Continuous", "Fragmented"]
         positions = np.arange(n_bins, dtype=float)
         multi_index = pd.MultiIndex.from_product([states, positions], names=["state", "position"])
-        results = _xarray_results(
+        results = xarray_results(
             posterior_per_state.reshape(n_time, -1),
             "predictive_posterior",
             state_bins=multi_index,
@@ -129,7 +109,7 @@ class TestGetStateMarginalizedPosterior:
         broken_index = pd.MultiIndex.from_tuples(
             [("A", 0), ("A", 0), ("B", 0), ("B", 0)], names=["state", "position"]
         )
-        results = _xarray_results(
+        results = xarray_results(
             np.random.default_rng(0).random((n_time, 4)),
             "predictive_posterior",
             state_bins=broken_index,
