@@ -669,6 +669,8 @@ def lookup_statespacecheck_doi(version: str) -> str:
         If Zenodo has not archived that version (yet).
     urllib.error.URLError
         If Zenodo cannot be reached.
+    TimeoutError
+        If Zenodo does not reply within 30 seconds.
     """
     query = urllib.parse.urlencode(
         {
