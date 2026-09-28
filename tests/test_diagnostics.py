@@ -265,6 +265,38 @@ class TestSpikeEventDiagnosticsInvariants:
                 per_spike_likelihood=np.zeros((n_spikes, n_bins)),
             )
 
+    @pytest.mark.parametrize(
+        ("field", "bad_value", "message"),
+        [
+            ("event_hpd_overlap", 1.5, "values above 1.0"),
+            ("event_predictive_pvalue", -0.5, "values below 0.0"),
+            ("event_kl_divergence", np.nan, "NaN found in a required per-event value"),
+            ("hpd_overlap", -np.inf, "-inf is not a valid diagnostic value"),
+            ("predictive_pvalue", np.inf, r"\+inf is not permitted"),
+            ("kl_divergence", -1.0, "values below 0.0"),
+        ],
+    )
+    def test_out_of_range_metric_names_the_field(
+        self, field: str, bad_value: float, message: str
+    ) -> None:
+        n_spikes, n_time, n_cells, n_bins = 2, 4, 2, 3
+        arrays: dict[str, Any] = {
+            "event_hpd_overlap": np.full(n_spikes, 0.5),
+            "event_kl_divergence": np.full(n_spikes, np.inf),
+            "event_predictive_pvalue": np.full(n_spikes, 0.5),
+            "hpd_overlap": np.full((n_time, n_cells), np.nan),
+            "kl_divergence": np.full((n_time, n_cells), np.nan),
+            "predictive_pvalue": np.full((n_time, n_cells), np.nan),
+        }
+        arrays[field].flat[0] = bad_value
+        with pytest.raises(ValueError, match=rf"SpikeEventDiagnostics\.{field}: {message}"):
+            SpikeEventDiagnostics(
+                event_time_ind=np.zeros(n_spikes, dtype=np.intp),
+                event_cell_ind=np.zeros(n_spikes, dtype=np.intp),
+                per_spike_likelihood=np.zeros((n_spikes, n_bins)),
+                **arrays,
+            )
+
 
 # ---------------------------------------------------------------------------
 # compute_spike_event_diagnostics_from_rates

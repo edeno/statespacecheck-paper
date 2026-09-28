@@ -137,6 +137,36 @@ def _validate_diagnostic_range(
         raise ValueError(f"{name}: values above {hi} found (max={float(valid.max())})")
 
 
+def _validate_metric_ranges(
+    container: SpikeEventDiagnostics | DecodingDiagnostics,
+    owner: str,
+    prefix: str,
+    *,
+    allow_nan: bool,
+) -> None:
+    """Range-check a container's three ``{prefix}{metric}`` diagnostic arrays.
+
+    HPD overlap and the predictive p-value must lie in ``[0, 1]``; KL
+    divergence must be non-negative and may be ``+inf``. ``prefix`` is
+    ``"event_"`` for the per-event arrays and ``""`` for the dense matrices;
+    ``owner`` names the container in error messages.
+    """
+    for metric, hi, allow_positive_infinity in (
+        ("hpd_overlap", 1.0, False),
+        ("predictive_pvalue", 1.0, False),
+        ("kl_divergence", None, True),
+    ):
+        field = prefix + metric
+        _validate_diagnostic_range(
+            getattr(container, field),
+            f"{owner}.{field}",
+            lo=0.0,
+            hi=hi,
+            allow_nan=allow_nan,
+            allow_positive_infinity=allow_positive_infinity,
+        )
+
+
 @dataclass(frozen=True)
 class SpikeEventDiagnostics:
     """Return of :func:`compute_spike_event_diagnostics_from_rates`.
@@ -228,53 +258,9 @@ class SpikeEventDiagnostics:
                     f"per_spike_likelihood leading dim {self.per_spike_likelihood.shape[0]} "
                     f"!= n_spikes={n_spikes}"
                 )
-        _validate_diagnostic_range(
-            self.event_hpd_overlap,
-            "SpikeEventDiagnostics.event_hpd_overlap",
-            lo=0.0,
-            hi=1.0,
-            allow_nan=False,
-        )
-        _validate_diagnostic_range(
-            self.event_predictive_pvalue,
-            "SpikeEventDiagnostics.event_predictive_pvalue",
-            lo=0.0,
-            hi=1.0,
-            allow_nan=False,
-        )
-        _validate_diagnostic_range(
-            self.event_kl_divergence,
-            "SpikeEventDiagnostics.event_kl_divergence",
-            lo=0.0,
-            hi=None,
-            allow_nan=False,
-            allow_positive_infinity=True,
-        )
+        _validate_metric_ranges(self, "SpikeEventDiagnostics", "event_", allow_nan=False)
         if self.hpd_overlap is not None:
-            assert self.kl_divergence is not None
-            assert self.predictive_pvalue is not None
-            _validate_diagnostic_range(
-                self.hpd_overlap,
-                "SpikeEventDiagnostics.hpd_overlap",
-                lo=0.0,
-                hi=1.0,
-                allow_nan=True,
-            )
-            _validate_diagnostic_range(
-                self.predictive_pvalue,
-                "SpikeEventDiagnostics.predictive_pvalue",
-                lo=0.0,
-                hi=1.0,
-                allow_nan=True,
-            )
-            _validate_diagnostic_range(
-                self.kl_divergence,
-                "SpikeEventDiagnostics.kl_divergence",
-                lo=0.0,
-                hi=None,
-                allow_nan=True,
-                allow_positive_infinity=True,
-            )
+            _validate_metric_ranges(self, "SpikeEventDiagnostics", "", allow_nan=True)
         # Write-protect everything that's not None.
         for name in (
             "event_time_ind",
@@ -382,50 +368,8 @@ class DecodingDiagnostics:
         # the range check ignores NaN. A buggy decoder otherwise ships
         # out-of-range values that only surface much later (e.g., as a NaN
         # ``DiagnosticThresholds`` or a misleading hexbin).
-        _validate_diagnostic_range(
-            self.hpd_overlap,
-            "DecodingDiagnostics.hpd_overlap",
-            lo=0.0,
-            hi=1.0,
-            allow_nan=True,
-        )
-        _validate_diagnostic_range(
-            self.predictive_pvalue,
-            "DecodingDiagnostics.predictive_pvalue",
-            lo=0.0,
-            hi=1.0,
-            allow_nan=True,
-        )
-        _validate_diagnostic_range(
-            self.kl_divergence,
-            "DecodingDiagnostics.kl_divergence",
-            lo=0.0,
-            hi=None,
-            allow_nan=True,
-            allow_positive_infinity=True,
-        )
-        _validate_diagnostic_range(
-            self.event_hpd_overlap,
-            "DecodingDiagnostics.event_hpd_overlap",
-            lo=0.0,
-            hi=1.0,
-            allow_nan=False,
-        )
-        _validate_diagnostic_range(
-            self.event_predictive_pvalue,
-            "DecodingDiagnostics.event_predictive_pvalue",
-            lo=0.0,
-            hi=1.0,
-            allow_nan=False,
-        )
-        _validate_diagnostic_range(
-            self.event_kl_divergence,
-            "DecodingDiagnostics.event_kl_divergence",
-            lo=0.0,
-            hi=None,
-            allow_nan=False,
-            allow_positive_infinity=True,
-        )
+        _validate_metric_ranges(self, "DecodingDiagnostics", "", allow_nan=True)
+        _validate_metric_ranges(self, "DecodingDiagnostics", "event_", allow_nan=False)
         # Write-protect every backing buffer.
         for name in (
             "posterior",
