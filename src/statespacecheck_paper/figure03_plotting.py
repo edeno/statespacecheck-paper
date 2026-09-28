@@ -653,7 +653,9 @@ def _plot_figure3_summary_heatmap(
         accuracy_header.set_gid(FIGURE3_SUMMARY_ACCURACY_HEADER_GID)
 
     component_row_y = 3.0 + len(accuracy_headers)
-    component_color = {"Observation": "#E69F00", "Transition": "#0072B2"}
+    # The observation model is the likelihood's component; the transition
+    # model is the predictive's.
+    component_color = {"Observation": COLORS["likelihood"], "Transition": COLORS["predictive"]}
     for col_idx, comp in enumerate(component_labels):
         color = component_color.get(comp, "0.4")
         component_label = ax.text(
