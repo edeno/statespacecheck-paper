@@ -1340,8 +1340,6 @@ from .panels import (  # noqa: E402, F401
     _STATE_LIKELIHOOD_RGB,
     _STATE_POSTERIOR_RGB,
     _TRUE_POSITION_PEN,
-    METRIC_COLORS,
-    METRIC_TITLES,
     _make_slice_subplot,
     _PerCellRow,
     _pin_slice_axes,

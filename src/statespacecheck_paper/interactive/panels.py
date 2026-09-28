@@ -32,7 +32,7 @@ from numpy.typing import NDArray
 from PySide6 import QtCore, QtWidgets
 
 from statespacecheck_paper.plotting import negative_log_pvalue
-from statespacecheck_paper.style import COLORS, WONG, hex_to_rgb
+from statespacecheck_paper.style import COLORS, METRIC_SPECS, WONG, MetricSpec, hex_to_rgb
 
 # Top-plot overlay choices: which derived distribution the slice
 # panel's population plot draws as the blue overlay line.
@@ -87,12 +87,12 @@ _PER_CELL_PALETTE: tuple[tuple[int, int, int], ...] = (
 
 MetricName = Literal["event_hpd_overlap", "event_kl_divergence", "event_predictive_pvalue"]
 
-METRIC_COLORS: dict[MetricName, tuple[int, int, int]] = {
-    "event_hpd_overlap": hex_to_rgb(COLORS["hpd_overlap"]),  # WONG[2] Sky Blue
-    "event_kl_divergence": hex_to_rgb(COLORS["kl_divergence"]),  # WONG[3] Bluish Green
-    "event_predictive_pvalue": hex_to_rgb(COLORS["metric_combined"]),  # WONG[7] Reddish Purple
-}
-METRIC_TITLES: dict[MetricName, str] = {
+# Color and display transform come from the paper's metric registry, keyed
+# here by the per-spike event attribute the viewer reads.
+_METRIC_SPEC_BY_EVENT_ATTR: dict[str, MetricSpec] = {s.event_attr: s for s in METRIC_SPECS}
+# Plain-text axis titles: pyqtgraph does not render the registry's LaTeX
+# ylabels, and the viewer has room to spell out "KL divergence".
+_METRIC_TITLES: dict[MetricName, str] = {
     "event_hpd_overlap": "HPD overlap",
     "event_kl_divergence": "KL divergence",
     "event_predictive_pvalue": "-log(p)",
@@ -539,10 +539,12 @@ class MetricPanel(pg.PlotWidget):
         self.setMouseEnabled(x=False, y=False)
         self.setLabel("bottom", "Time relative to center (s)")
         self.getAxis("bottom").enableAutoSIPrefix(False)
-        self.setLabel("left", METRIC_TITLES[metric])
+        self.setLabel("left", _METRIC_TITLES[metric])
 
         self._metric: MetricName = metric
-        rgb = METRIC_COLORS[metric]
+        spec = _METRIC_SPEC_BY_EVENT_ATTR[metric]
+        self._neg_log_p = spec.display_transform == "neg_log_p"
+        rgb = hex_to_rgb(spec.color)
         self._scatter = pg.ScatterPlotItem(
             pen=pg.mkPen(rgb, width=0),
             brush=pg.mkBrush(*rgb, 200),
@@ -557,9 +559,7 @@ class MetricPanel(pg.PlotWidget):
         # 0.05 ⇒ -log(0.05) ≈ 3.0 on this axis).
         self._threshold_line: pg.InfiniteLine | None = None
         if threshold is not None:
-            disp = (
-                negative_log_pvalue(threshold) if metric == "event_predictive_pvalue" else threshold
-            )
+            disp = negative_log_pvalue(threshold) if self._neg_log_p else threshold
             self._threshold_line = pg.InfiniteLine(
                 pos=float(disp),
                 angle=0,
@@ -652,16 +652,12 @@ class MetricPanel(pg.PlotWidget):
             return
         self._pin_line.setPos(relative_time)
         self._pin_line.setVisible(True)
-        disp = (
-            negative_log_pvalue(metric_value)
-            if self._metric == "event_predictive_pvalue"
-            else metric_value
-        )
+        disp = negative_log_pvalue(metric_value) if self._neg_log_p else metric_value
         self._pin_dot.setData(x=[relative_time], y=[float(disp)])
         self._pin_dot.setVisible(True)
 
     def _display_values(self, raw: NDArray[np.float32]) -> NDArray[np.float32]:
-        if self._metric == "event_predictive_pvalue":
+        if self._neg_log_p:
             return np.asarray(negative_log_pvalue(raw), dtype=np.float32)
         return np.asarray(raw, dtype=np.float32)
 
