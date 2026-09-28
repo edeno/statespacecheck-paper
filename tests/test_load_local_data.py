@@ -14,6 +14,7 @@ import pandas as pd
 import pytest
 
 from statespacecheck_paper.load_local_data import (
+    FIGURE04_INPUTS_DOI,
     FIGURE04_INPUTS_FILE,
     FIGURE04_INPUTS_SHA256,
     LEGACY_PICKLE_SUFFIXES,
@@ -299,3 +300,11 @@ def test_published_checksum_is_the_one_figure4_records() -> None:
     )
     recorded = summary["provenance"]["figure04_decode_cache"]["export_file_sha256"]
     assert recorded == {FIGURE04_INPUTS_FILE: FIGURE04_INPUTS_SHA256}
+
+
+def test_manuscript_cites_the_downloaded_file() -> None:
+    """The data statement cites the Zenodo record the download verifies."""
+    manuscript = (Path(__file__).resolve().parents[1] / "manuscript/main.tex").read_text(
+        encoding="utf-8"
+    )
+    assert f"https://doi.org/{FIGURE04_INPUTS_DOI}" in manuscript
