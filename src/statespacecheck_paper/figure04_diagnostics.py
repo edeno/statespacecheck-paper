@@ -19,7 +19,7 @@ Examples
 from __future__ import annotations
 
 import dataclasses
-from typing import Any, Literal
+from typing import Any
 
 import numpy as np
 import statespacecheck as ssc
@@ -27,8 +27,10 @@ from numpy.typing import NDArray
 from scipy.ndimage import gaussian_filter1d
 
 from statespacecheck_paper.diagnostics import (
+    FlagDirection,
     SpikeEventDiagnostics,
     compute_spike_event_diagnostics_from_rates,
+    flag_mask,
 )
 from statespacecheck_paper.figure04_place_fields import (
     extract_shared_position_place_fields,
@@ -566,7 +568,7 @@ def compute_flag_confusion(
     metric: str,
     threshold: float,
     *,
-    worse_when: Literal["below", "above"],
+    worse_when: FlagDirection,
 ) -> FlagConfusion:
     """Tabulate per-spike flag agreement between two decoders for one metric.
 
@@ -625,10 +627,8 @@ def compute_flag_confusion(
     ):
         raise ValueError(f"{event_key} contains an undefined per-event value")
 
-    if worse_when == "below":
-        flag_a, flag_b = a <= threshold, b <= threshold
-    else:
-        flag_a, flag_b = a >= threshold, b >= threshold
+    flag_a = flag_mask(a, threshold, worse_when)
+    flag_b = flag_mask(b, threshold, worse_when)
 
     return FlagConfusion(
         metric=metric,

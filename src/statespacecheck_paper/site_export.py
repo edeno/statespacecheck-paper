@@ -44,8 +44,11 @@ from numpy.typing import NDArray
 
 from statespacecheck_paper.decoding import decode_with_diagnostics
 from statespacecheck_paper.diagnostics import (
+    INCLUSIVE_FLAG_COMPARISONS,
     DecodingDiagnostics,
+    FlagDirection,
     compute_spike_event_diagnostics_from_rates,
+    flag_mask,
 )
 from statespacecheck_paper.figure03_generation import FIGURE03_CONDITION_IDS, conditions_by_id
 from statespacecheck_paper.figure03_protocol import STEP_SECONDS, Figure3Config
@@ -221,6 +224,11 @@ def _rounded_significant(values: NDArray[np.floating], digits: int) -> list[floa
     return [float(f"{value:.{digits}g}") for value in _finite(values).tolist()]
 
 
+_FLAG_DIRECTION_BY_COMPARISON: dict[str, FlagDirection] = {
+    comparison: direction for direction, comparison in INCLUSIVE_FLAG_COMPARISONS.items()
+}
+
+
 def flag_events(values: NDArray[np.floating], rule: Mapping[str, Any]) -> NDArray[np.bool_]:
     """Apply an inclusive flag rule from a figure summary's ``flag_rules``.
 
@@ -238,12 +246,9 @@ def flag_events(values: NDArray[np.floating], rule: Mapping[str, Any]) -> NDArra
     """
     threshold = float(rule["threshold"])
     comparison = rule["comparison"]
-    array = np.asarray(values, dtype=np.float64)
-    if comparison == "less_than_or_equal":
-        return array <= threshold
-    if comparison == "greater_than_or_equal":
-        return array >= threshold
-    raise ValueError(f"Unknown flag comparison {comparison!r}")
+    if comparison not in _FLAG_DIRECTION_BY_COMPARISON:
+        raise ValueError(f"Unknown flag comparison {comparison!r}")
+    return flag_mask(values, threshold, _FLAG_DIRECTION_BY_COMPARISON[comparison])
 
 
 class EventDiagnostics(Protocol):

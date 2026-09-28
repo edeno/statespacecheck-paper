@@ -19,7 +19,11 @@ import statespacecheck as ssc
 from numpy.typing import NDArray
 
 from statespacecheck_paper.decoding import decode_with_diagnostics
-from statespacecheck_paper.diagnostics import compute_spike_event_diagnostics_from_rates
+from statespacecheck_paper.diagnostics import (
+    METRIC_FLAG_DIRECTIONS,
+    compute_spike_event_diagnostics_from_rates,
+    flag_mask,
+)
 from statespacecheck_paper.figure03_generation import FIGURE03_CONDITION_IDS, conditions_by_id
 from statespacecheck_paper.figure03_protocol import STEP_SECONDS, Figure3Config
 from statespacecheck_paper.figure03_simulation import (
@@ -32,6 +36,7 @@ from statespacecheck_paper.figure04_diagnostics import mean_per_spike_likelihood
 from statespacecheck_paper.figure04_layout import Figure4DetailWindow
 from statespacecheck_paper.number_format import significant, whole_percent
 from statespacecheck_paper.reported_values import FIGURE03_SUMMARY_PATH, FIGURE04_SUMMARY_PATH
+from statespacecheck_paper.scientific_artifacts import inclusive_flag_rules
 from statespacecheck_paper.simulation import gaussian_transition_matrix, place_field_rates
 from statespacecheck_paper.site_export import (
     FILTER_EXPLAINER,
@@ -130,6 +135,17 @@ def test_flag_events_is_inclusive_in_both_directions() -> None:
     np.testing.assert_array_equal(flag_events(values, above), [False, True, True])
     with pytest.raises(ValueError, match="Unknown flag comparison"):
         flag_events(values, {"comparison": "equal", "threshold": 0.05})
+
+
+def test_flag_events_reads_the_rules_the_summaries_record() -> None:
+    values = np.array([0.04, 0.05, 0.06, np.nan])
+    rules = inclusive_flag_rules(
+        dict.fromkeys(METRIC_FLAG_DIRECTIONS, 0.05), METRIC_FLAG_DIRECTIONS
+    )
+    for metric, direction in METRIC_FLAG_DIRECTIONS.items():
+        np.testing.assert_array_equal(
+            flag_events(values, rules[metric]), flag_mask(values, 0.05, direction)
+        )
 
 
 # ---------------------------------------------------------------------------

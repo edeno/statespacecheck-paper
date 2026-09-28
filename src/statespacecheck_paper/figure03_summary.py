@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Literal, cast
+from typing import cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -28,9 +28,12 @@ from statespacecheck_paper.diagnostics import (
     BASELINE_HPD_OVERLAP_QUANTILE,
     BASELINE_KL_DIVERGENCE_QUANTILE,
     FIXED_PREDICTIVE_PVALUE_CUTOFF,
+    METRIC_FLAG_DIRECTIONS,
     DecodingDiagnostics,
     DiagnosticThresholds,
+    FlagDirection,
     compute_baseline_diagnostic_thresholds,
+    flag_mask,
 )
 from statespacecheck_paper.figure03_protocol import (
     Figure3Config,
@@ -39,11 +42,7 @@ from statespacecheck_paper.figure03_protocol import (
 )
 from statespacecheck_paper.figure03_simulation import run_figure03_simulation
 
-SUMMARY_FLAG_METRICS: tuple[tuple[str, Literal["below", "above"]], ...] = (
-    ("hpd_overlap", "below"),
-    ("predictive_pvalue", "below"),
-    ("kl_divergence", "above"),
-)
+SUMMARY_FLAG_METRICS: tuple[tuple[str, FlagDirection], ...] = tuple(METRIC_FLAG_DIRECTIONS.items())
 
 # Row order of the per-condition decoding-accuracy block beneath the flag
 # heatmap: currently the median absolute error of the filtered-posterior
@@ -143,7 +142,9 @@ def build_summary_conditions(config: Figure3Config) -> list[Figure3SummaryCondit
     ]
 
 
-def _flag_percentage(values: NDArray[np.floating], threshold: float, direction: str) -> float:
+def _flag_percentage(
+    values: NDArray[np.floating], threshold: float, direction: FlagDirection
+) -> float:
     """Percent of ``values`` flagged as poor fit at ``threshold``.
 
     Parameters
@@ -153,8 +154,7 @@ def _flag_percentage(values: NDArray[np.floating], threshold: float, direction: 
     threshold : float
         Flag threshold.
     direction : {"below", "above"}
-        ``"below"`` flags ``values <= threshold``; ``"above"`` flags
-        ``values >= threshold``.
+        Worse-fit side of ``threshold``, applied by :func:`flag_mask`.
 
     Returns
     -------
@@ -165,13 +165,7 @@ def _flag_percentage(values: NDArray[np.floating], threshold: float, direction: 
         raise ValueError("Cannot compute a flag percentage for a condition with no spike events")
     if np.any(np.isnan(values)) or np.any(np.isneginf(values)):
         raise ValueError("Per-event diagnostic values must not contain NaN or -inf")
-    if direction == "below":
-        flagged = float(np.mean(values <= threshold))
-    elif direction == "above":
-        flagged = float(np.mean(values >= threshold))
-    else:
-        raise ValueError(f"direction must be 'below' or 'above'; got {direction!r}")
-    return 100.0 * flagged
+    return 100.0 * float(np.mean(flag_mask(values, threshold, direction)))
 
 
 def extract_condition_flag_values(

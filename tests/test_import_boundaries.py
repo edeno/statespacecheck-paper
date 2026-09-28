@@ -158,6 +158,7 @@ def test_figure04_family_dependency_edges_are_acyclic() -> None:
             prefix + "figure04_track_plots",
         },
         "figure04_generation.py": {
+            prefix + "diagnostics",
             prefix + "figure04_cache",
             prefix + "figure04_workflow",
             prefix + "figure04_layout",

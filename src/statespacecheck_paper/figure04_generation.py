@@ -14,8 +14,8 @@ from __future__ import annotations
 import dataclasses
 import math
 from pathlib import Path
-from typing import Literal
 
+from statespacecheck_paper.diagnostics import METRIC_FLAG_DIRECTIONS, FlagDirection
 from statespacecheck_paper.figure04_cache import Figure4CacheProvenance, Figure4Paths
 from statespacecheck_paper.figure04_decoder import Figure4Config
 from statespacecheck_paper.figure04_layout import Figure4DetailWindow, compose_figure04
@@ -40,9 +40,8 @@ FIGURE4_DIAGNOSTIC_THRESHOLDS: dict[str, float] = {
     "hpd_overlap": 0.05,
     "predictive_pvalue": 0.05,
 }
-FIGURE4_METRIC_DIRECTIONS: dict[str, Literal["below", "above"]] = {
-    "hpd_overlap": "below",
-    "predictive_pvalue": "below",
+FIGURE4_METRIC_DIRECTIONS: dict[str, FlagDirection] = {
+    metric: METRIC_FLAG_DIRECTIONS[metric] for metric in FIGURE4_DIAGNOSTIC_THRESHOLDS
 }
 # Manuscript detail view: a KL-divergence spike during immobility at a reward
 # well, shown with 500 samples on either side (~2 seconds total at 500 Hz).

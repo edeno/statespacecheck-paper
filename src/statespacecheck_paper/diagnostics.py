@@ -17,13 +17,14 @@ paper's dependency graph.
 - **DecodingDiagnostics**: full decoder return with dense distributions + diagnostics
 - **compute_spike_event_diagnostics_from_rates**: per-spike diagnostics via ``statespacecheck``
 - **DiagnosticThresholds** / **compute_baseline_diagnostic_thresholds**: baseline flags
+- **METRIC_FLAG_DIRECTIONS** / **flag_mask**: the inclusive flag rule
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import cast
+from typing import Literal, cast
 
 import numpy as np
 import statespacecheck as ssc
@@ -41,6 +42,63 @@ _PER_EVENT_METRIC_NAMES = ("event_hpd_overlap", "event_kl_divergence", "event_pr
 BASELINE_HPD_OVERLAP_QUANTILE = 0.01
 BASELINE_KL_DIVERGENCE_QUANTILE = 0.99
 FIXED_PREDICTIVE_PVALUE_CUTOFF = 0.05
+
+FlagDirection = Literal["below", "above"]
+
+# Side of the threshold on which each raw per-event diagnostic indicates worse
+# fit, in the paper's metric order: low HPD overlap and low predictive p-values
+# are misfit, and so is high KL divergence.
+METRIC_FLAG_DIRECTIONS: dict[str, FlagDirection] = {
+    "hpd_overlap": "below",
+    "predictive_pvalue": "below",
+    "kl_divergence": "above",
+}
+
+# Name a figure summary records for each direction's inclusive comparison.
+INCLUSIVE_FLAG_COMPARISONS: dict[FlagDirection, str] = {
+    "below": "less_than_or_equal",
+    "above": "greater_than_or_equal",
+}
+
+
+def flag_mask(
+    values: NDArray[np.floating],
+    threshold: float,
+    direction: FlagDirection,
+) -> NDArray[np.bool_]:
+    """Flag diagnostic values on the worse-fit side of ``threshold``, inclusively.
+
+    Parameters
+    ----------
+    values : np.ndarray, shape (n_events,)
+        Per-event diagnostic values.
+    threshold : float
+        Flag threshold. Values equal to it are flagged.
+    direction : {"below", "above"}
+        ``"below"`` flags ``values <= threshold``; ``"above"`` flags
+        ``values >= threshold``. See :data:`METRIC_FLAG_DIRECTIONS`.
+
+    Returns
+    -------
+    np.ndarray of bool, shape (n_events,)
+        True where the value is flagged. NaN is never flagged.
+
+    Raises
+    ------
+    ValueError
+        If ``direction`` is not ``"below"`` or ``"above"``.
+
+    Examples
+    --------
+    >>> flag_mask(np.array([0.01, 0.05, 0.5, np.nan]), 0.05, "below").tolist()
+    [True, True, False, False]
+    """
+    array = np.asarray(values, dtype=np.float64)
+    if direction == "below":
+        return array <= threshold
+    if direction == "above":
+        return array >= threshold
+    raise ValueError(f"direction must be 'below' or 'above'; got {direction!r}")
 
 
 def _validate_diagnostic_range(

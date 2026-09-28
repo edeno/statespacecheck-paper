@@ -9,11 +9,15 @@ import pytest
 import statespacecheck as ssc
 
 from statespacecheck_paper.diagnostics import (
+    INCLUSIVE_FLAG_COMPARISONS,
+    METRIC_FLAG_DIRECTIONS,
     DecodingDiagnostics,
     DiagnosticThresholds,
+    FlagDirection,
     SpikeEventDiagnostics,
     compute_baseline_diagnostic_thresholds,
     compute_spike_event_diagnostics_from_rates,
+    flag_mask,
 )
 
 from ._decoder_inputs import DecoderInputs
@@ -311,3 +315,40 @@ class TestComputeSpikeEventDiagnosticsFromRates:
         assert result.predictive_pvalue is None
         assert result.per_spike_likelihood is None
         assert result.event_hpd_overlap.shape == (4,)
+
+
+# ---------------------------------------------------------------------------
+# flag_mask / METRIC_FLAG_DIRECTIONS
+# ---------------------------------------------------------------------------
+
+
+class TestFlagMask:
+    @pytest.mark.parametrize(
+        ("direction", "expected"),
+        [
+            ("below", [True, True, False, False]),
+            ("above", [False, True, True, False]),
+        ],
+    )
+    def test_inclusive_at_threshold_and_never_flags_nan(
+        self, direction: FlagDirection, expected: list[bool]
+    ) -> None:
+        values = np.array([0.0, 0.5, 1.0, np.nan])
+        np.testing.assert_array_equal(flag_mask(values, 0.5, direction), expected)
+
+    def test_positive_infinity_is_flagged_above(self) -> None:
+        values = np.array([np.inf, 1.0])
+        np.testing.assert_array_equal(flag_mask(values, 2.0, "above"), [True, False])
+
+    def test_bad_direction_raises(self) -> None:
+        unchecked: Any = flag_mask
+        with pytest.raises(ValueError, match="direction"):
+            unchecked(np.array([1.0]), 0.5, "sideways")
+
+    def test_every_metric_direction_has_a_recorded_comparison(self) -> None:
+        assert METRIC_FLAG_DIRECTIONS == {
+            "hpd_overlap": "below",
+            "predictive_pvalue": "below",
+            "kl_divergence": "above",
+        }
+        assert set(INCLUSIVE_FLAG_COMPARISONS) == set(METRIC_FLAG_DIRECTIONS.values())
