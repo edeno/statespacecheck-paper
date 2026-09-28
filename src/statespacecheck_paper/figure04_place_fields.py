@@ -215,6 +215,54 @@ def extract_agreed_place_fields(
     return place_fields, position_bins
 
 
+def marginalize_state_bins(distribution_da: xr.DataArray) -> xr.DataArray:
+    """Sum a distribution over the decoder's discrete states.
+
+    Multi-state models encode ``(state, position)`` in ``state_bins`` as a
+    MultiIndex, which is unstacked and summed over ``state``; a single-state
+    model's plain ``state_bins`` index is returned unchanged. Branching on the
+    index type, rather than catching a generic unstack failure, keeps a
+    malformed multi-state index from being treated as single-state and
+    returning a per-state slice labeled as the marginal.
+
+    Parameters
+    ----------
+    distribution_da : xr.DataArray, dims (time, state_bins)
+        Distribution over the decoder's state bins.
+
+    Returns
+    -------
+    xr.DataArray
+        Dims ``(time, position)`` for a multi-state model, else unchanged.
+
+    Raises
+    ------
+    ValueError
+        If the ``state_bins`` MultiIndex is malformed (e.g. duplicate
+        ``(state, position)`` entries) and cannot be unstacked.
+    """
+    if not isinstance(distribution_da.indexes["state_bins"], pd.MultiIndex):
+        return distribution_da
+    try:
+        unstacked: xr.DataArray = distribution_da.unstack("state_bins")
+    except (ValueError, KeyError, TypeError) as e:
+        raise ValueError(
+            "Failed to unstack the state_bins MultiIndex on the decoder "
+            "distribution; the index is malformed (likely duplicate "
+            f"(state, position) entries) and cannot be marginalized. Underlying error: {e}"
+        ) from e
+    # ``skipna=False``: if the per-state interior masks differed, unstack would
+    # back-fill missing (state, position) cells with NaN, and a skipna sum would
+    # silently produce an asymmetric marginal that still looks like a
+    # distribution. Callers pair this with ``extract_shared_position_place_fields``
+    # (which rejects state-varying masks), but this keeps the marginal honest
+    # even without that guard.
+    if "state" in unstacked.dims:
+        marginal: xr.DataArray = unstacked.sum("state", skipna=False)
+        return marginal
+    return unstacked
+
+
 def get_state_marginalized_posterior(
     results: xr.Dataset,
     posterior_type: Literal["predictive", "acausal"] = "predictive",
@@ -268,35 +316,5 @@ def get_state_marginalized_posterior(
     # Drop NaN state bins (e.g., track interior only)
     posterior_da = posterior_da.dropna("state_bins")
 
-    # Multi-state models encode (state, position) in state_bins as a
-    # MultiIndex; single-state models use a plain Index. Branch on
-    # the index type rather than catching a generic unstack failure,
-    # which would silently treat a malformed multi-state model as
-    # single-state and produce a per-state slice labeled as marginal.
-    state_bins_index = posterior_da.indexes["state_bins"]
-    if isinstance(state_bins_index, pd.MultiIndex):
-        try:
-            unstacked = posterior_da.unstack("state_bins")
-        except (ValueError, KeyError) as e:
-            raise ValueError(
-                "Failed to unstack the state_bins MultiIndex on the "
-                "decoder posterior; the index is malformed (likely "
-                "duplicate (state, position) entries) and cannot be "
-                f"marginalized. Underlying error: {e}"
-            ) from e
-        # ``skipna=False``: if the per-state interior masks differed, unstack
-        # would back-fill missing (state, position) cells with NaN, and a
-        # skipna sum would silently produce an asymmetric marginal that still
-        # looks like a distribution. Callers pair this with
-        # ``extract_shared_position_place_fields`` (which rejects state-varying
-        # masks), but this keeps the marginal honest even without that guard.
-        if "state" in unstacked.dims:
-            marginalized = unstacked.sum("state", skipna=False)
-        else:
-            marginalized = unstacked
-        posterior: NDArray[np.float64] = np.asarray(marginalized.values)
-    else:
-        # Single-state model: no states to sum over.
-        posterior = np.asarray(posterior_da.values)
-
+    posterior: NDArray[np.float64] = np.asarray(marginalize_state_bins(posterior_da).values)
     return posterior

@@ -52,7 +52,7 @@ generate_figure03.py   → figure03_generation
 figure04_decoder       → (leaf; nld construction + Figure4Config)
 figure04_place_fields  → (leaf; place-field / marginalized-posterior extraction)
 figure04_diagnostics   → diagnostics, figure04_place_fields
-figure04_plot_primitives → style
+figure04_plot_primitives → figure04_place_fields, style
 figure04_track_plots   → figure04_plot_primitives
 figure04_panels        → diagnostics, figure04_diagnostics, figure04_plot_primitives, figure04_track_plots, plotting, style
 figure04_cache         → figure04_decoder (Figure4Config, Figure4DiagnosticsConfig), load_local_data

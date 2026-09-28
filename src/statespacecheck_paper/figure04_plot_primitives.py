@@ -14,6 +14,7 @@ import xarray as xr
 from matplotlib.axes import Axes
 from numpy.typing import NDArray
 
+from statespacecheck_paper.figure04_place_fields import marginalize_state_bins
 from statespacecheck_paper.style import (
     CMAP_POSTERIOR,
     COLORS,
@@ -177,51 +178,24 @@ def plot_distribution_heatmap(
     has_value = _state_bins_with_any_value(distribution_da)
     window_da = distribution_da.isel(time=time_slice_ind, state_bins=has_value)
 
-    # Plot distribution heatmap. Multi-state models encode
-    # (state, position) in state_bins as a MultiIndex; single-state
-    # models leave it as a plain Index without a separate ``position``
-    # coord. Branch on the index type so a malformed MultiIndex fails
-    # loud, and single-state data plots against state_bins directly
-    # rather than dying inside xarray on a missing ``position``.
-    if isinstance(window_da.indexes["state_bins"], pd.MultiIndex):
-        try:
-            unstacked = window_da.unstack("state_bins")
-        except (ValueError, KeyError, TypeError) as e:
-            raise ValueError(
-                "Failed to unstack state_bins MultiIndex on the "
-                "distribution heatmap; the index is malformed and cannot "
-                f"be marginalized. Underlying error: {e}"
-            ) from e
-        marginalized = (
-            unstacked.sum("state", skipna=False) if "state" in unstacked.dims else unstacked
-        )
-        if marginalized.notnull().any():
-            marginalized.plot(
-                x="time",
-                y="position",
-                ax=ax,
-                add_colorbar=False,
-                robust=True,
-                cmap=cmap,
-                rasterized=True,
-            )
-        else:
-            raise ValueError("Predictive-posterior slice contains no plottable values")
-    else:
-        # Single-state model: no separate ``position`` axis. Plot
-        # against the state_bins axis directly so the figure still
-        # renders something meaningful.
-        if window_da.notnull().any():
-            window_da.plot(
-                x="time",
-                ax=ax,
-                add_colorbar=False,
-                robust=True,
-                cmap=cmap,
-                rasterized=True,
-            )
-        else:
-            raise ValueError("Predictive-posterior slice contains no plottable values")
+    # Multi-state models plot the state-marginal against position; a
+    # single-state model has no separate ``position`` axis, so it plots
+    # against the state_bins axis directly.
+    position_axis = (
+        "position" if isinstance(window_da.indexes["state_bins"], pd.MultiIndex) else None
+    )
+    marginalized = marginalize_state_bins(window_da)
+    if not marginalized.notnull().any():
+        raise ValueError("Predictive-posterior slice contains no plottable values")
+    marginalized.plot.pcolormesh(
+        x="time",
+        y=position_axis,
+        ax=ax,
+        add_colorbar=False,
+        robust=True,
+        cmap=cmap,
+        rasterized=True,
+    )
 
     # Overlay animal position
     if show_position:
