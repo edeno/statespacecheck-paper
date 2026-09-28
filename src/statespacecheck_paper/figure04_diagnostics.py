@@ -1,19 +1,10 @@
 """Real-data goodness-of-fit diagnostic computations.
 
-Per-spike-event diagnostics for real neural recordings: temporal smoothing and
-running averages, the spike-event expansion helpers, the HPD/KL/predictive-p-value
-computation delegating to :mod:`statespacecheck_paper.diagnostics`, the mean
-per-spike likelihood, the end-to-end per-model diagnostic driver, and the
-two-decoder flag-agreement tabulation.
-
-Examples
---------
->>> import numpy as np
->>> from statespacecheck_paper.figure04_diagnostics import gaussian_smooth
->>> data = np.random.randn(1000)
->>> smoothed = gaussian_smooth(data, sigma=0.02, sampling_frequency=500)
->>> smoothed.shape
-(1000,)
+Per-spike-event diagnostics for real neural recordings: the spike-event
+expansion from exact spike times, the HPD/KL/predictive-p-value computation
+delegating to :mod:`statespacecheck_paper.diagnostics`, the mean per-spike
+likelihood, the end-to-end per-model diagnostic driver, and the two-decoder
+flag-agreement tabulation.
 """
 
 from __future__ import annotations
@@ -24,7 +15,6 @@ from typing import Any
 import numpy as np
 import statespacecheck as ssc
 from numpy.typing import NDArray
-from scipy.ndimage import gaussian_filter1d
 
 from statespacecheck_paper.diagnostics import (
     FlagDirection,
@@ -37,142 +27,6 @@ from statespacecheck_paper.figure04_place_fields import (
     extract_shared_position_place_fields,
     get_state_marginalized_posterior,
 )
-
-
-def gaussian_smooth(
-    data: NDArray[np.float64],
-    sigma: float,
-    sampling_frequency: float,
-    axis: int = 0,
-    truncate: int = 8,
-) -> NDArray[np.float64]:
-    """Apply 1D Gaussian convolution to data.
-
-    The standard deviation of the gaussian is in the units of the sampling
-    frequency. The function is a wrapper around scipy's `gaussian_filter1d`.
-    The support is truncated at 8 by default, instead of 4 in `gaussian_filter1d`.
-
-    Parameters
-    ----------
-    data : np.ndarray
-        Input data to smooth.
-    sigma : float
-        Standard deviation of the Gaussian kernel in seconds.
-    sampling_frequency : float
-        Number of samples per second.
-    axis : int, default=0
-        Axis along which to apply the filter.
-    truncate : int, default=8
-        Truncate the filter at this many standard deviations.
-
-    Returns
-    -------
-    smoothed_data : np.ndarray
-        Gaussian-smoothed data with same shape as input.
-
-    Examples
-    --------
-    >>> data = np.random.randn(1000)
-    >>> smoothed = gaussian_smooth(data, sigma=0.01, sampling_frequency=1000)
-    >>> smoothed.shape
-    (1000,)
-    """
-    result: NDArray[np.float64] = gaussian_filter1d(
-        data,
-        sigma * sampling_frequency,
-        truncate=truncate,
-        axis=axis,
-        mode="constant",
-    )
-    return result
-
-
-def compute_running_average(
-    event_times: NDArray[np.floating],
-    event_values: NDArray[np.floating],
-    evaluation_time: NDArray[np.float64],
-    window_size: float = 0.050,
-) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """Compute the manuscript's event-weighted running diagnostic average.
-
-    Implements the event-weighted average formula from the manuscript:
-
-        D(t) = sum(metric_k * I(t_k in window)) / sum(I(t_k in window))
-
-    where the sum is over all spike events (time, cell) pairs and I(*) is the
-    indicator function selecting events within the sliding window centered at t.
-    Each spike event contributes equally regardless of how many cells fire in
-    a given time bin.
-
-    Parameters
-    ----------
-    event_times : np.ndarray, shape (n_events,)
-        Exact event times, or decoder-bin times indexed once per event.
-    event_values : np.ndarray, shape (n_events,)
-        Diagnostic value for every event.
-    evaluation_time : np.ndarray, shape (n_time,)
-        Time coordinates at which to evaluate the sliding-window average.
-    window_size : float, default 0.050
-        Width of the centered sliding window in seconds.
-
-    Returns
-    -------
-    running_avg : np.ndarray, shape (n_time,)
-        Running average of the metric over time. NaN where no events fall
-        within the window.
-    time_out : np.ndarray, shape (n_time,)
-        ``evaluation_time`` (returned for convenience).
-
-    Notes
-    -----
-    Events are sorted once, then cumulative sums and ``searchsorted`` evaluate
-    each centered window in O(n log n). Bins with no events produce NaN.
-
-    Examples
-    --------
-    >>> import numpy as np
-    >>> time = np.linspace(0, 1, 100)
-    >>> event_times = np.array([0.1, 0.12, 0.8])
-    >>> event_values = np.array([0.2, 0.4, 0.9])
-    >>> running_avg, time_out = compute_running_average(
-    ...     event_times, event_values, time, window_size=0.1
-    ... )
-    >>> running_avg.shape
-    (100,)
-    """
-    event_times = np.asarray(event_times, dtype=np.float64)
-    event_values = np.asarray(event_values, dtype=np.float64)
-    evaluation_time = np.asarray(evaluation_time, dtype=np.float64)
-    if event_times.ndim != 1 or event_values.shape != event_times.shape:
-        raise ValueError("event_times and event_values must be matching 1-D arrays")
-    if evaluation_time.ndim != 1:
-        raise ValueError("evaluation_time must be a 1-D array")
-    if not np.isfinite(window_size) or window_size <= 0.0:
-        raise ValueError(f"window_size must be positive and finite; got {window_size}")
-    if not np.all(np.isfinite(event_times)) or not np.all(np.isfinite(event_values)):
-        raise ValueError("Every spike event must have a finite time and diagnostic value")
-    if not np.all(np.isfinite(evaluation_time)):
-        raise ValueError("evaluation_time must contain only finite values")
-
-    n_time_pts = evaluation_time.size
-    if event_times.size == 0:
-        return np.full(n_time_pts, np.nan), evaluation_time.copy()
-
-    sort_ind = np.argsort(event_times)
-    sorted_times = event_times[sort_ind]
-    sorted_values = event_values[sort_ind]
-    cumsum = np.concatenate(([0.0], np.cumsum(sorted_values)))
-
-    half_window = window_size / 2.0
-    starts = np.searchsorted(sorted_times, evaluation_time - half_window, side="left")
-    stops = np.searchsorted(sorted_times, evaluation_time + half_window, side="right")
-    counts = stops - starts
-    sums = cumsum[stops] - cumsum[starts]
-
-    running_avg = np.full(n_time_pts, np.nan)
-    has_events = counts > 0
-    running_avg[has_events] = sums[has_events] / counts[has_events]
-    return running_avg, evaluation_time.copy()
 
 
 def _get_spike_events_from_spike_times(

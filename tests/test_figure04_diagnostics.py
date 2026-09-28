@@ -15,9 +15,7 @@ from statespacecheck_paper.diagnostics import SpikeEventDiagnostics
 from statespacecheck_paper.figure04_diagnostics import (
     compute_flag_confusion,
     compute_model_diagnostics,
-    compute_running_average,
     compute_spike_event_diagnostics,
-    gaussian_smooth,
 )
 
 
@@ -58,23 +56,6 @@ def per_cell_setup(rng: np.random.Generator) -> dict[str, Any]:
         "place_fields": rng.random((n_cells, n_bins)) * 10 + 0.1,
         "spike_counts": rng.poisson(0.5, (n_time, n_cells)).astype(np.int64),
     }
-
-
-# ---------------------------------------------------------------------------
-# gaussian_smooth
-# ---------------------------------------------------------------------------
-
-
-class TestGaussianSmooth:
-    def test_output_shape_matches_input(self, rng: np.random.Generator) -> None:
-        data = rng.standard_normal(1000)
-        result = gaussian_smooth(data, sigma=0.01, sampling_frequency=1000)
-        assert result.shape == data.shape
-
-    def test_smoothing_reduces_variance_of_noise(self, rng: np.random.Generator) -> None:
-        data = rng.standard_normal(1000)
-        result = gaussian_smooth(data, sigma=0.02, sampling_frequency=500)
-        assert result.var() < data.var()
 
 
 # ---------------------------------------------------------------------------
@@ -341,60 +322,6 @@ class TestComputeModelDiagnostics:
         )
         np.testing.assert_allclose(captured["place_fields"], place_fields[:, interior_mask])
         assert captured["kwargs"]["time"] is time
-
-
-# ---------------------------------------------------------------------------
-# compute_running_average
-# ---------------------------------------------------------------------------
-
-
-class TestComputeRunningAverage:
-    def test_output_shape_matches_evaluation_time(self, rng: np.random.Generator) -> None:
-        n_time = 100
-        time = np.linspace(0, 1, n_time)
-        event_times = rng.uniform(0, 1, 200)
-        event_values = rng.random(200)
-        running_avg, time_out = compute_running_average(
-            event_times, event_values, time, window_size=0.1
-        )
-        assert running_avg.shape == (n_time,)
-        np.testing.assert_array_equal(time_out, time)
-
-    def test_nan_event_value_raises(self) -> None:
-        n_time = 100
-        time = np.linspace(0, 1, n_time)
-        with pytest.raises(ValueError, match="Every spike event"):
-            compute_running_average(
-                np.array([0.2, 0.4]), np.array([1.0, np.nan]), time, window_size=0.1
-            )
-
-    def test_no_events_yields_all_nan_output(self) -> None:
-        n_time = 100
-        time = np.linspace(0, 1, n_time)
-        running_avg, _ = compute_running_average(np.array([]), np.array([]), time, window_size=0.1)
-        assert np.all(np.isnan(running_avg))
-
-    def test_larger_window_smooths_more(self, rng: np.random.Generator) -> None:
-        n_time = 1000
-        time = np.linspace(0, 1, n_time)
-        event_times = time.copy()
-        event_values = rng.random(n_time)
-        small, _ = compute_running_average(event_times, event_values, time, window_size=0.01)
-        large, _ = compute_running_average(event_times, event_values, time, window_size=0.1)
-        assert np.nanvar(large) < np.nanvar(small)
-
-    def test_event_inputs_count_duplicates_at_same_time(self) -> None:
-        """Two events at the same time both contribute to the running mean."""
-        time = np.array([0.0, 1.0, 2.0])
-        running_avg, _ = compute_running_average(
-            np.array([1.0, 1.0]),
-            np.array([1.0, 3.0]),
-            time,
-            window_size=0.1,
-        )
-        assert np.isnan(running_avg[0])
-        assert running_avg[1] == 2.0
-        assert np.isnan(running_avg[2])
 
 
 # ---------------------------------------------------------------------------

@@ -1,8 +1,7 @@
 """Tests for Figure-4 raster and diagnostic panels.
 
 Covers ``plot_per_spike_metric_hexbin_row`` — the Figure 4(c) whole-session
-comparison panel — and the spike-event diagnostic scatter's spike-time alignment
-and running-average behavior.
+comparison panel — and the spike-event diagnostic scatter's spike-time alignment.
 """
 
 from __future__ import annotations
@@ -277,76 +276,6 @@ class TestPlotSpikeEventDiagnosticScatter:
         plot_spike_event_diagnostic_scatter(time, diagnostics, ax=ax)
         offsets = _scatter_offsets(ax)
         np.testing.assert_allclose(sorted(offsets[:, 0]), [0.1, 0.3])
-        plt.close(fig)
-
-
-class TestPlotSpikeEventDiagnosticScatterRunningAverage:
-    def test_running_average_adds_a_line_to_axis(self, rng: np.random.Generator) -> None:
-        time = np.linspace(0.0, 1.0, 100)
-        diagnostics = _diagnostics_from_metric("hpd_overlap", rng.random((100, 10)))
-
-        fig_off, ax_off = plt.subplots()
-        plot_spike_event_diagnostic_scatter(
-            time, diagnostics, ax=ax_off, show_running_average=False
-        )
-        n_off = len(ax_off.lines)
-        plt.close(fig_off)
-
-        fig_on, ax_on = plt.subplots()
-        plot_spike_event_diagnostic_scatter(time, diagnostics, ax=ax_on, show_running_average=True)
-        assert len(ax_on.lines) == n_off + 1
-        plt.close(fig_on)
-
-    def test_running_average_window_size_changes_curve(self, rng: np.random.Generator) -> None:
-        time = np.linspace(0.0, 1.0, 100)
-        diagnostics = _diagnostics_from_metric("hpd_overlap", rng.random((100, 10)))
-
-        def _line_y(window: float) -> np.ndarray:
-            fig, ax = plt.subplots()
-            plot_spike_event_diagnostic_scatter(
-                time,
-                diagnostics,
-                ax=ax,
-                show_running_average=True,
-                running_average_window=window,
-            )
-            y = np.asarray(ax.lines[0].get_ydata()).copy()
-            plt.close(fig)
-            return y
-
-        assert not np.allclose(_line_y(0.05), _line_y(0.2))
-
-    def test_predictive_pvalue_running_average_uses_raw_then_transforms(self) -> None:
-        """Critical correctness: -log(mean(p)) != mean(-log(p)). Running
-        average must average raw probabilities first, then take -log."""
-        predictive_pvalues = np.array(
-            [
-                [0.01, 0.99],  # mean(raw) = 0.5
-                [0.1, 0.9],  # mean(raw) = 0.5
-                [0.5, 0.5],  # mean(raw) = 0.5 (control)
-            ]
-        )
-        time = np.linspace(0, 0.2, 3)
-        diagnostics = _diagnostics_from_metric("predictive_pvalue", predictive_pvalues)
-
-        fig, ax = plt.subplots()
-        plot_spike_event_diagnostic_scatter(
-            time,
-            diagnostics,
-            ax=ax,
-            metric_name="predictive_pvalue",
-            show_running_average=True,
-            running_average_window=0.01,
-        )
-        y_actual = np.asarray(ax.lines[0].get_ydata())
-
-        # Correct path: average raw, then -log (natural log).
-        expected = -np.log(np.mean(predictive_pvalues, axis=1))
-        np.testing.assert_allclose(y_actual, expected, rtol=1e-3)
-
-        # Wrong path: -log first, then average. Different on rows 0 and 1.
-        wrong = np.mean(-np.log(predictive_pvalues), axis=1)
-        assert not np.allclose(y_actual, wrong, rtol=1e-3)
         plt.close(fig)
 
 

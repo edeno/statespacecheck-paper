@@ -24,10 +24,7 @@ from matplotlib.patches import Rectangle
 from numpy.typing import NDArray
 
 from statespacecheck_paper.diagnostics import SpikeEventDiagnostics
-from statespacecheck_paper.figure04_diagnostics import (
-    compute_running_average,
-    mean_per_spike_likelihood_by_time,
-)
+from statespacecheck_paper.figure04_diagnostics import mean_per_spike_likelihood_by_time
 from statespacecheck_paper.figure04_plot_primitives import (
     ANIMAL_POSITION_LABEL_GID,
     THRESHOLD_LABEL_GID,
@@ -269,9 +266,6 @@ def plot_spike_event_diagnostic_scatter(
     color: str = "steelblue",
     ylabel: str | None = None,
     show_xlabel: bool = True,
-    show_running_average: bool = False,
-    running_average_window: float = 0.050,
-    running_average_color: str | None = None,
 ) -> Axes:
     """Plot a diagnostic value for each spike event over time.
 
@@ -304,15 +298,6 @@ def plot_spike_event_diagnostic_scatter(
         Y-axis label. If None, uses metric_name.
     show_xlabel : bool, default True
         Whether to show "Time" xlabel.
-    show_running_average : bool, default False
-        If True, overlay a running average line on top of the scatter plot.
-        The running average is computed as the weighted mean over a sliding
-        window, as described in the manuscript.
-    running_average_window : float, default 0.050
-        Size of the sliding window in seconds for the running average.
-    running_average_color : str, optional
-        Color for the running average line. If None, uses a darker version
-        of the scatter color.
 
     Returns
     -------
@@ -378,42 +363,6 @@ def plot_spike_event_diagnostic_scatter(
         c=color,
         rasterized=True,
     )
-
-    # Add running average line if requested
-    if show_running_average:
-        # Compute on raw per-event values exactly as specified in the
-        # manuscript, then apply the display transform to the average.
-        running_avg, _ = compute_running_average(
-            x_positions_arr,
-            raw_y_values,
-            time_arr,
-            window_size=running_average_window,
-        )
-
-        # Transform running average if needed (same as scatter points)
-        if use_neg_log:
-            running_avg = negative_log_pvalue(running_avg)
-
-        # Determine line color (darker version of scatter color if not specified)
-        line_color: str | tuple[float, ...]
-        if running_average_color is None:
-            # Convert to RGB, darken by 30%, convert back
-            try:
-                rgb = mcolors.to_rgb(color)
-                line_color = tuple(c * 0.7 for c in rgb)
-            except ValueError:
-                line_color = "black"
-        else:
-            line_color = running_average_color
-
-        ax.plot(
-            time_arr,
-            running_avg,
-            color=line_color,
-            linewidth=2,
-            alpha=0.9,
-            zorder=5,
-        )
 
     if threshold is not None:
         ax.axhline(
@@ -549,8 +498,6 @@ def plot_single_model_diagnostics(
     time_slice_ind: slice | None = None,
     model_name: str = "Continuous",
     thresholds: Mapping[str, float] | None = None,
-    show_running_average: bool = False,
-    running_average_window: float = 0.050,
     fig: Figure | None = None,
 ) -> tuple[Figure, NDArray[np.object_]]:
     """Create single-model diagnostic figure with 6 rows.
@@ -575,10 +522,6 @@ def plot_single_model_diagnostics(
         Model name for title.
     thresholds : dict[str, float], optional
         Thresholds for horizontal lines on diagnostic plots.
-    show_running_average : bool, default False
-        If True, overlay a running average on diagnostic scatters.
-    running_average_window : float, default 0.050
-        Window size in seconds for running average.
     fig : Figure, optional
         Existing figure to draw into.
 
@@ -692,8 +635,6 @@ def plot_single_model_diagnostics(
             color=spec.color,
             ylabel=spec.ylabel,
             show_xlabel=(i == 2),
-            show_running_average=show_running_average,
-            running_average_window=running_average_window,
         )
         if spec.name == "hpd_overlap":
             worse_fit_y = 0.28
