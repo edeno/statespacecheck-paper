@@ -1025,3 +1025,46 @@ class TestFilterStep:
         np.testing.assert_array_equal(step.prior, result.predictive[1])
         np.testing.assert_array_equal(step.posterior, result.posterior[1])
         np.testing.assert_array_equal(step.combined_likelihood, result.likelihood[1])
+
+
+class TestDecodeInputValidation:
+    @pytest.mark.parametrize(
+        "bad_count",
+        [1.5, -0.5, -1.0, np.nan, np.inf],
+        ids=["fractional", "negative_fractional", "negative", "nan", "inf"],
+    )
+    def test_rejects_counts_outside_the_poisson_support(self, bad_count: float) -> None:
+        # The direct Poisson formula gives finite values for some of these, so the
+        # decoder must reject them before the filter runs.
+        position_bins = np.linspace(0.0, 100.0, 21)
+        spike_counts = np.zeros((5, 3))
+        spike_counts[2, 0] = bad_count
+        with pytest.raises(ValueError, match="non-negative integer counts"):
+            decode_with_diagnostics(
+                spike_counts,
+                position_bins,
+                gaussian_transition_matrix(position_bins, step_std=0.5),
+                np.array([25.0, 50.0, 75.0]),
+                5.0,
+                0.1,
+            )
+
+    def test_accepts_integer_valued_float_counts(self) -> None:
+        position_bins = np.linspace(0.0, 100.0, 21)
+        spike_counts = np.array([[1.0, 0.0, 2.0]] * 5)
+        result = decode_with_diagnostics(
+            spike_counts,
+            position_bins,
+            gaussian_transition_matrix(position_bins, step_std=0.5),
+            np.array([25.0, 50.0, 75.0]),
+            5.0,
+            0.1,
+        )
+        assert result.event_time_ind.size == 15
+
+    def test_rejects_negative_place_field_rate_scale(self) -> None:
+        position_bins = np.linspace(0, 100, 5)
+        with pytest.raises(ValueError, match="finite, non-negative"):
+            _resolve_baseline_firing_rates(
+                None, position_bins, np.array([25.0, 75.0]), 5.0, -0.1, n_bins=5, n_cells=2
+            )

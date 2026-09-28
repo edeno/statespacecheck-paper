@@ -296,29 +296,30 @@ def _resolve_baseline_firing_rates(
 ) -> NDArray[np.floating]:
     """Build or validate the baseline ``(n_bins, n_cells)`` Poisson rate table.
 
-    When ``baseline_firing_rates`` is supplied it is validated against the decoder grid and
-    rejected if it is the wrong shape or holds any negative / non-finite rate
-    (mirroring ``DecoderOverrideWindow.firing_rate_table`` validation), so a bad table fails
-    loudly here rather than surfacing as an opaque Poisson error or a silent NaN
-    deep in the filter loop. When omitted, the table is built from the Gaussian
-    place-field parameters.
+    When ``baseline_firing_rates`` is supplied it is validated against the decoder grid;
+    when omitted, the table is built from the Gaussian place-field parameters. Either
+    table is rejected if it holds any negative / non-finite rate (mirroring
+    ``DecoderOverrideWindow.firing_rate_table`` validation), so a bad table or a
+    negative ``place_field_rate_scale`` fails loudly here rather than surfacing as a
+    silent NaN or a meaningless likelihood deep in the filter loop.
     """
-    if baseline_firing_rates is not None:
+    if baseline_firing_rates is None:
+        rates = place_field_rates(
+            position_bins, place_field_centers, place_field_std, place_field_rate_scale
+        )
+    else:
         rates = np.asarray(baseline_firing_rates, dtype=float)
         if rates.shape != (n_bins, n_cells):
             raise ValueError(
                 f"baseline_firing_rates shape {rates.shape} does not match the decoder grid "
                 f"(n_bins={n_bins}, n_cells={n_cells})."
             )
-        # Reject invalid rate tables up front (as ``DecoderOverrideWindow.firing_rate_table``
-        # does), rather than letting a negative/nonfinite rate surface as an
-        # opaque Poisson error or a silent NaN deep in the filter loop.
-        if not (np.all(np.isfinite(rates)) and np.all(rates >= 0.0)):
-            raise ValueError("baseline_firing_rates must contain only finite, non-negative rates.")
-        return rates
-    return place_field_rates(
-        position_bins, place_field_centers, place_field_std, place_field_rate_scale
-    )
+    if not (np.all(np.isfinite(rates)) and np.all(rates >= 0.0)):
+        raise ValueError(
+            "The baseline rate table must contain only finite, non-negative rates; check "
+            "baseline_firing_rates or place_field_rate_scale."
+        )
+    return rates
 
 
 def _select_decoder_components_for_step(
@@ -456,7 +457,8 @@ def update_step(
     prior : np.ndarray, shape (n_bins,)
         Distribution of the state before seeing this bin's spikes.
     spike_counts_t : np.ndarray, shape (n_cells,)
-        Spike counts observed at this timestep.
+        Spike counts observed at this timestep: non-negative integers (not
+        checked here; see ``decode_with_diagnostics``).
     rates_t : np.ndarray, shape (n_bins, n_cells)
         Per-cell Poisson mean (expected count per step) at every position.
 
@@ -476,7 +478,9 @@ def update_step(
     # ``n_cells * log(peak)`` crosses the float64 floor (~700) — likely on
     # real-data sessions with many sparsely-firing cells. This is
     # ``scipy.stats.poisson.logpmf``'s formula, called directly: the distribution method's
-    # argument handling dominated the per-step cost.
+    # argument handling dominated the per-step cost. It skips logpmf's support
+    # checks, so counts must be non-negative integers (``decode_with_diagnostics``
+    # validates them).
     counts = spike_counts_t[None, :]
     log_lik_per_cell = xlogy(counts, rates_t) - gammaln(counts + 1) - rates_t  # (n_bins, n_cells)
 
@@ -526,7 +530,8 @@ def filter_step(
     previous_posterior : np.ndarray, shape (n_bins,)
         Filtered posterior ``p(x_{t-1} | y_{1:t-1})`` from the previous step.
     spike_counts_t : np.ndarray, shape (n_cells,)
-        Spike counts observed at this timestep.
+        Spike counts observed at this timestep: non-negative integers (not
+        checked here; see ``decode_with_diagnostics``).
     current_transition : np.ndarray, shape (n_bins, n_bins)
         Column-stochastic transition matrix for this step.
     rates_t : np.ndarray, shape (n_bins, n_cells)
@@ -597,7 +602,8 @@ def decode_with_diagnostics(
     Parameters
     ----------
     spike_counts : np.ndarray, shape (n_time, n_cells)
-        Observed spike counts at each timestep for each cell.
+        Observed spike counts at each timestep for each cell: finite,
+        non-negative integers (any numeric dtype).
     position_bins : np.ndarray, shape (n_bins,)
         Position grid (spatial bins).
     transition_matrix : np.ndarray, shape (n_bins, n_bins)
@@ -718,6 +724,12 @@ def decode_with_diagnostics(
     n_cells = spike_counts.shape[1]
     for schedule_entry in override_schedule.windows:
         schedule_entry.validate_against(n_bins=n_bins, n_cells=n_cells)
+
+    # The Poisson log-likelihood in ``update_step`` does not check its support, so
+    # a fractional, negative, or non-finite count would decode to a plausible
+    # posterior instead of failing.
+    if not np.all((spike_counts >= 0) & (np.mod(spike_counts, 1) == 0)):
+        raise ValueError("spike_counts must be finite, non-negative integer counts.")
 
     # Preallocate outputs
     posterior: NDArray[np.floating] = np.zeros((n_time, n_bins))
