@@ -18,8 +18,8 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import shutil
-import tempfile
 import urllib.request
+import uuid
 import zipfile
 from collections.abc import Hashable, Mapping, Sequence
 from pathlib import Path
@@ -386,7 +386,8 @@ def download_figure04_inputs(
 
     The file (``FIGURE04_INPUTS_FILE``, 75 MB) is version 1.0 of Zenodo record
     ``FIGURE04_INPUTS_DOI``. It is saved under its final name only if its SHA-256
-    matches, so a partial or corrupted download never replaces anything.
+    matches, so a partial or corrupted download never appears under that name,
+    and an existing file is never overwritten.
 
     Parameters
     ----------
@@ -419,19 +420,20 @@ def download_figure04_inputs(
             "move it aside to download the published one"
         )
     data_path.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(dir=data_path, suffix=".part", delete=False) as part:
-        partial = Path(part.name)
-        try:
-            with urllib.request.urlopen(url, timeout=60) as reply:
-                shutil.copyfileobj(reply, part)
-        except BaseException:
-            partial.unlink()
-            raise
-    downloaded = _sha256(partial)
-    if downloaded != sha256:
-        partial.unlink()
-        raise ValueError(f"Downloaded file has SHA-256 {downloaded}; expected {sha256}")
-    partial.replace(output)
+    # A unique name opened with "xb" gets the default file mode (tempfile's are
+    # owner-only). It is removed only after it is closed: Windows cannot delete
+    # an open file.
+    partial = data_path / f"{FIGURE04_INPUTS_FILE}.{uuid.uuid4().hex}.part"
+    try:
+        with urllib.request.urlopen(url, timeout=60) as reply, partial.open("xb") as stream:
+            shutil.copyfileobj(reply, stream)
+        downloaded = _sha256(partial)
+        if downloaded != sha256:
+            raise ValueError(f"Downloaded file has SHA-256 {downloaded}; expected {sha256}")
+        partial.replace(output)
+    except BaseException:
+        partial.unlink(missing_ok=True)
+        raise
     return output
 
 

@@ -4,9 +4,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import pickle
+import shutil
+import stat
+import urllib.error
 from pathlib import Path
-from typing import Any
+from typing import Any, BinaryIO
 
 import networkx as nx
 import numpy as np
@@ -259,6 +263,49 @@ def test_download_saves_the_verified_file(tmp_path: Path, published_copy: tuple[
     output = download_figure04_inputs(tmp_path / "data", url=url, sha256=sha256)
     assert output == tmp_path / "data" / FIGURE04_INPUTS_FILE
     assert output.read_bytes() == b"figure 4 inputs"
+    assert list(output.parent.iterdir()) == [output]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+def test_downloaded_file_gets_the_default_mode(
+    tmp_path: Path, published_copy: tuple[str, str]
+) -> None:
+    """Readable by the group and others on a shared data directory, as the umask allows."""
+    url, sha256 = published_copy
+    previous = os.umask(0o022)
+    try:
+        output = download_figure04_inputs(tmp_path, url=url, sha256=sha256)
+    finally:
+        os.umask(previous)
+    assert stat.S_IMODE(output.stat().st_mode) == 0o644
+
+
+def _fail_mid_transfer(source: BinaryIO, destination: BinaryIO) -> None:
+    destination.write(source.read(3))
+    raise ConnectionResetError("connection reset")
+
+
+@pytest.mark.parametrize(
+    ("failure", "error"),
+    [("unreachable source", urllib.error.URLError), ("mid-transfer", ConnectionResetError)],
+)
+def test_failed_download_raises_its_error_and_leaves_nothing(
+    tmp_path: Path,
+    published_copy: tuple[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+    failure: str,
+    error: type[Exception],
+) -> None:
+    """The partial file is closed before it is removed, which Windows requires."""
+    url, sha256 = published_copy
+    if failure == "unreachable source":
+        url = (tmp_path / "missing.npz").as_uri()
+    else:
+        monkeypatch.setattr(shutil, "copyfileobj", _fail_mid_transfer)
+    data = tmp_path / "data"
+    with pytest.raises(error):
+        download_figure04_inputs(data, url=url, sha256=sha256)
+    assert list(data.iterdir()) == []
 
 
 def test_download_with_the_wrong_checksum_leaves_nothing(
