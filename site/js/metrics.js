@@ -116,15 +116,25 @@ export function predictiveCellProbabilities(predictive, rates) {
 /**
  * Rank-based predictive p-value: the predictive probability of every cell at
  * least as unlikely as the one that fired. The tolerance matches the Python
- * implementation's allowance for summation-order rounding.
+ * implementation's allowance for rounding: relative to the observed probability
+ * (each probability is a sum of nBins nonnegative terms), plus a term for
+ * products below the smallest normal float, which round by an absolute amount.
+ * The Python code also rescales events whose total intensity is below about
+ * nBins * 1e-292; the page's intensities are never that small.
  */
 export function predictivePvalue(predictive, rates, cell) {
   const probabilities = predictiveCellProbabilities(predictive, rates);
-  const observed = probabilities[cell];
-  const tolerance = FLOAT64_EPS * predictive.length * 16 * Math.max(...probabilities);
+  const nBins = predictive.length;
+  let total = 0;
+  for (let x = 0; x < nBins; x += 1) {
+    for (const rate of rates[x]) total += predictive[x] * rate;
+  }
+  const bound =
+    probabilities[cell] * (1 + FLOAT64_EPS * nBins * 16) +
+    16 * (nBins * (Number.MIN_VALUE / total) + Number.MIN_VALUE);
   let p = 0;
   for (const value of probabilities) {
-    if (value <= observed + tolerance) p += value;
+    if (value <= bound) p += value;
   }
   return Math.min(p, 1);
 }
