@@ -83,9 +83,15 @@ def test_summary_condition_and_realization_summary_fields() -> None:
     assert _field_names(Figure3SummaryCondition) == ["label", "step_windows", "model_component"]
     assert _field_names(Figure3RealizationSummary) == [
         "diagnostic_thresholds",
+        "realization_flag_percentages",
+        "realization_decoding_accuracy",
+    ]
+    # The aggregates are derived from the realizations, under their old names.
+    for name in (
         "median_flag_percentages",
         "median_decoding_accuracy",
         "flag_percentage_standard_errors",
         "decoding_accuracy_standard_errors",
         "n_realizations",
-    ]
+    ):
+        assert isinstance(getattr(Figure3RealizationSummary, name), property), name

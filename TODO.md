@@ -18,7 +18,8 @@
 
 ## Scientific follow-ups
 
-- [ ] Preserve per-realization Figure 3 results and show their variability.
+- [ ] Show the variability of Figure 3's per-realization results, which the summary
+  now keeps (`realization_flag_percentages`, `realization_decoding_accuracy`).
 - [ ] Evaluate sensitivity to simulation parameters and diagnostic thresholds.
 
 These are separate analysis tasks; they are not prerequisites for reproducing
