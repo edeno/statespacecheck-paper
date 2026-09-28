@@ -384,12 +384,9 @@ class Figure3Config:
         )
 
 
-# Canonical ordered phase labels — the public contract of
-# ``Figure3SimulationResult.phase_labels``. ``run_figure03_simulation`` passes each
-# label explicitly at its ``_record_phase`` call site, in this order;
-# ``Figure3SimulationResult.__post_init__`` checks the emitted sequence equals this
-# tuple. Tests and downstream code import this tuple rather than re-typing
-# the strings.
+# Canonical ordered phase names, one per segment that
+# ``Figure3Config.phase_boundaries`` delimits. Tests import this tuple rather
+# than re-typing the strings.
 PHASE_LABELS: tuple[str, ...] = (
     "Clean Baseline",
     "Remap Misfit",
