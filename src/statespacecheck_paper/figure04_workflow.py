@@ -21,6 +21,7 @@ from __future__ import annotations
 import dataclasses
 import warnings
 from collections.abc import Mapping
+from typing import Any
 
 import numpy as np
 import xarray as xr
@@ -67,7 +68,8 @@ class Figure4DecodeResults:
 
     The contained xarray datasets and diagnostic objects are treated as
     read-only by convention (the frozen wrapper does not deep-freeze them); the
-    four arrays are copied to their dtypes and marked read-only at construction.
+    four arrays are converted to their dtypes and made read-only at
+    construction, copied unless already read-only.
     In-memory field names spell out ``continuous_fragmented_*``; the serialized
     cache keys remain ``contfrag_*`` (see :meth:`from_cache_payload`).
 
@@ -93,12 +95,10 @@ class Figure4DecodeResults:
     diagnostic_position_bins: NDArray[np.float64]
 
     def __post_init__(self) -> None:
-        # Unconditional copies (``np.array``, not ``np.asarray``): otherwise the
-        # subsequent ``setflags(write=False)`` would freeze a caller-owned array.
-        spike_counts = np.array(self.spike_counts, dtype=np.int64)
-        place_field_peaks = np.array(self.place_field_peaks, dtype=np.float64)
-        diagnostic_place_fields = np.array(self.diagnostic_place_fields, dtype=np.float64)
-        diagnostic_position_bins = np.array(self.diagnostic_position_bins, dtype=np.float64)
+        spike_counts = _read_only_array(self.spike_counts, np.int64)
+        place_field_peaks = _read_only_array(self.place_field_peaks, np.float64)
+        diagnostic_place_fields = _read_only_array(self.diagnostic_place_fields, np.float64)
+        diagnostic_position_bins = _read_only_array(self.diagnostic_position_bins, np.float64)
 
         if spike_counts.ndim != 2:
             raise ValueError(f"spike_counts must be (n_time, n_cells); got {spike_counts.shape}")
@@ -168,14 +168,10 @@ class Figure4DecodeResults:
                     "diagnostics do not match the spike_counts cell count."
                 )
 
-        for name, arr in (
-            ("spike_counts", spike_counts),
-            ("place_field_peaks", place_field_peaks),
-            ("diagnostic_place_fields", diagnostic_place_fields),
-            ("diagnostic_position_bins", diagnostic_position_bins),
-        ):
-            arr.setflags(write=False)
-            object.__setattr__(self, name, arr)
+        object.__setattr__(self, "spike_counts", spike_counts)
+        object.__setattr__(self, "place_field_peaks", place_field_peaks)
+        object.__setattr__(self, "diagnostic_place_fields", diagnostic_place_fields)
+        object.__setattr__(self, "diagnostic_position_bins", diagnostic_position_bins)
 
     @classmethod
     def from_cache_payload(cls, payload: Mapping[str, object]) -> Figure4DecodeResults:
@@ -221,6 +217,21 @@ class Figure4DecodeResults:
         }
 
 
+def _read_only_array(value: object, dtype: type[np.generic]) -> NDArray[Any]:
+    """Return ``value`` as a read-only array of ``dtype``, copying only when needed.
+
+    A writeable array is copied before it is frozen, so freezing cannot reach
+    back into a caller-owned array. An array that is already read-only (the
+    memory-mapped decode cache) is kept as is: copying the 1.15 GB spike-count
+    matrix on every cache load bought nothing.
+    """
+    arr = np.asarray(value, dtype=dtype)
+    if arr.flags.writeable:
+        arr = arr.copy()
+        arr.setflags(write=False)
+    return arr
+
+
 def _cast_dataset(value: object) -> xr.Dataset:
     """Narrow a cache-payload value to ``xr.Dataset`` (fails clearly otherwise)."""
     if not isinstance(value, xr.Dataset):
@@ -258,7 +269,7 @@ class Figure4RenderData:
     cache_provenance: Figure4CacheProvenance | None = None
 
     def __post_init__(self) -> None:
-        # Unconditional copies (see Figure4DecodeResults) so freezing cannot
+        # Unconditional copies (these arrays are small) so freezing cannot
         # reach back into a caller-owned array.
         time = np.array(self.time, dtype=np.float64)
         head_position = np.array(self.head_position, dtype=np.float64)

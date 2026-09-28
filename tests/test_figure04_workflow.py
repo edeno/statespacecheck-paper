@@ -246,6 +246,13 @@ class TestFigure4DecodeResults:
         assert decode.spike_counts[0, 0] == 0  # stored copy isolated
         assert not decode.spike_counts.flags.writeable
 
+    def test_keeps_read_only_input_without_copying(self) -> None:
+        # The memory-mapped cache arrives read-only; it is used in place.
+        spike_counts = np.zeros((8, 2), dtype=np.int64)
+        spike_counts.setflags(write=False)
+        decode = dataclasses.replace(_synthetic_decode_results(), spike_counts=spike_counts)
+        assert np.shares_memory(decode.spike_counts, spike_counts)
+
     def test_rejects_dataset_timeline_mismatch(self) -> None:
         with pytest.raises(ValueError, match="decode timelines must match"):
             Figure4DecodeResults(
