@@ -36,6 +36,9 @@ from statespacecheck_paper.load_local_data import (
     recording_difference,
     write_npz,
 )
+from statespacecheck_paper.paths import DATA_PATH
+
+from ._scripts import load_script
 
 
 def _position_info(n_time: int = 8) -> pd.DataFrame:
@@ -398,6 +401,28 @@ def test_existing_different_file_is_not_overwritten(
     with pytest.raises(FileExistsError, match="different SHA-256"):
         download_figure04_inputs(tmp_path, url=url, sha256=sha256)
     assert existing.read_bytes() == b"something else"
+
+
+@pytest.mark.parametrize("given", [True, False])
+def test_download_script_saves_into_the_data_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    given: bool,
+) -> None:
+    """``--data-path`` reaches the download; without it the file goes to ``DATA_PATH``."""
+    script = load_script("download_figure04_inputs")
+    requested: list[Path] = []
+
+    def download(data_path: Path) -> Path:
+        requested.append(data_path)
+        return data_path / FIGURE04_INPUTS_FILE
+
+    monkeypatch.setattr(script, "download_figure04_inputs", download)
+    script.main(["--data-path", str(tmp_path)] if given else [])
+    expected = tmp_path if given else DATA_PATH
+    assert requested == [expected]
+    assert capsys.readouterr().out == f"Verified {expected / FIGURE04_INPUTS_FILE}\n"
 
 
 def test_zenodo_record_is_the_cited_version_with_the_file() -> None:
