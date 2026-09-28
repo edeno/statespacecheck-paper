@@ -41,13 +41,15 @@ EXPORT_FILE_SUFFIXES = (_INPUTS_SUFFIX,)
 
 # The published copy of the Figure-4 input file: version 1.0 of its Zenodo record
 # (the manuscript's data statement cites this DOI), and the file's SHA-256, which
-# the Figure-4 summary also records
+# the Figure-4 summary also records. The download URL is built from the DOI, so
+# the two cannot name different records.
 FIGURE04_INPUTS_DOI = "10.5281/zenodo.23020757"
 FIGURE04_INPUTS_SHA256 = "60383b394b597e2900545548ecac7c53a8601038ace9dbeb42d7f9a5fe1c93b3"
 FIGURE04_INPUTS_FILE = f"j1620210710_02_r1{_INPUTS_SUFFIX}"
-_FIGURE04_INPUTS_URL = (
-    f"https://zenodo.org/api/records/23020757/files/{FIGURE04_INPUTS_FILE}/content"
+FIGURE04_INPUTS_RECORD_URL = (
+    f"https://zenodo.org/api/records/{FIGURE04_INPUTS_DOI.removeprefix('10.5281/zenodo.')}"
 )
+_FIGURE04_INPUTS_URL = f"{FIGURE04_INPUTS_RECORD_URL}/files/{FIGURE04_INPUTS_FILE}/content"
 
 # Version of the array layout written by :func:`recording_arrays`.
 NPZ_FORMAT_VERSION = 1

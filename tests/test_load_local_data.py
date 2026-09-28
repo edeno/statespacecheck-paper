@@ -10,6 +10,7 @@ import shutil
 import stat
 import threading
 import urllib.error
+import urllib.request
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import Any, BinaryIO
@@ -22,6 +23,7 @@ import pytest
 from statespacecheck_paper.load_local_data import (
     FIGURE04_INPUTS_DOI,
     FIGURE04_INPUTS_FILE,
+    FIGURE04_INPUTS_RECORD_URL,
     FIGURE04_INPUTS_SHA256,
     LEGACY_PICKLE_SUFFIXES,
     NeuralRecordingData,
@@ -367,6 +369,18 @@ def test_existing_different_file_is_not_overwritten(
     with pytest.raises(FileExistsError, match="different SHA-256"):
         download_figure04_inputs(tmp_path, url=url, sha256=sha256)
     assert existing.read_bytes() == b"something else"
+
+
+def test_zenodo_record_is_the_cited_version_with_the_file() -> None:
+    """The DOI names one version (not all versions), and that record holds the file."""
+    try:
+        with urllib.request.urlopen(FIGURE04_INPUTS_RECORD_URL, timeout=30) as reply:
+            record = json.load(reply)
+    except (urllib.error.URLError, TimeoutError) as err:  # offline, or Zenodo unavailable
+        pytest.skip(f"Zenodo cannot be reached: {err}")
+    assert record["doi"] == FIGURE04_INPUTS_DOI
+    assert record["conceptdoi"] != FIGURE04_INPUTS_DOI
+    assert [file["key"] for file in record["files"]] == [FIGURE04_INPUTS_FILE]
 
 
 def test_published_checksum_is_the_one_figure4_records() -> None:
