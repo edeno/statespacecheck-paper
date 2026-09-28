@@ -486,6 +486,12 @@ def test_simulate_sparse_approach_phase() -> None:
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture(scope="module")
+def summary() -> Figure3RealizationSummary:
+    """Five pooled realizations, shared by the scientific-claim guards below."""
+    return estimate_realization_summary(_moderate_params(), n_realizations=5, first_random_seed=0)
+
+
 class TestEstimateRealizationSummary:
     def test_shapes_and_determinism(self) -> None:
         """The summary is (3 metrics x 6 columns: well-specified, remap,
@@ -515,25 +521,19 @@ class TestEstimateRealizationSummary:
             == repeat.diagnostic_thresholds.kl_divergence
         )
 
-    def test_remap_column_is_most_flagged(self) -> None:
+    def test_remap_column_is_most_flagged(self, summary: Figure3RealizationSummary) -> None:
         """Scientific regression guard: across realizations, the remap column
         (index 1) is flagged far more than the well-specified column (index 0)
         for every metric — the headline 'all three detect remap' result, now
         on a stabilized median."""
-        summary = estimate_realization_summary(
-            _moderate_params(), n_realizations=5, first_random_seed=0
-        )
         for row in range(3):
             assert summary.median_flag_percentages[row, 1] > summary.median_flag_percentages[row, 0]
 
-    def test_replay_is_not_flagged(self) -> None:
+    def test_replay_is_not_flagged(self, summary: Figure3RealizationSummary) -> None:
         """Scientific claim: the replay event (column 3) is *not* a
         misspecification. The decoder tracks the swept trajectory, so every
         metric stays low — far below the remap positive control — even though
         the decoded position departs from the (fixed) true position."""
-        summary = estimate_realization_summary(
-            _moderate_params(), n_realizations=5, first_random_seed=0
-        )
         replay = summary.median_flag_percentages[:, 3]
         remap = summary.median_flag_percentages[:, 1]
         assert np.all(replay < 15.0), f"replay should stay low; got {replay}"
@@ -541,7 +541,9 @@ class TestEstimateRealizationSummary:
             f"replay must flag far less than the remap misfit; got replay={replay}, remap={remap}"
         )
 
-    def test_sparse_population_column_flags_kl_only(self) -> None:
+    def test_sparse_population_column_flags_kl_only(
+        self, summary: Figure3RealizationSummary
+    ) -> None:
         """Headline panel-(b) claim, guarded on the flag-fraction columns the
         figure actually shows (rows HPD, predictive-p, KL): the sparse-
         population control (column 5) elevates KL well above the
@@ -550,9 +552,6 @@ class TestEstimateRealizationSummary:
         regression that started flagging HPD/p there, or dropped the KL rate,
         would fail here even though the per-event-median guard stays green.
         """
-        summary = estimate_realization_summary(
-            _moderate_params(), n_realizations=5, first_random_seed=0
-        )
         sparse = summary.median_flag_percentages[:, 5]  # [HPD, predictive-p, KL]
         well = summary.median_flag_percentages[:, 0]
         assert sparse[2] > 15.0, f"sparse-population KL should be clearly elevated; got {sparse[2]}"
@@ -565,13 +564,10 @@ class TestEstimateRealizationSummary:
             f"got {sparse}"
         )
 
-    def test_history_dependent_column_is_missed(self) -> None:
+    def test_history_dependent_column_is_missed(self, summary: Figure3RealizationSummary) -> None:
         """Panel-(b) guard: the history-dependent (temporal) misfit is missed
         by all three per-spike spatial diagnostics (column 2 stays low on the
         flag-fraction columns, not merely at the per-event median)."""
-        summary = estimate_realization_summary(
-            _moderate_params(), n_realizations=5, first_random_seed=0
-        )
         hist = summary.median_flag_percentages[:, 2]
         well = summary.median_flag_percentages[:, 0]
         assert np.all(hist < 5.0), f"history-dependent phase should stay near zero; got {hist}"
@@ -579,7 +575,9 @@ class TestEstimateRealizationSummary:
             f"history-dependent flags should not exceed the baseline; got hist={hist}, well={well}"
         )
 
-    def test_remap_is_strongly_flagged_by_all_three(self) -> None:
+    def test_remap_is_strongly_flagged_by_all_three(
+        self, summary: Figure3RealizationSummary
+    ) -> None:
         """Magnitude guard (replaces the removed single-realization
         ``test_remap_phase_flags_all_three``): the incoherent random-remap is
         the headline positive control, so every metric must flag it well
@@ -593,9 +591,6 @@ class TestEstimateRealizationSummary:
         partly explores; bounds are set against the observed deterministic
         values (remap ~[15, 20, 14]% vs well ~[4, 5, 3]%, drift ~[3, 5, 1]%).
         """
-        summary = estimate_realization_summary(
-            _moderate_params(), n_realizations=5, first_random_seed=0
-        )
         well = summary.median_flag_percentages[:, 0]
         remap = summary.median_flag_percentages[:, 1]
         drift = summary.median_flag_percentages[:, 4]
