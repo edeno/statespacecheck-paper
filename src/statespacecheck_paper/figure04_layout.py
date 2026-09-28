@@ -114,7 +114,7 @@ def _shift_axis_to_artist_edge(
 
 def _axes_tight_bbox_inches(fig: Any, *, pad_inches: float = 0.05) -> Bbox:
     """Return a figure bbox cropped to the union of visible axes."""
-    fig.canvas.draw()
+    fig.draw_without_rendering()
     renderer = fig.canvas.get_renderer()
     bboxes = [
         bbox
@@ -192,7 +192,7 @@ def _place_track_inset(
     # Align the track diagram itself with the shared right-side diagnostic
     # annotations: the diagram's left edge should begin where the annotation
     # text ends.
-    fig.canvas.draw()
+    fig.draw_without_rendering()
     renderer = fig.canvas.get_renderer()
     annotation_texts = [
         text
@@ -252,7 +252,7 @@ def _layout_hexbin_row(
     for ax, anchor in zip(axes_hexbin, ("E", "C", "W"), strict=True):
         ax.set_anchor(anchor)
     hexbin_colorbar_axes = [ax for ax in fig.axes if ax not in axes_before_hexbin]
-    fig.canvas.draw()
+    fig.draw_without_rendering()
     hexbin_positions = [ax.get_position() for ax in axes_hexbin]
     panel_width = min(pos.width for pos in hexbin_positions)
     panel_height = min(pos.height for pos in hexbin_positions)
@@ -286,7 +286,7 @@ def _layout_hexbin_row(
         )
     fig.set_layout_engine("none")
     if hexbin_colorbar_axes:
-        fig.canvas.draw()
+        fig.draw_without_rendering()
         renderer = fig.canvas.get_renderer()
         colorbar_label_bbox = hexbin_colorbar_axes[-1].yaxis.label.get_window_extent(renderer)
         _shift_axis_to_artist_edge(
