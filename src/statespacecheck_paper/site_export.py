@@ -166,14 +166,6 @@ def encode_display_rows(values: NDArray[np.floating]) -> str:
     return base64.b64encode(quantized.tobytes()).decode("ascii")
 
 
-def decode_display_rows(encoded: str, n_bins: int) -> NDArray[np.uint8]:
-    """Invert :func:`encode_display_rows` to a ``(n_rows, n_bins)`` array."""
-    flat = np.frombuffer(base64.b64decode(encoded), dtype=np.uint8)
-    if flat.size % n_bins:
-        raise ValueError(f"{flat.size} encoded values do not divide into rows of {n_bins}")
-    return flat.reshape(-1, n_bins)
-
-
 def heatmap_payload(
     values: NDArray[np.floating], value_range: tuple[float, float]
 ) -> dict[str, Any]:
