@@ -280,7 +280,7 @@ def plot_kl_log_ratio(ax: Axes, data: Figure2ExampleData) -> None:
 
     ax.set_xlabel("Latent state (a.u.)", labelpad=8)
     ax.set_ylabel(r"$\log(\mathrm{pred}) - \log(\mathrm{like})$", labelpad=8)
-    ax.set_title("Log Ratio", fontsize=8, pad=4)
+    ax.set_title("Log Ratio", pad=4)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     ax.set_xlim(0, 100)
@@ -311,7 +311,7 @@ def plot_kl_pointwise(ax: Axes, data: Figure2ExampleData) -> None:
         r"$\mathrm{pred} \cdot [\log(\mathrm{pred}) - \log(\mathrm{like})]$",
         labelpad=8,
     )
-    ax.set_title("Pointwise KL: pred × log ratio", fontsize=8, pad=4)
+    ax.set_title("Pointwise KL: pred × log ratio", pad=4)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     ax.set_xlim(0, 100)
@@ -376,7 +376,7 @@ def _plot_hpd_panel(
 
     ax.set_xlabel("Latent state (a.u.)", labelpad=8)
     ax.set_ylabel("Probability", labelpad=8)
-    ax.set_title(title, fontsize=8, pad=4)
+    ax.set_title(title, pad=4)
     ax.legend(frameon=False, **legend_kwargs)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)

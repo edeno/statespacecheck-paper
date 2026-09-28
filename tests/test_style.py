@@ -3,19 +3,15 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal
 
 import matplotlib.pyplot as plt
 import pytest
 
 from statespacecheck_paper.style import (
     WONG,
-    get_figure_size,
     save_figure,
     set_figure_defaults,
 )
-
-WidthType = Literal["single", "double", "full"]
 
 
 def test_wong_palette_is_eight_hex_colors() -> None:
@@ -33,7 +29,7 @@ def test_set_figure_defaults_paper_font_sizes_within_journal_range() -> None:
     expected = {
         "font.size": 8,
         "axes.labelsize": 8,
-        "axes.titlesize": 9,
+        "axes.titlesize": 8,
         "xtick.labelsize": 8,
         "ytick.labelsize": 8,
         "legend.fontsize": 8,
@@ -130,23 +126,3 @@ def test_save_figure_accepts_explicit_figure(tmp_path: Path) -> None:
     assert (tmp_path / "explicit_figure.pdf").exists()
     assert (tmp_path / "explicit_figure.png").exists()
     assert not plt.fignum_exists(fig.number)
-
-
-@pytest.mark.parametrize(
-    ("width_type", "expected_width"),
-    [("single", 3.5), ("double", 7.0), ("full", 7.0)],
-)
-def test_get_figure_size_returns_journal_widths(
-    width_type: WidthType, expected_width: float
-) -> None:
-    """Standard width strings map to the documented journal column inches."""
-    width, height = get_figure_size(width_type)
-    assert width == pytest.approx(expected_width, abs=0.1)
-    assert height > 0
-
-
-@pytest.mark.parametrize("aspect_ratio", [1.0, 1.5, 2.0])
-def test_get_figure_size_with_aspect_ratio(aspect_ratio: float) -> None:
-    """Aspect ratio sets width/height precisely."""
-    width, height = get_figure_size("single", aspect_ratio=aspect_ratio)
-    assert width / height == pytest.approx(aspect_ratio)

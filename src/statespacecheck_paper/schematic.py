@@ -579,7 +579,7 @@ def draw_graphical_model(
     )
 
     # Title (using set_title for consistent positioning across panels)
-    ax.set_title("State Space Model", fontsize=8, fontweight="bold", pad=4)
+    ax.set_title("State Space Model", fontweight="bold", pad=4)
 
     # Time direction indicator
     ax.text(
@@ -825,4 +825,4 @@ def draw_equation_boxes(ax: Axes) -> None:
     )
 
     # Title (using set_title for consistent positioning across panels)
-    ax.set_title("Recursive Estimation Algorithm", fontsize=8, fontweight="bold", pad=4)
+    ax.set_title("Recursive Estimation Algorithm", fontweight="bold", pad=4)

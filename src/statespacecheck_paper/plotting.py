@@ -231,7 +231,7 @@ def create_distribution_comparison_panel(
     ax.set_xlim(float(x[0]), float(x[-1]))
     ax.set_ylim(-0.1, 0.30)  # Room for sub-panel titles
     if title:
-        ax.set_title(title, fontsize=8, fontweight="normal", pad=2)
+        ax.set_title(title, fontweight="normal", pad=2)
 
     ax.axis("off")
 

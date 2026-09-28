@@ -9,18 +9,18 @@ Examples
 Basic usage for creating a publication figure:
 
 >>> from statespacecheck_paper.style import (
-...     WONG, get_figure_size, set_figure_defaults, save_figure
+...     WONG, set_figure_defaults, save_figure
 ... )
 >>> import matplotlib.pyplot as plt
 >>> set_figure_defaults(context="paper")
->>> fig, ax = plt.subplots(figsize=get_figure_size("single"))
+>>> fig, ax = plt.subplots(figsize=(3.5, 2.3))
 >>> _ = ax.plot([1, 2, 3], [1, 2, 3], color=WONG[1])
 >>> save_figure("manuscript/figures/my_figure")  # doctest: +SKIP
 
 For presentations:
 
 >>> set_figure_defaults(context="presentation")
->>> fig, ax = plt.subplots(figsize=get_figure_size("double"))
+>>> fig, ax = plt.subplots(figsize=(7.0, 4.7))
 >>> save_figure("manuscript/figures/presentation_figure", dpi=300)  # doctest: +SKIP
 """
 
@@ -245,7 +245,7 @@ def set_figure_defaults(context: Literal["paper", "presentation", "poster"] = "p
             # Journals typically require 8-12 pt for all in-figure text; 8 pt is the floor.
             "font.size": 8,
             "axes.labelsize": 8,
-            "axes.titlesize": 9,
+            "axes.titlesize": 8,
             "xtick.labelsize": 8,
             "ytick.labelsize": 8,
             "legend.fontsize": 8,
@@ -359,68 +359,3 @@ def save_figure(
 
     if close:
         plt.close(fig)
-
-
-def get_figure_size(
-    width_type: Literal["single", "double", "full"] = "single",
-    aspect_ratio: float = 1.5,
-) -> tuple[float, float]:
-    """Get figure size in inches for different column widths.
-
-    Provides standard figure sizes that fit journal column widths.
-    Most journals use similar column widths (Nature, Science, Cell, etc.).
-
-    Parameters
-    ----------
-    width_type : {"single", "double", "full"}, default "single"
-        Figure width type:
-        - "single": Single column width (~3.5 inches)
-        - "double": Double column width (~7.0 inches)
-        - "full": Full page width (~7.0 inches, same as double)
-    aspect_ratio : float, default 1.5
-        Width to height ratio. Default 1.5 gives pleasant proportions.
-        Use 1.0 for square figures, 2.0 for wide figures.
-
-    Returns
-    -------
-    width : float
-        Figure width in inches.
-    height : float
-        Figure height in inches, computed as width / aspect_ratio.
-
-    Notes
-    -----
-    Standard journal column widths:
-    - Nature: Single column 89mm (~3.5"), double column 183mm (~7.2")
-    - Science: Single column 90mm (~3.54"), double column 180mm (~7.08")
-    - Cell: Single column 85mm (~3.35"), double column 174mm (~6.85")
-
-    This function uses compromise values that work for all major journals.
-
-    Examples
-    --------
-    Single column figure with default aspect ratio:
-
-    >>> width, height = get_figure_size("single")
-    >>> fig, ax = plt.subplots(figsize=(width, height))
-
-    Wide double-column figure:
-
-    >>> width, height = get_figure_size("double", aspect_ratio=2.0)
-    >>> fig, axes = plt.subplots(1, 2, figsize=(width, height))
-
-    Square single column figure:
-
-    >>> width, height = get_figure_size("single", aspect_ratio=1.0)
-    """
-    # Standard column widths in inches
-    widths = {
-        "single": 3.5,  # Single column (~89mm)
-        "double": 7.0,  # Double column (~180mm)
-        "full": 7.0,  # Full width (same as double)
-    }
-
-    width = widths[width_type]
-    height = width / aspect_ratio
-
-    return width, height

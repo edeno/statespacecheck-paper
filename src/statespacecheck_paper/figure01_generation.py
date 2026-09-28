@@ -71,7 +71,6 @@ def compose_figure01() -> Figure:
     axes["goodness_of_fit"].axis("off")
     axes["goodness_of_fit"].set_title(
         "Goodness-of-Fit: Predictive vs. Likelihood",
-        fontsize=8,
         fontweight="bold",
         pad=4,
     )

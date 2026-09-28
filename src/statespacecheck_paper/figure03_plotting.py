@@ -349,7 +349,7 @@ def _plot_figure3_predictive_row(
     """Plot Figure 3's predictive row with a direct physical-position label."""
     _plot_timeseries_heatmap(ax, predictive, true_position)
     ax.set_ylabel("Position (a.u.)", labelpad=7)
-    ax.tick_params(labelsize=8, labelbottom=False)
+    ax.tick_params(labelbottom=False)
     true_position_label = ax.text(
         0.02,
         0.90,
@@ -377,7 +377,7 @@ def _plot_figure3_likelihood_row(
         true_position=true_position,
     )
     ax.set_ylabel("Position (a.u.)", labelpad=7)
-    ax.tick_params(labelsize=8, labelbottom=False)
+    ax.tick_params(labelbottom=False)
     _add_figure3_row_label(ax, "Likelihood")
 
 
@@ -388,7 +388,7 @@ def _plot_figure3_raster_row(
 ) -> None:
     """Plot Figure 3's spike-count raster row."""
     _plot_spike_count_raster(ax, spike_counts, place_field_centers)
-    ax.tick_params(labelsize=8, labelbottom=False)
+    ax.tick_params(labelbottom=False)
     _add_figure3_row_label(ax, "Spikes")
 
 
@@ -441,9 +441,8 @@ def _plot_figure3_diagnostic_row(
     ax.set_ylabel(FIGURE3_DIAGNOSTIC_YLABELS.get(spec.name, spec.ylabel), labelpad=7)
     if show_xlabel:
         ax.set_xlabel("Time (ms)", labelpad=7)
-        ax.tick_params(labelsize=8)
     else:
-        ax.tick_params(labelsize=8, labelbottom=False)
+        ax.tick_params(labelbottom=False)
 
     _add_figure3_worse_fit_label(ax, spec.worse_fit_direction)
     _add_figure3_threshold_label(ax, plot_threshold)
@@ -605,7 +604,6 @@ def _plot_figure3_summary_heatmap(
 
     title = ax.set_title(
         "% of spike events flagged as poor fit (median across realizations)",
-        fontsize=8,
         pad=8,
         loc="center",
     )
