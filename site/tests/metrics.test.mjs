@@ -20,8 +20,10 @@ const fixture = JSON.parse(
 // Continuous metrics may differ only by summation-order rounding.
 const RELATIVE_TOLERANCE = 1e-9;
 
-function assertClose(actual, expected, label) {
-  const scale = Math.max(1, Math.abs(expected));
+function assertClose(actual, expected, label, { relative = false } = {}) {
+  // Relative comparisons hold small values (p-values in the tail) to their own
+  // scale, where an absolute one would accept any value below the tolerance
+  const scale = relative ? Math.abs(expected) : Math.max(1, Math.abs(expected));
   assert.ok(
     Math.abs(actual - expected) <= RELATIVE_TOLERANCE * scale,
     `${label}: ${actual} vs Python ${expected}`,
@@ -52,7 +54,9 @@ test("per-spike diagnostics match Python", () => {
     const label = `case ${index} (ensemble ${ensemble}, cell ${cell})`;
     // HPD overlap is a ratio of bin counts, so it must match exactly.
     assert.equal(actual.hpd_overlap, expected.hpd_overlap, `${label} HPD overlap`);
-    assertClose(actual.predictive_pvalue, expected.predictive_pvalue, `${label} p-value`);
+    assertClose(actual.predictive_pvalue, expected.predictive_pvalue, `${label} p-value`, {
+      relative: true,
+    });
     assertClose(actual.kl_divergence, expected.kl_divergence, `${label} KL`);
   }
 });
