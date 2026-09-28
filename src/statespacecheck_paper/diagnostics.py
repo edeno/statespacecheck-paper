@@ -15,6 +15,7 @@ paper's dependency graph.
 **Key Components**:
 - **SpikeEventDiagnostics**: per-spike-event diagnostic arrays (dense matrices optional)
 - **DecodingDiagnostics**: full decoder return with dense distributions + diagnostics
+- **expand_spike_events**: one event per spike from a spike-count matrix
 - **compute_spike_event_diagnostics_from_rates**: per-spike diagnostics via ``statespacecheck``
 - **DiagnosticThresholds** / **compute_baseline_diagnostic_thresholds**: baseline flags
 - **METRIC_FLAG_DIRECTIONS** / **flag_mask**: the inclusive flag rule
@@ -440,6 +441,37 @@ class DecodingDiagnostics:
             "per_spike_likelihood",
         ):
             getattr(self, name).setflags(write=False)
+
+
+def expand_spike_events(
+    spike_counts: NDArray[np.integer],
+) -> tuple[NDArray[np.intp], NDArray[np.intp]]:
+    """Expand a spike-count matrix into one event per spike.
+
+    Every bin, including ``t=0``, contributes events; a bin with count ``k``
+    contributes ``k`` repeated events, in row-major ``(time, cell)`` order.
+
+    Parameters
+    ----------
+    spike_counts : np.ndarray, shape (n_time, n_cells)
+        Non-negative spike count per time bin and cell.
+
+    Returns
+    -------
+    spike_time_ind, spike_cell_ind : np.ndarray, shape (n_spikes,)
+        Time-bin and cell index of each spike event.
+
+    Examples
+    --------
+    >>> time_ind, cell_ind = expand_spike_events(np.array([[0, 2], [1, 0]]))
+    >>> time_ind.tolist(), cell_ind.tolist()
+    ([0, 0, 1], [1, 1, 0])
+    """
+    spike_time_ind, spike_cell_ind = np.nonzero(spike_counts)
+    counts = spike_counts[spike_time_ind, spike_cell_ind].astype(np.intp)
+    spike_time_ind = np.repeat(spike_time_ind, counts).astype(np.intp)
+    spike_cell_ind = np.repeat(spike_cell_ind, counts).astype(np.intp)
+    return spike_time_ind, spike_cell_ind
 
 
 def compute_spike_event_diagnostics_from_rates(

@@ -17,6 +17,7 @@ from statespacecheck_paper.diagnostics import (
     SpikeEventDiagnostics,
     compute_baseline_diagnostic_thresholds,
     compute_spike_event_diagnostics_from_rates,
+    expand_spike_events,
     flag_mask,
 )
 
@@ -315,6 +316,27 @@ class TestComputeSpikeEventDiagnosticsFromRates:
         assert result.predictive_pvalue is None
         assert result.per_spike_likelihood is None
         assert result.event_hpd_overlap.shape == (4,)
+
+
+# ---------------------------------------------------------------------------
+# expand_spike_events
+# ---------------------------------------------------------------------------
+
+
+def test_expand_spike_events_repeats_multi_spike_bins_in_row_major_order() -> None:
+    spike_counts = np.array([[1, 0, 2], [0, 0, 0], [3, 1, 0]])
+    time_ind, cell_ind = expand_spike_events(spike_counts)
+    assert time_ind.dtype == np.intp and cell_ind.dtype == np.intp
+    np.testing.assert_array_equal(time_ind, [0, 0, 0, 2, 2, 2, 2])
+    np.testing.assert_array_equal(cell_ind, [0, 2, 2, 0, 0, 0, 1])
+    np.testing.assert_array_equal(
+        np.bincount(time_ind * 3 + cell_ind, minlength=9), spike_counts.ravel()
+    )
+
+
+def test_expand_spike_events_without_spikes_is_empty() -> None:
+    time_ind, cell_ind = expand_spike_events(np.zeros((4, 2), dtype=np.int64))
+    assert time_ind.shape == (0,) and cell_ind.shape == (0,)
 
 
 # ---------------------------------------------------------------------------

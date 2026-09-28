@@ -30,6 +30,7 @@ from statespacecheck_paper.diagnostics import (
     FlagDirection,
     SpikeEventDiagnostics,
     compute_spike_event_diagnostics_from_rates,
+    expand_spike_events,
     flag_mask,
 )
 from statespacecheck_paper.figure04_place_fields import (
@@ -172,21 +173,6 @@ def compute_running_average(
     has_events = counts > 0
     running_avg[has_events] = sums[has_events] / counts[has_events]
     return running_avg, evaluation_time.copy()
-
-
-def _get_spike_events_from_counts(
-    spike_counts: NDArray[np.int64],
-    time: NDArray[np.float64] | None = None,
-) -> tuple[NDArray[np.intp], NDArray[np.intp], NDArray[np.float64] | None]:
-    """Expand binned spike counts into one event per spike."""
-    spike_time_ind, spike_cell_ind = np.nonzero(spike_counts)
-    counts = spike_counts[spike_time_ind, spike_cell_ind].astype(np.intp)
-
-    spike_time_ind = np.repeat(spike_time_ind, counts).astype(np.intp)
-    spike_cell_ind = np.repeat(spike_cell_ind, counts).astype(np.intp)
-    event_times = None if time is None else np.asarray(time, dtype=np.float64)[spike_time_ind]
-
-    return spike_time_ind, spike_cell_ind, event_times
 
 
 def _get_spike_events_from_spike_times(
@@ -336,10 +322,8 @@ def compute_spike_event_diagnostics(
             spike_times, time
         )
     else:
-        spike_time_ind, spike_cell_ind, event_times = _get_spike_events_from_counts(
-            spike_counts,
-            time,
-        )
+        spike_time_ind, spike_cell_ind = expand_spike_events(spike_counts)
+        event_times = None if time is None else np.asarray(time, dtype=np.float64)[spike_time_ind]
 
     result = compute_spike_event_diagnostics_from_rates(
         predictive_posterior,
