@@ -1,11 +1,11 @@
 """Default paths and identifiers for the paper's real-data analysis.
 
-These exist so the 5 figure / sanity scripts that consume the real-data
-pickles don't each redeclare the same constants. Override
-``DATA_PATH`` via the ``STATESPACECHECK_DATA_PATH`` environment
-variable and ``ANIMAL_DATE_EPOCH`` via
-``STATESPACECHECK_ANIMAL_DATE_EPOCH`` to run any of these scripts
-against a different dataset without editing source.
+These exist so the modules and scripts that read the Figure-4 input file
+(``{animal_date_epoch}_figure04_inputs.npz``) don't each redeclare the same
+constants. Override ``DATA_PATH`` via the ``STATESPACECHECK_DATA_PATH``
+environment variable and ``ANIMAL_DATE_EPOCH`` via
+``STATESPACECHECK_ANIMAL_DATE_EPOCH`` to run them against a different dataset
+without editing source.
 """
 
 from __future__ import annotations
