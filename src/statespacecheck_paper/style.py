@@ -33,6 +33,8 @@ from typing import Literal
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
 
+from statespacecheck_paper.diagnostics import METRIC_FLAG_DIRECTIONS, FlagDirection
+
 # Wong colorblind-friendly palette
 # Reference: Wong, B. (2011). Points of view: Color blindness.
 # Nature Methods 8, 441. https://doi.org/10.1038/nmeth.1618
@@ -147,7 +149,6 @@ MetricName = Literal["hpd_overlap", "kl_divergence", "predictive_pvalue"]
 
 
 DisplayTransform = Literal["identity", "neg_log_p"]
-PlottedWorseDirection = Literal["below", "above"]
 
 
 @dataclass(frozen=True)
@@ -161,8 +162,10 @@ class MetricSpec:
     the interactive viewer.
 
     ``plotted_worse`` is the worse-fit direction **on the plotted axis** (after
-    ``display_transform``), so it drives both the ``worse_fit_direction`` arrow
-    and the hexbin "rescue" quadrant. ``ylabel`` is the canonical LaTeX axis
+    ``display_transform``), derived from the flag rule's
+    :data:`~statespacecheck_paper.diagnostics.METRIC_FLAG_DIRECTIONS` so the
+    ``worse_fit_direction`` arrow and the hexbin "rescue" quadrant cannot
+    disagree with the flags. ``ylabel`` is the canonical LaTeX axis
     label; a few consumers (Figure 3's diagnostic rows, the pyqtgraph viewer)
     render their own plain-text variant instead.
     """
@@ -170,9 +173,20 @@ class MetricSpec:
     name: MetricName
     ylabel: str
     color: str
-    plotted_worse: PlottedWorseDirection
     display_transform: DisplayTransform = "identity"
     symlog_axis: bool = False
+
+    @property
+    def plotted_worse(self) -> FlagDirection:
+        """Worse-fit direction on the plotted axis.
+
+        The raw flag direction, flipped by the monotonically decreasing
+        ``-log(p)`` transform.
+        """
+        raw = METRIC_FLAG_DIRECTIONS[self.name]
+        if self.display_transform == "neg_log_p":
+            return "above" if raw == "below" else "below"
+        return raw
 
     @property
     def event_attr(self) -> str:
@@ -186,15 +200,14 @@ class MetricSpec:
 
 
 METRIC_SPECS: tuple[MetricSpec, ...] = (
-    MetricSpec("hpd_overlap", "HPD overlap", COLORS["hpd_overlap"], "below", symlog_axis=True),
+    MetricSpec("hpd_overlap", "HPD overlap", COLORS["hpd_overlap"], symlog_axis=True),
     MetricSpec(
         "predictive_pvalue",
         r"$-\log(p)$",
         COLORS["metric_combined"],
-        "above",
         display_transform="neg_log_p",
     ),
-    MetricSpec("kl_divergence", "KL div.", COLORS["kl_divergence"], "above"),
+    MetricSpec("kl_divergence", "KL div.", COLORS["kl_divergence"]),
 )
 METRIC_NAMES: tuple[MetricName, ...] = tuple(s.name for s in METRIC_SPECS)
 METRIC_SPEC_BY_NAME: dict[str, MetricSpec] = {s.name: s for s in METRIC_SPECS}
