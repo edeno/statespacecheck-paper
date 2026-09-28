@@ -10,8 +10,6 @@ public entry point. Generic renderers (``plot_likelihood_columns``) stay in
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib import gridspec
@@ -79,117 +77,42 @@ FIGURE3_SUMMARY_ACCURACY_CELL_LABEL_GID = "figure3-summary-accuracy-cell-label"
 FIGURE3_SUMMARY_ACCURACY_HEADER_GID = "figure3-summary-accuracy-header"
 
 
-@dataclass(frozen=True)
-class DiagnosticRowSpec:
-    """One Figure 3 diagnostic row.
+# Figure 3 renders the predictive p-value axis label as plain "−log(p)"
+# rather than the shared LaTeX ``MetricSpec.ylabel``; the other rows use it.
+FIGURE3_DIAGNOSTIC_YLABELS: dict[str, str] = {"predictive_pvalue": "−log(p)"}
 
-    Pairs a shared :class:`MetricSpec` with Figure 3's own plain-text y-axis
-    label (``MetricSpec.ylabel`` uses LaTeX). Color, transform, symlog axis,
-    worse-fit arrow, event attribute, and threshold key all come from
-    ``metric``.
-    """
-
-    metric: MetricSpec
-    ylabel: str
-
-
-# Figure 3 renders the predictive p-value axis label as plain "−log(p)" rather
-# than the shared LaTeX "$-\log(p)$"; the other two match MetricSpec.ylabel.
-FIGURE3_DIAGNOSTIC_ROW_SPECS: tuple[DiagnosticRowSpec, ...] = tuple(
-    DiagnosticRowSpec(metric=spec, ylabel=ylabel)
-    for spec, ylabel in zip(METRIC_SPECS, ("HPD overlap", "−log(p)", "KL div."), strict=True)
+# Shaded Figure 3 misfit bands: (start, end) boundary indices and the ``COLORS``
+# key. Saturated colors keep the bands visible at low alpha.
+FIGURE3_MISFIT_BANDS: tuple[tuple[PhaseBoundary, PhaseBoundary, str], ...] = (
+    (PhaseBoundary.REMAP_START, PhaseBoundary.REMAP_END, "likelihood"),
+    (PhaseBoundary.RECOVERY1_END, PhaseBoundary.HIST_DEP_END, "reference"),
+    (PhaseBoundary.RECOVERY2_END, PhaseBoundary.DRIFT_END, "predictive"),
+    (PhaseBoundary.RECOVERY3_END, PhaseBoundary.SPARSE_POP_END, "metric_combined"),
 )
 
 
-def add_phase_boundaries(
-    axes: list[Axes],
-    phase_boundaries: tuple[int, ...],
-    include_labels: bool = False,
-    alpha: float = 0.15,
-    replay: tuple[int, int] | None = None,
-) -> None:
-    """Add colored phase boundaries to multiple axes.
+def add_phase_boundaries(axes: list[Axes], config: Figure3Config, alpha: float = 0.15) -> None:
+    """Shade the misfit phases and the replay control on each time-series axis.
 
     Parameters
     ----------
-    axes : list[plt.Axes]
-        List of axes to add phase boundaries to.
-    phase_boundaries : tuple[int, ...]
-        Phase boundary time points, in the canonical 8-element order
-        indexed by :class:`statespacecheck_paper.figure03_protocol.PhaseBoundary`
-        (``REMAP_START``, ``REMAP_END``, ``RECOVERY1_END``,
-        ``HIST_DEP_END``, ``RECOVERY2_END``, ``DRIFT_END``,
-        ``RECOVERY3_END``, ``SPARSE_POP_END``). Shorter tuples (down
-        to 2 elements) are accepted and produce a partial shading; only
-        the misfit conditions whose pair of boundary entries is present
-        are drawn.
-    include_labels : bool, default False
-        If True, add labels for legend on first axis.
+    axes : list[Axes]
+        Axes sharing the Figure 3 step timeline.
+    config : Figure3Config
+        Supplies ``phase_boundaries`` and the replay step window.
     alpha : float, default 0.15
-        Alpha (transparency) for phase boundaries.
-    replay : tuple[int, int] or None, default None
-        Half-open ``[start, end)`` step bounds of the replay control band
-        (shaded in a distinct, non-misfit color) when provided.
-
-    Returns
-    -------
-    None
-        Modifies axes in-place by adding colored phase boundary regions.
-
-    Examples
-    --------
-    >>> fig, axes = plt.subplots(4, 1)
-    >>> boundaries = (10, 20, 30, 40, 50, 60, 70, 80)
-    >>> add_phase_boundaries(axes, boundaries, include_labels=True)
+        Band transparency.
     """
-    # Saturated colors so axvspan at low alpha is still visible. We use
-    # ``COLORS`` entries that are vivid hexes (the pastel ``phase_*``
-    # palette entries wash out completely at this alpha).
-    misfit_specs: list[tuple[int, int, str, str]] = []
-    n = len(phase_boundaries)
-    if n >= 2:
-        misfit_specs.append(
-            (phase_boundaries[0], phase_boundaries[1], COLORS["likelihood"], "Remap")
-        )
-    if n >= 4:
-        misfit_specs.append(
-            (
-                phase_boundaries[2],
-                phase_boundaries[3],
-                COLORS["reference"],
-                "History-dependent firing",
-            )
-        )
-    if n >= 6:
-        misfit_specs.append(
-            (phase_boundaries[4], phase_boundaries[5], COLORS["predictive"], "Drift")
-        )
-    if n >= 8:
-        misfit_specs.append(
-            (
-                phase_boundaries[6],
-                phase_boundaries[7],
-                COLORS["metric_combined"],
-                "Sparse population",
-            )
-        )
+    bnd = config.phase_boundaries
+    bands = [(bnd[start], bnd[end], COLORS[color]) for start, end, color in FIGURE3_MISFIT_BANDS]
     # The replay band (in clean-recovery 2) is not a misfit; shade it in a
     # distinct color so the reader can see the decoded-vs-true divergence is
     # a deliberate, non-flagged event.
-    if replay is not None:
-        misfit_specs.append((replay[0], replay[1], COLORS["phase_replay"], "Replay"))
-    phases = misfit_specs
-
-    for ax_idx, ax in enumerate(axes):
-        add_labels_to_axis = include_labels and ax_idx == 0
-        for start, end, color, label in phases:
-            ax.axvspan(
-                start,
-                end,
-                alpha=alpha if not add_labels_to_axis else alpha + 0.05,
-                color=color,
-                label=label if add_labels_to_axis else "",
-            )
+    replay_start, replay_end = compute_replay_step_window(config)
+    bands.append((replay_start, replay_end, COLORS["phase_replay"]))
+    for ax in axes:
+        for start, end, color in bands:
+            ax.axvspan(start, end, alpha=alpha, color=color, label="")
 
 
 def _plot_timeseries_heatmap(
@@ -474,7 +397,7 @@ def _plot_figure3_diagnostic_row(
     time_ind: NDArray[np.integer],
     values: NDArray[np.floating],
     threshold: float,
-    spec: DiagnosticRowSpec,
+    spec: MetricSpec,
     *,
     n_time: int,
     show_xlabel: bool,
@@ -482,7 +405,7 @@ def _plot_figure3_diagnostic_row(
     """Plot one Figure 3 diagnostic event row."""
     plot_values = np.asarray(values, dtype=float)
     plot_threshold = float(threshold)
-    if spec.metric.display_transform == "neg_log_p":
+    if spec.display_transform == "neg_log_p":
         plot_values = negative_log_pvalue(plot_values)
         plot_threshold = float(negative_log_pvalue(plot_threshold))
 
@@ -491,7 +414,7 @@ def _plot_figure3_diagnostic_row(
         plot_values,
         s=0.8,
         alpha=0.6,
-        c=spec.metric.color,
+        c=spec.color,
         rasterized=True,
     )
     threshold_line = ax.axhline(
@@ -503,7 +426,7 @@ def _plot_figure3_diagnostic_row(
     )
     threshold_line.set_gid(FIGURE3_THRESHOLD_LINE_GID)
 
-    if spec.metric.symlog_axis:
+    if spec.symlog_axis:
         # Symlog y-scale expands the worst-fit floor near 0 instead of
         # compressing it onto the bottom spine.
         ax.set_yscale("symlog", linthresh=0.01, linscale=1.0)
@@ -515,14 +438,14 @@ def _plot_figure3_diagnostic_row(
         ax.set_ylim(-0.005, 1.6)
 
     ax.set_xlim(0, n_time)
-    ax.set_ylabel(spec.ylabel, labelpad=7)
+    ax.set_ylabel(FIGURE3_DIAGNOSTIC_YLABELS.get(spec.name, spec.ylabel), labelpad=7)
     if show_xlabel:
         ax.set_xlabel("Time (ms)", labelpad=7)
         ax.tick_params(labelsize=8)
     else:
         ax.tick_params(labelsize=8, labelbottom=False)
 
-    _add_figure3_worse_fit_label(ax, spec.metric.worse_fit_direction)
+    _add_figure3_worse_fit_label(ax, spec.worse_fit_direction)
     _add_figure3_threshold_label(ax, plot_threshold)
 
 
@@ -788,26 +711,19 @@ def compose_figure03(
     _plot_figure3_raster_row(ax_raster, spike_counts, place_field_centers)
 
     event_time_ind = diagnostics.event_time_ind
-    for row_idx, (ax, spec) in enumerate(
-        zip(diagnostic_axes, FIGURE3_DIAGNOSTIC_ROW_SPECS, strict=True)
-    ):
+    for row_idx, (ax, spec) in enumerate(zip(diagnostic_axes, METRIC_SPECS, strict=True)):
         _plot_figure3_diagnostic_row(
             ax,
             event_time_ind,
-            getattr(diagnostics, spec.metric.event_attr),
-            getattr(diagnostic_thresholds, spec.metric.name),
+            getattr(diagnostics, spec.event_attr),
+            getattr(diagnostic_thresholds, spec.name),
             spec,
             n_time=n_time,
-            show_xlabel=row_idx == len(FIGURE3_DIAGNOSTIC_ROW_SPECS) - 1,
+            show_xlabel=row_idx == len(METRIC_SPECS) - 1,
         )
 
     time_series_axes = [ax_pred, ax_like, ax_raster, *diagnostic_axes]
-    add_phase_boundaries(
-        time_series_axes,
-        tuple(config.phase_boundaries),
-        alpha=0.15,
-        replay=compute_replay_step_window(config),
-    )
+    add_phase_boundaries(time_series_axes, config)
     _add_figure3_phase_labels(ax_pred, config)
     _add_figure3_panel_label(ax_pred, "a", y=1.15)
 
