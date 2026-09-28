@@ -170,7 +170,7 @@ def create_shared_example(rng: np.random.Generator) -> Figure2ExampleData:
         predictive[np.newaxis, :],
         model,
         np.array([[like_mean]]),
-        n_samples=1000,
+        n_samples=10_000,
         rng=rng,
         return_samples=True,
     )
