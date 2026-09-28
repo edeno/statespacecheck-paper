@@ -246,12 +246,30 @@ class TestFigure4DecodeResults:
         assert decode.spike_counts[0, 0] == 0  # stored copy isolated
         assert not decode.spike_counts.flags.writeable
 
-    def test_keeps_read_only_input_without_copying(self) -> None:
+    def test_keeps_read_only_memmap_without_copying(self, tmp_path: Path) -> None:
         # The memory-mapped cache arrives read-only; it is used in place.
-        spike_counts = np.zeros((8, 2), dtype=np.int64)
-        spike_counts.setflags(write=False)
+        np.save(tmp_path / "counts.npy", np.zeros((8, 2), dtype=np.int64))
+        spike_counts = np.load(tmp_path / "counts.npy", mmap_mode="r")
         decode = dataclasses.replace(_synthetic_decode_results(), spike_counts=spike_counts)
         assert np.shares_memory(decode.spike_counts, spike_counts)
+        assert not decode.spike_counts.flags.writeable
+
+    def test_copies_read_only_view_of_a_writeable_array(self) -> None:
+        # A read-only view can still change through its writeable base.
+        base = np.zeros((8, 2), dtype=np.int64)
+        view = base.view()
+        view.setflags(write=False)
+        decode = dataclasses.replace(_synthetic_decode_results(), spike_counts=view)
+        base[0, 0] = 7
+        assert decode.spike_counts[0, 0] == 0
+
+    def test_converts_a_read_only_memmap_of_another_dtype(self, tmp_path: Path) -> None:
+        np.save(tmp_path / "counts.npy", np.ones((8, 2), dtype=np.int32))
+        spike_counts = np.load(tmp_path / "counts.npy", mmap_mode="r")
+        decode = dataclasses.replace(_synthetic_decode_results(), spike_counts=spike_counts)
+        assert decode.spike_counts.dtype == np.int64
+        assert not np.shares_memory(decode.spike_counts, spike_counts)
+        assert not decode.spike_counts.flags.writeable
 
     def test_rejects_dataset_timeline_mismatch(self) -> None:
         with pytest.raises(ValueError, match="decode timelines must match"):

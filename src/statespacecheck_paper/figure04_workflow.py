@@ -69,7 +69,7 @@ class Figure4DecodeResults:
     The contained xarray datasets and diagnostic objects are treated as
     read-only by convention (the frozen wrapper does not deep-freeze them); the
     four arrays are converted to their dtypes and made read-only at
-    construction, copied unless already read-only.
+    construction, copied unless they are a read-only memory map (the cache).
     In-memory field names spell out ``continuous_fragmented_*``; the serialized
     cache keys remain ``contfrag_*`` (see :meth:`from_cache_payload`).
 
@@ -218,17 +218,18 @@ class Figure4DecodeResults:
 
 
 def _read_only_array(value: object, dtype: type[np.generic]) -> NDArray[Any]:
-    """Return ``value`` as a read-only array of ``dtype``, copying only when needed.
+    """Return ``value`` as a read-only array of ``dtype`` that no caller can change.
 
-    A writeable array is copied before it is frozen, so freezing cannot reach
-    back into a caller-owned array. An array that is already read-only (the
-    memory-mapped decode cache) is kept as is: copying the 1.15 GB spike-count
-    matrix on every cache load bought nothing.
+    Any other input is copied before it is frozen, so freezing never reaches a
+    caller's array and a caller's writeable base cannot change the result. A
+    read-only memory map of the right dtype (the decode cache) is used in place,
+    avoiding a copy of the session-sized spike counts: its file is only ever
+    replaced by rename, never rewritten.
     """
-    arr = np.asarray(value, dtype=dtype)
-    if arr.flags.writeable:
-        arr = arr.copy()
-        arr.setflags(write=False)
+    if isinstance(value, np.memmap) and not value.flags.writeable and value.dtype == dtype:
+        return np.asarray(value)
+    arr = np.array(value, dtype=dtype)
+    arr.setflags(write=False)
     return arr
 
 
@@ -269,7 +270,8 @@ class Figure4RenderData:
     cache_provenance: Figure4CacheProvenance | None = None
 
     def __post_init__(self) -> None:
-        # Unconditional copies (these arrays are small) so freezing cannot
+        # Unconditional copies (per-time vectors, far smaller than the spike
+        # counts) so freezing cannot
         # reach back into a caller-owned array.
         time = np.array(self.time, dtype=np.float64)
         head_position = np.array(self.head_position, dtype=np.float64)
