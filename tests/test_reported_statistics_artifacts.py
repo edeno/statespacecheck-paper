@@ -17,10 +17,7 @@ from statespacecheck_paper.figure04_cache import Figure4CacheProvenance, Figure4
 from statespacecheck_paper.figure04_decoder import Figure4Config, Figure4DiagnosticsConfig
 from statespacecheck_paper.figure04_diagnostics import FlagConfusion
 from statespacecheck_paper.figure04_generation import figure04_summary_payload
-from statespacecheck_paper.figure04_workflow import (
-    Figure4DiagnosticMeans,
-    Figure4Summary,
-)
+from statespacecheck_paper.figure04_summary import Figure4DiagnosticMeans, Figure4Summary
 from statespacecheck_paper.load_local_data import EXPORT_FILE_SUFFIXES
 from statespacecheck_paper.scientific_artifacts import write_json_artifact
 

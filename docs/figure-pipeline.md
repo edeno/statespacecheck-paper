@@ -57,8 +57,9 @@ figure04_track_plots   → figure04_plot_primitives
 figure04_panels        → diagnostics, figure04_diagnostics, figure04_plot_primitives, figure04_track_plots, plotting, style
 figure04_cache         → figure04_decoder (Figure4Config, Figure4DiagnosticsConfig), load_local_data
 figure04_workflow      → figure04_cache, figure04_decoder, figure04_diagnostics, figure04_place_fields, diagnostics, load_local_data
+figure04_summary       → figure04_workflow, figure04_diagnostics, diagnostics
 figure04_layout        → figure04_workflow, diagnostics, figure04_panels, figure04_plot_primitives, figure04_track_plots
-figure04_generation    → figure04_workflow, figure04_layout, figure04_cache, figure04_decoder, paths, scientific_artifacts, style
+figure04_generation    → figure04_workflow, figure04_summary, figure04_layout, figure04_cache, figure04_decoder, paths, scientific_artifacts, style
 generate_figure04.py   → figure04_generation
 ```
 
@@ -248,7 +249,8 @@ $\Lambda(x)$.
   change confined to `diagnostics.py` or `figure04_diagnostics.py` therefore
   recomputes only the diagnostics from cached predictions (about a minute).
   Edits to shared workflow/place-field modules conservatively invalidate both
-  caches. Docstring and comment edits invalidate neither cache.
+  caches. Docstring and comment edits invalidate neither cache, and the summary
+  scalars and their printed text (`figure04_summary.py`) are outside both.
 - **Manuscript:** the real hippocampal-recording panels comparing the Continuous
   and Continuous-Fragmented decoders (and the whole-session hexbin summary).
 - **Entry point:** `scripts/generate_figure04.py::main` (the CLI), which calls
@@ -277,7 +279,7 @@ $\Lambda(x)$.
   `figure04_generation` (recipe) → `figure04_workflow.prepare_figure04_render_data`
   (loads the recording, loads a fingerprint-matching cache or fits/decodes via
   `figure04_decoder`/`figure04_place_fields`, computes `figure04_diagnostics`) →
-  `figure04_workflow.compute_figure04_summary` (typed manuscript scalars) →
+  `figure04_summary.compute_figure04_summary` (typed manuscript scalars) →
   `figure04_layout.compose_figure04`
   (artist arrangement) → `save_figure`.
 - **Intermediate data — the honest boundary.** Figure 4 is reproduced **from

@@ -113,9 +113,9 @@ def test_figure01_and_figure02_generation_dependencies_are_explicit() -> None:
 
 
 def test_figure04_family_dependency_edges_are_acyclic() -> None:
-    """The Figure-4 family is layered cache < workflow < layout < generation:
-    cache imports no other Figure-4 module; workflow imports cache; layout
-    imports workflow (never cache/config/paths); generation ties them together.
+    """The Figure-4 family is layered cache < workflow < summary/layout < generation:
+    cache imports no other Figure-4 module; workflow imports cache; summary and
+    layout import workflow (never cache/config/paths); generation ties them together.
 
     The analysis and plotting leaves (``figure04_decoder`` /
     ``figure04_place_fields`` < ``figure04_diagnostics`` and
@@ -151,6 +151,11 @@ def test_figure04_family_dependency_edges_are_acyclic() -> None:
             prefix + "diagnostics",
             prefix + "load_local_data",
         },
+        "figure04_summary.py": {
+            prefix + "diagnostics",
+            prefix + "figure04_diagnostics",
+            prefix + "figure04_workflow",
+        },
         "figure04_layout.py": {
             prefix + "figure04_workflow",
             prefix + "diagnostics",
@@ -162,6 +167,7 @@ def test_figure04_family_dependency_edges_are_acyclic() -> None:
             prefix + "diagnostics",
             prefix + "figure04_cache",
             prefix + "figure04_workflow",
+            prefix + "figure04_summary",
             prefix + "figure04_layout",
             prefix + "figure04_decoder",
             prefix + "paths",

@@ -43,7 +43,7 @@ from statespacecheck_paper.load_local_data import (
 
 if TYPE_CHECKING:
     from statespacecheck_paper.diagnostics import SpikeEventDiagnostics
-    from statespacecheck_paper.figure04_workflow import Figure4Summary
+    from statespacecheck_paper.figure04_summary import Figure4Summary
 
 FIGURE04_NWB_FILE_NAME = "j1620210710_.nwb"
 FIGURE04_EPOCH_NAME = "02_r1"
@@ -754,7 +754,7 @@ def figure04_diagnostics_from_decodes(
         FIGURE4_METRIC_DIRECTIONS,
     )
     from statespacecheck_paper.figure04_place_fields import extract_shared_position_place_fields
-    from statespacecheck_paper.figure04_workflow import summarize_figure04_diagnostics
+    from statespacecheck_paper.figure04_summary import summarize_figure04_diagnostics
 
     time = continuous_results["time"].to_numpy()
     if not np.array_equal(time, contfrag_results["time"].to_numpy()):

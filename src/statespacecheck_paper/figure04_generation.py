@@ -18,12 +18,12 @@ from statespacecheck_paper.diagnostics import METRIC_FLAG_DIRECTIONS, FlagDirect
 from statespacecheck_paper.figure04_cache import Figure4CacheProvenance, Figure4Paths
 from statespacecheck_paper.figure04_decoder import Figure4Config
 from statespacecheck_paper.figure04_layout import Figure4DetailWindow, compose_figure04
-from statespacecheck_paper.figure04_workflow import (
+from statespacecheck_paper.figure04_summary import (
     Figure4Summary,
     compute_figure04_summary,
     format_figure04_summary,
-    prepare_figure04_render_data,
 )
+from statespacecheck_paper.figure04_workflow import prepare_figure04_render_data
 from statespacecheck_paper.paths import ANIMAL_DATE_EPOCH, DATA_PATH, FIGURE04_SUMMARY_PATH
 from statespacecheck_paper.scientific_artifacts import (
     inclusive_flag_rules,

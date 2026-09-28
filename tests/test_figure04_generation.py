@@ -21,10 +21,7 @@ from statespacecheck_paper.figure04_cache import (
 from statespacecheck_paper.figure04_decoder import Figure4Config, Figure4DiagnosticsConfig
 from statespacecheck_paper.figure04_diagnostics import FlagConfusion
 from statespacecheck_paper.figure04_layout import Figure4Composition
-from statespacecheck_paper.figure04_workflow import (
-    Figure4DiagnosticMeans,
-    Figure4Summary,
-)
+from statespacecheck_paper.figure04_summary import Figure4DiagnosticMeans, Figure4Summary
 from statespacecheck_paper.load_local_data import EXPORT_FILE_SUFFIXES
 
 _SCRIPTS_DIR = Path(__file__).parent.parent / "scripts"

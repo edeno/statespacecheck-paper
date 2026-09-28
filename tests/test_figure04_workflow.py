@@ -15,13 +15,15 @@ from statespacecheck_paper import figure04_cache, figure04_workflow
 from statespacecheck_paper.diagnostics import SpikeEventDiagnostics
 from statespacecheck_paper.figure04_cache import _FIGURE04_CACHE_PAYLOAD_KEYS, Figure4Paths
 from statespacecheck_paper.figure04_decoder import Figure4Config
-from statespacecheck_paper.figure04_workflow import (
-    Figure4DecodeResults,
-    Figure4RenderData,
+from statespacecheck_paper.figure04_summary import (
     Figure4Summary,
     compute_figure04_summary,
     compute_mean_spike_event_diagnostic,
     format_figure04_summary,
+)
+from statespacecheck_paper.figure04_workflow import (
+    Figure4DecodeResults,
+    Figure4RenderData,
     prepare_figure04_render_data,
 )
 from statespacecheck_paper.load_local_data import NeuralRecordingData
