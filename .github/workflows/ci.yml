@@ -9,6 +9,9 @@ on:
 jobs:
   test:
     runs-on: ${{ matrix.os }}
+    env:
+      # Override the local .python-version pin for every uv invocation.
+      UV_PYTHON: ${{ matrix.python-version }}
     strategy:
       fail-fast: false
       matrix:
@@ -29,15 +32,11 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
-        # Sync from the committed lock file so every job pins the
-        # same dep versions across OS / Python combos. Previously we
-        # ran ``uv pip install --system`` (which doesn't honor
-        # ``uv.lock``) and let ``uv run`` separately resolve each
-        # check's deps — that produced a different numpy across jobs
-        # (2.2 vs 2.4) and intermittent mypy ``[type-arg]`` /
-        # ``[redundant-cast]`` failures depending on which numpy
-        # stubs landed.
+        # Use the lockfile's resolution for this Python version and platform.
         run: uv sync --frozen --extra dev --extra interactive
+
+      - name: Verify Python version
+        run: uv run --frozen python -c "import os, sys; assert '.'.join(map(str, sys.version_info[:2])) == os.environ['UV_PYTHON'], sys.version"
 
       - name: Check formatting with ruff
         run: uv run ruff format --check .
@@ -46,6 +45,11 @@ jobs:
         run: uv run ruff check .
 
       - name: Type check with mypy
+        # Type-check against one set of stubs: the lock resolves numpy 2.2 on
+        # Python 3.10 and 2.3 on 3.11+, whose stubs disagree on array shapes
+        # (10 errors under 2.2 in code that is clean under 2.3). 3.11 is the development pin
+        # (.python-version); the tests still run on every version.
+        if: matrix.python-version == '3.11'
         run: uv run mypy src/
 
       - name: Run tests with pytest
