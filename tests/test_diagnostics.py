@@ -21,8 +21,6 @@ from statespacecheck_paper.diagnostics import (
     flag_mask,
 )
 
-from ._decoder_inputs import DecoderInputs
-
 
 @pytest.fixture
 def metrics_2d() -> dict[str, np.ndarray]:
@@ -120,24 +118,6 @@ class TestComputeBaselineDiagnosticThresholds:
         }
         with pytest.raises(ValueError, match="kl_divergence baseline slice"):
             compute_baseline_diagnostic_thresholds(metrics, baseline_end_index=10)
-
-    def test_accepts_diagnostics_object(self, decoder_inputs: DecoderInputs) -> None:
-        """``compute_baseline_diagnostic_thresholds`` accepts either a
-        ``DecodingDiagnostics`` or a plain dict (union back-compat for
-        synthetic test fixtures). Pin the DecodingDiagnostics branch so it
-        stays exercised."""
-        diagnostics = decoder_inputs.call()
-        thresholds = compute_baseline_diagnostic_thresholds(diagnostics, baseline_end_index=5)
-        # Same call shape with a dict — results must agree.
-        as_dict = {
-            "hpd_overlap": diagnostics.hpd_overlap,
-            "kl_divergence": diagnostics.kl_divergence,
-            "predictive_pvalue": diagnostics.predictive_pvalue,
-        }
-        from_dict = compute_baseline_diagnostic_thresholds(as_dict, baseline_end_index=5)
-        assert thresholds.hpd_overlap == pytest.approx(from_dict.hpd_overlap)
-        assert thresholds.kl_divergence == pytest.approx(from_dict.kl_divergence)
-        assert thresholds.predictive_pvalue == from_dict.predictive_pvalue
 
 
 class TestDiagnosticThresholdsInvariants:

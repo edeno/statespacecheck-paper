@@ -17,9 +17,7 @@ simulation), and :mod:`diagnostics` (the thresholds/diagnostic containers).
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -168,7 +166,7 @@ def _flag_percentage(
 
 
 def extract_condition_flag_values(
-    diagnostics: DecodingDiagnostics | Mapping[str, NDArray[np.floating] | NDArray[np.intp]],
+    diagnostics: DecodingDiagnostics,
     conditions: list[Figure3SummaryCondition],
 ) -> list[list[NDArray[np.floating]]]:
     """Collect per-spike-event diagnostic values per metric per column.
@@ -182,7 +180,7 @@ def extract_condition_flag_values(
 
     Parameters
     ----------
-    diagnostics : DecodingDiagnostics or Mapping[str, NDArray]
+    diagnostics : DecodingDiagnostics
         Source of the per-event arrays ``event_time_ind`` (int) and
         ``event_{hpd_overlap,kl_divergence,predictive_pvalue}`` (float), each of
         shape ``(n_events,)``.
@@ -197,19 +195,10 @@ def extract_condition_flag_values(
         event time falls inside that column's half-open time windows. Metric
         order follows :data:`SUMMARY_FLAG_METRICS`.
     """
-
-    def _get(name: str) -> NDArray[np.generic]:
-        arr = (
-            getattr(diagnostics, name)
-            if isinstance(diagnostics, DecodingDiagnostics)
-            else diagnostics[name]
-        )
-        return cast("NDArray[np.generic]", arr)
-
-    event_time = np.asarray(_get("event_time_ind"))
+    event_time = np.asarray(diagnostics.event_time_ind)
     out: list[list[NDArray[np.floating]]] = []
     for metric_key, _direction in SUMMARY_FLAG_METRICS:
-        ev = np.asarray(_get("event_" + metric_key), dtype=float)
+        ev = np.asarray(getattr(diagnostics, "event_" + metric_key), dtype=float)
         per_window: list[NDArray[np.floating]] = []
         for col in conditions:
             mask = np.zeros(event_time.shape, dtype=bool)

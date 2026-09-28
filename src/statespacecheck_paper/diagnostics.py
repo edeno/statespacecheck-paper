@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Literal, cast
+from typing import Literal
 
 import numpy as np
 import statespacecheck as ssc
@@ -574,14 +574,14 @@ class DiagnosticThresholds:
 
 
 def compute_baseline_diagnostic_thresholds(
-    diagnostics: DecodingDiagnostics | Mapping[str, NDArray[np.floating] | NDArray[np.intp]],
+    diagnostics: Mapping[str, NDArray[np.floating]],
     *,
     baseline_end_index: int,
 ) -> DiagnosticThresholds:
     """Compute threshold values from baseline period.
 
-    Thresholds are computed across all cells (flattened (n_time, n_cells)
-    → 1D) so a single threshold scalar can compare against any cell's
+    Thresholds are computed across all values (a ``(n_time, n_cells)`` array
+    is flattened) so a single threshold scalar can compare against any cell's
     diagnostic time series:
 
     - HPD overlap threshold: 1st percentile (low values indicate misfit)
@@ -590,13 +590,11 @@ def compute_baseline_diagnostic_thresholds(
 
     Parameters
     ----------
-    diagnostics : DecodingDiagnostics or Mapping[str, NDArray]
-        Either a :class:`DecodingDiagnostics` (the typical caller, produced by
-        :func:`decode_with_diagnostics`) or a plain dict — the dict
-        form is retained so synthetic test fixtures don't need to
-        construct a full ``DecodingDiagnostics``. Only ``hpd_overlap`` and
-        ``kl_divergence`` are read; the ``predictive_pvalue`` threshold is a
-        fixed constant (0.05) and is not derived from the input.
+    diagnostics : Mapping[str, NDArray]
+        Diagnostic values by metric name, each with time (or pooled events)
+        on the first axis: ``(n_time,)`` or ``(n_time, n_cells)``. Only
+        ``hpd_overlap`` and ``kl_divergence`` are read; the ``predictive_pvalue``
+        threshold is a fixed constant (0.05) and is not derived from the input.
     baseline_end_index : int, keyword-only
         Index marking end of baseline period (exclusive). Required —
         silently slicing the whole recording would contaminate
@@ -633,16 +631,8 @@ def compute_baseline_diagnostic_thresholds(
     0.05
     """
 
-    def _get(name: str) -> NDArray[np.floating]:
-        arr = (
-            getattr(diagnostics, name)
-            if isinstance(diagnostics, DecodingDiagnostics)
-            else diagnostics[name]
-        )
-        return cast("NDArray[np.floating]", arr)
-
     def _threshold(name: str, quantile: float) -> float:
-        values = _get(name)
+        values = diagnostics[name]
         n_time = values.shape[0]
         if not 0 < baseline_end_index <= n_time:
             raise ValueError(

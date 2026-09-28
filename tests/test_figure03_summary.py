@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+from typing import Any
+
 import numpy as np
 import pytest
 
@@ -15,6 +18,11 @@ from statespacecheck_paper.figure03_summary import (
     extract_condition_flag_values,
     flag_percentages_from_values,
 )
+
+
+def _events(arrays: dict[str, np.ndarray]) -> Any:
+    """Expose per-event arrays as attributes, like ``DecodingDiagnostics``."""
+    return SimpleNamespace(**arrays)
 
 
 class TestSummaryFlagPercentages:
@@ -99,7 +107,7 @@ class TestSummaryFlagPercentages:
         )
         conditions = build_summary_conditions(params)
         frac = flag_percentages_from_values(
-            extract_condition_flag_values(metrics, conditions), thresholds
+            extract_condition_flag_values(_events(metrics), conditions), thresholds
         )
 
         assert frac.shape == (3, 6)
@@ -128,7 +136,7 @@ class TestSummaryFlagPercentages:
         conditions = build_summary_conditions(params)
 
         with pytest.raises(ValueError, match="undefined value"):
-            extract_condition_flag_values(metrics, conditions)
+            extract_condition_flag_values(_events(metrics), conditions)
 
 
 class TestConditionDecodingAccuracy:
