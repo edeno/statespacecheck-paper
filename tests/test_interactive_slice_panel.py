@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-import os
-import time
 from pathlib import Path
 
 import numpy as np
 import pytest
 
+from ._qt import (
+    make_viewer,
+    qt_offscreen,  # noqa: F401 -- registers the autouse fixture here
+    wait_for_request,
+)
 from ._synthetic_cache import build_synthetic_cache as _build_cache_impl
 
 PYSIDE6_AVAILABLE = True
@@ -34,33 +37,6 @@ def _build_cache(cache_dir: Path, *, n_states: int) -> None:
     _build_cache_impl(cache_dir, model="continuous", n_states=n_states)
 
 
-@pytest.fixture(scope="module", autouse=True)
-def _qt_offscreen() -> None:
-    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-
-
-def _make_viewer(cache_dir: Path):
-    from PySide6 import QtWidgets
-
-    from statespacecheck_paper.interactive.data_source import DecoderDataSource
-    from statespacecheck_paper.interactive.viewer import DecoderViewer
-
-    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-    ds = DecoderDataSource(cache_dir, model="continuous")
-    viewer = DecoderViewer(ds)
-    return app, viewer, ds
-
-
-def _wait_for_request(app, viewer, request_id: int, timeout_s: float = 5.0) -> bool:
-    deadline = time.perf_counter() + timeout_s
-    while time.perf_counter() < deadline:
-        app.processEvents()
-        if viewer._latest_committed_request_id >= request_id:  # noqa: SLF001
-            return True
-        time.sleep(0.005)
-    return False
-
-
 # ---------------------------------------------------------------------------
 # Population-likelihood plot
 # ---------------------------------------------------------------------------
@@ -68,7 +44,7 @@ def _wait_for_request(app, viewer, request_id: int, timeout_s: float = 5.0) -> b
 
 def test_slice_panel_constructs_with_single_state(tmp_path: Path) -> None:
     _build_cache(tmp_path / "cache", n_states=1)
-    app, viewer, ds = _make_viewer(tmp_path / "cache")
+    app, viewer, ds = make_viewer(tmp_path / "cache")
     try:
         sp = viewer.slice_panel
         # Population likelihood: one top-curve per state + the
@@ -85,11 +61,11 @@ def test_slice_panel_constructs_with_single_state(tmp_path: Path) -> None:
 
 def test_slice_panel_updates_after_window_load(tmp_path: Path) -> None:
     _build_cache(tmp_path / "cache", n_states=1)
-    app, viewer, ds = _make_viewer(tmp_path / "cache")
+    app, viewer, ds = make_viewer(tmp_path / "cache")
     try:
         target = viewer._next_request_id  # noqa: SLF001
         viewer.force_reload_now()
-        assert _wait_for_request(app, viewer, target)
+        assert wait_for_request(app, viewer, target)
 
         sp = viewer.slice_panel
         assert sp._buffer_post is not None  # noqa: SLF001
@@ -109,11 +85,11 @@ def test_slice_panel_updates_after_window_load(tmp_path: Path) -> None:
 
 def test_slice_panel_animates_on_set_center_time(tmp_path: Path) -> None:
     _build_cache(tmp_path / "cache", n_states=1)
-    app, viewer, ds = _make_viewer(tmp_path / "cache")
+    app, viewer, ds = make_viewer(tmp_path / "cache")
     try:
         target = viewer._next_request_id  # noqa: SLF001
         viewer.force_reload_now()
-        assert _wait_for_request(app, viewer, target)
+        assert wait_for_request(app, viewer, target)
 
         sp = viewer.slice_panel
         sl = sp._buffer_slice  # noqa: SLF001
@@ -135,11 +111,11 @@ def test_slice_panel_y_axis_pinned_to_unit_range(tmp_path: Path) -> None:
     from statespacecheck_paper.interactive.viewer import _SLICE_Y_MAX, _SLICE_Y_MIN
 
     _build_cache(tmp_path / "cache", n_states=1)
-    app, viewer, ds = _make_viewer(tmp_path / "cache")
+    app, viewer, ds = make_viewer(tmp_path / "cache")
     try:
         target = viewer._next_request_id  # noqa: SLF001
         viewer.force_reload_now()
-        assert _wait_for_request(app, viewer, target)
+        assert wait_for_request(app, viewer, target)
         viewer.set_center_time(float(ds.event_times[0]))
         viewer._update_slice_panel_at_center()  # noqa: SLF001
 
@@ -166,7 +142,7 @@ def test_slice_panel_y_axis_pinned_to_unit_range(tmp_path: Path) -> None:
 
 def test_slice_panel_stacks_states_for_contfrag(tmp_path: Path) -> None:
     _build_cache(tmp_path / "cache", n_states=2)
-    app, viewer, ds = _make_viewer(tmp_path / "cache")
+    app, viewer, ds = make_viewer(tmp_path / "cache")
     try:
         sp = viewer.slice_panel
         assert sp._n_states == 2  # noqa: SLF001
@@ -174,7 +150,7 @@ def test_slice_panel_stacks_states_for_contfrag(tmp_path: Path) -> None:
 
         target = viewer._next_request_id  # noqa: SLF001
         viewer.force_reload_now()
-        assert _wait_for_request(app, viewer, target)
+        assert wait_for_request(app, viewer, target)
 
         x0, y0 = sp._lik_top_curves[0].getData()  # noqa: SLF001
         x1, y1 = sp._lik_top_curves[1].getData()  # noqa: SLF001
@@ -192,11 +168,11 @@ def test_slice_panel_stacks_states_for_contfrag(tmp_path: Path) -> None:
 
 def test_slice_panel_live_readout_updates_with_center(tmp_path: Path) -> None:
     _build_cache(tmp_path / "cache", n_states=1)
-    app, viewer, ds = _make_viewer(tmp_path / "cache")
+    app, viewer, ds = make_viewer(tmp_path / "cache")
     try:
         target = viewer._next_request_id  # noqa: SLF001
         viewer.force_reload_now()
-        assert _wait_for_request(app, viewer, target)
+        assert wait_for_request(app, viewer, target)
 
         viewer.set_center_time(float(ds.event_times[0]))
         viewer._update_slice_panel_at_center()  # noqa: SLF001
@@ -222,11 +198,11 @@ def test_slice_panel_live_readout_updates_with_center(tmp_path: Path) -> None:
 
 def test_per_cell_row_visible_when_spikes_present(tmp_path: Path) -> None:
     _build_cache(tmp_path / "cache", n_states=1)
-    app, viewer, ds = _make_viewer(tmp_path / "cache")
+    app, viewer, ds = make_viewer(tmp_path / "cache")
     try:
         target = viewer._next_request_id  # noqa: SLF001
         viewer.force_reload_now()
-        assert _wait_for_request(app, viewer, target)
+        assert wait_for_request(app, viewer, target)
         # Per-cell rows default to ON in the new layout.
         assert viewer._per_cell_checkbox.isChecked()  # noqa: SLF001
 
@@ -247,11 +223,11 @@ def test_per_cell_row_visible_when_spikes_present(tmp_path: Path) -> None:
 
 def test_per_cell_row_header_contains_metrics(tmp_path: Path) -> None:
     _build_cache(tmp_path / "cache", n_states=1)
-    app, viewer, ds = _make_viewer(tmp_path / "cache")
+    app, viewer, ds = make_viewer(tmp_path / "cache")
     try:
         target = viewer._next_request_id  # noqa: SLF001
         viewer.force_reload_now()
-        assert _wait_for_request(app, viewer, target)
+        assert wait_for_request(app, viewer, target)
 
         viewer.set_center_time(float(ds.event_times[0]))
         viewer._update_slice_panel_at_center()  # noqa: SLF001
@@ -267,11 +243,11 @@ def test_per_cell_row_header_contains_metrics(tmp_path: Path) -> None:
 
 def test_per_cell_checkbox_hides_rows(tmp_path: Path) -> None:
     _build_cache(tmp_path / "cache", n_states=1)
-    app, viewer, ds = _make_viewer(tmp_path / "cache")
+    app, viewer, ds = make_viewer(tmp_path / "cache")
     try:
         target = viewer._next_request_id  # noqa: SLF001
         viewer.force_reload_now()
-        assert _wait_for_request(app, viewer, target)
+        assert wait_for_request(app, viewer, target)
 
         viewer.set_center_time(float(ds.event_times[0]))
         viewer._update_slice_panel_at_center()  # noqa: SLF001
@@ -318,18 +294,18 @@ def test_slice_panel_falls_back_to_row_provider_outside_buffer(tmp_path: Path) -
     so the curves keep animating until the next async load commits.
     """
     _build_cache(tmp_path / "cache", n_states=1)
-    app, viewer, ds = _make_viewer(tmp_path / "cache")
+    app, viewer, ds = make_viewer(tmp_path / "cache")
     try:
         # Wait for the initial in-flight load so subsequent
         # ``force_reload_now`` calls aren't merely queued as pending.
-        assert _wait_for_request(app, viewer, viewer._next_request_id)  # noqa: SLF001
+        assert wait_for_request(app, viewer, viewer._next_request_id)  # noqa: SLF001
         # Now shrink the window and recenter so the buffer no longer
         # covers the entire (small) synthetic session.
         viewer._set_window_seconds(0.05)  # noqa: SLF001
         viewer.set_center_time(float(ds.time[100]))
         viewer.force_reload_now()
         target = viewer._next_request_id  # noqa: SLF001
-        assert _wait_for_request(app, viewer, target)
+        assert wait_for_request(app, viewer, target)
 
         sp = viewer.slice_panel
         sl = sp._buffer_slice  # noqa: SLF001
@@ -364,11 +340,11 @@ def test_filtered_overlay_matches_predictive_times_likelihood(tmp_path: Path) ->
     then state-collapsed and peak-normalized for display.
     """
     _build_cache(tmp_path / "cache", n_states=1)
-    app, viewer, ds = _make_viewer(tmp_path / "cache")
+    app, viewer, ds = make_viewer(tmp_path / "cache")
     try:
         target = viewer._next_request_id  # noqa: SLF001
         viewer.force_reload_now()
-        assert _wait_for_request(app, viewer, target)
+        assert wait_for_request(app, viewer, target)
 
         sp = viewer.slice_panel
         sl = sp._buffer_slice  # noqa: SLF001
@@ -401,11 +377,11 @@ def test_filtered_overlay_matches_predictive_times_likelihood(tmp_path: Path) ->
 def test_smoothed_overlay_is_loaded_in_the_committed_buffer(tmp_path: Path) -> None:
     """Switching labels must not wait on or substitute data from another read."""
     _build_cache(tmp_path / "cache", n_states=1)
-    app, viewer, ds = _make_viewer(tmp_path / "cache")
+    app, viewer, ds = make_viewer(tmp_path / "cache")
     try:
         target = viewer._next_request_id  # noqa: SLF001
         viewer.force_reload_now()
-        assert _wait_for_request(app, viewer, target)
+        assert wait_for_request(app, viewer, target)
 
         sp = viewer.slice_panel
         # The acausal row is committed alongside predictive even though the
@@ -440,7 +416,7 @@ def test_old_cache_without_acausal_disables_smoothed(tmp_path: Path) -> None:
     from PySide6 import QtGui
 
     _build_cache_impl(tmp_path / "cache", model="continuous", with_acausal=False)
-    app, viewer, ds = _make_viewer(tmp_path / "cache")
+    app, viewer, ds = make_viewer(tmp_path / "cache")
     try:
         assert ds.has_acausal is False
 

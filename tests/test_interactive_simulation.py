@@ -12,12 +12,15 @@ end-to-end shape contract.
 
 from __future__ import annotations
 
-import os
-import time as time_mod
 from pathlib import Path
 
 import numpy as np
 import pytest
+
+from ._qt import (
+    qt_offscreen,  # noqa: F401 -- registers the autouse fixture here
+    wait_for_request,
+)
 
 PYSIDE6_AVAILABLE = True
 try:
@@ -36,11 +39,6 @@ pytestmark = pytest.mark.skipif(
     not (PYSIDE6_AVAILABLE and PYQTGRAPH_AVAILABLE),
     reason="PySide6 / pyqtgraph not installed (optional [interactive] extra).",
 )
-
-
-@pytest.fixture(scope="module", autouse=True)
-def _qt_offscreen() -> None:
-    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 
 def _tiny_params():
@@ -169,16 +167,6 @@ def test_simulated_event_likelihood_round_trips_in_event_order(tmp_path: Path) -
 # ---------------------------------------------------------------------------
 
 
-def _wait_for_request(app, viewer, request_id: int, timeout_s: float = 5.0) -> bool:
-    deadline = time_mod.perf_counter() + timeout_s
-    while time_mod.perf_counter() < deadline:
-        app.processEvents()
-        if viewer._latest_committed_request_id >= request_id:  # noqa: SLF001
-            return True
-        time_mod.sleep(0.005)
-    return False
-
-
 def test_simulated_viewer_hides_model_combo(tmp_path: Path) -> None:
     """The viewer's model-swap combo is *not present* for simulation
     caches (not just disabled — there is no model concept here).
@@ -231,7 +219,7 @@ def test_simulated_viewer_loads_window(tmp_path: Path) -> None:
     try:
         target = viewer._next_request_id  # noqa: SLF001
         viewer.force_reload_now()
-        assert _wait_for_request(app, viewer, target)
+        assert wait_for_request(app, viewer, target)
 
         sp = viewer.slice_panel
         assert sp._buffer_post is not None  # noqa: SLF001

@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-import os
-import time
 from pathlib import Path
 
 import numpy as np
 import pytest
 
+from ._qt import (
+    make_viewer,
+    qt_offscreen,  # noqa: F401 -- registers the autouse fixture here
+    wait_for_request,
+)
 from ._synthetic_cache import build_synthetic_cache as _build_cache_impl
 
 PYSIDE6_AVAILABLE = True
@@ -35,33 +38,6 @@ def _build_cache(cache_dir: Path) -> None:
     _build_cache_impl(cache_dir, n_states=1, p_min=0.001)
 
 
-@pytest.fixture(scope="module", autouse=True)
-def _qt_offscreen() -> None:
-    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-
-
-def _make_viewer(cache_dir: Path):
-    from PySide6 import QtWidgets
-
-    from statespacecheck_paper.interactive.data_source import DecoderDataSource
-    from statespacecheck_paper.interactive.viewer import DecoderViewer
-
-    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-    ds = DecoderDataSource(cache_dir, model="continuous")
-    viewer = DecoderViewer(ds)
-    return app, viewer, ds
-
-
-def _wait_for_request(app, viewer, request_id: int, timeout_s: float = 5.0) -> bool:
-    deadline = time.perf_counter() + timeout_s
-    while time.perf_counter() < deadline:
-        app.processEvents()
-        if viewer._latest_committed_request_id >= request_id:  # noqa: SLF001
-            return True
-        time.sleep(0.005)
-    return False
-
-
 # ---------------------------------------------------------------------------
 # MetricPanel
 # ---------------------------------------------------------------------------
@@ -69,7 +45,7 @@ def _wait_for_request(app, viewer, request_id: int, timeout_s: float = 5.0) -> b
 
 def test_three_metric_panels_constructed(tmp_path: Path) -> None:
     _build_cache(tmp_path / "cache")
-    app, viewer, ds = _make_viewer(tmp_path / "cache")
+    app, viewer, ds = make_viewer(tmp_path / "cache")
     try:
         assert set(viewer.metric_panels.keys()) == {
             "event_hpd_overlap",
@@ -87,11 +63,11 @@ def test_three_metric_panels_constructed(tmp_path: Path) -> None:
 
 def test_metric_panel_displays_neglog_for_predictive_pvalue(tmp_path: Path) -> None:
     _build_cache(tmp_path / "cache")
-    app, viewer, ds = _make_viewer(tmp_path / "cache")
+    app, viewer, ds = make_viewer(tmp_path / "cache")
     try:
         target = viewer._next_request_id  # noqa: SLF001
         viewer.force_reload_now()
-        assert _wait_for_request(app, viewer, target)
+        assert wait_for_request(app, viewer, target)
 
         sp_panel = viewer.metric_panels["event_predictive_pvalue"]
         x_data, y_data = sp_panel._scatter.getData()  # noqa: SLF001
@@ -125,11 +101,11 @@ def _first_visible_event_row(ds, sl) -> int | None:
 
 def test_metric_click_recenters_on_event_time(tmp_path: Path) -> None:
     _build_cache(tmp_path / "cache")
-    app, viewer, ds = _make_viewer(tmp_path / "cache")
+    app, viewer, ds = make_viewer(tmp_path / "cache")
     try:
         target = viewer._next_request_id  # noqa: SLF001
         viewer.force_reload_now()
-        assert _wait_for_request(app, viewer, target)
+        assert wait_for_request(app, viewer, target)
 
         sl = viewer.slice_panel._buffer_slice  # noqa: SLF001
         assert sl is not None
@@ -148,11 +124,11 @@ def test_metric_click_recenters_on_event_time(tmp_path: Path) -> None:
 
 def test_pin_markers_visible_after_click(tmp_path: Path) -> None:
     _build_cache(tmp_path / "cache")
-    app, viewer, ds = _make_viewer(tmp_path / "cache")
+    app, viewer, ds = make_viewer(tmp_path / "cache")
     try:
         target = viewer._next_request_id  # noqa: SLF001
         viewer.force_reload_now()
-        assert _wait_for_request(app, viewer, target)
+        assert wait_for_request(app, viewer, target)
 
         sl = viewer.slice_panel._buffer_slice  # noqa: SLF001
         assert sl is not None
@@ -163,7 +139,7 @@ def test_pin_markers_visible_after_click(tmp_path: Path) -> None:
         # Click triggers a recenter -> new load. Wait for the new
         # window to commit so the pin lands inside the buffered slice.
         target2 = viewer._next_request_id  # noqa: SLF001
-        assert _wait_for_request(app, viewer, target2)
+        assert wait_for_request(app, viewer, target2)
 
         assert viewer.posterior_panel._pin_line.isVisible()  # noqa: SLF001
         assert viewer.likelihood_panel._pin_line.isVisible()  # noqa: SLF001
@@ -179,11 +155,11 @@ def test_pin_markers_visible_after_click(tmp_path: Path) -> None:
 
 def test_manual_scroll_unpins_event(tmp_path: Path) -> None:
     _build_cache(tmp_path / "cache")
-    app, viewer, ds = _make_viewer(tmp_path / "cache")
+    app, viewer, ds = make_viewer(tmp_path / "cache")
     try:
         target = viewer._next_request_id  # noqa: SLF001
         viewer.force_reload_now()
-        assert _wait_for_request(app, viewer, target)
+        assert wait_for_request(app, viewer, target)
 
         sl = viewer.slice_panel._buffer_slice  # noqa: SLF001
         assert sl is not None
@@ -206,11 +182,11 @@ def test_manual_scroll_unpins_event(tmp_path: Path) -> None:
 def test_pin_invisible_when_event_outside_loaded_window(tmp_path: Path) -> None:
     """If the pinned event is outside the current window, markers hide."""
     _build_cache(tmp_path / "cache")
-    app, viewer, ds = _make_viewer(tmp_path / "cache")
+    app, viewer, ds = make_viewer(tmp_path / "cache")
     try:
         target = viewer._next_request_id  # noqa: SLF001
         viewer.force_reload_now()
-        assert _wait_for_request(app, viewer, target)
+        assert wait_for_request(app, viewer, target)
 
         # Pick the last event in the table (likely outside the initial
         # window) and pin it manually without recentering.

@@ -4,8 +4,6 @@ model swap, play/pause auto-scroll, and keyboard shortcuts.
 
 from __future__ import annotations
 
-import os
-import time
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -14,6 +12,10 @@ import pytest
 
 from statespacecheck_paper.interactive.cache import ModelName
 
+from ._qt import (
+    qt_offscreen,  # noqa: F401 -- registers the autouse fixture here
+    wait_for_request,
+)
 from ._synthetic_cache import build_synthetic_cache as _build_cache_impl
 
 PYSIDE6_AVAILABLE = True
@@ -33,11 +35,6 @@ pytestmark = pytest.mark.skipif(
     not (PYSIDE6_AVAILABLE and PYQTGRAPH_AVAILABLE),
     reason="PySide6 / pyqtgraph not installed (optional [interactive] extra).",
 )
-
-
-@pytest.fixture(scope="module", autouse=True)
-def _qt_offscreen() -> None:
-    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 
 def _build_cache(
@@ -78,16 +75,6 @@ def viewer_session(tmp_path: Path) -> Iterator[tuple[Any, Any, Any]]:
     finally:
         viewer.close()
         ds.close()
-
-
-def _wait_for_request(app, viewer, request_id: int, timeout_s: float = 5.0) -> bool:
-    deadline = time.perf_counter() + timeout_s
-    while time.perf_counter() < deadline:
-        app.processEvents()
-        if viewer._latest_committed_request_id >= request_id:  # noqa: SLF001
-            return True
-        time.sleep(0.005)
-    return False
 
 
 # ---------------------------------------------------------------------------
@@ -275,7 +262,7 @@ def test_model_swap_rebuilds_panels_and_loads(tmp_path: Path) -> None:
 
         # The new central widget should commit a fresh load.
         target = viewer._next_request_id  # noqa: SLF001
-        assert _wait_for_request(app, viewer, target)
+        assert wait_for_request(app, viewer, target)
     finally:
         viewer.close()
         ds.close()
