@@ -123,8 +123,13 @@ export `comrie2026` (export 135): for this session the export lists 154 files an
 the dandiset has 154 assets. It contains the raw recording and the position
 analysis file above. **The HPC sorting above is not part of that export or of any
 other Spyglass export, and is not on DANDI.** The recording could be re-sorted from
-the raw data, but the exact units used in Figure 4 are available only from the lab
-database until they are exported.
+the raw data, but the exact units used in Figure 4 are not on DANDI until they are
+exported.
+
+The input file itself (the SHA-256 above) is archived on Zenodo as version 1.0 of
+record [10.5281/zenodo.23020757](https://doi.org/10.5281/zenodo.23020757) (CC BY 4.0).
+`scripts/download_figure04_inputs.py` downloads it into `data/` and saves it only
+if its SHA-256 matches.
 
 ## Regenerating the input file
 
@@ -192,7 +197,7 @@ uv run python scripts/convert_figure04_pickles.py --pickle-dir data --output-dir
 - Run the Figure-4 Spyglass pipeline and its export; see
   [spyglass-pipeline.md](spyglass-pipeline.md) for the steps, status, and blockers.
 - Run the Spyglass export for this paper (`scripts/spyglass_export_figure04.py`).
-- Make the HPC sorting publicly available, e.g. by adding the export's analysis
-  files to DANDI.
-- The manuscript's data statement cites dandiset 001942, which does not include
-  the sorted units.
+- Make the HPC sorting publicly available on DANDI too, e.g. by adding the export's
+  analysis files; until then the input file on Zenodo is its public copy.
+- Publish a version of dandiset 001942 (it has only a draft, so no DOI), and cite
+  that DOI in the data statement and the Zenodo record.

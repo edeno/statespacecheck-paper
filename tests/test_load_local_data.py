@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import pickle
 from pathlib import Path
 from typing import Any
@@ -12,9 +14,12 @@ import pandas as pd
 import pytest
 
 from statespacecheck_paper.load_local_data import (
+    FIGURE04_INPUTS_FILE,
+    FIGURE04_INPUTS_SHA256,
     LEGACY_PICKLE_SUFFIXES,
     NeuralRecordingData,
     convert_legacy_pickle_exports,
+    download_figure04_inputs,
     load_neural_recording_from_files,
     read_legacy_pickle_exports,
     recording_arrays,
@@ -233,3 +238,64 @@ def test_convert_refuses_to_overwrite(tmp_path: Path) -> None:
 
     with pytest.raises(FileExistsError):
         convert_legacy_pickle_exports(tmp_path, tmp_path, _EPOCH)
+
+
+# ---------------------------------------------------------------------------
+# download_figure04_inputs
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def published_copy(tmp_path: Path) -> tuple[str, str]:
+    """A stand-in for the Zenodo file: its ``file://`` URL and SHA-256."""
+    source = tmp_path / "source.npz"
+    source.write_bytes(b"figure 4 inputs")
+    return source.as_uri(), hashlib.sha256(b"figure 4 inputs").hexdigest()
+
+
+def test_download_saves_the_verified_file(tmp_path: Path, published_copy: tuple[str, str]) -> None:
+    url, sha256 = published_copy
+    output = download_figure04_inputs(tmp_path / "data", url=url, sha256=sha256)
+    assert output == tmp_path / "data" / FIGURE04_INPUTS_FILE
+    assert output.read_bytes() == b"figure 4 inputs"
+
+
+def test_download_with_the_wrong_checksum_leaves_nothing(
+    tmp_path: Path, published_copy: tuple[str, str]
+) -> None:
+    url, _ = published_copy
+    data = tmp_path / "data"
+    with pytest.raises(ValueError, match="SHA-256"):
+        download_figure04_inputs(data, url=url, sha256="0" * 64)
+    assert list(data.iterdir()) == []
+
+
+def test_existing_verified_file_is_kept_without_downloading(
+    tmp_path: Path, published_copy: tuple[str, str]
+) -> None:
+    _, sha256 = published_copy
+    (tmp_path / FIGURE04_INPUTS_FILE).write_bytes(b"figure 4 inputs")
+    missing_source = (tmp_path / "missing.npz").as_uri()
+    assert download_figure04_inputs(tmp_path, url=missing_source, sha256=sha256).is_file()
+
+
+def test_existing_different_file_is_not_overwritten(
+    tmp_path: Path, published_copy: tuple[str, str]
+) -> None:
+    url, sha256 = published_copy
+    existing = tmp_path / FIGURE04_INPUTS_FILE
+    existing.write_bytes(b"something else")
+    with pytest.raises(FileExistsError, match="different SHA-256"):
+        download_figure04_inputs(tmp_path, url=url, sha256=sha256)
+    assert existing.read_bytes() == b"something else"
+
+
+def test_published_checksum_is_the_one_figure4_records() -> None:
+    """The file the download verifies is the file the Figure-4 summary was made from."""
+    summary = json.loads(
+        (
+            Path(__file__).resolve().parents[1] / "manuscript/figures/main/figure04_summary.json"
+        ).read_text(encoding="utf-8")
+    )
+    recorded = summary["provenance"]["figure04_decode_cache"]["export_file_sha256"]
+    assert recorded == {FIGURE04_INPUTS_FILE: FIGURE04_INPUTS_SHA256}

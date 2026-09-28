@@ -65,7 +65,15 @@ Figures 1–3 reproduce deterministically from the seeded simulation. **Figure 4
 uses the real hippocampal recording of [Comrie et al. 2026](https://doi.org/10.1016/j.neuron.2026.08.023).
 It is **not** included here (large). The decoder consumes one derived input file,
 `{epoch}_figure04_inputs.npz` (linearized position, spike times, track graph, edge
-order/spacing), not the raw NWB files. It comes from the Frank-lab Spyglass database;
+order/spacing), not the raw NWB files. It is archived on Zenodo
+([10.5281/zenodo.23020757](https://doi.org/10.5281/zenodo.23020757), 75 MB); download
+it and verify its SHA-256 with
+
+```bash
+uv run python scripts/download_figure04_inputs.py  # saves data/j1620210710_02_r1_figure04_inputs.npz
+```
+
+It comes from the Frank-lab Spyglass database;
 [docs/data-lineage.md](docs/data-lineage.md) records the exact entries, how they
 were verified, and which of them are public. The raw recording is on the DANDI
 Archive as dandiset [001942](https://dandiarchive.org/dandiset/001942). On a lab
@@ -332,7 +340,7 @@ uv run python scripts/generate_all_figures.py
 uv run python scripts/generate_figure01.py   # Fig 1  (simulated)
 uv run python scripts/generate_figure02.py   # Fig 2  (simulated)
 uv run python scripts/generate_figure03.py   # Fig 3  (simulated)
-uv run python scripts/generate_figure04.py   # Fig 4  (needs the real dataset)
+uv run python scripts/generate_figure04.py   # Fig 4  (needs the real dataset: scripts/download_figure04_inputs.py)
 
 # Outputs saved to manuscript/figures/main/ directory as PDF and PNG (450 DPI)
 

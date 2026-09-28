@@ -16,6 +16,10 @@ converted and checked.
 from __future__ import annotations
 
 import dataclasses
+import hashlib
+import shutil
+import tempfile
+import urllib.request
 import zipfile
 from collections.abc import Hashable, Mapping, Sequence
 from pathlib import Path
@@ -34,6 +38,16 @@ _REQUIRED_POSITION_COLUMNS = ("head_position_x", "head_position_y", "linear_posi
 # exactly the files read here.
 _INPUTS_SUFFIX = "_figure04_inputs.npz"
 EXPORT_FILE_SUFFIXES = (_INPUTS_SUFFIX,)
+
+# The published copy of the Figure-4 input file: version 1.0 of its Zenodo record
+# (the manuscript's data statement cites this DOI), and the file's SHA-256, which
+# the Figure-4 summary also records
+FIGURE04_INPUTS_DOI = "10.5281/zenodo.23020757"
+FIGURE04_INPUTS_SHA256 = "60383b394b597e2900545548ecac7c53a8601038ace9dbeb42d7f9a5fe1c93b3"
+FIGURE04_INPUTS_FILE = f"j1620210710_02_r1{_INPUTS_SUFFIX}"
+_FIGURE04_INPUTS_URL = (
+    f"https://zenodo.org/api/records/23020757/files/{FIGURE04_INPUTS_FILE}/content"
+)
 
 # Version of the array layout written by :func:`recording_arrays`.
 NPZ_FORMAT_VERSION = 1
@@ -345,12 +359,80 @@ def load_neural_recording_from_files(
         raise FileNotFoundError(
             f"Missing {len(missing)} expected export file(s) for '{animal_date_epoch}' in "
             f"{data_path}: {missing}. This recording is not distributed with the repository "
-            "(see the README); check STATESPACECHECK_DATA_PATH and "
+            "(see the README); download it with `uv run python "
+            "scripts/download_figure04_inputs.py`, or check STATESPACECHECK_DATA_PATH and "
             "STATESPACECHECK_ANIMAL_DATE_EPOCH."
         )
 
     with np.load(data_path / f"{animal_date_epoch}{_INPUTS_SUFFIX}", allow_pickle=False) as arrays:
         return recording_from_arrays(arrays)
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def download_figure04_inputs(
+    data_path: str | Path,
+    *,
+    url: str = _FIGURE04_INPUTS_URL,
+    sha256: str = FIGURE04_INPUTS_SHA256,
+) -> Path:
+    """Download the Figure-4 input file from Zenodo into ``data_path`` and verify it.
+
+    The file (``FIGURE04_INPUTS_FILE``, 75 MB) is version 1.0 of Zenodo record
+    ``FIGURE04_INPUTS_DOI``. It is saved under its final name only if its SHA-256
+    matches, so a partial or corrupted download never replaces anything.
+
+    Parameters
+    ----------
+    data_path : str or Path
+        Directory to save the file in (created if needed).
+    url, sha256 : str, keyword-only
+        Source and expected SHA-256; the defaults are the published file.
+
+    Returns
+    -------
+    Path
+        The verified file.
+
+    Raises
+    ------
+    FileExistsError
+        If a different file (another SHA-256) already has that name.
+    ValueError
+        If the downloaded file's SHA-256 does not match.
+    urllib.error.URLError
+        If the source cannot be reached.
+    """
+    data_path = Path(data_path)
+    output = data_path / FIGURE04_INPUTS_FILE
+    if output.exists():
+        if _sha256(output) == sha256:
+            return output
+        raise FileExistsError(
+            f"{output} exists with a different SHA-256 than the published file; "
+            "move it aside to download the published one"
+        )
+    data_path.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(dir=data_path, suffix=".part", delete=False) as part:
+        partial = Path(part.name)
+        try:
+            with urllib.request.urlopen(url, timeout=60) as reply:
+                shutil.copyfileobj(reply, part)
+        except BaseException:
+            partial.unlink()
+            raise
+    downloaded = _sha256(partial)
+    if downloaded != sha256:
+        partial.unlink()
+        raise ValueError(f"Downloaded file has SHA-256 {downloaded}; expected {sha256}")
+    partial.replace(output)
+    return output
 
 
 def read_legacy_pickle_exports(
