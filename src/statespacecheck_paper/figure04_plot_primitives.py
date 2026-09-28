@@ -21,8 +21,6 @@ from statespacecheck_paper.style import (
 )
 
 ANIMAL_POSITION_LABEL_GID = "animal-position-label"
-THRESHOLD_LABEL_GID = "threshold-label"
-WORSE_FIT_LABEL_GID = "worse-fit-label"
 
 
 def compute_half_pixel_extent(

@@ -6,6 +6,7 @@ diagnostic metrics and misfit examples for state space models.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import overload
 
 import matplotlib.pyplot as plt
@@ -13,7 +14,13 @@ import numpy as np
 from matplotlib.axes import Axes
 from numpy.typing import NDArray
 
-from statespacecheck_paper.style import CMAP_LIKELIHOOD
+from statespacecheck_paper.style import CMAP_LIKELIHOOD, COLORS, MetricSpec
+
+# Artist ids of a diagnostic row's threshold line and its right-edge labels, so
+# layout code and tests can find them without matching text.
+THRESHOLD_LINE_GID = "threshold-line"
+THRESHOLD_LABEL_GID = "threshold-label"
+WORSE_FIT_LABEL_GID = "worse-fit-label"
 
 
 @overload
@@ -187,3 +194,93 @@ def plot_likelihood_columns(
             extent=(t - min_half_width, t + min_half_width, y0, y1),
             interpolation="nearest",
         )
+
+
+def plot_event_metric_row(
+    ax: Axes,
+    event_x: NDArray[np.floating] | NDArray[np.integer],
+    values: NDArray[np.floating],
+    spec: MetricSpec,
+    *,
+    threshold: float | None,
+    xlim: tuple[float, float],
+    ylabel: str,
+    symlog_yticks: Sequence[float],
+    symlog_ylim: tuple[float, float],
+    worse_fit_y: float = 0.5,
+    show_annotations: bool = True,
+) -> None:
+    """Plot one per-spike-event diagnostic row, as in Figures 3 and 4.
+
+    Scatters each event's value (on the metric's display scale), draws the
+    flag threshold, sets the axis, and labels the threshold and the direction
+    of worse fit at the right edge.
+
+    Parameters
+    ----------
+    ax : Axes
+        Row axis.
+    event_x : np.ndarray, shape (n_events,)
+        Horizontal position of each event (time index or seconds).
+    values : np.ndarray, shape (n_events,)
+        Raw per-event metric values; ``spec.display_transform`` is applied here.
+    spec : MetricSpec
+        The metric's color, display transform, and axis scale.
+    threshold : float or None
+        Raw flag threshold, or None for no threshold line.
+    xlim : tuple of float
+        Horizontal axis limits.
+    ylabel : str
+        Row label.
+    symlog_yticks : sequence of float
+        Ticks for a ``spec.symlog_axis`` row (labeled ``f"{tick:g}"``).
+    symlog_ylim : tuple of float
+        Vertical limits for a ``spec.symlog_axis`` row.
+    worse_fit_y : float, default 0.5
+        Height of the worse-fit label, in axes coordinates.
+    show_annotations : bool, default True
+        Whether to draw the right-edge threshold and worse-fit labels (a
+        figure with side-by-side stacks shows them on one stack only).
+    """
+    neg_log = spec.display_transform == "neg_log_p"
+    plot_values = np.asarray(values, dtype=float)
+    if neg_log:
+        plot_values = negative_log_pvalue(plot_values)
+    ax.scatter(event_x, plot_values, s=0.8, alpha=0.6, c=spec.color, rasterized=True)
+
+    plot_threshold = None
+    if threshold is not None:
+        plot_threshold = float(negative_log_pvalue(threshold)) if neg_log else float(threshold)
+        threshold_line = ax.axhline(
+            plot_threshold, color=COLORS["threshold"], linewidth=1.2, alpha=0.7, zorder=10
+        )
+        threshold_line.set_gid(THRESHOLD_LINE_GID)
+
+    if spec.symlog_axis:
+        # Symlog y-scale expands the worst-fit floor near 0 instead of
+        # compressing it onto the bottom spine.
+        ax.set_yscale("symlog", linthresh=0.01, linscale=1.0)
+        ax.set_yticks(list(symlog_yticks))
+        ax.set_yticklabels([f"{tick:g}" for tick in symlog_yticks])
+        ax.set_ylim(symlog_ylim)
+
+    ax.set_xlim(xlim)
+    ax.set_ylabel(ylabel, labelpad=7)
+
+    if not show_annotations:
+        return
+    if plot_threshold is not None:
+        threshold_label = ax.text(
+            1.01,
+            plot_threshold,
+            "Threshold",
+            transform=ax.get_yaxis_transform(),
+            va="center",
+            ha="left",
+            color=COLORS["threshold"],
+        )
+        threshold_label.set_gid(THRESHOLD_LABEL_GID)
+    worse_fit_label = ax.text(
+        1.01, worse_fit_y, spec.worse_fit_direction, transform=ax.transAxes, va="center", ha="left"
+    )
+    worse_fit_label.set_gid(WORSE_FIT_LABEL_GID)

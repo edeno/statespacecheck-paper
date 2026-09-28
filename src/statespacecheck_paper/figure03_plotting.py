@@ -30,7 +30,10 @@ from statespacecheck_paper.figure03_summary import (
     build_summary_conditions,
 )
 from statespacecheck_paper.number_format import significant, whole_percent
-from statespacecheck_paper.plotting import negative_log_pvalue, plot_likelihood_columns
+from statespacecheck_paper.plotting import (
+    plot_event_metric_row,
+    plot_likelihood_columns,
+)
 from statespacecheck_paper.style import (
     CMAP_LIKELIHOOD,
     CMAP_POSTERIOR,
@@ -49,16 +52,7 @@ FIGURE3_PHASE_LABEL_GID = "figure3-phase-label"
 FIGURE3_ROW_LABEL_GID = "figure3-row-label"
 
 
-FIGURE3_THRESHOLD_LABEL_GID = "figure3-threshold-label"
-
-
-FIGURE3_THRESHOLD_LINE_GID = "figure3-threshold-line"
-
-
 FIGURE3_TRUE_POSITION_LABEL_GID = "figure3-true-position-label"
-
-
-FIGURE3_WORSE_FIT_LABEL_GID = "figure3-worse-fit-label"
 
 
 FIGURE3_SUMMARY_CELL_LABEL_GID = "figure3-summary-cell-label"
@@ -314,33 +308,6 @@ def _add_figure3_panel_label(ax: Axes, label: str, *, y: float) -> None:
     panel_label.set_gid(FIGURE3_PANEL_LABEL_GID)
 
 
-def _add_figure3_threshold_label(ax: Axes, threshold: float) -> None:
-    """Label a diagnostic threshold line at the right edge of an axis."""
-    threshold_label = ax.text(
-        1.01,
-        threshold,
-        "Threshold",
-        transform=ax.get_yaxis_transform(),
-        va="center",
-        ha="left",
-        color=COLORS["threshold"],
-    )
-    threshold_label.set_gid(FIGURE3_THRESHOLD_LABEL_GID)
-
-
-def _add_figure3_worse_fit_label(ax: Axes, label: str) -> None:
-    """Add the right-side direction-of-worse-fit annotation."""
-    worse_fit_label = ax.text(
-        1.01,
-        0.5,
-        label,
-        transform=ax.transAxes,
-        va="center",
-        ha="left",
-    )
-    worse_fit_label.set_gid(FIGURE3_WORSE_FIT_LABEL_GID)
-
-
 def _plot_figure3_predictive_row(
     ax: Axes,
     predictive: NDArray[np.floating],
@@ -403,49 +370,24 @@ def _plot_figure3_diagnostic_row(
     show_xlabel: bool,
 ) -> None:
     """Plot one Figure 3 diagnostic event row."""
-    plot_values = np.asarray(values, dtype=float)
-    plot_threshold = float(threshold)
-    if spec.display_transform == "neg_log_p":
-        plot_values = negative_log_pvalue(plot_values)
-        plot_threshold = float(negative_log_pvalue(plot_threshold))
-
-    ax.scatter(
+    plot_event_metric_row(
+        ax,
         time_ind,
-        plot_values,
-        s=0.8,
-        alpha=0.6,
-        c=spec.color,
-        rasterized=True,
-    )
-    threshold_line = ax.axhline(
-        plot_threshold,
-        color=COLORS["threshold"],
-        linewidth=1.2,
-        alpha=0.7,
-        zorder=10,
-    )
-    threshold_line.set_gid(FIGURE3_THRESHOLD_LINE_GID)
-
-    if spec.symlog_axis:
-        # Symlog y-scale expands the worst-fit floor near 0 instead of
-        # compressing it onto the bottom spine.
-        ax.set_yscale("symlog", linthresh=0.01, linscale=1.0)
-        ax.set_yticks([0.0, 0.01, 0.1, 1.0])
-        ax.set_yticklabels(["0", "0.01", "0.1", "1"])
+        values,
+        spec,
+        threshold=threshold,
+        xlim=(0, n_time),
+        ylabel=FIGURE3_DIAGNOSTIC_YLABELS.get(spec.name, spec.ylabel),
+        symlog_yticks=(0.0, 0.01, 0.1, 1.0),
         # Headroom above 1 keeps the "1" tick label (and the dense band of
-        # fully nested HPD regions at overlap = 1) clear of the raster
-        # panel that abuts this axis from above.
-        ax.set_ylim(-0.005, 1.6)
-
-    ax.set_xlim(0, n_time)
-    ax.set_ylabel(FIGURE3_DIAGNOSTIC_YLABELS.get(spec.name, spec.ylabel), labelpad=7)
+        # fully nested HPD regions at overlap = 1) clear of the raster panel
+        # that abuts this axis from above.
+        symlog_ylim=(-0.005, 1.6),
+    )
     if show_xlabel:
         ax.set_xlabel("Time (ms)", labelpad=7)
     else:
         ax.tick_params(labelbottom=False)
-
-    _add_figure3_worse_fit_label(ax, spec.worse_fit_direction)
-    _add_figure3_threshold_label(ax, plot_threshold)
 
 
 def _add_figure3_phase_labels(ax: Axes, config: Figure3Config) -> None:

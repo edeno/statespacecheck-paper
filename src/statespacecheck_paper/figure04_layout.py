@@ -28,13 +28,10 @@ from statespacecheck_paper.figure04_panels import (
     plot_per_spike_metric_hexbin_row,
     plot_single_model_diagnostics,
 )
-from statespacecheck_paper.figure04_plot_primitives import (
-    ANIMAL_POSITION_LABEL_GID,
-    THRESHOLD_LABEL_GID,
-    WORSE_FIT_LABEL_GID,
-)
+from statespacecheck_paper.figure04_plot_primitives import ANIMAL_POSITION_LABEL_GID
 from statespacecheck_paper.figure04_track_plots import plot_track_graph_2d
 from statespacecheck_paper.figure04_workflow import Figure4RenderData
+from statespacecheck_paper.plotting import THRESHOLD_LABEL_GID, WORSE_FIT_LABEL_GID
 
 FIGURE4_DIAGNOSTIC_ANNOTATION_GIDS = {THRESHOLD_LABEL_GID, WORSE_FIT_LABEL_GID}
 

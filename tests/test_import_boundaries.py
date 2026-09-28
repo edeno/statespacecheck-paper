@@ -163,6 +163,7 @@ def test_figure04_family_dependency_edges_are_acyclic() -> None:
             prefix + "figure04_panels",
             prefix + "figure04_plot_primitives",
             prefix + "figure04_track_plots",
+            prefix + "plotting",
         },
         "figure04_generation.py": {
             prefix + "diagnostics",

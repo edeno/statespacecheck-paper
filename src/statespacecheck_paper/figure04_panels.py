@@ -27,13 +27,15 @@ from statespacecheck_paper.diagnostics import SpikeEventDiagnostics
 from statespacecheck_paper.figure04_diagnostics import mean_per_spike_likelihood_by_time
 from statespacecheck_paper.figure04_plot_primitives import (
     ANIMAL_POSITION_LABEL_GID,
-    THRESHOLD_LABEL_GID,
-    WORSE_FIT_LABEL_GID,
     compute_half_pixel_extent,
     plot_distribution_heatmap,
 )
 from statespacecheck_paper.figure04_track_plots import plot_track_graph_1d
-from statespacecheck_paper.plotting import negative_log_pvalue, plot_likelihood_columns
+from statespacecheck_paper.plotting import (
+    negative_log_pvalue,
+    plot_event_metric_row,
+    plot_likelihood_columns,
+)
 from statespacecheck_paper.style import (
     CMAP_LIKELIHOOD,
     CMAP_POSTERIOR,
@@ -257,6 +259,11 @@ def plot_raster(
     ax.set_xlabel("Time")
 
 
+# Height of each row's worse-fit label (axes fraction), placed where it clears
+# the row's threshold label.
+_WORSE_FIT_LABEL_Y = {"hpd_overlap": 0.28, "predictive_pvalue": 0.68}
+
+
 def plot_spike_event_diagnostic_scatter(
     time: NDArray[np.float64] | pd.Index,
     diagnostics: SpikeEventDiagnostics,
@@ -264,9 +271,9 @@ def plot_spike_event_diagnostic_scatter(
     threshold: float | None = None,
     ax: Axes | None = None,
     metric_name: str = "hpd_overlap",
-    color: str = "steelblue",
     ylabel: str | None = None,
     show_xlabel: bool = True,
+    show_annotations: bool = True,
 ) -> Axes:
     """Plot a diagnostic value for each spike event over time.
 
@@ -292,13 +299,15 @@ def plot_spike_event_diagnostic_scatter(
     ax : plt.Axes, optional
         Axes to plot on. If None, uses current axes.
     metric_name : str, default "hpd_overlap"
-        Attribute of ``diagnostics`` to plot.
-    color : str, default "steelblue"
-        Color for scatter points.
+        Metric to plot (a :data:`~statespacecheck_paper.style.METRIC_SPECS` name),
+        which sets its color, display scale, and worse-fit direction.
     ylabel : str, optional
         Y-axis label. If None, uses metric_name.
     show_xlabel : bool, default True
         Whether to show "Time" xlabel.
+    show_annotations : bool, default True
+        Whether to label the threshold and the direction of worse fit at the
+        right edge.
 
     Returns
     -------
@@ -348,54 +357,19 @@ def plot_spike_event_diagnostic_scatter(
         if diagnostics.event_time is not None
         else full_time[event_time_ind]
     )
-    x_positions_arr = all_event_times[event_mask]
-    raw_y_values = event_metric_values[event_mask]
-    spec = METRIC_SPEC_BY_NAME.get(metric_name)
-    use_neg_log = spec is not None and spec.display_transform == "neg_log_p"
-    y_values_arr = negative_log_pvalue(raw_y_values) if use_neg_log else raw_y_values
-    if threshold is not None and use_neg_log:
-        threshold = float(negative_log_pvalue(threshold))
-
-    ax.scatter(
-        x_positions_arr,
-        y_values_arr,
-        s=0.8,
-        alpha=0.6,
-        c=color,
-        rasterized=True,
+    plot_event_metric_row(
+        ax,
+        all_event_times[event_mask],
+        event_metric_values[event_mask],
+        METRIC_SPEC_BY_NAME[metric_name],
+        threshold=threshold,
+        xlim=(time_arr.min(), time_arr.max()),
+        ylabel=metric_name if ylabel is None else ylabel,
+        symlog_yticks=(0.0, 0.1, 1.0),
+        symlog_ylim=(-0.005, 1.0),
+        worse_fit_y=_WORSE_FIT_LABEL_Y.get(metric_name, 0.5),
+        show_annotations=show_annotations,
     )
-
-    if threshold is not None:
-        ax.axhline(
-            threshold,
-            color=COLORS["threshold"],
-            linewidth=1.2,
-            alpha=0.7,
-            zorder=10,
-        )
-        # Add threshold annotation on right side
-        threshold_label = ax.text(
-            1.01,
-            threshold,
-            "Threshold",
-            transform=ax.get_yaxis_transform(),
-            va="center",
-            ha="left",
-            color=COLORS["threshold"],
-        )
-        threshold_label.set_gid(THRESHOLD_LABEL_GID)
-
-    # HPD overlap: symlog y-scale (matching Figure 3) so the worst-fit
-    # floor near 0 is expanded instead of compressed onto the bottom
-    # spine.
-    if spec is not None and spec.symlog_axis:
-        ax.set_yscale("symlog", linthresh=0.01, linscale=1.0)
-        ax.set_yticks([0.0, 0.1, 1.0])
-        ax.set_yticklabels(["0", "0.1", "1"])
-        ax.set_ylim(-0.005, 1.0)
-
-    ax.set_xlim(time_arr.min(), time_arr.max())
-    ax.set_ylabel(metric_name if ylabel is None else ylabel, labelpad=7)
 
     if show_xlabel:
         ax.set_xlabel("Time (s)", labelpad=7)
@@ -632,25 +606,9 @@ def plot_single_model_diagnostics(
             threshold=threshold,
             ax=axes[row],
             metric_name=spec.name,
-            color=spec.color,
             ylabel=spec.ylabel,
             show_xlabel=(i == 2),
         )
-        if spec.name == "hpd_overlap":
-            worse_fit_y = 0.28
-        elif spec.name == "predictive_pvalue":
-            worse_fit_y = 0.68
-        else:
-            worse_fit_y = 0.5
-        worse_fit_label = axes[row].text(
-            1.01,
-            worse_fit_y,
-            spec.worse_fit_direction,
-            transform=axes[row].transAxes,
-            va="center",
-            ha="left",
-        )
-        worse_fit_label.set_gid(WORSE_FIT_LABEL_GID)
 
     return fig, axes
 

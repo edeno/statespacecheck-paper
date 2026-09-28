@@ -17,13 +17,15 @@ from statespacecheck_paper.figure03_plotting import (
     FIGURE3_SUMMARY_CELL_LABEL_GID,
     FIGURE3_SUMMARY_KNOWN_COMPONENT_LABEL_GID,
     FIGURE3_SUMMARY_TITLE_GID,
-    FIGURE3_THRESHOLD_LABEL_GID,
-    FIGURE3_THRESHOLD_LINE_GID,
     FIGURE3_TRUE_POSITION_LABEL_GID,
-    FIGURE3_WORSE_FIT_LABEL_GID,
     compose_figure03,
 )
 from statespacecheck_paper.figure03_protocol import Figure3Config
+from statespacecheck_paper.plotting import (
+    THRESHOLD_LABEL_GID,
+    THRESHOLD_LINE_GID,
+    WORSE_FIT_LABEL_GID,
+)
 
 
 def _per_cell_metrics(rng: np.random.Generator, n_time: int, n_cells: int) -> dict[str, np.ndarray]:
@@ -237,15 +239,15 @@ def test_compose_figure03_tags_figure3_annotations(
         assert {text.get_position()[1] for text in phase_labels} == {
             phase_labels[0].get_position()[1]
         }
-        assert sum(text.get_gid() == FIGURE3_THRESHOLD_LABEL_GID for text in texts) == 3
-        assert sum(text.get_gid() == FIGURE3_WORSE_FIT_LABEL_GID for text in texts) == 3
+        assert sum(text.get_gid() == THRESHOLD_LABEL_GID for text in texts) == 3
+        assert sum(text.get_gid() == WORSE_FIT_LABEL_GID for text in texts) == 3
         assert any(text.get_gid() == FIGURE3_TRUE_POSITION_LABEL_GID for text in texts)
         assert any(text.get_gid() == FIGURE3_SUMMARY_KNOWN_COMPONENT_LABEL_GID for text in texts)
         assert sum(text.get_gid() == FIGURE3_SUMMARY_CELL_LABEL_GID for text in texts) == 18
         assert sum(text.get_gid() == FIGURE3_SUMMARY_ACCURACY_CELL_LABEL_GID for text in texts) == 6
         assert sum(text.get_gid() == FIGURE3_SUMMARY_ACCURACY_HEADER_GID for text in texts) == 1
         assert any(ax.title.get_gid() == FIGURE3_SUMMARY_TITLE_GID for ax in fig.axes)
-        assert sum(line.get_gid() == FIGURE3_THRESHOLD_LINE_GID for line in lines) == 3
+        assert sum(line.get_gid() == THRESHOLD_LINE_GID for line in lines) == 3
     finally:
         plt.close(fig)
 
