@@ -118,7 +118,6 @@ class TestFigure4ConfigMatchesManuscript:
         for model in (continuous_model, contfrag_model):
             assert model.sampling_frequency == pytest.approx(config.decoder.sampling_frequency_hz)
         assert config.decoder.sampling_frequency_hz == pytest.approx(500.0)
-        assert config.decoder.time_bin_size_ms == pytest.approx(2.0)
 
     def test_config_records_manuscript_dependency_version(self) -> None:
         """The provenance string must match the manuscript-stated version."""

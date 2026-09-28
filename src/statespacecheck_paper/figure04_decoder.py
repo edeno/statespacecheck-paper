@@ -103,11 +103,6 @@ class Figure4DecoderConfig:
                     f"Figure4DecoderConfig.{name} must be finite and positive; got {value!r}"
                 )
 
-    @property
-    def time_bin_size_ms(self) -> float:
-        """Spike time-bin size in milliseconds (``1000 / sampling_frequency``)."""
-        return 1000.0 / self.sampling_frequency_hz
-
 
 @dataclasses.dataclass(frozen=True)
 class Figure4ExecutionConfig:

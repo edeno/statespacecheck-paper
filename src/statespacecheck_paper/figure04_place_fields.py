@@ -64,38 +64,6 @@ def extract_place_fields(
     return place_fields, position_bins
 
 
-def extract_place_fields_concat(
-    model: Any,
-) -> tuple[NDArray[np.float64], NDArray[np.bool_]]:
-    """Concatenate per-observation-model place fields + the interior mask.
-
-    Returns the place fields aligned with the predictive posterior's
-    full ``state_bins`` axis (i.e. before the interior-mask filter):
-    one ``(n_cells, n_state_bins_full)`` array stacked across the
-    model's observation models, plus the matching boolean
-    ``is_track_interior_state_bins_`` mask. Callers that only need
-    the interior bins do ``place_fields[:, interior_mask]``.
-
-    Used by the interactive cache builder, which keeps both arrays so the
-    viewer can reconstruct the non-interior NaN columns. Diagnostics that
-    compare models with different numbers of discrete states should instead
-    use :func:`extract_shared_position_place_fields`.
-    """
-    place_fields = np.concatenate(
-        [
-            extract_place_fields(
-                model,
-                environment_name=obs.environment_name,
-                encoding_group=obs.encoding_group,
-            )[0]
-            for obs in model.observation_models
-        ],
-        axis=1,
-    )
-    interior_mask: NDArray[np.bool_] = np.asarray(model.is_track_interior_state_bins_, dtype=bool)
-    return place_fields, interior_mask
-
-
 def extract_shared_position_place_fields(
     model: Any,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
