@@ -72,8 +72,9 @@ DECODING_PARAM_NAMES: Mapping[str, str] = MappingProxyType(
         "contfrag": "statespacecheck_figure04_contfrag",
     }
 )
-# Outputs the diagnostics need; Spyglass passes decoding_kwargs through to predict().
-DECODE_OUTPUTS = ("filter", "predictive_posterior", "log_likelihood")
+# Outputs requested besides the always-returned smoothed posterior, matching the
+# paper decode; Spyglass passes decoding_kwargs through to predict().
+DECODE_OUTPUTS = ("predictive_posterior", "log_likelihood")
 
 schema = dj.Schema()  # activated only by activate_schema()
 

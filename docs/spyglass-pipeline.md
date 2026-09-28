@@ -25,7 +25,7 @@ a step would write unless given `--write`, and then asks for confirmation.
 | `position-group` | `PositionGroup` `statespacecheck_figure04` | the epoch's v0 `IntervalPositionInfo` (`default_decoding`) entry; `head_position_x/y`; no upsampling |
 | `spike-sorting-output` | 22 `SpikeSortingOutput.CuratedSpikeSorting` entries | registers the v0 HPC sort (not yet in the merge table); re-running skips existing entries |
 | `sorted-spikes-group` | `SortedSpikesGroup` `statespacecheck_figure04` (`all_units`) | the sort's 22 merge entries |
-| `decoding-parameters` | `DecodingParameters` `statespacecheck_figure04_continuous` / `_contfrag` | models from `figure04_decoder.build_decoder_models`; `decoding_kwargs` requests `filter`, `predictive_posterior`, `log_likelihood` |
+| `decoding-parameters` | `DecodingParameters` `statespacecheck_figure04_continuous` / `_contfrag` | models from `figure04_decoder.build_decoder_models`; `decoding_kwargs` requests `predictive_posterior`, `log_likelihood` |
 | `decoding-selections` | two `SortedSpikesDecodingSelection` entries | encoding = decoding = `02_r1 noPrePostTrialTimes`; `estimate_decoding_params = 0` |
 | `decode` | `SortedSpikesDecodingV1`, `DecodingOutput`, result and model files | needs the analysis store (a lab server); about 3 minutes per model on CPU |
 | `diagnostics-schema` | schema `edeno_statespacecheck` and its tables | including the `Figure4DiagnosticsParameters` entry `figure04` |
