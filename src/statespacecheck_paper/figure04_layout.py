@@ -28,7 +28,6 @@ from statespacecheck_paper.figure04_panels import (
     plot_per_spike_metric_hexbin_row,
     plot_single_model_diagnostics,
 )
-from statespacecheck_paper.figure04_plot_primitives import ANIMAL_POSITION_LABEL_GID
 from statespacecheck_paper.figure04_track_plots import plot_track_graph_2d
 from statespacecheck_paper.figure04_workflow import Figure4RenderData
 from statespacecheck_paper.plotting import THRESHOLD_LABEL_GID, WORSE_FIT_LABEL_GID
@@ -434,23 +433,26 @@ def compose_figure04(
         wspace=0.005,
     )
 
-    # Panel (a): Continuous detail view
+    # Panel (a): Continuous detail view. Its row labels serve both stacks, and
+    # the threshold / worse-fit annotations are left to panel (b), where they
+    # read as shared labels for both.
     _, axes_a = plot_single_model_diagnostics(
         continuous_panel_data,
         time_slice_ind=detail_slice,
         thresholds=thresholds_dict,
         model_name="Continuous Model",
         fig=subfigs_top[1],
+        show_annotations=False,
     )
-    axes_a[3].set_ylabel("HPD\noverlap", labelpad=7)
 
-    # Panel (b): ContFrag detail view
+    # Panel (b): ContFrag detail view, repeating panel (a)'s row scales.
     _, axes_b = plot_single_model_diagnostics(
         continuous_fragmented_panel_data,
         time_slice_ind=detail_slice,
         thresholds=thresholds_dict,
         model_name="Cont.-Frag. Model",
         fig=subfigs_top[2],
+        show_y_labels=False,
     )
 
     # Match y-axis limits between detail panels for direct comparison
@@ -460,22 +462,6 @@ def compose_figure04(
         shared_ylim = (min(ylim_a[0], ylim_b[0]), max(ylim_a[1], ylim_b[1]))
         axes_a[i].set_ylim(shared_ylim)
         axes_b[i].set_ylim(shared_ylim)
-
-    # Panel (b) repeats the row scales from panel (a), so keep only the
-    # model-specific data and title on the right stack.
-    for ax in axes_b:
-        ax.set_ylabel("")
-        ax.tick_params(axis="y", left=False, labelleft=False)
-    for text in axes_b[0].texts:
-        if text.get_gid() == ANIMAL_POSITION_LABEL_GID:
-            text.set_visible(False)
-
-    # Keep threshold / worse-fit row annotations only on panel (b), where they
-    # read as shared labels for both model stacks.
-    for ax in axes_a[3:]:
-        for text in ax.texts:
-            if text.get_gid() in FIGURE4_DIAGNOSTIC_ANNOTATION_GIDS:
-                text.set_visible(False)
 
     # Panel labels - place in axes coordinates on the predictive row of each.
     panel_label_x = {"a": -0.115, "b": -0.05}

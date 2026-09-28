@@ -28,6 +28,7 @@ from statespacecheck_paper.figure04_panels import (  # noqa: E402
     plot_single_model_diagnostics,
     plot_spike_event_diagnostic_scatter,
 )
+from statespacecheck_paper.figure04_plot_primitives import ANIMAL_POSITION_LABEL_GID  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # plot_per_spike_metric_hexbin_row
@@ -349,6 +350,42 @@ def _panel_inputs() -> dict:
 
 
 class TestPlotSingleModelDiagnostics:
+    def _panel_data(self) -> ModelDiagnosticPanelData:
+        c = _panel_inputs()
+        rng = np.random.default_rng(9)
+        return ModelDiagnosticPanelData(
+            time=c["time"],
+            position=c["position"],
+            results=_multistate_results(5),
+            diagnostics=_dense_diagnostics(6),
+            spike_times=c["spike_times"],
+            spike_counts=c["spike_counts"],
+            place_field_peaks=c["place_field_peaks"],
+            place_fields=rng.random((_N_CELLS, _N_POS)) * 10 + 0.1,
+            position_bins=np.linspace(0.0, 100.0, _N_POS),
+            track_graph=_linear_track_graph(),
+            edge_order=[(i, i + 1) for i in range(5)],
+        )
+
+    def test_side_stack_omits_row_labels_and_ticks(self) -> None:
+        fig, axes = plot_single_model_diagnostics(self._panel_data(), show_y_labels=False)
+        assert all(ax.get_ylabel() == "" for ax in axes)
+        assert not any(label.get_visible() for label in axes[3].get_yticklabels())
+        assert not any(text.get_gid() == ANIMAL_POSITION_LABEL_GID for text in axes[0].texts)
+        plt.close(fig)
+
+    def test_annotations_can_be_omitted(self) -> None:
+        thresholds = {"hpd_overlap": 0.05, "predictive_pvalue": 0.05}
+        fig, axes = plot_single_model_diagnostics(self._panel_data(), thresholds=thresholds)
+        assert all(len(ax.texts) == (1 if i == 2 else 2) for i, ax in enumerate(axes[3:]))
+        plt.close(fig)
+        fig, axes = plot_single_model_diagnostics(
+            self._panel_data(), thresholds=thresholds, show_annotations=False
+        )
+        assert all(len(ax.texts) == 0 for ax in axes[3:])
+        assert axes[3].get_ylabel() == "HPD\noverlap"
+        plt.close(fig)
+
     def test_renders_six_rows_with_place_field_likelihood(self) -> None:
         c = _panel_inputs()
         rng = np.random.default_rng(9)

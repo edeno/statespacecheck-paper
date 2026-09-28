@@ -259,6 +259,9 @@ def plot_raster(
     ax.set_xlabel("Time")
 
 
+# The HPD-overlap row label wraps to fit beside the narrow detail stacks.
+_ROW_YLABELS = {"hpd_overlap": "HPD\noverlap"}
+
 # Height of each row's worse-fit label (axes fraction), placed where it clears
 # the row's threshold label.
 _WORSE_FIT_LABEL_Y = {"hpd_overlap": 0.28, "predictive_pvalue": 0.68}
@@ -473,6 +476,8 @@ def plot_single_model_diagnostics(
     model_name: str = "Continuous",
     thresholds: Mapping[str, float] | None = None,
     fig: Figure | None = None,
+    show_y_labels: bool = True,
+    show_annotations: bool = True,
 ) -> tuple[Figure, NDArray[np.object_]]:
     """Create single-model diagnostic figure with 6 rows.
 
@@ -498,6 +503,12 @@ def plot_single_model_diagnostics(
         Thresholds for horizontal lines on diagnostic plots.
     fig : Figure, optional
         Existing figure to draw into.
+    show_y_labels : bool, default True
+        Whether to draw the row labels, y-axis ticks, and the "Animal Position"
+        label. A stack placed beside another with the same rows omits them.
+    show_annotations : bool, default True
+        Whether to label each diagnostic row's threshold and worse-fit
+        direction at its right edge. Side-by-side stacks label one of them.
 
     Returns
     -------
@@ -538,20 +549,21 @@ def plot_single_model_diagnostics(
         title=model_name,
         ylabel="Predictive\nposition (cm)",
     )
-    # Self-label the position trace in its own color instead of a legend.
-    animal_position_label = axes[0].text(
-        0.02,
-        0.90,
-        "Animal Position",
-        transform=axes[0].transAxes,
-        fontweight="normal",
-        color=COLORS["ground_truth"],
-        alpha=0.85,
-        va="top",
-        ha="left",
-        bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.45, "pad": 0.15},
-    )
-    animal_position_label.set_gid(ANIMAL_POSITION_LABEL_GID)
+    if show_y_labels:
+        # Self-label the position trace in its own color instead of a legend.
+        animal_position_label = axes[0].text(
+            0.02,
+            0.90,
+            "Animal Position",
+            transform=axes[0].transAxes,
+            fontweight="normal",
+            color=COLORS["ground_truth"],
+            alpha=0.85,
+            va="top",
+            ha="left",
+            bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.45, "pad": 0.15},
+        )
+        animal_position_label.set_gid(ANIMAL_POSITION_LABEL_GID)
 
     # Row 1: Likelihood overlay at spike times
     ax_lik = axes[1]
@@ -606,9 +618,17 @@ def plot_single_model_diagnostics(
             threshold=threshold,
             ax=axes[row],
             metric_name=spec.name,
-            ylabel=spec.ylabel,
+            ylabel=_ROW_YLABELS.get(spec.name, spec.ylabel),
             show_xlabel=(i == 2),
+            show_annotations=show_annotations,
         )
+
+    if not show_y_labels:
+        # The heatmap and raster helpers label their own rows, so clear the
+        # labels here rather than threading the option through each of them.
+        for ax in axes:
+            ax.set_ylabel("")
+            ax.tick_params(axis="y", left=False, labelleft=False)
 
     return fig, axes
 
