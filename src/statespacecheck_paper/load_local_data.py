@@ -391,7 +391,8 @@ def load_neural_recording_from_files(
         return recording_from_arrays(arrays)
 
 
-def _sha256(path: Path) -> str:
+def file_sha256(path: Path) -> str:
+    """Return the SHA-256 of a file's bytes as a hex string, read in 1 MiB blocks."""
     digest = hashlib.sha256()
     with path.open("rb") as stream:
         for block in iter(lambda: stream.read(1 << 20), b""):
@@ -401,7 +402,7 @@ def _sha256(path: Path) -> str:
 
 def _keep_existing(output: Path, sha256: str) -> Path:
     """Return ``output`` if it is the verified file; otherwise refuse to replace it."""
-    if _sha256(output) != sha256:
+    if file_sha256(output) != sha256:
         raise FileExistsError(
             f"{output} exists with a different SHA-256 than the published file; "
             "move it aside to download the published one"
@@ -465,7 +466,7 @@ def download_figure04_inputs(
             raise ConnectionError(
                 f"Download from {url} stopped after {received} of {announced} bytes; run it again"
             )
-        downloaded = _sha256(partial)
+        downloaded = file_sha256(partial)
         if downloaded != sha256:
             raise ValueError(
                 f"File downloaded from {url} has SHA-256 {downloaded}; expected {sha256}"
