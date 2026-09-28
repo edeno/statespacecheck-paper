@@ -13,6 +13,7 @@ import ast
 from pathlib import Path
 
 import statespacecheck_paper
+from statespacecheck_paper import figure04_cache
 
 _SRC = Path(statespacecheck_paper.__file__).resolve().parent
 
@@ -177,6 +178,17 @@ def test_figure04_family_dependency_edges_are_acyclic() -> None:
     }
     for module_file, permitted in allowed.items():
         assert _sibling_module_imports(module_file) <= permitted, module_file
+
+
+def test_decode_hashed_modules_do_not_import_unhashed_figure04_helpers() -> None:
+    """The decode cache fingerprints only its source files; the summary and the
+    input-file writer stay outside it, so the decode must not come to depend
+    on them."""
+    prefix = "statespacecheck_paper."
+    for module_file in figure04_cache._DECODE_SOURCE_FILES:
+        imports = _sibling_module_imports(module_file)
+        assert prefix + "figure04_summary" not in imports, module_file
+        assert prefix + "write_local_data" not in imports, module_file
 
 
 def test_reported_values_imports_no_analysis_module() -> None:

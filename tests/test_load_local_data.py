@@ -15,17 +15,19 @@ import pandas as pd
 import pytest
 
 from statespacecheck_paper.load_local_data import (
-    LEGACY_PICKLE_SUFFIXES,
     NeuralRecordingData,
-    convert_legacy_pickle_exports,
     load_neural_recording_from_files,
+)
+from statespacecheck_paper.paths import (
+    FIGURE04_INPUTS_EPOCH,
+)
+from statespacecheck_paper.write_local_data import (
+    LEGACY_PICKLE_SUFFIXES,
+    convert_legacy_pickle_exports,
     read_legacy_pickle_exports,
     recording_arrays,
     recording_difference,
     write_npz,
-)
-from statespacecheck_paper.paths import (
-    FIGURE04_INPUTS_EPOCH,
 )
 
 

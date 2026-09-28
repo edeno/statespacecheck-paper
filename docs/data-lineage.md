@@ -15,7 +15,7 @@ the repository, `data/` is ignored). It matches
 `provenance.figure04_decode_cache.export_file_sha256` in
 `manuscript/figures/main/figure04_summary.json`. It holds only numeric and string
 arrays (loaded with `allow_pickle=False`) and is written deterministically, so the
-same content always has the same SHA-256; `load_local_data.recording_arrays`
+same content always has the same SHA-256; `write_local_data.recording_arrays`
 defines the layout.
 
 ### Originally: five pickles

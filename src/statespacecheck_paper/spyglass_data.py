@@ -34,12 +34,8 @@ import pandas as pd
 import xarray as xr
 from numpy.typing import NDArray
 
-from statespacecheck_paper.load_local_data import (
-    EXPORT_FILE_SUFFIXES,
-    NeuralRecordingData,
-    recording_arrays,
-    write_npz,
-)
+from statespacecheck_paper.load_local_data import NeuralRecordingData, input_file_path
+from statespacecheck_paper.write_local_data import recording_arrays, write_npz
 
 if TYPE_CHECKING:
     from statespacecheck_paper.diagnostics import SpikeEventDiagnostics
@@ -494,25 +490,6 @@ def fetch_figure04_inputs(
     return Figure4Inputs(spike_times=spike_times, **position)
 
 
-def export_file_path(output_dir: str | Path, animal_date_epoch: str) -> Path:
-    """Return the path of the ``.npz`` input file for an epoch.
-
-    Parameters
-    ----------
-    output_dir : str or Path
-        Directory holding the file.
-    animal_date_epoch : str
-        Epoch identifier (see :func:`epoch_identifier`).
-
-    Returns
-    -------
-    Path
-        ``{output_dir}/{animal_date_epoch}_figure04_inputs.npz``.
-    """
-    (suffix,) = EXPORT_FILE_SUFFIXES
-    return Path(output_dir) / f"{animal_date_epoch}{suffix}"
-
-
 def check_output_paths(
     output_dir: str | Path,
     animal_date_epoch: str,
@@ -545,11 +522,11 @@ def check_output_paths(
     """
     if reference_dir is not None and Path(reference_dir).resolve() == Path(output_dir).resolve():
         raise ValueError(f"Output and reference directory are the same: {output_dir}")
-    output = export_file_path(output_dir, animal_date_epoch)
+    output = input_file_path(output_dir, animal_date_epoch)
     if output.exists() and not overwrite:
         raise FileExistsError(f"Refusing to overwrite existing export: {output}")
     if reference_dir is not None:
-        reference = export_file_path(reference_dir, animal_date_epoch)
+        reference = input_file_path(reference_dir, animal_date_epoch)
         if not reference.is_file():
             raise FileNotFoundError(f"Missing reference export: {reference}")
 
@@ -564,7 +541,7 @@ def write_figure04_inputs(
     """Write the Figure-4 inputs as the ``.npz`` file the figure reads.
 
     The inputs are validated with the loader's checks, encoded with
-    :func:`~statespacecheck_paper.load_local_data.recording_arrays`, and written
+    :func:`~statespacecheck_paper.write_local_data.recording_arrays`, and written
     deterministically, so the same inputs always give the same SHA-256.
 
     Parameters
@@ -609,7 +586,7 @@ def write_figure04_inputs(
         inputs.linear_edge_spacing,
     )
     Path(output_dir).mkdir(parents=True, exist_ok=True)
-    return write_npz(export_file_path(output_dir, animal_date_epoch), arrays)
+    return write_npz(input_file_path(output_dir, animal_date_epoch), arrays)
 
 
 def _array_difference(reference: NDArray[np.generic], candidate: NDArray[np.generic]) -> str | None:
@@ -647,8 +624,8 @@ def compare_figure04_exports(
         Array name → ``None`` if identical, otherwise what differs (including an
         array present in only one file).
     """
-    reference_path = export_file_path(reference_dir, animal_date_epoch)
-    candidate_path = export_file_path(candidate_dir, animal_date_epoch)
+    reference_path = input_file_path(reference_dir, animal_date_epoch)
+    candidate_path = input_file_path(candidate_dir, animal_date_epoch)
     with (
         np.load(reference_path, allow_pickle=False) as reference,
         np.load(candidate_path, allow_pickle=False) as candidate,

@@ -69,8 +69,9 @@ generate_figure04.py   → figure04_generation
   diagnostic results but produces no manuscript figure.
 - **`spyglass_data.py`** (with `scripts/fetch_figure04_inputs.py`,
   `scripts/spyglass_export_figure04.py`, and `scripts/convert_figure04_pickles.py`)
-  — rebuilds and exports the Figure-4 input file from Spyglass. It runs upstream
-  of `load_local_data` and nothing in figure generation imports it. See
+  — rebuilds and exports the Figure-4 input file from Spyglass, writing it with
+  `write_local_data`. Both run upstream of `load_local_data`, and nothing in
+  figure generation imports them. See
   [data-lineage.md](data-lineage.md).
 - **`spyglass_pipeline.py`** (with `scripts/spyglass_pipeline_figure04.py`) — the
   Figure-4 decode and diagnostics as a Spyglass pipeline, meant to reproduce this
@@ -298,7 +299,7 @@ $\Lambda(x)$.
 
   The file holds only numeric and string arrays, is read with
   `allow_pickle=False`, and is written deterministically (same content, same
-  SHA-256); `load_local_data.recording_arrays` defines the layout. It replaces the
+  SHA-256); `write_local_data.recording_arrays` defines the layout. It replaces the
   five pickles the recording was first exported as;
   `scripts/convert_figure04_pickles.py` converts those and checks the result.
 

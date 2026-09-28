@@ -22,14 +22,13 @@ import xarray as xr
 from track_linearization import make_track_graph
 
 from statespacecheck_paper import spyglass_data
-from statespacecheck_paper.load_local_data import load_neural_recording_from_files
+from statespacecheck_paper.load_local_data import input_file_path, load_neural_recording_from_files
 from statespacecheck_paper.spyglass_data import (
     Figure4Inputs,
     check_output_paths,
     compare_figure04_exports,
     declared_attribute_names,
     epoch_identifier,
-    export_file_path,
     figure04_diagnostics_from_decodes,
     filter_spike_times,
     get_interpolated_position_info,
@@ -159,7 +158,7 @@ def test_written_exports_load_through_the_figure_loader(tmp_path: Path) -> None:
 
 
 def test_write_refuses_an_existing_file_and_leaves_it(tmp_path: Path) -> None:
-    existing = export_file_path(tmp_path, _EPOCH)
+    existing = input_file_path(tmp_path, _EPOCH)
     existing.write_bytes(b"earlier")
 
     with pytest.raises(FileExistsError, match="Refusing to overwrite"):

@@ -3,7 +3,7 @@
 The recording was first exported as five pickles; Figure 4 now reads one
 ``{animal_date_epoch}_figure04_inputs.npz``. This writes that file next to (or
 away from) the pickles and checks that it loads back identical to them. The
-recipe is :func:`statespacecheck_paper.load_local_data.convert_legacy_pickle_exports`.
+recipe is :func:`statespacecheck_paper.write_local_data.convert_legacy_pickle_exports`.
 
 Example::
 
@@ -16,8 +16,8 @@ import argparse
 from collections.abc import Sequence
 from pathlib import Path
 
-from statespacecheck_paper.load_local_data import convert_legacy_pickle_exports
 from statespacecheck_paper.paths import ANIMAL_DATE_EPOCH
+from statespacecheck_paper.write_local_data import convert_legacy_pickle_exports
 
 
 def main(argv: Sequence[str] | None = None) -> None:

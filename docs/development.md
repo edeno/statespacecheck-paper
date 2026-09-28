@@ -62,7 +62,7 @@ and orchestration separate; the dependency graph is tested for cycles.
 | General Bayesian filter | `decoding.py` |
 | Paper diagnostic containers and threshold choices | `diagnostics.py` |
 | Figure 3 protocol, simulation, summary, rendering | `figure03_*` |
-| Figure 4 loading, fitting, diagnostics, caches, rendering | `load_local_data.py`, `figure04_*` |
+| Figure 4 loading, fitting, diagnostics, caches, rendering | `load_local_data.py`, `write_local_data.py`, `figure04_*` |
 | Shared plotting and appearance | `plotting.py`, `style.py`, `schematic.py` |
 | Summary-to-prose reporting | `reported_values.py`, `number_format.py` |
 | Website export | `site_export.py` |
