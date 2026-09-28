@@ -577,8 +577,10 @@ def compute_baseline_diagnostic_thresholds(
     Raises
     ------
     ValueError
-        If the baseline slice of ``hpd_overlap`` or ``kl_divergence``
-        contains no finite values (thresholds would be NaN and
+        If ``baseline_end_index`` is not between 1 and the number of time bins
+        (an index past the end would silently use the whole recording, and a
+        negative one would drop its last rows). If the baseline slice of
+        ``hpd_overlap`` or ``kl_divergence`` contains no finite values (thresholds would be NaN and
         downstream comparisons would silently evaluate False), or if the
         slice contains infinity (a finite empirical threshold cannot be
         estimated).
@@ -606,9 +608,15 @@ def compute_baseline_diagnostic_thresholds(
         return cast("NDArray[np.floating]", arr)
 
     def _threshold(name: str, quantile: float) -> float:
+        values = _get(name)
+        n_time = values.shape[0]
+        if not 0 < baseline_end_index <= n_time:
+            raise ValueError(
+                f"compute_baseline_diagnostic_thresholds: baseline_end_index must be in "
+                f"1..{n_time} (the {name} time bins); got {baseline_end_index}"
+            )
         try:
-            # float() because statespacecheck ships no py.typed, so mypy sees Any.
-            return float(ssc.baseline_threshold(_get(name)[:baseline_end_index], quantile))
+            return ssc.baseline_threshold(values[:baseline_end_index], quantile)
         except ValueError as err:
             raise ValueError(
                 f"compute_baseline_diagnostic_thresholds: {name} baseline slice "

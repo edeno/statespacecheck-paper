@@ -11,6 +11,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from scipy.optimize import brentq
 from scipy.stats import norm
 
 # Add scripts directory to path so we can import the figure scripts.
@@ -67,11 +68,10 @@ def test_figure_script_exports_expected_api(
 
 
 def test_figure02_create_shared_example_samples_y_tilde_with_noise() -> None:
-    """The Figure 2 predictive-check MC loop must draw y_tilde from
-    N(x_s, like_std), not use x_s as the observation. That step is the
-    only thing distinguishing the corrected schematic from the previous
-    mean-prediction shortcut, so a regression that quietly reverted it
-    would land silently.
+    """The Figure 2 predictive check must draw y_tilde from N(x_s, like_std),
+    not use x_s as the observation: the showcase draws must scatter around
+    their states, and the Monte Carlo p-value must agree with the exact one.
+    A regression to the mean-prediction shortcut would otherwise land silently.
     """
     from statespacecheck_paper.figure02_panels import create_shared_example
 
@@ -101,6 +101,21 @@ def test_figure02_create_shared_example_samples_y_tilde_with_noise() -> None:
     expected_observed = np.log(np.sum(data.predictive * raw_observation_density))
     assert observed == pytest.approx(expected_observed, rel=1e-13)
 
+    # The exact p-value: f_pred is unimodal, so {f_pred <= f_pred(60)} is
+    # y <= a or y >= 60, with a found by root-finding left of the mode (35).
+    def log_f_pred(y: float) -> float:
+        return float(np.log(np.sum(data.predictive * norm.pdf(y, data.position_bins, 12.0))))
+
+    a = brentq(lambda y: log_f_pred(y) - observed, -200.0, 35.0)
+    exact = float(
+        np.sum(
+            data.predictive
+            * (norm.cdf(a, data.position_bins, 12.0) + norm.sf(60.0, data.position_bins, 12.0))
+        )
+    )
+    standard_error = np.sqrt(exact * (1.0 - exact) / simulated.size)
+    assert abs(p_value - exact) < 4.0 * standard_error, (p_value, exact)
+
     positions = np.asarray(data.showcase_positions)
     y_tildes = np.asarray(data.showcase_y_tildes)
     assert positions.shape == y_tildes.shape, (
@@ -108,7 +123,7 @@ def test_figure02_create_shared_example_samples_y_tilde_with_noise() -> None:
     )
     # Load-bearing assertion: y_tilde must differ from its originating
     # state position by more than rounding (~1 bin width = 0.5). If every
-    # y_tilde sits exactly on its sample position, the MC loop has been
+    # y_tilde sits exactly on its sample position, the showcase draws have
     # reverted to the deterministic y_tilde = x_s shortcut and the
     # manuscript's predictive-check definition is no longer depicted.
     deltas = np.abs(y_tildes - positions)
@@ -120,6 +135,41 @@ def test_figure02_create_shared_example_samples_y_tilde_with_noise() -> None:
     assert not data.showcase_likelihoods.flags.writeable
     with pytest.raises(ValueError, match="p_value must lie"):
         replace(data, p_value=float("nan"))
+
+
+@pytest.mark.parametrize("observed_in_tail", [False, True])
+def test_figure02_density_histogram_crops_the_sparse_tail(observed_in_tail: bool) -> None:
+    """The histogram drops the simulated values below the crop quantile but
+    keeps the observed value in view, and its bars stay densities over all
+    samples (their area is the fraction of samples shown)."""
+    import matplotlib.pyplot as plt
+
+    from statespacecheck_paper.figure02_panels import (
+        HISTOGRAM_LOWER_QUANTILE,
+        create_shared_example,
+        plot_ppc_density_histogram,
+    )
+
+    data = create_shared_example(np.random.default_rng(42))
+    simulated = data.simulated_log_pred
+    if observed_in_tail:
+        data = replace(data, observed_log_pred=float(simulated.min()) - 1.0)
+    lower = min(np.quantile(simulated, HISTOGRAM_LOWER_QUANTILE), data.observed_log_pred)
+
+    fig, ax = plt.subplots()
+    try:
+        plot_ppc_density_histogram(ax, data)
+        x_min, x_max = ax.get_xlim()
+        bars = ax.patches
+        area = sum(bar.get_width() * bar.get_height() for bar in bars)
+    finally:
+        plt.close(fig)
+
+    assert x_min <= data.observed_log_pred <= x_max
+    assert bars[0].get_x() == pytest.approx(lower)
+    if not observed_in_tail:
+        assert x_min > simulated.min(), "the sparse left tail was not cropped"
+    assert area == pytest.approx(np.mean(simulated >= lower))
 
 
 def test_figure02_panels_module_is_load_bearing() -> None:

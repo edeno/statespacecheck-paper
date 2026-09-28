@@ -13,7 +13,7 @@ All commands are run from the repository root in the locked environment:
 uv sync --frozen
 uv run python scripts/generate_figureNN.py     # one figure
 uv run python scripts/generate_all_figures.py  # all four
-uv run python scripts/emit_reported_values.py  # refresh the manuscript's numbers
+uv run python scripts/emit_reported_values.py  # refresh the manuscript's numbers (needs internet)
 make -C manuscript                           # build the paper
 # Figures: manuscript/figures/main/figureNN.{pdf,png} at 450 DPI.
 # Prose macros: manuscript/reported_values.tex; paper: manuscript/main.pdf.
@@ -99,11 +99,11 @@ Start from the four `scripts/generate_figureNN.py` entry points.
 - **Configuration:** named constants / function arguments inside the generation recipe and
   `schematic.py`; no config dataclass.
 - **Computation:** `schematic.py` (graphical model + equation boxes) and
-  `plotting.create_distribution_comparison_panel` / `compute_hpd_region`.
+  `plotting.create_distribution_comparison_panel` (HPD regions from
+  `statespacecheck.highest_density_region`).
 - **Output:** `manuscript/figures/main/figure01.{pdf,png}`.
 - **Tests:** `tests/test_schematic.py`; `tests/test_figures.py` (entry-point
-  contract); `tests/test_plotting.py::TestComputeHpdRegion`,
-  `TestCreateDistributionComparisonPanel`.
+  contract); `tests/test_plotting.py::TestCreateDistributionComparisonPanel`.
 
 Trace: `generate_figure01` → `compose_figure01` → semantic axes
 (`graphical_model`, `filtering_equations`, and four named consistency cases) →
@@ -118,10 +118,12 @@ the `schematic` / `plotting` renderers → `save_figure`.
   injectable random generator and returns the in-memory figure.
 - **Configuration:** named constants / arguments in the generation recipe; per-panel
   renderers live in `figure02_panels.py`.
-- **Computation:** `figure02_panels.py` → `plotting.plot_likelihood_columns`
-  and the `diagnostics` computations.
+- **Computation:** `figure02_panels.py` → `plotting.plot_likelihood_columns`;
+  the diagnostics, HPD regions and the Monte Carlo predictive p-value come from
+  `statespacecheck` (`kl_divergence`, `hpd_overlap`, `highest_density_region`,
+  `monte_carlo_mark_pvalue`).
 - **Output:** `manuscript/figures/main/figure02.{pdf,png}`.
-- **Tests:** `tests/test_figures.py` (the figure-2 panel/MC-loop tests);
+- **Tests:** `tests/test_figures.py` (the Figure 2 panel and data tests);
   `tests/test_diagnostics.py`.
 
 Trace: `create_shared_example(rng)` returns one immutable

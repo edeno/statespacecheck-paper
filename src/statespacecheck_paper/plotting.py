@@ -2,16 +2,6 @@
 
 This module provides functions for creating publication-ready figures showing
 diagnostic metrics and misfit examples for state space models.
-
-Examples
---------
->>> import numpy as np
->>> from statespacecheck_paper.plotting import compute_hpd_region
->>> x = np.linspace(-5, 5, 100)
->>> pdf = np.exp(-0.5 * x**2) / np.sqrt(2 * np.pi)
->>> mask = compute_hpd_region(x, pdf, coverage=0.95)
->>> mask.shape
-(100,)
 """
 
 from __future__ import annotations
@@ -20,6 +10,7 @@ from typing import overload
 
 import matplotlib.pyplot as plt
 import numpy as np
+import statespacecheck as ssc
 from matplotlib.axes import Axes
 from numpy.typing import NDArray
 
@@ -72,47 +63,6 @@ def negative_log_pvalue(
     if np.isscalar(x):
         return np.float64(transformed)
     return transformed
-
-
-def compute_hpd_region(x: np.ndarray, pdf: np.ndarray, coverage: float = 0.95) -> np.ndarray:
-    """Compute highest probability-density region for given coverage.
-
-    Parameters
-    ----------
-    x : np.ndarray, shape (n_points,)
-        Domain values.
-    pdf : np.ndarray, shape (n_points,)
-        Probability density values (must be normalized).
-    coverage : float, default 0.95
-        Desired coverage probability.
-
-    Returns
-    -------
-    mask : np.ndarray, shape (n_points,)
-        Boolean mask indicating points in HPD region.
-
-    Examples
-    --------
-    >>> x = np.linspace(-5, 5, 100)
-    >>> pdf = np.exp(-0.5 * x**2) / np.sqrt(2 * np.pi)
-    >>> mask = compute_hpd_region(x, pdf, coverage=0.95)
-    >>> mask.dtype == bool
-    True
-    """
-    # Normalize to ensure proper probability
-    dx = x[1] - x[0]
-    pdf_normalized = pdf / (np.sum(pdf) * dx)
-
-    # Sort by density and find threshold
-    sorted_pdf = np.sort(pdf_normalized)[::-1]  # Descending
-    cumsum = np.cumsum(sorted_pdf) * dx
-    threshold_idx = int(np.searchsorted(cumsum, coverage))
-    if threshold_idx >= len(sorted_pdf):
-        threshold_idx = len(sorted_pdf) - 1
-    threshold = sorted_pdf[threshold_idx]
-
-    mask: np.ndarray = pdf_normalized >= threshold
-    return mask
 
 
 def extract_contiguous_regions(
@@ -241,8 +191,8 @@ def create_distribution_comparison_panel(
     ax.fill_between(x, pdf_likelihood, alpha=0.3, color=color_likelihood)
 
     # Compute HPD regions and extract contiguous intervals
-    hpd_predictive = compute_hpd_region(x, pdf_predictive, coverage=coverage)
-    hpd_likelihood = compute_hpd_region(x, pdf_likelihood, coverage=coverage)
+    hpd_predictive = ssc.highest_density_region(pdf_predictive[np.newaxis], coverage=coverage)[0]
+    hpd_likelihood = ssc.highest_density_region(pdf_likelihood[np.newaxis], coverage=coverage)[0]
     pred_regions = extract_contiguous_regions(hpd_predictive, x)
     like_regions = extract_contiguous_regions(hpd_likelihood, x)
 

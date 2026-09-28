@@ -73,6 +73,26 @@ class TestComputeBaselineDiagnosticThresholds:
         with pytest.raises(TypeError, match="positional"):
             unchecked(metrics_2d, 50)
 
+    @pytest.mark.parametrize("case", ["past_end", "zero", "negative"])
+    def test_baseline_end_index_out_of_range_raises(
+        self, metrics_2d: dict[str, np.ndarray], case: str
+    ) -> None:
+        """An index past the end would silently use the whole recording and a
+        negative one would drop its last rows; both, and zero, raise."""
+        n_time = metrics_2d["hpd_overlap"].shape[0]
+        index = {"past_end": n_time + 1, "zero": 0, "negative": -1}[case]
+        with pytest.raises(ValueError, match="baseline_end_index must be in"):
+            compute_baseline_diagnostic_thresholds(metrics_2d, baseline_end_index=index)
+
+    def test_baseline_end_index_may_cover_the_recording(
+        self, metrics_2d: dict[str, np.ndarray]
+    ) -> None:
+        n_time = metrics_2d["hpd_overlap"].shape[0]
+        thresholds = compute_baseline_diagnostic_thresholds(metrics_2d, baseline_end_index=n_time)
+        assert thresholds.hpd_overlap == pytest.approx(
+            np.nanquantile(metrics_2d["hpd_overlap"].ravel(), 0.01)
+        )
+
     def test_all_nan_hpd_baseline_raises(self) -> None:
         """An all-NaN baseline slice would produce a NaN threshold and
         every downstream ``metric < threshold`` comparison would silently

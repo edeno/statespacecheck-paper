@@ -9,7 +9,6 @@ import numpy as np
 import pytest
 
 from statespacecheck_paper.plotting import (
-    compute_hpd_region,
     create_distribution_comparison_panel,
     extract_contiguous_regions,
     negative_log_pvalue,
@@ -30,74 +29,6 @@ class TestNegativeLogPvalue:
     def test_scalar_threshold_transform(self) -> None:
         """The scalar overload used on flag thresholds is exact."""
         assert negative_log_pvalue(0.2) == -np.log(0.2)
-
-
-# ---------------------------------------------------------------------------
-# Shared fixtures
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture
-def gaussian_pdf() -> tuple[np.ndarray, np.ndarray]:
-    """Standard normal PDF on a fine grid for HPD-region tests."""
-    x = np.linspace(-5, 5, 1000)
-    pdf = np.exp(-0.5 * x**2) / np.sqrt(2 * np.pi)
-    return x, pdf
-
-
-# ---------------------------------------------------------------------------
-# compute_hpd_region
-# ---------------------------------------------------------------------------
-
-
-class TestComputeHpdRegion:
-    def test_output_shape_and_dtype(self, gaussian_pdf: tuple) -> None:
-        x, pdf = gaussian_pdf
-        mask = compute_hpd_region(x, pdf, coverage=0.95)
-        assert mask.shape == x.shape
-        assert mask.dtype == bool
-
-    def test_coverage_close_to_target(self, gaussian_pdf: tuple) -> None:
-        x, pdf = gaussian_pdf
-        mask = compute_hpd_region(x, pdf, coverage=0.95)
-        dx = x[1] - x[0]
-        pdf_normalized = pdf / (pdf.sum() * dx)
-        actual_coverage = pdf_normalized[mask].sum() * dx
-        # Discrete HPD slightly overshoots; tolerate up to 100%.
-        assert 0.90 <= actual_coverage <= 1.0
-
-    def test_hpd_is_contiguous_for_unimodal_distribution(self, gaussian_pdf: tuple) -> None:
-        x, pdf = gaussian_pdf
-        mask = compute_hpd_region(x, pdf, coverage=0.95)
-        true_indices = np.where(mask)[0]
-        expected_run = np.arange(true_indices[0], true_indices[-1] + 1)
-        # Allow tiny gaps from discretization.
-        assert len(true_indices) / len(expected_run) > 0.90
-
-    @pytest.mark.parametrize(
-        ("low_coverage", "high_coverage"),
-        [(0.50, 0.95), (0.50, 0.99), (0.80, 0.95)],
-    )
-    def test_higher_coverage_includes_more_points(
-        self, gaussian_pdf: tuple, low_coverage: float, high_coverage: float
-    ) -> None:
-        x, pdf = gaussian_pdf
-        low_mask = compute_hpd_region(x, pdf, coverage=low_coverage)
-        high_mask = compute_hpd_region(x, pdf, coverage=high_coverage)
-        assert high_mask.sum() > low_mask.sum()
-
-    def test_uniform_distribution_includes_almost_all_points(self) -> None:
-        x = np.linspace(0, 10, 100)
-        pdf = np.ones_like(x)
-        mask = compute_hpd_region(x, pdf, coverage=0.95)
-        assert mask.sum() / len(mask) > 0.90
-
-    def test_coverage_near_one_does_not_overshoot_index(self) -> None:
-        """Edge case: coverage very close to 1.0 must not index past the end."""
-        x = np.linspace(-5, 5, 50)
-        pdf = np.exp(-0.5 * x**2) / np.sqrt(2 * np.pi)
-        mask = compute_hpd_region(x, pdf, coverage=0.999)
-        assert mask.shape == x.shape
 
 
 # ---------------------------------------------------------------------------
