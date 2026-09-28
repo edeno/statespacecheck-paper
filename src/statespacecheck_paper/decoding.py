@@ -22,8 +22,7 @@ from typing import NamedTuple
 import numpy as np
 import statespacecheck as ssc
 from numpy.typing import NDArray
-from scipy.special import logsumexp
-from scipy.stats import poisson
+from scipy.special import gammaln, logsumexp, xlogy
 
 from statespacecheck_paper.diagnostics import (
     DecodingDiagnostics,
@@ -169,7 +168,7 @@ class DecoderOverrideWindow:
             )
 
         # A negative or non-finite rate table would become NaN once it
-        # reaches ``poisson.pmf`` and propagate silently through the
+        # reaches the Poisson likelihood and propagate silently through the
         # posterior — reject it at construction.
         if self.firing_rate_table is not None and not (
             np.all(np.isfinite(self.firing_rate_table)) and np.all(self.firing_rate_table >= 0.0)
@@ -490,8 +489,11 @@ def update_step(
     """
     # Per-cell log-likelihoods. Log-space avoids underflow when
     # ``n_cells * log(peak)`` crosses the float64 floor (~700) — likely on
-    # real-data sessions with many sparsely-firing cells.
-    log_lik_per_cell = poisson.logpmf(spike_counts_t[None, :], rates_t)  # (n_bins, n_cells)
+    # real-data sessions with many sparsely-firing cells. This is
+    # ``scipy.stats.poisson.logpmf``'s formula, called directly: the distribution method's
+    # argument handling dominated the per-step cost.
+    counts = spike_counts_t[None, :]
+    log_lik_per_cell = xlogy(counts, rates_t) - gammaln(counts + 1) - rates_t  # (n_bins, n_cells)
 
     # Combined log-likelihood across cells (sum in log space = product in linear
     # space), normalized independently with a max-shifted softmax for display.
