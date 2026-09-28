@@ -607,8 +607,7 @@ def compute_baseline_diagnostic_thresholds(
 
     def _threshold(name: str, quantile: float) -> float:
         try:
-            # float() because statespacecheck ships no py.typed, so mypy sees Any.
-            return float(ssc.baseline_threshold(_get(name)[:baseline_end_index], quantile))
+            return ssc.baseline_threshold(_get(name)[:baseline_end_index], quantile)
         except ValueError as err:
             raise ValueError(
                 f"compute_baseline_diagnostic_thresholds: {name} baseline slice "
