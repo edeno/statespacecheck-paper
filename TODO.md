@@ -10,6 +10,11 @@
 - [ ] Complete the lab's Spyglass pipeline/export and public sorting archive,
   following the blockers and approval requirements in
   [the lab guide](docs/spyglass-pipeline.md).
+- [ ] Upload the Spyglass export for this paper, including the HPC sorting used in
+  Figure 4, to DANDI, and cite it in the data statement.
+- [ ] Release and archive `non_local_detector` at the commit `uv.lock` pins
+  (`956fdcc`; its last release is v0.6.9) on PyPI or Zenodo, then pin the
+  release. Figure 4 cannot be rebuilt if that commit becomes unavailable.
 
 ## Scientific follow-ups
 

@@ -25,7 +25,10 @@ This builds `manuscript/main.pdf` without Python or the recording data.
 
 Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and Make.
 All commands below run from the repository root. The locked analysis environment
-uses Python 3.11; uv can install it if needed.
+uses Python 3.11; uv can install it if needed. CI runs the tests on Linux, macOS,
+and Windows. The reported Figure 4 values were verified on macOS (Apple silicon)
+with Python 3.11; Intel Macs cannot run Figure 4 because the locked JAX release
+has no build for them.
 
 ### Figures 1–3: self-contained simulations
 
@@ -80,6 +83,8 @@ make sync-dev
 make check  # Python checks and website tests; requires Node 22+
 ```
 
+## Use the diagnostics in your own work
+
 This repository contains the experiments for the paper. The reusable diagnostics
 are developed in the separate [`statespacecheck`](https://github.com/edeno/statespacecheck)
 package and installed here as a dependency. To apply them to your own decoder,
@@ -97,4 +102,10 @@ Use [CITATION.cff](CITATION.cff) for the authors and citation metadata. The anal
 code is archived on [Zenodo](https://doi.org/10.5281/zenodo.23019296).
 
 Code is licensed under [MIT](LICENSE). Manuscript text and figures are licensed
-under [CC BY 4.0](manuscript/LICENSE).
+under [CC BY 4.0](manuscript/LICENSE). The Figure 4 input file on Zenodo is
+licensed under CC BY 4.0.
+
+## Questions and problems
+
+Open an [issue](https://github.com/edeno/statespacecheck-paper/issues) or contact
+Eric Denovellis (eric.denovellis@ucsf.edu).
