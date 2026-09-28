@@ -34,6 +34,8 @@ import pyqtgraph as pg
 from numpy.typing import NDArray
 from PySide6 import QtCore, QtGui, QtWidgets
 
+from statespacecheck_paper.figure04_generation import FIGURE4_DIAGNOSTIC_THRESHOLDS
+
 from .data_source import DecoderDataSource, ModelName
 from .panels import (
     _OVERLAY_LABELS,
@@ -327,12 +329,15 @@ class DecoderViewer(QtWidgets.QMainWindow):
             n_cells=ds.n_cells,
             place_field_peaks=ds.place_field_peaks,
         )
-        # Three diagnostic-metric panels; the thresholds match Figure 4
-        # defaults at scripts/generate_figure04.py.
+        # Three diagnostic-metric panels with Figure 4's fixed thresholds;
+        # KL divergence has none.
+        thresholds = FIGURE4_DIAGNOSTIC_THRESHOLDS
         self.metric_panels: dict[str, MetricPanel] = {
-            "event_hpd_overlap": MetricPanel(metric="event_hpd_overlap", threshold=0.05),
+            "event_hpd_overlap": MetricPanel(
+                metric="event_hpd_overlap", threshold=thresholds["hpd_overlap"]
+            ),
             "event_predictive_pvalue": MetricPanel(
-                metric="event_predictive_pvalue", threshold=0.05
+                metric="event_predictive_pvalue", threshold=thresholds["predictive_pvalue"]
             ),
             "event_kl_divergence": MetricPanel(metric="event_kl_divergence", threshold=None),
         }
