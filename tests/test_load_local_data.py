@@ -449,8 +449,9 @@ def test_published_checksum_is_the_one_figure4_records() -> None:
 
 
 def test_manuscript_cites_the_downloaded_file() -> None:
-    """The data statement cites the Zenodo record the download verifies."""
-    manuscript = (Path(__file__).resolve().parents[1] / "manuscript/main.tex").read_text(
-        encoding="utf-8"
-    )
-    assert f"https://doi.org/{FIGURE04_INPUTS_DOI}" in manuscript
+    """The data statement cites, through its generated macro, the record the download verifies."""
+    manuscript = Path(__file__).resolve().parents[1] / "manuscript"
+    macros = (manuscript / "reported_values.tex").read_text(encoding="utf-8")
+    assert f"\\newcommand{{\\RecordingInputsDOI}}{{{FIGURE04_INPUTS_DOI}}}" in macros
+    statement = (manuscript / "main.tex").read_text(encoding="utf-8")
+    assert "\\href{https://doi.org/\\RecordingInputsDOI}" in statement
