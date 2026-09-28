@@ -407,8 +407,11 @@ def download_figure04_inputs(
         If a different file (another SHA-256) already has that name.
     ValueError
         If the downloaded file's SHA-256 does not match.
-    urllib.error.URLError
-        If the source cannot be reached.
+    OSError
+        If the source cannot be reached (``urllib.error.URLError``, including
+        ``HTTPError`` for an HTTP error status), the transfer fails or times out
+        (60 s without data), or the connection closes before the announced
+        length (``ConnectionError``; Python does not report that itself).
     """
     data_path = Path(data_path)
     output = data_path / FIGURE04_INPUTS_FILE
@@ -427,9 +430,17 @@ def download_figure04_inputs(
     try:
         with urllib.request.urlopen(url, timeout=60) as reply, partial.open("xb") as stream:
             shutil.copyfileobj(reply, stream)
+            announced = reply.headers.get("Content-Length")
+        received = partial.stat().st_size
+        if announced is not None and received != int(announced):
+            raise ConnectionError(
+                f"Download from {url} stopped after {received} of {announced} bytes; run it again"
+            )
         downloaded = _sha256(partial)
         if downloaded != sha256:
-            raise ValueError(f"Downloaded file has SHA-256 {downloaded}; expected {sha256}")
+            raise ValueError(
+                f"File downloaded from {url} has SHA-256 {downloaded}; expected {sha256}"
+            )
         partial.replace(output)
     except BaseException:
         partial.unlink(missing_ok=True)

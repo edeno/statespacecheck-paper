@@ -8,7 +8,9 @@ import os
 import pickle
 import shutil
 import stat
+import threading
 import urllib.error
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import Any, BinaryIO
 
@@ -316,6 +318,35 @@ def test_download_with_the_wrong_checksum_leaves_nothing(
     with pytest.raises(ValueError, match="SHA-256"):
         download_figure04_inputs(data, url=url, sha256="0" * 64)
     assert list(data.iterdir()) == []
+
+
+class _TruncatingHandler(BaseHTTPRequestHandler):
+    """Announces 100 bytes, sends 10, and closes the connection."""
+
+    def do_GET(self) -> None:
+        self.send_response(200)
+        self.send_header("Content-Length", "100")
+        self.end_headers()
+        self.wfile.write(b"x" * 10)
+
+    def log_message(self, format: str, *args: Any) -> None:
+        pass
+
+
+def test_interrupted_download_is_reported_as_interrupted(tmp_path: Path) -> None:
+    """Python returns the short body without an error; the download must not."""
+    server = HTTPServer(("127.0.0.1", 0), _TruncatingHandler)
+    thread = threading.Thread(target=server.serve_forever)
+    thread.start()
+    try:
+        url = f"http://127.0.0.1:{server.server_port}/"
+        with pytest.raises(ConnectionError, match="stopped after 10 of 100 bytes"):
+            download_figure04_inputs(tmp_path, url=url, sha256="0" * 64)
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_existing_verified_file_is_kept_without_downloading(
