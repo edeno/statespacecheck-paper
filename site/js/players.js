@@ -27,6 +27,7 @@ import {
   readoutCard,
   worseFit,
 } from "./data.js";
+import { normalized } from "./metrics.js";
 
 // Seconds of real time to play through one window.
 const PLAYBACK_SECONDS = 15;
@@ -76,12 +77,6 @@ const SCALE_HELP =
 // ---------------------------------------------------------------------------
 // Shared helpers
 // ---------------------------------------------------------------------------
-
-function normalizedRow(row) {
-  let total = 0;
-  for (const v of row) total += v;
-  return Array.from(row, (v) => (total > 0 ? v / total : 0));
-}
 
 function argmax(values) {
   let best = 0;
@@ -465,7 +460,7 @@ function renderScenario(view, payload, manifest) {
   const likelihoodSum = new Float64Array(nSteps * nBins);
   const likelihoodCount = new Uint16Array(nSteps);
   events.t.forEach((t, i) => {
-    const row = normalizedRow(likelihoodRows.row(events.likelihood_row[i]));
+    const row = normalized(likelihoodRows.row(events.likelihood_row[i]));
     for (let b = 0; b < nBins; b += 1) likelihoodSum[t * nBins + b] += row[b];
     likelihoodCount[t] += 1;
   });
@@ -548,9 +543,9 @@ function renderScenario(view, payload, manifest) {
     detailTitle.textContent = describeSpike(index);
     chart.update({
       series: [
-        { values: normalizedRow(predictive.row(t)), color: cssVar("--predictive") },
+        { values: normalized(predictive.row(t)), color: cssVar("--predictive") },
         {
-          values: normalizedRow(likelihoodRows.row(events.likelihood_row[index])),
+          values: normalized(likelihoodRows.row(events.likelihood_row[index])),
           color: cssVar("--likelihood"),
         },
       ],
@@ -764,8 +759,8 @@ export function renderReplay(root, payload, manifest) {
     for (const model of MODELS) {
       charts[model.id].update({
         series: [
-          { values: normalizedRow(predictive[model.id].row(step)), color: cssVar("--predictive") },
-          { values: normalizedRow(unitLikelihoods.row(cell)), color: cssVar("--likelihood") },
+          { values: normalized(predictive[model.id].row(step)), color: cssVar("--predictive") },
+          { values: normalized(unitLikelihoods.row(cell)), color: cssVar("--likelihood") },
         ],
         marker: position[step],
       });

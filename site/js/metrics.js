@@ -77,8 +77,12 @@ export function hpdOverlap(predictive, likelihood, coverage = 0.95) {
   return smaller > 0 ? both / smaller : 0;
 }
 
-function normalized(values) {
-  const clean = values.map((v) => (Number.isFinite(v) ? v : 0));
+/**
+ * Plain array scaled to sum to 1, with non-finite values as 0; all zeros when
+ * nothing positive remains. Accepts typed arrays (e.g. decoded uint8 rows).
+ */
+export function normalized(values) {
+  const clean = Array.from(values, (v) => (Number.isFinite(v) ? v : 0));
   const total = sum(clean);
   return clean.map((v) => (total > 0 ? v / total : 0));
 }
@@ -99,14 +103,10 @@ export function klDivergence(predictive, likelihood) {
 }
 
 /**
- * Predictive probability that a randomly selected event comes from each cell:
- * f_pred(c) = Σ_x P(x) λ_c(x) / Σ_d Σ_x P(x) λ_d(x).
+ * Predictive probability that a randomly selected event comes from each cell,
+ * f_pred(c) = Σ_x P(x) λ_c(x) / Σ_d Σ_x P(x) λ_d(x), and the total expected
+ * intensity Σ_d Σ_x P(x) λ_d(x).
  */
-export function predictiveCellProbabilities(predictive, rates) {
-  return cellProbabilitiesAndTotal(predictive, rates).probabilities;
-}
-
-/** The cell probabilities and the total expected intensity Σ_d Σ_x P(x) λ_d(x). */
 function cellProbabilitiesAndTotal(predictive, rates) {
   const nCells = rates[0].length;
   const expected = new Array(nCells).fill(0);
