@@ -354,7 +354,7 @@ It does not require a second set of NetCDF results or fitted-model pickles.
 
 ## Machine-readable summary schema
 
-`figure03_summary.json` uses schema version 5 and `figure04_summary.json`
+`figure03_summary.json` uses schema version 6 and `figure04_summary.json`
 uses schema version 4. The Figure-3 schema includes the decoding-accuracy block:
 `accuracy_metric_order` (`median_absolute_error`), `accuracy_units`, and
 `median_decoding_accuracy`, a `(1, n_conditions)` matrix of the
@@ -365,7 +365,11 @@ records `median_flag_percentage_standard_errors` and
 medians, estimated from order-statistic interval widths. These describe the
 uncertainty in the aggregated medians under repeated simulation with the same
 configuration, not the spread of individual realizations, and do not set
-reported precision. The summary also records the baseline-threshold provenance
+reported precision. The spread itself is in `realization_flag_percentages`
+`(n_realizations, 3, n_conditions)` and `realization_decoding_accuracy`
+`(n_realizations, 1, n_conditions)`: every realization's values, in seed order
+from `realizations.first_seed`; the medians are their medians over the first
+axis. The summary also records the baseline-threshold provenance
 quoted in the Methods. The Figure-4
 schema records `dataset.n_units` alongside the recording identifier. The
 `flag_rules` object binds each numeric threshold to its executable semantics:

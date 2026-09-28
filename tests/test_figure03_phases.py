@@ -43,6 +43,7 @@ from statespacecheck_paper.figure03_simulation import (
 from statespacecheck_paper.figure03_summary import (
     Figure3RealizationSummary,
     estimate_realization_summary,
+    median_standard_error,
 )
 from statespacecheck_paper.simulation import gaussian_transition_matrix, place_field_rates
 
@@ -616,35 +617,55 @@ class TestFigure3RealizationSummaryInvariants:
     def _thresholds() -> DiagnosticThresholds:
         return DiagnosticThresholds(hpd_overlap=0.5, kl_divergence=1.0, predictive_pvalue=0.05)
 
-    def test_non_2d_median_raises(self) -> None:
-        with pytest.raises(ValueError, match="median_flag_percentages"):
+    def test_non_3d_realizations_raise(self) -> None:
+        with pytest.raises(ValueError, match="realization_flag_percentages"):
             Figure3RealizationSummary(
                 diagnostic_thresholds=self._thresholds(),
-                median_flag_percentages=np.zeros(5),
-                median_decoding_accuracy=np.zeros((1, 5)),
-                flag_percentage_standard_errors=np.zeros(5),
-                decoding_accuracy_standard_errors=np.zeros((1, 5)),
-                n_realizations=2,
+                realization_flag_percentages=np.zeros((3, 5)),
+                realization_decoding_accuracy=np.zeros((1, 5)),
             )
 
     def test_accuracy_column_mismatch_raises(self) -> None:
-        with pytest.raises(ValueError, match="median_decoding_accuracy"):
+        with pytest.raises(ValueError, match="realization_decoding_accuracy"):
             Figure3RealizationSummary(
                 diagnostic_thresholds=self._thresholds(),
-                median_flag_percentages=np.zeros((3, 5)),
-                median_decoding_accuracy=np.zeros((1, 4)),
-                flag_percentage_standard_errors=np.zeros((3, 5)),
-                decoding_accuracy_standard_errors=np.zeros((1, 4)),
-                n_realizations=2,
+                realization_flag_percentages=np.zeros((2, 3, 5)),
+                realization_decoding_accuracy=np.zeros((2, 1, 4)),
             )
 
-    def test_nonpositive_realizations_raises(self) -> None:
+    def test_accuracy_realization_mismatch_raises(self) -> None:
+        with pytest.raises(ValueError, match="realization_decoding_accuracy"):
+            Figure3RealizationSummary(
+                diagnostic_thresholds=self._thresholds(),
+                realization_flag_percentages=np.zeros((2, 3, 5)),
+                realization_decoding_accuracy=np.zeros((3, 1, 5)),
+            )
+
+    def test_no_realizations_raises(self) -> None:
         with pytest.raises(ValueError, match="n_realizations"):
             Figure3RealizationSummary(
                 diagnostic_thresholds=self._thresholds(),
-                median_flag_percentages=np.zeros((3, 5)),
-                median_decoding_accuracy=np.zeros((1, 5)),
-                flag_percentage_standard_errors=np.zeros((3, 5)),
-                decoding_accuracy_standard_errors=np.zeros((1, 5)),
-                n_realizations=0,
+                realization_flag_percentages=np.zeros((0, 3, 5)),
+                realization_decoding_accuracy=np.zeros((0, 1, 5)),
             )
+
+    def test_medians_and_errors_come_from_the_realizations(self) -> None:
+        """The summary keeps every realization; its medians cannot disagree with them."""
+        rng = np.random.default_rng(0)
+        flags = rng.uniform(0.0, 100.0, size=(7, 3, 5))
+        accuracy = rng.uniform(0.0, 10.0, size=(7, 1, 5))
+        summary = Figure3RealizationSummary(
+            diagnostic_thresholds=self._thresholds(),
+            realization_flag_percentages=flags,
+            realization_decoding_accuracy=accuracy,
+        )
+        assert summary.n_realizations == 7
+        np.testing.assert_array_equal(summary.median_flag_percentages, np.median(flags, axis=0))
+        np.testing.assert_array_equal(summary.median_decoding_accuracy, np.median(accuracy, axis=0))
+        np.testing.assert_array_equal(
+            summary.flag_percentage_standard_errors, median_standard_error(flags)
+        )
+        np.testing.assert_array_equal(
+            summary.decoding_accuracy_standard_errors, median_standard_error(accuracy)
+        )
+        assert not summary.realization_flag_percentages.flags.writeable

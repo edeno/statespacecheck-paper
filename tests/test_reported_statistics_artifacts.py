@@ -44,7 +44,7 @@ def _round_trip_live_payload(tmp_path: Path, payload: dict[str, object]) -> dict
 def test_figure03_reported_statistics_match_canonical_run(tmp_path: Path) -> None:
     payload = _load("figure03_summary.json")
 
-    assert payload["schema_version"] == 5
+    assert payload["schema_version"] == 6
     assert payload["realizations"] == {
         "count": 100,
         "first_seed": 1,
@@ -125,15 +125,8 @@ def test_figure03_reported_statistics_match_canonical_run(tmp_path: Path) -> Non
             kl_divergence=payload["flag_rules"]["kl_divergence"]["threshold"],
             predictive_pvalue=payload["flag_rules"]["predictive_pvalue"]["threshold"],
         ),
-        median_flag_percentages=np.asarray(payload["median_flag_percentages"]),
-        median_decoding_accuracy=np.asarray(payload["median_decoding_accuracy"]),
-        flag_percentage_standard_errors=np.asarray(
-            payload["median_flag_percentage_standard_errors"]
-        ),
-        decoding_accuracy_standard_errors=np.asarray(
-            payload["median_decoding_accuracy_standard_errors"]
-        ),
-        n_realizations=payload["realizations"]["count"],
+        realization_flag_percentages=np.asarray(payload["realization_flag_percentages"]),
+        realization_decoding_accuracy=np.asarray(payload["realization_decoding_accuracy"]),
     )
     live = figure03_summary_payload(Figure3Config(), summary)
     assert _round_trip_live_payload(tmp_path, live) == payload

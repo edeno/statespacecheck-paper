@@ -95,7 +95,7 @@ def figure03_summary_payload(
     thresholds = dataclasses.asdict(summary.diagnostic_thresholds)
     directions = {metric: direction for metric, direction in SUMMARY_FLAG_METRICS}
     return {
-        "schema_version": 5,
+        "schema_version": 6,
         "figure": "figure03",
         "configuration": dataclasses.asdict(config),
         "realizations": {
@@ -120,6 +120,10 @@ def figure03_summary_payload(
         "standard_error_method": "order_statistic_interval_95",
         "median_flag_percentage_standard_errors": summary.flag_percentage_standard_errors,
         "median_decoding_accuracy_standard_errors": summary.decoding_accuracy_standard_errors,
+        # Every realization's values, in seed order (first_seed to last_seed), so
+        # the spread across realizations can be shown, not only the medians.
+        "realization_flag_percentages": summary.realization_flag_percentages,
+        "realization_decoding_accuracy": summary.realization_decoding_accuracy,
         "provenance": {"source": scientific_source_provenance()},
     }
 
