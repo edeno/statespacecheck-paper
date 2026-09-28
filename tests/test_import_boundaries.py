@@ -183,7 +183,7 @@ def test_reported_values_imports_no_analysis_module() -> None:
 
 def test_no_module_imports_the_download() -> None:
     """Editing the Zenodo download may be relabeled rather than regenerated
-    (docs/figure-pipeline.md) only while no figure code imports it."""
+    (docs/development.md) only while no figure code imports it."""
     prefix = "statespacecheck_paper."
     modules = [path.relative_to(_SRC).as_posix() for path in sorted(_SRC.rglob("*.py"))]
     importers = [

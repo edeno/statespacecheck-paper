@@ -136,9 +136,10 @@ Each needs the user's go-ahead before anything is written.
 - The analysis NWB files exist only on the lab's storage. A laptop can reach the
   database (via VPN) but `fetch_nwb` fails there, and reads over the VPN can stall;
   run fetches on a lab server. Server load varies; check it and use an idle one.
-- After any change under `src/` or to `uv.lock`, refresh `provenance.source` in both
-  figure summaries (procedure in [figure-pipeline.md](figure-pipeline.md)) and re-emit
-  the reported values; `tests/test_reported_statistics_artifacts.py` fails otherwise.
+- After any change under `src/` or to `uv.lock`, follow the
+  [artifact refresh procedure](development.md#refreshing-publication-artifacts):
+  regenerate affected figures, or refresh only `provenance.source` where it allows,
+  then re-emit the reported values; `tests/test_reported_statistics_artifacts.py` fails otherwise.
   After a Figure-4 summary change, also update `site/data/replay.json` (its
   decode-cache fingerprint); other re-exported site files that differ only in the
   last floating-point digit need not be committed.

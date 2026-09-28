@@ -1,8 +1,20 @@
-# Manuscript TODO
+# Publication follow-ups
 
-Open follow-ups for **"Local goodness-of-fit measures for neural decoding"**
-(`manuscript/main.tex`). Completed work is in git history; this lists only what's left.
+## Release and archival records
 
-## Red placeholders in main.tex
+- [ ] Tag the exact analysis release used for submission and record its
+  version-specific Zenodo DOI. `CITATION.cff` currently points to the concept DOI
+  that groups all releases; the old manuscript DOI placeholder has been replaced.
+- [ ] Publish a version of DANDI dandiset 001942 and update the data statement
+  and Zenodo input record with its DOI. See [data lineage](docs/data-lineage.md).
+- [ ] Complete the lab's Spyglass pipeline/export and public sorting archive,
+  following the blockers and approval requirements in
+  [the lab guide](docs/spyglass-pipeline.md).
 
-- [ ] **Archival DOI** — replace the red DOI placeholder in the Data and Code Availability section of `manuscript/main.tex` with the DOI for the tagged release used in the paper.
+## Scientific follow-ups
+
+- [ ] Preserve per-realization Figure 3 results and show their variability.
+- [ ] Evaluate sensitivity to simulation parameters and diagnostic thresholds.
+
+These are separate analysis tasks; they are not prerequisites for reproducing
+the current paper from its archived input and committed configuration.
