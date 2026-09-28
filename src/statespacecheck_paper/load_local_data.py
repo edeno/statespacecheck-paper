@@ -35,6 +35,12 @@ import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
+from statespacecheck_paper.paths import (
+    FIGURE04_INPUTS_DOI,
+    FIGURE04_INPUTS_EPOCH,
+    FIGURE04_INPUTS_SHA256,
+)
+
 # Position columns every downstream consumer relies on (centimeters).
 _REQUIRED_POSITION_COLUMNS = ("head_position_x", "head_position_y", "linear_position")
 
@@ -44,13 +50,9 @@ _REQUIRED_POSITION_COLUMNS = ("head_position_x", "head_position_y", "linear_posi
 _INPUTS_SUFFIX = "_figure04_inputs.npz"
 EXPORT_FILE_SUFFIXES = (_INPUTS_SUFFIX,)
 
-# The published copy of the Figure-4 input file: version 1.0 of its Zenodo record
-# (the manuscript's data statement cites this DOI), and the file's SHA-256, which
-# the Figure-4 summary also records. The download URL is built from the DOI, so
-# the two cannot name different records.
-FIGURE04_INPUTS_DOI = "10.5281/zenodo.23020757"
-FIGURE04_INPUTS_SHA256 = "60383b394b597e2900545548ecac7c53a8601038ace9dbeb42d7f9a5fe1c93b3"
-FIGURE04_INPUTS_FILE = f"j1620210710_02_r1{_INPUTS_SUFFIX}"
+# The published copy of the Figure-4 input file (see ``paths``). The download URL
+# is built from the DOI, so the two cannot name different records.
+FIGURE04_INPUTS_FILE = f"{FIGURE04_INPUTS_EPOCH}{_INPUTS_SUFFIX}"
 FIGURE04_INPUTS_RECORD_URL = (
     f"https://zenodo.org/api/records/{FIGURE04_INPUTS_DOI.removeprefix('10.5281/zenodo.')}"
 )
@@ -324,7 +326,7 @@ def _download_hint(data_path: Path, animal_date_epoch: str) -> str:
     The directory is quoted for the platform's shell, so the command can be
     pasted as is when the path has spaces.
     """
-    if f"{animal_date_epoch}{_INPUTS_SUFFIX}" != FIGURE04_INPUTS_FILE:
+    if animal_date_epoch != FIGURE04_INPUTS_EPOCH:
         return ""
     quote = subprocess.list2cmdline if os.name == "nt" else shlex.join
     return (

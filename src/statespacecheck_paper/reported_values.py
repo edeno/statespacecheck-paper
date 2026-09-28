@@ -44,9 +44,9 @@ silently redefining anything.
 This module reads the committed summary JSONs; the one exception is the
 archived DOI of the cited ``statespacecheck`` version, which
 :func:`write_macro_file` looks up on Zenodo (so emitting needs internet
-access). Its only sibling import is
-``number_format``, the rounding shared with the Figure-3 summary panel, so
-the figure and the prose cannot round the same number differently.
+access). Its sibling imports are ``number_format``, the rounding shared with
+the Figure-3 summary panel, so the figure and the prose cannot round the same
+number differently, and ``paths``, for the Figure-4 data DOI.
 """
 
 from __future__ import annotations
@@ -60,8 +60,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from statespacecheck_paper.load_local_data import FIGURE04_INPUTS_DOI
 from statespacecheck_paper.number_format import SIGNIFICANT_FIGURES, significant, whole_percent
+from statespacecheck_paper.paths import FIGURE04_INPUTS_DOI
 
 MACRO_FILE_PATH = Path("manuscript/reported_values.tex")
 # This repository's citation metadata; its ``doi`` is the analysis code's Zenodo DOI
@@ -781,7 +781,7 @@ def macro_sections(
             MacroDefinition(
                 "RecordingInputsDOI",
                 recording_inputs_doi,
-                "Zenodo DOI of the Figure-4 input file (load_local_data.FIGURE04_INPUTS_DOI)",
+                "Zenodo DOI of the Figure-4 input file (paths.FIGURE04_INPUTS_DOI)",
             )
         ]
         if recording_inputs_doi is not None
@@ -850,7 +850,7 @@ def render_macro_file(
         "% Every value below is read from the canonical figure summaries",
         "% (except \\StatespacecheckDOI, that version's DOI, looked up on Zenodo,",
         "% \\AnalysisCodeDOI, from CITATION.cff, and \\RecordingInputsDOI, from",
-        "% load_local_data.FIGURE04_INPUTS_DOI):",
+        "% paths.FIGURE04_INPUTS_DOI):",
         f"%   figures/main/figure03_summary.json (schema {figure03_payload['schema_version']})",
         f"%   figures/main/figure04_summary.json (schema {figure04_payload['schema_version']})",
         f"% source_tree_sha256: {source_hash}",

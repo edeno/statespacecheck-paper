@@ -23,10 +23,8 @@ import pandas as pd
 import pytest
 
 from statespacecheck_paper.load_local_data import (
-    FIGURE04_INPUTS_DOI,
     FIGURE04_INPUTS_FILE,
     FIGURE04_INPUTS_RECORD_URL,
-    FIGURE04_INPUTS_SHA256,
     LEGACY_PICKLE_SUFFIXES,
     NeuralRecordingData,
     convert_legacy_pickle_exports,
@@ -37,7 +35,12 @@ from statespacecheck_paper.load_local_data import (
     recording_difference,
     write_npz,
 )
-from statespacecheck_paper.paths import DATA_PATH
+from statespacecheck_paper.paths import (
+    DATA_PATH,
+    FIGURE04_INPUTS_DOI,
+    FIGURE04_INPUTS_EPOCH,
+    FIGURE04_INPUTS_SHA256,
+)
 
 from ._scripts import load_script
 
@@ -132,9 +135,6 @@ def test_spike_arrays_are_copied_and_leave_caller_writable() -> None:
     assert not recording.spike_times[0].flags.writeable
 
 
-_PUBLISHED_EPOCH = FIGURE04_INPUTS_FILE.removesuffix("_figure04_inputs.npz")
-
-
 def _download_command(message: str) -> list[str] | None:
     """The arguments of the download command a missing-data error suggests, if any."""
     match = re.search(r"`(uv run python scripts/.+?)`", message)
@@ -157,7 +157,7 @@ def test_missing_directory_raises_actionable_error(tmp_path: Path) -> None:
     # error a new user sees first; it names the download into that directory.
     data = tmp_path / "does_not_exist"
     with pytest.raises(FileNotFoundError, match="Data directory not found") as error:
-        load_neural_recording_from_files(data, _PUBLISHED_EPOCH)
+        load_neural_recording_from_files(data, FIGURE04_INPUTS_EPOCH)
     assert _download_command(str(error.value)) == _download_arguments(data)
 
 
@@ -167,7 +167,7 @@ def test_missing_export_files_lists_what_is_absent(tmp_path: Path) -> None:
     with pytest.raises(
         FileNotFoundError, match="Missing 1 expected export file.*_figure04_inputs.npz"
     ) as error:
-        load_neural_recording_from_files(tmp_path, _PUBLISHED_EPOCH)
+        load_neural_recording_from_files(tmp_path, FIGURE04_INPUTS_EPOCH)
     assert _download_command(str(error.value)) == _download_arguments(tmp_path)
     assert (Path(__file__).resolve().parents[1] / "scripts/download_figure04_inputs.py").is_file()
 
@@ -177,7 +177,7 @@ def test_suggested_download_command_quotes_a_path_with_spaces(tmp_path: Path) ->
     """The command can be pasted into a shell as is."""
     data = tmp_path / "data set"
     with pytest.raises(FileNotFoundError) as error:
-        load_neural_recording_from_files(data, _PUBLISHED_EPOCH)
+        load_neural_recording_from_files(data, FIGURE04_INPUTS_EPOCH)
     assert _download_command(str(error.value)) == _download_arguments(data)
 
 
