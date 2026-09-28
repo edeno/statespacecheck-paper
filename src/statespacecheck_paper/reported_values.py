@@ -57,6 +57,10 @@ from typing import Any
 from statespacecheck_paper.number_format import SIGNIFICANT_FIGURES, significant, whole_percent
 
 MACRO_FILE_PATH = Path("manuscript/reported_values.tex")
+
+# Zenodo DOI of each archived statespacecheck release the paper may cite. Add the
+# new version's DOI (from its Zenodo record) when moving to a new release.
+STATESPACECHECK_DOIS = {"0.3.0": "10.5281/zenodo.22999989"}
 FIGURE03_SUMMARY_PATH = Path("manuscript/figures/main/figure03_summary.json")
 FIGURE04_SUMMARY_PATH = Path("manuscript/figures/main/figure04_summary.json")
 
@@ -613,13 +617,14 @@ def _recording_configuration(payload: dict[str, Any]) -> list[MacroDefinition]:
 def _software_versions(
     figure03_payload: dict[str, Any], figure04_payload: dict[str, Any]
 ) -> list[MacroDefinition]:
-    """Build the macro for the ``statespacecheck`` version behind both figures.
+    """Build the macros for the ``statespacecheck`` version behind both figures and its DOI.
 
     Raises
     ------
     ValueError
         If the two summaries, or the Figure-4 diagnostics cache, record
-        different ``statespacecheck`` versions, since the manuscript cites one.
+        different ``statespacecheck`` versions, since the manuscript cites one,
+        or if that version has no archived DOI in ``STATESPACECHECK_DOIS``.
     """
     recorded = {
         "figure03 provenance.source": figure03_payload["provenance"]["source"][
@@ -637,12 +642,22 @@ def _software_versions(
             "The figure summaries record different statespacecheck versions; "
             f"regenerate them in one environment: {recorded}"
         )
+    version = recorded["figure03 provenance.source"]
+    if version not in STATESPACECHECK_DOIS:
+        raise ValueError(
+            f"statespacecheck {version} has no archived DOI; add it to STATESPACECHECK_DOIS"
+        )
     return [
         MacroDefinition(
             "StatespacecheckVersion",
-            recorded["figure03 provenance.source"],
+            version,
             "provenance.source.statespacecheck_version (both summaries)",
-        )
+        ),
+        MacroDefinition(
+            "StatespacecheckDOI",
+            STATESPACECHECK_DOIS[version],
+            "Zenodo DOI of that version (STATESPACECHECK_DOIS)",
+        ),
     ]
 
 

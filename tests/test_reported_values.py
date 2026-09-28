@@ -114,6 +114,18 @@ def test_mismatched_statespacecheck_versions_are_rejected(path: tuple[str]) -> N
         render_macro_file(_load("figure03_summary.json"), figure04)
 
 
+def test_statespacecheck_version_without_a_doi_is_rejected() -> None:
+    """The manuscript cites the archived release, so an unarchived version fails."""
+    figure03 = copy.deepcopy(_load("figure03_summary.json"))
+    figure04 = copy.deepcopy(_load("figure04_summary.json"))
+    for payload in (figure03, figure04):
+        payload["provenance"]["source"]["statespacecheck_version"] = "0.0.0"
+    figure04["provenance"]["figure04_decode_cache"]["statespacecheck_version"] = "0.0.0"
+
+    with pytest.raises(ValueError, match="no archived DOI"):
+        render_macro_file(figure03, figure04)
+
+
 @pytest.mark.parametrize("quantile", [0.005, 0.995])
 def test_fractional_percentile_is_not_silently_rounded(quantile: float) -> None:
     """0.005 must not print as "0th": the ordinal prose has no form for it."""
