@@ -174,7 +174,9 @@ The boundary between the two repositories:
 
 - **`statespacecheck`** holds everything general: the distribution-level
   diagnostics, the per-spike computations (single-spike likelihood, predictive
-  unit probabilities, exact predictive p-value), and threshold estimation.
+  unit probabilities, exact predictive p-value), the Monte Carlo predictive
+  p-value (`monte_carlo_mark_pvalue`, used for Figure 2), highest-density
+  regions (`highest_density_region`), and threshold estimation.
 - **This repository** holds what is specific to the paper: the simulation
   protocol and decoder used for Figure 3, the real-data decoding for Figure 4,
   the paper's threshold choices, figure generation, the reported-value pipeline,

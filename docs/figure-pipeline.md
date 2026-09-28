@@ -118,10 +118,12 @@ the `schematic` / `plotting` renderers → `save_figure`.
   injectable random generator and returns the in-memory figure.
 - **Configuration:** named constants / arguments in the generation recipe; per-panel
   renderers live in `figure02_panels.py`.
-- **Computation:** `figure02_panels.py` → `plotting.plot_likelihood_columns`
-  and the `diagnostics` computations.
+- **Computation:** `figure02_panels.py` → `plotting.plot_likelihood_columns`;
+  the diagnostics, HPD regions and the Monte Carlo predictive p-value come from
+  `statespacecheck` (`kl_divergence`, `hpd_overlap`, `highest_density_region`,
+  `monte_carlo_mark_pvalue`).
 - **Output:** `manuscript/figures/main/figure02.{pdf,png}`.
-- **Tests:** `tests/test_figures.py` (the figure-2 panel/MC-loop tests);
+- **Tests:** `tests/test_figures.py` (the Figure 2 panel and data tests);
   `tests/test_diagnostics.py`.
 
 Trace: `create_shared_example(rng)` returns one immutable
