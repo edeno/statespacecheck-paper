@@ -235,6 +235,73 @@ def test_fingerprint_changes_with_config_and_dependency(
     assert compute_figure04_cache_fingerprint(config, paths) != fp1
 
 
+@pytest.fixture
+def source_tree(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A source tree whose files can change without editing the checkout."""
+    package = tmp_path / "package"
+    package.mkdir()
+    filenames = set(figure04_cache._DECODE_SOURCE_FILES) | set(
+        figure04_cache._DIAGNOSTIC_SOURCE_FILES
+    )
+    for filename in filenames | {"figure04_layout.py"}:
+        (package / filename).write_text('"""Documentation."""\nVALUE = 1\n', encoding="utf-8")
+    monkeypatch.setattr(figure04_cache, "__file__", str(package / "figure04_cache.py"))
+    return package
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "figure04_decoder.py",
+        "figure04_workflow.py",
+        "figure04_place_fields.py",
+        "load_local_data.py",
+    ],
+)
+def test_decode_source_change_rejects_existing_cache(
+    source_tree: Path, tmp_path: Path, filename: str
+) -> None:
+    paths = Figure4Paths(tmp_path, "epoch")
+    config = Figure4Config()
+    original = compute_figure04_cache_fingerprint(config, paths)
+    save_figure04_cache(paths.cache_path, original, _payload())
+    assert load_figure04_cache(paths.cache_path, original) is not None
+
+    (source_tree / filename).write_text('"""Documentation."""\nVALUE = 2\n', encoding="utf-8")
+    changed = compute_figure04_cache_fingerprint(config, paths)
+    assert changed != original
+    assert load_figure04_cache(paths.cache_path, changed) is None
+
+
+def test_documentation_and_plotting_edits_preserve_both_caches(
+    source_tree: Path, tmp_path: Path
+) -> None:
+    paths = Figure4Paths(tmp_path, "epoch")
+    config = Figure4Config()
+    original = compute_figure04_cache_provenance(config, paths)
+    for filename in set(figure04_cache._DECODE_SOURCE_FILES) | set(
+        figure04_cache._DIAGNOSTIC_SOURCE_FILES
+    ):
+        (source_tree / filename).write_text(
+            '"""Updated documentation."""\n# New comment\nVALUE = 1\n', encoding="utf-8"
+        )
+    (source_tree / "figure04_layout.py").write_text("VALUE = 2\n", encoding="utf-8")
+    assert compute_figure04_cache_provenance(config, paths) == original
+
+
+@pytest.mark.parametrize("filename", ["diagnostics.py", "figure04_diagnostics.py"])
+def test_diagnostic_only_source_edit_preserves_decode_cache(
+    source_tree: Path, tmp_path: Path, filename: str
+) -> None:
+    paths = Figure4Paths(tmp_path, "epoch")
+    config = Figure4Config()
+    original = compute_figure04_cache_provenance(config, paths)
+    (source_tree / filename).write_text("VALUE = 2\n", encoding="utf-8")
+    changed = compute_figure04_cache_provenance(config, paths)
+    assert changed.fingerprint_sha256 == original.fingerprint_sha256
+    assert changed.diagnostics_fingerprint_sha256 != original.diagnostics_fingerprint_sha256
+
+
 def test_fingerprint_unchanged_when_block_size_changes(tmp_path: Path) -> None:
     # block_size (Figure4ExecutionConfig) is a performance-only knob that leaves
     # the decode result identical, so it must NOT be hashed into the fingerprint:

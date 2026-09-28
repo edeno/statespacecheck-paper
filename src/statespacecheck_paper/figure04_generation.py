@@ -130,7 +130,8 @@ def generate_figure04(*, use_cache: bool = True) -> None:
         When True and a fingerprint-matching cache of decoder outputs exists
         under ``data/intermediates``, load it and skip the expensive fit/decode
         step. When False (``--force-recompute``), always recompute and
-        overwrite the cache. A config / data / ``non_local_detector`` change
+        overwrite the cache. A config / data / fitting implementation /
+        ``non_local_detector`` change
         invalidates the cache automatically. Fitting + decoding both models
         takes several minutes; figure-only edits (styling, thresholds) reuse
         the cache.

@@ -485,9 +485,9 @@ def prepare_figure04_render_data(
     ``DATA_PATH`` / ``ANIMAL_DATE_EPOCH``), so it is exercisable with synthetic
     inputs and a temporary cache directory. The decode cache is keyed on the
     decode fingerprint of :func:`compute_figure04_cache_provenance` (a decoder
-    config / data / ``non_local_detector`` change refits); the diagnostics cache
-    is keyed on that fingerprint plus the diagnostics fingerprint (a diagnostic
-    configuration or implementation change recomputes only the diagnostics
+    config / data / fitting implementation / ``non_local_detector`` change refits).
+    The diagnostics cache is keyed on that fingerprint plus the diagnostics
+    fingerprint (a configuration or diagnostic-only module change recomputes only the diagnostics
     from the cached predictions). The recording is always loaded fresh (it is
     cheap and never cached).
 
@@ -521,7 +521,8 @@ def prepare_figure04_render_data(
         if decode_payload is None:
             print(
                 "  No matching decode cache (absent, unreadable, or fingerprint mismatch "
-                "from a config / data / non_local_detector change); refitting."
+                "from a config / data / fitting implementation / non_local_detector change); "
+                "refitting."
             )
     if decode_payload is None:
         decode_payload = _fit_and_decode(
