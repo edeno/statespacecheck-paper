@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import dataclasses
 import hashlib
+import os
 import shutil
 import urllib.request
 import uuid
@@ -391,6 +392,16 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _keep_existing(output: Path, sha256: str) -> Path:
+    """Return ``output`` if it is the verified file; otherwise refuse to replace it."""
+    if _sha256(output) != sha256:
+        raise FileExistsError(
+            f"{output} exists with a different SHA-256 than the published file; "
+            "move it aside to download the published one"
+        )
+    return output
+
+
 def download_figure04_inputs(
     data_path: str | Path,
     *,
@@ -419,7 +430,8 @@ def download_figure04_inputs(
     Raises
     ------
     FileExistsError
-        If a different file (another SHA-256) already has that name.
+        If a different file (another SHA-256) has that name, before or after
+        the download.
     ValueError
         If the downloaded file's SHA-256 does not match.
     OSError
@@ -431,12 +443,7 @@ def download_figure04_inputs(
     data_path = Path(data_path)
     output = data_path / FIGURE04_INPUTS_FILE
     if output.exists():
-        if _sha256(output) == sha256:
-            return output
-        raise FileExistsError(
-            f"{output} exists with a different SHA-256 than the published file; "
-            "move it aside to download the published one"
-        )
+        return _keep_existing(output, sha256)
     data_path.mkdir(parents=True, exist_ok=True)
     # A unique name opened with "xb" gets the default file mode (tempfile's are
     # owner-only). It is removed only after it is closed: Windows cannot delete
@@ -456,10 +463,14 @@ def download_figure04_inputs(
             raise ValueError(
                 f"File downloaded from {url} has SHA-256 {downloaded}; expected {sha256}"
             )
-        partial.replace(output)
-    except BaseException:
+        # A hard link publishes the file atomically and, unlike a rename, refuses
+        # a file that appeared under that name during the download.
+        try:
+            os.link(partial, output)
+        except FileExistsError:
+            return _keep_existing(output, sha256)
+    finally:
         partial.unlink(missing_ok=True)
-        raise
     return output
 
 

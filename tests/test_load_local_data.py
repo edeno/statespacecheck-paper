@@ -403,6 +403,37 @@ def test_existing_different_file_is_not_overwritten(
     assert existing.read_bytes() == b"something else"
 
 
+@pytest.mark.parametrize(
+    ("appearing", "kept"), [(b"figure 4 inputs", True), (b"something else", False)]
+)
+def test_file_appearing_during_the_download_is_not_overwritten(
+    tmp_path: Path,
+    published_copy: tuple[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+    appearing: bytes,
+    kept: bool,
+) -> None:
+    """Another writer's file is kept if it is the verified one, else refused, never replaced."""
+    url, sha256 = published_copy
+    data = tmp_path / "data"
+    data.mkdir()
+    output = data / FIGURE04_INPUTS_FILE
+    copy = shutil.copyfileobj
+
+    def copy_while_another_writer_saves(source: BinaryIO, destination: BinaryIO) -> None:
+        output.write_bytes(appearing)
+        copy(source, destination)
+
+    monkeypatch.setattr(shutil, "copyfileobj", copy_while_another_writer_saves)
+    if kept:
+        assert download_figure04_inputs(data, url=url, sha256=sha256) == output
+    else:
+        with pytest.raises(FileExistsError, match="different SHA-256"):
+            download_figure04_inputs(data, url=url, sha256=sha256)
+    assert output.read_bytes() == appearing
+    assert list(data.iterdir()) == [output]
+
+
 @pytest.mark.parametrize("given", [True, False])
 def test_download_script_saves_into_the_data_path(
     tmp_path: Path,
