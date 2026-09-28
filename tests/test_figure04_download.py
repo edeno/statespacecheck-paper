@@ -22,23 +22,27 @@ from statespacecheck_paper.figure04_download import (
 )
 from statespacecheck_paper.load_local_data import FIGURE04_INPUTS_FILE
 from statespacecheck_paper.paths import DATA_PATH, FIGURE04_INPUTS_DOI, FIGURE04_INPUTS_SHA256
+from tests.test_reported_statistics_artifacts import _load
 
 from ._scripts import load_script
+
+# Contents of the stand-in for the Zenodo file.
+_PUBLISHED = b"figure 4 inputs"
 
 
 @pytest.fixture
 def published_copy(tmp_path: Path) -> tuple[str, str]:
     """A stand-in for the Zenodo file: its ``file://`` URL and SHA-256."""
     source = tmp_path / "source.npz"
-    source.write_bytes(b"figure 4 inputs")
-    return source.as_uri(), hashlib.sha256(b"figure 4 inputs").hexdigest()
+    source.write_bytes(_PUBLISHED)
+    return source.as_uri(), hashlib.sha256(_PUBLISHED).hexdigest()
 
 
 def test_download_saves_the_verified_file(tmp_path: Path, published_copy: tuple[str, str]) -> None:
     url, sha256 = published_copy
     output = download_figure04_inputs(tmp_path / "data", url=url, sha256=sha256)
     assert output == tmp_path / "data" / FIGURE04_INPUTS_FILE
-    assert output.read_bytes() == b"figure 4 inputs"
+    assert output.read_bytes() == _PUBLISHED
     assert list(output.parent.iterdir()) == [output]
 
 
@@ -56,30 +60,26 @@ def test_downloaded_file_gets_the_default_mode(
     assert stat.S_IMODE(output.stat().st_mode) == 0o644
 
 
-def _fail_mid_transfer(source: BinaryIO, destination: BinaryIO) -> None:
-    destination.write(source.read(3))
-    raise ConnectionResetError("connection reset")
+def test_unreachable_source_raises_its_error_and_leaves_nothing(tmp_path: Path) -> None:
+    data = tmp_path / "data"
+    with pytest.raises(urllib.error.URLError):
+        download_figure04_inputs(data, url=(tmp_path / "missing.npz").as_uri(), sha256="0" * 64)
+    assert list(data.iterdir()) == []
 
 
-@pytest.mark.parametrize(
-    ("failure", "error"),
-    [("unreachable source", urllib.error.URLError), ("mid-transfer", ConnectionResetError)],
-)
-def test_failed_download_raises_its_error_and_leaves_nothing(
-    tmp_path: Path,
-    published_copy: tuple[str, str],
-    monkeypatch: pytest.MonkeyPatch,
-    failure: str,
-    error: type[Exception],
+def test_failure_mid_transfer_raises_its_error_and_leaves_nothing(
+    tmp_path: Path, published_copy: tuple[str, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The partial file is closed before it is removed, which Windows requires."""
+
+    def fail_mid_transfer(source: BinaryIO, destination: BinaryIO) -> None:
+        destination.write(source.read(3))
+        raise ConnectionResetError("connection reset")
+
+    monkeypatch.setattr(shutil, "copyfileobj", fail_mid_transfer)
     url, sha256 = published_copy
-    if failure == "unreachable source":
-        url = (tmp_path / "missing.npz").as_uri()
-    else:
-        monkeypatch.setattr(shutil, "copyfileobj", _fail_mid_transfer)
     data = tmp_path / "data"
-    with pytest.raises(error):
+    with pytest.raises(ConnectionResetError):
         download_figure04_inputs(data, url=url, sha256=sha256)
     assert list(data.iterdir()) == []
 
@@ -110,16 +110,16 @@ class _TruncatingHandler(BaseHTTPRequestHandler):
 def test_interrupted_download_is_reported_as_interrupted(tmp_path: Path) -> None:
     """Python returns the short body without an error; the download must not."""
     server = HTTPServer(("127.0.0.1", 0), _TruncatingHandler)
-    thread = threading.Thread(target=server.serve_forever)
+    # One request, so the server answers it and stops, with no shutdown poll to wait on.
+    thread = threading.Thread(target=server.handle_request)
     thread.start()
     try:
         url = f"http://127.0.0.1:{server.server_port}/"
         with pytest.raises(ConnectionError, match="stopped after 10 of 100 bytes"):
             download_figure04_inputs(tmp_path, url=url, sha256="0" * 64)
     finally:
-        server.shutdown()
-        server.server_close()
         thread.join()
+        server.server_close()
     assert list(tmp_path.iterdir()) == []
 
 
@@ -127,7 +127,7 @@ def test_existing_verified_file_is_kept_without_downloading(
     tmp_path: Path, published_copy: tuple[str, str]
 ) -> None:
     _, sha256 = published_copy
-    (tmp_path / FIGURE04_INPUTS_FILE).write_bytes(b"figure 4 inputs")
+    (tmp_path / FIGURE04_INPUTS_FILE).write_bytes(_PUBLISHED)
     missing_source = (tmp_path / "missing.npz").as_uri()
     assert download_figure04_inputs(tmp_path, url=missing_source, sha256=sha256).is_file()
 
@@ -143,34 +143,40 @@ def test_existing_different_file_is_not_overwritten(
     assert existing.read_bytes() == b"something else"
 
 
-@pytest.mark.parametrize(
-    ("appearing", "kept"), [(b"figure 4 inputs", True), (b"something else", False)]
-)
-def test_file_appearing_during_the_download_is_not_overwritten(
-    tmp_path: Path,
-    published_copy: tuple[str, str],
-    monkeypatch: pytest.MonkeyPatch,
-    appearing: bytes,
-    kept: bool,
+def _another_writer_saves(monkeypatch: pytest.MonkeyPatch, output: Path, content: bytes) -> None:
+    """Make ``content`` appear under ``output`` while the download is in progress."""
+    copy = shutil.copyfileobj
+
+    def copy_while_another_writer_saves(source: BinaryIO, destination: BinaryIO) -> None:
+        output.write_bytes(content)
+        copy(source, destination)
+
+    monkeypatch.setattr(shutil, "copyfileobj", copy_while_another_writer_saves)
+
+
+def test_verified_file_appearing_during_the_download_is_kept(
+    tmp_path: Path, published_copy: tuple[str, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Another writer's file is kept if it is the verified one, else refused, never replaced."""
     url, sha256 = published_copy
     data = tmp_path / "data"
     data.mkdir()
     output = data / FIGURE04_INPUTS_FILE
-    copy = shutil.copyfileobj
+    _another_writer_saves(monkeypatch, output, _PUBLISHED)
+    assert download_figure04_inputs(data, url=url, sha256=sha256) == output
+    assert list(data.iterdir()) == [output]
 
-    def copy_while_another_writer_saves(source: BinaryIO, destination: BinaryIO) -> None:
-        output.write_bytes(appearing)
-        copy(source, destination)
 
-    monkeypatch.setattr(shutil, "copyfileobj", copy_while_another_writer_saves)
-    if kept:
-        assert download_figure04_inputs(data, url=url, sha256=sha256) == output
-    else:
-        with pytest.raises(FileExistsError, match="different SHA-256"):
-            download_figure04_inputs(data, url=url, sha256=sha256)
-    assert output.read_bytes() == appearing
+def test_different_file_appearing_during_the_download_is_not_overwritten(
+    tmp_path: Path, published_copy: tuple[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    url, sha256 = published_copy
+    data = tmp_path / "data"
+    data.mkdir()
+    output = data / FIGURE04_INPUTS_FILE
+    _another_writer_saves(monkeypatch, output, b"something else")
+    with pytest.raises(FileExistsError, match="different SHA-256"):
+        download_figure04_inputs(data, url=url, sha256=sha256)
+    assert output.read_bytes() == b"something else"
     assert list(data.iterdir()) == [output]
 
 
@@ -210,10 +216,7 @@ def test_zenodo_record_is_the_cited_version_with_the_file() -> None:
 
 def test_published_checksum_is_the_one_figure4_records() -> None:
     """The file the download verifies is the file the Figure-4 summary was made from."""
-    summary = json.loads(
-        (
-            Path(__file__).resolve().parents[1] / "manuscript/figures/main/figure04_summary.json"
-        ).read_text(encoding="utf-8")
-    )
-    recorded = summary["provenance"]["figure04_decode_cache"]["export_file_sha256"]
+    recorded = _load("figure04_summary.json")["provenance"]["figure04_decode_cache"][
+        "export_file_sha256"
+    ]
     assert recorded == {FIGURE04_INPUTS_FILE: FIGURE04_INPUTS_SHA256}

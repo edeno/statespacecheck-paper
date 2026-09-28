@@ -181,6 +181,19 @@ def test_reported_values_imports_no_analysis_module() -> None:
     }
 
 
+def test_no_module_imports_the_download() -> None:
+    """Editing the Zenodo download may be relabeled rather than regenerated
+    (docs/figure-pipeline.md) only while no figure code imports it."""
+    prefix = "statespacecheck_paper."
+    modules = [path.relative_to(_SRC).as_posix() for path in sorted(_SRC.rglob("*.py"))]
+    importers = [
+        module
+        for module in modules
+        if prefix + "figure04_download" in _sibling_module_imports(module)
+    ]
+    assert importers == []
+
+
 def test_site_export_depends_only_on_analysis_layers() -> None:
     """The website export reads the figure pipelines' outputs and the reported
     values; it sits above both figure families and nothing imports it."""

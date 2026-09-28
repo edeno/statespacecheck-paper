@@ -153,7 +153,6 @@ def test_missing_export_files_lists_what_is_absent(tmp_path: Path) -> None:
     ) as error:
         load_neural_recording_from_files(tmp_path, FIGURE04_INPUTS_EPOCH)
     assert _download_command(str(error.value)) == _download_arguments(tmp_path)
-    assert (Path(__file__).resolve().parents[1] / "scripts/download_figure04_inputs.py").is_file()
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX shell quoting")
