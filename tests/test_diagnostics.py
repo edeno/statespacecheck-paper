@@ -222,6 +222,30 @@ class TestDecodingDiagnosticsInvariants:
         kwargs["predictive_pvalue"][0, :] = np.nan
         DecodingDiagnostics(**kwargs)  # does not raise
 
+    @pytest.mark.parametrize(
+        ("field", "bad_value", "message"),
+        [
+            ("event_hpd_overlap", np.nan, "NaN found in a required per-event value"),
+            ("event_predictive_pvalue", 1.5, "values above 1.0"),
+            ("event_kl_divergence", -np.inf, "-inf is not a valid diagnostic value"),
+            ("predictive_pvalue", -0.5, "values below 0.0"),
+        ],
+    )
+    def test_out_of_range_metric_names_the_field(
+        self, field: str, bad_value: float, message: str
+    ) -> None:
+        # The per-event arrays feed the manuscript means, which no longer
+        # re-check them, so these range checks are their only guard.
+        kwargs = self._kwargs()
+        kwargs[field].flat[0] = bad_value
+        with pytest.raises(ValueError, match=rf"DecodingDiagnostics\.{field}: {message}"):
+            DecodingDiagnostics(**kwargs)
+
+    def test_infinite_event_kl_divergence_is_allowed(self) -> None:
+        kwargs = self._kwargs()
+        kwargs["event_kl_divergence"][0] = np.inf
+        DecodingDiagnostics(**kwargs)  # does not raise
+
 
 class TestSpikeEventDiagnosticsInvariants:
     """All-or-nothing on the dense matrices is the load-bearing

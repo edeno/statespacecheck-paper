@@ -8,12 +8,14 @@ from unittest.mock import MagicMock
 import numpy as np
 import pandas as pd
 import pytest
+import xarray as xr
 
 from statespacecheck_paper.figure04_place_fields import (
     extract_agreed_place_fields,
     extract_place_fields,
     extract_shared_position_place_fields,
     get_state_marginalized_posterior,
+    marginalize_state_bins,
 )
 
 from ._decoder_inputs import xarray_results
@@ -196,3 +198,56 @@ class TestExtractAgreedPlaceFields:
                 _single_state_model(place_fields, position_bins),
                 _single_state_model(place_fields + 1.0, position_bins),
             )
+
+
+def _state_bins_da(values: np.ndarray, index: pd.MultiIndex | np.ndarray) -> xr.DataArray:
+    return xr.DataArray(
+        values,
+        dims=["time", "state_bins"],
+        coords={"time": np.arange(values.shape[0]), "state_bins": index},
+    )
+
+
+class TestMarginalizeStateBins:
+    def test_position_missing_from_one_state_stays_nan(self) -> None:
+        # skipna=False: a position NaN in one state must not become that
+        # state's partial sum labeled as the marginal.
+        values = np.ones((2, 6))
+        values[:, 0] = np.nan  # state A, position 0
+        index = pd.MultiIndex.from_product(
+            [["A", "B"], [0.0, 1.0, 2.0]], names=["state", "position"]
+        )
+        marginal = marginalize_state_bins(_state_bins_da(values, index))
+        assert marginal.dims == ("time", "position")
+        np.testing.assert_array_equal(marginal.values, [[np.nan, 2.0, 2.0]] * 2)
+
+    def test_single_state_index_is_returned_unchanged(self) -> None:
+        da = _state_bins_da(np.ones((2, 3)), np.arange(3))
+        assert marginalize_state_bins(da) is da
+
+    def test_index_without_a_state_level_is_only_unstacked(self) -> None:
+        index = pd.MultiIndex.from_product([[0.0, 1.0, 2.0]], names=["position"])
+        values = np.arange(6.0).reshape(2, 3)
+        marginal = marginalize_state_bins(_state_bins_da(values, index))
+        assert marginal.dims == ("time", "position")
+        np.testing.assert_array_equal(marginal.values, values)
+
+
+class TestExtractAgreedPlaceFieldsEdges:
+    def test_rejects_models_whose_grids_differ(self) -> None:
+        place_fields = np.array([[1.0, 2.0, 3.0]])
+        position_bins = np.array([0.0, 1.0, 2.0])
+        with pytest.raises(ValueError, match="place fields or position grids differ"):
+            extract_agreed_place_fields(
+                _single_state_model(place_fields, position_bins),
+                _single_state_model(place_fields, position_bins + 1.0),
+            )
+
+    def test_matching_nan_fields_agree(self) -> None:
+        place_fields = np.array([[np.nan, 2.0, 3.0]])
+        position_bins = np.array([0.0, 1.0, 2.0])
+        fields, _ = extract_agreed_place_fields(
+            _single_state_model(place_fields, position_bins),
+            _single_state_model(place_fields.copy(), position_bins),
+        )
+        np.testing.assert_array_equal(fields, [[np.nan, 2.0]])

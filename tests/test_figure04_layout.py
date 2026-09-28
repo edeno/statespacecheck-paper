@@ -216,3 +216,32 @@ def test_compose_figure04_produces_panels_and_finite_bbox() -> None:
     import matplotlib.pyplot as plt
 
     plt.close(result.figure)
+
+
+def test_compose_figure04_labels_rows_once_across_the_two_stacks() -> None:
+    """Panel (a) carries the row labels, panel (b) the right-edge threshold and
+    worse-fit labels (which the track inset aligns to); neither repeats them."""
+    import matplotlib.pyplot as plt
+
+    from statespacecheck_paper.figure04_layout import FIGURE4_DIAGNOSTIC_ANNOTATION_GIDS
+    from statespacecheck_paper.plotting import THRESHOLD_LABEL_GID, WORSE_FIT_LABEL_GID
+
+    result = compose_figure04(
+        _compose_render_data(),
+        diagnostic_thresholds={"hpd_overlap": 0.05, "predictive_pvalue": 0.05},
+        detail_window=Figure4DetailWindow(center_index=20, half_width_samples=10),
+    )
+    axes_a, axes_b = result.figure.axes[:6], result.figure.axes[6:12]
+
+    assert axes_a[3].get_ylabel() == "HPD\noverlap"
+    assert all(ax.get_ylabel() == "" for ax in axes_b)
+    assert not any(
+        text.get_gid() in FIGURE4_DIAGNOSTIC_ANNOTATION_GIDS for ax in axes_a for text in ax.texts
+    )
+    gids_b = [[text.get_gid() for text in ax.texts] for ax in axes_b[3:]]
+    assert gids_b == [
+        [THRESHOLD_LABEL_GID, WORSE_FIT_LABEL_GID],
+        [THRESHOLD_LABEL_GID, WORSE_FIT_LABEL_GID],
+        [WORSE_FIT_LABEL_GID],  # KL divergence has no threshold here
+    ]
+    plt.close(result.figure)

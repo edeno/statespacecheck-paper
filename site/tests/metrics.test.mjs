@@ -10,6 +10,7 @@ import { test } from "node:test";
 import {
   gaussianPredictive,
   isFlagged,
+  normalized,
   spikeDiagnostics,
 } from "../js/metrics.js";
 
@@ -66,4 +67,12 @@ test("flag rules are inclusive", () => {
   assert.equal(isFlagged(0.06, { comparison: "less_than_or_equal", threshold: 0.05 }), false);
   assert.equal(isFlagged(4, { comparison: "greater_than_or_equal", threshold: 4 }), true);
   assert.throws(() => isFlagged(1, { comparison: "equal", threshold: 1 }));
+});
+
+test("normalized scales decoded uint8 rows without truncating them", () => {
+  // The players pass Uint8Array display rows; mapping one in place would
+  // truncate every fraction to 0.
+  assert.deepEqual(normalized(new Uint8Array([1, 3])), [0.25, 0.75]);
+  assert.deepEqual(normalized(new Uint8Array([0, 0])), [0, 0]);
+  assert.deepEqual(normalized([NaN, 1]), [0, 1]);
 });
