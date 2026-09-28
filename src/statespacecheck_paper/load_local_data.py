@@ -20,7 +20,9 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import os
+import shlex
 import shutil
+import subprocess
 import urllib.request
 import uuid
 import zipfile
@@ -317,12 +319,17 @@ def write_npz(path: str | Path, arrays: Mapping[str, NDArray[np.generic]]) -> Pa
 
 
 def _download_hint(data_path: Path, animal_date_epoch: str) -> str:
-    """Return a clause giving the download command for the published epoch, else ``""``."""
+    """Return a clause giving the download command for the published epoch, else ``""``.
+
+    The directory is quoted for the platform's shell, so the command can be
+    pasted as is when the path has spaces.
+    """
     if f"{animal_date_epoch}{_INPUTS_SUFFIX}" != FIGURE04_INPUTS_FILE:
         return ""
+    quote = subprocess.list2cmdline if os.name == "nt" else shlex.join
     return (
         "download it from Zenodo with `uv run python scripts/download_figure04_inputs.py "
-        f"--data-path {data_path}`, or "
+        f"--data-path {quote([str(data_path)])}`, or "
     )
 
 

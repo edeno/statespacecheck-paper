@@ -7,6 +7,7 @@ import json
 import os
 import pickle
 import re
+import shlex
 import shutil
 import stat
 import threading
@@ -134,10 +135,21 @@ def test_spike_arrays_are_copied_and_leave_caller_writable() -> None:
 _PUBLISHED_EPOCH = FIGURE04_INPUTS_FILE.removesuffix("_figure04_inputs.npz")
 
 
-def _download_command(message: str) -> str | None:
-    """The download command a missing-data error suggests, if any."""
-    match = re.search(r"`uv run python (scripts/\S+\.py) --data-path (.+?)`", message)
-    return None if match is None else f"{match[1]} {match[2]}"
+def _download_command(message: str) -> list[str] | None:
+    """The arguments of the download command a missing-data error suggests, if any."""
+    match = re.search(r"`(uv run python scripts/.+?)`", message)
+    return None if match is None else shlex.split(match[1], posix=os.name != "nt")
+
+
+def _download_arguments(data_path: Path) -> list[str]:
+    return [
+        "uv",
+        "run",
+        "python",
+        "scripts/download_figure04_inputs.py",
+        "--data-path",
+        str(data_path),
+    ]
 
 
 def test_missing_directory_raises_actionable_error(tmp_path: Path) -> None:
@@ -146,7 +158,7 @@ def test_missing_directory_raises_actionable_error(tmp_path: Path) -> None:
     data = tmp_path / "does_not_exist"
     with pytest.raises(FileNotFoundError, match="Data directory not found") as error:
         load_neural_recording_from_files(data, _PUBLISHED_EPOCH)
-    assert _download_command(str(error.value)) == f"scripts/download_figure04_inputs.py {data}"
+    assert _download_command(str(error.value)) == _download_arguments(data)
 
 
 def test_missing_export_files_lists_what_is_absent(tmp_path: Path) -> None:
@@ -156,9 +168,17 @@ def test_missing_export_files_lists_what_is_absent(tmp_path: Path) -> None:
         FileNotFoundError, match="Missing 1 expected export file.*_figure04_inputs.npz"
     ) as error:
         load_neural_recording_from_files(tmp_path, _PUBLISHED_EPOCH)
-    command = _download_command(str(error.value))
-    assert command == f"scripts/download_figure04_inputs.py {tmp_path}"
-    assert (Path(__file__).resolve().parents[1] / command.split()[0]).is_file()
+    assert _download_command(str(error.value)) == _download_arguments(tmp_path)
+    assert (Path(__file__).resolve().parents[1] / "scripts/download_figure04_inputs.py").is_file()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX shell quoting")
+def test_suggested_download_command_quotes_a_path_with_spaces(tmp_path: Path) -> None:
+    """The command can be pasted into a shell as is."""
+    data = tmp_path / "data set"
+    with pytest.raises(FileNotFoundError) as error:
+        load_neural_recording_from_files(data, _PUBLISHED_EPOCH)
+    assert _download_command(str(error.value)) == _download_arguments(data)
 
 
 @pytest.mark.parametrize("directory_exists", [True, False])
