@@ -8,8 +8,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
+from statespacecheck_paper.figure01_generation import create_distribution_comparison_panel
 from statespacecheck_paper.plotting import (
-    create_distribution_comparison_panel,
     extract_contiguous_regions,
     negative_log_pvalue,
 )
