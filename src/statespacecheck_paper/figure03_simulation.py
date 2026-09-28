@@ -457,6 +457,68 @@ def build_sparse_population(
     return sparse_cell_spikes, sparse_centers
 
 
+def _place_field_rate_blocks(
+    position_bins: NDArray[np.floating],
+    place_field_centers: NDArray[np.floating],
+    sparse_centers: NDArray[np.floating],
+    config: Figure3Config,
+) -> tuple[NDArray[np.floating], NDArray[np.floating]]:
+    """Return the ordinary and the full-gain sparse-population rate blocks.
+
+    Returns
+    -------
+    normal_rates : np.ndarray, shape (n_bins, n_normal_cells)
+        Ordinary place fields at ``place_field_rate_scale``.
+    sparse_cell_rates : np.ndarray, shape (n_bins, sparse_cell_count)
+        Sparse-population fields at their full (in-window) peak rate.
+    """
+    normal_rates = place_field_rates(
+        position_bins, place_field_centers, config.place_field_std, config.place_field_rate_scale
+    )
+    sparse_cell_scale = peak_rate_to_place_field_scale(
+        config.sparse_cell_peak_rate_per_step, config.sparse_place_field_std
+    )
+    sparse_cell_rates = place_field_rates(
+        position_bins,
+        sparse_centers,
+        config.sparse_place_field_std,
+        sparse_cell_scale,
+    )
+    return normal_rates, sparse_cell_rates
+
+
+def all_place_field_rates(
+    config: Figure3Config,
+    position_bins: NDArray[np.floating],
+    sparse_centers: NDArray[np.floating] | tuple[float, ...],
+) -> NDArray[np.floating]:
+    """Place fields of every decoded cell at full gain, shape (n_bins, n_cells).
+
+    The ordinary cells at ``place_field_rate_scale``, then the sparse
+    population at its full peak rate: the cell order of
+    :func:`all_place_field_centers`.
+
+    Parameters
+    ----------
+    config : Figure3Config
+        Supplies ``place_field_centers`` and the field widths and gains.
+    position_bins : np.ndarray, shape (n_bins,)
+        Position grid.
+    sparse_centers : array-like, shape (sparse_cell_count,)
+        ``Figure3SimulationResult.sparse_place_field_centers``.
+    """
+    if config.place_field_centers is None:
+        raise ValueError("config.place_field_centers must be initialized")
+    return np.hstack(
+        _place_field_rate_blocks(
+            position_bins,
+            config.place_field_centers,
+            np.asarray(sparse_centers, dtype=np.float64),
+            config,
+        )
+    )
+
+
 def build_figure03_rate_tables(
     position_bins: NDArray[np.floating],
     place_field_centers: NDArray[np.floating],
@@ -478,17 +540,8 @@ def build_figure03_rate_tables(
     - Sparse population: the decoder uses the correctly scaled quiet
       ensemble and active sparse-population rates.
     """
-    normal_rates = place_field_rates(
-        position_bins, place_field_centers, config.place_field_std, config.place_field_rate_scale
-    )
-    sparse_cell_scale = peak_rate_to_place_field_scale(
-        config.sparse_cell_peak_rate_per_step, config.sparse_place_field_std
-    )
-    sparse_cell_rates = place_field_rates(
-        position_bins,
-        sparse_centers,
-        config.sparse_place_field_std,
-        sparse_cell_scale,
+    normal_rates, sparse_cell_rates = _place_field_rate_blocks(
+        position_bins, place_field_centers, sparse_centers, config
     )
     baseline_sparse_firing_rates = config.sparse_cell_baseline_rate_fraction * sparse_cell_rates
     baseline_firing_rates = np.hstack([normal_rates, baseline_sparse_firing_rates])

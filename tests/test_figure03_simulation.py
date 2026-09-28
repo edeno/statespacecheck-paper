@@ -9,6 +9,9 @@ from statespacecheck_paper.diagnostics import DecodingDiagnostics
 from statespacecheck_paper.figure03_protocol import Figure3Config
 from statespacecheck_paper.figure03_simulation import (
     Figure3SimulationResult,
+    all_place_field_centers,
+    all_place_field_rates,
+    build_figure03_rate_tables,
     remap_place_field_centers,
 )
 
@@ -82,6 +85,29 @@ class TestRemapPlaceFieldCenters:
             active=True,
         )
         np.testing.assert_array_equal(result, params.place_field_centers[mapping[:, 1]])
+
+
+def test_all_place_field_rates_match_decoder_tables_and_center_order() -> None:
+    """The full-gain table is the decoder's ordinary baseline block followed by
+    its in-window sparse-population block, one column per cell center."""
+    config = Figure3Config()
+    assert config.place_field_centers is not None
+    sparse_centers = (40.0, 42.0, 44.0)
+    n_normal = config.place_field_centers.size
+
+    rates = all_place_field_rates(config, config.position_bins, sparse_centers)
+
+    tables = build_figure03_rate_tables(
+        config.position_bins, config.place_field_centers, np.asarray(sparse_centers), config
+    )
+    assert rates.shape == (
+        config.position_bins.size,
+        all_place_field_centers(config, sparse_centers).size,
+    )
+    np.testing.assert_array_equal(rates[:, :n_normal], tables.baseline_firing_rates[:, :n_normal])
+    np.testing.assert_array_equal(
+        rates[:, n_normal:], tables.sparse_population_firing_rates[:, n_normal:]
+    )
 
 
 class TestFigure3SimulationResultDataclass:

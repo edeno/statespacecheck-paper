@@ -467,16 +467,6 @@ def build_figure04_viewer_cache(
 # Simulated-dataset cache builder
 # ---------------------------------------------------------------------------
 
-# 1 sample = ``_SIMULATED_DT`` seconds when written to the simulation
-# meta sidecar. The figure-3 simulation is dt-agnostic (each time index is
-# one decoder step), but the manuscript and ``Figure3Config`` fix the step at
-# 1 ms by convention: main.tex calibrates 0.20 spikes/step as ~200 Hz and
-# ``Figure3Config`` sizes 0.001 spikes/step as 1 Hz, both of which hold only at
-# 1 ms/step. Use the same 1 ms here so the viewer's time axis, event times, and
-# window-width slider match the manuscript timebase. (The figure-4 real-data
-# cache is a genuinely different 2 ms / 500 Hz cadence and is unaffected.)
-_SIMULATED_DT = 0.001
-
 
 def build_simulated_cache(
     cache_dir: Path,
@@ -532,12 +522,11 @@ def build_simulated_cache(
     """
     # Imported here so the cache module doesn't pull simulation
     # machinery on every figure-4 cache build.
+    from statespacecheck_paper.figure03_protocol import STEP_SECONDS  # noqa: PLC0415
     from statespacecheck_paper.figure03_simulation import (  # noqa: PLC0415
+        all_place_field_centers,
+        all_place_field_rates,
         run_figure03_simulation,
-    )
-    from statespacecheck_paper.simulation import (  # noqa: PLC0415
-        peak_rate_to_place_field_scale,
-        place_field_rates,
     )
 
     cache_dir = Path(cache_dir)
@@ -559,14 +548,15 @@ def build_simulated_cache(
     n_cells = int(spikes.shape[1])
     # The simulation appends a narrow sparse-population of cells; include them
     # in the cache's cell set and sort them at their fixed field centers.
-    pf_centers = np.asarray(params_used.place_field_centers, dtype=np.float64)
-    pf_centers_full = np.append(
-        pf_centers, np.asarray(sim.sparse_place_field_centers, dtype=np.float64)
-    )
+    pf_centers_full = all_place_field_centers(params_used, sim.sparse_place_field_centers)
     if pf_centers_full.shape[0] != n_cells:
         raise ValueError(f"pf_centers length {pf_centers_full.shape[0]} != n_cells={n_cells}")
 
-    time_arr = (np.arange(n_time, dtype=np.float64) * _SIMULATED_DT).astype(np.float64)
+    # The Figure-3 simulation is dt-agnostic (each time index is one decoder
+    # step); write it on the manuscript's 1 ms/step timebase so the viewer's
+    # time axis, event times, and window-width slider match. (The figure-4
+    # real-data cache is a genuinely different 2 ms / 500 Hz cadence.)
+    time_arr = (np.arange(n_time, dtype=np.float64) * STEP_SECONDS).astype(np.float64)
 
     # log_likelihood: true log space. ``metrics["likelihood"]`` is a
     # normalized linear distribution per row; we take ``log`` directly
@@ -629,21 +619,11 @@ def build_simulated_cache(
     events_df.to_parquet(paths["events"], engine="pyarrow", compression="zstd")
 
     # Place-fields sidecar. The 11 normal cells (shared width) plus the narrow
-    # sparse-population cells (their own width and peak rate). ``place_field_rates``
+    # sparse-population cells (their own width and peak rate). ``all_place_field_rates``
     # returns ``(n_bins, n_cells)``; the viewer expects ``(n_cells, n_bins)``.
-    normal_rates = place_field_rates(
-        xs, pf_centers, params_used.place_field_std, params_used.place_field_rate_scale
+    rates = np.asarray(
+        all_place_field_rates(params_used, xs, sim.sparse_place_field_centers), dtype=np.float64
     )
-    sparse_cell_scale = peak_rate_to_place_field_scale(
-        params_used.sparse_cell_peak_rate_per_step, params_used.sparse_place_field_std
-    )
-    sparse_rates = place_field_rates(
-        xs,
-        np.asarray(sim.sparse_place_field_centers, dtype=np.float64),
-        params_used.sparse_place_field_std,
-        sparse_cell_scale,
-    )
-    rates = np.asarray(np.hstack([normal_rates, sparse_rates]), dtype=np.float64)
     place_fields = rates.T  # (n_cells, n_bins)
     interior_mask = np.ones(n_bins, dtype=bool)
     _write_place_fields(
