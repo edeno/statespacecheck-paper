@@ -311,9 +311,11 @@ $\Lambda(x)$.
   `spyglass_data.py` rebuilds the input file from the database
   (`scripts/fetch_figure04_inputs.py`, read-only) and logs them in a Spyglass
   export (`scripts/spyglass_export_figure04.py`); both run on a lab server with
-  Spyglass and database access. Place the input file under `data/` (or set
-  `STATESPACECHECK_DATA_PATH`). The expensive decode
-  is cached under `data/intermediates/` as two joblib bundles: the ~19 GB decode
+  Spyglass and database access. The input file is archived on Zenodo
+  ([10.5281/zenodo.23020757](https://doi.org/10.5281/zenodo.23020757));
+  `scripts/download_figure04_inputs.py` downloads it and checks its SHA-256.
+  It downloads into `data/` by default; to use another directory, set
+  `STATESPACECHECK_DATA_PATH` (or pass `--data-path`). The expensive decode is cached under `data/intermediates/` as two joblib bundles: the ~19 GB decode
   bundle `{epoch}_fig4_cache.joblib` (memory-mapped on load) and the diagnostics
   bundle `{epoch}_fig4_diagnostics.joblib`, each gated by the fingerprints
   described above. Writes go to a temporary sibling and are renamed into place,

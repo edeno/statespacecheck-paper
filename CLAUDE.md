@@ -54,6 +54,9 @@ Key modules and the rationale that the source alone won't tell you:
 - **load_local_data.py** — `load_neural_recording_from_files` → validated
   `NeuralRecordingData`; loads the pre-exported `{epoch}_figure04_inputs.npz` (plain
   arrays, no pickle; layout in `recording_arrays`), no Spyglass DB needed.
+  `download_figure04_inputs` fetches that file from its Zenodo record and saves it
+  only if its SHA-256 matches `FIGURE04_INPUTS_SHA256`, which a test pins to the
+  Figure-4 summary; the record's DOI is the manuscript's `\RecordingInputsDOI`.
 - **spyglass_data.py** — rebuilds that file from the lab's Spyglass database
   (optional `spyglass` extra), logs it in a Spyglass export, and computes the
   Figure-4 diagnostics from decodes stored elsewhere

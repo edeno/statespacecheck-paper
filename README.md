@@ -70,10 +70,10 @@ order/spacing), not the raw NWB files. It is archived on Zenodo
 it and verify its SHA-256 with
 
 ```bash
-uv run python scripts/download_figure04_inputs.py  # saves data/j1620210710_02_r1_figure04_inputs.npz
+uv run python scripts/download_figure04_inputs.py  # into data/ (or STATESPACECHECK_DATA_PATH, or --data-path)
 ```
 
-It comes from the Frank-lab Spyglass database;
+The file comes from the Frank-lab Spyglass database;
 [docs/data-lineage.md](docs/data-lineage.md) records the exact entries, how they
 were verified, and which of them are public. The raw recording is on the DANDI
 Archive as dandiset [001942](https://dandiarchive.org/dandiset/001942). On a lab
@@ -382,7 +382,7 @@ uv run ruff format . && uv run ruff check . && uv run mypy src/ && uv run pytest
 - **`figure04_{cache,workflow,layout,generation}.py`**: Figure-4 cache, analysis workflow, composition, and generation recipe
 - **`reported_values.py`**: Summary-to-LaTeX macro generation and the manuscript's reporting policy
 - **`site_export.py`**: Data files for the project website (playground, simulation and replay players, parity fixture)
-- **`load_local_data.py`**: Real data loading utilities
+- **`load_local_data.py`**: Real data loading utilities, and the Zenodo download of the Figure-4 input
 - **`spyglass_data.py`**: Rebuilds the Figure-4 input file from Spyglass, logs it in a Spyglass export, and computes the Figure-4 diagnostics from stored decodes (optional `spyglass` extra; not used by figure generation)
 - **`spyglass_pipeline.py`**: The Figure-4 decode and diagnostics as a Spyglass pipeline; connects to the lab database on import (see [docs/spyglass-pipeline.md](docs/spyglass-pipeline.md))
 - **`paths.py`**: Shared `DATA_PATH` / `ANIMAL_DATE_EPOCH` constants (env-overridable)

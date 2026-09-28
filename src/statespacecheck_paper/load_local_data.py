@@ -10,7 +10,9 @@ numeric and string arrays (read with ``allow_pickle=False``, so loading runs no
 code and does not depend on library internals), written deterministically so
 the same content always has the same SHA-256. :func:`read_legacy_pickle_exports`
 reads the five pickles the recording was first exported as, so they can be
-converted and checked.
+converted and checked. :func:`download_figure04_inputs` fetches the published
+file from Zenodo (the one network access here) and saves it only if its SHA-256
+matches.
 """
 
 from __future__ import annotations
