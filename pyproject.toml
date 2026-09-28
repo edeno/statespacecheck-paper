@@ -119,7 +119,6 @@ module = [
     "datajoint.*",
     "spyglass.*",
     "track_linearization.*",
-    "statespacecheck.*",
     "joblib.*",
     "xarray.*",
     "non_local_detector.*",
