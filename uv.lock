@@ -5306,7 +5306,7 @@ wheels = [
 
 [[package]]
 name = "statespacecheck"
-version = "0.2.0"
+version = "0.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "matplotlib" },
@@ -5315,9 +5315,9 @@ dependencies = [
     { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "scipy", version = "1.16.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ee/f7/a71e0897c5c2ddc0d47c369a471d3ed64307943b1a51e1558119e14d167f/statespacecheck-0.2.0.tar.gz", hash = "sha256:4917ecea64076bb7593aafea5b820e7383b8e7f0f5f55d5b1d948a34ce3e7f5d", size = 2327971, upload-time = "2026-09-25T21:54:49.186Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/75/3b/49133a2515c7b695decf78dc2455f615a9c622a03f5af25b6b68b0cb4774/statespacecheck-0.3.0.tar.gz", hash = "sha256:7e32827a29e3659e2c46f9fc376aecfb5293971fc5d798204d332ecc85f9ba36", size = 3086457, upload-time = "2026-09-27T16:32:43.913Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b5/df/20a4e9476cdc3e96fa8407570e51b3599db3081254efc6c41fbe9ab410a3/statespacecheck-0.2.0-py3-none-any.whl", hash = "sha256:754727d683f8dfd14c0a7085ad0fd62ac32ea3f7276ba03abdeb41a2df1f98fc", size = 34627, upload-time = "2026-09-25T21:54:47.785Z" },
+    { url = "https://files.pythonhosted.org/packages/ca/25/487b18348d183328d80be92132566ac79316f702884fe1140338c7b4c84a/statespacecheck-0.3.0-py3-none-any.whl", hash = "sha256:a2a894837c283a58057e3c297f8466180a5ab25c0ac63467318472eb26847575", size = 58306, upload-time = "2026-09-27T16:32:42.315Z" },
 ]
 
 [[package]]
@@ -5381,7 +5381,7 @@ requires-dist = [
     { name = "scipy", specifier = ">=1.11.0" },
     { name = "seaborn", specifier = ">=0.13.0" },
     { name = "spyglass-neuro", marker = "extra == 'spyglass'" },
-    { name = "statespacecheck", specifier = ">=0.2.0" },
+    { name = "statespacecheck", specifier = ">=0.3.0" },
     { name = "track-linearization", marker = "extra == 'spyglass'" },
     { name = "zarr", marker = "extra == 'interactive'", specifier = ">=2.16,<3" },
 ]
