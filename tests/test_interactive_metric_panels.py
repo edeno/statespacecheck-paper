@@ -171,7 +171,7 @@ def test_pin_markers_visible_after_click(tmp_path: Path) -> None:
         for panel in viewer.metric_panels.values():
             assert panel._pin_line.isVisible()  # noqa: SLF001
             assert panel._pin_dot.isVisible()  # noqa: SLF001
-        assert viewer.slice_panel.is_pin_displayed()
+        assert viewer.slice_panel._annotation.text()  # noqa: SLF001
     finally:
         viewer.close()
         ds.close()

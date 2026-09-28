@@ -1226,7 +1226,3 @@ class SlicePanel(QtWidgets.QWidget):
             return
         self._annotation.setText(f"Pinned: {annotation}")
         self._annotation.setVisible(True)
-
-    def is_pin_displayed(self) -> bool:
-        """Return whether a pinned-event annotation is currently shown."""
-        return bool(self._annotation.text())

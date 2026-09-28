@@ -68,7 +68,6 @@ RESET_WINDOW_SECONDS = 20.0
 
 # Auto-scroll defaults.
 AUTOSCROLL_TICK_HZ = 30.0
-AUTOSCROLL_RATE_REALTIME = 1.0  # 1 second of session per second of wall time
 AUTOSCROLL_SPEED_OPTIONS: tuple[float, ...] = (0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0)
 # Startup default. Real-time playback is so fast that the slice panel
 # barely registers; 0.05× is slow enough to actually watch the
