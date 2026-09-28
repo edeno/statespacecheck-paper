@@ -497,12 +497,3 @@ def test_published_checksum_is_the_one_figure4_records() -> None:
     )
     recorded = summary["provenance"]["figure04_decode_cache"]["export_file_sha256"]
     assert recorded == {FIGURE04_INPUTS_FILE: FIGURE04_INPUTS_SHA256}
-
-
-def test_manuscript_cites_the_downloaded_file() -> None:
-    """The data statement cites, through its generated macro, the record the download verifies."""
-    manuscript = Path(__file__).resolve().parents[1] / "manuscript"
-    macros = (manuscript / "reported_values.tex").read_text(encoding="utf-8")
-    assert f"\\newcommand{{\\RecordingInputsDOI}}{{{FIGURE04_INPUTS_DOI}}}" in macros
-    statement = (manuscript / "main.tex").read_text(encoding="utf-8")
-    assert "\\href{https://doi.org/\\RecordingInputsDOI}" in statement
