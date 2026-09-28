@@ -399,11 +399,10 @@ def plot_spike_event_diagnostic_scatter(
 
     if show_xlabel:
         ax.set_xlabel("Time (s)", labelpad=7)
-        ax.tick_params(labelsize=8)
     else:
-        ax.tick_params(labelsize=8, labelbottom=False)
+        ax.tick_params(labelbottom=False)
     if metric_name == "hpd_overlap":
-        ax.tick_params(axis="y", labelsize=8, pad=1)
+        ax.tick_params(axis="y", pad=1)
 
     return ax
 
@@ -432,10 +431,10 @@ def _draw_predictive_heatmap_row(
         show_position=True,
         cmap=CMAP_POSTERIOR,
     )
-    ax.set_title(title, fontsize=8)
+    ax.set_title(title)
     ax.set_ylabel(ylabel, labelpad=7)
     ax.set_xlabel("")
-    ax.tick_params(labelsize=8, labelbottom=False)
+    ax.tick_params(labelbottom=False)
 
 
 def _draw_place_field_likelihood_image(
@@ -601,7 +600,7 @@ def plot_single_model_diagnostics(
     )
     ax_lik.set_ylabel("Likelihood\nposition (cm)", labelpad=7)
     ax_lik.set_xlabel("")
-    ax_lik.tick_params(labelsize=8, labelbottom=False)
+    ax_lik.tick_params(labelbottom=False)
 
     # 1D track graph on right edge of predictive and likelihood rows
     _draw_track_graph_edges(
@@ -620,7 +619,7 @@ def plot_single_model_diagnostics(
     plot_raster(spike_times, time_slice, ax=axes[2], sort_order=sort_order)
     axes[2].set_ylabel("Neuron", labelpad=7)
     axes[2].set_xlabel("")
-    axes[2].tick_params(labelsize=8, labelbottom=False)
+    axes[2].tick_params(labelbottom=False)
 
     # Rows 3-5: Diagnostic scatters
     for i, spec in enumerate(METRIC_SPECS):
@@ -846,8 +845,7 @@ def plot_per_spike_metric_hexbin_row(
 
         ax.set_xlabel(model_a_name, labelpad=4)
         ax.set_ylabel(model_b_name if panel_idx == 0 else "", labelpad=4)
-        ax.set_title(title, fontsize=8)
-        ax.tick_params(labelsize=8)
+        ax.set_title(title)
 
         if key == "event_kl_divergence":
             ax.text(
@@ -886,4 +884,4 @@ def plot_per_spike_metric_hexbin_row(
         count_ticks = [tick for tick in (1, 10, 100, 1000, 10000, 100000) if tick <= max_count]
         cbar.set_ticks(count_ticks)
         cbar.set_ticklabels([f"{tick:,}" for tick in count_ticks])
-        cbar.ax.tick_params(labelsize=8, width=0.5, length=2)
+        cbar.ax.tick_params(width=0.5, length=2)
