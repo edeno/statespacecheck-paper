@@ -730,7 +730,7 @@ def figure04_diagnostics_from_decodes(
         FIGURE4_DIAGNOSTIC_THRESHOLDS,
         FIGURE4_METRIC_DIRECTIONS,
     )
-    from statespacecheck_paper.figure04_place_fields import extract_shared_position_place_fields
+    from statespacecheck_paper.figure04_place_fields import extract_agreed_place_fields
     from statespacecheck_paper.figure04_summary import summarize_figure04_diagnostics
 
     time = continuous_results["time"].to_numpy()
@@ -751,12 +751,7 @@ def figure04_diagnostics_from_decodes(
             fitted_rates, expected_rates, rtol=1e-6, atol=0.0
         ):
             raise ValueError("The spike trains do not match the fitted units (count or order)")
-    place_fields, position_bins = extract_shared_position_place_fields(continuous_model)
-    contfrag_fields, contfrag_bins = extract_shared_position_place_fields(contfrag_model)
-    if not np.allclose(place_fields, contfrag_fields, equal_nan=True) or not np.allclose(
-        position_bins, contfrag_bins, equal_nan=True
-    ):
-        raise ValueError("The Continuous and ContFrag place fields or position grids differ")
+    place_fields, _ = extract_agreed_place_fields(continuous_model, contfrag_model)
     spike_counts = get_spike_counts(spikes, time)
     continuous, contfrag = (
         compute_results_diagnostics(

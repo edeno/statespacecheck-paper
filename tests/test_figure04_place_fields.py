@@ -10,6 +10,7 @@ import pandas as pd
 import pytest
 
 from statespacecheck_paper.figure04_place_fields import (
+    extract_agreed_place_fields,
     extract_place_fields,
     extract_shared_position_place_fields,
     get_state_marginalized_posterior,
@@ -166,3 +167,32 @@ class TestExtractSharedPositionPlaceFields:
 
         with pytest.raises(ValueError, match="interior mask differs"):
             extract_shared_position_place_fields(model)
+
+
+def _single_state_model(place_fields: np.ndarray, position_bins: np.ndarray) -> MagicMock:
+    """One-state model whose interior mask keeps every bin but the last."""
+    model = _mock_model(place_fields, position_bins)
+    model.observation_models = [MagicMock(environment_name="", encoding_group=0)]
+    model.is_track_interior_state_bins_ = np.arange(position_bins.size) < position_bins.size - 1
+    return model
+
+
+class TestExtractAgreedPlaceFields:
+    def test_returns_the_shared_interior_fields(self) -> None:
+        position_bins = np.array([0.0, 1.0, 2.0])
+        place_fields = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+        fields, bins = extract_agreed_place_fields(
+            _single_state_model(place_fields, position_bins),
+            _single_state_model(place_fields.copy(), position_bins.copy()),
+        )
+        np.testing.assert_array_equal(fields, place_fields[:, :2])
+        np.testing.assert_array_equal(bins, position_bins[:2])
+
+    def test_rejects_models_whose_fields_differ(self) -> None:
+        position_bins = np.array([0.0, 1.0, 2.0])
+        place_fields = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+        with pytest.raises(ValueError, match="place fields or position grids differ"):
+            extract_agreed_place_fields(
+                _single_state_model(place_fields, position_bins),
+                _single_state_model(place_fields + 1.0, position_bins),
+            )

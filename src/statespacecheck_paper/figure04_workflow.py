@@ -53,8 +53,8 @@ from statespacecheck_paper.figure04_decoder import (
 )
 from statespacecheck_paper.figure04_diagnostics import compute_results_diagnostics
 from statespacecheck_paper.figure04_place_fields import (
+    extract_agreed_place_fields,
     extract_place_fields,
-    extract_shared_position_place_fields,
 )
 from statespacecheck_paper.load_local_data import (
     NeuralRecordingData,
@@ -366,24 +366,9 @@ def _fit_and_decode(
     place_field_peaks = position_bins[np.nanargmax(place_fields, axis=1)]
 
     # Shared interior place fields for the mean per-spike likelihood row.
-    # The row is meant to be identical across decoders, so verify the two
-    # models agree on both fields and grid before storing a single copy.
-    diagnostic_place_fields, diagnostic_position_bins = extract_shared_position_place_fields(
-        continuous_model
+    diagnostic_place_fields, diagnostic_position_bins = extract_agreed_place_fields(
+        continuous_model, continuous_fragmented_model
     )
-    continuous_fragmented_place_fields, continuous_fragmented_position_bins = (
-        extract_shared_position_place_fields(continuous_fragmented_model)
-    )
-    if not np.allclose(
-        diagnostic_place_fields, continuous_fragmented_place_fields, equal_nan=True
-    ) or not np.allclose(
-        diagnostic_position_bins, continuous_fragmented_position_bins, equal_nan=True
-    ):
-        raise ValueError(
-            "Continuous and Continuous--Fragmented place fields or position "
-            "grids differ; the shared likelihood row would misrepresent one "
-            "of the decoders."
-        )
 
     return {
         "continuous_results": continuous_results,

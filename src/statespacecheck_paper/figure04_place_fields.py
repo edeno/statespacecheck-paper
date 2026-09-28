@@ -182,6 +182,39 @@ def extract_shared_position_place_fields(
     return place_fields[:, position_mask], position_bins[position_mask]
 
 
+def extract_agreed_place_fields(
+    continuous_model: Any,
+    continuous_fragmented_model: Any,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Extract the shared interior place fields both Figure-4 decoders agree on.
+
+    The per-spike diagnostics use one position likelihood for both decoders,
+    so each model's :func:`extract_shared_position_place_fields` must match the
+    other's (fields and grid, NaN equal to NaN) before one copy is used.
+
+    Returns
+    -------
+    place_fields : np.ndarray, shape (n_cells, n_interior_bins)
+    position_bins : np.ndarray, shape (n_interior_bins,)
+
+    Raises
+    ------
+    ValueError
+        If the two models' place fields or position grids differ.
+    """
+    place_fields, position_bins = extract_shared_position_place_fields(continuous_model)
+    other_fields, other_bins = extract_shared_position_place_fields(continuous_fragmented_model)
+    if not np.allclose(place_fields, other_fields, equal_nan=True) or not np.allclose(
+        position_bins, other_bins, equal_nan=True
+    ):
+        raise ValueError(
+            "Continuous and Continuous--Fragmented place fields or position "
+            "grids differ; the shared likelihood row would misrepresent one "
+            "of the decoders."
+        )
+    return place_fields, position_bins
+
+
 def get_state_marginalized_posterior(
     results: xr.Dataset,
     posterior_type: Literal["predictive", "acausal"] = "predictive",
