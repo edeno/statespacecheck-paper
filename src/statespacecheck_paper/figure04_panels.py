@@ -40,6 +40,7 @@ from statespacecheck_paper.style import (
     COLORS,
     METRIC_SPEC_BY_NAME,
     METRIC_SPECS,
+    WONG,
 )
 
 
@@ -788,7 +789,7 @@ def plot_per_spike_metric_hexbin_row(
             # Accent-outlined callout box framing the "rescue" quadrant: spikes
             # flagged by model A but not model B. A solid coloured border reads as
             # "look here", unlike a muted gray fill.
-            rescue_accent = "#D55E00"  # Wong vermillion, distinct from the metric colours
+            rescue_accent = WONG[6]  # Vermillion, distinct from the metric colours
             ax.add_patch(
                 Rectangle(
                     rect_xy,
