@@ -28,6 +28,7 @@ from statespacecheck_paper.diagnostics import (
     DecodingDiagnostics,
     SpikeEventDiagnostics,
     compute_spike_event_diagnostics_from_rates,
+    expand_spike_events,
 )
 from statespacecheck_paper.simulation import (
     normalize,
@@ -318,22 +319,6 @@ def _resolve_baseline_firing_rates(
     return place_field_rates(
         position_bins, place_field_centers, place_field_std, place_field_rate_scale
     )
-
-
-def _expand_spike_events(
-    spike_counts: NDArray[np.int_],
-) -> tuple[NDArray[np.intp], NDArray[np.intp]]:
-    """Expand a ``(n_time, n_cells)`` spike-count matrix into per-event indices.
-
-    Every bin, including ``t=0`` (whose prediction is the initial state
-    distribution), contributes events; a bin with count ``k`` contributes
-    ``k`` repeated events, in row-major ``(time, cell)`` order.
-    """
-    spike_time_ind, spike_cell_ind = np.nonzero(spike_counts)
-    spike_counts_at_events = spike_counts[spike_time_ind, spike_cell_ind].astype(np.intp)
-    spike_time_ind = np.repeat(spike_time_ind, spike_counts_at_events).astype(np.intp)
-    spike_cell_ind = np.repeat(spike_cell_ind, spike_counts_at_events).astype(np.intp)
-    return spike_time_ind, spike_cell_ind
 
 
 def _select_decoder_components_for_step(
@@ -799,7 +784,7 @@ def decode_with_diagnostics(
 
     # Find all spike events (every bin, including t=0). Count matrices are
     # expanded so a bin with count k contributes k spike events.
-    spike_time_ind, spike_cell_ind = _expand_spike_events(spike_counts)
+    spike_time_ind, spike_cell_ind = expand_spike_events(spike_counts)
 
     # Compute the baseline diagnostics first. Events inside a window with
     # ``firing_rate_table`` are overwritten below using that same rate table,
