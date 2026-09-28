@@ -21,6 +21,7 @@ from statespacecheck_paper.number_format import significant, whole_percent
 from statespacecheck_paper.reported_values import (
     MACRO_FILE_PATH,
     _exact,
+    analysis_code_doi,
     cardinal_word,
     doi_from_zenodo_search,
     lookup_statespacecheck_doi,
@@ -53,6 +54,7 @@ def test_committed_macro_file_matches_the_figure_summaries(tmp_path: Path) -> No
         figure03_path=REPO_ROOT / "manuscript/figures/main/figure03_summary.json",
         figure04_path=REPO_ROOT / "manuscript/figures/main/figure04_summary.json",
         statespacecheck_doi=CITED_DOI,
+        citation_path=REPO_ROOT / "CITATION.cff",
     )
     assert regenerated.read_text(encoding="utf-8") == COMMITTED_MACRO_FILE.read_text(
         encoding="utf-8"
@@ -123,6 +125,23 @@ def test_mismatched_statespacecheck_versions_are_rejected(path: tuple[str]) -> N
 
     with pytest.raises(ValueError, match="different statespacecheck versions"):
         render_macro_file(_load("figure03_summary.json"), figure04, statespacecheck_doi=CITED_DOI)
+
+
+@pytest.mark.parametrize("line", ["doi: 10.5281/zenodo.7", 'doi: "10.5281/zenodo.7"'])
+def test_analysis_code_doi_is_read_from_the_citation_file(tmp_path: Path, line: str) -> None:
+    citation = tmp_path / "CITATION.cff"
+    citation.write_text(
+        f"cff-version: 1.2.0\n{line}\nidentifiers:\n  - type: doi\n", encoding="utf-8"
+    )
+    assert analysis_code_doi(citation) == "10.5281/zenodo.7"
+
+
+def test_citation_file_without_a_doi_is_rejected(tmp_path: Path) -> None:
+    """Only a top-level doi counts; the paper's preferred-citation has its own fields."""
+    citation = tmp_path / "CITATION.cff"
+    citation.write_text("cff-version: 1.2.0\npreferred-citation:\n  doi: 1/2\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="no top-level doi"):
+        analysis_code_doi(citation)
 
 
 def _zenodo_record(version: str, doi: str) -> dict[str, object]:
