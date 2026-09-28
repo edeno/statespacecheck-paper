@@ -107,19 +107,25 @@ class _TruncatingHandler(BaseHTTPRequestHandler):
         pass
 
 
-def test_interrupted_download_is_reported_as_interrupted(tmp_path: Path) -> None:
+def test_interrupted_download_is_reported_as_interrupted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Python returns the short body without an error; the download must not."""
+    # Reach the local server directly even where an HTTP proxy is configured.
+    monkeypatch.setenv("no_proxy", "127.0.0.1")
     server = HTTPServer(("127.0.0.1", 0), _TruncatingHandler)
-    # One request, so the server answers it and stops, with no shutdown poll to wait on.
-    thread = threading.Thread(target=server.handle_request)
+    # shutdown() always ends serve_forever, even if no request arrives; a short poll
+    # interval keeps that wait at ~10 ms instead of the default 0.5 s.
+    thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01})
     thread.start()
     try:
         url = f"http://127.0.0.1:{server.server_port}/"
         with pytest.raises(ConnectionError, match="stopped after 10 of 100 bytes"):
             download_figure04_inputs(tmp_path, url=url, sha256="0" * 64)
     finally:
-        thread.join()
+        server.shutdown()
         server.server_close()
+        thread.join()
     assert list(tmp_path.iterdir()) == []
 
 
