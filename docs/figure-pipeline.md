@@ -3,21 +3,14 @@
 This document maps every main-text figure from **manuscript claim → reproduction
 command → entry point → configuration → computation (module reading order) →
 intermediate data → output → the scientific tests that guard it**. It is the
-public, tracked complement to the reproduction table in
-[`README.md`](../README.md#reproducing-the-paper-figures): the README gets you to
-the entry points; this document connects them to the code and the manuscript.
+implementation guide. [Reproduction](reproduce.md) covers requirements,
+commands, runtime, and storage; this document connects results to the code and
+the manuscript.
 
-All commands are run from the repository root in the locked environment:
-
-```bash
-uv sync --frozen
-uv run python scripts/generate_figureNN.py     # one figure
-uv run python scripts/generate_all_figures.py  # all four
-uv run python scripts/emit_reported_values.py  # refresh the manuscript's numbers (needs internet)
-make -C manuscript                           # build the paper
-# Figures: manuscript/figures/main/figureNN.{pdf,png} at 450 DPI.
-# Prose macros: manuscript/reported_values.tex; paper: manuscript/main.pdf.
-```
+Run the individual commands below from the repository root after installing
+the locked environment. The [complete reproduction recipe](reproduce.md#reproduce-the-full-paper)
+downloads the recording input before generating all four figures and building
+the manuscript. Figures are exported as PDF and 450-DPI PNG.
 
 ## Architecture at a glance
 
@@ -235,22 +228,27 @@ $\Lambda(x)$.
 
 - **Reproduction:** `uv run python scripts/generate_figure04.py`. Add
   `--force-recompute` to re-fit and re-decode both models instead of loading the
-  cached decoder outputs (this overwrites the cache; a config / data /
-  `non_local_detector` change invalidates the cache automatically). The cache
+  cached decoder outputs (this overwrites the cache; a config / data / fitting
+  implementation / `non_local_detector` change invalidates the cache automatically). The cache
   fingerprint (`figure04_cache.compute_figure04_cache_provenance`) hashes the
   schema version, the decoder and provenance parts of `Figure4Config`, the
   data identifier, the installed `non_local_detector`
   version, and the **content hash of the input file** — so replacing it under the
-  same `animal_date_epoch` invalidates the cache too.
+  same `animal_date_epoch` invalidates the cache too. It also hashes the
+  docstring-stripped syntax trees of `figure04_decoder.py`,
+  `figure04_place_fields.py`, `figure04_workflow.py`, and `load_local_data.py`.
+  This includes helper functions, imports, defaults, and recording preparation.
+  Older caches without this source digest miss once and are rebuilt.
   The per-spike diagnostics are cached separately, keyed by the decode
   fingerprint plus a diagnostics fingerprint
   (`figure04_cache.compute_figure04_diagnostics_fingerprint`): the
   `Figure4DiagnosticsConfig`, the installed `statespacecheck` version, and a
   digest of the docstring-stripped syntax trees of `diagnostics.py`,
   `figure04_diagnostics.py`, and `figure04_place_fields.py`. A diagnostics
-  change therefore recomputes only the diagnostics from the cached predictions
-  (about a minute); it never refits or rewrites the decode bundle. Docstring and
-  comment edits invalidate neither cache.
+  change confined to `diagnostics.py` or `figure04_diagnostics.py` therefore
+  recomputes only the diagnostics from cached predictions (about a minute).
+  Edits to shared workflow/place-field modules conservatively invalidate both
+  caches. Docstring and comment edits invalidate neither cache.
 - **Manuscript:** the real hippocampal-recording panels comparing the Continuous
   and Continuous-Fragmented decoders (and the whole-session hexbin summary).
 - **Entry point:** `scripts/generate_figure04.py::main` (the CLI), which calls
@@ -315,7 +313,7 @@ $\Lambda(x)$.
   ([10.5281/zenodo.23020757](https://doi.org/10.5281/zenodo.23020757));
   `scripts/download_figure04_inputs.py` downloads it and checks its SHA-256.
   It downloads into `data/` by default; to use another directory, set
-  `STATESPACECHECK_DATA_PATH` (or pass `--data-path`). The expensive decode is cached under `data/intermediates/` as two joblib bundles: the ~19 GB decode
+  `STATESPACECHECK_DATA_PATH` (or pass `--data-path`). The expensive decode is cached under `data/intermediates/` as two joblib bundles: the ~10 GB decode
   bundle `{epoch}_fig4_cache.joblib` (memory-mapped on load) and the diagnostics
   bundle `{epoch}_fig4_diagnostics.joblib`, each gated by the fingerprints
   described above. Writes go to a temporary sibling and are renamed into place,
@@ -357,7 +355,7 @@ It does not require a second set of NetCDF results or fitted-model pickles.
 ## Machine-readable summary schema
 
 `figure03_summary.json` uses schema version 5 and `figure04_summary.json`
-uses schema version 3. The Figure-3 schema includes the decoding-accuracy block:
+uses schema version 4. The Figure-3 schema includes the decoding-accuracy block:
 `accuracy_metric_order` (`median_absolute_error`), `accuracy_units`, and
 `median_decoding_accuracy`, a `(1, n_conditions)` matrix of the
 across-realization median absolute error of the filtered-posterior mean
@@ -384,18 +382,11 @@ file under `src/statespacecheck_paper`, and the SHA-256 digest of `uv.lock`.
 The digest excludes timestamps, generated outputs, and absolute paths, so clean
 checkouts of identical source produce the same identity.
 
-The source digest includes comments and docstrings. After a documentation-only
-source edit, verify that executable code is unchanged (for example, compare
-Python syntax trees with docstrings removed). Then refresh only
-`provenance.source` in both committed summaries using
-`scientific_source_provenance` and `write_json_artifact`, preserving all other
-fields, and rerun `uv run python scripts/emit_reported_values.py`. The same
-relabeling applies to executable edits confined to modules that no figure entry
-point imports (`reported_values`, `site_export`, `figure04_download`), provided the regenerated
-`reported_values.tex` is unchanged apart from its source hash. If scientific
-code or inputs changed, regenerate the affected figures and summaries through
-their canonical entry points instead of relabeling existing results, then
-re-export the website data (`uv run python scripts/export_site_data.py`).
+The source digest includes comments and docstrings. Follow the
+[artifact refresh procedure](development.md#refreshing-publication-artifacts)
+after changing source code, inputs, or dependencies. Scientific changes require
+regenerating the affected results; documentation-only source edits can refresh
+the provenance after verifying that executable code is unchanged.
 
 Figure 4 also contains `provenance.figure04_decode_cache`. Its
 `fingerprint_sha256` is the same identity used to accept or reject the
