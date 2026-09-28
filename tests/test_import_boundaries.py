@@ -171,6 +171,29 @@ def test_figure04_family_dependency_edges_are_acyclic() -> None:
         assert _sibling_module_imports(module_file) <= permitted, module_file
 
 
+def test_reported_values_imports_no_analysis_module() -> None:
+    """The macro emitter reads committed summaries; it needs only the shared
+    rounding and the published-data identifiers, not the data stack."""
+    prefix = "statespacecheck_paper."
+    assert _sibling_module_imports("reported_values.py") <= {
+        prefix + "number_format",
+        prefix + "paths",
+    }
+
+
+def test_no_module_imports_the_download() -> None:
+    """Editing the Zenodo download may be relabeled rather than regenerated
+    (docs/figure-pipeline.md) only while no figure code imports it."""
+    prefix = "statespacecheck_paper."
+    modules = [path.relative_to(_SRC).as_posix() for path in sorted(_SRC.rglob("*.py"))]
+    importers = [
+        module
+        for module in modules
+        if prefix + "figure04_download" in _sibling_module_imports(module)
+    ]
+    assert importers == []
+
+
 def test_site_export_depends_only_on_analysis_layers() -> None:
     """The website export reads the figure pipelines' outputs and the reported
     values; it sits above both figure families and nothing imports it."""

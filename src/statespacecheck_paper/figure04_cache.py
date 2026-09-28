@@ -41,7 +41,7 @@ from typing import TypedDict
 import joblib
 
 from statespacecheck_paper.figure04_decoder import Figure4Config, Figure4DiagnosticsConfig
-from statespacecheck_paper.load_local_data import EXPORT_FILE_SUFFIXES
+from statespacecheck_paper.load_local_data import EXPORT_FILE_SUFFIXES, file_sha256
 
 # Decode-bundle schema. Version 5 changed the cached HPD/KL event likelihood
 # from normalized Poisson(1; lambda) to normalized event intensity while the
@@ -116,11 +116,7 @@ def _export_file_checksums(paths: Figure4Paths) -> dict[str, str | None]:
         if not file_path.exists():
             checksums[suffix] = None
             continue
-        digest = hashlib.sha256()
-        with open(file_path, "rb") as handle:
-            for chunk in iter(lambda: handle.read(1 << 20), b""):
-                digest.update(chunk)
-        checksums[suffix] = digest.hexdigest()
+        checksums[suffix] = file_sha256(file_path)
     return checksums
 
 

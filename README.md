@@ -65,7 +65,15 @@ Figures 1–3 reproduce deterministically from the seeded simulation. **Figure 4
 uses the real hippocampal recording of [Comrie et al. 2026](https://doi.org/10.1016/j.neuron.2026.08.023).
 It is **not** included here (large). The decoder consumes one derived input file,
 `{epoch}_figure04_inputs.npz` (linearized position, spike times, track graph, edge
-order/spacing), not the raw NWB files. It comes from the Frank-lab Spyglass database;
+order/spacing), not the raw NWB files. It is archived on Zenodo
+([10.5281/zenodo.23020757](https://doi.org/10.5281/zenodo.23020757), 75 MB); download
+it and verify its SHA-256 with
+
+```bash
+uv run python scripts/download_figure04_inputs.py  # into data/ (or STATESPACECHECK_DATA_PATH, or --data-path)
+```
+
+The file comes from the Frank-lab Spyglass database;
 [docs/data-lineage.md](docs/data-lineage.md) records the exact entries, how they
 were verified, and which of them are public. The raw recording is on the DANDI
 Archive as dandiset [001942](https://dandiarchive.org/dandiset/001942). On a lab
@@ -332,7 +340,7 @@ uv run python scripts/generate_all_figures.py
 uv run python scripts/generate_figure01.py   # Fig 1  (simulated)
 uv run python scripts/generate_figure02.py   # Fig 2  (simulated)
 uv run python scripts/generate_figure03.py   # Fig 3  (simulated)
-uv run python scripts/generate_figure04.py   # Fig 4  (needs the real dataset)
+uv run python scripts/generate_figure04.py   # Fig 4  (needs the real dataset: scripts/download_figure04_inputs.py)
 
 # Outputs saved to manuscript/figures/main/ directory as PDF and PNG (450 DPI)
 
@@ -375,9 +383,10 @@ uv run ruff format . && uv run ruff check . && uv run mypy src/ && uv run pytest
 - **`reported_values.py`**: Summary-to-LaTeX macro generation and the manuscript's reporting policy
 - **`site_export.py`**: Data files for the project website (playground, simulation and replay players, parity fixture)
 - **`load_local_data.py`**: Real data loading utilities
+- **`figure04_download.py`**: Downloads the Figure-4 input file from Zenodo and checks its SHA-256
 - **`spyglass_data.py`**: Rebuilds the Figure-4 input file from Spyglass, logs it in a Spyglass export, and computes the Figure-4 diagnostics from stored decodes (optional `spyglass` extra; not used by figure generation)
 - **`spyglass_pipeline.py`**: The Figure-4 decode and diagnostics as a Spyglass pipeline; connects to the lab database on import (see [docs/spyglass-pipeline.md](docs/spyglass-pipeline.md))
-- **`paths.py`**: Shared `DATA_PATH` / `ANIMAL_DATE_EPOCH` constants (env-overridable)
+- **`paths.py`**: Shared `DATA_PATH` / `ANIMAL_DATE_EPOCH` constants (env-overridable), and the published Figure-4 input's epoch, DOI and SHA-256
 
 ### Standards
 

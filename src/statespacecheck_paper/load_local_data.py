@@ -10,12 +10,17 @@ numeric and string arrays (read with ``allow_pickle=False``, so loading runs no
 code and does not depend on library internals), written deterministically so
 the same content always has the same SHA-256. :func:`read_legacy_pickle_exports`
 reads the five pickles the recording was first exported as, so they can be
-converted and checked.
+converted and checked. The published copy of the file is downloaded by
+:mod:`statespacecheck_paper.figure04_download`.
 """
 
 from __future__ import annotations
 
 import dataclasses
+import hashlib
+import os
+import shlex
+import subprocess
 import zipfile
 from collections.abc import Hashable, Mapping, Sequence
 from pathlib import Path
@@ -26,6 +31,8 @@ import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
+from statespacecheck_paper.paths import FIGURE04_INPUTS_EPOCH
+
 # Position columns every downstream consumer relies on (centimeters).
 _REQUIRED_POSITION_COLUMNS = ("head_position_x", "head_position_y", "linear_position")
 
@@ -34,6 +41,9 @@ _REQUIRED_POSITION_COLUMNS = ("head_position_x", "head_position_y", "linear_posi
 # exactly the files read here.
 _INPUTS_SUFFIX = "_figure04_inputs.npz"
 EXPORT_FILE_SUFFIXES = (_INPUTS_SUFFIX,)
+
+# Name of the published copy of the Figure-4 input file (see ``paths``).
+FIGURE04_INPUTS_FILE = f"{FIGURE04_INPUTS_EPOCH}{_INPUTS_SUFFIX}"
 
 # Version of the array layout written by :func:`recording_arrays`.
 NPZ_FORMAT_VERSION = 1
@@ -297,6 +307,21 @@ def write_npz(path: str | Path, arrays: Mapping[str, NDArray[np.generic]]) -> Pa
     return path
 
 
+def _download_hint(data_path: Path, animal_date_epoch: str) -> str:
+    """Return a clause giving the download command for the published epoch, else ``""``.
+
+    The directory is quoted for the platform's shell, so the command can be
+    pasted as is when the path has spaces.
+    """
+    if animal_date_epoch != FIGURE04_INPUTS_EPOCH:
+        return ""
+    quote = subprocess.list2cmdline if os.name == "nt" else shlex.join
+    return (
+        "download it from Zenodo with `uv run python scripts/download_figure04_inputs.py "
+        f"--data-path {quote([str(data_path)])}`, or "
+    )
+
+
 def load_neural_recording_from_files(
     data_path: str | Path,
     animal_date_epoch: str,
@@ -325,7 +350,8 @@ def load_neural_recording_from_files(
     FileNotFoundError
         If ``data_path`` or the input file is missing. This real hippocampal
         recording is not distributed with the repository (see the README); the
-        error names what is missing and how to point the loader at the data.
+        error names what is missing, how to point the loader at the data, and,
+        for the published epoch, the command that downloads it.
     """
     data_path = Path(data_path)
 
@@ -333,7 +359,8 @@ def load_neural_recording_from_files(
     if not data_path.is_dir():
         raise FileNotFoundError(
             f"Data directory not found: {data_path}. The real hippocampal recording is "
-            "not included in the repository (see the README); place the exported files "
+            "not included in the repository (see the README); "
+            f"{_download_hint(data_path, animal_date_epoch)}place the exported files "
             "under this directory or set STATESPACECHECK_DATA_PATH to their location."
         )
     missing = [
@@ -345,12 +372,21 @@ def load_neural_recording_from_files(
         raise FileNotFoundError(
             f"Missing {len(missing)} expected export file(s) for '{animal_date_epoch}' in "
             f"{data_path}: {missing}. This recording is not distributed with the repository "
-            "(see the README); check STATESPACECHECK_DATA_PATH and "
-            "STATESPACECHECK_ANIMAL_DATE_EPOCH."
+            f"(see the README); {_download_hint(data_path, animal_date_epoch)}check "
+            "STATESPACECHECK_DATA_PATH and STATESPACECHECK_ANIMAL_DATE_EPOCH."
         )
 
     with np.load(data_path / f"{animal_date_epoch}{_INPUTS_SUFFIX}", allow_pickle=False) as arrays:
         return recording_from_arrays(arrays)
+
+
+def file_sha256(path: Path) -> str:
+    """Return the SHA-256 of a file's bytes as a hex string, read in 1 MiB blocks."""
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def read_legacy_pickle_exports(

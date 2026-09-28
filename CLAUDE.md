@@ -54,6 +54,10 @@ Key modules and the rationale that the source alone won't tell you:
 - **load_local_data.py** — `load_neural_recording_from_files` → validated
   `NeuralRecordingData`; loads the pre-exported `{epoch}_figure04_inputs.npz` (plain
   arrays, no pickle; layout in `recording_arrays`), no Spyglass DB needed.
+- **figure04_download.py** — `download_figure04_inputs` fetches that file from its
+  Zenodo record and saves it only if its SHA-256 matches `FIGURE04_INPUTS_SHA256`,
+  which a test pins to the Figure-4 summary. No figure code imports it, so an edit
+  here is relabeled rather than regenerated (`docs/figure-pipeline.md`).
 - **spyglass_data.py** — rebuilds that file from the lab's Spyglass database
   (optional `spyglass` extra), logs it in a Spyglass export, and computes the
   Figure-4 diagnostics from decodes stored elsewhere
@@ -67,7 +71,9 @@ Key modules and the rationale that the source alone won't tell you:
   lab database on import; figure code and tests must never import it. See
   `docs/spyglass-pipeline.md`.
 - **paths.py** — `DATA_PATH` / `ANIMAL_DATE_EPOCH` constants, env-overridable via
-  `STATESPACECHECK_DATA_PATH` / `STATESPACECHECK_ANIMAL_DATE_EPOCH`.
+  `STATESPACECHECK_DATA_PATH` / `STATESPACECHECK_ANIMAL_DATE_EPOCH`; also the
+  published Figure-4 input's epoch, DOI and SHA-256. Standard library only, so
+  `reported_values` can read the DOI without the data stack (a boundary test).
 - **style.py / simulation.py / plotting.py / schematic.py** — styling (WONG
   palette), simulation primitives, reusable plotting (HPD regions, likelihood
   columns), and the Figure-1 graphical-model/equation diagrams.

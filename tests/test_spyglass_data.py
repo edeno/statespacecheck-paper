@@ -8,7 +8,6 @@ comparison) on simulated data.
 from __future__ import annotations
 
 import dataclasses
-import importlib.util
 import os
 import subprocess
 import sys
@@ -39,6 +38,8 @@ from statespacecheck_paper.spyglass_data import (
     unrestricted_log_entries,
     write_figure04_inputs,
 )
+
+from ._scripts import load_script
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _EPOCH = "rat20200101_02_r1"
@@ -458,16 +459,8 @@ def test_unrestricted_log_entries_ignores_restricted_tables_and_files() -> None:
 # --- Export script (database-bound helpers replaced) --------------------------
 
 
-def _load_script(name: str) -> ModuleType:
-    spec = importlib.util.spec_from_file_location(name, _REPO_ROOT / "scripts" / f"{name}.py")
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
 def _export_script(monkeypatch: pytest.MonkeyPatch, calls: list[str], answer: str) -> ModuleType:
-    script = _load_script("spyglass_export_figure04")
+    script = load_script("spyglass_export_figure04")
 
     def log(paper_id: str, analysis_id: str) -> Figure4Inputs:
         calls.append("log")
@@ -556,7 +549,7 @@ def test_export_script_packages_a_verified_export(
 
 
 def test_fetch_script_refuses_to_compare_the_output_with_itself(tmp_path: Path) -> None:
-    script = _load_script("fetch_figure04_inputs")
+    script = load_script("fetch_figure04_inputs")
 
     with pytest.raises(SystemExit) as exc:
         script.main(["--output-dir", str(tmp_path), "--compare-to", str(tmp_path), "--overwrite"])

@@ -222,6 +222,13 @@ def test_every_macro_is_used_by_the_manuscript() -> None:
     assert unused == []
 
 
+def test_data_statement_links_the_published_input_file() -> None:
+    """The Figure-4 data DOI is cited as a link through its macro, which the
+    committed-macro test ties to the DOI the download verifies."""
+    manuscript = (REPO_ROOT / "manuscript" / "main.tex").read_text(encoding="utf-8")
+    assert "\\href{https://doi.org/\\RecordingInputsDOI}" in manuscript
+
+
 def test_exact_rejects_precision_loss() -> None:
     """``_exact`` is the guard against a config change quietly changing a digit."""
     assert _exact(0.88, 2) == "0.88"
