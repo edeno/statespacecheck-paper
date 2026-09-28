@@ -1,6 +1,4 @@
-# statespacecheck-paper
-
-**Local goodness-of-fit measures for neural decoding**
+# Local goodness-of-fit measures for neural decoding
 
 This repository contains the source code and supplementary materials for the paper demonstrating `statespacecheck`. The paper assesses local model fit by comparing one-step predictive state distributions with normalized single-event likelihoods and by checking each spike's mark against its predictive distribution. These diagnostics help identify issues with model assumptions, enabling iterative model refinement.
 
