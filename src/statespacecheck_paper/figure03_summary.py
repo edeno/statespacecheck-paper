@@ -77,13 +77,12 @@ class Figure3SummaryCondition:
 def build_summary_conditions(config: Figure3Config) -> list[Figure3SummaryCondition]:
     """Phase columns for the Figure-3b summary heatmap.
 
-    Single source of truth for the heatmap's columns, shared by the
-    single-run flag-percentage helper (:func:`compute_condition_flag_percentages`)
-    and the multi-realization averaging
-    path (:func:`statespacecheck_paper.figure03_summary.estimate_realization_summary`)
+    Single source of truth for the heatmap's columns, used by the
+    multi-realization averaging path
+    (:func:`statespacecheck_paper.figure03_summary.estimate_realization_summary`)
     so the column order, time windows, and component labels cannot drift
     out of sync. ``compose_figure03`` renders from precomputed
-    ``median_flag_percentages`` rather than calling either helper directly.
+    ``median_flag_percentages`` rather than recomputing them.
 
     The first column ("Well-specified") aggregates the clean-recovery
     conditions (with the replay sub-window carved out) into an out-of-sample
@@ -232,7 +231,7 @@ def flag_percentages_from_values(
 ) -> NDArray[np.floating]:
     """Percent flagged per metric per column from pre-extracted values.
 
-    Splitting this out from :func:`compute_condition_flag_percentages` lets the
+    Separating this from :func:`extract_condition_flag_values` lets the
     multi-realization averaging path
     (:func:`statespacecheck_paper.figure03_summary.estimate_realization_summary`)
     extract each realization's per-column values once and apply a
@@ -259,36 +258,6 @@ def flag_percentages_from_values(
         for j in range(n_columns):
             frac[i, j] = _flag_percentage(values[i][j], threshold, direction)
     return frac
-
-
-def compute_condition_flag_percentages(
-    diagnostics: DecodingDiagnostics | Mapping[str, NDArray[np.floating]],
-    diagnostic_thresholds: DiagnosticThresholds,
-    conditions: list[Figure3SummaryCondition],
-) -> NDArray[np.floating]:
-    """Percent of spike events flagged per metric per phase column.
-
-    Convenience wrapper around :func:`extract_condition_flag_values` +
-    :func:`flag_percentages_from_values` for the single-realization renderer.
-
-    Parameters
-    ----------
-    diagnostics : DecodingDiagnostics or Mapping[str, NDArray]
-        Diagnostic matrices for a single realization.
-    diagnostic_thresholds : DiagnosticThresholds
-        Flag thresholds (one per metric).
-    conditions : list of Figure3SummaryCondition
-        Heatmap columns from :func:`build_summary_conditions`.
-
-    Returns
-    -------
-    np.ndarray, shape (3, n_columns)
-        Percent (0–100) flagged. Rows follow :data:`SUMMARY_FLAG_METRICS`;
-        columns follow ``conditions``.
-    """
-    return flag_percentages_from_values(
-        extract_condition_flag_values(diagnostics, conditions), diagnostic_thresholds
-    )
 
 
 def compute_condition_decoding_accuracy(

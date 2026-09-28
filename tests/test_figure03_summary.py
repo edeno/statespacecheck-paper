@@ -12,8 +12,8 @@ from statespacecheck_paper.figure03_summary import (
     _flag_percentage,
     build_summary_conditions,
     compute_condition_decoding_accuracy,
-    compute_condition_flag_percentages,
     extract_condition_flag_values,
+    flag_percentages_from_values,
 )
 
 
@@ -98,7 +98,9 @@ class TestSummaryFlagPercentages:
             hpd_overlap=0.5, kl_divergence=5.0, predictive_pvalue=0.05
         )
         conditions = build_summary_conditions(params)
-        frac = compute_condition_flag_percentages(metrics, thresholds, conditions)
+        frac = flag_percentages_from_values(
+            extract_condition_flag_values(metrics, conditions), thresholds
+        )
 
         assert frac.shape == (3, 6)
         # KL row (index 2): only the remap column (index 1) flags.
