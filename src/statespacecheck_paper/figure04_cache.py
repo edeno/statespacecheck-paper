@@ -5,14 +5,14 @@ diagnostics derived from it are comparatively cheap, so the two are cached in
 **separate** joblib bundles under ``<data path>/intermediates`` (the data path
 is ``data/`` unless ``STATESPACECHECK_DATA_PATH`` is set; see :class:`Figure4Paths`):
 
-- the *decode* bundle (``{epoch}_fig4_cache.joblib``) holds the fitted models'
+- the *decode* bundle (``{epoch}_figure04_decode.joblib``) holds the fitted models'
   decoder outputs (smoothed posterior, predictive distribution, log-likelihood), spike
   counts, and place fields, gated by the
   **decode fingerprint** (:func:`compute_figure04_cache_provenance`): schema,
   decode-affecting configuration, input-data identity and content hashes,
   executable source of the fitting/data-preparation modules, and the installed
   ``non_local_detector`` version;
-- the *diagnostics* bundle (``{epoch}_fig4_diagnostics.joblib``) holds the
+- the *diagnostics* bundle (``{epoch}_figure04_diagnostics.joblib``) holds the
   per-spike diagnostics for both models, gated by the decode fingerprint **and**
   a **diagnostics fingerprint** (:func:`compute_figure04_diagnostics_fingerprint`):
   the diagnostics schema, the :class:`~figure04_decoder.Figure4DiagnosticsConfig`
@@ -54,7 +54,7 @@ from statespacecheck_paper.figure04_input import (
 # Decode-bundle schema version, hashed into the decode fingerprint. Bump it to
 # invalidate every decode cache when the payload layout changes in a way the
 # decode-source digest does not capture.
-FIGURE04_CACHE_SCHEMA_VERSION = 6
+FIGURE04_DECODE_SCHEMA_VERSION = 6
 
 # Diagnostics-bundle schema version, hashed into the diagnostics fingerprint;
 # bump it to invalidate every diagnostics cache.
@@ -99,7 +99,9 @@ _FIGURE04_DIAGNOSTICS_PAYLOAD_KEYS = (
 # The full in-memory payload consumed by :class:`Figure4DecodeResults`. These
 # are the serialized key spellings, equal to the in-memory field names, and
 # MUST NOT change without a schema bump.
-_FIGURE04_CACHE_PAYLOAD_KEYS = _FIGURE04_DECODE_PAYLOAD_KEYS + _FIGURE04_DIAGNOSTICS_PAYLOAD_KEYS
+_FIGURE04_DECODE_AND_DIAGNOSTICS_PAYLOAD_KEYS = (
+    _FIGURE04_DECODE_PAYLOAD_KEYS + _FIGURE04_DIAGNOSTICS_PAYLOAD_KEYS
+)
 
 
 class Figure4CacheArtifactProvenance(TypedDict):
@@ -226,20 +228,22 @@ class Figure4Paths:
     animal_date_epoch: str
 
     @property
-    def cache_path(self) -> Path:
+    def decode_cache_path(self) -> Path:
         """Path of the cached Figure-4 *decode* bundle (under ``data_path/intermediates``).
 
         A single joblib bundle is used rather than netCDF because the decoder
         results carry a ``state_bins`` MultiIndex coordinate, which netCDF cannot
         serialize; joblib (pickle) preserves it exactly.
         """
-        return self.data_path / "intermediates" / f"{self.animal_date_epoch}_fig4_cache.joblib"
+        return self.data_path / "intermediates" / f"{self.animal_date_epoch}_figure04_decode.joblib"
 
     @property
     def diagnostics_cache_path(self) -> Path:
         """Path of the cached Figure-4 per-spike *diagnostics* bundle."""
         return (
-            self.data_path / "intermediates" / f"{self.animal_date_epoch}_fig4_diagnostics.joblib"
+            self.data_path
+            / "intermediates"
+            / f"{self.animal_date_epoch}_figure04_diagnostics.joblib"
         )
 
 
@@ -309,13 +313,13 @@ def compute_figure04_cache_provenance(
 
     The *diagnostics* fingerprint is :func:`compute_figure04_diagnostics_fingerprint`.
 
-    Bumping :data:`FIGURE04_CACHE_SCHEMA_VERSION` is the manual override ---
+    Bumping :data:`FIGURE04_DECODE_SCHEMA_VERSION` is the manual override ---
     it is part of the hashed payload, so a bump invalidates every existing cache.
     """
     input_file_sha256 = _input_file_checksum(paths)
     non_local_detector_version = _installed_non_local_detector_version()
     fingerprint_payload = {
-        "schema_version": FIGURE04_CACHE_SCHEMA_VERSION,
+        "schema_version": FIGURE04_DECODE_SCHEMA_VERSION,
         "config": {
             "decoder": dataclasses.asdict(config.decoder),
             "package_defaults": dataclasses.asdict(config.package_defaults),
@@ -328,7 +332,7 @@ def compute_figure04_cache_provenance(
     blob = json.dumps(fingerprint_payload, sort_keys=True, default=str).encode()
     return Figure4CacheProvenance(
         fingerprint_sha256=hashlib.sha256(blob).hexdigest(),
-        schema_version=FIGURE04_CACHE_SCHEMA_VERSION,
+        schema_version=FIGURE04_DECODE_SCHEMA_VERSION,
         animal_date_epoch=paths.animal_date_epoch,
         input_file_sha256=input_file_sha256,
         non_local_detector_version=non_local_detector_version,
@@ -358,7 +362,7 @@ def _load_wrapper(path: Path, *, mmap_mode: str | None) -> Mapping[str, object] 
     return cached
 
 
-def load_figure04_cache(path: Path, expected_fingerprint: str) -> dict[str, object] | None:
+def load_figure04_decode_cache(path: Path, expected_fingerprint: str) -> dict[str, object] | None:
     """Load a Figure-4 *decode* payload from ``path``, or ``None`` on any miss.
 
     Returns ``None`` (a cache miss) when the file is absent or unreadable, the
@@ -378,14 +382,14 @@ def load_figure04_cache(path: Path, expected_fingerprint: str) -> dict[str, obje
         return None
     if set(cached.keys()) != {"schema_version", "fingerprint", *_FIGURE04_DECODE_PAYLOAD_KEYS}:
         return None
-    if cached.get("schema_version") != FIGURE04_CACHE_SCHEMA_VERSION:
+    if cached.get("schema_version") != FIGURE04_DECODE_SCHEMA_VERSION:
         return None
     if cached.get("fingerprint") != expected_fingerprint:
         return None
     return {key: cached[key] for key in _FIGURE04_DECODE_PAYLOAD_KEYS}
 
 
-def save_figure04_cache(path: Path, fingerprint: str, payload: Mapping[str, object]) -> None:
+def save_figure04_decode_cache(path: Path, fingerprint: str, payload: Mapping[str, object]) -> None:
     """Write a Figure-4 *decode* payload to ``path`` with its provenance wrapper.
 
     Raises ``ValueError`` unless the payload keys are exactly
@@ -397,13 +401,13 @@ def save_figure04_cache(path: Path, fingerprint: str, payload: Mapping[str, obje
     """
     if set(payload.keys()) != set(_FIGURE04_DECODE_PAYLOAD_KEYS):
         raise ValueError(
-            "save_figure04_cache payload keys must be exactly "
+            "save_figure04_decode_cache payload keys must be exactly "
             f"{sorted(_FIGURE04_DECODE_PAYLOAD_KEYS)}; got {sorted(payload.keys())}."
         )
     _atomic_dump(
         path,
         {
-            "schema_version": FIGURE04_CACHE_SCHEMA_VERSION,
+            "schema_version": FIGURE04_DECODE_SCHEMA_VERSION,
             "fingerprint": fingerprint,
             **payload,
         },

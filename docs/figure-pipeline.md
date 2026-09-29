@@ -566,10 +566,10 @@ Fitting and decoding both models takes several minutes, so
 `<data path>/intermediates/` (`data/` unless `STATESPACECHECK_DATA_PATH` is set;
 `Figure4Paths` defines the locations):
 
-- the **decode cache** `{epoch}_fig4_cache.joblib` (about 8 GB; memory-mapped
+- the **decode cache** `{epoch}_figure04_decode.joblib` (about 8 GB; memory-mapped
   on load) holds both models' decoder outputs, the spike counts, and the place
   fields;
-- the **diagnostics cache** `{epoch}_fig4_diagnostics.joblib` holds both models'
+- the **diagnostics cache** `{epoch}_figure04_diagnostics.joblib` holds both models'
   per-spike diagnostics.
 
 Each is used only when its fingerprint matches; otherwise it is rebuilt and
@@ -599,7 +599,7 @@ Docstring and comment edits invalidate neither cache, and the summary scalars
 and their printed text (`figure04_summary.py`) are outside both. Bundles are
 written to a temporary sibling and renamed into place, so a memory-mapped
 bundle is never overwritten in place. The schema versions
-(`FIGURE04_CACHE_SCHEMA_VERSION`, `FIGURE04_DIAGNOSTICS_SCHEMA_VERSION`) are
+(`FIGURE04_DECODE_SCHEMA_VERSION`, `FIGURE04_DIAGNOSTICS_SCHEMA_VERSION`) are
 manual overrides: bumping one invalidates every cache of that kind.
 
 ## Machine-readable summary schema

@@ -282,7 +282,7 @@ def test_build_cli_loads_the_canonical_figure04_workflow(
 # Real-data integration test (skipped when intermediates are not available).
 # ---------------------------------------------------------------------------
 
-FIGURE04_JOBLIB = INTERMEDIATES / f"{ANIMAL_DATE_EPOCH}_fig4_cache.joblib"
+FIGURE04_JOBLIB = INTERMEDIATES / f"{ANIMAL_DATE_EPOCH}_figure04_decode.joblib"
 RAW_INPUTS = RAW_DATA / f"{ANIMAL_DATE_EPOCH}_figure04_inputs.npz"
 
 REAL_DATA_AVAILABLE = all(

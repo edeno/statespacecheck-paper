@@ -90,7 +90,7 @@
       },
       "diagnostics_fingerprint_sha256": "3a4dc176494e66c68a6e54a61d6f08e6d9a7c97e387cb37dd63a74571d1835ea",
       "diagnostics_schema_version": 2,
-      "fingerprint_sha256": "1b7bd3004223737cce24e90641f836cab9b0ee2ae45436d27b9f8133a8a1b4aa",
+      "fingerprint_sha256": "1e189248e917820c59c0356a0b23b97b41cca45700c7bf352382ebb7a6b38fa6",
       "input_file_sha256": {
         "j1620210710_02_r1_figure04_inputs.npz": "60383b394b597e2900545548ecac7c53a8601038ace9dbeb42d7f9a5fe1c93b3"
       },
@@ -99,7 +99,7 @@
       "statespacecheck_version": "0.3.1"
     },
     "source": {
-      "source_tree_sha256": "c966170142980537b7fb082032ca63097046f57e856617fb5f292568cf666dd8",
+      "source_tree_sha256": "c3b8efa9900573b5270c59793ac9663e082934690a1002b206568774130312e2",
       "statespacecheck_paper_version": "0.1.0",
       "statespacecheck_version": "0.3.1",
       "uv_lock_sha256": "7db5bb03266cfeab8f804cd7262232f3ffa16ebaf423722a399076043b640574"

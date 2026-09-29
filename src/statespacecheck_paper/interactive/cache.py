@@ -737,7 +737,8 @@ def _build_command(args: argparse.Namespace) -> int:
         animal_date_epoch=args.animal_date_epoch,
     )
     print(
-        f"[cache] Loading canonical Figure 4 workflow data from {figure4_paths.cache_path} ...",
+        "[cache] Loading canonical Figure 4 workflow data from "
+        f"{figure4_paths.decode_cache_path} ...",
         flush=True,
     )
     render_data = prepare_figure04_render_data(

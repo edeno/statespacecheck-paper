@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from statespacecheck_paper.figure04_cache import (
-    FIGURE04_CACHE_SCHEMA_VERSION,
+    FIGURE04_DECODE_SCHEMA_VERSION,
     FIGURE04_DIAGNOSTICS_SCHEMA_VERSION,
     Figure4CacheProvenance,
 )
@@ -18,7 +18,7 @@ def synthetic_cache_provenance(animal_date_epoch: str = "epoch_x") -> Figure4Cac
     """
     return Figure4CacheProvenance(
         fingerprint_sha256="c" * 64,
-        schema_version=FIGURE04_CACHE_SCHEMA_VERSION,
+        schema_version=FIGURE04_DECODE_SCHEMA_VERSION,
         animal_date_epoch=animal_date_epoch,
         input_file_sha256="d" * 64,
         non_local_detector_version="1.2.3",

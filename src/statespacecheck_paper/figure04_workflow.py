@@ -29,15 +29,15 @@ from numpy.typing import NDArray
 
 from statespacecheck_paper.diagnostics import SpikeEventDiagnostics
 from statespacecheck_paper.figure04_cache import (
-    _FIGURE04_CACHE_PAYLOAD_KEYS,
+    _FIGURE04_DECODE_AND_DIAGNOSTICS_PAYLOAD_KEYS,
     _FIGURE04_DECODE_PAYLOAD_KEYS,
     _FIGURE04_DIAGNOSTICS_PAYLOAD_KEYS,
     Figure4CacheProvenance,
     Figure4Paths,
     compute_figure04_cache_provenance,
-    load_figure04_cache,
+    load_figure04_decode_cache,
     load_figure04_diagnostics_cache,
-    save_figure04_cache,
+    save_figure04_decode_cache,
     save_figure04_diagnostics_cache,
 )
 from statespacecheck_paper.figure04_decoder import (
@@ -178,7 +178,9 @@ class Figure4DecodeResults:
     @classmethod
     def from_cache_payload(cls, payload: Mapping[str, object]) -> Figure4DecodeResults:
         """Build from the serialized cache payload."""
-        missing = [key for key in _FIGURE04_CACHE_PAYLOAD_KEYS if key not in payload]
+        missing = [
+            key for key in _FIGURE04_DECODE_AND_DIAGNOSTICS_PAYLOAD_KEYS if key not in payload
+        ]
         if missing:
             raise ValueError(f"decode payload missing keys: {missing}")
         return cls(
@@ -468,7 +470,7 @@ def prepare_figure04_render_data(
     decode_payload: dict[str, object] | None = None
     if use_cache:
         print("Loading cached decoder outputs (use --force-recompute to rebuild)...")
-        decode_payload = load_figure04_cache(paths.cache_path, expected_fingerprint)
+        decode_payload = load_figure04_decode_cache(paths.decode_cache_path, expected_fingerprint)
         if decode_payload is None:
             print(
                 "  No matching decode cache (absent, unreadable, or fingerprint mismatch "
@@ -484,8 +486,8 @@ def prepare_figure04_render_data(
             execution_config=config.execution,
             package_defaults=config.package_defaults,
         )
-        print(f"Caching decoder outputs to {paths.cache_path} ...")
-        save_figure04_cache(paths.cache_path, expected_fingerprint, decode_payload)
+        print(f"Caching decoder outputs to {paths.decode_cache_path} ...")
+        save_figure04_decode_cache(paths.decode_cache_path, expected_fingerprint, decode_payload)
 
     diagnostics_payload: dict[str, object] | None = None
     if use_cache:

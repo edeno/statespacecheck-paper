@@ -30,8 +30,8 @@ Two dataset kinds are supported:
 
 For Figure 4, first run `make download-data`. The builder loads the same two
 canonical caches the static figure uses, the decode bundle
-`{epoch}_fig4_cache.joblib` and the diagnostics bundle
-`{epoch}_fig4_diagnostics.joblib` under `<data-dir>/intermediates/`. It refits
+`{epoch}_figure04_decode.joblib` and the diagnostics bundle
+`{epoch}_figure04_diagnostics.joblib` under `<data-dir>/intermediates/`. It refits
 the models when the decode cache is absent or stale, and recomputes the
 diagnostics when the diagnostics cache is absent or stale; either way it
 rewrites the canonical cache it rebuilt. `--force-recompute` refits and

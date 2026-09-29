@@ -12,7 +12,10 @@ import pytest
 import xarray as xr
 
 from statespacecheck_paper import figure04_cache, figure04_workflow
-from statespacecheck_paper.figure04_cache import _FIGURE04_CACHE_PAYLOAD_KEYS, Figure4Paths
+from statespacecheck_paper.figure04_cache import (
+    _FIGURE04_DECODE_AND_DIAGNOSTICS_PAYLOAD_KEYS,
+    Figure4Paths,
+)
 from statespacecheck_paper.figure04_decoder import Figure4Config
 from statespacecheck_paper.figure04_input import NeuralRecordingData
 from statespacecheck_paper.figure04_summary import (
@@ -165,7 +168,7 @@ class TestFigure4DecodeResults:
         # Guard against drift between the on-disk key list (owned by
         # figure04_cache) and the field->key mapping in to_cache_payload.
         assert set(_synthetic_decode_results().to_cache_payload().keys()) == set(
-            _FIGURE04_CACHE_PAYLOAD_KEYS
+            _FIGURE04_DECODE_AND_DIAGNOSTICS_PAYLOAD_KEYS
         )
 
     def test_from_cache_payload_rejects_missing_key(self) -> None:
@@ -371,7 +374,7 @@ class TestPrepareRenderData:
 
         prepare_figure04_render_data(config, paths, use_cache=True)
         assert calls == {"fit": 1, "diagnostics": 1}
-        assert paths.cache_path.exists()
+        assert paths.decode_cache_path.exists()
         assert paths.diagnostics_cache_path.exists()
 
         prepare_figure04_render_data(config, paths, use_cache=True)
@@ -462,10 +465,10 @@ class TestPrepareRenderData:
         render_data = prepare_figure04_render_data(Figure4Config(), injected, use_cache=False)
 
         assert seen == {"data_path": tmp_path, "animal_date_epoch": "injected_epoch"}
-        assert injected.cache_path.exists()
+        assert injected.decode_cache_path.exists()
         # The progress messages name the caches actually written.
         printed = capsys.readouterr().out
-        assert str(injected.cache_path) in printed
+        assert str(injected.decode_cache_path) in printed
         assert str(injected.diagnostics_cache_path) in printed
         # The recording and typed decode results are threaded through by attribute.
         assert render_data.recording.spike_times[0].shape == (2,)
