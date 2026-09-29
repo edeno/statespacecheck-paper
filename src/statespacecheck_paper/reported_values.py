@@ -420,6 +420,9 @@ def _simulation_configuration(payload: dict[str, Any]) -> list[MacroDefinition]:
             "prediction_step_std",
         ),
         MacroDefinition(
+            "SimInitialPosition", _exact(config["initial_position"]), "initial_position"
+        ),
+        MacroDefinition(
             "SimNSparseCellsWord",
             cardinal_word(config["sparse_cell_count"]),
             "sparse_cell_count",

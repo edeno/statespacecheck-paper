@@ -127,7 +127,7 @@ def test_summary_payload_preserves_labels_rules_and_source_provenance(
     )
     flag_rules = cast(dict[str, dict[str, str | float]], payload["flag_rules"])
 
-    assert payload["schema_version"] == 6
+    assert payload["schema_version"] == 7
     assert payload["accuracy_metric_order"] == ["median_absolute_error"]
     assert np.asarray(payload["realization_flag_percentages"]).shape == (2, 3, 6)
     assert np.asarray(payload["realization_decoding_accuracy"]).shape == (2, 1, 6)

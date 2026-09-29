@@ -22,7 +22,9 @@ class TestFigure3Config:
 
     def test_position_bins_span_the_track_inclusively(self) -> None:
         np.testing.assert_array_equal(Figure3Config().position_bins, np.arange(0.0, 101.0))
-        coarse = Figure3Config(position_min=10, position_max=50, position_bin_size=5)
+        coarse = Figure3Config(
+            position_min=10, position_max=50, position_bin_size=5, initial_position=10.0
+        )
         np.testing.assert_array_equal(coarse.position_bins, np.arange(10.0, 51.0, 5.0))
         assert coarse.position_bins.dtype == np.float64
 
@@ -91,3 +93,8 @@ class TestFigure3ConfigPhaseBoundaries:
     ) -> None:
         with pytest.raises(ValueError, match=match):
             Figure3Config(**kwargs)
+
+    @pytest.mark.parametrize("initial_position", [-0.5, 100.5, np.nan])
+    def test_initial_position_outside_the_track_raises(self, initial_position: float) -> None:
+        with pytest.raises(ValueError, match="initial_position"):
+            Figure3Config(initial_position=initial_position)

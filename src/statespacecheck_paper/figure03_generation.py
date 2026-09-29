@@ -72,7 +72,7 @@ def figure03_summary_payload(
     thresholds = dataclasses.asdict(summary.diagnostic_thresholds)
     directions = {metric: direction for metric, direction in SUMMARY_FLAG_METRICS}
     return {
-        "schema_version": 6,
+        "schema_version": 7,
         "figure": "figure03",
         "configuration": dataclasses.asdict(config),
         "realizations": {

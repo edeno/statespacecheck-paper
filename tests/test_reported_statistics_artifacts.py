@@ -41,7 +41,7 @@ def _round_trip_live_payload(tmp_path: Path, payload: dict[str, object]) -> dict
 def test_figure03_reported_statistics_match_canonical_run(tmp_path: Path) -> None:
     payload = _load("figure03_summary.json")
 
-    assert payload["schema_version"] == 6
+    assert payload["schema_version"] == 7
     assert payload["realizations"] == {
         "count": 100,
         "first_seed": 1,

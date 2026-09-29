@@ -102,6 +102,19 @@ def test_phase_labels_and_boundaries(sim: Figure3SimulationResult) -> None:
     assert x_true.shape[0] == end
 
 
+@pytest.mark.parametrize("initial_position", [0.0, 50.0])
+def test_trajectory_starts_from_the_configured_initial_position(initial_position: float) -> None:
+    """The first sample is one random-walk increment away from ``initial_position``."""
+    config = Figure3Config(
+        phase_boundaries=(200, 300, 400, 500, 600, 700, 800, 900),
+        initial_position=initial_position,
+    )
+    first = float(run_figure03_simulation(config, seed=0).true_position[0])
+
+    # Reflection at the track ends keeps |step| as the distance from x_0.
+    assert abs(first - initial_position) <= 5.0 * config.prediction_step_std
+
+
 @pytest.mark.parametrize(
     ("start", "expected_endpoint"),
     [(20.0, 100.0), (80.0, 0.0)],

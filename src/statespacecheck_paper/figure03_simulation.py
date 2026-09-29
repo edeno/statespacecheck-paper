@@ -698,7 +698,7 @@ def run_figure03_simulation(
     transition_matrix = gaussian_transition_matrix(position_bins, config.prediction_step_std)
 
     phases: list[tuple[NDArray[np.floating], NDArray[np.int_]]] = []
-    x_last: float = 0.0
+    x_last: float = config.initial_position
     bnd = config.phase_boundaries
 
     def _walk(n: int, x0: float) -> NDArray[np.floating]:

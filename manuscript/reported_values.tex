@@ -2,9 +2,9 @@
 %
 % Every value below is read from the canonical figure summaries
 % (except the DOIs, whose comments name their sources):
-%   figures/main/figure03_summary.json (schema 6)
+%   figures/main/figure03_summary.json (schema 7)
 %   figures/main/figure04_summary.json (schema 5)
-% source_tree_sha256: b80597e12be42493254f14a340d3c6d6177f696ba13ed6df0e88994e9afb3250
+% source_tree_sha256: e4a93dbf8f33b57c5283790b212eca451745ab74d732fbdfc2d1ce25c62b4742
 %
 % Regenerate with: uv run python scripts/emit_reported_values.py
 
@@ -49,6 +49,7 @@
 \newcommand{\SimPeakCountPerStep}{0.20}        % place_field_rate_scale / (place_field_std * sqrt(2 pi))
 \newcommand{\SimPeakRateHz}{200}               % peak expected count per step at 1 ms/step, in Hz
 \newcommand{\SimPredictionStepStd}{0.5}        % prediction_step_std
+\newcommand{\SimInitialPosition}{0}            % initial_position
 \newcommand{\SimNSparseCellsWord}{five}        % sparse_cell_count
 \newcommand{\SimNSparseCellsWordCap}{Five}     % sparse_cell_count, sentence-initial
 \newcommand{\SimSparsePosition}{30}            % sparse_position

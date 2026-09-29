@@ -29,6 +29,7 @@ def test_figure3_config_is_frozen_with_exact_fields() -> None:
     assert _field_names(Figure3Config) == [
         "phase_boundaries",
         "prediction_step_std",
+        "initial_position",
         "drift_momentum",
         "history_refractory_steps",
         "history_burst_window",

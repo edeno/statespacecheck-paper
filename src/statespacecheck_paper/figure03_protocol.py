@@ -97,6 +97,11 @@ class Figure3Config:
         only makes sense over the full ladder.
     prediction_step_std : float, default 0.5
         Decoder's baseline dynamics standard deviation.
+    initial_position : float, default 0.0
+        The trajectory's starting position, :math:`x_0`, from which the first
+        random-walk increment is taken; must lie in
+        ``[position_min, position_max]``. Each later phase starts where the
+        previous one ended.
     drift_momentum : float, default 0.88
         AR(1) coefficient on the animal's velocity during the drift
         misfit phase. The true trajectory is
@@ -186,6 +191,7 @@ class Figure3Config:
 
     # Decoder & dynamics parameters
     prediction_step_std: float = 0.5  # baseline dynamics std
+    initial_position: float = 0.0  # x_0, before the first increment
     drift_momentum: float = 0.88  # AR(1) coefficient for drift-misfit trajectory
 
     # History-dependence misfit: hard refractory + post-spike burst window.
@@ -307,6 +313,11 @@ class Figure3Config:
         centers.setflags(write=False)
         object.__setattr__(self, "place_field_centers", centers)
 
+        if not (self.position_min <= self.initial_position <= self.position_max):
+            raise ValueError(
+                f"initial_position must lie in [{self.position_min}, {self.position_max}]; "
+                f"got {self.initial_position}."
+            )
         if not (self.position_min <= self.sparse_position <= self.position_max):
             raise ValueError(
                 f"sparse_position must lie in [{self.position_min}, {self.position_max}]; "
