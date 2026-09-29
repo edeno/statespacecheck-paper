@@ -107,7 +107,7 @@ def _node_json(script: str, *args: str) -> Any:
     completed = subprocess.run(
         [node, "--input-type=module", "-e", script, *args],
         capture_output=True,
-        text=True,
+        encoding="utf-8",  # Node writes UTF-8; Windows' default code page is not
         check=True,
     )
     return json.loads(completed.stdout)
