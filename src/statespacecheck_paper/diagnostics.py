@@ -400,7 +400,7 @@ def expand_spike_events(
 
     Returns
     -------
-    spike_time_ind, spike_cell_ind : np.ndarray, shape (n_spikes,)
+    event_time_ind, event_cell_ind : np.ndarray, shape (n_spikes,)
         Time-bin and cell index of each spike event.
 
     Examples
@@ -409,18 +409,18 @@ def expand_spike_events(
     >>> time_ind.tolist(), cell_ind.tolist()
     ([0, 0, 1], [1, 1, 0])
     """
-    spike_time_ind, spike_cell_ind = np.nonzero(spike_counts)
-    counts = spike_counts[spike_time_ind, spike_cell_ind].astype(np.intp)
-    spike_time_ind = np.repeat(spike_time_ind, counts).astype(np.intp)
-    spike_cell_ind = np.repeat(spike_cell_ind, counts).astype(np.intp)
-    return spike_time_ind, spike_cell_ind
+    event_time_ind, event_cell_ind = np.nonzero(spike_counts)
+    counts = spike_counts[event_time_ind, event_cell_ind].astype(np.intp)
+    event_time_ind = np.repeat(event_time_ind, counts).astype(np.intp)
+    event_cell_ind = np.repeat(event_cell_ind, counts).astype(np.intp)
+    return event_time_ind, event_cell_ind
 
 
 def compute_spike_event_diagnostics_from_rates(
     predictive: NDArray[np.floating],
     rates: NDArray[np.floating],
-    spike_time_ind: NDArray[np.intp],
-    spike_cell_ind: NDArray[np.intp],
+    event_time_ind: NDArray[np.intp],
+    event_cell_ind: NDArray[np.intp],
     coverage: float = HPD_COVERAGE,
     include_dense_matrices: bool = True,
 ) -> SpikeEventDiagnostics:
@@ -438,9 +438,9 @@ def compute_spike_event_diagnostics_from_rates(
         Predictive distribution over position at each time.
     rates : np.ndarray, shape (n_bins, n_cells)
         Expected spike rate (spikes/bin) at each position for each cell.
-    spike_time_ind : np.ndarray, shape (n_spikes,)
+    event_time_ind : np.ndarray, shape (n_spikes,)
         Time indices where spikes occurred.
-    spike_cell_ind : np.ndarray, shape (n_spikes,)
+    event_cell_ind : np.ndarray, shape (n_spikes,)
         Cell indices for each spike event.
     coverage : float, default ``HPD_COVERAGE``
         Coverage probability for HPD region computation.
@@ -476,15 +476,15 @@ def compute_spike_event_diagnostics_from_rates(
     Notes
     -----
     If multiple spikes occur in the same time/cell bin, pass repeated entries in
-    ``spike_time_ind`` and ``spike_cell_ind`` so every observed spike contributes
+    ``event_time_ind`` and ``event_cell_ind`` so every observed spike contributes
     one event. See :func:`statespacecheck.event_diagnostics` for how each
     diagnostic is computed.
     """
     events = ssc.event_diagnostics(
         predictive,
         rates,
-        spike_time_ind,
-        spike_cell_ind,
+        event_time_ind,
+        event_cell_ind,
         coverage=coverage,
         return_likelihood=include_dense_matrices,
     )
@@ -494,12 +494,12 @@ def compute_spike_event_diagnostics_from_rates(
         if not include_dense_matrices:
             return None
         matrix = np.full((predictive.shape[0], rates.shape[1]), np.nan)
-        matrix[spike_time_ind, spike_cell_ind] = values
+        matrix[event_time_ind, event_cell_ind] = values
         return matrix
 
     return SpikeEventDiagnostics(
-        event_time_ind=spike_time_ind,
-        event_cell_ind=spike_cell_ind,
+        event_time_ind=event_time_ind,
+        event_cell_ind=event_cell_ind,
         event_hpd_overlap=events.hpd_overlap,
         event_kl_divergence=events.kl_divergence,
         event_predictive_pvalue=events.predictive_pvalue,

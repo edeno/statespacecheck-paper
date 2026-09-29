@@ -279,9 +279,9 @@ class TestComputeSpikeEventDiagnosticsFromRates:
         predictive = rng.dirichlet(np.ones(6), size=5)  # (n_time, n_bins)
         rates = rng.random((6, 3)) + 0.1  # (n_bins, n_cells)
         # Two spikes share (time 1, cell 2); time 3 has no spikes.
-        spike_time_ind = np.array([0, 1, 1, 4], dtype=np.intp)
-        spike_cell_ind = np.array([0, 2, 2, 1], dtype=np.intp)
-        return predictive, rates, spike_time_ind, spike_cell_ind
+        event_time_ind = np.array([0, 1, 1, 4], dtype=np.intp)
+        event_cell_ind = np.array([0, 2, 2, 1], dtype=np.intp)
+        return predictive, rates, event_time_ind, event_cell_ind
 
     def test_matches_package_and_scatters_into_dense_matrices(
         self, inputs: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]

@@ -43,8 +43,8 @@ def _get_spike_events_from_spike_times(
     actually updated with that spike.
     """
     time = np.asarray(time, dtype=np.float64)
-    spike_time_inds = []
-    spike_cell_inds = []
+    event_time_inds = []
+    event_cell_inds = []
     event_times = []
 
     for cell_ind, cell_spike_times in enumerate(spike_times):
@@ -53,8 +53,8 @@ def _get_spike_events_from_spike_times(
         cell_event_times = cell_spike_times[in_bounds]
         cell_time_inds = np.digitize(cell_event_times, time[1:-1])
 
-        spike_time_inds.append(cell_time_inds.astype(np.intp))
-        spike_cell_inds.append(np.full(len(cell_event_times), cell_ind, dtype=np.intp))
+        event_time_inds.append(cell_time_inds.astype(np.intp))
+        event_cell_inds.append(np.full(len(cell_event_times), cell_ind, dtype=np.intp))
         event_times.append(cell_event_times)
 
     if not event_times:
@@ -64,12 +64,12 @@ def _get_spike_events_from_spike_times(
             np.empty(0, dtype=np.float64),
         )
 
-    spike_time_ind = np.concatenate(spike_time_inds)
-    spike_cell_ind = np.concatenate(spike_cell_inds)
+    event_time_ind = np.concatenate(event_time_inds)
+    event_cell_ind = np.concatenate(event_cell_inds)
     event_time = np.concatenate(event_times)
     sort_ind = np.argsort(event_time)
 
-    return spike_time_ind[sort_ind], spike_cell_ind[sort_ind], event_time[sort_ind]
+    return event_time_ind[sort_ind], event_cell_ind[sort_ind], event_time[sort_ind]
 
 
 def compute_spike_event_diagnostics(
@@ -170,18 +170,18 @@ def compute_spike_event_diagnostics(
     if spike_times is not None:
         if time is None:
             raise ValueError("time must be provided when spike_times is provided")
-        spike_time_ind, spike_cell_ind, event_times = _get_spike_events_from_spike_times(
+        event_time_ind, event_cell_ind, event_times = _get_spike_events_from_spike_times(
             spike_times, time
         )
     else:
-        spike_time_ind, spike_cell_ind = expand_spike_events(spike_counts)
-        event_times = None if time is None else np.asarray(time, dtype=np.float64)[spike_time_ind]
+        event_time_ind, event_cell_ind = expand_spike_events(spike_counts)
+        event_times = None if time is None else np.asarray(time, dtype=np.float64)[event_time_ind]
 
     result = compute_spike_event_diagnostics_from_rates(
         predictive,
         place_fields.T,  # (n_bins, n_cells)
-        spike_time_ind.astype(np.intp),
-        spike_cell_ind.astype(np.intp),
+        event_time_ind.astype(np.intp),
+        event_cell_ind.astype(np.intp),
         coverage=coverage,
         include_dense_matrices=include_dense_matrices,
     )
