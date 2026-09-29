@@ -118,7 +118,7 @@
       },
       "diagnostics_fingerprint_sha256": "ee5ee5dcef07def97ea0091d728024b3fd2fd24666ed460849789aae26cc69ff",
       "diagnostics_schema_version": 2,
-      "fingerprint_sha256": "e64b1a47697bdfadc348941822b413313d89b1aaab3068209c67d2621602bc70",
+      "fingerprint_sha256": "2feafce9175e3c09564f925afdfc61b5772ed5b53c019f4ad56ab112da5d784d",
       "input_file_sha256": {
         "j1620210710_02_r1_figure04_inputs.npz": "60383b394b597e2900545548ecac7c53a8601038ace9dbeb42d7f9a5fe1c93b3"
       },
@@ -127,7 +127,7 @@
       "statespacecheck_version": "0.3.1"
     },
     "source": {
-      "source_tree_sha256": "78a5dba7ceda5341d2d013da53d3fc8ebf5c813d25255d2278d259b83bdfab0f",
+      "source_tree_sha256": "f8472df299dc1bd3c4b0e0763386bac025042f6137f265cbeac8caf06c1a5ec7",
       "statespacecheck_paper_version": "0.1.0",
       "statespacecheck_version": "0.3.1",
       "uv_lock_sha256": "7db5bb03266cfeab8f804cd7262232f3ffa16ebaf423722a399076043b640574"

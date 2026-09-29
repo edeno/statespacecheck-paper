@@ -254,6 +254,14 @@ class TestValidatePackageDefaults:
             cont, cf, figure04_decoder.Figure4PackageDefaults()
         )
 
+    def test_raises_when_installed_version_differs(self) -> None:
+        cont, cf = self._models()
+        drifted = dataclasses.replace(
+            figure04_decoder.Figure4PackageDefaults(), non_local_detector_version="0.0.0"
+        )
+        with pytest.raises(ValueError, match="version drift: .* records '0.0.0'"):
+            figure04_decoder.validate_package_defaults(cont, cf, drifted)
+
     @pytest.mark.parametrize(
         ("field", "drifted_value", "label"),
         [

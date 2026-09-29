@@ -17,6 +17,7 @@ the decode time grid.
 from __future__ import annotations
 
 import dataclasses
+from importlib.metadata import version
 from typing import Any
 
 import numpy as np
@@ -203,7 +204,9 @@ class Figure4PackageDefaults:
     continuous_fragmented_discrete_initial_conditions : tuple[float, float]
         Continuous-Fragmented mode initial conditions ``(0.5, 0.5)``.
     non_local_detector_version : str
-        Manuscript-stated ``non_local_detector`` version whose defaults these are.
+        Manuscript-stated ``non_local_detector`` version whose defaults these
+        are. :func:`validate_package_defaults` requires the installed version,
+        which the cache provenance records, to equal it.
     """
 
     sorted_spikes_algorithm: str = "sorted_spikes_kde"
@@ -436,7 +439,9 @@ def validate_package_defaults(
     silently change one, producing a different published figure. This checks the
     *resolved* model attributes against the recorded values and raises at decode
     time (runtime), rather than relying only on the drift-guard test, so an
-    unintended dependency change fails loudly instead of silently.
+    unintended dependency change fails loudly instead of silently. It first
+    checks that the installed ``non_local_detector`` (the version the cache
+    provenance records) is the recorded, manuscript-stated version.
 
     Parameters
     ----------
@@ -449,8 +454,18 @@ def validate_package_defaults(
     Raises
     ------
     ValueError
-        If any resolved model attribute diverges from the recorded default.
+        If the installed ``non_local_detector`` version differs from the
+        recorded one, or any resolved model attribute diverges from the
+        recorded default.
     """
+    installed_version = version("non_local_detector")
+    if installed_version != package_defaults.non_local_detector_version:
+        raise ValueError(
+            f"non_local_detector version drift: {installed_version!r} is installed but "
+            f"Figure4PackageDefaults records {package_defaults.non_local_detector_version!r}, "
+            "the version the manuscript states. Update Figure4PackageDefaults (and re-verify "
+            "Figure 4) if the dependency change is intentional."
+        )
     models = (
         ("continuous", continuous_model),
         ("continuous_fragmented", continuous_fragmented_model),

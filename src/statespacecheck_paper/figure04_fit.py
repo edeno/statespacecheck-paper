@@ -62,8 +62,8 @@ def fit_and_decode(
     Both models are fitted with every head-position sample and every spike in
     the recording (no training mask), then decode that same recording on
     :func:`decode_time`. Before decoding, :func:`validate_package_defaults`
-    checks the built models against ``package_defaults`` and raises on any
-    drift.
+    checks the installed ``non_local_detector`` version and the built models
+    against ``package_defaults`` and raises on any drift.
 
     Parameters
     ----------
