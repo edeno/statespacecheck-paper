@@ -172,6 +172,6 @@ def format_figure04_summary(summary: Figure4Summary) -> str:
         lines.append(
             f"  {confusion.metric}: n={confusion.n:,} both={confusion.both:,} "
             f"rescued={confusion.rescued:,} newly_flagged={confusion.newly_flagged:,} "
-            f"neither={confusion.neither:,} rescue={100 * confusion.rescue_rate:.1f}%"
+            f"neither={confusion.neither:,} rescued_percent={100 * confusion.rescued_fraction:.1f}%"
         )
     return "\n".join(lines)

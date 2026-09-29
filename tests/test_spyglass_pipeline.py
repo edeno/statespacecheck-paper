@@ -694,7 +694,7 @@ def test_summary_rows_round_trip(committed_figure04: dict[str, Any]) -> None:
         continuous=Figure4DiagnosticMeans(**means["continuous"]),
         continuous_fragmented=Figure4DiagnosticMeans(**means["continuous_fragmented"]),
         flag_confusions=tuple(
-            FlagConfusion(**{k: v for k, v in c.items() if k != "rescue_rate"})
+            FlagConfusion(**{k: v for k, v in c.items() if k != "rescued_fraction"})
             for c in committed_figure04["flag_confusions"]
         ),
         n_units=n_units,

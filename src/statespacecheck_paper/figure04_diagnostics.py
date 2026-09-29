@@ -330,7 +330,7 @@ class FlagConfusion:
     neither: int
 
     @property
-    def rescue_rate(self) -> float:
+    def rescued_fraction(self) -> float:
         """Fraction of reference-flagged spikes that the comparison does not flag (``rescued``).
 
         Returns ``nan`` when the reference flags no spikes.

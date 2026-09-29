@@ -178,7 +178,7 @@ def test_figure04_reported_statistics_counts_partition_events(tmp_path: Path) ->
         )
         assert counts == expected[confusion["metric"]]
         assert sum(counts[1:]) == counts[0]
-        assert confusion["rescue_rate"] == pytest.approx(
+        assert confusion["rescued_fraction"] == pytest.approx(
             confusion["rescued"] / (confusion["rescued"] + confusion["both"])
         )
 

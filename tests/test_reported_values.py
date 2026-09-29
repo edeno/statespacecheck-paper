@@ -84,7 +84,7 @@ def test_macro_values_round_trip_the_canonical_statistics() -> None:
     hpd = next(item for item in figure04["flag_confusions"] if item["metric"] == "hpd_overlap")
     assert values["RecHpdRescued"] == str(hpd["rescued"])
     assert values["RecHpdFlaggedContinuous"] == str(hpd["rescued"] + hpd["both"])
-    assert values["RecHpdRescuedPercent"] == f"{100 * hpd['rescue_rate']:.0f}"
+    assert values["RecHpdRescuedPercent"] == f"{100 * hpd['rescued_fraction']:.0f}"
 
 
 def test_asymmetric_mode_parameters_are_reported_independently() -> None:

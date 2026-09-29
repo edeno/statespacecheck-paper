@@ -308,7 +308,7 @@ class TestComputeResultsDiagnostics:
 
 
 class TestComputeFlagConfusion:
-    def test_below_direction_counts_and_rescue_rate(self) -> None:
+    def test_below_direction_counts_and_rescued_fraction(self) -> None:
         a = event_diagnostics(hpd=np.array([0.01, 0.02, 0.10, 0.20, 0.03]))
         b = event_diagnostics(hpd=np.array([0.01, 0.20, 0.02, 0.20, 0.20]))
         conf = compute_flag_confusion(a, b, "hpd_overlap", 0.05, worse_when="below")
@@ -320,14 +320,14 @@ class TestComputeFlagConfusion:
             1,
         )
         assert conf.both + conf.rescued + conf.newly_flagged + conf.neither == conf.n
-        assert conf.rescue_rate == pytest.approx(2 / 3)
+        assert conf.rescued_fraction == pytest.approx(2 / 3)
 
     def test_above_direction(self) -> None:
         a = event_diagnostics(kl=np.array([5.0, 6.0, 1.0, 2.0]))
         b = event_diagnostics(kl=np.array([5.0, 1.0, 7.0, 1.0]))
         conf = compute_flag_confusion(a, b, "kl_divergence", 4.0, worse_when="above")
         assert (conf.both, conf.rescued, conf.newly_flagged, conf.neither) == (1, 1, 1, 1)
-        assert conf.rescue_rate == pytest.approx(0.5)
+        assert conf.rescued_fraction == pytest.approx(0.5)
 
     def test_threshold_values_are_inclusive(self) -> None:
         hpd_a = event_diagnostics(hpd=np.array([0.05, 0.10]))
@@ -344,12 +344,12 @@ class TestComputeFlagConfusion:
         with pytest.raises(ValueError, match="required per-event value"):
             event_diagnostics(hpd=np.array([0.01, np.nan, 0.02]))
 
-    def test_rescue_rate_nan_when_the_reference_flags_nothing(self) -> None:
+    def test_rescued_fraction_nan_when_the_reference_flags_nothing(self) -> None:
         a = event_diagnostics(hpd=np.array([0.5, 0.6]))  # none at or below 0.05
         b = event_diagnostics(hpd=np.array([0.01, 0.6]))
         conf = compute_flag_confusion(a, b, "hpd_overlap", 0.05, worse_when="below")
         assert conf.rescued == 0 and conf.both == 0
-        assert np.isnan(conf.rescue_rate)
+        assert np.isnan(conf.rescued_fraction)
 
     def test_rejects_bad_direction(self) -> None:
         a = event_diagnostics(hpd=np.array([0.1]))

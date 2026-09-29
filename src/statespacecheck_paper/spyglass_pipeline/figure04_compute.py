@@ -203,7 +203,7 @@ def figure04_reported_statistics_from_rows(
     -------
     dict
         ``n_units``, ``diagnostic_means`` (per decoder and metric), and
-        ``flag_confusions`` (with ``rescue_rate``), as in ``figure04_summary.json``.
+        ``flag_confusions`` (with ``rescued_fraction``), as in ``figure04_summary.json``.
 
     Raises
     ------

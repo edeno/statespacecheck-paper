@@ -145,7 +145,7 @@ def test_summary_payload_contains_reported_counts_rates_and_provenance(
         "rescued": 18,
         "newly_flagged": 3,
         "neither": 77,
-        "rescue_rate": 0.9,
+        "rescued_fraction": 0.9,
     }
     assert provenance["source"] == source
     cache_provenance_payload = provenance["figure04_caches"]

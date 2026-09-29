@@ -51,7 +51,7 @@ These were established offline by emulating `SortedSpikesDecodingV1.make()` (Spy
 | figure pipeline, re-run | identical |
 | Spyglass-matched: no upsampling, `estimate_decoding_params = 0` | identical |
 | same with `PositionGroup.upsample_rate = 500` | identical (the entry is already on a 500 Hz grid) |
-| `estimate_decoding_params = 1` (the Spyglass default) | **different**: EM re-fits the Continuous–Fragmented transitions (`[[0.9988, 0.0012], [0.133, 0.867]]` vs `[[0.98, 0.02], [0.02, 0.98]]`); Continuous–Fragmented mean HPD overlap 0.880 → 0.836, KL 2.18 → 2.85; HPD rescue rate 92% → 30% |
+| `estimate_decoding_params = 1` (the Spyglass default) | **different**: EM re-fits the Continuous–Fragmented transitions (`[[0.9988, 0.0012], [0.133, 0.867]]` vs `[[0.98, 0.02], [0.02, 0.98]]`); Continuous–Fragmented mean HPD overlap 0.880 → 0.836, KL 2.18 → 2.85; HPD rescued percentage 92% → 30% |
 
 Storing the decodes the way Spyglass does (`save_results` / `save_model`), reloading
 them, and running `figure04_diagnostics_from_decodes` also reproduces the committed

@@ -22,7 +22,7 @@ rule preserves the distinctions the prose draws with the number. Decoding
 errors are compared as ratios ("four times the well-specified value", "one
 fifth of a place-field width"), which two significant figures support; flag
 percentages are compared as substantial, low, or modest, which whole percents
-support; rescue rates are descriptive of this recording and appear next to
+support; rescued percentages are descriptive of this recording and appear next to
 their exact counts. Constants the text hedges with "approximately" (199.47 Hz,
 sqrt(12.5) cm) are exact functions of chosen parameters and are shown to two
 significant figures. The p-value cutoff's position on the figures' -log(p)
@@ -605,8 +605,8 @@ def _recording_statistics(payload: dict[str, Any]) -> list[MacroDefinition]:
                 ),
                 MacroDefinition(
                     f"{prefix}RescuedPercent",
-                    whole_percent(100.0 * confusion["rescue_rate"]),
-                    f"flag_confusions[{metric}].rescue_rate",
+                    whole_percent(100.0 * confusion["rescued_fraction"]),
+                    f"flag_confusions[{metric}].rescued_fraction",
                 ),
                 MacroDefinition(
                     f"{prefix}NewlyFlagged",

@@ -79,15 +79,15 @@ def figure04_reported_statistics(summary: Figure4Summary) -> dict[str, object]:
         (which decoder is the reference and which the comparison), and
         ``flag_confusions`` (``rescued`` = flagged by the
         reference only, ``newly_flagged`` = by the comparison only, with
-        ``rescue_rate``, ``None`` when undefined).
+        ``rescued_fraction``, ``None`` when undefined).
     """
     confusions: list[dict[str, object]] = []
     for confusion in summary.flag_confusions:
-        rescue_rate = confusion.rescue_rate
+        rescued_fraction = confusion.rescued_fraction
         confusions.append(
             {
                 **dataclasses.asdict(confusion),
-                "rescue_rate": rescue_rate if math.isfinite(rescue_rate) else None,
+                "rescued_fraction": rescued_fraction if math.isfinite(rescued_fraction) else None,
             }
         )
     return {
