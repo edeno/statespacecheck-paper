@@ -170,8 +170,8 @@ function legendBlock(html) {
 // Legend of the detail chart that both players show for the selected spike.
 const DETAIL_LEGEND = `
     <span><i class="swatch" style="background:var(--predictive)"></i>Prediction</span>
-    <span><i class="swatch" style="background:var(--likelihood)"></i>Spike likelihood</span>
-    <span><i class="swatch" style="background:var(--position)"></i>Animal's position</span>`;
+    <span><i class="swatch" style="background:var(--likelihood-ink)"></i>Spike likelihood</span>
+    <span><i class="swatch" style="background:var(--position-ink)"></i>Animal's position</span>`;
 
 /** The player layout: tracks on the left, a detail panel on the right. */
 function playerFrame() {
@@ -198,7 +198,7 @@ function heatmapTrack({ label, bitmap, height, times, bins, position, mask = nul
     draw(context, width, h, xOf) {
       if (mask) paintColumns(context, bitmap, times, mask, xOf, width, h);
       else paintHeatmap(context, bitmap, width, h);
-      paintPositionLine(context, times, position, xOf, positionScale(bins, h), cssVar("--position"));
+      paintPositionLine(context, times, position, xOf, positionScale(bins, h), cssVar("--position-ink"));
     },
   };
 }
@@ -569,7 +569,7 @@ function renderCondition(view, payload, manifest) {
     rules[metricName][i] ? { fill: true, alpha: 1, radius: 3 } : { fill: true, alpha: 0.3, radius: 2.2 };
 
   const legend = legendBlock(`
-    <span><i class="swatch" style="background:var(--position)"></i>Animal's position</span>
+    <span><i class="swatch" style="background:var(--position-ink)"></i>Animal's position</span>
     <span><i class="swatch dot" style="background:var(--text)"></i>Flagged spike (solid)</span>
     <span><i class="swatch dot" style="background:var(--text);opacity:.3"></i>Not flagged (faded)</span>
     <span><i class="swatch" style="background:var(--threshold)"></i>Flag threshold</span>
@@ -642,7 +642,7 @@ function renderCondition(view, payload, manifest) {
         { values: normalized(predictive.row(t)), color: cssVar("--predictive"), name: "prediction" },
         {
           values: normalized(likelihoodRows.row(events.likelihood_row[index])),
-          color: cssVar("--likelihood"),
+          color: cssVar("--likelihood-ink"),
           name: "spike likelihood",
         },
       ],
@@ -778,7 +778,7 @@ export function renderRecording(root, payload, manifest) {
     .join("")}</tbody>`;
 
   const legend = legendBlock(`
-    <span><i class="swatch" style="background:var(--position)"></i>Animal's position</span>
+    <span><i class="swatch" style="background:var(--position-ink)"></i>Animal's position</span>
     <span><i class="swatch ring" style="border-color:var(--text)"></i>${reference.label} model</span>
     <span><i class="swatch dot" style="background:var(--text)"></i>${comparison.label} model</span>
     <span><i class="swatch" style="background:var(--threshold)"></i>Flag threshold</span>`);
@@ -882,7 +882,7 @@ export function renderRecording(root, payload, manifest) {
           },
           {
             values: normalized(cellLikelihoods.row(cell)),
-            color: cssVar("--likelihood"),
+            color: cssVar("--likelihood-ink"),
             name: "spike likelihood",
           },
         ],

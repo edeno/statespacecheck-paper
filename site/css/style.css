@@ -24,6 +24,16 @@
   --hpd: #56b4e9;
   --pvalue: #cc79a7;
   --kl: #009e73;
+  /* The colors above are the paper's figures'. Five are fainter than 3:1 (WCAG
+     1.4.11) against these light surfaces, so the page draws with a darker shade
+     of each: its channels scaled by the largest hundredth that reaches 3:1
+     against --surface, --surface-muted, and --surface-sunken (0.79, 0.94, 0.80,
+     0.93, and 0.99). tests/contrast.test.mjs checks the ratios and hues. */
+  --likelihood-ink: #b67e00;
+  --position-ink: #f000f0;
+  --hpd-ink: #4590ba;
+  --pvalue-ink: #be719b;
+  --kl-ink: #009c72;
   /* Unselected place fields: 3.4:1 against the panel, enough for graphics. */
   --curve-muted: #858581;
   /* Place fields in the filter explainer: the cell that fired, and the rest. */

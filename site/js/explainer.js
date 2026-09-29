@@ -81,7 +81,7 @@ export function initExplainer(root, data, manifest) {
   /** The whole run faintly, and the part already run in full color. */
   function paintRun(context, xOf, yOf, lineWidth) {
     context.globalAlpha = 0.3;
-    paintPositionLine(context, stepCenters, x, xOf, yOf, cssVar("--position"), lineWidth);
+    paintPositionLine(context, stepCenters, x, xOf, yOf, cssVar("--position-ink"), lineWidth);
     context.globalAlpha = 1;
     paintPositionLine(
       context,
@@ -89,7 +89,7 @@ export function initExplainer(root, data, manifest) {
       x.slice(0, t + 1),
       xOf,
       yOf,
-      cssVar("--position"),
+      cssVar("--position-ink"),
       lineWidth,
     );
   }
@@ -124,7 +124,7 @@ export function initExplainer(root, data, manifest) {
         const row = data.events.cell[i];
         const left = xOf(step);
         const w = Math.max(2, xOf(step + 1) - left);
-        if (step === t) context.fillStyle = cssVar("--likelihood");
+        if (step === t) context.fillStyle = cssVar("--likelihood-ink");
         else if (step < t) context.fillStyle = cssVar("--text");
         else context.fillStyle = cssVar("--curve-muted");
         context.fillRect(left, height - (row + 1) * rowHeight + 1, w, Math.max(1, rowHeight - 2));
@@ -263,7 +263,7 @@ export function initExplainer(root, data, manifest) {
     }
     likelihoodSeries.push({
       values: Array.from(likelihood.row(t)),
-      color: cssVar("--likelihood"),
+      color: cssVar("--likelihood-ink"),
       name: "likelihood",
     });
     charts.likelihood.update({ series: likelihoodSeries, marker });
