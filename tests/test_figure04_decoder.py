@@ -9,7 +9,6 @@ import numpy as np
 import pytest
 
 import statespacecheck_paper.figure04_decoder as figure04_decoder
-from statespacecheck_paper.diagnostics import HPD_COVERAGE
 
 
 class TestFigure4ConfigMatchesManuscript:
@@ -224,9 +223,3 @@ class TestValidateProvenanceDefaults:
         )
         with pytest.raises(ValueError, match="default drift"):
             figure04_decoder.validate_provenance_defaults(cont, cf, drifted)
-
-
-def test_diagnostics_config_hpd_coverage_is_the_paper_coverage() -> None:
-    """The decode-hashed config spells the coverage out; it must equal the one
-    the simulation, the website, and the figure schematics use."""
-    assert figure04_decoder.Figure4DiagnosticsConfig().hpd_coverage == HPD_COVERAGE

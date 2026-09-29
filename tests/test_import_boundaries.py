@@ -124,13 +124,13 @@ def test_figure04_family_dependency_edges_are_acyclic() -> None:
     cache; summary and layout import workflow (never cache/config/paths);
     generation ties them together.
 
-    The analysis and plotting leaves (``figure04_decoder`` /
+    The analysis and plotting modules (``figure04_decoder`` /
     ``figure04_place_fields`` < ``figure04_diagnostics`` and
     ``figure04_plot_primitives`` < ``figure04_track_plots`` < ``figure04_panels``)
     sit below this layering."""
     prefix = "statespacecheck_paper."
     allowed = {
-        "figure04_decoder.py": set(),
+        "figure04_decoder.py": {prefix + "diagnostics"},
         "figure04_place_fields.py": set(),
         "figure04_diagnostics.py": {
             prefix + "diagnostics",

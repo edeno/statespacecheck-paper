@@ -91,13 +91,13 @@
       "export_file_sha256": {
         "j1620210710_02_r1_figure04_inputs.npz": "60383b394b597e2900545548ecac7c53a8601038ace9dbeb42d7f9a5fe1c93b3"
       },
-      "fingerprint_sha256": "7035b9035252b082323b6925d16523949ea40bb1d1cac65bbc0aab0586f9ef47",
+      "fingerprint_sha256": "ace94df7130fa638e6cb60fdf019f9fd27c4e03810fa2964d130ec323b962a93",
       "non_local_detector_version": "0.6.10.dev214+g956fdccaf",
       "schema_version": 5,
       "statespacecheck_version": "0.3.1"
     },
     "source": {
-      "source_tree_sha256": "294af2df49c04e3ad1c3d589bfaac952fe8495ecbbf4fb57d12a55ff6c3377af",
+      "source_tree_sha256": "9beb7149b815d086e558b60773d6f12b7d54c873cabda64b3013d303e199d45a",
       "statespacecheck_paper_version": "0.1.0",
       "statespacecheck_version": "0.3.1",
       "uv_lock_sha256": "7db5bb03266cfeab8f804cd7262232f3ffa16ebaf423722a399076043b640574"

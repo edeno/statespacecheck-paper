@@ -53,7 +53,7 @@ figure03_plotting      → figure03_protocol, figure03_summary, diagnostics, num
 figure03_generation    → figure03_protocol, figure03_simulation, figure03_summary, figure03_plotting, paths, scientific_artifacts, style
 generate_figure03.py   → figure03_generation
 
-figure04_decoder       → (leaf; nld construction + Figure4Config)
+figure04_decoder       → diagnostics (HPD_COVERAGE); nld construction + Figure4Config
 figure04_place_fields  → (leaf; place-field / marginalized-posterior extraction)
 figure04_diagnostics   → diagnostics, figure04_place_fields
 figure04_plot_primitives → figure04_place_fields, style

@@ -22,6 +22,8 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
+from statespacecheck_paper.diagnostics import HPD_COVERAGE
+
 
 def create_decoder_environment(
     track_graph: Any,
@@ -225,7 +227,7 @@ class Figure4DiagnosticsConfig:
     ----------
     hpd_coverage : float
         Coverage probability of the HPD regions compared by the HPD-overlap
-        diagnostic (``0.95`` in the manuscript).
+        diagnostic; defaults to the paper's :data:`~statespacecheck_paper.diagnostics.HPD_COVERAGE`.
     event_selection : str
         Which spike events are diagnosed. ``"all_spikes_in_recording"`` means
         every spike of every unit whose timestamp lies within the decoded
@@ -233,7 +235,7 @@ class Figure4DiagnosticsConfig:
         applied. Recorded so the cache identity states the selection rule.
     """
 
-    hpd_coverage: float = 0.95
+    hpd_coverage: float = HPD_COVERAGE
     event_selection: str = "all_spikes_in_recording"
 
     def __post_init__(self) -> None:
