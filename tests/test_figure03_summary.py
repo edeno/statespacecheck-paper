@@ -35,7 +35,7 @@ class TestSummaryFlagPercentages:
         # Tiny strictly-increasing ladder so conditions map to known slices.
         return Figure3Config(phase_boundaries=(6, 10, 14, 18, 26, 30, 34, 36))
 
-    def test_summary_phase_windows_structure(self) -> None:
+    def test_summary_conditions_structure(self) -> None:
         cols = build_summary_conditions(self._params())
         # The published summary's condition_order and the website's condition
         # files use these identifiers; each names its own column.
@@ -92,12 +92,12 @@ class TestSummaryFlagPercentages:
         with pytest.raises(ValueError, match="direction"):
             _flag_percentage(np.array([1.0]), 0.5, "sideways")
 
-    def test_compute_phase_flag_fractions_isolates_remap(self) -> None:
+    def test_flag_percentages_isolate_the_remap_condition(self) -> None:
         """A KL spike confined to the remap window must flag 100% in the
-        remap column and 0% elsewhere; HPD/spike-prob rows that never cross
+        remap column and 0% elsewhere; HPD-overlap and predictive p-value rows that never cross
         their thresholds must be 0% everywhere.
 
-        Row order follows ``SUMMARY_FLAG_METRICS``: HPD (0), spike-prob (1),
+        Row order follows ``SUMMARY_FLAG_METRICS``: HPD overlap (0), predictive p-value (1),
         KL (2). Column order: well-specified (0), remap (1), history (2),
         replay (3), drift (4), sparse population (5)."""
         params = self._params()
@@ -124,7 +124,7 @@ class TestSummaryFlagPercentages:
         # KL row (index 2): only the remap column (index 1) flags.
         assert frac[2, 1] == pytest.approx(100.0)
         assert np.allclose(np.delete(frac[2], 1), 0.0)
-        # HPD (0) and spike-prob (1) rows never cross their thresholds.
+        # HPD-overlap (0) and predictive p-value (1) rows never cross their thresholds.
         assert np.allclose(frac[0], 0.0)
         assert np.allclose(frac[1], 0.0)
 

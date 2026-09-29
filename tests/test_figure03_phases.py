@@ -435,7 +435,7 @@ def test_history_dependent_firing_per_spike_metrics_near_baseline(
         f"3x baseline; got baseline={base_kl:.3f}, hist-dep={hd_kl:.3f}"
     )
     assert hd_hpd > 0.9 * base_hpd, (
-        "per-spike HPDO in the history-dependent phase should stay within "
+        "per-spike HPD overlap in the history-dependent phase should stay within "
         f"10% of baseline; got baseline={base_hpd:.3f}, hist-dep={hd_hpd:.3f}"
     )
     # predictive_pvalue stays in a band around baseline (neither collapsing like

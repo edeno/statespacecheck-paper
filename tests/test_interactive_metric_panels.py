@@ -36,7 +36,7 @@ pytestmark = pytest.mark.skipif(
 
 
 def _build_cache(cache_dir: Path) -> None:
-    """Metric-panel tests need a single-state cache with non-zero spike-prob floor."""
+    """Metric-panel tests need a single-state cache with non-zero predictive p-value floor."""
     _build_cache_impl(cache_dir, n_states=1, p_min=0.001)
 
 

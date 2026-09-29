@@ -55,10 +55,10 @@ class TestComputeBaselineDiagnosticThresholds:
 
     def test_handles_partial_nan_baseline(self) -> None:
         """NaNs in the baseline must be ignored, not propagate to thresholds."""
-        hpdo = np.full(30, 0.8)
-        hpdo[:5] = np.nan
+        hpd_overlap = np.full(30, 0.8)
+        hpd_overlap[:5] = np.nan
         thresholds = compute_baseline_diagnostic_thresholds(
-            hpd_overlap=hpdo, kl_divergence=np.full(30, 1.0)
+            hpd_overlap=hpd_overlap, kl_divergence=np.full(30, 1.0)
         )
         assert thresholds.hpd_overlap == pytest.approx(0.8)
         assert thresholds.kl_divergence == pytest.approx(1.0)

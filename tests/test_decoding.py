@@ -264,7 +264,7 @@ class TestDecodeWithDiagnostics:
             atol=1e-6,
         ), f"transition_matrix in {window} did not change predictive — schedule ignored?"
 
-    def test_alt_rates_used_only_inside_window(self) -> None:
+    def test_override_rates_used_only_inside_the_override_window(self) -> None:
         """A :class:`DecoderOverrideWindow` with ``firing_rate_table`` must change
         every per-spike diagnostic inside the window and leave it
         untouched outside. The in-window values are checked directly
