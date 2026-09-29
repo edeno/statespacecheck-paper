@@ -112,7 +112,7 @@ class Figure4Inputs:
 
 
 def epoch_identifier(nwb_file_name: str, epoch_name: str) -> str:
-    """Return the ``{animal}{date}_{epoch}`` identifier used in export file names.
+    """Return the ``{animal}{date}_{epoch}`` identifier used in Figure-4 input file names.
 
     Parameters
     ----------

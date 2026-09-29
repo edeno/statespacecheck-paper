@@ -148,11 +148,11 @@ def test_missing_directory_raises_actionable_error(tmp_path: Path) -> None:
     assert _download_command(str(error.value)) == _download_arguments(data)
 
 
-def test_missing_export_files_lists_what_is_absent(tmp_path: Path) -> None:
+def test_missing_input_file_is_named(tmp_path: Path) -> None:
     # Directory exists but the input file does not: the loader should name the
     # missing file rather than surfacing a bare np.load traceback.
     with pytest.raises(
-        FileNotFoundError, match="Missing 1 expected export file.*_figure04_inputs.npz"
+        FileNotFoundError, match="Missing the Figure-4 input file .*_figure04_inputs.npz"
     ) as error:
         load_neural_recording_from_files(tmp_path, FIGURE04_INPUTS_EPOCH)
     assert _download_command(str(error.value)) == _download_arguments(tmp_path)

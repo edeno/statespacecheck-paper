@@ -26,8 +26,8 @@ workflow/place-field modules refit both models.
 This module owns the cache locations (:class:`Figure4Paths`), both fingerprints,
 the machine-readable provenance record stored in the summary, and the load/save
 helpers with explicit invalid-cache behavior. It imports ``Figure4Config`` from
-:mod:`figure04_decoder` and the input-file suffix list (``EXPORT_FILE_SUFFIXES``)
-from :mod:`load_local_data`, whose loader owns it.
+:mod:`figure04_decoder` and the input-file name (``input_file_path``,
+``INPUT_FILE_SUFFIX``) from :mod:`load_local_data`, whose loader owns it.
 """
 
 from __future__ import annotations
@@ -45,7 +45,11 @@ from typing import TypedDict
 import joblib
 
 from statespacecheck_paper.figure04_decoder import Figure4Config, Figure4DiagnosticsConfig
-from statespacecheck_paper.load_local_data import EXPORT_FILE_SUFFIXES, file_sha256
+from statespacecheck_paper.load_local_data import (
+    INPUT_FILE_SUFFIX,
+    file_sha256,
+    input_file_path,
+)
 
 # Decode-bundle schema version, hashed into the decode fingerprint. Bump it to
 # invalidate every decode cache when the payload layout changes in a way the
@@ -104,34 +108,30 @@ class Figure4CacheArtifactProvenance(TypedDict):
     schema_version: int
     fingerprint_sha256: str
     non_local_detector_version: str
-    export_file_sha256: dict[str, str]
+    input_file_sha256: dict[str, str]
     diagnostics_schema_version: int
     diagnostics_fingerprint_sha256: str
     statespacecheck_version: str
     diagnostics_config: dict[str, object]
 
 
-# The pre-exported input files are named by ``load_local_data`` (which owns
-# ``EXPORT_FILE_SUFFIXES``); their content hashes go into the fingerprint so that
-# replacing an export under the same ``{epoch}`` prefix invalidates the cache
+# The Figure-4 input file is named by ``load_local_data`` (which owns
+# ``INPUT_FILE_SUFFIX``); its content hash goes into the fingerprint so that
+# replacing the file under the same ``{epoch}`` prefix invalidates the cache
 # instead of silently reusing a decode of the old data.
 
 
-def _export_file_checksums(paths: Figure4Paths) -> dict[str, str | None]:
-    """sha256 of each pre-exported input file (``None`` when a file is absent).
+def _input_file_checksum(paths: Figure4Paths) -> str | None:
+    """sha256 of the Figure-4 input file (``None`` when the file is absent).
 
     A missing file hashes to ``None`` rather than raising, so the fingerprint
-    stays well-defined for synthetic/test paths that have no real exports; a
+    stays well-defined for synthetic/test paths that have no real input file; a
     real run hashes the actual bytes so any data-content change invalidates.
     """
-    checksums: dict[str, str | None] = {}
-    for suffix in EXPORT_FILE_SUFFIXES:
-        file_path = paths.data_path / f"{paths.animal_date_epoch}{suffix}"
-        if not file_path.exists():
-            checksums[suffix] = None
-            continue
-        checksums[suffix] = file_sha256(file_path)
-    return checksums
+    file_path = input_file_path(paths.data_path, paths.animal_date_epoch)
+    if not file_path.exists():
+        return None
+    return file_sha256(file_path)
 
 
 def _strip_docstrings(tree: ast.AST) -> ast.AST:
@@ -183,7 +183,7 @@ class Figure4CacheProvenance:
     fingerprint_sha256: str
     schema_version: int
     animal_date_epoch: str
-    export_checksums: tuple[tuple[str, str | None], ...]
+    input_file_sha256: str | None
     non_local_detector_version: str
     diagnostics_fingerprint_sha256: str
     diagnostics_schema_version: int
@@ -193,39 +193,19 @@ class Figure4CacheProvenance:
     def artifact_payload(self) -> Figure4CacheArtifactProvenance:
         """Return path-independent cache provenance for a summary artifact.
 
-        Raises ``ValueError`` unless every canonical input export has a
-        checksum.
+        Raises ``ValueError`` unless the input file has a checksum.
         """
-        checksum_by_suffix = dict(self.export_checksums)
-        if len(checksum_by_suffix) != len(self.export_checksums):
-            raise ValueError("Figure 4 provenance contains duplicate export suffixes.")
-        missing_suffixes = set(EXPORT_FILE_SUFFIXES) - set(checksum_by_suffix)
-        unexpected_suffixes = set(checksum_by_suffix) - set(EXPORT_FILE_SUFFIXES)
-        if missing_suffixes or unexpected_suffixes:
+        input_file = f"{self.animal_date_epoch}{INPUT_FILE_SUFFIX}"
+        if self.input_file_sha256 is None:
             raise ValueError(
-                "Figure 4 provenance must identify the canonical input exports; "
-                f"missing {sorted(missing_suffixes)}, unexpected {sorted(unexpected_suffixes)}."
+                "Canonical Figure 4 provenance requires the input file's checksum; "
+                f"{input_file} has none."
             )
-        missing = [
-            f"{self.animal_date_epoch}{suffix}"
-            for suffix, checksum in checksum_by_suffix.items()
-            if checksum is None
-        ]
-        if missing:
-            raise ValueError(
-                "Canonical Figure 4 provenance requires every exported input; "
-                f"missing checksums for {missing}."
-            )
-        export_file_sha256 = {
-            f"{self.animal_date_epoch}{suffix}": checksum
-            for suffix, checksum in checksum_by_suffix.items()
-            if checksum is not None
-        }
         return {
             "schema_version": self.schema_version,
             "fingerprint_sha256": self.fingerprint_sha256,
             "non_local_detector_version": self.non_local_detector_version,
-            "export_file_sha256": export_file_sha256,
+            "input_file_sha256": {input_file: self.input_file_sha256},
             "diagnostics_schema_version": self.diagnostics_schema_version,
             "diagnostics_fingerprint_sha256": self.diagnostics_fingerprint_sha256,
             "statespacecheck_version": self.statespacecheck_version,
@@ -313,15 +293,15 @@ def compute_figure04_cache_provenance(
     decode-affecting parameters (the :class:`Figure4Config` ``decoder`` and
     ``package_defaults`` parts -- but **not** ``execution``, which is performance-only
     and leaves the decode identical, nor ``diagnostics``, which does not touch
-    the fit), the input-data identifier *and the content hashes of the
-    pre-exported input files*, the executable source of the fitting and
+    the fit), the input-data identifier *and the content hash of the
+    Figure-4 input file*, the executable source of the fitting and
     data-preparation modules, and the *installed* ``non_local_detector``
     revision. Any change forces a refit; the cached bundle stores this
     fingerprint so a stale cache cannot silently produce a figure that no longer
     matches the current method, input data, or dependency. Hashing the file
-    contents (not just ``animal_date_epoch``) is what makes replacing an export
-    under the same epoch invalidate the cache rather than reuse a decode of the
-    old bytes.
+    contents (not just ``animal_date_epoch``) is what makes replacing the input
+    file under the same epoch invalidate the cache rather than reuse a decode of
+    the old bytes.
 
     Comments and docstrings do not affect the source digest. Edits to shared
     workflow or place-field code conservatively refit; edits confined to
@@ -332,7 +312,7 @@ def compute_figure04_cache_provenance(
     Bumping :data:`FIGURE04_CACHE_SCHEMA_VERSION` is the manual override ---
     it is part of the hashed payload, so a bump invalidates every existing cache.
     """
-    export_checksums = _export_file_checksums(paths)
+    input_file_sha256 = _input_file_checksum(paths)
     non_local_detector_version = _installed_non_local_detector_version()
     fingerprint_payload = {
         "schema_version": FIGURE04_CACHE_SCHEMA_VERSION,
@@ -341,7 +321,7 @@ def compute_figure04_cache_provenance(
             "package_defaults": dataclasses.asdict(config.package_defaults),
         },
         "animal_date_epoch": paths.animal_date_epoch,
-        "export_checksums": export_checksums,
+        "input_file_sha256": input_file_sha256,
         "non_local_detector_version": non_local_detector_version,
         "decode_source_digest": _decode_source_digest(),
     }
@@ -350,7 +330,7 @@ def compute_figure04_cache_provenance(
         fingerprint_sha256=hashlib.sha256(blob).hexdigest(),
         schema_version=FIGURE04_CACHE_SCHEMA_VERSION,
         animal_date_epoch=paths.animal_date_epoch,
-        export_checksums=tuple(export_checksums.items()),
+        input_file_sha256=input_file_sha256,
         non_local_detector_version=non_local_detector_version,
         diagnostics_fingerprint_sha256=compute_figure04_diagnostics_fingerprint(config.diagnostics),
         diagnostics_schema_version=FIGURE04_DIAGNOSTICS_SCHEMA_VERSION,

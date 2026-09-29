@@ -26,7 +26,7 @@ from statespacecheck_paper.figure04_cache import (
     save_figure04_diagnostics_cache,
 )
 from statespacecheck_paper.figure04_decoder import Figure4Config, Figure4DiagnosticsConfig
-from statespacecheck_paper.load_local_data import EXPORT_FILE_SUFFIXES
+from statespacecheck_paper.load_local_data import INPUT_FILE_SUFFIX
 
 
 def _payload() -> dict[str, Any]:
@@ -302,24 +302,23 @@ def test_fingerprint_unchanged_when_block_size_changes(tmp_path: Path) -> None:
     assert compute_figure04_cache_provenance(changed, paths).fingerprint_sha256 == fp
 
 
-def test_fingerprint_changes_when_export_file_content_changes(
+def test_fingerprint_changes_when_input_file_content_changes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Replacing an export under the same epoch must invalidate the cache: the
-    # fingerprint hashes the file contents, not just ``animal_date_epoch``.
+    # Replacing the input file under the same epoch must invalidate the cache:
+    # the fingerprint hashes the file contents, not just ``animal_date_epoch``.
     paths = Figure4Paths(data_path=tmp_path, animal_date_epoch="epoch_x")
     config = Figure4Config()
     monkeypatch.setattr(figure04_cache, "_installed_non_local_detector_version", lambda: "1.0.0")
 
-    (suffix,) = EXPORT_FILE_SUFFIXES
-    export = tmp_path / f"epoch_x{suffix}"
-    export.write_bytes(b"original")
+    input_file = tmp_path / f"epoch_x{INPUT_FILE_SUFFIX}"
+    input_file.write_bytes(b"original")
     fp_original = compute_figure04_cache_provenance(config, paths).fingerprint_sha256
     assert (
         compute_figure04_cache_provenance(config, paths).fingerprint_sha256 == fp_original
     )  # deterministic
 
-    export.write_bytes(b"REPLACED with different data")
+    input_file.write_bytes(b"REPLACED with different data")
     assert compute_figure04_cache_provenance(config, paths).fingerprint_sha256 != fp_original
 
 
@@ -327,8 +326,7 @@ def test_cache_provenance_serializes_complete_path_independent_inputs(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     paths = Figure4Paths(data_path=tmp_path, animal_date_epoch="epoch_x")
-    for suffix in EXPORT_FILE_SUFFIXES:
-        (tmp_path / f"epoch_x{suffix}").write_bytes(suffix.encode())
+    (tmp_path / f"epoch_x{INPUT_FILE_SUFFIX}").write_bytes(b"input")
     monkeypatch.setattr(figure04_cache, "_installed_non_local_detector_version", lambda: "1.2.3")
 
     provenance = compute_figure04_cache_provenance(Figure4Config(), paths)
@@ -336,9 +334,7 @@ def test_cache_provenance_serializes_complete_path_independent_inputs(
 
     assert payload["schema_version"] == FIGURE04_CACHE_SCHEMA_VERSION
     assert payload["non_local_detector_version"] == "1.2.3"
-    assert set(payload["export_file_sha256"]) == {
-        f"epoch_x{suffix}" for suffix in EXPORT_FILE_SUFFIXES
-    }
+    assert set(payload["input_file_sha256"]) == {f"epoch_x{INPUT_FILE_SUFFIX}"}
     assert payload["diagnostics_schema_version"] == FIGURE04_DIAGNOSTICS_SCHEMA_VERSION
     assert payload["diagnostics_fingerprint_sha256"] == compute_figure04_diagnostics_fingerprint(
         Figure4DiagnosticsConfig()
@@ -355,12 +351,12 @@ def test_cache_provenance_rejects_missing_canonical_input_checksum() -> None:
         fingerprint_sha256="f" * 64,
         schema_version=FIGURE04_CACHE_SCHEMA_VERSION,
         animal_date_epoch="epoch_x",
-        export_checksums=tuple((suffix, None) for suffix in EXPORT_FILE_SUFFIXES),
+        input_file_sha256=None,
         non_local_detector_version="1.2.3",
         diagnostics_fingerprint_sha256="d" * 64,
         diagnostics_schema_version=FIGURE04_DIAGNOSTICS_SCHEMA_VERSION,
         statespacecheck_version="0.1.0",
         diagnostics_config=Figure4DiagnosticsConfig(),
     )
-    with pytest.raises(ValueError, match="requires every exported input"):
+    with pytest.raises(ValueError, match="requires the input file's checksum"):
         provenance.artifact_payload()

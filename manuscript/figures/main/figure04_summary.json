@@ -90,20 +90,20 @@
       },
       "diagnostics_fingerprint_sha256": "3a4dc176494e66c68a6e54a61d6f08e6d9a7c97e387cb37dd63a74571d1835ea",
       "diagnostics_schema_version": 2,
-      "export_file_sha256": {
+      "fingerprint_sha256": "634c33a56c5c943170c14b0cfbf2fca09449208cdcf1cd94f74d1d218ca29890",
+      "input_file_sha256": {
         "j1620210710_02_r1_figure04_inputs.npz": "60383b394b597e2900545548ecac7c53a8601038ace9dbeb42d7f9a5fe1c93b3"
       },
-      "fingerprint_sha256": "b7eedabc0e65a93df0ae376ee990134d886283d6d8102a56641be0ca7eed3b78",
       "non_local_detector_version": "0.6.10.dev214+g956fdccaf",
       "schema_version": 6,
       "statespacecheck_version": "0.3.1"
     },
     "source": {
-      "source_tree_sha256": "019d1fdec870b4cd2db0a5ce5593dfa6b98d5d4f843d3d418fc253c009315e38",
+      "source_tree_sha256": "9abf93fcbb1867e2ec2c8efe24d664b52b20a60d2348db7960d0e0fc71172597",
       "statespacecheck_paper_version": "0.1.0",
       "statespacecheck_version": "0.3.1",
       "uv_lock_sha256": "7db5bb03266cfeab8f804cd7262232f3ffa16ebaf423722a399076043b640574"
     }
   },
-  "schema_version": 5
+  "schema_version": 6
 }

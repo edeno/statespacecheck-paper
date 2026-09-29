@@ -19,7 +19,7 @@ from statespacecheck_paper.figure04_decoder import Figure4Config
 from statespacecheck_paper.figure04_diagnostics import FlagConfusion
 from statespacecheck_paper.figure04_layout import Figure4Composition
 from statespacecheck_paper.figure04_summary import Figure4DiagnosticMeans, Figure4Summary
-from statespacecheck_paper.load_local_data import EXPORT_FILE_SUFFIXES
+from statespacecheck_paper.load_local_data import INPUT_FILE_SUFFIX
 
 from ._figure04 import synthetic_cache_provenance
 from ._scripts import SCRIPTS_DIR
@@ -125,7 +125,7 @@ def test_summary_payload_contains_reported_counts_rates_and_provenance(
     flag_rules = cast(dict[str, dict[str, str | float]], payload["flag_rules"])
     provenance = cast(dict[str, Any], payload["provenance"])
 
-    assert payload["schema_version"] == 5
+    assert payload["schema_version"] == 6
     assert payload["dataset"] == {"animal_date_epoch": "epoch_x", "n_units": 7}
     assert flag_rules["hpd_overlap"] == {
         "comparison": "less_than_or_equal",
@@ -152,9 +152,7 @@ def test_summary_payload_contains_reported_counts_rates_and_provenance(
     assert decode_provenance["fingerprint_sha256"] == "c" * 64
     assert decode_provenance["diagnostics_fingerprint_sha256"] == "e" * 64
     assert decode_provenance["diagnostics_config"]["hpd_coverage"] == 0.95
-    assert set(decode_provenance["export_file_sha256"]) == {
-        f"epoch_x{suffix}" for suffix in EXPORT_FILE_SUFFIXES
-    }
+    assert decode_provenance["input_file_sha256"] == {f"epoch_x{INPUT_FILE_SUFFIX}": "d" * 64}
 
 
 def test_cli_force_recompute_forwards_use_cache(

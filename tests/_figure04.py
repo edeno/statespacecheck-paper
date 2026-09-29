@@ -8,20 +8,19 @@ from statespacecheck_paper.figure04_cache import (
     Figure4CacheProvenance,
 )
 from statespacecheck_paper.figure04_decoder import Figure4DiagnosticsConfig
-from statespacecheck_paper.load_local_data import EXPORT_FILE_SUFFIXES
 
 
 def synthetic_cache_provenance(animal_date_epoch: str = "epoch_x") -> Figure4CacheProvenance:
-    """Cache provenance with placeholder fingerprints and a checksum per input file.
+    """Cache provenance with placeholder fingerprints and input-file checksum.
 
     The decode fingerprint is ``"c" * 64``, the diagnostics fingerprint
-    ``"e" * 64``, and every input checksum ``"d" * 64``.
+    ``"e" * 64``, and the input-file checksum ``"d" * 64``.
     """
     return Figure4CacheProvenance(
         fingerprint_sha256="c" * 64,
         schema_version=FIGURE04_CACHE_SCHEMA_VERSION,
         animal_date_epoch=animal_date_epoch,
-        export_checksums=tuple((suffix, "d" * 64) for suffix in EXPORT_FILE_SUFFIXES),
+        input_file_sha256="d" * 64,
         non_local_detector_version="1.2.3",
         diagnostics_fingerprint_sha256="e" * 64,
         diagnostics_schema_version=FIGURE04_DIAGNOSTICS_SCHEMA_VERSION,

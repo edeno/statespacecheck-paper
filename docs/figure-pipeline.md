@@ -604,7 +604,7 @@ manual overrides: bumping one invalidates every cache of that kind.
 ## Machine-readable summary schema
 
 `figure03_summary.json` uses schema version 8 and `figure04_summary.json`
-uses schema version 5. The Figure-3 configuration block records every
+uses schema version 6. The Figure-3 configuration block records every
 `Figure3Config` field together with the step length in seconds
 (`configuration.step_seconds`, the protocol constant `STEP_SECONDS`) and the
 HPD coverage (`configuration.hpd_coverage`, `diagnostics.HPD_COVERAGE`). The

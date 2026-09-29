@@ -35,13 +35,12 @@ from statespacecheck_paper.paths import FIGURE04_INPUTS_EPOCH
 _REQUIRED_POSITION_COLUMNS = ("head_position_x", "head_position_y", "linear_position")
 
 # File-name suffix (after the ``{animal_date_epoch}`` prefix) of the input file this
-# loader reads. This module owns the list so the Figure-4 decode cache can hash
-# exactly the files read here.
-_INPUTS_SUFFIX = "_figure04_inputs.npz"
-EXPORT_FILE_SUFFIXES = (_INPUTS_SUFFIX,)
+# loader reads. This module owns it so the Figure-4 decode cache hashes exactly
+# the file read here.
+INPUT_FILE_SUFFIX = "_figure04_inputs.npz"
 
 # Name of the published copy of the Figure-4 input file (see ``paths``).
-FIGURE04_INPUTS_FILE = f"{FIGURE04_INPUTS_EPOCH}{_INPUTS_SUFFIX}"
+FIGURE04_INPUTS_FILE = f"{FIGURE04_INPUTS_EPOCH}{INPUT_FILE_SUFFIX}"
 
 # Version of the array layout (see :func:`write_local_data.recording_arrays`).
 NPZ_FORMAT_VERSION = 1
@@ -219,7 +218,7 @@ def input_file_path(data_path: str | Path, animal_date_epoch: str) -> Path:
     Path
         ``{data_path}/{animal_date_epoch}_figure04_inputs.npz``.
     """
-    return Path(data_path) / f"{animal_date_epoch}{_INPUTS_SUFFIX}"
+    return Path(data_path) / f"{animal_date_epoch}{INPUT_FILE_SUFFIX}"
 
 
 def load_neural_recording_from_files(
@@ -263,20 +262,16 @@ def load_neural_recording_from_files(
             f"{_download_hint(data_path, animal_date_epoch)}place the exported files "
             "under this directory or set STATESPACECHECK_DATA_PATH to their location."
         )
-    missing = [
-        f"{animal_date_epoch}{suffix}"
-        for suffix in EXPORT_FILE_SUFFIXES
-        if not (data_path / f"{animal_date_epoch}{suffix}").is_file()
-    ]
-    if missing:
+    input_file = input_file_path(data_path, animal_date_epoch)
+    if not input_file.is_file():
         raise FileNotFoundError(
-            f"Missing {len(missing)} expected export file(s) for '{animal_date_epoch}' in "
-            f"{data_path}: {missing}. This recording is not distributed with the repository "
+            f"Missing the Figure-4 input file {input_file.name} for '{animal_date_epoch}' in "
+            f"{data_path}. This recording is not distributed with the repository "
             f"(see the README); {_download_hint(data_path, animal_date_epoch)}check "
             "STATESPACECHECK_DATA_PATH and STATESPACECHECK_ANIMAL_DATE_EPOCH."
         )
 
-    with np.load(input_file_path(data_path, animal_date_epoch), allow_pickle=False) as arrays:
+    with np.load(input_file, allow_pickle=False) as arrays:
         return recording_from_arrays(arrays)
 
 

@@ -13,7 +13,7 @@ Spyglass paper export is `spyglass_pipeline/paper_export.py`.
 `j1620210710_02_r1_figure04_inputs.npz`, SHA-256
 `60383b394b597e2900545548ecac7c53a8601038ace9dbeb42d7f9a5fe1c93b3` (75.1 MB; not in
 the repository, `data/` is ignored). It matches
-`provenance.figure04_decode_cache.export_file_sha256` in
+`provenance.figure04_decode_cache.input_file_sha256` in
 `manuscript/figures/main/figure04_summary.json`. It holds only numeric and string
 arrays (loaded with `allow_pickle=False`) and is written deterministically, so the
 same content always has the same SHA-256; `write_local_data.recording_arrays`

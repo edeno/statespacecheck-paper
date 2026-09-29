@@ -18,7 +18,7 @@ from statespacecheck_paper.figure04_decoder import Figure4Config, Figure4Diagnos
 from statespacecheck_paper.figure04_diagnostics import FlagConfusion
 from statespacecheck_paper.figure04_generation import figure04_summary_payload
 from statespacecheck_paper.figure04_summary import Figure4DiagnosticMeans, Figure4Summary
-from statespacecheck_paper.load_local_data import EXPORT_FILE_SUFFIXES
+from statespacecheck_paper.load_local_data import INPUT_FILE_SUFFIX
 from statespacecheck_paper.paths import REPO_ROOT
 from statespacecheck_paper.scientific_artifacts import write_json_artifact
 
@@ -150,7 +150,7 @@ def test_figure03_reported_statistics_match_canonical_run(tmp_path: Path) -> Non
 def test_figure04_reported_statistics_counts_partition_events(tmp_path: Path) -> None:
     payload = _load("figure04_summary.json")
 
-    assert payload["schema_version"] == 5
+    assert payload["schema_version"] == 6
     # 203 units is the count reported in the Figure-4 caption.
     assert payload["dataset"] == {
         "animal_date_epoch": "j1620210710_02_r1",
@@ -199,10 +199,7 @@ def test_figure04_reported_statistics_counts_partition_events(tmp_path: Path) ->
         fingerprint_sha256=cache_payload["fingerprint_sha256"],
         schema_version=cache_payload["schema_version"],
         animal_date_epoch=epoch,
-        export_checksums=tuple(
-            (suffix, cache_payload["export_file_sha256"][f"{epoch}{suffix}"])
-            for suffix in EXPORT_FILE_SUFFIXES
-        ),
+        input_file_sha256=cache_payload["input_file_sha256"][f"{epoch}{INPUT_FILE_SUFFIX}"],
         non_local_detector_version=cache_payload["non_local_detector_version"],
         diagnostics_fingerprint_sha256=cache_payload["diagnostics_fingerprint_sha256"],
         diagnostics_schema_version=cache_payload["diagnostics_schema_version"],
