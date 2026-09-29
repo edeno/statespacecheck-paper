@@ -10,6 +10,8 @@ from typing import Any
 
 import pytest
 
+from statespacecheck_paper.figure04_generation import FIGURE04_DETAIL_WINDOW
+from statespacecheck_paper.figure04_layout import Figure4DetailWindow
 from statespacecheck_paper.figure04_models import Figure4ModelId
 
 from ._qt import (
@@ -127,8 +129,24 @@ def test_reset_view_centers_and_sets_window(viewer_session: tuple[Any, Any, Any]
 
     expected_w = min(RESET_WINDOW_SECONDS, MAX_WINDOW_SECONDS)
     assert abs(viewer._window_seconds - expected_w) < 1e-9  # noqa: SLF001
-    # Reset center should be inside the session.
-    assert viewer._t_min <= viewer._t_center <= viewer._t_max  # noqa: SLF001
+    # The synthetic recording is shorter than Figure 4's detail window, so the
+    # viewer opens, and resets, mid-session.
+    assert ds.n_time <= FIGURE04_DETAIL_WINDOW.center_index
+    assert viewer._t_center == 0.5 * (viewer._t_min + viewer._t_max)  # noqa: SLF001
+
+
+def test_recording_opens_and_resets_on_the_figure04_window(
+    viewer_session: tuple[Any, Any, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A recording long enough to contain Figure 4a/b's window centers on it."""
+    from statespacecheck_paper.interactive import viewer as viewer_module
+
+    _, viewer, ds = viewer_session
+    window = Figure4DetailWindow(center_index=ds.n_time // 3, half_width_samples=10)
+    monkeypatch.setattr(viewer_module, "FIGURE04_DETAIL_WINDOW", window)
+    viewer.set_center_time(float(ds.time[-1]))
+    viewer._reset_view()  # noqa: SLF001
+    assert viewer._t_center == float(ds.time[window.center_index])  # noqa: SLF001
 
 
 # ---------------------------------------------------------------------------

@@ -29,7 +29,10 @@ import pyqtgraph as pg
 from numpy.typing import NDArray
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from statespacecheck_paper.figure04_generation import FIGURE04_DIAGNOSTIC_THRESHOLDS
+from statespacecheck_paper.figure04_generation import (
+    FIGURE04_DETAIL_WINDOW,
+    FIGURE04_DIAGNOSTIC_THRESHOLDS,
+)
 from statespacecheck_paper.figure04_models import FIGURE04_MODEL_IDS, Figure4ModelId, figure04_model
 from statespacecheck_paper.style import METRIC_SPECS
 
@@ -47,7 +50,8 @@ from .panels import (
     SlicePanel,
 )
 
-# Window width: 2 s at startup, adjustable from 0.1 s to 60 s.
+# Window width: 2 s at startup (the span of Figure 4a/b), adjustable from
+# 0.1 s to 60 s.
 DEFAULT_WINDOW_SECONDS = 2.0
 MIN_WINDOW_SECONDS = 0.1
 MAX_WINDOW_SECONDS = 60.0
@@ -57,10 +61,9 @@ SLIDER_RESOLUTION = 100_000  # subdivides the full session into this many ticks
 # can resolve both 0.1 s and 60 s endpoints with reasonable granularity.
 WINDOW_SLIDER_RESOLUTION = 1000
 
-# Reset shortcut width. Re-centers near the Figure-4 detail region
-# (``figure04_generation.FIGURE04_DETAIL_WINDOW``, ~27% into the session) but
-# shows a wider 20 s context than the figure's ~2 s zoom so the viewer lands
-# with surrounding context rather than the tight crop.
+# Reset shortcut width. Re-centers where the viewer opened (see
+# ``DecoderViewer._home_center_time``) but shows a wider 20 s context than the
+# figure's 2 s window, so the view lands with surrounding context.
 RESET_WINDOW_SECONDS = 20.0
 
 # Auto-scroll defaults.
@@ -265,7 +268,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
         self._t_min = float(data_source.time[0])
         self._t_max = float(data_source.time[-1])
         self._window_seconds = DEFAULT_WINDOW_SECONDS
-        self._t_center = 0.5 * (self._t_min + self._t_max)
+        self._t_center = self._home_center_time()
         self._next_request_id = 0
         self._latest_committed_request_id = -1
         # At most one load worker is in flight at a time. While in
@@ -590,7 +593,8 @@ class DecoderViewer(QtWidgets.QMainWindow):
                                     scroll the mouse wheel over any
                                     time-axis panel).
         - ``R``                  : reset to a 20 s context window centered
-                                    near the Figure 4a default.
+                                    where the viewer opened (Figure 4a/b's
+                                    window for a recording).
         - ``Esc``                : unpin the currently pinned spike
                                     (clicking the pinned spike again
                                     also unpins).
@@ -1187,17 +1191,24 @@ class DecoderViewer(QtWidgets.QMainWindow):
                 return True
         return bool(super().eventFilter(watched, event))
 
+    def _home_center_time(self) -> float:
+        """Time the viewer opens on and ``R`` returns to.
+
+        A recording opens on the center of Figure 4a/b's detail window
+        (``figure04_generation.FIGURE04_DETAIL_WINDOW``) when its timeline
+        contains it; the Figure-3 simulation, and a recording too short to
+        contain it, open mid-session.
+        """
+        center = FIGURE04_DETAIL_WINDOW.center_index
+        if self._ds.dataset_kind == "recording" and center < self._ds.n_time:
+            return float(self._ds.time[center])
+        return 0.5 * (self._t_min + self._t_max)
+
     @QtCore.Slot()
     def _reset_view(self) -> None:
-        # Reset to a 20 s window centered ~a quarter into the session. The
-        # Figure 4 detail region (``FIGURE04_DETAIL_WINDOW``) sits ~27% into
-        # the recorded session; ``n_time // 4`` (25%) is a size-agnostic
-        # default that lands nearby and stays valid for synthetic / shorter
-        # sessions.
-        mid_idx = max(0, min(self._ds.n_time - 1, self._ds.n_time // 4))
-        target_t = float(self._ds.time[mid_idx])
+        # A 20 s context window around where the viewer opened.
         self._set_window_seconds(RESET_WINDOW_SECONDS)
-        self.set_center_time(target_t)
+        self.set_center_time(self._home_center_time())
 
     @QtCore.Slot()
     def _toggle_model(self) -> None:

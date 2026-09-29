@@ -79,7 +79,7 @@ uv run --frozen python -m statespacecheck_paper.interactive \
 | Play / pause auto-scroll | `Space` |
 | Slower / faster auto-scroll | `,` / `.` |
 | Resize window width | Mouse wheel over a time-axis panel, or `[` / `]` |
-| Reset to a 20 s context window | `R` |
+| Reset to a 20 s context window where the viewer opened (a recording opens on Figure 4a/b's window) | `R` |
 | Toggle real-data model | `M` (real-data caches only) |
 
 The slice panel's "Overlay" combo switches the population-likelihood
