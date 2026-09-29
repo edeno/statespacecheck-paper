@@ -293,7 +293,7 @@ class DecodingDiagnostics:
         Per-event diagnostic values.
     event_likelihood : np.ndarray, shape (n_spikes, n_bins)
         Per-spike normalized likelihood as seen by the decoder
-        (uses ``firing_rate_table`` inside override windows where set).
+        (uses ``expected_counts_per_step`` inside override windows where set).
 
     Raises
     ------

@@ -36,15 +36,15 @@ analyses reach it through one paper-side wrapper,
 one value per spike event. Every per-spike diagnostic in Figures 3 and 4 goes
 through it (Figure 2's single worked example calls `statespacecheck` directly).
 Figure 3 calls the wrapper from `decoding.decode_with_diagnostics`, once with the
-baseline rate table and again for the spikes inside each decoder override window
-that swaps the rate table; Figure 4 calls it from
+baseline expected-count table and again for the spikes inside each decoder
+override window that swaps it; Figure 4 calls it from
 `figure04_diagnostics.compute_results_diagnostics`. Equation numbers are those
 of `manuscript/main.tex` (labels in parentheses): Eqs. 1–10 are in the Methods,
 and Eq. 11 is in the simulation study's generative model.
 
 | Paper quantity | Equation | `statespacecheck` function | Paper-side name |
 | --- | --- | --- | --- |
-| Event factorization of the Poisson likelihood | Eq. 1 (`eq:poisson_event_factorization`) | — | Figure 3's decoder forms $p(\mathbf{n}_k \mid x_k)$ from a rate table of expected counts (`decoding.decode_with_diagnostics`) |
+| Event factorization of the Poisson likelihood | Eq. 1 (`eq:poisson_event_factorization`) | — | Figure 3's decoder forms $p(\mathbf{n}_k \mid x_k)$ from a table of expected counts per step (`decoding.decode_with_diagnostics`) |
 | One-step predictive distribution $P_k(x_k)=p(x_k\mid y_{1:k-1})$ | unnumbered, after Eq. 1 | input to every function below | `predictive` (see the vocabulary below) |
 | Normalized single-event likelihood $Q_{k,j}$ | Eq. 2 (`eq:single_event_likelihood`) | `event_likelihood` | `event_likelihood`, shape `(n_spikes, n_bins)` |
 | HPD overlap (overlap coefficient of the two HPD regions) | Eq. 3 (`eq:hpd`) | `hpd_overlap`; regions from `highest_density_region` | `event_hpd_overlap`; coverage `diagnostics.HPD_COVERAGE` (0.95, macro `\HpdCoveragePercent`) |
@@ -52,7 +52,7 @@ and Eq. 11 is in the simulation study's generative model.
 | Rank-based predictive $p$-value, exact for sorted spikes | Eqs. 8–9 (`eq:predictive_application`, `eq:predictive_application_sorted`) | `mark_predictive_pvalue` | `event_predictive_pvalue` |
 | Monte Carlo predictive $p$-value (clusterless form, Eq. 7; Figure 2b) | Eqs. 7–8 | `monte_carlo_mark_pvalue` | used only by `figure02_panels` |
 | KL divergence $D_{\mathrm{KL}}(P_k\,\|\,Q_{k,j})$ | Eq. 10 (`eq:kl`) | `kl_divergence` | `event_kl_divergence` |
-| Simulated expected counts $m_c(x)=\lambda_c(x)\Delta t=\alpha\phi(x\mid\mu_c,\sigma_{\mathrm{pf}}^2)$ | Eq. 11 (`eq:rate`, simulation study) | — | `simulation.place_field_rates` |
+| Simulated expected counts $m_c(x)=\lambda_c(x)\Delta t=\alpha\phi(x\mid\mu_c,\sigma_{\mathrm{pf}}^2)$ | Eq. 11 (`eq:rate`, simulation study) | — | `simulation.place_field_expected_counts` |
 
 ### Flag thresholds
 
@@ -77,10 +77,11 @@ the pooled baseline for each metric as
 - **Figure 3:** the grid Bayesian filter `decoding.decode_with_diagnostics`,
   with a Gaussian random-walk transition
   (`simulation.gaussian_transition_matrix`, step standard deviation
-  `Figure3Config.prediction_step_std`) and Poisson place-field rates from
-  `figure03_simulation.build_figure03_rate_tables`. Decoder override windows
-  (`decoding.DecoderOverrideWindow`) swap in the scrambled rates of the remap
-  misfit and the correct rates of the replay and sparse-population controls.
+  `Figure3Config.prediction_step_std`) and Poisson place-field expected counts
+  per step from `figure03_simulation.build_figure03_expected_count_tables`.
+  Decoder override windows (`decoding.DecoderOverrideWindow`) swap in the
+  scrambled fields of the remap misfit and the correct fields of the replay and
+  sparse-population controls.
 - **Figure 4:** the `non_local_detector` models `SortedSpikesDecoder`
   (Continuous) and `ContFragSortedSpikesClassifier` (Continuous–Fragmented),
   built by `figure04_decoder.build_decoder_models` from `Figure4Config`: the
@@ -108,10 +109,10 @@ field it came from. See [From summary to prose](#from-summary-to-prose-the-repor
 | Normalized combined likelihood of all cells in a bin | `combined_likelihood` | Figure 3 (`DecodingDiagnostics.combined_likelihood`); the viewer's “population likelihood” |
 | Per-spike HPD overlap, predictive $p$-value, KL divergence | `event_hpd_overlap`, `event_predictive_pvalue`, `event_kl_divergence` | with `event_time_ind` (time bin) and `event_cell_ind` (unit); the un-prefixed `hpd_overlap`, … are dense `(n_time, n_cells)` matrices |
 | Flag | `flag_mask`, `flag_rules` | inclusive comparison against a threshold |
-| Firing rate $\lambda_c$ vs expected count $m_c=\lambda_c\Delta t$ | “rates” in code are expected counts per step | see [Rates and expected counts](#rates-and-expected-counts) |
-| Rate table | `firing_rates`, `firing_rate_table`, `baseline_firing_rates`, `simulation.place_field_rates` | shape `(n_bins, n_cells)`; each entry is an expected count per step $m_c(x)$, not a rate in Hz |
+| Firing rate $\lambda_c$ vs expected count $m_c=\lambda_c\Delta t$ | `expected_counts…` arrays hold expected counts per step; the `…rate_scale` configuration fields scale them | see [Rates and expected counts](#rates-and-expected-counts) |
+| Expected-count table | `expected_counts_per_step`, `baseline_expected_counts_per_step`, `figure03_simulation.Figure3ExpectedCountTables`, `simulation.place_field_expected_counts` | shape `(n_bins, n_cells)`; each entry is an expected count per step $m_c(x)$, not a rate in Hz |
 | Time bin $k$ ($K$ bins) | `t`, `event_time_ind`, `n_time` | the paper writes $k$; the code writes `t`, counting from 0 |
-| The Figure-3 remap, replay, and sparse-population windows | decoder override windows: `decoding.DecoderOverrideWindow`, `DecoderOverrideSchedule` | a half-open step interval `[start, end)` in which the decoder uses another rate table; the remap window is the observation misfit, the replay and sparse-population windows are controls |
+| The Figure-3 remap, replay, and sparse-population windows | decoder override windows: `decoding.DecoderOverrideWindow`, `DecoderOverrideSchedule` | a half-open step interval `[start, end)` in which the decoder uses another expected-count table; the remap window is the observation misfit, the replay and sparse-population windows are controls |
 | Position and decoding error, Figure 3 | “a.u.”; summary `error_units: position_units` | the simulated track is in arbitrary position units (axis label “Position (a.u.)”); Figure 4 positions are in cm |
 | Rescued percentage (Figure 4) | `FlagConfusion.rescued_fraction`; summary `flag_confusions[].rescued_fraction` | fraction (0–1) of the spikes the Continuous model flags that the Continuous–Fragmented model does not; the prose prints it as a whole percent (`\RecHpdRescuedPercent`, `\RecPvalueRescuedPercent`) |
 | Rank-based predictive $p$-value | `statespacecheck.mark_predictive_pvalue` (called by `event_diagnostics`) | `statespacecheck` also exports `predictive_pvalue`, a Monte Carlo check for a user-supplied replicate generator, which the paper does not use |
@@ -123,7 +124,7 @@ field it came from. See [From summary to prose](#from-summary-to-prose-the-repor
 The code separates **general, figure-agnostic layers** from **per-figure
 families**:
 
-- **General layers**: `simulation` (random walks, place-field rates, spike
+- **General layers**: `simulation` (random walks, place-field expected counts, spike
   simulators), `decoding` (the Bayesian filter `decode_with_diagnostics` and its
   decoder override windows), and `diagnostics` (containers, the HPD coverage,
   and the paper's threshold rule around the per-spike HPD-overlap /
@@ -337,7 +338,7 @@ Trace: `create_shared_example(rng)` returns one immutable
 - **Tests:** `tests/test_figure03_phases.py` (the higher-level scientific
   contract, including the control-integrity checks that the replay and
   sparse-population controls carry no hidden observation misfit, because the
-  decoder is given the rate tables that generated their spikes. Both still have
+  decoder is given the expected-count tables that generated their spikes. Both still have
   a motion-model mismatch: the decoder keeps its random-walk prior for the
   replay's deterministic out-and-back sweep and for the sparse phase's
   stationary animal);
@@ -358,7 +359,7 @@ condition's `title`, the website's tab):
    spatial diagnostics.
 4. **Replay** (`replay`) — an out-and-back represented sweep while the animal
    is immobile; *control* (benign decoded-vs-true divergence). The decoder has
-   the correct rates but keeps its random-walk prior, which does not describe
+   the correct place fields but keeps its random-walk prior, which does not describe
    the deterministic sweep.
 5. **Drift** (`drift`) — AR(1) persistent-velocity trajectory;
    *transition-model* misfit.
@@ -406,15 +407,16 @@ and their configuration to `figure03_summary.json`.
 | `event_hpd_overlap` | HPD overlap | per-spike prediction/likelihood HPD overlap |
 | `event_predictive_pvalue` | rank-based predictive $p$-value | per-spike rank statistic |
 | `event_kl_divergence` | KL divergence | per-spike prediction→likelihood KL |
-| `DecoderOverrideWindow` | the remap, replay, and sparse-population windows | decoder override windows that swap the decoder's rate table |
+| `DecoderOverrideWindow` | the remap, replay, and sparse-population windows | decoder override windows that swap the decoder's expected-count table |
 | `well_specified`, `remap`, `history_dependent`, `replay`, `drift`, `sparse_population` | the heatmap's condition columns | `condition_order` in the summary |
 
 ### Rates and expected counts
 
 The Methods distinguish the firing rate $\lambda_c(x)$ from the expected count
 $m_c(x)=\lambda_c(x)\Delta t$ in a bin of width $\Delta t$. The simulation's
-`place_field_rates` and decoder rate tables already contain these expected
-counts per step: they go directly into the Poisson distribution. In Figure 3,
+`place_field_expected_counts` and decoder expected-count tables
+(`expected_counts_per_step`) contain these expected counts per step: they go
+directly into the Poisson distribution. In Figure 3,
 $\Delta t=1$ ms and $m_c(x)=\alpha\phi(x\mid\mu_c,\sigma_{\mathrm{pf}}^2)$.
 Convert to Hz by dividing by the bin width in seconds; do not multiply these
 Poisson inputs by the bin width again.

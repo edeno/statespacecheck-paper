@@ -6,13 +6,13 @@ This module holds the figure-agnostic decoder — the Bayesian filter
 primitives (spike counts, a position grid, a transition matrix, and place-field
 parameters or an explicit baseline expected-count table), computes the per-spike
 diagnostics with ``diagnostics.compute_spike_event_diagnostics_from_rates`` (for
-the baseline rate table, then again for each override window that swaps the rate
-table), and returns a ``DecodingDiagnostics``. It depends only on ``diagnostics`` and the general
+the baseline expected-count table, then again for each override window that swaps
+it), and returns a ``DecodingDiagnostics``. It depends only on ``diagnostics`` and the general
 ``simulation`` primitives — no figure-specific module.
 
-Tables named ``firing_rates`` or ``firing_rate_table`` contain Poisson means
-per time step, ``m = lambda * dt``, rather than rates in Hz. The filter uses
-these expected counts directly, without another bin-width conversion.
+The ``(n_bins, n_cells)`` tables named ``expected_counts_per_step`` hold Poisson
+means per time step, ``m = lambda * dt``, not rates in Hz. The filter uses these
+expected counts directly, without another bin-width conversion.
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ from statespacecheck_paper.diagnostics import (
 )
 from statespacecheck_paper.simulation import (
     normalize,
-    place_field_rates,
+    place_field_expected_counts,
     softmax_with_shift,
 )
 
@@ -106,11 +106,11 @@ class DecoderOverrideWindow:
     """A decoder override window: alternate decoder settings over ``[start, end)``.
 
     Inside the half-open interval the decoder replaces its baseline
-    transition matrix, its baseline rate table, or both. Each field is
+    transition matrix, its baseline expected-count table, or both. Each field is
     optional; ``None`` means "use the baseline". Whether a window is a misfit
     depends on how the spikes were generated: Figure 3 uses one to decode
     with scrambled place fields (the remap misfit) and others to give the
-    decoder the correct rates during the replay and sparse-population
+    decoder the correct expected counts during the replay and sparse-population
     controls.
 
     Parameters
@@ -120,20 +120,20 @@ class DecoderOverrideWindow:
         required.
     transition_matrix : np.ndarray, shape (n_bins, n_bins), optional
         Replaces the baseline transition matrix in the predict step.
-    firing_rate_table : np.ndarray, shape (n_bins, n_cells), optional
-        Replaces the baseline rate table used to form the posterior-update
+    expected_counts_per_step : np.ndarray, shape (n_bins, n_cells), optional
+        Replaces the baseline expected-count table used to form the posterior-update
         likelihood, the per-spike diagnostics, and the displayed per-spike
         likelihood. Entries are expected counts per time step.
 
     Raises
     ------
     ValueError
-        If ``start >= end`` or if ``firing_rate_table`` contains negative or
+        If ``start >= end`` or if ``expected_counts_per_step`` contains negative or
         non-finite entries.
 
     Notes
     -----
-    Supplied ``transition_matrix`` and ``firing_rate_table`` are copied at
+    Supplied ``transition_matrix`` and ``expected_counts_per_step`` are copied at
     construction and marked write-protected via ``setflags(write=False)``,
     extending the dataclass's ``frozen=True`` invariant to the array
     contents.
@@ -145,12 +145,12 @@ class DecoderOverrideWindow:
 
     Examples
     --------
-    The decoder and its diagnostics use an alternate rate table inside the
+    The decoder and its diagnostics use an alternate expected-count table inside the
     window:
 
     >>> import numpy as np
     >>> remapped = np.full((5, 3), 0.1)
-    >>> w = DecoderOverrideWindow(10, 20, firing_rate_table=remapped)
+    >>> w = DecoderOverrideWindow(10, 20, expected_counts_per_step=remapped)
     >>> w.start, w.end
     (10, 20)
     """
@@ -158,10 +158,10 @@ class DecoderOverrideWindow:
     start: int
     end: int
     transition_matrix: NDArray[np.floating] | None = None
-    firing_rate_table: NDArray[np.floating] | None = None
+    expected_counts_per_step: NDArray[np.floating] | None = None
 
     def __post_init__(self) -> None:
-        """Validate the window bounds and any supplied rate tables.
+        """Validate the window bounds and any supplied expected-count tables.
 
         Makes a write-protected copy of any supplied table so the
         ``frozen=True`` invariant extends to the array contents, not
@@ -172,22 +172,24 @@ class DecoderOverrideWindow:
                 f"DecoderOverrideWindow requires start < end, got ({self.start}, {self.end})"
             )
 
-        # A negative or non-finite rate table would become NaN once it
+        # A negative or non-finite expected-count table would become NaN once it
         # reaches the Poisson likelihood and propagate silently through the
         # posterior — reject it at construction.
-        if self.firing_rate_table is not None and not (
-            np.all(np.isfinite(self.firing_rate_table)) and np.all(self.firing_rate_table >= 0.0)
+        if self.expected_counts_per_step is not None and not (
+            np.all(np.isfinite(self.expected_counts_per_step))
+            and np.all(self.expected_counts_per_step >= 0.0)
         ):
             raise ValueError(
-                "DecoderOverrideWindow.firing_rate_table must be finite and non-negative everywhere"
+                "DecoderOverrideWindow.expected_counts_per_step must be finite and "
+                "non-negative everywhere"
             )
 
         # Write-protect any supplied tables. A frozen dataclass only
-        # prevents rebinding ``self.firing_rate_table``; the underlying
+        # prevents rebinding ``self.expected_counts_per_step``; the underlying
         # ndarray is still mutable. Take a defensive copy and mark it
         # read-only so callers can't bypass the validation above by
         # mutating in place after construction.
-        for name in ("transition_matrix", "firing_rate_table"):
+        for name in ("transition_matrix", "expected_counts_per_step"):
             table = getattr(self, name)
             if table is None:
                 continue
@@ -196,7 +198,7 @@ class DecoderOverrideWindow:
             object.__setattr__(self, name, copy)
 
     def validate_against(self, *, n_bins: int, n_cells: int) -> None:
-        """Validate that supplied rate tables match the decoder's grid.
+        """Validate that supplied expected-count tables match the decoder's grid.
 
         Shape parity with the decoder's position grid and cell count
         can't be checked at construction time because the schedule may
@@ -213,13 +215,16 @@ class DecoderOverrideWindow:
         Raises
         ------
         ValueError
-            If ``firing_rate_table`` shape doesn't equal ``(n_bins, n_cells)``,
+            If ``expected_counts_per_step`` shape doesn't equal ``(n_bins, n_cells)``,
             or ``transition_matrix`` shape doesn't equal ``(n_bins, n_bins)``.
         """
-        if self.firing_rate_table is not None and self.firing_rate_table.shape != (n_bins, n_cells):
+        if self.expected_counts_per_step is not None and self.expected_counts_per_step.shape != (
+            n_bins,
+            n_cells,
+        ):
             raise ValueError(
-                f"DecoderOverrideWindow.firing_rate_table shape "
-                f"{self.firing_rate_table.shape} does not "
+                f"DecoderOverrideWindow.expected_counts_per_step shape "
+                f"{self.expected_counts_per_step.shape} does not "
                 f"match decoder grid ({n_bins}, {n_cells})."
             )
         if self.transition_matrix is not None and self.transition_matrix.shape != (
@@ -238,7 +243,7 @@ class DecoderOverrideSchedule:
     """An ordered set of non-overlapping :class:`DecoderOverrideWindow` entries.
 
     Time steps not covered by any window decode with the baseline
-    transition matrix and rate table. The empty schedule (the default)
+    transition matrix and expected-count table. The empty schedule (the default)
     decodes every step with the baseline.
 
     Parameters
@@ -288,8 +293,8 @@ class DecoderOverrideSchedule:
         return None
 
 
-def _resolve_baseline_firing_rates(
-    baseline_firing_rates: NDArray[np.floating] | None,
+def _resolve_baseline_expected_counts(
+    baseline_expected_counts_per_step: NDArray[np.floating] | None,
     position_bins: NDArray[np.floating],
     place_field_centers: NDArray[np.floating],
     place_field_std: float,
@@ -297,40 +302,40 @@ def _resolve_baseline_firing_rates(
     n_bins: int,
     n_cells: int,
 ) -> NDArray[np.floating]:
-    """Build or validate the baseline ``(n_bins, n_cells)`` Poisson rate table.
+    """Build or validate the baseline ``(n_bins, n_cells)`` Poisson expected-count table.
 
-    When ``baseline_firing_rates`` is supplied it is validated against the decoder grid;
+    When ``baseline_expected_counts_per_step`` is supplied it is validated against the decoder grid;
     when omitted, the table is built from the Gaussian place-field parameters. Either
     table is rejected if it holds any negative / non-finite rate (mirroring
-    ``DecoderOverrideWindow.firing_rate_table`` validation), so a bad table or a
+    ``DecoderOverrideWindow.expected_counts_per_step`` validation), so a bad table or a
     negative ``place_field_rate_scale`` fails loudly here rather than surfacing as a
     silent NaN or a meaningless likelihood deep in the filter loop.
     """
-    if baseline_firing_rates is None:
-        rates = place_field_rates(
+    if baseline_expected_counts_per_step is None:
+        expected_counts = place_field_expected_counts(
             position_bins, place_field_centers, place_field_std, place_field_rate_scale
         )
     else:
-        rates = np.asarray(baseline_firing_rates, dtype=float)
-        if rates.shape != (n_bins, n_cells):
+        expected_counts = np.asarray(baseline_expected_counts_per_step, dtype=float)
+        if expected_counts.shape != (n_bins, n_cells):
             raise ValueError(
-                f"baseline_firing_rates shape {rates.shape} does not match the decoder grid "
-                f"(n_bins={n_bins}, n_cells={n_cells})."
+                f"baseline_expected_counts_per_step shape {expected_counts.shape} does not "
+                f"match the decoder grid (n_bins={n_bins}, n_cells={n_cells})."
             )
-    if not (np.all(np.isfinite(rates)) and np.all(rates >= 0.0)):
+    if not (np.all(np.isfinite(expected_counts)) and np.all(expected_counts >= 0.0)):
         raise ValueError(
-            "The baseline rate table must contain only finite, non-negative rates; check "
-            "baseline_firing_rates or place_field_rate_scale."
+            "The baseline expected-count table must contain only finite, non-negative "
+            "values; check baseline_expected_counts_per_step or place_field_rate_scale."
         )
-    return rates
+    return expected_counts
 
 
 def _select_decoder_components_for_step(
     window: DecoderOverrideWindow | None,
     base_transition: NDArray[np.floating],
-    baseline_firing_rates: NDArray[np.floating],
+    baseline_expected_counts_per_step: NDArray[np.floating],
 ) -> tuple[NDArray[np.floating], NDArray[np.floating]]:
-    """Select the transition matrix and rate table for one filter step.
+    """Select the transition matrix and expected-count table for one filter step.
 
     Pure per-step *selector*: returns the baseline transition matrix and rate
     table unless the active override ``window`` replaces either. It performs
@@ -340,10 +345,10 @@ def _select_decoder_components_for_step(
     transition_t = base_transition
     if window is not None and window.transition_matrix is not None:
         transition_t = window.transition_matrix
-    rates_t = baseline_firing_rates
-    if window is not None and window.firing_rate_table is not None:
-        rates_t = window.firing_rate_table
-    return transition_t, rates_t
+    expected_counts_t = baseline_expected_counts_per_step
+    if window is not None and window.expected_counts_per_step is not None:
+        expected_counts_t = window.expected_counts_per_step
+    return transition_t, expected_counts_t
 
 
 def _apply_window_rate_overrides(
@@ -356,7 +361,7 @@ def _apply_window_rate_overrides(
     """Overwrite per-event / dense diagnostics inside each rate-override window.
 
     The baseline ``diagnostics`` were computed against the decoder's default
-    rate table. For every override window that swaps ``firing_rate_table``, the
+    expected-count table. For every override window that swaps ``expected_counts_per_step``, the
     events falling inside it are recomputed against that window's table, with
     the same :func:`compute_spike_event_diagnostics_from_rates`, so the
     posterior update, per-event diagnostics, and displayed likelihood stay on
@@ -378,7 +383,7 @@ def _apply_window_rate_overrides(
     decoder_event_lik = diagnostics.event_likelihood.copy()
 
     for window in windows:
-        if window.firing_rate_table is None:
+        if window.expected_counts_per_step is None:
             continue
         in_window = (event_time_ind >= window.start) & (event_time_ind < window.end)
         if not np.any(in_window):
@@ -388,7 +393,7 @@ def _apply_window_rate_overrides(
         window_cells = event_cell_ind[in_window]
         window_events = compute_spike_event_diagnostics_from_rates(
             predictive,
-            window.firing_rate_table,
+            window.expected_counts_per_step,
             window_times,
             window_cells,
             coverage=HPD_COVERAGE,
@@ -439,7 +444,7 @@ class FilterStep(NamedTuple):
 def update_step(
     predictive: NDArray[np.floating],
     spike_counts_t: NDArray[np.int_],
-    rates_t: NDArray[np.floating],
+    expected_counts_t: NDArray[np.floating],
 ) -> FilterStep:
     """Assimilate one bin of spike counts into a given state distribution.
 
@@ -458,7 +463,7 @@ def update_step(
     spike_counts_t : np.ndarray, shape (n_cells,)
         Spike counts observed at this timestep: non-negative integers (not
         checked here; see ``decode_with_diagnostics``).
-    rates_t : np.ndarray, shape (n_bins, n_cells)
+    expected_counts_t : np.ndarray, shape (n_bins, n_cells)
         Per-cell Poisson mean (expected count per step) at every position.
 
     Returns
@@ -481,7 +486,9 @@ def update_step(
     # checks, so counts must be non-negative integers (``decode_with_diagnostics``
     # validates them).
     counts = spike_counts_t[None, :]
-    log_lik_per_cell = xlogy(counts, rates_t) - gammaln(counts + 1) - rates_t  # (n_bins, n_cells)
+    log_lik_per_cell = (
+        xlogy(counts, expected_counts_t) - gammaln(counts + 1) - expected_counts_t
+    )  # (n_bins, n_cells)
 
     # Combined log-likelihood across cells (sum in log space = product in linear
     # space), normalized independently with a max-shifted softmax for display.
@@ -505,7 +512,7 @@ def filter_step(
     previous_posterior: NDArray[np.floating],
     spike_counts_t: NDArray[np.int_],
     current_transition: NDArray[np.floating],
-    rates_t: NDArray[np.floating],
+    expected_counts_t: NDArray[np.floating],
 ) -> FilterStep:
     """Advance the Bayesian filter by one timestep (predict, then update).
 
@@ -525,8 +532,8 @@ def filter_step(
         checked here; see ``decode_with_diagnostics``).
     current_transition : np.ndarray, shape (n_bins, n_bins)
         Column-stochastic transition matrix for this step.
-    rates_t : np.ndarray, shape (n_bins, n_cells)
-        Per-cell Poisson rate table for this step.
+    expected_counts_t : np.ndarray, shape (n_bins, n_cells)
+        Per-cell Poisson expected-count table for this step.
 
     Returns
     -------
@@ -546,7 +553,7 @@ def filter_step(
     # two differ near the track boundaries where column normalization breaks the
     # kernel's symmetry.
     predictive = normalize(current_transition @ previous_posterior)
-    return update_step(predictive, spike_counts_t, rates_t)
+    return update_step(predictive, spike_counts_t, expected_counts_t)
 
 
 def decode_with_diagnostics(
@@ -557,7 +564,7 @@ def decode_with_diagnostics(
     place_field_std: float,
     place_field_rate_scale: float,
     override_schedule: DecoderOverrideSchedule | None = None,
-    baseline_firing_rates: NDArray[np.floating] | None = None,
+    baseline_expected_counts_per_step: NDArray[np.floating] | None = None,
     initial_state_distribution: NDArray[np.floating] | None = None,
 ) -> DecodingDiagnostics:
     """Run the Bayesian filter with per-time, per-cell diagnostics.
@@ -576,7 +583,7 @@ def decode_with_diagnostics(
     2. ``t >= 1``:
        a. Predict: ``pred[t] = normalize(T_t @ post[t-1])`` where ``T_t`` is
           this step's (possibly overridden) column-stochastic transition.
-       b. Likelihood: ``p(y_t | x)`` for all cells from this step's rate table.
+       b. Likelihood: ``p(y_t | x)`` for all cells from this step's expected-count table.
        c. Update: ``post[t] = normalize(pred[t] * p(y_t | x))``.
     3. Diagnostics: every spike event in every bin, including ``t = 0``, is
        compared against that bin's prediction (``pred[0] = p(x_0)``).
@@ -601,26 +608,26 @@ def decode_with_diagnostics(
         State transition matrix for baseline dynamics.
     place_field_centers : np.ndarray, shape (n_cells,)
         Place field center positions for each cell. Used only to build the
-        baseline rate table; ignored when ``baseline_firing_rates`` is given.
+        baseline expected-count table; ignored when ``baseline_expected_counts_per_step`` is given.
     place_field_std : float
         Width (standard deviation) of Gaussian place fields. Ignored when
-        ``baseline_firing_rates`` is given.
+        ``baseline_expected_counts_per_step`` is given.
     place_field_rate_scale : float
         Scale multiplying the Gaussian field to give expected counts per step.
-        Ignored when ``baseline_firing_rates`` is given.
+        Ignored when ``baseline_expected_counts_per_step`` is given.
     override_schedule : DecoderOverrideSchedule, optional
-        Decoder override windows, such as Figure 3's remapped rates and its
-        replay and sparse-population control rates.
+        Decoder override windows, such as Figure 3's remapped expected counts and
+        its replay and sparse-population control expected counts.
         Each :class:`DecoderOverrideWindow` swaps the transition matrix and/or
-        the per-cell rate table for its interval. Defaults to an empty
+        the per-cell expected-count table for its interval. Defaults to an empty
         schedule, which decodes every step with the baseline.
-    baseline_firing_rates : np.ndarray, shape (n_bins, n_cells), optional
+    baseline_expected_counts_per_step : np.ndarray, shape (n_bins, n_cells), optional
         Baseline per-cell Poisson means (expected counts per time step, not Hz).
         Supply this when cells do not share one place-field width and scale,
         as in Figure 3's sparse population; the three place-field arguments,
         which remain required, are then ignored.
-        If omitted, rates are built from ``place_field_centers``, ``place_field_std``, and
-        ``place_field_rate_scale``.
+        If omitted, the expected counts are built from ``place_field_centers``,
+        ``place_field_std``, and ``place_field_rate_scale``.
     initial_state_distribution : np.ndarray, shape (n_bins,), optional
         The initial state law ``p(x_0)`` used as the ``t=0`` prediction. Must
         be a finite nonnegative distribution summing to 1. Defaults to the
@@ -651,13 +658,13 @@ def decode_with_diagnostics(
 
         ``event_likelihood`` of shape ``(n_spikes, n_bins)``
             Normalized likelihood for each individual spike event,
-            computed against the rates the decoder used at that step (a
-            override window's ``firing_rate_table`` inside that window).
+            computed against the expected counts the decoder used at that step (a
+            override window's ``expected_counts_per_step`` inside that window).
 
     Notes
     -----
     Invalid override schedules (overlapping windows, ``start >= end``,
-    negative/non-finite rate tables) are rejected when the
+    negative/non-finite expected-count tables) are rejected when the
     :class:`DecoderOverrideSchedule` / :class:`DecoderOverrideWindow` is *constructed*, not
     here.
 
@@ -745,15 +752,15 @@ def decode_with_diagnostics(
                 f"of shape ({n_bins},) summing to 1."
             )
 
-    # Baseline per-cell Poisson rate table. Used at every timestep not
-    # covered by an override window whose ``firing_rate_table`` is set. Callers
-    # can inject ``baseline_firing_rates`` directly when the decoder's cell set does
+    # Baseline per-cell Poisson expected-count table. Used at every timestep not
+    # covered by an override window whose ``expected_counts_per_step`` is set. Callers
+    # can inject ``baseline_expected_counts_per_step`` directly when the decoder's cell set does
     # not reduce to one shared Gaussian width/scale — e.g. the figure-3
     # simulation appends a narrow sparse-population of cells with a small
     # baseline rate that increases during a correctly modeled, low-activity
     # window.
-    rates = _resolve_baseline_firing_rates(
-        baseline_firing_rates,
+    expected_counts = _resolve_baseline_expected_counts(
+        baseline_expected_counts_per_step,
         position_bins,
         place_field_centers,
         place_field_std,
@@ -765,19 +772,21 @@ def decode_with_diagnostics(
     for t in range(n_time):
         window = override_schedule.window_at(t)
 
-        # Select this step's transition matrix and per-cell rate table —
+        # Select this step's transition matrix and per-cell expected-count table —
         # the baseline pair unless the active override window replaces either.
-        current_transition, rates_t = _select_decoder_components_for_step(
-            window, transition_matrix, rates
+        current_transition, expected_counts_t = _select_decoder_components_for_step(
+            window, transition_matrix, expected_counts
         )
 
         # Advance the recursion one step. At t=0 the prediction is p(x_0)
         # itself (no transition), assimilated with the same observation
         # model; afterwards ``filter_step`` predicts then updates.
         if t == 0:
-            step = update_step(initial_state, spike_counts[0], rates_t)
+            step = update_step(initial_state, spike_counts[0], expected_counts_t)
         else:
-            step = filter_step(posterior[t - 1], spike_counts[t], current_transition, rates_t)
+            step = filter_step(
+                posterior[t - 1], spike_counts[t], current_transition, expected_counts_t
+            )
         predictive[t] = step.predictive  # stored for p-value computation
         combined_likelihood[t] = step.combined_likelihood
         posterior[t] = step.posterior
@@ -787,12 +796,12 @@ def decode_with_diagnostics(
     event_time_ind, event_cell_ind = expand_spike_events(spike_counts)
 
     # Compute the baseline diagnostics first. Events inside a window with
-    # ``firing_rate_table`` are overwritten below using that same rate table,
+    # ``expected_counts_per_step`` are overwritten below using that same expected-count table,
     # keeping the posterior update, per-event diagnostics, and displayed
     # likelihood on one internally consistent decoder model.
     diagnostics = compute_spike_event_diagnostics_from_rates(
         predictive,
-        rates,
+        expected_counts,
         event_time_ind,
         event_cell_ind,
         coverage=HPD_COVERAGE,

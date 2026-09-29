@@ -55,7 +55,7 @@ from statespacecheck_paper.figure03_protocol import STEP_SECONDS, Figure3Config
 from statespacecheck_paper.figure03_simulation import (
     Figure3SimulationResult,
     all_place_field_centers,
-    build_figure03_rate_tables,
+    build_figure03_expected_count_tables,
     run_figure03_simulation,
 )
 from statespacecheck_paper.figure03_summary import conditions_by_id
@@ -78,7 +78,7 @@ from statespacecheck_paper.paths import (
 from statespacecheck_paper.reported_values import cardinal_word, macro_sections
 from statespacecheck_paper.simulation import (
     gaussian_transition_matrix,
-    place_field_rates,
+    place_field_expected_counts,
     simulate_spikes_position_tuned,
 )
 from statespacecheck_paper.style import (
@@ -449,7 +449,9 @@ def filter_explainer_sequence(config: Figure3Config) -> FilterExplainerSequence:
     counts[explainer.conflict_step, np.argsort(np.abs(centers - target))[:2]] = 1
 
     rates = np.asarray(
-        place_field_rates(position_bins, centers, config.place_field_std, explainer.rate_scale),
+        place_field_expected_counts(
+            position_bins, centers, config.place_field_std, explainer.rate_scale
+        ),
         dtype=np.float64,
     )
     decoded = decode_with_diagnostics(
@@ -576,7 +578,7 @@ def gaussian_predictive(
 
 @dataclass(frozen=True)
 class PlaygroundEnsemble:
-    """One decoder rate table the playground can evaluate spikes against.
+    """One decoder expected-count table the playground can evaluate spikes against.
 
     Parameters
     ----------
@@ -599,7 +601,7 @@ class PlaygroundEnsemble:
 def playground_ensembles(
     config: Figure3Config, sparse_centers: NDArray[np.floating]
 ) -> tuple[PlaygroundEnsemble, ...]:
-    """Build the two Figure-3 decoder rate tables on ``config.position_bins``.
+    """Build the two Figure-3 decoder expected-count tables on ``config.position_bins``.
 
     Parameters
     ----------
@@ -617,7 +619,7 @@ def playground_ensembles(
     if config.place_field_centers is None:
         raise ValueError("config.place_field_centers must be initialized")
     sparse = np.asarray(sparse_centers, dtype=np.float64)
-    tables = build_figure03_rate_tables(
+    tables = build_figure03_expected_count_tables(
         config.position_bins, config.place_field_centers, sparse, config
     )
     n_place_cells = len(config.place_field_centers)
@@ -625,12 +627,12 @@ def playground_ensembles(
     return (
         PlaygroundEnsemble(
             "place_cells",
-            np.asarray(tables.baseline_firing_rates, dtype=np.float64),
+            np.asarray(tables.baseline_expected_counts_per_step, dtype=np.float64),
             tuple(range(n_place_cells)),
         ),
         PlaygroundEnsemble(
             "sparse_epoch",
-            np.asarray(tables.sparse_population_firing_rates, dtype=np.float64),
+            np.asarray(tables.sparse_population_expected_counts_per_step, dtype=np.float64),
             tuple(range(n_place_cells, n_cells)),
         ),
     )

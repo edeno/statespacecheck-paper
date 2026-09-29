@@ -10,8 +10,8 @@ from statespacecheck_paper.figure03_protocol import Figure3Config
 from statespacecheck_paper.figure03_simulation import (
     Figure3SimulationResult,
     all_place_field_centers,
-    all_place_field_rates,
-    build_figure03_rate_tables,
+    all_place_field_expected_counts,
+    build_figure03_expected_count_tables,
     remap_place_field_centers,
 )
 
@@ -94,18 +94,20 @@ def test_all_place_field_rates_match_decoder_tables_and_center_order() -> None:
     sparse_centers = (40.0, 42.0, 44.0)
     n_normal = config.place_field_centers.size
 
-    rates = all_place_field_rates(config, config.position_bins, sparse_centers)
+    rates = all_place_field_expected_counts(config, config.position_bins, sparse_centers)
 
-    tables = build_figure03_rate_tables(
+    tables = build_figure03_expected_count_tables(
         config.position_bins, config.place_field_centers, np.asarray(sparse_centers), config
     )
     assert rates.shape == (
         config.position_bins.size,
         all_place_field_centers(config, sparse_centers).size,
     )
-    np.testing.assert_array_equal(rates[:, :n_normal], tables.baseline_firing_rates[:, :n_normal])
     np.testing.assert_array_equal(
-        rates[:, n_normal:], tables.sparse_population_firing_rates[:, n_normal:]
+        rates[:, :n_normal], tables.baseline_expected_counts_per_step[:, :n_normal]
+    )
+    np.testing.assert_array_equal(
+        rates[:, n_normal:], tables.sparse_population_expected_counts_per_step[:, n_normal:]
     )
 
 

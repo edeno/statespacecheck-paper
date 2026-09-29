@@ -84,12 +84,15 @@ Use dataclasses for configurations and scientific result containers.
   Preserve draw order when preserving an existing seeded experiment.
 - Arrays have time first: spatial distributions are `(n_time, n_position_bins)`
   or `(n_time, n_x_bins, n_y_bins)`; spike counts are `(n_time, n_cells)`;
-  the simulated rate table is `(n_bins, n_cells)`.
+  the simulated expected-count table is `(n_bins, n_cells)`.
 - Predictions mean `p(x_t | y_{1:t-1})`, filtering means `p(x_t | y_{1:t})`, and
   smoothing means `p(x_t | y_{1:T})`. Keep them distinct in code and prose.
-- Manuscript rates are `lambda`; expected counts are `lambda * dt`. Simulation
-  Poisson inputs already contain counts per step, even where named `rate`.
-  Do not multiply them by `dt` again.
+- Manuscript rates are `lambda`; expected counts are `lambda * dt`. The
+  simulation's Poisson inputs are expected counts per step and are named so
+  (`place_field_expected_counts`, `expected_counts_per_step`,
+  `baseline_expected_counts_per_step`); the scale parameters that set them keep
+  their configured names (`place_field_rate_scale`). Do not multiply them by
+  `dt` again.
 - Handle invalid spatial bins and NaNs explicitly. Vectorize independent
   operations; sequential filtering recursions require their time loop.
 - Use `style.py` for fonts, the colorblind-friendly palette, and the

@@ -561,7 +561,7 @@ def build_simulated_cache(
     from statespacecheck_paper.figure03_protocol import STEP_SECONDS  # noqa: PLC0415
     from statespacecheck_paper.figure03_simulation import (  # noqa: PLC0415
         all_place_field_centers,
-        all_place_field_rates,
+        all_place_field_expected_counts,
         run_figure03_simulation,
     )
 
@@ -641,12 +641,13 @@ def build_simulated_cache(
     events_df.to_parquet(paths["events"], engine="pyarrow", compression="zstd")
 
     # Place-fields sidecar. The 11 normal cells (shared width) plus the narrow
-    # sparse-population cells (their own width and peak rate). ``all_place_field_rates``
+    # sparse-population cells (their own width and peak rate). ``all_place_field_expected_counts``
     # returns ``(n_bins, n_cells)``; the viewer expects ``(n_cells, n_bins)``.
-    rates = np.asarray(
-        all_place_field_rates(config_used, xs, sim.sparse_place_field_centers), dtype=np.float64
+    expected_counts = np.asarray(
+        all_place_field_expected_counts(config_used, xs, sim.sparse_place_field_centers),
+        dtype=np.float64,
     )
-    place_fields = rates.T  # (n_cells, n_bins)
+    place_fields = expected_counts.T  # (n_cells, n_bins)
     interior_mask = np.ones(n_bins, dtype=bool)
     _write_place_fields(
         out_path=paths["place_fields"],

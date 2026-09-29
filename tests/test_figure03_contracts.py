@@ -11,7 +11,7 @@ from typing import Any
 
 from statespacecheck_paper.figure03_protocol import Figure3Config
 from statespacecheck_paper.figure03_simulation import (
-    Figure3RateTables,
+    Figure3ExpectedCountTables,
     Figure3SimulationResult,
 )
 from statespacecheck_paper.figure03_summary import (
@@ -69,11 +69,11 @@ def test_simulation_result_fields() -> None:
 
 
 def test_rate_tables_fields() -> None:
-    assert _field_names(Figure3RateTables) == [
-        "baseline_firing_rates",
-        "remapped_firing_rates",
-        "replay_firing_rates",
-        "sparse_population_firing_rates",
+    assert _field_names(Figure3ExpectedCountTables) == [
+        "baseline_expected_counts_per_step",
+        "remapped_expected_counts_per_step",
+        "replay_expected_counts_per_step",
+        "sparse_population_expected_counts_per_step",
     ]
 
 

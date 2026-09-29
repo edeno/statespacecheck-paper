@@ -31,7 +31,7 @@ from statespacecheck_paper.figure03_protocol import STEP_SECONDS, Figure3Config
 from statespacecheck_paper.figure03_simulation import (
     Figure3SimulationResult,
     all_place_field_centers,
-    build_figure03_rate_tables,
+    build_figure03_expected_count_tables,
     run_figure03_simulation,
 )
 from statespacecheck_paper.figure03_summary import conditions_by_id
@@ -48,7 +48,7 @@ from statespacecheck_paper.paths import (
     SITE_DATA_DIR,
 )
 from statespacecheck_paper.scientific_artifacts import inclusive_flag_rules
-from statespacecheck_paper.simulation import gaussian_transition_matrix, place_field_rates
+from statespacecheck_paper.simulation import gaussian_transition_matrix, place_field_expected_counts
 from statespacecheck_paper.site_export import (
     CONDITION_WINDOWS,
     FILTER_EXPLAINER,
@@ -183,7 +183,7 @@ def test_filter_explainer_is_decoded_by_the_papers_filter(
     assert config.place_field_centers is not None
     sequence = explainer_sequence
     centers = np.asarray(config.place_field_centers)
-    rates = place_field_rates(
+    rates = place_field_expected_counts(
         sequence.position_bins, centers, config.place_field_std, FILTER_EXPLAINER.rate_scale
     )
     np.testing.assert_array_equal(sequence.rates, rates)
@@ -281,12 +281,14 @@ def test_playground_ensembles_are_the_figure03_decoder_tables(
     position_bins = config.position_bins
     cell_centers = all_place_field_centers(config, sparse_centers)
     np.testing.assert_array_equal(position_bins, simulation.position_bins)
-    tables = build_figure03_rate_tables(
+    tables = build_figure03_expected_count_tables(
         position_bins, config.place_field_centers, sparse_centers, config
     )
     place_cells, sparse_epoch = ensembles
-    np.testing.assert_array_equal(place_cells.rates, tables.baseline_firing_rates)
-    np.testing.assert_array_equal(sparse_epoch.rates, tables.sparse_population_firing_rates)
+    np.testing.assert_array_equal(place_cells.rates, tables.baseline_expected_counts_per_step)
+    np.testing.assert_array_equal(
+        sparse_epoch.rates, tables.sparse_population_expected_counts_per_step
+    )
     n_place = len(config.place_field_centers)
     assert place_cells.selectable_cells == tuple(range(n_place))
     assert sparse_epoch.selectable_cells == tuple(range(n_place, n_place + sparse_centers.size))

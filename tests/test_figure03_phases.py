@@ -3,7 +3,7 @@
 These tests verify the scientific claims of the figure-3 simulation:
 
 - The remap phase diagnostics use the decoder's remapped likelihood,
-  rather than an oracle baseline rate table.
+  rather than an oracle baseline expected-count table.
 - In the sparse-population control, isolated spikes from a small population of
   narrow cells clustered at one location elevate KL while HPD overlap and the
   rank-based p-value remain consistent.
@@ -35,7 +35,7 @@ from statespacecheck_paper.figure03_protocol import Figure3Config, PhaseBoundary
 from statespacecheck_paper.figure03_simulation import (
     Figure3SimulationResult,
     _single_out_and_back_sweep,
-    build_figure03_rate_tables,
+    build_figure03_expected_count_tables,
     remap_place_field_centers,
     run_figure03_simulation,
     simulate_drift_phase,
@@ -46,7 +46,7 @@ from statespacecheck_paper.figure03_summary import (
     estimate_realization_summary,
     median_standard_error,
 )
-from statespacecheck_paper.simulation import gaussian_transition_matrix, place_field_rates
+from statespacecheck_paper.simulation import gaussian_transition_matrix, place_field_expected_counts
 
 
 def _moderate_params() -> Figure3Config:
@@ -153,24 +153,24 @@ def test_replay_generative_and_decoder_share_tuning_model(sim: Figure3Simulation
 
     The generative sweep spikes fire at the elevated ``replay_place_field_rate_scale``
     through the ordinary position-tuning model; the decoder's replay-window
-    rate table must use the *same* tuning model (centers, width) and the
+    expected-count table must use the *same* tuning model (centers, width) and the
     *same* elevated scale. The invariant is this parameterization
     equivalence, not array equality of the continuous sweep evaluation
-    against the grid rate table. When both match, the window carries no
+    against the grid expected-count table. When both match, the window carries no
     observation misfit; the decoder's random-walk transition still differs
     from the deterministic sweep.
     """
     params = sim.config
     assert params.place_field_centers is not None
-    rate_tables = build_figure03_rate_tables(
+    expected_count_tables = build_figure03_expected_count_tables(
         sim.position_bins,
         params.place_field_centers,
         np.asarray(sim.sparse_place_field_centers),
         params,
     )
     n_normal = len(params.place_field_centers)
-    decoder_replay_normal = rate_tables.replay_firing_rates[:, :n_normal]
-    generative_replay = place_field_rates(
+    decoder_replay_normal = expected_count_tables.replay_expected_counts_per_step[:, :n_normal]
+    generative_replay = place_field_expected_counts(
         sim.position_bins,
         params.place_field_centers,
         params.place_field_std,
@@ -179,7 +179,7 @@ def test_replay_generative_and_decoder_share_tuning_model(sim: Figure3Simulation
     np.testing.assert_allclose(decoder_replay_normal, generative_replay)
     # The elevated replay scale is genuinely above the ordinary rate scale,
     # so this equivalence is not vacuously true at the baseline rate.
-    baseline_normal = place_field_rates(
+    baseline_normal = place_field_expected_counts(
         sim.position_bins,
         params.place_field_centers,
         params.place_field_std,
@@ -202,7 +202,7 @@ def test_remap_phase_uses_decoder_likelihood(sim: Figure3SimulationResult) -> No
     in_window = (sim.diagnostics.event_time_ind >= start) & (sim.diagnostics.event_time_ind < end)
     assert in_window.any(), "test simulation produced no remap-window spike events"
 
-    remapped_normal_rates = place_field_rates(
+    remapped_normal_rates = place_field_expected_counts(
         sim.position_bins,
         remap_place_field_centers(
             params.place_field_centers, params.place_field_remapping, active=True
@@ -213,16 +213,21 @@ def test_remap_phase_uses_decoder_likelihood(sim: Figure3SimulationResult) -> No
     sparse_scale = (
         params.sparse_cell_peak_rate_per_step * np.sqrt(2.0 * np.pi) * params.sparse_place_field_std
     )
-    baseline_sparse_firing_rates = params.sparse_cell_baseline_rate_fraction * place_field_rates(
-        sim.position_bins,
-        np.asarray(sim.sparse_place_field_centers),
-        params.sparse_place_field_std,
-        sparse_scale,
+    baseline_sparse_expected_counts = (
+        params.sparse_cell_baseline_rate_fraction
+        * place_field_expected_counts(
+            sim.position_bins,
+            np.asarray(sim.sparse_place_field_centers),
+            params.sparse_place_field_std,
+            sparse_scale,
+        )
     )
-    remapped_firing_rates = np.hstack([remapped_normal_rates, baseline_sparse_firing_rates])
+    remapped_expected_counts_per_step = np.hstack(
+        [remapped_normal_rates, baseline_sparse_expected_counts]
+    )
     expected = compute_spike_event_diagnostics_from_rates(
         sim.diagnostics.predictive,
-        remapped_firing_rates,
+        remapped_expected_counts_per_step,
         sim.diagnostics.event_time_ind[in_window],
         sim.diagnostics.event_cell_ind[in_window],
     )
@@ -266,13 +271,13 @@ def test_remap_phase_uses_decoder_likelihood(sim: Figure3SimulationResult) -> No
     # decoder does not use during the remap.
     baseline_rates = np.hstack(
         [
-            place_field_rates(
+            place_field_expected_counts(
                 sim.position_bins,
                 params.place_field_centers,
                 params.place_field_std,
                 params.place_field_rate_scale,
             ),
-            baseline_sparse_firing_rates,
+            baseline_sparse_expected_counts,
         ]
     )
     oracle = compute_spike_event_diagnostics_from_rates(
@@ -344,7 +349,7 @@ def test_sparse_population_is_a_correctly_modeled_low_activity_regime(
     sparse_scale = (
         params.sparse_cell_peak_rate_per_step * np.sqrt(2.0 * np.pi) * params.sparse_place_field_std
     )
-    sparse_population_firing_rates = place_field_rates(
+    sparse_population_expected_counts_per_step = place_field_expected_counts(
         sim.position_bins,
         np.asarray(sim.sparse_place_field_centers),
         params.sparse_place_field_std,
@@ -352,10 +357,10 @@ def test_sparse_population_is_a_correctly_modeled_low_activity_regime(
     )
     expected = compute_spike_event_diagnostics_from_rates(
         sim.diagnostics.predictive,
-        sparse_population_firing_rates,
+        sparse_population_expected_counts_per_step,
         sim.diagnostics.event_time_ind[in_window],
         # Re-index the sparse-cell columns to 0..n_sparse-1 for the K-column
-        # sparse rate table.
+        # sparse expected-count table.
         (sim.diagnostics.event_cell_ind[in_window] - n_normal).astype(np.intp),
     )
     np.testing.assert_allclose(
@@ -374,28 +379,31 @@ def test_sparse_population_is_a_correctly_modeled_low_activity_regime(
         expected_predictive,
     )
 
-    # Parameterization equivalence: the decoder's sparse rate tables use the
-    # same centers/width/scale as the generative model (``sparse_population_firing_rates``),
+    # Parameterization equivalence: the decoder's sparse expected-count tables use
+    # the same centers/width/scale as the generative model
+    # (``sparse_population_expected_counts_per_step``),
     # with the declared baseline gain below the window and the full elevated
     # rate within it. The gain is intentionally nonzero, so this is a
     # rate-regime check (low baseline vs elevated), not a zero-count check.
-    rate_tables = build_figure03_rate_tables(
+    expected_count_tables = build_figure03_expected_count_tables(
         sim.position_bins,
         params.place_field_centers,
         np.asarray(sim.sparse_place_field_centers),
         params,
     )
-    decoder_elevated_sparse = rate_tables.sparse_population_firing_rates[:, n_normal:]
-    decoder_baseline_sparse = rate_tables.baseline_firing_rates[:, n_normal:]
-    np.testing.assert_allclose(decoder_elevated_sparse, sparse_population_firing_rates)
+    decoder_elevated_sparse = expected_count_tables.sparse_population_expected_counts_per_step[
+        :, n_normal:
+    ]
+    decoder_baseline_sparse = expected_count_tables.baseline_expected_counts_per_step[:, n_normal:]
+    np.testing.assert_allclose(decoder_elevated_sparse, sparse_population_expected_counts_per_step)
     np.testing.assert_allclose(
         decoder_baseline_sparse,
-        params.sparse_cell_baseline_rate_fraction * sparse_population_firing_rates,
+        params.sparse_cell_baseline_rate_fraction * sparse_population_expected_counts_per_step,
     )
     # Rate regime: the baseline gain is < 1, so out-of-window rates are
     # uniformly below the elevated in-window peak.
     assert params.sparse_cell_baseline_rate_fraction < 1.0
-    peak = float(sparse_population_firing_rates.max())
+    peak = float(sparse_population_expected_counts_per_step.max())
     assert float(decoder_baseline_sparse.max()) < peak
     assert float(decoder_elevated_sparse.max()) == pytest.approx(peak)
 

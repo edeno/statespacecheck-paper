@@ -7,7 +7,7 @@ final sparse-population epoch). It drives both
 ``statespacecheck_paper.figure03_generation`` and
 ``statespacecheck_paper.interactive.cache.build_simulated_cache``. Both call
 ``run_figure03_simulation`` and take the cell tables from
-``all_place_field_centers`` (the cache also from ``all_place_field_rates``), so
+``all_place_field_centers`` (the cache also from ``all_place_field_expected_counts``), so
 the figure and the interactive viewer's simulated cache show the same simulated
 data.
 
@@ -35,7 +35,7 @@ from statespacecheck_paper.figure03_protocol import (
 from statespacecheck_paper.simulation import (
     gaussian_transition_matrix,
     peak_rate_to_place_field_scale,
-    place_field_rates,
+    place_field_expected_counts,
     reflect_into_interval,
     simulate_spikes_history_dependent,
     simulate_spikes_position_tuned,
@@ -191,8 +191,8 @@ class Figure3SimulationResult:
 
 
 @dataclass(frozen=True)
-class Figure3RateTables:
-    """Per-cell decoder rate tables for the figure-3 decoding windows.
+class Figure3ExpectedCountTables:
+    """Per-cell decoder expected-count tables for the figure-3 decoding windows.
 
     Each table stacks the eleven ordinary place cells with the sparse
     population (``n_normal_cells + sparse_cell_count`` columns), so it plugs
@@ -201,25 +201,25 @@ class Figure3RateTables:
 
     Attributes
     ----------
-    baseline_firing_rates : np.ndarray, shape (n_bins, n_cells)
-        Default decoder rates: ordinary place fields plus the sparse
+    baseline_expected_counts_per_step : np.ndarray, shape (n_bins, n_cells)
+        Default decoder expected counts: ordinary place fields plus the sparse
         population at its small baseline gain.
-    remapped_firing_rates : np.ndarray, shape (n_bins, n_cells)
-        Remap-window rates: the scrambled ordinary place fields plus the
+    remapped_expected_counts_per_step : np.ndarray, shape (n_bins, n_cells)
+        Remap-window expected counts: the scrambled ordinary place fields plus the
         baseline sparse population.
-    replay_firing_rates : np.ndarray, shape (n_bins, n_cells)
-        Replay-window rates: ordinary place fields at the elevated
+    replay_expected_counts_per_step : np.ndarray, shape (n_bins, n_cells)
+        Replay-window expected counts: ordinary place fields at the elevated
         ``replay_place_field_rate_scale`` plus the baseline sparse population.
-    sparse_population_firing_rates : np.ndarray, shape (n_bins, n_cells)
-        Sparse-window rates: the quiet ordinary ensemble
+    sparse_population_expected_counts_per_step : np.ndarray, shape (n_bins, n_cells)
+        Sparse-window expected counts: the quiet ordinary ensemble
         (``sparse_control_ordinary_rate_scale``) plus the fully active sparse
         population.
     """
 
-    baseline_firing_rates: NDArray[np.floating]
-    remapped_firing_rates: NDArray[np.floating]
-    replay_firing_rates: NDArray[np.floating]
-    sparse_population_firing_rates: NDArray[np.floating]
+    baseline_expected_counts_per_step: NDArray[np.floating]
+    remapped_expected_counts_per_step: NDArray[np.floating]
+    replay_expected_counts_per_step: NDArray[np.floating]
+    sparse_population_expected_counts_per_step: NDArray[np.floating]
 
 
 def _record_phase(
@@ -471,7 +471,7 @@ def build_sparse_population(
     return sparse_cell_spikes, sparse_centers
 
 
-def _place_field_rate_blocks(
+def _place_field_expected_count_blocks(
     position_bins: NDArray[np.floating],
     place_field_centers: NDArray[np.floating],
     sparse_centers: NDArray[np.floating],
@@ -492,27 +492,27 @@ def _place_field_rate_blocks(
 
     Returns
     -------
-    normal_rates : np.ndarray, shape (n_bins, n_normal_cells)
+    normal_expected_counts : np.ndarray, shape (n_bins, n_normal_cells)
         Ordinary place fields at ``place_field_rate_scale``.
-    sparse_cell_rates : np.ndarray, shape (n_bins, sparse_cell_count)
+    sparse_cell_expected_counts : np.ndarray, shape (n_bins, sparse_cell_count)
         Sparse-population fields at their full (in-window) peak rate.
     """
-    normal_rates = place_field_rates(
+    normal_expected_counts = place_field_expected_counts(
         position_bins, place_field_centers, config.place_field_std, config.place_field_rate_scale
     )
     sparse_cell_scale = peak_rate_to_place_field_scale(
         config.sparse_cell_peak_rate_per_step, config.sparse_place_field_std
     )
-    sparse_cell_rates = place_field_rates(
+    sparse_cell_expected_counts = place_field_expected_counts(
         position_bins,
         sparse_centers,
         config.sparse_place_field_std,
         sparse_cell_scale,
     )
-    return normal_rates, sparse_cell_rates
+    return normal_expected_counts, sparse_cell_expected_counts
 
 
-def all_place_field_rates(
+def all_place_field_expected_counts(
     config: Figure3Config,
     position_bins: NDArray[np.floating],
     sparse_centers: NDArray[np.floating] | tuple[float, ...],
@@ -545,7 +545,7 @@ def all_place_field_rates(
     if config.place_field_centers is None:
         raise ValueError("config.place_field_centers must be initialized")
     return np.hstack(
-        _place_field_rate_blocks(
+        _place_field_expected_count_blocks(
             position_bins,
             config.place_field_centers,
             np.asarray(sparse_centers, dtype=np.float64),
@@ -554,13 +554,13 @@ def all_place_field_rates(
     )
 
 
-def build_figure03_rate_tables(
+def build_figure03_expected_count_tables(
     position_bins: NDArray[np.floating],
     place_field_centers: NDArray[np.floating],
     sparse_centers: NDArray[np.floating],
     config: Figure3Config,
-) -> Figure3RateTables:
-    """Assemble the four figure-3 decoder rate tables.
+) -> Figure3ExpectedCountTables:
+    """Assemble the four figure-3 decoder expected-count tables.
 
     The decoder knows the sparse population's small baseline gain and the
     low-activity regime. Each override window's table is used for both the
@@ -579,17 +579,24 @@ def build_figure03_rate_tables(
       carries no observation misfit. The animal is stationary while the
       decoder keeps its random-walk transition.
     """
-    normal_rates, sparse_cell_rates = _place_field_rate_blocks(
+    normal_expected_counts, sparse_cell_expected_counts = _place_field_expected_count_blocks(
         position_bins, place_field_centers, sparse_centers, config
     )
-    baseline_sparse_firing_rates = config.sparse_cell_baseline_rate_fraction * sparse_cell_rates
-    baseline_firing_rates = np.hstack([normal_rates, baseline_sparse_firing_rates])
-    sparse_population_firing_rates = np.hstack(
-        [config.sparse_control_ordinary_rate_scale * normal_rates, sparse_cell_rates]
+    baseline_sparse_expected_counts = (
+        config.sparse_cell_baseline_rate_fraction * sparse_cell_expected_counts
     )
-    remapped_firing_rates = np.hstack(
+    baseline_expected_counts_per_step = np.hstack(
+        [normal_expected_counts, baseline_sparse_expected_counts]
+    )
+    sparse_population_expected_counts_per_step = np.hstack(
         [
-            place_field_rates(
+            config.sparse_control_ordinary_rate_scale * normal_expected_counts,
+            sparse_cell_expected_counts,
+        ]
+    )
+    remapped_expected_counts_per_step = np.hstack(
+        [
+            place_field_expected_counts(
                 position_bins,
                 remap_place_field_centers(
                     place_field_centers, config.place_field_remapping, active=True
@@ -597,25 +604,25 @@ def build_figure03_rate_tables(
                 config.place_field_std,
                 config.place_field_rate_scale,
             ),
-            baseline_sparse_firing_rates,
+            baseline_sparse_expected_counts,
         ]
     )
-    replay_firing_rates = np.hstack(
+    replay_expected_counts_per_step = np.hstack(
         [
-            place_field_rates(
+            place_field_expected_counts(
                 position_bins,
                 place_field_centers,
                 config.place_field_std,
                 config.replay_place_field_rate_scale,
             ),
-            baseline_sparse_firing_rates,
+            baseline_sparse_expected_counts,
         ]
     )
-    return Figure3RateTables(
-        baseline_firing_rates=baseline_firing_rates,
-        remapped_firing_rates=remapped_firing_rates,
-        replay_firing_rates=replay_firing_rates,
-        sparse_population_firing_rates=sparse_population_firing_rates,
+    return Figure3ExpectedCountTables(
+        baseline_expected_counts_per_step=baseline_expected_counts_per_step,
+        remapped_expected_counts_per_step=remapped_expected_counts_per_step,
+        replay_expected_counts_per_step=replay_expected_counts_per_step,
+        sparse_population_expected_counts_per_step=sparse_population_expected_counts_per_step,
     )
 
 
@@ -625,7 +632,7 @@ def all_place_field_centers(
     """Field centers of every decoded cell, shape (n_cells,).
 
     The ordinary place cells come first, then the sparse population: the cell
-    order of the decoder's rate tables and of the simulated ``spike_counts``.
+    order of the decoder's expected-count tables and of the simulated ``spike_counts``.
 
     Parameters
     ----------
@@ -797,7 +804,7 @@ def run_figure03_simulation(
     # (n_time, n_normal_cells + sparse_cell_count)
     spike_counts = np.hstack([spike_counts, sparse_cell_spikes])
 
-    rate_tables = build_figure03_rate_tables(
+    expected_count_tables = build_figure03_expected_count_tables(
         position_bins, place_field_centers, sparse_centers, config
     )
 
@@ -807,17 +814,17 @@ def run_figure03_simulation(
             DecoderOverrideWindow(
                 bnd[PhaseBoundary.REMAP_START],
                 bnd[PhaseBoundary.REMAP_END],
-                firing_rate_table=rate_tables.remapped_firing_rates,
+                expected_counts_per_step=expected_count_tables.remapped_expected_counts_per_step,
             ),
             DecoderOverrideWindow(
                 replay_r0,
                 replay_r1,
-                firing_rate_table=rate_tables.replay_firing_rates,
+                expected_counts_per_step=expected_count_tables.replay_expected_counts_per_step,
             ),
             DecoderOverrideWindow(
                 w0,
                 w1,
-                firing_rate_table=rate_tables.sparse_population_firing_rates,
+                expected_counts_per_step=expected_count_tables.sparse_population_expected_counts_per_step,
             ),
         )
     )
@@ -830,7 +837,7 @@ def run_figure03_simulation(
         place_field_std=config.place_field_std,
         place_field_rate_scale=config.place_field_rate_scale,
         override_schedule=override_schedule,
-        baseline_firing_rates=rate_tables.baseline_firing_rates,
+        baseline_expected_counts_per_step=expected_count_tables.baseline_expected_counts_per_step,
     )
 
     return Figure3SimulationResult(
