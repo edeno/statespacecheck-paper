@@ -32,7 +32,7 @@ import pandas as pd
 import xarray as xr
 from numpy.typing import NDArray
 
-from statespacecheck_paper.diagnostics import SpikeEventDiagnostics
+from statespacecheck_paper.diagnostics import DecodingDiagnostics, SpikeEventDiagnostics
 
 if TYPE_CHECKING:
     from statespacecheck_paper.figure04_workflow import Figure4RenderData
@@ -105,13 +105,18 @@ def simulated_spike_times_path(cache_dir: Path) -> Path:
 
 
 def _events_dataframe(
-    diagnostics: SpikeEventDiagnostics,
+    diagnostics: SpikeEventDiagnostics | DecodingDiagnostics,
     n_cells: int,
     *,
     time: NDArray[np.float64] | None = None,
 ) -> pd.DataFrame:
-    """Convert per-spike diagnostic arrays into a sorted Parquet-friendly frame."""
-    event_time = diagnostics.event_time
+    """Convert per-spike diagnostic arrays into a sorted Parquet-friendly frame.
+
+    Event times come from ``diagnostics.event_time`` when the real-data path
+    supplied it, otherwise from ``time[diagnostics.event_time_ind]``. Rows are
+    stably sorted by time, so events in the same bin keep their input order.
+    """
+    event_time = diagnostics.event_time if isinstance(diagnostics, SpikeEventDiagnostics) else None
     if event_time is None:
         if time is None:
             raise ValueError(
@@ -597,26 +602,14 @@ def build_simulated_cache(
     # ``decode_with_diagnostics`` are already expanded for multi-count
     # bins (a bin with ``k`` spikes contributes ``k`` events) and
     # ``compute_spike_event_diagnostics_from_rates`` returns per-event
-    # diagnostics in the same order.
+    # diagnostics in the same order. ``_events_dataframe`` stably sorts the
+    # rows by time; ``event_order`` is that same permutation, used to align
+    # the per-event likelihoods with the table.
     spike_time_ind = np.asarray(metrics.event_time_ind, dtype=np.intp)
     spike_cell_ind = np.asarray(metrics.event_cell_ind, dtype=np.intp)
     event_times = time_arr[spike_time_ind]
     event_order = np.argsort(event_times, kind="stable")
-    events_df = pd.DataFrame(
-        {
-            "time": event_times[event_order].astype(np.float64),
-            "cell_id": spike_cell_ind[event_order].astype(np.int32),
-            "event_hpd_overlap": np.asarray(
-                metrics.event_hpd_overlap[event_order], dtype=np.float32
-            ),
-            "event_kl_divergence": np.asarray(
-                metrics.event_kl_divergence[event_order], dtype=np.float32
-            ),
-            "event_predictive_pvalue": np.asarray(
-                metrics.event_predictive_pvalue[event_order], dtype=np.float32
-            ),
-        }
-    )
+    events_df = _events_dataframe(metrics, n_cells, time=time_arr)
     events_df.to_parquet(paths["events"], engine="pyarrow", compression="zstd")
 
     # Place-fields sidecar. The 11 normal cells (shared width) plus the narrow
