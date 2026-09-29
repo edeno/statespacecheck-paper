@@ -449,7 +449,8 @@ export function initConditions(root, manifest) {
     return button;
   });
 
-  async function select(id) {
+  /** Show condition `id`; `remember` records it in the URL, for a reader's own choice. */
+  async function select(id, { remember = true } = {}) {
     const request = ++generation;
     // Stop the previous player before anything else can go wrong.
     if (teardown) teardown();
@@ -461,9 +462,11 @@ export function initConditions(root, manifest) {
     }
     view.setAttribute("aria-labelledby", `cond-tab-${id}`);
     text.textContent = CONDITION_TEXT[id] ?? "";
-    const url = new URL(window.location.href);
-    url.searchParams.set("condition", id);
-    window.history.replaceState(null, "", url);
+    if (remember) {
+      const url = new URL(window.location.href);
+      url.searchParams.set("condition", id);
+      window.history.replaceState(null, "", url);
+    }
     if (!cache.has(id)) {
       view.innerHTML = '<p class="loading" role="status">Loading simulation…</p>';
       const entry = manifest.conditions.find((c) => c.condition_id === id);
@@ -487,7 +490,8 @@ export function initConditions(root, manifest) {
 
   // ?condition=<id> links to one condition; otherwise start on remapping.
   const requested = new URLSearchParams(window.location.search).get("condition");
-  select(ids.includes(requested) ? requested : ids.includes("remap") ? "remap" : ids[0]);
+  const initial = ids.includes(requested) ? requested : ids.includes("remap") ? "remap" : ids[0];
+  select(initial, { remember: false });
 }
 
 function renderCondition(view, payload, manifest) {

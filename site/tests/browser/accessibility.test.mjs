@@ -175,6 +175,16 @@ describe("condition tabs", () => {
       await conditionShown(page, focused);
       assert.equal(await page.locator(`#cond-tab-${focused}`).getAttribute("aria-selected"), "true");
     }));
+
+  test("only a reader's own choice of condition enters the URL", () =>
+    withPage({}, async (page) => {
+      assert.equal(new URL(page.url()).search, "");
+      const other = page.locator("#cond-tabs [aria-selected=false]").first();
+      const id = await other.getAttribute("data-condition");
+      await other.click();
+      await conditionShown(page, id);
+      assert.equal(new URL(page.url()).searchParams.get("condition"), id);
+    }));
 });
 
 describe("navigation and states", () => {
