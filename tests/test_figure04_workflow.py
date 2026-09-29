@@ -350,7 +350,7 @@ class TestPrepareRenderData:
     ) -> None:
         monkeypatch.setattr(
             figure04_workflow,
-            "load_neural_recording_from_files",
+            "load_figure04_input",
             lambda *a, **k: _synthetic_recording(),
         )
         calls = {"fit": 0, "diagnostics": 0}
@@ -403,7 +403,7 @@ class TestPrepareRenderData:
     ) -> None:
         monkeypatch.setattr(
             figure04_workflow,
-            "load_neural_recording_from_files",
+            "load_figure04_input",
             lambda *a, **k: _synthetic_recording(),
         )
         calls = {"n": 0}
@@ -446,7 +446,7 @@ class TestPrepareRenderData:
             seen["animal_date_epoch"] = animal_date_epoch
             return _synthetic_recording()
 
-        monkeypatch.setattr(figure04_workflow, "load_neural_recording_from_files", spy_load)
+        monkeypatch.setattr(figure04_workflow, "load_figure04_input", spy_load)
         monkeypatch.setattr(
             figure04_workflow,
             "_fit_and_decode",

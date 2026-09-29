@@ -1,7 +1,7 @@
 """Rebuild the Figure-4 input file from the Frank-lab Spyglass database.
 
-:func:`statespacecheck_paper.load_local_data.load_neural_recording_from_files`
-reads one pre-exported ``.npz`` file. This module is the upstream side of that
+:func:`statespacecheck_paper.load_local_data.load_figure04_input` reads the
+Figure-4 input file, one ``.npz``. This module is the upstream side of that
 boundary: it fetches the Spyglass entries the recording is derived from and
 writes that file, so it can be regenerated, compared with the one the figure
 used, and recorded in a Spyglass paper export

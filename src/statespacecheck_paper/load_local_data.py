@@ -1,9 +1,9 @@
-"""Load neural recording data from local files without database dependencies.
+"""Read the Figure-4 input file without database dependencies.
 
-This module provides file-based data loading without requiring Spyglass database
-connections. Useful for working with pre-exported datasets. The loader returns a
-validated :class:`NeuralRecordingData` so downstream code reads documented
-attributes instead of an undiscoverable ``dict[str, Any]``.
+This module reads the recording from the Figure-4 input file without requiring
+Spyglass database connections. The loader returns a validated
+:class:`NeuralRecordingData` so downstream code reads documented attributes
+instead of an undiscoverable ``dict[str, Any]``.
 
 The recording is stored as one ``{animal_date_epoch}_figure04_inputs.npz``: plain
 numeric and string arrays (read with ``allow_pickle=False``, so loading runs no
@@ -48,9 +48,9 @@ NPZ_FORMAT_VERSION = 1
 
 @dataclasses.dataclass(frozen=True)
 class NeuralRecordingData:
-    """Validated neural-recording session loaded from pre-exported files.
+    """Validated neural-recording session loaded from the Figure-4 input file.
 
-    A frozen wrapper around the pre-exported recording. It is *shallow*: the
+    A frozen wrapper around the recording in that file. It is *shallow*: the
     contained ``position_info`` DataFrame and ``track_graph`` are treated as
     read-only by convention (Python does not deep-freeze them), while the
     per-cell spike-time arrays are copied to ``float64`` and marked read-only at
@@ -58,7 +58,7 @@ class NeuralRecordingData:
     construction: mutating ``position_info`` / ``track_graph`` in place afterward
     (via a retained external reference) can void the checked invariants.
 
-    Units follow the export: the ``position_info`` time index and the spike
+    Units follow the input file: the ``position_info`` time index and the spike
     times are in seconds; ``head_position_x`` / ``head_position_y`` /
     ``linear_position`` and ``linear_edge_spacing`` are in centimeters.
 
@@ -221,11 +221,11 @@ def input_file_path(data_path: str | Path, animal_date_epoch: str) -> Path:
     return Path(data_path) / f"{animal_date_epoch}{INPUT_FILE_SUFFIX}"
 
 
-def load_neural_recording_from_files(
+def load_figure04_input(
     data_path: str | Path,
     animal_date_epoch: str,
 ) -> NeuralRecordingData:
-    """Load a neural recording session from its ``.npz`` input file.
+    """Load a neural recording session from its Figure-4 input file.
 
     Parameters
     ----------
@@ -259,7 +259,7 @@ def load_neural_recording_from_files(
         raise FileNotFoundError(
             f"Data directory not found: {data_path}. The real hippocampal recording is "
             "not included in the repository (see the README); "
-            f"{_download_hint(data_path, animal_date_epoch)}place the exported files "
+            f"{_download_hint(data_path, animal_date_epoch)}place the input file "
             "under this directory or set STATESPACECHECK_DATA_PATH to their location."
         )
     input_file = input_file_path(data_path, animal_date_epoch)

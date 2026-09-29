@@ -480,8 +480,8 @@ $\Lambda(x)$.
   confusions) → `figure04_layout.compose_figure04` (artist arrangement) →
   `save_figure`.
 - **Intermediate data — the honest boundary.** Figure 4 is reproduced **from
-  pre-exported derived inputs onward**, not from raw acquisition. The loader
-  `load_local_data.load_neural_recording_from_files` reads one file from the
+  the Figure-4 input file (derived data) onward**, not from raw acquisition. The loader
+  `load_local_data.load_figure04_input` reads one file from the
   data directory, `{epoch}_figure04_inputs.npz`, and returns a validated
   `NeuralRecordingData`:
 

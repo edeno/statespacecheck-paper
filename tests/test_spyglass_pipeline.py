@@ -28,7 +28,7 @@ from track_linearization import make_track_graph
 
 from statespacecheck_paper.figure04_diagnostics import FlagConfusion
 from statespacecheck_paper.figure04_summary import Figure4DiagnosticMeans, Figure4Summary
-from statespacecheck_paper.load_local_data import input_file_path, load_neural_recording_from_files
+from statespacecheck_paper.load_local_data import input_file_path, load_figure04_input
 from statespacecheck_paper.paths import FIGURE04_INPUTS_EPOCH, FIGURE04_SUMMARY_PATH, REPO_ROOT
 from statespacecheck_paper.spyglass_pipeline import figure04_input, paper_export
 from statespacecheck_paper.spyglass_pipeline.figure04_compute import (
@@ -165,7 +165,7 @@ def test_written_exports_load_through_the_figure_loader(tmp_path: Path) -> None:
     inputs = _inputs()
     write_figure04_inputs(inputs, tmp_path, _EPOCH)
 
-    recording = load_neural_recording_from_files(tmp_path, _EPOCH)
+    recording = load_figure04_input(tmp_path, _EPOCH)
 
     np.testing.assert_array_equal(recording.spike_times[0], [0.001, 0.004])
     assert recording.spike_times[1].shape == (0,)
@@ -187,7 +187,7 @@ def test_write_overwrite_replaces_the_contents(tmp_path: Path) -> None:
     write_figure04_inputs(_inputs(), tmp_path, _EPOCH)
     write_figure04_inputs(_inputs(spike_shift=1e-3), tmp_path, _EPOCH, overwrite=True)
 
-    recording = load_neural_recording_from_files(tmp_path, _EPOCH)
+    recording = load_figure04_input(tmp_path, _EPOCH)
     np.testing.assert_array_equal(recording.spike_times[0], [0.001, 0.004 + 1e-3])
 
 

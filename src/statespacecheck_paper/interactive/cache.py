@@ -779,7 +779,7 @@ def main(argv: list[str] | None = None) -> int:
         "--data-dir",
         required=True,
         help=(
-            "Figure 4 data directory. Must contain the exported recording inputs; "
+            "Figure 4 data directory. Must contain the Figure 4 input file; "
             "the Figure 4 decode and diagnostics caches under intermediates/ are "
             "reused when current and otherwise rebuilt there."
         ),

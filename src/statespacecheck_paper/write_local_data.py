@@ -24,7 +24,7 @@ from statespacecheck_paper.load_local_data import (
     NPZ_FORMAT_VERSION,
     NeuralRecordingData,
     input_file_path,
-    load_neural_recording_from_files,
+    load_figure04_input,
 )
 
 # Suffixes of the five pickles the recording was first exported as.
@@ -262,9 +262,7 @@ def convert_legacy_pickle_exports(
             legacy.linear_edge_spacing,
         ),
     )
-    difference = recording_difference(
-        legacy, load_neural_recording_from_files(output.parent, animal_date_epoch)
-    )
+    difference = recording_difference(legacy, load_figure04_input(output.parent, animal_date_epoch))
     if difference is not None:
         raise ValueError(f"Converted file differs from the pickles ({difference}): {output}")
     return output

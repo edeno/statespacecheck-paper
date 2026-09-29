@@ -1,7 +1,8 @@
 """Figure-4 workflow: load derived data, fit/decode (or load cache), summarize.
 
-Assembles everything the Figure-4 render needs. Inputs are pre-exported derived
-data (a :class:`~statespacecheck_paper.load_local_data.NeuralRecordingData`),
+Assembles everything the Figure-4 render needs. Its input is the Figure-4 input
+file of derived data (loaded as a
+:class:`~statespacecheck_paper.load_local_data.NeuralRecordingData`),
 not a raw-data pipeline, so this is a *workflow*: load the fresh recording, load
 a fingerprint-matching decode cache or fit + decode both models and cache the
 result, and load a matching diagnostics cache or compute the per-spike
@@ -58,7 +59,7 @@ from statespacecheck_paper.figure04_place_fields import (
 )
 from statespacecheck_paper.load_local_data import (
     NeuralRecordingData,
-    load_neural_recording_from_files,
+    load_figure04_input,
 )
 
 
@@ -452,7 +453,7 @@ def prepare_figure04_render_data(
         recomputing. When False, refit, recompute, and overwrite both caches.
     """
     print("Loading data...")
-    recording = load_neural_recording_from_files(paths.data_path, paths.animal_date_epoch)
+    recording = load_figure04_input(paths.data_path, paths.animal_date_epoch)
     print(f"  Loaded {len(recording.spike_times)} cells")
 
     position_info = recording.position_info
