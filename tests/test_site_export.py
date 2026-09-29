@@ -522,6 +522,15 @@ def test_recording_payload_slices_both_models_to_the_detail_window() -> None:
             n_bins,
         ),
     )
+    np.testing.assert_array_equal(
+        decode_display_rows(payload["place_fields"]["rows"], n_bins),
+        decode_display_rows(encode_display_rows(analysis.diagnostic_place_fields), n_bins),
+    )
+    np.testing.assert_allclose(
+        payload["place_fields"]["row_max"],
+        analysis.diagnostic_place_fields.max(axis=1),
+        rtol=1e-5,
+    )
     for name, diagnostics in (
         ("continuous", analysis.continuous_diagnostics),
         ("continuous_fragmented", analysis.continuous_fragmented_diagnostics),

@@ -1003,6 +1003,10 @@ def recording_payload(
         "has_spikes": has_spikes.tolist(),
         # Each cell's normalized single-event likelihood (one row per cell).
         "cell_likelihoods": encode_display_rows(ssc.event_likelihood(place_fields)),
+        # The shared encoding-model place fields, for the selected unit's
+        # profile in the recording player. Keep row maxima so the export does
+        # not confuse a place field with a normalized spike likelihood.
+        "place_fields": heatmap_payload(place_fields, (0.0, float(place_fields.max()))),
         "cell_rank": cell_rank.tolist(),
         "spike_times": [
             _rounded(times[(times >= t0) & (times < t_end)] - t0, 4) for times in spike_times
