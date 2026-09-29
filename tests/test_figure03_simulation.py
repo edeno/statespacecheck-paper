@@ -34,7 +34,7 @@ def _zero_diagnostics(
         event_hpd_overlap=np.zeros(n_spikes),
         event_kl_divergence=np.zeros(n_spikes),
         event_predictive_pvalue=np.zeros(n_spikes),
-        per_spike_likelihood=np.zeros((n_spikes, n_bins)),
+        event_likelihood=np.zeros((n_spikes, n_bins)),
     )
 
 

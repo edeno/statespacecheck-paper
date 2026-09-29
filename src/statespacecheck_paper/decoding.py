@@ -364,7 +364,7 @@ def _apply_window_rate_overrides(
     assert diagnostics.hpd_overlap is not None
     assert diagnostics.kl_divergence is not None
     assert diagnostics.predictive_pvalue is not None
-    assert diagnostics.per_spike_likelihood is not None
+    assert diagnostics.event_likelihood is not None
 
     hpd_overlap = diagnostics.hpd_overlap.copy()
     kl_divergence = diagnostics.kl_divergence.copy()
@@ -372,7 +372,7 @@ def _apply_window_rate_overrides(
     event_hpd_overlap = diagnostics.event_hpd_overlap.copy()
     event_kl_divergence = diagnostics.event_kl_divergence.copy()
     event_predictive_pvalue = diagnostics.event_predictive_pvalue.copy()
-    decoder_per_spike_lik = diagnostics.per_spike_likelihood.copy()
+    decoder_event_lik = diagnostics.event_likelihood.copy()
 
     for window in windows:
         if window.firing_rate_table is None:
@@ -396,7 +396,7 @@ def _apply_window_rate_overrides(
         event_hpd_overlap[in_window] = window_events.hpd_overlap
         event_kl_divergence[in_window] = window_events.kl_divergence
         event_predictive_pvalue[in_window] = window_events.predictive_pvalue
-        decoder_per_spike_lik[in_window] = window_events.likelihood
+        decoder_event_lik[in_window] = window_events.likelihood
 
         hpd_overlap[window_times, window_cells] = window_events.hpd_overlap
         kl_divergence[window_times, window_cells] = window_events.kl_divergence
@@ -411,7 +411,7 @@ def _apply_window_rate_overrides(
         hpd_overlap=hpd_overlap,
         kl_divergence=kl_divergence,
         predictive_pvalue=predictive_pvalue,
-        per_spike_likelihood=decoder_per_spike_lik,
+        event_likelihood=decoder_event_lik,
     )
 
 
@@ -645,7 +645,7 @@ def decode_with_diagnostics(
             ``spike_cell_ind`` aliases were removed; use the
             ``event_*_ind`` fields instead.
 
-        ``per_spike_likelihood`` of shape ``(n_spikes, n_bins)``
+        ``event_likelihood`` of shape ``(n_spikes, n_bins)``
             Normalized likelihood for each individual spike event,
             computed against the decoder's actual rates (remapped
             inside any misfit window with ``firing_rate_table`` set).
@@ -803,7 +803,7 @@ def decode_with_diagnostics(
     assert overridden.hpd_overlap is not None  # dense matrices requested above
     assert overridden.kl_divergence is not None
     assert overridden.predictive_pvalue is not None
-    assert overridden.per_spike_likelihood is not None
+    assert overridden.event_likelihood is not None
 
     return DecodingDiagnostics(
         posterior=posterior,
@@ -812,7 +812,7 @@ def decode_with_diagnostics(
         hpd_overlap=overridden.hpd_overlap,
         kl_divergence=overridden.kl_divergence,
         predictive_pvalue=overridden.predictive_pvalue,
-        per_spike_likelihood=overridden.per_spike_likelihood,
+        event_likelihood=overridden.event_likelihood,
         event_time_ind=overridden.event_time_ind,
         event_cell_ind=overridden.event_cell_ind,
         event_hpd_overlap=overridden.event_hpd_overlap,

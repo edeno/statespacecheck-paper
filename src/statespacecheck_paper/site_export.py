@@ -61,7 +61,7 @@ from statespacecheck_paper.figure03_simulation import (
 )
 from statespacecheck_paper.figure04_cache import Figure4Paths
 from statespacecheck_paper.figure04_decoder import Figure4Config
-from statespacecheck_paper.figure04_diagnostics import mean_per_spike_likelihood_by_time
+from statespacecheck_paper.figure04_diagnostics import mean_event_likelihood_by_time
 from statespacecheck_paper.figure04_generation import FIGURE4_DETAIL_WINDOW
 from statespacecheck_paper.figure04_layout import Figure4DetailWindow
 from statespacecheck_paper.figure04_place_fields import get_state_marginalized_posterior
@@ -749,7 +749,7 @@ def scenario_payloads(
 
     event_time = np.asarray(diagnostics.event_time_ind)
     event_cell = np.asarray(diagnostics.event_cell_ind)
-    per_spike_likelihood = np.asarray(diagnostics.per_spike_likelihood, dtype=np.float64)
+    event_likelihood = np.asarray(diagnostics.event_likelihood, dtype=np.float64)
 
     predictive_range = (
         0.0,
@@ -763,7 +763,7 @@ def scenario_payloads(
         column = order.index(window.condition_id)
         in_window = (event_time >= window.start) & (event_time < window.stop)
         likelihood_rows, likelihood_index = np.unique(
-            per_spike_likelihood[in_window], axis=0, return_inverse=True
+            event_likelihood[in_window], axis=0, return_inverse=True
         )
         payloads[window.condition_id] = {
             "condition_id": window.condition_id,
@@ -836,7 +836,7 @@ def replay_payload(
         else float(time[-1] + (time[-1] - time[-2]))
     )
     place_fields = np.asarray(decode.diagnostic_place_fields, dtype=np.float64)
-    mean_likelihood, has_spikes = mean_per_spike_likelihood_by_time(
+    mean_likelihood, has_spikes = mean_event_likelihood_by_time(
         decode.spike_counts[window], place_fields
     )
     flag_rules = figure04_summary["flag_rules"]

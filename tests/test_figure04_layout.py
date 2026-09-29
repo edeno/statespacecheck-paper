@@ -117,7 +117,7 @@ def _compose_diagnostics(seed: int) -> SpikeEventDiagnostics:
         hpd_overlap=rng.uniform(0, 1, (_N_TIME, _N_CELLS)),
         kl_divergence=rng.gamma(2.0, 0.5, (_N_TIME, _N_CELLS)),
         predictive_pvalue=rng.uniform(0.01, 1, (_N_TIME, _N_CELLS)),
-        per_spike_likelihood=rng.uniform(0, 1, (n_spk, _N_POS)),
+        event_likelihood=rng.uniform(0, 1, (n_spk, _N_POS)),
         event_time=np.sort(rng.uniform(0, _N_TIME, n_spk)),
     )
 

@@ -24,7 +24,7 @@ from matplotlib.patches import Rectangle
 from numpy.typing import NDArray
 
 from statespacecheck_paper.diagnostics import SpikeEventDiagnostics
-from statespacecheck_paper.figure04_diagnostics import mean_per_spike_likelihood_by_time
+from statespacecheck_paper.figure04_diagnostics import mean_event_likelihood_by_time
 from statespacecheck_paper.figure04_place_fields import DECODER_PREDICTIVE_VAR
 from statespacecheck_paper.figure04_plot_primitives import (
     ANIMAL_POSITION_LABEL_GID,
@@ -434,7 +434,7 @@ def _draw_place_field_likelihood_image(
     for a ~1000-bin plot.
     """
     counts_win = spike_counts[time_slice_ind]
-    lik_np, has_spk_slice = mean_per_spike_likelihood_by_time(counts_win, place_fields)
+    lik_np, has_spk_slice = mean_event_likelihood_by_time(counts_win, place_fields)
     time_win = np.asarray(time)[time_slice_ind]
     pos = np.asarray(position_bins, dtype=np.float64)
     extent = compute_half_pixel_extent(time_win, pos)

@@ -163,7 +163,7 @@ def _plot_timeseries_heatmap(
 def _plot_likelihood_overlay(
     ax: Axes,
     predictive: NDArray[np.floating],
-    per_spike_likelihood: NDArray[np.floating],
+    event_likelihood: NDArray[np.floating],
     spike_time_ind: NDArray[np.intp],
     true_position: NDArray[np.floating] | None = None,
 ) -> None:
@@ -179,7 +179,7 @@ def _plot_likelihood_overlay(
         Matplotlib axes to plot on.
     predictive : NDArray, shape (n_time, n_bins)
         Predictive distribution over position at each time (used for shape only).
-    per_spike_likelihood : NDArray, shape (n_spikes, n_bins)
+    event_likelihood : NDArray, shape (n_spikes, n_bins)
         Normalized likelihood distribution for each individual spike event.
     spike_time_ind : NDArray, shape (n_spikes,)
         Time index for each spike event.
@@ -196,7 +196,7 @@ def _plot_likelihood_overlay(
     if len(spike_time_ind) > 0:
         lik_per_time: NDArray[np.floating] = np.zeros((n_time, n_bins))
         counts = np.zeros(n_time)
-        np.add.at(lik_per_time, spike_time_ind, per_spike_likelihood)
+        np.add.at(lik_per_time, spike_time_ind, event_likelihood)
         np.add.at(counts, spike_time_ind, 1.0)
         has_spikes = counts > 0
         lik_per_time[has_spikes] /= counts[has_spikes, np.newaxis]
@@ -330,7 +330,7 @@ def _plot_figure3_likelihood_row(
     _plot_likelihood_overlay(
         ax,
         diagnostics.predictive,
-        diagnostics.per_spike_likelihood,
+        diagnostics.event_likelihood,
         diagnostics.event_time_ind,
         true_position=true_position,
     )

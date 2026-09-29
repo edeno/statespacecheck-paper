@@ -132,7 +132,7 @@ def compute_spike_event_diagnostics(
         - ``hpd_overlap``, ``kl_divergence``, ``predictive_pvalue``: shape
           (n_time, n_cells), NaN where the cell has no spike at that
           timestep.
-        - ``per_spike_likelihood``: shape (n_spikes, n_bins), normalized
+        - ``event_likelihood``: shape (n_spikes, n_bins), normalized
           per-event intensity likelihood.
 
         When ``include_dense_matrices=False`` those four dense fields
@@ -189,7 +189,7 @@ def compute_spike_event_diagnostics(
     return dataclasses.replace(result, event_time=event_times)
 
 
-def mean_per_spike_likelihood_by_time(
+def mean_event_likelihood_by_time(
     spike_counts: NDArray[np.int64],
     place_fields: NDArray[np.float64],
 ) -> tuple[NDArray[np.float64], NDArray[np.bool_]]:

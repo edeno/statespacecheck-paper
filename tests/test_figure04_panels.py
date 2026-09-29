@@ -222,7 +222,7 @@ def _diagnostics_from_metric(
         hpd_overlap=_named("hpd_overlap", metric),
         kl_divergence=_named("kl_divergence", metric),
         predictive_pvalue=_named("predictive_pvalue", metric),
-        per_spike_likelihood=np.zeros((n_spikes, 1)),
+        event_likelihood=np.zeros((n_spikes, 1)),
         event_time=event_time,
     )
 
@@ -311,7 +311,7 @@ def _dense_diagnostics(seed: int) -> SpikeEventDiagnostics:
         hpd_overlap=rng.uniform(0, 1, (_N_TIME, _N_CELLS)),
         kl_divergence=rng.gamma(2.0, 0.5, (_N_TIME, _N_CELLS)),
         predictive_pvalue=rng.uniform(0.01, 1, (_N_TIME, _N_CELLS)),
-        per_spike_likelihood=rng.uniform(0, 1, (n_spk, _N_POS)),
+        event_likelihood=rng.uniform(0, 1, (n_spk, _N_POS)),
         event_time=rng.uniform(0, _N_TIME, n_spk),
     )
 
@@ -453,7 +453,7 @@ def _diag_all_dense_none() -> SpikeEventDiagnostics:
         hpd_overlap=None,
         kl_divergence=None,
         predictive_pvalue=None,
-        per_spike_likelihood=None,
+        event_likelihood=None,
     )
 
 
@@ -470,7 +470,7 @@ def _diag_wrong_time_rows() -> SpikeEventDiagnostics:
         hpd_overlap=np.zeros(bad),
         kl_divergence=np.zeros(bad),
         predictive_pvalue=np.zeros(bad),
-        per_spike_likelihood=np.zeros((n, _N_POS)),
+        event_likelihood=np.zeros((n, _N_POS)),
     )
 
 
@@ -561,7 +561,7 @@ def test_scatter_event_time_ind_keeps_repeated_events_distinct() -> None:
         hpd_overlap=np.full((n_time, n_cells), np.nan),
         kl_divergence=np.full((n_time, n_cells), np.nan),
         predictive_pvalue=np.full((n_time, n_cells), np.nan),
-        per_spike_likelihood=np.zeros((n_spk, 1)),
+        event_likelihood=np.zeros((n_spk, 1)),
         event_time=None,
     )
     fig, ax = plt.subplots()

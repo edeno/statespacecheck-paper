@@ -33,7 +33,7 @@ from statespacecheck_paper.figure03_simulation import (
     build_figure03_rate_tables,
     run_figure03_simulation,
 )
-from statespacecheck_paper.figure04_diagnostics import mean_per_spike_likelihood_by_time
+from statespacecheck_paper.figure04_diagnostics import mean_event_likelihood_by_time
 from statespacecheck_paper.figure04_layout import Figure4DetailWindow
 from statespacecheck_paper.number_format import significant, whole_percent
 from statespacecheck_paper.paths import FIGURE03_SUMMARY_PATH, FIGURE04_SUMMARY_PATH, REPO_ROOT
@@ -363,7 +363,7 @@ def test_scenario_events_match_the_decoded_diagnostics(
         # Each event's likelihood row decodes to its own quantized likelihood.
         rows = decode_display_rows(payload["likelihood_rows"], n_bins)
         expected = decode_display_rows(
-            encode_display_rows(diagnostics.per_spike_likelihood[in_window]), n_bins
+            encode_display_rows(diagnostics.event_likelihood[in_window]), n_bins
         )
         np.testing.assert_array_equal(rows[events["likelihood_row"]], expected)
         predictive = decode_display_rows(payload["predictive"]["rows"], n_bins)
@@ -426,7 +426,7 @@ def test_replay_payload_slices_both_models_to_the_detail_window() -> None:
 
     assert len(payload["time"]) == n_time
     assert payload["time"][0] == 0.0
-    likelihood, has_spikes = mean_per_spike_likelihood_by_time(
+    likelihood, has_spikes = mean_event_likelihood_by_time(
         decode.spike_counts[time_slice], decode.diagnostic_place_fields
     )
     np.testing.assert_array_equal(

@@ -152,13 +152,13 @@ class TestComputePerCellDiagnostics:
 
         assert result.event_time is not None
         assert result.kl_divergence is not None
-        assert result.per_spike_likelihood is not None
+        assert result.event_likelihood is not None
         np.testing.assert_allclose(result.event_time, [1.10, 1.20])
         np.testing.assert_array_equal(result.event_time_ind, [1, 1])
         np.testing.assert_array_equal(result.event_cell_ind, [0, 0])
         expected_likelihood = place_fields[0] / place_fields[0].sum()
         np.testing.assert_allclose(
-            result.per_spike_likelihood,
+            result.event_likelihood,
             np.repeat(expected_likelihood[np.newaxis], 2, axis=0),
         )
         for event_key in ("event_hpd_overlap", "event_kl_divergence", "event_predictive_pvalue"):
@@ -172,14 +172,14 @@ class TestComputePerCellDiagnostics:
 class TestMeanPerSpikeLikelihoodByTime:
     def test_averages_normalized_fields_weighted_by_spike_count(self) -> None:
         from statespacecheck_paper.figure04_diagnostics import (
-            mean_per_spike_likelihood_by_time,
+            mean_event_likelihood_by_time,
         )
 
         # cell 0 concentrates at bin 0, cell 1 at bin 2 (unnormalized).
         place_fields = np.array([[2.0, 0.0, 0.0], [0.0, 0.0, 4.0]])
         spike_counts = np.array([[1, 0], [1, 1], [0, 0]], dtype=np.int64)
 
-        mean_lik, has_spikes = mean_per_spike_likelihood_by_time(spike_counts, place_fields)
+        mean_lik, has_spikes = mean_event_likelihood_by_time(spike_counts, place_fields)
 
         expected = np.array([[1.0, 0.0, 0.0], [0.5, 0.0, 0.5], [0.0, 0.0, 0.0]])
         np.testing.assert_allclose(mean_lik, expected)
@@ -187,7 +187,7 @@ class TestMeanPerSpikeLikelihoodByTime:
 
     def test_uses_normalized_event_intensity(self) -> None:
         from statespacecheck_paper.figure04_diagnostics import (
-            mean_per_spike_likelihood_by_time,
+            mean_event_likelihood_by_time,
         )
 
         # One selected event contributes its mark intensity. The Poisson
@@ -196,12 +196,12 @@ class TestMeanPerSpikeLikelihoodByTime:
         place_fields = np.array([[2.0, 0.5]])
         spike_counts = np.array([[1]], dtype=np.int64)
 
-        mean_lik, _ = mean_per_spike_likelihood_by_time(spike_counts, place_fields)
+        mean_lik, _ = mean_event_likelihood_by_time(spike_counts, place_fields)
 
         expected = place_fields[0] / place_fields[0].sum()
         np.testing.assert_allclose(mean_lik[0], expected)
 
-    def test_matches_diagnostics_per_spike_likelihood(self) -> None:
+    def test_matches_diagnostics_event_likelihood(self) -> None:
         # Parity across the two entry points that both claim to plot/consume
         # the same per-spike likelihood: the plotting helper (place fields,
         # (n_cells, n_bins)) and the diagnostics (rates, (n_bins, n_cells)).
@@ -209,12 +209,12 @@ class TestMeanPerSpikeLikelihoodByTime:
             compute_spike_event_diagnostics_from_rates,
         )
         from statespacecheck_paper.figure04_diagnostics import (
-            mean_per_spike_likelihood_by_time,
+            mean_event_likelihood_by_time,
         )
 
         place_fields = np.array([[2.0, 0.5, 1.0], [0.1, 0.4, 0.3]])  # (n_cells, n_bins)
         spike_counts = np.array([[0, 1]], dtype=np.int64)  # one spike from cell 1 at t=0
-        mean_lik, _ = mean_per_spike_likelihood_by_time(spike_counts, place_fields)
+        mean_lik, _ = mean_event_likelihood_by_time(spike_counts, place_fields)
 
         predictive = np.full((1, 3), 1.0 / 3.0)
         diag = compute_spike_event_diagnostics_from_rates(
@@ -224,8 +224,8 @@ class TestMeanPerSpikeLikelihoodByTime:
             np.array([1], dtype=np.intp),
             include_dense_matrices=True,
         )
-        assert diag.per_spike_likelihood is not None
-        np.testing.assert_allclose(mean_lik[0], diag.per_spike_likelihood[0])
+        assert diag.event_likelihood is not None
+        np.testing.assert_allclose(mean_lik[0], diag.event_likelihood[0])
 
 
 # ---------------------------------------------------------------------------

@@ -32,7 +32,7 @@ class TestDecodeWithDiagnostics:
     def test_full_output_contract(self, decoder_inputs: DecoderInputs) -> None:
         """Lock in the full set of fields + their shapes. Downstream
         plotting and cache code consumes every field, so silently
-        dropping one (e.g. ``predictive``, ``per_spike_likelihood``,
+        dropping one (e.g. ``predictive``, ``event_likelihood``,
         ``event_*``) is a regression even if the four headline metrics
         are intact."""
         result = decoder_inputs.call()
@@ -52,7 +52,7 @@ class TestDecodeWithDiagnostics:
             "kl_divergence": (n_time, n_cells),
             "predictive_pvalue": (n_time, n_cells),
             # Per-spike-event arrays (count expansion in src/.../analysis.py:584).
-            "per_spike_likelihood": (n_events, n_bins),
+            "event_likelihood": (n_events, n_bins),
             "event_time_ind": (n_events,),
             "event_cell_ind": (n_events,),
             "event_hpd_overlap": (n_events,),
@@ -316,10 +316,10 @@ class TestDecodeWithDiagnostics:
             with_alt.event_time_ind[inside],
             with_alt.event_cell_ind[inside],
         )
-        assert expected.per_spike_likelihood is not None
+        assert expected.event_likelihood is not None
         np.testing.assert_allclose(
-            with_alt.per_spike_likelihood[inside],
-            expected.per_spike_likelihood,
+            with_alt.event_likelihood[inside],
+            expected.event_likelihood,
         )
         for name in (
             "event_hpd_overlap",
@@ -338,10 +338,10 @@ class TestDecodeWithDiagnostics:
             with_alt.event_time_ind[outside],
             with_alt.event_cell_ind[outside],
         )
-        assert expected_outside.per_spike_likelihood is not None
+        assert expected_outside.event_likelihood is not None
         np.testing.assert_allclose(
-            with_alt.per_spike_likelihood[outside],
-            expected_outside.per_spike_likelihood,
+            with_alt.event_likelihood[outside],
+            expected_outside.event_likelihood,
         )
         for name in (
             "event_hpd_overlap",
@@ -366,7 +366,7 @@ class TestDecodeWithDiagnostics:
             "event_hpd_overlap",
             "event_kl_divergence",
             "event_predictive_pvalue",
-            "per_spike_likelihood",
+            "event_likelihood",
         ):
             assert not np.allclose(getattr(expected, name), getattr(oracle, name)), (
                 f"test fixture does not distinguish decoder and oracle values for {name}"

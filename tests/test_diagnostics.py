@@ -176,7 +176,7 @@ class TestDecodingDiagnosticsInvariants:
             event_hpd_overlap=np.zeros(n_spikes),
             event_kl_divergence=np.zeros(n_spikes),
             event_predictive_pvalue=np.zeros(n_spikes),
-            per_spike_likelihood=np.zeros((n_spikes, n_bins)),
+            event_likelihood=np.zeros((n_spikes, n_bins)),
         )
 
     def test_predictive_shape_mismatch_raises(self) -> None:
@@ -265,7 +265,7 @@ class TestSpikeEventDiagnosticsInvariants:
                 hpd_overlap=np.zeros((n_time, n_cells)),
                 kl_divergence=None,  # only some dense matrices supplied
                 predictive_pvalue=np.zeros((n_time, n_cells)),
-                per_spike_likelihood=np.zeros((n_spikes, n_bins)),
+                event_likelihood=np.zeros((n_spikes, n_bins)),
             )
 
     @pytest.mark.parametrize(
@@ -296,7 +296,7 @@ class TestSpikeEventDiagnosticsInvariants:
             SpikeEventDiagnostics(
                 event_time_ind=np.zeros(n_spikes, dtype=np.intp),
                 event_cell_ind=np.zeros(n_spikes, dtype=np.intp),
-                per_spike_likelihood=np.zeros((n_spikes, n_bins)),
+                event_likelihood=np.zeros((n_spikes, n_bins)),
                 **arrays,
             )
 
@@ -337,7 +337,7 @@ class TestComputeSpikeEventDiagnosticsFromRates:
             assert dense.shape == (5, 3)
             np.testing.assert_array_equal(dense[time_ind, cell_ind], values)
             assert np.all(np.isnan(dense[~spiked]))
-        np.testing.assert_array_equal(result.per_spike_likelihood, expected.likelihood)
+        np.testing.assert_array_equal(result.event_likelihood, expected.likelihood)
 
     def test_dense_matrices_omitted_on_request(
         self, inputs: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]
@@ -349,7 +349,7 @@ class TestComputeSpikeEventDiagnosticsFromRates:
         assert result.hpd_overlap is None
         assert result.kl_divergence is None
         assert result.predictive_pvalue is None
-        assert result.per_spike_likelihood is None
+        assert result.event_likelihood is None
         assert result.event_hpd_overlap.shape == (4,)
 
 

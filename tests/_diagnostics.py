@@ -48,6 +48,6 @@ def event_diagnostics(
         hpd_overlap=None,
         kl_divergence=None,
         predictive_pvalue=None,
-        per_spike_likelihood=None,
+        event_likelihood=None,
         event_time=event_time,
     )

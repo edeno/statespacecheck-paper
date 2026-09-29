@@ -212,18 +212,18 @@ def test_remap_phase_uses_decoder_likelihood(sim: Figure3SimulationResult) -> No
         sim.diagnostics.event_time_ind[in_window],
         sim.diagnostics.event_cell_ind[in_window],
     )
-    assert expected.per_spike_likelihood is not None
+    assert expected.event_likelihood is not None
 
     np.testing.assert_allclose(
-        sim.diagnostics.per_spike_likelihood[in_window],
-        expected.per_spike_likelihood,
+        sim.diagnostics.event_likelihood[in_window],
+        expected.event_likelihood,
     )
     predictive = sim.diagnostics.predictive[sim.diagnostics.event_time_ind[in_window]]
     np.testing.assert_allclose(
         sim.diagnostics.event_hpd_overlap[in_window],
         ssc.hpd_overlap(
             predictive,
-            sim.diagnostics.per_spike_likelihood[in_window],
+            sim.diagnostics.event_likelihood[in_window],
             coverage=HPD_COVERAGE,
         ),
         err_msg="remap HPD was not computed from the displayed event likelihood",
@@ -232,7 +232,7 @@ def test_remap_phase_uses_decoder_likelihood(sim: Figure3SimulationResult) -> No
         sim.diagnostics.event_kl_divergence[in_window],
         ssc.kl_divergence(
             predictive,
-            sim.diagnostics.per_spike_likelihood[in_window],
+            sim.diagnostics.event_likelihood[in_window],
         ),
         err_msg="remap KL was not computed from the displayed event likelihood",
     )
@@ -344,8 +344,8 @@ def test_sparse_population_is_a_correctly_modeled_low_activity_regime(
         (sim.diagnostics.event_cell_ind[in_window] - n_normal).astype(np.intp),
     )
     np.testing.assert_allclose(
-        sim.diagnostics.per_spike_likelihood[in_window],
-        expected.per_spike_likelihood,
+        sim.diagnostics.event_likelihood[in_window],
+        expected.event_likelihood,
     )
 
     # No phase-specific transition is introduced: the stored prediction is

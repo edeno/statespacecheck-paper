@@ -53,7 +53,7 @@ def _combined_metrics(
     spike_time_ind = (spike_time_ind + 1).astype(np.intp)
     spike_cell_ind = spike_cell_ind.astype(np.intp)
     n_spikes = max(len(spike_time_ind), 1)
-    per_spike_lik = rng.dirichlet(np.ones(n_bins), size=n_spikes)[: len(spike_time_ind)]
+    event_lik = rng.dirichlet(np.ones(n_bins), size=n_spikes)[: len(spike_time_ind)]
 
     per_cell = _per_cell_metrics(rng, n_time, n_cells)
     diagnostics = DecodingDiagnostics(
@@ -68,7 +68,7 @@ def _combined_metrics(
         event_hpd_overlap=rng.uniform(0, 1, len(spike_time_ind)),
         event_kl_divergence=rng.uniform(0, 5, len(spike_time_ind)),
         event_predictive_pvalue=rng.uniform(0, 1, len(spike_time_ind)),
-        per_spike_likelihood=per_spike_lik,
+        event_likelihood=event_lik,
     )
     return {"spikes": spikes, "metrics": diagnostics}
 
@@ -252,7 +252,7 @@ def test_compose_figure03_uses_event_diagnostics_for_scatter() -> None:
     hpd = np.full((n_time, n_cells), np.nan)
     kl = np.full((n_time, n_cells), np.nan)
     sp = np.full((n_time, n_cells), np.nan)
-    per_spike_lik = rng.dirichlet(np.ones(n_bins), size=2)
+    event_lik = rng.dirichlet(np.ones(n_bins), size=2)
     hpd[10, 0] = 0.5
     kl[10, 0] = 2.0
     sp[10, 0] = 0.05
@@ -269,7 +269,7 @@ def test_compose_figure03_uses_event_diagnostics_for_scatter() -> None:
         event_hpd_overlap=np.array([0.25, 0.75]),
         event_kl_divergence=np.array([1.0, 3.0]),
         event_predictive_pvalue=np.array([0.1, 0.01]),
-        per_spike_likelihood=per_spike_lik,
+        event_likelihood=event_lik,
     )
 
     thresholds = DiagnosticThresholds(hpd_overlap=0.8, kl_divergence=2.0, predictive_pvalue=0.05)

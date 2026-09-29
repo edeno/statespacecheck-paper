@@ -629,7 +629,7 @@ def build_simulated_cache(
         interior_mask=interior_mask,
         position_bins=xs,
         place_field_peaks=pf_centers_full,
-        event_likelihood=np.asarray(metrics.per_spike_likelihood[event_order]),
+        event_likelihood=np.asarray(metrics.event_likelihood[event_order]),
     )
 
     _write_meta(

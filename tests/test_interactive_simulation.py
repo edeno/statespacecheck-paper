@@ -149,7 +149,7 @@ def test_simulated_event_likelihood_round_trips_in_event_order(tmp_path: Path) -
         event_order = np.argsort(event_times, kind="stable")
         np.testing.assert_allclose(
             ds.event_likelihood,
-            sim.diagnostics.per_spike_likelihood[event_order].astype(np.float32),
+            sim.diagnostics.event_likelihood[event_order].astype(np.float32),
         )
 
         remap_start, remap_end = params.phase_boundaries[:2]
