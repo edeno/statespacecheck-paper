@@ -1,7 +1,8 @@
 # Project website
 
-Run the commands below from the repository root. Node 22+ is required for
-assembly and tests; the preview server also needs `python3`.
+Run the commands below from the repository root. Node 22+ (`engines` in
+`site/package.json`) is required for assembly and tests; the preview server
+also needs `python3`.
 
 The site uses plain HTML, CSS, and JavaScript with a small Make/Node assembly step.
 It has four interactive explainers: a time stepper through a short spike train decoded
@@ -29,7 +30,7 @@ simulation conditions, and the Figure-4 recording window under both decoders.
 # untouched when the recording outputs are unchanged.
 uv run --frozen python scripts/export_site_data.py
 
-# Check the JavaScript diagnostics against the Python reference (Node 22+)
+# Check the JavaScript diagnostics against the Python reference
 make check-site
 
 # Assemble the site (adds Figure 1 and the paper PDF, and writes the reported

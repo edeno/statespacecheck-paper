@@ -16,7 +16,8 @@ make check
 ```
 
 `make check` checks formatting, lint, strict types, the default Python test suite,
-and website metric parity. The website tests need Node 22+; run
+and website metric parity. The website tests need the Node version that
+`site/package.json` requires (`engines`); run
 `make check-python` or `make check-site` separately when working on one component.
 An explicit Node executable can be passed as `make check NODE=/path/to/node`.
 
