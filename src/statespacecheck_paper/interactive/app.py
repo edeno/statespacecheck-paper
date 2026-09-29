@@ -69,7 +69,7 @@ def launch(
         ds = DecoderDataSource.for_simulation(cache_dir)
     else:
         assert model is not None  # narrowed above
-        ds = DecoderDataSource.for_model(cache_dir, model)
+        ds = DecoderDataSource.for_recording(cache_dir, model)
     viewer = DecoderViewer(ds, cache_dir=cache_dir)
     viewer.show()
     try:

@@ -108,7 +108,7 @@ def build_synthetic_cache(
 
     ds = xr.Dataset(data_vars=data_vars, coords=coords)
 
-    paths = cache_mod.cache_paths(cache_dir, model)
+    paths = cache_mod.recording_cache_paths(cache_dir, model)
     cache_mod._write_zarr_store(ds=ds, out_dir=paths["zarr"], time_chunk=64)
 
     spike_times = [
@@ -161,7 +161,7 @@ def build_synthetic_cache(
     )
 
     np.savez(
-        cache_mod.meta_path(cache_dir),
+        cache_mod.recording_meta_path(cache_dir),
         time=time_arr,
         linear_position=rng.uniform(0.0, 100.0, size=n_time).astype(np.float64),
         n_cells=np.int64(n_cells),
@@ -170,4 +170,4 @@ def build_synthetic_cache(
     container = np.empty(n_cells, dtype=object)
     for i, st in enumerate(spike_times):
         container[i] = st
-    np.save(cache_mod.spike_times_path(cache_dir), container, allow_pickle=True)
+    np.save(cache_mod.recording_spike_times_path(cache_dir), container, allow_pickle=True)

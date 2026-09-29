@@ -533,7 +533,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
         # entirely (not just disabled — there's no model concept here).
         self._model_label: QtWidgets.QLabel | None = None
         self._model_combo: QtWidgets.QComboBox | None = None
-        if self._ds.dataset_kind == "model":
+        if self._ds.dataset_kind == "recording":
             controls_layout.addSpacing(12)
             self._model_label = QtWidgets.QLabel("Model:")
             controls_layout.addWidget(self._model_label)
@@ -1202,7 +1202,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
 
     @QtCore.Slot()
     def _toggle_model(self) -> None:
-        if self._ds.dataset_kind != "model" or self._cache_dir is None:
+        if self._ds.dataset_kind != "recording" or self._cache_dir is None:
             # The simulation dataset has no alternative model; the
             # ``M`` keyboard shortcut and any stray combo signal
             # both no-op.
@@ -1212,7 +1212,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
         self._switch_model(new_model)
 
     def _switch_model(self, model: ModelName) -> None:
-        if self._ds.dataset_kind != "model" or self._cache_dir is None:
+        if self._ds.dataset_kind != "recording" or self._cache_dir is None:
             return
         if model == self._ds.model:
             return

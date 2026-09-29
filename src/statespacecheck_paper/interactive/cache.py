@@ -49,7 +49,7 @@ MODEL_NAMES: tuple[ModelName, ...] = FIGURE04_MODEL_IDS
 DEFAULT_TIME_CHUNK = 8192
 
 
-def cache_paths(cache_dir: Path, model: ModelName) -> dict[str, Path]:
+def recording_cache_paths(cache_dir: Path, model: ModelName) -> dict[str, Path]:
     """Return the on-disk cache layout for ``model`` under ``cache_dir``.
 
     Real-data caches are figure-4 specific (the ``figure04_`` prefix
@@ -65,7 +65,7 @@ def cache_paths(cache_dir: Path, model: ModelName) -> dict[str, Path]:
     }
 
 
-def meta_path(cache_dir: Path) -> Path:
+def recording_meta_path(cache_dir: Path) -> Path:
     """Path to the real-data (figure-4) meta sidecar.
 
     Both ``continuous`` and ``continuous_fragmented`` real-data caches share this
@@ -75,7 +75,7 @@ def meta_path(cache_dir: Path) -> Path:
     return cache_dir / "figure04_meta.npz"
 
 
-def spike_times_path(cache_dir: Path) -> Path:
+def recording_spike_times_path(cache_dir: Path) -> Path:
     """Path to the real-data per-cell spike-times sidecar (object-dtype .npy)."""
     return cache_dir / "figure04_spike_times.npy"
 
@@ -368,7 +368,7 @@ def _write_figure04_model_cache(
 ) -> dict[str, Any]:
     """Write one viewer model from the canonical Figure 4 render data."""
     results, diagnostics = _figure04_model_inputs(render_data, model)
-    paths = cache_paths(cache_dir, model)
+    paths = recording_cache_paths(cache_dir, model)
     zarr_shapes = _write_zarr_store(
         ds=results,
         out_dir=paths["zarr"],
@@ -443,9 +443,9 @@ def build_figure04_viewer_cache(
     cache_dir.mkdir(parents=True, exist_ok=True)
     if not force:
         existing = [
-            cache_paths(cache_dir, model)["zarr"]
+            recording_cache_paths(cache_dir, model)["zarr"]
             for model in selected
-            if cache_paths(cache_dir, model)["zarr"].exists()
+            if recording_cache_paths(cache_dir, model)["zarr"].exists()
         ]
         if existing:
             raise FileExistsError(
@@ -473,19 +473,19 @@ def build_figure04_viewer_cache(
             f"has {n_cells} cells."
         )
     _write_meta(
-        out_path=meta_path(cache_dir),
+        out_path=recording_meta_path(cache_dir),
         time=np.asarray(render_data.time, dtype=np.float64),
         linear_position=np.asarray(render_data.linear_position, dtype=np.float64),
         n_cells=n_cells,
     )
     _write_spike_times(
-        out_path=spike_times_path(cache_dir),
+        out_path=recording_spike_times_path(cache_dir),
         spike_times=spike_times,
     )
 
     for info in summaries.values():
-        info["meta_path"] = str(meta_path(cache_dir))
-        info["spike_times_path"] = str(spike_times_path(cache_dir))
+        info["meta_path"] = str(recording_meta_path(cache_dir))
+        info["spike_times_path"] = str(recording_spike_times_path(cache_dir))
     return summaries
 
 

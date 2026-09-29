@@ -222,11 +222,13 @@ def test_build_figure04_viewer_cache_uses_canonical_render_data(tmp_path: Path) 
 
     assert set(summaries) == {"continuous", "continuous_fragmented"}
     assert summaries["continuous"]["n_events"] == 3
-    with DecoderDataSource.for_model(tmp_path, "continuous") as continuous:
+    with DecoderDataSource.for_recording(tmp_path, "continuous") as continuous:
         assert continuous.n_states == 1
         assert continuous.load_predictive(slice(0, 5)).shape == (5, n_position)
         assert continuous.events["cell_id"].tolist() == [0, 2, 1]
-    with DecoderDataSource.for_model(tmp_path, "continuous_fragmented") as continuous_fragmented:
+    with DecoderDataSource.for_recording(
+        tmp_path, "continuous_fragmented"
+    ) as continuous_fragmented:
         assert continuous_fragmented.n_states == 2
         assert continuous_fragmented.load_predictive(slice(0, 5)).shape == (5, 2 * n_position)
         assert continuous_fragmented.event_likelihood_at(0, 0).shape == (n_position,)
@@ -332,12 +334,12 @@ def test_build_figure04_viewer_cache_continuous_integration(tmp_path: Path) -> N
     assert 850000 <= continuous_info["n_events"] <= 900000
 
     # Verify on-disk artifacts exist.
-    paths = cache_mod.cache_paths(cache_dir, "continuous")
+    paths = cache_mod.recording_cache_paths(cache_dir, "continuous")
     assert paths["zarr"].is_dir()
     assert paths["events"].is_file()
     assert paths["place_fields"].is_file()
-    assert cache_mod.meta_path(cache_dir).is_file()
-    assert cache_mod.spike_times_path(cache_dir).is_file()
+    assert cache_mod.recording_meta_path(cache_dir).is_file()
+    assert cache_mod.recording_spike_times_path(cache_dir).is_file()
 
     # Quick read-back: a 2-second window (1000 samples) reads a small
     # number of chunks and matches in shape.

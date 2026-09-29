@@ -43,7 +43,7 @@ from . import cache as cache_mod
 ModelName = cache_mod.ModelName
 
 
-DatasetKind = Literal["model", "simulation"]
+DatasetKind = Literal["recording", "simulation"]
 
 
 def _readonly(arr: NDArray[Any]) -> NDArray[Any]:
@@ -69,15 +69,15 @@ class CacheLayout:
     spike_times: Path
 
     @classmethod
-    def for_model(cls, cache_dir: Path, model: ModelName) -> CacheLayout:
+    def for_recording(cls, cache_dir: Path, model: ModelName) -> CacheLayout:
         """Resolve the cache + sidecar paths for a real-data model cache."""
-        paths = cache_mod.cache_paths(cache_dir, model)
+        paths = cache_mod.recording_cache_paths(cache_dir, model)
         return cls(
             zarr=paths["zarr"],
             events=paths["events"],
             place_fields=paths["place_fields"],
-            meta=cache_mod.meta_path(cache_dir),
-            spike_times=cache_mod.spike_times_path(cache_dir),
+            meta=cache_mod.recording_meta_path(cache_dir),
+            spike_times=cache_mod.recording_spike_times_path(cache_dir),
         )
 
     @classmethod
@@ -114,12 +114,12 @@ class DecoderDataSource:
 
     The data source serves two distinct dataset kinds:
 
-    * **Real-data decoder caches** (``dataset_kind == "model"``) — derived
+    * **Real-data decoder caches** (``dataset_kind == "recording"``) — derived
       by ``cache.build_figure04_viewer_cache`` (CLI ``cache build``) from the
       canonical Figure 4 workflow/cache. The viewer
       can swap between
       ``"continuous"`` and ``"continuous_fragmented"`` if both caches are present
-      in ``cache_dir``. Use ``DecoderDataSource.for_model`` (or
+      in ``cache_dir``. Use ``DecoderDataSource.for_recording`` (or
       ``DecoderDataSource(cache_dir, model)``) to load.
 
     * **Figure-3 simulation cache** (``dataset_kind == "simulation"``) —
@@ -155,7 +155,7 @@ class DecoderDataSource:
 
     Attributes
     ----------
-    dataset_kind : Literal["model", "simulation"]
+    dataset_kind : Literal["recording", "simulation"]
         Which kind of dataset is loaded. Drives viewer UI choices
         (model-swap visibility, window title).
     model : str | None
@@ -213,13 +213,13 @@ class DecoderDataSource:
         model: ModelName | None = None,
         *,
         layout: CacheLayout | None = None,
-        dataset_kind: DatasetKind = "model",
+        dataset_kind: DatasetKind = "recording",
         display_name: str | None = None,
     ) -> None:
         # ``__init__`` accepts either the real-data signature
         # (``cache_dir, model``) or an explicit ``layout`` for the
         # simulation path. Use the named constructors
-        # (``for_model`` / ``for_simulation``) for new callers.
+        # (``for_recording`` / ``for_simulation``) for new callers.
         self._cache_dir = Path(cache_dir)
         if layout is None:
             if model is None:
@@ -227,7 +227,7 @@ class DecoderDataSource:
                     "DecoderDataSource(): pass model= for real-data caches "
                     "or use DecoderDataSource.for_simulation(cache_dir)."
                 )
-            layout = CacheLayout.for_model(self._cache_dir, model)
+            layout = CacheLayout.for_recording(self._cache_dir, model)
         self._layout = layout
         self.dataset_kind: DatasetKind = dataset_kind
         self.model: ModelName | None = model
@@ -614,7 +614,7 @@ class DecoderDataSource:
     # ------------------------------------------------------------------
 
     @classmethod
-    def for_model(cls, cache_dir: Path | str, model: ModelName) -> DecoderDataSource:
+    def for_recording(cls, cache_dir: Path | str, model: ModelName) -> DecoderDataSource:
         """Open the real-data (figure-4) cache for ``model`` under ``cache_dir``."""
         return cls(cache_dir, model)
 
