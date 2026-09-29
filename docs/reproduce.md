@@ -121,6 +121,12 @@ step). Running in a copy, rather than regenerating the committed files in place
 and restoring them, leaves a working tree with local edits untouched and needs no
 cleanup.
 
+The `Reproduce` GitHub Actions workflow (`.github/workflows/reproduce.yml`) runs
+this target on Ubuntu with Python 3.11 monthly, on each published release, on
+demand, and on pull requests that change the workflow. It installs the TeX Live
+collections the manuscript needs, frees runner disk space for the decode cache,
+and uploads the report, step timings, fresh summaries, and fresh macros.
+
 | Resource | Fresh run |
 | --- | --- |
 | Peak RAM | TODO(measure): about 12 GB expected, set by the Figure 4 fit/decode |
