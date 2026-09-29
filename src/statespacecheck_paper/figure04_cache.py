@@ -106,7 +106,7 @@ class Figure4CacheArtifactProvenance(TypedDict):
     schema_version: int
     fingerprint_sha256: str
     non_local_detector_version: str
-    export_file_sha256: dict[str, str | None]
+    export_file_sha256: dict[str, str]
     diagnostics_schema_version: int
     diagnostics_fingerprint_sha256: str
     statespacecheck_version: str
@@ -192,10 +192,12 @@ class Figure4CacheProvenance:
     statespacecheck_version: str
     diagnostics_config: Figure4DiagnosticsConfig
 
-    def artifact_payload(
-        self, *, require_complete_inputs: bool = True
-    ) -> Figure4CacheArtifactProvenance:
-        """Return path-independent cache provenance for a summary artifact."""
+    def artifact_payload(self) -> Figure4CacheArtifactProvenance:
+        """Return path-independent cache provenance for a summary artifact.
+
+        Raises ``ValueError`` unless every canonical input export has a
+        checksum.
+        """
         checksum_by_suffix = dict(self.export_checksums)
         if len(checksum_by_suffix) != len(self.export_checksums):
             raise ValueError("Figure 4 provenance contains duplicate export suffixes.")
@@ -206,16 +208,21 @@ class Figure4CacheProvenance:
                 "Figure 4 provenance must identify the canonical input exports; "
                 f"missing {sorted(missing_suffixes)}, unexpected {sorted(unexpected_suffixes)}."
             )
-        export_file_sha256 = {
-            f"{self.animal_date_epoch}{suffix}": checksum
+        missing = [
+            f"{self.animal_date_epoch}{suffix}"
             for suffix, checksum in checksum_by_suffix.items()
-        }
-        missing = [name for name, checksum in export_file_sha256.items() if checksum is None]
-        if require_complete_inputs and missing:
+            if checksum is None
+        ]
+        if missing:
             raise ValueError(
                 "Canonical Figure 4 provenance requires every exported input; "
                 f"missing checksums for {missing}."
             )
+        export_file_sha256 = {
+            f"{self.animal_date_epoch}{suffix}": checksum
+            for suffix, checksum in checksum_by_suffix.items()
+            if checksum is not None
+        }
         return {
             "schema_version": self.schema_version,
             "fingerprint_sha256": self.fingerprint_sha256,
