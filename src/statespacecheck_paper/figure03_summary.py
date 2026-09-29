@@ -346,7 +346,7 @@ def compute_condition_decoding_accuracy(
     return out
 
 
-def median_standard_error(samples: NDArray[np.floating], axis: int = 0) -> NDArray[np.floating]:
+def median_standard_error(samples: NDArray[np.floating]) -> NDArray[np.floating]:
     """Approximate a median's standard error from an order-statistic interval.
 
     This is an *approximate* standard error, and it is conditional on the
@@ -369,15 +369,13 @@ def median_standard_error(samples: NDArray[np.floating], axis: int = 0) -> NDArr
 
     Parameters
     ----------
-    samples : np.ndarray
-        Sample values; ``axis`` indexes the realizations.
-    axis : int, default 0
-        Axis to reduce.
+    samples : np.ndarray, shape (n_samples, ...)
+        Sample values; the first axis indexes the realizations.
 
     Returns
     -------
     standard_error : np.ndarray
-        Approximate standard error of the median, with ``axis`` removed.
+        Approximate standard error of the median, shape ``samples.shape[1:]``.
         Returns zero when the selected order statistics coincide, including
         when every sample is identical; this does not establish zero
         population uncertainty.
@@ -396,14 +394,14 @@ def median_standard_error(samples: NDArray[np.floating], axis: int = 0) -> NDArr
     >>> bool(np.all(se < 0.1))
     True
     """
-    n_samples = samples.shape[axis]
+    n_samples = samples.shape[0]
     z = 1.96
     # Convert the 1-based order statistics to 0-based indices, clipped so a
     # small sample cannot index outside the array.
     lower = max(int(np.floor(n_samples / 2 - z * np.sqrt(n_samples) / 2)) - 1, 0)
     upper = min(n_samples - lower - 1, n_samples - 1)
-    ordered = np.sort(samples, axis=axis)
-    interval = np.take(ordered, upper, axis=axis) - np.take(ordered, lower, axis=axis)
+    ordered = np.sort(samples, axis=0)
+    interval = ordered[upper] - ordered[lower]
     return np.asarray(interval / (2.0 * z), dtype=float)
 
 
