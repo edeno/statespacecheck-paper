@@ -49,11 +49,11 @@ def _combined_metrics(
     """Build the full ``DecodingDiagnostics`` accepted by ``compose_figure03``."""
     spikes = rng.poisson(0.5, (n_time, n_cells))
 
-    spike_time_ind, spike_cell_ind = np.nonzero(spikes[1:])
-    spike_time_ind = (spike_time_ind + 1).astype(np.intp)
-    spike_cell_ind = spike_cell_ind.astype(np.intp)
-    n_spikes = max(len(spike_time_ind), 1)
-    event_lik = rng.dirichlet(np.ones(n_bins), size=n_spikes)[: len(spike_time_ind)]
+    event_time_ind, event_cell_ind = np.nonzero(spikes[1:])
+    event_time_ind = (event_time_ind + 1).astype(np.intp)
+    event_cell_ind = event_cell_ind.astype(np.intp)
+    n_spikes = max(len(event_time_ind), 1)
+    event_lik = rng.dirichlet(np.ones(n_bins), size=n_spikes)[: len(event_time_ind)]
 
     per_cell = _per_cell_metrics(rng, n_time, n_cells)
     diagnostics = DecodingDiagnostics(
@@ -63,11 +63,11 @@ def _combined_metrics(
         hpd_overlap=per_cell["hpd_overlap"],
         kl_divergence=per_cell["kl_divergence"],
         predictive_pvalue=per_cell["predictive_pvalue"],
-        event_time_ind=spike_time_ind,
-        event_cell_ind=spike_cell_ind,
-        event_hpd_overlap=rng.uniform(0, 1, len(spike_time_ind)),
-        event_kl_divergence=rng.uniform(0, 5, len(spike_time_ind)),
-        event_predictive_pvalue=rng.uniform(0, 1, len(spike_time_ind)),
+        event_time_ind=event_time_ind,
+        event_cell_ind=event_cell_ind,
+        event_hpd_overlap=rng.uniform(0, 1, len(event_time_ind)),
+        event_kl_divergence=rng.uniform(0, 5, len(event_time_ind)),
+        event_predictive_pvalue=rng.uniform(0, 1, len(event_time_ind)),
         event_likelihood=event_lik,
     )
     return {"spikes": spikes, "metrics": diagnostics}

@@ -164,7 +164,7 @@ def _plot_likelihood_overlay(
     ax: Axes,
     predictive: NDArray[np.floating],
     event_likelihood: NDArray[np.floating],
-    spike_time_ind: NDArray[np.intp],
+    event_time_ind: NDArray[np.intp],
     true_position: NDArray[np.floating],
 ) -> None:
     """Plot per-spike likelihood distributions at spike times.
@@ -181,7 +181,7 @@ def _plot_likelihood_overlay(
         Predictive distribution over position at each time (used for shape only).
     event_likelihood : NDArray, shape (n_spikes, n_bins)
         Normalized likelihood distribution for each individual spike event.
-    spike_time_ind : NDArray, shape (n_spikes,)
+    event_time_ind : NDArray, shape (n_spikes,)
         Time index for each spike event.
     true_position : NDArray, shape (n_time,)
         True position to overlay.
@@ -193,11 +193,11 @@ def _plot_likelihood_overlay(
 
     # Aggregate per-spike likelihoods into per-timestep arrays.
     # When multiple cells spike at the same time, average their likelihoods.
-    if len(spike_time_ind) > 0:
+    if len(event_time_ind) > 0:
         lik_per_time: NDArray[np.floating] = np.zeros((n_time, n_bins))
         counts = np.zeros(n_time)
-        np.add.at(lik_per_time, spike_time_ind, event_likelihood)
-        np.add.at(counts, spike_time_ind, 1.0)
+        np.add.at(lik_per_time, event_time_ind, event_likelihood)
+        np.add.at(counts, event_time_ind, 1.0)
         has_spikes = counts > 0
         lik_per_time[has_spikes] /= counts[has_spikes, np.newaxis]
 

@@ -350,8 +350,8 @@ def _apply_window_rate_overrides(
     diagnostics: SpikeEventDiagnostics,
     predictive: NDArray[np.floating],
     windows: tuple[DecoderOverrideWindow, ...],
-    spike_time_ind: NDArray[np.intp],
-    spike_cell_ind: NDArray[np.intp],
+    event_time_ind: NDArray[np.intp],
+    event_cell_ind: NDArray[np.intp],
 ) -> SpikeEventDiagnostics:
     """Overwrite per-event / dense diagnostics inside each rate-override window.
 
@@ -380,12 +380,12 @@ def _apply_window_rate_overrides(
     for window in windows:
         if window.firing_rate_table is None:
             continue
-        in_window = (spike_time_ind >= window.start) & (spike_time_ind < window.end)
+        in_window = (event_time_ind >= window.start) & (event_time_ind < window.end)
         if not np.any(in_window):
             continue
 
-        window_times = spike_time_ind[in_window]
-        window_cells = spike_cell_ind[in_window]
+        window_times = event_time_ind[in_window]
+        window_cells = event_cell_ind[in_window]
         window_events = compute_spike_event_diagnostics_from_rates(
             predictive,
             window.firing_rate_table,
@@ -784,7 +784,7 @@ def decode_with_diagnostics(
 
     # Find all spike events (every bin, including t=0). Count matrices are
     # expanded so a bin with count k contributes k spike events.
-    spike_time_ind, spike_cell_ind = expand_spike_events(spike_counts)
+    event_time_ind, event_cell_ind = expand_spike_events(spike_counts)
 
     # Compute the baseline diagnostics first. Events inside a window with
     # ``firing_rate_table`` are overwritten below using that same rate table,
@@ -793,8 +793,8 @@ def decode_with_diagnostics(
     diagnostics = compute_spike_event_diagnostics_from_rates(
         predictive,
         rates,
-        spike_time_ind,
-        spike_cell_ind,
+        event_time_ind,
+        event_cell_ind,
         coverage=HPD_COVERAGE,
     )
 
@@ -802,8 +802,8 @@ def decode_with_diagnostics(
         diagnostics,
         predictive,
         override_schedule.windows,
-        spike_time_ind,
-        spike_cell_ind,
+        event_time_ind,
+        event_cell_ind,
     )
     assert overridden.hpd_overlap is not None  # dense matrices requested above
     assert overridden.kl_divergence is not None

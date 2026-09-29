@@ -631,9 +631,9 @@ def build_simulated_cache(
     # diagnostics in the same order. ``_events_dataframe`` stably sorts the
     # rows by time; ``event_order`` is that same permutation, used to align
     # the per-event likelihoods with the table.
-    spike_time_ind = np.asarray(metrics.event_time_ind, dtype=np.intp)
-    spike_cell_ind = np.asarray(metrics.event_cell_ind, dtype=np.intp)
-    event_times = time_arr[spike_time_ind]
+    event_time_ind = np.asarray(metrics.event_time_ind, dtype=np.intp)
+    event_cell_ind = np.asarray(metrics.event_cell_ind, dtype=np.intp)
+    event_times = time_arr[event_time_ind]
     event_order = np.argsort(event_times, kind="stable")
     events_df = _events_dataframe(metrics, n_cells, time=time_arr)
     events_df.to_parquet(paths["events"], engine="pyarrow", compression="zstd")
@@ -665,13 +665,13 @@ def build_simulated_cache(
 
     # Per-cell spike-time arrays. Build by gathering the absolute times
     # at which each cell fired, preserving ordering (already monotone
-    # because ``spike_time_ind`` is built from ``np.nonzero`` on the
+    # because ``event_time_ind`` is built from ``np.nonzero`` on the
     # row-major spike matrix).
     # Bucket spike times by cell in O(n_spikes log n_spikes) — the
-    # naive ``mask = spike_cell_ind == cell_id`` loop would be
+    # naive ``mask = event_cell_ind == cell_id`` loop would be
     # O(n_cells × n_spikes) and wasteful at full real-data scale.
-    order = np.argsort(spike_cell_ind, kind="stable")
-    sorted_cell_ind = spike_cell_ind[order]
+    order = np.argsort(event_cell_ind, kind="stable")
+    sorted_cell_ind = event_cell_ind[order]
     sorted_event_times = event_times[order].astype(np.float64)
     bucket_starts = np.searchsorted(sorted_cell_ind, np.arange(n_cells + 1))
     spike_times_per_cell: list[NDArray[np.float64]] = [
