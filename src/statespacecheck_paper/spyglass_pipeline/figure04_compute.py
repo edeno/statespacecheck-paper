@@ -117,9 +117,7 @@ def figure04_diagnostics_from_decodes(
     place_fields, _ = extract_agreed_place_fields(continuous_model, continuous_fragmented_model)
     spike_counts = get_spike_counts(spikes, time)
     continuous, continuous_fragmented = (
-        compute_results_diagnostics(
-            results, place_fields, spike_counts, time, spikes, coverage=coverage
-        )
+        compute_results_diagnostics(results, place_fields, time, spikes, coverage=coverage)
         for results in (continuous_results, continuous_fragmented_results)
     )
     summary = summarize_figure04_diagnostics(

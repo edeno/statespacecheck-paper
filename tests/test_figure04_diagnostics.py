@@ -24,17 +24,40 @@ from ._diagnostics import event_diagnostics
 # ---------------------------------------------------------------------------
 
 
+def _spike_times_on_grid(
+    spike_counts: np.ndarray,
+) -> tuple[list[np.ndarray], np.ndarray]:
+    """Spike times at the grid ``arange(n_time)``, one per counted spike, and the grid.
+
+    The decoder's binning assigns a spike at grid time ``k`` to row ``k`` for
+    every row but the last (see ``test_event_binning_matches_decoder_bin_assignment``),
+    so ``spike_counts`` must have no spikes in its last row.
+    """
+    assert not spike_counts[-1].any()
+    time = np.arange(spike_counts.shape[0], dtype=np.float64)
+    return [np.repeat(time, spike_counts[:, cell]) for cell in range(spike_counts.shape[1])], time
+
+
+def _diagnostics_from_counts(
+    predictive: np.ndarray, spike_counts: np.ndarray, place_fields: np.ndarray
+) -> Any:
+    spike_times, time = _spike_times_on_grid(spike_counts)
+    return compute_spike_event_diagnostics(predictive, place_fields, spike_times, time)
+
+
 @pytest.fixture
 def per_cell_setup(rng: np.random.Generator) -> dict[str, Any]:
     """Standard inputs for ``compute_spike_event_diagnostics``."""
     n_time, n_bins, n_cells = 100, 50, 10
+    spike_counts = rng.poisson(0.5, (n_time, n_cells)).astype(np.int64)
+    spike_counts[-1] = 0  # the decoder's binning puts no spike in the last row
     return {
         "n_time": n_time,
         "n_bins": n_bins,
         "n_cells": n_cells,
         "predictive": rng.dirichlet(np.ones(n_bins), size=n_time),
         "place_fields": rng.random((n_cells, n_bins)) * 10 + 0.1,
-        "spike_counts": rng.poisson(0.5, (n_time, n_cells)).astype(np.int64),
+        "spike_counts": spike_counts,
     }
 
 
@@ -45,7 +68,7 @@ def per_cell_setup(rng: np.random.Generator) -> dict[str, Any]:
 
 class TestComputePerCellDiagnostics:
     def test_shapes_and_keys(self, per_cell_setup: dict) -> None:
-        result = compute_spike_event_diagnostics(
+        result = _diagnostics_from_counts(
             per_cell_setup["predictive"],
             per_cell_setup["spike_counts"],
             per_cell_setup["place_fields"],
@@ -56,7 +79,7 @@ class TestComputePerCellDiagnostics:
             assert arr.shape == (per_cell_setup["n_time"], per_cell_setup["n_cells"])
 
     def test_nan_exactly_where_no_spikes(self, per_cell_setup: dict) -> None:
-        result = compute_spike_event_diagnostics(
+        result = _diagnostics_from_counts(
             per_cell_setup["predictive"],
             per_cell_setup["spike_counts"],
             per_cell_setup["place_fields"],
@@ -81,8 +104,9 @@ class TestComputePerCellDiagnostics:
             place_fields[j] = np.exp(-0.5 * ((np.arange(n_bins) - center) / 5) ** 2)
         place_fields = place_fields * 10 + 0.1
         spike_counts = np.ones((n_time, n_cells), dtype=np.int64)
+        spike_counts[-1] = 0
 
-        result = compute_spike_event_diagnostics(predictive, spike_counts, place_fields)
+        result = _diagnostics_from_counts(predictive, spike_counts, place_fields)
         arr = getattr(result, metric)
         assert arr is not None
         valid = arr[~np.isnan(arr)]
@@ -98,7 +122,7 @@ class TestComputePerCellDiagnostics:
         spike_counts[[2, 7], 1] = 1
         spike_counts[15, 2] = 1
 
-        result = compute_spike_event_diagnostics(predictive, spike_counts, place_fields)
+        result = _diagnostics_from_counts(predictive, spike_counts, place_fields)
         # Diagnostics finite at spike times, NaN elsewhere — single check.
         assert result.hpd_overlap is not None
         np.testing.assert_array_equal(np.isnan(result.hpd_overlap), spike_counts == 0)
@@ -139,15 +163,11 @@ class TestComputePerCellDiagnostics:
         n_time, n_bins, n_cells = 4, 8, 1
         predictive = rng.dirichlet(np.ones(n_bins), size=n_time)
         place_fields = rng.random((n_cells, n_bins)) + 0.1
-        spike_counts = np.zeros((n_time, n_cells), dtype=np.int64)
-        spike_counts[1, 0] = 2
-
         result = compute_spike_event_diagnostics(
             predictive,
-            spike_counts,
             place_fields,
-            spike_times=[np.array([1.10, 1.20])],
-            time=np.arange(n_time, dtype=np.float64),
+            [np.array([1.10, 1.20])],
+            np.arange(n_time, dtype=np.float64),
         )
 
         assert result.event_time is not None
@@ -267,26 +287,28 @@ class TestComputeResultsDiagnostics:
 
         def _capture(
             predictive: np.ndarray,
-            spike_counts: np.ndarray,
             diagnostic_place_fields: np.ndarray,
+            spike_times: list[np.ndarray],
+            time: np.ndarray,
             **kwargs: Any,
         ) -> MagicMock:
             captured["predictive"] = predictive
             captured["place_fields"] = diagnostic_place_fields
+            captured["spike_times"] = spike_times
+            captured["time"] = time
             captured["kwargs"] = kwargs
             return sentinel
 
         monkeypatch.setattr(figure04_diagnostics, "compute_spike_event_diagnostics", _capture)
-        spike_counts = np.zeros((2, 2), dtype=np.int64)
         time = np.array([0.0, 0.002])
         spike_times = [np.array([0.001]), np.array([], dtype=np.float64)]
-        result = compute_results_diagnostics(results, place_fields, spike_counts, time, spike_times)
+        result = compute_results_diagnostics(results, place_fields, time, spike_times)
 
         assert result is sentinel
         np.testing.assert_allclose(captured["predictive"], marginal)
         np.testing.assert_allclose(captured["place_fields"], place_fields)
-        assert captured["kwargs"]["time"] is time
-        assert captured["kwargs"]["spike_times"] is spike_times
+        assert captured["time"] is time
+        assert captured["spike_times"] is spike_times
         # A full recording's dense matrices would be hundreds of MB.
         assert captured["kwargs"]["include_dense_matrices"] is False
 
@@ -296,7 +318,6 @@ class TestComputeResultsDiagnostics:
             compute_results_diagnostics(
                 results,
                 np.ones((2, 3)),
-                np.zeros((2, 2), dtype=np.int64),
                 np.array([0.0, 0.002]),
                 [np.array([0.001]), np.array([0.001])],
             )

@@ -333,11 +333,10 @@ def plot_event_diagnostic_scatter(
     >>> n_time, n_bins, n_cells = 100, 50, 10
     >>> predictive = np.random.dirichlet(np.ones(n_bins), size=n_time)
     >>> place_fields = np.random.rand(n_cells, n_bins) * 10
-    >>> spike_counts = np.random.poisson(0.5, (n_time, n_cells))
-    >>> diagnostics = compute_spike_event_diagnostics(
-    ...     predictive, spike_counts, place_fields
-    ... )
-    >>> ax = plot_event_diagnostic_scatter(np.arange(n_time), diagnostics)
+    >>> time = np.arange(n_time, dtype=float)
+    >>> spike_times = [np.sort(np.random.uniform(0, n_time - 1, 50)) for _ in range(n_cells)]
+    >>> diagnostics = compute_spike_event_diagnostics(predictive, place_fields, spike_times, time)
+    >>> ax = plot_event_diagnostic_scatter(time, diagnostics)
     """
     if ax is None:
         ax = plt.gca()

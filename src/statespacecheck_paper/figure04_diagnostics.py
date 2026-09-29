@@ -21,7 +21,6 @@ from statespacecheck_paper.diagnostics import (
     FlagDirection,
     SpikeEventDiagnostics,
     compute_spike_event_diagnostics_from_rates,
-    expand_spike_events,
     flag_mask,
 )
 from statespacecheck_paper.figure04_place_fields import marginal_position_distribution
@@ -74,11 +73,10 @@ def _get_spike_events_from_spike_times(
 
 def compute_spike_event_diagnostics(
     predictive: NDArray[np.float64],
-    spike_counts: NDArray[np.int64],
     place_fields: NDArray[np.float64],
+    spike_times: list[NDArray[np.float64]],
+    time: NDArray[np.float64],
     coverage: float = HPD_COVERAGE,
-    spike_times: list[NDArray[np.float64]] | None = None,
-    time: NDArray[np.float64] | None = None,
     include_dense_matrices: bool = True,
 ) -> SpikeEventDiagnostics:
     """Compute per-cell diagnostic metrics for model checking.
@@ -86,25 +84,23 @@ def compute_spike_event_diagnostics(
     Computes HPD overlap, KL divergence, and the rank-based predictive p-value for each
     spike event. The dense ``(n_time, n_cells)`` matrices are returned when
     ``include_dense_matrices`` is True, and event arrays preserve one row per
-    spike with exact timestamps when ``spike_times`` and ``time`` are supplied.
+    spike with its exact timestamp.
 
     Parameters
     ----------
     predictive : np.ndarray, shape (n_time, n_bins)
-        State-marginalized predictive distribution over position.
-    spike_counts : np.ndarray, shape (n_time, n_cells)
-        Spike count for each cell at each time point.
+        Position-marginal predictive distribution.
     place_fields : np.ndarray, shape (n_cells, n_bins)
         Expected spike count at each position bin for each cell (spikes/bin).
         This is the format returned by non_local_detector.
+    spike_times : list of np.ndarray
+        Exact spike timestamps for each cell; diagnostics are computed per
+        spike event, at its exact time.
+    time : np.ndarray, shape (n_time,)
+        Decoder time grid used to map spike timestamps to predictive-distribution
+        rows, with the decoder's own bin assignment.
     coverage : float, default ``HPD_COVERAGE``
         Coverage probability for HPD region computation.
-    spike_times : list of np.ndarray, optional
-        Exact spike timestamps for each cell. If supplied, diagnostics are
-        computed per spike event and plotted at exact spike times.
-    time : np.ndarray, optional
-        Decoder time grid used to map spike timestamps to predictive-distribution
-        rows. Required when ``spike_times`` is supplied.
     include_dense_matrices : bool, default True
         Forwarded to ``compute_spike_event_diagnostics_from_rates``. Set False
         when only the per-spike event arrays are needed (avoids the
@@ -120,12 +116,7 @@ def compute_spike_event_diagnostics(
           decoder-bin and cell indices per spike event.
         - ``event_hpd_overlap``, ``event_kl_divergence``, ``event_predictive_pvalue``:
           shape (n_spikes,), one value per spike event.
-
-        Optionally populated:
-
         - ``event_time``: shape (n_spikes,), exact wall-clock spike time.
-          Populated when either ``spike_times`` (preferred) or ``time``
-          alone is supplied; ``None`` when both are ``None``.
 
         When ``include_dense_matrices`` (the default), additionally:
 
@@ -155,27 +146,18 @@ def compute_spike_event_diagnostics(
     >>> n_time, n_bins, n_cells = 100, 50, 10
     >>> predictive = np.random.dirichlet(np.ones(n_bins), size=n_time)
     >>> place_fields = np.random.rand(n_cells, n_bins) * 10
-    >>> spike_counts = np.random.poisson(0.5, (n_time, n_cells))
-    >>> diagnostics = compute_spike_event_diagnostics(
-    ...     predictive, spike_counts, place_fields
-    ... )
+    >>> time = np.arange(n_time, dtype=float)
+    >>> spike_times = [np.sort(np.random.uniform(0, n_time - 1, 50)) for _ in range(n_cells)]
+    >>> diagnostics = compute_spike_event_diagnostics(predictive, place_fields, spike_times, time)
     >>> diagnostics.hpd_overlap.shape
     (100, 10)
     """
-    # Ensure all inputs are NumPy arrays (handles JAX arrays from decoder)
+    # Ensure the predictive is a NumPy array (handles JAX arrays from decoder)
     predictive = np.asarray(predictive)
-    spike_counts = np.asarray(spike_counts)
 
-    event_times: NDArray[np.float64] | None
-    if spike_times is not None:
-        if time is None:
-            raise ValueError("time must be provided when spike_times is provided")
-        event_time_ind, event_cell_ind, event_times = _get_spike_events_from_spike_times(
-            spike_times, time
-        )
-    else:
-        event_time_ind, event_cell_ind = expand_spike_events(spike_counts)
-        event_times = None if time is None else np.asarray(time, dtype=np.float64)[event_time_ind]
+    event_time_ind, event_cell_ind, event_times = _get_spike_events_from_spike_times(
+        spike_times, time
+    )
 
     result = compute_spike_event_diagnostics_from_rates(
         predictive,
@@ -237,7 +219,6 @@ def mean_event_likelihood_by_time(
 def compute_results_diagnostics(
     results: Any,
     place_fields: NDArray[np.float64],
-    spike_counts: NDArray[np.int64],
     time: NDArray[np.float64],
     spike_times: list[NDArray[np.float64]],
     *,
@@ -259,8 +240,6 @@ def compute_results_diagnostics(
     place_fields : np.ndarray, shape (n_cells, n_bins)
         Shared interior place fields (expected spikes per bin), as returned by
         :func:`~figure04_place_fields.extract_shared_position_place_fields`.
-    spike_counts : np.ndarray, shape (n_time, n_cells)
-        Spike count matrix.
     time : np.ndarray, shape (n_time,)
         Decoder time grid.
     spike_times : list of np.ndarray
@@ -286,11 +265,10 @@ def compute_results_diagnostics(
         )
     return compute_spike_event_diagnostics(
         predictive,
-        spike_counts,
         place_fields,
+        spike_times,
+        time,
         coverage=coverage,
-        spike_times=spike_times,
-        time=time,
         include_dense_matrices=False,
     )
 

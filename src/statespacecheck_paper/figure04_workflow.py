@@ -404,7 +404,6 @@ def _compute_diagnostics_payload(
     if missing:
         raise ValueError(f"decode payload missing keys: {missing}")
     spike_times_list = list(recording.spike_times)
-    spike_counts = np.asarray(decode_payload["spike_counts"], dtype=np.int64)
     place_fields = np.asarray(decode_payload["diagnostic_place_fields"], dtype=np.float64)
     payload: dict[str, object] = {}
     for decode_key, diagnostics_key in (
@@ -415,7 +414,6 @@ def _compute_diagnostics_payload(
         payload[diagnostics_key] = compute_results_diagnostics(
             _cast_dataset(decode_payload[decode_key]),
             place_fields,
-            spike_counts,
             time,
             spike_times_list,
             coverage=diagnostics_config.hpd_coverage,
