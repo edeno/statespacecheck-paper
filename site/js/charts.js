@@ -110,6 +110,12 @@ export function heatmapBitmap(rows, lut, scale = rows.range ? rows : null) {
 // Track stack
 // ---------------------------------------------------------------------------
 
+function labelTrack(element, track) {
+  if (track.axis) return;
+  const note = track.note ? `<span class="direction">${track.note}</span>` : "";
+  element.innerHTML = `<span>${track.top ?? ""}</span><span><span class="name">${track.label}</span>${note}</span><span>${track.bottom ?? ""}</span>`;
+}
+
 /**
  * A vertical stack of canvas tracks sharing one time axis and a cursor. For
  * assistive technology the stack is a slider over the time range whose value
@@ -149,10 +155,7 @@ export class TrackStack {
       row.className = "track";
       const label = document.createElement("div");
       label.className = "track-label";
-      if (!track.axis) {
-        const note = track.note ? `<span class="direction">${track.note}</span>` : "";
-        label.innerHTML = `<span>${track.top ?? ""}</span><span><span class="name">${track.label}</span>${note}</span><span>${track.bottom ?? ""}</span>`;
-      }
+      labelTrack(label, track);
       const canvas = document.createElement("canvas");
       canvas.style.height = `${track.height}px`;
       row.append(label, canvas);
@@ -219,6 +222,21 @@ export class TrackStack {
   destroy() {
     this.resizeObserver.disconnect();
     this.stopWatchingRatio();
+  }
+
+  /** Replace same-layout tracks while preserving the cursor, focus, and playback. */
+  setTracks(tracks) {
+    if (tracks.length !== this.canvases.length - 1) {
+      throw new Error("Replacement tracks must keep the same number of rows");
+    }
+    this.tracks = tracks;
+    tracks.forEach((track, i) => {
+      const entry = this.canvases[i];
+      entry.track = track;
+      entry.canvas.style.height = `${track.height}px`;
+      labelTrack(entry.canvas.parentElement.querySelector(".track-label"), track);
+    });
+    this.draw();
   }
 
   xOf(width) {

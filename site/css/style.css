@@ -408,14 +408,6 @@ summary:focus-visible,
   border-radius: 50%;
 }
 
-.swatch.ring {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: transparent !important;
-  border: 2px solid;
-}
-
 .swatch.band {
   height: 8px;
   opacity: 0.35;
@@ -770,6 +762,29 @@ summary:focus-visible,
 
 .condition-text {
   min-height: 3.2em;
+}
+
+.model-switch {
+  border: 0;
+  padding: 0;
+  margin: 0 0 1rem;
+}
+
+.model-switch legend {
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+}
+
+.model-switch label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin: 0.25rem 1rem 0.25rem 0;
+  cursor: pointer;
+}
+
+.model-switch input {
+  accent-color: var(--link);
 }
 
 .loading {

@@ -8,7 +8,9 @@ The site uses plain HTML, CSS, and JavaScript with a small Make/Node assembly st
 It has four interactive explainers: a time stepper through a short spike train decoded
 by the paper's Bayesian filter, a playground that recomputes the three
 diagnostics as the reader moves a prediction, a player for the Figure-3
-simulation conditions, and the Figure-4 recording window under both decoders.
+simulation conditions, and the Figure-4 recording window with a switch between
+its two decoders. The recording player holds the selected spike fixed while the
+model changes and shows that unit's place field from the shared observation model.
 
 - The players and every number in the page text come from the paper's pipeline
   via `statespacecheck_paper.site_export`, which writes `site/data/*.json`. The

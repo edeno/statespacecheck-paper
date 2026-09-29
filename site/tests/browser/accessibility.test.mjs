@@ -178,6 +178,68 @@ describe("players", () => {
         assert.ok(count > 10, view);
       }
     }));
+
+  test("the recording model switch preserves the spike and changes the plotted prediction", () =>
+    withPage({}, async (page) => {
+      const view = page.locator("#rec-view");
+      const charts = view.locator(".detail svg.dist-chart");
+      const state = async () => ({
+        spike: await view.locator(".detail h3").textContent(),
+        spikeChart: await charts.first().getAttribute("aria-label"),
+        fieldChart: await charts.last().getAttribute("aria-label"),
+        prediction: await view.locator(".stack canvas").first().evaluate((c) => c.toDataURL()),
+        // Every track label but the prediction's, which names the model.
+        otherLabels: (await view.locator(".stack .track-label").allTextContents()).slice(1),
+      });
+      const radios = view.locator(".model-switch input[type=radio]");
+      assert.equal(await radios.count(), 2);
+      const [first, second] = [radios.first(), radios.last()];
+      assert.equal(await first.isChecked(), true);
+      const before = await state();
+
+      await second.check();
+      const switched = await state();
+      assert.equal(switched.spike, before.spike);
+      assert.equal(switched.fieldChart, before.fieldChart);
+      assert.deepEqual(switched.otherLabels, before.otherLabels);
+      assert.notEqual(switched.spikeChart, before.spikeChart);
+      assert.notEqual(switched.prediction, before.prediction);
+      const spoken = await view.locator(".stack").getAttribute("aria-valuetext");
+      assert.match(spoken, /Continuous.Fragmented model/);
+
+      await first.check();
+      assert.deepEqual(await state(), before);
+      await first.focus();
+      await page.keyboard.press("ArrowRight");
+      assert.equal(await second.isChecked(), true);
+      assert.equal(await view.locator(".detail h3").textContent(), before.spike);
+    }));
+
+  test("the selected spike shows its unit's exported place field", () =>
+    withPage({}, async (page) => {
+      const view = page.locator("#rec-view");
+      const heading = () => view.locator(".detail .row-label").textContent();
+      const fieldChart = () => view.locator(".detail svg.dist-chart").last().getAttribute("aria-label");
+      const unit = Number((await view.locator(".detail h3").textContent()).match(/unit (\d+)/)[1]);
+      assert.match(await heading(), new RegExp(`unit ${unit} \\(`));
+      assert.match(await heading(), /peak [\d.e+-]+ expected spikes per \d+-ms time bin/);
+      assert.match(await fieldChart(), new RegExp(`unit ${unit} place field peaks at`));
+
+      const exported = await page.evaluate(async () => (await fetch("data/recording.json")).json());
+      const nUnits = exported.spike_times.length;
+      assert.equal(exported.place_fields.row_max.length, nUnits);
+      // One row of the position grid per unit.
+      assert.equal(atob(exported.place_fields.rows).length, nUnits * exported.position_bins.length);
+
+      // Jump to the first or last spike, whichever is from another unit.
+      const cells = exported.models.continuous.events.cell;
+      const [key, other] = cells[0] + 1 !== unit ? ["Home", cells[0] + 1] : ["End", cells.at(-1) + 1];
+      assert.notEqual(other, unit);
+      await view.locator(".stack").focus();
+      await page.keyboard.press(key);
+      assert.match(await heading(), new RegExp(`unit ${other} \\(`));
+      assert.match(await fieldChart(), new RegExp(`unit ${other} place field peaks at`));
+    }));
 });
 
 describe("condition tabs", () => {
@@ -299,6 +361,14 @@ describe("axe-core WCAG 2.2 A/AA rules", () => {
         await button.click();
         const name = await button.textContent();
         assert.deepEqual(await axeViolations(page, "#playground"), [], name);
+      }
+    }));
+
+  test("both recording model views", () =>
+    withPage({}, async (page) => {
+      for (const radio of await page.$$("#rec-view .model-switch input[type=radio]")) {
+        await radio.check();
+        assert.deepEqual(await axeViolations(page, "#real-data"), []);
       }
     }));
 });
