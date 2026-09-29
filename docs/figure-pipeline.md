@@ -17,16 +17,20 @@ the manuscript. Figures are exported as PDF and 450-DPI PNG.
 The code separates **general, figure-agnostic layers** from **per-figure
 families**:
 
-- **General layers** (reused by every figure): `simulation` (random walks,
-  place-field rates, spike simulators), `decoding` (the Bayesian filter
-  `decode_with_diagnostics` + its per-window override mechanism), and
-  `diagnostics` (containers and the paper's threshold rule around the
-  per-spike HPD-overlap / predictive-p-value / KL-divergence computation, which
-  lives in the external `statespacecheck` package). `diagnostics` is the
-  dependency-graph leaf.
-- **Per-figure families**: `figure01_generation`,
-  `figure02_{panels,generation}`, `figure03_{protocol,simulation,summary,plotting,generation}` and
-  `figure04_{cache,workflow,layout,generation}`. Each figure is a small set of
+- **General layers**: `simulation` (random walks, place-field rates, spike
+  simulators), `decoding` (the Bayesian filter `decode_with_diagnostics` + its
+  per-window override mechanism), and `diagnostics` (containers and the paper's
+  threshold rule around the per-spike HPD-overlap / predictive-p-value /
+  KL-divergence computation, which lives in the external `statespacecheck`
+  package). Figure 3 uses all three, Figure 2 uses `simulation`, and Figure 4
+  uses `diagnostics`; Figure 1 uses none of them. `diagnostics` is a leaf of
+  the dependency graph.
+- **Per-figure families**: `figure01_generation`;
+  `figure02_{panels,generation}`;
+  `figure03_{protocol,simulation,summary,plotting,generation}`; and
+  `load_local_data` with
+  `figure04_{decoder,place_fields,diagnostics,plot_primitives,track_plots,panels,cache,workflow,summary,layout,generation}`
+  (edges in the graph below). Each figure is a small set of
   single-responsibility modules rather than one monolith, so an outside reader
   can follow the scientific workflow (configure → simulate/load → decode →
   diagnose → summarize → render).
@@ -117,8 +121,7 @@ the `schematic` renderers and `create_distribution_comparison_panel` → `save_f
   `statespacecheck` (`kl_divergence`, `hpd_overlap`, `highest_density_region`,
   `monte_carlo_mark_pvalue`).
 - **Output:** `manuscript/figures/main/figure02.{pdf,png}`.
-- **Tests:** `tests/test_figures.py` (the Figure 2 panel and data tests);
-  `tests/test_diagnostics.py`.
+- **Tests:** `tests/test_figures.py` (the Figure 2 panel and data tests).
 
 Trace: `create_shared_example(rng)` returns one immutable
 `Figure2ExampleData` whose named arrays/scalars feed all nine renderers →
@@ -155,7 +158,7 @@ Trace: `create_shared_example(rng)` returns one immutable
 - **Tests:** `tests/test_figure03_phases.py` (the higher-level scientific
   contract, including the control-integrity checks that the replay and
   sparse-population controls carry no hidden misfit);
-  `tests/test_figure03_{protocol,simulation,summary,plotting,contracts}.py`.
+  `tests/test_figure03_{protocol,simulation,summary,plotting,generation,contracts}.py`.
 
 ### Figure-3 conditions (executable source of truth: `build_summary_conditions`)
 
@@ -228,9 +231,10 @@ $\Lambda(x)$.
 ## Figure 4 — Real-data decoder diagnostics
 
 - **Reproduction:** `uv run python scripts/generate_figure04.py`. Add
-  `--force-recompute` to re-fit and re-decode both models instead of loading the
-  cached decoder outputs (this overwrites the cache; a config / data / fitting
-  implementation / `non_local_detector` change invalidates the cache automatically). The cache
+  `--force-recompute` to re-fit and re-decode both models and recompute their
+  diagnostics instead of loading the caches (this overwrites both caches; a
+  config / data / fitting implementation / `non_local_detector` change
+  invalidates the decode cache automatically). The cache
   fingerprint (`figure04_cache.compute_figure04_cache_provenance`) hashes the
   schema version, the decoder and provenance parts of `Figure4Config`, the
   data identifier, the installed `non_local_detector`
@@ -242,8 +246,9 @@ $\Lambda(x)$.
   Older caches without this source digest miss once and are rebuilt.
   The per-spike diagnostics are cached separately, keyed by the decode
   fingerprint plus a diagnostics fingerprint
-  (`figure04_cache.compute_figure04_diagnostics_fingerprint`): the
-  `Figure4DiagnosticsConfig`, the installed `statespacecheck` version, and a
+  (`figure04_cache.compute_figure04_diagnostics_fingerprint`): the diagnostics
+  schema version, the `Figure4DiagnosticsConfig`, the installed
+  `statespacecheck` version, and a
   digest of the docstring-stripped syntax trees of `diagnostics.py`,
   `figure04_diagnostics.py`, and `figure04_place_fields.py`. A diagnostics
   change confined to `diagnostics.py` or `figure04_diagnostics.py` therefore
@@ -261,24 +266,25 @@ $\Lambda(x)$.
   half_width_samples=500)` in `figure04_generation.py`. The explicit detail
   window centers the manuscript panels on a KL-divergence spike during
   immobility at a reward well and spans about two seconds total. `Figure4Config`
-  is split into three scoped parts:
-  a `Figure4DecoderConfig` — `position_std`, `position_bin_size_cm`,
+  has four scoped parts:
+  `decoder`, a `Figure4DecoderConfig` — `position_std`, `position_bin_size_cm`,
   `sampling_frequency_hz`, threaded into environment/model construction so they
-  genuinely drive the decode; a `Figure4Provenance` holding the
+  genuinely drive the decode; `provenance`, a `Figure4Provenance` holding the
   `non_local_detector`-default decode-shaping values (`movement_var`, the ContFrag
   transition/initial-condition/concentration/regularization, and the dependency
   version), recorded and drift-guard pinned but not injected (faithfully injecting
   them would rebuild the nested transition grid and hit the concentration-default
-  split); and a `Figure4ExecutionConfig` holding `block_size`, a performance/memory
-  knob that does **not** change the decode result (the KDE density is identical for
-  any `block_size`) and is therefore excluded from the cache fingerprint. The
-  per-spike diagnostic settings (`hpd_coverage`, `event_selection`) live in a
-  separate `Figure4DiagnosticsConfig`, hashed into the diagnostics fingerprint
-  only. See the `Figure4Config` docstring.
+  split); `execution`, a `Figure4ExecutionConfig` holding `block_size`, a
+  performance/memory knob that does **not** change the decode result (the KDE
+  density is identical for any `block_size`) and is therefore excluded from both
+  fingerprints; and `diagnostics`, a `Figure4DiagnosticsConfig` holding the
+  per-spike diagnostic settings (`hpd_coverage`, `event_selection`), hashed into
+  the diagnostics fingerprint only. See the `Figure4Config` docstring.
 - **Computation (reading order):**
   `figure04_generation` (recipe) → `figure04_workflow.prepare_figure04_render_data`
-  (loads the recording, loads a fingerprint-matching cache or fits/decodes via
-  `figure04_decoder`/`figure04_place_fields`, computes `figure04_diagnostics`) →
+  (loads the recording; loads a fingerprint-matching decode cache or fits/decodes
+  via `figure04_decoder`/`figure04_place_fields`; loads a fingerprint-matching
+  diagnostics cache or computes the diagnostics with `figure04_diagnostics`) →
   `figure04_summary.compute_figure04_summary` (typed manuscript scalars) →
   `figure04_layout.compose_figure04`
   (artist arrangement) → `save_figure`.
@@ -330,18 +336,21 @@ $\Lambda(x)$.
   (config matches the manuscript decoder parameters);
   `tests/test_figure04_{cache,workflow,layout,generation}.py` (orchestration);
   `tests/test_figure04_{diagnostics,place_fields}.py` (the analysis leaves) and
-  `tests/test_figure04_{plot_primitives,track_plots,panels}.py` (the plotting
-  leaves — panels covers both composite figures and the extracted row renderers);
-  `tests/test_load_local_data.py` (the `NeuralRecordingData` contract).
+  `tests/test_figure04_{plot_primitives,panels}.py` (the plotting leaves;
+  `figure04_track_plots` has no test module of its own);
+  `tests/test_load_local_data.py` (the `NeuralRecordingData` contract);
+  `tests/test_figure04_download.py` (the input download).
 
 ### Figure-4 traceability walkthrough (following the typed returns)
 
 `Figure4Config` + `Figure4Paths` → `prepare_figure04_render_data(config, paths, use_cache=…)`
 loads a `NeuralRecordingData` and returns a `Figure4RenderData`
 (`.recording`, `.time`, `.head_position`, `.linear_position`,
-`.decode_results: Figure4DecodeResults`) — the decode results come from a
-fingerprint-matching cache (`Figure4DecodeResults.from_cache_payload`) or a fresh
-fit/decode (`_compute_figure04_decode_results`) → `compute_figure04_summary`
+`.decode_results: Figure4DecodeResults`, `.cache_provenance`) — the decode
+results are built by `Figure4DecodeResults.from_cache_payload` from a decode
+payload and a diagnostics payload, each loaded from its fingerprint-matching
+cache or computed fresh (`_fit_and_decode` for the decode,
+`_compute_diagnostics_payload` for the diagnostics) → `compute_figure04_summary`
 returns a `Figure4Summary` (`.n_units`, per-decoder `Figure4DiagnosticMeans`, and
 typed `FlagConfusion` counts) → `format_figure04_summary` handles CLI text separately
 → `compose_figure04(render_data, diagnostic_thresholds=…,
@@ -420,8 +429,12 @@ generated from the summaries. `main.tex` inputs
 (`\Sim...` for the Figure-3 simulation, `\Rec...` for the Figure-4 recording),
 so the chain runs **code → summary JSON → macro file → prose**.
 `scripts/emit_reported_values.py` (recipe:
-`statespacecheck_paper.reported_values`) reads only the two committed summaries,
-so these values reach the paper through an artifact. Upstream acquisition and
+`statespacecheck_paper.reported_values`) takes every analysis value from the two
+committed summaries, so these values reach the paper through an artifact. The
+emitter also writes three DOI macros: the analysis code's, from the `doi` field
+of `CITATION.cff`; the Figure-4 input file's, from `paths.FIGURE04_INPUTS_DOI`;
+and that of the `statespacecheck` version the summaries record, looked up on
+Zenodo (this lookup needs internet). Upstream acquisition and
 sorting parameters, which have no artifact in this repository, remain stated
 directly in the Methods.
 
