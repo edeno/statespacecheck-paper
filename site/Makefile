@@ -4,7 +4,7 @@
 BUILD := _build
 NODE ?= node
 
-.PHONY: build serve test clean
+.PHONY: build serve test test-browser clean
 
 build:
 	rm -rf $(BUILD)
@@ -20,6 +20,11 @@ serve: build
 
 test:
 	$(NODE) --test tests/*.test.mjs
+
+# Accessibility and keyboard checks of the assembled page in headless Chromium.
+# Needs `npm ci` and `npx playwright install chromium` once.
+test-browser: build
+	$(NODE) --test tests/browser/*.test.mjs
 
 clean:
 	rm -rf $(BUILD)
