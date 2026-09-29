@@ -14,7 +14,11 @@ from __future__ import annotations
 import dataclasses
 import math
 
-from statespacecheck_paper.diagnostics import METRIC_FLAG_DIRECTIONS, FlagDirection
+from statespacecheck_paper.diagnostics import (
+    FIXED_PREDICTIVE_PVALUE_CUTOFF,
+    METRIC_FLAG_DIRECTIONS,
+    FlagDirection,
+)
 from statespacecheck_paper.figure04_cache import Figure4CacheProvenance, Figure4Paths
 from statespacecheck_paper.figure04_decoder import Figure4Config
 from statespacecheck_paper.figure04_layout import Figure4DetailWindow, compose_figure04
@@ -33,11 +37,15 @@ from statespacecheck_paper.scientific_artifacts import (
 from statespacecheck_paper.style import save_figure, set_figure_defaults
 
 # Diagnostic thresholds. HPD overlap and the predictive p-value use fixed
-# cutoffs of 0.05. The KL divergence has no natural fixed cutoff, so it is
-# shown without a threshold line or a flagged-region callout.
+# cutoffs of 0.05: the predictive p-value's is the paper-wide cutoff that
+# Figure 3 also uses; the HPD-overlap cutoff is chosen for this recording
+# (Figure 3 derives its HPD threshold from a baseline instead). The KL
+# divergence has no natural fixed cutoff, so it is shown without a threshold
+# line or a flagged-region callout.
+FIGURE4_HPD_OVERLAP_CUTOFF = 0.05
 FIGURE4_DIAGNOSTIC_THRESHOLDS: dict[str, float] = {
-    "hpd_overlap": 0.05,
-    "predictive_pvalue": 0.05,
+    "hpd_overlap": FIGURE4_HPD_OVERLAP_CUTOFF,
+    "predictive_pvalue": FIXED_PREDICTIVE_PVALUE_CUTOFF,
 }
 FIGURE4_METRIC_DIRECTIONS: dict[str, FlagDirection] = {
     metric: METRIC_FLAG_DIRECTIONS[metric] for metric in FIGURE4_DIAGNOSTIC_THRESHOLDS
