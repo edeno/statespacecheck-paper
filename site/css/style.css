@@ -321,6 +321,8 @@ input[type="range"] {
 .chip:focus-visible,
 .button:focus-visible,
 input:focus-visible,
+summary:focus-visible,
+.table-wrap:focus-visible,
 .stack:focus-visible {
   outline: 2px solid var(--link);
   outline-offset: 2px;
@@ -599,6 +601,28 @@ input:focus-visible,
   font-size: 0.68rem;
   color: var(--text-muted);
   white-space: nowrap;
+}
+
+.spike-table {
+  margin-top: 1rem;
+  font-size: 0.9rem;
+}
+
+.spike-table summary {
+  cursor: pointer;
+  color: var(--text-secondary);
+}
+
+.spike-table .table-wrap {
+  max-height: 24rem;
+  overflow-y: auto;
+  margin-top: 0.5rem;
+}
+
+.spike-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--surface);
 }
 
 .compare-table .rule {

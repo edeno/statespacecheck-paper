@@ -111,7 +111,9 @@ export function heatmapBitmap(rows, lut, scale = rows.range ? rows : null) {
 // ---------------------------------------------------------------------------
 
 /**
- * A vertical stack of canvas tracks sharing one time axis and a cursor.
+ * A vertical stack of canvas tracks sharing one time axis and a cursor. For
+ * assistive technology the stack is a slider over the time range: its value
+ * is the cursor time, and `setValueText` names what the cursor selects.
  *
  * tracks: [{ label, note?, top, bottom, height, draw(ctx, width, height, xOf) }]
  * range:  [t0, t1] in seconds (or the unit tickLabel names).
@@ -132,8 +134,11 @@ export class TrackStack {
     this.root = document.createElement("div");
     this.root.className = "stack";
     this.root.tabIndex = 0;
-    this.root.setAttribute("role", "group");
+    this.root.setAttribute("role", "slider");
     this.root.setAttribute("aria-label", ariaLabel);
+    this.root.setAttribute("aria-valuemin", String(range[0]));
+    this.root.setAttribute("aria-valuemax", String(range[1]));
+    this.root.setAttribute("aria-valuenow", String(range[0]));
     this.canvases = [];
 
     for (const track of [...tracks, { axis: true, height: 22 }]) {
@@ -240,12 +245,18 @@ export class TrackStack {
     context.stroke();
   }
 
+  /** The slider's spoken value, e.g. the selected spike. */
+  setValueText(text) {
+    this.root.setAttribute("aria-valuetext", text);
+  }
+
   placeCursor(time) {
     this.cursorTime = time;
     if (time === undefined || time === null) {
       this.cursor.style.display = "none";
       return;
     }
+    this.root.setAttribute("aria-valuenow", String(Number(time.toFixed(3))));
     const first = this.canvases[0].canvas;
     const left = first.offsetLeft + this.xOf(first.clientWidth)(time);
     this.cursor.style.left = `${left}px`;

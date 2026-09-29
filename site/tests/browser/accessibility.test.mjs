@@ -98,3 +98,36 @@ describe("tables", () => {
       }
     }));
 });
+
+describe("players", () => {
+  test("track stacks are sliders whose value text names the selection", () =>
+    withPage({}, async (page) => {
+      for (const selector of ["#ft-tracks .stack", "#cond-view .stack", "#rec-view .stack"]) {
+        const stack = page.locator(selector);
+        assert.equal(await stack.getAttribute("role"), "slider", selector);
+        await stack.focus();
+        const before = await stack.getAttribute("aria-valuetext");
+        await page.keyboard.press("ArrowRight");
+        const after = await stack.getAttribute("aria-valuetext");
+        assert.ok(before && after, selector);
+        assert.notEqual(after, before, selector);
+        // Spikes in one time bin share a time, so the value itself may stay.
+        const value = Number(await stack.getAttribute("aria-valuenow"));
+        const min = Number(await stack.getAttribute("aria-valuemin"));
+        const max = Number(await stack.getAttribute("aria-valuemax"));
+        assert.ok(min <= value && value <= max, `${selector}: ${min} <= ${value} <= ${max}`);
+      }
+    }));
+
+  test("each player lists every spike in a table", () =>
+    withPage({}, async (page) => {
+      for (const view of ["#cond-view", "#rec-view"]) {
+        const details = page.locator(`${view} details.spike-table`);
+        const count = Number((await details.locator("summary").textContent()).match(/\d+/)[0]);
+        await details.locator("summary").click();
+        await details.locator("tbody tr").first().waitFor();
+        assert.equal(await details.locator("tbody tr").count(), count, view);
+        assert.ok(count > 10, view);
+      }
+    }));
+});
