@@ -78,3 +78,23 @@ describe("charts", () => {
       assert.equal(await page.locator("#pg-chart input[type=radio]:checked").count(), 1);
     }));
 });
+
+describe("tables", () => {
+  test("every table has a caption, and each value a row and a column header", () =>
+    withPage({}, async (page) => {
+      const tables = await page.$$eval(".compare-table", (tables) =>
+        tables.map((table) => ({
+          caption: Boolean(table.caption?.textContent.trim()),
+          emptyHeaders: [...table.querySelectorAll("th")].filter((th) => !th.textContent.trim()).length,
+          columnHeaders: [...table.tHead.rows[0].cells].every((th) => th.scope === "col"),
+          rowHeaders: [...table.tBodies[0].rows].every(
+            (row) => row.cells[0].tagName === "TH" && row.cells[0].scope === "row",
+          ),
+        })),
+      );
+      assert.ok(tables.length >= 2);
+      for (const table of tables) {
+        assert.deepEqual(table, { caption: true, emptyHeaders: 0, columnHeaders: true, rowHeaders: true });
+      }
+    }));
+});

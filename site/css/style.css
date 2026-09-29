@@ -522,6 +522,20 @@ input:focus-visible,
   color: var(--text-secondary);
 }
 
+/* Row headers keep the look of the table's values. */
+.compare-table tbody th {
+  font-weight: normal;
+  color: var(--text);
+}
+
+.compare-table caption {
+  text-align: left;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  padding: 0 0 0.3rem;
+}
+
 /* ------------------------------------------------------ Diagnostic cards */
 
 .cards {

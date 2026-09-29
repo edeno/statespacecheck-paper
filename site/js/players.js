@@ -671,10 +671,10 @@ export function renderRecording(root, payload, manifest) {
   const counts = document.createElement("table");
   counts.className = "compare-table";
   const flaggedMetrics = METRICS.filter((m) => rules[m.name]);
-  counts.innerHTML = `<thead><tr><th>Spikes flagged in this window</th>${MODELS.map((m) => `<th>${m.label}</th>`).join("")}</tr></thead><tbody>${flaggedMetrics
+  counts.innerHTML = `<caption>Spikes flagged in this window</caption><thead><tr><th scope="col">Diagnostic</th>${MODELS.map((m) => `<th scope="col">${m.label}</th>`).join("")}</tr></thead><tbody>${flaggedMetrics
     .map(
       (metric) =>
-        `<tr><td>${metric.label}</td>${MODELS.map((model) => {
+        `<tr><th scope="row">${metric.label}</th>${MODELS.map((model) => {
           const flags = payload.models[model.id].events.flagged[metric.name];
           return `<td>${flags.filter(Boolean).length} of ${flags.length}</td>`;
         }).join("")}</tr>`,
@@ -725,12 +725,13 @@ export function renderRecording(root, payload, manifest) {
   // One row per metric; only the value cells change with the selected spike.
   const table = document.createElement("table");
   table.className = "compare-table";
-  table.innerHTML = `<thead><tr><th></th>${MODELS.map((m) => `<th>${m.short}</th>`).join("")}</tr></thead>`;
+  table.innerHTML = `<caption class="sr-only">Diagnostics of the selected spike under each model</caption><thead><tr><th scope="col">Diagnostic</th>${MODELS.map((m) => `<th scope="col">${m.short}</th>`).join("")}</tr></thead>`;
   const tbody = document.createElement("tbody");
   const valueCells = {};
   for (const metric of METRICS) {
     const tr = document.createElement("tr");
-    const name = document.createElement("td");
+    const name = document.createElement("th");
+    name.scope = "row";
     name.innerHTML = `${metric.label}<div class="rule">${worseFit(metric)}</div>`;
     tr.appendChild(name);
     valueCells[metric.name] = Object.fromEntries(
