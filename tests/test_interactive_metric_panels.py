@@ -242,7 +242,9 @@ def test_pin_markers_visible_after_click(tmp_path: Path) -> None:
         for panel in viewer.metric_panels.values():
             assert panel._pin_line.isVisible()  # noqa: SLF001
             assert panel._pin_dot.isVisible()  # noqa: SLF001
-        assert viewer.slice_panel._annotation.text()  # noqa: SLF001
+        # The pinned spike's cell is labeled 1-based.
+        annotation = viewer.slice_panel._annotation.text()  # noqa: SLF001
+        assert f"cell={int(ds.event_cell_ids[row]) + 1}\n" in annotation
     finally:
         viewer.close()
         ds.close()

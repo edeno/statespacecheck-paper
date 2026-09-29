@@ -343,7 +343,7 @@ class _BaseHeatmapPanel(pg.PlotWidget):
         # the first visible bin and ``time_end`` = right edge of the
         # last, so the rect spans those edges directly. A spike at
         # ``time[i] + 0.7·dt`` falls on pixel ``i``, the same bin it
-        # was assigned by ``event_time_idx``.
+        # was assigned by ``event_time_ind``.
         #
         # Y axis (position): CENTER convention — ``position_bins[j]``
         # is bin ``j``'s center. Pad by half a bin on each side so
@@ -1248,8 +1248,10 @@ class SlicePanel(QtWidgets.QWidget):
             row.cell_curve.setPen(pg.mkPen(*rgb, 230, width=3))
             n_spikes_str = f"  ({cs.n_spikes} spikes)" if cs.n_spikes > 1 else ""
             pin_str = "  ★" if cs.is_pinned else ""
+            # Cell labels shown to the reader are 1-based ("Cell 1" is cell_id 0),
+            # as on the website; cell_id stays 0-based everywhere else.
             row.header.setText(
-                f"Cell {cs.cell_id:>3d}{pin_str}   "
+                f"Cell {cs.cell_id + 1:>3d}{pin_str}   "
                 f"HPD={cs.hpd:.3f}  KL={cs.kl:.3f}  p={cs.predictive_pvalue:.3g}{n_spikes_str}"
             )
             row.header.setStyleSheet(

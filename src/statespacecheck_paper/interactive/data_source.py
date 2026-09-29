@@ -190,7 +190,7 @@ class DecoderDataSource:
         (i64), ``cell_id`` (i32), ``event_hpd_overlap`` (f32),
         ``event_kl_divergence`` (f32), ``event_predictive_pvalue`` (f32).
         Indexed by row position.
-    event_time_idx : np.ndarray, shape (n_events,), int64
+    event_time_ind : np.ndarray, shape (n_events,), int64
         Decoder time bin of each event row, as the diagnostics assigned it
         (the cache's ``event_time_ind`` column). Non-decreasing. A Figure-4
         spike at or after ``time[-2]``, including one exactly at the final
@@ -314,7 +314,7 @@ class DecoderDataSource:
         self.event_cell_ids = _readonly(self.events["cell_id"].to_numpy(dtype=np.int32))
         # Decoder time bin of each event, as the diagnostics assigned it. Used
         # by ``event_indices_at`` to find the events in a given time bin.
-        self.event_time_idx: NDArray[np.int64] = _readonly(
+        self.event_time_ind: NDArray[np.int64] = _readonly(
             self.events["event_time_ind"].to_numpy(dtype=np.int64)
         )
         self.event_hpd_overlap = _readonly(
@@ -418,15 +418,15 @@ class DecoderDataSource:
                 f"got [{self.events['cell_id'].min()}, "
                 f"{self.events['cell_id'].max()}]"
             )
-        if self.event_time_idx.size:
-            if self.event_time_idx.min() < 0 or self.event_time_idx.max() >= self.time.shape[0]:
+        if self.event_time_ind.size:
+            if self.event_time_ind.min() < 0 or self.event_time_ind.max() >= self.time.shape[0]:
                 raise ValueError(
                     f"events event_time_ind out of range [0, {self.time.shape[0]}); "
-                    f"got [{self.event_time_idx.min()}, {self.event_time_idx.max()}]"
+                    f"got [{self.event_time_ind.min()}, {self.event_time_ind.max()}]"
                 )
             # ``event_indices_at`` bisects this column, so it must follow the
             # time order of the rows.
-            if np.any(np.diff(self.event_time_idx) < 0):
+            if np.any(np.diff(self.event_time_ind) < 0):
                 raise ValueError("events event_time_ind must be non-decreasing in time order")
         if self.event_likelihood is not None:
             expected_shape = (len(self.events), self.place_fields.shape[1])
@@ -492,7 +492,7 @@ class DecoderDataSource:
         Uses LEFT-EDGE bin convention — bin ``i`` covers
         ``[time[i], time[i+1])`` — like ``non_local_detector``'s
         ``np.digitize``-based spike binning, so a click on a spike lands on
-        the spike's ``event_time_idx`` and the slice panel's per-cell rows
+        the spike's ``event_time_ind`` and the slice panel's per-cell rows
         include it. The one difference is the final timestamp: this returns
         the last row, ``n_time - 1``, while the decoder counts a spike there
         in bin ``n_time - 2``.
@@ -510,10 +510,10 @@ class DecoderDataSource:
         ``event_kl_divergence``, ``event_predictive_pvalue``). ``i1 <= i0``
         means no events landed in this bin.
         """
-        if self.event_time_idx.size == 0:
+        if self.event_time_ind.size == 0:
             return 0, 0
-        i0 = int(np.searchsorted(self.event_time_idx, t_idx, side="left"))
-        i1 = int(np.searchsorted(self.event_time_idx, t_idx, side="right"))
+        i0 = int(np.searchsorted(self.event_time_ind, t_idx, side="left"))
+        i1 = int(np.searchsorted(self.event_time_ind, t_idx, side="right"))
         return i0, i1
 
     def event_likelihood_at(self, event_idx: int, cell_id: int) -> NDArray[np.float32]:

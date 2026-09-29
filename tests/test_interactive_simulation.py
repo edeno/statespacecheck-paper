@@ -153,7 +153,7 @@ def test_simulated_event_likelihood_round_trips_in_event_order(tmp_path: Path) -
         )
 
         remap_start, remap_end = params.phase_boundaries[:2]
-        in_remap = (ds.event_time_idx >= remap_start) & (ds.event_time_idx < remap_end)
+        in_remap = (ds.event_time_ind >= remap_start) & (ds.event_time_ind < remap_end)
         assert in_remap.any(), "tiny simulation produced no remap-window events"
         remap_rows = np.flatnonzero(in_remap)
         static_rows = ds.place_fields[ds.event_cell_ids[remap_rows]]
@@ -315,7 +315,7 @@ def test_simulated_viewer_uses_event_likelihood_in_remap(tmp_path: Path) -> None
     try:
         remap_start, remap_end = params.phase_boundaries[:2]
         candidates = np.flatnonzero(
-            (ds.event_time_idx >= remap_start) & (ds.event_time_idx < remap_end)
+            (ds.event_time_ind >= remap_start) & (ds.event_time_ind < remap_end)
         )
         candidates = candidates[
             np.array(
@@ -330,7 +330,7 @@ def test_simulated_viewer_uses_event_likelihood_in_remap(tmp_path: Path) -> None
         ]
         assert candidates.size > 0, "tiny simulation produced no visibly remapped event"
         event_idx = int(candidates[0])
-        t_idx = int(ds.event_time_idx[event_idx])
+        t_idx = int(ds.event_time_ind[event_idx])
         cell_id = int(ds.event_cell_ids[event_idx])
         i0, i1 = ds.event_indices_at(t_idx)
         first_event = next(i for i in range(i0, i1) if int(ds.event_cell_ids[i]) == cell_id)

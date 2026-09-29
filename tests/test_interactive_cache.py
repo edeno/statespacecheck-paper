@@ -251,7 +251,7 @@ def test_build_figure04_viewer_cache_uses_canonical_render_data(tmp_path: Path) 
         assert continuous.n_states == 1
         assert continuous.load_predictive(slice(0, 5)).shape == (5, n_position)
         assert continuous.events["cell_id"].tolist() == [0, 2, 1]
-        assert continuous.event_time_idx.tolist() == [10, 50, 150]
+        assert continuous.event_time_ind.tolist() == [10, 50, 150]
     with DecoderDataSource.for_recording(
         tmp_path, "continuous_fragmented"
     ) as continuous_fragmented:
@@ -302,9 +302,9 @@ def test_viewer_event_bins_equal_the_diagnostics_bins_at_the_final_timestamp(
     order = np.argsort(diagnostics.event_time, kind="stable")
     with DecoderDataSource.for_recording(tmp_path, "continuous") as ds:
         np.testing.assert_array_equal(ds.event_times, diagnostics.event_time[order])
-        np.testing.assert_array_equal(ds.event_time_idx, diagnostics.event_time_ind[order])
+        np.testing.assert_array_equal(ds.event_time_ind, diagnostics.event_time_ind[order])
         final_row = int(np.flatnonzero(ds.event_times == time[-1])[0])
-        assert ds.event_time_idx[final_row] == n_time - 2
+        assert ds.event_time_ind[final_row] == n_time - 2
         i0, i1 = ds.event_indices_at(n_time - 2)
         assert i0 <= final_row < i1
         i0, i1 = ds.event_indices_at(n_time - 1)

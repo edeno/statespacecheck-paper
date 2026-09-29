@@ -877,7 +877,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
         # falls within the currently rendered window. The time axis
         # is centered at ``t_center``, so the relative time is the
         # event time minus the current center.
-        if sl is None or not (sl.start <= int(ds.event_time_idx[row]) < sl.stop):
+        if sl is None or not (sl.start <= int(ds.event_time_ind[row]) < sl.stop):
             relative_time: float | None = None
         else:
             relative_time = float(event["time"]) - float(self._t_center)
@@ -898,8 +898,10 @@ class DecoderViewer(QtWidgets.QMainWindow):
         # ``is_pinned`` flag on the next ``set_per_cell_slices`` call;
         # here we only update the annotation label below the rows.
         cell_id = int(event["cell_id"])
+        # Cell labels shown to the reader are 1-based ("cell=1" is cell_id 0),
+        # as on the website; cell_id stays 0-based everywhere else.
         annotation = (
-            f"t={float(event['time']):.3f}  cell={cell_id}\n"
+            f"t={float(event['time']):.3f}  cell={cell_id + 1}\n"
             f"HPD={float(event['event_hpd_overlap']):.3f}  "
             f"KL={float(event['event_kl_divergence']):.3f}  "
             f"p={float(event['event_predictive_pvalue']):.3f}"
@@ -943,7 +945,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
         # negative and positive values. The center-time vertical
         # line on each panel sits at x=0 so the user can see which
         # column corresponds to the slice panel.
-        # LEFT-EDGE bin convention (matches ``event_time_idx`` and
+        # LEFT-EDGE bin convention (matches ``event_time_ind`` and
         # ``np.digitize`` spike binning): bin ``i`` covers the real-time
         # interval ``[time[i], time[i+1])``. The visible window is
         # therefore the half-open interval ``[time[sl.start], time[sl.stop])``.

@@ -212,7 +212,7 @@ def test_per_cell_row_visible_when_spikes_present(tmp_path: Path) -> None:
         sp = viewer.slice_panel
         assert sp._n_active_per_cell_rows >= 1  # noqa: SLF001
         row = sp._per_cell_rows[0]  # noqa: SLF001
-        # Cell-curve data is the cell's normalized place-field shape.
+        # Cell-curve data is the event's likelihood, scaled to a peak of 1.
         x, y = row.cell_curve.getData()
         assert y.shape == (ds.n_position_full,)
         assert 0.0 < float(np.max(y)) <= 1.0 + 1e-6
@@ -233,9 +233,39 @@ def test_per_cell_row_header_contains_metrics(tmp_path: Path) -> None:
         viewer._update_slice_panel_at_center()  # noqa: SLF001
 
         header_text = viewer.slice_panel._per_cell_rows[0].header.text()  # noqa: SLF001
-        assert header_text.startswith("Cell")
+        slices, _ = viewer._per_cell_slices_at(ds.index_at_time(viewer._t_center))  # noqa: SLF001
+        # Labels are 1-based; the cell IDs stay 0-based.
+        assert header_text.startswith(f"Cell {slices[0].cell_id + 1:>3d}")
         assert "HPD=" in header_text
         assert "KL=" in header_text
+    finally:
+        viewer.close()
+        ds.close()
+
+
+def test_per_cell_row_labels_cell_id_zero_as_cell_one(tmp_path: Path) -> None:
+    from statespacecheck_paper.interactive.panels import CellSlice
+
+    _build_cache(tmp_path / "cache", n_states=1)
+    app, viewer, ds = make_viewer(tmp_path / "cache")
+    try:
+        curve = np.zeros(ds.n_position_full, dtype=np.float32)
+        viewer.slice_panel.set_per_cell_slices(
+            [
+                CellSlice(
+                    cell_id=0,
+                    event_likelihood_peak_scaled=curve,
+                    hpd=0.5,
+                    kl=1.0,
+                    predictive_pvalue=0.5,
+                    n_spikes=1,
+                    is_pinned=False,
+                )
+            ],
+            total_in_bin=1,
+        )
+        header_text = viewer.slice_panel._per_cell_rows[0].header.text()  # noqa: SLF001
+        assert header_text.startswith("Cell   1")
     finally:
         viewer.close()
         ds.close()

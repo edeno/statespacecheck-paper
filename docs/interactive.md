@@ -89,6 +89,9 @@ uv run --frozen python -m statespacecheck_paper.interactive \
 | Reset to a 20 s context window where the viewer opened (a recording opens on Figure 4a/b's window) | `R` |
 | Toggle real-data model | `M` (real-data caches only) |
 
+Cells are labeled from 1, as on the website ("Cell 1" is the first unit); the
+caches and the code index them from 0.
+
 The HPD-overlap panel uses the figures' symmetric-log axis (matplotlib's
 transform with `style.SYMLOG_LINTHRESH` and `style.SYMLOG_LINSCALE`, ticked at
 Figure 3's values), so small overlaps separate from exact zeros as they do in
