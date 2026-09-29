@@ -1,4 +1,4 @@
-"""Panel widgets for the Figure 4 interactive viewer.
+"""Panel widgets for the interactive viewer (Figure-4 and simulation caches).
 
 This module owns the per-row plot widgets the viewer composes:
 
@@ -11,9 +11,9 @@ This module owns the per-row plot widgets the viewer composes:
   population-likelihood plot and a pool of per-cell-likelihood rows.
 
 Each panel is self-contained (it does not import from ``viewer``)
-and is driven by viewer-side updates: ``update_window`` for the
-time-axis panels, ``update_for_index`` + ``set_per_cell_slices``
-for the slice panel.
+and is driven by viewer-side updates: ``update_with_window`` for the
+heatmap panels, ``update_window`` for the raster and metric panels, and
+``update_for_index`` + ``set_per_cell_slices`` for the slice panel.
 
 Module-internal constants (color palettes, stylesheets, the
 ``_pin_slice_axes`` helper, and the ``_PerCellRow`` / ``CellSlice``

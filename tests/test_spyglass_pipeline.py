@@ -1,8 +1,11 @@
-"""Tests for the Spyglass rebuild of the Figure-4 exports (no database access).
+"""Tests for the lab's Spyglass pipeline for Figure 4 (no database access).
 
-The Spyglass fetches themselves need the lab database; these tests cover the
-offline pieces (import laziness, clipping, linearization, file round trip, and
-comparison) on simulated data.
+The Spyglass fetches and table writes need the lab database; these tests cover
+the offline pieces on simulated data: import laziness; the input rebuild in
+``figure04_input`` (clipping, linearization, file round trip, and comparison);
+the paper-export logging in ``paper_export`` and its script; and what the tables
+compute in ``figure04_compute`` (diagnostics from stored decodes and the summary
+rows).
 """
 
 from __future__ import annotations

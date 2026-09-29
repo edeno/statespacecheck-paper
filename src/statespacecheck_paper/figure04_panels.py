@@ -1,7 +1,7 @@
 """Raster and diagnostic panels.
 
 The canonical Figure-4 panels: spike raster, spike-event diagnostic scatter,
-single-model posterior/likelihood/raster/diagnostic stack, and per-spike metric
+single-model predictive/likelihood/raster/diagnostic stack, and per-spike metric
 hexbin comparison row.
 """
 
@@ -404,8 +404,7 @@ def _draw_predictive_heatmap_row(
 ) -> None:
     """Draw one predictive-distribution heatmap row (heatmap + standard labels).
 
-    Shared by the comparison (per column) and single-model composites; the
-    per-composite legend / "Animal Position" annotation is added by the caller.
+    The legend / "Animal Position" annotation is added by the caller.
     """
     plot_distribution_heatmap(
         ax=ax,

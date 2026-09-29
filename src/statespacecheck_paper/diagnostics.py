@@ -9,7 +9,7 @@ likelihood and predictive-mark calculations, live in ``statespacecheck`` so that
 other projects can use them directly.
 
 It depends only on ``numpy`` and the external ``statespacecheck`` package — it
-imports no sibling ``statespacecheck_paper`` module, so it is the leaf of the
+imports no sibling ``statespacecheck_paper`` module, so it is a leaf of the
 paper's dependency graph.
 
 **Key Components**:

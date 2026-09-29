@@ -13,7 +13,8 @@ import statespacecheck_paper.figure04_decoder as figure04_decoder
 
 class TestFigure4ConfigMatchesManuscript:
     """Drift guard: the decoder models the code actually builds must carry the
-    exact parameters stated in the manuscript (``main.tex:294``).
+    exact parameters stated in the manuscript's decoder paragraph (the
+    ``sec:realdatamethods`` subsection of ``main.tex``).
 
     Rather than reconstruct the nested transition structure (which risks
     changing the decode), this fits nothing and asserts the *resolved*
@@ -44,13 +45,13 @@ class TestFigure4ConfigMatchesManuscript:
         continuous_model, _ = self._build_models()
         config = figure04_decoder.Figure4Config()
 
-        # main.tex:294 -- sorted-spikes KDE positional bandwidth sqrt(12.5).
+        # sec:realdatamethods -- sorted-spikes KDE positional bandwidth sqrt(12.5).
         assert continuous_model.sorted_spikes_algorithm_params["position_std"] == pytest.approx(
             config.decoder.position_std
         )
         assert config.decoder.position_std == pytest.approx(float(np.sqrt(12.5)))
 
-        # main.tex:294 -- zero-mean Gaussian random walk, movement_var = 6.0 cm^2.
+        # sec:realdatamethods -- zero-mean Gaussian random walk, movement_var = 6.0 cm^2.
         random_walk = continuous_model.continuous_transition_types[0][0]
         assert isinstance(random_walk, RandomWalk)
         assert random_walk.movement_var == pytest.approx(config.package_defaults.movement_var)
@@ -63,13 +64,13 @@ class TestFigure4ConfigMatchesManuscript:
         _, continuous_fragmented_model = self._build_models()
         config = figure04_decoder.Figure4Config()
 
-        # main.tex:294 -- Continuous-Fragmented Continuous-to-Continuous transition reuses the
-        # same random walk (movement_var = 6.0).
+        # sec:realdatamethods -- Continuous-Fragmented Continuous-to-Continuous
+        # transition reuses the same random walk (movement_var = 6.0).
         random_walk = continuous_fragmented_model.continuous_transition_types[0][0]
         assert isinstance(random_walk, RandomWalk)
         assert random_walk.movement_var == pytest.approx(config.package_defaults.movement_var)
 
-        # main.tex:294 -- mode-transition matrix [[0.98, 0.02], [0.02, 0.98]],
+        # sec:realdatamethods -- mode-transition matrix [[0.98, 0.02], [0.02, 0.98]],
         # i.e. a stationary diagonal (0.98, 0.98).
         discrete_transition_type = continuous_fragmented_model.discrete_transition_type
         assert isinstance(discrete_transition_type, DiscreteStationaryDiagonal)
@@ -78,7 +79,7 @@ class TestFigure4ConfigMatchesManuscript:
             np.asarray(config.package_defaults.continuous_fragmented_diagonal_values, dtype=float),
         )
 
-        # main.tex:294 -- Continuous / Fragmented modes initialized at (0.5, 0.5).
+        # sec:realdatamethods -- Continuous / Fragmented modes initialized at (0.5, 0.5).
         np.testing.assert_array_equal(
             np.asarray(continuous_fragmented_model.discrete_initial_conditions, dtype=float),
             np.asarray(
@@ -93,14 +94,14 @@ class TestFigure4ConfigMatchesManuscript:
         continuous_model, continuous_fragmented_model = self._build_models()
         config = figure04_decoder.Figure4Config()
 
-        # main.tex:294 -- ~2 cm spatial bins.
+        # sec:realdatamethods -- ~2 cm spatial bins.
         for model in (continuous_model, continuous_fragmented_model):
             assert model.environments[0].place_bin_size == pytest.approx(
                 config.decoder.position_bin_size_cm
             )
         assert config.decoder.position_bin_size_cm == pytest.approx(2.0)
 
-        # main.tex:294 -- 2 ms spike bins == 500 Hz sampling frequency.
+        # sec:realdatamethods -- 2 ms spike bins == 500 Hz sampling frequency.
         for model in (continuous_model, continuous_fragmented_model):
             assert model.sampling_frequency == pytest.approx(config.decoder.sampling_frequency_hz)
         assert config.decoder.sampling_frequency_hz == pytest.approx(500.0)
@@ -141,7 +142,7 @@ class TestConfigValueValidation:
             {"non_local_detector_version": ""},
         ],
     )
-    def test_provenance_rejects_invalid(self, kwargs: dict) -> None:
+    def test_package_defaults_reject_invalid(self, kwargs: dict) -> None:
         with pytest.raises(ValueError):
             figure04_decoder.Figure4PackageDefaults(**kwargs)
 
@@ -181,7 +182,7 @@ class TestNonDefaultPropagation:
         assert env.place_bin_size == pytest.approx(3.0)
 
 
-class TestValidateProvenanceDefaults:
+class TestValidatePackageDefaults:
     @staticmethod
     def _models() -> tuple[Any, Any]:
         pytest.importorskip("non_local_detector")

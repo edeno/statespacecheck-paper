@@ -34,5 +34,5 @@ def test_lookup_by_id_returns_the_model(model: Figure4Model) -> None:
 
 
 def test_lookup_rejects_an_unknown_id() -> None:
-    with pytest.raises(ValueError, match="Unknown Figure 4 model: 'contfrag'"):
-        figure4_model("contfrag")
+    with pytest.raises(ValueError, match="Unknown Figure 4 model: 'not_a_model'"):
+        figure4_model("not_a_model")

@@ -446,7 +446,10 @@ def prepare_figure04_render_data(
     Parameters
     ----------
     config : Figure4Config
-        Decoder and diagnostics configuration; hashed into the fingerprints.
+        Decoder, package-default, diagnostics, and execution configuration. The
+        decoder and package-default parts are hashed into the decode fingerprint
+        and the diagnostics part into the diagnostics fingerprint; the execution
+        part (``block_size``) is in neither.
     paths : Figure4Paths
         Injected data-location identifiers.
     use_cache : bool, default True

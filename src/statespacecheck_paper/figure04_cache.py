@@ -329,7 +329,7 @@ def compute_figure04_cache_provenance(
 
     The *diagnostics* fingerprint is :func:`compute_figure04_diagnostics_fingerprint`.
 
-    Bumping :data:`FIGURE04_CACHE_SCHEMA_VERSION` remains the manual override ---
+    Bumping :data:`FIGURE04_CACHE_SCHEMA_VERSION` is the manual override ---
     it is part of the hashed payload, so a bump invalidates every existing cache.
     """
     export_checksums = _export_file_checksums(paths)

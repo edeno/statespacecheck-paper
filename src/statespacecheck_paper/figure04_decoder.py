@@ -65,7 +65,8 @@ def create_decoder_environment(
         from non_local_detector.environment import Environment
     except ImportError as e:
         raise ImportError(
-            "non_local_detector package required. Install with: pip install non_local_detector"
+            "non_local_detector package required. Install the project's locked "
+            "environment with: make sync"
         ) from e
 
     return Environment(
@@ -343,7 +344,8 @@ def build_decoder_models(
         )
     except ImportError as e:
         raise ImportError(
-            "non_local_detector package required. Install with: pip install non_local_detector"
+            "non_local_detector package required. Install the project's locked "
+            "environment with: make sync"
         ) from e
 
     if decoder_config is None:
@@ -534,7 +536,8 @@ def get_spike_counts(
         from non_local_detector.likelihoods.common import get_spikecount_per_time_bin
     except ImportError as e:
         raise ImportError(
-            "non_local_detector package required. Install with: pip install non_local_detector"
+            "non_local_detector package required. Install the project's locked "
+            "environment with: make sync"
         ) from e
 
     counts_per_cell = [get_spikecount_per_time_bin(spike_times=st, time=time) for st in spike_times]

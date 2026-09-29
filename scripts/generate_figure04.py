@@ -8,7 +8,8 @@ is the thin CLI wrapper.
 
 Requires:
 - non_local_detector package for decoder models
-- Pre-exported neural recording data under ``data/``
+- The Figure-4 input file (``make download-data``), under ``DATA_PATH``:
+  ``data/`` unless ``$STATESPACECHECK_DATA_PATH`` is set
 """
 
 from __future__ import annotations

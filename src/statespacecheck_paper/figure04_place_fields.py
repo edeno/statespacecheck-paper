@@ -28,7 +28,7 @@ def extract_place_fields(
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Extract place fields and position bins from fitted decoder model.
 
-    Retrieves the place field firing rates and corresponding position bin centers
+    Retrieves the place fields and corresponding position bin centers
     from a fitted `SortedSpikesDecoder` or `ContFragSortedSpikesClassifier` model.
 
     Parameters
@@ -44,7 +44,8 @@ def extract_place_fields(
     Returns
     -------
     place_fields : np.ndarray, shape (n_cells, n_bins)
-        Firing rate at each position bin for each cell (in Hz or spikes/time).
+        Expected spike count per decoder time bin at each position bin, for
+        each cell (``non_local_detector``'s KDE place fields; not Hz).
     position_bins : np.ndarray, shape (n_bins,)
         Position bin centers.
 

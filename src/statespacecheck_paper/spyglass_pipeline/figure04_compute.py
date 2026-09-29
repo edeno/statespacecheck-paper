@@ -62,11 +62,6 @@ def figure04_diagnostics_from_decodes(
     thresholds : Mapping of str to float, optional
         Flag threshold per metric. Default: the Figure-4 thresholds.
 
-    Notes
-    -----
-    Needs the figure pipeline's dependencies (e.g. ``statespacecheck``); they are
-    imported here so the fetch functions above do not need them.
-
     Returns
     -------
     continuous, continuous_fragmented : SpikeEventDiagnostics
@@ -80,6 +75,12 @@ def figure04_diagnostics_from_decodes(
         If a decode lacks ``predictive_posterior``, the decodes cover different
         time bins, the spike trains do not match the fitted units (count or
         order), or the two decoders' place fields differ.
+
+    Notes
+    -----
+    The Figure-4 modules this reuses, and through them ``statespacecheck`` and
+    ``non_local_detector``, are imported inside this function, so this module
+    stays importable without those packages.
     """
     from statespacecheck_paper.figure04_decoder import get_spike_counts
     from statespacecheck_paper.figure04_diagnostics import compute_results_diagnostics
