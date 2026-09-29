@@ -147,6 +147,30 @@ def test_negative_log_cutoffs_follow_the_recorded_p_value_cutoffs() -> None:
     assert values["RecPredictiveCutoffNegLog"] == "2"  # -log(0.2) = 1.6
 
 
+@pytest.mark.parametrize(
+    ("approach_steps", "phrase"), [(1000, "second"), (2500, "2.5 seconds"), (9000, "4 seconds")]
+)
+def test_sparse_approach_duration_is_written_as_a_phrase(approach_steps: int, phrase: str) -> None:
+    """The approach lasts its configured steps, capped at clean recovery 3 (4 s)."""
+    figure03 = copy.deepcopy(_load("figure03_summary.json"))
+    figure03["configuration"]["sparse_approach_duration_steps"] = approach_steps
+
+    values = _macro_values(
+        render_macro_file(figure03, _load("figure04_summary.json"), statespacecheck_doi=CITED_DOI)
+    )
+
+    assert values["SimSparseApproachDuration"] == phrase
+
+
+def test_non_unit_position_grid_fails_the_emit() -> None:
+    """The Methods call the simulated position grid unit-spaced."""
+    figure03 = copy.deepcopy(_load("figure03_summary.json"))
+    figure03["configuration"]["position_bin_size"] = 2
+
+    with pytest.raises(ValueError, match="unit-spaced"):
+        render_macro_file(figure03, _load("figure04_summary.json"), statespacecheck_doi=CITED_DOI)
+
+
 def test_non_integral_burst_factor_is_not_silently_rounded() -> None:
     """The spelled-out prose cannot faithfully represent a fractional factor."""
     figure03 = copy.deepcopy(_load("figure03_summary.json"))

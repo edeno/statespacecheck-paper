@@ -416,6 +416,22 @@ def _simulation_configuration(payload: dict[str, Any]) -> list[MacroDefinition]:
     # cannot be represented faithfully. Reuse the exact-value guard rather
     # than silently rounding a valid simulation setting to a different value.
     burst_factor_word = cardinal_word(int(_exact(config["history_burst_factor"])))
+    # The Methods describe the position grid as having "unit spacing".
+    if config["position_bin_size"] != 1:
+        raise ValueError(
+            "The Methods describe the simulated position grid as unit-spaced; "
+            f"position_bin_size is {config['position_bin_size']}"
+        )
+    # The approach to the sparse-population location takes the last
+    # sparse_approach_duration_steps of clean recovery 3 (all of it if shorter).
+    recovery_three_steps = boundaries[6] - boundaries[5]
+    approach_seconds = (
+        min(config["sparse_approach_duration_steps"], recovery_three_steps) * step_seconds
+    )
+    # The prose reads "during the last second"; any other duration is written out.
+    approach_phrase = (
+        "second" if math.isclose(approach_seconds, 1.0) else f"{approach_seconds:g} seconds"
+    )
 
     def replay_bound(fraction: float) -> int:
         return int(round(recovery_two_start + fraction * recovery_two_span))
@@ -423,6 +439,11 @@ def _simulation_configuration(payload: dict[str, Any]) -> list[MacroDefinition]:
     return [
         MacroDefinition("SimTrackLength", _exact(config["position_max"]), "position_max"),
         MacroDefinition("SimPositionMin", _exact(config["position_min"]), "position_min"),
+        MacroDefinition(
+            "SimPositionSecondBin",
+            _exact(config["position_min"] + config["position_bin_size"]),
+            "position_min + position_bin_size",
+        ),
         MacroDefinition(
             "SimNPlaceCellsWord",
             cardinal_word(len(centers)),
@@ -469,6 +490,11 @@ def _simulation_configuration(payload: dict[str, Any]) -> list[MacroDefinition]:
             "sparse_cell_count, sentence-initial",
         ),
         MacroDefinition("SimSparsePosition", _exact(config["sparse_position"]), "sparse_position"),
+        MacroDefinition(
+            "SimSparseApproachDuration",
+            approach_phrase,
+            "sparse_approach_duration_steps * step_seconds, as a phrase",
+        ),
         MacroDefinition(
             "SimSparseSpreadLow",
             _exact(config["sparse_position"] - config["sparse_place_field_spread"], 1),

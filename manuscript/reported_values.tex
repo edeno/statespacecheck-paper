@@ -4,7 +4,7 @@
 % (except the DOIs, whose comments name their sources):
 %   figures/main/figure03_summary.json (schema 7)
 %   figures/main/figure04_summary.json (schema 5)
-% source_tree_sha256: 4f39937eb4bbe8a224f0751df344952327dc65e3e6b6e3bef3b1f6ec18aa79e6
+% source_tree_sha256: d73a16c61772c8822193c0ee1229fa95f9821423a8f86c5a48171c9722c4cd8c
 %
 % Regenerate with: uv run python scripts/emit_reported_values.py
 
@@ -43,45 +43,47 @@
 \newcommand{\SimBaselineEnd}{6000}          % threshold_provenance.baseline_end_index
 
 % --- Simulation study (Figure 3) --- recorded configuration
-\newcommand{\SimTrackLength}{100}              % position_max
-\newcommand{\SimPositionMin}{0}                % position_min
-\newcommand{\SimNPlaceCellsWord}{eleven}       % len(place_field_centers)
-\newcommand{\SimNNeuronsWord}{sixteen}         % len(place_field_centers) + sparse_cell_count
-\newcommand{\SimPlaceFieldSpacing}{10}         % place_field_centers spacing
-\newcommand{\SimPlaceFieldStd}{10}             % place_field_std
-\newcommand{\SimRateScale}{5}                  % place_field_rate_scale
-\newcommand{\SimPeakCountPerStep}{0.20}        % place_field_rate_scale / (place_field_std * sqrt(2 pi))
-\newcommand{\SimPeakRateHz}{200}               % peak expected count per step / step_seconds, in Hz
-\newcommand{\SimPredictionStepStd}{0.5}        % prediction_step_std
-\newcommand{\SimInitialPosition}{0}            % initial_position
-\newcommand{\SimNSparseCellsWord}{five}        % sparse_cell_count
-\newcommand{\SimNSparseCellsWordCap}{Five}     % sparse_cell_count, sentence-initial
-\newcommand{\SimSparsePosition}{30}            % sparse_position
-\newcommand{\SimSparseSpreadLow}{28.5}         % sparse_position - sparse_place_field_spread
-\newcommand{\SimSparseSpreadHigh}{31.5}        % sparse_position + sparse_place_field_spread
-\newcommand{\SimSparseFieldStd}{2}             % sparse_place_field_std
-\newcommand{\SimSparseBaselineRateHz}{0.01}    % sparse_cell_peak_rate_per_step * sparse_cell_baseline_rate_fraction / step_seconds
-\newcommand{\SimSparseActiveRateHz}{1}         % sparse_cell_peak_rate_per_step / step_seconds, in Hz
-\newcommand{\SimStepMs}{1}                     % step_seconds, in ms
-\newcommand{\SimDurationSteps}{32000}          % phase_boundaries[-1]
-\newcommand{\SimDurationSeconds}{32}           % phase_boundaries[-1] * step_seconds
-\newcommand{\SimNPhasesWord}{eight}            % len(phase_boundaries)
-\newcommand{\SimRemapStart}{6000}              % phase_boundaries[0]
-\newcommand{\SimRemapEnd}{10000}               % phase_boundaries[1]
-\newcommand{\SimRecoveryOneEnd}{14000}         % phase_boundaries[2]
-\newcommand{\SimHistoryEnd}{18000}             % phase_boundaries[3]
-\newcommand{\SimRecoveryTwoEnd}{22000}         % phase_boundaries[4]
-\newcommand{\SimDriftEnd}{26000}               % phase_boundaries[5]
-\newcommand{\SimRecoveryThreeEnd}{30000}       % phase_boundaries[6]
-\newcommand{\SimSparseEnd}{32000}              % phase_boundaries[7]
-\newcommand{\SimReplayStart}{19000}            % replay_start_fraction within clean recovery 2
-\newcommand{\SimReplayEnd}{21000}              % replay_end_fraction within clean recovery 2
-\newcommand{\SimRemapDisplacementWord}{three}  % min displacement in place_field_remapping
-\newcommand{\SimDriftMomentum}{0.88}           % drift_momentum
-\newcommand{\SimRefractoryMs}{1}               % history_refractory_steps * step_seconds, in ms
-\newcommand{\SimBurstStartMs}{2}               % history_burst_window[0] * step_seconds, in ms
-\newcommand{\SimBurstEndMs}{10}                % history_burst_window[1] * step_seconds, in ms
-\newcommand{\SimBurstFactorWord}{three}        % history_burst_factor
+\newcommand{\SimTrackLength}{100}                % position_max
+\newcommand{\SimPositionMin}{0}                  % position_min
+\newcommand{\SimPositionSecondBin}{1}            % position_min + position_bin_size
+\newcommand{\SimNPlaceCellsWord}{eleven}         % len(place_field_centers)
+\newcommand{\SimNNeuronsWord}{sixteen}           % len(place_field_centers) + sparse_cell_count
+\newcommand{\SimPlaceFieldSpacing}{10}           % place_field_centers spacing
+\newcommand{\SimPlaceFieldStd}{10}               % place_field_std
+\newcommand{\SimRateScale}{5}                    % place_field_rate_scale
+\newcommand{\SimPeakCountPerStep}{0.20}          % place_field_rate_scale / (place_field_std * sqrt(2 pi))
+\newcommand{\SimPeakRateHz}{200}                 % peak expected count per step / step_seconds, in Hz
+\newcommand{\SimPredictionStepStd}{0.5}          % prediction_step_std
+\newcommand{\SimInitialPosition}{0}              % initial_position
+\newcommand{\SimNSparseCellsWord}{five}          % sparse_cell_count
+\newcommand{\SimNSparseCellsWordCap}{Five}       % sparse_cell_count, sentence-initial
+\newcommand{\SimSparsePosition}{30}              % sparse_position
+\newcommand{\SimSparseApproachDuration}{second}  % sparse_approach_duration_steps * step_seconds, as a phrase
+\newcommand{\SimSparseSpreadLow}{28.5}           % sparse_position - sparse_place_field_spread
+\newcommand{\SimSparseSpreadHigh}{31.5}          % sparse_position + sparse_place_field_spread
+\newcommand{\SimSparseFieldStd}{2}               % sparse_place_field_std
+\newcommand{\SimSparseBaselineRateHz}{0.01}      % sparse_cell_peak_rate_per_step * sparse_cell_baseline_rate_fraction / step_seconds
+\newcommand{\SimSparseActiveRateHz}{1}           % sparse_cell_peak_rate_per_step / step_seconds, in Hz
+\newcommand{\SimStepMs}{1}                       % step_seconds, in ms
+\newcommand{\SimDurationSteps}{32000}            % phase_boundaries[-1]
+\newcommand{\SimDurationSeconds}{32}             % phase_boundaries[-1] * step_seconds
+\newcommand{\SimNPhasesWord}{eight}              % len(phase_boundaries)
+\newcommand{\SimRemapStart}{6000}                % phase_boundaries[0]
+\newcommand{\SimRemapEnd}{10000}                 % phase_boundaries[1]
+\newcommand{\SimRecoveryOneEnd}{14000}           % phase_boundaries[2]
+\newcommand{\SimHistoryEnd}{18000}               % phase_boundaries[3]
+\newcommand{\SimRecoveryTwoEnd}{22000}           % phase_boundaries[4]
+\newcommand{\SimDriftEnd}{26000}                 % phase_boundaries[5]
+\newcommand{\SimRecoveryThreeEnd}{30000}         % phase_boundaries[6]
+\newcommand{\SimSparseEnd}{32000}                % phase_boundaries[7]
+\newcommand{\SimReplayStart}{19000}              % replay_start_fraction within clean recovery 2
+\newcommand{\SimReplayEnd}{21000}                % replay_end_fraction within clean recovery 2
+\newcommand{\SimRemapDisplacementWord}{three}    % min displacement in place_field_remapping
+\newcommand{\SimDriftMomentum}{0.88}             % drift_momentum
+\newcommand{\SimRefractoryMs}{1}                 % history_refractory_steps * step_seconds, in ms
+\newcommand{\SimBurstStartMs}{2}                 % history_burst_window[0] * step_seconds, in ms
+\newcommand{\SimBurstEndMs}{10}                  % history_burst_window[1] * step_seconds, in ms
+\newcommand{\SimBurstFactorWord}{three}          % history_burst_factor
 
 % --- Hippocampal recording (Figure 4) --- computed from the recording
 \newcommand{\RecNUnits}{203}                     % dataset.n_units
