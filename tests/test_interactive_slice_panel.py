@@ -390,11 +390,12 @@ def test_smoothed_overlay_is_loaded_in_the_committed_buffer(tmp_path: Path) -> N
         ds.close()
 
 
-def test_old_cache_without_acausal_disables_smoothed(tmp_path: Path) -> None:
-    """Caches built before the smoothed-overlay feature don't have
-    ``acausal_posterior``. The viewer should report ``has_acausal=False``,
-    leave the smoothed combo entry disabled, and never load acausal
-    even if some path tried to.
+def test_cache_without_acausal_disables_smoothed(tmp_path: Path) -> None:
+    """A cache without ``acausal_posterior`` disables the smoothed overlay.
+
+    The simulation cache has no smoothed posterior. For any such cache the
+    viewer reports ``has_acausal=False``, leaves the smoothed combo entry
+    disabled, and never loads acausal even if some path tried to.
     """
     from PySide6 import QtGui
 

@@ -481,8 +481,8 @@ class DecoderViewer(QtWidgets.QMainWindow):
         )
         for choice in OVERLAY_CHOICES:
             self._overlay_combo.addItem(_OVERLAY_LABELS[choice], userData=choice)
-        # Smoothed requires ``acausal_posterior`` in the cache; disable the
-        # option for caches without it.
+        # Smoothed requires ``acausal_posterior``, which every Figure-4 cache
+        # carries and the forward-filter-only simulation cache lacks.
         if not self._ds.has_acausal:
             smoothed_idx = OVERLAY_CHOICES.index("smoothed")
             combo_model = cast(QtGui.QStandardItemModel, self._overlay_combo.model())
@@ -490,8 +490,8 @@ class DecoderViewer(QtWidgets.QMainWindow):
             if model_item is not None:
                 model_item.setEnabled(False)
                 model_item.setToolTip(
-                    "Cache built before the smoothed-overlay feature; "
-                    "rebuild via 'python -m statespacecheck_paper.interactive.cache build'."
+                    "This cache has no smoothed posterior: the Figure-3 simulation "
+                    "only forward-filters."
                 )
         self._overlay_combo.setCurrentIndex(OVERLAY_CHOICES.index(self.slice_panel.overlay_choice))
         self._overlay_combo.currentIndexChanged.connect(self._on_overlay_combo_changed)

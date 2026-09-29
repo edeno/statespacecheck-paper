@@ -149,8 +149,9 @@ class DecoderDataSource:
     * ``Zarr``: ``predictive_posterior`` (the predictive distribution, under the
       decoder's name) (n_time, n_state_bins) f32,
       ``log_likelihood`` (n_time, n_state_bins) f32 (true log-space),
-      optional ``acausal_posterior`` (n_time, n_state_bins) f32 — only
-      present for real-data caches built post-smoothed-overlay feature.
+      optional ``acausal_posterior`` (n_time, n_state_bins) f32 — present in
+      every Figure-4 cache and absent from the simulation cache, which only
+      forward-filters.
 
     Attributes
     ----------
@@ -538,9 +539,8 @@ class DecoderDataSource:
     def load_acausal(self, sl: slice) -> NDArray[np.float32] | None:
         """Load the acausal (smoothed) posterior, or ``None`` if absent.
 
-        Caches without ``acausal_posterior`` (the simulation cache, or a
-        real-data cache built without it) return ``None``; callers fall back
-        to the predictive distribution.
+        Caches without ``acausal_posterior`` (the simulation cache) return
+        ``None``; callers fall back to the predictive distribution.
         """
         if self._acausal_arr is None:
             return None

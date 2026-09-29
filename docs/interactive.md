@@ -85,5 +85,6 @@ uv run --frozen python -m statespacecheck_paper.interactive \
 The slice panel's "Overlay" combo switches the population-likelihood
 plot's blue overlay between predictive `p(x_t | y_{1:t-1})`, filtered
 `p(x_t | y_{1:t})`, and smoothed `p(x_t | y_{1:T})` distributions.
-Smoothed is only available for caches that include `acausal_posterior`
-(rebuild via `cache build --force` if the entry is greyed out).
+Every Figure-4 cache carries the smoothed posterior (`acausal_posterior`).
+The Figure-3 simulation cache has none, because the simulation only
+forward-filters, so the Smoothed entry is disabled there.
