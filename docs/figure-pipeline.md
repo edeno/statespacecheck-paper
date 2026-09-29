@@ -109,6 +109,14 @@ field it came from. See [From summary to prose](#from-summary-to-prose-the-repor
 | Per-spike HPD overlap, predictive $p$-value, KL divergence | `event_hpd_overlap`, `event_predictive_pvalue`, `event_kl_divergence` | with `event_time_ind` (time bin) and `event_cell_ind` (unit); the un-prefixed `hpd_overlap`, … are dense `(n_time, n_cells)` matrices |
 | Flag | `flag_mask`, `flag_rules` | inclusive comparison against a threshold |
 | Firing rate $\lambda_c$ vs expected count $m_c=\lambda_c\Delta t$ | “rates” in code are expected counts per step | see [Rates and expected counts](#rates-and-expected-counts) |
+| Rate table | `firing_rates`, `firing_rate_table`, `baseline_firing_rates`, `simulation.place_field_rates` | shape `(n_bins, n_cells)`; each entry is an expected count per step $m_c(x)$, not a rate in Hz |
+| Time bin $k$ ($K$ bins) | `t`, `event_time_ind`, `n_time` | the paper writes $k$; the code writes `t`, counting from 0 |
+| The Figure-3 remap, replay, and sparse-population windows | decoder override windows: `decoding.DecoderOverrideWindow`, `DecoderOverrideSchedule` | a half-open step interval `[start, end)` in which the decoder uses another rate table; the remap window is the observation misfit, the replay and sparse-population windows are controls |
+| Position and decoding error, Figure 3 | “a.u.”; summary `accuracy_units: position_units` | the simulated track is in arbitrary position units (axis label “Position (a.u.)”); Figure 4 positions are in cm |
+| Rescued percentage (Figure 4) | `FlagConfusion.rescue_rate`; summary `flag_confusions[].rescue_rate` | fraction (0–1) of the spikes the Continuous model flags that the Continuous–Fragmented model does not; the prose prints it as a whole percent (`\RecHpdRescuedPercent`, `\RecPvalueRescuedPercent`) |
+| Rank-based predictive $p$-value | `statespacecheck.mark_predictive_pvalue` (called by `event_diagnostics`) | `statespacecheck` also exports `predictive_pvalue`, a Monte Carlo check for a user-supplied replicate generator, which the paper does not use |
+| Summary source digest | `provenance.source.source_tree_sha256` | SHA-256 of every `.py` file under `src/statespacecheck_paper`, comments and docstrings included: any source edit changes it, so both summaries' `provenance.source` are refreshed together |
+| Cache fingerprints | `fingerprint_sha256` (decode), `diagnostics_fingerprint_sha256` | SHA-256 of the docstring-stripped syntax trees of listed modules plus the relevant configuration, input-file checksum, and package versions; comment and docstring edits leave them unchanged (see [Figure-4 cache behavior](#figure-4-cache-behavior)) |
 
 ## Architecture at a glance
 
@@ -137,6 +145,16 @@ families**:
   single-responsibility modules rather than one monolith, so an outside reader
   can follow the scientific workflow (configure → simulate/load → decode →
   diagnose → summarize → render).
+
+  Some Figure-4 boundaries also protect the expensive decode cache. Refitting
+  and decoding both models takes minutes and writes an ~8 GB cache, so the
+  decode fingerprint hashes only the modules that shape the decode
+  (`figure04_decoder`, `figure04_place_fields`, `figure04_workflow`,
+  `load_local_data`), and the diagnostics fingerprint only those that shape
+  the per-spike diagnostics (`diagnostics`, `figure04_diagnostics`,
+  `figure04_place_fields`). Model labels (`figure04_models`), cache I/O
+  (`figure04_cache`), whole-session statistics (`figure04_summary`), and all
+  plotting live elsewhere, so editing them refits nothing.
 - **Shared support**: `plotting`, `style`, and `schematic` (figure drawing);
   `paths` (repository and data locations, published identifiers);
   `scientific_artifacts` (summary provenance and flag rules); `number_format`
