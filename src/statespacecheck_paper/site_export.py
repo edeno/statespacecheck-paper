@@ -73,6 +73,8 @@ from statespacecheck_paper.paths import (
     DATA_PATH,
     FIGURE03_SUMMARY_PATH,
     FIGURE04_SUMMARY_PATH,
+    PARITY_FIXTURE_PATH,
+    SITE_DATA_DIR,
 )
 from statespacecheck_paper.reported_values import cardinal_word, macro_sections
 from statespacecheck_paper.simulation import (
@@ -86,9 +88,6 @@ from statespacecheck_paper.style import (
     METRIC_NAMES,
     PREDICTIVE_VMAX_QUANTILE,
 )
-
-SITE_DATA_DIR = Path("site/data")
-PARITY_FIXTURE_PATH = Path("site/tests/fixtures/metric_parity.json")
 
 # Significant figures kept for per-event diagnostic values. Significant figures,
 # not decimal places, so a small predictive p-value keeps its magnitude.

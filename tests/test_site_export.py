@@ -38,14 +38,18 @@ from statespacecheck_paper.figure04_diagnostics import mean_event_likelihood_by_
 from statespacecheck_paper.figure04_layout import Figure4DetailWindow
 from statespacecheck_paper.figure04_models import FIGURE04_MODELS, figure04_model
 from statespacecheck_paper.number_format import significant, whole_percent
-from statespacecheck_paper.paths import FIGURE03_SUMMARY_PATH, FIGURE04_SUMMARY_PATH, REPO_ROOT
+from statespacecheck_paper.paths import (
+    FIGURE03_SUMMARY_PATH,
+    FIGURE04_SUMMARY_PATH,
+    PARITY_FIXTURE_PATH,
+    REPO_ROOT,
+    SITE_DATA_DIR,
+)
 from statespacecheck_paper.scientific_artifacts import inclusive_flag_rules
 from statespacecheck_paper.simulation import gaussian_transition_matrix, place_field_rates
 from statespacecheck_paper.site_export import (
     CONDITION_WINDOWS,
     FILTER_EXPLAINER,
-    PARITY_FIXTURE_PATH,
-    SITE_DATA_DIR,
     FilterExplainerSequence,
     condition_payloads,
     encode_display_rows,

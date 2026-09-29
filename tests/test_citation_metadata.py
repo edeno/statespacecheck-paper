@@ -15,7 +15,7 @@ from typing import Any
 import pytest
 import yaml
 
-from statespacecheck_paper.paths import REPO_ROOT
+from statespacecheck_paper.paths import CITATION_PATH, REPO_ROOT
 
 MAIN_TEX = (REPO_ROOT / "manuscript" / "main.tex").read_text(encoding="utf-8")
 INDEX_HTML = (REPO_ROOT / "site" / "index.html").read_text(encoding="utf-8")
@@ -24,9 +24,7 @@ PYPROJECT = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
 
 @pytest.fixture(scope="module")
 def citation() -> dict[str, Any]:
-    payload: dict[str, Any] = yaml.safe_load(
-        (REPO_ROOT / "CITATION.cff").read_text(encoding="utf-8")
-    )
+    payload: dict[str, Any] = yaml.safe_load(CITATION_PATH.read_text(encoding="utf-8"))
     return payload
 
 

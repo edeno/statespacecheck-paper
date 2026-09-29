@@ -29,7 +29,7 @@ from track_linearization import make_track_graph
 from statespacecheck_paper.figure04_diagnostics import FlagConfusion
 from statespacecheck_paper.figure04_input import input_file_path, load_figure04_input
 from statespacecheck_paper.figure04_summary import Figure4DiagnosticMeans, Figure4Summary
-from statespacecheck_paper.paths import FIGURE04_INPUTS_EPOCH, FIGURE04_SUMMARY_PATH, REPO_ROOT
+from statespacecheck_paper.paths import FIGURE04_INPUTS_EPOCH, FIGURE04_SUMMARY_PATH
 from statespacecheck_paper.spyglass_pipeline import figure04_input, paper_export
 from statespacecheck_paper.spyglass_pipeline.figure04_compute import (
     figure04_diagnostics_from_decodes,
@@ -638,7 +638,7 @@ _KEY = {
 
 @pytest.fixture(scope="module")
 def committed_figure04() -> dict[str, Any]:
-    return json.loads((REPO_ROOT / FIGURE04_SUMMARY_PATH).read_text(encoding="utf-8"))
+    return json.loads(FIGURE04_SUMMARY_PATH.read_text(encoding="utf-8"))
 
 
 def _stored_rows(

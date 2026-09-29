@@ -18,9 +18,14 @@ import numpy as np
 import pytest
 
 from statespacecheck_paper.number_format import significant, whole_percent
-from statespacecheck_paper.paths import REPO_ROOT
-from statespacecheck_paper.reported_values import (
+from statespacecheck_paper.paths import (
+    CITATION_PATH,
+    FIGURE03_SUMMARY_PATH,
+    FIGURE04_SUMMARY_PATH,
     MACRO_FILE_PATH,
+    REPO_ROOT,
+)
+from statespacecheck_paper.reported_values import (
     _exact,
     analysis_code_doi,
     cardinal_word,
@@ -33,8 +38,6 @@ from statespacecheck_paper.reported_values import (
 )
 from tests.test_reported_statistics_artifacts import _load
 
-COMMITTED_MACRO_FILE = REPO_ROOT / MACRO_FILE_PATH
-
 
 def _macro_values(text: str) -> dict[str, str]:
     """Parse ``\\newcommand`` definitions into a name -> value mapping."""
@@ -44,22 +47,20 @@ def _macro_values(text: str) -> dict[str, str]:
 # The DOI the committed macro file cites. Emitting looks it up on Zenodo; the
 # tests below take it from the committed file so they run offline, and
 # test_zenodo_lookup_gives_the_cited_doi checks it against Zenodo
-CITED_DOI = _macro_values(COMMITTED_MACRO_FILE.read_text(encoding="utf-8"))["StatespacecheckDOI"]
-CODE_DOI = analysis_code_doi(REPO_ROOT / "CITATION.cff")
+CITED_DOI = _macro_values(MACRO_FILE_PATH.read_text(encoding="utf-8"))["StatespacecheckDOI"]
+CODE_DOI = analysis_code_doi(CITATION_PATH)
 
 
 def test_committed_macro_file_matches_the_figure_summaries(tmp_path: Path) -> None:
     """The committed macro file is exactly what the summaries generate now."""
     regenerated = write_macro_file(
         tmp_path / "reported_values.tex",
-        figure03_path=REPO_ROOT / "manuscript/figures/main/figure03_summary.json",
-        figure04_path=REPO_ROOT / "manuscript/figures/main/figure04_summary.json",
+        figure03_path=FIGURE03_SUMMARY_PATH,
+        figure04_path=FIGURE04_SUMMARY_PATH,
         statespacecheck_doi=CITED_DOI,
-        citation_path=REPO_ROOT / "CITATION.cff",
+        citation_path=CITATION_PATH,
     )
-    assert regenerated.read_text(encoding="utf-8") == COMMITTED_MACRO_FILE.read_text(
-        encoding="utf-8"
-    ), (
+    assert regenerated.read_text(encoding="utf-8") == MACRO_FILE_PATH.read_text(encoding="utf-8"), (
         "manuscript/reported_values.tex is stale; regenerate it with "
         "`uv run python scripts/emit_reported_values.py`."
     )
@@ -67,7 +68,7 @@ def test_committed_macro_file_matches_the_figure_summaries(tmp_path: Path) -> No
 
 def test_macro_values_round_trip_the_canonical_statistics() -> None:
     """Spot-check that the headline numbers carry the summaries' values."""
-    values = _macro_values(COMMITTED_MACRO_FILE.read_text(encoding="utf-8"))
+    values = _macro_values(MACRO_FILE_PATH.read_text(encoding="utf-8"))
     figure03 = _load("figure03_summary.json")
     figure04 = _load("figure04_summary.json")
 
@@ -332,14 +333,14 @@ def test_zero_decoding_error_renders() -> None:
 
 def test_macro_names_are_unique() -> None:
     """A duplicated name would make ``\\newcommand`` abort the LaTeX build."""
-    text = COMMITTED_MACRO_FILE.read_text(encoding="utf-8")
+    text = MACRO_FILE_PATH.read_text(encoding="utf-8")
     names = re.findall(r"\\newcommand\{\\(\w+)\}", text)
     assert len(names) == len(set(names))
 
 
 def test_every_macro_is_used_by_the_manuscript() -> None:
     """An unused macro is a number nobody reports; drop it rather than ship it."""
-    macro_text = COMMITTED_MACRO_FILE.read_text(encoding="utf-8")
+    macro_text = MACRO_FILE_PATH.read_text(encoding="utf-8")
     manuscript = (REPO_ROOT / "manuscript" / "main.tex").read_text(encoding="utf-8")
     unused = [
         name

@@ -52,7 +52,7 @@ internet access); this repository's DOI, read from ``CITATION.cff``; and the
 Figure-4 input file's DOI, ``paths.FIGURE04_INPUTS_DOI``. Its sibling imports
 are ``number_format``, the rounding shared with the Figure-3 summary panel, so
 the figure and the prose cannot round the same number differently, and
-``paths``, for the summary locations and that data DOI.
+``paths``, for the summary, macro-file, and citation locations and that data DOI.
 """
 
 from __future__ import annotations
@@ -68,14 +68,12 @@ from typing import Any
 
 from statespacecheck_paper.number_format import SIGNIFICANT_FIGURES, significant, whole_percent
 from statespacecheck_paper.paths import (
+    CITATION_PATH,
     FIGURE03_SUMMARY_PATH,
     FIGURE04_INPUTS_DOI,
     FIGURE04_SUMMARY_PATH,
+    MACRO_FILE_PATH,
 )
-
-MACRO_FILE_PATH = Path("manuscript/reported_values.tex")
-# This repository's citation metadata; its ``doi`` is the analysis code's Zenodo DOI
-CITATION_PATH = Path("CITATION.cff")
 
 # Zenodo record that groups every archived statespacecheck release (its concept
 # record); each release's own DOI is looked up under it by version

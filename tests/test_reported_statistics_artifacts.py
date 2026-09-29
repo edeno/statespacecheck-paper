@@ -25,10 +25,8 @@ from statespacecheck_paper.figure04_generation import (
 )
 from statespacecheck_paper.figure04_input import INPUT_FILE_SUFFIX
 from statespacecheck_paper.figure04_summary import Figure4DiagnosticMeans, Figure4Summary
-from statespacecheck_paper.paths import REPO_ROOT
+from statespacecheck_paper.paths import FIGURE_DIR, REPO_ROOT
 from statespacecheck_paper.scientific_artifacts import write_json_artifact
-
-FIGURE_DIR = REPO_ROOT / "manuscript" / "figures" / "main"
 
 
 def _load(name: str) -> dict[str, Any]:
