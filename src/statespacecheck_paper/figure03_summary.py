@@ -599,8 +599,9 @@ def estimate_realization_summary(
     # the dict is a faithful baseline sample if that ever changes. Pool the
     # per-*event* baseline values (one per spike event), matching the
     # event-based phase fractions from ``extract_condition_flag_values``.
-    baseline_keys = ("hpd_overlap", "kl_divergence", "predictive_pvalue")
-    baseline_values: dict[str, list[NDArray[np.floating]]] = {key: [] for key in baseline_keys}
+    baseline_values: dict[str, list[NDArray[np.floating]]] = {
+        key: [] for key in METRIC_FLAG_DIRECTIONS
+    }
     per_realization_values: list[list[list[NDArray[np.floating]]]] = []
     per_realization_accuracy: list[NDArray[np.floating]] = []
 
@@ -608,7 +609,7 @@ def estimate_realization_summary(
         sim = run_figure03_simulation(config, seed=base + offset)
         diagnostics = sim.diagnostics
         base_mask = np.asarray(diagnostics.event_time_ind) < baseline_end
-        for key in baseline_keys:
+        for key in baseline_values:
             ev = np.asarray(getattr(diagnostics, "event_" + key), dtype=float)[base_mask]
             if not np.all(np.isfinite(ev)):
                 raise ValueError(

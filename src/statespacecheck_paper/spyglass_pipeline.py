@@ -47,6 +47,7 @@ from spyglass.common import AnalysisNwbfile
 from spyglass.decoding.decoding_merge import DecodingOutput
 from spyglass.utils import SpyglassMixin, SpyglassMixinPart
 
+from statespacecheck_paper.diagnostics import METRIC_FLAG_DIRECTIONS
 from statespacecheck_paper.figure04_decoder import (
     Figure4Config,
     build_decoder_models,
@@ -189,7 +190,7 @@ class Figure4Diagnostics(SpyglassMixin, dj.Computed):
                 **{
                     f"{model}_{metric}": getattr(diagnostics, f"event_{metric}")
                     for model, diagnostics in (("continuous", continuous), ("contfrag", contfrag))
-                    for metric in ("hpd_overlap", "kl_divergence", "predictive_pvalue")
+                    for metric in METRIC_FLAG_DIRECTIONS
                 },
             }
         )

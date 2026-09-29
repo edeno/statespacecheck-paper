@@ -31,10 +31,6 @@ import numpy as np
 import statespacecheck as ssc
 from numpy.typing import NDArray
 
-# Per-event metric field names — shared by ``SpikeEventDiagnostics`` and
-# ``DecodingDiagnostics`` shape-validation loops.
-_PER_EVENT_METRIC_NAMES = ("event_hpd_overlap", "event_kl_divergence", "event_predictive_pvalue")
-
 # Baseline-threshold definitions used by ``compute_baseline_diagnostic_thresholds``.
 # Named (rather than inlined at the quantile calls) because the manuscript
 # reports the percentile levels themselves, and the figure summaries record these
@@ -58,6 +54,10 @@ METRIC_FLAG_DIRECTIONS: dict[str, FlagDirection] = {
     "predictive_pvalue": "below",
     "kl_divergence": "above",
 }
+
+# Per-event metric field names — shared by ``SpikeEventDiagnostics`` and
+# ``DecodingDiagnostics`` shape-validation loops.
+_PER_EVENT_METRIC_NAMES = tuple(f"event_{metric}" for metric in METRIC_FLAG_DIRECTIONS)
 
 # Name a figure summary records for each direction's inclusive comparison.
 INCLUSIVE_FLAG_COMPARISONS: dict[FlagDirection, str] = {
@@ -218,12 +218,7 @@ class SpikeEventDiagnostics:
 
     def __post_init__(self) -> None:
         n_spikes = self.event_time_ind.shape[0]
-        for name in (
-            "event_cell_ind",
-            "event_hpd_overlap",
-            "event_kl_divergence",
-            "event_predictive_pvalue",
-        ):
+        for name in ("event_cell_ind", *_PER_EVENT_METRIC_NAMES):
             arr = getattr(self, name)
             if arr.shape != (n_spikes,):
                 raise ValueError(f"SpikeEventDiagnostics.{name} shape {arr.shape} != ({n_spikes},)")
