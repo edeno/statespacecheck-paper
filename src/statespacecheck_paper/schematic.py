@@ -349,7 +349,7 @@ def draw_equation_box(
     center: tuple[float, float],
     width: float,
     height: float,
-    edgecolor: str = "#666666",
+    edgecolor: str = COLORS["annotation"],
     facecolor: str = "#FAFAFA",
     linewidth: float = 1.0,
 ) -> FancyBboxPatch:
@@ -365,7 +365,7 @@ def draw_equation_box(
         Width of the box.
     height : float
         Height of the box.
-    edgecolor : str, default "#666666"
+    edgecolor : str, default ``COLORS["annotation"]``
         Edge color.
     facecolor : str, default "#FAFAFA"
         Fill color.
@@ -475,7 +475,7 @@ def draw_graphical_model(
         "Transition",
         ha="center",
         va="bottom",
-        color="#666666",
+        color=COLORS["annotation"],
     )
     ax.text(
         (x_prev_pos[0] + x_curr_pos[0]) / 2,
@@ -483,7 +483,7 @@ def draw_graphical_model(
         r"$p(x_t|x_{t-1})$",
         ha="center",
         va="top",
-        color="#666666",
+        color=COLORS["annotation"],
     )
 
     # Downward arrows: x -> y
@@ -589,7 +589,7 @@ def draw_graphical_model(
         ha="left",
         va="center",
         fontstyle="italic",
-        color="#666666",
+        color=COLORS["annotation"],
     )
 
 
@@ -670,7 +670,7 @@ def _draw_equation_row(
         operator_label,
         ha="center",
         va="bottom",
-        color="#666666",
+        color=COLORS["annotation"],
     )
 
     ax.text(4.3 + eq_offset, center_y, "=", ha="center", va="center", fontsize=14)
@@ -749,7 +749,7 @@ def draw_equation_boxes(ax: Axes) -> None:
         middle=_InsetSpec(
             mean=45,
             std=10,
-            color="#666666",
+            color=COLORS["annotation"],
             label=r"$p(x_t|x_{t-1})$",
             title="Transition",
         ),
@@ -800,7 +800,7 @@ def draw_equation_boxes(ax: Axes) -> None:
     ax.plot(
         [bracket_x + bracket_width, bracket_x, bracket_x, bracket_x + line_end],
         [bracket_top, bracket_top, bracket_bottom, bracket_bottom],
-        color="#666666",
+        color=COLORS["annotation"],
         linewidth=1.0,
         solid_capstyle="round",
         solid_joinstyle="round",
@@ -809,7 +809,7 @@ def draw_equation_boxes(ax: Axes) -> None:
         ax,
         start=(bracket_x + line_end, bracket_bottom),
         end=(bracket_x + arrow_length, bracket_bottom),
-        color="#666666",
+        color=COLORS["annotation"],
         linewidth=1.0,
     )
 
@@ -821,7 +821,7 @@ def draw_equation_boxes(ax: Axes) -> None:
         ha="right",
         va="center",
         fontweight="bold",
-        color="#666666",
+        color=COLORS["annotation"],
     )
 
     # Title (using set_title for consistent positioning across panels)

@@ -93,6 +93,11 @@ COLORS: dict[str, str] = {
     # Zero/baseline reference lines
     "reference": "#999999",  # Medium gray
     #
+    # Secondary annotation - captions, guide lines, and neutral elements such
+    # as the transition model in the Figure-1 schematic. Same gray as the
+    # threshold, but a different role.
+    "annotation": "#666666",  # Dark gray
+    #
     # -------------------------------------------------------------------------
     # Diagnostic Metrics
     # -------------------------------------------------------------------------
