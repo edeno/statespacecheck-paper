@@ -26,13 +26,17 @@ import pytest
 import xarray as xr
 from track_linearization import make_track_graph
 
-from statespacecheck_paper.figure04_diagnostics import FlagConfusion
+from statespacecheck_paper.figure04_diagnostics import (
+    FlagConfusion,
+    compute_spike_event_diagnostics,
+)
 from statespacecheck_paper.figure04_input import input_file_path, load_figure04_input
 from statespacecheck_paper.figure04_summary import Figure4DiagnosticMeans, Figure4Summary
 from statespacecheck_paper.paths import FIGURE04_INPUTS_EPOCH, FIGURE04_SUMMARY_PATH
 from statespacecheck_paper.spyglass_pipeline import figure04_input, paper_export
 from statespacecheck_paper.spyglass_pipeline.figure04_compute import (
     figure04_diagnostics_from_decodes,
+    figure04_event_table,
     figure04_reported_statistics_from_rows,
     figure04_summary_rows,
 )
@@ -625,6 +629,66 @@ def test_diagnostics_from_decodes_refuses_spikes_of_other_units() -> None:
         figure04_diagnostics_from_decodes(
             fitted, fitted, _decode(time), _decode(time), swapped, coverage=0.95, thresholds={}
         )
+
+
+# --- Stored per-spike table -------------------------------------------------------
+
+
+def _event_diagnostics_pair(time: np.ndarray, spike_times: list[np.ndarray]) -> tuple[Any, Any]:
+    """Diagnostics of two decoders' predictive distributions on the same spikes."""
+    rng = np.random.default_rng(0)
+    place_fields = rng.uniform(0.1, 2.0, size=(len(spike_times), 6))
+    return tuple(
+        compute_spike_event_diagnostics(
+            rng.dirichlet(np.ones(6), size=time.size),
+            place_fields,
+            spike_times,
+            time,
+            include_dense_matrices=False,
+        )
+        for _ in range(2)
+    )
+
+
+def test_event_table_keeps_exact_spike_times_and_the_diagnostics_bins() -> None:
+    """Two spikes in one decoder bin keep their own times; the bin is its own column."""
+    time = np.arange(10, dtype=np.float64) * 0.002
+    spike_times = [np.array([time[3] + 0.0002, time[3] + 0.0011]), np.array([time[6], time[-1]])]
+    continuous, continuous_fragmented = _event_diagnostics_pair(time, spike_times)
+
+    events = figure04_event_table(continuous, continuous_fragmented)
+
+    np.testing.assert_array_equal(events["time"], continuous.event_time)
+    np.testing.assert_array_equal(events["event_time_ind"], continuous.event_time_ind)
+    np.testing.assert_array_equal(events["unit_index"], continuous.event_cell_ind)
+    same_bin = events[events["event_time_ind"] == 3]
+    assert same_bin["time"].tolist() == spike_times[0].tolist()
+    # The spike at the final timestamp is in the bin the decoder counted it in.
+    assert events.loc[events["time"] == time[-1], "event_time_ind"].tolist() == [time.size - 2]
+    for model, diagnostics in (
+        ("continuous", continuous),
+        ("continuous_fragmented", continuous_fragmented),
+    ):
+        np.testing.assert_array_equal(
+            events[f"{model}_kl_divergence"], diagnostics.event_kl_divergence
+        )
+
+
+def test_event_table_requires_exact_spike_times() -> None:
+    time = np.arange(10, dtype=np.float64) * 0.002
+    continuous, continuous_fragmented = _event_diagnostics_pair(time, [np.array([time[2]])])
+    with pytest.raises(ValueError, match="lack exact spike times"):
+        figure04_event_table(
+            dataclasses.replace(continuous, event_time=None), continuous_fragmented
+        )
+
+
+def test_event_table_refuses_diagnostics_of_different_spikes() -> None:
+    time = np.arange(10, dtype=np.float64) * 0.002
+    continuous, _ = _event_diagnostics_pair(time, [np.array([time[2]])])
+    _, other = _event_diagnostics_pair(time, [np.array([time[4]])])
+    with pytest.raises(ValueError, match="differ in event_time"):
+        figure04_event_table(continuous, other)
 
 
 # --- Stored summary rows ---------------------------------------------------------

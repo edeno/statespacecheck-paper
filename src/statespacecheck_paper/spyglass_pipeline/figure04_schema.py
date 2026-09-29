@@ -41,12 +41,10 @@ from typing import Any
 
 import datajoint as dj
 import numpy as np
-import pandas as pd
 from spyglass.common import AnalysisNwbfile
 from spyglass.decoding.decoding_merge import DecodingOutput
 from spyglass.utils import SpyglassMixin, SpyglassMixinPart
 
-from statespacecheck_paper.diagnostics import METRIC_FLAG_DIRECTIONS
 from statespacecheck_paper.figure04_decoder import (
     Figure4Config,
     build_decoder_models,
@@ -62,6 +60,7 @@ from statespacecheck_paper.figure04_place_fields import DECODER_PREDICTIVE_VAR
 from statespacecheck_paper.figure04_protocol import FIGURE04_DIAGNOSTIC_THRESHOLDS
 from statespacecheck_paper.spyglass_pipeline.figure04_compute import (
     figure04_diagnostics_from_decodes,
+    figure04_event_table,
     figure04_reported_statistics_from_rows,
     figure04_summary_rows,
 )
@@ -191,21 +190,7 @@ class Figure4Diagnostics(SpyglassMixin, dj.Computed):
                 "predictive_pvalue": params["predictive_pvalue_threshold"],
             },
         )
-        time = continuous_results["time"].to_numpy()
-        events = pd.DataFrame(
-            {
-                "time": time[continuous.event_time_ind],
-                "unit_index": continuous.event_cell_ind,
-                **{
-                    f"{model}_{metric}": getattr(diagnostics, f"event_{metric}")
-                    for model, diagnostics in (
-                        (CONTINUOUS.id, continuous),
-                        (CONTINUOUS_FRAGMENTED.id, continuous_fragmented),
-                    )
-                    for metric in METRIC_FLAG_DIRECTIONS
-                },
-            }
-        )
+        events = figure04_event_table(continuous, continuous_fragmented)
         nwb_file_name = (DecodingOutput.SortedSpikesDecodingV1 & continuous_key).fetch1(
             "nwb_file_name"
         )

@@ -230,8 +230,8 @@ interactive.viewer                  → figure04_models, figure04_protocol, inte
 spyglass_pipeline                   → (none)
 spyglass_pipeline.figure04_input    → figure04_input
 spyglass_pipeline.paper_export      → spyglass_pipeline.figure04_input
-spyglass_pipeline.figure04_schema   → diagnostics, figure04_decoder, figure04_input, figure04_models, figure04_place_fields, figure04_protocol, spyglass_pipeline.figure04_compute, spyglass_pipeline.figure04_input
-spyglass_pipeline.figure04_compute  → figure04_models, spyglass_pipeline.figure04_input; lazy: figure04_decoder, figure04_diagnostics, figure04_generation, figure04_place_fields, figure04_protocol, figure04_summary; type-only: diagnostics
+spyglass_pipeline.figure04_schema   → figure04_decoder, figure04_input, figure04_models, figure04_place_fields, figure04_protocol, spyglass_pipeline.figure04_compute, spyglass_pipeline.figure04_input
+spyglass_pipeline.figure04_compute  → figure04_models, spyglass_pipeline.figure04_input; lazy: diagnostics, figure04_decoder, figure04_diagnostics, figure04_generation, figure04_place_fields, figure04_protocol, figure04_summary
 spyglass_pipeline.pickle_conversion → figure04_input, spyglass_pipeline.figure04_input
 ```
 <!-- module-graph -->

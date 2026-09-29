@@ -30,7 +30,7 @@ a step would write unless given `--write`, and then asks for confirmation.
 | `decode` | `SortedSpikesDecodingV1`, `DecodingOutput`, result and model files | needs the analysis store (a lab server); about 3 minutes per model on CPU |
 | `diagnostics-schema` | schema `edeno_statespacecheck` and its tables | including the `Figure4DiagnosticsParameters` entry `figure04` |
 | `diagnostics-selection` | `Figure4DiagnosticsSelection` | the two decodes' merge IDs (`continuous_merge_id`, `continuous_fragmented_merge_id`) |
-| `diagnostics` | `Figure4Diagnostics` (+ `Mean`, `FlagConfusion`) and an analysis NWB file | per-spike diagnostics table and the Figure-4 summary; `FlagConfusion` counts spikes flagged by `both` decoders, by the Continuous only (`rescued`), by the Continuous–Fragmented only (`newly_flagged`), and by `neither` |
+| `diagnostics` | `Figure4Diagnostics` (+ `Mean`, `FlagConfusion`) and an analysis NWB file | per-spike diagnostics table (`figure04_compute.figure04_event_table`: each spike's exact `time`, the decoder bin `event_time_ind` it was scored in, `unit_index`, and both decoders' diagnostics) and the Figure-4 summary; `FlagConfusion` counts spikes flagged by `both` decoders, by the Continuous only (`rescued`), by the Continuous–Fragmented only (`newly_flagged`), and by `neither` |
 | `check` | nothing | stored summary vs `manuscript/figures/main/figure04_summary.json` |
 
 The diagnostics are computed by `spyglass_pipeline.figure04_compute.figure04_diagnostics_from_decodes`,

@@ -5,8 +5,8 @@ decoding and per-spike diagnostics in Spyglass tables; importing it connects to 
 lab database. The computations those tables run live here instead, so they can be
 tested and reused without a connection: the per-spike diagnostics and summary from
 two stored decodes (reusing the paper's Figure-4 code, so both routes compute the
-same numbers), the part-table rows that store a summary, and the reported
-statistics rebuilt from those rows.
+same numbers), the per-spike table and the part-table rows that store them, and
+the reported statistics rebuilt from those rows.
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
+import pandas as pd
 import xarray as xr
 from numpy.typing import NDArray
 
@@ -128,6 +129,65 @@ def figure04_diagnostics_from_decodes(
         metric_directions=FIGURE04_METRIC_DIRECTIONS,
     )
     return continuous, continuous_fragmented, summary
+
+
+def figure04_event_table(
+    continuous: SpikeEventDiagnostics,
+    continuous_fragmented: SpikeEventDiagnostics,
+) -> pd.DataFrame:
+    """Return the per-spike diagnostics table ``Figure4Diagnostics`` stores.
+
+    One row per spike event, in the diagnostics' order: its exact spike time,
+    the decoder time bin the diagnostics scored it in, its unit, and each
+    decoder's three diagnostics. Distinct spikes in one decoder bin keep
+    distinct times, as in the figure pipeline and the viewer.
+
+    Parameters
+    ----------
+    continuous, continuous_fragmented : SpikeEventDiagnostics
+        Per-spike diagnostics of the two decoders on the same spikes, with
+        exact spike times (``event_time``), as
+        :func:`figure04_diagnostics_from_decodes` returns them.
+
+    Returns
+    -------
+    pandas.DataFrame, shape (n_spikes, 3 + 2 * n_metrics)
+        Columns ``time`` (exact spike time, seconds), ``event_time_ind``
+        (decoder time bin), ``unit_index``, and ``{model}_{metric}`` for each
+        decoder ID and diagnostic.
+
+    Raises
+    ------
+    ValueError
+        If either decoder's diagnostics lack exact spike times, or the two do
+        not describe the same spikes (times, bins, and units).
+    """
+    from statespacecheck_paper.diagnostics import METRIC_FLAG_DIRECTIONS
+
+    for name, diagnostics in (
+        (CONTINUOUS.label, continuous),
+        (CONTINUOUS_FRAGMENTED.label, continuous_fragmented),
+    ):
+        if diagnostics.event_time is None:
+            raise ValueError(f"The {name} diagnostics lack exact spike times (event_time)")
+    for field in ("event_time", "event_time_ind", "event_cell_ind"):
+        if not np.array_equal(getattr(continuous, field), getattr(continuous_fragmented, field)):
+            raise ValueError(f"The two decoders' diagnostics differ in {field}")
+    return pd.DataFrame(
+        {
+            "time": np.asarray(continuous.event_time, dtype=np.float64),
+            "event_time_ind": np.asarray(continuous.event_time_ind, dtype=np.int64),
+            "unit_index": continuous.event_cell_ind,
+            **{
+                f"{model}_{metric}": getattr(diagnostics, f"event_{metric}")
+                for model, diagnostics in (
+                    (CONTINUOUS.id, continuous),
+                    (CONTINUOUS_FRAGMENTED.id, continuous_fragmented),
+                )
+                for metric in METRIC_FLAG_DIRECTIONS
+            },
+        }
+    )
 
 
 def figure04_summary_rows(
