@@ -102,12 +102,14 @@ def test_figure01_and_figure02_generation_dependencies_are_explicit() -> None:
     allowed = {
         "figure01_generation.py": {
             prefix + "diagnostics",
+            prefix + "paths",
             prefix + "plotting",
             prefix + "schematic",
             prefix + "style",
         },
         "figure02_generation.py": {
             prefix + "figure02_panels",
+            prefix + "paths",
             prefix + "style",
         },
     }
@@ -165,9 +167,9 @@ def test_figure04_family_dependency_edges_are_acyclic() -> None:
             prefix + "figure04_workflow",
             prefix + "diagnostics",
             prefix + "figure04_panels",
-            prefix + "figure04_plot_primitives",
             prefix + "figure04_track_plots",
             prefix + "plotting",
+            prefix + "style",
         },
         "figure04_generation.py": {
             prefix + "diagnostics",

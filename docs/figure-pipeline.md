@@ -62,7 +62,7 @@ figure04_panels        → diagnostics, figure04_diagnostics, figure04_plot_prim
 figure04_cache         → figure04_decoder (Figure4Config, Figure4DiagnosticsConfig), load_local_data
 figure04_workflow      → figure04_cache, figure04_decoder, figure04_diagnostics, figure04_place_fields, diagnostics, load_local_data
 figure04_summary       → figure04_workflow, figure04_diagnostics, diagnostics
-figure04_layout        → figure04_workflow, diagnostics, figure04_panels, figure04_track_plots, plotting
+figure04_layout        → figure04_workflow, diagnostics, figure04_panels, figure04_track_plots, plotting, style
 figure04_generation    → diagnostics, figure04_workflow, figure04_summary, figure04_layout, figure04_cache, figure04_decoder, paths, scientific_artifacts, style
 generate_figure04.py   → figure04_generation
 ```

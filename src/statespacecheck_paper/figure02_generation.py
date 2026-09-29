@@ -47,6 +47,7 @@ from statespacecheck_paper.figure02_panels import (
     plot_ppc_likelihood_fan,
     plot_ppc_predictive_fan,
 )
+from statespacecheck_paper.paths import FIGURE_DIR
 from statespacecheck_paper.style import FIGURE_DPI, save_figure, set_figure_defaults
 
 
@@ -287,5 +288,5 @@ def generate_figure02() -> None:
     """Compose Figure 2 with paper styling and save its PDF and PNG."""
     set_figure_defaults(context="paper")
     fig = compose_figure02()
-    save_figure("manuscript/figures/main/figure02", close=True, fig=fig)
-    print("\nFigure 2 saved to manuscript/figures/main/figure02.{pdf,png}")
+    save_figure(FIGURE_DIR / "figure02", close=True, fig=fig)
+    print(f"\nFigure 2 saved to {FIGURE_DIR / 'figure02'}.{{pdf,png}}")

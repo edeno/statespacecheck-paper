@@ -27,6 +27,7 @@ from numpy.typing import NDArray
 from scipy import stats
 
 from statespacecheck_paper.diagnostics import HPD_COVERAGE
+from statespacecheck_paper.paths import FIGURE_DIR
 from statespacecheck_paper.plotting import extract_contiguous_regions
 from statespacecheck_paper.schematic import draw_equation_boxes, draw_graphical_model
 from statespacecheck_paper.style import COLORS, FIGURE_DPI, save_figure, set_figure_defaults
@@ -326,5 +327,5 @@ def generate_figure01() -> None:
     """Compose Figure 1 with paper styling and save its PDF and PNG."""
     set_figure_defaults(context="paper")
     fig = compose_figure01()
-    save_figure("manuscript/figures/main/figure01", close=True, fig=fig)
-    print("\nFigure 1 saved to manuscript/figures/main/figure01.{pdf,png}")
+    save_figure(FIGURE_DIR / "figure01", close=True, fig=fig)
+    print(f"\nFigure 1 saved to {FIGURE_DIR / 'figure01'}.{{pdf,png}}")

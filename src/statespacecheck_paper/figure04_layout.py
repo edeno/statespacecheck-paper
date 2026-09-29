@@ -32,12 +32,13 @@ from statespacecheck_paper.figure04_panels import (
 from statespacecheck_paper.figure04_track_plots import plot_track_graph_2d
 from statespacecheck_paper.figure04_workflow import Figure4RenderData
 from statespacecheck_paper.plotting import THRESHOLD_LABEL_GID, WORSE_FIT_LABEL_GID
+from statespacecheck_paper.style import FIGURE_DPI
 
 FIGURE4_DIAGNOSTIC_ANNOTATION_GIDS = {THRESHOLD_LABEL_GID, WORSE_FIT_LABEL_GID}
 
 # --- Track-inset / hexbin pixel-nudge constants ---------------------------
 # Empirically measured on the exported PNG at the current figure size (7.2 x
-# 6.1 in) and DPI (450). They tune only artist placement, never any decoded or
+# 6.1 in) and DPI (``FIGURE_DPI``, 450). They tune only artist placement, never any decoded or
 # diagnostic value; changing the figure size or DPI would require re-measuring.
 #
 # ``add_scalebar`` appends the scale bar as the final line; FIGURE4_SCALE_BAR_HORIZONTAL_SHIFT_PX /
@@ -399,7 +400,7 @@ def compose_figure04(
 
     # Two-row figure: (a)/(b) detail zooms with a track inset on top, and
     # (c) whole-session metric hexbins on the bottom.
-    fig = plt.figure(figsize=(7.2, 6.1), dpi=450, constrained_layout=True)
+    fig = plt.figure(figsize=(7.2, 6.1), dpi=FIGURE_DPI, constrained_layout=True)
     subfigs_rows = fig.subfigures(2, 1, height_ratios=[5.0, 2.6], hspace=0.02)
 
     def _panel_data(

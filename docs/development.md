@@ -92,7 +92,7 @@ Use dataclasses for configurations and scientific result containers.
   operations; sequential filtering recursions require their time loop.
 - Use `style.py` for fonts, the colorblind-friendly palette, and the
   `METRIC_SPECS` registry (each metric's color, display transform, and label).
-  Export both PDF and PNG; the canonical generators use 450 DPI.
+  Export both PDF and PNG at `style.FIGURE_DPI` (450).
 - Add full type hints (`NDArray[np.float64]` for arrays) and NumPy-style
   docstrings with array shapes. Strict mypy must pass on Python 3.11, the
   development pin; CI type-checks there only, because the lock installs numpy 2.2
