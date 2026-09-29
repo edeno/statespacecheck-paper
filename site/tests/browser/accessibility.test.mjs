@@ -207,9 +207,20 @@ describe("navigation and states", () => {
 
   test("loading and error messages are status messages", () =>
     withPage({}, async (page) => {
-      await page.route("**/data/condition_*.json", (route) => route.abort());
+      let fail;
+      const failed = new Promise((resolve) => {
+        fail = resolve;
+      });
+      await page.route("**/data/condition_*.json", async (route) => {
+        await failed;
+        await route.abort();
+      });
       const other = page.locator("#cond-tabs [aria-selected=false]").first();
       await other.click();
+      const loading = page.locator("#cond-view .loading");
+      await loading.waitFor();
+      assert.equal(await loading.getAttribute("role"), "status");
+      fail();
       const error = page.locator("#cond-view .error");
       await error.waitFor();
       assert.equal(await error.getAttribute("role"), "alert");
