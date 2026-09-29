@@ -26,8 +26,9 @@ def main(argv: Sequence[str] | None = None) -> None:
         "--force-recompute",
         action="store_true",
         help=(
-            "Re-fit and re-decode both models instead of loading the cached "
-            "decoder outputs under data/intermediates (overwrites the cache)."
+            "Re-fit and re-decode both models and recompute their per-spike "
+            "diagnostics instead of loading the caches under data/intermediates "
+            "(overwrites both caches)."
         ),
     )
     args = parser.parse_args(argv)

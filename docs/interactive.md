@@ -41,7 +41,8 @@ ignored by Git.
 ```bash
 # Real data (figure 4): derives figure04_continuous.zarr +
 # figure04_contfrag.zarr and shared sidecars from the canonical Figure 4
-# decode and diagnostics caches.
+# decode and diagnostics caches. --animal-date-epoch defaults to
+# STATESPACECHECK_ANIMAL_DATE_EPOCH, else the published epoch.
 uv run --frozen python -m statespacecheck_paper.interactive.cache build \
     --data-dir data \
     --cache-dir data/cache \
