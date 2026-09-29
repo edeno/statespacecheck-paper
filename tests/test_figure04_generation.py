@@ -24,20 +24,20 @@ from statespacecheck_paper.figure04_layout import Figure4Composition
 from statespacecheck_paper.figure04_summary import Figure4DiagnosticMeans, Figure4Summary
 from statespacecheck_paper.load_local_data import EXPORT_FILE_SUFFIXES
 
-_SCRIPTS_DIR = Path(__file__).parent.parent / "scripts"
+from ._scripts import SCRIPTS_DIR
 
 
 @pytest.fixture(scope="module")
 def figure04_script() -> Iterator[ModuleType]:
     """Import the thin ``scripts/generate_figure04.py`` CLI module."""
-    added = str(_SCRIPTS_DIR) not in sys.path
+    added = str(SCRIPTS_DIR) not in sys.path
     if added:
-        sys.path.insert(0, str(_SCRIPTS_DIR))
+        sys.path.insert(0, str(SCRIPTS_DIR))
     try:
         yield importlib.import_module("generate_figure04")
     finally:
         if added:
-            sys.path.remove(str(_SCRIPTS_DIR))
+            sys.path.remove(str(SCRIPTS_DIR))
 
 
 def test_generation_passes_figure_and_bbox_to_save(monkeypatch: pytest.MonkeyPatch) -> None:

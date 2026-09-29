@@ -15,10 +15,10 @@ import numpy as np
 import pytest
 
 from statespacecheck_paper.interactive.data_source import DecoderDataSource
+from statespacecheck_paper.paths import REPO_ROOT
 
 from ._synthetic_cache import build_synthetic_cache
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
 CACHE_DIR = REPO_ROOT / "data" / "cache"
 
 

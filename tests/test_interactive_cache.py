@@ -22,8 +22,8 @@ import xarray as xr
 from statespacecheck_paper.diagnostics import SpikeEventDiagnostics
 from statespacecheck_paper.interactive import cache as cache_mod
 from statespacecheck_paper.interactive.data_source import DecoderDataSource
+from statespacecheck_paper.paths import REPO_ROOT
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
 INTERMEDIATES = REPO_ROOT / "data" / "intermediates"
 RAW_DATA = REPO_ROOT / "data"
 ANIMAL_DATE_EPOCH = "j1620210710_02_r1"

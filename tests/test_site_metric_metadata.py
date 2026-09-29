@@ -13,7 +13,6 @@ import json
 import os
 import shutil
 import subprocess
-from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -21,6 +20,7 @@ import pytest
 from matplotlib.scale import SymmetricalLogTransform
 
 from statespacecheck_paper.diagnostics import METRIC_FLAG_DIRECTIONS
+from statespacecheck_paper.paths import REPO_ROOT
 from statespacecheck_paper.plotting import negative_log_pvalue
 from statespacecheck_paper.style import (
     METRIC_SPECS,
@@ -28,7 +28,7 @@ from statespacecheck_paper.style import (
     SYMLOG_LINTHRESH,
 )
 
-DATA_JS = Path(__file__).resolve().parents[1] / "site" / "js" / "data.js"
+DATA_JS = REPO_ROOT / "site" / "js" / "data.js"
 
 # Values in (0, 1], spanning the symlog axis's linear and logarithmic ranges;
 # every metric's display transform is defined on them.

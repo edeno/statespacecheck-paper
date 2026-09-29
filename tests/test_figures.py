@@ -14,8 +14,9 @@ import pytest
 from scipy.optimize import brentq
 from scipy.stats import norm
 
+from ._scripts import SCRIPTS_DIR
+
 # Add scripts directory to path so we can import the figure scripts.
-SCRIPTS_DIR = Path(__file__).parent.parent / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 

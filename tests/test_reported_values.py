@@ -18,6 +18,7 @@ import numpy as np
 import pytest
 
 from statespacecheck_paper.number_format import significant, whole_percent
+from statespacecheck_paper.paths import REPO_ROOT
 from statespacecheck_paper.reported_values import (
     MACRO_FILE_PATH,
     _exact,
@@ -32,7 +33,6 @@ from statespacecheck_paper.reported_values import (
 )
 from tests.test_reported_statistics_artifacts import _load
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
 COMMITTED_MACRO_FILE = REPO_ROOT / MACRO_FILE_PATH
 
 

@@ -36,7 +36,7 @@ from statespacecheck_paper.figure03_simulation import (
 from statespacecheck_paper.figure04_diagnostics import mean_per_spike_likelihood_by_time
 from statespacecheck_paper.figure04_layout import Figure4DetailWindow
 from statespacecheck_paper.number_format import significant, whole_percent
-from statespacecheck_paper.paths import FIGURE03_SUMMARY_PATH, FIGURE04_SUMMARY_PATH
+from statespacecheck_paper.paths import FIGURE03_SUMMARY_PATH, FIGURE04_SUMMARY_PATH, REPO_ROOT
 from statespacecheck_paper.scientific_artifacts import inclusive_flag_rules
 from statespacecheck_paper.simulation import gaussian_transition_matrix, place_field_rates
 from statespacecheck_paper.site_export import (
@@ -59,8 +59,6 @@ from statespacecheck_paper.site_export import (
 )
 from statespacecheck_paper.style import COLORS, METRIC_NAMES, METRIC_SPECS, PREDICTIVE_VMAX_QUANTILE
 from tests.test_figure04_layout import _compose_render_data
-
-REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _load(path: Path) -> dict[str, Any]:

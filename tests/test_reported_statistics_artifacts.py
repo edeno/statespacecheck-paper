@@ -19,9 +19,9 @@ from statespacecheck_paper.figure04_diagnostics import FlagConfusion
 from statespacecheck_paper.figure04_generation import figure04_summary_payload
 from statespacecheck_paper.figure04_summary import Figure4DiagnosticMeans, Figure4Summary
 from statespacecheck_paper.load_local_data import EXPORT_FILE_SUFFIXES
+from statespacecheck_paper.paths import REPO_ROOT
 from statespacecheck_paper.scientific_artifacts import write_json_artifact
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
 FIGURE_DIR = REPO_ROOT / "manuscript" / "figures" / "main"
 
 

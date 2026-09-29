@@ -27,7 +27,7 @@ from statespacecheck_paper import spyglass_data
 from statespacecheck_paper.figure04_diagnostics import FlagConfusion
 from statespacecheck_paper.figure04_summary import Figure4DiagnosticMeans, Figure4Summary
 from statespacecheck_paper.load_local_data import input_file_path, load_neural_recording_from_files
-from statespacecheck_paper.paths import FIGURE04_INPUTS_EPOCH, FIGURE04_SUMMARY_PATH
+from statespacecheck_paper.paths import FIGURE04_INPUTS_EPOCH, FIGURE04_SUMMARY_PATH, REPO_ROOT
 from statespacecheck_paper.spyglass_data import (
     Figure4Inputs,
     check_output_paths,
@@ -45,9 +45,8 @@ from statespacecheck_paper.spyglass_data import (
     write_figure04_inputs,
 )
 
-from ._scripts import load_script
+from ._scripts import SCRIPTS_DIR, load_script
 
-_REPO_ROOT = Path(__file__).resolve().parents[1]
 _EPOCH = "rat20200101_02_r1"
 _NO_DATABASE_IMPORTS = (
     "import sys\n"
@@ -71,7 +70,7 @@ def test_importing_module_does_not_import_spyglass_or_datajoint() -> None:
     ],
 )
 def test_script_help_does_not_import_spyglass_or_datajoint(script: str) -> None:
-    path = str(_REPO_ROOT / "scripts" / script)
+    path = str(SCRIPTS_DIR / script)
     code = (
         "import runpy, sys\n"
         f"sys.argv = [{path!r}, '--help']\n"
@@ -618,7 +617,7 @@ _KEY = {"continuous_merge_id": "a", "contfrag_merge_id": "b", "figure4_diagnosti
 
 @pytest.fixture(scope="module")
 def committed_figure04() -> dict[str, Any]:
-    return json.loads((_REPO_ROOT / FIGURE04_SUMMARY_PATH).read_text(encoding="utf-8"))
+    return json.loads((REPO_ROOT / FIGURE04_SUMMARY_PATH).read_text(encoding="utf-8"))
 
 
 def _stored_rows(
