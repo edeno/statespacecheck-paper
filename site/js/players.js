@@ -416,6 +416,8 @@ export function initConditions(root, manifest) {
     button.setAttribute("aria-controls", view.id);
     button.dataset.condition = id;
     button.textContent = title;
+    // Manual activation: the arrow keys move focus between tabs, and Enter or
+    // Space (a button's click) selects one, since a first selection loads a file.
     button.addEventListener("click", () => select(id));
     button.addEventListener("keydown", (event) => {
       const i = ids.indexOf(id);
@@ -427,7 +429,6 @@ export function initConditions(root, manifest) {
       }[event.key];
       if (target === undefined) return;
       event.preventDefault();
-      select(ids[target]);
       buttons[target].focus();
     });
     tabs.appendChild(button);

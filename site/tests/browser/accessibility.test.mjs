@@ -33,6 +33,14 @@ async function withPage(options, body) {
   }
 }
 
+/** Wait until the condition panel shows condition `id`. */
+async function conditionShown(page, id) {
+  await page.waitForFunction((id) => {
+    const view = document.querySelector("#cond-view");
+    return view.getAttribute("aria-labelledby") === `cond-tab-${id}` && view.querySelector(".stack");
+  }, id);
+}
+
 describe("layout", () => {
   test("every section loads without scrolling", () => withPage({}, async () => {}));
 
@@ -129,5 +137,21 @@ describe("players", () => {
         assert.equal(await details.locator("tbody tr").count(), count, view);
         assert.ok(count > 10, view);
       }
+    }));
+});
+
+describe("condition tabs", () => {
+  test("the arrow keys move focus between tabs and Enter selects one", () =>
+    withPage({}, async (page) => {
+      const selected = page.locator("#cond-tabs [aria-selected=true]");
+      const first = await selected.getAttribute("data-condition");
+      await selected.focus();
+      await page.keyboard.press("ArrowRight");
+      const focused = await page.evaluate(() => document.activeElement.dataset.condition);
+      assert.notEqual(focused, first);
+      assert.equal(await page.locator(`#cond-tab-${focused}`).getAttribute("aria-selected"), "false");
+      await page.keyboard.press("Enter");
+      await conditionShown(page, focused);
+      assert.equal(await page.locator(`#cond-tab-${focused}`).getAttribute("aria-selected"), "true");
     }));
 });
