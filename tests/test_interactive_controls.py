@@ -198,6 +198,29 @@ def test_speed_step_keyboard_shortcut(viewer_session: tuple[Any, Any, Any]) -> N
     assert viewer._speed_combo.currentIndex() == len(AUTOSCROLL_SPEED_OPTIONS) - 1  # noqa: SLF001
 
 
+@pytest.mark.parametrize(("key", "expected_change"), [(",", "slower"), (".", "faster")])
+def test_comma_slows_and_period_speeds_up_autoscroll(
+    viewer_session: tuple[Any, Any, Any], key: str, expected_change: str
+) -> None:
+    """The ``,`` shortcut lowers the auto-scroll speed and ``.`` raises it."""
+    _, viewer, _ = viewer_session
+    from PySide6 import QtGui
+
+    viewer._speed_combo.setCurrentIndex(3)  # noqa: SLF001
+    rate_before = viewer._autoscroll_rate  # noqa: SLF001
+    (shortcut,) = [
+        s
+        for s in viewer.findChildren(QtGui.QShortcut)
+        if s.key().matches(QtGui.QKeySequence(key)) == QtGui.QKeySequence.SequenceMatch.ExactMatch
+    ]
+    shortcut.activated.emit()
+    rate_after = viewer._autoscroll_rate  # noqa: SLF001
+    if expected_change == "slower":
+        assert rate_after < rate_before
+    else:
+        assert rate_after > rate_before
+
+
 def test_autoscroll_step_uses_current_speed(
     viewer_session: tuple[Any, Any, Any],
 ) -> None:

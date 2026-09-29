@@ -77,7 +77,7 @@ uv run --frozen python -m statespacecheck_paper.interactive \
 | Step center by one bin | `←` / `→` |
 | Step center by one window | `Shift+←` / `Shift+→` |
 | Play / pause auto-scroll | `Space` |
-| Scrub auto-scroll speed | `,` / `.` |
+| Slower / faster auto-scroll | `,` / `.` |
 | Resize window width | Mouse wheel over a time-axis panel, or `[` / `]` |
 | Reset to a 20 s context window | `R` |
 | Toggle real-data model | `M` (real-data caches only) |

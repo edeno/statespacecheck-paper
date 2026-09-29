@@ -518,7 +518,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
 
         self._speed_combo = QtWidgets.QComboBox()
         self._speed_combo.setToolTip(
-            "Auto-scroll speed (×realtime). Shortcuts: , faster, . slower."
+            "Auto-scroll speed (×realtime). Shortcuts: , slower, . faster."
         )
         for speed in AUTOSCROLL_SPEED_OPTIONS:
             self._speed_combo.addItem(self._format_speed(speed), userData=speed)
@@ -585,6 +585,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
         - ``←`` / ``→``         : step center by one decoder time bin.
         - ``Shift+←`` / ``Shift+→``: step by one window-width.
         - ``Space``              : play / pause auto-scroll.
+        - ``,`` / ``.``          : slower / faster auto-scroll.
         - ``M``                  : toggle model (Continuous ↔ Continuous-Fragmented).
         - ``[`` / ``]``          : shrink / grow window width (or
                                     scroll the mouse wheel over any
@@ -611,8 +612,8 @@ class DecoderViewer(QtWidgets.QMainWindow):
         add("]", lambda: self._scale_window(2.0))
         add("R", self._reset_view)
         # ``,`` and ``.`` (the same keys as ``<`` / ``>`` without
-        # Shift) step the auto-scroll speed up / down through the
-        # preset list.
+        # Shift) step the auto-scroll speed down / up through the
+        # ascending preset list.
         add(",", lambda: self._step_speed(-1))
         add(".", lambda: self._step_speed(+1))
         add("Escape", self._unpin_event)
