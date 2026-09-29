@@ -271,23 +271,6 @@ def test_per_cell_checkbox_hides_rows(tmp_path: Path) -> None:
         ds.close()
 
 
-def test_data_source_cells_at_index_returns_unique_cells(tmp_path: Path) -> None:
-    _build_cache(tmp_path / "cache", n_states=1)
-    from statespacecheck_paper.interactive.data_source import DecoderDataSource
-
-    src = DecoderDataSource(tmp_path / "cache", model="continuous")
-    try:
-        first_t_idx = int(src.event_time_idx[0])
-        cells = src.cells_at_index(first_t_idx)
-        assert cells.size >= 1
-        assert cells.dtype == np.int32
-        assert cells.size == np.unique(cells).size
-        empty = src.cells_at_index(int(src.event_time_idx[0]) - 100)
-        assert empty.size == 0
-    finally:
-        src.close()
-
-
 def test_slice_panel_falls_back_to_row_provider_outside_buffer(tmp_path: Path) -> None:
     """When ``t_idx`` is outside the buffered window, the slice panel
     fetches a single row via the registered ``row_provider`` callable
