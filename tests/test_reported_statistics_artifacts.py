@@ -10,7 +10,10 @@ import numpy as np
 import pytest
 
 from statespacecheck_paper.diagnostics import DiagnosticThresholds
-from statespacecheck_paper.figure03_generation import figure03_summary_payload
+from statespacecheck_paper.figure03_generation import (
+    FIGURE03_SUMMARY_SCHEMA_VERSION,
+    figure03_summary_payload,
+)
 from statespacecheck_paper.figure03_protocol import Figure3Config
 from statespacecheck_paper.figure03_summary import Figure3RealizationSummary
 from statespacecheck_paper.figure04_cache import Figure4CacheProvenance, Figure4Paths
@@ -44,7 +47,7 @@ def _round_trip_live_payload(tmp_path: Path, payload: dict[str, object]) -> dict
 def test_figure03_reported_statistics_match_canonical_run(tmp_path: Path) -> None:
     payload = _load("figure03_summary.json")
 
-    assert payload["schema_version"] == 9
+    assert payload["schema_version"] == FIGURE03_SUMMARY_SCHEMA_VERSION
     assert payload["realizations"] == {
         "count": 100,
         "first_seed": 1,

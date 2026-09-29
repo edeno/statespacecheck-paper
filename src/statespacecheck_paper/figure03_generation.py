@@ -52,6 +52,11 @@ from statespacecheck_paper.scientific_artifacts import (
 )
 from statespacecheck_paper.style import save_figure, set_figure_defaults
 
+# Version of the ``figure03_summary.json`` layout that
+# :func:`figure03_summary_payload` writes. Bump it whenever a field is added,
+# removed, renamed, or changes meaning.
+FIGURE03_SUMMARY_SCHEMA_VERSION = 9
+
 
 def _plain_condition_label(label: str) -> str:
     """Flatten a plotting label while preserving hyphenated line breaks."""
@@ -73,7 +78,7 @@ def figure03_summary_payload(
     thresholds = dataclasses.asdict(summary.diagnostic_thresholds)
     directions = {metric: direction for metric, direction in SUMMARY_FLAG_METRICS}
     return {
-        "schema_version": 9,
+        "schema_version": FIGURE03_SUMMARY_SCHEMA_VERSION,
         "figure": "figure03",
         # The step length and HPD coverage are constants rather than config
         # fields; recorded so the prose can quote them.
