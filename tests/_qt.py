@@ -12,9 +12,12 @@ from __future__ import annotations
 import os
 import time
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
+
+if TYPE_CHECKING:
+    from statespacecheck_paper.interactive.cache import ModelName
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -23,11 +26,14 @@ def qt_offscreen() -> None:
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 
-def make_viewer(cache_dir: Path) -> tuple[Any, Any, Any]:
-    """Open a Continuous-model viewer on ``cache_dir``.
+def make_viewer(
+    cache_dir: Path, *, model: ModelName = "continuous", model_swaps: bool = False
+) -> tuple[Any, Any, Any]:
+    """Open a viewer on ``cache_dir``'s ``model`` cache.
 
-    Returns ``(app, viewer, data_source)``; the caller closes the viewer
-    and the data source.
+    ``model_swaps`` hands the viewer ``cache_dir`` so it can switch to the
+    other model's cache. Returns ``(app, viewer, data_source)``; the caller
+    closes the viewer and the data source.
     """
     from PySide6 import QtWidgets
 
@@ -35,8 +41,8 @@ def make_viewer(cache_dir: Path) -> tuple[Any, Any, Any]:
     from statespacecheck_paper.interactive.viewer import DecoderViewer
 
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-    ds = DecoderDataSource(cache_dir, model="continuous")
-    viewer = DecoderViewer(ds)
+    ds = DecoderDataSource(cache_dir, model=model)
+    viewer = DecoderViewer(ds, cache_dir=cache_dir) if model_swaps else DecoderViewer(ds)
     return app, viewer, ds
 
 

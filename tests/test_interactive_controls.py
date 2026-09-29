@@ -13,6 +13,7 @@ import pytest
 from statespacecheck_paper.interactive.cache import ModelName
 
 from ._qt import (
+    make_viewer,
     qt_offscreen,  # noqa: F401 -- registers the autouse fixture here
     wait_for_request,
 )
@@ -48,18 +49,6 @@ def _build_cache(
     _build_cache_impl(cache_dir, model=model, n_states=n_states, seed=seed)
 
 
-def _make_viewer(cache_dir: Path, *, model: ModelName = "continuous") -> tuple[Any, Any, Any]:
-    from PySide6 import QtWidgets
-
-    from statespacecheck_paper.interactive.data_source import DecoderDataSource
-    from statespacecheck_paper.interactive.viewer import DecoderViewer
-
-    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-    ds = DecoderDataSource(cache_dir, model=model)
-    viewer = DecoderViewer(ds, cache_dir=cache_dir)
-    return app, viewer, ds
-
-
 @pytest.fixture
 def viewer_session(tmp_path: Path) -> Iterator[tuple[Any, Any, Any]]:
     """Build a continuous cache + open a viewer; tear it down after the test.
@@ -69,7 +58,7 @@ def viewer_session(tmp_path: Path) -> Iterator[tuple[Any, Any, Any]]:
     """
     cache_dir = tmp_path / "cache"
     _build_cache(cache_dir)
-    app, viewer, ds = _make_viewer(cache_dir)
+    app, viewer, ds = make_viewer(cache_dir, model_swaps=True)
     try:
         yield app, viewer, ds
     finally:
@@ -249,7 +238,7 @@ def test_model_swap_rebuilds_panels_and_loads(tmp_path: Path) -> None:
     _build_cache(cache_dir, model="continuous", n_states=1)
     _build_cache(cache_dir, model="contfrag", n_states=2, seed=1)
 
-    app, viewer, ds = _make_viewer(cache_dir, model="continuous")
+    app, viewer, ds = make_viewer(cache_dir, model_swaps=True)
     try:
         assert viewer._ds.model == "continuous"  # noqa: SLF001
         assert viewer.slice_panel._n_states == 1  # noqa: SLF001
@@ -273,7 +262,7 @@ def test_model_toggle_alternates_between_the_two_models(tmp_path: Path) -> None:
     _build_cache(cache_dir, model="continuous", n_states=1)
     _build_cache(cache_dir, model="contfrag", n_states=2, seed=1)
 
-    _, viewer, _ = _make_viewer(cache_dir, model="continuous")
+    _, viewer, _ = make_viewer(cache_dir, model_swaps=True)
     try:
         assert [
             viewer._model_combo.itemText(i)  # noqa: SLF001
@@ -294,7 +283,7 @@ def test_model_swap_revert_when_cache_missing(tmp_path: Path) -> None:
     _build_cache(cache_dir, model="continuous", n_states=1)
     # Note: do NOT build the contfrag cache.
 
-    _, viewer, ds = _make_viewer(cache_dir, model="continuous")
+    _, viewer, ds = make_viewer(cache_dir, model_swaps=True)
     try:
         viewer._switch_model("contfrag")  # noqa: SLF001
         # The data source should remain on continuous.
