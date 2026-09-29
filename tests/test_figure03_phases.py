@@ -18,6 +18,8 @@ story the paper claims; CI flags the regression.
 
 from __future__ import annotations
 
+import dataclasses
+
 import numpy as np
 import pytest
 import statespacecheck as ssc
@@ -58,6 +60,11 @@ def _moderate_params() -> Figure3Config:
     return Figure3Config(
         phase_boundaries=(600, 900, 1100, 1400, 1600, 1900, 2100, 3100),
     )
+
+
+def _seed0_params() -> Figure3Config:
+    """``_moderate_params`` whose realizations start at seed 0."""
+    return dataclasses.replace(_moderate_params(), random_seed=0)
 
 
 def _per_phase_medians(
@@ -498,7 +505,7 @@ def test_simulate_sparse_approach_phase() -> None:
 @pytest.fixture(scope="module")
 def summary() -> Figure3RealizationSummary:
     """Five pooled realizations, shared by the scientific-claim guards below."""
-    return estimate_realization_summary(_moderate_params(), n_realizations=5, first_random_seed=0)
+    return estimate_realization_summary(_seed0_params(), n_realizations=5)
 
 
 class TestEstimateRealizationSummary:
@@ -506,8 +513,8 @@ class TestEstimateRealizationSummary:
         """The summary is (3 metrics x 6 columns: well-specified, remap,
         history, replay, drift, sparse population), fractions are percentages,
         and the same seeds reproduce the same result."""
-        params = _moderate_params()
-        summary = estimate_realization_summary(params, n_realizations=3, first_random_seed=0)
+        params = _seed0_params()
+        summary = estimate_realization_summary(params, n_realizations=3)
 
         assert isinstance(summary, Figure3RealizationSummary)
         assert summary.n_realizations == 3
@@ -521,7 +528,7 @@ class TestEstimateRealizationSummary:
         assert summary.diagnostic_thresholds.predictive_pvalue == 0.05
         assert np.isfinite(summary.diagnostic_thresholds.kl_divergence)
 
-        repeat = estimate_realization_summary(params, n_realizations=3, first_random_seed=0)
+        repeat = estimate_realization_summary(params, n_realizations=3)
         np.testing.assert_array_equal(
             summary.median_flag_percentages, repeat.median_flag_percentages
         )
@@ -536,8 +543,8 @@ class TestEstimateRealizationSummary:
         Flags are inclusive, so every event tied at a threshold counts; this
         recomputes the fraction from the realizations' baseline events.
         """
-        params = _moderate_params()
-        summary = estimate_realization_summary(params, n_realizations=2, first_random_seed=0)
+        params = _seed0_params()
+        summary = estimate_realization_summary(params, n_realizations=2)
         baseline_end = params.phase_boundaries[PhaseBoundary.REMAP_START]
         diagnostics = [run_figure03_simulation(params, seed=seed).diagnostics for seed in (0, 1)]
         for metric, direction in METRIC_FLAG_DIRECTIONS.items():

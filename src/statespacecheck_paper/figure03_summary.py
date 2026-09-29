@@ -581,12 +581,12 @@ def estimate_realization_summary(
     config: Figure3Config,
     *,
     n_realizations: int = N_REALIZATIONS,
-    first_random_seed: int | None = None,
 ) -> Figure3RealizationSummary:
     """Pool many realizations into stable Figure-3 flag thresholds and fractions.
 
     Runs ``n_realizations`` independent realizations of the figure-3
-    simulation (seeds ``first_random_seed, first_random_seed + 1, ...``), pools their
+    simulation (seeds ``config.random_seed, config.random_seed + 1, ...``, so
+    the displayed seed-``config.random_seed`` run is one of them), pools their
     per-spike *baseline-window* diagnostics to compute the flag
     thresholds, then scores every realization's per-phase flag fractions
     against those shared thresholds and returns them all (their
@@ -598,14 +598,11 @@ def estimate_realization_summary(
     Parameters
     ----------
     config : Figure3Config
-        Simulation configuration. ``config.place_field_centers`` must be set
-        (the dataclass initializes it by default).
+        Simulation configuration; ``config.random_seed`` is the first seed.
+        ``config.place_field_centers`` must be set (the dataclass initializes
+        it by default).
     n_realizations : int, default ``N_REALIZATIONS``
         Number of independent realizations to aggregate. Must be >= 1.
-    first_random_seed : int, optional
-        First seed; subsequent realizations use consecutive seeds. If
-        ``None``, uses ``config.random_seed`` so the canonical displayed run
-        (seed ``config.random_seed``) is one of the aggregated realizations.
 
     Returns
     -------
@@ -622,7 +619,7 @@ def estimate_realization_summary(
     if n_realizations < 1:
         raise ValueError(f"n_realizations must be >= 1; got {n_realizations}")
 
-    base = config.random_seed if first_random_seed is None else first_random_seed
+    base = config.random_seed
     baseline_end = config.phase_boundaries[PhaseBoundary.REMAP_START]
     conditions = build_summary_conditions(config)
 
