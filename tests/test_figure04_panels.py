@@ -30,31 +30,11 @@ from statespacecheck_paper.figure04_panels import (  # noqa: E402
 )
 from statespacecheck_paper.figure04_plot_primitives import ANIMAL_POSITION_LABEL_GID  # noqa: E402
 
+from ._diagnostics import event_diagnostics  # noqa: E402
+
 # ---------------------------------------------------------------------------
 # plot_per_spike_metric_hexbin_row
 # ---------------------------------------------------------------------------
-
-
-def _per_spike_diagnostics(
-    hpd: np.ndarray, kl: np.ndarray, sp: np.ndarray
-) -> SpikeEventDiagnostics:
-    """Build a ``SpikeEventDiagnostics`` from per-spike metric arrays only.
-
-    The hexbin helper consumes the three ``event_*`` arrays; the rest
-    of the dataclass is required by the constructor but unused here.
-    """
-    n_spikes = hpd.shape[0]
-    return SpikeEventDiagnostics(
-        event_time_ind=np.zeros(n_spikes, dtype=np.intp),
-        event_cell_ind=np.zeros(n_spikes, dtype=np.intp),
-        event_hpd_overlap=hpd,
-        event_kl_divergence=kl,
-        event_predictive_pvalue=sp,
-        hpd_overlap=None,
-        kl_divergence=None,
-        predictive_pvalue=None,
-        per_spike_likelihood=None,
-    )
 
 
 @pytest.fixture
@@ -78,7 +58,9 @@ def paired_diagnostics() -> tuple[SpikeEventDiagnostics, SpikeEventDiagnostics]:
     sp_a = rng.uniform(0.01, 1.0, n_spikes)
     sp_b = np.clip(sp_a + rng.normal(0.0, 0.02, n_spikes), 1e-3, 1.0)
 
-    return _per_spike_diagnostics(hpd_a, kl_a, sp_a), _per_spike_diagnostics(hpd_b, kl_b, sp_b)
+    return event_diagnostics(hpd=hpd_a, kl=kl_a, pvalue=sp_a), event_diagnostics(
+        hpd=hpd_b, kl=kl_b, pvalue=sp_b
+    )
 
 
 class TestPlotPerSpikeMetricHexbinRow:
@@ -118,7 +100,9 @@ class TestPlotPerSpikeMetricHexbinRow:
         hpd = diag_a.event_hpd_overlap.copy()
         hpd[0] = np.nan
         with pytest.raises(ValueError, match="required per-event value"):
-            _per_spike_diagnostics(hpd, diag_a.event_kl_divergence, diag_a.event_predictive_pvalue)
+            event_diagnostics(
+                hpd=hpd, kl=diag_a.event_kl_divergence, pvalue=diag_a.event_predictive_pvalue
+            )
 
     def test_validates_same_length(
         self,
@@ -128,10 +112,10 @@ class TestPlotPerSpikeMetricHexbinRow:
         produce a plausible-looking hexbin on misaligned arrays.
         """
         diag_a, diag_b = paired_diagnostics
-        diag_b_short = _per_spike_diagnostics(
-            diag_b.event_hpd_overlap[:25],
-            diag_b.event_kl_divergence[:25],
-            diag_b.event_predictive_pvalue[:25],
+        diag_b_short = event_diagnostics(
+            hpd=diag_b.event_hpd_overlap[:25],
+            kl=diag_b.event_kl_divergence[:25],
+            pvalue=diag_b.event_predictive_pvalue[:25],
         )
         fig, axes = plt.subplots(1, 3)
         with pytest.raises(ValueError, match="same set of spike events"):

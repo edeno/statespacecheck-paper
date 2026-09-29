@@ -12,7 +12,6 @@ import pytest
 import xarray as xr
 
 from statespacecheck_paper import figure04_cache, figure04_workflow
-from statespacecheck_paper.diagnostics import SpikeEventDiagnostics
 from statespacecheck_paper.figure04_cache import _FIGURE04_CACHE_PAYLOAD_KEYS, Figure4Paths
 from statespacecheck_paper.figure04_decoder import Figure4Config
 from statespacecheck_paper.figure04_summary import (
@@ -28,38 +27,7 @@ from statespacecheck_paper.figure04_workflow import (
 )
 from statespacecheck_paper.load_local_data import NeuralRecordingData
 
-
-def _diagnostics(event_hpd_overlap: np.ndarray) -> SpikeEventDiagnostics:
-    n_spikes = event_hpd_overlap.shape[0]
-    return SpikeEventDiagnostics(
-        event_time_ind=np.zeros(n_spikes, dtype=np.intp),
-        event_cell_ind=np.zeros(n_spikes, dtype=np.intp),
-        event_hpd_overlap=event_hpd_overlap,
-        event_kl_divergence=np.zeros(n_spikes),
-        event_predictive_pvalue=np.zeros(n_spikes),
-        hpd_overlap=None,
-        kl_divergence=None,
-        predictive_pvalue=None,
-        per_spike_likelihood=None,
-        event_time=None,
-    )
-
-
-def _diagnostics_at(time_ind: list[int], cell_ind: list[int]) -> SpikeEventDiagnostics:
-    """Diagnostics whose per-spike event indices are placed explicitly."""
-    n_spikes = len(time_ind)
-    return SpikeEventDiagnostics(
-        event_time_ind=np.asarray(time_ind, dtype=np.intp),
-        event_cell_ind=np.asarray(cell_ind, dtype=np.intp),
-        event_hpd_overlap=np.full(n_spikes, 0.5),
-        event_kl_divergence=np.zeros(n_spikes),
-        event_predictive_pvalue=np.zeros(n_spikes),
-        hpd_overlap=None,
-        kl_divergence=None,
-        predictive_pvalue=None,
-        per_spike_likelihood=None,
-        event_time=None,
-    )
+from ._diagnostics import event_diagnostics
 
 
 def _synthetic_recording() -> NeuralRecordingData:
@@ -96,8 +64,8 @@ def _synthetic_decode_results() -> Figure4DecodeResults:
     return Figure4DecodeResults(
         continuous_results=_ds(np.zeros(n_time)),
         continuous_fragmented_results=_ds(np.ones(n_time)),
-        continuous_diagnostics=_diagnostics(np.array([0.5])),
-        continuous_fragmented_diagnostics=_diagnostics(np.array([0.5, 0.5])),
+        continuous_diagnostics=event_diagnostics(hpd=np.array([0.5])),
+        continuous_fragmented_diagnostics=event_diagnostics(hpd=np.array([0.5, 0.5])),
         spike_counts=np.zeros((n_time, n_cells), dtype=np.int64),
         place_field_peaks=np.zeros(n_cells),
         diagnostic_place_fields=np.zeros((n_cells, n_bins)),
@@ -107,22 +75,24 @@ def _synthetic_decode_results() -> Figure4DecodeResults:
 
 class TestComputeMeanSpikeEventDiagnostic:
     def test_uses_per_spike_array(self) -> None:
-        diagnostics = _diagnostics(np.array([0.0, 1.0, 1.0]))
+        diagnostics = event_diagnostics(hpd=np.array([0.0, 1.0, 1.0]))
         assert compute_mean_spike_event_diagnostic(diagnostics, "hpd_overlap") == pytest.approx(
             2.0 / 3.0
         )
 
     def test_raises_when_event_array_missing(self) -> None:
         with pytest.raises(KeyError, match="event_made_up_metric"):
-            compute_mean_spike_event_diagnostic(_diagnostics(np.array([0.5])), "made_up_metric")
+            compute_mean_spike_event_diagnostic(
+                event_diagnostics(hpd=np.array([0.5])), "made_up_metric"
+            )
 
 
 class TestFigure4Summary:
     def _render_data(self) -> Figure4RenderData:
         decode = dataclasses.replace(
             _synthetic_decode_results(),
-            continuous_diagnostics=_diagnostics(np.array([0.01, 0.20])),
-            continuous_fragmented_diagnostics=_diagnostics(np.array([0.40, 0.20])),
+            continuous_diagnostics=event_diagnostics(hpd=np.array([0.01, 0.20])),
+            continuous_fragmented_diagnostics=event_diagnostics(hpd=np.array([0.40, 0.20])),
         )
         return Figure4RenderData(
             recording=_synthetic_recording(),
@@ -214,8 +184,8 @@ class TestFigure4DecodeResults:
             Figure4DecodeResults(
                 continuous_results=xr.Dataset(),
                 continuous_fragmented_results=xr.Dataset(),
-                continuous_diagnostics=_diagnostics(np.array([0.5])),
-                continuous_fragmented_diagnostics=_diagnostics(np.array([0.5])),
+                continuous_diagnostics=event_diagnostics(hpd=np.array([0.5])),
+                continuous_fragmented_diagnostics=event_diagnostics(hpd=np.array([0.5])),
                 spike_counts=np.zeros((8, 2), dtype=np.int64),
                 place_field_peaks=np.zeros(3),  # should be (2,)
                 diagnostic_place_fields=np.zeros((2, 4)),
@@ -234,8 +204,8 @@ class TestFigure4DecodeResults:
         decode = Figure4DecodeResults(
             continuous_results=_ds(np.zeros(8)),
             continuous_fragmented_results=_ds(np.zeros(8)),
-            continuous_diagnostics=_diagnostics(np.array([0.5])),
-            continuous_fragmented_diagnostics=_diagnostics(np.array([0.5])),
+            continuous_diagnostics=event_diagnostics(hpd=np.array([0.5])),
+            continuous_fragmented_diagnostics=event_diagnostics(hpd=np.array([0.5])),
             spike_counts=spike_counts,
             place_field_peaks=np.zeros(2),
             diagnostic_place_fields=np.zeros((2, 4)),
@@ -276,8 +246,8 @@ class TestFigure4DecodeResults:
             Figure4DecodeResults(
                 continuous_results=_ds(np.zeros(3)),
                 continuous_fragmented_results=_ds(np.zeros(8)),
-                continuous_diagnostics=_diagnostics(np.array([0.5])),
-                continuous_fragmented_diagnostics=_diagnostics(np.array([0.5])),
+                continuous_diagnostics=event_diagnostics(hpd=np.array([0.5])),
+                continuous_fragmented_diagnostics=event_diagnostics(hpd=np.array([0.5])),
                 spike_counts=np.zeros((8, 2), dtype=np.int64),  # 8 != dataset's 3
                 place_field_peaks=np.zeros(2),
                 diagnostic_place_fields=np.zeros((2, 4)),
@@ -291,8 +261,8 @@ class TestFigure4DecodeResults:
             Figure4DecodeResults(
                 continuous_results=xr.Dataset({"acausal_posterior": ("time", np.zeros(8))}),
                 continuous_fragmented_results=_ds(np.zeros(8)),
-                continuous_diagnostics=_diagnostics(np.array([0.5])),
-                continuous_fragmented_diagnostics=_diagnostics(np.array([0.5])),
+                continuous_diagnostics=event_diagnostics(hpd=np.array([0.5])),
+                continuous_fragmented_diagnostics=event_diagnostics(hpd=np.array([0.5])),
                 spike_counts=np.zeros((8, 2), dtype=np.int64),
                 place_field_peaks=np.zeros(2),
                 diagnostic_place_fields=np.zeros((2, 4)),
@@ -312,8 +282,8 @@ class TestFigure4DecodeResults:
                     {"acausal_posterior": ("time", np.zeros(8))},
                     coords={"time": np.arange(8, dtype=float) + 100.0},
                 ),
-                continuous_diagnostics=_diagnostics(np.array([0.5])),
-                continuous_fragmented_diagnostics=_diagnostics(np.array([0.5])),
+                continuous_diagnostics=event_diagnostics(hpd=np.array([0.5])),
+                continuous_fragmented_diagnostics=event_diagnostics(hpd=np.array([0.5])),
                 spike_counts=np.zeros((8, 2), dtype=np.int64),
                 place_field_peaks=np.zeros(2),
                 diagnostic_place_fields=np.zeros((2, 4)),
@@ -325,8 +295,10 @@ class TestFigure4DecodeResults:
             Figure4DecodeResults(
                 continuous_results=_ds(np.zeros(8)),
                 continuous_fragmented_results=_ds(np.zeros(8)),
-                continuous_diagnostics=_diagnostics_at([99], [0]),  # 99 >= n_time 8
-                continuous_fragmented_diagnostics=_diagnostics(np.array([0.5])),
+                continuous_diagnostics=event_diagnostics(
+                    hpd=np.full(1, 0.5), time_ind=[99], cell_ind=[0]
+                ),  # 99 >= n_time 8
+                continuous_fragmented_diagnostics=event_diagnostics(hpd=np.array([0.5])),
                 spike_counts=np.zeros((8, 2), dtype=np.int64),
                 place_field_peaks=np.zeros(2),
                 diagnostic_place_fields=np.zeros((2, 4)),
