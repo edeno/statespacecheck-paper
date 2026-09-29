@@ -15,6 +15,7 @@ from pathlib import Path
 import pyqtgraph as pg
 from PySide6 import QtGui, QtWidgets
 
+from .cache import MODEL_NAMES
 from .data_source import DecoderDataSource, ModelName
 
 
@@ -99,7 +100,7 @@ def main(argv: list[str] | None = None) -> int:
     target = parser.add_mutually_exclusive_group()
     target.add_argument(
         "--model",
-        choices=("continuous", "contfrag"),
+        choices=MODEL_NAMES,
         default=None,
         help="Open the real-data cache for this model.",
     )

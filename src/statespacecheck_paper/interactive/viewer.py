@@ -37,6 +37,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from statespacecheck_paper.figure04_generation import FIGURE4_DIAGNOSTIC_THRESHOLDS
 from statespacecheck_paper.style import METRIC_SPECS
 
+from .cache import MODEL_NAMES
 from .data_source import DecoderDataSource, ModelName
 from .panels import (
     _OVERLAY_LABELS,
@@ -537,7 +538,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
             self._model_label = QtWidgets.QLabel("Model:")
             controls_layout.addWidget(self._model_label)
             self._model_combo = QtWidgets.QComboBox()
-            self._model_combo.addItems(["continuous", "contfrag"])
+            self._model_combo.addItems(list(MODEL_NAMES))
             self._model_combo.setCurrentText(self._ds.model or "")
             self._model_combo.currentTextChanged.connect(self._on_model_changed)
             # Disabled when the cache directory wasn't provided (e.g.
@@ -674,7 +675,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
     def _on_model_changed(self, model: str) -> None:
         if model == self._ds.model:
             return
-        if model not in ("continuous", "contfrag"):
+        if model not in MODEL_NAMES:
             return
         self._switch_model(cast(ModelName, model))
 
@@ -1199,7 +1200,8 @@ class DecoderViewer(QtWidgets.QMainWindow):
             # ``M`` keyboard shortcut and any stray combo signal
             # both no-op.
             return
-        new_model: ModelName = "contfrag" if self._ds.model == "continuous" else "continuous"
+        # Switch to the first model that is not the current one.
+        new_model = next(model for model in MODEL_NAMES if model != self._ds.model)
         self._switch_model(new_model)
 
     def _switch_model(self, model: ModelName) -> None:

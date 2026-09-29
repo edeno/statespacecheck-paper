@@ -268,6 +268,27 @@ def test_model_swap_rebuilds_panels_and_loads(tmp_path: Path) -> None:
         ds.close()
 
 
+def test_model_toggle_alternates_between_the_two_models(tmp_path: Path) -> None:
+    cache_dir = tmp_path / "cache"
+    _build_cache(cache_dir, model="continuous", n_states=1)
+    _build_cache(cache_dir, model="contfrag", n_states=2, seed=1)
+
+    _, viewer, _ = _make_viewer(cache_dir, model="continuous")
+    try:
+        assert [
+            viewer._model_combo.itemText(i)  # noqa: SLF001
+            for i in range(viewer._model_combo.count())  # noqa: SLF001
+        ] == ["continuous", "contfrag"]
+        viewer._toggle_model()  # noqa: SLF001
+        assert viewer._ds.model == "contfrag"  # noqa: SLF001
+        viewer._toggle_model()  # noqa: SLF001
+        assert viewer._ds.model == "continuous"  # noqa: SLF001
+    finally:
+        viewer.close()
+        # Each switch closes the source it replaces; close the current one.
+        viewer._ds.close()  # noqa: SLF001
+
+
 def test_model_swap_revert_when_cache_missing(tmp_path: Path) -> None:
     cache_dir = tmp_path / "cache"
     _build_cache(cache_dir, model="continuous", n_states=1)
