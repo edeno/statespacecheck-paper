@@ -1,6 +1,6 @@
 """Enforce the intended module dependency direction.
 
-``diagnostics.py`` is the leaf of the paper's dependency graph: it computes the
+``diagnostics.py`` is a leaf of the paper's dependency graph: it computes the
 goodness-of-fit diagnostics from primitives plus the external ``statespacecheck``
 package, so it must not import any sibling ``statespacecheck_paper`` module
 (``decoding``, the ``figure0*`` layers, plotting, etc.). The tests below pin the
@@ -34,14 +34,15 @@ def _sibling_module_imports(module_filename: str) -> set[str]:
 
 
 def test_diagnostics_imports_no_sibling_paper_module() -> None:
-    """The diagnostics layer is a leaf: it imports numpy/scipy and the external
-    ``statespacecheck`` package only, never a sibling paper module."""
+    """The diagnostics layer is a leaf: besides the standard library it imports
+    numpy and the external ``statespacecheck`` package only, never a sibling
+    paper module."""
     assert _sibling_module_imports("diagnostics.py") == set()
 
 
 def test_decoding_imports_only_diagnostics_and_simulation() -> None:
     """The general decoder depends only on the ``diagnostics`` and general
-    ``simulation`` layers — never on ``analysis`` or a figure-specific module."""
+    ``simulation`` layers — never on a figure-specific module."""
     imported = _sibling_module_imports("decoding.py")
     assert imported <= {
         "statespacecheck_paper.diagnostics",
@@ -115,8 +116,10 @@ def test_figure01_and_figure02_generation_dependencies_are_explicit() -> None:
 
 def test_figure04_family_dependency_edges_are_acyclic() -> None:
     """The Figure-4 family is layered cache < workflow < summary/layout < generation:
-    cache imports no other Figure-4 module; workflow imports cache; summary and
-    layout import workflow (never cache/config/paths); generation ties them together.
+    cache imports only ``figure04_decoder`` (the configuration it hashes) and
+    ``load_local_data`` (the input-file names and checksum); workflow imports
+    cache; summary and layout import workflow (never cache/config/paths);
+    generation ties them together.
 
     The analysis and plotting leaves (``figure04_decoder`` /
     ``figure04_place_fields`` < ``figure04_diagnostics`` and

@@ -1,12 +1,12 @@
-"""Shared decoder-test inputs used across the split analysis test modules.
+"""Shared decoder-test inputs.
 
 ``DecoderInputs`` bundles a small reproducible ``decode_with_diagnostics``
-problem; ``_diag_dominant_transition`` builds a symmetric near-identity
-transition matrix. Both are imported by the test modules that split out of the
-old ``test_analysis.py`` (decoding, figure-3). The ``decoder_inputs`` fixture in
-``conftest.py`` wraps ``DecoderInputs`` so it is available by name to every test
-module without an import. ``xarray_results`` builds a Figure-4 decoder results
-dataset for the place-field and diagnostics tests.
+problem, built by ``make_decoder_inputs``; the ``decoder_inputs`` fixture in
+``conftest.py`` returns it, so every test module can request it by name.
+``_diag_dominant_transition`` builds a symmetric near-identity transition
+matrix for ``test_decoding.py``. ``xarray_results`` builds a one-variable
+Figure-4 decoder results dataset for the Figure-4 place-field and diagnostics
+tests.
 """
 
 from __future__ import annotations
