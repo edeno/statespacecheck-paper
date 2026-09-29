@@ -13,7 +13,7 @@ import statespacecheck_paper.figure04_diagnostics as figure04_diagnostics
 from statespacecheck_paper.diagnostics import SpikeEventDiagnostics
 from statespacecheck_paper.figure04_diagnostics import (
     compute_flag_confusion,
-    compute_model_diagnostics,
+    compute_results_diagnostics,
     compute_spike_event_diagnostics,
 )
 
@@ -229,37 +229,16 @@ class TestMeanPerSpikeLikelihoodByTime:
 
 
 # ---------------------------------------------------------------------------
-# position-marginal model diagnostics
+# position-marginal diagnostics from decode results
 # ---------------------------------------------------------------------------
 
 
-def _two_state_model(
-    place_fields: np.ndarray,
-    position_bins: np.ndarray,
-    interior_mask: np.ndarray,
-) -> MagicMock:
-    model = MagicMock()
-    model.observation_models = [
-        MagicMock(environment_name="", encoding_group=0),
-        MagicMock(environment_name="", encoding_group=0),
-    ]
-    model.encoding_model_ = {("", 0): {"place_fields": place_fields}}
-    environment = MagicMock()
-    environment.place_bin_centers_ = position_bins[:, np.newaxis]
-    model.environments = [environment]
-    model.is_track_interior_state_bins_ = np.tile(interior_mask, 2)
-    return model
-
-
-class TestComputeModelDiagnostics:
-    def test_marginalizes_state_and_uses_one_shared_place_field_copy(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+class TestComputeResultsDiagnostics:
+    @staticmethod
+    def _two_state_results() -> tuple[Any, np.ndarray]:
+        """Predictive over two discrete states on an interior grid, and its marginal."""
         position_bins = np.array([0.0, 1.0, 2.0])
         interior_mask = np.array([True, False, True])
-        place_fields = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
-        model = _two_state_model(place_fields, position_bins, interior_mask)
-
         posterior_per_state = np.array(
             [
                 [[0.10, np.nan, 0.20], [0.30, np.nan, 0.40]],
@@ -275,6 +254,13 @@ class TestComputeModelDiagnostics:
             "predictive_posterior",
             state_bins=state_bins,
         )
+        return results, posterior_per_state[:, :, interior_mask].sum(axis=1)
+
+    def test_marginalizes_state_and_forwards_the_shared_place_fields(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        results, marginal = self._two_state_results()
+        place_fields = np.array([[1.0, 3.0], [4.0, 6.0]])  # interior bins only
 
         captured: dict[str, Any] = {}
         sentinel = MagicMock()
@@ -293,15 +279,24 @@ class TestComputeModelDiagnostics:
         monkeypatch.setattr(figure04_diagnostics, "compute_spike_event_diagnostics", _capture)
         spike_counts = np.zeros((2, 2), dtype=np.int64)
         time = np.array([0.0, 0.002])
-        result = compute_model_diagnostics(model, results, spike_counts, time)
+        result = compute_results_diagnostics(results, place_fields, spike_counts, time)
 
         assert result is sentinel
-        np.testing.assert_allclose(
-            captured["predictive"],
-            posterior_per_state[:, :, interior_mask].sum(axis=1),
-        )
-        np.testing.assert_allclose(captured["place_fields"], place_fields[:, interior_mask])
+        np.testing.assert_allclose(captured["predictive"], marginal)
+        np.testing.assert_allclose(captured["place_fields"], place_fields)
         assert captured["kwargs"]["time"] is time
+        # A full recording's dense matrices would be hundreds of MB.
+        assert captured["kwargs"]["include_dense_matrices"] is False
+
+    def test_rejects_place_fields_on_another_grid(self) -> None:
+        results, _ = self._two_state_results()
+        with pytest.raises(ValueError, match="2 bins but the shared observation"):
+            compute_results_diagnostics(
+                results,
+                np.ones((2, 3)),
+                np.zeros((2, 2), dtype=np.int64),
+                np.array([0.0, 0.002]),
+            )
 
 
 # ---------------------------------------------------------------------------
