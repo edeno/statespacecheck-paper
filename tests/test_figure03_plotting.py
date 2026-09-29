@@ -39,20 +39,6 @@ def _per_cell_metrics(rng: np.random.Generator, n_time: int, n_cells: int) -> di
 
 
 @pytest.fixture
-def small_metrics(rng: np.random.Generator) -> dict[str, Any]:
-    """``plot_original`` / ``plot_transformed``-shaped inputs for a small grid."""
-    n_time, n_bins, n_cells = 100, 50, 5
-    return {
-        "xs": np.linspace(0, 1, n_bins),
-        "x_true": rng.uniform(0, n_bins - 1, n_time),
-        "metrics": {
-            "posterior": rng.dirichlet(np.ones(n_bins), size=n_time),
-            **_per_cell_metrics(rng, n_time, n_cells),
-        },
-    }
-
-
-@pytest.fixture
 def thresholds_default() -> DiagnosticThresholds:
     return DiagnosticThresholds(hpd_overlap=0.8, kl_divergence=2.0, predictive_pvalue=0.05)
 
