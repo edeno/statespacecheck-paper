@@ -55,11 +55,6 @@ def create_decoder_environment(
     ------
     ImportError
         If non_local_detector package is not available.
-
-    Examples
-    --------
-    >>> # Requires non_local_detector package
-    >>> # env = create_decoder_environment(track_graph, edge_order, edge_spacing)
     """
     try:
         from non_local_detector.environment import Environment
@@ -295,8 +290,8 @@ class Figure4Config:
 
 def build_decoder_models(
     environment: Any,
-    decoder_config: Figure4DecoderConfig | None = None,
-    execution_config: Figure4ExecutionConfig | None = None,
+    decoder_config: Figure4DecoderConfig,
+    execution_config: Figure4ExecutionConfig,
 ) -> tuple[Any, Any]:
     """Construct the (unfitted) Continuous and Continuous-Fragmented decoder models.
 
@@ -315,14 +310,14 @@ def build_decoder_models(
     environment : Environment
         Track environment object. Its ``place_bin_size`` is set by
         :func:`create_decoder_environment` from the same config.
-    decoder_config : Figure4DecoderConfig, optional
-        Injected decoder parameters. Defaults to :class:`Figure4DecoderConfig`,
-        the manuscript values. Its ``sampling_frequency_hz`` (500 Hz) equals
-        the ``non_local_detector`` default, but its ``position_std``
+    decoder_config : Figure4DecoderConfig
+        Injected decoder parameters. The default :class:`Figure4DecoderConfig`
+        holds the manuscript values: its ``sampling_frequency_hz`` (500 Hz)
+        equals the ``non_local_detector`` default, but its ``position_std``
         (``sqrt(12.5) ~= 3.54 cm``) replaces that package's default of 6.0 cm.
-    execution_config : Figure4ExecutionConfig, optional
-        Performance-only parameters (``block_size``). Defaults to
-        :class:`Figure4ExecutionConfig`, whose ``block_size`` (10000) equals the
+    execution_config : Figure4ExecutionConfig
+        Performance-only parameters (``block_size``). The default
+        :class:`Figure4ExecutionConfig` ``block_size`` (10000) equals the
         ``non_local_detector`` default. Does not change the decode result.
 
     Returns
@@ -348,11 +343,6 @@ def build_decoder_models(
             "environment with: make sync"
         ) from e
 
-    if decoder_config is None:
-        decoder_config = Figure4DecoderConfig()
-    if execution_config is None:
-        execution_config = Figure4ExecutionConfig()
-
     sorted_spikes_algorithm_params = {
         "block_size": execution_config.block_size,
         "position_std": decoder_config.position_std,
@@ -373,7 +363,7 @@ def build_decoder_models(
 def validate_package_defaults(
     continuous_model: Any,
     continuous_fragmented_model: Any,
-    package_defaults: Figure4PackageDefaults | None = None,
+    package_defaults: Figure4PackageDefaults,
 ) -> None:
     """Assert the built models still carry the recorded ``non_local_detector`` defaults.
 
@@ -384,14 +374,19 @@ def validate_package_defaults(
     time (runtime), rather than relying only on the drift-guard test, so an
     unintended dependency change fails loudly instead of silently.
 
+    Parameters
+    ----------
+    continuous_model, continuous_fragmented_model : non_local_detector model
+        The built (fitted or unfitted) Continuous and Continuous-Fragmented
+        decoders.
+    package_defaults : Figure4PackageDefaults
+        The recorded defaults to check against.
+
     Raises
     ------
     ValueError
         If any resolved model attribute diverges from the recorded default.
     """
-    if package_defaults is None:
-        package_defaults = Figure4PackageDefaults()
-
     scalar_checks: tuple[tuple[str, Any, float], ...] = (
         (
             "continuous movement_var",
@@ -442,8 +437,8 @@ def fit_decoder_models(
     spike_times: list[NDArray[np.float64]],
     time: NDArray[np.float64],
     environment: Any,
-    decoder_config: Figure4DecoderConfig | None = None,
-    execution_config: Figure4ExecutionConfig | None = None,
+    decoder_config: Figure4DecoderConfig,
+    execution_config: Figure4ExecutionConfig,
 ) -> tuple[Any, Any]:
     """Fit Continuous and Continuous-Fragmented decoder models.
 
@@ -458,12 +453,10 @@ def fit_decoder_models(
         Time values corresponding to position.
     environment : Environment
         Track environment object.
-    decoder_config : Figure4DecoderConfig, optional
+    decoder_config : Figure4DecoderConfig
         Injected decoder parameters passed to :func:`build_decoder_models`.
-        Defaults to :class:`Figure4DecoderConfig`.
-    execution_config : Figure4ExecutionConfig, optional
+    execution_config : Figure4ExecutionConfig
         Performance-only parameters passed to :func:`build_decoder_models`.
-        Defaults to :class:`Figure4ExecutionConfig`.
 
     Returns
     -------
@@ -476,13 +469,6 @@ def fit_decoder_models(
     ------
     ImportError
         If non_local_detector package is not available.
-
-    Examples
-    --------
-    >>> # Requires non_local_detector package and fitted environment
-    >>> # continuous_model, continuous_fragmented_model = fit_decoder_models(
-    >>> #     position, spike_times, time, environment
-    >>> # )
     """
     continuous_model, continuous_fragmented_model = build_decoder_models(
         environment, decoder_config, execution_config
@@ -525,12 +511,6 @@ def get_spike_counts(
     ------
     ImportError
         If non_local_detector package is not available.
-
-    Examples
-    --------
-    >>> # Requires non_local_detector package
-    >>> # spike_counts = get_spike_counts(spike_times, time)
-    >>> # spike_counts.shape  # (n_time, n_cells)
     """
     try:
         from non_local_detector.likelihoods.common import get_spikecount_per_time_bin

@@ -157,6 +157,7 @@ class TestNonDefaultPropagation:
         from non_local_detector.environment import Environment
 
         decoder = decoder or figure04_decoder.Figure4DecoderConfig()
+        execution = execution or figure04_decoder.Figure4ExecutionConfig()
         env = Environment(place_bin_size=decoder.position_bin_size_cm)
         return figure04_decoder.build_decoder_models(env, decoder, execution)
 
@@ -188,12 +189,18 @@ class TestValidatePackageDefaults:
         pytest.importorskip("non_local_detector")
         from non_local_detector.environment import Environment
 
-        return figure04_decoder.build_decoder_models(Environment())
+        return figure04_decoder.build_decoder_models(
+            Environment(),
+            figure04_decoder.Figure4DecoderConfig(),
+            figure04_decoder.Figure4ExecutionConfig(),
+        )
 
     def test_passes_for_recorded_defaults(self) -> None:
         cont, cf = self._models()
         # nld defaults still match Figure4PackageDefaults -> no raise.
-        figure04_decoder.validate_package_defaults(cont, cf)
+        figure04_decoder.validate_package_defaults(
+            cont, cf, figure04_decoder.Figure4PackageDefaults()
+        )
 
     def test_raises_on_scalar_drift(self) -> None:
         cont, cf = self._models()

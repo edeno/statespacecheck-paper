@@ -48,13 +48,6 @@ def extract_place_fields(
         each cell (``non_local_detector``'s KDE place fields; not Hz).
     position_bins : np.ndarray, shape (n_bins,)
         Position bin centers.
-
-    Examples
-    --------
-    >>> # Requires fitted model from non_local_detector
-    >>> # place_fields, position_bins = extract_place_fields(model)
-    >>> # place_fields.shape  # (n_cells, n_bins)
-    >>> # position_bins.shape  # (n_bins,)
     """
     # Access place fields from encoding model
     # Key is tuple (environment_name, encoding_group)
@@ -270,12 +263,6 @@ def get_state_marginalized_posterior(
         cannot be unstacked. Refusing here is intentional: a silent
         fallback would return a per-state slice labeled as the
         marginal posterior, producing a wrong figure.
-
-    Examples
-    --------
-    >>> # Requires xarray Dataset from non_local_detector
-    >>> # posterior = get_state_marginalized_posterior(results, "predictive")
-    >>> # posterior.shape  # (n_time, n_bins)
     """
     # Select appropriate posterior
     if posterior_type == "predictive":

@@ -279,12 +279,14 @@ class TestComputeResultsDiagnostics:
         monkeypatch.setattr(figure04_diagnostics, "compute_spike_event_diagnostics", _capture)
         spike_counts = np.zeros((2, 2), dtype=np.int64)
         time = np.array([0.0, 0.002])
-        result = compute_results_diagnostics(results, place_fields, spike_counts, time)
+        spike_times = [np.array([0.001]), np.array([], dtype=np.float64)]
+        result = compute_results_diagnostics(results, place_fields, spike_counts, time, spike_times)
 
         assert result is sentinel
         np.testing.assert_allclose(captured["predictive"], marginal)
         np.testing.assert_allclose(captured["place_fields"], place_fields)
         assert captured["kwargs"]["time"] is time
+        assert captured["kwargs"]["spike_times"] is spike_times
         # A full recording's dense matrices would be hundreds of MB.
         assert captured["kwargs"]["include_dense_matrices"] is False
 
@@ -296,6 +298,7 @@ class TestComputeResultsDiagnostics:
                 np.ones((2, 3)),
                 np.zeros((2, 2), dtype=np.int64),
                 np.array([0.0, 0.002]),
+                [np.array([0.001]), np.array([0.001])],
             )
 
 

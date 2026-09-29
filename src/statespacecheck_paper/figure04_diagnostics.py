@@ -239,7 +239,7 @@ def compute_results_diagnostics(
     place_fields: NDArray[np.float64],
     spike_counts: NDArray[np.int64],
     time: NDArray[np.float64],
-    spike_times: list[NDArray[np.float64]] | None = None,
+    spike_times: list[NDArray[np.float64]],
     *,
     coverage: float = HPD_COVERAGE,
 ) -> SpikeEventDiagnostics:
@@ -263,9 +263,9 @@ def compute_results_diagnostics(
         Spike count matrix.
     time : np.ndarray, shape (n_time,)
         Decoder time grid.
-    spike_times : list of np.ndarray, optional
-        Exact spike timestamps for each cell. If supplied, diagnostics are
-        computed as one event per spike instead of one event per nonzero bin.
+    spike_times : list of np.ndarray
+        Exact spike timestamps for each cell; diagnostics are computed as one
+        event per spike, at its exact time.
     coverage : float, default ``HPD_COVERAGE``
         HPD-region coverage used by the HPD-overlap diagnostic.
 
@@ -392,18 +392,6 @@ def compute_flag_confusion(
             "diagnostics_a and diagnostics_b must carry identical event_time_ind and "
             "event_cell_ind arrays in the same order"
         )
-    # Belt-and-suspenders: SpikeEventDiagnostics.__post_init__ already rejects
-    # NaN/-inf in the event arrays, so this cannot fire for a constructed
-    # dataclass. Kept as a cheap guard in case a metric ever names an
-    # unvalidated event array.
-    if (
-        np.any(np.isnan(a))
-        or np.any(np.isnan(b))
-        or np.any(np.isneginf(a))
-        or np.any(np.isneginf(b))
-    ):
-        raise ValueError(f"{event_key} contains an undefined per-event value")
-
     flag_a = flag_mask(a, threshold, worse_when)
     flag_b = flag_mask(b, threshold, worse_when)
 
