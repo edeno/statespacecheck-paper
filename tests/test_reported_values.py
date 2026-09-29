@@ -143,6 +143,15 @@ def test_non_integral_burst_factor_is_not_silently_rounded() -> None:
         render_macro_file(figure03, _load("figure04_summary.json"), statespacecheck_doi=CITED_DOI)
 
 
+def test_mismatched_hpd_coverages_are_rejected() -> None:
+    """The Methods state one HPD coverage for the simulation and the recording."""
+    figure03 = copy.deepcopy(_load("figure03_summary.json"))
+    figure03["configuration"]["hpd_coverage"] = 0.9
+
+    with pytest.raises(ValueError, match="different HPD coverages"):
+        render_macro_file(figure03, _load("figure04_summary.json"), statespacecheck_doi=CITED_DOI)
+
+
 @pytest.mark.parametrize(
     "path",
     [("source",), ("figure04_decode_cache",)],

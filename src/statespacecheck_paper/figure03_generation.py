@@ -27,6 +27,7 @@ import dataclasses
 
 import numpy as np
 
+from statespacecheck_paper.diagnostics import HPD_COVERAGE
 from statespacecheck_paper.figure03_plotting import compose_figure03
 from statespacecheck_paper.figure03_protocol import STEP_SECONDS, Figure3Config
 from statespacecheck_paper.figure03_simulation import (
@@ -74,9 +75,13 @@ def figure03_summary_payload(
     return {
         "schema_version": 7,
         "figure": "figure03",
-        # The step length is a protocol constant rather than a config field;
-        # recorded so the prose can convert steps to time.
-        "configuration": {**dataclasses.asdict(config), "step_seconds": STEP_SECONDS},
+        # The step length and HPD coverage are constants rather than config
+        # fields; recorded so the prose can quote them.
+        "configuration": {
+            **dataclasses.asdict(config),
+            "step_seconds": STEP_SECONDS,
+            "hpd_coverage": HPD_COVERAGE,
+        },
         "realizations": {
             "count": summary.n_realizations,
             "first_seed": first_seed,

@@ -37,7 +37,9 @@ so a configuration change from ``0.88`` to ``0.875`` fails the emit rather
 than quietly printing ``0.88``.
 
 Macros are prefixed ``\Sim`` (simulation study, Figure 3) or ``\Rec``
-(hippocampal recording, Figure 4). ``\newcommand`` deliberately errors on a
+(hippocampal recording, Figure 4); a setting both analyses share, such as the
+HPD coverage, carries no prefix and must agree between the two summaries.
+``\newcommand`` deliberately errors on a
 name clash, so a collision with a package macro fails the build rather than
 silently redefining anything.
 
@@ -679,6 +681,25 @@ def statespacecheck_version(
     return version
 
 
+def hpd_coverage_percent(figure03_payload: dict[str, Any], figure04_payload: dict[str, Any]) -> str:
+    """Return the HPD coverage both figures' diagnostics used, in percent.
+
+    Raises
+    ------
+    ValueError
+        If the two summaries record different coverages, since the Methods
+        state one for both analyses.
+    """
+    simulation: float = figure03_payload["configuration"]["hpd_coverage"]
+    recording: float = figure04_payload["configuration"]["diagnostics"]["hpd_coverage"]
+    if simulation != recording:
+        raise ValueError(
+            f"The figure summaries record different HPD coverages: {simulation} (Figure 3), "
+            f"{recording} (Figure 4)"
+        )
+    return _exact(100.0 * simulation)
+
+
 def lookup_statespacecheck_doi(version: str) -> str:
     """Look up the Zenodo DOI of a ``statespacecheck`` release (needs internet access).
 
@@ -804,9 +825,17 @@ def macro_sections(
             "Zenodo DOI of the Figure-4 input file (paths.FIGURE04_INPUTS_DOI)",
         )
     ]
+    diagnostics = [
+        MacroDefinition(
+            "HpdCoveragePercent",
+            hpd_coverage_percent(figure03_payload, figure04_payload),
+            "100 * hpd_coverage (figure03 configuration; figure04 configuration.diagnostics)",
+        )
+    ]
     return (
         ("Software", software),
         ("Data", data),
+        ("Diagnostics (both figures)", diagnostics),
         (
             "Simulation study (Figure 3) --- computed from the simulated data",
             _simulation_statistics(figure03_payload),

@@ -53,7 +53,7 @@ figure03_protocol      → (leaf; no sibling paper module)
 figure03_simulation    → figure03_protocol, decoding, diagnostics, simulation
 figure03_summary       → figure03_protocol, figure03_simulation, diagnostics
 figure03_plotting      → figure03_protocol, figure03_summary, diagnostics, number_format, plotting, style
-figure03_generation    → figure03_protocol, figure03_simulation, figure03_summary, figure03_plotting, paths, scientific_artifacts, style
+figure03_generation    → diagnostics, figure03_protocol, figure03_simulation, figure03_summary, figure03_plotting, paths, scientific_artifacts, style
 generate_figure03.py   → figure03_generation
 
 figure04_models        → (leaf; model IDs and display labels)
@@ -373,7 +373,8 @@ same `Figure4RenderData` via `interactive.cache.build_figure04_viewer_cache`.
 `figure03_summary.json` uses schema version 7 and `figure04_summary.json`
 uses schema version 5. Schema 7 added the trajectory's starting position,
 `configuration.initial_position`, and the step length in seconds,
-`configuration.step_seconds` (the protocol constant `STEP_SECONDS`). The Figure-3 schema includes the decoding-accuracy block:
+`configuration.step_seconds` (the protocol constant `STEP_SECONDS`), and the
+HPD coverage, `configuration.hpd_coverage` (`diagnostics.HPD_COVERAGE`). The Figure-3 schema includes the decoding-accuracy block:
 `accuracy_metric_order` (`median_absolute_error`), `accuracy_units`, and
 `median_decoding_accuracy`, a `(1, n_conditions)` matrix of the
 across-realization median absolute error of the filtered-posterior mean
