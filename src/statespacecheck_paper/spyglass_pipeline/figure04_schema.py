@@ -105,7 +105,7 @@ class Figure4DiagnosticsParameters(SpyglassMixin, dj.Lookup):
     """HPD coverage and flag thresholds for the Figure-4 diagnostics."""
 
     definition = """
-    figure4_diagnostics_param_name: varchar(32)
+    figure04_diagnostics_param_name: varchar(32)
     ---
     hpd_coverage: double                 # coverage of the highest-density regions
     hpd_overlap_threshold: double        # flag when HPD overlap <= this
@@ -430,7 +430,7 @@ def diagnostics_selection_entry() -> dict[str, Any]:
     return {
         "continuous_merge_id": merge_ids[CONTINUOUS.id],
         "continuous_fragmented_merge_id": merge_ids[CONTINUOUS_FRAGMENTED.id],
-        "figure4_diagnostics_param_name": "figure04",
+        "figure04_diagnostics_param_name": "figure04",
     }
 
 

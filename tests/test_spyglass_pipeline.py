@@ -632,7 +632,7 @@ def test_diagnostics_from_decodes_refuses_spikes_of_other_units() -> None:
 _KEY = {
     "continuous_merge_id": "a",
     "continuous_fragmented_merge_id": "b",
-    "figure4_diagnostics_param_name": "x",
+    "figure04_diagnostics_param_name": "x",
 }
 
 
