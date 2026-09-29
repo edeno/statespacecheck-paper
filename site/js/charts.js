@@ -1,6 +1,8 @@
 // Drawing primitives: time-aligned canvas tracks with a shared cursor, and an
 // SVG chart of a prediction and a spike likelihood over position.
 
+import { argmax } from "./data.js";
+
 const SVG_NS = "http://www.w3.org/2000/svg";
 
 // A tap moves the cursor only if the pointer travelled less than this (px);
@@ -363,26 +365,40 @@ export function paintDots(context, times, values, xOf, yOf, color, style) {
 // Distribution chart (SVG)
 // ---------------------------------------------------------------------------
 
+// Distinguishes the radio groups of several cell strips on one page.
+let cellPickerCount = 0;
+
 /**
  * Distributions over position (e.g., a prediction and a spike likelihood),
  * each scaled to its own maximum unless a shared `scaleMax` is given, with
- * optional HPD bands, a position marker, and a keyboard- and pointer-operable
- * strip of place fields for choosing the firing cell.
+ * optional HPD bands, a position marker, and a strip of place fields for
+ * choosing the firing cell.
  *
  * The SVG is laid out at its container's pixel width, so text keeps its CSS
  * size on narrow screens. Curves and bands break across gaps in the position
  * grid (e.g., between linearized track segments).
  *
+ * The SVG is an image whose text alternative, `title` followed by the peak of
+ * each named series, the extent of each named band, and the marker, is
+ * rewritten on every update; positions are given in `unit`.
+ *
  * axis: false omits the position axis (for charts stacked above another).
  *
  * cellStrip: { label, state() -> {rates, selectable, centers, selected},
- *              onSelect(cell) }
+ *              onSelect(cell) }. The pointer selects a field in the SVG; the
+ *              keyboard and screen readers use a visually hidden native radio
+ *              group after it, whose focus the SVG outlines.
  */
 export class DistributionChart {
-  constructor(container, { positionBins, xLabel, plotHeight = 150, cellStrip = null, axis = true }) {
+  constructor(
+    container,
+    { positionBins, xLabel, title, unit, plotHeight = 150, cellStrip = null, axis = true },
+  ) {
     this.container = container;
     this.bins = positionBins;
     this.xLabel = xLabel;
+    this.title = title;
+    this.unit = unit;
     this.plotHeight = plotHeight;
     this.cellStrip = cellStrip;
     this.showAxis = axis;
@@ -398,7 +414,7 @@ export class DistributionChart {
       (b, i) => i === 0 || b - positionBins[i - 1] > 1.5 * spacing,
     );
 
-    this.root = svg("svg", { class: "dist-chart", role: "img" });
+    this.root = svg("svg", { class: "dist-chart", role: "img", "aria-label": title });
     container.appendChild(this.root);
     this.layers = {
       bands: svg("g", {}, this.root),
@@ -410,6 +426,8 @@ export class DistributionChart {
     this.width = 0;
     this.last = null;
     this.cellKey = null;
+    this.pickerKey = null;
+    this.focusedCell = null;
     this.resize();
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(container);
@@ -489,31 +507,74 @@ export class DistributionChart {
     return { open, closed };
   }
 
+  /** [first, last] bin indices of each contiguous run of `mask`, split at grid gaps. */
+  runs(mask) {
+    const runs = [];
+    let start = null;
+    for (let i = 0; i < mask.length; i += 1) {
+      if (start !== null && (!mask[i] || this.segmentStart[i])) {
+        runs.push([start, i - 1]);
+        start = null;
+      }
+      if (mask[i] && start === null) start = i;
+    }
+    if (start !== null) runs.push([start, mask.length - 1]);
+    return runs;
+  }
+
   /** One rect per contiguous run of in-region bins, so bands have no seams. */
   drawBand(mask, color, y) {
     const half = (this.x(this.bins[0] + this.binWidth) - this.x(this.bins[0])) / 2;
-    let start = null;
-    const close = (end) => {
-      const x0 = this.x(this.bins[start]) - half;
-      const x1 = this.x(this.bins[end]) + half;
+    for (const [first, last] of this.runs(mask)) {
+      const x0 = this.x(this.bins[first]) - half;
+      const x1 = this.x(this.bins[last]) + half;
       svg("rect", { x: x0, y, width: x1 - x0, height: 5, fill: color }, this.layers.bands);
-      start = null;
-    };
-    for (let i = 0; i < mask.length; i += 1) {
-      if (start !== null && (!mask[i] || this.segmentStart[i])) close(i - 1);
-      if (mask[i] && start === null) start = i;
     }
-    if (start !== null) close(mask.length - 1);
+  }
+
+  /** A position as text, to at most one decimal. */
+  place(value) {
+    return String(Number(value.toFixed(1)));
+  }
+
+  /** The chart's text alternative for one update's state. */
+  describe({ series, bands, marker }) {
+    const parts = [];
+    for (const { name, values } of series) {
+      if (!name) continue;
+      const peak = argmax(values);
+      parts.push(
+        values.every((v) => v === values[peak])
+          ? `${name} is flat`
+          : `${name} peaks at ${this.place(this.bins[peak])} ${this.unit}`,
+      );
+    }
+    for (const { name, mask } of bands) {
+      if (!name) continue;
+      const spans = this.runs(mask).map(([first, last]) =>
+        first === last
+          ? this.place(this.bins[first])
+          : `${this.place(this.bins[first])}–${this.place(this.bins[last])}`,
+      );
+      parts.push(`${name} ${spans.length ? `spans ${spans.join(", ")} ${this.unit}` : "is empty"}`);
+    }
+    if (marker !== null) parts.push(`animal at ${this.place(marker)} ${this.unit}`);
+    if (!parts.length) return this.title;
+    // Units such as "a.u." already end the sentence.
+    const text = `${this.title}: ${parts.join("; ")}`;
+    return text.endsWith(".") ? text : `${text}.`;
   }
 
   /**
-   * series: [{values, color, dashed?, filled? (default true), width? (default 2)}],
-   * bands: [{mask, color}], marker: position | null,
-   * scaleMax: value drawn at full height for every series | null
+   * series: [{values, color, name?, dashed?, filled? (default true), width? (default 2)}],
+   * bands: [{mask, color, name?}], marker: the animal's position | null,
+   * scaleMax: value drawn at full height for every series | null.
+   * Only named series and bands enter the text alternative.
    */
   update(state) {
     this.last = state;
     const { series, bands = [], marker = null, scaleMax = null } = state;
+    this.root.setAttribute("aria-label", this.describe({ series, bands, marker }));
     for (const layer of ["bands", "areas", "marker"]) this.layers[layer].replaceChildren();
     for (const { values, color, dashed = false, filled = true, width = 2 } of series) {
       const { open, closed } = this.curvePaths(values, scaleMax);
@@ -551,38 +612,81 @@ export class DistributionChart {
     if (this.cellStrip) this.drawCells();
   }
 
-  /** Build the cell radiogroup when the cell set or width changes; else restyle. */
+  /**
+   * Build the radio group when the cell set changes and the strip when the
+   * cell set or width changes; otherwise restyle both.
+   */
   drawCells() {
     const { rates, selectable, centers, selected } = this.cellStrip.state();
-    const key = `${selectable.join(",")}@${this.width}`;
+    const order = [...selectable].sort((a, b) => centers[a] - centers[b]);
+    const pickerKey = order.join(",");
+    if (pickerKey !== this.pickerKey) {
+      this.pickerKey = pickerKey;
+      this.buildPicker(order, centers);
+    }
+    const key = `${pickerKey}@${this.width}`;
     if (key !== this.cellKey) {
       this.cellKey = key;
-      this.buildCells(rates, selectable, centers);
+      this.buildCells(rates, order, centers);
     }
     for (const { cell, rect, path } of this.cells) {
       const isSelected = cell === selected;
-      rect.setAttribute("aria-checked", String(isSelected));
-      rect.setAttribute("tabindex", isSelected ? "0" : "-1");
+      rect.classList.toggle("focused", cell === this.focusedCell);
       path.setAttribute("stroke", isSelected ? cssVar("--likelihood") : cssVar("--curve-muted"));
       path.setAttribute("stroke-width", isSelected ? 2.5 : 1.2);
     }
+    for (const [cell, input] of this.radios) input.checked = cell === selected;
   }
 
-  buildCells(rates, selectable, centers) {
+  cellLabel(cell, centers) {
+    return `Cell ${cell + 1}, field centered at ${centers[cell]} ${this.unit}`;
+  }
+
+  /** The native radio group, in field order, after the SVG. */
+  buildPicker(order, centers) {
+    this.picker?.remove();
+    this.focusedCell = null;
+    const name = `cell-picker-${(cellPickerCount += 1)}`;
+    const fieldset = document.createElement("fieldset");
+    fieldset.className = "sr-only";
+    const legend = document.createElement("legend");
+    legend.textContent = this.cellStrip.label;
+    fieldset.appendChild(legend);
+    this.radios = new Map();
+    for (const cell of order) {
+      const input = document.createElement("input");
+      input.type = "radio";
+      input.name = name;
+      input.value = String(cell);
+      input.addEventListener("change", () => this.cellStrip.onSelect(cell));
+      input.addEventListener("focus", () => {
+        this.focusedCell = cell;
+        this.drawCells();
+      });
+      input.addEventListener("blur", () => {
+        this.focusedCell = null;
+        this.drawCells();
+      });
+      const label = document.createElement("label");
+      label.append(input, ` ${this.cellLabel(cell, centers)}`);
+      fieldset.appendChild(label);
+      this.radios.set(cell, input);
+    }
+    this.container.appendChild(fieldset);
+    this.picker = fieldset;
+  }
+
+  /** The strip of place fields, `order` sorted by field center, with pointer hit areas. */
+  buildCells(rates, order, centers) {
     this.layers.cells.replaceChildren();
     const top = this.margin.top + this.plotHeight + this.axisBlock + 22;
     const caption = svg("text", { x: this.margin.left, y: top - 8 }, this.layers.cells);
     caption.textContent = `${this.cellStrip.label}: click a field, or use the arrow keys`;
     // Curves first, then the hit areas on top of them.
     const curves = svg("g", { "pointer-events": "none" }, this.layers.cells);
-    const group = svg(
-      "g",
-      { role: "radiogroup", "aria-label": this.cellStrip.label },
-      this.layers.cells,
-    );
+    const hits = svg("g", {}, this.layers.cells);
     // Each hit area runs between the midpoints to the neighboring field
     // centers, so closely spaced fields stay individually selectable.
-    const order = [...selectable].sort((a, b) => centers[a] - centers[b]);
     const xs = order.map((cell) => this.x(centers[cell]));
     const bounds = xs.map((x, i) => {
       const gapLeft = i > 0 ? x - xs[i - 1] : null;
@@ -600,7 +704,6 @@ export class DistributionChart {
       });
       const path = svg("path", { d, fill: "none" }, curves);
       const [x0, x1] = bounds[i];
-      const label = `Cell ${cell + 1}, field centered at ${centers[cell]} a.u.`;
       const rect = svg(
         "rect",
         {
@@ -610,25 +713,11 @@ export class DistributionChart {
           width: Math.max(1, x1 - x0),
           height: this.stripHeight + 8,
           fill: "transparent",
-          role: "radio",
-          "aria-label": label,
         },
-        group,
+        hits,
       );
-      svg("title", {}, rect).textContent = label;
+      svg("title", {}, rect).textContent = this.cellLabel(cell, centers);
       rect.addEventListener("click", () => this.cellStrip.onSelect(cell));
-      rect.addEventListener("keydown", (event) => {
-        const moves = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
-        let next = null;
-        if (event.key in moves) next = Math.min(order.length - 1, Math.max(0, i + moves[event.key]));
-        else if (event.key === "Home") next = 0;
-        else if (event.key === "End") next = order.length - 1;
-        else if (event.key === "Enter" || event.key === " ") next = i;
-        if (next === null) return;
-        event.preventDefault();
-        this.cellStrip.onSelect(order[next]);
-        this.cells[next].rect.focus();
-      });
       return { cell, rect, path };
     });
   }

@@ -172,6 +172,13 @@ export function fillMacros(root, macros) {
   }
 }
 
+/** Index of the first largest entry. */
+export function argmax(values) {
+  let best = 0;
+  for (let i = 1; i < values.length; i += 1) if (values[i] > values[best]) best = i;
+  return best;
+}
+
 /** Index of the entry in a sorted array nearest to `value`. */
 export function nearestIndex(sorted, value) {
   if (sorted.length === 0) return -1;

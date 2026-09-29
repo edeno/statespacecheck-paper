@@ -149,18 +149,20 @@ export function initExplainer(root, data, manifest) {
 
   // ------------------------------------------------- Distribution rows
 
-  const rowChart = (id, axis) =>
+  const rowChart = (id, title, axis) =>
     new DistributionChart(root.querySelector(id), {
       positionBins: bins,
       xLabel: "Position (a.u.)",
+      title,
+      unit: "a.u.",
       plotHeight: 58,
       axis,
     });
   const charts = {
-    prediction: rowChart("#ft-prediction", false),
-    fields: rowChart("#ft-fields", false),
-    likelihood: rowChart("#ft-likelihood", false),
-    posterior: rowChart("#ft-posterior", true),
+    prediction: rowChart("#ft-prediction", "Prediction over position", false),
+    fields: rowChart("#ft-fields", "Place fields over position", false),
+    likelihood: rowChart("#ft-likelihood", "Likelihood over position", false),
+    posterior: rowChart("#ft-posterior", "Posterior over position", true),
   };
   // Each field in expected spikes per step, drawn on the cells' shared scale.
   const fieldRows = centers.map((_, c) => fields.values(c));
@@ -226,9 +228,15 @@ export function initExplainer(root, data, manifest) {
     const prediction = [];
     if (t > 0) {
       const from = fired.length ? lastSpikeBefore(t) : t - 1;
-      prediction.push({ values: posterior.values(from), color: cssVar("--posterior"), dashed: true, filled: false });
+      prediction.push({
+        values: posterior.values(from),
+        color: cssVar("--posterior"),
+        name: "earlier posterior (dashed)",
+        dashed: true,
+        filled: false,
+      });
     }
-    prediction.push({ values: predictive.values(t), color: cssVar("--predictive") });
+    prediction.push({ values: predictive.values(t), color: cssVar("--predictive"), name: "prediction" });
     charts.prediction.update({ series: prediction, marker, scaleMax: sharedMax });
 
     // The fields that fired are drawn last, on top.
@@ -236,7 +244,13 @@ export function initExplainer(root, data, manifest) {
     charts.fields.update({
       series: order.map((c) =>
         firedCells.has(c)
-          ? { values: fieldRows[c], color: cssVar("--field"), filled: false, width: 2.5 }
+          ? {
+              values: fieldRows[c],
+              color: cssVar("--field"),
+              name: `field of cell ${c + 1}, which fired,`,
+              filled: false,
+              width: 2.5,
+            }
           : { values: fieldRows[c], color: cssVar("--field-muted"), filled: false, width: 1 },
       ),
       marker,
@@ -247,14 +261,18 @@ export function initExplainer(root, data, manifest) {
     if (fired.length) {
       likelihoodSeries.push({ values: data.exposure, color: cssVar("--curve-muted"), dashed: true, filled: false });
     }
-    likelihoodSeries.push({ values: Array.from(likelihood.row(t)), color: cssVar("--likelihood") });
+    likelihoodSeries.push({
+      values: Array.from(likelihood.row(t)),
+      color: cssVar("--likelihood"),
+      name: "likelihood",
+    });
     charts.likelihood.update({ series: likelihoodSeries, marker });
     likelihoodLabel.textContent = fired.length
       ? "Likelihood of this step's spikes"
       : "Likelihood of no spike, exp(−Λ(x))";
 
     charts.posterior.update({
-      series: [{ values: posterior.values(t), color: cssVar("--posterior") }],
+      series: [{ values: posterior.values(t), color: cssVar("--posterior"), name: "posterior" }],
       marker,
       scaleMax: sharedMax,
     });

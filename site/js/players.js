@@ -16,6 +16,7 @@ import {
   TrackStack,
 } from "./charts.js";
 import {
+  argmax,
   badge,
   decodeHeatmap,
   decodeRows,
@@ -79,12 +80,6 @@ const SCALE_HELP =
 // ---------------------------------------------------------------------------
 // Shared helpers
 // ---------------------------------------------------------------------------
-
-function argmax(values) {
-  let best = 0;
-  for (let i = 1; i < values.length; i += 1) if (values[i] > values[best]) best = i;
-  return best;
-}
 
 function metricRange(metric, values, rule) {
   if (metric.range) return metric.range;
@@ -509,6 +504,8 @@ function renderCondition(view, payload, manifest) {
   const chart = new DistributionChart(chartBox, {
     positionBins: bins,
     xLabel: "Position (a.u.)",
+    title: "Prediction and spike likelihood at the selected spike",
+    unit: "a.u.",
     plotHeight: 110,
   });
   const chartLegend = legendBlock(DETAIL_LEGEND);
@@ -546,10 +543,11 @@ function renderCondition(view, payload, manifest) {
     detailTitle.textContent = describeSpike(index);
     chart.update({
       series: [
-        { values: normalized(predictive.row(t)), color: cssVar("--predictive") },
+        { values: normalized(predictive.row(t)), color: cssVar("--predictive"), name: "prediction" },
         {
           values: normalized(likelihoodRows.row(events.likelihood_row[index])),
           color: cssVar("--likelihood"),
+          name: "spike likelihood",
         },
       ],
       marker: position[t],
@@ -719,6 +717,8 @@ export function renderRecording(root, payload, manifest) {
     charts[model.id] = new DistributionChart(box, {
       positionBins: bins,
       xLabel: "Linearized position (cm)",
+      title: `${model.label} model: prediction and spike likelihood at the selected spike`,
+      unit: "cm",
       plotHeight: 70,
     });
   }
@@ -768,8 +768,16 @@ export function renderRecording(root, payload, manifest) {
     for (const model of MODELS) {
       charts[model.id].update({
         series: [
-          { values: normalized(predictive[model.id].row(step)), color: cssVar("--predictive") },
-          { values: normalized(cellLikelihoods.row(cell)), color: cssVar("--likelihood") },
+          {
+            values: normalized(predictive[model.id].row(step)),
+            color: cssVar("--predictive"),
+            name: "prediction",
+          },
+          {
+            values: normalized(cellLikelihoods.row(cell)),
+            color: cssVar("--likelihood"),
+            name: "spike likelihood",
+          },
         ],
         marker: position[step],
       });

@@ -44,3 +44,37 @@ describe("layout", () => {
       assert.equal(overflow, 0);
     }));
 });
+
+describe("charts", () => {
+  test("each chart is an image whose text alternative describes its current state", () =>
+    withPage({}, async (page) => {
+      const charts = await page.$$eval("svg.dist-chart", (svgs) =>
+        svgs.map((svg) => ({
+          role: svg.getAttribute("role"),
+          label: svg.getAttribute("aria-label") ?? "",
+          controls: svg.querySelectorAll("[tabindex], [role]").length,
+        })),
+      );
+      assert.ok(charts.length >= 8);
+      for (const { role, label, controls } of charts) {
+        assert.equal(role, "img");
+        assert.match(label, /: .*(peaks at|is flat)/, label);
+        assert.equal(controls, 0, label);
+      }
+    }));
+
+  test("the playground's firing cell is a native radio group operated by the arrow keys", () =>
+    withPage({}, async (page) => {
+      assert.ok((await page.locator("#pg-chart fieldset input[type=radio]").count()) > 1);
+      const chart = page.locator("#pg-chart svg");
+      const before = await chart.getAttribute("aria-label");
+      await page.locator("#pg-chart input[type=radio]:checked").focus();
+      await page.keyboard.press("ArrowRight");
+      assert.notEqual(await chart.getAttribute("aria-label"), before);
+      assert.equal(await page.evaluate(() => document.activeElement.checked), true);
+      assert.equal(await page.locator("#pg-chart .cell-hit.focused").count(), 1);
+      // The sparse epoch replaces the cell set, and with it the radio group.
+      await page.click("[data-ensemble=sparse_epoch]");
+      assert.equal(await page.locator("#pg-chart input[type=radio]:checked").count(), 1);
+    }));
+});

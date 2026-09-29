@@ -255,6 +255,8 @@ figcaption {
   position: absolute;
   width: 1px;
   height: 1px;
+  /* A fieldset is otherwise at least as wide as its content. */
+  min-inline-size: 0;
   padding: 0;
   margin: -1px;
   overflow: hidden;
@@ -324,12 +326,8 @@ input:focus-visible,
   outline-offset: 2px;
 }
 
-/* The cell hit area outlines itself (SVG outline support varies). */
-.dist-chart .cell-hit:focus {
-  outline: none;
-}
-
-.dist-chart .cell-hit:focus-visible {
+/* The visually hidden cell radio outlines its field in the SVG strip. */
+.dist-chart .cell-hit.focused {
   stroke: var(--link);
   stroke-width: 2;
 }
