@@ -86,6 +86,7 @@ def test_summary_condition_and_realization_summary_fields() -> None:
     ]
     assert _field_names(Figure3RealizationSummary) == [
         "diagnostic_thresholds",
+        "baseline_flagged_fractions",
         "realization_flag_percentages",
         "realization_decoding_accuracy",
     ]

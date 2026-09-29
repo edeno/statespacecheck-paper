@@ -41,7 +41,7 @@ def _round_trip_live_payload(tmp_path: Path, payload: dict[str, object]) -> dict
 def test_figure03_reported_statistics_match_canonical_run(tmp_path: Path) -> None:
     payload = _load("figure03_summary.json")
 
-    assert payload["schema_version"] == 7
+    assert payload["schema_version"] == 8
     assert payload["realizations"] == {
         "count": 100,
         "first_seed": 1,
@@ -103,11 +103,25 @@ def test_figure03_reported_statistics_match_canonical_run(tmp_path: Path) -> Non
     remap = payload["condition_order"].index("remap")
     assert np.all(flag_errors[:, remap] > 1.0)
     # The Methods quote the rule behind the thresholds, not just their values.
+    # With inclusive flags, the HPD-overlap threshold of 0 flags every baseline
+    # event whose HPD regions are disjoint: more than the 1% quantile level.
     assert payload["threshold_provenance"] == {
         "baseline_end_index": 6000,
-        "hpd_overlap": {"rule": "pooled_baseline_quantile", "quantile": 0.01},
-        "kl_divergence": {"rule": "pooled_baseline_quantile", "quantile": 0.99},
-        "predictive_pvalue": {"rule": "fixed_cutoff", "cutoff": 0.05},
+        "hpd_overlap": {
+            "rule": "pooled_baseline_quantile",
+            "quantile": 0.01,
+            "baseline_flagged_fraction": 0.013951078314006469,
+        },
+        "kl_divergence": {
+            "rule": "pooled_baseline_quantile",
+            "quantile": 0.99,
+            "baseline_flagged_fraction": 0.010002322797362732,
+        },
+        "predictive_pvalue": {
+            "rule": "fixed_cutoff",
+            "cutoff": 0.05,
+            "baseline_flagged_fraction": 0.024292886879768435,
+        },
     }
     # The history-dependence misfit parameters the Methods report, at 1 ms/step:
     # 1 ms post-spike suppression, a 2-10 ms burst window, a threefold rate increase.
@@ -122,6 +136,10 @@ def test_figure03_reported_statistics_match_canonical_run(tmp_path: Path) -> Non
             kl_divergence=payload["flag_rules"]["kl_divergence"]["threshold"],
             predictive_pvalue=payload["flag_rules"]["predictive_pvalue"]["threshold"],
         ),
+        baseline_flagged_fractions={
+            metric: payload["threshold_provenance"][metric]["baseline_flagged_fraction"]
+            for metric in payload["metric_order"]
+        },
         realization_flag_percentages=np.asarray(payload["realization_flag_percentages"]),
         realization_decoding_accuracy=np.asarray(payload["realization_decoding_accuracy"]),
     )

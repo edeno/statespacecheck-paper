@@ -33,6 +33,11 @@ def test_generation_threads_one_config_through_simulation_summary_and_plot(
             kl_divergence=2.0,
             predictive_pvalue=0.05,
         ),
+        baseline_flagged_fractions={
+            "hpd_overlap": 0.02,
+            "predictive_pvalue": 0.05,
+            "kl_divergence": 0.01,
+        },
         realization_flag_percentages=np.zeros((7, 3, 6)),
         realization_decoding_accuracy=np.zeros((7, 1, 6)),
     )
@@ -110,6 +115,11 @@ def test_summary_payload_preserves_labels_rules_and_source_provenance(
             kl_divergence=2.0,
             predictive_pvalue=0.05,
         ),
+        baseline_flagged_fractions={
+            "hpd_overlap": 0.02,
+            "predictive_pvalue": 0.05,
+            "kl_divergence": 0.01,
+        },
         realization_flag_percentages=np.zeros((2, 3, 6)),
         realization_decoding_accuracy=np.zeros((2, 1, 6)),
     )
@@ -127,7 +137,7 @@ def test_summary_payload_preserves_labels_rules_and_source_provenance(
     )
     flag_rules = cast(dict[str, dict[str, str | float]], payload["flag_rules"])
 
-    assert payload["schema_version"] == 7
+    assert payload["schema_version"] == 8
     assert payload["accuracy_metric_order"] == ["median_absolute_error"]
     assert np.asarray(payload["realization_flag_percentages"]).shape == (2, 3, 6)
     assert np.asarray(payload["realization_decoding_accuracy"]).shape == (2, 1, 6)
@@ -146,11 +156,24 @@ def test_summary_payload_preserves_labels_rules_and_source_provenance(
         "kl_divergence": {"comparison": "greater_than_or_equal", "threshold": 2.0},
     }
     # The thresholds are numbers; this block records the rule that produced
-    # them, which the Methods text quotes as 1st / 99th percentiles.
+    # them, which the Methods text quotes as 1st / 99th percentiles, and the
+    # share of the pooled baseline each threshold flags.
     assert payload["threshold_provenance"] == {
         "baseline_end_index": 6000,
-        "hpd_overlap": {"rule": "pooled_baseline_quantile", "quantile": 0.01},
-        "kl_divergence": {"rule": "pooled_baseline_quantile", "quantile": 0.99},
-        "predictive_pvalue": {"rule": "fixed_cutoff", "cutoff": 0.05},
+        "hpd_overlap": {
+            "rule": "pooled_baseline_quantile",
+            "quantile": 0.01,
+            "baseline_flagged_fraction": 0.02,
+        },
+        "kl_divergence": {
+            "rule": "pooled_baseline_quantile",
+            "quantile": 0.99,
+            "baseline_flagged_fraction": 0.01,
+        },
+        "predictive_pvalue": {
+            "rule": "fixed_cutoff",
+            "cutoff": 0.05,
+            "baseline_flagged_fraction": 0.05,
+        },
     }
     assert payload["provenance"] == {"source": source}

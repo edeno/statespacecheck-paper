@@ -216,7 +216,7 @@
   "percentage_unit": "percent_of_spike_events",
   "provenance": {
     "source": {
-      "source_tree_sha256": "1e04d4878255cd29a9f971c6aa2dfc420147aa8628a4265465ac68b37a5ea395",
+      "source_tree_sha256": "c816f438898a5f4e76f37ac59ad2d0857adc927d0fce2fd32e9989eff110577d",
       "statespacecheck_paper_version": "0.1.0",
       "statespacecheck_version": "0.3.1",
       "uv_lock_sha256": "7db5bb03266cfeab8f804cd7262232f3ffa16ebaf423722a399076043b640574"
@@ -3831,19 +3831,22 @@
     "first_seed": 1,
     "last_seed": 100
   },
-  "schema_version": 7,
+  "schema_version": 8,
   "standard_error_method": "order_statistic_interval_95",
   "threshold_provenance": {
     "baseline_end_index": 6000,
     "hpd_overlap": {
+      "baseline_flagged_fraction": 0.013951078314006469,
       "quantile": 0.01,
       "rule": "pooled_baseline_quantile"
     },
     "kl_divergence": {
+      "baseline_flagged_fraction": 0.010002322797362732,
       "quantile": 0.99,
       "rule": "pooled_baseline_quantile"
     },
     "predictive_pvalue": {
+      "baseline_flagged_fraction": 0.024292886879768435,
       "cutoff": 0.05,
       "rule": "fixed_cutoff"
     }

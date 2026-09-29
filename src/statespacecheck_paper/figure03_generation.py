@@ -73,7 +73,7 @@ def figure03_summary_payload(
     thresholds = dataclasses.asdict(summary.diagnostic_thresholds)
     directions = {metric: direction for metric, direction in SUMMARY_FLAG_METRICS}
     return {
-        "schema_version": 7,
+        "schema_version": 8,
         "figure": "figure03",
         # The step length and HPD coverage are constants rather than config
         # fields; recorded so the prose can quote them.
@@ -89,7 +89,9 @@ def figure03_summary_payload(
         },
         "metric_order": [metric for metric, _ in SUMMARY_FLAG_METRICS],
         "flag_rules": inclusive_flag_rules(thresholds, directions),
-        "threshold_provenance": baseline_threshold_provenance(config),
+        "threshold_provenance": baseline_threshold_provenance(
+            config, summary.baseline_flagged_fractions
+        ),
         "condition_order": [condition.condition_id for condition in conditions],
         "condition_labels": [_plain_condition_label(condition.label) for condition in conditions],
         "median_flag_percentages": summary.median_flag_percentages,

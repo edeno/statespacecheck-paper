@@ -24,8 +24,10 @@ import statespacecheck as ssc
 
 from statespacecheck_paper.diagnostics import (
     HPD_COVERAGE,
+    METRIC_FLAG_DIRECTIONS,
     DiagnosticThresholds,
     compute_spike_event_diagnostics_from_rates,
+    flag_mask,
 )
 from statespacecheck_paper.figure03_protocol import (
     PHASE_LABELS,
@@ -529,6 +531,27 @@ class TestEstimateRealizationSummary:
             == repeat.diagnostic_thresholds.kl_divergence
         )
 
+    def test_baseline_flagged_fractions_score_the_pooled_baseline(self) -> None:
+        """Each fraction is the share of pooled opening-baseline events flagged.
+
+        Flags are inclusive, so every event tied at a threshold counts; this
+        recomputes the fraction from the realizations' baseline events.
+        """
+        params = _moderate_params()
+        summary = estimate_realization_summary(params, n_realizations=2, first_random_seed=0)
+        baseline_end = params.phase_boundaries[PhaseBoundary.REMAP_START]
+        diagnostics = [run_figure03_simulation(params, seed=seed).diagnostics for seed in (0, 1)]
+        for metric, direction in METRIC_FLAG_DIRECTIONS.items():
+            pooled = np.concatenate(
+                [
+                    np.asarray(getattr(d, "event_" + metric))[d.event_time_ind < baseline_end]
+                    for d in diagnostics
+                ]
+            )
+            threshold = getattr(summary.diagnostic_thresholds, metric)
+            expected = float(np.mean(flag_mask(pooled, threshold, direction)))
+            assert summary.baseline_flagged_fractions[metric] == expected
+
     def test_remap_column_is_most_flagged(self, summary: Figure3RealizationSummary) -> None:
         """Scientific regression guard: across realizations, the remap column
         (index 1) is flagged far more than the well-specified column (index 0)
@@ -620,10 +643,32 @@ class TestFigure3RealizationSummaryInvariants:
     def _thresholds() -> DiagnosticThresholds:
         return DiagnosticThresholds(hpd_overlap=0.5, kl_divergence=1.0, predictive_pvalue=0.05)
 
+    @staticmethod
+    def _fractions() -> dict[str, float]:
+        return {"hpd_overlap": 0.02, "predictive_pvalue": 0.05, "kl_divergence": 0.01}
+
+    @pytest.mark.parametrize(
+        "fractions",
+        [
+            {"hpd_overlap": 0.02, "predictive_pvalue": 0.05},
+            {"hpd_overlap": 0.02, "predictive_pvalue": 0.05, "kl_divergence": 1.5},
+            {"hpd_overlap": -0.1, "predictive_pvalue": 0.05, "kl_divergence": 0.01},
+        ],
+    )
+    def test_invalid_baseline_flagged_fractions_raise(self, fractions: dict[str, float]) -> None:
+        with pytest.raises(ValueError, match="baseline_flagged_fractions"):
+            Figure3RealizationSummary(
+                diagnostic_thresholds=self._thresholds(),
+                baseline_flagged_fractions=fractions,
+                realization_flag_percentages=np.zeros((2, 3, 5)),
+                realization_decoding_accuracy=np.zeros((2, 1, 5)),
+            )
+
     def test_non_3d_realizations_raise(self) -> None:
         with pytest.raises(ValueError, match="realization_flag_percentages"):
             Figure3RealizationSummary(
                 diagnostic_thresholds=self._thresholds(),
+                baseline_flagged_fractions=self._fractions(),
                 realization_flag_percentages=np.zeros((3, 5)),
                 realization_decoding_accuracy=np.zeros((1, 5)),
             )
@@ -632,6 +677,7 @@ class TestFigure3RealizationSummaryInvariants:
         with pytest.raises(ValueError, match="realization_decoding_accuracy"):
             Figure3RealizationSummary(
                 diagnostic_thresholds=self._thresholds(),
+                baseline_flagged_fractions=self._fractions(),
                 realization_flag_percentages=np.zeros((2, 3, 5)),
                 realization_decoding_accuracy=np.zeros((2, 1, 4)),
             )
@@ -640,6 +686,7 @@ class TestFigure3RealizationSummaryInvariants:
         with pytest.raises(ValueError, match="realization_decoding_accuracy"):
             Figure3RealizationSummary(
                 diagnostic_thresholds=self._thresholds(),
+                baseline_flagged_fractions=self._fractions(),
                 realization_flag_percentages=np.zeros((2, 3, 5)),
                 realization_decoding_accuracy=np.zeros((3, 1, 5)),
             )
@@ -648,6 +695,7 @@ class TestFigure3RealizationSummaryInvariants:
         with pytest.raises(ValueError, match="n_realizations"):
             Figure3RealizationSummary(
                 diagnostic_thresholds=self._thresholds(),
+                baseline_flagged_fractions=self._fractions(),
                 realization_flag_percentages=np.zeros((0, 3, 5)),
                 realization_decoding_accuracy=np.zeros((0, 1, 5)),
             )
@@ -659,6 +707,7 @@ class TestFigure3RealizationSummaryInvariants:
         accuracy = rng.uniform(0.0, 10.0, size=(7, 1, 5))
         summary = Figure3RealizationSummary(
             diagnostic_thresholds=self._thresholds(),
+            baseline_flagged_fractions=self._fractions(),
             realization_flag_percentages=flags,
             realization_decoding_accuracy=accuracy,
         )

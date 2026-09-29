@@ -17,6 +17,7 @@ simulation), and :mod:`diagnostics` (the thresholds/diagnostic containers).
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 import numpy as np
@@ -417,6 +418,12 @@ class Figure3RealizationSummary:
     - ``diagnostic_thresholds`` are computed from the per-spike baseline diagnostics
       pooled across all realizations — a far more stable estimate of the
       baseline interval than one run's quantile.
+    - ``baseline_flagged_fractions`` records, per metric, the fraction of those
+      pooled baseline events flagged under ``diagnostic_thresholds``. Because
+      flags are inclusive, values tied at a threshold are all flagged, so this
+      fraction can exceed the quantile that set the threshold (the HPD-overlap
+      threshold is 0 once about 1% of baseline events have disjoint HPD
+      regions, and then every such event is flagged).
     - ``realization_flag_percentages`` holds each realization's percent of spike
       events flagged in each phase column by each metric (every realization
       scored against the shared pooled-baseline ``diagnostic_thresholds``), and
@@ -432,6 +439,10 @@ class Figure3RealizationSummary:
     ----------
     diagnostic_thresholds : DiagnosticThresholds
         Pooled-baseline flag thresholds.
+    baseline_flagged_fractions : Mapping[str, float]
+        Fraction (0-1) of the pooled baseline spike events flagged under
+        ``diagnostic_thresholds``, keyed by each metric in
+        :data:`SUMMARY_FLAG_METRICS`.
     realization_flag_percentages : np.ndarray, shape (n_realizations, 3, n_columns)
         Percent flagged in each realization, in seed order. The middle axis
         follows :data:`statespacecheck_paper.figure03_summary.SUMMARY_FLAG_METRICS`;
@@ -446,15 +457,26 @@ class Figure3RealizationSummary:
     ------
     ValueError
         If ``realization_flag_percentages`` is not 3-D with at least one
-        realization, or ``realization_decoding_accuracy`` is not
-        ``(n_realizations, 1, n_columns)``.
+        realization, ``realization_decoding_accuracy`` is not
+        ``(n_realizations, 1, n_columns)``, or ``baseline_flagged_fractions``
+        does not hold one fraction in ``[0, 1]`` per flag metric.
     """
 
     diagnostic_thresholds: DiagnosticThresholds
+    baseline_flagged_fractions: Mapping[str, float]
     realization_flag_percentages: NDArray[np.floating]
     realization_decoding_accuracy: NDArray[np.floating]
 
     def __post_init__(self) -> None:
+        metrics = [metric for metric, _ in SUMMARY_FLAG_METRICS]
+        fractions = self.baseline_flagged_fractions
+        if sorted(fractions) != sorted(metrics) or not all(
+            0.0 <= fractions[metric] <= 1.0 for metric in metrics
+        ):
+            raise ValueError(
+                "Figure3RealizationSummary.baseline_flagged_fractions must map each of "
+                f"{metrics} to a fraction in [0, 1]; got {dict(fractions)}"
+            )
         flags = self.realization_flag_percentages
         if flags.ndim != 3 or flags.shape[0] < 1:
             raise ValueError(
@@ -503,7 +525,10 @@ class Figure3RealizationSummary:
         return median_standard_error(self.realization_decoding_accuracy)
 
 
-def baseline_threshold_provenance(config: Figure3Config) -> dict[str, object]:
+def baseline_threshold_provenance(
+    config: Figure3Config,
+    baseline_flagged_fractions: Mapping[str, float],
+) -> dict[str, object]:
     """Describe the rule that produced the Figure-3 flag thresholds.
 
     :func:`estimate_realization_summary` reports threshold *values*; the
@@ -511,11 +536,16 @@ def baseline_threshold_provenance(config: Figure3Config) -> dict[str, object]:
     pooled opening baseline, plus the fixed predictive-p-value cutoff). This
     returns that rule in machine-readable form, reading the same constants
     and the same baseline boundary the estimate uses, so the two cannot drift.
+    Each metric's entry also records the fraction of the pooled baseline
+    events flagged under its threshold.
 
     Parameters
     ----------
     config : Figure3Config
         Configuration whose phase ladder defines the baseline window.
+    baseline_flagged_fractions : Mapping[str, float]
+        Fraction (0-1) of pooled baseline events flagged per metric
+        (:attr:`Figure3RealizationSummary.baseline_flagged_fractions`).
 
     Returns
     -------
@@ -524,7 +554,8 @@ def baseline_threshold_provenance(config: Figure3Config) -> dict[str, object]:
 
     Examples
     --------
-    >>> baseline_threshold_provenance(Figure3Config())["baseline_end_index"]
+    >>> fractions = {"hpd_overlap": 0.02, "predictive_pvalue": 0.03, "kl_divergence": 0.01}
+    >>> baseline_threshold_provenance(Figure3Config(), fractions)["baseline_end_index"]
     6000
     """
     return {
@@ -532,14 +563,17 @@ def baseline_threshold_provenance(config: Figure3Config) -> dict[str, object]:
         "hpd_overlap": {
             "rule": "pooled_baseline_quantile",
             "quantile": BASELINE_HPD_OVERLAP_QUANTILE,
+            "baseline_flagged_fraction": baseline_flagged_fractions["hpd_overlap"],
         },
         "kl_divergence": {
             "rule": "pooled_baseline_quantile",
             "quantile": BASELINE_KL_DIVERGENCE_QUANTILE,
+            "baseline_flagged_fraction": baseline_flagged_fractions["kl_divergence"],
         },
         "predictive_pvalue": {
             "rule": "fixed_cutoff",
             "cutoff": FIXED_PREDICTIVE_PVALUE_CUTOFF,
+            "baseline_flagged_fraction": baseline_flagged_fractions["predictive_pvalue"],
         },
     }
 
@@ -577,8 +611,9 @@ def estimate_realization_summary(
     Returns
     -------
     Figure3RealizationSummary
-        Pooled flag thresholds, and every realization's per-phase flag
-        fractions and decoding accuracy (with their medians).
+        Pooled flag thresholds with the fraction of pooled baseline events each
+        flags, and every realization's per-phase flag fractions and decoding
+        accuracy (with their medians).
 
     Raises
     ------
@@ -626,6 +661,20 @@ def estimate_realization_summary(
         hpd_overlap=pooled_baseline["hpd_overlap"],
         kl_divergence=pooled_baseline["kl_divergence"],
     )
+    # Inclusive flags flag every value tied at a threshold, so the flagged
+    # share of the baseline can exceed the quantile that set the threshold.
+    baseline_flagged_fractions = {
+        metric: float(
+            np.mean(
+                flag_mask(
+                    pooled_baseline[metric],
+                    float(getattr(diagnostic_thresholds, metric)),
+                    direction,
+                )
+            )
+        )
+        for metric, direction in SUMMARY_FLAG_METRICS
+    }
 
     # (n_realizations, n_metrics, n_columns) flag-fraction stack.
     frac = np.stack(
@@ -637,6 +686,7 @@ def estimate_realization_summary(
     )
     return Figure3RealizationSummary(
         diagnostic_thresholds=diagnostic_thresholds,
+        baseline_flagged_fractions=baseline_flagged_fractions,
         realization_flag_percentages=frac,
         realization_decoding_accuracy=np.stack(per_realization_accuracy, axis=0),
     )

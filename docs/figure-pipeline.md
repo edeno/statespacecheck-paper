@@ -57,14 +57,19 @@ of the Methods in `manuscript/main.tex` (labels in parentheses).
 
 | Figure | Rule | Where it is defined |
 | --- | --- | --- |
-| 3 | HPD overlap flagged at or below the 1st percentile, KL divergence at or above the 99th percentile, of baseline values pooled over every spike event in steps 0–6000 of all 100 realizations | quantiles `diagnostics.BASELINE_HPD_OVERLAP_QUANTILE` and `BASELINE_KL_DIVERGENCE_QUANTILE`; rule `diagnostics.compute_baseline_diagnostic_thresholds`; pooling `figure03_summary.estimate_realization_summary` |
+| 3 | HPD overlap flagged at or below the 1st percentile, KL divergence at or above the 99th percentile, of baseline values pooled over every spike event before step 6000 of all 100 realizations. The committed HPD-overlap threshold is exactly 0, so a spike is flagged only when its two HPD regions do not overlap at all | quantiles `diagnostics.BASELINE_HPD_OVERLAP_QUANTILE` and `BASELINE_KL_DIVERGENCE_QUANTILE`; rule `diagnostics.compute_baseline_diagnostic_thresholds`; pooling `figure03_summary.estimate_realization_summary` |
 | 3 | Predictive $p$-value flagged at or below a fixed 0.05 | `diagnostics.FIXED_PREDICTIVE_PVALUE_CUTOFF` |
 | 4 | Fixed cutoffs: HPD overlap ≤ 0.05 and predictive $p$-value ≤ 0.05; KL divergence is not thresholded | `figure04_generation.FIGURE4_DIAGNOSTIC_THRESHOLDS` |
 
 Every comparison is inclusive; `diagnostics.METRIC_FLAG_DIRECTIONS` gives each
 metric's worse-fit direction and `diagnostics.flag_mask` applies it. Both
 summaries record the numeric thresholds with their comparison under
-`flag_rules`.
+`flag_rules`. Because ties at a threshold are flagged, a pooled-baseline
+threshold can flag more of the baseline than its quantile level: about 1.4% of
+the Figure-3 baseline spikes have disjoint HPD regions, so the 1st percentile is
+0 and all of them are flagged. The Figure-3 summary records the flagged share of
+the pooled baseline for each metric as
+`threshold_provenance.<metric>.baseline_flagged_fraction`.
 
 ### Decoders
 
@@ -294,9 +299,14 @@ Trace: `create_shared_example(rng)` returns one immutable
   flag heatmap and decoding-error row).
 - **Output:** `manuscript/figures/main/figure03.{pdf,png}` plus
   `figure03_summary.json`, containing the full configuration, seed range,
-  explicit inclusive flag rules, metric/condition order, reported percentage
+  explicit inclusive flag rules, the threshold rule with the share of the pooled
+  baseline each threshold flags, metric/condition order, reported percentage
   matrix, per-condition decoding accuracy (median absolute error), and
   source/dependency-lock provenance.
+- **Thresholds:** pooled over the opening baseline of all realizations; the
+  HPD-overlap threshold is exactly 0 (`flag_rules.hpd_overlap.threshold`), so
+  Figure 3 flags a spike's HPD overlap only when the predictive and likelihood
+  HPD regions are disjoint.
 - **Tests:** `tests/test_figure03_phases.py` (the higher-level scientific
   contract, including the control-integrity checks that the replay and
   sparse-population controls carry no hidden observation misfit, because the
@@ -574,7 +584,7 @@ manual overrides: bumping one invalidates every cache of that kind.
 
 ## Machine-readable summary schema
 
-`figure03_summary.json` uses schema version 7 and `figure04_summary.json`
+`figure03_summary.json` uses schema version 8 and `figure04_summary.json`
 uses schema version 5. The Figure-3 configuration block records every
 `Figure3Config` field together with the step length in seconds
 (`configuration.step_seconds`, the protocol constant `STEP_SECONDS`) and the
@@ -594,7 +604,10 @@ reported precision. The spread itself is in `realization_flag_percentages`
 `(n_realizations, 1, n_conditions)`: every realization's values, in seed order
 from `realizations.first_seed`; the medians are their medians over the first
 axis. The summary also records the baseline-threshold provenance
-(`threshold_provenance`) quoted in the Methods.
+(`threshold_provenance`) quoted in the Methods: the baseline's end step, each
+metric's rule (quantile or fixed cutoff), and each metric's
+`baseline_flagged_fraction`, the fraction (0–1) of pooled baseline spike events
+flagged under the recorded threshold.
 
 The Figure-4 schema records `dataset.n_units` alongside the recording
 identifier, names the second decoder `continuous_fragmented` throughout, and
