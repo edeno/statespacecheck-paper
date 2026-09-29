@@ -32,8 +32,10 @@ from numpy.typing import NDArray
 
 from statespacecheck_paper.paths import FIGURE04_INPUTS_EPOCH
 
-# Position columns every downstream consumer relies on (centimeters).
-_REQUIRED_POSITION_COLUMNS = ("head_position_x", "head_position_y", "linear_position")
+# Position columns every downstream consumer relies on (centimeters): the head
+# position's x and y, then its linearization along the track.
+HEAD_POSITION_COLUMNS = ("head_position_x", "head_position_y")
+REQUIRED_POSITION_COLUMNS = (*HEAD_POSITION_COLUMNS, "linear_position")
 
 # File-name suffix (after the ``{animal_date_epoch}`` prefix) of the input file this
 # loader reads. This module owns it so the Figure-4 decode cache hashes exactly
@@ -89,10 +91,10 @@ class NeuralRecordingData:
     def __post_init__(self) -> None:
         if len(self.position_info) == 0:
             raise ValueError("position_info must be nonempty")
-        missing = [c for c in _REQUIRED_POSITION_COLUMNS if c not in self.position_info.columns]
+        missing = [c for c in REQUIRED_POSITION_COLUMNS if c not in self.position_info.columns]
         if missing:
             raise ValueError(f"position_info missing required columns: {missing}")
-        for col in _REQUIRED_POSITION_COLUMNS:
+        for col in REQUIRED_POSITION_COLUMNS:
             values = self.position_info[col].to_numpy()
             if not np.issubdtype(values.dtype, np.number) or not np.all(np.isfinite(values)):
                 raise ValueError(f"position_info column {col!r} must be numeric and finite")

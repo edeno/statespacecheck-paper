@@ -15,6 +15,7 @@ import pandas as pd
 from matplotlib.axes import Axes
 from numpy.typing import NDArray
 
+from statespacecheck_paper.figure04_input import HEAD_POSITION_COLUMNS
 from statespacecheck_paper.figure04_plot_primitives import add_scalebar
 
 
@@ -61,9 +62,10 @@ def plot_track_graph_2d(
     if reward_well_nodes is None:
         reward_well_nodes = []
     edge_colors = _edge_colors()
+    x_column, y_column = HEAD_POSITION_COLUMNS
     ax.plot(
-        position_info["head_position_x"],
-        position_info["head_position_y"],
+        position_info[x_column],
+        position_info[y_column],
         color="lightgrey",
         alpha=0.7,
         linewidth=0.5,

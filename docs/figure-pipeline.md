@@ -204,7 +204,7 @@ figure04_decoder                    → diagnostics
 figure04_place_fields               → (none)
 figure04_diagnostics                → diagnostics, figure04_place_fields
 figure04_plot_primitives            → figure04_place_fields, style
-figure04_track_plots                → figure04_plot_primitives
+figure04_track_plots                → figure04_input, figure04_plot_primitives
 figure04_panels                     → diagnostics, figure04_diagnostics, figure04_models, figure04_place_fields, figure04_plot_primitives, figure04_track_plots, plotting, style
 figure04_fit                        → figure04_decoder, figure04_input, figure04_place_fields
 figure04_cache                      → figure04_decoder, figure04_input
@@ -226,7 +226,7 @@ interactive.viewer                  → figure04_generation, figure04_models, in
 spyglass_pipeline                   → (none)
 spyglass_pipeline.figure04_input    → figure04_input
 spyglass_pipeline.paper_export      → spyglass_pipeline.figure04_input
-spyglass_pipeline.figure04_schema   → diagnostics, figure04_decoder, figure04_generation, figure04_models, figure04_place_fields, spyglass_pipeline.figure04_compute, spyglass_pipeline.figure04_input
+spyglass_pipeline.figure04_schema   → diagnostics, figure04_decoder, figure04_generation, figure04_input, figure04_models, figure04_place_fields, spyglass_pipeline.figure04_compute, spyglass_pipeline.figure04_input
 spyglass_pipeline.figure04_compute  → figure04_models, spyglass_pipeline.figure04_input; lazy: figure04_decoder, figure04_diagnostics, figure04_generation, figure04_place_fields, figure04_summary; type-only: diagnostics
 spyglass_pipeline.pickle_conversion → figure04_input, spyglass_pipeline.figure04_input
 ```

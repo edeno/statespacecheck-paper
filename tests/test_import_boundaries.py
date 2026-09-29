@@ -130,7 +130,8 @@ def test_figure04_family_dependency_edges_are_acyclic() -> None:
     The analysis and plotting modules (``figure04_decoder`` /
     ``figure04_place_fields`` < ``figure04_diagnostics`` and
     ``figure04_plot_primitives`` < ``figure04_track_plots`` < ``figure04_panels``)
-    sit below this layering."""
+    sit below this layering; ``figure04_track_plots`` also reads the input
+    file's position-column names from ``figure04_input``."""
     prefix = "statespacecheck_paper."
     allowed = {
         "figure04_models.py": set(),
@@ -141,7 +142,10 @@ def test_figure04_family_dependency_edges_are_acyclic() -> None:
             prefix + "figure04_place_fields",
         },
         "figure04_plot_primitives.py": {prefix + "figure04_place_fields", prefix + "style"},
-        "figure04_track_plots.py": {prefix + "figure04_plot_primitives"},
+        "figure04_track_plots.py": {
+            prefix + "figure04_input",
+            prefix + "figure04_plot_primitives",
+        },
         "figure04_panels.py": {
             prefix + "diagnostics",
             prefix + "figure04_diagnostics",

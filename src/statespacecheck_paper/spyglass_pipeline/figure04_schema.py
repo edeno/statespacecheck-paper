@@ -53,6 +53,7 @@ from statespacecheck_paper.figure04_decoder import (
     create_decoder_environment,
 )
 from statespacecheck_paper.figure04_generation import FIGURE04_DIAGNOSTIC_THRESHOLDS
+from statespacecheck_paper.figure04_input import HEAD_POSITION_COLUMNS
 from statespacecheck_paper.figure04_models import (
     CONTINUOUS,
     CONTINUOUS_FRAGMENTED,
@@ -67,7 +68,6 @@ from statespacecheck_paper.spyglass_pipeline.figure04_compute import (
 from statespacecheck_paper.spyglass_pipeline.figure04_input import (
     FIGURE04_EPOCH_NAME,
     FIGURE04_NWB_FILE_NAME,
-    HEAD_POSITION_COLUMNS,
     HPC_SORTING_RESTRICTION,
     POSITION_INFO_PARAM_NAME,
     get_position_interval_name,

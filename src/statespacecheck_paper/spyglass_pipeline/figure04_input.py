@@ -36,6 +36,7 @@ import pandas as pd
 from numpy.typing import NDArray
 
 from statespacecheck_paper.figure04_input import (
+    HEAD_POSITION_COLUMNS,
     NPZ_FORMAT_VERSION,
     NeuralRecordingData,
     input_file_path,
@@ -48,8 +49,6 @@ FIGURE04_NWB_FILE_NAME = "j1620210710_.nwb"
 FIGURE04_EPOCH_NAME = "02_r1"
 
 POSITION_INFO_PARAM_NAME = "default_decoding"
-HEAD_POSITION_COLUMNS = ("head_position_x", "head_position_y")
-"""x and y columns of the ``IntervalPositionInfo`` head position the figure uses."""
 LINEARIZATION_PARAM_NAME = "default"
 
 HPC_SORTING_RESTRICTION: Mapping[str, str | int] = MappingProxyType(
@@ -182,13 +181,13 @@ def get_interpolated_position_info(
 
     Same algorithm as ``continuum-swr-replay``'s
     ``data_loaders.position.get_interpolated_position_info``, linearizing the
-    :data:`HEAD_POSITION_COLUMNS`.
+    :data:`~statespacecheck_paper.figure04_input.HEAD_POSITION_COLUMNS`.
 
     Parameters
     ----------
     position_info : pd.DataFrame
         Position data with a time index (seconds) and the
-        :data:`HEAD_POSITION_COLUMNS`.
+        :data:`~statespacecheck_paper.figure04_input.HEAD_POSITION_COLUMNS`.
     time : np.ndarray, shape (n_time,)
         Time points (seconds) of the output.
     track_graph : networkx.Graph
