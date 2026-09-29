@@ -27,8 +27,8 @@ import xarray as xr
 from track_linearization import make_track_graph
 
 from statespacecheck_paper.figure04_diagnostics import FlagConfusion
+from statespacecheck_paper.figure04_input import input_file_path, load_figure04_input
 from statespacecheck_paper.figure04_summary import Figure4DiagnosticMeans, Figure4Summary
-from statespacecheck_paper.load_local_data import input_file_path, load_figure04_input
 from statespacecheck_paper.paths import FIGURE04_INPUTS_EPOCH, FIGURE04_SUMMARY_PATH, REPO_ROOT
 from statespacecheck_paper.spyglass_pipeline import figure04_input, paper_export
 from statespacecheck_paper.spyglass_pipeline.figure04_compute import (

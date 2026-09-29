@@ -26,7 +26,7 @@ from statespacecheck_paper.figure04_cache import (
     save_figure04_diagnostics_cache,
 )
 from statespacecheck_paper.figure04_decoder import Figure4Config, Figure4DiagnosticsConfig
-from statespacecheck_paper.load_local_data import INPUT_FILE_SUFFIX
+from statespacecheck_paper.figure04_input import INPUT_FILE_SUFFIX
 
 
 def _payload() -> dict[str, Any]:
@@ -240,7 +240,7 @@ def source_tree(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         "figure04_decoder.py",
         "figure04_workflow.py",
         "figure04_place_fields.py",
-        "load_local_data.py",
+        "figure04_input.py",
     ],
 )
 def test_decode_source_change_rejects_existing_cache(

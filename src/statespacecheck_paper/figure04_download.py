@@ -14,7 +14,7 @@ import urllib.request
 import uuid
 from pathlib import Path
 
-from statespacecheck_paper.load_local_data import FIGURE04_INPUTS_FILE, file_sha256
+from statespacecheck_paper.figure04_input import FIGURE04_INPUTS_FILE, file_sha256
 from statespacecheck_paper.paths import FIGURE04_INPUTS_DOI, FIGURE04_INPUTS_SHA256
 
 # The download URL is built from the DOI, so the two cannot name different records.

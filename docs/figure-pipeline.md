@@ -136,8 +136,7 @@ families**:
 - **Per-figure families**: `figure01_generation`;
   `figure02_{panels,generation}`;
   `figure03_{protocol,simulation,summary,plotting,generation}`; and
-  `load_local_data` with
-  `figure04_{models,decoder,place_fields,diagnostics,plot_primitives,track_plots,panels,cache,workflow,summary,layout,generation}`.
+  `figure04_{input,models,decoder,place_fields,diagnostics,plot_primitives,track_plots,panels,cache,workflow,summary,layout,generation}`.
   `figure04_models` holds each decoder's one machine ID (`continuous`,
   `continuous_fragmented`) and its display labels; the figure, summary
   printout, viewer, and website data take the labels from it, and the
@@ -150,7 +149,7 @@ families**:
   and decoding both models takes minutes and writes an ~8 GB cache, so the
   decode fingerprint hashes only the modules that shape the decode
   (`figure04_decoder`, `figure04_place_fields`, `figure04_workflow`,
-  `load_local_data`), and the diagnostics fingerprint only those that shape
+  `figure04_input`), and the diagnostics fingerprint only those that shape
   the per-spike diagnostics (`diagnostics`, `figure04_diagnostics`,
   `figure04_place_fields`). Model labels (`figure04_models`), cache I/O
   (`figure04_cache`), whole-session statistics (`figure04_summary`), and all
@@ -158,8 +157,8 @@ families**:
 - **Shared support**: `plotting`, `style`, and `schematic` (figure drawing);
   `paths` (repository and data locations, published identifiers);
   `scientific_artifacts` (summary provenance and flag rules); `number_format`
-  and `reported_values` (summary to prose); `write_local_data` and
-  `figure04_download` (the Figure-4 input file); `site_export` (website data).
+  and `reported_values` (summary to prose); `figure04_download` (the
+  Figure-4 input file's download); `site_export` (website data).
 
 ### Module dependency graph
 
@@ -174,59 +173,59 @@ matches it exactly.
 
 <!-- module-graph -->
 ```text
-__init__                           → (none)
-paths                              → (none)
-number_format                      → (none)
-diagnostics                        → (none)
-simulation                         → (none)
-decoding                           → diagnostics, simulation
-style                              → diagnostics
-plotting                           → style
-schematic                          → style
-scientific_artifacts               → diagnostics, paths
-reported_values                    → number_format, paths
+__init__                            → (none)
+paths                               → (none)
+number_format                       → (none)
+diagnostics                         → (none)
+simulation                          → (none)
+decoding                            → diagnostics, simulation
+style                               → diagnostics
+plotting                            → style
+schematic                           → style
+scientific_artifacts                → diagnostics, paths
+reported_values                     → number_format, paths
 
-figure01_generation                → diagnostics, paths, plotting, schematic, style
-figure02_panels                    → diagnostics, simulation, style
-figure02_generation                → figure02_panels, paths, style
+figure01_generation                 → diagnostics, paths, plotting, schematic, style
+figure02_panels                     → diagnostics, simulation, style
+figure02_generation                 → figure02_panels, paths, style
 
-figure03_protocol                  → (none)
-figure03_simulation                → decoding, diagnostics, figure03_protocol, simulation
-figure03_summary                   → diagnostics, figure03_protocol, figure03_simulation
-figure03_plotting                  → diagnostics, figure03_protocol, figure03_summary, number_format, plotting, style
-figure03_generation                → diagnostics, figure03_plotting, figure03_protocol, figure03_simulation, figure03_summary, paths, scientific_artifacts, style
+figure03_protocol                   → (none)
+figure03_simulation                 → decoding, diagnostics, figure03_protocol, simulation
+figure03_summary                    → diagnostics, figure03_protocol, figure03_simulation
+figure03_plotting                   → diagnostics, figure03_protocol, figure03_summary, number_format, plotting, style
+figure03_generation                 → diagnostics, figure03_plotting, figure03_protocol, figure03_simulation, figure03_summary, paths, scientific_artifacts, style
 
-load_local_data                    → paths
-write_local_data                   → load_local_data
-figure04_download                  → load_local_data, paths
-figure04_models                    → (none)
-figure04_decoder                   → diagnostics
-figure04_place_fields              → (none)
-figure04_diagnostics               → diagnostics, figure04_place_fields
-figure04_plot_primitives           → figure04_place_fields, style
-figure04_track_plots               → figure04_plot_primitives
-figure04_panels                    → diagnostics, figure04_diagnostics, figure04_models, figure04_place_fields, figure04_plot_primitives, figure04_track_plots, plotting, style
-figure04_cache                     → figure04_decoder, load_local_data
-figure04_workflow                  → diagnostics, figure04_cache, figure04_decoder, figure04_diagnostics, figure04_place_fields, load_local_data
-figure04_summary                   → diagnostics, figure04_diagnostics, figure04_models, figure04_workflow
-figure04_layout                    → diagnostics, figure04_models, figure04_panels, figure04_track_plots, figure04_workflow, plotting, style
-figure04_generation                → diagnostics, figure04_cache, figure04_decoder, figure04_layout, figure04_models, figure04_summary, figure04_workflow, paths, scientific_artifacts, style
+figure04_input                      → paths
+figure04_download                   → figure04_input, paths
+figure04_models                     → (none)
+figure04_decoder                    → diagnostics
+figure04_place_fields               → (none)
+figure04_diagnostics                → diagnostics, figure04_place_fields
+figure04_plot_primitives            → figure04_place_fields, style
+figure04_track_plots                → figure04_plot_primitives
+figure04_panels                     → diagnostics, figure04_diagnostics, figure04_models, figure04_place_fields, figure04_plot_primitives, figure04_track_plots, plotting, style
+figure04_cache                      → figure04_decoder, figure04_input
+figure04_workflow                   → diagnostics, figure04_cache, figure04_decoder, figure04_diagnostics, figure04_input, figure04_place_fields
+figure04_summary                    → diagnostics, figure04_diagnostics, figure04_models, figure04_workflow
+figure04_layout                     → diagnostics, figure04_models, figure04_panels, figure04_track_plots, figure04_workflow, plotting, style
+figure04_generation                 → diagnostics, figure04_cache, figure04_decoder, figure04_layout, figure04_models, figure04_summary, figure04_workflow, paths, scientific_artifacts, style
 
-site_export                        → decoding, diagnostics, figure03_generation, figure03_protocol, figure03_simulation, figure04_cache, figure04_decoder, figure04_diagnostics, figure04_generation, figure04_layout, figure04_models, figure04_place_fields, figure04_workflow, number_format, paths, reported_values, simulation, style
+site_export                         → decoding, diagnostics, figure03_generation, figure03_protocol, figure03_simulation, figure04_cache, figure04_decoder, figure04_diagnostics, figure04_generation, figure04_layout, figure04_models, figure04_place_fields, figure04_workflow, number_format, paths, reported_values, simulation, style
 
-interactive                        → (none)
-interactive.__main__               → interactive.app
-interactive.app                    → interactive.cache, interactive.data_source; lazy: interactive.viewer
-interactive.cache                  → diagnostics, figure04_models, figure04_place_fields, paths; lazy: figure03_protocol, figure03_simulation, figure04_cache, figure04_decoder, figure04_workflow
-interactive.data_source            → figure04_models, figure04_place_fields, interactive.cache
-interactive.panels                 → plotting, style
-interactive.viewer                 → figure04_generation, figure04_models, interactive.cache, interactive.data_source, interactive.panels, style
+interactive                         → (none)
+interactive.__main__                → interactive.app
+interactive.app                     → interactive.cache, interactive.data_source; lazy: interactive.viewer
+interactive.cache                   → diagnostics, figure04_models, figure04_place_fields, paths; lazy: figure03_protocol, figure03_simulation, figure04_cache, figure04_decoder, figure04_workflow
+interactive.data_source             → figure04_models, figure04_place_fields, interactive.cache
+interactive.panels                  → plotting, style
+interactive.viewer                  → figure04_generation, figure04_models, interactive.cache, interactive.data_source, interactive.panels, style
 
-spyglass_pipeline                  → (none)
-spyglass_pipeline.figure04_input   → load_local_data, write_local_data
-spyglass_pipeline.paper_export     → spyglass_pipeline.figure04_input
-spyglass_pipeline.figure04_schema  → diagnostics, figure04_decoder, figure04_generation, figure04_models, figure04_place_fields, spyglass_pipeline.figure04_compute, spyglass_pipeline.figure04_input
-spyglass_pipeline.figure04_compute → figure04_models, spyglass_pipeline.figure04_input; lazy: figure04_decoder, figure04_diagnostics, figure04_generation, figure04_place_fields, figure04_summary; type-only: diagnostics
+spyglass_pipeline                   → (none)
+spyglass_pipeline.figure04_input    → figure04_input
+spyglass_pipeline.paper_export      → spyglass_pipeline.figure04_input
+spyglass_pipeline.figure04_schema   → diagnostics, figure04_decoder, figure04_generation, figure04_models, figure04_place_fields, spyglass_pipeline.figure04_compute, spyglass_pipeline.figure04_input
+spyglass_pipeline.figure04_compute  → figure04_models, spyglass_pipeline.figure04_input; lazy: figure04_decoder, figure04_diagnostics, figure04_generation, figure04_place_fields, figure04_summary; type-only: diagnostics
+spyglass_pipeline.pickle_conversion → figure04_input, spyglass_pipeline.figure04_input
 ```
 <!-- module-graph -->
 
@@ -237,8 +236,9 @@ spyglass_pipeline.figure04_compute → figure04_models, spyglass_pipeline.figure
 - **`spyglass_pipeline/`** — the lab's Spyglass pipeline for Figure 4, upstream of the
   paper code; no figure or analysis module imports it (`tests/test_import_boundaries.py`).
   - **`figure04_input.py`** (with `scripts/fetch_figure04_inputs.py`) rebuilds the
-    Figure-4 input file from Spyglass, writing it with `write_local_data`, and
-    compares it with the archived copy. See [data-lineage.md](data-lineage.md).
+    Figure-4 input file from Spyglass, writes it (`recording_arrays` defines the
+    layout, `write_npz` writes it deterministically), and compares it with the
+    archived copy. See [data-lineage.md](data-lineage.md).
   - **`paper_export.py`** (with `scripts/spyglass_export_figure04.py`) records that
     fetch in a Spyglass paper export.
   - **`figure04_schema.py`** (with `scripts/spyglass_pipeline_figure04.py`) defines
@@ -246,8 +246,9 @@ spyglass_pipeline.figure04_compute → figure04_models, spyglass_pipeline.figure
     figure's numbers inside the lab database; **`figure04_compute.py`** holds what
     those tables compute, runnable without a database. See
     [spyglass-pipeline.md](spyglass-pipeline.md).
-- **`scripts/convert_figure04_pickles.py`** converts the five pickles the
-  recording was first exported as into the input file.
+  - **`pickle_conversion.py`** (with `scripts/convert_figure04_pickles.py`)
+    converts the five pickles the recording was first exported as into the
+    input file.
 
 ---
 
@@ -481,7 +482,7 @@ $\Lambda(x)$.
   `save_figure`.
 - **Intermediate data — the honest boundary.** Figure 4 is reproduced **from
   the Figure-4 input file (derived data) onward**, not from raw acquisition. The loader
-  `load_local_data.load_figure04_input` reads one file from the
+  `figure04_input.load_figure04_input` reads one file from the
   data directory, `{epoch}_figure04_inputs.npz`, and returns a validated
   `NeuralRecordingData`:
 
@@ -495,7 +496,7 @@ $\Lambda(x)$.
 
   The file holds only numeric and string arrays, is read with
   `allow_pickle=False`, and is written deterministically (same content, same
-  SHA-256); `write_local_data.recording_arrays` defines the layout.
+  SHA-256); `spyglass_pipeline.figure04_input.recording_arrays` defines the layout.
   `scripts/convert_figure04_pickles.py` converts the five pickles the recording
   was first exported as and checks the result.
 
@@ -524,7 +525,7 @@ $\Lambda(x)$.
   `tests/test_figure04_{diagnostics,place_fields,models}.py` (the analysis
   leaves and model registry);
   `tests/test_figure04_{plot_primitives,track_plots,panels}.py` (the plotting
-  leaves); `tests/test_load_local_data.py` (the `NeuralRecordingData` contract);
+  leaves); `tests/test_figure04_input.py` (the `NeuralRecordingData` contract);
   `tests/test_figure04_download.py` (the input download).
 
 ### Figure-4 traceability walkthrough (following the typed returns)
@@ -581,7 +582,7 @@ regardless.
   version, the **content hash of the input file** (so replacing it under the
   same `animal_date_epoch` invalidates the cache), and the docstring-stripped
   syntax trees of `figure04_decoder.py`, `figure04_place_fields.py`,
-  `figure04_workflow.py`, and `load_local_data.py`. This covers helper
+  `figure04_workflow.py`, and `figure04_input.py`. This covers helper
   functions, imports, defaults, and recording preparation.
 - The **diagnostics cache** is keyed by the decode fingerprint plus a
   **diagnostics fingerprint**

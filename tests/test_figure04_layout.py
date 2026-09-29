@@ -15,6 +15,7 @@ import pandas as pd  # noqa: E402
 import xarray as xr  # noqa: E402
 
 from statespacecheck_paper.diagnostics import SpikeEventDiagnostics  # noqa: E402
+from statespacecheck_paper.figure04_input import NeuralRecordingData  # noqa: E402
 from statespacecheck_paper.figure04_layout import (  # noqa: E402
     Figure4Composition,
     Figure4DetailWindow,
@@ -25,7 +26,6 @@ from statespacecheck_paper.figure04_workflow import (  # noqa: E402
     Figure4DecodeResults,
     Figure4RenderData,
 )
-from statespacecheck_paper.load_local_data import NeuralRecordingData  # noqa: E402
 
 from ._diagnostics import event_diagnostics  # noqa: E402
 from ._figure04 import synthetic_cache_provenance  # noqa: E402

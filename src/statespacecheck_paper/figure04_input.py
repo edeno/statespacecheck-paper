@@ -8,10 +8,11 @@ instead of an undiscoverable ``dict[str, Any]``.
 The recording is stored as one ``{animal_date_epoch}_figure04_inputs.npz``: plain
 numeric and string arrays (read with ``allow_pickle=False``, so loading runs no
 code and does not depend on library internals), written deterministically so
-the same content always has the same SHA-256. The file is written, and the five
-pickles the recording was first exported as are converted, by
-:mod:`statespacecheck_paper.write_local_data`; the published copy is downloaded
-by :mod:`statespacecheck_paper.figure04_download`.
+the same content always has the same SHA-256. The lab's tooling writes the file:
+:mod:`statespacecheck_paper.spyglass_pipeline.figure04_input` rebuilds it from the
+Spyglass database, and :mod:`statespacecheck_paper.spyglass_pipeline.pickle_conversion`
+converted the five pickles the recording was first exported as. The published
+copy is downloaded by :mod:`statespacecheck_paper.figure04_download`.
 """
 
 from __future__ import annotations
@@ -42,7 +43,7 @@ INPUT_FILE_SUFFIX = "_figure04_inputs.npz"
 # Name of the published copy of the Figure-4 input file (see ``paths``).
 FIGURE04_INPUTS_FILE = f"{FIGURE04_INPUTS_EPOCH}{INPUT_FILE_SUFFIX}"
 
-# Version of the array layout (see :func:`write_local_data.recording_arrays`).
+# Version of the array layout (see :func:`spyglass_pipeline.figure04_input.recording_arrays`).
 NPZ_FORMAT_VERSION = 1
 
 
@@ -137,7 +138,7 @@ class NeuralRecordingData:
 def recording_from_arrays(arrays: Mapping[str, NDArray[np.generic]]) -> NeuralRecordingData:
     """Decode the named arrays of the ``.npz`` input file.
 
-    The layout is defined by :func:`write_local_data.recording_arrays`.
+    The layout is defined by :func:`spyglass_pipeline.figure04_input.recording_arrays`.
 
     Parameters
     ----------
@@ -242,7 +243,7 @@ def load_figure04_input(
     Notes
     -----
     Expected file in data_path: ``{animal_date_epoch}_figure04_inputs.npz`` (see
-    :func:`write_local_data.recording_arrays` for its contents).
+    :func:`spyglass_pipeline.figure04_input.recording_arrays` for its contents).
 
     Raises
     ------

@@ -62,11 +62,11 @@ and orchestration separate; the dependency graph is tested for cycles.
 | General Bayesian filter | `decoding.py` |
 | Paper diagnostic containers and threshold choices | `diagnostics.py` |
 | Figure 3 protocol, simulation, summary, rendering | `figure03_*` |
-| Figure 4 loading, fitting, diagnostics, caches, rendering | `load_local_data.py`, `write_local_data.py`, `figure04_*` |
+| Figure 4 loading, fitting, diagnostics, caches, rendering | `figure04_*` (the input-file reader is `figure04_input.py`) |
 | Shared plotting and appearance | `plotting.py`, `style.py`, `schematic.py` |
 | Summary-to-prose reporting | `reported_values.py`, `number_format.py` |
 | Website export | `site_export.py` |
-| The lab's Spyglass pipeline for Figure 4 (rebuilding its input; running it as Spyglass tables) | `spyglass_pipeline/` |
+| The lab's Spyglass pipeline for Figure 4 (rebuilding and writing its input file; converting the original pickles; running it as Spyglass tables) | `spyglass_pipeline/` |
 
 The general diagnostic computations belong to the separate `statespacecheck`
 package. Change them there, release/update that dependency, and regenerate this
@@ -158,7 +158,7 @@ The [artifact table](reproduce.md#outputs-and-checks) identifies each generator.
 - **Lab acquisition/export:** `fetch_figure04_inputs.py`,
   `spyglass_export_figure04.py`, `spyglass_pipeline_figure04.py`, and
   `datajoint_read_only.py`. See [the lab guide](spyglass-pipeline.md).
-- **Legacy conversion:** `convert_figure04_pickles.py`, for the original five
+- **Pickle conversion:** `convert_figure04_pickles.py`, for the original five
   local pickles. Current reproduction uses the archived `.npz` input. Conversion
   verification and historic checksums remain in [data lineage](data-lineage.md).
 

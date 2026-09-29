@@ -1,9 +1,10 @@
-"""Convert the legacy Figure-4 pickles to the ``.npz`` input file (CLI).
+"""Convert the Figure-4 pickles to the ``.npz`` input file (CLI).
 
 The recording was first exported as five pickles; Figure 4 reads one
 ``{animal_date_epoch}_figure04_inputs.npz``. This writes that file next to (or
 away from) the pickles and checks that it loads back identical to them. The
-recipe is :func:`statespacecheck_paper.write_local_data.convert_legacy_pickle_exports`.
+recipe is
+:func:`statespacecheck_paper.spyglass_pipeline.pickle_conversion.convert_pickles_to_input_file`.
 
 Example::
 
@@ -17,17 +18,19 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from statespacecheck_paper.paths import ANIMAL_DATE_EPOCH
-from statespacecheck_paper.write_local_data import convert_legacy_pickle_exports
+from statespacecheck_paper.spyglass_pipeline.pickle_conversion import (
+    convert_pickles_to_input_file,
+)
 
 
 def main(argv: Sequence[str] | None = None) -> None:
-    """Convert and verify the legacy pickles for one epoch."""
+    """Convert and verify the pickles for one epoch."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--pickle-dir", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--animal-date-epoch", default=ANIMAL_DATE_EPOCH)
     args = parser.parse_args(argv)
-    path = convert_legacy_pickle_exports(args.pickle_dir, args.output_dir, args.animal_date_epoch)
+    path = convert_pickles_to_input_file(args.pickle_dir, args.output_dir, args.animal_date_epoch)
     print(f"wrote {path} (verified identical to the pickles)")
 
 

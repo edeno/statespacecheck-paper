@@ -17,9 +17,9 @@ from statespacecheck_paper.figure04_cache import (
 )
 from statespacecheck_paper.figure04_decoder import Figure4Config
 from statespacecheck_paper.figure04_diagnostics import FlagConfusion
+from statespacecheck_paper.figure04_input import INPUT_FILE_SUFFIX
 from statespacecheck_paper.figure04_layout import Figure4Composition
 from statespacecheck_paper.figure04_summary import Figure4DiagnosticMeans, Figure4Summary
-from statespacecheck_paper.load_local_data import INPUT_FILE_SUFFIX
 
 from ._figure04 import synthetic_cache_provenance
 from ._scripts import SCRIPTS_DIR

@@ -27,7 +27,7 @@ This module owns the cache locations (:class:`Figure4Paths`), both fingerprints,
 the machine-readable provenance record stored in the summary, and the load/save
 helpers with explicit invalid-cache behavior. It imports ``Figure4Config`` from
 :mod:`figure04_decoder` and the input-file name (``input_file_path``,
-``INPUT_FILE_SUFFIX``) from :mod:`load_local_data`, whose loader owns it.
+``INPUT_FILE_SUFFIX``) from :mod:`figure04_input`, whose loader owns it.
 """
 
 from __future__ import annotations
@@ -45,7 +45,7 @@ from typing import TypedDict
 import joblib
 
 from statespacecheck_paper.figure04_decoder import Figure4Config, Figure4DiagnosticsConfig
-from statespacecheck_paper.load_local_data import (
+from statespacecheck_paper.figure04_input import (
     INPUT_FILE_SUFFIX,
     file_sha256,
     input_file_path,
@@ -69,7 +69,7 @@ _DECODE_SOURCE_FILES: tuple[str, ...] = (
     "figure04_decoder.py",
     "figure04_place_fields.py",
     "figure04_workflow.py",
-    "load_local_data.py",
+    "figure04_input.py",
 )
 
 # Source files whose executable content shapes the cached diagnostics. Their
@@ -115,7 +115,7 @@ class Figure4CacheArtifactProvenance(TypedDict):
     diagnostics_config: dict[str, object]
 
 
-# The Figure-4 input file is named by ``load_local_data`` (which owns
+# The Figure-4 input file is named by ``figure04_input`` (which owns
 # ``INPUT_FILE_SUFFIX``); its content hash goes into the fingerprint so that
 # replacing the file under the same ``{epoch}`` prefix invalidates the cache
 # instead of silently reusing a decode of the old data.

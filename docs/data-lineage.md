@@ -16,7 +16,7 @@ the repository, `data/` is ignored). It matches
 `provenance.figure04_decode_cache.input_file_sha256` in
 `manuscript/figures/main/figure04_summary.json`. It holds only numeric and string
 arrays (loaded with `allow_pickle=False`) and is written deterministically, so the
-same content always has the same SHA-256; `write_local_data.recording_arrays`
+same content always has the same SHA-256; `spyglass_pipeline.figure04_input.recording_arrays`
 defines the layout.
 
 ### Originally: five pickles
@@ -178,7 +178,7 @@ be checked against the current database before any manual deletion. The partial
 selection has not been cleaned up by this repository's scripts.
 
 With the position fetch reading the single `IntervalPositionInfo` entry directly
-(so that no restriction by `True` is logged; see `figure04_input.py`), the
+(so that no restriction by `True` is logged; see `spyglass_pipeline/figure04_input.py`), the
 Figure-4 fetch was rehearsed on the lab server under `scripts/datajoint_read_only.py` on 2026-09-24. It
 would log 131 table restrictions and 23 files, with no unrestricted table
 entry. A separate guarded fetch rebuilt the `.npz` and matched the reference

@@ -2,7 +2,7 @@
 
 Assembles everything the Figure-4 render needs. Its input is the Figure-4 input
 file of derived data (loaded as a
-:class:`~statespacecheck_paper.load_local_data.NeuralRecordingData`),
+:class:`~statespacecheck_paper.figure04_input.NeuralRecordingData`),
 not a raw-data pipeline, so this is a *workflow*: load the fresh recording, load
 a fingerprint-matching decode cache or fit + decode both models and cache the
 result, and load a matching diagnostics cache or compute the per-spike
@@ -52,14 +52,14 @@ from statespacecheck_paper.figure04_decoder import (
     validate_package_defaults,
 )
 from statespacecheck_paper.figure04_diagnostics import compute_results_diagnostics
+from statespacecheck_paper.figure04_input import (
+    NeuralRecordingData,
+    load_figure04_input,
+)
 from statespacecheck_paper.figure04_place_fields import (
     DECODER_PREDICTIVE_VAR,
     extract_agreed_place_fields,
     extract_place_fields,
-)
-from statespacecheck_paper.load_local_data import (
-    NeuralRecordingData,
-    load_figure04_input,
 )
 
 

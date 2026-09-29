@@ -1,5 +1,5 @@
 """Tests for the NeuralRecordingData contract, the ``.npz`` reader and writer, and
-the legacy pickle conversion."""
+the pickle conversion."""
 
 from __future__ import annotations
 
@@ -15,20 +15,19 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from statespacecheck_paper.load_local_data import (
+from statespacecheck_paper.figure04_input import (
     NeuralRecordingData,
     load_figure04_input,
 )
 from statespacecheck_paper.paths import (
     FIGURE04_INPUTS_EPOCH,
 )
-from statespacecheck_paper.write_local_data import (
-    LEGACY_PICKLE_SUFFIXES,
-    convert_legacy_pickle_exports,
-    read_legacy_pickle_exports,
-    recording_arrays,
+from statespacecheck_paper.spyglass_pipeline.figure04_input import recording_arrays, write_npz
+from statespacecheck_paper.spyglass_pipeline.pickle_conversion import (
+    PICKLE_SUFFIXES,
+    convert_pickles_to_input_file,
+    read_recording_pickles,
     recording_difference,
-    write_npz,
 )
 
 
@@ -252,12 +251,10 @@ def test_recording_arrays_refuses_what_it_cannot_store() -> None:
         recording_arrays(**_kwargs(track_graph=graph))
 
 
-def _write_legacy_pickles(directory: Path) -> None:
+def _write_recording_pickles(directory: Path) -> None:
     kwargs = _kwargs()
     names = dict(
-        zip(
-            ("position", "spikes", "graph", "order", "spacing"), LEGACY_PICKLE_SUFFIXES, strict=True
-        )
+        zip(("position", "spikes", "graph", "order", "spacing"), PICKLE_SUFFIXES, strict=True)
     )
     kwargs["position_info"].to_pickle(directory / f"{_EPOCH}{names['position']}")
     for key, value in (
@@ -270,18 +267,18 @@ def _write_legacy_pickles(directory: Path) -> None:
             pickle.dump(value, f, protocol=4)
 
 
-def test_convert_legacy_pickles_writes_an_identical_npz(tmp_path: Path) -> None:
-    _write_legacy_pickles(tmp_path)
+def test_convert_pickles_writes_an_identical_npz(tmp_path: Path) -> None:
+    _write_recording_pickles(tmp_path)
 
-    path = convert_legacy_pickle_exports(tmp_path, tmp_path / "npz", _EPOCH)
+    path = convert_pickles_to_input_file(tmp_path, tmp_path / "npz", _EPOCH)
 
     converted = load_figure04_input(path.parent, _EPOCH)
-    assert recording_difference(converted, read_legacy_pickle_exports(tmp_path, _EPOCH)) is None
+    assert recording_difference(converted, read_recording_pickles(tmp_path, _EPOCH)) is None
 
 
 def test_convert_refuses_to_overwrite(tmp_path: Path) -> None:
-    _write_legacy_pickles(tmp_path)
-    convert_legacy_pickle_exports(tmp_path, tmp_path, _EPOCH)
+    _write_recording_pickles(tmp_path)
+    convert_pickles_to_input_file(tmp_path, tmp_path, _EPOCH)
 
     with pytest.raises(FileExistsError):
-        convert_legacy_pickle_exports(tmp_path, tmp_path, _EPOCH)
+        convert_pickles_to_input_file(tmp_path, tmp_path, _EPOCH)

@@ -20,7 +20,7 @@ from statespacecheck_paper.figure04_download import (
     FIGURE04_INPUTS_RECORD_URL,
     download_figure04_inputs,
 )
-from statespacecheck_paper.load_local_data import FIGURE04_INPUTS_FILE
+from statespacecheck_paper.figure04_input import FIGURE04_INPUTS_FILE
 from statespacecheck_paper.paths import DATA_PATH, FIGURE04_INPUTS_DOI, FIGURE04_INPUTS_SHA256
 from tests.test_reported_statistics_artifacts import _load
 

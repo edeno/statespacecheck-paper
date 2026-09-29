@@ -122,7 +122,7 @@ def test_figure01_and_figure02_generation_dependencies_are_explicit() -> None:
 def test_figure04_family_dependency_edges_are_acyclic() -> None:
     """The Figure-4 family is layered cache < workflow < summary/layout < generation:
     cache imports only ``figure04_decoder`` (the configuration it hashes) and
-    ``load_local_data`` (the input-file names and checksum); workflow imports
+    ``figure04_input`` (the input-file name and checksum); workflow imports
     cache; summary and layout import workflow (never cache/config/paths);
     generation ties them together.
 
@@ -153,7 +153,7 @@ def test_figure04_family_dependency_edges_are_acyclic() -> None:
         },
         "figure04_cache.py": {
             prefix + "figure04_decoder",
-            prefix + "load_local_data",
+            prefix + "figure04_input",
         },
         "figure04_workflow.py": {
             prefix + "figure04_cache",
@@ -161,7 +161,7 @@ def test_figure04_family_dependency_edges_are_acyclic() -> None:
             prefix + "figure04_diagnostics",
             prefix + "figure04_place_fields",
             prefix + "diagnostics",
-            prefix + "load_local_data",
+            prefix + "figure04_input",
         },
         "figure04_summary.py": {
             prefix + "diagnostics",
@@ -196,14 +196,14 @@ def test_figure04_family_dependency_edges_are_acyclic() -> None:
 
 
 def test_decode_hashed_modules_do_not_import_unhashed_figure04_helpers() -> None:
-    """The decode cache fingerprints only its source files; the summary, the
-    input-file writer, and the model display labels stay outside it, so the
-    decode must not come to depend on them."""
+    """The decode cache fingerprints only its source files; the summary and the
+    model display labels stay outside it, so the decode must not come to depend
+    on them. (The input-file writer is in ``spyglass_pipeline``, which no figure
+    module imports.)"""
     prefix = "statespacecheck_paper."
     for module_file in figure04_cache._DECODE_SOURCE_FILES:
         imports = _sibling_module_imports(module_file)
         assert prefix + "figure04_summary" not in imports, module_file
-        assert prefix + "write_local_data" not in imports, module_file
         assert prefix + "figure04_models" not in imports, module_file
 
 

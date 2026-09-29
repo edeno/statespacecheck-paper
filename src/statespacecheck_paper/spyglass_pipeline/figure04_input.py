@@ -1,10 +1,11 @@
 """Rebuild the Figure-4 input file from the Frank-lab Spyglass database.
 
-:func:`statespacecheck_paper.load_local_data.load_figure04_input` reads the
+:func:`statespacecheck_paper.figure04_input.load_figure04_input` reads the
 Figure-4 input file, one ``.npz``. This module is the upstream side of that
 boundary: it fetches the Spyglass entries the recording is derived from and
-writes that file, so it can be regenerated, compared with the one the figure
-used, and recorded in a Spyglass paper export
+writes that file (:func:`recording_arrays` defines its layout and
+:func:`write_npz` writes it deterministically), so it can be regenerated,
+compared with the one the figure used, and recorded in a Spyglass paper export
 (:mod:`~statespacecheck_paper.spyglass_pipeline.paper_export`).
 See ``docs/data-lineage.md`` for the entries, processing steps, and verification
 record.
@@ -23,7 +24,8 @@ machine with the lab's analysis store mounted.
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Mapping, Sequence
+import zipfile
+from collections.abc import Hashable, Mapping, Sequence
 from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, TypedDict
@@ -33,8 +35,11 @@ import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
-from statespacecheck_paper.load_local_data import NeuralRecordingData, input_file_path
-from statespacecheck_paper.write_local_data import recording_arrays, write_npz
+from statespacecheck_paper.figure04_input import (
+    NPZ_FORMAT_VERSION,
+    NeuralRecordingData,
+    input_file_path,
+)
 
 if TYPE_CHECKING:
     pass
@@ -87,7 +92,7 @@ class Figure4Inputs:
 
     Values keep the types Spyglass returns (e.g. ``linear_edge_spacing`` is the
     stored blob, an ``int`` for this track); the writer encodes them, and
-    :class:`~statespacecheck_paper.load_local_data.NeuralRecordingData`
+    :class:`~statespacecheck_paper.figure04_input.NeuralRecordingData`
     normalizes them on load.
 
     Parameters
@@ -524,6 +529,115 @@ def check_output_paths(
             raise FileNotFoundError(f"Missing reference input file: {reference}")
 
 
+def recording_arrays(
+    position_info: pd.DataFrame,
+    spike_times: Sequence[NDArray[np.float64]],
+    track_graph: nx.Graph,
+    linear_edge_order: Sequence[tuple[Hashable, Hashable]],
+    linear_edge_spacing: float,
+) -> dict[str, NDArray[np.generic]]:
+    """Encode a recording as the named arrays of the ``.npz`` input file.
+
+    Parameters
+    ----------
+    position_info : pd.DataFrame, shape (n_time, n_columns)
+        Time-indexed position; every column must be numeric.
+    spike_times : sequence of np.ndarray, shape (n_spikes,)
+        Per-unit spike times (seconds); units with no spikes are kept.
+    track_graph : networkx.Graph
+        Track graph with integer nodes carrying only ``pos`` and edges carrying
+        only ``distance`` and ``edge_id`` (anything else would be dropped, so it
+        is refused).
+    linear_edge_order : sequence of (int, int)
+        Edge order for linearization (integer node IDs).
+    linear_edge_spacing : float
+        Spacing between linearized edges (centimeters).
+
+    Returns
+    -------
+    dict of str to np.ndarray
+        ``format_version``; ``position_time``, ``position_index_name``,
+        ``position_columns`` and one ``position/<column>`` per column;
+        ``spike_times`` (all units concatenated) and ``spike_offsets``
+        (``n_units + 1``); ``track_nodes``, ``track_node_positions``,
+        ``track_edges``, ``track_edge_distance``, ``track_edge_id`` (in the
+        graph's iteration order); ``linear_edge_order``; ``linear_edge_spacing``.
+
+    Raises
+    ------
+    ValueError
+        If a position column is not numeric, or the graph carries attributes
+        other than those listed above.
+    """
+    columns = [str(column) for column in position_info.columns]
+    arrays: dict[str, NDArray[np.generic]] = {
+        "format_version": np.asarray(NPZ_FORMAT_VERSION, dtype=np.int64),
+        "position_time": position_info.index.to_numpy(dtype=np.float64),
+        "position_index_name": np.asarray(position_info.index.name or ""),
+        "position_columns": np.asarray(columns),
+    }
+    for column in columns:
+        values = position_info[column].to_numpy()
+        if not np.issubdtype(values.dtype, np.number):
+            raise ValueError(f"position_info column {column!r} is not numeric ({values.dtype})")
+        arrays[f"position/{column}"] = values
+
+    units = [np.asarray(st, dtype=np.float64) for st in spike_times]
+    arrays["spike_times"] = np.concatenate(units) if units else np.empty(0)
+    arrays["spike_offsets"] = np.concatenate(([0], np.cumsum([len(u) for u in units]))).astype(
+        np.int64
+    )
+
+    if track_graph.graph or track_graph.is_directed():
+        raise ValueError("track_graph must be an undirected graph without graph attributes")
+    node_keys = {frozenset(data) for _, data in track_graph.nodes(data=True)}
+    edge_keys = {frozenset(data) for _, _, data in track_graph.edges(data=True)}
+    if node_keys - {frozenset({"pos"})} or edge_keys - {frozenset({"distance", "edge_id"})}:
+        raise ValueError("track_graph attributes must be node 'pos' and edge 'distance', 'edge_id'")
+    arrays["track_nodes"] = np.asarray(list(track_graph.nodes), dtype=np.int64)
+    arrays["track_node_positions"] = np.asarray(
+        [track_graph.nodes[node]["pos"] for node in track_graph.nodes], dtype=np.float64
+    )
+    arrays["track_edges"] = np.asarray(list(track_graph.edges), dtype=np.int64).reshape(-1, 2)
+    arrays["track_edge_distance"] = np.asarray(
+        [data["distance"] for _, _, data in track_graph.edges(data=True)], dtype=np.float64
+    )
+    arrays["track_edge_id"] = np.asarray(
+        [data["edge_id"] for _, _, data in track_graph.edges(data=True)], dtype=np.int64
+    )
+    arrays["linear_edge_order"] = np.asarray(linear_edge_order, dtype=np.int64).reshape(-1, 2)
+    arrays["linear_edge_spacing"] = np.asarray(linear_edge_spacing, dtype=np.float64)
+    return arrays
+
+
+def write_npz(path: str | Path, arrays: Mapping[str, NDArray[np.generic]]) -> Path:
+    """Write arrays as an uncompressed ``.npz`` whose bytes depend only on the arrays.
+
+    ``np.savez`` stamps the current time on each archive entry, so the same arrays
+    would get a different SHA-256 on every write. This writes the same ``.npy``
+    entries in sorted order with a fixed timestamp.
+
+    Parameters
+    ----------
+    path : str or Path
+        Destination file.
+    arrays : Mapping of str to np.ndarray
+        Arrays to store; none may need pickling (object dtype is refused).
+
+    Returns
+    -------
+    Path
+        The written path.
+    """
+    path = Path(path)
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_STORED) as archive:
+        for name in sorted(arrays):
+            info = zipfile.ZipInfo(f"{name}.npy", date_time=(1980, 1, 1, 0, 0, 0))
+            with archive.open(info, "w", force_zip64=True) as entry:
+                np.save(entry, np.asanyarray(arrays[name]), allow_pickle=False)
+    return path
+
+
 def write_figure04_inputs(
     inputs: Figure4Inputs,
     output_dir: str | Path,
@@ -534,7 +648,7 @@ def write_figure04_inputs(
     """Write the Figure-4 inputs as the ``.npz`` file the figure reads.
 
     The inputs are validated with the loader's checks, encoded with
-    :func:`~statespacecheck_paper.write_local_data.recording_arrays`, and written
+    :func:`recording_arrays`, and written
     deterministically, so the same inputs always give the same SHA-256.
 
     Parameters
@@ -559,7 +673,7 @@ def write_figure04_inputs(
         If the file exists and ``overwrite`` is False.
     ValueError
         If the inputs fail the loader's checks
-        (:class:`~statespacecheck_paper.load_local_data.NeuralRecordingData`) or
+        (:class:`~statespacecheck_paper.figure04_input.NeuralRecordingData`) or
         cannot be encoded; nothing is written.
     """
     check_output_paths(output_dir, animal_date_epoch, overwrite=overwrite)

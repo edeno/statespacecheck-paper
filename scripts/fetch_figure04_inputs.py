@@ -1,7 +1,7 @@
 r"""Rebuild the Figure-4 input file from Spyglass (CLI; read-only).
 
 Fetches the Spyglass entries behind the Figure-4 recording and writes the
-``.npz`` file that :func:`statespacecheck_paper.load_local_data.load_figure04_input`
+``.npz`` file that :func:`statespacecheck_paper.figure04_input.load_figure04_input`
 reads. With ``--compare-to``, checks it array by array against a reference (e.g.
 the ``data/`` file the figure used). The recipe lives in
 :mod:`statespacecheck_paper.spyglass_pipeline.figure04_input`; this script is the thin CLI wrapper.
