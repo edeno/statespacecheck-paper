@@ -47,7 +47,6 @@ class TestDecodeWithDiagnostics:
             "posterior": (n_time, n_bins),
             "predictive": (n_time, n_bins),
             "likelihood": (n_time, n_bins),
-            "spike_likelihood": (n_time, n_bins),
             # Per-cell metric matrices.
             "hpd_overlap": (n_time, n_cells),
             "kl_divergence": (n_time, n_cells),
@@ -731,11 +730,10 @@ class TestDecoderOverrideWindowTightening:
 
 
 class TestStoredLikelihoodNormalization:
-    """The log-space rewrite stores ``combined_likelihood_all`` and
-    ``spike_likelihood_all`` via a bespoke shift-and-normalize. A
-    regression that left these unnormalized would still pass shape
-    contracts but distort every downstream HPD / KL on the displayed
-    likelihood. Pin the normalization directly.
+    """The log-space rewrite stores ``combined_likelihood_all`` via a
+    bespoke shift-and-normalize. A regression that left it unnormalized
+    would still pass shape contracts but distort the displayed likelihood.
+    Pin the normalization directly.
     """
 
     def test_combined_likelihood_sums_to_one_at_every_step(
@@ -749,26 +747,6 @@ class TestStoredLikelihoodNormalization:
             rtol=1e-10,
             atol=1e-12,
             err_msg="combined_likelihood_all is not row-normalized",
-        )
-
-    def test_spike_likelihood_sums_to_one_at_spike_steps(
-        self, decoder_inputs: DecoderInputs
-    ) -> None:
-        """Steps with at least one spike must produce a normalized
-        spike-only likelihood. NaN at no-spike steps is acceptable (and
-        documented)."""
-        result = decoder_inputs.call()
-        spike_lik = result.spike_likelihood
-        spike_counts = decoder_inputs.spike_counts
-        spike_steps = np.where(spike_counts.sum(axis=1) > 0)[0]
-        assert spike_steps.size, "test fixture produced no spike_counts"
-        sums = spike_lik[spike_steps].sum(axis=1)
-        np.testing.assert_allclose(
-            sums,
-            1.0,
-            rtol=1e-10,
-            atol=1e-12,
-            err_msg="spike_likelihood_all is not row-normalized at spike steps",
         )
 
 
@@ -989,19 +967,6 @@ class TestFilterStep:
         expected = transition @ previous
         np.testing.assert_allclose(step.prior, expected)
         assert step.prior[1] == pytest.approx(1.0)
-
-    def test_spike_likelihood_is_nan_without_spikes(self) -> None:
-        n_bins, n_cells = 21, 3
-        transition = _diag_dominant_transition(n_bins)
-        rates = self._rates(n_bins, n_cells)
-        previous = normalize(np.ones(n_bins))
-
-        silent = filter_step(previous, np.zeros(n_cells, dtype=int), transition, rates)
-        assert np.all(np.isnan(silent.spike_likelihood))
-
-        firing = filter_step(previous, np.array([0, 2, 0]), transition, rates)
-        assert np.all(np.isfinite(firing.spike_likelihood))
-        np.testing.assert_allclose(firing.spike_likelihood.sum(), 1.0)
 
     def test_matches_first_step_of_full_decode(self, decoder_inputs: DecoderInputs) -> None:
         """One ``filter_step`` reproduces the t=1 arrays of the full recursion."""

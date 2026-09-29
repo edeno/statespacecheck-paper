@@ -426,15 +426,11 @@ class FilterStep(NamedTuple):
         Filtered posterior ``p(x_t | y_{1:t})``.
     combined_likelihood : np.ndarray, shape (n_bins,)
         Normalized combined likelihood over all cells (display normalization).
-    spike_likelihood : np.ndarray, shape (n_bins,)
-        Normalized likelihood over only the cells that fired this step; all-NaN
-        when no cell fired.
     """
 
     prior: NDArray[np.floating]
     posterior: NDArray[np.floating]
     combined_likelihood: NDArray[np.floating]
-    spike_likelihood: NDArray[np.floating]
 
 
 def update_step(
@@ -465,8 +461,8 @@ def update_step(
     Returns
     -------
     step : FilterStep
-        ``prior`` echoed back, the updated posterior, and the two displayed
-        likelihood rows (all shape ``(n_bins,)``).
+        ``prior`` echoed back, the updated posterior, and the displayed
+        combined likelihood (all shape ``(n_bins,)``).
 
     Raises
     ------
@@ -489,13 +485,6 @@ def update_step(
     log_lik_combined = log_lik_per_cell.sum(axis=1)  # (n_bins,)
     combined_likelihood = softmax_with_shift(log_lik_combined)
 
-    # Spike-only likelihood: product over only the cells that fired. Stays NaN
-    # at times with no spikes.
-    spike_likelihood: NDArray[np.floating] = np.full(prior.shape, np.nan)
-    spiking_mask = spike_counts_t > 0
-    if np.any(spiking_mask):
-        spike_likelihood = softmax_with_shift(log_lik_per_cell[:, spiking_mask].sum(axis=1))
-
     # Posterior update via the _condition_on pattern (dynamax /
     # non_local_detector). An impossible observation raises at this exact
     # timestep rather than resetting the posterior and changing every downstream
@@ -506,7 +495,6 @@ def update_step(
         prior=prior,
         posterior=posterior,
         combined_likelihood=combined_likelihood,
-        spike_likelihood=spike_likelihood,
     )
 
 
@@ -522,7 +510,7 @@ def filter_step(
     :func:`decode_with_diagnostics`, extracted so a single predict/update step
     can be exercised in isolation. It is pure: given the previous posterior and
     this step's decoder components, it returns the predictive prior, the updated
-    posterior, and the two displayed likelihood rows without touching any
+    posterior, and the displayed combined likelihood without touching any
     preallocated output buffers.
 
     Parameters
@@ -540,8 +528,7 @@ def filter_step(
     Returns
     -------
     step : FilterStep
-        The prior, posterior, combined likelihood, and spike-only likelihood
-        (all shape ``(n_bins,)``).
+        The prior, posterior, and combined likelihood (all shape ``(n_bins,)``).
 
     Raises
     ------
@@ -640,10 +627,8 @@ def decode_with_diagnostics(
 
         Dense ``(n_time, n_bins)`` distributions
             ``posterior`` (filtered posterior), ``predictive`` (one-step
-            ahead; the initial state distribution at t=0), ``likelihood``
-            (normalized combined likelihood from all cells), and
-            ``spike_likelihood`` (combined likelihood from only spiking
-            cells; NaN where no cell fired).
+            ahead; the initial state distribution at t=0), and ``likelihood``
+            (normalized combined likelihood from all cells).
 
         Dense ``(n_time, n_cells)`` per-cell diagnostic matrices
             ``hpd_overlap``, ``kl_divergence``, ``predictive_pvalue``. NaN at
@@ -674,10 +659,10 @@ def decode_with_diagnostics(
     run in log-space via the :func:`_condition_on` pattern adapted from
     ``dynamax`` / ``non_local_detector.core``. The posterior update
     itself cannot underflow on the inner step (it uses an explicit
-    log-sum-exp shift). The stored ``likelihood`` and
-    ``spike_likelihood`` arrays are renormalized after the same shift,
-    so individual bins still underflow to zero in linear space but the
-    row as a whole remains a proper probability distribution.
+    log-sum-exp shift). The stored ``likelihood`` array is renormalized
+    after the same shift, so individual bins still underflow to zero in
+    linear space but the row as a whole remains a proper probability
+    distribution.
 
     When the observation has zero probability at every state with nonzero
     prior mass, :func:`_condition_on` raises. Continuing from an invented
@@ -735,9 +720,6 @@ def decode_with_diagnostics(
     posterior: NDArray[np.floating] = np.zeros((n_time, n_bins))
     predictive_posterior: NDArray[np.floating] = np.zeros((n_time, n_bins))  # p(x_t | y_{1:t-1})
     combined_likelihood_all: NDArray[np.floating] = np.zeros((n_time, n_bins))  # p(y_t | x_t)
-    # Spike-only likelihood: product over only cells that fired (for display).
-    # NaN at times with no spike_counts.
-    spike_likelihood_all: NDArray[np.floating] = np.full((n_time, n_bins), np.nan)
 
     # Initial state law p(x_0): the t=0 prediction. It is not propagated
     # through the transition matrix; the first bin's spikes update it directly.
@@ -791,7 +773,6 @@ def decode_with_diagnostics(
             step = filter_step(posterior[t - 1], spike_counts[t], current_transition, rates_t)
         predictive_posterior[t] = step.prior  # stored for p-value computation
         combined_likelihood_all[t] = step.combined_likelihood
-        spike_likelihood_all[t] = step.spike_likelihood
         posterior[t] = step.posterior
 
     # Find all spike events (every bin, including t=0). Count matrices are
@@ -826,7 +807,6 @@ def decode_with_diagnostics(
         posterior=posterior,
         predictive=predictive_posterior,
         likelihood=combined_likelihood_all,
-        spike_likelihood=spike_likelihood_all,
         hpd_overlap=overridden.hpd_overlap,
         kl_divergence=overridden.kl_divergence,
         predictive_pvalue=overridden.predictive_pvalue,

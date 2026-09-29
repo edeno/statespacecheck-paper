@@ -168,7 +168,6 @@ class TestDecodingDiagnosticsInvariants:
             posterior=posterior,
             predictive=posterior.copy(),
             likelihood=posterior.copy(),
-            spike_likelihood=posterior.copy(),
             hpd_overlap=np.zeros((n_time, n_cells)),
             kl_divergence=np.zeros((n_time, n_cells)),
             predictive_pvalue=np.zeros((n_time, n_cells)),

@@ -282,7 +282,7 @@ class DecodingDiagnostics:
 
     Parameters
     ----------
-    posterior, predictive, likelihood, spike_likelihood : np.ndarray, shape (n_time, n_bins)
+    posterior, predictive, likelihood : np.ndarray, shape (n_time, n_bins)
         Dense distributions over position.
     hpd_overlap, kl_divergence, predictive_pvalue : np.ndarray, shape (n_time, n_cells)
         Dense per-cell diagnostic matrices; ``NaN`` where no spike.
@@ -308,7 +308,6 @@ class DecodingDiagnostics:
     posterior: NDArray[np.floating]
     predictive: NDArray[np.floating]
     likelihood: NDArray[np.floating]
-    spike_likelihood: NDArray[np.floating]
     hpd_overlap: NDArray[np.floating]
     kl_divergence: NDArray[np.floating]
     predictive_pvalue: NDArray[np.floating]
@@ -334,7 +333,7 @@ class DecodingDiagnostics:
                 f"got shape {self.hpd_overlap.shape}"
             )
         n_time, n_bins = self.posterior.shape
-        for name in ("predictive", "likelihood", "spike_likelihood"):
+        for name in ("predictive", "likelihood"):
             arr = getattr(self, name)
             if arr.shape != (n_time, n_bins):
                 raise ValueError(
@@ -374,7 +373,6 @@ class DecodingDiagnostics:
             "posterior",
             "predictive",
             "likelihood",
-            "spike_likelihood",
             "hpd_overlap",
             "kl_divergence",
             "predictive_pvalue",

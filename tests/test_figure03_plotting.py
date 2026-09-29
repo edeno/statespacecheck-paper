@@ -48,9 +48,6 @@ def _combined_metrics(
 ) -> dict[str, Any]:
     """Build the full ``DecodingDiagnostics`` accepted by ``compose_figure03``."""
     spikes = rng.poisson(0.5, (n_time, n_cells))
-    spike_lik = np.full((n_time, n_bins), np.nan)
-    has_spk = spikes.sum(axis=1) > 0
-    spike_lik[has_spk] = rng.dirichlet(np.ones(n_bins), size=int(has_spk.sum()))
 
     spike_time_ind, spike_cell_ind = np.nonzero(spikes[1:])
     spike_time_ind = (spike_time_ind + 1).astype(np.intp)
@@ -63,7 +60,6 @@ def _combined_metrics(
         posterior=rng.dirichlet(np.ones(n_bins), size=n_time),
         predictive=rng.dirichlet(np.ones(n_bins), size=n_time),
         likelihood=rng.dirichlet(np.ones(n_bins), size=n_time),
-        spike_likelihood=spike_lik,
         hpd_overlap=per_cell["hpd_overlap"],
         kl_divergence=per_cell["kl_divergence"],
         predictive_pvalue=per_cell["predictive_pvalue"],
@@ -253,12 +249,10 @@ def test_compose_figure03_uses_event_diagnostics_for_scatter() -> None:
     spikes = np.zeros((n_time, n_cells), dtype=int)
     spikes[10, 0] = 2
 
-    spike_lik = np.full((n_time, n_bins), np.nan)
     hpd = np.full((n_time, n_cells), np.nan)
     kl = np.full((n_time, n_cells), np.nan)
     sp = np.full((n_time, n_cells), np.nan)
     per_spike_lik = rng.dirichlet(np.ones(n_bins), size=2)
-    spike_lik[10] = per_spike_lik[0]
     hpd[10, 0] = 0.5
     kl[10, 0] = 2.0
     sp[10, 0] = 0.05
@@ -267,7 +261,6 @@ def test_compose_figure03_uses_event_diagnostics_for_scatter() -> None:
         posterior=rng.dirichlet(np.ones(n_bins), size=n_time),
         predictive=rng.dirichlet(np.ones(n_bins), size=n_time),
         likelihood=rng.dirichlet(np.ones(n_bins), size=n_time),
-        spike_likelihood=spike_lik,
         hpd_overlap=hpd,
         kl_divergence=kl,
         predictive_pvalue=sp,
