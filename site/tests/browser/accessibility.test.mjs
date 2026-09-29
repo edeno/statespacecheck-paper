@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
 
-import { launch, openPage, serveBuild } from "./site.mjs";
+import { axeViolations, launch, openPage, serveBuild } from "./site.mjs";
 
 let server;
 let browser;
@@ -182,5 +182,53 @@ describe("navigation and states", () => {
       const error = page.locator("#cond-view .error");
       await error.waitFor();
       assert.equal(await error.getAttribute("role"), "alert");
+    }));
+});
+
+describe("axe-core WCAG 2.2 A/AA rules", () => {
+  test("the fully loaded page, with both spike tables open", () =>
+    withPage({}, async (page) => {
+      for (const view of ["#cond-view", "#rec-view"]) {
+        await page.click(`${view} details.spike-table summary`);
+        await page.locator(`${view} details.spike-table tbody tr`).first().waitFor();
+      }
+      assert.deepEqual(await axeViolations(page), []);
+    }));
+
+  test("the fully loaded page at 320 CSS pixels wide", () =>
+    withPage({ width: 320, height: 640 }, async (page) => {
+      assert.deepEqual(await axeViolations(page), []);
+    }));
+
+  test("the filter explainer while playing and at its last step", () =>
+    withPage({}, async (page) => {
+      await page.click("#ft-play");
+      assert.deepEqual(await axeViolations(page, "#filter"), [], "playing");
+      await page.click("#ft-play");
+      await page.locator("#ft-tracks .stack").focus();
+      await page.keyboard.press("End");
+      assert.deepEqual(await axeViolations(page, "#filter"), [], "last step");
+    }));
+
+  test("every simulated condition", () =>
+    withPage({}, async (page) => {
+      const ids = await page.$$eval("#cond-tabs [role=tab]", (tabs) =>
+        tabs.map((tab) => tab.dataset.condition),
+      );
+      assert.ok(ids.length > 1);
+      for (const id of ids) {
+        await page.click(`#cond-tab-${id}`);
+        await conditionShown(page, id);
+        assert.deepEqual(await axeViolations(page, "#simulation"), [], id);
+      }
+    }));
+
+  test("every playground example and cell set", () =>
+    withPage({}, async (page) => {
+      for (const button of await page.$$("#playground [data-preset], #playground [data-ensemble]")) {
+        await button.click();
+        const name = await button.textContent();
+        assert.deepEqual(await axeViolations(page, "#playground"), [], name);
+      }
     }));
 });

@@ -581,11 +581,15 @@ summary:focus-visible,
   font-size: 0.95rem;
 }
 
+/* Fraction bars reach a few pixels past a formula's box; the padding holds
+   them, so the formula scrolls only sideways, when it is wider than the card. */
 .card math {
   display: block;
   margin: 0.6rem 0 0.9rem;
+  padding: 0.25em 0;
   font-size: 1.05rem;
   overflow-x: auto;
+  overflow-y: hidden;
 }
 
 /* ----------------------------------------------------------- Track stack */
@@ -789,6 +793,9 @@ pre.bibtex {
   font-family: var(--mono);
   font-size: 0.85rem;
   line-height: 1.45;
+  /* Wrap on narrow screens rather than scroll; copying keeps the line breaks. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .copy {
