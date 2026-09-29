@@ -1,10 +1,4 @@
 {
-  "accuracy_metric_order": [
-    "median_absolute_error"
-  ],
-  "accuracy_units": {
-    "median_absolute_error": "position_units"
-  },
   "condition_labels": [
     "Well-specified",
     "Remap",
@@ -121,6 +115,12 @@
     "sparse_position": 30.0,
     "step_seconds": 0.001
   },
+  "error_metric_order": [
+    "median_absolute_error"
+  ],
+  "error_units": {
+    "median_absolute_error": "position_units"
+  },
   "figure": "figure03",
   "flag_rules": {
     "hpd_overlap": {
@@ -136,7 +136,7 @@
       "threshold": 0.05
     }
   },
-  "median_decoding_accuracy": [
+  "median_decoding_error": [
     [
       1.7667602927910817,
       42.16926259332958,
@@ -146,7 +146,7 @@
       1.0283064565550593
     ]
   ],
-  "median_decoding_accuracy_standard_errors": [
+  "median_decoding_error_standard_errors": [
     [
       0.014448185985773732,
       2.2990407870257834,
@@ -216,13 +216,13 @@
   "percentage_unit": "percent_of_spike_events",
   "provenance": {
     "source": {
-      "source_tree_sha256": "69e23df35e5b97b1021828fc441f6c19a6ad56eb3e7c4470e610ea00b1f20dfb",
+      "source_tree_sha256": "96a4f850be3da7ab599a9f3d994f91805d3e98e460572555b361ed5838da34f6",
       "statespacecheck_paper_version": "0.1.0",
       "statespacecheck_version": "0.3.1",
       "uv_lock_sha256": "7db5bb03266cfeab8f804cd7262232f3ffa16ebaf423722a399076043b640574"
     }
   },
-  "realization_decoding_accuracy": [
+  "realization_decoding_error": [
     [
       [
         1.7389475375854841,
@@ -3831,7 +3831,7 @@
     "first_seed": 1,
     "last_seed": 100
   },
-  "schema_version": 8,
+  "schema_version": 9,
   "standard_error_method": "order_statistic_interval_95",
   "threshold_provenance": {
     "baseline_end_index": 6000,

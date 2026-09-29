@@ -43,10 +43,10 @@ from statespacecheck_paper.figure03_simulation import run_figure03_simulation
 
 SUMMARY_FLAG_METRICS: tuple[tuple[str, FlagDirection], ...] = tuple(METRIC_FLAG_DIRECTIONS.items())
 
-# Row order of the per-condition decoding-accuracy block beneath the flag
+# Row order of the per-condition decoding-error block beneath the flag
 # heatmap: the median absolute error of the filtered-posterior mean
 # (position units).
-SUMMARY_ACCURACY_METRICS: tuple[str, ...] = ("median_absolute_error",)
+SUMMARY_ERROR_METRICS: tuple[str, ...] = ("median_absolute_error",)
 
 # Number of independent realizations pooled to stabilize the panel-(b)
 # summary. A single run's flag thresholds and per-phase percentages are
@@ -267,13 +267,13 @@ def flag_percentages_from_values(
     return frac
 
 
-def compute_condition_decoding_accuracy(
+def compute_condition_decoding_error(
     posterior: NDArray[np.floating],
     position_bins: NDArray[np.floating],
     true_position: NDArray[np.floating],
     conditions: list[Figure3SummaryCondition],
 ) -> NDArray[np.floating]:
-    """Per-condition decoding accuracy of the filtered posterior.
+    """Per-condition decoding error of the filtered posterior.
 
     Scores the decoder's state estimate against the stored true position
     inside each summary column's time windows. Unlike the flag percentages,
@@ -297,7 +297,7 @@ def compute_condition_decoding_accuracy(
     Returns
     -------
     np.ndarray, shape (1, n_columns)
-        Rows follow :data:`SUMMARY_ACCURACY_METRICS`: the median absolute
+        Rows follow :data:`SUMMARY_ERROR_METRICS`: the median absolute
         error between the posterior mean and ``true_position``, in position
         units.
 
@@ -336,7 +336,7 @@ def compute_condition_decoding_accuracy(
     posterior_mean = (posterior @ position_bins) / mass
     abs_error = np.abs(posterior_mean - true_position)
 
-    out = np.zeros((len(SUMMARY_ACCURACY_METRICS), len(conditions)))
+    out = np.zeros((len(SUMMARY_ERROR_METRICS), len(conditions)))
     for j, col in enumerate(conditions):
         mask = np.zeros(n_time, dtype=bool)
         for t0, t1 in col.step_windows:
@@ -426,10 +426,10 @@ class Figure3RealizationSummary:
     - ``realization_flag_percentages`` holds each realization's percent of spike
       events flagged in each phase column by each metric (every realization
       scored against the shared pooled-baseline ``diagnostic_thresholds``), and
-      ``realization_decoding_accuracy`` each realization's per-column decoding
-      accuracy from :func:`compute_condition_decoding_accuracy`. Keeping them
+      ``realization_decoding_error`` each realization's per-column decoding
+      error from :func:`compute_condition_decoding_error`. Keeping them
       shows the spread across realizations, not only its center.
-    - ``median_flag_percentages`` and ``median_decoding_accuracy`` are their
+    - ``median_flag_percentages`` and ``median_decoding_error`` are their
       medians across realizations. The median is used in place of the mean
       because the remapping column is strongly trajectory-dependent and skewed
       across realizations.
@@ -447,16 +447,16 @@ class Figure3RealizationSummary:
         follows :data:`statespacecheck_paper.figure03_summary.SUMMARY_FLAG_METRICS`;
         columns follow
         :func:`statespacecheck_paper.figure03_summary.build_summary_conditions`.
-    realization_decoding_accuracy : np.ndarray, shape (n_realizations, 1, n_columns)
-        Decoding accuracy in each realization. The middle axis follows
-        :data:`statespacecheck_paper.figure03_summary.SUMMARY_ACCURACY_METRICS`;
+    realization_decoding_error : np.ndarray, shape (n_realizations, 1, n_columns)
+        Decoding error in each realization. The middle axis follows
+        :data:`statespacecheck_paper.figure03_summary.SUMMARY_ERROR_METRICS`;
         realizations and columns match ``realization_flag_percentages``.
 
     Raises
     ------
     ValueError
         If ``realization_flag_percentages`` is not 3-D with at least one
-        realization, ``realization_decoding_accuracy`` is not
+        realization, ``realization_decoding_error`` is not
         ``(n_realizations, 1, n_columns)``, or ``baseline_flagged_fractions``
         does not hold one fraction in ``[0, 1]`` per flag metric.
     """
@@ -464,7 +464,7 @@ class Figure3RealizationSummary:
     diagnostic_thresholds: DiagnosticThresholds
     baseline_flagged_fractions: Mapping[str, float]
     realization_flag_percentages: NDArray[np.floating]
-    realization_decoding_accuracy: NDArray[np.floating]
+    realization_decoding_error: NDArray[np.floating]
 
     def __post_init__(self) -> None:
         metrics = [metric for metric, _ in SUMMARY_FLAG_METRICS]
@@ -482,15 +482,15 @@ class Figure3RealizationSummary:
                 "Figure3RealizationSummary.realization_flag_percentages must be 3-D "
                 f"(n_realizations >= 1, n_metrics, n_columns); got shape {flags.shape}"
             )
-        expected = (flags.shape[0], len(SUMMARY_ACCURACY_METRICS), flags.shape[2])
-        if self.realization_decoding_accuracy.shape != expected:
+        expected = (flags.shape[0], len(SUMMARY_ERROR_METRICS), flags.shape[2])
+        if self.realization_decoding_error.shape != expected:
             raise ValueError(
-                "Figure3RealizationSummary.realization_decoding_accuracy must have shape "
+                "Figure3RealizationSummary.realization_decoding_error must have shape "
                 f"{expected} to match realization_flag_percentages; "
-                f"got shape {self.realization_decoding_accuracy.shape}"
+                f"got shape {self.realization_decoding_error.shape}"
             )
         flags.setflags(write=False)
-        self.realization_decoding_accuracy.setflags(write=False)
+        self.realization_decoding_error.setflags(write=False)
 
     @property
     def n_realizations(self) -> int:
@@ -503,9 +503,9 @@ class Figure3RealizationSummary:
         return np.asarray(np.median(self.realization_flag_percentages, axis=0), dtype=float)
 
     @property
-    def median_decoding_accuracy(self) -> NDArray[np.floating]:
-        """Median decoding accuracy across realizations, shape ``(1, n_columns)``."""
-        return np.asarray(np.median(self.realization_decoding_accuracy, axis=0), dtype=float)
+    def median_decoding_error(self) -> NDArray[np.floating]:
+        """Median decoding error across realizations, shape ``(1, n_columns)``."""
+        return np.asarray(np.median(self.realization_decoding_error, axis=0), dtype=float)
 
     @property
     def flag_percentage_standard_errors(self) -> NDArray[np.floating]:
@@ -519,9 +519,9 @@ class Figure3RealizationSummary:
         return median_standard_error(self.realization_flag_percentages)
 
     @property
-    def decoding_accuracy_standard_errors(self) -> NDArray[np.floating]:
-        """Approximate standard error of each median decoding accuracy, ``(1, n_columns)``."""
-        return median_standard_error(self.realization_decoding_accuracy)
+    def decoding_error_standard_errors(self) -> NDArray[np.floating]:
+        """Approximate standard error of each median decoding error, ``(1, n_columns)``."""
+        return median_standard_error(self.realization_decoding_error)
 
 
 def baseline_threshold_provenance(
@@ -609,7 +609,7 @@ def estimate_realization_summary(
     Figure3RealizationSummary
         Pooled flag thresholds with the fraction of pooled baseline events each
         flags, and every realization's per-phase flag fractions and decoding
-        accuracy (with their medians).
+        error (with their medians).
 
     Raises
     ------
@@ -631,7 +631,7 @@ def estimate_realization_summary(
         key: [] for key in METRIC_FLAG_DIRECTIONS
     }
     per_realization_values: list[list[list[NDArray[np.floating]]]] = []
-    per_realization_accuracy: list[NDArray[np.floating]] = []
+    per_realization_error: list[NDArray[np.floating]] = []
 
     for offset in range(n_realizations):
         sim = run_figure03_simulation(config, seed=base + offset)
@@ -646,8 +646,8 @@ def estimate_realization_summary(
                 )
             baseline_values[key].append(ev)
         per_realization_values.append(extract_condition_flag_values(diagnostics, conditions))
-        per_realization_accuracy.append(
-            compute_condition_decoding_accuracy(
+        per_realization_error.append(
+            compute_condition_decoding_error(
                 diagnostics.posterior, sim.position_bins, sim.true_position, conditions
             )
         )
@@ -684,5 +684,5 @@ def estimate_realization_summary(
         diagnostic_thresholds=diagnostic_thresholds,
         baseline_flagged_fractions=baseline_flagged_fractions,
         realization_flag_percentages=frac,
-        realization_decoding_accuracy=np.stack(per_realization_accuracy, axis=0),
+        realization_decoding_error=np.stack(per_realization_error, axis=0),
     )

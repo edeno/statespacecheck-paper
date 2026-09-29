@@ -99,7 +99,7 @@
       "statespacecheck_version": "0.3.1"
     },
     "source": {
-      "source_tree_sha256": "69e23df35e5b97b1021828fc441f6c19a6ad56eb3e7c4470e610ea00b1f20dfb",
+      "source_tree_sha256": "96a4f850be3da7ab599a9f3d994f91805d3e98e460572555b361ed5838da34f6",
       "statespacecheck_paper_version": "0.1.0",
       "statespacecheck_version": "0.3.1",
       "uv_lock_sha256": "7db5bb03266cfeab8f804cd7262232f3ffa16ebaf423722a399076043b640574"

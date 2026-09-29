@@ -744,9 +744,9 @@ def scenario_payloads(
     order = list(figure03_summary["condition_order"])
     metric_order = list(figure03_summary["metric_order"])
     flag_percentages = np.asarray(figure03_summary["median_flag_percentages"], dtype=np.float64)
-    decoding_error = np.asarray(figure03_summary["median_decoding_accuracy"], dtype=np.float64)
+    decoding_error = np.asarray(figure03_summary["median_decoding_error"], dtype=np.float64)
     flag_rules = figure03_summary["flag_rules"]
-    error_row = list(figure03_summary["accuracy_metric_order"]).index("median_absolute_error")
+    error_row = list(figure03_summary["error_metric_order"]).index("median_absolute_error")
 
     event_time = np.asarray(diagnostics.event_time_ind)
     event_cell = np.asarray(diagnostics.event_cell_ind)

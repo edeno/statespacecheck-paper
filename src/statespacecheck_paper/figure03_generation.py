@@ -36,7 +36,7 @@ from statespacecheck_paper.figure03_simulation import (
 )
 from statespacecheck_paper.figure03_summary import (
     N_REALIZATIONS,
-    SUMMARY_ACCURACY_METRICS,
+    SUMMARY_ERROR_METRICS,
     SUMMARY_FLAG_METRICS,
     Figure3RealizationSummary,
     Figure3SummaryCondition,
@@ -73,7 +73,7 @@ def figure03_summary_payload(
     thresholds = dataclasses.asdict(summary.diagnostic_thresholds)
     directions = {metric: direction for metric, direction in SUMMARY_FLAG_METRICS}
     return {
-        "schema_version": 8,
+        "schema_version": 9,
         "figure": "figure03",
         # The step length and HPD coverage are constants rather than config
         # fields; recorded so the prose can quote them.
@@ -96,20 +96,20 @@ def figure03_summary_payload(
         "condition_labels": [_plain_condition_label(condition.label) for condition in conditions],
         "median_flag_percentages": summary.median_flag_percentages,
         "percentage_unit": "percent_of_spike_events",
-        "accuracy_metric_order": list(SUMMARY_ACCURACY_METRICS),
-        "accuracy_units": {"median_absolute_error": "position_units"},
-        "median_decoding_accuracy": summary.median_decoding_accuracy,
+        "error_metric_order": list(SUMMARY_ERROR_METRICS),
+        "error_units": {"median_absolute_error": "position_units"},
+        "median_decoding_error": summary.median_decoding_error,
         # Approximate across-realization standard errors, conditional on this
         # configuration. Published as data about how variable each median is;
         # they do not set the manuscript's printed precision, which follows the
         # policy in reported_values. See figure03_summary.median_standard_error.
         "standard_error_method": "order_statistic_interval_95",
         "median_flag_percentage_standard_errors": summary.flag_percentage_standard_errors,
-        "median_decoding_accuracy_standard_errors": summary.decoding_accuracy_standard_errors,
+        "median_decoding_error_standard_errors": summary.decoding_error_standard_errors,
         # Every realization's values, in seed order (first_seed to last_seed), so
         # the spread across realizations can be shown, not only the medians.
         "realization_flag_percentages": summary.realization_flag_percentages,
-        "realization_decoding_accuracy": summary.realization_decoding_accuracy,
+        "realization_decoding_error": summary.realization_decoding_error,
         "provenance": {"source": scientific_source_provenance()},
     }
 
@@ -158,9 +158,9 @@ def generate_figure03(
         f"{np.array2string(realization_summary.median_flag_percentages, precision=3)}"
     )
     print(
-        "Median decoding accuracy [median |error| (a.u.)] x "
+        "Median decoding error [median |error| (a.u.)] x "
         "[well-specified, remap, history, replay, drift, sparse population]:\n"
-        f"{np.array2string(realization_summary.median_decoding_accuracy, precision=3)}"
+        f"{np.array2string(realization_summary.median_decoding_error, precision=3)}"
     )
     summary_path = write_json_artifact(
         FIGURE03_SUMMARY_PATH,
@@ -179,7 +179,7 @@ def generate_figure03(
         config=config,
         place_field_centers=raster_place_field_centers,
         median_flag_percentages=realization_summary.median_flag_percentages,
-        median_decoding_accuracy=realization_summary.median_decoding_accuracy,
+        median_decoding_error=realization_summary.median_decoding_error,
     )
 
     save_figure(FIGURE_DIR / "figure03", close=True, fig=fig)

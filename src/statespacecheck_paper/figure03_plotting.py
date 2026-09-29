@@ -26,7 +26,7 @@ from statespacecheck_paper.figure03_protocol import (
     compute_replay_step_window,
 )
 from statespacecheck_paper.figure03_summary import (
-    SUMMARY_ACCURACY_METRICS,
+    SUMMARY_ERROR_METRICS,
     SUMMARY_FLAG_METRICS,
     build_summary_conditions,
 )
@@ -68,10 +68,10 @@ FIGURE03_SUMMARY_KNOWN_COMPONENT_LABEL_GID = "figure03-summary-known-model-compo
 
 
 FIGURE03_SUMMARY_TITLE_GID = "figure03-summary-title"
-# Per-condition decoding-accuracy row (median absolute error) rendered as text
+# Per-condition decoding-error row (median absolute error) rendered as text
 # beneath the flag heatmap, plus its row header.
-FIGURE03_SUMMARY_ACCURACY_CELL_LABEL_GID = "figure03-summary-accuracy-cell-label"
-FIGURE03_SUMMARY_ACCURACY_HEADER_GID = "figure03-summary-accuracy-header"
+FIGURE03_SUMMARY_ERROR_CELL_LABEL_GID = "figure03-summary-error-cell-label"
+FIGURE03_SUMMARY_ERROR_HEADER_GID = "figure03-summary-error-header"
 
 
 # Shaded Figure 3 misfit bands: (start, end) boundary indices and the ``COLORS``
@@ -421,12 +421,12 @@ def _plot_figure03_summary_heatmap(
     ax: Axes,
     config: Figure3Config,
     median_flag_percentages: NDArray[np.floating],
-    median_decoding_accuracy: NDArray[np.floating],
+    median_decoding_error: NDArray[np.floating],
 ) -> None:
     """Plot the across-realization phase-by-metric flag percentages.
 
     A plain-text row beneath the heatmap reports the per-condition decoding
-    accuracy (median absolute error in position units) so each flag
+    error (median absolute error in position units) so each flag
     percentage can be read against ground truth. It is not colour-mapped
     because its units differ from the flag percentages.
     """
@@ -442,15 +442,15 @@ def _plot_figure03_summary_heatmap(
     if not np.all(np.isfinite(frac_data)) or np.any((frac_data < 0.0) | (frac_data > 100.0)):
         raise ValueError("median_flag_percentages must contain finite percentages in [0, 100]")
 
-    accuracy = np.asarray(median_decoding_accuracy, dtype=float)
-    expected_accuracy_shape = (len(SUMMARY_ACCURACY_METRICS), len(conditions))
-    if accuracy.shape != expected_accuracy_shape:
+    decoding_error = np.asarray(median_decoding_error, dtype=float)
+    expected_error_shape = (len(SUMMARY_ERROR_METRICS), len(conditions))
+    if decoding_error.shape != expected_error_shape:
         raise ValueError(
-            f"median_decoding_accuracy must have shape {expected_accuracy_shape}; "
-            f"got {accuracy.shape}"
+            f"median_decoding_error must have shape {expected_error_shape}; "
+            f"got {decoding_error.shape}"
         )
-    if not np.all(np.isfinite(accuracy)) or np.any(accuracy < 0.0):
-        raise ValueError("median_decoding_accuracy must be finite and non-negative")
+    if not np.all(np.isfinite(decoding_error)) or np.any(decoding_error < 0.0):
+        raise ValueError("median_decoding_error must be finite and non-negative")
 
     max_frac = np.nanmax(frac_data)
     norm_frac = frac_data / max_frac if max_frac > 0 else frac_data
@@ -486,24 +486,24 @@ def _plot_figure03_summary_heatmap(
             )
             cell_label.set_gid(FIGURE03_SUMMARY_CELL_LABEL_GID)
 
-    # The decoding-accuracy row sits directly beneath the heatmap; the known
+    # The decoding-error row sits directly beneath the heatmap; the known
     # component row follows it.
     # Both rows round with the same functions the manuscript prose uses, so a
     # value cannot read differently in the panel and in the text beside it.
-    accuracy_headers = ("Median |error|\n(a.u.):",)
-    for row_offset, header in enumerate(accuracy_headers):
+    error_headers = ("Median |error|\n(a.u.):",)
+    for row_offset, header in enumerate(error_headers):
         row_y = float(n_metrics + row_offset)
         for col_idx in range(len(conditions)):
-            accuracy_label = ax.text(
+            error_label = ax.text(
                 col_idx,
                 row_y,
-                significant(accuracy[row_offset, col_idx]),
+                significant(decoding_error[row_offset, col_idx]),
                 ha="center",
                 va="center",
                 color="black",
             )
-            accuracy_label.set_gid(FIGURE03_SUMMARY_ACCURACY_CELL_LABEL_GID)
-        accuracy_header = ax.text(
+            error_label.set_gid(FIGURE03_SUMMARY_ERROR_CELL_LABEL_GID)
+        error_header = ax.text(
             -0.04,
             row_y,
             header,
@@ -513,9 +513,9 @@ def _plot_figure03_summary_heatmap(
             color="0.4",
             fontstyle="italic",
         )
-        accuracy_header.set_gid(FIGURE03_SUMMARY_ACCURACY_HEADER_GID)
+        error_header.set_gid(FIGURE03_SUMMARY_ERROR_HEADER_GID)
 
-    component_row_y = float(n_metrics + len(accuracy_headers))
+    component_row_y = float(n_metrics + len(error_headers))
     # The observation model is the likelihood's component; the transition
     # model is the predictive's.
     component_color = {"Observation": COLORS["likelihood"], "Transition": COLORS["predictive"]}
@@ -559,7 +559,7 @@ def compose_figure03(
     config: Figure3Config,
     place_field_centers: NDArray[np.floating],
     median_flag_percentages: NDArray[np.floating],
-    median_decoding_accuracy: NDArray[np.floating],
+    median_decoding_error: NDArray[np.floating],
 ) -> Figure:
     """Create comprehensive time-series diagnostics figure.
 
@@ -591,9 +591,9 @@ def compose_figure03(
         columns follow :func:`statespacecheck_paper.figure03_summary.build_summary_conditions`).
         This stabilized summary is deliberately required: substituting the
         displayed realization would change the meaning of panel (b).
-    median_decoding_accuracy : NDArray, shape (1, n_columns)
-        Median per-condition decoding accuracy (rows follow
-        :data:`statespacecheck_paper.figure03_summary.SUMMARY_ACCURACY_METRICS`:
+    median_decoding_error : NDArray, shape (1, n_columns)
+        Median per-condition decoding error (rows follow
+        :data:`statespacecheck_paper.figure03_summary.SUMMARY_ERROR_METRICS`:
         median absolute error in position units), rendered as a text row
         beneath the panel-(b) heatmap.
 
@@ -611,7 +611,7 @@ def compose_figure03(
     >>> # and how to plumb it into compose_figure03.
     """
     fig_width = 6.85  # Full page width; tight PDF stays within ~183 mm.
-    # Extra height (and bottom margin) holds the accuracy row and the
+    # Extra height (and bottom margin) holds the error row and the
     # known-component row beneath the panel-(b) heatmap; the plotted area
     # above them is unchanged.
     fig_height = 7.4
@@ -673,7 +673,7 @@ def compose_figure03(
         ax_summary,
         config,
         median_flag_percentages,
-        median_decoding_accuracy,
+        median_decoding_error,
     )
 
     return fig

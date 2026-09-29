@@ -88,15 +88,15 @@ def test_summary_condition_and_realization_summary_fields() -> None:
         "diagnostic_thresholds",
         "baseline_flagged_fractions",
         "realization_flag_percentages",
-        "realization_decoding_accuracy",
+        "realization_decoding_error",
     ]
     # The medians and their standard errors are properties derived from the
     # realizations, so they cannot disagree with the stored values.
     for name in (
         "median_flag_percentages",
-        "median_decoding_accuracy",
+        "median_decoding_error",
         "flag_percentage_standard_errors",
-        "decoding_accuracy_standard_errors",
+        "decoding_error_standard_errors",
         "n_realizations",
     ):
         assert isinstance(getattr(Figure3RealizationSummary, name), property), name

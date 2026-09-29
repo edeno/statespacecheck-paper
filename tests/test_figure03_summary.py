@@ -11,10 +11,10 @@ import pytest
 from statespacecheck_paper.diagnostics import DiagnosticThresholds
 from statespacecheck_paper.figure03_protocol import Figure3Config, PhaseBoundary
 from statespacecheck_paper.figure03_summary import (
-    SUMMARY_ACCURACY_METRICS,
+    SUMMARY_ERROR_METRICS,
     _flag_percentage,
     build_summary_conditions,
-    compute_condition_decoding_accuracy,
+    compute_condition_decoding_error,
     extract_condition_flag_values,
     flag_percentages_from_values,
 )
@@ -149,8 +149,8 @@ class TestSummaryFlagPercentages:
             extract_condition_flag_values(_events(metrics), conditions)
 
 
-class TestConditionDecodingAccuracy:
-    """Per-phase decoding accuracy of the filtered posterior against the
+class TestConditionDecodingError:
+    """Per-phase decoding error of the filtered posterior against the
     stored true position: median absolute error of the posterior mean (row
     0, position units). Columns follow ``build_summary_conditions``."""
 
@@ -165,7 +165,7 @@ class TestConditionDecodingAccuracy:
         return posterior
 
     def test_metric_order(self) -> None:
-        assert SUMMARY_ACCURACY_METRICS == ("median_absolute_error",)
+        assert SUMMARY_ERROR_METRICS == ("median_absolute_error",)
 
     def test_perfect_decoder_has_zero_error(self) -> None:
         params = self._params()
@@ -175,12 +175,12 @@ class TestConditionDecodingAccuracy:
         posterior = self._delta_posterior(true_bin, position_bins.size)
         conditions = build_summary_conditions(params)
 
-        accuracy = compute_condition_decoding_accuracy(
+        decoding_error = compute_condition_decoding_error(
             posterior, position_bins, position_bins[true_bin], conditions
         )
 
-        assert accuracy.shape == (1, 6)
-        assert np.allclose(accuracy[0], 0.0)
+        assert decoding_error.shape == (1, 6)
+        assert np.allclose(decoding_error[0], 0.0)
 
     def test_shift_confined_to_remap_window(self) -> None:
         """A posterior displaced by two bins only inside remap [6, 10) must
@@ -194,12 +194,12 @@ class TestConditionDecodingAccuracy:
         posterior = self._delta_posterior(decoded_bin, position_bins.size)
         conditions = build_summary_conditions(params)
 
-        accuracy = compute_condition_decoding_accuracy(
+        decoding_error = compute_condition_decoding_error(
             posterior, position_bins, position_bins[true_bin], conditions
         )
 
-        assert accuracy[0, 1] == pytest.approx(4.0)  # two bins of 2 a.u.
-        assert np.allclose(np.delete(accuracy[0], 1), 0.0)
+        assert decoding_error[0, 1] == pytest.approx(4.0)  # two bins of 2 a.u.
+        assert np.allclose(np.delete(decoding_error[0], 1), 0.0)
 
     def test_error_uses_continuous_true_position(self) -> None:
         """The error is measured against the continuous position, not its bin."""
@@ -210,11 +210,11 @@ class TestConditionDecodingAccuracy:
         true_position = np.full(n_time, 4.3)
         conditions = build_summary_conditions(params)
 
-        accuracy = compute_condition_decoding_accuracy(
+        decoding_error = compute_condition_decoding_error(
             posterior, position_bins, true_position, conditions
         )
 
-        assert np.allclose(accuracy[0], 0.3)
+        assert np.allclose(decoding_error[0], 0.3)
 
     def test_shape_mismatch_raises(self) -> None:
         params = self._params()
@@ -223,10 +223,10 @@ class TestConditionDecodingAccuracy:
         posterior = self._delta_posterior(np.zeros(n_time, dtype=int), position_bins.size)
         conditions = build_summary_conditions(params)
         with pytest.raises(ValueError, match="true_position"):
-            compute_condition_decoding_accuracy(
+            compute_condition_decoding_error(
                 posterior, position_bins, np.zeros(n_time - 1), conditions
             )
         with pytest.raises(ValueError, match="position_bins"):
-            compute_condition_decoding_accuracy(
+            compute_condition_decoding_error(
                 posterior, position_bins[:-1], np.zeros(n_time), conditions
             )

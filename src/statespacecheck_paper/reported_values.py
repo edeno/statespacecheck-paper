@@ -282,9 +282,9 @@ def _flag_percentage(payload: dict[str, Any], metric: str, condition: str) -> fl
 
 def _decoding_error(payload: dict[str, Any], condition: str) -> float:
     """Return the median absolute decoding error for one condition."""
-    row = payload["accuracy_metric_order"].index("median_absolute_error")
+    row = payload["error_metric_order"].index("median_absolute_error")
     column = payload["condition_order"].index(condition)
-    error: float = payload["median_decoding_accuracy"][row][column]
+    error: float = payload["median_decoding_error"][row][column]
     return error
 
 
@@ -349,7 +349,7 @@ def _simulation_statistics(payload: dict[str, Any]) -> list[MacroDefinition]:
             MacroDefinition(
                 name,
                 significant(_decoding_error(payload, condition), SIGNIFICANT_FIGURES),
-                f"median_decoding_accuracy[median_absolute_error, {condition}]",
+                f"median_decoding_error[median_absolute_error, {condition}]",
             )
         )
 

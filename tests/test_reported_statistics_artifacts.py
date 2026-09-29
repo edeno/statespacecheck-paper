@@ -41,7 +41,7 @@ def _round_trip_live_payload(tmp_path: Path, payload: dict[str, object]) -> dict
 def test_figure03_reported_statistics_match_canonical_run(tmp_path: Path) -> None:
     payload = _load("figure03_summary.json")
 
-    assert payload["schema_version"] == 8
+    assert payload["schema_version"] == 9
     assert payload["realizations"] == {
         "count": 100,
         "first_seed": 1,
@@ -72,9 +72,9 @@ def test_figure03_reported_statistics_match_canonical_run(tmp_path: Path) -> Non
         atol=5e-4,
         rtol=0.0,
     )
-    assert payload["accuracy_metric_order"] == ["median_absolute_error"]
+    assert payload["error_metric_order"] == ["median_absolute_error"]
     np.testing.assert_allclose(
-        np.asarray(payload["median_decoding_accuracy"]),
+        np.asarray(payload["median_decoding_error"]),
         np.array([[1.767, 42.169, 1.630, 36.039, 8.010, 1.028]]),
         atol=5e-4,
         rtol=0.0,
@@ -94,10 +94,10 @@ def test_figure03_reported_statistics_match_canonical_run(tmp_path: Path) -> Non
     # Approximate median uncertainty is retained independently of prose precision.
     assert payload["standard_error_method"] == "order_statistic_interval_95"
     flag_errors = np.asarray(payload["median_flag_percentage_standard_errors"])
-    accuracy_errors = np.asarray(payload["median_decoding_accuracy_standard_errors"])
+    decoding_error_ses = np.asarray(payload["median_decoding_error_standard_errors"])
     assert flag_errors.shape == np.asarray(payload["median_flag_percentages"]).shape
-    assert accuracy_errors.shape == np.asarray(payload["median_decoding_accuracy"]).shape
-    assert np.all(flag_errors >= 0.0) and np.all(accuracy_errors >= 0.0)
+    assert decoding_error_ses.shape == np.asarray(payload["median_decoding_error"]).shape
+    assert np.all(flag_errors >= 0.0) and np.all(decoding_error_ses >= 0.0)
     # The remap column is trajectory-dependent, so its median is the least
     # certain of the flag percentages by an order of magnitude.
     remap = payload["condition_order"].index("remap")
@@ -141,7 +141,7 @@ def test_figure03_reported_statistics_match_canonical_run(tmp_path: Path) -> Non
             for metric in payload["metric_order"]
         },
         realization_flag_percentages=np.asarray(payload["realization_flag_percentages"]),
-        realization_decoding_accuracy=np.asarray(payload["realization_decoding_accuracy"]),
+        realization_decoding_error=np.asarray(payload["realization_decoding_error"]),
     )
     live = figure03_summary_payload(Figure3Config(), summary)
     assert _round_trip_live_payload(tmp_path, live) == payload

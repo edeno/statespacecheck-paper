@@ -112,7 +112,7 @@ field it came from. See [From summary to prose](#from-summary-to-prose-the-repor
 | Rate table | `firing_rates`, `firing_rate_table`, `baseline_firing_rates`, `simulation.place_field_rates` | shape `(n_bins, n_cells)`; each entry is an expected count per step $m_c(x)$, not a rate in Hz |
 | Time bin $k$ ($K$ bins) | `t`, `event_time_ind`, `n_time` | the paper writes $k$; the code writes `t`, counting from 0 |
 | The Figure-3 remap, replay, and sparse-population windows | decoder override windows: `decoding.DecoderOverrideWindow`, `DecoderOverrideSchedule` | a half-open step interval `[start, end)` in which the decoder uses another rate table; the remap window is the observation misfit, the replay and sparse-population windows are controls |
-| Position and decoding error, Figure 3 | “a.u.”; summary `accuracy_units: position_units` | the simulated track is in arbitrary position units (axis label “Position (a.u.)”); Figure 4 positions are in cm |
+| Position and decoding error, Figure 3 | “a.u.”; summary `error_units: position_units` | the simulated track is in arbitrary position units (axis label “Position (a.u.)”); Figure 4 positions are in cm |
 | Rescued percentage (Figure 4) | `FlagConfusion.rescued_fraction`; summary `flag_confusions[].rescued_fraction` | fraction (0–1) of the spikes the Continuous model flags that the Continuous–Fragmented model does not; the prose prints it as a whole percent (`\RecHpdRescuedPercent`, `\RecPvalueRescuedPercent`) |
 | Rank-based predictive $p$-value | `statespacecheck.mark_predictive_pvalue` (called by `event_diagnostics`) | `statespacecheck` also exports `predictive_pvalue`, a Monte Carlo check for a user-supplied replicate generator, which the paper does not use |
 | Summary source digest | `provenance.source.source_tree_sha256` | SHA-256 of every `.py` file under `src/statespacecheck_paper`, comments and docstrings included: any source edit changes it, so both summaries' `provenance.source` are refreshed together |
@@ -314,14 +314,14 @@ Trace: `create_shared_example(rng)` returns one immutable
   `figure03_simulation.run_figure03_simulation` (drives the 8-phase trajectory,
   calls `decoding.decode_with_diagnostics`, which calls `diagnostics`) →
   `figure03_summary.estimate_realization_summary` (pools 100 realizations into
-  thresholds, median flag percentages, and median decoding accuracy) →
+  thresholds, median flag percentages, and median decoding error) →
   `figure03_plotting.compose_figure03` (the time-series panel + the panel-(b)
   flag heatmap and decoding-error row).
 - **Output:** `manuscript/figures/main/figure03.{pdf,png}` plus
   `figure03_summary.json`, containing the full configuration, seed range,
   explicit inclusive flag rules, the threshold rule with the share of the pooled
   baseline each threshold flags, metric/condition order, reported percentage
-  matrix, per-condition decoding accuracy (median absolute error), and
+  matrix, per-condition decoding error (median absolute error), and
   source/dependency-lock provenance.
 - **Thresholds:** pooled over the opening baseline of all realizations; the
   HPD-overlap threshold is exactly 0 (`flag_rules.hpd_overlap.threshold`), so
@@ -372,11 +372,11 @@ duplicating them here.
 `Figure3SimulationResult` (`.true_position`, `.spike_counts`, `.diagnostics: DecodingDiagnostics`,
 `.position_bins`, `.sparse_place_field_centers`) → `estimate_realization_summary(config, n_realizations=100)`
 returns a `Figure3RealizationSummary` (`.diagnostic_thresholds: DiagnosticThresholds`,
-`.median_flag_percentages`, `.median_decoding_accuracy`,
-`.flag_percentage_standard_errors`, `.decoding_accuracy_standard_errors`) →
+`.median_flag_percentages`, `.median_decoding_error`,
+`.flag_percentage_standard_errors`, `.decoding_error_standard_errors`) →
 `compose_figure03(true_position=…, spike_counts=…,
 diagnostics=…, diagnostic_thresholds=…, config=…, place_field_centers=…,
-median_flag_percentages=…, median_decoding_accuracy=…)` returns a `matplotlib`
+median_flag_percentages=…, median_decoding_error=…)` returns a `matplotlib`
 `Figure` → `save_figure` writes
 `figure03.{pdf,png}` while `write_json_artifact` writes the same summary values
 and their configuration to `figure03_summary.json`.
@@ -604,23 +604,23 @@ manual overrides: bumping one invalidates every cache of that kind.
 
 ## Machine-readable summary schema
 
-`figure03_summary.json` uses schema version 8 and `figure04_summary.json`
+`figure03_summary.json` uses schema version 9 and `figure04_summary.json`
 uses schema version 6. The Figure-3 configuration block records every
 `Figure3Config` field together with the step length in seconds
 (`configuration.step_seconds`, the protocol constant `STEP_SECONDS`) and the
 HPD coverage (`configuration.hpd_coverage`, `diagnostics.HPD_COVERAGE`). The
-Figure-3 schema includes the decoding-accuracy block:
-`accuracy_metric_order` (`median_absolute_error`), `accuracy_units`, and
-`median_decoding_accuracy`, a `(1, n_conditions)` matrix of the
+Figure-3 schema includes the decoding-error block:
+`error_metric_order` (`median_absolute_error`), `error_units`, and
+`median_decoding_error`, a `(1, n_conditions)` matrix of the
 across-realization median absolute error of the filtered-posterior mean
 (position units), in the same column order as `median_flag_percentages`. It also
 records `median_flag_percentage_standard_errors` and
-`median_decoding_accuracy_standard_errors`: approximate standard errors of the
+`median_decoding_error_standard_errors`: approximate standard errors of the
 medians, estimated from order-statistic interval widths. These describe the
 uncertainty in the aggregated medians under repeated simulation with the same
 configuration, not the spread of individual realizations, and do not set
 reported precision. The spread itself is in `realization_flag_percentages`
-`(n_realizations, 3, n_conditions)` and `realization_decoding_accuracy`
+`(n_realizations, 3, n_conditions)` and `realization_decoding_error`
 `(n_realizations, 1, n_conditions)`: every realization's values, in seed order
 from `realizations.first_seed`; the medians are their medians over the first
 axis. The summary also records the baseline-threshold provenance

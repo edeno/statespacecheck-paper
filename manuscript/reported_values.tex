@@ -2,9 +2,9 @@
 %
 % Every value below is read from the canonical figure summaries
 % (except the DOIs, whose comments name their sources):
-%   figures/main/figure03_summary.json (schema 8)
+%   figures/main/figure03_summary.json (schema 9)
 %   figures/main/figure04_summary.json (schema 6)
-% source_tree_sha256: 69e23df35e5b97b1021828fc441f6c19a6ad56eb3e7c4470e610ea00b1f20dfb
+% source_tree_sha256: 96a4f850be3da7ab599a9f3d994f91805d3e98e460572555b361ed5838da34f6
 %
 % Regenerate with: uv run python scripts/emit_reported_values.py
 
@@ -30,12 +30,12 @@
 \newcommand{\SimDriftFlagMin}{8}            % min over metrics of median_flag_percentages[:, drift]
 \newcommand{\SimDriftFlagMax}{14}           % max over metrics of median_flag_percentages[:, drift]
 \newcommand{\SimSparseKlFlag}{43}           % median_flag_percentages[kl_divergence, sparse_population]
-\newcommand{\SimWellSpecifiedError}{1.8}    % median_decoding_accuracy[median_absolute_error, well_specified]
-\newcommand{\SimRemapError}{42}             % median_decoding_accuracy[median_absolute_error, remap]
-\newcommand{\SimHistoryError}{1.6}          % median_decoding_accuracy[median_absolute_error, history_dependent]
-\newcommand{\SimReplayError}{36}            % median_decoding_accuracy[median_absolute_error, replay]
-\newcommand{\SimDriftError}{8.0}            % median_decoding_accuracy[median_absolute_error, drift]
-\newcommand{\SimSparseError}{1.0}           % median_decoding_accuracy[median_absolute_error, sparse_population]
+\newcommand{\SimWellSpecifiedError}{1.8}    % median_decoding_error[median_absolute_error, well_specified]
+\newcommand{\SimRemapError}{42}             % median_decoding_error[median_absolute_error, remap]
+\newcommand{\SimHistoryError}{1.6}          % median_decoding_error[median_absolute_error, history_dependent]
+\newcommand{\SimReplayError}{36}            % median_decoding_error[median_absolute_error, replay]
+\newcommand{\SimDriftError}{8.0}            % median_decoding_error[median_absolute_error, drift]
+\newcommand{\SimSparseError}{1.0}           % median_decoding_error[median_absolute_error, sparse_population]
 \newcommand{\SimHpdPercentile}{1st}         % threshold_provenance.hpd_overlap.quantile
 \newcommand{\SimKlPercentile}{99th}         % threshold_provenance.kl_divergence.quantile
 \newcommand{\SimPredictiveCutoff}{0.05}     % threshold_provenance.predictive_pvalue.cutoff
