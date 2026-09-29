@@ -28,6 +28,7 @@ from statespacecheck_paper.figure04_decoder import Figure4Config
 from statespacecheck_paper.figure04_generation import (
     FIGURE04_DETAIL_WINDOW,
     FIGURE04_DIAGNOSTIC_THRESHOLDS,
+    FIGURE04_SUMMARY_SCHEMA_VERSION,
 )
 from statespacecheck_paper.figure04_input import FIGURE04_INPUTS_FILE
 from statespacecheck_paper.number_format import significant
@@ -38,7 +39,6 @@ from statespacecheck_paper.paths import (
     FIGURE04_INPUTS_DOI,
     FIGURE04_INPUTS_EPOCH,
     FIGURE04_INPUTS_SHA256,
-    FIGURE04_SUMMARY_PATH,
     REPO_ROOT,
 )
 from statespacecheck_paper.reported_values import analysis_code_doi, cardinal_word, ordinal
@@ -50,7 +50,6 @@ LINEAGE = "docs/data-lineage.md"
 
 _FIGURE03 = Figure3Config()
 _FIGURE03_SUMMARY = json.loads(FIGURE03_SUMMARY_PATH.read_text(encoding="utf-8"))
-_FIGURE04_SUMMARY = json.loads(FIGURE04_SUMMARY_PATH.read_text(encoding="utf-8"))
 _DECODER = Figure4Config().decoder
 _DETAIL_SECONDS = 2 * FIGURE04_DETAIL_WINDOW.half_width_samples / _DECODER.sampling_frequency_hz
 _NODE_ENGINE = json.loads((REPO_ROOT / "site" / "package.json").read_text(encoding="utf-8"))[
@@ -154,7 +153,7 @@ DOCUMENTED_VALUES: tuple[tuple[str, str, str], ...] = (
     (
         PIPELINE,
         r"`figure04_summary\.json`\s+uses schema version (\d+)",
-        str(_FIGURE04_SUMMARY["schema_version"]),
+        str(FIGURE04_SUMMARY_SCHEMA_VERSION),
     ),
     # The Figure-4 input file and the code's archive
     (REPRODUCE, r"The canonical epoch is `(\w+)`", FIGURE04_INPUTS_EPOCH),
