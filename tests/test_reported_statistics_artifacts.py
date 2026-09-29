@@ -209,6 +209,10 @@ def test_figure04_reported_statistics_counts_partition_events(tmp_path: Path) ->
         diagnostics_schema_version=cache_payload["diagnostics_schema_version"],
         statespacecheck_version=cache_payload["statespacecheck_version"],
         diagnostics_config=Figure4DiagnosticsConfig(**cache_payload["diagnostics_config"]),
+        python_version=cache_payload["python_version"],
+        machine=cache_payload["machine"],
+        decode_dependency_versions=cache_payload["decode_dependency_versions"],
+        diagnostics_dependency_versions=cache_payload["diagnostics_dependency_versions"],
     )
     means = payload["diagnostic_means"]
     summary = Figure4Summary(

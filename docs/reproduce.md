@@ -17,9 +17,10 @@ and orders the steps needed to build the paper.
   provide these; a minimal TeX installation may need additional packages.
 - **Optional tools:** Node 22+ for website tests and assembly. Desktop-viewer
   dependencies are installed separately; see [the viewer guide](interactive.md).
-- **Network:** installation, the initial Figure 4 download, and the reported-value
-  emitter's lookup of the cited `statespacecheck` DOI on Zenodo need internet.
-  Building the manuscript from committed figures/macros can run offline.
+- **Network:** installation and the initial Figure 4 download need internet.
+  Generating figures, emitting the reported-value macros (the cited
+  `statespacecheck` DOI is committed in `manuscript/software_dois.json`), and
+  building the manuscript run offline.
 
 | Work | Approximate cost |
 | --- | --- |
@@ -34,7 +35,9 @@ is not a RAM requirement. Cache replacement is atomic and temporarily keeps the
 old and new decode caches, so allow roughly 16 GB for those two files when
 refitting, plus space for inputs, diagnostics, dependencies, and optional viewer
 caches. A source change in the fitting/data-preparation modules invalidates the
-decode cache; see [cache behavior](figure-pipeline.md#figure-4-cache-behavior).
+decode cache, as do a different Python version, machine architecture, or
+installed version of any runtime dependency of `non_local_detector`; see
+[cache behavior](figure-pipeline.md#figure-4-cache-behavior).
 
 ## Build from committed artifacts
 
@@ -93,6 +96,55 @@ input file and no lab database connection. Lab acquisition and export procedures
 are documented separately in [data lineage](data-lineage.md) and the
 [Spyglass pipeline](spyglass-pipeline.md).
 
+## Check a fresh reproduction
+
+```bash
+make reproduce-fresh                              # work in a new temporary directory
+make reproduce-fresh FRESH_DIR=/path/to/empty-dir  # or in a chosen empty directory
+```
+
+`scripts/reproduce_fresh.py` reruns the committed paper from scratch without
+touching the checkout. It exports the committed tree (`git archive HEAD`, so
+uncommitted changes are not included) into `<work dir>/repo`, installs that
+copy's locked environment, and points `STATESPACECHECK_DATA_PATH` at the empty
+`<work dir>/data`, so no existing input file or cache is reused. In the copy it
+downloads and verifies the Figure 4 input, generates Figures 1–4 and both
+summaries, emits the macros (offline), and builds the manuscript with latexmk.
+It then runs `scripts/check_reproduction.py` on the fresh summaries against
+HEAD's and compares the fresh `reported_values.tex` with HEAD's byte for byte.
+The target exits nonzero on any difference.
+
+The work directory keeps `fresh/` (figures, summaries, macros, and PDF),
+`committed/` (HEAD's summaries and macros), `reproduction_report.txt`, and
+`steps.tsv` (seconds and the largest child-process resident memory for each
+step). Running in a copy, rather than regenerating the committed files in place
+and restoring them, leaves a working tree with local edits untouched and needs no
+cleanup.
+
+The `Reproduce` GitHub Actions workflow (`.github/workflows/reproduce.yml`) runs
+this target on Ubuntu with Python 3.11 monthly, on each published release, on
+demand, and on pull requests that change the workflow. It installs the TeX Live
+collections the manuscript needs, checks the Zenodo records (`pytest -m
+network`), and uploads the report, step timings, fresh summaries, and fresh
+macros.
+
+Measured fresh runs (`steps.tsv`; peak memory is the largest child process):
+
+| Resource | macOS, Apple M5 Max, 18 cores, 64 GB | GitHub Actions `ubuntu-latest` (x86_64) |
+| --- | --- | --- |
+| Peak RAM | 13.8 GB, during the Figure 4 fit and decode | 14.3 GB |
+| Disk | 7.9 GB of data (7.7 GB decode cache, 75 MB input), plus 0.6 GB for the copy and its environment | 7.4 GB of data |
+| Time | 7 minutes: figures 385 s (Figure 3 about 260 s, the Figure 4 fit about 140 s), download 27 s, manuscript 3 s | 20-minute job: figures 907 s, download 44 s, manuscript 3 s |
+
+Both runs reproduced the committed summaries and macros. The Linux run's
+Figure 3 floats differ from the macOS-committed values by at most 1.9e-13
+relative (round-off); its Figure 4 values are bit-identical. The comparison's
+tolerances and their basis are in `scripts/check_reproduction.py`.
+
+Individual steps on the same machine, with current Figure 4 caches: Figures 1
+and 2 take about 1 s each (under 0.6 GB); Figure 4 from its caches 8 s (4.7 GB);
+the website export 5 s (3.3 GB).
+
 ## Individual steps
 
 | Command | Result |
@@ -100,8 +152,9 @@ are documented separately in [data lineage](data-lineage.md) and the
 | `make download-data` | Download and verify the Figure 4 input |
 | `make figures-simulated` | Regenerate Figures 1–3 and the Figure 3 summary |
 | `make figures` | Regenerate all four figures and both summaries; input must exist |
-| `make reported-values` | Regenerate the manuscript's numerical macros from both summaries |
+| `make reported-values` | Regenerate the manuscript's numerical macros from both summaries (offline) |
 | `make manuscript` | Build the PDF from the current figures and macros |
+| `make reproduce-fresh` | Rerun HEAD in a clean copy with empty caches and compare with the committed results |
 
 An individual figure can be regenerated with
 `uv run --frozen python scripts/generate_figure03.py` (substitute `01`, `02`, or
@@ -138,10 +191,22 @@ uv run --frozen pytest tests/test_reported_statistics_artifacts.py tests/test_re
 
 These checks validate the committed reference statistics, schemas, macros, and
 website data. They do not independently rerun the full analyses. To check a
-reproduction, also inspect the generated summary diff against the committed
-version: counts and statistics should match; changes in configuration or source
-must be explained by provenance. PDF timestamps and small rendering differences
-can change binary files even when the scientific outputs agree.
+reproduction, compare the regenerated summaries with the committed ones:
+
+```bash
+uv run --frozen python scripts/check_reproduction.py FRESH/figure03_summary.json FRESH/figure04_summary.json
+```
+
+It requires exact equality for integers, strings, booleans, seeds,
+configuration, counts, and the source and `uv.lock` digests, and equality within
+the tolerances defined at the top of the script (`RTOL`, `ATOL`) for
+floating-point statistics. It skips only the provenance entries that describe
+the machine rather than the result (`MACHINE_SPECIFIC_PATHS`: the Figure-4 cache
+fingerprints, Python version, architecture, and dependency versions), prints
+every difference with its JSON path, and exits nonzero if there is any.
+`--committed-dir` compares against summaries elsewhere than
+`manuscript/figures/main/`. PDF timestamps and small rendering differences can
+change binary files even when the scientific outputs agree.
 
 The figure-to-code map and summary schema are in [figure-pipeline.md](figure-pipeline.md).
 Code-change validation and artifact refresh rules are in [development.md](development.md).

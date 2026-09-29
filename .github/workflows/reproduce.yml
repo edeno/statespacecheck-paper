@@ -1,0 +1,84 @@
+name: Reproduce
+
+# Reruns the committed paper from scratch (`make reproduce-fresh`): a clean
+# export of the commit, its own locked environment, empty data and caches, a
+# fresh Figure-4 download and refit, the macros, and the manuscript, then a
+# comparison with the committed summaries and macros. Too heavy for every
+# push (several GB of decode cache), so it runs monthly, on each release, on
+# demand, and on pull requests that change this workflow.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 1 * *"  # 06:00 UTC on the first of each month
+  pull_request:
+    paths: [.github/workflows/reproduce.yml]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: reproduce-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  reproduce:
+    runs-on: ubuntu-latest
+    # A measured run took 20 minutes, 15 of them regenerating the figures.
+    timeout-minutes: 60
+    env:
+      # The development pin (.python-version); also inherited by the fresh copy's uv calls.
+      UV_PYTHON: "3.11"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install LaTeX
+        # The TeX Live collections holding main.tex's packages: newtx
+        # (fonts-extra; its binhex.tex is in plain-generic), orcidlink, multirow,
+        # and fontaxes (latex-extra), siunitx (science), and the iopart-num
+        # bibliography style (bibtex-extra).
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            latexmk texlive-latex-base texlive-latex-recommended texlive-latex-extra \
+            texlive-fonts-recommended texlive-fonts-extra texlive-science \
+            texlive-bibtex-extra texlive-plain-generic
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Reproduce from scratch and compare
+        env:
+          FRESH_DIR: ${{ runner.temp }}/fresh
+        run: make reproduce-fresh FRESH_DIR="$FRESH_DIR"
+
+      - name: Check the Zenodo records
+        # The network-marked tests (the cited statespacecheck DOI and the
+        # Figure-4 input record) are excluded from the per-push CI.
+        if: always()
+        run: |
+          uv sync --frozen --extra dev --extra interactive
+          uv run --frozen pytest -m network --no-cov
+
+      - name: Report disk use
+        if: always()
+        env:
+          FRESH_DIR: ${{ runner.temp }}/fresh
+        run: |
+          df -h /
+          du -sh "$FRESH_DIR"/* || true
+
+      - name: Upload the report and fresh summaries
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reproduction-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/fresh/reproduction_report.txt
+            ${{ runner.temp }}/fresh/steps.tsv
+            ${{ runner.temp }}/fresh/fresh/*.json
+            ${{ runner.temp }}/fresh/fresh/reported_values.tex
+          if-no-files-found: warn

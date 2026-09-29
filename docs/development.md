@@ -125,7 +125,13 @@ make manuscript
 uv run --frozen python scripts/export_site_data.py
 ```
 
-The macro emitter needs internet for the package DOI lookup. Website export
+The macro emitter runs offline: it reads the cited `statespacecheck` release's
+DOI from `manuscript/software_dois.json`. After the summaries record a new
+`statespacecheck` version, run
+`uv run --frozen python scripts/emit_reported_values.py --refresh-dois` once
+(needs internet); it looks the DOI up on Zenodo, records it, and fails if an
+already-recorded DOI disagrees. `uv run --frozen pytest -m network` checks the
+committed DOIs against Zenodo; the default test run excludes these tests. Website export
 needs the Figure 4 input file for the recording window; it reuses the Figure 4
 caches when they are current and otherwise refits both models (several minutes)
 and writes the ~8 GB decode cache, as `generate_figure04.py` does.
@@ -152,7 +158,12 @@ Any executable change to those modules refits both models, including an edited
 message string. Changes confined to `diagnostics.py`, `figure04_diagnostics.py`,
 `figure04_workflow.py`, or the diagnostics configuration recompute diagnostics
 from cached predictions. Comments and docstrings are excluded from both cache
-hashes. See [the cache specification](figure-pipeline.md#figure-4-cache-behavior).
+hashes. Both fingerprints also hash the Python version, the machine
+architecture, and the installed versions of the relevant package's runtime
+dependency closure (`non_local_detector` for the decode, `statespacecheck` for
+the diagnostics), so a dependency upgrade, a different Python, or a cache moved
+to another architecture recomputes. See
+[the cache specification](figure-pipeline.md#figure-4-cache-behavior).
 
 The guides quote configured values readers need (the figure resolution, flag
 cutoffs, Figure-4 decoder settings, input-file identifiers, summary schema
@@ -167,7 +178,9 @@ The [artifact table](reproduce.md#outputs-and-checks) identifies each generator.
 ## Script audiences and lab operations
 
 - **Public reproduction:** `download_figure04_inputs.py`, `generate_figure*.py`,
-  `emit_reported_values.py`, and `export_site_data.py`.
+  `emit_reported_values.py`, `export_site_data.py`, and the fresh-run check
+  `reproduce_fresh.py` (`make reproduce-fresh`) with its comparison
+  `check_reproduction.py`.
 - **Lab acquisition/export:** `fetch_figure04_inputs.py`,
   `spyglass_export_figure04.py`, `spyglass_pipeline_figure04.py`, and
   `datajoint_read_only.py`. See [the lab guide](spyglass-pipeline.md).

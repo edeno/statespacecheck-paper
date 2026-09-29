@@ -10,8 +10,10 @@ file fails here rather than silently leaving a stale number in the paper.
 from __future__ import annotations
 
 import copy
+import json
 import re
 import urllib.error
+import urllib.request
 from pathlib import Path
 
 import numpy as np
@@ -24,19 +26,24 @@ from statespacecheck_paper.paths import (
     FIGURE04_SUMMARY_PATH,
     MACRO_FILE_PATH,
     REPO_ROOT,
+    SOFTWARE_DOIS_PATH,
 )
 from statespacecheck_paper.reported_values import (
+    REFRESH_DOIS_COMMAND,
     _exact,
     analysis_code_doi,
     cardinal_word,
     doi_from_zenodo_search,
     lookup_statespacecheck_doi,
     ordinal,
+    recorded_statespacecheck_doi,
+    refresh_statespacecheck_doi,
     render_macro_file,
     require_matching_source_provenance,
     statespacecheck_version,
     write_macro_file,
 )
+from tests._scripts import load_script
 from tests.test_reported_statistics_artifacts import _load
 
 
@@ -45,9 +52,10 @@ def _macro_values(text: str) -> dict[str, str]:
     return {name: value for name, value in re.findall(r"\\newcommand\{\\(\w+)\}\{([^}]*)\}", text)}
 
 
-# The DOI the committed macro file cites. Emitting looks it up on Zenodo; the
-# tests below take it from the committed file so they run offline, and
-# test_zenodo_lookup_gives_the_cited_doi checks it against Zenodo
+# The DOI the committed macro file cites. Emitting reads it from the committed
+# manuscript/software_dois.json (test_committed_doi_file_gives_the_cited_doi),
+# and the network test test_recorded_doi_is_zenodos_record checks that file
+# against Zenodo
 CITED_DOI = _macro_values(MACRO_FILE_PATH.read_text(encoding="utf-8"))["StatespacecheckDOI"]
 CODE_DOI = analysis_code_doi(CITATION_PATH)
 
@@ -321,16 +329,91 @@ def test_version_without_exactly_one_zenodo_record_is_rejected(n_records: int) -
         doi_from_zenodo_search(search, "0.3.1")
 
 
-def test_zenodo_lookup_gives_the_cited_doi() -> None:
-    """The DOI the manuscript cites is Zenodo's record of the recorded version."""
-    version = statespacecheck_version(
-        _load("figure03_summary.json"), _load("figure04_summary.json")
+def _recorded_version() -> str:
+    return statespacecheck_version(_load("figure03_summary.json"), _load("figure04_summary.json"))
+
+
+def test_committed_doi_file_gives_the_cited_doi() -> None:
+    """Emitting offline reads the DOI the manuscript cites from the committed file."""
+    assert recorded_statespacecheck_doi(_recorded_version()) == CITED_DOI
+
+
+def test_emitting_needs_no_network(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The routine emit path never calls the Zenodo lookup."""
+
+    def no_network(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("emitting the macros must not open a URL")
+
+    monkeypatch.setattr(urllib.request, "urlopen", no_network)
+    regenerated = write_macro_file(tmp_path / "reported_values.tex")
+    assert _macro_values(regenerated.read_text(encoding="utf-8"))["StatespacecheckDOI"] == (
+        CITED_DOI
     )
+
+
+def test_unrecorded_version_names_the_refresh_command(tmp_path: Path) -> None:
+    dois = tmp_path / "software_dois.json"
+    dois.write_text('{"statespacecheck": {"0.3.1": "10.5281/zenodo.1"}}\n', encoding="utf-8")
+    with pytest.raises(ValueError, match="records no Zenodo DOI for statespacecheck 9.9.9") as err:
+        recorded_statespacecheck_doi("9.9.9", dois)
+    assert REFRESH_DOIS_COMMAND in str(err.value)
+    with pytest.raises(ValueError, match="records no Zenodo DOI"):
+        recorded_statespacecheck_doi("0.3.1", tmp_path / "absent.json")
+
+
+def test_refresh_records_a_new_version_and_keeps_recorded_ones(tmp_path: Path) -> None:
+    dois = tmp_path / "software_dois.json"
+    lookups = {"0.3.1": "10.5281/zenodo.1", "0.4.0": "10.5281/zenodo.2"}
+    assert refresh_statespacecheck_doi("0.3.1", dois, lookup=lookups.__getitem__) == (
+        "10.5281/zenodo.1"
+    )
+    first = dois.read_text(encoding="utf-8")
+    assert refresh_statespacecheck_doi("0.3.1", dois, lookup=lookups.__getitem__) == (
+        "10.5281/zenodo.1"
+    )
+    assert dois.read_text(encoding="utf-8") == first  # verified, not rewritten
+    refresh_statespacecheck_doi("0.4.0", dois, lookup=lookups.__getitem__)
+    assert recorded_statespacecheck_doi("0.3.1", dois) == "10.5281/zenodo.1"
+    assert recorded_statespacecheck_doi("0.4.0", dois) == "10.5281/zenodo.2"
+
+
+def test_refresh_rejects_a_disagreeing_recorded_doi(tmp_path: Path) -> None:
+    dois = tmp_path / "software_dois.json"
+    dois.write_text('{"statespacecheck": {"0.3.1": "10.5281/zenodo.1"}}\n', encoding="utf-8")
+    with pytest.raises(ValueError, match="archives it as 10.5281/zenodo.9"):
+        refresh_statespacecheck_doi("0.3.1", dois, lookup=lambda _version: "10.5281/zenodo.9")
+    assert "zenodo.1" in dois.read_text(encoding="utf-8")
+
+
+def test_committed_doi_file_is_canonical_json() -> None:
+    """The committed file is in the layout refresh_statespacecheck_doi writes."""
+    text = SOFTWARE_DOIS_PATH.read_text(encoding="utf-8")
+    assert text == json.dumps(json.loads(text), indent=2, sort_keys=True) + "\n"
+
+
+@pytest.mark.parametrize("refresh", [False, True])
+def test_emit_script_refreshes_dois_only_on_request(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, refresh: bool
+) -> None:
+    script = load_script("emit_reported_values")
+    refreshed: list[str] = []
+    monkeypatch.setattr(
+        script, "refresh_statespacecheck_doi", lambda version: refreshed.append(version) or "doi"
+    )
+    monkeypatch.setattr(script, "write_macro_file", lambda: tmp_path / "reported_values.tex")
+    script.main(["--refresh-dois"] if refresh else [])
+    assert refreshed == ([_recorded_version()] if refresh else [])
+
+
+@pytest.mark.network
+def test_recorded_doi_is_zenodos_record() -> None:
+    """The committed DOI of the recorded version is Zenodo's record of it."""
+    version = _recorded_version()
     try:
         doi = lookup_statespacecheck_doi(version)
     except (urllib.error.URLError, TimeoutError) as err:  # offline, or Zenodo unavailable
         pytest.skip(f"Zenodo cannot be reached: {err}")
-    assert doi == CITED_DOI
+    assert doi == recorded_statespacecheck_doi(version) == CITED_DOI
 
 
 @pytest.mark.parametrize("quantile", [0.005, 0.995])

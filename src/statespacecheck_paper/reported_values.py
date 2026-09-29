@@ -47,12 +47,15 @@ silently redefining anything.
 
 The analysis numbers come only from the committed summary JSONs. The three
 DOIs come from elsewhere: the archived DOI of the cited ``statespacecheck``
-version, which :func:`write_macro_file` looks up on Zenodo (so emitting needs
-internet access); this repository's DOI, read from ``CITATION.cff``; and the
-Figure-4 input file's DOI, ``paths.FIGURE04_INPUTS_DOI``. Its sibling imports
-are ``number_format``, the rounding shared with the Figure-3 summary panel, so
-the figure and the prose cannot round the same number differently, and
-``paths``, for the summary, macro-file, and citation locations and that data DOI.
+version, read from the committed ``manuscript/software_dois.json``
+(:func:`recorded_statespacecheck_doi`), so emitting runs offline; this
+repository's DOI, read from ``CITATION.cff``; and the Figure-4 input file's DOI,
+``paths.FIGURE04_INPUTS_DOI``. Only :func:`refresh_statespacecheck_doi` (the
+emitter's ``--refresh-dois`` option) queries Zenodo, to add a newly cited
+version to that file or verify the recorded one. Its sibling imports are
+``number_format``, the rounding shared with the Figure-3 summary panel, so the
+figure and the prose cannot round the same number differently, and ``paths``,
+for the summary, macro-file, DOI-file, and citation locations and that data DOI.
 """
 
 from __future__ import annotations
@@ -62,6 +65,7 @@ import math
 import re
 import urllib.parse
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -73,11 +77,15 @@ from statespacecheck_paper.paths import (
     FIGURE04_INPUTS_DOI,
     FIGURE04_SUMMARY_PATH,
     MACRO_FILE_PATH,
+    SOFTWARE_DOIS_PATH,
 )
 
 # Zenodo record that groups every archived statespacecheck release (its concept
 # record); each release's own DOI is looked up under it by version
 STATESPACECHECK_ZENODO_CONCEPT_RECORD = "22999988"
+
+# The command that adds a newly cited version's DOI to SOFTWARE_DOIS_PATH
+REFRESH_DOIS_COMMAND = "uv run --frozen python scripts/emit_reported_values.py --refresh-dois"
 
 # Unit conversion for the durations the prose gives in milliseconds
 _MS_PER_SECOND = 1000.0
@@ -842,6 +850,88 @@ def doi_from_zenodo_search(search: dict[str, Any], version: str) -> str:
     return doi
 
 
+def _load_software_dois(path: Path) -> dict[str, dict[str, str]]:
+    """Read the package -> version -> DOI mapping (empty when the file is absent)."""
+    if not path.exists():
+        return {}
+    dois: dict[str, dict[str, str]] = json.loads(path.read_text(encoding="utf-8"))
+    return dois
+
+
+def recorded_statespacecheck_doi(version: str, path: Path = SOFTWARE_DOIS_PATH) -> str:
+    """Return the committed Zenodo DOI of a ``statespacecheck`` release (offline).
+
+    Parameters
+    ----------
+    version : str
+        The release the figure summaries record, e.g. ``"0.3.1"``.
+    path : Path, default ``SOFTWARE_DOIS_PATH``
+        JSON file mapping ``{"statespacecheck": {version: doi}}``.
+
+    Returns
+    -------
+    str
+        The DOI recorded for that version.
+
+    Raises
+    ------
+    ValueError
+        If the file records no DOI for ``version``; the message names
+        :data:`REFRESH_DOIS_COMMAND`, which looks it up on Zenodo.
+    """
+    doi = _load_software_dois(path).get("statespacecheck", {}).get(version)
+    if doi is None:
+        raise ValueError(
+            f"{path} records no Zenodo DOI for statespacecheck {version}. Look it up "
+            f"and record it (needs internet) with: {REFRESH_DOIS_COMMAND}"
+        )
+    return doi
+
+
+def refresh_statespacecheck_doi(
+    version: str,
+    path: Path = SOFTWARE_DOIS_PATH,
+    *,
+    lookup: Callable[[str], str] = lookup_statespacecheck_doi,
+) -> str:
+    """Look up a release's DOI on Zenodo; record it if new, verify it if recorded.
+
+    Parameters
+    ----------
+    version : str
+        The ``statespacecheck`` release to look up.
+    path : Path, default ``SOFTWARE_DOIS_PATH``
+        JSON file mapping ``{"statespacecheck": {version: doi}}``; created or
+        updated when ``version`` is not yet recorded.
+    lookup : Callable[[str], str], default :func:`lookup_statespacecheck_doi`
+        Returns the DOI Zenodo archives for a version (needs internet access).
+
+    Returns
+    -------
+    str
+        The DOI, now recorded in ``path``.
+
+    Raises
+    ------
+    ValueError
+        If ``path`` already records a different DOI for ``version``; a
+        release's DOI never changes, so the disagreement needs inspection.
+    """
+    doi = lookup(version)
+    dois = _load_software_dois(path)
+    recorded = dois.get("statespacecheck", {}).get(version)
+    if recorded is not None and recorded != doi:
+        raise ValueError(
+            f"{path} records {recorded} for statespacecheck {version}, but Zenodo "
+            f"archives it as {doi}; resolve the disagreement by hand."
+        )
+    if recorded is None:
+        dois.setdefault("statespacecheck", {})[version] = doi
+        text = json.dumps(dois, indent=2, sort_keys=True)
+        path.write_text(f"{text}\n", encoding="utf-8")
+    return doi
+
+
 def analysis_code_doi(citation_path: Path = CITATION_PATH) -> str:
     """Return this repository's Zenodo DOI (all versions), the ``doi`` of its CITATION.cff.
 
@@ -874,7 +964,7 @@ def macro_sections(
         Parsed contents of the two canonical figure summaries.
     statespacecheck_doi : str, optional, keyword-only
         Zenodo DOI of the recorded ``statespacecheck`` version
-        (:func:`lookup_statespacecheck_doi`); the manuscript cites it and the website
+        (:func:`recorded_statespacecheck_doi`); the manuscript cites it and the website
         does not use it. Without it, no DOI macro is emitted.
     analysis_code_doi : str, optional, keyword-only
         This repository's Zenodo DOI (:func:`analysis_code_doi`), cited by the
@@ -956,7 +1046,7 @@ def render_macro_file(
         Parsed contents of the two canonical figure summaries.
     statespacecheck_doi : str, keyword-only
         Zenodo DOI of the recorded ``statespacecheck`` version
-        (:func:`lookup_statespacecheck_doi`).
+        (:func:`recorded_statespacecheck_doi`).
     analysis_code_doi : str, keyword-only
         This repository's Zenodo DOI (:func:`analysis_code_doi`).
 
@@ -1007,6 +1097,7 @@ def write_macro_file(
     figure04_path: Path = FIGURE04_SUMMARY_PATH,
     statespacecheck_doi: str | None = None,
     citation_path: Path = CITATION_PATH,
+    software_dois_path: Path = SOFTWARE_DOIS_PATH,
 ) -> Path:
     """Write ``reported_values.tex`` from the committed figure summaries.
 
@@ -1018,10 +1109,12 @@ def write_macro_file(
         Canonical summary JSONs to read.
     statespacecheck_doi : str, optional
         Zenodo DOI of the recorded ``statespacecheck`` version. By default it is
-        looked up on Zenodo (:func:`lookup_statespacecheck_doi`), which needs internet
-        access.
+        read from ``software_dois_path`` (:func:`recorded_statespacecheck_doi`),
+        without network access.
     citation_path : Path, default ``CITATION_PATH``
         This repository's CITATION.cff, whose ``doi`` the manuscript cites.
+    software_dois_path : Path, default ``SOFTWARE_DOIS_PATH``
+        Committed DOIs of the cited software releases.
 
     Returns
     -------
@@ -1030,8 +1123,8 @@ def write_macro_file(
     """
     figure03_payload, figure04_payload = _load(figure03_path), _load(figure04_path)
     if statespacecheck_doi is None:
-        statespacecheck_doi = lookup_statespacecheck_doi(
-            statespacecheck_version(figure03_payload, figure04_payload)
+        statespacecheck_doi = recorded_statespacecheck_doi(
+            statespacecheck_version(figure03_payload, figure04_payload), software_dois_path
         )
     text = render_macro_file(
         figure03_payload,

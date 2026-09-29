@@ -38,7 +38,7 @@ regenerated; `make manuscript`, which needs no Python, still works.
 ```bash
 make sync
 make figures-simulated
-make reported-values  # needs internet to look up the cited package DOI
+make reported-values
 make manuscript
 ```
 

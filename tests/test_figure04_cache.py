@@ -226,6 +226,101 @@ def test_fingerprint_changes_with_config_and_dependency(
     assert compute_figure04_cache_provenance(config, paths).fingerprint_sha256 != fp1
 
 
+def test_runtime_dependency_closure_walks_a_metadata_graph() -> None:
+    graph: dict[str, list[str]] = {
+        "root-pkg": [
+            "Dep_A>=1",  # followed; spelled un-normalized
+            "cyclic",
+            "with-extra[Fast]",  # requests an extra of with-extra
+            'dev-only; extra == "dev"',  # extras-only: excluded for a no-extras walk
+            'old-python; python_version < "3"',  # marker false for this interpreter
+            "not-installed",  # optional package absent from the environment
+        ],
+        "dep-a": ["shared"],
+        "cyclic": ["root_pkg", "shared"],  # cycle back to the root
+        "with-extra": ['accelerator; extra == "fast"', 'docs-tool; extra == "docs"'],
+        "accelerator": [],
+        "shared": [],
+        "dev-only": ["shared"],
+        "old-python": [],
+        "docs-tool": [],
+    }
+    calls: list[str] = []
+
+    def requirements_of(name: str) -> list[str] | None:
+        calls.append(name)
+        return graph.get(name)
+
+    closure = figure04_cache.runtime_dependency_closure("Root_Pkg", requirements_of)
+    assert closure == {"root-pkg", "dep-a", "cyclic", "with-extra", "accelerator", "shared"}
+    # Every lookup used the normalized name; the cycle visited each node once per extra.
+    assert all(name == name.lower() and "_" not in name for name in calls)
+    assert calls.count("root-pkg") == 1
+
+
+def test_installed_dependency_versions_records_the_real_closure() -> None:
+    versions = figure04_cache.installed_dependency_versions("statespacecheck")
+    assert list(versions) == sorted(versions)
+    assert {"statespacecheck", "numpy", "scipy"} <= set(versions)
+    assert "pytest" not in versions  # a dev extra of statespacecheck
+    decode = figure04_cache.installed_dependency_versions("non_local_detector")
+    assert {"non-local-detector", "jax", "numpy", "scipy"} <= set(decode)
+
+
+def _patched_versions(monkeypatch: pytest.MonkeyPatch, overrides: dict[str, str]) -> None:
+    """Report ``overrides`` in place of the installed versions of those packages."""
+    installed = figure04_cache.version
+
+    def patched(name: str) -> str:
+        normalized = name.lower().replace("_", "-")
+        return overrides.get(normalized, installed(name))
+
+    monkeypatch.setattr(figure04_cache, "version", patched)
+
+
+@pytest.mark.parametrize(
+    ("package", "changes_decode", "changes_diagnostics"),
+    [
+        ("jax", True, False),  # decode closure only
+        ("numpy", True, True),  # both closures
+        ("statespacecheck", False, True),  # the diagnostics root
+    ],
+)
+def test_fingerprints_track_dependency_closure_versions(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    package: str,
+    changes_decode: bool,
+    changes_diagnostics: bool,
+) -> None:
+    paths = Figure4Paths(data_path=tmp_path, animal_date_epoch="epoch_x")
+    config = Figure4Config()
+    original = compute_figure04_cache_provenance(config, paths)
+    _patched_versions(monkeypatch, {package: "0.0.0.test"})
+    changed = compute_figure04_cache_provenance(config, paths)
+    assert (changed.fingerprint_sha256 != original.fingerprint_sha256) is changes_decode
+    assert (
+        changed.diagnostics_fingerprint_sha256 != original.diagnostics_fingerprint_sha256
+    ) is changes_diagnostics
+
+
+@pytest.mark.parametrize(
+    ("helper", "value"), [("_python_version", "3.99.0"), ("_machine", "riscv64")]
+)
+def test_fingerprints_track_python_version_and_machine(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, helper: str, value: str
+) -> None:
+    paths = Figure4Paths(data_path=tmp_path, animal_date_epoch="epoch_x")
+    config = Figure4Config()
+    original = compute_figure04_cache_provenance(config, paths)
+    monkeypatch.setattr(figure04_cache, helper, lambda: value)
+    changed = compute_figure04_cache_provenance(config, paths)
+    assert changed.fingerprint_sha256 != original.fingerprint_sha256
+    assert changed.diagnostics_fingerprint_sha256 != original.diagnostics_fingerprint_sha256
+    recorded = changed.python_version if helper == "_python_version" else changed.machine
+    assert recorded == value
+
+
 @pytest.fixture
 def source_tree(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """A source tree whose files can change without editing the checkout."""
@@ -365,6 +460,14 @@ def test_cache_provenance_serializes_complete_path_independent_inputs(
         "hpd_coverage": 0.95,
         "event_selection": "all_spikes_in_recording",
     }
+    assert payload["python_version"] == figure04_cache._python_version()
+    assert payload["machine"] == figure04_cache._machine()
+    assert payload["decode_dependency_versions"] == (
+        figure04_cache.installed_dependency_versions("non_local_detector")
+    )
+    assert payload["diagnostics_dependency_versions"] == (
+        figure04_cache.installed_dependency_versions("statespacecheck")
+    )
     assert str(tmp_path) not in repr(payload)
 
 
@@ -379,6 +482,10 @@ def test_cache_provenance_rejects_missing_canonical_input_checksum() -> None:
         diagnostics_schema_version=FIGURE04_DIAGNOSTICS_SCHEMA_VERSION,
         statespacecheck_version="0.1.0",
         diagnostics_config=Figure4DiagnosticsConfig(),
+        python_version="3.11.0",
+        machine="x86_64",
+        decode_dependency_versions={"non-local-detector": "1.2.3", "numpy": "2.0.0"},
+        diagnostics_dependency_versions={"numpy": "2.0.0", "statespacecheck": "0.1.0"},
     )
     with pytest.raises(ValueError, match="requires the input file's checksum"):
         provenance.artifact_payload()

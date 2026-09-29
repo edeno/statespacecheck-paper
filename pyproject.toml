@@ -32,6 +32,7 @@ dependencies = [
     "pandas>=2.0.0",
     "networkx>=3.4",
     "joblib>=1.5",
+    "packaging>=22",
     "xarray>=2025.6",
     "statespacecheck>=0.3.1",
     "non_local_detector @ git+https://github.com/LorenFrankLab/non_local_detector.git",
@@ -170,9 +171,11 @@ addopts = [
     # cache-build integration test reads multi-GB ``data/intermediates/``
     # files and rebuilds a Zarr store, so on a fully provisioned checkout
     # it takes minutes and writes gigabytes; run it only deliberately.
+    # ``network`` tests query Zenodo; the default run stays offline.
     "-m",
-    "not slow",
+    "not slow and not network",
 ]
 markers = [
     "slow: long-running tests (e.g. real-data cache builds); run with `-m slow`",
+    "network: tests that query Zenodo (skip when it is unreachable); run with `-m network`",
 ]

@@ -44,7 +44,7 @@ from statespacecheck_paper.style import save_figure, set_figure_defaults
 
 # Version of the figure04_summary.json layout written by
 # figure04_summary_payload. Bump it when a field is added, removed, or renamed.
-FIGURE04_SUMMARY_SCHEMA_VERSION = 7
+FIGURE04_SUMMARY_SCHEMA_VERSION = 8
 
 
 def figure04_reported_statistics(summary: Figure4Summary) -> dict[str, object]:
@@ -133,7 +133,7 @@ def generate_figure04(*, use_cache: bool = True) -> None:
         ``DATA_PATH / "intermediates"`` (``DATA_PATH`` is ``data/`` unless
         ``STATESPACECHECK_DATA_PATH`` is set) when their fingerprints match,
         and rebuild whichever does not. A stale decode cache (a config, input
-        data, fitting implementation, or ``non_local_detector`` change) refits
+        data, fitting implementation, or computational-environment change) refits
         and re-decodes both models, which takes several minutes, and then
         recomputes the diagnostics; a stale diagnostics cache alone recomputes
         only the diagnostics from the cached predictions. When False

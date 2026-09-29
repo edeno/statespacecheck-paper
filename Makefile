@@ -5,7 +5,7 @@ RUN = $(UV) run --frozen
 
 .DEFAULT_GOAL := help
 .PHONY: help sync sync-dev manuscript figures-simulated figures download-data \
-        reported-values reproduce check check-python check-site
+        reported-values reproduce reproduce-fresh check check-python check-site
 
 help:
 	@echo "make manuscript         Build the PDF from committed figures and macros (LaTeX)"
@@ -13,8 +13,9 @@ help:
 	@echo "make figures-simulated  Regenerate Figures 1-3 (no recording data)"
 	@echo "make download-data      Download and verify the 75 MB Figure-4 input"
 	@echo "make figures            Regenerate all figures (Figure-4 input required)"
-	@echo "make reported-values    Update manuscript macros (needs internet)"
+	@echo "make reported-values    Update manuscript macros (offline)"
 	@echo "make reproduce          Sync, download, regenerate figures/macros, build PDF"
+	@echo "make reproduce-fresh    Rerun HEAD from scratch elsewhere; compare with committed"
 	@echo "make sync-dev           Install locked development and viewer dependencies"
 	@echo "make check              Run Python checks and website tests (Node 22+)"
 	@echo "make check-python       Run formatting, lint, types, and default Python tests"
@@ -52,6 +53,14 @@ reproduce:
 	$(MAKE) figures
 	$(MAKE) reported-values
 	$(MAKE) manuscript
+
+# Rerun the committed paper (HEAD) in a clean export with empty data and caches,
+# then compare its summaries and macros with the committed ones. Writes nothing
+# in this checkout; FRESH_DIR (empty or missing) chooses the work directory,
+# otherwise a new temporary directory. The orchestrator needs only the standard
+# library, so no environment is synced here; the export syncs its own.
+reproduce-fresh:
+	$(UV) run --no-project python scripts/reproduce_fresh.py $(if $(FRESH_DIR),--work-dir "$(FRESH_DIR)")
 
 check: check-python check-site
 

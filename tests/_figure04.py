@@ -26,4 +26,8 @@ def synthetic_cache_provenance(animal_date_epoch: str = "epoch_x") -> Figure4Cac
         diagnostics_schema_version=FIGURE04_DIAGNOSTICS_SCHEMA_VERSION,
         statespacecheck_version="0.1.0",
         diagnostics_config=Figure4DiagnosticsConfig(),
+        python_version="3.11.0",
+        machine="x86_64",
+        decode_dependency_versions={"non-local-detector": "1.2.3", "numpy": "2.0.0"},
+        diagnostics_dependency_versions={"numpy": "2.0.0", "statespacecheck": "0.1.0"},
     )
