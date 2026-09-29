@@ -35,7 +35,8 @@ from statespacecheck_paper.paths import FIGURE04_INPUTS_EPOCH
 # Position columns every downstream consumer relies on (centimeters): the head
 # position's x and y, then its linearization along the track.
 HEAD_POSITION_COLUMNS = ("head_position_x", "head_position_y")
-REQUIRED_POSITION_COLUMNS = (*HEAD_POSITION_COLUMNS, "linear_position")
+LINEAR_POSITION_COLUMN = "linear_position"
+REQUIRED_POSITION_COLUMNS = (*HEAD_POSITION_COLUMNS, LINEAR_POSITION_COLUMN)
 
 # File-name suffix (after the ``{animal_date_epoch}`` prefix) of the input file this
 # loader reads. This module owns it so the Figure-4 decode cache hashes exactly

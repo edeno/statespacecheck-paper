@@ -28,7 +28,7 @@ from statespacecheck_paper.figure04_decoder import (
     get_spike_counts,
     validate_package_defaults,
 )
-from statespacecheck_paper.figure04_input import NeuralRecordingData
+from statespacecheck_paper.figure04_input import HEAD_POSITION_COLUMNS, NeuralRecordingData
 from statespacecheck_paper.figure04_place_fields import (
     DECODER_PREDICTIVE_VAR,
     extract_agreed_place_fields,
@@ -86,9 +86,7 @@ def fit_and_decode(
         and ``diagnostic_position_bins`` ``(n_position_bins,)``.
     """
     time = decode_time(recording)
-    head_position = recording.position_info[["head_position_x", "head_position_y"]].to_numpy(
-        dtype=np.float64
-    )
+    head_position = recording.position_info[list(HEAD_POSITION_COLUMNS)].to_numpy(dtype=np.float64)
     spike_times_list = list(recording.spike_times)  # non_local_detector wants a list
 
     # Environment is only needed to fit the decoders.

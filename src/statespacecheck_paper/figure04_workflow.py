@@ -50,6 +50,7 @@ from statespacecheck_paper.figure04_decoder import Figure4Config, Figure4Diagnos
 from statespacecheck_paper.figure04_diagnostics import compute_results_diagnostics
 from statespacecheck_paper.figure04_fit import decode_time, fit_and_decode
 from statespacecheck_paper.figure04_input import (
+    LINEAR_POSITION_COLUMN,
     NeuralRecordingData,
     load_figure04_input,
 )
@@ -366,7 +367,7 @@ def prepare_figure04_render_data(
     print(f"  Loaded {len(recording.spike_times)} cells")
 
     time = decode_time(recording)
-    linear_position = recording.position_info["linear_position"].to_numpy(dtype=np.float64)
+    linear_position = recording.position_info[LINEAR_POSITION_COLUMN].to_numpy(dtype=np.float64)
 
     cache_provenance = compute_figure04_cache_provenance(config, paths)
     expected_fingerprint = cache_provenance.fingerprint_sha256
