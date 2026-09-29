@@ -372,7 +372,8 @@ same `Figure4RenderData` via `interactive.cache.build_figure04_viewer_cache`.
 
 `figure03_summary.json` uses schema version 7 and `figure04_summary.json`
 uses schema version 5. Schema 7 added the trajectory's starting position,
-`configuration.initial_position`. The Figure-3 schema includes the decoding-accuracy block:
+`configuration.initial_position`, and the step length in seconds,
+`configuration.step_seconds` (the protocol constant `STEP_SECONDS`). The Figure-3 schema includes the decoding-accuracy block:
 `accuracy_metric_order` (`median_absolute_error`), `accuracy_units`, and
 `median_decoding_accuracy`, a `(1, n_conditions)` matrix of the
 across-realization median absolute error of the filtered-posterior mean

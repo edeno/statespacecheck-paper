@@ -20,6 +20,7 @@ from numpy.typing import NDArray
 
 from statespacecheck_paper.diagnostics import DecodingDiagnostics, DiagnosticThresholds
 from statespacecheck_paper.figure03_protocol import (
+    STEP_SECONDS,
     Figure3Config,
     PhaseBoundary,
     compute_replay_step_window,
@@ -376,6 +377,9 @@ def _plot_figure3_diagnostic_row(
         symlog_ylim=(-0.005, 1.6),
     )
     if show_xlabel:
+        # The axis counts steps; labeling it in ms holds only for 1 ms steps.
+        if STEP_SECONDS != 1e-3:
+            raise ValueError(f"Figure 3 labels its step axis in ms; STEP_SECONDS is {STEP_SECONDS}")
         ax.set_xlabel("Time (ms)", labelpad=7)
     else:
         ax.tick_params(labelbottom=False)

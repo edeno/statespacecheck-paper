@@ -28,7 +28,7 @@ import dataclasses
 import numpy as np
 
 from statespacecheck_paper.figure03_plotting import compose_figure03
-from statespacecheck_paper.figure03_protocol import Figure3Config
+from statespacecheck_paper.figure03_protocol import STEP_SECONDS, Figure3Config
 from statespacecheck_paper.figure03_simulation import (
     all_place_field_centers,
     run_figure03_simulation,
@@ -74,7 +74,9 @@ def figure03_summary_payload(
     return {
         "schema_version": 7,
         "figure": "figure03",
-        "configuration": dataclasses.asdict(config),
+        # The step length is a protocol constant rather than a config field;
+        # recorded so the prose can convert steps to time.
+        "configuration": {**dataclasses.asdict(config), "step_seconds": STEP_SECONDS},
         "realizations": {
             "count": summary.n_realizations,
             "first_seed": first_seed,

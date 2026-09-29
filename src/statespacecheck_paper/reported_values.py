@@ -77,6 +77,9 @@ CITATION_PATH = Path("CITATION.cff")
 # record); each release's own DOI is looked up under it by version
 STATESPACECHECK_ZENODO_CONCEPT_RECORD = "22999988"
 
+# Unit conversion for the durations the prose gives in milliseconds
+_MS_PER_SECOND = 1000.0
+
 # Spelled-out cardinals for the counts the manuscript writes as words
 # ("eleven place cells", "Five additional cells"). Only small counts appear,
 # so a short table beats a spell-out dependency.
@@ -367,10 +370,13 @@ def _simulation_configuration(payload: dict[str, Any]) -> list[MacroDefinition]:
     centers = config["place_field_centers"]
     field_std: float = config["place_field_std"]
     rate_scale: float = config["place_field_rate_scale"]
-    # Peak of the Gaussian place field, in expected spikes per 1 ms step.
+    # Simulation time is counted in steps of this length.
+    step_seconds: float = config["step_seconds"]
+    step_ms = step_seconds * _MS_PER_SECOND
+    # Peak of the Gaussian place field, in expected spikes per step.
     peak_count_per_step = rate_scale / (field_std * math.sqrt(2.0 * math.pi))
-    # Per-cell sparse rates, converted from spikes/step to Hz at 1 ms/step.
-    sparse_active_hz = config["sparse_cell_peak_rate_per_step"] * 1000.0
+    # Per-cell sparse rates, converted from spikes/step to Hz.
+    sparse_active_hz = config["sparse_cell_peak_rate_per_step"] / step_seconds
     sparse_baseline_hz = sparse_active_hz * config["sparse_cell_baseline_rate_fraction"]
     remap_displacement = min(abs(dst - src) for src, dst in config["place_field_remapping"])
     # The replay sweep occupies a fractional sub-window of clean recovery 2.
@@ -411,8 +417,8 @@ def _simulation_configuration(payload: dict[str, Any]) -> list[MacroDefinition]:
         ),
         MacroDefinition(
             "SimPeakRateHz",
-            significant(peak_count_per_step * 1000.0, SIGNIFICANT_FIGURES),
-            "peak expected count per step at 1 ms/step, in Hz",
+            significant(peak_count_per_step / step_seconds, SIGNIFICANT_FIGURES),
+            "peak expected count per step / step_seconds, in Hz",
         ),
         MacroDefinition(
             "SimPredictionStepStd",
@@ -451,18 +457,19 @@ def _simulation_configuration(payload: dict[str, Any]) -> list[MacroDefinition]:
         MacroDefinition(
             "SimSparseBaselineRateHz",
             _exact(sparse_baseline_hz, 2),
-            "sparse_cell_peak_rate_per_step * sparse_cell_baseline_rate_fraction, in Hz",
+            "sparse_cell_peak_rate_per_step * sparse_cell_baseline_rate_fraction / step_seconds",
         ),
         MacroDefinition(
             "SimSparseActiveRateHz",
             _exact(sparse_active_hz),
-            "sparse_cell_peak_rate_per_step, in Hz",
+            "sparse_cell_peak_rate_per_step / step_seconds, in Hz",
         ),
+        MacroDefinition("SimStepMs", _exact(step_ms), "step_seconds, in ms"),
         MacroDefinition("SimDurationSteps", _exact(boundaries[-1]), "phase_boundaries[-1]"),
         MacroDefinition(
             "SimDurationSeconds",
-            _exact(boundaries[-1] / 1000.0),
-            "phase_boundaries[-1] at 1 ms/step",
+            _exact(boundaries[-1] * step_seconds),
+            "phase_boundaries[-1] * step_seconds",
         ),
         MacroDefinition("SimNPhasesWord", cardinal_word(len(boundaries)), "len(phase_boundaries)"),
         MacroDefinition("SimRemapStart", _exact(boundaries[0]), "phase_boundaries[0]"),
@@ -491,18 +498,18 @@ def _simulation_configuration(payload: dict[str, Any]) -> list[MacroDefinition]:
         MacroDefinition("SimDriftMomentum", _exact(config["drift_momentum"], 2), "drift_momentum"),
         MacroDefinition(
             "SimRefractoryMs",
-            _exact(config["history_refractory_steps"]),
-            "history_refractory_steps at 1 ms/step",
+            _exact(config["history_refractory_steps"] * step_ms),
+            "history_refractory_steps * step_seconds, in ms",
         ),
         MacroDefinition(
             "SimBurstStartMs",
-            _exact(config["history_burst_window"][0]),
-            "history_burst_window[0] at 1 ms/step",
+            _exact(config["history_burst_window"][0] * step_ms),
+            "history_burst_window[0] * step_seconds, in ms",
         ),
         MacroDefinition(
             "SimBurstEndMs",
-            _exact(config["history_burst_window"][1]),
-            "history_burst_window[1] at 1 ms/step",
+            _exact(config["history_burst_window"][1] * step_ms),
+            "history_burst_window[1] * step_seconds, in ms",
         ),
         MacroDefinition(
             "SimBurstFactorWord",
@@ -575,7 +582,7 @@ def _recording_configuration(payload: dict[str, Any]) -> list[MacroDefinition]:
         ),
         MacroDefinition(
             "RecTimeBinMs",
-            _exact(1000.0 / decoder["sampling_frequency_hz"]),
+            _exact(_MS_PER_SECOND / decoder["sampling_frequency_hz"]),
             "1 / configuration.decoder.sampling_frequency_hz",
         ),
         MacroDefinition(

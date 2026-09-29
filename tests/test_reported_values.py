@@ -116,6 +116,24 @@ def test_every_figure4_flag_rule_is_reported_or_fails_the_emit() -> None:
         render_macro_file(figure03, figure04, statespacecheck_doi=CITED_DOI)
 
 
+def test_time_conversions_follow_the_recorded_step_length() -> None:
+    """Durations and rates are converted with the summary's step, not a fixed 1 ms."""
+    figure03 = copy.deepcopy(_load("figure03_summary.json"))
+    figure03["configuration"]["step_seconds"] = 0.002
+    figure03["configuration"]["sparse_cell_peak_rate_per_step"] = 0.002
+
+    values = _macro_values(
+        render_macro_file(figure03, _load("figure04_summary.json"), statespacecheck_doi=CITED_DOI)
+    )
+
+    assert values["SimStepMs"] == "2"
+    assert values["SimDurationSeconds"] == "64"
+    assert values["SimRefractoryMs"] == "2"
+    assert (values["SimBurstStartMs"], values["SimBurstEndMs"]) == ("4", "20")
+    assert values["SimPeakRateHz"] == "100"
+    assert values["SimSparseActiveRateHz"] == "1"
+
+
 def test_non_integral_burst_factor_is_not_silently_rounded() -> None:
     """The spelled-out prose cannot faithfully represent a fractional factor."""
     figure03 = copy.deepcopy(_load("figure03_summary.json"))
