@@ -70,15 +70,15 @@ COLORS: dict[str, str] = {
     # -------------------------------------------------------------------------
     # Predictive: "What we expect" - the one-step-ahead prediction from the model
     # Blue chosen for "cool" association with prior/prediction (before evidence)
-    "predictive": "#0072B2",  # WONG[5] Blue
+    "predictive": WONG[5],  # Blue
     #
     # Likelihood: "What we observe" - evidence from current observations
     # Orange chosen for "warm" association with data/evidence (new information)
-    "likelihood": "#E69F00",  # WONG[1] Orange
+    "likelihood": WONG[1],  # Orange
     #
     # Posterior: "What we believe" - combined belief after incorporating evidence
     # Black chosen as neutral, authoritative color (the "answer")
-    "posterior": "#000000",  # WONG[0] Black
+    "posterior": WONG[0],  # Black
     #
     # -------------------------------------------------------------------------
     # Ground Truth and Reference
@@ -103,14 +103,14 @@ COLORS: dict[str, str] = {
     # -------------------------------------------------------------------------
     # HPD Overlap metric - related to distributions but distinct
     # Sky blue: lighter than predictive blue, suggests "overlap/intersection"
-    "hpd_overlap": "#56B4E9",  # WONG[2] Sky Blue
+    "hpd_overlap": WONG[2],  # Sky Blue
     #
     # KL Divergence metric - measures information difference
     # Bluish green: distinct from both primary colors, suggests "divergence"
-    "kl_divergence": "#009E73",  # WONG[3] Bluish Green
+    "kl_divergence": WONG[3],  # Bluish Green
     #
     # Predictive p-value metric
-    "predictive_pvalue": "#CC79A7",  # WONG[7] Reddish Purple
+    "predictive_pvalue": WONG[7],  # Reddish Purple
     #
     # -------------------------------------------------------------------------
     # Figure-3 Replay Band
@@ -118,7 +118,7 @@ COLORS: dict[str, str] = {
     # Replay event (in clean-recovery 2) — immobile animal, decoded
     # trajectory sweeps the track; a control. Used to mark
     # the replay band in the Figure-3 time series.
-    "replay": "#009E73",  # Vivid green (WONG[3]); marks the replay band
+    "replay": WONG[3],  # Bluish green; marks the replay band
     #
     # -------------------------------------------------------------------------
     # Heatmap Colormaps
