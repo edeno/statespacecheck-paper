@@ -603,14 +603,17 @@ const MODELS = [
   { id: "continuous_fragmented", label: "Continuous–Fragmented", short: "Cont.–Frag." },
 ];
 
-/** Time of peak population firing (all units), which marks the replay event. */
-function populationPeak(spikeTimes, range) {
+/**
+ * Time of peak population firing (all units), which marks the replay event,
+ * searched in steps of one decoder bin `dt`.
+ */
+function populationPeak(spikeTimes, range, dt) {
   const all = spikeTimes.flat().sort((a, b) => a - b);
   let best = range[0];
   let bestCount = -1;
   let lo = 0;
   let hi = 0;
-  for (let t = range[0]; t <= range[1]; t += 0.002) {
+  for (let t = range[0]; t <= range[1]; t += dt) {
     while (lo < all.length && all[lo] < t - POPULATION_PEAK_HALF_WIDTH) lo += 1;
     while (hi < all.length && all[hi] <= t + POPULATION_PEAK_HALF_WIDTH) hi += 1;
     if (hi - lo > bestCount) {
@@ -801,7 +804,7 @@ export function renderReplay(root, payload, manifest) {
   });
   // Open on the HPD-overlap rescue nearest the peak of population firing,
   // i.e., inside the replay event.
-  const peak = populationPeak(payload.spike_times, range);
+  const peak = populationPeak(payload.spike_times, range, dt);
   let initial = -1;
   eventTimes.forEach((t, i) => {
     if (!isRescued("hpd_overlap", i)) return;
