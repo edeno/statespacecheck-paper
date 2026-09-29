@@ -28,14 +28,20 @@ Two dataset kinds are supported:
 
 ## Build a cache
 
-For Figure 4, first run `make download-data`. The builder fits the models when
-the canonical decode cache is absent or stale. Viewer caches require additional
-disk space and are ignored by Git.
+For Figure 4, first run `make download-data`. The builder loads the same two
+canonical caches the static figure uses, the decode bundle
+`{epoch}_fig4_cache.joblib` and the diagnostics bundle
+`{epoch}_fig4_diagnostics.joblib` under `<data-dir>/intermediates/`. It refits
+the models when the decode cache is absent or stale, and recomputes the
+diagnostics when the diagnostics cache is absent or stale; either way it
+rewrites the canonical cache it rebuilt. `--force-recompute` refits and
+recomputes both regardless. Viewer caches require additional disk space and are
+ignored by Git.
 
 ```bash
 # Real data (figure 4): derives figure04_continuous.zarr +
-# figure04_contfrag.zarr and shared sidecars from the same canonical
-# {epoch}_fig4_cache.joblib bundle used by the static figure.
+# figure04_contfrag.zarr and shared sidecars from the canonical Figure 4
+# decode and diagnostics caches.
 uv run --frozen python -m statespacecheck_paper.interactive.cache build \
     --data-dir data \
     --cache-dir data/cache \
