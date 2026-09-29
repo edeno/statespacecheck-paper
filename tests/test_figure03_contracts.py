@@ -90,7 +90,8 @@ def test_summary_condition_and_realization_summary_fields() -> None:
         "realization_flag_percentages",
         "realization_decoding_accuracy",
     ]
-    # The aggregates are derived from the realizations, under their old names.
+    # The medians and their standard errors are properties derived from the
+    # realizations, so they cannot disagree with the stored values.
     for name in (
         "median_flag_percentages",
         "median_decoding_accuracy",

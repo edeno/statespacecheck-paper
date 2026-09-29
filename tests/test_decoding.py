@@ -568,14 +568,13 @@ class TestConditionOn:
 
 
 class TestDecodeWithDiagnosticsLogSpace:
-    """Stress tests for the log-space rewrite of decode_with_diagnostics.
+    """Stress tests for the log-space update of decode_with_diagnostics.
 
-    The previous implementation reset the posterior to uniform when
-    ``predictive * combined_likelihood`` underflowed to zero. The log-space
-    rewrite removes that branch; the finite-overlap numerical-underflow
-    failure mode cannot occur. An exactly impossible observation retains
-    a separately tested fallback. These tests pin that distinction so a
-    future refactor cannot silently reintroduce the arbitrary reset.
+    The update is computed in log space and normalized with log-sum-exp, so a
+    finite but tiny overlap between ``predictive`` and ``combined_likelihood``
+    still yields a normalized posterior; the posterior is never reset to
+    uniform. An exactly impossible observation raises instead (tested
+    separately). These tests guard against an arbitrary reset.
     """
 
     def test_posterior_sums_to_one_at_every_step(self) -> None:
@@ -604,10 +603,9 @@ class TestDecodeWithDiagnosticsLogSpace:
         one end of the grid then drive the decoder with spike_counts whose
         place-field rate is concentrated at the *other* end.
 
-        On the pre-refactor code this configuration triggered the
-        ``posterior_sum < 1e-300`` reset-to-uniform branch. The
-        log-space implementation must instead produce a normalized,
-        non-uniform posterior at every step.
+        The linear-space product of predictive and likelihood underflows
+        here (its sum falls below ``1e-300``). The log-space update must
+        still produce a normalized, non-uniform posterior at every step.
         """
         n_time, n_cells, n_bins = 30, 2, 51
         position_bins = np.linspace(0.0, 100.0, n_bins)
@@ -633,16 +631,14 @@ class TestDecodeWithDiagnosticsLogSpace:
         # Every step's posterior sums to 1 (no underflow, no reset).
         np.testing.assert_allclose(posterior.sum(axis=1), 1.0, rtol=1e-8, atol=1e-10)
 
-        # Posterior is not uniform — at least one step's distribution
-        # is meaningfully concentrated. The old reset-to-uniform branch
-        # would have made every transitioning step uniform, so non-
-        # uniformity at any step rules out the silent fallback.
+        # Posterior is not uniform — at least one step's distribution is
+        # meaningfully concentrated, so the filter did not replace the
+        # posterior with a uniform one when the likelihood underflows.
         uniform = 1.0 / n_bins
         max_dev = float(np.max(np.abs(posterior - uniform)))
         assert max_dev > 0.05, (
             f"posterior is uniformly flat (max |Δ uniform| = {max_dev:.4f}); "
-            f"the log-space rewrite may have collapsed to the old reset-to-"
-            f"uniform behaviour."
+            f"the log-space update must not reset the posterior to uniform."
         )
 
         # The mass should ultimately concentrate near the place-field

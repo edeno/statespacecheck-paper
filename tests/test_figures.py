@@ -124,9 +124,9 @@ def test_figure02_create_shared_example_samples_y_tilde_with_noise() -> None:
     )
     # Load-bearing assertion: y_tilde must differ from its originating
     # state position by more than rounding (~1 bin width = 0.5). If every
-    # y_tilde sits exactly on its sample position, the showcase draws have
-    # reverted to the deterministic y_tilde = x_s shortcut and the
-    # manuscript's predictive-check definition is no longer depicted.
+    # y_tilde sits exactly on its sample position, the showcase draws take
+    # the deterministic y_tilde = x_s shortcut and do not depict the
+    # manuscript's predictive-check definition.
     deltas = np.abs(y_tildes - positions)
     assert np.any(deltas > 0.5), (
         f"showcase_y_tildes equal showcase_positions (max |Δ| = {deltas.max():.3f}); "

@@ -168,8 +168,8 @@ addopts = [
     "--cov-report=term-missing",
     # Skip ``slow``-marked tests by default. The real-data
     # cache-build integration test reads multi-GB ``data/intermediates/``
-    # files and rebuilds a Zarr store; running it accidentally on a
-    # fully provisioned checkout has been a foot-gun.
+    # files and rebuilds a Zarr store, so on a fully provisioned checkout
+    # it takes minutes and writes gigabytes; run it only deliberately.
     "-m",
     "not slow",
 ]

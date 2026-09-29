@@ -264,7 +264,8 @@ def test_remap_phase_uses_decoder_likelihood(sim: Figure3SimulationResult) -> No
         )
 
     # Confirm that this fixture distinguishes decoder-rate diagnostics from
-    # the old oracle computation based on the unperturbed place fields.
+    # an oracle computation with the unperturbed place fields, which the
+    # decoder does not use during the remap.
     baseline_rates = np.hstack(
         [
             place_field_rates(
@@ -442,9 +443,7 @@ def test_history_dependent_firing_per_spike_metrics_near_baseline(
 def test_drift_phase_inflates_kl(sim: Figure3SimulationResult) -> None:
     """The drift misfit (persistent-velocity trajectory vs. memoryless
     decoder) must produce a meaningfully larger per-spike KL than
-    baseline. With the wiggly phase removed, this and the sparse-reward
-    test are the only metric-dissociation regression guards left, so the
-    bound is tight enough to catch a near-noop drift.
+    baseline. The bound is tight enough to catch a near-noop drift.
     """
     medians = _per_phase_medians(sim)
     base_kl, _, _ = medians["Clean Baseline"]
@@ -555,8 +554,8 @@ class TestEstimateRealizationSummary:
     def test_remap_column_is_most_flagged(self, summary: Figure3RealizationSummary) -> None:
         """Scientific regression guard: across realizations, the remap column
         (index 1) is flagged far more than the well-specified column (index 0)
-        for every metric — the headline 'all three detect remap' result, now
-        on a stabilized median."""
+        for every metric — the headline 'all three detect remap' result, on
+        the median across realizations."""
         for row in range(3):
             assert summary.median_flag_percentages[row, 1] > summary.median_flag_percentages[row, 0]
 
@@ -609,8 +608,7 @@ class TestEstimateRealizationSummary:
     def test_remap_is_strongly_flagged_by_all_three(
         self, summary: Figure3RealizationSummary
     ) -> None:
-        """Magnitude guard (replaces the removed single-realization
-        ``test_remap_phase_flags_all_three``): the incoherent random-remap is
+        """Magnitude guard: the incoherent random-remap is
         the headline positive control, so every metric must flag it well
         above both the well-specified baseline and the drift misfit.
 

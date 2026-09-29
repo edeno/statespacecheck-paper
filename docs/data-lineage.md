@@ -99,12 +99,11 @@ ran on a lab server in a conda environment with Python 3.11.8, Spyglass
 0.5.6.dev16, NumPy 1.26.4, pandas 1.5.3, networkx 3.4, and track-linearization
 2.3.2. **All five pickles it wrote were byte-identical to the ones the figure was
 made from** (same SHA-256 as above). It was run again, on a second lab server,
-after the fetch gained its data checks (one sort per sort group, unit IDs per sort
-group, patch coverage, and the loader's checks before writing), with the same
-result.
+with the fetch's data checks (one sort per sort group, unit IDs per sort group,
+patch coverage, and the loader's checks before writing), with the same result.
 
-After the switch to the `.npz`, the same script wrote the `.npz` directly on a lab
-server (NumPy 1.26), and it has **the same SHA-256 as the one converted from the
+The same script, writing the `.npz` input file directly on a lab server
+(NumPy 1.26), produced **the same SHA-256 as the file converted from the
 pickles** on a laptop (NumPy 2.3). Figure 4 regenerated from the `.npz` gives an
 identical summary (every mean and flag count; only the provenance checksums and
 cache fingerprints change). The PNG matched the committed one pixel for pixel
@@ -178,8 +177,9 @@ the whole table if packaged. These details come from that inspection and should
 be checked against the current database before any manual deletion. The partial
 selection has not been cleaned up by this repository's scripts.
 
-After replacing the `fetch1_dataframe()` call, the Figure-4 fetch was rehearsed
-on the lab server under `scripts/datajoint_read_only.py` on 2026-09-24. It
+With the position fetch reading the single `IntervalPositionInfo` entry directly
+(so that no restriction by `True` is logged; see `figure04_input.py`), the
+Figure-4 fetch was rehearsed on the lab server under `scripts/datajoint_read_only.py` on 2026-09-24. It
 would log 131 table restrictions and 23 files, with no unrestricted table
 entry. A separate guarded fetch rebuilt the `.npz` and matched the reference
 array by array (all 24 arrays). This verifies the input data and proposed log;
