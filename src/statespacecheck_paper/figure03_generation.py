@@ -34,6 +34,7 @@ from statespacecheck_paper.figure03_simulation import (
     run_figure03_simulation,
 )
 from statespacecheck_paper.figure03_summary import (
+    N_REALIZATIONS,
     SUMMARY_ACCURACY_METRICS,
     SUMMARY_FLAG_METRICS,
     Figure3RealizationSummary,
@@ -49,14 +50,6 @@ from statespacecheck_paper.scientific_artifacts import (
     write_json_artifact,
 )
 from statespacecheck_paper.style import save_figure, set_figure_defaults
-
-# Number of independent realizations pooled to stabilize the panel-(b)
-# summary. A single run's flag thresholds and per-phase percentages are
-# noisy (the KL 99th-percentile threshold varies ~17% across seeds, and
-# the remap flag percentage swings with the trajectory); pooling many
-# realizations gives a stable threshold and a median per-phase summary.
-# The seed-1 realization shown in panel (a) is one of these.
-N_REALIZATIONS = 100
 
 
 def _plain_condition_label(label: str) -> str:

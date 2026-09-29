@@ -47,6 +47,14 @@ SUMMARY_FLAG_METRICS: tuple[tuple[str, FlagDirection], ...] = tuple(METRIC_FLAG_
 # mean (position units).
 SUMMARY_ACCURACY_METRICS: tuple[str, ...] = ("median_absolute_error",)
 
+# Number of independent realizations pooled to stabilize the panel-(b)
+# summary. A single run's flag thresholds and per-phase percentages are
+# noisy (the KL 99th-percentile threshold varies ~17% across seeds, and
+# the remap flag percentage swings with the trajectory); pooling many
+# realizations gives a stable threshold and a median per-phase summary.
+# The seed-1 realization shown in panel (a) is one of these.
+N_REALIZATIONS = 100
+
 
 @dataclass(frozen=True)
 class Figure3SummaryCondition:
@@ -541,7 +549,7 @@ def baseline_threshold_provenance(config: Figure3Config) -> dict[str, object]:
 def estimate_realization_summary(
     config: Figure3Config,
     *,
-    n_realizations: int = 100,
+    n_realizations: int = N_REALIZATIONS,
     first_random_seed: int | None = None,
 ) -> Figure3RealizationSummary:
     """Pool many realizations into stable Figure-3 diagnostic_thresholds and fractions.
@@ -561,7 +569,7 @@ def estimate_realization_summary(
     config : Figure3Config
         Simulation configuration. ``config.place_field_centers`` must be set
         (the dataclass initializes it by default).
-    n_realizations : int, default 100
+    n_realizations : int, default ``N_REALIZATIONS``
         Number of independent realizations to aggregate. Must be >= 1.
     first_random_seed : int, optional
         First seed; subsequent realizations use consecutive seeds. If
