@@ -389,7 +389,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
             name=ds.PREDICTIVE_VAR,
         )
         loglik_row = _replace_structural_padding(
-            ds.slice_at_index(t_idx, which="likelihood"),
+            ds.slice_at_index(t_idx, which="log_likelihood"),
             ds.state_interior_mask,
             fill_value=-np.inf,
             name="log_likelihood",

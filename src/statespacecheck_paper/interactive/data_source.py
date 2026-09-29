@@ -575,9 +575,13 @@ class DecoderDataSource:
         self,
         t_idx: int,
         *,
-        which: Literal["predictive", "likelihood", "smoothed"] = "predictive",
+        which: Literal["predictive", "log_likelihood", "smoothed"] = "predictive",
     ) -> NDArray[np.float32]:
         """Return one 1D row (length ``n_state_bins``) at ``t_idx``.
+
+        ``which`` selects the predictive distribution, the log likelihood
+        (true log space, as :meth:`load_log_likelihood` returns it), or the
+        smoothed posterior.
 
         Hot-path call from the slice panel: a single Zarr row read.
         Typical chunk size (8192 along time) means at most one chunk
@@ -587,7 +591,7 @@ class DecoderDataSource:
             raise IndexError(f"t_idx {t_idx} out of range [0, {self.n_time})")
         if which == "predictive":
             arr = self._predictive_arr
-        elif which == "likelihood":
+        elif which == "log_likelihood":
             arr = self._loglik_arr
         elif which == "smoothed":
             if self._smoothed_arr is None:
@@ -597,7 +601,10 @@ class DecoderDataSource:
                 )
             arr = self._smoothed_arr
         else:
-            raise ValueError(f"Unknown slice variant: {which!r}")
+            raise ValueError(
+                f"Unknown slice variant: {which!r}; expected 'predictive', "
+                "'log_likelihood', or 'smoothed'"
+            )
         return np.asarray(arr[t_idx], dtype=np.float32)
 
     @staticmethod

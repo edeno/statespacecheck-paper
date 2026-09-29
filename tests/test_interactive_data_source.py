@@ -163,12 +163,15 @@ def test_slice_at_index_matches_load_predictive_row(synthetic_cache: Path) -> No
             np.testing.assert_array_equal(row, predictive[offset])
 
 
-def test_slice_at_index_likelihood_branch(synthetic_cache: Path) -> None:
+def test_slice_at_index_log_likelihood_branch(synthetic_cache: Path) -> None:
     with DecoderDataSource(synthetic_cache, model="continuous") as src:
         sl = slice(80, 96)
         loglik = src.load_log_likelihood(sl)
-        row = src.slice_at_index(sl.start + 7, which="likelihood")
+        row = src.slice_at_index(sl.start + 7, which="log_likelihood")
         np.testing.assert_array_equal(row, loglik[7])
+        # The row is a log likelihood, so the selector says so.
+        with pytest.raises(ValueError, match="Unknown slice variant: 'likelihood'"):
+            src.slice_at_index(sl.start, which="likelihood")
 
 
 def test_slice_at_index_raises_for_out_of_range(synthetic_cache: Path) -> None:
