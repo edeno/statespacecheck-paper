@@ -5,7 +5,8 @@ RUN = $(UV) run --frozen
 
 .DEFAULT_GOAL := help
 .PHONY: help sync sync-dev manuscript figures-simulated figures download-data \
-        reported-values reproduce reproduce-fresh check check-python check-site
+        reported-values reproduce reproduce-fresh check check-python check-site \
+        check-site-browser
 
 help:
 	@echo "make manuscript         Build the PDF from committed figures and macros (LaTeX)"
@@ -20,6 +21,7 @@ help:
 	@echo "make check              Run Python checks and website tests (Node 22+)"
 	@echo "make check-python       Run formatting, lint, types, and default Python tests"
 	@echo "make check-site         Run website metric parity tests (Node 22+)"
+	@echo "make check-site-browser Run website accessibility tests in headless Chromium"
 
 # --inexact installs the locked analysis environment without removing the
 # development and viewer extras that sync-dev added.
@@ -72,3 +74,7 @@ check-python:
 
 check-site:
 	$(MAKE) -C site test NODE="$(NODE)"
+
+# Needs the site's npm dev dependencies and Playwright's Chromium (site/README.md).
+check-site-browser:
+	$(MAKE) -C site test-browser NODE="$(NODE)"

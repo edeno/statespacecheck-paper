@@ -33,12 +33,29 @@ uv run --frozen python scripts/export_site_data.py
 # Check the JavaScript diagnostics against the Python reference
 make check-site
 
+# Check the assembled page's accessibility and keyboard behavior in headless
+# Chromium (installs the test dependencies and the browser once)
+npm --prefix site ci
+(cd site && npx playwright install chromium)
+make check-site-browser
+
 # Assemble the site (adds Figure 1 and the paper PDF, and writes the reported
 # numbers into the HTML) and preview it locally
 make -C site serve   # http://localhost:8000
 # If `node` is not on make's PATH (e.g., nvm loads lazily), pass the binary:
 make -C site serve NODE=/path/to/node
 ```
+
+The browser tests (`site/tests/browser/`) build the site, wait without
+scrolling until every section has loaded, and run axe-core's WCAG 2.2 A/AA
+rules in each interactive state: the loaded page at desktop and 320-pixel
+widths, each simulated condition, each playground example, and the filter
+explainer while playing. They also check the keyboard and screen-reader
+semantics that axe cannot: the skip link, the condition tabs (arrow keys move
+focus; Enter or Space selects), the playground's native cell radios, the time
+tracks as sliders whose value text names the selected spike, the per-player
+spike tables, table headers, and the chart descriptions. Automated checks catch
+regressions; they do not replace keyboard and screen-reader review.
 
 Every push to `main` deploys the site through `.github/workflows/pages.yml` once
 CI (including the website's staleness tests) passes on that commit; a CI run

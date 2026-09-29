@@ -75,3 +75,25 @@ jobs:
 
       - name: Run site tests
         run: make -C site test
+
+  site-accessibility:
+    # Accessibility and keyboard checks of the assembled site in headless
+    # Chromium; the Pages deploy waits for every CI job, so a failure blocks it.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+
+      - name: Install test dependencies and Chromium
+        working-directory: site
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Run browser tests
+        run: make -C site test-browser
