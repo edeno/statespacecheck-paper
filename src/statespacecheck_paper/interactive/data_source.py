@@ -35,13 +35,10 @@ import xarray as xr
 import zarr
 from numpy.typing import NDArray
 
-from statespacecheck_paper.figure04_models import figure04_model
+from statespacecheck_paper.figure04_models import Figure4ModelId, figure04_model
 from statespacecheck_paper.figure04_place_fields import DECODER_PREDICTIVE_VAR, DECODER_SMOOTHED_VAR
 
 from . import cache as cache_mod
-
-ModelName = cache_mod.ModelName
-
 
 DatasetKind = Literal["recording", "simulation"]
 
@@ -69,7 +66,7 @@ class CacheLayout:
     spike_times: Path
 
     @classmethod
-    def for_recording(cls, cache_dir: Path, model: ModelName) -> CacheLayout:
+    def for_recording(cls, cache_dir: Path, model: Figure4ModelId) -> CacheLayout:
         """Resolve the cache + sidecar paths for a real-data model cache."""
         paths = cache_mod.recording_cache_paths(cache_dir, model)
         return cls(
@@ -210,7 +207,7 @@ class DecoderDataSource:
     def __init__(
         self,
         cache_dir: Path | str,
-        model: ModelName | None = None,
+        model: Figure4ModelId | None = None,
         *,
         layout: CacheLayout | None = None,
         dataset_kind: DatasetKind = "recording",
@@ -230,7 +227,7 @@ class DecoderDataSource:
             layout = CacheLayout.for_recording(self._cache_dir, model)
         self._layout = layout
         self.dataset_kind: DatasetKind = dataset_kind
-        self.model: ModelName | None = model
+        self.model: Figure4ModelId | None = model
         self.display_name: str = display_name or (
             figure04_model(model).label if model is not None else "decoder"
         )
@@ -614,7 +611,7 @@ class DecoderDataSource:
     # ------------------------------------------------------------------
 
     @classmethod
-    def for_recording(cls, cache_dir: Path | str, model: ModelName) -> DecoderDataSource:
+    def for_recording(cls, cache_dir: Path | str, model: Figure4ModelId) -> DecoderDataSource:
         """Open the real-data (figure-4) cache for ``model`` under ``cache_dir``."""
         return cls(cache_dir, model)
 

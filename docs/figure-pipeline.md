@@ -214,11 +214,11 @@ site_export                         → decoding, diagnostics, figure03_generati
 
 interactive                         → (none)
 interactive.__main__                → interactive.app
-interactive.app                     → interactive.cache, interactive.data_source; lazy: interactive.viewer
+interactive.app                     → figure04_models, interactive.data_source; lazy: interactive.viewer
 interactive.cache                   → diagnostics, figure04_models, figure04_place_fields, paths; lazy: figure03_protocol, figure03_simulation, figure04_cache, figure04_decoder, figure04_workflow
 interactive.data_source             → figure04_models, figure04_place_fields, interactive.cache
 interactive.panels                  → plotting, style
-interactive.viewer                  → figure04_generation, figure04_models, interactive.cache, interactive.data_source, interactive.panels, style
+interactive.viewer                  → figure04_generation, figure04_models, interactive.data_source, interactive.panels, style
 
 spyglass_pipeline                   → (none)
 spyglass_pipeline.figure04_input    → figure04_input

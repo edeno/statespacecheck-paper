@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 if TYPE_CHECKING:
-    from statespacecheck_paper.interactive.cache import ModelName
+    from statespacecheck_paper.figure04_models import Figure4ModelId
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -27,7 +27,7 @@ def qt_offscreen() -> None:
 
 
 def make_viewer(
-    cache_dir: Path, *, model: ModelName = "continuous", model_swaps: bool = False
+    cache_dir: Path, *, model: Figure4ModelId = "continuous", model_swaps: bool = False
 ) -> tuple[Any, Any, Any]:
     """Open a viewer on ``cache_dir``'s ``model`` cache.
 

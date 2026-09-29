@@ -16,14 +16,14 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
+from statespacecheck_paper.figure04_models import Figure4ModelId
 from statespacecheck_paper.interactive import cache as cache_mod
-from statespacecheck_paper.interactive.cache import ModelName
 
 
 def build_synthetic_cache(
     cache_dir: Path,
     *,
-    model: ModelName = "continuous",
+    model: Figure4ModelId = "continuous",
     n_states: int = 1,
     n_time: int = 500,
     n_position: int = 16,

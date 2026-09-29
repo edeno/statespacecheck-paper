@@ -36,20 +36,22 @@ import xarray as xr
 from numpy.typing import NDArray
 
 from statespacecheck_paper.diagnostics import DecodingDiagnostics, SpikeEventDiagnostics
-from statespacecheck_paper.figure04_models import FIGURE04_MODEL_IDS, Figure4ModelId
+from statespacecheck_paper.figure04_models import (
+    CONTINUOUS,
+    CONTINUOUS_FRAGMENTED,
+    FIGURE04_MODEL_IDS,
+    Figure4ModelId,
+)
 from statespacecheck_paper.figure04_place_fields import DECODER_PREDICTIVE_VAR
 from statespacecheck_paper.paths import ANIMAL_DATE_EPOCH, FIGURE03_SUMMARY_PATH
 
 if TYPE_CHECKING:
     from statespacecheck_paper.figure04_workflow import Figure4RenderData
 
-ModelName = Figure4ModelId
-MODEL_NAMES: tuple[ModelName, ...] = FIGURE04_MODEL_IDS
-
 DEFAULT_TIME_CHUNK = 8192
 
 
-def recording_cache_paths(cache_dir: Path, model: ModelName) -> dict[str, Path]:
+def recording_cache_paths(cache_dir: Path, model: Figure4ModelId) -> dict[str, Path]:
     """Return the on-disk cache layout for ``model`` under ``cache_dir``.
 
     Real-data caches are figure-4 specific (the ``figure04_`` prefix
@@ -301,13 +303,13 @@ def _write_spike_times(
 
 def _figure04_model_inputs(
     render_data: Figure4RenderData,
-    model: ModelName,
+    model: Figure4ModelId,
 ) -> tuple[xr.Dataset, SpikeEventDiagnostics]:
     """Return the canonical result dataset and diagnostics for one model."""
     decode = render_data.decode_results
-    if model == "continuous":
+    if model == CONTINUOUS.id:
         return decode.continuous_results, decode.continuous_diagnostics
-    if model == "continuous_fragmented":
+    if model == CONTINUOUS_FRAGMENTED.id:
         return (
             decode.continuous_fragmented_results,
             decode.continuous_fragmented_diagnostics,
@@ -362,7 +364,7 @@ def _position_grid_and_interior_mask(
 def _write_figure04_model_cache(
     *,
     render_data: Figure4RenderData,
-    model: ModelName,
+    model: Figure4ModelId,
     cache_dir: Path,
     time_chunk: int,
 ) -> dict[str, Any]:
@@ -417,10 +419,10 @@ def build_figure04_viewer_cache(
     *,
     render_data: Figure4RenderData,
     cache_dir: Path,
-    models: Sequence[ModelName] = MODEL_NAMES,
+    models: Sequence[Figure4ModelId] = FIGURE04_MODEL_IDS,
     time_chunk: int = DEFAULT_TIME_CHUNK,
     force: bool = False,
-) -> dict[ModelName, dict[str, Any]]:
+) -> dict[Figure4ModelId, dict[str, Any]]:
     """Derive viewer artifacts from the canonical Figure 4 workflow output.
 
     The input is the same Figure4RenderData used to render the static figure.
@@ -435,7 +437,7 @@ def build_figure04_viewer_cache(
         raise ValueError("models must contain at least one Figure 4 model")
     if len(set(selected)) != len(selected):
         raise ValueError(f"models contains duplicates: {selected!r}")
-    unknown = [model for model in selected if model not in MODEL_NAMES]
+    unknown = [model for model in selected if model not in FIGURE04_MODEL_IDS]
     if unknown:
         raise ValueError(f"Unknown Figure 4 models: {unknown!r}")
 
@@ -452,7 +454,7 @@ def build_figure04_viewer_cache(
                 f"{existing[0]} already exists; pass --force to overwrite viewer artifacts."
             )
 
-    summaries: dict[ModelName, dict[str, Any]] = {}
+    summaries: dict[Figure4ModelId, dict[str, Any]] = {}
     for model in selected:
         summaries[model] = _write_figure04_model_cache(
             render_data=render_data,
@@ -716,7 +718,7 @@ def _build_command(args: argparse.Namespace) -> int:
     cache_dir = Path(args.cache_dir).expanduser().resolve()
 
     if args.model == "both":
-        models: tuple[ModelName, ...] = MODEL_NAMES
+        models: tuple[Figure4ModelId, ...] = FIGURE04_MODEL_IDS
     else:
         models = (args.model,)
 
@@ -772,7 +774,7 @@ def main(argv: list[str] | None = None) -> int:
     build = sub.add_parser("build", help="Build the Figure 4 viewer cache.")
     build.add_argument(
         "--model",
-        choices=(*MODEL_NAMES, "both"),
+        choices=(*FIGURE04_MODEL_IDS, "both"),
         default="both",
         help="Which model to cache (default: both).",
     )

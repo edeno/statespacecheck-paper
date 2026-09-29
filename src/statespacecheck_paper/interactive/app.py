@@ -15,8 +15,9 @@ from pathlib import Path
 import pyqtgraph as pg
 from PySide6 import QtGui, QtWidgets
 
-from .cache import MODEL_NAMES
-from .data_source import DecoderDataSource, ModelName
+from statespacecheck_paper.figure04_models import CONTINUOUS, FIGURE04_MODEL_IDS, Figure4ModelId
+
+from .data_source import DecoderDataSource
 
 
 def configure_qt_application(app: QtWidgets.QApplication) -> None:
@@ -38,7 +39,7 @@ def configure_qt_application(app: QtWidgets.QApplication) -> None:
 
 def launch(
     cache_dir: Path | str,
-    model: ModelName | None = None,
+    model: Figure4ModelId | None = None,
     *,
     simulation: bool = False,
 ) -> int:
@@ -100,7 +101,7 @@ def main(argv: list[str] | None = None) -> int:
     target = parser.add_mutually_exclusive_group()
     target.add_argument(
         "--model",
-        choices=MODEL_NAMES,
+        choices=FIGURE04_MODEL_IDS,
         default=None,
         help="Open the real-data cache for this model.",
     )
@@ -113,7 +114,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.simulation:
         return launch(args.cache_dir, simulation=True)
     # Default to ``continuous`` when neither flag is given.
-    model: ModelName = args.model if args.model is not None else "continuous"
+    model: Figure4ModelId = args.model if args.model is not None else CONTINUOUS.id
     return launch(args.cache_dir, model=model)
 
 

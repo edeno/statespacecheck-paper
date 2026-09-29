@@ -30,11 +30,10 @@ from numpy.typing import NDArray
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from statespacecheck_paper.figure04_generation import FIGURE04_DIAGNOSTIC_THRESHOLDS
-from statespacecheck_paper.figure04_models import figure04_model
+from statespacecheck_paper.figure04_models import FIGURE04_MODEL_IDS, Figure4ModelId, figure04_model
 from statespacecheck_paper.style import METRIC_SPECS
 
-from .cache import MODEL_NAMES
-from .data_source import DecoderDataSource, ModelName
+from .data_source import DecoderDataSource
 from .panels import (
     _OVERLAY_LABELS,
     MAX_PER_CELL_PLOTS,
@@ -539,7 +538,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
             controls_layout.addWidget(self._model_label)
             self._model_combo = QtWidgets.QComboBox()
             # Show each model's display label; its machine ID is the item data.
-            for model in MODEL_NAMES:
+            for model in FIGURE04_MODEL_IDS:
                 self._model_combo.addItem(figure04_model(model).label, userData=model)
             self._select_model_in_combo(self._ds.model)
             self._model_combo.currentIndexChanged.connect(self._on_model_changed)
@@ -689,9 +688,9 @@ class DecoderViewer(QtWidgets.QMainWindow):
         model = self._model_combo.itemData(index)
         if model == self._ds.model:
             return
-        if model not in MODEL_NAMES:
+        if model not in FIGURE04_MODEL_IDS:
             return
-        self._switch_model(cast(ModelName, model))
+        self._switch_model(cast(Figure4ModelId, model))
 
     @QtCore.Slot(int)
     def _on_speed_combo_changed(self, index: int) -> None:
@@ -1208,10 +1207,10 @@ class DecoderViewer(QtWidgets.QMainWindow):
             # both no-op.
             return
         # Switch to the first model that is not the current one.
-        new_model = next(model for model in MODEL_NAMES if model != self._ds.model)
+        new_model = next(model for model in FIGURE04_MODEL_IDS if model != self._ds.model)
         self._switch_model(new_model)
 
-    def _switch_model(self, model: ModelName) -> None:
+    def _switch_model(self, model: Figure4ModelId) -> None:
         if self._ds.dataset_kind != "recording" or self._cache_dir is None:
             return
         if model == self._ds.model:

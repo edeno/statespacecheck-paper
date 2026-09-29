@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from statespacecheck_paper.interactive.cache import ModelName
+from statespacecheck_paper.figure04_models import Figure4ModelId
 
 from ._qt import (
     make_viewer,
@@ -41,7 +41,7 @@ pytestmark = pytest.mark.skipif(
 def _build_cache(
     cache_dir: Path,
     *,
-    model: ModelName = "continuous",
+    model: Figure4ModelId = "continuous",
     n_states: int = 1,
     seed: int = 0,
 ) -> None:
