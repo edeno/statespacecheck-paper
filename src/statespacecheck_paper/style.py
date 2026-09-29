@@ -134,7 +134,6 @@ FIGURE_DPI = 450
 # Colormap constants (can't be in dict since they're not colors)
 CMAP_POSTERIOR = "bone_r"  # Reversed bone for posterior/predictive heatmaps
 CMAP_LIKELIHOOD = "inferno"  # Warm colormap for likelihood overlay at spike times
-CMAP_DIAGNOSTIC = "bone_r"  # Same as posterior for diagnostic heatmaps
 
 # Top of the predictive heatmaps' color scale: this quantile of the plotted
 # distribution, for robustness to outliers. Figure 3a and the website share it.

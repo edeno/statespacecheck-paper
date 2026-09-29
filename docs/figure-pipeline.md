@@ -122,9 +122,9 @@ families**:
   predictive-p-value / KL-divergence computation, which lives in the external
   `statespacecheck` package). Figure 1 uses `diagnostics` (the HPD coverage);
   Figure 2 uses `diagnostics` and `simulation`; Figure 3 uses all three; and
-  Figure 4 uses `diagnostics`. `diagnostics` imports no sibling module. Because
-  `style` imports it (for each metric's flag direction) and the package
-  `__init__` imports `style`, importing any module loads both.
+  Figure 4 uses `diagnostics`. `diagnostics` imports no sibling module, and
+  `style` imports it for each metric's flag direction. The package `__init__`
+  imports nothing, so importing one module loads only its own dependencies.
 - **Per-figure families**: `figure01_generation`;
   `figure02_{panels,generation}`;
   `figure03_{protocol,simulation,summary,plotting,generation}`; and
@@ -156,7 +156,7 @@ matches it exactly.
 
 <!-- module-graph -->
 ```text
-__init__                           → style
+__init__                           → (none)
 paths                              → (none)
 number_format                      → (none)
 diagnostics                        → (none)
