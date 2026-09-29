@@ -1,6 +1,6 @@
 """Tests for Figure-4 raster and diagnostic panels.
 
-Covers ``plot_per_spike_metric_hexbin_row`` — the Figure 4(c) whole-session
+Covers ``plot_event_metric_hexbin_row`` — the Figure 4(c) whole-session
 comparison panel — and the spike-event diagnostic scatter's spike-time alignment.
 """
 
@@ -25,16 +25,16 @@ from statespacecheck_paper.figure04_panels import (  # noqa: E402
     ModelDiagnosticPanelData,
     _draw_predictive_heatmap_row,
     _draw_track_graph_edges,
-    plot_per_spike_metric_hexbin_row,
+    plot_event_diagnostic_scatter,
+    plot_event_metric_hexbin_row,
     plot_single_model_diagnostics,
-    plot_spike_event_diagnostic_scatter,
 )
 from statespacecheck_paper.figure04_plot_primitives import ANIMAL_POSITION_LABEL_GID  # noqa: E402
 
 from ._diagnostics import event_diagnostics  # noqa: E402
 
 # ---------------------------------------------------------------------------
-# plot_per_spike_metric_hexbin_row
+# plot_event_metric_hexbin_row
 # ---------------------------------------------------------------------------
 
 
@@ -44,7 +44,7 @@ def paired_diagnostics() -> tuple[SpikeEventDiagnostics, SpikeEventDiagnostics]:
 
     Synthesized in-test so the helper is exercised without requiring real-data
     fixtures. Same n_spikes so the same-length contract in
-    ``plot_per_spike_metric_hexbin_row`` is satisfied; correlated noise
+    ``plot_event_metric_hexbin_row`` is satisfied; correlated noise
     gives a hexbin with mass on the identity line plus a spread.
     """
     rng = np.random.default_rng(0)
@@ -64,7 +64,7 @@ def paired_diagnostics() -> tuple[SpikeEventDiagnostics, SpikeEventDiagnostics]:
     )
 
 
-class TestPlotPerSpikeMetricHexbinRow:
+class TestPlotEventMetricHexbinRow:
     def test_renders_three_panels_with_hexbin_and_identity_line(
         self,
         paired_diagnostics: tuple[SpikeEventDiagnostics, SpikeEventDiagnostics],
@@ -74,7 +74,7 @@ class TestPlotPerSpikeMetricHexbinRow:
         """
         diag_a, diag_b = paired_diagnostics
         fig, axes = plt.subplots(1, 3)
-        plot_per_spike_metric_hexbin_row(diag_a, diag_b, axes)
+        plot_event_metric_hexbin_row(diag_a, diag_b, axes)
 
         assert [ax.get_title() for ax in axes] == [
             "HPD overlap",
@@ -120,7 +120,7 @@ class TestPlotPerSpikeMetricHexbinRow:
         )
         fig, axes = plt.subplots(1, 3)
         with pytest.raises(ValueError, match="same set of spike events"):
-            plot_per_spike_metric_hexbin_row(diag_a, diag_b_short, axes)
+            plot_event_metric_hexbin_row(diag_a, diag_b_short, axes)
         plt.close(fig)
 
     def test_rejects_wrong_axes_count(
@@ -131,7 +131,7 @@ class TestPlotPerSpikeMetricHexbinRow:
         diag_a, diag_b = paired_diagnostics
         fig, axes = plt.subplots(1, 2)
         with pytest.raises(ValueError, match="axes must have length 3"):
-            plot_per_spike_metric_hexbin_row(diag_a, diag_b, axes)
+            plot_event_metric_hexbin_row(diag_a, diag_b, axes)
         plt.close(fig)
 
     def test_thresholds_draw_dotted_lines_and_rescue_patch(
@@ -147,7 +147,7 @@ class TestPlotPerSpikeMetricHexbinRow:
         thresholds = {"hpd_overlap": 0.05, "kl_divergence": 4.52, "predictive_pvalue": 0.05}
 
         fig, axes = plt.subplots(1, 3)
-        plot_per_spike_metric_hexbin_row(diag_a, diag_b, axes, thresholds=thresholds)
+        plot_event_metric_hexbin_row(diag_a, diag_b, axes, thresholds=thresholds)
 
         for ax in axes:
             dotted = [ln for ln in ax.lines if ln.get_linestyle() in (":", "dotted")]
@@ -174,7 +174,7 @@ class TestPlotPerSpikeMetricHexbinRow:
 
         diag_a, diag_b = paired_diagnostics
         fig, axes = plt.subplots(1, 3)
-        plot_per_spike_metric_hexbin_row(diag_a, diag_b, axes)
+        plot_event_metric_hexbin_row(diag_a, diag_b, axes)
 
         for ax in axes:
             assert not [ln for ln in ax.lines if ln.get_linestyle() in (":", "dotted")]
@@ -183,7 +183,7 @@ class TestPlotPerSpikeMetricHexbinRow:
 
 
 # ---------------------------------------------------------------------------
-# plot_spike_event_diagnostic_scatter (spike-time alignment behavior)
+# plot_event_diagnostic_scatter (spike-time alignment behavior)
 # ---------------------------------------------------------------------------
 
 
@@ -239,7 +239,7 @@ def _scatter_offsets(ax: plt.Axes) -> np.ndarray:
     return np.asarray(offsets)[~mask.any(axis=1)]
 
 
-class TestPlotSpikeEventDiagnosticScatter:
+class TestPlotEventDiagnosticScatter:
     def test_event_diagnostics_plot_at_exact_event_times(self) -> None:
         """When ``event_*`` arrays are present, scatter uses their times
         directly with no bin lookup."""
@@ -254,7 +254,7 @@ class TestPlotSpikeEventDiagnosticScatter:
         )
 
         fig, ax = plt.subplots()
-        plot_spike_event_diagnostic_scatter(time, diagnostics, ax=ax)
+        plot_event_diagnostic_scatter(time, diagnostics, ax=ax)
         offsets = _scatter_offsets(ax)
         np.testing.assert_allclose(offsets[:, 0], [0.151, 0.157])
         np.testing.assert_allclose(offsets[:, 1], [0.8, 0.6])
@@ -269,7 +269,7 @@ class TestPlotSpikeEventDiagnosticScatter:
         diagnostics = _diagnostics_from_metric("hpd_overlap", hpd)
 
         fig, ax = plt.subplots()
-        plot_spike_event_diagnostic_scatter(time, diagnostics, ax=ax)
+        plot_event_diagnostic_scatter(time, diagnostics, ax=ax)
         offsets = _scatter_offsets(ax)
         np.testing.assert_allclose(sorted(offsets[:, 0]), [0.1, 0.3])
         plt.close(fig)
@@ -571,7 +571,7 @@ def test_scatter_event_time_ind_keeps_repeated_events_distinct() -> None:
         event_time=None,
     )
     fig, ax = plt.subplots()
-    plot_spike_event_diagnostic_scatter(time, diagnostics, ax=ax)
+    plot_event_diagnostic_scatter(time, diagnostics, ax=ax)
     offsets = _scatter_offsets(ax)
     assert offsets.shape[0] == 2  # two distinct events, not one
     np.testing.assert_allclose(sorted(offsets[:, 0]), [0.5, 0.5])  # both at time[5]

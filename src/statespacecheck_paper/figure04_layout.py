@@ -27,7 +27,7 @@ from statespacecheck_paper.diagnostics import SpikeEventDiagnostics
 from statespacecheck_paper.figure04_models import CONTINUOUS, CONTINUOUS_FRAGMENTED
 from statespacecheck_paper.figure04_panels import (
     ModelDiagnosticPanelData,
-    plot_per_spike_metric_hexbin_row,
+    plot_event_metric_hexbin_row,
     plot_single_model_diagnostics,
 )
 from statespacecheck_paper.figure04_track_plots import plot_track_graph_2d
@@ -239,7 +239,7 @@ def _layout_hexbin_row(
     subfigs_bot = bottom_subfig.subfigures(1, 3, width_ratios=[0.16, 7, 0.16], wspace=0.015)
     axes_hexbin = subfigs_bot[1].subplots(1, 3, gridspec_kw={"wspace": -0.02})
     axes_before_hexbin = tuple(fig.axes)
-    plot_per_spike_metric_hexbin_row(
+    plot_event_metric_hexbin_row(
         render_data.decode_results.continuous_diagnostics,
         render_data.decode_results.continuous_fragmented_diagnostics,
         axes_hexbin,

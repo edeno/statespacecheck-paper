@@ -274,7 +274,7 @@ _ROW_YLABELS = {"hpd_overlap": "HPD\noverlap"}
 _WORSE_FIT_LABEL_Y = {"hpd_overlap": 0.28, "predictive_pvalue": 0.68}
 
 
-def plot_spike_event_diagnostic_scatter(
+def plot_event_diagnostic_scatter(
     time: NDArray[np.float64] | pd.Index,
     diagnostics: SpikeEventDiagnostics,
     time_slice_ind: slice | None = None,
@@ -337,7 +337,7 @@ def plot_spike_event_diagnostic_scatter(
     >>> diagnostics = compute_spike_event_diagnostics(
     ...     predictive, spike_counts, place_fields
     ... )
-    >>> ax = plot_spike_event_diagnostic_scatter(np.arange(n_time), diagnostics)
+    >>> ax = plot_event_diagnostic_scatter(np.arange(n_time), diagnostics)
     """
     if ax is None:
         ax = plt.gca()
@@ -618,7 +618,7 @@ def plot_single_model_diagnostics(
     for i, spec in enumerate(METRIC_SPECS):
         row = i + 3
         threshold = thresholds.get(spec.name) if thresholds else None
-        plot_spike_event_diagnostic_scatter(
+        plot_event_diagnostic_scatter(
             time,
             diagnostics,
             time_slice_ind=time_slice_ind,
@@ -640,7 +640,7 @@ def plot_single_model_diagnostics(
     return fig, axes
 
 
-def plot_per_spike_metric_hexbin_row(
+def plot_event_metric_hexbin_row(
     diagnostics_a: SpikeEventDiagnostics,
     diagnostics_b: SpikeEventDiagnostics,
     axes: Sequence[Axes],
