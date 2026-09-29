@@ -230,7 +230,7 @@ class SpikeEventDiagnostics:
         if self.event_time is not None and not np.all(np.isfinite(self.event_time)):
             raise ValueError("SpikeEventDiagnostics.event_time must contain only finite values")
         # Dense matrices are an all-or-nothing group.
-        dense_names = ("hpd_overlap", "kl_divergence", "predictive_pvalue", "event_likelihood")
+        dense_names = (*METRIC_FLAG_DIRECTIONS, "event_likelihood")
         dense_provided = [getattr(self, n) is not None for n in dense_names]
         if any(dense_provided) and not all(dense_provided):
             missing = [n for n, p in zip(dense_names, dense_provided, strict=True) if not p]
@@ -374,9 +374,7 @@ class DecodingDiagnostics:
             "posterior",
             "predictive",
             "combined_likelihood",
-            "hpd_overlap",
-            "kl_divergence",
-            "predictive_pvalue",
+            *METRIC_FLAG_DIRECTIONS,
             "event_time_ind",
             "event_cell_ind",
             *_PER_EVENT_METRIC_NAMES,

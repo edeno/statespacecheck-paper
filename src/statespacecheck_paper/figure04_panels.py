@@ -46,6 +46,7 @@ from statespacecheck_paper.style import (
     CMAP_LIKELIHOOD,
     CMAP_PREDICTIVE,
     COLORS,
+    METRIC_NAMES,
     METRIC_SPEC_BY_NAME,
     METRIC_SPECS,
     WONG,
@@ -132,7 +133,7 @@ class ModelDiagnosticPanelData:
                 f"spike_counts must be (n_time, n_cells); got {self.spike_counts.shape}"
             )
         n_cells = self.spike_counts.shape[1]
-        for name in ("hpd_overlap", "predictive_pvalue", "kl_divergence"):
+        for name in METRIC_NAMES:
             dense = getattr(self.diagnostics, name)
             if dense is not None and dense.shape != (time.size, n_cells):
                 raise ValueError(
