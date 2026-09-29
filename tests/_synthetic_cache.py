@@ -46,8 +46,7 @@ def build_synthetic_cache(
     model : {"continuous", "continuous_fragmented"}
         Which model name's cache layout to produce.
     n_states : int
-        State count (1 or 2). Multi-state caches use a multi-state
-        ``acausal_state_probabilities`` with ``("time", "states")``.
+        State count (1 or 2).
     n_time, n_position, n_cells : int
         Synthetic data dimensions.
     n_spikes_per_cell : int
@@ -70,16 +69,6 @@ def build_synthetic_cache(
 
     predictive = rng.dirichlet(np.ones(n_state_bins), size=n_time).astype(np.float32)
     log_likelihood = np.log(predictive + 1e-12).astype(np.float32)
-    if n_states == 1:
-        state_probs_var: tuple[Any, Any] = (
-            ("time",),
-            np.ones((n_time,), dtype=np.float32),
-        )
-    else:
-        state_probs_var = (
-            ("time", "states"),
-            rng.dirichlet(np.ones(n_states), size=n_time).astype(np.float32),
-        )
     time_arr = 1000.0 + np.arange(n_time, dtype=np.float64) * 0.002
 
     coords: dict[str, Any] = {
@@ -94,7 +83,6 @@ def build_synthetic_cache(
     data_vars: dict[str, Any] = {
         "predictive_posterior": (("time", "state_bins"), predictive),
         "log_likelihood": (("time", "state_bins"), log_likelihood),
-        "acausal_state_probabilities": state_probs_var,
     }
     if with_acausal:
         # Synthetic acausal (smoothed) posterior: a different Dirichlet

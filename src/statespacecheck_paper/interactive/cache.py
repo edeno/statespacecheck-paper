@@ -43,10 +43,14 @@ from statespacecheck_paper.figure04_models import (
     FIGURE04_MODEL_IDS,
     Figure4ModelId,
 )
-from statespacecheck_paper.figure04_place_fields import DECODER_PREDICTIVE_VAR
+from statespacecheck_paper.figure04_place_fields import (
+    DECODER_PREDICTIVE_VAR,
+    DECODER_SMOOTHED_VAR,
+)
 from statespacecheck_paper.paths import ANIMAL_DATE_EPOCH, FIGURE03_SUMMARY_PATH
 
 if TYPE_CHECKING:
+    from statespacecheck_paper.figure03_protocol import Figure3Config
     from statespacecheck_paper.figure04_workflow import Figure4RenderData
 
 DEFAULT_TIME_CHUNK = 8192
@@ -172,10 +176,9 @@ def _write_zarr_store(
     """Stream a decoder result dataset into a chunked Zarr store.
 
     Writes ``predictive_posterior`` (the predictive distribution, under the
-    decoder's name), ``log_likelihood``, and — when
-    present — ``acausal_posterior`` (the smoothed distribution powering
-    the slice-panel overlay) and ``acausal_state_probabilities``, chunked at
-    ``time_chunk`` along the time axis so the viewer's window reads
+    decoder's name), ``log_likelihood``, and — when present —
+    ``acausal_posterior`` (the smoothed distribution powering the slice-panel
+    overlay), chunked at ``time_chunk`` along the time axis so the viewer's window reads
     only touch one or two chunks. ``xarray.to_zarr`` streams chunk
     by chunk, so peak in-memory cost is bounded by the chunk size,
     not the full session.
@@ -195,13 +198,11 @@ def _write_zarr_store(
         shutil.rmtree(out_dir)
 
     keep_vars = [DECODER_PREDICTIVE_VAR, "log_likelihood"]
-    # ``acausal_posterior`` is the smoothed distribution
-    # ``p(x_t | y_{1:T})`` — included so the slice panel's top-plot
-    # overlay can switch between predictive / filtered / smoothed.
-    if "acausal_posterior" in ds.data_vars:
-        keep_vars.append("acausal_posterior")
-    if "acausal_state_probabilities" in ds.data_vars:
-        keep_vars.append("acausal_state_probabilities")
+    # The smoothed distribution ``p(x_t | y_{1:T})`` — included so the slice
+    # panel's top-plot overlay can switch between predictive / filtered /
+    # smoothed. Other decoder outputs are not written.
+    if DECODER_SMOOTHED_VAR in ds.data_vars:
+        keep_vars.append(DECODER_SMOOTHED_VAR)
 
     base = ds[keep_vars]
     # The canonical joblib cache preserves xarray's ``state_bins`` MultiIndex,
@@ -501,7 +502,7 @@ def build_figure04_viewer_cache(
 def build_simulated_cache(
     cache_dir: Path,
     *,
-    params: Any | None = None,
+    config: Figure3Config | None = None,
     seed: int | None = None,
     time_chunk: int = DEFAULT_TIME_CHUNK,
     force: bool = False,
@@ -522,10 +523,10 @@ def build_simulated_cache(
     ----------
     cache_dir : Path
         Output directory.
-    params : Figure3Config, optional
+    config : Figure3Config, optional
         Simulation configuration. ``None`` ⇒ default ``Figure3Config()``.
     seed : int, optional
-        Override ``params.random_seed`` for the run.
+        Override ``config.random_seed`` for the run.
     time_chunk : int
         Zarr chunk size along the time axis.
     force : bool
@@ -571,8 +572,8 @@ def build_simulated_cache(
     if paths["zarr"].exists() and not force:
         raise FileExistsError(f"{paths['zarr']} already exists; pass force=True to overwrite.")
 
-    sim = run_figure03_simulation(params, seed=seed)
-    params_used = sim.config
+    sim = run_figure03_simulation(config, seed=seed)
+    config_used = sim.config
     xs: NDArray[np.float64] = np.asarray(sim.position_bins, dtype=np.float64)
     x_true: NDArray[np.float64] = np.asarray(sim.true_position, dtype=np.float64)
     spikes: NDArray[np.int_] = np.asarray(sim.spike_counts, dtype=np.int_)
@@ -583,7 +584,7 @@ def build_simulated_cache(
     n_cells = int(spikes.shape[1])
     # The simulation appends a narrow sparse-population of cells; include them
     # in the cache's cell set and sort them at their fixed field centers.
-    pf_centers_full = all_place_field_centers(params_used, sim.sparse_place_field_centers)
+    pf_centers_full = all_place_field_centers(config_used, sim.sparse_place_field_centers)
     if pf_centers_full.shape[0] != n_cells:
         raise ValueError(f"pf_centers length {pf_centers_full.shape[0]} != n_cells={n_cells}")
 
@@ -613,8 +614,6 @@ def build_simulated_cache(
         data_vars={
             DECODER_PREDICTIVE_VAR: (("time", "state_bins"), predictive),
             "log_likelihood": (("time", "state_bins"), log_lik),
-            # Single-state state probability (always 1.0).
-            "acausal_state_probabilities": (("time",), np.ones(n_time, dtype=np.float32)),
         },
         coords={
             "time": ("time", time_arr),
@@ -645,7 +644,7 @@ def build_simulated_cache(
     # sparse-population cells (their own width and peak rate). ``all_place_field_rates``
     # returns ``(n_bins, n_cells)``; the viewer expects ``(n_cells, n_bins)``.
     rates = np.asarray(
-        all_place_field_rates(params_used, xs, sim.sparse_place_field_centers), dtype=np.float64
+        all_place_field_rates(config_used, xs, sim.sparse_place_field_centers), dtype=np.float64
     )
     place_fields = rates.T  # (n_cells, n_bins)
     interior_mask = np.ones(n_bins, dtype=bool)

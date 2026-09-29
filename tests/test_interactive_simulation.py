@@ -55,7 +55,7 @@ def _build_simulated(cache_dir: Path) -> dict[str, object]:
 
     return build_simulated_cache(
         cache_dir,
-        params=_tiny_params(),
+        config=_tiny_params(),
         seed=0,
         time_chunk=128,
         force=True,
@@ -214,7 +214,7 @@ def test_simulated_viewer_draws_the_cached_thresholds(tmp_path: Path) -> None:
 
     thresholds = {"hpd_overlap": 0.0, "predictive_pvalue": 0.01, "kl_divergence": 4.5}
     build_simulated_cache(
-        tmp_path, params=_tiny_params(), seed=0, time_chunk=128, flag_thresholds=thresholds
+        tmp_path, config=_tiny_params(), seed=0, time_chunk=128, flag_thresholds=thresholds
     )
     _ = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     viewer = DecoderViewer(DecoderDataSource.for_simulation(tmp_path))

@@ -39,7 +39,9 @@ def _synthetic_results_dataset(
 
     ``state_bins`` is a plain integer dim with ``state`` and ``position``
     as non-dim coords on it: the layout the Zarr writer stores after
-    flattening the joblib cache's ``state_bins`` MultiIndex.
+    flattening the joblib cache's ``state_bins`` MultiIndex. Like the
+    decoder's output it also carries ``acausal_state_probabilities``, which
+    the viewer does not read and the writer leaves out.
     """
     rng = np.random.default_rng(0)
     n_state_bins = n_states * n_position
@@ -147,10 +149,11 @@ def test_write_zarr_store_roundtrips_arrays(tmp_path: Path) -> None:
     out_dir = tmp_path / "cache.zarr"
 
     shapes = cache_mod._write_zarr_store(ds=ds, out_dir=out_dir, time_chunk=64)
-    assert shapes["predictive_posterior"] == (200, 16)
-    assert shapes["log_likelihood"] == (200, 16)
+    assert shapes == {"predictive_posterior": (200, 16), "log_likelihood": (200, 16)}
 
     with xr.open_zarr(out_dir, consolidated=True) as readback:
+        # Only the arrays the viewer reads are written.
+        assert set(readback.data_vars) == {"predictive_posterior", "log_likelihood"}
         np.testing.assert_array_equal(
             readback["predictive_posterior"].values,
             ds["predictive_posterior"].values,
