@@ -141,10 +141,22 @@ uv run --frozen pytest tests/test_reported_statistics_artifacts.py tests/test_re
 
 These checks validate the committed reference statistics, schemas, macros, and
 website data. They do not independently rerun the full analyses. To check a
-reproduction, also inspect the generated summary diff against the committed
-version: counts and statistics should match; changes in configuration or source
-must be explained by provenance. PDF timestamps and small rendering differences
-can change binary files even when the scientific outputs agree.
+reproduction, compare the regenerated summaries with the committed ones:
+
+```bash
+uv run --frozen python scripts/check_reproduction.py FRESH/figure03_summary.json FRESH/figure04_summary.json
+```
+
+It requires exact equality for integers, strings, booleans, seeds,
+configuration, counts, and the source and `uv.lock` digests, and equality within
+the tolerances defined at the top of the script (`RTOL`, `ATOL`) for
+floating-point statistics. It skips only the provenance entries that describe
+the machine rather than the result (`MACHINE_SPECIFIC_PATHS`: the Figure-4 cache
+fingerprints, Python version, architecture, and dependency versions), prints
+every difference with its JSON path, and exits nonzero if there is any.
+`--committed-dir` compares against summaries elsewhere than
+`manuscript/figures/main/`. PDF timestamps and small rendering differences can
+change binary files even when the scientific outputs agree.
 
 The figure-to-code map and summary schema are in [figure-pipeline.md](figure-pipeline.md).
 Code-change validation and artifact refresh rules are in [development.md](development.md).
