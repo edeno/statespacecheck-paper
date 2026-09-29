@@ -15,13 +15,13 @@ Basic usage for creating a publication figure:
 >>> set_figure_defaults(context="paper")
 >>> fig, ax = plt.subplots(figsize=(3.5, 2.3))
 >>> _ = ax.plot([1, 2, 3], [1, 2, 3], color=WONG[1])
->>> save_figure("manuscript/figures/my_figure")  # doctest: +SKIP
+>>> save_figure("manuscript/figures/my_figure", fig=fig)  # doctest: +SKIP
 
 For presentations:
 
 >>> set_figure_defaults(context="presentation")
 >>> fig, ax = plt.subplots(figsize=(7.0, 4.7))
->>> save_figure("manuscript/figures/presentation_figure", dpi=300)  # doctest: +SKIP
+>>> save_figure("manuscript/figures/presentation_figure", dpi=300, fig=fig)  # doctest: +SKIP
 """
 
 from __future__ import annotations
@@ -344,7 +344,8 @@ def save_figure(
     dpi: int = FIGURE_DPI,
     close: bool = True,
     bbox_inches: object = "tight",
-    fig: Figure | None = None,
+    *,
+    fig: Figure,
 ) -> None:
     """Save figure as both PDF and PNG with journal-quality resolution.
 
@@ -361,12 +362,11 @@ def save_figure(
     close : bool, default True
         If True, close the figure after saving to free memory.
     bbox_inches : object, default "tight"
-        Bounding box passed through to ``matplotlib.pyplot.savefig``. The
-        default preserves the existing tight-save behavior; callers can pass a
-        precomputed ``matplotlib.transforms.Bbox`` for custom cropping.
-    fig : matplotlib.figure.Figure, optional
-        Explicit figure to save. When omitted, saves the current pyplot figure
-        for backward compatibility.
+        Bounding box passed through to ``Figure.savefig``: ``"tight"`` crops to
+        the drawn artists, and a precomputed ``matplotlib.transforms.Bbox``
+        gives a custom crop.
+    fig : matplotlib.figure.Figure
+        The figure to save (keyword-only).
 
     Returns
     -------
@@ -381,34 +381,30 @@ def save_figure(
 
     >>> fig, ax = plt.subplots()
     >>> _ = ax.plot([1, 2, 3], [1, 2, 3])
-    >>> save_figure("manuscript/figures/my_figure")  # doctest: +SKIP
+    >>> save_figure("manuscript/figures/my_figure", fig=fig)  # doctest: +SKIP
     Saved manuscript/figures/my_figure.pdf and manuscript/figures/my_figure.png
 
     With custom DPI and keeping figure open:
 
-    >>> save_figure("manuscript/figures/my_figure", dpi=300, close=False)  # doctest: +SKIP
+    >>> save_figure("manuscript/figures/my_figure", dpi=300, close=False, fig=fig)  # doctest: +SKIP
 
     Using Path object:
 
     >>> from pathlib import Path
     >>> output_path = Path("results") / "figure1"
-    >>> save_figure(output_path)  # doctest: +SKIP
+    >>> save_figure(output_path, fig=fig)  # doctest: +SKIP
 
     Auto-creates nested directories:
 
-    >>> save_figure("manuscript/figures/supplementary/figure_s1")  # doctest: +SKIP
+    >>> save_figure("manuscript/figures/supplementary/figure_s1", fig=fig)  # doctest: +SKIP
     """
     path = Path(name)
     path.parent.mkdir(parents=True, exist_ok=True)
 
     pdf_path = path.with_suffix(".pdf")
     png_path = path.with_suffix(".png")
-    if fig is None:
-        plt.savefig(pdf_path, dpi=dpi, bbox_inches=bbox_inches)
-        plt.savefig(png_path, dpi=dpi, bbox_inches=bbox_inches)
-    else:
-        fig.savefig(pdf_path, dpi=dpi, bbox_inches=bbox_inches)
-        fig.savefig(png_path, dpi=dpi, bbox_inches=bbox_inches)
+    fig.savefig(pdf_path, dpi=dpi, bbox_inches=bbox_inches)
+    fig.savefig(png_path, dpi=dpi, bbox_inches=bbox_inches)
 
     print(f"Saved {pdf_path} and {png_path}")
 

@@ -73,7 +73,7 @@ def test_save_figure_creates_pdf_and_png(tmp_path: Path, path_type: str) -> None
     """save_figure creates both PDF and PNG, accepting both str and Path."""
     fig = _make_simple_figure()
     output = tmp_path / "test_figure"
-    save_figure(str(output) if path_type == "str" else output)
+    save_figure(str(output) if path_type == "str" else output, fig=fig)
     assert (tmp_path / "test_figure.pdf").exists()
     assert (tmp_path / "test_figure.png").exists()
     plt.close(fig)
@@ -82,30 +82,30 @@ def test_save_figure_creates_pdf_and_png(tmp_path: Path, path_type: str) -> None
 def test_save_figure_creates_parent_directories(tmp_path: Path) -> None:
     """save_figure auto-creates missing parent directories."""
     fig = _make_simple_figure()
-    save_figure(tmp_path / "subdir1" / "subdir2" / "test_figure")
+    save_figure(tmp_path / "subdir1" / "subdir2" / "test_figure", fig=fig)
     assert (tmp_path / "subdir1" / "subdir2" / "test_figure.pdf").exists()
     assert (tmp_path / "subdir1" / "subdir2" / "test_figure.png").exists()
     plt.close(fig)
 
 
 def test_save_figure_respects_custom_dpi(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """The ``dpi`` argument is forwarded to every ``plt.savefig`` call.
+    """The ``dpi`` argument is forwarded to every ``Figure.savefig`` call.
 
     Asserts the kwarg passthrough directly rather than reading it back
     from the rendered PNG, which would pull in a Pillow dependency that
     the package does not otherwise declare.
     """
     captured_dpis: list[object] = []
-    real_savefig = plt.savefig
+    fig = _make_simple_figure()
+    real_savefig = fig.savefig
 
     def _spy_savefig(*args: object, **kwargs: object) -> object:
         captured_dpis.append(kwargs["dpi"])
         return real_savefig(*args, **kwargs)
 
-    monkeypatch.setattr(plt, "savefig", _spy_savefig)
+    monkeypatch.setattr(fig, "savefig", _spy_savefig)
 
-    fig = _make_simple_figure()
-    save_figure(tmp_path / "test_figure", dpi=150)
+    save_figure(tmp_path / "test_figure", dpi=150, fig=fig)
     # save_figure writes both a PDF and a PNG; dpi must reach both.
     assert captured_dpis == [150, 150]
     plt.close(fig)
@@ -114,15 +114,18 @@ def test_save_figure_respects_custom_dpi(tmp_path: Path, monkeypatch: pytest.Mon
 def test_save_figure_close_false_keeps_figure_open(tmp_path: Path) -> None:
     """close=False leaves the figure registered with pyplot."""
     fig = _make_simple_figure()
-    save_figure(tmp_path / "test_figure", close=False)
+    save_figure(tmp_path / "test_figure", close=False, fig=fig)
     assert plt.fignum_exists(fig.number)
     plt.close(fig)
 
 
-def test_save_figure_accepts_explicit_figure(tmp_path: Path) -> None:
-    """The optional ``fig`` argument saves that figure without pyplot globals."""
+def test_save_figure_saves_the_given_figure_not_the_current_one(tmp_path: Path) -> None:
+    """``fig`` is saved and closed even when another figure is current in pyplot."""
     fig = _make_simple_figure()
+    other = _make_simple_figure()
     save_figure(tmp_path / "explicit_figure", fig=fig)
     assert (tmp_path / "explicit_figure.pdf").exists()
     assert (tmp_path / "explicit_figure.png").exists()
     assert not plt.fignum_exists(fig.number)
+    assert plt.fignum_exists(other.number)
+    plt.close(other)
