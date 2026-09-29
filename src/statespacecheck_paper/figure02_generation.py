@@ -43,9 +43,9 @@ from statespacecheck_paper.figure02_panels import (
     plot_kl_distributions,
     plot_kl_log_ratio,
     plot_kl_pointwise,
-    plot_ppc_density_histogram,
-    plot_ppc_likelihood_fan,
-    plot_ppc_predictive_fan,
+    plot_predictive_check_density_histogram,
+    plot_predictive_check_likelihood_fan,
+    plot_predictive_check_predictive_fan,
 )
 from statespacecheck_paper.paths import FIGURE_DIR
 from statespacecheck_paper.style import FIGURE_DPI, save_figure, set_figure_defaults
@@ -182,9 +182,9 @@ def compose_figure02(rng: np.random.Generator | None = None) -> Figure:
     hpd_sizes = plot_hpd_intersection(axes["hpd_overlap"], data)
 
     # Predictive Check column
-    plot_ppc_predictive_fan(axes["predictive_distribution"], data)
-    plot_ppc_likelihood_fan(axes["predictive_simulations"], data)
-    plot_ppc_density_histogram(axes["predictive_histogram"], data)
+    plot_predictive_check_predictive_fan(axes["predictive_distribution"], data)
+    plot_predictive_check_likelihood_fan(axes["predictive_simulations"], data)
+    plot_predictive_check_density_histogram(axes["predictive_histogram"], data)
 
     column_titles = [
         ("hpd_predictive", "HPD Overlap"),

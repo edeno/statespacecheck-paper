@@ -148,7 +148,7 @@ def test_figure02_density_histogram_crops_the_sparse_tail(observed_in_tail: bool
     from statespacecheck_paper.figure02_panels import (
         HISTOGRAM_LOWER_QUANTILE,
         create_shared_example,
-        plot_ppc_density_histogram,
+        plot_predictive_check_density_histogram,
     )
 
     data = create_shared_example(np.random.default_rng(42))
@@ -159,7 +159,7 @@ def test_figure02_density_histogram_crops_the_sparse_tail(observed_in_tail: bool
 
     fig, ax = plt.subplots()
     try:
-        plot_ppc_density_histogram(ax, data)
+        plot_predictive_check_density_histogram(ax, data)
         x_min, x_max = ax.get_xlim()
         bars = ax.patches
         area = sum(bar.get_width() * bar.get_height() for bar in bars)

@@ -556,7 +556,7 @@ def _showcase_colors(n: int) -> NDArray[np.float64]:
     return cmap(np.linspace(0.15, 0.85, n))
 
 
-def plot_ppc_predictive_fan(ax: Axes, data: Figure2ExampleData) -> None:
+def plot_predictive_check_predictive_fan(ax: Axes, data: Figure2ExampleData) -> None:
     """Predictive distribution with a fan of sampled positions.
 
     Each colored marker is one draw from the predictive that flows into
@@ -603,7 +603,7 @@ def plot_ppc_predictive_fan(ax: Axes, data: Figure2ExampleData) -> None:
     ax.set_yticklabels(["0", f"{y_max:.2f}"])
 
 
-def plot_ppc_likelihood_fan(ax: Axes, data: Figure2ExampleData) -> None:
+def plot_predictive_check_likelihood_fan(ax: Axes, data: Figure2ExampleData) -> None:
     """Fan of simulated observation likelihoods.
 
     For each state sample drawn from the predictive (the predictive-distribution panel), the
@@ -719,7 +719,7 @@ def plot_ppc_likelihood_fan(ax: Axes, data: Figure2ExampleData) -> None:
     )
 
 
-def plot_ppc_density_histogram(ax: Axes, data: Figure2ExampleData) -> None:
+def plot_predictive_check_density_histogram(ax: Axes, data: Figure2ExampleData) -> None:
     """Histogram of observed vs simulated log predictive density.
 
     Uses the exact Monte Carlo samples computed in create_shared_example().
