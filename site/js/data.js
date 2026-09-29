@@ -2,8 +2,8 @@
 // The JSON files are written by statespacecheck_paper.site_export.
 
 // Matplotlib's base-10 symlog transform with the paper's HPD-overlap settings
-// (linthresh = 0.01, linscale = 1): linear below 0.01, logarithmic above, so
-// values near zero stay separated from exact zeros.
+// (style.SYMLOG_LINTHRESH = 0.01, SYMLOG_LINSCALE = 1): linear below 0.01,
+// logarithmic above, so values near zero stay separated from exact zeros.
 const SYMLOG_LINTHRESH = 0.01;
 const SYMLOG_LINSCALE_ADJ = 1 / (1 - 1 / 10);
 
@@ -17,6 +17,9 @@ export function symlog(value) {
   );
 }
 
+// The paper's metrics in order (style.METRIC_SPECS). Names, worse-fit
+// directions, display transforms, and the symlog axis are checked against the
+// Python registry by tests/test_site_metric_metadata.py.
 export const METRICS = [
   {
     name: "hpd_overlap",
