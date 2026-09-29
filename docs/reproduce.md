@@ -177,6 +177,7 @@ the website after a reproduction run, follow [site/README.md](../site/README.md)
 | `manuscript/reported_values.tex` | `scripts/emit_reported_values.py` | Numbers used in the manuscript |
 | `manuscript/main.pdf` | `make manuscript` | Readable paper |
 | `site/data/*.json` and the metric parity fixture | `scripts/export_site_data.py` | Website displays, numbers, and Python/JavaScript agreement checks |
+| `site/data/recording_explorer.json` (committed) and the archive it names (a `site-data` release asset) | `scripts/export_recording_explorer.py` | Website's session-wide Figure-4 comparison and its recording windows |
 
 These outputs are committed so readers can inspect the results and build the
 paper before rerunning the analyses. Recording inputs, decode/viewer caches,
@@ -186,7 +187,7 @@ After installing the development dependencies, run the artifact checks:
 
 ```bash
 make sync-dev
-uv run --frozen pytest tests/test_reported_statistics_artifacts.py tests/test_reported_values.py tests/test_site_export.py
+uv run --frozen pytest tests/test_reported_statistics_artifacts.py tests/test_reported_values.py tests/test_site_export.py tests/test_site_explorer_export.py
 ```
 
 These checks validate the committed reference statistics, schemas, macros, and

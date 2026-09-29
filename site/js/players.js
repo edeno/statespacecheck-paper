@@ -403,7 +403,10 @@ const formatPosition = (value) => (value === null ? "—" : value.toFixed(1));
  * the tracks' value text, `describe(index)`, are kept here. The step buttons
  * read the description to screen readers.
  */
-function mountTracks(left, { ariaLabel, range, tracks, eventTimes, select, describe }) {
+function mountTracks(
+  left,
+  { ariaLabel, range, tracks, eventTimes, select, describe, onSettle = null },
+) {
   const stack = new TrackStack(left, {
     ariaLabel,
     range,
@@ -420,7 +423,10 @@ function mountTracks(left, { ariaLabel, range, tracks, eventTimes, select, descr
     select(index);
     if (index >= 0) controls.time.textContent = `${eventTimes[index].toFixed(3)} s`;
   };
-  const settle = (index) => stack.setValue(eventTimes[index], describe(index));
+  const settle = (index) => {
+    stack.setValue(eventTimes[index], describe(index));
+    onSettle?.(index);
+  };
   const playback = wirePlayback(stack, range, eventTimes, show, controls, {
     settle,
     announce: (index) => say(describe(index)),
@@ -727,7 +733,19 @@ function populationPeak(spikeTimes, range, dt) {
   return best;
 }
 
-export function renderRecording(root, payload, manifest) {
+/**
+ * The recording window `payload` (recording.json's shape) under both decoders.
+ * For a window of the session explorer, whose events carry session-wide `id`s,
+ * `initialEventId` opens a spike and `onEventSelect(id)` hears each discrete
+ * selection (not hover or playback frames). Returns `selectEventId(id)` and
+ * `destroy()`.
+ */
+export function renderRecording(
+  root,
+  payload,
+  manifest,
+  { initialEventId = null, onEventSelect = null } = {},
+) {
   const view = root.querySelector("#rec-view");
   view.replaceChildren();
   const bins = payload.position_bins;
@@ -987,6 +1005,7 @@ export function renderRecording(root, payload, manifest) {
     select: selectEvent,
     describe: (index) =>
       `${describeSpike(index)}. ${selectedModel.label} model: ${flagSummary(index, payload.models[selectedModel.id].events.flagged)}`,
+    onSettle: events.id && onEventSelect ? (index) => onEventSelect(events.id[index]) : null,
   });
   modelSwitch.addEventListener("change", (event) => {
     if (event.target.type !== "radio" || !event.target.checked) return;
@@ -1002,5 +1021,24 @@ export function renderRecording(root, payload, manifest) {
     if (!isRescued("hpd_overlap", i)) return;
     if (initial < 0 || Math.abs(t - peak) < Math.abs(eventTimes[initial] - peak)) initial = i;
   });
+  if (initialEventId !== null && events.id) {
+    const index = events.id.indexOf(initialEventId);
+    if (index < 0) throw new RangeError(`Spike ${initialEventId} is absent from this window`);
+    initial = index;
+  }
   if (eventTimes.length) playback.selectIndex(Math.max(0, initial));
+  return {
+    selectEventId(id) {
+      const index = events.id?.indexOf(id) ?? -1;
+      if (index < 0) return false;
+      playback.selectIndex(index);
+      return true;
+    },
+    destroy() {
+      playback.halt();
+      stack.destroy();
+      chart.destroy();
+      fieldChart.destroy();
+    },
+  };
 }

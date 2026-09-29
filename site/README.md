@@ -11,6 +11,10 @@ diagnostics as the reader moves a prediction, a player for the Figure-3
 simulation conditions, and the Figure-4 recording window with a switch between
 its two decoders. The recording player holds the selected spike fixed while the
 model changes and shows that unit's place field from the shared observation model.
+Above it, a session explorer compares the two decoders over every spike in the
+session in three plots; choosing a square opens one of its spikes in the player,
+and the spike controls and link make the selection reproducible. The overview
+stays in view while the details load on demand.
 
 - The players and every number in the page text come from the paper's pipeline
   via `statespacecheck_paper.site_export`, which writes `site/data/*.json`. The
@@ -31,6 +35,12 @@ model changes and shows that unit's place field from the shared observation mode
 # writes the ~8 GB decode cache. Add --skip-recording to leave recording.json
 # untouched when the recording outputs are unchanged.
 uv run --frozen python scripts/export_site_data.py
+
+# Regenerate the session explorer from those same caches (no decoding when they
+# are current): the committed overview, site/data/recording_explorer.json, and
+# the archive it names, in site/.explorer/. Publish the archive as the script
+# prints (gh release upload site-data ...) before committing the overview.
+uv run --frozen python scripts/export_recording_explorer.py
 
 # Check the JavaScript diagnostics against the Python reference
 make check-site
@@ -56,8 +66,28 @@ explainer while playing. They also check the keyboard and screen-reader
 semantics that axe cannot: the skip link, the condition tabs (arrow keys move
 focus; Enter or Space selects), the playground's native cell radios, the time
 tracks as sliders whose value text names the selected spike, the per-player
-spike tables, table headers, and the chart descriptions. Automated checks catch
-regressions; they do not replace keyboard and screen-reader review.
+spike tables, table headers, the chart descriptions, and the session explorer:
+a square opens one of its spikes, the controls and the player stay in step,
+and a link reopens its spike. Automated checks catch regressions; they do not
+replace keyboard and screen-reader review.
+
+### Session explorer data
+
+The explorer's data are too large to commit. The committed overview
+(`site/data/recording_explorer.json`) holds the plots' counts, each window's
+color range, and the flag agreement, and names an archive by its SHA-256. The
+archive, a release asset of this repository's `site-data` release, holds a
+spike index (each spike's decoder time bin, unit, and plot square) and the
+session in two-second blocks: both models' predictions, the animal's position,
+and each spike's diagnostic values and flags, in the binary container
+`site/js/container.js` reads. `make -C site build` takes the archive from
+`site/.explorer/` when its checksum matches and otherwise downloads it there,
+then extracts it into the build. The page loads the overview with the section,
+the index when a reader first chooses a square, and then the two blocks of the
+chosen window; the browser decompresses each file with `DecompressionStream`.
+`tests/test_site_explorer_export.py` fails when the export code changes without
+a new export, and checks the local archive against the overview when it is
+present.
 
 Every push to `main` deploys the site through `.github/workflows/pages.yml` once
 CI (including the website's staleness tests) passes on that commit; a CI run

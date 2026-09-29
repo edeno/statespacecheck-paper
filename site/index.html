@@ -419,7 +419,7 @@
             models are compared on the same position grid.
           </p>
           <p>
-            This <span data-macro="RecordingWindowSecondsWord"></span>-second window contains a candidate replay event while the animal is still. The
+            The paper highlights a <span data-macro="RecordingWindowSecondsWord"></span>-second window containing a candidate replay event while the animal is still. In that window, the
             Continuous model's prediction cannot keep up with the rapidly moving representation, so
             many spikes are flagged. When the Continuous–Fragmented model switches to its fragmented
             state, its prediction becomes broad, the next spikes can move the estimate, and most of
@@ -427,10 +427,14 @@
             fixed cutoffs are used: a spike is flagged when HPD overlap is at or below
             <span data-macro="RecHpdCutoff"></span> or the p-value at or below
             <span data-macro="RecPredictiveCutoff"></span>; KL divergence is not thresholded here.
-            Inspect spikes the same way as in the simulation, and switch between the two models while
-            keeping the same spike selected. The spike panel also shows the selected unit's place field.
+            The player opens on the paper's window. The comparison plots above it cover every spike
+            in the session: choosing a square opens a four-second window around one of its spikes,
+            and the controls below the plots step through that square's spikes and link to one. In
+            either view, you can switch models while keeping the same spike selected and see the
+            selected unit's place field.
           </p>
           <div class="panel">
+            <div id="rec-explorer"><p class="loading" role="status">Loading session overview…</p></div>
             <div id="rec-view"><p class="loading" role="status">Loading recording…</p></div>
           </div>
           <p class="note">

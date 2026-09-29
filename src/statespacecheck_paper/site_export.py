@@ -144,8 +144,32 @@ CONDITION_WINDOWS: tuple[ConditionWindow, ...] = (
 # ---------------------------------------------------------------------------
 
 
+def display_rows(values: NDArray[np.floating]) -> NDArray[np.uint8]:
+    """Scale each row to its maximum and quantize it to ``uint8``.
+
+    Parameters
+    ----------
+    values : np.ndarray, shape (n_rows, n_bins)
+        Nonnegative finite values, e.g. distributions over position.
+
+    Returns
+    -------
+    np.ndarray, shape (n_rows, n_bins)
+        A row's maximum maps to 255 and an all-zero row stays zero.
+    """
+    array = np.asarray(values, dtype=np.float64)
+    if array.ndim != 2:
+        raise ValueError(f"values must be 2-D (n_rows, n_bins); got shape {array.shape}")
+    if not np.all(np.isfinite(array)) or np.any(array < 0.0):
+        raise ValueError("values must be finite and nonnegative")
+    row_max = array.max(axis=1, keepdims=True)
+    scaled = np.divide(array, row_max, out=np.zeros_like(array), where=row_max > 0.0)
+    quantized: NDArray[np.uint8] = np.rint(scaled * 255.0).astype(np.uint8)
+    return quantized
+
+
 def encode_display_rows(values: NDArray[np.floating]) -> str:
-    """Scale each row to its maximum and base64-encode it as ``uint8``.
+    """Base64 of :func:`display_rows`, row-major, for the JSON data files.
 
     Parameters
     ----------
@@ -155,18 +179,9 @@ def encode_display_rows(values: NDArray[np.floating]) -> str:
     Returns
     -------
     str
-        Base64 of the row-major ``uint8`` array; a row's maximum maps to 255 and
-        an all-zero row stays zero.
+        Base64 of the row-major ``uint8`` array.
     """
-    array = np.asarray(values, dtype=np.float64)
-    if array.ndim != 2:
-        raise ValueError(f"values must be 2-D (n_rows, n_bins); got shape {array.shape}")
-    if not np.all(np.isfinite(array)) or np.any(array < 0.0):
-        raise ValueError("values must be finite and nonnegative")
-    row_max = array.max(axis=1, keepdims=True)
-    scaled = np.divide(array, row_max, out=np.zeros_like(array), where=row_max > 0.0)
-    quantized = np.rint(scaled * 255.0).astype(np.uint8)
-    return base64.b64encode(quantized.tobytes()).decode("ascii")
+    return base64.b64encode(display_rows(values).tobytes()).decode("ascii")
 
 
 def heatmap_payload(
@@ -195,7 +210,7 @@ def heatmap_payload(
         raise ValueError(f"value_range must be increasing; got {value_range}")
     return {
         "rows": encode_display_rows(array),
-        "row_max": _rounded_significant(array.max(axis=1), 6),
+        "row_max": rounded_significant(array.max(axis=1), 6),
         "range": [vmin, vmax],
     }
 
@@ -214,7 +229,7 @@ def _rounded(values: NDArray[np.floating], decimals: int) -> list[float]:
     return rounded
 
 
-def _rounded_significant(values: NDArray[np.floating], digits: int) -> list[float]:
+def rounded_significant(values: NDArray[np.floating], digits: int) -> list[float]:
     """Round finite values to ``digits`` significant figures for JSON."""
     return [float(f"{value:.{digits}g}") for value in _finite(values).tolist()]
 
@@ -313,7 +328,7 @@ def _event_payload(
     flags: dict[str, list[bool]] = {}
     for metric in METRIC_NAMES:
         values = np.asarray(getattr(diagnostics, f"event_{metric}"))[selection]
-        payload[metric] = _rounded_significant(values, EVENT_VALUE_SIGNIFICANT_FIGURES)
+        payload[metric] = rounded_significant(values, EVENT_VALUE_SIGNIFICANT_FIGURES)
         if metric in flag_rules:
             flags[metric] = flag_events(values, flag_rules[metric]).tolist()
     payload["flagged"] = flags
@@ -520,7 +535,7 @@ def filter_explainer_payload(config: Figure3Config) -> dict[str, Any]:
         "events": {
             "t": np.asarray(decoded.event_time_ind).tolist(),
             "cell": np.asarray(decoded.event_cell_ind).tolist(),
-            "hpd_overlap": _rounded_significant(
+            "hpd_overlap": rounded_significant(
                 decoded.event_hpd_overlap, EVENT_VALUE_SIGNIFICANT_FIGURES
             ),
         },
