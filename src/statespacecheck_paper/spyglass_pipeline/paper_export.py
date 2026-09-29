@@ -193,13 +193,8 @@ def unrestricted_log_entries(entries: Sequence[Mapping[str, str]]) -> list[str]:
     ]
 
 
-def log_figure04_export(
-    paper_id: str,
-    analysis_id: str,
-    nwb_file_name: str = FIGURE04_NWB_FILE_NAME,
-    epoch_name: str = FIGURE04_EPOCH_NAME,
-) -> Figure4Inputs:
-    """Fetch the Figure-4 inputs inside a new Spyglass export session.
+def log_figure04_export(paper_id: str, analysis_id: str) -> Figure4Inputs:
+    """Fetch the Figure-4 session's inputs inside a new Spyglass export session.
 
     **Writes to the lab database**: ``ExportSelection.start_export`` inserts a
     selection entry, and every Spyglass fetch until ``stop_export`` is logged
@@ -215,10 +210,6 @@ def log_figure04_export(
         New export paper ID (at most 32 characters).
     analysis_id : str
         Analysis label within the paper (at most 32 characters).
-    nwb_file_name : str, optional
-        Spyglass NWB file name. Default is the Figure-4 session.
-    epoch_name : str, optional
-        Epoch interval name. Default is the Figure-4 epoch.
 
     Returns
     -------
@@ -244,7 +235,7 @@ def log_figure04_export(
         raise ValueError(f"paper_id {paper_id!r} already has export selections; choose a new one")
     # Rehearse the fetch with logging recorded, not written: this also imports every
     # module the fetch needs, so nothing can fail for that reason mid-export.
-    rehearsal = dry_run_figure04_export_log(nwb_file_name, epoch_name)
+    rehearsal = dry_run_figure04_export_log()
     if not rehearsal:
         raise RuntimeError("The export rehearsal recorded nothing; Spyglass's logging changed")
     if unrestricted := unrestricted_log_entries(rehearsal):
@@ -252,7 +243,7 @@ def log_figure04_export(
 
     selection.start_export(paper_id=paper_id, analysis_id=analysis_id)
     try:
-        return fetch_figure04_inputs(nwb_file_name, epoch_name)
+        return fetch_figure04_inputs()
     finally:
         selection.stop_export()
 

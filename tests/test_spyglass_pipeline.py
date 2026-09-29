@@ -598,7 +598,7 @@ def test_diagnostics_from_decodes_refuses_mismatched_time_bins() -> None:
     time = np.linspace(0.0, 1.0, 5)
     with pytest.raises(ValueError, match="different time bins"):
         figure04_diagnostics_from_decodes(
-            None, None, _decode(time), _decode(time + 1.0), [], coverage=0.95
+            None, None, _decode(time), _decode(time + 1.0), [], coverage=0.95, thresholds={}
         )
 
 
@@ -606,7 +606,13 @@ def test_diagnostics_from_decodes_requires_the_predictive_distribution() -> None
     time = np.linspace(0.0, 1.0, 5)
     with pytest.raises(ValueError, match="predictive_posterior"):
         figure04_diagnostics_from_decodes(
-            None, None, _decode(time), _decode(time, with_predictive=False), [], coverage=0.95
+            None,
+            None,
+            _decode(time),
+            _decode(time, with_predictive=False),
+            [],
+            coverage=0.95,
+            thresholds={},
         )
 
 
@@ -617,7 +623,7 @@ def test_diagnostics_from_decodes_refuses_spikes_of_other_units() -> None:
     swapped = [spike_times[1], spike_times[0]]
     with pytest.raises(ValueError, match="do not match the fitted units"):
         figure04_diagnostics_from_decodes(
-            fitted, fitted, _decode(time), _decode(time), swapped, coverage=0.95
+            fitted, fitted, _decode(time), _decode(time), swapped, coverage=0.95, thresholds={}
         )
 
 

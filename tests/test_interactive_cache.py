@@ -110,7 +110,7 @@ def test_events_dataframe_sorts_by_time_and_validates_cell_id() -> None:
         event_kl_divergence=np.array([1.0, 2.0, 3.0], dtype=np.float32),
         event_predictive_pvalue=np.array([0.5, 0.4, 0.3], dtype=np.float32),
     )
-    df = cache_mod._events_dataframe(diagnostics, n_cells=3)
+    df = cache_mod._events_dataframe(diagnostics, n_cells=3, time=np.arange(4.0))
     assert list(df.columns) == [
         "time",
         "cell_id",
@@ -132,7 +132,7 @@ def test_events_dataframe_rejects_out_of_range_cell_id() -> None:
         event_predictive_pvalue=np.array([0.0], dtype=np.float32),
     )
     with pytest.raises(ValueError, match="event_cell_ind out of range"):
-        cache_mod._events_dataframe(diagnostics, n_cells=3)
+        cache_mod._events_dataframe(diagnostics, n_cells=3, time=np.arange(4.0))
 
 
 def test_write_zarr_store_roundtrips_arrays(tmp_path: Path) -> None:

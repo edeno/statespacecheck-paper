@@ -36,7 +36,7 @@ def figure04_diagnostics_from_decodes(
     spike_times: Sequence[NDArray[np.float64]],
     *,
     coverage: float,
-    thresholds: Mapping[str, float] | None = None,
+    thresholds: Mapping[str, float],
 ) -> tuple[SpikeEventDiagnostics, SpikeEventDiagnostics, Figure4Summary]:
     """Compute Figure 4's per-spike diagnostics and summary from two stored decodes.
 
@@ -44,7 +44,8 @@ def figure04_diagnostics_from_decodes(
     elsewhere (e.g. by Spyglass ``SortedSpikesDecodingV1``): spikes are clipped to
     the decoded time range, the per-spike likelihood uses the Continuous
     decoder's place fields (which must equal the Continuous-Fragmented ones), and
-    the summary uses the Figure-4 flag thresholds.
+    the summary flags with the Figure-4 metric directions at the given
+    thresholds.
 
     Parameters
     ----------
@@ -59,8 +60,9 @@ def figure04_diagnostics_from_decodes(
         were trained on every decoded time bin (as in Figure 4).
     coverage : float
         HPD coverage for the HPD-overlap diagnostic.
-    thresholds : Mapping of str to float, optional
-        Flag threshold per metric. Default: the Figure-4 thresholds.
+    thresholds : Mapping of str to float
+        Flag threshold per metric (the figure uses
+        ``figure04_generation.FIGURE4_DIAGNOSTIC_THRESHOLDS``).
 
     Returns
     -------
@@ -84,10 +86,7 @@ def figure04_diagnostics_from_decodes(
     """
     from statespacecheck_paper.figure04_decoder import get_spike_counts
     from statespacecheck_paper.figure04_diagnostics import compute_results_diagnostics
-    from statespacecheck_paper.figure04_generation import (
-        FIGURE4_DIAGNOSTIC_THRESHOLDS,
-        FIGURE4_METRIC_DIRECTIONS,
-    )
+    from statespacecheck_paper.figure04_generation import FIGURE4_METRIC_DIRECTIONS
     from statespacecheck_paper.figure04_place_fields import (
         DECODER_PREDICTIVE_VAR,
         extract_agreed_place_fields,
@@ -127,7 +126,7 @@ def figure04_diagnostics_from_decodes(
         continuous,
         continuous_fragmented,
         n_units=int(spike_counts.shape[1]),
-        thresholds=FIGURE4_DIAGNOSTIC_THRESHOLDS if thresholds is None else thresholds,
+        thresholds=thresholds,
         metric_directions=FIGURE4_METRIC_DIRECTIONS,
     )
     return continuous, continuous_fragmented, summary

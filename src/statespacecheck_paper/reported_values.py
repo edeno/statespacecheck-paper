@@ -919,7 +919,7 @@ def render_macro_file(
     figure04_payload: dict[str, Any],
     *,
     statespacecheck_doi: str,
-    analysis_code_doi: str | None = None,
+    analysis_code_doi: str,
 ) -> str:
     """Render the full ``reported_values.tex`` contents.
 
@@ -930,7 +930,7 @@ def render_macro_file(
     statespacecheck_doi : str, keyword-only
         Zenodo DOI of the recorded ``statespacecheck`` version
         (:func:`lookup_statespacecheck_doi`).
-    analysis_code_doi : str, optional, keyword-only
+    analysis_code_doi : str, keyword-only
         This repository's Zenodo DOI (:func:`analysis_code_doi`).
 
     Returns

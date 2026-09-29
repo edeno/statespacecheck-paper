@@ -45,6 +45,7 @@ def _macro_values(text: str) -> dict[str, str]:
 # tests below take it from the committed file so they run offline, and
 # test_zenodo_lookup_gives_the_cited_doi checks it against Zenodo
 CITED_DOI = _macro_values(COMMITTED_MACRO_FILE.read_text(encoding="utf-8"))["StatespacecheckDOI"]
+CODE_DOI = analysis_code_doi(REPO_ROOT / "CITATION.cff")
 
 
 def test_committed_macro_file_matches_the_figure_summaries(tmp_path: Path) -> None:
@@ -94,7 +95,11 @@ def test_asymmetric_mode_parameters_are_reported_independently() -> None:
     package_defaults["continuous_fragmented_discrete_initial_conditions"] = [0.6, 0.4]
     package_defaults["continuous_fragmented_diagonal_values"] = [0.9, 0.8]
 
-    values = _macro_values(render_macro_file(figure03, figure04, statespacecheck_doi=CITED_DOI))
+    values = _macro_values(
+        render_macro_file(
+            figure03, figure04, statespacecheck_doi=CITED_DOI, analysis_code_doi=CODE_DOI
+        )
+    )
 
     assert values["RecModeContinuousInitial"] == "0.6"
     assert values["RecModeFragmentedInitial"] == "0.4"
@@ -113,7 +118,9 @@ def test_every_figure4_flag_rule_is_reported_or_fails_the_emit() -> None:
         "threshold": 4.0,
     }
     with pytest.raises(KeyError, match="kl_divergence"):
-        render_macro_file(figure03, figure04, statespacecheck_doi=CITED_DOI)
+        render_macro_file(
+            figure03, figure04, statespacecheck_doi=CITED_DOI, analysis_code_doi=CODE_DOI
+        )
 
 
 def test_time_conversions_follow_the_recorded_step_length() -> None:
@@ -123,7 +130,12 @@ def test_time_conversions_follow_the_recorded_step_length() -> None:
     figure03["configuration"]["sparse_cell_peak_rate_per_step"] = 0.002
 
     values = _macro_values(
-        render_macro_file(figure03, _load("figure04_summary.json"), statespacecheck_doi=CITED_DOI)
+        render_macro_file(
+            figure03,
+            _load("figure04_summary.json"),
+            statespacecheck_doi=CITED_DOI,
+            analysis_code_doi=CODE_DOI,
+        )
     )
 
     assert values["SimStepMs"] == "2"
@@ -141,7 +153,11 @@ def test_negative_log_cutoffs_follow_the_recorded_p_value_cutoffs() -> None:
     figure03["threshold_provenance"]["predictive_pvalue"]["cutoff"] = 0.01
     figure04["flag_rules"]["predictive_pvalue"]["threshold"] = 0.2
 
-    values = _macro_values(render_macro_file(figure03, figure04, statespacecheck_doi=CITED_DOI))
+    values = _macro_values(
+        render_macro_file(
+            figure03, figure04, statespacecheck_doi=CITED_DOI, analysis_code_doi=CODE_DOI
+        )
+    )
 
     assert values["SimPredictiveCutoffNegLog"] == "5"  # -log(0.01) = 4.6
     assert values["RecPredictiveCutoffNegLog"] == "2"  # -log(0.2) = 1.6
@@ -156,7 +172,12 @@ def test_sparse_approach_duration_is_written_as_a_phrase(approach_steps: int, ph
     figure03["configuration"]["sparse_approach_duration_steps"] = approach_steps
 
     values = _macro_values(
-        render_macro_file(figure03, _load("figure04_summary.json"), statespacecheck_doi=CITED_DOI)
+        render_macro_file(
+            figure03,
+            _load("figure04_summary.json"),
+            statespacecheck_doi=CITED_DOI,
+            analysis_code_doi=CODE_DOI,
+        )
     )
 
     assert values["SimSparseApproachDuration"] == phrase
@@ -168,7 +189,12 @@ def test_non_unit_position_grid_fails_the_emit() -> None:
     figure03["configuration"]["position_bin_size"] = 2
 
     with pytest.raises(ValueError, match="unit-spaced"):
-        render_macro_file(figure03, _load("figure04_summary.json"), statespacecheck_doi=CITED_DOI)
+        render_macro_file(
+            figure03,
+            _load("figure04_summary.json"),
+            statespacecheck_doi=CITED_DOI,
+            analysis_code_doi=CODE_DOI,
+        )
 
 
 def test_non_integral_burst_factor_is_not_silently_rounded() -> None:
@@ -177,7 +203,12 @@ def test_non_integral_burst_factor_is_not_silently_rounded() -> None:
     figure03["configuration"]["history_burst_factor"] = 3.4
 
     with pytest.raises(ValueError, match="not exact"):
-        render_macro_file(figure03, _load("figure04_summary.json"), statespacecheck_doi=CITED_DOI)
+        render_macro_file(
+            figure03,
+            _load("figure04_summary.json"),
+            statespacecheck_doi=CITED_DOI,
+            analysis_code_doi=CODE_DOI,
+        )
 
 
 def test_mismatched_hpd_coverages_are_rejected() -> None:
@@ -186,7 +217,12 @@ def test_mismatched_hpd_coverages_are_rejected() -> None:
     figure03["configuration"]["hpd_coverage"] = 0.9
 
     with pytest.raises(ValueError, match="different HPD coverages"):
-        render_macro_file(figure03, _load("figure04_summary.json"), statespacecheck_doi=CITED_DOI)
+        render_macro_file(
+            figure03,
+            _load("figure04_summary.json"),
+            statespacecheck_doi=CITED_DOI,
+            analysis_code_doi=CODE_DOI,
+        )
 
 
 @pytest.mark.parametrize(
@@ -200,7 +236,12 @@ def test_mismatched_statespacecheck_versions_are_rejected(path: tuple[str]) -> N
     figure04["provenance"][path[0]]["statespacecheck_version"] = "0.0.0"
 
     with pytest.raises(ValueError, match="different statespacecheck versions"):
-        render_macro_file(_load("figure03_summary.json"), figure04, statespacecheck_doi=CITED_DOI)
+        render_macro_file(
+            _load("figure03_summary.json"),
+            figure04,
+            statespacecheck_doi=CITED_DOI,
+            analysis_code_doi=CODE_DOI,
+        )
 
 
 @pytest.mark.parametrize("line", ["doi: 10.5281/zenodo.7", 'doi: "10.5281/zenodo.7"'])
@@ -263,7 +304,12 @@ def test_fractional_percentile_is_not_silently_rounded(quantile: float) -> None:
     figure03["threshold_provenance"]["hpd_overlap"]["quantile"] = quantile
 
     with pytest.raises(ValueError, match="not exact"):
-        render_macro_file(figure03, _load("figure04_summary.json"), statespacecheck_doi=CITED_DOI)
+        render_macro_file(
+            figure03,
+            _load("figure04_summary.json"),
+            statespacecheck_doi=CITED_DOI,
+            analysis_code_doi=CODE_DOI,
+        )
 
 
 def test_zero_decoding_error_renders() -> None:
@@ -273,7 +319,12 @@ def test_zero_decoding_error_renders() -> None:
     figure03["median_decoding_accuracy"][0][well_specified] = 0.0
 
     values = _macro_values(
-        render_macro_file(figure03, _load("figure04_summary.json"), statespacecheck_doi=CITED_DOI)
+        render_macro_file(
+            figure03,
+            _load("figure04_summary.json"),
+            statespacecheck_doi=CITED_DOI,
+            analysis_code_doi=CODE_DOI,
+        )
     )
 
     assert values["SimWellSpecifiedError"] == "0"
@@ -358,7 +409,11 @@ def test_published_standard_errors_do_not_set_precision() -> None:
     """The Figure-3 SEs are data for the reader, not a formatting authority."""
     figure03 = copy.deepcopy(_load("figure03_summary.json"))
     figure04 = _load("figure04_summary.json")
-    baseline = _macro_values(render_macro_file(figure03, figure04, statespacecheck_doi=CITED_DOI))
+    baseline = _macro_values(
+        render_macro_file(
+            figure03, figure04, statespacecheck_doi=CITED_DOI, analysis_code_doi=CODE_DOI
+        )
+    )
     # Shrink every published SE a thousandfold; no printed digit may change.
     for key in (
         "median_flag_percentage_standard_errors",
@@ -366,7 +421,11 @@ def test_published_standard_errors_do_not_set_precision() -> None:
     ):
         figure03[key] = [[value / 1000.0 for value in row] for row in figure03[key]]
     assert (
-        _macro_values(render_macro_file(figure03, figure04, statespacecheck_doi=CITED_DOI))
+        _macro_values(
+            render_macro_file(
+                figure03, figure04, statespacecheck_doi=CITED_DOI, analysis_code_doi=CODE_DOI
+            )
+        )
         == baseline
     )
 
@@ -383,6 +442,7 @@ def test_render_is_deterministic() -> None:
     """Two renders of the same payloads agree byte for byte."""
     figure03 = _load("figure03_summary.json")
     figure04 = _load("figure04_summary.json")
-    assert render_macro_file(
-        figure03, figure04, statespacecheck_doi=CITED_DOI
-    ) == render_macro_file(figure03, figure04, statespacecheck_doi=CITED_DOI)
+    dois = {"statespacecheck_doi": CITED_DOI, "analysis_code_doi": CODE_DOI}
+    assert render_macro_file(figure03, figure04, **dois) == render_macro_file(
+        figure03, figure04, **dois
+    )

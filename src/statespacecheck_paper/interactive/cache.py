@@ -114,21 +114,17 @@ def _events_dataframe(
     diagnostics: SpikeEventDiagnostics | DecodingDiagnostics,
     n_cells: int,
     *,
-    time: NDArray[np.float64] | None = None,
+    time: NDArray[np.float64],
 ) -> pd.DataFrame:
     """Convert per-spike diagnostic arrays into a sorted Parquet-friendly frame.
 
     Event times come from ``diagnostics.event_time`` when the real-data path
-    supplied it, otherwise from ``time[diagnostics.event_time_ind]``. Rows are
-    stably sorted by time, so events in the same bin keep their input order.
+    supplied it, otherwise from the decoder time grid,
+    ``time[diagnostics.event_time_ind]``. Rows are stably sorted by time, so
+    events in the same bin keep their input order.
     """
     event_time = diagnostics.event_time if isinstance(diagnostics, SpikeEventDiagnostics) else None
     if event_time is None:
-        if time is None:
-            raise ValueError(
-                "SpikeEventDiagnostics.event_time or an explicit decoder time grid "
-                "is required when building the cache events frame."
-            )
         event_time_ind = np.asarray(diagnostics.event_time_ind, dtype=np.intp)
         if event_time_ind.size and (
             event_time_ind.min() < 0 or event_time_ind.max() >= time.shape[0]
