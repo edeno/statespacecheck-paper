@@ -60,7 +60,7 @@ and Eq. 11 is in the simulation study's generative model.
 | --- | --- | --- |
 | 3 | HPD overlap flagged at or below the 1st percentile, KL divergence at or above the 99th percentile, of baseline values pooled over every spike event before step 6000 of all 100 realizations. The committed HPD-overlap threshold is exactly 0, so a spike is flagged only when its two HPD regions do not overlap at all | quantiles `diagnostics.BASELINE_HPD_OVERLAP_QUANTILE` and `BASELINE_KL_DIVERGENCE_QUANTILE`; rule `diagnostics.compute_baseline_diagnostic_thresholds`; pooling `figure03_summary.estimate_realization_summary` |
 | 3 | Predictive $p$-value flagged at or below a fixed 0.05 | `diagnostics.FIXED_PREDICTIVE_PVALUE_CUTOFF` |
-| 4 | Fixed cutoffs: HPD overlap ≤ 0.05 and predictive $p$-value ≤ 0.05; KL divergence is not thresholded | `figure04_generation.FIGURE4_DIAGNOSTIC_THRESHOLDS` |
+| 4 | Fixed cutoffs: HPD overlap ≤ 0.05 and predictive $p$-value ≤ 0.05; KL divergence is not thresholded | `figure04_generation.FIGURE04_DIAGNOSTIC_THRESHOLDS` |
 
 Every comparison is inclusive; `diagnostics.METRIC_FLAG_DIRECTIONS` gives each
 metric's worse-fit direction and `diagnostics.flag_mask` applies it. Both
@@ -463,12 +463,12 @@ $\Lambda(x)$.
   marginalized over the dynamics mode, so both decoders are diagnosed on the
   same position grid against the same place fields
   (`figure04_diagnostics.compute_results_diagnostics`). Flags use the fixed
-  cutoffs `FIGURE4_DIAGNOSTIC_THRESHOLDS = {"hpd_overlap": 0.05,
+  cutoffs `FIGURE04_DIAGNOSTIC_THRESHOLDS = {"hpd_overlap": 0.05,
   "predictive_pvalue": 0.05}` in `figure04_generation.py`; KL divergence is not
   thresholded. `figure04_diagnostics.FlagConfusion` counts, for each metric,
   the spikes flagged by both decoders, by the Continuous model only (`rescued`),
   by the Continuous–Fragmented model only (`newly_flagged`), and by neither.
-- **Detail window:** `FIGURE4_DETAIL_WINDOW = Figure4DetailWindow(center_index=193069,
+- **Detail window:** `FIGURE04_DETAIL_WINDOW = Figure4DetailWindow(center_index=193069,
   half_width_samples=500)` in `figure04_generation.py` centers panels (a, b) on
   a KL-divergence spike during immobility at a reward well and spans about two
   seconds total.

@@ -36,7 +36,7 @@ import xarray as xr
 from numpy.typing import NDArray
 
 from statespacecheck_paper.diagnostics import DecodingDiagnostics, SpikeEventDiagnostics
-from statespacecheck_paper.figure04_models import FIGURE4_MODEL_IDS, Figure4ModelId
+from statespacecheck_paper.figure04_models import FIGURE04_MODEL_IDS, Figure4ModelId
 from statespacecheck_paper.figure04_place_fields import DECODER_PREDICTIVE_VAR
 from statespacecheck_paper.paths import ANIMAL_DATE_EPOCH, FIGURE03_SUMMARY_PATH
 
@@ -44,7 +44,7 @@ if TYPE_CHECKING:
     from statespacecheck_paper.figure04_workflow import Figure4RenderData
 
 ModelName = Figure4ModelId
-MODEL_NAMES: tuple[ModelName, ...] = FIGURE4_MODEL_IDS
+MODEL_NAMES: tuple[ModelName, ...] = FIGURE04_MODEL_IDS
 
 DEFAULT_TIME_CHUNK = 8192
 
@@ -732,18 +732,18 @@ def _build_command(args: argparse.Namespace) -> int:
         prepare_figure04_render_data,
     )
 
-    figure4_paths = Figure4Paths(
+    figure04_paths = Figure4Paths(
         data_path=data_dir,
         animal_date_epoch=args.animal_date_epoch,
     )
     print(
         "[cache] Loading canonical Figure 4 workflow data from "
-        f"{figure4_paths.decode_cache_path} ...",
+        f"{figure04_paths.decode_cache_path} ...",
         flush=True,
     )
     render_data = prepare_figure04_render_data(
         Figure4Config(),
-        figure4_paths,
+        figure04_paths,
         use_cache=not args.force_recompute,
     )
     summaries = build_figure04_viewer_cache(

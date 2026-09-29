@@ -207,7 +207,7 @@ def test_compose_figure04_labels_rows_once_across_the_two_stacks() -> None:
     worse-fit labels (which the track inset aligns to); neither repeats them."""
     import matplotlib.pyplot as plt
 
-    from statespacecheck_paper.figure04_layout import FIGURE4_DIAGNOSTIC_ANNOTATION_GIDS
+    from statespacecheck_paper.figure04_layout import FIGURE04_DIAGNOSTIC_ANNOTATION_GIDS
     from statespacecheck_paper.plotting import THRESHOLD_LABEL_GID, WORSE_FIT_LABEL_GID
 
     result = compose_figure04(
@@ -220,7 +220,7 @@ def test_compose_figure04_labels_rows_once_across_the_two_stacks() -> None:
     assert axes_a[3].get_ylabel() == "HPD\noverlap"
     assert all(ax.get_ylabel() == "" for ax in axes_b)
     assert not any(
-        text.get_gid() in FIGURE4_DIAGNOSTIC_ANNOTATION_GIDS for ax in axes_a for text in ax.texts
+        text.get_gid() in FIGURE04_DIAGNOSTIC_ANNOTATION_GIDS for ax in axes_a for text in ax.texts
     )
     gids_b = [[text.get_gid() for text in ax.texts] for ax in axes_b[3:]]
     assert gids_b == [

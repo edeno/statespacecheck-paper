@@ -109,7 +109,7 @@ def test_asymmetric_mode_parameters_are_reported_independently() -> None:
     assert values["RecModeFragmentedStay"] == "0.80"
 
 
-def test_every_figure4_flag_rule_is_reported_or_fails_the_emit() -> None:
+def test_every_figure04_flag_rule_is_reported_or_fails_the_emit() -> None:
     """The flag-count macros follow the summary's flag rules, not a fixed list."""
     figure03 = _load("figure03_summary.json")
     figure04 = copy.deepcopy(_load("figure04_summary.json"))

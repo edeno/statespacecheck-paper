@@ -10,14 +10,14 @@ import pytest
 
 from statespacecheck_paper.diagnostics import DecodingDiagnostics, DiagnosticThresholds
 from statespacecheck_paper.figure03_plotting import (
-    FIGURE3_PANEL_LABEL_GID,
-    FIGURE3_PHASE_LABEL_GID,
-    FIGURE3_SUMMARY_ACCURACY_CELL_LABEL_GID,
-    FIGURE3_SUMMARY_ACCURACY_HEADER_GID,
-    FIGURE3_SUMMARY_CELL_LABEL_GID,
-    FIGURE3_SUMMARY_KNOWN_COMPONENT_LABEL_GID,
-    FIGURE3_SUMMARY_TITLE_GID,
-    FIGURE3_TRUE_POSITION_LABEL_GID,
+    FIGURE03_PANEL_LABEL_GID,
+    FIGURE03_PHASE_LABEL_GID,
+    FIGURE03_SUMMARY_ACCURACY_CELL_LABEL_GID,
+    FIGURE03_SUMMARY_ACCURACY_HEADER_GID,
+    FIGURE03_SUMMARY_CELL_LABEL_GID,
+    FIGURE03_SUMMARY_KNOWN_COMPONENT_LABEL_GID,
+    FIGURE03_SUMMARY_TITLE_GID,
+    FIGURE03_TRUE_POSITION_LABEL_GID,
     compose_figure03,
 )
 from statespacecheck_paper.figure03_protocol import Figure3Config
@@ -197,7 +197,7 @@ def test_compose_figure03_renders_precomputed_summary(
         plt.close(fig)
 
 
-def test_compose_figure03_tags_figure3_annotations(
+def test_compose_figure03_tags_figure03_annotations(
     thresholds_default: DiagnosticThresholds,
 ) -> None:
     """Figure 3 annotations should be targetable by semantic artist ids."""
@@ -221,20 +221,22 @@ def test_compose_figure03_tags_figure3_annotations(
         texts = [text for ax in fig.axes for text in ax.texts]
         lines = [line for ax in fig.axes for line in ax.lines]
 
-        assert sum(text.get_gid() == FIGURE3_PANEL_LABEL_GID for text in texts) == 2
-        phase_labels = [text for text in texts if text.get_gid() == FIGURE3_PHASE_LABEL_GID]
+        assert sum(text.get_gid() == FIGURE03_PANEL_LABEL_GID for text in texts) == 2
+        phase_labels = [text for text in texts if text.get_gid() == FIGURE03_PHASE_LABEL_GID]
         assert len(phase_labels) == 5
         assert {text.get_position()[1] for text in phase_labels} == {
             phase_labels[0].get_position()[1]
         }
         assert sum(text.get_gid() == THRESHOLD_LABEL_GID for text in texts) == 3
         assert sum(text.get_gid() == WORSE_FIT_LABEL_GID for text in texts) == 3
-        assert any(text.get_gid() == FIGURE3_TRUE_POSITION_LABEL_GID for text in texts)
-        assert any(text.get_gid() == FIGURE3_SUMMARY_KNOWN_COMPONENT_LABEL_GID for text in texts)
-        assert sum(text.get_gid() == FIGURE3_SUMMARY_CELL_LABEL_GID for text in texts) == 18
-        assert sum(text.get_gid() == FIGURE3_SUMMARY_ACCURACY_CELL_LABEL_GID for text in texts) == 6
-        assert sum(text.get_gid() == FIGURE3_SUMMARY_ACCURACY_HEADER_GID for text in texts) == 1
-        assert any(ax.title.get_gid() == FIGURE3_SUMMARY_TITLE_GID for ax in fig.axes)
+        assert any(text.get_gid() == FIGURE03_TRUE_POSITION_LABEL_GID for text in texts)
+        assert any(text.get_gid() == FIGURE03_SUMMARY_KNOWN_COMPONENT_LABEL_GID for text in texts)
+        assert sum(text.get_gid() == FIGURE03_SUMMARY_CELL_LABEL_GID for text in texts) == 18
+        assert (
+            sum(text.get_gid() == FIGURE03_SUMMARY_ACCURACY_CELL_LABEL_GID for text in texts) == 6
+        )
+        assert sum(text.get_gid() == FIGURE03_SUMMARY_ACCURACY_HEADER_GID for text in texts) == 1
+        assert any(ax.title.get_gid() == FIGURE03_SUMMARY_TITLE_GID for ax in fig.axes)
         assert sum(line.get_gid() == THRESHOLD_LINE_GID for line in lines) == 3
     finally:
         plt.close(fig)

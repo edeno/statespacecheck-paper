@@ -42,11 +42,11 @@ CONTINUOUS_FRAGMENTED = Figure4Model(
     short_label="Cont.\N{EN DASH}Frag.",
 )
 # In the order the figure, summary, and viewer present them.
-FIGURE4_MODELS: tuple[Figure4Model, ...] = (CONTINUOUS, CONTINUOUS_FRAGMENTED)
-FIGURE4_MODEL_IDS: tuple[Figure4ModelId, ...] = tuple(model.id for model in FIGURE4_MODELS)
+FIGURE04_MODELS: tuple[Figure4Model, ...] = (CONTINUOUS, CONTINUOUS_FRAGMENTED)
+FIGURE04_MODEL_IDS: tuple[Figure4ModelId, ...] = tuple(model.id for model in FIGURE04_MODELS)
 
 
-def figure4_model(model_id: str) -> Figure4Model:
+def figure04_model(model_id: str) -> Figure4Model:
     """Return the Figure-4 model with machine ID ``model_id``.
 
     Raises
@@ -54,7 +54,7 @@ def figure4_model(model_id: str) -> Figure4Model:
     ValueError
         If ``model_id`` names no Figure-4 model.
     """
-    for model in FIGURE4_MODELS:
+    for model in FIGURE04_MODELS:
         if model.id == model_id:
             return model
-    raise ValueError(f"Unknown Figure 4 model: {model_id!r}; expected one of {FIGURE4_MODEL_IDS}")
+    raise ValueError(f"Unknown Figure 4 model: {model_id!r}; expected one of {FIGURE04_MODEL_IDS}")

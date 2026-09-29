@@ -35,24 +35,24 @@ from statespacecheck_paper.figure04_workflow import Figure4RenderData
 from statespacecheck_paper.plotting import THRESHOLD_LABEL_GID, WORSE_FIT_LABEL_GID
 from statespacecheck_paper.style import FIGURE_DPI
 
-FIGURE4_DIAGNOSTIC_ANNOTATION_GIDS = {THRESHOLD_LABEL_GID, WORSE_FIT_LABEL_GID}
+FIGURE04_DIAGNOSTIC_ANNOTATION_GIDS = {THRESHOLD_LABEL_GID, WORSE_FIT_LABEL_GID}
 
 # --- Track-inset / hexbin pixel-nudge constants ---------------------------
 # Empirically measured on the exported PNG at the current figure size (7.2 x
 # 6.1 in) and DPI (``FIGURE_DPI``, 450). They tune only artist placement, never any decoded or
 # diagnostic value; changing the figure size or DPI would require re-measuring.
 #
-# ``add_scalebar`` appends the scale bar as the final line; FIGURE4_SCALE_BAR_HORIZONTAL_SHIFT_PX /
-# FIGURE4_SCALE_BAR_VERTICAL_DROP_PX move the bar and its label together so the label clears the
+# ``add_scalebar`` appends the scale bar as the final line; FIGURE04_SCALE_BAR_HORIZONTAL_SHIFT_PX /
+# FIGURE04_SCALE_BAR_VERTICAL_DROP_PX move the bar and its label together so the label clears the
 # nearby reward-well marker.
-FIGURE4_SCALE_BAR_HORIZONTAL_SHIFT_PX = 22.0
-FIGURE4_SCALE_BAR_VERTICAL_DROP_PX = 5.0
+FIGURE04_SCALE_BAR_HORIZONTAL_SHIFT_PX = 22.0
+FIGURE04_SCALE_BAR_VERTICAL_DROP_PX = 5.0
 # The trajectory line's vector bbox extends slightly farther left than the
 # visually salient rendered diagram, so the track inset's left edge is nudged
 # right by this many pixels when aligning it to the diagnostic annotations.
-FIGURE4_TRACK_VISUAL_EDGE_CORRECTION_PX = 7.0
+FIGURE04_TRACK_VISUAL_EDGE_CORRECTION_PX = 7.0
 # Enlarge the track inset about its center for legibility.
-FIGURE4_TRACK_SIZE_SCALE = 1.10
+FIGURE04_TRACK_SIZE_SCALE = 1.10
 
 
 def _shift_diagnostic_event_times(
@@ -137,7 +137,7 @@ def _place_track_inset(
     """Draw the unlettered 2D track inset and align it to the diagnostic labels.
 
     Pixel-nudging is confined here and to the module-level ``SCALE_BAR_*`` /
-    ``FIGURE4_TRACK_VISUAL_EDGE_CORRECTION_PX`` / ``FIGURE4_TRACK_SIZE_SCALE`` constants
+    ``FIGURE04_TRACK_VISUAL_EDGE_CORRECTION_PX`` / ``FIGURE04_TRACK_SIZE_SCALE`` constants
     (measured at
     the current figure size and DPI). Returns the inset axis so the hexbin
     layout can later align its right edge to the colorbar label.
@@ -170,10 +170,10 @@ def _place_track_inset(
     # reward-well marker.
     scale_bar_line = ax_track.lines[-1]
     scale_bar_line.set_xdata(
-        np.asarray(scale_bar_line.get_xdata()) + FIGURE4_SCALE_BAR_HORIZONTAL_SHIFT_PX
+        np.asarray(scale_bar_line.get_xdata()) + FIGURE04_SCALE_BAR_HORIZONTAL_SHIFT_PX
     )
     scale_bar_line.set_ydata(
-        np.asarray(scale_bar_line.get_ydata()) - FIGURE4_SCALE_BAR_VERTICAL_DROP_PX
+        np.asarray(scale_bar_line.get_ydata()) - FIGURE04_SCALE_BAR_VERTICAL_DROP_PX
     )
     scale_bar_line.set_linewidth(2.0)
     for text in ax_track.texts:
@@ -181,8 +181,8 @@ def _place_track_inset(
             x_pos, y_pos = text.get_position()
             text.set_position(
                 (
-                    x_pos + FIGURE4_SCALE_BAR_HORIZONTAL_SHIFT_PX + 10,
-                    y_pos - 4 - FIGURE4_SCALE_BAR_VERTICAL_DROP_PX,
+                    x_pos + FIGURE04_SCALE_BAR_HORIZONTAL_SHIFT_PX + 10,
+                    y_pos - 4 - FIGURE04_SCALE_BAR_VERTICAL_DROP_PX,
                 )
             )
             text.set_fontsize(8.5)
@@ -197,7 +197,7 @@ def _place_track_inset(
         text
         for ax in axes_b[3:]
         for text in ax.texts
-        if text.get_gid() in FIGURE4_DIAGNOSTIC_ANNOTATION_GIDS
+        if text.get_gid() in FIGURE04_DIAGNOSTIC_ANNOTATION_GIDS
     ]
     annotation_bboxes = _visible_artist_bboxes(annotation_texts, renderer)
     if annotation_bboxes:
@@ -209,15 +209,15 @@ def _place_track_inset(
             renderer,
             target_px=annotation_right,
             edge="left",
-            correction_px=FIGURE4_TRACK_VISUAL_EDGE_CORRECTION_PX,
+            correction_px=FIGURE04_TRACK_VISUAL_EDGE_CORRECTION_PX,
         )
     pos = ax_track.get_position()
     ax_track.set_position(
         [
             pos.x0,
-            pos.y0 - pos.height * (FIGURE4_TRACK_SIZE_SCALE - 1) / 2,
-            pos.width * FIGURE4_TRACK_SIZE_SCALE,
-            pos.height * FIGURE4_TRACK_SIZE_SCALE,
+            pos.y0 - pos.height * (FIGURE04_TRACK_SIZE_SCALE - 1) / 2,
+            pos.width * FIGURE04_TRACK_SIZE_SCALE,
+            pos.height * FIGURE04_TRACK_SIZE_SCALE,
         ]
     )
     return ax_track

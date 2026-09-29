@@ -52,11 +52,11 @@ from statespacecheck_paper.figure04_decoder import (
     build_decoder_models,
     create_decoder_environment,
 )
-from statespacecheck_paper.figure04_generation import FIGURE4_DIAGNOSTIC_THRESHOLDS
+from statespacecheck_paper.figure04_generation import FIGURE04_DIAGNOSTIC_THRESHOLDS
 from statespacecheck_paper.figure04_models import (
     CONTINUOUS,
     CONTINUOUS_FRAGMENTED,
-    FIGURE4_MODELS,
+    FIGURE04_MODELS,
 )
 from statespacecheck_paper.figure04_place_fields import DECODER_PREDICTIVE_VAR
 from statespacecheck_paper.spyglass_pipeline.figure04_compute import (
@@ -78,7 +78,7 @@ SCHEMA_NAME = "edeno_statespacecheck"
 GROUP_NAME = "statespacecheck_figure04"
 UNIT_FILTER_PARAMS_NAME = "all_units"
 DECODING_PARAM_NAMES: Mapping[str, str] = MappingProxyType(
-    {model.id: f"statespacecheck_figure04_{model.id}" for model in FIGURE4_MODELS}
+    {model.id: f"statespacecheck_figure04_{model.id}" for model in FIGURE04_MODELS}
 )
 # Outputs requested besides the always-returned smoothed posterior, matching the
 # paper decode; Spyglass passes decoding_kwargs through to predict().
@@ -115,8 +115,8 @@ class Figure4DiagnosticsParameters(SpyglassMixin, dj.Lookup):
         (
             "figure04",
             Figure4Config().diagnostics.hpd_coverage,
-            FIGURE4_DIAGNOSTIC_THRESHOLDS["hpd_overlap"],
-            FIGURE4_DIAGNOSTIC_THRESHOLDS["predictive_pvalue"],
+            FIGURE04_DIAGNOSTIC_THRESHOLDS["hpd_overlap"],
+            FIGURE04_DIAGNOSTIC_THRESHOLDS["predictive_pvalue"],
         )
     ]
 

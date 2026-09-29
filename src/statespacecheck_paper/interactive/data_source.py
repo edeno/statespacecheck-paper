@@ -35,7 +35,7 @@ import xarray as xr
 import zarr
 from numpy.typing import NDArray
 
-from statespacecheck_paper.figure04_models import figure4_model
+from statespacecheck_paper.figure04_models import figure04_model
 from statespacecheck_paper.figure04_place_fields import DECODER_PREDICTIVE_VAR
 
 from . import cache as cache_mod
@@ -232,7 +232,7 @@ class DecoderDataSource:
         self.dataset_kind: DatasetKind = dataset_kind
         self.model: ModelName | None = model
         self.display_name: str = display_name or (
-            figure4_model(model).label if model is not None else "decoder"
+            figure04_model(model).label if model is not None else "decoder"
         )
 
         self._layout.assert_exists()

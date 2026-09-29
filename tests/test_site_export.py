@@ -36,7 +36,7 @@ from statespacecheck_paper.figure03_simulation import (
 )
 from statespacecheck_paper.figure04_diagnostics import mean_event_likelihood_by_time
 from statespacecheck_paper.figure04_layout import Figure4DetailWindow
-from statespacecheck_paper.figure04_models import FIGURE4_MODELS, figure4_model
+from statespacecheck_paper.figure04_models import FIGURE04_MODELS, figure04_model
 from statespacecheck_paper.number_format import significant, whole_percent
 from statespacecheck_paper.paths import FIGURE03_SUMMARY_PATH, FIGURE04_SUMMARY_PATH, REPO_ROOT
 from statespacecheck_paper.scientific_artifacts import inclusive_flag_rules
@@ -262,7 +262,7 @@ def test_gaussian_predictive_is_normalized_and_centered() -> None:
         gaussian_predictive(bins, 40.0, 0.0)
 
 
-def test_playground_ensembles_are_the_figure3_decoder_tables(
+def test_playground_ensembles_are_the_figure03_decoder_tables(
     simulation: Figure3SimulationResult,
     config: Figure3Config,
     sparse_centers: NDArray[np.float64],
@@ -451,8 +451,8 @@ def test_replay_payload_slices_both_models_to_the_detail_window() -> None:
         model = payload["models"][name]
         # The page takes the model labels from the export, not its own copy.
         assert (model["label"], model["short_label"]) == (
-            figure4_model(name).label,
-            figure4_model(name).short_label,
+            figure04_model(name).label,
+            figure04_model(name).short_label,
         )
         rows = decode_display_rows(model["predictive"]["rows"], n_bins)
         assert rows.shape == (n_time, n_bins)
@@ -605,7 +605,7 @@ def test_committed_playground_is_current(
         np.testing.assert_allclose(old["rates"], new["rates"], rtol=1e-12)
 
 
-def test_committed_replay_matches_the_figure4_decode(figure04_summary: dict[str, Any]) -> None:
+def test_committed_replay_matches_the_figure04_decode(figure04_summary: dict[str, Any]) -> None:
     committed = _load(SITE_DATA_DIR / "replay.json")
     caches = figure04_summary["provenance"]["figure04_caches"]
     # A decoder or a diagnostics change must be followed by a re-export.
@@ -614,7 +614,7 @@ def test_committed_replay_matches_the_figure4_decode(figure04_summary: dict[str,
     assert committed["flag_rules"] == figure04_summary["flag_rules"]
     assert {
         name: (model["label"], model["short_label"]) for name, model in committed["models"].items()
-    } == {model.id: (model.label, model.short_label) for model in FIGURE4_MODELS}
+    } == {model.id: (model.label, model.short_label) for model in FIGURE04_MODELS}
     continuous, fragmented = (
         committed["models"][name]["events"] for name in ("continuous", "continuous_fragmented")
     )

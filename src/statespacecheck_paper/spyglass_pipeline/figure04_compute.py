@@ -62,7 +62,7 @@ def figure04_diagnostics_from_decodes(
         HPD coverage for the HPD-overlap diagnostic.
     thresholds : Mapping of str to float
         Flag threshold per metric (the figure uses
-        ``figure04_generation.FIGURE4_DIAGNOSTIC_THRESHOLDS``).
+        ``figure04_generation.FIGURE04_DIAGNOSTIC_THRESHOLDS``).
 
     Returns
     -------
@@ -86,7 +86,7 @@ def figure04_diagnostics_from_decodes(
     """
     from statespacecheck_paper.figure04_decoder import get_spike_counts
     from statespacecheck_paper.figure04_diagnostics import compute_results_diagnostics
-    from statespacecheck_paper.figure04_generation import FIGURE4_METRIC_DIRECTIONS
+    from statespacecheck_paper.figure04_generation import FIGURE04_METRIC_DIRECTIONS
     from statespacecheck_paper.figure04_place_fields import (
         DECODER_PREDICTIVE_VAR,
         extract_agreed_place_fields,
@@ -127,7 +127,7 @@ def figure04_diagnostics_from_decodes(
         continuous_fragmented,
         n_units=int(spike_counts.shape[1]),
         thresholds=thresholds,
-        metric_directions=FIGURE4_METRIC_DIRECTIONS,
+        metric_directions=FIGURE04_METRIC_DIRECTIONS,
     )
     return continuous, continuous_fragmented, summary
 
@@ -213,7 +213,7 @@ def figure04_reported_statistics_from_rows(
     """
     from statespacecheck_paper.figure04_diagnostics import FlagConfusion
     from statespacecheck_paper.figure04_generation import (
-        FIGURE4_METRIC_DIRECTIONS,
+        FIGURE04_METRIC_DIRECTIONS,
         figure04_reported_statistics,
     )
     from statespacecheck_paper.figure04_summary import Figure4DiagnosticMeans, Figure4Summary
@@ -222,9 +222,9 @@ def figure04_reported_statistics_from_rows(
     for row in mean_rows:
         means.setdefault(row["model"], {})[row["metric"]] = float(row["value"])
     metrics = [row["metric"] for row in confusion_rows]
-    if sorted(metrics) != sorted(FIGURE4_METRIC_DIRECTIONS):
+    if sorted(metrics) != sorted(FIGURE04_METRIC_DIRECTIONS):
         raise ValueError(
-            f"Expected one flag-confusion row per metric in {list(FIGURE4_METRIC_DIRECTIONS)}; "
+            f"Expected one flag-confusion row per metric in {list(FIGURE04_METRIC_DIRECTIONS)}; "
             f"got {metrics}"
         )
     confusions = {
@@ -242,7 +242,7 @@ def figure04_reported_statistics_from_rows(
     summary = Figure4Summary(
         continuous=Figure4DiagnosticMeans(**means[CONTINUOUS.id]),
         continuous_fragmented=Figure4DiagnosticMeans(**means[CONTINUOUS_FRAGMENTED.id]),
-        flag_confusions=tuple(confusions[metric] for metric in FIGURE4_METRIC_DIRECTIONS),
+        flag_confusions=tuple(confusions[metric] for metric in FIGURE04_METRIC_DIRECTIONS),
         n_units=n_units,
     )
     return {"n_units": summary.n_units, **figure04_reported_statistics(summary)}

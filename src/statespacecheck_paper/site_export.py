@@ -62,7 +62,7 @@ from statespacecheck_paper.figure03_simulation import (
 from statespacecheck_paper.figure04_cache import Figure4Paths
 from statespacecheck_paper.figure04_decoder import Figure4Config
 from statespacecheck_paper.figure04_diagnostics import mean_event_likelihood_by_time
-from statespacecheck_paper.figure04_generation import FIGURE4_DETAIL_WINDOW
+from statespacecheck_paper.figure04_generation import FIGURE04_DETAIL_WINDOW
 from statespacecheck_paper.figure04_layout import Figure4DetailWindow
 from statespacecheck_paper.figure04_models import CONTINUOUS, CONTINUOUS_FRAGMENTED
 from statespacecheck_paper.figure04_place_fields import marginal_position_distribution
@@ -106,7 +106,7 @@ COLORMAP_LUT_SIZE = 64
 # export reads has already dropped every bin holding a NaN in the window, but
 # it would lower the limits of a window with NaN. Figure 3's scale is
 # ``style.PREDICTIVE_VMAX_QUANTILE``, shared with ``figure03_plotting``.
-FIGURE4_PREDICTIVE_PERCENTILES = (2.0, 98.0)
+FIGURE04_PREDICTIVE_PERCENTILES = (2.0, 98.0)
 
 
 @dataclass(frozen=True)
@@ -126,7 +126,7 @@ class ScenarioWindow:
     stop: int
 
 
-# Display choices, like ``FIGURE4_DETAIL_WINDOW``; each overlaps its condition's
+# Display choices, like ``FIGURE04_DETAIL_WINDOW``; each overlaps its condition's
 # scored step windows (checked by the test suite). Abrupt conditions (remap,
 # history dependence, replay) start a few hundred clean steps before onset so
 # the change is visible. Drift builds up gradually, so its window sits mid-phase,
@@ -813,7 +813,7 @@ def scenario_payloads(
 def replay_payload(
     render_data: Figure4RenderData,
     figure04_summary: Mapping[str, Any],
-    detail_window: Figure4DetailWindow = FIGURE4_DETAIL_WINDOW,
+    detail_window: Figure4DetailWindow = FIGURE04_DETAIL_WINDOW,
 ) -> dict[str, Any]:
     """Build the Figure-4 detail window under both decoders.
 
@@ -823,7 +823,7 @@ def replay_payload(
         Recording plus cached decode, as used to render Figure 4.
     figure04_summary : mapping
         Parsed ``figure04_summary.json``: flag rules and decode-cache identity.
-    detail_window : Figure4DetailWindow, default ``FIGURE4_DETAIL_WINDOW``
+    detail_window : Figure4DetailWindow, default ``FIGURE04_DETAIL_WINDOW``
         Samples shown; defaults to the window in Figure 4a/b.
     """
     window = detail_window.to_slice(render_data.time.size)
@@ -860,7 +860,7 @@ def replay_payload(
         if diagnostics.event_time is None:
             raise ValueError(f"{model.id} diagnostics lack exact event times")
         predictive = np.nan_to_num(predictive)
-        low, high = np.percentile(predictive, FIGURE4_PREDICTIVE_PERCENTILES)
+        low, high = np.percentile(predictive, FIGURE04_PREDICTIVE_PERCENTILES)
         # Events belong to the decoder bin that counted them (event_time_ind),
         # as in Figure 4, not to the bin nearest their exact spike time.
         event_bin = np.asarray(diagnostics.event_time_ind)

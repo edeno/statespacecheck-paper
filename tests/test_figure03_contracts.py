@@ -24,7 +24,7 @@ def _field_names(cls: Any) -> list[str]:
     return [f.name for f in dataclasses.fields(cls)]
 
 
-def test_figure3_config_is_frozen_with_exact_fields() -> None:
+def test_figure03_config_is_frozen_with_exact_fields() -> None:
     assert Figure3Config.__dataclass_params__.frozen
     assert _field_names(Figure3Config) == [
         "phase_boundaries",

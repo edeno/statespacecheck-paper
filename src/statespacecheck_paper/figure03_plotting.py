@@ -46,37 +46,37 @@ from statespacecheck_paper.style import (
     MetricSpec,
 )
 
-FIGURE3_PANEL_LABEL_GID = "figure3-panel-label"
+FIGURE03_PANEL_LABEL_GID = "figure03-panel-label"
 
 
-FIGURE3_PHASE_LABEL_GID = "figure3-phase-label"
+FIGURE03_PHASE_LABEL_GID = "figure03-phase-label"
 
 
-FIGURE3_ROW_LABEL_GID = "figure3-row-label"
+FIGURE03_ROW_LABEL_GID = "figure03-row-label"
 
 
-FIGURE3_TRUE_POSITION_LABEL_GID = "figure3-true-position-label"
+FIGURE03_TRUE_POSITION_LABEL_GID = "figure03-true-position-label"
 
 
-FIGURE3_SUMMARY_CELL_LABEL_GID = "figure3-summary-cell-label"
+FIGURE03_SUMMARY_CELL_LABEL_GID = "figure03-summary-cell-label"
 
 
-FIGURE3_SUMMARY_COMPONENT_LABEL_GID = "figure3-summary-model_component-label"
+FIGURE03_SUMMARY_COMPONENT_LABEL_GID = "figure03-summary-model-component-label"
 
 
-FIGURE3_SUMMARY_KNOWN_COMPONENT_LABEL_GID = "figure3-summary-known-model_component-label"
+FIGURE03_SUMMARY_KNOWN_COMPONENT_LABEL_GID = "figure03-summary-known-model-component-label"
 
 
-FIGURE3_SUMMARY_TITLE_GID = "figure3-summary-title"
+FIGURE03_SUMMARY_TITLE_GID = "figure03-summary-title"
 # Per-condition decoding-accuracy row (median absolute error) rendered as text
 # beneath the flag heatmap, plus its row header.
-FIGURE3_SUMMARY_ACCURACY_CELL_LABEL_GID = "figure3-summary-accuracy-cell-label"
-FIGURE3_SUMMARY_ACCURACY_HEADER_GID = "figure3-summary-accuracy-header"
+FIGURE03_SUMMARY_ACCURACY_CELL_LABEL_GID = "figure03-summary-accuracy-cell-label"
+FIGURE03_SUMMARY_ACCURACY_HEADER_GID = "figure03-summary-accuracy-header"
 
 
 # Shaded Figure 3 misfit bands: (start, end) boundary indices and the ``COLORS``
 # key. Saturated colors keep the bands visible at low alpha.
-FIGURE3_MISFIT_BANDS: tuple[tuple[PhaseBoundary, PhaseBoundary, str], ...] = (
+FIGURE03_MISFIT_BANDS: tuple[tuple[PhaseBoundary, PhaseBoundary, str], ...] = (
     (PhaseBoundary.REMAP_START, PhaseBoundary.REMAP_END, "likelihood"),
     (PhaseBoundary.RECOVERY1_END, PhaseBoundary.HIST_DEP_END, "reference"),
     (PhaseBoundary.RECOVERY2_END, PhaseBoundary.DRIFT_END, "predictive"),
@@ -95,7 +95,7 @@ def add_phase_boundaries(axes: list[Axes], config: Figure3Config) -> None:
         Supplies ``phase_boundaries`` and the replay step window.
     """
     bnd = config.phase_boundaries
-    bands = [(bnd[start], bnd[end], COLORS[color]) for start, end, color in FIGURE3_MISFIT_BANDS]
+    bands = [(bnd[start], bnd[end], COLORS[color]) for start, end, color in FIGURE03_MISFIT_BANDS]
     # The replay band (in clean-recovery 2) is a control; shade it in a
     # distinct color so the reader can see the decoded-vs-true divergence is
     # a deliberate, non-flagged event.
@@ -270,7 +270,7 @@ def _plot_spike_count_raster(
     ax.set_ylabel("Neuron", labelpad=7)
 
 
-def _add_figure3_row_label(ax: Axes, label: str) -> None:
+def _add_figure03_row_label(ax: Axes, label: str) -> None:
     """Add the right-side row label used in Figure 3 panel (a)."""
     row_label = ax.text(
         1.01,
@@ -281,10 +281,10 @@ def _add_figure3_row_label(ax: Axes, label: str) -> None:
         ha="left",
         rotation=270,
     )
-    row_label.set_gid(FIGURE3_ROW_LABEL_GID)
+    row_label.set_gid(FIGURE03_ROW_LABEL_GID)
 
 
-def _add_figure3_panel_label(ax: Axes, label: str, *, y: float) -> None:
+def _add_figure03_panel_label(ax: Axes, label: str, *, y: float) -> None:
     """Add a panel letter with a stable semantic artist id."""
     panel_label = ax.text(
         -0.05,
@@ -295,10 +295,10 @@ def _add_figure3_panel_label(ax: Axes, label: str, *, y: float) -> None:
         va="top",
         ha="right",
     )
-    panel_label.set_gid(FIGURE3_PANEL_LABEL_GID)
+    panel_label.set_gid(FIGURE03_PANEL_LABEL_GID)
 
 
-def _plot_figure3_predictive_row(
+def _plot_figure03_predictive_row(
     ax: Axes,
     predictive: NDArray[np.floating],
     true_position: NDArray[np.floating],
@@ -316,11 +316,11 @@ def _plot_figure3_predictive_row(
         va="top",
         ha="left",
     )
-    true_position_label.set_gid(FIGURE3_TRUE_POSITION_LABEL_GID)
-    _add_figure3_row_label(ax, "Predictive")
+    true_position_label.set_gid(FIGURE03_TRUE_POSITION_LABEL_GID)
+    _add_figure03_row_label(ax, "Predictive")
 
 
-def _plot_figure3_likelihood_row(
+def _plot_figure03_likelihood_row(
     ax: Axes,
     diagnostics: DecodingDiagnostics,
     true_position: NDArray[np.floating],
@@ -335,10 +335,10 @@ def _plot_figure3_likelihood_row(
     )
     ax.set_ylabel("Position (a.u.)", labelpad=7)
     ax.tick_params(labelbottom=False)
-    _add_figure3_row_label(ax, "Likelihood")
+    _add_figure03_row_label(ax, "Likelihood")
 
 
-def _plot_figure3_raster_row(
+def _plot_figure03_raster_row(
     ax: Axes,
     spike_counts: NDArray[np.floating],
     place_field_centers: NDArray[np.floating],
@@ -346,10 +346,10 @@ def _plot_figure3_raster_row(
     """Plot Figure 3's spike-count raster row."""
     _plot_spike_count_raster(ax, spike_counts, place_field_centers)
     ax.tick_params(labelbottom=False)
-    _add_figure3_row_label(ax, "Spikes")
+    _add_figure03_row_label(ax, "Spikes")
 
 
-def _plot_figure3_diagnostic_row(
+def _plot_figure03_diagnostic_row(
     ax: Axes,
     time_ind: NDArray[np.integer],
     values: NDArray[np.floating],
@@ -383,7 +383,7 @@ def _plot_figure3_diagnostic_row(
         ax.tick_params(labelbottom=False)
 
 
-def _add_figure3_phase_labels(ax: Axes, config: Figure3Config) -> None:
+def _add_figure03_phase_labels(ax: Axes, config: Figure3Config) -> None:
     """Add staggered misfit labels above Figure 3 panel (a)."""
     bnd = config.phase_boundaries
     t_remap_start = bnd[PhaseBoundary.REMAP_START]
@@ -414,10 +414,10 @@ def _add_figure3_phase_labels(ax: Axes, config: Figure3Config) -> None:
             va="bottom",
             style="italic",
         )
-        phase_label.set_gid(FIGURE3_PHASE_LABEL_GID)
+        phase_label.set_gid(FIGURE03_PHASE_LABEL_GID)
 
 
-def _plot_figure3_summary_heatmap(
+def _plot_figure03_summary_heatmap(
     ax: Axes,
     config: Figure3Config,
     median_flag_percentages: NDArray[np.floating],
@@ -484,7 +484,7 @@ def _plot_figure3_summary_heatmap(
                 color=color,
                 fontweight=weight,
             )
-            cell_label.set_gid(FIGURE3_SUMMARY_CELL_LABEL_GID)
+            cell_label.set_gid(FIGURE03_SUMMARY_CELL_LABEL_GID)
 
     # The decoding-accuracy row sits directly beneath the heatmap; the known
     # component row follows it.
@@ -502,7 +502,7 @@ def _plot_figure3_summary_heatmap(
                 va="center",
                 color="black",
             )
-            accuracy_label.set_gid(FIGURE3_SUMMARY_ACCURACY_CELL_LABEL_GID)
+            accuracy_label.set_gid(FIGURE03_SUMMARY_ACCURACY_CELL_LABEL_GID)
         accuracy_header = ax.text(
             -0.04,
             row_y,
@@ -513,7 +513,7 @@ def _plot_figure3_summary_heatmap(
             color="0.4",
             fontstyle="italic",
         )
-        accuracy_header.set_gid(FIGURE3_SUMMARY_ACCURACY_HEADER_GID)
+        accuracy_header.set_gid(FIGURE03_SUMMARY_ACCURACY_HEADER_GID)
 
     component_row_y = float(n_metrics + len(accuracy_headers))
     # The observation model is the likelihood's component; the transition
@@ -530,7 +530,7 @@ def _plot_figure3_summary_heatmap(
             fontstyle="italic",
             color=color,
         )
-        component_label.set_gid(FIGURE3_SUMMARY_COMPONENT_LABEL_GID)
+        component_label.set_gid(FIGURE03_SUMMARY_COMPONENT_LABEL_GID)
     known_component_label = ax.text(
         -0.04,
         component_row_y,
@@ -541,14 +541,14 @@ def _plot_figure3_summary_heatmap(
         color="0.4",
         fontstyle="italic",
     )
-    known_component_label.set_gid(FIGURE3_SUMMARY_KNOWN_COMPONENT_LABEL_GID)
+    known_component_label.set_gid(FIGURE03_SUMMARY_KNOWN_COMPONENT_LABEL_GID)
 
     title = ax.set_title(
         "% of spike events flagged as poor fit (median across realizations)",
         pad=8,
         loc="center",
     )
-    title.set_gid(FIGURE3_SUMMARY_TITLE_GID)
+    title.set_gid(FIGURE03_SUMMARY_TITLE_GID)
 
 
 def compose_figure03(
@@ -645,13 +645,13 @@ def compose_figure03(
     ax_raster = fig.add_subplot(gs[2], sharex=ax_pred)
     diagnostic_axes = [fig.add_subplot(gs[i], sharex=ax_pred) for i in range(3, 6)]
 
-    _plot_figure3_predictive_row(ax_pred, diagnostics.predictive, true_position)
-    _plot_figure3_likelihood_row(ax_like, diagnostics, true_position)
-    _plot_figure3_raster_row(ax_raster, spike_counts, place_field_centers)
+    _plot_figure03_predictive_row(ax_pred, diagnostics.predictive, true_position)
+    _plot_figure03_likelihood_row(ax_like, diagnostics, true_position)
+    _plot_figure03_raster_row(ax_raster, spike_counts, place_field_centers)
 
     event_time_ind = diagnostics.event_time_ind
     for row_idx, (ax, spec) in enumerate(zip(diagnostic_axes, METRIC_SPECS, strict=True)):
-        _plot_figure3_diagnostic_row(
+        _plot_figure03_diagnostic_row(
             ax,
             event_time_ind,
             getattr(diagnostics, spec.event_attr),
@@ -663,13 +663,13 @@ def compose_figure03(
 
     time_series_axes = [ax_pred, ax_like, ax_raster, *diagnostic_axes]
     add_phase_boundaries(time_series_axes, config)
-    _add_figure3_phase_labels(ax_pred, config)
-    _add_figure3_panel_label(ax_pred, "a", y=1.15)
+    _add_figure03_phase_labels(ax_pred, config)
+    _add_figure03_panel_label(ax_pred, "a", y=1.15)
 
     # ===== SUMMARY HEATMAP: % exceeding baseline threshold per phase =====
     ax_summary = fig.add_subplot(gs_summary)
-    _add_figure3_panel_label(ax_summary, "b", y=1.25)
-    _plot_figure3_summary_heatmap(
+    _add_figure03_panel_label(ax_summary, "b", y=1.25)
+    _plot_figure03_summary_heatmap(
         ax_summary,
         config,
         median_flag_percentages,

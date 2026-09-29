@@ -162,7 +162,7 @@ def test_simulated_event_likelihood_round_trips_in_event_order(tmp_path: Path) -
         ds.close()
 
 
-def test_simulated_cache_records_figure3_flag_thresholds(tmp_path: Path) -> None:
+def test_simulated_cache_records_figure03_flag_thresholds(tmp_path: Path) -> None:
     """The simulation cache carries Figure 3's thresholds, not Figure 4's cutoffs."""
     import json
 

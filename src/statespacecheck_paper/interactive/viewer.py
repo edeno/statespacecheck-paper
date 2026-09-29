@@ -29,8 +29,8 @@ import pyqtgraph as pg
 from numpy.typing import NDArray
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from statespacecheck_paper.figure04_generation import FIGURE4_DIAGNOSTIC_THRESHOLDS
-from statespacecheck_paper.figure04_models import figure4_model
+from statespacecheck_paper.figure04_generation import FIGURE04_DIAGNOSTIC_THRESHOLDS
+from statespacecheck_paper.figure04_models import figure04_model
 from statespacecheck_paper.style import METRIC_SPECS
 
 from .cache import MODEL_NAMES
@@ -59,7 +59,7 @@ SLIDER_RESOLUTION = 100_000  # subdivides the full session into this many ticks
 WINDOW_SLIDER_RESOLUTION = 1000
 
 # Reset shortcut width. Re-centers near the Figure-4 detail region
-# (``figure04_generation.FIGURE4_DETAIL_WINDOW``, ~27% into the session) but
+# (``figure04_generation.FIGURE04_DETAIL_WINDOW``, ~27% into the session) but
 # shows a wider 20 s context than the figure's ~2 s zoom so the viewer lands
 # with surrounding context rather than the tight crop.
 RESET_WINDOW_SECONDS = 20.0
@@ -333,7 +333,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
         # records Figure 3's thresholds; real-data caches take Figure 4's
         # fixed cutoffs (KL divergence has none there).
         thresholds = (
-            FIGURE4_DIAGNOSTIC_THRESHOLDS if ds.flag_thresholds is None else ds.flag_thresholds
+            FIGURE04_DIAGNOSTIC_THRESHOLDS if ds.flag_thresholds is None else ds.flag_thresholds
         )
         self.metric_panels: dict[str, MetricPanel] = {
             spec.event_attr: MetricPanel(spec=spec, threshold=thresholds.get(spec.name))
@@ -540,7 +540,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
             self._model_combo = QtWidgets.QComboBox()
             # Show each model's display label; its machine ID is the item data.
             for model in MODEL_NAMES:
-                self._model_combo.addItem(figure4_model(model).label, userData=model)
+                self._model_combo.addItem(figure04_model(model).label, userData=model)
             self._select_model_in_combo(self._ds.model)
             self._model_combo.currentIndexChanged.connect(self._on_model_changed)
             # Disabled when the cache directory wasn't provided (e.g.
@@ -1191,7 +1191,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
     @QtCore.Slot()
     def _reset_view(self) -> None:
         # Reset to a 20 s window centered ~a quarter into the session. The
-        # Figure 4 detail region (``FIGURE4_DETAIL_WINDOW``) sits ~27% into
+        # Figure 4 detail region (``FIGURE04_DETAIL_WINDOW``) sits ~27% into
         # the recorded session; ``n_time // 4`` (25%) is a size-agnostic
         # default that lands nearby and stays valid for synthetic / shorter
         # sessions.

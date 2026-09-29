@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from statespacecheck_paper.diagnostics import METRIC_FLAG_DIRECTIONS
 from statespacecheck_paper.figure04_generation import (
-    FIGURE4_DIAGNOSTIC_THRESHOLDS,
-    FIGURE4_METRIC_DIRECTIONS,
+    FIGURE04_DIAGNOSTIC_THRESHOLDS,
+    FIGURE04_METRIC_DIRECTIONS,
 )
 from statespacecheck_paper.style import METRIC_SPECS
 
@@ -39,6 +39,6 @@ def test_metric_specs_list_the_flagged_metrics_in_order() -> None:
 
 
 def test_figure04_flags_its_thresholded_metrics_by_the_shared_rule() -> None:
-    assert set(FIGURE4_METRIC_DIRECTIONS) == set(FIGURE4_DIAGNOSTIC_THRESHOLDS)
-    for name, direction in FIGURE4_METRIC_DIRECTIONS.items():
+    assert set(FIGURE04_METRIC_DIRECTIONS) == set(FIGURE04_DIAGNOSTIC_THRESHOLDS)
+    for name, direction in FIGURE04_METRIC_DIRECTIONS.items():
         assert direction == METRIC_FLAG_DIRECTIONS[name]

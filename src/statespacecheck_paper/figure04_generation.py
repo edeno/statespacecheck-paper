@@ -48,17 +48,17 @@ from statespacecheck_paper.style import save_figure, set_figure_defaults
 # (Figure 3 derives its HPD threshold from a baseline instead). The KL
 # divergence has no natural fixed cutoff, so it is shown without a threshold
 # line or a flagged-region callout.
-FIGURE4_HPD_OVERLAP_CUTOFF = 0.05
-FIGURE4_DIAGNOSTIC_THRESHOLDS: dict[str, float] = {
-    "hpd_overlap": FIGURE4_HPD_OVERLAP_CUTOFF,
+FIGURE04_HPD_OVERLAP_CUTOFF = 0.05
+FIGURE04_DIAGNOSTIC_THRESHOLDS: dict[str, float] = {
+    "hpd_overlap": FIGURE04_HPD_OVERLAP_CUTOFF,
     "predictive_pvalue": FIXED_PREDICTIVE_PVALUE_CUTOFF,
 }
-FIGURE4_METRIC_DIRECTIONS: dict[str, FlagDirection] = {
-    metric: METRIC_FLAG_DIRECTIONS[metric] for metric in FIGURE4_DIAGNOSTIC_THRESHOLDS
+FIGURE04_METRIC_DIRECTIONS: dict[str, FlagDirection] = {
+    metric: METRIC_FLAG_DIRECTIONS[metric] for metric in FIGURE04_DIAGNOSTIC_THRESHOLDS
 }
 # Manuscript detail view: a KL-divergence spike during immobility at a reward
 # well, shown with 500 samples on either side (~2 seconds total at 500 Hz).
-FIGURE4_DETAIL_WINDOW = Figure4DetailWindow(
+FIGURE04_DETAIL_WINDOW = Figure4DetailWindow(
     center_index=193_069,
     half_width_samples=500,
 )
@@ -126,10 +126,10 @@ def figure04_summary_payload(
         },
         "configuration": dataclasses.asdict(config),
         "flag_rules": inclusive_flag_rules(
-            FIGURE4_DIAGNOSTIC_THRESHOLDS,
-            FIGURE4_METRIC_DIRECTIONS,
+            FIGURE04_DIAGNOSTIC_THRESHOLDS,
+            FIGURE04_METRIC_DIRECTIONS,
         ),
-        "detail_window": dataclasses.asdict(FIGURE4_DETAIL_WINDOW),
+        "detail_window": dataclasses.asdict(FIGURE04_DETAIL_WINDOW),
         "diagnostic_means": statistics["diagnostic_means"],
         "flag_confusion_models": statistics["flag_confusion_models"],
         "flag_confusions": statistics["flag_confusions"],
@@ -163,8 +163,8 @@ def generate_figure04(*, use_cache: bool = True) -> None:
 
     summary = compute_figure04_summary(
         render_data,
-        FIGURE4_DIAGNOSTIC_THRESHOLDS,
-        FIGURE4_METRIC_DIRECTIONS,
+        FIGURE04_DIAGNOSTIC_THRESHOLDS,
+        FIGURE04_METRIC_DIRECTIONS,
     )
     print(f"\n{format_figure04_summary(summary)}")
     summary_path = write_json_artifact(
@@ -182,8 +182,8 @@ def generate_figure04(*, use_cache: bool = True) -> None:
     set_figure_defaults(context="paper")
     composition = compose_figure04(
         render_data,
-        diagnostic_thresholds=FIGURE4_DIAGNOSTIC_THRESHOLDS,
-        detail_window=FIGURE4_DETAIL_WINDOW,
+        diagnostic_thresholds=FIGURE04_DIAGNOSTIC_THRESHOLDS,
+        detail_window=FIGURE04_DETAIL_WINDOW,
     )
     save_figure(
         FIGURE_DIR / "figure04",

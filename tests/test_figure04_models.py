@@ -7,16 +7,16 @@ import pytest
 from statespacecheck_paper.figure04_models import (
     CONTINUOUS,
     CONTINUOUS_FRAGMENTED,
-    FIGURE4_MODEL_IDS,
-    FIGURE4_MODELS,
+    FIGURE04_MODEL_IDS,
+    FIGURE04_MODELS,
     Figure4Model,
-    figure4_model,
+    figure04_model,
 )
 
 
 def test_registry_lists_both_models_in_figure_order() -> None:
-    assert FIGURE4_MODELS == (CONTINUOUS, CONTINUOUS_FRAGMENTED)
-    assert FIGURE4_MODEL_IDS == ("continuous", "continuous_fragmented")
+    assert FIGURE04_MODELS == (CONTINUOUS, CONTINUOUS_FRAGMENTED)
+    assert FIGURE04_MODEL_IDS == ("continuous", "continuous_fragmented")
 
 
 def test_labels_match_the_manuscript_names() -> None:
@@ -28,11 +28,11 @@ def test_labels_match_the_manuscript_names() -> None:
     )
 
 
-@pytest.mark.parametrize("model", FIGURE4_MODELS)
+@pytest.mark.parametrize("model", FIGURE04_MODELS)
 def test_lookup_by_id_returns_the_model(model: Figure4Model) -> None:
-    assert figure4_model(model.id) is model
+    assert figure04_model(model.id) is model
 
 
 def test_lookup_rejects_an_unknown_id() -> None:
     with pytest.raises(ValueError, match="Unknown Figure 4 model: 'not_a_model'"):
-        figure4_model("not_a_model")
+        figure04_model("not_a_model")
