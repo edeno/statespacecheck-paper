@@ -188,7 +188,8 @@ class MetricSpec:
       mathtext).
     - ``short_label``: plain-text abbreviated axis label (Figure 3's rows; its
       summary heatmap stacks the words one per line).
-    - ``ylabel``: mathtext abbreviated axis label (Figure 4's rows).
+    - ``wrapped_ylabel``: mathtext abbreviated axis label, broken over two
+      lines where it would not fit beside Figure 4's narrow detail rows.
     - ``title``: mathtext full name (Figure 4's hexbin titles).
     """
 
@@ -196,7 +197,7 @@ class MetricSpec:
     color: str
     label: str
     short_label: str
-    ylabel: str
+    wrapped_ylabel: str
     title: str
     display_transform: DisplayTransform = "identity"
     symlog_axis: bool = False
@@ -230,7 +231,7 @@ METRIC_SPECS: tuple[MetricSpec, ...] = (
         color=COLORS["hpd_overlap"],
         label="HPD overlap",
         short_label="HPD overlap",
-        ylabel="HPD overlap",
+        wrapped_ylabel="HPD\noverlap",
         title="HPD overlap",
         symlog_axis=True,
     ),
@@ -239,7 +240,7 @@ METRIC_SPECS: tuple[MetricSpec, ...] = (
         color=COLORS["predictive_pvalue"],
         label="−log(p)",
         short_label="−log(p)",
-        ylabel=r"$-\log(p)$",
+        wrapped_ylabel=r"$-\log(p)$",
         title=r"$-\log(p)$",
         display_transform="neg_log_p",
     ),
@@ -248,7 +249,7 @@ METRIC_SPECS: tuple[MetricSpec, ...] = (
         color=COLORS["kl_divergence"],
         label="KL divergence",
         short_label="KL div.",
-        ylabel="KL div.",
+        wrapped_ylabel="KL div.",
         title="KL divergence",
     ),
 )

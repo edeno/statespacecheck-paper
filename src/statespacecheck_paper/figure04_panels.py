@@ -266,9 +266,6 @@ def plot_raster(
     ax.set_xlabel("Time")
 
 
-# The HPD-overlap row label wraps to fit beside the narrow detail stacks.
-_ROW_YLABELS = {"hpd_overlap": "HPD\noverlap"}
-
 # Height of each row's worse-fit label (axes fraction), placed where it clears
 # the row's threshold label.
 _WORSE_FIT_LABEL_Y = {"hpd_overlap": 0.28, "predictive_pvalue": 0.68}
@@ -624,7 +621,7 @@ def plot_single_model_diagnostics(
             threshold=threshold,
             ax=axes[row],
             metric_name=spec.name,
-            ylabel=_ROW_YLABELS.get(spec.name, spec.ylabel),
+            ylabel=spec.wrapped_ylabel,
             show_xlabel=(i == len(METRIC_SPECS) - 1),
             show_annotations=show_annotations,
         )
