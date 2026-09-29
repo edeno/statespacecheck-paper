@@ -149,6 +149,11 @@ message string. Changes confined to `diagnostics.py`, `figure04_diagnostics.py`,
 from cached predictions. Comments and docstrings are excluded from both cache
 hashes. See [the cache specification](figure-pipeline.md#figure-4-cache-behavior).
 
+The guides quote configured values readers need (the figure resolution, flag
+cutoffs, Figure-4 decoder settings, input-file identifiers, summary schema
+versions); `tests/test_documented_values.py` checks each against the code that
+defines it, so update the guide in the same change as the value.
+
 Keep publication PDFs, previews, summaries, macros, and website data committed
 together after a result change. Inspect binary diffs visually: PDF creation
 timestamps and small renderer differences do not establish a scientific change.
