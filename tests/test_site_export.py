@@ -235,9 +235,7 @@ def test_filter_explainer_sequence_tells_the_story_on_the_page(
     # Two cells whose fields lie far from the animal fire together, and each
     # spike's likelihood is disjoint from the prediction.
     assert counts[conflict].sum() == 2
-    assert np.all(
-        np.abs(centers[list(sequence.conflict_cells)] - sequence.true_position[conflict]) > 30
-    )
+    assert np.all(np.abs(centers[np.flatnonzero(counts[conflict])] - position[conflict]) > 30)
     at_conflict = decoded.event_time_ind == conflict
     np.testing.assert_array_equal(decoded.event_hpd_overlap[at_conflict], 0.0)
     # Elsewhere the spikes come from the model, so the decoder tracks the

@@ -356,8 +356,6 @@ class FilterExplainerSequence:
         from the same place-field parameters, kept for the page's field plots.
     true_position : np.ndarray, shape (n_steps,)
     spike_counts : np.ndarray, shape (n_steps, n_cells)
-    conflict_cells : tuple of int
-        The cells that fire at ``conflict_step``.
     decoded : DecodingDiagnostics
         Output of :func:`decode_with_diagnostics` for ``spike_counts``.
     """
@@ -366,7 +364,6 @@ class FilterExplainerSequence:
     rates: NDArray[np.float64]
     true_position: NDArray[np.float64]
     spike_counts: NDArray[np.int_]
-    conflict_cells: tuple[int, ...]
     decoded: DecodingDiagnostics
 
 
@@ -408,9 +405,8 @@ def filter_explainer_sequence(
     target = (
         here + explainer.conflict_offset if here <= midpoint else here - explainer.conflict_offset
     )
-    conflict_cells = tuple(sorted(int(c) for c in np.argsort(np.abs(centers - target))[:2]))
     counts[explainer.conflict_step] = 0
-    counts[explainer.conflict_step, list(conflict_cells)] = 1
+    counts[explainer.conflict_step, np.argsort(np.abs(centers - target))[:2]] = 1
 
     rates = np.asarray(
         place_field_rates(position_bins, centers, config.place_field_std, explainer.rate_scale),
@@ -429,7 +425,6 @@ def filter_explainer_sequence(
         rates=rates,
         true_position=np.asarray(position, dtype=np.float64),
         spike_counts=counts,
-        conflict_cells=conflict_cells,
         decoded=decoded,
     )
 
