@@ -20,8 +20,10 @@ simulation conditions, and the Figure-4 replay window under both decoders.
 
 ```bash
 # Regenerate the page data after a figure summary or a diagnostic changes.
-# The Figure-4 window needs the real-data exports and decode cache; on a
-# machine without them add --skip-recording when the recording outputs are unchanged.
+# The Figure-4 window needs the Figure-4 input file. It reuses the Figure-4
+# caches when current; otherwise it refits both models (several minutes) and
+# writes the ~8 GB decode cache. Add --skip-recording to leave replay.json
+# untouched when the recording outputs are unchanged.
 uv run --frozen python scripts/export_site_data.py
 
 # Check the JavaScript diagnostics against the Python reference (Node 22+)

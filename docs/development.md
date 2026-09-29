@@ -121,8 +121,11 @@ uv run --frozen python scripts/export_site_data.py
 ```
 
 The macro emitter needs internet for the package DOI lookup. Website export
-needs the Figure 4 inputs/cache; `--skip-recording` is appropriate only when
-the recording outputs are unchanged. Figure 3 and 4 summaries must carry the
+needs the Figure 4 input file for the recording window; it reuses the Figure 4
+caches when they are current and otherwise refits both models (several minutes)
+and writes the ~8 GB decode cache, as `generate_figure04.py` does.
+`--skip-recording` leaves `site/data/replay.json` untouched and is appropriate
+only when the recording outputs are unchanged. Figure 3 and 4 summaries must carry the
 same current source provenance before emitting macros; the tests enforce this
 (the emitter itself checks only that both record the same `statespacecheck`
 version).

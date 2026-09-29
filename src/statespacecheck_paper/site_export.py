@@ -986,9 +986,13 @@ def export_site_data(*, include_recording: bool = True) -> list[Path]:
     Parameters
     ----------
     include_recording : bool, default True
-        Also export the Figure-4 replay window. This needs the derived
-        recording exports and the Figure-4 decode cache; pass False on a
-        machine without them to leave the committed ``replay.json`` untouched.
+        Also export the Figure-4 replay window. This needs the Figure-4 input
+        file in ``DATA_PATH``. It reuses the Figure-4 decode and diagnostics
+        caches when their fingerprints match and otherwise rebuilds them as
+        ``generate_figure04.py`` does: a stale or missing decode cache refits
+        both models (several minutes) and writes the ~8 GB decode cache. Pass
+        False on a machine without the input file, or when the recording
+        outputs are unchanged, to leave the committed ``replay.json`` untouched.
 
     Returns
     -------
