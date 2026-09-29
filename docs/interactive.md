@@ -89,6 +89,11 @@ uv run --frozen python -m statespacecheck_paper.interactive \
 | Reset to a 20 s context window where the viewer opened (a recording opens on Figure 4a/b's window) | `R` |
 | Toggle real-data model | `M` (real-data caches only) |
 
+The HPD-overlap panel uses the figures' symmetric-log axis (matplotlib's
+transform with `style.SYMLOG_LINTHRESH` and `style.SYMLOG_LINSCALE`, ticked at
+Figure 3's values), so small overlaps separate from exact zeros as they do in
+the paper and on the website; the p-value panel shows −log p.
+
 The slice panel's "Overlay" combo switches the population-likelihood
 plot's blue overlay between predictive `p(x_t | y_{1:t-1})`, filtered
 `p(x_t | y_{1:t})`, and smoothed `p(x_t | y_{1:T})` distributions.

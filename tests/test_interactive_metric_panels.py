@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pytest
@@ -94,6 +95,91 @@ def test_metric_panel_displays_neglog_for_predictive_pvalue(tmp_path: Path) -> N
     finally:
         viewer.close()
         ds.close()
+
+
+# ---------------------------------------------------------------------------
+# Symmetric-log HPD-overlap axis
+# ---------------------------------------------------------------------------
+
+_SYMLOG_PROBES = np.array([0.0, 1e-4, 0.005, 0.01, 0.05, 0.3, 1.0])
+
+
+def test_symlog_position_matches_the_figures_axis() -> None:
+    """The panel's heights are those of the axis ``plot_event_metric_row`` sets up."""
+    import matplotlib.pyplot as plt
+
+    from statespacecheck_paper.interactive.panels import symlog_position
+    from statespacecheck_paper.style import SYMLOG_LINSCALE, SYMLOG_LINTHRESH
+
+    fig, ax = plt.subplots()
+    try:
+        ax.set_yscale("symlog", linthresh=SYMLOG_LINTHRESH, linscale=SYMLOG_LINSCALE)
+        expected = ax.yaxis.get_transform().transform(_SYMLOG_PROBES)
+    finally:
+        plt.close(fig)
+    np.testing.assert_allclose(symlog_position(_SYMLOG_PROBES), expected, rtol=0, atol=1e-15)
+    # A small positive overlap sits strictly above an exact zero.
+    assert symlog_position([0.0])[0] == 0.0
+    assert symlog_position([1e-4])[0] > 0.0
+
+
+def _metric_panel(name: str, threshold: float | None) -> Any:
+    from PySide6 import QtWidgets
+
+    from statespacecheck_paper.interactive.panels import MetricPanel
+    from statespacecheck_paper.style import METRIC_SPEC_BY_NAME
+
+    QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    return MetricPanel(spec=METRIC_SPEC_BY_NAME[name], threshold=threshold)
+
+
+def test_hpd_panel_draws_every_height_on_the_symlog_axis() -> None:
+    from statespacecheck_paper.figure03_plotting import FIGURE03_SYMLOG_YTICKS
+    from statespacecheck_paper.interactive.panels import symlog_position
+
+    panel = _metric_panel("hpd_overlap", threshold=0.05)
+    try:
+        # Ticks sit at the transformed positions, labeled with the raw values.
+        (major, minor) = panel.getAxis("left")._tickLevels  # noqa: SLF001
+        assert minor == []
+        assert [label for _, label in major] == ["0", "0.01", "0.1", "1"]
+        np.testing.assert_allclose(
+            [position for position, _ in major], symlog_position(FIGURE03_SYMLOG_YTICKS)
+        )
+        assert panel._threshold_line.value() == pytest.approx(  # noqa: SLF001
+            symlog_position([0.05])[0]
+        )
+
+        values = _SYMLOG_PROBES.astype(np.float32)
+        panel.update_window(
+            np.arange(values.size, dtype=np.float64),
+            values,
+            0.0,
+            np.arange(values.size, dtype=np.int64),
+        )
+        _, y = panel._scatter.getData()  # noqa: SLF001
+        np.testing.assert_allclose(y, symlog_position(values), rtol=1e-6)
+
+        panel.update_pinned_event(relative_time=1.0, metric_value=1e-4)
+        _, pin_y = panel._pin_dot.getData()  # noqa: SLF001
+        assert pin_y[0] == pytest.approx(symlog_position([1e-4])[0], rel=1e-6)
+        assert pin_y[0] > 0.0
+    finally:
+        panel.close()
+
+
+def test_other_metric_panels_keep_their_linear_axes() -> None:
+    panel = _metric_panel("kl_divergence", threshold=None)
+    try:
+        assert panel.getAxis("left")._tickLevels is None  # noqa: SLF001
+        values = np.array([0.0, 0.5, 3.0], dtype=np.float32)
+        panel.update_window(
+            np.arange(3, dtype=np.float64), values, 0.0, np.arange(3, dtype=np.int64)
+        )
+        _, y = panel._scatter.getData()  # noqa: SLF001
+        np.testing.assert_array_equal(y, values)
+    finally:
+        panel.close()
 
 
 # ---------------------------------------------------------------------------

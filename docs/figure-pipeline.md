@@ -224,7 +224,7 @@ interactive.__main__                → interactive.app
 interactive.app                     → figure04_models, interactive.data_source; lazy: interactive.viewer
 interactive.cache                   → diagnostics, figure04_models, figure04_place_fields, paths; lazy: figure03_protocol, figure03_simulation, figure04_cache, figure04_decoder, figure04_workflow
 interactive.data_source             → figure04_models, figure04_place_fields, interactive.cache
-interactive.panels                  → plotting, style
+interactive.panels                  → figure03_plotting, plotting, style
 interactive.viewer                  → figure04_models, figure04_protocol, interactive.data_source, interactive.panels, style
 
 spyglass_pipeline                   → (none)

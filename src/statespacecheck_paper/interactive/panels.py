@@ -28,11 +28,20 @@ from typing import Any, Literal
 
 import numpy as np
 import pyqtgraph as pg
-from numpy.typing import NDArray
+from matplotlib.scale import SymmetricalLogTransform
+from numpy.typing import ArrayLike, NDArray
 from PySide6 import QtCore, QtWidgets
 
+from statespacecheck_paper.figure03_plotting import FIGURE03_SYMLOG_YTICKS
 from statespacecheck_paper.plotting import negative_log_pvalue
-from statespacecheck_paper.style import COLORS, WONG, MetricSpec, hex_to_rgb
+from statespacecheck_paper.style import (
+    COLORS,
+    SYMLOG_LINSCALE,
+    SYMLOG_LINTHRESH,
+    WONG,
+    MetricSpec,
+    hex_to_rgb,
+)
 
 # Top-plot overlay choices: which derived distribution the slice
 # panel's population plot draws as the blue overlay line.
@@ -120,6 +129,41 @@ _SLICE_CELL_HEADER_PINNED_STYLE = (
     "font-family: 'Menlo', 'Consolas', monospace; font-size: 10pt; "
     "font-weight: bold; }"
 )
+
+
+# The figures draw a ``MetricSpec.symlog_axis`` metric on matplotlib's
+# symmetric-log scale (``plotting.plot_event_metric_row``). pyqtgraph has no
+# such scale, so the metric panel plots values through matplotlib's own
+# transform with the figures' parameters and labels its ticks with raw values.
+# Only this panel draws in transformed coordinates (the figures set the axis
+# scale and the website ports the transform to JavaScript), so the helper
+# lives here. The ticks are Figure 3's, whose interior ones the website's
+# HPD-overlap tracks also draw as gridlines.
+_SYMLOG_TRANSFORM = SymmetricalLogTransform(
+    base=10, linthresh=SYMLOG_LINTHRESH, linscale=SYMLOG_LINSCALE
+)
+SYMLOG_TICK_VALUES: tuple[float, ...] = FIGURE03_SYMLOG_YTICKS
+
+
+def symlog_position(values: ArrayLike) -> NDArray[np.float64]:
+    """Map raw values to their height on the figures' symmetric-log axis.
+
+    Parameters
+    ----------
+    values : array_like, shape (n,)
+        Raw metric values.
+
+    Returns
+    -------
+    np.ndarray, shape (n,)
+        ``SymmetricalLogTransform(base=10, linthresh=SYMLOG_LINTHRESH,
+        linscale=SYMLOG_LINSCALE)`` applied to ``values``: linear within
+        ``SYMLOG_LINTHRESH`` of zero and logarithmic beyond, so a small positive
+        value sits visibly above an exact zero.
+    """
+    return np.asarray(
+        _SYMLOG_TRANSFORM.transform(np.asarray(values, dtype=np.float64)), dtype=np.float64
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -515,7 +559,11 @@ class MetricPanel(pg.PlotWidget):
     Parameters
     ----------
     spec : MetricSpec
-        The metric's label, color, and display transform.
+        The metric's label, color, and display transform. A ``symlog_axis``
+        metric (HPD overlap) is drawn on the figures' symmetric-log axis:
+        every plotted height goes through :func:`symlog_position`, and the
+        left-axis ticks sit at the transformed ``SYMLOG_TICK_VALUES``,
+        labeled with the raw values.
     threshold : float, optional
         Raw flag threshold drawn as a horizontal line; None draws none.
     """
@@ -532,6 +580,19 @@ class MetricPanel(pg.PlotWidget):
 
         self._metric = spec.event_attr
         self._neg_log_p = spec.display_transform == "neg_log_p"
+        self._symlog = spec.symlog_axis
+        if self._symlog:
+            self.getAxis("left").setTicks(
+                [
+                    [
+                        (float(position), f"{tick:g}")
+                        for tick, position in zip(
+                            SYMLOG_TICK_VALUES, symlog_position(SYMLOG_TICK_VALUES), strict=True
+                        )
+                    ],
+                    [],
+                ]
+            )
         rgb = hex_to_rgb(spec.color)
         self._scatter = pg.ScatterPlotItem(
             pen=pg.mkPen(rgb, width=0),
@@ -546,9 +607,8 @@ class MetricPanel(pg.PlotWidget):
         # 0.05 sits at -log(0.05) ≈ 3.0 on this axis).
         self._threshold_line: pg.InfiniteLine | None = None
         if threshold is not None:
-            disp = negative_log_pvalue(threshold) if self._neg_log_p else threshold
             self._threshold_line = pg.InfiniteLine(
-                pos=float(disp),
+                pos=float(self._display_values(np.array([threshold]))[0]),
                 angle=0,
                 pen=pg.mkPen(
                     hex_to_rgb(COLORS["threshold"]), width=1, style=QtCore.Qt.PenStyle.DashLine
@@ -639,13 +699,16 @@ class MetricPanel(pg.PlotWidget):
             return
         self._pin_line.setPos(relative_time)
         self._pin_line.setVisible(True)
-        disp = negative_log_pvalue(metric_value) if self._neg_log_p else metric_value
+        disp = self._display_values(np.array([metric_value]))[0]
         self._pin_dot.setData(x=[relative_time], y=[float(disp)])
         self._pin_dot.setVisible(True)
 
-    def _display_values(self, raw: NDArray[np.float32]) -> NDArray[np.float32]:
+    def _display_values(self, raw: NDArray[np.floating]) -> NDArray[np.float32]:
+        """Map raw metric values to plotted heights: ``-log p``, symlog, or unchanged."""
         if self._neg_log_p:
             return np.asarray(negative_log_pvalue(raw), dtype=np.float32)
+        if self._symlog:
+            return np.asarray(symlog_position(raw), dtype=np.float32)
         return np.asarray(raw, dtype=np.float32)
 
     def _handle_click(self, _scatter: pg.ScatterPlotItem, points: Any) -> None:
