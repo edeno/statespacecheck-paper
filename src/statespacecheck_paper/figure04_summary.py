@@ -158,12 +158,14 @@ def format_figure04_summary(summary: Figure4Summary) -> str:
             ]
         )
 
-    # "rescued": flagged by Continuous (A) but not by Continuous-Fragmented (B);
-    # "newly_flagged": the reverse. Rescue rate is rescued / Continuous flags.
+    # "rescued": flagged by Continuous (the reference) but not by
+    # Continuous-Fragmented (the comparison); "newly_flagged": the reverse. The
+    # rescued share is rescued / Continuous flags.
     lines.extend(
         [
             "",
-            f"=== Flag agreement: {CONTINUOUS.label} (A) vs {CONTINUOUS_FRAGMENTED.label} (B) ===",
+            f"=== Flag agreement: {CONTINUOUS.label} (reference) vs "
+            f"{CONTINUOUS_FRAGMENTED.label} (comparison) ===",
         ]
     )
     for confusion in summary.flag_confusions:

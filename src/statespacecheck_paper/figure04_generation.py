@@ -76,8 +76,8 @@ def figure04_reported_statistics(summary: Figure4Summary) -> dict[str, object]:
     -------
     dict
         ``diagnostic_means`` (per decoder and metric), ``flag_confusion_models``
-        (which decoder is the reference, model A, and which the comparison,
-        model B), and ``flag_confusions`` (``rescued`` = flagged by the
+        (which decoder is the reference and which the comparison), and
+        ``flag_confusions`` (``rescued`` = flagged by the
         reference only, ``newly_flagged`` = by the comparison only, with
         ``rescue_rate``, ``None`` when undefined).
     """

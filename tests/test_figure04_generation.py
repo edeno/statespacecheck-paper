@@ -132,7 +132,7 @@ def test_summary_payload_contains_reported_counts_rates_and_provenance(
         "threshold": 0.05,
     }
     assert payload["diagnostic_means"]["continuous"]["hpd_overlap"] == pytest.approx(0.1)
-    # Model A of each flag confusion is the reference decoder, B the comparison.
+    # Each flag confusion names its reference and comparison decoders.
     assert payload["flag_confusion_models"] == {
         "reference": "continuous",
         "comparison": "continuous_fragmented",

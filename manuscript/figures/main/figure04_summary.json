@@ -88,7 +88,7 @@
         "event_selection": "all_spikes_in_recording",
         "hpd_coverage": 0.95
       },
-      "diagnostics_fingerprint_sha256": "3a4dc176494e66c68a6e54a61d6f08e6d9a7c97e387cb37dd63a74571d1835ea",
+      "diagnostics_fingerprint_sha256": "cb76476b7efc5ea6eb752c9b0e7db6089b661af9b65f93679623845dabcee80e",
       "diagnostics_schema_version": 2,
       "fingerprint_sha256": "1e189248e917820c59c0356a0b23b97b41cca45700c7bf352382ebb7a6b38fa6",
       "input_file_sha256": {
@@ -99,7 +99,7 @@
       "statespacecheck_version": "0.3.1"
     },
     "source": {
-      "source_tree_sha256": "fe9996da4ff2b253874b793b1e84a9bb228a8526754962edddc3c6fb7f56ecc6",
+      "source_tree_sha256": "eea21f5a8c2870ad3e763775f9d0c5933e303483793bc747a2b272c93af5ac9e",
       "statespacecheck_paper_version": "0.1.0",
       "statespacecheck_version": "0.3.1",
       "uv_lock_sha256": "7db5bb03266cfeab8f804cd7262232f3ffa16ebaf423722a399076043b640574"

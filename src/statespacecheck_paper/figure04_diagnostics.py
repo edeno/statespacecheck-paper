@@ -301,9 +301,9 @@ class FlagConfusion:
 
     A spike is "flagged" when its per-spike diagnostic crosses ``threshold`` in
     the direction of worse fit. The four counts partition every aligned spike
-    event by whether model A and/or model B flags it. Model A is the reference
-    decoder and model B the comparison decoder; in Figure 4, A is the Continuous
-    and B the Continuous-Fragmented model. ``rescued`` counts spikes the
+    event by whether the reference decoder and/or the comparison decoder flags
+    it; in Figure 4, the reference is the Continuous and the comparison the
+    Continuous-Fragmented model. ``rescued`` counts spikes the
     reference flags but the comparison does not (Figure 4's "flagged by Cont.
     only" quadrant), and ``newly_flagged`` spikes the comparison flags but the
     reference does not.
@@ -317,9 +317,8 @@ class FlagConfusion:
     n : int
         Number of aligned spike events.
     both, rescued, newly_flagged, neither : int
-        Counts of spikes flagged by both decoders, by model A (the reference)
-        only, by model B (the comparison) only, and by neither. They sum to
-        ``n``.
+        Counts of spikes flagged by both decoders, by the reference only, by
+        the comparison only, and by neither. They sum to ``n``.
     """
 
     metric: str
@@ -332,17 +331,17 @@ class FlagConfusion:
 
     @property
     def rescue_rate(self) -> float:
-        """Fraction of model-A-flagged spikes that model B does not flag (``rescued``).
+        """Fraction of reference-flagged spikes that the comparison does not flag (``rescued``).
 
-        Returns ``nan`` when model A flags no spikes.
+        Returns ``nan`` when the reference flags no spikes.
         """
-        a_flagged = self.rescued + self.both
-        return self.rescued / a_flagged if a_flagged else float("nan")
+        reference_flagged = self.rescued + self.both
+        return self.rescued / reference_flagged if reference_flagged else float("nan")
 
 
 def compute_flag_confusion(
-    diagnostics_a: SpikeEventDiagnostics,
-    diagnostics_b: SpikeEventDiagnostics,
+    reference_diagnostics: SpikeEventDiagnostics,
+    comparison_diagnostics: SpikeEventDiagnostics,
     metric: str,
     threshold: float,
     *,
@@ -352,10 +351,10 @@ def compute_flag_confusion(
 
     Parameters
     ----------
-    diagnostics_a, diagnostics_b : SpikeEventDiagnostics
-        Per-spike diagnostics for the reference (A) and comparison (B)
-        decoders, carrying the same spike events in the same order (e.g.
-        Continuous vs Continuous--Fragmented).
+    reference_diagnostics, comparison_diagnostics : SpikeEventDiagnostics
+        Per-spike diagnostics for the reference and comparison decoders,
+        carrying the same spike events in the same order (e.g. Continuous vs
+        Continuous--Fragmented).
     metric : str
         Diagnostic base name; the per-spike array ``event_{metric}`` is used.
     threshold : float
@@ -368,8 +367,8 @@ def compute_flag_confusion(
     Returns
     -------
     FlagConfusion
-        The 2x2 flag agreement: ``rescued`` is flagged by A only,
-        ``newly_flagged`` by B only.
+        The 2x2 flag agreement: ``rescued`` is flagged by the reference only,
+        ``newly_flagged`` by the comparison only.
 
     Raises
     ------
@@ -378,29 +377,32 @@ def compute_flag_confusion(
         ``worse_when`` is not ``"below"`` or ``"above"`` (from :func:`flag_mask`).
     """
     event_key = f"event_{metric}"
-    a = np.asarray(getattr(diagnostics_a, event_key), dtype=np.float64)
-    b = np.asarray(getattr(diagnostics_b, event_key), dtype=np.float64)
-    if a.shape != b.shape:
+    reference = np.asarray(getattr(reference_diagnostics, event_key), dtype=np.float64)
+    comparison = np.asarray(getattr(comparison_diagnostics, event_key), dtype=np.float64)
+    if reference.shape != comparison.shape:
         raise ValueError(
-            f"diagnostics_a[{event_key!r}] and diagnostics_b[{event_key!r}] must carry "
-            f"the same set of spike events in the same order; got {a.shape} vs {b.shape}."
+            f"reference_diagnostics[{event_key!r}] and comparison_diagnostics[{event_key!r}] "
+            "must carry the same set of spike events in the same order; "
+            f"got {reference.shape} vs {comparison.shape}."
         )
-    if not np.array_equal(diagnostics_a.event_time_ind, diagnostics_b.event_time_ind) or not (
-        np.array_equal(diagnostics_a.event_cell_ind, diagnostics_b.event_cell_ind)
+    if not np.array_equal(
+        reference_diagnostics.event_time_ind, comparison_diagnostics.event_time_ind
+    ) or not np.array_equal(
+        reference_diagnostics.event_cell_ind, comparison_diagnostics.event_cell_ind
     ):
         raise ValueError(
-            "diagnostics_a and diagnostics_b must carry identical event_time_ind and "
-            "event_cell_ind arrays in the same order"
+            "reference_diagnostics and comparison_diagnostics must carry identical "
+            "event_time_ind and event_cell_ind arrays in the same order"
         )
-    flag_a = flag_mask(a, threshold, worse_when)
-    flag_b = flag_mask(b, threshold, worse_when)
+    flag_reference = flag_mask(reference, threshold, worse_when)
+    flag_comparison = flag_mask(comparison, threshold, worse_when)
 
     return FlagConfusion(
         metric=metric,
         threshold=float(threshold),
-        n=int(a.size),
-        both=int(np.sum(flag_a & flag_b)),
-        rescued=int(np.sum(flag_a & ~flag_b)),
-        newly_flagged=int(np.sum(~flag_a & flag_b)),
-        neither=int(np.sum(~flag_a & ~flag_b)),
+        n=int(reference.size),
+        both=int(np.sum(flag_reference & flag_comparison)),
+        rescued=int(np.sum(flag_reference & ~flag_comparison)),
+        newly_flagged=int(np.sum(~flag_reference & flag_comparison)),
+        neither=int(np.sum(~flag_reference & ~flag_comparison)),
     )

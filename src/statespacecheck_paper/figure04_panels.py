@@ -652,8 +652,9 @@ def plot_per_spike_metric_hexbin_row(
 ) -> None:
     """Plot a 1x3 row of hexbin densities comparing per-spike diagnostics between two decoders.
 
-    Each panel shows one diagnostic on the x-axis (model A) and the same
-    diagnostic on the y-axis (model B). Each hexagon's colour encodes
+    Each panel shows one diagnostic on the x-axis (the reference decoder,
+    ``model_a``) and the same diagnostic on the y-axis (the comparison decoder,
+    ``model_b``). Each hexagon's colour encodes
     log-scaled spike-event count (matplotlib ``bins='log'``). Points on
     the identity line indicate decoder agreement on that spike.
 
@@ -673,14 +674,15 @@ def plot_per_spike_metric_hexbin_row(
         Three axes, one per metric (HPD overlap, ``-log(p)`` natural
         log, KL divergence).
     model_a, model_b : Figure4Model, default Continuous and Continuous-Fragmented
-        The two decoders; their full labels name the axes, and model A's short
-        label names the flagged-by-A-only callout.
+        The reference and comparison decoders; their full labels name the
+        axes, and the reference's short label names the callout for spikes
+        flagged by the reference only.
     thresholds : dict[str, float], optional
         Per-metric flag thresholds keyed by ``hpd_overlap``, ``kl_divergence``,
         ``predictive_pvalue`` (raw values; the ``predictive_pvalue`` cutoff is transformed to
         the ``-log(p)`` axis). When given, each panel draws dotted threshold
         lines on both axes and lightly shades the quadrant of spikes flagged by
-        model A but not model B. Metrics absent from the dict get no lines.
+        the reference but not the comparison. Metrics absent from the dict get no lines.
     colorbar_pad : float, default 0.02
         Fractional padding between the rightmost panel and shared count
         colorbar.
@@ -751,23 +753,23 @@ def plot_per_spike_metric_hexbin_row(
         ax.plot(padded_lims, padded_lims, color=COLORS["threshold"], lw=0.8, ls="--", alpha=0.7)
 
         # Per-metric flag threshold: dotted lines on both axes (same scalar on
-        # x=model A and y=model B), plus light shading of the "rescue" quadrant —
-        # spikes flagged by model A but not model B.
+        # x=reference and y=comparison), plus light shading of the "rescue"
+        # quadrant — spikes flagged by the reference but not the comparison.
         thr_raw = thresholds.get(thr_key) if thresholds else None
         if thr_raw is not None:
             thr = negative_log_pvalue(thr_raw) if log_transform else float(thr_raw)
             lo, hi = padded_lims
             if direction == "below":
-                # Flagged below threshold: A flagged (x < thr), B not (y > thr).
+                # Flagged below threshold: reference flagged (x < thr), comparison not (y > thr).
                 rect_xy, rect_w, rect_h = (lo, thr), thr - lo, hi - thr
             else:
-                # Flagged above threshold: A flagged (x > thr), B not (y < thr).
+                # Flagged above threshold: reference flagged (x > thr), comparison not (y < thr).
                 rect_xy, rect_w, rect_h = (thr, lo), hi - thr, thr - lo
             # Dotted threshold cross spanning the panel (reads the cutoff on each axis).
             ax.axvline(thr, color=COLORS["threshold"], lw=0.8, ls=":", alpha=0.7, zorder=2)
             ax.axhline(thr, color=COLORS["threshold"], lw=0.8, ls=":", alpha=0.7, zorder=2)
             # Accent-outlined callout box framing the "rescue" quadrant: spikes
-            # flagged by model A but not model B. A solid coloured border reads as
+            # flagged by the reference but not the comparison. A solid coloured border reads as
             # "look here", unlike a muted gray fill.
             rescue_accent = WONG[6]  # Vermillion, distinct from the metric colours
             ax.add_patch(

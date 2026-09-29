@@ -344,7 +344,7 @@ class TestComputeFlagConfusion:
         with pytest.raises(ValueError, match="required per-event value"):
             event_diagnostics(hpd=np.array([0.01, np.nan, 0.02]))
 
-    def test_rescue_rate_nan_when_a_flags_nothing(self) -> None:
+    def test_rescue_rate_nan_when_the_reference_flags_nothing(self) -> None:
         a = event_diagnostics(hpd=np.array([0.5, 0.6]))  # none at or below 0.05
         b = event_diagnostics(hpd=np.array([0.01, 0.6]))
         conf = compute_flag_confusion(a, b, "hpd_overlap", 0.05, worse_when="below")
