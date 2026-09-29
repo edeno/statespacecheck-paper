@@ -52,7 +52,7 @@ _VIRIDIS_LUT: NDArray[np.uint8] = pg.colormap.get("viridis").getLookupTable(0.0,
 # Shared style constants
 # ---------------------------------------------------------------------------
 
-# Per-state colors (Continuous, Fragmented for ContFrag). Derived from
+# Per-state colors (Continuous, Fragmented for Continuous-Fragmented). Derived from
 # the paper's WONG palette via :data:`statespacecheck_paper.style.COLORS`
 # so the GUI matches the manuscript figures. State-0 uses the paper's
 # "predictive" / "likelihood" semantics; state-1 picks the adjacent

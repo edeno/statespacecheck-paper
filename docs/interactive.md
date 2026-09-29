@@ -19,7 +19,7 @@ memory.
 
 Two dataset kinds are supported:
 
-- **Real-data decoder caches** (`continuous` / `contfrag` models from
+- **Real-data decoder caches** (`continuous` / `continuous_fragmented` models from
   fitted `non_local_detector` decoders).
 - **Figure-3 simulation cache** — the simulated demonstration with
   baseline / remap / history-dependent-firing / drift phases plus the
@@ -40,7 +40,7 @@ ignored by Git.
 
 ```bash
 # Real data (figure 4): derives figure04_continuous.zarr +
-# figure04_contfrag.zarr and shared sidecars from the canonical Figure 4
+# figure04_continuous_fragmented.zarr and shared sidecars from the canonical Figure 4
 # decode and diagnostics caches. --animal-date-epoch defaults to
 # STATESPACECHECK_ANIMAL_DATE_EPOCH, else the published epoch.
 uv run --frozen python -m statespacecheck_paper.interactive.cache build \
@@ -57,7 +57,7 @@ uv run --frozen python -m statespacecheck_paper.interactive.cache build-simulate
 ## Open the viewer
 
 ```bash
-# Real-data model (Continuous or ContFrag).
+# Real-data model (Continuous or Continuous-Fragmented).
 uv run --frozen python -m statespacecheck_paper.interactive \
     --cache-dir data/cache --model continuous
 

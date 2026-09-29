@@ -187,12 +187,12 @@ def test_build_figure04_viewer_cache_uses_canonical_render_data(tmp_path: Path) 
     continuous_results = _synthetic_results_dataset(n_time, 1, n_position).set_index(
         state_bins=["state", "position"]
     )
-    contfrag_results = _synthetic_results_dataset(n_time, 2, n_position).set_index(
+    continuous_fragmented_results = _synthetic_results_dataset(n_time, 2, n_position).set_index(
         state_bins=["state", "position"]
     )
     decode = SimpleNamespace(
         continuous_results=continuous_results,
-        continuous_fragmented_results=contfrag_results,
+        continuous_fragmented_results=continuous_fragmented_results,
         continuous_diagnostics=diagnostics,
         continuous_fragmented_diagnostics=diagnostics,
         spike_counts=np.zeros((n_time, n_cells), dtype=np.int64),
@@ -220,16 +220,16 @@ def test_build_figure04_viewer_cache_uses_canonical_render_data(tmp_path: Path) 
         time_chunk=64,
     )
 
-    assert set(summaries) == {"continuous", "contfrag"}
+    assert set(summaries) == {"continuous", "continuous_fragmented"}
     assert summaries["continuous"]["n_events"] == 3
     with DecoderDataSource.for_model(tmp_path, "continuous") as continuous:
         assert continuous.n_states == 1
         assert continuous.load_posterior(slice(0, 5)).shape == (5, n_position)
         assert continuous.events["cell_id"].tolist() == [0, 2, 1]
-    with DecoderDataSource.for_model(tmp_path, "contfrag") as contfrag:
-        assert contfrag.n_states == 2
-        assert contfrag.load_posterior(slice(0, 5)).shape == (5, 2 * n_position)
-        assert contfrag.event_likelihood_at(0, 0).shape == (n_position,)
+    with DecoderDataSource.for_model(tmp_path, "continuous_fragmented") as continuous_fragmented:
+        assert continuous_fragmented.n_states == 2
+        assert continuous_fragmented.load_posterior(slice(0, 5)).shape == (5, 2 * n_position)
+        assert continuous_fragmented.event_likelihood_at(0, 0).shape == (n_position,)
 
 
 def test_build_cli_loads_the_canonical_figure04_workflow(

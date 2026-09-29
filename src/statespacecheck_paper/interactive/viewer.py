@@ -522,7 +522,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
         controls_layout.addWidget(self._speed_combo)
 
         # Model swap UI only makes sense for real-data caches with both
-        # ``continuous`` and ``contfrag`` available. The figure-3
+        # ``continuous`` and ``continuous_fragmented`` available. The figure-3
         # simulation has a single decoder baked into the data and no
         # alternative to swap to, so the label + combo are hidden
         # entirely (not just disabled — there's no model concept here).
@@ -578,7 +578,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
         - ``←`` / ``→``         : step center by one decoder time bin.
         - ``Shift+←`` / ``Shift+→``: step by one window-width.
         - ``Space``              : play / pause auto-scroll.
-        - ``M``                  : toggle model (Continuous ↔ ContFrag).
+        - ``M``                  : toggle model (Continuous ↔ Continuous-Fragmented).
         - ``[`` / ``]``          : shrink / grow window width (or
                                     scroll the mouse wheel over any
                                     time-axis panel).

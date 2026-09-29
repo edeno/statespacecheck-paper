@@ -380,9 +380,11 @@ def compose_figure04(
     continuous_results = render_data.decode_results.continuous_results.assign_coords(
         time=render_data.decode_results.continuous_results.coords["time"].values - time_offset
     )
-    contfrag_results = render_data.decode_results.continuous_fragmented_results.assign_coords(
-        time=render_data.decode_results.continuous_fragmented_results.coords["time"].values
-        - time_offset
+    continuous_fragmented_results = (
+        render_data.decode_results.continuous_fragmented_results.assign_coords(
+            time=render_data.decode_results.continuous_fragmented_results.coords["time"].values
+            - time_offset
+        )
     )
 
     # Shift spike times to relative seconds
@@ -393,7 +395,7 @@ def compose_figure04(
         render_data.decode_results.continuous_diagnostics,
         time_offset,
     )
-    contfrag_diagnostics_relative = _shift_diagnostic_event_times(
+    continuous_fragmented_diagnostics_relative = _shift_diagnostic_event_times(
         render_data.decode_results.continuous_fragmented_diagnostics,
         time_offset,
     )
@@ -424,9 +426,11 @@ def compose_figure04(
         )
 
     continuous_panel_data = _panel_data(continuous_results, continuous_diagnostics_relative)
-    continuous_fragmented_panel_data = _panel_data(contfrag_results, contfrag_diagnostics_relative)
+    continuous_fragmented_panel_data = _panel_data(
+        continuous_fragmented_results, continuous_fragmented_diagnostics_relative
+    )
 
-    # Top row: (a) Continuous and (b) ContFrag detail zooms, side by side,
+    # Top row: (a) Continuous and (b) Continuous-Fragmented detail zooms, side by side,
     # with a small unlettered track inset on the right for spatial context.
     subfigs_top = subfigs_rows[0].subfigures(
         1,
@@ -447,7 +451,7 @@ def compose_figure04(
         show_annotations=False,
     )
 
-    # Panel (b): ContFrag detail view, repeating panel (a)'s row scales.
+    # Panel (b): Continuous-Fragmented detail view, repeating panel (a)'s row scales.
     _, axes_b = plot_single_model_diagnostics(
         continuous_fragmented_panel_data,
         time_slice_ind=detail_slice,

@@ -668,9 +668,9 @@ def print_export_comparison(
 
 def figure04_diagnostics_from_decodes(
     continuous_model: Any,
-    contfrag_model: Any,
+    continuous_fragmented_model: Any,
     continuous_results: xr.Dataset,
-    contfrag_results: xr.Dataset,
+    continuous_fragmented_results: xr.Dataset,
     spike_times: Sequence[NDArray[np.float64]],
     *,
     coverage: float,
@@ -686,9 +686,9 @@ def figure04_diagnostics_from_decodes(
 
     Parameters
     ----------
-    continuous_model, contfrag_model : non_local_detector model
+    continuous_model, continuous_fragmented_model : non_local_detector model
         Fitted Continuous and Continuous-Fragmented decoders.
-    continuous_results, contfrag_results : xr.Dataset
+    continuous_results, continuous_fragmented_results : xr.Dataset
         Their decodes over the same time bins; each must hold the predictive
         distribution ``predictive_posterior`` (request it with ``return_outputs``).
     spike_times : sequence of np.ndarray, shape (n_spikes,)
@@ -707,7 +707,7 @@ def figure04_diagnostics_from_decodes(
 
     Returns
     -------
-    continuous, contfrag : SpikeEventDiagnostics
+    continuous, continuous_fragmented : SpikeEventDiagnostics
         Per-spike diagnostics of each decoder, on the same spikes.
     summary : Figure4Summary
         Whole-session event means and two-decoder flag agreement.
@@ -732,9 +732,12 @@ def figure04_diagnostics_from_decodes(
     from statespacecheck_paper.figure04_summary import summarize_figure04_diagnostics
 
     time = continuous_results["time"].to_numpy()
-    if not np.array_equal(time, contfrag_results["time"].to_numpy()):
+    if not np.array_equal(time, continuous_fragmented_results["time"].to_numpy()):
         raise ValueError("The two decodes cover different time bins")
-    for name, results in (("Continuous", continuous_results), ("ContFrag", contfrag_results)):
+    for name, results in (
+        ("Continuous", continuous_results),
+        ("ContFrag", continuous_fragmented_results),
+    ):
         if DECODER_PREDICTIVE_VAR not in results:
             raise ValueError(
                 f"The {name} decode has no {DECODER_PREDICTIVE_VAR}; decode with "
@@ -742,29 +745,29 @@ def figure04_diagnostics_from_decodes(
             )
     spikes = filter_spike_times(spike_times, time)
     expected_rates = np.array([len(st) for st in spikes]) / len(time)
-    for model in (continuous_model, contfrag_model):
+    for model in (continuous_model, continuous_fragmented_model):
         (encoding_model,) = model.encoding_model_.values()
         fitted_rates = np.asarray(encoding_model["mean_rates"])
         if fitted_rates.shape != expected_rates.shape or not np.allclose(
             fitted_rates, expected_rates, rtol=1e-6, atol=0.0
         ):
             raise ValueError("The spike trains do not match the fitted units (count or order)")
-    place_fields, _ = extract_agreed_place_fields(continuous_model, contfrag_model)
+    place_fields, _ = extract_agreed_place_fields(continuous_model, continuous_fragmented_model)
     spike_counts = get_spike_counts(spikes, time)
-    continuous, contfrag = (
+    continuous, continuous_fragmented = (
         compute_results_diagnostics(
             results, place_fields, spike_counts, time, spikes, coverage=coverage
         )
-        for results in (continuous_results, contfrag_results)
+        for results in (continuous_results, continuous_fragmented_results)
     )
     summary = summarize_figure04_diagnostics(
         continuous,
-        contfrag,
+        continuous_fragmented,
         n_units=int(spike_counts.shape[1]),
         thresholds=FIGURE4_DIAGNOSTIC_THRESHOLDS if thresholds is None else thresholds,
         metric_directions=FIGURE4_METRIC_DIRECTIONS,
     )
-    return continuous, contfrag, summary
+    return continuous, continuous_fragmented, summary
 
 
 def figure04_summary_rows(

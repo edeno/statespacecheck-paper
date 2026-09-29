@@ -117,7 +117,7 @@ class DecoderDataSource:
       by ``cache.build_figure04_viewer_cache`` (CLI ``cache build``) from the
       canonical Figure 4 workflow/cache. The viewer
       can swap between
-      ``"continuous"`` and ``"contfrag"`` if both caches are present
+      ``"continuous"`` and ``"continuous_fragmented"`` if both caches are present
       in ``cache_dir``. Use ``DecoderDataSource.for_model`` (or the
       legacy ``DecoderDataSource(cache_dir, model)``) to load.
 
@@ -155,18 +155,18 @@ class DecoderDataSource:
         Which kind of dataset is loaded. Drives viewer UI choices
         (model-swap visibility, window title).
     model : str | None
-        The active model name (``"continuous"`` / ``"contfrag"``) for
+        The active model name (``"continuous"`` / ``"continuous_fragmented"``) for
         real-data caches; ``None`` for the simulation cache.
     display_name : str
         Human-readable name for the loaded dataset (drives the window
-        title): ``"continuous"``, ``"contfrag"``, or ``"Figure 3 simulation"``.
+        title): ``"continuous"``, ``"continuous_fragmented"``, or ``"Figure 3 simulation"``.
     time : np.ndarray, shape (n_time,), float64
         Decoder time grid (absolute seconds).
     linear_position : np.ndarray, shape (n_time,), float64
         Animal linear position at each decoder time bin.
     place_fields : np.ndarray, shape (n_cells, n_interior), float32
         Shared positional place-field firing rates on the interior grid. The
-        observation model is identical across the discrete ContFrag states.
+        observation model is identical across the discrete Continuous-Fragmented states.
     position_bins : np.ndarray, shape (n_interior,), float64
         Per-state interior position grid (1D, identical across states).
     place_field_peaks : np.ndarray, shape (n_cells,), float64
@@ -186,7 +186,7 @@ class DecoderDataSource:
     n_time : int
     n_states : int
         Number of state slots in ``place_fields`` (1 for Continuous /
-        simulation, 2 for ContFrag).
+        simulation, 2 for Continuous-Fragmented).
     n_interior : int
         Number of interior position bins per state.
     n_state_bins : int
@@ -302,7 +302,7 @@ class DecoderDataSource:
 
         # Total state bins along the Zarr ``state_bins`` axis. For a
         # Continuous classifier this is one state's full position grid;
-        # for ContFrag it is ``n_states * n_pos_full``.
+        # for Continuous-Fragmented it is ``n_states * n_pos_full``.
         self.n_state_bins: int = int(meta_ds[self.PREDICTIVE_VAR].sizes["state_bins"])
 
         # Full (non-interior + interior) per-state position grid. The

@@ -140,7 +140,7 @@ def test_slice_panel_y_axis_pinned_to_unit_range(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_slice_panel_stacks_states_for_contfrag(tmp_path: Path) -> None:
+def test_slice_panel_stacks_states_for_continuous_fragmented(tmp_path: Path) -> None:
     _build_cache(tmp_path / "cache", n_states=2)
     app, viewer, ds = make_viewer(tmp_path / "cache")
     try:

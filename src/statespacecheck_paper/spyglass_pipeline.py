@@ -18,8 +18,8 @@ pipeline so it can be reproduced and exported with the rest of the lab's data:
 
 With these settings the decode reproduces the figure pipeline exactly (checked
 offline by emulating ``SortedSpikesDecodingV1``; see ``docs/spyglass-pipeline.md``).
-Leaving parameter estimation on (the Spyglass default) re-fits the ContFrag
-transition matrix and changes the Figure-4 results.
+Leaving parameter estimation on (the Spyglass default) re-fits the
+Continuous-Fragmented transition matrix and changes the Figure-4 results.
 
 **Importing this module imports Spyglass, which connects to the lab database**, so
 nothing in figure generation imports it. It creates nothing on import: the custom
@@ -73,7 +73,7 @@ UNIT_FILTER_PARAMS_NAME = "all_units"
 DECODING_PARAM_NAMES: Mapping[str, str] = MappingProxyType(
     {
         "continuous": "statespacecheck_figure04_continuous",
-        "contfrag": "statespacecheck_figure04_contfrag",
+        "continuous_fragmented": "statespacecheck_figure04_continuous_fragmented",
     }
 )
 # Outputs requested besides the always-returned smoothed posterior, matching the
@@ -123,7 +123,7 @@ class Figure4DiagnosticsSelection(SpyglassMixin, dj.Manual):
 
     definition = """
     -> DecodingOutput.proj(continuous_merge_id="merge_id")
-    -> DecodingOutput.proj(contfrag_merge_id="merge_id")
+    -> DecodingOutput.proj(continuous_fragmented_merge_id="merge_id")
     -> Figure4DiagnosticsParameters
     """
 
@@ -171,13 +171,13 @@ class Figure4Diagnostics(SpyglassMixin, dj.Computed):
         """Diagnose both decodes with the figure pipeline's code and store the results."""
         params = (Figure4DiagnosticsParameters() & key).fetch1()
         continuous_key = {"merge_id": key["continuous_merge_id"]}
-        contfrag_key = {"merge_id": key["contfrag_merge_id"]}
+        continuous_fragmented_key = {"merge_id": key["continuous_fragmented_merge_id"]}
         continuous_results = DecodingOutput.fetch_results(continuous_key)
-        continuous, contfrag, summary = figure04_diagnostics_from_decodes(
+        continuous, continuous_fragmented, summary = figure04_diagnostics_from_decodes(
             DecodingOutput.fetch_model(continuous_key),
-            DecodingOutput.fetch_model(contfrag_key),
+            DecodingOutput.fetch_model(continuous_fragmented_key),
             continuous_results,
-            DecodingOutput.fetch_results(contfrag_key),
+            DecodingOutput.fetch_results(continuous_fragmented_key),
             DecodingOutput.fetch_spike_data(continuous_key, filter_by_interval=False),
             coverage=params["hpd_coverage"],
             thresholds={
@@ -192,7 +192,10 @@ class Figure4Diagnostics(SpyglassMixin, dj.Computed):
                 "unit_index": continuous.event_cell_ind,
                 **{
                     f"{model}_{metric}": getattr(diagnostics, f"event_{metric}")
-                    for model, diagnostics in (("continuous", continuous), ("contfrag", contfrag))
+                    for model, diagnostics in (
+                        ("continuous", continuous),
+                        ("continuous_fragmented", continuous_fragmented),
+                    )
                     for metric in METRIC_FLAG_DIRECTIONS
                 },
             }
@@ -345,14 +348,19 @@ def decoding_parameter_entries() -> list[dict[str, Any]]:
     environment = create_decoder_environment(
         track_graph, list(edge_order), edge_spacing, config.decoder.position_bin_size_cm
     )
-    continuous, contfrag = build_decoder_models(environment, config.decoder, config.execution)
+    continuous, continuous_fragmented = build_decoder_models(
+        environment, config.decoder, config.execution
+    )
     return [
         {
             "decoding_param_name": DECODING_PARAM_NAMES[name],
             "decoding_params": model,
             "decoding_kwargs": {"return_outputs": list(DECODE_OUTPUTS)},
         }
-        for name, model in (("continuous", continuous), ("contfrag", contfrag))
+        for name, model in (
+            ("continuous", continuous),
+            ("continuous_fragmented", continuous_fragmented),
+        )
     ]
 
 
@@ -417,7 +425,7 @@ def diagnostics_selection_entry() -> dict[str, Any]:
     }
     return {
         "continuous_merge_id": merge_ids["continuous"],
-        "contfrag_merge_id": merge_ids["contfrag"],
+        "continuous_fragmented_merge_id": merge_ids["continuous_fragmented"],
         "figure4_diagnostics_param_name": "figure04",
     }
 

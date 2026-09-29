@@ -150,7 +150,7 @@ class Figure4Provenance:
     explicitly: faithfully injecting them would require rebuilding the nested
     ``continuous_transition_types`` grid (a mix of ``RandomWalk`` and ``Uniform``)
     and would hit the concentration-default split (``1.0`` for the continuous
-    decoder, ``1.1`` for the ContFrag classifier) -- either of which risks
+    decoder, ``1.1`` for the Continuous-Fragmented classifier) -- either of which risks
     silently changing the published decode. Instead they are pinned two ways:
     ``tests/test_figure04_decoder.py::TestFigure4ConfigMatchesManuscript`` asserts
     the *resolved* model attributes equal these values, and
@@ -165,12 +165,12 @@ class Figure4Provenance:
         Random-walk position-transition variance, ``6.0 cm^2`` (``RandomWalk``
         default).
     contfrag_diagonal_values : tuple[float, float]
-        ContFrag ``DiscreteStationaryDiagonal`` diagonal ``(0.98, 0.98)``
+        Continuous-Fragmented ``DiscreteStationaryDiagonal`` diagonal ``(0.98, 0.98)``
         (mode-transition matrix ``[[0.98, 0.02], [0.02, 0.98]]``).
     contfrag_discrete_initial_conditions : tuple[float, float]
-        ContFrag mode initial conditions ``(0.5, 0.5)``.
+        Continuous-Fragmented mode initial conditions ``(0.5, 0.5)``.
     discrete_transition_concentration : float
-        ContFrag Dirichlet concentration (unprinted effective default ``1.1``;
+        Continuous-Fragmented Dirichlet concentration (unprinted effective default ``1.1``;
         the continuous decoder's own default is ``1.0``).
     discrete_transition_regularization : float
         Discrete-transition regularization (unprinted default ``1e-10``).
@@ -292,7 +292,7 @@ def build_decoder_models(
     decoder_config: Figure4DecoderConfig | None = None,
     execution_config: Figure4ExecutionConfig | None = None,
 ) -> tuple[Any, Any]:
-    """Construct the (unfitted) Continuous and ContFrag decoder models.
+    """Construct the (unfitted) Continuous and Continuous-Fragmented decoder models.
 
     This holds the single source of decoder *construction* used by both
     :func:`fit_decoder_models` and the config drift guard. The
@@ -324,7 +324,7 @@ def build_decoder_models(
     -------
     continuous_model : SortedSpikesDecoder
         Unfitted continuous decoder model.
-    contfrag_model : ContFragSortedSpikesClassifier
+    continuous_fragmented_model : ContFragSortedSpikesClassifier
         Unfitted continuous-fragmented decoder model.
 
     Raises
@@ -356,17 +356,17 @@ def build_decoder_models(
         sorted_spikes_algorithm_params=sorted_spikes_algorithm_params,
         sampling_frequency=decoder_config.sampling_frequency_hz,
     )
-    contfrag_model = ContFragSortedSpikesClassifier(
+    continuous_fragmented_model = ContFragSortedSpikesClassifier(
         environments=[environment],
         sorted_spikes_algorithm_params=sorted_spikes_algorithm_params,
         sampling_frequency=decoder_config.sampling_frequency_hz,
     )
-    return continuous_model, contfrag_model
+    return continuous_model, continuous_fragmented_model
 
 
 def validate_provenance_defaults(
     continuous_model: Any,
-    contfrag_model: Any,
+    continuous_fragmented_model: Any,
     provenance: Figure4Provenance | None = None,
 ) -> None:
     """Assert the built models still carry the recorded ``non_local_detector`` defaults.
@@ -393,13 +393,13 @@ def validate_provenance_defaults(
             provenance.movement_var,
         ),
         (
-            "contfrag movement_var",
-            contfrag_model.continuous_transition_types[0][0].movement_var,
+            "continuous_fragmented movement_var",
+            continuous_fragmented_model.continuous_transition_types[0][0].movement_var,
             provenance.movement_var,
         ),
         (
-            "contfrag discrete_transition_concentration",
-            contfrag_model.discrete_transition_concentration,
+            "continuous_fragmented discrete_transition_concentration",
+            continuous_fragmented_model.discrete_transition_concentration,
             provenance.discrete_transition_concentration,
         ),
         (
@@ -408,8 +408,8 @@ def validate_provenance_defaults(
             provenance.discrete_transition_regularization,
         ),
         (
-            "contfrag discrete_transition_regularization",
-            contfrag_model.discrete_transition_regularization,
+            "continuous_fragmented discrete_transition_regularization",
+            continuous_fragmented_model.discrete_transition_regularization,
             provenance.discrete_transition_regularization,
         ),
     )
@@ -424,13 +424,13 @@ def validate_provenance_defaults(
 
     array_checks: tuple[tuple[str, Any, tuple[float, float]], ...] = (
         (
-            "contfrag discrete_transition_type.diagonal_values",
-            contfrag_model.discrete_transition_type.diagonal_values,
+            "continuous_fragmented discrete_transition_type.diagonal_values",
+            continuous_fragmented_model.discrete_transition_type.diagonal_values,
             provenance.contfrag_diagonal_values,
         ),
         (
-            "contfrag discrete_initial_conditions",
-            contfrag_model.discrete_initial_conditions,
+            "continuous_fragmented discrete_initial_conditions",
+            continuous_fragmented_model.discrete_initial_conditions,
             provenance.contfrag_discrete_initial_conditions,
         ),
     )
@@ -454,7 +454,7 @@ def fit_decoder_models(
     decoder_config: Figure4DecoderConfig | None = None,
     execution_config: Figure4ExecutionConfig | None = None,
 ) -> tuple[Any, Any]:
-    """Fit Continuous and ContFrag decoder models.
+    """Fit Continuous and Continuous-Fragmented decoder models.
 
     Parameters
     ----------
@@ -478,7 +478,7 @@ def fit_decoder_models(
     -------
     continuous_model : SortedSpikesDecoder
         Fitted continuous decoder model.
-    contfrag_model : ContFragSortedSpikesClassifier
+    continuous_fragmented_model : ContFragSortedSpikesClassifier
         Fitted continuous-fragmented decoder model.
 
     Raises
@@ -489,11 +489,11 @@ def fit_decoder_models(
     Examples
     --------
     >>> # Requires non_local_detector package and fitted environment
-    >>> # continuous_model, contfrag_model = fit_decoder_models(
+    >>> # continuous_model, continuous_fragmented_model = fit_decoder_models(
     >>> #     position, spike_times, time, environment
     >>> # )
     """
-    continuous_model, contfrag_model = build_decoder_models(
+    continuous_model, continuous_fragmented_model = build_decoder_models(
         environment, decoder_config, execution_config
     )
 
@@ -501,9 +501,11 @@ def fit_decoder_models(
     position_2d = position.reshape(-1, 1) if position.ndim == 1 else position
 
     continuous_model.fit(position=position_2d, spike_times=spike_times, position_time=time)
-    contfrag_model.fit(position=position_2d, spike_times=spike_times, position_time=time)
+    continuous_fragmented_model.fit(
+        position=position_2d, spike_times=spike_times, position_time=time
+    )
 
-    return continuous_model, contfrag_model
+    return continuous_model, continuous_fragmented_model
 
 
 def get_spike_counts(

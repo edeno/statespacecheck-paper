@@ -39,8 +39,8 @@ from statespacecheck_paper.paths import ANIMAL_DATE_EPOCH
 if TYPE_CHECKING:
     from statespacecheck_paper.figure04_workflow import Figure4RenderData
 
-ModelName = Literal["continuous", "contfrag"]
-MODEL_NAMES: tuple[ModelName, ...] = ("continuous", "contfrag")
+ModelName = Literal["continuous", "continuous_fragmented"]
+MODEL_NAMES: tuple[ModelName, ...] = ("continuous", "continuous_fragmented")
 
 DEFAULT_TIME_CHUNK = 8192
 
@@ -64,7 +64,7 @@ def cache_paths(cache_dir: Path, model: ModelName) -> dict[str, Path]:
 def meta_path(cache_dir: Path) -> Path:
     """Path to the real-data (figure-4) meta sidecar.
 
-    Both ``continuous`` and ``contfrag`` real-data caches share this
+    Both ``continuous`` and ``continuous_fragmented`` real-data caches share this
     sidecar — the recording session's time grid, animal linear position,
     and cell count are model-independent.
     """
@@ -291,7 +291,7 @@ def _figure04_model_inputs(
     decode = render_data.decode_results
     if model == "continuous":
         return decode.continuous_results, decode.continuous_diagnostics
-    if model == "contfrag":
+    if model == "continuous_fragmented":
         return (
             decode.continuous_fragmented_results,
             decode.continuous_fragmented_diagnostics,

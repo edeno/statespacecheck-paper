@@ -56,22 +56,22 @@ class TestFigure4ConfigMatchesManuscript:
         assert random_walk.movement_var == pytest.approx(config.provenance.movement_var)
         assert config.provenance.movement_var == pytest.approx(6.0)
 
-    def test_contfrag_discrete_dynamics(self) -> None:
+    def test_continuous_fragmented_discrete_dynamics(self) -> None:
         from non_local_detector.continuous_state_transitions import RandomWalk
         from non_local_detector.discrete_state_transitions import DiscreteStationaryDiagonal
 
-        _, contfrag_model = self._build_models()
+        _, continuous_fragmented_model = self._build_models()
         config = figure04_decoder.Figure4Config()
 
-        # main.tex:294 -- ContFrag Continuous-to-Continuous transition reuses the
+        # main.tex:294 -- Continuous-Fragmented Continuous-to-Continuous transition reuses the
         # same random walk (movement_var = 6.0).
-        random_walk = contfrag_model.continuous_transition_types[0][0]
+        random_walk = continuous_fragmented_model.continuous_transition_types[0][0]
         assert isinstance(random_walk, RandomWalk)
         assert random_walk.movement_var == pytest.approx(config.provenance.movement_var)
 
         # main.tex:294 -- mode-transition matrix [[0.98, 0.02], [0.02, 0.98]],
         # i.e. a stationary diagonal (0.98, 0.98).
-        discrete_transition_type = contfrag_model.discrete_transition_type
+        discrete_transition_type = continuous_fragmented_model.discrete_transition_type
         assert isinstance(discrete_transition_type, DiscreteStationaryDiagonal)
         np.testing.assert_array_equal(
             np.asarray(discrete_transition_type.diagonal_values, dtype=float),
@@ -80,22 +80,22 @@ class TestFigure4ConfigMatchesManuscript:
 
         # main.tex:294 -- Continuous / Fragmented modes initialized at (0.5, 0.5).
         np.testing.assert_array_equal(
-            np.asarray(contfrag_model.discrete_initial_conditions, dtype=float),
+            np.asarray(continuous_fragmented_model.discrete_initial_conditions, dtype=float),
             np.asarray(config.provenance.contfrag_discrete_initial_conditions, dtype=float),
         )
 
     def test_unprinted_effective_defaults(self) -> None:
         """Concentration / regularization are not printed in the manuscript but
         shape the decode; pin them so a dependency bump fails loudly."""
-        continuous_model, contfrag_model = self._build_models()
+        continuous_model, continuous_fragmented_model = self._build_models()
         config = figure04_decoder.Figure4Config()
 
-        assert contfrag_model.discrete_transition_concentration == pytest.approx(
+        assert continuous_fragmented_model.discrete_transition_concentration == pytest.approx(
             config.provenance.discrete_transition_concentration
         )
         assert config.provenance.discrete_transition_concentration == pytest.approx(1.1)
 
-        for model in (continuous_model, contfrag_model):
+        for model in (continuous_model, continuous_fragmented_model):
             assert model.discrete_transition_regularization == pytest.approx(
                 config.provenance.discrete_transition_regularization
             )
@@ -104,18 +104,18 @@ class TestFigure4ConfigMatchesManuscript:
     def test_binning_values_the_code_uses(self) -> None:
         """Position bin size (from the Environment) and time bin size (from the
         sampling frequency) are the values the decode actually uses."""
-        continuous_model, contfrag_model = self._build_models()
+        continuous_model, continuous_fragmented_model = self._build_models()
         config = figure04_decoder.Figure4Config()
 
         # main.tex:294 -- ~2 cm spatial bins.
-        for model in (continuous_model, contfrag_model):
+        for model in (continuous_model, continuous_fragmented_model):
             assert model.environments[0].place_bin_size == pytest.approx(
                 config.decoder.position_bin_size_cm
             )
         assert config.decoder.position_bin_size_cm == pytest.approx(2.0)
 
         # main.tex:294 -- 2 ms spike bins == 500 Hz sampling frequency.
-        for model in (continuous_model, contfrag_model):
+        for model in (continuous_model, continuous_fragmented_model):
             assert model.sampling_frequency == pytest.approx(config.decoder.sampling_frequency_hz)
         assert config.decoder.sampling_frequency_hz == pytest.approx(500.0)
 

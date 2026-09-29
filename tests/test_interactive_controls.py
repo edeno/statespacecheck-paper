@@ -45,7 +45,7 @@ def _build_cache(
     n_states: int = 1,
     seed: int = 0,
 ) -> None:
-    """Controls tests need both Continuous and ContFrag caches for swap tests."""
+    """Controls tests need both Continuous and Continuous-Fragmented caches for swap tests."""
     _build_cache_impl(cache_dir, model=model, n_states=n_states, seed=seed)
 
 
@@ -236,15 +236,15 @@ def test_autoscroll_pauses_at_session_end(
 def test_model_swap_rebuilds_panels_and_loads(tmp_path: Path) -> None:
     cache_dir = tmp_path / "cache"
     _build_cache(cache_dir, model="continuous", n_states=1)
-    _build_cache(cache_dir, model="contfrag", n_states=2, seed=1)
+    _build_cache(cache_dir, model="continuous_fragmented", n_states=2, seed=1)
 
     app, viewer, ds = make_viewer(cache_dir, model_swaps=True)
     try:
         assert viewer._ds.model == "continuous"  # noqa: SLF001
         assert viewer.slice_panel._n_states == 1  # noqa: SLF001
 
-        viewer._switch_model("contfrag")  # noqa: SLF001
-        assert viewer._ds.model == "contfrag"  # noqa: SLF001
+        viewer._switch_model("continuous_fragmented")  # noqa: SLF001
+        assert viewer._ds.model == "continuous_fragmented"  # noqa: SLF001
         assert viewer.slice_panel._n_states == 2  # noqa: SLF001
         # Heatmap panels rebuilt with the new state count too.
         assert viewer.posterior_panel._n_states == 2  # noqa: SLF001
@@ -260,16 +260,16 @@ def test_model_swap_rebuilds_panels_and_loads(tmp_path: Path) -> None:
 def test_model_toggle_alternates_between_the_two_models(tmp_path: Path) -> None:
     cache_dir = tmp_path / "cache"
     _build_cache(cache_dir, model="continuous", n_states=1)
-    _build_cache(cache_dir, model="contfrag", n_states=2, seed=1)
+    _build_cache(cache_dir, model="continuous_fragmented", n_states=2, seed=1)
 
     _, viewer, _ = make_viewer(cache_dir, model_swaps=True)
     try:
         assert [
             viewer._model_combo.itemText(i)  # noqa: SLF001
             for i in range(viewer._model_combo.count())  # noqa: SLF001
-        ] == ["continuous", "contfrag"]
+        ] == ["continuous", "continuous_fragmented"]
         viewer._toggle_model()  # noqa: SLF001
-        assert viewer._ds.model == "contfrag"  # noqa: SLF001
+        assert viewer._ds.model == "continuous_fragmented"  # noqa: SLF001
         viewer._toggle_model()  # noqa: SLF001
         assert viewer._ds.model == "continuous"  # noqa: SLF001
     finally:
@@ -281,11 +281,11 @@ def test_model_toggle_alternates_between_the_two_models(tmp_path: Path) -> None:
 def test_model_swap_revert_when_cache_missing(tmp_path: Path) -> None:
     cache_dir = tmp_path / "cache"
     _build_cache(cache_dir, model="continuous", n_states=1)
-    # Note: do NOT build the contfrag cache.
+    # Note: do NOT build the continuous_fragmented cache.
 
     _, viewer, ds = make_viewer(cache_dir, model_swaps=True)
     try:
-        viewer._switch_model("contfrag")  # noqa: SLF001
+        viewer._switch_model("continuous_fragmented")  # noqa: SLF001
         # The data source should remain on continuous.
         assert viewer._ds.model == "continuous"  # noqa: SLF001
     finally:

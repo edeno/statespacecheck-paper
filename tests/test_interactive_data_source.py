@@ -203,7 +203,9 @@ def test_events_in_window_empty_when_outside(synthetic_cache: Path) -> None:
 # ---------------------------------------------------------------------------
 
 REAL_CONT_CACHE_AVAILABLE = (CACHE_DIR / "figure04_continuous.zarr").exists()
-REAL_CONTFRAG_CACHE_AVAILABLE = (CACHE_DIR / "figure04_contfrag.zarr").exists()
+REAL_CONTINUOUS_FRAGMENTED_CACHE_AVAILABLE = (
+    CACHE_DIR / "figure04_continuous_fragmented.zarr"
+).exists()
 
 
 @pytest.mark.skipif(
@@ -246,12 +248,12 @@ def test_real_continuous_cache_window_read_latency() -> None:
 
 
 @pytest.mark.skipif(
-    not REAL_CONTFRAG_CACHE_AVAILABLE,
+    not REAL_CONTINUOUS_FRAGMENTED_CACHE_AVAILABLE,
     reason="Run `python -m statespacecheck_paper.interactive.cache build "
-    "--model contfrag --data-dir data` first.",
+    "--model continuous_fragmented --data-dir data` first.",
 )
-def test_real_contfrag_cache_has_two_states() -> None:
-    src = DecoderDataSource(CACHE_DIR, model="contfrag")
+def test_real_continuous_fragmented_cache_has_two_states() -> None:
+    src = DecoderDataSource(CACHE_DIR, model="continuous_fragmented")
     try:
         assert src.n_time == 709321
         assert src.n_cells == 203

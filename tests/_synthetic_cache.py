@@ -43,7 +43,7 @@ def build_synthetic_cache(
     ----------
     cache_dir : Path
         Directory to write into (created on demand).
-    model : {"continuous", "contfrag"}
+    model : {"continuous", "continuous_fragmented"}
         Which model name's cache layout to produce.
     n_states : int
         State count (1 or 2). Multi-state caches use a multi-state
