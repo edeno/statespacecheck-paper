@@ -4,8 +4,9 @@ Owns everything about *how* Figure 4 looks — the validated detail-window
 contract, pixel-nudge layout constants, bbox/edge-alignment helpers, track inset
 and hexbin-row placement, and ``compose_figure04`` which assembles the two-row
 figure and returns it with the tight bounding box to crop to. It reads a
-:class:`Figure4RenderData` and imports only the render layers; it never loads
-data, fits/decodes, reads the cache/config/paths, or saves.
+:class:`Figure4RenderData` (the one name it takes from ``figure04_workflow``)
+and otherwise imports only the render layers and the diagnostics container; it
+never loads data, fits/decodes, reads the cache/config/paths, or saves.
 """
 
 from __future__ import annotations

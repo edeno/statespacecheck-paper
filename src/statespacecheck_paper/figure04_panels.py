@@ -654,7 +654,7 @@ def plot_per_spike_metric_hexbin_row(
     Both diagnostics dicts must carry the same set of per-spike events
     in the same order (i.e. ``event_*`` arrays produced from the same
     spike trains by
-    :func:`statespacecheck_paper.figure04_diagnostics.compute_model_diagnostics`).
+    :func:`statespacecheck_paper.figure04_diagnostics.compute_results_diagnostics`).
     Raises ``ValueError`` if shapes differ for any of the three metrics.
 
     Parameters
