@@ -5,8 +5,9 @@ This module holds the figure-agnostic decoder — the Bayesian filter
 (``DecoderOverrideWindow`` / ``DecoderOverrideSchedule``). It takes scientific
 primitives (spike counts, a position grid, a transition matrix, and place-field
 parameters or an explicit baseline expected-count table), computes the per-spike
-diagnostics via :mod:`statespacecheck_paper.diagnostics`, and returns a
-``DecodingDiagnostics``. It depends only on ``diagnostics`` and the general
+diagnostics with ``diagnostics.compute_spike_event_diagnostics_from_rates`` (for
+the baseline rate table, then again for each override window that swaps the rate
+table), and returns a ``DecodingDiagnostics``. It depends only on ``diagnostics`` and the general
 ``simulation`` primitives — no figure-specific module.
 
 Tables named ``firing_rates`` or ``firing_rate_table`` contain Poisson means
@@ -20,7 +21,6 @@ from dataclasses import dataclass
 from typing import NamedTuple
 
 import numpy as np
-import statespacecheck as ssc
 from numpy.typing import NDArray
 from scipy.special import gammaln, logsumexp, xlogy
 
@@ -356,8 +356,9 @@ def _apply_window_rate_overrides(
     """Overwrite per-event / dense diagnostics inside each rate-override window.
 
     The baseline ``diagnostics`` were computed against the decoder's default
-    rate table. For every regime window that swaps ``firing_rate_table``, the events
-    falling inside it are recomputed against that window's table so the
+    rate table. For every regime window that swaps ``firing_rate_table``, the
+    events falling inside it are recomputed against that window's table, with
+    the same :func:`compute_spike_event_diagnostics_from_rates`, so the
     posterior update, per-event diagnostics, and displayed likelihood stay on
     one internally consistent decoder model. The base diagnostics' seven arrays
     are copied first, so this mutates copies and leaves the passed-in dataclass
@@ -385,24 +386,23 @@ def _apply_window_rate_overrides(
 
         window_times = spike_time_ind[in_window]
         window_cells = spike_cell_ind[in_window]
-        window_events = ssc.event_diagnostics(
+        window_events = compute_spike_event_diagnostics_from_rates(
             predictive,
             window.firing_rate_table,
             window_times,
             window_cells,
             coverage=HPD_COVERAGE,
-            return_likelihood=True,
         )
-        assert window_events.likelihood is not None
+        assert window_events.event_likelihood is not None
 
-        event_hpd_overlap[in_window] = window_events.hpd_overlap
-        event_kl_divergence[in_window] = window_events.kl_divergence
-        event_predictive_pvalue[in_window] = window_events.predictive_pvalue
-        decoder_event_lik[in_window] = window_events.likelihood
+        event_hpd_overlap[in_window] = window_events.event_hpd_overlap
+        event_kl_divergence[in_window] = window_events.event_kl_divergence
+        event_predictive_pvalue[in_window] = window_events.event_predictive_pvalue
+        decoder_event_lik[in_window] = window_events.event_likelihood
 
-        hpd_overlap[window_times, window_cells] = window_events.hpd_overlap
-        kl_divergence[window_times, window_cells] = window_events.kl_divergence
-        predictive_pvalue[window_times, window_cells] = window_events.predictive_pvalue
+        hpd_overlap[window_times, window_cells] = window_events.event_hpd_overlap
+        kl_divergence[window_times, window_cells] = window_events.event_kl_divergence
+        predictive_pvalue[window_times, window_cells] = window_events.event_predictive_pvalue
 
     return SpikeEventDiagnostics(
         event_time_ind=diagnostics.event_time_ind,

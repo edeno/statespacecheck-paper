@@ -33,8 +33,11 @@ The diagnostics themselves are computed by the separate
 analyses reach it through one paper-side wrapper,
 `diagnostics.compute_spike_event_diagnostics_from_rates`, which calls
 `statespacecheck.event_diagnostics` and returns a `SpikeEventDiagnostics` with
-one value per spike event. Figure 3 calls the wrapper from
-`decoding.decode_with_diagnostics`; Figure 4 calls it from
+one value per spike event. Every per-spike diagnostic in Figures 3 and 4 goes
+through it (Figure 2's single worked example calls `statespacecheck` directly).
+Figure 3 calls the wrapper from `decoding.decode_with_diagnostics`, once with the
+baseline rate table and again for the spikes inside each decoder override window
+that swaps the rate table; Figure 4 calls it from
 `figure04_diagnostics.compute_results_diagnostics`. Equation numbers are those
 of the Methods in `manuscript/main.tex` (labels in parentheses).
 
