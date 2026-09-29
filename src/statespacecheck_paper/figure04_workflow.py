@@ -258,7 +258,7 @@ class Figure4RenderData:
     cheap, never cached); the decode results are the expensive cacheable content
     (:class:`Figure4DecodeResults`). ``cache_provenance`` records the exact
     cache fingerprint, input checksums, and decoder dependency version used to
-    produce those results. The three per-time arrays derived from the
+    produce those results. The two per-time arrays derived from the
     recording are copied and marked read-only at construction, must share a
     single 1-D ``n_time``, and that ``n_time`` must match the decode timeline
     (``decode_results.spike_counts.shape[0]``) so a cached decode cannot pair
@@ -267,23 +267,19 @@ class Figure4RenderData:
 
     recording: NeuralRecordingData
     time: NDArray[np.float64]
-    head_position: NDArray[np.float64]
     linear_position: NDArray[np.float64]
     decode_results: Figure4DecodeResults
-    cache_provenance: Figure4CacheProvenance | None = None
+    cache_provenance: Figure4CacheProvenance
 
     def __post_init__(self) -> None:
         # Unconditional copies (per-time vectors, far smaller than the spike
         # counts) so freezing cannot
         # reach back into a caller-owned array.
         time = np.array(self.time, dtype=np.float64)
-        head_position = np.array(self.head_position, dtype=np.float64)
         linear_position = np.array(self.linear_position, dtype=np.float64)
         if time.ndim != 1:
             raise ValueError(f"time must be 1-D (n_time,); got shape {time.shape}")
         n_time = time.shape[0]
-        if head_position.shape != (n_time, 2):
-            raise ValueError(f"head_position must be ({n_time}, 2); got {head_position.shape}")
         if linear_position.shape != (n_time,):
             raise ValueError(f"linear_position must be ({n_time},); got {linear_position.shape}")
         # The decode results must have been produced on this same recording
@@ -297,7 +293,6 @@ class Figure4RenderData:
             )
         for name, arr in (
             ("time", time),
-            ("head_position", head_position),
             ("linear_position", linear_position),
         ):
             arr.setflags(write=False)
@@ -529,7 +524,6 @@ def prepare_figure04_render_data(
     return Figure4RenderData(
         recording=recording,
         time=time,
-        head_position=head_position,
         linear_position=linear_position,
         decode_results=decode_results,
         cache_provenance=cache_provenance,

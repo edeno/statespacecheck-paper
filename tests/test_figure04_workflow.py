@@ -28,6 +28,7 @@ from statespacecheck_paper.figure04_workflow import (
 from statespacecheck_paper.load_local_data import NeuralRecordingData
 
 from ._diagnostics import event_diagnostics
+from ._figure04 import synthetic_cache_provenance
 
 
 def _synthetic_recording() -> NeuralRecordingData:
@@ -97,9 +98,9 @@ class TestFigure4Summary:
         return Figure4RenderData(
             recording=_synthetic_recording(),
             time=np.arange(8, dtype=float),
-            head_position=np.zeros((8, 2)),
             linear_position=np.zeros(8),
             decode_results=decode,
+            cache_provenance=synthetic_cache_provenance(),
         )
 
     def test_computes_typed_means_and_flag_counts(self) -> None:
@@ -317,9 +318,9 @@ class TestFigure4RenderData:
         return Figure4RenderData(
             recording=_synthetic_recording(),
             time=time,
-            head_position=np.zeros((n_time, 2)),
             linear_position=np.zeros(n_time),
             decode_results=decode_results or _synthetic_decode_results(),
+            cache_provenance=synthetic_cache_provenance(),
         )
 
     def test_rejects_non_1d_time(self) -> None:
@@ -476,4 +477,3 @@ class TestPrepareRenderData:
         )
         assert render_data.decode_results.spike_counts.shape == (8, 2)
         assert render_data.time.shape == (8,)
-        assert render_data.head_position.shape == (8, 2)

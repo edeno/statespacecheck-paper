@@ -13,17 +13,15 @@ import pytest
 
 from statespacecheck_paper import figure04_generation
 from statespacecheck_paper.figure04_cache import (
-    FIGURE04_CACHE_SCHEMA_VERSION,
-    FIGURE04_DIAGNOSTICS_SCHEMA_VERSION,
-    Figure4CacheProvenance,
     Figure4Paths,
 )
-from statespacecheck_paper.figure04_decoder import Figure4Config, Figure4DiagnosticsConfig
+from statespacecheck_paper.figure04_decoder import Figure4Config
 from statespacecheck_paper.figure04_diagnostics import FlagConfusion
 from statespacecheck_paper.figure04_layout import Figure4Composition
 from statespacecheck_paper.figure04_summary import Figure4DiagnosticMeans, Figure4Summary
 from statespacecheck_paper.load_local_data import EXPORT_FILE_SUFFIXES
 
+from ._figure04 import synthetic_cache_provenance
 from ._scripts import SCRIPTS_DIR
 
 
@@ -107,17 +105,7 @@ def test_summary_payload_contains_reported_counts_rates_and_provenance(
         neither=77,
     )
     summary = Figure4Summary(means_a, means_b, (confusion,), n_units=7)
-    cache_provenance = Figure4CacheProvenance(
-        fingerprint_sha256="c" * 64,
-        schema_version=FIGURE04_CACHE_SCHEMA_VERSION,
-        animal_date_epoch="epoch_x",
-        export_checksums=tuple((suffix, "d" * 64) for suffix in EXPORT_FILE_SUFFIXES),
-        non_local_detector_version="1.2.3",
-        diagnostics_fingerprint_sha256="e" * 64,
-        diagnostics_schema_version=FIGURE04_DIAGNOSTICS_SCHEMA_VERSION,
-        statespacecheck_version="0.1.0",
-        diagnostics_config=Figure4DiagnosticsConfig(),
-    )
+    cache_provenance = synthetic_cache_provenance("epoch_x")
     source = {
         "statespacecheck_paper_version": "test",
         "statespacecheck_version": "test",

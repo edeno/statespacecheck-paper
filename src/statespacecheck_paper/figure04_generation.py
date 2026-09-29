@@ -160,11 +160,6 @@ def generate_figure04(*, use_cache: bool = True) -> None:
     config = Figure4Config()
     paths = Figure4Paths(data_path=DATA_PATH, animal_date_epoch=ANIMAL_DATE_EPOCH)
     render_data = prepare_figure04_render_data(config, paths, use_cache=use_cache)
-    if render_data.cache_provenance is None:
-        raise RuntimeError(
-            "Figure 4 render data lacks cache provenance; refusing to write a "
-            "canonical summary without input identities."
-        )
 
     summary = compute_figure04_summary(
         render_data,

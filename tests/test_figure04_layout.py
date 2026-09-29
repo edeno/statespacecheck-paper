@@ -28,6 +28,7 @@ from statespacecheck_paper.figure04_workflow import (  # noqa: E402
 from statespacecheck_paper.load_local_data import NeuralRecordingData  # noqa: E402
 
 from ._diagnostics import event_diagnostics  # noqa: E402
+from ._figure04 import synthetic_cache_provenance  # noqa: E402
 
 
 class TestShiftDiagnosticEventTimes:
@@ -172,9 +173,9 @@ def _compose_render_data() -> Figure4RenderData:
     return Figure4RenderData(
         recording=_compose_recording(),
         time=np.arange(_N_TIME, dtype=float),
-        head_position=np.column_stack([np.linspace(0.0, 100.0, _N_TIME), np.zeros(_N_TIME)]),
         linear_position=np.linspace(0.0, 100.0, _N_TIME),
         decode_results=decode,
+        cache_provenance=synthetic_cache_provenance(),
     )
 
 
