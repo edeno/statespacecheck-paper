@@ -1,9 +1,17 @@
 """Figure-4 decoder configuration and construction.
 
-Holds the Figure-4 decode configuration objects (:class:`Figure4Config`,
-:class:`Figure4DecoderConfig`, :class:`Figure4Provenance`) and the functions that
-build and fit the Continuous / Continuous-Fragmented decoder models from
-``non_local_detector``, plus the spike-count helper.
+Configuration: :class:`Figure4Config` and its four parts,
+:class:`Figure4DecoderConfig` (injected decode parameters),
+:class:`Figure4Provenance` (recorded ``non_local_detector`` defaults),
+:class:`Figure4ExecutionConfig` (performance-only settings), and
+:class:`Figure4DiagnosticsConfig` (per-spike diagnostic settings).
+
+Construction, using ``non_local_detector``: :func:`create_decoder_environment`
+builds the track environment, :func:`build_decoder_models` the unfitted
+Continuous and Continuous-Fragmented models, and :func:`fit_decoder_models` fits
+them. :func:`validate_provenance_defaults` checks the built models against
+:class:`Figure4Provenance`, and :func:`get_spike_counts` bins spike times onto
+the decode time grid.
 """
 
 from __future__ import annotations
@@ -30,7 +38,7 @@ def create_decoder_environment(
     edge_order : list[tuple]
         Edge ordering for linearization.
     edge_spacing : float or list[float]
-        Spacing between nodes.
+        Gap inserted between consecutive edges of the linearized track.
     place_bin_size : float, default 2.0
         Spatial bin size in cm (Environment ``place_bin_size``). The default
         equals ``non_local_detector``'s own default and
@@ -301,11 +309,14 @@ def build_decoder_models(
         Track environment object. Its ``place_bin_size`` is set by
         :func:`create_decoder_environment` from the same config.
     decoder_config : Figure4DecoderConfig, optional
-        Injected decoder parameters. Defaults to :class:`Figure4DecoderConfig`
-        (the manuscript values, which equal the ``non_local_detector`` defaults).
+        Injected decoder parameters. Defaults to :class:`Figure4DecoderConfig`,
+        the manuscript values. Its ``sampling_frequency_hz`` (500 Hz) equals
+        the ``non_local_detector`` default, but its ``position_std``
+        (``sqrt(12.5) ~= 3.54 cm``) replaces that package's default of 6.0 cm.
     execution_config : Figure4ExecutionConfig, optional
         Performance-only parameters (``block_size``). Defaults to
-        :class:`Figure4ExecutionConfig`. Does not change the decode result.
+        :class:`Figure4ExecutionConfig`, whose ``block_size`` (10000) equals the
+        ``non_local_detector`` default. Does not change the decode result.
 
     Returns
     -------
@@ -504,12 +515,16 @@ def get_spike_counts(
     spike_times : list[np.ndarray]
         List of spike time arrays, one per cell.
     time : np.ndarray, shape (n_time,)
-        Time bin centers.
+        Decode time grid. Row ``i`` counts the spikes in
+        ``[time[i], time[i + 1])``; the last of these intervals also includes
+        ``time[-1]``.
 
     Returns
     -------
     spike_counts : np.ndarray, shape (n_time, n_cells)
-        Spike count for each cell at each time bin.
+        Spike count for each cell in each time bin. Spikes outside
+        ``[time[0], time[-1]]`` are dropped, and the final row is always zero
+        (``non_local_detector.likelihoods.common.get_spikecount_per_time_bin``).
 
     Raises
     ------
