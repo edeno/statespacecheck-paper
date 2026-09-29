@@ -13,11 +13,11 @@
       "block_size": 10000
     },
     "provenance": {
-      "contfrag_diagonal_values": [
+      "continuous_fragmented_diagonal_values": [
         0.98,
         0.98
       ],
-      "contfrag_discrete_initial_conditions": [
+      "continuous_fragmented_discrete_initial_conditions": [
         0.5,
         0.5
       ],
@@ -91,17 +91,17 @@
       "export_file_sha256": {
         "j1620210710_02_r1_figure04_inputs.npz": "60383b394b597e2900545548ecac7c53a8601038ace9dbeb42d7f9a5fe1c93b3"
       },
-      "fingerprint_sha256": "0ff2856585eca008f8cb73bf84e738c16aa4c6761ff7fe98177ddcb57ea7af8c",
+      "fingerprint_sha256": "900e22dfb1baba5cb05e2880cf2f046ed4b2dd1c93136d0c54d55723358a564f",
       "non_local_detector_version": "0.6.10.dev214+g956fdccaf",
       "schema_version": 6,
       "statespacecheck_version": "0.3.1"
     },
     "source": {
-      "source_tree_sha256": "d102c28cfb8eb947ba03698f9c3484d410d7f857211df016a68c4539bc459f6b",
+      "source_tree_sha256": "f462b781cd86647c1ac5789db2a25dc57e8c5e942c46b9556c8dd1f2a6abac9a",
       "statespacecheck_paper_version": "0.1.0",
       "statespacecheck_version": "0.3.1",
       "uv_lock_sha256": "7db5bb03266cfeab8f804cd7262232f3ffa16ebaf423722a399076043b640574"
     }
   },
-  "schema_version": 4
+  "schema_version": 5
 }

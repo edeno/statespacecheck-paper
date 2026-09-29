@@ -3,8 +3,8 @@
 % Every value below is read from the canonical figure summaries
 % (except the DOIs, whose comments name their sources):
 %   figures/main/figure03_summary.json (schema 6)
-%   figures/main/figure04_summary.json (schema 4)
-% source_tree_sha256: d102c28cfb8eb947ba03698f9c3484d410d7f857211df016a68c4539bc459f6b
+%   figures/main/figure04_summary.json (schema 5)
+% source_tree_sha256: f462b781cd86647c1ac5789db2a25dc57e8c5e942c46b9556c8dd1f2a6abac9a
 %
 % Regenerate with: uv run python scripts/emit_reported_values.py
 
@@ -94,12 +94,12 @@
 \newcommand{\RecPositionStdVariance}{12.5}             % configuration.decoder.position_std squared
 \newcommand{\RecPositionStdCm}{3.5}                    % configuration.decoder.position_std
 \newcommand{\RecMovementVar}{6.0}                      % configuration.provenance.movement_var
-\newcommand{\RecModeContinuousInitial}{0.5}            % configuration.provenance.contfrag_discrete_initial_conditions[0]
-\newcommand{\RecModeFragmentedInitial}{0.5}            % configuration.provenance.contfrag_discrete_initial_conditions[1]
-\newcommand{\RecModeContinuousStay}{0.98}              % configuration.provenance.contfrag_diagonal_values[0]
-\newcommand{\RecModeContinuousToFragmented}{0.02}      % 1 - configuration.provenance.contfrag_diagonal_values[0]
-\newcommand{\RecModeFragmentedToContinuous}{0.02}      % 1 - configuration.provenance.contfrag_diagonal_values[1]
-\newcommand{\RecModeFragmentedStay}{0.98}              % configuration.provenance.contfrag_diagonal_values[1]
+\newcommand{\RecModeContinuousInitial}{0.5}            % configuration.provenance.continuous_fragmented_discrete_initial_conditions[0]
+\newcommand{\RecModeFragmentedInitial}{0.5}            % configuration.provenance.continuous_fragmented_discrete_initial_conditions[1]
+\newcommand{\RecModeContinuousStay}{0.98}              % configuration.provenance.continuous_fragmented_diagonal_values[0]
+\newcommand{\RecModeContinuousToFragmented}{0.02}      % 1 - configuration.provenance.continuous_fragmented_diagonal_values[0]
+\newcommand{\RecModeFragmentedToContinuous}{0.02}      % 1 - configuration.provenance.continuous_fragmented_diagonal_values[1]
+\newcommand{\RecModeFragmentedStay}{0.98}              % configuration.provenance.continuous_fragmented_diagonal_values[1]
 \newcommand{\RecNldVersion}{0.6.10.dev214+g956fdccaf}  % configuration.provenance.non_local_detector_version
 \newcommand{\RecHpdCutoff}{0.05}                       % flag_rules.hpd_overlap.threshold
 \newcommand{\RecPredictiveCutoff}{0.05}                % flag_rules.predictive_pvalue.threshold

@@ -132,7 +132,7 @@ def test_figure03_reported_statistics_match_canonical_run(tmp_path: Path) -> Non
 def test_figure04_reported_statistics_counts_partition_events(tmp_path: Path) -> None:
     payload = _load("figure04_summary.json")
 
-    assert payload["schema_version"] == 4
+    assert payload["schema_version"] == 5
     # 203 units is the count reported in the Figure-4 caption.
     assert payload["dataset"] == {
         "animal_date_epoch": "j1620210710_02_r1",

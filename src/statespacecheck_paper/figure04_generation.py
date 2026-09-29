@@ -111,7 +111,7 @@ def figure04_summary_payload(
         )
     statistics = figure04_reported_statistics(summary)
     return {
-        "schema_version": 4,
+        "schema_version": 5,
         "figure": "figure04",
         "dataset": {
             "animal_date_epoch": paths.animal_date_epoch,

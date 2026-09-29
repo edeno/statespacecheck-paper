@@ -369,7 +369,7 @@ same `Figure4RenderData` via `interactive.cache.build_figure04_viewer_cache`.
 ## Machine-readable summary schema
 
 `figure03_summary.json` uses schema version 6 and `figure04_summary.json`
-uses schema version 4. The Figure-3 schema includes the decoding-accuracy block:
+uses schema version 5. The Figure-3 schema includes the decoding-accuracy block:
 `accuracy_metric_order` (`median_absolute_error`), `accuracy_units`, and
 `median_decoding_accuracy`, a `(1, n_conditions)` matrix of the
 across-realization median absolute error of the filtered-posterior mean
@@ -385,7 +385,9 @@ reported precision. The spread itself is in `realization_flag_percentages`
 from `realizations.first_seed`; the medians are their medians over the first
 axis. The summary also records the baseline-threshold provenance
 quoted in the Methods. The Figure-4
-schema records `dataset.n_units` alongside the recording identifier. The
+schema records `dataset.n_units` alongside the recording identifier and
+names the second decoder `continuous_fragmented` throughout (schema 5 renamed
+the `contfrag_*` configuration keys). The
 `flag_rules` object binds each numeric threshold to its executable semantics:
 `less_than_or_equal` means a value is flagged when `value <= threshold`, and
 `greater_than_or_equal` means it is flagged when `value >= threshold`. Keeping

@@ -164,10 +164,10 @@ class Figure4Provenance:
     movement_var : float
         Random-walk position-transition variance, ``6.0 cm^2`` (``RandomWalk``
         default).
-    contfrag_diagonal_values : tuple[float, float]
+    continuous_fragmented_diagonal_values : tuple[float, float]
         Continuous-Fragmented ``DiscreteStationaryDiagonal`` diagonal ``(0.98, 0.98)``
         (mode-transition matrix ``[[0.98, 0.02], [0.02, 0.98]]``).
-    contfrag_discrete_initial_conditions : tuple[float, float]
+    continuous_fragmented_discrete_initial_conditions : tuple[float, float]
         Continuous-Fragmented mode initial conditions ``(0.5, 0.5)``.
     discrete_transition_concentration : float
         Continuous-Fragmented Dirichlet concentration (unprinted effective default ``1.1``;
@@ -179,8 +179,8 @@ class Figure4Provenance:
     """
 
     movement_var: float = 6.0
-    contfrag_diagonal_values: tuple[float, float] = (0.98, 0.98)
-    contfrag_discrete_initial_conditions: tuple[float, float] = (0.5, 0.5)
+    continuous_fragmented_diagonal_values: tuple[float, float] = (0.98, 0.98)
+    continuous_fragmented_discrete_initial_conditions: tuple[float, float] = (0.5, 0.5)
     discrete_transition_concentration: float = 1.1
     discrete_transition_regularization: float = 1e-10
     non_local_detector_version: str = "0.6.10.dev214+g956fdccaf"
@@ -196,8 +196,11 @@ class Figure4Provenance:
                     f"Figure4Provenance.{name} must be finite and positive; got {value!r}"
                 )
         for name, pair in (
-            ("contfrag_diagonal_values", self.contfrag_diagonal_values),
-            ("contfrag_discrete_initial_conditions", self.contfrag_discrete_initial_conditions),
+            ("continuous_fragmented_diagonal_values", self.continuous_fragmented_diagonal_values),
+            (
+                "continuous_fragmented_discrete_initial_conditions",
+                self.continuous_fragmented_discrete_initial_conditions,
+            ),
         ):
             arr = np.asarray(pair, dtype=float)
             if (
@@ -426,12 +429,12 @@ def validate_provenance_defaults(
         (
             "continuous_fragmented discrete_transition_type.diagonal_values",
             continuous_fragmented_model.discrete_transition_type.diagonal_values,
-            provenance.contfrag_diagonal_values,
+            provenance.continuous_fragmented_diagonal_values,
         ),
         (
             "continuous_fragmented discrete_initial_conditions",
             continuous_fragmented_model.discrete_initial_conditions,
-            provenance.contfrag_discrete_initial_conditions,
+            provenance.continuous_fragmented_discrete_initial_conditions,
         ),
     )
     for label, resolved, expected_pair in array_checks:

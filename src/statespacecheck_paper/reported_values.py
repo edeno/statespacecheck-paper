@@ -558,8 +558,10 @@ def _recording_configuration(payload: dict[str, Any]) -> list[MacroDefinition]:
     provenance = payload["configuration"]["provenance"]
     flag_rules = payload["flag_rules"]
     position_std: float = decoder["position_std"]
-    continuous_initial, fragmented_initial = provenance["contfrag_discrete_initial_conditions"]
-    continuous_diagonal, fragmented_diagonal = provenance["contfrag_diagonal_values"]
+    continuous_initial, fragmented_initial = provenance[
+        "continuous_fragmented_discrete_initial_conditions"
+    ]
+    continuous_diagonal, fragmented_diagonal = provenance["continuous_fragmented_diagonal_values"]
     return [
         MacroDefinition(
             "RecPositionBinSizeCm",
@@ -589,32 +591,32 @@ def _recording_configuration(payload: dict[str, Any]) -> list[MacroDefinition]:
         MacroDefinition(
             "RecModeContinuousInitial",
             _exact(continuous_initial, 1),
-            "configuration.provenance.contfrag_discrete_initial_conditions[0]",
+            "configuration.provenance.continuous_fragmented_discrete_initial_conditions[0]",
         ),
         MacroDefinition(
             "RecModeFragmentedInitial",
             _exact(fragmented_initial, 1),
-            "configuration.provenance.contfrag_discrete_initial_conditions[1]",
+            "configuration.provenance.continuous_fragmented_discrete_initial_conditions[1]",
         ),
         MacroDefinition(
             "RecModeContinuousStay",
             _exact(continuous_diagonal, 2),
-            "configuration.provenance.contfrag_diagonal_values[0]",
+            "configuration.provenance.continuous_fragmented_diagonal_values[0]",
         ),
         MacroDefinition(
             "RecModeContinuousToFragmented",
             _exact(1.0 - continuous_diagonal, 2),
-            "1 - configuration.provenance.contfrag_diagonal_values[0]",
+            "1 - configuration.provenance.continuous_fragmented_diagonal_values[0]",
         ),
         MacroDefinition(
             "RecModeFragmentedToContinuous",
             _exact(1.0 - fragmented_diagonal, 2),
-            "1 - configuration.provenance.contfrag_diagonal_values[1]",
+            "1 - configuration.provenance.continuous_fragmented_diagonal_values[1]",
         ),
         MacroDefinition(
             "RecModeFragmentedStay",
             _exact(fragmented_diagonal, 2),
-            "configuration.provenance.contfrag_diagonal_values[1]",
+            "configuration.provenance.continuous_fragmented_diagonal_values[1]",
         ),
         MacroDefinition(
             "RecNldVersion",

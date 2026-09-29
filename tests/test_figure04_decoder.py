@@ -75,13 +75,15 @@ class TestFigure4ConfigMatchesManuscript:
         assert isinstance(discrete_transition_type, DiscreteStationaryDiagonal)
         np.testing.assert_array_equal(
             np.asarray(discrete_transition_type.diagonal_values, dtype=float),
-            np.asarray(config.provenance.contfrag_diagonal_values, dtype=float),
+            np.asarray(config.provenance.continuous_fragmented_diagonal_values, dtype=float),
         )
 
         # main.tex:294 -- Continuous / Fragmented modes initialized at (0.5, 0.5).
         np.testing.assert_array_equal(
             np.asarray(continuous_fragmented_model.discrete_initial_conditions, dtype=float),
-            np.asarray(config.provenance.contfrag_discrete_initial_conditions, dtype=float),
+            np.asarray(
+                config.provenance.continuous_fragmented_discrete_initial_conditions, dtype=float
+            ),
         )
 
     def test_unprinted_effective_defaults(self) -> None:
@@ -152,8 +154,8 @@ class TestConfigValueValidation:
             {"movement_var": 0.0},
             {"discrete_transition_concentration": -1.0},
             {"discrete_transition_regularization": 0.0},
-            {"contfrag_diagonal_values": (1.2, 0.98)},
-            {"contfrag_discrete_initial_conditions": (-0.1, 1.1)},
+            {"continuous_fragmented_diagonal_values": (1.2, 0.98)},
+            {"continuous_fragmented_discrete_initial_conditions": (-0.1, 1.1)},
             {"non_local_detector_version": ""},
         ],
     )
@@ -219,7 +221,7 @@ class TestValidateProvenanceDefaults:
     def test_raises_on_array_drift(self) -> None:
         cont, cf = self._models()
         drifted = dataclasses.replace(
-            figure04_decoder.Figure4Provenance(), contfrag_diagonal_values=(0.5, 0.5)
+            figure04_decoder.Figure4Provenance(), continuous_fragmented_diagonal_values=(0.5, 0.5)
         )
         with pytest.raises(ValueError, match="default drift"):
             figure04_decoder.validate_provenance_defaults(cont, cf, drifted)
