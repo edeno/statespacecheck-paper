@@ -223,7 +223,14 @@ def test_compose_figure03_tags_figure03_annotations(
 
         assert sum(text.get_gid() == FIGURE03_PANEL_LABEL_GID for text in texts) == 2
         phase_labels = [text for text in texts if text.get_gid() == FIGURE03_PHASE_LABEL_GID]
-        assert len(phase_labels) == 5
+        # Every single-window condition names its band, in its unwrapped label.
+        assert sorted(text.get_text() for text in phase_labels) == [
+            "Drift",
+            "History-dep.",
+            "Remap",
+            "Replay",
+            "Sparse population",
+        ]
         assert {text.get_position()[1] for text in phase_labels} == {
             phase_labels[0].get_position()[1]
         }

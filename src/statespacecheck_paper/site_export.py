@@ -944,8 +944,11 @@ def manifest_payload(
     """Page-wide data: reported values, flag rules, colormaps, and conditions.
 
     ``macros`` holds the manuscript's macros and ``page_values`` the numbers
-    only the page states (:func:`page_values`).
+    only the page states (:func:`page_values`). Each ``conditions`` entry names
+    a condition's data file and its tab title
+    (:attr:`~statespacecheck_paper.figure03_summary.Figure3SummaryCondition.title`).
     """
+    conditions = conditions_by_id(Figure3Config())
     macros = {
         macro.name: macro.value
         for _, section in macro_sections(figure03_summary, figure04_summary)
@@ -962,9 +965,7 @@ def manifest_payload(
         "conditions": [
             {
                 "condition_id": window.condition_id,
-                "label": figure03_summary["condition_labels"][
-                    figure03_summary["condition_order"].index(window.condition_id)
-                ],
+                "title": conditions[window.condition_id].title,
                 "file": f"condition_{window.condition_id}.json",
             }
             for window in CONDITION_WINDOWS

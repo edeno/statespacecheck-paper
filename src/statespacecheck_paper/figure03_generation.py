@@ -58,11 +58,6 @@ from statespacecheck_paper.style import save_figure, set_figure_defaults
 FIGURE03_SUMMARY_SCHEMA_VERSION = 9
 
 
-def _plain_condition_label(label: str) -> str:
-    """Flatten a plotting label while preserving hyphenated line breaks."""
-    return label.replace("-\n", "-").replace("\n", " ")
-
-
 def conditions_by_id(config: Figure3Config) -> dict[str, Figure3SummaryCondition]:
     """Key each summary condition by its ``condition_id``, in summary column order."""
     return {condition.condition_id: condition for condition in build_summary_conditions(config)}
@@ -98,7 +93,7 @@ def figure03_summary_payload(
             config, summary.baseline_flagged_fractions
         ),
         "condition_order": [condition.condition_id for condition in conditions],
-        "condition_labels": [_plain_condition_label(condition.label) for condition in conditions],
+        "condition_labels": [condition.unwrapped_label for condition in conditions],
         "median_flag_percentages": summary.median_flag_percentages,
         "percentage_unit": "percent_of_spike_events",
         "error_metric_order": list(SUMMARY_ERROR_METRICS),

@@ -342,7 +342,8 @@ Trace: `create_shared_example(rng)` returns one immutable
 ### Figure-3 conditions (executable source of truth: `build_summary_conditions`)
 
 In heatmap order, each condition labeled by which part of the model it perturbs
-(the summary's `condition_order` ID is in parentheses):
+(the summary's `condition_order` ID is in parentheses; the bold name is the
+condition's `title`, the website's tab):
 
 1. **Well-specified** (`well_specified`) — pooled clean-recovery windows
    (out-of-sample false-positive reference); *control*.

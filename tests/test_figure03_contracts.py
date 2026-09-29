@@ -80,6 +80,7 @@ def test_rate_tables_fields() -> None:
 def test_summary_condition_and_realization_summary_fields() -> None:
     assert _field_names(Figure3SummaryCondition) == [
         "condition_id",
+        "title",
         "label",
         "step_windows",
         "model_component",

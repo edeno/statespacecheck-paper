@@ -47,6 +47,15 @@ class TestSummaryFlagPercentages:
             "drift",
             "sparse_population",
         ]
+        # Full names for the website's tabs; abbreviated headers for the heatmap.
+        assert [c.title for c in cols] == [
+            "Well-specified",
+            "Remap",
+            "History-dependent firing",
+            "Replay",
+            "Drift",
+            "Sparse population",
+        ]
         assert [c.label for c in cols] == [
             "Well-\nspecified",
             "Remap",

@@ -66,8 +66,14 @@ class Figure3SummaryCondition:
     condition_id : str
         Stable identifier, e.g. ``"remap"``. The published summary's
         ``condition_order`` and the website key each column by it.
+    title : str
+        Full, unwrapped name, e.g. ``"History-dependent firing"``: the
+        website's condition tabs.
     label : str
-        Column header (may contain a newline for a two-line label).
+        Column header, abbreviated to fit (may contain a newline for a
+        two-line label). Unwrapped (:attr:`unwrapped_label`), it names the
+        condition's band above Figure 3a and in the summary's
+        ``condition_labels``.
     step_windows : tuple of (int, int)
         Half-open ``[t0, t1)`` time-step conditions aggregated into this
         column. The well-specified column concatenates the three
@@ -80,9 +86,21 @@ class Figure3SummaryCondition:
     """
 
     condition_id: str
+    title: str
     label: str
     step_windows: tuple[tuple[int, int], ...]
     model_component: str
+
+    @property
+    def unwrapped_label(self) -> str:
+        r""":attr:`label` on one line, keeping the hyphen of a hyphenated break.
+
+        Examples
+        --------
+        >>> Figure3SummaryCondition("c", "C", "History-\ndep.", ((0, 1),), "—").unwrapped_label
+        'History-dep.'
+        """
+        return self.label.replace("-\n", "-").replace("\n", " ")
 
 
 def build_summary_conditions(config: Figure3Config) -> list[Figure3SummaryCondition]:
@@ -130,6 +148,7 @@ def build_summary_conditions(config: Figure3Config) -> list[Figure3SummaryCondit
     return [
         Figure3SummaryCondition(
             "well_specified",
+            "Well-specified",
             "Well-\nspecified",
             (
                 (t_remap_end, t_recovery1_end),
@@ -139,17 +158,23 @@ def build_summary_conditions(config: Figure3Config) -> list[Figure3SummaryCondit
             ),
             "—",
         ),
-        Figure3SummaryCondition("remap", "Remap", ((t_remap_start, t_remap_end),), "Observation"),
+        Figure3SummaryCondition(
+            "remap", "Remap", "Remap", ((t_remap_start, t_remap_end),), "Observation"
+        ),
         Figure3SummaryCondition(
             "history_dependent",
+            "History-dependent firing",
             "History-\ndep.",
             ((t_recovery1_end, t_hist_dep_end),),
             "Observation",
         ),
-        Figure3SummaryCondition("replay", "Replay", ((r0, r1),), "—"),
-        Figure3SummaryCondition("drift", "Drift", ((t_recovery2_end, t_drift_end),), "Transition"),
+        Figure3SummaryCondition("replay", "Replay", "Replay", ((r0, r1),), "—"),
+        Figure3SummaryCondition(
+            "drift", "Drift", "Drift", ((t_recovery2_end, t_drift_end),), "Transition"
+        ),
         Figure3SummaryCondition(
             "sparse_population",
+            "Sparse population",
             "Sparse\npopulation",
             ((t_recovery3_end, t_sparse_pop_end),),
             "—",

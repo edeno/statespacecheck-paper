@@ -384,31 +384,21 @@ def _plot_figure03_diagnostic_row(
 
 
 def _add_figure03_phase_labels(ax: Axes, config: Figure3Config) -> None:
-    """Add staggered misfit labels above Figure 3 panel (a)."""
-    bnd = config.phase_boundaries
-    t_remap_start = bnd[PhaseBoundary.REMAP_START]
-    t_remap_end = bnd[PhaseBoundary.REMAP_END]
-    t_recovery1_end = bnd[PhaseBoundary.RECOVERY1_END]
-    t_hist_dep_end = bnd[PhaseBoundary.HIST_DEP_END]
-    t_recovery2_end = bnd[PhaseBoundary.RECOVERY2_END]
-    t_drift_end = bnd[PhaseBoundary.DRIFT_END]
-    t_recovery3_end = bnd[PhaseBoundary.RECOVERY3_END]
-    t_sparse_pop_end = bnd[PhaseBoundary.SPARSE_POP_END]
+    """Name each condition's band above Figure 3 panel (a).
 
-    r0, r1 = compute_replay_step_window(config)
+    Each condition scored over one contiguous step window is labeled at that
+    window's center with its :attr:`~Figure3SummaryCondition.unwrapped_label`;
+    the well-specified column pools several windows and has no band to label.
+    """
     phase_label_y = 1.04
-    phase_labels_info: list[tuple[float, str]] = [
-        ((t_remap_start + t_remap_end) / 2, "Remap"),
-        ((r0 + r1) / 2, "Replay"),
-        ((t_recovery1_end + t_hist_dep_end) / 2, "History-dep."),
-        ((t_recovery2_end + t_drift_end) / 2, "Drift"),
-        ((t_recovery3_end + t_sparse_pop_end) / 2, "Sparse population"),
-    ]
-    for x_pos, label_text in phase_labels_info:
+    for condition in build_summary_conditions(config):
+        if len(condition.step_windows) != 1:
+            continue
+        ((start, end),) = condition.step_windows
         phase_label = ax.text(
-            x_pos,
+            (start + end) / 2,
             phase_label_y,
-            label_text,
+            condition.unwrapped_label,
             transform=ax.get_xaxis_transform(),
             ha="center",
             va="bottom",

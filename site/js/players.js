@@ -37,17 +37,11 @@ const PLAYBACK_SECONDS = 15;
 // which marks the replay event in the recording.
 const POPULATION_PEAK_HALF_WIDTH = 0.05;
 
-// Tab titles; the summaries abbreviate some condition labels for the figure.
-const CONDITION_TITLES = {
-  well_specified: "Well-specified",
-  remap: "Remap",
-  history_dependent: "History-dependent firing",
-  replay: "Replay",
-  drift: "Drift",
-  sparse_population: "Sparse population",
-};
-
-const CONDITION_TEXT = {
+// What each Figure-3 condition shows, keyed by the summary's condition IDs
+// (the tab titles come from the manifest). tests/test_site_metric_metadata.py
+// checks these keys against the summary's condition_order, and that
+// OPEN_ON_FLAGGED names only those conditions.
+export const CONDITION_TEXT = {
   well_specified:
     "Model and data agree. The few spikes flagged here show the false-positive rate that each threshold allows.",
   remap:
@@ -64,7 +58,7 @@ const CONDITION_TEXT = {
 
 // Conditions whose flagged spikes are the point open on one; the rest open on
 // a typical, unflagged spike (for drift, one the lagging prediction still fits).
-const OPEN_ON_FLAGGED = new Set(["remap", "sparse_population"]);
+export const OPEN_ON_FLAGGED = new Set(["remap", "sparse_population"]);
 
 const INTERACTION_HELP =
   "Hover over or tap the tracks to inspect a spike, press Play, or focus the tracks (click or Tab) and use ← → to step between spikes (Home and End jump to the first and last).";
@@ -361,7 +355,7 @@ export function initConditions(root, manifest) {
 
   view.setAttribute("role", "tabpanel");
   view.tabIndex = -1;
-  const buttons = manifest.conditions.map(({ condition_id: id, label }) => {
+  const buttons = manifest.conditions.map(({ condition_id: id, title }) => {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "chip";
@@ -369,7 +363,7 @@ export function initConditions(root, manifest) {
     button.setAttribute("role", "tab");
     button.setAttribute("aria-controls", view.id);
     button.dataset.condition = id;
-    button.textContent = CONDITION_TITLES[id] ?? label;
+    button.textContent = title;
     button.addEventListener("click", () => select(id));
     button.addEventListener("keydown", (event) => {
       const i = ids.indexOf(id);

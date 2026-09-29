@@ -5,9 +5,10 @@ conditions (remap, history-dependent firing, drift) and two specificity controls
 (a replay event embedded in clean-recovery 2, and a final sparse-population
 epoch), separated by clean-recovery windows. This module holds the immutable
 experimental configuration (:class:`Figure3Config`), the phase-transition index
-enum (:class:`PhaseBoundary`), the canonical ordered phase labels
-(:data:`PHASE_LABELS`), and the replay-window step-bound helper
-(:func:`compute_replay_step_window`). It imports no sibling paper module.
+enum (:class:`PhaseBoundary`), and the replay-window step-bound helper
+(:func:`compute_replay_step_window`). The conditions' display names live with
+the summary columns (``figure03_summary.build_summary_conditions``). It
+imports no sibling paper module.
 """
 
 from __future__ import annotations
@@ -399,21 +400,6 @@ class Figure3Config:
             self.position_bin_size,
             dtype=np.float64,
         )
-
-
-# Canonical ordered phase names: ``PHASE_LABELS[i]`` names the phase that ends
-# at ``Figure3Config.phase_boundaries[i]`` (the first starts at step 0). Tests
-# import this tuple rather than re-typing the strings.
-PHASE_LABELS: tuple[str, ...] = (
-    "Clean Baseline",
-    "Remap Misfit",
-    "Clean Recovery",
-    "History-Dependent Firing",
-    "Clean Recovery",
-    "Drift Misfit",
-    "Clean Recovery",
-    "Sparse Population",
-)
 
 
 def compute_replay_step_window(config: Figure3Config) -> tuple[int, int]:

@@ -31,11 +31,7 @@ from statespacecheck_paper.diagnostics import (
     compute_spike_event_diagnostics_from_rates,
     flag_mask,
 )
-from statespacecheck_paper.figure03_protocol import (
-    PHASE_LABELS,
-    Figure3Config,
-    PhaseBoundary,
-)
+from statespacecheck_paper.figure03_protocol import Figure3Config, PhaseBoundary
 from statespacecheck_paper.figure03_simulation import (
     Figure3SimulationResult,
     _single_out_and_back_sweep,
@@ -69,14 +65,18 @@ def _seed0_params() -> Figure3Config:
 
 def _per_phase_medians(
     sim: Figure3SimulationResult,
-) -> dict[str, tuple[float, float, float]]:
-    """Return (kl_med, hpd_med, sp_med) per phase label."""
+) -> dict[PhaseBoundary, tuple[float, float, float]]:
+    """Return (kl_med, hpd_med, sp_med) per phase.
+
+    Each phase is keyed by the boundary that ends it: the opening baseline by
+    ``PhaseBoundary.REMAP_START``, the sparse population by ``SPARSE_POP_END``.
+    """
     metrics = sim.diagnostics
     boundaries = np.asarray(sim.config.phase_boundaries)
     event_phase = np.searchsorted(boundaries, metrics.event_time_ind, side="right")
-    out: dict[str, tuple[float, float, float]] = {}
-    for i, label in enumerate(PHASE_LABELS):
-        mask = event_phase == i
+    out: dict[PhaseBoundary, tuple[float, float, float]] = {}
+    for label in PhaseBoundary:
+        mask = event_phase == label
         if not mask.any():
             continue
         kl = float(np.nanmedian(metrics.event_kl_divergence[mask]))
@@ -91,21 +91,12 @@ def sim() -> Figure3SimulationResult:
     return run_figure03_simulation(_moderate_params(), seed=0)
 
 
-def test_phase_labels_and_boundaries(sim: Figure3SimulationResult) -> None:
-    """One canonical label per configured phase, and a simulated timeline
-    that ends at the SPARSE_POP_END boundary.
+def test_phase_boundaries_end_the_timeline(sim: Figure3SimulationResult) -> None:
+    """One boundary per phase, and a simulated timeline that ends at the
+    SPARSE_POP_END boundary.
     """
     params = sim.config
-    # Sanity-check the canonical set itself: 8 phases, with each expected
-    # non-baseline condition appearing once.
-    assert len(PHASE_LABELS) == len(params.phase_boundaries) == 8
-    for misfit in (
-        "Remap Misfit",
-        "History-Dependent Firing",
-        "Drift Misfit",
-        "Sparse Population",
-    ):
-        assert PHASE_LABELS.count(misfit) == 1
+    assert len(PhaseBoundary) == len(params.phase_boundaries) == 8
     end = params.phase_boundaries[PhaseBoundary.SPARSE_POP_END]
     x_true = np.asarray(sim.true_position)
     assert x_true.shape[0] == end
@@ -307,8 +298,8 @@ def test_sparse_population_dissociates_kl_from_other_metrics(
     overlap and the predictive p-value remain consistent.
     """
     medians = _per_phase_medians(sim)
-    base_kl, base_hpd, _ = medians["Clean Baseline"]
-    sparse_kl, sparse_hpd, sparse_p = medians["Sparse Population"]
+    base_kl, base_hpd, _ = medians[PhaseBoundary.REMAP_START]
+    sparse_kl, sparse_hpd, sparse_p = medians[PhaseBoundary.SPARSE_POP_END]
 
     assert sparse_kl > 3 * base_kl, (
         "sparse-population spikes should inflate KL by >3x; "
@@ -422,8 +413,8 @@ def test_history_dependent_firing_per_spike_metrics_near_baseline(
     thresholds the way remap/drift do.
     """
     medians = _per_phase_medians(sim)
-    base_kl, base_hpd, base_sp = medians["Clean Baseline"]
-    hd_kl, hd_hpd, hd_sp = medians["History-Dependent Firing"]
+    base_kl, base_hpd, base_sp = medians[PhaseBoundary.REMAP_START]
+    hd_kl, hd_hpd, hd_sp = medians[PhaseBoundary.HIST_DEP_END]
 
     # All three per-spike metrics stay near baseline — the temporal
     # misfit barely registers. Bounds are absolute (vs. baseline), not
@@ -453,8 +444,8 @@ def test_drift_phase_inflates_kl(sim: Figure3SimulationResult) -> None:
     baseline. The bound is tight enough to catch a near-noop drift.
     """
     medians = _per_phase_medians(sim)
-    base_kl, _, _ = medians["Clean Baseline"]
-    drift_kl, _, _ = medians["Drift Misfit"]
+    base_kl, _, _ = medians[PhaseBoundary.REMAP_START]
+    drift_kl, _, _ = medians[PhaseBoundary.DRIFT_END]
     # Bound chosen against observed ratio (~1.38x at the moderate test
     # scale) — strict enough to catch a regression where drift becomes
     # indistinguishable from baseline, loose enough to absorb normal
