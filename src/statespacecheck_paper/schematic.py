@@ -36,7 +36,6 @@ def draw_node(
     label: str,
     facecolor: str = "white",
     edgecolor: str = "black",
-    linewidth: float = 1.5,
 ) -> Circle:
     """Draw a circular node for graphical models.
 
@@ -54,8 +53,6 @@ def draw_node(
         Fill color of the circle.
     edgecolor : str, default "black"
         Edge color of the circle.
-    linewidth : float, default 1.5
-        Width of the circle edge.
 
     Returns
     -------
@@ -74,7 +71,7 @@ def draw_node(
         radius,
         facecolor=facecolor,
         edgecolor=edgecolor,
-        linewidth=linewidth,
+        linewidth=1.5,
         zorder=10,
     )
     ax.add_patch(circle)
@@ -99,7 +96,6 @@ def draw_arrow(
     label: str | None = None,
     color: str = "black",
     linewidth: float = 1.5,
-    connectionstyle: str = "arc3,rad=0",
 ) -> FancyArrowPatch:
     """Draw an arrow between two points.
 
@@ -117,8 +113,6 @@ def draw_arrow(
         Arrow color.
     linewidth : float, default 1.5
         Arrow line width.
-    connectionstyle : str, default "arc3,rad=0"
-        Connection style for curved arrows.
 
     Returns
     -------
@@ -139,7 +133,7 @@ def draw_arrow(
         mutation_scale=12,
         color=color,
         linewidth=linewidth,
-        connectionstyle=connectionstyle,
+        connectionstyle="arc3,rad=0",
         zorder=5,
     )
     ax.add_patch(arrow)
@@ -168,10 +162,8 @@ def draw_distribution_inset(
     std: float,
     color: str,
     label: str | None = None,
-    label_color: str | None = None,
     label_size: int = 8,
     title: str | None = None,
-    title_size: int = 8,
 ) -> None:
     """Draw a small distribution plot as an inset.
 
@@ -193,17 +185,13 @@ def draw_distribution_inset(
     std : float
         Standard deviation of the Gaussian distribution.
     color : str
-        Color for the distribution curve and fill.
+        Color for the distribution curve and fill, the title, and the label.
     label : str | None, optional
         Label below distribution (e.g., math notation).
-    label_color : str | None, optional
-        Color for label. Defaults to distribution color.
     label_size : int, default 8
         Font size for label.
     title : str | None, optional
-        Title above distribution.
-    title_size : int, default 8
-        Font size for title.
+        Title above distribution, in 8 pt.
 
     Examples
     --------
@@ -214,9 +202,6 @@ def draw_distribution_inset(
     >>> draw_distribution_inset(ax, (5, 5), 2, 1, mean=0, std=1, color="blue")
     >>> plt.close(fig)
     """
-    if label_color is None:
-        label_color = color
-
     left_data = center[0] - width / 2
     bottom_data = center[1] - height / 2
 
@@ -247,7 +232,7 @@ def draw_distribution_inset(
             ha="center",
             va="bottom",
             transform=inset.transAxes,
-            fontsize=title_size,
+            fontsize=8,
             color=color,
         )
 
@@ -260,7 +245,7 @@ def draw_distribution_inset(
             va="top",
             transform=inset.transAxes,
             fontsize=label_size,
-            color=label_color,
+            color=color,
         )
 
 
@@ -351,7 +336,6 @@ def draw_equation_box(
     height: float,
     edgecolor: str = COLORS["annotation"],
     facecolor: str = "#FAFAFA",
-    linewidth: float = 1.0,
 ) -> FancyBboxPatch:
     """Draw a rounded box for equation grouping.
 
@@ -369,8 +353,6 @@ def draw_equation_box(
         Edge color.
     facecolor : str, default "#FAFAFA"
         Fill color.
-    linewidth : float, default 1.0
-        Edge line width.
 
     Returns
     -------
@@ -391,7 +373,7 @@ def draw_equation_box(
         boxstyle="round,pad=0.05",
         edgecolor=edgecolor,
         facecolor=facecolor,
-        linewidth=linewidth,
+        linewidth=1.0,
         zorder=1,
     )
     ax.add_patch(box)
