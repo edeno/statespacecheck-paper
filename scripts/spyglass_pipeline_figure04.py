@@ -16,7 +16,7 @@ Steps, in order (see ``docs/spyglass-pipeline.md``)::
 Every step except ``check`` writes to the lab database, so each only prints what
 it would write unless given ``--write`` (and then asks for confirmation unless
 ``--yes``). ``check`` only reads. The recipes live in
-:mod:`statespacecheck_paper.lab.spyglass_pipeline`; this script is the thin CLI wrapper.
+:mod:`statespacecheck_paper.spyglass_pipeline.figure04_schema`; this script is the thin CLI wrapper.
 
 Run on a lab server with the lab's current Spyglass and this repository's
 ``src/`` on the import path::
@@ -70,7 +70,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     # Imports Spyglass, which connects to the lab database.
-    from statespacecheck_paper.lab import spyglass_pipeline as pipeline
+    from statespacecheck_paper.spyglass_pipeline import figure04_schema as pipeline
 
     if args.step in ("diagnostics-selection", "diagnostics", "check"):
         pipeline.activate_schema()

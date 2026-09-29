@@ -230,31 +230,33 @@ def test_no_module_imports_the_download() -> None:
     assert importers == []
 
 
-def test_no_figure_or_analysis_module_imports_the_lab_package() -> None:
-    """The lab's Spyglass acquisition and export code runs upstream of the
-    figures; ``lab.spyglass_pipeline`` connects to the lab database when
-    imported. Only the ``lab`` package itself may import from it."""
-    lab = "statespacecheck_paper.lab"
+def test_no_figure_or_analysis_module_imports_the_spyglass_pipeline() -> None:
+    """The Spyglass pipeline runs upstream of the figures, which read the archived
+    input file instead; ``spyglass_pipeline.figure04_schema`` connects to the lab database
+    when imported. Only the ``spyglass_pipeline`` package itself may import from it."""
+    package = "statespacecheck_paper.spyglass_pipeline"
+    short = "spyglass_pipeline"
 
-    def imports_lab(module_file: str) -> bool:
+    def imports_package(module_file: str) -> bool:
         tree = ast.parse((_SRC / module_file).read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom):
                 module = node.module or ""
-                # ``from statespacecheck_paper import lab`` and relative forms.
-                if any(alias.name == "lab" for alias in node.names) or module in {"lab", lab}:
+                # ``from statespacecheck_paper import spyglass_pipeline`` and relative forms.
+                if any(alias.name == short for alias in node.names) or module in {short, package}:
                     return True
-                if module.startswith((lab + ".", "lab.")):
+                if module.startswith((package + ".", short + ".")):
                     return True
             elif isinstance(node, ast.Import) and any(
-                alias.name == lab or alias.name.startswith(lab + ".") for alias in node.names
+                alias.name == package or alias.name.startswith(package + ".")
+                for alias in node.names
             ):
                 return True
         return False
 
     modules = [path.relative_to(_SRC).as_posix() for path in sorted(_SRC.rglob("*.py"))]
-    assert "lab/spyglass_data.py" in modules
-    importers = [m for m in modules if not m.startswith("lab/") and imports_lab(m)]
+    assert "spyglass_pipeline/figure04_input.py" in modules
+    importers = [m for m in modules if not m.startswith(short + "/") and imports_package(m)]
     assert importers == []
 
 
@@ -308,7 +310,10 @@ _MAIN_GUARDS = {"__name__ == '__main__'", '__name__ == "__main__"'}
 
 
 def _module_name(path: Path) -> str:
-    """``figure04_cache``, ``interactive.cache``, ``lab`` (a package), ``__init__``."""
+    """Dotted name under the package, e.g. ``figure04_cache``, ``interactive.cache``.
+
+    A subpackage's ``__init__`` is named after the subpackage.
+    """
     parts = path.relative_to(_SRC).with_suffix("").parts
     if parts[-1] == "__init__" and len(parts) > 1:
         parts = parts[:-1]

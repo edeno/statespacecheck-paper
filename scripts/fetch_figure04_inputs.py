@@ -4,7 +4,7 @@ Fetches the Spyglass entries behind the Figure-4 recording and writes the
 ``.npz`` file that :func:`statespacecheck_paper.load_local_data.load_neural_recording_from_files`
 reads. With ``--compare-to``, checks it array by array against a reference (e.g.
 the ``data/`` file the figure used). The recipe lives in
-:mod:`statespacecheck_paper.lab.spyglass_data`; this script is the thin CLI wrapper.
+:mod:`statespacecheck_paper.spyglass_pipeline.figure04_input`; this script is the thin CLI wrapper.
 
 Requires Spyglass, lab database credentials, and the lab's analysis NWB store:
 run on a lab server in an environment with the lab's Spyglass. Only reads from
@@ -23,7 +23,7 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from statespacecheck_paper.lab.spyglass_data import (
+from statespacecheck_paper.spyglass_pipeline.figure04_input import (
     FIGURE04_EPOCH_NAME,
     FIGURE04_NWB_FILE_NAME,
     check_output_paths,

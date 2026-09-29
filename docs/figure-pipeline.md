@@ -147,57 +147,59 @@ matches it exactly.
 
 <!-- module-graph -->
 ```text
-__init__                   → style
-paths                      → (none)
-number_format              → (none)
-diagnostics                → (none)
-simulation                 → (none)
-decoding                   → diagnostics, simulation
-style                      → diagnostics
-plotting                   → style
-schematic                  → style
-scientific_artifacts       → diagnostics, paths
-reported_values            → number_format, paths
+__init__                           → style
+paths                              → (none)
+number_format                      → (none)
+diagnostics                        → (none)
+simulation                         → (none)
+decoding                           → diagnostics, simulation
+style                              → diagnostics
+plotting                           → style
+schematic                          → style
+scientific_artifacts               → diagnostics, paths
+reported_values                    → number_format, paths
 
-figure01_generation        → diagnostics, paths, plotting, schematic, style
-figure02_panels            → diagnostics, simulation, style
-figure02_generation        → figure02_panels, paths, style
+figure01_generation                → diagnostics, paths, plotting, schematic, style
+figure02_panels                    → diagnostics, simulation, style
+figure02_generation                → figure02_panels, paths, style
 
-figure03_protocol          → (none)
-figure03_simulation        → decoding, diagnostics, figure03_protocol, simulation
-figure03_summary           → diagnostics, figure03_protocol, figure03_simulation
-figure03_plotting          → diagnostics, figure03_protocol, figure03_summary, number_format, plotting, style
-figure03_generation        → diagnostics, figure03_plotting, figure03_protocol, figure03_simulation, figure03_summary, paths, scientific_artifacts, style
+figure03_protocol                  → (none)
+figure03_simulation                → decoding, diagnostics, figure03_protocol, simulation
+figure03_summary                   → diagnostics, figure03_protocol, figure03_simulation
+figure03_plotting                  → diagnostics, figure03_protocol, figure03_summary, number_format, plotting, style
+figure03_generation                → diagnostics, figure03_plotting, figure03_protocol, figure03_simulation, figure03_summary, paths, scientific_artifacts, style
 
-load_local_data            → paths
-write_local_data           → load_local_data
-figure04_download          → load_local_data, paths
-figure04_models            → (none)
-figure04_decoder           → diagnostics
-figure04_place_fields      → (none)
-figure04_diagnostics       → diagnostics, figure04_place_fields
-figure04_plot_primitives   → figure04_place_fields, style
-figure04_track_plots       → figure04_plot_primitives
-figure04_panels            → diagnostics, figure04_diagnostics, figure04_models, figure04_place_fields, figure04_plot_primitives, figure04_track_plots, plotting, style
-figure04_cache             → figure04_decoder, load_local_data
-figure04_workflow          → diagnostics, figure04_cache, figure04_decoder, figure04_diagnostics, figure04_place_fields, load_local_data
-figure04_summary           → diagnostics, figure04_diagnostics, figure04_models, figure04_workflow
-figure04_layout            → diagnostics, figure04_models, figure04_panels, figure04_track_plots, figure04_workflow, plotting, style
-figure04_generation        → diagnostics, figure04_cache, figure04_decoder, figure04_layout, figure04_models, figure04_summary, figure04_workflow, paths, scientific_artifacts, style
+load_local_data                    → paths
+write_local_data                   → load_local_data
+figure04_download                  → load_local_data, paths
+figure04_models                    → (none)
+figure04_decoder                   → diagnostics
+figure04_place_fields              → (none)
+figure04_diagnostics               → diagnostics, figure04_place_fields
+figure04_plot_primitives           → figure04_place_fields, style
+figure04_track_plots               → figure04_plot_primitives
+figure04_panels                    → diagnostics, figure04_diagnostics, figure04_models, figure04_place_fields, figure04_plot_primitives, figure04_track_plots, plotting, style
+figure04_cache                     → figure04_decoder, load_local_data
+figure04_workflow                  → diagnostics, figure04_cache, figure04_decoder, figure04_diagnostics, figure04_place_fields, load_local_data
+figure04_summary                   → diagnostics, figure04_diagnostics, figure04_models, figure04_workflow
+figure04_layout                    → diagnostics, figure04_models, figure04_panels, figure04_track_plots, figure04_workflow, plotting, style
+figure04_generation                → diagnostics, figure04_cache, figure04_decoder, figure04_layout, figure04_models, figure04_summary, figure04_workflow, paths, scientific_artifacts, style
 
-site_export                → decoding, diagnostics, figure03_generation, figure03_protocol, figure03_simulation, figure04_cache, figure04_decoder, figure04_diagnostics, figure04_generation, figure04_layout, figure04_models, figure04_place_fields, figure04_workflow, number_format, paths, reported_values, simulation, style
+site_export                        → decoding, diagnostics, figure03_generation, figure03_protocol, figure03_simulation, figure04_cache, figure04_decoder, figure04_diagnostics, figure04_generation, figure04_layout, figure04_models, figure04_place_fields, figure04_workflow, number_format, paths, reported_values, simulation, style
 
-interactive                → (none)
-interactive.__main__       → interactive.app
-interactive.app            → interactive.cache, interactive.data_source; lazy: interactive.viewer
-interactive.cache          → diagnostics, figure04_models, figure04_place_fields, paths; lazy: figure03_protocol, figure03_simulation, figure04_cache, figure04_decoder, figure04_workflow
-interactive.data_source    → figure04_models, figure04_place_fields, interactive.cache
-interactive.panels         → plotting, style
-interactive.viewer         → figure04_generation, figure04_models, interactive.cache, interactive.data_source, interactive.panels, style
+interactive                        → (none)
+interactive.__main__               → interactive.app
+interactive.app                    → interactive.cache, interactive.data_source; lazy: interactive.viewer
+interactive.cache                  → diagnostics, figure04_models, figure04_place_fields, paths; lazy: figure03_protocol, figure03_simulation, figure04_cache, figure04_decoder, figure04_workflow
+interactive.data_source            → figure04_models, figure04_place_fields, interactive.cache
+interactive.panels                 → plotting, style
+interactive.viewer                 → figure04_generation, figure04_models, interactive.cache, interactive.data_source, interactive.panels, style
 
-lab                        → (none)
-lab.spyglass_data          → figure04_models, load_local_data, write_local_data; lazy: figure04_decoder, figure04_diagnostics, figure04_generation, figure04_place_fields, figure04_summary; type-only: diagnostics
-lab.spyglass_pipeline      → diagnostics, figure04_decoder, figure04_generation, figure04_models, figure04_place_fields, lab.spyglass_data
+spyglass_pipeline                  → (none)
+spyglass_pipeline.figure04_input   → load_local_data, write_local_data
+spyglass_pipeline.paper_export     → spyglass_pipeline.figure04_input
+spyglass_pipeline.figure04_schema  → diagnostics, figure04_decoder, figure04_generation, figure04_models, figure04_place_fields, spyglass_pipeline.figure04_compute, spyglass_pipeline.figure04_input
+spyglass_pipeline.figure04_compute → figure04_models, spyglass_pipeline.figure04_input; lazy: figure04_decoder, figure04_diagnostics, figure04_generation, figure04_place_fields, figure04_summary; type-only: diagnostics
 ```
 <!-- module-graph -->
 
@@ -205,15 +207,17 @@ lab.spyglass_pipeline      → diagnostics, figure04_decoder, figure04_generatio
 
 - **`interactive/`** — an optional pyqtgraph viewer that consumes the same
   diagnostic results but produces no manuscript figure.
-- **`lab/`** — the lab's acquisition and export code; no figure or analysis
-  module imports it (`tests/test_import_boundaries.py`).
-  - **`lab/spyglass_data.py`** (with `scripts/fetch_figure04_inputs.py` and
-    `scripts/spyglass_export_figure04.py`) rebuilds and exports the Figure-4
-    input file from Spyglass, writing it with `write_local_data`. See
-    [data-lineage.md](data-lineage.md).
-  - **`lab/spyglass_pipeline.py`** (with `scripts/spyglass_pipeline_figure04.py`)
-    runs the Figure-4 decode and diagnostics as a Spyglass pipeline, meant to
-    reproduce this figure's numbers inside the lab database. See
+- **`spyglass_pipeline/`** — the lab's Spyglass pipeline for Figure 4, upstream of the
+  paper code; no figure or analysis module imports it (`tests/test_import_boundaries.py`).
+  - **`figure04_input.py`** (with `scripts/fetch_figure04_inputs.py`) rebuilds the
+    Figure-4 input file from Spyglass, writing it with `write_local_data`, and
+    compares it with the archived copy. See [data-lineage.md](data-lineage.md).
+  - **`paper_export.py`** (with `scripts/spyglass_export_figure04.py`) records that
+    fetch in a Spyglass paper export.
+  - **`figure04_schema.py`** (with `scripts/spyglass_pipeline_figure04.py`) defines
+    the Figure-4 decode and diagnostics as Spyglass tables, meant to reproduce this
+    figure's numbers inside the lab database; **`figure04_compute.py`** holds what
+    those tables compute, runnable without a database. See
     [spyglass-pipeline.md](spyglass-pipeline.md).
 - **`scripts/convert_figure04_pickles.py`** converts the five pickles the
   recording was first exported as into the input file.
@@ -462,9 +466,9 @@ $\Lambda(x)$.
   processing steps, the verification against the files the figure used, and which
   of them are public (DANDI dandiset
   [001942](https://dandiarchive.org/dandiset/001942) has the raw recording).
-  `lab/spyglass_data.py` rebuilds the input file from the database
-  (`scripts/fetch_figure04_inputs.py`, read-only) and logs the fetches in a Spyglass
-  export (`scripts/spyglass_export_figure04.py`); both run on a lab server with
+  `spyglass_pipeline/figure04_input.py` rebuilds the input file from the database
+  (`scripts/fetch_figure04_inputs.py`, read-only) and `spyglass_pipeline/paper_export.py`
+  logs the fetches in a Spyglass paper export (`scripts/spyglass_export_figure04.py`); both run on a lab server with
   Spyglass and database access. The input file is archived on Zenodo
   ([10.5281/zenodo.23020757](https://doi.org/10.5281/zenodo.23020757));
   `scripts/download_figure04_inputs.py` downloads it and checks its SHA-256.

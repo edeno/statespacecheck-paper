@@ -2,7 +2,7 @@
 
 A dedicated doctest runner is used here rather than ``--doctest-modules``
 in ``[tool.pytest.ini_options] addopts``: that flag imports *every* module
-under ``src/`` to collect doctests. Importing ``lab.spyglass_pipeline`` imports
+under ``src/`` to collect doctests. Importing ``spyglass_pipeline.figure04_schema`` imports
 Spyglass, which connects to the lab database, and importing
 ``interactive.__main__`` parses the command line and exits.
 
@@ -40,7 +40,8 @@ _DOCTEST_MODULES = [
     "statespacecheck_paper.figure04_panels",
     "statespacecheck_paper.number_format",
     "statespacecheck_paper.reported_values",
-    "statespacecheck_paper.lab.spyglass_data",
+    "statespacecheck_paper.spyglass_pipeline.figure04_input",
+    "statespacecheck_paper.spyglass_pipeline.paper_export",
 ]
 
 _EXECUTABLE_EXAMPLE = re.compile(r"^\s*>>> (?!#)", re.MULTILINE)

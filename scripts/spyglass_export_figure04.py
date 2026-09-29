@@ -34,16 +34,18 @@ from collections.abc import Sequence
 from importlib.metadata import version
 from pathlib import Path
 
-from statespacecheck_paper.lab.spyglass_data import (
+from statespacecheck_paper.spyglass_pipeline.figure04_input import (
     FIGURE04_EPOCH_NAME,
     FIGURE04_NWB_FILE_NAME,
     check_output_paths,
-    describe_figure04_export,
     epoch_identifier,
-    log_figure04_export,
-    package_figure04_export,
     print_export_comparison,
     write_figure04_inputs,
+)
+from statespacecheck_paper.spyglass_pipeline.paper_export import (
+    describe_figure04_export,
+    log_figure04_export,
+    package_figure04_export,
 )
 
 

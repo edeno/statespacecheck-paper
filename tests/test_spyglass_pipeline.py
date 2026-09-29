@@ -25,25 +25,29 @@ from track_linearization import make_track_graph
 
 from statespacecheck_paper.figure04_diagnostics import FlagConfusion
 from statespacecheck_paper.figure04_summary import Figure4DiagnosticMeans, Figure4Summary
-from statespacecheck_paper.lab import spyglass_data
-from statespacecheck_paper.lab.spyglass_data import (
-    Figure4Inputs,
-    check_output_paths,
-    compare_figure04_exports,
-    declared_attribute_names,
-    epoch_identifier,
+from statespacecheck_paper.load_local_data import input_file_path, load_neural_recording_from_files
+from statespacecheck_paper.paths import FIGURE04_INPUTS_EPOCH, FIGURE04_SUMMARY_PATH, REPO_ROOT
+from statespacecheck_paper.spyglass_pipeline import figure04_input, paper_export
+from statespacecheck_paper.spyglass_pipeline.figure04_compute import (
     figure04_diagnostics_from_decodes,
     figure04_reported_statistics_from_rows,
     figure04_summary_rows,
+)
+from statespacecheck_paper.spyglass_pipeline.figure04_input import (
+    Figure4Inputs,
+    check_output_paths,
+    compare_figure04_exports,
+    epoch_identifier,
     filter_spike_times,
     get_interpolated_position_info,
     get_patch_id,
-    log_figure04_export,
-    unrestricted_log_entries,
     write_figure04_inputs,
 )
-from statespacecheck_paper.load_local_data import input_file_path, load_neural_recording_from_files
-from statespacecheck_paper.paths import FIGURE04_INPUTS_EPOCH, FIGURE04_SUMMARY_PATH, REPO_ROOT
+from statespacecheck_paper.spyglass_pipeline.paper_export import (
+    declared_attribute_names,
+    log_figure04_export,
+    unrestricted_log_entries,
+)
 
 from ._scripts import SCRIPTS_DIR, load_script
 
@@ -56,7 +60,11 @@ _NO_DATABASE_IMPORTS = (
 
 
 def test_importing_module_does_not_import_spyglass_or_datajoint() -> None:
-    code = "import statespacecheck_paper.lab.spyglass_data\n" + _NO_DATABASE_IMPORTS
+    code = (
+        "import statespacecheck_paper.spyglass_pipeline.figure04_input\n"
+        "import statespacecheck_paper.spyglass_pipeline.figure04_compute\n"
+        "import statespacecheck_paper.spyglass_pipeline.paper_export\n"
+    ) + _NO_DATABASE_IMPORTS
     subprocess.run([sys.executable, "-c", code], check=True)
 
 
@@ -238,7 +246,7 @@ def test_write_refuses_a_directed_graph(tmp_path: Path) -> None:
 def test_spyglass_session_and_epoch_name_the_published_input_file() -> None:
     """The Spyglass fetch rebuilds the input file the figure reads, not another epoch's."""
     assert (
-        epoch_identifier(spyglass_data.FIGURE04_NWB_FILE_NAME, spyglass_data.FIGURE04_EPOCH_NAME)
+        epoch_identifier(figure04_input.FIGURE04_NWB_FILE_NAME, figure04_input.FIGURE04_EPOCH_NAME)
         == FIGURE04_INPUTS_EPOCH
     )
 
@@ -378,11 +386,11 @@ def test_log_export_stops_the_session_when_the_fetch_fails(
         raise OSError("analysis file unavailable")
 
     monkeypatch.setattr(
-        spyglass_data,
+        paper_export,
         "dry_run_figure04_export_log",
         lambda *args: [{"part": "Table", "table_name": "position", "restriction": "(id=1)"}],
     )
-    monkeypatch.setattr(spyglass_data, "fetch_figure04_inputs", failing_fetch)
+    monkeypatch.setattr(paper_export, "fetch_figure04_inputs", failing_fetch)
 
     with pytest.raises(OSError):
         log_figure04_export("paper", "analysis")
@@ -403,7 +411,7 @@ def test_log_export_refuses_unsafe_rehearsal_before_writing(
 ) -> None:
     calls: list[str] = []
     _fake_common_usage(monkeypatch, calls)
-    monkeypatch.setattr(spyglass_data, "dry_run_figure04_export_log", lambda *args: entries)
+    monkeypatch.setattr(paper_export, "dry_run_figure04_export_log", lambda *args: entries)
 
     with pytest.raises(RuntimeError, match=message):
         log_figure04_export("paper", "analysis")
@@ -445,12 +453,12 @@ def test_export_rehearsal_records_without_inserting_and_restores_state(
         if fetch_fails:
             raise OSError("analysis file unavailable")
 
-    monkeypatch.setattr(spyglass_data, "fetch_figure04_inputs", fetch)
+    monkeypatch.setattr(paper_export, "fetch_figure04_inputs", fetch)
     if fetch_fails:
         with pytest.raises(OSError, match="analysis file unavailable"):
-            spyglass_data.dry_run_figure04_export_log()
+            paper_export.dry_run_figure04_export_log()
     else:
-        assert spyglass_data.dry_run_figure04_export_log() == [
+        assert paper_export.dry_run_figure04_export_log() == [
             {"part": "Table", "table_name": "position", "restriction": "(id=1)"},
             {"part": "File", "analysis_file_name": "analysis.nwb"},
         ]
@@ -499,8 +507,8 @@ def _export_script(monkeypatch: pytest.MonkeyPatch, calls: list[str], answer: st
 
 
 def _script_epoch() -> str:
-    return spyglass_data.epoch_identifier(
-        spyglass_data.FIGURE04_NWB_FILE_NAME, spyglass_data.FIGURE04_EPOCH_NAME
+    return figure04_input.epoch_identifier(
+        figure04_input.FIGURE04_NWB_FILE_NAME, figure04_input.FIGURE04_EPOCH_NAME
     )
 
 
