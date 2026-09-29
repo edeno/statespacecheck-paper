@@ -37,6 +37,16 @@ class TestSummaryFlagPercentages:
 
     def test_summary_phase_windows_structure(self) -> None:
         cols = build_summary_conditions(self._params())
+        # The published summary's condition_order and the website's scenario
+        # files use these identifiers; each names its own column.
+        assert [c.condition_id for c in cols] == [
+            "well_specified",
+            "remap",
+            "history_dependent",
+            "replay",
+            "drift",
+            "sparse_population",
+        ]
         assert [c.label for c in cols] == [
             "Well-\nspecified",
             "Remap",

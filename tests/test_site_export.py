@@ -25,7 +25,7 @@ from statespacecheck_paper.diagnostics import (
     compute_spike_event_diagnostics_from_rates,
     flag_mask,
 )
-from statespacecheck_paper.figure03_generation import FIGURE03_CONDITION_IDS, conditions_by_id
+from statespacecheck_paper.figure03_generation import conditions_by_id
 from statespacecheck_paper.figure03_protocol import STEP_SECONDS, Figure3Config
 from statespacecheck_paper.figure03_simulation import (
     Figure3SimulationResult,
@@ -329,7 +329,7 @@ def test_scenario_windows_cover_every_condition_and_overlap_its_scored_steps(
     config: Figure3Config,
 ) -> None:
     conditions = conditions_by_id(config)
-    assert [window.condition_id for window in SCENARIO_WINDOWS] == list(FIGURE03_CONDITION_IDS)
+    assert [window.condition_id for window in SCENARIO_WINDOWS] == list(conditions)
     n_time = config.phase_boundaries[-1]
     for window in SCENARIO_WINDOWS:
         assert 0 <= window.start < window.stop <= n_time

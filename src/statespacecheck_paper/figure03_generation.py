@@ -57,14 +57,6 @@ from statespacecheck_paper.style import save_figure, set_figure_defaults
 # realizations gives a stable threshold and a median per-phase summary.
 # The seed-1 realization shown in panel (a) is one of these.
 N_REALIZATIONS = 100
-FIGURE03_CONDITION_IDS = (
-    "well_specified",
-    "remap",
-    "history_dependent",
-    "replay",
-    "drift",
-    "sparse_population",
-)
 
 
 def _plain_condition_label(label: str) -> str:
@@ -73,15 +65,8 @@ def _plain_condition_label(label: str) -> str:
 
 
 def conditions_by_id(config: Figure3Config) -> dict[str, Figure3SummaryCondition]:
-    """Pair each identifier in ``FIGURE03_CONDITION_IDS`` with its summary condition."""
-    conditions = build_summary_conditions(config)
-    if len(conditions) != len(FIGURE03_CONDITION_IDS):
-        raise ValueError(
-            "Figure 3 condition identifiers are out of sync with "
-            f"build_summary_conditions: {len(FIGURE03_CONDITION_IDS)} IDs for "
-            f"{len(conditions)} conditions."
-        )
-    return dict(zip(FIGURE03_CONDITION_IDS, conditions, strict=True))
+    """Key each summary condition by its ``condition_id``, in summary column order."""
+    return {condition.condition_id: condition for condition in build_summary_conditions(config)}
 
 
 def figure03_summary_payload(
@@ -89,7 +74,7 @@ def figure03_summary_payload(
     summary: Figure3RealizationSummary,
 ) -> dict[str, object]:
     """Return the canonical Figure 3 reported statistics as JSON-ready data."""
-    conditions = conditions_by_id(config).values()
+    conditions = build_summary_conditions(config)
     first_seed = config.random_seed
     thresholds = dataclasses.asdict(summary.diagnostic_thresholds)
     directions = {metric: direction for metric, direction in SUMMARY_FLAG_METRICS}
@@ -105,7 +90,7 @@ def figure03_summary_payload(
         "metric_order": [metric for metric, _ in SUMMARY_FLAG_METRICS],
         "flag_rules": inclusive_flag_rules(thresholds, directions),
         "threshold_provenance": baseline_threshold_provenance(config),
-        "condition_order": list(FIGURE03_CONDITION_IDS),
+        "condition_order": [condition.condition_id for condition in conditions],
         "condition_labels": [_plain_condition_label(condition.label) for condition in conditions],
         "median_flag_percentages": summary.median_flag_percentages,
         "percentage_unit": "percent_of_spike_events",

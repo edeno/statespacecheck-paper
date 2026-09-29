@@ -51,7 +51,7 @@ from statespacecheck_paper.diagnostics import (
     compute_spike_event_diagnostics_from_rates,
     flag_mask,
 )
-from statespacecheck_paper.figure03_generation import FIGURE03_CONDITION_IDS, conditions_by_id
+from statespacecheck_paper.figure03_generation import conditions_by_id
 from statespacecheck_paper.figure03_protocol import STEP_SECONDS, Figure3Config
 from statespacecheck_paper.figure03_simulation import (
     Figure3SimulationResult,
@@ -109,7 +109,7 @@ class ScenarioWindow:
     Parameters
     ----------
     condition_id : str
-        One of ``FIGURE03_CONDITION_IDS``.
+        A Figure-3 summary condition's ``condition_id``.
     start, stop : int
         Half-open range of simulation steps shown.
     """
@@ -803,7 +803,7 @@ def scenario_payloads(
                 "median_absolute_error_text": significant(decoding_error[error_row, column]),
             },
         }
-    for condition_id in FIGURE03_CONDITION_IDS:
+    for condition_id in conditions:
         if condition_id not in payloads:
             raise ValueError(f"No display window for condition {condition_id!r}")
     return payloads

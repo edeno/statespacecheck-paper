@@ -54,6 +54,9 @@ class Figure3SummaryCondition:
 
     Parameters
     ----------
+    condition_id : str
+        Stable identifier, e.g. ``"remap"``. The published summary's
+        ``condition_order`` and the website key each column by it.
     label : str
         Column header (may contain a newline for a two-line label).
     step_windows : tuple of (int, int)
@@ -67,6 +70,7 @@ class Figure3SummaryCondition:
         in the attribution row beneath the heatmap.
     """
 
+    condition_id: str
     label: str
     step_windows: tuple[tuple[int, int], ...]
     model_component: str
@@ -116,6 +120,7 @@ def build_summary_conditions(config: Figure3Config) -> list[Figure3SummaryCondit
     r0, r1 = compute_replay_step_window(config)
     return [
         Figure3SummaryCondition(
+            "well_specified",
             "Well-\nspecified",
             (
                 (t_remap_end, t_recovery1_end),
@@ -125,13 +130,17 @@ def build_summary_conditions(config: Figure3Config) -> list[Figure3SummaryCondit
             ),
             "—",
         ),
-        Figure3SummaryCondition("Remap", ((t_remap_start, t_remap_end),), "Observation"),
+        Figure3SummaryCondition("remap", "Remap", ((t_remap_start, t_remap_end),), "Observation"),
         Figure3SummaryCondition(
-            "History-\ndep.", ((t_recovery1_end, t_hist_dep_end),), "Observation"
+            "history_dependent",
+            "History-\ndep.",
+            ((t_recovery1_end, t_hist_dep_end),),
+            "Observation",
         ),
-        Figure3SummaryCondition("Replay", ((r0, r1),), "—"),
-        Figure3SummaryCondition("Drift", ((t_recovery2_end, t_drift_end),), "Transition"),
+        Figure3SummaryCondition("replay", "Replay", ((r0, r1),), "—"),
+        Figure3SummaryCondition("drift", "Drift", ((t_recovery2_end, t_drift_end),), "Transition"),
         Figure3SummaryCondition(
+            "sparse_population",
             "Sparse\npopulation",
             ((t_recovery3_end, t_sparse_pop_end),),
             "—",
