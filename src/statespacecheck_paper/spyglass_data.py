@@ -45,6 +45,8 @@ FIGURE04_NWB_FILE_NAME = "j1620210710_.nwb"
 FIGURE04_EPOCH_NAME = "02_r1"
 
 POSITION_INFO_PARAM_NAME = "default_decoding"
+HEAD_POSITION_COLUMNS = ("head_position_x", "head_position_y")
+"""x and y columns of the ``IntervalPositionInfo`` head position the figure uses."""
 LINEARIZATION_PARAM_NAME = "default"
 
 HPC_SORTING_RESTRICTION: Mapping[str, str | int] = MappingProxyType(
@@ -172,17 +174,18 @@ def get_interpolated_position_info(
     track_graph: nx.Graph,
     edge_order: list[tuple[int, int]],
     edge_spacing: float | list[float],
-    position_columns: list[str] | None = None,
 ) -> pd.DataFrame:
     """Interpolate position onto new time points and add linearization.
 
     Same algorithm as ``continuum-swr-replay``'s
-    ``data_loaders.position.get_interpolated_position_info``.
+    ``data_loaders.position.get_interpolated_position_info``, linearizing the
+    :data:`HEAD_POSITION_COLUMNS`.
 
     Parameters
     ----------
     position_info : pd.DataFrame
-        Position data with a time index (seconds) and x/y position columns.
+        Position data with a time index (seconds) and the
+        :data:`HEAD_POSITION_COLUMNS`.
     time : np.ndarray, shape (n_time,)
         Time points (seconds) of the output.
     track_graph : networkx.Graph
@@ -191,8 +194,6 @@ def get_interpolated_position_info(
         Edge order for linearization.
     edge_spacing : float or list of float
         Spacing between linearized edges (centimeters).
-    position_columns : list of str, optional
-        x and y position columns. Default ``["head_position_x", "head_position_y"]``.
 
     Returns
     -------
@@ -203,15 +204,12 @@ def get_interpolated_position_info(
     """
     from track_linearization import get_linearized_position
 
-    if position_columns is None:
-        position_columns = ["head_position_x", "head_position_y"]
-
     new_index = pd.Index(np.unique(np.concatenate((position_info.index, time))), name="time")
     interpolated_position_info = (
         position_info.reindex(index=new_index).interpolate(method="linear").reindex(index=time)
     )
     linear_position_info = get_linearized_position(
-        position=interpolated_position_info[position_columns].to_numpy(),
+        position=interpolated_position_info[list(HEAD_POSITION_COLUMNS)].to_numpy(),
         track_graph=track_graph,
         edge_order=edge_order,
         edge_spacing=edge_spacing,
@@ -357,11 +355,10 @@ def get_position_info(nwb_file_name: str, epoch_name: str, pos_name: str) -> Pos
     }
 
 
-def get_hpc_sorted_spike_times(
-    nwb_file_name: str,
-    sorting_restriction: Mapping[str, str | int] = HPC_SORTING_RESTRICTION,
-) -> list[NDArray[np.float64]]:
+def get_hpc_sorted_spike_times(nwb_file_name: str) -> list[NDArray[np.float64]]:
     """Fetch curated hippocampal unit spike times from v0 ``CuratedSpikeSorting``.
+
+    The sort is the one :data:`HPC_SORTING_RESTRICTION` selects.
 
     Units come in ``(sort_group_id, unit_id)`` order: each analysis file's units
     are checked to be exactly the group's ``CuratedSpikeSorting.Unit`` entries,
@@ -378,8 +375,6 @@ def get_hpc_sorted_spike_times(
     ----------
     nwb_file_name : str
         Spyglass NWB file name.
-    sorting_restriction : Mapping
-        ``CuratedSpikeSorting`` restriction without ``nwb_file_name``.
 
     Returns
     -------
@@ -397,7 +392,7 @@ def get_hpc_sorted_spike_times(
     from spyglass.common import BrainRegion, ElectrodeGroup
     from spyglass.spikesorting.v0 import CuratedSpikeSorting, SortGroup
 
-    restriction = {"nwb_file_name": nwb_file_name, **sorting_restriction}
+    restriction = {"nwb_file_name": nwb_file_name, **HPC_SORTING_RESTRICTION}
     sort_group_keys = (CuratedSpikeSorting & restriction).fetch("KEY", order_by="sort_group_id")
     if len(sort_group_keys) == 0:
         raise ValueError(f"No CuratedSpikeSorting entries match {restriction}")

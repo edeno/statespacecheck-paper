@@ -56,6 +56,7 @@ from statespacecheck_paper.figure04_generation import FIGURE4_DIAGNOSTIC_THRESHO
 from statespacecheck_paper.spyglass_data import (
     FIGURE04_EPOCH_NAME,
     FIGURE04_NWB_FILE_NAME,
+    HEAD_POSITION_COLUMNS,
     HPC_SORTING_RESTRICTION,
     POSITION_INFO_PARAM_NAME,
     figure04_diagnostics_from_decodes,
@@ -228,9 +229,7 @@ class Figure4Diagnostics(SpyglassMixin, dj.Computed):
 # --- Decode setup (existing Spyglass tables) -------------------------------------
 
 
-def position_group_entry(
-    nwb_file_name: str = FIGURE04_NWB_FILE_NAME, epoch_name: str = FIGURE04_EPOCH_NAME
-) -> dict[str, Any]:
+def position_group_entry() -> dict[str, Any]:
     """Return the ``PositionGroup`` to create (read-only).
 
     The group holds the v0 ``IntervalPositionInfo`` (``default_decoding``) entry of
@@ -239,19 +238,19 @@ def position_group_entry(
     """
     from spyglass.position import PositionOutput
 
-    pos_name = get_position_interval_name(nwb_file_name, epoch_name)
+    pos_name = get_position_interval_name(FIGURE04_NWB_FILE_NAME, FIGURE04_EPOCH_NAME)
     merge_id = PositionOutput.merge_get_part(
         {
-            "nwb_file_name": nwb_file_name,
+            "nwb_file_name": FIGURE04_NWB_FILE_NAME,
             "interval_list_name": pos_name,
             "position_info_param_name": POSITION_INFO_PARAM_NAME,
         }
     ).fetch1("merge_id")
     return {
-        "nwb_file_name": nwb_file_name,
+        "nwb_file_name": FIGURE04_NWB_FILE_NAME,
         "group_name": GROUP_NAME,
         "keys": [{"pos_merge_id": merge_id}],
-        "position_variables": ["head_position_x", "head_position_y"],
+        "position_variables": list(HEAD_POSITION_COLUMNS),
         "upsample_rate": np.nan,
     }
 
@@ -263,9 +262,7 @@ def create_position_group(entry: Mapping[str, Any]) -> None:
     PositionGroup().create_group(**entry)
 
 
-def spike_sorting_output_entries(
-    nwb_file_name: str = FIGURE04_NWB_FILE_NAME,
-) -> list[dict[str, Any]]:
+def spike_sorting_output_entries() -> list[dict[str, Any]]:
     """Return the v0 HPC sort's ``CuratedSpikeSorting`` keys (read-only).
 
     ``SortedSpikesGroup`` reads units through the ``SpikeSortingOutput`` merge
@@ -278,7 +275,7 @@ def spike_sorting_output_entries(
     """
     from spyglass.spikesorting.v0 import CuratedSpikeSorting
 
-    restriction = {"nwb_file_name": nwb_file_name, **HPC_SORTING_RESTRICTION}
+    restriction = {"nwb_file_name": FIGURE04_NWB_FILE_NAME, **HPC_SORTING_RESTRICTION}
     keys: list[dict[str, Any]] = list(
         (CuratedSpikeSorting & restriction).fetch("KEY", order_by="sort_group_id")
     )
@@ -298,7 +295,7 @@ def register_spike_sorting_output(entries: list[dict[str, Any]]) -> None:
     SpikeSortingOutput().insert(entries, part_name="CuratedSpikeSorting")
 
 
-def sorted_spikes_group_entry(nwb_file_name: str = FIGURE04_NWB_FILE_NAME) -> dict[str, Any]:
+def sorted_spikes_group_entry() -> dict[str, Any]:
     """Return the ``SortedSpikesGroup`` to create (read-only): the HPC sort's groups.
 
     Raises
@@ -310,7 +307,7 @@ def sorted_spikes_group_entry(nwb_file_name: str = FIGURE04_NWB_FILE_NAME) -> di
     from spyglass.spikesorting.spikesorting_merge import SpikeSortingOutput
     from spyglass.spikesorting.v0 import CuratedSpikeSorting
 
-    restriction = {"nwb_file_name": nwb_file_name, **HPC_SORTING_RESTRICTION}
+    restriction = {"nwb_file_name": FIGURE04_NWB_FILE_NAME, **HPC_SORTING_RESTRICTION}
     n_sort_groups = len(CuratedSpikeSorting & restriction)
     merge_ids = (SpikeSortingOutput.CuratedSpikeSorting & restriction).fetch("merge_id")
     if len(merge_ids) != n_sort_groups:
@@ -320,7 +317,7 @@ def sorted_spikes_group_entry(nwb_file_name: str = FIGURE04_NWB_FILE_NAME) -> di
         )
     return {
         "group_name": GROUP_NAME,
-        "nwb_file_name": nwb_file_name,
+        "nwb_file_name": FIGURE04_NWB_FILE_NAME,
         "unit_filter_params_name": UNIT_FILTER_PARAMS_NAME,
         "keys": [{"spikesorting_merge_id": merge_id} for merge_id in merge_ids],
     }
@@ -333,9 +330,7 @@ def create_sorted_spikes_group(entry: Mapping[str, Any]) -> None:
     SortedSpikesGroup().create_group(**entry)
 
 
-def decoding_parameter_entries(
-    nwb_file_name: str = FIGURE04_NWB_FILE_NAME, epoch_name: str = FIGURE04_EPOCH_NAME
-) -> list[dict[str, Any]]:
+def decoding_parameter_entries() -> list[dict[str, Any]]:
     """Return the two ``DecodingParameters`` to insert (read-only).
 
     The models are built by the figure pipeline's ``build_decoder_models`` on the
@@ -343,7 +338,8 @@ def decoding_parameter_entries(
     """
     config = Figure4Config()
     track_graph, edge_order, edge_spacing = get_track_graph(
-        nwb_file_name, get_position_interval_name(nwb_file_name, epoch_name)
+        FIGURE04_NWB_FILE_NAME,
+        get_position_interval_name(FIGURE04_NWB_FILE_NAME, FIGURE04_EPOCH_NAME),
     )
     environment = create_decoder_environment(
         track_graph, list(edge_order), edge_spacing, config.decoder.position_bin_size_cm
@@ -366,18 +362,16 @@ def insert_decoding_parameters(entries: list[dict[str, Any]]) -> None:
     DecodingParameters().insert(entries)
 
 
-def decoding_selection_entries(
-    nwb_file_name: str = FIGURE04_NWB_FILE_NAME, epoch_name: str = FIGURE04_EPOCH_NAME
-) -> list[dict[str, Any]]:
+def decoding_selection_entries() -> list[dict[str, Any]]:
     """Return the two ``SortedSpikesDecodingSelection`` entries (read-only).
 
     Encoding and decoding use the whole epoch interval, and parameter estimation
     is off, as in the figure pipeline.
     """
-    interval_name = f"{epoch_name} noPrePostTrialTimes"
+    interval_name = f"{FIGURE04_EPOCH_NAME} noPrePostTrialTimes"
     return [
         {
-            "nwb_file_name": nwb_file_name,
+            "nwb_file_name": FIGURE04_NWB_FILE_NAME,
             "sorted_spikes_group_name": GROUP_NAME,
             "unit_filter_params_name": UNIT_FILTER_PARAMS_NAME,
             "position_group_name": GROUP_NAME,
@@ -411,17 +405,9 @@ def populate_decoding(entries: list[dict[str, Any]]) -> None:
 # --- Diagnostics (custom schema) -------------------------------------------------
 
 
-def diagnostics_selection_entry(
-    nwb_file_name: str = FIGURE04_NWB_FILE_NAME, epoch_name: str = FIGURE04_EPOCH_NAME
-) -> dict[str, Any]:
+def diagnostics_selection_entry() -> dict[str, Any]:
     """Return the :class:`Figure4DiagnosticsSelection` entry (read-only)."""
-    selections = dict(
-        zip(
-            DECODING_PARAM_NAMES,
-            decoding_selection_entries(nwb_file_name, epoch_name),
-            strict=True,
-        )
-    )
+    selections = dict(zip(DECODING_PARAM_NAMES, decoding_selection_entries(), strict=True))
     merge_ids = {
         name: DecodingOutput.merge_get_part(
             {k: v for k, v in selection.items() if k != "estimate_decoding_params"}
