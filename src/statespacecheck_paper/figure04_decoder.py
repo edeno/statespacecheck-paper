@@ -148,16 +148,20 @@ class Figure4Provenance:
     These are ``non_local_detector`` class defaults that shape the decode. The
     code deliberately relies on those defaults rather than passing them
     explicitly: faithfully injecting them would require rebuilding the nested
-    ``continuous_transition_types`` grid (a mix of ``RandomWalk`` and ``Uniform``)
-    and would hit the concentration-default split (``1.0`` for the continuous
-    decoder, ``1.1`` for the Continuous-Fragmented classifier) -- either of which risks
-    silently changing the published decode. Instead they are pinned two ways:
+    ``continuous_transition_types`` grid (a mix of ``RandomWalk`` and ``Uniform``),
+    which risks silently changing the published decode. Instead they are pinned
+    two ways:
     ``tests/test_figure04_decoder.py::TestFigure4ConfigMatchesManuscript`` asserts
     the *resolved* model attributes equal these values, and
     :func:`validate_provenance_defaults` re-checks them at decode time (runtime),
     so a dependency bump that moves a default fails loudly either way. They are
     also hashed into the cache fingerprint, so a recorded value changing
     invalidates the cache.
+
+    The discrete-transition concentration and regularization are not recorded:
+    ``non_local_detector`` reads them only when re-estimating the discrete
+    transitions in ``estimate_parameters`` (EM), and Figure 4 only fits and
+    predicts, so they cannot affect the decode.
 
     Attributes
     ----------
@@ -169,11 +173,6 @@ class Figure4Provenance:
         (mode-transition matrix ``[[0.98, 0.02], [0.02, 0.98]]``).
     continuous_fragmented_discrete_initial_conditions : tuple[float, float]
         Continuous-Fragmented mode initial conditions ``(0.5, 0.5)``.
-    discrete_transition_concentration : float
-        Continuous-Fragmented Dirichlet concentration (unprinted effective default ``1.1``;
-        the continuous decoder's own default is ``1.0``).
-    discrete_transition_regularization : float
-        Discrete-transition regularization (unprinted default ``1e-10``).
     non_local_detector_version : str
         Manuscript-stated ``non_local_detector`` version, for provenance.
     """
@@ -181,20 +180,14 @@ class Figure4Provenance:
     movement_var: float = 6.0
     continuous_fragmented_diagonal_values: tuple[float, float] = (0.98, 0.98)
     continuous_fragmented_discrete_initial_conditions: tuple[float, float] = (0.5, 0.5)
-    discrete_transition_concentration: float = 1.1
-    discrete_transition_regularization: float = 1e-10
     non_local_detector_version: str = "0.6.10.dev214+g956fdccaf"
 
     def __post_init__(self) -> None:
-        for name, value in (
-            ("movement_var", self.movement_var),
-            ("discrete_transition_concentration", self.discrete_transition_concentration),
-            ("discrete_transition_regularization", self.discrete_transition_regularization),
-        ):
-            if not np.isfinite(value) or value <= 0.0:
-                raise ValueError(
-                    f"Figure4Provenance.{name} must be finite and positive; got {value!r}"
-                )
+        if not np.isfinite(self.movement_var) or self.movement_var <= 0.0:
+            raise ValueError(
+                "Figure4Provenance.movement_var must be finite and positive; "
+                f"got {self.movement_var!r}"
+            )
         for name, pair in (
             ("continuous_fragmented_diagonal_values", self.continuous_fragmented_diagonal_values),
             (
@@ -302,9 +295,8 @@ def build_decoder_models(
     :class:`Figure4DecoderConfig` values (``position_std``,
     ``sampling_frequency_hz``) and the :class:`Figure4ExecutionConfig`
     ``block_size`` are injected here; ``movement_var``, the mode-transition
-    matrix, the mode initial conditions, and the discrete-transition
-    concentration / regularization all come from ``non_local_detector`` class
-    defaults (see :class:`Figure4Provenance` for why they are pinned rather than
+    matrix, and the mode initial conditions come from ``non_local_detector``
+    class defaults (see :class:`Figure4Provenance` for why they are pinned rather than
     injected). The drift guard inspects the resolved attributes of these objects,
     so it never needs real data or a fit.
 
@@ -399,21 +391,6 @@ def validate_provenance_defaults(
             "continuous_fragmented movement_var",
             continuous_fragmented_model.continuous_transition_types[0][0].movement_var,
             provenance.movement_var,
-        ),
-        (
-            "continuous_fragmented discrete_transition_concentration",
-            continuous_fragmented_model.discrete_transition_concentration,
-            provenance.discrete_transition_concentration,
-        ),
-        (
-            "continuous discrete_transition_regularization",
-            continuous_model.discrete_transition_regularization,
-            provenance.discrete_transition_regularization,
-        ),
-        (
-            "continuous_fragmented discrete_transition_regularization",
-            continuous_fragmented_model.discrete_transition_regularization,
-            provenance.discrete_transition_regularization,
         ),
     )
     for label, resolved, expected in scalar_checks:

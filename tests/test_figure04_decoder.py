@@ -86,23 +86,6 @@ class TestFigure4ConfigMatchesManuscript:
             ),
         )
 
-    def test_unprinted_effective_defaults(self) -> None:
-        """Concentration / regularization are not printed in the manuscript but
-        shape the decode; pin them so a dependency bump fails loudly."""
-        continuous_model, continuous_fragmented_model = self._build_models()
-        config = figure04_decoder.Figure4Config()
-
-        assert continuous_fragmented_model.discrete_transition_concentration == pytest.approx(
-            config.provenance.discrete_transition_concentration
-        )
-        assert config.provenance.discrete_transition_concentration == pytest.approx(1.1)
-
-        for model in (continuous_model, continuous_fragmented_model):
-            assert model.discrete_transition_regularization == pytest.approx(
-                config.provenance.discrete_transition_regularization
-            )
-        assert config.provenance.discrete_transition_regularization == pytest.approx(1e-10)
-
     def test_binning_values_the_code_uses(self) -> None:
         """Position bin size (from the Environment) and time bin size (from the
         sampling frequency) are the values the decode actually uses."""
@@ -152,8 +135,6 @@ class TestConfigValueValidation:
         "kwargs",
         [
             {"movement_var": 0.0},
-            {"discrete_transition_concentration": -1.0},
-            {"discrete_transition_regularization": 0.0},
             {"continuous_fragmented_diagonal_values": (1.2, 0.98)},
             {"continuous_fragmented_discrete_initial_conditions": (-0.1, 1.1)},
             {"non_local_detector_version": ""},

@@ -275,10 +275,12 @@ $\Lambda(x)$.
   `sampling_frequency_hz`, threaded into environment/model construction so they
   genuinely drive the decode; `provenance`, a `Figure4Provenance` holding the
   `non_local_detector`-default decode-shaping values (`movement_var`, the Continuous-Fragmented
-  transition/initial-condition/concentration/regularization, and the dependency
+  mode-transition diagonal and initial conditions, and the dependency
   version), recorded and drift-guard pinned but not injected (faithfully injecting
-  them would rebuild the nested transition grid and hit the concentration-default
-  split); `execution`, a `Figure4ExecutionConfig` holding `block_size`, a
+  them would rebuild the nested transition grid; the discrete-transition
+  concentration and regularization are not recorded, since `non_local_detector`
+  reads them only in `estimate_parameters`, which Figure 4 never calls);
+  `execution`, a `Figure4ExecutionConfig` holding `block_size`, a
   performance/memory knob that does **not** change the decode result (the KDE
   density is identical for any `block_size`) and is therefore excluded from both
   fingerprints; and `diagnostics`, a `Figure4DiagnosticsConfig` holding the
@@ -386,8 +388,9 @@ from `realizations.first_seed`; the medians are their medians over the first
 axis. The summary also records the baseline-threshold provenance
 quoted in the Methods. The Figure-4
 schema records `dataset.n_units` alongside the recording identifier and
-names the second decoder `continuous_fragmented` throughout (schema 5 renamed
-the `contfrag_*` configuration keys). The
+names the second decoder `continuous_fragmented` throughout. Schema 5 renamed
+the `contfrag_*` configuration keys and dropped the discrete-transition
+concentration and regularization, which the decode never reads. The
 `flag_rules` object binds each numeric threshold to its executable semantics:
 `less_than_or_equal` means a value is flagged when `value <= threshold`, and
 `greater_than_or_equal` means it is flagged when `value >= threshold`. Keeping
