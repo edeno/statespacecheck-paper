@@ -153,6 +153,31 @@ function rankOf(values) {
   return rank;
 }
 
+/**
+ * Mean normalized likelihood of the spikes in each time step, as in Figures 3a
+ * and 4 (figure04_diagnostics.mean_event_likelihood_by_time): spike `i` falls in
+ * step `steps[i]` with likelihood row `rowOf(i)`. Rows come back scaled to their
+ * maxima, as display rows, with each step's spike `count`.
+ */
+function meanEventLikelihood(steps, rowOf, nSteps, nBins) {
+  const sum = new Float64Array(nSteps * nBins);
+  const count = new Uint16Array(nSteps);
+  steps.forEach((t, i) => {
+    const row = normalized(rowOf(i));
+    for (let b = 0; b < nBins; b += 1) sum[t * nBins + b] += row[b];
+    count[t] += 1;
+  });
+  const bytes = new Uint8Array(nSteps * nBins);
+  for (let t = 0; t < nSteps; t += 1) {
+    let max = 0;
+    for (let b = 0; b < nBins; b += 1) max = Math.max(max, sum[t * nBins + b]);
+    for (let b = 0; b < nBins; b += 1) {
+      bytes[t * nBins + b] = max > 0 ? Math.round((sum[t * nBins + b] / max) * 255) : 0;
+    }
+  }
+  return { nRows: nSteps, nBins, count, row: (t) => bytes.subarray(t * nBins, (t + 1) * nBins) };
+}
+
 function note(text) {
   const p = document.createElement("p");
   p.className = "note";
@@ -540,33 +565,13 @@ function renderCondition(view, payload, manifest) {
     `Medians across ${manifest.macros.SimNRealizations} simulated sessions: the percentage of spikes each diagnostic flags, and the decoding error, the median absolute difference between the decoder's position estimate (the filtered posterior mean) and the true position. Perturbed model component: ${component}. Below: ${(range[1] - range[0]).toFixed(1)} s of one session, with the condition's time window shaded gray.`,
   );
 
-  // Mean normalized likelihood per spike-containing step, as in Figure 3a.
-  const likelihoodSum = new Float64Array(nSteps * nBins);
-  const likelihoodCount = new Uint16Array(nSteps);
-  events.t.forEach((t, i) => {
-    const row = normalized(likelihoodRows.row(events.likelihood_row[i]));
-    for (let b = 0; b < nBins; b += 1) likelihoodSum[t * nBins + b] += row[b];
-    likelihoodCount[t] += 1;
-  });
-  const likelihoodBytes = new Uint8Array(nSteps * nBins);
-  for (let t = 0; t < nSteps; t += 1) {
-    let max = 0;
-    for (let b = 0; b < nBins; b += 1) max = Math.max(max, likelihoodSum[t * nBins + b]);
-    for (let b = 0; b < nBins; b += 1) {
-      likelihoodBytes[t * nBins + b] =
-        max > 0 ? Math.round((likelihoodSum[t * nBins + b] / max) * 255) : 0;
-    }
-  }
-  const likelihoodMean = {
-    nRows: nSteps,
-    nBins,
-    row: (t) => likelihoodBytes.subarray(t * nBins, (t + 1) * nBins),
-  };
+  const likelihoodMean = meanEventLikelihood(events.t, (i) =>
+    likelihoodRows.row(events.likelihood_row[i]), nSteps, nBins);
 
   const lut = manifest.colormaps;
   const predictiveBitmap = heatmapBitmap(predictive, lut.predictive);
   const likelihoodBitmap = heatmapBitmap(likelihoodMean, lut.likelihood);
-  const hasSpikes = (t) => likelihoodCount[t] > 0;
+  const hasSpikes = (t) => likelihoodMean.count[t] > 0;
   const cellRank = rankOf(payload.cell_centers);
   const position = payload.physical_position;
   const track = (label, bitmap, height, mask = null) =>
@@ -702,11 +707,11 @@ function renderCondition(view, payload, manifest) {
 // ---------------------------------------------------------------------------
 
 /**
- * Time of peak population firing (all cells), which marks the replay event,
- * searched in steps of one decoder bin `dt`.
+ * Time of peak population firing (every spike, all cells), which marks the
+ * replay event, searched in steps of one decoder bin `dt`.
  */
 function populationPeak(spikeTimes, range, dt) {
-  const all = spikeTimes.flat().sort((a, b) => a - b);
+  const all = [...spikeTimes].sort((a, b) => a - b);
   let best = range[0];
   let bestCount = -1;
   let lo = 0;
@@ -743,8 +748,10 @@ export function renderRecording(root, payload, manifest) {
   const events = payload.models[reference.id].events;
   const eventTimes = events.t;
   const position = payload.linear_position;
-  const likelihood = decodeRows(payload.likelihood, nBins);
   const cellLikelihoods = decodeRows(payload.cell_likelihoods, nBins);
+  // Every spike is an event, so the likelihood track and the raster come from the events.
+  const likelihood = meanEventLikelihood(events.bin, (i) => cellLikelihoods.row(events.cell[i]),
+    time.length, nBins);
   const placeFields = decodeHeatmap(payload.place_fields, nBins);
   const timeBinMs = manifest.macros.RecTimeBinMs;
   const predictive = Object.fromEntries(
@@ -758,15 +765,8 @@ export function renderRecording(root, payload, manifest) {
     heatmapTrack({ label, bitmap, height, mask, times: time, bins, position, unit: "cm" });
   let selectedModel = reference;
 
-  // Cells: raster of every spike in the window, sorted by place-field peak.
-  const rasterTimes = [];
-  const rasterRows = [];
-  payload.spike_times.forEach((times, cell) => {
-    for (const t of times) {
-      rasterTimes.push(t);
-      rasterRows.push(payload.cell_rank[cell]);
-    }
-  });
+  // Units sorted by place-field peak.
+  const rasterRows = Array.from(events.cell, (cell) => payload.cell_rank[cell]);
 
   // Use one fixed vertical scale per diagnostic when switching models.
   const metricValues = Object.fromEntries(
@@ -777,8 +777,8 @@ export function renderRecording(root, payload, manifest) {
   );
   const tracksFor = (model) => [
     track(`Prediction: ${model.label}`, predictiveBitmaps[model.id], 92),
-    track("Likelihood", likelihoodBitmap, 64, (t) => payload.has_spikes[t]),
-    rasterTrack(rasterTimes, rasterRows, payload.spike_times.length, null, "Units"),
+    track("Likelihood", likelihoodBitmap, 64, (t) => likelihood.count[t] > 0),
+    rasterTrack(eventTimes, rasterRows, payload.cell_rank.length, null, "Units"),
     ...METRICS.map((metric) =>
       metricTrack(
         metric,
@@ -996,7 +996,7 @@ export function renderRecording(root, payload, manifest) {
   });
   // Open on the HPD-overlap rescue nearest the peak of population firing,
   // i.e., inside the replay event.
-  const peak = populationPeak(payload.spike_times, range, dt);
+  const peak = populationPeak(eventTimes, range, dt);
   let initial = -1;
   eventTimes.forEach((t, i) => {
     if (!isRescued("hpd_overlap", i)) return;

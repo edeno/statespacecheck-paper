@@ -35,7 +35,6 @@ from statespacecheck_paper.figure03_simulation import (
     run_figure03_simulation,
 )
 from statespacecheck_paper.figure03_summary import conditions_by_id
-from statespacecheck_paper.figure04_diagnostics import mean_event_likelihood_by_time
 from statespacecheck_paper.figure04_models import FIGURE04_MODELS, figure04_model
 from statespacecheck_paper.figure04_protocol import Figure4DetailWindow
 from statespacecheck_paper.figure04_workflow import Figure4RenderData
@@ -507,14 +506,10 @@ def test_recording_payload_slices_both_models_to_the_detail_window() -> None:
 
     assert len(payload["time"]) == n_time
     assert payload["time"][0] == 0.0
-    likelihood, has_spikes = mean_event_likelihood_by_time(
-        analysis.spike_counts[time_slice], analysis.diagnostic_place_fields
-    )
-    np.testing.assert_array_equal(
-        decode_display_rows(payload["likelihood"], n_bins),
-        decode_display_rows(encode_display_rows(likelihood), n_bins),
-    )
-    assert payload["has_spikes"] == has_spikes.tolist()
+    # The page draws the likelihood track and the raster from the events; that
+    # events count every binned spike is checked in test_figure04_diagnostics
+    # (test_event_binning_matches_decoder_bin_assignment).
+    assert {"likelihood", "has_spikes", "spike_times"}.isdisjoint(payload)
     np.testing.assert_array_equal(
         decode_display_rows(payload["cell_likelihoods"], n_bins),
         decode_display_rows(
@@ -562,11 +557,6 @@ def test_recording_payload_slices_both_models_to_the_detail_window() -> None:
         payload["diagnostics_fingerprint"]
         == render_data.cache_provenance.diagnostics_fingerprint_sha256
     )
-    # The raster covers the same bins as the events: [time[start], time[stop]).
-    t_end = render_data.time[time_slice.stop]
-    for cell, times in enumerate(render_data.recording.spike_times):
-        in_bins = (times >= render_data.time[time_slice.start]) & (times < t_end)
-        assert len(payload["spike_times"][cell]) == int(in_bins.sum())
 
 
 @pytest.mark.parametrize("key", ["fingerprint_sha256", "diagnostics_fingerprint_sha256"])

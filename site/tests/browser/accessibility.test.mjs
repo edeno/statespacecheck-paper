@@ -226,7 +226,7 @@ describe("players", () => {
       assert.match(await fieldChart(), new RegExp(`unit ${unit} place field peaks at`));
 
       const exported = await page.evaluate(async () => (await fetch("data/recording.json")).json());
-      const nUnits = exported.spike_times.length;
+      const nUnits = exported.cell_rank.length;
       assert.equal(exported.place_fields.row_max.length, nUnits);
       // One row of the position grid per unit.
       assert.equal(atob(exported.place_fields.rows).length, nUnits * exported.position_bins.length);

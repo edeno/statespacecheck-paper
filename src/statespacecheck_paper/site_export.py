@@ -61,7 +61,6 @@ from statespacecheck_paper.figure03_simulation import (
 from statespacecheck_paper.figure03_summary import conditions_by_id
 from statespacecheck_paper.figure04_cache import Figure4Paths
 from statespacecheck_paper.figure04_decoder import Figure4Config
-from statespacecheck_paper.figure04_diagnostics import mean_event_likelihood_by_time
 from statespacecheck_paper.figure04_models import CONTINUOUS, CONTINUOUS_FRAGMENTED
 from statespacecheck_paper.figure04_place_fields import marginal_position_distribution
 from statespacecheck_paper.figure04_protocol import FIGURE04_DETAIL_WINDOW, Figure4DetailWindow
@@ -944,17 +943,8 @@ def recording_payload(
     window = detail_window.to_slice(render_data.time.size)
     analysis = render_data.analysis_results
     time = np.asarray(render_data.time, dtype=np.float64)
-    # Decoder bins are left-closed; the window spans [time[start], time[stop]).
     t0 = float(time[window.start])
-    t_end = (
-        float(time[window.stop])
-        if window.stop < time.size
-        else float(time[-1] + (time[-1] - time[-2]))
-    )
     place_fields = np.asarray(analysis.diagnostic_place_fields, dtype=np.float64)
-    mean_likelihood, has_spikes = mean_event_likelihood_by_time(
-        analysis.spike_counts[window], place_fields
-    )
     flag_rules = figure04_summary["flag_rules"]
 
     models: dict[str, Any] = {}
@@ -993,14 +983,14 @@ def recording_payload(
             },
         }
 
-    spike_times = render_data.recording.spike_times
     cell_rank = np.argsort(np.argsort(analysis.place_field_peaks))
+    # The page draws the likelihood track and the raster from the events: every
+    # spike is scored once, in the decoder bin that counted it
+    # (figure04_diagnostics), so the events' per-bin counts are the decoder's.
     return {
         "time": _rounded(time[window] - t0, 4),
         "position_bins": _rounded(analysis.diagnostic_position_bins, 2),
         "linear_position": _rounded(render_data.linear_position[window], 2),
-        "likelihood": encode_display_rows(mean_likelihood),
-        "has_spikes": has_spikes.tolist(),
         # Each cell's normalized single-event likelihood (one row per cell).
         "cell_likelihoods": encode_display_rows(ssc.event_likelihood(place_fields)),
         # The shared encoding-model place fields, for the selected unit's
@@ -1008,9 +998,6 @@ def recording_payload(
         # not confuse a place field with a normalized spike likelihood.
         "place_fields": heatmap_payload(place_fields, (0.0, float(place_fields.max()))),
         "cell_rank": cell_rank.tolist(),
-        "spike_times": [
-            _rounded(times[(times >= t0) & (times < t_end)] - t0, 4) for times in spike_times
-        ],
         "models": models,
         "flag_rules": flag_rules,
         # Identify the decode and the diagnostics this window was exported from.
