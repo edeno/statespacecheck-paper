@@ -87,22 +87,7 @@ class TestDrawArrow:
         arrow = draw_arrow(ax, (0, 0), (1, 1))
         assert isinstance(arrow, FancyArrowPatch)
         assert arrow in ax.patches
-
-    @pytest.mark.parametrize(
-        ("label", "expected_text_count"),
-        [(None, 0), ("transition", 1)],
-    )
-    def test_label_text_optional(
-        self,
-        fresh_axes: tuple[Figure, Axes],
-        label: str | None,
-        expected_text_count: int,
-    ) -> None:
-        _, ax = fresh_axes
-        draw_arrow(ax, (0, 0), (1, 1), label=label)
-        assert len(ax.texts) == expected_text_count
-        if label is not None:
-            assert ax.texts[0].get_text() == label
+        assert not ax.texts
 
     def test_custom_color_applied(self, fresh_axes: tuple[Figure, Axes]) -> None:
         _, ax = fresh_axes

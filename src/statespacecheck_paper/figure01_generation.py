@@ -42,12 +42,11 @@ def create_distribution_comparison_panel(
     color_likelihood: str,
     title: str | None = None,
     show_labels: bool = False,
-    coverage: float = HPD_COVERAGE,
 ) -> None:
     """Create a panel comparing predictive and likelihood distributions.
 
-    Shows both distributions with filled curves and HPD regions as
-    horizontal bars below the plot.
+    Shows both distributions with filled curves and their HPD regions (coverage
+    ``diagnostics.HPD_COVERAGE``) as horizontal bars below the plot.
 
     Parameters
     ----------
@@ -67,8 +66,6 @@ def create_distribution_comparison_panel(
         Panel title.
     show_labels : bool, default False
         Whether to show "Predictive"/"Likelihood" text labels on curves.
-    coverage : float, default ``HPD_COVERAGE``
-        Coverage probability for HPD regions.
 
     Examples
     --------
@@ -115,8 +112,12 @@ def create_distribution_comparison_panel(
     ax.fill_between(x, pdf_likelihood, alpha=0.3, color=color_likelihood)
 
     # Compute HPD regions and extract contiguous intervals
-    hpd_predictive = ssc.highest_density_region(pdf_predictive[np.newaxis], coverage=coverage)[0]
-    hpd_likelihood = ssc.highest_density_region(pdf_likelihood[np.newaxis], coverage=coverage)[0]
+    hpd_predictive = ssc.highest_density_region(pdf_predictive[np.newaxis], coverage=HPD_COVERAGE)[
+        0
+    ]
+    hpd_likelihood = ssc.highest_density_region(pdf_likelihood[np.newaxis], coverage=HPD_COVERAGE)[
+        0
+    ]
     pred_regions = extract_contiguous_regions(hpd_predictive, x)
     like_regions = extract_contiguous_regions(hpd_likelihood, x)
 

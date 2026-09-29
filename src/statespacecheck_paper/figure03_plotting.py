@@ -109,9 +109,9 @@ def add_phase_boundaries(axes: list[Axes], config: Figure3Config) -> None:
 def _plot_timeseries_heatmap(
     ax: Axes,
     data: NDArray[np.floating],
-    true_position: NDArray[np.floating] | None = None,
+    true_position: NDArray[np.floating],
 ) -> AxesImage:
-    """Plot time x position heatmap with optional true position overlay.
+    """Plot time x position heatmap with the true position overlaid.
 
     The color scale runs from 0 to the ``PREDICTIVE_VMAX_QUANTILE`` quantile
     of ``data`` (for robustness to outliers), in ``CMAP_POSTERIOR``.
@@ -122,7 +122,7 @@ def _plot_timeseries_heatmap(
         Matplotlib axes to plot on.
     data : NDArray, shape (n_time, n_bins)
         Distribution data (predictive, likelihood, or posterior).
-    true_position : NDArray, shape (n_time,), optional
+    true_position : NDArray, shape (n_time,)
         True position to overlay as a line.
 
     Returns
@@ -150,14 +150,13 @@ def _plot_timeseries_heatmap(
         vmax=np.nanquantile(data, PREDICTIVE_VMAX_QUANTILE),
         cmap=CMAP_POSTERIOR,
     )
-    if true_position is not None:
-        ax.plot(
-            np.arange(n_time),
-            true_position,
-            color=COLORS["ground_truth"],
-            linewidth=1.0,
-            alpha=0.5,
-        )
+    ax.plot(
+        np.arange(n_time),
+        true_position,
+        color=COLORS["ground_truth"],
+        linewidth=1.0,
+        alpha=0.5,
+    )
     return im
 
 
@@ -166,7 +165,7 @@ def _plot_likelihood_overlay(
     predictive: NDArray[np.floating],
     event_likelihood: NDArray[np.floating],
     spike_time_ind: NDArray[np.intp],
-    true_position: NDArray[np.floating] | None = None,
+    true_position: NDArray[np.floating],
 ) -> None:
     """Plot per-spike likelihood distributions at spike times.
 
@@ -184,7 +183,7 @@ def _plot_likelihood_overlay(
         Normalized likelihood distribution for each individual spike event.
     spike_time_ind : NDArray, shape (n_spikes,)
         Time index for each spike event.
-    true_position : NDArray, shape (n_time,), optional
+    true_position : NDArray, shape (n_time,)
         True position to overlay.
     """
     n_time, n_bins = predictive.shape
@@ -204,14 +203,13 @@ def _plot_likelihood_overlay(
 
         plot_likelihood_columns(ax, lik_per_time, has_spikes, n_time, cmap=CMAP_LIKELIHOOD)
 
-    if true_position is not None:
-        ax.plot(
-            np.arange(n_time),
-            true_position,
-            color=COLORS["ground_truth"],
-            linewidth=1.0,
-            alpha=0.5,
-        )
+    ax.plot(
+        np.arange(n_time),
+        true_position,
+        color=COLORS["ground_truth"],
+        linewidth=1.0,
+        alpha=0.5,
+    )
 
     ax.set_xlim(0, n_time - 1)
     ax.set_ylim(0, n_bins - 1)

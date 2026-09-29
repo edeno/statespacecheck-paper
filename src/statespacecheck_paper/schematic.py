@@ -93,7 +93,6 @@ def draw_arrow(
     ax: Axes,
     start: tuple[float, float],
     end: tuple[float, float],
-    label: str | None = None,
     color: str = "black",
     linewidth: float = 1.5,
 ) -> FancyArrowPatch:
@@ -107,8 +106,6 @@ def draw_arrow(
         Starting position (x, y).
     end : tuple[float, float]
         Ending position (x, y).
-    label : str | None, optional
-        Text label to display above arrow midpoint.
     color : str, default "black"
         Arrow color.
     linewidth : float, default 1.5
@@ -123,7 +120,7 @@ def draw_arrow(
     --------
     >>> import matplotlib.pyplot as plt
     >>> fig, ax = plt.subplots()
-    >>> arrow = draw_arrow(ax, (0, 0), (1, 1), label="transition")
+    >>> arrow = draw_arrow(ax, (0, 0), (1, 1))
     >>> plt.close(fig)
     """
     arrow = FancyArrowPatch(
@@ -137,19 +134,6 @@ def draw_arrow(
         zorder=5,
     )
     ax.add_patch(arrow)
-
-    if label:
-        mid_x = (start[0] + end[0]) / 2
-        mid_y = (start[1] + end[1]) / 2
-        ax.text(
-            mid_x,
-            mid_y + 0.15,
-            label,
-            ha="center",
-            va="bottom",
-            style="italic",
-        )
-
     return arrow
 
 
