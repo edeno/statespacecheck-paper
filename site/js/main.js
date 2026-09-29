@@ -14,22 +14,34 @@ function showError(container, what, error) {
   console.error(error);
 }
 
-/** Run `start` once `element` is within a screen of the viewport. */
-function whenNear(element, start) {
-  if (!("IntersectionObserver" in window)) {
+/**
+ * Run `start` once, when `element` comes within a screen of the viewport or
+ * the page has finished loading and the browser is idle, whichever is first.
+ * A screen reader's reading cursor need not scroll the viewport, so a section
+ * must not wait for scrolling alone.
+ */
+function whenNearOrIdle(element, start) {
+  let started = false;
+  let observer = null;
+  const run = () => {
+    if (started) return;
+    started = true;
+    observer?.disconnect();
     start();
-    return;
+  };
+  if ("IntersectionObserver" in window) {
+    observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) run();
+      },
+      { rootMargin: "100% 0px" },
+    );
+    observer.observe(element);
   }
-  const observer = new IntersectionObserver(
-    (entries) => {
-      if (entries.some((entry) => entry.isIntersecting)) {
-        observer.disconnect();
-        start();
-      }
-    },
-    { rootMargin: "100% 0px" },
-  );
-  observer.observe(element);
+  const idle = () =>
+    "requestIdleCallback" in window ? requestIdleCallback(run, { timeout: 2000 }) : setTimeout(run, 500);
+  if (document.readyState === "complete") idle();
+  else window.addEventListener("load", idle, { once: true });
 }
 
 function wireCopyButtons() {
@@ -75,9 +87,9 @@ async function main() {
   }
   fillMacros(document, { ...manifest.macros, ...manifest.page_values });
 
-  whenNear(simulation, () => initConditions(simulation, manifest));
+  whenNearOrIdle(simulation, () => initConditions(simulation, manifest));
 
-  whenNear(recording, () =>
+  whenNearOrIdle(recording, () =>
     loadJSON("data/recording.json")
       .then((data) => renderRecording(recording, data, manifest))
       .catch((error) => showError(recording.querySelector("#rec-view"), "recording", error)),
