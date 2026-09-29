@@ -114,7 +114,6 @@ def _validate_diagnostic_range(
     hi: float | None,
     allow_nan: bool,
     allow_positive_infinity: bool = False,
-    atol: float = 1e-9,
 ) -> None:
     """Validate missingness, infinities, and the scientific metric range.
 
@@ -122,8 +121,8 @@ def _validate_diagnostic_range(
     (t, cell)" structurally. Per-event arrays may not: every row represents an
     observed spike and must carry a value. KL divergence may opt into positive
     infinity, which is a meaningful result for disjoint support; negative
-    infinity is never valid. ``atol`` absorbs harmless floating-point range
-    overshoot at the producer boundary.
+    infinity is never valid. A tolerance of ``1e-9`` absorbs harmless
+    floating-point range overshoot at the producer boundary.
     """
     if not allow_nan and np.any(np.isnan(arr)):
         raise ValueError(f"{name}: NaN found in a required per-event value")
@@ -135,6 +134,7 @@ def _validate_diagnostic_range(
     if not np.any(present):
         return
     valid = arr[present]
+    atol = 1e-9
     if np.any(valid < lo - atol):
         raise ValueError(f"{name}: values below {lo} found (min={float(valid.min())})")
     if hi is not None and np.any(valid > hi + atol):
