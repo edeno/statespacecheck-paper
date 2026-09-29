@@ -257,7 +257,11 @@ function windowPayload(blocks, windowIndex, overview, shared) {
   };
 }
 
-/** Show the paper's window, then let readers browse the session from the comparison plots. */
+/**
+ * One recording player for the paper's window and for windows around spikes
+ * chosen in the session plots, with a switch between the two. In either, the
+ * plots circle the player's spike and the controls follow it.
+ */
 export async function initRecordingExplorer(root, manifest) {
   const view = root.querySelector("#rec-view");
   const explorer = root.querySelector("#rec-explorer");
@@ -270,31 +274,40 @@ export async function initRecordingExplorer(root, manifest) {
     console.error(error);
   };
 
-  let player = null;
-  let shared = null;
-  const paperLoad = loadJSON("data/recording.json").then((payload) => {
-    shared = payload;
-    player = renderRecording(root, payload, manifest);
-  });
-  paperLoad.catch((error) => fail(view, "recording", error));
-  let overview;
-  try {
-    overview = await loadJSON("data/recording_explorer.json");
-  } catch (error) {
-    fail(explorer, "session overview", error);
+  const [paperLoad, overviewLoad] = await Promise.allSettled([
+    loadJSON("data/recording.json"),
+    loadJSON("data/recording_explorer.json"),
+  ]);
+  if (paperLoad.status === "rejected") {
+    // The explorer's windows take their shared fields from the paper's window.
+    fail(view, "recording", paperLoad.reason);
+    fail(explorer, "session overview", paperLoad.reason);
     return;
   }
+  // The paper's window: shared fields for every window, and the default view.
+  const shared = paperLoad.value;
+  if (overviewLoad.status === "rejected") {
+    fail(explorer, "session overview", overviewLoad.reason);
+    renderRecording(root, shared, manifest);
+    return;
+  }
+  const overview = overviewLoad.value;
+  let player = null;
 
   const grid = overview.grid_size;
   const B = overview.block_samples;
   let index = null;
   let indexLoad = null;
   const blockCache = new Map();
-  let shown = null; // {window, payload}
+  let shown = null; // {window: "paper" or the window's first block, payload}
   let selectedMetric = METRICS[0];
   let selectedSquare = null;
   let candidates = [];
   let highlightedId = null;
+  let paperId = null; // the spike last selected in the paper's window
+  let chosenId = null; // the spike last chosen from the session plots
+  // False while a player opens, so its opening selection loads nothing.
+  let following = false;
   let generation = 0;
   const charts = new Map();
 
@@ -377,6 +390,27 @@ export async function initRecordingExplorer(root, manifest) {
   );
   explorer.replaceChildren(heading, intro, chartGrid, chartNote, agreementTable(overview), controls);
 
+  // Which window the player shows: the paper's, or the one around the chosen spike.
+  const windowSwitch = document.createElement("fieldset");
+  windowSwitch.className = "model-switch";
+  const windowLegend = document.createElement("legend");
+  windowLegend.textContent = "Recording window shown below";
+  const windowOption = (value, text) => {
+    const input = document.createElement("input");
+    input.type = "radio";
+    input.name = "recording-window";
+    input.value = value;
+    const label = document.createElement("label");
+    label.append(input, ` ${text}`);
+    windowSwitch.appendChild(label);
+    return input;
+  };
+  windowSwitch.appendChild(windowLegend);
+  const paperOption = windowOption("paper", "The paper's window (Figure 4)");
+  const spikeOption = windowOption("spike", "Around the spike chosen above");
+  spikeOption.disabled = true;
+  view.before(windowSwitch);
+
   // ------------------------------------------------------------- Drawing
 
   /** The selected spike's plotted values under both models, if its window is shown. */
@@ -445,10 +479,11 @@ export async function initRecordingExplorer(root, manifest) {
 
   function setLink(id) {
     const url = new URL(window.location.href);
-    url.searchParams.set("recording_event", String(id));
+    if (id === null) url.searchParams.delete("recording_event");
+    else url.searchParams.set("recording_event", String(id));
     window.history.replaceState(null, "", url);
     permalink.href = url.href;
-    permalink.hidden = false;
+    permalink.hidden = id === null;
   }
 
   function describeSquare() {
@@ -505,10 +540,35 @@ export async function initRecordingExplorer(root, manifest) {
     describeSpike(position);
   }
 
-  /** Open spike `id` in the player, loading its window if another is shown. */
+  /** Show `payload` in the player, opening on spike `id` (its own default if null). */
+  function render(payload, windowIndex, id) {
+    player?.destroy();
+    shown = { window: windowIndex, payload };
+    following = false;
+    player = renderRecording(root, payload, manifest, {
+      initialEventId: id,
+      onEventSelect: followPlayer,
+    });
+    following = true;
+  }
+
+  /** Return to the paper's window, on the spike last selected there. */
+  function showPaper() {
+    ++generation;
+    paperOption.checked = true;
+    setLink(null);
+    viewLink.hidden = true;
+    render(shared, "paper", paperId);
+    draw();
+  }
+
+  /** Open spike `id`, chosen from the plots, in the window around it. */
   async function showSpike(id) {
     const request = ++generation;
+    chosenId = id;
     highlightedId = id;
+    spikeOption.disabled = false;
+    spikeOption.checked = true;
     setLink(id);
     draw();
     const windowIndex = windowFor(index.time_bin[id]);
@@ -518,15 +578,8 @@ export async function initRecordingExplorer(root, manifest) {
       const blocks = await Promise.all(
         Array.from({ length: overview.window_blocks }, (_, i) => loadBlock(windowIndex + i)),
       );
-      await paperLoad;
       if (request !== generation) return;
-      const payload = windowPayload(blocks, windowIndex, overview, shared);
-      player?.destroy();
-      shown = { window: windowIndex, payload };
-      player = renderRecording(root, payload, manifest, {
-        initialEventId: id,
-        onEventSelect: followPlayer,
-      });
+      render(windowPayload(blocks, windowIndex, overview, shared), windowIndex, id);
       viewLink.hidden = false;
       draw();
     } catch (error) {
@@ -537,15 +590,28 @@ export async function initRecordingExplorer(root, manifest) {
     }
   }
 
-  /** Keep the plots, controls, and link on the spike the player settles on. */
+  /** Circle the player's spike in the plots and move the controls to it. */
   function followPlayer(id) {
-    if (!index) return;
     highlightedId = id;
-    setLink(id);
-    const square = index[`square_${selectedMetric.name}`][id];
-    if (square !== selectedSquare) setSquare(square);
-    setPosition(candidates.indexOf(id));
+    if (shown?.window === "paper") paperId = id;
+    else {
+      chosenId = id;
+      setLink(id);
+    }
     draw();
+    // A player's opening spike is marked, but loads nothing.
+    if (!following) return;
+    loadIndex()
+      .then(() => {
+        if (highlightedId !== id) return;
+        const square = index[`square_${selectedMetric.name}`][id];
+        if (square !== selectedSquare) setSquare(square);
+        setPosition(candidates.indexOf(id));
+        draw();
+      })
+      .catch((error) => {
+        squareStatus.textContent = `Could not load the spike index (${error.message}).`;
+      });
   }
 
   async function chooseSquare(square, requestedId = null) {
@@ -608,8 +674,14 @@ export async function initRecordingExplorer(root, manifest) {
     showSpike(candidates[position]);
   });
   describeAxes();
+  paperOption.addEventListener("change", showPaper);
+  spikeOption.addEventListener("change", () => showSpike(chosenId));
 
-  // ?recording_event=<id> opens that spike in its square of the first diagnostic.
+  // The paper's window opens first; ?recording_event=<id> then opens that
+  // spike in its square of the first diagnostic.
+  paperOption.checked = true;
+  render(shared, "paper", null);
+  draw();
   const requested = new URLSearchParams(window.location.search).get("recording_event");
   const id = Number(requested);
   if (requested !== null && Number.isInteger(id) && id >= 0 && id < overview.n_events) {

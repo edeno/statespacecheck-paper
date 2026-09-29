@@ -349,6 +349,38 @@ describe("recording explorer", () => {
       assert.equal(await page.locator("#rec-view .detail h3").textContent(), detail);
     }));
 
+  test("the paper's window stays one choice away from the chosen spike's", () =>
+    withPage({}, async (page) => {
+      const detail = page.locator("#rec-view .detail h3");
+      const window = (value) => page.locator(`input[name=recording-window][value=${value}]`);
+      assert.equal(await window("paper").isChecked(), true);
+      assert.equal(await window("spike").isDisabled(), true);
+      const paperSpike = await detail.textContent();
+      await clickSquare(page, 0, 10);
+      await spikeShown(page);
+      const chosen = await detail.textContent();
+      assert.equal(await window("spike").isChecked(), true);
+      await window("paper").check();
+      assert.equal(await detail.textContent(), paperSpike);
+      assert.equal(new URL(page.url()).searchParams.has("recording_event"), false);
+      await window("spike").check();
+      await page.waitForFunction((text) => document.querySelector("#rec-view .detail h3")?.textContent === text, chosen);
+    }));
+
+  test("stepping through the paper's window moves the explorer to each spike", () =>
+    withPage({}, async (page) => {
+      const stack = page.locator("#rec-view .stack");
+      await stack.focus();
+      await page.keyboard.press("ArrowRight");
+      const unit = (await page.locator("#rec-view .detail h3").textContent()).match(/unit (\d+)/)[1];
+      await page.waitForFunction(
+        (u) => new RegExp(`in this square: unit ${u},`).test(document.querySelector("#rec-explorer [aria-live]")?.textContent ?? ""),
+        unit,
+      );
+      // The paper's window is the default view: stepping in it links nothing.
+      assert.equal(new URL(page.url()).searchParams.has("recording_event"), false);
+    }));
+
   test("the explorer passes axe and reflows at 320 CSS pixels", () =>
     withPage({ width: 320, height: 640 }, async (page) => {
       await clickSquare(page, 0, 10);

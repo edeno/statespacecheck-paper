@@ -549,6 +549,8 @@ def test_recording_payload_slices_both_models_to_the_detail_window() -> None:
             diagnostics.event_time_ind[in_window],
         )
         assert len(model["events"]["t"]) == int(in_window.sum())
+        # Session-wide spike numbers: positions in the diagnostics' event arrays.
+        assert model["events"]["id"] == np.flatnonzero(in_window).tolist()
         assert set(model["events"]["flagged"]) == {"hpd_overlap", "predictive_pvalue"}
     # Cells are ranked by place-field peak.
     assert sorted(payload["cell_rank"]) == list(range(analysis.place_field_peaks.size))

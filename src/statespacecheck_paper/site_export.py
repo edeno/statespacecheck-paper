@@ -991,6 +991,8 @@ def recording_payload(
             "short_label": model.short_label,
             "predictive": heatmap_payload(predictive, (float(low), float(high))),
             "events": {
+                # Session-wide spike numbers, shared with the session explorer.
+                "id": np.flatnonzero(in_window).tolist(),
                 "bin": (event_bin[in_window] - window.start).tolist(),
                 "t": _rounded(event_time[in_window] - t0, 4),
                 "cell": np.asarray(diagnostics.event_cell_ind)[in_window].tolist(),
