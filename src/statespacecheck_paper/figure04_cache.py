@@ -388,14 +388,9 @@ def load_figure04_cache(path: Path, expected_fingerprint: str) -> dict[str, obje
     """Load a Figure-4 *decode* payload from ``path``, or ``None`` on any miss.
 
     Returns ``None`` (a cache miss) when the file is absent or unreadable, the
-    wrapper is not a mapping, its schema/fingerprint does not match, or it does
-    not carry every decode payload key. A valid load returns only the decode
-    payload (the six :data:`_FIGURE04_DECODE_PAYLOAD_KEYS`).
-
-    Legacy bundles that also embed the diagnostics keys are accepted as a
-    decode payload (their embedded diagnostics are ignored; the diagnostics
-    bundle is the sole diagnostics source), so a pre-split cache continues to
-    serve the expensive decode while its diagnostics are recomputed once.
+    wrapper is not a mapping, its schema/fingerprint does not match, or its
+    keys are not exactly the wrapper keys plus the decode payload keys. A valid
+    load returns the decode payload (the six :data:`_FIGURE04_DECODE_PAYLOAD_KEYS`).
 
     Large arrays are memory-mapped read-only (``mmap_mode="r"``) so a
     multi-gigabyte bundle can be used without materializing it.
@@ -407,10 +402,7 @@ def load_figure04_cache(path: Path, expected_fingerprint: str) -> dict[str, obje
     cached = _load_wrapper(path, mmap_mode="r")
     if cached is None:
         return None
-    required_keys = {"schema_version", "fingerprint", *_FIGURE04_DECODE_PAYLOAD_KEYS}
-    allowed_keys = required_keys | set(_FIGURE04_DIAGNOSTICS_PAYLOAD_KEYS)
-    keys = set(cached.keys())
-    if not required_keys <= keys or not keys <= allowed_keys:
+    if set(cached.keys()) != {"schema_version", "fingerprint", *_FIGURE04_DECODE_PAYLOAD_KEYS}:
         return None
     if cached.get("schema_version") != FIGURE04_CACHE_SCHEMA_VERSION:
         return None

@@ -82,27 +82,6 @@ def test_round_trip(tmp_path: Path) -> None:
     assert not path.with_name(path.name + ".tmp").exists()
 
 
-def test_legacy_bundle_with_embedded_diagnostics_serves_decode_payload(tmp_path: Path) -> None:
-    """A pre-split bundle (decode + diagnostics keys) is accepted as a decode cache.
-
-    Its embedded diagnostics are dropped from the returned payload: the
-    separate diagnostics bundle is the only diagnostics source.
-    """
-    path = tmp_path / "c.joblib"
-    joblib.dump(
-        {
-            "schema_version": FIGURE04_CACHE_SCHEMA_VERSION,
-            "fingerprint": "fp",
-            **_payload(),
-            **_diagnostics_payload(),
-        },
-        path,
-    )
-    loaded = load_figure04_cache(path, "fp")
-    assert loaded is not None
-    assert set(loaded.keys()) == set(_payload().keys())
-
-
 def test_diagnostics_cache_round_trip_and_misses(tmp_path: Path) -> None:
     path = tmp_path / "intermediates" / "d.joblib"
     save_figure04_diagnostics_cache(path, "fp1", "dfp1", _diagnostics_payload())
