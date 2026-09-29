@@ -39,7 +39,7 @@ from statespacecheck_paper.spyglass_pipeline.figure04_input import (
     FIGURE04_NWB_FILE_NAME,
     check_output_paths,
     epoch_identifier,
-    print_export_comparison,
+    print_input_comparison,
     write_figure04_inputs,
 )
 from statespacecheck_paper.spyglass_pipeline.paper_export import (
@@ -91,7 +91,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         if args.output_dir is not None:
             write_figure04_inputs(inputs, args.output_dir, animal_date_epoch)
-        if args.compare_to is not None and not print_export_comparison(
+        if args.compare_to is not None and not print_input_comparison(
             args.compare_to, args.output_dir, animal_date_epoch
         ):
             print(

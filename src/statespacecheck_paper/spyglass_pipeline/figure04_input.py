@@ -490,7 +490,7 @@ def check_output_paths(
     reference_dir: str | Path | None = None,
     overwrite: bool = False,
 ) -> None:
-    """Check the export destination (and a comparison reference) before any work.
+    """Check the input file's destination (and a comparison reference) before any work.
 
     Parameters
     ----------
@@ -517,11 +517,11 @@ def check_output_paths(
         raise ValueError(f"Output and reference directory are the same: {output_dir}")
     output = input_file_path(output_dir, animal_date_epoch)
     if output.exists() and not overwrite:
-        raise FileExistsError(f"Refusing to overwrite existing export: {output}")
+        raise FileExistsError(f"Refusing to overwrite existing input file: {output}")
     if reference_dir is not None:
         reference = input_file_path(reference_dir, animal_date_epoch)
         if not reference.is_file():
-            raise FileNotFoundError(f"Missing reference export: {reference}")
+            raise FileNotFoundError(f"Missing reference input file: {reference}")
 
 
 def write_figure04_inputs(
@@ -593,7 +593,7 @@ def _array_difference(reference: NDArray[np.generic], candidate: NDArray[np.gene
     return None if same else "values differ"
 
 
-def compare_figure04_exports(
+def compare_figure04_inputs(
     reference_dir: str | Path,
     candidate_dir: str | Path,
     animal_date_epoch: str,
@@ -634,12 +634,12 @@ def compare_figure04_exports(
     return differences
 
 
-def print_export_comparison(
+def print_input_comparison(
     reference_dir: str | Path,
     candidate_dir: str | Path,
     animal_date_epoch: str,
 ) -> bool:
-    """Print the arrays :func:`compare_figure04_exports` finds different.
+    """Print the arrays :func:`compare_figure04_inputs` finds different.
 
     Parameters
     ----------
@@ -655,7 +655,7 @@ def print_export_comparison(
     bool
         Whether every array is identical.
     """
-    differences = compare_figure04_exports(reference_dir, candidate_dir, animal_date_epoch)
+    differences = compare_figure04_inputs(reference_dir, candidate_dir, animal_date_epoch)
     different = {name: why for name, why in differences.items() if why is not None}
     for name, why in different.items():
         print(f"DIFFERENT  {name}: {why}")

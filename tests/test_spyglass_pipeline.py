@@ -39,7 +39,7 @@ from statespacecheck_paper.spyglass_pipeline.figure04_compute import (
 from statespacecheck_paper.spyglass_pipeline.figure04_input import (
     Figure4Inputs,
     check_output_paths,
-    compare_figure04_exports,
+    compare_figure04_inputs,
     epoch_identifier,
     filter_spike_times,
     get_interpolated_position_info,
@@ -137,7 +137,7 @@ def test_get_interpolated_position_info_adds_edge_spacing() -> None:
     )
 
     np.testing.assert_allclose(result["linear_position"], [5.0, 30.0])
-    # Onto its own timestamps (as the Figure-4 export does) the input is unchanged.
+    # Onto its own timestamps (as the Figure-4 input fetch does) the input is unchanged.
     pd.testing.assert_frame_equal(result[list(position_info.columns)], position_info)
 
 
@@ -161,7 +161,7 @@ def _inputs(spike_shift: float = 0.0) -> Figure4Inputs:
     )
 
 
-def test_written_exports_load_through_the_figure_loader(tmp_path: Path) -> None:
+def test_written_input_files_load_through_the_figure_loader(tmp_path: Path) -> None:
     inputs = _inputs()
     write_figure04_inputs(inputs, tmp_path, _EPOCH)
 
@@ -198,11 +198,11 @@ def test_write_is_deterministic(tmp_path: Path) -> None:
     assert first.read_bytes() == second.read_bytes()
 
 
-def test_compare_finds_no_difference_between_identical_exports(tmp_path: Path) -> None:
+def test_compare_finds_no_difference_between_identical_input_files(tmp_path: Path) -> None:
     write_figure04_inputs(_inputs(), tmp_path / "reference", _EPOCH)
     write_figure04_inputs(_inputs(), tmp_path / "same", _EPOCH)
 
-    differences = compare_figure04_exports(tmp_path / "reference", tmp_path / "same", _EPOCH)
+    differences = compare_figure04_inputs(tmp_path / "reference", tmp_path / "same", _EPOCH)
 
     assert "spike_times" in differences and "position/head_position_x" in differences
     assert set(differences.values()) == {None}
@@ -230,7 +230,7 @@ def test_compare_flags_only_the_array_that_differs(tmp_path: Path, array_name: s
     write_figure04_inputs(_inputs(), tmp_path / "reference", _EPOCH)
     write_figure04_inputs(_PERTURBATIONS[array_name](_inputs()), tmp_path / "changed", _EPOCH)
 
-    differences = compare_figure04_exports(tmp_path / "reference", tmp_path / "changed", _EPOCH)
+    differences = compare_figure04_inputs(tmp_path / "reference", tmp_path / "changed", _EPOCH)
 
     assert {name for name, difference in differences.items() if difference} == {array_name}
 

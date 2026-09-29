@@ -29,7 +29,7 @@ from statespacecheck_paper.spyglass_pipeline.figure04_input import (
     check_output_paths,
     epoch_identifier,
     fetch_figure04_inputs,
-    print_export_comparison,
+    print_input_comparison,
     write_figure04_inputs,
 )
 
@@ -67,7 +67,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.compare_to is None:
         return 0
-    return 0 if print_export_comparison(args.compare_to, args.output_dir, animal_date_epoch) else 1
+    return 0 if print_input_comparison(args.compare_to, args.output_dir, animal_date_epoch) else 1
 
 
 if __name__ == "__main__":
