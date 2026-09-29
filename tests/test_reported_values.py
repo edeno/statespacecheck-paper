@@ -104,6 +104,18 @@ def test_asymmetric_mode_parameters_are_reported_independently() -> None:
     assert values["RecModeFragmentedStay"] == "0.80"
 
 
+def test_every_figure4_flag_rule_is_reported_or_fails_the_emit() -> None:
+    """The flag-count macros follow the summary's flag rules, not a fixed list."""
+    figure03 = _load("figure03_summary.json")
+    figure04 = copy.deepcopy(_load("figure04_summary.json"))
+    figure04["flag_rules"]["kl_divergence"] = {
+        "comparison": "greater_than_or_equal",
+        "threshold": 4.0,
+    }
+    with pytest.raises(KeyError, match="kl_divergence"):
+        render_macro_file(figure03, figure04, statespacecheck_doi=CITED_DOI)
+
+
 def test_non_integral_burst_factor_is_not_silently_rounded() -> None:
     """The spelled-out prose cannot faithfully represent a fractional factor."""
     figure03 = copy.deepcopy(_load("figure03_summary.json"))

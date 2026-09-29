@@ -507,12 +507,19 @@ def _simulation_configuration(payload: dict[str, Any]) -> list[MacroDefinition]:
     ]
 
 
+# Macro-name prefix of each Figure-4 metric that can carry a flag rule. Flag
+# counts are reported for every metric in the summary's ``flag_rules``; one
+# missing here fails the emit instead of going unreported.
+_RECORDING_FLAG_MACRO_PREFIXES = {"hpd_overlap": "RecHpd", "predictive_pvalue": "RecPvalue"}
+
+
 def _recording_statistics(payload: dict[str, Any]) -> list[MacroDefinition]:
     """Build the Figure-4 macros computed from the hippocampal recording."""
     macros = [
         MacroDefinition("RecNUnits", _exact(payload["dataset"]["n_units"]), "dataset.n_units")
     ]
-    for prefix, metric in (("RecHpd", "hpd_overlap"), ("RecPvalue", "predictive_pvalue")):
+    for metric in payload["flag_rules"]:
+        prefix = _RECORDING_FLAG_MACRO_PREFIXES[metric]
         confusion = _confusion(payload, metric)
         # Flagged by the Continuous model = rescued by ContFrag + flagged by both.
         flagged_continuous = confusion["a_only"] + confusion["both"]
