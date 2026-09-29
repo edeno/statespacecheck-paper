@@ -33,6 +33,7 @@ import xarray as xr
 from numpy.typing import NDArray
 
 from statespacecheck_paper.diagnostics import DecodingDiagnostics, SpikeEventDiagnostics
+from statespacecheck_paper.paths import ANIMAL_DATE_EPOCH
 
 if TYPE_CHECKING:
     from statespacecheck_paper.figure04_workflow import Figure4RenderData
@@ -766,8 +767,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     build.add_argument(
         "--animal-date-epoch",
-        default="j1620210710_02_r1",
-        help="Identifier for the recording session.",
+        default=ANIMAL_DATE_EPOCH,
+        help=(
+            "Identifier for the recording session (default: "
+            "$STATESPACECHECK_ANIMAL_DATE_EPOCH, else the published Figure 4 epoch)."
+        ),
     )
     build.add_argument(
         "--time-chunk",
