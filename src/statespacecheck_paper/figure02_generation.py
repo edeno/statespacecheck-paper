@@ -209,7 +209,7 @@ def compose_figure02(rng: np.random.Generator | None = None) -> Figure:
         0.5,
         0.5,
         r"$D_{\mathrm{KL}} = \sum \mathrm{pred} \cdot \log(\mathrm{pred}/\mathrm{like})$"
-        f" = {data.kl_value:.2f}",
+        f" = {data.kl_divergence:.2f}",
         transform=axes["kl_formula"].transAxes,
         fontweight="bold",
         ha="center",
@@ -224,7 +224,7 @@ def compose_figure02(rng: np.random.Generator | None = None) -> Figure:
         r"{\min(|H_{\mathrm{pred}}|, |H_{\mathrm{like}}|)}$"
         f" = "
         rf"$\frac{{{intersection_size:.1f}}}{{{min(pred_size, like_size):.1f}}}$"
-        f" = {data.hpd_value:.2f}"
+        f" = {data.hpd_overlap:.2f}"
     )
     axes["hpd_formula"].text(
         0.5,
@@ -241,7 +241,7 @@ def compose_figure02(rng: np.random.Generator | None = None) -> Figure:
     axes["predictive_formula"].text(
         0.5,
         0.5,
-        f"$p = P(T^{{rep}} \\leq T^{{obs}})$ = {data.p_value:.2f}",
+        f"$p = P(T^{{rep}} \\leq T^{{obs}})$ = {data.predictive_pvalue:.2f}",
         transform=axes["predictive_formula"].transAxes,
         fontweight="bold",
         ha="center",

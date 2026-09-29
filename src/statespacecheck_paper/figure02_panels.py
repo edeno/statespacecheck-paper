@@ -48,9 +48,9 @@ class Figure2ExampleData:
     position_bins: NDArray[np.float64]
     predictive: NDArray[np.float64]
     likelihood: NDArray[np.float64]
-    kl_value: float
-    hpd_value: float
-    p_value: float
+    kl_divergence: float
+    hpd_overlap: float
+    predictive_pvalue: float
     observed_log_pred: float
     simulated_log_pred: NDArray[np.float64]
     showcase_positions: NDArray[np.float64]
@@ -98,15 +98,15 @@ class Figure2ExampleData:
         for name, array in arrays.items():
             if not np.all(np.isfinite(array)):
                 raise ValueError(f"{name} must contain only finite values")
-        for name in ("kl_value", "hpd_value", "observed_log_pred"):
+        for name in ("kl_divergence", "hpd_overlap", "observed_log_pred"):
             if not np.isfinite(getattr(self, name)):
                 raise ValueError(f"{name} must be finite")
-        if self.kl_value < 0.0:
-            raise ValueError(f"kl_value must be non-negative; got {self.kl_value}")
-        if not 0.0 <= self.hpd_value <= 1.0:
-            raise ValueError(f"hpd_value must lie in [0, 1]; got {self.hpd_value}")
-        if not np.isfinite(self.p_value) or not 0.0 <= self.p_value <= 1.0:
-            raise ValueError(f"p_value must lie in [0, 1]; got {self.p_value}")
+        if self.kl_divergence < 0.0:
+            raise ValueError(f"kl_divergence must be non-negative; got {self.kl_divergence}")
+        if not 0.0 <= self.hpd_overlap <= 1.0:
+            raise ValueError(f"hpd_overlap must lie in [0, 1]; got {self.hpd_overlap}")
+        if not np.isfinite(self.predictive_pvalue) or not 0.0 <= self.predictive_pvalue <= 1.0:
+            raise ValueError(f"predictive_pvalue must lie in [0, 1]; got {self.predictive_pvalue}")
         for name, array in arrays.items():
             array.setflags(write=False)
             object.__setattr__(self, name, array)
@@ -154,8 +154,10 @@ def create_shared_example(rng: np.random.Generator) -> Figure2ExampleData:
     likelihood = normalize(observed_conditional_density)
 
     # Compute KL divergence and HPD overlap using statespacecheck
-    kl_value = float(ssc.kl_divergence(predictive[np.newaxis, :], likelihood[np.newaxis, :])[0])
-    hpd_value = float(ssc.hpd_overlap(predictive[np.newaxis, :], likelihood[np.newaxis, :])[0])
+    kl_divergence = float(
+        ssc.kl_divergence(predictive[np.newaxis, :], likelihood[np.newaxis, :])[0]
+    )
+    hpd_overlap = float(ssc.hpd_overlap(predictive[np.newaxis, :], likelihood[np.newaxis, :])[0])
 
     # Monte Carlo predictive p-value (eq:fpred / eq:predictive_application):
     # each replicate draws a state from the event-weighted predictive
@@ -179,7 +181,7 @@ def create_shared_example(rng: np.random.Generator) -> Figure2ExampleData:
         rng=rng,
         return_samples=True,
     )
-    p_value = float(check.pvalue[0])
+    predictive_pvalue = float(check.pvalue[0])
     observed_log_pred = float(check.observed_log_density[0])
     assert check.simulated_log_density is not None  # return_samples=True
     simulated_log_pred_values = check.simulated_log_density[0]
@@ -206,9 +208,9 @@ def create_shared_example(rng: np.random.Generator) -> Figure2ExampleData:
         position_bins=position_bins,
         predictive=np.asarray(predictive, dtype=np.float64),
         likelihood=np.asarray(likelihood, dtype=np.float64),
-        kl_value=kl_value,
-        hpd_value=hpd_value,
-        p_value=p_value,
+        kl_divergence=kl_divergence,
+        hpd_overlap=hpd_overlap,
+        predictive_pvalue=predictive_pvalue,
         observed_log_pred=observed_log_pred,
         simulated_log_pred=simulated_log_pred_values,
         showcase_positions=showcase_positions,
@@ -344,14 +346,14 @@ def _plot_hpd_panel(
     """Render one 95% HPD distribution panel (predictive or likelihood column).
 
     Draws the distribution line, shades the 95% HPD region under it, marks the
-    HPD density threshold with a dashed line + label, and applies the shared
-    Figure-2 panel styling. Only the color, title, threshold-label placement,
+    HPD density level with a dashed line + label, and applies the shared
+    Figure-2 panel styling. Only the color, title, level-label placement,
     and legend keywords differ between the two columns.
     """
     hpd_mask = ssc.highest_density_region(dist[np.newaxis], coverage=HPD_COVERAGE)[0]
 
-    # HPD threshold is the minimum density value inside the HPD region.
-    hpd_threshold = np.min(dist[hpd_mask])
+    # The HPD density level is the minimum density value inside the HPD region.
+    hpd_density_level = np.min(dist[hpd_mask])
 
     ax.plot(x, dist, color=color, linewidth=1.2)
     ax.fill_between(
@@ -363,11 +365,11 @@ def _plot_hpd_panel(
         color=color,
         label=f"{HPD_COVERAGE:.0%} HPD",
     )
-    ax.axhline(hpd_threshold, color=color, linestyle="--", linewidth=0.8, alpha=0.7)
+    ax.axhline(hpd_density_level, color=color, linestyle="--", linewidth=0.8, alpha=0.7)
     ax.text(
         label_x,
-        hpd_threshold,
-        f"{HPD_COVERAGE:.0%} threshold",
+        hpd_density_level,
+        f"{HPD_COVERAGE:.0%} HPD level",
         ha=label_ha,
         va="bottom",
         color=color,
@@ -407,7 +409,7 @@ def plot_hpd_predictive(ax: Axes, data: Figure2ExampleData) -> None:
 
 def plot_hpd_likelihood(ax: Axes, data: Figure2ExampleData) -> None:
     """Likelihood distribution with 95% HPD region shaded."""
-    # Curve peaks center-right, so the threshold label sits on the left and the
+    # Curve peaks center-right, so the HPD-level label sits on the left and the
     # legend is tucked into the empty upper-left corner against the y-axis.
     _plot_hpd_panel(
         ax,

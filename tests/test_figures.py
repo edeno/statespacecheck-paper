@@ -79,8 +79,8 @@ def test_figure02_create_shared_example_samples_y_tilde_with_noise() -> None:
     rng = np.random.default_rng(42)
     data = create_shared_example(rng)
 
-    p_value = data.p_value
-    assert 0.0 <= p_value <= 1.0, f"p_value out of [0, 1]: {p_value}"
+    predictive_pvalue = data.predictive_pvalue
+    assert 0.0 <= predictive_pvalue <= 1.0, f"predictive_pvalue out of [0, 1]: {predictive_pvalue}"
 
     observed = data.observed_log_pred
     simulated = data.simulated_log_pred
@@ -115,7 +115,7 @@ def test_figure02_create_shared_example_samples_y_tilde_with_noise() -> None:
         )
     )
     standard_error = np.sqrt(exact * (1.0 - exact) / simulated.size)
-    assert abs(p_value - exact) < 4.0 * standard_error, (p_value, exact)
+    assert abs(predictive_pvalue - exact) < 4.0 * standard_error, (predictive_pvalue, exact)
 
     positions = np.asarray(data.showcase_positions)
     y_tildes = np.asarray(data.showcase_y_tildes)
@@ -134,8 +134,8 @@ def test_figure02_create_shared_example_samples_y_tilde_with_noise() -> None:
     )
     assert not data.predictive.flags.writeable
     assert not data.showcase_likelihoods.flags.writeable
-    with pytest.raises(ValueError, match="p_value must lie"):
-        replace(data, p_value=float("nan"))
+    with pytest.raises(ValueError, match="predictive_pvalue must lie"):
+        replace(data, predictive_pvalue=float("nan"))
 
 
 @pytest.mark.parametrize("observed_in_tail", [False, True])
