@@ -48,9 +48,9 @@ def launch(
     otherwise pass ``model=`` to choose the real-data model. Exactly
     one of those must be specified.
     """
-    # Deferred to break the import cycle with ``viewer``: this module
-    # is imported by ``viewer.py``'s re-export footer, so a top-level
-    # ``from .viewer import DecoderViewer`` here would loop back.
+    # Deferred so the CLI parses its arguments before importing the viewer,
+    # which loads the Figure-4 modules; ``viewer`` imports this module only
+    # when run as ``python -m statespacecheck_paper.interactive.viewer``.
     from .viewer import DecoderViewer  # noqa: PLC0415
 
     if simulation and model is not None:

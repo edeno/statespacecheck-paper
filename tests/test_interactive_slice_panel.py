@@ -108,7 +108,7 @@ def test_slice_panel_animates_on_set_center_time(tmp_path: Path) -> None:
 
 def test_slice_panel_y_axis_pinned_to_unit_range(tmp_path: Path) -> None:
     """Population-likelihood + per-cell-row plots have y-range hard-pinned."""
-    from statespacecheck_paper.interactive.viewer import _SLICE_Y_MAX, _SLICE_Y_MIN
+    from statespacecheck_paper.interactive.panels import _SLICE_Y_MAX, _SLICE_Y_MIN
 
     _build_cache(tmp_path / "cache", n_states=1)
     app, viewer, ds = make_viewer(tmp_path / "cache")
@@ -427,7 +427,7 @@ def test_slice_panel_no_op_outside_buffer_without_provider(tmp_path: Path) -> No
     in isolation), out-of-buffer ``update_for_index`` is a silent no-op
     instead of raising.
     """
-    from statespacecheck_paper.interactive.viewer import SlicePanel
+    from statespacecheck_paper.interactive.panels import SlicePanel
 
     panel = SlicePanel(position_bins=np.linspace(0.0, 100.0, 16), n_states=1)
     try:

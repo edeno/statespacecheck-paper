@@ -14,11 +14,6 @@ For the Qt-application entry point and the
 ``app.py``. Panel widget classes (``PosteriorPanel``,
 ``LikelihoodPanel``, ``RasterPanel``, ``MetricPanel``, ``SlicePanel``)
 plus the ``CellSlice`` payload dataclass live in ``panels.py``.
-
-Names imported from those modules (and a few constants) are
-re-exported at the bottom of this file so ``from
-statespacecheck_paper.interactive.viewer import X`` keeps working for
-the existing test suite.
 """
 
 from __future__ import annotations
@@ -52,7 +47,7 @@ from .panels import (
     SlicePanel,
 )
 
-# Plan defaults.
+# Window width: 2 s at startup, adjustable from 0.1 s to 60 s.
 DEFAULT_WINDOW_SECONDS = 2.0
 MIN_WINDOW_SECONDS = 0.1
 MAX_WINDOW_SECONDS = 60.0
@@ -63,9 +58,9 @@ SLIDER_RESOLUTION = 100_000  # subdivides the full session into this many ticks
 WINDOW_SLIDER_RESOLUTION = 1000
 
 # Reset shortcut width. Re-centers near the Figure-4 detail region
-# (``center_index=193_069`` in figure04_generation.py, ~27% into the
-# session) but shows a wider 20 s context than the figure's ~2 s zoom so
-# the viewer lands with surrounding context rather than the tight crop.
+# (``figure04_generation.FIGURE4_DETAIL_WINDOW``, ~27% into the session) but
+# shows a wider 20 s context than the figure's ~2 s zoom so the viewer lands
+# with surrounding context rather than the tight crop.
 RESET_WINDOW_SECONDS = 20.0
 
 # Auto-scroll defaults.
@@ -578,7 +573,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
         self.set_center_time(self._t_center + rel_t)
 
     def _wire_keyboard_shortcuts(self) -> None:
-        """Bind the keyboard shortcuts spec'd in the plan.
+        """Bind the viewer's keyboard shortcuts.
 
         - ``←`` / ``→``         : step center by one decoder time bin.
         - ``Shift+←`` / ``Shift+→``: step by one window-width.
@@ -1185,9 +1180,10 @@ class DecoderViewer(QtWidgets.QMainWindow):
     @QtCore.Slot()
     def _reset_view(self) -> None:
         # Reset to a 20 s window centered ~a quarter into the session. The
-        # Figure 4 detail region sits at index 193069 of a 709321-point
-        # session (~27% in); ``n_time // 4`` (25%) is a size-agnostic default
-        # that lands nearby and stays valid for synthetic / shorter sessions.
+        # Figure 4 detail region (``FIGURE4_DETAIL_WINDOW``) sits ~27% into
+        # the recorded session; ``n_time // 4`` (25%) is a size-agnostic
+        # default that lands nearby and stays valid for synthetic / shorter
+        # sessions.
         mid_idx = max(0, min(self._ds.n_time - 1, self._ds.n_time // 4))
         target_t = float(self._ds.time[mid_idx])
         self._set_window_seconds(RESET_WINDOW_SECONDS)
@@ -1322,28 +1318,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
         self._load_timer.start()
 
 
-# ---------------------------------------------------------------------------
-# Backward-compat re-exports
-# ---------------------------------------------------------------------------
-#
-# Pre-split, all of the panel classes and the launch / configure_qt_application
-# helpers lived in this module. Tests and downstream callers still import
-# them via ``from statespacecheck_paper.interactive.viewer import X``; keep
-# those imports working without forcing an update.
-
-from .app import configure_qt_application, launch, main  # noqa: E402, F401
-from .panels import (  # noqa: E402, F401
-    _LIKELIHOOD_PEN_RGB,
-    _PER_CELL_PALETTE,
-    _SLICE_Y_MAX,
-    _SLICE_Y_MIN,
-    _STATE_LIKELIHOOD_RGB,
-    _STATE_POSTERIOR_RGB,
-    _TRUE_POSITION_PEN,
-    _make_slice_subplot,
-    _PerCellRow,
-    _pin_slice_axes,
-)
-
 if __name__ == "__main__":
+    from .app import main
+
     raise SystemExit(main())

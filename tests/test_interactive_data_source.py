@@ -4,7 +4,7 @@ The unit-style tests build a tiny synthetic cache (Zarr + Parquet +
 sidecars) in ``tmp_path`` and exercise the windowed-read API. The
 real-data integration test (marked ``slow``) opens the cache built by
 ``cache.build`` from the live intermediates and checks the same API
-plus latency targets from the plan.
+plus the window-read latency target (p95 ≤ 50 ms for 20 s windows).
 """
 
 from __future__ import annotations
@@ -214,7 +214,7 @@ REAL_CONTFRAG_CACHE_AVAILABLE = (CACHE_DIR / "figure04_contfrag.zarr").exists()
 def test_real_continuous_cache_window_read_latency() -> None:
     """A 2-second window read on the real cache must comfortably beat 50 ms.
 
-    Plan target is window-load p95 ≤ 50 ms for 20 s windows; this test
+    The latency target is window-load p95 ≤ 50 ms for 20 s windows; this test
     is a smaller smoke check on a 2 s window (1000 samples at 500 Hz).
     """
     import time
@@ -238,7 +238,7 @@ def test_real_continuous_cache_window_read_latency() -> None:
 
         assert post.shape[1] == 256
         assert post.shape == post2.shape
-        # Generous bound — the plan asks for 50 ms p95 on 20 s windows.
+        # Generous bound on the 50 ms p95 target for 20 s windows.
         assert cold_ms < 100, f"cold read {cold_ms:.1f} ms"
         assert warm_ms < 100, f"warm read {warm_ms:.1f} ms"
     finally:
