@@ -118,8 +118,9 @@ export function heatmapBitmap(rows, lut, scale = rows.range ? rows : null) {
  *
  * tracks: [{ label, note?, top, bottom, height, draw(ctx, width, height, xOf) }]
  * range:  [t0, t1] in seconds (or the unit tickLabel names).
- * onCursor(time, pressed): mouse hover (unless hover is false; pressed false)
- *   or press, or a tap (not a scroll) on touch screens (pressed true).
+ * onCursor(time, pressed): mouse hover or drag (unless hover is false; pressed
+ *   false), or a press, a release, or a tap (not a scroll) on touch screens
+ *   (pressed true).
  * onKey(key): ArrowLeft/ArrowRight/Home/End while the stack has focus;
  *   ArrowDown and ArrowUp arrive as ArrowLeft and ArrowRight, as on a slider.
  * tickLabel(time): axis tick text; seconds by default.
@@ -170,14 +171,24 @@ export class TrackStack {
     };
     let touchStart = null;
     this.root.addEventListener("pointerdown", (event) => {
-      if (event.pointerType === "touch") touchStart = { x: event.clientX, y: event.clientY };
-      else this.onCursor(timeAt(event.clientX), true);
+      if (event.pointerType === "touch") {
+        touchStart = { x: event.clientX, y: event.clientY };
+        return;
+      }
+      // Capture, so a drag released outside the tracks still ends here.
+      this.root.setPointerCapture(event.pointerId);
+      this.onCursor(timeAt(event.clientX), true);
     });
     this.root.addEventListener("pointermove", (event) => {
       if (hover && event.pointerType !== "touch") this.onCursor(timeAt(event.clientX), false);
     });
     this.root.addEventListener("pointerup", (event) => {
-      if (event.pointerType !== "touch" || !touchStart) return;
+      // A release ends a drag: the selection it leaves is a discrete one.
+      if (event.pointerType !== "touch") {
+        this.onCursor(timeAt(event.clientX), true);
+        return;
+      }
+      if (!touchStart) return;
       const moved = Math.hypot(event.clientX - touchStart.x, event.clientY - touchStart.y);
       touchStart = null;
       if (moved < TAP_SLOP) this.onCursor(timeAt(event.clientX), true);

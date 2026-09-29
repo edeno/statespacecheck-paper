@@ -148,6 +148,25 @@ describe("players", () => {
       assert.notEqual(await stack.getAttribute("aria-valuetext"), up);
     }));
 
+  test("dragging along the tracks leaves the spoken value on the spike shown", () =>
+    withPage({}, async (page) => {
+      const stack = page.locator("#rec-view .stack");
+      await stack.scrollIntoViewIfNeeded();
+      const box = await stack.boundingBox();
+      const y = box.y + box.height / 2;
+      await page.mouse.move(box.x + box.width * 0.05, y);
+      await page.mouse.down();
+      const pressed = await stack.getAttribute("aria-valuetext");
+      await page.mouse.move(box.x + box.width * 0.4, y, { steps: 5 });
+      // Released outside the tracks: the pointer is captured.
+      await page.mouse.move(box.x + box.width * 0.7, box.y - 40, { steps: 5 });
+      await page.mouse.up();
+      const shown = await page.locator("#rec-view .detail h3").textContent();
+      const spoken = await stack.getAttribute("aria-valuetext");
+      assert.notEqual(spoken, pressed);
+      assert.ok(spoken.startsWith(shown), `${spoken} / ${shown}`);
+    }));
+
   test("each player lists every spike in a table", () =>
     withPage({}, async (page) => {
       for (const view of ["#cond-view", "#rec-view"]) {
