@@ -135,6 +135,7 @@ def test_figure04_family_dependency_edges_are_acyclic() -> None:
     prefix = "statespacecheck_paper."
     allowed = {
         "figure04_models.py": set(),
+        "figure04_protocol.py": {prefix + "diagnostics"},
         "figure04_decoder.py": {prefix + "diagnostics"},
         "figure04_place_fields.py": set(),
         "figure04_diagnostics.py": {
@@ -184,6 +185,7 @@ def test_figure04_family_dependency_edges_are_acyclic() -> None:
             prefix + "diagnostics",
             prefix + "figure04_models",
             prefix + "figure04_panels",
+            prefix + "figure04_protocol",
             prefix + "figure04_track_plots",
             prefix + "plotting",
             prefix + "style",
@@ -196,6 +198,7 @@ def test_figure04_family_dependency_edges_are_acyclic() -> None:
             prefix + "figure04_layout",
             prefix + "figure04_decoder",
             prefix + "figure04_models",
+            prefix + "figure04_protocol",
             prefix + "paths",
             prefix + "scientific_artifacts",
             prefix + "style",
@@ -203,6 +206,35 @@ def test_figure04_family_dependency_edges_are_acyclic() -> None:
     }
     for module_file, permitted in allowed.items():
         assert _sibling_module_imports(module_file) <= permitted, module_file
+
+
+def test_figure04_protocol_loads_no_rendering_module() -> None:
+    """The shared Figure-4 cutoffs and detail window sit below every rendering layer.
+
+    The viewer, website export, and lab pipeline import them; loading them must
+    not pull in matplotlib, the plotting helpers, or the Figure-4 layout.
+    """
+    edges = {name: kinds["top"] | kinds["lazy"] for name, kinds in _module_graph().items()}
+    reachable: set[str] = set()
+    pending = ["figure04_protocol"]
+    while pending:
+        for target in edges[pending.pop()] - reachable:
+            reachable.add(target)
+            pending.append(target)
+    assert reachable == {"diagnostics"}
+    for module in ("figure04_protocol", *reachable):
+        tree = ast.parse((_SRC / f"{module}.py").read_text(encoding="utf-8"))
+        imported = {
+            name.split(".")[0]
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.Import, ast.ImportFrom))
+            for name in (
+                [alias.name for alias in node.names]
+                if isinstance(node, ast.Import)
+                else [node.module or ""]
+            )
+        }
+        assert not imported & {"matplotlib", "pyqtgraph", "PySide6"}, module
 
 
 def test_reported_values_imports_no_analysis_module() -> None:
@@ -265,17 +297,15 @@ def test_site_export_depends_only_on_analysis_layers() -> None:
     assert _sibling_module_imports("site_export.py") <= {
         prefix + "decoding",
         prefix + "diagnostics",
-        prefix + "figure03_generation",
         prefix + "figure03_protocol",
         prefix + "figure03_simulation",
         prefix + "figure03_summary",
         prefix + "figure04_cache",
         prefix + "figure04_decoder",
         prefix + "figure04_diagnostics",
-        prefix + "figure04_generation",
-        prefix + "figure04_layout",
         prefix + "figure04_models",
         prefix + "figure04_place_fields",
+        prefix + "figure04_protocol",
         prefix + "figure04_workflow",
         prefix + "number_format",
         prefix + "paths",

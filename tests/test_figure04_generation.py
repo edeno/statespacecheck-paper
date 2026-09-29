@@ -21,6 +21,7 @@ from statespacecheck_paper.figure04_decoder import Figure4Config, Figure4Package
 from statespacecheck_paper.figure04_diagnostics import FlagConfusion
 from statespacecheck_paper.figure04_input import INPUT_FILE_SUFFIX
 from statespacecheck_paper.figure04_layout import Figure4Composition
+from statespacecheck_paper.figure04_protocol import FIGURE04_DETAIL_WINDOW
 from statespacecheck_paper.figure04_summary import Figure4DiagnosticMeans, Figure4Summary
 from statespacecheck_paper.paths import FIGURE04_SUMMARY_PATH, REPO_ROOT
 
@@ -88,7 +89,7 @@ def test_generation_passes_figure_and_bbox_to_save(monkeypatch: pytest.MonkeyPat
     assert saved["kwargs"]["fig"] is fig
     assert saved["kwargs"]["bbox_inches"] is composition.bbox_inches
     assert saved["kwargs"]["close"] is True
-    assert composed["kwargs"]["detail_window"] is figure04_generation.FIGURE04_DETAIL_WINDOW
+    assert composed["kwargs"]["detail_window"] is FIGURE04_DETAIL_WINDOW
 
 
 def test_summary_payload_contains_reported_counts_rates_and_provenance(

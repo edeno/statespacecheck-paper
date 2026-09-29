@@ -60,7 +60,7 @@ and Eq. 11 is in the simulation study's generative model.
 | --- | --- | --- |
 | 3 | HPD overlap flagged at or below the 1st percentile, KL divergence at or above the 99th percentile, of baseline values pooled over every spike event before step 6000 of all 100 realizations. The committed HPD-overlap threshold is exactly 0, so a spike is flagged only when its two HPD regions do not overlap at all | quantiles `diagnostics.BASELINE_HPD_OVERLAP_QUANTILE` and `BASELINE_KL_DIVERGENCE_QUANTILE`; rule `diagnostics.compute_baseline_diagnostic_thresholds`; pooling `figure03_summary.estimate_realization_summary` |
 | 3 | Predictive $p$-value flagged at or below a fixed 0.05 | `diagnostics.FIXED_PREDICTIVE_PVALUE_CUTOFF` |
-| 4 | Fixed cutoffs: HPD overlap ≤ 0.05 and predictive $p$-value ≤ 0.05; KL divergence is not thresholded | `figure04_generation.FIGURE04_DIAGNOSTIC_THRESHOLDS` |
+| 4 | Fixed cutoffs: HPD overlap ≤ 0.05 and predictive $p$-value ≤ 0.05; KL divergence is not thresholded | `figure04_protocol.FIGURE04_DIAGNOSTIC_THRESHOLDS` |
 
 Every comparison is inclusive; `diagnostics.METRIC_FLAG_DIRECTIONS` gives each
 metric's worse-fit direction and `diagnostics.flag_mask` applies it. Both
@@ -136,11 +136,14 @@ families**:
 - **Per-figure families**: `figure01_generation`;
   `figure02_{panels,generation}`;
   `figure03_{protocol,simulation,summary,plotting,generation}`; and
-  `figure04_{input,models,decoder,place_fields,diagnostics,plot_primitives,track_plots,panels,fit,cache,workflow,summary,layout,generation}`.
+  `figure04_{input,models,protocol,decoder,place_fields,diagnostics,plot_primitives,track_plots,panels,fit,cache,workflow,summary,layout,generation}`.
   `figure04_models` holds each decoder's one machine ID (`continuous`,
   `continuous_fragmented`) and its display labels; the figure, summary
   printout, viewer, and website data take the labels from it, and the
-  decode-hashed modules do not import it. Each figure is a small set of
+  decode-hashed modules do not import it. `figure04_protocol` holds the fixed
+  flag cutoffs and the manuscript's detail window, which the figure, viewer,
+  website export, and lab pipeline share; it imports only `diagnostics`, so
+  none of them loads the layout or plotting modules for these values. Each figure is a small set of
   single-responsibility modules rather than one monolith, so an outside reader
   can follow the scientific workflow (configure → simulate/load → decode →
   diagnose → summarize → render).
@@ -200,6 +203,7 @@ figure03_generation                 → diagnostics, figure03_plotting, figure03
 figure04_input                      → paths
 figure04_download                   → figure04_input, paths
 figure04_models                     → (none)
+figure04_protocol                   → diagnostics
 figure04_decoder                    → diagnostics
 figure04_place_fields               → (none)
 figure04_diagnostics                → diagnostics, figure04_place_fields
@@ -210,10 +214,10 @@ figure04_fit                        → figure04_decoder, figure04_input, figure
 figure04_cache                      → figure04_decoder, figure04_input
 figure04_workflow                   → diagnostics, figure04_cache, figure04_decoder, figure04_diagnostics, figure04_fit, figure04_input
 figure04_summary                    → diagnostics, figure04_diagnostics, figure04_models, figure04_workflow
-figure04_layout                     → diagnostics, figure04_models, figure04_panels, figure04_track_plots, figure04_workflow, plotting, style
-figure04_generation                 → diagnostics, figure04_cache, figure04_decoder, figure04_layout, figure04_models, figure04_summary, figure04_workflow, paths, scientific_artifacts, style
+figure04_layout                     → diagnostics, figure04_models, figure04_panels, figure04_protocol, figure04_track_plots, figure04_workflow, plotting, style
+figure04_generation                 → figure04_cache, figure04_decoder, figure04_layout, figure04_models, figure04_protocol, figure04_summary, figure04_workflow, paths, scientific_artifacts, style
 
-site_export                         → decoding, diagnostics, figure03_generation, figure03_protocol, figure03_simulation, figure04_cache, figure04_decoder, figure04_diagnostics, figure04_generation, figure04_layout, figure04_models, figure04_place_fields, figure04_workflow, number_format, paths, reported_values, simulation, style
+site_export                         → decoding, diagnostics, figure03_protocol, figure03_simulation, figure03_summary, figure04_cache, figure04_decoder, figure04_diagnostics, figure04_models, figure04_place_fields, figure04_protocol, figure04_workflow, number_format, paths, reported_values, simulation, style
 
 interactive                         → (none)
 interactive.__main__                → interactive.app
@@ -221,13 +225,13 @@ interactive.app                     → figure04_models, interactive.data_source
 interactive.cache                   → diagnostics, figure04_models, figure04_place_fields, paths; lazy: figure03_protocol, figure03_simulation, figure04_cache, figure04_decoder, figure04_workflow
 interactive.data_source             → figure04_models, figure04_place_fields, interactive.cache
 interactive.panels                  → plotting, style
-interactive.viewer                  → figure04_generation, figure04_models, interactive.data_source, interactive.panels, style
+interactive.viewer                  → figure04_models, figure04_protocol, interactive.data_source, interactive.panels, style
 
 spyglass_pipeline                   → (none)
 spyglass_pipeline.figure04_input    → figure04_input
 spyglass_pipeline.paper_export      → spyglass_pipeline.figure04_input
-spyglass_pipeline.figure04_schema   → diagnostics, figure04_decoder, figure04_generation, figure04_input, figure04_models, figure04_place_fields, spyglass_pipeline.figure04_compute, spyglass_pipeline.figure04_input
-spyglass_pipeline.figure04_compute  → figure04_models, spyglass_pipeline.figure04_input; lazy: figure04_decoder, figure04_diagnostics, figure04_generation, figure04_place_fields, figure04_summary; type-only: diagnostics
+spyglass_pipeline.figure04_schema   → diagnostics, figure04_decoder, figure04_input, figure04_models, figure04_place_fields, figure04_protocol, spyglass_pipeline.figure04_compute, spyglass_pipeline.figure04_input
+spyglass_pipeline.figure04_compute  → figure04_models, spyglass_pipeline.figure04_input; lazy: figure04_decoder, figure04_diagnostics, figure04_generation, figure04_place_fields, figure04_protocol, figure04_summary; type-only: diagnostics
 spyglass_pipeline.pickle_conversion → figure04_input, spyglass_pipeline.figure04_input
 ```
 <!-- module-graph -->
@@ -470,12 +474,12 @@ $\Lambda(x)$.
   same position grid against the same place fields
   (`figure04_diagnostics.compute_results_diagnostics`). Flags use the fixed
   cutoffs `FIGURE04_DIAGNOSTIC_THRESHOLDS = {"hpd_overlap": 0.05,
-  "predictive_pvalue": 0.05}` in `figure04_generation.py`; KL divergence is not
+  "predictive_pvalue": 0.05}` in `figure04_protocol.py`; KL divergence is not
   thresholded. `figure04_diagnostics.FlagConfusion` counts, for each metric,
   the spikes flagged by both decoders, by the Continuous model only (`rescued`),
   by the Continuous–Fragmented model only (`newly_flagged`), and by neither.
 - **Detail window:** `FIGURE04_DETAIL_WINDOW = Figure4DetailWindow(center_index=193069,
-  half_width_samples=500)` in `figure04_generation.py` centers panels (a, b) on
+  half_width_samples=500)` in `figure04_protocol.py` centers panels (a, b) on
   a KL-divergence spike during immobility at a reward well and spans about two
   seconds total.
 - **Computation (reading order):**

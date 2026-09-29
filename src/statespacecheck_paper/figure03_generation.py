@@ -39,7 +39,6 @@ from statespacecheck_paper.figure03_summary import (
     SUMMARY_ERROR_METRICS,
     SUMMARY_FLAG_METRICS,
     Figure3RealizationSummary,
-    Figure3SummaryCondition,
     baseline_threshold_provenance,
     build_summary_conditions,
     estimate_realization_summary,
@@ -56,11 +55,6 @@ from statespacecheck_paper.style import save_figure, set_figure_defaults
 # :func:`figure03_summary_payload` writes. Bump it whenever a field is added,
 # removed, renamed, or changes meaning.
 FIGURE03_SUMMARY_SCHEMA_VERSION = 9
-
-
-def conditions_by_id(config: Figure3Config) -> dict[str, Figure3SummaryCondition]:
-    """Key each summary condition by its ``condition_id``, in summary column order."""
-    return {condition.condition_id: condition for condition in build_summary_conditions(config)}
 
 
 def figure03_summary_payload(

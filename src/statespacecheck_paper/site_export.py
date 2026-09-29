@@ -51,7 +51,6 @@ from statespacecheck_paper.diagnostics import (
     compute_spike_event_diagnostics_from_rates,
     flag_mask,
 )
-from statespacecheck_paper.figure03_generation import conditions_by_id
 from statespacecheck_paper.figure03_protocol import STEP_SECONDS, Figure3Config
 from statespacecheck_paper.figure03_simulation import (
     Figure3SimulationResult,
@@ -59,13 +58,13 @@ from statespacecheck_paper.figure03_simulation import (
     build_figure03_rate_tables,
     run_figure03_simulation,
 )
+from statespacecheck_paper.figure03_summary import conditions_by_id
 from statespacecheck_paper.figure04_cache import Figure4Paths
 from statespacecheck_paper.figure04_decoder import Figure4Config
 from statespacecheck_paper.figure04_diagnostics import mean_event_likelihood_by_time
-from statespacecheck_paper.figure04_generation import FIGURE04_DETAIL_WINDOW
-from statespacecheck_paper.figure04_layout import Figure4DetailWindow
 from statespacecheck_paper.figure04_models import CONTINUOUS, CONTINUOUS_FRAGMENTED
 from statespacecheck_paper.figure04_place_fields import marginal_position_distribution
+from statespacecheck_paper.figure04_protocol import FIGURE04_DETAIL_WINDOW, Figure4DetailWindow
 from statespacecheck_paper.figure04_workflow import Figure4RenderData, prepare_figure04_render_data
 from statespacecheck_paper.number_format import SIGNIFICANT_FIGURES, significant, whole_percent
 from statespacecheck_paper.paths import (

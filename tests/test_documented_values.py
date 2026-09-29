@@ -25,12 +25,12 @@ from statespacecheck_paper.figure03_generation import FIGURE03_SUMMARY_SCHEMA_VE
 from statespacecheck_paper.figure03_protocol import STEP_SECONDS, Figure3Config, PhaseBoundary
 from statespacecheck_paper.figure03_summary import N_REALIZATIONS
 from statespacecheck_paper.figure04_decoder import Figure4Config
-from statespacecheck_paper.figure04_generation import (
+from statespacecheck_paper.figure04_generation import FIGURE04_SUMMARY_SCHEMA_VERSION
+from statespacecheck_paper.figure04_input import FIGURE04_INPUTS_FILE
+from statespacecheck_paper.figure04_protocol import (
     FIGURE04_DETAIL_WINDOW,
     FIGURE04_DIAGNOSTIC_THRESHOLDS,
-    FIGURE04_SUMMARY_SCHEMA_VERSION,
 )
-from statespacecheck_paper.figure04_input import FIGURE04_INPUTS_FILE
 from statespacecheck_paper.number_format import significant
 from statespacecheck_paper.paths import (
     CITATION_PATH,

@@ -182,6 +182,11 @@ def build_summary_conditions(config: Figure3Config) -> list[Figure3SummaryCondit
     ]
 
 
+def conditions_by_id(config: Figure3Config) -> dict[str, Figure3SummaryCondition]:
+    """Key each summary condition by its ``condition_id``, in summary column order."""
+    return {condition.condition_id: condition for condition in build_summary_conditions(config)}
+
+
 def _flag_percentage(
     values: NDArray[np.floating], threshold: float, direction: FlagDirection
 ) -> float:

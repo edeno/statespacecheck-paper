@@ -29,11 +29,11 @@ import pyqtgraph as pg
 from numpy.typing import NDArray
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from statespacecheck_paper.figure04_generation import (
+from statespacecheck_paper.figure04_models import FIGURE04_MODEL_IDS, Figure4ModelId, figure04_model
+from statespacecheck_paper.figure04_protocol import (
     FIGURE04_DETAIL_WINDOW,
     FIGURE04_DIAGNOSTIC_THRESHOLDS,
 )
-from statespacecheck_paper.figure04_models import FIGURE04_MODEL_IDS, Figure4ModelId, figure04_model
 from statespacecheck_paper.style import METRIC_SPECS
 
 from .data_source import DecoderDataSource
@@ -1195,7 +1195,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
         """Time the viewer opens on and ``R`` returns to.
 
         A recording opens on the center of Figure 4a/b's detail window
-        (``figure04_generation.FIGURE04_DETAIL_WINDOW``) when its timeline
+        (``figure04_protocol.FIGURE04_DETAIL_WINDOW``) when its timeline
         contains it; the Figure-3 simulation, and a recording too short to
         contain it, open mid-session.
         """

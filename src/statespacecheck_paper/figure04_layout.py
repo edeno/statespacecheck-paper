@@ -1,18 +1,18 @@
 """Figure-4 layout: artist arrangement and render-only transformations.
 
-Owns everything about *how* Figure 4 looks — the validated detail-window
-contract, pixel-nudge layout constants, bbox/edge-alignment helpers, track inset
-and hexbin-row placement, and ``compose_figure04`` which assembles the two-row
+Owns everything about *how* Figure 4 looks — pixel-nudge layout constants,
+bbox/edge-alignment helpers, track inset and hexbin-row placement, and
+``compose_figure04`` which assembles the two-row
 figure and returns it with the tight bounding box to crop to. It reads a
 :class:`Figure4RenderData` (the one name it takes from ``figure04_workflow``)
-and otherwise imports only the render layers and the diagnostics container; it
+and otherwise imports only the render layers, the diagnostics container, and
+the detail-window contract (``figure04_protocol.Figure4DetailWindow``); it
 never loads data, fits/decodes, reads the cache/config/paths, or saves.
 """
 
 from __future__ import annotations
 
 import dataclasses
-import numbers
 from collections.abc import Mapping
 from typing import Any, Literal, cast
 
@@ -30,6 +30,7 @@ from statespacecheck_paper.figure04_panels import (
     plot_event_metric_hexbin_row,
     plot_single_model_diagnostics,
 )
+from statespacecheck_paper.figure04_protocol import Figure4DetailWindow
 from statespacecheck_paper.figure04_track_plots import plot_track_graph_2d
 from statespacecheck_paper.figure04_workflow import Figure4RenderData
 from statespacecheck_paper.plotting import THRESHOLD_LABEL_GID, WORSE_FIT_LABEL_GID
@@ -312,48 +313,6 @@ class Figure4Composition:
 
     figure: Figure
     bbox_inches: Bbox
-
-
-def _is_integer(value: object) -> bool:
-    """Return True for Python and NumPy integers, excluding ``bool`` (an ``int`` subclass).
-
-    Using :class:`numbers.Integral` accepts ``np.int64`` etc. (common when an
-    index is derived from an array), which a strict ``type(x) is int`` check
-    would spuriously reject in this NumPy-heavy codebase.
-    """
-    return isinstance(value, numbers.Integral) and not isinstance(value, bool)
-
-
-@dataclasses.dataclass(frozen=True)
-class Figure4DetailWindow:
-    """Index window used for the side-by-side Figure-4 detail panels.
-
-    The canonical values live in :mod:`figure04_generation`; layout receives
-    them explicitly so tests and alternate recipes can select a scientifically
-    meaningful window without mutating module globals.
-    """
-
-    center_index: int
-    half_width_samples: int
-
-    def __post_init__(self) -> None:
-        if not _is_integer(self.center_index) or self.center_index < 0:
-            raise ValueError("center_index must be a non-negative integer")
-        if not _is_integer(self.half_width_samples) or self.half_width_samples <= 0:
-            raise ValueError("half_width_samples must be a positive integer")
-
-    def to_slice(self, n_time_samples: int) -> slice:
-        """Return the validated half-open slice for a recording timeline."""
-        if not _is_integer(n_time_samples) or n_time_samples <= 0:
-            raise ValueError("n_time_samples must be a positive integer")
-        start = self.center_index - self.half_width_samples
-        stop = self.center_index + self.half_width_samples
-        if start < 0 or stop > n_time_samples:
-            raise ValueError(
-                "detail window falls outside the recording timeline: "
-                f"slice({start}, {stop}) for {n_time_samples} samples"
-            )
-        return slice(start, stop)
 
 
 def compose_figure04(

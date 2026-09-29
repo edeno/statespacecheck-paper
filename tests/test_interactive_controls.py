@@ -10,9 +10,8 @@ from typing import Any
 
 import pytest
 
-from statespacecheck_paper.figure04_generation import FIGURE04_DETAIL_WINDOW
-from statespacecheck_paper.figure04_layout import Figure4DetailWindow
 from statespacecheck_paper.figure04_models import Figure4ModelId
+from statespacecheck_paper.figure04_protocol import FIGURE04_DETAIL_WINDOW, Figure4DetailWindow
 
 from ._qt import (
     make_viewer,

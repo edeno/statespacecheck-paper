@@ -52,7 +52,6 @@ from statespacecheck_paper.figure04_decoder import (
     build_decoder_models,
     create_decoder_environment,
 )
-from statespacecheck_paper.figure04_generation import FIGURE04_DIAGNOSTIC_THRESHOLDS
 from statespacecheck_paper.figure04_input import HEAD_POSITION_COLUMNS
 from statespacecheck_paper.figure04_models import (
     CONTINUOUS,
@@ -60,6 +59,7 @@ from statespacecheck_paper.figure04_models import (
     FIGURE04_MODELS,
 )
 from statespacecheck_paper.figure04_place_fields import DECODER_PREDICTIVE_VAR
+from statespacecheck_paper.figure04_protocol import FIGURE04_DIAGNOSTIC_THRESHOLDS
 from statespacecheck_paper.spyglass_pipeline.figure04_compute import (
     figure04_diagnostics_from_decodes,
     figure04_reported_statistics_from_rows,

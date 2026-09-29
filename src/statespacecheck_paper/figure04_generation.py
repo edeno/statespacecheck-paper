@@ -14,15 +14,15 @@ from __future__ import annotations
 import dataclasses
 import math
 
-from statespacecheck_paper.diagnostics import (
-    FIXED_PREDICTIVE_PVALUE_CUTOFF,
-    METRIC_FLAG_DIRECTIONS,
-    FlagDirection,
-)
 from statespacecheck_paper.figure04_cache import Figure4CacheProvenance, Figure4Paths
 from statespacecheck_paper.figure04_decoder import Figure4Config
-from statespacecheck_paper.figure04_layout import Figure4DetailWindow, compose_figure04
+from statespacecheck_paper.figure04_layout import compose_figure04
 from statespacecheck_paper.figure04_models import CONTINUOUS, CONTINUOUS_FRAGMENTED
+from statespacecheck_paper.figure04_protocol import (
+    FIGURE04_DETAIL_WINDOW,
+    FIGURE04_DIAGNOSTIC_THRESHOLDS,
+    FIGURE04_METRIC_DIRECTIONS,
+)
 from statespacecheck_paper.figure04_summary import (
     Figure4Summary,
     compute_figure04_summary,
@@ -42,29 +42,9 @@ from statespacecheck_paper.scientific_artifacts import (
 )
 from statespacecheck_paper.style import save_figure, set_figure_defaults
 
-# Diagnostic thresholds. HPD overlap and the predictive p-value use fixed
-# cutoffs of 0.05: the predictive p-value's is the paper-wide cutoff that
-# Figure 3 also uses; the HPD-overlap cutoff is chosen for this recording
-# (Figure 3 derives its HPD threshold from a baseline instead). The KL
-# divergence has no natural fixed cutoff, so it is shown without a threshold
-# line or a flagged-region callout.
-FIGURE04_HPD_OVERLAP_CUTOFF = 0.05
-FIGURE04_DIAGNOSTIC_THRESHOLDS: dict[str, float] = {
-    "hpd_overlap": FIGURE04_HPD_OVERLAP_CUTOFF,
-    "predictive_pvalue": FIXED_PREDICTIVE_PVALUE_CUTOFF,
-}
-FIGURE04_METRIC_DIRECTIONS: dict[str, FlagDirection] = {
-    metric: METRIC_FLAG_DIRECTIONS[metric] for metric in FIGURE04_DIAGNOSTIC_THRESHOLDS
-}
 # Version of the figure04_summary.json layout written by
 # figure04_summary_payload. Bump it when a field is added, removed, or renamed.
 FIGURE04_SUMMARY_SCHEMA_VERSION = 7
-# Manuscript detail view: a KL-divergence spike during immobility at a reward
-# well, shown with 500 samples on either side (~2 seconds total at 500 Hz).
-FIGURE04_DETAIL_WINDOW = Figure4DetailWindow(
-    center_index=193_069,
-    half_width_samples=500,
-)
 
 
 def figure04_reported_statistics(summary: Figure4Summary) -> dict[str, object]:

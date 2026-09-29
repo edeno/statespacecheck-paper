@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from statespacecheck_paper.diagnostics import METRIC_FLAG_DIRECTIONS
-from statespacecheck_paper.figure04_generation import (
+from statespacecheck_paper.figure04_protocol import (
     FIGURE04_DIAGNOSTIC_THRESHOLDS,
     FIGURE04_METRIC_DIRECTIONS,
 )

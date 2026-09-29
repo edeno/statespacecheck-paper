@@ -62,7 +62,7 @@ def figure04_diagnostics_from_decodes(
         HPD coverage for the HPD-overlap diagnostic.
     thresholds : Mapping of str to float
         Flag threshold per metric (the figure uses
-        ``figure04_generation.FIGURE04_DIAGNOSTIC_THRESHOLDS``).
+        ``figure04_protocol.FIGURE04_DIAGNOSTIC_THRESHOLDS``).
 
     Returns
     -------
@@ -86,11 +86,11 @@ def figure04_diagnostics_from_decodes(
     """
     from statespacecheck_paper.figure04_decoder import get_spike_counts
     from statespacecheck_paper.figure04_diagnostics import compute_results_diagnostics
-    from statespacecheck_paper.figure04_generation import FIGURE04_METRIC_DIRECTIONS
     from statespacecheck_paper.figure04_place_fields import (
         DECODER_PREDICTIVE_VAR,
         extract_agreed_place_fields,
     )
+    from statespacecheck_paper.figure04_protocol import FIGURE04_METRIC_DIRECTIONS
     from statespacecheck_paper.figure04_summary import summarize_figure04_diagnostics
 
     time = continuous_results["time"].to_numpy()
@@ -210,10 +210,8 @@ def figure04_reported_statistics_from_rows(
         exactly once.
     """
     from statespacecheck_paper.figure04_diagnostics import FlagConfusion
-    from statespacecheck_paper.figure04_generation import (
-        FIGURE04_METRIC_DIRECTIONS,
-        figure04_reported_statistics,
-    )
+    from statespacecheck_paper.figure04_generation import figure04_reported_statistics
+    from statespacecheck_paper.figure04_protocol import FIGURE04_METRIC_DIRECTIONS
     from statespacecheck_paper.figure04_summary import Figure4DiagnosticMeans, Figure4Summary
 
     means: dict[str, dict[str, float]] = {}
