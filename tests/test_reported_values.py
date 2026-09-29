@@ -134,6 +134,19 @@ def test_time_conversions_follow_the_recorded_step_length() -> None:
     assert values["SimSparseActiveRateHz"] == "1"
 
 
+def test_negative_log_cutoffs_follow_the_recorded_p_value_cutoffs() -> None:
+    """The -log(p) axis positions the prose quotes move with each figure's cutoff."""
+    figure03 = copy.deepcopy(_load("figure03_summary.json"))
+    figure04 = copy.deepcopy(_load("figure04_summary.json"))
+    figure03["threshold_provenance"]["predictive_pvalue"]["cutoff"] = 0.01
+    figure04["flag_rules"]["predictive_pvalue"]["threshold"] = 0.2
+
+    values = _macro_values(render_macro_file(figure03, figure04, statespacecheck_doi=CITED_DOI))
+
+    assert values["SimPredictiveCutoffNegLog"] == "5"  # -log(0.01) = 4.6
+    assert values["RecPredictiveCutoffNegLog"] == "2"  # -log(0.2) = 1.6
+
+
 def test_non_integral_burst_factor_is_not_silently_rounded() -> None:
     """The spelled-out prose cannot faithfully represent a fractional factor."""
     figure03 = copy.deepcopy(_load("figure03_summary.json"))

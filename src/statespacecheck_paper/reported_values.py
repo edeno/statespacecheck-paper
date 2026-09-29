@@ -25,7 +25,9 @@ percentages are compared as substantial, low, or modest, which whole percents
 support; rescue rates are descriptive of this recording and appear next to
 their exact counts. Constants the text hedges with "approximately" (199.47 Hz,
 sqrt(12.5) cm) are exact functions of chosen parameters and are shown to two
-significant figures. Where variability matters to a claim it belongs in the
+significant figures. The p-value cutoff's position on the figures' -log(p)
+axis (-log(0.05) = 2.996) is shown to the nearest whole number, because the text
+reads it off that axis ("x = 3"). Where variability matters to a claim it belongs in the
 text or a figure, not in the digit count; the Figure-3 summary publishes
 approximate standard errors of the aggregated medians, conditional on the
 simulation setup. These do not describe the spread of individual realizations
@@ -222,6 +224,27 @@ def _exact(value: float, decimals: int = 0) -> str:
     return f"{value:.{decimals}f}"
 
 
+def _negative_log_cutoff(cutoff: float) -> str:
+    """Render a p-value cutoff's position on the -log(p) axis, to a whole number.
+
+    Parameters
+    ----------
+    cutoff : float
+        Predictive p-value cutoff in ``(0, 1)``.
+
+    Returns
+    -------
+    str
+        ``-log(cutoff)`` (natural log), rounded to the nearest whole number.
+
+    Examples
+    --------
+    >>> _negative_log_cutoff(0.05)
+    '3'
+    """
+    return f"{-math.log(cutoff):.0f}"
+
+
 def _load(path: Path) -> dict[str, Any]:
     """Read one summary JSON."""
     with open(path, encoding="utf-8") as handle:
@@ -354,6 +377,11 @@ def _simulation_statistics(payload: dict[str, Any]) -> list[MacroDefinition]:
                 "SimPredictiveCutoff",
                 _exact(provenance["predictive_pvalue"]["cutoff"], 2),
                 "threshold_provenance.predictive_pvalue.cutoff",
+            ),
+            MacroDefinition(
+                "SimPredictiveCutoffNegLog",
+                _negative_log_cutoff(provenance["predictive_pvalue"]["cutoff"]),
+                "-log(threshold_provenance.predictive_pvalue.cutoff), nearest whole number",
             ),
             MacroDefinition(
                 "SimBaselineEnd",
@@ -646,6 +674,11 @@ def _recording_configuration(payload: dict[str, Any]) -> list[MacroDefinition]:
             "RecPredictiveCutoff",
             _exact(flag_rules["predictive_pvalue"]["threshold"], 2),
             "flag_rules.predictive_pvalue.threshold",
+        ),
+        MacroDefinition(
+            "RecPredictiveCutoffNegLog",
+            _negative_log_cutoff(flag_rules["predictive_pvalue"]["threshold"]),
+            "-log(flag_rules.predictive_pvalue.threshold), nearest whole number",
         ),
     ]
 
