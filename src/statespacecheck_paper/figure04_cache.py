@@ -355,14 +355,6 @@ def compute_figure04_cache_provenance(
     )
 
 
-def compute_figure04_cache_fingerprint(config: Figure4Config, paths: Figure4Paths) -> str:
-    """Return the decode fingerprint gating the Figure-4 decode cache.
-
-    See :func:`compute_figure04_cache_provenance` for the fingerprint inputs.
-    """
-    return compute_figure04_cache_provenance(config, paths).fingerprint_sha256
-
-
 def _load_wrapper(path: Path, *, mmap_mode: str | None) -> Mapping[str, object] | None:
     """Read a joblib cache wrapper, treating any read failure as a miss."""
     if not path.exists():

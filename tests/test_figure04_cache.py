@@ -17,7 +17,6 @@ from statespacecheck_paper.figure04_cache import (
     FIGURE04_DIAGNOSTICS_SCHEMA_VERSION,
     Figure4CacheProvenance,
     Figure4Paths,
-    compute_figure04_cache_fingerprint,
     compute_figure04_cache_provenance,
     compute_figure04_diagnostics_fingerprint,
     executable_source_digest,
@@ -220,8 +219,10 @@ def test_fingerprint_changes_with_config_and_dependency(
     paths = Figure4Paths(data_path=tmp_path, animal_date_epoch="epoch_x")
     config = Figure4Config()
     monkeypatch.setattr(figure04_cache, "_installed_non_local_detector_version", lambda: "1.0.0")
-    fp1 = compute_figure04_cache_fingerprint(config, paths)
-    assert compute_figure04_cache_fingerprint(config, paths) == fp1  # deterministic
+    fp1 = compute_figure04_cache_provenance(config, paths).fingerprint_sha256
+    assert (
+        compute_figure04_cache_provenance(config, paths).fingerprint_sha256 == fp1
+    )  # deterministic
 
     changed = dataclasses.replace(
         config,
@@ -229,10 +230,10 @@ def test_fingerprint_changes_with_config_and_dependency(
             config.provenance, movement_var=config.provenance.movement_var + 1.0
         ),
     )
-    assert compute_figure04_cache_fingerprint(changed, paths) != fp1
+    assert compute_figure04_cache_provenance(changed, paths).fingerprint_sha256 != fp1
 
     monkeypatch.setattr(figure04_cache, "_installed_non_local_detector_version", lambda: "2.0.0")
-    assert compute_figure04_cache_fingerprint(config, paths) != fp1
+    assert compute_figure04_cache_provenance(config, paths).fingerprint_sha256 != fp1
 
 
 @pytest.fixture
@@ -263,12 +264,12 @@ def test_decode_source_change_rejects_existing_cache(
 ) -> None:
     paths = Figure4Paths(tmp_path, "epoch")
     config = Figure4Config()
-    original = compute_figure04_cache_fingerprint(config, paths)
+    original = compute_figure04_cache_provenance(config, paths).fingerprint_sha256
     save_figure04_cache(paths.cache_path, original, _payload())
     assert load_figure04_cache(paths.cache_path, original) is not None
 
     (source_tree / filename).write_text('"""Documentation."""\nVALUE = 2\n', encoding="utf-8")
-    changed = compute_figure04_cache_fingerprint(config, paths)
+    changed = compute_figure04_cache_provenance(config, paths).fingerprint_sha256
     assert changed != original
     assert load_figure04_cache(paths.cache_path, changed) is None
 
@@ -308,13 +309,13 @@ def test_fingerprint_unchanged_when_block_size_changes(tmp_path: Path) -> None:
     # changing it must not invalidate a cached decode.
     paths = Figure4Paths(data_path=tmp_path, animal_date_epoch="epoch_x")
     config = Figure4Config()
-    fp = compute_figure04_cache_fingerprint(config, paths)
+    fp = compute_figure04_cache_provenance(config, paths).fingerprint_sha256
 
     changed = dataclasses.replace(
         config,
         execution=dataclasses.replace(config.execution, block_size=config.execution.block_size * 2),
     )
-    assert compute_figure04_cache_fingerprint(changed, paths) == fp
+    assert compute_figure04_cache_provenance(changed, paths).fingerprint_sha256 == fp
 
 
 def test_fingerprint_changes_when_export_file_content_changes(
@@ -329,11 +330,13 @@ def test_fingerprint_changes_when_export_file_content_changes(
     (suffix,) = EXPORT_FILE_SUFFIXES
     export = tmp_path / f"epoch_x{suffix}"
     export.write_bytes(b"original")
-    fp_original = compute_figure04_cache_fingerprint(config, paths)
-    assert compute_figure04_cache_fingerprint(config, paths) == fp_original  # deterministic
+    fp_original = compute_figure04_cache_provenance(config, paths).fingerprint_sha256
+    assert (
+        compute_figure04_cache_provenance(config, paths).fingerprint_sha256 == fp_original
+    )  # deterministic
 
     export.write_bytes(b"REPLACED with different data")
-    assert compute_figure04_cache_fingerprint(config, paths) != fp_original
+    assert compute_figure04_cache_provenance(config, paths).fingerprint_sha256 != fp_original
 
 
 def test_cache_provenance_serializes_complete_path_independent_inputs(
@@ -347,9 +350,6 @@ def test_cache_provenance_serializes_complete_path_independent_inputs(
     provenance = compute_figure04_cache_provenance(Figure4Config(), paths)
     payload = provenance.artifact_payload()
 
-    assert provenance.fingerprint_sha256 == compute_figure04_cache_fingerprint(
-        Figure4Config(), paths
-    )
     assert payload["schema_version"] == FIGURE04_CACHE_SCHEMA_VERSION
     assert payload["non_local_detector_version"] == "1.2.3"
     assert set(payload["export_file_sha256"]) == {
