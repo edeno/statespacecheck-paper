@@ -9,7 +9,8 @@ layout that supports fast windowed reads:
   (chunked along time, full position axis per chunk).
 - A Parquet event table with one row per spike, sorted by time, holding
   the per-spike diagnostic metrics (HPD overlap, KL divergence, predictive
-  p-value) plus the cell index.
+  p-value) plus the cell index and the decoder time bin the diagnostics
+  assigned the spike to (``event_time_ind``).
 - A small ``.npz`` sidecar with the time grid, animal linear position,
   per-cell place fields, and place-field peak positions.
 - A ``.npy`` sidecar with the per-cell spike-time arrays used by
@@ -122,20 +123,21 @@ def _events_dataframe(
 
     Event times come from ``diagnostics.event_time`` when the real-data path
     supplied it, otherwise from the decoder time grid,
-    ``time[diagnostics.event_time_ind]``. Rows are stably sorted by time, so
-    events in the same bin keep their input order.
+    ``time[diagnostics.event_time_ind]``. Each row also stores the event's
+    decoder time bin, ``event_time_ind``, exactly as the diagnostics assigned
+    it, so the viewer shows each spike in the bin the diagnostics used rather
+    than re-binning its time. Rows are stably sorted by time, so events in the
+    same bin keep their input order.
     """
+    event_time_ind = np.asarray(diagnostics.event_time_ind, dtype=np.int64)
+    if event_time_ind.size and (event_time_ind.min() < 0 or event_time_ind.max() >= time.shape[0]):
+        raise ValueError(
+            "event_time_ind falls outside the supplied decoder time grid: "
+            f"valid [0, {time.shape[0]}), got "
+            f"[{event_time_ind.min()}, {event_time_ind.max()}]"
+        )
     event_time = diagnostics.event_time if isinstance(diagnostics, SpikeEventDiagnostics) else None
     if event_time is None:
-        event_time_ind = np.asarray(diagnostics.event_time_ind, dtype=np.intp)
-        if event_time_ind.size and (
-            event_time_ind.min() < 0 or event_time_ind.max() >= time.shape[0]
-        ):
-            raise ValueError(
-                "event_time_ind falls outside the supplied decoder time grid: "
-                f"valid [0, {time.shape[0]}), got "
-                f"[{event_time_ind.min()}, {event_time_ind.max()}]"
-            )
         event_time = time[event_time_ind]
 
     cell_id = np.asarray(diagnostics.event_cell_ind, dtype=np.int32)
@@ -147,6 +149,7 @@ def _events_dataframe(
     df = pd.DataFrame(
         {
             "time": np.asarray(event_time, dtype=np.float64),
+            "event_time_ind": event_time_ind,
             "cell_id": cell_id,
             "event_hpd_overlap": np.asarray(diagnostics.event_hpd_overlap, dtype=np.float32),
             "event_kl_divergence": np.asarray(diagnostics.event_kl_divergence, dtype=np.float32),

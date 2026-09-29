@@ -116,12 +116,15 @@ def build_synthetic_cache(
         for _ in range(n_cells)
     ]
 
-    rows: list[tuple[float, int, float, float, float]] = []
+    # Each event's decoder bin follows the paper's spike binning
+    # (``figure04_diagnostics``): ``np.digitize`` against the interior edges.
+    rows: list[tuple[float, int, int, float, float, float]] = []
     for cell_id, ts in enumerate(spike_times):
         for t_val in ts:
             rows.append(
                 (
                     float(t_val),
+                    int(np.digitize(t_val, time_arr[1:-1])),
                     int(cell_id),
                     float(rng.uniform(0.0, 1.0)),
                     float(rng.uniform(0.0, 5.0)),
@@ -134,6 +137,7 @@ def build_synthetic_cache(
         rows,
         columns=[
             "time",
+            "event_time_ind",
             "cell_id",
             "event_hpd_overlap",
             "event_kl_divergence",
@@ -142,6 +146,7 @@ def build_synthetic_cache(
     ).astype(
         {
             "time": np.float64,
+            "event_time_ind": np.int64,
             "cell_id": np.int32,
             "event_hpd_overlap": np.float32,
             "event_kl_divergence": np.float32,

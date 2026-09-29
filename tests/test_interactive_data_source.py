@@ -12,11 +12,14 @@ p95 ≤ 50 ms for 20 s windows.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import pytest
 
+from statespacecheck_paper.interactive import cache as cache_mod
 from statespacecheck_paper.interactive.data_source import DecoderDataSource
 from statespacecheck_paper.paths import REPO_ROOT
 
@@ -201,6 +204,52 @@ def test_events_in_window_empty_when_outside(synthetic_cache: Path) -> None:
             assert events["time"].max() <= src.time[0]
 
 
+def _rewrite_events(cache_dir: Path, edit: Callable[[pd.DataFrame], pd.DataFrame]) -> None:
+    """Apply ``edit`` to the synthetic Continuous cache's event table in place."""
+    path = cache_mod.recording_cache_paths(cache_dir, "continuous")["events"]
+    edit(pd.read_parquet(path)).to_parquet(path, engine="pyarrow")
+
+
+def test_cache_without_event_time_ind_is_rejected(synthetic_cache: Path) -> None:
+    """A cache built before events stored their bins must be rebuilt, not re-binned."""
+    _rewrite_events(synthetic_cache, lambda events: events.drop(columns="event_time_ind"))
+    with pytest.raises(ValueError, match=r"records no event_time_ind; rebuild it with .*--force"):
+        DecoderDataSource(synthetic_cache, model="continuous")
+
+
+def _as_float(events: pd.DataFrame) -> pd.DataFrame:
+    return events.astype({"event_time_ind": np.float64})
+
+
+def _past_the_grid(events: pd.DataFrame) -> pd.DataFrame:
+    events.loc[events.index[-1], "event_time_ind"] = 500
+    return events
+
+
+def _reversed(events: pd.DataFrame) -> pd.DataFrame:
+    events["event_time_ind"] = events["event_time_ind"].to_numpy()[::-1].copy()
+    return events
+
+
+@pytest.mark.parametrize(
+    ("edit", "message"),
+    [
+        (_as_float, "must be integer"),
+        (_past_the_grid, "out of range"),
+        (_reversed, "non-decreasing"),
+    ],
+    ids=["float", "out_of_range", "decreasing"],
+)
+def test_invalid_event_time_ind_is_rejected(
+    synthetic_cache: Path,
+    edit: Callable[[pd.DataFrame], pd.DataFrame],
+    message: str,
+) -> None:
+    _rewrite_events(synthetic_cache, edit)
+    with pytest.raises(ValueError, match=message):
+        DecoderDataSource(synthetic_cache, model="continuous")
+
+
 # ---------------------------------------------------------------------------
 # Real-cache integration tests (skip when the cache has not been built yet).
 # ---------------------------------------------------------------------------
@@ -229,7 +278,7 @@ def test_real_continuous_cache_window_read_latency() -> None:
         assert src.n_time == 709321
         assert src.n_cells == 203
         assert src.n_state_bins == 256
-        assert src.events.shape == (870018, 5)
+        assert src.events.shape == (870018, 6)
 
         # Cold + warm reads both well under the smoke target.
         sl = src.window_indices(t_center=src.time[100_000], t_width=2.0)

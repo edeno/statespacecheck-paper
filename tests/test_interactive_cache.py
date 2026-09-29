@@ -20,6 +20,7 @@ import pytest
 import xarray as xr
 
 from statespacecheck_paper.diagnostics import SpikeEventDiagnostics
+from statespacecheck_paper.figure04_diagnostics import compute_spike_event_diagnostics
 from statespacecheck_paper.interactive import cache as cache_mod
 from statespacecheck_paper.interactive.data_source import DecoderDataSource
 from statespacecheck_paper.paths import REPO_ROOT
@@ -82,14 +83,14 @@ def _synthetic_results_dataset(
 def _per_spike(
     *,
     event_time: np.ndarray,
+    event_time_ind: np.ndarray,
     event_cell_ind: np.ndarray,
     event_hpd_overlap: np.ndarray,
     event_kl_divergence: np.ndarray,
     event_predictive_pvalue: np.ndarray,
 ) -> SpikeEventDiagnostics:
-    n_spikes = event_time.shape[0]
     return SpikeEventDiagnostics(
-        event_time_ind=np.zeros(n_spikes, dtype=np.intp),
+        event_time_ind=event_time_ind.astype(np.intp),
         event_cell_ind=event_cell_ind.astype(np.intp),
         event_hpd_overlap=event_hpd_overlap,
         event_kl_divergence=event_kl_divergence,
@@ -105,6 +106,7 @@ def _per_spike(
 def test_events_dataframe_sorts_by_time_and_validates_cell_id() -> None:
     diagnostics = _per_spike(
         event_time=np.array([2.0, 1.0, 3.0], dtype=np.float64),
+        event_time_ind=np.array([2, 1, 2]),
         event_cell_ind=np.array([0, 2, 1], dtype=np.int64),
         event_hpd_overlap=np.array([0.1, 0.2, 0.3], dtype=np.float32),
         event_kl_divergence=np.array([1.0, 2.0, 3.0], dtype=np.float32),
@@ -113,6 +115,7 @@ def test_events_dataframe_sorts_by_time_and_validates_cell_id() -> None:
     df = cache_mod._events_dataframe(diagnostics, n_cells=3, time=np.arange(4.0))
     assert list(df.columns) == [
         "time",
+        "event_time_ind",
         "cell_id",
         "event_hpd_overlap",
         "event_kl_divergence",
@@ -121,11 +124,14 @@ def test_events_dataframe_sorts_by_time_and_validates_cell_id() -> None:
     assert df["time"].tolist() == [1.0, 2.0, 3.0]
     assert df["cell_id"].tolist() == [2, 0, 1]
     assert df["cell_id"].dtype == np.int32
+    # The stored bins are the diagnostics' own, reordered with the rows.
+    assert df["event_time_ind"].tolist() == [1, 2, 2]
 
 
 def test_events_dataframe_rejects_out_of_range_cell_id() -> None:
     diagnostics = _per_spike(
         event_time=np.array([1.0], dtype=np.float64),
+        event_time_ind=np.array([1]),
         event_cell_ind=np.array([5], dtype=np.int64),
         event_hpd_overlap=np.array([0.0], dtype=np.float32),
         event_kl_divergence=np.array([0.0], dtype=np.float32),
@@ -168,20 +174,17 @@ def test_write_zarr_store_overwrites_existing(tmp_path: Path) -> None:
         )
 
 
-def test_build_figure04_viewer_cache_uses_canonical_render_data(tmp_path: Path) -> None:
-    """Both viewer models are derived from one canonical Figure 4 payload."""
-    n_time, n_cells, n_position = 200, 3, 8
-    time = np.arange(n_time, dtype=np.float64) * 0.002
-    position_bins = np.linspace(0.0, 100.0, n_position)
-    event_time = np.array([time[10], time[50], time[150]])
-    diagnostics = _per_spike(
-        event_time=event_time,
-        event_cell_ind=np.array([0, 2, 1]),
-        event_hpd_overlap=np.array([0.1, 0.2, 0.3]),
-        event_kl_divergence=np.array([1.0, 2.0, 3.0]),
-        event_predictive_pvalue=np.array([0.5, 0.4, 0.3]),
-    )
-    place_fields = np.full((n_cells, n_position), 0.1, dtype=np.float64)
+def _canonical_render_data(
+    *,
+    time: np.ndarray,
+    diagnostics: SpikeEventDiagnostics,
+    spike_times: tuple[np.ndarray, ...],
+    place_fields: np.ndarray,
+    position_bins: np.ndarray,
+) -> SimpleNamespace:
+    """Stand in for ``Figure4RenderData`` with both models sharing one diagnostics set."""
+    n_time = time.shape[0]
+    n_cells, n_position = place_fields.shape
     # The canonical joblib decode cache preserves the state/position MultiIndex;
     # exercise its flattening to the viewer's Zarr-compatible coordinates.
     continuous_results = _synthetic_results_dataset(n_time, 1, n_position).set_index(
@@ -196,22 +199,41 @@ def test_build_figure04_viewer_cache_uses_canonical_render_data(tmp_path: Path) 
         continuous_diagnostics=diagnostics,
         continuous_fragmented_diagnostics=diagnostics,
         spike_counts=np.zeros((n_time, n_cells), dtype=np.int64),
-        place_field_peaks=np.array([0.0, 50.0, 100.0]),
+        place_field_peaks=np.linspace(position_bins[0], position_bins[-1], n_cells),
         diagnostic_place_fields=place_fields,
         diagnostic_position_bins=position_bins,
     )
-    recording = SimpleNamespace(
+    return SimpleNamespace(
+        decode_results=decode,
+        recording=SimpleNamespace(spike_times=spike_times),
+        time=time,
+        linear_position=np.linspace(0.0, 100.0, n_time),
+    )
+
+
+def test_build_figure04_viewer_cache_uses_canonical_render_data(tmp_path: Path) -> None:
+    """Both viewer models are derived from one canonical Figure 4 payload."""
+    n_time, n_cells, n_position = 200, 3, 8
+    time = np.arange(n_time, dtype=np.float64) * 0.002
+    event_time = np.array([time[10], time[50], time[150]])
+    diagnostics = _per_spike(
+        event_time=event_time,
+        event_time_ind=np.array([10, 50, 150]),
+        event_cell_ind=np.array([0, 2, 1]),
+        event_hpd_overlap=np.array([0.1, 0.2, 0.3]),
+        event_kl_divergence=np.array([1.0, 2.0, 3.0]),
+        event_predictive_pvalue=np.array([0.5, 0.4, 0.3]),
+    )
+    render_data = _canonical_render_data(
+        time=time,
+        diagnostics=diagnostics,
         spike_times=(
             np.array([event_time[0]]),
             np.array([event_time[2]]),
             np.array([event_time[1]]),
-        )
-    )
-    render_data = SimpleNamespace(
-        decode_results=decode,
-        recording=recording,
-        time=time,
-        linear_position=np.linspace(0.0, 100.0, n_time),
+        ),
+        place_fields=np.full((n_cells, n_position), 0.1, dtype=np.float64),
+        position_bins=np.linspace(0.0, 100.0, n_position),
     )
 
     summaries = cache_mod.build_figure04_viewer_cache(
@@ -226,12 +248,64 @@ def test_build_figure04_viewer_cache_uses_canonical_render_data(tmp_path: Path) 
         assert continuous.n_states == 1
         assert continuous.load_predictive(slice(0, 5)).shape == (5, n_position)
         assert continuous.events["cell_id"].tolist() == [0, 2, 1]
+        assert continuous.event_time_idx.tolist() == [10, 50, 150]
     with DecoderDataSource.for_recording(
         tmp_path, "continuous_fragmented"
     ) as continuous_fragmented:
         assert continuous_fragmented.n_states == 2
         assert continuous_fragmented.load_predictive(slice(0, 5)).shape == (5, 2 * n_position)
         assert continuous_fragmented.event_likelihood_at(0, 0).shape == (n_position,)
+
+
+def test_viewer_event_bins_equal_the_diagnostics_bins_at_the_final_timestamp(
+    tmp_path: Path,
+) -> None:
+    """A spike exactly at ``time[-1]`` stays in the bin the diagnostics used.
+
+    The diagnostics bin spikes as the decoder does, so a spike at the final
+    timestamp is scored against row ``n_time - 2``; the viewer must show it
+    there rather than re-binning its time into the last row.
+    """
+    n_time, n_position = 40, 8
+    time = np.arange(n_time, dtype=np.float64) * 0.002
+    position_bins = np.linspace(0.0, 100.0, n_position)
+    rng = np.random.default_rng(0)
+    place_fields = rng.uniform(0.1, 2.0, size=(2, n_position))
+    predictive = rng.dirichlet(np.ones(n_position), size=n_time)
+    spike_times = (
+        np.array([time[3], time[3] + 0.0005, time[-1]]),
+        np.array([time[20] + 0.001, time[-2]]),
+    )
+    diagnostics = compute_spike_event_diagnostics(
+        predictive, place_fields, list(spike_times), time, include_dense_matrices=False
+    )
+    assert diagnostics.event_time is not None
+    final = diagnostics.event_time == time[-1]
+    assert diagnostics.event_time_ind[final].tolist() == [n_time - 2]
+
+    cache_mod.build_figure04_viewer_cache(
+        render_data=_canonical_render_data(
+            time=time,
+            diagnostics=diagnostics,
+            spike_times=spike_times,
+            place_fields=place_fields,
+            position_bins=position_bins,
+        ),
+        cache_dir=tmp_path,
+        models=("continuous",),
+        time_chunk=16,
+    )
+
+    order = np.argsort(diagnostics.event_time, kind="stable")
+    with DecoderDataSource.for_recording(tmp_path, "continuous") as ds:
+        np.testing.assert_array_equal(ds.event_times, diagnostics.event_time[order])
+        np.testing.assert_array_equal(ds.event_time_idx, diagnostics.event_time_ind[order])
+        final_row = int(np.flatnonzero(ds.event_times == time[-1])[0])
+        assert ds.event_time_idx[final_row] == n_time - 2
+        i0, i1 = ds.event_indices_at(n_time - 2)
+        assert i0 <= final_row < i1
+        i0, i1 = ds.event_indices_at(n_time - 1)
+        assert i1 <= i0
 
 
 def test_build_cli_loads_the_canonical_figure04_workflow(

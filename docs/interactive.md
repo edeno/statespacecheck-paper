@@ -38,6 +38,13 @@ rewrites the canonical cache it rebuilt. `--force-recompute` refits and
 recomputes both regardless. Viewer caches require additional disk space and are
 ignored by Git.
 
+Each row of a viewer cache's Parquet event table stores the spike's time, its
+cell, its three diagnostics, and `event_time_ind`, the decoder time bin the
+diagnostics assigned it to. The viewer places each spike in that bin rather than
+re-binning its time, so a Figure-4 spike at the final timestamp stays in the
+penultimate bin, where the decoder counted it. The viewer rejects a cache
+without this column and names the command that rebuilds it with `--force`.
+
 ```bash
 # Real data (figure 4): derives figure04_continuous.zarr +
 # figure04_continuous_fragmented.zarr and shared sidecars from the canonical Figure 4

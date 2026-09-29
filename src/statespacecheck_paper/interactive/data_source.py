@@ -138,7 +138,8 @@ class DecoderDataSource:
       ``interior_mask`` bool ``(n_state_bins // n_states,)``, and optional
       ``event_likelihood`` f32 ``(n_events, n_interior)`` for caches with
       time-varying event likelihoods.
-    * ``events .parquet``: ``time`` f64, ``cell_id`` i32,
+    * ``events .parquet``: ``time`` f64, ``event_time_ind`` i64 (the decoder
+      time bin the diagnostics assigned the event to), ``cell_id`` i32,
       ``event_hpd_overlap`` f32, ``event_kl_divergence`` f32,
       ``event_predictive_pvalue`` f32 — sorted by ``time``.
     * ``spike_times .npy``: object-dtype array length ``n_cells``,
@@ -185,9 +186,15 @@ class DecoderDataSource:
     spike_times : list[np.ndarray]
         Per-cell spike-time arrays (float64).
     events : pandas.DataFrame
-        Sorted event table with columns ``time`` (f64), ``cell_id`` (i32),
-        ``event_hpd_overlap`` (f32), ``event_kl_divergence`` (f32),
-        ``event_predictive_pvalue`` (f32). Indexed by row position.
+        Sorted event table with columns ``time`` (f64), ``event_time_ind``
+        (i64), ``cell_id`` (i32), ``event_hpd_overlap`` (f32),
+        ``event_kl_divergence`` (f32), ``event_predictive_pvalue`` (f32).
+        Indexed by row position.
+    event_time_idx : np.ndarray, shape (n_events,), int64
+        Decoder time bin of each event row, as the diagnostics assigned it
+        (the cache's ``event_time_ind`` column). Non-decreasing. A Figure-4
+        spike at or after ``time[-2]``, including one exactly at the final
+        timestamp, is in bin ``n_time - 2``, where the decoder counted it.
     n_cells : int
     n_time : int
     n_states : int
@@ -251,8 +258,8 @@ class DecoderDataSource:
         if dataset_kind == "simulation":
             if "flag_thresholds" not in meta.files:
                 raise ValueError(
-                    f"{self._layout.meta} records no flag thresholds; rebuild it with "
-                    "'python -m statespacecheck_paper.interactive.cache build-simulated --force'."
+                    f"{self._layout.meta} records no flag thresholds; "
+                    f"rebuild it with {self._rebuild_command()}."
                 )
             self.flag_thresholds = {
                 str(metric): float(threshold)
@@ -279,6 +286,15 @@ class DecoderDataSource:
         ]
 
         self.events: pd.DataFrame = pd.read_parquet(self._layout.events)
+        if "event_time_ind" not in self.events.columns:
+            raise ValueError(
+                f"{self._layout.events} records no event_time_ind; "
+                f"rebuild it with {self._rebuild_command()}."
+            )
+        if not pd.api.types.is_integer_dtype(self.events["event_time_ind"]):
+            raise ValueError(
+                f"events event_time_ind must be integer; got {self.events['event_time_ind'].dtype}"
+            )
         if not self.events["time"].is_monotonic_increasing:
             event_order = np.argsort(self.events["time"].to_numpy(), kind="stable")
             self.events = self.events.iloc[event_order].reset_index(drop=True)
@@ -296,6 +312,11 @@ class DecoderDataSource:
         # also lock the underlying DataFrame storage.
         self.event_times = _readonly(self.events["time"].to_numpy(dtype=np.float64))
         self.event_cell_ids = _readonly(self.events["cell_id"].to_numpy(dtype=np.int32))
+        # Decoder time bin of each event, as the diagnostics assigned it. Used
+        # by ``event_indices_at`` to find the events in a given time bin.
+        self.event_time_idx: NDArray[np.int64] = _readonly(
+            self.events["event_time_ind"].to_numpy(dtype=np.int64)
+        )
         self.event_hpd_overlap = _readonly(
             self.events["event_hpd_overlap"].to_numpy(dtype=np.float32)
         )
@@ -307,16 +328,6 @@ class DecoderDataSource:
         )
 
         self._validate_consistency()
-
-        # Decoder time-bin index for each event. Used by
-        # ``event_indices_at`` to find the events in a given time bin
-        # without re-bisecting the time grid per call.
-        time_arr = np.asarray(self.time, dtype=np.float64)
-        self.event_time_idx: NDArray[np.int64] = np.clip(
-            np.searchsorted(time_arr, self.event_times, side="right") - 1,
-            0,
-            max(time_arr.shape[0] - 1, 0),
-        ).astype(np.int64)
 
         self.n_time: int = int(self.time.shape[0])
         self.n_interior: int = int(self.position_bins.shape[0])
@@ -372,6 +383,13 @@ class DecoderDataSource:
     # Consistency / sanity
     # ------------------------------------------------------------------
 
+    def _rebuild_command(self) -> str:
+        """Return the CLI command that rebuilds this cache, quoted for messages."""
+        command = "python -m statespacecheck_paper.interactive.cache"
+        if self.dataset_kind == "simulation":
+            return f"'{command} build-simulated --force'"
+        return f"'{command} build --data-dir DATA --force'"
+
     def _validate_consistency(self) -> None:
         n_cells = self.n_cells
         if self.place_fields.shape[0] != n_cells:
@@ -400,6 +418,16 @@ class DecoderDataSource:
                 f"got [{self.events['cell_id'].min()}, "
                 f"{self.events['cell_id'].max()}]"
             )
+        if self.event_time_idx.size:
+            if self.event_time_idx.min() < 0 or self.event_time_idx.max() >= self.time.shape[0]:
+                raise ValueError(
+                    f"events event_time_ind out of range [0, {self.time.shape[0]}); "
+                    f"got [{self.event_time_idx.min()}, {self.event_time_idx.max()}]"
+                )
+            # ``event_indices_at`` bisects this column, so it must follow the
+            # time order of the rows.
+            if np.any(np.diff(self.event_time_idx) < 0):
+                raise ValueError("events event_time_ind must be non-decreasing in time order")
         if self.event_likelihood is not None:
             expected_shape = (len(self.events), self.place_fields.shape[1])
             if self.event_likelihood.shape != expected_shape:
@@ -462,12 +490,12 @@ class DecoderDataSource:
         """Return the decoder-grid index for the bin containing ``t``.
 
         Uses LEFT-EDGE bin convention — bin ``i`` covers
-        ``[time[i], time[i+1])`` — matching ``event_time_idx`` (which
-        is built via ``np.searchsorted(side="right") - 1``) and
-        ``non_local_detector``'s ``np.digitize``-based spike binning.
-        Click handlers therefore land on the same bin as the spike's
-        ``event_time_idx``, so the per-cell rows on the slice panel
-        always include the clicked event.
+        ``[time[i], time[i+1])`` — like ``non_local_detector``'s
+        ``np.digitize``-based spike binning, so a click on a spike lands on
+        the spike's ``event_time_idx`` and the slice panel's per-cell rows
+        include it. The one difference is the final timestamp: this returns
+        the last row, ``n_time - 1``, while the decoder counts a spike there
+        in bin ``n_time - 2``.
         """
         if self.n_time == 0:
             raise ValueError("Empty time grid")

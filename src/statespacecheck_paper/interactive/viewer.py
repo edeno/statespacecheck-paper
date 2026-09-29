@@ -873,7 +873,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
         # falls within the currently rendered window. The time axis
         # is centered at ``t_center``, so the relative time is the
         # event time minus the current center.
-        if sl is None or not (sl.start <= ds.index_at_time(float(event["time"])) < sl.stop):
+        if sl is None or not (sl.start <= int(ds.event_time_idx[row]) < sl.stop):
             relative_time: float | None = None
         else:
             relative_time = float(event["time"]) - float(self._t_center)
