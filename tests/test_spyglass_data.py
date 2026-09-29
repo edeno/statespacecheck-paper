@@ -8,11 +8,13 @@ comparison) on simulated data.
 from __future__ import annotations
 
 import dataclasses
+import json
 import os
 import subprocess
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
+from typing import Any
 
 import networkx as nx
 import numpy as np
@@ -22,8 +24,10 @@ import xarray as xr
 from track_linearization import make_track_graph
 
 from statespacecheck_paper import spyglass_data
+from statespacecheck_paper.figure04_diagnostics import FlagConfusion
+from statespacecheck_paper.figure04_summary import Figure4DiagnosticMeans, Figure4Summary
 from statespacecheck_paper.load_local_data import input_file_path, load_neural_recording_from_files
-from statespacecheck_paper.paths import FIGURE04_INPUTS_EPOCH
+from statespacecheck_paper.paths import FIGURE04_INPUTS_EPOCH, FIGURE04_SUMMARY_PATH
 from statespacecheck_paper.spyglass_data import (
     Figure4Inputs,
     check_output_paths,
@@ -31,6 +35,8 @@ from statespacecheck_paper.spyglass_data import (
     declared_attribute_names,
     epoch_identifier,
     figure04_diagnostics_from_decodes,
+    figure04_reported_statistics_from_rows,
+    figure04_summary_rows,
     filter_spike_times,
     get_interpolated_position_info,
     get_patch_id,
@@ -602,4 +608,85 @@ def test_diagnostics_from_decodes_refuses_spikes_of_other_units() -> None:
     with pytest.raises(ValueError, match="do not match the fitted units"):
         figure04_diagnostics_from_decodes(
             fitted, fitted, _decode(time), _decode(time), swapped, coverage=0.95
+        )
+
+
+# --- Stored summary rows ---------------------------------------------------------
+
+_KEY = {"continuous_merge_id": "a", "contfrag_merge_id": "b", "figure4_diagnostics_param_name": "x"}
+
+
+@pytest.fixture(scope="module")
+def committed_figure04() -> dict[str, Any]:
+    return json.loads((_REPO_ROOT / FIGURE04_SUMMARY_PATH).read_text(encoding="utf-8"))
+
+
+def _stored_rows(
+    summary: dict[str, Any],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Part-table rows as Spyglass fetches them for the committed summary, key included."""
+    mean_rows = [
+        {**_KEY, "model": model, "metric": metric, "value": value}
+        for model, means in summary["diagnostic_means"].items()
+        for metric, value in means.items()
+    ]
+    confusion_rows = [
+        {
+            **_KEY,
+            "metric": c["metric"],
+            "threshold": c["threshold"],
+            "n": c["n"],
+            "both": c["both"],
+            "continuous_only": c["a_only"],
+            "contfrag_only": c["b_only"],
+            "neither": c["neither"],
+        }
+        for c in summary["flag_confusions"]
+    ]
+    return mean_rows, confusion_rows
+
+
+def test_stored_rows_reproduce_the_committed_reported_statistics(
+    committed_figure04: dict[str, Any],
+) -> None:
+    """The ``check`` step's comparison: rows in any order give the committed values."""
+    mean_rows, confusion_rows = _stored_rows(committed_figure04)
+    stored = figure04_reported_statistics_from_rows(
+        mean_rows[::-1],
+        confusion_rows[::-1],
+        n_units=committed_figure04["dataset"]["n_units"],
+    )
+    assert stored == {
+        "n_units": committed_figure04["dataset"]["n_units"],
+        "diagnostic_means": committed_figure04["diagnostic_means"],
+        "flag_confusions": committed_figure04["flag_confusions"],
+    }
+
+
+def test_summary_rows_round_trip(committed_figure04: dict[str, Any]) -> None:
+    """What ``make`` stores is what ``fetch_reported_statistics`` reads back."""
+    mean_rows, confusion_rows = _stored_rows(committed_figure04)
+    n_units = committed_figure04["dataset"]["n_units"]
+    stored = figure04_reported_statistics_from_rows(mean_rows, confusion_rows, n_units=n_units)
+    means = committed_figure04["diagnostic_means"]
+    summary = Figure4Summary(
+        continuous=Figure4DiagnosticMeans(**means["continuous"]),
+        continuous_fragmented=Figure4DiagnosticMeans(**means["continuous_fragmented"]),
+        flag_confusions=tuple(
+            FlagConfusion(**{k: v for k, v in c.items() if k != "rescue_rate"})
+            for c in committed_figure04["flag_confusions"]
+        ),
+        n_units=n_units,
+    )
+    rows = figure04_summary_rows(summary)
+    assert figure04_reported_statistics_from_rows(*rows, n_units=n_units) == stored
+
+
+def test_stored_rows_must_name_each_thresholded_metric_once(
+    committed_figure04: dict[str, Any],
+) -> None:
+    mean_rows, confusion_rows = _stored_rows(committed_figure04)
+    with pytest.raises(ValueError, match="one flag-confusion row per metric"):
+        figure04_reported_statistics_from_rows(
+            mean_rows, confusion_rows[:1] * 2, n_units=committed_figure04["dataset"]["n_units"]
         )

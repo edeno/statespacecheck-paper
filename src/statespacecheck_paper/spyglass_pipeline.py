@@ -35,7 +35,6 @@ coordinate); that decode needs a Spyglass with the fix.
 
 from __future__ import annotations
 
-import dataclasses
 from collections.abc import Mapping
 from types import MappingProxyType
 from typing import Any
@@ -60,6 +59,8 @@ from statespacecheck_paper.spyglass_data import (
     HPC_SORTING_RESTRICTION,
     POSITION_INFO_PARAM_NAME,
     figure04_diagnostics_from_decodes,
+    figure04_reported_statistics_from_rows,
+    figure04_summary_rows,
     get_position_interval_name,
     get_track_graph,
 )
@@ -210,56 +211,18 @@ class Figure4Diagnostics(SpyglassMixin, dj.Computed):
                 "n_events": len(events),
             }
         )
-        self.Mean.insert(
-            {**key, "model": model, "metric": metric, "value": value}
-            for model, means in (
-                ("continuous", summary.continuous),
-                ("continuous_fragmented", summary.continuous_fragmented),
-            )
-            for metric, value in dataclasses.asdict(means).items()
-        )
-        self.FlagConfusion.insert(
-            {
-                **key,
-                "metric": c.metric,
-                "threshold": c.threshold,
-                "n": c.n,
-                "both": c.both,
-                "continuous_only": c.a_only,
-                "contfrag_only": c.b_only,
-                "neither": c.neither,
-            }
-            for c in summary.flag_confusions
-        )
+        mean_rows, confusion_rows = figure04_summary_rows(summary)
+        self.Mean.insert({**key, **row} for row in mean_rows)
+        self.FlagConfusion.insert({**key, **row} for row in confusion_rows)
 
     def fetch_reported_statistics(self) -> dict[str, Any]:
         """Return one entry's summary in the shape of ``figure04_summary.json``."""
         key = self.fetch1("KEY")
-        means: dict[str, dict[str, float]] = {}
-        for row in (self.Mean() & key).fetch(as_dict=True):
-            means.setdefault(row["model"], {})[row["metric"]] = row["value"]
-        confusions = []
-        for row in (self.FlagConfusion() & key).fetch(as_dict=True, order_by="metric"):
-            flagged_by_continuous = row["continuous_only"] + row["both"]
-            confusions.append(
-                {
-                    "metric": row["metric"],
-                    "threshold": row["threshold"],
-                    "n": row["n"],
-                    "both": row["both"],
-                    "a_only": row["continuous_only"],
-                    "b_only": row["contfrag_only"],
-                    "neither": row["neither"],
-                    "rescue_rate": row["continuous_only"] / flagged_by_continuous
-                    if flagged_by_continuous
-                    else None,
-                }
-            )
-        return {
-            "n_units": int(self.fetch1("n_units")),
-            "diagnostic_means": means,
-            "flag_confusions": confusions,
-        }
+        return figure04_reported_statistics_from_rows(
+            (self.Mean() & key).fetch(as_dict=True),
+            (self.FlagConfusion() & key).fetch(as_dict=True),
+            n_units=int(self.fetch1("n_units")),
+        )
 
 
 # --- Decode setup (existing Spyglass tables) -------------------------------------

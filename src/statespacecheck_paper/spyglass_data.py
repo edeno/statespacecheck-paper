@@ -769,6 +769,122 @@ def figure04_diagnostics_from_decodes(
     return continuous, contfrag, summary
 
 
+def figure04_summary_rows(
+    summary: Figure4Summary,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Return the ``Figure4Diagnostics`` part-table rows that store a summary.
+
+    The inverse of :func:`figure04_reported_statistics_from_rows`. Rows carry no
+    table key; the caller adds it.
+
+    Parameters
+    ----------
+    summary : Figure4Summary
+        Whole-session event means and two-decoder flag agreement.
+
+    Returns
+    -------
+    mean_rows : list of dict
+        ``Figure4Diagnostics.Mean`` rows: ``model``, ``metric``, ``value``.
+    confusion_rows : list of dict
+        ``Figure4Diagnostics.FlagConfusion`` rows: ``metric``, ``threshold``,
+        ``n``, ``both``, ``continuous_only``, ``contfrag_only``, ``neither``.
+    """
+    mean_rows = [
+        {"model": model, "metric": metric, "value": value}
+        for model, means in (
+            ("continuous", summary.continuous),
+            ("continuous_fragmented", summary.continuous_fragmented),
+        )
+        for metric, value in dataclasses.asdict(means).items()
+    ]
+    confusion_rows = [
+        {
+            "metric": confusion.metric,
+            "threshold": confusion.threshold,
+            "n": confusion.n,
+            "both": confusion.both,
+            "continuous_only": confusion.a_only,
+            "contfrag_only": confusion.b_only,
+            "neither": confusion.neither,
+        }
+        for confusion in summary.flag_confusions
+    ]
+    return mean_rows, confusion_rows
+
+
+def figure04_reported_statistics_from_rows(
+    mean_rows: Sequence[Mapping[str, Any]],
+    confusion_rows: Sequence[Mapping[str, Any]],
+    *,
+    n_units: int,
+) -> dict[str, Any]:
+    """Rebuild the reported statistics of ``figure04_summary.json`` from stored rows.
+
+    The rows are turned back into a :class:`~statespacecheck_paper.figure04_summary.Figure4Summary`
+    and reported by the figure pipeline's
+    :func:`~statespacecheck_paper.figure04_generation.figure04_reported_statistics`,
+    so the stored and committed summaries are compared in the same form. Flag
+    confusions follow the Figure-4 metric order whatever order the rows come in.
+
+    Parameters
+    ----------
+    mean_rows : sequence of mapping
+        ``Figure4Diagnostics.Mean`` rows (``model``, ``metric``, ``value``).
+    confusion_rows : sequence of mapping
+        ``Figure4Diagnostics.FlagConfusion`` rows (see :func:`figure04_summary_rows`).
+    n_units : int
+        Number of units decoded.
+
+    Returns
+    -------
+    dict
+        ``n_units``, ``diagnostic_means`` (per decoder and metric), and
+        ``flag_confusions`` (with ``rescue_rate``), as in ``figure04_summary.json``.
+
+    Raises
+    ------
+    ValueError
+        If the flag-confusion rows do not name each Figure-4 thresholded metric
+        exactly once.
+    """
+    from statespacecheck_paper.figure04_diagnostics import FlagConfusion
+    from statespacecheck_paper.figure04_generation import (
+        FIGURE4_METRIC_DIRECTIONS,
+        figure04_reported_statistics,
+    )
+    from statespacecheck_paper.figure04_summary import Figure4DiagnosticMeans, Figure4Summary
+
+    means: dict[str, dict[str, float]] = {}
+    for row in mean_rows:
+        means.setdefault(row["model"], {})[row["metric"]] = float(row["value"])
+    metrics = [row["metric"] for row in confusion_rows]
+    if sorted(metrics) != sorted(FIGURE4_METRIC_DIRECTIONS):
+        raise ValueError(
+            f"Expected one flag-confusion row per metric in {list(FIGURE4_METRIC_DIRECTIONS)}; "
+            f"got {metrics}"
+        )
+    confusions = {
+        row["metric"]: FlagConfusion(
+            metric=row["metric"],
+            threshold=float(row["threshold"]),
+            n=int(row["n"]),
+            both=int(row["both"]),
+            a_only=int(row["continuous_only"]),
+            b_only=int(row["contfrag_only"]),
+            neither=int(row["neither"]),
+        )
+        for row in confusion_rows
+    }
+    summary = Figure4Summary(
+        continuous=Figure4DiagnosticMeans(**means["continuous"]),
+        continuous_fragmented=Figure4DiagnosticMeans(**means["continuous_fragmented"]),
+        flag_confusions=tuple(confusions[metric] for metric in FIGURE4_METRIC_DIRECTIONS),
+        n_units=n_units,
+    )
+    return {"n_units": summary.n_units, **figure04_reported_statistics(summary)}
+
+
 # ``name [= default] : type`` lines of a DataJoint definition (not ``->`` or index lines).
 _ATTRIBUTE_LINE = re.compile(r"^\s*([a-z][a-z0-9_]*)\s*(?:=[^:#\n]*)?:", re.MULTILINE)
 
