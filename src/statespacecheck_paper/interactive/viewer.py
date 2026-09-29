@@ -165,10 +165,10 @@ class ViewState:
     request_id: int
     t_center: float
     t_width: float
-    # Load the acausal posterior into the same committed window buffer when the
+    # Load the smoothed posterior into the same committed window buffer when the
     # cache provides it, so switching overlays cannot show predictive data under
     # a smoothed label while another read is pending.
-    load_acausal: bool
+    load_smoothed: bool
 
     def __post_init__(self) -> None:
         if self.request_id < 0:
@@ -187,12 +187,12 @@ class _LoadSignals(QtCore.QObject):
     signals.
     """
 
-    # request_id, slice, predictive, lik, acausal (None if cache lacks it)
+    # request_id, slice, predictive, lik, smoothed (None if cache lacks it)
     finished = QtCore.Signal(int, slice, object, object, object)
 
 
 class _WindowLoadWorker(QtCore.QRunnable):
-    """Pull one window's predictive + log-likelihood + acausal from the cache.
+    """Pull one window's predictive + log-likelihood + smoothed posterior from the cache.
 
     Runs on a ``QThreadPool`` worker thread; emits the result on the
     main thread via the bridge ``QObject``'s signal.
@@ -214,8 +214,8 @@ class _WindowLoadWorker(QtCore.QRunnable):
     def run(self) -> None:  # noqa: D401 - QRunnable contract
         sl = self._ds.window_indices(self._state.t_center, self._state.t_width)
         predictive = self._ds.load_predictive(sl)
-        loglik = self._ds.load_likelihood(sl)
-        acausal = self._ds.load_acausal(sl) if self._state.load_acausal else None
+        loglik = self._ds.load_log_likelihood(sl)
+        smoothed = self._ds.load_smoothed(sl) if self._state.load_smoothed else None
 
         mask = self._ds.state_interior_mask
         predictive = _replace_structural_padding(
@@ -228,9 +228,9 @@ class _WindowLoadWorker(QtCore.QRunnable):
             name="log_likelihood",
             allow_negative_infinity=True,
         )
-        if acausal is not None:
-            acausal = _replace_structural_padding(
-                acausal, mask, fill_value=0.0, name="acausal_posterior"
+        if smoothed is not None:
+            smoothed = _replace_structural_padding(
+                smoothed, mask, fill_value=0.0, name="acausal_posterior"
             )
 
         # Convert log-likelihood -> normalized linear likelihood here
@@ -238,7 +238,7 @@ class _WindowLoadWorker(QtCore.QRunnable):
         # ``np.exp`` per committed update. Subtract the per-row max
         # first to avoid float32 overflow.
         lik = _relative_likelihood_from_log(loglik)
-        self._signals.finished.emit(self._state.request_id, sl, predictive, lik, acausal)
+        self._signals.finished.emit(self._state.request_id, sl, predictive, lik, smoothed)
 
 
 # ---------------------------------------------------------------------------
@@ -375,8 +375,8 @@ class DecoderViewer(QtWidgets.QMainWindow):
         Mirrors the per-window normalization the worker thread does in
         ``_WindowLoadWorker.run`` so the slice panel sees the same kind
         of arrays whether the row came from the buffered window or
-        from this direct-read path. Returns ``(predictive, lik, acausal)``;
-        ``acausal`` is ``None`` for caches without
+        from this direct-read path. Returns ``(predictive, lik, smoothed)``;
+        ``smoothed`` is ``None`` for caches without
         ``acausal_posterior``.
         """
         ds = self._ds
@@ -394,16 +394,16 @@ class DecoderViewer(QtWidgets.QMainWindow):
             allow_negative_infinity=True,
         )
         lik_row = _relative_likelihood_from_log(loglik_row)
-        if ds.has_acausal:
-            acausal_row = _replace_structural_padding(
-                ds.slice_at_index(t_idx, which="acausal"),
+        if ds.has_smoothed:
+            smoothed_row = _replace_structural_padding(
+                ds.slice_at_index(t_idx, which="smoothed"),
                 ds.state_interior_mask,
                 fill_value=0.0,
                 name="acausal_posterior",
             )
         else:
-            acausal_row = None
-        return predictive_row, lik_row, acausal_row
+            smoothed_row = None
+        return predictive_row, lik_row, smoothed_row
 
     def _build_controls(self) -> None:
         central = QtWidgets.QWidget(self)
@@ -483,7 +483,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
             self._overlay_combo.addItem(_OVERLAY_LABELS[choice], userData=choice)
         # Smoothed requires ``acausal_posterior``, which every Figure-4 cache
         # carries and the forward-filter-only simulation cache lacks.
-        if not self._ds.has_acausal:
+        if not self._ds.has_smoothed:
             smoothed_idx = OVERLAY_CHOICES.index("smoothed")
             combo_model = cast(QtGui.QStandardItemModel, self._overlay_combo.model())
             model_item = combo_model.item(smoothed_idx)
@@ -912,7 +912,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
         sl: slice,
         predictive: NDArray[np.float32],
         lik: NDArray[np.float32],
-        acausal: NDArray[np.float32] | None,
+        smoothed: NDArray[np.float32] | None,
     ) -> None:
         # The in-flight worker just finished; clear the slot and fire
         # any deferred dispatch (this is how a paused-then-moved center
@@ -965,7 +965,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
 
         # Slice panel buffer: hand the freshly loaded full-resolution
         # arrays so per-tick ``update_for_index`` is a NumPy index.
-        self.slice_panel.set_window_buffer(sl, predictive, lik, acausal=acausal)
+        self.slice_panel.set_window_buffer(sl, predictive, lik, smoothed=smoothed)
         # Animate now — the slice should reflect the current center
         # immediately after a load, even if the slider has not moved.
         self._update_slice_panel_at_center()
@@ -1044,7 +1044,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
             # Keep the smoothed distribution in the same committed buffer as
             # the predictive distribution so changing the label never exposes
             # a transient substitution.
-            load_acausal=self._ds.has_acausal,
+            load_smoothed=self._ds.has_smoothed,
         )
         worker = _WindowLoadWorker(self._ds, state, self._load_signals)
         self._thread_pool.start(worker)
@@ -1268,7 +1268,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
         self._per_cell_checkbox.setChecked(per_cell_on)
         # Restore the choice when it exists in the new model. Otherwise select
         # the explicitly labeled predictive option; smoothed is disabled.
-        if overlay_choice == "smoothed" and not self._ds.has_acausal:
+        if overlay_choice == "smoothed" and not self._ds.has_smoothed:
             overlay_choice = "predictive"
         self._overlay_combo.setCurrentIndex(OVERLAY_CHOICES.index(overlay_choice))
         self.slice_panel.set_overlay_choice(overlay_choice)

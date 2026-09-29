@@ -143,10 +143,10 @@ def test_load_predictive_returns_window_shape_and_dtype(synthetic_cache: Path) -
         assert predictive.flags["C_CONTIGUOUS"]
 
 
-def test_load_likelihood_returns_window(synthetic_cache: Path) -> None:
+def test_load_log_likelihood_returns_window(synthetic_cache: Path) -> None:
     with DecoderDataSource(synthetic_cache, model="continuous") as src:
         sl = slice(0, 64)
-        loglik = src.load_likelihood(sl)
+        loglik = src.load_log_likelihood(sl)
         assert loglik.shape == (64, src.n_state_bins)
         assert loglik.dtype == np.float32
 
@@ -163,7 +163,7 @@ def test_slice_at_index_matches_load_predictive_row(synthetic_cache: Path) -> No
 def test_slice_at_index_likelihood_branch(synthetic_cache: Path) -> None:
     with DecoderDataSource(synthetic_cache, model="continuous") as src:
         sl = slice(80, 96)
-        loglik = src.load_likelihood(sl)
+        loglik = src.load_log_likelihood(sl)
         row = src.slice_at_index(sl.start + 7, which="likelihood")
         np.testing.assert_array_equal(row, loglik[7])
 

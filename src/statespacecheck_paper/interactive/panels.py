@@ -901,9 +901,9 @@ class SlicePanel(QtWidgets.QWidget):
         self._buffer_slice: slice | None = None
         self._buffer_predictive: NDArray[np.float32] | None = None
         self._buffer_lik: NDArray[np.float32] | None = None
-        self._buffer_acausal: NDArray[np.float32] | None = None
-        # Row provider returns ``(predictive, lik, acausal)`` for a single
-        # ``t_idx``. ``acausal`` may be ``None`` only for caches where the
+        self._buffer_smoothed: NDArray[np.float32] | None = None
+        # Row provider returns ``(predictive, lik, smoothed)`` for a single
+        # ``t_idx``. ``smoothed`` may be ``None`` only for caches where the
         # smoothed overlay choice is disabled.
         self._row_provider: (
             Callable[
@@ -940,7 +940,7 @@ class SlicePanel(QtWidgets.QWidget):
         predictive: NDArray[np.float32],
         lik: NDArray[np.float32],
         *,
-        acausal: NDArray[np.float32] | None = None,
+        smoothed: NDArray[np.float32] | None = None,
     ) -> None:
         """Cache the window's predictive/likelihood (and optional smoothed) arrays.
 
@@ -950,7 +950,7 @@ class SlicePanel(QtWidgets.QWidget):
         self._buffer_slice = sl
         self._buffer_predictive = predictive
         self._buffer_lik = lik
-        self._buffer_acausal = acausal
+        self._buffer_smoothed = smoothed
 
     def set_row_provider(
         self,
@@ -962,10 +962,10 @@ class SlicePanel(QtWidgets.QWidget):
     ) -> None:
         """Install a single-row reader for use when ``t_idx`` is outside the buffer.
 
-        ``provider(t_idx)`` returns ``(predictive_row, lik_row, acausal_row)``
+        ``provider(t_idx)`` returns ``(predictive_row, lik_row, smoothed_row)``
         — already NaN-cleaned (and ``lik_row`` exponentiated from the
         cache's ``log_likelihood``) — matching what the worker thread
-        produces for the buffered case. ``acausal_row`` is ``None``
+        produces for the buffered case. ``smoothed_row`` is ``None``
         when the cache lacks ``acausal_posterior``.
         """
         self._row_provider = provider
@@ -1004,7 +1004,7 @@ class SlicePanel(QtWidgets.QWidget):
         sl = self._buffer_slice
         predictive = self._buffer_predictive
         lik = self._buffer_lik
-        acausal = self._buffer_acausal
+        smoothed = self._buffer_smoothed
         if (
             sl is not None
             and predictive is not None
@@ -1014,11 +1014,11 @@ class SlicePanel(QtWidgets.QWidget):
             local_idx = t_idx - sl.start
             predictive_row = predictive[local_idx]
             lik_row = lik[local_idx]
-            acausal_row = acausal[local_idx] if acausal is not None else None
+            smoothed_row = smoothed[local_idx] if smoothed is not None else None
         elif self._row_provider is not None:
             # Buffer doesn't cover ``t_idx`` (the user has scrubbed
             # past the loaded window). Fall back to a single-row read.
-            predictive_row, lik_row, acausal_row = self._row_provider(t_idx)
+            predictive_row, lik_row, smoothed_row = self._row_provider(t_idx)
         else:
             return
         predictive_row_collapsed = self._collapse_row(predictive_row)
@@ -1038,7 +1038,7 @@ class SlicePanel(QtWidgets.QWidget):
         self._top_overlay_norm = self._compute_top_overlay(
             predictive_row=predictive_row,
             lik_row=lik_row,
-            acausal_row=acausal_row,
+            smoothed_row=smoothed_row,
         )
         self._lik_overlay_curve.setData(self._position_bins_uniform, self._top_overlay_norm)
 
@@ -1071,7 +1071,7 @@ class SlicePanel(QtWidgets.QWidget):
         *,
         predictive_row: NDArray[np.float32],
         lik_row: NDArray[np.float32],
-        acausal_row: NDArray[np.float32] | None,
+        smoothed_row: NDArray[np.float32] | None,
     ) -> NDArray[np.float32]:
         """Build the peak-normalized overlay for the top plot."""
         choice = self._overlay_choice
@@ -1086,13 +1086,13 @@ class SlicePanel(QtWidgets.QWidget):
                 filtered_full = filtered_full / total
             collapsed = self._collapse_row(filtered_full)
         else:
-            # ``acausal_row`` is a probability over state_bins from the
+            # ``smoothed_row`` is a probability over state_bins from the
             # decoder's smoother; just collapse states for the visual.
-            if acausal_row is None:
+            if smoothed_row is None:
                 raise ValueError(
                     "Smoothed overlay was selected but acausal_posterior is unavailable"
                 )
-            collapsed = self._collapse_row(acausal_row)
+            collapsed = self._collapse_row(smoothed_row)
         peak = float(collapsed.max())
         if peak > 0:
             return np.asarray(collapsed / peak, dtype=np.float32)

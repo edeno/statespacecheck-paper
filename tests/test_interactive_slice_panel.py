@@ -367,10 +367,10 @@ def test_smoothed_overlay_is_loaded_in_the_committed_buffer(tmp_path: Path) -> N
         assert wait_for_request(app, viewer, target)
 
         sp = viewer.slice_panel
-        # The acausal row is committed alongside predictive even though the
+        # The smoothed row is committed alongside predictive even though the
         # default visible overlay is predictive.
         assert sp.overlay_choice == "predictive"
-        assert sp._buffer_acausal is not None  # noqa: SLF001
+        assert sp._buffer_smoothed is not None  # noqa: SLF001
 
         smoothed_idx = next(
             i
@@ -383,8 +383,8 @@ def test_smoothed_overlay_is_loaded_in_the_committed_buffer(tmp_path: Path) -> N
 
         assert sp.overlay_choice == "smoothed"
         assert viewer._next_request_id == request_id_before_switch  # noqa: SLF001
-        assert sp._buffer_acausal is not None  # noqa: SLF001
-        assert sp._buffer_acausal.shape == sp._buffer_predictive.shape  # noqa: SLF001
+        assert sp._buffer_smoothed is not None  # noqa: SLF001
+        assert sp._buffer_smoothed.shape == sp._buffer_predictive.shape  # noqa: SLF001
     finally:
         viewer.close()
         ds.close()
@@ -394,15 +394,15 @@ def test_cache_without_acausal_disables_smoothed(tmp_path: Path) -> None:
     """A cache without ``acausal_posterior`` disables the smoothed overlay.
 
     The simulation cache has no smoothed posterior. For any such cache the
-    viewer reports ``has_acausal=False``, leaves the smoothed combo entry
-    disabled, and never loads acausal even if some path tried to.
+    viewer reports ``has_smoothed=False``, leaves the smoothed combo entry
+    disabled, and never loads a smoothed posterior even if some path tried to.
     """
     from PySide6 import QtGui
 
     _build_cache_impl(tmp_path / "cache", model="continuous", with_acausal=False)
     app, viewer, ds = make_viewer(tmp_path / "cache")
     try:
-        assert ds.has_acausal is False
+        assert ds.has_smoothed is False
 
         smoothed_idx = next(
             i
@@ -415,9 +415,9 @@ def test_cache_without_acausal_disables_smoothed(tmp_path: Path) -> None:
         assert isinstance(combo_model, QtGui.QStandardItemModel)
         assert combo_model.item(smoothed_idx).isEnabled() is False
 
-        # The data-source's load_acausal returns ``None`` regardless of
+        # The data-source's load_smoothed returns ``None`` regardless of
         # slice — exercises the worker's lazy-load short-circuit.
-        assert ds.load_acausal(slice(0, 10)) is None
+        assert ds.load_smoothed(slice(0, 10)) is None
     finally:
         viewer.close()
         ds.close()

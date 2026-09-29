@@ -12,7 +12,7 @@ viewer panels:
   the current view.
 
 The hot-path methods (``window_indices``, ``load_predictive``,
-``load_likelihood``, ``events_in_window``, ``slice_at_index``) accept
+``load_log_likelihood``, ``events_in_window``, ``slice_at_index``) accept
 plain Python ``slice`` and ``int`` arguments and return raw NumPy
 float32/float64 arrays. No xarray on the call path beyond the chunk
 read, so the viewer can hand results straight to ``pyqtgraph.ImageItem``
@@ -36,7 +36,7 @@ import zarr
 from numpy.typing import NDArray
 
 from statespacecheck_paper.figure04_models import figure04_model
-from statespacecheck_paper.figure04_place_fields import DECODER_PREDICTIVE_VAR
+from statespacecheck_paper.figure04_place_fields import DECODER_PREDICTIVE_VAR, DECODER_SMOOTHED_VAR
 
 from . import cache as cache_mod
 
@@ -204,8 +204,8 @@ class DecoderDataSource:
 
     # The Zarr store keeps the decoder's variable names.
     PREDICTIVE_VAR = DECODER_PREDICTIVE_VAR
-    LIKELIHOOD_VAR = "log_likelihood"
-    ACAUSAL_VAR = "acausal_posterior"
+    LOG_LIKELIHOOD_VAR = "log_likelihood"
+    SMOOTHED_VAR = DECODER_SMOOTHED_VAR
 
     def __init__(
         self,
@@ -362,14 +362,14 @@ class DecoderDataSource:
 
         # Direct zarr arrays for the hot path.
         self._predictive_arr: zarr.Array = self._zarr_group[self.PREDICTIVE_VAR]
-        self._loglik_arr: zarr.Array = self._zarr_group[self.LIKELIHOOD_VAR]
+        self._loglik_arr: zarr.Array = self._zarr_group[self.LOG_LIKELIHOOD_VAR]
         # ``acausal_posterior`` (smoothed distribution) is optional. The viewer
         # disables the smoothed choice when it is absent; it never substitutes
         # a predictive distribution under the smoothed label.
-        self._acausal_arr: zarr.Array | None = (
-            self._zarr_group[self.ACAUSAL_VAR] if self.ACAUSAL_VAR in self._zarr_group else None
+        self._smoothed_arr: zarr.Array | None = (
+            self._zarr_group[self.SMOOTHED_VAR] if self.SMOOTHED_VAR in self._zarr_group else None
         )
-        self.has_acausal: bool = self._acausal_arr is not None
+        self.has_smoothed: bool = self._smoothed_arr is not None
 
     # ------------------------------------------------------------------
     # Consistency / sanity
@@ -526,7 +526,7 @@ class DecoderDataSource:
         """Load the predictive distribution for the given time slice."""
         return self._read_window(self._predictive_arr, sl)
 
-    def load_likelihood(self, sl: slice) -> NDArray[np.float32]:
+    def load_log_likelihood(self, sl: slice) -> NDArray[np.float32]:
         """Load the (log) likelihood for the given time slice.
 
         The cache stores the raw ``log_likelihood`` from the decoder.
@@ -536,21 +536,21 @@ class DecoderDataSource:
         """
         return self._read_window(self._loglik_arr, sl)
 
-    def load_acausal(self, sl: slice) -> NDArray[np.float32] | None:
-        """Load the acausal (smoothed) posterior, or ``None`` if absent.
+    def load_smoothed(self, sl: slice) -> NDArray[np.float32] | None:
+        """Load the smoothed posterior, or ``None`` if absent.
 
         Caches without ``acausal_posterior`` (the simulation cache) return
         ``None``; callers fall back to the predictive distribution.
         """
-        if self._acausal_arr is None:
+        if self._smoothed_arr is None:
             return None
-        return self._read_window(self._acausal_arr, sl)
+        return self._read_window(self._smoothed_arr, sl)
 
     def slice_at_index(
         self,
         t_idx: int,
         *,
-        which: Literal["predictive", "likelihood", "acausal"] = "predictive",
+        which: Literal["predictive", "likelihood", "smoothed"] = "predictive",
     ) -> NDArray[np.float32]:
         """Return one 1D row (length ``n_state_bins``) at ``t_idx``.
 
@@ -564,13 +564,13 @@ class DecoderDataSource:
             arr = self._predictive_arr
         elif which == "likelihood":
             arr = self._loglik_arr
-        elif which == "acausal":
-            if self._acausal_arr is None:
+        elif which == "smoothed":
+            if self._smoothed_arr is None:
                 raise ValueError(
                     "acausal_posterior is not present in this cache; "
                     "rebuild via 'python -m statespacecheck_paper.interactive.cache build'."
                 )
-            arr = self._acausal_arr
+            arr = self._smoothed_arr
         else:
             raise ValueError(f"Unknown slice variant: {which!r}")
         return np.asarray(arr[t_idx], dtype=np.float32)
@@ -650,7 +650,7 @@ class DecoderDataSource:
         self._zarr_group = None
         self._predictive_arr = None
         self._loglik_arr = None
-        self._acausal_arr = None
+        self._smoothed_arr = None
 
     def __enter__(self) -> DecoderDataSource:
         return self

@@ -78,7 +78,7 @@ def test_simulated_cache_loader_metadata(tmp_path: Path) -> None:
         assert ds.model is None
         assert ds.display_name == "Figure 3 simulation"
         # Simulation only forward-filters — no smoothed posterior.
-        assert ds.has_acausal is False
+        assert ds.has_smoothed is False
         # Single state, all bins interior.
         assert ds.n_states == 1
         assert ds.n_interior == ds.position_bins.shape[0]
@@ -248,7 +248,7 @@ def test_simulated_viewer_hides_model_combo(tmp_path: Path) -> None:
         assert viewer._model_label is None  # noqa: SLF001
         # Window title uses display_name, not "None" from a missing model.
         assert "Figure 3 simulation" in viewer.windowTitle()
-        # Smoothed overlay disabled (data source has no acausal).
+        # Smoothed overlay disabled (data source has no smoothed posterior).
         smoothed_idx = next(
             i
             for i in range(viewer._overlay_combo.count())  # noqa: SLF001
@@ -287,7 +287,7 @@ def test_simulated_viewer_loads_window(tmp_path: Path) -> None:
         sp = viewer.slice_panel
         assert sp._buffer_predictive is not None  # noqa: SLF001
         assert sp._buffer_lik is not None  # noqa: SLF001
-        assert sp._buffer_acausal is None  # noqa: SLF001 — no acausal in simulation
+        assert sp._buffer_smoothed is None  # noqa: SLF001 — no smoothed posterior in simulation
 
         # Pick a time at a real event so per-cell rows are guaranteed
         # populated.
