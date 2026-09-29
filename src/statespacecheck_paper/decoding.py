@@ -103,7 +103,7 @@ def _condition_on(
 
 @dataclass(frozen=True)
 class DecoderOverrideWindow:
-    """A decoder regime window: alternate decoder settings over ``[start, end)``.
+    """A decoder override window: alternate decoder settings over ``[start, end)``.
 
     Inside the half-open interval the decoder replaces its baseline
     transition matrix, its baseline rate table, or both. Each field is
@@ -244,7 +244,7 @@ class DecoderOverrideSchedule:
     Parameters
     ----------
     windows : tuple[DecoderOverrideWindow, ...]
-        The regime windows. Must not overlap; order is not significant.
+        The override windows. Must not overlap; order is not significant.
 
     Raises
     ------
@@ -333,7 +333,7 @@ def _select_decoder_components_for_step(
     """Select the transition matrix and rate table for one filter step.
 
     Pure per-step *selector*: returns the baseline transition matrix and rate
-    table unless the active regime ``window`` overrides either. It performs
+    table unless the active override ``window`` replaces either. It performs
     neither the predictive matmul nor the predictive store — those
     are the recursion itself and stay in ``decode_with_diagnostics``.
     """
@@ -356,7 +356,7 @@ def _apply_window_rate_overrides(
     """Overwrite per-event / dense diagnostics inside each rate-override window.
 
     The baseline ``diagnostics`` were computed against the decoder's default
-    rate table. For every regime window that swaps ``firing_rate_table``, the
+    rate table. For every override window that swaps ``firing_rate_table``, the
     events falling inside it are recomputed against that window's table, with
     the same :func:`compute_spike_event_diagnostics_from_rates`, so the
     posterior update, per-event diagnostics, and displayed likelihood stay on
@@ -609,7 +609,7 @@ def decode_with_diagnostics(
         Scale multiplying the Gaussian field to give expected counts per step.
         Ignored when ``baseline_firing_rates`` is given.
     override_schedule : DecoderOverrideSchedule, optional
-        Decoder regime windows, such as Figure 3's remapped rates and its
+        Decoder override windows, such as Figure 3's remapped rates and its
         replay and sparse-population control rates.
         Each :class:`DecoderOverrideWindow` swaps the transition matrix and/or
         the per-cell rate table for its interval. Defaults to an empty
@@ -652,7 +652,7 @@ def decode_with_diagnostics(
         ``event_likelihood`` of shape ``(n_spikes, n_bins)``
             Normalized likelihood for each individual spike event,
             computed against the rates the decoder used at that step (a
-            regime window's ``firing_rate_table`` inside that window).
+            override window's ``firing_rate_table`` inside that window).
 
     Notes
     -----
@@ -687,7 +687,7 @@ def decode_with_diagnostics(
     >>> place_field_centers = np.array([25.0, 50.0, 75.0])
     >>> place_field_std = 5.0
     >>> place_field_rate_scale = 0.1
-    >>> # Baseline decode, no regime windows
+    >>> # Baseline decode, no override windows
     >>> results = decode_with_diagnostics(
     ...     spike_counts,
     ...     position_bins,
@@ -746,7 +746,7 @@ def decode_with_diagnostics(
             )
 
     # Baseline per-cell Poisson rate table. Used at every timestep not
-    # covered by a regime window whose ``firing_rate_table`` is set. Callers
+    # covered by an override window whose ``firing_rate_table`` is set. Callers
     # can inject ``baseline_firing_rates`` directly when the decoder's cell set does
     # not reduce to one shared Gaussian width/scale — e.g. the figure-3
     # simulation appends a narrow sparse-population of cells with a small
@@ -766,7 +766,7 @@ def decode_with_diagnostics(
         window = override_schedule.window_at(t)
 
         # Select this step's transition matrix and per-cell rate table —
-        # the baseline pair unless the active regime window overrides either.
+        # the baseline pair unless the active override window replaces either.
         current_transition, rates_t = _select_decoder_components_for_step(
             window, transition_matrix, rates
         )

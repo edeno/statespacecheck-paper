@@ -78,7 +78,7 @@ the pooled baseline for each metric as
   with a Gaussian random-walk transition
   (`simulation.gaussian_transition_matrix`, step standard deviation
   `Figure3Config.prediction_step_std`) and Poisson place-field rates from
-  `figure03_simulation.build_figure03_rate_tables`. Decoder regime windows
+  `figure03_simulation.build_figure03_rate_tables`. Decoder override windows
   (`decoding.DecoderOverrideWindow`) swap in the scrambled rates of the remap
   misfit and the correct rates of the replay and sparse-population controls.
 - **Figure 4:** the `non_local_detector` models `SortedSpikesDecoder`
@@ -125,7 +125,7 @@ families**:
 
 - **General layers**: `simulation` (random walks, place-field rates, spike
   simulators), `decoding` (the Bayesian filter `decode_with_diagnostics` and its
-  decoder regime windows), and `diagnostics` (containers, the HPD coverage,
+  decoder override windows), and `diagnostics` (containers, the HPD coverage,
   and the paper's threshold rule around the per-spike HPD-overlap /
   predictive-p-value / KL-divergence computation, which lives in the external
   `statespacecheck` package). Figure 1 uses `diagnostics` (the HPD coverage);
@@ -398,7 +398,7 @@ and their configuration to `figure03_summary.json`.
 | `event_hpd_overlap` | HPD overlap | per-spike prediction/likelihood HPD overlap |
 | `event_predictive_pvalue` | rank-based predictive $p$-value | per-spike rank statistic |
 | `event_kl_divergence` | KL divergence | per-spike prediction→likelihood KL |
-| `DecoderOverrideWindow` | the remap, replay, and sparse-population windows | decoder regime windows that swap the decoder's rate table |
+| `DecoderOverrideWindow` | the remap, replay, and sparse-population windows | decoder override windows that swap the decoder's rate table |
 | `well_specified`, `remap`, `history_dependent`, `replay`, `drift`, `sparse_population` | the heatmap's condition columns | `condition_order` in the summary |
 
 ### Rates and expected counts
