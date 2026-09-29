@@ -31,7 +31,7 @@ and orders the steps needed to build the paper.
 
 Peak RAM for a fresh Figure 4 run has not been benchmarked; the disk-cache size
 is not a RAM requirement. Cache replacement is atomic and temporarily keeps the
-old and new decode bundles, so allow roughly 16 GB for those two files when
+old and new decode caches, so allow roughly 16 GB for those two files when
 refitting, plus space for inputs, diagnostics, dependencies, and optional viewer
 caches. A source change in the fitting/data-preparation modules invalidates the
 decode cache; see [cache behavior](figure-pipeline.md#figure-4-cache-behavior).

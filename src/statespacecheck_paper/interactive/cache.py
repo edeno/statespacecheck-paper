@@ -1,7 +1,7 @@
 r"""Build the on-disk caches used by the interactive viewer.
 
 For Figure 4, the viewer cache reformats the decoder outputs and per-spike
-diagnostics from Figure 4's decode and diagnostics caches (the joblib bundles
+diagnostics from Figure 4's decode and diagnostics caches (the joblib files
 written by ``generate_figure04.py``, rebuilt here if missing or stale) into a
 layout that supports fast windowed reads:
 
@@ -54,7 +54,7 @@ def cache_paths(cache_dir: Path, model: ModelName) -> dict[str, Path]:
 
     Real-data caches are figure-4 specific (the ``figure04_`` prefix
     is meaningful — these files are derived from the canonical Figure 4
-    joblib decode bundle).
+    joblib decode cache).
     Simulated-data caches use a separate filename layout via
     ``simulated_cache_paths``.
     """

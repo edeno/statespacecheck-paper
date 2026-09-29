@@ -562,7 +562,7 @@ same `Figure4RenderData` via `interactive.cache.build_figure04_viewer_cache`.
 ### Figure-4 cache behavior
 
 Fitting and decoding both models takes several minutes, so
-`prepare_figure04_render_data` caches the results as two joblib bundles in
+`prepare_figure04_render_data` caches the results as two joblib files in
 `<data path>/intermediates/` (`data/` unless `STATESPACECHECK_DATA_PATH` is set;
 `Figure4Paths` defines the locations):
 
@@ -596,9 +596,9 @@ confined to `diagnostics.py`, `figure04_diagnostics.py`, or the diagnostics
 configuration recomputes only the diagnostics from the cached predictions
 (about a minute). The `execution` settings are in neither fingerprint.
 Docstring and comment edits invalidate neither cache, and the summary scalars
-and their printed text (`figure04_summary.py`) are outside both. Bundles are
+and their printed text (`figure04_summary.py`) are outside both. Caches are
 written to a temporary sibling and renamed into place, so a memory-mapped
-bundle is never overwritten in place. The schema versions
+cache is never overwritten in place. The schema versions
 (`FIGURE04_DECODE_SCHEMA_VERSION`, `FIGURE04_DIAGNOSTICS_SCHEMA_VERSION`) are
 manual overrides: bumping one invalidates every cache of that kind.
 

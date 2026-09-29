@@ -123,10 +123,10 @@ class Figure4DecodeResults:
 
         # Tie the decode timelines together: both decoder result datasets and
         # both per-spike diagnostics must live on the same ``n_time`` grid as
-        # ``spike_counts``, so an inconsistent bundle is rejected at construction
+        # ``spike_counts``, so an inconsistent payload is rejected at construction
         # rather than silently misaligning Figure 4. Require the actual ``time``
         # coordinate (not just a matching length) -- ``compose_figure04`` reads
-        # it, and comparing the two decoders' coordinates catches a bundle that
+        # it, and comparing the two decoders' coordinates catches a payload that
         # pairs decodes from different windows even when the lengths agree.
         result_time_coords: dict[str, NDArray[np.float64]] = {}
         for name, dataset in (

@@ -5,7 +5,7 @@ and the Figure 4 viewer-cache builder and CLI on synthetic inputs and
 must pass without ``non_local_detector`` or any real recording files.
 
 The real-data integration test is skipped unless the canonical Figure 4 joblib
-bundle and exported recording inputs are available.
+decode cache and the Figure 4 input file are available.
 """
 
 from __future__ import annotations
@@ -182,7 +182,7 @@ def test_build_figure04_viewer_cache_uses_canonical_render_data(tmp_path: Path) 
         event_predictive_pvalue=np.array([0.5, 0.4, 0.3]),
     )
     place_fields = np.full((n_cells, n_position), 0.1, dtype=np.float64)
-    # The canonical joblib bundle preserves the state/position MultiIndex;
+    # The canonical joblib decode cache preserves the state/position MultiIndex;
     # exercise its flattening to the viewer's Zarr-compatible coordinates.
     continuous_results = _synthetic_results_dataset(n_time, 1, n_position).set_index(
         state_bins=["state", "position"]
@@ -303,7 +303,7 @@ def test_build_figure04_viewer_cache_continuous_integration(tmp_path: Path) -> N
     """Build the Continuous viewer cache from canonical Figure 4 data.
 
     This test takes several minutes and several GB of disk; it runs only
-    when the canonical joblib bundle and exported recording inputs are present.
+    when the canonical joblib decode cache and the Figure 4 input file are present.
     """
     cache_dir = tmp_path / "cache"
     from statespacecheck_paper.figure04_cache import Figure4Paths

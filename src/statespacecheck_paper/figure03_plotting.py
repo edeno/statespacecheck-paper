@@ -573,7 +573,7 @@ def compose_figure03(
     spike_counts : NDArray, shape (n_time, n_cells)
         Spike counts for each cell at each time point.
     diagnostics : DecodingDiagnostics
-        Diagnostic bundle from ``decode_with_diagnostics``. The panels read its
+        Diagnostics from ``decode_with_diagnostics``. The panels read its
         dense ``(n_time, n_cells)`` metric matrices (``hpd_overlap``,
         ``kl_divergence``, ``predictive_pvalue``) and its per-event
         ``(n_events,)`` arrays (``event_time_ind``, ``event_cell_ind``, and the

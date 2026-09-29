@@ -88,7 +88,7 @@ def test_diagnostics_cache_round_trip_and_misses(tmp_path: Path) -> None:
     loaded = load_figure04_diagnostics_cache(path, "fp1", "dfp1")
     assert loaded is not None
     assert set(loaded.keys()) == set(_diagnostics_payload().keys())
-    # Both fingerprints gate the bundle: a decode change or a diagnostics change misses.
+    # Both fingerprints gate the diagnostics cache: a decode change or a diagnostics change misses.
     assert load_figure04_diagnostics_cache(path, "fp2", "dfp1") is None
     assert load_figure04_diagnostics_cache(path, "fp1", "dfp2") is None
     assert load_figure04_diagnostics_cache(tmp_path / "nope.joblib", "fp1", "dfp1") is None
