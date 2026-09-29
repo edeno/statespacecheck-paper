@@ -121,6 +121,11 @@ COLORS: dict[str, str] = {
     # See ``CMAP_*`` constants below for the matplotlib colormaps.
 }
 
+# Resolution of the paper's figures, in dots per inch: the canonical figures are
+# composed and saved at it. 450 dpi meets most journal requirements (Nature
+# requires 300-600 dpi for final figures).
+FIGURE_DPI = 450
+
 # Colormap constants (can't be in dict since they're not colors)
 CMAP_POSTERIOR = "bone_r"  # Reversed bone for posterior/predictive heatmaps
 CMAP_LIKELIHOOD = "inferno"  # Warm colormap for likelihood overlay at spike times
@@ -333,7 +338,7 @@ def set_figure_defaults(context: Literal["paper", "presentation", "poster"] = "p
 
 def save_figure(
     name: str | Path,
-    dpi: int = 450,
+    dpi: int = FIGURE_DPI,
     close: bool = True,
     bbox_inches: object = "tight",
     fig: Figure | None = None,
@@ -348,9 +353,8 @@ def save_figure(
     name : str or Path
         Output filename without extension. Both .pdf and .png will be added.
         Can be a string path or pathlib.Path object.
-    dpi : int, default 450
-        Resolution in dots per inch. Default 450 meets most journal requirements
-        (Nature requires 300-600 dpi for final figures).
+    dpi : int, default ``FIGURE_DPI``
+        Resolution in dots per inch.
     close : bool, default True
         If True, close the figure after saving to free memory.
     bbox_inches : object, default "tight"

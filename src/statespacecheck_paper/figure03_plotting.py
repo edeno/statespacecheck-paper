@@ -38,6 +38,7 @@ from statespacecheck_paper.style import (
     CMAP_LIKELIHOOD,
     CMAP_POSTERIOR,
     COLORS,
+    FIGURE_DPI,
     METRIC_SPEC_BY_NAME,
     METRIC_SPECS,
     PREDICTIVE_VMAX_QUANTILE,
@@ -619,7 +620,7 @@ def compose_figure03(
     # known-component row beneath the panel-(b) heatmap; the plotted area
     # above them is unchanged.
     fig_height = 7.4
-    fig = plt.figure(figsize=(fig_width, fig_height), dpi=450)
+    fig = plt.figure(figsize=(fig_width, fig_height), dpi=FIGURE_DPI)
 
     # Outer grid: time-series block on top, summary heatmap on bottom.
     gs_outer = gridspec.GridSpec(

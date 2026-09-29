@@ -47,7 +47,7 @@ from statespacecheck_paper.figure02_panels import (
     plot_ppc_likelihood_fan,
     plot_ppc_predictive_fan,
 )
-from statespacecheck_paper.style import save_figure, set_figure_defaults
+from statespacecheck_paper.style import FIGURE_DPI, save_figure, set_figure_defaults
 
 
 def _add_column_group_backplates(
@@ -166,7 +166,7 @@ def compose_figure02(rng: np.random.Generator | None = None) -> Figure:
         figsize=(7.15, 7.0),
         width_ratios=[1, 1, 0.2, 1, 1, 0.2, 1, 1],
         height_ratios=[1, 1, 1, 0.35],
-        dpi=450,
+        dpi=FIGURE_DPI,
         constrained_layout={"h_pad": 0.10, "w_pad": 0.04},
     )
 

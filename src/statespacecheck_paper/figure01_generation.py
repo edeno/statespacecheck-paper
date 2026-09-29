@@ -29,7 +29,7 @@ from scipy import stats
 from statespacecheck_paper.diagnostics import HPD_COVERAGE
 from statespacecheck_paper.plotting import extract_contiguous_regions
 from statespacecheck_paper.schematic import draw_equation_boxes, draw_graphical_model
-from statespacecheck_paper.style import COLORS, save_figure, set_figure_defaults
+from statespacecheck_paper.style import COLORS, FIGURE_DPI, save_figure, set_figure_defaults
 
 
 def create_distribution_comparison_panel(
@@ -194,7 +194,7 @@ def compose_figure01() -> Figure:
     """
     # Create figure with GridSpec for precise control
     # 3 rows: graphical model, equation boxes, distribution panels
-    fig: Figure = plt.figure(figsize=(5.0, 5.1), dpi=450)
+    fig: Figure = plt.figure(figsize=(5.0, 5.1), dpi=FIGURE_DPI)
 
     # Create grid with minimal spacing between rows
     gs = fig.add_gridspec(
