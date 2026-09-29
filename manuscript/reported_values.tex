@@ -4,7 +4,7 @@
 % (except the DOIs, whose comments name their sources):
 %   figures/main/figure03_summary.json (schema 6)
 %   figures/main/figure04_summary.json (schema 5)
-% source_tree_sha256: 92542a7a45c18ed8b17d84ae786909a6207633da659af0904ba96c29b87f4a04
+% source_tree_sha256: b80597e12be42493254f14a340d3c6d6177f696ba13ed6df0e88994e9afb3250
 %
 % Regenerate with: uv run python scripts/emit_reported_values.py
 
@@ -79,14 +79,14 @@
 
 % --- Hippocampal recording (Figure 4) --- computed from the recording
 \newcommand{\RecNUnits}{203}                     % dataset.n_units
-\newcommand{\RecHpdFlaggedContinuous}{18790}     % flag_confusions[hpd_overlap]: a_only + both
-\newcommand{\RecHpdRescued}{17289}               % flag_confusions[hpd_overlap].a_only
+\newcommand{\RecHpdFlaggedContinuous}{18790}     % flag_confusions[hpd_overlap]: rescued + both
+\newcommand{\RecHpdRescued}{17289}               % flag_confusions[hpd_overlap].rescued
 \newcommand{\RecHpdRescuedPercent}{92}           % flag_confusions[hpd_overlap].rescue_rate
-\newcommand{\RecHpdNewlyFlagged}{176}            % flag_confusions[hpd_overlap].b_only
-\newcommand{\RecPvalueFlaggedContinuous}{33954}  % flag_confusions[predictive_pvalue]: a_only + both
-\newcommand{\RecPvalueRescued}{9373}             % flag_confusions[predictive_pvalue].a_only
+\newcommand{\RecHpdNewlyFlagged}{176}            % flag_confusions[hpd_overlap].newly_flagged
+\newcommand{\RecPvalueFlaggedContinuous}{33954}  % flag_confusions[predictive_pvalue]: rescued + both
+\newcommand{\RecPvalueRescued}{9373}             % flag_confusions[predictive_pvalue].rescued
 \newcommand{\RecPvalueRescuedPercent}{28}        % flag_confusions[predictive_pvalue].rescue_rate
-\newcommand{\RecPvalueNewlyFlagged}{1706}        % flag_confusions[predictive_pvalue].b_only
+\newcommand{\RecPvalueNewlyFlagged}{1706}        % flag_confusions[predictive_pvalue].newly_flagged
 
 % --- Hippocampal recording (Figure 4) --- recorded configuration
 \newcommand{\RecPositionBinSizeCm}{2}                  % configuration.decoder.position_bin_size_cm

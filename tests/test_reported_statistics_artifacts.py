@@ -154,14 +154,14 @@ def test_figure04_reported_statistics_counts_partition_events(tmp_path: Path) ->
         counts = (
             confusion["n"],
             confusion["both"],
-            confusion["a_only"],
-            confusion["b_only"],
+            confusion["rescued"],
+            confusion["newly_flagged"],
             confusion["neither"],
         )
         assert counts == expected[confusion["metric"]]
         assert sum(counts[1:]) == counts[0]
         assert confusion["rescue_rate"] == pytest.approx(
-            confusion["a_only"] / (confusion["a_only"] + confusion["both"])
+            confusion["rescued"] / (confusion["rescued"] + confusion["both"])
         )
 
     assert payload["flag_rules"] == {
@@ -201,8 +201,8 @@ def test_figure04_reported_statistics_counts_partition_events(tmp_path: Path) ->
                 threshold=item["threshold"],
                 n=item["n"],
                 both=item["both"],
-                a_only=item["a_only"],
-                b_only=item["b_only"],
+                rescued=item["rescued"],
+                newly_flagged=item["newly_flagged"],
                 neither=item["neither"],
             )
             for item in payload["flag_confusions"]

@@ -790,7 +790,7 @@ def figure04_summary_rows(
         ``Figure4Diagnostics.Mean`` rows: ``model``, ``metric``, ``value``.
     confusion_rows : list of dict
         ``Figure4Diagnostics.FlagConfusion`` rows: ``metric``, ``threshold``,
-        ``n``, ``both``, ``continuous_only``, ``contfrag_only``, ``neither``.
+        ``n``, ``both``, ``rescued``, ``newly_flagged``, ``neither``.
     """
     mean_rows = [
         {"model": model, "metric": metric, "value": value}
@@ -806,8 +806,8 @@ def figure04_summary_rows(
             "threshold": confusion.threshold,
             "n": confusion.n,
             "both": confusion.both,
-            "continuous_only": confusion.a_only,
-            "contfrag_only": confusion.b_only,
+            "rescued": confusion.rescued,
+            "newly_flagged": confusion.newly_flagged,
             "neither": confusion.neither,
         }
         for confusion in summary.flag_confusions
@@ -872,8 +872,8 @@ def figure04_reported_statistics_from_rows(
             threshold=float(row["threshold"]),
             n=int(row["n"]),
             both=int(row["both"]),
-            a_only=int(row["continuous_only"]),
-            b_only=int(row["contfrag_only"]),
+            rescued=int(row["rescued"]),
+            newly_flagged=int(row["newly_flagged"]),
             neither=int(row["neither"]),
         )
         for row in confusion_rows

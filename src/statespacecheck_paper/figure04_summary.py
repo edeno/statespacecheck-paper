@@ -158,8 +158,8 @@ def format_figure04_summary(summary: Figure4Summary) -> str:
             ]
         )
 
-    # "cont-only" is the rescue quadrant: flagged by Continuous but not by
-    # Continuous-Fragmented. Rescue rate is its fraction of Continuous flags.
+    # "rescued": flagged by Continuous (A) but not by Continuous-Fragmented (B);
+    # "newly_flagged": the reverse. Rescue rate is rescued / Continuous flags.
     lines.extend(
         [
             "",
@@ -169,7 +169,7 @@ def format_figure04_summary(summary: Figure4Summary) -> str:
     for confusion in summary.flag_confusions:
         lines.append(
             f"  {confusion.metric}: n={confusion.n:,} both={confusion.both:,} "
-            f"cont-only={confusion.a_only:,} cf-only={confusion.b_only:,} "
+            f"rescued={confusion.rescued:,} newly_flagged={confusion.newly_flagged:,} "
             f"neither={confusion.neither:,} rescue={100 * confusion.rescue_rate:.1f}%"
         )
     return "\n".join(lines)

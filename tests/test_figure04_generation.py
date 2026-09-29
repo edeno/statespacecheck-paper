@@ -102,8 +102,8 @@ def test_summary_payload_contains_reported_counts_rates_and_provenance(
         threshold=0.05,
         n=100,
         both=2,
-        a_only=18,
-        b_only=3,
+        rescued=18,
+        newly_flagged=3,
         neither=77,
     )
     summary = Figure4Summary(means_a, means_b, (confusion,), n_units=7)
@@ -144,13 +144,18 @@ def test_summary_payload_contains_reported_counts_rates_and_provenance(
         "threshold": 0.05,
     }
     assert payload["diagnostic_means"]["continuous"]["hpd_overlap"] == pytest.approx(0.1)
+    # Model A of each flag confusion is the reference decoder, B the comparison.
+    assert payload["flag_confusion_models"] == {
+        "reference": "continuous",
+        "comparison": "continuous_fragmented",
+    }
     assert payload["flag_confusions"][0] == {
         "metric": "hpd_overlap",
         "threshold": 0.05,
         "n": 100,
         "both": 2,
-        "a_only": 18,
-        "b_only": 3,
+        "rescued": 18,
+        "newly_flagged": 3,
         "neither": 77,
         "rescue_rate": 0.9,
     }

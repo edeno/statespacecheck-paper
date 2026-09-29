@@ -46,25 +46,29 @@
     }
   },
   "figure": "figure04",
+  "flag_confusion_models": {
+    "comparison": "continuous_fragmented",
+    "reference": "continuous"
+  },
   "flag_confusions": [
     {
-      "a_only": 17289,
-      "b_only": 176,
       "both": 1501,
       "metric": "hpd_overlap",
       "n": 870018,
       "neither": 851052,
+      "newly_flagged": 176,
       "rescue_rate": 0.9201170835550825,
+      "rescued": 17289,
       "threshold": 0.05
     },
     {
-      "a_only": 9373,
-      "b_only": 1706,
       "both": 24581,
       "metric": "predictive_pvalue",
       "n": 870018,
       "neither": 834358,
+      "newly_flagged": 1706,
       "rescue_rate": 0.2760499499322613,
+      "rescued": 9373,
       "threshold": 0.05
     }
   ],
@@ -84,7 +88,7 @@
         "event_selection": "all_spikes_in_recording",
         "hpd_coverage": 0.95
       },
-      "diagnostics_fingerprint_sha256": "d90b05e7838fd175615eeda91b5d2b48a6e678aa4099b139c2f49e89dd707557",
+      "diagnostics_fingerprint_sha256": "2ec4472f9e0c38d8fe91f8079708c3b3a12ecda6510849f80a3480700cd6e2b8",
       "diagnostics_schema_version": 2,
       "export_file_sha256": {
         "j1620210710_02_r1_figure04_inputs.npz": "60383b394b597e2900545548ecac7c53a8601038ace9dbeb42d7f9a5fe1c93b3"
@@ -95,7 +99,7 @@
       "statespacecheck_version": "0.3.1"
     },
     "source": {
-      "source_tree_sha256": "92542a7a45c18ed8b17d84ae786909a6207633da659af0904ba96c29b87f4a04",
+      "source_tree_sha256": "b80597e12be42493254f14a340d3c6d6177f696ba13ed6df0e88994e9afb3250",
       "statespacecheck_paper_version": "0.1.0",
       "statespacecheck_version": "0.3.1",
       "uv_lock_sha256": "7db5bb03266cfeab8f804cd7262232f3ffa16ebaf423722a399076043b640574"

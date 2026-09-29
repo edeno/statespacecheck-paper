@@ -164,8 +164,8 @@ class Figure4Diagnostics(SpyglassMixin, dj.Computed):
         threshold: double
         n: int
         both: int
-        continuous_only: int
-        contfrag_only: int
+        rescued: int        # flagged by the Continuous decoder only
+        newly_flagged: int  # flagged by the Continuous-Fragmented decoder only
         neither: int
         """
 

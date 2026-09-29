@@ -301,8 +301,12 @@ class FlagConfusion:
 
     A spike is "flagged" when its per-spike diagnostic crosses ``threshold`` in
     the direction of worse fit. The four counts partition every aligned spike
-    event by whether model A and/or model B flags it.
-    ``a_only`` is the rescue quadrant: spikes flagged by model A but not model B.
+    event by whether model A and/or model B flags it. Model A is the reference
+    decoder and model B the comparison decoder; in Figure 4, A is the Continuous
+    and B the Continuous-Fragmented model. ``rescued`` counts spikes the
+    reference flags but the comparison does not (Figure 4's "flagged by Cont.
+    only" quadrant), and ``newly_flagged`` spikes the comparison flags but the
+    reference does not.
 
     Attributes
     ----------
@@ -312,27 +316,28 @@ class FlagConfusion:
         Flag threshold applied to the raw per-spike diagnostic.
     n : int
         Number of aligned spike events.
-    both, a_only, b_only, neither : int
-        Counts of spikes flagged by both decoders, by model A only, by model B
-        only, and by neither. They sum to ``n``.
+    both, rescued, newly_flagged, neither : int
+        Counts of spikes flagged by both decoders, by model A (the reference)
+        only, by model B (the comparison) only, and by neither. They sum to
+        ``n``.
     """
 
     metric: str
     threshold: float
     n: int
     both: int
-    a_only: int
-    b_only: int
+    rescued: int
+    newly_flagged: int
     neither: int
 
     @property
     def rescue_rate(self) -> float:
-        """Fraction of model-A-flagged spikes that model B does not flag.
+        """Fraction of model-A-flagged spikes that model B does not flag (``rescued``).
 
         Returns ``nan`` when model A flags no spikes.
         """
-        a_flagged = self.a_only + self.both
-        return self.a_only / a_flagged if a_flagged else float("nan")
+        a_flagged = self.rescued + self.both
+        return self.rescued / a_flagged if a_flagged else float("nan")
 
 
 def compute_flag_confusion(
@@ -348,8 +353,9 @@ def compute_flag_confusion(
     Parameters
     ----------
     diagnostics_a, diagnostics_b : SpikeEventDiagnostics
-        Per-spike diagnostics for the two decoders, carrying the same spike
-        events in the same order (e.g. Continuous vs Continuous--Fragmented).
+        Per-spike diagnostics for the reference (A) and comparison (B)
+        decoders, carrying the same spike events in the same order (e.g.
+        Continuous vs Continuous--Fragmented).
     metric : str
         Diagnostic base name; the per-spike array ``event_{metric}`` is used.
     threshold : float
@@ -362,7 +368,8 @@ def compute_flag_confusion(
     Returns
     -------
     FlagConfusion
-        The 2x2 flag agreement (``a`` = model A, ``b`` = model B).
+        The 2x2 flag agreement: ``rescued`` is flagged by A only,
+        ``newly_flagged`` by B only.
 
     Raises
     ------
@@ -405,7 +412,7 @@ def compute_flag_confusion(
         threshold=float(threshold),
         n=int(a.size),
         both=int(np.sum(flag_a & flag_b)),
-        a_only=int(np.sum(flag_a & ~flag_b)),
-        b_only=int(np.sum(~flag_a & flag_b)),
+        rescued=int(np.sum(flag_a & ~flag_b)),
+        newly_flagged=int(np.sum(~flag_a & flag_b)),
         neither=int(np.sum(~flag_a & ~flag_b)),
     )

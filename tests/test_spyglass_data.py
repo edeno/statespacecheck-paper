@@ -640,8 +640,8 @@ def _stored_rows(
             "threshold": c["threshold"],
             "n": c["n"],
             "both": c["both"],
-            "continuous_only": c["a_only"],
-            "contfrag_only": c["b_only"],
+            "rescued": c["rescued"],
+            "newly_flagged": c["newly_flagged"],
             "neither": c["neither"],
         }
         for c in summary["flag_confusions"]
@@ -662,6 +662,7 @@ def test_stored_rows_reproduce_the_committed_reported_statistics(
     assert stored == {
         "n_units": committed_figure04["dataset"]["n_units"],
         "diagnostic_means": committed_figure04["diagnostic_means"],
+        "flag_confusion_models": committed_figure04["flag_confusion_models"],
         "flag_confusions": committed_figure04["flag_confusions"],
     }
 

@@ -117,8 +117,8 @@ class TestFigure4Summary:
         assert (
             confusion.n,
             confusion.both,
-            confusion.a_only,
-            confusion.b_only,
+            confusion.rescued,
+            confusion.newly_flagged,
             confusion.neither,
         ) == (
             2,
@@ -137,7 +137,7 @@ class TestFigure4Summary:
         text = format_figure04_summary(summary)
         assert "Continuous:" in text
         assert "hpd_overlap: 0.1050" in text
-        assert "cont-only=1" in text
+        assert "rescued=1" in text
 
     def test_requires_threshold_for_every_direction(self) -> None:
         with pytest.raises(ValueError, match="without thresholds"):

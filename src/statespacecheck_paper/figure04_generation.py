@@ -75,8 +75,11 @@ def figure04_reported_statistics(summary: Figure4Summary) -> dict[str, object]:
     Returns
     -------
     dict
-        ``diagnostic_means`` (per decoder and metric) and ``flag_confusions``
-        (with ``rescue_rate``, ``None`` when undefined).
+        ``diagnostic_means`` (per decoder and metric), ``flag_confusion_models``
+        (which decoder is the reference, model A, and which the comparison,
+        model B), and ``flag_confusions`` (``rescued`` = flagged by the
+        reference only, ``newly_flagged`` = by the comparison only, with
+        ``rescue_rate``, ``None`` when undefined).
     """
     confusions: list[dict[str, object]] = []
     for confusion in summary.flag_confusions:
@@ -91,6 +94,10 @@ def figure04_reported_statistics(summary: Figure4Summary) -> dict[str, object]:
         "diagnostic_means": {
             CONTINUOUS.id: dataclasses.asdict(summary.continuous),
             CONTINUOUS_FRAGMENTED.id: dataclasses.asdict(summary.continuous_fragmented),
+        },
+        "flag_confusion_models": {
+            "reference": CONTINUOUS.id,
+            "comparison": CONTINUOUS_FRAGMENTED.id,
         },
         "flag_confusions": confusions,
     }
@@ -124,6 +131,7 @@ def figure04_summary_payload(
         ),
         "detail_window": dataclasses.asdict(FIGURE4_DETAIL_WINDOW),
         "diagnostic_means": statistics["diagnostic_means"],
+        "flag_confusion_models": statistics["flag_confusion_models"],
         "flag_confusions": statistics["flag_confusions"],
         "provenance": {
             "source": scientific_source_provenance(),

@@ -390,8 +390,13 @@ quoted in the Methods. The Figure-4
 schema records `dataset.n_units` alongside the recording identifier and
 names the second decoder `continuous_fragmented` throughout. Schema 5 renamed
 `configuration.provenance` to `configuration.package_defaults` and its
-`contfrag_*` keys, and dropped the discrete-transition concentration and
-regularization, which the decode never reads. The
+`contfrag_*` keys, renamed the flag-confusion counts `a_only` and `b_only`,
+and dropped the discrete-transition concentration and regularization, which
+the decode never reads. Each `flag_confusions` entry counts
+spikes flagged by `both` decoders, by the reference only (`rescued`), by the
+comparison only (`newly_flagged`), and by `neither`; `flag_confusion_models`
+names the reference (`continuous`) and comparison (`continuous_fragmented`)
+decoders. The
 `flag_rules` object binds each numeric threshold to its executable semantics:
 `less_than_or_equal` means a value is flagged when `value <= threshold`, and
 `greater_than_or_equal` means it is flagged when `value >= threshold`. Keeping

@@ -524,18 +524,18 @@ def _recording_statistics(payload: dict[str, Any]) -> list[MacroDefinition]:
         prefix = _RECORDING_FLAG_MACRO_PREFIXES[metric]
         confusion = _confusion(payload, metric)
         # Flagged by the Continuous model = rescued by Continuous-Fragmented + flagged by both.
-        flagged_continuous = confusion["a_only"] + confusion["both"]
+        flagged_continuous = confusion["rescued"] + confusion["both"]
         macros.extend(
             [
                 MacroDefinition(
                     f"{prefix}FlaggedContinuous",
                     _exact(flagged_continuous),
-                    f"flag_confusions[{metric}]: a_only + both",
+                    f"flag_confusions[{metric}]: rescued + both",
                 ),
                 MacroDefinition(
                     f"{prefix}Rescued",
-                    _exact(confusion["a_only"]),
-                    f"flag_confusions[{metric}].a_only",
+                    _exact(confusion["rescued"]),
+                    f"flag_confusions[{metric}].rescued",
                 ),
                 MacroDefinition(
                     f"{prefix}RescuedPercent",
@@ -544,8 +544,8 @@ def _recording_statistics(payload: dict[str, Any]) -> list[MacroDefinition]:
                 ),
                 MacroDefinition(
                     f"{prefix}NewlyFlagged",
-                    _exact(confusion["b_only"]),
-                    f"flag_confusions[{metric}].b_only",
+                    _exact(confusion["newly_flagged"]),
+                    f"flag_confusions[{metric}].newly_flagged",
                 ),
             ]
         )

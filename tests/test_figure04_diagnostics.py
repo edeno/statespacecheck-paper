@@ -309,27 +309,33 @@ class TestComputeFlagConfusion:
         a = event_diagnostics(hpd=np.array([0.01, 0.02, 0.10, 0.20, 0.03]))
         b = event_diagnostics(hpd=np.array([0.01, 0.20, 0.02, 0.20, 0.20]))
         conf = compute_flag_confusion(a, b, "hpd_overlap", 0.05, worse_when="below")
-        assert (conf.n, conf.both, conf.a_only, conf.b_only, conf.neither) == (5, 1, 2, 1, 1)
-        assert conf.both + conf.a_only + conf.b_only + conf.neither == conf.n
+        assert (conf.n, conf.both, conf.rescued, conf.newly_flagged, conf.neither) == (
+            5,
+            1,
+            2,
+            1,
+            1,
+        )
+        assert conf.both + conf.rescued + conf.newly_flagged + conf.neither == conf.n
         assert conf.rescue_rate == pytest.approx(2 / 3)
 
     def test_above_direction(self) -> None:
         a = event_diagnostics(kl=np.array([5.0, 6.0, 1.0, 2.0]))
         b = event_diagnostics(kl=np.array([5.0, 1.0, 7.0, 1.0]))
         conf = compute_flag_confusion(a, b, "kl_divergence", 4.0, worse_when="above")
-        assert (conf.both, conf.a_only, conf.b_only, conf.neither) == (1, 1, 1, 1)
+        assert (conf.both, conf.rescued, conf.newly_flagged, conf.neither) == (1, 1, 1, 1)
         assert conf.rescue_rate == pytest.approx(0.5)
 
     def test_threshold_values_are_inclusive(self) -> None:
         hpd_a = event_diagnostics(hpd=np.array([0.05, 0.10]))
         hpd_b = event_diagnostics(hpd=np.array([0.10, 0.05]))
         hpd_conf = compute_flag_confusion(hpd_a, hpd_b, "hpd_overlap", 0.05, worse_when="below")
-        assert (hpd_conf.a_only, hpd_conf.b_only) == (1, 1)
+        assert (hpd_conf.rescued, hpd_conf.newly_flagged) == (1, 1)
 
         kl_a = event_diagnostics(kl=np.array([4.0, 3.0]))
         kl_b = event_diagnostics(kl=np.array([3.0, 4.0]))
         kl_conf = compute_flag_confusion(kl_a, kl_b, "kl_divergence", 4.0, worse_when="above")
-        assert (kl_conf.a_only, kl_conf.b_only) == (1, 1)
+        assert (kl_conf.rescued, kl_conf.newly_flagged) == (1, 1)
 
     def test_nan_event_is_rejected_at_construction(self) -> None:
         with pytest.raises(ValueError, match="required per-event value"):
@@ -339,7 +345,7 @@ class TestComputeFlagConfusion:
         a = event_diagnostics(hpd=np.array([0.5, 0.6]))  # none at or below 0.05
         b = event_diagnostics(hpd=np.array([0.01, 0.6]))
         conf = compute_flag_confusion(a, b, "hpd_overlap", 0.05, worse_when="below")
-        assert conf.a_only == 0 and conf.both == 0
+        assert conf.rescued == 0 and conf.both == 0
         assert np.isnan(conf.rescue_rate)
 
     def test_rejects_bad_direction(self) -> None:
