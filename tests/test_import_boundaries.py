@@ -101,6 +101,7 @@ def test_figure01_and_figure02_generation_dependencies_are_explicit() -> None:
     prefix = "statespacecheck_paper."
     allowed = {
         "figure01_generation.py": {
+            prefix + "diagnostics",
             prefix + "plotting",
             prefix + "schematic",
             prefix + "style",

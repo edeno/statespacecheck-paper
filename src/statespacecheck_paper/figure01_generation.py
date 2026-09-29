@@ -26,6 +26,7 @@ from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 from numpy.typing import NDArray
 from scipy import stats
 
+from statespacecheck_paper.diagnostics import HPD_COVERAGE
 from statespacecheck_paper.plotting import extract_contiguous_regions
 from statespacecheck_paper.schematic import draw_equation_boxes, draw_graphical_model
 from statespacecheck_paper.style import COLORS, save_figure, set_figure_defaults
@@ -40,7 +41,7 @@ def create_distribution_comparison_panel(
     color_likelihood: str,
     title: str | None = None,
     show_labels: bool = False,
-    coverage: float = 0.95,
+    coverage: float = HPD_COVERAGE,
 ) -> None:
     """Create a panel comparing predictive and likelihood distributions.
 
@@ -65,7 +66,7 @@ def create_distribution_comparison_panel(
         Panel title.
     show_labels : bool, default False
         Whether to show "Predictive"/"Likelihood" text labels on curves.
-    coverage : float, default 0.95
+    coverage : float, default ``HPD_COVERAGE``
         Coverage probability for HPD regions.
 
     Examples
