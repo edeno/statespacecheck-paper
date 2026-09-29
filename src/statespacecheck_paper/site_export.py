@@ -914,7 +914,30 @@ def recording_payload(
         Parsed ``figure04_summary.json``: flag rules and decode-cache identity.
     detail_window : Figure4DetailWindow, default ``FIGURE04_DETAIL_WINDOW``
         Samples shown; defaults to the window in Figure 4a/b.
+
+    Raises
+    ------
+    ValueError
+        If the summary's decode or diagnostics fingerprint differs from the
+        provenance of the decode being exported (``render_data.cache_provenance``),
+        so the window would be labeled with another decode's identity.
     """
+    caches = figure04_summary["provenance"]["figure04_caches"]
+    exported = render_data.cache_provenance
+    mismatched = [
+        key
+        for key, exported_value in (
+            ("fingerprint_sha256", exported.fingerprint_sha256),
+            ("diagnostics_fingerprint_sha256", exported.diagnostics_fingerprint_sha256),
+        )
+        if caches[key] != exported_value
+    ]
+    if mismatched:
+        raise ValueError(
+            "figure04_summary.json provenance.figure04_caches does not match the decode "
+            f"being exported ({', '.join(mismatched)} differ); regenerate Figure 4 from "
+            "the same decode and diagnostics caches before exporting the recording window."
+        )
     window = detail_window.to_slice(render_data.time.size)
     decode = render_data.decode_results
     time = np.asarray(render_data.time, dtype=np.float64)
@@ -968,7 +991,6 @@ def recording_payload(
         }
 
     spike_times = render_data.recording.spike_times
-    caches = figure04_summary["provenance"]["figure04_caches"]
     cell_rank = np.argsort(np.argsort(decode.place_field_peaks))
     return {
         "time": _rounded(time[window] - t0, 4),

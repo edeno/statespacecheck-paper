@@ -674,9 +674,10 @@ consumers from guessing whether a boundary is strict or inclusive.
 
 Both summaries contain `provenance.source`, with the installed
 `statespacecheck-paper` and `statespacecheck` versions (the diagnostics are
-computed in `statespacecheck`, outside the hashed source tree; the emitter
-refuses summaries that disagree on it), a deterministic SHA-256 digest of every Python
-file under `src/statespacecheck_paper`, and the SHA-256 digest of `uv.lock`.
+computed in `statespacecheck`, outside the hashed source tree), a deterministic
+SHA-256 digest of every Python file under `src/statespacecheck_paper`, and the
+SHA-256 digest of `uv.lock`. The emitter refuses summaries whose
+`provenance.source` blocks differ in any of these.
 The digest excludes timestamps, generated outputs, and absolute paths, so clean
 checkouts of identical source produce the same identity.
 

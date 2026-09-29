@@ -38,6 +38,7 @@ from statespacecheck_paper.figure03_simulation import (
 from statespacecheck_paper.figure04_diagnostics import mean_event_likelihood_by_time
 from statespacecheck_paper.figure04_layout import Figure4DetailWindow
 from statespacecheck_paper.figure04_models import FIGURE04_MODELS, figure04_model
+from statespacecheck_paper.figure04_workflow import Figure4RenderData
 from statespacecheck_paper.number_format import significant, whole_percent
 from statespacecheck_paper.paths import (
     FIGURE03_SUMMARY_PATH,
@@ -475,20 +476,26 @@ def test_condition_summaries_come_from_the_figure_summary(
 # ---------------------------------------------------------------------------
 
 
-def test_recording_payload_slices_both_models_to_the_detail_window() -> None:
-    render_data = _compose_render_data()
-    summary = {
+def _recording_summary(render_data: Figure4RenderData) -> dict[str, Any]:
+    """A Figure-4 summary whose cache fingerprints match ``render_data``."""
+    provenance = render_data.cache_provenance
+    return {
         "flag_rules": {
             "hpd_overlap": {"comparison": "less_than_or_equal", "threshold": 0.05},
             "predictive_pvalue": {"comparison": "less_than_or_equal", "threshold": 0.05},
         },
         "provenance": {
             "figure04_caches": {
-                "fingerprint_sha256": "abc",
-                "diagnostics_fingerprint_sha256": "def",
+                "fingerprint_sha256": provenance.fingerprint_sha256,
+                "diagnostics_fingerprint_sha256": provenance.diagnostics_fingerprint_sha256,
             }
         },
     }
+
+
+def test_recording_payload_slices_both_models_to_the_detail_window() -> None:
+    render_data = _compose_render_data()
+    summary = _recording_summary(render_data)
     window = Figure4DetailWindow(center_index=20, half_width_samples=10)
     payload = recording_payload(render_data, summary, window)
     time_slice = window.to_slice(render_data.time.size)
@@ -539,13 +546,27 @@ def test_recording_payload_slices_both_models_to_the_detail_window() -> None:
         assert set(model["events"]["flagged"]) == {"hpd_overlap", "predictive_pvalue"}
     # Cells are ranked by place-field peak.
     assert sorted(payload["cell_rank"]) == list(range(decode.place_field_peaks.size))
-    assert payload["decode_cache_fingerprint"] == "abc"
-    assert payload["diagnostics_fingerprint"] == "def"
+    assert payload["decode_cache_fingerprint"] == render_data.cache_provenance.fingerprint_sha256
+    assert (
+        payload["diagnostics_fingerprint"]
+        == render_data.cache_provenance.diagnostics_fingerprint_sha256
+    )
     # The raster covers the same bins as the events: [time[start], time[stop]).
     t_end = render_data.time[time_slice.stop]
     for cell, times in enumerate(render_data.recording.spike_times):
         in_bins = (times >= render_data.time[time_slice.start]) & (times < t_end)
         assert len(payload["spike_times"][cell]) == int(in_bins.sum())
+
+
+@pytest.mark.parametrize("key", ["fingerprint_sha256", "diagnostics_fingerprint_sha256"])
+def test_recording_payload_rejects_a_summary_from_another_decode(key: str) -> None:
+    """The window is not labeled with fingerprints of a decode other than the exported one."""
+    render_data = _compose_render_data()
+    summary = _recording_summary(render_data)
+    summary["provenance"]["figure04_caches"][key] = "0" * 64
+    window = Figure4DetailWindow(center_index=20, half_width_samples=10)
+    with pytest.raises(ValueError, match=rf"\({key} differ\)"):
+        recording_payload(render_data, summary, window)
 
 
 # ---------------------------------------------------------------------------

@@ -33,6 +33,7 @@ from statespacecheck_paper.reported_values import (
     lookup_statespacecheck_doi,
     ordinal,
     render_macro_file,
+    require_matching_source_provenance,
     statespacecheck_version,
     write_macro_file,
 )
@@ -243,6 +244,40 @@ def test_mismatched_statespacecheck_versions_are_rejected(path: tuple[str]) -> N
             statespacecheck_doi=CITED_DOI,
             analysis_code_doi=CODE_DOI,
         )
+
+
+@pytest.mark.parametrize(
+    "keys",
+    [("source_tree_sha256",), ("uv_lock_sha256",), ("source_tree_sha256", "uv_lock_sha256")],
+    ids=["source_tree", "uv_lock", "both"],
+)
+def test_mismatched_source_provenance_is_rejected(keys: tuple[str, ...]) -> None:
+    """The macro file states one source digest, so both summaries must share their source."""
+    figure04 = copy.deepcopy(_load("figure04_summary.json"))
+    for key in keys:
+        figure04["provenance"]["source"][key] = "0" * 64
+
+    with pytest.raises(ValueError, match=rf"provenance.source values for {', '.join(keys)};"):
+        render_macro_file(
+            _load("figure03_summary.json"),
+            figure04,
+            statespacecheck_doi=CITED_DOI,
+            analysis_code_doi=CODE_DOI,
+        )
+
+
+def test_source_provenance_key_recorded_by_one_summary_is_rejected() -> None:
+    figure03 = copy.deepcopy(_load("figure03_summary.json"))
+    figure03["provenance"]["source"]["extra"] = "value"
+
+    with pytest.raises(ValueError, match="provenance.source values for extra;"):
+        require_matching_source_provenance(figure03, _load("figure04_summary.json"))
+
+
+def test_matching_source_provenance_is_accepted() -> None:
+    require_matching_source_provenance(
+        _load("figure03_summary.json"), _load("figure04_summary.json")
+    )
 
 
 @pytest.mark.parametrize("line", ["doi: 10.5281/zenodo.7", 'doi: "10.5281/zenodo.7"'])

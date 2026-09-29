@@ -127,10 +127,12 @@ needs the Figure 4 input file for the recording window; it reuses the Figure 4
 caches when they are current and otherwise refits both models (several minutes)
 and writes the ~8 GB decode cache, as `generate_figure04.py` does.
 `--skip-recording` leaves `site/data/recording.json` untouched and is appropriate
-only when the recording outputs are unchanged. Figure 3 and 4 summaries must carry the
-same current source provenance before emitting macros; the tests enforce this
-(the emitter itself checks only that both record the same `statespacecheck`
-version).
+only when the recording outputs are unchanged. The recording export refuses a
+Figure-4 summary whose decode or diagnostics fingerprint differs from the decode
+it exports. Figure 3 and 4 summaries must carry the same current source
+provenance before emitting macros: the emitter refuses summaries whose
+`provenance.source` blocks differ, naming the differing keys, and the tests
+check that the recorded source digest is current.
 
 The source digest covers all Python files under `src/`, including comments and
 docstrings. After a documentation-only source change, first verify that the
