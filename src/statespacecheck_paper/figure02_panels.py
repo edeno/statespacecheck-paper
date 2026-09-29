@@ -157,7 +157,11 @@ def create_shared_example(rng: np.random.Generator) -> Figure2ExampleData:
     kl_divergence = float(
         ssc.kl_divergence(predictive[np.newaxis, :], likelihood[np.newaxis, :])[0]
     )
-    hpd_overlap = float(ssc.hpd_overlap(predictive[np.newaxis, :], likelihood[np.newaxis, :])[0])
+    hpd_overlap = float(
+        ssc.hpd_overlap(
+            predictive[np.newaxis, :], likelihood[np.newaxis, :], coverage=HPD_COVERAGE
+        )[0]
+    )
 
     # Monte Carlo predictive p-value (eq:fpred / eq:predictive_application):
     # each replicate draws a state from the event-weighted predictive
