@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import base64
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
@@ -281,10 +281,10 @@ def _event_payload(
     return payload
 
 
-def colormap_lut(name: str, n: int = COLORMAP_LUT_SIZE) -> list[str]:
-    """Sample a matplotlib colormap as ``n`` hex colors, low to high."""
-    cmap = mpl.colormaps[name].resampled(n)
-    return [mpl.colors.to_hex(cmap(i)) for i in range(n)]
+def colormap_lut(name: str) -> list[str]:
+    """Sample a matplotlib colormap as ``COLORMAP_LUT_SIZE`` hex colors, low to high."""
+    cmap = mpl.colormaps[name].resampled(COLORMAP_LUT_SIZE)
+    return [mpl.colors.to_hex(cmap(i)) for i in range(COLORMAP_LUT_SIZE)]
 
 
 # ---------------------------------------------------------------------------
@@ -367,9 +367,7 @@ class FilterExplainerSequence:
     decoded: DecodingDiagnostics
 
 
-def filter_explainer_sequence(
-    config: Figure3Config, explainer: FilterExplainerConfig = FILTER_EXPLAINER
-) -> FilterExplainerSequence:
+def filter_explainer_sequence(config: Figure3Config) -> FilterExplainerSequence:
     """Simulate and decode the explainer's spike train.
 
     The spikes come from the simulation's generator, given the smooth run. The
@@ -377,17 +375,17 @@ def filter_explainer_sequence(
     cell whose field is centered nearest the animal, so the demonstration opens
     on a spike whose prediction is the flat initial distribution; and
     ``conflict_step`` holds the inconsistent spikes described in
-    :class:`FilterExplainerConfig`.
+    :class:`FilterExplainerConfig`. :data:`FILTER_EXPLAINER` supplies the run,
+    rates, movement model, and the scripted edits.
 
     Parameters
     ----------
     config : Figure3Config
         Supplies the track and the place-field centers and width.
-    explainer : FilterExplainerConfig
-        Supplies the run, rates, movement model, and the scripted edits.
     """
     if config.place_field_centers is None:
         raise ValueError("config.place_field_centers must be initialized")
+    explainer = FILTER_EXPLAINER
     centers = np.asarray(config.place_field_centers, dtype=np.float64)
     position_bins = config.position_bins
     steps = np.arange(explainer.n_steps)
@@ -438,15 +436,12 @@ def _moments(
     return mean, np.sqrt(variance)
 
 
-def filter_explainer_payload(
-    config: Figure3Config, explainer: FilterExplainerConfig = FILTER_EXPLAINER
-) -> dict[str, Any]:
-    """Build the data for the filter explainer's time stepper.
+def filter_explainer_payload(config: Figure3Config) -> dict[str, Any]:
+    """Build the data for the filter explainer's time stepper, :data:`FILTER_EXPLAINER`.
 
     Parameters
     ----------
     config : Figure3Config
-    explainer : FilterExplainerConfig
 
     Returns
     -------
@@ -464,7 +459,7 @@ def filter_explainer_payload(
         posterior at each step); ``conflict_step``; and ``coverage``, the
         probability mass of the HPD regions the page's captions name.
     """
-    sequence = filter_explainer_sequence(config, explainer)
+    sequence = filter_explainer_sequence(config)
     decoded = sequence.decoded
     bins = sequence.position_bins
     predictive = np.asarray(decoded.predictive, dtype=np.float64)
@@ -497,7 +492,7 @@ def filter_explainer_payload(
             "posterior_mean": _rounded(posterior_mean, 2),
             "posterior_sd": _rounded(posterior_sd, 2),
         },
-        "conflict_step": explainer.conflict_step,
+        "conflict_step": FILTER_EXPLAINER.conflict_step,
         "coverage": HPD_COVERAGE,
     }
 
@@ -716,9 +711,10 @@ def metric_parity_fixture(
 def scenario_payloads(
     sim: Figure3SimulationResult,
     figure03_summary: Mapping[str, Any],
-    windows: Sequence[ScenarioWindow] = SCENARIO_WINDOWS,
 ) -> dict[str, dict[str, Any]]:
     """Per-condition display data from one Figure-3 realization.
+
+    Each condition is shown over its window in :data:`SCENARIO_WINDOWS`.
 
     Parameters
     ----------
@@ -727,8 +723,6 @@ def scenario_payloads(
     figure03_summary : mapping
         Parsed ``figure03_summary.json``: flag rules plus per-condition median
         flag percentages and decoding errors across realizations.
-    windows : sequence of ScenarioWindow
-        One display window per condition.
 
     Returns
     -------
@@ -756,7 +750,7 @@ def scenario_payloads(
         float(np.nanquantile(diagnostics.predictive, PREDICTIVE_VMAX_QUANTILE)),
     )
     payloads: dict[str, dict[str, Any]] = {}
-    for window in windows:
+    for window in SCENARIO_WINDOWS:
         if not 0 <= window.start < window.stop <= n_time:
             raise ValueError(f"{window} lies outside the {n_time}-step timeline")
         condition = conditions[window.condition_id]
