@@ -534,9 +534,10 @@ def simulate_spikes_history_dependent(
     Notes
     -----
     History dependence breaks vectorization over time, so this routine
-    loops per timestep (still vectorized over cells per step). For
-    figure-3-scale runs (~40k timesteps, 11 cells) this is fast enough
-    to be unnoticeable.
+    loops per timestep (still vectorized over cells per step). Figure 3
+    calls it only for its history-dependent phase, 4,000 timesteps of 11
+    cells under the default ``Figure3Config``, where the loop takes a
+    negligible share of the simulation time.
 
     When ``burst_window`` overlaps the suppressed region
     (``burst_start <= refractory_steps``), the zero is applied first, so the
