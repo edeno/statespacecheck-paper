@@ -77,6 +77,8 @@ from statespacecheck_paper.spyglass_pipeline.figure04_input import (
 SCHEMA_NAME = "edeno_statespacecheck"
 GROUP_NAME = "statespacecheck_figure04"
 UNIT_FILTER_PARAMS_NAME = "all_units"
+# Primary key of the Figure4DiagnosticsParameters entry the figure uses.
+DIAGNOSTICS_PARAM_NAME = "figure04"
 DECODING_PARAM_NAMES: Mapping[str, str] = MappingProxyType(
     {model.id: f"statespacecheck_figure04_{model.id}" for model in FIGURE04_MODELS}
 )
@@ -113,7 +115,7 @@ class Figure4DiagnosticsParameters(SpyglassMixin, dj.Lookup):
     """
     contents = [
         (
-            "figure04",
+            DIAGNOSTICS_PARAM_NAME,
             Figure4Config().diagnostics.hpd_coverage,
             FIGURE04_DIAGNOSTIC_THRESHOLDS["hpd_overlap"],
             FIGURE04_DIAGNOSTIC_THRESHOLDS["predictive_pvalue"],
@@ -430,7 +432,7 @@ def diagnostics_selection_entry() -> dict[str, Any]:
     return {
         "continuous_merge_id": merge_ids[CONTINUOUS.id],
         "continuous_fragmented_merge_id": merge_ids[CONTINUOUS_FRAGMENTED.id],
-        "figure04_diagnostics_param_name": "figure04",
+        "figure04_diagnostics_param_name": DIAGNOSTICS_PARAM_NAME,
     }
 
 
