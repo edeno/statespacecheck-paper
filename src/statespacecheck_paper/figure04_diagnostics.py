@@ -24,7 +24,7 @@ from statespacecheck_paper.diagnostics import (
     expand_spike_events,
     flag_mask,
 )
-from statespacecheck_paper.figure04_place_fields import get_state_marginalized_posterior
+from statespacecheck_paper.figure04_place_fields import marginal_position_distribution
 
 
 def _get_spike_events_from_spike_times(
@@ -276,7 +276,7 @@ def compute_results_diagnostics(
         ``(n_time, n_cells)`` matrices, hundreds of MB for a full recording and
         read by no consumer, are left ``None``.
     """
-    predictive = get_state_marginalized_posterior(results, "predictive")
+    predictive = marginal_position_distribution(results, "predictive")
     place_fields = np.asarray(place_fields, dtype=np.float64)
     if predictive.shape[1] != place_fields.shape[1]:
         raise ValueError(

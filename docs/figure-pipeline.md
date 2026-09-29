@@ -101,9 +101,9 @@ field it came from. See [From summary to prose](#from-summary-to-prose-the-repor
 
 | Paper term | Code name | Notes |
 | --- | --- | --- |
-| Predictive distribution $P_k$, $p(x_k\mid y_{1:k-1})$ (the Introduction's “prediction distribution”) | `predictive` | Figure 3: `DecodingDiagnostics.predictive`, shape `(n_time, n_bins)`; at $t=0$ it is the initial distribution. Figure 4: `non_local_detector`'s output variable `predictive_posterior` (`figure04_place_fields.DECODER_PREDICTIVE_VAR`), marginalized over the Continuous–Fragmented dynamics mode by `get_state_marginalized_posterior(results, "predictive")` |
+| Predictive distribution $P_k$, $p(x_k\mid y_{1:k-1})$ (the Introduction's “prediction distribution”) | `predictive` | Figure 3: `DecodingDiagnostics.predictive`, shape `(n_time, n_bins)`; at $t=0$ it is the initial distribution. Figure 4: `non_local_detector`'s output variable `predictive_posterior` (`figure04_place_fields.DECODER_PREDICTIVE_VAR`), marginalized over the Continuous–Fragmented dynamics mode by `marginal_position_distribution(results, "predictive")` |
 | Filtered posterior $p(x_k\mid y_{1:k})$ | `posterior` | Figure 3 (`DecodingDiagnostics.posterior`); its mean gives the decoding error. Figure 4 does not request the filter output |
-| Smoothed (acausal) posterior $p(x_k\mid y_{1:K})$ | `acausal_posterior` | Figure 4 decoder output; used by the desktop viewer's overlay only |
+| Smoothed (acausal) posterior $p(x_k\mid y_{1:K})$ | `acausal_posterior` | Figure 4 decoder output (`figure04_place_fields.DECODER_SMOOTHED_VAR`; `marginal_position_distribution(results, "smoothed")`); used by the desktop viewer's overlay only |
 | Normalized single-event likelihood $Q_{k,j}$ | `event_likelihood` | one row per spike; the figures' likelihood rows show its mean over the spikes in each bin |
 | Normalized combined likelihood of all cells in a bin | `combined_likelihood` | Figure 3 (`DecodingDiagnostics.combined_likelihood`); the viewer's “population likelihood” |
 | Per-spike HPD overlap, predictive $p$-value, KL divergence | `event_hpd_overlap`, `event_predictive_pvalue`, `event_kl_divergence` | with `event_time_ind` (time bin) and `event_cell_ind` (unit); the un-prefixed `hpd_overlap`, … are dense `(n_time, n_cells)` matrices |
@@ -554,7 +554,7 @@ same `Figure4RenderData` via `interactive.cache.build_figure04_viewer_cache`.
 | --- | --- | --- |
 | Continuous, Continuous–Fragmented | model IDs `continuous`, `continuous_fragmented` | `figure04_models.CONTINUOUS` / `CONTINUOUS_FRAGMENTED` carry the IDs, full labels, and short labels (“Cont.”, “Cont.–Frag.”) |
 | `position_std`, `movement_var` | same names | kept in the spelling of the Methods and `non_local_detector` |
-| Predictive distribution, marginalized over dynamics mode | `get_state_marginalized_posterior(results, "predictive")` | reads `predictive_posterior` |
+| Predictive distribution, marginalized over dynamics mode | `marginal_position_distribution(results, "predictive")` | reads `predictive_posterior` |
 | Rescued, newly flagged | `FlagConfusion.rescued`, `FlagConfusion.newly_flagged` | reference decoder `continuous`, comparison `continuous_fragmented` (`flag_confusion_models` in the summary) |
 | Per-spike diagnostics | `event_hpd_overlap`, `event_predictive_pvalue`, `event_kl_divergence` | as in Figure 3 |
 

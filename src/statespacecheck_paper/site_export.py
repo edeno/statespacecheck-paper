@@ -65,7 +65,7 @@ from statespacecheck_paper.figure04_diagnostics import mean_event_likelihood_by_
 from statespacecheck_paper.figure04_generation import FIGURE4_DETAIL_WINDOW
 from statespacecheck_paper.figure04_layout import Figure4DetailWindow
 from statespacecheck_paper.figure04_models import CONTINUOUS, CONTINUOUS_FRAGMENTED
-from statespacecheck_paper.figure04_place_fields import get_state_marginalized_posterior
+from statespacecheck_paper.figure04_place_fields import marginal_position_distribution
 from statespacecheck_paper.figure04_workflow import Figure4RenderData, prepare_figure04_render_data
 from statespacecheck_paper.number_format import significant, whole_percent
 from statespacecheck_paper.paths import (
@@ -851,7 +851,7 @@ def replay_payload(
             decode.continuous_fragmented_diagnostics,
         ),
     ):
-        predictive = get_state_marginalized_posterior(results.isel(time=window), "predictive")
+        predictive = marginal_position_distribution(results.isel(time=window), "predictive")
         if predictive.shape[1] != place_fields.shape[1]:
             raise ValueError(
                 f"{model.id} predictive has {predictive.shape[1]} bins; "

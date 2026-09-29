@@ -1,9 +1,9 @@
-"""Extracting place fields and marginalized posteriors from fitted models.
+"""Extracting place fields and position-marginal distributions from fitted models.
 
 Helpers that read the fitted ``non_local_detector`` decoder models and their
 ``predict`` outputs: per-observation-model place fields, the single shared
 position-dependent observation likelihood used for cross-model diagnostics, and
-the state-marginalized posterior over position.
+the decoder distributions marginalized over the dynamics mode.
 """
 
 from __future__ import annotations
@@ -19,6 +19,9 @@ from numpy.typing import NDArray
 # ``predictive_posterior``; the paper calls it the predictive distribution. Every
 # request for, or read of, that decoder output uses this name.
 DECODER_PREDICTIVE_VAR = "predictive_posterior"
+# non_local_detector names its smoothed posterior p(x_k | y_{1:K})
+# ``acausal_posterior``; the paper calls it the smoothed posterior.
+DECODER_SMOOTHED_VAR = "acausal_posterior"
 
 
 def extract_place_fields(
@@ -221,7 +224,7 @@ def marginalize_state_bins(distribution_da: xr.DataArray) -> xr.DataArray:
     # ``skipna=False``: if the per-state interior masks differed, unstack would
     # back-fill missing (state, position) cells with NaN, and a skipna sum would
     # silently produce an asymmetric marginal that still looks like a
-    # distribution. ``get_state_marginalized_posterior``'s callers also pair this
+    # distribution. ``marginal_position_distribution``'s callers also pair this
     # with ``extract_shared_position_place_fields`` (which rejects state-varying
     # masks); the heatmap relies on this rule directly to draw such cells as NaN.
     if "state" in unstacked.dims:
@@ -230,52 +233,52 @@ def marginalize_state_bins(distribution_da: xr.DataArray) -> xr.DataArray:
     return unstacked
 
 
-def get_state_marginalized_posterior(
+def marginal_position_distribution(
     results: xr.Dataset,
-    posterior_type: Literal["predictive", "acausal"] = "predictive",
+    kind: Literal["predictive", "smoothed"],
 ) -> NDArray[np.float64]:
-    """Extract state-marginalized posterior from decoder results.
+    """Return a decoder distribution marginalized over the dynamics mode.
 
     For multi-state models (e.g., ContFragSortedSpikesClassifier), sums over
-    states to get the marginal posterior over position. For single-state models,
-    simply extracts the posterior. Also handles NaN state bins (e.g., track edges).
+    states to get the marginal distribution over position. For single-state
+    models, simply extracts the distribution. Also drops NaN state bins (e.g.,
+    track edges).
 
     Parameters
     ----------
     results : xr.Dataset
-        Decoding results from model.predict() containing posterior distributions.
-    posterior_type : {"predictive", "acausal"}, default "predictive"
-        Type of posterior to extract:
-        - "predictive": One-step-ahead prediction p(x_t | y_{1:t-1})
-        - "acausal": Smoothed posterior p(x_t | y_{1:T})
+        Decoding results from model.predict().
+    kind : {"predictive", "smoothed"}
+        Distribution to extract:
+        - "predictive": one-step predictive distribution p(x_t | y_{1:t-1})
+          (:data:`DECODER_PREDICTIVE_VAR`)
+        - "smoothed": smoothed posterior p(x_t | y_{1:T})
+          (:data:`DECODER_SMOOTHED_VAR`)
 
     Returns
     -------
-    posterior : np.ndarray, shape (n_time, n_bins)
-        State-marginalized posterior summed over states, with NaN bins dropped.
+    distribution : np.ndarray, shape (n_time, n_bins)
+        Position-marginal distribution summed over states, with NaN bins dropped.
 
     Raises
     ------
     ValueError
-        If ``posterior_type`` is not ``"predictive"`` or ``"acausal"``,
+        If ``kind`` is not ``"predictive"`` or ``"smoothed"``,
         or if the ``state_bins`` MultiIndex on a multi-state model is
         malformed (e.g. duplicate ``(state, position)`` entries) and
         cannot be unstacked. Refusing here is intentional: a silent
         fallback would return a per-state slice labeled as the
-        marginal posterior, producing a wrong figure.
+        marginal distribution, producing a wrong figure.
     """
-    # Select appropriate posterior
-    if posterior_type == "predictive":
-        posterior_da = results[DECODER_PREDICTIVE_VAR]
-    elif posterior_type == "acausal":
-        posterior_da = results.acausal_posterior
+    if kind == "predictive":
+        distribution_da = results[DECODER_PREDICTIVE_VAR]
+    elif kind == "smoothed":
+        distribution_da = results[DECODER_SMOOTHED_VAR]
     else:
-        raise ValueError(
-            f"Invalid posterior_type: {posterior_type}. Must be 'predictive' or 'acausal'."
-        )
+        raise ValueError(f"Invalid kind: {kind}. Must be 'predictive' or 'smoothed'.")
 
     # Drop NaN state bins (e.g., track interior only)
-    posterior_da = posterior_da.dropna("state_bins")
+    distribution_da = distribution_da.dropna("state_bins")
 
-    posterior: NDArray[np.float64] = np.asarray(marginalize_state_bins(posterior_da).values)
-    return posterior
+    distribution: NDArray[np.float64] = np.asarray(marginalize_state_bins(distribution_da).values)
+    return distribution

@@ -1,4 +1,4 @@
-"""Tests for Figure-4 place-field and marginalized-posterior extraction."""
+"""Tests for Figure-4 place-field and position-marginal distribution extraction."""
 
 from __future__ import annotations
 
@@ -11,10 +11,12 @@ import pytest
 import xarray as xr
 
 from statespacecheck_paper.figure04_place_fields import (
+    DECODER_PREDICTIVE_VAR,
+    DECODER_SMOOTHED_VAR,
     extract_agreed_place_fields,
     extract_place_fields,
     extract_shared_position_place_fields,
-    get_state_marginalized_posterior,
+    marginal_position_distribution,
     marginalize_state_bins,
 )
 
@@ -63,22 +65,26 @@ class TestExtractPlaceFields:
 
 
 # ---------------------------------------------------------------------------
-# get_state_marginalized_posterior
+# marginal_position_distribution
 # ---------------------------------------------------------------------------
 
 
-class TestGetStateMarginalizedPosterior:
-    @pytest.mark.parametrize("posterior_type", ["predictive", "acausal"])
+class TestMarginalPositionDistribution:
+    @pytest.mark.parametrize(
+        ("kind", "variable"),
+        [("predictive", DECODER_PREDICTIVE_VAR), ("smoothed", DECODER_SMOOTHED_VAR)],
+    )
     def test_single_state_passthrough(
         self,
         rng: np.random.Generator,
-        posterior_type: Literal["predictive", "acausal"],
+        kind: Literal["predictive", "smoothed"],
+        variable: str,
     ) -> None:
         """Single-state model: no states to marginalize, output equals input."""
         n_time, n_bins = 100, 50
         posterior_data = rng.dirichlet(np.ones(n_bins), size=n_time)
-        results = xarray_results(posterior_data, f"{posterior_type}_posterior")
-        result = get_state_marginalized_posterior(results, posterior_type)
+        results = xarray_results(posterior_data, variable)
+        result = marginal_position_distribution(results, kind)
         assert result.shape == (n_time, n_bins)
         np.testing.assert_allclose(result, posterior_data)
 
@@ -97,7 +103,7 @@ class TestGetStateMarginalizedPosterior:
             "predictive_posterior",
             state_bins=multi_index,
         )
-        result = get_state_marginalized_posterior(results, "predictive")
+        result = marginal_position_distribution(results, "predictive")
         np.testing.assert_allclose(result, posterior_per_state.sum(axis=1), rtol=1e-5)
 
     def test_unstack_failure_raises(self) -> None:
@@ -118,7 +124,7 @@ class TestGetStateMarginalizedPosterior:
             state_bins=broken_index,
         )
         with pytest.raises(ValueError, match="Failed to unstack"):
-            get_state_marginalized_posterior(results, "predictive")
+            marginal_position_distribution(results, "predictive")
 
 
 # ---------------------------------------------------------------------------
