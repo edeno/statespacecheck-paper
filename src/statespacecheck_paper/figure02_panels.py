@@ -557,10 +557,12 @@ def _showcase_colors(n: int) -> NDArray[np.float64]:
 
 
 def plot_predictive_check_predictive_fan(ax: Axes, data: Figure2ExampleData) -> None:
-    """Predictive distribution with a fan of sampled positions.
+    """Predictive distribution with a fan of showcase positions.
 
-    Each colored marker is one draw from the predictive that flows into
-    the corresponding simulated observation likelihood plotted in the simulated-likelihood panel.
+    Each colored marker is a state at a fixed quantile of the predictive
+    (the 10th, 30th, 50th, 70th, and 90th percentiles, chosen to span its
+    support rather than drawn at random); the simulated observation drawn at
+    that state gives the matching curve in the simulated-likelihood panel.
     """
     x = data.position_bins
     pred = data.predictive
@@ -570,7 +572,7 @@ def plot_predictive_check_predictive_fan(ax: Axes, data: Figure2ExampleData) -> 
     ax.plot(x, pred, color=COLORS["predictive"], linewidth=1.5, label="Predictive")
     ax.fill_between(x, pred, alpha=0.3, color=COLORS["predictive"])
 
-    # Each sampled state is shown as a colored tick + dot on the predictive
+    # Each showcase state is shown as a colored tick + dot on the predictive
     # so the matching curve in the simulated-likelihood panel can be read off by colour.
     sample_indices = np.argmin(np.abs(x[None, :] - positions[:, None]), axis=1)
     for pos, idx, color in zip(positions, sample_indices, colors, strict=True):
@@ -606,12 +608,13 @@ def plot_predictive_check_predictive_fan(ax: Axes, data: Figure2ExampleData) -> 
 def plot_predictive_check_likelihood_fan(ax: Axes, data: Figure2ExampleData) -> None:
     """Fan of simulated observation likelihoods.
 
-    For each state sample drawn from the predictive (the predictive-distribution panel), the
-    Monte Carlo p-value draws an observation y_tilde ~ p(y | x_s) and
-    constructs the corresponding observation likelihood p(y_tilde | x).
-    This panel shows that fan of likelihood curves, colored to match
-    the samples in the predictive-distribution panel. Per-curve markers distinguish the state
-    sample (dotted line at x_s) from the drawn observation (triangle
+    For each state x_s it samples from the predictive, the Monte Carlo
+    p-value draws an observation y_tilde ~ p(y | x_s) and constructs the
+    corresponding observation likelihood p(y_tilde | x). This panel shows
+    that step for the showcase states of the predictive-distribution panel
+    (fixed predictive quantiles standing in for random samples), colored to
+    match them. Per-curve markers distinguish the state
+    (dotted line at x_s) from the drawn observation (triangle
     at the curve peak, at y_tilde). A faint dashed copy of the
     predictive is overlaid so the reader can see what the curves get
     multiplied by when computing the log predictive density that ends

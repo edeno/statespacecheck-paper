@@ -142,7 +142,10 @@ class Figure3Config:
         replay_end_fraction)``.
     replay_speed_per_step : float, default 0.5
         Maximum per-step displacement of the replay trajectory as it sweeps
-        toward the farther track end and returns.
+        toward the farther track end and returns. At the default settings
+        the cap never binds: the sweep spends about 1,000 steps on each leg,
+        so reaching the farther end (50--100 position units away) takes
+        about 0.05--0.1 units per step, and that is the sweep's actual speed.
     replay_place_field_rate_scale : float, default 20.0
         Elevated place-field rate scale applied during the replay sweep.
     sparse_position : float, default 30.0

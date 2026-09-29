@@ -103,11 +103,15 @@ def _condition_on(
 
 @dataclass(frozen=True)
 class DecoderOverrideWindow:
-    """One decoder-side misfit, active over the half-open interval ``[start, end)``.
+    """A decoder regime window: alternate decoder settings over ``[start, end)``.
 
-    A misfit window substitutes any of three baseline quantities while the
-    decoder runs inside it. Each field is optional; ``None`` means "use the
-    baseline".
+    Inside the half-open interval the decoder replaces its baseline
+    transition matrix, its baseline rate table, or both. Each field is
+    optional; ``None`` means "use the baseline". Whether a window is a misfit
+    depends on how the spikes were generated: Figure 3 uses one to decode
+    with scrambled place fields (the remap misfit) and others to give the
+    decoder the correct rates during the replay and sparse-population
+    controls.
 
     Parameters
     ----------
@@ -117,10 +121,9 @@ class DecoderOverrideWindow:
     transition_matrix : np.ndarray, shape (n_bins, n_bins), optional
         Replaces the baseline transition matrix in the predict step.
     firing_rate_table : np.ndarray, shape (n_bins, n_cells), optional
-        Replaces the baseline Gaussian place-field rate table used to
-        form the posterior-update likelihood, the per-spike diagnostics,
-        and the displayed per-spike likelihood. Used by the remap misfit
-        (remapped place fields). Entries are expected counts per time step.
+        Replaces the baseline rate table used to form the posterior-update
+        likelihood, the per-spike diagnostics, and the displayed per-spike
+        likelihood. Entries are expected counts per time step.
 
     Raises
     ------
@@ -142,8 +145,8 @@ class DecoderOverrideWindow:
 
     Examples
     --------
-    Remap-style misfit — the decoder and its diagnostics use an alternate
-    rate table inside the window:
+    The decoder and its diagnostics use an alternate rate table inside the
+    window:
 
     >>> import numpy as np
     >>> remapped = np.full((5, 3), 0.1)
@@ -235,14 +238,13 @@ class DecoderOverrideSchedule:
     """An ordered set of non-overlapping :class:`DecoderOverrideWindow` entries.
 
     Time steps not covered by any window decode with the baseline
-    transition matrix and Gaussian place-field rates. The empty schedule
-    (the default) is a clean decode with no misfits — used for real-data
-    decoding.
+    transition matrix and rate table. The empty schedule (the default)
+    decodes every step with the baseline.
 
     Parameters
     ----------
     windows : tuple[DecoderOverrideWindow, ...]
-        The misfit windows. Must not overlap; order is not significant.
+        The regime windows. Must not overlap; order is not significant.
 
     Raises
     ------
@@ -331,7 +333,7 @@ def _select_decoder_components_for_step(
     """Select the transition matrix and rate table for one filter step.
 
     Pure per-step *selector*: returns the baseline transition matrix and rate
-    table unless the active misfit ``window`` overrides either. It performs
+    table unless the active regime ``window`` overrides either. It performs
     neither the predictive matmul nor the predictive store — those
     are the recursion itself and stay in ``decode_with_diagnostics``.
     """
@@ -354,7 +356,7 @@ def _apply_window_rate_overrides(
     """Overwrite per-event / dense diagnostics inside each rate-override window.
 
     The baseline ``diagnostics`` were computed against the decoder's default
-    rate table. For every misfit window that swaps ``firing_rate_table``, the events
+    rate table. For every regime window that swaps ``firing_rate_table``, the events
     falling inside it are recomputed against that window's table so the
     posterior update, per-event diagnostics, and displayed likelihood stay on
     one internally consistent decoder model. The base diagnostics' seven arrays
@@ -598,22 +600,25 @@ def decode_with_diagnostics(
     transition_matrix : np.ndarray, shape (n_bins, n_bins)
         State transition matrix for baseline dynamics.
     place_field_centers : np.ndarray, shape (n_cells,)
-        Place field center positions for each cell.
+        Place field center positions for each cell. Used only to build the
+        baseline rate table; ignored when ``baseline_firing_rates`` is given.
     place_field_std : float
-        Width (standard deviation) of Gaussian place fields.
+        Width (standard deviation) of Gaussian place fields. Ignored when
+        ``baseline_firing_rates`` is given.
     place_field_rate_scale : float
         Scale multiplying the Gaussian field to give expected counts per step.
+        Ignored when ``baseline_firing_rates`` is given.
     override_schedule : DecoderOverrideSchedule, optional
-        Decoder-side rate or transition regimes, such as remapping and the
-        sparse-population control.
+        Decoder regime windows, such as Figure 3's remapped rates and its
+        replay and sparse-population control rates.
         Each :class:`DecoderOverrideWindow` swaps the transition matrix and/or
         the per-cell rate table for its interval. Defaults to an empty
-        schedule: a clean decode with no
-        misfits (the real-data decoding case).
+        schedule, which decodes every step with the baseline.
     baseline_firing_rates : np.ndarray, shape (n_bins, n_cells), optional
         Baseline per-cell Poisson means (expected counts per time step, not Hz).
         Supply this when cells do not share one place-field width and scale,
-        as in Figure 3's sparse population.
+        as in Figure 3's sparse population; the three place-field arguments,
+        which remain required, are then ignored.
         If omitted, rates are built from ``place_field_centers``, ``place_field_std``, and
         ``place_field_rate_scale``.
     initial_state_distribution : np.ndarray, shape (n_bins,), optional
@@ -648,12 +653,12 @@ def decode_with_diagnostics(
 
         ``event_likelihood`` of shape ``(n_spikes, n_bins)``
             Normalized likelihood for each individual spike event,
-            computed against the decoder's actual rates (remapped
-            inside any misfit window with ``firing_rate_table`` set).
+            computed against the rates the decoder used at that step (a
+            regime window's ``firing_rate_table`` inside that window).
 
     Notes
     -----
-    Invalid misfit configurations (overlapping windows, ``start >= end``,
+    Invalid override schedules (overlapping windows, ``start >= end``,
     negative/non-finite rate tables) are rejected when the
     :class:`DecoderOverrideSchedule` / :class:`DecoderOverrideWindow` is *constructed*, not
     here.
@@ -684,7 +689,7 @@ def decode_with_diagnostics(
     >>> place_field_centers = np.array([25.0, 50.0, 75.0])
     >>> place_field_std = 5.0
     >>> place_field_rate_scale = 0.1
-    >>> # Clean decode, no misfits
+    >>> # Baseline decode, no regime windows
     >>> results = decode_with_diagnostics(
     ...     spike_counts,
     ...     position_bins,
@@ -742,7 +747,7 @@ def decode_with_diagnostics(
             )
 
     # Baseline per-cell Poisson rate table. Used at every timestep not
-    # covered by a misfit window whose ``firing_rate_table`` is set. Callers
+    # covered by a regime window whose ``firing_rate_table`` is set. Callers
     # can inject ``baseline_firing_rates`` directly when the decoder's cell set does
     # not reduce to one shared Gaussian width/scale — e.g. the figure-3
     # simulation appends a narrow sparse-population of cells with a small
@@ -762,7 +767,7 @@ def decode_with_diagnostics(
         window = override_schedule.window_at(t)
 
         # Select this step's transition matrix and per-cell rate table —
-        # the baseline pair unless the active misfit window overrides either.
+        # the baseline pair unless the active regime window overrides either.
         current_transition, rates_t = _select_decoder_components_for_step(
             window, transition_matrix, rates
         )

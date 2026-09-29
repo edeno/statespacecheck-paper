@@ -251,7 +251,7 @@ def _plot_spike_count_raster(
     sort_order = np.argsort(place_field_centers)
     spikes_sorted = spike_counts[:, sort_order]
 
-    # Find spike locations (time, neuron pairs where spike_counts occurred)
+    # Find spike locations (time, neuron pairs where spikes occurred)
     spike_times, spike_neurons = np.where(spikes_sorted > 0)
 
     # Use scatter plot for better visibility of sparse events

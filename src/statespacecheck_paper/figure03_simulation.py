@@ -53,7 +53,7 @@ def remap_place_field_centers(
     This function creates remapped place field centers for computing likelihoods
     during model misfit periods. When active, the source cell's place field center
     is replaced with the target cell's center, so the likelihood is computed using
-    the wrong place field for that cell's spike_counts.
+    the wrong place field for that cell's spikes.
 
     Each ``(src, dst)`` pair makes cell ``src`` use cell ``dst``'s place-field
     center; original centers are snapshotted before any writes so a pair of
@@ -240,7 +240,7 @@ def simulate_history_dependent_phase(
     place_field_centers: NDArray[np.floating],
     rng: np.random.Generator,
 ) -> tuple[NDArray[np.floating], NDArray[np.int_]]:
-    """History-dependent firing misfit: a normal walk with bursting spike_counts.
+    """History-dependent firing misfit: a normal walk with bursting spikes.
 
     Cells fire via ``simulate_spikes_history_dependent`` (post-spike
     suppression plus a burst window); the decoder still treats every spike as an
@@ -248,7 +248,7 @@ def simulate_history_dependent_phase(
     correlations and is largely invisible to the per-spike spatial
     diagnostics.
 
-    Draw order: the trajectory walk, then the history-dependent spike_counts.
+    Draw order: the trajectory walk, then the history-dependent spikes.
     """
     x = simulate_walk(
         n, config.prediction_step_std, x_last, config.position_min, config.position_max, rng
@@ -281,14 +281,14 @@ def simulate_replay_phase(
     while a coherent represented trajectory sweeps the track once out and
     back over the sub-window ``[r0, r1)``. Spikes during the sweep fire at
     the elevated ``replay_place_field_rate_scale``; before and after they are ordinary
-    position-tuned spike_counts.
+    position-tuned spikes.
 
     RNG-order contract: the shared ``rng`` draws BOTH walks (``x_pre``
-    then ``x_post``) before ANY spike_counts, matching the original ``vstack``
-    order. Reordering to walk -> spike -> walk -> spike would move the
-    ``x_post`` walk ahead of the ``x_pre`` spike_counts and shift every
-    downstream draw, changing Figure 3 and the interactive simulated
-    cache. Do not reorder.
+    then ``x_post``) before ANY spikes, then the spikes of the three
+    segments in time order. Draw order is part of the seeded experiment:
+    reordering to walk -> spike -> walk -> spike would move the ``x_post``
+    walk ahead of the ``x_pre`` spikes and shift every downstream draw,
+    changing Figure 3 and the interactive simulated cache.
     """
     x_pre = simulate_walk(
         r0, config.prediction_step_std, x_last, config.position_min, config.position_max, rng
@@ -304,7 +304,7 @@ def simulate_replay_phase(
         float(config.position_max),
         config.replay_speed_per_step,
     )
-    # Second walk drawn before any spike_counts (shared-rng draw-order contract).
+    # Second walk drawn before any spikes (shared-rng draw-order contract).
     x_post = simulate_walk(
         n - r1, config.prediction_step_std, x_still, config.position_min, config.position_max, rng
     )
@@ -348,8 +348,8 @@ def simulate_drift_phase(
     ``x[t] = x[t-1] + v[t]`` with
     ``v[t] = drift_momentum * v[t-1] + N(0, prediction_step_std)``; the decoder
     assumes a memoryless walk. Returns the trajectory only; the caller
-    draws the position-tuned spike_counts from it, matching the original draw
-    order (drift steps, then spike_counts).
+    then draws the position-tuned spikes from it. Draw order (drift steps,
+    then spikes) is part of the seeded experiment.
     """
     momentum = config.drift_momentum
     x_mom = np.zeros(n)
@@ -372,8 +372,8 @@ def simulate_sparse_approach_phase(
     A normal walk for ``n - sparse_approach_duration_steps`` steps, then a smooth
     ramp to ``config.sparse_position`` so the sparse-population control
     begins without a position jump. Returns the trajectory only; the
-    caller draws the position-tuned spike_counts (original draw order: walk,
-    then spike_counts).
+    caller then draws the position-tuned spikes. Draw order (walk, then
+    spikes) is part of the seeded experiment.
     """
     approach_steps = min(config.sparse_approach_duration_steps, n)
     walk_steps = n - approach_steps
@@ -442,8 +442,9 @@ def build_sparse_population(
         config.sparse_cell_peak_rate_per_step, config.sparse_place_field_std
     )
     sparse_rng = np.random.default_rng(np.random.SeedSequence([random_seed, 12]))
-    # Draw the baseline window first (matching the original stream order),
-    # then the elevated window; leave post-``w1`` samples at zero.
+    # Draw the baseline window first, then the elevated window (this stream's
+    # draw order is part of the seeded experiment); leave post-``w1`` samples
+    # at zero.
     baseline_block = simulate_spikes_position_tuned(
         true_position[:w0],
         sparse_centers,
@@ -663,7 +664,7 @@ def run_figure03_simulation(
        small population of pre-existing, sharply tuned cells clustered at one
        location fires sparsely — each an independent Poisson process, the
        decoder's rates matching exactly. The prediction spreads between the
-       isolated spike_counts, and each spike's narrow likelihood remains contained
+       isolated spikes, and each spike's narrow likelihood remains contained
        within it. KL responds to the concentration difference while HPD overlap
        and the rank-based p-value remain consistent.)
 
@@ -761,7 +762,7 @@ def run_figure03_simulation(
     # 8. Sparse population — the animal remains immobile at the location while
     #    the ordinary ensemble becomes quiet. The baseline transition is still
     #    used, so the prediction spreads naturally between the isolated sparse
-    #    spike_counts (built below with an independent RNG stream).
+    #    spikes (built below with an independent RNG stream).
     n = bnd[PhaseBoundary.SPARSE_POP_END] - bnd[PhaseBoundary.RECOVERY3_END]
     x = np.full(n, config.sparse_position, dtype=float)
     sparse_normal_spikes = simulate_spikes_position_tuned(

@@ -522,8 +522,9 @@ class DiagnosticThresholds:
     ----------
     hpd_overlap : float
         HPD overlap threshold; must lie in ``[0, 1]`` (the underlying
-        diagnostic is a probability overlap). Lower values indicate
-        worse fit.
+        diagnostic is the overlap coefficient of the two HPD regions: the
+        volume of their intersection divided by the volume of the smaller
+        region). Lower values indicate worse fit.
     kl_divergence : float
         KL divergence threshold; must be non-negative finite. Higher
         values indicate worse fit.

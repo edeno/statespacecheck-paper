@@ -123,7 +123,7 @@ def build_summary_conditions(config: Figure3Config) -> list[Figure3SummaryCondit
     t_sparse_pop_end = bnd[PhaseBoundary.SPARSE_POP_END]
     # The replay event sits inside clean-recovery 2; carve it out of the
     # well-specified pool (it is scored in its own column) so its spikes
-    # neither define the baseline diagnostic_thresholds nor dilute the false-positive
+    # neither define the baseline thresholds nor dilute the false-positive
     # rate.
     r0, r1 = compute_replay_step_window(config)
     return [
@@ -410,7 +410,7 @@ class Figure3RealizationSummary:
     """Figure-3 thresholds and every realization's flags and errors, with their medians.
 
     Aggregates ``n_realizations`` independent realizations of the figure-3
-    simulation so the Figure-3b heatmap and its flag diagnostic_thresholds no longer
+    simulation so the Figure-3b heatmap and its flag thresholds do not
     depend on a single noisy run (a single run's KL 99th-percentile
     threshold varies ~17% across seeds).
 
@@ -431,7 +431,7 @@ class Figure3RealizationSummary:
     Parameters
     ----------
     diagnostic_thresholds : DiagnosticThresholds
-        Pooled-baseline flag diagnostic_thresholds.
+        Pooled-baseline flag thresholds.
     realization_flag_percentages : np.ndarray, shape (n_realizations, 3, n_columns)
         Percent flagged in each realization, in seed order. The middle axis
         follows :data:`statespacecheck_paper.figure03_summary.SUMMARY_FLAG_METRICS`;
@@ -550,13 +550,13 @@ def estimate_realization_summary(
     n_realizations: int = N_REALIZATIONS,
     first_random_seed: int | None = None,
 ) -> Figure3RealizationSummary:
-    """Pool many realizations into stable Figure-3 diagnostic_thresholds and fractions.
+    """Pool many realizations into stable Figure-3 flag thresholds and fractions.
 
     Runs ``n_realizations`` independent realizations of the figure-3
     simulation (seeds ``first_random_seed, first_random_seed + 1, ...``), pools their
     per-spike *baseline-window* diagnostics to compute the flag
-    diagnostic_thresholds, then scores every realization's per-phase flag fractions
-    against those shared diagnostic_thresholds and returns them all (their
+    thresholds, then scores every realization's per-phase flag fractions
+    against those shared thresholds and returns them all (their
     medians are properties of the result). A single pass holds only the finite
     per-spike values (not the dense ``DecodingDiagnostics``) per realization, so
     memory stays bounded even at
@@ -577,7 +577,7 @@ def estimate_realization_summary(
     Returns
     -------
     Figure3RealizationSummary
-        Pooled diagnostic_thresholds, and every realization's per-phase flag
+        Pooled flag thresholds, and every realization's per-phase flag
         fractions and decoding accuracy (with their medians).
 
     Raises
