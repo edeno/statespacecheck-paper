@@ -555,13 +555,15 @@ def _recording_statistics(payload: dict[str, Any]) -> list[MacroDefinition]:
 def _recording_configuration(payload: dict[str, Any]) -> list[MacroDefinition]:
     """Build the Figure-4 macros recording the decoder's chosen inputs."""
     decoder = payload["configuration"]["decoder"]
-    provenance = payload["configuration"]["provenance"]
+    package_defaults = payload["configuration"]["package_defaults"]
     flag_rules = payload["flag_rules"]
     position_std: float = decoder["position_std"]
-    continuous_initial, fragmented_initial = provenance[
+    continuous_initial, fragmented_initial = package_defaults[
         "continuous_fragmented_discrete_initial_conditions"
     ]
-    continuous_diagonal, fragmented_diagonal = provenance["continuous_fragmented_diagonal_values"]
+    continuous_diagonal, fragmented_diagonal = package_defaults[
+        "continuous_fragmented_diagonal_values"
+    ]
     return [
         MacroDefinition(
             "RecPositionBinSizeCm",
@@ -585,43 +587,43 @@ def _recording_configuration(payload: dict[str, Any]) -> list[MacroDefinition]:
         ),
         MacroDefinition(
             "RecMovementVar",
-            _exact(provenance["movement_var"], 1),
-            "configuration.provenance.movement_var",
+            _exact(package_defaults["movement_var"], 1),
+            "configuration.package_defaults.movement_var",
         ),
         MacroDefinition(
             "RecModeContinuousInitial",
             _exact(continuous_initial, 1),
-            "configuration.provenance.continuous_fragmented_discrete_initial_conditions[0]",
+            "configuration.package_defaults.continuous_fragmented_discrete_initial_conditions[0]",
         ),
         MacroDefinition(
             "RecModeFragmentedInitial",
             _exact(fragmented_initial, 1),
-            "configuration.provenance.continuous_fragmented_discrete_initial_conditions[1]",
+            "configuration.package_defaults.continuous_fragmented_discrete_initial_conditions[1]",
         ),
         MacroDefinition(
             "RecModeContinuousStay",
             _exact(continuous_diagonal, 2),
-            "configuration.provenance.continuous_fragmented_diagonal_values[0]",
+            "configuration.package_defaults.continuous_fragmented_diagonal_values[0]",
         ),
         MacroDefinition(
             "RecModeContinuousToFragmented",
             _exact(1.0 - continuous_diagonal, 2),
-            "1 - configuration.provenance.continuous_fragmented_diagonal_values[0]",
+            "1 - configuration.package_defaults.continuous_fragmented_diagonal_values[0]",
         ),
         MacroDefinition(
             "RecModeFragmentedToContinuous",
             _exact(1.0 - fragmented_diagonal, 2),
-            "1 - configuration.provenance.continuous_fragmented_diagonal_values[1]",
+            "1 - configuration.package_defaults.continuous_fragmented_diagonal_values[1]",
         ),
         MacroDefinition(
             "RecModeFragmentedStay",
             _exact(fragmented_diagonal, 2),
-            "configuration.provenance.continuous_fragmented_diagonal_values[1]",
+            "configuration.package_defaults.continuous_fragmented_diagonal_values[1]",
         ),
         MacroDefinition(
             "RecNldVersion",
-            provenance["non_local_detector_version"],
-            "configuration.provenance.non_local_detector_version",
+            package_defaults["non_local_detector_version"],
+            "configuration.package_defaults.non_local_detector_version",
         ),
         MacroDefinition(
             "RecHpdCutoff",

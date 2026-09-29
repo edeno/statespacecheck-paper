@@ -44,11 +44,11 @@ from statespacecheck_paper.figure04_decoder import (
     Figure4DecoderConfig,
     Figure4DiagnosticsConfig,
     Figure4ExecutionConfig,
-    Figure4Provenance,
+    Figure4PackageDefaults,
     create_decoder_environment,
     fit_decoder_models,
     get_spike_counts,
-    validate_provenance_defaults,
+    validate_package_defaults,
 )
 from statespacecheck_paper.figure04_diagnostics import compute_results_diagnostics
 from statespacecheck_paper.figure04_place_fields import (
@@ -311,7 +311,7 @@ def _fit_and_decode(
     head_position: NDArray[np.float64],
     decoder_config: Figure4DecoderConfig,
     execution_config: Figure4ExecutionConfig,
-    provenance: Figure4Provenance,
+    package_defaults: Figure4PackageDefaults,
 ) -> dict[str, object]:
     """Fit both decoders on the full recording, decode it, and return the decode payload.
 
@@ -339,10 +339,10 @@ def _fit_and_decode(
         execution_config=execution_config,
     )
 
-    # Runtime guard: the non_local_detector defaults recorded as provenance shape
+    # Runtime guard: the recorded non_local_detector package defaults shape
     # the decode but are not injected, so a dependency bump could silently change
     # them. Fail loudly here rather than produce a different published figure.
-    validate_provenance_defaults(continuous_model, continuous_fragmented_model, provenance)
+    validate_package_defaults(continuous_model, continuous_fragmented_model, package_defaults)
 
     print(f"Decoding {len(time)} time points...")
     # non_local_detector always returns the smoothed (acausal) posterior. The
@@ -483,7 +483,7 @@ def prepare_figure04_render_data(
             head_position=head_position,
             decoder_config=config.decoder,
             execution_config=config.execution,
-            provenance=config.provenance,
+            package_defaults=config.package_defaults,
         )
         print("Caching decoder outputs to data/intermediates ...")
         save_figure04_cache(paths.cache_path, expected_fingerprint, decode_payload)

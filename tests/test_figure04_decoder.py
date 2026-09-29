@@ -53,8 +53,8 @@ class TestFigure4ConfigMatchesManuscript:
         # main.tex:294 -- zero-mean Gaussian random walk, movement_var = 6.0 cm^2.
         random_walk = continuous_model.continuous_transition_types[0][0]
         assert isinstance(random_walk, RandomWalk)
-        assert random_walk.movement_var == pytest.approx(config.provenance.movement_var)
-        assert config.provenance.movement_var == pytest.approx(6.0)
+        assert random_walk.movement_var == pytest.approx(config.package_defaults.movement_var)
+        assert config.package_defaults.movement_var == pytest.approx(6.0)
 
     def test_continuous_fragmented_discrete_dynamics(self) -> None:
         from non_local_detector.continuous_state_transitions import RandomWalk
@@ -67,7 +67,7 @@ class TestFigure4ConfigMatchesManuscript:
         # same random walk (movement_var = 6.0).
         random_walk = continuous_fragmented_model.continuous_transition_types[0][0]
         assert isinstance(random_walk, RandomWalk)
-        assert random_walk.movement_var == pytest.approx(config.provenance.movement_var)
+        assert random_walk.movement_var == pytest.approx(config.package_defaults.movement_var)
 
         # main.tex:294 -- mode-transition matrix [[0.98, 0.02], [0.02, 0.98]],
         # i.e. a stationary diagonal (0.98, 0.98).
@@ -75,14 +75,15 @@ class TestFigure4ConfigMatchesManuscript:
         assert isinstance(discrete_transition_type, DiscreteStationaryDiagonal)
         np.testing.assert_array_equal(
             np.asarray(discrete_transition_type.diagonal_values, dtype=float),
-            np.asarray(config.provenance.continuous_fragmented_diagonal_values, dtype=float),
+            np.asarray(config.package_defaults.continuous_fragmented_diagonal_values, dtype=float),
         )
 
         # main.tex:294 -- Continuous / Fragmented modes initialized at (0.5, 0.5).
         np.testing.assert_array_equal(
             np.asarray(continuous_fragmented_model.discrete_initial_conditions, dtype=float),
             np.asarray(
-                config.provenance.continuous_fragmented_discrete_initial_conditions, dtype=float
+                config.package_defaults.continuous_fragmented_discrete_initial_conditions,
+                dtype=float,
             ),
         )
 
@@ -107,7 +108,7 @@ class TestFigure4ConfigMatchesManuscript:
     def test_config_records_manuscript_dependency_version(self) -> None:
         """The provenance string must match the manuscript-stated version."""
         config = figure04_decoder.Figure4Config()
-        assert config.provenance.non_local_detector_version == "0.6.10.dev214+g956fdccaf"
+        assert config.package_defaults.non_local_detector_version == "0.6.10.dev214+g956fdccaf"
 
 
 class TestConfigValueValidation:
@@ -142,7 +143,7 @@ class TestConfigValueValidation:
     )
     def test_provenance_rejects_invalid(self, kwargs: dict) -> None:
         with pytest.raises(ValueError):
-            figure04_decoder.Figure4Provenance(**kwargs)
+            figure04_decoder.Figure4PackageDefaults(**kwargs)
 
 
 class TestNonDefaultPropagation:
@@ -190,19 +191,20 @@ class TestValidateProvenanceDefaults:
 
     def test_passes_for_recorded_defaults(self) -> None:
         cont, cf = self._models()
-        # nld defaults still match Figure4Provenance -> no raise.
-        figure04_decoder.validate_provenance_defaults(cont, cf)
+        # nld defaults still match Figure4PackageDefaults -> no raise.
+        figure04_decoder.validate_package_defaults(cont, cf)
 
     def test_raises_on_scalar_drift(self) -> None:
         cont, cf = self._models()
-        drifted = dataclasses.replace(figure04_decoder.Figure4Provenance(), movement_var=999.0)
+        drifted = dataclasses.replace(figure04_decoder.Figure4PackageDefaults(), movement_var=999.0)
         with pytest.raises(ValueError, match="default drift"):
-            figure04_decoder.validate_provenance_defaults(cont, cf, drifted)
+            figure04_decoder.validate_package_defaults(cont, cf, drifted)
 
     def test_raises_on_array_drift(self) -> None:
         cont, cf = self._models()
         drifted = dataclasses.replace(
-            figure04_decoder.Figure4Provenance(), continuous_fragmented_diagonal_values=(0.5, 0.5)
+            figure04_decoder.Figure4PackageDefaults(),
+            continuous_fragmented_diagonal_values=(0.5, 0.5),
         )
         with pytest.raises(ValueError, match="default drift"):
-            figure04_decoder.validate_provenance_defaults(cont, cf, drifted)
+            figure04_decoder.validate_package_defaults(cont, cf, drifted)

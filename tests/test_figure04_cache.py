@@ -231,8 +231,8 @@ def test_fingerprint_changes_with_config_and_dependency(
 
     changed = dataclasses.replace(
         config,
-        provenance=dataclasses.replace(
-            config.provenance, movement_var=config.provenance.movement_var + 1.0
+        package_defaults=dataclasses.replace(
+            config.package_defaults, movement_var=config.package_defaults.movement_var + 1.0
         ),
     )
     assert compute_figure04_cache_provenance(changed, paths).fingerprint_sha256 != fp1

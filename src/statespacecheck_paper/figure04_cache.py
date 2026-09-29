@@ -316,7 +316,7 @@ def compute_figure04_cache_provenance(
 
     The *decode* fingerprint hashes the decode schema version, the
     decode-affecting parameters (the :class:`Figure4Config` ``decoder`` and
-    ``provenance`` parts -- but **not** ``execution``, which is performance-only
+    ``package_defaults`` parts -- but **not** ``execution``, which is performance-only
     and leaves the decode identical, nor ``diagnostics``, which does not touch
     the fit), the input-data identifier *and the content hashes of the
     pre-exported input files*, the executable source of the fitting and
@@ -344,7 +344,7 @@ def compute_figure04_cache_provenance(
         "schema_version": FIGURE04_CACHE_SCHEMA_VERSION,
         "config": {
             "decoder": dataclasses.asdict(config.decoder),
-            "provenance": dataclasses.asdict(config.provenance),
+            "package_defaults": dataclasses.asdict(config.package_defaults),
         },
         "animal_date_epoch": paths.animal_date_epoch,
         "export_checksums": export_checksums,

@@ -90,9 +90,9 @@ def test_asymmetric_mode_parameters_are_reported_independently() -> None:
     """Each mode keeps its own initial and transition probability."""
     figure03 = _load("figure03_summary.json")
     figure04 = copy.deepcopy(_load("figure04_summary.json"))
-    provenance = figure04["configuration"]["provenance"]
-    provenance["continuous_fragmented_discrete_initial_conditions"] = [0.6, 0.4]
-    provenance["continuous_fragmented_diagonal_values"] = [0.9, 0.8]
+    package_defaults = figure04["configuration"]["package_defaults"]
+    package_defaults["continuous_fragmented_discrete_initial_conditions"] = [0.6, 0.4]
+    package_defaults["continuous_fragmented_diagonal_values"] = [0.9, 0.8]
 
     values = _macro_values(render_macro_file(figure03, figure04, statespacecheck_doi=CITED_DOI))
 

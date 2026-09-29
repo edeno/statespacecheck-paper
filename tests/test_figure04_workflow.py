@@ -386,8 +386,8 @@ class TestPrepareRenderData:
         # A decode-affecting change refits and (necessarily) recomputes diagnostics.
         changed = dataclasses.replace(
             config,
-            provenance=dataclasses.replace(
-                config.provenance, movement_var=config.provenance.movement_var + 1.0
+            package_defaults=dataclasses.replace(
+                config.package_defaults, movement_var=config.package_defaults.movement_var + 1.0
             ),
         )
         prepare_figure04_render_data(changed, paths, use_cache=True)

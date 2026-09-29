@@ -240,7 +240,7 @@ $\Lambda(x)$.
   config / data / fitting implementation / `non_local_detector` change
   invalidates the decode cache automatically). The cache
   fingerprint (`figure04_cache.compute_figure04_cache_provenance`) hashes the
-  schema version, the decoder and provenance parts of `Figure4Config`, the
+  schema version, the decoder and package-defaults parts of `Figure4Config`, the
   data identifier, the installed `non_local_detector`
   version, and the **content hash of the input file** — so replacing it under the
   same `animal_date_epoch` invalidates the cache too. It also hashes the
@@ -273,7 +273,7 @@ $\Lambda(x)$.
   has four scoped parts:
   `decoder`, a `Figure4DecoderConfig` — `position_std`, `position_bin_size_cm`,
   `sampling_frequency_hz`, threaded into environment/model construction so they
-  genuinely drive the decode; `provenance`, a `Figure4Provenance` holding the
+  genuinely drive the decode; `package_defaults`, a `Figure4PackageDefaults` holding the
   `non_local_detector`-default decode-shaping values (`movement_var`, the Continuous-Fragmented
   mode-transition diagonal and initial conditions, and the dependency
   version), recorded and drift-guard pinned but not injected (faithfully injecting
@@ -389,8 +389,9 @@ axis. The summary also records the baseline-threshold provenance
 quoted in the Methods. The Figure-4
 schema records `dataset.n_units` alongside the recording identifier and
 names the second decoder `continuous_fragmented` throughout. Schema 5 renamed
-the `contfrag_*` configuration keys and dropped the discrete-transition
-concentration and regularization, which the decode never reads. The
+`configuration.provenance` to `configuration.package_defaults` and its
+`contfrag_*` keys, and dropped the discrete-transition concentration and
+regularization, which the decode never reads. The
 `flag_rules` object binds each numeric threshold to its executable semantics:
 `less_than_or_equal` means a value is flagged when `value <= threshold`, and
 `greater_than_or_equal` means it is flagged when `value >= threshold`. Keeping

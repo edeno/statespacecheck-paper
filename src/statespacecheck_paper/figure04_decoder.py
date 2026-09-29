@@ -2,15 +2,15 @@
 
 Configuration: :class:`Figure4Config` and its four parts,
 :class:`Figure4DecoderConfig` (injected decode parameters),
-:class:`Figure4Provenance` (recorded ``non_local_detector`` defaults),
+:class:`Figure4PackageDefaults` (recorded ``non_local_detector`` defaults),
 :class:`Figure4ExecutionConfig` (performance-only settings), and
 :class:`Figure4DiagnosticsConfig` (per-spike diagnostic settings).
 
 Construction, using ``non_local_detector``: :func:`create_decoder_environment`
 builds the track environment, :func:`build_decoder_models` the unfitted
 Continuous and Continuous-Fragmented models, and :func:`fit_decoder_models` fits
-them. :func:`validate_provenance_defaults` checks the built models against
-:class:`Figure4Provenance`, and :func:`get_spike_counts` bins spike times onto
+them. :func:`validate_package_defaults` checks the built models against
+:class:`Figure4PackageDefaults`, and :func:`get_spike_counts` bins spike times onto
 the decode time grid.
 """
 
@@ -84,7 +84,7 @@ class Figure4DecoderConfig:
     :func:`build_decoder_models` and genuinely controls the *scientific result*:
     changing one changes the decode. Contrast :class:`Figure4ExecutionConfig`
     (performance-only knobs that do not change the result) and
-    :class:`Figure4Provenance` (``non_local_detector`` defaults that are
+    :class:`Figure4PackageDefaults` (``non_local_detector`` defaults that are
     *recorded* and drift-guard pinned but deliberately **not** injected).
 
     Attributes
@@ -142,8 +142,8 @@ class Figure4ExecutionConfig:
 
 
 @dataclasses.dataclass(frozen=True)
-class Figure4Provenance:
-    """Figure-4 decode parameters recorded for provenance but **not** injected.
+class Figure4PackageDefaults:
+    """``non_local_detector`` defaults the Figure-4 decode relies on, recorded, not injected.
 
     These are ``non_local_detector`` class defaults that shape the decode. The
     code deliberately relies on those defaults rather than passing them
@@ -153,7 +153,7 @@ class Figure4Provenance:
     two ways:
     ``tests/test_figure04_decoder.py::TestFigure4ConfigMatchesManuscript`` asserts
     the *resolved* model attributes equal these values, and
-    :func:`validate_provenance_defaults` re-checks them at decode time (runtime),
+    :func:`validate_package_defaults` re-checks them at decode time (runtime),
     so a dependency bump that moves a default fails loudly either way. They are
     also hashed into the cache fingerprint, so a recorded value changing
     invalidates the cache.
@@ -174,7 +174,7 @@ class Figure4Provenance:
     continuous_fragmented_discrete_initial_conditions : tuple[float, float]
         Continuous-Fragmented mode initial conditions ``(0.5, 0.5)``.
     non_local_detector_version : str
-        Manuscript-stated ``non_local_detector`` version, for provenance.
+        Manuscript-stated ``non_local_detector`` version whose defaults these are.
     """
 
     movement_var: float = 6.0
@@ -185,7 +185,7 @@ class Figure4Provenance:
     def __post_init__(self) -> None:
         if not np.isfinite(self.movement_var) or self.movement_var <= 0.0:
             raise ValueError(
-                "Figure4Provenance.movement_var must be finite and positive; "
+                "Figure4PackageDefaults.movement_var must be finite and positive; "
                 f"got {self.movement_var!r}"
             )
         for name, pair in (
@@ -202,11 +202,11 @@ class Figure4Provenance:
                 or np.any((arr < 0.0) | (arr > 1.0))
             ):
                 raise ValueError(
-                    f"Figure4Provenance.{name} must be two finite probabilities in [0, 1]; "
+                    f"Figure4PackageDefaults.{name} must be two finite probabilities in [0, 1]; "
                     f"got {pair!r}"
                 )
         if not self.non_local_detector_version:
-            raise ValueError("Figure4Provenance.non_local_detector_version must be non-empty")
+            raise ValueError("Figure4PackageDefaults.non_local_detector_version must be non-empty")
 
 
 @dataclasses.dataclass(frozen=True)
@@ -249,14 +249,14 @@ class Figure4DiagnosticsConfig:
 
 @dataclasses.dataclass(frozen=True)
 class Figure4Config:
-    """Full Figure-4 configuration: injected knobs, provenance, and diagnostics.
+    """Full Figure-4 configuration: injected knobs, package defaults, and diagnostics.
 
     Split into clearly-scoped parts so a reader can tell which parameters drive
     the fitted decode (:attr:`decoder`), which are recorded-but-not-injected
-    provenance (:attr:`provenance`), which are performance-only
+    package defaults (:attr:`package_defaults`), which are performance-only
     (:attr:`execution`), and which shape only the per-spike diagnostics
     (:attr:`diagnostics`). The decode cache fingerprint hashes :attr:`decoder`
-    and :attr:`provenance` -- changing either invalidates the cached decode --
+    and :attr:`package_defaults` -- changing either invalidates the cached decode --
     but **not** :attr:`execution`, whose values do not change the decode result,
     nor :attr:`diagnostics`, which is hashed into the separate diagnostics
     fingerprint (see :mod:`statespacecheck_paper.figure04_cache`).
@@ -265,7 +265,7 @@ class Figure4Config:
     ----------
     decoder : Figure4DecoderConfig
         Parameters the construction code injects that control the decode result.
-    provenance : Figure4Provenance
+    package_defaults : Figure4PackageDefaults
         ``non_local_detector`` defaults recorded and drift-guard pinned, but not
         injected.
     execution : Figure4ExecutionConfig
@@ -276,7 +276,9 @@ class Figure4Config:
     """
 
     decoder: Figure4DecoderConfig = dataclasses.field(default_factory=Figure4DecoderConfig)
-    provenance: Figure4Provenance = dataclasses.field(default_factory=Figure4Provenance)
+    package_defaults: Figure4PackageDefaults = dataclasses.field(
+        default_factory=Figure4PackageDefaults
+    )
     execution: Figure4ExecutionConfig = dataclasses.field(default_factory=Figure4ExecutionConfig)
     diagnostics: Figure4DiagnosticsConfig = dataclasses.field(
         default_factory=Figure4DiagnosticsConfig
@@ -296,7 +298,7 @@ def build_decoder_models(
     ``sampling_frequency_hz``) and the :class:`Figure4ExecutionConfig`
     ``block_size`` are injected here; ``movement_var``, the mode-transition
     matrix, and the mode initial conditions come from ``non_local_detector``
-    class defaults (see :class:`Figure4Provenance` for why they are pinned rather than
+    class defaults (see :class:`Figure4PackageDefaults` for why they are pinned rather than
     injected). The drift guard inspects the resolved attributes of these objects,
     so it never needs real data or a fit.
 
@@ -359,14 +361,14 @@ def build_decoder_models(
     return continuous_model, continuous_fragmented_model
 
 
-def validate_provenance_defaults(
+def validate_package_defaults(
     continuous_model: Any,
     continuous_fragmented_model: Any,
-    provenance: Figure4Provenance | None = None,
+    package_defaults: Figure4PackageDefaults | None = None,
 ) -> None:
     """Assert the built models still carry the recorded ``non_local_detector`` defaults.
 
-    :class:`Figure4Provenance` records nld class defaults that shape the decode but
+    :class:`Figure4PackageDefaults` records nld class defaults that shape the decode but
     are deliberately not injected (see its docstring). A dependency bump could
     silently change one, producing a different published figure. This checks the
     *resolved* model attributes against the recorded values and raises at decode
@@ -376,29 +378,29 @@ def validate_provenance_defaults(
     Raises
     ------
     ValueError
-        If any resolved model attribute diverges from the recorded provenance.
+        If any resolved model attribute diverges from the recorded default.
     """
-    if provenance is None:
-        provenance = Figure4Provenance()
+    if package_defaults is None:
+        package_defaults = Figure4PackageDefaults()
 
     scalar_checks: tuple[tuple[str, Any, float], ...] = (
         (
             "continuous movement_var",
             continuous_model.continuous_transition_types[0][0].movement_var,
-            provenance.movement_var,
+            package_defaults.movement_var,
         ),
         (
             "continuous_fragmented movement_var",
             continuous_fragmented_model.continuous_transition_types[0][0].movement_var,
-            provenance.movement_var,
+            package_defaults.movement_var,
         ),
     )
     for label, resolved, expected in scalar_checks:
         if not np.isclose(float(resolved), float(expected)):
             raise ValueError(
                 f"non_local_detector default drift: {label} resolved to {resolved!r} but "
-                f"Figure4Provenance records {expected!r}. A dependency change moved a "
-                "decode-shaping default; update Figure4Provenance (and re-verify Figure 4) "
+                f"Figure4PackageDefaults records {expected!r}. A dependency change moved a "
+                "decode-shaping default; update Figure4PackageDefaults (and re-verify Figure 4) "
                 "if this is intentional."
             )
 
@@ -406,12 +408,12 @@ def validate_provenance_defaults(
         (
             "continuous_fragmented discrete_transition_type.diagonal_values",
             continuous_fragmented_model.discrete_transition_type.diagonal_values,
-            provenance.continuous_fragmented_diagonal_values,
+            package_defaults.continuous_fragmented_diagonal_values,
         ),
         (
             "continuous_fragmented discrete_initial_conditions",
             continuous_fragmented_model.discrete_initial_conditions,
-            provenance.continuous_fragmented_discrete_initial_conditions,
+            package_defaults.continuous_fragmented_discrete_initial_conditions,
         ),
     )
     for label, resolved, expected_pair in array_checks:
@@ -420,9 +422,9 @@ def validate_provenance_defaults(
         ):
             raise ValueError(
                 f"non_local_detector default drift: {label} resolved to "
-                f"{np.asarray(resolved)!r} but Figure4Provenance records {expected_pair!r}. "
+                f"{np.asarray(resolved)!r} but Figure4PackageDefaults records {expected_pair!r}. "
                 "A dependency change moved a decode-shaping default; update "
-                "Figure4Provenance (and re-verify Figure 4) if this is intentional."
+                "Figure4PackageDefaults (and re-verify Figure 4) if this is intentional."
             )
 
 
