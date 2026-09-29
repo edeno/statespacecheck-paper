@@ -35,6 +35,7 @@ from numpy.typing import NDArray
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from statespacecheck_paper.figure04_generation import FIGURE4_DIAGNOSTIC_THRESHOLDS
+from statespacecheck_paper.style import METRIC_SPECS
 
 from .data_source import DecoderDataSource, ModelName
 from .panels import (
@@ -328,17 +329,14 @@ class DecoderViewer(QtWidgets.QMainWindow):
             n_cells=ds.n_cells,
             place_field_peaks=ds.place_field_peaks,
         )
-        # Three diagnostic-metric panels with Figure 4's fixed thresholds;
-        # KL divergence has none.
-        thresholds = FIGURE4_DIAGNOSTIC_THRESHOLDS
+        # One diagnostic-metric panel per metric, in the paper's order and
+        # keyed by the per-spike event column it plots, with Figure 4's fixed
+        # thresholds (KL divergence has none).
         self.metric_panels: dict[str, MetricPanel] = {
-            "event_hpd_overlap": MetricPanel(
-                metric="event_hpd_overlap", threshold=thresholds["hpd_overlap"]
-            ),
-            "event_predictive_pvalue": MetricPanel(
-                metric="event_predictive_pvalue", threshold=thresholds["predictive_pvalue"]
-            ),
-            "event_kl_divergence": MetricPanel(metric="event_kl_divergence", threshold=None),
+            spec.event_attr: MetricPanel(
+                spec=spec, threshold=FIGURE4_DIAGNOSTIC_THRESHOLDS.get(spec.name)
+            )
+            for spec in METRIC_SPECS
         }
         self.slice_panel = SlicePanel(
             position_bins=ds.position_grid_full,
@@ -427,12 +425,8 @@ class DecoderViewer(QtWidgets.QMainWindow):
         time_axis_layout.addWidget(self.posterior_panel, stretch=2)
         time_axis_layout.addWidget(self.likelihood_panel, stretch=2)
         time_axis_layout.addWidget(self.raster_panel, stretch=1)
-        for metric in (
-            "event_hpd_overlap",
-            "event_predictive_pvalue",
-            "event_kl_divergence",
-        ):
-            time_axis_layout.addWidget(self.metric_panels[metric], stretch=1)
+        for metric_panel in self.metric_panels.values():
+            time_axis_layout.addWidget(metric_panel, stretch=1)
 
         slice_column = QtWidgets.QWidget()
         slice_column_layout = QtWidgets.QVBoxLayout(slice_column)

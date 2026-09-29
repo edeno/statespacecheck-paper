@@ -93,6 +93,11 @@ class TestPlotPerSpikeMetricHexbinRow:
         fig, axes = plt.subplots(1, 3)
         plot_per_spike_metric_hexbin_row(diag_a, diag_b, axes)
 
+        assert [ax.get_title() for ax in axes] == [
+            "HPD overlap",
+            r"$-\log(p)$",
+            "KL divergence",
+        ]
         for ax in axes:
             polys = [c for c in ax.collections if isinstance(c, PolyCollection)]
             assert polys, f"axis {ax.get_title()!r} has no PolyCollection (hexbin)"

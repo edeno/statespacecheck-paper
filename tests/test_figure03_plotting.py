@@ -181,6 +181,12 @@ def test_compose_figure03_renders_precomputed_summary(
         # mode and at least one cell shows the supplied median.
         summary_ax = fig.axes[-1]
         assert "median across realizations" in summary_ax.get_title()
+        # Rows follow the flag-rule order, each label one word per line.
+        assert [label.get_text() for label in summary_ax.get_yticklabels()] == [
+            "HPD\noverlap",
+            "−log(p)",
+            "KL\ndiv.",
+        ]
         cell_texts = {t.get_text() for t in summary_ax.texts}
         assert "60%" in cell_texts  # supplied remap median
         # The error row rounds with the prose's formatter: two significant

@@ -165,14 +165,25 @@ class MetricSpec:
     ``display_transform``), derived from the flag rule's
     :data:`~statespacecheck_paper.diagnostics.METRIC_FLAG_DIRECTIONS` so the
     ``worse_fit_direction`` arrow and the hexbin "rescue" quadrant cannot
-    disagree with the flags. ``ylabel`` is the canonical LaTeX axis
-    label; a few consumers (Figure 3's diagnostic rows, the pyqtgraph viewer)
-    render their own plain-text variant instead.
+    disagree with the flags.
+
+    Each metric carries the label variants its renderers need, so no consumer
+    restates a metric's label or relies on the registry's order:
+
+    - ``label``: plain-text full name (the pyqtgraph viewer, which renders no
+      mathtext).
+    - ``short_label``: plain-text abbreviated axis label (Figure 3's rows; its
+      summary heatmap stacks the words one per line).
+    - ``ylabel``: mathtext abbreviated axis label (Figure 4's rows).
+    - ``title``: mathtext full name (Figure 4's hexbin titles).
     """
 
     name: MetricName
-    ylabel: str
     color: str
+    label: str
+    short_label: str
+    ylabel: str
+    title: str
     display_transform: DisplayTransform = "identity"
     symlog_axis: bool = False
 
@@ -200,14 +211,32 @@ class MetricSpec:
 
 
 METRIC_SPECS: tuple[MetricSpec, ...] = (
-    MetricSpec("hpd_overlap", "HPD overlap", COLORS["hpd_overlap"], symlog_axis=True),
     MetricSpec(
-        "predictive_pvalue",
-        r"$-\log(p)$",
-        COLORS["metric_combined"],
+        name="hpd_overlap",
+        color=COLORS["hpd_overlap"],
+        label="HPD overlap",
+        short_label="HPD overlap",
+        ylabel="HPD overlap",
+        title="HPD overlap",
+        symlog_axis=True,
+    ),
+    MetricSpec(
+        name="predictive_pvalue",
+        color=COLORS["metric_combined"],
+        label="−log(p)",
+        short_label="−log(p)",
+        ylabel=r"$-\log(p)$",
+        title=r"$-\log(p)$",
         display_transform="neg_log_p",
     ),
-    MetricSpec("kl_divergence", "KL div.", COLORS["kl_divergence"]),
+    MetricSpec(
+        name="kl_divergence",
+        color=COLORS["kl_divergence"],
+        label="KL divergence",
+        short_label="KL div.",
+        ylabel="KL div.",
+        title="KL divergence",
+    ),
 )
 METRIC_NAMES: tuple[MetricName, ...] = tuple(s.name for s in METRIC_SPECS)
 METRIC_SPEC_BY_NAME: dict[str, MetricSpec] = {s.name: s for s in METRIC_SPECS}

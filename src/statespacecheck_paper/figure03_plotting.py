@@ -38,6 +38,7 @@ from statespacecheck_paper.style import (
     CMAP_LIKELIHOOD,
     CMAP_POSTERIOR,
     COLORS,
+    METRIC_SPEC_BY_NAME,
     METRIC_SPECS,
     PREDICTIVE_VMAX_QUANTILE,
     MetricSpec,
@@ -70,10 +71,6 @@ FIGURE3_SUMMARY_TITLE_GID = "figure3-summary-title"
 FIGURE3_SUMMARY_ACCURACY_CELL_LABEL_GID = "figure3-summary-accuracy-cell-label"
 FIGURE3_SUMMARY_ACCURACY_HEADER_GID = "figure3-summary-accuracy-header"
 
-
-# Figure 3 renders the predictive p-value axis label as plain "−log(p)"
-# rather than the shared LaTeX ``MetricSpec.ylabel``; the other rows use it.
-FIGURE3_DIAGNOSTIC_YLABELS: dict[str, str] = {"predictive_pvalue": "−log(p)"}
 
 # Shaded Figure 3 misfit bands: (start, end) boundary indices and the ``COLORS``
 # key. Saturated colors keep the bands visible at low alpha.
@@ -377,7 +374,7 @@ def _plot_figure3_diagnostic_row(
         spec,
         threshold=threshold,
         xlim=(0, n_time),
-        ylabel=FIGURE3_DIAGNOSTIC_YLABELS.get(spec.name, spec.ylabel),
+        ylabel=spec.short_label,
         symlog_yticks=(0.0, 0.01, 0.1, 1.0),
         # Headroom above 1 keeps the "1" tick label (and the dense band of
         # fully nested HPD regions at overlap = 1) clear of the raster panel
@@ -463,15 +460,21 @@ def _plot_figure3_summary_heatmap(
     norm_frac = frac_data / max_frac if max_frac > 0 else frac_data
     ax.imshow(norm_frac, cmap="YlOrRd", aspect="auto", vmin=0, vmax=1)
 
-    metric_labels = ["HPD\noverlap", "−log(p)", "KL\ndiv."]
-    ax.set_yticks(range(3))
-    ax.set_yticklabels(metric_labels)
+    # Rows follow SUMMARY_FLAG_METRICS; each label stacks its words one per line.
+    n_metrics = len(SUMMARY_FLAG_METRICS)
+    ax.set_yticks(range(n_metrics))
+    ax.set_yticklabels(
+        [
+            METRIC_SPEC_BY_NAME[metric].short_label.replace(" ", "\n")
+            for metric, _direction in SUMMARY_FLAG_METRICS
+        ]
+    )
 
     ax.set_xticks(range(len(conditions)))
     ax.set_xticklabels([col.label for col in conditions])
     ax.tick_params(top=True, bottom=False, labeltop=True, labelbottom=False)
 
-    for row_idx in range(3):
+    for row_idx in range(n_metrics):
         for col_idx in range(len(conditions)):
             val = frac_data[row_idx, col_idx]
             color = "white" if norm_frac[row_idx, col_idx] > 0.55 else "black"
@@ -493,7 +496,7 @@ def _plot_figure3_summary_heatmap(
     # value cannot read differently in the panel and in the text beside it.
     accuracy_headers = ("Median |error|\n(a.u.):",)
     for row_offset, header in enumerate(accuracy_headers):
-        row_y = 3.0 + row_offset
+        row_y = float(n_metrics + row_offset)
         for col_idx in range(len(conditions)):
             accuracy_label = ax.text(
                 col_idx,
@@ -516,7 +519,7 @@ def _plot_figure3_summary_heatmap(
         )
         accuracy_header.set_gid(FIGURE3_SUMMARY_ACCURACY_HEADER_GID)
 
-    component_row_y = 3.0 + len(accuracy_headers)
+    component_row_y = float(n_metrics + len(accuracy_headers))
     # The observation model is the likelihood's component; the transition
     # model is the predictive's.
     component_color = {"Observation": COLORS["likelihood"], "Transition": COLORS["predictive"]}

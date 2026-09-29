@@ -47,11 +47,15 @@ def test_three_metric_panels_constructed(tmp_path: Path) -> None:
     _build_cache(tmp_path / "cache")
     app, viewer, ds = make_viewer(tmp_path / "cache")
     try:
-        assert set(viewer.metric_panels.keys()) == {
+        # One panel per metric, in the paper's order, with plain-text labels.
+        assert list(viewer.metric_panels) == [
             "event_hpd_overlap",
-            "event_kl_divergence",
             "event_predictive_pvalue",
-        }
+            "event_kl_divergence",
+        ]
+        assert [
+            panel.getPlotItem().getAxis("left").labelText for panel in viewer.metric_panels.values()
+        ] == ["HPD overlap", "−log(p)", "KL divergence"]
         # Spike-prob panel has its threshold line; KL has none.
         assert viewer.metric_panels["event_hpd_overlap"]._threshold_line is not None  # noqa: SLF001
         assert viewer.metric_panels["event_predictive_pvalue"]._threshold_line is not None  # noqa: SLF001

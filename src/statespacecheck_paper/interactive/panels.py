@@ -32,7 +32,7 @@ from numpy.typing import NDArray
 from PySide6 import QtCore, QtWidgets
 
 from statespacecheck_paper.plotting import negative_log_pvalue
-from statespacecheck_paper.style import COLORS, METRIC_SPECS, WONG, MetricSpec, hex_to_rgb
+from statespacecheck_paper.style import COLORS, WONG, MetricSpec, hex_to_rgb
 
 # Top-plot overlay choices: which derived distribution the slice
 # panel's population plot draws as the blue overlay line.
@@ -84,19 +84,6 @@ _PER_CELL_PALETTE: tuple[tuple[int, int, int], ...] = (
     (188, 189, 34),  # olive
     (227, 49, 165),  # magenta
 )
-
-MetricName = Literal["event_hpd_overlap", "event_kl_divergence", "event_predictive_pvalue"]
-
-# Color and display transform come from the paper's metric registry, keyed
-# here by the per-spike event attribute the viewer reads.
-_METRIC_SPEC_BY_EVENT_ATTR: dict[str, MetricSpec] = {s.event_attr: s for s in METRIC_SPECS}
-# Plain-text axis titles: pyqtgraph does not render the registry's LaTeX
-# p-value label, and the viewer has room to spell out "KL divergence".
-_METRIC_TITLES: dict[MetricName, str] = {
-    "event_hpd_overlap": "HPD overlap",
-    "event_kl_divergence": "KL divergence",
-    "event_predictive_pvalue": "-log(p)",
-}
 
 # Slice-panel y-range hard limits. All curves in the slice column are
 # peak-normalized to 1, so this fits a priori; ``_pin_slice_axes``
@@ -530,19 +517,27 @@ class RasterPanel(pg.PlotWidget):
 
 
 class MetricPanel(pg.PlotWidget):
-    """Per-spike scatter for one diagnostic metric."""
+    """Per-spike scatter for one diagnostic metric.
 
-    def __init__(self, *, metric: MetricName, threshold: float | None = None) -> None:
+    Parameters
+    ----------
+    spec : MetricSpec
+        The metric's label, color, and display transform.
+    threshold : float, optional
+        Raw flag threshold drawn as a horizontal line; None draws none.
+    """
+
+    def __init__(self, *, spec: MetricSpec, threshold: float | None = None) -> None:
         super().__init__()
         self.setBackground("w")
         self.setMenuEnabled(False)
         self.setMouseEnabled(x=False, y=False)
         self.setLabel("bottom", "Time relative to center (s)")
         self.getAxis("bottom").enableAutoSIPrefix(False)
-        self.setLabel("left", _METRIC_TITLES[metric])
+        # Plain-text label: pyqtgraph renders no mathtext.
+        self.setLabel("left", spec.label)
 
-        self._metric: MetricName = metric
-        spec = _METRIC_SPEC_BY_EVENT_ATTR[metric]
+        self._metric = spec.event_attr
         self._neg_log_p = spec.display_transform == "neg_log_p"
         rgb = hex_to_rgb(spec.color)
         self._scatter = pg.ScatterPlotItem(
@@ -554,9 +549,8 @@ class MetricPanel(pg.PlotWidget):
         )
         self.addItem(self._scatter)
 
-        # Threshold horizontal line for the two metrics that have one
-        # in the existing Figure 4 (HPD overlap = 0.05, predictive_pvalue =
-        # 0.05 ⇒ -log(0.05) ≈ 3.0 on this axis).
+        # Threshold horizontal line, on the display scale (a p-value of
+        # 0.05 sits at -log(0.05) ≈ 3.0 on this axis).
         self._threshold_line: pg.InfiniteLine | None = None
         if threshold is not None:
             disp = negative_log_pvalue(threshold) if self._neg_log_p else threshold

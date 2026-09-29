@@ -360,11 +360,12 @@ def plot_spike_event_diagnostic_scatter(
         if diagnostics.event_time is not None
         else full_time[event_time_ind]
     )
+    spec = METRIC_SPEC_BY_NAME[metric_name]
     plot_event_metric_row(
         ax,
         all_event_times[event_mask],
         event_metric_values[event_mask],
-        METRIC_SPEC_BY_NAME[metric_name],
+        spec,
         threshold=threshold,
         xlim=(time_arr.min(), time_arr.max()),
         ylabel=metric_name if ylabel is None else ylabel,
@@ -378,7 +379,7 @@ def plot_spike_event_diagnostic_scatter(
         ax.set_xlabel("Time (s)", labelpad=7)
     else:
         ax.tick_params(labelbottom=False)
-    if metric_name == "hpd_overlap":
+    if spec.symlog_axis:
         ax.tick_params(axis="y", pad=1)
 
     return ax
@@ -619,7 +620,7 @@ def plot_single_model_diagnostics(
             ax=axes[row],
             metric_name=spec.name,
             ylabel=_ROW_YLABELS.get(spec.name, spec.ylabel),
-            show_xlabel=(i == 2),
+            show_xlabel=(i == len(METRIC_SPECS) - 1),
             show_annotations=show_annotations,
         )
 
@@ -691,18 +692,13 @@ def plot_per_spike_metric_hexbin_row(
             "diagnostics_a and diagnostics_b must carry identical spike events in the same order"
         )
 
-    # Event attr, colour, display transform, threshold key, and plotted worse-fit
-    # direction all come from the shared MetricSpec. Only the panel title differs
-    # from MetricSpec.ylabel here ("KL divergence" vs the scatter's "KL div."),
-    # so it stays a local per-panel override. ``plotted_worse`` is relative to the
-    # plotted axis: HPD overlap flags low values ("below"); KL divergence and the
-    # (log-transformed) predictive p-value flag high values ("above").
-    hexbin_titles = ("HPD overlap", r"$-\log(p)$", "KL divergence")
-
+    # Event attr, colour, display transform, threshold key, title, and plotted
+    # worse-fit direction all come from the shared MetricSpec. ``plotted_worse``
+    # is relative to the plotted axis: HPD overlap flags low values ("below");
+    # KL divergence and the (log-transformed) predictive p-value flag high
+    # values ("above").
     hex_artists = []
-    for panel_idx, (ax, spec, title) in enumerate(
-        zip(axes, METRIC_SPECS, hexbin_titles, strict=True)
-    ):
+    for panel_idx, (ax, spec) in enumerate(zip(axes, METRIC_SPECS, strict=True)):
         key = spec.event_attr
         color = spec.color
         log_transform = spec.display_transform == "neg_log_p"
@@ -823,7 +819,7 @@ def plot_per_spike_metric_hexbin_row(
 
         ax.set_xlabel(model_a_name, labelpad=4)
         ax.set_ylabel(model_b_name if panel_idx == 0 else "", labelpad=4)
-        ax.set_title(title)
+        ax.set_title(spec.title)
 
         if key == "event_kl_divergence":
             ax.text(
