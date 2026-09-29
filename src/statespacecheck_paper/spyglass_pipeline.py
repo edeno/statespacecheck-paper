@@ -53,6 +53,11 @@ from statespacecheck_paper.figure04_decoder import (
     create_decoder_environment,
 )
 from statespacecheck_paper.figure04_generation import FIGURE4_DIAGNOSTIC_THRESHOLDS
+from statespacecheck_paper.figure04_models import (
+    CONTINUOUS,
+    CONTINUOUS_FRAGMENTED,
+    FIGURE4_MODELS,
+)
 from statespacecheck_paper.figure04_place_fields import DECODER_PREDICTIVE_VAR
 from statespacecheck_paper.spyglass_data import (
     FIGURE04_EPOCH_NAME,
@@ -71,10 +76,7 @@ SCHEMA_NAME = "edeno_statespacecheck"
 GROUP_NAME = "statespacecheck_figure04"
 UNIT_FILTER_PARAMS_NAME = "all_units"
 DECODING_PARAM_NAMES: Mapping[str, str] = MappingProxyType(
-    {
-        "continuous": "statespacecheck_figure04_continuous",
-        "continuous_fragmented": "statespacecheck_figure04_continuous_fragmented",
-    }
+    {model.id: f"statespacecheck_figure04_{model.id}" for model in FIGURE4_MODELS}
 )
 # Outputs requested besides the always-returned smoothed posterior, matching the
 # paper decode; Spyglass passes decoding_kwargs through to predict().
@@ -193,8 +195,8 @@ class Figure4Diagnostics(SpyglassMixin, dj.Computed):
                 **{
                     f"{model}_{metric}": getattr(diagnostics, f"event_{metric}")
                     for model, diagnostics in (
-                        ("continuous", continuous),
-                        ("continuous_fragmented", continuous_fragmented),
+                        (CONTINUOUS.id, continuous),
+                        (CONTINUOUS_FRAGMENTED.id, continuous_fragmented),
                     )
                     for metric in METRIC_FLAG_DIRECTIONS
                 },
@@ -358,8 +360,8 @@ def decoding_parameter_entries() -> list[dict[str, Any]]:
             "decoding_kwargs": {"return_outputs": list(DECODE_OUTPUTS)},
         }
         for name, model in (
-            ("continuous", continuous),
-            ("continuous_fragmented", continuous_fragmented),
+            (CONTINUOUS.id, continuous),
+            (CONTINUOUS_FRAGMENTED.id, continuous_fragmented),
         )
     ]
 
@@ -424,8 +426,8 @@ def diagnostics_selection_entry() -> dict[str, Any]:
         for name, selection in selections.items()
     }
     return {
-        "continuous_merge_id": merge_ids["continuous"],
-        "continuous_fragmented_merge_id": merge_ids["continuous_fragmented"],
+        "continuous_merge_id": merge_ids[CONTINUOUS.id],
+        "continuous_fragmented_merge_id": merge_ids[CONTINUOUS_FRAGMENTED.id],
         "figure4_diagnostics_param_name": "figure04",
     }
 

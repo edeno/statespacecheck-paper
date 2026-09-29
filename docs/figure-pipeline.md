@@ -29,8 +29,11 @@ families**:
   `figure02_{panels,generation}`;
   `figure03_{protocol,simulation,summary,plotting,generation}`; and
   `load_local_data` with
-  `figure04_{decoder,place_fields,diagnostics,plot_primitives,track_plots,panels,cache,workflow,summary,layout,generation}`
-  (edges in the graph below). Each figure is a small set of
+  `figure04_{models,decoder,place_fields,diagnostics,plot_primitives,track_plots,panels,cache,workflow,summary,layout,generation}`
+  (edges in the graph below). `figure04_models` holds each decoder's one
+  machine ID (`continuous`, `continuous_fragmented`) and its display labels;
+  the figure, summary printout, viewer, and website data take the labels
+  from it, and the decode-hashed modules do not import it. Each figure is a small set of
   single-responsibility modules rather than one monolith, so an outside reader
   can follow the scientific workflow (configure → simulate/load → decode →
   diagnose → summarize → render).
@@ -53,17 +56,18 @@ figure03_plotting      → figure03_protocol, figure03_summary, diagnostics, num
 figure03_generation    → figure03_protocol, figure03_simulation, figure03_summary, figure03_plotting, paths, scientific_artifacts, style
 generate_figure03.py   → figure03_generation
 
+figure04_models        → (leaf; model IDs and display labels)
 figure04_decoder       → diagnostics (HPD_COVERAGE); nld construction + Figure4Config
 figure04_place_fields  → (leaf; place-field / marginalized-posterior extraction)
 figure04_diagnostics   → diagnostics, figure04_place_fields
 figure04_plot_primitives → figure04_place_fields, style
 figure04_track_plots   → figure04_plot_primitives
-figure04_panels        → diagnostics, figure04_diagnostics, figure04_plot_primitives, figure04_track_plots, plotting, style
+figure04_panels        → diagnostics, figure04_diagnostics, figure04_models, figure04_plot_primitives, figure04_track_plots, plotting, style
 figure04_cache         → figure04_decoder (Figure4Config, Figure4DiagnosticsConfig), load_local_data
 figure04_workflow      → figure04_cache, figure04_decoder, figure04_diagnostics, figure04_place_fields, diagnostics, load_local_data
-figure04_summary       → figure04_workflow, figure04_diagnostics, diagnostics
-figure04_layout        → figure04_workflow, diagnostics, figure04_panels, figure04_track_plots, plotting, style
-figure04_generation    → diagnostics, figure04_workflow, figure04_summary, figure04_layout, figure04_cache, figure04_decoder, paths, scientific_artifacts, style
+figure04_summary       → figure04_workflow, figure04_diagnostics, figure04_models, diagnostics
+figure04_layout        → figure04_workflow, diagnostics, figure04_models, figure04_panels, figure04_track_plots, plotting, style
+figure04_generation    → diagnostics, figure04_workflow, figure04_summary, figure04_layout, figure04_cache, figure04_decoder, figure04_models, paths, scientific_artifacts, style
 generate_figure04.py   → figure04_generation
 ```
 
@@ -270,7 +274,7 @@ $\Lambda(x)$.
   `decoder`, a `Figure4DecoderConfig` — `position_std`, `position_bin_size_cm`,
   `sampling_frequency_hz`, threaded into environment/model construction so they
   genuinely drive the decode; `provenance`, a `Figure4Provenance` holding the
-  `non_local_detector`-default decode-shaping values (`movement_var`, the ContFrag
+  `non_local_detector`-default decode-shaping values (`movement_var`, the Continuous-Fragmented
   transition/initial-condition/concentration/regularization, and the dependency
   version), recorded and drift-guard pinned but not injected (faithfully injecting
   them would rebuild the nested transition grid and hit the concentration-default

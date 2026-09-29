@@ -25,6 +25,11 @@ from numpy.typing import NDArray
 
 from statespacecheck_paper.diagnostics import SpikeEventDiagnostics
 from statespacecheck_paper.figure04_diagnostics import mean_event_likelihood_by_time
+from statespacecheck_paper.figure04_models import (
+    CONTINUOUS,
+    CONTINUOUS_FRAGMENTED,
+    Figure4Model,
+)
 from statespacecheck_paper.figure04_place_fields import DECODER_PREDICTIVE_VAR
 from statespacecheck_paper.figure04_plot_primitives import (
     ANIMAL_POSITION_LABEL_GID,
@@ -476,7 +481,7 @@ def plot_single_model_diagnostics(
     data: ModelDiagnosticPanelData,
     *,
     time_slice_ind: slice | None = None,
-    model_name: str = "Continuous",
+    model_name: str = CONTINUOUS.label,
     thresholds: Mapping[str, float] | None = None,
     fig: Figure | None = None,
     show_y_labels: bool = True,
@@ -500,7 +505,7 @@ def plot_single_model_diagnostics(
         by the diagnostic calculation.
     time_slice_ind : slice, optional
         Time slice to plot. If None, plots all time points.
-    model_name : str, default "Continuous"
+    model_name : str, default ``CONTINUOUS.label`` ("Continuous")
         Model name for title.
     thresholds : dict[str, float], optional
         Thresholds for horizontal lines on diagnostic plots.
@@ -641,8 +646,8 @@ def plot_per_spike_metric_hexbin_row(
     diagnostics_b: SpikeEventDiagnostics,
     axes: Sequence[Axes],
     *,
-    model_a_name: str = "Continuous",
-    model_b_name: str = "Cont-Frag",
+    model_a: Figure4Model = CONTINUOUS,
+    model_b: Figure4Model = CONTINUOUS_FRAGMENTED,
     thresholds: dict[str, float] | None = None,
     colorbar_pad: float = 0.02,
 ) -> None:
@@ -668,8 +673,9 @@ def plot_per_spike_metric_hexbin_row(
     axes : Sequence[matplotlib.axes.Axes]
         Three axes, one per metric (HPD overlap, ``-log(p)`` natural
         log, KL divergence).
-    model_a_name, model_b_name : str
-        Axis labels for each decoder.
+    model_a, model_b : Figure4Model, default Continuous and Continuous-Fragmented
+        The two decoders; their full labels name the axes, and model A's short
+        label names the flagged-by-A-only callout.
     thresholds : dict[str, float], optional
         Per-metric flag thresholds keyed by ``hpd_overlap``, ``kl_divergence``,
         ``predictive_pvalue`` (raw values; the ``predictive_pvalue`` cutoff is transformed to
@@ -747,7 +753,7 @@ def plot_per_spike_metric_hexbin_row(
 
         # Per-metric flag threshold: dotted lines on both axes (same scalar on
         # x=model A and y=model B), plus light shading of the "rescue" quadrant —
-        # spikes flagged by model A (Continuous) but not model B (Cont-Frag).
+        # spikes flagged by model A but not model B.
         thr_raw = thresholds.get(thr_key) if thresholds else None
         if thr_raw is not None:
             thr = negative_log_pvalue(thr_raw) if log_transform else float(thr_raw)
@@ -776,8 +782,7 @@ def plot_per_spike_metric_hexbin_row(
                     zorder=4,
                 )
             )
-            callout_model_a_name = "Cont." if model_a_name == "Continuous" else model_a_name
-            label = f"flagged by\n{callout_model_a_name} only"
+            label = f"flagged by\n{model_a.short_label} only"
             label_bbox = {
                 "boxstyle": "round,pad=0.15",
                 "facecolor": "white",
@@ -819,8 +824,8 @@ def plot_per_spike_metric_hexbin_row(
         ax.set_ylim(padded_lims)
         ax.set_aspect("equal", adjustable="box")
 
-        ax.set_xlabel(model_a_name, labelpad=4)
-        ax.set_ylabel(model_b_name if panel_idx == 0 else "", labelpad=4)
+        ax.set_xlabel(model_a.label, labelpad=4)
+        ax.set_ylabel(model_b.label if panel_idx == 0 else "", labelpad=4)
         ax.set_title(spec.title)
 
         if key == "event_kl_divergence":

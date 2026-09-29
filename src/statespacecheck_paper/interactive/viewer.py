@@ -30,6 +30,7 @@ from numpy.typing import NDArray
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from statespacecheck_paper.figure04_generation import FIGURE4_DIAGNOSTIC_THRESHOLDS
+from statespacecheck_paper.figure04_models import figure4_model
 from statespacecheck_paper.style import METRIC_SPECS
 
 from .cache import MODEL_NAMES
@@ -533,9 +534,11 @@ class DecoderViewer(QtWidgets.QMainWindow):
             self._model_label = QtWidgets.QLabel("Model:")
             controls_layout.addWidget(self._model_label)
             self._model_combo = QtWidgets.QComboBox()
-            self._model_combo.addItems(list(MODEL_NAMES))
-            self._model_combo.setCurrentText(self._ds.model or "")
-            self._model_combo.currentTextChanged.connect(self._on_model_changed)
+            # Show each model's display label; its machine ID is the item data.
+            for model in MODEL_NAMES:
+                self._model_combo.addItem(figure4_model(model).label, userData=model)
+            self._select_model_in_combo(self._ds.model)
+            self._model_combo.currentIndexChanged.connect(self._on_model_changed)
             # Disabled when the cache directory wasn't provided (e.g.
             # tests that construct with a single model in tmp_path).
             self._model_combo.setEnabled(self._cache_dir is not None)
@@ -666,8 +669,19 @@ class DecoderViewer(QtWidgets.QMainWindow):
             self._stop_autoscroll()
             self._play_button.setText("▶")
 
-    @QtCore.Slot(str)
-    def _on_model_changed(self, model: str) -> None:
+    def _select_model_in_combo(self, model: str | None) -> None:
+        """Select ``model``'s entry in the model combo box without emitting signals."""
+        if self._model_combo is None:
+            return
+        self._model_combo.blockSignals(True)
+        self._model_combo.setCurrentIndex(self._model_combo.findData(model))
+        self._model_combo.blockSignals(False)
+
+    @QtCore.Slot(int)
+    def _on_model_changed(self, index: int) -> None:
+        if self._model_combo is None:
+            return
+        model = self._model_combo.itemData(index)
         if model == self._ds.model:
             return
         if model not in MODEL_NAMES:
@@ -1210,10 +1224,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
         except FileNotFoundError:
             # The requested cache doesn't exist; revert the combo
             # box and bail.
-            if self._model_combo is not None:
-                self._model_combo.blockSignals(True)
-                self._model_combo.setCurrentText(self._ds.model or "")
-                self._model_combo.blockSignals(False)
+            self._select_model_in_combo(self._ds.model)
             return
 
         # Drain the in-flight worker before swapping so the worker
@@ -1264,10 +1275,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
             overlay_choice = "predictive"
         self._overlay_combo.setCurrentIndex(OVERLAY_CHOICES.index(overlay_choice))
         self.slice_panel.set_overlay_choice(overlay_choice)
-        if self._model_combo is not None:
-            self._model_combo.blockSignals(True)
-            self._model_combo.setCurrentText(new_ds.model or "")
-            self._model_combo.blockSignals(False)
+        self._select_model_in_combo(new_ds.model)
         if was_playing:
             self._play_button.setChecked(True)
 

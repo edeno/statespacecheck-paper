@@ -64,6 +64,7 @@ from statespacecheck_paper.figure04_decoder import Figure4Config
 from statespacecheck_paper.figure04_diagnostics import mean_event_likelihood_by_time
 from statespacecheck_paper.figure04_generation import FIGURE4_DETAIL_WINDOW
 from statespacecheck_paper.figure04_layout import Figure4DetailWindow
+from statespacecheck_paper.figure04_models import CONTINUOUS, CONTINUOUS_FRAGMENTED
 from statespacecheck_paper.figure04_place_fields import get_state_marginalized_posterior
 from statespacecheck_paper.figure04_workflow import Figure4RenderData, prepare_figure04_render_data
 from statespacecheck_paper.number_format import significant, whole_percent
@@ -842,10 +843,10 @@ def replay_payload(
     flag_rules = figure04_summary["flag_rules"]
 
     models: dict[str, Any] = {}
-    for name, results, diagnostics in (
-        ("continuous", decode.continuous_results, decode.continuous_diagnostics),
+    for model, results, diagnostics in (
+        (CONTINUOUS, decode.continuous_results, decode.continuous_diagnostics),
         (
-            "continuous_fragmented",
+            CONTINUOUS_FRAGMENTED,
             decode.continuous_fragmented_results,
             decode.continuous_fragmented_diagnostics,
         ),
@@ -853,11 +854,11 @@ def replay_payload(
         predictive = get_state_marginalized_posterior(results.isel(time=window), "predictive")
         if predictive.shape[1] != place_fields.shape[1]:
             raise ValueError(
-                f"{name} predictive has {predictive.shape[1]} bins; "
+                f"{model.id} predictive has {predictive.shape[1]} bins; "
                 f"place fields have {place_fields.shape[1]}"
             )
         if diagnostics.event_time is None:
-            raise ValueError(f"{name} diagnostics lack exact event times")
+            raise ValueError(f"{model.id} diagnostics lack exact event times")
         predictive = np.nan_to_num(predictive)
         low, high = np.percentile(predictive, FIGURE4_PREDICTIVE_PERCENTILES)
         # Events belong to the decoder bin that counted them (event_time_ind),
@@ -865,7 +866,9 @@ def replay_payload(
         event_bin = np.asarray(diagnostics.event_time_ind)
         in_window = (event_bin >= window.start) & (event_bin < window.stop)
         event_time = np.asarray(diagnostics.event_time, dtype=np.float64)
-        models[name] = {
+        models[model.id] = {
+            "label": model.label,
+            "short_label": model.short_label,
             "predictive": heatmap_payload(predictive, (float(low), float(high))),
             "events": {
                 "bin": (event_bin[in_window] - window.start).tolist(),

@@ -34,6 +34,7 @@ import pandas as pd
 import xarray as xr
 from numpy.typing import NDArray
 
+from statespacecheck_paper.figure04_models import CONTINUOUS, CONTINUOUS_FRAGMENTED
 from statespacecheck_paper.load_local_data import NeuralRecordingData, input_file_path
 from statespacecheck_paper.write_local_data import recording_arrays, write_npz
 
@@ -735,8 +736,8 @@ def figure04_diagnostics_from_decodes(
     if not np.array_equal(time, continuous_fragmented_results["time"].to_numpy()):
         raise ValueError("The two decodes cover different time bins")
     for name, results in (
-        ("Continuous", continuous_results),
-        ("ContFrag", continuous_fragmented_results),
+        (CONTINUOUS.label, continuous_results),
+        (CONTINUOUS_FRAGMENTED.label, continuous_fragmented_results),
     ):
         if DECODER_PREDICTIVE_VAR not in results:
             raise ValueError(
@@ -794,8 +795,8 @@ def figure04_summary_rows(
     mean_rows = [
         {"model": model, "metric": metric, "value": value}
         for model, means in (
-            ("continuous", summary.continuous),
-            ("continuous_fragmented", summary.continuous_fragmented),
+            (CONTINUOUS.id, summary.continuous),
+            (CONTINUOUS_FRAGMENTED.id, summary.continuous_fragmented),
         )
         for metric, value in dataclasses.asdict(means).items()
     ]
@@ -878,8 +879,8 @@ def figure04_reported_statistics_from_rows(
         for row in confusion_rows
     }
     summary = Figure4Summary(
-        continuous=Figure4DiagnosticMeans(**means["continuous"]),
-        continuous_fragmented=Figure4DiagnosticMeans(**means["continuous_fragmented"]),
+        continuous=Figure4DiagnosticMeans(**means[CONTINUOUS.id]),
+        continuous_fragmented=Figure4DiagnosticMeans(**means[CONTINUOUS_FRAGMENTED.id]),
         flag_confusions=tuple(confusions[metric] for metric in FIGURE4_METRIC_DIRECTIONS),
         n_units=n_units,
     )

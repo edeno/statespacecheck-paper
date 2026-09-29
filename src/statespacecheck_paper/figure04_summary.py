@@ -15,6 +15,7 @@ import numpy as np
 
 from statespacecheck_paper.diagnostics import FlagDirection, SpikeEventDiagnostics
 from statespacecheck_paper.figure04_diagnostics import FlagConfusion, compute_flag_confusion
+from statespacecheck_paper.figure04_models import CONTINUOUS, CONTINUOUS_FRAGMENTED
 from statespacecheck_paper.figure04_workflow import Figure4RenderData
 
 
@@ -144,8 +145,8 @@ def format_figure04_summary(summary: Figure4Summary) -> str:
     """Format a computed Figure-4 summary for command-line output."""
     lines = [f"=== Diagnostic Summary ({summary.n_units} units, all time points) ==="]
     for model_name, means in (
-        ("Continuous", summary.continuous),
-        ("ContFrag", summary.continuous_fragmented),
+        (CONTINUOUS.label, summary.continuous),
+        (CONTINUOUS_FRAGMENTED.label, summary.continuous_fragmented),
     ):
         lines.extend(
             [
@@ -159,7 +160,12 @@ def format_figure04_summary(summary: Figure4Summary) -> str:
 
     # "cont-only" is the rescue quadrant: flagged by Continuous but not by
     # Continuous-Fragmented. Rescue rate is its fraction of Continuous flags.
-    lines.extend(["", "=== Flag agreement: Continuous (A) vs Cont-Frag (B) ==="])
+    lines.extend(
+        [
+            "",
+            f"=== Flag agreement: {CONTINUOUS.label} (A) vs {CONTINUOUS_FRAGMENTED.label} (B) ===",
+        ]
+    )
     for confusion in summary.flag_confusions:
         lines.append(
             f"  {confusion.metric}: n={confusion.n:,} both={confusion.both:,} "

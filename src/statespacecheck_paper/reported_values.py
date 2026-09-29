@@ -523,7 +523,7 @@ def _recording_statistics(payload: dict[str, Any]) -> list[MacroDefinition]:
     for metric in payload["flag_rules"]:
         prefix = _RECORDING_FLAG_MACRO_PREFIXES[metric]
         confusion = _confusion(payload, metric)
-        # Flagged by the Continuous model = rescued by ContFrag + flagged by both.
+        # Flagged by the Continuous model = rescued by Continuous-Fragmented + flagged by both.
         flagged_continuous = confusion["a_only"] + confusion["both"]
         macros.extend(
             [

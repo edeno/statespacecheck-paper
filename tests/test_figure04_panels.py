@@ -20,6 +20,7 @@ from matplotlib.collections import PolyCollection  # noqa: E402
 from matplotlib.lines import Line2D  # noqa: E402
 
 from statespacecheck_paper.diagnostics import SpikeEventDiagnostics  # noqa: E402
+from statespacecheck_paper.figure04_models import CONTINUOUS, CONTINUOUS_FRAGMENTED  # noqa: E402
 from statespacecheck_paper.figure04_panels import (  # noqa: E402
     ModelDiagnosticPanelData,
     _draw_predictive_heatmap_row,
@@ -155,6 +156,11 @@ class TestPlotPerSpikeMetricHexbinRow:
             )
             rects = [p for p in ax.patches if isinstance(p, Rectangle)]
             assert rects, f"{ax.get_title()!r}: no shaded rescue-quadrant patch"
+            # Axis labels and the callout name the models by their registry labels.
+            assert ax.get_xlabel() == CONTINUOUS.label
+            callouts = [text.get_text() for text in ax.texts if "flagged by" in text.get_text()]
+            assert callouts == [f"flagged by\n{CONTINUOUS.short_label} only"]
+        assert axes[0].get_ylabel() == CONTINUOUS_FRAGMENTED.label
         plt.close(fig)
 
     def test_no_thresholds_leaves_panels_unshaded(

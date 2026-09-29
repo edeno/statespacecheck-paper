@@ -598,11 +598,6 @@ function renderScenario(view, payload, manifest) {
 // Replay comparison
 // ---------------------------------------------------------------------------
 
-const MODELS = [
-  { id: "continuous", label: "Continuous", short: "Cont." },
-  { id: "continuous_fragmented", label: "Continuous–Fragmented", short: "Cont.–Frag." },
-];
-
 /**
  * Time of peak population firing (all units), which marks the replay event,
  * searched in steps of one decoder bin `dt`.
@@ -634,7 +629,15 @@ export function renderReplay(root, payload, manifest) {
   const range = [time[0], time[time.length - 1] + dt];
   const lut = manifest.colormaps;
   const rules = payload.flag_rules;
-  const events = payload.models.continuous.events;
+  // Model IDs and display labels come from the export, in figure order:
+  // the Continuous (reference) model, then the Continuous–Fragmented one.
+  const MODELS = Object.entries(payload.models).map(([id, model]) => ({
+    id,
+    label: model.label,
+    short: model.short_label,
+  }));
+  const [reference, comparison] = MODELS;
+  const events = payload.models[reference.id].events;
   const eventTimes = events.t;
   const position = payload.linear_position;
   const likelihood = decodeRows(payload.likelihood, nBins);
@@ -679,8 +682,8 @@ export function renderReplay(root, payload, manifest) {
 
   const legend = legendBlock(`
     <span><i class="swatch" style="background:var(--position)"></i>Animal's position</span>
-    <span><i class="swatch ring" style="border-color:var(--text)"></i>Continuous model</span>
-    <span><i class="swatch dot" style="background:var(--text)"></i>Continuous–Fragmented model</span>
+    <span><i class="swatch ring" style="border-color:var(--text)"></i>${reference.label} model</span>
+    <span><i class="swatch dot" style="background:var(--text)"></i>${comparison.label} model</span>
     <span><i class="swatch" style="background:var(--threshold)"></i>Flag threshold</span>`);
 
   const { body, left, detail } = playerFrame();
@@ -693,7 +696,7 @@ export function renderReplay(root, payload, manifest) {
     countsWrap,
     note(INTERACTION_HELP),
     note(
-      "Here the dots do not show flag status: open circles are the Continuous model and filled dots the Continuous–Fragmented model, and a spike is flagged when its marker lies beyond the dashed threshold. The Continuous–Fragmented prediction is summed over its Continuous and Fragmented states. Position is linearized distance along the maze (cm).",
+      `Here the dots do not show flag status: open circles are the ${reference.label} model and filled dots the ${comparison.label} model, and a spike is flagged when its marker lies beyond the dashed threshold. The ${comparison.label} prediction is summed over its Continuous and Fragmented states. Position is linearized distance along the maze (cm).`,
     ),
     note(AXIS_HELP),
     note(SCALE_HELP),
@@ -746,8 +749,8 @@ export function renderReplay(root, payload, manifest) {
   detail.appendChild(rescue);
 
   const isRescued = (metric, index) =>
-    payload.models.continuous.events.flagged[metric]?.[index] === true &&
-    payload.models.continuous_fragmented.events.flagged[metric]?.[index] === false;
+    payload.models[reference.id].events.flagged[metric]?.[index] === true &&
+    payload.models[comparison.id].events.flagged[metric]?.[index] === false;
 
   function describeSpike(index) {
     return `Spike at ${eventTimes[index].toFixed(3)} s — unit ${events.cell[index] + 1}`;
@@ -778,7 +781,7 @@ export function renderReplay(root, payload, manifest) {
     }
     const rescued = METRICS.filter((m) => isRescued(m.name, index)).map((m) => m.label);
     rescue.textContent = rescued.length
-      ? `Rescued (${rescued.join(", ")}): flagged under the Continuous model but not under the Continuous–Fragmented model.`
+      ? `Rescued (${rescued.join(", ")}): flagged under the ${reference.label} model but not under the ${comparison.label} model.`
       : "";
   }
 
@@ -786,8 +789,8 @@ export function renderReplay(root, payload, manifest) {
     ariaLabel: "Hippocampal recording tracks. Use the arrow keys to step between spikes.",
     range,
     tracks: [
-      track("Prediction: Continuous", predictiveBitmap("continuous"), 92),
-      track("Prediction: Cont.–Frag.", predictiveBitmap("continuous_fragmented"), 92),
+      track(`Prediction: ${reference.label}`, predictiveBitmap(reference.id), 92),
+      track(`Prediction: ${comparison.short}`, predictiveBitmap(comparison.id), 92),
       track(
         "Likelihood",
         heatmapBitmap(likelihood, lut.likelihood),
@@ -800,7 +803,7 @@ export function renderReplay(root, payload, manifest) {
     eventTimes,
     select: selectEvent,
     announce: (index) =>
-      say(`${describeSpike(index)}. Continuous model: ${flagSummary(index, events.flagged)}`),
+      say(`${describeSpike(index)}. ${reference.label} model: ${flagSummary(index, events.flagged)}`),
   });
   // Open on the HPD-overlap rescue nearest the peak of population firing,
   // i.e., inside the replay event.

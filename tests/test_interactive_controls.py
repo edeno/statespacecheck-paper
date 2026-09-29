@@ -264,14 +264,27 @@ def test_model_toggle_alternates_between_the_two_models(tmp_path: Path) -> None:
 
     _, viewer, _ = make_viewer(cache_dir, model_swaps=True)
     try:
-        assert [
-            viewer._model_combo.itemText(i)  # noqa: SLF001
-            for i in range(viewer._model_combo.count())  # noqa: SLF001
-        ] == ["continuous", "continuous_fragmented"]
+        combo = viewer._model_combo  # noqa: SLF001
+        # The combo shows display labels and carries the machine IDs.
+        assert [combo.itemText(i) for i in range(combo.count())] == [
+            "Continuous",
+            "Continuous\N{EN DASH}Fragmented",
+        ]
+        assert [combo.itemData(i) for i in range(combo.count())] == [
+            "continuous",
+            "continuous_fragmented",
+        ]
+        # A switch rebuilds the controls, so read the current combo each time.
         viewer._toggle_model()  # noqa: SLF001
         assert viewer._ds.model == "continuous_fragmented"  # noqa: SLF001
+        assert viewer._model_combo.currentData() == "continuous_fragmented"  # noqa: SLF001
         viewer._toggle_model()  # noqa: SLF001
         assert viewer._ds.model == "continuous"  # noqa: SLF001
+        assert viewer._model_combo.currentData() == "continuous"  # noqa: SLF001
+        # Choosing a label in the combo switches to that model.
+        combo = viewer._model_combo  # noqa: SLF001
+        combo.setCurrentIndex(combo.findData("continuous_fragmented"))
+        assert viewer._ds.model == "continuous_fragmented"  # noqa: SLF001
     finally:
         viewer.close()
         # Each switch closes the source it replaces; close the current one.

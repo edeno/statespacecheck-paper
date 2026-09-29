@@ -35,6 +35,7 @@ import xarray as xr
 import zarr
 from numpy.typing import NDArray
 
+from statespacecheck_paper.figure04_models import figure4_model
 from statespacecheck_paper.figure04_place_fields import DECODER_PREDICTIVE_VAR
 
 from . import cache as cache_mod
@@ -159,7 +160,8 @@ class DecoderDataSource:
         real-data caches; ``None`` for the simulation cache.
     display_name : str
         Human-readable name for the loaded dataset (drives the window
-        title): ``"continuous"``, ``"continuous_fragmented"``, or ``"Figure 3 simulation"``.
+        title): the model's display label (``Figure4Model.label``) or
+        ``"Figure 3 simulation"``.
     time : np.ndarray, shape (n_time,), float64
         Decoder time grid (absolute seconds).
     linear_position : np.ndarray, shape (n_time,), float64
@@ -222,7 +224,9 @@ class DecoderDataSource:
         self._layout = layout
         self.dataset_kind: DatasetKind = dataset_kind
         self.model: ModelName | None = model
-        self.display_name: str = display_name or (model if model is not None else "decoder")
+        self.display_name: str = display_name or (
+            figure4_model(model).label if model is not None else "decoder"
+        )
 
         self._layout.assert_exists()
 

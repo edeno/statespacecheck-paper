@@ -130,6 +130,7 @@ def test_figure04_family_dependency_edges_are_acyclic() -> None:
     sit below this layering."""
     prefix = "statespacecheck_paper."
     allowed = {
+        "figure04_models.py": set(),
         "figure04_decoder.py": {prefix + "diagnostics"},
         "figure04_place_fields.py": set(),
         "figure04_diagnostics.py": {
@@ -141,6 +142,7 @@ def test_figure04_family_dependency_edges_are_acyclic() -> None:
         "figure04_panels.py": {
             prefix + "diagnostics",
             prefix + "figure04_diagnostics",
+            prefix + "figure04_models",
             prefix + "figure04_place_fields",
             prefix + "figure04_plot_primitives",
             prefix + "figure04_track_plots",
@@ -162,11 +164,13 @@ def test_figure04_family_dependency_edges_are_acyclic() -> None:
         "figure04_summary.py": {
             prefix + "diagnostics",
             prefix + "figure04_diagnostics",
+            prefix + "figure04_models",
             prefix + "figure04_workflow",
         },
         "figure04_layout.py": {
             prefix + "figure04_workflow",
             prefix + "diagnostics",
+            prefix + "figure04_models",
             prefix + "figure04_panels",
             prefix + "figure04_track_plots",
             prefix + "plotting",
@@ -179,6 +183,7 @@ def test_figure04_family_dependency_edges_are_acyclic() -> None:
             prefix + "figure04_summary",
             prefix + "figure04_layout",
             prefix + "figure04_decoder",
+            prefix + "figure04_models",
             prefix + "paths",
             prefix + "scientific_artifacts",
             prefix + "style",
@@ -189,14 +194,15 @@ def test_figure04_family_dependency_edges_are_acyclic() -> None:
 
 
 def test_decode_hashed_modules_do_not_import_unhashed_figure04_helpers() -> None:
-    """The decode cache fingerprints only its source files; the summary and the
-    input-file writer stay outside it, so the decode must not come to depend
-    on them."""
+    """The decode cache fingerprints only its source files; the summary, the
+    input-file writer, and the model display labels stay outside it, so the
+    decode must not come to depend on them."""
     prefix = "statespacecheck_paper."
     for module_file in figure04_cache._DECODE_SOURCE_FILES:
         imports = _sibling_module_imports(module_file)
         assert prefix + "figure04_summary" not in imports, module_file
         assert prefix + "write_local_data" not in imports, module_file
+        assert prefix + "figure04_models" not in imports, module_file
 
 
 def test_reported_values_imports_no_analysis_module() -> None:
@@ -238,6 +244,7 @@ def test_site_export_depends_only_on_analysis_layers() -> None:
         prefix + "figure04_diagnostics",
         prefix + "figure04_generation",
         prefix + "figure04_layout",
+        prefix + "figure04_models",
         prefix + "figure04_place_fields",
         prefix + "figure04_workflow",
         prefix + "number_format",

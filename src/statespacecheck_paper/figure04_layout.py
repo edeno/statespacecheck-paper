@@ -24,6 +24,7 @@ from matplotlib.transforms import Bbox
 from numpy.typing import NDArray
 
 from statespacecheck_paper.diagnostics import SpikeEventDiagnostics
+from statespacecheck_paper.figure04_models import CONTINUOUS, CONTINUOUS_FRAGMENTED
 from statespacecheck_paper.figure04_panels import (
     ModelDiagnosticPanelData,
     plot_per_spike_metric_hexbin_row,
@@ -242,8 +243,8 @@ def _layout_hexbin_row(
         render_data.decode_results.continuous_diagnostics,
         render_data.decode_results.continuous_fragmented_diagnostics,
         axes_hexbin,
-        model_a_name="Continuous",
-        model_b_name="Cont-Frag",
+        model_a=CONTINUOUS,
+        model_b=CONTINUOUS_FRAGMENTED,
         thresholds=thresholds,
         colorbar_pad=0.006,
     )
@@ -446,7 +447,7 @@ def compose_figure04(
         continuous_panel_data,
         time_slice_ind=detail_slice,
         thresholds=thresholds_dict,
-        model_name="Continuous Model",
+        model_name=f"{CONTINUOUS.label} Model",
         fig=subfigs_top[1],
         show_annotations=False,
     )
@@ -456,7 +457,7 @@ def compose_figure04(
         continuous_fragmented_panel_data,
         time_slice_ind=detail_slice,
         thresholds=thresholds_dict,
-        model_name="Cont.-Frag. Model",
+        model_name=f"{CONTINUOUS_FRAGMENTED.label} Model",
         fig=subfigs_top[2],
         show_y_labels=False,
     )

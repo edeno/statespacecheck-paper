@@ -25,7 +25,7 @@ import argparse
 import shutil
 from collections.abc import Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pandas as pd
@@ -33,14 +33,15 @@ import xarray as xr
 from numpy.typing import NDArray
 
 from statespacecheck_paper.diagnostics import DecodingDiagnostics, SpikeEventDiagnostics
+from statespacecheck_paper.figure04_models import FIGURE4_MODEL_IDS, Figure4ModelId
 from statespacecheck_paper.figure04_place_fields import DECODER_PREDICTIVE_VAR
 from statespacecheck_paper.paths import ANIMAL_DATE_EPOCH
 
 if TYPE_CHECKING:
     from statespacecheck_paper.figure04_workflow import Figure4RenderData
 
-ModelName = Literal["continuous", "continuous_fragmented"]
-MODEL_NAMES: tuple[ModelName, ...] = ("continuous", "continuous_fragmented")
+ModelName = Figure4ModelId
+MODEL_NAMES: tuple[ModelName, ...] = FIGURE4_MODEL_IDS
 
 DEFAULT_TIME_CHUNK = 8192
 

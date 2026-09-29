@@ -51,7 +51,7 @@ These were established offline by emulating `SortedSpikesDecodingV1.make()` (Spy
 | figure pipeline, re-run | identical |
 | Spyglass-matched: no upsampling, `estimate_decoding_params = 0` | identical |
 | same with `PositionGroup.upsample_rate = 500` | identical (the entry is already on a 500 Hz grid) |
-| `estimate_decoding_params = 1` (the Spyglass default) | **different**: EM re-fits the ContFrag transitions (`[[0.9988, 0.0012], [0.133, 0.867]]` vs `[[0.98, 0.02], [0.02, 0.98]]`); ContFrag mean HPD overlap 0.880 → 0.836, KL 2.18 → 2.85; HPD rescue rate 92% → 30% |
+| `estimate_decoding_params = 1` (the Spyglass default) | **different**: EM re-fits the Continuous–Fragmented transitions (`[[0.9988, 0.0012], [0.133, 0.867]]` vs `[[0.98, 0.02], [0.02, 0.98]]`); Continuous–Fragmented mean HPD overlap 0.880 → 0.836, KL 2.18 → 2.85; HPD rescue rate 92% → 30% |
 
 Storing the decodes the way Spyglass does (`save_results` / `save_model`), reloading
 them, and running `figure04_diagnostics_from_decodes` also reproduces the committed
@@ -59,7 +59,7 @@ summary exactly.
 
 ## Blockers
 
-Both concern the single-state Continuous decoder; the two-state ContFrag decoder
+Both concern the single-state Continuous decoder; the two-state Continuous–Fragmented decoder
 works. `non_local_detector` squeezes the length-1 `states` dimension out of the
 results, leaving scalar `states`, `environments`, and `encoding_groups` coordinates.
 
@@ -143,7 +143,7 @@ Each needs the user's go-ahead before anything is written.
   After a Figure-4 summary change, also update `site/data/replay.json` (its
   decode-cache fingerprint); other re-exported site files that differ only in the
   last floating-point digit need not be committed.
-- Figure-4 renders are not byte-stable: the "Cont.-Frag. Model" panel title can
+- Figure-4 renders are not byte-stable: the "Continuous–Fragmented Model" panel title can
   land about a pixel differently between runs (seen with fresh and cache-backed
   renders alike). Keep the committed PNG when that title is the only difference
   (check pixels, e.g. with PIL), and compare PDFs by rendering them (their bytes

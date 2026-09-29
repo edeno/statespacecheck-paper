@@ -22,6 +22,7 @@ from statespacecheck_paper.diagnostics import (
 from statespacecheck_paper.figure04_cache import Figure4CacheProvenance, Figure4Paths
 from statespacecheck_paper.figure04_decoder import Figure4Config
 from statespacecheck_paper.figure04_layout import Figure4DetailWindow, compose_figure04
+from statespacecheck_paper.figure04_models import CONTINUOUS, CONTINUOUS_FRAGMENTED
 from statespacecheck_paper.figure04_summary import (
     Figure4Summary,
     compute_figure04_summary,
@@ -88,8 +89,8 @@ def figure04_reported_statistics(summary: Figure4Summary) -> dict[str, object]:
         )
     return {
         "diagnostic_means": {
-            "continuous": dataclasses.asdict(summary.continuous),
-            "continuous_fragmented": dataclasses.asdict(summary.continuous_fragmented),
+            CONTINUOUS.id: dataclasses.asdict(summary.continuous),
+            CONTINUOUS_FRAGMENTED.id: dataclasses.asdict(summary.continuous_fragmented),
         },
         "flag_confusions": confusions,
     }

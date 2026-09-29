@@ -35,6 +35,7 @@ from statespacecheck_paper.figure03_simulation import (
 )
 from statespacecheck_paper.figure04_diagnostics import mean_event_likelihood_by_time
 from statespacecheck_paper.figure04_layout import Figure4DetailWindow
+from statespacecheck_paper.figure04_models import FIGURE4_MODELS, figure4_model
 from statespacecheck_paper.number_format import significant, whole_percent
 from statespacecheck_paper.paths import FIGURE03_SUMMARY_PATH, FIGURE04_SUMMARY_PATH, REPO_ROOT
 from statespacecheck_paper.scientific_artifacts import inclusive_flag_rules
@@ -446,6 +447,11 @@ def test_replay_payload_slices_both_models_to_the_detail_window() -> None:
         ("continuous_fragmented", decode.continuous_fragmented_diagnostics),
     ):
         model = payload["models"][name]
+        # The page takes the model labels from the export, not its own copy.
+        assert (model["label"], model["short_label"]) == (
+            figure4_model(name).label,
+            figure4_model(name).short_label,
+        )
         rows = decode_display_rows(model["predictive"]["rows"], n_bins)
         assert rows.shape == (n_time, n_bins)
         low, high = model["predictive"]["range"]
@@ -592,6 +598,9 @@ def test_committed_replay_matches_the_figure4_decode(figure04_summary: dict[str,
     assert committed["decode_cache_fingerprint"] == decode_cache["fingerprint_sha256"]
     assert committed["diagnostics_fingerprint"] == decode_cache["diagnostics_fingerprint_sha256"]
     assert committed["flag_rules"] == figure04_summary["flag_rules"]
+    assert {
+        name: (model["label"], model["short_label"]) for name, model in committed["models"].items()
+    } == {model.id: (model.label, model.short_label) for model in FIGURE4_MODELS}
     continuous, fragmented = (
         committed["models"][name]["events"] for name in ("continuous", "continuous_fragmented")
     )
