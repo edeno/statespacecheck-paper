@@ -433,7 +433,10 @@ class TestPrepareRenderData:
         assert calls["n"] == 2
 
     def test_uses_injected_paths_and_maps_serialized_keys(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
     ) -> None:
         seen: dict[str, object] = {}
 
@@ -459,6 +462,10 @@ class TestPrepareRenderData:
 
         assert seen == {"data_path": tmp_path, "animal_date_epoch": "injected_epoch"}
         assert injected.cache_path.exists()
+        # The progress messages name the caches actually written.
+        printed = capsys.readouterr().out
+        assert str(injected.cache_path) in printed
+        assert str(injected.diagnostics_cache_path) in printed
         # The recording and typed decode results are threaded through by attribute.
         assert render_data.recording.spike_times[0].shape == (2,)
         np.testing.assert_array_equal(

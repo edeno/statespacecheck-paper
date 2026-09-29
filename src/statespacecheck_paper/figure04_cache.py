@@ -2,7 +2,8 @@
 
 The Figure-4 decode (fit + decode both models) is expensive, and the per-spike
 diagnostics derived from it are comparatively cheap, so the two are cached in
-**separate** joblib bundles under ``data/intermediates``:
+**separate** joblib bundles under ``<data path>/intermediates`` (the data path
+is ``data/`` unless ``STATESPACECHECK_DATA_PATH`` is set; see :class:`Figure4Paths`):
 
 - the *decode* bundle (``{epoch}_fig4_cache.joblib``) holds the fitted models'
   decoder outputs (smoothed posterior, predictive distribution, log-likelihood), spike
@@ -252,7 +253,7 @@ class Figure4Paths:
 
     @property
     def cache_path(self) -> Path:
-        """Path of the cached Figure-4 *decode* bundle (under data/intermediates).
+        """Path of the cached Figure-4 *decode* bundle (under ``data_path/intermediates``).
 
         A single joblib bundle is used rather than netCDF because the decoder
         results carry a ``state_bins`` MultiIndex coordinate, which netCDF cannot

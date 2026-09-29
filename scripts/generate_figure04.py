@@ -27,8 +27,8 @@ def main(argv: Sequence[str] | None = None) -> None:
         action="store_true",
         help=(
             "Re-fit and re-decode both models and recompute their per-spike "
-            "diagnostics instead of loading the caches under data/intermediates "
-            "(overwrites both caches)."
+            "diagnostics instead of loading the decode and diagnostics caches "
+            "under the data directory's intermediates/ (overwrites both caches)."
         ),
     )
     args = parser.parse_args(argv)

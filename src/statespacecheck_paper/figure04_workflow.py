@@ -485,7 +485,7 @@ def prepare_figure04_render_data(
             execution_config=config.execution,
             package_defaults=config.package_defaults,
         )
-        print("Caching decoder outputs to data/intermediates ...")
+        print(f"Caching decoder outputs to {paths.cache_path} ...")
         save_figure04_cache(paths.cache_path, expected_fingerprint, decode_payload)
 
     diagnostics_payload: dict[str, object] | None = None
@@ -508,7 +508,7 @@ def prepare_figure04_render_data(
             time=time,
             diagnostics_config=config.diagnostics,
         )
-        print("Caching per-spike diagnostics to data/intermediates ...")
+        print(f"Caching per-spike diagnostics to {paths.diagnostics_cache_path} ...")
         save_figure04_diagnostics_cache(
             paths.diagnostics_cache_path,
             expected_fingerprint,

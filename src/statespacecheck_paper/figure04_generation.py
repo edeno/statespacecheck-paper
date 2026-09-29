@@ -146,14 +146,16 @@ def generate_figure04(*, use_cache: bool = True) -> None:
     Parameters
     ----------
     use_cache : bool, default True
-        When True and a fingerprint-matching cache of decoder outputs exists
-        under ``data/intermediates``, load it and skip the expensive fit/decode
-        step. When False (``--force-recompute``), always recompute and
-        overwrite the cache. A config / data / fitting implementation /
-        ``non_local_detector`` change
-        invalidates the cache automatically. Fitting + decoding both models
-        takes several minutes; figure-only edits (styling, thresholds) reuse
-        the cache.
+        When True, load the decode cache and the diagnostics cache from
+        ``DATA_PATH / "intermediates"`` (``DATA_PATH`` is ``data/`` unless
+        ``STATESPACECHECK_DATA_PATH`` is set) when their fingerprints match,
+        and rebuild whichever does not. A stale decode cache (a config, input
+        data, fitting implementation, or ``non_local_detector`` change) refits
+        and re-decodes both models, which takes several minutes, and then
+        recomputes the diagnostics; a stale diagnostics cache alone recomputes
+        only the diagnostics from the cached predictions. When False
+        (``--force-recompute``), refit, recompute, and overwrite both caches.
+        Figure-only edits (styling, flag thresholds) reuse both caches.
     """
     config = Figure4Config()
     paths = Figure4Paths(data_path=DATA_PATH, animal_date_epoch=ANIMAL_DATE_EPOCH)

@@ -1,7 +1,9 @@
 r"""Build the on-disk caches used by the interactive viewer.
 
-For Figure 4, the cache reformats the canonical decode bundle produced by
-``generate_figure04.py`` into a layout that supports fast windowed reads:
+For Figure 4, the viewer cache reformats the decoder outputs and per-spike
+diagnostics from Figure 4's decode and diagnostics caches (the joblib bundles
+written by ``generate_figure04.py``, rebuilt here if missing or stale) into a
+layout that supports fast windowed reads:
 
 - A Zarr store per model with chunked predictive / log-likelihood arrays
   (chunked along time, full position axis per chunk).
@@ -814,8 +816,9 @@ def main(argv: list[str] | None = None) -> int:
         "--force-recompute",
         action="store_true",
         help=(
-            "Re-fit and re-decode Figure 4 instead of loading its canonical "
-            "joblib cache. This also overwrites that canonical cache."
+            "Re-fit and re-decode both Figure 4 models and recompute their "
+            "per-spike diagnostics instead of loading Figure 4's decode and "
+            "diagnostics caches. This also overwrites both caches."
         ),
     )
     build.set_defaults(func=_build_command)
