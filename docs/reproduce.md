@@ -96,6 +96,37 @@ input file and no lab database connection. Lab acquisition and export procedures
 are documented separately in [data lineage](data-lineage.md) and the
 [Spyglass pipeline](spyglass-pipeline.md).
 
+## Check a fresh reproduction
+
+```bash
+make reproduce-fresh                              # work in a new temporary directory
+make reproduce-fresh FRESH_DIR=/path/to/empty-dir  # or in a chosen empty directory
+```
+
+`scripts/reproduce_fresh.py` reruns the committed paper from scratch without
+touching the checkout. It exports the committed tree (`git archive HEAD`, so
+uncommitted changes are not included) into `<work dir>/repo`, installs that
+copy's locked environment, and points `STATESPACECHECK_DATA_PATH` at the empty
+`<work dir>/data`, so no existing input file or cache is reused. In the copy it
+downloads and verifies the Figure 4 input, generates Figures 1–4 and both
+summaries, emits the macros (offline), and builds the manuscript with latexmk.
+It then runs `scripts/check_reproduction.py` on the fresh summaries against
+HEAD's and compares the fresh `reported_values.tex` with HEAD's byte for byte.
+The target exits nonzero on any difference.
+
+The work directory keeps `fresh/` (figures, summaries, macros, and PDF),
+`committed/` (HEAD's summaries and macros), `reproduction_report.txt`, and
+`steps.tsv` (seconds and the largest child-process resident memory for each
+step). Running in a copy, rather than regenerating the committed files in place
+and restoring them, leaves a working tree with local edits untouched and needs no
+cleanup.
+
+| Resource | Fresh run |
+| --- | --- |
+| Peak RAM | TODO(measure): about 12 GB expected, set by the Figure 4 fit/decode |
+| Disk | TODO(measure): about 8 GB for the decode cache, plus the copy's environment and the 75 MB input |
+| Time | TODO(measure) |
+
 ## Individual steps
 
 | Command | Result |
@@ -105,6 +136,7 @@ are documented separately in [data lineage](data-lineage.md) and the
 | `make figures` | Regenerate all four figures and both summaries; input must exist |
 | `make reported-values` | Regenerate the manuscript's numerical macros from both summaries (offline) |
 | `make manuscript` | Build the PDF from the current figures and macros |
+| `make reproduce-fresh` | Rerun HEAD in a clean copy with empty caches and compare with the committed results |
 
 An individual figure can be regenerated with
 `uv run --frozen python scripts/generate_figure03.py` (substitute `01`, `02`, or

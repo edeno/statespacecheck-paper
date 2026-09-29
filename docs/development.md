@@ -178,7 +178,9 @@ The [artifact table](reproduce.md#outputs-and-checks) identifies each generator.
 ## Script audiences and lab operations
 
 - **Public reproduction:** `download_figure04_inputs.py`, `generate_figure*.py`,
-  `emit_reported_values.py`, and `export_site_data.py`.
+  `emit_reported_values.py`, `export_site_data.py`, and the fresh-run check
+  `reproduce_fresh.py` (`make reproduce-fresh`) with its comparison
+  `check_reproduction.py`.
 - **Lab acquisition/export:** `fetch_figure04_inputs.py`,
   `spyglass_export_figure04.py`, `spyglass_pipeline_figure04.py`, and
   `datajoint_read_only.py`. See [the lab guide](spyglass-pipeline.md).
