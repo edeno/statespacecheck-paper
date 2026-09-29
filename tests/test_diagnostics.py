@@ -167,7 +167,7 @@ class TestDecodingDiagnosticsInvariants:
         return dict(
             posterior=posterior,
             predictive=posterior.copy(),
-            likelihood=posterior.copy(),
+            combined_likelihood=posterior.copy(),
             hpd_overlap=np.zeros((n_time, n_cells)),
             kl_divergence=np.zeros((n_time, n_cells)),
             predictive_pvalue=np.zeros((n_time, n_cells)),

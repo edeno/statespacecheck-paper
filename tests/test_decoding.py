@@ -46,7 +46,7 @@ class TestDecodeWithDiagnostics:
             # Distributions over position (time × bins).
             "posterior": (n_time, n_bins),
             "predictive": (n_time, n_bins),
-            "likelihood": (n_time, n_bins),
+            "combined_likelihood": (n_time, n_bins),
             # Per-cell metric matrices.
             "hpd_overlap": (n_time, n_cells),
             "kl_divergence": (n_time, n_cells),
@@ -730,7 +730,7 @@ class TestDecoderOverrideWindowTightening:
 
 
 class TestStoredLikelihoodNormalization:
-    """The log-space rewrite stores ``combined_likelihood_all`` via a
+    """The log-space rewrite stores ``combined_likelihood`` via a
     bespoke shift-and-normalize. A regression that left it unnormalized
     would still pass shape contracts but distort the displayed likelihood.
     Pin the normalization directly.
@@ -740,13 +740,13 @@ class TestStoredLikelihoodNormalization:
         self, decoder_inputs: DecoderInputs
     ) -> None:
         result = decoder_inputs.call()
-        likelihood = result.likelihood
+        likelihood = result.combined_likelihood
         np.testing.assert_allclose(
             likelihood.sum(axis=1),
             1.0,
             rtol=1e-10,
             atol=1e-12,
-            err_msg="combined_likelihood_all is not row-normalized",
+            err_msg="combined_likelihood is not row-normalized",
         )
 
 
@@ -989,7 +989,7 @@ class TestFilterStep:
 
         np.testing.assert_array_equal(step.predictive, result.predictive[1])
         np.testing.assert_array_equal(step.posterior, result.posterior[1])
-        np.testing.assert_array_equal(step.combined_likelihood, result.likelihood[1])
+        np.testing.assert_array_equal(step.combined_likelihood, result.combined_likelihood[1])
 
 
 class TestDecodeInputValidation:

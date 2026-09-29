@@ -517,7 +517,7 @@ def build_simulated_cache(
 
     Notes
     -----
-    The simulation's ``metrics["likelihood"]`` is the *normalized linear*
+    The simulation's ``combined_likelihood`` is the *normalized linear*
     combined likelihood. The viewer's worker exponentiates the cache's
     ``log_likelihood`` back, so this builder writes ``log_likelihood =
     log(likelihood)`` — true log space, with no clamp (exact-zero bins
@@ -567,7 +567,7 @@ def build_simulated_cache(
     # real-data cache is a genuinely different 2 ms / 500 Hz cadence.)
     time_arr = (np.arange(n_time, dtype=np.float64) * STEP_SECONDS).astype(np.float64)
 
-    # log_likelihood: true log space. ``metrics["likelihood"]`` is a
+    # log_likelihood: true log space. ``combined_likelihood`` is a
     # normalized linear distribution per row; we take ``log`` directly
     # — bins with exact-zero likelihood become ``-inf`` and the
     # viewer preserves them as zero relative likelihood after a finite
@@ -578,7 +578,7 @@ def build_simulated_cache(
     # response that the viewer renders as flat colour, hiding the
     # actual decoded structure).
     predictive = np.asarray(metrics.predictive, dtype=np.float32)
-    likelihood_lin = np.asarray(metrics.likelihood, dtype=np.float64)
+    likelihood_lin = np.asarray(metrics.combined_likelihood, dtype=np.float64)
     with np.errstate(divide="ignore"):
         log_lik = np.log(likelihood_lin).astype(np.float32)
 

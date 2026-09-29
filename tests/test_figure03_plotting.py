@@ -59,7 +59,7 @@ def _combined_metrics(
     diagnostics = DecodingDiagnostics(
         posterior=rng.dirichlet(np.ones(n_bins), size=n_time),
         predictive=rng.dirichlet(np.ones(n_bins), size=n_time),
-        likelihood=rng.dirichlet(np.ones(n_bins), size=n_time),
+        combined_likelihood=rng.dirichlet(np.ones(n_bins), size=n_time),
         hpd_overlap=per_cell["hpd_overlap"],
         kl_divergence=per_cell["kl_divergence"],
         predictive_pvalue=per_cell["predictive_pvalue"],
@@ -260,7 +260,7 @@ def test_compose_figure03_uses_event_diagnostics_for_scatter() -> None:
     metrics = DecodingDiagnostics(
         posterior=rng.dirichlet(np.ones(n_bins), size=n_time),
         predictive=rng.dirichlet(np.ones(n_bins), size=n_time),
-        likelihood=rng.dirichlet(np.ones(n_bins), size=n_time),
+        combined_likelihood=rng.dirichlet(np.ones(n_bins), size=n_time),
         hpd_overlap=hpd,
         kl_divergence=kl,
         predictive_pvalue=sp,

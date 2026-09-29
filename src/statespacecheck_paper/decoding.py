@@ -629,8 +629,9 @@ def decode_with_diagnostics(
 
         Dense ``(n_time, n_bins)`` distributions
             ``posterior`` (filtered posterior), ``predictive`` (one-step
-            ahead; the initial state distribution at t=0), and ``likelihood``
-            (normalized combined likelihood from all cells).
+            ahead; the initial state distribution at t=0), and
+            ``combined_likelihood`` (normalized combined likelihood from all
+            cells).
 
         Dense ``(n_time, n_cells)`` per-cell diagnostic matrices
             ``hpd_overlap``, ``kl_divergence``, ``predictive_pvalue``. NaN at
@@ -661,7 +662,7 @@ def decode_with_diagnostics(
     run in log-space via the :func:`_condition_on` pattern adapted from
     ``dynamax`` / ``non_local_detector.core``. The posterior update
     itself cannot underflow on the inner step (it uses an explicit
-    log-sum-exp shift). The stored ``likelihood`` array is renormalized
+    log-sum-exp shift). The stored ``combined_likelihood`` array is renormalized
     after the same shift, so individual bins still underflow to zero in
     linear space but the row as a whole remains a proper probability
     distribution.
@@ -721,7 +722,7 @@ def decode_with_diagnostics(
     # Preallocate outputs
     posterior: NDArray[np.floating] = np.zeros((n_time, n_bins))
     predictive: NDArray[np.floating] = np.zeros((n_time, n_bins))  # p(x_t | y_{1:t-1})
-    combined_likelihood_all: NDArray[np.floating] = np.zeros((n_time, n_bins))  # p(y_t | x_t)
+    combined_likelihood: NDArray[np.floating] = np.zeros((n_time, n_bins))  # p(y_t | x_t)
 
     # Initial state law p(x_0): the t=0 prediction. It is not propagated
     # through the transition matrix; the first bin's spikes update it directly.
@@ -774,7 +775,7 @@ def decode_with_diagnostics(
         else:
             step = filter_step(posterior[t - 1], spike_counts[t], current_transition, rates_t)
         predictive[t] = step.predictive  # stored for p-value computation
-        combined_likelihood_all[t] = step.combined_likelihood
+        combined_likelihood[t] = step.combined_likelihood
         posterior[t] = step.posterior
 
     # Find all spike events (every bin, including t=0). Count matrices are
@@ -808,7 +809,7 @@ def decode_with_diagnostics(
     return DecodingDiagnostics(
         posterior=posterior,
         predictive=predictive,
-        likelihood=combined_likelihood_all,
+        combined_likelihood=combined_likelihood,
         hpd_overlap=overridden.hpd_overlap,
         kl_divergence=overridden.kl_divergence,
         predictive_pvalue=overridden.predictive_pvalue,

@@ -489,7 +489,7 @@ def filter_explainer_payload(config: Figure3Config) -> dict[str, Any]:
         },
         "predictive": heatmap_payload(predictive, shared_range),
         "posterior": heatmap_payload(posterior, shared_range),
-        "likelihood": encode_display_rows(decoded.likelihood),
+        "likelihood": encode_display_rows(decoded.combined_likelihood),
         "place_fields": heatmap_payload(sequence.rates.T, (0.0, float(sequence.rates.max()))),
         "exposure": _rounded(exposure, 4),
         "moments": {
