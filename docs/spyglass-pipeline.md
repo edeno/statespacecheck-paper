@@ -1,7 +1,7 @@
 # Figure 4 in the lab's Spyglass pipeline
 
 Lab policy is that a paper's analyses run as Spyglass pipelines, so they can be
-reproduced and exported with the lab's data. `src/statespacecheck_paper/spyglass_pipeline.py`
+reproduced and exported with the lab's data. `src/statespacecheck_paper/lab/spyglass_pipeline.py`
 does this for Figure 4, and `scripts/spyglass_pipeline_figure04.py` runs it one step
 at a time. The figure pipeline itself (`scripts/generate_figure04.py`) does not use
 Spyglass; it reads the input file described in [data-lineage.md](data-lineage.md).
@@ -33,7 +33,7 @@ a step would write unless given `--write`, and then asks for confirmation.
 | `diagnostics` | `Figure4Diagnostics` (+ `Mean`, `FlagConfusion`) and an analysis NWB file | per-spike diagnostics table and the Figure-4 summary; `FlagConfusion` counts spikes flagged by `both` decoders, by the Continuous only (`rescued`), by the Continuous–Fragmented only (`newly_flagged`), and by `neither` |
 | `check` | nothing | stored summary vs `manuscript/figures/main/figure04_summary.json` |
 
-The diagnostics are computed by `spyglass_data.figure04_diagnostics_from_decodes`,
+The diagnostics are computed by `lab.spyglass_data.figure04_diagnostics_from_decodes`,
 which applies the figure pipeline's own functions to the stored decodes and fitted
 models. It also checks that the spike trains match the fitted units (count and
 order, via each unit's fitted mean rate), so a unit-order mismatch between the
@@ -129,10 +129,12 @@ Each needs the user's go-ahead before anything is written.
   `scripts/datajoint_read_only.py`: it stops DataJoint from creating schemas or tables
   and makes every insert, delete, and drop raise (including the default rows
   DataJoint inserts into `Lookup` tables on import).
-- Importing Spyglass connects to the database. Keep Spyglass imports inside
-  functions in modules the figures or tests import (`spyglass_data` is tested for
-  this); `spyglass_pipeline` imports Spyglass at the top and must stay out of the
-  figure pipeline and the tests.
+- Importing Spyglass connects to the database. Both Spyglass modules live in the
+  `statespacecheck_paper.lab` package, which no figure or analysis module imports
+  (`tests/test_import_boundaries.py` enforces this). Keep Spyglass imports inside
+  functions in `lab/spyglass_data.py`, which the tests import (they check this);
+  `lab/spyglass_pipeline.py` imports Spyglass at the top and must stay out of the
+  tests.
 - The analysis NWB files exist only on the lab's storage. A laptop can reach the
   database (via VPN) but `fetch_nwb` fails there, and reads over the VPN can stall;
   run fetches on a lab server. Server load varies; check it and use an idle one.

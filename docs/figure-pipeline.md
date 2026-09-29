@@ -75,13 +75,13 @@ generate_figure04.py   → figure04_generation
 
 - **`interactive/`** — an optional pyqtgraph viewer that consumes the same
   diagnostic results but produces no manuscript figure.
-- **`spyglass_data.py`** (with `scripts/fetch_figure04_inputs.py`,
+- **`lab/spyglass_data.py`** (with `scripts/fetch_figure04_inputs.py`,
   `scripts/spyglass_export_figure04.py`, and `scripts/convert_figure04_pickles.py`)
   — rebuilds and exports the Figure-4 input file from Spyglass, writing it with
   `write_local_data`. Both run upstream of `load_local_data`, and nothing in
   figure generation imports them. See
   [data-lineage.md](data-lineage.md).
-- **`spyglass_pipeline.py`** (with `scripts/spyglass_pipeline_figure04.py`) — the
+- **`lab/spyglass_pipeline.py`** (with `scripts/spyglass_pipeline_figure04.py`) — the
   Figure-4 decode and diagnostics as a Spyglass pipeline, meant to reproduce this
   figure's numbers inside the lab database. See
   [spyglass-pipeline.md](spyglass-pipeline.md).
@@ -320,7 +320,7 @@ $\Lambda(x)$.
   processing steps, the verification against the files the figure used, and which
   of them are public (DANDI dandiset
   [001942](https://dandiarchive.org/dandiset/001942) has the raw recording).
-  `spyglass_data.py` rebuilds the input file from the database
+  `lab/spyglass_data.py` rebuilds the input file from the database
   (`scripts/fetch_figure04_inputs.py`, read-only) and logs them in a Spyglass
   export (`scripts/spyglass_export_figure04.py`); both run on a lab server with
   Spyglass and database access. The input file is archived on Zenodo

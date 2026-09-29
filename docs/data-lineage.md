@@ -5,7 +5,7 @@ Figure 4 reads one derived input file for one recording epoch, `j1620210710_02_r
 [Comrie et al. 2026](https://doi.org/10.1016/j.neuron.2026.08.023)). This page records
 which Frank-lab Spyglass database entries it comes from, how that was verified,
 and what is publicly available. The fetch code is
-`src/statespacecheck_paper/spyglass_data.py`.
+`src/statespacecheck_paper/lab/spyglass_data.py`.
 
 ## The input file
 

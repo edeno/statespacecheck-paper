@@ -34,7 +34,7 @@ from collections.abc import Sequence
 from importlib.metadata import version
 from pathlib import Path
 
-from statespacecheck_paper.spyglass_data import (
+from statespacecheck_paper.lab.spyglass_data import (
     FIGURE04_EPOCH_NAME,
     FIGURE04_NWB_FILE_NAME,
     check_output_paths,

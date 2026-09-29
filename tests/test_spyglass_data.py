@@ -23,12 +23,10 @@ import pytest
 import xarray as xr
 from track_linearization import make_track_graph
 
-from statespacecheck_paper import spyglass_data
 from statespacecheck_paper.figure04_diagnostics import FlagConfusion
 from statespacecheck_paper.figure04_summary import Figure4DiagnosticMeans, Figure4Summary
-from statespacecheck_paper.load_local_data import input_file_path, load_neural_recording_from_files
-from statespacecheck_paper.paths import FIGURE04_INPUTS_EPOCH, FIGURE04_SUMMARY_PATH, REPO_ROOT
-from statespacecheck_paper.spyglass_data import (
+from statespacecheck_paper.lab import spyglass_data
+from statespacecheck_paper.lab.spyglass_data import (
     Figure4Inputs,
     check_output_paths,
     compare_figure04_exports,
@@ -44,6 +42,8 @@ from statespacecheck_paper.spyglass_data import (
     unrestricted_log_entries,
     write_figure04_inputs,
 )
+from statespacecheck_paper.load_local_data import input_file_path, load_neural_recording_from_files
+from statespacecheck_paper.paths import FIGURE04_INPUTS_EPOCH, FIGURE04_SUMMARY_PATH, REPO_ROOT
 
 from ._scripts import SCRIPTS_DIR, load_script
 
@@ -56,7 +56,7 @@ _NO_DATABASE_IMPORTS = (
 
 
 def test_importing_module_does_not_import_spyglass_or_datajoint() -> None:
-    code = "import statespacecheck_paper.spyglass_data\n" + _NO_DATABASE_IMPORTS
+    code = "import statespacecheck_paper.lab.spyglass_data\n" + _NO_DATABASE_IMPORTS
     subprocess.run([sys.executable, "-c", code], check=True)
 
 

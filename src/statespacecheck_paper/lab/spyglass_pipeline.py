@@ -59,7 +59,7 @@ from statespacecheck_paper.figure04_models import (
     FIGURE4_MODELS,
 )
 from statespacecheck_paper.figure04_place_fields import DECODER_PREDICTIVE_VAR
-from statespacecheck_paper.spyglass_data import (
+from statespacecheck_paper.lab.spyglass_data import (
     FIGURE04_EPOCH_NAME,
     FIGURE04_NWB_FILE_NAME,
     HEAD_POSITION_COLUMNS,

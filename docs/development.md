@@ -66,6 +66,7 @@ and orchestration separate; the dependency graph is tested for cycles.
 | Shared plotting and appearance | `plotting.py`, `style.py`, `schematic.py` |
 | Summary-to-prose reporting | `reported_values.py`, `number_format.py` |
 | Website export | `site_export.py` |
+| Lab-only Spyglass acquisition, export, and pipeline | `lab/` |
 
 The general diagnostic computations belong to the separate `statespacecheck`
 package. Change them there, release/update that dependency, and regenerate this
@@ -165,8 +166,10 @@ Never write to the lab's Spyglass database without the user's explicit approval
 of that specific step, including inserts, `populate`, schema creation, deletes,
 and exports. Use `scripts/datajoint_read_only.py` for read-only checks.
 
-`spyglass_data.py` keeps Spyglass imports inside functions. Importing
-`spyglass_pipeline.py` connects to the database, so figure code and tests must
-never import it. Fetches requiring analysis NWB storage must run on a lab server;
+The scripts call the `statespacecheck_paper.lab` package, which no figure or
+analysis module imports (`tests/test_import_boundaries.py` enforces this).
+`lab/spyglass_data.py` keeps Spyglass imports inside functions. Importing
+`lab/spyglass_pipeline.py` connects to the database, so tests must never import
+it. Fetches requiring analysis NWB storage must run on a lab server;
 the locked Spyglass extra does not satisfy the current lab export requirements.
 The lab guide records the environment, status, and blockers.

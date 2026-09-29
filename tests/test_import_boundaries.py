@@ -229,6 +229,34 @@ def test_no_module_imports_the_download() -> None:
     assert importers == []
 
 
+def test_no_figure_or_analysis_module_imports_the_lab_package() -> None:
+    """The lab's Spyglass acquisition and export code runs upstream of the
+    figures; ``lab.spyglass_pipeline`` connects to the lab database when
+    imported. Only the ``lab`` package itself may import from it."""
+    lab = "statespacecheck_paper.lab"
+
+    def imports_lab(module_file: str) -> bool:
+        tree = ast.parse((_SRC / module_file).read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                module = node.module or ""
+                # ``from statespacecheck_paper import lab`` and relative forms.
+                if any(alias.name == "lab" for alias in node.names) or module in {"lab", lab}:
+                    return True
+                if module.startswith((lab + ".", "lab.")):
+                    return True
+            elif isinstance(node, ast.Import) and any(
+                alias.name == lab or alias.name.startswith(lab + ".") for alias in node.names
+            ):
+                return True
+        return False
+
+    modules = [path.relative_to(_SRC).as_posix() for path in sorted(_SRC.rglob("*.py"))]
+    assert "lab/spyglass_data.py" in modules
+    importers = [m for m in modules if not m.startswith("lab/") and imports_lab(m)]
+    assert importers == []
+
+
 def test_site_export_depends_only_on_analysis_layers() -> None:
     """The website export reads the figure pipelines' outputs and the reported
     values; it sits above both figure families and nothing imports it."""
