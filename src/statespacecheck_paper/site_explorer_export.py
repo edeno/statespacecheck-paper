@@ -36,6 +36,7 @@ import hashlib
 import io
 import json
 import math
+import sys
 import tarfile
 from collections.abc import Collection, Mapping
 from pathlib import Path
@@ -81,6 +82,15 @@ _DTYPES = {
 }
 # The modules whose code determines the explorer files.
 _EXPORT_SOURCES = ("site_explorer_export.py", "site_export.py")
+
+
+def export_source_python() -> str:
+    """Return the Python ``major.minor`` whose syntax trees :func:`export_source_digest` hashes.
+
+    ``ast.dump`` output differs between Python versions, so the digest is only
+    comparable on the version that recorded it.
+    """
+    return f"{sys.version_info.major}.{sys.version_info.minor}"
 
 
 def export_source_digest() -> str:
@@ -389,6 +399,7 @@ def explorer_files(
     overview = {
         "format_version": FORMAT_VERSION,
         "export_source_sha256": export_source_digest(),
+        "export_source_python": export_source_python(),
         "n_events": int(time_bin.size),
         "n_time": int(time.size),
         "time_step": step,

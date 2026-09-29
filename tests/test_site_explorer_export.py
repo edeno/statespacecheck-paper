@@ -31,6 +31,7 @@ from statespacecheck_paper.site_explorer_export import (
     explorer_files,
     export_recording_explorer,
     export_source_digest,
+    export_source_python,
 )
 from statespacecheck_paper.site_export import (
     EVENT_VALUE_SIGNIFICANT_FIGURES,
@@ -249,16 +250,15 @@ def test_archive_is_deterministic_and_named_by_content(tmp_path: Any) -> None:
     assert names == sorted(files)
 
 
-def test_committed_overview_matches_the_paper_and_the_export_code() -> None:
-    """The overview describes the summary's decode and was written by today's code.
+def _committed_overview() -> dict[str, Any]:
+    return json.loads((SITE_DATA_DIR / "recording_explorer.json").read_text(encoding="utf-8"))
 
-    A change to the export modules' executable code changes the digest: export
-    again and publish the new archive.
-    """
+
+def test_committed_overview_matches_the_paper() -> None:
+    """The overview describes the summary's decode and names its archive."""
     summary = json.loads(FIGURE04_SUMMARY_PATH.read_text(encoding="utf-8"))
-    overview = json.loads((SITE_DATA_DIR / "recording_explorer.json").read_text(encoding="utf-8"))
+    overview = _committed_overview()
     caches = summary["provenance"]["figure04_caches"]
-    assert overview["export_source_sha256"] == export_source_digest()
     assert overview["decode_cache_fingerprint"] == caches["fingerprint_sha256"]
     assert overview["diagnostics_fingerprint"] == caches["diagnostics_fingerprint_sha256"]
     assert overview["flag_rules"] == summary["flag_rules"]
@@ -273,9 +273,24 @@ def test_committed_overview_matches_the_paper_and_the_export_code() -> None:
     assert archive["url"] == RELEASE_URL + archive["name"]
 
 
+def test_committed_overview_was_written_by_the_current_export_code() -> None:
+    """A change to the export modules' executable code needs a new export.
+
+    Export again and publish the new archive. The digest hashes syntax trees,
+    whose dump differs between Python versions, so it is compared only on the
+    version that wrote the overview (CI runs that version on every platform).
+    """
+    overview = _committed_overview()
+    if overview["export_source_python"] != export_source_python():
+        pytest.skip(
+            f"the overview's digest was computed on Python {overview['export_source_python']}"
+        )
+    assert overview["export_source_sha256"] == export_source_digest()
+
+
 def test_local_archive_matches_the_committed_overview() -> None:
     """Check the exported archive, when present (the site build downloads it)."""
-    overview = json.loads((SITE_DATA_DIR / "recording_explorer.json").read_text(encoding="utf-8"))
+    overview = _committed_overview()
     path = SITE_EXPLORER_ARCHIVE_DIR / overview["archive"]["name"]
     if not path.exists():
         pytest.skip(f"{path.name} is not in {SITE_EXPLORER_ARCHIVE_DIR}")
