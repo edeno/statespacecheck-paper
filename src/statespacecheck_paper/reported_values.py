@@ -727,9 +727,9 @@ def statespacecheck_version(
         "figure04 provenance.source": figure04_payload["provenance"]["source"][
             "statespacecheck_version"
         ],
-        "figure04 provenance.figure04_decode_cache": figure04_payload["provenance"][
-            "figure04_decode_cache"
-        ]["statespacecheck_version"],
+        "figure04 provenance.figure04_caches": figure04_payload["provenance"]["figure04_caches"][
+            "statespacecheck_version"
+        ],
     }
     if len(set(recorded.values())) != 1:
         raise ValueError(

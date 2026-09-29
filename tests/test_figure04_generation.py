@@ -148,11 +148,13 @@ def test_summary_payload_contains_reported_counts_rates_and_provenance(
         "rescue_rate": 0.9,
     }
     assert provenance["source"] == source
-    decode_provenance = provenance["figure04_decode_cache"]
-    assert decode_provenance["fingerprint_sha256"] == "c" * 64
-    assert decode_provenance["diagnostics_fingerprint_sha256"] == "e" * 64
-    assert decode_provenance["diagnostics_config"]["hpd_coverage"] == 0.95
-    assert decode_provenance["input_file_sha256"] == {f"epoch_x{INPUT_FILE_SUFFIX}": "d" * 64}
+    cache_provenance_payload = provenance["figure04_caches"]
+    assert cache_provenance_payload["fingerprint_sha256"] == "c" * 64
+    assert cache_provenance_payload["diagnostics_fingerprint_sha256"] == "e" * 64
+    assert cache_provenance_payload["diagnostics_config"]["hpd_coverage"] == 0.95
+    assert cache_provenance_payload["input_file_sha256"] == {
+        f"epoch_x{INPUT_FILE_SUFFIX}": "d" * 64
+    }
 
 
 def test_cli_force_recompute_forwards_use_cache(

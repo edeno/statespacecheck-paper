@@ -879,7 +879,7 @@ def replay_payload(
         }
 
     spike_times = render_data.recording.spike_times
-    decode_cache = figure04_summary["provenance"]["figure04_decode_cache"]
+    caches = figure04_summary["provenance"]["figure04_caches"]
     unit_rank = np.argsort(np.argsort(decode.place_field_peaks))
     return {
         "time": _rounded(time[window] - t0, 4),
@@ -896,8 +896,8 @@ def replay_payload(
         "models": models,
         "flag_rules": flag_rules,
         # Identify the decode and the diagnostics this window was exported from.
-        "decode_cache_fingerprint": decode_cache["fingerprint_sha256"],
-        "diagnostics_fingerprint": decode_cache["diagnostics_fingerprint_sha256"],
+        "decode_cache_fingerprint": caches["fingerprint_sha256"],
+        "diagnostics_fingerprint": caches["diagnostics_fingerprint_sha256"],
     }
 
 

@@ -135,7 +135,7 @@ def figure04_summary_payload(
         "flag_confusions": statistics["flag_confusions"],
         "provenance": {
             "source": scientific_source_provenance(),
-            "figure04_decode_cache": cache_provenance.artifact_payload(),
+            "figure04_caches": cache_provenance.artifact_payload(),
         },
     }
 

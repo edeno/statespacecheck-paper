@@ -414,7 +414,7 @@ def test_replay_payload_slices_both_models_to_the_detail_window() -> None:
             "predictive_pvalue": {"comparison": "less_than_or_equal", "threshold": 0.05},
         },
         "provenance": {
-            "figure04_decode_cache": {
+            "figure04_caches": {
                 "fingerprint_sha256": "abc",
                 "diagnostics_fingerprint_sha256": "def",
             }
@@ -607,10 +607,10 @@ def test_committed_playground_is_current(
 
 def test_committed_replay_matches_the_figure4_decode(figure04_summary: dict[str, Any]) -> None:
     committed = _load(SITE_DATA_DIR / "replay.json")
-    decode_cache = figure04_summary["provenance"]["figure04_decode_cache"]
+    caches = figure04_summary["provenance"]["figure04_caches"]
     # A decoder or a diagnostics change must be followed by a re-export.
-    assert committed["decode_cache_fingerprint"] == decode_cache["fingerprint_sha256"]
-    assert committed["diagnostics_fingerprint"] == decode_cache["diagnostics_fingerprint_sha256"]
+    assert committed["decode_cache_fingerprint"] == caches["fingerprint_sha256"]
+    assert committed["diagnostics_fingerprint"] == caches["diagnostics_fingerprint_sha256"]
     assert committed["flag_rules"] == figure04_summary["flag_rules"]
     assert {
         name: (model["label"], model["short_label"]) for name, model in committed["models"].items()

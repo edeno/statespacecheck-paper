@@ -194,7 +194,7 @@ def test_figure04_reported_statistics_counts_partition_events(tmp_path: Path) ->
     assert len(source["uv_lock_sha256"]) == 64
 
     epoch = payload["dataset"]["animal_date_epoch"]
-    cache_payload = payload["provenance"]["figure04_decode_cache"]
+    cache_payload = payload["provenance"]["figure04_caches"]
     cache_provenance = Figure4CacheProvenance(
         fingerprint_sha256=cache_payload["fingerprint_sha256"],
         schema_version=cache_payload["schema_version"],

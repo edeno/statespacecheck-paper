@@ -658,7 +658,7 @@ after changing source code, inputs, or dependencies. Scientific changes require
 regenerating the affected results; documentation-only source edits can refresh
 the provenance after verifying that executable code is unchanged.
 
-Figure 4 also contains `provenance.figure04_decode_cache`. Its
+Figure 4 also contains `provenance.figure04_caches`. Its
 `fingerprint_sha256` is the same identity used to accept or reject the
 expensive decoder cache, `diagnostics_fingerprint_sha256` the identity of the
 diagnostics cache (recorded with the diagnostics configuration and the

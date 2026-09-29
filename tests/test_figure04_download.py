@@ -222,7 +222,5 @@ def test_zenodo_record_is_the_cited_version_with_the_file() -> None:
 
 def test_published_checksum_is_the_one_figure4_records() -> None:
     """The file the download verifies is the file the Figure-4 summary was made from."""
-    recorded = _load("figure04_summary.json")["provenance"]["figure04_decode_cache"][
-        "input_file_sha256"
-    ]
+    recorded = _load("figure04_summary.json")["provenance"]["figure04_caches"]["input_file_sha256"]
     assert recorded == {FIGURE04_INPUTS_FILE: FIGURE04_INPUTS_SHA256}

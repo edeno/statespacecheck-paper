@@ -227,8 +227,8 @@ def test_mismatched_hpd_coverages_are_rejected() -> None:
 
 @pytest.mark.parametrize(
     "path",
-    [("source",), ("figure04_decode_cache",)],
-    ids=["figure04_source", "figure04_decode_cache"],
+    [("source",), ("figure04_caches",)],
+    ids=["figure04_source", "figure04_caches"],
 )
 def test_mismatched_statespacecheck_versions_are_rejected(path: tuple[str]) -> None:
     """The manuscript cites one statespacecheck version for both figures."""
