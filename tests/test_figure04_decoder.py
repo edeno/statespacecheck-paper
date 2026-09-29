@@ -13,7 +13,8 @@ import statespacecheck_paper.figure04_decoder as figure04_decoder
 
 class TestFigure4ConfigMatchesManuscript:
     """Drift guard: the decoder models the code actually builds must carry the
-    exact parameters stated in the manuscript (``main.tex:294``).
+    exact parameters stated in the manuscript's decoder paragraph (the
+    ``sec:realdatamethods`` subsection of ``main.tex``).
 
     Rather than reconstruct the nested transition structure (which risks
     changing the decode), this fits nothing and asserts the *resolved*
@@ -44,86 +45,120 @@ class TestFigure4ConfigMatchesManuscript:
         continuous_model, _ = self._build_models()
         config = figure04_decoder.Figure4Config()
 
-        # main.tex:294 -- sorted-spikes KDE positional bandwidth sqrt(12.5).
+        # sec:realdatamethods -- sorted-spikes KDE positional bandwidth sqrt(12.5).
         assert continuous_model.sorted_spikes_algorithm_params["position_std"] == pytest.approx(
             config.decoder.position_std
         )
         assert config.decoder.position_std == pytest.approx(float(np.sqrt(12.5)))
 
-        # main.tex:294 -- zero-mean Gaussian random walk, movement_var = 6.0 cm^2.
+        # sec:realdatamethods -- zero-mean Gaussian random walk, movement_var = 6.0 cm^2.
         random_walk = continuous_model.continuous_transition_types[0][0]
         assert isinstance(random_walk, RandomWalk)
-        assert random_walk.movement_var == pytest.approx(config.provenance.movement_var)
-        assert config.provenance.movement_var == pytest.approx(6.0)
+        assert random_walk.movement_var == pytest.approx(config.package_defaults.movement_var)
+        assert config.package_defaults.movement_var == pytest.approx(6.0)
 
-    def test_contfrag_discrete_dynamics(self) -> None:
+    def test_continuous_fragmented_discrete_dynamics(self) -> None:
         from non_local_detector.continuous_state_transitions import RandomWalk
         from non_local_detector.discrete_state_transitions import DiscreteStationaryDiagonal
 
-        _, contfrag_model = self._build_models()
+        _, continuous_fragmented_model = self._build_models()
         config = figure04_decoder.Figure4Config()
 
-        # main.tex:294 -- ContFrag Continuous-to-Continuous transition reuses the
-        # same random walk (movement_var = 6.0).
-        random_walk = contfrag_model.continuous_transition_types[0][0]
+        # sec:realdatamethods -- Continuous-Fragmented Continuous-to-Continuous
+        # transition reuses the same random walk (movement_var = 6.0).
+        random_walk = continuous_fragmented_model.continuous_transition_types[0][0]
         assert isinstance(random_walk, RandomWalk)
-        assert random_walk.movement_var == pytest.approx(config.provenance.movement_var)
+        assert random_walk.movement_var == pytest.approx(config.package_defaults.movement_var)
 
-        # main.tex:294 -- mode-transition matrix [[0.98, 0.02], [0.02, 0.98]],
+        # sec:realdatamethods -- mode-transition matrix [[0.98, 0.02], [0.02, 0.98]],
         # i.e. a stationary diagonal (0.98, 0.98).
-        discrete_transition_type = contfrag_model.discrete_transition_type
+        discrete_transition_type = continuous_fragmented_model.discrete_transition_type
         assert isinstance(discrete_transition_type, DiscreteStationaryDiagonal)
         np.testing.assert_array_equal(
             np.asarray(discrete_transition_type.diagonal_values, dtype=float),
-            np.asarray(config.provenance.contfrag_diagonal_values, dtype=float),
+            np.asarray(config.package_defaults.continuous_fragmented_diagonal_values, dtype=float),
         )
 
-        # main.tex:294 -- Continuous / Fragmented modes initialized at (0.5, 0.5).
+        # sec:realdatamethods -- Continuous / Fragmented modes initialized at (0.5, 0.5).
         np.testing.assert_array_equal(
-            np.asarray(contfrag_model.discrete_initial_conditions, dtype=float),
-            np.asarray(config.provenance.contfrag_discrete_initial_conditions, dtype=float),
+            np.asarray(continuous_fragmented_model.discrete_initial_conditions, dtype=float),
+            np.asarray(
+                config.package_defaults.continuous_fragmented_discrete_initial_conditions,
+                dtype=float,
+            ),
         )
 
-    def test_unprinted_effective_defaults(self) -> None:
-        """Concentration / regularization are not printed in the manuscript but
-        shape the decode; pin them so a dependency bump fails loudly."""
-        continuous_model, contfrag_model = self._build_models()
-        config = figure04_decoder.Figure4Config()
+    def test_observation_initial_conditions_and_position_transitions(self) -> None:
+        from non_local_detector.continuous_state_transitions import RandomWalk, Uniform
+        from non_local_detector.initial_conditions import UniformInitialConditions
 
-        assert contfrag_model.discrete_transition_concentration == pytest.approx(
-            config.provenance.discrete_transition_concentration
-        )
-        assert config.provenance.discrete_transition_concentration == pytest.approx(1.1)
+        continuous_model, continuous_fragmented_model = self._build_models()
+        defaults = figure04_decoder.Figure4Config().package_defaults
 
-        for model in (continuous_model, contfrag_model):
-            assert model.discrete_transition_regularization == pytest.approx(
-                config.provenance.discrete_transition_regularization
+        for model in (continuous_model, continuous_fragmented_model):
+            # sec:realdatamethods -- one sorted-spikes kernel-density observation model.
+            assert model.sorted_spikes_algorithm == "sorted_spikes_kde"
+            # sec:realdatamethods -- position initialized uniformly over the
+            # track-interior bins, in every mode.
+            assert all(
+                type(item) is UniformInitialConditions
+                for item in model.continuous_initial_conditions_types
             )
-        assert config.provenance.discrete_transition_regularization == pytest.approx(1e-10)
+            # sec:realdatamethods -- zero-mean random walk.
+            assert model.continuous_transition_types[0][0].movement_mean == 0.0
+
+        # sec:realdatamethods -- the Continuous model's sole mode has probability one.
+        np.testing.assert_array_equal(continuous_model.discrete_initial_conditions, [1.0])
+        assert [
+            [type(item) for item in row] for row in continuous_model.continuous_transition_types
+        ] == [[RandomWalk]]
+        # sec:realdatamethods -- Continuous-to-Continuous uses the random walk;
+        # the other three mode transitions are uniform over track-interior bins.
+        assert [
+            [type(item) for item in row]
+            for row in continuous_fragmented_model.continuous_transition_types
+        ] == [[RandomWalk, Uniform], [Uniform, Uniform]]
+
+        # The recorded class names are those classes.
+        assert defaults.sorted_spikes_algorithm == "sorted_spikes_kde"
+        assert defaults.movement_mean == 0.0
+        assert defaults.continuous_discrete_initial_conditions == (1.0,)
+        assert defaults.continuous_initial_conditions_types == ("UniformInitialConditions",)
+        assert defaults.continuous_fragmented_initial_conditions_types == (
+            "UniformInitialConditions",
+            "UniformInitialConditions",
+        )
+        assert defaults.continuous_transition_types == (("RandomWalk",),)
+        assert defaults.continuous_fragmented_transition_types == (
+            ("RandomWalk", "Uniform"),
+            ("Uniform", "Uniform"),
+        )
+        assert defaults.continuous_fragmented_discrete_transition_type == (
+            "DiscreteStationaryDiagonal"
+        )
 
     def test_binning_values_the_code_uses(self) -> None:
         """Position bin size (from the Environment) and time bin size (from the
         sampling frequency) are the values the decode actually uses."""
-        continuous_model, contfrag_model = self._build_models()
+        continuous_model, continuous_fragmented_model = self._build_models()
         config = figure04_decoder.Figure4Config()
 
-        # main.tex:294 -- ~2 cm spatial bins.
-        for model in (continuous_model, contfrag_model):
+        # sec:realdatamethods -- ~2 cm spatial bins.
+        for model in (continuous_model, continuous_fragmented_model):
             assert model.environments[0].place_bin_size == pytest.approx(
                 config.decoder.position_bin_size_cm
             )
         assert config.decoder.position_bin_size_cm == pytest.approx(2.0)
 
-        # main.tex:294 -- 2 ms spike bins == 500 Hz sampling frequency.
-        for model in (continuous_model, contfrag_model):
+        # sec:realdatamethods -- 2 ms spike bins == 500 Hz sampling frequency.
+        for model in (continuous_model, continuous_fragmented_model):
             assert model.sampling_frequency == pytest.approx(config.decoder.sampling_frequency_hz)
         assert config.decoder.sampling_frequency_hz == pytest.approx(500.0)
-        assert config.decoder.time_bin_size_ms == pytest.approx(2.0)
 
     def test_config_records_manuscript_dependency_version(self) -> None:
         """The provenance string must match the manuscript-stated version."""
         config = figure04_decoder.Figure4Config()
-        assert config.provenance.non_local_detector_version == "0.6.10.dev214+g956fdccaf"
+        assert config.package_defaults.non_local_detector_version == "0.6.10.dev214+g956fdccaf"
 
 
 class TestConfigValueValidation:
@@ -151,16 +186,17 @@ class TestConfigValueValidation:
         "kwargs",
         [
             {"movement_var": 0.0},
-            {"discrete_transition_concentration": -1.0},
-            {"discrete_transition_regularization": 0.0},
-            {"contfrag_diagonal_values": (1.2, 0.98)},
-            {"contfrag_discrete_initial_conditions": (-0.1, 1.1)},
+            {"movement_mean": float("nan")},
+            {"continuous_discrete_initial_conditions": (0.5, 0.5)},
+            {"continuous_fragmented_diagonal_values": (1.2, 0.98)},
+            {"continuous_fragmented_diagonal_values": (0.98,)},
+            {"continuous_fragmented_discrete_initial_conditions": (-0.1, 1.1)},
             {"non_local_detector_version": ""},
         ],
     )
-    def test_provenance_rejects_invalid(self, kwargs: dict) -> None:
+    def test_package_defaults_reject_invalid(self, kwargs: dict) -> None:
         with pytest.raises(ValueError):
-            figure04_decoder.Figure4Provenance(**kwargs)
+            figure04_decoder.Figure4PackageDefaults(**kwargs)
 
 
 class TestNonDefaultPropagation:
@@ -173,6 +209,7 @@ class TestNonDefaultPropagation:
         from non_local_detector.environment import Environment
 
         decoder = decoder or figure04_decoder.Figure4DecoderConfig()
+        execution = execution or figure04_decoder.Figure4ExecutionConfig()
         env = Environment(place_bin_size=decoder.position_bin_size_cm)
         return figure04_decoder.build_decoder_models(env, decoder, execution)
 
@@ -198,29 +235,77 @@ class TestNonDefaultPropagation:
         assert env.place_bin_size == pytest.approx(3.0)
 
 
-class TestValidateProvenanceDefaults:
+class TestValidatePackageDefaults:
     @staticmethod
     def _models() -> tuple[Any, Any]:
         pytest.importorskip("non_local_detector")
         from non_local_detector.environment import Environment
 
-        return figure04_decoder.build_decoder_models(Environment())
+        return figure04_decoder.build_decoder_models(
+            Environment(),
+            figure04_decoder.Figure4DecoderConfig(),
+            figure04_decoder.Figure4ExecutionConfig(),
+        )
 
     def test_passes_for_recorded_defaults(self) -> None:
         cont, cf = self._models()
-        # nld defaults still match Figure4Provenance -> no raise.
-        figure04_decoder.validate_provenance_defaults(cont, cf)
+        # nld defaults still match Figure4PackageDefaults -> no raise.
+        figure04_decoder.validate_package_defaults(
+            cont, cf, figure04_decoder.Figure4PackageDefaults()
+        )
 
-    def test_raises_on_scalar_drift(self) -> None:
-        cont, cf = self._models()
-        drifted = dataclasses.replace(figure04_decoder.Figure4Provenance(), movement_var=999.0)
-        with pytest.raises(ValueError, match="default drift"):
-            figure04_decoder.validate_provenance_defaults(cont, cf, drifted)
-
-    def test_raises_on_array_drift(self) -> None:
+    def test_raises_when_installed_version_differs(self) -> None:
         cont, cf = self._models()
         drifted = dataclasses.replace(
-            figure04_decoder.Figure4Provenance(), contfrag_diagonal_values=(0.5, 0.5)
+            figure04_decoder.Figure4PackageDefaults(), non_local_detector_version="0.0.0"
         )
-        with pytest.raises(ValueError, match="default drift"):
-            figure04_decoder.validate_provenance_defaults(cont, cf, drifted)
+        with pytest.raises(ValueError, match="version drift: .* records '0.0.0'"):
+            figure04_decoder.validate_package_defaults(cont, cf, drifted)
+
+    @pytest.mark.parametrize(
+        ("field", "drifted_value", "label"),
+        [
+            ("sorted_spikes_algorithm", "sorted_spikes_glm", "sorted_spikes_algorithm"),
+            ("movement_var", 999.0, "movement_var"),
+            ("movement_mean", 1.0, "movement_mean"),
+            (
+                "continuous_initial_conditions_types",
+                ("EmpiricalInitialConditions",),
+                "continuous continuous_initial_conditions_types",
+            ),
+            (
+                "continuous_transition_types",
+                (("Uniform",),),
+                "continuous continuous_transition_types",
+            ),
+            (
+                "continuous_fragmented_initial_conditions_types",
+                ("UniformInitialConditions", "EmpiricalInitialConditions"),
+                "continuous_fragmented continuous_initial_conditions_types",
+            ),
+            (
+                "continuous_fragmented_transition_types",
+                (("RandomWalk", "Uniform"), ("Uniform", "RandomWalk")),
+                "continuous_fragmented continuous_transition_types",
+            ),
+            (
+                "continuous_fragmented_discrete_transition_type",
+                "DiscreteStationaryCustom",
+                "discrete_transition_type",
+            ),
+            ("continuous_discrete_initial_conditions", (0.0,), "continuous discrete_initial"),
+            ("continuous_fragmented_diagonal_values", (0.5, 0.5), "diagonal_values"),
+            (
+                "continuous_fragmented_discrete_initial_conditions",
+                (0.9, 0.1),
+                "continuous_fragmented discrete_initial",
+            ),
+        ],
+    )
+    def test_raises_on_drift(self, field: str, drifted_value: object, label: str) -> None:
+        cont, cf = self._models()
+        drifted = dataclasses.replace(
+            figure04_decoder.Figure4PackageDefaults(), **{field: drifted_value}
+        )
+        with pytest.raises(ValueError, match=f"default drift: .*{label}"):
+            figure04_decoder.validate_package_defaults(cont, cf, drifted)

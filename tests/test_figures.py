@@ -14,8 +14,9 @@ import pytest
 from scipy.optimize import brentq
 from scipy.stats import norm
 
+from ._scripts import SCRIPTS_DIR
+
 # Add scripts directory to path so we can import the figure scripts.
-SCRIPTS_DIR = Path(__file__).parent.parent / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 
@@ -78,8 +79,8 @@ def test_figure02_create_shared_example_samples_y_tilde_with_noise() -> None:
     rng = np.random.default_rng(42)
     data = create_shared_example(rng)
 
-    p_value = data.p_value
-    assert 0.0 <= p_value <= 1.0, f"p_value out of [0, 1]: {p_value}"
+    predictive_pvalue = data.predictive_pvalue
+    assert 0.0 <= predictive_pvalue <= 1.0, f"predictive_pvalue out of [0, 1]: {predictive_pvalue}"
 
     observed = data.observed_log_pred
     simulated = data.simulated_log_pred
@@ -114,7 +115,7 @@ def test_figure02_create_shared_example_samples_y_tilde_with_noise() -> None:
         )
     )
     standard_error = np.sqrt(exact * (1.0 - exact) / simulated.size)
-    assert abs(p_value - exact) < 4.0 * standard_error, (p_value, exact)
+    assert abs(predictive_pvalue - exact) < 4.0 * standard_error, (predictive_pvalue, exact)
 
     positions = np.asarray(data.showcase_positions)
     y_tildes = np.asarray(data.showcase_y_tildes)
@@ -123,9 +124,9 @@ def test_figure02_create_shared_example_samples_y_tilde_with_noise() -> None:
     )
     # Load-bearing assertion: y_tilde must differ from its originating
     # state position by more than rounding (~1 bin width = 0.5). If every
-    # y_tilde sits exactly on its sample position, the showcase draws have
-    # reverted to the deterministic y_tilde = x_s shortcut and the
-    # manuscript's predictive-check definition is no longer depicted.
+    # y_tilde sits exactly on its sample position, the showcase draws take
+    # the deterministic y_tilde = x_s shortcut and do not depict the
+    # manuscript's predictive-check definition.
     deltas = np.abs(y_tildes - positions)
     assert np.any(deltas > 0.5), (
         f"showcase_y_tildes equal showcase_positions (max |Δ| = {deltas.max():.3f}); "
@@ -133,8 +134,8 @@ def test_figure02_create_shared_example_samples_y_tilde_with_noise() -> None:
     )
     assert not data.predictive.flags.writeable
     assert not data.showcase_likelihoods.flags.writeable
-    with pytest.raises(ValueError, match="p_value must lie"):
-        replace(data, p_value=float("nan"))
+    with pytest.raises(ValueError, match="predictive_pvalue must lie"):
+        replace(data, predictive_pvalue=float("nan"))
 
 
 @pytest.mark.parametrize("observed_in_tail", [False, True])
@@ -147,7 +148,7 @@ def test_figure02_density_histogram_crops_the_sparse_tail(observed_in_tail: bool
     from statespacecheck_paper.figure02_panels import (
         HISTOGRAM_LOWER_QUANTILE,
         create_shared_example,
-        plot_ppc_density_histogram,
+        plot_predictive_check_density_histogram,
     )
 
     data = create_shared_example(np.random.default_rng(42))
@@ -158,7 +159,7 @@ def test_figure02_density_histogram_crops_the_sparse_tail(observed_in_tail: bool
 
     fig, ax = plt.subplots()
     try:
-        plot_ppc_density_histogram(ax, data)
+        plot_predictive_check_density_histogram(ax, data)
         x_min, x_max = ax.get_xlim()
         bars = ax.patches
         area = sum(bar.get_width() * bar.get_height() for bar in bars)

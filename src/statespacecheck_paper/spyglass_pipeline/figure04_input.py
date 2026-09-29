@@ -1,10 +1,12 @@
-"""Rebuild the Figure-4 recording input from the Frank-lab Spyglass database.
+"""Rebuild the Figure-4 input file from the Frank-lab Spyglass database.
 
-:func:`statespacecheck_paper.load_local_data.load_neural_recording_from_files`
-reads one pre-exported ``.npz`` file. This module is the upstream side of that
+:func:`statespacecheck_paper.figure04_input.load_figure04_input` reads the
+Figure-4 input file, one ``.npz``. This module is the upstream side of that
 boundary: it fetches the Spyglass entries the recording is derived from and
-writes that file, so it can be regenerated, compared with the one the figure
-used, and captured by a Spyglass export (``scripts/spyglass_export_figure04.py``).
+writes that file (:func:`recording_arrays` defines its layout and
+:func:`write_npz` writes it deterministically), so it can be regenerated,
+compared with the one the figure used, and recorded in a Spyglass paper export
+(:mod:`~statespacecheck_paper.spyglass_pipeline.paper_export`).
 See ``docs/data-lineage.md`` for the entries, processing steps, and verification
 record.
 
@@ -22,28 +24,26 @@ machine with the lab's analysis store mounted.
 from __future__ import annotations
 
 import dataclasses
-import re
-from collections.abc import Mapping, Sequence
+import zipfile
+from collections.abc import Hashable, Mapping, Sequence
 from pathlib import Path
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, TypedDict
+from typing import TYPE_CHECKING, TypedDict
 
 import networkx as nx
 import numpy as np
 import pandas as pd
-import xarray as xr
 from numpy.typing import NDArray
 
-from statespacecheck_paper.load_local_data import (
-    EXPORT_FILE_SUFFIXES,
+from statespacecheck_paper.figure04_input import (
+    HEAD_POSITION_COLUMNS,
+    NPZ_FORMAT_VERSION,
     NeuralRecordingData,
-    recording_arrays,
-    write_npz,
+    input_file_path,
 )
 
 if TYPE_CHECKING:
-    from statespacecheck_paper.diagnostics import SpikeEventDiagnostics
-    from statespacecheck_paper.figure04_workflow import Figure4Summary
+    pass
 
 FIGURE04_NWB_FILE_NAME = "j1620210710_.nwb"
 FIGURE04_EPOCH_NAME = "02_r1"
@@ -91,7 +91,7 @@ class Figure4Inputs:
 
     Values keep the types Spyglass returns (e.g. ``linear_edge_spacing`` is the
     stored blob, an ``int`` for this track); the writer encodes them, and
-    :class:`~statespacecheck_paper.load_local_data.NeuralRecordingData`
+    :class:`~statespacecheck_paper.figure04_input.NeuralRecordingData`
     normalizes them on load.
 
     Parameters
@@ -116,7 +116,7 @@ class Figure4Inputs:
 
 
 def epoch_identifier(nwb_file_name: str, epoch_name: str) -> str:
-    """Return the ``{animal}{date}_{epoch}`` identifier used in export file names.
+    """Return the ``{animal}{date}_{epoch}`` identifier used in Figure-4 input file names.
 
     Parameters
     ----------
@@ -176,17 +176,18 @@ def get_interpolated_position_info(
     track_graph: nx.Graph,
     edge_order: list[tuple[int, int]],
     edge_spacing: float | list[float],
-    position_columns: list[str] | None = None,
 ) -> pd.DataFrame:
     """Interpolate position onto new time points and add linearization.
 
     Same algorithm as ``continuum-swr-replay``'s
-    ``data_loaders.position.get_interpolated_position_info``.
+    ``data_loaders.position.get_interpolated_position_info``, linearizing the
+    :data:`~statespacecheck_paper.figure04_input.HEAD_POSITION_COLUMNS`.
 
     Parameters
     ----------
     position_info : pd.DataFrame
-        Position data with a time index (seconds) and x/y position columns.
+        Position data with a time index (seconds) and the
+        :data:`~statespacecheck_paper.figure04_input.HEAD_POSITION_COLUMNS`.
     time : np.ndarray, shape (n_time,)
         Time points (seconds) of the output.
     track_graph : networkx.Graph
@@ -195,8 +196,6 @@ def get_interpolated_position_info(
         Edge order for linearization.
     edge_spacing : float or list of float
         Spacing between linearized edges (centimeters).
-    position_columns : list of str, optional
-        x and y position columns. Default ``["head_position_x", "head_position_y"]``.
 
     Returns
     -------
@@ -207,15 +206,12 @@ def get_interpolated_position_info(
     """
     from track_linearization import get_linearized_position
 
-    if position_columns is None:
-        position_columns = ["head_position_x", "head_position_y"]
-
     new_index = pd.Index(np.unique(np.concatenate((position_info.index, time))), name="time")
     interpolated_position_info = (
         position_info.reindex(index=new_index).interpolate(method="linear").reindex(index=time)
     )
     linear_position_info = get_linearized_position(
-        position=interpolated_position_info[position_columns].to_numpy(),
+        position=interpolated_position_info[list(HEAD_POSITION_COLUMNS)].to_numpy(),
         track_graph=track_graph,
         edge_order=edge_order,
         edge_spacing=edge_spacing,
@@ -361,11 +357,10 @@ def get_position_info(nwb_file_name: str, epoch_name: str, pos_name: str) -> Pos
     }
 
 
-def get_hpc_sorted_spike_times(
-    nwb_file_name: str,
-    sorting_restriction: Mapping[str, str | int] = HPC_SORTING_RESTRICTION,
-) -> list[NDArray[np.float64]]:
+def get_hpc_sorted_spike_times(nwb_file_name: str) -> list[NDArray[np.float64]]:
     """Fetch curated hippocampal unit spike times from v0 ``CuratedSpikeSorting``.
+
+    The sort is the one :data:`HPC_SORTING_RESTRICTION` selects.
 
     Units come in ``(sort_group_id, unit_id)`` order: each analysis file's units
     are checked to be exactly the group's ``CuratedSpikeSorting.Unit`` entries,
@@ -382,8 +377,6 @@ def get_hpc_sorted_spike_times(
     ----------
     nwb_file_name : str
         Spyglass NWB file name.
-    sorting_restriction : Mapping
-        ``CuratedSpikeSorting`` restriction without ``nwb_file_name``.
 
     Returns
     -------
@@ -401,7 +394,7 @@ def get_hpc_sorted_spike_times(
     from spyglass.common import BrainRegion, ElectrodeGroup
     from spyglass.spikesorting.v0 import CuratedSpikeSorting, SortGroup
 
-    restriction = {"nwb_file_name": nwb_file_name, **sorting_restriction}
+    restriction = {"nwb_file_name": nwb_file_name, **HPC_SORTING_RESTRICTION}
     sort_group_keys = (CuratedSpikeSorting & restriction).fetch("KEY", order_by="sort_group_id")
     if len(sort_group_keys) == 0:
         raise ValueError(f"No CuratedSpikeSorting entries match {restriction}")
@@ -494,25 +487,6 @@ def fetch_figure04_inputs(
     return Figure4Inputs(spike_times=spike_times, **position)
 
 
-def export_file_path(output_dir: str | Path, animal_date_epoch: str) -> Path:
-    """Return the path of the ``.npz`` input file for an epoch.
-
-    Parameters
-    ----------
-    output_dir : str or Path
-        Directory holding the file.
-    animal_date_epoch : str
-        Epoch identifier (see :func:`epoch_identifier`).
-
-    Returns
-    -------
-    Path
-        ``{output_dir}/{animal_date_epoch}_figure04_inputs.npz``.
-    """
-    (suffix,) = EXPORT_FILE_SUFFIXES
-    return Path(output_dir) / f"{animal_date_epoch}{suffix}"
-
-
 def check_output_paths(
     output_dir: str | Path,
     animal_date_epoch: str,
@@ -520,7 +494,7 @@ def check_output_paths(
     reference_dir: str | Path | None = None,
     overwrite: bool = False,
 ) -> None:
-    """Check the export destination (and a comparison reference) before any work.
+    """Check the input file's destination (and a comparison reference) before any work.
 
     Parameters
     ----------
@@ -545,13 +519,122 @@ def check_output_paths(
     """
     if reference_dir is not None and Path(reference_dir).resolve() == Path(output_dir).resolve():
         raise ValueError(f"Output and reference directory are the same: {output_dir}")
-    output = export_file_path(output_dir, animal_date_epoch)
+    output = input_file_path(output_dir, animal_date_epoch)
     if output.exists() and not overwrite:
-        raise FileExistsError(f"Refusing to overwrite existing export: {output}")
+        raise FileExistsError(f"Refusing to overwrite existing input file: {output}")
     if reference_dir is not None:
-        reference = export_file_path(reference_dir, animal_date_epoch)
+        reference = input_file_path(reference_dir, animal_date_epoch)
         if not reference.is_file():
-            raise FileNotFoundError(f"Missing reference export: {reference}")
+            raise FileNotFoundError(f"Missing reference input file: {reference}")
+
+
+def recording_arrays(
+    position_info: pd.DataFrame,
+    spike_times: Sequence[NDArray[np.float64]],
+    track_graph: nx.Graph,
+    linear_edge_order: Sequence[tuple[Hashable, Hashable]],
+    linear_edge_spacing: float,
+) -> dict[str, NDArray[np.generic]]:
+    """Encode a recording as the named arrays of the ``.npz`` input file.
+
+    Parameters
+    ----------
+    position_info : pd.DataFrame, shape (n_time, n_columns)
+        Time-indexed position; every column must be numeric.
+    spike_times : sequence of np.ndarray, shape (n_spikes,)
+        Per-unit spike times (seconds); units with no spikes are kept.
+    track_graph : networkx.Graph
+        Track graph with integer nodes carrying only ``pos`` and edges carrying
+        only ``distance`` and ``edge_id`` (anything else would be dropped, so it
+        is refused).
+    linear_edge_order : sequence of (int, int)
+        Edge order for linearization (integer node IDs).
+    linear_edge_spacing : float
+        Spacing between linearized edges (centimeters).
+
+    Returns
+    -------
+    dict of str to np.ndarray
+        ``format_version``; ``position_time``, ``position_index_name``,
+        ``position_columns`` and one ``position/<column>`` per column;
+        ``spike_times`` (all units concatenated) and ``spike_offsets``
+        (``n_units + 1``); ``track_nodes``, ``track_node_positions``,
+        ``track_edges``, ``track_edge_distance``, ``track_edge_id`` (in the
+        graph's iteration order); ``linear_edge_order``; ``linear_edge_spacing``.
+
+    Raises
+    ------
+    ValueError
+        If a position column is not numeric, or the graph carries attributes
+        other than those listed above.
+    """
+    columns = [str(column) for column in position_info.columns]
+    arrays: dict[str, NDArray[np.generic]] = {
+        "format_version": np.asarray(NPZ_FORMAT_VERSION, dtype=np.int64),
+        "position_time": position_info.index.to_numpy(dtype=np.float64),
+        "position_index_name": np.asarray(position_info.index.name or ""),
+        "position_columns": np.asarray(columns),
+    }
+    for column in columns:
+        values = position_info[column].to_numpy()
+        if not np.issubdtype(values.dtype, np.number):
+            raise ValueError(f"position_info column {column!r} is not numeric ({values.dtype})")
+        arrays[f"position/{column}"] = values
+
+    units = [np.asarray(st, dtype=np.float64) for st in spike_times]
+    arrays["spike_times"] = np.concatenate(units) if units else np.empty(0)
+    arrays["spike_offsets"] = np.concatenate(([0], np.cumsum([len(u) for u in units]))).astype(
+        np.int64
+    )
+
+    if track_graph.graph or track_graph.is_directed():
+        raise ValueError("track_graph must be an undirected graph without graph attributes")
+    node_keys = {frozenset(data) for _, data in track_graph.nodes(data=True)}
+    edge_keys = {frozenset(data) for _, _, data in track_graph.edges(data=True)}
+    if node_keys - {frozenset({"pos"})} or edge_keys - {frozenset({"distance", "edge_id"})}:
+        raise ValueError("track_graph attributes must be node 'pos' and edge 'distance', 'edge_id'")
+    arrays["track_nodes"] = np.asarray(list(track_graph.nodes), dtype=np.int64)
+    arrays["track_node_positions"] = np.asarray(
+        [track_graph.nodes[node]["pos"] for node in track_graph.nodes], dtype=np.float64
+    )
+    arrays["track_edges"] = np.asarray(list(track_graph.edges), dtype=np.int64).reshape(-1, 2)
+    arrays["track_edge_distance"] = np.asarray(
+        [data["distance"] for _, _, data in track_graph.edges(data=True)], dtype=np.float64
+    )
+    arrays["track_edge_id"] = np.asarray(
+        [data["edge_id"] for _, _, data in track_graph.edges(data=True)], dtype=np.int64
+    )
+    arrays["linear_edge_order"] = np.asarray(linear_edge_order, dtype=np.int64).reshape(-1, 2)
+    arrays["linear_edge_spacing"] = np.asarray(linear_edge_spacing, dtype=np.float64)
+    return arrays
+
+
+def write_npz(path: str | Path, arrays: Mapping[str, NDArray[np.generic]]) -> Path:
+    """Write arrays as an uncompressed ``.npz`` whose bytes depend only on the arrays.
+
+    ``np.savez`` stamps the current time on each archive entry, so the same arrays
+    would get a different SHA-256 on every write. This writes the same ``.npy``
+    entries in sorted order with a fixed timestamp.
+
+    Parameters
+    ----------
+    path : str or Path
+        Destination file.
+    arrays : Mapping of str to np.ndarray
+        Arrays to store; none may need pickling (object dtype is refused).
+
+    Returns
+    -------
+    Path
+        The written path.
+    """
+    path = Path(path)
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_STORED) as archive:
+        for name in sorted(arrays):
+            info = zipfile.ZipInfo(f"{name}.npy", date_time=(1980, 1, 1, 0, 0, 0))
+            with archive.open(info, "w", force_zip64=True) as entry:
+                np.save(entry, np.asanyarray(arrays[name]), allow_pickle=False)
+    return path
 
 
 def write_figure04_inputs(
@@ -564,7 +647,7 @@ def write_figure04_inputs(
     """Write the Figure-4 inputs as the ``.npz`` file the figure reads.
 
     The inputs are validated with the loader's checks, encoded with
-    :func:`~statespacecheck_paper.load_local_data.recording_arrays`, and written
+    :func:`recording_arrays`, and written
     deterministically, so the same inputs always give the same SHA-256.
 
     Parameters
@@ -589,7 +672,7 @@ def write_figure04_inputs(
         If the file exists and ``overwrite`` is False.
     ValueError
         If the inputs fail the loader's checks
-        (:class:`~statespacecheck_paper.load_local_data.NeuralRecordingData`) or
+        (:class:`~statespacecheck_paper.figure04_input.NeuralRecordingData`) or
         cannot be encoded; nothing is written.
     """
     check_output_paths(output_dir, animal_date_epoch, overwrite=overwrite)
@@ -609,7 +692,7 @@ def write_figure04_inputs(
         inputs.linear_edge_spacing,
     )
     Path(output_dir).mkdir(parents=True, exist_ok=True)
-    return write_npz(export_file_path(output_dir, animal_date_epoch), arrays)
+    return write_npz(input_file_path(output_dir, animal_date_epoch), arrays)
 
 
 def _array_difference(reference: NDArray[np.generic], candidate: NDArray[np.generic]) -> str | None:
@@ -623,7 +706,7 @@ def _array_difference(reference: NDArray[np.generic], candidate: NDArray[np.gene
     return None if same else "values differ"
 
 
-def compare_figure04_exports(
+def compare_figure04_inputs(
     reference_dir: str | Path,
     candidate_dir: str | Path,
     animal_date_epoch: str,
@@ -647,8 +730,8 @@ def compare_figure04_exports(
         Array name → ``None`` if identical, otherwise what differs (including an
         array present in only one file).
     """
-    reference_path = export_file_path(reference_dir, animal_date_epoch)
-    candidate_path = export_file_path(candidate_dir, animal_date_epoch)
+    reference_path = input_file_path(reference_dir, animal_date_epoch)
+    candidate_path = input_file_path(candidate_dir, animal_date_epoch)
     with (
         np.load(reference_path, allow_pickle=False) as reference,
         np.load(candidate_path, allow_pickle=False) as candidate,
@@ -664,12 +747,12 @@ def compare_figure04_exports(
     return differences
 
 
-def print_export_comparison(
+def print_input_comparison(
     reference_dir: str | Path,
     candidate_dir: str | Path,
     animal_date_epoch: str,
 ) -> bool:
-    """Print the arrays :func:`compare_figure04_exports` finds different.
+    """Print the arrays :func:`compare_figure04_inputs` finds different.
 
     Parameters
     ----------
@@ -685,396 +768,10 @@ def print_export_comparison(
     bool
         Whether every array is identical.
     """
-    differences = compare_figure04_exports(reference_dir, candidate_dir, animal_date_epoch)
+    differences = compare_figure04_inputs(reference_dir, candidate_dir, animal_date_epoch)
     different = {name: why for name, why in differences.items() if why is not None}
     for name, why in different.items():
         print(f"DIFFERENT  {name}: {why}")
     if not different:
         print(f"identical  all {len(differences)} arrays")
     return not different
-
-
-def figure04_diagnostics_from_decodes(
-    continuous_model: Any,
-    contfrag_model: Any,
-    continuous_results: xr.Dataset,
-    contfrag_results: xr.Dataset,
-    spike_times: Sequence[NDArray[np.float64]],
-    *,
-    coverage: float,
-    thresholds: Mapping[str, float] | None = None,
-) -> tuple[SpikeEventDiagnostics, SpikeEventDiagnostics, Figure4Summary]:
-    """Compute Figure 4's per-spike diagnostics and summary from two stored decodes.
-
-    The same computation as the figure pipeline, applied to decodes made
-    elsewhere (e.g. by Spyglass ``SortedSpikesDecodingV1``): spikes are clipped to
-    the decoded time range, the per-spike likelihood uses the Continuous
-    decoder's place fields (which must equal the Continuous-Fragmented ones), and
-    the summary uses the Figure-4 flag thresholds.
-
-    Parameters
-    ----------
-    continuous_model, contfrag_model : non_local_detector model
-        Fitted Continuous and Continuous-Fragmented decoders.
-    continuous_results, contfrag_results : xr.Dataset
-        Their decodes over the same time bins; each must hold
-        ``predictive_posterior`` (request it with ``return_outputs``).
-    spike_times : sequence of np.ndarray, shape (n_spikes,)
-        Per-unit spike times (seconds), in the order the models were fitted with.
-        Checked against each unit's fitted mean rate, which assumes the models
-        were trained on every decoded time bin (as in Figure 4).
-    coverage : float
-        HPD coverage for the HPD-overlap diagnostic.
-    thresholds : Mapping of str to float, optional
-        Flag threshold per metric. Default: the Figure-4 thresholds.
-
-    Notes
-    -----
-    Needs the figure pipeline's dependencies (e.g. ``statespacecheck``); they are
-    imported here so the fetch functions above do not need them.
-
-    Returns
-    -------
-    continuous, contfrag : SpikeEventDiagnostics
-        Per-spike diagnostics of each decoder, on the same spikes.
-    summary : Figure4Summary
-        Whole-session event means and two-decoder flag agreement.
-
-    Raises
-    ------
-    ValueError
-        If a decode lacks ``predictive_posterior``, the decodes cover different
-        time bins, the spike trains do not match the fitted units (count or
-        order), or the two decoders' place fields differ.
-    """
-    from statespacecheck_paper.figure04_decoder import get_spike_counts
-    from statespacecheck_paper.figure04_diagnostics import compute_results_diagnostics
-    from statespacecheck_paper.figure04_generation import (
-        FIGURE4_DIAGNOSTIC_THRESHOLDS,
-        FIGURE4_METRIC_DIRECTIONS,
-    )
-    from statespacecheck_paper.figure04_place_fields import extract_shared_position_place_fields
-    from statespacecheck_paper.figure04_workflow import summarize_figure04_diagnostics
-
-    time = continuous_results["time"].to_numpy()
-    if not np.array_equal(time, contfrag_results["time"].to_numpy()):
-        raise ValueError("The two decodes cover different time bins")
-    for name, results in (("Continuous", continuous_results), ("ContFrag", contfrag_results)):
-        if "predictive_posterior" not in results:
-            raise ValueError(
-                f"The {name} decode has no predictive_posterior; decode with "
-                "return_outputs including 'predictive_posterior'"
-            )
-    spikes = filter_spike_times(spike_times, time)
-    expected_rates = np.array([len(st) for st in spikes]) / len(time)
-    for model in (continuous_model, contfrag_model):
-        (encoding_model,) = model.encoding_model_.values()
-        fitted_rates = np.asarray(encoding_model["mean_rates"])
-        if fitted_rates.shape != expected_rates.shape or not np.allclose(
-            fitted_rates, expected_rates, rtol=1e-6, atol=0.0
-        ):
-            raise ValueError("The spike trains do not match the fitted units (count or order)")
-    place_fields, position_bins = extract_shared_position_place_fields(continuous_model)
-    contfrag_fields, contfrag_bins = extract_shared_position_place_fields(contfrag_model)
-    if not np.allclose(place_fields, contfrag_fields, equal_nan=True) or not np.allclose(
-        position_bins, contfrag_bins, equal_nan=True
-    ):
-        raise ValueError("The Continuous and ContFrag place fields or position grids differ")
-    spike_counts = get_spike_counts(spikes, time)
-    continuous, contfrag = (
-        compute_results_diagnostics(
-            results, place_fields, spike_counts, time, spikes, coverage=coverage
-        )
-        for results in (continuous_results, contfrag_results)
-    )
-    summary = summarize_figure04_diagnostics(
-        continuous,
-        contfrag,
-        n_units=int(spike_counts.shape[1]),
-        thresholds=FIGURE4_DIAGNOSTIC_THRESHOLDS if thresholds is None else thresholds,
-        metric_directions=FIGURE4_METRIC_DIRECTIONS,
-    )
-    return continuous, contfrag, summary
-
-
-# ``name [= default] : type`` lines of a DataJoint definition (not ``->`` or index lines).
-_ATTRIBUTE_LINE = re.compile(r"^\s*([a-z][a-z0-9_]*)\s*(?:=[^:#\n]*)?:", re.MULTILINE)
-
-
-def declared_attribute_names(definition: str) -> set[str]:
-    """Return the attribute names a DataJoint table definition declares directly.
-
-    Attributes inherited through ``->`` references are not included.
-
-    Parameters
-    ----------
-    definition : str
-        DataJoint table definition.
-
-    Returns
-    -------
-    set of str
-        Declared attribute names.
-
-    Examples
-    --------
-    >>> sorted(declared_attribute_names('''
-    ...     -> master
-    ...     table_id: int
-    ...     ---
-    ...     time=CURRENT_TIMESTAMP: timestamp  # when
-    ...     unique index (export_id, table_id)
-    ... '''))
-    ['table_id', 'time']
-    """
-    return set(_ATTRIBUTE_LINE.findall(definition))
-
-
-def check_export_tables_match_spyglass() -> None:
-    """Refuse to export with a Spyglass that does not declare the database's export columns.
-
-    The export tables of the lab database can be newer than the installed
-    Spyglass (the version in ``uv.lock`` is), and an older Spyglass would write
-    rows its successors do not expect. ``Export.make`` also requires packaging
-    with the same Spyglass ``x.y.z`` that logged the selection, so a selection
-    logged by a Spyglass that cannot package would be stranded. Run this before
-    logging as well as before packaging. Read-only.
-
-    Raises
-    ------
-    RuntimeError
-        If a secondary column of the database's ``ExportSelection`` or ``Export``
-        tables is not declared by the installed Spyglass.
-    """
-    from spyglass.common.common_usage import Export, ExportSelection
-
-    tables = (
-        ExportSelection,
-        ExportSelection.Table,
-        ExportSelection.File,
-        Export,
-        Export.Table,
-        Export.File,
-    )
-    unknown = [
-        f"{table.full_table_name}.{name}"
-        for table in tables
-        for name in table.heading.secondary_attributes
-        if name not in declared_attribute_names(table.definition)
-    ]
-    if unknown:
-        raise RuntimeError(
-            f"Installed Spyglass predates the database's export tables (undeclared columns: "
-            f"{unknown}); run the export with the lab's current Spyglass."
-        )
-
-
-def dry_run_figure04_export_log(
-    nwb_file_name: str = FIGURE04_NWB_FILE_NAME,
-    epoch_name: str = FIGURE04_EPOCH_NAME,
-) -> list[dict[str, str]]:
-    """Return what an export session would log for the Figure-4 fetch, writing nothing.
-
-    Runs :func:`fetch_figure04_inputs` with Spyglass export logging switched on
-    (a placeholder export ID) and the ``ExportSelection.Table`` / ``.File`` inserts
-    replaced by a recorder, then restores both. Reads the database and the analysis
-    files like a real fetch. This relies on how Spyglass logs exports; if nothing is
-    recorded, treat that as a changed mechanism, not as an empty export.
-
-    Parameters
-    ----------
-    nwb_file_name : str, optional
-        Spyglass NWB file name. Default is the Figure-4 session.
-    epoch_name : str, optional
-        Epoch interval name. Default is the Figure-4 epoch.
-
-    Returns
-    -------
-    list of dict of str to str
-        One entry per row that would be inserted: ``part`` (``"Table"`` or
-        ``"File"``) plus the row's fields (e.g. ``table_name`` and
-        ``restriction``, or ``analysis_file_name``).
-    """
-    import os
-
-    from spyglass.common.common_usage import ExportSelection
-    from spyglass.utils.mixins.export import EXPORT_ENV_VAR
-
-    recorded: list[dict[str, str]] = []
-
-    def recorder(part: str) -> Any:
-        def record(self: Any, rows: Any, *args: Any, **kwargs: Any) -> None:
-            rows = [rows] if isinstance(rows, Mapping) else list(rows)
-            recorded.extend({"part": part, **{k: str(v) for k, v in r.items()}} for r in rows)
-
-        return record
-
-    parts = {name: getattr(ExportSelection, name) for name in ("Table", "File")}
-    originals = {
-        (name, method): getattr(part, method)
-        for name, part in parts.items()
-        for method in ("insert", "insert1")
-    }
-    previous_export_id = os.environ.get(EXPORT_ENV_VAR)
-    try:
-        for (name, method), _ in originals.items():
-            setattr(parts[name], method, recorder(name))
-        os.environ[EXPORT_ENV_VAR] = "999999999"
-        fetch_figure04_inputs(nwb_file_name, epoch_name)
-    finally:
-        if previous_export_id is None:
-            os.environ.pop(EXPORT_ENV_VAR, None)
-        else:
-            os.environ[EXPORT_ENV_VAR] = previous_export_id
-        for (name, method), original in originals.items():
-            setattr(parts[name], method, original)
-    return recorded
-
-
-def unrestricted_log_entries(entries: Sequence[Mapping[str, str]]) -> list[str]:
-    """Return the tables an export log would include whole.
-
-    Spyglass's export logging records ``table & True`` (as in
-    ``ensure_single_entry()``, used by ``fetch1_dataframe``) as an unrestricted
-    fetch, and packaging then exports the entire table.
-
-    Parameters
-    ----------
-    entries : sequence of Mapping of str to str
-        Log rows, as returned by :func:`dry_run_figure04_export_log`.
-
-    Returns
-    -------
-    list of str
-        Names of tables with an unrestricted log entry.
-
-    Examples
-    --------
-    >>> unrestricted_log_entries([
-    ...     {"part": "Table", "table_name": "a", "restriction": "(True)"},
-    ...     {"part": "Table", "table_name": "b", "restriction": "(x=1)"},
-    ...     {"part": "File", "analysis_file_name": "f.nwb"},
-    ... ])
-    ['a']
-    """
-    return [
-        entry["table_name"]
-        for entry in entries
-        if entry.get("part") == "Table"
-        and entry.get("restriction", "").strip("() ") in ("", "True", "1")
-    ]
-
-
-def log_figure04_export(
-    paper_id: str,
-    analysis_id: str,
-    nwb_file_name: str = FIGURE04_NWB_FILE_NAME,
-    epoch_name: str = FIGURE04_EPOCH_NAME,
-) -> Figure4Inputs:
-    """Fetch the Figure-4 inputs inside a new Spyglass export session.
-
-    **Writes to the lab database**: ``ExportSelection.start_export`` inserts a
-    selection entry, and every Spyglass fetch until ``stop_export`` is logged
-    against it. Before that, :func:`check_export_tables_match_spyglass` runs, the
-    ``paper_id`` is checked to be new, and the fetch is rehearsed with
-    :func:`dry_run_figure04_export_log` (refusing an export that would include a
-    whole table). Packaging is :func:`package_figure04_export`, which must use the
-    same Spyglass version.
-
-    Parameters
-    ----------
-    paper_id : str
-        New export paper ID (at most 32 characters).
-    analysis_id : str
-        Analysis label within the paper (at most 32 characters).
-    nwb_file_name : str, optional
-        Spyglass NWB file name. Default is the Figure-4 session.
-    epoch_name : str, optional
-        Epoch interval name. Default is the Figure-4 epoch.
-
-    Returns
-    -------
-    Figure4Inputs
-        The inputs fetched while logging.
-
-    Raises
-    ------
-    RuntimeError
-        From :func:`check_export_tables_match_spyglass`, or if the rehearsal
-        records nothing or an unrestricted table.
-    ValueError
-        If ``paper_id`` already has export selections. Re-starting an existing
-        ``(paper_id, analysis_id)`` deletes its packaged ``Export`` entry, and
-        packaging rebuilds the paper's one package from all of its selections, so
-        this refuses rather than change a previous export.
-    """
-    from spyglass.common.common_usage import ExportSelection
-
-    check_export_tables_match_spyglass()
-    selection = ExportSelection()
-    if len(selection & {"paper_id": paper_id}) > 0:
-        raise ValueError(f"paper_id {paper_id!r} already has export selections; choose a new one")
-    # Rehearse the fetch with logging recorded, not written: this also imports every
-    # module the fetch needs, so nothing can fail for that reason mid-export.
-    rehearsal = dry_run_figure04_export_log(nwb_file_name, epoch_name)
-    if not rehearsal:
-        raise RuntimeError("The export rehearsal recorded nothing; Spyglass's logging changed")
-    if unrestricted := unrestricted_log_entries(rehearsal):
-        raise RuntimeError(f"The export would include whole tables: {sorted(set(unrestricted))}")
-
-    selection.start_export(paper_id=paper_id, analysis_id=analysis_id)
-    try:
-        return fetch_figure04_inputs(nwb_file_name, epoch_name)
-    finally:
-        selection.stop_export()
-
-
-def describe_figure04_export(paper_id: str) -> list[str]:
-    """List the tables and files logged for an export (read-only).
-
-    Parameters
-    ----------
-    paper_id : str
-        Export paper ID.
-
-    Returns
-    -------
-    list of str
-        Printable lines: each logged table with its row count, then each file.
-    """
-    from spyglass.common.common_usage import ExportSelection
-
-    selection = ExportSelection()
-    tables = selection.preview_tables(paper_id=paper_id)
-    files = selection.list_file_paths({"paper_id": paper_id}, as_dict=False)
-    return [
-        "Logged tables:",
-        *(f"  {table.full_table_name}: {len(table)} rows" for table in tables),
-        "Logged files:",
-        *(f"  {path}" for path in sorted(files)),
-    ]
-
-
-def package_figure04_export(paper_id: str) -> None:
-    """Package a logged export with ``Export().populate_paper``.
-
-    **Writes to the lab database** (``Export`` entries listing the tables and
-    files) and to the Spyglass export directory (a ``mysqldump`` script
-    ``_ExportSQL_<paper_id>.sh``, the Spyglass version, and ``environment.yml``;
-    it may also create ``~/.my.cnf``). Running that script produces the SQL dump.
-
-    Parameters
-    ----------
-    paper_id : str
-        Export paper ID, logged with the installed Spyglass version.
-
-    Raises
-    ------
-    RuntimeError
-        From :func:`check_export_tables_match_spyglass`, or from Spyglass when
-        the selection was logged with a different Spyglass version.
-    """
-    from spyglass.common.common_usage import Export
-
-    check_export_tables_match_spyglass()
-    Export().populate_paper(paper_id=paper_id)

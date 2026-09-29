@@ -18,8 +18,8 @@ pipeline so it can be reproduced and exported with the rest of the lab's data:
 
 With these settings the decode reproduces the figure pipeline exactly (checked
 offline by emulating ``SortedSpikesDecodingV1``; see ``docs/spyglass-pipeline.md``).
-Leaving parameter estimation on (the Spyglass default) re-fits the ContFrag
-transition matrix and changes the Figure-4 results.
+Leaving parameter estimation on (the Spyglass default) re-fits the
+Continuous-Fragmented transition matrix and changes the Figure-4 results.
 
 **Importing this module imports Spyglass, which connects to the lab database**, so
 nothing in figure generation imports it. It creates nothing on import: the custom
@@ -35,14 +35,12 @@ coordinate); that decode needs a Spyglass with the fix.
 
 from __future__ import annotations
 
-import dataclasses
 from collections.abc import Mapping
 from types import MappingProxyType
 from typing import Any
 
 import datajoint as dj
 import numpy as np
-import pandas as pd
 from spyglass.common import AnalysisNwbfile
 from spyglass.decoding.decoding_merge import DecodingOutput
 from spyglass.utils import SpyglassMixin, SpyglassMixinPart
@@ -52,13 +50,25 @@ from statespacecheck_paper.figure04_decoder import (
     build_decoder_models,
     create_decoder_environment,
 )
-from statespacecheck_paper.figure04_generation import FIGURE4_DIAGNOSTIC_THRESHOLDS
-from statespacecheck_paper.spyglass_data import (
+from statespacecheck_paper.figure04_input import HEAD_POSITION_COLUMNS
+from statespacecheck_paper.figure04_models import (
+    CONTINUOUS,
+    CONTINUOUS_FRAGMENTED,
+    FIGURE04_MODELS,
+)
+from statespacecheck_paper.figure04_place_fields import DECODER_PREDICTIVE_VAR
+from statespacecheck_paper.figure04_protocol import FIGURE04_DIAGNOSTIC_THRESHOLDS
+from statespacecheck_paper.spyglass_pipeline.figure04_compute import (
+    figure04_diagnostics_from_decodes,
+    figure04_event_table,
+    figure04_reported_statistics_from_rows,
+    figure04_summary_rows,
+)
+from statespacecheck_paper.spyglass_pipeline.figure04_input import (
     FIGURE04_EPOCH_NAME,
     FIGURE04_NWB_FILE_NAME,
     HPC_SORTING_RESTRICTION,
     POSITION_INFO_PARAM_NAME,
-    figure04_diagnostics_from_decodes,
     get_position_interval_name,
     get_track_graph,
 )
@@ -66,14 +76,14 @@ from statespacecheck_paper.spyglass_data import (
 SCHEMA_NAME = "edeno_statespacecheck"
 GROUP_NAME = "statespacecheck_figure04"
 UNIT_FILTER_PARAMS_NAME = "all_units"
+# Primary key of the Figure4DiagnosticsParameters entry the figure uses.
+DIAGNOSTICS_PARAM_NAME = "figure04"
 DECODING_PARAM_NAMES: Mapping[str, str] = MappingProxyType(
-    {
-        "continuous": "statespacecheck_figure04_continuous",
-        "contfrag": "statespacecheck_figure04_contfrag",
-    }
+    {model.id: f"statespacecheck_figure04_{model.id}" for model in FIGURE04_MODELS}
 )
-# Outputs the diagnostics need; Spyglass passes decoding_kwargs through to predict().
-DECODE_OUTPUTS = ("filter", "predictive_posterior", "log_likelihood")
+# Outputs requested besides the always-returned smoothed posterior, matching the
+# paper decode; Spyglass passes decoding_kwargs through to predict().
+DECODE_OUTPUTS = (DECODER_PREDICTIVE_VAR, "log_likelihood")
 
 schema = dj.Schema()  # activated only by activate_schema()
 
@@ -96,7 +106,7 @@ class Figure4DiagnosticsParameters(SpyglassMixin, dj.Lookup):
     """HPD coverage and flag thresholds for the Figure-4 diagnostics."""
 
     definition = """
-    figure4_diagnostics_param_name: varchar(32)
+    figure04_diagnostics_param_name: varchar(32)
     ---
     hpd_coverage: double                 # coverage of the highest-density regions
     hpd_overlap_threshold: double        # flag when HPD overlap <= this
@@ -104,10 +114,10 @@ class Figure4DiagnosticsParameters(SpyglassMixin, dj.Lookup):
     """
     contents = [
         (
-            "figure04",
+            DIAGNOSTICS_PARAM_NAME,
             Figure4Config().diagnostics.hpd_coverage,
-            FIGURE4_DIAGNOSTIC_THRESHOLDS["hpd_overlap"],
-            FIGURE4_DIAGNOSTIC_THRESHOLDS["predictive_pvalue"],
+            FIGURE04_DIAGNOSTIC_THRESHOLDS["hpd_overlap"],
+            FIGURE04_DIAGNOSTIC_THRESHOLDS["predictive_pvalue"],
         )
     ]
 
@@ -118,7 +128,7 @@ class Figure4DiagnosticsSelection(SpyglassMixin, dj.Manual):
 
     definition = """
     -> DecodingOutput.proj(continuous_merge_id="merge_id")
-    -> DecodingOutput.proj(contfrag_merge_id="merge_id")
+    -> DecodingOutput.proj(continuous_fragmented_merge_id="merge_id")
     -> Figure4DiagnosticsParameters
     """
 
@@ -157,8 +167,8 @@ class Figure4Diagnostics(SpyglassMixin, dj.Computed):
         threshold: double
         n: int
         both: int
-        continuous_only: int
-        contfrag_only: int
+        rescued: int        # flagged by the Continuous decoder only
+        newly_flagged: int  # flagged by the Continuous-Fragmented decoder only
         neither: int
         """
 
@@ -166,13 +176,13 @@ class Figure4Diagnostics(SpyglassMixin, dj.Computed):
         """Diagnose both decodes with the figure pipeline's code and store the results."""
         params = (Figure4DiagnosticsParameters() & key).fetch1()
         continuous_key = {"merge_id": key["continuous_merge_id"]}
-        contfrag_key = {"merge_id": key["contfrag_merge_id"]}
+        continuous_fragmented_key = {"merge_id": key["continuous_fragmented_merge_id"]}
         continuous_results = DecodingOutput.fetch_results(continuous_key)
-        continuous, contfrag, summary = figure04_diagnostics_from_decodes(
+        continuous, continuous_fragmented, summary = figure04_diagnostics_from_decodes(
             DecodingOutput.fetch_model(continuous_key),
-            DecodingOutput.fetch_model(contfrag_key),
+            DecodingOutput.fetch_model(continuous_fragmented_key),
             continuous_results,
-            DecodingOutput.fetch_results(contfrag_key),
+            DecodingOutput.fetch_results(continuous_fragmented_key),
             DecodingOutput.fetch_spike_data(continuous_key, filter_by_interval=False),
             coverage=params["hpd_coverage"],
             thresholds={
@@ -180,18 +190,7 @@ class Figure4Diagnostics(SpyglassMixin, dj.Computed):
                 "predictive_pvalue": params["predictive_pvalue_threshold"],
             },
         )
-        time = continuous_results["time"].to_numpy()
-        events = pd.DataFrame(
-            {
-                "time": time[continuous.event_time_ind],
-                "unit_index": continuous.event_cell_ind,
-                **{
-                    f"{model}_{metric}": getattr(diagnostics, f"event_{metric}")
-                    for model, diagnostics in (("continuous", continuous), ("contfrag", contfrag))
-                    for metric in ("hpd_overlap", "kl_divergence", "predictive_pvalue")
-                },
-            }
-        )
+        events = figure04_event_table(continuous, continuous_fragmented)
         nwb_file_name = (DecodingOutput.SortedSpikesDecodingV1 & continuous_key).fetch1(
             "nwb_file_name"
         )
@@ -208,64 +207,24 @@ class Figure4Diagnostics(SpyglassMixin, dj.Computed):
                 "n_events": len(events),
             }
         )
-        self.Mean.insert(
-            {**key, "model": model, "metric": metric, "value": value}
-            for model, means in (
-                ("continuous", summary.continuous),
-                ("continuous_fragmented", summary.continuous_fragmented),
-            )
-            for metric, value in dataclasses.asdict(means).items()
-        )
-        self.FlagConfusion.insert(
-            {
-                **key,
-                "metric": c.metric,
-                "threshold": c.threshold,
-                "n": c.n,
-                "both": c.both,
-                "continuous_only": c.a_only,
-                "contfrag_only": c.b_only,
-                "neither": c.neither,
-            }
-            for c in summary.flag_confusions
-        )
+        mean_rows, confusion_rows = figure04_summary_rows(summary)
+        self.Mean.insert({**key, **row} for row in mean_rows)
+        self.FlagConfusion.insert({**key, **row} for row in confusion_rows)
 
     def fetch_reported_statistics(self) -> dict[str, Any]:
         """Return one entry's summary in the shape of ``figure04_summary.json``."""
         key = self.fetch1("KEY")
-        means: dict[str, dict[str, float]] = {}
-        for row in (self.Mean() & key).fetch(as_dict=True):
-            means.setdefault(row["model"], {})[row["metric"]] = row["value"]
-        confusions = []
-        for row in (self.FlagConfusion() & key).fetch(as_dict=True, order_by="metric"):
-            flagged_by_continuous = row["continuous_only"] + row["both"]
-            confusions.append(
-                {
-                    "metric": row["metric"],
-                    "threshold": row["threshold"],
-                    "n": row["n"],
-                    "both": row["both"],
-                    "a_only": row["continuous_only"],
-                    "b_only": row["contfrag_only"],
-                    "neither": row["neither"],
-                    "rescue_rate": row["continuous_only"] / flagged_by_continuous
-                    if flagged_by_continuous
-                    else None,
-                }
-            )
-        return {
-            "n_units": int(self.fetch1("n_units")),
-            "diagnostic_means": means,
-            "flag_confusions": confusions,
-        }
+        return figure04_reported_statistics_from_rows(
+            (self.Mean() & key).fetch(as_dict=True),
+            (self.FlagConfusion() & key).fetch(as_dict=True),
+            n_units=int(self.fetch1("n_units")),
+        )
 
 
 # --- Decode setup (existing Spyglass tables) -------------------------------------
 
 
-def position_group_entry(
-    nwb_file_name: str = FIGURE04_NWB_FILE_NAME, epoch_name: str = FIGURE04_EPOCH_NAME
-) -> dict[str, Any]:
+def position_group_entry() -> dict[str, Any]:
     """Return the ``PositionGroup`` to create (read-only).
 
     The group holds the v0 ``IntervalPositionInfo`` (``default_decoding``) entry of
@@ -274,19 +233,19 @@ def position_group_entry(
     """
     from spyglass.position import PositionOutput
 
-    pos_name = get_position_interval_name(nwb_file_name, epoch_name)
+    pos_name = get_position_interval_name(FIGURE04_NWB_FILE_NAME, FIGURE04_EPOCH_NAME)
     merge_id = PositionOutput.merge_get_part(
         {
-            "nwb_file_name": nwb_file_name,
+            "nwb_file_name": FIGURE04_NWB_FILE_NAME,
             "interval_list_name": pos_name,
             "position_info_param_name": POSITION_INFO_PARAM_NAME,
         }
     ).fetch1("merge_id")
     return {
-        "nwb_file_name": nwb_file_name,
+        "nwb_file_name": FIGURE04_NWB_FILE_NAME,
         "group_name": GROUP_NAME,
         "keys": [{"pos_merge_id": merge_id}],
-        "position_variables": ["head_position_x", "head_position_y"],
+        "position_variables": list(HEAD_POSITION_COLUMNS),
         "upsample_rate": np.nan,
     }
 
@@ -298,9 +257,7 @@ def create_position_group(entry: Mapping[str, Any]) -> None:
     PositionGroup().create_group(**entry)
 
 
-def spike_sorting_output_entries(
-    nwb_file_name: str = FIGURE04_NWB_FILE_NAME,
-) -> list[dict[str, Any]]:
+def spike_sorting_output_entries() -> list[dict[str, Any]]:
     """Return the v0 HPC sort's ``CuratedSpikeSorting`` keys (read-only).
 
     ``SortedSpikesGroup`` reads units through the ``SpikeSortingOutput`` merge
@@ -313,7 +270,7 @@ def spike_sorting_output_entries(
     """
     from spyglass.spikesorting.v0 import CuratedSpikeSorting
 
-    restriction = {"nwb_file_name": nwb_file_name, **HPC_SORTING_RESTRICTION}
+    restriction = {"nwb_file_name": FIGURE04_NWB_FILE_NAME, **HPC_SORTING_RESTRICTION}
     keys: list[dict[str, Any]] = list(
         (CuratedSpikeSorting & restriction).fetch("KEY", order_by="sort_group_id")
     )
@@ -333,7 +290,7 @@ def register_spike_sorting_output(entries: list[dict[str, Any]]) -> None:
     SpikeSortingOutput().insert(entries, part_name="CuratedSpikeSorting")
 
 
-def sorted_spikes_group_entry(nwb_file_name: str = FIGURE04_NWB_FILE_NAME) -> dict[str, Any]:
+def sorted_spikes_group_entry() -> dict[str, Any]:
     """Return the ``SortedSpikesGroup`` to create (read-only): the HPC sort's groups.
 
     Raises
@@ -345,7 +302,7 @@ def sorted_spikes_group_entry(nwb_file_name: str = FIGURE04_NWB_FILE_NAME) -> di
     from spyglass.spikesorting.spikesorting_merge import SpikeSortingOutput
     from spyglass.spikesorting.v0 import CuratedSpikeSorting
 
-    restriction = {"nwb_file_name": nwb_file_name, **HPC_SORTING_RESTRICTION}
+    restriction = {"nwb_file_name": FIGURE04_NWB_FILE_NAME, **HPC_SORTING_RESTRICTION}
     n_sort_groups = len(CuratedSpikeSorting & restriction)
     merge_ids = (SpikeSortingOutput.CuratedSpikeSorting & restriction).fetch("merge_id")
     if len(merge_ids) != n_sort_groups:
@@ -355,7 +312,7 @@ def sorted_spikes_group_entry(nwb_file_name: str = FIGURE04_NWB_FILE_NAME) -> di
         )
     return {
         "group_name": GROUP_NAME,
-        "nwb_file_name": nwb_file_name,
+        "nwb_file_name": FIGURE04_NWB_FILE_NAME,
         "unit_filter_params_name": UNIT_FILTER_PARAMS_NAME,
         "keys": [{"spikesorting_merge_id": merge_id} for merge_id in merge_ids],
     }
@@ -368,9 +325,7 @@ def create_sorted_spikes_group(entry: Mapping[str, Any]) -> None:
     SortedSpikesGroup().create_group(**entry)
 
 
-def decoding_parameter_entries(
-    nwb_file_name: str = FIGURE04_NWB_FILE_NAME, epoch_name: str = FIGURE04_EPOCH_NAME
-) -> list[dict[str, Any]]:
+def decoding_parameter_entries() -> list[dict[str, Any]]:
     """Return the two ``DecodingParameters`` to insert (read-only).
 
     The models are built by the figure pipeline's ``build_decoder_models`` on the
@@ -378,19 +333,25 @@ def decoding_parameter_entries(
     """
     config = Figure4Config()
     track_graph, edge_order, edge_spacing = get_track_graph(
-        nwb_file_name, get_position_interval_name(nwb_file_name, epoch_name)
+        FIGURE04_NWB_FILE_NAME,
+        get_position_interval_name(FIGURE04_NWB_FILE_NAME, FIGURE04_EPOCH_NAME),
     )
     environment = create_decoder_environment(
         track_graph, list(edge_order), edge_spacing, config.decoder.position_bin_size_cm
     )
-    continuous, contfrag = build_decoder_models(environment, config.decoder, config.execution)
+    continuous, continuous_fragmented = build_decoder_models(
+        environment, config.decoder, config.execution
+    )
     return [
         {
             "decoding_param_name": DECODING_PARAM_NAMES[name],
             "decoding_params": model,
             "decoding_kwargs": {"return_outputs": list(DECODE_OUTPUTS)},
         }
-        for name, model in (("continuous", continuous), ("contfrag", contfrag))
+        for name, model in (
+            (CONTINUOUS.id, continuous),
+            (CONTINUOUS_FRAGMENTED.id, continuous_fragmented),
+        )
     ]
 
 
@@ -401,18 +362,16 @@ def insert_decoding_parameters(entries: list[dict[str, Any]]) -> None:
     DecodingParameters().insert(entries)
 
 
-def decoding_selection_entries(
-    nwb_file_name: str = FIGURE04_NWB_FILE_NAME, epoch_name: str = FIGURE04_EPOCH_NAME
-) -> list[dict[str, Any]]:
+def decoding_selection_entries() -> list[dict[str, Any]]:
     """Return the two ``SortedSpikesDecodingSelection`` entries (read-only).
 
     Encoding and decoding use the whole epoch interval, and parameter estimation
     is off, as in the figure pipeline.
     """
-    interval_name = f"{epoch_name} noPrePostTrialTimes"
+    interval_name = f"{FIGURE04_EPOCH_NAME} noPrePostTrialTimes"
     return [
         {
-            "nwb_file_name": nwb_file_name,
+            "nwb_file_name": FIGURE04_NWB_FILE_NAME,
             "sorted_spikes_group_name": GROUP_NAME,
             "unit_filter_params_name": UNIT_FILTER_PARAMS_NAME,
             "position_group_name": GROUP_NAME,
@@ -446,17 +405,9 @@ def populate_decoding(entries: list[dict[str, Any]]) -> None:
 # --- Diagnostics (custom schema) -------------------------------------------------
 
 
-def diagnostics_selection_entry(
-    nwb_file_name: str = FIGURE04_NWB_FILE_NAME, epoch_name: str = FIGURE04_EPOCH_NAME
-) -> dict[str, Any]:
+def diagnostics_selection_entry() -> dict[str, Any]:
     """Return the :class:`Figure4DiagnosticsSelection` entry (read-only)."""
-    selections = dict(
-        zip(
-            DECODING_PARAM_NAMES,
-            decoding_selection_entries(nwb_file_name, epoch_name),
-            strict=True,
-        )
-    )
+    selections = dict(zip(DECODING_PARAM_NAMES, decoding_selection_entries(), strict=True))
     merge_ids = {
         name: DecodingOutput.merge_get_part(
             {k: v for k, v in selection.items() if k != "estimate_decoding_params"}
@@ -464,9 +415,9 @@ def diagnostics_selection_entry(
         for name, selection in selections.items()
     }
     return {
-        "continuous_merge_id": merge_ids["continuous"],
-        "contfrag_merge_id": merge_ids["contfrag"],
-        "figure4_diagnostics_param_name": "figure04",
+        "continuous_merge_id": merge_ids[CONTINUOUS.id],
+        "continuous_fragmented_merge_id": merge_ids[CONTINUOUS_FRAGMENTED.id],
+        "figure04_diagnostics_param_name": DIAGNOSTICS_PARAM_NAME,
     }
 
 

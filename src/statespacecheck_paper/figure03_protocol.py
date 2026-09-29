@@ -5,9 +5,10 @@ conditions (remap, history-dependent firing, drift) and two specificity controls
 (a replay event embedded in clean-recovery 2, and a final sparse-population
 epoch), separated by clean-recovery windows. This module holds the immutable
 experimental configuration (:class:`Figure3Config`), the phase-transition index
-enum (:class:`PhaseBoundary`), the canonical ordered phase labels
-(:data:`PHASE_LABELS`), and the replay-window step-bound helper
-(:func:`compute_replay_step_window`). It imports no sibling paper module.
+enum (:class:`PhaseBoundary`), and the replay-window step-bound helper
+(:func:`compute_replay_step_window`). The conditions' display names live with
+the summary columns (``figure03_summary.build_summary_conditions``). It
+imports no sibling paper module.
 """
 
 from __future__ import annotations
@@ -97,6 +98,11 @@ class Figure3Config:
         only makes sense over the full ladder.
     prediction_step_std : float, default 0.5
         Decoder's baseline dynamics standard deviation.
+    initial_position : float, default 0.0
+        The trajectory's starting position, :math:`x_0`, from which the first
+        random-walk increment is taken; must lie in
+        ``[position_min, position_max]``. Each later phase starts where the
+        previous one ended.
     drift_momentum : float, default 0.88
         AR(1) coefficient on the animal's velocity during the drift
         misfit phase. The true trajectory is
@@ -137,7 +143,10 @@ class Figure3Config:
         replay_end_fraction)``.
     replay_speed_per_step : float, default 0.5
         Maximum per-step displacement of the replay trajectory as it sweeps
-        toward the farther track end and returns.
+        toward the farther track end and returns. At the default settings
+        the cap never binds: the sweep spends about 1,000 steps on each leg,
+        so reaching the farther end (50--100 position units away) takes
+        about 0.05--0.1 units per step, and that is the sweep's actual speed.
     replay_place_field_rate_scale : float, default 20.0
         Elevated place-field rate scale applied during the replay sweep.
     sparse_position : float, default 30.0
@@ -186,6 +195,7 @@ class Figure3Config:
 
     # Decoder & dynamics parameters
     prediction_step_std: float = 0.5  # baseline dynamics std
+    initial_position: float = 0.0  # x_0, before the first increment
     drift_momentum: float = 0.88  # AR(1) coefficient for drift-misfit trajectory
 
     # History-dependence misfit: hard refractory + post-spike burst window.
@@ -236,8 +246,10 @@ class Figure3Config:
     # Replay event embedded in the second clean-recovery window. The animal
     # is immobile while a coherent trajectory sweeps the track; the decoder
     # tracks the sweep, so the decoded position departs from the true
-    # (fixed) position without any diagnostic flagging it -- replay is not a
-    # misspecification. The sweep occupies the fractional sub-window
+    # (fixed) position without any diagnostic flagging it. The replay rates are
+    # modeled correctly, so this is a control with no observation misfit, although
+    # the decoder's random-walk transition does not describe the deterministic
+    # sweep. The sweep occupies the fractional sub-window
     # ``[replay_start_fraction, replay_end_fraction)`` of clean-recovery 2 and fires
     # at an elevated ``replay_place_field_rate_scale``. The trajectory makes one sweep
     # toward the farther track end, capped at ``replay_speed_per_step`` per step, and
@@ -254,8 +266,9 @@ class Figure3Config:
     # Poisson process increasing from a small baseline gain to its full rate.
     # With little intervening population information, the predictive spreads
     # between the isolated spikes; each spike supplies a narrow likelihood
-    # contained in that broad prediction. This is a correctly modeled,
-    # low-activity observation regime, not a transition-model perturbation.
+    # contained in that broad prediction. The low-activity observation regime is
+    # modeled correctly; the decoder's random-walk transition still does not
+    # describe the stationary animal.
     sparse_position: float = 30.0
     sparse_approach_duration_steps: int = 1_000
     sparse_control_ordinary_rate_scale: float = 0.0
@@ -307,6 +320,11 @@ class Figure3Config:
         centers.setflags(write=False)
         object.__setattr__(self, "place_field_centers", centers)
 
+        if not (self.position_min <= self.initial_position <= self.position_max):
+            raise ValueError(
+                f"initial_position must lie in [{self.position_min}, {self.position_max}]; "
+                f"got {self.initial_position}."
+            )
         if not (self.position_min <= self.sparse_position <= self.position_max):
             raise ValueError(
                 f"sparse_position must lie in [{self.position_min}, {self.position_max}]; "
@@ -382,24 +400,6 @@ class Figure3Config:
             self.position_bin_size,
             dtype=np.float64,
         )
-
-
-# Canonical ordered phase labels — the public contract of
-# ``Figure3SimulationResult.phase_labels``. ``run_figure03_simulation`` passes each
-# label explicitly at its ``_record_phase`` call site, in this order;
-# ``Figure3SimulationResult.__post_init__`` checks the emitted sequence equals this
-# tuple. Tests and downstream code import this tuple rather than re-typing
-# the strings.
-PHASE_LABELS: tuple[str, ...] = (
-    "Clean Baseline",
-    "Remap Misfit",
-    "Clean Recovery",
-    "History-Dependent Firing",
-    "Clean Recovery",
-    "Drift Misfit",
-    "Clean Recovery",
-    "Sparse Population",
-)
 
 
 def compute_replay_step_window(config: Figure3Config) -> tuple[int, int]:

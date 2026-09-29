@@ -1,7 +1,7 @@
 # Figure 4 in the lab's Spyglass pipeline
 
 Lab policy is that a paper's analyses run as Spyglass pipelines, so they can be
-reproduced and exported with the lab's data. `src/statespacecheck_paper/spyglass_pipeline.py`
+reproduced and exported with the lab's data. `src/statespacecheck_paper/spyglass_pipeline/figure04_schema.py`
 does this for Figure 4, and `scripts/spyglass_pipeline_figure04.py` runs it one step
 at a time. The figure pipeline itself (`scripts/generate_figure04.py`) does not use
 Spyglass; it reads the input file described in [data-lineage.md](data-lineage.md).
@@ -25,15 +25,15 @@ a step would write unless given `--write`, and then asks for confirmation.
 | `position-group` | `PositionGroup` `statespacecheck_figure04` | the epoch's v0 `IntervalPositionInfo` (`default_decoding`) entry; `head_position_x/y`; no upsampling |
 | `spike-sorting-output` | 22 `SpikeSortingOutput.CuratedSpikeSorting` entries | registers the v0 HPC sort (not yet in the merge table); re-running skips existing entries |
 | `sorted-spikes-group` | `SortedSpikesGroup` `statespacecheck_figure04` (`all_units`) | the sort's 22 merge entries |
-| `decoding-parameters` | `DecodingParameters` `statespacecheck_figure04_continuous` / `_contfrag` | models from `figure04_decoder.build_decoder_models`; `decoding_kwargs` requests `filter`, `predictive_posterior`, `log_likelihood` |
+| `decoding-parameters` | `DecodingParameters` `statespacecheck_figure04_continuous` / `_continuous_fragmented` | models from `figure04_decoder.build_decoder_models`; `decoding_kwargs` requests `predictive_posterior`, `log_likelihood` |
 | `decoding-selections` | two `SortedSpikesDecodingSelection` entries | encoding = decoding = `02_r1 noPrePostTrialTimes`; `estimate_decoding_params = 0` |
 | `decode` | `SortedSpikesDecodingV1`, `DecodingOutput`, result and model files | needs the analysis store (a lab server); about 3 minutes per model on CPU |
 | `diagnostics-schema` | schema `edeno_statespacecheck` and its tables | including the `Figure4DiagnosticsParameters` entry `figure04` |
-| `diagnostics-selection` | `Figure4DiagnosticsSelection` | the two decodes' merge IDs |
-| `diagnostics` | `Figure4Diagnostics` (+ `Mean`, `FlagConfusion`) and an analysis NWB file | per-spike diagnostics table and the Figure-4 summary |
+| `diagnostics-selection` | `Figure4DiagnosticsSelection` | the two decodes' merge IDs (`continuous_merge_id`, `continuous_fragmented_merge_id`) |
+| `diagnostics` | `Figure4Diagnostics` (+ `Mean`, `FlagConfusion`) and an analysis NWB file | per-spike diagnostics table (`figure04_compute.figure04_event_table`: each spike's exact `time`, the decoder bin `event_time_ind` it was scored in, `unit_index`, and both decoders' diagnostics) and the Figure-4 summary; `FlagConfusion` counts spikes flagged by `both` decoders, by the Continuous only (`rescued`), by the Continuous–Fragmented only (`newly_flagged`), and by `neither` |
 | `check` | nothing | stored summary vs `manuscript/figures/main/figure04_summary.json` |
 
-The diagnostics are computed by `spyglass_data.figure04_diagnostics_from_decodes`,
+The diagnostics are computed by `spyglass_pipeline.figure04_compute.figure04_diagnostics_from_decodes`,
 which applies the figure pipeline's own functions to the stored decodes and fitted
 models. It also checks that the spike trains match the fitted units (count and
 order, via each unit's fitted mean rate), so a unit-order mismatch between the
@@ -51,7 +51,7 @@ These were established offline by emulating `SortedSpikesDecodingV1.make()` (Spy
 | figure pipeline, re-run | identical |
 | Spyglass-matched: no upsampling, `estimate_decoding_params = 0` | identical |
 | same with `PositionGroup.upsample_rate = 500` | identical (the entry is already on a 500 Hz grid) |
-| `estimate_decoding_params = 1` (the Spyglass default) | **different**: EM re-fits the ContFrag transitions (`[[0.9988, 0.0012], [0.133, 0.867]]` vs `[[0.98, 0.02], [0.02, 0.98]]`); ContFrag mean HPD overlap 0.880 → 0.836, KL 2.18 → 2.85; HPD rescue rate 92% → 30% |
+| `estimate_decoding_params = 1` (the Spyglass default) | **different**: EM re-fits the Continuous–Fragmented transitions (`[[0.9988, 0.0012], [0.133, 0.867]]` vs `[[0.98, 0.02], [0.02, 0.98]]`); Continuous–Fragmented mean HPD overlap 0.880 → 0.836, KL 2.18 → 2.85; HPD rescued percentage 92% → 30% |
 
 Storing the decodes the way Spyglass does (`save_results` / `save_model`), reloading
 them, and running `figure04_diagnostics_from_decodes` also reproduces the committed
@@ -59,7 +59,7 @@ summary exactly.
 
 ## Blockers
 
-Both concern the single-state Continuous decoder; the two-state ContFrag decoder
+Both concern the single-state Continuous decoder; the two-state Continuous–Fragmented decoder
 works. `non_local_detector` squeezes the length-1 `states` dimension out of the
 results, leaving scalar `states`, `environments`, and `encoding_groups` coordinates.
 
@@ -129,10 +129,12 @@ Each needs the user's go-ahead before anything is written.
   `scripts/datajoint_read_only.py`: it stops DataJoint from creating schemas or tables
   and makes every insert, delete, and drop raise (including the default rows
   DataJoint inserts into `Lookup` tables on import).
-- Importing Spyglass connects to the database. Keep Spyglass imports inside
-  functions in modules the figures or tests import (`spyglass_data` is tested for
-  this); `spyglass_pipeline` imports Spyglass at the top and must stay out of the
-  figure pipeline and the tests.
+- Importing Spyglass connects to the database. The Spyglass code lives in the
+  `statespacecheck_paper.spyglass_pipeline` package, which no figure or analysis module imports
+  (`tests/test_import_boundaries.py` enforces this). Keep Spyglass imports inside
+  functions in `figure04_input.py`, `paper_export.py`, and `figure04_compute.py`, which the
+  tests import (they check this); `figure04_schema.py` imports Spyglass at the top and must
+  stay out of the tests.
 - The analysis NWB files exist only on the lab's storage. A laptop can reach the
   database (via VPN) but `fetch_nwb` fails there, and reads over the VPN can stall;
   run fetches on a lab server. Server load varies; check it and use an idle one.
@@ -140,10 +142,10 @@ Each needs the user's go-ahead before anything is written.
   [artifact refresh procedure](development.md#refreshing-publication-artifacts):
   regenerate affected figures, or refresh only `provenance.source` where it allows,
   then re-emit the reported values; `tests/test_reported_statistics_artifacts.py` fails otherwise.
-  After a Figure-4 summary change, also update `site/data/replay.json` (its
+  After a Figure-4 summary change, also update `site/data/recording.json` (its
   decode-cache fingerprint); other re-exported site files that differ only in the
   last floating-point digit need not be committed.
-- Figure-4 renders are not byte-stable: the "Cont.-Frag. Model" panel title can
+- Figure-4 renders are not byte-stable: the "Continuous–Fragmented Model" panel title can
   land about a pixel differently between runs (seen with fresh and cache-backed
   renders alike). Keep the committed PNG when that title is the only difference
   (check pixels, e.g. with PIL), and compare PDFs by rendering them (their bytes

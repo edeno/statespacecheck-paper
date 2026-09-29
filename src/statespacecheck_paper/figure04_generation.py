@@ -13,19 +13,28 @@ from __future__ import annotations
 
 import dataclasses
 import math
-from pathlib import Path
-from typing import Literal
 
 from statespacecheck_paper.figure04_cache import Figure4CacheProvenance, Figure4Paths
 from statespacecheck_paper.figure04_decoder import Figure4Config
-from statespacecheck_paper.figure04_layout import Figure4DetailWindow, compose_figure04
-from statespacecheck_paper.figure04_workflow import (
+from statespacecheck_paper.figure04_layout import compose_figure04
+from statespacecheck_paper.figure04_models import CONTINUOUS, CONTINUOUS_FRAGMENTED
+from statespacecheck_paper.figure04_protocol import (
+    FIGURE04_DETAIL_WINDOW,
+    FIGURE04_DIAGNOSTIC_THRESHOLDS,
+    FIGURE04_METRIC_DIRECTIONS,
+)
+from statespacecheck_paper.figure04_summary import (
     Figure4Summary,
     compute_figure04_summary,
     format_figure04_summary,
-    prepare_figure04_render_data,
 )
-from statespacecheck_paper.paths import ANIMAL_DATE_EPOCH, DATA_PATH
+from statespacecheck_paper.figure04_workflow import prepare_figure04_render_data
+from statespacecheck_paper.paths import (
+    ANIMAL_DATE_EPOCH,
+    DATA_PATH,
+    FIGURE04_SUMMARY_PATH,
+    FIGURE_DIR,
+)
 from statespacecheck_paper.scientific_artifacts import (
     inclusive_flag_rules,
     scientific_source_provenance,
@@ -33,24 +42,9 @@ from statespacecheck_paper.scientific_artifacts import (
 )
 from statespacecheck_paper.style import save_figure, set_figure_defaults
 
-# Diagnostic thresholds. HPD overlap and the predictive p-value use fixed
-# cutoffs of 0.05. The KL divergence has no natural fixed cutoff, so it is
-# shown without a threshold line or a flagged-region callout.
-FIGURE4_DIAGNOSTIC_THRESHOLDS: dict[str, float] = {
-    "hpd_overlap": 0.05,
-    "predictive_pvalue": 0.05,
-}
-FIGURE4_METRIC_DIRECTIONS: dict[str, Literal["below", "above"]] = {
-    "hpd_overlap": "below",
-    "predictive_pvalue": "below",
-}
-# Manuscript detail view: a KL-divergence spike during immobility at a reward
-# well, shown with 500 samples on either side (~2 seconds total at 500 Hz).
-FIGURE4_DETAIL_WINDOW = Figure4DetailWindow(
-    center_index=193_069,
-    half_width_samples=500,
-)
-FIGURE04_SUMMARY_PATH = Path("manuscript/figures/main/figure04_summary.json")
+# Version of the figure04_summary.json layout written by
+# figure04_summary_payload. Bump it when a field is added, removed, or renamed.
+FIGURE04_SUMMARY_SCHEMA_VERSION = 7
 
 
 def figure04_reported_statistics(summary: Figure4Summary) -> dict[str, object]:
@@ -64,22 +58,29 @@ def figure04_reported_statistics(summary: Figure4Summary) -> dict[str, object]:
     Returns
     -------
     dict
-        ``diagnostic_means`` (per decoder and metric) and ``flag_confusions``
-        (with ``rescue_rate``, ``None`` when undefined).
+        ``diagnostic_means`` (per decoder and metric), ``flag_confusion_models``
+        (which decoder is the reference and which the comparison), and
+        ``flag_confusions`` (``rescued`` = flagged by the
+        reference only, ``newly_flagged`` = by the comparison only, with
+        ``rescued_fraction``, ``None`` when undefined).
     """
     confusions: list[dict[str, object]] = []
     for confusion in summary.flag_confusions:
-        rescue_rate = confusion.rescue_rate
+        rescued_fraction = confusion.rescued_fraction
         confusions.append(
             {
                 **dataclasses.asdict(confusion),
-                "rescue_rate": rescue_rate if math.isfinite(rescue_rate) else None,
+                "rescued_fraction": rescued_fraction if math.isfinite(rescued_fraction) else None,
             }
         )
     return {
         "diagnostic_means": {
-            "continuous": dataclasses.asdict(summary.continuous),
-            "continuous_fragmented": dataclasses.asdict(summary.continuous_fragmented),
+            CONTINUOUS.id: dataclasses.asdict(summary.continuous),
+            CONTINUOUS_FRAGMENTED.id: dataclasses.asdict(summary.continuous_fragmented),
+        },
+        "flag_confusion_models": {
+            "reference": CONTINUOUS.id,
+            "comparison": CONTINUOUS_FRAGMENTED.id,
         },
         "flag_confusions": confusions,
     }
@@ -100,7 +101,7 @@ def figure04_summary_payload(
         )
     statistics = figure04_reported_statistics(summary)
     return {
-        "schema_version": 4,
+        "schema_version": FIGURE04_SUMMARY_SCHEMA_VERSION,
         "figure": "figure04",
         "dataset": {
             "animal_date_epoch": paths.animal_date_epoch,
@@ -108,15 +109,16 @@ def figure04_summary_payload(
         },
         "configuration": dataclasses.asdict(config),
         "flag_rules": inclusive_flag_rules(
-            FIGURE4_DIAGNOSTIC_THRESHOLDS,
-            FIGURE4_METRIC_DIRECTIONS,
+            FIGURE04_DIAGNOSTIC_THRESHOLDS,
+            FIGURE04_METRIC_DIRECTIONS,
         ),
-        "detail_window": dataclasses.asdict(FIGURE4_DETAIL_WINDOW),
+        "detail_window": dataclasses.asdict(FIGURE04_DETAIL_WINDOW),
         "diagnostic_means": statistics["diagnostic_means"],
+        "flag_confusion_models": statistics["flag_confusion_models"],
         "flag_confusions": statistics["flag_confusions"],
         "provenance": {
             "source": scientific_source_provenance(),
-            "figure04_decode_cache": cache_provenance.artifact_payload(),
+            "figure04_caches": cache_provenance.artifact_payload(),
         },
     }
 
@@ -127,28 +129,25 @@ def generate_figure04(*, use_cache: bool = True) -> None:
     Parameters
     ----------
     use_cache : bool, default True
-        When True and a fingerprint-matching cache of decoder outputs exists
-        under ``data/intermediates``, load it and skip the expensive fit/decode
-        step. When False (``--force-recompute``), always recompute and
-        overwrite the cache. A config / data / fitting implementation /
-        ``non_local_detector`` change
-        invalidates the cache automatically. Fitting + decoding both models
-        takes several minutes; figure-only edits (styling, thresholds) reuse
-        the cache.
+        When True, load the decode cache and the diagnostics cache from
+        ``DATA_PATH / "intermediates"`` (``DATA_PATH`` is ``data/`` unless
+        ``STATESPACECHECK_DATA_PATH`` is set) when their fingerprints match,
+        and rebuild whichever does not. A stale decode cache (a config, input
+        data, fitting implementation, or ``non_local_detector`` change) refits
+        and re-decodes both models, which takes several minutes, and then
+        recomputes the diagnostics; a stale diagnostics cache alone recomputes
+        only the diagnostics from the cached predictions. When False
+        (``--force-recompute``), refit, recompute, and overwrite both caches.
+        Figure-only edits (styling, flag thresholds) reuse both caches.
     """
     config = Figure4Config()
     paths = Figure4Paths(data_path=DATA_PATH, animal_date_epoch=ANIMAL_DATE_EPOCH)
     render_data = prepare_figure04_render_data(config, paths, use_cache=use_cache)
-    if render_data.cache_provenance is None:
-        raise RuntimeError(
-            "Figure 4 render data lacks cache provenance; refusing to write a "
-            "canonical summary without input identities."
-        )
 
     summary = compute_figure04_summary(
         render_data,
-        FIGURE4_DIAGNOSTIC_THRESHOLDS,
-        FIGURE4_METRIC_DIRECTIONS,
+        FIGURE04_DIAGNOSTIC_THRESHOLDS,
+        FIGURE04_METRIC_DIRECTIONS,
     )
     print(f"\n{format_figure04_summary(summary)}")
     summary_path = write_json_artifact(
@@ -166,14 +165,14 @@ def generate_figure04(*, use_cache: bool = True) -> None:
     set_figure_defaults(context="paper")
     composition = compose_figure04(
         render_data,
-        diagnostic_thresholds=FIGURE4_DIAGNOSTIC_THRESHOLDS,
-        detail_window=FIGURE4_DETAIL_WINDOW,
+        diagnostic_thresholds=FIGURE04_DIAGNOSTIC_THRESHOLDS,
+        detail_window=FIGURE04_DETAIL_WINDOW,
     )
     save_figure(
-        "manuscript/figures/main/figure04",
+        FIGURE_DIR / "figure04",
         close=True,
         fig=composition.figure,
         bbox_inches=composition.bbox_inches,
     )
-    print("Saved manuscript/figures/main/figure04.{pdf,png}")
+    print(f"Saved {FIGURE_DIR / 'figure04'}.{{pdf,png}}")
     print("\nFigure 4 complete!")

@@ -3,8 +3,9 @@
 // Mirrors statespacecheck.event_diagnostics (called by the paper through
 // statespacecheck_paper.diagnostics.compute_spike_event_diagnostics_from_rates)
 // for a single spike event.
-// site/tests/metrics.test.mjs checks every function here against reference
-// values computed by the Python implementation (site/tests/fixtures/metric_parity.json).
+// site/tests/metrics.test.mjs checks every function here (the per-metric ones
+// through spikeDiagnostics) against reference values computed by the Python
+// implementation (site/tests/fixtures/metric_parity.json).
 //
 // Distributions are arrays over position bins. `rates` is an array of rows,
 // shape (n_bins, n_cells): expected spikes per bin for each cell.
@@ -27,7 +28,7 @@ export function gaussianPredictive(positionBins, mean, std) {
 }
 
 /** Normalized single-event likelihood: the firing cell's intensity over position. */
-export function eventLikelihood(rates, cell) {
+function eventLikelihood(rates, cell) {
   const intensity = rates.map((row) => row[cell]);
   if (intensity.some((v) => !Number.isFinite(v) || v < 0)) {
     throw new RangeError("event intensities must be finite and nonnegative");
@@ -42,7 +43,7 @@ export function eventLikelihood(rates, cell) {
  * which the descending cumulative mass first reaches `coverage` of the total.
  * Ties at the cutoff are all included, as in statespacecheck.
  */
-export function highestDensityRegion(distribution, coverage = 0.95) {
+export function highestDensityRegion(distribution, coverage) {
   const clean = distribution.map((v) => (Number.isFinite(v) ? v : 0));
   const total = sum(clean);
   if (!(total > 0) || !Number.isFinite(total)) return clean.map(() => false);
@@ -62,7 +63,7 @@ export function highestDensityRegion(distribution, coverage = 0.95) {
 }
 
 /** |HPD_P ∩ HPD_Q| / min(|HPD_P|, |HPD_Q|); 0 when either region is empty. */
-export function hpdOverlap(predictive, likelihood, coverage = 0.95) {
+function hpdOverlap(predictive, likelihood, coverage) {
   const regionP = highestDensityRegion(predictive, coverage);
   const regionQ = highestDensityRegion(likelihood, coverage);
   let sizeP = 0;
@@ -77,14 +78,20 @@ export function hpdOverlap(predictive, likelihood, coverage = 0.95) {
   return smaller > 0 ? both / smaller : 0;
 }
 
-function normalized(values) {
-  const clean = values.map((v) => (Number.isFinite(v) ? v : 0));
+/**
+ * Plain array scaled to sum to 1, with non-finite values as 0; all zeros when
+ * the cleaned values do not sum to a positive total. Accepts typed arrays (e.g.
+ * decoded uint8 rows), which must not be mapped in place: a Uint8Array.map
+ * would truncate every fraction to 0.
+ */
+export function normalized(values) {
+  const clean = Array.from(values, (v) => (Number.isFinite(v) ? v : 0));
   const total = sum(clean);
   return clean.map((v) => (total > 0 ? v / total : 0));
 }
 
 /** D_KL(P || Q) in nats; Infinity where Q is zero but P is not. */
-export function klDivergence(predictive, likelihood) {
+function klDivergence(predictive, likelihood) {
   // statespacecheck normalizes, then scipy.stats.entropy normalizes again.
   const p = normalized(normalized(predictive));
   const q = normalized(normalized(likelihood));
@@ -99,14 +106,10 @@ export function klDivergence(predictive, likelihood) {
 }
 
 /**
- * Predictive probability that a randomly selected event comes from each cell:
- * f_pred(c) = Σ_x P(x) λ_c(x) / Σ_d Σ_x P(x) λ_d(x).
+ * Predictive probability that a randomly selected event comes from each cell,
+ * f_pred(c) = Σ_x P(x) λ_c(x) / Σ_d Σ_x P(x) λ_d(x), and the total expected
+ * intensity Σ_d Σ_x P(x) λ_d(x).
  */
-export function predictiveCellProbabilities(predictive, rates) {
-  return cellProbabilitiesAndTotal(predictive, rates).probabilities;
-}
-
-/** The cell probabilities and the total expected intensity Σ_d Σ_x P(x) λ_d(x). */
 function cellProbabilitiesAndTotal(predictive, rates) {
   const nCells = rates[0].length;
   const expected = new Array(nCells).fill(0);
@@ -127,7 +130,7 @@ function cellProbabilitiesAndTotal(predictive, rates) {
  * The Python code also rescales events whose total intensity is below about
  * nBins * 1e-292; the page's intensities are never that small.
  */
-export function predictivePvalue(predictive, rates, cell) {
+function predictivePvalue(predictive, rates, cell) {
   const { probabilities, total } = cellProbabilitiesAndTotal(predictive, rates);
   const nBins = predictive.length;
   const bound =
@@ -141,7 +144,7 @@ export function predictivePvalue(predictive, rates, cell) {
 }
 
 /** All three diagnostics for one spike from `cell` under `predictive`. */
-export function spikeDiagnostics(predictive, rates, cell, coverage = 0.95) {
+export function spikeDiagnostics(predictive, rates, cell, coverage) {
   const likelihood = eventLikelihood(rates, cell);
   return {
     likelihood,

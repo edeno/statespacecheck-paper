@@ -43,11 +43,12 @@ from statespacecheck_paper.figure02_panels import (
     plot_kl_distributions,
     plot_kl_log_ratio,
     plot_kl_pointwise,
-    plot_ppc_density_histogram,
-    plot_ppc_likelihood_fan,
-    plot_ppc_predictive_fan,
+    plot_predictive_check_density_histogram,
+    plot_predictive_check_likelihood_fan,
+    plot_predictive_check_predictive_fan,
 )
-from statespacecheck_paper.style import save_figure, set_figure_defaults
+from statespacecheck_paper.paths import FIGURE_DIR
+from statespacecheck_paper.style import FIGURE_DPI, save_figure, set_figure_defaults
 
 
 def _add_column_group_backplates(
@@ -55,7 +56,7 @@ def _add_column_group_backplates(
     axes: Mapping[Hashable, Axes],
 ) -> None:
     """Add subtle column backplates so each metric reads as one group."""
-    fig.canvas.draw()
+    fig.draw_without_rendering()
     to_figure = fig.transFigure.inverted()
     column_groups = (
         ("hpd_predictive", "hpd_likelihood", "hpd_overlap", "hpd_formula"),
@@ -166,7 +167,7 @@ def compose_figure02(rng: np.random.Generator | None = None) -> Figure:
         figsize=(7.15, 7.0),
         width_ratios=[1, 1, 0.2, 1, 1, 0.2, 1, 1],
         height_ratios=[1, 1, 1, 0.35],
-        dpi=450,
+        dpi=FIGURE_DPI,
         constrained_layout={"h_pad": 0.10, "w_pad": 0.04},
     )
 
@@ -181,9 +182,9 @@ def compose_figure02(rng: np.random.Generator | None = None) -> Figure:
     hpd_sizes = plot_hpd_intersection(axes["hpd_overlap"], data)
 
     # Predictive Check column
-    plot_ppc_predictive_fan(axes["predictive_distribution"], data)
-    plot_ppc_likelihood_fan(axes["predictive_simulations"], data)
-    plot_ppc_density_histogram(axes["predictive_histogram"], data)
+    plot_predictive_check_predictive_fan(axes["predictive_distribution"], data)
+    plot_predictive_check_likelihood_fan(axes["predictive_simulations"], data)
+    plot_predictive_check_density_histogram(axes["predictive_histogram"], data)
 
     column_titles = [
         ("hpd_predictive", "HPD Overlap"),
@@ -208,7 +209,7 @@ def compose_figure02(rng: np.random.Generator | None = None) -> Figure:
         0.5,
         0.5,
         r"$D_{\mathrm{KL}} = \sum \mathrm{pred} \cdot \log(\mathrm{pred}/\mathrm{like})$"
-        f" = {data.kl_value:.2f}",
+        f" = {data.kl_divergence:.2f}",
         transform=axes["kl_formula"].transAxes,
         fontweight="bold",
         ha="center",
@@ -223,7 +224,7 @@ def compose_figure02(rng: np.random.Generator | None = None) -> Figure:
         r"{\min(|H_{\mathrm{pred}}|, |H_{\mathrm{like}}|)}$"
         f" = "
         rf"$\frac{{{intersection_size:.1f}}}{{{min(pred_size, like_size):.1f}}}$"
-        f" = {data.hpd_value:.2f}"
+        f" = {data.hpd_overlap:.2f}"
     )
     axes["hpd_formula"].text(
         0.5,
@@ -240,7 +241,7 @@ def compose_figure02(rng: np.random.Generator | None = None) -> Figure:
     axes["predictive_formula"].text(
         0.5,
         0.5,
-        f"$p = P(T^{{rep}} \\leq T^{{obs}})$ = {data.p_value:.2f}",
+        f"$p = P(T^{{rep}} \\leq T^{{obs}})$ = {data.predictive_pvalue:.2f}",
         transform=axes["predictive_formula"].transAxes,
         fontweight="bold",
         ha="center",
@@ -266,7 +267,7 @@ def compose_figure02(rng: np.random.Generator | None = None) -> Figure:
 
     # The 8 pt legends/titles need clear space above the data. Expand the
     # y-limits of the distribution panels (the formula and HPD-bar panels are
-    # excluded) so the corner-anchored legends no longer sit on the curves;
+    # excluded) so the corner-anchored legends do not sit on the curves;
     # the data-max y-tick stays put, the extra room opens up above it.
     for key in (
         "kl_distributions",
@@ -287,5 +288,5 @@ def generate_figure02() -> None:
     """Compose Figure 2 with paper styling and save its PDF and PNG."""
     set_figure_defaults(context="paper")
     fig = compose_figure02()
-    save_figure("manuscript/figures/main/figure02", close=True, fig=fig)
-    print("\nFigure 2 saved to manuscript/figures/main/figure02.{pdf,png}")
+    save_figure(FIGURE_DIR / "figure02", close=True, fig=fig)
+    print(f"\nFigure 2 saved to {FIGURE_DIR / 'figure02'}.{{pdf,png}}")

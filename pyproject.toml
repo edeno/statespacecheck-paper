@@ -29,8 +29,10 @@ dependencies = [
     "numpy>=1.26.0",
     "scipy>=1.11.0",
     "matplotlib>=3.8.0",
-    "seaborn>=0.13.0",
     "pandas>=2.0.0",
+    "networkx>=3.4",
+    "joblib>=1.5",
+    "xarray>=2025.6",
     "statespacecheck>=0.3.1",
     "non_local_detector @ git+https://github.com/LorenFrankLab/non_local_detector.git",
 ]
@@ -42,8 +44,6 @@ dev = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
     "hypothesis>=6.0.0",
-    "jupyter>=1.0.0",
-    "ipykernel>=6.0.0",
     "pre-commit>=3.0.0",
 ]
 interactive = [
@@ -52,7 +52,7 @@ interactive = [
     "zarr>=2.16,<3",
     "pyarrow>=14",
 ]
-# Spyglass for ``statespacecheck_paper.spyglass_data`` (rebuilding the Figure-4
+# Spyglass for ``statespacecheck_paper.spyglass_pipeline.figure04_input`` (rebuilding the Figure-4
 # inputs from the Frank-lab database); see docs/data-lineage.md. kachery-cloud is
 # only in Spyglass's test extra, but ``spyglass.spikesorting.v0`` imports it.
 spyglass = [
@@ -94,9 +94,6 @@ ignore = ["D105"]
 convention = "numpy"
 
 [tool.ruff.lint.per-file-ignores]
-# Notebooks have cell-based imports and exploration code
-"notebooks/*.py" = ["E402", "F401", "F541"]
-"notebooks/*.ipynb" = ["E402", "F401", "F821", "E501"]
 # Tests use legacy numpy random for simplicity; test functions are
 # self-describing by name, so docstrings (``D``) aren't required.
 "tests/*.py" = ["NPY002", "D"]
@@ -113,7 +110,6 @@ module = [
     "scipy.*",
     "matplotlib.*",
     "mpl_toolkits.*",
-    "seaborn.*",
     "pandas.*",
     "networkx.*",
     "datajoint.*",
@@ -150,7 +146,7 @@ follow_imports = "skip"
 # The Spyglass pipeline's DataJoint tables subclass untyped Spyglass/DataJoint
 # classes and use the untyped ``@schema`` decorator.
 [[tool.mypy.overrides]]
-module = ["statespacecheck_paper.spyglass_pipeline"]
+module = ["statespacecheck_paper.spyglass_pipeline.figure04_schema"]
 disallow_subclassing_any = false
 disallow_untyped_decorators = false
 
@@ -172,8 +168,8 @@ addopts = [
     "--cov-report=term-missing",
     # Skip ``slow``-marked tests by default. The real-data
     # cache-build integration test reads multi-GB ``data/intermediates/``
-    # files and rebuilds a Zarr store; running it accidentally on a
-    # fully provisioned checkout has been a foot-gun.
+    # files and rebuilds a Zarr store, so on a fully provisioned checkout
+    # it takes minutes and writes gigabytes; run it only deliberately.
     "-m",
     "not slow",
 ]

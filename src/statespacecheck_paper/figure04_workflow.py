@@ -1,27 +1,34 @@
 """Figure-4 workflow: load derived data, fit/decode (or load cache), summarize.
 
-Assembles everything the Figure-4 render needs. Inputs are pre-exported derived
-data (a :class:`~statespacecheck_paper.load_local_data.NeuralRecordingData`),
+Assembles everything the Figure-4 render needs. Its input is the Figure-4 input
+file of derived data (loaded as a
+:class:`~statespacecheck_paper.figure04_input.NeuralRecordingData`),
 not a raw-data pipeline, so this is a *workflow*: load the fresh recording, load
 a fingerprint-matching decode cache or fit + decode both models and cache the
-result, load a matching diagnostics cache or compute the per-spike diagnostics
-from the cached predictions and cache those, and calculate the manuscript
-summary scalars. Both models are fitted on the full recording and their
-diagnostics are computed on that same recording; no training/validation split
-is applied.
+result, and load a matching diagnostics cache or compute the per-spike
+diagnostics from the cached predictions and cache those. The manuscript summary
+scalars are computed from the result by :mod:`figure04_summary`. Both models are
+fitted on the full recording and their diagnostics are computed on that same
+recording; no training/validation split is applied.
 
-The in-memory decode results are a typed :class:`Figure4DecodeResults` whose
-fields spell out ``continuous_fragmented_*``; the on-disk cache keys stay
-``contfrag_*`` and the mapping is confined to
-:meth:`Figure4DecodeResults.from_cache_payload` / ``to_cache_payload``.
+The in-memory analysis results (both decodes, their per-spike diagnostics,
+spike counts, and place fields) are a typed :class:`Figure4AnalysisResults`; its
+field names are also the on-disk cache keys, read and written by
+:meth:`Figure4AnalysisResults.from_cache_payload` / ``to_cache_payload``.
+
+The fit and decode themselves are :func:`figure04_fit.fit_and_decode`, whose
+modules alone form the decode-cache fingerprint; this module's containers,
+orchestration, and progress messages stay outside it, so editing them refits
+nothing. This module does compute the cached diagnostics
+(:func:`_compute_diagnostics_payload`), so it is hashed into the diagnostics
+fingerprint.
 """
 
 from __future__ import annotations
 
 import dataclasses
-import warnings
 from collections.abc import Mapping
-from typing import Literal
+from typing import Any
 
 import numpy as np
 import xarray as xr
@@ -29,57 +36,47 @@ from numpy.typing import NDArray
 
 from statespacecheck_paper.diagnostics import SpikeEventDiagnostics
 from statespacecheck_paper.figure04_cache import (
-    _FIGURE04_CACHE_PAYLOAD_KEYS,
+    _FIGURE04_DECODE_AND_DIAGNOSTICS_PAYLOAD_KEYS,
     _FIGURE04_DECODE_PAYLOAD_KEYS,
     _FIGURE04_DIAGNOSTICS_PAYLOAD_KEYS,
     Figure4CacheProvenance,
     Figure4Paths,
     compute_figure04_cache_provenance,
-    load_figure04_cache,
+    load_figure04_decode_cache,
     load_figure04_diagnostics_cache,
-    save_figure04_cache,
+    save_figure04_decode_cache,
     save_figure04_diagnostics_cache,
 )
-from statespacecheck_paper.figure04_decoder import (
-    Figure4Config,
-    Figure4DecoderConfig,
-    Figure4DiagnosticsConfig,
-    Figure4ExecutionConfig,
-    Figure4Provenance,
-    create_decoder_environment,
-    fit_decoder_models,
-    get_spike_counts,
-    validate_provenance_defaults,
-)
-from statespacecheck_paper.figure04_diagnostics import (
-    FlagConfusion,
-    compute_flag_confusion,
-    compute_results_diagnostics,
-)
-from statespacecheck_paper.figure04_place_fields import (
-    extract_place_fields,
-    extract_shared_position_place_fields,
-)
-from statespacecheck_paper.load_local_data import (
+from statespacecheck_paper.figure04_decoder import Figure4Config, Figure4DiagnosticsConfig
+from statespacecheck_paper.figure04_diagnostics import compute_results_diagnostics
+from statespacecheck_paper.figure04_fit import decode_time, fit_and_decode
+from statespacecheck_paper.figure04_input import (
+    LINEAR_POSITION_COLUMN,
     NeuralRecordingData,
-    load_neural_recording_from_files,
+    load_figure04_input,
 )
 
 
 @dataclasses.dataclass(frozen=True)
-class Figure4DecodeResults:
-    """The expensive, cacheable Figure-4 decode outputs, typed and validated.
+class Figure4AnalysisResults:
+    """The expensive, cacheable Figure-4 analysis results, typed and validated.
+
+    Both models' decoder outputs and per-spike diagnostics, with the spike
+    counts and place fields they share; assembled from the decode cache and
+    the diagnostics cache.
 
     The contained xarray datasets and diagnostic objects are treated as
     read-only by convention (the frozen wrapper does not deep-freeze them); the
-    four arrays are copied to their dtypes and marked read-only at construction.
-    In-memory field names spell out ``continuous_fragmented_*``; the serialized
-    cache keys remain ``contfrag_*`` (see :meth:`from_cache_payload`).
+    four arrays are converted to their dtypes and made read-only at
+    construction, copied unless they are a read-only memory map (the cache).
+    The field names are also the serialized cache keys (see
+    :meth:`from_cache_payload`).
 
     Parameters
     ----------
     continuous_results, continuous_fragmented_results : xr.Dataset
-        Decoder outputs (filter / predictive / log-likelihood) per model.
+        Decoder outputs (smoothed posterior, predictive distribution, log-likelihood)
+        per model.
     continuous_diagnostics, continuous_fragmented_diagnostics : SpikeEventDiagnostics
         Per-spike diagnostics per model.
     spike_counts : np.ndarray, shape (n_time, n_cells)
@@ -98,12 +95,10 @@ class Figure4DecodeResults:
     diagnostic_position_bins: NDArray[np.float64]
 
     def __post_init__(self) -> None:
-        # Unconditional copies (``np.array``, not ``np.asarray``): otherwise the
-        # subsequent ``setflags(write=False)`` would freeze a caller-owned array.
-        spike_counts = np.array(self.spike_counts, dtype=np.int64)
-        place_field_peaks = np.array(self.place_field_peaks, dtype=np.float64)
-        diagnostic_place_fields = np.array(self.diagnostic_place_fields, dtype=np.float64)
-        diagnostic_position_bins = np.array(self.diagnostic_position_bins, dtype=np.float64)
+        spike_counts = _read_only_array(self.spike_counts, np.int64)
+        place_field_peaks = _read_only_array(self.place_field_peaks, np.float64)
+        diagnostic_place_fields = _read_only_array(self.diagnostic_place_fields, np.float64)
+        diagnostic_position_bins = _read_only_array(self.diagnostic_position_bins, np.float64)
 
         if spike_counts.ndim != 2:
             raise ValueError(f"spike_counts must be (n_time, n_cells); got {spike_counts.shape}")
@@ -126,10 +121,10 @@ class Figure4DecodeResults:
 
         # Tie the decode timelines together: both decoder result datasets and
         # both per-spike diagnostics must live on the same ``n_time`` grid as
-        # ``spike_counts``, so an inconsistent bundle is rejected at construction
+        # ``spike_counts``, so an inconsistent payload is rejected at construction
         # rather than silently misaligning Figure 4. Require the actual ``time``
         # coordinate (not just a matching length) -- ``compose_figure04`` reads
-        # it, and comparing the two decoders' coordinates catches a bundle that
+        # it, and comparing the two decoders' coordinates catches a payload that
         # pairs decodes from different windows even when the lengths agree.
         result_time_coords: dict[str, NDArray[np.float64]] = {}
         for name, dataset in (
@@ -173,26 +168,26 @@ class Figure4DecodeResults:
                     "diagnostics do not match the spike_counts cell count."
                 )
 
-        for name, arr in (
-            ("spike_counts", spike_counts),
-            ("place_field_peaks", place_field_peaks),
-            ("diagnostic_place_fields", diagnostic_place_fields),
-            ("diagnostic_position_bins", diagnostic_position_bins),
-        ):
-            arr.setflags(write=False)
-            object.__setattr__(self, name, arr)
+        object.__setattr__(self, "spike_counts", spike_counts)
+        object.__setattr__(self, "place_field_peaks", place_field_peaks)
+        object.__setattr__(self, "diagnostic_place_fields", diagnostic_place_fields)
+        object.__setattr__(self, "diagnostic_position_bins", diagnostic_position_bins)
 
     @classmethod
-    def from_cache_payload(cls, payload: Mapping[str, object]) -> Figure4DecodeResults:
-        """Build from the serialized cache payload (the ``contfrag_*`` keys)."""
-        missing = [key for key in _FIGURE04_CACHE_PAYLOAD_KEYS if key not in payload]
+    def from_cache_payload(cls, payload: Mapping[str, object]) -> Figure4AnalysisResults:
+        """Build from the serialized cache payload."""
+        missing = [
+            key for key in _FIGURE04_DECODE_AND_DIAGNOSTICS_PAYLOAD_KEYS if key not in payload
+        ]
         if missing:
             raise ValueError(f"decode payload missing keys: {missing}")
         return cls(
             continuous_results=_cast_dataset(payload["continuous_results"]),
-            continuous_fragmented_results=_cast_dataset(payload["contfrag_results"]),
+            continuous_fragmented_results=_cast_dataset(payload["continuous_fragmented_results"]),
             continuous_diagnostics=_cast_diagnostics(payload["continuous_diagnostics"]),
-            continuous_fragmented_diagnostics=_cast_diagnostics(payload["contfrag_diagnostics"]),
+            continuous_fragmented_diagnostics=_cast_diagnostics(
+                payload["continuous_fragmented_diagnostics"]
+            ),
             spike_counts=np.asarray(payload["spike_counts"], dtype=np.int64),
             place_field_peaks=np.asarray(payload["place_field_peaks"], dtype=np.float64),
             diagnostic_place_fields=np.asarray(
@@ -204,14 +199,14 @@ class Figure4DecodeResults:
         )
 
     def to_cache_payload(self) -> dict[str, object]:
-        """Return the serialized cache payload (mapping fields to ``contfrag_*``)."""
+        """Return the serialized cache payload (decode and diagnostics keys)."""
         return {**self.to_decode_payload(), **self.to_diagnostics_payload()}
 
     def to_decode_payload(self) -> dict[str, object]:
         """Return the serialized *decode* payload (the expensive fitted part)."""
         return {
             "continuous_results": self.continuous_results,
-            "contfrag_results": self.continuous_fragmented_results,
+            "continuous_fragmented_results": self.continuous_fragmented_results,
             "spike_counts": self.spike_counts,
             "place_field_peaks": self.place_field_peaks,
             "diagnostic_place_fields": self.diagnostic_place_fields,
@@ -222,8 +217,24 @@ class Figure4DecodeResults:
         """Return the serialized *diagnostics* payload (derived from the decode)."""
         return {
             "continuous_diagnostics": self.continuous_diagnostics,
-            "contfrag_diagnostics": self.continuous_fragmented_diagnostics,
+            "continuous_fragmented_diagnostics": self.continuous_fragmented_diagnostics,
         }
+
+
+def _read_only_array(value: object, dtype: type[np.generic]) -> NDArray[Any]:
+    """Return ``value`` as a read-only array of ``dtype`` that no caller can change.
+
+    Any other input is copied before it is frozen, so freezing never reaches a
+    caller's array and a caller's writeable base cannot change the result. A
+    read-only memory map of the right dtype (the decode cache) is used in place,
+    avoiding a copy of the session-sized spike counts: its file is only ever
+    replaced by rename, never rewritten.
+    """
+    if isinstance(value, np.memmap) and not value.flags.writeable and value.dtype == dtype:
+        return np.asarray(value)
+    arr = np.array(value, dtype=dtype)
+    arr.setflags(write=False)
+    return arr
 
 
 def _cast_dataset(value: object) -> xr.Dataset:
@@ -242,197 +253,51 @@ def _cast_diagnostics(value: object) -> SpikeEventDiagnostics:
 
 @dataclasses.dataclass(frozen=True)
 class Figure4RenderData:
-    """Everything the Figure-4 render needs: the recording + typed decode results.
+    """Everything the Figure-4 render needs: the recording + typed analysis results.
 
     The position/track data is always loaded fresh (:class:`NeuralRecordingData`,
-    cheap, never cached); the decode results are the expensive cacheable content
-    (:class:`Figure4DecodeResults`). ``cache_provenance`` records the exact
+    cheap, never cached); the analysis results are the expensive cacheable content
+    (:class:`Figure4AnalysisResults`). ``cache_provenance`` records the exact
     cache fingerprint, input checksums, and decoder dependency version used to
-    produce those results. The three per-time arrays derived from the
+    produce those results. The two per-time arrays derived from the
     recording are copied and marked read-only at construction, must share a
     single 1-D ``n_time``, and that ``n_time`` must match the decode timeline
-    (``decode_results.spike_counts.shape[0]``) so a cached decode cannot pair
+    (``analysis_results.spike_counts.shape[0]``) so a cached decode cannot pair
     with a differently sized fresh recording.
     """
 
     recording: NeuralRecordingData
     time: NDArray[np.float64]
-    head_position: NDArray[np.float64]
     linear_position: NDArray[np.float64]
-    decode_results: Figure4DecodeResults
-    cache_provenance: Figure4CacheProvenance | None = None
+    analysis_results: Figure4AnalysisResults
+    cache_provenance: Figure4CacheProvenance
 
     def __post_init__(self) -> None:
-        # Unconditional copies (see Figure4DecodeResults) so freezing cannot
+        # Unconditional copies (per-time vectors, far smaller than the spike
+        # counts) so freezing cannot
         # reach back into a caller-owned array.
         time = np.array(self.time, dtype=np.float64)
-        head_position = np.array(self.head_position, dtype=np.float64)
         linear_position = np.array(self.linear_position, dtype=np.float64)
         if time.ndim != 1:
             raise ValueError(f"time must be 1-D (n_time,); got shape {time.shape}")
         n_time = time.shape[0]
-        if head_position.shape != (n_time, 2):
-            raise ValueError(f"head_position must be ({n_time}, 2); got {head_position.shape}")
         if linear_position.shape != (n_time,):
             raise ValueError(f"linear_position must be ({n_time},); got {linear_position.shape}")
         # The decode results must have been produced on this same recording
         # timeline; a cached decode of a different-length session would otherwise
         # silently pair with the freshly loaded position data.
-        decode_n_time = self.decode_results.spike_counts.shape[0]
+        decode_n_time = self.analysis_results.spike_counts.shape[0]
         if decode_n_time != n_time:
             raise ValueError(
-                f"decode_results timeline ({decode_n_time}) does not match the "
+                f"analysis_results timeline ({decode_n_time}) does not match the "
                 f"recording timeline ({n_time}); they must be the same session."
             )
         for name, arr in (
             ("time", time),
-            ("head_position", head_position),
             ("linear_position", linear_position),
         ):
             arr.setflags(write=False)
             object.__setattr__(self, name, arr)
-
-
-def compute_mean_spike_event_diagnostic(diagnostics: SpikeEventDiagnostics, metric: str) -> float:
-    """Return the per-spike mean for a diagnostic metric."""
-    event_key = f"event_{metric}"
-    if not hasattr(diagnostics, event_key):
-        raise KeyError(f"Missing per-spike diagnostic array: {event_key}")
-    values = np.asarray(getattr(diagnostics, event_key), dtype=np.float64)
-    if values.size == 0:
-        raise ValueError(f"Cannot compute {event_key} mean: no spike events are present")
-    if np.any(np.isnan(values)) or np.any(np.isneginf(values)):
-        raise ValueError(f"Cannot compute {event_key} mean: undefined event value present")
-    return float(np.mean(values))
-
-
-@dataclasses.dataclass(frozen=True)
-class Figure4DiagnosticMeans:
-    """Whole-session mean of each per-spike diagnostic for one decoder."""
-
-    hpd_overlap: float
-    kl_divergence: float
-    predictive_pvalue: float
-
-
-@dataclasses.dataclass(frozen=True)
-class Figure4Summary:
-    """Manuscript-facing Figure-4 scalars, independent of output formatting.
-
-    ``n_units`` is the number of simultaneously recorded units the decoders
-    were fit on — reported in the figure caption, so it is carried here
-    rather than recounted at render time.
-    """
-
-    continuous: Figure4DiagnosticMeans
-    continuous_fragmented: Figure4DiagnosticMeans
-    flag_confusions: tuple[FlagConfusion, ...]
-    n_units: int
-
-
-def _compute_diagnostic_means(
-    diagnostics: SpikeEventDiagnostics,
-) -> Figure4DiagnosticMeans:
-    """Compute the three manuscript diagnostic means for one decoder."""
-    return Figure4DiagnosticMeans(
-        hpd_overlap=compute_mean_spike_event_diagnostic(diagnostics, "hpd_overlap"),
-        kl_divergence=compute_mean_spike_event_diagnostic(diagnostics, "kl_divergence"),
-        predictive_pvalue=compute_mean_spike_event_diagnostic(diagnostics, "predictive_pvalue"),
-    )
-
-
-def _fit_and_decode(
-    recording: NeuralRecordingData,
-    *,
-    time: NDArray[np.float64],
-    head_position: NDArray[np.float64],
-    decoder_config: Figure4DecoderConfig,
-    execution_config: Figure4ExecutionConfig,
-    provenance: Figure4Provenance,
-) -> dict[str, object]:
-    """Fit both decoders on the full recording, decode it, and return the decode payload.
-
-    Both models are fitted with every position sample and every spike in the
-    supplied recording (no training mask), then decode that same recording.
-    The returned mapping carries exactly the decode-cache keys.
-    """
-    spike_times_list = list(recording.spike_times)  # non_local_detector wants a list
-
-    # Environment is only needed to fit the decoders.
-    env = create_decoder_environment(
-        track_graph=recording.track_graph,
-        edge_order=list(recording.linear_edge_order),
-        edge_spacing=recording.linear_edge_spacing,
-        place_bin_size=decoder_config.position_bin_size_cm,
-    )
-
-    print("Fitting models...")
-    continuous_model, continuous_fragmented_model = fit_decoder_models(
-        position=head_position,
-        spike_times=spike_times_list,
-        time=time,
-        environment=env,
-        decoder_config=decoder_config,
-        execution_config=execution_config,
-    )
-
-    # Runtime guard: the non_local_detector defaults recorded as provenance shape
-    # the decode but are not injected, so a dependency bump could silently change
-    # them. Fail loudly here rather than produce a different published figure.
-    validate_provenance_defaults(continuous_model, continuous_fragmented_model, provenance)
-
-    print(f"Decoding {len(time)} time points...")
-    decode_outputs = ["filter", "predictive_posterior", "log_likelihood"]
-    continuous_results = continuous_model.predict(
-        spike_times=spike_times_list,
-        time=time,
-        return_outputs=decode_outputs,
-    )
-    continuous_fragmented_results = continuous_fragmented_model.predict(
-        spike_times=spike_times_list,
-        time=time,
-        return_outputs=decode_outputs,
-    )
-
-    spike_counts = get_spike_counts(spike_times_list, time)
-
-    # Extract place fields for raster sorting (use continuous model).
-    place_fields, position_bins = extract_place_fields(continuous_model)
-    if np.any(np.all(np.isnan(place_fields), axis=1)):
-        warnings.warn(
-            "Some cells have all-NaN place fields; peak positions may be incorrect",
-            stacklevel=2,
-        )
-    place_field_peaks = position_bins[np.nanargmax(place_fields, axis=1)]
-
-    # Shared interior place fields for the mean per-spike likelihood row.
-    # The row is meant to be identical across decoders, so verify the two
-    # models agree on both fields and grid before storing a single copy.
-    diagnostic_place_fields, diagnostic_position_bins = extract_shared_position_place_fields(
-        continuous_model
-    )
-    continuous_fragmented_place_fields, continuous_fragmented_position_bins = (
-        extract_shared_position_place_fields(continuous_fragmented_model)
-    )
-    if not np.allclose(
-        diagnostic_place_fields, continuous_fragmented_place_fields, equal_nan=True
-    ) or not np.allclose(
-        diagnostic_position_bins, continuous_fragmented_position_bins, equal_nan=True
-    ):
-        raise ValueError(
-            "Continuous and Continuous--Fragmented place fields or position "
-            "grids differ; the shared likelihood row would misrepresent one "
-            "of the decoders."
-        )
-
-    return {
-        "continuous_results": continuous_results,
-        "contfrag_results": continuous_fragmented_results,
-        "spike_counts": spike_counts,
-        "place_field_peaks": place_field_peaks,
-        "diagnostic_place_fields": diagnostic_place_fields,
-        "diagnostic_position_bins": diagnostic_position_bins,
-    }
 
 
 def _compute_diagnostics_payload(
@@ -454,18 +319,16 @@ def _compute_diagnostics_payload(
     if missing:
         raise ValueError(f"decode payload missing keys: {missing}")
     spike_times_list = list(recording.spike_times)
-    spike_counts = np.asarray(decode_payload["spike_counts"], dtype=np.int64)
     place_fields = np.asarray(decode_payload["diagnostic_place_fields"], dtype=np.float64)
     payload: dict[str, object] = {}
     for decode_key, diagnostics_key in (
         ("continuous_results", "continuous_diagnostics"),
-        ("contfrag_results", "contfrag_diagnostics"),
+        ("continuous_fragmented_results", "continuous_fragmented_diagnostics"),
     ):
         print(f"Computing diagnostics ({diagnostics_key}) ...")
         payload[diagnostics_key] = compute_results_diagnostics(
             _cast_dataset(decode_payload[decode_key]),
             place_fields,
-            spike_counts,
             time,
             spike_times_list,
             coverage=diagnostics_config.hpd_coverage,
@@ -494,7 +357,10 @@ def prepare_figure04_render_data(
     Parameters
     ----------
     config : Figure4Config
-        Decoder and diagnostics configuration; hashed into the fingerprints.
+        Decoder, package-default, diagnostics, and execution configuration. The
+        decoder and package-default parts are hashed into the decode fingerprint
+        and the diagnostics part into the diagnostics fingerprint; the execution
+        part (``block_size``) is in neither.
     paths : Figure4Paths
         Injected data-location identifiers.
     use_cache : bool, default True
@@ -502,13 +368,11 @@ def prepare_figure04_render_data(
         recomputing. When False, refit, recompute, and overwrite both caches.
     """
     print("Loading data...")
-    recording = load_neural_recording_from_files(paths.data_path, paths.animal_date_epoch)
+    recording = load_figure04_input(paths.data_path, paths.animal_date_epoch)
     print(f"  Loaded {len(recording.spike_times)} cells")
 
-    position_info = recording.position_info
-    time = np.asarray(position_info.index.to_numpy(), dtype=np.float64)
-    head_position = position_info[["head_position_x", "head_position_y"]].to_numpy(dtype=np.float64)
-    linear_position = position_info["linear_position"].to_numpy(dtype=np.float64)
+    time = decode_time(recording)
+    linear_position = recording.position_info[LINEAR_POSITION_COLUMN].to_numpy(dtype=np.float64)
 
     cache_provenance = compute_figure04_cache_provenance(config, paths)
     expected_fingerprint = cache_provenance.fingerprint_sha256
@@ -517,7 +381,7 @@ def prepare_figure04_render_data(
     decode_payload: dict[str, object] | None = None
     if use_cache:
         print("Loading cached decoder outputs (use --force-recompute to rebuild)...")
-        decode_payload = load_figure04_cache(paths.cache_path, expected_fingerprint)
+        decode_payload = load_figure04_decode_cache(paths.decode_cache_path, expected_fingerprint)
         if decode_payload is None:
             print(
                 "  No matching decode cache (absent, unreadable, or fingerprint mismatch "
@@ -525,16 +389,15 @@ def prepare_figure04_render_data(
                 "refitting."
             )
     if decode_payload is None:
-        decode_payload = _fit_and_decode(
+        print(f"Fitting both models and decoding {len(time)} time points...")
+        decode_payload = fit_and_decode(
             recording,
-            time=time,
-            head_position=head_position,
             decoder_config=config.decoder,
             execution_config=config.execution,
-            provenance=config.provenance,
+            package_defaults=config.package_defaults,
         )
-        print("Caching decoder outputs to data/intermediates ...")
-        save_figure04_cache(paths.cache_path, expected_fingerprint, decode_payload)
+        print(f"Caching decoder outputs to {paths.decode_cache_path} ...")
+        save_figure04_decode_cache(paths.decode_cache_path, expected_fingerprint, decode_payload)
 
     diagnostics_payload: dict[str, object] | None = None
     if use_cache:
@@ -556,7 +419,7 @@ def prepare_figure04_render_data(
             time=time,
             diagnostics_config=config.diagnostics,
         )
-        print("Caching per-spike diagnostics to data/intermediates ...")
+        print(f"Caching per-spike diagnostics to {paths.diagnostics_cache_path} ...")
         save_figure04_diagnostics_cache(
             paths.diagnostics_cache_path,
             expected_fingerprint,
@@ -564,7 +427,7 @@ def prepare_figure04_render_data(
             diagnostics_payload,
         )
 
-    decode_results = Figure4DecodeResults.from_cache_payload(
+    analysis_results = Figure4AnalysisResults.from_cache_payload(
         {
             **{key: decode_payload[key] for key in _FIGURE04_DECODE_PAYLOAD_KEYS},
             **{key: diagnostics_payload[key] for key in _FIGURE04_DIAGNOSTICS_PAYLOAD_KEYS},
@@ -574,113 +437,7 @@ def prepare_figure04_render_data(
     return Figure4RenderData(
         recording=recording,
         time=time,
-        head_position=head_position,
         linear_position=linear_position,
-        decode_results=decode_results,
+        analysis_results=analysis_results,
         cache_provenance=cache_provenance,
     )
-
-
-def compute_figure04_summary(
-    render_data: Figure4RenderData,
-    thresholds: Mapping[str, float],
-    metric_directions: Mapping[str, Literal["below", "above"]],
-) -> Figure4Summary:
-    """Compute whole-session event means and two-decoder flag agreement.
-
-    These scalars can appear in the manuscript text, so their computation must
-    stay identical to the cached decode; the render layer never alters them.
-    """
-    decode = render_data.decode_results
-    return summarize_figure04_diagnostics(
-        decode.continuous_diagnostics,
-        decode.continuous_fragmented_diagnostics,
-        n_units=int(decode.spike_counts.shape[1]),
-        thresholds=thresholds,
-        metric_directions=metric_directions,
-    )
-
-
-def summarize_figure04_diagnostics(
-    continuous_diagnostics: SpikeEventDiagnostics,
-    continuous_fragmented_diagnostics: SpikeEventDiagnostics,
-    *,
-    n_units: int,
-    thresholds: Mapping[str, float],
-    metric_directions: Mapping[str, Literal["below", "above"]],
-) -> Figure4Summary:
-    """Compute the Figure-4 summary from the two decoders' per-spike diagnostics.
-
-    The computation behind :func:`compute_figure04_summary`, usable without
-    render data (e.g. on decodes stored by the Spyglass pipeline).
-
-    Parameters
-    ----------
-    continuous_diagnostics, continuous_fragmented_diagnostics : SpikeEventDiagnostics
-        Per-spike diagnostics of the Continuous and Continuous-Fragmented decoders,
-        on the same spikes.
-    n_units : int
-        Number of units decoded.
-    thresholds : Mapping of str to float
-        Flag threshold per metric.
-    metric_directions : Mapping of str to {"below", "above"}
-        Which side of each threshold is flagged.
-
-    Returns
-    -------
-    Figure4Summary
-        Whole-session event means and two-decoder flag agreement.
-    """
-    missing_thresholds = set(metric_directions) - set(thresholds)
-    if missing_thresholds:
-        raise ValueError(
-            f"metric_directions contains metrics without thresholds: {sorted(missing_thresholds)}"
-        )
-
-    flag_confusions = []
-    for metric, worse_when in metric_directions.items():
-        flag_confusions.append(
-            compute_flag_confusion(
-                continuous_diagnostics,
-                continuous_fragmented_diagnostics,
-                metric,
-                thresholds[metric],
-                worse_when=worse_when,
-            )
-        )
-
-    return Figure4Summary(
-        continuous=_compute_diagnostic_means(continuous_diagnostics),
-        continuous_fragmented=_compute_diagnostic_means(continuous_fragmented_diagnostics),
-        flag_confusions=tuple(flag_confusions),
-        n_units=n_units,
-    )
-
-
-def format_figure04_summary(summary: Figure4Summary) -> str:
-    """Format a computed Figure-4 summary for command-line output."""
-    lines = [f"=== Diagnostic Summary ({summary.n_units} units, all time points) ==="]
-    for model_name, means in (
-        ("Continuous", summary.continuous),
-        ("ContFrag", summary.continuous_fragmented),
-    ):
-        lines.extend(
-            [
-                "",
-                f"{model_name}:",
-                f"  hpd_overlap: {means.hpd_overlap:.4f}",
-                f"  kl_divergence: {means.kl_divergence:.4f}",
-                f"  predictive_pvalue: {means.predictive_pvalue:.4f}",
-            ]
-        )
-
-    # "cont-only" is the rescue quadrant: flagged by Continuous but not by
-    # Continuous-Fragmented. Rescue rate is its fraction of Continuous flags.
-    lines.extend(["", "=== Flag agreement: Continuous (A) vs Cont-Frag (B) ==="])
-    for confusion in summary.flag_confusions:
-        lines.append(
-            f"  {confusion.metric}: n={confusion.n:,} both={confusion.both:,} "
-            f"cont-only={confusion.a_only:,} cf-only={confusion.b_only:,} "
-            f"neither={confusion.neither:,} rescue={100 * confusion.rescue_rate:.1f}%"
-        )
-    return "\n".join(lines)

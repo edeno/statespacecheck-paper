@@ -10,7 +10,8 @@ Key Components
 - **Transition matrices**: Gaussian transition matrices for state space models
 - **Place fields**: Gaussian place field models for spatial tuning
 - **Spike generation**: Poisson spike generation for position-tuned neurons
-- **Place-field rates**: Gaussian place-field firing-rate tables
+- **Place-field expected counts**: Gaussian place-field tables of expected
+  spike counts per step
 
 Examples
 --------
@@ -244,7 +245,7 @@ def gaussian_transition_matrix(
     return result
 
 
-def place_field_rates(
+def place_field_expected_counts(
     position_bins: NDArray[np.floating],
     place_field_centers: NDArray[np.floating],
     place_field_std: float,
@@ -280,22 +281,23 @@ def place_field_rates(
 
     Returns
     -------
-    rates : np.ndarray, shape (n_bins, n_cells)
-        Scaled field for each position bin and neuron; expected counts per
-        step when using the simulation's place-field scale.
+    expected_counts : np.ndarray, shape (n_bins, n_cells)
+        Scaled field for each position bin and neuron: the expected spike count
+        per time step when ``place_field_rate_scale`` is the simulation's
+        place-field scale (not a rate in Hz).
 
     Examples
     --------
-    Compute place field rates for 3 neurons:
+    Compute the expected counts of 3 neurons:
 
     >>> position_bins = np.linspace(0, 10, 11)
     >>> place_field_centers = np.array([2.0, 5.0, 8.0])
-    >>> rates = place_field_rates(
+    >>> expected_counts = place_field_expected_counts(
     ...     position_bins, place_field_centers, place_field_std=1.0, place_field_rate_scale=1.0
     ... )
-    >>> rates.shape
+    >>> expected_counts.shape
     (11, 3)
-    >>> rates.max(axis=0).round(3)  # Peak at each center
+    >>> expected_counts.max(axis=0).round(3)  # Peak at each center
     array([0.399, 0.399, 0.399])
     """
     result: NDArray[np.floating] = (
@@ -310,7 +312,7 @@ def place_field_rates(
 def peak_rate_to_place_field_scale(peak_rate_per_step: float, place_field_std: float) -> float:
     """Convert a desired peak firing rate to the ``place_field_rate_scale`` argument.
 
-    ``place_field_rates`` multiplies a normalized Gaussian density (peaking at
+    ``place_field_expected_counts`` multiplies a normalized Gaussian density (peaking at
     ``1 / (place_field_std * sqrt(2 * pi))`` at the field center) by
     ``place_field_rate_scale``. This is its inverse: the scale that makes the
     field peak at ``peak_rate_per_step``.
@@ -325,7 +327,7 @@ def peak_rate_to_place_field_scale(peak_rate_per_step: float, place_field_std: f
     Returns
     -------
     place_field_rate_scale : float
-        Scale factor to pass to ``place_field_rates`` for the given peak rate.
+        Scale factor to pass to ``place_field_expected_counts`` for the given peak rate.
     """
     return float(peak_rate_per_step * np.sqrt(2.0 * np.pi) * place_field_std)
 
@@ -534,9 +536,10 @@ def simulate_spikes_history_dependent(
     Notes
     -----
     History dependence breaks vectorization over time, so this routine
-    loops per timestep (still vectorized over cells per step). For
-    figure-3-scale runs (~40k timesteps, 11 cells) this is fast enough
-    to be unnoticeable.
+    loops per timestep (still vectorized over cells per step). Figure 3
+    calls it only for its history-dependent phase, 4,000 timesteps of 11
+    cells under the default ``Figure3Config``, where the loop takes a
+    negligible share of the simulation time.
 
     When ``burst_window`` overlaps the suppressed region
     (``burst_start <= refractory_steps``), the zero is applied first, so the
@@ -570,8 +573,8 @@ def simulate_spikes_history_dependent(
 
     n_time = position.shape[0]
     n_cells = place_field_centers.shape[0]
-    # (n_time, n_cells) Gaussian place-field rate at each step's position.
-    base_rates = place_field_rates(
+    # (n_time, n_cells) Gaussian place-field expected count at each step's position.
+    base_expected_counts = place_field_expected_counts(
         position, place_field_centers, place_field_std, place_field_rate_scale
     )
 
@@ -583,13 +586,13 @@ def simulate_spikes_history_dependent(
     elapsed = np.full(n_cells, burst_end + 1, dtype=np.int64)
 
     for t in range(n_time):
-        rate = base_rates[t].copy()  # (n_cells,)
+        expected_counts_t = base_expected_counts[t].copy()  # (n_cells,)
         in_refractory = elapsed <= refractory_steps
         in_burst = (elapsed >= burst_start) & (elapsed <= burst_end)
-        rate[in_refractory] = 0.0
-        rate[in_burst] *= burst_factor
+        expected_counts_t[in_refractory] = 0.0
+        expected_counts_t[in_burst] *= burst_factor
 
-        step_spikes = rng.poisson(rate)
+        step_spikes = rng.poisson(expected_counts_t)
         spikes[t] = step_spikes
         # A cell that fired is one step past its spike at the next draw;
         # everyone else moves one step further from their last spike.

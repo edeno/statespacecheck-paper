@@ -1,17 +1,18 @@
 """Figure-4 layout: artist arrangement and render-only transformations.
 
-Owns everything about *how* Figure 4 looks — the validated detail-window
-contract, pixel-nudge layout constants, bbox/edge-alignment helpers, track inset
-and hexbin-row placement, and ``compose_figure04`` which assembles the two-row
+Owns everything about *how* Figure 4 looks — pixel-nudge layout constants,
+bbox/edge-alignment helpers, track inset and hexbin-row placement, and
+``compose_figure04`` which assembles the two-row
 figure and returns it with the tight bounding box to crop to. It reads a
-:class:`Figure4RenderData` and imports only the render layers; it never loads
-data, fits/decodes, reads the cache/config/paths, or saves.
+:class:`Figure4RenderData` (the one name it takes from ``figure04_workflow``)
+and otherwise imports only the render layers, the diagnostics container, and
+the detail-window contract (``figure04_protocol.Figure4DetailWindow``); it
+never loads data, fits/decodes, reads the cache/config/paths, or saves.
 """
 
 from __future__ import annotations
 
 import dataclasses
-import numbers
 from collections.abc import Mapping
 from typing import Any, Literal, cast
 
@@ -23,37 +24,36 @@ from matplotlib.transforms import Bbox
 from numpy.typing import NDArray
 
 from statespacecheck_paper.diagnostics import SpikeEventDiagnostics
+from statespacecheck_paper.figure04_models import CONTINUOUS, CONTINUOUS_FRAGMENTED
 from statespacecheck_paper.figure04_panels import (
     ModelDiagnosticPanelData,
-    plot_per_spike_metric_hexbin_row,
+    plot_event_metric_hexbin_row,
     plot_single_model_diagnostics,
 )
-from statespacecheck_paper.figure04_plot_primitives import (
-    ANIMAL_POSITION_LABEL_GID,
-    THRESHOLD_LABEL_GID,
-    WORSE_FIT_LABEL_GID,
-)
+from statespacecheck_paper.figure04_protocol import Figure4DetailWindow
 from statespacecheck_paper.figure04_track_plots import plot_track_graph_2d
 from statespacecheck_paper.figure04_workflow import Figure4RenderData
+from statespacecheck_paper.plotting import THRESHOLD_LABEL_GID, WORSE_FIT_LABEL_GID
+from statespacecheck_paper.style import FIGURE_DPI
 
-FIGURE4_DIAGNOSTIC_ANNOTATION_GIDS = {THRESHOLD_LABEL_GID, WORSE_FIT_LABEL_GID}
+FIGURE04_DIAGNOSTIC_ANNOTATION_GIDS = {THRESHOLD_LABEL_GID, WORSE_FIT_LABEL_GID}
 
 # --- Track-inset / hexbin pixel-nudge constants ---------------------------
 # Empirically measured on the exported PNG at the current figure size (7.2 x
-# 6.1 in) and DPI (450). They tune only artist placement, never any decoded or
+# 6.1 in) and DPI (``FIGURE_DPI``, 450). They tune only artist placement, never any decoded or
 # diagnostic value; changing the figure size or DPI would require re-measuring.
 #
-# ``add_scalebar`` appends the scale bar as the final line; FIGURE4_SCALE_BAR_HORIZONTAL_SHIFT_PX /
-# FIGURE4_SCALE_BAR_VERTICAL_DROP_PX move the bar and its label together so the label clears the
+# ``add_scalebar`` appends the scale bar as the final line; FIGURE04_SCALE_BAR_HORIZONTAL_SHIFT_PX /
+# FIGURE04_SCALE_BAR_VERTICAL_DROP_PX move the bar and its label together so the label clears the
 # nearby reward-well marker.
-FIGURE4_SCALE_BAR_HORIZONTAL_SHIFT_PX = 22.0
-FIGURE4_SCALE_BAR_VERTICAL_DROP_PX = 5.0
+FIGURE04_SCALE_BAR_HORIZONTAL_SHIFT_PX = 22.0
+FIGURE04_SCALE_BAR_VERTICAL_DROP_PX = 5.0
 # The trajectory line's vector bbox extends slightly farther left than the
 # visually salient rendered diagram, so the track inset's left edge is nudged
 # right by this many pixels when aligning it to the diagnostic annotations.
-FIGURE4_TRACK_VISUAL_EDGE_CORRECTION_PX = 7.0
+FIGURE04_TRACK_VISUAL_EDGE_CORRECTION_PX = 7.0
 # Enlarge the track inset about its center for legibility.
-FIGURE4_TRACK_SIZE_SCALE = 1.10
+FIGURE04_TRACK_SIZE_SCALE = 1.10
 
 
 def _shift_diagnostic_event_times(
@@ -114,7 +114,7 @@ def _shift_axis_to_artist_edge(
 
 def _axes_tight_bbox_inches(fig: Any, *, pad_inches: float = 0.05) -> Bbox:
     """Return a figure bbox cropped to the union of visible axes."""
-    fig.canvas.draw()
+    fig.draw_without_rendering()
     renderer = fig.canvas.get_renderer()
     bboxes = [
         bbox
@@ -138,7 +138,7 @@ def _place_track_inset(
     """Draw the unlettered 2D track inset and align it to the diagnostic labels.
 
     Pixel-nudging is confined here and to the module-level ``SCALE_BAR_*`` /
-    ``FIGURE4_TRACK_VISUAL_EDGE_CORRECTION_PX`` / ``FIGURE4_TRACK_SIZE_SCALE`` constants
+    ``FIGURE04_TRACK_VISUAL_EDGE_CORRECTION_PX`` / ``FIGURE04_TRACK_SIZE_SCALE`` constants
     (measured at
     the current figure size and DPI). Returns the inset axis so the hexbin
     layout can later align its right edge to the colorbar label.
@@ -171,10 +171,10 @@ def _place_track_inset(
     # reward-well marker.
     scale_bar_line = ax_track.lines[-1]
     scale_bar_line.set_xdata(
-        np.asarray(scale_bar_line.get_xdata()) + FIGURE4_SCALE_BAR_HORIZONTAL_SHIFT_PX
+        np.asarray(scale_bar_line.get_xdata()) + FIGURE04_SCALE_BAR_HORIZONTAL_SHIFT_PX
     )
     scale_bar_line.set_ydata(
-        np.asarray(scale_bar_line.get_ydata()) - FIGURE4_SCALE_BAR_VERTICAL_DROP_PX
+        np.asarray(scale_bar_line.get_ydata()) - FIGURE04_SCALE_BAR_VERTICAL_DROP_PX
     )
     scale_bar_line.set_linewidth(2.0)
     for text in ax_track.texts:
@@ -182,8 +182,8 @@ def _place_track_inset(
             x_pos, y_pos = text.get_position()
             text.set_position(
                 (
-                    x_pos + FIGURE4_SCALE_BAR_HORIZONTAL_SHIFT_PX + 10,
-                    y_pos - 4 - FIGURE4_SCALE_BAR_VERTICAL_DROP_PX,
+                    x_pos + FIGURE04_SCALE_BAR_HORIZONTAL_SHIFT_PX + 10,
+                    y_pos - 4 - FIGURE04_SCALE_BAR_VERTICAL_DROP_PX,
                 )
             )
             text.set_fontsize(8.5)
@@ -192,13 +192,13 @@ def _place_track_inset(
     # Align the track diagram itself with the shared right-side diagnostic
     # annotations: the diagram's left edge should begin where the annotation
     # text ends.
-    fig.canvas.draw()
+    fig.draw_without_rendering()
     renderer = fig.canvas.get_renderer()
     annotation_texts = [
         text
         for ax in axes_b[3:]
         for text in ax.texts
-        if text.get_gid() in FIGURE4_DIAGNOSTIC_ANNOTATION_GIDS
+        if text.get_gid() in FIGURE04_DIAGNOSTIC_ANNOTATION_GIDS
     ]
     annotation_bboxes = _visible_artist_bboxes(annotation_texts, renderer)
     if annotation_bboxes:
@@ -210,15 +210,15 @@ def _place_track_inset(
             renderer,
             target_px=annotation_right,
             edge="left",
-            correction_px=FIGURE4_TRACK_VISUAL_EDGE_CORRECTION_PX,
+            correction_px=FIGURE04_TRACK_VISUAL_EDGE_CORRECTION_PX,
         )
     pos = ax_track.get_position()
     ax_track.set_position(
         [
             pos.x0,
-            pos.y0 - pos.height * (FIGURE4_TRACK_SIZE_SCALE - 1) / 2,
-            pos.width * FIGURE4_TRACK_SIZE_SCALE,
-            pos.height * FIGURE4_TRACK_SIZE_SCALE,
+            pos.y0 - pos.height * (FIGURE04_TRACK_SIZE_SCALE - 1) / 2,
+            pos.width * FIGURE04_TRACK_SIZE_SCALE,
+            pos.height * FIGURE04_TRACK_SIZE_SCALE,
         ]
     )
     return ax_track
@@ -240,19 +240,19 @@ def _layout_hexbin_row(
     subfigs_bot = bottom_subfig.subfigures(1, 3, width_ratios=[0.16, 7, 0.16], wspace=0.015)
     axes_hexbin = subfigs_bot[1].subplots(1, 3, gridspec_kw={"wspace": -0.02})
     axes_before_hexbin = tuple(fig.axes)
-    plot_per_spike_metric_hexbin_row(
-        render_data.decode_results.continuous_diagnostics,
-        render_data.decode_results.continuous_fragmented_diagnostics,
+    plot_event_metric_hexbin_row(
+        render_data.analysis_results.continuous_diagnostics,
+        render_data.analysis_results.continuous_fragmented_diagnostics,
         axes_hexbin,
-        model_a_name="Continuous",
-        model_b_name="Cont-Frag",
+        reference_model=CONTINUOUS,
+        comparison_model=CONTINUOUS_FRAGMENTED,
         thresholds=thresholds,
         colorbar_pad=0.006,
     )
     for ax, anchor in zip(axes_hexbin, ("E", "C", "W"), strict=True):
         ax.set_anchor(anchor)
     hexbin_colorbar_axes = [ax for ax in fig.axes if ax not in axes_before_hexbin]
-    fig.canvas.draw()
+    fig.draw_without_rendering()
     hexbin_positions = [ax.get_position() for ax in axes_hexbin]
     panel_width = min(pos.width for pos in hexbin_positions)
     panel_height = min(pos.height for pos in hexbin_positions)
@@ -286,7 +286,7 @@ def _layout_hexbin_row(
         )
     fig.set_layout_engine("none")
     if hexbin_colorbar_axes:
-        fig.canvas.draw()
+        fig.draw_without_rendering()
         renderer = fig.canvas.get_renderer()
         colorbar_label_bbox = hexbin_colorbar_axes[-1].yaxis.label.get_window_extent(renderer)
         _shift_axis_to_artist_edge(
@@ -315,48 +315,6 @@ class Figure4Composition:
     bbox_inches: Bbox
 
 
-def _is_integer(value: object) -> bool:
-    """Return True for Python and NumPy integers, excluding ``bool`` (an ``int`` subclass).
-
-    Using :class:`numbers.Integral` accepts ``np.int64`` etc. (common when an
-    index is derived from an array), which a strict ``type(x) is int`` check
-    would spuriously reject in this NumPy-heavy codebase.
-    """
-    return isinstance(value, numbers.Integral) and not isinstance(value, bool)
-
-
-@dataclasses.dataclass(frozen=True)
-class Figure4DetailWindow:
-    """Index window used for the side-by-side Figure-4 detail panels.
-
-    The canonical values live in :mod:`figure04_generation`; layout receives
-    them explicitly so tests and alternate recipes can select a scientifically
-    meaningful window without mutating module globals.
-    """
-
-    center_index: int
-    half_width_samples: int
-
-    def __post_init__(self) -> None:
-        if not _is_integer(self.center_index) or self.center_index < 0:
-            raise ValueError("center_index must be a non-negative integer")
-        if not _is_integer(self.half_width_samples) or self.half_width_samples <= 0:
-            raise ValueError("half_width_samples must be a positive integer")
-
-    def to_slice(self, n_time_samples: int) -> slice:
-        """Return the validated half-open slice for a recording timeline."""
-        if not _is_integer(n_time_samples) or n_time_samples <= 0:
-            raise ValueError("n_time_samples must be a positive integer")
-        start = self.center_index - self.half_width_samples
-        stop = self.center_index + self.half_width_samples
-        if start < 0 or stop > n_time_samples:
-            raise ValueError(
-                "detail window falls outside the recording timeline: "
-                f"slice({start}, {stop}) for {n_time_samples} samples"
-            )
-        return slice(start, stop)
-
-
 def compose_figure04(
     render_data: Figure4RenderData,
     *,
@@ -379,12 +337,14 @@ def compose_figure04(
     time_relative = time_arr - time_offset
 
     # Shift xarray time coordinates to relative seconds
-    continuous_results = render_data.decode_results.continuous_results.assign_coords(
-        time=render_data.decode_results.continuous_results.coords["time"].values - time_offset
+    continuous_results = render_data.analysis_results.continuous_results.assign_coords(
+        time=render_data.analysis_results.continuous_results.coords["time"].values - time_offset
     )
-    contfrag_results = render_data.decode_results.continuous_fragmented_results.assign_coords(
-        time=render_data.decode_results.continuous_fragmented_results.coords["time"].values
-        - time_offset
+    continuous_fragmented_results = (
+        render_data.analysis_results.continuous_fragmented_results.assign_coords(
+            time=render_data.analysis_results.continuous_fragmented_results.coords["time"].values
+            - time_offset
+        )
     )
 
     # Shift spike times to relative seconds
@@ -392,17 +352,17 @@ def compose_figure04(
         np.asarray(st - time_offset, dtype=np.float64) for st in render_data.recording.spike_times
     ]
     continuous_diagnostics_relative = _shift_diagnostic_event_times(
-        render_data.decode_results.continuous_diagnostics,
+        render_data.analysis_results.continuous_diagnostics,
         time_offset,
     )
-    contfrag_diagnostics_relative = _shift_diagnostic_event_times(
-        render_data.decode_results.continuous_fragmented_diagnostics,
+    continuous_fragmented_diagnostics_relative = _shift_diagnostic_event_times(
+        render_data.analysis_results.continuous_fragmented_diagnostics,
         time_offset,
     )
 
     # Two-row figure: (a)/(b) detail zooms with a track inset on top, and
     # (c) whole-session metric hexbins on the bottom.
-    fig = plt.figure(figsize=(7.2, 6.1), dpi=450, constrained_layout=True)
+    fig = plt.figure(figsize=(7.2, 6.1), dpi=FIGURE_DPI, constrained_layout=True)
     subfigs_rows = fig.subfigures(2, 1, height_ratios=[5.0, 2.6], hspace=0.02)
 
     def _panel_data(
@@ -416,19 +376,21 @@ def compose_figure04(
             results=results,
             diagnostics=diagnostics,
             spike_times=spike_times_relative,
-            spike_counts=render_data.decode_results.spike_counts,
-            place_field_peaks=render_data.decode_results.place_field_peaks,
-            place_fields=render_data.decode_results.diagnostic_place_fields,
-            position_bins=render_data.decode_results.diagnostic_position_bins,
+            spike_counts=render_data.analysis_results.spike_counts,
+            place_field_peaks=render_data.analysis_results.place_field_peaks,
+            place_fields=render_data.analysis_results.diagnostic_place_fields,
+            position_bins=render_data.analysis_results.diagnostic_position_bins,
             track_graph=render_data.recording.track_graph,
             edge_order=render_data.recording.linear_edge_order,
             edge_spacing=render_data.recording.linear_edge_spacing,
         )
 
     continuous_panel_data = _panel_data(continuous_results, continuous_diagnostics_relative)
-    continuous_fragmented_panel_data = _panel_data(contfrag_results, contfrag_diagnostics_relative)
+    continuous_fragmented_panel_data = _panel_data(
+        continuous_fragmented_results, continuous_fragmented_diagnostics_relative
+    )
 
-    # Top row: (a) Continuous and (b) ContFrag detail zooms, side by side,
+    # Top row: (a) Continuous and (b) Continuous-Fragmented detail zooms, side by side,
     # with a small unlettered track inset on the right for spatial context.
     subfigs_top = subfigs_rows[0].subfigures(
         1,
@@ -437,23 +399,26 @@ def compose_figure04(
         wspace=0.005,
     )
 
-    # Panel (a): Continuous detail view
+    # Panel (a): Continuous detail view. Its row labels serve both stacks, and
+    # the threshold / worse-fit annotations are left to panel (b), where they
+    # read as shared labels for both.
     _, axes_a = plot_single_model_diagnostics(
         continuous_panel_data,
         time_slice_ind=detail_slice,
         thresholds=thresholds_dict,
-        model_name="Continuous Model",
+        model_name=f"{CONTINUOUS.label} Model",
         fig=subfigs_top[1],
+        show_annotations=False,
     )
-    axes_a[3].set_ylabel("HPD\noverlap", labelpad=7)
 
-    # Panel (b): ContFrag detail view
+    # Panel (b): Continuous-Fragmented detail view, repeating panel (a)'s row scales.
     _, axes_b = plot_single_model_diagnostics(
         continuous_fragmented_panel_data,
         time_slice_ind=detail_slice,
         thresholds=thresholds_dict,
-        model_name="Cont.-Frag. Model",
+        model_name=f"{CONTINUOUS_FRAGMENTED.label} Model",
         fig=subfigs_top[2],
+        show_y_labels=False,
     )
 
     # Match y-axis limits between detail panels for direct comparison
@@ -463,22 +428,6 @@ def compose_figure04(
         shared_ylim = (min(ylim_a[0], ylim_b[0]), max(ylim_a[1], ylim_b[1]))
         axes_a[i].set_ylim(shared_ylim)
         axes_b[i].set_ylim(shared_ylim)
-
-    # Panel (b) repeats the row scales from panel (a), so keep only the
-    # model-specific data and title on the right stack.
-    for ax in axes_b:
-        ax.set_ylabel("")
-        ax.tick_params(axis="y", left=False, labelleft=False)
-    for text in axes_b[0].texts:
-        if text.get_gid() == ANIMAL_POSITION_LABEL_GID:
-            text.set_visible(False)
-
-    # Keep threshold / worse-fit row annotations only on panel (b), where they
-    # read as shared labels for both model stacks.
-    for ax in axes_a[3:]:
-        for text in ax.texts:
-            if text.get_gid() in FIGURE4_DIAGNOSTIC_ANNOTATION_GIDS:
-                text.set_visible(False)
 
     # Panel labels - place in axes coordinates on the predictive row of each.
     panel_label_x = {"a": -0.115, "b": -0.05}

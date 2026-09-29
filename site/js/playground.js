@@ -5,16 +5,6 @@ import { cssVar, DistributionChart } from "./charts.js";
 import { METRICS, readoutCard } from "./data.js";
 import { gaussianPredictive, highestDensityRegion, isFlagged, spikeDiagnostics } from "./metrics.js";
 
-const PRESETS = {
-  consistent: { ensemble: "place_cells", mean: 50, std: 5, cell: 5 },
-  conflicting: { ensemble: "place_cells", mean: 25, std: 4, cell: 7 },
-  nested: { ensemble: "place_cells", mean: 47, std: 1.5, cell: 5 },
-  broad: { ensemble: "sparse_epoch", mean: 30, std: 15, cell: 13 },
-  // The sparse cells' fields nearly coincide, so which of them fired says
-  // little; the p-value misses a conflict that HPD overlap catches.
-  pvalueMiss: { ensemble: "sparse_epoch", mean: 50, std: 3, cell: 13 },
-};
-
 // The spread slider is logarithmic so both near-point and very broad
 // predictions are reachable.
 const STD_MIN = 0.5;
@@ -43,7 +33,9 @@ function verdict(flags) {
 export function initPlayground(root, data) {
   const bins = data.position_bins;
   const ensembles = Object.fromEntries(data.ensembles.map((e) => [e.ensemble_id, e]));
-  const state = { ...PRESETS.consistent };
+  // The examples (site_export.PLAYGROUND_PRESETS), keyed by data-preset.
+  const presets = data.presets;
+  const state = { ...presets.consistent };
 
   const ensembleButtons = root.querySelectorAll("[data-ensemble]");
   const presetButtons = root.querySelectorAll("[data-preset]");
@@ -75,7 +67,11 @@ export function initPlayground(root, data) {
   const readouts = {};
   const readoutRoot = root.querySelector("#pg-readouts");
   for (const metric of METRICS) {
-    const card = readoutCard(metric, data.flag_rules[metric.name]);
+    const card = readoutCard(
+      metric,
+      data.flag_rules[metric.name],
+      data.flag_threshold_text[metric.name],
+    );
     readoutRoot.appendChild(card.element);
     readouts[metric.name] = card;
   }
@@ -136,7 +132,7 @@ export function initPlayground(root, data) {
   }
   for (const button of presetButtons) {
     button.addEventListener("click", () => {
-      Object.assign(state, PRESETS[button.dataset.preset]);
+      Object.assign(state, presets[button.dataset.preset]);
       render();
     });
   }

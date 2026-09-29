@@ -6,19 +6,14 @@ and the cache reads (provided by ``data_source.py``). It owns:
 - view state (center time, window width, model, pinned event),
 - the autoscroll / keyboard / model-swap UI behaviors,
 - the ``_WindowLoadWorker`` + ``_LoadSignals`` thread-pool harness that
-  reads a window's posterior + log-likelihood off the disk cache and
+  reads a window's predictive + log-likelihood off the disk cache and
   hands the result to the panels on the main thread.
 
 For the Qt-application entry point and the
 ``python -m statespacecheck_paper.interactive.viewer`` CLI, see
-``app.py``. Panel widget classes (``PosteriorPanel``,
+``app.py``. Panel widget classes (``PredictivePanel``,
 ``LikelihoodPanel``, ``RasterPanel``, ``MetricPanel``, ``SlicePanel``)
 plus the ``CellSlice`` payload dataclass live in ``panels.py``.
-
-Names imported from those modules (and a few constants) are
-re-exported at the bottom of this file so ``from
-statespacecheck_paper.interactive.viewer import X`` keeps working for
-the existing test suite.
 """
 
 from __future__ import annotations
@@ -34,7 +29,14 @@ import pyqtgraph as pg
 from numpy.typing import NDArray
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from .data_source import DecoderDataSource, ModelName
+from statespacecheck_paper.figure04_models import FIGURE04_MODEL_IDS, Figure4ModelId, figure04_model
+from statespacecheck_paper.figure04_protocol import (
+    FIGURE04_DETAIL_WINDOW,
+    FIGURE04_DIAGNOSTIC_THRESHOLDS,
+)
+from statespacecheck_paper.style import METRIC_SPECS
+
+from .data_source import DecoderDataSource
 from .panels import (
     _OVERLAY_LABELS,
     MAX_PER_CELL_PLOTS,
@@ -43,12 +45,13 @@ from .panels import (
     LikelihoodPanel,
     MetricPanel,
     OverlayChoice,
-    PosteriorPanel,
+    PredictivePanel,
     RasterPanel,
     SlicePanel,
 )
 
-# Plan defaults.
+# Window width: 2 s at startup (the span of Figure 4a/b), adjustable from
+# 0.1 s to 60 s.
 DEFAULT_WINDOW_SECONDS = 2.0
 MIN_WINDOW_SECONDS = 0.1
 MAX_WINDOW_SECONDS = 60.0
@@ -58,15 +61,13 @@ SLIDER_RESOLUTION = 100_000  # subdivides the full session into this many ticks
 # can resolve both 0.1 s and 60 s endpoints with reasonable granularity.
 WINDOW_SLIDER_RESOLUTION = 1000
 
-# Reset shortcut width. Re-centers near the Figure-4 detail region
-# (``center_index=193_069`` in figure04_generation.py, ~27% into the
-# session) but shows a wider 20 s context than the figure's ~2 s zoom so
-# the viewer lands with surrounding context rather than the tight crop.
+# Reset shortcut width. Re-centers where the viewer opened (see
+# ``DecoderViewer._home_center_time``) but shows a wider 20 s context than the
+# figure's 2 s window, so the view lands with surrounding context.
 RESET_WINDOW_SECONDS = 20.0
 
 # Auto-scroll defaults.
 AUTOSCROLL_TICK_HZ = 30.0
-AUTOSCROLL_RATE_REALTIME = 1.0  # 1 second of session per second of wall time
 AUTOSCROLL_SPEED_OPTIONS: tuple[float, ...] = (0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0)
 # Startup default. Real-time playback is so fast that the slice panel
 # barely registers; 0.05× is slow enough to actually watch the
@@ -166,10 +167,10 @@ class ViewState:
     request_id: int
     t_center: float
     t_width: float
-    # Load the acausal posterior into the same committed window buffer when the
+    # Load the smoothed posterior into the same committed window buffer when the
     # cache provides it, so switching overlays cannot show predictive data under
     # a smoothed label while another read is pending.
-    load_acausal: bool
+    load_smoothed: bool
 
     def __post_init__(self) -> None:
         if self.request_id < 0:
@@ -188,12 +189,12 @@ class _LoadSignals(QtCore.QObject):
     signals.
     """
 
-    # request_id, slice, post, lik, acausal (None if cache lacks it)
+    # request_id, slice, predictive, lik, smoothed (None if cache lacks it)
     finished = QtCore.Signal(int, slice, object, object, object)
 
 
 class _WindowLoadWorker(QtCore.QRunnable):
-    """Pull one window's posterior + log-likelihood + acausal from the cache.
+    """Pull one window's predictive + log-likelihood + smoothed posterior from the cache.
 
     Runs on a ``QThreadPool`` worker thread; emits the result on the
     main thread via the bridge ``QObject``'s signal.
@@ -214,12 +215,14 @@ class _WindowLoadWorker(QtCore.QRunnable):
     @QtCore.Slot()
     def run(self) -> None:  # noqa: D401 - QRunnable contract
         sl = self._ds.window_indices(self._state.t_center, self._state.t_width)
-        post = self._ds.load_posterior(sl)
-        loglik = self._ds.load_likelihood(sl)
-        acausal = self._ds.load_acausal(sl) if self._state.load_acausal else None
+        predictive = self._ds.load_predictive(sl)
+        loglik = self._ds.load_log_likelihood(sl)
+        smoothed = self._ds.load_smoothed(sl) if self._state.load_smoothed else None
 
         mask = self._ds.state_interior_mask
-        post = _replace_structural_padding(post, mask, fill_value=0.0, name="predictive_posterior")
+        predictive = _replace_structural_padding(
+            predictive, mask, fill_value=0.0, name=self._ds.PREDICTIVE_VAR
+        )
         loglik = _replace_structural_padding(
             loglik,
             mask,
@@ -227,9 +230,9 @@ class _WindowLoadWorker(QtCore.QRunnable):
             name="log_likelihood",
             allow_negative_infinity=True,
         )
-        if acausal is not None:
-            acausal = _replace_structural_padding(
-                acausal, mask, fill_value=0.0, name="acausal_posterior"
+        if smoothed is not None:
+            smoothed = _replace_structural_padding(
+                smoothed, mask, fill_value=0.0, name="acausal_posterior"
             )
 
         # Convert log-likelihood -> normalized linear likelihood here
@@ -237,7 +240,7 @@ class _WindowLoadWorker(QtCore.QRunnable):
         # ``np.exp`` per committed update. Subtract the per-row max
         # first to avoid float32 overflow.
         lik = _relative_likelihood_from_log(loglik)
-        self._signals.finished.emit(self._state.request_id, sl, post, lik, acausal)
+        self._signals.finished.emit(self._state.request_id, sl, predictive, lik, smoothed)
 
 
 # ---------------------------------------------------------------------------
@@ -265,7 +268,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
         self._t_min = float(data_source.time[0])
         self._t_max = float(data_source.time[-1])
         self._window_seconds = DEFAULT_WINDOW_SECONDS
-        self._t_center = 0.5 * (self._t_min + self._t_max)
+        self._t_center = self._home_center_time()
         self._next_request_id = 0
         self._latest_committed_request_id = -1
         # At most one load worker is in flight at a time. While in
@@ -315,7 +318,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
         # NaN-cleans to zero). ``position_bins`` (248 interior) is only
         # used for things that operate on the interior subset, like
         # place-field peaks.
-        self.posterior_panel = PosteriorPanel(
+        self.predictive_panel = PredictivePanel(
             position_bins=ds.position_grid_full,
             n_states=ds.n_states,
         )
@@ -327,14 +330,16 @@ class DecoderViewer(QtWidgets.QMainWindow):
             n_cells=ds.n_cells,
             place_field_peaks=ds.place_field_peaks,
         )
-        # Three diagnostic-metric panels; the thresholds match Figure 4
-        # defaults at scripts/generate_figure04.py.
+        # One diagnostic-metric panel per metric, in the paper's order and
+        # keyed by the per-spike event column it plots. A simulation cache
+        # records Figure 3's thresholds; real-data caches take Figure 4's
+        # fixed cutoffs (KL divergence has none there).
+        thresholds = (
+            FIGURE04_DIAGNOSTIC_THRESHOLDS if ds.flag_thresholds is None else ds.flag_thresholds
+        )
         self.metric_panels: dict[str, MetricPanel] = {
-            "event_hpd_overlap": MetricPanel(metric="event_hpd_overlap", threshold=0.05),
-            "event_predictive_pvalue": MetricPanel(
-                metric="event_predictive_pvalue", threshold=0.05
-            ),
-            "event_kl_divergence": MetricPanel(metric="event_kl_divergence", threshold=None),
+            spec.event_attr: MetricPanel(spec=spec, threshold=thresholds.get(spec.name))
+            for spec in METRIC_SPECS
         }
         self.slice_panel = SlicePanel(
             position_bins=ds.position_grid_full,
@@ -346,14 +351,14 @@ class DecoderViewer(QtWidgets.QMainWindow):
         x_linked: list[pg.PlotWidget] = [self.likelihood_panel, self.raster_panel]
         x_linked.extend(self.metric_panels.values())
         for panel in x_linked:
-            panel.setXLink(self.posterior_panel)
+            panel.setXLink(self.predictive_panel)
 
         # Wheel-over-time-axis-panel scrolls the window width. Install
         # the event filter both on the panel itself and its viewport
         # because pyqtgraph's ``PlotWidget`` (a ``GraphicsView``) routes
         # wheel events through the viewport widget.
         self._wheel_filter_targets: tuple[pg.PlotWidget, ...] = (
-            self.posterior_panel,
+            self.predictive_panel,
             self.likelihood_panel,
             self.raster_panel,
             *self.metric_panels.values(),
@@ -372,35 +377,35 @@ class DecoderViewer(QtWidgets.QMainWindow):
         Mirrors the per-window normalization the worker thread does in
         ``_WindowLoadWorker.run`` so the slice panel sees the same kind
         of arrays whether the row came from the buffered window or
-        from this direct-read path. Returns ``(post, lik, acausal)``;
-        ``acausal`` is ``None`` for older caches without
+        from this direct-read path. Returns ``(predictive, lik, smoothed)``;
+        ``smoothed`` is ``None`` for caches without
         ``acausal_posterior``.
         """
         ds = self._ds
-        post_row = _replace_structural_padding(
-            ds.slice_at_index(t_idx, which="posterior"),
+        predictive_row = _replace_structural_padding(
+            ds.slice_at_index(t_idx, which="predictive"),
             ds.state_interior_mask,
             fill_value=0.0,
-            name="predictive_posterior",
+            name=ds.PREDICTIVE_VAR,
         )
         loglik_row = _replace_structural_padding(
-            ds.slice_at_index(t_idx, which="likelihood"),
+            ds.slice_at_index(t_idx, which="log_likelihood"),
             ds.state_interior_mask,
             fill_value=-np.inf,
             name="log_likelihood",
             allow_negative_infinity=True,
         )
         lik_row = _relative_likelihood_from_log(loglik_row)
-        if ds.has_acausal:
-            acausal_row = _replace_structural_padding(
-                ds.slice_at_index(t_idx, which="acausal"),
+        if ds.has_smoothed:
+            smoothed_row = _replace_structural_padding(
+                ds.slice_at_index(t_idx, which="smoothed"),
                 ds.state_interior_mask,
                 fill_value=0.0,
                 name="acausal_posterior",
             )
         else:
-            acausal_row = None
-        return post_row, lik_row, acausal_row
+            smoothed_row = None
+        return predictive_row, lik_row, smoothed_row
 
     def _build_controls(self) -> None:
         central = QtWidgets.QWidget(self)
@@ -414,29 +419,25 @@ class DecoderViewer(QtWidgets.QMainWindow):
         # (right, ~30%). The right column wraps the slice panel in a
         # vertical layout with a trailing spacer so the slice does not
         # stretch the full window height — the curves are easier to
-        # read at the same vertical extent as the posterior heatmap.
+        # read at the same vertical extent as the predictive heatmap.
         split = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
         time_axis = QtWidgets.QWidget()
         time_axis_layout = QtWidgets.QVBoxLayout(time_axis)
         time_axis_layout.setContentsMargins(0, 0, 0, 0)
         time_axis_layout.setSpacing(2)
-        time_axis_layout.addWidget(self.posterior_panel, stretch=2)
+        time_axis_layout.addWidget(self.predictive_panel, stretch=2)
         time_axis_layout.addWidget(self.likelihood_panel, stretch=2)
         time_axis_layout.addWidget(self.raster_panel, stretch=1)
-        for metric in (
-            "event_hpd_overlap",
-            "event_predictive_pvalue",
-            "event_kl_divergence",
-        ):
-            time_axis_layout.addWidget(self.metric_panels[metric], stretch=1)
+        for metric_panel in self.metric_panels.values():
+            time_axis_layout.addWidget(metric_panel, stretch=1)
 
         slice_column = QtWidgets.QWidget()
         slice_column_layout = QtWidgets.QVBoxLayout(slice_column)
         slice_column_layout.setContentsMargins(0, 0, 0, 0)
         slice_column_layout.setSpacing(0)
-        # Match the posterior panel's stretch (2 of 8 units in the
+        # Match the predictive panel's stretch (2 of 8 units in the
         # time-axis stack) so the slice's vertical extent lines up
-        # with the posterior heatmap above.
+        # with the predictive heatmap above.
         slice_column_layout.addWidget(self.slice_panel, stretch=2)
         slice_column_layout.addStretch(stretch=6)
 
@@ -478,21 +479,21 @@ class DecoderViewer(QtWidgets.QMainWindow):
         self._overlay_combo = QtWidgets.QComboBox()
         self._overlay_combo.setToolTip(
             "Distribution shown as the blue overlay on the top slice "
-            "plot. Per-cell rows always use the predictive prior."
+            "plot. Per-cell rows always use the predictive distribution."
         )
         for choice in OVERLAY_CHOICES:
             self._overlay_combo.addItem(_OVERLAY_LABELS[choice], userData=choice)
-        # Smoothed requires ``acausal_posterior`` in the cache; older
-        # caches don't have it, so disable the option there.
-        if not self._ds.has_acausal:
+        # Smoothed requires ``acausal_posterior``, which every Figure-4 cache
+        # carries and the forward-filter-only simulation cache lacks.
+        if not self._ds.has_smoothed:
             smoothed_idx = OVERLAY_CHOICES.index("smoothed")
             combo_model = cast(QtGui.QStandardItemModel, self._overlay_combo.model())
             model_item = combo_model.item(smoothed_idx)
             if model_item is not None:
                 model_item.setEnabled(False)
                 model_item.setToolTip(
-                    "Cache built before the smoothed-overlay feature; "
-                    "rebuild via 'python -m statespacecheck_paper.interactive.cache build'."
+                    "This cache has no smoothed posterior: the Figure-3 simulation "
+                    "only forward-filters."
                 )
         self._overlay_combo.setCurrentIndex(OVERLAY_CHOICES.index(self.slice_panel.overlay_choice))
         self._overlay_combo.currentIndexChanged.connect(self._on_overlay_combo_changed)
@@ -519,7 +520,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
 
         self._speed_combo = QtWidgets.QComboBox()
         self._speed_combo.setToolTip(
-            "Auto-scroll speed (×realtime). Shortcuts: , faster, . slower."
+            "Auto-scroll speed (×realtime). Shortcuts: , slower, . faster."
         )
         for speed in AUTOSCROLL_SPEED_OPTIONS:
             self._speed_combo.addItem(self._format_speed(speed), userData=speed)
@@ -528,20 +529,22 @@ class DecoderViewer(QtWidgets.QMainWindow):
         controls_layout.addWidget(self._speed_combo)
 
         # Model swap UI only makes sense for real-data caches with both
-        # ``continuous`` and ``contfrag`` available. The figure-3
+        # ``continuous`` and ``continuous_fragmented`` available. The figure-3
         # simulation has a single decoder baked into the data and no
         # alternative to swap to, so the label + combo are hidden
         # entirely (not just disabled — there's no model concept here).
         self._model_label: QtWidgets.QLabel | None = None
         self._model_combo: QtWidgets.QComboBox | None = None
-        if self._ds.dataset_kind == "model":
+        if self._ds.dataset_kind == "recording":
             controls_layout.addSpacing(12)
             self._model_label = QtWidgets.QLabel("Model:")
             controls_layout.addWidget(self._model_label)
             self._model_combo = QtWidgets.QComboBox()
-            self._model_combo.addItems(["continuous", "contfrag"])
-            self._model_combo.setCurrentText(self._ds.model or "")
-            self._model_combo.currentTextChanged.connect(self._on_model_changed)
+            # Show each model's display label; its machine ID is the item data.
+            for model in FIGURE04_MODEL_IDS:
+                self._model_combo.addItem(figure04_model(model).label, userData=model)
+            self._select_model_in_combo(self._ds.model)
+            self._model_combo.currentIndexChanged.connect(self._on_model_changed)
             # Disabled when the cache directory wasn't provided (e.g.
             # tests that construct with a single model in tmp_path).
             self._model_combo.setEnabled(self._cache_dir is not None)
@@ -579,17 +582,19 @@ class DecoderViewer(QtWidgets.QMainWindow):
         self.set_center_time(self._t_center + rel_t)
 
     def _wire_keyboard_shortcuts(self) -> None:
-        """Bind the keyboard shortcuts spec'd in the plan.
+        """Bind the viewer's keyboard shortcuts.
 
         - ``←`` / ``→``         : step center by one decoder time bin.
         - ``Shift+←`` / ``Shift+→``: step by one window-width.
         - ``Space``              : play / pause auto-scroll.
-        - ``M``                  : toggle model (Continuous ↔ ContFrag).
+        - ``,`` / ``.``          : slower / faster auto-scroll.
+        - ``M``                  : toggle model (Continuous ↔ Continuous-Fragmented).
         - ``[`` / ``]``          : shrink / grow window width (or
                                     scroll the mouse wheel over any
                                     time-axis panel).
         - ``R``                  : reset to a 20 s context window centered
-                                    near the Figure 4a default.
+                                    where the viewer opened (Figure 4a/b's
+                                    window for a recording).
         - ``Esc``                : unpin the currently pinned spike
                                     (clicking the pinned spike again
                                     also unpins).
@@ -610,8 +615,8 @@ class DecoderViewer(QtWidgets.QMainWindow):
         add("]", lambda: self._scale_window(2.0))
         add("R", self._reset_view)
         # ``,`` and ``.`` (the same keys as ``<`` / ``>`` without
-        # Shift) step the auto-scroll speed up / down through the
-        # preset list.
+        # Shift) step the auto-scroll speed down / up through the
+        # ascending preset list.
         add(",", lambda: self._step_speed(-1))
         add(".", lambda: self._step_speed(+1))
         add("Escape", self._unpin_event)
@@ -672,13 +677,24 @@ class DecoderViewer(QtWidgets.QMainWindow):
             self._stop_autoscroll()
             self._play_button.setText("▶")
 
-    @QtCore.Slot(str)
-    def _on_model_changed(self, model: str) -> None:
+    def _select_model_in_combo(self, model: str | None) -> None:
+        """Select ``model``'s entry in the model combo box without emitting signals."""
+        if self._model_combo is None:
+            return
+        self._model_combo.blockSignals(True)
+        self._model_combo.setCurrentIndex(self._model_combo.findData(model))
+        self._model_combo.blockSignals(False)
+
+    @QtCore.Slot(int)
+    def _on_model_changed(self, index: int) -> None:
+        if self._model_combo is None:
+            return
+        model = self._model_combo.itemData(index)
         if model == self._ds.model:
             return
-        if model not in ("continuous", "contfrag"):
+        if model not in FIGURE04_MODEL_IDS:
             return
-        self._switch_model(cast(ModelName, model))
+        self._switch_model(cast(Figure4ModelId, model))
 
     @QtCore.Slot(int)
     def _on_speed_combo_changed(self, index: int) -> None:
@@ -690,9 +706,9 @@ class DecoderViewer(QtWidgets.QMainWindow):
     def _update_slice_panel_at_center(self) -> None:
         ds = self._ds
         t_idx = ds.index_at_time(self._t_center)
-        true_pos = float(ds.linear_position[t_idx])
-        self.slice_panel.update_for_index(t_idx, true_pos)
-        self.slice_panel.set_live_readout(self._format_live_readout(t_idx, true_pos))
+        physical_pos = float(ds.linear_position[t_idx])
+        self.slice_panel.update_for_index(t_idx, physical_pos)
+        self.slice_panel.set_live_readout(self._format_live_readout(t_idx, physical_pos))
         slices, total = self._per_cell_slices_at(t_idx)
         self.slice_panel.set_per_cell_slices(slices, total_in_bin=total)
         self._refresh_active_bin_band(t_idx)
@@ -737,10 +753,12 @@ class DecoderViewer(QtWidgets.QMainWindow):
         truncated list plus the unique total so the panel can show a
         ``(+K more)`` indicator.
 
-        Each row's ``place_field_norm`` is the event likelihood when the
-        cache provides one, otherwise the cell's first-state place field.
+        Each row's ``event_likelihood_peak_scaled`` is the normalized
+        likelihood of the cell's first event in the bin
+        (``DecoderDataSource.event_likelihood_at``: stored by the simulation
+        cache, computed from the cell's static place field for a recording).
         It is embedded into the full per-state position grid (non-interior
-        bins stay at zero) and normalized to its own peak so it sits on a
+        bins stay at zero) and scaled to its own peak so it sits on a
         [0, 1] axis alongside the predictive overlay.
         """
         ds = self._ds
@@ -767,15 +785,17 @@ class DecoderViewer(QtWidgets.QMainWindow):
         for cell_id in kept:
             first_event = seen[cell_id]
             n_spikes = int(count_by_cell[cell_id])
-            pf = ds.event_likelihood_at(first_event, cell_id)[:n_interior]
-            peak = float(pf.max())
-            pf_norm_interior = (pf / peak).astype(np.float32, copy=False) if peak > 0 else pf
+            likelihood = ds.event_likelihood_at(first_event, cell_id)[:n_interior]
+            peak = float(likelihood.max())
+            peak_scaled_interior = (
+                (likelihood / peak).astype(np.float32, copy=False) if peak > 0 else likelihood
+            )
             curve = np.zeros(ds.n_position_full, dtype=np.float32)
-            curve[ds.interior_mask] = pf_norm_interior
+            curve[ds.interior_mask] = peak_scaled_interior
             slices.append(
                 CellSlice(
                     cell_id=cell_id,
-                    place_field_norm=curve,
+                    event_likelihood_peak_scaled=curve,
                     hpd=float(ds.event_hpd_overlap[first_event]),
                     kl=float(ds.event_kl_divergence[first_event]),
                     predictive_pvalue=float(ds.event_predictive_pvalue[first_event]),
@@ -791,17 +811,17 @@ class DecoderViewer(QtWidgets.QMainWindow):
             return None
         return int(self._ds.event_cell_ids[row])
 
-    def _format_live_readout(self, t_idx: int, true_pos: float) -> str:
+    def _format_live_readout(self, t_idx: int, physical_pos: float) -> str:
         """Time + predictive(x_true). Per-cell metrics live in the row headers."""
         ds = self._ds
         lines = [f"t = {float(ds.time[t_idx]) - float(ds.time[0]):.3f} s"]
         sl = self.slice_panel._buffer_slice  # noqa: SLF001
-        post_buf = self.slice_panel._buffer_post  # noqa: SLF001
-        if sl is not None and post_buf is not None and sl.start <= t_idx < sl.stop:
-            row = post_buf[t_idx - sl.start]
+        predictive_buf = self.slice_panel._buffer_predictive  # noqa: SLF001
+        if sl is not None and predictive_buf is not None and sl.start <= t_idx < sl.stop:
+            row = predictive_buf[t_idx - sl.start]
             if ds.n_states > 1:
                 row = row.reshape(ds.n_states, ds.n_position_full).sum(axis=0)
-            pos_bin = _nearest_index(ds.position_grid_full, true_pos)
+            pos_bin = _nearest_index(ds.position_grid_full, physical_pos)
             lines.append(f"predictive(x_true) = {float(row[pos_bin]):.4f}")
         return "\n".join(lines)
 
@@ -843,7 +863,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
             for panel in self.metric_panels.values():
                 panel.update_pinned_event(relative_time=None, metric_value=None)
             self.raster_panel.update_pinned_event(relative_time=None, cell_id=None)
-            self.posterior_panel.update_pinned_event(None)
+            self.predictive_panel.update_pinned_event(None)
             self.likelihood_panel.update_pinned_event(None)
             self.slice_panel.update_pinned_event(
                 place_field_row=None,
@@ -857,7 +877,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
         # falls within the currently rendered window. The time axis
         # is centered at ``t_center``, so the relative time is the
         # event time minus the current center.
-        if sl is None or not (sl.start <= ds.index_at_time(float(event["time"])) < sl.stop):
+        if sl is None or not (sl.start <= int(ds.event_time_ind[row]) < sl.stop):
             relative_time: float | None = None
         else:
             relative_time = float(event["time"]) - float(self._t_center)
@@ -871,15 +891,17 @@ class DecoderViewer(QtWidgets.QMainWindow):
             relative_time=relative_time,
             cell_id=int(event["cell_id"]),
         )
-        self.posterior_panel.update_pinned_event(relative_time)
+        self.predictive_panel.update_pinned_event(relative_time)
         self.likelihood_panel.update_pinned_event(relative_time)
 
         # Slice-panel: the pinned-row highlight is driven via the
         # ``is_pinned`` flag on the next ``set_per_cell_slices`` call;
         # here we only update the annotation label below the rows.
         cell_id = int(event["cell_id"])
+        # Cell labels shown to the reader are 1-based ("cell=1" is cell_id 0),
+        # as on the website; cell_id stays 0-based everywhere else.
         annotation = (
-            f"t={float(event['time']):.3f}  cell={cell_id}\n"
+            f"t={float(event['time']):.3f}  cell={cell_id + 1}\n"
             f"HPD={float(event['event_hpd_overlap']):.3f}  "
             f"KL={float(event['event_kl_divergence']):.3f}  "
             f"p={float(event['event_predictive_pvalue']):.3f}"
@@ -897,9 +919,9 @@ class DecoderViewer(QtWidgets.QMainWindow):
         self,
         request_id: int,
         sl: slice,
-        post: NDArray[np.float32],
+        predictive: NDArray[np.float32],
         lik: NDArray[np.float32],
-        acausal: NDArray[np.float32] | None,
+        smoothed: NDArray[np.float32] | None,
     ) -> None:
         # The in-flight worker just finished; clear the slot and fire
         # any deferred dispatch (this is how a paused-then-moved center
@@ -923,7 +945,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
         # negative and positive values. The center-time vertical
         # line on each panel sits at x=0 so the user can see which
         # column corresponds to the slice panel.
-        # LEFT-EDGE bin convention (matches ``event_time_idx`` and
+        # LEFT-EDGE bin convention (matches ``event_time_ind`` and
         # ``np.digitize`` spike binning): bin ``i`` covers the real-time
         # interval ``[time[i], time[i+1])``. The visible window is
         # therefore the half-open interval ``[time[sl.start], time[sl.stop])``.
@@ -948,24 +970,24 @@ class DecoderViewer(QtWidgets.QMainWindow):
         # range here is independent of those sub-millisecond shifts.
         # The other time-axis panels follow via ``setXLink``.
         target_half_w = self._window_seconds / 2.0
-        self.posterior_panel.setXRange(-target_half_w, target_half_w, padding=0)
+        self.predictive_panel.setXRange(-target_half_w, target_half_w, padding=0)
 
         # Slice panel buffer: hand the freshly loaded full-resolution
         # arrays so per-tick ``update_for_index`` is a NumPy index.
-        self.slice_panel.set_window_buffer(sl, post, lik, acausal=acausal)
+        self.slice_panel.set_window_buffer(sl, predictive, lik, smoothed=smoothed)
         # Animate now — the slice should reflect the current center
         # immediately after a load, even if the slider has not moved.
         self._update_slice_panel_at_center()
 
-        self.posterior_panel.update_with_window(rel_start, rel_end, post)
+        self.predictive_panel.update_with_window(rel_start, rel_end, predictive)
         self.likelihood_panel.update_with_window(rel_start, rel_end, lik)
 
-        # Overlay the animal's true position trajectory on both heatmaps.
+        # Overlay the animal's physical position trajectory on both heatmaps.
         # Times are relative to ``t_center`` so the curve aligns with the
         # heatmap's center marker at x=0.
         rel_time_window = np.asarray(time[sl], dtype=np.float64) - t_offset
         linear_pos_window = np.asarray(self._ds.linear_position[sl], dtype=np.float64)
-        self.posterior_panel.update_position_trajectory(rel_time_window, linear_pos_window)
+        self.predictive_panel.update_position_trajectory(rel_time_window, linear_pos_window)
         self.likelihood_panel.update_position_trajectory(rel_time_window, linear_pos_window)
 
         events = self._ds.events_in_window(sl)
@@ -975,8 +997,6 @@ class DecoderViewer(QtWidgets.QMainWindow):
             empty_m = np.empty(0, dtype=np.float32)
             empty_idx = np.empty(0, dtype=np.int64)
             self.raster_panel.update_window(
-                rel_start,
-                rel_end,
                 empty_t,
                 empty_c,
                 t_offset,
@@ -984,8 +1004,6 @@ class DecoderViewer(QtWidgets.QMainWindow):
             )
             for panel in self.metric_panels.values():
                 panel.update_window(
-                    rel_start,
-                    rel_end,
                     empty_t,
                     empty_m,
                     t_offset,
@@ -996,8 +1014,6 @@ class DecoderViewer(QtWidgets.QMainWindow):
             cell_ids = events["cell_id"].to_numpy()
             global_indices = events.index.to_numpy().astype(np.int64, copy=False)
             self.raster_panel.update_window(
-                rel_start,
-                rel_end,
                 event_times_arr,
                 cell_ids,
                 t_offset,
@@ -1005,8 +1021,6 @@ class DecoderViewer(QtWidgets.QMainWindow):
             )
             for metric, panel in self.metric_panels.items():
                 panel.update_window(
-                    rel_start,
-                    rel_end,
                     event_times_arr,
                     events[metric].to_numpy(),
                     t_offset,
@@ -1039,7 +1053,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
             # Keep the smoothed distribution in the same committed buffer as
             # the predictive distribution so changing the label never exposes
             # a transient substitution.
-            load_acausal=self._ds.has_acausal,
+            load_smoothed=self._ds.has_smoothed,
         )
         worker = _WindowLoadWorker(self._ds, state, self._load_signals)
         self._thread_pool.start(worker)
@@ -1183,29 +1197,38 @@ class DecoderViewer(QtWidgets.QMainWindow):
                 return True
         return bool(super().eventFilter(watched, event))
 
+    def _home_center_time(self) -> float:
+        """Time the viewer opens on and ``R`` returns to.
+
+        A recording opens on the center of Figure 4a/b's detail window
+        (``figure04_protocol.FIGURE04_DETAIL_WINDOW``) when its timeline
+        contains it; the Figure-3 simulation, and a recording too short to
+        contain it, open mid-session.
+        """
+        center = FIGURE04_DETAIL_WINDOW.center_index
+        if self._ds.dataset_kind == "recording" and center < self._ds.n_time:
+            return float(self._ds.time[center])
+        return 0.5 * (self._t_min + self._t_max)
+
     @QtCore.Slot()
     def _reset_view(self) -> None:
-        # Reset to a 20 s window centered ~a quarter into the session. The
-        # Figure 4 detail region sits at index 193069 of a 709321-point
-        # session (~27% in); ``n_time // 4`` (25%) is a size-agnostic default
-        # that lands nearby and stays valid for synthetic / shorter sessions.
-        mid_idx = max(0, min(self._ds.n_time - 1, self._ds.n_time // 4))
-        target_t = float(self._ds.time[mid_idx])
+        # A 20 s context window around where the viewer opened.
         self._set_window_seconds(RESET_WINDOW_SECONDS)
-        self.set_center_time(target_t)
+        self.set_center_time(self._home_center_time())
 
     @QtCore.Slot()
     def _toggle_model(self) -> None:
-        if self._ds.dataset_kind != "model" or self._cache_dir is None:
+        if self._ds.dataset_kind != "recording" or self._cache_dir is None:
             # The simulation dataset has no alternative model; the
             # ``M`` keyboard shortcut and any stray combo signal
             # both no-op.
             return
-        new_model: ModelName = "contfrag" if self._ds.model == "continuous" else "continuous"
+        # Switch to the first model that is not the current one.
+        new_model = next(model for model in FIGURE04_MODEL_IDS if model != self._ds.model)
         self._switch_model(new_model)
 
-    def _switch_model(self, model: ModelName) -> None:
-        if self._ds.dataset_kind != "model" or self._cache_dir is None:
+    def _switch_model(self, model: Figure4ModelId) -> None:
+        if self._ds.dataset_kind != "recording" or self._cache_dir is None:
             return
         if model == self._ds.model:
             return
@@ -1214,10 +1237,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
         except FileNotFoundError:
             # The requested cache doesn't exist; revert the combo
             # box and bail.
-            if self._model_combo is not None:
-                self._model_combo.blockSignals(True)
-                self._model_combo.setCurrentText(self._ds.model or "")
-                self._model_combo.blockSignals(False)
+            self._select_model_in_combo(self._ds.model)
             return
 
         # Drain the in-flight worker before swapping so the worker
@@ -1264,14 +1284,11 @@ class DecoderViewer(QtWidgets.QMainWindow):
         self._per_cell_checkbox.setChecked(per_cell_on)
         # Restore the choice when it exists in the new model. Otherwise select
         # the explicitly labeled predictive option; smoothed is disabled.
-        if overlay_choice == "smoothed" and not self._ds.has_acausal:
+        if overlay_choice == "smoothed" and not self._ds.has_smoothed:
             overlay_choice = "predictive"
         self._overlay_combo.setCurrentIndex(OVERLAY_CHOICES.index(overlay_choice))
         self.slice_panel.set_overlay_choice(overlay_choice)
-        if self._model_combo is not None:
-            self._model_combo.blockSignals(True)
-            self._model_combo.setCurrentText(new_ds.model or "")
-            self._model_combo.blockSignals(False)
+        self._select_model_in_combo(new_ds.model)
         if was_playing:
             self._play_button.setChecked(True)
 
@@ -1322,30 +1339,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
         self._load_timer.start()
 
 
-# ---------------------------------------------------------------------------
-# Backward-compat re-exports
-# ---------------------------------------------------------------------------
-#
-# Pre-split, all of the panel classes and the launch / configure_qt_application
-# helpers lived in this module. Tests and downstream callers still import
-# them via ``from statespacecheck_paper.interactive.viewer import X``; keep
-# those imports working without forcing an update.
-
-from .app import configure_qt_application, launch, main  # noqa: E402, F401
-from .panels import (  # noqa: E402, F401
-    _LIKELIHOOD_PEN_RGB,
-    _PER_CELL_PALETTE,
-    _SLICE_Y_MAX,
-    _SLICE_Y_MIN,
-    _STATE_LIKELIHOOD_RGB,
-    _STATE_POSTERIOR_RGB,
-    _TRUE_POSITION_PEN,
-    METRIC_COLORS,
-    METRIC_TITLES,
-    _make_slice_subplot,
-    _PerCellRow,
-    _pin_slice_axes,
-)
-
 if __name__ == "__main__":
+    from .app import main
+
     raise SystemExit(main())

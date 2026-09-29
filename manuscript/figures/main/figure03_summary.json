@@ -1,10 +1,4 @@
 {
-  "accuracy_metric_order": [
-    "median_absolute_error"
-  ],
-  "accuracy_units": {
-    "median_absolute_error": "position_units"
-  },
   "condition_labels": [
     "Well-specified",
     "Remap",
@@ -29,6 +23,8 @@
       10
     ],
     "history_refractory_steps": 1,
+    "hpd_coverage": 0.95,
+    "initial_position": 0.0,
     "phase_boundaries": [
       6000,
       10000,
@@ -116,7 +112,14 @@
     "sparse_control_ordinary_rate_scale": 0.0,
     "sparse_place_field_spread": 1.5,
     "sparse_place_field_std": 2.0,
-    "sparse_position": 30.0
+    "sparse_position": 30.0,
+    "step_seconds": 0.001
+  },
+  "error_metric_order": [
+    "median_absolute_error"
+  ],
+  "error_units": {
+    "median_absolute_error": "position_units"
   },
   "figure": "figure03",
   "flag_rules": {
@@ -133,7 +136,7 @@
       "threshold": 0.05
     }
   },
-  "median_decoding_accuracy": [
+  "median_decoding_error": [
     [
       1.7667602927910817,
       42.16926259332958,
@@ -143,7 +146,7 @@
       1.0283064565550593
     ]
   ],
-  "median_decoding_accuracy_standard_errors": [
+  "median_decoding_error_standard_errors": [
     [
       0.014448185985773732,
       2.2990407870257834,
@@ -213,13 +216,13 @@
   "percentage_unit": "percent_of_spike_events",
   "provenance": {
     "source": {
-      "source_tree_sha256": "7bef641eb84c80e5b6dc9125a227c88af7758f1a5dfb18084b345676c23ce92a",
+      "source_tree_sha256": "83e399ba6bc6b17c8403fb2741368441b9861ed8c205421f80cde7297e55093f",
       "statespacecheck_paper_version": "0.1.0",
       "statespacecheck_version": "0.3.1",
-      "uv_lock_sha256": "47254ea6d4d86a02429fbb7c7a5ba481a8424bc3cf80c410a3d14a895a6224a3"
+      "uv_lock_sha256": "7db5bb03266cfeab8f804cd7262232f3ffa16ebaf423722a399076043b640574"
     }
   },
-  "realization_decoding_accuracy": [
+  "realization_decoding_error": [
     [
       [
         1.7389475375854841,
@@ -3828,19 +3831,22 @@
     "first_seed": 1,
     "last_seed": 100
   },
-  "schema_version": 6,
+  "schema_version": 9,
   "standard_error_method": "order_statistic_interval_95",
   "threshold_provenance": {
     "baseline_end_index": 6000,
     "hpd_overlap": {
+      "baseline_flagged_fraction": 0.013951078314006469,
       "quantile": 0.01,
       "rule": "pooled_baseline_quantile"
     },
     "kl_divergence": {
+      "baseline_flagged_fraction": 0.010002322797362732,
       "quantile": 0.99,
       "rule": "pooled_baseline_quantile"
     },
     "predictive_pvalue": {
+      "baseline_flagged_fraction": 0.024292886879768435,
       "cutoff": 0.05,
       "rule": "fixed_cutoff"
     }

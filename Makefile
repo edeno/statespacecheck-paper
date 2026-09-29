@@ -59,7 +59,7 @@ check-python:
 	$(RUN) ruff format --check .
 	$(RUN) ruff check .
 	$(RUN) mypy src/
-	$(RUN) pytest
+	NODE="$(NODE)" $(RUN) pytest
 
 check-site:
 	$(MAKE) -C site test NODE="$(NODE)"

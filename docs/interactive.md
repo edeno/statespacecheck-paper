@@ -19,7 +19,7 @@ memory.
 
 Two dataset kinds are supported:
 
-- **Real-data decoder caches** (`continuous` / `contfrag` models from
+- **Real-data decoder caches** (`continuous` / `continuous_fragmented` models from
   fitted `non_local_detector` decoders).
 - **Figure-3 simulation cache** — the simulated demonstration with
   baseline / remap / history-dependent-firing / drift phases plus the
@@ -28,21 +28,36 @@ Two dataset kinds are supported:
 
 ## Build a cache
 
-For Figure 4, first run `make download-data`. The builder fits the models when
-the canonical decode cache is absent or stale. Viewer caches require additional
-disk space and are ignored by Git.
+For Figure 4, first run `make download-data`. The builder loads the same two
+canonical caches the static figure uses, the decode cache
+`{epoch}_figure04_decode.joblib` and the diagnostics cache
+`{epoch}_figure04_diagnostics.joblib` under `<data-dir>/intermediates/`. It refits
+the models when the decode cache is absent or stale, and recomputes the
+diagnostics when the diagnostics cache is absent or stale; either way it
+rewrites the canonical cache it rebuilt. `--force-recompute` refits and
+recomputes both regardless. Viewer caches require additional disk space and are
+ignored by Git.
+
+Each row of a viewer cache's Parquet event table stores the spike's time, its
+cell, its three diagnostics, and `event_time_ind`, the decoder time bin the
+diagnostics assigned it to. The viewer places each spike in that bin rather than
+re-binning its time, so a Figure-4 spike at the final timestamp stays in the
+penultimate bin, where the decoder counted it. The viewer rejects a cache
+without this column and names the command that rebuilds it with `--force`.
 
 ```bash
 # Real data (figure 4): derives figure04_continuous.zarr +
-# figure04_contfrag.zarr and shared sidecars from the same canonical
-# {epoch}_fig4_cache.joblib bundle used by the static figure.
+# figure04_continuous_fragmented.zarr and shared sidecars from the canonical Figure 4
+# decode and diagnostics caches. --animal-date-epoch defaults to
+# STATESPACECHECK_ANIMAL_DATE_EPOCH, else the published epoch.
 uv run --frozen python -m statespacecheck_paper.interactive.cache build \
     --data-dir data \
     --cache-dir data/cache \
     --model both
 
 # Figure-3 simulation: runs the demo simulation + decoder and writes
-# simulation.zarr + sidecars.
+# simulation.zarr + sidecars, recording Figure 3's flag thresholds (from
+# figure03_summary.json) for the metric panels' threshold lines.
 uv run --frozen python -m statespacecheck_paper.interactive.cache build-simulated \
     --cache-dir data/cache/simulation
 ```
@@ -50,7 +65,7 @@ uv run --frozen python -m statespacecheck_paper.interactive.cache build-simulate
 ## Open the viewer
 
 ```bash
-# Real-data model (Continuous or ContFrag).
+# Real-data model (Continuous or Continuous-Fragmented).
 uv run --frozen python -m statespacecheck_paper.interactive \
     --cache-dir data/cache --model continuous
 
@@ -69,13 +84,22 @@ uv run --frozen python -m statespacecheck_paper.interactive \
 | Step center by one bin | `←` / `→` |
 | Step center by one window | `Shift+←` / `Shift+→` |
 | Play / pause auto-scroll | `Space` |
-| Scrub auto-scroll speed | `,` / `.` |
+| Slower / faster auto-scroll | `,` / `.` |
 | Resize window width | Mouse wheel over a time-axis panel, or `[` / `]` |
-| Reset to a 20 s context window | `R` |
+| Reset to a 20 s context window where the viewer opened (a recording opens on Figure 4a/b's window) | `R` |
 | Toggle real-data model | `M` (real-data caches only) |
+
+Cells are labeled from 1, as on the website ("Cell 1" is the first unit); the
+caches and the code index them from 0.
+
+The HPD-overlap panel uses the figures' symmetric-log axis (matplotlib's
+transform with `style.SYMLOG_LINTHRESH` and `style.SYMLOG_LINSCALE`, ticked at
+Figure 3's values), so small overlaps separate from exact zeros as they do in
+the paper and on the website; the p-value panel shows −log p.
 
 The slice panel's "Overlay" combo switches the population-likelihood
 plot's blue overlay between predictive `p(x_t | y_{1:t-1})`, filtered
 `p(x_t | y_{1:t})`, and smoothed `p(x_t | y_{1:T})` distributions.
-Smoothed is only available for caches that include `acausal_posterior`
-(rebuild via `cache build --force` if the entry is greyed out).
+Every Figure-4 cache carries the smoothed posterior (`acausal_posterior`).
+The Figure-3 simulation cache has none, because the simulation only
+forward-filters, so the Smoothed entry is disabled there.

@@ -280,12 +280,15 @@ export function paintHeatmap(context, bitmap, width, height) {
   context.drawImage(bitmap, 0, 0, width, height);
 }
 
+// Narrowest painted spike column, in pixels.
+const MIN_COLUMN_WIDTH = 1.5;
+
 /**
- * Paint only the time steps where `mask(t)` holds, each at least `minWidth`
- * pixels wide, over a black background. Isolated spikes stay visible even when
- * a time step is narrower than a pixel.
+ * Paint only the time steps where `mask(t)` holds, each at least
+ * MIN_COLUMN_WIDTH pixels wide, over a black background. Isolated spikes stay
+ * visible even when a time step is narrower than a pixel.
  */
-export function paintColumns(context, bitmap, times, mask, xOf, width, height, minWidth = 1.5) {
+export function paintColumns(context, bitmap, times, mask, xOf, width, height) {
   context.fillStyle = "#000000";
   context.fillRect(0, 0, width, height);
   context.imageSmoothingEnabled = false;
@@ -293,7 +296,7 @@ export function paintColumns(context, bitmap, times, mask, xOf, width, height, m
   for (let t = 0; t < times.length; t += 1) {
     if (!mask(t)) continue;
     const x = xOf(times[t]);
-    const w = Math.max(minWidth, xOf(times[t] + step) - x);
+    const w = Math.max(MIN_COLUMN_WIDTH, xOf(times[t] + step) - x);
     context.drawImage(bitmap, t, 0, 1, bitmap.height, x, 0, w, height);
   }
 }

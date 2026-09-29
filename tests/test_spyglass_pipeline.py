@@ -1,18 +1,23 @@
-"""Tests for the Spyglass rebuild of the Figure-4 exports (no database access).
+"""Tests for the lab's Spyglass pipeline for Figure 4 (no database access).
 
-The Spyglass fetches themselves need the lab database; these tests cover the
-offline pieces (import laziness, clipping, linearization, file round trip, and
-comparison) on simulated data.
+The Spyglass fetches and table writes need the lab database; these tests cover
+the offline pieces on simulated data: import laziness; the input rebuild in
+``figure04_input`` (clipping, linearization, file round trip, and comparison);
+the paper-export logging in ``paper_export`` and its script; and what the tables
+compute in ``figure04_compute`` (diagnostics from stored decodes and the summary
+rows).
 """
 
 from __future__ import annotations
 
 import dataclasses
+import json
 import os
 import subprocess
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
+from typing import Any
 
 import networkx as nx
 import numpy as np
@@ -21,27 +26,38 @@ import pytest
 import xarray as xr
 from track_linearization import make_track_graph
 
-from statespacecheck_paper import spyglass_data
-from statespacecheck_paper.load_local_data import load_neural_recording_from_files
-from statespacecheck_paper.spyglass_data import (
+from statespacecheck_paper.figure04_diagnostics import (
+    FlagConfusion,
+    compute_spike_event_diagnostics,
+)
+from statespacecheck_paper.figure04_input import input_file_path, load_figure04_input
+from statespacecheck_paper.figure04_summary import Figure4DiagnosticMeans, Figure4Summary
+from statespacecheck_paper.paths import FIGURE04_INPUTS_EPOCH, FIGURE04_SUMMARY_PATH
+from statespacecheck_paper.spyglass_pipeline import figure04_input, paper_export
+from statespacecheck_paper.spyglass_pipeline.figure04_compute import (
+    figure04_diagnostics_from_decodes,
+    figure04_event_table,
+    figure04_reported_statistics_from_rows,
+    figure04_summary_rows,
+)
+from statespacecheck_paper.spyglass_pipeline.figure04_input import (
     Figure4Inputs,
     check_output_paths,
-    compare_figure04_exports,
-    declared_attribute_names,
+    compare_figure04_inputs,
     epoch_identifier,
-    export_file_path,
-    figure04_diagnostics_from_decodes,
     filter_spike_times,
     get_interpolated_position_info,
     get_patch_id,
-    log_figure04_export,
-    unrestricted_log_entries,
     write_figure04_inputs,
 )
+from statespacecheck_paper.spyglass_pipeline.paper_export import (
+    declared_attribute_names,
+    log_figure04_export,
+    unrestricted_log_entries,
+)
 
-from ._scripts import load_script
+from ._scripts import SCRIPTS_DIR, load_script
 
-_REPO_ROOT = Path(__file__).resolve().parents[1]
 _EPOCH = "rat20200101_02_r1"
 _NO_DATABASE_IMPORTS = (
     "import sys\n"
@@ -51,7 +67,11 @@ _NO_DATABASE_IMPORTS = (
 
 
 def test_importing_module_does_not_import_spyglass_or_datajoint() -> None:
-    code = "import statespacecheck_paper.spyglass_data\n" + _NO_DATABASE_IMPORTS
+    code = (
+        "import statespacecheck_paper.spyglass_pipeline.figure04_input\n"
+        "import statespacecheck_paper.spyglass_pipeline.figure04_compute\n"
+        "import statespacecheck_paper.spyglass_pipeline.paper_export\n"
+    ) + _NO_DATABASE_IMPORTS
     subprocess.run([sys.executable, "-c", code], check=True)
 
 
@@ -65,7 +85,7 @@ def test_importing_module_does_not_import_spyglass_or_datajoint() -> None:
     ],
 )
 def test_script_help_does_not_import_spyglass_or_datajoint(script: str) -> None:
-    path = str(_REPO_ROOT / "scripts" / script)
+    path = str(SCRIPTS_DIR / script)
     code = (
         "import runpy, sys\n"
         f"sys.argv = [{path!r}, '--help']\n"
@@ -121,7 +141,7 @@ def test_get_interpolated_position_info_adds_edge_spacing() -> None:
     )
 
     np.testing.assert_allclose(result["linear_position"], [5.0, 30.0])
-    # Onto its own timestamps (as the Figure-4 export does) the input is unchanged.
+    # Onto its own timestamps (as the Figure-4 input fetch does) the input is unchanged.
     pd.testing.assert_frame_equal(result[list(position_info.columns)], position_info)
 
 
@@ -145,11 +165,11 @@ def _inputs(spike_shift: float = 0.0) -> Figure4Inputs:
     )
 
 
-def test_written_exports_load_through_the_figure_loader(tmp_path: Path) -> None:
+def test_written_input_files_load_through_the_figure_loader(tmp_path: Path) -> None:
     inputs = _inputs()
     write_figure04_inputs(inputs, tmp_path, _EPOCH)
 
-    recording = load_neural_recording_from_files(tmp_path, _EPOCH)
+    recording = load_figure04_input(tmp_path, _EPOCH)
 
     np.testing.assert_array_equal(recording.spike_times[0], [0.001, 0.004])
     assert recording.spike_times[1].shape == (0,)
@@ -159,7 +179,7 @@ def test_written_exports_load_through_the_figure_loader(tmp_path: Path) -> None:
 
 
 def test_write_refuses_an_existing_file_and_leaves_it(tmp_path: Path) -> None:
-    existing = export_file_path(tmp_path, _EPOCH)
+    existing = input_file_path(tmp_path, _EPOCH)
     existing.write_bytes(b"earlier")
 
     with pytest.raises(FileExistsError, match="Refusing to overwrite"):
@@ -171,7 +191,7 @@ def test_write_overwrite_replaces_the_contents(tmp_path: Path) -> None:
     write_figure04_inputs(_inputs(), tmp_path, _EPOCH)
     write_figure04_inputs(_inputs(spike_shift=1e-3), tmp_path, _EPOCH, overwrite=True)
 
-    recording = load_neural_recording_from_files(tmp_path, _EPOCH)
+    recording = load_figure04_input(tmp_path, _EPOCH)
     np.testing.assert_array_equal(recording.spike_times[0], [0.001, 0.004 + 1e-3])
 
 
@@ -182,11 +202,11 @@ def test_write_is_deterministic(tmp_path: Path) -> None:
     assert first.read_bytes() == second.read_bytes()
 
 
-def test_compare_finds_no_difference_between_identical_exports(tmp_path: Path) -> None:
+def test_compare_finds_no_difference_between_identical_input_files(tmp_path: Path) -> None:
     write_figure04_inputs(_inputs(), tmp_path / "reference", _EPOCH)
     write_figure04_inputs(_inputs(), tmp_path / "same", _EPOCH)
 
-    differences = compare_figure04_exports(tmp_path / "reference", tmp_path / "same", _EPOCH)
+    differences = compare_figure04_inputs(tmp_path / "reference", tmp_path / "same", _EPOCH)
 
     assert "spike_times" in differences and "position/head_position_x" in differences
     assert set(differences.values()) == {None}
@@ -214,7 +234,7 @@ def test_compare_flags_only_the_array_that_differs(tmp_path: Path, array_name: s
     write_figure04_inputs(_inputs(), tmp_path / "reference", _EPOCH)
     write_figure04_inputs(_PERTURBATIONS[array_name](_inputs()), tmp_path / "changed", _EPOCH)
 
-    differences = compare_figure04_exports(tmp_path / "reference", tmp_path / "changed", _EPOCH)
+    differences = compare_figure04_inputs(tmp_path / "reference", tmp_path / "changed", _EPOCH)
 
     assert {name for name, difference in differences.items() if difference} == {array_name}
 
@@ -228,6 +248,14 @@ def test_write_refuses_a_directed_graph(tmp_path: Path) -> None:
 
 
 # --- Data checks -------------------------------------------------------------
+
+
+def test_spyglass_session_and_epoch_name_the_published_input_file() -> None:
+    """The Spyglass fetch rebuilds the input file the figure reads, not another epoch's."""
+    assert (
+        epoch_identifier(figure04_input.FIGURE04_NWB_FILE_NAME, figure04_input.FIGURE04_EPOCH_NAME)
+        == FIGURE04_INPUTS_EPOCH
+    )
 
 
 def test_epoch_identifier_rejects_names_without_the_spyglass_suffix() -> None:
@@ -365,11 +393,11 @@ def test_log_export_stops_the_session_when_the_fetch_fails(
         raise OSError("analysis file unavailable")
 
     monkeypatch.setattr(
-        spyglass_data,
+        paper_export,
         "dry_run_figure04_export_log",
         lambda *args: [{"part": "Table", "table_name": "position", "restriction": "(id=1)"}],
     )
-    monkeypatch.setattr(spyglass_data, "fetch_figure04_inputs", failing_fetch)
+    monkeypatch.setattr(paper_export, "fetch_figure04_inputs", failing_fetch)
 
     with pytest.raises(OSError):
         log_figure04_export("paper", "analysis")
@@ -390,7 +418,7 @@ def test_log_export_refuses_unsafe_rehearsal_before_writing(
 ) -> None:
     calls: list[str] = []
     _fake_common_usage(monkeypatch, calls)
-    monkeypatch.setattr(spyglass_data, "dry_run_figure04_export_log", lambda *args: entries)
+    monkeypatch.setattr(paper_export, "dry_run_figure04_export_log", lambda *args: entries)
 
     with pytest.raises(RuntimeError, match=message):
         log_figure04_export("paper", "analysis")
@@ -432,12 +460,12 @@ def test_export_rehearsal_records_without_inserting_and_restores_state(
         if fetch_fails:
             raise OSError("analysis file unavailable")
 
-    monkeypatch.setattr(spyglass_data, "fetch_figure04_inputs", fetch)
+    monkeypatch.setattr(paper_export, "fetch_figure04_inputs", fetch)
     if fetch_fails:
         with pytest.raises(OSError, match="analysis file unavailable"):
-            spyglass_data.dry_run_figure04_export_log()
+            paper_export.dry_run_figure04_export_log()
     else:
-        assert spyglass_data.dry_run_figure04_export_log() == [
+        assert paper_export.dry_run_figure04_export_log() == [
             {"part": "Table", "table_name": "position", "restriction": "(id=1)"},
             {"part": "File", "analysis_file_name": "analysis.nwb"},
         ]
@@ -486,8 +514,8 @@ def _export_script(monkeypatch: pytest.MonkeyPatch, calls: list[str], answer: st
 
 
 def _script_epoch() -> str:
-    return spyglass_data.epoch_identifier(
-        spyglass_data.FIGURE04_NWB_FILE_NAME, spyglass_data.FIGURE04_EPOCH_NAME
+    return figure04_input.epoch_identifier(
+        figure04_input.FIGURE04_NWB_FILE_NAME, figure04_input.FIGURE04_EPOCH_NAME
     )
 
 
@@ -574,7 +602,7 @@ def test_diagnostics_from_decodes_refuses_mismatched_time_bins() -> None:
     time = np.linspace(0.0, 1.0, 5)
     with pytest.raises(ValueError, match="different time bins"):
         figure04_diagnostics_from_decodes(
-            None, None, _decode(time), _decode(time + 1.0), [], coverage=0.95
+            None, None, _decode(time), _decode(time + 1.0), [], coverage=0.95, thresholds={}
         )
 
 
@@ -582,7 +610,13 @@ def test_diagnostics_from_decodes_requires_the_predictive_distribution() -> None
     time = np.linspace(0.0, 1.0, 5)
     with pytest.raises(ValueError, match="predictive_posterior"):
         figure04_diagnostics_from_decodes(
-            None, None, _decode(time), _decode(time, with_predictive=False), [], coverage=0.95
+            None,
+            None,
+            _decode(time),
+            _decode(time, with_predictive=False),
+            [],
+            coverage=0.95,
+            thresholds={},
         )
 
 
@@ -593,5 +627,151 @@ def test_diagnostics_from_decodes_refuses_spikes_of_other_units() -> None:
     swapped = [spike_times[1], spike_times[0]]
     with pytest.raises(ValueError, match="do not match the fitted units"):
         figure04_diagnostics_from_decodes(
-            fitted, fitted, _decode(time), _decode(time), swapped, coverage=0.95
+            fitted, fitted, _decode(time), _decode(time), swapped, coverage=0.95, thresholds={}
+        )
+
+
+# --- Stored per-spike table -------------------------------------------------------
+
+
+def _event_diagnostics_pair(time: np.ndarray, spike_times: list[np.ndarray]) -> tuple[Any, Any]:
+    """Diagnostics of two decoders' predictive distributions on the same spikes."""
+    rng = np.random.default_rng(0)
+    place_fields = rng.uniform(0.1, 2.0, size=(len(spike_times), 6))
+    return tuple(
+        compute_spike_event_diagnostics(
+            rng.dirichlet(np.ones(6), size=time.size),
+            place_fields,
+            spike_times,
+            time,
+            include_dense_matrices=False,
+        )
+        for _ in range(2)
+    )
+
+
+def test_event_table_keeps_exact_spike_times_and_the_diagnostics_bins() -> None:
+    """Two spikes in one decoder bin keep their own times; the bin is its own column."""
+    time = np.arange(10, dtype=np.float64) * 0.002
+    spike_times = [np.array([time[3] + 0.0002, time[3] + 0.0011]), np.array([time[6], time[-1]])]
+    continuous, continuous_fragmented = _event_diagnostics_pair(time, spike_times)
+
+    events = figure04_event_table(continuous, continuous_fragmented)
+
+    np.testing.assert_array_equal(events["time"], continuous.event_time)
+    np.testing.assert_array_equal(events["event_time_ind"], continuous.event_time_ind)
+    np.testing.assert_array_equal(events["unit_index"], continuous.event_cell_ind)
+    same_bin = events[events["event_time_ind"] == 3]
+    assert same_bin["time"].tolist() == spike_times[0].tolist()
+    # The spike at the final timestamp is in the bin the decoder counted it in.
+    assert events.loc[events["time"] == time[-1], "event_time_ind"].tolist() == [time.size - 2]
+    for model, diagnostics in (
+        ("continuous", continuous),
+        ("continuous_fragmented", continuous_fragmented),
+    ):
+        np.testing.assert_array_equal(
+            events[f"{model}_kl_divergence"], diagnostics.event_kl_divergence
+        )
+
+
+def test_event_table_requires_exact_spike_times() -> None:
+    time = np.arange(10, dtype=np.float64) * 0.002
+    continuous, continuous_fragmented = _event_diagnostics_pair(time, [np.array([time[2]])])
+    with pytest.raises(ValueError, match="lack exact spike times"):
+        figure04_event_table(
+            dataclasses.replace(continuous, event_time=None), continuous_fragmented
+        )
+
+
+def test_event_table_refuses_diagnostics_of_different_spikes() -> None:
+    time = np.arange(10, dtype=np.float64) * 0.002
+    continuous, _ = _event_diagnostics_pair(time, [np.array([time[2]])])
+    _, other = _event_diagnostics_pair(time, [np.array([time[4]])])
+    with pytest.raises(ValueError, match="differ in event_time"):
+        figure04_event_table(continuous, other)
+
+
+# --- Stored summary rows ---------------------------------------------------------
+
+_KEY = {
+    "continuous_merge_id": "a",
+    "continuous_fragmented_merge_id": "b",
+    "figure04_diagnostics_param_name": "x",
+}
+
+
+@pytest.fixture(scope="module")
+def committed_figure04() -> dict[str, Any]:
+    return json.loads(FIGURE04_SUMMARY_PATH.read_text(encoding="utf-8"))
+
+
+def _stored_rows(
+    summary: dict[str, Any],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Part-table rows as Spyglass fetches them for the committed summary, key included."""
+    mean_rows = [
+        {**_KEY, "model": model, "metric": metric, "value": value}
+        for model, means in summary["diagnostic_means"].items()
+        for metric, value in means.items()
+    ]
+    confusion_rows = [
+        {
+            **_KEY,
+            "metric": c["metric"],
+            "threshold": c["threshold"],
+            "n": c["n"],
+            "both": c["both"],
+            "rescued": c["rescued"],
+            "newly_flagged": c["newly_flagged"],
+            "neither": c["neither"],
+        }
+        for c in summary["flag_confusions"]
+    ]
+    return mean_rows, confusion_rows
+
+
+def test_stored_rows_reproduce_the_committed_reported_statistics(
+    committed_figure04: dict[str, Any],
+) -> None:
+    """The ``check`` step's comparison: rows in any order give the committed values."""
+    mean_rows, confusion_rows = _stored_rows(committed_figure04)
+    stored = figure04_reported_statistics_from_rows(
+        mean_rows[::-1],
+        confusion_rows[::-1],
+        n_units=committed_figure04["dataset"]["n_units"],
+    )
+    assert stored == {
+        "n_units": committed_figure04["dataset"]["n_units"],
+        "diagnostic_means": committed_figure04["diagnostic_means"],
+        "flag_confusion_models": committed_figure04["flag_confusion_models"],
+        "flag_confusions": committed_figure04["flag_confusions"],
+    }
+
+
+def test_summary_rows_round_trip(committed_figure04: dict[str, Any]) -> None:
+    """What ``make`` stores is what ``fetch_reported_statistics`` reads back."""
+    mean_rows, confusion_rows = _stored_rows(committed_figure04)
+    n_units = committed_figure04["dataset"]["n_units"]
+    stored = figure04_reported_statistics_from_rows(mean_rows, confusion_rows, n_units=n_units)
+    means = committed_figure04["diagnostic_means"]
+    summary = Figure4Summary(
+        continuous=Figure4DiagnosticMeans(**means["continuous"]),
+        continuous_fragmented=Figure4DiagnosticMeans(**means["continuous_fragmented"]),
+        flag_confusions=tuple(
+            FlagConfusion(**{k: v for k, v in c.items() if k != "rescued_fraction"})
+            for c in committed_figure04["flag_confusions"]
+        ),
+        n_units=n_units,
+    )
+    rows = figure04_summary_rows(summary)
+    assert figure04_reported_statistics_from_rows(*rows, n_units=n_units) == stored
+
+
+def test_stored_rows_must_name_each_thresholded_metric_once(
+    committed_figure04: dict[str, Any],
+) -> None:
+    mean_rows, confusion_rows = _stored_rows(committed_figure04)
+    with pytest.raises(ValueError, match="one flag-confusion row per metric"):
+        figure04_reported_statistics_from_rows(
+            mean_rows, confusion_rows[:1] * 2, n_units=committed_figure04["dataset"]["n_units"]
         )

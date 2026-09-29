@@ -2,15 +2,17 @@
 
 The Figure-4 decode (fit + decode both models) is expensive, and the per-spike
 diagnostics derived from it are comparatively cheap, so the two are cached in
-**separate** joblib bundles under ``data/intermediates``:
+**separate** joblib caches under ``<data path>/intermediates`` (the data path
+is ``data/`` unless ``STATESPACECHECK_DATA_PATH`` is set; see :class:`Figure4Paths`):
 
-- the *decode* bundle (``{epoch}_fig4_cache.joblib``) holds the fitted models'
-  predictive/filter outputs, spike counts, and place fields, gated by the
+- the *decode* cache (``{epoch}_figure04_decode.joblib``) holds the fitted models'
+  decoder outputs (smoothed posterior, predictive distribution, log-likelihood), spike
+  counts, and place fields, gated by the
   **decode fingerprint** (:func:`compute_figure04_cache_provenance`): schema,
   decode-affecting configuration, input-data identity and content hashes,
-  executable source of the fitting/data-preparation modules, and the installed
-  ``non_local_detector`` version;
-- the *diagnostics* bundle (``{epoch}_fig4_diagnostics.joblib``) holds the
+  executable source of :mod:`figure04_fit` and the modules it depends on, and
+  the installed ``non_local_detector`` version;
+- the *diagnostics* cache (``{epoch}_figure04_diagnostics.joblib``) holds the
   per-spike diagnostics for both models, gated by the decode fingerprint **and**
   a **diagnostics fingerprint** (:func:`compute_figure04_diagnostics_fingerprint`):
   the diagnostics schema, the :class:`~figure04_decoder.Figure4DiagnosticsConfig`
@@ -19,13 +21,13 @@ diagnostics derived from it are comparatively cheap, so the two are cached in
   (docstrings and comments excluded).
 
 Changes confined to the diagnostic modules or configuration recompute diagnostics
-from cached predictions. Changes to decoding, data preparation, or their shared
-workflow/place-field modules refit both models.
+from cached predictions. Changes to the fit, its model construction, the input
+reader, or the shared place-field module refit both models.
 This module owns the cache locations (:class:`Figure4Paths`), both fingerprints,
 the machine-readable provenance record stored in the summary, and the load/save
 helpers with explicit invalid-cache behavior. It imports ``Figure4Config`` from
-:mod:`figure04_decoder` and the input-file suffix list (``EXPORT_FILE_SUFFIXES``)
-from :mod:`load_local_data`, whose loader owns it.
+:mod:`figure04_decoder` and the input-file name (``input_file_path``,
+``INPUT_FILE_SUFFIX``) from :mod:`figure04_input`, whose loader owns it.
 """
 
 from __future__ import annotations
@@ -43,44 +45,56 @@ from typing import TypedDict
 import joblib
 
 from statespacecheck_paper.figure04_decoder import Figure4Config, Figure4DiagnosticsConfig
-from statespacecheck_paper.load_local_data import EXPORT_FILE_SUFFIXES, file_sha256
+from statespacecheck_paper.figure04_input import (
+    INPUT_FILE_SUFFIX,
+    file_sha256,
+    input_file_path,
+)
 
-# Decode-bundle schema. Version 5 changed the cached HPD/KL event likelihood
-# from normalized Poisson(1; lambda) to normalized event intensity while the
-# diagnostics still lived in the decode bundle; the decode payload itself has
-# not changed since, so the decode fingerprint is unchanged by the split.
-FIGURE04_CACHE_SCHEMA_VERSION = 5
+# Decode-cache schema version, hashed into the decode fingerprint. Bump it to
+# invalidate every decode cache when the payload layout changes in a way the
+# decode-source digest does not capture.
+FIGURE04_DECODE_SCHEMA_VERSION = 6
 
-# Diagnostics-bundle schema. Version 1 is the first separately cached
-# diagnostics payload (events binned with the decoder's ``digitize`` rule).
-FIGURE04_DIAGNOSTICS_SCHEMA_VERSION = 1
+# Diagnostics-cache schema version, hashed into the diagnostics fingerprint;
+# bump it to invalidate every diagnostics cache.
+FIGURE04_DIAGNOSTICS_SCHEMA_VERSION = 2
 
-# Hash entire modules so changes to helpers, imports, defaults, or recording
-# preparation cannot silently reuse an old decode. Shared workflow/place-field
-# edits conservatively invalidate both caches; diagnostic-only modules below
-# remain independent of the expensive decode. Hashing files by name means this
-# module need not import figure04_workflow (which imports it).
+# The decode payload is computed by figure04_fit.fit_and_decode. Hash it and
+# every paper module it imports, whole, so changes to helpers, imports,
+# defaults, or recording preparation cannot silently reuse an old decode:
+# figure04_decoder builds, checks, and fits the models and bins the spikes;
+# figure04_input reads and validates the recording; figure04_place_fields
+# extracts the cached place fields. The workflow's containers, orchestration,
+# and messages stay outside, so editing them refits nothing.
+# tests/test_import_boundaries.py checks that every paper module these import
+# is hashed here or named in its allowlist of decode-neutral modules. Hashing
+# files by name means this module need not import figure04_fit.
 _DECODE_SOURCE_FILES: tuple[str, ...] = (
     "figure04_decoder.py",
+    "figure04_fit.py",
+    "figure04_input.py",
     "figure04_place_fields.py",
-    "figure04_workflow.py",
-    "load_local_data.py",
 )
 
 # Source files whose executable content shapes the cached diagnostics. Their
 # docstring-stripped syntax trees are hashed into the diagnostics fingerprint,
 # so an implementation change recomputes the diagnostics while a comment or
-# docstring edit does not.
+# docstring edit does not. figure04_workflow computes the diagnostics payload
+# (which predictions and spikes are diagnosed, with which coverage), so its
+# edits recompute the diagnostics but never refit. The diagnostics cache is
+# also keyed by the decode fingerprint, which covers the decode-hashed modules.
 _DIAGNOSTIC_SOURCE_FILES: tuple[str, ...] = (
     "diagnostics.py",
     "figure04_diagnostics.py",
     "figure04_place_fields.py",
+    "figure04_workflow.py",
 )
 
 # The decode payload keys (the expensive, fitted part).
 _FIGURE04_DECODE_PAYLOAD_KEYS = (
     "continuous_results",
-    "contfrag_results",
+    "continuous_fragmented_results",
     "spike_counts",
     "place_field_peaks",
     "diagnostic_place_fields",
@@ -89,13 +103,14 @@ _FIGURE04_DECODE_PAYLOAD_KEYS = (
 # The diagnostics payload keys (derived from the decode payload).
 _FIGURE04_DIAGNOSTICS_PAYLOAD_KEYS = (
     "continuous_diagnostics",
-    "contfrag_diagnostics",
+    "continuous_fragmented_diagnostics",
 )
-# The full in-memory payload consumed by :class:`Figure4DecodeResults`. These
-# are the serialized key spellings and MUST NOT change without a schema bump
-# (``contfrag_*`` is retained as the serialized name even though the in-memory
-# render-data fields are spelled ``continuous_fragmented_*``).
-_FIGURE04_CACHE_PAYLOAD_KEYS = _FIGURE04_DECODE_PAYLOAD_KEYS + _FIGURE04_DIAGNOSTICS_PAYLOAD_KEYS
+# The full in-memory payload consumed by :class:`Figure4AnalysisResults`. These
+# are the serialized key spellings, equal to the in-memory field names, and
+# MUST NOT change without a schema bump.
+_FIGURE04_DECODE_AND_DIAGNOSTICS_PAYLOAD_KEYS = (
+    _FIGURE04_DECODE_PAYLOAD_KEYS + _FIGURE04_DIAGNOSTICS_PAYLOAD_KEYS
+)
 
 
 class Figure4CacheArtifactProvenance(TypedDict):
@@ -104,34 +119,30 @@ class Figure4CacheArtifactProvenance(TypedDict):
     schema_version: int
     fingerprint_sha256: str
     non_local_detector_version: str
-    export_file_sha256: dict[str, str | None]
+    input_file_sha256: dict[str, str]
     diagnostics_schema_version: int
     diagnostics_fingerprint_sha256: str
     statespacecheck_version: str
     diagnostics_config: dict[str, object]
 
 
-# The pre-exported input files are named by ``load_local_data`` (which owns
-# ``EXPORT_FILE_SUFFIXES``); their content hashes go into the fingerprint so that
-# replacing an export under the same ``{epoch}`` prefix invalidates the cache
+# The Figure-4 input file is named by ``figure04_input`` (which owns
+# ``INPUT_FILE_SUFFIX``); its content hash goes into the fingerprint so that
+# replacing the file under the same ``{epoch}`` prefix invalidates the cache
 # instead of silently reusing a decode of the old data.
 
 
-def _export_file_checksums(paths: Figure4Paths) -> dict[str, str | None]:
-    """sha256 of each pre-exported input file (``None`` when a file is absent).
+def _input_file_checksum(paths: Figure4Paths) -> str | None:
+    """sha256 of the Figure-4 input file (``None`` when the file is absent).
 
     A missing file hashes to ``None`` rather than raising, so the fingerprint
-    stays well-defined for synthetic/test paths that have no real exports; a
+    stays well-defined for synthetic/test paths that have no real input file; a
     real run hashes the actual bytes so any data-content change invalidates.
     """
-    checksums: dict[str, str | None] = {}
-    for suffix in EXPORT_FILE_SUFFIXES:
-        file_path = paths.data_path / f"{paths.animal_date_epoch}{suffix}"
-        if not file_path.exists():
-            checksums[suffix] = None
-            continue
-        checksums[suffix] = file_sha256(file_path)
-    return checksums
+    file_path = input_file_path(paths.data_path, paths.animal_date_epoch)
+    if not file_path.exists():
+        return None
+    return file_sha256(file_path)
 
 
 def _strip_docstrings(tree: ast.AST) -> ast.AST:
@@ -171,7 +182,7 @@ def _diagnostic_source_digest() -> str:
 
 
 def _decode_source_digest() -> str:
-    """Executable-source digest of the modules that prepare and decode the recording."""
+    """Executable-source digest of the fit-and-decode modules."""
     package_root = Path(__file__).resolve().parent
     return executable_source_digest(tuple(package_root / name for name in _DECODE_SOURCE_FILES))
 
@@ -183,42 +194,29 @@ class Figure4CacheProvenance:
     fingerprint_sha256: str
     schema_version: int
     animal_date_epoch: str
-    export_checksums: tuple[tuple[str, str | None], ...]
+    input_file_sha256: str | None
     non_local_detector_version: str
     diagnostics_fingerprint_sha256: str
     diagnostics_schema_version: int
     statespacecheck_version: str
     diagnostics_config: Figure4DiagnosticsConfig
 
-    def artifact_payload(
-        self, *, require_complete_inputs: bool = True
-    ) -> Figure4CacheArtifactProvenance:
-        """Return path-independent cache provenance for a summary artifact."""
-        checksum_by_suffix = dict(self.export_checksums)
-        if len(checksum_by_suffix) != len(self.export_checksums):
-            raise ValueError("Figure 4 provenance contains duplicate export suffixes.")
-        missing_suffixes = set(EXPORT_FILE_SUFFIXES) - set(checksum_by_suffix)
-        unexpected_suffixes = set(checksum_by_suffix) - set(EXPORT_FILE_SUFFIXES)
-        if missing_suffixes or unexpected_suffixes:
+    def artifact_payload(self) -> Figure4CacheArtifactProvenance:
+        """Return path-independent cache provenance for a summary artifact.
+
+        Raises ``ValueError`` unless the input file has a checksum.
+        """
+        input_file = f"{self.animal_date_epoch}{INPUT_FILE_SUFFIX}"
+        if self.input_file_sha256 is None:
             raise ValueError(
-                "Figure 4 provenance must identify the canonical input exports; "
-                f"missing {sorted(missing_suffixes)}, unexpected {sorted(unexpected_suffixes)}."
-            )
-        export_file_sha256 = {
-            f"{self.animal_date_epoch}{suffix}": checksum
-            for suffix, checksum in checksum_by_suffix.items()
-        }
-        missing = [name for name, checksum in export_file_sha256.items() if checksum is None]
-        if require_complete_inputs and missing:
-            raise ValueError(
-                "Canonical Figure 4 provenance requires every exported input; "
-                f"missing checksums for {missing}."
+                "Canonical Figure 4 provenance requires the input file's checksum; "
+                f"{input_file} has none."
             )
         return {
             "schema_version": self.schema_version,
             "fingerprint_sha256": self.fingerprint_sha256,
             "non_local_detector_version": self.non_local_detector_version,
-            "export_file_sha256": export_file_sha256,
+            "input_file_sha256": {input_file: self.input_file_sha256},
             "diagnostics_schema_version": self.diagnostics_schema_version,
             "diagnostics_fingerprint_sha256": self.diagnostics_fingerprint_sha256,
             "statespacecheck_version": self.statespacecheck_version,
@@ -239,20 +237,22 @@ class Figure4Paths:
     animal_date_epoch: str
 
     @property
-    def cache_path(self) -> Path:
-        """Path of the cached Figure-4 *decode* bundle (under data/intermediates).
+    def decode_cache_path(self) -> Path:
+        """Path of the Figure-4 *decode* cache (under ``data_path/intermediates``).
 
-        A single joblib bundle is used rather than netCDF because the decoder
+        A single joblib file is used rather than netCDF because the decoder
         results carry a ``state_bins`` MultiIndex coordinate, which netCDF cannot
         serialize; joblib (pickle) preserves it exactly.
         """
-        return self.data_path / "intermediates" / f"{self.animal_date_epoch}_fig4_cache.joblib"
+        return self.data_path / "intermediates" / f"{self.animal_date_epoch}_figure04_decode.joblib"
 
     @property
     def diagnostics_cache_path(self) -> Path:
-        """Path of the cached Figure-4 per-spike *diagnostics* bundle."""
+        """Path of the Figure-4 per-spike *diagnostics* cache."""
         return (
-            self.data_path / "intermediates" / f"{self.animal_date_epoch}_fig4_diagnostics.joblib"
+            self.data_path
+            / "intermediates"
+            / f"{self.animal_date_epoch}_figure04_diagnostics.joblib"
         )
 
 
@@ -283,7 +283,7 @@ def compute_figure04_diagnostics_fingerprint(config: Figure4DiagnosticsConfig) -
     Hashes the diagnostics schema version, the diagnostics configuration (HPD
     coverage and event-selection rule), the installed ``statespacecheck``
     version, and the executable-source digest of the diagnostic modules. It
-    deliberately excludes the decode identity: the diagnostics bundle stores
+    deliberately excludes the decode identity: the diagnostics cache stores
     the decode fingerprint alongside this one, and both must match.
     """
     payload = {
@@ -304,61 +304,53 @@ def compute_figure04_cache_provenance(
 
     The *decode* fingerprint hashes the decode schema version, the
     decode-affecting parameters (the :class:`Figure4Config` ``decoder`` and
-    ``provenance`` parts -- but **not** ``execution``, which is performance-only
+    ``package_defaults`` parts -- but **not** ``execution``, which is performance-only
     and leaves the decode identical, nor ``diagnostics``, which does not touch
-    the fit), the input-data identifier *and the content hashes of the
-    pre-exported input files*, the executable source of the fitting and
-    data-preparation modules, and the *installed* ``non_local_detector``
-    revision. Any change forces a refit; the cached bundle stores this
+    the fit), the input-data identifier *and the content hash of the
+    Figure-4 input file*, the executable source of the fit-and-decode modules
+    (``_DECODE_SOURCE_FILES``), and the *installed* ``non_local_detector``
+    revision. Any change forces a refit; the decode cache stores this
     fingerprint so a stale cache cannot silently produce a figure that no longer
     matches the current method, input data, or dependency. Hashing the file
-    contents (not just ``animal_date_epoch``) is what makes replacing an export
-    under the same epoch invalidate the cache rather than reuse a decode of the
-    old bytes.
+    contents (not just ``animal_date_epoch``) is what makes replacing the input
+    file under the same epoch invalidate the cache rather than reuse a decode of
+    the old bytes.
 
-    Comments and docstrings do not affect the source digest. Edits to shared
-    workflow or place-field code conservatively refit; edits confined to
-    ``diagnostics.py`` or ``figure04_diagnostics.py`` only recompute diagnostics.
-    Caches created before source hashing was added miss once and are rebuilt.
+    Comments and docstrings do not affect the source digest. Edits to the
+    shared place-field code refit; edits confined to ``diagnostics.py``,
+    ``figure04_diagnostics.py``, or ``figure04_workflow.py`` only recompute
+    diagnostics.
 
     The *diagnostics* fingerprint is :func:`compute_figure04_diagnostics_fingerprint`.
 
-    Bumping :data:`FIGURE04_CACHE_SCHEMA_VERSION` remains the manual override ---
+    Bumping :data:`FIGURE04_DECODE_SCHEMA_VERSION` is the manual override ---
     it is part of the hashed payload, so a bump invalidates every existing cache.
     """
-    export_checksums = _export_file_checksums(paths)
+    input_file_sha256 = _input_file_checksum(paths)
     non_local_detector_version = _installed_non_local_detector_version()
     fingerprint_payload = {
-        "schema_version": FIGURE04_CACHE_SCHEMA_VERSION,
+        "schema_version": FIGURE04_DECODE_SCHEMA_VERSION,
         "config": {
             "decoder": dataclasses.asdict(config.decoder),
-            "provenance": dataclasses.asdict(config.provenance),
+            "package_defaults": dataclasses.asdict(config.package_defaults),
         },
         "animal_date_epoch": paths.animal_date_epoch,
-        "export_checksums": export_checksums,
+        "input_file_sha256": input_file_sha256,
         "non_local_detector_version": non_local_detector_version,
         "decode_source_digest": _decode_source_digest(),
     }
     blob = json.dumps(fingerprint_payload, sort_keys=True, default=str).encode()
     return Figure4CacheProvenance(
         fingerprint_sha256=hashlib.sha256(blob).hexdigest(),
-        schema_version=FIGURE04_CACHE_SCHEMA_VERSION,
+        schema_version=FIGURE04_DECODE_SCHEMA_VERSION,
         animal_date_epoch=paths.animal_date_epoch,
-        export_checksums=tuple(export_checksums.items()),
+        input_file_sha256=input_file_sha256,
         non_local_detector_version=non_local_detector_version,
         diagnostics_fingerprint_sha256=compute_figure04_diagnostics_fingerprint(config.diagnostics),
         diagnostics_schema_version=FIGURE04_DIAGNOSTICS_SCHEMA_VERSION,
         statespacecheck_version=_installed_statespacecheck_version(),
         diagnostics_config=config.diagnostics,
     )
-
-
-def compute_figure04_cache_fingerprint(config: Figure4Config, paths: Figure4Paths) -> str:
-    """Return the decode fingerprint gating the Figure-4 decode cache.
-
-    See :func:`compute_figure04_cache_provenance` for the fingerprint inputs.
-    """
-    return compute_figure04_cache_provenance(config, paths).fingerprint_sha256
 
 
 def _load_wrapper(path: Path, *, mmap_mode: str | None) -> Mapping[str, object] | None:
@@ -380,66 +372,52 @@ def _load_wrapper(path: Path, *, mmap_mode: str | None) -> Mapping[str, object] 
     return cached
 
 
-def load_figure04_cache(
-    path: Path,
-    expected_fingerprint: str,
-    *,
-    mmap_mode: str | None = "r",
-) -> dict[str, object] | None:
+def load_figure04_decode_cache(path: Path, expected_fingerprint: str) -> dict[str, object] | None:
     """Load a Figure-4 *decode* payload from ``path``, or ``None`` on any miss.
 
     Returns ``None`` (a cache miss) when the file is absent or unreadable, the
-    wrapper is not a mapping, its schema/fingerprint does not match, or it does
-    not carry every decode payload key. A valid load returns only the decode
-    payload (the six :data:`_FIGURE04_DECODE_PAYLOAD_KEYS`).
+    wrapper is not a mapping, its schema/fingerprint does not match, or its
+    keys are not exactly the wrapper keys plus the decode payload keys. A valid
+    load returns the decode payload (the six :data:`_FIGURE04_DECODE_PAYLOAD_KEYS`).
 
-    Legacy bundles that also embed the diagnostics keys are accepted as a
-    decode payload (their embedded diagnostics are ignored; the diagnostics
-    bundle is the sole diagnostics source), so a pre-split cache continues to
-    serve the expensive decode while its diagnostics are recomputed once.
-
-    Large arrays are memory-mapped by default (``mmap_mode="r"``) so a
-    multi-gigabyte bundle can be inspected without materializing it; pass
-    ``mmap_mode=None`` to load everything into memory.
+    Large arrays are memory-mapped read-only (``mmap_mode="r"``) so a
+    multi-gigabyte cache can be used without materializing it.
 
     Any failure to read/unpickle the file is treated as a miss, but a
     ``RuntimeWarning`` is emitted so the cause is visible instead of a silent,
     repeating recompute.
     """
-    cached = _load_wrapper(path, mmap_mode=mmap_mode)
+    cached = _load_wrapper(path, mmap_mode="r")
     if cached is None:
         return None
-    required_keys = {"schema_version", "fingerprint", *_FIGURE04_DECODE_PAYLOAD_KEYS}
-    allowed_keys = required_keys | set(_FIGURE04_DIAGNOSTICS_PAYLOAD_KEYS)
-    keys = set(cached.keys())
-    if not required_keys <= keys or not keys <= allowed_keys:
+    if set(cached.keys()) != {"schema_version", "fingerprint", *_FIGURE04_DECODE_PAYLOAD_KEYS}:
         return None
-    if cached.get("schema_version") != FIGURE04_CACHE_SCHEMA_VERSION:
+    if cached.get("schema_version") != FIGURE04_DECODE_SCHEMA_VERSION:
         return None
     if cached.get("fingerprint") != expected_fingerprint:
         return None
     return {key: cached[key] for key in _FIGURE04_DECODE_PAYLOAD_KEYS}
 
 
-def save_figure04_cache(path: Path, fingerprint: str, payload: Mapping[str, object]) -> None:
+def save_figure04_decode_cache(path: Path, fingerprint: str, payload: Mapping[str, object]) -> None:
     """Write a Figure-4 *decode* payload to ``path`` with its provenance wrapper.
 
     Raises ``ValueError`` unless the payload keys are exactly
     :data:`_FIGURE04_DECODE_PAYLOAD_KEYS`, then creates the parent directory and
     stores the ``schema_version`` / ``fingerprint`` wrapper plus the payload.
-    The bundle is written to a temporary sibling and atomically renamed into
-    place, so a bundle being read (possibly memory-mapped) is never overwritten
+    The cache is written to a temporary sibling and atomically renamed into
+    place, so a cache being read (possibly memory-mapped) is never overwritten
     in place.
     """
     if set(payload.keys()) != set(_FIGURE04_DECODE_PAYLOAD_KEYS):
         raise ValueError(
-            "save_figure04_cache payload keys must be exactly "
+            "save_figure04_decode_cache payload keys must be exactly "
             f"{sorted(_FIGURE04_DECODE_PAYLOAD_KEYS)}; got {sorted(payload.keys())}."
         )
     _atomic_dump(
         path,
         {
-            "schema_version": FIGURE04_CACHE_SCHEMA_VERSION,
+            "schema_version": FIGURE04_DECODE_SCHEMA_VERSION,
             "fingerprint": fingerprint,
             **payload,
         },
@@ -453,7 +431,7 @@ def load_figure04_diagnostics_cache(
 ) -> dict[str, object] | None:
     """Load a Figure-4 *diagnostics* payload from ``path``, or ``None`` on a miss.
 
-    The bundle must carry the diagnostics schema version, the decode
+    The cache must carry the diagnostics schema version, the decode
     fingerprint of the predictions it was derived from, and the diagnostics
     fingerprint; all three must match, and the keys must be exactly the wrapper
     plus :data:`_FIGURE04_DIAGNOSTICS_PAYLOAD_KEYS`.

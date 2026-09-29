@@ -18,8 +18,14 @@ import numpy as np
 import pytest
 
 from statespacecheck_paper.number_format import significant, whole_percent
-from statespacecheck_paper.reported_values import (
+from statespacecheck_paper.paths import (
+    CITATION_PATH,
+    FIGURE03_SUMMARY_PATH,
+    FIGURE04_SUMMARY_PATH,
     MACRO_FILE_PATH,
+    REPO_ROOT,
+)
+from statespacecheck_paper.reported_values import (
     _exact,
     analysis_code_doi,
     cardinal_word,
@@ -27,13 +33,11 @@ from statespacecheck_paper.reported_values import (
     lookup_statespacecheck_doi,
     ordinal,
     render_macro_file,
+    require_matching_source_provenance,
     statespacecheck_version,
     write_macro_file,
 )
 from tests.test_reported_statistics_artifacts import _load
-
-REPO_ROOT = Path(__file__).resolve().parents[1]
-COMMITTED_MACRO_FILE = REPO_ROOT / MACRO_FILE_PATH
 
 
 def _macro_values(text: str) -> dict[str, str]:
@@ -44,21 +48,20 @@ def _macro_values(text: str) -> dict[str, str]:
 # The DOI the committed macro file cites. Emitting looks it up on Zenodo; the
 # tests below take it from the committed file so they run offline, and
 # test_zenodo_lookup_gives_the_cited_doi checks it against Zenodo
-CITED_DOI = _macro_values(COMMITTED_MACRO_FILE.read_text(encoding="utf-8"))["StatespacecheckDOI"]
+CITED_DOI = _macro_values(MACRO_FILE_PATH.read_text(encoding="utf-8"))["StatespacecheckDOI"]
+CODE_DOI = analysis_code_doi(CITATION_PATH)
 
 
 def test_committed_macro_file_matches_the_figure_summaries(tmp_path: Path) -> None:
     """The committed macro file is exactly what the summaries generate now."""
     regenerated = write_macro_file(
         tmp_path / "reported_values.tex",
-        figure03_path=REPO_ROOT / "manuscript/figures/main/figure03_summary.json",
-        figure04_path=REPO_ROOT / "manuscript/figures/main/figure04_summary.json",
+        figure03_path=FIGURE03_SUMMARY_PATH,
+        figure04_path=FIGURE04_SUMMARY_PATH,
         statespacecheck_doi=CITED_DOI,
-        citation_path=REPO_ROOT / "CITATION.cff",
+        citation_path=CITATION_PATH,
     )
-    assert regenerated.read_text(encoding="utf-8") == COMMITTED_MACRO_FILE.read_text(
-        encoding="utf-8"
-    ), (
+    assert regenerated.read_text(encoding="utf-8") == MACRO_FILE_PATH.read_text(encoding="utf-8"), (
         "manuscript/reported_values.tex is stale; regenerate it with "
         "`uv run python scripts/emit_reported_values.py`."
     )
@@ -66,7 +69,7 @@ def test_committed_macro_file_matches_the_figure_summaries(tmp_path: Path) -> No
 
 def test_macro_values_round_trip_the_canonical_statistics() -> None:
     """Spot-check that the headline numbers carry the summaries' values."""
-    values = _macro_values(COMMITTED_MACRO_FILE.read_text(encoding="utf-8"))
+    values = _macro_values(MACRO_FILE_PATH.read_text(encoding="utf-8"))
     figure03 = _load("figure03_summary.json")
     figure04 = _load("figure04_summary.json")
 
@@ -75,26 +78,30 @@ def test_macro_values_round_trip_the_canonical_statistics() -> None:
     assert values["SimRemapFlagMin"] == f"{min(remap_percentages):.0f}"
     assert values["SimRemapFlagMax"] == f"{max(remap_percentages):.0f}"
 
-    accuracy = figure03["median_decoding_accuracy"][0]
-    assert values["SimRemapError"] == significant(accuracy[remap], 2)
+    decoding_error = figure03["median_decoding_error"][0]
+    assert values["SimRemapError"] == significant(decoding_error[remap], 2)
     assert values["SimNRealizations"] == str(figure03["realizations"]["count"])
 
     assert values["RecNUnits"] == str(figure04["dataset"]["n_units"])
     hpd = next(item for item in figure04["flag_confusions"] if item["metric"] == "hpd_overlap")
-    assert values["RecHpdRescued"] == str(hpd["a_only"])
-    assert values["RecHpdFlaggedContinuous"] == str(hpd["a_only"] + hpd["both"])
-    assert values["RecHpdRescuedPercent"] == f"{100 * hpd['rescue_rate']:.0f}"
+    assert values["RecHpdRescued"] == str(hpd["rescued"])
+    assert values["RecHpdFlaggedContinuous"] == str(hpd["rescued"] + hpd["both"])
+    assert values["RecHpdRescuedPercent"] == f"{100 * hpd['rescued_fraction']:.0f}"
 
 
 def test_asymmetric_mode_parameters_are_reported_independently() -> None:
     """Each mode keeps its own initial and transition probability."""
     figure03 = _load("figure03_summary.json")
     figure04 = copy.deepcopy(_load("figure04_summary.json"))
-    provenance = figure04["configuration"]["provenance"]
-    provenance["contfrag_discrete_initial_conditions"] = [0.6, 0.4]
-    provenance["contfrag_diagonal_values"] = [0.9, 0.8]
+    package_defaults = figure04["configuration"]["package_defaults"]
+    package_defaults["continuous_fragmented_discrete_initial_conditions"] = [0.6, 0.4]
+    package_defaults["continuous_fragmented_diagonal_values"] = [0.9, 0.8]
 
-    values = _macro_values(render_macro_file(figure03, figure04, statespacecheck_doi=CITED_DOI))
+    values = _macro_values(
+        render_macro_file(
+            figure03, figure04, statespacecheck_doi=CITED_DOI, analysis_code_doi=CODE_DOI
+        )
+    )
 
     assert values["RecModeContinuousInitial"] == "0.6"
     assert values["RecModeFragmentedInitial"] == "0.4"
@@ -104,19 +111,126 @@ def test_asymmetric_mode_parameters_are_reported_independently() -> None:
     assert values["RecModeFragmentedStay"] == "0.80"
 
 
+def test_every_figure04_flag_rule_is_reported_or_fails_the_emit() -> None:
+    """The flag-count macros follow the summary's flag rules, not a fixed list."""
+    figure03 = _load("figure03_summary.json")
+    figure04 = copy.deepcopy(_load("figure04_summary.json"))
+    figure04["flag_rules"]["kl_divergence"] = {
+        "comparison": "greater_than_or_equal",
+        "threshold": 4.0,
+    }
+    with pytest.raises(KeyError, match="kl_divergence"):
+        render_macro_file(
+            figure03, figure04, statespacecheck_doi=CITED_DOI, analysis_code_doi=CODE_DOI
+        )
+
+
+def test_time_conversions_follow_the_recorded_step_length() -> None:
+    """Durations and rates are converted with the summary's step, not a fixed 1 ms."""
+    figure03 = copy.deepcopy(_load("figure03_summary.json"))
+    figure03["configuration"]["step_seconds"] = 0.002
+    figure03["configuration"]["sparse_cell_peak_rate_per_step"] = 0.002
+
+    values = _macro_values(
+        render_macro_file(
+            figure03,
+            _load("figure04_summary.json"),
+            statespacecheck_doi=CITED_DOI,
+            analysis_code_doi=CODE_DOI,
+        )
+    )
+
+    assert values["SimStepMs"] == "2"
+    assert values["SimDurationSeconds"] == "64"
+    assert values["SimRefractoryMs"] == "2"
+    assert (values["SimBurstStartMs"], values["SimBurstEndMs"]) == ("4", "20")
+    assert values["SimPeakRateHz"] == "100"
+    assert values["SimSparseActiveRateHz"] == "1"
+
+
+def test_negative_log_cutoffs_follow_the_recorded_p_value_cutoffs() -> None:
+    """The -log(p) axis positions the prose quotes move with each figure's cutoff."""
+    figure03 = copy.deepcopy(_load("figure03_summary.json"))
+    figure04 = copy.deepcopy(_load("figure04_summary.json"))
+    figure03["threshold_provenance"]["predictive_pvalue"]["cutoff"] = 0.01
+    figure04["flag_rules"]["predictive_pvalue"]["threshold"] = 0.2
+
+    values = _macro_values(
+        render_macro_file(
+            figure03, figure04, statespacecheck_doi=CITED_DOI, analysis_code_doi=CODE_DOI
+        )
+    )
+
+    assert values["SimPredictiveCutoffNegLog"] == "5"  # -log(0.01) = 4.6
+    assert values["RecPredictiveCutoffNegLog"] == "2"  # -log(0.2) = 1.6
+
+
+@pytest.mark.parametrize(
+    ("approach_steps", "phrase"), [(1000, "second"), (2500, "2.5 seconds"), (9000, "4 seconds")]
+)
+def test_sparse_approach_duration_is_written_as_a_phrase(approach_steps: int, phrase: str) -> None:
+    """The approach lasts its configured steps, capped at clean recovery 3 (4 s)."""
+    figure03 = copy.deepcopy(_load("figure03_summary.json"))
+    figure03["configuration"]["sparse_approach_duration_steps"] = approach_steps
+
+    values = _macro_values(
+        render_macro_file(
+            figure03,
+            _load("figure04_summary.json"),
+            statespacecheck_doi=CITED_DOI,
+            analysis_code_doi=CODE_DOI,
+        )
+    )
+
+    assert values["SimSparseApproachDuration"] == phrase
+
+
+def test_non_unit_position_grid_fails_the_emit() -> None:
+    """The Methods call the simulated position grid unit-spaced."""
+    figure03 = copy.deepcopy(_load("figure03_summary.json"))
+    figure03["configuration"]["position_bin_size"] = 2
+
+    with pytest.raises(ValueError, match="unit-spaced"):
+        render_macro_file(
+            figure03,
+            _load("figure04_summary.json"),
+            statespacecheck_doi=CITED_DOI,
+            analysis_code_doi=CODE_DOI,
+        )
+
+
 def test_non_integral_burst_factor_is_not_silently_rounded() -> None:
     """The spelled-out prose cannot faithfully represent a fractional factor."""
     figure03 = copy.deepcopy(_load("figure03_summary.json"))
     figure03["configuration"]["history_burst_factor"] = 3.4
 
     with pytest.raises(ValueError, match="not exact"):
-        render_macro_file(figure03, _load("figure04_summary.json"), statespacecheck_doi=CITED_DOI)
+        render_macro_file(
+            figure03,
+            _load("figure04_summary.json"),
+            statespacecheck_doi=CITED_DOI,
+            analysis_code_doi=CODE_DOI,
+        )
+
+
+def test_mismatched_hpd_coverages_are_rejected() -> None:
+    """The Methods state one HPD coverage for the simulation and the recording."""
+    figure03 = copy.deepcopy(_load("figure03_summary.json"))
+    figure03["configuration"]["hpd_coverage"] = 0.9
+
+    with pytest.raises(ValueError, match="different HPD coverages"):
+        render_macro_file(
+            figure03,
+            _load("figure04_summary.json"),
+            statespacecheck_doi=CITED_DOI,
+            analysis_code_doi=CODE_DOI,
+        )
 
 
 @pytest.mark.parametrize(
     "path",
-    [("source",), ("figure04_decode_cache",)],
-    ids=["figure04_source", "figure04_decode_cache"],
+    [("source",), ("figure04_caches",)],
+    ids=["figure04_source", "figure04_caches"],
 )
 def test_mismatched_statespacecheck_versions_are_rejected(path: tuple[str]) -> None:
     """The manuscript cites one statespacecheck version for both figures."""
@@ -124,7 +238,46 @@ def test_mismatched_statespacecheck_versions_are_rejected(path: tuple[str]) -> N
     figure04["provenance"][path[0]]["statespacecheck_version"] = "0.0.0"
 
     with pytest.raises(ValueError, match="different statespacecheck versions"):
-        render_macro_file(_load("figure03_summary.json"), figure04, statespacecheck_doi=CITED_DOI)
+        render_macro_file(
+            _load("figure03_summary.json"),
+            figure04,
+            statespacecheck_doi=CITED_DOI,
+            analysis_code_doi=CODE_DOI,
+        )
+
+
+@pytest.mark.parametrize(
+    "keys",
+    [("source_tree_sha256",), ("uv_lock_sha256",), ("source_tree_sha256", "uv_lock_sha256")],
+    ids=["source_tree", "uv_lock", "both"],
+)
+def test_mismatched_source_provenance_is_rejected(keys: tuple[str, ...]) -> None:
+    """The macro file states one source digest, so both summaries must share their source."""
+    figure04 = copy.deepcopy(_load("figure04_summary.json"))
+    for key in keys:
+        figure04["provenance"]["source"][key] = "0" * 64
+
+    with pytest.raises(ValueError, match=rf"provenance.source values for {', '.join(keys)};"):
+        render_macro_file(
+            _load("figure03_summary.json"),
+            figure04,
+            statespacecheck_doi=CITED_DOI,
+            analysis_code_doi=CODE_DOI,
+        )
+
+
+def test_source_provenance_key_recorded_by_one_summary_is_rejected() -> None:
+    figure03 = copy.deepcopy(_load("figure03_summary.json"))
+    figure03["provenance"]["source"]["extra"] = "value"
+
+    with pytest.raises(ValueError, match="provenance.source values for extra;"):
+        require_matching_source_provenance(figure03, _load("figure04_summary.json"))
+
+
+def test_matching_source_provenance_is_accepted() -> None:
+    require_matching_source_provenance(
+        _load("figure03_summary.json"), _load("figure04_summary.json")
+    )
 
 
 @pytest.mark.parametrize("line", ["doi: 10.5281/zenodo.7", 'doi: "10.5281/zenodo.7"'])
@@ -187,17 +340,27 @@ def test_fractional_percentile_is_not_silently_rounded(quantile: float) -> None:
     figure03["threshold_provenance"]["hpd_overlap"]["quantile"] = quantile
 
     with pytest.raises(ValueError, match="not exact"):
-        render_macro_file(figure03, _load("figure04_summary.json"), statespacecheck_doi=CITED_DOI)
+        render_macro_file(
+            figure03,
+            _load("figure04_summary.json"),
+            statespacecheck_doi=CITED_DOI,
+            analysis_code_doi=CODE_DOI,
+        )
 
 
 def test_zero_decoding_error_renders() -> None:
     """A perfectly decoded phase must not abort the emit."""
     figure03 = copy.deepcopy(_load("figure03_summary.json"))
     well_specified = figure03["condition_order"].index("well_specified")
-    figure03["median_decoding_accuracy"][0][well_specified] = 0.0
+    figure03["median_decoding_error"][0][well_specified] = 0.0
 
     values = _macro_values(
-        render_macro_file(figure03, _load("figure04_summary.json"), statespacecheck_doi=CITED_DOI)
+        render_macro_file(
+            figure03,
+            _load("figure04_summary.json"),
+            statespacecheck_doi=CITED_DOI,
+            analysis_code_doi=CODE_DOI,
+        )
     )
 
     assert values["SimWellSpecifiedError"] == "0"
@@ -205,14 +368,14 @@ def test_zero_decoding_error_renders() -> None:
 
 def test_macro_names_are_unique() -> None:
     """A duplicated name would make ``\\newcommand`` abort the LaTeX build."""
-    text = COMMITTED_MACRO_FILE.read_text(encoding="utf-8")
+    text = MACRO_FILE_PATH.read_text(encoding="utf-8")
     names = re.findall(r"\\newcommand\{\\(\w+)\}", text)
     assert len(names) == len(set(names))
 
 
 def test_every_macro_is_used_by_the_manuscript() -> None:
     """An unused macro is a number nobody reports; drop it rather than ship it."""
-    macro_text = COMMITTED_MACRO_FILE.read_text(encoding="utf-8")
+    macro_text = MACRO_FILE_PATH.read_text(encoding="utf-8")
     manuscript = (REPO_ROOT / "manuscript" / "main.tex").read_text(encoding="utf-8")
     unused = [
         name
@@ -282,15 +445,23 @@ def test_published_standard_errors_do_not_set_precision() -> None:
     """The Figure-3 SEs are data for the reader, not a formatting authority."""
     figure03 = copy.deepcopy(_load("figure03_summary.json"))
     figure04 = _load("figure04_summary.json")
-    baseline = _macro_values(render_macro_file(figure03, figure04, statespacecheck_doi=CITED_DOI))
+    baseline = _macro_values(
+        render_macro_file(
+            figure03, figure04, statespacecheck_doi=CITED_DOI, analysis_code_doi=CODE_DOI
+        )
+    )
     # Shrink every published SE a thousandfold; no printed digit may change.
     for key in (
         "median_flag_percentage_standard_errors",
-        "median_decoding_accuracy_standard_errors",
+        "median_decoding_error_standard_errors",
     ):
         figure03[key] = [[value / 1000.0 for value in row] for row in figure03[key]]
     assert (
-        _macro_values(render_macro_file(figure03, figure04, statespacecheck_doi=CITED_DOI))
+        _macro_values(
+            render_macro_file(
+                figure03, figure04, statespacecheck_doi=CITED_DOI, analysis_code_doi=CODE_DOI
+            )
+        )
         == baseline
     )
 
@@ -307,6 +478,7 @@ def test_render_is_deterministic() -> None:
     """Two renders of the same payloads agree byte for byte."""
     figure03 = _load("figure03_summary.json")
     figure04 = _load("figure04_summary.json")
-    assert render_macro_file(
-        figure03, figure04, statespacecheck_doi=CITED_DOI
-    ) == render_macro_file(figure03, figure04, statespacecheck_doi=CITED_DOI)
+    dois = {"statespacecheck_doi": CITED_DOI, "analysis_code_doi": CODE_DOI}
+    assert render_macro_file(figure03, figure04, **dois) == render_macro_file(
+        figure03, figure04, **dois
+    )

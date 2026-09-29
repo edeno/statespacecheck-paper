@@ -6,7 +6,6 @@ import dataclasses
 
 import matplotlib
 import numpy as np
-import pytest
 
 matplotlib.use("Agg")  # noqa: E402
 
@@ -15,44 +14,28 @@ import pandas as pd  # noqa: E402
 import xarray as xr  # noqa: E402
 
 from statespacecheck_paper.diagnostics import SpikeEventDiagnostics  # noqa: E402
+from statespacecheck_paper.figure04_input import NeuralRecordingData  # noqa: E402
 from statespacecheck_paper.figure04_layout import (  # noqa: E402
     Figure4Composition,
-    Figure4DetailWindow,
     _shift_diagnostic_event_times,
     compose_figure04,
 )
+from statespacecheck_paper.figure04_protocol import Figure4DetailWindow  # noqa: E402
 from statespacecheck_paper.figure04_workflow import (  # noqa: E402
-    Figure4DecodeResults,
+    Figure4AnalysisResults,
     Figure4RenderData,
 )
-from statespacecheck_paper.load_local_data import NeuralRecordingData  # noqa: E402
 
-
-def _make_per_cell_diagnostics(
-    *, event_time: np.ndarray | None, event_hpd_overlap: np.ndarray
-) -> SpikeEventDiagnostics:
-    n_spikes = event_hpd_overlap.shape[0]
-    return SpikeEventDiagnostics(
-        event_time_ind=np.zeros(n_spikes, dtype=np.intp),
-        event_cell_ind=np.zeros(n_spikes, dtype=np.intp),
-        event_hpd_overlap=event_hpd_overlap,
-        event_kl_divergence=np.zeros(n_spikes),
-        event_predictive_pvalue=np.zeros(n_spikes),
-        hpd_overlap=None,
-        kl_divergence=None,
-        predictive_pvalue=None,
-        per_spike_likelihood=None,
-        event_time=event_time,
-    )
+from ._diagnostics import event_diagnostics  # noqa: E402
+from ._figure04 import synthetic_cache_provenance  # noqa: E402
 
 
 class TestShiftDiagnosticEventTimes:
     def test_subtracts_offset(self) -> None:
         """Per-spike event times must be relative to the same time base as the
         figure axis — otherwise scatter points slide off the panels."""
-        diagnostics = _make_per_cell_diagnostics(
-            event_time=np.array([101.0, 101.5]),
-            event_hpd_overlap=np.array([0.25, 0.75]),
+        diagnostics = event_diagnostics(
+            event_time=np.array([101.0, 101.5]), hpd=np.array([0.25, 0.75])
         )
         shifted = _shift_diagnostic_event_times(diagnostics, 100.0)
         np.testing.assert_allclose(shifted.event_time, [1.0, 1.5])
@@ -64,34 +47,8 @@ class TestShiftDiagnosticEventTimes:
     def test_passthrough_when_none(self) -> None:
         """Simulated-data path leaves ``event_time`` as ``None``; the shift is a
         no-op there, not a raise."""
-        diagnostics = _make_per_cell_diagnostics(event_time=None, event_hpd_overlap=np.array([0.5]))
+        diagnostics = event_diagnostics(event_time=None, hpd=np.array([0.5]))
         assert _shift_diagnostic_event_times(diagnostics, 100.0) is diagnostics
-
-
-class TestFigure4DetailWindow:
-    def test_converts_center_and_half_width_to_slice(self) -> None:
-        assert Figure4DetailWindow(center_index=20, half_width_samples=10).to_slice(40) == slice(
-            10, 30
-        )
-
-    @pytest.mark.parametrize(
-        ("center_index", "half_width_samples"),
-        [(-1, 10), (20, 0), (20, -1), (20.0, 10)],
-    )
-    def test_rejects_invalid_values(self, center_index: int, half_width_samples: int) -> None:
-        with pytest.raises(ValueError):
-            Figure4DetailWindow(
-                center_index=center_index,
-                half_width_samples=half_width_samples,
-            )
-
-    def test_rejects_window_outside_recording(self) -> None:
-        with pytest.raises(ValueError, match="outside the recording timeline"):
-            Figure4DetailWindow(center_index=5, half_width_samples=10).to_slice(40)
-
-    def test_rejects_invalid_recording_length(self) -> None:
-        with pytest.raises(ValueError, match="n_time_samples"):
-            Figure4DetailWindow(center_index=5, half_width_samples=2).to_slice(0)
 
 
 # ---------------------------------------------------------------------------
@@ -134,7 +91,7 @@ def _compose_diagnostics(seed: int) -> SpikeEventDiagnostics:
         hpd_overlap=rng.uniform(0, 1, (_N_TIME, _N_CELLS)),
         kl_divergence=rng.gamma(2.0, 0.5, (_N_TIME, _N_CELLS)),
         predictive_pvalue=rng.uniform(0.01, 1, (_N_TIME, _N_CELLS)),
-        per_spike_likelihood=rng.uniform(0, 1, (n_spk, _N_POS)),
+        event_likelihood=rng.uniform(0, 1, (n_spk, _N_POS)),
         event_time=np.sort(rng.uniform(0, _N_TIME, n_spk)),
     )
 
@@ -176,7 +133,7 @@ def _compose_render_data() -> Figure4RenderData:
         event_cell_ind=continuous_diagnostics.event_cell_ind,
         event_time=continuous_diagnostics.event_time,
     )
-    decode = Figure4DecodeResults(
+    decode = Figure4AnalysisResults(
         continuous_results=_compose_results(1),
         continuous_fragmented_results=_compose_results(2),
         continuous_diagnostics=continuous_diagnostics,
@@ -189,9 +146,9 @@ def _compose_render_data() -> Figure4RenderData:
     return Figure4RenderData(
         recording=_compose_recording(),
         time=np.arange(_N_TIME, dtype=float),
-        head_position=np.column_stack([np.linspace(0.0, 100.0, _N_TIME), np.zeros(_N_TIME)]),
         linear_position=np.linspace(0.0, 100.0, _N_TIME),
-        decode_results=decode,
+        analysis_results=decode,
+        cache_provenance=synthetic_cache_provenance(),
     )
 
 
@@ -215,4 +172,33 @@ def test_compose_figure04_produces_panels_and_finite_bbox() -> None:
 
     import matplotlib.pyplot as plt
 
+    plt.close(result.figure)
+
+
+def test_compose_figure04_labels_rows_once_across_the_two_stacks() -> None:
+    """Panel (a) carries the row labels, panel (b) the right-edge threshold and
+    worse-fit labels (which the track inset aligns to); neither repeats them."""
+    import matplotlib.pyplot as plt
+
+    from statespacecheck_paper.figure04_layout import FIGURE04_DIAGNOSTIC_ANNOTATION_GIDS
+    from statespacecheck_paper.plotting import THRESHOLD_LABEL_GID, WORSE_FIT_LABEL_GID
+
+    result = compose_figure04(
+        _compose_render_data(),
+        diagnostic_thresholds={"hpd_overlap": 0.05, "predictive_pvalue": 0.05},
+        detail_window=Figure4DetailWindow(center_index=20, half_width_samples=10),
+    )
+    axes_a, axes_b = result.figure.axes[:6], result.figure.axes[6:12]
+
+    assert axes_a[3].get_ylabel() == "HPD\noverlap"
+    assert all(ax.get_ylabel() == "" for ax in axes_b)
+    assert not any(
+        text.get_gid() in FIGURE04_DIAGNOSTIC_ANNOTATION_GIDS for ax in axes_a for text in ax.texts
+    )
+    gids_b = [[text.get_gid() for text in ax.texts] for ax in axes_b[3:]]
+    assert gids_b == [
+        [THRESHOLD_LABEL_GID, WORSE_FIT_LABEL_GID],
+        [THRESHOLD_LABEL_GID, WORSE_FIT_LABEL_GID],
+        [WORSE_FIT_LABEL_GID],  # KL divergence has no threshold here
+    ]
     plt.close(result.figure)

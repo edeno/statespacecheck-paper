@@ -55,9 +55,13 @@
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8.5 6 2.5 12l6 6 1.4-1.4L5.3 12l4.6-4.6zm7 0-1.4 1.4 4.6 4.6-4.6 4.6 1.4 1.4 6-6z" /></svg>
             Code
           </a>
-          <a class="button" href="https://dandiarchive.org/dandiset/001942">
+          <a class="button" data-doi-macro="RecordingInputsDOI" title="The decoder input for the recording figure: position, spike times, and track geometry (Zenodo)">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2C7 2 4 3.8 4 5.5v13C4 20.2 7 22 12 22s8-1.8 8-3.5v-13C20 3.8 17 2 12 2zm0 2c3.9 0 6 1.2 6 1.5S15.9 7 12 7 6 5.8 6 5.5 8.1 4 12 4zm0 16c-3.9 0-6-1.2-6-1.5v-2.2c1.5.8 3.6 1.2 6 1.2s4.5-.4 6-1.2v2.2c0 .3-2.1 1.5-6 1.5zm0-4.5c-3.9 0-6-1.2-6-1.5v-2.2c1.5.8 3.6 1.2 6 1.2s4.5-.4 6-1.2V14c0 .3-2.1 1.5-6 1.5zm0-4.5c-3.9 0-6-1.2-6-1.5V7.3C7.5 8.1 9.6 8.5 12 8.5s4.5-.4 6-1.2v2.2c0 .3-2.1 1.5-6 1.5z" /></svg>
-            Data
+            Decoder input
+          </a>
+          <a class="button" href="https://dandiarchive.org/dandiset/001942" title="The full hippocampal recording on the DANDI Archive (dandiset 001942)">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2C7 2 4 3.8 4 5.5v13C4 20.2 7 22 12 22s8-1.8 8-3.5v-13C20 3.8 17 2 12 2zm0 2c3.9 0 6 1.2 6 1.5S15.9 7 12 7 6 5.8 6 5.5 8.1 4 12 4zm0 16c-3.9 0-6-1.2-6-1.5v-2.2c1.5.8 3.6 1.2 6 1.2s4.5-.4 6-1.2v2.2c0 .3-2.1 1.5-6 1.5zm0-4.5c-3.9 0-6-1.2-6-1.5v-2.2c1.5.8 3.6 1.2 6 1.2s4.5-.4 6-1.2V14c0 .3-2.1 1.5-6 1.5zm0-4.5c-3.9 0-6-1.2-6-1.5V7.3C7.5 8.1 9.6 8.5 12 8.5s4.5-.4 6-1.2v2.2c0 .3-2.1 1.5-6 1.5z" /></svg>
+            Raw recording
           </a>
           <a class="button" href="#cite">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 17h3l2-4V7H4v6h3zm8 0h3l2-4V7h-6v6h3z" /></svg>
@@ -233,7 +237,7 @@
                 </mfrac>
               </math>
               <p>
-                Find the 95% highest-probability-density regions of the prediction and of the
+                Find the <span data-macro="HpdCoveragePercent"></span>% highest-probability-density regions of the prediction and of the
                 spike's likelihood, then divide the size of their intersection by the size of the
                 smaller region. The value is 1 whenever one region lies inside the other and 0 when
                 they do not meet, so a broad prediction containing a narrow spike still counts as
@@ -259,7 +263,8 @@
                 probability of every cell at least as unlikely as the one that fired, <i>y</i>. A
                 small value means the model did not expect this spike. We call it the predictive
                 p-value for short; the tracks below plot −log <i>p</i> (natural log), where
-                <i>p</i> = 0.05 is about 3.
+                <i>p</i> = <span data-macro="SimPredictiveCutoff"></span> is about
+                <span data-macro="SimPredictiveCutoffNegLog"></span>.
               </p>
             </article>
             <article class="card" style="--metric-color: var(--kl)">
@@ -285,7 +290,7 @@
             <span data-macro="SimKlPercentile"></span> percentile, in a well-specified baseline
             period; the p-value uses a fixed cutoff of
             <span data-macro="SimPredictiveCutoff"></span>. That HPD-overlap percentile is exactly
-            0, so in the simulation and the playground HPD overlap flags only spikes whose 95%
+            0, so in the simulation and the playground HPD overlap flags only spikes whose <span data-macro="HpdCoveragePercent"></span>%
             region does not meet the prediction's at all.
           </p>
         </div>
@@ -308,7 +313,7 @@
                 <button class="chip" type="button" data-preset="conflicting">Conflicting</button>
                 <button class="chip" type="button" data-preset="nested">Narrow prediction</button>
                 <button class="chip" type="button" data-preset="broad">Broad prediction, narrow spike</button>
-                <button class="chip" type="button" data-preset="pvalueMiss">p-value misses a conflict</button>
+                <button class="chip" type="button" data-preset="pvalue_miss">p-value misses a conflict</button>
               </div>
             </div>
             <div class="row">
@@ -347,8 +352,8 @@
             <div class="legend">
               <span><i class="swatch" style="background: var(--predictive)"></i>Prediction P(x)</span>
               <span><i class="swatch" style="background: var(--likelihood)"></i>Spike likelihood Q(x)</span>
-              <span><i class="swatch band" style="background: var(--predictive)"></i>95% HPD region of P</span>
-              <span><i class="swatch band" style="background: var(--likelihood)"></i>95% HPD region of Q</span>
+              <span><i class="swatch band" style="background: var(--predictive)"></i><span data-macro="HpdCoveragePercent"></span>% HPD region of P</span>
+              <span><i class="swatch band" style="background: var(--likelihood)"></i><span data-macro="HpdCoveragePercent"></span>% HPD region of Q</span>
             </div>
             <div id="pg-chart"></div>
             <div class="readouts" id="pg-readouts"></div>
@@ -378,9 +383,9 @@
             the arrow keys to inspect individual spikes.
           </p>
           <div class="panel">
-            <div class="segmented" id="sc-tabs" role="tablist" aria-label="Simulated condition"></div>
-            <p class="scenario-text" id="sc-text"></p>
-            <div id="sc-view"><p class="loading">Loading simulation…</p></div>
+            <div class="segmented" id="cond-tabs" role="tablist" aria-label="Simulated condition"></div>
+            <p class="condition-text" id="cond-text"></p>
+            <div id="cond-view"><p class="loading">Loading simulation…</p></div>
           </div>
         </div>
       </section>
@@ -413,7 +418,7 @@
             models are compared on the same position grid.
           </p>
           <p>
-            This two-second window contains a candidate replay event while the animal is still. The
+            This <span data-macro="RecordingWindowSecondsWord"></span>-second window contains a candidate replay event while the animal is still. The
             Continuous model's prediction cannot keep up with the rapidly moving representation, so
             many spikes are flagged. When the Continuous–Fragmented model switches to its fragmented
             state, its prediction becomes broad, the next spikes can move the estimate, and most of
@@ -424,11 +429,11 @@
             Inspect spikes the same way as in the simulation.
           </p>
           <div class="panel">
-            <div id="rp-view"><p class="loading">Loading recording…</p></div>
+            <div id="rec-view"><p class="loading">Loading recording…</p></div>
           </div>
           <p class="note">
             A <strong>rescued</strong> spike is flagged under the Continuous model but not under the
-            Continuous–Fragmented model: its likelihood's 95% region now overlaps the
+            Continuous–Fragmented model: its likelihood's <span data-macro="HpdCoveragePercent"></span>% region now overlaps the
             Continuous–Fragmented prediction's, which can be broad enough to allow a jump there. It
             does not mean that the prediction was centered on the spike.
           </p>

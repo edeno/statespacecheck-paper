@@ -1,7 +1,7 @@
 """Raster and diagnostic panels.
 
 The canonical Figure-4 panels: spike raster, spike-event diagnostic scatter,
-single-model posterior/likelihood/raster/diagnostic stack, and per-spike metric
+single-model predictive/likelihood/raster/diagnostic stack, and per-spike metric
 hexbin comparison row.
 """
 
@@ -24,25 +24,32 @@ from matplotlib.patches import Rectangle
 from numpy.typing import NDArray
 
 from statespacecheck_paper.diagnostics import SpikeEventDiagnostics
-from statespacecheck_paper.figure04_diagnostics import (
-    compute_running_average,
-    mean_per_spike_likelihood_by_time,
+from statespacecheck_paper.figure04_diagnostics import mean_event_likelihood_by_time
+from statespacecheck_paper.figure04_models import (
+    CONTINUOUS,
+    CONTINUOUS_FRAGMENTED,
+    Figure4Model,
 )
+from statespacecheck_paper.figure04_place_fields import DECODER_PREDICTIVE_VAR
 from statespacecheck_paper.figure04_plot_primitives import (
     ANIMAL_POSITION_LABEL_GID,
-    THRESHOLD_LABEL_GID,
-    WORSE_FIT_LABEL_GID,
     compute_half_pixel_extent,
     plot_distribution_heatmap,
 )
 from statespacecheck_paper.figure04_track_plots import plot_track_graph_1d
-from statespacecheck_paper.plotting import negative_log_pvalue, plot_likelihood_columns
+from statespacecheck_paper.plotting import (
+    negative_log_pvalue,
+    plot_event_metric_row,
+    plot_likelihood_columns,
+)
 from statespacecheck_paper.style import (
     CMAP_LIKELIHOOD,
-    CMAP_POSTERIOR,
+    CMAP_PREDICTIVE,
     COLORS,
+    METRIC_NAMES,
     METRIC_SPEC_BY_NAME,
     METRIC_SPECS,
+    WONG,
 )
 
 
@@ -63,9 +70,10 @@ class ModelDiagnosticPanelData:
     position : np.ndarray, shape (n_time,)
         Animal position aligned to ``time``.
     results : xr.Dataset
-        Decoder outputs carrying a ``predictive_posterior`` variable on a
-        ``time`` dimension of length ``n_time`` (and optionally
-        ``log_likelihood``); sliced on the same timeline as ``diagnostics``.
+        Decoder outputs carrying the predictive distribution
+        (:data:`DECODER_PREDICTIVE_VAR`) on a ``time`` dimension of length
+        ``n_time`` (and optionally ``log_likelihood``); sliced on the same
+        timeline as ``diagnostics``.
     diagnostics : SpikeEventDiagnostics
         Per-spike diagnostics on this window's timeline (the per-event arrays
         are rendered; dense matrices, if present, must be ``(n_time, n_cells)``).
@@ -125,7 +133,7 @@ class ModelDiagnosticPanelData:
                 f"spike_counts must be (n_time, n_cells); got {self.spike_counts.shape}"
             )
         n_cells = self.spike_counts.shape[1]
-        for name in ("hpd_overlap", "predictive_pvalue", "kl_divergence"):
+        for name in METRIC_NAMES:
             dense = getattr(self.diagnostics, name)
             if dense is not None and dense.shape != (time.size, n_cells):
                 raise ValueError(
@@ -136,30 +144,30 @@ class ModelDiagnosticPanelData:
         if event_time_ind.size and (event_time_ind.min() < 0 or event_time_ind.max() >= time.size):
             raise ValueError(f"diagnostics.event_time_ind must index the {time.size} time samples")
 
-        # The posterior/likelihood heatmap rows are sliced by the same detail
-        # window as the diagnostic scatter rows, so the posterior must live on
-        # the same timeline. Validate the variable, its dimensions, and the exact
-        # time coordinate -- a matching length alone would still accept a shifted
-        # timeline or a posterior indexed by an unrelated dimension, silently
-        # misaligning (or hiding) the heatmap.
-        if "predictive_posterior" not in self.results:
-            raise ValueError("results must contain a 'predictive_posterior' variable")
-        posterior = self.results["predictive_posterior"]
-        if "time" not in posterior.dims or "state_bins" not in posterior.dims:
+        # The predictive/likelihood heatmap rows are sliced by the same detail
+        # window as the diagnostic scatter rows, so the predictive distribution
+        # must live on the same timeline. Validate the variable, its dimensions,
+        # and the exact time coordinate -- a matching length alone would still
+        # accept a shifted timeline or a distribution indexed by an unrelated
+        # dimension, silently misaligning (or hiding) the heatmap.
+        if DECODER_PREDICTIVE_VAR not in self.results:
+            raise ValueError(f"results must contain a {DECODER_PREDICTIVE_VAR!r} variable")
+        predictive = self.results[DECODER_PREDICTIVE_VAR]
+        if "time" not in predictive.dims or "state_bins" not in predictive.dims:
             raise ValueError(
-                "results.predictive_posterior must have 'time' and 'state_bins' "
-                f"dimensions; got {tuple(posterior.dims)}"
+                f"results.{DECODER_PREDICTIVE_VAR} must have 'time' and 'state_bins' "
+                f"dimensions; got {tuple(predictive.dims)}"
             )
-        if "time" not in posterior.coords:
-            raise ValueError("results.predictive_posterior must carry a 'time' coordinate")
-        posterior_time = np.asarray(posterior.coords["time"].values, dtype=np.float64)
+        if "time" not in predictive.coords:
+            raise ValueError(f"results.{DECODER_PREDICTIVE_VAR} must carry a 'time' coordinate")
+        predictive_time = np.asarray(predictive.coords["time"].values, dtype=np.float64)
         panel_time = np.asarray(self.time, dtype=np.float64)
-        if posterior_time.shape != panel_time.shape or not np.array_equal(
-            posterior_time, panel_time
+        if predictive_time.shape != panel_time.shape or not np.array_equal(
+            predictive_time, panel_time
         ):
             raise ValueError(
-                "results.predictive_posterior 'time' coordinate must equal the panel "
-                "'time' array; the posterior heatmap would otherwise be misaligned with "
+                f"results.{DECODER_PREDICTIVE_VAR} 'time' coordinate must equal the panel "
+                "'time' array; the predictive heatmap would otherwise be misaligned with "
                 "the per-spike diagnostics."
             )
 
@@ -259,19 +267,21 @@ def plot_raster(
     ax.set_xlabel("Time")
 
 
-def plot_spike_event_diagnostic_scatter(
+# Height of each row's worse-fit label (axes fraction), placed where it clears
+# the row's threshold label.
+_WORSE_FIT_LABEL_Y = {"hpd_overlap": 0.28, "predictive_pvalue": 0.68}
+
+
+def plot_event_diagnostic_scatter(
     time: NDArray[np.float64] | pd.Index,
     diagnostics: SpikeEventDiagnostics,
     time_slice_ind: slice | None = None,
     threshold: float | None = None,
     ax: Axes | None = None,
     metric_name: str = "hpd_overlap",
-    color: str = "steelblue",
     ylabel: str | None = None,
     show_xlabel: bool = True,
-    show_running_average: bool = False,
-    running_average_window: float = 0.050,
-    running_average_color: str | None = None,
+    show_annotations: bool = True,
 ) -> Axes:
     """Plot a diagnostic value for each spike event over time.
 
@@ -297,22 +307,15 @@ def plot_spike_event_diagnostic_scatter(
     ax : plt.Axes, optional
         Axes to plot on. If None, uses current axes.
     metric_name : str, default "hpd_overlap"
-        Attribute of ``diagnostics`` to plot.
-    color : str, default "steelblue"
-        Color for scatter points.
+        Metric to plot (a :data:`~statespacecheck_paper.style.METRIC_SPECS` name),
+        which sets its color, display scale, and worse-fit direction.
     ylabel : str, optional
         Y-axis label. If None, uses metric_name.
     show_xlabel : bool, default True
         Whether to show "Time" xlabel.
-    show_running_average : bool, default False
-        If True, overlay a running average line on top of the scatter plot.
-        The running average is computed as the weighted mean over a sliding
-        window, as described in the manuscript.
-    running_average_window : float, default 0.050
-        Size of the sliding window in seconds for the running average.
-    running_average_color : str, optional
-        Color for the running average line. If None, uses a darker version
-        of the scatter color.
+    show_annotations : bool, default True
+        Whether to label the threshold and the direction of worse fit at the
+        right edge.
 
     Returns
     -------
@@ -328,11 +331,10 @@ def plot_spike_event_diagnostic_scatter(
     >>> n_time, n_bins, n_cells = 100, 50, 10
     >>> predictive = np.random.dirichlet(np.ones(n_bins), size=n_time)
     >>> place_fields = np.random.rand(n_cells, n_bins) * 10
-    >>> spike_counts = np.random.poisson(0.5, (n_time, n_cells))
-    >>> diagnostics = compute_spike_event_diagnostics(
-    ...     predictive, spike_counts, place_fields
-    ... )
-    >>> ax = plot_spike_event_diagnostic_scatter(np.arange(n_time), diagnostics)
+    >>> time = np.arange(n_time, dtype=float)
+    >>> spike_times = [np.sort(np.random.uniform(0, n_time - 1, 50)) for _ in range(n_cells)]
+    >>> diagnostics = compute_spike_event_diagnostics(predictive, place_fields, spike_times, time)
+    >>> ax = plot_event_diagnostic_scatter(time, diagnostics)
     """
     if ax is None:
         ax = plt.gca()
@@ -362,98 +364,27 @@ def plot_spike_event_diagnostic_scatter(
         if diagnostics.event_time is not None
         else full_time[event_time_ind]
     )
-    x_positions_arr = all_event_times[event_mask]
-    raw_y_values = event_metric_values[event_mask]
-    spec = METRIC_SPEC_BY_NAME.get(metric_name)
-    use_neg_log = spec is not None and spec.display_transform == "neg_log_p"
-    y_values_arr = negative_log_pvalue(raw_y_values) if use_neg_log else raw_y_values
-    if threshold is not None and use_neg_log:
-        threshold = float(negative_log_pvalue(threshold))
-
-    ax.scatter(
-        x_positions_arr,
-        y_values_arr,
-        s=0.8,
-        alpha=0.6,
-        c=color,
-        rasterized=True,
+    spec = METRIC_SPEC_BY_NAME[metric_name]
+    plot_event_metric_row(
+        ax,
+        all_event_times[event_mask],
+        event_metric_values[event_mask],
+        spec,
+        threshold=threshold,
+        xlim=(time_arr.min(), time_arr.max()),
+        ylabel=metric_name if ylabel is None else ylabel,
+        symlog_yticks=(0.0, 0.1, 1.0),
+        symlog_ylim=(-0.005, 1.0),
+        worse_fit_y=_WORSE_FIT_LABEL_Y.get(metric_name, 0.5),
+        show_annotations=show_annotations,
     )
-
-    # Add running average line if requested
-    if show_running_average:
-        # Compute on raw per-event values exactly as specified in the
-        # manuscript, then apply the display transform to the average.
-        running_avg, _ = compute_running_average(
-            x_positions_arr,
-            raw_y_values,
-            time_arr,
-            window_size=running_average_window,
-        )
-
-        # Transform running average if needed (same as scatter points)
-        if use_neg_log:
-            running_avg = negative_log_pvalue(running_avg)
-
-        # Determine line color (darker version of scatter color if not specified)
-        line_color: str | tuple[float, ...]
-        if running_average_color is None:
-            # Convert to RGB, darken by 30%, convert back
-            try:
-                rgb = mcolors.to_rgb(color)
-                line_color = tuple(c * 0.7 for c in rgb)
-            except ValueError:
-                line_color = "black"
-        else:
-            line_color = running_average_color
-
-        ax.plot(
-            time_arr,
-            running_avg,
-            color=line_color,
-            linewidth=2,
-            alpha=0.9,
-            zorder=5,
-        )
-
-    if threshold is not None:
-        ax.axhline(
-            threshold,
-            color=COLORS["threshold"],
-            linewidth=1.2,
-            alpha=0.7,
-            zorder=10,
-        )
-        # Add threshold annotation on right side
-        threshold_label = ax.text(
-            1.01,
-            threshold,
-            "Threshold",
-            transform=ax.get_yaxis_transform(),
-            va="center",
-            ha="left",
-            color=COLORS["threshold"],
-        )
-        threshold_label.set_gid(THRESHOLD_LABEL_GID)
-
-    # HPD overlap: symlog y-scale (matching Figure 3) so the worst-fit
-    # floor near 0 is expanded instead of compressed onto the bottom
-    # spine.
-    if spec is not None and spec.symlog_axis:
-        ax.set_yscale("symlog", linthresh=0.01, linscale=1.0)
-        ax.set_yticks([0.0, 0.1, 1.0])
-        ax.set_yticklabels(["0", "0.1", "1"])
-        ax.set_ylim(-0.005, 1.0)
-
-    ax.set_xlim(time_arr.min(), time_arr.max())
-    ax.set_ylabel(metric_name if ylabel is None else ylabel, labelpad=7)
 
     if show_xlabel:
         ax.set_xlabel("Time (s)", labelpad=7)
-        ax.tick_params(labelsize=8)
     else:
-        ax.tick_params(labelsize=8, labelbottom=False)
-    if metric_name == "hpd_overlap":
-        ax.tick_params(axis="y", labelsize=8, pad=1)
+        ax.tick_params(labelbottom=False)
+    if spec.symlog_axis:
+        ax.tick_params(axis="y", pad=1)
 
     return ax
 
@@ -468,24 +399,23 @@ def _draw_predictive_heatmap_row(
     title: str,
     ylabel: str,
 ) -> None:
-    """Draw one predictive-posterior heatmap row (heatmap + standard labels).
+    """Draw one predictive-distribution heatmap row (heatmap + standard labels).
 
-    Shared by the comparison (per column) and single-model composites; the
-    per-composite legend / "Animal Position" annotation is added by the caller.
+    The legend / "Animal Position" annotation is added by the caller.
     """
     plot_distribution_heatmap(
         ax=ax,
-        distribution_da=results.predictive_posterior,
+        distribution_da=results[DECODER_PREDICTIVE_VAR],
         time=time,
         position=position,
         time_slice_ind=time_slice_ind,
         show_position=True,
-        cmap=CMAP_POSTERIOR,
+        cmap=CMAP_PREDICTIVE,
     )
-    ax.set_title(title, fontsize=8)
+    ax.set_title(title)
     ax.set_ylabel(ylabel, labelpad=7)
     ax.set_xlabel("")
-    ax.tick_params(labelsize=8, labelbottom=False)
+    ax.tick_params(labelbottom=False)
 
 
 def _draw_place_field_likelihood_image(
@@ -505,7 +435,7 @@ def _draw_place_field_likelihood_image(
     for a ~1000-bin plot.
     """
     counts_win = spike_counts[time_slice_ind]
-    lik_np, has_spk_slice = mean_per_spike_likelihood_by_time(counts_win, place_fields)
+    lik_np, has_spk_slice = mean_event_likelihood_by_time(counts_win, place_fields)
     time_win = np.asarray(time)[time_slice_ind]
     pos = np.asarray(position_bins, dtype=np.float64)
     extent = compute_half_pixel_extent(time_win, pos)
@@ -547,16 +477,16 @@ def plot_single_model_diagnostics(
     data: ModelDiagnosticPanelData,
     *,
     time_slice_ind: slice | None = None,
-    model_name: str = "Continuous",
+    model_name: str = CONTINUOUS.label,
     thresholds: Mapping[str, float] | None = None,
-    show_running_average: bool = False,
-    running_average_window: float = 0.050,
     fig: Figure | None = None,
+    show_y_labels: bool = True,
+    show_annotations: bool = True,
 ) -> tuple[Figure, NDArray[np.object_]]:
     """Create single-model diagnostic figure with 6 rows.
 
     Layout (6 rows, single column):
-    - Row 0: Predictive posterior with animal position overlay
+    - Row 0: Predictive distribution with animal position overlay
     - Row 1: Likelihood at spike times with position overlay
     - Row 2: Spike raster (sorted by place field peak)
     - Row 3: HPD overlap scatter
@@ -571,16 +501,18 @@ def plot_single_model_diagnostics(
         by the diagnostic calculation.
     time_slice_ind : slice, optional
         Time slice to plot. If None, plots all time points.
-    model_name : str, default "Continuous"
+    model_name : str, default ``CONTINUOUS.label`` ("Continuous")
         Model name for title.
     thresholds : dict[str, float], optional
         Thresholds for horizontal lines on diagnostic plots.
-    show_running_average : bool, default False
-        If True, overlay a running average on diagnostic scatters.
-    running_average_window : float, default 0.050
-        Window size in seconds for running average.
     fig : Figure, optional
         Existing figure to draw into.
+    show_y_labels : bool, default True
+        Whether to draw the row labels, y-axis ticks, and the "Animal Position"
+        label. A stack placed beside another with the same rows omits them.
+    show_annotations : bool, default True
+        Whether to label each diagnostic row's threshold and worse-fit
+        direction at its right edge. Side-by-side stacks label one of them.
 
     Returns
     -------
@@ -611,7 +543,7 @@ def plot_single_model_diagnostics(
     if time_slice_ind is None:
         time_slice_ind = slice(None)
 
-    # Row 0: Predictive posterior
+    # Row 0: Predictive distribution
     _draw_predictive_heatmap_row(
         axes[0],
         results,
@@ -621,20 +553,21 @@ def plot_single_model_diagnostics(
         title=model_name,
         ylabel="Predictive\nposition (cm)",
     )
-    # Self-label the position trace in its own color instead of a legend.
-    animal_position_label = axes[0].text(
-        0.02,
-        0.90,
-        "Animal Position",
-        transform=axes[0].transAxes,
-        fontweight="normal",
-        color=COLORS["ground_truth"],
-        alpha=0.85,
-        va="top",
-        ha="left",
-        bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.45, "pad": 0.15},
-    )
-    animal_position_label.set_gid(ANIMAL_POSITION_LABEL_GID)
+    if show_y_labels:
+        # Self-label the position trace in its own color instead of a legend.
+        animal_position_label = axes[0].text(
+            0.02,
+            0.90,
+            "Animal Position",
+            transform=axes[0].transAxes,
+            fontweight="normal",
+            color=COLORS["ground_truth"],
+            alpha=0.85,
+            va="top",
+            ha="left",
+            bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.45, "pad": 0.15},
+        )
+        animal_position_label.set_gid(ANIMAL_POSITION_LABEL_GID)
 
     # Row 1: Likelihood overlay at spike times
     ax_lik = axes[1]
@@ -657,7 +590,7 @@ def plot_single_model_diagnostics(
     )
     ax_lik.set_ylabel("Likelihood\nposition (cm)", labelpad=7)
     ax_lik.set_xlabel("")
-    ax_lik.tick_params(labelsize=8, labelbottom=False)
+    ax_lik.tick_params(labelbottom=False)
 
     # 1D track graph on right edge of predictive and likelihood rows
     _draw_track_graph_edges(
@@ -676,141 +609,132 @@ def plot_single_model_diagnostics(
     plot_raster(spike_times, time_slice, ax=axes[2], sort_order=sort_order)
     axes[2].set_ylabel("Neuron", labelpad=7)
     axes[2].set_xlabel("")
-    axes[2].tick_params(labelsize=8, labelbottom=False)
+    axes[2].tick_params(labelbottom=False)
 
     # Rows 3-5: Diagnostic scatters
     for i, spec in enumerate(METRIC_SPECS):
         row = i + 3
         threshold = thresholds.get(spec.name) if thresholds else None
-        plot_spike_event_diagnostic_scatter(
+        plot_event_diagnostic_scatter(
             time,
             diagnostics,
             time_slice_ind=time_slice_ind,
             threshold=threshold,
             ax=axes[row],
             metric_name=spec.name,
-            color=spec.color,
-            ylabel=spec.ylabel,
-            show_xlabel=(i == 2),
-            show_running_average=show_running_average,
-            running_average_window=running_average_window,
+            ylabel=spec.wrapped_ylabel,
+            show_xlabel=(i == len(METRIC_SPECS) - 1),
+            show_annotations=show_annotations,
         )
-        if spec.name == "hpd_overlap":
-            worse_fit_y = 0.28
-        elif spec.name == "predictive_pvalue":
-            worse_fit_y = 0.68
-        else:
-            worse_fit_y = 0.5
-        worse_fit_label = axes[row].text(
-            1.01,
-            worse_fit_y,
-            spec.worse_fit_direction,
-            transform=axes[row].transAxes,
-            va="center",
-            ha="left",
-        )
-        worse_fit_label.set_gid(WORSE_FIT_LABEL_GID)
+
+    if not show_y_labels:
+        # The heatmap and raster helpers label their own rows, so clear the
+        # labels here rather than threading the option through each of them.
+        for ax in axes:
+            ax.set_ylabel("")
+            ax.tick_params(axis="y", left=False, labelleft=False)
 
     return fig, axes
 
 
-def plot_per_spike_metric_hexbin_row(
-    diagnostics_a: SpikeEventDiagnostics,
-    diagnostics_b: SpikeEventDiagnostics,
+def plot_event_metric_hexbin_row(
+    reference_diagnostics: SpikeEventDiagnostics,
+    comparison_diagnostics: SpikeEventDiagnostics,
     axes: Sequence[Axes],
     *,
-    model_a_name: str = "Continuous",
-    model_b_name: str = "Cont-Frag",
+    reference_model: Figure4Model = CONTINUOUS,
+    comparison_model: Figure4Model = CONTINUOUS_FRAGMENTED,
     thresholds: dict[str, float] | None = None,
     colorbar_pad: float = 0.02,
 ) -> None:
     """Plot a 1x3 row of hexbin densities comparing per-spike diagnostics between two decoders.
 
-    Each panel shows one diagnostic on the x-axis (model A) and the same
-    diagnostic on the y-axis (model B). Each hexagon's colour encodes
+    Each panel shows one diagnostic on the x-axis (the reference decoder,
+    ``reference_model``) and the same diagnostic on the y-axis (the comparison decoder,
+    ``comparison_model``). Each hexagon's colour encodes
     log-scaled spike-event count (matplotlib ``bins='log'``). Points on
     the identity line indicate decoder agreement on that spike.
 
     Both diagnostics dicts must carry the same set of per-spike events
     in the same order (i.e. ``event_*`` arrays produced from the same
     spike trains by
-    :func:`statespacecheck_paper.figure04_diagnostics.compute_model_diagnostics`).
+    :func:`statespacecheck_paper.figure04_diagnostics.compute_results_diagnostics`).
     Raises ``ValueError`` if shapes differ for any of the three metrics.
 
     Parameters
     ----------
-    diagnostics_a, diagnostics_b : SpikeEventDiagnostics
+    reference_diagnostics, comparison_diagnostics : SpikeEventDiagnostics
         Per-spike-event diagnostics whose ``event_hpd_overlap``,
         ``event_kl_divergence``, ``event_predictive_pvalue`` attributes (each
         shape ``(n_spikes,)``) supply the hexbin values.
     axes : Sequence[matplotlib.axes.Axes]
         Three axes, one per metric (HPD overlap, ``-log(p)`` natural
         log, KL divergence).
-    model_a_name, model_b_name : str
-        Axis labels for each decoder.
+    reference_model, comparison_model : Figure4Model, default Continuous and Continuous-Fragmented
+        The reference and comparison decoders; their full labels name the
+        axes, and the reference's short label names the callout for spikes
+        flagged by the reference only.
     thresholds : dict[str, float], optional
         Per-metric flag thresholds keyed by ``hpd_overlap``, ``kl_divergence``,
         ``predictive_pvalue`` (raw values; the ``predictive_pvalue`` cutoff is transformed to
         the ``-log(p)`` axis). When given, each panel draws dotted threshold
         lines on both axes and lightly shades the quadrant of spikes flagged by
-        model A but not model B. Metrics absent from the dict get no lines.
+        the reference but not the comparison. Metrics absent from the dict get no lines.
     colorbar_pad : float, default 0.02
         Fractional padding between the rightmost panel and shared count
         colorbar.
     """
     if len(axes) != 3:
         raise ValueError(f"axes must have length 3, got {len(axes)}")
-    if diagnostics_a.event_time_ind.shape != diagnostics_b.event_time_ind.shape:
+    if reference_diagnostics.event_time_ind.shape != comparison_diagnostics.event_time_ind.shape:
         raise ValueError(
-            "diagnostics_a and diagnostics_b must carry the same set of spike events "
-            "in the same order"
+            "reference_diagnostics and comparison_diagnostics must carry the same set "
+            "of spike events in the same order"
         )
-    if not np.array_equal(diagnostics_a.event_time_ind, diagnostics_b.event_time_ind) or not (
-        np.array_equal(diagnostics_a.event_cell_ind, diagnostics_b.event_cell_ind)
+    if not np.array_equal(
+        reference_diagnostics.event_time_ind, comparison_diagnostics.event_time_ind
+    ) or not (
+        np.array_equal(reference_diagnostics.event_cell_ind, comparison_diagnostics.event_cell_ind)
     ):
         raise ValueError(
-            "diagnostics_a and diagnostics_b must carry identical spike events in the same order"
+            "reference_diagnostics and comparison_diagnostics must carry identical "
+            "spike events in the same order"
         )
 
-    # Event attr, colour, display transform, threshold key, and plotted worse-fit
-    # direction all come from the shared MetricSpec. Only the panel title differs
-    # from MetricSpec.ylabel here ("KL divergence" vs the scatter's "KL div."),
-    # so it stays a local per-panel override. ``plotted_worse`` is relative to the
-    # plotted axis: HPD overlap flags low values ("below"); KL divergence and the
-    # (log-transformed) predictive p-value flag high values ("above").
-    hexbin_titles = ("HPD overlap", r"$-\log(p)$", "KL divergence")
-
+    # Event attr, colour, display transform, threshold key, title, and plotted
+    # worse-fit direction all come from the shared MetricSpec. ``plotted_worse``
+    # is relative to the plotted axis: HPD overlap flags low values ("below");
+    # KL divergence and the (log-transformed) predictive p-value flag high
+    # values ("above").
     hex_artists = []
-    for panel_idx, (ax, spec, title) in enumerate(
-        zip(axes, METRIC_SPECS, hexbin_titles, strict=True)
-    ):
+    for panel_idx, (ax, spec) in enumerate(zip(axes, METRIC_SPECS, strict=True)):
         key = spec.event_attr
         color = spec.color
         log_transform = spec.display_transform == "neg_log_p"
         thr_key = spec.name
         direction = spec.plotted_worse
-        data_a = np.asarray(getattr(diagnostics_a, key), dtype=np.float64)
-        data_b = np.asarray(getattr(diagnostics_b, key), dtype=np.float64)
-        if data_a.shape != data_b.shape:
+        reference_values = np.asarray(getattr(reference_diagnostics, key), dtype=np.float64)
+        comparison_values = np.asarray(getattr(comparison_diagnostics, key), dtype=np.float64)
+        if reference_values.shape != comparison_values.shape:
             raise ValueError(
-                f"diagnostics_a[{key!r}] and diagnostics_b[{key!r}] must "
+                f"reference_diagnostics[{key!r}] and comparison_diagnostics[{key!r}] must "
                 f"carry the same set of spike events in the same order; "
-                f"got shapes {data_a.shape} vs {data_b.shape}."
+                f"got shapes {reference_values.shape} vs {comparison_values.shape}."
             )
         if log_transform:
-            data_a = negative_log_pvalue(data_a)
-            data_b = negative_log_pvalue(data_b)
-        if data_a.size == 0:
+            reference_values = negative_log_pvalue(reference_values)
+            comparison_values = negative_log_pvalue(comparison_values)
+        if reference_values.size == 0:
             raise ValueError(f"Cannot plot {key}: no spike events are present")
-        if not np.all(np.isfinite(data_a)) or not np.all(np.isfinite(data_b)):
+        if not np.all(np.isfinite(reference_values)) or not np.all(np.isfinite(comparison_values)):
             raise ValueError(
                 f"Cannot plot {key}: every aligned spike event must have a finite value"
             )
 
         cmap = mcolors.LinearSegmentedColormap.from_list("custom", ["white", color])
         hb = ax.hexbin(
-            data_a,
-            data_b,
+            reference_values,
+            comparison_values,
             gridsize=40,
             cmap=cmap,
             mincnt=1,
@@ -820,7 +744,7 @@ def plot_per_spike_metric_hexbin_row(
 
         # Identity line — span the actual data range so the visual
         # agreement reference doesn't depend on matplotlib's autoscale.
-        combined = np.concatenate([data_a, data_b])
+        combined = np.concatenate([reference_values, comparison_values])
         lims = (float(np.min(combined)), float(np.max(combined)))
         # Pad limits so hexbins centred on the data extrema (e.g. at 0)
         # render fully instead of being clipped at the axis spine.
@@ -829,25 +753,25 @@ def plot_per_spike_metric_hexbin_row(
         ax.plot(padded_lims, padded_lims, color=COLORS["threshold"], lw=0.8, ls="--", alpha=0.7)
 
         # Per-metric flag threshold: dotted lines on both axes (same scalar on
-        # x=model A and y=model B), plus light shading of the "rescue" quadrant —
-        # spikes flagged by model A (Continuous) but not model B (Cont-Frag).
+        # x=reference and y=comparison), plus light shading of the "rescue"
+        # quadrant — spikes flagged by the reference but not the comparison.
         thr_raw = thresholds.get(thr_key) if thresholds else None
         if thr_raw is not None:
             thr = negative_log_pvalue(thr_raw) if log_transform else float(thr_raw)
             lo, hi = padded_lims
             if direction == "below":
-                # Flagged below threshold: A flagged (x < thr), B not (y > thr).
+                # Flagged below threshold: reference flagged (x < thr), comparison not (y > thr).
                 rect_xy, rect_w, rect_h = (lo, thr), thr - lo, hi - thr
             else:
-                # Flagged above threshold: A flagged (x > thr), B not (y < thr).
+                # Flagged above threshold: reference flagged (x > thr), comparison not (y < thr).
                 rect_xy, rect_w, rect_h = (thr, lo), hi - thr, thr - lo
             # Dotted threshold cross spanning the panel (reads the cutoff on each axis).
             ax.axvline(thr, color=COLORS["threshold"], lw=0.8, ls=":", alpha=0.7, zorder=2)
             ax.axhline(thr, color=COLORS["threshold"], lw=0.8, ls=":", alpha=0.7, zorder=2)
             # Accent-outlined callout box framing the "rescue" quadrant: spikes
-            # flagged by model A but not model B. A solid coloured border reads as
+            # flagged by the reference but not the comparison. A solid coloured border reads as
             # "look here", unlike a muted gray fill.
-            rescue_accent = "#D55E00"  # Wong vermillion, distinct from the metric colours
+            rescue_accent = WONG[6]  # Vermillion, distinct from the metric colours
             ax.add_patch(
                 Rectangle(
                     rect_xy,
@@ -859,8 +783,7 @@ def plot_per_spike_metric_hexbin_row(
                     zorder=4,
                 )
             )
-            callout_model_a_name = "Cont." if model_a_name == "Continuous" else model_a_name
-            label = f"flagged by\n{callout_model_a_name} only"
+            label = f"flagged by\n{reference_model.short_label} only"
             label_bbox = {
                 "boxstyle": "round,pad=0.15",
                 "facecolor": "white",
@@ -902,16 +825,15 @@ def plot_per_spike_metric_hexbin_row(
         ax.set_ylim(padded_lims)
         ax.set_aspect("equal", adjustable="box")
 
-        ax.set_xlabel(model_a_name, labelpad=4)
-        ax.set_ylabel(model_b_name if panel_idx == 0 else "", labelpad=4)
-        ax.set_title(title, fontsize=8)
-        ax.tick_params(labelsize=8)
+        ax.set_xlabel(reference_model.label, labelpad=4)
+        ax.set_ylabel(comparison_model.label if panel_idx == 0 else "", labelpad=4)
+        ax.set_title(spec.title)
 
         if key == "event_kl_divergence":
             ax.text(
                 0.02,
                 0.98,
-                f"n={len(data_a):,}",
+                f"n={len(reference_values):,}",
                 transform=ax.transAxes,
                 va="top",
                 ha="left",
@@ -944,4 +866,4 @@ def plot_per_spike_metric_hexbin_row(
         count_ticks = [tick for tick in (1, 10, 100, 1000, 10000, 100000) if tick <= max_count]
         cbar.set_ticks(count_ticks)
         cbar.set_ticklabels([f"{tick:,}" for tick in count_ticks])
-        cbar.ax.tick_params(labelsize=8, width=0.5, length=2)
+        cbar.ax.tick_params(width=0.5, length=2)

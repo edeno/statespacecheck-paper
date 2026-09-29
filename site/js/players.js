@@ -1,4 +1,4 @@
-// Scenario player (Figure 3 simulation) and replay comparison (Figure 4
+// Condition player (Figure 3 simulation) and recording comparison (Figure 4
 // recording). Both show precomputed per-spike diagnostics from the paper's
 // pipeline on a shared time axis, with a cursor that inspects one spike.
 
@@ -25,8 +25,10 @@ import {
   nearestIndex,
   plottedWorseFit,
   readoutCard,
+  SYMLOG_LINTHRESH,
   worseFit,
 } from "./data.js";
+import { normalized } from "./metrics.js";
 
 // Seconds of real time to play through one window.
 const PLAYBACK_SECONDS = 15;
@@ -35,17 +37,11 @@ const PLAYBACK_SECONDS = 15;
 // which marks the replay event in the recording.
 const POPULATION_PEAK_HALF_WIDTH = 0.05;
 
-// Tab titles; the summaries abbreviate some condition labels for the figure.
-const SCENARIO_TITLES = {
-  well_specified: "Well-specified",
-  remap: "Remap",
-  history_dependent: "History-dependent firing",
-  replay: "Replay",
-  drift: "Drift",
-  sparse_population: "Sparse population",
-};
-
-const SCENARIO_TEXT = {
+// What each Figure-3 condition shows, keyed by the summary's condition IDs
+// (the tab titles come from the manifest). tests/test_site_metric_metadata.py
+// checks these keys against the summary's condition_order, and that
+// OPEN_ON_FLAGGED names only those conditions.
+export const CONDITION_TEXT = {
   well_specified:
     "Model and data agree. The few spikes flagged here show the false-positive rate that each threshold allows.",
   remap:
@@ -62,13 +58,20 @@ const SCENARIO_TEXT = {
 
 // Conditions whose flagged spikes are the point open on one; the rest open on
 // a typical, unflagged spike (for drift, one the lagging prediction still fits).
-const OPEN_ON_FLAGGED = new Set(["remap", "sparse_population"]);
+export const OPEN_ON_FLAGGED = new Set(["remap", "sparse_population"]);
 
 const INTERACTION_HELP =
   "Hover over or tap the tracks to inspect a spike, press Play, or focus the tracks (click or Tab) and use ← → to step between spikes (Home and End jump to the first and last).";
 
-const AXIS_HELP =
-  "HPD overlap is drawn on a symmetric-log axis (linear below 0.01, logarithmic above), as in the paper, so values near 0 separate from exact zeros. −log p is the negative natural log of the p-value (p = 0.05 is about 3). KL divergence is in nats (natural-log units). Dashed lines mark flag thresholds.";
+/**
+ * Axis notes. `study` is the manuscript macro prefix, "Sim" or "Rec", whose
+ * p-value cutoff and its −log are quoted.
+ */
+function axisHelp(macros, study) {
+  const cutoff = macros[`${study}PredictiveCutoff`];
+  const negLog = macros[`${study}PredictiveCutoffNegLog`];
+  return `HPD overlap is drawn on a symmetric-log axis (linear below ${SYMLOG_LINTHRESH}, logarithmic above), as in the paper, so values near 0 separate from exact zeros. −log p is the negative natural log of the p-value (p = ${cutoff} is about ${negLog}). KL divergence is in nats (natural-log units). Dashed lines mark flag thresholds.`;
+}
 
 const SCALE_HELP =
   "Darker prediction shading means higher probability, on one color scale per panel as in the paper's figures. The likelihood track is drawn only in time bins that contain spikes. Likelihood columns and the curves in the spike panel are each scaled to their own maximum.";
@@ -76,12 +79,6 @@ const SCALE_HELP =
 // ---------------------------------------------------------------------------
 // Shared helpers
 // ---------------------------------------------------------------------------
-
-function normalizedRow(row) {
-  let total = 0;
-  for (const v of row) total += v;
-  return Array.from(row, (v) => (total > 0 ? v / total : 0));
-}
 
 function argmax(values) {
   let best = 0;
@@ -342,15 +339,15 @@ function mountTracks(left, { ariaLabel, range, tracks, eventTimes, select, annou
 }
 
 // ---------------------------------------------------------------------------
-// Scenario player
+// Condition player
 // ---------------------------------------------------------------------------
 
-export function initScenarios(root, manifest) {
-  const tabs = root.querySelector("#sc-tabs");
-  const view = root.querySelector("#sc-view");
-  const text = root.querySelector("#sc-text");
+export function initConditions(root, manifest) {
+  const tabs = root.querySelector("#cond-tabs");
+  const view = root.querySelector("#cond-view");
+  const text = root.querySelector("#cond-text");
   const cache = new Map();
-  const ids = manifest.scenarios.map((s) => s.condition_id);
+  const ids = manifest.conditions.map((c) => c.condition_id);
   // Each selection bumps the generation; a load that finishes after a newer
   // selection (even of the same condition, A -> B -> A) is discarded.
   let generation = 0;
@@ -358,15 +355,15 @@ export function initScenarios(root, manifest) {
 
   view.setAttribute("role", "tabpanel");
   view.tabIndex = -1;
-  const buttons = manifest.scenarios.map(({ condition_id: id, label }) => {
+  const buttons = manifest.conditions.map(({ condition_id: id, title }) => {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "chip";
-    button.id = `sc-tab-${id}`;
+    button.id = `cond-tab-${id}`;
     button.setAttribute("role", "tab");
     button.setAttribute("aria-controls", view.id);
     button.dataset.condition = id;
-    button.textContent = SCENARIO_TITLES[id] ?? label;
+    button.textContent = title;
     button.addEventListener("click", () => select(id));
     button.addEventListener("keydown", (event) => {
       const i = ids.indexOf(id);
@@ -395,14 +392,14 @@ export function initScenarios(root, manifest) {
       button.setAttribute("aria-selected", String(selected));
       button.tabIndex = selected ? 0 : -1;
     }
-    view.setAttribute("aria-labelledby", `sc-tab-${id}`);
-    text.textContent = SCENARIO_TEXT[id] ?? "";
+    view.setAttribute("aria-labelledby", `cond-tab-${id}`);
+    text.textContent = CONDITION_TEXT[id] ?? "";
     const url = new URL(window.location.href);
     url.searchParams.set("condition", id);
     window.history.replaceState(null, "", url);
     if (!cache.has(id)) {
       view.innerHTML = '<p class="loading">Loading simulation…</p>';
-      const entry = manifest.scenarios.find((s) => s.condition_id === id);
+      const entry = manifest.conditions.find((c) => c.condition_id === id);
       try {
         cache.set(id, await loadJSON(`data/${entry.file}`));
       } catch (error) {
@@ -414,7 +411,7 @@ export function initScenarios(root, manifest) {
     }
     if (request !== generation) return;
     try {
-      teardown = renderScenario(view, cache.get(id), manifest);
+      teardown = renderCondition(view, cache.get(id), manifest);
     } catch (error) {
       view.innerHTML = `<p class="error">Could not display this condition (${error.message}).</p>`;
       console.error(error);
@@ -426,7 +423,7 @@ export function initScenarios(root, manifest) {
   select(ids.includes(requested) ? requested : ids.includes("remap") ? "remap" : ids[0]);
 }
 
-function renderScenario(view, payload, manifest) {
+function renderCondition(view, payload, manifest) {
   view.replaceChildren();
   const bins = payload.position_bins;
   const nBins = bins.length;
@@ -444,6 +441,7 @@ function renderScenario(view, payload, manifest) {
   ]);
   const rules = payload.events.flagged;
   const flagRules = manifest.flag_rules.simulation;
+  const thresholdText = manifest.flag_threshold_text.simulation;
 
   // Summary stats across realizations.
   const summary = payload.summary;
@@ -465,7 +463,7 @@ function renderScenario(view, payload, manifest) {
   const likelihoodSum = new Float64Array(nSteps * nBins);
   const likelihoodCount = new Uint16Array(nSteps);
   events.t.forEach((t, i) => {
-    const row = normalizedRow(likelihoodRows.row(events.likelihood_row[i]));
+    const row = normalized(likelihoodRows.row(events.likelihood_row[i]));
     for (let b = 0; b < nBins; b += 1) likelihoodSum[t * nBins + b] += row[b];
     likelihoodCount[t] += 1;
   });
@@ -489,7 +487,7 @@ function renderScenario(view, payload, manifest) {
   const likelihoodBitmap = heatmapBitmap(likelihoodMean, lut.likelihood);
   const hasSpikes = (t) => likelihoodCount[t] > 0;
   const cellRank = rankOf(payload.cell_centers);
-  const position = payload.true_position;
+  const position = payload.physical_position;
   const track = (label, bitmap, height, mask = null) =>
     heatmapTrack({ label, bitmap, height, mask, times: stepTimes, bins, position });
   const flaggedStyle = (metricName) => (i) =>
@@ -503,7 +501,7 @@ function renderScenario(view, payload, manifest) {
     <span><i class="swatch band" style="background:var(--text-muted)"></i>Condition window</span>`);
 
   const { body, left, detail } = playerFrame();
-  view.append(stats, statsNote, legend, body, note(INTERACTION_HELP), note(AXIS_HELP), note(SCALE_HELP));
+  view.append(stats, statsNote, legend, body, note(INTERACTION_HELP), note(axisHelp(manifest.macros, "Sim")), note(SCALE_HELP));
   const say = liveRegion(view);
 
   const detailTitle = document.createElement("h3");
@@ -518,7 +516,7 @@ function renderScenario(view, payload, manifest) {
   readouts.className = "readouts";
   const cards = Object.fromEntries(
     METRICS.map((m) => {
-      const card = readoutCard(m, flagRules[m.name]);
+      const card = readoutCard(m, flagRules[m.name], thresholdText[m.name]);
       readouts.appendChild(card.element);
       return [m.name, card];
     }),
@@ -548,9 +546,9 @@ function renderScenario(view, payload, manifest) {
     detailTitle.textContent = describeSpike(index);
     chart.update({
       series: [
-        { values: normalizedRow(predictive.row(t)), color: cssVar("--predictive") },
+        { values: normalized(predictive.row(t)), color: cssVar("--predictive") },
         {
-          values: normalizedRow(likelihoodRows.row(events.likelihood_row[index])),
+          values: normalized(likelihoodRows.row(events.likelihood_row[index])),
           color: cssVar("--likelihood"),
         },
       ],
@@ -600,22 +598,20 @@ function renderScenario(view, payload, manifest) {
 }
 
 // ---------------------------------------------------------------------------
-// Replay comparison
+// Recording comparison
 // ---------------------------------------------------------------------------
 
-const MODELS = [
-  { id: "continuous", label: "Continuous", short: "Cont." },
-  { id: "continuous_fragmented", label: "Continuous–Fragmented", short: "Cont.–Frag." },
-];
-
-/** Time of peak population firing (all units), which marks the replay event. */
-function populationPeak(spikeTimes, range) {
+/**
+ * Time of peak population firing (all cells), which marks the replay event,
+ * searched in steps of one decoder bin `dt`.
+ */
+function populationPeak(spikeTimes, range, dt) {
   const all = spikeTimes.flat().sort((a, b) => a - b);
   let best = range[0];
   let bestCount = -1;
   let lo = 0;
   let hi = 0;
-  for (let t = range[0]; t <= range[1]; t += 0.002) {
+  for (let t = range[0]; t <= range[1]; t += dt) {
     while (lo < all.length && all[lo] < t - POPULATION_PEAK_HALF_WIDTH) lo += 1;
     while (hi < all.length && all[hi] <= t + POPULATION_PEAK_HALF_WIDTH) hi += 1;
     if (hi - lo > bestCount) {
@@ -626,8 +622,8 @@ function populationPeak(spikeTimes, range) {
   return best;
 }
 
-export function renderReplay(root, payload, manifest) {
-  const view = root.querySelector("#rp-view");
+export function renderRecording(root, payload, manifest) {
+  const view = root.querySelector("#rec-view");
   view.replaceChildren();
   const bins = payload.position_bins;
   const nBins = bins.length;
@@ -636,11 +632,19 @@ export function renderReplay(root, payload, manifest) {
   const range = [time[0], time[time.length - 1] + dt];
   const lut = manifest.colormaps;
   const rules = payload.flag_rules;
-  const events = payload.models.continuous.events;
+  // Model IDs and display labels come from the export, in figure order:
+  // the Continuous (reference) model, then the Continuous–Fragmented one.
+  const MODELS = Object.entries(payload.models).map(([id, model]) => ({
+    id,
+    label: model.label,
+    short: model.short_label,
+  }));
+  const [reference, comparison] = MODELS;
+  const events = payload.models[reference.id].events;
   const eventTimes = events.t;
   const position = payload.linear_position;
   const likelihood = decodeRows(payload.likelihood, nBins);
-  const unitLikelihoods = decodeRows(payload.unit_likelihoods, nBins);
+  const cellLikelihoods = decodeRows(payload.cell_likelihoods, nBins);
   const predictive = Object.fromEntries(
     MODELS.map((m) => [m.id, decodeHeatmap(payload.models[m.id].predictive, nBins)]),
   );
@@ -648,13 +652,13 @@ export function renderReplay(root, payload, manifest) {
   const track = (label, bitmap, height, mask = null) =>
     heatmapTrack({ label, bitmap, height, mask, times: time, bins, position, unit: "cm" });
 
-  // Units: raster of every spike in the window, sorted by place-field peak.
+  // Cells: raster of every spike in the window, sorted by place-field peak.
   const rasterTimes = [];
   const rasterRows = [];
-  payload.spike_times.forEach((times, unit) => {
+  payload.spike_times.forEach((times, cell) => {
     for (const t of times) {
       rasterTimes.push(t);
-      rasterRows.push(payload.unit_rank[unit]);
+      rasterRows.push(payload.cell_rank[cell]);
     }
   });
 
@@ -681,8 +685,8 @@ export function renderReplay(root, payload, manifest) {
 
   const legend = legendBlock(`
     <span><i class="swatch" style="background:var(--position)"></i>Animal's position</span>
-    <span><i class="swatch ring" style="border-color:var(--text)"></i>Continuous model</span>
-    <span><i class="swatch dot" style="background:var(--text)"></i>Continuous–Fragmented model</span>
+    <span><i class="swatch ring" style="border-color:var(--text)"></i>${reference.label} model</span>
+    <span><i class="swatch dot" style="background:var(--text)"></i>${comparison.label} model</span>
     <span><i class="swatch" style="background:var(--threshold)"></i>Flag threshold</span>`);
 
   const { body, left, detail } = playerFrame();
@@ -695,9 +699,9 @@ export function renderReplay(root, payload, manifest) {
     countsWrap,
     note(INTERACTION_HELP),
     note(
-      "Here the dots do not show flag status: open circles are the Continuous model and filled dots the Continuous–Fragmented model, and a spike is flagged when its marker lies beyond the dashed threshold. The Continuous–Fragmented prediction is summed over its Continuous and Fragmented states. Position is linearized distance along the maze (cm).",
+      `Here the dots do not show flag status: open circles are the ${reference.label} model and filled dots the ${comparison.label} model, and a spike is flagged when its marker lies beyond the dashed threshold. The ${comparison.label} prediction is summed over its Continuous and Fragmented states. Position is linearized distance along the maze (cm).`,
     ),
-    note(AXIS_HELP),
+    note(axisHelp(manifest.macros, "Rec")),
     note(SCALE_HELP),
   );
   const say = liveRegion(view);
@@ -748,8 +752,8 @@ export function renderReplay(root, payload, manifest) {
   detail.appendChild(rescue);
 
   const isRescued = (metric, index) =>
-    payload.models.continuous.events.flagged[metric]?.[index] === true &&
-    payload.models.continuous_fragmented.events.flagged[metric]?.[index] === false;
+    payload.models[reference.id].events.flagged[metric]?.[index] === true &&
+    payload.models[comparison.id].events.flagged[metric]?.[index] === false;
 
   function describeSpike(index) {
     return `Spike at ${eventTimes[index].toFixed(3)} s — unit ${events.cell[index] + 1}`;
@@ -764,8 +768,8 @@ export function renderReplay(root, payload, manifest) {
     for (const model of MODELS) {
       charts[model.id].update({
         series: [
-          { values: normalizedRow(predictive[model.id].row(step)), color: cssVar("--predictive") },
-          { values: normalizedRow(unitLikelihoods.row(cell)), color: cssVar("--likelihood") },
+          { values: normalized(predictive[model.id].row(step)), color: cssVar("--predictive") },
+          { values: normalized(cellLikelihoods.row(cell)), color: cssVar("--likelihood") },
         ],
         marker: position[step],
       });
@@ -780,7 +784,7 @@ export function renderReplay(root, payload, manifest) {
     }
     const rescued = METRICS.filter((m) => isRescued(m.name, index)).map((m) => m.label);
     rescue.textContent = rescued.length
-      ? `Rescued (${rescued.join(", ")}): flagged under the Continuous model but not under the Continuous–Fragmented model.`
+      ? `Rescued (${rescued.join(", ")}): flagged under the ${reference.label} model but not under the ${comparison.label} model.`
       : "";
   }
 
@@ -788,8 +792,8 @@ export function renderReplay(root, payload, manifest) {
     ariaLabel: "Hippocampal recording tracks. Use the arrow keys to step between spikes.",
     range,
     tracks: [
-      track("Prediction: Continuous", predictiveBitmap("continuous"), 92),
-      track("Prediction: Cont.–Frag.", predictiveBitmap("continuous_fragmented"), 92),
+      track(`Prediction: ${reference.label}`, predictiveBitmap(reference.id), 92),
+      track(`Prediction: ${comparison.short}`, predictiveBitmap(comparison.id), 92),
       track(
         "Likelihood",
         heatmapBitmap(likelihood, lut.likelihood),
@@ -802,11 +806,11 @@ export function renderReplay(root, payload, manifest) {
     eventTimes,
     select: selectEvent,
     announce: (index) =>
-      say(`${describeSpike(index)}. Continuous model: ${flagSummary(index, events.flagged)}`),
+      say(`${describeSpike(index)}. ${reference.label} model: ${flagSummary(index, events.flagged)}`),
   });
   // Open on the HPD-overlap rescue nearest the peak of population firing,
   // i.e., inside the replay event.
-  const peak = populationPeak(payload.spike_times, range);
+  const peak = populationPeak(payload.spike_times, range, dt);
   let initial = -1;
   eventTimes.forEach((t, i) => {
     if (!isRescued("hpd_overlap", i)) return;

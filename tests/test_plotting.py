@@ -8,11 +8,16 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
+from statespacecheck_paper.figure01_generation import create_distribution_comparison_panel
 from statespacecheck_paper.plotting import (
-    create_distribution_comparison_panel,
+    THRESHOLD_LABEL_GID,
+    THRESHOLD_LINE_GID,
+    WORSE_FIT_LABEL_GID,
     extract_contiguous_regions,
     negative_log_pvalue,
+    plot_event_metric_row,
 )
+from statespacecheck_paper.style import METRIC_SPEC_BY_NAME, SYMLOG_LINSCALE, SYMLOG_LINTHRESH
 
 
 class TestNegativeLogPvalue:
@@ -133,8 +138,8 @@ class TestCreateDistributionComparisonPanel:
         likelihood_params: tuple[float, float],
     ) -> None:
         """Both configurations must complete without error and still
-        produce HPD patches (regression: very-different-mean distributions
-        used to crash HPD bar placement)."""
+        produce HPD patches (HPD bar placement must handle distributions with
+        very different means)."""
         _, ax = fresh_axes
         create_distribution_comparison_panel(
             ax,
@@ -145,3 +150,48 @@ class TestCreateDistributionComparisonPanel:
             color_likelihood="orange",
         )
         assert len(ax.patches) >= 2
+
+
+class TestPlotEventMetricRow:
+    def _row(
+        self, metric: str, *, threshold: float | None = 0.05, show_annotations: bool = True
+    ) -> Any:
+        _, ax = plt.subplots()
+        plot_event_metric_row(
+            ax,
+            np.array([0.0, 1.0, 2.0]),
+            np.array([0.5, 0.05, 1.0]),
+            METRIC_SPEC_BY_NAME[metric],
+            threshold=threshold,
+            xlim=(0.0, 3.0),
+            ylabel="label",
+            symlog_yticks=(0.0, 0.1, 1.0),
+            symlog_ylim=(-0.005, 1.0),
+            show_annotations=show_annotations,
+        )
+        return ax
+
+    def test_pvalue_row_plots_values_and_threshold_on_neg_log_scale(self) -> None:
+        ax = self._row("predictive_pvalue")
+        offsets = np.asarray(ax.collections[0].get_offsets())
+        np.testing.assert_allclose(offsets[:, 1], -np.log([0.5, 0.05, 1.0]))
+        (line,) = [line for line in ax.lines if line.get_gid() == THRESHOLD_LINE_GID]
+        np.testing.assert_allclose(line.get_ydata(), -np.log(0.05))
+        gids = [text.get_gid() for text in ax.texts]
+        assert gids == [THRESHOLD_LABEL_GID, WORSE_FIT_LABEL_GID]
+        plt.close("all")
+
+    def test_hpd_row_uses_symlog_ticks(self) -> None:
+        ax = self._row("hpd_overlap")
+        assert ax.get_yscale() == "symlog"
+        transform = ax.yaxis.get_transform()
+        assert (transform.linthresh, transform.linscale) == (SYMLOG_LINTHRESH, SYMLOG_LINSCALE)
+        assert [label.get_text() for label in ax.get_yticklabels()] == ["0", "0.1", "1"]
+        assert ax.get_ylim() == (-0.005, 1.0)
+        plt.close("all")
+
+    def test_annotations_can_be_left_to_another_stack(self) -> None:
+        ax = self._row("kl_divergence", threshold=None, show_annotations=False)
+        assert len(ax.texts) == 0
+        assert not any(line.get_gid() == THRESHOLD_LINE_GID for line in ax.lines)
+        plt.close("all")

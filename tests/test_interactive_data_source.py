@@ -1,24 +1,30 @@
 """Tests for ``DecoderDataSource``.
 
 The unit-style tests build a tiny synthetic cache (Zarr + Parquet +
-sidecars) in ``tmp_path`` and exercise the windowed-read API. The
-real-data integration test (marked ``slow``) opens the cache built by
-``cache.build`` from the live intermediates and checks the same API
-plus latency targets from the plan.
+sidecars) in ``tmp_path`` and exercise the windowed-read API. Two
+real-data tests run only when viewer caches built by ``cache build``
+exist under ``data/cache/`` and are skipped otherwise (they carry no
+``slow`` marker). They check the recording's dimensions, the
+Continuous-Fragmented cache's two discrete states, and that a 2 s window
+read takes under 100 ms, a smoke check on the viewer's target of
+p95 ≤ 50 ms for 20 s windows.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import pytest
 
+from statespacecheck_paper.interactive import cache as cache_mod
 from statespacecheck_paper.interactive.data_source import DecoderDataSource
+from statespacecheck_paper.paths import REPO_ROOT
 
 from ._synthetic_cache import build_synthetic_cache
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
 CACHE_DIR = REPO_ROOT / "data" / "cache"
 
 
@@ -131,38 +137,41 @@ def test_index_at_time_returns_nearest_neighbor(synthetic_cache: Path) -> None:
         assert src.index_at_time(src.time[-1] + 1.0) == src.n_time - 1
 
 
-def test_load_posterior_returns_window_shape_and_dtype(synthetic_cache: Path) -> None:
+def test_load_predictive_returns_window_shape_and_dtype(synthetic_cache: Path) -> None:
     with DecoderDataSource(synthetic_cache, model="continuous") as src:
         sl = slice(50, 150)
-        post = src.load_posterior(sl)
-        assert post.shape == (100, src.n_state_bins)
-        assert post.dtype == np.float32
-        assert post.flags["C_CONTIGUOUS"]
+        predictive = src.load_predictive(sl)
+        assert predictive.shape == (100, src.n_state_bins)
+        assert predictive.dtype == np.float32
+        assert predictive.flags["C_CONTIGUOUS"]
 
 
-def test_load_likelihood_returns_window(synthetic_cache: Path) -> None:
+def test_load_log_likelihood_returns_window(synthetic_cache: Path) -> None:
     with DecoderDataSource(synthetic_cache, model="continuous") as src:
         sl = slice(0, 64)
-        loglik = src.load_likelihood(sl)
+        loglik = src.load_log_likelihood(sl)
         assert loglik.shape == (64, src.n_state_bins)
         assert loglik.dtype == np.float32
 
 
-def test_slice_at_index_matches_load_posterior_row(synthetic_cache: Path) -> None:
+def test_slice_at_index_matches_load_predictive_row(synthetic_cache: Path) -> None:
     with DecoderDataSource(synthetic_cache, model="continuous") as src:
         sl = slice(40, 60)
-        post = src.load_posterior(sl)
+        predictive = src.load_predictive(sl)
         for offset in [0, 5, 19]:
-            row = src.slice_at_index(sl.start + offset, which="posterior")
-            np.testing.assert_array_equal(row, post[offset])
+            row = src.slice_at_index(sl.start + offset, which="predictive")
+            np.testing.assert_array_equal(row, predictive[offset])
 
 
-def test_slice_at_index_likelihood_branch(synthetic_cache: Path) -> None:
+def test_slice_at_index_log_likelihood_branch(synthetic_cache: Path) -> None:
     with DecoderDataSource(synthetic_cache, model="continuous") as src:
         sl = slice(80, 96)
-        loglik = src.load_likelihood(sl)
-        row = src.slice_at_index(sl.start + 7, which="likelihood")
+        loglik = src.load_log_likelihood(sl)
+        row = src.slice_at_index(sl.start + 7, which="log_likelihood")
         np.testing.assert_array_equal(row, loglik[7])
+        # The row is a log likelihood, so the selector says so.
+        with pytest.raises(ValueError, match="Unknown slice variant: 'likelihood'"):
+            src.slice_at_index(sl.start, which="likelihood")
 
 
 def test_slice_at_index_raises_for_out_of_range(synthetic_cache: Path) -> None:
@@ -198,23 +207,70 @@ def test_events_in_window_empty_when_outside(synthetic_cache: Path) -> None:
             assert events["time"].max() <= src.time[0]
 
 
+def _rewrite_events(cache_dir: Path, edit: Callable[[pd.DataFrame], pd.DataFrame]) -> None:
+    """Apply ``edit`` to the synthetic Continuous cache's event table in place."""
+    path = cache_mod.recording_cache_paths(cache_dir, "continuous")["events"]
+    edit(pd.read_parquet(path)).to_parquet(path, engine="pyarrow")
+
+
+def test_cache_without_event_time_ind_is_rejected(synthetic_cache: Path) -> None:
+    """A cache built before events stored their bins must be rebuilt, not re-binned."""
+    _rewrite_events(synthetic_cache, lambda events: events.drop(columns="event_time_ind"))
+    with pytest.raises(ValueError, match=r"records no event_time_ind; rebuild it with .*--force"):
+        DecoderDataSource(synthetic_cache, model="continuous")
+
+
+def _as_float(events: pd.DataFrame) -> pd.DataFrame:
+    return events.astype({"event_time_ind": np.float64})
+
+
+def _past_the_grid(events: pd.DataFrame) -> pd.DataFrame:
+    events.loc[events.index[-1], "event_time_ind"] = 500
+    return events
+
+
+def _reversed(events: pd.DataFrame) -> pd.DataFrame:
+    events["event_time_ind"] = events["event_time_ind"].to_numpy()[::-1].copy()
+    return events
+
+
+@pytest.mark.parametrize(
+    ("edit", "message"),
+    [
+        (_as_float, "must be integer"),
+        (_past_the_grid, "out of range"),
+        (_reversed, "non-decreasing"),
+    ],
+    ids=["float", "out_of_range", "decreasing"],
+)
+def test_invalid_event_time_ind_is_rejected(
+    synthetic_cache: Path,
+    edit: Callable[[pd.DataFrame], pd.DataFrame],
+    message: str,
+) -> None:
+    _rewrite_events(synthetic_cache, edit)
+    with pytest.raises(ValueError, match=message):
+        DecoderDataSource(synthetic_cache, model="continuous")
+
+
 # ---------------------------------------------------------------------------
 # Real-cache integration tests (skip when the cache has not been built yet).
 # ---------------------------------------------------------------------------
 
 REAL_CONT_CACHE_AVAILABLE = (CACHE_DIR / "figure04_continuous.zarr").exists()
-REAL_CONTFRAG_CACHE_AVAILABLE = (CACHE_DIR / "figure04_contfrag.zarr").exists()
+REAL_CONTINUOUS_FRAGMENTED_CACHE_AVAILABLE = (
+    CACHE_DIR / "figure04_continuous_fragmented.zarr"
+).exists()
 
 
 @pytest.mark.skipif(
     not REAL_CONT_CACHE_AVAILABLE,
-    reason="Run `python -m statespacecheck_paper.interactive.cache build "
-    "--model continuous --data-dir data` first.",
+    reason="Run `python -m statespacecheck_paper.interactive.cache build --data-dir data` first.",
 )
 def test_real_continuous_cache_window_read_latency() -> None:
     """A 2-second window read on the real cache must comfortably beat 50 ms.
 
-    Plan target is window-load p95 ≤ 50 ms for 20 s windows; this test
+    The latency target is window-load p95 ≤ 50 ms for 20 s windows; this test
     is a smaller smoke check on a 2 s window (1000 samples at 500 Hz).
     """
     import time
@@ -224,21 +280,21 @@ def test_real_continuous_cache_window_read_latency() -> None:
         assert src.n_time == 709321
         assert src.n_cells == 203
         assert src.n_state_bins == 256
-        assert src.events.shape == (870018, 5)
+        assert src.events.shape == (870018, 6)
 
         # Cold + warm reads both well under the smoke target.
         sl = src.window_indices(t_center=src.time[100_000], t_width=2.0)
         t0 = time.perf_counter()
-        post = src.load_posterior(sl)
+        predictive = src.load_predictive(sl)
         cold_ms = (time.perf_counter() - t0) * 1000
 
         t0 = time.perf_counter()
-        post2 = src.load_posterior(sl)
+        predictive2 = src.load_predictive(sl)
         warm_ms = (time.perf_counter() - t0) * 1000
 
-        assert post.shape[1] == 256
-        assert post.shape == post2.shape
-        # Generous bound — the plan asks for 50 ms p95 on 20 s windows.
+        assert predictive.shape[1] == 256
+        assert predictive.shape == predictive2.shape
+        # Generous bound on the 50 ms p95 target for 20 s windows.
         assert cold_ms < 100, f"cold read {cold_ms:.1f} ms"
         assert warm_ms < 100, f"warm read {warm_ms:.1f} ms"
     finally:
@@ -246,12 +302,11 @@ def test_real_continuous_cache_window_read_latency() -> None:
 
 
 @pytest.mark.skipif(
-    not REAL_CONTFRAG_CACHE_AVAILABLE,
-    reason="Run `python -m statespacecheck_paper.interactive.cache build "
-    "--model contfrag --data-dir data` first.",
+    not REAL_CONTINUOUS_FRAGMENTED_CACHE_AVAILABLE,
+    reason="Run `python -m statespacecheck_paper.interactive.cache build --data-dir data` first.",
 )
-def test_real_contfrag_cache_has_two_states() -> None:
-    src = DecoderDataSource(CACHE_DIR, model="contfrag")
+def test_real_continuous_fragmented_cache_has_two_states() -> None:
+    src = DecoderDataSource(CACHE_DIR, model="continuous_fragmented")
     try:
         assert src.n_time == 709321
         assert src.n_cells == 203

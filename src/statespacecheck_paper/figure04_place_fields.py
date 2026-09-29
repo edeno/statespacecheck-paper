@@ -1,9 +1,9 @@
-"""Extracting place fields and marginalized posteriors from fitted models.
+"""Extracting place fields and position-marginal distributions from fitted models.
 
 Helpers that read the fitted ``non_local_detector`` decoder models and their
 ``predict`` outputs: per-observation-model place fields, the single shared
 position-dependent observation likelihood used for cross-model diagnostics, and
-the state-marginalized posterior over position.
+the decoder distributions marginalized over the dynamics mode.
 """
 
 from __future__ import annotations
@@ -15,6 +15,14 @@ import pandas as pd
 import xarray as xr
 from numpy.typing import NDArray
 
+# non_local_detector names its one-step predictive distribution p(x_k | y_{1:k-1})
+# ``predictive_posterior``; the paper calls it the predictive distribution. Every
+# request for, or read of, that decoder output uses this name.
+DECODER_PREDICTIVE_VAR = "predictive_posterior"
+# non_local_detector names its smoothed posterior p(x_k | y_{1:K})
+# ``acausal_posterior``; the paper calls it the smoothed posterior.
+DECODER_SMOOTHED_VAR = "acausal_posterior"
+
 
 def extract_place_fields(
     model: Any,
@@ -23,7 +31,7 @@ def extract_place_fields(
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Extract place fields and position bins from fitted decoder model.
 
-    Retrieves the place field firing rates and corresponding position bin centers
+    Retrieves the place fields and corresponding position bin centers
     from a fitted `SortedSpikesDecoder` or `ContFragSortedSpikesClassifier` model.
 
     Parameters
@@ -39,16 +47,10 @@ def extract_place_fields(
     Returns
     -------
     place_fields : np.ndarray, shape (n_cells, n_bins)
-        Firing rate at each position bin for each cell (in Hz or spikes/time).
+        Expected spike count per decoder time bin at each position bin, for
+        each cell (``non_local_detector``'s KDE place fields; not Hz).
     position_bins : np.ndarray, shape (n_bins,)
         Position bin centers.
-
-    Examples
-    --------
-    >>> # Requires fitted model from non_local_detector
-    >>> # place_fields, position_bins = extract_place_fields(model)
-    >>> # place_fields.shape  # (n_cells, n_bins)
-    >>> # position_bins.shape  # (n_bins,)
     """
     # Access place fields from encoding model
     # Key is tuple (environment_name, encoding_group)
@@ -62,38 +64,6 @@ def extract_place_fields(
     ].place_bin_centers_.squeeze()
 
     return place_fields, position_bins
-
-
-def extract_place_fields_concat(
-    model: Any,
-) -> tuple[NDArray[np.float64], NDArray[np.bool_]]:
-    """Concatenate per-observation-model place fields + the interior mask.
-
-    Returns the place fields aligned with the predictive posterior's
-    full ``state_bins`` axis (i.e. before the interior-mask filter):
-    one ``(n_cells, n_state_bins_full)`` array stacked across the
-    model's observation models, plus the matching boolean
-    ``is_track_interior_state_bins_`` mask. Callers that only need
-    the interior bins do ``place_fields[:, interior_mask]``.
-
-    Used by the interactive cache builder, which keeps both arrays so the
-    viewer can reconstruct the non-interior NaN columns. Diagnostics that
-    compare models with different numbers of discrete states should instead
-    use :func:`extract_shared_position_place_fields`.
-    """
-    place_fields = np.concatenate(
-        [
-            extract_place_fields(
-                model,
-                environment_name=obs.environment_name,
-                encoding_group=obs.encoding_group,
-            )[0]
-            for obs in model.observation_models
-        ],
-        axis=1,
-    )
-    interior_mask: NDArray[np.bool_] = np.asarray(model.is_track_interior_state_bins_, dtype=bool)
-    return place_fields, interior_mask
 
 
 def extract_shared_position_place_fields(
@@ -182,88 +152,133 @@ def extract_shared_position_place_fields(
     return place_fields[:, position_mask], position_bins[position_mask]
 
 
-def get_state_marginalized_posterior(
-    results: xr.Dataset,
-    posterior_type: Literal["predictive", "acausal"] = "predictive",
-) -> NDArray[np.float64]:
-    """Extract state-marginalized posterior from decoder results.
+def extract_agreed_place_fields(
+    continuous_model: Any,
+    continuous_fragmented_model: Any,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Extract the shared interior place fields both Figure-4 decoders agree on.
 
-    For multi-state models (e.g., ContFragSortedSpikesClassifier), sums over
-    states to get the marginal posterior over position. For single-state models,
-    simply extracts the posterior. Also handles NaN state bins (e.g., track edges).
-
-    Parameters
-    ----------
-    results : xr.Dataset
-        Decoding results from model.predict() containing posterior distributions.
-    posterior_type : {"predictive", "acausal"}, default "predictive"
-        Type of posterior to extract:
-        - "predictive": One-step-ahead prediction p(x_t | y_{1:t-1})
-        - "acausal": Smoothed posterior p(x_t | y_{1:T})
+    The per-spike diagnostics use one position likelihood for both decoders,
+    so each model's :func:`extract_shared_position_place_fields` must match the
+    other's (fields and grid, NaN equal to NaN) before one copy is used.
 
     Returns
     -------
-    posterior : np.ndarray, shape (n_time, n_bins)
-        State-marginalized posterior summed over states, with NaN bins dropped.
+    place_fields : np.ndarray, shape (n_cells, n_interior_bins)
+    position_bins : np.ndarray, shape (n_interior_bins,)
 
     Raises
     ------
     ValueError
-        If ``posterior_type`` is not ``"predictive"`` or ``"acausal"``,
+        If the two models' place fields or position grids differ.
+    """
+    place_fields, position_bins = extract_shared_position_place_fields(continuous_model)
+    other_fields, other_bins = extract_shared_position_place_fields(continuous_fragmented_model)
+    if not np.allclose(place_fields, other_fields, equal_nan=True) or not np.allclose(
+        position_bins, other_bins, equal_nan=True
+    ):
+        raise ValueError(
+            "Continuous and Continuous--Fragmented place fields or position "
+            "grids differ; the shared likelihood row would misrepresent one "
+            "of the decoders."
+        )
+    return place_fields, position_bins
+
+
+def marginalize_state_bins(distribution_da: xr.DataArray) -> xr.DataArray:
+    """Sum a distribution over the decoder's discrete states.
+
+    Multi-state models encode ``(state, position)`` in ``state_bins`` as a
+    MultiIndex, which is unstacked and summed over ``state``; a single-state
+    model's plain ``state_bins`` index is returned unchanged. Branching on the
+    index type, rather than catching a generic unstack failure, keeps a
+    malformed multi-state index from being treated as single-state and
+    returning a per-state slice labeled as the marginal.
+
+    Parameters
+    ----------
+    distribution_da : xr.DataArray, dims (time, state_bins)
+        Distribution over the decoder's state bins.
+
+    Returns
+    -------
+    xr.DataArray
+        Dims ``(time, position)`` for a multi-state model, else unchanged.
+
+    Raises
+    ------
+    ValueError
+        If the ``state_bins`` MultiIndex is malformed (e.g. duplicate
+        ``(state, position)`` entries) and cannot be unstacked.
+    """
+    if not isinstance(distribution_da.indexes["state_bins"], pd.MultiIndex):
+        return distribution_da
+    try:
+        unstacked: xr.DataArray = distribution_da.unstack("state_bins")
+    except (ValueError, KeyError, TypeError) as e:
+        raise ValueError(
+            "Failed to unstack the state_bins MultiIndex on the decoder "
+            "distribution; the index is malformed (likely duplicate "
+            f"(state, position) entries) and cannot be marginalized. Underlying error: {e}"
+        ) from e
+    # ``skipna=False``: if the per-state interior masks differed, unstack would
+    # back-fill missing (state, position) cells with NaN, and a skipna sum would
+    # silently produce an asymmetric marginal that still looks like a
+    # distribution. ``marginal_position_distribution``'s callers also pair this
+    # with ``extract_shared_position_place_fields`` (which rejects state-varying
+    # masks); the heatmap relies on this rule directly to draw such cells as NaN.
+    if "state" in unstacked.dims:
+        marginal: xr.DataArray = unstacked.sum("state", skipna=False)
+        return marginal
+    return unstacked
+
+
+def marginal_position_distribution(
+    results: xr.Dataset,
+    kind: Literal["predictive", "smoothed"],
+) -> NDArray[np.float64]:
+    """Return a decoder distribution marginalized over the dynamics mode.
+
+    For multi-state models (e.g., ContFragSortedSpikesClassifier), sums over
+    states to get the marginal distribution over position. For single-state
+    models, simply extracts the distribution. Also drops NaN state bins (e.g.,
+    track edges).
+
+    Parameters
+    ----------
+    results : xr.Dataset
+        Decoding results from model.predict().
+    kind : {"predictive", "smoothed"}
+        Distribution to extract:
+        - "predictive": one-step predictive distribution p(x_t | y_{1:t-1})
+          (:data:`DECODER_PREDICTIVE_VAR`)
+        - "smoothed": smoothed posterior p(x_t | y_{1:T})
+          (:data:`DECODER_SMOOTHED_VAR`)
+
+    Returns
+    -------
+    distribution : np.ndarray, shape (n_time, n_bins)
+        Position-marginal distribution summed over states, with NaN bins dropped.
+
+    Raises
+    ------
+    ValueError
+        If ``kind`` is not ``"predictive"`` or ``"smoothed"``,
         or if the ``state_bins`` MultiIndex on a multi-state model is
         malformed (e.g. duplicate ``(state, position)`` entries) and
         cannot be unstacked. Refusing here is intentional: a silent
         fallback would return a per-state slice labeled as the
-        marginal posterior, producing a wrong figure.
-
-    Examples
-    --------
-    >>> # Requires xarray Dataset from non_local_detector
-    >>> # posterior = get_state_marginalized_posterior(results, "predictive")
-    >>> # posterior.shape  # (n_time, n_bins)
+        marginal distribution, producing a wrong figure.
     """
-    # Select appropriate posterior
-    if posterior_type == "predictive":
-        posterior_da = results.predictive_posterior
-    elif posterior_type == "acausal":
-        posterior_da = results.acausal_posterior
+    if kind == "predictive":
+        distribution_da = results[DECODER_PREDICTIVE_VAR]
+    elif kind == "smoothed":
+        distribution_da = results[DECODER_SMOOTHED_VAR]
     else:
-        raise ValueError(
-            f"Invalid posterior_type: {posterior_type}. Must be 'predictive' or 'acausal'."
-        )
+        raise ValueError(f"Invalid kind: {kind}. Must be 'predictive' or 'smoothed'.")
 
     # Drop NaN state bins (e.g., track interior only)
-    posterior_da = posterior_da.dropna("state_bins")
+    distribution_da = distribution_da.dropna("state_bins")
 
-    # Multi-state models encode (state, position) in state_bins as a
-    # MultiIndex; single-state models use a plain Index. Branch on
-    # the index type rather than catching a generic unstack failure,
-    # which would silently treat a malformed multi-state model as
-    # single-state and produce a per-state slice labeled as marginal.
-    state_bins_index = posterior_da.indexes["state_bins"]
-    if isinstance(state_bins_index, pd.MultiIndex):
-        try:
-            unstacked = posterior_da.unstack("state_bins")
-        except (ValueError, KeyError) as e:
-            raise ValueError(
-                "Failed to unstack the state_bins MultiIndex on the "
-                "decoder posterior; the index is malformed (likely "
-                "duplicate (state, position) entries) and cannot be "
-                f"marginalized. Underlying error: {e}"
-            ) from e
-        # ``skipna=False``: if the per-state interior masks differed, unstack
-        # would back-fill missing (state, position) cells with NaN, and a
-        # skipna sum would silently produce an asymmetric marginal that still
-        # looks like a distribution. Callers pair this with
-        # ``extract_shared_position_place_fields`` (which rejects state-varying
-        # masks), but this keeps the marginal honest even without that guard.
-        if "state" in unstacked.dims:
-            marginalized = unstacked.sum("state", skipna=False)
-        else:
-            marginalized = unstacked
-        posterior: NDArray[np.float64] = np.asarray(marginalized.values)
-    else:
-        # Single-state model: no states to sum over.
-        posterior = np.asarray(posterior_da.values)
-
-    return posterior
+    distribution: NDArray[np.float64] = np.asarray(marginalize_state_bins(distribution_da).values)
+    return distribution

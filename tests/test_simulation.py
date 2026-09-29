@@ -12,7 +12,7 @@ from numpy.typing import NDArray
 from statespacecheck_paper.simulation import (
     gaussian_transition_matrix,
     normalize,
-    place_field_rates,
+    place_field_expected_counts,
     reflect_into_interval,
     simulate_spikes_history_dependent,
     simulate_spikes_position_tuned,
@@ -174,13 +174,13 @@ class TestGaussianTransitionMatrix:
 
 
 # ---------------------------------------------------------------------------
-# place_field_rates
+# place_field_expected_counts
 # ---------------------------------------------------------------------------
 
 
 class TestPlaceFieldRates:
     def test_shape(self) -> None:
-        rates = place_field_rates(
+        rates = place_field_expected_counts(
             np.linspace(0, 10, 11),
             np.array([2.0, 5.0, 8.0]),
             place_field_std=1.0,
@@ -190,7 +190,7 @@ class TestPlaceFieldRates:
 
     def test_peak_is_at_place_field_center(self) -> None:
         xs = np.linspace(0, 10, 101)
-        rates = place_field_rates(
+        rates = place_field_expected_counts(
             xs, np.array([5.0]), place_field_std=1.0, place_field_rate_scale=1.0
         )
         center_idx = int(np.argmin(np.abs(xs - 5.0)))
@@ -199,13 +199,17 @@ class TestPlaceFieldRates:
     def test_scale_multiplies_rates(self) -> None:
         xs = np.linspace(0, 10, 11)
         centers = np.array([5.0])
-        baseline = place_field_rates(xs, centers, place_field_std=1.0, place_field_rate_scale=1.0)
-        doubled = place_field_rates(xs, centers, place_field_std=1.0, place_field_rate_scale=2.0)
+        baseline = place_field_expected_counts(
+            xs, centers, place_field_std=1.0, place_field_rate_scale=1.0
+        )
+        doubled = place_field_expected_counts(
+            xs, centers, place_field_std=1.0, place_field_rate_scale=2.0
+        )
         assert_allclose(doubled, 2.0 * baseline)
 
     def test_empty_centers_yields_empty_columns(self) -> None:
         """Edge case: no cells -> shape (n_bins, 0) without error."""
-        rates = place_field_rates(
+        rates = place_field_expected_counts(
             np.linspace(0, 10, 11), np.array([]), place_field_std=1.0, place_field_rate_scale=1.0
         )
         assert rates.shape == (11, 0)
@@ -334,7 +338,7 @@ def test_place_field_rates_floor_underflow_keeps_event_likelihood_positive() -> 
     import statespacecheck as ssc
 
     bins = np.arange(0.0, 101.0)
-    rates = place_field_rates(
+    rates = place_field_expected_counts(
         bins, np.array([0.0]), place_field_std=2.0, place_field_rate_scale=1.0
     )
     assert np.all(rates > 0.0)
@@ -345,7 +349,7 @@ def test_place_field_rates_floor_underflow_keeps_event_likelihood_positive() -> 
     likelihood = (rates[:, 0] / rates[:, 0].sum())[None, :]
     assert np.isfinite(ssc.kl_divergence(prediction, likelihood)[0])
     # A zero scale is a genuinely silent cell and stays exactly zero.
-    silent = place_field_rates(bins, np.array([0.0]), 2.0, 0.0)
+    silent = place_field_expected_counts(bins, np.array([0.0]), 2.0, 0.0)
     assert np.all(silent == 0.0)
 
 

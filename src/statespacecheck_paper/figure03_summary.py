@@ -19,7 +19,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Literal, cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -28,9 +27,12 @@ from statespacecheck_paper.diagnostics import (
     BASELINE_HPD_OVERLAP_QUANTILE,
     BASELINE_KL_DIVERGENCE_QUANTILE,
     FIXED_PREDICTIVE_PVALUE_CUTOFF,
+    METRIC_FLAG_DIRECTIONS,
     DecodingDiagnostics,
     DiagnosticThresholds,
+    FlagDirection,
     compute_baseline_diagnostic_thresholds,
+    flag_mask,
 )
 from statespacecheck_paper.figure03_protocol import (
     Figure3Config,
@@ -39,16 +41,20 @@ from statespacecheck_paper.figure03_protocol import (
 )
 from statespacecheck_paper.figure03_simulation import run_figure03_simulation
 
-SUMMARY_FLAG_METRICS: tuple[tuple[str, Literal["below", "above"]], ...] = (
-    ("hpd_overlap", "below"),
-    ("predictive_pvalue", "below"),
-    ("kl_divergence", "above"),
-)
+SUMMARY_FLAG_METRICS: tuple[tuple[str, FlagDirection], ...] = tuple(METRIC_FLAG_DIRECTIONS.items())
 
-# Row order of the per-condition decoding-accuracy block beneath the flag
-# heatmap: currently the median absolute error of the filtered-posterior
-# mean (position units).
-SUMMARY_ACCURACY_METRICS: tuple[str, ...] = ("median_absolute_error",)
+# Row order of the per-condition decoding-error block beneath the flag
+# heatmap: the median absolute error of the filtered-posterior mean
+# (position units).
+SUMMARY_ERROR_METRICS: tuple[str, ...] = ("median_absolute_error",)
+
+# Number of independent realizations pooled to stabilize the panel-(b)
+# summary. A single run's flag thresholds and per-phase percentages are
+# noisy (the tail quantiles rest on few events, and the remap flag
+# percentage swings with the trajectory); pooling many realizations gives
+# a stable threshold and a median per-phase summary.
+# The seed-1 realization shown in panel (a) is one of these.
+N_REALIZATIONS = 100
 
 
 @dataclass(frozen=True)
@@ -57,8 +63,17 @@ class Figure3SummaryCondition:
 
     Parameters
     ----------
+    condition_id : str
+        Stable identifier, e.g. ``"remap"``. The published summary's
+        ``condition_order`` and the website key each column by it.
+    title : str
+        Full, unwrapped name, e.g. ``"History-dependent firing"``: the
+        website's condition tabs.
     label : str
-        Column header (may contain a newline for a two-line label).
+        Column header, abbreviated to fit (may contain a newline for a
+        two-line label). Unwrapped (:attr:`unwrapped_label`), it names the
+        condition's band above Figure 3a and in the summary's
+        ``condition_labels``.
     step_windows : tuple of (int, int)
         Half-open ``[t0, t1)`` time-step conditions aggregated into this
         column. The well-specified column concatenates the three
@@ -70,26 +85,38 @@ class Figure3SummaryCondition:
         in the attribution row beneath the heatmap.
     """
 
+    condition_id: str
+    title: str
     label: str
     step_windows: tuple[tuple[int, int], ...]
     model_component: str
+
+    @property
+    def unwrapped_label(self) -> str:
+        r""":attr:`label` on one line, keeping the hyphen of a hyphenated break.
+
+        Examples
+        --------
+        >>> Figure3SummaryCondition("c", "C", "History-\ndep.", ((0, 1),), "—").unwrapped_label
+        'History-dep.'
+        """
+        return self.label.replace("-\n", "-").replace("\n", " ")
 
 
 def build_summary_conditions(config: Figure3Config) -> list[Figure3SummaryCondition]:
     """Phase columns for the Figure-3b summary heatmap.
 
-    Single source of truth for the heatmap's columns, shared by the
-    single-run flag-percentage helper (:func:`compute_condition_flag_percentages`)
-    and the multi-realization averaging
-    path (:func:`statespacecheck_paper.figure03_summary.estimate_realization_summary`)
+    Single source of truth for the heatmap's columns, used by the
+    multi-realization averaging path
+    (:func:`statespacecheck_paper.figure03_summary.estimate_realization_summary`)
     so the column order, time windows, and component labels cannot drift
     out of sync. ``compose_figure03`` renders from precomputed
-    ``median_flag_percentages`` rather than calling either helper directly.
+    ``median_flag_percentages`` rather than recomputing them.
 
     The first column ("Well-specified") aggregates the clean-recovery
-    conditions (with the replay sub-window carved out) into an out-of-sample
-    false-positive rate against the matched misfit columns. The "Replay"
-    column scores the replay event, which is not a misspecification.
+    conditions (with the replay sub-window carved out) into a false-positive
+    rate outside the opening baseline that sets the thresholds. The "Replay"
+    column scores the replay event, a control with no observation misfit.
 
     Parameters
     ----------
@@ -114,12 +141,14 @@ def build_summary_conditions(config: Figure3Config) -> list[Figure3SummaryCondit
     t_recovery3_end = bnd[PhaseBoundary.RECOVERY3_END]
     t_sparse_pop_end = bnd[PhaseBoundary.SPARSE_POP_END]
     # The replay event sits inside clean-recovery 2; carve it out of the
-    # well-specified pool (it is scored in its own column) so its spikes
-    # neither define the baseline diagnostic_thresholds nor dilute the false-positive
-    # rate.
+    # well-specified pool (it is scored in its own column) so its spikes do
+    # not dilute the false-positive rate. The thresholds come from the opening
+    # baseline, which no column includes.
     r0, r1 = compute_replay_step_window(config)
     return [
         Figure3SummaryCondition(
+            "well_specified",
+            "Well-specified",
             "Well-\nspecified",
             (
                 (t_remap_end, t_recovery1_end),
@@ -129,13 +158,23 @@ def build_summary_conditions(config: Figure3Config) -> list[Figure3SummaryCondit
             ),
             "—",
         ),
-        Figure3SummaryCondition("Remap", ((t_remap_start, t_remap_end),), "Observation"),
         Figure3SummaryCondition(
-            "History-\ndep.", ((t_recovery1_end, t_hist_dep_end),), "Observation"
+            "remap", "Remap", "Remap", ((t_remap_start, t_remap_end),), "Observation"
         ),
-        Figure3SummaryCondition("Replay", ((r0, r1),), "—"),
-        Figure3SummaryCondition("Drift", ((t_recovery2_end, t_drift_end),), "Transition"),
         Figure3SummaryCondition(
+            "history_dependent",
+            "History-dependent firing",
+            "History-\ndep.",
+            ((t_recovery1_end, t_hist_dep_end),),
+            "Observation",
+        ),
+        Figure3SummaryCondition("replay", "Replay", "Replay", ((r0, r1),), "—"),
+        Figure3SummaryCondition(
+            "drift", "Drift", "Drift", ((t_recovery2_end, t_drift_end),), "Transition"
+        ),
+        Figure3SummaryCondition(
+            "sparse_population",
+            "Sparse population",
             "Sparse\npopulation",
             ((t_recovery3_end, t_sparse_pop_end),),
             "—",
@@ -143,7 +182,14 @@ def build_summary_conditions(config: Figure3Config) -> list[Figure3SummaryCondit
     ]
 
 
-def _flag_percentage(values: NDArray[np.floating], threshold: float, direction: str) -> float:
+def conditions_by_id(config: Figure3Config) -> dict[str, Figure3SummaryCondition]:
+    """Key each summary condition by its ``condition_id``, in summary column order."""
+    return {condition.condition_id: condition for condition in build_summary_conditions(config)}
+
+
+def _flag_percentage(
+    values: NDArray[np.floating], threshold: float, direction: FlagDirection
+) -> float:
     """Percent of ``values`` flagged as poor fit at ``threshold``.
 
     Parameters
@@ -153,8 +199,7 @@ def _flag_percentage(values: NDArray[np.floating], threshold: float, direction: 
     threshold : float
         Flag threshold.
     direction : {"below", "above"}
-        ``"below"`` flags ``values <= threshold``; ``"above"`` flags
-        ``values >= threshold``.
+        Worse-fit side of ``threshold``, applied by :func:`flag_mask`.
 
     Returns
     -------
@@ -165,17 +210,11 @@ def _flag_percentage(values: NDArray[np.floating], threshold: float, direction: 
         raise ValueError("Cannot compute a flag percentage for a condition with no spike events")
     if np.any(np.isnan(values)) or np.any(np.isneginf(values)):
         raise ValueError("Per-event diagnostic values must not contain NaN or -inf")
-    if direction == "below":
-        flagged = float(np.mean(values <= threshold))
-    elif direction == "above":
-        flagged = float(np.mean(values >= threshold))
-    else:
-        raise ValueError(f"direction must be 'below' or 'above'; got {direction!r}")
-    return 100.0 * flagged
+    return 100.0 * float(np.mean(flag_mask(values, threshold, direction)))
 
 
 def extract_condition_flag_values(
-    diagnostics: DecodingDiagnostics | Mapping[str, NDArray[np.floating] | NDArray[np.intp]],
+    diagnostics: DecodingDiagnostics,
     conditions: list[Figure3SummaryCondition],
 ) -> list[list[NDArray[np.floating]]]:
     """Collect per-spike-event diagnostic values per metric per column.
@@ -189,7 +228,7 @@ def extract_condition_flag_values(
 
     Parameters
     ----------
-    diagnostics : DecodingDiagnostics or Mapping[str, NDArray]
+    diagnostics : DecodingDiagnostics
         Source of the per-event arrays ``event_time_ind`` (int) and
         ``event_{hpd_overlap,kl_divergence,predictive_pvalue}`` (float), each of
         shape ``(n_events,)``.
@@ -204,19 +243,10 @@ def extract_condition_flag_values(
         event time falls inside that column's half-open time windows. Metric
         order follows :data:`SUMMARY_FLAG_METRICS`.
     """
-
-    def _get(name: str) -> NDArray[np.generic]:
-        arr = (
-            getattr(diagnostics, name)
-            if isinstance(diagnostics, DecodingDiagnostics)
-            else diagnostics[name]
-        )
-        return cast("NDArray[np.generic]", arr)
-
-    event_time = np.asarray(_get("event_time_ind"))
+    event_time = np.asarray(diagnostics.event_time_ind)
     out: list[list[NDArray[np.floating]]] = []
     for metric_key, _direction in SUMMARY_FLAG_METRICS:
-        ev = np.asarray(_get("event_" + metric_key), dtype=float)
+        ev = np.asarray(getattr(diagnostics, "event_" + metric_key), dtype=float)
         per_window: list[NDArray[np.floating]] = []
         for col in conditions:
             mask = np.zeros(event_time.shape, dtype=bool)
@@ -238,7 +268,7 @@ def flag_percentages_from_values(
 ) -> NDArray[np.floating]:
     """Percent flagged per metric per column from pre-extracted values.
 
-    Splitting this out from :func:`compute_condition_flag_percentages` lets the
+    Separating this from :func:`extract_condition_flag_values` lets the
     multi-realization averaging path
     (:func:`statespacecheck_paper.figure03_summary.estimate_realization_summary`)
     extract each realization's per-column values once and apply a
@@ -267,45 +297,15 @@ def flag_percentages_from_values(
     return frac
 
 
-def compute_condition_flag_percentages(
-    diagnostics: DecodingDiagnostics | Mapping[str, NDArray[np.floating]],
-    diagnostic_thresholds: DiagnosticThresholds,
-    conditions: list[Figure3SummaryCondition],
-) -> NDArray[np.floating]:
-    """Percent of spike events flagged per metric per phase column.
-
-    Convenience wrapper around :func:`extract_condition_flag_values` +
-    :func:`flag_percentages_from_values` for the single-realization renderer.
-
-    Parameters
-    ----------
-    diagnostics : DecodingDiagnostics or Mapping[str, NDArray]
-        Diagnostic matrices for a single realization.
-    diagnostic_thresholds : DiagnosticThresholds
-        Flag thresholds (one per metric).
-    conditions : list of Figure3SummaryCondition
-        Heatmap columns from :func:`build_summary_conditions`.
-
-    Returns
-    -------
-    np.ndarray, shape (3, n_columns)
-        Percent (0–100) flagged. Rows follow :data:`SUMMARY_FLAG_METRICS`;
-        columns follow ``conditions``.
-    """
-    return flag_percentages_from_values(
-        extract_condition_flag_values(diagnostics, conditions), diagnostic_thresholds
-    )
-
-
-def compute_condition_decoding_accuracy(
+def compute_condition_decoding_error(
     posterior: NDArray[np.floating],
     position_bins: NDArray[np.floating],
-    true_position: NDArray[np.floating],
+    physical_position: NDArray[np.floating],
     conditions: list[Figure3SummaryCondition],
 ) -> NDArray[np.floating]:
-    """Per-condition decoding accuracy of the filtered posterior.
+    """Per-condition decoding error of the filtered posterior.
 
-    Scores the decoder's state estimate against the stored true position
+    Scores the decoder's state estimate against the animal's physical position
     inside each summary column's time windows. Unlike the flag percentages,
     which are per spike event, these are per time step, so every step in a
     window counts whether or not a spike occurred.
@@ -317,18 +317,19 @@ def compute_condition_decoding_accuracy(
         need not be normalized, but each must carry positive finite mass.
     position_bins : np.ndarray, shape (n_bins,)
         Position-grid bin centres (position units).
-    true_position : np.ndarray, shape (n_time,)
-        True position at each time step. For the replay control this is the
-        animal's fixed physical position, so the replay column measures the
-        decoded-versus-physical gap by construction.
+    physical_position : np.ndarray, shape (n_time,)
+        The animal's physical position at each time step. Outside replay the
+        spikes follow it; during the replay control they follow a represented
+        trajectory while the physical position stays fixed, so the replay
+        column measures the decoded-versus-physical gap by construction.
     conditions : list of Figure3SummaryCondition
         Heatmap columns from :func:`build_summary_conditions`.
 
     Returns
     -------
     np.ndarray, shape (1, n_columns)
-        Rows follow :data:`SUMMARY_ACCURACY_METRICS`: the median absolute
-        error between the posterior mean and ``true_position``, in position
+        Rows follow :data:`SUMMARY_ERROR_METRICS`: the median absolute
+        error between the posterior mean and ``physical_position``, in position
         units.
 
     Raises
@@ -339,7 +340,7 @@ def compute_condition_decoding_accuracy(
     """
     posterior = np.asarray(posterior, dtype=float)
     position_bins = np.asarray(position_bins, dtype=float)
-    true_position = np.asarray(true_position, dtype=float)
+    physical_position = np.asarray(physical_position, dtype=float)
     if posterior.ndim != 2:
         raise ValueError(f"posterior must be 2-D (n_time, n_bins); got shape {posterior.shape}")
     n_time, n_bins = posterior.shape
@@ -348,25 +349,25 @@ def compute_condition_decoding_accuracy(
             f"position_bins must have shape ({n_bins},) to match posterior; "
             f"got {position_bins.shape}"
         )
-    if true_position.shape != (n_time,):
+    if physical_position.shape != (n_time,):
         raise ValueError(
-            f"true_position must have shape ({n_time},) to match posterior; "
-            f"got {true_position.shape}"
+            f"physical_position must have shape ({n_time},) to match posterior; "
+            f"got {physical_position.shape}"
         )
     if not (
         np.all(np.isfinite(posterior))
         and np.all(np.isfinite(position_bins))
-        and np.all(np.isfinite(true_position))
+        and np.all(np.isfinite(physical_position))
     ):
-        raise ValueError("posterior, position_bins, and true_position must all be finite")
+        raise ValueError("posterior, position_bins, and physical_position must all be finite")
     mass = posterior.sum(axis=1)
     if np.any(mass <= 0.0):
         raise ValueError("Every posterior row must carry positive mass")
 
     posterior_mean = (posterior @ position_bins) / mass
-    abs_error = np.abs(posterior_mean - true_position)
+    abs_error = np.abs(posterior_mean - physical_position)
 
-    out = np.zeros((len(SUMMARY_ACCURACY_METRICS), len(conditions)))
+    out = np.zeros((len(SUMMARY_ERROR_METRICS), len(conditions)))
     for j, col in enumerate(conditions):
         mask = np.zeros(n_time, dtype=bool)
         for t0, t1 in col.step_windows:
@@ -377,7 +378,7 @@ def compute_condition_decoding_accuracy(
     return out
 
 
-def median_standard_error(samples: NDArray[np.floating], axis: int = 0) -> NDArray[np.floating]:
+def median_standard_error(samples: NDArray[np.floating]) -> NDArray[np.floating]:
     """Approximate a median's standard error from an order-statistic interval.
 
     This is an *approximate* standard error, and it is conditional on the
@@ -400,15 +401,13 @@ def median_standard_error(samples: NDArray[np.floating], axis: int = 0) -> NDArr
 
     Parameters
     ----------
-    samples : np.ndarray
-        Sample values; ``axis`` indexes the realizations.
-    axis : int, default 0
-        Axis to reduce.
+    samples : np.ndarray, shape (n_samples, ...)
+        Sample values; the first axis indexes the realizations.
 
     Returns
     -------
     standard_error : np.ndarray
-        Approximate standard error of the median, with ``axis`` removed.
+        Approximate standard error of the median, shape ``samples.shape[1:]``.
         Returns zero when the selected order statistics coincide, including
         when every sample is identical; this does not establish zero
         population uncertainty.
@@ -427,14 +426,14 @@ def median_standard_error(samples: NDArray[np.floating], axis: int = 0) -> NDArr
     >>> bool(np.all(se < 0.1))
     True
     """
-    n_samples = samples.shape[axis]
+    n_samples = samples.shape[0]
     z = 1.96
     # Convert the 1-based order statistics to 0-based indices, clipped so a
     # small sample cannot index outside the array.
     lower = max(int(np.floor(n_samples / 2 - z * np.sqrt(n_samples) / 2)) - 1, 0)
     upper = min(n_samples - lower - 1, n_samples - 1)
-    ordered = np.sort(samples, axis=axis)
-    interval = np.take(ordered, upper, axis=axis) - np.take(ordered, lower, axis=axis)
+    ordered = np.sort(samples, axis=0)
+    interval = ordered[upper] - ordered[lower]
     return np.asarray(interval / (2.0 * z), dtype=float)
 
 
@@ -443,20 +442,25 @@ class Figure3RealizationSummary:
     """Figure-3 thresholds and every realization's flags and errors, with their medians.
 
     Aggregates ``n_realizations`` independent realizations of the figure-3
-    simulation so the Figure-3b heatmap and its flag diagnostic_thresholds no longer
-    depend on a single noisy run (a single run's KL 99th-percentile
-    threshold varies ~17% across seeds).
+    simulation so the Figure-3b heatmap and its flag thresholds do not
+    depend on a single noisy run.
 
     - ``diagnostic_thresholds`` are computed from the per-spike baseline diagnostics
       pooled across all realizations — a far more stable estimate of the
       baseline interval than one run's quantile.
+    - ``baseline_flagged_fractions`` records, per metric, the fraction of those
+      pooled baseline events flagged under ``diagnostic_thresholds``. Because
+      flags are inclusive, values tied at a threshold are all flagged, so this
+      fraction can exceed the quantile that set the threshold (the HPD-overlap
+      threshold is 0 once about 1% of baseline events have disjoint HPD
+      regions, and then every such event is flagged).
     - ``realization_flag_percentages`` holds each realization's percent of spike
       events flagged in each phase column by each metric (every realization
       scored against the shared pooled-baseline ``diagnostic_thresholds``), and
-      ``realization_decoding_accuracy`` each realization's per-column decoding
-      accuracy from :func:`compute_condition_decoding_accuracy`. Keeping them
+      ``realization_decoding_error`` each realization's per-column decoding
+      error from :func:`compute_condition_decoding_error`. Keeping them
       shows the spread across realizations, not only its center.
-    - ``median_flag_percentages`` and ``median_decoding_accuracy`` are their
+    - ``median_flag_percentages`` and ``median_decoding_error`` are their
       medians across realizations. The median is used in place of the mean
       because the remapping column is strongly trajectory-dependent and skewed
       across realizations.
@@ -464,45 +468,60 @@ class Figure3RealizationSummary:
     Parameters
     ----------
     diagnostic_thresholds : DiagnosticThresholds
-        Pooled-baseline flag diagnostic_thresholds.
+        Pooled-baseline flag thresholds.
+    baseline_flagged_fractions : Mapping[str, float]
+        Fraction (0-1) of the pooled baseline spike events flagged under
+        ``diagnostic_thresholds``, keyed by each metric in
+        :data:`SUMMARY_FLAG_METRICS`.
     realization_flag_percentages : np.ndarray, shape (n_realizations, 3, n_columns)
         Percent flagged in each realization, in seed order. The middle axis
         follows :data:`statespacecheck_paper.figure03_summary.SUMMARY_FLAG_METRICS`;
         columns follow
         :func:`statespacecheck_paper.figure03_summary.build_summary_conditions`.
-    realization_decoding_accuracy : np.ndarray, shape (n_realizations, 1, n_columns)
-        Decoding accuracy in each realization. The middle axis follows
-        :data:`statespacecheck_paper.figure03_summary.SUMMARY_ACCURACY_METRICS`;
+    realization_decoding_error : np.ndarray, shape (n_realizations, 1, n_columns)
+        Decoding error in each realization. The middle axis follows
+        :data:`statespacecheck_paper.figure03_summary.SUMMARY_ERROR_METRICS`;
         realizations and columns match ``realization_flag_percentages``.
 
     Raises
     ------
     ValueError
         If ``realization_flag_percentages`` is not 3-D with at least one
-        realization, or ``realization_decoding_accuracy`` is not
-        ``(n_realizations, 1, n_columns)``.
+        realization, ``realization_decoding_error`` is not
+        ``(n_realizations, 1, n_columns)``, or ``baseline_flagged_fractions``
+        does not hold one fraction in ``[0, 1]`` per flag metric.
     """
 
     diagnostic_thresholds: DiagnosticThresholds
+    baseline_flagged_fractions: Mapping[str, float]
     realization_flag_percentages: NDArray[np.floating]
-    realization_decoding_accuracy: NDArray[np.floating]
+    realization_decoding_error: NDArray[np.floating]
 
     def __post_init__(self) -> None:
+        metrics = [metric for metric, _ in SUMMARY_FLAG_METRICS]
+        fractions = self.baseline_flagged_fractions
+        if sorted(fractions) != sorted(metrics) or not all(
+            0.0 <= fractions[metric] <= 1.0 for metric in metrics
+        ):
+            raise ValueError(
+                "Figure3RealizationSummary.baseline_flagged_fractions must map each of "
+                f"{metrics} to a fraction in [0, 1]; got {dict(fractions)}"
+            )
         flags = self.realization_flag_percentages
         if flags.ndim != 3 or flags.shape[0] < 1:
             raise ValueError(
                 "Figure3RealizationSummary.realization_flag_percentages must be 3-D "
                 f"(n_realizations >= 1, n_metrics, n_columns); got shape {flags.shape}"
             )
-        expected = (flags.shape[0], len(SUMMARY_ACCURACY_METRICS), flags.shape[2])
-        if self.realization_decoding_accuracy.shape != expected:
+        expected = (flags.shape[0], len(SUMMARY_ERROR_METRICS), flags.shape[2])
+        if self.realization_decoding_error.shape != expected:
             raise ValueError(
-                "Figure3RealizationSummary.realization_decoding_accuracy must have shape "
+                "Figure3RealizationSummary.realization_decoding_error must have shape "
                 f"{expected} to match realization_flag_percentages; "
-                f"got shape {self.realization_decoding_accuracy.shape}"
+                f"got shape {self.realization_decoding_error.shape}"
             )
         flags.setflags(write=False)
-        self.realization_decoding_accuracy.setflags(write=False)
+        self.realization_decoding_error.setflags(write=False)
 
     @property
     def n_realizations(self) -> int:
@@ -515,9 +534,9 @@ class Figure3RealizationSummary:
         return np.asarray(np.median(self.realization_flag_percentages, axis=0), dtype=float)
 
     @property
-    def median_decoding_accuracy(self) -> NDArray[np.floating]:
-        """Median decoding accuracy across realizations, shape ``(1, n_columns)``."""
-        return np.asarray(np.median(self.realization_decoding_accuracy, axis=0), dtype=float)
+    def median_decoding_error(self) -> NDArray[np.floating]:
+        """Median decoding error across realizations, shape ``(1, n_columns)``."""
+        return np.asarray(np.median(self.realization_decoding_error, axis=0), dtype=float)
 
     @property
     def flag_percentage_standard_errors(self) -> NDArray[np.floating]:
@@ -531,12 +550,15 @@ class Figure3RealizationSummary:
         return median_standard_error(self.realization_flag_percentages)
 
     @property
-    def decoding_accuracy_standard_errors(self) -> NDArray[np.floating]:
-        """Approximate standard error of each median decoding accuracy, ``(1, n_columns)``."""
-        return median_standard_error(self.realization_decoding_accuracy)
+    def decoding_error_standard_errors(self) -> NDArray[np.floating]:
+        """Approximate standard error of each median decoding error, ``(1, n_columns)``."""
+        return median_standard_error(self.realization_decoding_error)
 
 
-def baseline_threshold_provenance(config: Figure3Config) -> dict[str, object]:
+def baseline_threshold_provenance(
+    config: Figure3Config,
+    baseline_flagged_fractions: Mapping[str, float],
+) -> dict[str, object]:
     """Describe the rule that produced the Figure-3 flag thresholds.
 
     :func:`estimate_realization_summary` reports threshold *values*; the
@@ -544,11 +566,16 @@ def baseline_threshold_provenance(config: Figure3Config) -> dict[str, object]:
     pooled opening baseline, plus the fixed predictive-p-value cutoff). This
     returns that rule in machine-readable form, reading the same constants
     and the same baseline boundary the estimate uses, so the two cannot drift.
+    Each metric's entry also records the fraction of the pooled baseline
+    events flagged under its threshold.
 
     Parameters
     ----------
     config : Figure3Config
         Configuration whose phase ladder defines the baseline window.
+    baseline_flagged_fractions : Mapping[str, float]
+        Fraction (0-1) of pooled baseline events flagged per metric
+        (:attr:`Figure3RealizationSummary.baseline_flagged_fractions`).
 
     Returns
     -------
@@ -557,7 +584,8 @@ def baseline_threshold_provenance(config: Figure3Config) -> dict[str, object]:
 
     Examples
     --------
-    >>> baseline_threshold_provenance(Figure3Config())["baseline_end_index"]
+    >>> fractions = {"hpd_overlap": 0.02, "predictive_pvalue": 0.03, "kl_divergence": 0.01}
+    >>> baseline_threshold_provenance(Figure3Config(), fractions)["baseline_end_index"]
     6000
     """
     return {
@@ -565,14 +593,17 @@ def baseline_threshold_provenance(config: Figure3Config) -> dict[str, object]:
         "hpd_overlap": {
             "rule": "pooled_baseline_quantile",
             "quantile": BASELINE_HPD_OVERLAP_QUANTILE,
+            "baseline_flagged_fraction": baseline_flagged_fractions["hpd_overlap"],
         },
         "kl_divergence": {
             "rule": "pooled_baseline_quantile",
             "quantile": BASELINE_KL_DIVERGENCE_QUANTILE,
+            "baseline_flagged_fraction": baseline_flagged_fractions["kl_divergence"],
         },
         "predictive_pvalue": {
             "rule": "fixed_cutoff",
             "cutoff": FIXED_PREDICTIVE_PVALUE_CUTOFF,
+            "baseline_flagged_fraction": baseline_flagged_fractions["predictive_pvalue"],
         },
     }
 
@@ -580,16 +611,16 @@ def baseline_threshold_provenance(config: Figure3Config) -> dict[str, object]:
 def estimate_realization_summary(
     config: Figure3Config,
     *,
-    n_realizations: int = 100,
-    first_random_seed: int | None = None,
+    n_realizations: int = N_REALIZATIONS,
 ) -> Figure3RealizationSummary:
-    """Pool many realizations into stable Figure-3 diagnostic_thresholds and fractions.
+    """Pool many realizations into stable Figure-3 flag thresholds and fractions.
 
     Runs ``n_realizations`` independent realizations of the figure-3
-    simulation (seeds ``first_random_seed, first_random_seed + 1, ...``), pools their
+    simulation (seeds ``config.random_seed, config.random_seed + 1, ...``, so
+    the displayed seed-``config.random_seed`` run is one of them), pools their
     per-spike *baseline-window* diagnostics to compute the flag
-    diagnostic_thresholds, then scores every realization's per-phase flag fractions
-    against those shared diagnostic_thresholds and returns them all (their
+    thresholds, then scores every realization's per-phase flag fractions
+    against those shared thresholds and returns them all (their
     medians are properties of the result). A single pass holds only the finite
     per-spike values (not the dense ``DecodingDiagnostics``) per realization, so
     memory stays bounded even at
@@ -598,20 +629,18 @@ def estimate_realization_summary(
     Parameters
     ----------
     config : Figure3Config
-        Simulation configuration. ``config.place_field_centers`` must be set
-        (the dataclass initializes it by default).
-    n_realizations : int, default 100
+        Simulation configuration; ``config.random_seed`` is the first seed.
+        ``config.place_field_centers`` must be set (the dataclass initializes
+        it by default).
+    n_realizations : int, default ``N_REALIZATIONS``
         Number of independent realizations to aggregate. Must be >= 1.
-    first_random_seed : int, optional
-        First seed; subsequent realizations use consecutive seeds. If
-        ``None``, uses ``config.random_seed`` so the canonical displayed run
-        (seed ``config.random_seed``) is one of the aggregated realizations.
 
     Returns
     -------
     Figure3RealizationSummary
-        Pooled diagnostic_thresholds, and every realization's per-phase flag
-        fractions and decoding accuracy (with their medians).
+        Pooled flag thresholds with the fraction of pooled baseline events each
+        flags, and every realization's per-phase flag fractions and decoding
+        error (with their medians).
 
     Raises
     ------
@@ -621,25 +650,25 @@ def estimate_realization_summary(
     if n_realizations < 1:
         raise ValueError(f"n_realizations must be >= 1; got {n_realizations}")
 
-    base = config.random_seed if first_random_seed is None else first_random_seed
+    base = config.random_seed
     baseline_end = config.phase_boundaries[PhaseBoundary.REMAP_START]
     conditions = build_summary_conditions(config)
 
-    # ``compute_baseline_diagnostic_thresholds`` reads only hpd_overlap and kl_divergence (the
-    # predictive_pvalue threshold is the fixed 0.05 cutoff), but pool all three so
-    # the dict is a faithful baseline sample if that ever changes. Pool the
-    # per-*event* baseline values (one per spike event), matching the
-    # event-based phase fractions from ``extract_condition_flag_values``.
-    baseline_keys = ("hpd_overlap", "kl_divergence", "predictive_pvalue")
-    baseline_values: dict[str, list[NDArray[np.floating]]] = {key: [] for key in baseline_keys}
+    # Pool the per-*event* baseline values (one per spike event), matching the
+    # event-based phase fractions from ``extract_condition_flag_values``. The
+    # thresholds use only hpd_overlap and kl_divergence (the predictive_pvalue
+    # cutoff is fixed), but all three are checked for non-finite values.
+    baseline_values: dict[str, list[NDArray[np.floating]]] = {
+        key: [] for key in METRIC_FLAG_DIRECTIONS
+    }
     per_realization_values: list[list[list[NDArray[np.floating]]]] = []
-    per_realization_accuracy: list[NDArray[np.floating]] = []
+    per_realization_error: list[NDArray[np.floating]] = []
 
     for offset in range(n_realizations):
         sim = run_figure03_simulation(config, seed=base + offset)
         diagnostics = sim.diagnostics
         base_mask = np.asarray(diagnostics.event_time_ind) < baseline_end
-        for key in baseline_keys:
+        for key in baseline_values:
             ev = np.asarray(getattr(diagnostics, "event_" + key), dtype=float)[base_mask]
             if not np.all(np.isfinite(ev)):
                 raise ValueError(
@@ -648,16 +677,31 @@ def estimate_realization_summary(
                 )
             baseline_values[key].append(ev)
         per_realization_values.append(extract_condition_flag_values(diagnostics, conditions))
-        per_realization_accuracy.append(
-            compute_condition_decoding_accuracy(
-                diagnostics.posterior, sim.position_bins, sim.true_position, conditions
+        per_realization_error.append(
+            compute_condition_decoding_error(
+                diagnostics.posterior, sim.position_bins, sim.physical_position, conditions
             )
         )
 
     pooled_baseline = {key: np.concatenate(vals) for key, vals in baseline_values.items()}
     diagnostic_thresholds = compute_baseline_diagnostic_thresholds(
-        pooled_baseline, baseline_end_index=pooled_baseline["hpd_overlap"].shape[0]
+        hpd_overlap=pooled_baseline["hpd_overlap"],
+        kl_divergence=pooled_baseline["kl_divergence"],
     )
+    # Inclusive flags flag every value tied at a threshold, so the flagged
+    # share of the baseline can exceed the quantile that set the threshold.
+    baseline_flagged_fractions = {
+        metric: float(
+            np.mean(
+                flag_mask(
+                    pooled_baseline[metric],
+                    float(getattr(diagnostic_thresholds, metric)),
+                    direction,
+                )
+            )
+        )
+        for metric, direction in SUMMARY_FLAG_METRICS
+    }
 
     # (n_realizations, n_metrics, n_columns) flag-fraction stack.
     frac = np.stack(
@@ -669,6 +713,7 @@ def estimate_realization_summary(
     )
     return Figure3RealizationSummary(
         diagnostic_thresholds=diagnostic_thresholds,
+        baseline_flagged_fractions=baseline_flagged_fractions,
         realization_flag_percentages=frac,
-        realization_decoding_accuracy=np.stack(per_realization_accuracy, axis=0),
+        realization_decoding_error=np.stack(per_realization_error, axis=0),
     )

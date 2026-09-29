@@ -1,4 +1,5 @@
-"""Tests for the NeuralRecordingData contract at the loader boundary."""
+"""Tests for the NeuralRecordingData contract, the ``.npz`` reader and writer, and
+the pickle conversion."""
 
 from __future__ import annotations
 
@@ -14,18 +15,19 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from statespacecheck_paper.load_local_data import (
-    LEGACY_PICKLE_SUFFIXES,
+from statespacecheck_paper.figure04_input import (
     NeuralRecordingData,
-    convert_legacy_pickle_exports,
-    load_neural_recording_from_files,
-    read_legacy_pickle_exports,
-    recording_arrays,
-    recording_difference,
-    write_npz,
+    load_figure04_input,
 )
 from statespacecheck_paper.paths import (
     FIGURE04_INPUTS_EPOCH,
+)
+from statespacecheck_paper.spyglass_pipeline.figure04_input import recording_arrays, write_npz
+from statespacecheck_paper.spyglass_pipeline.pickle_conversion import (
+    PICKLE_SUFFIXES,
+    convert_pickles_to_input_file,
+    read_recording_pickles,
+    recording_difference,
 )
 
 
@@ -141,17 +143,17 @@ def test_missing_directory_raises_actionable_error(tmp_path: Path) -> None:
     # error a new user sees first; it names the download into that directory.
     data = tmp_path / "does_not_exist"
     with pytest.raises(FileNotFoundError, match="Data directory not found") as error:
-        load_neural_recording_from_files(data, FIGURE04_INPUTS_EPOCH)
+        load_figure04_input(data, FIGURE04_INPUTS_EPOCH)
     assert _download_command(str(error.value)) == _download_arguments(data)
 
 
-def test_missing_export_files_lists_what_is_absent(tmp_path: Path) -> None:
+def test_missing_input_file_is_named(tmp_path: Path) -> None:
     # Directory exists but the input file does not: the loader should name the
     # missing file rather than surfacing a bare np.load traceback.
     with pytest.raises(
-        FileNotFoundError, match="Missing 1 expected export file.*_figure04_inputs.npz"
+        FileNotFoundError, match="Missing the Figure-4 input file .*_figure04_inputs.npz"
     ) as error:
-        load_neural_recording_from_files(tmp_path, FIGURE04_INPUTS_EPOCH)
+        load_figure04_input(tmp_path, FIGURE04_INPUTS_EPOCH)
     assert _download_command(str(error.value)) == _download_arguments(tmp_path)
 
 
@@ -160,7 +162,7 @@ def test_suggested_download_command_quotes_a_path_with_spaces(tmp_path: Path) ->
     """The command can be pasted into a shell as is."""
     data = tmp_path / "data set"
     with pytest.raises(FileNotFoundError) as error:
-        load_neural_recording_from_files(data, FIGURE04_INPUTS_EPOCH)
+        load_figure04_input(data, FIGURE04_INPUTS_EPOCH)
     assert _download_command(str(error.value)) == _download_arguments(data)
 
 
@@ -171,7 +173,7 @@ def test_download_is_not_suggested_for_another_epoch(
     """The download fetches only the published epoch, so it would not fix the error."""
     data = tmp_path if directory_exists else tmp_path / "does_not_exist"
     with pytest.raises(FileNotFoundError) as error:
-        load_neural_recording_from_files(data, "rat20200101_02_r1")
+        load_figure04_input(data, "rat20200101_02_r1")
     assert _download_command(str(error.value)) is None
     assert "Zenodo" not in str(error.value)
 
@@ -212,7 +214,7 @@ def test_npz_round_trip_is_exact(tmp_path: Path) -> None:
     kwargs = _kwargs()
     _write(kwargs, tmp_path)
 
-    loaded = load_neural_recording_from_files(tmp_path, _EPOCH)
+    loaded = load_figure04_input(tmp_path, _EPOCH)
     expected = NeuralRecordingData(
         position_info=kwargs["position_info"],
         spike_times=tuple(kwargs["spike_times"]),
@@ -237,7 +239,7 @@ def test_npz_refuses_an_unknown_format_version(tmp_path: Path) -> None:
     write_npz(tmp_path / f"{_EPOCH}_figure04_inputs.npz", arrays)
 
     with pytest.raises(ValueError, match="format_version 99"):
-        load_neural_recording_from_files(tmp_path, _EPOCH)
+        load_figure04_input(tmp_path, _EPOCH)
 
 
 def test_recording_arrays_refuses_what_it_cannot_store() -> None:
@@ -249,12 +251,10 @@ def test_recording_arrays_refuses_what_it_cannot_store() -> None:
         recording_arrays(**_kwargs(track_graph=graph))
 
 
-def _write_legacy_pickles(directory: Path) -> None:
+def _write_recording_pickles(directory: Path) -> None:
     kwargs = _kwargs()
     names = dict(
-        zip(
-            ("position", "spikes", "graph", "order", "spacing"), LEGACY_PICKLE_SUFFIXES, strict=True
-        )
+        zip(("position", "spikes", "graph", "order", "spacing"), PICKLE_SUFFIXES, strict=True)
     )
     kwargs["position_info"].to_pickle(directory / f"{_EPOCH}{names['position']}")
     for key, value in (
@@ -267,18 +267,18 @@ def _write_legacy_pickles(directory: Path) -> None:
             pickle.dump(value, f, protocol=4)
 
 
-def test_convert_legacy_pickles_writes_an_identical_npz(tmp_path: Path) -> None:
-    _write_legacy_pickles(tmp_path)
+def test_convert_pickles_writes_an_identical_npz(tmp_path: Path) -> None:
+    _write_recording_pickles(tmp_path)
 
-    path = convert_legacy_pickle_exports(tmp_path, tmp_path / "npz", _EPOCH)
+    path = convert_pickles_to_input_file(tmp_path, tmp_path / "npz", _EPOCH)
 
-    converted = load_neural_recording_from_files(path.parent, _EPOCH)
-    assert recording_difference(converted, read_legacy_pickle_exports(tmp_path, _EPOCH)) is None
+    converted = load_figure04_input(path.parent, _EPOCH)
+    assert recording_difference(converted, read_recording_pickles(tmp_path, _EPOCH)) is None
 
 
 def test_convert_refuses_to_overwrite(tmp_path: Path) -> None:
-    _write_legacy_pickles(tmp_path)
-    convert_legacy_pickle_exports(tmp_path, tmp_path, _EPOCH)
+    _write_recording_pickles(tmp_path)
+    convert_pickles_to_input_file(tmp_path, tmp_path, _EPOCH)
 
     with pytest.raises(FileExistsError):
-        convert_legacy_pickle_exports(tmp_path, tmp_path, _EPOCH)
+        convert_pickles_to_input_file(tmp_path, tmp_path, _EPOCH)

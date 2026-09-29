@@ -34,16 +34,18 @@ from collections.abc import Sequence
 from importlib.metadata import version
 from pathlib import Path
 
-from statespacecheck_paper.spyglass_data import (
+from statespacecheck_paper.spyglass_pipeline.figure04_input import (
     FIGURE04_EPOCH_NAME,
     FIGURE04_NWB_FILE_NAME,
     check_output_paths,
-    describe_figure04_export,
     epoch_identifier,
+    print_input_comparison,
+    write_figure04_inputs,
+)
+from statespacecheck_paper.spyglass_pipeline.paper_export import (
+    describe_figure04_export,
     log_figure04_export,
     package_figure04_export,
-    print_export_comparison,
-    write_figure04_inputs,
 )
 
 
@@ -53,7 +55,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--paper-id", required=True, help="New export paper ID (<= 32 chars).")
     parser.add_argument("--analysis-id", default="figure04_inputs", help="(<= 32 chars)")
     parser.add_argument("--output-dir", type=Path, help="Write the fetched input file here.")
-    parser.add_argument("--compare-to", type=Path, help="Compare the written file with this one.")
+    parser.add_argument(
+        "--compare-to",
+        type=Path,
+        help="Directory of the reference input file to compare the written one against.",
+    )
     parser.add_argument(
         "--populate", action="store_true", help="Package the export with populate_paper."
     )
@@ -85,7 +91,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         if args.output_dir is not None:
             write_figure04_inputs(inputs, args.output_dir, animal_date_epoch)
-        if args.compare_to is not None and not print_export_comparison(
+        if args.compare_to is not None and not print_input_comparison(
             args.compare_to, args.output_dir, animal_date_epoch
         ):
             print(

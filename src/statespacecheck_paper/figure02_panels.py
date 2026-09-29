@@ -22,6 +22,7 @@ from matplotlib.axes import Axes
 from numpy.typing import NDArray
 from scipy.stats import norm
 
+from statespacecheck_paper.diagnostics import HPD_COVERAGE
 from statespacecheck_paper.simulation import normalize
 from statespacecheck_paper.style import COLORS
 
@@ -38,8 +39,8 @@ HISTOGRAM_LOWER_QUANTILE = 0.001
 class Figure2ExampleData:
     """Validated shared example used by every Figure-2 panel.
 
-    Named attributes replace the former ``dict[str, Any]`` boundary, making the
-    scientific quantities discoverable to readers and checkable by mypy. Array
+    Named attributes make the scientific quantities discoverable to readers
+    and checkable by mypy. Array
     fields are defensively copied and made read-only so all nine panels are
     guaranteed to render the same immutable realization.
     """
@@ -47,9 +48,9 @@ class Figure2ExampleData:
     position_bins: NDArray[np.float64]
     predictive: NDArray[np.float64]
     likelihood: NDArray[np.float64]
-    kl_value: float
-    hpd_value: float
-    p_value: float
+    kl_divergence: float
+    hpd_overlap: float
+    predictive_pvalue: float
     observed_log_pred: float
     simulated_log_pred: NDArray[np.float64]
     showcase_positions: NDArray[np.float64]
@@ -97,15 +98,15 @@ class Figure2ExampleData:
         for name, array in arrays.items():
             if not np.all(np.isfinite(array)):
                 raise ValueError(f"{name} must contain only finite values")
-        for name in ("kl_value", "hpd_value", "observed_log_pred"):
+        for name in ("kl_divergence", "hpd_overlap", "observed_log_pred"):
             if not np.isfinite(getattr(self, name)):
                 raise ValueError(f"{name} must be finite")
-        if self.kl_value < 0.0:
-            raise ValueError(f"kl_value must be non-negative; got {self.kl_value}")
-        if not 0.0 <= self.hpd_value <= 1.0:
-            raise ValueError(f"hpd_value must lie in [0, 1]; got {self.hpd_value}")
-        if not np.isfinite(self.p_value) or not 0.0 <= self.p_value <= 1.0:
-            raise ValueError(f"p_value must lie in [0, 1]; got {self.p_value}")
+        if self.kl_divergence < 0.0:
+            raise ValueError(f"kl_divergence must be non-negative; got {self.kl_divergence}")
+        if not 0.0 <= self.hpd_overlap <= 1.0:
+            raise ValueError(f"hpd_overlap must lie in [0, 1]; got {self.hpd_overlap}")
+        if not np.isfinite(self.predictive_pvalue) or not 0.0 <= self.predictive_pvalue <= 1.0:
+            raise ValueError(f"predictive_pvalue must lie in [0, 1]; got {self.predictive_pvalue}")
         for name, array in arrays.items():
             array.setflags(write=False)
             object.__setattr__(self, name, array)
@@ -153,8 +154,14 @@ def create_shared_example(rng: np.random.Generator) -> Figure2ExampleData:
     likelihood = normalize(observed_conditional_density)
 
     # Compute KL divergence and HPD overlap using statespacecheck
-    kl_value = float(ssc.kl_divergence(predictive[np.newaxis, :], likelihood[np.newaxis, :])[0])
-    hpd_value = float(ssc.hpd_overlap(predictive[np.newaxis, :], likelihood[np.newaxis, :])[0])
+    kl_divergence = float(
+        ssc.kl_divergence(predictive[np.newaxis, :], likelihood[np.newaxis, :])[0]
+    )
+    hpd_overlap = float(
+        ssc.hpd_overlap(
+            predictive[np.newaxis, :], likelihood[np.newaxis, :], coverage=HPD_COVERAGE
+        )[0]
+    )
 
     # Monte Carlo predictive p-value (eq:fpred / eq:predictive_application):
     # each replicate draws a state from the event-weighted predictive
@@ -178,7 +185,7 @@ def create_shared_example(rng: np.random.Generator) -> Figure2ExampleData:
         rng=rng,
         return_samples=True,
     )
-    p_value = float(check.pvalue[0])
+    predictive_pvalue = float(check.pvalue[0])
     observed_log_pred = float(check.observed_log_density[0])
     assert check.simulated_log_density is not None  # return_samples=True
     simulated_log_pred_values = check.simulated_log_density[0]
@@ -205,9 +212,9 @@ def create_shared_example(rng: np.random.Generator) -> Figure2ExampleData:
         position_bins=position_bins,
         predictive=np.asarray(predictive, dtype=np.float64),
         likelihood=np.asarray(likelihood, dtype=np.float64),
-        kl_value=kl_value,
-        hpd_value=hpd_value,
-        p_value=p_value,
+        kl_divergence=kl_divergence,
+        hpd_overlap=hpd_overlap,
+        predictive_pvalue=predictive_pvalue,
         observed_log_pred=observed_log_pred,
         simulated_log_pred=simulated_log_pred_values,
         showcase_positions=showcase_positions,
@@ -280,7 +287,7 @@ def plot_kl_log_ratio(ax: Axes, data: Figure2ExampleData) -> None:
 
     ax.set_xlabel("Latent state (a.u.)", labelpad=8)
     ax.set_ylabel(r"$\log(\mathrm{pred}) - \log(\mathrm{like})$", labelpad=8)
-    ax.set_title("Log Ratio", fontsize=8, pad=4)
+    ax.set_title("Log Ratio", pad=4)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     ax.set_xlim(0, 100)
@@ -311,7 +318,7 @@ def plot_kl_pointwise(ax: Axes, data: Figure2ExampleData) -> None:
         r"$\mathrm{pred} \cdot [\log(\mathrm{pred}) - \log(\mathrm{like})]$",
         labelpad=8,
     )
-    ax.set_title("Pointwise KL: pred × log ratio", fontsize=8, pad=4)
+    ax.set_title("Pointwise KL: pred × log ratio", pad=4)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     ax.set_xlim(0, 100)
@@ -343,15 +350,14 @@ def _plot_hpd_panel(
     """Render one 95% HPD distribution panel (predictive or likelihood column).
 
     Draws the distribution line, shades the 95% HPD region under it, marks the
-    HPD density threshold with a dashed line + label, and applies the shared
-    Figure-2 panel styling. Only the color, title, threshold-label placement,
+    HPD density level with a dashed line + label, and applies the shared
+    Figure-2 panel styling. Only the color, title, level-label placement,
     and legend keywords differ between the two columns.
     """
-    coverage = 0.95
-    hpd_mask = ssc.highest_density_region(dist[np.newaxis], coverage=coverage)[0]
+    hpd_mask = ssc.highest_density_region(dist[np.newaxis], coverage=HPD_COVERAGE)[0]
 
-    # HPD threshold is the minimum density value inside the HPD region.
-    hpd_threshold = np.min(dist[hpd_mask])
+    # The HPD density level is the minimum density value inside the HPD region.
+    hpd_density_level = np.min(dist[hpd_mask])
 
     ax.plot(x, dist, color=color, linewidth=1.2)
     ax.fill_between(
@@ -361,13 +367,13 @@ def _plot_hpd_panel(
         where=list(hpd_mask),
         alpha=0.35,
         color=color,
-        label="95% HPD",
+        label=f"{HPD_COVERAGE:.0%} HPD",
     )
-    ax.axhline(hpd_threshold, color=color, linestyle="--", linewidth=0.8, alpha=0.7)
+    ax.axhline(hpd_density_level, color=color, linestyle="--", linewidth=0.8, alpha=0.7)
     ax.text(
         label_x,
-        hpd_threshold,
-        "95% threshold",
+        hpd_density_level,
+        f"{HPD_COVERAGE:.0%} HPD level",
         ha=label_ha,
         va="bottom",
         color=color,
@@ -376,7 +382,7 @@ def _plot_hpd_panel(
 
     ax.set_xlabel("Latent state (a.u.)", labelpad=8)
     ax.set_ylabel("Probability", labelpad=8)
-    ax.set_title(title, fontsize=8, pad=4)
+    ax.set_title(title, pad=4)
     ax.legend(frameon=False, **legend_kwargs)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
@@ -407,7 +413,7 @@ def plot_hpd_predictive(ax: Axes, data: Figure2ExampleData) -> None:
 
 def plot_hpd_likelihood(ax: Axes, data: Figure2ExampleData) -> None:
     """Likelihood distribution with 95% HPD region shaded."""
-    # Curve peaks center-right, so the threshold label sits on the left and the
+    # Curve peaks center-right, so the HPD-level label sits on the left and the
     # legend is tucked into the empty upper-left corner against the y-axis.
     _plot_hpd_panel(
         ax,
@@ -442,11 +448,10 @@ def plot_hpd_intersection(ax: Axes, data: Figure2ExampleData) -> tuple[float, fl
     x = data.position_bins
     pred = data.predictive
     like = data.likelihood
-    coverage = 0.95
     dx = x[1] - x[0]
 
-    pred_hpd = ssc.highest_density_region(pred[np.newaxis], coverage=coverage)[0]
-    like_hpd = ssc.highest_density_region(like[np.newaxis], coverage=coverage)[0]
+    pred_hpd = ssc.highest_density_region(pred[np.newaxis], coverage=HPD_COVERAGE)[0]
+    like_hpd = ssc.highest_density_region(like[np.newaxis], coverage=HPD_COVERAGE)[0]
     intersection = pred_hpd & like_hpd
 
     # Compute sizes for annotation
@@ -557,11 +562,13 @@ def _showcase_colors(n: int) -> NDArray[np.float64]:
     return cmap(np.linspace(0.15, 0.85, n))
 
 
-def plot_ppc_predictive_fan(ax: Axes, data: Figure2ExampleData) -> None:
-    """Predictive distribution with a fan of sampled positions.
+def plot_predictive_check_predictive_fan(ax: Axes, data: Figure2ExampleData) -> None:
+    """Predictive distribution with a fan of showcase positions.
 
-    Each colored marker is one draw from the predictive that flows into
-    the corresponding simulated observation likelihood plotted in the simulated-likelihood panel.
+    Each colored marker is a state at a fixed quantile of the predictive
+    (the 10th, 30th, 50th, 70th, and 90th percentiles, chosen to span its
+    support rather than drawn at random); the simulated observation drawn at
+    that state gives the matching curve in the simulated-likelihood panel.
     """
     x = data.position_bins
     pred = data.predictive
@@ -571,7 +578,7 @@ def plot_ppc_predictive_fan(ax: Axes, data: Figure2ExampleData) -> None:
     ax.plot(x, pred, color=COLORS["predictive"], linewidth=1.5, label="Predictive")
     ax.fill_between(x, pred, alpha=0.3, color=COLORS["predictive"])
 
-    # Each sampled state is shown as a colored tick + dot on the predictive
+    # Each showcase state is shown as a colored tick + dot on the predictive
     # so the matching curve in the simulated-likelihood panel can be read off by colour.
     sample_indices = np.argmin(np.abs(x[None, :] - positions[:, None]), axis=1)
     for pos, idx, color in zip(positions, sample_indices, colors, strict=True):
@@ -604,15 +611,16 @@ def plot_ppc_predictive_fan(ax: Axes, data: Figure2ExampleData) -> None:
     ax.set_yticklabels(["0", f"{y_max:.2f}"])
 
 
-def plot_ppc_likelihood_fan(ax: Axes, data: Figure2ExampleData) -> None:
+def plot_predictive_check_likelihood_fan(ax: Axes, data: Figure2ExampleData) -> None:
     """Fan of simulated observation likelihoods.
 
-    For each state sample drawn from the predictive (the predictive-distribution panel), the
-    Monte Carlo p-value draws an observation y_tilde ~ p(y | x_s) and
-    constructs the corresponding observation likelihood p(y_tilde | x).
-    This panel shows that fan of likelihood curves, colored to match
-    the samples in the predictive-distribution panel. Per-curve markers distinguish the state
-    sample (dotted line at x_s) from the drawn observation (triangle
+    For each state x_s it samples from the predictive, the Monte Carlo
+    p-value draws an observation y_tilde ~ p(y | x_s) and constructs the
+    corresponding observation likelihood p(y_tilde | x). This panel shows
+    that step for the showcase states of the predictive-distribution panel
+    (fixed predictive quantiles standing in for random samples), colored to
+    match them. Per-curve markers distinguish the state
+    (dotted line at x_s) from the drawn observation (triangle
     at the curve peak, at y_tilde). A faint dashed copy of the
     predictive is overlaid so the reader can see what the curves get
     multiplied by when computing the log predictive density that ends
@@ -720,7 +728,7 @@ def plot_ppc_likelihood_fan(ax: Axes, data: Figure2ExampleData) -> None:
     )
 
 
-def plot_ppc_density_histogram(ax: Axes, data: Figure2ExampleData) -> None:
+def plot_predictive_check_density_histogram(ax: Axes, data: Figure2ExampleData) -> None:
     """Histogram of observed vs simulated log predictive density.
 
     Uses the exact Monte Carlo samples computed in create_shared_example().

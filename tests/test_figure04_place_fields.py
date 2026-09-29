@@ -1,4 +1,4 @@
-"""Tests for Figure-4 place-field and marginalized-posterior extraction."""
+"""Tests for Figure-4 place-field and position-marginal distribution extraction."""
 
 from __future__ import annotations
 
@@ -11,31 +11,16 @@ import pytest
 import xarray as xr
 
 from statespacecheck_paper.figure04_place_fields import (
+    DECODER_PREDICTIVE_VAR,
+    DECODER_SMOOTHED_VAR,
+    extract_agreed_place_fields,
     extract_place_fields,
     extract_shared_position_place_fields,
-    get_state_marginalized_posterior,
+    marginal_position_distribution,
+    marginalize_state_bins,
 )
 
-
-def _xarray_results(
-    posterior_data: np.ndarray,
-    name: str,
-    state_bins: pd.MultiIndex | np.ndarray | None = None,
-) -> xr.Dataset:
-    """Build a 2-variable Dataset matching the on-disk results layout."""
-    n_time, n_state_bins = posterior_data.shape
-    if state_bins is None:
-        state_bins = np.arange(n_state_bins)
-    return xr.Dataset(
-        {
-            name: xr.DataArray(
-                posterior_data,
-                dims=["time", "state_bins"],
-                coords={"time": np.arange(n_time), "state_bins": state_bins},
-            )
-        }
-    )
-
+from ._decoder_inputs import xarray_results
 
 # ---------------------------------------------------------------------------
 # extract_place_fields
@@ -80,22 +65,26 @@ class TestExtractPlaceFields:
 
 
 # ---------------------------------------------------------------------------
-# get_state_marginalized_posterior
+# marginal_position_distribution
 # ---------------------------------------------------------------------------
 
 
-class TestGetStateMarginalizedPosterior:
-    @pytest.mark.parametrize("posterior_type", ["predictive", "acausal"])
+class TestMarginalPositionDistribution:
+    @pytest.mark.parametrize(
+        ("kind", "variable"),
+        [("predictive", DECODER_PREDICTIVE_VAR), ("smoothed", DECODER_SMOOTHED_VAR)],
+    )
     def test_single_state_passthrough(
         self,
         rng: np.random.Generator,
-        posterior_type: Literal["predictive", "acausal"],
+        kind: Literal["predictive", "smoothed"],
+        variable: str,
     ) -> None:
         """Single-state model: no states to marginalize, output equals input."""
         n_time, n_bins = 100, 50
         posterior_data = rng.dirichlet(np.ones(n_bins), size=n_time)
-        results = _xarray_results(posterior_data, f"{posterior_type}_posterior")
-        result = get_state_marginalized_posterior(results, posterior_type)
+        results = xarray_results(posterior_data, variable)
+        result = marginal_position_distribution(results, kind)
         assert result.shape == (n_time, n_bins)
         np.testing.assert_allclose(result, posterior_data)
 
@@ -109,12 +98,12 @@ class TestGetStateMarginalizedPosterior:
         states = ["Continuous", "Fragmented"]
         positions = np.arange(n_bins, dtype=float)
         multi_index = pd.MultiIndex.from_product([states, positions], names=["state", "position"])
-        results = _xarray_results(
+        results = xarray_results(
             posterior_per_state.reshape(n_time, -1),
             "predictive_posterior",
             state_bins=multi_index,
         )
-        result = get_state_marginalized_posterior(results, "predictive")
+        result = marginal_position_distribution(results, "predictive")
         np.testing.assert_allclose(result, posterior_per_state.sum(axis=1), rtol=1e-5)
 
     def test_unstack_failure_raises(self) -> None:
@@ -129,13 +118,13 @@ class TestGetStateMarginalizedPosterior:
         broken_index = pd.MultiIndex.from_tuples(
             [("A", 0), ("A", 0), ("B", 0), ("B", 0)], names=["state", "position"]
         )
-        results = _xarray_results(
+        results = xarray_results(
             np.random.default_rng(0).random((n_time, 4)),
             "predictive_posterior",
             state_bins=broken_index,
         )
         with pytest.raises(ValueError, match="Failed to unstack"):
-            get_state_marginalized_posterior(results, "predictive")
+            marginal_position_distribution(results, "predictive")
 
 
 # ---------------------------------------------------------------------------
@@ -186,3 +175,85 @@ class TestExtractSharedPositionPlaceFields:
 
         with pytest.raises(ValueError, match="interior mask differs"):
             extract_shared_position_place_fields(model)
+
+
+def _single_state_model(place_fields: np.ndarray, position_bins: np.ndarray) -> MagicMock:
+    """One-state model whose interior mask keeps every bin but the last."""
+    model = _mock_model(place_fields, position_bins)
+    model.observation_models = [MagicMock(environment_name="", encoding_group=0)]
+    model.is_track_interior_state_bins_ = np.arange(position_bins.size) < position_bins.size - 1
+    return model
+
+
+class TestExtractAgreedPlaceFields:
+    def test_returns_the_shared_interior_fields(self) -> None:
+        position_bins = np.array([0.0, 1.0, 2.0])
+        place_fields = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+        fields, bins = extract_agreed_place_fields(
+            _single_state_model(place_fields, position_bins),
+            _single_state_model(place_fields.copy(), position_bins.copy()),
+        )
+        np.testing.assert_array_equal(fields, place_fields[:, :2])
+        np.testing.assert_array_equal(bins, position_bins[:2])
+
+    def test_rejects_models_whose_fields_differ(self) -> None:
+        position_bins = np.array([0.0, 1.0, 2.0])
+        place_fields = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+        with pytest.raises(ValueError, match="place fields or position grids differ"):
+            extract_agreed_place_fields(
+                _single_state_model(place_fields, position_bins),
+                _single_state_model(place_fields + 1.0, position_bins),
+            )
+
+
+def _state_bins_da(values: np.ndarray, index: pd.MultiIndex | np.ndarray) -> xr.DataArray:
+    return xr.DataArray(
+        values,
+        dims=["time", "state_bins"],
+        coords={"time": np.arange(values.shape[0]), "state_bins": index},
+    )
+
+
+class TestMarginalizeStateBins:
+    def test_position_missing_from_one_state_stays_nan(self) -> None:
+        # skipna=False: a position NaN in one state must not become that
+        # state's partial sum labeled as the marginal.
+        values = np.ones((2, 6))
+        values[:, 0] = np.nan  # state A, position 0
+        index = pd.MultiIndex.from_product(
+            [["A", "B"], [0.0, 1.0, 2.0]], names=["state", "position"]
+        )
+        marginal = marginalize_state_bins(_state_bins_da(values, index))
+        assert marginal.dims == ("time", "position")
+        np.testing.assert_array_equal(marginal.values, [[np.nan, 2.0, 2.0]] * 2)
+
+    def test_single_state_index_is_returned_unchanged(self) -> None:
+        da = _state_bins_da(np.ones((2, 3)), np.arange(3))
+        assert marginalize_state_bins(da) is da
+
+    def test_index_without_a_state_level_is_only_unstacked(self) -> None:
+        index = pd.MultiIndex.from_product([[0.0, 1.0, 2.0]], names=["position"])
+        values = np.arange(6.0).reshape(2, 3)
+        marginal = marginalize_state_bins(_state_bins_da(values, index))
+        assert marginal.dims == ("time", "position")
+        np.testing.assert_array_equal(marginal.values, values)
+
+
+class TestExtractAgreedPlaceFieldsEdges:
+    def test_rejects_models_whose_grids_differ(self) -> None:
+        place_fields = np.array([[1.0, 2.0, 3.0]])
+        position_bins = np.array([0.0, 1.0, 2.0])
+        with pytest.raises(ValueError, match="place fields or position grids differ"):
+            extract_agreed_place_fields(
+                _single_state_model(place_fields, position_bins),
+                _single_state_model(place_fields, position_bins + 1.0),
+            )
+
+    def test_matching_nan_fields_agree(self) -> None:
+        place_fields = np.array([[np.nan, 2.0, 3.0]])
+        position_bins = np.array([0.0, 1.0, 2.0])
+        fields, _ = extract_agreed_place_fields(
+            _single_state_model(place_fields, position_bins),
+            _single_state_model(place_fields.copy(), position_bins),
+        )
+        np.testing.assert_array_equal(fields, [[np.nan, 2.0]])

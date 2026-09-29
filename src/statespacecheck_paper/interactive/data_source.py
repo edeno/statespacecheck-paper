@@ -8,17 +8,17 @@ viewer panels:
   place fields, place-field peaks, per-cell spike times, full event
   Parquet) — all together ~50 MB.
 - Lazy ``xarray.Dataset`` handles for the per-model Zarr stores so
-  posterior / log-likelihood reads pull only the chunks that overlap
+  predictive / log-likelihood reads pull only the chunks that overlap
   the current view.
 
-The hot-path methods (``window_indices``, ``load_posterior``,
-``load_likelihood``, ``events_in_window``, ``slice_at_index``) accept
+The hot-path methods (``window_indices``, ``load_predictive``,
+``load_log_likelihood``, ``events_in_window``, ``slice_at_index``) accept
 plain Python ``slice`` and ``int`` arguments and return raw NumPy
 float32/float64 arrays. No xarray on the call path beyond the chunk
 read, so the viewer can hand results straight to ``pyqtgraph.ImageItem``
 or ``PlotCurveItem.setData`` without any object-creation overhead.
 
-The slice panel uses ``slice_at_index`` for its 1D posterior /
+The slice panel uses ``slice_at_index`` for its 1D predictive /
 likelihood curves and a small ring buffer that the viewer maintains; the
 data source just hands it the requested 1D row.
 """
@@ -35,12 +35,12 @@ import xarray as xr
 import zarr
 from numpy.typing import NDArray
 
+from statespacecheck_paper.figure04_models import Figure4ModelId, figure04_model
+from statespacecheck_paper.figure04_place_fields import DECODER_PREDICTIVE_VAR, DECODER_SMOOTHED_VAR
+
 from . import cache as cache_mod
 
-ModelName = cache_mod.ModelName
-
-
-DatasetKind = Literal["model", "simulation"]
+DatasetKind = Literal["recording", "simulation"]
 
 
 def _readonly(arr: NDArray[Any]) -> NDArray[Any]:
@@ -66,15 +66,15 @@ class CacheLayout:
     spike_times: Path
 
     @classmethod
-    def for_model(cls, cache_dir: Path, model: ModelName) -> CacheLayout:
+    def for_recording(cls, cache_dir: Path, model: Figure4ModelId) -> CacheLayout:
         """Resolve the cache + sidecar paths for a real-data model cache."""
-        paths = cache_mod.cache_paths(cache_dir, model)
+        paths = cache_mod.recording_cache_paths(cache_dir, model)
         return cls(
             zarr=paths["zarr"],
             events=paths["events"],
             place_fields=paths["place_fields"],
-            meta=cache_mod.meta_path(cache_dir),
-            spike_times=cache_mod.spike_times_path(cache_dir),
+            meta=cache_mod.recording_meta_path(cache_dir),
+            spike_times=cache_mod.recording_spike_times_path(cache_dir),
         )
 
     @classmethod
@@ -107,26 +107,30 @@ class DecoderDataSource:
 
     Construction is cheap: it reads the small sidecars (~50 MB total)
     and opens the Zarr store as a lazy ``xarray.Dataset``. The full
-    posterior / log-likelihood arrays are never realized in memory.
+    predictive / log-likelihood arrays are never realized in memory.
 
     The data source serves two distinct dataset kinds:
 
-    * **Real-data decoder caches** (``dataset_kind == "model"``) — derived
-      by ``cache.build`` from the canonical Figure 4 workflow/cache. The viewer
+    * **Real-data decoder caches** (``dataset_kind == "recording"``) — derived
+      by ``cache.build_figure04_viewer_cache`` (CLI ``cache build``) from the
+      canonical Figure 4 workflow/cache. The viewer
       can swap between
-      ``"continuous"`` and ``"contfrag"`` if both caches are present
-      in ``cache_dir``. Use ``DecoderDataSource.for_model`` (or the
-      legacy ``DecoderDataSource(cache_dir, model)``) to load.
+      ``"continuous"`` and ``"continuous_fragmented"`` if both caches are present
+      in ``cache_dir``. Use ``DecoderDataSource.for_recording`` (or
+      ``DecoderDataSource(cache_dir, model)``) to load.
 
     * **Figure-3 simulation cache** (``dataset_kind == "simulation"``) —
-      built by ``cache.build_simulated``. Single dataset, no model
+      built by ``cache.build_simulated_cache`` (CLI ``cache build-simulated``).
+      Single dataset, no model
       choice, no smoothed posterior. Use
       ``DecoderDataSource.for_simulation``.
 
     Sidecar schema (the same for both kinds):
 
     * ``meta``: ``time`` f64 ``(n_time,)``, ``linear_position`` f64
-      ``(n_time,)``, ``n_cells`` i64.
+      ``(n_time,)``, ``n_cells`` i64; the simulation cache also records
+      ``flag_metrics`` str ``(n_rules,)`` and ``flag_thresholds`` f64
+      ``(n_rules,)``, the thresholds its diagnostics are scored with.
     * ``place_fields .npz``: shared positional ``place_fields`` f32
       ``(n_cells, n_interior)``,
       ``position_bins`` f64 ``(n_interior,)``,
@@ -134,34 +138,42 @@ class DecoderDataSource:
       ``interior_mask`` bool ``(n_state_bins // n_states,)``, and optional
       ``event_likelihood`` f32 ``(n_events, n_interior)`` for caches with
       time-varying event likelihoods.
-    * ``events .parquet``: ``time`` f64, ``cell_id`` i32,
+    * ``events .parquet``: ``time`` f64, ``event_time_ind`` i64 (the decoder
+      time bin the diagnostics assigned the event to), ``cell_id`` i32,
       ``event_hpd_overlap`` f32, ``event_kl_divergence`` f32,
       ``event_predictive_pvalue`` f32 — sorted by ``time``.
     * ``spike_times .npy``: object-dtype array length ``n_cells``,
       each entry an f64 array of spike timestamps.
-    * ``Zarr``: ``predictive_posterior`` (n_time, n_state_bins) f32,
+    * ``Zarr``: ``predictive_posterior`` (the predictive distribution, under the
+      decoder's name) (n_time, n_state_bins) f32,
       ``log_likelihood`` (n_time, n_state_bins) f32 (true log-space),
-      optional ``acausal_posterior`` (n_time, n_state_bins) f32 — only
-      present for real-data caches built post-smoothed-overlay feature.
+      optional ``acausal_posterior`` (n_time, n_state_bins) f32 — present in
+      every Figure-4 cache and absent from the simulation cache, which only
+      forward-filters.
 
     Attributes
     ----------
-    dataset_kind : Literal["model", "simulation"]
+    dataset_kind : Literal["recording", "simulation"]
         Which kind of dataset is loaded. Drives viewer UI choices
         (model-swap visibility, window title).
     model : str | None
-        The active model name (``"continuous"`` / ``"contfrag"``) for
+        The active model name (``"continuous"`` / ``"continuous_fragmented"``) for
         real-data caches; ``None`` for the simulation cache.
     display_name : str
         Human-readable name for the loaded dataset (drives the window
-        title): ``"continuous"``, ``"contfrag"``, or ``"Figure 3 simulation"``.
+        title): the model's display label (``Figure4Model.label``) or
+        ``"Figure 3 simulation"``.
+    flag_thresholds : dict[str, float] | None
+        Flag threshold per metric recorded in a simulation cache (Figure 3's
+        thresholds); ``None`` for real-data caches, which are scored with
+        Figure 4's fixed cutoffs.
     time : np.ndarray, shape (n_time,), float64
         Decoder time grid (absolute seconds).
     linear_position : np.ndarray, shape (n_time,), float64
         Animal linear position at each decoder time bin.
     place_fields : np.ndarray, shape (n_cells, n_interior), float32
         Shared positional place-field firing rates on the interior grid. The
-        observation model is identical across the discrete ContFrag states.
+        observation model is identical across the discrete Continuous-Fragmented states.
     position_bins : np.ndarray, shape (n_interior,), float64
         Per-state interior position grid (1D, identical across states).
     place_field_peaks : np.ndarray, shape (n_cells,), float64
@@ -170,41 +182,48 @@ class DecoderDataSource:
         Exact normalized likelihood for each event, on the interior position
         grid. Present in the simulation
         cache so remap-window slices use the decoder's active place fields;
-        ``None`` for legacy and real-data caches with static place fields.
+        ``None`` for real-data caches, whose place fields are static.
     spike_times : list[np.ndarray]
         Per-cell spike-time arrays (float64).
     events : pandas.DataFrame
-        Sorted event table with columns ``time`` (f64), ``cell_id`` (i32),
-        ``event_hpd_overlap`` (f32), ``event_kl_divergence`` (f32),
-        ``event_predictive_pvalue`` (f32). Indexed by row position.
+        Sorted event table with columns ``time`` (f64), ``event_time_ind``
+        (i64), ``cell_id`` (i32), ``event_hpd_overlap`` (f32),
+        ``event_kl_divergence`` (f32), ``event_predictive_pvalue`` (f32).
+        Indexed by row position.
+    event_time_ind : np.ndarray, shape (n_events,), int64
+        Decoder time bin of each event row, as the diagnostics assigned it
+        (the cache's ``event_time_ind`` column). Non-decreasing. A Figure-4
+        spike at or after ``time[-2]``, including one exactly at the final
+        timestamp, is in bin ``n_time - 2``, where the decoder counted it.
     n_cells : int
     n_time : int
     n_states : int
         Number of state slots in ``place_fields`` (1 for Continuous /
-        simulation, 2 for ContFrag).
+        simulation, 2 for Continuous-Fragmented).
     n_interior : int
         Number of interior position bins per state.
     n_state_bins : int
         Total full-grid state bins in the Zarr arrays.
     """
 
-    POSTERIOR_VAR = "predictive_posterior"
-    LIKELIHOOD_VAR = "log_likelihood"
-    ACAUSAL_VAR = "acausal_posterior"
+    # The Zarr store keeps the decoder's variable names.
+    PREDICTIVE_VAR = DECODER_PREDICTIVE_VAR
+    LOG_LIKELIHOOD_VAR = "log_likelihood"
+    SMOOTHED_VAR = DECODER_SMOOTHED_VAR
 
     def __init__(
         self,
         cache_dir: Path | str,
-        model: ModelName | None = None,
+        model: Figure4ModelId | None = None,
         *,
         layout: CacheLayout | None = None,
-        dataset_kind: DatasetKind = "model",
+        dataset_kind: DatasetKind = "recording",
         display_name: str | None = None,
     ) -> None:
-        # ``__init__`` accepts either the legacy real-data signature
+        # ``__init__`` accepts either the real-data signature
         # (``cache_dir, model``) or an explicit ``layout`` for the
         # simulation path. Use the named constructors
-        # (``for_model`` / ``for_simulation``) for new callers.
+        # (``for_recording`` / ``for_simulation``) for new callers.
         self._cache_dir = Path(cache_dir)
         if layout is None:
             if model is None:
@@ -212,11 +231,13 @@ class DecoderDataSource:
                     "DecoderDataSource(): pass model= for real-data caches "
                     "or use DecoderDataSource.for_simulation(cache_dir)."
                 )
-            layout = CacheLayout.for_model(self._cache_dir, model)
+            layout = CacheLayout.for_recording(self._cache_dir, model)
         self._layout = layout
         self.dataset_kind: DatasetKind = dataset_kind
-        self.model: ModelName | None = model
-        self.display_name: str = display_name or (model if model is not None else "decoder")
+        self.model: Figure4ModelId | None = model
+        self.display_name: str = display_name or (
+            figure04_model(model).label if model is not None else "decoder"
+        )
 
         self._layout.assert_exists()
 
@@ -233,6 +254,19 @@ class DecoderDataSource:
         self.time = _readonly(np.asarray(meta["time"], dtype=np.float64))
         self.linear_position = _readonly(np.asarray(meta["linear_position"], dtype=np.float64))
         self.n_cells = int(meta["n_cells"])
+        self.flag_thresholds: dict[str, float] | None = None
+        if dataset_kind == "simulation":
+            if "flag_thresholds" not in meta.files:
+                raise ValueError(
+                    f"{self._layout.meta} records no flag thresholds; "
+                    f"rebuild it with {self._rebuild_command()}."
+                )
+            self.flag_thresholds = {
+                str(metric): float(threshold)
+                for metric, threshold in zip(
+                    meta["flag_metrics"], meta["flag_thresholds"], strict=True
+                )
+            }
 
         pfs = np.load(self._layout.place_fields)
         self.place_fields = _readonly(np.asarray(pfs["place_fields"], dtype=np.float32))
@@ -252,6 +286,15 @@ class DecoderDataSource:
         ]
 
         self.events: pd.DataFrame = pd.read_parquet(self._layout.events)
+        if "event_time_ind" not in self.events.columns:
+            raise ValueError(
+                f"{self._layout.events} records no event_time_ind; "
+                f"rebuild it with {self._rebuild_command()}."
+            )
+        if not pd.api.types.is_integer_dtype(self.events["event_time_ind"]):
+            raise ValueError(
+                f"events event_time_ind must be integer; got {self.events['event_time_ind'].dtype}"
+            )
         if not self.events["time"].is_monotonic_increasing:
             event_order = np.argsort(self.events["time"].to_numpy(), kind="stable")
             self.events = self.events.iloc[event_order].reset_index(drop=True)
@@ -269,6 +312,11 @@ class DecoderDataSource:
         # also lock the underlying DataFrame storage.
         self.event_times = _readonly(self.events["time"].to_numpy(dtype=np.float64))
         self.event_cell_ids = _readonly(self.events["cell_id"].to_numpy(dtype=np.int32))
+        # Decoder time bin of each event, as the diagnostics assigned it. Used
+        # by ``event_indices_at`` to find the events in a given time bin.
+        self.event_time_ind: NDArray[np.int64] = _readonly(
+            self.events["event_time_ind"].to_numpy(dtype=np.int64)
+        )
         self.event_hpd_overlap = _readonly(
             self.events["event_hpd_overlap"].to_numpy(dtype=np.float32)
         )
@@ -281,23 +329,13 @@ class DecoderDataSource:
 
         self._validate_consistency()
 
-        # Decoder time-bin index for each event. Used by
-        # ``cells_at_index`` to find which cells fired in a given
-        # time bin without re-bisecting the time grid per call.
-        self._time_arr_for_bin = np.asarray(self.time, dtype=np.float64)
-        self.event_time_idx: NDArray[np.int64] = np.clip(
-            np.searchsorted(self._time_arr_for_bin, self.event_times, side="right") - 1,
-            0,
-            max(self._time_arr_for_bin.shape[0] - 1, 0),
-        ).astype(np.int64)
-
         self.n_time: int = int(self.time.shape[0])
         self.n_interior: int = int(self.position_bins.shape[0])
 
         # Total state bins along the Zarr ``state_bins`` axis. For a
         # Continuous classifier this is one state's full position grid;
-        # for ContFrag it is ``n_states * n_pos_full``.
-        self.n_state_bins: int = int(meta_ds[self.POSTERIOR_VAR].sizes["state_bins"])
+        # for Continuous-Fragmented it is ``n_states * n_pos_full``.
+        self.n_state_bins: int = int(meta_ds[self.PREDICTIVE_VAR].sizes["state_bins"])
 
         # Full (non-interior + interior) per-state position grid. The
         # Zarr's ``position`` non-dim coord on ``state_bins`` repeats
@@ -310,7 +348,7 @@ class DecoderDataSource:
 
         # Interior mask in per-state position-grid coordinates (shape
         # ``(n_position_full,)``). Used by ``SlicePanel`` to find which
-        # entries of a posterior row are real vs. NaN-filled by the
+        # entries of a predictive row are real vs. NaN-filled by the
         # cache.
         interior_mask_full = np.asarray(pfs["interior_mask"], dtype=bool)
         # ``interior_mask`` saved by the cache is concatenated across
@@ -331,19 +369,26 @@ class DecoderDataSource:
             )
 
         # Direct zarr arrays for the hot path.
-        self._post_arr: zarr.Array = self._zarr_group[self.POSTERIOR_VAR]
-        self._loglik_arr: zarr.Array = self._zarr_group[self.LIKELIHOOD_VAR]
+        self._predictive_arr: zarr.Array = self._zarr_group[self.PREDICTIVE_VAR]
+        self._loglik_arr: zarr.Array = self._zarr_group[self.LOG_LIKELIHOOD_VAR]
         # ``acausal_posterior`` (smoothed distribution) is optional. The viewer
         # disables the smoothed choice when it is absent; it never substitutes
         # a predictive distribution under the smoothed label.
-        self._acausal_arr: zarr.Array | None = (
-            self._zarr_group[self.ACAUSAL_VAR] if self.ACAUSAL_VAR in self._zarr_group else None
+        self._smoothed_arr: zarr.Array | None = (
+            self._zarr_group[self.SMOOTHED_VAR] if self.SMOOTHED_VAR in self._zarr_group else None
         )
-        self.has_acausal: bool = self._acausal_arr is not None
+        self.has_smoothed: bool = self._smoothed_arr is not None
 
     # ------------------------------------------------------------------
     # Consistency / sanity
     # ------------------------------------------------------------------
+
+    def _rebuild_command(self) -> str:
+        """Return the CLI command that rebuilds this cache, quoted for messages."""
+        command = "python -m statespacecheck_paper.interactive.cache"
+        if self.dataset_kind == "simulation":
+            return f"'{command} build-simulated --force'"
+        return f"'{command} build --data-dir DATA --force'"
 
     def _validate_consistency(self) -> None:
         n_cells = self.n_cells
@@ -373,6 +418,16 @@ class DecoderDataSource:
                 f"got [{self.events['cell_id'].min()}, "
                 f"{self.events['cell_id'].max()}]"
             )
+        if self.event_time_ind.size:
+            if self.event_time_ind.min() < 0 or self.event_time_ind.max() >= self.time.shape[0]:
+                raise ValueError(
+                    f"events event_time_ind out of range [0, {self.time.shape[0]}); "
+                    f"got [{self.event_time_ind.min()}, {self.event_time_ind.max()}]"
+                )
+            # ``event_indices_at`` bisects this column, so it must follow the
+            # time order of the rows.
+            if np.any(np.diff(self.event_time_ind) < 0):
+                raise ValueError("events event_time_ind must be non-decreasing in time order")
         if self.event_likelihood is not None:
             expected_shape = (len(self.events), self.place_fields.shape[1])
             if self.event_likelihood.shape != expected_shape:
@@ -435,12 +490,12 @@ class DecoderDataSource:
         """Return the decoder-grid index for the bin containing ``t``.
 
         Uses LEFT-EDGE bin convention — bin ``i`` covers
-        ``[time[i], time[i+1])`` — matching ``event_time_idx`` (which
-        is built via ``np.searchsorted(side="right") - 1``) and
-        ``non_local_detector``'s ``np.digitize``-based spike binning.
-        Click handlers therefore land on the same bin as the spike's
-        ``event_time_idx``, so the per-cell rows on the slice panel
-        always include the clicked event.
+        ``[time[i], time[i+1])`` — like ``non_local_detector``'s
+        ``np.digitize``-based spike binning, so a click on a spike lands on
+        the spike's ``event_time_ind`` and the slice panel's per-cell rows
+        include it. The one difference is the final timestamp: this returns
+        the last row, ``n_time - 1``, while the decoder counts a spike there
+        in bin ``n_time - 2``.
         """
         if self.n_time == 0:
             raise ValueError("Empty time grid")
@@ -455,18 +510,11 @@ class DecoderDataSource:
         ``event_kl_divergence``, ``event_predictive_pvalue``). ``i1 <= i0``
         means no events landed in this bin.
         """
-        if self.event_time_idx.size == 0:
+        if self.event_time_ind.size == 0:
             return 0, 0
-        i0 = int(np.searchsorted(self.event_time_idx, t_idx, side="left"))
-        i1 = int(np.searchsorted(self.event_time_idx, t_idx, side="right"))
+        i0 = int(np.searchsorted(self.event_time_ind, t_idx, side="left"))
+        i1 = int(np.searchsorted(self.event_time_ind, t_idx, side="right"))
         return i0, i1
-
-    def cells_at_index(self, t_idx: int) -> NDArray[np.int32]:
-        """Return the unique cell IDs that fired in time bin ``t_idx``."""
-        i0, i1 = self.event_indices_at(t_idx)
-        if i1 <= i0:
-            return np.empty(0, dtype=np.int32)
-        return np.unique(self.event_cell_ids[i0:i1])
 
     def event_likelihood_at(self, event_idx: int, cell_id: int) -> NDArray[np.float32]:
         """Return the likelihood curve associated with one event.
@@ -499,11 +547,11 @@ class DecoderDataSource:
     # Hot-path readers
     # ------------------------------------------------------------------
 
-    def load_posterior(self, sl: slice) -> NDArray[np.float32]:
-        """Load the predictive posterior for the given time slice."""
-        return self._read_window(self._post_arr, sl)
+    def load_predictive(self, sl: slice) -> NDArray[np.float32]:
+        """Load the predictive distribution for the given time slice."""
+        return self._read_window(self._predictive_arr, sl)
 
-    def load_likelihood(self, sl: slice) -> NDArray[np.float32]:
+    def load_log_likelihood(self, sl: slice) -> NDArray[np.float32]:
         """Load the (log) likelihood for the given time slice.
 
         The cache stores the raw ``log_likelihood`` from the decoder.
@@ -513,24 +561,27 @@ class DecoderDataSource:
         """
         return self._read_window(self._loglik_arr, sl)
 
-    def load_acausal(self, sl: slice) -> NDArray[np.float32] | None:
-        """Load the acausal (smoothed) posterior, or ``None`` if absent.
+    def load_smoothed(self, sl: slice) -> NDArray[np.float32] | None:
+        """Load the smoothed posterior, or ``None`` if absent.
 
-        Older caches built before the smoothed-overlay feature landed
-        did not include this variable; callers should fall back to
-        predictive in that case.
+        Caches without ``acausal_posterior`` (the simulation cache) return
+        ``None``; callers fall back to the predictive distribution.
         """
-        if self._acausal_arr is None:
+        if self._smoothed_arr is None:
             return None
-        return self._read_window(self._acausal_arr, sl)
+        return self._read_window(self._smoothed_arr, sl)
 
     def slice_at_index(
         self,
         t_idx: int,
         *,
-        which: Literal["posterior", "likelihood", "acausal"] = "posterior",
+        which: Literal["predictive", "log_likelihood", "smoothed"] = "predictive",
     ) -> NDArray[np.float32]:
         """Return one 1D row (length ``n_state_bins``) at ``t_idx``.
+
+        ``which`` selects the predictive distribution, the log likelihood
+        (true log space, as :meth:`load_log_likelihood` returns it), or the
+        smoothed posterior.
 
         Hot-path call from the slice panel: a single Zarr row read.
         Typical chunk size (8192 along time) means at most one chunk
@@ -538,19 +589,22 @@ class DecoderDataSource:
         """
         if not 0 <= t_idx < self.n_time:
             raise IndexError(f"t_idx {t_idx} out of range [0, {self.n_time})")
-        if which == "posterior":
-            arr = self._post_arr
-        elif which == "likelihood":
+        if which == "predictive":
+            arr = self._predictive_arr
+        elif which == "log_likelihood":
             arr = self._loglik_arr
-        elif which == "acausal":
-            if self._acausal_arr is None:
+        elif which == "smoothed":
+            if self._smoothed_arr is None:
                 raise ValueError(
                     "acausal_posterior is not present in this cache; "
                     "rebuild via 'python -m statespacecheck_paper.interactive.cache build'."
                 )
-            arr = self._acausal_arr
+            arr = self._smoothed_arr
         else:
-            raise ValueError(f"Unknown slice variant: {which!r}")
+            raise ValueError(
+                f"Unknown slice variant: {which!r}; expected 'predictive', "
+                "'log_likelihood', or 'smoothed'"
+            )
         return np.asarray(arr[t_idx], dtype=np.float32)
 
     @staticmethod
@@ -592,7 +646,7 @@ class DecoderDataSource:
     # ------------------------------------------------------------------
 
     @classmethod
-    def for_model(cls, cache_dir: Path | str, model: ModelName) -> DecoderDataSource:
+    def for_recording(cls, cache_dir: Path | str, model: Figure4ModelId) -> DecoderDataSource:
         """Open the real-data (figure-4) cache for ``model`` under ``cache_dir``."""
         return cls(cache_dir, model)
 
@@ -626,9 +680,9 @@ class DecoderDataSource:
         """
         # Drop array references so the underlying store can be GC'd.
         self._zarr_group = None
-        self._post_arr = None
+        self._predictive_arr = None
         self._loglik_arr = None
-        self._acausal_arr = None
+        self._smoothed_arr = None
 
     def __enter__(self) -> DecoderDataSource:
         return self

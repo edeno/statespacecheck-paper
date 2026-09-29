@@ -14,9 +14,9 @@ pieces, and each reads data produced here from the paper's own pipeline:
   reference cases computed through the paper's
   :func:`~statespacecheck_paper.diagnostics.compute_spike_event_diagnostics_from_rates`
   wrapper of that function, and ``site/tests/metrics.test.mjs`` checks the port against them.
-- **Scenario player** — one display window per Figure-3 condition from the
+- **Condition player** — one display window per Figure-3 condition from the
   seed-``config.random_seed`` realization shown in Figure 3a.
-- **Replay comparison** — the Figure-4 detail window under both decoders.
+- **Recording comparison** — the Figure-4 detail window under both decoders.
 
 The players show precomputed diagnostic values, never recomputed ones. Numbers
 quoted in the page text come from :func:`statespacecheck_paper.reported_values.macro_sections`,
@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import base64
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
@@ -44,45 +44,49 @@ from numpy.typing import NDArray
 
 from statespacecheck_paper.decoding import decode_with_diagnostics
 from statespacecheck_paper.diagnostics import (
+    HPD_COVERAGE,
+    INCLUSIVE_FLAG_COMPARISONS,
     DecodingDiagnostics,
+    FlagDirection,
     compute_spike_event_diagnostics_from_rates,
+    flag_mask,
 )
-from statespacecheck_paper.figure03_generation import FIGURE03_CONDITION_IDS, conditions_by_id
 from statespacecheck_paper.figure03_protocol import STEP_SECONDS, Figure3Config
 from statespacecheck_paper.figure03_simulation import (
     Figure3SimulationResult,
     all_place_field_centers,
-    build_figure03_rate_tables,
+    build_figure03_expected_count_tables,
     run_figure03_simulation,
 )
+from statespacecheck_paper.figure03_summary import conditions_by_id
 from statespacecheck_paper.figure04_cache import Figure4Paths
 from statespacecheck_paper.figure04_decoder import Figure4Config
-from statespacecheck_paper.figure04_diagnostics import mean_per_spike_likelihood_by_time
-from statespacecheck_paper.figure04_generation import FIGURE4_DETAIL_WINDOW
-from statespacecheck_paper.figure04_layout import Figure4DetailWindow
-from statespacecheck_paper.figure04_place_fields import get_state_marginalized_posterior
+from statespacecheck_paper.figure04_diagnostics import mean_event_likelihood_by_time
+from statespacecheck_paper.figure04_models import CONTINUOUS, CONTINUOUS_FRAGMENTED
+from statespacecheck_paper.figure04_place_fields import marginal_position_distribution
+from statespacecheck_paper.figure04_protocol import FIGURE04_DETAIL_WINDOW, Figure4DetailWindow
 from statespacecheck_paper.figure04_workflow import Figure4RenderData, prepare_figure04_render_data
-from statespacecheck_paper.number_format import significant, whole_percent
-from statespacecheck_paper.paths import ANIMAL_DATE_EPOCH, DATA_PATH
-from statespacecheck_paper.reported_values import (
+from statespacecheck_paper.number_format import SIGNIFICANT_FIGURES, significant, whole_percent
+from statespacecheck_paper.paths import (
+    ANIMAL_DATE_EPOCH,
+    DATA_PATH,
     FIGURE03_SUMMARY_PATH,
     FIGURE04_SUMMARY_PATH,
-    macro_sections,
+    PARITY_FIXTURE_PATH,
+    SITE_DATA_DIR,
 )
+from statespacecheck_paper.reported_values import cardinal_word, macro_sections
 from statespacecheck_paper.simulation import (
     gaussian_transition_matrix,
-    place_field_rates,
+    place_field_expected_counts,
     simulate_spikes_position_tuned,
 )
 from statespacecheck_paper.style import (
     CMAP_LIKELIHOOD,
-    CMAP_POSTERIOR,
+    CMAP_PREDICTIVE,
     METRIC_NAMES,
     PREDICTIVE_VMAX_QUANTILE,
 )
-
-SITE_DATA_DIR = Path("site/data")
-PARITY_FIXTURE_PATH = Path("site/tests/fixtures/metric_parity.json")
 
 # Significant figures kept for per-event diagnostic values. Significant figures,
 # not decimal places, so a small predictive p-value keeps its magnitude.
@@ -91,23 +95,26 @@ EVENT_VALUE_SIGNIFICANT_FIGURES = 4
 # Entries in each exported colormap lookup table.
 COLORMAP_LUT_SIZE = 64
 
-# Probability mass of the HPD regions, as throughout the paper.
-HPD_COVERAGE = 0.95
-
-# Color scale of the Figure-4 predictive heatmaps (xarray's ``robust=True``):
-# the 2nd to 98th percentiles of the plotted window. Figure 3's scale is
+# Color scale of the Figure-4 predictive heatmaps: the 2nd to 98th percentiles
+# of the plotted window, restating the limits that xarray's ``robust=True``
+# (``xarray.plot.utils.ROBUST_PERCENTILE``) gives the figure in
+# ``figure04_plot_primitives.plot_distribution_heatmap``. xarray drops
+# non-finite values before taking them, whereas the export zero-fills NaN
+# first. The zero-fill changes nothing here, since the state marginal the
+# export reads has already dropped every bin holding a NaN in the window, but
+# it would lower the limits of a window with NaN. Figure 3's scale is
 # ``style.PREDICTIVE_VMAX_QUANTILE``, shared with ``figure03_plotting``.
-FIGURE4_PREDICTIVE_PERCENTILES = (2.0, 98.0)
+FIGURE04_PREDICTIVE_PERCENTILES = (2.0, 98.0)
 
 
 @dataclass(frozen=True)
-class ScenarioWindow:
-    """Display window for one Figure-3 condition in the scenario player.
+class ConditionWindow:
+    """Display window for one Figure-3 condition in the condition player.
 
     Parameters
     ----------
     condition_id : str
-        One of ``FIGURE03_CONDITION_IDS``.
+        A Figure-3 summary condition's ``condition_id``.
     start, stop : int
         Half-open range of simulation steps shown.
     """
@@ -117,19 +124,19 @@ class ScenarioWindow:
     stop: int
 
 
-# Display choices, like ``FIGURE4_DETAIL_WINDOW``; each overlaps its condition's
+# Display choices, like ``FIGURE04_DETAIL_WINDOW``; each overlaps its condition's
 # scored step windows (checked by the test suite). Abrupt conditions (remap,
 # history dependence, replay) start a few hundred clean steps before onset so
 # the change is visible. Drift builds up gradually, so its window sits mid-phase,
 # where the flag rates are close to the across-realization medians. The sparse
 # population fires only a handful of spikes, so its window spans the whole phase.
-SCENARIO_WINDOWS: tuple[ScenarioWindow, ...] = (
-    ScenarioWindow("well_specified", 11_500, 13_000),
-    ScenarioWindow("remap", 5_700, 7_200),
-    ScenarioWindow("history_dependent", 13_700, 15_200),
-    ScenarioWindow("replay", 18_700, 21_300),
-    ScenarioWindow("drift", 24_000, 25_500),
-    ScenarioWindow("sparse_population", 29_700, 32_000),
+CONDITION_WINDOWS: tuple[ConditionWindow, ...] = (
+    ConditionWindow("well_specified", 11_500, 13_000),
+    ConditionWindow("remap", 5_700, 7_200),
+    ConditionWindow("history_dependent", 13_700, 15_200),
+    ConditionWindow("replay", 18_700, 21_300),
+    ConditionWindow("drift", 24_000, 25_500),
+    ConditionWindow("sparse_population", 29_700, 32_000),
 )
 
 
@@ -161,14 +168,6 @@ def encode_display_rows(values: NDArray[np.floating]) -> str:
     scaled = np.divide(array, row_max, out=np.zeros_like(array), where=row_max > 0.0)
     quantized = np.rint(scaled * 255.0).astype(np.uint8)
     return base64.b64encode(quantized.tobytes()).decode("ascii")
-
-
-def decode_display_rows(encoded: str, n_bins: int) -> NDArray[np.uint8]:
-    """Invert :func:`encode_display_rows` to a ``(n_rows, n_bins)`` array."""
-    flat = np.frombuffer(base64.b64decode(encoded), dtype=np.uint8)
-    if flat.size % n_bins:
-        raise ValueError(f"{flat.size} encoded values do not divide into rows of {n_bins}")
-    return flat.reshape(-1, n_bins)
 
 
 def heatmap_payload(
@@ -221,6 +220,46 @@ def _rounded_significant(values: NDArray[np.floating], digits: int) -> list[floa
     return [float(f"{value:.{digits}g}") for value in _finite(values).tolist()]
 
 
+_FLAG_DIRECTION_BY_COMPARISON: dict[str, FlagDirection] = {
+    comparison: direction for direction, comparison in INCLUSIVE_FLAG_COMPARISONS.items()
+}
+
+
+def flag_threshold_text(figure03_summary: Mapping[str, Any]) -> dict[str, str]:
+    """Each Figure-3 flag threshold as the page prints it.
+
+    The page states a threshold beside each diagnostic's readout, rounded by
+    the manuscript's reporting policy: a threshold estimated from the pooled
+    baseline is a derived constant, printed to
+    :data:`~statespacecheck_paper.number_format.SIGNIFICANT_FIGURES`
+    significant figures (the KL divergence's 4.138... prints as 4.1), and a
+    fixed cutoff is a configured parameter, printed in full (0.05).
+
+    Parameters
+    ----------
+    figure03_summary : mapping
+        Parsed ``figure03_summary.json``: ``flag_rules`` and, for each metric,
+        the ``threshold_provenance`` rule that set its threshold.
+
+    Returns
+    -------
+    dict
+        Metric name -> threshold text.
+    """
+    provenance = figure03_summary["threshold_provenance"]
+    texts: dict[str, str] = {}
+    for metric, rule in figure03_summary["flag_rules"].items():
+        threshold = float(rule["threshold"])
+        kind = provenance[metric]["rule"]
+        if kind == "fixed_cutoff":
+            texts[metric] = repr(threshold)
+        elif kind == "pooled_baseline_quantile":
+            texts[metric] = significant(threshold, SIGNIFICANT_FIGURES)
+        else:
+            raise ValueError(f"Unknown threshold rule {kind!r} for {metric}")
+    return texts
+
+
 def flag_events(values: NDArray[np.floating], rule: Mapping[str, Any]) -> NDArray[np.bool_]:
     """Apply an inclusive flag rule from a figure summary's ``flag_rules``.
 
@@ -238,12 +277,9 @@ def flag_events(values: NDArray[np.floating], rule: Mapping[str, Any]) -> NDArra
     """
     threshold = float(rule["threshold"])
     comparison = rule["comparison"]
-    array = np.asarray(values, dtype=np.float64)
-    if comparison == "less_than_or_equal":
-        return array <= threshold
-    if comparison == "greater_than_or_equal":
-        return array >= threshold
-    raise ValueError(f"Unknown flag comparison {comparison!r}")
+    if comparison not in _FLAG_DIRECTION_BY_COMPARISON:
+        raise ValueError(f"Unknown flag comparison {comparison!r}")
+    return flag_mask(values, threshold, _FLAG_DIRECTION_BY_COMPARISON[comparison])
 
 
 class EventDiagnostics(Protocol):
@@ -285,10 +321,10 @@ def _event_payload(
     return payload
 
 
-def colormap_lut(name: str, n: int = COLORMAP_LUT_SIZE) -> list[str]:
-    """Sample a matplotlib colormap as ``n`` hex colors, low to high."""
-    cmap = mpl.colormaps[name].resampled(n)
-    return [mpl.colors.to_hex(cmap(i)) for i in range(n)]
+def colormap_lut(name: str) -> list[str]:
+    """Sample a matplotlib colormap as ``COLORMAP_LUT_SIZE`` hex colors, low to high."""
+    cmap = mpl.colormaps[name].resampled(COLORMAP_LUT_SIZE)
+    return [mpl.colors.to_hex(cmap(i)) for i in range(COLORMAP_LUT_SIZE)]
 
 
 # ---------------------------------------------------------------------------
@@ -342,7 +378,7 @@ class FilterExplainerConfig:
     conflict_offset: float = 45.0
 
 
-# A display choice, like ``SCENARIO_WINDOWS``: a seed whose sequence shows the
+# A display choice, like ``CONDITION_WINDOWS``: a seed whose sequence shows the
 # prediction spreading over a long gap, tracks the animal with no inconsistent
 # spike before the conflict, and recovers after it (checked by the test suite).
 FILTER_EXPLAINER = FilterExplainerConfig()
@@ -358,25 +394,22 @@ class FilterExplainerSequence:
     rates : np.ndarray, shape (n_bins, n_cells)
         Expected spikes per step of each cell: the table the decoder builds
         from the same place-field parameters, kept for the page's field plots.
-    true_position : np.ndarray, shape (n_steps,)
+    physical_position : np.ndarray, shape (n_steps,)
+        The simulated animal's position, which the spikes follow (the
+        sequence has no replay).
     spike_counts : np.ndarray, shape (n_steps, n_cells)
-    conflict_cells : tuple of int
-        The cells that fire at ``conflict_step``.
     decoded : DecodingDiagnostics
         Output of :func:`decode_with_diagnostics` for ``spike_counts``.
     """
 
     position_bins: NDArray[np.float64]
     rates: NDArray[np.float64]
-    true_position: NDArray[np.float64]
+    physical_position: NDArray[np.float64]
     spike_counts: NDArray[np.int_]
-    conflict_cells: tuple[int, ...]
     decoded: DecodingDiagnostics
 
 
-def filter_explainer_sequence(
-    config: Figure3Config, explainer: FilterExplainerConfig = FILTER_EXPLAINER
-) -> FilterExplainerSequence:
+def filter_explainer_sequence(config: Figure3Config) -> FilterExplainerSequence:
     """Simulate and decode the explainer's spike train.
 
     The spikes come from the simulation's generator, given the smooth run. The
@@ -384,17 +417,17 @@ def filter_explainer_sequence(
     cell whose field is centered nearest the animal, so the demonstration opens
     on a spike whose prediction is the flat initial distribution; and
     ``conflict_step`` holds the inconsistent spikes described in
-    :class:`FilterExplainerConfig`.
+    :class:`FilterExplainerConfig`. :data:`FILTER_EXPLAINER` supplies the run,
+    rates, movement model, and the scripted edits.
 
     Parameters
     ----------
     config : Figure3Config
         Supplies the track and the place-field centers and width.
-    explainer : FilterExplainerConfig
-        Supplies the run, rates, movement model, and the scripted edits.
     """
     if config.place_field_centers is None:
         raise ValueError("config.place_field_centers must be initialized")
+    explainer = FILTER_EXPLAINER
     centers = np.asarray(config.place_field_centers, dtype=np.float64)
     position_bins = config.position_bins
     steps = np.arange(explainer.n_steps)
@@ -412,12 +445,13 @@ def filter_explainer_sequence(
     target = (
         here + explainer.conflict_offset if here <= midpoint else here - explainer.conflict_offset
     )
-    conflict_cells = tuple(sorted(int(c) for c in np.argsort(np.abs(centers - target))[:2]))
     counts[explainer.conflict_step] = 0
-    counts[explainer.conflict_step, list(conflict_cells)] = 1
+    counts[explainer.conflict_step, np.argsort(np.abs(centers - target))[:2]] = 1
 
     rates = np.asarray(
-        place_field_rates(position_bins, centers, config.place_field_std, explainer.rate_scale),
+        place_field_expected_counts(
+            position_bins, centers, config.place_field_std, explainer.rate_scale
+        ),
         dtype=np.float64,
     )
     decoded = decode_with_diagnostics(
@@ -431,9 +465,8 @@ def filter_explainer_sequence(
     return FilterExplainerSequence(
         position_bins=position_bins,
         rates=rates,
-        true_position=np.asarray(position, dtype=np.float64),
+        physical_position=np.asarray(position, dtype=np.float64),
         spike_counts=counts,
-        conflict_cells=conflict_cells,
         decoded=decoded,
     )
 
@@ -447,20 +480,17 @@ def _moments(
     return mean, np.sqrt(variance)
 
 
-def filter_explainer_payload(
-    config: Figure3Config, explainer: FilterExplainerConfig = FILTER_EXPLAINER
-) -> dict[str, Any]:
-    """Build the data for the filter explainer's time stepper.
+def filter_explainer_payload(config: Figure3Config) -> dict[str, Any]:
+    """Build the data for the filter explainer's time stepper, :data:`FILTER_EXPLAINER`.
 
     Parameters
     ----------
     config : Figure3Config
-    explainer : FilterExplainerConfig
 
     Returns
     -------
     dict
-        ``position_bins``, ``cell_centers``, ``true_position``; ``events``
+        ``position_bins``, ``cell_centers``, ``physical_position``; ``events``
         (time step, cell, and HPD overlap of each spike); ``predictive`` and
         ``posterior`` (display rows on one shared scale, see
         :func:`heatmap_payload`); ``likelihood`` (each step's normalized
@@ -473,7 +503,7 @@ def filter_explainer_payload(
         posterior at each step); ``conflict_step``; and ``coverage``, the
         probability mass of the HPD regions the page's captions name.
     """
-    sequence = filter_explainer_sequence(config, explainer)
+    sequence = filter_explainer_sequence(config)
     decoded = sequence.decoded
     bins = sequence.position_bins
     predictive = np.asarray(decoded.predictive, dtype=np.float64)
@@ -487,7 +517,7 @@ def filter_explainer_payload(
     return {
         "position_bins": bins.tolist(),
         "cell_centers": np.asarray(config.place_field_centers, dtype=np.float64).tolist(),
-        "true_position": _rounded(sequence.true_position, 2),
+        "physical_position": _rounded(sequence.physical_position, 2),
         "events": {
             "t": np.asarray(decoded.event_time_ind).tolist(),
             "cell": np.asarray(decoded.event_cell_ind).tolist(),
@@ -497,7 +527,7 @@ def filter_explainer_payload(
         },
         "predictive": heatmap_payload(predictive, shared_range),
         "posterior": heatmap_payload(posterior, shared_range),
-        "likelihood": encode_display_rows(decoded.likelihood),
+        "likelihood": encode_display_rows(decoded.combined_likelihood),
         "place_fields": heatmap_payload(sequence.rates.T, (0.0, float(sequence.rates.max()))),
         "exposure": _rounded(exposure, 4),
         "moments": {
@@ -506,7 +536,7 @@ def filter_explainer_payload(
             "posterior_mean": _rounded(posterior_mean, 2),
             "posterior_sd": _rounded(posterior_sd, 2),
         },
-        "conflict_step": explainer.conflict_step,
+        "conflict_step": FILTER_EXPLAINER.conflict_step,
         "coverage": HPD_COVERAGE,
     }
 
@@ -548,7 +578,7 @@ def gaussian_predictive(
 
 @dataclass(frozen=True)
 class PlaygroundEnsemble:
-    """One decoder rate table the playground can evaluate spikes against.
+    """One decoder expected-count table the playground can evaluate spikes against.
 
     Parameters
     ----------
@@ -571,7 +601,7 @@ class PlaygroundEnsemble:
 def playground_ensembles(
     config: Figure3Config, sparse_centers: NDArray[np.floating]
 ) -> tuple[PlaygroundEnsemble, ...]:
-    """Build the two Figure-3 decoder rate tables on ``config.position_bins``.
+    """Build the two Figure-3 decoder expected-count tables on ``config.position_bins``.
 
     Parameters
     ----------
@@ -589,7 +619,7 @@ def playground_ensembles(
     if config.place_field_centers is None:
         raise ValueError("config.place_field_centers must be initialized")
     sparse = np.asarray(sparse_centers, dtype=np.float64)
-    tables = build_figure03_rate_tables(
+    tables = build_figure03_expected_count_tables(
         config.position_bins, config.place_field_centers, sparse, config
     )
     n_place_cells = len(config.place_field_centers)
@@ -597,15 +627,52 @@ def playground_ensembles(
     return (
         PlaygroundEnsemble(
             "place_cells",
-            np.asarray(tables.baseline_firing_rates, dtype=np.float64),
+            np.asarray(tables.baseline_expected_counts_per_step, dtype=np.float64),
             tuple(range(n_place_cells)),
         ),
         PlaygroundEnsemble(
             "sparse_epoch",
-            np.asarray(tables.sparse_population_firing_rates, dtype=np.float64),
+            np.asarray(tables.sparse_population_expected_counts_per_step, dtype=np.float64),
             tuple(range(n_place_cells, n_cells)),
         ),
     )
+
+
+@dataclass(frozen=True)
+class PlaygroundPreset:
+    """An example the playground loads from one of its buttons.
+
+    Parameters
+    ----------
+    preset_id : str
+        The button's ``data-preset`` in ``site/index.html``.
+    ensemble_id : str
+        A :class:`PlaygroundEnsemble`'s ``ensemble_id``.
+    mean, std : float
+        Center and standard deviation of the Gaussian prediction, in position
+        units (:func:`gaussian_predictive`).
+    cell : int
+        The cell that fired; one of the ensemble's ``selectable_cells``.
+    """
+
+    preset_id: str
+    ensemble_id: str
+    mean: float
+    std: float
+    cell: int
+
+
+# The playground's examples. Each button's label claims which diagnostics flag
+# its spike under the Figure-3 flag rules, checked by the test suite.
+PLAYGROUND_PRESETS: tuple[PlaygroundPreset, ...] = (
+    PlaygroundPreset("consistent", "place_cells", mean=50.0, std=5.0, cell=5),
+    PlaygroundPreset("conflicting", "place_cells", mean=25.0, std=4.0, cell=7),
+    PlaygroundPreset("nested", "place_cells", mean=47.0, std=1.5, cell=5),
+    PlaygroundPreset("broad", "sparse_epoch", mean=30.0, std=15.0, cell=13),
+    # The sparse cells' fields nearly coincide, so which of them fired says
+    # little; the p-value misses a conflict that HPD overlap catches.
+    PlaygroundPreset("pvalue_miss", "sparse_epoch", mean=50.0, std=3.0, cell=13),
+)
 
 
 def playground_payload(
@@ -623,6 +690,14 @@ def playground_payload(
         Sparse-population field centers from the Figure-3 simulation.
     figure03_summary : mapping
         Parsed ``figure03_summary.json``; supplies the simulation flag rules.
+
+    Returns
+    -------
+    dict
+        ``position_bins``, ``cell_centers``, ``ensembles`` (rates and
+        selectable cells), ``presets`` (:data:`PLAYGROUND_PRESETS`, keyed by
+        ``preset_id``), ``flag_rules`` with their ``flag_threshold_text``
+        (:func:`flag_threshold_text`), and the HPD ``coverage``.
     """
     return {
         "position_bins": config.position_bins.tolist(),
@@ -635,7 +710,17 @@ def playground_payload(
             }
             for ensemble in playground_ensembles(config, sparse_centers)
         ],
+        "presets": {
+            preset.preset_id: {
+                "ensemble": preset.ensemble_id,
+                "mean": preset.mean,
+                "std": preset.std,
+                "cell": preset.cell,
+            }
+            for preset in PLAYGROUND_PRESETS
+        },
         "flag_rules": figure03_summary["flag_rules"],
+        "flag_threshold_text": flag_threshold_text(figure03_summary),
         "coverage": HPD_COVERAGE,
     }
 
@@ -718,16 +803,17 @@ def metric_parity_fixture(
 
 
 # ---------------------------------------------------------------------------
-# Scenario player (Figure 3)
+# Condition player (Figure 3)
 # ---------------------------------------------------------------------------
 
 
-def scenario_payloads(
+def condition_payloads(
     sim: Figure3SimulationResult,
     figure03_summary: Mapping[str, Any],
-    windows: Sequence[ScenarioWindow] = SCENARIO_WINDOWS,
 ) -> dict[str, dict[str, Any]]:
     """Per-condition display data from one Figure-3 realization.
+
+    Each condition is shown over its window in :data:`CONDITION_WINDOWS`.
 
     Parameters
     ----------
@@ -736,8 +822,6 @@ def scenario_payloads(
     figure03_summary : mapping
         Parsed ``figure03_summary.json``: flag rules plus per-condition median
         flag percentages and decoding errors across realizations.
-    windows : sequence of ScenarioWindow
-        One display window per condition.
 
     Returns
     -------
@@ -752,27 +836,27 @@ def scenario_payloads(
     order = list(figure03_summary["condition_order"])
     metric_order = list(figure03_summary["metric_order"])
     flag_percentages = np.asarray(figure03_summary["median_flag_percentages"], dtype=np.float64)
-    decoding_error = np.asarray(figure03_summary["median_decoding_accuracy"], dtype=np.float64)
+    decoding_error = np.asarray(figure03_summary["median_decoding_error"], dtype=np.float64)
     flag_rules = figure03_summary["flag_rules"]
-    error_row = list(figure03_summary["accuracy_metric_order"]).index("median_absolute_error")
+    error_row = list(figure03_summary["error_metric_order"]).index("median_absolute_error")
 
     event_time = np.asarray(diagnostics.event_time_ind)
     event_cell = np.asarray(diagnostics.event_cell_ind)
-    per_spike_likelihood = np.asarray(diagnostics.per_spike_likelihood, dtype=np.float64)
+    event_likelihood = np.asarray(diagnostics.event_likelihood, dtype=np.float64)
 
     predictive_range = (
         0.0,
         float(np.nanquantile(diagnostics.predictive, PREDICTIVE_VMAX_QUANTILE)),
     )
     payloads: dict[str, dict[str, Any]] = {}
-    for window in windows:
+    for window in CONDITION_WINDOWS:
         if not 0 <= window.start < window.stop <= n_time:
             raise ValueError(f"{window} lies outside the {n_time}-step timeline")
         condition = conditions[window.condition_id]
         column = order.index(window.condition_id)
         in_window = (event_time >= window.start) & (event_time < window.stop)
         likelihood_rows, likelihood_index = np.unique(
-            per_spike_likelihood[in_window], axis=0, return_inverse=True
+            event_likelihood[in_window], axis=0, return_inverse=True
         )
         payloads[window.condition_id] = {
             "condition_id": window.condition_id,
@@ -786,7 +870,7 @@ def scenario_payloads(
                 if t0 < window.stop and t1 > window.start
             ],
             "position_bins": position_bins.tolist(),
-            "true_position": _rounded(sim.true_position[window.start : window.stop], 2),
+            "physical_position": _rounded(sim.physical_position[window.start : window.stop], 2),
             "predictive": heatmap_payload(
                 diagnostics.predictive[window.start : window.stop], predictive_range
             ),
@@ -807,21 +891,21 @@ def scenario_payloads(
                 "median_absolute_error_text": significant(decoding_error[error_row, column]),
             },
         }
-    for condition_id in FIGURE03_CONDITION_IDS:
+    for condition_id in conditions:
         if condition_id not in payloads:
             raise ValueError(f"No display window for condition {condition_id!r}")
     return payloads
 
 
 # ---------------------------------------------------------------------------
-# Replay comparison (Figure 4)
+# Recording comparison (Figure 4)
 # ---------------------------------------------------------------------------
 
 
-def replay_payload(
+def recording_payload(
     render_data: Figure4RenderData,
     figure04_summary: Mapping[str, Any],
-    detail_window: Figure4DetailWindow = FIGURE4_DETAIL_WINDOW,
+    detail_window: Figure4DetailWindow = FIGURE04_DETAIL_WINDOW,
 ) -> dict[str, Any]:
     """Build the Figure-4 detail window under both decoders.
 
@@ -831,11 +915,34 @@ def replay_payload(
         Recording plus cached decode, as used to render Figure 4.
     figure04_summary : mapping
         Parsed ``figure04_summary.json``: flag rules and decode-cache identity.
-    detail_window : Figure4DetailWindow, default ``FIGURE4_DETAIL_WINDOW``
+    detail_window : Figure4DetailWindow, default ``FIGURE04_DETAIL_WINDOW``
         Samples shown; defaults to the window in Figure 4a/b.
+
+    Raises
+    ------
+    ValueError
+        If the summary's decode or diagnostics fingerprint differs from the
+        provenance of the decode being exported (``render_data.cache_provenance``),
+        so the window would be labeled with another decode's identity.
     """
+    caches = figure04_summary["provenance"]["figure04_caches"]
+    exported = render_data.cache_provenance
+    mismatched = [
+        key
+        for key, exported_value in (
+            ("fingerprint_sha256", exported.fingerprint_sha256),
+            ("diagnostics_fingerprint_sha256", exported.diagnostics_fingerprint_sha256),
+        )
+        if caches[key] != exported_value
+    ]
+    if mismatched:
+        raise ValueError(
+            "figure04_summary.json provenance.figure04_caches does not match the decode "
+            f"being exported ({', '.join(mismatched)} differ); regenerate Figure 4 from "
+            "the same decode and diagnostics caches before exporting the recording window."
+        )
     window = detail_window.to_slice(render_data.time.size)
-    decode = render_data.decode_results
+    analysis = render_data.analysis_results
     time = np.asarray(render_data.time, dtype=np.float64)
     # Decoder bins are left-closed; the window spans [time[start], time[stop]).
     t0 = float(time[window.start])
@@ -844,37 +951,39 @@ def replay_payload(
         if window.stop < time.size
         else float(time[-1] + (time[-1] - time[-2]))
     )
-    place_fields = np.asarray(decode.diagnostic_place_fields, dtype=np.float64)
-    mean_likelihood, has_spikes = mean_per_spike_likelihood_by_time(
-        decode.spike_counts[window], place_fields
+    place_fields = np.asarray(analysis.diagnostic_place_fields, dtype=np.float64)
+    mean_likelihood, has_spikes = mean_event_likelihood_by_time(
+        analysis.spike_counts[window], place_fields
     )
     flag_rules = figure04_summary["flag_rules"]
 
     models: dict[str, Any] = {}
-    for name, results, diagnostics in (
-        ("continuous", decode.continuous_results, decode.continuous_diagnostics),
+    for model, results, diagnostics in (
+        (CONTINUOUS, analysis.continuous_results, analysis.continuous_diagnostics),
         (
-            "continuous_fragmented",
-            decode.continuous_fragmented_results,
-            decode.continuous_fragmented_diagnostics,
+            CONTINUOUS_FRAGMENTED,
+            analysis.continuous_fragmented_results,
+            analysis.continuous_fragmented_diagnostics,
         ),
     ):
-        predictive = get_state_marginalized_posterior(results.isel(time=window), "predictive")
+        predictive = marginal_position_distribution(results.isel(time=window), "predictive")
         if predictive.shape[1] != place_fields.shape[1]:
             raise ValueError(
-                f"{name} predictive has {predictive.shape[1]} bins; "
+                f"{model.id} predictive has {predictive.shape[1]} bins; "
                 f"place fields have {place_fields.shape[1]}"
             )
         if diagnostics.event_time is None:
-            raise ValueError(f"{name} diagnostics lack exact event times")
+            raise ValueError(f"{model.id} diagnostics lack exact event times")
         predictive = np.nan_to_num(predictive)
-        low, high = np.percentile(predictive, FIGURE4_PREDICTIVE_PERCENTILES)
+        low, high = np.percentile(predictive, FIGURE04_PREDICTIVE_PERCENTILES)
         # Events belong to the decoder bin that counted them (event_time_ind),
         # as in Figure 4, not to the bin nearest their exact spike time.
         event_bin = np.asarray(diagnostics.event_time_ind)
         in_window = (event_bin >= window.start) & (event_bin < window.stop)
         event_time = np.asarray(diagnostics.event_time, dtype=np.float64)
-        models[name] = {
+        models[model.id] = {
+            "label": model.label,
+            "short_label": model.short_label,
             "predictive": heatmap_payload(predictive, (float(low), float(high))),
             "events": {
                 "bin": (event_bin[in_window] - window.start).tolist(),
@@ -885,25 +994,24 @@ def replay_payload(
         }
 
     spike_times = render_data.recording.spike_times
-    decode_cache = figure04_summary["provenance"]["figure04_decode_cache"]
-    unit_rank = np.argsort(np.argsort(decode.place_field_peaks))
+    cell_rank = np.argsort(np.argsort(analysis.place_field_peaks))
     return {
         "time": _rounded(time[window] - t0, 4),
-        "position_bins": _rounded(decode.diagnostic_position_bins, 2),
+        "position_bins": _rounded(analysis.diagnostic_position_bins, 2),
         "linear_position": _rounded(render_data.linear_position[window], 2),
         "likelihood": encode_display_rows(mean_likelihood),
         "has_spikes": has_spikes.tolist(),
-        # Each unit's normalized single-event likelihood (one row per unit).
-        "unit_likelihoods": encode_display_rows(ssc.event_likelihood(place_fields)),
-        "unit_rank": unit_rank.tolist(),
+        # Each cell's normalized single-event likelihood (one row per cell).
+        "cell_likelihoods": encode_display_rows(ssc.event_likelihood(place_fields)),
+        "cell_rank": cell_rank.tolist(),
         "spike_times": [
             _rounded(times[(times >= t0) & (times < t_end)] - t0, 4) for times in spike_times
         ],
         "models": models,
         "flag_rules": flag_rules,
         # Identify the decode and the diagnostics this window was exported from.
-        "decode_cache_fingerprint": decode_cache["fingerprint_sha256"],
-        "diagnostics_fingerprint": decode_cache["diagnostics_fingerprint_sha256"],
+        "decode_cache_fingerprint": caches["fingerprint_sha256"],
+        "diagnostics_fingerprint": caches["diagnostics_fingerprint_sha256"],
     }
 
 
@@ -912,10 +1020,51 @@ def replay_payload(
 # ---------------------------------------------------------------------------
 
 
+def page_values(figure04_summary: Mapping[str, Any]) -> dict[str, str]:
+    """Numbers the page text states that the manuscript does not.
+
+    The page fills them into ``data-macro`` placeholders alongside the
+    manuscript's macros.
+
+    Parameters
+    ----------
+    figure04_summary : mapping
+        Parsed ``figure04_summary.json``: the detail window and decoder bin rate.
+
+    Returns
+    -------
+    dict
+        ``RecordingWindowSecondsWord``: the Figure-4 detail window's length in
+        seconds, spelled out ("this two-second window").
+
+    Raises
+    ------
+    ValueError
+        If the window is not a whole number of seconds.
+    """
+    half_width = figure04_summary["detail_window"]["half_width_samples"]
+    sampling_frequency_hz = figure04_summary["configuration"]["decoder"]["sampling_frequency_hz"]
+    seconds = 2 * half_width / sampling_frequency_hz
+    if not float(seconds).is_integer():
+        raise ValueError(
+            f"The page spells the recording window in whole seconds; it is {seconds} s"
+        )
+    return {"RecordingWindowSecondsWord": cardinal_word(int(seconds))}
+
+
 def manifest_payload(
     figure03_summary: dict[str, Any], figure04_summary: dict[str, Any]
 ) -> dict[str, Any]:
-    """Page-wide data: reported-value macros, flag rules, colormaps, and conditions."""
+    """Page-wide data: reported values, flag rules, colormaps, and conditions.
+
+    ``macros`` holds the manuscript's macros and ``page_values`` the numbers
+    only the page states (:func:`page_values`). ``flag_threshold_text`` holds
+    the simulation's thresholds as the page prints them
+    (:func:`flag_threshold_text`). Each ``conditions`` entry names
+    a condition's data file and its tab title
+    (:attr:`~statespacecheck_paper.figure03_summary.Figure3SummaryCondition.title`).
+    """
+    conditions = conditions_by_id(Figure3Config())
     macros = {
         macro.name: macro.value
         for _, section in macro_sections(figure03_summary, figure04_summary)
@@ -923,20 +1072,20 @@ def manifest_payload(
     }
     return {
         "macros": macros,
+        "page_values": page_values(figure04_summary),
         "flag_rules": {"simulation": figure03_summary["flag_rules"]},
+        "flag_threshold_text": {"simulation": flag_threshold_text(figure03_summary)},
         "colormaps": {
-            "predictive": colormap_lut(CMAP_POSTERIOR),
+            "predictive": colormap_lut(CMAP_PREDICTIVE),
             "likelihood": colormap_lut(CMAP_LIKELIHOOD),
         },
-        "scenarios": [
+        "conditions": [
             {
                 "condition_id": window.condition_id,
-                "label": figure03_summary["condition_labels"][
-                    figure03_summary["condition_order"].index(window.condition_id)
-                ],
-                "file": f"scenario_{window.condition_id}.json",
+                "title": conditions[window.condition_id].title,
+                "file": f"condition_{window.condition_id}.json",
             }
-            for window in SCENARIO_WINDOWS
+            for window in CONDITION_WINDOWS
         ],
     }
 
@@ -957,9 +1106,13 @@ def export_site_data(*, include_recording: bool = True) -> list[Path]:
     Parameters
     ----------
     include_recording : bool, default True
-        Also export the Figure-4 replay window. This needs the derived
-        recording exports and the Figure-4 decode cache; pass False on a
-        machine without them to leave the committed ``replay.json`` untouched.
+        Also export the Figure-4 recording window. This needs the Figure-4 input
+        file in ``DATA_PATH``. It reuses the Figure-4 decode and diagnostics
+        caches when their fingerprints match and otherwise rebuilds them as
+        ``generate_figure04.py`` does: a stale or missing decode cache refits
+        both models (several minutes) and writes the ~8 GB decode cache. Pass
+        False on a machine without the input file, or when the recording
+        outputs are unchanged, to leave the committed ``recording.json`` untouched.
 
     Returns
     -------
@@ -982,8 +1135,8 @@ def export_site_data(*, include_recording: bool = True) -> list[Path]:
         write_site_json(PARITY_FIXTURE_PATH, metric_parity_fixture(config, sparse_centers)),
         write_site_json(SITE_DATA_DIR / "filter.json", filter_explainer_payload(config)),
     ]
-    for condition_id, payload in scenario_payloads(simulation, figure03_summary).items():
-        written.append(write_site_json(SITE_DATA_DIR / f"scenario_{condition_id}.json", payload))
+    for condition_id, payload in condition_payloads(simulation, figure03_summary).items():
+        written.append(write_site_json(SITE_DATA_DIR / f"condition_{condition_id}.json", payload))
     if include_recording:
         render_data = prepare_figure04_render_data(
             Figure4Config(),
@@ -991,7 +1144,7 @@ def export_site_data(*, include_recording: bool = True) -> list[Path]:
         )
         written.append(
             write_site_json(
-                SITE_DATA_DIR / "replay.json", replay_payload(render_data, figure04_summary)
+                SITE_DATA_DIR / "recording.json", recording_payload(render_data, figure04_summary)
             )
         )
     return written

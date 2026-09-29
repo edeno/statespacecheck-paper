@@ -4,16 +4,20 @@ model swap, play/pause auto-scroll, and keyboard shortcuts.
 
 from __future__ import annotations
 
-import os
-import time
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from statespacecheck_paper.interactive.cache import ModelName
+from statespacecheck_paper.figure04_models import Figure4ModelId
+from statespacecheck_paper.figure04_protocol import FIGURE04_DETAIL_WINDOW, Figure4DetailWindow
 
+from ._qt import (
+    make_viewer,
+    qt_offscreen,  # noqa: F401 -- registers the autouse fixture here
+    wait_for_request,
+)
 from ._synthetic_cache import build_synthetic_cache as _build_cache_impl
 
 PYSIDE6_AVAILABLE = True
@@ -35,32 +39,15 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-@pytest.fixture(scope="module", autouse=True)
-def _qt_offscreen() -> None:
-    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-
-
 def _build_cache(
     cache_dir: Path,
     *,
-    model: ModelName = "continuous",
+    model: Figure4ModelId = "continuous",
     n_states: int = 1,
     seed: int = 0,
 ) -> None:
-    """Controls tests need both Continuous and ContFrag caches for swap tests."""
+    """Controls tests need both Continuous and Continuous-Fragmented caches for swap tests."""
     _build_cache_impl(cache_dir, model=model, n_states=n_states, seed=seed)
-
-
-def _make_viewer(cache_dir: Path, *, model: ModelName = "continuous") -> tuple[Any, Any, Any]:
-    from PySide6 import QtWidgets
-
-    from statespacecheck_paper.interactive.data_source import DecoderDataSource
-    from statespacecheck_paper.interactive.viewer import DecoderViewer
-
-    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-    ds = DecoderDataSource(cache_dir, model=model)
-    viewer = DecoderViewer(ds, cache_dir=cache_dir)
-    return app, viewer, ds
 
 
 @pytest.fixture
@@ -72,22 +59,12 @@ def viewer_session(tmp_path: Path) -> Iterator[tuple[Any, Any, Any]]:
     """
     cache_dir = tmp_path / "cache"
     _build_cache(cache_dir)
-    app, viewer, ds = _make_viewer(cache_dir)
+    app, viewer, ds = make_viewer(cache_dir, model_swaps=True)
     try:
         yield app, viewer, ds
     finally:
         viewer.close()
         ds.close()
-
-
-def _wait_for_request(app, viewer, request_id: int, timeout_s: float = 5.0) -> bool:
-    deadline = time.perf_counter() + timeout_s
-    while time.perf_counter() < deadline:
-        app.processEvents()
-        if viewer._latest_committed_request_id >= request_id:  # noqa: SLF001
-            return True
-        time.sleep(0.005)
-    return False
 
 
 # ---------------------------------------------------------------------------
@@ -151,8 +128,24 @@ def test_reset_view_centers_and_sets_window(viewer_session: tuple[Any, Any, Any]
 
     expected_w = min(RESET_WINDOW_SECONDS, MAX_WINDOW_SECONDS)
     assert abs(viewer._window_seconds - expected_w) < 1e-9  # noqa: SLF001
-    # Reset center should be inside the session.
-    assert viewer._t_min <= viewer._t_center <= viewer._t_max  # noqa: SLF001
+    # The synthetic recording is shorter than Figure 4's detail window, so the
+    # viewer opens, and resets, mid-session.
+    assert ds.n_time <= FIGURE04_DETAIL_WINDOW.center_index
+    assert viewer._t_center == 0.5 * (viewer._t_min + viewer._t_max)  # noqa: SLF001
+
+
+def test_recording_opens_and_resets_on_the_figure04_window(
+    viewer_session: tuple[Any, Any, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A recording long enough to contain Figure 4a/b's window centers on it."""
+    from statespacecheck_paper.interactive import viewer as viewer_module
+
+    _, viewer, ds = viewer_session
+    window = Figure4DetailWindow(center_index=ds.n_time // 3, half_width_samples=10)
+    monkeypatch.setattr(viewer_module, "FIGURE04_DETAIL_WINDOW", window)
+    viewer.set_center_time(float(ds.time[-1]))
+    viewer._reset_view()  # noqa: SLF001
+    assert viewer._t_center == float(ds.time[window.center_index])  # noqa: SLF001
 
 
 # ---------------------------------------------------------------------------
@@ -222,6 +215,29 @@ def test_speed_step_keyboard_shortcut(viewer_session: tuple[Any, Any, Any]) -> N
     assert viewer._speed_combo.currentIndex() == len(AUTOSCROLL_SPEED_OPTIONS) - 1  # noqa: SLF001
 
 
+@pytest.mark.parametrize(("key", "expected_change"), [(",", "slower"), (".", "faster")])
+def test_comma_slows_and_period_speeds_up_autoscroll(
+    viewer_session: tuple[Any, Any, Any], key: str, expected_change: str
+) -> None:
+    """The ``,`` shortcut lowers the auto-scroll speed and ``.`` raises it."""
+    _, viewer, _ = viewer_session
+    from PySide6 import QtGui
+
+    viewer._speed_combo.setCurrentIndex(3)  # noqa: SLF001
+    rate_before = viewer._autoscroll_rate  # noqa: SLF001
+    (shortcut,) = [
+        s
+        for s in viewer.findChildren(QtGui.QShortcut)
+        if s.key().matches(QtGui.QKeySequence(key)) == QtGui.QKeySequence.SequenceMatch.ExactMatch
+    ]
+    shortcut.activated.emit()
+    rate_after = viewer._autoscroll_rate  # noqa: SLF001
+    if expected_change == "slower":
+        assert rate_after < rate_before
+    else:
+        assert rate_after > rate_before
+
+
 def test_autoscroll_step_uses_current_speed(
     viewer_session: tuple[Any, Any, Any],
 ) -> None:
@@ -260,35 +276,69 @@ def test_autoscroll_pauses_at_session_end(
 def test_model_swap_rebuilds_panels_and_loads(tmp_path: Path) -> None:
     cache_dir = tmp_path / "cache"
     _build_cache(cache_dir, model="continuous", n_states=1)
-    _build_cache(cache_dir, model="contfrag", n_states=2, seed=1)
+    _build_cache(cache_dir, model="continuous_fragmented", n_states=2, seed=1)
 
-    app, viewer, ds = _make_viewer(cache_dir, model="continuous")
+    app, viewer, ds = make_viewer(cache_dir, model_swaps=True)
     try:
         assert viewer._ds.model == "continuous"  # noqa: SLF001
         assert viewer.slice_panel._n_states == 1  # noqa: SLF001
 
-        viewer._switch_model("contfrag")  # noqa: SLF001
-        assert viewer._ds.model == "contfrag"  # noqa: SLF001
+        viewer._switch_model("continuous_fragmented")  # noqa: SLF001
+        assert viewer._ds.model == "continuous_fragmented"  # noqa: SLF001
         assert viewer.slice_panel._n_states == 2  # noqa: SLF001
         # Heatmap panels rebuilt with the new state count too.
-        assert viewer.posterior_panel._n_states == 2  # noqa: SLF001
+        assert viewer.predictive_panel._n_states == 2  # noqa: SLF001
 
         # The new central widget should commit a fresh load.
         target = viewer._next_request_id  # noqa: SLF001
-        assert _wait_for_request(app, viewer, target)
+        assert wait_for_request(app, viewer, target)
     finally:
         viewer.close()
         ds.close()
 
 
+def test_model_toggle_alternates_between_the_two_models(tmp_path: Path) -> None:
+    cache_dir = tmp_path / "cache"
+    _build_cache(cache_dir, model="continuous", n_states=1)
+    _build_cache(cache_dir, model="continuous_fragmented", n_states=2, seed=1)
+
+    _, viewer, _ = make_viewer(cache_dir, model_swaps=True)
+    try:
+        combo = viewer._model_combo  # noqa: SLF001
+        # The combo shows display labels and carries the machine IDs.
+        assert [combo.itemText(i) for i in range(combo.count())] == [
+            "Continuous",
+            "Continuous\N{EN DASH}Fragmented",
+        ]
+        assert [combo.itemData(i) for i in range(combo.count())] == [
+            "continuous",
+            "continuous_fragmented",
+        ]
+        # A switch rebuilds the controls, so read the current combo each time.
+        viewer._toggle_model()  # noqa: SLF001
+        assert viewer._ds.model == "continuous_fragmented"  # noqa: SLF001
+        assert viewer._model_combo.currentData() == "continuous_fragmented"  # noqa: SLF001
+        viewer._toggle_model()  # noqa: SLF001
+        assert viewer._ds.model == "continuous"  # noqa: SLF001
+        assert viewer._model_combo.currentData() == "continuous"  # noqa: SLF001
+        # Choosing a label in the combo switches to that model.
+        combo = viewer._model_combo  # noqa: SLF001
+        combo.setCurrentIndex(combo.findData("continuous_fragmented"))
+        assert viewer._ds.model == "continuous_fragmented"  # noqa: SLF001
+    finally:
+        viewer.close()
+        # Each switch closes the source it replaces; close the current one.
+        viewer._ds.close()  # noqa: SLF001
+
+
 def test_model_swap_revert_when_cache_missing(tmp_path: Path) -> None:
     cache_dir = tmp_path / "cache"
     _build_cache(cache_dir, model="continuous", n_states=1)
-    # Note: do NOT build the contfrag cache.
+    # Note: do NOT build the continuous_fragmented cache.
 
-    _, viewer, ds = _make_viewer(cache_dir, model="continuous")
+    _, viewer, ds = make_viewer(cache_dir, model_swaps=True)
     try:
-        viewer._switch_model("contfrag")  # noqa: SLF001
+        viewer._switch_model("continuous_fragmented")  # noqa: SLF001
         # The data source should remain on continuous.
         assert viewer._ds.model == "continuous"  # noqa: SLF001
     finally:

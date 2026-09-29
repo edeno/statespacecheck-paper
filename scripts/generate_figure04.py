@@ -8,7 +8,8 @@ is the thin CLI wrapper.
 
 Requires:
 - non_local_detector package for decoder models
-- Pre-exported neural recording data under ``data/``
+- The Figure-4 input file (``make download-data``), under ``DATA_PATH``:
+  ``data/`` unless ``$STATESPACECHECK_DATA_PATH`` is set
 """
 
 from __future__ import annotations
@@ -26,8 +27,9 @@ def main(argv: Sequence[str] | None = None) -> None:
         "--force-recompute",
         action="store_true",
         help=(
-            "Re-fit and re-decode both models instead of loading the cached "
-            "decoder outputs under data/intermediates (overwrites the cache)."
+            "Re-fit and re-decode both models and recompute their per-spike "
+            "diagnostics instead of loading the decode and diagnostics caches "
+            "under the data directory's intermediates/ (overwrites both caches)."
         ),
     )
     args = parser.parse_args(argv)

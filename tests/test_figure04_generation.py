@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import dataclasses
 import importlib
+import json
 import sys
 from collections.abc import Iterator
 from pathlib import Path
@@ -13,34 +15,31 @@ import pytest
 
 from statespacecheck_paper import figure04_generation
 from statespacecheck_paper.figure04_cache import (
-    FIGURE04_CACHE_SCHEMA_VERSION,
-    FIGURE04_DIAGNOSTICS_SCHEMA_VERSION,
-    Figure4CacheProvenance,
     Figure4Paths,
 )
-from statespacecheck_paper.figure04_decoder import Figure4Config, Figure4DiagnosticsConfig
+from statespacecheck_paper.figure04_decoder import Figure4Config, Figure4PackageDefaults
 from statespacecheck_paper.figure04_diagnostics import FlagConfusion
+from statespacecheck_paper.figure04_input import INPUT_FILE_SUFFIX
 from statespacecheck_paper.figure04_layout import Figure4Composition
-from statespacecheck_paper.figure04_workflow import (
-    Figure4DiagnosticMeans,
-    Figure4Summary,
-)
-from statespacecheck_paper.load_local_data import EXPORT_FILE_SUFFIXES
+from statespacecheck_paper.figure04_protocol import FIGURE04_DETAIL_WINDOW
+from statespacecheck_paper.figure04_summary import Figure4DiagnosticMeans, Figure4Summary
+from statespacecheck_paper.paths import FIGURE04_SUMMARY_PATH, REPO_ROOT
 
-_SCRIPTS_DIR = Path(__file__).parent.parent / "scripts"
+from ._figure04 import synthetic_cache_provenance
+from ._scripts import SCRIPTS_DIR
 
 
 @pytest.fixture(scope="module")
 def figure04_script() -> Iterator[ModuleType]:
     """Import the thin ``scripts/generate_figure04.py`` CLI module."""
-    added = str(_SCRIPTS_DIR) not in sys.path
+    added = str(SCRIPTS_DIR) not in sys.path
     if added:
-        sys.path.insert(0, str(_SCRIPTS_DIR))
+        sys.path.insert(0, str(SCRIPTS_DIR))
     try:
         yield importlib.import_module("generate_figure04")
     finally:
         if added:
-            sys.path.remove(str(_SCRIPTS_DIR))
+            sys.path.remove(str(SCRIPTS_DIR))
 
 
 def test_generation_passes_figure_and_bbox_to_save(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -90,7 +89,7 @@ def test_generation_passes_figure_and_bbox_to_save(monkeypatch: pytest.MonkeyPat
     assert saved["kwargs"]["fig"] is fig
     assert saved["kwargs"]["bbox_inches"] is composition.bbox_inches
     assert saved["kwargs"]["close"] is True
-    assert composed["kwargs"]["detail_window"] is figure04_generation.FIGURE4_DETAIL_WINDOW
+    assert composed["kwargs"]["detail_window"] is FIGURE04_DETAIL_WINDOW
 
 
 def test_summary_payload_contains_reported_counts_rates_and_provenance(
@@ -105,22 +104,12 @@ def test_summary_payload_contains_reported_counts_rates_and_provenance(
         threshold=0.05,
         n=100,
         both=2,
-        a_only=18,
-        b_only=3,
+        rescued=18,
+        newly_flagged=3,
         neither=77,
     )
     summary = Figure4Summary(means_a, means_b, (confusion,), n_units=7)
-    cache_provenance = Figure4CacheProvenance(
-        fingerprint_sha256="c" * 64,
-        schema_version=FIGURE04_CACHE_SCHEMA_VERSION,
-        animal_date_epoch="epoch_x",
-        export_checksums=tuple((suffix, "d" * 64) for suffix in EXPORT_FILE_SUFFIXES),
-        non_local_detector_version="1.2.3",
-        diagnostics_fingerprint_sha256="e" * 64,
-        diagnostics_schema_version=FIGURE04_DIAGNOSTICS_SCHEMA_VERSION,
-        statespacecheck_version="0.1.0",
-        diagnostics_config=Figure4DiagnosticsConfig(),
-    )
+    cache_provenance = synthetic_cache_provenance("epoch_x")
     source = {
         "statespacecheck_paper_version": "test",
         "statespacecheck_version": "test",
@@ -140,31 +129,61 @@ def test_summary_payload_contains_reported_counts_rates_and_provenance(
     flag_rules = cast(dict[str, dict[str, str | float]], payload["flag_rules"])
     provenance = cast(dict[str, Any], payload["provenance"])
 
-    assert payload["schema_version"] == 4
+    assert payload["schema_version"] == figure04_generation.FIGURE04_SUMMARY_SCHEMA_VERSION
+    # The recorded package defaults include the per-state classes the decode relies on.
+    package_defaults = payload["configuration"]["package_defaults"]
+    assert package_defaults["continuous_fragmented_transition_types"] == (
+        ("RandomWalk", "Uniform"),
+        ("Uniform", "Uniform"),
+    )
+    assert package_defaults["continuous_initial_conditions_types"] == ("UniformInitialConditions",)
     assert payload["dataset"] == {"animal_date_epoch": "epoch_x", "n_units": 7}
     assert flag_rules["hpd_overlap"] == {
         "comparison": "less_than_or_equal",
         "threshold": 0.05,
     }
     assert payload["diagnostic_means"]["continuous"]["hpd_overlap"] == pytest.approx(0.1)
+    # Each flag confusion names its reference and comparison decoders.
+    assert payload["flag_confusion_models"] == {
+        "reference": "continuous",
+        "comparison": "continuous_fragmented",
+    }
     assert payload["flag_confusions"][0] == {
         "metric": "hpd_overlap",
         "threshold": 0.05,
         "n": 100,
         "both": 2,
-        "a_only": 18,
-        "b_only": 3,
+        "rescued": 18,
+        "newly_flagged": 3,
         "neither": 77,
-        "rescue_rate": 0.9,
+        "rescued_fraction": 0.9,
     }
     assert provenance["source"] == source
-    decode_provenance = provenance["figure04_decode_cache"]
-    assert decode_provenance["fingerprint_sha256"] == "c" * 64
-    assert decode_provenance["diagnostics_fingerprint_sha256"] == "e" * 64
-    assert decode_provenance["diagnostics_config"]["hpd_coverage"] == 0.95
-    assert set(decode_provenance["export_file_sha256"]) == {
-        f"epoch_x{suffix}" for suffix in EXPORT_FILE_SUFFIXES
+    cache_provenance_payload = provenance["figure04_caches"]
+    assert cache_provenance_payload["fingerprint_sha256"] == "c" * 64
+    assert cache_provenance_payload["diagnostics_fingerprint_sha256"] == "e" * 64
+    assert cache_provenance_payload["diagnostics_config"]["hpd_coverage"] == 0.95
+    assert cache_provenance_payload["input_file_sha256"] == {
+        f"epoch_x{INPUT_FILE_SUFFIX}": "d" * 64
     }
+
+
+def test_committed_summary_records_the_current_schema_and_package_defaults() -> None:
+    """The committed summary uses the current layout and records exactly the
+    package defaults the code checks the decoders against."""
+    committed = json.loads((REPO_ROOT / FIGURE04_SUMMARY_PATH).read_text(encoding="utf-8"))
+    assert committed["schema_version"] == figure04_generation.FIGURE04_SUMMARY_SCHEMA_VERSION
+    expected = json.loads(json.dumps(dataclasses.asdict(Figure4PackageDefaults())))
+    assert committed["configuration"]["package_defaults"] == expected
+
+
+def test_committed_summary_states_the_nld_version_it_was_decoded_with() -> None:
+    """The version the manuscript states (the RecNldVersion macro, from the recorded
+    package defaults) is the installed version the decode cache recorded."""
+    committed = json.loads((REPO_ROOT / FIGURE04_SUMMARY_PATH).read_text(encoding="utf-8"))
+    stated = committed["configuration"]["package_defaults"]["non_local_detector_version"]
+    decoded_with = committed["provenance"]["figure04_caches"]["non_local_detector_version"]
+    assert stated == decoded_with
 
 
 def test_cli_force_recompute_forwards_use_cache(

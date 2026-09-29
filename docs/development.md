@@ -16,7 +16,8 @@ make check
 ```
 
 `make check` checks formatting, lint, strict types, the default Python test suite,
-and website metric parity. The website tests need Node 22+; run
+and website metric parity. The website tests need the Node version that
+`site/package.json` requires (`engines`); run
 `make check-python` or `make check-site` separately when working on one component.
 An explicit Node executable can be passed as `make check NODE=/path/to/node`.
 
@@ -62,10 +63,11 @@ and orchestration separate; the dependency graph is tested for cycles.
 | General Bayesian filter | `decoding.py` |
 | Paper diagnostic containers and threshold choices | `diagnostics.py` |
 | Figure 3 protocol, simulation, summary, rendering | `figure03_*` |
-| Figure 4 loading, fitting, diagnostics, caches, rendering | `load_local_data.py`, `figure04_*` |
+| Figure 4 loading, fitting, diagnostics, caches, rendering | `figure04_*` (the input-file reader is `figure04_input.py`) |
 | Shared plotting and appearance | `plotting.py`, `style.py`, `schematic.py` |
 | Summary-to-prose reporting | `reported_values.py`, `number_format.py` |
 | Website export | `site_export.py` |
+| The lab's Spyglass pipeline for Figure 4 (rebuilding and writing its input file; converting the original pickles; running it as Spyglass tables) | `spyglass_pipeline/` |
 
 The general diagnostic computations belong to the separate `statespacecheck`
 package. Change them there, release/update that dependency, and regenerate this
@@ -82,16 +84,20 @@ Use dataclasses for configurations and scientific result containers.
   Preserve draw order when preserving an existing seeded experiment.
 - Arrays have time first: spatial distributions are `(n_time, n_position_bins)`
   or `(n_time, n_x_bins, n_y_bins)`; spike counts are `(n_time, n_cells)`;
-  the simulated rate table is `(n_bins, n_cells)`.
+  the simulated expected-count table is `(n_bins, n_cells)`.
 - Predictions mean `p(x_t | y_{1:t-1})`, filtering means `p(x_t | y_{1:t})`, and
   smoothing means `p(x_t | y_{1:T})`. Keep them distinct in code and prose.
-- Manuscript rates are `lambda`; expected counts are `lambda * dt`. Simulation
-  Poisson inputs already contain counts per step, even where named `rate`.
-  Do not multiply them by `dt` again.
+- Manuscript rates are `lambda`; expected counts are `lambda * dt`. The
+  simulation's Poisson inputs are expected counts per step and are named so
+  (`place_field_expected_counts`, `expected_counts_per_step`,
+  `baseline_expected_counts_per_step`); the scale parameters that set them keep
+  their configured names (`place_field_rate_scale`). Do not multiply them by
+  `dt` again.
 - Handle invalid spatial bins and NaNs explicitly. Vectorize independent
   operations; sequential filtering recursions require their time loop.
-- Use `style.py` for fonts, figure sizes, and the colorblind-friendly palette.
-  Export both PDF and PNG; the canonical generators use 450 DPI.
+- Use `style.py` for fonts, the colorblind-friendly palette, and the
+  `METRIC_SPECS` registry (each metric's color, display transform, and label).
+  Export both PDF and PNG at `style.FIGURE_DPI` (450).
 - Add full type hints (`NDArray[np.float64]` for arrays) and NumPy-style
   docstrings with array shapes. Strict mypy must pass on Python 3.11, the
   development pin; CI type-checks there only, because the lock installs numpy 2.2
@@ -120,11 +126,16 @@ uv run --frozen python scripts/export_site_data.py
 ```
 
 The macro emitter needs internet for the package DOI lookup. Website export
-needs the Figure 4 inputs/cache; `--skip-recording` is appropriate only when
-the recording outputs are unchanged. Figure 3 and 4 summaries must carry the
-same current source provenance before emitting macros; the tests enforce this
-(the emitter itself checks only that both record the same `statespacecheck`
-version).
+needs the Figure 4 input file for the recording window; it reuses the Figure 4
+caches when they are current and otherwise refits both models (several minutes)
+and writes the ~8 GB decode cache, as `generate_figure04.py` does.
+`--skip-recording` leaves `site/data/recording.json` untouched and is appropriate
+only when the recording outputs are unchanged. The recording export refuses a
+Figure-4 summary whose decode or diagnostics fingerprint differs from the decode
+it exports. Figure 3 and 4 summaries must carry the same current source
+provenance before emitting macros: the emitter refuses summaries whose
+`provenance.source` blocks differ, naming the differing keys, and the tests
+check that the recorded source digest is current.
 
 The source digest covers all Python files under `src/`, including comments and
 docstrings. After a documentation-only source change, first verify that the
@@ -134,13 +145,19 @@ and run the commands above. Edits confined to `reported_values`, `site_export`,
 or `figure04_download` may use this procedure while no figure imports them and
 the reported values remain unchanged. Markdown-only edits do not affect the hash.
 
-Figure 4 caches have separate decode and diagnostic fingerprints. Decode source
-hashes cover fitting, recording preparation, and shared workflow/place-field code.
+Figure 4 caches have separate decode and diagnostic fingerprints. The decode
+source hash covers the fit and decode (`figure04_fit.py`) and the modules it
+uses: `figure04_decoder.py`, `figure04_input.py`, and `figure04_place_fields.py`.
 Any executable change to those modules refits both models, including an edited
 message string. Changes confined to `diagnostics.py`, `figure04_diagnostics.py`,
-or the diagnostics configuration recompute diagnostics from cached predictions. Comments and docstrings
-are excluded from both cache hashes. Existing caches without the decode source
-hash are rebuilt on their next use. See [the cache specification](figure-pipeline.md#figure-4--real-data-decoder-diagnostics).
+`figure04_workflow.py`, or the diagnostics configuration recompute diagnostics
+from cached predictions. Comments and docstrings are excluded from both cache
+hashes. See [the cache specification](figure-pipeline.md#figure-4-cache-behavior).
+
+The guides quote configured values readers need (the figure resolution, flag
+cutoffs, Figure-4 decoder settings, input-file identifiers, summary schema
+versions); `tests/test_documented_values.py` checks each against the code that
+defines it, so update the guide in the same change as the value.
 
 Keep publication PDFs, previews, summaries, macros, and website data committed
 together after a result change. Inspect binary diffs visually: PDF creation
@@ -154,7 +171,7 @@ The [artifact table](reproduce.md#outputs-and-checks) identifies each generator.
 - **Lab acquisition/export:** `fetch_figure04_inputs.py`,
   `spyglass_export_figure04.py`, `spyglass_pipeline_figure04.py`, and
   `datajoint_read_only.py`. See [the lab guide](spyglass-pipeline.md).
-- **Legacy conversion:** `convert_figure04_pickles.py`, for the original five
+- **Pickle conversion:** `convert_figure04_pickles.py`, for the original five
   local pickles. Current reproduction uses the archived `.npz` input. Conversion
   verification and historic checksums remain in [data lineage](data-lineage.md).
 
@@ -162,8 +179,10 @@ Never write to the lab's Spyglass database without the user's explicit approval
 of that specific step, including inserts, `populate`, schema creation, deletes,
 and exports. Use `scripts/datajoint_read_only.py` for read-only checks.
 
-`spyglass_data.py` keeps Spyglass imports inside functions. Importing
-`spyglass_pipeline.py` connects to the database, so figure code and tests must
+The scripts call the `statespacecheck_paper.spyglass_pipeline` package, which no figure or
+analysis module imports (`tests/test_import_boundaries.py` enforces this).
+`figure04_input.py`, `paper_export.py`, and `figure04_compute.py` keep Spyglass imports
+inside functions. Importing `figure04_schema.py` connects to the database, so tests must
 never import it. Fetches requiring analysis NWB storage must run on a lab server;
 the locked Spyglass extra does not satisfy the current lab export requirements.
 The lab guide records the environment, status, and blockers.

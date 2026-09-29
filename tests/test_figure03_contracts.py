@@ -11,7 +11,7 @@ from typing import Any
 
 from statespacecheck_paper.figure03_protocol import Figure3Config
 from statespacecheck_paper.figure03_simulation import (
-    Figure3RateTables,
+    Figure3ExpectedCountTables,
     Figure3SimulationResult,
 )
 from statespacecheck_paper.figure03_summary import (
@@ -24,11 +24,12 @@ def _field_names(cls: Any) -> list[str]:
     return [f.name for f in dataclasses.fields(cls)]
 
 
-def test_figure3_config_is_frozen_with_exact_fields() -> None:
+def test_figure03_config_is_frozen_with_exact_fields() -> None:
     assert Figure3Config.__dataclass_params__.frozen
     assert _field_names(Figure3Config) == [
         "phase_boundaries",
         "prediction_step_std",
+        "initial_position",
         "drift_momentum",
         "history_refractory_steps",
         "history_burst_window",
@@ -60,38 +61,43 @@ def test_simulation_result_fields() -> None:
     assert _field_names(Figure3SimulationResult) == [
         "config",
         "position_bins",
-        "true_position",
+        "physical_position",
         "spike_counts",
         "diagnostics",
-        "phase_labels",
-        "phase_boundaries",
         "sparse_place_field_centers",
     ]
 
 
 def test_rate_tables_fields() -> None:
-    assert _field_names(Figure3RateTables) == [
-        "baseline_firing_rates",
-        "remapped_firing_rates",
-        "replay_firing_rates",
-        "sparse_population_firing_rates",
-        "baseline_sparse_firing_rates",
+    assert _field_names(Figure3ExpectedCountTables) == [
+        "baseline_expected_counts_per_step",
+        "remapped_expected_counts_per_step",
+        "replay_expected_counts_per_step",
+        "sparse_population_expected_counts_per_step",
     ]
 
 
 def test_summary_condition_and_realization_summary_fields() -> None:
-    assert _field_names(Figure3SummaryCondition) == ["label", "step_windows", "model_component"]
+    assert _field_names(Figure3SummaryCondition) == [
+        "condition_id",
+        "title",
+        "label",
+        "step_windows",
+        "model_component",
+    ]
     assert _field_names(Figure3RealizationSummary) == [
         "diagnostic_thresholds",
+        "baseline_flagged_fractions",
         "realization_flag_percentages",
-        "realization_decoding_accuracy",
+        "realization_decoding_error",
     ]
-    # The aggregates are derived from the realizations, under their old names.
+    # The medians and their standard errors are properties derived from the
+    # realizations, so they cannot disagree with the stored values.
     for name in (
         "median_flag_percentages",
-        "median_decoding_accuracy",
+        "median_decoding_error",
         "flag_percentage_standard_errors",
-        "decoding_accuracy_standard_errors",
+        "decoding_error_standard_errors",
         "n_realizations",
     ):
         assert isinstance(getattr(Figure3RealizationSummary, name), property), name

@@ -2,19 +2,27 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+from typing import Any
+
 import numpy as np
 import pytest
 
 from statespacecheck_paper.diagnostics import DiagnosticThresholds
 from statespacecheck_paper.figure03_protocol import Figure3Config, PhaseBoundary
 from statespacecheck_paper.figure03_summary import (
-    SUMMARY_ACCURACY_METRICS,
+    SUMMARY_ERROR_METRICS,
     _flag_percentage,
     build_summary_conditions,
-    compute_condition_decoding_accuracy,
-    compute_condition_flag_percentages,
+    compute_condition_decoding_error,
     extract_condition_flag_values,
+    flag_percentages_from_values,
 )
+
+
+def _events(arrays: dict[str, np.ndarray]) -> Any:
+    """Expose per-event arrays as attributes, like ``DecodingDiagnostics``."""
+    return SimpleNamespace(**arrays)
 
 
 class TestSummaryFlagPercentages:
@@ -27,8 +35,27 @@ class TestSummaryFlagPercentages:
         # Tiny strictly-increasing ladder so conditions map to known slices.
         return Figure3Config(phase_boundaries=(6, 10, 14, 18, 26, 30, 34, 36))
 
-    def test_summary_phase_windows_structure(self) -> None:
+    def test_summary_conditions_structure(self) -> None:
         cols = build_summary_conditions(self._params())
+        # The published summary's condition_order and the website's condition
+        # files use these identifiers; each names its own column.
+        assert [c.condition_id for c in cols] == [
+            "well_specified",
+            "remap",
+            "history_dependent",
+            "replay",
+            "drift",
+            "sparse_population",
+        ]
+        # Full names for the website's tabs; abbreviated headers for the heatmap.
+        assert [c.title for c in cols] == [
+            "Well-specified",
+            "Remap",
+            "History-dependent firing",
+            "Replay",
+            "Drift",
+            "Sparse population",
+        ]
         assert [c.label for c in cols] == [
             "Well-\nspecified",
             "Remap",
@@ -74,12 +101,12 @@ class TestSummaryFlagPercentages:
         with pytest.raises(ValueError, match="direction"):
             _flag_percentage(np.array([1.0]), 0.5, "sideways")
 
-    def test_compute_phase_flag_fractions_isolates_remap(self) -> None:
+    def test_flag_percentages_isolate_the_remap_condition(self) -> None:
         """A KL spike confined to the remap window must flag 100% in the
-        remap column and 0% elsewhere; HPD/spike-prob rows that never cross
+        remap column and 0% elsewhere; HPD-overlap and predictive p-value rows that never cross
         their thresholds must be 0% everywhere.
 
-        Row order follows ``SUMMARY_FLAG_METRICS``: HPD (0), spike-prob (1),
+        Row order follows ``SUMMARY_FLAG_METRICS``: HPD overlap (0), predictive p-value (1),
         KL (2). Column order: well-specified (0), remap (1), history (2),
         replay (3), drift (4), sparse population (5)."""
         params = self._params()
@@ -98,13 +125,15 @@ class TestSummaryFlagPercentages:
             hpd_overlap=0.5, kl_divergence=5.0, predictive_pvalue=0.05
         )
         conditions = build_summary_conditions(params)
-        frac = compute_condition_flag_percentages(metrics, thresholds, conditions)
+        frac = flag_percentages_from_values(
+            extract_condition_flag_values(_events(metrics), conditions), thresholds
+        )
 
         assert frac.shape == (3, 6)
         # KL row (index 2): only the remap column (index 1) flags.
         assert frac[2, 1] == pytest.approx(100.0)
         assert np.allclose(np.delete(frac[2], 1), 0.0)
-        # HPD (0) and spike-prob (1) rows never cross their thresholds.
+        # HPD-overlap (0) and predictive p-value (1) rows never cross their thresholds.
         assert np.allclose(frac[0], 0.0)
         assert np.allclose(frac[1], 0.0)
 
@@ -126,12 +155,12 @@ class TestSummaryFlagPercentages:
         conditions = build_summary_conditions(params)
 
         with pytest.raises(ValueError, match="undefined value"):
-            extract_condition_flag_values(metrics, conditions)
+            extract_condition_flag_values(_events(metrics), conditions)
 
 
-class TestConditionDecodingAccuracy:
-    """Per-phase decoding accuracy of the filtered posterior against the
-    stored true position: median absolute error of the posterior mean (row
+class TestConditionDecodingError:
+    """Per-phase decoding error of the filtered posterior against the
+    physical position: median absolute error of the posterior mean (row
     0, position units). Columns follow ``build_summary_conditions``."""
 
     @staticmethod
@@ -145,7 +174,7 @@ class TestConditionDecodingAccuracy:
         return posterior
 
     def test_metric_order(self) -> None:
-        assert SUMMARY_ACCURACY_METRICS == ("median_absolute_error",)
+        assert SUMMARY_ERROR_METRICS == ("median_absolute_error",)
 
     def test_perfect_decoder_has_zero_error(self) -> None:
         params = self._params()
@@ -155,12 +184,12 @@ class TestConditionDecodingAccuracy:
         posterior = self._delta_posterior(true_bin, position_bins.size)
         conditions = build_summary_conditions(params)
 
-        accuracy = compute_condition_decoding_accuracy(
+        decoding_error = compute_condition_decoding_error(
             posterior, position_bins, position_bins[true_bin], conditions
         )
 
-        assert accuracy.shape == (1, 6)
-        assert np.allclose(accuracy[0], 0.0)
+        assert decoding_error.shape == (1, 6)
+        assert np.allclose(decoding_error[0], 0.0)
 
     def test_shift_confined_to_remap_window(self) -> None:
         """A posterior displaced by two bins only inside remap [6, 10) must
@@ -174,27 +203,27 @@ class TestConditionDecodingAccuracy:
         posterior = self._delta_posterior(decoded_bin, position_bins.size)
         conditions = build_summary_conditions(params)
 
-        accuracy = compute_condition_decoding_accuracy(
+        decoding_error = compute_condition_decoding_error(
             posterior, position_bins, position_bins[true_bin], conditions
         )
 
-        assert accuracy[0, 1] == pytest.approx(4.0)  # two bins of 2 a.u.
-        assert np.allclose(np.delete(accuracy[0], 1), 0.0)
+        assert decoding_error[0, 1] == pytest.approx(4.0)  # two bins of 2 a.u.
+        assert np.allclose(np.delete(decoding_error[0], 1), 0.0)
 
-    def test_error_uses_continuous_true_position(self) -> None:
+    def test_error_uses_continuous_physical_position(self) -> None:
         """The error is measured against the continuous position, not its bin."""
         params = self._params()
         n_time = params.phase_boundaries[PhaseBoundary.SPARSE_POP_END]
         position_bins = np.arange(10, dtype=float)
         posterior = self._delta_posterior(np.full(n_time, 4), position_bins.size)
-        true_position = np.full(n_time, 4.3)
+        physical_position = np.full(n_time, 4.3)
         conditions = build_summary_conditions(params)
 
-        accuracy = compute_condition_decoding_accuracy(
-            posterior, position_bins, true_position, conditions
+        decoding_error = compute_condition_decoding_error(
+            posterior, position_bins, physical_position, conditions
         )
 
-        assert np.allclose(accuracy[0], 0.3)
+        assert np.allclose(decoding_error[0], 0.3)
 
     def test_shape_mismatch_raises(self) -> None:
         params = self._params()
@@ -202,11 +231,11 @@ class TestConditionDecodingAccuracy:
         position_bins = np.arange(10, dtype=float)
         posterior = self._delta_posterior(np.zeros(n_time, dtype=int), position_bins.size)
         conditions = build_summary_conditions(params)
-        with pytest.raises(ValueError, match="true_position"):
-            compute_condition_decoding_accuracy(
+        with pytest.raises(ValueError, match="physical_position"):
+            compute_condition_decoding_error(
                 posterior, position_bins, np.zeros(n_time - 1), conditions
             )
         with pytest.raises(ValueError, match="position_bins"):
-            compute_condition_decoding_accuracy(
+            compute_condition_decoding_error(
                 posterior, position_bins[:-1], np.zeros(n_time), conditions
             )

@@ -4,20 +4,23 @@ Builds a tiny simulation cache via ``build_simulated_cache``, opens it
 through ``DecoderDataSource.for_simulation``, and exercises the loader
 contract + the viewer's adaptation to ``dataset_kind == "simulation"``.
 
-The simulation params are scaled down (``T_*`` shrunk by a factor of
-~30) so the full forward filter runs in well under a second on CI;
+The simulation params are scaled down (``phase_boundaries`` shrink the
+timeline from 32,000 to 900 steps) so the forward filter runs quickly on CI;
 the assertions don't depend on phase-specific behaviour, just on the
 end-to-end shape contract.
 """
 
 from __future__ import annotations
 
-import os
-import time as time_mod
 from pathlib import Path
 
 import numpy as np
 import pytest
+
+from ._qt import (
+    qt_offscreen,  # noqa: F401 -- registers the autouse fixture here
+    wait_for_request,
+)
 
 PYSIDE6_AVAILABLE = True
 try:
@@ -38,11 +41,6 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-@pytest.fixture(scope="module", autouse=True)
-def _qt_offscreen() -> None:
-    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-
-
 def _tiny_params():
     """``Figure3Config`` shrunk so the simulation runs fast in tests."""
     from statespacecheck_paper.figure03_protocol import Figure3Config
@@ -57,7 +55,7 @@ def _build_simulated(cache_dir: Path) -> dict[str, object]:
 
     return build_simulated_cache(
         cache_dir,
-        params=_tiny_params(),
+        config=_tiny_params(),
         seed=0,
         time_chunk=128,
         force=True,
@@ -80,7 +78,7 @@ def test_simulated_cache_loader_metadata(tmp_path: Path) -> None:
         assert ds.model is None
         assert ds.display_name == "Figure 3 simulation"
         # Simulation only forward-filters — no smoothed posterior.
-        assert ds.has_acausal is False
+        assert ds.has_smoothed is False
         # Single state, all bins interior.
         assert ds.n_states == 1
         assert ds.n_interior == ds.position_bins.shape[0]
@@ -126,7 +124,7 @@ def test_simulated_cache_log_likelihood_round_trips(tmp_path: Path) -> None:
 
     # Reference: the simulation's normalised linear likelihood,
     # peak-normalised the same way the worker output is.
-    sim_lik = np.asarray(sim.diagnostics.likelihood, dtype=np.float64)
+    sim_lik = np.asarray(sim.diagnostics.combined_likelihood, dtype=np.float64)
     sim_peak = sim_lik.max(axis=1, keepdims=True)
     sim_peak = np.where(sim_peak > 0, sim_peak, 1.0)
     sim_lik_peak_normed = (sim_lik / sim_peak).astype(np.float32)
@@ -151,11 +149,11 @@ def test_simulated_event_likelihood_round_trips_in_event_order(tmp_path: Path) -
         event_order = np.argsort(event_times, kind="stable")
         np.testing.assert_allclose(
             ds.event_likelihood,
-            sim.diagnostics.per_spike_likelihood[event_order].astype(np.float32),
+            sim.diagnostics.event_likelihood[event_order].astype(np.float32),
         )
 
         remap_start, remap_end = params.phase_boundaries[:2]
-        in_remap = (ds.event_time_idx >= remap_start) & (ds.event_time_idx < remap_end)
+        in_remap = (ds.event_time_ind >= remap_start) & (ds.event_time_ind < remap_end)
         assert in_remap.any(), "tiny simulation produced no remap-window events"
         remap_rows = np.flatnonzero(in_remap)
         static_rows = ds.place_fields[ds.event_cell_ids[remap_rows]]
@@ -164,19 +162,72 @@ def test_simulated_event_likelihood_round_trips_in_event_order(tmp_path: Path) -
         ds.close()
 
 
+def test_simulated_cache_records_figure03_flag_thresholds(tmp_path: Path) -> None:
+    """The simulation cache carries Figure 3's thresholds, not Figure 4's cutoffs."""
+    import json
+
+    from statespacecheck_paper.interactive.data_source import DecoderDataSource
+    from statespacecheck_paper.paths import FIGURE03_SUMMARY_PATH
+
+    rules = json.loads(FIGURE03_SUMMARY_PATH.read_text(encoding="utf-8"))["flag_rules"]
+    _build_simulated(tmp_path)
+    ds = DecoderDataSource.for_simulation(tmp_path)
+    try:
+        assert ds.flag_thresholds == {metric: rule["threshold"] for metric, rule in rules.items()}
+        # Figure 3's HPD threshold is the pooled-baseline 1st percentile (0),
+        # not Figure 4's fixed 0.05, and KL divergence has a threshold.
+        assert ds.flag_thresholds["hpd_overlap"] == 0.0
+        assert "kl_divergence" in ds.flag_thresholds
+    finally:
+        ds.close()
+
+
+def test_simulation_cache_without_thresholds_is_rejected(tmp_path: Path) -> None:
+    """An older simulation cache must be rebuilt, not drawn with Figure 4's cutoffs."""
+    from statespacecheck_paper.interactive.cache import simulated_meta_path
+    from statespacecheck_paper.interactive.data_source import DecoderDataSource
+
+    _build_simulated(tmp_path)
+    meta_file = simulated_meta_path(tmp_path)
+    with np.load(meta_file) as meta:
+        kept = {key: meta[key] for key in ("time", "linear_position", "n_cells")}
+    np.savez(meta_file, **kept)
+
+    with pytest.raises(ValueError, match="no flag thresholds"):
+        DecoderDataSource.for_simulation(tmp_path)
+
+
 # ---------------------------------------------------------------------------
 # Viewer wiring
 # ---------------------------------------------------------------------------
 
 
-def _wait_for_request(app, viewer, request_id: int, timeout_s: float = 5.0) -> bool:
-    deadline = time_mod.perf_counter() + timeout_s
-    while time_mod.perf_counter() < deadline:
-        app.processEvents()
-        if viewer._latest_committed_request_id >= request_id:  # noqa: SLF001
-            return True
-        time_mod.sleep(0.005)
-    return False
+def test_simulated_viewer_draws_the_cached_thresholds(tmp_path: Path) -> None:
+    """Each metric panel's threshold line sits at the cache's threshold."""
+    from PySide6 import QtWidgets
+
+    from statespacecheck_paper.interactive.cache import build_simulated_cache
+    from statespacecheck_paper.interactive.data_source import DecoderDataSource
+    from statespacecheck_paper.interactive.viewer import DecoderViewer
+    from statespacecheck_paper.plotting import negative_log_pvalue
+    from statespacecheck_paper.style import METRIC_SPECS
+
+    thresholds = {"hpd_overlap": 0.0, "predictive_pvalue": 0.01, "kl_divergence": 4.5}
+    build_simulated_cache(
+        tmp_path, config=_tiny_params(), seed=0, time_chunk=128, flag_thresholds=thresholds
+    )
+    _ = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    viewer = DecoderViewer(DecoderDataSource.for_simulation(tmp_path))
+    try:
+        for spec in METRIC_SPECS:
+            line = viewer.metric_panels[spec.event_attr]._threshold_line  # noqa: SLF001
+            assert line is not None, spec.name
+            expected = thresholds[spec.name]
+            if spec.display_transform == "neg_log_p":
+                expected = float(negative_log_pvalue(expected))
+            assert line.value() == pytest.approx(expected), spec.name
+    finally:
+        viewer.close()
 
 
 def test_simulated_viewer_hides_model_combo(tmp_path: Path) -> None:
@@ -197,7 +248,7 @@ def test_simulated_viewer_hides_model_combo(tmp_path: Path) -> None:
         assert viewer._model_label is None  # noqa: SLF001
         # Window title uses display_name, not "None" from a missing model.
         assert "Figure 3 simulation" in viewer.windowTitle()
-        # Smoothed overlay disabled (data source has no acausal).
+        # Smoothed overlay disabled (data source has no smoothed posterior).
         smoothed_idx = next(
             i
             for i in range(viewer._overlay_combo.count())  # noqa: SLF001
@@ -215,7 +266,7 @@ def test_simulated_viewer_hides_model_combo(tmp_path: Path) -> None:
 
 def test_simulated_viewer_loads_window(tmp_path: Path) -> None:
     """Opening a simulated cache and forcing a window load populates
-    ``_buffer_post`` and ``_buffer_lik`` with the expected shapes.
+    ``_buffer_predictive`` and ``_buffer_lik`` with the expected shapes.
     Per-cell rows should appear at a bin where the simulation has
     spikes.
     """
@@ -231,12 +282,12 @@ def test_simulated_viewer_loads_window(tmp_path: Path) -> None:
     try:
         target = viewer._next_request_id  # noqa: SLF001
         viewer.force_reload_now()
-        assert _wait_for_request(app, viewer, target)
+        assert wait_for_request(app, viewer, target)
 
         sp = viewer.slice_panel
-        assert sp._buffer_post is not None  # noqa: SLF001
+        assert sp._buffer_predictive is not None  # noqa: SLF001
         assert sp._buffer_lik is not None  # noqa: SLF001
-        assert sp._buffer_acausal is None  # noqa: SLF001 — no acausal in simulation
+        assert sp._buffer_smoothed is None  # noqa: SLF001 — no smoothed posterior in simulation
 
         # Pick a time at a real event so per-cell rows are guaranteed
         # populated.
@@ -264,7 +315,7 @@ def test_simulated_viewer_uses_event_likelihood_in_remap(tmp_path: Path) -> None
     try:
         remap_start, remap_end = params.phase_boundaries[:2]
         candidates = np.flatnonzero(
-            (ds.event_time_idx >= remap_start) & (ds.event_time_idx < remap_end)
+            (ds.event_time_ind >= remap_start) & (ds.event_time_ind < remap_end)
         )
         candidates = candidates[
             np.array(
@@ -279,7 +330,7 @@ def test_simulated_viewer_uses_event_likelihood_in_remap(tmp_path: Path) -> None
         ]
         assert candidates.size > 0, "tiny simulation produced no visibly remapped event"
         event_idx = int(candidates[0])
-        t_idx = int(ds.event_time_idx[event_idx])
+        t_idx = int(ds.event_time_ind[event_idx])
         cell_id = int(ds.event_cell_ids[event_idx])
         i0, i1 = ds.event_indices_at(t_idx)
         first_event = next(i for i in range(i0, i1) if int(ds.event_cell_ids[i]) == cell_id)
@@ -288,7 +339,7 @@ def test_simulated_viewer_uses_event_likelihood_in_remap(tmp_path: Path) -> None
         row = next(item for item in rows if item.cell_id == cell_id)
         expected = ds.event_likelihood_at(first_event, cell_id)[: ds.n_interior]
         expected = expected / expected.max()
-        np.testing.assert_allclose(row.place_field_norm[ds.interior_mask], expected)
+        np.testing.assert_allclose(row.event_likelihood_peak_scaled[ds.interior_mask], expected)
 
         static = ds.place_fields[cell_id, : ds.n_interior]
         static = static / static.max()

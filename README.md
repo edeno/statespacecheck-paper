@@ -25,10 +25,13 @@ This builds `manuscript/main.pdf` without Python or the recording data.
 
 Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and Make.
 All commands below run from the repository root. The locked analysis environment
-uses Python 3.11; uv can install it if needed. CI runs the tests on Linux, macOS,
-and Windows. The reported Figure 4 values were verified on macOS (Apple silicon)
-with Python 3.11; Intel Macs cannot run Figure 4 because the locked JAX release
-has no build for them.
+uses Python 3.11; uv can install it if needed. CI runs the tests on Linux, macOS
+(Apple silicon), and Windows. The reported Figure 4 values were verified on macOS
+(Apple silicon) with Python 3.11. Intel Macs cannot install the environment: the
+package depends on `non_local_detector` (the Figure 4 decoders), which requires
+JAX, and the locked `jaxlib` releases publish neither an Intel-macOS wheel nor a
+source distribution. `make sync` therefore fails there, so no figure can be
+regenerated; `make manuscript`, which needs no Python, still works.
 
 ### Figures 1–3: self-contained simulations
 
@@ -47,7 +50,7 @@ make reproduce
 
 This installs the locked environment, downloads and verifies the 75 MB Figure 4
 input, generates all four figures, updates reported values, and builds the PDF.
-Figure 4 creates a decode cache of approximately 10 GB. See the
+Figure 4 creates a decode cache of approximately 8 GB. See the
 [requirements, timings, and individual commands](docs/reproduce.md) before running.
 
 The Figure 4 input is archived at

@@ -9,19 +9,19 @@ Examples
 Basic usage for creating a publication figure:
 
 >>> from statespacecheck_paper.style import (
-...     WONG, get_figure_size, set_figure_defaults, save_figure
+...     WONG, set_figure_defaults, save_figure
 ... )
 >>> import matplotlib.pyplot as plt
 >>> set_figure_defaults(context="paper")
->>> fig, ax = plt.subplots(figsize=get_figure_size("single"))
+>>> fig, ax = plt.subplots(figsize=(3.5, 2.3))
 >>> _ = ax.plot([1, 2, 3], [1, 2, 3], color=WONG[1])
->>> save_figure("manuscript/figures/my_figure")  # doctest: +SKIP
+>>> save_figure("manuscript/figures/my_figure", fig=fig)  # doctest: +SKIP
 
 For presentations:
 
 >>> set_figure_defaults(context="presentation")
->>> fig, ax = plt.subplots(figsize=get_figure_size("double"))
->>> save_figure("manuscript/figures/presentation_figure", dpi=300)  # doctest: +SKIP
+>>> fig, ax = plt.subplots(figsize=(7.0, 4.7))
+>>> save_figure("manuscript/figures/presentation_figure", dpi=300, fig=fig)  # doctest: +SKIP
 """
 
 from __future__ import annotations
@@ -32,6 +32,8 @@ from typing import Literal
 
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
+
+from statespacecheck_paper.diagnostics import METRIC_FLAG_DIRECTIONS, FlagDirection
 
 # Wong colorblind-friendly palette
 # Reference: Wong, B. (2011). Points of view: Color blindness.
@@ -68,15 +70,15 @@ COLORS: dict[str, str] = {
     # -------------------------------------------------------------------------
     # Predictive: "What we expect" - the one-step-ahead prediction from the model
     # Blue chosen for "cool" association with prior/prediction (before evidence)
-    "predictive": "#0072B2",  # WONG[5] Blue
+    "predictive": WONG[5],  # Blue
     #
     # Likelihood: "What we observe" - evidence from current observations
     # Orange chosen for "warm" association with data/evidence (new information)
-    "likelihood": "#E69F00",  # WONG[1] Orange
+    "likelihood": WONG[1],  # Orange
     #
     # Posterior: "What we believe" - combined belief after incorporating evidence
     # Black chosen as neutral, authoritative color (the "answer")
-    "posterior": "#000000",  # WONG[0] Black
+    "posterior": WONG[0],  # Black
     #
     # -------------------------------------------------------------------------
     # Ground Truth and Reference
@@ -91,27 +93,32 @@ COLORS: dict[str, str] = {
     # Zero/baseline reference lines
     "reference": "#999999",  # Medium gray
     #
+    # Secondary annotation - captions, guide lines, and neutral elements such
+    # as the transition model in the Figure-1 schematic. Same gray as the
+    # threshold, but a different role.
+    "annotation": "#666666",  # Dark gray
+    #
     # -------------------------------------------------------------------------
     # Diagnostic Metrics
     # -------------------------------------------------------------------------
     # HPD Overlap metric - related to distributions but distinct
     # Sky blue: lighter than predictive blue, suggests "overlap/intersection"
-    "hpd_overlap": "#56B4E9",  # WONG[2] Sky Blue
+    "hpd_overlap": WONG[2],  # Sky Blue
     #
     # KL Divergence metric - measures information difference
     # Bluish green: distinct from both primary colors, suggests "divergence"
-    "kl_divergence": "#009E73",  # WONG[3] Bluish Green
+    "kl_divergence": WONG[3],  # Bluish Green
     #
-    # Combined/summary metric (e.g., p-value)
-    "metric_combined": "#CC79A7",  # WONG[7] Reddish Purple
+    # Predictive p-value metric
+    "predictive_pvalue": WONG[7],  # Reddish Purple
     #
     # -------------------------------------------------------------------------
     # Figure-3 Replay Band
     # -------------------------------------------------------------------------
     # Replay event (in clean-recovery 2) — immobile animal, decoded
-    # trajectory sweeps the track; not a misspecification. Used to mark
+    # trajectory sweeps the track; a control. Used to mark
     # the replay band in the Figure-3 time series.
-    "phase_replay": "#009E73",  # Vivid green (WONG[3]); marks the replay band
+    "replay": WONG[3],  # Bluish green; marks the replay band
     #
     # -------------------------------------------------------------------------
     # Heatmap Colormaps
@@ -119,14 +126,24 @@ COLORS: dict[str, str] = {
     # See ``CMAP_*`` constants below for the matplotlib colormaps.
 }
 
+# Resolution of the paper's figures, in dots per inch: the canonical figures are
+# composed and saved at it. 450 dpi meets most journal requirements (Nature
+# requires 300-600 dpi for final figures).
+FIGURE_DPI = 450
+
 # Colormap constants (can't be in dict since they're not colors)
-CMAP_POSTERIOR = "bone_r"  # Reversed bone for posterior/predictive heatmaps
+CMAP_PREDICTIVE = "bone_r"  # Reversed bone for the predictive heatmaps
 CMAP_LIKELIHOOD = "inferno"  # Warm colormap for likelihood overlay at spike times
-CMAP_DIAGNOSTIC = "bone_r"  # Same as posterior for diagnostic heatmaps
 
 # Top of the predictive heatmaps' color scale: this quantile of the plotted
 # distribution, for robustness to outliers. Figure 3a and the website share it.
 PREDICTIVE_VMAX_QUANTILE = 0.975
+
+# Base-10 symlog scale of a ``MetricSpec.symlog_axis`` row: linear within
+# ``SYMLOG_LINTHRESH`` of zero, logarithmic beyond, so values near zero stay
+# separated from exact zeros. The website's HPD-overlap axis mirrors it.
+SYMLOG_LINTHRESH = 0.01
+SYMLOG_LINSCALE = 1.0
 
 
 def hex_to_rgb(hex_str: str) -> tuple[int, int, int]:
@@ -147,7 +164,6 @@ MetricName = Literal["hpd_overlap", "kl_divergence", "predictive_pvalue"]
 
 
 DisplayTransform = Literal["identity", "neg_log_p"]
-PlottedWorseDirection = Literal["below", "above"]
 
 
 @dataclass(frozen=True)
@@ -155,24 +171,48 @@ class MetricSpec:
     """Display metadata for one diagnostic metric.
 
     Single source of truth for how each metric is rendered and flagged on a
-    plotted axis, collapsing the parallel ``(metric, color, transform,
-    direction)`` tables and ``metric == "..."`` special cases that were
-    otherwise repeated across ``figure03_plotting``, ``figure04_panels``, and
-    the interactive viewer.
+    plotted axis: its color, display transform, label, and worse-fit
+    direction, shared by ``figure03_plotting``, ``figure04_panels``, and the
+    interactive viewer.
 
     ``plotted_worse`` is the worse-fit direction **on the plotted axis** (after
-    ``display_transform``), so it drives both the ``worse_fit_direction`` arrow
-    and the hexbin "rescue" quadrant. ``ylabel`` is the canonical LaTeX axis
-    label; a few consumers (Figure 3's diagnostic rows, the pyqtgraph viewer)
-    render their own plain-text variant instead.
+    ``display_transform``), derived from the flag rule's
+    :data:`~statespacecheck_paper.diagnostics.METRIC_FLAG_DIRECTIONS` so the
+    ``worse_fit_direction`` arrow and the hexbin "rescue" quadrant cannot
+    disagree with the flags.
+
+    Each metric carries the label variants its renderers need, so no consumer
+    restates a metric's label or relies on the registry's order:
+
+    - ``label``: plain-text full name (the pyqtgraph viewer, which renders no
+      mathtext).
+    - ``short_label``: plain-text abbreviated axis label (Figure 3's rows; its
+      summary heatmap stacks the words one per line).
+    - ``wrapped_ylabel``: mathtext abbreviated axis label, broken over two
+      lines where it would not fit beside Figure 4's narrow detail rows.
+    - ``title``: mathtext full name (Figure 4's hexbin titles).
     """
 
     name: MetricName
-    ylabel: str
     color: str
-    plotted_worse: PlottedWorseDirection
+    label: str
+    short_label: str
+    wrapped_ylabel: str
+    title: str
     display_transform: DisplayTransform = "identity"
     symlog_axis: bool = False
+
+    @property
+    def plotted_worse(self) -> FlagDirection:
+        """Worse-fit direction on the plotted axis.
+
+        The raw flag direction, flipped by the monotonically decreasing
+        ``-log(p)`` transform.
+        """
+        raw = METRIC_FLAG_DIRECTIONS[self.name]
+        if self.display_transform == "neg_log_p":
+            return "above" if raw == "below" else "below"
+        return raw
 
     @property
     def event_attr(self) -> str:
@@ -186,15 +226,32 @@ class MetricSpec:
 
 
 METRIC_SPECS: tuple[MetricSpec, ...] = (
-    MetricSpec("hpd_overlap", "HPD overlap", COLORS["hpd_overlap"], "below", symlog_axis=True),
     MetricSpec(
-        "predictive_pvalue",
-        r"$-\log(p)$",
-        COLORS["metric_combined"],
-        "above",
+        name="hpd_overlap",
+        color=COLORS["hpd_overlap"],
+        label="HPD overlap",
+        short_label="HPD overlap",
+        wrapped_ylabel="HPD\noverlap",
+        title="HPD overlap",
+        symlog_axis=True,
+    ),
+    MetricSpec(
+        name="predictive_pvalue",
+        color=COLORS["predictive_pvalue"],
+        label="−log(p)",
+        short_label="−log(p)",
+        wrapped_ylabel=r"$-\log(p)$",
+        title=r"$-\log(p)$",
         display_transform="neg_log_p",
     ),
-    MetricSpec("kl_divergence", "KL div.", COLORS["kl_divergence"], "above"),
+    MetricSpec(
+        name="kl_divergence",
+        color=COLORS["kl_divergence"],
+        label="KL divergence",
+        short_label="KL div.",
+        wrapped_ylabel="KL div.",
+        title="KL divergence",
+    ),
 )
 METRIC_NAMES: tuple[MetricName, ...] = tuple(s.name for s in METRIC_SPECS)
 METRIC_SPEC_BY_NAME: dict[str, MetricSpec] = {s.name: s for s in METRIC_SPECS}
@@ -211,7 +268,7 @@ def set_figure_defaults(context: Literal["paper", "presentation", "poster"] = "p
     ----------
     context : {"paper", "presentation", "poster"}, default "paper"
         Context for figure display:
-        - "paper": Small fonts (7pt base) for journal publications
+        - "paper": Small fonts (8pt base) for journal publications
         - "presentation": Medium fonts (12pt base) for talks/slides
         - "poster": Large fonts (16pt base) for conference posters
 
@@ -245,7 +302,7 @@ def set_figure_defaults(context: Literal["paper", "presentation", "poster"] = "p
             # Journals typically require 8-12 pt for all in-figure text; 8 pt is the floor.
             "font.size": 8,
             "axes.labelsize": 8,
-            "axes.titlesize": 9,
+            "axes.titlesize": 8,
             "xtick.labelsize": 8,
             "ytick.labelsize": 8,
             "legend.fontsize": 8,
@@ -285,10 +342,11 @@ def set_figure_defaults(context: Literal["paper", "presentation", "poster"] = "p
 
 def save_figure(
     name: str | Path,
-    dpi: int = 450,
+    dpi: int = FIGURE_DPI,
     close: bool = True,
     bbox_inches: object = "tight",
-    fig: Figure | None = None,
+    *,
+    fig: Figure,
 ) -> None:
     """Save figure as both PDF and PNG with journal-quality resolution.
 
@@ -300,18 +358,16 @@ def save_figure(
     name : str or Path
         Output filename without extension. Both .pdf and .png will be added.
         Can be a string path or pathlib.Path object.
-    dpi : int, default 450
-        Resolution in dots per inch. Default 450 meets most journal requirements
-        (Nature requires 300-600 dpi for final figures).
+    dpi : int, default ``FIGURE_DPI``
+        Resolution in dots per inch.
     close : bool, default True
         If True, close the figure after saving to free memory.
     bbox_inches : object, default "tight"
-        Bounding box passed through to ``matplotlib.pyplot.savefig``. The
-        default preserves the existing tight-save behavior; callers can pass a
-        precomputed ``matplotlib.transforms.Bbox`` for custom cropping.
-    fig : matplotlib.figure.Figure, optional
-        Explicit figure to save. When omitted, saves the current pyplot figure
-        for backward compatibility.
+        Bounding box passed through to ``Figure.savefig``: ``"tight"`` crops to
+        the drawn artists, and a precomputed ``matplotlib.transforms.Bbox``
+        gives a custom crop.
+    fig : matplotlib.figure.Figure
+        The figure to save (keyword-only).
 
     Returns
     -------
@@ -326,101 +382,32 @@ def save_figure(
 
     >>> fig, ax = plt.subplots()
     >>> _ = ax.plot([1, 2, 3], [1, 2, 3])
-    >>> save_figure("manuscript/figures/my_figure")  # doctest: +SKIP
+    >>> save_figure("manuscript/figures/my_figure", fig=fig)  # doctest: +SKIP
     Saved manuscript/figures/my_figure.pdf and manuscript/figures/my_figure.png
 
     With custom DPI and keeping figure open:
 
-    >>> save_figure("manuscript/figures/my_figure", dpi=300, close=False)  # doctest: +SKIP
+    >>> save_figure("manuscript/figures/my_figure", dpi=300, close=False, fig=fig)  # doctest: +SKIP
 
     Using Path object:
 
     >>> from pathlib import Path
     >>> output_path = Path("results") / "figure1"
-    >>> save_figure(output_path)  # doctest: +SKIP
+    >>> save_figure(output_path, fig=fig)  # doctest: +SKIP
 
     Auto-creates nested directories:
 
-    >>> save_figure("manuscript/figures/supplementary/figure_s1")  # doctest: +SKIP
+    >>> save_figure("manuscript/figures/supplementary/figure_s1", fig=fig)  # doctest: +SKIP
     """
     path = Path(name)
     path.parent.mkdir(parents=True, exist_ok=True)
 
     pdf_path = path.with_suffix(".pdf")
     png_path = path.with_suffix(".png")
-    if fig is None:
-        plt.savefig(pdf_path, dpi=dpi, bbox_inches=bbox_inches)
-        plt.savefig(png_path, dpi=dpi, bbox_inches=bbox_inches)
-    else:
-        fig.savefig(pdf_path, dpi=dpi, bbox_inches=bbox_inches)
-        fig.savefig(png_path, dpi=dpi, bbox_inches=bbox_inches)
+    fig.savefig(pdf_path, dpi=dpi, bbox_inches=bbox_inches)
+    fig.savefig(png_path, dpi=dpi, bbox_inches=bbox_inches)
 
     print(f"Saved {pdf_path} and {png_path}")
 
     if close:
         plt.close(fig)
-
-
-def get_figure_size(
-    width_type: Literal["single", "double", "full"] = "single",
-    aspect_ratio: float = 1.5,
-) -> tuple[float, float]:
-    """Get figure size in inches for different column widths.
-
-    Provides standard figure sizes that fit journal column widths.
-    Most journals use similar column widths (Nature, Science, Cell, etc.).
-
-    Parameters
-    ----------
-    width_type : {"single", "double", "full"}, default "single"
-        Figure width type:
-        - "single": Single column width (~3.5 inches)
-        - "double": Double column width (~7.0 inches)
-        - "full": Full page width (~7.0 inches, same as double)
-    aspect_ratio : float, default 1.5
-        Width to height ratio. Default 1.5 gives pleasant proportions.
-        Use 1.0 for square figures, 2.0 for wide figures.
-
-    Returns
-    -------
-    width : float
-        Figure width in inches.
-    height : float
-        Figure height in inches, computed as width / aspect_ratio.
-
-    Notes
-    -----
-    Standard journal column widths:
-    - Nature: Single column 89mm (~3.5"), double column 183mm (~7.2")
-    - Science: Single column 90mm (~3.54"), double column 180mm (~7.08")
-    - Cell: Single column 85mm (~3.35"), double column 174mm (~6.85")
-
-    This function uses compromise values that work for all major journals.
-
-    Examples
-    --------
-    Single column figure with default aspect ratio:
-
-    >>> width, height = get_figure_size("single")
-    >>> fig, ax = plt.subplots(figsize=(width, height))
-
-    Wide double-column figure:
-
-    >>> width, height = get_figure_size("double", aspect_ratio=2.0)
-    >>> fig, axes = plt.subplots(1, 2, figsize=(width, height))
-
-    Square single column figure:
-
-    >>> width, height = get_figure_size("single", aspect_ratio=1.0)
-    """
-    # Standard column widths in inches
-    widths = {
-        "single": 3.5,  # Single column (~89mm)
-        "double": 7.0,  # Double column (~180mm)
-        "full": 7.0,  # Full width (same as double)
-    }
-
-    width = widths[width_type]
-    height = width / aspect_ratio
-
-    return width, height

@@ -3,14 +3,15 @@
 The figure-3 demo simulates a hippocampal-style decoder under a
 sequence of misfit conditions (remap, history-dependent firing, drift) and
 two specificity controls (a replay event embedded in clean-recovery 2 and a
-final sparse-population epoch). The simulation pipeline drives both
+final sparse-population epoch). It drives both
 ``statespacecheck_paper.figure03_generation`` and
-``statespacecheck_paper.interactive.cache.build_simulated_cache``;
-both call ``run_figure03_simulation`` so the figure and the
-interactive viewer's simulated cache stay byte-identical.
+``statespacecheck_paper.interactive.cache.build_simulated_cache``. Both call
+``run_figure03_simulation`` and take the cell tables from
+``all_place_field_centers`` (the cache also from ``all_place_field_expected_counts``), so
+the figure and the interactive viewer's simulated cache show the same simulated
+data.
 
-The figure-generation recipe extends this with diagnostic threshold
-computation + plotting.
+The figure-generation recipe adds the diagnostic thresholds and the plotting.
 """
 
 from __future__ import annotations
@@ -27,7 +28,6 @@ from statespacecheck_paper.decoding import (
 )
 from statespacecheck_paper.diagnostics import DecodingDiagnostics
 from statespacecheck_paper.figure03_protocol import (
-    PHASE_LABELS,
     Figure3Config,
     PhaseBoundary,
     compute_replay_step_window,
@@ -35,7 +35,7 @@ from statespacecheck_paper.figure03_protocol import (
 from statespacecheck_paper.simulation import (
     gaussian_transition_matrix,
     peak_rate_to_place_field_scale,
-    place_field_rates,
+    place_field_expected_counts,
     reflect_into_interval,
     simulate_spikes_history_dependent,
     simulate_spikes_position_tuned,
@@ -53,7 +53,7 @@ def remap_place_field_centers(
     This function creates remapped place field centers for computing likelihoods
     during model misfit periods. When active, the source cell's place field center
     is replaced with the target cell's center, so the likelihood is computed using
-    the wrong place field for that cell's spike_counts.
+    the wrong place field for that cell's spikes.
 
     Each ``(src, dst)`` pair makes cell ``src`` use cell ``dst``'s place-field
     center; original centers are snapshotted before any writes so a pair of
@@ -146,80 +146,53 @@ def _single_out_and_back_sweep(
 class Figure3SimulationResult:
     """Result of :func:`run_figure03_simulation`.
 
-    Promoted from ``TypedDict`` to frozen dataclass so the load-bearing
-    length invariants — one ``phase_labels`` entry per phase, boundaries
-    delimit those phases, ``spike_counts`` and ``true_position`` share the timeline,
-    and the final boundary equals the timeline length — are checked at
-    construction. Without this, adding or removing a phase silently
-    changes downstream lengths and the figure-3 pipeline would run with
-    miscounted indices.
+    A frozen dataclass so the timeline invariants — ``spike_counts``,
+    ``physical_position``, and the diagnostics share one timeline, which ends at
+    the final ``config.phase_boundaries`` entry — are checked at construction.
+    Every per-phase summary indexes time through those boundaries, so a phase
+    simulated one step short or long would otherwise shift them silently.
+
+    ``physical_position``, shape ``(n_time,)``, is the animal's physical
+    position. Outside the replay control the spikes follow it; during replay
+    the animal is still and the spikes follow a represented sweep instead.
+    Decoding error is measured against the physical position.
     """
 
     config: Figure3Config
     position_bins: NDArray[np.floating]
-    true_position: NDArray[np.floating]
+    physical_position: NDArray[np.floating]
     spike_counts: NDArray[np.int_]
     diagnostics: DecodingDiagnostics
-    # Sequence fields are declared as tuple so ``frozen=True``'s
-    # immutability extends to the contents — list would leave
-    # ``sim.phase_labels.append(...)`` and ``sim.phase_boundaries[-1] = 9999``
-    # as silent invariant-breakers. Callers passing a list at construction
-    # are coerced in __post_init__.
-    phase_labels: tuple[str, ...]
-    phase_boundaries: tuple[int, ...]
     # Fixed sparse-population field centers; let the raster sort all cells by
     # location without deriving a field center from the realized trajectory.
     sparse_place_field_centers: tuple[float, ...] = ()
 
     def __post_init__(self) -> None:
-        """Enforce length and timeline-consistency invariants.
-
-        Also coerces the two sequence fields to tuple (in case the
-        caller supplied a list) and validates each diagnostics array shares
-        the spike timeline.
-        """
-        # Coerce list -> tuple so frozen=True's immutability extends to
-        # the contents. ``object.__setattr__`` because frozen blocks the
-        # normal binding.
-        if not isinstance(self.phase_labels, tuple):
-            object.__setattr__(self, "phase_labels", tuple(self.phase_labels))
-        if not isinstance(self.phase_boundaries, tuple):
-            object.__setattr__(self, "phase_boundaries", tuple(self.phase_boundaries))
-
-        if self.phase_labels != PHASE_LABELS:
+        """Check that the spikes and diagnostics share the phases' timeline."""
+        n_time = self.physical_position.shape[0]
+        if self.config.phase_boundaries[-1] != n_time:
             raise ValueError(
-                f"phase_labels must equal PHASE_LABELS in order; "
-                f"got {list(self.phase_labels)!r} vs canonical {list(PHASE_LABELS)!r}"
+                f"final phase boundary ({self.config.phase_boundaries[-1]}) must equal the "
+                f"physical_position timeline ({n_time})."
             )
-        if len(self.phase_boundaries) != len(self.phase_labels):
-            raise ValueError(
-                f"phase_boundaries length ({len(self.phase_boundaries)}) "
-                f"must equal phase_labels length ({len(self.phase_labels)})."
-            )
-        n_time = self.true_position.shape[0]
         if self.spike_counts.shape[0] != n_time:
             raise ValueError(
                 f"spike_counts timeline ({self.spike_counts.shape[0]}) must equal "
-                f"true_position timeline ({n_time})."
-            )
-        if self.phase_boundaries[-1] != n_time:
-            raise ValueError(
-                f"final phase boundary ({self.phase_boundaries[-1]}) must "
-                f"equal true_position timeline ({n_time})."
+                f"physical_position timeline ({n_time})."
             )
         # ``DecodingDiagnostics.__post_init__`` enforces shape agreement across
         # its own fields; cross-check that ``DecodingDiagnostics``'s leading dim
-        # matches the ``true_position`` timeline supplied here.
+        # matches the ``physical_position`` timeline supplied here.
         if self.diagnostics.posterior.shape[0] != n_time:
             raise ValueError(
                 f"diagnostics.posterior leading dim {self.diagnostics.posterior.shape[0]} "
-                f"does not match true_position timeline ({n_time})."
+                f"does not match physical_position timeline ({n_time})."
             )
 
 
 @dataclass(frozen=True)
-class Figure3RateTables:
-    """Per-cell decoder rate tables for the figure-3 decoding windows.
+class Figure3ExpectedCountTables:
+    """Per-cell decoder expected-count tables for the figure-3 decoding windows.
 
     Each table stacks the eleven ordinary place cells with the sparse
     population (``n_normal_cells + sparse_cell_count`` columns), so it plugs
@@ -228,46 +201,39 @@ class Figure3RateTables:
 
     Attributes
     ----------
-    baseline_firing_rates : np.ndarray, shape (n_bins, n_cells)
-        Default decoder rates: ordinary place fields plus the sparse
+    baseline_expected_counts_per_step : np.ndarray, shape (n_bins, n_cells)
+        Default decoder expected counts: ordinary place fields plus the sparse
         population at its small baseline gain.
-    remapped_firing_rates : np.ndarray, shape (n_bins, n_cells)
-        Remap-window rates: the scrambled ordinary place fields plus the
+    remapped_expected_counts_per_step : np.ndarray, shape (n_bins, n_cells)
+        Remap-window expected counts: the scrambled ordinary place fields plus the
         baseline sparse population.
-    replay_firing_rates : np.ndarray, shape (n_bins, n_cells)
-        Replay-window rates: ordinary place fields at the elevated
+    replay_expected_counts_per_step : np.ndarray, shape (n_bins, n_cells)
+        Replay-window expected counts: ordinary place fields at the elevated
         ``replay_place_field_rate_scale`` plus the baseline sparse population.
-    sparse_population_firing_rates : np.ndarray, shape (n_bins, n_cells)
-        Sparse-window rates: the quiet ordinary ensemble
+    sparse_population_expected_counts_per_step : np.ndarray, shape (n_bins, n_cells)
+        Sparse-window expected counts: the quiet ordinary ensemble
         (``sparse_control_ordinary_rate_scale``) plus the fully active sparse
         population.
-    baseline_sparse_firing_rates : np.ndarray, shape (n_bins, sparse_cell_count)
-        Sparse-population columns at the baseline gain; the shared block
-        appended to ``baseline_firing_rates``/``remapped_firing_rates``/``replay_firing_rates``.
     """
 
-    baseline_firing_rates: NDArray[np.floating]
-    remapped_firing_rates: NDArray[np.floating]
-    replay_firing_rates: NDArray[np.floating]
-    sparse_population_firing_rates: NDArray[np.floating]
-    baseline_sparse_firing_rates: NDArray[np.floating]
+    baseline_expected_counts_per_step: NDArray[np.floating]
+    remapped_expected_counts_per_step: NDArray[np.floating]
+    replay_expected_counts_per_step: NDArray[np.floating]
+    sparse_population_expected_counts_per_step: NDArray[np.floating]
 
 
 def _record_phase(
     phases: list[tuple[NDArray[np.floating], NDArray[np.int_]]],
-    phase_labels: list[str],
-    label: str,
     x: NDArray[np.floating],
     sp: NDArray[np.int_],
 ) -> float:
-    """Append one phase with an explicit label; return its end position.
+    """Append one phase; return its end position.
 
     The returned value is the next phase's starting position. ``x_last``
     trajectory continuity between phases is intentional and threaded
     explicitly by the caller, never inferred from phase order or a generic
     accumulator.
     """
-    phase_labels.append(label)
     phases.append((x, sp))
     return float(x[-1])
 
@@ -279,7 +245,7 @@ def simulate_history_dependent_phase(
     place_field_centers: NDArray[np.floating],
     rng: np.random.Generator,
 ) -> tuple[NDArray[np.floating], NDArray[np.int_]]:
-    """History-dependent firing misfit: a normal walk with bursting spike_counts.
+    """History-dependent firing misfit: a normal walk with bursting spikes.
 
     Cells fire via ``simulate_spikes_history_dependent`` (post-spike
     suppression plus a burst window); the decoder still treats every spike as an
@@ -287,7 +253,7 @@ def simulate_history_dependent_phase(
     correlations and is largely invisible to the per-spike spatial
     diagnostics.
 
-    Draw order: the trajectory walk, then the history-dependent spike_counts.
+    Draw order: the trajectory walk, then the history-dependent spikes.
     """
     x = simulate_walk(
         n, config.prediction_step_std, x_last, config.position_min, config.position_max, rng
@@ -320,14 +286,14 @@ def simulate_replay_phase(
     while a coherent represented trajectory sweeps the track once out and
     back over the sub-window ``[r0, r1)``. Spikes during the sweep fire at
     the elevated ``replay_place_field_rate_scale``; before and after they are ordinary
-    position-tuned spike_counts.
+    position-tuned spikes.
 
     RNG-order contract: the shared ``rng`` draws BOTH walks (``x_pre``
-    then ``x_post``) before ANY spike_counts, matching the original ``vstack``
-    order. Reordering to walk -> spike -> walk -> spike would move the
-    ``x_post`` walk ahead of the ``x_pre`` spike_counts and shift every
-    downstream draw, changing Figure 3 and the interactive simulated
-    cache. Do not reorder.
+    then ``x_post``) before ANY spikes, then the spikes of the three
+    segments in time order. Draw order is part of the seeded experiment:
+    reordering to walk -> spike -> walk -> spike would move the ``x_post``
+    walk ahead of the ``x_pre`` spikes and shift every downstream draw,
+    changing Figure 3 and the interactive simulated cache.
     """
     x_pre = simulate_walk(
         r0, config.prediction_step_std, x_last, config.position_min, config.position_max, rng
@@ -343,7 +309,7 @@ def simulate_replay_phase(
         float(config.position_max),
         config.replay_speed_per_step,
     )
-    # Second walk drawn before any spike_counts (shared-rng draw-order contract).
+    # Second walk drawn before any spikes (shared-rng draw-order contract).
     x_post = simulate_walk(
         n - r1, config.prediction_step_std, x_still, config.position_min, config.position_max, rng
     )
@@ -387,8 +353,8 @@ def simulate_drift_phase(
     ``x[t] = x[t-1] + v[t]`` with
     ``v[t] = drift_momentum * v[t-1] + N(0, prediction_step_std)``; the decoder
     assumes a memoryless walk. Returns the trajectory only; the caller
-    draws the position-tuned spike_counts from it, matching the original draw
-    order (drift steps, then spike_counts).
+    then draws the position-tuned spikes from it. Draw order (drift steps,
+    then spikes) is part of the seeded experiment.
     """
     momentum = config.drift_momentum
     x_mom = np.zeros(n)
@@ -411,8 +377,8 @@ def simulate_sparse_approach_phase(
     A normal walk for ``n - sparse_approach_duration_steps`` steps, then a smooth
     ramp to ``config.sparse_position`` so the sparse-population control
     begins without a position jump. Returns the trajectory only; the
-    caller draws the position-tuned spike_counts (original draw order: walk,
-    then spike_counts).
+    caller then draws the position-tuned spikes. Draw order (walk, then
+    spikes) is part of the seeded experiment.
     """
     approach_steps = min(config.sparse_approach_duration_steps, n)
     walk_steps = n - approach_steps
@@ -443,7 +409,7 @@ def simulate_sparse_approach_phase(
 
 
 def build_sparse_population(
-    true_position: NDArray[np.floating],
+    physical_position: NDArray[np.floating],
     config: Figure3Config,
     random_seed: int,
     w0: int,
@@ -481,21 +447,22 @@ def build_sparse_population(
         config.sparse_cell_peak_rate_per_step, config.sparse_place_field_std
     )
     sparse_rng = np.random.default_rng(np.random.SeedSequence([random_seed, 12]))
-    # Draw the baseline window first (matching the original stream order),
-    # then the elevated window; leave post-``w1`` samples at zero.
+    # Draw the baseline window first, then the elevated window (this stream's
+    # draw order is part of the seeded experiment); leave post-``w1`` samples
+    # at zero.
     baseline_block = simulate_spikes_position_tuned(
-        true_position[:w0],
+        physical_position[:w0],
         sparse_centers,
         config.sparse_place_field_std,
         sparse_cell_scale * config.sparse_cell_baseline_rate_fraction,
         sparse_rng,
     )
     sparse_cell_spikes = np.zeros(
-        (true_position.shape[0], sparse_centers.size), dtype=baseline_block.dtype
+        (physical_position.shape[0], sparse_centers.size), dtype=baseline_block.dtype
     )
     sparse_cell_spikes[:w0] = baseline_block
     sparse_cell_spikes[w0:w1] = simulate_spikes_position_tuned(
-        true_position[w0:w1],
+        physical_position[w0:w1],
         sparse_centers,
         config.sparse_place_field_std,
         sparse_cell_scale,
@@ -504,47 +471,132 @@ def build_sparse_population(
     return sparse_cell_spikes, sparse_centers
 
 
-def build_figure03_rate_tables(
+def _place_field_expected_count_blocks(
     position_bins: NDArray[np.floating],
     place_field_centers: NDArray[np.floating],
     sparse_centers: NDArray[np.floating],
     config: Figure3Config,
-) -> Figure3RateTables:
-    """Assemble the four figure-3 decoder rate tables.
+) -> tuple[NDArray[np.floating], NDArray[np.floating]]:
+    """Return the ordinary and the full-gain sparse-population rate blocks.
 
-    The decoder knows the sparse population's small baseline gain and the
-    low-activity regime, so each misfit window tests metric behavior under
-    a consistent (correctly specified) model:
+    Parameters
+    ----------
+    position_bins : np.ndarray, shape (n_bins,)
+        Position grid.
+    place_field_centers : np.ndarray, shape (n_normal_cells,)
+        Ordinary place-field centers.
+    sparse_centers : np.ndarray, shape (sparse_cell_count,)
+        Sparse-population field centers.
+    config : Figure3Config
+        Supplies the field widths and gains.
 
-    - Remap: the posterior update uses randomly scrambled place-field
-      centers; its diagnostics use that same likelihood, so the misfit
-      surfaces from the scramble's spatial incoherence.
-    - Replay: the ensemble fires at the elevated ``replay_place_field_rate_scale`` and
-      the decoder is given that same elevated rate, so the replay is a
-      correctly-specified observation model.
-    - Sparse population: the decoder uses the correctly scaled quiet
-      ensemble and active sparse-population rates.
+    Returns
+    -------
+    normal_expected_counts : np.ndarray, shape (n_bins, n_normal_cells)
+        Ordinary place fields at ``place_field_rate_scale``.
+    sparse_cell_expected_counts : np.ndarray, shape (n_bins, sparse_cell_count)
+        Sparse-population fields at their full (in-window) peak rate.
     """
-    normal_rates = place_field_rates(
+    normal_expected_counts = place_field_expected_counts(
         position_bins, place_field_centers, config.place_field_std, config.place_field_rate_scale
     )
     sparse_cell_scale = peak_rate_to_place_field_scale(
         config.sparse_cell_peak_rate_per_step, config.sparse_place_field_std
     )
-    sparse_cell_rates = place_field_rates(
+    sparse_cell_expected_counts = place_field_expected_counts(
         position_bins,
         sparse_centers,
         config.sparse_place_field_std,
         sparse_cell_scale,
     )
-    baseline_sparse_firing_rates = config.sparse_cell_baseline_rate_fraction * sparse_cell_rates
-    baseline_firing_rates = np.hstack([normal_rates, baseline_sparse_firing_rates])
-    sparse_population_firing_rates = np.hstack(
-        [config.sparse_control_ordinary_rate_scale * normal_rates, sparse_cell_rates]
+    return normal_expected_counts, sparse_cell_expected_counts
+
+
+def all_place_field_expected_counts(
+    config: Figure3Config,
+    position_bins: NDArray[np.floating],
+    sparse_centers: NDArray[np.floating] | tuple[float, ...],
+) -> NDArray[np.floating]:
+    """Place fields of every decoded cell at full gain, shape (n_bins, n_cells).
+
+    The ordinary cells at ``place_field_rate_scale``, then the sparse
+    population at its full peak rate: the cell order of
+    :func:`all_place_field_centers`.
+
+    Parameters
+    ----------
+    config : Figure3Config
+        Supplies ``place_field_centers`` and the field widths and gains.
+    position_bins : np.ndarray, shape (n_bins,)
+        Position grid.
+    sparse_centers : array-like, shape (sparse_cell_count,)
+        ``Figure3SimulationResult.sparse_place_field_centers``.
+
+    Returns
+    -------
+    np.ndarray, shape (n_bins, n_normal_cells + sparse_cell_count)
+        Expected counts per step for each cell at each position.
+
+    Raises
+    ------
+    ValueError
+        If ``config.place_field_centers`` is not initialized.
+    """
+    if config.place_field_centers is None:
+        raise ValueError("config.place_field_centers must be initialized")
+    return np.hstack(
+        _place_field_expected_count_blocks(
+            position_bins,
+            config.place_field_centers,
+            np.asarray(sparse_centers, dtype=np.float64),
+            config,
+        )
     )
-    remapped_firing_rates = np.hstack(
+
+
+def build_figure03_expected_count_tables(
+    position_bins: NDArray[np.floating],
+    place_field_centers: NDArray[np.floating],
+    sparse_centers: NDArray[np.floating],
+    config: Figure3Config,
+) -> Figure3ExpectedCountTables:
+    """Assemble the four figure-3 decoder expected-count tables.
+
+    The decoder knows the sparse population's small baseline gain and the
+    low-activity regime. Each override window's table is used for both the
+    posterior update and the diagnostics:
+
+    - Remap (the observation misfit): the decoder uses randomly scrambled
+      place-field centers, so the misfit surfaces from the scramble's spatial
+      incoherence.
+    - Replay (a control window): the ensemble fires at the elevated
+      ``replay_place_field_rate_scale`` and the decoder is given that same
+      elevated rate, so the window carries no observation misfit. The
+      decoder's random-walk transition still does not describe the
+      deterministic out-and-back sweep.
+    - Sparse population (a control window): the decoder uses the correctly
+      scaled quiet ensemble and active sparse-population rates, so the window
+      carries no observation misfit. The animal is stationary while the
+      decoder keeps its random-walk transition.
+    """
+    normal_expected_counts, sparse_cell_expected_counts = _place_field_expected_count_blocks(
+        position_bins, place_field_centers, sparse_centers, config
+    )
+    baseline_sparse_expected_counts = (
+        config.sparse_cell_baseline_rate_fraction * sparse_cell_expected_counts
+    )
+    baseline_expected_counts_per_step = np.hstack(
+        [normal_expected_counts, baseline_sparse_expected_counts]
+    )
+    sparse_population_expected_counts_per_step = np.hstack(
         [
-            place_field_rates(
+            config.sparse_control_ordinary_rate_scale * normal_expected_counts,
+            sparse_cell_expected_counts,
+        ]
+    )
+    remapped_expected_counts_per_step = np.hstack(
+        [
+            place_field_expected_counts(
                 position_bins,
                 remap_place_field_centers(
                     place_field_centers, config.place_field_remapping, active=True
@@ -552,26 +604,25 @@ def build_figure03_rate_tables(
                 config.place_field_std,
                 config.place_field_rate_scale,
             ),
-            baseline_sparse_firing_rates,
+            baseline_sparse_expected_counts,
         ]
     )
-    replay_firing_rates = np.hstack(
+    replay_expected_counts_per_step = np.hstack(
         [
-            place_field_rates(
+            place_field_expected_counts(
                 position_bins,
                 place_field_centers,
                 config.place_field_std,
                 config.replay_place_field_rate_scale,
             ),
-            baseline_sparse_firing_rates,
+            baseline_sparse_expected_counts,
         ]
     )
-    return Figure3RateTables(
-        baseline_firing_rates=baseline_firing_rates,
-        remapped_firing_rates=remapped_firing_rates,
-        replay_firing_rates=replay_firing_rates,
-        sparse_population_firing_rates=sparse_population_firing_rates,
-        baseline_sparse_firing_rates=baseline_sparse_firing_rates,
+    return Figure3ExpectedCountTables(
+        baseline_expected_counts_per_step=baseline_expected_counts_per_step,
+        remapped_expected_counts_per_step=remapped_expected_counts_per_step,
+        replay_expected_counts_per_step=replay_expected_counts_per_step,
+        sparse_population_expected_counts_per_step=sparse_population_expected_counts_per_step,
     )
 
 
@@ -581,7 +632,7 @@ def all_place_field_centers(
     """Field centers of every decoded cell, shape (n_cells,).
 
     The ordinary place cells come first, then the sparse population: the cell
-    order of the decoder's rate tables and of the simulated ``spike_counts``.
+    order of the decoder's expected-count tables and of the simulated ``spike_counts``.
 
     Parameters
     ----------
@@ -620,7 +671,9 @@ def run_figure03_simulation(
        trajectory sweep while the animal is immobile. The decoder tracks the
        sweep, so the decoded position departs from the true fixed position
        yet stays consistent with each spike's likelihood — a benign
-       decoded-vs-true divergence that none of the diagnostics should flag.)
+       decoded-vs-true divergence that none of the diagnostics should flag.
+       The replay rates are modeled correctly; the decoder's random-walk
+       transition does not describe the deterministic sweep.)
     6. **Drift Misfit** (transition: trajectory has persistent velocity
        at AR(1) coefficient ``config.drift_momentum``; decoder assumes
        memoryless walk)
@@ -628,8 +681,9 @@ def run_figure03_simulation(
     8. **Sparse Population** (control: the ordinary ensemble is quiet while a
        small population of pre-existing, sharply tuned cells clustered at one
        location fires sparsely — each an independent Poisson process, the
-       decoder's rates matching exactly. The prediction spreads between the
-       isolated spike_counts, and each spike's narrow likelihood remains contained
+       decoder's rates matching exactly, while the stationary animal is
+       decoded with the random-walk transition. The prediction spreads between the
+       isolated spikes, and each spike's narrow likelihood remains contained
        within it. KL responds to the concentration difference while HPD overlap
        and the rank-based p-value remain consistent.)
 
@@ -645,11 +699,11 @@ def run_figure03_simulation(
     Returns
     -------
     Figure3SimulationResult
-        Dataclass with attributes ``config``, ``position_bins``, ``true_position``,
-        ``spike_counts``, ``diagnostics``, ``phase_labels``, ``phase_boundaries``,
-        and ``sparse_place_field_centers`` (fixed centers for the appended
-        sparse-population cells). Access via attribute (``sim.diagnostics``),
-        not subscript.
+        Dataclass with attributes ``config``, ``position_bins``, ``physical_position``,
+        ``spike_counts``, ``diagnostics``, and ``sparse_place_field_centers``
+        (fixed centers for the appended sparse-population cells). Access via
+        attribute (``sim.diagnostics``), not subscript. The phases are
+        delimited by ``config.phase_boundaries``.
     """
     if config is None:
         config = Figure3Config()
@@ -664,8 +718,7 @@ def run_figure03_simulation(
     transition_matrix = gaussian_transition_matrix(position_bins, config.prediction_step_std)
 
     phases: list[tuple[NDArray[np.floating], NDArray[np.int_]]] = []
-    phase_labels: list[str] = []
-    x_last: float = 0.0
+    x_last: float = config.initial_position
     bnd = config.phase_boundaries
 
     def _walk(n: int, x0: float) -> NDArray[np.floating]:
@@ -685,24 +738,24 @@ def run_figure03_simulation(
     # 1. Clean baseline
     n = bnd[PhaseBoundary.REMAP_START]
     x = _walk(n, x_last)
-    x_last = _record_phase(phases, phase_labels, "Clean Baseline", x, _spikes(x))
+    x_last = _record_phase(phases, x, _spikes(x))
 
     # 2. Remap misfit — spike *generation* is normal position-tuned; only the
     #    decoder uses randomly scrambled PF centers during this window (via
     #    ``DecoderOverrideWindow`` below).
     n = bnd[PhaseBoundary.REMAP_END] - bnd[PhaseBoundary.REMAP_START]
     x = _walk(n, x_last)
-    x_last = _record_phase(phases, phase_labels, "Remap Misfit", x, _spikes(x))
+    x_last = _record_phase(phases, x, _spikes(x))
 
     # 3. Clean recovery 1
     n = bnd[PhaseBoundary.RECOVERY1_END] - bnd[PhaseBoundary.REMAP_END]
     x = _walk(n, x_last)
-    x_last = _record_phase(phases, phase_labels, "Clean Recovery", x, _spikes(x))
+    x_last = _record_phase(phases, x, _spikes(x))
 
     # 4. History-dependent firing misfit
     n = bnd[PhaseBoundary.HIST_DEP_END] - bnd[PhaseBoundary.RECOVERY1_END]
     x, sp = simulate_history_dependent_phase(n, x_last, config, place_field_centers, rng)
-    x_last = _record_phase(phases, phase_labels, "History-Dependent Firing", x, sp)
+    x_last = _record_phase(phases, x, sp)
 
     # 5. Clean recovery 2 — with the embedded replay control. Local
     #    (within-phase) replay bounds derived from the shared global
@@ -713,22 +766,22 @@ def run_figure03_simulation(
     r0 = r0_global - bnd[PhaseBoundary.HIST_DEP_END]
     r1 = r1_global - bnd[PhaseBoundary.HIST_DEP_END]
     x, sp = simulate_replay_phase(n, r0, r1, x_last, config, place_field_centers, rng)
-    x_last = _record_phase(phases, phase_labels, "Clean Recovery", x, sp)
+    x_last = _record_phase(phases, x, sp)
 
     # 6. Drift misfit — persistent-velocity walk; decoder assumes memoryless.
     n = bnd[PhaseBoundary.DRIFT_END] - bnd[PhaseBoundary.RECOVERY2_END]
     x = simulate_drift_phase(n, x_last, config, rng)
-    x_last = _record_phase(phases, phase_labels, "Drift Misfit", x, _spikes(x))
+    x_last = _record_phase(phases, x, _spikes(x))
 
     # 7. Clean recovery 3 — ends by approaching the sparse-population location.
     n = bnd[PhaseBoundary.RECOVERY3_END] - bnd[PhaseBoundary.DRIFT_END]
     x = simulate_sparse_approach_phase(n, x_last, config, rng)
-    x_last = _record_phase(phases, phase_labels, "Clean Recovery", x, _spikes(x))
+    x_last = _record_phase(phases, x, _spikes(x))
 
     # 8. Sparse population — the animal remains immobile at the location while
     #    the ordinary ensemble becomes quiet. The baseline transition is still
     #    used, so the prediction spreads naturally between the isolated sparse
-    #    spike_counts (built below with an independent RNG stream).
+    #    spikes (built below with an independent RNG stream).
     n = bnd[PhaseBoundary.SPARSE_POP_END] - bnd[PhaseBoundary.RECOVERY3_END]
     x = np.full(n, config.sparse_position, dtype=float)
     sparse_normal_spikes = simulate_spikes_position_tuned(
@@ -738,20 +791,20 @@ def run_figure03_simulation(
         config.place_field_rate_scale * config.sparse_control_ordinary_rate_scale,
         rng,
     )
-    _record_phase(phases, phase_labels, "Sparse Population", x, sparse_normal_spikes)
+    _record_phase(phases, x, sparse_normal_spikes)
 
-    true_position = np.concatenate([p_x for p_x, _ in phases], axis=0)
+    physical_position = np.concatenate([p_x for p_x, _ in phases], axis=0)
     spike_counts = np.vstack([p_s for _, p_s in phases])  # (n_time, n_normal_cells)
 
     w0 = bnd[PhaseBoundary.RECOVERY3_END]
     w1 = bnd[PhaseBoundary.SPARSE_POP_END]
     sparse_cell_spikes, sparse_centers = build_sparse_population(
-        true_position, config, random_seed, w0, w1
+        physical_position, config, random_seed, w0, w1
     )
     # (n_time, n_normal_cells + sparse_cell_count)
     spike_counts = np.hstack([spike_counts, sparse_cell_spikes])
 
-    rate_tables = build_figure03_rate_tables(
+    expected_count_tables = build_figure03_expected_count_tables(
         position_bins, place_field_centers, sparse_centers, config
     )
 
@@ -761,17 +814,17 @@ def run_figure03_simulation(
             DecoderOverrideWindow(
                 bnd[PhaseBoundary.REMAP_START],
                 bnd[PhaseBoundary.REMAP_END],
-                firing_rate_table=rate_tables.remapped_firing_rates,
+                expected_counts_per_step=expected_count_tables.remapped_expected_counts_per_step,
             ),
             DecoderOverrideWindow(
                 replay_r0,
                 replay_r1,
-                firing_rate_table=rate_tables.replay_firing_rates,
+                expected_counts_per_step=expected_count_tables.replay_expected_counts_per_step,
             ),
             DecoderOverrideWindow(
                 w0,
                 w1,
-                firing_rate_table=rate_tables.sparse_population_firing_rates,
+                expected_counts_per_step=expected_count_tables.sparse_population_expected_counts_per_step,
             ),
         )
     )
@@ -784,18 +837,14 @@ def run_figure03_simulation(
         place_field_std=config.place_field_std,
         place_field_rate_scale=config.place_field_rate_scale,
         override_schedule=override_schedule,
-        baseline_firing_rates=rate_tables.baseline_firing_rates,
+        baseline_expected_counts_per_step=expected_count_tables.baseline_expected_counts_per_step,
     )
-
-    boundaries = np.cumsum([len(p_x) for p_x, _ in phases]).tolist()
 
     return Figure3SimulationResult(
         config=config,
         position_bins=position_bins,
-        true_position=true_position,
+        physical_position=physical_position,
         spike_counts=spike_counts,
         diagnostics=diagnostics,
-        phase_labels=tuple(phase_labels),
-        phase_boundaries=tuple(boundaries),
         sparse_place_field_centers=tuple(float(c) for c in sparse_centers),
     )

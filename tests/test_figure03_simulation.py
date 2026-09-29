@@ -6,9 +6,12 @@ import numpy as np
 import pytest
 
 from statespacecheck_paper.diagnostics import DecodingDiagnostics
-from statespacecheck_paper.figure03_protocol import PHASE_LABELS, Figure3Config
+from statespacecheck_paper.figure03_protocol import Figure3Config
 from statespacecheck_paper.figure03_simulation import (
     Figure3SimulationResult,
+    all_place_field_centers,
+    all_place_field_expected_counts,
+    build_figure03_expected_count_tables,
     remap_place_field_centers,
 )
 
@@ -22,8 +25,7 @@ def _zero_diagnostics(
     return DecodingDiagnostics(
         posterior=posterior,
         predictive=posterior.copy(),
-        likelihood=posterior.copy(),
-        spike_likelihood=posterior.copy(),
+        combined_likelihood=posterior.copy(),
         hpd_overlap=np.zeros((n_time, n_cells)),
         kl_divergence=np.zeros((n_time, n_cells)),
         predictive_pvalue=np.zeros((n_time, n_cells)),
@@ -32,7 +34,7 @@ def _zero_diagnostics(
         event_hpd_overlap=np.zeros(n_spikes),
         event_kl_divergence=np.zeros(n_spikes),
         event_predictive_pvalue=np.zeros(n_spikes),
-        per_spike_likelihood=np.zeros((n_spikes, n_bins)),
+        event_likelihood=np.zeros((n_spikes, n_bins)),
     )
 
 
@@ -84,60 +86,65 @@ class TestRemapPlaceFieldCenters:
         np.testing.assert_array_equal(result, params.place_field_centers[mapping[:, 1]])
 
 
+def test_all_place_field_rates_match_decoder_tables_and_center_order() -> None:
+    """The full-gain table is the decoder's ordinary baseline block followed by
+    its in-window sparse-population block, one column per cell center."""
+    config = Figure3Config()
+    assert config.place_field_centers is not None
+    sparse_centers = (40.0, 42.0, 44.0)
+    n_normal = config.place_field_centers.size
+
+    rates = all_place_field_expected_counts(config, config.position_bins, sparse_centers)
+
+    tables = build_figure03_expected_count_tables(
+        config.position_bins, config.place_field_centers, np.asarray(sparse_centers), config
+    )
+    assert rates.shape == (
+        config.position_bins.size,
+        all_place_field_centers(config, sparse_centers).size,
+    )
+    np.testing.assert_array_equal(
+        rates[:, :n_normal], tables.baseline_expected_counts_per_step[:, :n_normal]
+    )
+    np.testing.assert_array_equal(
+        rates[:, n_normal:], tables.sparse_population_expected_counts_per_step[:, n_normal:]
+    )
+
+
+# Phase boundaries ending at step 10, matching the tiny result timelines below.
+_TEN_STEP_CONFIG = Figure3Config(phase_boundaries=(1, 2, 3, 4, 5, 6, 7, 10))
+
+
 class TestFigure3SimulationResultDataclass:
-    """The ``TypedDict`` → frozen-dataclass conversion brought length
-    validation. Cover the success contract and the failure modes."""
+    """Construction checks that spikes, physical position, and diagnostics share
+    one timeline ending at the final phase boundary."""
 
     def test_valid_construction_succeeds(self) -> None:
-        """Happy path: a well-formed Figure3SimulationResult constructs cleanly,
-        coerces list inputs to tuple, and exposes attribute access on
-        every field."""
+        """Happy path: a well-formed Figure3SimulationResult constructs cleanly
+        and exposes attribute access on every field."""
 
         n_bins = 5
         n_time = 10
         sim = Figure3SimulationResult(
-            config=Figure3Config(),
+            config=_TEN_STEP_CONFIG,
             position_bins=np.linspace(0.0, 100.0, n_bins),
-            true_position=np.zeros(n_time),
+            physical_position=np.zeros(n_time),
             spike_counts=np.zeros((n_time, 1), dtype=np.int_),
             diagnostics=_zero_diagnostics(n_time=n_time, n_bins=n_bins),
-            phase_labels=PHASE_LABELS,
-            phase_boundaries=(1, 2, 3, 4, 5, 6, 7, n_time),
         )
-        # Sequence fields coerced to tuple by __post_init__.
-        assert isinstance(sim.phase_labels, tuple)
-        assert isinstance(sim.phase_boundaries, tuple)
-        # Attribute access works (the migration test).
         assert sim.position_bins.shape == (n_bins,)
-        assert sim.true_position.shape == (n_time,)
+        assert sim.physical_position.shape == (n_time,)
 
-    def test_phase_labels_wrong_order_raises(self) -> None:
+    def test_final_boundary_must_equal_timeline_length(self) -> None:
         n_bins = 5
-        n_time = 10
-        bogus_labels = tuple(reversed(PHASE_LABELS))
-        with pytest.raises(ValueError, match="phase_labels must equal PHASE_LABELS"):
+        n_time = 11
+        with pytest.raises(ValueError, match="final phase boundary"):
             Figure3SimulationResult(
-                config=Figure3Config(),
+                config=_TEN_STEP_CONFIG,
                 position_bins=np.linspace(0.0, 100.0, n_bins),
-                true_position=np.zeros(n_time),
+                physical_position=np.zeros(n_time),
                 spike_counts=np.zeros((n_time, 1), dtype=np.int_),
                 diagnostics=_zero_diagnostics(n_time=n_time, n_bins=n_bins),
-                phase_labels=bogus_labels,
-                phase_boundaries=(1, 2, 3, 4, 5, 6, 7, n_time),
-            )
-
-    def test_phase_boundary_length_mismatch_raises(self) -> None:
-        n_bins = 5
-        n_time = 10
-        with pytest.raises(ValueError, match="phase_boundaries length"):
-            Figure3SimulationResult(
-                config=Figure3Config(),
-                position_bins=np.linspace(0.0, 100.0, n_bins),
-                true_position=np.zeros(n_time),
-                spike_counts=np.zeros((n_time, 1), dtype=np.int_),
-                diagnostics=_zero_diagnostics(n_time=n_time, n_bins=n_bins),
-                phase_labels=PHASE_LABELS,
-                phase_boundaries=(1, 2, 3),  # wrong length
             )
 
     def test_spikes_and_x_true_timeline_mismatch_raises(self) -> None:
@@ -145,27 +152,11 @@ class TestFigure3SimulationResultDataclass:
         n_time = 10
         with pytest.raises(ValueError, match="spike_counts timeline"):
             Figure3SimulationResult(
-                config=Figure3Config(),
+                config=_TEN_STEP_CONFIG,
                 position_bins=np.linspace(0.0, 100.0, n_bins),
-                true_position=np.zeros(n_time),
+                physical_position=np.zeros(n_time),
                 spike_counts=np.zeros((n_time + 1, 1), dtype=np.int_),  # off by one
                 diagnostics=_zero_diagnostics(n_time=n_time, n_bins=n_bins),
-                phase_labels=PHASE_LABELS,
-                phase_boundaries=(1, 2, 3, 4, 5, 6, 7, n_time),
-            )
-
-    def test_final_boundary_must_equal_timeline_length(self) -> None:
-        n_bins = 5
-        n_time = 10
-        with pytest.raises(ValueError, match="final phase boundary"):
-            Figure3SimulationResult(
-                config=Figure3Config(),
-                position_bins=np.linspace(0.0, 100.0, n_bins),
-                true_position=np.zeros(n_time),
-                spike_counts=np.zeros((n_time, 1), dtype=np.int_),
-                diagnostics=_zero_diagnostics(n_time=n_time, n_bins=n_bins),
-                phase_labels=PHASE_LABELS,
-                phase_boundaries=(1, 2, 3, 4, 5, 6, 7, n_time + 1),
             )
 
     def test_metrics_timeline_mismatch_against_x_true_raises(self) -> None:
@@ -180,11 +171,9 @@ class TestFigure3SimulationResultDataclass:
         bad_metrics = _zero_diagnostics(n_time=n_time + 1, n_bins=n_bins)
         with pytest.raises(ValueError, match=r"diagnostics.posterior leading dim"):
             Figure3SimulationResult(
-                config=Figure3Config(),
+                config=_TEN_STEP_CONFIG,
                 position_bins=np.linspace(0.0, 100.0, n_bins),
-                true_position=np.zeros(n_time),
+                physical_position=np.zeros(n_time),
                 spike_counts=np.zeros((n_time, 1), dtype=np.int_),
                 diagnostics=bad_metrics,
-                phase_labels=PHASE_LABELS,
-                phase_boundaries=(1, 2, 3, 4, 5, 6, 7, n_time),
             )

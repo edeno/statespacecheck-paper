@@ -12,19 +12,45 @@
     "execution": {
       "block_size": 10000
     },
-    "provenance": {
-      "contfrag_diagonal_values": [
+    "package_defaults": {
+      "continuous_discrete_initial_conditions": [
+        1.0
+      ],
+      "continuous_fragmented_diagonal_values": [
         0.98,
         0.98
       ],
-      "contfrag_discrete_initial_conditions": [
+      "continuous_fragmented_discrete_initial_conditions": [
         0.5,
         0.5
       ],
-      "discrete_transition_concentration": 1.1,
-      "discrete_transition_regularization": 1e-10,
+      "continuous_fragmented_discrete_transition_type": "DiscreteStationaryDiagonal",
+      "continuous_fragmented_initial_conditions_types": [
+        "UniformInitialConditions",
+        "UniformInitialConditions"
+      ],
+      "continuous_fragmented_transition_types": [
+        [
+          "RandomWalk",
+          "Uniform"
+        ],
+        [
+          "Uniform",
+          "Uniform"
+        ]
+      ],
+      "continuous_initial_conditions_types": [
+        "UniformInitialConditions"
+      ],
+      "continuous_transition_types": [
+        [
+          "RandomWalk"
+        ]
+      ],
+      "movement_mean": 0.0,
       "movement_var": 6.0,
-      "non_local_detector_version": "0.6.10.dev214+g956fdccaf"
+      "non_local_detector_version": "0.6.10.dev214+g956fdccaf",
+      "sorted_spikes_algorithm": "sorted_spikes_kde"
     }
   },
   "dataset": {
@@ -48,25 +74,29 @@
     }
   },
   "figure": "figure04",
+  "flag_confusion_models": {
+    "comparison": "continuous_fragmented",
+    "reference": "continuous"
+  },
   "flag_confusions": [
     {
-      "a_only": 17289,
-      "b_only": 176,
       "both": 1501,
       "metric": "hpd_overlap",
       "n": 870018,
       "neither": 851052,
-      "rescue_rate": 0.9201170835550825,
+      "newly_flagged": 176,
+      "rescued": 17289,
+      "rescued_fraction": 0.9201170835550825,
       "threshold": 0.05
     },
     {
-      "a_only": 9373,
-      "b_only": 1706,
       "both": 24581,
       "metric": "predictive_pvalue",
       "n": 870018,
       "neither": 834358,
-      "rescue_rate": 0.2760499499322613,
+      "newly_flagged": 1706,
+      "rescued": 9373,
+      "rescued_fraction": 0.2760499499322613,
       "threshold": 0.05
     }
   ],
@@ -81,27 +111,27 @@
     }
   },
   "provenance": {
-    "figure04_decode_cache": {
+    "figure04_caches": {
       "diagnostics_config": {
         "event_selection": "all_spikes_in_recording",
         "hpd_coverage": 0.95
       },
-      "diagnostics_fingerprint_sha256": "8e7e0f29f734e71266d09e9562b9b29e7796dff6f2bab79d7b6d81488fe85564",
-      "diagnostics_schema_version": 1,
-      "export_file_sha256": {
+      "diagnostics_fingerprint_sha256": "1ef77b917ada65c62cee167b3877ee7299cadee63782eaea4aef8d452b608dbf",
+      "diagnostics_schema_version": 2,
+      "fingerprint_sha256": "bab8d84154b6a6194a6061b2d0d8eda0825c8a59420cdbf4688c55620681689e",
+      "input_file_sha256": {
         "j1620210710_02_r1_figure04_inputs.npz": "60383b394b597e2900545548ecac7c53a8601038ace9dbeb42d7f9a5fe1c93b3"
       },
-      "fingerprint_sha256": "c6b0129ece8906a8271a3303e47ee6381c7da03d8ee29d97576af4a776199e87",
       "non_local_detector_version": "0.6.10.dev214+g956fdccaf",
-      "schema_version": 5,
+      "schema_version": 6,
       "statespacecheck_version": "0.3.1"
     },
     "source": {
-      "source_tree_sha256": "7bef641eb84c80e5b6dc9125a227c88af7758f1a5dfb18084b345676c23ce92a",
+      "source_tree_sha256": "83e399ba6bc6b17c8403fb2741368441b9861ed8c205421f80cde7297e55093f",
       "statespacecheck_paper_version": "0.1.0",
       "statespacecheck_version": "0.3.1",
-      "uv_lock_sha256": "47254ea6d4d86a02429fbb7c7a5ba481a8424bc3cf80c410a3d14a895a6224a3"
+      "uv_lock_sha256": "7db5bb03266cfeab8f804cd7262232f3ffa16ebaf423722a399076043b640574"
     }
   },
-  "schema_version": 4
+  "schema_version": 7
 }

@@ -8,13 +8,16 @@ no GUI assertions, just no-crash + correct array slicing.
 
 from __future__ import annotations
 
-import os
-import time
 from pathlib import Path
 
 import numpy as np
 import pytest
 
+from ._qt import (
+    make_viewer,
+    qt_offscreen,  # noqa: F401 -- registers the autouse fixture here
+    wait_for_request,
+)
 from ._synthetic_cache import build_synthetic_cache
 
 PYSIDE6_AVAILABLE = True
@@ -73,37 +76,14 @@ def test_relative_likelihood_rejects_all_impossible_row() -> None:
         _relative_likelihood_from_log(np.full((1, 4), -np.inf, dtype=np.float32))
 
 
-@pytest.fixture(scope="module", autouse=True)
-def _qt_offscreen() -> None:
-    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-
-
 @pytest.fixture
 def viewer_setup(tmp_path: Path):
     cache_dir = tmp_path / "cache"
     _build_synthetic_cache(cache_dir)
-
-    from PySide6 import QtWidgets
-
-    from statespacecheck_paper.interactive.data_source import DecoderDataSource
-    from statespacecheck_paper.interactive.viewer import DecoderViewer
-
-    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-    ds = DecoderDataSource(cache_dir, model="continuous")
-    viewer = DecoderViewer(ds)
+    app, viewer, ds = make_viewer(cache_dir)
     yield app, viewer, ds
     viewer.close()
     ds.close()
-
-
-def _wait_for_request(app, viewer, request_id: int, timeout_s: float = 5.0) -> bool:
-    deadline = time.perf_counter() + timeout_s
-    while time.perf_counter() < deadline:
-        app.processEvents()
-        if viewer._latest_committed_request_id >= request_id:  # noqa: SLF001
-            return True
-        time.sleep(0.005)
-    return False
 
 
 def test_viewer_constructs_and_loads_initial_window(viewer_setup) -> None:
@@ -112,10 +92,10 @@ def test_viewer_constructs_and_loads_initial_window(viewer_setup) -> None:
 
     initial_request = viewer._next_request_id  # noqa: SLF001
     viewer.force_reload_now()
-    assert _wait_for_request(app, viewer, initial_request)
+    assert wait_for_request(app, viewer, initial_request)
 
     # Heatmap image was populated.
-    img = viewer.posterior_panel._image  # noqa: SLF001
+    img = viewer.predictive_panel._image  # noqa: SLF001
     assert img.image is not None
     # Shape: (n_visible, n_position) for single-state model.
     assert img.image.shape[1] == ds.n_interior
@@ -127,14 +107,14 @@ def test_viewer_set_center_time_drives_load(viewer_setup) -> None:
     # Initial load.
     initial_request = viewer._next_request_id  # noqa: SLF001
     viewer.force_reload_now()
-    assert _wait_for_request(app, viewer, initial_request)
+    assert wait_for_request(app, viewer, initial_request)
 
     # Programmatically scroll to a different time.
     target_t = ds.time[200]
     viewer.set_center_time(target_t)
     viewer.force_reload_now()
     new_request = viewer._next_request_id  # noqa: SLF001
-    assert _wait_for_request(app, viewer, new_request)
+    assert wait_for_request(app, viewer, new_request)
 
     # The viewer's internal center matches what we set.
     assert abs(viewer._t_center - target_t) < 1e-9  # noqa: SLF001
@@ -152,7 +132,7 @@ def test_viewer_drops_stale_requests(viewer_setup) -> None:
         viewer.set_center_time(viewer._ds.time[offset])  # noqa: SLF001
         viewer.force_reload_now()
     final_request = viewer._next_request_id  # noqa: SLF001
-    assert _wait_for_request(app, viewer, final_request, timeout_s=10.0)
+    assert wait_for_request(app, viewer, final_request, timeout_s=10.0)
 
     # The committed request id is at least the final one we issued.
     assert viewer._latest_committed_request_id >= final_request  # noqa: SLF001

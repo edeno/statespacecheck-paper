@@ -1,20 +1,33 @@
-"""Plotting utilities for state space model diagnostics.
+"""Plotting helpers shared by more than one figure.
 
-This module provides functions for creating publication-ready figures showing
-diagnostic metrics and misfit examples for state space models.
+The ``-log(p)`` display transform, contiguous HPD-region extraction, the
+per-spike likelihood columns, and the per-spike diagnostic row with its artist
+GIDs.
 """
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import overload
 
 import matplotlib.pyplot as plt
 import numpy as np
-import statespacecheck as ssc
 from matplotlib.axes import Axes
 from numpy.typing import NDArray
 
-from statespacecheck_paper.style import CMAP_LIKELIHOOD
+from statespacecheck_paper.style import (
+    CMAP_LIKELIHOOD,
+    COLORS,
+    SYMLOG_LINSCALE,
+    SYMLOG_LINTHRESH,
+    MetricSpec,
+)
+
+# Artist ids of a diagnostic row's threshold line and its right-edge labels, so
+# layout code and tests can find them without matching text.
+THRESHOLD_LINE_GID = "threshold-line"
+THRESHOLD_LABEL_GID = "threshold-label"
+WORSE_FIT_LABEL_GID = "worse-fit-label"
 
 
 @overload
@@ -106,156 +119,6 @@ def extract_contiguous_regions(
     return [(float(x[s]), float(x[e])) for s, e in zip(starts, ends, strict=True)]
 
 
-def create_distribution_comparison_panel(
-    ax: Axes,
-    x: NDArray[np.floating],
-    predictive_params: tuple[float, float],
-    likelihood_params: tuple[float, float],
-    color_predictive: str,
-    color_likelihood: str,
-    title: str | None = None,
-    show_labels: bool = False,
-    coverage: float = 0.95,
-) -> None:
-    """Create a panel comparing predictive and likelihood distributions.
-
-    Shows both distributions with filled curves and HPD regions as
-    horizontal bars below the plot.
-
-    Parameters
-    ----------
-    ax : matplotlib.axes.Axes
-        Axes to plot on.
-    x : np.ndarray, shape (n_points,)
-        Position values for plotting.
-    predictive_params : tuple[float, float]
-        (mean, std) for predictive Gaussian distribution.
-    likelihood_params : tuple[float, float]
-        (mean, std) for likelihood Gaussian distribution.
-    color_predictive : str
-        Color for predictive distribution.
-    color_likelihood : str
-        Color for likelihood distribution.
-    title : str | None, optional
-        Panel title.
-    show_labels : bool, default False
-        Whether to show "Predictive"/"Likelihood" text labels on curves.
-    coverage : float, default 0.95
-        Coverage probability for HPD regions.
-
-    Examples
-    --------
-    >>> import matplotlib.pyplot as plt
-    >>> import numpy as np
-    >>> fig, ax = plt.subplots()
-    >>> x = np.linspace(-20, 20, 1000)
-    >>> create_distribution_comparison_panel(
-    ...     ax, x,
-    ...     predictive_params=(0, 1.5),
-    ...     likelihood_params=(5, 1.5),
-    ...     color_predictive="blue",
-    ...     color_likelihood="orange",
-    ...     title="Example",
-    ... )
-    >>> plt.close(fig)
-    """
-    from matplotlib.patches import Rectangle
-    from scipy import stats
-
-    # Generate distributions
-    pred_mean, pred_std = predictive_params
-    like_mean, like_std = likelihood_params
-
-    pdf_predictive: NDArray[np.floating] = stats.norm.pdf(x, loc=pred_mean, scale=pred_std)
-    pdf_likelihood: NDArray[np.floating] = stats.norm.pdf(x, loc=like_mean, scale=like_std)
-
-    dx = float(x[1] - x[0])
-    pdf_likelihood = pdf_likelihood / (np.sum(pdf_likelihood) * dx)
-
-    ax.plot(
-        x,
-        pdf_predictive,
-        color=color_predictive,
-        linewidth=1.2,
-        label="Predictive distribution",
-    )
-    ax.fill_between(x, pdf_predictive, alpha=0.3, color=color_predictive)
-
-    ax.plot(
-        x,
-        pdf_likelihood,
-        color=color_likelihood,
-        linewidth=1.2,
-        label="Normalized likelihood",
-    )
-    ax.fill_between(x, pdf_likelihood, alpha=0.3, color=color_likelihood)
-
-    # Compute HPD regions and extract contiguous intervals
-    hpd_predictive = ssc.highest_density_region(pdf_predictive[np.newaxis], coverage=coverage)[0]
-    hpd_likelihood = ssc.highest_density_region(pdf_likelihood[np.newaxis], coverage=coverage)[0]
-    pred_regions = extract_contiguous_regions(hpd_predictive, x)
-    like_regions = extract_contiguous_regions(hpd_likelihood, x)
-
-    # Draw HPD regions as horizontal bars
-    bar_height = 0.015
-    y_pred = -0.08
-    y_like = -0.05
-
-    for start, end in pred_regions:
-        ax.add_patch(
-            Rectangle(
-                (start, y_pred),
-                end - start,
-                bar_height,
-                facecolor=color_predictive,
-                edgecolor=color_predictive,
-                linewidth=1.0,
-                clip_on=False,
-            )
-        )
-
-    for start, end in like_regions:
-        ax.add_patch(
-            Rectangle(
-                (start, y_like),
-                end - start,
-                bar_height,
-                facecolor=color_likelihood,
-                edgecolor=color_likelihood,
-                linewidth=1.0,
-                clip_on=False,
-            )
-        )
-
-    # Formatting
-    ax.set_xlim(float(x[0]), float(x[-1]))
-    ax.set_ylim(-0.1, 0.30)  # Room for sub-panel titles
-    if title:
-        ax.set_title(title, fontsize=8, fontweight="normal", pad=2)
-
-    ax.axis("off")
-
-    # Add direct labels on distribution curves
-    if show_labels:
-        # Label predictive on left side, likelihood on right side
-        ax.text(
-            -12,
-            0.22,
-            "Predictive",
-            ha="center",
-            va="bottom",
-            color=color_predictive,
-        )
-        ax.text(
-            16,
-            0.22,
-            "Likelihood",
-            ha="center",
-            va="bottom",
-            color=color_likelihood,
-        )
-
-
 def plot_likelihood_columns(
     ax: Axes,
     likelihood: NDArray[np.floating],
@@ -338,3 +201,94 @@ def plot_likelihood_columns(
             extent=(t - min_half_width, t + min_half_width, y0, y1),
             interpolation="nearest",
         )
+
+
+def plot_event_metric_row(
+    ax: Axes,
+    event_x: NDArray[np.floating] | NDArray[np.integer],
+    values: NDArray[np.floating],
+    spec: MetricSpec,
+    *,
+    threshold: float | None,
+    xlim: tuple[float, float],
+    ylabel: str,
+    symlog_yticks: Sequence[float],
+    symlog_ylim: tuple[float, float],
+    worse_fit_y: float = 0.5,
+    show_annotations: bool = True,
+) -> None:
+    """Plot one per-spike-event diagnostic row, as in Figures 3 and 4.
+
+    Scatters each event's value (on the metric's display scale), draws the
+    flag threshold, sets the axis, and labels the threshold and the direction
+    of worse fit at the right edge.
+
+    Parameters
+    ----------
+    ax : Axes
+        Row axis.
+    event_x : np.ndarray, shape (n_events,)
+        Horizontal position of each event (time index or seconds).
+    values : np.ndarray, shape (n_events,)
+        Raw per-event metric values; ``spec.display_transform`` is applied here.
+    spec : MetricSpec
+        The metric's color, display transform, and axis scale.
+    threshold : float or None
+        Raw flag threshold, or None for no threshold line.
+    xlim : tuple of float
+        Horizontal axis limits.
+    ylabel : str
+        Row label.
+    symlog_yticks : sequence of float
+        Ticks for a ``spec.symlog_axis`` row (labeled ``f"{tick:g}"``); ignored
+        for other rows.
+    symlog_ylim : tuple of float
+        Vertical limits for a ``spec.symlog_axis`` row; ignored for other rows.
+    worse_fit_y : float, default 0.5
+        Height of the worse-fit label, in axes coordinates.
+    show_annotations : bool, default True
+        Whether to draw the right-edge threshold and worse-fit labels (a
+        figure with side-by-side stacks shows them on one stack only).
+    """
+    neg_log = spec.display_transform == "neg_log_p"
+    plot_values = np.asarray(values, dtype=float)
+    if neg_log:
+        plot_values = negative_log_pvalue(plot_values)
+    ax.scatter(event_x, plot_values, s=0.8, alpha=0.6, c=spec.color, rasterized=True)
+
+    plot_threshold = None
+    if threshold is not None:
+        plot_threshold = float(negative_log_pvalue(threshold)) if neg_log else float(threshold)
+        threshold_line = ax.axhline(
+            plot_threshold, color=COLORS["threshold"], linewidth=1.2, alpha=0.7, zorder=10
+        )
+        threshold_line.set_gid(THRESHOLD_LINE_GID)
+
+    if spec.symlog_axis:
+        # Symlog y-scale expands the worst-fit floor near 0 instead of
+        # compressing it onto the bottom spine.
+        ax.set_yscale("symlog", linthresh=SYMLOG_LINTHRESH, linscale=SYMLOG_LINSCALE)
+        ax.set_yticks(list(symlog_yticks))
+        ax.set_yticklabels([f"{tick:g}" for tick in symlog_yticks])
+        ax.set_ylim(symlog_ylim)
+
+    ax.set_xlim(xlim)
+    ax.set_ylabel(ylabel, labelpad=7)
+
+    if not show_annotations:
+        return
+    if plot_threshold is not None:
+        threshold_label = ax.text(
+            1.01,
+            plot_threshold,
+            "Threshold",
+            transform=ax.get_yaxis_transform(),
+            va="center",
+            ha="left",
+            color=COLORS["threshold"],
+        )
+        threshold_label.set_gid(THRESHOLD_LABEL_GID)
+    worse_fit_label = ax.text(
+        1.01, worse_fit_y, spec.worse_fit_direction, transform=ax.transAxes, va="center", ha="left"
+    )
+    worse_fit_label.set_gid(WORSE_FIT_LABEL_GID)

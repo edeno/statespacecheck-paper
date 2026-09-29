@@ -15,7 +15,9 @@ from pathlib import Path
 import pyqtgraph as pg
 from PySide6 import QtGui, QtWidgets
 
-from .data_source import DecoderDataSource, ModelName
+from statespacecheck_paper.figure04_models import CONTINUOUS, FIGURE04_MODEL_IDS, Figure4ModelId
+
+from .data_source import DecoderDataSource
 
 
 def configure_qt_application(app: QtWidgets.QApplication) -> None:
@@ -37,7 +39,7 @@ def configure_qt_application(app: QtWidgets.QApplication) -> None:
 
 def launch(
     cache_dir: Path | str,
-    model: ModelName | None = None,
+    model: Figure4ModelId | None = None,
     *,
     simulation: bool = False,
 ) -> int:
@@ -47,9 +49,9 @@ def launch(
     otherwise pass ``model=`` to choose the real-data model. Exactly
     one of those must be specified.
     """
-    # Deferred to break the import cycle with ``viewer``: this module
-    # is imported by ``viewer.py``'s re-export footer, so a top-level
-    # ``from .viewer import DecoderViewer`` here would loop back.
+    # Deferred so the CLI parses its arguments before importing the viewer,
+    # which loads the Figure-4 modules; ``viewer`` imports this module only
+    # when run as ``python -m statespacecheck_paper.interactive.viewer``.
     from .viewer import DecoderViewer  # noqa: PLC0415
 
     if simulation and model is not None:
@@ -68,7 +70,7 @@ def launch(
         ds = DecoderDataSource.for_simulation(cache_dir)
     else:
         assert model is not None  # narrowed above
-        ds = DecoderDataSource.for_model(cache_dir, model)
+        ds = DecoderDataSource.for_recording(cache_dir, model)
     viewer = DecoderViewer(ds, cache_dir=cache_dir)
     viewer.show()
     try:
@@ -99,7 +101,7 @@ def main(argv: list[str] | None = None) -> int:
     target = parser.add_mutually_exclusive_group()
     target.add_argument(
         "--model",
-        choices=("continuous", "contfrag"),
+        choices=FIGURE04_MODEL_IDS,
         default=None,
         help="Open the real-data cache for this model.",
     )
@@ -111,9 +113,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.simulation:
         return launch(args.cache_dir, simulation=True)
-    # Default to ``continuous`` when the user hasn't specified either
-    # flag (preserves the legacy CLI behaviour).
-    model: ModelName = args.model if args.model is not None else "continuous"
+    # Default to ``continuous`` when neither flag is given.
+    model: Figure4ModelId = args.model if args.model is not None else CONTINUOUS.id
     return launch(args.cache_dir, model=model)
 
 

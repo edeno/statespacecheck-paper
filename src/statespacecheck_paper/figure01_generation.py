@@ -18,13 +18,167 @@ from __future__ import annotations
 
 import matplotlib.pyplot as plt
 import numpy as np
+import statespacecheck as ssc
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
+from matplotlib.patches import Rectangle
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
+from numpy.typing import NDArray
+from scipy import stats
 
-from statespacecheck_paper.plotting import create_distribution_comparison_panel
+from statespacecheck_paper.diagnostics import HPD_COVERAGE
+from statespacecheck_paper.paths import FIGURE_DIR
+from statespacecheck_paper.plotting import extract_contiguous_regions
 from statespacecheck_paper.schematic import draw_equation_boxes, draw_graphical_model
-from statespacecheck_paper.style import COLORS, save_figure, set_figure_defaults
+from statespacecheck_paper.style import COLORS, FIGURE_DPI, save_figure, set_figure_defaults
+
+
+def create_distribution_comparison_panel(
+    ax: Axes,
+    x: NDArray[np.floating],
+    predictive_params: tuple[float, float],
+    likelihood_params: tuple[float, float],
+    color_predictive: str,
+    color_likelihood: str,
+    title: str | None = None,
+    show_labels: bool = False,
+) -> None:
+    """Create a panel comparing predictive and likelihood distributions.
+
+    Shows both distributions with filled curves and their HPD regions (coverage
+    ``diagnostics.HPD_COVERAGE``) as horizontal bars below the plot.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        Axes to plot on.
+    x : np.ndarray, shape (n_points,)
+        Position values for plotting.
+    predictive_params : tuple[float, float]
+        (mean, std) for predictive Gaussian distribution.
+    likelihood_params : tuple[float, float]
+        (mean, std) for likelihood Gaussian distribution.
+    color_predictive : str
+        Color for predictive distribution.
+    color_likelihood : str
+        Color for likelihood distribution.
+    title : str | None, optional
+        Panel title.
+    show_labels : bool, default False
+        Whether to show "Predictive"/"Likelihood" text labels on curves.
+
+    Examples
+    --------
+    >>> import matplotlib.pyplot as plt
+    >>> import numpy as np
+    >>> fig, ax = plt.subplots()
+    >>> x = np.linspace(-20, 20, 1000)
+    >>> create_distribution_comparison_panel(
+    ...     ax, x,
+    ...     predictive_params=(0, 1.5),
+    ...     likelihood_params=(5, 1.5),
+    ...     color_predictive="blue",
+    ...     color_likelihood="orange",
+    ...     title="Example",
+    ... )
+    >>> plt.close(fig)
+    """
+    # Generate distributions
+    pred_mean, pred_std = predictive_params
+    like_mean, like_std = likelihood_params
+
+    pdf_predictive: NDArray[np.floating] = stats.norm.pdf(x, loc=pred_mean, scale=pred_std)
+    pdf_likelihood: NDArray[np.floating] = stats.norm.pdf(x, loc=like_mean, scale=like_std)
+
+    dx = float(x[1] - x[0])
+    pdf_likelihood = pdf_likelihood / (np.sum(pdf_likelihood) * dx)
+
+    ax.plot(
+        x,
+        pdf_predictive,
+        color=color_predictive,
+        linewidth=1.2,
+        label="Predictive distribution",
+    )
+    ax.fill_between(x, pdf_predictive, alpha=0.3, color=color_predictive)
+
+    ax.plot(
+        x,
+        pdf_likelihood,
+        color=color_likelihood,
+        linewidth=1.2,
+        label="Normalized likelihood",
+    )
+    ax.fill_between(x, pdf_likelihood, alpha=0.3, color=color_likelihood)
+
+    # Compute HPD regions and extract contiguous intervals
+    hpd_predictive = ssc.highest_density_region(pdf_predictive[np.newaxis], coverage=HPD_COVERAGE)[
+        0
+    ]
+    hpd_likelihood = ssc.highest_density_region(pdf_likelihood[np.newaxis], coverage=HPD_COVERAGE)[
+        0
+    ]
+    pred_regions = extract_contiguous_regions(hpd_predictive, x)
+    like_regions = extract_contiguous_regions(hpd_likelihood, x)
+
+    # Draw HPD regions as horizontal bars
+    bar_height = 0.015
+    y_pred = -0.08
+    y_like = -0.05
+
+    for start, end in pred_regions:
+        ax.add_patch(
+            Rectangle(
+                (start, y_pred),
+                end - start,
+                bar_height,
+                facecolor=color_predictive,
+                edgecolor=color_predictive,
+                linewidth=1.0,
+                clip_on=False,
+            )
+        )
+
+    for start, end in like_regions:
+        ax.add_patch(
+            Rectangle(
+                (start, y_like),
+                end - start,
+                bar_height,
+                facecolor=color_likelihood,
+                edgecolor=color_likelihood,
+                linewidth=1.0,
+                clip_on=False,
+            )
+        )
+
+    # Formatting
+    ax.set_xlim(float(x[0]), float(x[-1]))
+    ax.set_ylim(-0.1, 0.30)  # Room for sub-panel titles
+    if title:
+        ax.set_title(title, fontweight="normal", pad=2)
+
+    ax.axis("off")
+
+    # Add direct labels on distribution curves
+    if show_labels:
+        # Label predictive on left side, likelihood on right side
+        ax.text(
+            -12,
+            0.22,
+            "Predictive",
+            ha="center",
+            va="bottom",
+            color=color_predictive,
+        )
+        ax.text(
+            16,
+            0.22,
+            "Likelihood",
+            ha="center",
+            va="bottom",
+            color=color_likelihood,
+        )
 
 
 def compose_figure01() -> Figure:
@@ -42,7 +196,7 @@ def compose_figure01() -> Figure:
     """
     # Create figure with GridSpec for precise control
     # 3 rows: graphical model, equation boxes, distribution panels
-    fig: Figure = plt.figure(figsize=(5.0, 5.1), dpi=450)
+    fig: Figure = plt.figure(figsize=(5.0, 5.1), dpi=FIGURE_DPI)
 
     # Create grid with minimal spacing between rows
     gs = fig.add_gridspec(
@@ -71,7 +225,6 @@ def compose_figure01() -> Figure:
     axes["goodness_of_fit"].axis("off")
     axes["goodness_of_fit"].set_title(
         "Goodness-of-Fit: Predictive vs. Likelihood",
-        fontsize=8,
         fontweight="bold",
         pad=4,
     )
@@ -151,7 +304,7 @@ def compose_figure01() -> Figure:
         va="top",
     )
 
-    # Add panel labels (a, b, c) - now consistent since all panels use set_title()
+    # Panel labels (a, b, c), aligned because every panel uses set_title()
     label_x = axes["goodness_of_fit"].get_position().x0 - 0.02
     for label, axis_name in (
         ("a", "graphical_model"),
@@ -175,5 +328,5 @@ def generate_figure01() -> None:
     """Compose Figure 1 with paper styling and save its PDF and PNG."""
     set_figure_defaults(context="paper")
     fig = compose_figure01()
-    save_figure("manuscript/figures/main/figure01", close=True, fig=fig)
-    print("\nFigure 1 saved to manuscript/figures/main/figure01.{pdf,png}")
+    save_figure(FIGURE_DIR / "figure01", close=True, fig=fig)
+    print(f"\nFigure 1 saved to {FIGURE_DIR / 'figure01'}.{{pdf,png}}")

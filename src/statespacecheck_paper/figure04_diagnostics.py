@@ -1,197 +1,36 @@
 """Real-data goodness-of-fit diagnostic computations.
 
-Per-spike-event diagnostics for real neural recordings: temporal smoothing and
-running averages, the spike-event expansion helpers, the HPD/KL/predictive-p-value
-computation delegating to :mod:`statespacecheck_paper.diagnostics`, the mean
-per-spike likelihood, the end-to-end per-model diagnostic driver, and the
+Per-spike-event diagnostics for real neural recordings: the spike-event
+expansion from exact spike times, the HPD/KL/predictive-p-value computation
+delegating to :mod:`statespacecheck_paper.diagnostics`, the mean per-spike
+likelihood, the driver that diagnoses a (cached) decode's results, and the
 two-decoder flag-agreement tabulation.
-
-Examples
---------
->>> import numpy as np
->>> from statespacecheck_paper.figure04_diagnostics import gaussian_smooth
->>> data = np.random.randn(1000)
->>> smoothed = gaussian_smooth(data, sigma=0.02, sampling_frequency=500)
->>> smoothed.shape
-(1000,)
 """
 
 from __future__ import annotations
 
 import dataclasses
-from typing import Any, Literal
+from typing import Any
 
 import numpy as np
 import statespacecheck as ssc
 from numpy.typing import NDArray
-from scipy.ndimage import gaussian_filter1d
 
 from statespacecheck_paper.diagnostics import (
+    HPD_COVERAGE,
+    FlagDirection,
     SpikeEventDiagnostics,
     compute_spike_event_diagnostics_from_rates,
+    flag_mask,
 )
-from statespacecheck_paper.figure04_place_fields import (
-    extract_shared_position_place_fields,
-    get_state_marginalized_posterior,
-)
-
-
-def gaussian_smooth(
-    data: NDArray[np.float64],
-    sigma: float,
-    sampling_frequency: float,
-    axis: int = 0,
-    truncate: int = 8,
-) -> NDArray[np.float64]:
-    """Apply 1D Gaussian convolution to data.
-
-    The standard deviation of the gaussian is in the units of the sampling
-    frequency. The function is a wrapper around scipy's `gaussian_filter1d`.
-    The support is truncated at 8 by default, instead of 4 in `gaussian_filter1d`.
-
-    Parameters
-    ----------
-    data : np.ndarray
-        Input data to smooth.
-    sigma : float
-        Standard deviation of the Gaussian kernel in seconds.
-    sampling_frequency : float
-        Number of samples per second.
-    axis : int, default=0
-        Axis along which to apply the filter.
-    truncate : int, default=8
-        Truncate the filter at this many standard deviations.
-
-    Returns
-    -------
-    smoothed_data : np.ndarray
-        Gaussian-smoothed data with same shape as input.
-
-    Examples
-    --------
-    >>> data = np.random.randn(1000)
-    >>> smoothed = gaussian_smooth(data, sigma=0.01, sampling_frequency=1000)
-    >>> smoothed.shape
-    (1000,)
-    """
-    result: NDArray[np.float64] = gaussian_filter1d(
-        data,
-        sigma * sampling_frequency,
-        truncate=truncate,
-        axis=axis,
-        mode="constant",
-    )
-    return result
-
-
-def compute_running_average(
-    event_times: NDArray[np.floating],
-    event_values: NDArray[np.floating],
-    evaluation_time: NDArray[np.float64],
-    window_size: float = 0.050,
-) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """Compute the manuscript's event-weighted running diagnostic average.
-
-    Implements the event-weighted average formula from the manuscript:
-
-        D(t) = sum(metric_k * I(t_k in window)) / sum(I(t_k in window))
-
-    where the sum is over all spike events (time, cell) pairs and I(*) is the
-    indicator function selecting events within the sliding window centered at t.
-    Each spike event contributes equally regardless of how many cells fire in
-    a given time bin.
-
-    Parameters
-    ----------
-    event_times : np.ndarray, shape (n_events,)
-        Exact event times, or decoder-bin times indexed once per event.
-    event_values : np.ndarray, shape (n_events,)
-        Diagnostic value for every event.
-    evaluation_time : np.ndarray, shape (n_time,)
-        Time coordinates at which to evaluate the sliding-window average.
-    window_size : float, default 0.050
-        Width of the centered sliding window in seconds.
-
-    Returns
-    -------
-    running_avg : np.ndarray, shape (n_time,)
-        Running average of the metric over time. NaN where no events fall
-        within the window.
-    time_out : np.ndarray, shape (n_time,)
-        ``evaluation_time`` (returned for convenience).
-
-    Notes
-    -----
-    Events are sorted once, then cumulative sums and ``searchsorted`` evaluate
-    each centered window in O(n log n). Bins with no events produce NaN.
-
-    Examples
-    --------
-    >>> import numpy as np
-    >>> time = np.linspace(0, 1, 100)
-    >>> event_times = np.array([0.1, 0.12, 0.8])
-    >>> event_values = np.array([0.2, 0.4, 0.9])
-    >>> running_avg, time_out = compute_running_average(
-    ...     event_times, event_values, time, window_size=0.1
-    ... )
-    >>> running_avg.shape
-    (100,)
-    """
-    event_times = np.asarray(event_times, dtype=np.float64)
-    event_values = np.asarray(event_values, dtype=np.float64)
-    evaluation_time = np.asarray(evaluation_time, dtype=np.float64)
-    if event_times.ndim != 1 or event_values.shape != event_times.shape:
-        raise ValueError("event_times and event_values must be matching 1-D arrays")
-    if evaluation_time.ndim != 1:
-        raise ValueError("evaluation_time must be a 1-D array")
-    if not np.isfinite(window_size) or window_size <= 0.0:
-        raise ValueError(f"window_size must be positive and finite; got {window_size}")
-    if not np.all(np.isfinite(event_times)) or not np.all(np.isfinite(event_values)):
-        raise ValueError("Every spike event must have a finite time and diagnostic value")
-    if not np.all(np.isfinite(evaluation_time)):
-        raise ValueError("evaluation_time must contain only finite values")
-
-    n_time_pts = evaluation_time.size
-    if event_times.size == 0:
-        return np.full(n_time_pts, np.nan), evaluation_time.copy()
-
-    sort_ind = np.argsort(event_times)
-    sorted_times = event_times[sort_ind]
-    sorted_values = event_values[sort_ind]
-    cumsum = np.concatenate(([0.0], np.cumsum(sorted_values)))
-
-    half_window = window_size / 2.0
-    starts = np.searchsorted(sorted_times, evaluation_time - half_window, side="left")
-    stops = np.searchsorted(sorted_times, evaluation_time + half_window, side="right")
-    counts = stops - starts
-    sums = cumsum[stops] - cumsum[starts]
-
-    running_avg = np.full(n_time_pts, np.nan)
-    has_events = counts > 0
-    running_avg[has_events] = sums[has_events] / counts[has_events]
-    return running_avg, evaluation_time.copy()
-
-
-def _get_spike_events_from_counts(
-    spike_counts: NDArray[np.int64],
-    time: NDArray[np.float64] | None = None,
-) -> tuple[NDArray[np.intp], NDArray[np.intp], NDArray[np.float64] | None]:
-    """Expand binned spike counts into one event per spike."""
-    spike_time_ind, spike_cell_ind = np.nonzero(spike_counts)
-    counts = spike_counts[spike_time_ind, spike_cell_ind].astype(np.intp)
-
-    spike_time_ind = np.repeat(spike_time_ind, counts).astype(np.intp)
-    spike_cell_ind = np.repeat(spike_cell_ind, counts).astype(np.intp)
-    event_times = None if time is None else np.asarray(time, dtype=np.float64)[spike_time_ind]
-
-    return spike_time_ind, spike_cell_ind, event_times
+from statespacecheck_paper.figure04_place_fields import marginal_position_distribution
 
 
 def _get_spike_events_from_spike_times(
     spike_times: list[NDArray[np.float64]],
     time: NDArray[np.float64],
 ) -> tuple[NDArray[np.intp], NDArray[np.intp], NDArray[np.float64]]:
-    """Map exact spike timestamps to predictive-posterior time indices.
+    """Map exact spike timestamps to predictive-distribution time indices.
 
     Uses the same bin assignment as the decoder's spike binning
     (``non_local_detector.likelihoods.common.get_spikecount_per_time_bin``):
@@ -203,8 +42,8 @@ def _get_spike_events_from_spike_times(
     actually updated with that spike.
     """
     time = np.asarray(time, dtype=np.float64)
-    spike_time_inds = []
-    spike_cell_inds = []
+    event_time_inds = []
+    event_cell_inds = []
     event_times = []
 
     for cell_ind, cell_spike_times in enumerate(spike_times):
@@ -213,8 +52,8 @@ def _get_spike_events_from_spike_times(
         cell_event_times = cell_spike_times[in_bounds]
         cell_time_inds = np.digitize(cell_event_times, time[1:-1])
 
-        spike_time_inds.append(cell_time_inds.astype(np.intp))
-        spike_cell_inds.append(np.full(len(cell_event_times), cell_ind, dtype=np.intp))
+        event_time_inds.append(cell_time_inds.astype(np.intp))
+        event_cell_inds.append(np.full(len(cell_event_times), cell_ind, dtype=np.intp))
         event_times.append(cell_event_times)
 
     if not event_times:
@@ -224,47 +63,44 @@ def _get_spike_events_from_spike_times(
             np.empty(0, dtype=np.float64),
         )
 
-    spike_time_ind = np.concatenate(spike_time_inds)
-    spike_cell_ind = np.concatenate(spike_cell_inds)
+    event_time_ind = np.concatenate(event_time_inds)
+    event_cell_ind = np.concatenate(event_cell_inds)
     event_time = np.concatenate(event_times)
     sort_ind = np.argsort(event_time)
 
-    return spike_time_ind[sort_ind], spike_cell_ind[sort_ind], event_time[sort_ind]
+    return event_time_ind[sort_ind], event_cell_ind[sort_ind], event_time[sort_ind]
 
 
 def compute_spike_event_diagnostics(
-    predictive_posterior: NDArray[np.float64],
-    spike_counts: NDArray[np.int64],
+    predictive: NDArray[np.float64],
     place_fields: NDArray[np.float64],
-    coverage: float = 0.95,
-    spike_times: list[NDArray[np.float64]] | None = None,
-    time: NDArray[np.float64] | None = None,
+    spike_times: list[NDArray[np.float64]],
+    time: NDArray[np.float64],
+    coverage: float = HPD_COVERAGE,
     include_dense_matrices: bool = True,
 ) -> SpikeEventDiagnostics:
     """Compute per-cell diagnostic metrics for model checking.
 
     Computes HPD overlap, KL divergence, and the rank-based predictive p-value for each
-    spike event. Matrix outputs are retained for backward-compatible plotting,
-    and event arrays preserve one row per spike with exact timestamps when
-    ``spike_times`` and ``time`` are supplied.
+    spike event. The dense ``(n_time, n_cells)`` matrices are returned when
+    ``include_dense_matrices`` is True, and event arrays preserve one row per
+    spike with its exact timestamp.
 
     Parameters
     ----------
-    predictive_posterior : np.ndarray, shape (n_time, n_bins)
-        State-marginalized predictive posterior distribution over position.
-    spike_counts : np.ndarray, shape (n_time, n_cells)
-        Spike count for each cell at each time point.
+    predictive : np.ndarray, shape (n_time, n_bins)
+        Position-marginal predictive distribution.
     place_fields : np.ndarray, shape (n_cells, n_bins)
         Expected spike count at each position bin for each cell (spikes/bin).
         This is the format returned by non_local_detector.
-    coverage : float, default 0.95
+    spike_times : list of np.ndarray
+        Exact spike timestamps for each cell; diagnostics are computed per
+        spike event, at its exact time.
+    time : np.ndarray, shape (n_time,)
+        Decoder time grid used to map spike timestamps to predictive-distribution
+        rows, with the decoder's own bin assignment.
+    coverage : float, default ``HPD_COVERAGE``
         Coverage probability for HPD region computation.
-    spike_times : list of np.ndarray, optional
-        Exact spike timestamps for each cell. If supplied, diagnostics are
-        computed per spike event and plotted at exact spike times.
-    time : np.ndarray, optional
-        Decoder time grid used to map spike timestamps to predictive posterior
-        rows. Required when ``spike_times`` is supplied.
     include_dense_matrices : bool, default True
         Forwarded to ``compute_spike_event_diagnostics_from_rates``. Set False
         when only the per-spike event arrays are needed (avoids the
@@ -280,19 +116,14 @@ def compute_spike_event_diagnostics(
           decoder-bin and cell indices per spike event.
         - ``event_hpd_overlap``, ``event_kl_divergence``, ``event_predictive_pvalue``:
           shape (n_spikes,), one value per spike event.
-
-        Optionally populated:
-
         - ``event_time``: shape (n_spikes,), exact wall-clock spike time.
-          Populated when either ``spike_times`` (preferred) or ``time``
-          alone is supplied; ``None`` when both are ``None``.
 
         When ``include_dense_matrices`` (the default), additionally:
 
         - ``hpd_overlap``, ``kl_divergence``, ``predictive_pvalue``: shape
           (n_time, n_cells), NaN where the cell has no spike at that
           timestep.
-        - ``per_spike_likelihood``: shape (n_spikes, n_bins), normalized
+        - ``event_likelihood``: shape (n_spikes, n_bins), normalized
           per-event intensity likelihood.
 
         When ``include_dense_matrices=False`` those four dense fields
@@ -315,35 +146,24 @@ def compute_spike_event_diagnostics(
     >>> n_time, n_bins, n_cells = 100, 50, 10
     >>> predictive = np.random.dirichlet(np.ones(n_bins), size=n_time)
     >>> place_fields = np.random.rand(n_cells, n_bins) * 10
-    >>> spike_counts = np.random.poisson(0.5, (n_time, n_cells))
-    >>> diagnostics = compute_spike_event_diagnostics(
-    ...     predictive, spike_counts, place_fields
-    ... )
+    >>> time = np.arange(n_time, dtype=float)
+    >>> spike_times = [np.sort(np.random.uniform(0, n_time - 1, 50)) for _ in range(n_cells)]
+    >>> diagnostics = compute_spike_event_diagnostics(predictive, place_fields, spike_times, time)
     >>> diagnostics.hpd_overlap.shape
     (100, 10)
     """
-    # Ensure all inputs are NumPy arrays (handles JAX arrays from decoder)
-    predictive_posterior = np.asarray(predictive_posterior)
-    spike_counts = np.asarray(spike_counts)
+    # Ensure the predictive is a NumPy array (handles JAX arrays from decoder)
+    predictive = np.asarray(predictive)
 
-    event_times: NDArray[np.float64] | None
-    if spike_times is not None:
-        if time is None:
-            raise ValueError("time must be provided when spike_times is provided")
-        spike_time_ind, spike_cell_ind, event_times = _get_spike_events_from_spike_times(
-            spike_times, time
-        )
-    else:
-        spike_time_ind, spike_cell_ind, event_times = _get_spike_events_from_counts(
-            spike_counts,
-            time,
-        )
+    event_time_ind, event_cell_ind, event_times = _get_spike_events_from_spike_times(
+        spike_times, time
+    )
 
     result = compute_spike_event_diagnostics_from_rates(
-        predictive_posterior,
+        predictive,
         place_fields.T,  # (n_bins, n_cells)
-        spike_time_ind.astype(np.intp),
-        spike_cell_ind.astype(np.intp),
+        event_time_ind.astype(np.intp),
+        event_cell_ind.astype(np.intp),
         coverage=coverage,
         include_dense_matrices=include_dense_matrices,
     )
@@ -351,7 +171,7 @@ def compute_spike_event_diagnostics(
     return dataclasses.replace(result, event_time=event_times)
 
 
-def mean_per_spike_likelihood_by_time(
+def mean_event_likelihood_by_time(
     spike_counts: NDArray[np.int64],
     place_fields: NDArray[np.float64],
 ) -> tuple[NDArray[np.float64], NDArray[np.bool_]]:
@@ -399,20 +219,17 @@ def mean_per_spike_likelihood_by_time(
 def compute_results_diagnostics(
     results: Any,
     place_fields: NDArray[np.float64],
-    spike_counts: NDArray[np.int64],
     time: NDArray[np.float64],
-    spike_times: list[NDArray[np.float64]] | None = None,
+    spike_times: list[NDArray[np.float64]],
     *,
-    coverage: float = 0.95,
-    include_dense_matrices: bool = False,
+    coverage: float = HPD_COVERAGE,
 ) -> SpikeEventDiagnostics:
     """Compute per-spike diagnostics from decode outputs and shared place fields.
 
-    This is the model-free form of :func:`compute_model_diagnostics`: it takes
-    the decoder's ``predict`` output and the one shared position-dependent
+    Takes the decoder's ``predict`` output and the one shared position-dependent
     observation likelihood (already restricted to track-interior bins), so the
     diagnostics can be (re)computed from a cached decode without the fitted
-    model object. The predictive posterior is marginalized over any discrete
+    model object. The predictive distribution is marginalized over any discrete
     dynamics mode before comparison, so models with different numbers of
     modes are diagnosed over the same position grid.
 
@@ -423,100 +240,36 @@ def compute_results_diagnostics(
     place_fields : np.ndarray, shape (n_cells, n_bins)
         Shared interior place fields (expected spikes per bin), as returned by
         :func:`~figure04_place_fields.extract_shared_position_place_fields`.
-    spike_counts : np.ndarray, shape (n_time, n_cells)
-        Spike count matrix.
     time : np.ndarray, shape (n_time,)
         Decoder time grid.
-    spike_times : list of np.ndarray, optional
-        Exact spike timestamps for each cell. If supplied, diagnostics are
-        computed as one event per spike instead of one event per nonzero bin.
-    coverage : float, default 0.95
+    spike_times : list of np.ndarray
+        Exact spike timestamps for each cell; diagnostics are computed as one
+        event per spike, at its exact time.
+    coverage : float, default ``HPD_COVERAGE``
         HPD-region coverage used by the HPD-overlap diagnostic.
-    include_dense_matrices : bool, default False
-        Forwarded to :func:`compute_spike_event_diagnostics`. The dense
-        ``(n_time, n_cells)`` matrices are hundreds of MB for a full recording
-        and no production consumer reads them, so they are off by default.
 
     Returns
     -------
     diagnostics : SpikeEventDiagnostics
-        See :func:`compute_spike_event_diagnostics` for the schema.
+        See :func:`compute_spike_event_diagnostics` for the schema. The dense
+        ``(n_time, n_cells)`` matrices, hundreds of MB for a full recording and
+        read by no consumer, are left ``None``.
     """
-    predictive_posterior = get_state_marginalized_posterior(results, "predictive")
+    predictive = marginal_position_distribution(results, "predictive")
     place_fields = np.asarray(place_fields, dtype=np.float64)
-    if predictive_posterior.shape[1] != place_fields.shape[1]:
+    if predictive.shape[1] != place_fields.shape[1]:
         raise ValueError(
-            f"Position-marginal predictive posterior has "
-            f"{predictive_posterior.shape[1]} bins but the shared observation "
+            f"Position-marginal predictive distribution has "
+            f"{predictive.shape[1]} bins but the shared observation "
             f"likelihood has {place_fields.shape[1]}."
         )
     return compute_spike_event_diagnostics(
-        predictive_posterior,
-        spike_counts,
+        predictive,
         place_fields,
-        coverage=coverage,
-        spike_times=spike_times,
-        time=time,
-        include_dense_matrices=include_dense_matrices,
-    )
-
-
-def compute_model_diagnostics(
-    model: Any,
-    results: Any,
-    spike_counts: NDArray[np.int64],
-    time: NDArray[np.float64],
-    spike_times: list[NDArray[np.float64]] | None = None,
-    *,
-    coverage: float = 0.95,
-) -> SpikeEventDiagnostics:
-    """Compute per-cell diagnostics for a fitted decoder model.
-
-    The decoder itself may operate over a joint discrete-state-by-position
-    space. For diagnostics, the predictive posterior is marginalized over the
-    discrete state and compared with one shared position-dependent observation
-    likelihood. This makes the metric domain identical for models with
-    different numbers of discrete states.
-
-    Parameters
-    ----------
-    model : decoder model
-        Fitted SortedSpikesDecoder or ContFragSortedSpikesClassifier.
-    results : xr.Dataset
-        Decoding results from model.predict().
-    spike_counts : np.ndarray, shape (n_time, n_cells)
-        Spike count matrix.
-    time : np.ndarray, shape (n_time,)
-        Time values.
-    spike_times : list of np.ndarray, optional
-        Exact spike timestamps for each cell. If supplied, diagnostics are
-        computed as one event per spike instead of one event per nonzero bin.
-    coverage : float, default 0.95
-        HPD-region coverage used by the HPD-overlap diagnostic.
-
-    Returns
-    -------
-    diagnostics : SpikeEventDiagnostics
-        See :func:`compute_spike_event_diagnostics` for the schema. The
-        ``event_time`` field carries either the original ``spike_times``
-        (when supplied) or the decoder-grid time at each event's index. The
-        dense matrices are populated for this model-level entry point.
-
-    Examples
-    --------
-    >>> # Requires fitted model and decoding results
-    >>> # diagnostics = compute_model_diagnostics(model, results, spike_counts, time)
-    >>> # diagnostics.hpd_overlap.shape  # (n_time, n_cells)
-    """
-    place_fields, _ = extract_shared_position_place_fields(model)
-    return compute_results_diagnostics(
-        results,
-        place_fields,
-        spike_counts,
-        time,
         spike_times,
+        time,
         coverage=coverage,
-        include_dense_matrices=True,
+        include_dense_matrices=False,
     )
 
 
@@ -526,8 +279,12 @@ class FlagConfusion:
 
     A spike is "flagged" when its per-spike diagnostic crosses ``threshold`` in
     the direction of worse fit. The four counts partition every aligned spike
-    event by whether model A and/or model B flags it.
-    ``a_only`` is the rescue quadrant: spikes flagged by model A but not model B.
+    event by whether the reference decoder and/or the comparison decoder flags
+    it; in Figure 4, the reference is the Continuous and the comparison the
+    Continuous-Fragmented model. ``rescued`` counts spikes the
+    reference flags but the comparison does not (Figure 4's "flagged by Cont.
+    only" quadrant), and ``newly_flagged`` spikes the comparison flags but the
+    reference does not.
 
     Attributes
     ----------
@@ -537,44 +294,45 @@ class FlagConfusion:
         Flag threshold applied to the raw per-spike diagnostic.
     n : int
         Number of aligned spike events.
-    both, a_only, b_only, neither : int
-        Counts of spikes flagged by both decoders, by model A only, by model B
-        only, and by neither. They sum to ``n``.
+    both, rescued, newly_flagged, neither : int
+        Counts of spikes flagged by both decoders, by the reference only, by
+        the comparison only, and by neither. They sum to ``n``.
     """
 
     metric: str
     threshold: float
     n: int
     both: int
-    a_only: int
-    b_only: int
+    rescued: int
+    newly_flagged: int
     neither: int
 
     @property
-    def rescue_rate(self) -> float:
-        """Fraction of model-A-flagged spikes that model B does not flag.
+    def rescued_fraction(self) -> float:
+        """Fraction of reference-flagged spikes that the comparison does not flag (``rescued``).
 
-        Returns ``nan`` when model A flags no spikes.
+        Returns ``nan`` when the reference flags no spikes.
         """
-        a_flagged = self.a_only + self.both
-        return self.a_only / a_flagged if a_flagged else float("nan")
+        reference_flagged = self.rescued + self.both
+        return self.rescued / reference_flagged if reference_flagged else float("nan")
 
 
 def compute_flag_confusion(
-    diagnostics_a: SpikeEventDiagnostics,
-    diagnostics_b: SpikeEventDiagnostics,
+    reference_diagnostics: SpikeEventDiagnostics,
+    comparison_diagnostics: SpikeEventDiagnostics,
     metric: str,
     threshold: float,
     *,
-    worse_when: Literal["below", "above"],
+    worse_when: FlagDirection,
 ) -> FlagConfusion:
     """Tabulate per-spike flag agreement between two decoders for one metric.
 
     Parameters
     ----------
-    diagnostics_a, diagnostics_b : SpikeEventDiagnostics
-        Per-spike diagnostics for the two decoders, carrying the same spike
-        events in the same order (e.g. Continuous vs Continuous--Fragmented).
+    reference_diagnostics, comparison_diagnostics : SpikeEventDiagnostics
+        Per-spike diagnostics for the reference and comparison decoders,
+        carrying the same spike events in the same order (e.g. Continuous vs
+        Continuous--Fragmented).
     metric : str
         Diagnostic base name; the per-spike array ``event_{metric}`` is used.
     threshold : float
@@ -587,55 +345,42 @@ def compute_flag_confusion(
     Returns
     -------
     FlagConfusion
-        The 2x2 flag agreement (``a`` = model A, ``b`` = model B).
+        The 2x2 flag agreement: ``rescued`` is flagged by the reference only,
+        ``newly_flagged`` by the comparison only.
 
     Raises
     ------
     ValueError
         If the two diagnostics carry different numbers of spike events, or if
-        ``worse_when`` is not ``"below"`` or ``"above"``.
+        ``worse_when`` is not ``"below"`` or ``"above"`` (from :func:`flag_mask`).
     """
-    if worse_when not in ("below", "above"):
-        raise ValueError(f"worse_when must be 'below' or 'above', got {worse_when!r}")
-
     event_key = f"event_{metric}"
-    a = np.asarray(getattr(diagnostics_a, event_key), dtype=np.float64)
-    b = np.asarray(getattr(diagnostics_b, event_key), dtype=np.float64)
-    if a.shape != b.shape:
+    reference = np.asarray(getattr(reference_diagnostics, event_key), dtype=np.float64)
+    comparison = np.asarray(getattr(comparison_diagnostics, event_key), dtype=np.float64)
+    if reference.shape != comparison.shape:
         raise ValueError(
-            f"diagnostics_a[{event_key!r}] and diagnostics_b[{event_key!r}] must carry "
-            f"the same set of spike events in the same order; got {a.shape} vs {b.shape}."
+            f"reference_diagnostics[{event_key!r}] and comparison_diagnostics[{event_key!r}] "
+            "must carry the same set of spike events in the same order; "
+            f"got {reference.shape} vs {comparison.shape}."
         )
-    if not np.array_equal(diagnostics_a.event_time_ind, diagnostics_b.event_time_ind) or not (
-        np.array_equal(diagnostics_a.event_cell_ind, diagnostics_b.event_cell_ind)
+    if not np.array_equal(
+        reference_diagnostics.event_time_ind, comparison_diagnostics.event_time_ind
+    ) or not np.array_equal(
+        reference_diagnostics.event_cell_ind, comparison_diagnostics.event_cell_ind
     ):
         raise ValueError(
-            "diagnostics_a and diagnostics_b must carry identical event_time_ind and "
-            "event_cell_ind arrays in the same order"
+            "reference_diagnostics and comparison_diagnostics must carry identical "
+            "event_time_ind and event_cell_ind arrays in the same order"
         )
-    # Belt-and-suspenders: SpikeEventDiagnostics.__post_init__ already rejects
-    # NaN/-inf in the event arrays, so this cannot fire for a constructed
-    # dataclass. Kept as a cheap guard in case a metric ever names an
-    # unvalidated event array.
-    if (
-        np.any(np.isnan(a))
-        or np.any(np.isnan(b))
-        or np.any(np.isneginf(a))
-        or np.any(np.isneginf(b))
-    ):
-        raise ValueError(f"{event_key} contains an undefined per-event value")
-
-    if worse_when == "below":
-        flag_a, flag_b = a <= threshold, b <= threshold
-    else:
-        flag_a, flag_b = a >= threshold, b >= threshold
+    flag_reference = flag_mask(reference, threshold, worse_when)
+    flag_comparison = flag_mask(comparison, threshold, worse_when)
 
     return FlagConfusion(
         metric=metric,
         threshold=float(threshold),
-        n=int(a.size),
-        both=int(np.sum(flag_a & flag_b)),
-        a_only=int(np.sum(flag_a & ~flag_b)),
-        b_only=int(np.sum(~flag_a & flag_b)),
-        neither=int(np.sum(~flag_a & ~flag_b)),
+        n=int(reference.size),
+        both=int(np.sum(flag_reference & flag_comparison)),
+        rescued=int(np.sum(flag_reference & ~flag_comparison)),
+        newly_flagged=int(np.sum(~flag_reference & flag_comparison)),
+        neither=int(np.sum(~flag_reference & ~flag_comparison)),
     )

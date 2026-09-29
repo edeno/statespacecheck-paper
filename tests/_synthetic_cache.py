@@ -1,10 +1,10 @@
 """Shared synthetic-cache builder for the interactive-viewer tests.
 
 The five ``test_interactive_*.py`` files all want a tiny but
-self-consistent cache (Zarr posterior + log-likelihood, Parquet event
+self-consistent cache (Zarr predictive + log-likelihood, Parquet event
 table, place-fields .npz, meta + spike-times sidecars) to drive
 ``DecoderDataSource`` and ``DecoderViewer`` without touching the real
-~5 GB of decoder outputs. This module is the single source of truth.
+~8 GB Figure 4 decode cache. This module is the single source of truth.
 """
 
 from __future__ import annotations
@@ -16,14 +16,14 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
+from statespacecheck_paper.figure04_models import Figure4ModelId
 from statespacecheck_paper.interactive import cache as cache_mod
-from statespacecheck_paper.interactive.cache import ModelName
 
 
 def build_synthetic_cache(
     cache_dir: Path,
     *,
-    model: ModelName = "continuous",
+    model: Figure4ModelId = "continuous",
     n_states: int = 1,
     n_time: int = 500,
     n_position: int = 16,
@@ -35,19 +35,18 @@ def build_synthetic_cache(
 ) -> None:
     """Write a minimal, self-consistent cache for the given model name.
 
-    The cache is fully populated: a chunked Zarr store (with one
-    pyramid level), a sorted Parquet event table, a place-fields
+    The cache is fully populated: a time-chunked Zarr store, a sorted
+    Parquet event table, a place-fields
     ``.npz``, the meta sidecar, and the spike-times ``.npy``.
 
     Parameters
     ----------
     cache_dir : Path
         Directory to write into (created on demand).
-    model : {"continuous", "contfrag"}
+    model : {"continuous", "continuous_fragmented"}
         Which model name's cache layout to produce.
     n_states : int
-        State count (1 or 2). Multi-state caches use a multi-state
-        ``acausal_state_probabilities`` with ``("time", "states")``.
+        State count (1 or 2).
     n_time, n_position, n_cells : int
         Synthetic data dimensions.
     n_spikes_per_cell : int
@@ -57,9 +56,8 @@ def build_synthetic_cache(
     seed : int
         RNG seed for reproducibility.
     with_acausal : bool, default True
-        Include ``acausal_posterior`` in the dataset (matches caches
-        built post-smoothed-overlay feature). Set ``False`` to
-        produce a legacy-shape cache for fallback tests.
+        Include ``acausal_posterior`` in the dataset. Set ``False`` to
+        produce a cache without it for the fallback tests.
     """
     rng = np.random.default_rng(seed)
     n_state_bins = n_states * n_position
@@ -69,18 +67,8 @@ def build_synthetic_cache(
     position_grid = np.linspace(0.0, 100.0, n_position)
     position_coord = np.tile(position_grid, n_states)
 
-    posterior = rng.dirichlet(np.ones(n_state_bins), size=n_time).astype(np.float32)
-    log_likelihood = np.log(posterior + 1e-12).astype(np.float32)
-    if n_states == 1:
-        state_probs_var: tuple[Any, Any] = (
-            ("time",),
-            np.ones((n_time,), dtype=np.float32),
-        )
-    else:
-        state_probs_var = (
-            ("time", "states"),
-            rng.dirichlet(np.ones(n_states), size=n_time).astype(np.float32),
-        )
+    predictive = rng.dirichlet(np.ones(n_state_bins), size=n_time).astype(np.float32)
+    log_likelihood = np.log(predictive + 1e-12).astype(np.float32)
     time_arr = 1000.0 + np.arange(n_time, dtype=np.float64) * 0.002
 
     coords: dict[str, Any] = {
@@ -93,23 +81,22 @@ def build_synthetic_cache(
         coords["states"] = ("states", np.array(state_names))
 
     data_vars: dict[str, Any] = {
-        "predictive_posterior": (("time", "state_bins"), posterior),
+        "predictive_posterior": (("time", "state_bins"), predictive),
         "log_likelihood": (("time", "state_bins"), log_likelihood),
-        "acausal_state_probabilities": state_probs_var,
     }
     if with_acausal:
         # Synthetic acausal (smoothed) posterior: a different Dirichlet
         # draw so it is distinguishable from ``predictive_posterior`` in
-        # round-trip tests. Uses a separate RNG to keep the main ``rng``
-        # sequence (and therefore spike times / event metadata) identical
-        # to the pre-acausal version of the cache builder.
+        # round-trip tests. Uses a separate RNG so the main ``rng``
+        # sequence (and therefore spike times / event metadata) is the same
+        # with or without it.
         acausal_rng = np.random.default_rng(seed + 1)
         acausal = acausal_rng.dirichlet(np.ones(n_state_bins), size=n_time).astype(np.float32)
         data_vars["acausal_posterior"] = (("time", "state_bins"), acausal)
 
     ds = xr.Dataset(data_vars=data_vars, coords=coords)
 
-    paths = cache_mod.cache_paths(cache_dir, model)
+    paths = cache_mod.recording_cache_paths(cache_dir, model)
     cache_mod._write_zarr_store(ds=ds, out_dir=paths["zarr"], time_chunk=64)
 
     spike_times = [
@@ -117,12 +104,15 @@ def build_synthetic_cache(
         for _ in range(n_cells)
     ]
 
-    rows: list[tuple[float, int, float, float, float]] = []
+    # Each event's decoder bin follows the paper's spike binning
+    # (``figure04_diagnostics``): ``np.digitize`` against the interior edges.
+    rows: list[tuple[float, int, int, float, float, float]] = []
     for cell_id, ts in enumerate(spike_times):
         for t_val in ts:
             rows.append(
                 (
                     float(t_val),
+                    int(np.digitize(t_val, time_arr[1:-1])),
                     int(cell_id),
                     float(rng.uniform(0.0, 1.0)),
                     float(rng.uniform(0.0, 5.0)),
@@ -135,6 +125,7 @@ def build_synthetic_cache(
         rows,
         columns=[
             "time",
+            "event_time_ind",
             "cell_id",
             "event_hpd_overlap",
             "event_kl_divergence",
@@ -143,6 +134,7 @@ def build_synthetic_cache(
     ).astype(
         {
             "time": np.float64,
+            "event_time_ind": np.int64,
             "cell_id": np.int32,
             "event_hpd_overlap": np.float32,
             "event_kl_divergence": np.float32,
@@ -162,7 +154,7 @@ def build_synthetic_cache(
     )
 
     np.savez(
-        cache_mod.meta_path(cache_dir),
+        cache_mod.recording_meta_path(cache_dir),
         time=time_arr,
         linear_position=rng.uniform(0.0, 100.0, size=n_time).astype(np.float64),
         n_cells=np.int64(n_cells),
@@ -171,4 +163,4 @@ def build_synthetic_cache(
     container = np.empty(n_cells, dtype=object)
     for i, st in enumerate(spike_times):
         container[i] = st
-    np.save(cache_mod.spike_times_path(cache_dir), container, allow_pickle=True)
+    np.save(cache_mod.recording_spike_times_path(cache_dir), container, allow_pickle=True)

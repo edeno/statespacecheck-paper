@@ -2,12 +2,12 @@
 // The JSON files are written by statespacecheck_paper.site_export.
 
 // Matplotlib's base-10 symlog transform with the paper's HPD-overlap settings
-// (linthresh = 0.01, linscale = 1): linear below 0.01, logarithmic above, so
-// values near zero stay separated from exact zeros.
-const SYMLOG_LINTHRESH = 0.01;
+// (style.SYMLOG_LINTHRESH = 0.01, SYMLOG_LINSCALE = 1): linear below 0.01,
+// logarithmic above, so values near zero stay separated from exact zeros.
+export const SYMLOG_LINTHRESH = 0.01;
 const SYMLOG_LINSCALE_ADJ = 1 / (1 - 1 / 10);
 
-export function symlog(value) {
+function symlog(value) {
   const magnitude = Math.abs(value);
   if (magnitude <= SYMLOG_LINTHRESH) return value * SYMLOG_LINSCALE_ADJ;
   return (
@@ -17,6 +17,9 @@ export function symlog(value) {
   );
 }
 
+// The paper's metrics in order (style.METRIC_SPECS). Names, labels, worse-fit
+// directions, display transforms, the symlog axis, and its gridlines are
+// checked against the Python registry by tests/test_site_metric_metadata.py.
 export const METRICS = [
   {
     name: "hpd_overlap",
@@ -27,7 +30,7 @@ export const METRICS = [
     plottedWorse: "below",
     color: "--hpd",
     display: (v) => v,
-    // Plotted on a symlog axis, as in the paper's figures.
+    // Plotted on a symlog axis, with gridlines at Figure 3's interior ticks.
     axis: symlog,
     gridlines: [0.01, 0.1],
     // Bounded, so its track always spans the whole range.
@@ -111,18 +114,27 @@ export function plottedWorseFit(metric) {
   return metric.plottedWorse === "below" ? "↓ worse fit" : "↑ worse fit";
 }
 
-/** Direction of worse fit plus the flag rule, e.g. "lower = worse fit; flagged if ≤ 0.05". */
-export function describeRule(metric, rule) {
-  return `${worseFit(metric)}; ${flagRule(rule)}`;
+/**
+ * Direction of worse fit plus the flag rule, e.g. "lower = worse fit; flagged
+ * if ≤ 0.05". `thresholdText` is the threshold as the export prints it.
+ */
+function describeRule(metric, rule, thresholdText) {
+  return `${worseFit(metric)}; ${flagRule(rule, thresholdText)}`;
 }
 
-function flagRule(rule) {
+// The summaries' inclusive flag comparisons (diagnostics.INCLUSIVE_FLAG_COMPARISONS)
+// and their symbols; checked by tests/test_site_metric_metadata.py.
+export const COMPARISON_SYMBOLS = {
+  less_than_or_equal: "≤",
+  greater_than_or_equal: "≥",
+};
+
+/** "flagged if ≤ 0.05" for a summary's flag rule, or "no fixed cutoff" without one. */
+export function flagRule(rule, thresholdText) {
   if (!rule) return "no fixed cutoff";
-  const symbol = rule.comparison === "less_than_or_equal" ? "≤" : "≥";
-  const threshold = Number.isInteger(rule.threshold)
-    ? String(rule.threshold)
-    : rule.threshold.toPrecision(3).replace(/\.?0+$/, "");
-  return `flagged if ${symbol} ${threshold}`;
+  const symbol = COMPARISON_SYMBOLS[rule.comparison];
+  if (symbol === undefined) throw new RangeError(`Unknown flag comparison ${rule.comparison}`);
+  return `flagged if ${symbol} ${thresholdText}`;
 }
 
 /** Text for a reported value; `format` "count" adds thousands separators. */
@@ -130,7 +142,16 @@ export function formatMacro(value, format) {
   return format === "count" ? Number(value).toLocaleString("en-US") : value;
 }
 
-/** Fill every [data-macro] element with the manuscript's reported value. */
+/** Link target of a DOI. */
+export function doiUrl(doi) {
+  return `https://doi.org/${doi}`;
+}
+
+/**
+ * Fill every [data-macro] element with its value: a manuscript macro or a
+ * number only the page states (manifest `macros` and `page_values`). Every
+ * [data-doi-macro] link points at the DOI that macro holds.
+ */
 export function fillMacros(root, macros) {
   for (const element of root.querySelectorAll("[data-macro]")) {
     const name = element.dataset.macro;
@@ -140,6 +161,14 @@ export function fillMacros(root, macros) {
       continue;
     }
     element.textContent = formatMacro(value, element.dataset.format);
+  }
+  for (const element of root.querySelectorAll("[data-doi-macro]")) {
+    const doi = macros[element.dataset.doiMacro];
+    if (doi === undefined) {
+      console.warn(`Unknown macro ${element.dataset.doiMacro}`);
+      continue;
+    }
+    element.href = doiUrl(doi);
   }
 }
 
@@ -169,11 +198,11 @@ export function badge(flagged) {
  * A metric readout: name and flag rule, plus a value cell that `set(value,
  * flagged)` fills with the formatted value and its badge.
  */
-export function readoutCard(metric, rule) {
+export function readoutCard(metric, rule, thresholdText) {
   const card = document.createElement("div");
   card.className = "readout";
   card.style.setProperty("--metric-color", `var(${metric.color})`);
-  card.innerHTML = `<div class="name">${metric.label}</div><div class="value"></div><div class="rule">${describeRule(metric, rule)}</div>`;
+  card.innerHTML = `<div class="name">${metric.label}</div><div class="value"></div><div class="rule">${describeRule(metric, rule, thresholdText)}</div>`;
   const value = card.querySelector(".value");
   return {
     element: card,

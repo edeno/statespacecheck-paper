@@ -12,7 +12,7 @@ from statespacecheck_paper.decoding import (
     DecoderOverrideWindow,
     FilterStep,
     _condition_on,
-    _resolve_baseline_firing_rates,
+    _resolve_baseline_expected_counts,
     decode_with_diagnostics,
     filter_step,
 )
@@ -22,7 +22,7 @@ from statespacecheck_paper.diagnostics import (
 from statespacecheck_paper.simulation import (
     gaussian_transition_matrix,
     normalize,
-    place_field_rates,
+    place_field_expected_counts,
 )
 
 from ._decoder_inputs import DecoderInputs, _diag_dominant_transition
@@ -32,7 +32,7 @@ class TestDecodeWithDiagnostics:
     def test_full_output_contract(self, decoder_inputs: DecoderInputs) -> None:
         """Lock in the full set of fields + their shapes. Downstream
         plotting and cache code consumes every field, so silently
-        dropping one (e.g. ``predictive``, ``per_spike_likelihood``,
+        dropping one (e.g. ``predictive``, ``event_likelihood``,
         ``event_*``) is a regression even if the four headline metrics
         are intact."""
         result = decoder_inputs.call()
@@ -46,14 +46,13 @@ class TestDecodeWithDiagnostics:
             # Distributions over position (time × bins).
             "posterior": (n_time, n_bins),
             "predictive": (n_time, n_bins),
-            "likelihood": (n_time, n_bins),
-            "spike_likelihood": (n_time, n_bins),
+            "combined_likelihood": (n_time, n_bins),
             # Per-cell metric matrices.
             "hpd_overlap": (n_time, n_cells),
             "kl_divergence": (n_time, n_cells),
             "predictive_pvalue": (n_time, n_cells),
             # Per-spike-event arrays (count expansion in src/.../analysis.py:584).
-            "per_spike_likelihood": (n_events, n_bins),
+            "event_likelihood": (n_events, n_bins),
             "event_time_ind": (n_events,),
             "event_cell_ind": (n_events,),
             "event_hpd_overlap": (n_events,),
@@ -85,7 +84,7 @@ class TestDecodeWithDiagnostics:
             place_field_centers=np.array([2.0, 1.0]),
             place_field_std=1.0,
             place_field_rate_scale=1.0,
-            baseline_firing_rates=rates,
+            baseline_expected_counts_per_step=rates,
         )
         initial = np.ones(3) / 3
         np.testing.assert_allclose(result.predictive[0], initial)
@@ -131,7 +130,7 @@ class TestDecodeWithDiagnostics:
             place_field_centers=np.array([0.0, 1.0]),
             place_field_std=1.0,
             place_field_rate_scale=1.0,
-            baseline_firing_rates=rates,
+            baseline_expected_counts_per_step=rates,
         )
         expected = np.exp(-rates.sum(axis=1)) / 3
         expected /= expected.sum()
@@ -265,8 +264,8 @@ class TestDecodeWithDiagnostics:
             atol=1e-6,
         ), f"transition_matrix in {window} did not change predictive — schedule ignored?"
 
-    def test_alt_rates_used_only_inside_window(self) -> None:
-        """A :class:`DecoderOverrideWindow` with ``firing_rate_table`` must change
+    def test_override_rates_used_only_inside_the_override_window(self) -> None:
+        """A :class:`DecoderOverrideWindow` with ``expected_counts_per_step`` must change
         every per-spike diagnostic inside the window and leave it
         untouched outside. The in-window values are checked directly
         against the shared diagnostic routine evaluated with the alternate
@@ -280,10 +279,10 @@ class TestDecodeWithDiagnostics:
         for time_ind, cell_ind in ((1, 0), (2, 0), (3, 1), (4, 2), (5, 0)):
             spike_counts[time_ind, cell_ind] = 1
 
-        baseline_rates = place_field_rates(
+        baseline_rates = place_field_expected_counts(
             position_bins, place_field_centers, place_field_std, place_field_rate_scale
         )
-        alt_rates = place_field_rates(
+        alt_rates = place_field_expected_counts(
             position_bins,
             np.array([4.0, 0.0, 2.0]),
             place_field_std,
@@ -291,7 +290,7 @@ class TestDecodeWithDiagnostics:
         )
         window = (2, 4)
         schedule = DecoderOverrideSchedule(
-            (DecoderOverrideWindow(window[0], window[1], firing_rate_table=alt_rates),)
+            (DecoderOverrideWindow(window[0], window[1], expected_counts_per_step=alt_rates),)
         )
 
         with_alt = decode_with_diagnostics(
@@ -309,7 +308,7 @@ class TestDecodeWithDiagnostics:
         outside = ~inside
 
         # The in-window metrics and displayed likelihood must all be the
-        # values obtained from the decoder's active rate table.
+        # values obtained from the decoder's active expected-count table.
         assert inside.any(), "test fixture produced no in-window spike events"
         expected = compute_spike_event_diagnostics_from_rates(
             with_alt.predictive,
@@ -317,10 +316,10 @@ class TestDecodeWithDiagnostics:
             with_alt.event_time_ind[inside],
             with_alt.event_cell_ind[inside],
         )
-        assert expected.per_spike_likelihood is not None
+        assert expected.event_likelihood is not None
         np.testing.assert_allclose(
-            with_alt.per_spike_likelihood[inside],
-            expected.per_spike_likelihood,
+            with_alt.event_likelihood[inside],
+            expected.event_likelihood,
         )
         for name in (
             "event_hpd_overlap",
@@ -330,7 +329,7 @@ class TestDecodeWithDiagnostics:
             np.testing.assert_allclose(
                 getattr(with_alt, name)[inside],
                 getattr(expected, name),
-                err_msg=f"in-window {name} was not computed from firing_rate_table",
+                err_msg=f"in-window {name} was not computed from expected_counts_per_step",
             )
 
         expected_outside = compute_spike_event_diagnostics_from_rates(
@@ -339,10 +338,10 @@ class TestDecodeWithDiagnostics:
             with_alt.event_time_ind[outside],
             with_alt.event_cell_ind[outside],
         )
-        assert expected_outside.per_spike_likelihood is not None
+        assert expected_outside.event_likelihood is not None
         np.testing.assert_allclose(
-            with_alt.per_spike_likelihood[outside],
-            expected_outside.per_spike_likelihood,
+            with_alt.event_likelihood[outside],
+            expected_outside.event_likelihood,
         )
         for name in (
             "event_hpd_overlap",
@@ -367,7 +366,7 @@ class TestDecodeWithDiagnostics:
             "event_hpd_overlap",
             "event_kl_divergence",
             "event_predictive_pvalue",
-            "per_spike_likelihood",
+            "event_likelihood",
         ):
             assert not np.allclose(getattr(expected, name), getattr(oracle, name)), (
                 f"test fixture does not distinguish decoder and oracle values for {name}"
@@ -440,19 +439,19 @@ class TestDecoderOverrideWindow:
             DecoderOverrideWindow(10, 5)
 
     def test_negative_rate_table_raises(self) -> None:
-        """A negative rate table is rejected before it can become NaN
+        """A negative expected-count table is rejected before it can become NaN
         likelihoods downstream."""
         bad = np.full((21, 3), 0.05)
         bad[0, 0] = -1.0
         with pytest.raises(ValueError, match="finite and non-negative"):
-            DecoderOverrideWindow(3, 7, firing_rate_table=bad)
+            DecoderOverrideWindow(3, 7, expected_counts_per_step=bad)
 
     def test_nonfinite_rate_table_raises(self) -> None:
-        """A non-finite rate table is rejected at construction."""
+        """A non-finite expected-count table is rejected at construction."""
         bad = np.full((21, 3), 0.05)
         bad[0, 0] = np.nan
         with pytest.raises(ValueError, match="finite and non-negative"):
-            DecoderOverrideWindow(3, 7, firing_rate_table=bad)
+            DecoderOverrideWindow(3, 7, expected_counts_per_step=bad)
 
 
 class TestDecoderOverrideSchedule:
@@ -473,7 +472,7 @@ class TestDecoderOverrideSchedule:
 
     def test_overlapping_windows_raise(self) -> None:
         """Overlapping windows are rejected — diagnostics could not pick a
-        single rate table for the overlap."""
+        single expected-count table for the overlap."""
         with pytest.raises(ValueError, match="must not overlap"):
             DecoderOverrideSchedule((DecoderOverrideWindow(10, 25), DecoderOverrideWindow(20, 30)))
 
@@ -569,14 +568,13 @@ class TestConditionOn:
 
 
 class TestDecodeWithDiagnosticsLogSpace:
-    """Stress tests for the log-space rewrite of decode_with_diagnostics.
+    """Stress tests for the log-space update of decode_with_diagnostics.
 
-    The previous implementation reset the posterior to uniform when
-    ``prior * combined_likelihood`` underflowed to zero. The log-space
-    rewrite removes that branch; the finite-overlap numerical-underflow
-    failure mode cannot occur. An exactly impossible observation retains
-    a separately tested fallback. These tests pin that distinction so a
-    future refactor cannot silently reintroduce the arbitrary reset.
+    The update is computed in log space and normalized with log-sum-exp, so a
+    finite but tiny overlap between ``predictive`` and ``combined_likelihood``
+    still yields a normalized posterior; the posterior is never reset to
+    uniform. An exactly impossible observation raises instead (tested
+    separately). These tests guard against an arbitrary reset.
     """
 
     def test_posterior_sums_to_one_at_every_step(self) -> None:
@@ -600,19 +598,18 @@ class TestDecodeWithDiagnosticsLogSpace:
         posterior = results.posterior
         np.testing.assert_allclose(posterior.sum(axis=1), 1.0, rtol=1e-10, atol=1e-12)
 
-    def test_extreme_prior_likelihood_mismatch_yields_meaningful_posterior(self) -> None:
-        """Stress test for an extreme but finite overlap: place a narrow prior at
+    def test_extreme_predictive_likelihood_mismatch_yields_meaningful_posterior(self) -> None:
+        """Stress test for an extreme but finite overlap: place a narrow predictive at
         one end of the grid then drive the decoder with spike_counts whose
         place-field rate is concentrated at the *other* end.
 
-        On the pre-refactor code this configuration triggered the
-        ``posterior_sum < 1e-300`` reset-to-uniform branch. The
-        log-space implementation must instead produce a normalized,
-        non-uniform posterior at every step.
+        The linear-space product of predictive and likelihood underflows
+        here (its sum falls below ``1e-300``). The log-space update must
+        still produce a normalized, non-uniform posterior at every step.
         """
         n_time, n_cells, n_bins = 30, 2, 51
         position_bins = np.linspace(0.0, 100.0, n_bins)
-        # Narrow transition kernel so the prior stays concentrated.
+        # Narrow transition kernel so the predictive stays concentrated.
         transition_matrix = gaussian_transition_matrix(position_bins, step_std=0.5)
         # Two cells with place fields at x≈90 — far from the
         # bias-initialized posterior which mostly accumulates near 0.
@@ -634,16 +631,14 @@ class TestDecodeWithDiagnosticsLogSpace:
         # Every step's posterior sums to 1 (no underflow, no reset).
         np.testing.assert_allclose(posterior.sum(axis=1), 1.0, rtol=1e-8, atol=1e-10)
 
-        # Posterior is not uniform — at least one step's distribution
-        # is meaningfully concentrated. The old reset-to-uniform branch
-        # would have made every transitioning step uniform, so non-
-        # uniformity at any step rules out the silent fallback.
+        # Posterior is not uniform — at least one step's distribution is
+        # meaningfully concentrated, so the filter did not replace the
+        # posterior with a uniform one when the likelihood underflows.
         uniform = 1.0 / n_bins
         max_dev = float(np.max(np.abs(posterior - uniform)))
         assert max_dev > 0.05, (
             f"posterior is uniformly flat (max |Δ uniform| = {max_dev:.4f}); "
-            f"the log-space rewrite may have collapsed to the old reset-to-"
-            f"uniform behaviour."
+            f"the log-space update must not reset the posterior to uniform."
         )
 
         # The mass should ultimately concentrate near the place-field
@@ -662,14 +657,14 @@ class TestDecodeWithDiagnosticsLogSpace:
         n_time, n_cells, n_bins = 8, 1, 21
         position_bins = np.linspace(0.0, 100.0, n_bins)
         transition_matrix = gaussian_transition_matrix(position_bins, step_std=2.0)
-        # ``place_field_rates`` floors its table above zero, so a rate table
+        # ``place_field_expected_counts`` floors its table above zero, so a expected-count table
         # that is exactly zero everywhere has to arrive through an override
         # window: the cell then fires at every step under a model in which it
         # can never fire.
         place_field_centers = np.array([50.0])
         spike_counts = np.ones((n_time, n_cells), dtype=np.int_)
         impossible = DecoderOverrideSchedule(
-            [DecoderOverrideWindow(0, n_time, firing_rate_table=np.zeros((n_bins, n_cells)))]
+            [DecoderOverrideWindow(0, n_time, expected_counts_per_step=np.zeros((n_bins, n_cells)))]
         )
 
         with pytest.raises(ValueError, match="every value is -inf"):
@@ -690,7 +685,7 @@ class TestDecoderOverrideWindowTightening:
     @pytest.mark.parametrize(
         ("field", "kwargs_factory"),
         [
-            ("firing_rate_table", lambda arr: {"firing_rate_table": arr}),
+            ("expected_counts_per_step", lambda arr: {"expected_counts_per_step": arr}),
             ("transition_matrix", lambda arr: {"transition_matrix": arr}),
         ],
     )
@@ -709,18 +704,18 @@ class TestDecoderOverrideWindowTightening:
     def test_caller_array_not_mutated_by_construction(self) -> None:
         """Defensive copy: caller's original array stays writable."""
         rates = np.full((5, 3), 0.1)
-        DecoderOverrideWindow(10, 20, firing_rate_table=rates)
+        DecoderOverrideWindow(10, 20, expected_counts_per_step=rates)
         assert rates.flags.writeable is True
 
     def test_validate_against_accepts_matching_shape(self) -> None:
         rates = np.full((5, 3), 0.1)
-        w = DecoderOverrideWindow(10, 20, firing_rate_table=rates)
+        w = DecoderOverrideWindow(10, 20, expected_counts_per_step=rates)
         w.validate_against(n_bins=5, n_cells=3)  # does not raise
 
     def test_validate_against_raises_on_mismatched_decoder_rates_shape(self) -> None:
         rates = np.full((5, 3), 0.1)
-        w = DecoderOverrideWindow(10, 20, firing_rate_table=rates)
-        with pytest.raises(ValueError, match=r"firing_rate_table shape"):
+        w = DecoderOverrideWindow(10, 20, expected_counts_per_step=rates)
+        with pytest.raises(ValueError, match=r"expected_counts_per_step shape"):
             w.validate_against(n_bins=7, n_cells=3)
 
     def test_validate_against_raises_on_mismatched_transition_shape(self) -> None:
@@ -731,44 +726,23 @@ class TestDecoderOverrideWindowTightening:
 
 
 class TestStoredLikelihoodNormalization:
-    """The log-space rewrite stores ``combined_likelihood_all`` and
-    ``spike_likelihood_all`` via a bespoke shift-and-normalize. A
-    regression that left these unnormalized would still pass shape
-    contracts but distort every downstream HPD / KL on the displayed
-    likelihood. Pin the normalization directly.
+    """The log-space rewrite stores ``combined_likelihood`` via a
+    bespoke shift-and-normalize. A regression that left it unnormalized
+    would still pass shape contracts but distort the displayed likelihood.
+    Pin the normalization directly.
     """
 
     def test_combined_likelihood_sums_to_one_at_every_step(
         self, decoder_inputs: DecoderInputs
     ) -> None:
         result = decoder_inputs.call()
-        likelihood = result.likelihood
+        likelihood = result.combined_likelihood
         np.testing.assert_allclose(
             likelihood.sum(axis=1),
             1.0,
             rtol=1e-10,
             atol=1e-12,
-            err_msg="combined_likelihood_all is not row-normalized",
-        )
-
-    def test_spike_likelihood_sums_to_one_at_spike_steps(
-        self, decoder_inputs: DecoderInputs
-    ) -> None:
-        """Steps with at least one spike must produce a normalized
-        spike-only likelihood. NaN at no-spike steps is acceptable (and
-        documented)."""
-        result = decoder_inputs.call()
-        spike_lik = result.spike_likelihood
-        spike_counts = decoder_inputs.spike_counts
-        spike_steps = np.where(spike_counts.sum(axis=1) > 0)[0]
-        assert spike_steps.size, "test fixture produced no spike_counts"
-        sums = spike_lik[spike_steps].sum(axis=1)
-        np.testing.assert_allclose(
-            sums,
-            1.0,
-            rtol=1e-10,
-            atol=1e-12,
-            err_msg="spike_likelihood_all is not row-normalized at spike steps",
+            err_msg="combined_likelihood is not row-normalized",
         )
 
 
@@ -785,9 +759,9 @@ class TestDecoderValidatesScheduleShapes:
         n_bins = decoder_inputs.position_bins.size
         wrong_shape = np.full((n_bins + 3, decoder_inputs.spike_counts.shape[1]), 0.1)
         schedule = DecoderOverrideSchedule(
-            (DecoderOverrideWindow(2, 5, firing_rate_table=wrong_shape),)
+            (DecoderOverrideWindow(2, 5, expected_counts_per_step=wrong_shape),)
         )
-        with pytest.raises(ValueError, match=r"firing_rate_table shape"):
+        with pytest.raises(ValueError, match=r"expected_counts_per_step shape"):
             decoder_inputs.call(override_schedule=schedule)
 
     def test_mismatched_transition_matrix_raises_before_decode(
@@ -815,7 +789,7 @@ class TestLogSpaceReferenceComparison:
     ) -> None:
         from scipy.stats import poisson as _poisson
 
-        from statespacecheck_paper.simulation import place_field_rates
+        from statespacecheck_paper.simulation import place_field_expected_counts
 
         spike_counts = decoder_inputs.spike_counts
         position_bins = decoder_inputs.position_bins
@@ -831,9 +805,9 @@ class TestLogSpaceReferenceComparison:
         transition /= transition.sum(axis=0, keepdims=True)  # column-stochastic
         assert not np.allclose(transition, transition.T)  # genuinely asymmetric
 
-        # Reference: linear-space prior, log-space combined likelihood,
+        # Reference: linear-space predictive, log-space combined likelihood,
         # softmax-shift normalization. No reset-to-uniform branch.
-        rates = place_field_rates(
+        rates = place_field_expected_counts(
             position_bins,
             decoder_inputs.place_field_centers,
             decoder_inputs.place_field_std,
@@ -847,14 +821,14 @@ class TestLogSpaceReferenceComparison:
             # check of orientation, not just of the log-space arithmetic. At
             # t=0 the prediction is the uniform initial law itself.
             if t == 0:
-                prior = np.ones(n_bins) / n_bins
+                predictive = np.ones(n_bins) / n_bins
             else:
-                prior = transition @ ref_post[t - 1]
-                prior = prior / prior.sum()
+                predictive = transition @ ref_post[t - 1]
+                predictive = predictive / predictive.sum()
             log_lik = _poisson.logpmf(spike_counts[t][None, :], rates).sum(axis=1)
             ll_max = float(np.max(log_lik))
             assert np.isfinite(ll_max)
-            weighted = prior * np.exp(log_lik - ll_max)
+            weighted = predictive * np.exp(log_lik - ll_max)
             norm = weighted.sum()
             assert norm > 0
             ref_post[t] = weighted / norm
@@ -868,7 +842,7 @@ class TestResolveBaselineFiringRates:
         position_bins = np.linspace(0, 100, 5)
         place_field_centers = np.array([25.0, 75.0])
         with pytest.raises(ValueError, match="does not match the decoder grid"):
-            _resolve_baseline_firing_rates(
+            _resolve_baseline_expected_counts(
                 np.ones((4, 2)), position_bins, place_field_centers, 5.0, 0.1, n_bins=5, n_cells=2
             )
 
@@ -878,7 +852,7 @@ class TestResolveBaselineFiringRates:
         bad = np.ones((5, 2))
         bad[0, 0] = -1.0
         with pytest.raises(ValueError, match="finite, non-negative"):
-            _resolve_baseline_firing_rates(
+            _resolve_baseline_expected_counts(
                 bad, position_bins, place_field_centers, 5.0, 0.1, n_bins=5, n_cells=2
             )
 
@@ -888,7 +862,7 @@ class TestResolveBaselineFiringRates:
         bad = np.ones((5, 2))
         bad[1, 1] = np.inf
         with pytest.raises(ValueError, match="finite, non-negative"):
-            _resolve_baseline_firing_rates(
+            _resolve_baseline_expected_counts(
                 bad, position_bins, place_field_centers, 5.0, 0.1, n_bins=5, n_cells=2
             )
 
@@ -896,7 +870,7 @@ class TestResolveBaselineFiringRates:
         position_bins = np.linspace(0, 100, 5)
         place_field_centers = np.array([25.0, 75.0])
         good = np.abs(np.random.default_rng(0).random((5, 2)))
-        out = _resolve_baseline_firing_rates(
+        out = _resolve_baseline_expected_counts(
             good, position_bins, place_field_centers, 5.0, 0.1, n_bins=5, n_cells=2
         )
         assert np.array_equal(out, good)
@@ -904,12 +878,12 @@ class TestResolveBaselineFiringRates:
     def test_none_builds_from_place_fields(self) -> None:
         position_bins = np.linspace(0, 100, 5)
         place_field_centers = np.array([25.0, 75.0])
-        built = _resolve_baseline_firing_rates(
+        built = _resolve_baseline_expected_counts(
             None, position_bins, place_field_centers, 5.0, 0.1, n_bins=5, n_cells=2
         )
         assert built.shape == (5, 2)
         assert np.array_equal(
-            built, place_field_rates(position_bins, place_field_centers, 5.0, 0.1)
+            built, place_field_expected_counts(position_bins, place_field_centers, 5.0, 0.1)
         )
 
 
@@ -929,7 +903,7 @@ class TestDecoderApiContract:
             "place_field_std",
             "place_field_rate_scale",
             "override_schedule",
-            "baseline_firing_rates",
+            "baseline_expected_counts_per_step",
             "initial_state_distribution",
         ]
 
@@ -937,7 +911,7 @@ class TestDecoderApiContract:
         import dataclasses
 
         names = {f.name for f in dataclasses.fields(DecoderOverrideWindow)}
-        assert {"start", "end", "transition_matrix", "firing_rate_table"} <= names
+        assert {"start", "end", "transition_matrix", "expected_counts_per_step"} <= names
         # Old field name must be gone.
         assert "decoder_rates" not in names
 
@@ -949,7 +923,7 @@ class TestFilterStep:
     def _rates(n_bins: int, n_cells: int) -> np.ndarray:
         centers = np.linspace(20.0, 80.0, n_cells)
         position_bins = np.linspace(0, 100, n_bins)
-        rates = place_field_rates(
+        rates = place_field_expected_counts(
             position_bins,
             centers,
             place_field_std=5.0,
@@ -957,7 +931,7 @@ class TestFilterStep:
         )
         return rates + 1e-3
 
-    def test_prior_and_posterior_are_normalized(self) -> None:
+    def test_predictive_and_posterior_are_normalized(self) -> None:
         n_bins, n_cells = 21, 3
         rng = np.random.default_rng(0)
         previous = normalize(rng.random(n_bins))
@@ -967,14 +941,14 @@ class TestFilterStep:
         step = filter_step(previous, np.array([0, 1, 0]), transition, rates)
 
         assert isinstance(step, FilterStep)
-        assert step.prior.shape == (n_bins,)
+        assert step.predictive.shape == (n_bins,)
         assert step.posterior.shape == (n_bins,)
-        np.testing.assert_allclose(step.prior.sum(), 1.0)
+        np.testing.assert_allclose(step.predictive.sum(), 1.0)
         np.testing.assert_allclose(step.posterior.sum(), 1.0)
         np.testing.assert_allclose(step.combined_likelihood.sum(), 1.0)
 
     def test_predictive_uses_column_stochastic_orientation(self) -> None:
-        """The prior is ``T @ post``, not ``post @ T`` (asymmetric transition)."""
+        """The predictive is ``T @ post``, not ``post @ T`` (asymmetric transition)."""
         n_bins, n_cells = 5, 2
         previous = np.zeros(n_bins)
         previous[0] = 1.0
@@ -987,26 +961,13 @@ class TestFilterStep:
         step = filter_step(previous, np.zeros(n_cells, dtype=int), transition, rates)
 
         expected = transition @ previous
-        np.testing.assert_allclose(step.prior, expected)
-        assert step.prior[1] == pytest.approx(1.0)
-
-    def test_spike_likelihood_is_nan_without_spikes(self) -> None:
-        n_bins, n_cells = 21, 3
-        transition = _diag_dominant_transition(n_bins)
-        rates = self._rates(n_bins, n_cells)
-        previous = normalize(np.ones(n_bins))
-
-        silent = filter_step(previous, np.zeros(n_cells, dtype=int), transition, rates)
-        assert np.all(np.isnan(silent.spike_likelihood))
-
-        firing = filter_step(previous, np.array([0, 2, 0]), transition, rates)
-        assert np.all(np.isfinite(firing.spike_likelihood))
-        np.testing.assert_allclose(firing.spike_likelihood.sum(), 1.0)
+        np.testing.assert_allclose(step.predictive, expected)
+        assert step.predictive[1] == pytest.approx(1.0)
 
     def test_matches_first_step_of_full_decode(self, decoder_inputs: DecoderInputs) -> None:
         """One ``filter_step`` reproduces the t=1 arrays of the full recursion."""
         result = decoder_inputs.call()
-        rates = _resolve_baseline_firing_rates(
+        rates = _resolve_baseline_expected_counts(
             None,
             decoder_inputs.position_bins,
             decoder_inputs.place_field_centers,
@@ -1022,6 +983,49 @@ class TestFilterStep:
             rates,
         )
 
-        np.testing.assert_array_equal(step.prior, result.predictive[1])
+        np.testing.assert_array_equal(step.predictive, result.predictive[1])
         np.testing.assert_array_equal(step.posterior, result.posterior[1])
-        np.testing.assert_array_equal(step.combined_likelihood, result.likelihood[1])
+        np.testing.assert_array_equal(step.combined_likelihood, result.combined_likelihood[1])
+
+
+class TestDecodeInputValidation:
+    @pytest.mark.parametrize(
+        "bad_count",
+        [1.5, -0.5, -1.0, np.nan, np.inf],
+        ids=["fractional", "negative_fractional", "negative", "nan", "inf"],
+    )
+    def test_rejects_counts_outside_the_poisson_support(self, bad_count: float) -> None:
+        # The direct Poisson formula gives finite values for some of these, so the
+        # decoder must reject them before the filter runs.
+        position_bins = np.linspace(0.0, 100.0, 21)
+        spike_counts = np.zeros((5, 3))
+        spike_counts[2, 0] = bad_count
+        with pytest.raises(ValueError, match="non-negative integer counts"):
+            decode_with_diagnostics(
+                spike_counts,
+                position_bins,
+                gaussian_transition_matrix(position_bins, step_std=0.5),
+                np.array([25.0, 50.0, 75.0]),
+                5.0,
+                0.1,
+            )
+
+    def test_accepts_integer_valued_float_counts(self) -> None:
+        position_bins = np.linspace(0.0, 100.0, 21)
+        spike_counts = np.array([[1.0, 0.0, 2.0]] * 5)
+        result = decode_with_diagnostics(
+            spike_counts,
+            position_bins,
+            gaussian_transition_matrix(position_bins, step_std=0.5),
+            np.array([25.0, 50.0, 75.0]),
+            5.0,
+            0.1,
+        )
+        assert result.event_time_ind.size == 15
+
+    def test_rejects_negative_place_field_rate_scale(self) -> None:
+        position_bins = np.linspace(0, 100, 5)
+        with pytest.raises(ValueError, match="finite, non-negative"):
+            _resolve_baseline_expected_counts(
+                None, position_bins, np.array([25.0, 75.0]), 5.0, -0.1, n_bins=5, n_cells=2
+            )

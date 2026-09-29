@@ -1,10 +1,10 @@
 r"""Rebuild the Figure-4 input file from Spyglass (CLI; read-only).
 
 Fetches the Spyglass entries behind the Figure-4 recording and writes the
-``.npz`` file that :func:`statespacecheck_paper.load_local_data.load_neural_recording_from_files`
+``.npz`` file that :func:`statespacecheck_paper.figure04_input.load_figure04_input`
 reads. With ``--compare-to``, checks it array by array against a reference (e.g.
 the ``data/`` file the figure used). The recipe lives in
-:mod:`statespacecheck_paper.spyglass_data`; this script is the thin CLI wrapper.
+:mod:`statespacecheck_paper.spyglass_pipeline.figure04_input`; this script is the thin CLI wrapper.
 
 Requires Spyglass, lab database credentials, and the lab's analysis NWB store:
 run on a lab server in an environment with the lab's Spyglass. Only reads from
@@ -23,13 +23,13 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from statespacecheck_paper.spyglass_data import (
+from statespacecheck_paper.spyglass_pipeline.figure04_input import (
     FIGURE04_EPOCH_NAME,
     FIGURE04_NWB_FILE_NAME,
     check_output_paths,
     epoch_identifier,
     fetch_figure04_inputs,
-    print_export_comparison,
+    print_input_comparison,
     write_figure04_inputs,
 )
 
@@ -67,7 +67,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.compare_to is None:
         return 0
-    return 0 if print_export_comparison(args.compare_to, args.output_dir, animal_date_epoch) else 1
+    return 0 if print_input_comparison(args.compare_to, args.output_dir, animal_date_epoch) else 1
 
 
 if __name__ == "__main__":

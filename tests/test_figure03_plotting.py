@@ -10,20 +10,22 @@ import pytest
 
 from statespacecheck_paper.diagnostics import DecodingDiagnostics, DiagnosticThresholds
 from statespacecheck_paper.figure03_plotting import (
-    FIGURE3_PANEL_LABEL_GID,
-    FIGURE3_PHASE_LABEL_GID,
-    FIGURE3_SUMMARY_ACCURACY_CELL_LABEL_GID,
-    FIGURE3_SUMMARY_ACCURACY_HEADER_GID,
-    FIGURE3_SUMMARY_CELL_LABEL_GID,
-    FIGURE3_SUMMARY_KNOWN_COMPONENT_LABEL_GID,
-    FIGURE3_SUMMARY_TITLE_GID,
-    FIGURE3_THRESHOLD_LABEL_GID,
-    FIGURE3_THRESHOLD_LINE_GID,
-    FIGURE3_TRUE_POSITION_LABEL_GID,
-    FIGURE3_WORSE_FIT_LABEL_GID,
+    FIGURE03_PANEL_LABEL_GID,
+    FIGURE03_PHASE_LABEL_GID,
+    FIGURE03_PHYSICAL_POSITION_LABEL_GID,
+    FIGURE03_SUMMARY_CELL_LABEL_GID,
+    FIGURE03_SUMMARY_ERROR_CELL_LABEL_GID,
+    FIGURE03_SUMMARY_ERROR_HEADER_GID,
+    FIGURE03_SUMMARY_KNOWN_COMPONENT_LABEL_GID,
+    FIGURE03_SUMMARY_TITLE_GID,
     compose_figure03,
 )
 from statespacecheck_paper.figure03_protocol import Figure3Config
+from statespacecheck_paper.plotting import (
+    THRESHOLD_LABEL_GID,
+    THRESHOLD_LINE_GID,
+    WORSE_FIT_LABEL_GID,
+)
 
 
 def _per_cell_metrics(rng: np.random.Generator, n_time: int, n_cells: int) -> dict[str, np.ndarray]:
@@ -37,20 +39,6 @@ def _per_cell_metrics(rng: np.random.Generator, n_time: int, n_cells: int) -> di
 
 
 @pytest.fixture
-def small_metrics(rng: np.random.Generator) -> dict[str, Any]:
-    """``plot_original`` / ``plot_transformed``-shaped inputs for a small grid."""
-    n_time, n_bins, n_cells = 100, 50, 5
-    return {
-        "xs": np.linspace(0, 1, n_bins),
-        "x_true": rng.uniform(0, n_bins - 1, n_time),
-        "metrics": {
-            "posterior": rng.dirichlet(np.ones(n_bins), size=n_time),
-            **_per_cell_metrics(rng, n_time, n_cells),
-        },
-    }
-
-
-@pytest.fixture
 def thresholds_default() -> DiagnosticThresholds:
     return DiagnosticThresholds(hpd_overlap=0.8, kl_divergence=2.0, predictive_pvalue=0.05)
 
@@ -60,31 +48,27 @@ def _combined_metrics(
 ) -> dict[str, Any]:
     """Build the full ``DecodingDiagnostics`` accepted by ``compose_figure03``."""
     spikes = rng.poisson(0.5, (n_time, n_cells))
-    spike_lik = np.full((n_time, n_bins), np.nan)
-    has_spk = spikes.sum(axis=1) > 0
-    spike_lik[has_spk] = rng.dirichlet(np.ones(n_bins), size=int(has_spk.sum()))
 
-    spike_time_ind, spike_cell_ind = np.nonzero(spikes[1:])
-    spike_time_ind = (spike_time_ind + 1).astype(np.intp)
-    spike_cell_ind = spike_cell_ind.astype(np.intp)
-    n_spikes = max(len(spike_time_ind), 1)
-    per_spike_lik = rng.dirichlet(np.ones(n_bins), size=n_spikes)[: len(spike_time_ind)]
+    event_time_ind, event_cell_ind = np.nonzero(spikes[1:])
+    event_time_ind = (event_time_ind + 1).astype(np.intp)
+    event_cell_ind = event_cell_ind.astype(np.intp)
+    n_spikes = max(len(event_time_ind), 1)
+    event_lik = rng.dirichlet(np.ones(n_bins), size=n_spikes)[: len(event_time_ind)]
 
     per_cell = _per_cell_metrics(rng, n_time, n_cells)
     diagnostics = DecodingDiagnostics(
         posterior=rng.dirichlet(np.ones(n_bins), size=n_time),
         predictive=rng.dirichlet(np.ones(n_bins), size=n_time),
-        likelihood=rng.dirichlet(np.ones(n_bins), size=n_time),
-        spike_likelihood=spike_lik,
+        combined_likelihood=rng.dirichlet(np.ones(n_bins), size=n_time),
         hpd_overlap=per_cell["hpd_overlap"],
         kl_divergence=per_cell["kl_divergence"],
         predictive_pvalue=per_cell["predictive_pvalue"],
-        event_time_ind=spike_time_ind,
-        event_cell_ind=spike_cell_ind,
-        event_hpd_overlap=rng.uniform(0, 1, len(spike_time_ind)),
-        event_kl_divergence=rng.uniform(0, 5, len(spike_time_ind)),
-        event_predictive_pvalue=rng.uniform(0, 1, len(spike_time_ind)),
-        per_spike_likelihood=per_spike_lik,
+        event_time_ind=event_time_ind,
+        event_cell_ind=event_cell_ind,
+        event_hpd_overlap=rng.uniform(0, 1, len(event_time_ind)),
+        event_kl_divergence=rng.uniform(0, 5, len(event_time_ind)),
+        event_predictive_pvalue=rng.uniform(0, 1, len(event_time_ind)),
+        event_likelihood=event_lik,
     )
     return {"spikes": spikes, "metrics": diagnostics}
 
@@ -148,7 +132,7 @@ def test_compose_figure03_runs(
         params,
         np.linspace(0, 1, n_cells),
         median_flag_percentages=np.zeros((3, 6)),
-        median_decoding_accuracy=np.zeros((1, 6)),
+        median_decoding_error=np.zeros((1, 6)),
     )
     try:
         assert isinstance(fig, plt.Figure)
@@ -186,13 +170,19 @@ def test_compose_figure03_renders_precomputed_summary(
         params,
         np.linspace(0, 1, n_cells),
         median_flag_percentages=median,
-        median_decoding_accuracy=np.array([[1.5, 20.16, 2.45, 30.0, 6.0, 0.5]]),
+        median_decoding_error=np.array([[1.5, 20.16, 2.45, 30.0, 6.0, 0.5]]),
     )
     try:
         # The summary axis is the last one added; its title flags the median
         # mode and at least one cell shows the supplied median.
         summary_ax = fig.axes[-1]
         assert "median across realizations" in summary_ax.get_title()
+        # Rows follow the flag-rule order, each label one word per line.
+        assert [label.get_text() for label in summary_ax.get_yticklabels()] == [
+            "HPD\noverlap",
+            "−log(p)",
+            "KL\ndiv.",
+        ]
         cell_texts = {t.get_text() for t in summary_ax.texts}
         assert "60%" in cell_texts  # supplied remap median
         # The error row rounds with the prose's formatter: two significant
@@ -207,7 +197,7 @@ def test_compose_figure03_renders_precomputed_summary(
         plt.close(fig)
 
 
-def test_compose_figure03_tags_figure3_annotations(
+def test_compose_figure03_tags_figure03_annotations(
     thresholds_default: DiagnosticThresholds,
 ) -> None:
     """Figure 3 annotations should be targetable by semantic artist ids."""
@@ -225,27 +215,34 @@ def test_compose_figure03_tags_figure3_annotations(
         params,
         np.linspace(0, 1, n_cells),
         median_flag_percentages=np.zeros((3, 6)),
-        median_decoding_accuracy=np.zeros((1, 6)),
+        median_decoding_error=np.zeros((1, 6)),
     )
     try:
         texts = [text for ax in fig.axes for text in ax.texts]
         lines = [line for ax in fig.axes for line in ax.lines]
 
-        assert sum(text.get_gid() == FIGURE3_PANEL_LABEL_GID for text in texts) == 2
-        phase_labels = [text for text in texts if text.get_gid() == FIGURE3_PHASE_LABEL_GID]
-        assert len(phase_labels) == 5
+        assert sum(text.get_gid() == FIGURE03_PANEL_LABEL_GID for text in texts) == 2
+        phase_labels = [text for text in texts if text.get_gid() == FIGURE03_PHASE_LABEL_GID]
+        # Every single-window condition names its band, in its unwrapped label.
+        assert sorted(text.get_text() for text in phase_labels) == [
+            "Drift",
+            "History-dep.",
+            "Remap",
+            "Replay",
+            "Sparse population",
+        ]
         assert {text.get_position()[1] for text in phase_labels} == {
             phase_labels[0].get_position()[1]
         }
-        assert sum(text.get_gid() == FIGURE3_THRESHOLD_LABEL_GID for text in texts) == 3
-        assert sum(text.get_gid() == FIGURE3_WORSE_FIT_LABEL_GID for text in texts) == 3
-        assert any(text.get_gid() == FIGURE3_TRUE_POSITION_LABEL_GID for text in texts)
-        assert any(text.get_gid() == FIGURE3_SUMMARY_KNOWN_COMPONENT_LABEL_GID for text in texts)
-        assert sum(text.get_gid() == FIGURE3_SUMMARY_CELL_LABEL_GID for text in texts) == 18
-        assert sum(text.get_gid() == FIGURE3_SUMMARY_ACCURACY_CELL_LABEL_GID for text in texts) == 6
-        assert sum(text.get_gid() == FIGURE3_SUMMARY_ACCURACY_HEADER_GID for text in texts) == 1
-        assert any(ax.title.get_gid() == FIGURE3_SUMMARY_TITLE_GID for ax in fig.axes)
-        assert sum(line.get_gid() == FIGURE3_THRESHOLD_LINE_GID for line in lines) == 3
+        assert sum(text.get_gid() == THRESHOLD_LABEL_GID for text in texts) == 3
+        assert sum(text.get_gid() == WORSE_FIT_LABEL_GID for text in texts) == 3
+        assert any(text.get_gid() == FIGURE03_PHYSICAL_POSITION_LABEL_GID for text in texts)
+        assert any(text.get_gid() == FIGURE03_SUMMARY_KNOWN_COMPONENT_LABEL_GID for text in texts)
+        assert sum(text.get_gid() == FIGURE03_SUMMARY_CELL_LABEL_GID for text in texts) == 18
+        assert sum(text.get_gid() == FIGURE03_SUMMARY_ERROR_CELL_LABEL_GID for text in texts) == 6
+        assert sum(text.get_gid() == FIGURE03_SUMMARY_ERROR_HEADER_GID for text in texts) == 1
+        assert any(ax.title.get_gid() == FIGURE03_SUMMARY_TITLE_GID for ax in fig.axes)
+        assert sum(line.get_gid() == THRESHOLD_LINE_GID for line in lines) == 3
     finally:
         plt.close(fig)
 
@@ -259,12 +256,10 @@ def test_compose_figure03_uses_event_diagnostics_for_scatter() -> None:
     spikes = np.zeros((n_time, n_cells), dtype=int)
     spikes[10, 0] = 2
 
-    spike_lik = np.full((n_time, n_bins), np.nan)
     hpd = np.full((n_time, n_cells), np.nan)
     kl = np.full((n_time, n_cells), np.nan)
     sp = np.full((n_time, n_cells), np.nan)
-    per_spike_lik = rng.dirichlet(np.ones(n_bins), size=2)
-    spike_lik[10] = per_spike_lik[0]
+    event_lik = rng.dirichlet(np.ones(n_bins), size=2)
     hpd[10, 0] = 0.5
     kl[10, 0] = 2.0
     sp[10, 0] = 0.05
@@ -272,8 +267,7 @@ def test_compose_figure03_uses_event_diagnostics_for_scatter() -> None:
     metrics = DecodingDiagnostics(
         posterior=rng.dirichlet(np.ones(n_bins), size=n_time),
         predictive=rng.dirichlet(np.ones(n_bins), size=n_time),
-        likelihood=rng.dirichlet(np.ones(n_bins), size=n_time),
-        spike_likelihood=spike_lik,
+        combined_likelihood=rng.dirichlet(np.ones(n_bins), size=n_time),
         hpd_overlap=hpd,
         kl_divergence=kl,
         predictive_pvalue=sp,
@@ -282,7 +276,7 @@ def test_compose_figure03_uses_event_diagnostics_for_scatter() -> None:
         event_hpd_overlap=np.array([0.25, 0.75]),
         event_kl_divergence=np.array([1.0, 3.0]),
         event_predictive_pvalue=np.array([0.1, 0.01]),
-        per_spike_likelihood=per_spike_lik,
+        event_likelihood=event_lik,
     )
 
     thresholds = DiagnosticThresholds(hpd_overlap=0.8, kl_divergence=2.0, predictive_pvalue=0.05)
@@ -296,7 +290,7 @@ def test_compose_figure03_uses_event_diagnostics_for_scatter() -> None:
         params,
         place_field_centers=np.linspace(0, 1, n_cells),
         median_flag_percentages=np.zeros((3, 6)),
-        median_decoding_accuracy=np.zeros((1, 6)),
+        median_decoding_error=np.zeros((1, 6)),
     )
     try:
         # Diagnostic rows are ordered HPD (axis 3), -log(p) (axis 4),
@@ -309,5 +303,14 @@ def test_compose_figure03_uses_event_diagnostics_for_scatter() -> None:
         np.testing.assert_array_equal(predictive_pvalue_offsets[:, 0], [10, 10])
         # Plotted as -log(predictive_pvalue) (natural log); 0.1 -> -ln(0.1), 0.01 -> -ln(0.01).
         np.testing.assert_allclose(predictive_pvalue_offsets[:, 1], [-np.log(0.1), -np.log(0.01)])
+        # Figure 3 labels the p-value row in plain text, not the shared LaTeX.
+        assert [ax.get_ylabel() for ax in fig.axes[3:6]] == [
+            "HPD overlap",
+            "−log(p)",
+            "KL div.",
+        ]
+        # Four misfit bands plus the replay band shade every time-series row
+        # (checked on the KL row).
+        assert len(fig.axes[5].patches) == 5
     finally:
         plt.close(fig)
