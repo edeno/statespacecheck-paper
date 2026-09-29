@@ -377,7 +377,7 @@ class TestComputeFlagConfusion:
     def test_rejects_bad_direction(self) -> None:
         a = _diag_from_events(hpd=np.array([0.1]))
         bad: Any = "sideways"
-        with pytest.raises(ValueError, match="worse_when"):
+        with pytest.raises(ValueError, match="direction must be 'below' or 'above'"):
             compute_flag_confusion(a, a, "hpd_overlap", 0.05, worse_when=bad)
 
     def test_rejects_length_mismatch(self) -> None:

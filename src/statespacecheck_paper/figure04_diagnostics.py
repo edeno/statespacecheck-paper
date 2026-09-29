@@ -434,11 +434,8 @@ def compute_flag_confusion(
     ------
     ValueError
         If the two diagnostics carry different numbers of spike events, or if
-        ``worse_when`` is not ``"below"`` or ``"above"``.
+        ``worse_when`` is not ``"below"`` or ``"above"`` (from :func:`flag_mask`).
     """
-    if worse_when not in ("below", "above"):
-        raise ValueError(f"worse_when must be 'below' or 'above', got {worse_when!r}")
-
     event_key = f"event_{metric}"
     a = np.asarray(getattr(diagnostics_a, event_key), dtype=np.float64)
     b = np.asarray(getattr(diagnostics_b, event_key), dtype=np.float64)
