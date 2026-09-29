@@ -381,12 +381,7 @@ def _load_wrapper(path: Path, *, mmap_mode: str | None) -> Mapping[str, object] 
     return cached
 
 
-def load_figure04_cache(
-    path: Path,
-    expected_fingerprint: str,
-    *,
-    mmap_mode: str | None = "r",
-) -> dict[str, object] | None:
+def load_figure04_cache(path: Path, expected_fingerprint: str) -> dict[str, object] | None:
     """Load a Figure-4 *decode* payload from ``path``, or ``None`` on any miss.
 
     Returns ``None`` (a cache miss) when the file is absent or unreadable, the
@@ -399,15 +394,14 @@ def load_figure04_cache(
     bundle is the sole diagnostics source), so a pre-split cache continues to
     serve the expensive decode while its diagnostics are recomputed once.
 
-    Large arrays are memory-mapped by default (``mmap_mode="r"``) so a
-    multi-gigabyte bundle can be inspected without materializing it; pass
-    ``mmap_mode=None`` to load everything into memory.
+    Large arrays are memory-mapped read-only (``mmap_mode="r"``) so a
+    multi-gigabyte bundle can be used without materializing it.
 
     Any failure to read/unpickle the file is treated as a miss, but a
     ``RuntimeWarning`` is emitted so the cause is visible instead of a silent,
     repeating recompute.
     """
-    cached = _load_wrapper(path, mmap_mode=mmap_mode)
+    cached = _load_wrapper(path, mmap_mode="r")
     if cached is None:
         return None
     required_keys = {"schema_version", "fingerprint", *_FIGURE04_DECODE_PAYLOAD_KEYS}
