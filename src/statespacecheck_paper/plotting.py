@@ -15,7 +15,13 @@ import numpy as np
 from matplotlib.axes import Axes
 from numpy.typing import NDArray
 
-from statespacecheck_paper.style import CMAP_LIKELIHOOD, COLORS, MetricSpec
+from statespacecheck_paper.style import (
+    CMAP_LIKELIHOOD,
+    COLORS,
+    SYMLOG_LINSCALE,
+    SYMLOG_LINTHRESH,
+    MetricSpec,
+)
 
 # Artist ids of a diagnostic row's threshold line and its right-edge labels, so
 # layout code and tests can find them without matching text.
@@ -261,7 +267,7 @@ def plot_event_metric_row(
     if spec.symlog_axis:
         # Symlog y-scale expands the worst-fit floor near 0 instead of
         # compressing it onto the bottom spine.
-        ax.set_yscale("symlog", linthresh=0.01, linscale=1.0)
+        ax.set_yscale("symlog", linthresh=SYMLOG_LINTHRESH, linscale=SYMLOG_LINSCALE)
         ax.set_yticks(list(symlog_yticks))
         ax.set_yticklabels([f"{tick:g}" for tick in symlog_yticks])
         ax.set_ylim(symlog_ylim)

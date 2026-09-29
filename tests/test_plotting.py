@@ -17,7 +17,7 @@ from statespacecheck_paper.plotting import (
     negative_log_pvalue,
     plot_event_metric_row,
 )
-from statespacecheck_paper.style import METRIC_SPEC_BY_NAME
+from statespacecheck_paper.style import METRIC_SPEC_BY_NAME, SYMLOG_LINSCALE, SYMLOG_LINTHRESH
 
 
 class TestNegativeLogPvalue:
@@ -184,6 +184,8 @@ class TestPlotEventMetricRow:
     def test_hpd_row_uses_symlog_ticks(self) -> None:
         ax = self._row("hpd_overlap")
         assert ax.get_yscale() == "symlog"
+        transform = ax.yaxis.get_transform()
+        assert (transform.linthresh, transform.linscale) == (SYMLOG_LINTHRESH, SYMLOG_LINSCALE)
         assert [label.get_text() for label in ax.get_yticklabels()] == ["0", "0.1", "1"]
         assert ax.get_ylim() == (-0.005, 1.0)
         plt.close("all")

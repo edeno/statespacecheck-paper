@@ -130,6 +130,12 @@ CMAP_DIAGNOSTIC = "bone_r"  # Same as posterior for diagnostic heatmaps
 # distribution, for robustness to outliers. Figure 3a and the website share it.
 PREDICTIVE_VMAX_QUANTILE = 0.975
 
+# Base-10 symlog scale of a ``MetricSpec.symlog_axis`` row: linear within
+# ``SYMLOG_LINTHRESH`` of zero, logarithmic beyond, so values near zero stay
+# separated from exact zeros. The website's HPD-overlap axis mirrors it.
+SYMLOG_LINTHRESH = 0.01
+SYMLOG_LINSCALE = 1.0
+
 
 def hex_to_rgb(hex_str: str) -> tuple[int, int, int]:
     """Convert a ``#RRGGBB`` color string to an ``(R, G, B)`` int tuple.
