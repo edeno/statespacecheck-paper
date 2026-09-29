@@ -66,7 +66,6 @@ _STATE_LIKELIHOOD_RGB: tuple[tuple[int, int, int], ...] = (
     hex_to_rgb(COLORS["likelihood"]),  # WONG[1] Orange
     hex_to_rgb(WONG[6]),  # WONG[6] Vermillion
 )
-_LIKELIHOOD_PEN_RGB = hex_to_rgb(WONG[6])  # WONG[6] Vermillion
 _TRUE_POSITION_PEN = pg.mkPen((50, 50, 50), width=1, style=QtCore.Qt.PenStyle.DashLine)
 
 # Palette for the per-cell place-field overlay. Picked to be distinct
@@ -405,7 +404,6 @@ class RasterPanel(pg.PlotWidget):
         self.getAxis("bottom").enableAutoSIPrefix(False)
         self.getPlotItem().setTitle("Raster")
 
-        self._n_cells = int(n_cells)
         if not np.all(np.isfinite(place_field_peaks)):
             raise ValueError("place_field_peaks must be finite to define the raster order")
         order = np.argsort(place_field_peaks)
@@ -475,18 +473,13 @@ class RasterPanel(pg.PlotWidget):
 
     def update_window(
         self,
-        time_start: float,
-        time_end: float,
         events_time: NDArray[np.float64],
         events_cell_id: NDArray[np.int32],
         time_offset: float,
-        global_event_indices: NDArray[np.int64] | None = None,
+        global_event_indices: NDArray[np.int64],
     ) -> None:
         """Redraw the spike raster for the given time window."""
-        if global_event_indices is None:
-            self._window_event_indices = np.empty(0, dtype=np.int64)
-        else:
-            self._window_event_indices = np.asarray(global_event_indices, dtype=np.int64)
+        self._window_event_indices = np.asarray(global_event_indices, dtype=np.int64)
 
         if events_time.size == 0:
             self._scatter.setData(x=[], y=[], data=[])
@@ -619,8 +612,6 @@ class MetricPanel(pg.PlotWidget):
 
     def update_window(
         self,
-        time_start: float,
-        time_end: float,
         events_time: NDArray[np.float64],
         events_metric: NDArray[np.float32],
         time_offset: float,
@@ -842,7 +833,6 @@ class SlicePanel(QtWidgets.QWidget):
             pen=pg.mkPen(*_STATE_PREDICTIVE_RGB[0], 230, width=2),
         )
         self._likelihood_plot.addItem(self._lik_overlay_curve)
-        self._lik_predictive_curve = self._lik_overlay_curve  # back-compat alias
 
         self._lik_top_curves: list[pg.PlotDataItem] = []
         for s in range(self._n_states):

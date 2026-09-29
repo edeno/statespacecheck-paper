@@ -988,8 +988,6 @@ class DecoderViewer(QtWidgets.QMainWindow):
             empty_m = np.empty(0, dtype=np.float32)
             empty_idx = np.empty(0, dtype=np.int64)
             self.raster_panel.update_window(
-                rel_start,
-                rel_end,
                 empty_t,
                 empty_c,
                 t_offset,
@@ -997,8 +995,6 @@ class DecoderViewer(QtWidgets.QMainWindow):
             )
             for panel in self.metric_panels.values():
                 panel.update_window(
-                    rel_start,
-                    rel_end,
                     empty_t,
                     empty_m,
                     t_offset,
@@ -1009,8 +1005,6 @@ class DecoderViewer(QtWidgets.QMainWindow):
             cell_ids = events["cell_id"].to_numpy()
             global_indices = events.index.to_numpy().astype(np.int64, copy=False)
             self.raster_panel.update_window(
-                rel_start,
-                rel_end,
                 event_times_arr,
                 cell_ids,
                 t_offset,
@@ -1018,8 +1012,6 @@ class DecoderViewer(QtWidgets.QMainWindow):
             )
             for metric, panel in self.metric_panels.items():
                 panel.update_window(
-                    rel_start,
-                    rel_end,
                     event_times_arr,
                     events[metric].to_numpy(),
                     t_offset,

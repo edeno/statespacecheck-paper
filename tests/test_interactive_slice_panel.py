@@ -72,7 +72,7 @@ def test_slice_panel_updates_after_window_load(tmp_path: Path) -> None:
         assert sp._buffer_lik is not None  # noqa: SLF001
         # Predictive overlay on the population plot is populated and
         # peak-normalized to 1 (within fp tolerance).
-        x_data, y_data = sp._lik_predictive_curve.getData()  # noqa: SLF001
+        x_data, y_data = sp._lik_overlay_curve.getData()  # noqa: SLF001
         assert y_data.shape == (ds.n_position_full,)
         assert 0.0 < float(np.max(y_data)) <= 1.0 + 1e-6
         # Likelihood top curve is populated.
@@ -97,9 +97,9 @@ def test_slice_panel_animates_on_set_center_time(tmp_path: Path) -> None:
         idx_a = sl.start + 1
         idx_b = sl.start + (sl.stop - sl.start) // 2
         viewer.set_center_time(ds.time[idx_a])
-        x_a, y_a = sp._lik_predictive_curve.getData()  # noqa: SLF001
+        x_a, y_a = sp._lik_overlay_curve.getData()  # noqa: SLF001
         viewer.set_center_time(ds.time[idx_b])
-        x_b, y_b = sp._lik_predictive_curve.getData()  # noqa: SLF001
+        x_b, y_b = sp._lik_overlay_curve.getData()  # noqa: SLF001
         assert not np.array_equal(y_a, y_b)
     finally:
         viewer.close()
@@ -299,9 +299,9 @@ def test_slice_panel_falls_back_to_row_provider_outside_buffer(tmp_path: Path) -
         out_of_buffer = sl.stop + 50
         assert sl.stop < out_of_buffer < ds.n_time
 
-        x_before, y_before = sp._lik_predictive_curve.getData()  # noqa: SLF001
+        x_before, y_before = sp._lik_overlay_curve.getData()  # noqa: SLF001
         sp.update_for_index(out_of_buffer, true_position=42.0)
-        x_after, y_after = sp._lik_predictive_curve.getData()  # noqa: SLF001
+        x_after, y_after = sp._lik_overlay_curve.getData()  # noqa: SLF001
         assert y_after.shape == y_before.shape
         # The predictive at the out-of-buffer index is almost certainly
         # different from the buffered center (Dirichlet rows are
@@ -434,9 +434,9 @@ def test_slice_panel_no_op_outside_buffer_without_provider(tmp_path: Path) -> No
     try:
         zero = np.zeros(16, dtype=np.float32)
         panel.set_window_buffer(slice(0, 1), zero[None, :], zero[None, :])
-        x_before, y_before = panel._lik_predictive_curve.getData()  # noqa: SLF001
+        x_before, y_before = panel._lik_overlay_curve.getData()  # noqa: SLF001
         panel.update_for_index(50, true_position=10.0)
-        x_after, y_after = panel._lik_predictive_curve.getData()  # noqa: SLF001
+        x_after, y_after = panel._lik_overlay_curve.getData()  # noqa: SLF001
         np.testing.assert_array_equal(y_after, y_before)
     finally:
         panel.close()
