@@ -44,7 +44,7 @@ from statespacecheck_paper.plotting import (
 )
 from statespacecheck_paper.style import (
     CMAP_LIKELIHOOD,
-    CMAP_POSTERIOR,
+    CMAP_PREDICTIVE,
     COLORS,
     METRIC_SPEC_BY_NAME,
     METRIC_SPECS,
@@ -412,7 +412,7 @@ def _draw_predictive_heatmap_row(
         position=position,
         time_slice_ind=time_slice_ind,
         show_position=True,
-        cmap=CMAP_POSTERIOR,
+        cmap=CMAP_PREDICTIVE,
     )
     ax.set_title(title)
     ax.set_ylabel(ylabel, labelpad=7)

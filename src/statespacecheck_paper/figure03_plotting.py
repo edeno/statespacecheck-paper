@@ -37,7 +37,7 @@ from statespacecheck_paper.plotting import (
 )
 from statespacecheck_paper.style import (
     CMAP_LIKELIHOOD,
-    CMAP_POSTERIOR,
+    CMAP_PREDICTIVE,
     COLORS,
     FIGURE_DPI,
     METRIC_SPEC_BY_NAME,
@@ -80,7 +80,7 @@ FIGURE03_MISFIT_BANDS: tuple[tuple[PhaseBoundary, PhaseBoundary, str], ...] = (
     (PhaseBoundary.REMAP_START, PhaseBoundary.REMAP_END, "likelihood"),
     (PhaseBoundary.RECOVERY1_END, PhaseBoundary.HIST_DEP_END, "reference"),
     (PhaseBoundary.RECOVERY2_END, PhaseBoundary.DRIFT_END, "predictive"),
-    (PhaseBoundary.RECOVERY3_END, PhaseBoundary.SPARSE_POP_END, "metric_combined"),
+    (PhaseBoundary.RECOVERY3_END, PhaseBoundary.SPARSE_POP_END, "predictive_pvalue"),
 )
 
 
@@ -100,7 +100,7 @@ def add_phase_boundaries(axes: list[Axes], config: Figure3Config) -> None:
     # distinct color so the reader can see the decoded-vs-true divergence is
     # a deliberate, non-flagged event.
     replay_start, replay_end = compute_replay_step_window(config)
-    bands.append((replay_start, replay_end, COLORS["phase_replay"]))
+    bands.append((replay_start, replay_end, COLORS["replay"]))
     for ax in axes:
         for start, end, color in bands:
             ax.axvspan(start, end, alpha=0.15, color=color, label="")
@@ -114,7 +114,7 @@ def _plot_timeseries_heatmap(
     """Plot time x position heatmap with the true position overlaid.
 
     The color scale runs from 0 to the ``PREDICTIVE_VMAX_QUANTILE`` quantile
-    of ``data`` (for robustness to outliers), in ``CMAP_POSTERIOR``.
+    of ``data`` (for robustness to outliers), in ``CMAP_PREDICTIVE``.
 
     Parameters
     ----------
@@ -148,7 +148,7 @@ def _plot_timeseries_heatmap(
         origin="lower",
         vmin=0.0,
         vmax=np.nanquantile(data, PREDICTIVE_VMAX_QUANTILE),
-        cmap=CMAP_POSTERIOR,
+        cmap=CMAP_PREDICTIVE,
     )
     ax.plot(
         np.arange(n_time),

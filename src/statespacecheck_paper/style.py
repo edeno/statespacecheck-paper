@@ -109,8 +109,8 @@ COLORS: dict[str, str] = {
     # Bluish green: distinct from both primary colors, suggests "divergence"
     "kl_divergence": "#009E73",  # WONG[3] Bluish Green
     #
-    # Combined/summary metric (e.g., p-value)
-    "metric_combined": "#CC79A7",  # WONG[7] Reddish Purple
+    # Predictive p-value metric
+    "predictive_pvalue": "#CC79A7",  # WONG[7] Reddish Purple
     #
     # -------------------------------------------------------------------------
     # Figure-3 Replay Band
@@ -118,7 +118,7 @@ COLORS: dict[str, str] = {
     # Replay event (in clean-recovery 2) — immobile animal, decoded
     # trajectory sweeps the track; a control. Used to mark
     # the replay band in the Figure-3 time series.
-    "phase_replay": "#009E73",  # Vivid green (WONG[3]); marks the replay band
+    "replay": "#009E73",  # Vivid green (WONG[3]); marks the replay band
     #
     # -------------------------------------------------------------------------
     # Heatmap Colormaps
@@ -132,7 +132,7 @@ COLORS: dict[str, str] = {
 FIGURE_DPI = 450
 
 # Colormap constants (can't be in dict since they're not colors)
-CMAP_POSTERIOR = "bone_r"  # Reversed bone for posterior/predictive heatmaps
+CMAP_PREDICTIVE = "bone_r"  # Reversed bone for the predictive heatmaps
 CMAP_LIKELIHOOD = "inferno"  # Warm colormap for likelihood overlay at spike times
 
 # Top of the predictive heatmaps' color scale: this quantile of the plotted
@@ -236,7 +236,7 @@ METRIC_SPECS: tuple[MetricSpec, ...] = (
     ),
     MetricSpec(
         name="predictive_pvalue",
-        color=COLORS["metric_combined"],
+        color=COLORS["predictive_pvalue"],
         label="−log(p)",
         short_label="−log(p)",
         ylabel=r"$-\log(p)$",

@@ -82,7 +82,7 @@ from statespacecheck_paper.simulation import (
 )
 from statespacecheck_paper.style import (
     CMAP_LIKELIHOOD,
-    CMAP_POSTERIOR,
+    CMAP_PREDICTIVE,
     METRIC_NAMES,
     PREDICTIVE_VMAX_QUANTILE,
 )
@@ -956,7 +956,7 @@ def manifest_payload(
         "page_values": page_values(figure04_summary),
         "flag_rules": {"simulation": figure03_summary["flag_rules"]},
         "colormaps": {
-            "predictive": colormap_lut(CMAP_POSTERIOR),
+            "predictive": colormap_lut(CMAP_PREDICTIVE),
             "likelihood": colormap_lut(CMAP_LIKELIHOOD),
         },
         "conditions": [

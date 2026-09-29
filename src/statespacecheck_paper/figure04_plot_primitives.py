@@ -17,7 +17,7 @@ from numpy.typing import NDArray
 
 from statespacecheck_paper.figure04_place_fields import marginalize_state_bins
 from statespacecheck_paper.style import (
-    CMAP_POSTERIOR,
+    CMAP_PREDICTIVE,
     COLORS,
 )
 
@@ -132,7 +132,7 @@ def plot_distribution_heatmap(
     position: NDArray[np.float64],
     time_slice_ind: slice,
     show_position: bool = True,
-    cmap: str = CMAP_POSTERIOR,
+    cmap: str = CMAP_PREDICTIVE,
 ) -> None:
     """Plot a distribution heatmap with optional position overlay.
 
@@ -150,7 +150,7 @@ def plot_distribution_heatmap(
         Time slice indices to plot.
     show_position : bool, default True
         Whether to show position overlay.
-    cmap : str, default CMAP_POSTERIOR
+    cmap : str, default CMAP_PREDICTIVE
         Colormap for the heatmap.
     """
     # Drop NaN bins (spatial bins that are NaN at every time of the session),
