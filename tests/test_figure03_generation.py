@@ -22,7 +22,7 @@ def test_generation_threads_one_config_through_simulation_summary_and_plot(
     """The displayed realization and pooled summary share the same config."""
     config = Figure3Config(drift_momentum=0.91)
     simulation_result = SimpleNamespace(
-        true_position=np.zeros(5),
+        physical_position=np.zeros(5),
         spike_counts=np.zeros((5, 2), dtype=np.int64),
         diagnostics=object(),
         sparse_place_field_centers=np.array([0.5]),

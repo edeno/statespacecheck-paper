@@ -61,7 +61,7 @@ def test_simulation_result_fields() -> None:
     assert _field_names(Figure3SimulationResult) == [
         "config",
         "position_bins",
-        "true_position",
+        "physical_position",
         "spike_counts",
         "diagnostics",
         "sparse_place_field_centers",

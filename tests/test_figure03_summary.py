@@ -160,7 +160,7 @@ class TestSummaryFlagPercentages:
 
 class TestConditionDecodingError:
     """Per-phase decoding error of the filtered posterior against the
-    stored true position: median absolute error of the posterior mean (row
+    physical position: median absolute error of the posterior mean (row
     0, position units). Columns follow ``build_summary_conditions``."""
 
     @staticmethod
@@ -210,17 +210,17 @@ class TestConditionDecodingError:
         assert decoding_error[0, 1] == pytest.approx(4.0)  # two bins of 2 a.u.
         assert np.allclose(np.delete(decoding_error[0], 1), 0.0)
 
-    def test_error_uses_continuous_true_position(self) -> None:
+    def test_error_uses_continuous_physical_position(self) -> None:
         """The error is measured against the continuous position, not its bin."""
         params = self._params()
         n_time = params.phase_boundaries[PhaseBoundary.SPARSE_POP_END]
         position_bins = np.arange(10, dtype=float)
         posterior = self._delta_posterior(np.full(n_time, 4), position_bins.size)
-        true_position = np.full(n_time, 4.3)
+        physical_position = np.full(n_time, 4.3)
         conditions = build_summary_conditions(params)
 
         decoding_error = compute_condition_decoding_error(
-            posterior, position_bins, true_position, conditions
+            posterior, position_bins, physical_position, conditions
         )
 
         assert np.allclose(decoding_error[0], 0.3)
@@ -231,7 +231,7 @@ class TestConditionDecodingError:
         position_bins = np.arange(10, dtype=float)
         posterior = self._delta_posterior(np.zeros(n_time, dtype=int), position_bins.size)
         conditions = build_summary_conditions(params)
-        with pytest.raises(ValueError, match="true_position"):
+        with pytest.raises(ValueError, match="physical_position"):
             compute_condition_decoding_error(
                 posterior, position_bins, np.zeros(n_time - 1), conditions
             )

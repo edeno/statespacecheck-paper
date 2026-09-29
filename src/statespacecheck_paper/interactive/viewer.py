@@ -706,9 +706,9 @@ class DecoderViewer(QtWidgets.QMainWindow):
     def _update_slice_panel_at_center(self) -> None:
         ds = self._ds
         t_idx = ds.index_at_time(self._t_center)
-        true_pos = float(ds.linear_position[t_idx])
-        self.slice_panel.update_for_index(t_idx, true_pos)
-        self.slice_panel.set_live_readout(self._format_live_readout(t_idx, true_pos))
+        physical_pos = float(ds.linear_position[t_idx])
+        self.slice_panel.update_for_index(t_idx, physical_pos)
+        self.slice_panel.set_live_readout(self._format_live_readout(t_idx, physical_pos))
         slices, total = self._per_cell_slices_at(t_idx)
         self.slice_panel.set_per_cell_slices(slices, total_in_bin=total)
         self._refresh_active_bin_band(t_idx)
@@ -811,7 +811,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
             return None
         return int(self._ds.event_cell_ids[row])
 
-    def _format_live_readout(self, t_idx: int, true_pos: float) -> str:
+    def _format_live_readout(self, t_idx: int, physical_pos: float) -> str:
         """Time + predictive(x_true). Per-cell metrics live in the row headers."""
         ds = self._ds
         lines = [f"t = {float(ds.time[t_idx]) - float(ds.time[0]):.3f} s"]
@@ -821,7 +821,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
             row = predictive_buf[t_idx - sl.start]
             if ds.n_states > 1:
                 row = row.reshape(ds.n_states, ds.n_position_full).sum(axis=0)
-            pos_bin = _nearest_index(ds.position_grid_full, true_pos)
+            pos_bin = _nearest_index(ds.position_grid_full, physical_pos)
             lines.append(f"predictive(x_true) = {float(row[pos_bin]):.4f}")
         return "\n".join(lines)
 
@@ -980,7 +980,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
         self.predictive_panel.update_with_window(rel_start, rel_end, predictive)
         self.likelihood_panel.update_with_window(rel_start, rel_end, lik)
 
-        # Overlay the animal's true position trajectory on both heatmaps.
+        # Overlay the animal's physical position trajectory on both heatmaps.
         # Times are relative to ``t_center`` so the curve aligns with the
         # heatmap's center marker at x=0.
         rel_time_window = np.asarray(time[sl], dtype=np.float64) - t_offset

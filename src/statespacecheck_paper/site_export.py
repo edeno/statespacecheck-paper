@@ -394,7 +394,9 @@ class FilterExplainerSequence:
     rates : np.ndarray, shape (n_bins, n_cells)
         Expected spikes per step of each cell: the table the decoder builds
         from the same place-field parameters, kept for the page's field plots.
-    true_position : np.ndarray, shape (n_steps,)
+    physical_position : np.ndarray, shape (n_steps,)
+        The simulated animal's position, which the spikes follow (the
+        sequence has no replay).
     spike_counts : np.ndarray, shape (n_steps, n_cells)
     decoded : DecodingDiagnostics
         Output of :func:`decode_with_diagnostics` for ``spike_counts``.
@@ -402,7 +404,7 @@ class FilterExplainerSequence:
 
     position_bins: NDArray[np.float64]
     rates: NDArray[np.float64]
-    true_position: NDArray[np.float64]
+    physical_position: NDArray[np.float64]
     spike_counts: NDArray[np.int_]
     decoded: DecodingDiagnostics
 
@@ -461,7 +463,7 @@ def filter_explainer_sequence(config: Figure3Config) -> FilterExplainerSequence:
     return FilterExplainerSequence(
         position_bins=position_bins,
         rates=rates,
-        true_position=np.asarray(position, dtype=np.float64),
+        physical_position=np.asarray(position, dtype=np.float64),
         spike_counts=counts,
         decoded=decoded,
     )
@@ -486,7 +488,7 @@ def filter_explainer_payload(config: Figure3Config) -> dict[str, Any]:
     Returns
     -------
     dict
-        ``position_bins``, ``cell_centers``, ``true_position``; ``events``
+        ``position_bins``, ``cell_centers``, ``physical_position``; ``events``
         (time step, cell, and HPD overlap of each spike); ``predictive`` and
         ``posterior`` (display rows on one shared scale, see
         :func:`heatmap_payload`); ``likelihood`` (each step's normalized
@@ -513,7 +515,7 @@ def filter_explainer_payload(config: Figure3Config) -> dict[str, Any]:
     return {
         "position_bins": bins.tolist(),
         "cell_centers": np.asarray(config.place_field_centers, dtype=np.float64).tolist(),
-        "true_position": _rounded(sequence.true_position, 2),
+        "physical_position": _rounded(sequence.physical_position, 2),
         "events": {
             "t": np.asarray(decoded.event_time_ind).tolist(),
             "cell": np.asarray(decoded.event_cell_ind).tolist(),
@@ -866,7 +868,7 @@ def condition_payloads(
                 if t0 < window.stop and t1 > window.start
             ],
             "position_bins": position_bins.tolist(),
-            "true_position": _rounded(sim.true_position[window.start : window.stop], 2),
+            "physical_position": _rounded(sim.physical_position[window.start : window.stop], 2),
             "predictive": heatmap_payload(
                 diagnostics.predictive[window.start : window.stop], predictive_range
             ),

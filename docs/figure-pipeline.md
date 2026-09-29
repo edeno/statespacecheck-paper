@@ -377,12 +377,12 @@ duplicating them here.
 ### Figure-3 traceability walkthrough (following the typed returns)
 
 `Figure3Config` → `run_figure03_simulation(config)` returns a
-`Figure3SimulationResult` (`.true_position`, `.spike_counts`, `.diagnostics: DecodingDiagnostics`,
+`Figure3SimulationResult` (`.physical_position`, `.spike_counts`, `.diagnostics: DecodingDiagnostics`,
 `.position_bins`, `.sparse_place_field_centers`) → `estimate_realization_summary(config, n_realizations=100)`
 returns a `Figure3RealizationSummary` (`.diagnostic_thresholds: DiagnosticThresholds`,
 `.median_flag_percentages`, `.median_decoding_error`,
 `.flag_percentage_standard_errors`, `.decoding_error_standard_errors`) →
-`compose_figure03(true_position=…, spike_counts=…,
+`compose_figure03(physical_position=…, spike_counts=…,
 diagnostics=…, diagnostic_thresholds=…, config=…, place_field_centers=…,
 median_flag_percentages=…, median_decoding_error=…)` returns a `matplotlib`
 `Figure` → `save_figure` writes
@@ -393,7 +393,7 @@ and their configuration to `figure03_summary.json`.
 
 | Code name | Manuscript notation | Meaning / shape |
 | --- | --- | --- |
-| `true_position` | $x_t$ outside replay; $z_t$ during replay | physical position, shape `(n_time,)`; decoding error is measured against this trajectory |
+| `physical_position` | $x_t$ outside replay; $z_t$ during replay | physical position, shape `(n_time,)`; decoding error is measured against this trajectory |
 | `position_bins` | discretized $x$ grid | position bin centers, shape `(n_bins,)` |
 | `spike_counts` | $y_{c,t}$ | integer spike counts, shape `(n_time, n_cells)` |
 | `place_field_centers` | $\mu_c$ | per-cell place-field centers, shape `(n_cells,)` |

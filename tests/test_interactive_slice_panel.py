@@ -300,7 +300,7 @@ def test_slice_panel_falls_back_to_row_provider_outside_buffer(tmp_path: Path) -
         assert sl.stop < out_of_buffer < ds.n_time
 
         x_before, y_before = sp._lik_overlay_curve.getData()  # noqa: SLF001
-        sp.update_for_index(out_of_buffer, true_position=42.0)
+        sp.update_for_index(out_of_buffer, physical_position=42.0)
         x_after, y_after = sp._lik_overlay_curve.getData()  # noqa: SLF001
         assert y_after.shape == y_before.shape
         # The predictive at the out-of-buffer index is almost certainly
@@ -435,7 +435,7 @@ def test_slice_panel_no_op_outside_buffer_without_provider(tmp_path: Path) -> No
         zero = np.zeros(16, dtype=np.float32)
         panel.set_window_buffer(slice(0, 1), zero[None, :], zero[None, :])
         x_before, y_before = panel._lik_overlay_curve.getData()  # noqa: SLF001
-        panel.update_for_index(50, true_position=10.0)
+        panel.update_for_index(50, physical_position=10.0)
         x_after, y_after = panel._lik_overlay_curve.getData()  # noqa: SLF001
         np.testing.assert_array_equal(y_after, y_before)
     finally:

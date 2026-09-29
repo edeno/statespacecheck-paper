@@ -98,7 +98,7 @@ def test_phase_boundaries_end_the_timeline(sim: Figure3SimulationResult) -> None
     params = sim.config
     assert len(PhaseBoundary) == len(params.phase_boundaries) == 8
     end = params.phase_boundaries[PhaseBoundary.SPARSE_POP_END]
-    x_true = np.asarray(sim.true_position)
+    x_true = np.asarray(sim.physical_position)
     assert x_true.shape[0] == end
 
 
@@ -109,7 +109,7 @@ def test_trajectory_starts_from_the_configured_initial_position(initial_position
         phase_boundaries=(200, 300, 400, 500, 600, 700, 800, 900),
         initial_position=initial_position,
     )
-    first = float(run_figure03_simulation(config, seed=0).true_position[0])
+    first = float(run_figure03_simulation(config, seed=0).physical_position[0])
 
     # Reflection at the track ends keeps |step| as the distance from x_0.
     assert abs(first - initial_position) <= 5.0 * config.prediction_step_std
@@ -331,7 +331,7 @@ def test_sparse_population_is_a_correctly_modeled_low_activity_regime(
     w1 = params.phase_boundaries[PhaseBoundary.SPARSE_POP_END]
     n_sparse = len(sim.sparse_place_field_centers)
     n_normal = sim.spike_counts.shape[1] - n_sparse
-    np.testing.assert_allclose(sim.true_position[w0:w1], params.sparse_position)
+    np.testing.assert_allclose(sim.physical_position[w0:w1], params.sparse_position)
     # The ordinary ensemble is silent; only the sparse-population cells fire.
     assert sim.spike_counts[w0:w1, :n_normal].sum() == 0
     assert sim.spike_counts[w0:w1, n_normal:].sum() > 0
@@ -561,7 +561,7 @@ class TestEstimateRealizationSummary:
         """Scientific claim: the replay event (column 3) is *not* a
         misspecification. The decoder tracks the swept trajectory, so every
         metric stays low — far below the remap positive control — even though
-        the decoded position departs from the (fixed) true position."""
+        the decoded position departs from the (fixed) physical position."""
         replay = summary.median_flag_percentages[:, 3]
         remap = summary.median_flag_percentages[:, 1]
         assert np.all(replay < 15.0), f"replay should stay low; got {replay}"

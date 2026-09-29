@@ -39,8 +39,8 @@ export function initExplainer(root, data, manifest) {
   const bins = data.position_bins;
   const nBins = bins.length;
   const centers = data.cell_centers;
-  const nSteps = data.true_position.length;
-  const x = data.true_position;
+  const nSteps = data.physical_position.length;
+  const x = data.physical_position;
   const m = data.moments;
   const predictive = decodeHeatmap(data.predictive, nBins);
   const posterior = decodeHeatmap(data.posterior, nBins);

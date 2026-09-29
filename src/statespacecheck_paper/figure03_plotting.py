@@ -55,7 +55,7 @@ FIGURE03_PHASE_LABEL_GID = "figure03-phase-label"
 FIGURE03_ROW_LABEL_GID = "figure03-row-label"
 
 
-FIGURE03_TRUE_POSITION_LABEL_GID = "figure03-true-position-label"
+FIGURE03_PHYSICAL_POSITION_LABEL_GID = "figure03-physical-position-label"
 
 
 FIGURE03_SUMMARY_CELL_LABEL_GID = "figure03-summary-cell-label"
@@ -114,9 +114,9 @@ def add_phase_boundaries(axes: list[Axes], config: Figure3Config) -> None:
 def _plot_timeseries_heatmap(
     ax: Axes,
     data: NDArray[np.floating],
-    true_position: NDArray[np.floating],
+    physical_position: NDArray[np.floating],
 ) -> AxesImage:
-    """Plot time x position heatmap with the true position overlaid.
+    """Plot time x position heatmap with the physical position overlaid.
 
     The color scale runs from 0 to the ``PREDICTIVE_VMAX_QUANTILE`` quantile
     of ``data`` (for robustness to outliers), in ``CMAP_PREDICTIVE``.
@@ -127,8 +127,8 @@ def _plot_timeseries_heatmap(
         Matplotlib axes to plot on.
     data : NDArray, shape (n_time, n_bins)
         Distribution data (predictive, likelihood, or posterior).
-    true_position : NDArray, shape (n_time,)
-        True position to overlay as a line.
+    physical_position : NDArray, shape (n_time,)
+        The animal's physical position, overlaid as a line.
 
     Returns
     -------
@@ -141,8 +141,8 @@ def _plot_timeseries_heatmap(
     >>> import matplotlib.pyplot as plt
     >>> fig, ax = plt.subplots()
     >>> data = np.random.dirichlet(np.ones(50), size=100)
-    >>> true_position = np.random.uniform(0, 49, 100)
-    >>> im = _plot_timeseries_heatmap(ax, data, true_position)
+    >>> physical_position = np.random.uniform(0, 49, 100)
+    >>> im = _plot_timeseries_heatmap(ax, data, physical_position)
     >>> plt.close(fig)
     """
     n_time = data.shape[0]
@@ -157,7 +157,7 @@ def _plot_timeseries_heatmap(
     )
     ax.plot(
         np.arange(n_time),
-        true_position,
+        physical_position,
         color=COLORS["ground_truth"],
         linewidth=1.0,
         alpha=0.5,
@@ -170,7 +170,7 @@ def _plot_likelihood_overlay(
     predictive: NDArray[np.floating],
     event_likelihood: NDArray[np.floating],
     event_time_ind: NDArray[np.intp],
-    true_position: NDArray[np.floating],
+    physical_position: NDArray[np.floating],
 ) -> None:
     """Plot per-spike likelihood distributions at spike times.
 
@@ -188,8 +188,8 @@ def _plot_likelihood_overlay(
         Normalized likelihood distribution for each individual spike event.
     event_time_ind : NDArray, shape (n_spikes,)
         Time index for each spike event.
-    true_position : NDArray, shape (n_time,)
-        True position to overlay.
+    physical_position : NDArray, shape (n_time,)
+        The animal's physical position, overlaid as a line.
     """
     n_time, n_bins = predictive.shape
 
@@ -210,7 +210,7 @@ def _plot_likelihood_overlay(
 
     ax.plot(
         np.arange(n_time),
-        true_position,
+        physical_position,
         color=COLORS["ground_truth"],
         linewidth=1.0,
         alpha=0.5,
@@ -306,13 +306,13 @@ def _add_figure03_panel_label(ax: Axes, label: str, *, y: float) -> None:
 def _plot_figure03_predictive_row(
     ax: Axes,
     predictive: NDArray[np.floating],
-    true_position: NDArray[np.floating],
+    physical_position: NDArray[np.floating],
 ) -> None:
     """Plot Figure 3's predictive row with a direct physical-position label."""
-    _plot_timeseries_heatmap(ax, predictive, true_position)
+    _plot_timeseries_heatmap(ax, predictive, physical_position)
     ax.set_ylabel("Position (a.u.)", labelpad=7)
     ax.tick_params(labelbottom=False)
-    true_position_label = ax.text(
+    physical_position_label = ax.text(
         0.02,
         0.90,
         "Physical position",
@@ -321,14 +321,14 @@ def _plot_figure03_predictive_row(
         va="top",
         ha="left",
     )
-    true_position_label.set_gid(FIGURE03_TRUE_POSITION_LABEL_GID)
+    physical_position_label.set_gid(FIGURE03_PHYSICAL_POSITION_LABEL_GID)
     _add_figure03_row_label(ax, "Predictive")
 
 
 def _plot_figure03_likelihood_row(
     ax: Axes,
     diagnostics: DecodingDiagnostics,
-    true_position: NDArray[np.floating],
+    physical_position: NDArray[np.floating],
 ) -> None:
     """Plot Figure 3's per-spike likelihood row."""
     _plot_likelihood_overlay(
@@ -336,7 +336,7 @@ def _plot_figure03_likelihood_row(
         diagnostics.predictive,
         diagnostics.event_likelihood,
         diagnostics.event_time_ind,
-        true_position=true_position,
+        physical_position=physical_position,
     )
     ax.set_ylabel("Position (a.u.)", labelpad=7)
     ax.tick_params(labelbottom=False)
@@ -547,7 +547,7 @@ def _plot_figure03_summary_heatmap(
 
 
 def compose_figure03(
-    true_position: NDArray[np.floating],
+    physical_position: NDArray[np.floating],
     spike_counts: NDArray[np.floating],
     diagnostics: DecodingDiagnostics,
     diagnostic_thresholds: DiagnosticThresholds,
@@ -563,8 +563,9 @@ def compose_figure03(
 
     Parameters
     ----------
-    true_position : NDArray, shape (n_time,)
-        True position at each time point.
+    physical_position : NDArray, shape (n_time,)
+        The animal's physical position at each time point (during replay the
+        spikes follow a different, represented trajectory).
     spike_counts : NDArray, shape (n_time, n_cells)
         Spike counts for each cell at each time point.
     diagnostics : DecodingDiagnostics
@@ -640,8 +641,8 @@ def compose_figure03(
     ax_raster = fig.add_subplot(gs[2], sharex=ax_pred)
     diagnostic_axes = [fig.add_subplot(gs[i], sharex=ax_pred) for i in range(3, 6)]
 
-    _plot_figure03_predictive_row(ax_pred, diagnostics.predictive, true_position)
-    _plot_figure03_likelihood_row(ax_like, diagnostics, true_position)
+    _plot_figure03_predictive_row(ax_pred, diagnostics.predictive, physical_position)
+    _plot_figure03_likelihood_row(ax_like, diagnostics, physical_position)
     _plot_figure03_raster_row(ax_raster, spike_counts, place_field_centers)
 
     event_time_ind = diagnostics.event_time_ind

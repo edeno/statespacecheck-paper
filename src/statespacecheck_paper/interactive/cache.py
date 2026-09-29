@@ -575,7 +575,7 @@ def build_simulated_cache(
     sim = run_figure03_simulation(config, seed=seed)
     config_used = sim.config
     xs: NDArray[np.float64] = np.asarray(sim.position_bins, dtype=np.float64)
-    x_true: NDArray[np.float64] = np.asarray(sim.true_position, dtype=np.float64)
+    x_true: NDArray[np.float64] = np.asarray(sim.physical_position, dtype=np.float64)
     spikes: NDArray[np.int_] = np.asarray(sim.spike_counts, dtype=np.int_)
     metrics = sim.diagnostics
 

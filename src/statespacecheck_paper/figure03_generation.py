@@ -166,7 +166,7 @@ def generate_figure03(
     # pooled median percentages scored against the pooled-baseline thresholds.
     set_figure_defaults(context="paper")
     fig = compose_figure03(
-        true_position=simulation_result.true_position,
+        physical_position=simulation_result.physical_position,
         spike_counts=simulation_result.spike_counts.astype(np.float64),
         diagnostics=simulation_result.diagnostics,
         diagnostic_thresholds=realization_summary.diagnostic_thresholds,

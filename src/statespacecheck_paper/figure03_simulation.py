@@ -147,15 +147,20 @@ class Figure3SimulationResult:
     """Result of :func:`run_figure03_simulation`.
 
     A frozen dataclass so the timeline invariants — ``spike_counts``,
-    ``true_position``, and the diagnostics share one timeline, which ends at
+    ``physical_position``, and the diagnostics share one timeline, which ends at
     the final ``config.phase_boundaries`` entry — are checked at construction.
     Every per-phase summary indexes time through those boundaries, so a phase
     simulated one step short or long would otherwise shift them silently.
+
+    ``physical_position``, shape ``(n_time,)``, is the animal's physical
+    position. Outside the replay control the spikes follow it; during replay
+    the animal is still and the spikes follow a represented sweep instead.
+    Decoding error is measured against the physical position.
     """
 
     config: Figure3Config
     position_bins: NDArray[np.floating]
-    true_position: NDArray[np.floating]
+    physical_position: NDArray[np.floating]
     spike_counts: NDArray[np.int_]
     diagnostics: DecodingDiagnostics
     # Fixed sparse-population field centers; let the raster sort all cells by
@@ -164,24 +169,24 @@ class Figure3SimulationResult:
 
     def __post_init__(self) -> None:
         """Check that the spikes and diagnostics share the phases' timeline."""
-        n_time = self.true_position.shape[0]
+        n_time = self.physical_position.shape[0]
         if self.config.phase_boundaries[-1] != n_time:
             raise ValueError(
                 f"final phase boundary ({self.config.phase_boundaries[-1]}) must equal the "
-                f"true_position timeline ({n_time})."
+                f"physical_position timeline ({n_time})."
             )
         if self.spike_counts.shape[0] != n_time:
             raise ValueError(
                 f"spike_counts timeline ({self.spike_counts.shape[0]}) must equal "
-                f"true_position timeline ({n_time})."
+                f"physical_position timeline ({n_time})."
             )
         # ``DecodingDiagnostics.__post_init__`` enforces shape agreement across
         # its own fields; cross-check that ``DecodingDiagnostics``'s leading dim
-        # matches the ``true_position`` timeline supplied here.
+        # matches the ``physical_position`` timeline supplied here.
         if self.diagnostics.posterior.shape[0] != n_time:
             raise ValueError(
                 f"diagnostics.posterior leading dim {self.diagnostics.posterior.shape[0]} "
-                f"does not match true_position timeline ({n_time})."
+                f"does not match physical_position timeline ({n_time})."
             )
 
 
@@ -404,7 +409,7 @@ def simulate_sparse_approach_phase(
 
 
 def build_sparse_population(
-    true_position: NDArray[np.floating],
+    physical_position: NDArray[np.floating],
     config: Figure3Config,
     random_seed: int,
     w0: int,
@@ -446,18 +451,18 @@ def build_sparse_population(
     # draw order is part of the seeded experiment); leave post-``w1`` samples
     # at zero.
     baseline_block = simulate_spikes_position_tuned(
-        true_position[:w0],
+        physical_position[:w0],
         sparse_centers,
         config.sparse_place_field_std,
         sparse_cell_scale * config.sparse_cell_baseline_rate_fraction,
         sparse_rng,
     )
     sparse_cell_spikes = np.zeros(
-        (true_position.shape[0], sparse_centers.size), dtype=baseline_block.dtype
+        (physical_position.shape[0], sparse_centers.size), dtype=baseline_block.dtype
     )
     sparse_cell_spikes[:w0] = baseline_block
     sparse_cell_spikes[w0:w1] = simulate_spikes_position_tuned(
-        true_position[w0:w1],
+        physical_position[w0:w1],
         sparse_centers,
         config.sparse_place_field_std,
         sparse_cell_scale,
@@ -687,7 +692,7 @@ def run_figure03_simulation(
     Returns
     -------
     Figure3SimulationResult
-        Dataclass with attributes ``config``, ``position_bins``, ``true_position``,
+        Dataclass with attributes ``config``, ``position_bins``, ``physical_position``,
         ``spike_counts``, ``diagnostics``, and ``sparse_place_field_centers``
         (fixed centers for the appended sparse-population cells). Access via
         attribute (``sim.diagnostics``), not subscript. The phases are
@@ -781,13 +786,13 @@ def run_figure03_simulation(
     )
     _record_phase(phases, x, sparse_normal_spikes)
 
-    true_position = np.concatenate([p_x for p_x, _ in phases], axis=0)
+    physical_position = np.concatenate([p_x for p_x, _ in phases], axis=0)
     spike_counts = np.vstack([p_s for _, p_s in phases])  # (n_time, n_normal_cells)
 
     w0 = bnd[PhaseBoundary.RECOVERY3_END]
     w1 = bnd[PhaseBoundary.SPARSE_POP_END]
     sparse_cell_spikes, sparse_centers = build_sparse_population(
-        true_position, config, random_seed, w0, w1
+        physical_position, config, random_seed, w0, w1
     )
     # (n_time, n_normal_cells + sparse_cell_count)
     spike_counts = np.hstack([spike_counts, sparse_cell_spikes])
@@ -831,7 +836,7 @@ def run_figure03_simulation(
     return Figure3SimulationResult(
         config=config,
         position_bins=position_bins,
-        true_position=true_position,
+        physical_position=physical_position,
         spike_counts=spike_counts,
         diagnostics=diagnostics,
         sparse_place_field_centers=tuple(float(c) for c in sparse_centers),

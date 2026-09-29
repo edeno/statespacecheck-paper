@@ -75,11 +75,11 @@ _STATE_LIKELIHOOD_RGB: tuple[tuple[int, int, int], ...] = (
     hex_to_rgb(COLORS["likelihood"]),  # WONG[1] Orange
     hex_to_rgb(WONG[6]),  # WONG[6] Vermillion
 )
-_TRUE_POSITION_PEN = pg.mkPen((50, 50, 50), width=1, style=QtCore.Qt.PenStyle.DashLine)
+_PHYSICAL_POSITION_PEN = pg.mkPen((50, 50, 50), width=1, style=QtCore.Qt.PenStyle.DashLine)
 
 # Palette for the per-cell event-likelihood curves. Picked to be distinct
 # from the joint predictive (blue), joint likelihood (orange), pinned
-# curve (gold), and true-position line (gray). Cells are colored by
+# curve (gold), and physical-position line (gray). Cells are colored by
 # ``cell_id % len(palette)``, so distinct cells in the same bin land
 # on different hues even when their IDs are adjacent.
 _PER_CELL_PALETTE: tuple[tuple[int, int, int], ...] = (
@@ -257,7 +257,7 @@ class _BaseHeatmapPanel(pg.PlotWidget):
         self._pin_line.setVisible(False)
         self.addItem(self._pin_line)
 
-        # Animal's true position trajectory across the visible window.
+        # Animal's physical position trajectory across the visible window.
         # White on viridis stays readable across the full colormap range
         # (viridis hits both deep purple at the low end and bright yellow
         # at the high end; white contrasts with both).
@@ -769,7 +769,7 @@ class _PerCellRow:
     plot: pg.PlotWidget
     cell_curve: pg.PlotDataItem
     predictive_curve: pg.PlotDataItem
-    true_position_line: pg.InfiniteLine
+    physical_position_line: pg.InfiniteLine
 
 
 def _pin_slice_axes(plot: pg.PlotWidget, position_bins: NDArray[np.float64]) -> None:
@@ -820,7 +820,7 @@ class SlicePanel(QtWidgets.QWidget):
 
     1. Legend label.
     2. Population-likelihood plot (orange line + thin blue
-       predictive overlay + dashed true-position).
+       predictive overlay + dashed physical-position).
     3. Pool of per-cell-likelihood rows; pre-allocated and hidden
        when not in the current bin so the column's vertical layout
        is fixed across ticks.
@@ -915,10 +915,10 @@ class SlicePanel(QtWidgets.QWidget):
             self._likelihood_plot.addItem(top)
             self._lik_top_curves.append(top)
 
-        self._lik_true_position_line = pg.InfiniteLine(
-            angle=90, movable=False, pen=_TRUE_POSITION_PEN
+        self._lik_physical_position_line = pg.InfiniteLine(
+            angle=90, movable=False, pen=_PHYSICAL_POSITION_PEN
         )
-        self._likelihood_plot.addItem(self._lik_true_position_line)
+        self._likelihood_plot.addItem(self._lik_physical_position_line)
         # Re-pin axes after every ``addItem`` so pyqtgraph's
         # auto-range hooks cannot nudge the viewbox.
         _pin_slice_axes(self._likelihood_plot, self._position_bins)
@@ -996,7 +996,7 @@ class SlicePanel(QtWidgets.QWidget):
             "font-size:14pt'>━</span> Likelihood",
             f"<span style='color:rgb({predictive_rgb[0]},{predictive_rgb[1]},{predictive_rgb[2]});"
             f"font-size:14pt'>━</span> {overlay_label} (top) / Predictive (per cell)",
-            "<span style='color:rgb(50,50,50);font-size:14pt'>┄</span> True position",
+            "<span style='color:rgb(50,50,50);font-size:14pt'>┄</span> Physical position",
         ]
         return " &nbsp;&nbsp; ".join(parts)
 
@@ -1061,7 +1061,7 @@ class SlicePanel(QtWidgets.QWidget):
         """Project a real-cm position onto the uniform x-grid used by the slice plots.
 
         Mirrors the same ``np.interp`` mapping ``_BaseHeatmapPanel``
-        applies to its position trajectory, so the slice's true-position
+        applies to its position trajectory, so the slice's physical-position
         marker, the population / per-cell curves, and the heatmap pixels
         all share one coordinate system.
         """
@@ -1069,7 +1069,7 @@ class SlicePanel(QtWidgets.QWidget):
             return float(self._position_bins_uniform[0])
         return float(np.interp(real_cm, self._position_bins, self._position_bins_uniform))
 
-    def update_for_index(self, t_idx: int, true_position: float) -> None:
+    def update_for_index(self, t_idx: int, physical_position: float) -> None:
         """Redraw the slice plots for sample ``t_idx`` from the cached window buffer."""
         sl = self._buffer_slice
         predictive = self._buffer_predictive
@@ -1118,17 +1118,17 @@ class SlicePanel(QtWidgets.QWidget):
             row_peak = float(row.max())
             row_norm = (row / row_peak).astype(np.float32, copy=False) if row_peak > 0 else row
             self._lik_top_curves[s].setData(self._position_bins_uniform, row_norm)
-        # ``true_position`` is in real cm; map onto the uniform x-grid
+        # ``physical_position`` is in real cm; map onto the uniform x-grid
         # so the marker sits on the same column as the heatmap pixel
         # for the animal's current bin (see ``_position_bins_uniform``).
-        true_x = self._uniform_x_for(true_position)
-        self._lik_true_position_line.setPos(true_x)
+        true_x = self._uniform_x_for(physical_position)
+        self._lik_physical_position_line.setPos(true_x)
 
         # Per-cell rows: predictive overlay only.
         for i in range(self._n_active_per_cell_rows):
             row = self._per_cell_rows[i]
             row.predictive_curve.setData(self._position_bins_uniform, self._predictive_norm)
-            row.true_position_line.setPos(true_x)
+            row.physical_position_line.setPos(true_x)
 
     def _collapse_row(self, row: NDArray[np.float32]) -> NDArray[np.float32]:
         """Sum a single ``(n_states * n_pos,)`` row over states to ``(n_pos,)``."""
@@ -1204,8 +1204,10 @@ class SlicePanel(QtWidgets.QWidget):
         )
         plot.addItem(cell_curve)
         plot.addItem(predictive_curve)
-        true_position_line = pg.InfiniteLine(angle=90, movable=False, pen=_TRUE_POSITION_PEN)
-        plot.addItem(true_position_line)
+        physical_position_line = pg.InfiniteLine(
+            angle=90, movable=False, pen=_PHYSICAL_POSITION_PEN
+        )
+        plot.addItem(physical_position_line)
         # Re-pin the axes after every ``addItem`` so the y-range
         # cannot get nudged by pyqtgraph's auto-range hooks.
         _pin_slice_axes(plot, self._position_bins)
@@ -1233,7 +1235,7 @@ class SlicePanel(QtWidgets.QWidget):
             plot=plot,
             cell_curve=cell_curve,
             predictive_curve=predictive_curve,
-            true_position_line=true_position_line,
+            physical_position_line=physical_position_line,
         )
 
     def set_per_cell_slices(self, slices: list[CellSlice], total_in_bin: int | None = None) -> None:

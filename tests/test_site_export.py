@@ -231,7 +231,7 @@ def test_filter_explainer_sequence_tells_the_story_on_the_page(
     assert counts[0].sum() == 1
     np.testing.assert_allclose(decoded.predictive[0], 1.0 / sequence.position_bins.size)
     # The animal runs smoothly up the track and back.
-    position = sequence.true_position
+    position = sequence.physical_position
     assert position[0] == pytest.approx(FILTER_EXPLAINER.run_low)
     assert position.max() == pytest.approx(FILTER_EXPLAINER.run_high, abs=1e-3)
     assert np.abs(np.diff(position, n=2)).max() < 0.1
@@ -253,8 +253,8 @@ def test_filter_explainer_sequence_tells_the_story_on_the_page(
     # inconsistent with the prediction, and playback pauses only at the conflict.
     assert np.all(decoded.event_hpd_overlap[decoded.event_time_ind > conflict] > 0)
     mean = decoded.posterior @ sequence.position_bins
-    assert np.median(np.abs(mean[:conflict] - sequence.true_position[:conflict])) < 5
-    assert abs(mean[-1] - sequence.true_position[-1]) < 5
+    assert np.median(np.abs(mean[:conflict] - sequence.physical_position[:conflict])) < 5
+    assert abs(mean[-1] - sequence.physical_position[-1]) < 5
 
 
 # ---------------------------------------------------------------------------
@@ -451,7 +451,7 @@ def test_condition_events_match_the_decoded_diagnostics(
             diagnostics.predictive[window.start : window.stop].max(axis=1),
             rtol=1e-5,
         )
-        assert len(payload["true_position"]) == window.stop - window.start
+        assert len(payload["physical_position"]) == window.stop - window.start
 
 
 def test_condition_summaries_come_from_the_figure_summary(
@@ -646,7 +646,7 @@ def test_committed_condition_payloads_are_current(
             np.testing.assert_allclose(
                 committed["events"][metric], fresh["events"][metric], rtol=1e-3
             )
-        for key in ("position_bins", "true_position", "cell_centers"):
+        for key in ("position_bins", "physical_position", "cell_centers"):
             np.testing.assert_allclose(committed[key], fresh[key], atol=0.011)
         _assert_heatmap_close(committed["predictive"], fresh["predictive"], n_bins)
         # The row table deduplicates float likelihoods, so rows that coincide on
@@ -677,7 +677,7 @@ def test_committed_filter_data_is_current() -> None:
     )
     for key, values in fresh["moments"].items():
         np.testing.assert_allclose(committed["moments"][key], values, atol=0.011)
-    for key in ("position_bins", "cell_centers", "true_position", "exposure"):
+    for key in ("position_bins", "cell_centers", "physical_position", "exposure"):
         np.testing.assert_allclose(committed[key], fresh[key], atol=0.011)
     for key in ("conflict_step", "coverage"):
         assert committed[key] == fresh[key], key

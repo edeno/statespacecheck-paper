@@ -487,7 +487,7 @@ function renderCondition(view, payload, manifest) {
   const likelihoodBitmap = heatmapBitmap(likelihoodMean, lut.likelihood);
   const hasSpikes = (t) => likelihoodCount[t] > 0;
   const cellRank = rankOf(payload.cell_centers);
-  const position = payload.true_position;
+  const position = payload.physical_position;
   const track = (label, bitmap, height, mask = null) =>
     heatmapTrack({ label, bitmap, height, mask, times: stepTimes, bins, position });
   const flaggedStyle = (metricName) => (i) =>

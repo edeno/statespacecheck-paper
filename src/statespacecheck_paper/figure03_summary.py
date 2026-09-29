@@ -300,12 +300,12 @@ def flag_percentages_from_values(
 def compute_condition_decoding_error(
     posterior: NDArray[np.floating],
     position_bins: NDArray[np.floating],
-    true_position: NDArray[np.floating],
+    physical_position: NDArray[np.floating],
     conditions: list[Figure3SummaryCondition],
 ) -> NDArray[np.floating]:
     """Per-condition decoding error of the filtered posterior.
 
-    Scores the decoder's state estimate against the stored true position
+    Scores the decoder's state estimate against the animal's physical position
     inside each summary column's time windows. Unlike the flag percentages,
     which are per spike event, these are per time step, so every step in a
     window counts whether or not a spike occurred.
@@ -317,10 +317,11 @@ def compute_condition_decoding_error(
         need not be normalized, but each must carry positive finite mass.
     position_bins : np.ndarray, shape (n_bins,)
         Position-grid bin centres (position units).
-    true_position : np.ndarray, shape (n_time,)
-        True position at each time step. For the replay control this is the
-        animal's fixed physical position, so the replay column measures the
-        decoded-versus-physical gap by construction.
+    physical_position : np.ndarray, shape (n_time,)
+        The animal's physical position at each time step. Outside replay the
+        spikes follow it; during the replay control they follow a represented
+        trajectory while the physical position stays fixed, so the replay
+        column measures the decoded-versus-physical gap by construction.
     conditions : list of Figure3SummaryCondition
         Heatmap columns from :func:`build_summary_conditions`.
 
@@ -328,7 +329,7 @@ def compute_condition_decoding_error(
     -------
     np.ndarray, shape (1, n_columns)
         Rows follow :data:`SUMMARY_ERROR_METRICS`: the median absolute
-        error between the posterior mean and ``true_position``, in position
+        error between the posterior mean and ``physical_position``, in position
         units.
 
     Raises
@@ -339,7 +340,7 @@ def compute_condition_decoding_error(
     """
     posterior = np.asarray(posterior, dtype=float)
     position_bins = np.asarray(position_bins, dtype=float)
-    true_position = np.asarray(true_position, dtype=float)
+    physical_position = np.asarray(physical_position, dtype=float)
     if posterior.ndim != 2:
         raise ValueError(f"posterior must be 2-D (n_time, n_bins); got shape {posterior.shape}")
     n_time, n_bins = posterior.shape
@@ -348,23 +349,23 @@ def compute_condition_decoding_error(
             f"position_bins must have shape ({n_bins},) to match posterior; "
             f"got {position_bins.shape}"
         )
-    if true_position.shape != (n_time,):
+    if physical_position.shape != (n_time,):
         raise ValueError(
-            f"true_position must have shape ({n_time},) to match posterior; "
-            f"got {true_position.shape}"
+            f"physical_position must have shape ({n_time},) to match posterior; "
+            f"got {physical_position.shape}"
         )
     if not (
         np.all(np.isfinite(posterior))
         and np.all(np.isfinite(position_bins))
-        and np.all(np.isfinite(true_position))
+        and np.all(np.isfinite(physical_position))
     ):
-        raise ValueError("posterior, position_bins, and true_position must all be finite")
+        raise ValueError("posterior, position_bins, and physical_position must all be finite")
     mass = posterior.sum(axis=1)
     if np.any(mass <= 0.0):
         raise ValueError("Every posterior row must carry positive mass")
 
     posterior_mean = (posterior @ position_bins) / mass
-    abs_error = np.abs(posterior_mean - true_position)
+    abs_error = np.abs(posterior_mean - physical_position)
 
     out = np.zeros((len(SUMMARY_ERROR_METRICS), len(conditions)))
     for j, col in enumerate(conditions):
@@ -678,7 +679,7 @@ def estimate_realization_summary(
         per_realization_values.append(extract_condition_flag_values(diagnostics, conditions))
         per_realization_error.append(
             compute_condition_decoding_error(
-                diagnostics.posterior, sim.position_bins, sim.true_position, conditions
+                diagnostics.posterior, sim.position_bins, sim.physical_position, conditions
             )
         )
 

@@ -12,12 +12,12 @@ from statespacecheck_paper.diagnostics import DecodingDiagnostics, DiagnosticThr
 from statespacecheck_paper.figure03_plotting import (
     FIGURE03_PANEL_LABEL_GID,
     FIGURE03_PHASE_LABEL_GID,
+    FIGURE03_PHYSICAL_POSITION_LABEL_GID,
     FIGURE03_SUMMARY_CELL_LABEL_GID,
     FIGURE03_SUMMARY_ERROR_CELL_LABEL_GID,
     FIGURE03_SUMMARY_ERROR_HEADER_GID,
     FIGURE03_SUMMARY_KNOWN_COMPONENT_LABEL_GID,
     FIGURE03_SUMMARY_TITLE_GID,
-    FIGURE03_TRUE_POSITION_LABEL_GID,
     compose_figure03,
 )
 from statespacecheck_paper.figure03_protocol import Figure3Config
@@ -236,7 +236,7 @@ def test_compose_figure03_tags_figure03_annotations(
         }
         assert sum(text.get_gid() == THRESHOLD_LABEL_GID for text in texts) == 3
         assert sum(text.get_gid() == WORSE_FIT_LABEL_GID for text in texts) == 3
-        assert any(text.get_gid() == FIGURE03_TRUE_POSITION_LABEL_GID for text in texts)
+        assert any(text.get_gid() == FIGURE03_PHYSICAL_POSITION_LABEL_GID for text in texts)
         assert any(text.get_gid() == FIGURE03_SUMMARY_KNOWN_COMPONENT_LABEL_GID for text in texts)
         assert sum(text.get_gid() == FIGURE03_SUMMARY_CELL_LABEL_GID for text in texts) == 18
         assert sum(text.get_gid() == FIGURE03_SUMMARY_ERROR_CELL_LABEL_GID for text in texts) == 6
