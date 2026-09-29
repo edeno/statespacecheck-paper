@@ -7,7 +7,7 @@
 const SYMLOG_LINTHRESH = 0.01;
 const SYMLOG_LINSCALE_ADJ = 1 / (1 - 1 / 10);
 
-export function symlog(value) {
+function symlog(value) {
   const magnitude = Math.abs(value);
   if (magnitude <= SYMLOG_LINTHRESH) return value * SYMLOG_LINSCALE_ADJ;
   return (
@@ -115,7 +115,7 @@ export function plottedWorseFit(metric) {
 }
 
 /** Direction of worse fit plus the flag rule, e.g. "lower = worse fit; flagged if ≤ 0.05". */
-export function describeRule(metric, rule) {
+function describeRule(metric, rule) {
   return `${worseFit(metric)}; ${flagRule(rule)}`;
 }
 
