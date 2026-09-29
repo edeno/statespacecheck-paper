@@ -83,7 +83,7 @@ FIGURE3_MISFIT_BANDS: tuple[tuple[PhaseBoundary, PhaseBoundary, str], ...] = (
 )
 
 
-def add_phase_boundaries(axes: list[Axes], config: Figure3Config, alpha: float = 0.15) -> None:
+def add_phase_boundaries(axes: list[Axes], config: Figure3Config) -> None:
     """Shade the misfit phases and the replay control on each time-series axis.
 
     Parameters
@@ -92,8 +92,6 @@ def add_phase_boundaries(axes: list[Axes], config: Figure3Config, alpha: float =
         Axes sharing the Figure 3 step timeline.
     config : Figure3Config
         Supplies ``phase_boundaries`` and the replay step window.
-    alpha : float, default 0.15
-        Band transparency.
     """
     bnd = config.phase_boundaries
     bands = [(bnd[start], bnd[end], COLORS[color]) for start, end, color in FIGURE3_MISFIT_BANDS]
@@ -104,17 +102,18 @@ def add_phase_boundaries(axes: list[Axes], config: Figure3Config, alpha: float =
     bands.append((replay_start, replay_end, COLORS["phase_replay"]))
     for ax in axes:
         for start, end, color in bands:
-            ax.axvspan(start, end, alpha=alpha, color=color, label="")
+            ax.axvspan(start, end, alpha=0.15, color=color, label="")
 
 
 def _plot_timeseries_heatmap(
     ax: Axes,
     data: NDArray[np.floating],
     true_position: NDArray[np.floating] | None = None,
-    cmap: str = CMAP_POSTERIOR,
-    vmax_quantile: float = PREDICTIVE_VMAX_QUANTILE,
 ) -> AxesImage:
     """Plot time x position heatmap with optional true position overlay.
+
+    The color scale runs from 0 to the ``PREDICTIVE_VMAX_QUANTILE`` quantile
+    of ``data`` (for robustness to outliers), in ``CMAP_POSTERIOR``.
 
     Parameters
     ----------
@@ -124,10 +123,6 @@ def _plot_timeseries_heatmap(
         Distribution data (predictive, likelihood, or posterior).
     true_position : NDArray, shape (n_time,), optional
         True position to overlay as a line.
-    cmap : str, default CMAP_POSTERIOR
-        Colormap for heatmap.
-    vmax_quantile : float, default ``PREDICTIVE_VMAX_QUANTILE``
-        Quantile for vmax (for robustness to outliers).
 
     Returns
     -------
@@ -151,8 +146,8 @@ def _plot_timeseries_heatmap(
         aspect="auto",
         origin="lower",
         vmin=0.0,
-        vmax=np.nanquantile(data, vmax_quantile),
-        cmap=cmap,
+        vmax=np.nanquantile(data, PREDICTIVE_VMAX_QUANTILE),
+        cmap=CMAP_POSTERIOR,
     )
     if true_position is not None:
         ax.plot(
@@ -171,12 +166,12 @@ def _plot_likelihood_overlay(
     per_spike_likelihood: NDArray[np.floating],
     spike_time_ind: NDArray[np.intp],
     true_position: NDArray[np.floating] | None = None,
-    cmap_overlay: str = CMAP_LIKELIHOOD,
 ) -> None:
     """Plot per-spike likelihood distributions at spike times.
 
     Aggregates per-spike likelihoods into per-timestep distributions and renders
-    each spike time as a colored column with guaranteed minimum width.
+    each spike time as a ``CMAP_LIKELIHOOD`` column with guaranteed minimum
+    width.
 
     Parameters
     ----------
@@ -190,8 +185,6 @@ def _plot_likelihood_overlay(
         Time index for each spike event.
     true_position : NDArray, shape (n_time,), optional
         True position to overlay.
-    cmap_overlay : str, default CMAP_LIKELIHOOD
-        Colormap for the likelihood columns.
     """
     n_time, n_bins = predictive.shape
 
@@ -208,7 +201,7 @@ def _plot_likelihood_overlay(
         has_spikes = counts > 0
         lik_per_time[has_spikes] /= counts[has_spikes, np.newaxis]
 
-        plot_likelihood_columns(ax, lik_per_time, has_spikes, n_time, cmap=cmap_overlay)
+        plot_likelihood_columns(ax, lik_per_time, has_spikes, n_time, cmap=CMAP_LIKELIHOOD)
 
     if true_position is not None:
         ax.plot(
