@@ -69,7 +69,7 @@ make reproduce
 The target performs the following steps in order, including under `make -j`:
 
 ```bash
-uv sync --frozen
+uv sync --frozen --inexact
 uv run --frozen python scripts/download_figure04_inputs.py
 uv run --frozen python scripts/generate_all_figures.py
 uv run --frozen python scripts/emit_reported_values.py
