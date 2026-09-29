@@ -157,8 +157,9 @@ the paths, asks for confirmation, and checks that the
 installed Spyglass declares every column of the database's export tables; the
 version in `uv.lock` does not, so the export must use the lab's current Spyglass.
 Spyglass also requires packaging with the same `x.y.z` version that logged the
-selection, which is why `--populate` packages in the same run and requires
-`--compare-to`.
+selection, which is why `--populate` packages in the same run. `--populate`
+requires `--compare-to` so that only fetches verified against the reference
+input file are packaged.
 
 The `spyglass` extra (`uv sync --extra spyglass`) installs the Spyglass in
 `uv.lock`; it has not been used for a full fetch.

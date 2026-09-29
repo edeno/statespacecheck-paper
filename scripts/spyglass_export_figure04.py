@@ -53,7 +53,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--paper-id", required=True, help="New export paper ID (<= 32 chars).")
     parser.add_argument("--analysis-id", default="figure04_inputs", help="(<= 32 chars)")
     parser.add_argument("--output-dir", type=Path, help="Write the fetched input file here.")
-    parser.add_argument("--compare-to", type=Path, help="Compare the written file with this one.")
+    parser.add_argument(
+        "--compare-to",
+        type=Path,
+        help="Directory of the reference input file to compare the written one against.",
+    )
     parser.add_argument(
         "--populate", action="store_true", help="Package the export with populate_paper."
     )
