@@ -7,6 +7,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from statespacecheck_paper.style import COLORS, hex_to_rgb
+
 from ._qt import (
     make_viewer,
     qt_offscreen,  # noqa: F401 -- registers the autouse fixture here
@@ -56,9 +58,12 @@ def test_three_metric_panels_constructed(tmp_path: Path) -> None:
         assert [
             panel.getPlotItem().getAxis("left").labelText for panel in viewer.metric_panels.values()
         ] == ["HPD overlap", "−log(p)", "KL divergence"]
-        # Spike-prob panel has its threshold line; KL has none.
-        assert viewer.metric_panels["event_hpd_overlap"]._threshold_line is not None  # noqa: SLF001
-        assert viewer.metric_panels["event_predictive_pvalue"]._threshold_line is not None  # noqa: SLF001
+        # HPD overlap and p-value panels have threshold lines, in the paper's
+        # threshold gray; KL has none.
+        for metric in ("event_hpd_overlap", "event_predictive_pvalue"):
+            line = viewer.metric_panels[metric]._threshold_line  # noqa: SLF001
+            assert line is not None
+            assert line.pen.color().getRgb()[:3] == hex_to_rgb(COLORS["threshold"])
         assert viewer.metric_panels["event_kl_divergence"]._threshold_line is None  # noqa: SLF001
     finally:
         viewer.close()

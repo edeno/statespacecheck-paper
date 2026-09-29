@@ -557,7 +557,9 @@ class MetricPanel(pg.PlotWidget):
             self._threshold_line = pg.InfiniteLine(
                 pos=float(disp),
                 angle=0,
-                pen=pg.mkPen((100, 100, 100), width=1, style=QtCore.Qt.PenStyle.DashLine),
+                pen=pg.mkPen(
+                    hex_to_rgb(COLORS["threshold"]), width=1, style=QtCore.Qt.PenStyle.DashLine
+                ),
                 movable=False,
             )
             self.addItem(self._threshold_line)
