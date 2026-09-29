@@ -96,8 +96,14 @@ EVENT_VALUE_SIGNIFICANT_FIGURES = 4
 # Entries in each exported colormap lookup table.
 COLORMAP_LUT_SIZE = 64
 
-# Color scale of the Figure-4 predictive heatmaps (xarray's ``robust=True``):
-# the 2nd to 98th percentiles of the plotted window. Figure 3's scale is
+# Color scale of the Figure-4 predictive heatmaps: the 2nd to 98th percentiles
+# of the plotted window, restating the limits that xarray's ``robust=True``
+# (``xarray.plot.utils.ROBUST_PERCENTILE``) gives the figure in
+# ``figure04_plot_primitives.plot_distribution_heatmap``. xarray drops
+# non-finite values before taking them, whereas the export zero-fills NaN
+# first. The zero-fill changes nothing here, since the state marginal the
+# export reads has already dropped every bin holding a NaN in the window, but
+# it would lower the limits of a window with NaN. Figure 3's scale is
 # ``style.PREDICTIVE_VMAX_QUANTILE``, shared with ``figure03_plotting``.
 FIGURE4_PREDICTIVE_PERCENTILES = (2.0, 98.0)
 
