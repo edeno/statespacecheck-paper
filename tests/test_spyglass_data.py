@@ -23,6 +23,7 @@ from track_linearization import make_track_graph
 
 from statespacecheck_paper import spyglass_data
 from statespacecheck_paper.load_local_data import input_file_path, load_neural_recording_from_files
+from statespacecheck_paper.paths import FIGURE04_INPUTS_EPOCH
 from statespacecheck_paper.spyglass_data import (
     Figure4Inputs,
     check_output_paths,
@@ -227,6 +228,14 @@ def test_write_refuses_a_directed_graph(tmp_path: Path) -> None:
 
 
 # --- Data checks -------------------------------------------------------------
+
+
+def test_spyglass_session_and_epoch_name_the_published_input_file() -> None:
+    """The Spyglass fetch rebuilds the input file the figure reads, not another epoch's."""
+    assert (
+        epoch_identifier(spyglass_data.FIGURE04_NWB_FILE_NAME, spyglass_data.FIGURE04_EPOCH_NAME)
+        == FIGURE04_INPUTS_EPOCH
+    )
 
 
 def test_epoch_identifier_rejects_names_without_the_spyglass_suffix() -> None:
