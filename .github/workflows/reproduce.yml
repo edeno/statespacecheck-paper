@@ -25,22 +25,13 @@ concurrency:
 jobs:
   reproduce:
     runs-on: ubuntu-latest
-    # TODO(measure): set from a measured run; the Figure-4 refit dominates.
-    timeout-minutes: 240
+    # A measured run took 20 minutes, 15 of them regenerating the figures.
+    timeout-minutes: 60
     env:
       # The development pin (.python-version); also inherited by the fresh copy's uv calls.
       UV_PYTHON: "3.11"
     steps:
       - uses: actions/checkout@v4
-
-      - name: Free disk space
-        # The Figure-4 decode cache is ~7.7 GB, and the copy needs its own
-        # environment; drop preinstalled toolchains this job does not use.
-        run: |
-          df -h /
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
-            /opt/hostedtoolcache/CodeQL /usr/local/share/boost
-          df -h /
 
       - name: Install LaTeX
         # The TeX Live collections holding main.tex's packages: newtx
@@ -69,7 +60,7 @@ jobs:
         # Figure-4 input record) are excluded from the per-push CI.
         if: always()
         run: |
-          uv sync --frozen --extra dev
+          uv sync --frozen --extra dev --extra interactive
           uv run --frozen pytest -m network --no-cov
 
       - name: Report disk use
