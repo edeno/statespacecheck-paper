@@ -4592,7 +4592,10 @@ name = "statespacecheck-paper"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "joblib" },
     { name = "matplotlib" },
+    { name = "networkx", version = "3.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "networkx", version = "3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "non-local-detector" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.3.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
@@ -4600,6 +4603,8 @@ dependencies = [
     { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "scipy", version = "1.16.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "statespacecheck" },
+    { name = "xarray", version = "2025.6.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "xarray", version = "2025.10.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
 ]
 
 [package.optional-dependencies]
@@ -4627,9 +4632,11 @@ spyglass = [
 [package.metadata]
 requires-dist = [
     { name = "hypothesis", marker = "extra == 'dev'", specifier = ">=6.0.0" },
+    { name = "joblib", specifier = ">=1.5" },
     { name = "kachery-cloud", marker = "extra == 'spyglass'" },
     { name = "matplotlib", specifier = ">=3.8.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.0.0" },
+    { name = "networkx", specifier = ">=3.4" },
     { name = "non-local-detector", git = "https://github.com/LorenFrankLab/non_local_detector.git" },
     { name = "numpy", specifier = ">=1.26.0" },
     { name = "pandas", specifier = ">=2.0.0" },
@@ -4644,6 +4651,7 @@ requires-dist = [
     { name = "spyglass-neuro", marker = "extra == 'spyglass'" },
     { name = "statespacecheck", specifier = ">=0.3.1" },
     { name = "track-linearization", marker = "extra == 'spyglass'" },
+    { name = "xarray", specifier = ">=2025.6" },
     { name = "zarr", marker = "extra == 'interactive'", specifier = ">=2.16,<3" },
 ]
 provides-extras = ["dev", "interactive", "spyglass"]
