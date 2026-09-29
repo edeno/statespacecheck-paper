@@ -346,6 +346,7 @@ input[type="range"] {
 input:focus-visible,
 summary:focus-visible,
 .table-wrap:focus-visible,
+[role="tabpanel"]:focus-visible,
 .stack:focus-visible {
   outline: 2px solid var(--link);
   outline-offset: 2px;

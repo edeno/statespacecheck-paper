@@ -420,7 +420,11 @@ export function initConditions(root, manifest) {
   let teardown = null;
 
   view.setAttribute("role", "tabpanel");
-  view.tabIndex = -1;
+  // A Tab stop, so Tab from the tabs enters the panel at its summary, not at
+  // its first control (the tracks), as the ARIA tabs pattern recommends.
+  view.tabIndex = 0;
+  // The condition's description sits just before the panel.
+  view.setAttribute("aria-describedby", text.id);
   const buttons = manifest.conditions.map(({ condition_id: id, title }) => {
     const button = document.createElement("button");
     button.type = "button";

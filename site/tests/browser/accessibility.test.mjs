@@ -195,6 +195,15 @@ describe("condition tabs", () => {
       assert.equal(await page.locator(`#cond-tab-${focused}`).getAttribute("aria-selected"), "true");
     }));
 
+  test("Tab from the selected tab enters the panel at its start", () =>
+    withPage({}, async (page) => {
+      await page.locator("#cond-tabs [aria-selected=true]").focus();
+      await page.keyboard.press("Tab");
+      assert.equal(await page.evaluate(() => document.activeElement.id), "cond-view");
+      const description = await page.locator("#cond-view").getAttribute("aria-describedby");
+      assert.ok((await page.locator(`#${description}`).textContent()).length > 20);
+    }));
+
   test("only a reader's own choice of condition enters the URL", () =>
     withPage({}, async (page) => {
       assert.equal(new URL(page.url()).search, "");
