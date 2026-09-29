@@ -144,7 +144,7 @@ hashes cover fitting, recording preparation, and shared workflow/place-field cod
 Any executable change to those modules refits both models, including an edited
 message string. Changes confined to `diagnostics.py`, `figure04_diagnostics.py`,
 or the diagnostics configuration recompute diagnostics from cached predictions. Comments and docstrings
-are excluded from both cache hashes. See [the cache specification](figure-pipeline.md#figure-4--real-data-decoder-diagnostics).
+are excluded from both cache hashes. See [the cache specification](figure-pipeline.md#figure-4-cache-behavior).
 
 Keep publication PDFs, previews, summaries, macros, and website data committed
 together after a result change. Inspect binary diffs visually: PDF creation

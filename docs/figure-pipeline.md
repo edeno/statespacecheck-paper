@@ -12,81 +12,211 @@ the locked environment. The [complete reproduction recipe](reproduce.md#reproduc
 downloads the recording input before generating all four figures and building
 the manuscript. Figures are exported as PDF and 450-DPI PNG.
 
+## Start here
+
+### The four entry points
+
+Each figure has one script under `scripts/`, a thin command-line adapter that
+calls one importable recipe in `src/statespacecheck_paper/`:
+
+| Figure | Script | Recipe | Data |
+| --- | --- | --- | --- |
+| 1 — schematic and distribution comparisons | `generate_figure01.py` | `figure01_generation.generate_figure01` | none |
+| 2 — the three diagnostics on one example | `generate_figure02.py` | `figure02_generation.generate_figure02` | seeded example |
+| 3 — simulation study | `generate_figure03.py` | `figure03_generation.generate_figure03` | seeded simulation |
+| 4 — hippocampal recording | `generate_figure04.py` (`--force-recompute`) | `figure04_generation.generate_figure04` | archived input file |
+
+### From the Methods to the code
+
+The diagnostics themselves are computed by the separate
+[`statespacecheck`](https://github.com/edeno/statespacecheck) package. Both
+analyses reach it through one paper-side wrapper,
+`diagnostics.compute_spike_event_diagnostics_from_rates`, which calls
+`statespacecheck.event_diagnostics` and returns a `SpikeEventDiagnostics` with
+one value per spike event. Figure 3 calls the wrapper from
+`decoding.decode_with_diagnostics`; Figure 4 calls it from
+`figure04_diagnostics.compute_results_diagnostics`. Equation numbers are those
+of the Methods in `manuscript/main.tex` (labels in parentheses).
+
+| Paper quantity | Methods | `statespacecheck` function | Paper-side name |
+| --- | --- | --- | --- |
+| Event factorization of the Poisson likelihood | Eq. 1 (`eq:poisson_event_factorization`) | — | Figure 3's decoder forms $p(\mathbf{n}_k \mid x_k)$ from a rate table of expected counts (`decoding.decode_with_diagnostics`) |
+| One-step predictive distribution $P_k(x_k)=p(x_k\mid y_{1:k-1})$ | unnumbered, after Eq. 1 | input to every function below | `predictive` (see the vocabulary below) |
+| Normalized single-event likelihood $Q_{k,j}$ | Eq. 2 (`eq:single_event_likelihood`) | `event_likelihood` | `event_likelihood`, shape `(n_spikes, n_bins)` |
+| HPD overlap (overlap coefficient of the two HPD regions) | Eq. 3 (`eq:hpd`) | `hpd_overlap`; regions from `highest_density_region` | `event_hpd_overlap`; coverage `diagnostics.HPD_COVERAGE` (0.95, macro `\HpdCoveragePercent`) |
+| Event-weighted predictive $P_k^{\mathrm{event}}$, cell identity $\pi_c$, predictive cell probabilities $f_{\mathrm{pred}}(c)$ | Eqs. 4–6 | `event_weighted_predictive`, `predictive_mark_probabilities` | — |
+| Rank-based predictive $p$-value, exact for sorted spikes | Eqs. 8–9 (`eq:predictive_application`, `eq:predictive_application_sorted`) | `mark_predictive_pvalue` | `event_predictive_pvalue` |
+| Monte Carlo predictive $p$-value (clusterless form, Eq. 7; Figure 2b) | Eqs. 7–8 | `monte_carlo_mark_pvalue` | used only by `figure02_panels` |
+| KL divergence $D_{\mathrm{KL}}(P_k\,\|\,Q_{k,j})$ | Eq. 10 (`eq:kl`) | `kl_divergence` | `event_kl_divergence` |
+| Simulated expected counts $m_c(x)=\lambda_c(x)\Delta t=\alpha\phi(x\mid\mu_c,\sigma_{\mathrm{pf}}^2)$ | Eq. 11 (`eq:rate`) | — | `simulation.place_field_rates` |
+
+### Flag thresholds
+
+| Figure | Rule | Where it is defined |
+| --- | --- | --- |
+| 3 | HPD overlap flagged at or below the 1st percentile, KL divergence at or above the 99th percentile, of baseline values pooled over every spike event in steps 0–6000 of all 100 realizations | quantiles `diagnostics.BASELINE_HPD_OVERLAP_QUANTILE` and `BASELINE_KL_DIVERGENCE_QUANTILE`; rule `diagnostics.compute_baseline_diagnostic_thresholds`; pooling `figure03_summary.estimate_realization_summary` |
+| 3 | Predictive $p$-value flagged at or below a fixed 0.05 | `diagnostics.FIXED_PREDICTIVE_PVALUE_CUTOFF` |
+| 4 | Fixed cutoffs: HPD overlap ≤ 0.05 and predictive $p$-value ≤ 0.05; KL divergence is not thresholded | `figure04_generation.FIGURE4_DIAGNOSTIC_THRESHOLDS` |
+
+Every comparison is inclusive; `diagnostics.METRIC_FLAG_DIRECTIONS` gives each
+metric's worse-fit direction and `diagnostics.flag_mask` applies it. Both
+summaries record the numeric thresholds with their comparison under
+`flag_rules`.
+
+### Decoders
+
+- **Figure 3:** the grid Bayesian filter `decoding.decode_with_diagnostics`,
+  with a Gaussian random-walk transition
+  (`simulation.gaussian_transition_matrix`, step standard deviation
+  `Figure3Config.prediction_step_std`) and Poisson place-field rates from
+  `figure03_simulation.build_figure03_rate_tables`. Decoder regime windows
+  (`decoding.DecoderOverrideWindow`) swap in the scrambled rates of the remap
+  misfit and the correct rates of the replay and sparse-population controls.
+- **Figure 4:** the `non_local_detector` models `SortedSpikesDecoder`
+  (Continuous) and `ContFragSortedSpikesClassifier` (Continuous–Fragmented),
+  built by `figure04_decoder.build_decoder_models` from `Figure4Config`: the
+  values passed to the package are in `Figure4DecoderConfig`, and the package
+  defaults the decode relies on are recorded in `Figure4PackageDefaults`.
+  `figure04_models` holds each model's ID and display labels.
+
+### Where the manuscript's numbers come from
+
+`manuscript/main.tex` quotes no analysis number literally. It inputs
+`manuscript/reported_values.tex`, which `scripts/emit_reported_values.py`
+(recipe `reported_values`) renders from the two committed summaries,
+`figure03_summary.json` and `figure04_summary.json` in
+`manuscript/figures/main/`. Each macro's comment in that file names the summary
+field it came from. See [From summary to prose](#from-summary-to-prose-the-reported-value-macros).
+
+### Shared vocabulary
+
+| Paper term | Code name | Notes |
+| --- | --- | --- |
+| Predictive distribution $P_k$, $p(x_k\mid y_{1:k-1})$ (the Introduction's “prediction distribution”) | `predictive` | Figure 3: `DecodingDiagnostics.predictive`, shape `(n_time, n_bins)`; at $t=0$ it is the initial distribution. Figure 4: `non_local_detector`'s output variable `predictive_posterior` (`figure04_place_fields.DECODER_PREDICTIVE_VAR`), marginalized over the Continuous–Fragmented dynamics mode by `get_state_marginalized_posterior(results, "predictive")` |
+| Filtered posterior $p(x_k\mid y_{1:k})$ | `posterior` | Figure 3 (`DecodingDiagnostics.posterior`); its mean gives the decoding error. Figure 4 does not request the filter output |
+| Smoothed (acausal) posterior $p(x_k\mid y_{1:K})$ | `acausal_posterior` | Figure 4 decoder output; used by the desktop viewer's overlay only |
+| Normalized single-event likelihood $Q_{k,j}$ | `event_likelihood` | one row per spike; the figures' likelihood rows show its mean over the spikes in each bin |
+| Normalized combined likelihood of all cells in a bin | `combined_likelihood` | Figure 3 (`DecodingDiagnostics.combined_likelihood`); the viewer's “population likelihood” |
+| Per-spike HPD overlap, predictive $p$-value, KL divergence | `event_hpd_overlap`, `event_predictive_pvalue`, `event_kl_divergence` | with `event_time_ind` (time bin) and `event_cell_ind` (unit); the un-prefixed `hpd_overlap`, … are dense `(n_time, n_cells)` matrices |
+| Flag | `flag_mask`, `flag_rules` | inclusive comparison against a threshold |
+| Firing rate $\lambda_c$ vs expected count $m_c=\lambda_c\Delta t$ | “rates” in code are expected counts per step | see [Rates and expected counts](#rates-and-expected-counts) |
+
 ## Architecture at a glance
 
 The code separates **general, figure-agnostic layers** from **per-figure
 families**:
 
 - **General layers**: `simulation` (random walks, place-field rates, spike
-  simulators), `decoding` (the Bayesian filter `decode_with_diagnostics` + its
-  per-window override mechanism), and `diagnostics` (containers and the paper's
-  threshold rule around the per-spike HPD-overlap / predictive-p-value /
-  KL-divergence computation, which lives in the external `statespacecheck`
-  package). Figure 3 uses all three, Figure 2 uses `simulation`, and Figure 4
-  uses `diagnostics`; Figure 1 uses none of them. `diagnostics` is a leaf of
-  the dependency graph.
+  simulators), `decoding` (the Bayesian filter `decode_with_diagnostics` and its
+  decoder regime windows), and `diagnostics` (containers, the HPD coverage,
+  and the paper's threshold rule around the per-spike HPD-overlap /
+  predictive-p-value / KL-divergence computation, which lives in the external
+  `statespacecheck` package). Figure 1 uses `diagnostics` (the HPD coverage);
+  Figure 2 uses `diagnostics` and `simulation`; Figure 3 uses all three; and
+  Figure 4 uses `diagnostics`. `diagnostics` imports no sibling module. Because
+  `style` imports it (for each metric's flag direction) and the package
+  `__init__` imports `style`, importing any module loads both.
 - **Per-figure families**: `figure01_generation`;
   `figure02_{panels,generation}`;
   `figure03_{protocol,simulation,summary,plotting,generation}`; and
   `load_local_data` with
-  `figure04_{models,decoder,place_fields,diagnostics,plot_primitives,track_plots,panels,cache,workflow,summary,layout,generation}`
-  (edges in the graph below). `figure04_models` holds each decoder's one
-  machine ID (`continuous`, `continuous_fragmented`) and its display labels;
-  the figure, summary printout, viewer, and website data take the labels
-  from it, and the decode-hashed modules do not import it. Each figure is a small set of
+  `figure04_{models,decoder,place_fields,diagnostics,plot_primitives,track_plots,panels,cache,workflow,summary,layout,generation}`.
+  `figure04_models` holds each decoder's one machine ID (`continuous`,
+  `continuous_fragmented`) and its display labels; the figure, summary
+  printout, viewer, and website data take the labels from it, and the
+  decode-hashed modules do not import it. Each figure is a small set of
   single-responsibility modules rather than one monolith, so an outside reader
   can follow the scientific workflow (configure → simulate/load → decode →
   diagnose → summarize → render).
+- **Shared support**: `plotting`, `style`, and `schematic` (figure drawing);
+  `paths` (repository and data locations, published identifiers);
+  `scientific_artifacts` (summary provenance and flag rules); `number_format`
+  and `reported_values` (summary to prose); `write_local_data` and
+  `figure04_download` (the Figure-4 input file); `site_export` (website data).
 
-### Module dependency graph (acyclic)
+### Module dependency graph
 
+Every module under `src/statespacecheck_paper/`, with the sibling modules it
+imports. Names before any `;` are imported at module level. `lazy:` names are
+imported inside a function, so they load only when that function runs;
+`type-only:` names are imported under `if TYPE_CHECKING` for annotations.
+Imports that run only when a module is executed as a script are left out.
+`tests/test_import_boundaries.py` derives this graph from the source, checks
+that it has no cycle (counting lazy imports), and checks that this listing
+matches it exactly.
+
+<!-- module-graph -->
 ```text
-diagnostics            → (external statespacecheck only; leaf)
-decoding               → diagnostics, simulation
-simulation             → (numpy/scipy only)
-scientific_artifacts   → diagnostics, paths
-number_format          → (standard library only; leaf)
-reported_values        → number_format, paths; reads summary JSONs
-emit_reported_values.py → reported_values
+__init__                   → style
+paths                      → (none)
+number_format              → (none)
+diagnostics                → (none)
+simulation                 → (none)
+decoding                   → diagnostics, simulation
+style                      → diagnostics
+plotting                   → style
+schematic                  → style
+scientific_artifacts       → diagnostics, paths
+reported_values            → number_format, paths
 
-figure03_protocol      → (leaf; no sibling paper module)
-figure03_simulation    → figure03_protocol, decoding, diagnostics, simulation
-figure03_summary       → figure03_protocol, figure03_simulation, diagnostics
-figure03_plotting      → figure03_protocol, figure03_summary, diagnostics, number_format, plotting, style
-figure03_generation    → diagnostics, figure03_protocol, figure03_simulation, figure03_summary, figure03_plotting, paths, scientific_artifacts, style
-generate_figure03.py   → figure03_generation
+figure01_generation        → diagnostics, paths, plotting, schematic, style
+figure02_panels            → diagnostics, simulation, style
+figure02_generation        → figure02_panels, paths, style
 
-figure04_models        → (leaf; model IDs and display labels)
-figure04_decoder       → diagnostics (HPD_COVERAGE); nld construction + Figure4Config
-figure04_place_fields  → (leaf; place-field / marginalized-posterior extraction)
-figure04_diagnostics   → diagnostics, figure04_place_fields
-figure04_plot_primitives → figure04_place_fields, style
-figure04_track_plots   → figure04_plot_primitives
-figure04_panels        → diagnostics, figure04_diagnostics, figure04_models, figure04_plot_primitives, figure04_track_plots, plotting, style
-figure04_cache         → figure04_decoder (Figure4Config, Figure4DiagnosticsConfig), load_local_data
-figure04_workflow      → figure04_cache, figure04_decoder, figure04_diagnostics, figure04_place_fields, diagnostics, load_local_data
-figure04_summary       → figure04_workflow, figure04_diagnostics, figure04_models, diagnostics
-figure04_layout        → figure04_workflow, diagnostics, figure04_models, figure04_panels, figure04_track_plots, plotting, style
-figure04_generation    → diagnostics, figure04_workflow, figure04_summary, figure04_layout, figure04_cache, figure04_decoder, figure04_models, paths, scientific_artifacts, style
-generate_figure04.py   → figure04_generation
+figure03_protocol          → (none)
+figure03_simulation        → decoding, diagnostics, figure03_protocol, simulation
+figure03_summary           → diagnostics, figure03_protocol, figure03_simulation
+figure03_plotting          → diagnostics, figure03_protocol, figure03_summary, number_format, plotting, style
+figure03_generation        → diagnostics, figure03_plotting, figure03_protocol, figure03_simulation, figure03_summary, paths, scientific_artifacts, style
+
+load_local_data            → paths
+write_local_data           → load_local_data
+figure04_download          → load_local_data, paths
+figure04_models            → (none)
+figure04_decoder           → diagnostics
+figure04_place_fields      → (none)
+figure04_diagnostics       → diagnostics, figure04_place_fields
+figure04_plot_primitives   → figure04_place_fields, style
+figure04_track_plots       → figure04_plot_primitives
+figure04_panels            → diagnostics, figure04_diagnostics, figure04_models, figure04_place_fields, figure04_plot_primitives, figure04_track_plots, plotting, style
+figure04_cache             → figure04_decoder, load_local_data
+figure04_workflow          → diagnostics, figure04_cache, figure04_decoder, figure04_diagnostics, figure04_place_fields, load_local_data
+figure04_summary           → diagnostics, figure04_diagnostics, figure04_models, figure04_workflow
+figure04_layout            → diagnostics, figure04_models, figure04_panels, figure04_track_plots, figure04_workflow, plotting, style
+figure04_generation        → diagnostics, figure04_cache, figure04_decoder, figure04_layout, figure04_models, figure04_summary, figure04_workflow, paths, scientific_artifacts, style
+
+site_export                → decoding, diagnostics, figure03_generation, figure03_protocol, figure03_simulation, figure04_cache, figure04_decoder, figure04_diagnostics, figure04_generation, figure04_layout, figure04_models, figure04_place_fields, figure04_workflow, number_format, paths, reported_values, simulation, style
+
+interactive                → (none)
+interactive.__main__       → interactive.app
+interactive.app            → interactive.cache, interactive.data_source; lazy: interactive.viewer
+interactive.cache          → diagnostics, figure04_models, figure04_place_fields, paths; lazy: figure03_protocol, figure03_simulation, figure04_cache, figure04_decoder, figure04_workflow
+interactive.data_source    → figure04_models, figure04_place_fields, interactive.cache
+interactive.panels         → plotting, style
+interactive.viewer         → figure04_generation, figure04_models, interactive.cache, interactive.data_source, interactive.panels, style
+
+lab                        → (none)
+lab.spyglass_data          → figure04_models, load_local_data, write_local_data; lazy: figure04_decoder, figure04_diagnostics, figure04_generation, figure04_place_fields, figure04_summary; type-only: diagnostics
+lab.spyglass_pipeline      → diagnostics, figure04_decoder, figure04_generation, figure04_models, figure04_place_fields, lab.spyglass_data
 ```
+<!-- module-graph -->
 
 ### Not part of figure generation
 
 - **`interactive/`** — an optional pyqtgraph viewer that consumes the same
   diagnostic results but produces no manuscript figure.
-- **`lab/spyglass_data.py`** (with `scripts/fetch_figure04_inputs.py`,
-  `scripts/spyglass_export_figure04.py`, and `scripts/convert_figure04_pickles.py`)
-  — rebuilds and exports the Figure-4 input file from Spyglass, writing it with
-  `write_local_data`. Both run upstream of `load_local_data`, and nothing in
-  figure generation imports them. See
-  [data-lineage.md](data-lineage.md).
-- **`lab/spyglass_pipeline.py`** (with `scripts/spyglass_pipeline_figure04.py`) — the
-  Figure-4 decode and diagnostics as a Spyglass pipeline, meant to reproduce this
-  figure's numbers inside the lab database. See
-  [spyglass-pipeline.md](spyglass-pipeline.md).
-
-Start from the four `scripts/generate_figureNN.py` entry points.
+- **`lab/`** — the lab's acquisition and export code; no figure or analysis
+  module imports it (`tests/test_import_boundaries.py`).
+  - **`lab/spyglass_data.py`** (with `scripts/fetch_figure04_inputs.py` and
+    `scripts/spyglass_export_figure04.py`) rebuilds and exports the Figure-4
+    input file from Spyglass, writing it with `write_local_data`. See
+    [data-lineage.md](data-lineage.md).
+  - **`lab/spyglass_pipeline.py`** (with `scripts/spyglass_pipeline_figure04.py`)
+    runs the Figure-4 decode and diagnostics as a Spyglass pipeline, meant to
+    reproduce this figure's numbers inside the lab database. See
+    [spyglass-pipeline.md](spyglass-pipeline.md).
+- **`scripts/convert_figure04_pickles.py`** converts the five pickles the
+  recording was first exported as into the input file.
 
 ---
 
@@ -99,8 +229,9 @@ Start from the four `scripts/generate_figureNN.py` entry points.
 - **Entry point:** `scripts/generate_figure01.py::main`, which calls
   `figure01_generation.generate_figure01`; the separately testable
   `compose_figure01` returns the in-memory figure.
-- **Configuration:** named constants / function arguments inside the generation recipe and
-  `schematic.py`; no config dataclass.
+- **Configuration:** named constants / function arguments inside the generation
+  recipe and `schematic.py`; the HPD coverage is `diagnostics.HPD_COVERAGE`. No
+  config dataclass.
 - **Computation:** `schematic.py` (graphical model + equation boxes) and
   `figure01_generation.create_distribution_comparison_panel` (HPD regions from
   `statespacecheck.highest_density_region`).
@@ -143,7 +274,7 @@ Trace: `create_shared_example(rng)` returns one immutable
   the scientific orchestrator
   `figure03_generation.generate_figure03(config, *, n_realizations)`.
 - **Configuration:** `Figure3Config` (frozen; in `figure03_protocol.py`).
-  the generation recipe uses the default `Figure3Config()` (whose canonical
+  The generation recipe uses the default `Figure3Config()` (whose canonical
   `drift_momentum` is `0.88`) and `figure03_summary.N_REALIZATIONS = 100`; both values are
   load-bearing for the published PNG.
 - **Computation (reading order):**
@@ -166,21 +297,30 @@ Trace: `create_shared_example(rng)` returns one immutable
 
 ### Figure-3 conditions (executable source of truth: `build_summary_conditions`)
 
-In heatmap order, each condition labeled by which part of the model it perturbs:
+In heatmap order, each condition labeled by which part of the model it perturbs
+(the summary's `condition_order` ID is in parentheses):
 
-1. **Well-specified** — pooled clean-recovery windows (out-of-sample
-   false-positive reference); *control*.
-2. **Remap** — scrambled place-field identities; *observation-model* misfit.
-3. **History-dependent firing** — refractory + bursting spikes; *observation
-   model* (temporal), largely missed by the per-spike spatial diagnostics.
-4. **Replay** — an out-and-back represented sweep while the animal is immobile;
-   *control* (benign decoded-vs-true divergence).
-5. **Drift** — AR(1) persistent-velocity trajectory; *transition-model* misfit.
-6. **Sparse population** — a quiet ordinary ensemble with a few narrow cells
-   firing sparsely; *control* (KL responds; HPD/rank-p stay near baseline).
+1. **Well-specified** (`well_specified`) — pooled clean-recovery windows
+   (out-of-sample false-positive reference); *control*.
+2. **Remap** (`remap`) — scrambled place-field identities; *observation-model*
+   misfit.
+3. **History-dependent firing** (`history_dependent`) — refractory + bursting
+   spikes; *observation model* (temporal), largely missed by the per-spike
+   spatial diagnostics.
+4. **Replay** (`replay`) — an out-and-back represented sweep while the animal
+   is immobile; *control* (benign decoded-vs-true divergence).
+5. **Drift** (`drift`) — AR(1) persistent-velocity trajectory;
+   *transition-model* misfit.
+6. **Sparse population** (`sparse_population`) — a quiet ordinary ensemble with
+   a few narrow cells firing sparsely; *control* (KL responds; HPD/rank-p stay
+   near baseline).
 
-The numeric phase boundaries live in `Figure3Config.phase_boundaries` — see that
-dataclass for values rather than duplicating them here.
+The simulation's eight phases are the opening baseline, remap, clean recovery 1,
+history-dependent firing, clean recovery 2 (containing the replay sweep), drift,
+clean recovery 3, and the sparse population. `figure03_protocol.PhaseBoundary`
+names their end steps, and the numeric boundaries live in
+`Figure3Config.phase_boundaries` — see that dataclass for values rather than
+duplicating them here.
 
 ### Figure-3 traceability walkthrough (following the typed returns)
 
@@ -208,9 +348,14 @@ and their configuration to `figure03_summary.json`.
 | `place_field_std` | $\sigma_\mathrm{pf}$ | Gaussian place-field standard deviation |
 | `place_field_rate_scale` | $\alpha$ | expected-count scale multiplying the normalized Gaussian field |
 | `prediction_step_std` | $\sigma_\mathrm{pred}$ | decoder baseline dynamics standard deviation |
+| `predictive` | $P_k$, the predictive distribution | shape `(n_time, n_bins)` |
+| `posterior` | filtered posterior | shape `(n_time, n_bins)`; the decoding-error row uses its mean |
+| `event_likelihood` | $Q_{k,j}$ | shape `(n_spikes, n_bins)`; the likelihood row shows its mean per bin |
 | `event_hpd_overlap` | HPD overlap | per-spike prediction/likelihood HPD overlap |
 | `event_predictive_pvalue` | rank-based predictive $p$-value | per-spike rank statistic |
 | `event_kl_divergence` | KL divergence | per-spike prediction→likelihood KL |
+| `DecoderOverrideWindow` | the remap, replay, and sparse-population windows | decoder regime windows that swap the decoder's rate table |
+| `well_specified`, `remap`, `history_dependent`, `replay`, `drift`, `sparse_population` | the heatmap's condition columns | `condition_order` in the summary |
 
 ### Rates and expected counts
 
@@ -234,66 +379,63 @@ $\Lambda(x)$.
 
 ## Figure 4 — Real-data decoder diagnostics
 
-- **Reproduction:** `uv run python scripts/generate_figure04.py`. Add
-  `--force-recompute` to re-fit and re-decode both models and recompute their
-  diagnostics instead of loading the caches (this overwrites both caches; a
-  config / data / fitting implementation / `non_local_detector` change
-  invalidates the decode cache automatically). The cache
-  fingerprint (`figure04_cache.compute_figure04_cache_provenance`) hashes the
-  schema version, the decoder and package-defaults parts of `Figure4Config`, the
-  data identifier, the installed `non_local_detector`
-  version, and the **content hash of the input file** — so replacing it under the
-  same `animal_date_epoch` invalidates the cache too. It also hashes the
-  docstring-stripped syntax trees of `figure04_decoder.py`,
-  `figure04_place_fields.py`, `figure04_workflow.py`, and `load_local_data.py`.
-  This includes helper functions, imports, defaults, and recording preparation.
-  Older caches without this source digest miss once and are rebuilt.
-  The per-spike diagnostics are cached separately, keyed by the decode
-  fingerprint plus a diagnostics fingerprint
-  (`figure04_cache.compute_figure04_diagnostics_fingerprint`): the diagnostics
-  schema version, the `Figure4DiagnosticsConfig`, the installed
-  `statespacecheck` version, and a
-  digest of the docstring-stripped syntax trees of `diagnostics.py`,
-  `figure04_diagnostics.py`, and `figure04_place_fields.py`. A diagnostics
-  change confined to `diagnostics.py` or `figure04_diagnostics.py` therefore
-  recomputes only the diagnostics from cached predictions (about a minute).
-  Edits to shared workflow/place-field modules conservatively invalidate both
-  caches. Docstring and comment edits invalidate neither cache, and the summary
-  scalars and their printed text (`figure04_summary.py`) are outside both.
 - **Manuscript:** the real hippocampal-recording panels comparing the Continuous
-  and Continuous-Fragmented decoders (and the whole-session hexbin summary).
+  and Continuous–Fragmented decoders: (a, b) a two-second window with a
+  candidate replay event under each decoder, and (c) whole-session hexbin
+  comparisons of each diagnostic between the two decoders, with the counts of
+  *rescued* and *newly flagged* spikes quoted in the Results.
+- **Reproduction:** `uv run python scripts/generate_figure04.py` after
+  downloading the input file (`make download-data`). The fit and decode are
+  cached; see [Figure-4 cache behavior](#figure-4-cache-behavior).
 - **Entry point:** `scripts/generate_figure04.py::main` (the CLI), which calls
   `figure04_generation.generate_figure04(*, use_cache)`.
-- **Configuration:** `Figure4Config` (in `figure04_decoder.py`) plus the fixed
-  `FIGURE4_DIAGNOSTIC_THRESHOLDS = {"hpd_overlap": 0.05, "predictive_pvalue": 0.05}`
-  and `FIGURE4_DETAIL_WINDOW = Figure4DetailWindow(center_index=193069,
-  half_width_samples=500)` in `figure04_generation.py`. The explicit detail
-  window centers the manuscript panels on a KL-divergence spike during
-  immobility at a reward well and spans about two seconds total. `Figure4Config`
-  has four scoped parts:
-  `decoder`, a `Figure4DecoderConfig` — `position_std`, `position_bin_size_cm`,
-  `sampling_frequency_hz`, threaded into environment/model construction so they
-  genuinely drive the decode; `package_defaults`, a `Figure4PackageDefaults` holding the
-  `non_local_detector`-default decode-shaping values (`movement_var`, the Continuous-Fragmented
-  mode-transition diagonal and initial conditions, and the dependency
-  version), recorded and drift-guard pinned but not injected (faithfully injecting
-  them would rebuild the nested transition grid; the discrete-transition
-  concentration and regularization are not recorded, since `non_local_detector`
-  reads them only in `estimate_parameters`, which Figure 4 never calls);
-  `execution`, a `Figure4ExecutionConfig` holding `block_size`, a
-  performance/memory knob that does **not** change the decode result (the KDE
-  density is identical for any `block_size`) and is therefore excluded from both
-  fingerprints; and `diagnostics`, a `Figure4DiagnosticsConfig` holding the
-  per-spike diagnostic settings (`hpd_coverage`, `event_selection`), hashed into
-  the diagnostics fingerprint only. See the `Figure4Config` docstring.
+- **Decoders and configuration:** `Figure4Config` (in `figure04_decoder.py`).
+  Both decoders share one sorted-spikes kernel-density observation model. The
+  Continuous model has a single random-walk dynamics mode; the
+  Continuous–Fragmented model adds a fragmented mode, keeps the random walk for
+  Continuous-to-Continuous transitions, and makes the other three mode
+  transitions uniform over track-interior position bins. `Figure4Config` has
+  four parts:
+  - `decoder`, a `Figure4DecoderConfig`: the values passed to
+    `non_local_detector` — `position_std` (KDE bandwidth,
+    $\sqrt{12.5}\approx3.54$ cm), `position_bin_size_cm` (2 cm), and
+    `sampling_frequency_hz` (500 Hz, i.e. 2 ms bins);
+  - `package_defaults`, a `Figure4PackageDefaults`: the `non_local_detector`
+    defaults the decode relies on without passing them — `movement_var`
+    (6 cm²), the Continuous–Fragmented mode-transition diagonal and mode initial
+    conditions, and the package version. They are recorded and checked against
+    the built models at decode time (`validate_package_defaults`) and in the
+    tests, but not injected: injecting them would mean rebuilding the nested
+    transition grid. The discrete-transition concentration and regularization
+    are not recorded, since `non_local_detector` reads them only in
+    `estimate_parameters`, which Figure 4 never calls;
+  - `diagnostics`, a `Figure4DiagnosticsConfig`: the HPD coverage and the
+    event-selection rule (every spike of every unit inside the decoded time
+    grid);
+  - `execution`, a `Figure4ExecutionConfig`: `block_size`, a memory knob that
+    does not change the decode (the KDE density is identical for any
+    `block_size`).
+- **Diagnostics:** the Continuous–Fragmented predictive distribution is
+  marginalized over the dynamics mode, so both decoders are diagnosed on the
+  same position grid against the same place fields
+  (`figure04_diagnostics.compute_results_diagnostics`). Flags use the fixed
+  cutoffs `FIGURE4_DIAGNOSTIC_THRESHOLDS = {"hpd_overlap": 0.05,
+  "predictive_pvalue": 0.05}` in `figure04_generation.py`; KL divergence is not
+  thresholded. `figure04_diagnostics.FlagConfusion` counts, for each metric,
+  the spikes flagged by both decoders, by the Continuous model only (`rescued`),
+  by the Continuous–Fragmented model only (`newly_flagged`), and by neither.
+- **Detail window:** `FIGURE4_DETAIL_WINDOW = Figure4DetailWindow(center_index=193069,
+  half_width_samples=500)` in `figure04_generation.py` centers panels (a, b) on
+  a KL-divergence spike during immobility at a reward well and spans about two
+  seconds total.
 - **Computation (reading order):**
   `figure04_generation` (recipe) → `figure04_workflow.prepare_figure04_render_data`
-  (loads the recording; loads a fingerprint-matching decode cache or fits/decodes
-  via `figure04_decoder`/`figure04_place_fields`; loads a fingerprint-matching
-  diagnostics cache or computes the diagnostics with `figure04_diagnostics`) →
-  `figure04_summary.compute_figure04_summary` (typed manuscript scalars) →
-  `figure04_layout.compose_figure04`
-  (artist arrangement) → `save_figure`.
+  (loads the recording; loads the cached decode or fits and decodes both models
+  via `figure04_decoder`/`figure04_place_fields`; loads the cached diagnostics or
+  computes them with `figure04_diagnostics`) →
+  `figure04_summary.compute_figure04_summary` (whole-session means and flag
+  confusions) → `figure04_layout.compose_figure04` (artist arrangement) →
+  `save_figure`.
 - **Intermediate data — the honest boundary.** Figure 4 is reproduced **from
   pre-exported derived inputs onward**, not from raw acquisition. The loader
   `load_local_data.load_neural_recording_from_files` reads one file from the
@@ -310,9 +452,9 @@ $\Lambda(x)$.
 
   The file holds only numeric and string arrays, is read with
   `allow_pickle=False`, and is written deterministically (same content, same
-  SHA-256); `write_local_data.recording_arrays` defines the layout. It replaces the
-  five pickles the recording was first exported as;
-  `scripts/convert_figure04_pickles.py` converts those and checks the result.
+  SHA-256); `write_local_data.recording_arrays` defines the layout.
+  `scripts/convert_figure04_pickles.py` converts the five pickles the recording
+  was first exported as and checks the result.
 
   The input comes from the Frank-lab Spyglass database (the recording of
   [Comrie et al. 2026](https://doi.org/10.1016/j.neuron.2026.08.023)).
@@ -321,30 +463,25 @@ $\Lambda(x)$.
   of them are public (DANDI dandiset
   [001942](https://dandiarchive.org/dandiset/001942) has the raw recording).
   `lab/spyglass_data.py` rebuilds the input file from the database
-  (`scripts/fetch_figure04_inputs.py`, read-only) and logs them in a Spyglass
+  (`scripts/fetch_figure04_inputs.py`, read-only) and logs the fetches in a Spyglass
   export (`scripts/spyglass_export_figure04.py`); both run on a lab server with
   Spyglass and database access. The input file is archived on Zenodo
   ([10.5281/zenodo.23020757](https://doi.org/10.5281/zenodo.23020757));
   `scripts/download_figure04_inputs.py` downloads it and checks its SHA-256.
   It downloads into `data/` by default; to use another directory, set
-  `STATESPACECHECK_DATA_PATH` (or pass `--data-path`). The expensive decode is cached under `data/intermediates/` as two joblib bundles: the ~8 GB decode
-  bundle `{epoch}_fig4_cache.joblib` (memory-mapped on load) and the diagnostics
-  bundle `{epoch}_fig4_diagnostics.joblib`, each gated by the fingerprints
-  described above. Writes go to a temporary sibling and are renamed into place,
-  so a memory-mapped bundle is never overwritten in place. Execution-only
-  settings are excluded; the input file's content hash is included.
+  `STATESPACECHECK_DATA_PATH` (or pass `--data-path`).
 - **Output:** `manuscript/figures/main/figure04.{pdf,png}` plus
   `figure04_summary.json`, containing configuration and dataset identifiers,
   explicit inclusive flag rules, whole-session means, flag-confusion counts,
-  rescue rates, source/dependency-lock provenance, the decode- and diagnostics-cache fingerprints,
-  and the SHA-256 checksum of the input file.
+  source/dependency-lock provenance, the decode- and diagnostics-cache
+  fingerprints, and the SHA-256 checksum of the input file.
 - **Tests:** `tests/test_figure04_decoder.py::TestFigure4ConfigMatchesManuscript`
   (config matches the manuscript decoder parameters);
   `tests/test_figure04_{cache,workflow,layout,generation}.py` (orchestration);
-  `tests/test_figure04_{diagnostics,place_fields}.py` (the analysis leaves) and
-  `tests/test_figure04_{plot_primitives,panels}.py` (the plotting leaves;
-  `figure04_track_plots` has no test module of its own);
-  `tests/test_load_local_data.py` (the `NeuralRecordingData` contract);
+  `tests/test_figure04_{diagnostics,place_fields,models}.py` (the analysis
+  leaves and model registry);
+  `tests/test_figure04_{plot_primitives,track_plots,panels}.py` (the plotting
+  leaves); `tests/test_load_local_data.py` (the `NeuralRecordingData` contract);
   `tests/test_figure04_download.py` (the input download).
 
 ### Figure-4 traceability walkthrough (following the typed returns)
@@ -368,13 +505,67 @@ typed summary to `figure04_summary.json`.
 The optional interactive viewer derives its Zarr/Parquet/NPZ layout from this
 same `Figure4RenderData` via `interactive.cache.build_figure04_viewer_cache`.
 
+### Manuscript ↔ code vocabulary (Figure 4)
+
+| Paper term | Code name | Notes |
+| --- | --- | --- |
+| Continuous, Continuous–Fragmented | model IDs `continuous`, `continuous_fragmented` | `figure04_models.CONTINUOUS` / `CONTINUOUS_FRAGMENTED` carry the IDs, full labels, and short labels (“Cont.”, “Cont.–Frag.”) |
+| `position_std`, `movement_var` | same names | kept in the spelling of the Methods and `non_local_detector` |
+| Predictive distribution, marginalized over dynamics mode | `get_state_marginalized_posterior(results, "predictive")` | reads `predictive_posterior` |
+| Rescued, newly flagged | `FlagConfusion.rescued`, `FlagConfusion.newly_flagged` | reference decoder `continuous`, comparison `continuous_fragmented` (`flag_confusion_models` in the summary) |
+| Per-spike diagnostics | `event_hpd_overlap`, `event_predictive_pvalue`, `event_kl_divergence` | as in Figure 3 |
+
+### Figure-4 cache behavior
+
+Fitting and decoding both models takes several minutes, so
+`prepare_figure04_render_data` caches the results as two joblib bundles in
+`<data path>/intermediates/` (`data/` unless `STATESPACECHECK_DATA_PATH` is set;
+`Figure4Paths` defines the locations):
+
+- the **decode cache** `{epoch}_fig4_cache.joblib` (about 8 GB; memory-mapped
+  on load) holds both models' decoder outputs, the spike counts, and the place
+  fields;
+- the **diagnostics cache** `{epoch}_fig4_diagnostics.joblib` holds both models'
+  per-spike diagnostics.
+
+Each is used only when its fingerprint matches; otherwise it is rebuilt and
+overwritten. `--force-recompute` refits, recomputes, and overwrites both
+regardless.
+
+- The **decode fingerprint** (`figure04_cache.compute_figure04_cache_provenance`)
+  hashes the decode schema version, the `decoder` and `package_defaults` parts
+  of `Figure4Config`, the data identifier, the installed `non_local_detector`
+  version, the **content hash of the input file** (so replacing it under the
+  same `animal_date_epoch` invalidates the cache), and the docstring-stripped
+  syntax trees of `figure04_decoder.py`, `figure04_place_fields.py`,
+  `figure04_workflow.py`, and `load_local_data.py`. This covers helper
+  functions, imports, defaults, and recording preparation.
+- The **diagnostics cache** is keyed by the decode fingerprint plus a
+  **diagnostics fingerprint**
+  (`figure04_cache.compute_figure04_diagnostics_fingerprint`): the diagnostics
+  schema version, the `Figure4DiagnosticsConfig`, the installed
+  `statespacecheck` version, and the docstring-stripped syntax trees of
+  `diagnostics.py`, `figure04_diagnostics.py`, and `figure04_place_fields.py`.
+
+Any change that refits therefore also recomputes the diagnostics. A change
+confined to `diagnostics.py`, `figure04_diagnostics.py`, or the diagnostics
+configuration recomputes only the diagnostics from the cached predictions
+(about a minute). The `execution` settings are in neither fingerprint.
+Docstring and comment edits invalidate neither cache, and the summary scalars
+and their printed text (`figure04_summary.py`) are outside both. Bundles are
+written to a temporary sibling and renamed into place, so a memory-mapped
+bundle is never overwritten in place. The schema versions
+(`FIGURE04_CACHE_SCHEMA_VERSION`, `FIGURE04_DIAGNOSTICS_SCHEMA_VERSION`) are
+manual overrides: bumping one invalidates every cache of that kind.
+
 ## Machine-readable summary schema
 
 `figure03_summary.json` uses schema version 7 and `figure04_summary.json`
-uses schema version 5. Schema 7 added the trajectory's starting position,
-`configuration.initial_position`, and the step length in seconds,
-`configuration.step_seconds` (the protocol constant `STEP_SECONDS`), and the
-HPD coverage, `configuration.hpd_coverage` (`diagnostics.HPD_COVERAGE`). The Figure-3 schema includes the decoding-accuracy block:
+uses schema version 5. The Figure-3 configuration block records every
+`Figure3Config` field together with the step length in seconds
+(`configuration.step_seconds`, the protocol constant `STEP_SECONDS`) and the
+HPD coverage (`configuration.hpd_coverage`, `diagnostics.HPD_COVERAGE`). The
+Figure-3 schema includes the decoding-accuracy block:
 `accuracy_metric_order` (`median_absolute_error`), `accuracy_units`, and
 `median_decoding_accuracy`, a `(1, n_conditions)` matrix of the
 across-realization median absolute error of the filtered-posterior mean
@@ -389,22 +580,22 @@ reported precision. The spread itself is in `realization_flag_percentages`
 `(n_realizations, 1, n_conditions)`: every realization's values, in seed order
 from `realizations.first_seed`; the medians are their medians over the first
 axis. The summary also records the baseline-threshold provenance
-quoted in the Methods. The Figure-4
-schema records `dataset.n_units` alongside the recording identifier and
-names the second decoder `continuous_fragmented` throughout. Schema 5 renamed
-`configuration.provenance` to `configuration.package_defaults` and its
-`contfrag_*` keys, renamed the flag-confusion counts `a_only` and `b_only`,
-and dropped the discrete-transition concentration and regularization, which
-the decode never reads. Each `flag_confusions` entry counts
+(`threshold_provenance`) quoted in the Methods.
+
+The Figure-4 schema records `dataset.n_units` alongside the recording
+identifier, names the second decoder `continuous_fragmented` throughout, and
+keeps the recorded `non_local_detector` defaults under
+`configuration.package_defaults`. Each `flag_confusions` entry counts
 spikes flagged by `both` decoders, by the reference only (`rescued`), by the
 comparison only (`newly_flagged`), and by `neither`; `flag_confusion_models`
 names the reference (`continuous`) and comparison (`continuous_fragmented`)
-decoders. The
-`flag_rules` object binds each numeric threshold to its executable semantics:
-`less_than_or_equal` means a value is flagged when `value <= threshold`, and
-`greater_than_or_equal` means it is flagged when `value >= threshold`. Keeping
-the operator and threshold in one record prevents consumers from guessing
-whether a boundary is strict or inclusive.
+decoders.
+
+In both summaries, the `flag_rules` object binds each numeric threshold to its
+executable semantics: `less_than_or_equal` means a value is flagged when
+`value <= threshold`, and `greater_than_or_equal` means it is flagged when
+`value >= threshold`. Keeping the operator and threshold in one record prevents
+consumers from guessing whether a boundary is strict or inclusive.
 
 Both summaries contain `provenance.source`, with the installed
 `statespacecheck-paper` and `statespacecheck` versions (the diagnostics are
@@ -430,22 +621,15 @@ SHA-256 of the named input file. Canonical artifact generation fails
 if the input checksum is missing. Thus a summary can be traced to the exact
 derived inputs even when those large files are distributed separately.
 
-### Manuscript ↔ code vocabulary (Figure 4)
-
-The decoder-parameter names deliberately match the manuscript and the external
-`non_local_detector` model: `position_std` and `movement_var` (see `Figure4Config`
-and the Methods) keep their manuscript spellings rather than being renamed. The
-three diagnostic quantities are the same `event_hpd_overlap` /
-`event_predictive_pvalue` / `event_kl_divergence` as in Figure 3.
-
 ## From summary to prose: the reported-value macros
 
 The manuscript's reported configuration and headline analysis statistics are
 generated from the summaries. `main.tex` inputs
 `manuscript/reported_values.tex`, a generated file of `\newcommand` definitions
-(`\Sim...` for the Figure-3 simulation, `\Rec...` for the Figure-4 recording),
-so the chain runs **code → summary JSON → macro file → prose**.
-`scripts/emit_reported_values.py` (recipe:
+(`\Sim...` for the Figure-3 simulation, `\Rec...` for the Figure-4 recording,
+and a few shared ones such as `\HpdCoveragePercent`, the `statespacecheck`
+version, and the DOIs), so the chain runs **code → summary JSON → macro file →
+prose**. `scripts/emit_reported_values.py` (recipe:
 `statespacecheck_paper.reported_values`) takes every analysis value from the two
 committed summaries, so these values reach the paper through an artifact. The
 emitter also writes three DOI macros: the analysis code's, from the `doi` field

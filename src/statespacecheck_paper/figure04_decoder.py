@@ -249,17 +249,24 @@ class Figure4DiagnosticsConfig:
 
 @dataclasses.dataclass(frozen=True)
 class Figure4Config:
-    """Full Figure-4 configuration: injected knobs, package defaults, and diagnostics.
+    """Full Figure-4 configuration: the two decoders and their per-spike diagnostics.
 
-    Split into clearly-scoped parts so a reader can tell which parameters drive
-    the fitted decode (:attr:`decoder`), which are recorded-but-not-injected
-    package defaults (:attr:`package_defaults`), which are performance-only
-    (:attr:`execution`), and which shape only the per-spike diagnostics
-    (:attr:`diagnostics`). The decode cache fingerprint hashes :attr:`decoder`
-    and :attr:`package_defaults` -- changing either invalidates the cached decode --
-    but **not** :attr:`execution`, whose values do not change the decode result,
-    nor :attr:`diagnostics`, which is hashed into the separate diagnostics
-    fingerprint (see :mod:`statespacecheck_paper.figure04_cache`).
+    Both decoders (Continuous and Continuous-Fragmented) share one sorted-spikes
+    kernel-density observation model. The parts say where each setting comes
+    from: :attr:`decoder` holds the values this code passes to
+    ``non_local_detector`` (KDE bandwidth, position bin size, time-bin rate);
+    :attr:`package_defaults` records the ``non_local_detector`` defaults the
+    decode relies on without passing them (the random-walk variance and the
+    Continuous-Fragmented mode transitions and initial conditions);
+    :attr:`diagnostics` sets how the per-spike diagnostics are computed from the
+    predictions (HPD coverage, which spikes); and :attr:`execution` holds
+    performance settings that do not change any result.
+
+    Cache behavior: the decode cache fingerprint hashes :attr:`decoder` and
+    :attr:`package_defaults`, so changing either refits; :attr:`diagnostics` is
+    hashed into the separate diagnostics fingerprint, so changing it recomputes
+    only the diagnostics; :attr:`execution` is hashed into neither (see
+    :mod:`statespacecheck_paper.figure04_cache`).
 
     Attributes
     ----------

@@ -4,7 +4,8 @@
 goodness-of-fit diagnostics from primitives plus the external ``statespacecheck``
 package, so it must not import any sibling ``statespacecheck_paper`` module
 (``decoding``, the ``figure0*`` layers, plotting, etc.). The tests below pin the
-allowed edges of the other layers.
+allowed edges of the other layers, check that the whole module graph is
+acyclic, and check that docs/figure-pipeline.md lists that graph exactly.
 """
 
 from __future__ import annotations
@@ -295,3 +296,136 @@ def test_site_export_depends_only_on_analysis_layers() -> None:
                 assert "site_export" not in names, path
             elif isinstance(node, ast.Import):
                 assert all(not a.name.endswith("site_export") for a in node.names), path
+
+
+# ---------------------------------------------------------------------------
+# The complete module graph, and the copy of it in docs/figure-pipeline.md
+# ---------------------------------------------------------------------------
+
+_PACKAGE = "statespacecheck_paper"
+_GRAPH_DOC = Path(__file__).resolve().parents[1] / "docs" / "figure-pipeline.md"
+_MAIN_GUARDS = {"__name__ == '__main__'", '__name__ == "__main__"'}
+
+
+def _module_name(path: Path) -> str:
+    """``figure04_cache``, ``interactive.cache``, ``lab`` (a package), ``__init__``."""
+    parts = path.relative_to(_SRC).with_suffix("").parts
+    if parts[-1] == "__init__" and len(parts) > 1:
+        parts = parts[:-1]
+    return ".".join(parts)
+
+
+def _module_graph() -> dict[str, dict[str, set[str]]]:
+    """Every source module's imports of sibling modules, by kind.
+
+    ``top`` are module-level imports, ``lazy`` imports inside a function, and
+    ``type_only`` imports under ``if TYPE_CHECKING``; each name appears only in
+    the first of these that applies. Imports under ``if __name__ ==
+    "__main__"`` run only when a module is executed as a script and are left
+    out. Relative imports are resolved, and ``from package import module``
+    counts as importing the module.
+    """
+    paths = sorted(_SRC.rglob("*.py"))
+    names = {_module_name(path) for path in paths}
+
+    def resolve(node: ast.Import | ast.ImportFrom, importer: str, is_package: bool) -> set[str]:
+        if isinstance(node, ast.Import):
+            return {
+                alias.name.removeprefix(_PACKAGE + ".")
+                for alias in node.names
+                if alias.name.startswith(_PACKAGE + ".")
+            }
+        if node.level:
+            package = importer if is_package else importer.rpartition(".")[0]
+            base = ".".join(filter(None, [package, node.module]))
+        elif node.module is not None and (
+            node.module == _PACKAGE or node.module.startswith(_PACKAGE + ".")
+        ):
+            base = node.module.removeprefix(_PACKAGE).removeprefix(".")
+        else:
+            return set()
+        targets = set()
+        for alias in node.names:
+            submodule = ".".join(filter(None, [base, alias.name]))
+            if submodule in names:
+                targets.add(submodule)
+            elif base:
+                targets.add(base)
+        return targets
+
+    def visit(
+        node: ast.AST, kind: str, found: list[tuple[str, ast.Import | ast.ImportFrom]]
+    ) -> None:
+        for child in ast.iter_child_nodes(node):
+            child_kind = kind
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                child_kind = "lazy" if kind == "top" else kind
+            elif isinstance(child, ast.If):
+                test = ast.unparse(child.test)
+                if test == "TYPE_CHECKING":
+                    child_kind = "type_only"
+                elif test in _MAIN_GUARDS:
+                    continue
+            if isinstance(child, (ast.Import, ast.ImportFrom)):
+                found.append((child_kind, child))
+            visit(child, child_kind, found)
+
+    graph: dict[str, dict[str, set[str]]] = {}
+    for path in paths:
+        importer = _module_name(path)
+        is_package = path.name == "__init__.py"
+        found: list[tuple[str, ast.Import | ast.ImportFrom]] = []
+        visit(ast.parse(path.read_text(encoding="utf-8")), "top", found)
+        kinds: dict[str, set[str]] = {"top": set(), "lazy": set(), "type_only": set()}
+        for kind, node in found:
+            kinds[kind] |= resolve(node, importer, is_package)
+        kinds["lazy"] -= kinds["top"]
+        kinds["type_only"] -= kinds["top"] | kinds["lazy"]
+        graph[importer] = {kind: targets - {importer} for kind, targets in kinds.items()}
+    return graph
+
+
+def test_module_graph_is_acyclic() -> None:
+    """No chain of module-level or function-level imports returns to its start."""
+    edges = {name: kinds["top"] | kinds["lazy"] for name, kinds in _module_graph().items()}
+    visiting: set[str] = set()
+    done: set[str] = set()
+
+    def check(name: str, path: tuple[str, ...]) -> None:
+        if name in done:
+            return
+        assert name not in visiting, f"import cycle: {' -> '.join((*path, name))}"
+        visiting.add(name)
+        for target in sorted(edges.get(name, set())):
+            check(target, (*path, name))
+        visiting.discard(name)
+        done.add(name)
+
+    for name in sorted(edges):
+        check(name, ())
+
+
+def _documented_graph() -> dict[str, dict[str, set[str]]]:
+    """Parse the dependency-graph block of docs/figure-pipeline.md.
+
+    Each line reads ``module → a, b; lazy: c; type-only: d``; ``(none)`` marks
+    a module without sibling imports.
+    """
+    block = _GRAPH_DOC.read_text(encoding="utf-8").split("<!-- module-graph -->")[1]
+    graph: dict[str, dict[str, set[str]]] = {}
+    for line in block.splitlines():
+        if "→" not in line:
+            continue
+        module, _, rest = (part.strip() for part in line.partition("→"))
+        kinds: dict[str, set[str]] = {"top": set(), "lazy": set(), "type_only": set()}
+        for field in rest.split(";"):
+            label, _, listed = field.strip().rpartition(":")
+            kind = {"": "top", "lazy": "lazy", "type-only": "type_only"}[label.strip()]
+            kinds[kind] = {n.strip() for n in listed.split(",")} - {"", "(none)"}
+        graph[module] = kinds
+    return graph
+
+
+def test_documented_module_graph_matches_the_source() -> None:
+    """The graph in docs/figure-pipeline.md lists every module and exactly its imports."""
+    assert _documented_graph() == _module_graph()
