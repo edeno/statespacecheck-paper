@@ -11,7 +11,9 @@ simulation conditions, and the Figure-4 replay window under both decoders.
 
 - The players and every number in the page text come from the paper's pipeline
   via `statespacecheck_paper.site_export`, which writes `site/data/*.json`. The
-  numbers are the same reported-value macros the manuscript uses.
+  numbers are the same reported-value macros the manuscript uses, plus the few
+  that only the page states (`site_export.page_values`, such as the length of
+  the Figure-4 window).
 - The playground runs a JavaScript port of the per-spike diagnostics
   (`site/js/metrics.js`). `site/tests/metrics.test.mjs` checks it against
   reference cases computed by the Python implementation.

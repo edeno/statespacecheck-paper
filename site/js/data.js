@@ -4,7 +4,7 @@
 // Matplotlib's base-10 symlog transform with the paper's HPD-overlap settings
 // (style.SYMLOG_LINTHRESH = 0.01, SYMLOG_LINSCALE = 1): linear below 0.01,
 // logarithmic above, so values near zero stay separated from exact zeros.
-const SYMLOG_LINTHRESH = 0.01;
+export const SYMLOG_LINTHRESH = 0.01;
 const SYMLOG_LINSCALE_ADJ = 1 / (1 - 1 / 10);
 
 function symlog(value) {
@@ -133,7 +133,10 @@ export function formatMacro(value, format) {
   return format === "count" ? Number(value).toLocaleString("en-US") : value;
 }
 
-/** Fill every [data-macro] element with the manuscript's reported value. */
+/**
+ * Fill every [data-macro] element with its value: a manuscript macro or a
+ * number only the page states (manifest `macros` and `page_values`).
+ */
 export function fillMacros(root, macros) {
   for (const element of root.querySelectorAll("[data-macro]")) {
     const name = element.dataset.macro;

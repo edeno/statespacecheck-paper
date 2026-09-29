@@ -25,6 +25,7 @@ import {
   nearestIndex,
   plottedWorseFit,
   readoutCard,
+  SYMLOG_LINTHRESH,
   worseFit,
 } from "./data.js";
 import { normalized } from "./metrics.js";
@@ -68,8 +69,15 @@ const OPEN_ON_FLAGGED = new Set(["remap", "sparse_population"]);
 const INTERACTION_HELP =
   "Hover over or tap the tracks to inspect a spike, press Play, or focus the tracks (click or Tab) and use ← → to step between spikes (Home and End jump to the first and last).";
 
-const AXIS_HELP =
-  "HPD overlap is drawn on a symmetric-log axis (linear below 0.01, logarithmic above), as in the paper, so values near 0 separate from exact zeros. −log p is the negative natural log of the p-value (p = 0.05 is about 3). KL divergence is in nats (natural-log units). Dashed lines mark flag thresholds.";
+/**
+ * Axis notes. `study` is the manuscript macro prefix, "Sim" or "Rec", whose
+ * p-value cutoff and its −log are quoted.
+ */
+function axisHelp(macros, study) {
+  const cutoff = macros[`${study}PredictiveCutoff`];
+  const negLog = macros[`${study}PredictiveCutoffNegLog`];
+  return `HPD overlap is drawn on a symmetric-log axis (linear below ${SYMLOG_LINTHRESH}, logarithmic above), as in the paper, so values near 0 separate from exact zeros. −log p is the negative natural log of the p-value (p = ${cutoff} is about ${negLog}). KL divergence is in nats (natural-log units). Dashed lines mark flag thresholds.`;
+}
 
 const SCALE_HELP =
   "Darker prediction shading means higher probability, on one color scale per panel as in the paper's figures. The likelihood track is drawn only in time bins that contain spikes. Likelihood columns and the curves in the spike panel are each scaled to their own maximum.";
@@ -498,7 +506,7 @@ function renderScenario(view, payload, manifest) {
     <span><i class="swatch band" style="background:var(--text-muted)"></i>Condition window</span>`);
 
   const { body, left, detail } = playerFrame();
-  view.append(stats, statsNote, legend, body, note(INTERACTION_HELP), note(AXIS_HELP), note(SCALE_HELP));
+  view.append(stats, statsNote, legend, body, note(INTERACTION_HELP), note(axisHelp(manifest.macros, "Sim")), note(SCALE_HELP));
   const say = liveRegion(view);
 
   const detailTitle = document.createElement("h3");
@@ -698,7 +706,7 @@ export function renderReplay(root, payload, manifest) {
     note(
       `Here the dots do not show flag status: open circles are the ${reference.label} model and filled dots the ${comparison.label} model, and a spike is flagged when its marker lies beyond the dashed threshold. The ${comparison.label} prediction is summed over its Continuous and Fragmented states. Position is linearized distance along the maze (cm).`,
     ),
-    note(AXIS_HELP),
+    note(axisHelp(manifest.macros, "Rec")),
     note(SCALE_HELP),
   );
   const say = liveRegion(view);

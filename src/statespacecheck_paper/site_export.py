@@ -74,7 +74,7 @@ from statespacecheck_paper.paths import (
     FIGURE03_SUMMARY_PATH,
     FIGURE04_SUMMARY_PATH,
 )
-from statespacecheck_paper.reported_values import macro_sections
+from statespacecheck_paper.reported_values import cardinal_word, macro_sections
 from statespacecheck_paper.simulation import (
     gaussian_transition_matrix,
     place_field_rates,
@@ -906,10 +906,44 @@ def replay_payload(
 # ---------------------------------------------------------------------------
 
 
+def page_values(figure04_summary: Mapping[str, Any]) -> dict[str, str]:
+    """Numbers the page text states that the manuscript does not.
+
+    The page fills them into ``data-macro`` placeholders alongside the
+    manuscript's macros.
+
+    Parameters
+    ----------
+    figure04_summary : mapping
+        Parsed ``figure04_summary.json``: the detail window and decoder bin rate.
+
+    Returns
+    -------
+    dict
+        ``ReplayWindowSecondsWord``: the Figure-4 detail window's length in
+        seconds, spelled out ("this two-second window").
+
+    Raises
+    ------
+    ValueError
+        If the window is not a whole number of seconds.
+    """
+    half_width = figure04_summary["detail_window"]["half_width_samples"]
+    sampling_frequency_hz = figure04_summary["configuration"]["decoder"]["sampling_frequency_hz"]
+    seconds = 2 * half_width / sampling_frequency_hz
+    if not float(seconds).is_integer():
+        raise ValueError(f"The page spells the replay window in whole seconds; it is {seconds} s")
+    return {"ReplayWindowSecondsWord": cardinal_word(int(seconds))}
+
+
 def manifest_payload(
     figure03_summary: dict[str, Any], figure04_summary: dict[str, Any]
 ) -> dict[str, Any]:
-    """Page-wide data: reported-value macros, flag rules, colormaps, and conditions."""
+    """Page-wide data: reported values, flag rules, colormaps, and conditions.
+
+    ``macros`` holds the manuscript's macros and ``page_values`` the numbers
+    only the page states (:func:`page_values`).
+    """
     macros = {
         macro.name: macro.value
         for _, section in macro_sections(figure03_summary, figure04_summary)
@@ -917,6 +951,7 @@ def manifest_payload(
     }
     return {
         "macros": macros,
+        "page_values": page_values(figure04_summary),
         "flag_rules": {"simulation": figure03_summary["flag_rules"]},
         "colormaps": {
             "predictive": colormap_lut(CMAP_POSTERIOR),

@@ -10,6 +10,7 @@ summaries.
 from __future__ import annotations
 
 import base64
+import copy
 import json
 from pathlib import Path
 from typing import Any
@@ -53,6 +54,7 @@ from statespacecheck_paper.site_export import (
     gaussian_predictive,
     manifest_payload,
     metric_parity_fixture,
+    page_values,
     playground_ensembles,
     playground_payload,
     replay_payload,
@@ -480,6 +482,18 @@ def test_replay_payload_slices_both_models_to_the_detail_window() -> None:
 # ---------------------------------------------------------------------------
 # Committed site files are current
 # ---------------------------------------------------------------------------
+
+
+def test_page_values_spell_the_replay_window_length(figure04_summary: dict[str, Any]) -> None:
+    """The page's "two-second window" is the Figure-4 detail window at the decoder's bin rate."""
+    assert page_values(figure04_summary) == {"ReplayWindowSecondsWord": "two"}
+
+    summary = copy.deepcopy(figure04_summary)
+    summary["detail_window"]["half_width_samples"] = 1_500
+    assert page_values(summary) == {"ReplayWindowSecondsWord": "six"}
+    summary["detail_window"]["half_width_samples"] = 600
+    with pytest.raises(ValueError, match="whole seconds"):
+        page_values(summary)
 
 
 def test_committed_manifest_matches_the_figure_summaries(

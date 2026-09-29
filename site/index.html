@@ -233,7 +233,7 @@
                 </mfrac>
               </math>
               <p>
-                Find the 95% highest-probability-density regions of the prediction and of the
+                Find the <span data-macro="HpdCoveragePercent"></span>% highest-probability-density regions of the prediction and of the
                 spike's likelihood, then divide the size of their intersection by the size of the
                 smaller region. The value is 1 whenever one region lies inside the other and 0 when
                 they do not meet, so a broad prediction containing a narrow spike still counts as
@@ -259,7 +259,8 @@
                 probability of every cell at least as unlikely as the one that fired, <i>y</i>. A
                 small value means the model did not expect this spike. We call it the predictive
                 p-value for short; the tracks below plot −log <i>p</i> (natural log), where
-                <i>p</i> = 0.05 is about 3.
+                <i>p</i> = <span data-macro="SimPredictiveCutoff"></span> is about
+                <span data-macro="SimPredictiveCutoffNegLog"></span>.
               </p>
             </article>
             <article class="card" style="--metric-color: var(--kl)">
@@ -285,7 +286,7 @@
             <span data-macro="SimKlPercentile"></span> percentile, in a well-specified baseline
             period; the p-value uses a fixed cutoff of
             <span data-macro="SimPredictiveCutoff"></span>. That HPD-overlap percentile is exactly
-            0, so in the simulation and the playground HPD overlap flags only spikes whose 95%
+            0, so in the simulation and the playground HPD overlap flags only spikes whose <span data-macro="HpdCoveragePercent"></span>%
             region does not meet the prediction's at all.
           </p>
         </div>
@@ -347,8 +348,8 @@
             <div class="legend">
               <span><i class="swatch" style="background: var(--predictive)"></i>Prediction P(x)</span>
               <span><i class="swatch" style="background: var(--likelihood)"></i>Spike likelihood Q(x)</span>
-              <span><i class="swatch band" style="background: var(--predictive)"></i>95% HPD region of P</span>
-              <span><i class="swatch band" style="background: var(--likelihood)"></i>95% HPD region of Q</span>
+              <span><i class="swatch band" style="background: var(--predictive)"></i><span data-macro="HpdCoveragePercent"></span>% HPD region of P</span>
+              <span><i class="swatch band" style="background: var(--likelihood)"></i><span data-macro="HpdCoveragePercent"></span>% HPD region of Q</span>
             </div>
             <div id="pg-chart"></div>
             <div class="readouts" id="pg-readouts"></div>
@@ -413,7 +414,7 @@
             models are compared on the same position grid.
           </p>
           <p>
-            This two-second window contains a candidate replay event while the animal is still. The
+            This <span data-macro="ReplayWindowSecondsWord"></span>-second window contains a candidate replay event while the animal is still. The
             Continuous model's prediction cannot keep up with the rapidly moving representation, so
             many spikes are flagged. When the Continuous–Fragmented model switches to its fragmented
             state, its prediction becomes broad, the next spikes can move the estimate, and most of
@@ -428,7 +429,7 @@
           </div>
           <p class="note">
             A <strong>rescued</strong> spike is flagged under the Continuous model but not under the
-            Continuous–Fragmented model: its likelihood's 95% region now overlaps the
+            Continuous–Fragmented model: its likelihood's <span data-macro="HpdCoveragePercent"></span>% region now overlaps the
             Continuous–Fragmented prediction's, which can be broad enough to allow a jump there. It
             does not mean that the prediction was centered on the spike.
           </p>

@@ -8,7 +8,8 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { formatMacro } from "../js/data.js";
 
 const [htmlPath, manifestPath] = process.argv.slice(2);
-const { macros } = JSON.parse(readFileSync(manifestPath, "utf8"));
+const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+const macros = { ...manifest.macros, ...manifest.page_values };
 const html = readFileSync(htmlPath, "utf8");
 
 const unknown = new Set();

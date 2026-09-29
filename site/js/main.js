@@ -73,7 +73,7 @@ async function main() {
     showError(recording.querySelector("#rp-view"), "recording", error);
     return;
   }
-  fillMacros(document, manifest.macros);
+  fillMacros(document, { ...manifest.macros, ...manifest.page_values });
 
   whenNear(simulation, () => initScenarios(simulation, manifest));
 
