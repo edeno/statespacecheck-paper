@@ -400,6 +400,31 @@ export function paintDots(context, times, values, xOf, yOf, color, style) {
 // Distinguishes the radio groups of several cell strips on one page.
 let cellPickerCount = 0;
 
+// Line spacing (px) of a wrapped SVG caption set in the charts' 12-px text.
+const CAPTION_LINE_HEIGHT = 15;
+
+/**
+ * Set `text` in the SVG text `element` as lines no wider than `width` px,
+ * breaking between words; returns the number of lines. SVG text does not wrap.
+ */
+function wrapText(element, text, width, lineHeight) {
+  const x = element.getAttribute("x");
+  let line = null;
+  let lines = 0;
+  for (const word of text.split(" ")) {
+    if (line) {
+      const before = line.textContent;
+      line.textContent = `${before} ${word}`;
+      if (line.getComputedTextLength() <= width) continue;
+      line.textContent = before;
+    }
+    line = svg("tspan", { x, dy: lines === 0 ? 0 : lineHeight }, element);
+    line.textContent = word;
+    lines += 1;
+  }
+  return lines;
+}
+
 /**
  * Distributions over position (e.g., a prediction and a spike likelihood),
  * each scaled to its own maximum unless a shared `scaleMax` is given, with
@@ -438,6 +463,8 @@ export class DistributionChart {
     // Below the plot: two HPD bands, the axis, tick labels, and the axis title.
     this.axisBlock = axis ? 60 : 4;
     this.stripHeight = 34;
+    // Height of the strip caption's lines past the first, when it wraps.
+    this.captionExtra = 0;
     this.xMin = positionBins[0];
     this.xMax = positionBins[positionBins.length - 1];
     const spacing = median(positionBins.slice(1).map((b, i) => b - positionBins[i]));
@@ -473,16 +500,20 @@ export class DistributionChart {
     const width = Math.max(260, Math.round(this.container.clientWidth || 640));
     if (width === this.width) return;
     this.width = width;
+    this.setHeight();
+    this.drawAxis();
+    this.cellKey = null;
+    if (this.last) this.update(this.last);
+  }
+
+  setHeight() {
     const height =
       this.margin.top +
       this.plotHeight +
       this.axisBlock +
-      (this.cellStrip ? this.stripHeight + 30 : 0);
-    this.root.setAttribute("viewBox", `0 0 ${width} ${height}`);
+      (this.cellStrip ? this.stripHeight + 30 + this.captionExtra : 0);
+    this.root.setAttribute("viewBox", `0 0 ${this.width} ${height}`);
     this.root.setAttribute("height", height);
-    this.drawAxis();
-    this.cellKey = null;
-    if (this.last) this.update(this.last);
   }
 
   x(value) {
@@ -711,9 +742,20 @@ export class DistributionChart {
   /** The strip of place fields, `order` sorted by field center, with pointer hit areas. */
   buildCells(rates, order, centers) {
     this.layers.cells.replaceChildren();
-    const top = this.margin.top + this.plotHeight + this.axisBlock + 22;
-    const caption = svg("text", { x: this.margin.left, y: top - 8 }, this.layers.cells);
-    caption.textContent = `${this.cellStrip.label}: click a field, or use the arrow keys`;
+    const captionTop = this.margin.top + this.plotHeight + this.axisBlock + 14;
+    const caption = svg("text", { x: this.margin.left, y: captionTop }, this.layers.cells);
+    const lines = wrapText(
+      caption,
+      `${this.cellStrip.label}: click a field, or use the arrow keys`,
+      this.width - this.margin.left - this.margin.right,
+      CAPTION_LINE_HEIGHT,
+    );
+    const captionExtra = (lines - 1) * CAPTION_LINE_HEIGHT;
+    if (captionExtra !== this.captionExtra) {
+      this.captionExtra = captionExtra;
+      this.setHeight();
+    }
+    const top = captionTop + 8 + captionExtra;
     // Curves first, then the hit areas on top of them.
     const curves = svg("g", { "pointer-events": "none" }, this.layers.cells);
     const hits = svg("g", {}, this.layers.cells);

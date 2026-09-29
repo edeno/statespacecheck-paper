@@ -302,3 +302,18 @@ describe("axe-core WCAG 2.2 A/AA rules", () => {
       }
     }));
 });
+
+describe("text layout", () => {
+  test("at 320 CSS pixels wide, chart text stays within its chart", () =>
+    withPage({ width: 320, height: 640 }, async (page) => {
+      const overflows = await page.$$eval("svg.dist-chart", (svgs) =>
+        svgs.flatMap((svg) => {
+          const right = svg.getBoundingClientRect().right;
+          return [...svg.querySelectorAll("text")]
+            .filter((text) => text.getBoundingClientRect().right > right + 0.5)
+            .map((text) => text.textContent);
+        }),
+      );
+      assert.deepEqual(overflows, []);
+    }));
+});
