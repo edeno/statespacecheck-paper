@@ -43,7 +43,7 @@ from statespacecheck_paper.figure03_summary import (
     build_summary_conditions,
     estimate_realization_summary,
 )
-from statespacecheck_paper.paths import FIGURE03_SUMMARY_PATH
+from statespacecheck_paper.paths import FIGURE03_SUMMARY_PATH, FIGURE_DIR
 from statespacecheck_paper.scientific_artifacts import (
     inclusive_flag_rules,
     scientific_source_provenance,
@@ -173,8 +173,8 @@ def generate_figure03(
         median_decoding_accuracy=realization_summary.median_decoding_accuracy,
     )
 
-    save_figure("manuscript/figures/main/figure03", close=True, fig=fig)
+    save_figure(FIGURE_DIR / "figure03", close=True, fig=fig)
     print(
-        f"\nFigure 3 saved to manuscript/figures/main/figure03.{{pdf,png}} "
+        f"\nFigure 3 saved to {FIGURE_DIR / 'figure03'}.{{pdf,png}} "
         f"(panel b pooled over {n_realizations} realizations)"
     )

@@ -17,10 +17,12 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
-# Canonical figure summaries, relative to the working directory: the figure
-# recipes write them and the macro emitter and website export read them.
-FIGURE03_SUMMARY_PATH = Path("manuscript/figures/main/figure03_summary.json")
-FIGURE04_SUMMARY_PATH = Path("manuscript/figures/main/figure04_summary.json")
+# Main-figure directory, relative to the working directory: the figure recipes
+# save the figures and their summaries here, and the macro emitter and website
+# export read the summaries.
+FIGURE_DIR = Path("manuscript/figures/main")
+FIGURE03_SUMMARY_PATH = FIGURE_DIR / "figure03_summary.json"
+FIGURE04_SUMMARY_PATH = FIGURE_DIR / "figure04_summary.json"
 
 # The published Figure-4 input: the one epoch whose input file is archived on
 # Zenodo, as version 1.0 of the record this DOI names (the manuscript's data

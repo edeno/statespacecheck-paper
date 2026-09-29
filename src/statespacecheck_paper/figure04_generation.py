@@ -28,7 +28,12 @@ from statespacecheck_paper.figure04_summary import (
     format_figure04_summary,
 )
 from statespacecheck_paper.figure04_workflow import prepare_figure04_render_data
-from statespacecheck_paper.paths import ANIMAL_DATE_EPOCH, DATA_PATH, FIGURE04_SUMMARY_PATH
+from statespacecheck_paper.paths import (
+    ANIMAL_DATE_EPOCH,
+    DATA_PATH,
+    FIGURE04_SUMMARY_PATH,
+    FIGURE_DIR,
+)
 from statespacecheck_paper.scientific_artifacts import (
     inclusive_flag_rules,
     scientific_source_provenance,
@@ -175,10 +180,10 @@ def generate_figure04(*, use_cache: bool = True) -> None:
         detail_window=FIGURE4_DETAIL_WINDOW,
     )
     save_figure(
-        "manuscript/figures/main/figure04",
+        FIGURE_DIR / "figure04",
         close=True,
         fig=composition.figure,
         bbox_inches=composition.bbox_inches,
     )
-    print("Saved manuscript/figures/main/figure04.{pdf,png}")
+    print(f"Saved {FIGURE_DIR / 'figure04'}.{{pdf,png}}")
     print("\nFigure 4 complete!")
