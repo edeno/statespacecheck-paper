@@ -332,7 +332,7 @@ def _select_decoder_components_for_step(
 
     Pure per-step *selector*: returns the baseline transition matrix and rate
     table unless the active misfit ``window`` overrides either. It performs
-    neither the predictive matmul nor the predictive-posterior store — those
+    neither the predictive matmul nor the predictive store — those
     are the recursion itself and stay in ``decode_with_diagnostics``.
     """
     transition_t = base_transition
@@ -346,7 +346,7 @@ def _select_decoder_components_for_step(
 
 def _apply_window_rate_overrides(
     diagnostics: SpikeEventDiagnostics,
-    predictive_posterior: NDArray[np.floating],
+    predictive: NDArray[np.floating],
     windows: tuple[DecoderOverrideWindow, ...],
     spike_time_ind: NDArray[np.intp],
     spike_cell_ind: NDArray[np.intp],
@@ -384,7 +384,7 @@ def _apply_window_rate_overrides(
         window_times = spike_time_ind[in_window]
         window_cells = spike_cell_ind[in_window]
         window_events = ssc.event_diagnostics(
-            predictive_posterior,
+            predictive,
             window.firing_rate_table,
             window_times,
             window_cells,
@@ -420,21 +420,22 @@ class FilterStep(NamedTuple):
 
     Attributes
     ----------
-    prior : np.ndarray, shape (n_bins,)
-        Predictive distribution ``p(x_t | y_{1:t-1})``.
+    predictive : np.ndarray, shape (n_bins,)
+        Predictive distribution ``p(x_t | y_{1:t-1})`` (the initial state
+        distribution at ``t=0``).
     posterior : np.ndarray, shape (n_bins,)
         Filtered posterior ``p(x_t | y_{1:t})``.
     combined_likelihood : np.ndarray, shape (n_bins,)
         Normalized combined likelihood over all cells (display normalization).
     """
 
-    prior: NDArray[np.floating]
+    predictive: NDArray[np.floating]
     posterior: NDArray[np.floating]
     combined_likelihood: NDArray[np.floating]
 
 
 def update_step(
-    prior: NDArray[np.floating],
+    predictive: NDArray[np.floating],
     spike_counts_t: NDArray[np.int_],
     rates_t: NDArray[np.floating],
 ) -> FilterStep:
@@ -450,7 +451,7 @@ def update_step(
 
     Parameters
     ----------
-    prior : np.ndarray, shape (n_bins,)
+    predictive : np.ndarray, shape (n_bins,)
         Distribution of the state before seeing this bin's spikes.
     spike_counts_t : np.ndarray, shape (n_cells,)
         Spike counts observed at this timestep: non-negative integers (not
@@ -461,14 +462,14 @@ def update_step(
     Returns
     -------
     step : FilterStep
-        ``prior`` echoed back, the updated posterior, and the displayed
+        ``predictive`` echoed back, the updated posterior, and the displayed
         combined likelihood (all shape ``(n_bins,)``).
 
     Raises
     ------
     ValueError
         Propagated from :func:`_condition_on` when the observation has zero
-        probability at every state with nonzero prior mass.
+        probability at every state with nonzero predictive mass.
     """
     # Per-cell log-likelihoods. Log-space avoids underflow when
     # ``n_cells * log(peak)`` crosses the float64 floor (~700) — likely on
@@ -489,10 +490,10 @@ def update_step(
     # non_local_detector). An impossible observation raises at this exact
     # timestep rather than resetting the posterior and changing every downstream
     # scientific quantity.
-    posterior, _log_norm = _condition_on(prior, log_lik_combined)
+    posterior, _log_norm = _condition_on(predictive, log_lik_combined)
 
     return FilterStep(
-        prior=prior,
+        predictive=predictive,
         posterior=posterior,
         combined_likelihood=combined_likelihood,
     )
@@ -509,7 +510,7 @@ def filter_step(
     This is the scientifically load-bearing recursion of
     :func:`decode_with_diagnostics`, extracted so a single predict/update step
     can be exercised in isolation. It is pure: given the previous posterior and
-    this step's decoder components, it returns the predictive prior, the updated
+    this step's decoder components, it returns the predictive distribution, the updated
     posterior, and the displayed combined likelihood without touching any
     preallocated output buffers.
 
@@ -528,21 +529,22 @@ def filter_step(
     Returns
     -------
     step : FilterStep
-        The prior, posterior, and combined likelihood (all shape ``(n_bins,)``).
+        The predictive distribution, posterior, and combined likelihood (all
+        shape ``(n_bins,)``).
 
     Raises
     ------
     ValueError
         Propagated from :func:`_condition_on` when the observation has zero
-        probability at every state with nonzero prior mass.
+        probability at every state with nonzero predictive mass.
     """
     # ``current_transition`` is column-stochastic: column j is the distribution
     # over next states given current state j (see ``gaussian_transition_matrix``).
     # The predictive marginal is therefore ``T @ post``, not ``post @ T`` — the
     # two differ near the track boundaries where column normalization breaks the
     # kernel's symmetry.
-    prior = normalize(current_transition @ previous_posterior)
-    return update_step(prior, spike_counts_t, rates_t)
+    predictive = normalize(current_transition @ previous_posterior)
+    return update_step(predictive, spike_counts_t, rates_t)
 
 
 def decode_with_diagnostics(
@@ -579,9 +581,9 @@ def decode_with_diagnostics(
 
     **Diagnostic metrics** (computed per firing cell, not against the combined
     all-cell likelihood):
-    - HPD overlap: overlap between the predictive-posterior HPD region and the
+    - HPD overlap: overlap between the predictive-distribution HPD region and the
       firing cell's single-event likelihood HPD region
-    - KL divergence: divergence from the predictive posterior to the firing
+    - KL divergence: divergence from the predictive distribution to the firing
       cell's single-event likelihood
     - Predictive p-value: rank-based predictive p-value of the firing cell under
       the event-weighted predictive distribution over cells, evaluated exactly
@@ -665,7 +667,7 @@ def decode_with_diagnostics(
     distribution.
 
     When the observation has zero probability at every state with nonzero
-    prior mass, :func:`_condition_on` raises. Continuing from an invented
+    predictive mass, :func:`_condition_on` raises. Continuing from an invented
     posterior would change the following predictive distribution and every
     downstream diagnostic.
 
@@ -718,7 +720,7 @@ def decode_with_diagnostics(
 
     # Preallocate outputs
     posterior: NDArray[np.floating] = np.zeros((n_time, n_bins))
-    predictive_posterior: NDArray[np.floating] = np.zeros((n_time, n_bins))  # p(x_t | y_{1:t-1})
+    predictive: NDArray[np.floating] = np.zeros((n_time, n_bins))  # p(x_t | y_{1:t-1})
     combined_likelihood_all: NDArray[np.floating] = np.zeros((n_time, n_bins))  # p(y_t | x_t)
 
     # Initial state law p(x_0): the t=0 prediction. It is not propagated
@@ -771,7 +773,7 @@ def decode_with_diagnostics(
             step = update_step(initial_state, spike_counts[0], rates_t)
         else:
             step = filter_step(posterior[t - 1], spike_counts[t], current_transition, rates_t)
-        predictive_posterior[t] = step.prior  # stored for p-value computation
+        predictive[t] = step.predictive  # stored for p-value computation
         combined_likelihood_all[t] = step.combined_likelihood
         posterior[t] = step.posterior
 
@@ -784,7 +786,7 @@ def decode_with_diagnostics(
     # keeping the posterior update, per-event diagnostics, and displayed
     # likelihood on one internally consistent decoder model.
     diagnostics = compute_spike_event_diagnostics_from_rates(
-        predictive_posterior,
+        predictive,
         rates,
         spike_time_ind,
         spike_cell_ind,
@@ -793,7 +795,7 @@ def decode_with_diagnostics(
 
     overridden = _apply_window_rate_overrides(
         diagnostics,
-        predictive_posterior,
+        predictive,
         override_schedule.windows,
         spike_time_ind,
         spike_cell_ind,
@@ -805,7 +807,7 @@ def decode_with_diagnostics(
 
     return DecodingDiagnostics(
         posterior=posterior,
-        predictive=predictive_posterior,
+        predictive=predictive,
         likelihood=combined_likelihood_all,
         hpd_overlap=overridden.hpd_overlap,
         kl_divergence=overridden.kl_divergence,

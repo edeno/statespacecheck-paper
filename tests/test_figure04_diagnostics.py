@@ -266,12 +266,12 @@ class TestComputeResultsDiagnostics:
         sentinel = MagicMock()
 
         def _capture(
-            predictive_posterior: np.ndarray,
+            predictive: np.ndarray,
             spike_counts: np.ndarray,
             diagnostic_place_fields: np.ndarray,
             **kwargs: Any,
         ) -> MagicMock:
-            captured["predictive"] = predictive_posterior
+            captured["predictive"] = predictive
             captured["place_fields"] = diagnostic_place_fields
             captured["kwargs"] = kwargs
             return sentinel

@@ -31,7 +31,7 @@ def _get_spike_events_from_spike_times(
     spike_times: list[NDArray[np.float64]],
     time: NDArray[np.float64],
 ) -> tuple[NDArray[np.intp], NDArray[np.intp], NDArray[np.float64]]:
-    """Map exact spike timestamps to predictive-posterior time indices.
+    """Map exact spike timestamps to predictive-distribution time indices.
 
     Uses the same bin assignment as the decoder's spike binning
     (``non_local_detector.likelihoods.common.get_spikecount_per_time_bin``):
@@ -73,7 +73,7 @@ def _get_spike_events_from_spike_times(
 
 
 def compute_spike_event_diagnostics(
-    predictive_posterior: NDArray[np.float64],
+    predictive: NDArray[np.float64],
     spike_counts: NDArray[np.int64],
     place_fields: NDArray[np.float64],
     coverage: float = HPD_COVERAGE,
@@ -90,8 +90,8 @@ def compute_spike_event_diagnostics(
 
     Parameters
     ----------
-    predictive_posterior : np.ndarray, shape (n_time, n_bins)
-        State-marginalized predictive posterior distribution over position.
+    predictive : np.ndarray, shape (n_time, n_bins)
+        State-marginalized predictive distribution over position.
     spike_counts : np.ndarray, shape (n_time, n_cells)
         Spike count for each cell at each time point.
     place_fields : np.ndarray, shape (n_cells, n_bins)
@@ -103,7 +103,7 @@ def compute_spike_event_diagnostics(
         Exact spike timestamps for each cell. If supplied, diagnostics are
         computed per spike event and plotted at exact spike times.
     time : np.ndarray, optional
-        Decoder time grid used to map spike timestamps to predictive posterior
+        Decoder time grid used to map spike timestamps to predictive-distribution
         rows. Required when ``spike_times`` is supplied.
     include_dense_matrices : bool, default True
         Forwarded to ``compute_spike_event_diagnostics_from_rates``. Set False
@@ -163,7 +163,7 @@ def compute_spike_event_diagnostics(
     (100, 10)
     """
     # Ensure all inputs are NumPy arrays (handles JAX arrays from decoder)
-    predictive_posterior = np.asarray(predictive_posterior)
+    predictive = np.asarray(predictive)
     spike_counts = np.asarray(spike_counts)
 
     event_times: NDArray[np.float64] | None
@@ -178,7 +178,7 @@ def compute_spike_event_diagnostics(
         event_times = None if time is None else np.asarray(time, dtype=np.float64)[spike_time_ind]
 
     result = compute_spike_event_diagnostics_from_rates(
-        predictive_posterior,
+        predictive,
         place_fields.T,  # (n_bins, n_cells)
         spike_time_ind.astype(np.intp),
         spike_cell_ind.astype(np.intp),
@@ -248,7 +248,7 @@ def compute_results_diagnostics(
     Takes the decoder's ``predict`` output and the one shared position-dependent
     observation likelihood (already restricted to track-interior bins), so the
     diagnostics can be (re)computed from a cached decode without the fitted
-    model object. The predictive posterior is marginalized over any discrete
+    model object. The predictive distribution is marginalized over any discrete
     dynamics mode before comparison, so models with different numbers of
     modes are diagnosed over the same position grid.
 
@@ -276,16 +276,16 @@ def compute_results_diagnostics(
         ``(n_time, n_cells)`` matrices, hundreds of MB for a full recording and
         read by no consumer, are left ``None``.
     """
-    predictive_posterior = get_state_marginalized_posterior(results, "predictive")
+    predictive = get_state_marginalized_posterior(results, "predictive")
     place_fields = np.asarray(place_fields, dtype=np.float64)
-    if predictive_posterior.shape[1] != place_fields.shape[1]:
+    if predictive.shape[1] != place_fields.shape[1]:
         raise ValueError(
-            f"Position-marginal predictive posterior has "
-            f"{predictive_posterior.shape[1]} bins but the shared observation "
+            f"Position-marginal predictive distribution has "
+            f"{predictive.shape[1]} bins but the shared observation "
             f"likelihood has {place_fields.shape[1]}."
         )
     return compute_spike_event_diagnostics(
-        predictive_posterior,
+        predictive,
         spike_counts,
         place_fields,
         coverage=coverage,

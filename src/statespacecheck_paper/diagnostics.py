@@ -416,7 +416,7 @@ def expand_spike_events(
 
 
 def compute_spike_event_diagnostics_from_rates(
-    predictive_posterior: NDArray[np.floating],
+    predictive: NDArray[np.floating],
     rates: NDArray[np.floating],
     spike_time_ind: NDArray[np.intp],
     spike_cell_ind: NDArray[np.intp],
@@ -433,8 +433,8 @@ def compute_spike_event_diagnostics_from_rates(
 
     Parameters
     ----------
-    predictive_posterior : np.ndarray, shape (n_time, n_bins)
-        Predictive posterior distribution over position at each time.
+    predictive : np.ndarray, shape (n_time, n_bins)
+        Predictive distribution over position at each time.
     rates : np.ndarray, shape (n_bins, n_cells)
         Expected spike rate (spikes/bin) at each position for each cell.
     spike_time_ind : np.ndarray, shape (n_spikes,)
@@ -480,7 +480,7 @@ def compute_spike_event_diagnostics_from_rates(
     diagnostic is computed.
     """
     events = ssc.event_diagnostics(
-        predictive_posterior,
+        predictive,
         rates,
         spike_time_ind,
         spike_cell_ind,
@@ -492,7 +492,7 @@ def compute_spike_event_diagnostics_from_rates(
         """Scatter per-event values into a NaN-filled (n_time, n_cells) matrix."""
         if not include_dense_matrices:
             return None
-        matrix = np.full((predictive_posterior.shape[0], rates.shape[1]), np.nan)
+        matrix = np.full((predictive.shape[0], rates.shape[1]), np.nan)
         matrix[spike_time_ind, spike_cell_ind] = values
         return matrix
 

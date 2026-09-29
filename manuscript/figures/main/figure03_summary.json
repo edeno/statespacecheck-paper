@@ -213,7 +213,7 @@
   "percentage_unit": "percent_of_spike_events",
   "provenance": {
     "source": {
-      "source_tree_sha256": "d7c1f93aaff7d8419c6d0defa5cf58816d4e75c318712ae561a734d82e3856a3",
+      "source_tree_sha256": "7ebc7a30ad26852652a6f5246a5e0771b366234b483f73e4c5bff1ff6f4744f3",
       "statespacecheck_paper_version": "0.1.0",
       "statespacecheck_version": "0.3.1",
       "uv_lock_sha256": "7db5bb03266cfeab8f804cd7262232f3ffa16ebaf423722a399076043b640574"

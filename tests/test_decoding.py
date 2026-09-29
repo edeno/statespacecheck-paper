@@ -571,7 +571,7 @@ class TestDecodeWithDiagnosticsLogSpace:
     """Stress tests for the log-space rewrite of decode_with_diagnostics.
 
     The previous implementation reset the posterior to uniform when
-    ``prior * combined_likelihood`` underflowed to zero. The log-space
+    ``predictive * combined_likelihood`` underflowed to zero. The log-space
     rewrite removes that branch; the finite-overlap numerical-underflow
     failure mode cannot occur. An exactly impossible observation retains
     a separately tested fallback. These tests pin that distinction so a
@@ -599,8 +599,8 @@ class TestDecodeWithDiagnosticsLogSpace:
         posterior = results.posterior
         np.testing.assert_allclose(posterior.sum(axis=1), 1.0, rtol=1e-10, atol=1e-12)
 
-    def test_extreme_prior_likelihood_mismatch_yields_meaningful_posterior(self) -> None:
-        """Stress test for an extreme but finite overlap: place a narrow prior at
+    def test_extreme_predictive_likelihood_mismatch_yields_meaningful_posterior(self) -> None:
+        """Stress test for an extreme but finite overlap: place a narrow predictive at
         one end of the grid then drive the decoder with spike_counts whose
         place-field rate is concentrated at the *other* end.
 
@@ -611,7 +611,7 @@ class TestDecodeWithDiagnosticsLogSpace:
         """
         n_time, n_cells, n_bins = 30, 2, 51
         position_bins = np.linspace(0.0, 100.0, n_bins)
-        # Narrow transition kernel so the prior stays concentrated.
+        # Narrow transition kernel so the predictive stays concentrated.
         transition_matrix = gaussian_transition_matrix(position_bins, step_std=0.5)
         # Two cells with place fields at x≈90 — far from the
         # bias-initialized posterior which mostly accumulates near 0.
@@ -809,7 +809,7 @@ class TestLogSpaceReferenceComparison:
         transition /= transition.sum(axis=0, keepdims=True)  # column-stochastic
         assert not np.allclose(transition, transition.T)  # genuinely asymmetric
 
-        # Reference: linear-space prior, log-space combined likelihood,
+        # Reference: linear-space predictive, log-space combined likelihood,
         # softmax-shift normalization. No reset-to-uniform branch.
         rates = place_field_rates(
             position_bins,
@@ -825,14 +825,14 @@ class TestLogSpaceReferenceComparison:
             # check of orientation, not just of the log-space arithmetic. At
             # t=0 the prediction is the uniform initial law itself.
             if t == 0:
-                prior = np.ones(n_bins) / n_bins
+                predictive = np.ones(n_bins) / n_bins
             else:
-                prior = transition @ ref_post[t - 1]
-                prior = prior / prior.sum()
+                predictive = transition @ ref_post[t - 1]
+                predictive = predictive / predictive.sum()
             log_lik = _poisson.logpmf(spike_counts[t][None, :], rates).sum(axis=1)
             ll_max = float(np.max(log_lik))
             assert np.isfinite(ll_max)
-            weighted = prior * np.exp(log_lik - ll_max)
+            weighted = predictive * np.exp(log_lik - ll_max)
             norm = weighted.sum()
             assert norm > 0
             ref_post[t] = weighted / norm
@@ -935,7 +935,7 @@ class TestFilterStep:
         )
         return rates + 1e-3
 
-    def test_prior_and_posterior_are_normalized(self) -> None:
+    def test_predictive_and_posterior_are_normalized(self) -> None:
         n_bins, n_cells = 21, 3
         rng = np.random.default_rng(0)
         previous = normalize(rng.random(n_bins))
@@ -945,14 +945,14 @@ class TestFilterStep:
         step = filter_step(previous, np.array([0, 1, 0]), transition, rates)
 
         assert isinstance(step, FilterStep)
-        assert step.prior.shape == (n_bins,)
+        assert step.predictive.shape == (n_bins,)
         assert step.posterior.shape == (n_bins,)
-        np.testing.assert_allclose(step.prior.sum(), 1.0)
+        np.testing.assert_allclose(step.predictive.sum(), 1.0)
         np.testing.assert_allclose(step.posterior.sum(), 1.0)
         np.testing.assert_allclose(step.combined_likelihood.sum(), 1.0)
 
     def test_predictive_uses_column_stochastic_orientation(self) -> None:
-        """The prior is ``T @ post``, not ``post @ T`` (asymmetric transition)."""
+        """The predictive is ``T @ post``, not ``post @ T`` (asymmetric transition)."""
         n_bins, n_cells = 5, 2
         previous = np.zeros(n_bins)
         previous[0] = 1.0
@@ -965,8 +965,8 @@ class TestFilterStep:
         step = filter_step(previous, np.zeros(n_cells, dtype=int), transition, rates)
 
         expected = transition @ previous
-        np.testing.assert_allclose(step.prior, expected)
-        assert step.prior[1] == pytest.approx(1.0)
+        np.testing.assert_allclose(step.predictive, expected)
+        assert step.predictive[1] == pytest.approx(1.0)
 
     def test_matches_first_step_of_full_decode(self, decoder_inputs: DecoderInputs) -> None:
         """One ``filter_step`` reproduces the t=1 arrays of the full recursion."""
@@ -987,7 +987,7 @@ class TestFilterStep:
             rates,
         )
 
-        np.testing.assert_array_equal(step.prior, result.predictive[1])
+        np.testing.assert_array_equal(step.predictive, result.predictive[1])
         np.testing.assert_array_equal(step.posterior, result.posterior[1])
         np.testing.assert_array_equal(step.combined_likelihood, result.likelihood[1])
 
