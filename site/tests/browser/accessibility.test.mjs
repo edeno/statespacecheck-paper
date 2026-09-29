@@ -316,4 +316,18 @@ describe("text layout", () => {
       );
       assert.deepEqual(overflows, []);
     }));
+
+  test("a reported value in a legend sits against the text after it", () =>
+    withPage({}, async (page) => {
+      const gaps = await page.$$eval(".legend [data-macro]", (values) =>
+        values.map((value) => {
+          const range = document.createRange();
+          range.setStart(value.nextSibling, 0);
+          range.setEnd(value.nextSibling, 1);
+          return range.getBoundingClientRect().left - value.getBoundingClientRect().right;
+        }),
+      );
+      assert.ok(gaps.length > 0);
+      for (const gap of gaps) assert.ok(Math.abs(gap) < 1, `gap ${gap}`);
+    }));
 });

@@ -389,7 +389,7 @@ summary:focus-visible,
   margin: 0.25rem 0 0.5rem;
 }
 
-.legend span {
+.legend > span {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
