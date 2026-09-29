@@ -27,6 +27,7 @@ _DOCTEST_MODULES = [
     "statespacecheck_paper.style",
     "statespacecheck_paper.plotting",
     "statespacecheck_paper.figure01_generation",
+    "statespacecheck_paper.schematic",
     "statespacecheck_paper.figure03_protocol",
     "statespacecheck_paper.figure03_simulation",
     "statespacecheck_paper.figure03_summary",

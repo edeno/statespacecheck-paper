@@ -197,8 +197,8 @@ def draw_distribution_inset(
     --------
     >>> import matplotlib.pyplot as plt
     >>> fig, ax = plt.subplots()
-    >>> ax.set_xlim(0, 10)
-    >>> ax.set_ylim(0, 10)
+    >>> _ = ax.set_xlim(0, 10)
+    >>> _ = ax.set_ylim(0, 10)
     >>> draw_distribution_inset(ax, (5, 5), 2, 1, mean=0, std=1, color="blue")
     >>> plt.close(fig)
     """
@@ -281,8 +281,8 @@ def draw_spikes_inset(
     --------
     >>> import matplotlib.pyplot as plt
     >>> fig, ax = plt.subplots()
-    >>> ax.set_xlim(0, 10)
-    >>> ax.set_ylim(0, 10)
+    >>> _ = ax.set_xlim(0, 10)
+    >>> _ = ax.set_ylim(0, 10)
     >>> draw_spikes_inset(ax, (5, 5), 2, 1, n_cells=5)
     >>> plt.close(fig)
     """
