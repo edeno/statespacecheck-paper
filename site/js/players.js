@@ -170,7 +170,7 @@ function legendBlock(html) {
 // Legend of the detail chart that both players show for the selected spike.
 const DETAIL_LEGEND = `
     <span><i class="swatch" style="background:var(--predictive)"></i>Prediction</span>
-    <span><i class="swatch" style="background:var(--likelihood)"></i>Spike likelihood</span>
+    <span><i class="swatch dashed" style="--swatch-color:var(--likelihood)"></i>Spike likelihood</span>
     <span><i class="swatch" style="background:var(--position)"></i>Animal's position</span>`;
 
 /** The player layout: tracks on the left, a detail panel on the right. */
@@ -644,6 +644,7 @@ function renderCondition(view, payload, manifest) {
           values: normalized(likelihoodRows.row(events.likelihood_row[index])),
           color: cssVar("--likelihood"),
           name: "spike likelihood",
+          dashed: true,
         },
       ],
       marker: position[t],
@@ -884,6 +885,7 @@ export function renderRecording(root, payload, manifest) {
             values: normalized(cellLikelihoods.row(cell)),
             color: cssVar("--likelihood"),
             name: "spike likelihood",
+          dashed: true,
           },
         ],
         marker: position[step],

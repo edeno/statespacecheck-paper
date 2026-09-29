@@ -554,13 +554,29 @@ export class DistributionChart {
     return runs;
   }
 
-  /** One rect per contiguous run of in-region bins, so bands have no seams. */
-  drawBand(mask, color, y) {
+  /**
+   * One bar per contiguous run of in-region bins, so bands have no seams;
+   * `dashed` breaks the bar into dashes, matching a dashed series.
+   */
+  drawBand(mask, color, y, dashed = false) {
     const half = (this.x(this.bins[0] + this.binWidth) - this.x(this.bins[0])) / 2;
     for (const [first, last] of this.runs(mask)) {
       const x0 = this.x(this.bins[first]) - half;
       const x1 = this.x(this.bins[last]) + half;
-      svg("rect", { x: x0, y, width: x1 - x0, height: 5, fill: color }, this.layers.bands);
+      svg(
+        "line",
+        {
+          class: "band",
+          x1: x0,
+          x2: x1,
+          y1: y + 2.5,
+          y2: y + 2.5,
+          stroke: color,
+          "stroke-width": 5,
+          ...(dashed ? { "stroke-dasharray": "5 3" } : {}),
+        },
+        this.layers.bands,
+      );
     }
   }
 
@@ -599,7 +615,7 @@ export class DistributionChart {
 
   /**
    * series: [{values, color, name?, dashed?, filled? (default true), width? (default 2)}],
-   * bands: [{mask, color, name?}], marker: the animal's position | null,
+   * bands: [{mask, color, name?, dashed?}], marker: the animal's position | null,
    * scaleMax: value drawn at full height for every series | null.
    * Only named series and bands enter the text alternative.
    */
@@ -608,12 +624,14 @@ export class DistributionChart {
     const { series, bands = [], marker = null, scaleMax = null } = state;
     this.root.setAttribute("aria-label", this.describe({ series, bands, marker }));
     for (const layer of ["bands", "areas", "marker"]) this.layers[layer].replaceChildren();
+    // Series that share a chart differ by line pattern as well as color.
     for (const { values, color, dashed = false, filled = true, width = 2 } of series) {
       const { open, closed } = this.curvePaths(values, scaleMax);
       if (filled) svg("path", { d: closed, fill: color, "fill-opacity": 0.12 }, this.layers.areas);
       svg(
         "path",
         {
+          class: "curve",
           d: open,
           fill: "none",
           stroke: color,
@@ -624,8 +642,8 @@ export class DistributionChart {
         this.layers.areas,
       );
     }
-    bands.forEach(({ mask, color }, index) => {
-      this.drawBand(mask, color, this.margin.top + this.plotHeight + 4 + index * 7);
+    bands.forEach(({ mask, color, dashed }, index) => {
+      this.drawBand(mask, color, this.margin.top + this.plotHeight + 4 + index * 7, dashed);
     });
     if (marker !== null) {
       svg(
