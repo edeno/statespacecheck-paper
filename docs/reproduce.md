@@ -127,11 +127,17 @@ demand, and on pull requests that change the workflow. It installs the TeX Live
 collections the manuscript needs, frees runner disk space for the decode cache,
 and uploads the report, step timings, fresh summaries, and fresh macros.
 
-| Resource | Fresh run |
+Measured fresh runs (`steps.tsv`; peak memory is the largest child process):
+
+| Resource | macOS, Apple M5 Max, 18 cores, 64 GB |
 | --- | --- |
-| Peak RAM | TODO(measure): about 12 GB expected, set by the Figure 4 fit/decode |
-| Disk | TODO(measure): about 8 GB for the decode cache, plus the copy's environment and the 75 MB input |
-| Time | TODO(measure) |
+| Peak RAM | 13.8 GB, during the Figure 4 fit and decode |
+| Disk | 7.9 GB of data (7.7 GB decode cache, 75 MB input), plus 0.6 GB for the copy and its environment |
+| Time | 7 minutes: figures 385 s (Figure 3 about 260 s, the Figure 4 fit about 140 s), download 27 s, manuscript 3 s |
+
+Individual steps on the same machine, with current Figure 4 caches: Figures 1
+and 2 take about 1 s each (under 0.6 GB); Figure 4 from its caches 8 s (4.7 GB);
+the website export 5 s (3.3 GB).
 
 ## Individual steps
 
