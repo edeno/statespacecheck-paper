@@ -17,9 +17,9 @@ function symlog(value) {
   );
 }
 
-// The paper's metrics in order (style.METRIC_SPECS). Names, worse-fit
-// directions, display transforms, and the symlog axis are checked against the
-// Python registry by tests/test_site_metric_metadata.py.
+// The paper's metrics in order (style.METRIC_SPECS). Names, labels, worse-fit
+// directions, display transforms, the symlog axis, and its gridlines are
+// checked against the Python registry by tests/test_site_metric_metadata.py.
 export const METRICS = [
   {
     name: "hpd_overlap",
@@ -30,7 +30,7 @@ export const METRICS = [
     plottedWorse: "below",
     color: "--hpd",
     display: (v) => v,
-    // Plotted on a symlog axis, as in the paper's figures.
+    // Plotted on a symlog axis, with gridlines at Figure 3's interior ticks.
     axis: symlog,
     gridlines: [0.01, 0.1],
     // Bounded, so its track always spans the whole range.
@@ -114,18 +114,27 @@ export function plottedWorseFit(metric) {
   return metric.plottedWorse === "below" ? "↓ worse fit" : "↑ worse fit";
 }
 
-/** Direction of worse fit plus the flag rule, e.g. "lower = worse fit; flagged if ≤ 0.05". */
-function describeRule(metric, rule) {
-  return `${worseFit(metric)}; ${flagRule(rule)}`;
+/**
+ * Direction of worse fit plus the flag rule, e.g. "lower = worse fit; flagged
+ * if ≤ 0.05". `thresholdText` is the threshold as the export prints it.
+ */
+function describeRule(metric, rule, thresholdText) {
+  return `${worseFit(metric)}; ${flagRule(rule, thresholdText)}`;
 }
 
-function flagRule(rule) {
+// The summaries' inclusive flag comparisons (diagnostics.INCLUSIVE_FLAG_COMPARISONS)
+// and their symbols; checked by tests/test_site_metric_metadata.py.
+export const COMPARISON_SYMBOLS = {
+  less_than_or_equal: "≤",
+  greater_than_or_equal: "≥",
+};
+
+/** "flagged if ≤ 0.05" for a summary's flag rule, or "no fixed cutoff" without one. */
+export function flagRule(rule, thresholdText) {
   if (!rule) return "no fixed cutoff";
-  const symbol = rule.comparison === "less_than_or_equal" ? "≤" : "≥";
-  const threshold = Number.isInteger(rule.threshold)
-    ? String(rule.threshold)
-    : rule.threshold.toPrecision(3).replace(/\.?0+$/, "");
-  return `flagged if ${symbol} ${threshold}`;
+  const symbol = COMPARISON_SYMBOLS[rule.comparison];
+  if (symbol === undefined) throw new RangeError(`Unknown flag comparison ${rule.comparison}`);
+  return `flagged if ${symbol} ${thresholdText}`;
 }
 
 /** Text for a reported value; `format` "count" adds thousands separators. */
@@ -189,11 +198,11 @@ export function badge(flagged) {
  * A metric readout: name and flag rule, plus a value cell that `set(value,
  * flagged)` fills with the formatted value and its badge.
  */
-export function readoutCard(metric, rule) {
+export function readoutCard(metric, rule, thresholdText) {
   const card = document.createElement("div");
   card.className = "readout";
   card.style.setProperty("--metric-color", `var(${metric.color})`);
-  card.innerHTML = `<div class="name">${metric.label}</div><div class="value"></div><div class="rule">${describeRule(metric, rule)}</div>`;
+  card.innerHTML = `<div class="name">${metric.label}</div><div class="value"></div><div class="rule">${describeRule(metric, rule, thresholdText)}</div>`;
   const value = card.querySelector(".value");
   return {
     element: card,

@@ -67,7 +67,7 @@ from statespacecheck_paper.figure04_layout import Figure4DetailWindow
 from statespacecheck_paper.figure04_models import CONTINUOUS, CONTINUOUS_FRAGMENTED
 from statespacecheck_paper.figure04_place_fields import marginal_position_distribution
 from statespacecheck_paper.figure04_workflow import Figure4RenderData, prepare_figure04_render_data
-from statespacecheck_paper.number_format import significant, whole_percent
+from statespacecheck_paper.number_format import SIGNIFICANT_FIGURES, significant, whole_percent
 from statespacecheck_paper.paths import (
     ANIMAL_DATE_EPOCH,
     DATA_PATH,
@@ -224,6 +224,41 @@ def _rounded_significant(values: NDArray[np.floating], digits: int) -> list[floa
 _FLAG_DIRECTION_BY_COMPARISON: dict[str, FlagDirection] = {
     comparison: direction for direction, comparison in INCLUSIVE_FLAG_COMPARISONS.items()
 }
+
+
+def flag_threshold_text(figure03_summary: Mapping[str, Any]) -> dict[str, str]:
+    """Each Figure-3 flag threshold as the page prints it.
+
+    The page states a threshold beside each diagnostic's readout, rounded by
+    the manuscript's reporting policy: a threshold estimated from the pooled
+    baseline is a derived constant, printed to
+    :data:`~statespacecheck_paper.number_format.SIGNIFICANT_FIGURES`
+    significant figures (the KL divergence's 4.138... prints as 4.1), and a
+    fixed cutoff is a configured parameter, printed in full (0.05).
+
+    Parameters
+    ----------
+    figure03_summary : mapping
+        Parsed ``figure03_summary.json``: ``flag_rules`` and, for each metric,
+        the ``threshold_provenance`` rule that set its threshold.
+
+    Returns
+    -------
+    dict
+        Metric name -> threshold text.
+    """
+    provenance = figure03_summary["threshold_provenance"]
+    texts: dict[str, str] = {}
+    for metric, rule in figure03_summary["flag_rules"].items():
+        threshold = float(rule["threshold"])
+        kind = provenance[metric]["rule"]
+        if kind == "fixed_cutoff":
+            texts[metric] = repr(threshold)
+        elif kind == "pooled_baseline_quantile":
+            texts[metric] = significant(threshold, SIGNIFICANT_FIGURES)
+        else:
+            raise ValueError(f"Unknown threshold rule {kind!r} for {metric}")
+    return texts
 
 
 def flag_events(values: NDArray[np.floating], rule: Mapping[str, Any]) -> NDArray[np.bool_]:
@@ -600,6 +635,43 @@ def playground_ensembles(
     )
 
 
+@dataclass(frozen=True)
+class PlaygroundPreset:
+    """An example the playground loads from one of its buttons.
+
+    Parameters
+    ----------
+    preset_id : str
+        The button's ``data-preset`` in ``site/index.html``.
+    ensemble_id : str
+        A :class:`PlaygroundEnsemble`'s ``ensemble_id``.
+    mean, std : float
+        Center and standard deviation of the Gaussian prediction, in position
+        units (:func:`gaussian_predictive`).
+    cell : int
+        The cell that fired; one of the ensemble's ``selectable_cells``.
+    """
+
+    preset_id: str
+    ensemble_id: str
+    mean: float
+    std: float
+    cell: int
+
+
+# The playground's examples. Each button's label claims which diagnostics flag
+# its spike under the Figure-3 flag rules, checked by the test suite.
+PLAYGROUND_PRESETS: tuple[PlaygroundPreset, ...] = (
+    PlaygroundPreset("consistent", "place_cells", mean=50.0, std=5.0, cell=5),
+    PlaygroundPreset("conflicting", "place_cells", mean=25.0, std=4.0, cell=7),
+    PlaygroundPreset("nested", "place_cells", mean=47.0, std=1.5, cell=5),
+    PlaygroundPreset("broad", "sparse_epoch", mean=30.0, std=15.0, cell=13),
+    # The sparse cells' fields nearly coincide, so which of them fired says
+    # little; the p-value misses a conflict that HPD overlap catches.
+    PlaygroundPreset("pvalue_miss", "sparse_epoch", mean=50.0, std=3.0, cell=13),
+)
+
+
 def playground_payload(
     config: Figure3Config,
     sparse_centers: NDArray[np.floating],
@@ -615,6 +687,14 @@ def playground_payload(
         Sparse-population field centers from the Figure-3 simulation.
     figure03_summary : mapping
         Parsed ``figure03_summary.json``; supplies the simulation flag rules.
+
+    Returns
+    -------
+    dict
+        ``position_bins``, ``cell_centers``, ``ensembles`` (rates and
+        selectable cells), ``presets`` (:data:`PLAYGROUND_PRESETS`, keyed by
+        ``preset_id``), ``flag_rules`` with their ``flag_threshold_text``
+        (:func:`flag_threshold_text`), and the HPD ``coverage``.
     """
     return {
         "position_bins": config.position_bins.tolist(),
@@ -627,7 +707,17 @@ def playground_payload(
             }
             for ensemble in playground_ensembles(config, sparse_centers)
         ],
+        "presets": {
+            preset.preset_id: {
+                "ensemble": preset.ensemble_id,
+                "mean": preset.mean,
+                "std": preset.std,
+                "cell": preset.cell,
+            }
+            for preset in PLAYGROUND_PRESETS
+        },
         "flag_rules": figure03_summary["flag_rules"],
+        "flag_threshold_text": flag_threshold_text(figure03_summary),
         "coverage": HPD_COVERAGE,
     }
 
@@ -943,7 +1033,9 @@ def manifest_payload(
     """Page-wide data: reported values, flag rules, colormaps, and conditions.
 
     ``macros`` holds the manuscript's macros and ``page_values`` the numbers
-    only the page states (:func:`page_values`). Each ``conditions`` entry names
+    only the page states (:func:`page_values`). ``flag_threshold_text`` holds
+    the simulation's thresholds as the page prints them
+    (:func:`flag_threshold_text`). Each ``conditions`` entry names
     a condition's data file and its tab title
     (:attr:`~statespacecheck_paper.figure03_summary.Figure3SummaryCondition.title`).
     """
@@ -957,6 +1049,7 @@ def manifest_payload(
         "macros": macros,
         "page_values": page_values(figure04_summary),
         "flag_rules": {"simulation": figure03_summary["flag_rules"]},
+        "flag_threshold_text": {"simulation": flag_threshold_text(figure03_summary)},
         "colormaps": {
             "predictive": colormap_lut(CMAP_PREDICTIVE),
             "likelihood": colormap_lut(CMAP_LIKELIHOOD),

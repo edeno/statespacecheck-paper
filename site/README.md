@@ -13,10 +13,13 @@ simulation conditions, and the Figure-4 recording window under both decoders.
   via `statespacecheck_paper.site_export`, which writes `site/data/*.json`. The
   numbers are the same reported-value macros the manuscript uses, plus one
   that only the page states (`site_export.page_values`: the length of the
-  Figure-4 window).
+  Figure-4 window). The flag thresholds beside each readout are printed by the
+  manuscript's rounding policy (`site_export.flag_threshold_text`).
 - The playground runs a JavaScript port of the per-spike diagnostics
   (`site/js/metrics.js`). `site/tests/metrics.test.mjs` checks it against
-  reference cases computed by the Python implementation.
+  reference cases computed by the Python implementation. Its example buttons
+  load `site_export.PLAYGROUND_PRESETS`; `tests/test_site_export.py` checks
+  that each flags what its label claims.
 
 ```bash
 # Regenerate the page data after a figure summary or a diagnostic changes.

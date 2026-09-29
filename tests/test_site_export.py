@@ -12,6 +12,7 @@ from __future__ import annotations
 import base64
 import copy
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -50,12 +51,15 @@ from statespacecheck_paper.simulation import gaussian_transition_matrix, place_f
 from statespacecheck_paper.site_export import (
     CONDITION_WINDOWS,
     FILTER_EXPLAINER,
+    PLAYGROUND_PRESETS,
     FilterExplainerSequence,
+    PlaygroundPreset,
     condition_payloads,
     encode_display_rows,
     filter_explainer_payload,
     filter_explainer_sequence,
     flag_events,
+    flag_threshold_text,
     gaussian_predictive,
     manifest_payload,
     metric_parity_fixture,
@@ -297,9 +301,70 @@ def test_playground_payload_carries_simulation_flag_rules(
 ) -> None:
     payload = playground_payload(config, sparse_centers, figure03_summary)
     assert payload["flag_rules"] == figure03_summary["flag_rules"]
+    assert payload["flag_threshold_text"] == flag_threshold_text(figure03_summary)
     assert [e["ensemble_id"] for e in payload["ensembles"]] == ["place_cells", "sparse_epoch"]
     for ensemble in payload["ensembles"]:
         assert len(ensemble["rates"]) == len(payload["position_bins"])
+
+
+def test_flag_thresholds_print_by_the_reporting_policy(figure03_summary: dict[str, Any]) -> None:
+    """Pooled-baseline thresholds print to two significant figures, cutoffs in full."""
+    rules = figure03_summary["flag_rules"]
+    assert flag_threshold_text(figure03_summary) == {
+        "hpd_overlap": significant(rules["hpd_overlap"]["threshold"]),
+        "kl_divergence": significant(rules["kl_divergence"]["threshold"]),
+        "predictive_pvalue": "0.05",
+    }
+    # The committed KL threshold, 4.138..., reads 4.1 on the page.
+    assert flag_threshold_text(figure03_summary)["kl_divergence"] == "4.1"
+    assert flag_threshold_text(figure03_summary)["hpd_overlap"] == "0"
+
+
+# Each playground example's button label (site/index.html) and the diagnostics
+# that label claims flag its spike under the Figure-3 flag rules.
+_PRESET_CLAIMS: dict[str, tuple[str, set[str]]] = {
+    "consistent": ("Consistent", set()),
+    "conflicting": ("Conflicting", {"hpd_overlap", "predictive_pvalue", "kl_divergence"}),
+    # A narrow prediction inside the spike's broader likelihood is consistent.
+    "nested": ("Narrow prediction", set()),
+    # Only KL divergence responds to the difference in spread.
+    "broad": ("Broad prediction, narrow spike", {"kl_divergence"}),
+    # HPD overlap catches the conflict the p-value misses (KL flags it too).
+    "pvalue_miss": ("p-value misses a conflict", {"hpd_overlap", "kl_divergence"}),
+}
+
+
+def test_playground_buttons_are_the_exported_presets() -> None:
+    html = (REPO_ROOT / "site" / "index.html").read_text(encoding="utf-8")
+    buttons = dict(re.findall(r'data-preset="([^"]+)">([^<]+)<', html))
+    assert buttons == {preset_id: label for preset_id, (label, _) in _PRESET_CLAIMS.items()}
+    assert [preset.preset_id for preset in PLAYGROUND_PRESETS] == list(_PRESET_CLAIMS)
+
+
+@pytest.mark.parametrize("preset", PLAYGROUND_PRESETS, ids=lambda preset: preset.preset_id)
+def test_playground_preset_flags_what_its_label_claims(
+    preset: PlaygroundPreset,
+    config: Figure3Config,
+    sparse_centers: NDArray[np.float64],
+    figure03_summary: dict[str, Any],
+) -> None:
+    ensemble = {e.ensemble_id: e for e in playground_ensembles(config, sparse_centers)}[
+        preset.ensemble_id
+    ]
+    assert preset.cell in ensemble.selectable_cells
+    diagnostics = compute_spike_event_diagnostics_from_rates(
+        gaussian_predictive(config.position_bins, preset.mean, preset.std)[np.newaxis, :],
+        ensemble.rates,
+        np.array([0], dtype=np.intp),
+        np.array([preset.cell], dtype=np.intp),
+        include_dense_matrices=False,
+    )
+    flagged = {
+        metric
+        for metric, rule in figure03_summary["flag_rules"].items()
+        if flag_events(getattr(diagnostics, f"event_{metric}"), rule)[0]
+    }
+    assert flagged == _PRESET_CLAIMS[preset.preset_id][1]
 
 
 def test_parity_fixture_matches_the_python_diagnostics(parity_fixture: dict[str, Any]) -> None:
@@ -603,7 +668,14 @@ def test_committed_playground_is_current(
     committed = _load(SITE_DATA_DIR / "playground.json")
     fresh = playground_payload(config, sparse_centers, figure03_summary)
     assert committed.keys() == fresh.keys()
-    for key in ("flag_rules", "coverage", "position_bins", "cell_centers"):
+    for key in (
+        "flag_rules",
+        "flag_threshold_text",
+        "presets",
+        "coverage",
+        "position_bins",
+        "cell_centers",
+    ):
         assert committed[key] == fresh[key], key
     for old, new in zip(committed["ensembles"], fresh["ensembles"], strict=True):
         assert old["ensemble_id"] == new["ensemble_id"]

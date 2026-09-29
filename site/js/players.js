@@ -441,6 +441,7 @@ function renderCondition(view, payload, manifest) {
   ]);
   const rules = payload.events.flagged;
   const flagRules = manifest.flag_rules.simulation;
+  const thresholdText = manifest.flag_threshold_text.simulation;
 
   // Summary stats across realizations.
   const summary = payload.summary;
@@ -515,7 +516,7 @@ function renderCondition(view, payload, manifest) {
   readouts.className = "readouts";
   const cards = Object.fromEntries(
     METRICS.map((m) => {
-      const card = readoutCard(m, flagRules[m.name]);
+      const card = readoutCard(m, flagRules[m.name], thresholdText[m.name]);
       readouts.appendChild(card.element);
       return [m.name, card];
     }),

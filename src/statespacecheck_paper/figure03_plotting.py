@@ -74,6 +74,11 @@ FIGURE03_SUMMARY_ERROR_CELL_LABEL_GID = "figure03-summary-error-cell-label"
 FIGURE03_SUMMARY_ERROR_HEADER_GID = "figure03-summary-error-header"
 
 
+# Ticks of the symlog HPD-overlap row; the website's HPD-overlap tracks draw
+# gridlines at the interior ones.
+FIGURE03_SYMLOG_YTICKS: tuple[float, ...] = (0.0, 0.01, 0.1, 1.0)
+
+
 # Shaded Figure 3 misfit bands: (start, end) boundary indices and the ``COLORS``
 # key. Saturated colors keep the bands visible at low alpha.
 FIGURE03_MISFIT_BANDS: tuple[tuple[PhaseBoundary, PhaseBoundary, str], ...] = (
@@ -368,7 +373,7 @@ def _plot_figure03_diagnostic_row(
         threshold=threshold,
         xlim=(0, n_time),
         ylabel=spec.short_label,
-        symlog_yticks=(0.0, 0.01, 0.1, 1.0),
+        symlog_yticks=FIGURE03_SYMLOG_YTICKS,
         # Headroom above 1 keeps the "1" tick label (and the dense band of
         # fully nested HPD regions at overlap = 1) clear of the raster panel
         # that abuts this axis from above.
