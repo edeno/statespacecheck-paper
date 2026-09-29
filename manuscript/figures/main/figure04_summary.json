@@ -86,18 +86,18 @@
         "event_selection": "all_spikes_in_recording",
         "hpd_coverage": 0.95
       },
-      "diagnostics_fingerprint_sha256": "07a1f759ce7669fa46bdb66b979fc827f3c3760fc93fd2cc77357fe875d1cf48",
+      "diagnostics_fingerprint_sha256": "98630cb802f4ad817e8e4f85c6b79cf8fad1b63454372172ffe3bcd390893836",
       "diagnostics_schema_version": 1,
       "export_file_sha256": {
         "j1620210710_02_r1_figure04_inputs.npz": "60383b394b597e2900545548ecac7c53a8601038ace9dbeb42d7f9a5fe1c93b3"
       },
-      "fingerprint_sha256": "ace94df7130fa638e6cb60fdf019f9fd27c4e03810fa2964d130ec323b962a93",
+      "fingerprint_sha256": "892d87d6a9ff030df68a2ee6509580716db4cac975d3832dde3adb9157ea1572",
       "non_local_detector_version": "0.6.10.dev214+g956fdccaf",
       "schema_version": 5,
       "statespacecheck_version": "0.3.1"
     },
     "source": {
-      "source_tree_sha256": "7ebc7a30ad26852652a6f5246a5e0771b366234b483f73e4c5bff1ff6f4744f3",
+      "source_tree_sha256": "f3624cfc680ad3dab59294c8883c7e25095a10d3ed8027a7457090f1c2207887",
       "statespacecheck_paper_version": "0.1.0",
       "statespacecheck_version": "0.3.1",
       "uv_lock_sha256": "7db5bb03266cfeab8f804cd7262232f3ffa16ebaf423722a399076043b640574"

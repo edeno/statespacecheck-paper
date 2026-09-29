@@ -167,7 +167,7 @@ def plot_distribution_heatmap(
     )
     marginalized = marginalize_state_bins(window_da)
     if not marginalized.notnull().any():
-        raise ValueError("Predictive-posterior slice contains no plottable values")
+        raise ValueError("Distribution slice contains no plottable values")
     marginalized.plot.pcolormesh(
         x="time",
         y=position_axis,

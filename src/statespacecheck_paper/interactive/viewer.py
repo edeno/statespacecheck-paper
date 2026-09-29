@@ -217,7 +217,7 @@ class _WindowLoadWorker(QtCore.QRunnable):
         acausal = self._ds.load_acausal(sl) if self._state.load_acausal else None
 
         mask = self._ds.state_interior_mask
-        post = _replace_structural_padding(post, mask, fill_value=0.0, name="predictive_posterior")
+        post = _replace_structural_padding(post, mask, fill_value=0.0, name=self._ds.PREDICTIVE_VAR)
         loglik = _replace_structural_padding(
             loglik,
             mask,
@@ -379,7 +379,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
             ds.slice_at_index(t_idx, which="posterior"),
             ds.state_interior_mask,
             fill_value=0.0,
-            name="predictive_posterior",
+            name=ds.PREDICTIVE_VAR,
         )
         loglik_row = _replace_structural_padding(
             ds.slice_at_index(t_idx, which="likelihood"),
@@ -472,7 +472,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
         self._overlay_combo = QtWidgets.QComboBox()
         self._overlay_combo.setToolTip(
             "Distribution shown as the blue overlay on the top slice "
-            "plot. Per-cell rows always use the predictive prior."
+            "plot. Per-cell rows always use the predictive distribution."
         )
         for choice in OVERLAY_CHOICES:
             self._overlay_combo.addItem(_OVERLAY_LABELS[choice], userData=choice)

@@ -53,6 +53,7 @@ from statespacecheck_paper.figure04_decoder import (
 )
 from statespacecheck_paper.figure04_diagnostics import compute_results_diagnostics
 from statespacecheck_paper.figure04_place_fields import (
+    DECODER_PREDICTIVE_VAR,
     extract_agreed_place_fields,
     extract_place_fields,
 )
@@ -76,7 +77,8 @@ class Figure4DecodeResults:
     Parameters
     ----------
     continuous_results, continuous_fragmented_results : xr.Dataset
-        Decoder outputs (smoothed and predictive posteriors, log-likelihood) per model.
+        Decoder outputs (smoothed posterior, predictive distribution, log-likelihood)
+        per model.
     continuous_diagnostics, continuous_fragmented_diagnostics : SpikeEventDiagnostics
         Per-spike diagnostics per model.
     spike_counts : np.ndarray, shape (n_time, n_cells)
@@ -346,7 +348,7 @@ def _fit_and_decode(
     # diagnostics, figure, and site export read the prediction; the viewer cache
     # also reads the log-likelihood and the smoothed posterior. Nothing reads
     # the causal "filter" output, so it is not requested.
-    decode_outputs = ["predictive_posterior", "log_likelihood"]
+    decode_outputs = [DECODER_PREDICTIVE_VAR, "log_likelihood"]
     continuous_results = continuous_model.predict(
         spike_times=spike_times_list,
         time=time,

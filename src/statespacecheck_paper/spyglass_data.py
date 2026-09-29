@@ -689,8 +689,8 @@ def figure04_diagnostics_from_decodes(
     continuous_model, contfrag_model : non_local_detector model
         Fitted Continuous and Continuous-Fragmented decoders.
     continuous_results, contfrag_results : xr.Dataset
-        Their decodes over the same time bins; each must hold
-        ``predictive_posterior`` (request it with ``return_outputs``).
+        Their decodes over the same time bins; each must hold the predictive
+        distribution ``predictive_posterior`` (request it with ``return_outputs``).
     spike_times : sequence of np.ndarray, shape (n_spikes,)
         Per-unit spike times (seconds), in the order the models were fitted with.
         Checked against each unit's fitted mean rate, which assumes the models
@@ -725,17 +725,20 @@ def figure04_diagnostics_from_decodes(
         FIGURE4_DIAGNOSTIC_THRESHOLDS,
         FIGURE4_METRIC_DIRECTIONS,
     )
-    from statespacecheck_paper.figure04_place_fields import extract_agreed_place_fields
+    from statespacecheck_paper.figure04_place_fields import (
+        DECODER_PREDICTIVE_VAR,
+        extract_agreed_place_fields,
+    )
     from statespacecheck_paper.figure04_summary import summarize_figure04_diagnostics
 
     time = continuous_results["time"].to_numpy()
     if not np.array_equal(time, contfrag_results["time"].to_numpy()):
         raise ValueError("The two decodes cover different time bins")
     for name, results in (("Continuous", continuous_results), ("ContFrag", contfrag_results)):
-        if "predictive_posterior" not in results:
+        if DECODER_PREDICTIVE_VAR not in results:
             raise ValueError(
-                f"The {name} decode has no predictive_posterior; decode with "
-                "return_outputs including 'predictive_posterior'"
+                f"The {name} decode has no {DECODER_PREDICTIVE_VAR}; decode with "
+                f"return_outputs including {DECODER_PREDICTIVE_VAR!r}"
             )
     spikes = filter_spike_times(spike_times, time)
     expected_rates = np.array([len(st) for st in spikes]) / len(time)

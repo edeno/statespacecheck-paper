@@ -35,6 +35,8 @@ import xarray as xr
 import zarr
 from numpy.typing import NDArray
 
+from statespacecheck_paper.figure04_place_fields import DECODER_PREDICTIVE_VAR
+
 from . import cache as cache_mod
 
 ModelName = cache_mod.ModelName
@@ -141,7 +143,8 @@ class DecoderDataSource:
       ``event_predictive_pvalue`` f32 — sorted by ``time``.
     * ``spike_times .npy``: object-dtype array length ``n_cells``,
       each entry an f64 array of spike timestamps.
-    * ``Zarr``: ``predictive_posterior`` (n_time, n_state_bins) f32,
+    * ``Zarr``: ``predictive_posterior`` (the predictive distribution, under the
+      decoder's name) (n_time, n_state_bins) f32,
       ``log_likelihood`` (n_time, n_state_bins) f32 (true log-space),
       optional ``acausal_posterior`` (n_time, n_state_bins) f32 — only
       present for real-data caches built post-smoothed-overlay feature.
@@ -190,7 +193,8 @@ class DecoderDataSource:
         Total full-grid state bins in the Zarr arrays.
     """
 
-    POSTERIOR_VAR = "predictive_posterior"
+    # The Zarr store keeps the decoder's variable names.
+    PREDICTIVE_VAR = DECODER_PREDICTIVE_VAR
     LIKELIHOOD_VAR = "log_likelihood"
     ACAUSAL_VAR = "acausal_posterior"
 
@@ -299,7 +303,7 @@ class DecoderDataSource:
         # Total state bins along the Zarr ``state_bins`` axis. For a
         # Continuous classifier this is one state's full position grid;
         # for ContFrag it is ``n_states * n_pos_full``.
-        self.n_state_bins: int = int(meta_ds[self.POSTERIOR_VAR].sizes["state_bins"])
+        self.n_state_bins: int = int(meta_ds[self.PREDICTIVE_VAR].sizes["state_bins"])
 
         # Full (non-interior + interior) per-state position grid. The
         # Zarr's ``position`` non-dim coord on ``state_bins`` repeats
@@ -333,7 +337,7 @@ class DecoderDataSource:
             )
 
         # Direct zarr arrays for the hot path.
-        self._post_arr: zarr.Array = self._zarr_group[self.POSTERIOR_VAR]
+        self._post_arr: zarr.Array = self._zarr_group[self.PREDICTIVE_VAR]
         self._loglik_arr: zarr.Array = self._zarr_group[self.LIKELIHOOD_VAR]
         # ``acausal_posterior`` (smoothed distribution) is optional. The viewer
         # disables the smoothed choice when it is absent; it never substitutes
@@ -495,7 +499,7 @@ class DecoderDataSource:
     # ------------------------------------------------------------------
 
     def load_posterior(self, sl: slice) -> NDArray[np.float32]:
-        """Load the predictive posterior for the given time slice."""
+        """Load the predictive distribution for the given time slice."""
         return self._read_window(self._post_arr, sl)
 
     def load_likelihood(self, sl: slice) -> NDArray[np.float32]:

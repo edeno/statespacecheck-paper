@@ -769,7 +769,7 @@ class SlicePanel(QtWidgets.QWidget):
 
     Every plot has the predictive distribution overlaid (peak-
     normalized to 1) so each row is a direct shape comparison
-    against the predictive prior — which is what the HPD/KL
+    against the predictive distribution — which is what the HPD/KL
     diagnostics actually quantify.
 
     Hot path: ``update_for_index`` (per UI tick) + the viewer's
@@ -818,7 +818,7 @@ class SlicePanel(QtWidgets.QWidget):
         # ``acausal_posterior``). The per-cell rows always use the
         # predictive overlay -- HPD overlap and KL divergence
         # diagnostics compare the cell's likelihood against the
-        # predictive prior, so other choices would break the
+        # predictive distribution, so other choices would break the
         # visual semantics.
         self._overlay_choice: OverlayChoice = "predictive"
 
@@ -984,7 +984,7 @@ class SlicePanel(QtWidgets.QWidget):
     def set_overlay_choice(self, choice: OverlayChoice) -> None:
         """Switch the top-plot blue overlay between predictive / filtered / smoothed.
 
-        Per-cell row overlays always use the predictive prior (the
+        Per-cell row overlays always use the predictive distribution (the
         diagnostics compare each cell's likelihood against it), so
         only the population plot's overlay changes.
         """

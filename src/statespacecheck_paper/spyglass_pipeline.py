@@ -53,6 +53,7 @@ from statespacecheck_paper.figure04_decoder import (
     create_decoder_environment,
 )
 from statespacecheck_paper.figure04_generation import FIGURE4_DIAGNOSTIC_THRESHOLDS
+from statespacecheck_paper.figure04_place_fields import DECODER_PREDICTIVE_VAR
 from statespacecheck_paper.spyglass_data import (
     FIGURE04_EPOCH_NAME,
     FIGURE04_NWB_FILE_NAME,
@@ -77,7 +78,7 @@ DECODING_PARAM_NAMES: Mapping[str, str] = MappingProxyType(
 )
 # Outputs requested besides the always-returned smoothed posterior, matching the
 # paper decode; Spyglass passes decoding_kwargs through to predict().
-DECODE_OUTPUTS = ("predictive_posterior", "log_likelihood")
+DECODE_OUTPUTS = (DECODER_PREDICTIVE_VAR, "log_likelihood")
 
 schema = dj.Schema()  # activated only by activate_schema()
 

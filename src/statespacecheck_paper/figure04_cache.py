@@ -5,7 +5,7 @@ diagnostics derived from it are comparatively cheap, so the two are cached in
 **separate** joblib bundles under ``data/intermediates``:
 
 - the *decode* bundle (``{epoch}_fig4_cache.joblib``) holds the fitted models'
-  decoder outputs (smoothed and predictive posteriors, log-likelihood), spike
+  decoder outputs (smoothed posterior, predictive distribution, log-likelihood), spike
   counts, and place fields, gated by the
   **decode fingerprint** (:func:`compute_figure04_cache_provenance`): schema,
   decode-affecting configuration, input-data identity and content hashes,

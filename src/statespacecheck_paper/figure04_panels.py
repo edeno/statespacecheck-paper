@@ -25,6 +25,7 @@ from numpy.typing import NDArray
 
 from statespacecheck_paper.diagnostics import SpikeEventDiagnostics
 from statespacecheck_paper.figure04_diagnostics import mean_per_spike_likelihood_by_time
+from statespacecheck_paper.figure04_place_fields import DECODER_PREDICTIVE_VAR
 from statespacecheck_paper.figure04_plot_primitives import (
     ANIMAL_POSITION_LABEL_GID,
     compute_half_pixel_extent,
@@ -63,9 +64,10 @@ class ModelDiagnosticPanelData:
     position : np.ndarray, shape (n_time,)
         Animal position aligned to ``time``.
     results : xr.Dataset
-        Decoder outputs carrying a ``predictive_posterior`` variable on a
-        ``time`` dimension of length ``n_time`` (and optionally
-        ``log_likelihood``); sliced on the same timeline as ``diagnostics``.
+        Decoder outputs carrying the predictive distribution
+        (:data:`DECODER_PREDICTIVE_VAR`) on a ``time`` dimension of length
+        ``n_time`` (and optionally ``log_likelihood``); sliced on the same
+        timeline as ``diagnostics``.
     diagnostics : SpikeEventDiagnostics
         Per-spike diagnostics on this window's timeline (the per-event arrays
         are rendered; dense matrices, if present, must be ``(n_time, n_cells)``).
@@ -136,30 +138,30 @@ class ModelDiagnosticPanelData:
         if event_time_ind.size and (event_time_ind.min() < 0 or event_time_ind.max() >= time.size):
             raise ValueError(f"diagnostics.event_time_ind must index the {time.size} time samples")
 
-        # The posterior/likelihood heatmap rows are sliced by the same detail
-        # window as the diagnostic scatter rows, so the posterior must live on
-        # the same timeline. Validate the variable, its dimensions, and the exact
-        # time coordinate -- a matching length alone would still accept a shifted
-        # timeline or a posterior indexed by an unrelated dimension, silently
-        # misaligning (or hiding) the heatmap.
-        if "predictive_posterior" not in self.results:
-            raise ValueError("results must contain a 'predictive_posterior' variable")
-        posterior = self.results["predictive_posterior"]
-        if "time" not in posterior.dims or "state_bins" not in posterior.dims:
+        # The predictive/likelihood heatmap rows are sliced by the same detail
+        # window as the diagnostic scatter rows, so the predictive distribution
+        # must live on the same timeline. Validate the variable, its dimensions,
+        # and the exact time coordinate -- a matching length alone would still
+        # accept a shifted timeline or a distribution indexed by an unrelated
+        # dimension, silently misaligning (or hiding) the heatmap.
+        if DECODER_PREDICTIVE_VAR not in self.results:
+            raise ValueError(f"results must contain a {DECODER_PREDICTIVE_VAR!r} variable")
+        predictive = self.results[DECODER_PREDICTIVE_VAR]
+        if "time" not in predictive.dims or "state_bins" not in predictive.dims:
             raise ValueError(
-                "results.predictive_posterior must have 'time' and 'state_bins' "
-                f"dimensions; got {tuple(posterior.dims)}"
+                f"results.{DECODER_PREDICTIVE_VAR} must have 'time' and 'state_bins' "
+                f"dimensions; got {tuple(predictive.dims)}"
             )
-        if "time" not in posterior.coords:
-            raise ValueError("results.predictive_posterior must carry a 'time' coordinate")
-        posterior_time = np.asarray(posterior.coords["time"].values, dtype=np.float64)
+        if "time" not in predictive.coords:
+            raise ValueError(f"results.{DECODER_PREDICTIVE_VAR} must carry a 'time' coordinate")
+        predictive_time = np.asarray(predictive.coords["time"].values, dtype=np.float64)
         panel_time = np.asarray(self.time, dtype=np.float64)
-        if posterior_time.shape != panel_time.shape or not np.array_equal(
-            posterior_time, panel_time
+        if predictive_time.shape != panel_time.shape or not np.array_equal(
+            predictive_time, panel_time
         ):
             raise ValueError(
-                "results.predictive_posterior 'time' coordinate must equal the panel "
-                "'time' array; the posterior heatmap would otherwise be misaligned with "
+                f"results.{DECODER_PREDICTIVE_VAR} 'time' coordinate must equal the panel "
+                "'time' array; the predictive heatmap would otherwise be misaligned with "
                 "the per-spike diagnostics."
             )
 
@@ -395,14 +397,14 @@ def _draw_predictive_heatmap_row(
     title: str,
     ylabel: str,
 ) -> None:
-    """Draw one predictive-posterior heatmap row (heatmap + standard labels).
+    """Draw one predictive-distribution heatmap row (heatmap + standard labels).
 
     Shared by the comparison (per column) and single-model composites; the
     per-composite legend / "Animal Position" annotation is added by the caller.
     """
     plot_distribution_heatmap(
         ax=ax,
-        distribution_da=results.predictive_posterior,
+        distribution_da=results[DECODER_PREDICTIVE_VAR],
         time=time,
         position=position,
         time_slice_ind=time_slice_ind,
@@ -483,7 +485,7 @@ def plot_single_model_diagnostics(
     """Create single-model diagnostic figure with 6 rows.
 
     Layout (6 rows, single column):
-    - Row 0: Predictive posterior with animal position overlay
+    - Row 0: Predictive distribution with animal position overlay
     - Row 1: Likelihood at spike times with position overlay
     - Row 2: Spike raster (sorted by place field peak)
     - Row 3: HPD overlap scatter
@@ -540,7 +542,7 @@ def plot_single_model_diagnostics(
     if time_slice_ind is None:
         time_slice_ind = slice(None)
 
-    # Row 0: Predictive posterior
+    # Row 0: Predictive distribution
     _draw_predictive_heatmap_row(
         axes[0],
         results,

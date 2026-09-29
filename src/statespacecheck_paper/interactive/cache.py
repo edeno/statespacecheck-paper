@@ -33,6 +33,7 @@ import xarray as xr
 from numpy.typing import NDArray
 
 from statespacecheck_paper.diagnostics import DecodingDiagnostics, SpikeEventDiagnostics
+from statespacecheck_paper.figure04_place_fields import DECODER_PREDICTIVE_VAR
 from statespacecheck_paper.paths import ANIMAL_DATE_EPOCH
 
 if TYPE_CHECKING:
@@ -165,7 +166,8 @@ def _write_zarr_store(
 ) -> dict[str, tuple[int, ...]]:
     """Stream a decoder result dataset into a chunked Zarr store.
 
-    Writes ``predictive_posterior``, ``log_likelihood``, and — when
+    Writes ``predictive_posterior`` (the predictive distribution, under the
+    decoder's name), ``log_likelihood``, and — when
     present — ``acausal_posterior`` (the smoothed distribution powering
     the slice-panel overlay) and ``acausal_state_probabilities``, chunked at
     ``time_chunk`` along the time axis so the viewer's window reads
@@ -187,7 +189,7 @@ def _write_zarr_store(
     if out_dir.exists():
         shutil.rmtree(out_dir)
 
-    keep_vars = ["predictive_posterior", "log_likelihood"]
+    keep_vars = [DECODER_PREDICTIVE_VAR, "log_likelihood"]
     # ``acausal_posterior`` is the smoothed distribution
     # ``p(x_t | y_{1:T})`` — included so the slice panel's top-plot
     # overlay can switch between predictive / filtered / smoothed.
@@ -304,8 +306,8 @@ def _position_grid_and_interior_mask(
     """Match the shared diagnostic grid to a decoder result's full state axis."""
     if "position" not in results.coords:
         raise ValueError("Figure 4 decoder results must carry a 'position' coordinate")
-    if "predictive_posterior" not in results:
-        raise ValueError("Figure 4 decoder results are missing 'predictive_posterior'")
+    if DECODER_PREDICTIVE_VAR not in results:
+        raise ValueError(f"Figure 4 decoder results are missing {DECODER_PREDICTIVE_VAR!r}")
 
     position_coord = np.asarray(results.coords["position"].values, dtype=np.float64)
     position_grid_full = np.unique(position_coord)
@@ -331,7 +333,7 @@ def _position_grid_and_interior_mask(
             "Diagnostic position bins are not in the same order as the decoder position coordinate."
         )
 
-    n_state_bins = int(results["predictive_posterior"].sizes["state_bins"])
+    n_state_bins = int(results[DECODER_PREDICTIVE_VAR].sizes["state_bins"])
     if n_state_bins % position_grid_full.size:
         raise ValueError(
             f"Decoder state axis ({n_state_bins}) is not divisible by the "
@@ -387,7 +389,7 @@ def _write_figure04_model_cache(
         "n_time": int(decode.spike_counts.shape[0]),
         "n_cells": n_cells,
         "n_states": n_states,
-        "n_state_bins_full_res": int(zarr_shapes["predictive_posterior"][1]),
+        "n_state_bins_full_res": int(zarr_shapes[DECODER_PREDICTIVE_VAR][1]),
         "n_position_bins": int(position_bins.size),
         "n_events": int(len(events_df)),
         "zarr_shapes": {key: list(shape) for key, shape in zarr_shapes.items()},
@@ -583,7 +585,7 @@ def build_simulated_cache(
     # ``state_bins`` axis: one state, so it equals the position grid.
     ds = xr.Dataset(
         data_vars={
-            "predictive_posterior": (("time", "state_bins"), predictive),
+            DECODER_PREDICTIVE_VAR: (("time", "state_bins"), predictive),
             "log_likelihood": (("time", "state_bins"), log_lik),
             # Single-state state probability (always 1.0).
             "acausal_state_probabilities": (("time",), np.ones(n_time, dtype=np.float32)),

@@ -15,6 +15,11 @@ import pandas as pd
 import xarray as xr
 from numpy.typing import NDArray
 
+# non_local_detector names its one-step predictive distribution p(x_k | y_{1:k-1})
+# ``predictive_posterior``; the paper calls it the predictive distribution. Every
+# request for, or read of, that decoder output uses this name.
+DECODER_PREDICTIVE_VAR = "predictive_posterior"
+
 
 def extract_place_fields(
     model: Any,
@@ -273,7 +278,7 @@ def get_state_marginalized_posterior(
     """
     # Select appropriate posterior
     if posterior_type == "predictive":
-        posterior_da = results.predictive_posterior
+        posterior_da = results[DECODER_PREDICTIVE_VAR]
     elif posterior_type == "acausal":
         posterior_da = results.acausal_posterior
     else:
