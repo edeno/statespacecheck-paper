@@ -299,7 +299,11 @@ Trace: `create_shared_example(rng)` returns one immutable
   source/dependency-lock provenance.
 - **Tests:** `tests/test_figure03_phases.py` (the higher-level scientific
   contract, including the control-integrity checks that the replay and
-  sparse-population controls carry no hidden misfit);
+  sparse-population controls carry no hidden observation misfit, because the
+  decoder is given the rate tables that generated their spikes. Both still have
+  a motion-model mismatch: the decoder keeps its random-walk prior for the
+  replay's deterministic out-and-back sweep and for the sparse phase's
+  stationary animal);
   `tests/test_figure03_{protocol,simulation,summary,plotting,generation,contracts}.py`.
 
 ### Figure-3 conditions (executable source of truth: `build_summary_conditions`)
@@ -315,12 +319,15 @@ In heatmap order, each condition labeled by which part of the model it perturbs
    spikes; *observation model* (temporal), largely missed by the per-spike
    spatial diagnostics.
 4. **Replay** (`replay`) — an out-and-back represented sweep while the animal
-   is immobile; *control* (benign decoded-vs-true divergence).
+   is immobile; *control* (benign decoded-vs-true divergence). The decoder has
+   the correct rates but keeps its random-walk prior, which does not describe
+   the deterministic sweep.
 5. **Drift** (`drift`) — AR(1) persistent-velocity trajectory;
    *transition-model* misfit.
 6. **Sparse population** (`sparse_population`) — a quiet ordinary ensemble with
    a few narrow cells firing sparsely; *control* (KL responds; HPD/rank-p stay
-   near baseline).
+   near baseline). The animal is stationary, and the decoder keeps its
+   random-walk prior.
 
 The simulation's eight phases are the opening baseline, remap, clean recovery 1,
 history-dependent firing, clean recovery 2 (containing the replay sweep), drift,

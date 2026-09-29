@@ -149,15 +149,16 @@ def test_short_replay_sweep_respects_speed_cap() -> None:
 
 
 def test_replay_generative_and_decoder_share_tuning_model(sim: Figure3SimulationResult) -> None:
-    """Replay is a correctly-specified observation model.
+    """Replay's observation model is correctly specified.
 
     The generative sweep spikes fire at the elevated ``replay_place_field_rate_scale``
     through the ordinary position-tuning model; the decoder's replay-window
     rate table must use the *same* tuning model (centers, width) and the
     *same* elevated scale. The invariant is this parameterization
     equivalence, not array equality of the continuous sweep evaluation
-    against the grid rate table. When both match, the decoded state simply
-    tracks the replayed trajectory and no metric flags a misfit.
+    against the grid rate table. When both match, the window carries no
+    observation misfit; the decoder's random-walk transition still differs
+    from the deterministic sweep.
     """
     params = sim.config
     assert params.place_field_centers is not None

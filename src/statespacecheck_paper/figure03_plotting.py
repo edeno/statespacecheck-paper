@@ -96,7 +96,7 @@ def add_phase_boundaries(axes: list[Axes], config: Figure3Config) -> None:
     """
     bnd = config.phase_boundaries
     bands = [(bnd[start], bnd[end], COLORS[color]) for start, end, color in FIGURE3_MISFIT_BANDS]
-    # The replay band (in clean-recovery 2) is not a misfit; shade it in a
+    # The replay band (in clean-recovery 2) is a control; shade it in a
     # distinct color so the reader can see the decoded-vs-true divergence is
     # a deliberate, non-flagged event.
     replay_start, replay_end = compute_replay_step_window(config)

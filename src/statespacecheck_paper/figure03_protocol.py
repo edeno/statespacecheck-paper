@@ -245,8 +245,10 @@ class Figure3Config:
     # Replay event embedded in the second clean-recovery window. The animal
     # is immobile while a coherent trajectory sweeps the track; the decoder
     # tracks the sweep, so the decoded position departs from the true
-    # (fixed) position without any diagnostic flagging it -- replay is not a
-    # misspecification. The sweep occupies the fractional sub-window
+    # (fixed) position without any diagnostic flagging it. The replay rates are
+    # modeled correctly, so this is a control with no observation misfit, although
+    # the decoder's random-walk transition does not describe the deterministic
+    # sweep. The sweep occupies the fractional sub-window
     # ``[replay_start_fraction, replay_end_fraction)`` of clean-recovery 2 and fires
     # at an elevated ``replay_place_field_rate_scale``. The trajectory makes one sweep
     # toward the farther track end, capped at ``replay_speed_per_step`` per step, and
@@ -263,8 +265,9 @@ class Figure3Config:
     # Poisson process increasing from a small baseline gain to its full rate.
     # With little intervening population information, the predictive spreads
     # between the isolated spikes; each spike supplies a narrow likelihood
-    # contained in that broad prediction. This is a correctly modeled,
-    # low-activity observation regime, not a transition-model perturbation.
+    # contained in that broad prediction. The low-activity observation regime is
+    # modeled correctly; the decoder's random-walk transition still does not
+    # describe the stationary animal.
     sparse_position: float = 30.0
     sparse_approach_duration_steps: int = 1_000
     sparse_control_ordinary_rate_scale: float = 0.0

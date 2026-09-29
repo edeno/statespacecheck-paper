@@ -558,17 +558,21 @@ def build_figure03_rate_tables(
     """Assemble the four figure-3 decoder rate tables.
 
     The decoder knows the sparse population's small baseline gain and the
-    low-activity regime, so each misfit window tests metric behavior under
-    a consistent (correctly specified) model:
+    low-activity regime. Each override window's table is used for both the
+    posterior update and the diagnostics:
 
-    - Remap: the posterior update uses randomly scrambled place-field
-      centers; its diagnostics use that same likelihood, so the misfit
-      surfaces from the scramble's spatial incoherence.
-    - Replay: the ensemble fires at the elevated ``replay_place_field_rate_scale`` and
-      the decoder is given that same elevated rate, so the replay is a
-      correctly-specified observation model.
-    - Sparse population: the decoder uses the correctly scaled quiet
-      ensemble and active sparse-population rates.
+    - Remap (the observation misfit): the decoder uses randomly scrambled
+      place-field centers, so the misfit surfaces from the scramble's spatial
+      incoherence.
+    - Replay (a control window): the ensemble fires at the elevated
+      ``replay_place_field_rate_scale`` and the decoder is given that same
+      elevated rate, so the window carries no observation misfit. The
+      decoder's random-walk transition still does not describe the
+      deterministic out-and-back sweep.
+    - Sparse population (a control window): the decoder uses the correctly
+      scaled quiet ensemble and active sparse-population rates, so the window
+      carries no observation misfit. The animal is stationary while the
+      decoder keeps its random-walk transition.
     """
     normal_rates, sparse_cell_rates = _place_field_rate_blocks(
         position_bins, place_field_centers, sparse_centers, config
@@ -655,7 +659,9 @@ def run_figure03_simulation(
        trajectory sweep while the animal is immobile. The decoder tracks the
        sweep, so the decoded position departs from the true fixed position
        yet stays consistent with each spike's likelihood — a benign
-       decoded-vs-true divergence that none of the diagnostics should flag.)
+       decoded-vs-true divergence that none of the diagnostics should flag.
+       The replay rates are modeled correctly; the decoder's random-walk
+       transition does not describe the deterministic sweep.)
     6. **Drift Misfit** (transition: trajectory has persistent velocity
        at AR(1) coefficient ``config.drift_momentum``; decoder assumes
        memoryless walk)
@@ -663,7 +669,8 @@ def run_figure03_simulation(
     8. **Sparse Population** (control: the ordinary ensemble is quiet while a
        small population of pre-existing, sharply tuned cells clustered at one
        location fires sparsely — each an independent Poisson process, the
-       decoder's rates matching exactly. The prediction spreads between the
+       decoder's rates matching exactly, while the stationary animal is
+       decoded with the random-walk transition. The prediction spreads between the
        isolated spikes, and each spike's narrow likelihood remains contained
        within it. KL responds to the concentration difference while HPD overlap
        and the rank-based p-value remain consistent.)
