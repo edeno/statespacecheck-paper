@@ -265,8 +265,7 @@ REAL_CONTINUOUS_FRAGMENTED_CACHE_AVAILABLE = (
 
 @pytest.mark.skipif(
     not REAL_CONT_CACHE_AVAILABLE,
-    reason="Run `python -m statespacecheck_paper.interactive.cache build "
-    "--model continuous --data-dir data` first.",
+    reason="Run `python -m statespacecheck_paper.interactive.cache build --data-dir data` first.",
 )
 def test_real_continuous_cache_window_read_latency() -> None:
     """A 2-second window read on the real cache must comfortably beat 50 ms.
@@ -304,8 +303,7 @@ def test_real_continuous_cache_window_read_latency() -> None:
 
 @pytest.mark.skipif(
     not REAL_CONTINUOUS_FRAGMENTED_CACHE_AVAILABLE,
-    reason="Run `python -m statespacecheck_paper.interactive.cache build "
-    "--model continuous_fragmented --data-dir data` first.",
+    reason="Run `python -m statespacecheck_paper.interactive.cache build --data-dir data` first.",
 )
 def test_real_continuous_fragmented_cache_has_two_states() -> None:
     src = DecoderDataSource(CACHE_DIR, model="continuous_fragmented")
