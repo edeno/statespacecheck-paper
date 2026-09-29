@@ -14,9 +14,9 @@ pieces, and each reads data produced here from the paper's own pipeline:
   reference cases computed through the paper's
   :func:`~statespacecheck_paper.diagnostics.compute_spike_event_diagnostics_from_rates`
   wrapper of that function, and ``site/tests/metrics.test.mjs`` checks the port against them.
-- **Scenario player** — one display window per Figure-3 condition from the
+- **Condition player** — one display window per Figure-3 condition from the
   seed-``config.random_seed`` realization shown in Figure 3a.
-- **Replay comparison** — the Figure-4 detail window under both decoders.
+- **Recording comparison** — the Figure-4 detail window under both decoders.
 
 The players show precomputed diagnostic values, never recomputed ones. Numbers
 quoted in the page text come from :func:`statespacecheck_paper.reported_values.macro_sections`,
@@ -110,8 +110,8 @@ FIGURE04_PREDICTIVE_PERCENTILES = (2.0, 98.0)
 
 
 @dataclass(frozen=True)
-class ScenarioWindow:
-    """Display window for one Figure-3 condition in the scenario player.
+class ConditionWindow:
+    """Display window for one Figure-3 condition in the condition player.
 
     Parameters
     ----------
@@ -132,13 +132,13 @@ class ScenarioWindow:
 # the change is visible. Drift builds up gradually, so its window sits mid-phase,
 # where the flag rates are close to the across-realization medians. The sparse
 # population fires only a handful of spikes, so its window spans the whole phase.
-SCENARIO_WINDOWS: tuple[ScenarioWindow, ...] = (
-    ScenarioWindow("well_specified", 11_500, 13_000),
-    ScenarioWindow("remap", 5_700, 7_200),
-    ScenarioWindow("history_dependent", 13_700, 15_200),
-    ScenarioWindow("replay", 18_700, 21_300),
-    ScenarioWindow("drift", 24_000, 25_500),
-    ScenarioWindow("sparse_population", 29_700, 32_000),
+CONDITION_WINDOWS: tuple[ConditionWindow, ...] = (
+    ConditionWindow("well_specified", 11_500, 13_000),
+    ConditionWindow("remap", 5_700, 7_200),
+    ConditionWindow("history_dependent", 13_700, 15_200),
+    ConditionWindow("replay", 18_700, 21_300),
+    ConditionWindow("drift", 24_000, 25_500),
+    ConditionWindow("sparse_population", 29_700, 32_000),
 )
 
 
@@ -345,7 +345,7 @@ class FilterExplainerConfig:
     conflict_offset: float = 45.0
 
 
-# A display choice, like ``SCENARIO_WINDOWS``: a seed whose sequence shows the
+# A display choice, like ``CONDITION_WINDOWS``: a seed whose sequence shows the
 # prediction spreading over a long gap, tracks the animal with no inconsistent
 # spike before the conflict, and recovers after it (checked by the test suite).
 FILTER_EXPLAINER = FilterExplainerConfig()
@@ -711,17 +711,17 @@ def metric_parity_fixture(
 
 
 # ---------------------------------------------------------------------------
-# Scenario player (Figure 3)
+# Condition player (Figure 3)
 # ---------------------------------------------------------------------------
 
 
-def scenario_payloads(
+def condition_payloads(
     sim: Figure3SimulationResult,
     figure03_summary: Mapping[str, Any],
 ) -> dict[str, dict[str, Any]]:
     """Per-condition display data from one Figure-3 realization.
 
-    Each condition is shown over its window in :data:`SCENARIO_WINDOWS`.
+    Each condition is shown over its window in :data:`CONDITION_WINDOWS`.
 
     Parameters
     ----------
@@ -757,7 +757,7 @@ def scenario_payloads(
         float(np.nanquantile(diagnostics.predictive, PREDICTIVE_VMAX_QUANTILE)),
     )
     payloads: dict[str, dict[str, Any]] = {}
-    for window in SCENARIO_WINDOWS:
+    for window in CONDITION_WINDOWS:
         if not 0 <= window.start < window.stop <= n_time:
             raise ValueError(f"{window} lies outside the {n_time}-step timeline")
         condition = conditions[window.condition_id]
@@ -806,11 +806,11 @@ def scenario_payloads(
 
 
 # ---------------------------------------------------------------------------
-# Replay comparison (Figure 4)
+# Recording comparison (Figure 4)
 # ---------------------------------------------------------------------------
 
 
-def replay_payload(
+def recording_payload(
     render_data: Figure4RenderData,
     figure04_summary: Mapping[str, Any],
     detail_window: Figure4DetailWindow = FIGURE04_DETAIL_WINDOW,
@@ -920,7 +920,7 @@ def page_values(figure04_summary: Mapping[str, Any]) -> dict[str, str]:
     Returns
     -------
     dict
-        ``ReplayWindowSecondsWord``: the Figure-4 detail window's length in
+        ``RecordingWindowSecondsWord``: the Figure-4 detail window's length in
         seconds, spelled out ("this two-second window").
 
     Raises
@@ -932,8 +932,10 @@ def page_values(figure04_summary: Mapping[str, Any]) -> dict[str, str]:
     sampling_frequency_hz = figure04_summary["configuration"]["decoder"]["sampling_frequency_hz"]
     seconds = 2 * half_width / sampling_frequency_hz
     if not float(seconds).is_integer():
-        raise ValueError(f"The page spells the replay window in whole seconds; it is {seconds} s")
-    return {"ReplayWindowSecondsWord": cardinal_word(int(seconds))}
+        raise ValueError(
+            f"The page spells the recording window in whole seconds; it is {seconds} s"
+        )
+    return {"RecordingWindowSecondsWord": cardinal_word(int(seconds))}
 
 
 def manifest_payload(
@@ -957,15 +959,15 @@ def manifest_payload(
             "predictive": colormap_lut(CMAP_POSTERIOR),
             "likelihood": colormap_lut(CMAP_LIKELIHOOD),
         },
-        "scenarios": [
+        "conditions": [
             {
                 "condition_id": window.condition_id,
                 "label": figure03_summary["condition_labels"][
                     figure03_summary["condition_order"].index(window.condition_id)
                 ],
-                "file": f"scenario_{window.condition_id}.json",
+                "file": f"condition_{window.condition_id}.json",
             }
-            for window in SCENARIO_WINDOWS
+            for window in CONDITION_WINDOWS
         ],
     }
 
@@ -986,13 +988,13 @@ def export_site_data(*, include_recording: bool = True) -> list[Path]:
     Parameters
     ----------
     include_recording : bool, default True
-        Also export the Figure-4 replay window. This needs the Figure-4 input
+        Also export the Figure-4 recording window. This needs the Figure-4 input
         file in ``DATA_PATH``. It reuses the Figure-4 decode and diagnostics
         caches when their fingerprints match and otherwise rebuilds them as
         ``generate_figure04.py`` does: a stale or missing decode cache refits
         both models (several minutes) and writes the ~8 GB decode cache. Pass
         False on a machine without the input file, or when the recording
-        outputs are unchanged, to leave the committed ``replay.json`` untouched.
+        outputs are unchanged, to leave the committed ``recording.json`` untouched.
 
     Returns
     -------
@@ -1015,8 +1017,8 @@ def export_site_data(*, include_recording: bool = True) -> list[Path]:
         write_site_json(PARITY_FIXTURE_PATH, metric_parity_fixture(config, sparse_centers)),
         write_site_json(SITE_DATA_DIR / "filter.json", filter_explainer_payload(config)),
     ]
-    for condition_id, payload in scenario_payloads(simulation, figure03_summary).items():
-        written.append(write_site_json(SITE_DATA_DIR / f"scenario_{condition_id}.json", payload))
+    for condition_id, payload in condition_payloads(simulation, figure03_summary).items():
+        written.append(write_site_json(SITE_DATA_DIR / f"condition_{condition_id}.json", payload))
     if include_recording:
         render_data = prepare_figure04_render_data(
             Figure4Config(),
@@ -1024,7 +1026,7 @@ def export_site_data(*, include_recording: bool = True) -> list[Path]:
         )
         written.append(
             write_site_json(
-                SITE_DATA_DIR / "replay.json", replay_payload(render_data, figure04_summary)
+                SITE_DATA_DIR / "recording.json", recording_payload(render_data, figure04_summary)
             )
         )
     return written

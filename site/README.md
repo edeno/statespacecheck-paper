@@ -7,7 +7,7 @@ The site uses plain HTML, CSS, and JavaScript with a small Make/Node assembly st
 It has four interactive explainers: a time stepper through a short spike train decoded
 by the paper's Bayesian filter, a playground that recomputes the three
 diagnostics as the reader moves a prediction, a player for the Figure-3
-simulation conditions, and the Figure-4 replay window under both decoders.
+simulation conditions, and the Figure-4 recording window under both decoders.
 
 - The players and every number in the page text come from the paper's pipeline
   via `statespacecheck_paper.site_export`, which writes `site/data/*.json`. The
@@ -22,7 +22,7 @@ simulation conditions, and the Figure-4 replay window under both decoders.
 # Regenerate the page data after a figure summary or a diagnostic changes.
 # The Figure-4 window needs the Figure-4 input file. It reuses the Figure-4
 # caches when current; otherwise it refits both models (several minutes) and
-# writes the ~8 GB decode cache. Add --skip-recording to leave replay.json
+# writes the ~8 GB decode cache. Add --skip-recording to leave recording.json
 # untouched when the recording outputs are unchanged.
 uv run --frozen python scripts/export_site_data.py
 

@@ -1,4 +1,4 @@
-// Scenario player (Figure 3 simulation) and replay comparison (Figure 4
+// Condition player (Figure 3 simulation) and recording comparison (Figure 4
 // recording). Both show precomputed per-spike diagnostics from the paper's
 // pipeline on a shared time axis, with a cursor that inspects one spike.
 
@@ -38,7 +38,7 @@ const PLAYBACK_SECONDS = 15;
 const POPULATION_PEAK_HALF_WIDTH = 0.05;
 
 // Tab titles; the summaries abbreviate some condition labels for the figure.
-const SCENARIO_TITLES = {
+const CONDITION_TITLES = {
   well_specified: "Well-specified",
   remap: "Remap",
   history_dependent: "History-dependent firing",
@@ -47,7 +47,7 @@ const SCENARIO_TITLES = {
   sparse_population: "Sparse population",
 };
 
-const SCENARIO_TEXT = {
+const CONDITION_TEXT = {
   well_specified:
     "Model and data agree. The few spikes flagged here show the false-positive rate that each threshold allows.",
   remap:
@@ -345,15 +345,15 @@ function mountTracks(left, { ariaLabel, range, tracks, eventTimes, select, annou
 }
 
 // ---------------------------------------------------------------------------
-// Scenario player
+// Condition player
 // ---------------------------------------------------------------------------
 
-export function initScenarios(root, manifest) {
-  const tabs = root.querySelector("#sc-tabs");
-  const view = root.querySelector("#sc-view");
-  const text = root.querySelector("#sc-text");
+export function initConditions(root, manifest) {
+  const tabs = root.querySelector("#cond-tabs");
+  const view = root.querySelector("#cond-view");
+  const text = root.querySelector("#cond-text");
   const cache = new Map();
-  const ids = manifest.scenarios.map((s) => s.condition_id);
+  const ids = manifest.conditions.map((c) => c.condition_id);
   // Each selection bumps the generation; a load that finishes after a newer
   // selection (even of the same condition, A -> B -> A) is discarded.
   let generation = 0;
@@ -361,15 +361,15 @@ export function initScenarios(root, manifest) {
 
   view.setAttribute("role", "tabpanel");
   view.tabIndex = -1;
-  const buttons = manifest.scenarios.map(({ condition_id: id, label }) => {
+  const buttons = manifest.conditions.map(({ condition_id: id, label }) => {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "chip";
-    button.id = `sc-tab-${id}`;
+    button.id = `cond-tab-${id}`;
     button.setAttribute("role", "tab");
     button.setAttribute("aria-controls", view.id);
     button.dataset.condition = id;
-    button.textContent = SCENARIO_TITLES[id] ?? label;
+    button.textContent = CONDITION_TITLES[id] ?? label;
     button.addEventListener("click", () => select(id));
     button.addEventListener("keydown", (event) => {
       const i = ids.indexOf(id);
@@ -398,14 +398,14 @@ export function initScenarios(root, manifest) {
       button.setAttribute("aria-selected", String(selected));
       button.tabIndex = selected ? 0 : -1;
     }
-    view.setAttribute("aria-labelledby", `sc-tab-${id}`);
-    text.textContent = SCENARIO_TEXT[id] ?? "";
+    view.setAttribute("aria-labelledby", `cond-tab-${id}`);
+    text.textContent = CONDITION_TEXT[id] ?? "";
     const url = new URL(window.location.href);
     url.searchParams.set("condition", id);
     window.history.replaceState(null, "", url);
     if (!cache.has(id)) {
       view.innerHTML = '<p class="loading">Loading simulation…</p>';
-      const entry = manifest.scenarios.find((s) => s.condition_id === id);
+      const entry = manifest.conditions.find((c) => c.condition_id === id);
       try {
         cache.set(id, await loadJSON(`data/${entry.file}`));
       } catch (error) {
@@ -417,7 +417,7 @@ export function initScenarios(root, manifest) {
     }
     if (request !== generation) return;
     try {
-      teardown = renderScenario(view, cache.get(id), manifest);
+      teardown = renderCondition(view, cache.get(id), manifest);
     } catch (error) {
       view.innerHTML = `<p class="error">Could not display this condition (${error.message}).</p>`;
       console.error(error);
@@ -429,7 +429,7 @@ export function initScenarios(root, manifest) {
   select(ids.includes(requested) ? requested : ids.includes("remap") ? "remap" : ids[0]);
 }
 
-function renderScenario(view, payload, manifest) {
+function renderCondition(view, payload, manifest) {
   view.replaceChildren();
   const bins = payload.position_bins;
   const nBins = bins.length;
@@ -603,7 +603,7 @@ function renderScenario(view, payload, manifest) {
 }
 
 // ---------------------------------------------------------------------------
-// Replay comparison
+// Recording comparison
 // ---------------------------------------------------------------------------
 
 /**
@@ -627,8 +627,8 @@ function populationPeak(spikeTimes, range, dt) {
   return best;
 }
 
-export function renderReplay(root, payload, manifest) {
-  const view = root.querySelector("#rp-view");
+export function renderRecording(root, payload, manifest) {
+  const view = root.querySelector("#rec-view");
   view.replaceChildren();
   const bins = payload.position_bins;
   const nBins = bins.length;

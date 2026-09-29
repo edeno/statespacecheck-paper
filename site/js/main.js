@@ -3,7 +3,7 @@
 import { fillMacros, loadJSON } from "./data.js";
 import { initExplainer } from "./explainer.js";
 import { initPlayground } from "./playground.js";
-import { initScenarios, renderReplay } from "./players.js";
+import { initConditions, renderRecording } from "./players.js";
 
 function showError(container, what, error) {
   container.innerHTML = "";
@@ -69,18 +69,18 @@ async function main() {
   try {
     manifest = await manifestLoad;
   } catch (error) {
-    showError(simulation.querySelector("#sc-view"), "simulation", error);
-    showError(recording.querySelector("#rp-view"), "recording", error);
+    showError(simulation.querySelector("#cond-view"), "simulation", error);
+    showError(recording.querySelector("#rec-view"), "recording", error);
     return;
   }
   fillMacros(document, { ...manifest.macros, ...manifest.page_values });
 
-  whenNear(simulation, () => initScenarios(simulation, manifest));
+  whenNear(simulation, () => initConditions(simulation, manifest));
 
   whenNear(recording, () =>
-    loadJSON("data/replay.json")
-      .then((data) => renderReplay(recording, data, manifest))
-      .catch((error) => showError(recording.querySelector("#rp-view"), "recording", error)),
+    loadJSON("data/recording.json")
+      .then((data) => renderRecording(recording, data, manifest))
+      .catch((error) => showError(recording.querySelector("#rec-view"), "recording", error)),
   );
 }
 

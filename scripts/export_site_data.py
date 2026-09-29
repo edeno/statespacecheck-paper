@@ -11,7 +11,7 @@ def main() -> None:
     parser.add_argument(
         "--skip-recording",
         action="store_true",
-        help="Leave replay.json untouched (for machines without the Figure-4 data).",
+        help="Leave recording.json untouched (for machines without the Figure-4 data).",
     )
     args = parser.parse_args()
     for path in export_site_data(include_recording=not args.skip_recording):

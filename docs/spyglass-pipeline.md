@@ -142,7 +142,7 @@ Each needs the user's go-ahead before anything is written.
   [artifact refresh procedure](development.md#refreshing-publication-artifacts):
   regenerate affected figures, or refresh only `provenance.source` where it allows,
   then re-emit the reported values; `tests/test_reported_statistics_artifacts.py` fails otherwise.
-  After a Figure-4 summary change, also update `site/data/replay.json` (its
+  After a Figure-4 summary change, also update `site/data/recording.json` (its
   decode-cache fingerprint); other re-exported site files that differ only in the
   last floating-point digit need not be committed.
 - Figure-4 renders are not byte-stable: the "Continuous–Fragmented Model" panel title can

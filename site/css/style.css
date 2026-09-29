@@ -698,7 +698,7 @@ input:focus-visible,
   font-variant-numeric: tabular-nums;
 }
 
-.scenario-text {
+.condition-text {
   min-height: 3.2em;
 }
 

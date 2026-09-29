@@ -1,8 +1,8 @@
 """Tests for the website data export (``statespacecheck_paper.site_export``).
 
 Covers the encoding helpers, the filter explainer, the playground and
-parity-fixture builders, the Figure-3 scenario payloads (against the real seed-1
-realization), the Figure-4 replay payload (against synthetic render data), and
+parity-fixture builders, the Figure-3 condition payloads (against the real seed-1
+realization), the Figure-4 recording payload (against synthetic render data), and
 that the committed files under ``site/`` are current with the committed figure
 summaries.
 """
@@ -42,11 +42,12 @@ from statespacecheck_paper.paths import FIGURE03_SUMMARY_PATH, FIGURE04_SUMMARY_
 from statespacecheck_paper.scientific_artifacts import inclusive_flag_rules
 from statespacecheck_paper.simulation import gaussian_transition_matrix, place_field_rates
 from statespacecheck_paper.site_export import (
+    CONDITION_WINDOWS,
     FILTER_EXPLAINER,
     PARITY_FIXTURE_PATH,
-    SCENARIO_WINDOWS,
     SITE_DATA_DIR,
     FilterExplainerSequence,
+    condition_payloads,
     encode_display_rows,
     filter_explainer_payload,
     filter_explainer_sequence,
@@ -57,8 +58,7 @@ from statespacecheck_paper.site_export import (
     page_values,
     playground_ensembles,
     playground_payload,
-    replay_payload,
-    scenario_payloads,
+    recording_payload,
 )
 from statespacecheck_paper.style import COLORS, METRIC_NAMES, METRIC_SPECS, PREDICTIVE_VMAX_QUANTILE
 from tests.test_figure04_layout import _compose_render_data
@@ -108,10 +108,10 @@ def parity_fixture(config: Figure3Config, sparse_centers: NDArray[np.float64]) -
 
 
 @pytest.fixture(scope="module")
-def scenarios(
+def site_conditions(
     simulation: Figure3SimulationResult, figure03_summary: dict[str, Any]
 ) -> dict[str, dict[str, Any]]:
-    return scenario_payloads(simulation, figure03_summary)
+    return condition_payloads(simulation, figure03_summary)
 
 
 # ---------------------------------------------------------------------------
@@ -320,17 +320,17 @@ def test_parity_fixture_matches_the_python_diagnostics(parity_fixture: dict[str,
 
 
 # ---------------------------------------------------------------------------
-# Scenario player (Figure 3)
+# Condition player (Figure 3)
 # ---------------------------------------------------------------------------
 
 
-def test_scenario_windows_cover_every_condition_and_overlap_its_scored_steps(
+def test_condition_windows_cover_every_condition_and_overlap_its_scored_steps(
     config: Figure3Config,
 ) -> None:
     conditions = conditions_by_id(config)
-    assert [window.condition_id for window in SCENARIO_WINDOWS] == list(conditions)
+    assert [window.condition_id for window in CONDITION_WINDOWS] == list(conditions)
     n_time = config.phase_boundaries[-1]
-    for window in SCENARIO_WINDOWS:
+    for window in CONDITION_WINDOWS:
         assert 0 <= window.start < window.stop <= n_time
         assert any(
             t0 < window.stop and t1 > window.start
@@ -338,15 +338,15 @@ def test_scenario_windows_cover_every_condition_and_overlap_its_scored_steps(
         ), window
 
 
-def test_scenario_events_match_the_decoded_diagnostics(
+def test_condition_events_match_the_decoded_diagnostics(
     simulation: Figure3SimulationResult,
-    scenarios: dict[str, dict[str, Any]],
+    site_conditions: dict[str, dict[str, Any]],
     figure03_summary: dict[str, Any],
 ) -> None:
     diagnostics = simulation.diagnostics
     n_bins = simulation.position_bins.size
-    for window in SCENARIO_WINDOWS:
-        payload = scenarios[window.condition_id]
+    for window in CONDITION_WINDOWS:
+        payload = site_conditions[window.condition_id]
         events = payload["events"]
         in_window = (diagnostics.event_time_ind >= window.start) & (
             diagnostics.event_time_ind < window.stop
@@ -384,14 +384,14 @@ def test_scenario_events_match_the_decoded_diagnostics(
         assert len(payload["true_position"]) == window.stop - window.start
 
 
-def test_scenario_summaries_come_from_the_figure_summary(
-    scenarios: dict[str, dict[str, Any]], figure03_summary: dict[str, Any]
+def test_condition_summaries_come_from_the_figure_summary(
+    site_conditions: dict[str, dict[str, Any]], figure03_summary: dict[str, Any]
 ) -> None:
     """The page quotes the summary's medians, rounded with the manuscript's policy."""
     metric_order = figure03_summary["metric_order"]
     error_row = figure03_summary["error_metric_order"].index("median_absolute_error")
     for column, condition_id in enumerate(figure03_summary["condition_order"]):
-        summary = scenarios[condition_id]["summary"]
+        summary = site_conditions[condition_id]["summary"]
         assert set(summary["median_flag_percent_text"]) == set(METRIC_NAMES)
         for metric, text in summary["median_flag_percent_text"].items():
             row = metric_order.index(metric)
@@ -402,11 +402,11 @@ def test_scenario_summaries_come_from_the_figure_summary(
 
 
 # ---------------------------------------------------------------------------
-# Replay comparison (Figure 4)
+# Recording comparison (Figure 4)
 # ---------------------------------------------------------------------------
 
 
-def test_replay_payload_slices_both_models_to_the_detail_window() -> None:
+def test_recording_payload_slices_both_models_to_the_detail_window() -> None:
     render_data = _compose_render_data()
     summary = {
         "flag_rules": {
@@ -421,7 +421,7 @@ def test_replay_payload_slices_both_models_to_the_detail_window() -> None:
         },
     }
     window = Figure4DetailWindow(center_index=20, half_width_samples=10)
-    payload = replay_payload(render_data, summary, window)
+    payload = recording_payload(render_data, summary, window)
     time_slice = window.to_slice(render_data.time.size)
     n_time = time_slice.stop - time_slice.start
     decode = render_data.decode_results
@@ -484,13 +484,13 @@ def test_replay_payload_slices_both_models_to_the_detail_window() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_page_values_spell_the_replay_window_length(figure04_summary: dict[str, Any]) -> None:
+def test_page_values_spell_the_recording_window_length(figure04_summary: dict[str, Any]) -> None:
     """The page's "two-second window" is the Figure-4 detail window at the decoder's bin rate."""
-    assert page_values(figure04_summary) == {"ReplayWindowSecondsWord": "two"}
+    assert page_values(figure04_summary) == {"RecordingWindowSecondsWord": "two"}
 
     summary = copy.deepcopy(figure04_summary)
     summary["detail_window"]["half_width_samples"] = 1_500
-    assert page_values(summary) == {"ReplayWindowSecondsWord": "six"}
+    assert page_values(summary) == {"RecordingWindowSecondsWord": "six"}
     summary["detail_window"]["half_width_samples"] = 600
     with pytest.raises(ValueError, match="whole seconds"):
         page_values(summary)
@@ -534,9 +534,11 @@ def _assert_heatmap_close(committed: dict[str, Any], fresh: dict[str, Any], n_bi
     np.testing.assert_allclose(committed["range"], fresh["range"], rtol=1e-9)
 
 
-def test_committed_scenarios_are_current(scenarios: dict[str, dict[str, Any]]) -> None:
-    for condition_id, fresh in scenarios.items():
-        committed = _load(SITE_DATA_DIR / f"scenario_{condition_id}.json")
+def test_committed_condition_payloads_are_current(
+    site_conditions: dict[str, dict[str, Any]],
+) -> None:
+    for condition_id, fresh in site_conditions.items():
+        committed = _load(SITE_DATA_DIR / f"condition_{condition_id}.json")
         assert committed.keys() == fresh.keys(), condition_id
         n_bins = len(fresh["position_bins"])
         for key in (
@@ -605,8 +607,8 @@ def test_committed_playground_is_current(
         np.testing.assert_allclose(old["rates"], new["rates"], rtol=1e-12)
 
 
-def test_committed_replay_matches_the_figure04_decode(figure04_summary: dict[str, Any]) -> None:
-    committed = _load(SITE_DATA_DIR / "replay.json")
+def test_committed_recording_matches_the_figure04_decode(figure04_summary: dict[str, Any]) -> None:
+    committed = _load(SITE_DATA_DIR / "recording.json")
     caches = figure04_summary["provenance"]["figure04_caches"]
     # A decoder or a diagnostics change must be followed by a re-export.
     assert committed["decode_cache_fingerprint"] == caches["fingerprint_sha256"]
