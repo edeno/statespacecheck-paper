@@ -421,22 +421,12 @@ summary:focus-visible,
   opacity: 0.35;
 }
 
-/* An HPD region's bar, as drawn under the curves. */
-.swatch.hpd {
-  height: 5px;
-}
-
-/* A dashed line or bar; --swatch-color sets its color. */
 .swatch.dashed {
-  background: repeating-linear-gradient(
-    90deg,
-    var(--swatch-color, var(--posterior)) 0 5px,
-    transparent 5px 8px
-  );
+  background: repeating-linear-gradient(90deg, var(--posterior) 0 5px, transparent 5px 8px);
 }
 
 .swatch.dashed.muted {
-  --swatch-color: var(--curve-muted);
+  background: repeating-linear-gradient(90deg, var(--curve-muted) 0 5px, transparent 5px 8px);
 }
 
 /* ------------------------------------------------------ Filter explainer */
