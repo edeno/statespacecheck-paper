@@ -3,7 +3,7 @@ r"""Build the on-disk caches used by the interactive viewer.
 For Figure 4, the cache reformats the canonical decode bundle produced by
 ``generate_figure04.py`` into a layout that supports fast windowed reads:
 
-- A Zarr store per model with chunked posterior / log-likelihood arrays
+- A Zarr store per model with chunked predictive / log-likelihood arrays
   (chunked along time, full position axis per chunk).
 - A Parquet event table with one row per spike, sorted by time, holding
   the per-spike diagnostic metrics (HPD overlap, KL divergence, predictive

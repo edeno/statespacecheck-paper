@@ -1,7 +1,7 @@
 """Shared synthetic-cache builder for the interactive-viewer tests.
 
 The five ``test_interactive_*.py`` files all want a tiny but
-self-consistent cache (Zarr posterior + log-likelihood, Parquet event
+self-consistent cache (Zarr predictive + log-likelihood, Parquet event
 table, place-fields .npz, meta + spike-times sidecars) to drive
 ``DecoderDataSource`` and ``DecoderViewer`` without touching the real
 ~8 GB Figure 4 decode cache. This module is the single source of truth.
@@ -69,8 +69,8 @@ def build_synthetic_cache(
     position_grid = np.linspace(0.0, 100.0, n_position)
     position_coord = np.tile(position_grid, n_states)
 
-    posterior = rng.dirichlet(np.ones(n_state_bins), size=n_time).astype(np.float32)
-    log_likelihood = np.log(posterior + 1e-12).astype(np.float32)
+    predictive = rng.dirichlet(np.ones(n_state_bins), size=n_time).astype(np.float32)
+    log_likelihood = np.log(predictive + 1e-12).astype(np.float32)
     if n_states == 1:
         state_probs_var: tuple[Any, Any] = (
             ("time",),
@@ -93,7 +93,7 @@ def build_synthetic_cache(
         coords["states"] = ("states", np.array(state_names))
 
     data_vars: dict[str, Any] = {
-        "predictive_posterior": (("time", "state_bins"), posterior),
+        "predictive_posterior": (("time", "state_bins"), predictive),
         "log_likelihood": (("time", "state_bins"), log_likelihood),
         "acausal_state_probabilities": state_probs_var,
     }

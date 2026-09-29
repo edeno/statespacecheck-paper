@@ -131,13 +131,13 @@ def test_index_at_time_returns_nearest_neighbor(synthetic_cache: Path) -> None:
         assert src.index_at_time(src.time[-1] + 1.0) == src.n_time - 1
 
 
-def test_load_posterior_returns_window_shape_and_dtype(synthetic_cache: Path) -> None:
+def test_load_predictive_returns_window_shape_and_dtype(synthetic_cache: Path) -> None:
     with DecoderDataSource(synthetic_cache, model="continuous") as src:
         sl = slice(50, 150)
-        post = src.load_posterior(sl)
-        assert post.shape == (100, src.n_state_bins)
-        assert post.dtype == np.float32
-        assert post.flags["C_CONTIGUOUS"]
+        predictive = src.load_predictive(sl)
+        assert predictive.shape == (100, src.n_state_bins)
+        assert predictive.dtype == np.float32
+        assert predictive.flags["C_CONTIGUOUS"]
 
 
 def test_load_likelihood_returns_window(synthetic_cache: Path) -> None:
@@ -148,13 +148,13 @@ def test_load_likelihood_returns_window(synthetic_cache: Path) -> None:
         assert loglik.dtype == np.float32
 
 
-def test_slice_at_index_matches_load_posterior_row(synthetic_cache: Path) -> None:
+def test_slice_at_index_matches_load_predictive_row(synthetic_cache: Path) -> None:
     with DecoderDataSource(synthetic_cache, model="continuous") as src:
         sl = slice(40, 60)
-        post = src.load_posterior(sl)
+        predictive = src.load_predictive(sl)
         for offset in [0, 5, 19]:
-            row = src.slice_at_index(sl.start + offset, which="posterior")
-            np.testing.assert_array_equal(row, post[offset])
+            row = src.slice_at_index(sl.start + offset, which="predictive")
+            np.testing.assert_array_equal(row, predictive[offset])
 
 
 def test_slice_at_index_likelihood_branch(synthetic_cache: Path) -> None:
@@ -231,15 +231,15 @@ def test_real_continuous_cache_window_read_latency() -> None:
         # Cold + warm reads both well under the smoke target.
         sl = src.window_indices(t_center=src.time[100_000], t_width=2.0)
         t0 = time.perf_counter()
-        post = src.load_posterior(sl)
+        predictive = src.load_predictive(sl)
         cold_ms = (time.perf_counter() - t0) * 1000
 
         t0 = time.perf_counter()
-        post2 = src.load_posterior(sl)
+        predictive2 = src.load_predictive(sl)
         warm_ms = (time.perf_counter() - t0) * 1000
 
-        assert post.shape[1] == 256
-        assert post.shape == post2.shape
+        assert predictive.shape[1] == 256
+        assert predictive.shape == predictive2.shape
         # Generous bound on the 50 ms p95 target for 20 s windows.
         assert cold_ms < 100, f"cold read {cold_ms:.1f} ms"
         assert warm_ms < 100, f"warm read {warm_ms:.1f} ms"

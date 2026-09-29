@@ -2,7 +2,7 @@
 
 This module owns the per-row plot widgets the viewer composes:
 
-- ``PosteriorPanel`` and ``LikelihoodPanel`` — heatmaps stacked along
+- ``PredictivePanel`` and ``LikelihoodPanel`` — heatmaps stacked along
   the left-hand time axis.
 - ``RasterPanel`` — sorted spike raster.
 - ``MetricPanel`` — per-spike scatter for one of HPD overlap,
@@ -56,9 +56,9 @@ _VIRIDIS_LUT: NDArray[np.uint8] = pg.colormap.get("viridis").getLookupTable(0.0,
 # the paper's WONG palette via :data:`statespacecheck_paper.style.COLORS`
 # so the GUI matches the manuscript figures. State-0 uses the paper's
 # "predictive" / "likelihood" semantics; state-1 picks the adjacent
-# WONG entry in the same hue family (cool for posterior, warm for
+# WONG entry in the same hue family (cool for predictive, warm for
 # likelihood) for within-panel separation.
-_STATE_POSTERIOR_RGB: tuple[tuple[int, int, int], ...] = (
+_STATE_PREDICTIVE_RGB: tuple[tuple[int, int, int], ...] = (
     hex_to_rgb(COLORS["predictive"]),  # WONG[5] Blue
     hex_to_rgb(WONG[3]),  # WONG[3] Bluish Green
 )
@@ -70,7 +70,7 @@ _LIKELIHOOD_PEN_RGB = hex_to_rgb(WONG[6])  # WONG[6] Vermillion
 _TRUE_POSITION_PEN = pg.mkPen((50, 50, 50), width=1, style=QtCore.Qt.PenStyle.DashLine)
 
 # Palette for the per-cell place-field overlay. Picked to be distinct
-# from the joint posterior (blue), joint likelihood (orange), pinned
+# from the joint predictive (blue), joint likelihood (orange), pinned
 # curve (gold), and true-position line (gray). Cells are colored by
 # ``cell_id % len(palette)``, so distinct cells in the same bin land
 # on different hues even when their IDs are adjacent.
@@ -129,7 +129,7 @@ _SLICE_CELL_HEADER_PINNED_STYLE = (
 
 
 class _BaseHeatmapPanel(pg.PlotWidget):
-    """Common posterior / likelihood heatmap behavior.
+    """Common predictive / likelihood heatmap behavior.
 
     Subclasses provide ``update_with_window`` which decides how to
     reduce a ``(n_visible, n_state_bins)`` window to a 2-D image; the
@@ -318,7 +318,7 @@ class _BaseHeatmapPanel(pg.PlotWidget):
         self.setYRange(self._y0 - self._dy_half, self._y1 + self._dy_half, padding=0)
 
 
-class PosteriorPanel(_BaseHeatmapPanel):
+class PredictivePanel(_BaseHeatmapPanel):
     """Predictive distribution heatmap (state-summed for multi-state models)."""
 
     def __init__(self, *, position_bins: NDArray[np.float64], n_states: int) -> None:
@@ -330,10 +330,10 @@ class PosteriorPanel(_BaseHeatmapPanel):
         self,
         time_start: float,
         time_end: float,
-        post: NDArray[np.float32],
+        predictive: NDArray[np.float32],
     ) -> None:
-        """Redraw the posterior heatmap for the given time window."""
-        arr = post
+        """Redraw the predictive heatmap for the given time window."""
+        arr = predictive
         if self._n_states > 1:
             n_visible = arr.shape[0]
             arr = arr.reshape(n_visible, self._n_states, self._n_pos).sum(axis=1)
@@ -840,7 +840,7 @@ class SlicePanel(QtWidgets.QWidget):
         self._lik_overlay_curve = pg.PlotDataItem(
             self._position_bins_uniform,
             self._zero_curve,
-            pen=pg.mkPen(*_STATE_POSTERIOR_RGB[0], 230, width=2),
+            pen=pg.mkPen(*_STATE_PREDICTIVE_RGB[0], 230, width=2),
         )
         self._likelihood_plot.addItem(self._lik_overlay_curve)
         self._lik_predictive_curve = self._lik_overlay_curve  # back-compat alias
@@ -910,10 +910,10 @@ class SlicePanel(QtWidgets.QWidget):
         outer.addWidget(self._annotation)
 
         self._buffer_slice: slice | None = None
-        self._buffer_post: NDArray[np.float32] | None = None
+        self._buffer_predictive: NDArray[np.float32] | None = None
         self._buffer_lik: NDArray[np.float32] | None = None
         self._buffer_acausal: NDArray[np.float32] | None = None
-        # Row provider returns ``(post, lik, acausal)`` for a single
+        # Row provider returns ``(predictive, lik, acausal)`` for a single
         # ``t_idx``. ``acausal`` may be ``None`` only for caches where the
         # smoothed overlay choice is disabled.
         self._row_provider: (
@@ -929,13 +929,13 @@ class SlicePanel(QtWidgets.QWidget):
     # ------------------------------------------------------------------
 
     def _build_legend_html(self) -> str:
-        post_rgb = _STATE_POSTERIOR_RGB[0]
+        predictive_rgb = _STATE_PREDICTIVE_RGB[0]
         lik_rgb = _STATE_LIKELIHOOD_RGB[0]
         overlay_label = _OVERLAY_LABELS[self._overlay_choice]
         parts = [
             f"<span style='color:rgb({lik_rgb[0]},{lik_rgb[1]},{lik_rgb[2]});"
             "font-size:14pt'>━</span> Likelihood",
-            f"<span style='color:rgb({post_rgb[0]},{post_rgb[1]},{post_rgb[2]});"
+            f"<span style='color:rgb({predictive_rgb[0]},{predictive_rgb[1]},{predictive_rgb[2]});"
             f"font-size:14pt'>━</span> {overlay_label} (top) / Predictive (per cell)",
             "<span style='color:rgb(50,50,50);font-size:14pt'>┄</span> True position",
         ]
@@ -948,18 +948,18 @@ class SlicePanel(QtWidgets.QWidget):
     def set_window_buffer(
         self,
         sl: slice,
-        post: NDArray[np.float32],
+        predictive: NDArray[np.float32],
         lik: NDArray[np.float32],
         *,
         acausal: NDArray[np.float32] | None = None,
     ) -> None:
-        """Cache the window's posterior/likelihood (and optional smoothed) arrays.
+        """Cache the window's predictive/likelihood (and optional smoothed) arrays.
 
         The cached buffer lets :meth:`update_for_index` redraw a single sample
         without re-slicing the full window on every cursor move.
         """
         self._buffer_slice = sl
-        self._buffer_post = post
+        self._buffer_predictive = predictive
         self._buffer_lik = lik
         self._buffer_acausal = acausal
 
@@ -973,7 +973,7 @@ class SlicePanel(QtWidgets.QWidget):
     ) -> None:
         """Install a single-row reader for use when ``t_idx`` is outside the buffer.
 
-        ``provider(t_idx)`` returns ``(post_row, lik_row, acausal_row)``
+        ``provider(t_idx)`` returns ``(predictive_row, lik_row, acausal_row)``
         — already NaN-cleaned (and ``lik_row`` exponentiated from the
         cache's ``log_likelihood``) — matching what the worker thread
         produces for the buffered case. ``acausal_row`` is ``None``
@@ -1013,36 +1013,41 @@ class SlicePanel(QtWidgets.QWidget):
     def update_for_index(self, t_idx: int, true_position: float) -> None:
         """Redraw the slice plots for sample ``t_idx`` from the cached window buffer."""
         sl = self._buffer_slice
-        post = self._buffer_post
+        predictive = self._buffer_predictive
         lik = self._buffer_lik
         acausal = self._buffer_acausal
-        if sl is not None and post is not None and lik is not None and sl.start <= t_idx < sl.stop:
+        if (
+            sl is not None
+            and predictive is not None
+            and lik is not None
+            and sl.start <= t_idx < sl.stop
+        ):
             local_idx = t_idx - sl.start
-            post_row = post[local_idx]
+            predictive_row = predictive[local_idx]
             lik_row = lik[local_idx]
             acausal_row = acausal[local_idx] if acausal is not None else None
         elif self._row_provider is not None:
             # Buffer doesn't cover ``t_idx`` (the user has scrubbed
             # past the loaded window). Fall back to a single-row read.
-            post_row, lik_row, acausal_row = self._row_provider(t_idx)
+            predictive_row, lik_row, acausal_row = self._row_provider(t_idx)
         else:
             return
-        post_row_collapsed = self._collapse_row(post_row)
+        predictive_row_collapsed = self._collapse_row(predictive_row)
         if self._n_states > 1:
             lik_rs = lik_row.reshape(self._n_states, self._n_pos)
         else:
             lik_rs = lik_row[None, :]
 
         # Predictive (always used for per-cell row overlays).
-        peak = float(post_row_collapsed.max())
+        peak = float(predictive_row_collapsed.max())
         if peak > 0:
-            self._predictive_norm = (post_row_collapsed / peak).astype(np.float32, copy=False)
+            self._predictive_norm = (predictive_row_collapsed / peak).astype(np.float32, copy=False)
         else:
-            self._predictive_norm = post_row_collapsed.astype(np.float32, copy=False)
+            self._predictive_norm = predictive_row_collapsed.astype(np.float32, copy=False)
 
         # Top-plot overlay: predictive / filtered / smoothed.
         self._top_overlay_norm = self._compute_top_overlay(
-            post_row=post_row,
+            predictive_row=predictive_row,
             lik_row=lik_row,
             acausal_row=acausal_row,
         )
@@ -1075,7 +1080,7 @@ class SlicePanel(QtWidgets.QWidget):
     def _compute_top_overlay(
         self,
         *,
-        post_row: NDArray[np.float32],
+        predictive_row: NDArray[np.float32],
         lik_row: NDArray[np.float32],
         acausal_row: NDArray[np.float32] | None,
     ) -> NDArray[np.float32]:
@@ -1086,7 +1091,7 @@ class SlicePanel(QtWidgets.QWidget):
         if choice == "filtered":
             # Bayesian filtered: ``predictive × likelihood``, normalized
             # over state_bins, then state-collapsed for the visual.
-            filtered_full = post_row * lik_row
+            filtered_full = predictive_row * lik_row
             total = float(filtered_full.sum())
             if total > 0:
                 filtered_full = filtered_full / total
@@ -1136,7 +1141,7 @@ class SlicePanel(QtWidgets.QWidget):
         predictive_curve = pg.PlotDataItem(
             self._position_bins,
             self._predictive_norm,
-            pen=pg.mkPen(*_STATE_POSTERIOR_RGB[0], 200, width=2),
+            pen=pg.mkPen(*_STATE_PREDICTIVE_RGB[0], 200, width=2),
         )
         plot.addItem(cell_curve)
         plot.addItem(predictive_curve)

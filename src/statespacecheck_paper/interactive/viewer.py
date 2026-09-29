@@ -6,12 +6,12 @@ and the cache reads (provided by ``data_source.py``). It owns:
 - view state (center time, window width, model, pinned event),
 - the autoscroll / keyboard / model-swap UI behaviors,
 - the ``_WindowLoadWorker`` + ``_LoadSignals`` thread-pool harness that
-  reads a window's posterior + log-likelihood off the disk cache and
+  reads a window's predictive + log-likelihood off the disk cache and
   hands the result to the panels on the main thread.
 
 For the Qt-application entry point and the
 ``python -m statespacecheck_paper.interactive.viewer`` CLI, see
-``app.py``. Panel widget classes (``PosteriorPanel``,
+``app.py``. Panel widget classes (``PredictivePanel``,
 ``LikelihoodPanel``, ``RasterPanel``, ``MetricPanel``, ``SlicePanel``)
 plus the ``CellSlice`` payload dataclass live in ``panels.py``.
 """
@@ -43,7 +43,7 @@ from .panels import (
     LikelihoodPanel,
     MetricPanel,
     OverlayChoice,
-    PosteriorPanel,
+    PredictivePanel,
     RasterPanel,
     SlicePanel,
 )
@@ -187,12 +187,12 @@ class _LoadSignals(QtCore.QObject):
     signals.
     """
 
-    # request_id, slice, post, lik, acausal (None if cache lacks it)
+    # request_id, slice, predictive, lik, acausal (None if cache lacks it)
     finished = QtCore.Signal(int, slice, object, object, object)
 
 
 class _WindowLoadWorker(QtCore.QRunnable):
-    """Pull one window's posterior + log-likelihood + acausal from the cache.
+    """Pull one window's predictive + log-likelihood + acausal from the cache.
 
     Runs on a ``QThreadPool`` worker thread; emits the result on the
     main thread via the bridge ``QObject``'s signal.
@@ -213,12 +213,14 @@ class _WindowLoadWorker(QtCore.QRunnable):
     @QtCore.Slot()
     def run(self) -> None:  # noqa: D401 - QRunnable contract
         sl = self._ds.window_indices(self._state.t_center, self._state.t_width)
-        post = self._ds.load_posterior(sl)
+        predictive = self._ds.load_predictive(sl)
         loglik = self._ds.load_likelihood(sl)
         acausal = self._ds.load_acausal(sl) if self._state.load_acausal else None
 
         mask = self._ds.state_interior_mask
-        post = _replace_structural_padding(post, mask, fill_value=0.0, name=self._ds.PREDICTIVE_VAR)
+        predictive = _replace_structural_padding(
+            predictive, mask, fill_value=0.0, name=self._ds.PREDICTIVE_VAR
+        )
         loglik = _replace_structural_padding(
             loglik,
             mask,
@@ -236,7 +238,7 @@ class _WindowLoadWorker(QtCore.QRunnable):
         # ``np.exp`` per committed update. Subtract the per-row max
         # first to avoid float32 overflow.
         lik = _relative_likelihood_from_log(loglik)
-        self._signals.finished.emit(self._state.request_id, sl, post, lik, acausal)
+        self._signals.finished.emit(self._state.request_id, sl, predictive, lik, acausal)
 
 
 # ---------------------------------------------------------------------------
@@ -314,7 +316,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
         # NaN-cleans to zero). ``position_bins`` (248 interior) is only
         # used for things that operate on the interior subset, like
         # place-field peaks.
-        self.posterior_panel = PosteriorPanel(
+        self.predictive_panel = PredictivePanel(
             position_bins=ds.position_grid_full,
             n_states=ds.n_states,
         )
@@ -347,14 +349,14 @@ class DecoderViewer(QtWidgets.QMainWindow):
         x_linked: list[pg.PlotWidget] = [self.likelihood_panel, self.raster_panel]
         x_linked.extend(self.metric_panels.values())
         for panel in x_linked:
-            panel.setXLink(self.posterior_panel)
+            panel.setXLink(self.predictive_panel)
 
         # Wheel-over-time-axis-panel scrolls the window width. Install
         # the event filter both on the panel itself and its viewport
         # because pyqtgraph's ``PlotWidget`` (a ``GraphicsView``) routes
         # wheel events through the viewport widget.
         self._wheel_filter_targets: tuple[pg.PlotWidget, ...] = (
-            self.posterior_panel,
+            self.predictive_panel,
             self.likelihood_panel,
             self.raster_panel,
             *self.metric_panels.values(),
@@ -373,13 +375,13 @@ class DecoderViewer(QtWidgets.QMainWindow):
         Mirrors the per-window normalization the worker thread does in
         ``_WindowLoadWorker.run`` so the slice panel sees the same kind
         of arrays whether the row came from the buffered window or
-        from this direct-read path. Returns ``(post, lik, acausal)``;
+        from this direct-read path. Returns ``(predictive, lik, acausal)``;
         ``acausal`` is ``None`` for older caches without
         ``acausal_posterior``.
         """
         ds = self._ds
-        post_row = _replace_structural_padding(
-            ds.slice_at_index(t_idx, which="posterior"),
+        predictive_row = _replace_structural_padding(
+            ds.slice_at_index(t_idx, which="predictive"),
             ds.state_interior_mask,
             fill_value=0.0,
             name=ds.PREDICTIVE_VAR,
@@ -401,7 +403,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
             )
         else:
             acausal_row = None
-        return post_row, lik_row, acausal_row
+        return predictive_row, lik_row, acausal_row
 
     def _build_controls(self) -> None:
         central = QtWidgets.QWidget(self)
@@ -415,13 +417,13 @@ class DecoderViewer(QtWidgets.QMainWindow):
         # (right, ~30%). The right column wraps the slice panel in a
         # vertical layout with a trailing spacer so the slice does not
         # stretch the full window height — the curves are easier to
-        # read at the same vertical extent as the posterior heatmap.
+        # read at the same vertical extent as the predictive heatmap.
         split = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
         time_axis = QtWidgets.QWidget()
         time_axis_layout = QtWidgets.QVBoxLayout(time_axis)
         time_axis_layout.setContentsMargins(0, 0, 0, 0)
         time_axis_layout.setSpacing(2)
-        time_axis_layout.addWidget(self.posterior_panel, stretch=2)
+        time_axis_layout.addWidget(self.predictive_panel, stretch=2)
         time_axis_layout.addWidget(self.likelihood_panel, stretch=2)
         time_axis_layout.addWidget(self.raster_panel, stretch=1)
         for metric_panel in self.metric_panels.values():
@@ -431,9 +433,9 @@ class DecoderViewer(QtWidgets.QMainWindow):
         slice_column_layout = QtWidgets.QVBoxLayout(slice_column)
         slice_column_layout.setContentsMargins(0, 0, 0, 0)
         slice_column_layout.setSpacing(0)
-        # Match the posterior panel's stretch (2 of 8 units in the
+        # Match the predictive panel's stretch (2 of 8 units in the
         # time-axis stack) so the slice's vertical extent lines up
-        # with the posterior heatmap above.
+        # with the predictive heatmap above.
         slice_column_layout.addWidget(self.slice_panel, stretch=2)
         slice_column_layout.addStretch(stretch=6)
 
@@ -806,9 +808,9 @@ class DecoderViewer(QtWidgets.QMainWindow):
         ds = self._ds
         lines = [f"t = {float(ds.time[t_idx]) - float(ds.time[0]):.3f} s"]
         sl = self.slice_panel._buffer_slice  # noqa: SLF001
-        post_buf = self.slice_panel._buffer_post  # noqa: SLF001
-        if sl is not None and post_buf is not None and sl.start <= t_idx < sl.stop:
-            row = post_buf[t_idx - sl.start]
+        predictive_buf = self.slice_panel._buffer_predictive  # noqa: SLF001
+        if sl is not None and predictive_buf is not None and sl.start <= t_idx < sl.stop:
+            row = predictive_buf[t_idx - sl.start]
             if ds.n_states > 1:
                 row = row.reshape(ds.n_states, ds.n_position_full).sum(axis=0)
             pos_bin = _nearest_index(ds.position_grid_full, true_pos)
@@ -853,7 +855,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
             for panel in self.metric_panels.values():
                 panel.update_pinned_event(relative_time=None, metric_value=None)
             self.raster_panel.update_pinned_event(relative_time=None, cell_id=None)
-            self.posterior_panel.update_pinned_event(None)
+            self.predictive_panel.update_pinned_event(None)
             self.likelihood_panel.update_pinned_event(None)
             self.slice_panel.update_pinned_event(
                 place_field_row=None,
@@ -881,7 +883,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
             relative_time=relative_time,
             cell_id=int(event["cell_id"]),
         )
-        self.posterior_panel.update_pinned_event(relative_time)
+        self.predictive_panel.update_pinned_event(relative_time)
         self.likelihood_panel.update_pinned_event(relative_time)
 
         # Slice-panel: the pinned-row highlight is driven via the
@@ -907,7 +909,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
         self,
         request_id: int,
         sl: slice,
-        post: NDArray[np.float32],
+        predictive: NDArray[np.float32],
         lik: NDArray[np.float32],
         acausal: NDArray[np.float32] | None,
     ) -> None:
@@ -958,16 +960,16 @@ class DecoderViewer(QtWidgets.QMainWindow):
         # range here is independent of those sub-millisecond shifts.
         # The other time-axis panels follow via ``setXLink``.
         target_half_w = self._window_seconds / 2.0
-        self.posterior_panel.setXRange(-target_half_w, target_half_w, padding=0)
+        self.predictive_panel.setXRange(-target_half_w, target_half_w, padding=0)
 
         # Slice panel buffer: hand the freshly loaded full-resolution
         # arrays so per-tick ``update_for_index`` is a NumPy index.
-        self.slice_panel.set_window_buffer(sl, post, lik, acausal=acausal)
+        self.slice_panel.set_window_buffer(sl, predictive, lik, acausal=acausal)
         # Animate now — the slice should reflect the current center
         # immediately after a load, even if the slider has not moved.
         self._update_slice_panel_at_center()
 
-        self.posterior_panel.update_with_window(rel_start, rel_end, post)
+        self.predictive_panel.update_with_window(rel_start, rel_end, predictive)
         self.likelihood_panel.update_with_window(rel_start, rel_end, lik)
 
         # Overlay the animal's true position trajectory on both heatmaps.
@@ -975,7 +977,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
         # heatmap's center marker at x=0.
         rel_time_window = np.asarray(time[sl], dtype=np.float64) - t_offset
         linear_pos_window = np.asarray(self._ds.linear_position[sl], dtype=np.float64)
-        self.posterior_panel.update_position_trajectory(rel_time_window, linear_pos_window)
+        self.predictive_panel.update_position_trajectory(rel_time_window, linear_pos_window)
         self.likelihood_panel.update_position_trajectory(rel_time_window, linear_pos_window)
 
         events = self._ds.events_in_window(sl)

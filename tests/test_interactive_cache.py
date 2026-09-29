@@ -50,8 +50,8 @@ def _synthetic_results_dataset(
     position_grid = np.linspace(0.0, 100.0, n_position)
     position_coord = np.tile(position_grid, n_states)
 
-    posterior = rng.dirichlet(np.ones(n_state_bins), size=n_time).astype(np.float32)
-    log_likelihood = np.log(posterior + 1e-12).astype(np.float32)
+    predictive = rng.dirichlet(np.ones(n_state_bins), size=n_time).astype(np.float32)
+    log_likelihood = np.log(predictive + 1e-12).astype(np.float32)
     state_probs = rng.dirichlet(np.ones(n_states), size=n_time).astype(np.float32)
 
     time = np.arange(n_time, dtype=np.float64) * 0.002
@@ -65,7 +65,7 @@ def _synthetic_results_dataset(
         coords["states"] = ("states", np.array(state_names, dtype=object))
 
     data_vars: dict[str, Any] = {
-        "predictive_posterior": (("time", "state_bins"), posterior),
+        "predictive_posterior": (("time", "state_bins"), predictive),
         "log_likelihood": (("time", "state_bins"), log_likelihood),
     }
     if n_states > 1:
@@ -224,11 +224,11 @@ def test_build_figure04_viewer_cache_uses_canonical_render_data(tmp_path: Path) 
     assert summaries["continuous"]["n_events"] == 3
     with DecoderDataSource.for_model(tmp_path, "continuous") as continuous:
         assert continuous.n_states == 1
-        assert continuous.load_posterior(slice(0, 5)).shape == (5, n_position)
+        assert continuous.load_predictive(slice(0, 5)).shape == (5, n_position)
         assert continuous.events["cell_id"].tolist() == [0, 2, 1]
     with DecoderDataSource.for_model(tmp_path, "continuous_fragmented") as continuous_fragmented:
         assert continuous_fragmented.n_states == 2
-        assert continuous_fragmented.load_posterior(slice(0, 5)).shape == (5, 2 * n_position)
+        assert continuous_fragmented.load_predictive(slice(0, 5)).shape == (5, 2 * n_position)
         assert continuous_fragmented.event_likelihood_at(0, 0).shape == (n_position,)
 
 

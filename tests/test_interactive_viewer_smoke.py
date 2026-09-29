@@ -95,7 +95,7 @@ def test_viewer_constructs_and_loads_initial_window(viewer_setup) -> None:
     assert wait_for_request(app, viewer, initial_request)
 
     # Heatmap image was populated.
-    img = viewer.posterior_panel._image  # noqa: SLF001
+    img = viewer.predictive_panel._image  # noqa: SLF001
     assert img.image is not None
     # Shape: (n_visible, n_position) for single-state model.
     assert img.image.shape[1] == ds.n_interior

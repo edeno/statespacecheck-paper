@@ -247,7 +247,7 @@ def test_model_swap_rebuilds_panels_and_loads(tmp_path: Path) -> None:
         assert viewer._ds.model == "continuous_fragmented"  # noqa: SLF001
         assert viewer.slice_panel._n_states == 2  # noqa: SLF001
         # Heatmap panels rebuilt with the new state count too.
-        assert viewer.posterior_panel._n_states == 2  # noqa: SLF001
+        assert viewer.predictive_panel._n_states == 2  # noqa: SLF001
 
         # The new central widget should commit a fresh load.
         target = viewer._next_request_id  # noqa: SLF001

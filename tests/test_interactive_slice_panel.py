@@ -68,7 +68,7 @@ def test_slice_panel_updates_after_window_load(tmp_path: Path) -> None:
         assert wait_for_request(app, viewer, target)
 
         sp = viewer.slice_panel
-        assert sp._buffer_post is not None  # noqa: SLF001
+        assert sp._buffer_predictive is not None  # noqa: SLF001
         assert sp._buffer_lik is not None  # noqa: SLF001
         # Predictive overlay on the population plot is populated and
         # peak-normalized to 1 (within fp tolerance).
@@ -331,9 +331,9 @@ def test_filtered_overlay_matches_predictive_times_likelihood(tmp_path: Path) ->
 
         sp = viewer.slice_panel
         sl = sp._buffer_slice  # noqa: SLF001
-        post = sp._buffer_post  # noqa: SLF001
+        predictive = sp._buffer_predictive  # noqa: SLF001
         lik = sp._buffer_lik  # noqa: SLF001
-        assert sl is not None and post is not None and lik is not None
+        assert sl is not None and predictive is not None and lik is not None
 
         # Pick a definite bin in the middle of the loaded buffer and
         # ``set_center_time`` to its real-time tick, so we know the
@@ -344,9 +344,9 @@ def test_filtered_overlay_matches_predictive_times_likelihood(tmp_path: Path) ->
         viewer._update_slice_panel_at_center()  # noqa: SLF001
         _, top = sp._lik_overlay_curve.getData()  # noqa: SLF001
 
-        post_row = post[target_idx - sl.start]
+        predictive_row = predictive[target_idx - sl.start]
         lik_row = lik[target_idx - sl.start]
-        prod = post_row * lik_row
+        prod = predictive_row * lik_row
         prod /= float(prod.sum())
         peak = float(prod.max())
         expected = (prod / peak).astype(np.float32, copy=False)
@@ -384,7 +384,7 @@ def test_smoothed_overlay_is_loaded_in_the_committed_buffer(tmp_path: Path) -> N
         assert sp.overlay_choice == "smoothed"
         assert viewer._next_request_id == request_id_before_switch  # noqa: SLF001
         assert sp._buffer_acausal is not None  # noqa: SLF001
-        assert sp._buffer_acausal.shape == sp._buffer_post.shape  # noqa: SLF001
+        assert sp._buffer_acausal.shape == sp._buffer_predictive.shape  # noqa: SLF001
     finally:
         viewer.close()
         ds.close()

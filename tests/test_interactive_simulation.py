@@ -266,7 +266,7 @@ def test_simulated_viewer_hides_model_combo(tmp_path: Path) -> None:
 
 def test_simulated_viewer_loads_window(tmp_path: Path) -> None:
     """Opening a simulated cache and forcing a window load populates
-    ``_buffer_post`` and ``_buffer_lik`` with the expected shapes.
+    ``_buffer_predictive`` and ``_buffer_lik`` with the expected shapes.
     Per-cell rows should appear at a bin where the simulation has
     spikes.
     """
@@ -285,7 +285,7 @@ def test_simulated_viewer_loads_window(tmp_path: Path) -> None:
         assert wait_for_request(app, viewer, target)
 
         sp = viewer.slice_panel
-        assert sp._buffer_post is not None  # noqa: SLF001
+        assert sp._buffer_predictive is not None  # noqa: SLF001
         assert sp._buffer_lik is not None  # noqa: SLF001
         assert sp._buffer_acausal is None  # noqa: SLF001 — no acausal in simulation
 

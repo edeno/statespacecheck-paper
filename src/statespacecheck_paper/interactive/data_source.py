@@ -8,17 +8,17 @@ viewer panels:
   place fields, place-field peaks, per-cell spike times, full event
   Parquet) — all together ~50 MB.
 - Lazy ``xarray.Dataset`` handles for the per-model Zarr stores so
-  posterior / log-likelihood reads pull only the chunks that overlap
+  predictive / log-likelihood reads pull only the chunks that overlap
   the current view.
 
-The hot-path methods (``window_indices``, ``load_posterior``,
+The hot-path methods (``window_indices``, ``load_predictive``,
 ``load_likelihood``, ``events_in_window``, ``slice_at_index``) accept
 plain Python ``slice`` and ``int`` arguments and return raw NumPy
 float32/float64 arrays. No xarray on the call path beyond the chunk
 read, so the viewer can hand results straight to ``pyqtgraph.ImageItem``
 or ``PlotCurveItem.setData`` without any object-creation overhead.
 
-The slice panel uses ``slice_at_index`` for its 1D posterior /
+The slice panel uses ``slice_at_index`` for its 1D predictive /
 likelihood curves and a small ring buffer that the viewer maintains; the
 data source just hands it the requested 1D row.
 """
@@ -110,7 +110,7 @@ class DecoderDataSource:
 
     Construction is cheap: it reads the small sidecars (~50 MB total)
     and opens the Zarr store as a lazy ``xarray.Dataset``. The full
-    posterior / log-likelihood arrays are never realized in memory.
+    predictive / log-likelihood arrays are never realized in memory.
 
     The data source serves two distinct dataset kinds:
 
@@ -339,7 +339,7 @@ class DecoderDataSource:
 
         # Interior mask in per-state position-grid coordinates (shape
         # ``(n_position_full,)``). Used by ``SlicePanel`` to find which
-        # entries of a posterior row are real vs. NaN-filled by the
+        # entries of a predictive row are real vs. NaN-filled by the
         # cache.
         interior_mask_full = np.asarray(pfs["interior_mask"], dtype=bool)
         # ``interior_mask`` saved by the cache is concatenated across
@@ -360,7 +360,7 @@ class DecoderDataSource:
             )
 
         # Direct zarr arrays for the hot path.
-        self._post_arr: zarr.Array = self._zarr_group[self.PREDICTIVE_VAR]
+        self._predictive_arr: zarr.Array = self._zarr_group[self.PREDICTIVE_VAR]
         self._loglik_arr: zarr.Array = self._zarr_group[self.LIKELIHOOD_VAR]
         # ``acausal_posterior`` (smoothed distribution) is optional. The viewer
         # disables the smoothed choice when it is absent; it never substitutes
@@ -521,9 +521,9 @@ class DecoderDataSource:
     # Hot-path readers
     # ------------------------------------------------------------------
 
-    def load_posterior(self, sl: slice) -> NDArray[np.float32]:
+    def load_predictive(self, sl: slice) -> NDArray[np.float32]:
         """Load the predictive distribution for the given time slice."""
-        return self._read_window(self._post_arr, sl)
+        return self._read_window(self._predictive_arr, sl)
 
     def load_likelihood(self, sl: slice) -> NDArray[np.float32]:
         """Load the (log) likelihood for the given time slice.
@@ -550,7 +550,7 @@ class DecoderDataSource:
         self,
         t_idx: int,
         *,
-        which: Literal["posterior", "likelihood", "acausal"] = "posterior",
+        which: Literal["predictive", "likelihood", "acausal"] = "predictive",
     ) -> NDArray[np.float32]:
         """Return one 1D row (length ``n_state_bins``) at ``t_idx``.
 
@@ -560,8 +560,8 @@ class DecoderDataSource:
         """
         if not 0 <= t_idx < self.n_time:
             raise IndexError(f"t_idx {t_idx} out of range [0, {self.n_time})")
-        if which == "posterior":
-            arr = self._post_arr
+        if which == "predictive":
+            arr = self._predictive_arr
         elif which == "likelihood":
             arr = self._loglik_arr
         elif which == "acausal":
@@ -648,7 +648,7 @@ class DecoderDataSource:
         """
         # Drop array references so the underlying store can be GC'd.
         self._zarr_group = None
-        self._post_arr = None
+        self._predictive_arr = None
         self._loglik_arr = None
         self._acausal_arr = None
 

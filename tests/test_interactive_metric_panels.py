@@ -150,7 +150,7 @@ def test_pin_markers_visible_after_click(tmp_path: Path) -> None:
         target2 = viewer._next_request_id  # noqa: SLF001
         assert wait_for_request(app, viewer, target2)
 
-        assert viewer.posterior_panel._pin_line.isVisible()  # noqa: SLF001
+        assert viewer.predictive_panel._pin_line.isVisible()  # noqa: SLF001
         assert viewer.likelihood_panel._pin_line.isVisible()  # noqa: SLF001
         assert viewer.raster_panel._pin_line.isVisible()  # noqa: SLF001
         for panel in viewer.metric_panels.values():
@@ -180,7 +180,7 @@ def test_manual_scroll_unpins_event(tmp_path: Path) -> None:
         # Slider movement signals the unpin path.
         viewer._on_slider_changed(viewer._slider.value() + 1)  # noqa: SLF001
         assert viewer._pinned_event_row is None  # noqa: SLF001
-        assert not viewer.posterior_panel._pin_line.isVisible()  # noqa: SLF001
+        assert not viewer.predictive_panel._pin_line.isVisible()  # noqa: SLF001
         for panel in viewer.metric_panels.values():
             assert not panel._pin_line.isVisible()  # noqa: SLF001
     finally:
@@ -211,7 +211,7 @@ def test_pin_invisible_when_event_outside_loaded_window(tmp_path: Path) -> None:
             # the buffered window.
             for panel in viewer.metric_panels.values():
                 assert not panel._pin_line.isVisible()  # noqa: SLF001
-            assert not viewer.posterior_panel._pin_line.isVisible()  # noqa: SLF001
+            assert not viewer.predictive_panel._pin_line.isVisible()  # noqa: SLF001
     finally:
         viewer.close()
         ds.close()
