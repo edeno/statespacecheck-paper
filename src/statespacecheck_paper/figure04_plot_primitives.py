@@ -64,15 +64,10 @@ def compute_half_pixel_extent(
     return (t0 - dt, t1 + dt, p0 - dp, p1 + dp)
 
 
-def add_scalebar(
-    ax: Axes,
-    length: float,
-    label: str,
-    loc: str = "lower right",
-    pad: float = 0.1,
-    fontsize: int = 8,
-) -> None:
-    """Add a scale bar to an axes.
+def add_scalebar(ax: Axes, length: float, label: str) -> None:
+    """Add a scale bar with an 8 pt label to the lower right of an axes.
+
+    The bar sits 10% of the axes' extent in from the right and bottom edges.
 
     Parameters
     ----------
@@ -82,27 +77,14 @@ def add_scalebar(
         Length of the scale bar in data units.
     label : str
         Label text for the scale bar.
-    loc : str, default "lower right"
-        Location for the scale bar.
-    pad : float, default 0.1
-        Padding from edges as fraction of axes size.
-    fontsize : int, default 8
-        Font size for the label.
     """
     xlim = ax.get_xlim()
     ylim = ax.get_ylim()
     x_range = xlim[1] - xlim[0]
     y_range = ylim[1] - ylim[0]
-
-    if "right" in loc:
-        x_start = xlim[1] - pad * x_range - length
-    else:
-        x_start = xlim[0] + pad * x_range
-
-    if "lower" in loc:
-        y_pos = ylim[0] + pad * y_range
-    else:
-        y_pos = ylim[1] - pad * y_range
+    pad = 0.1
+    x_start = xlim[1] - pad * x_range - length
+    y_pos = ylim[0] + pad * y_range
 
     ax.plot([x_start, x_start + length], [y_pos, y_pos], "k-", linewidth=2, clip_on=False)
     ax.text(
@@ -111,7 +93,7 @@ def add_scalebar(
         label,
         ha="center",
         va="top",
-        fontsize=fontsize,
+        fontsize=8,
     )
 
 
