@@ -19,10 +19,11 @@ from statespacecheck_paper.paths import FIGURE_DIR
 
 # Floating-point tolerances: a fresh value ``f`` matches the committed ``c`` when
 # ``|f - c| <= ATOL + RTOL * |c|``. The summaries come from seeded, deterministic
-# code, so these start near double-precision round-off (a few ulps of
-# accumulated arithmetic). They are provisional: set them from a measured
-# cross-platform fresh run (for example macOS arm64 against Linux x86_64 CI),
-# and record that run's observed maximum differences here.
+# code, so only floating-point round-off differs between platforms. Measured on
+# 2026-09-29, a Linux x86_64 fresh run (the Reproduce workflow) against the
+# summaries committed from macOS arm64: 431 of Figure 3's 2,486 floats differed,
+# by at most 1.9e-13 relative; Figure 4's 24 floats were bit-identical. RTOL
+# leaves four orders of magnitude above that.
 RTOL = 1e-9
 ATOL = 1e-12
 
