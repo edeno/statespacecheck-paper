@@ -880,16 +880,16 @@ def recording_payload(
 
     spike_times = render_data.recording.spike_times
     caches = figure04_summary["provenance"]["figure04_caches"]
-    unit_rank = np.argsort(np.argsort(decode.place_field_peaks))
+    cell_rank = np.argsort(np.argsort(decode.place_field_peaks))
     return {
         "time": _rounded(time[window] - t0, 4),
         "position_bins": _rounded(decode.diagnostic_position_bins, 2),
         "linear_position": _rounded(render_data.linear_position[window], 2),
         "likelihood": encode_display_rows(mean_likelihood),
         "has_spikes": has_spikes.tolist(),
-        # Each unit's normalized single-event likelihood (one row per unit).
-        "unit_likelihoods": encode_display_rows(ssc.event_likelihood(place_fields)),
-        "unit_rank": unit_rank.tolist(),
+        # Each cell's normalized single-event likelihood (one row per cell).
+        "cell_likelihoods": encode_display_rows(ssc.event_likelihood(place_fields)),
+        "cell_rank": cell_rank.tolist(),
         "spike_times": [
             _rounded(times[(times >= t0) & (times < t_end)] - t0, 4) for times in spike_times
         ],

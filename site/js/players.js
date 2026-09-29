@@ -607,7 +607,7 @@ function renderCondition(view, payload, manifest) {
 // ---------------------------------------------------------------------------
 
 /**
- * Time of peak population firing (all units), which marks the replay event,
+ * Time of peak population firing (all cells), which marks the replay event,
  * searched in steps of one decoder bin `dt`.
  */
 function populationPeak(spikeTimes, range, dt) {
@@ -649,7 +649,7 @@ export function renderRecording(root, payload, manifest) {
   const eventTimes = events.t;
   const position = payload.linear_position;
   const likelihood = decodeRows(payload.likelihood, nBins);
-  const unitLikelihoods = decodeRows(payload.unit_likelihoods, nBins);
+  const cellLikelihoods = decodeRows(payload.cell_likelihoods, nBins);
   const predictive = Object.fromEntries(
     MODELS.map((m) => [m.id, decodeHeatmap(payload.models[m.id].predictive, nBins)]),
   );
@@ -657,13 +657,13 @@ export function renderRecording(root, payload, manifest) {
   const track = (label, bitmap, height, mask = null) =>
     heatmapTrack({ label, bitmap, height, mask, times: time, bins, position, unit: "cm" });
 
-  // Units: raster of every spike in the window, sorted by place-field peak.
+  // Cells: raster of every spike in the window, sorted by place-field peak.
   const rasterTimes = [];
   const rasterRows = [];
-  payload.spike_times.forEach((times, unit) => {
+  payload.spike_times.forEach((times, cell) => {
     for (const t of times) {
       rasterTimes.push(t);
-      rasterRows.push(payload.unit_rank[unit]);
+      rasterRows.push(payload.cell_rank[cell]);
     }
   });
 
@@ -774,7 +774,7 @@ export function renderRecording(root, payload, manifest) {
       charts[model.id].update({
         series: [
           { values: normalized(predictive[model.id].row(step)), color: cssVar("--predictive") },
-          { values: normalized(unitLikelihoods.row(cell)), color: cssVar("--likelihood") },
+          { values: normalized(cellLikelihoods.row(cell)), color: cssVar("--likelihood") },
         ],
         marker: position[step],
       });

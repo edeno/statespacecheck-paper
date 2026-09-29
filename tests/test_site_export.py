@@ -438,7 +438,7 @@ def test_recording_payload_slices_both_models_to_the_detail_window() -> None:
     )
     assert payload["has_spikes"] == has_spikes.tolist()
     np.testing.assert_array_equal(
-        decode_display_rows(payload["unit_likelihoods"], n_bins),
+        decode_display_rows(payload["cell_likelihoods"], n_bins),
         decode_display_rows(
             encode_display_rows(ssc.event_likelihood(decode.diagnostic_place_fields)),
             n_bins,
@@ -468,15 +468,15 @@ def test_recording_payload_slices_both_models_to_the_detail_window() -> None:
         )
         assert len(model["events"]["t"]) == int(in_window.sum())
         assert set(model["events"]["flagged"]) == {"hpd_overlap", "predictive_pvalue"}
-    # Units are ranked by place-field peak.
-    assert sorted(payload["unit_rank"]) == list(range(decode.place_field_peaks.size))
+    # Cells are ranked by place-field peak.
+    assert sorted(payload["cell_rank"]) == list(range(decode.place_field_peaks.size))
     assert payload["decode_cache_fingerprint"] == "abc"
     assert payload["diagnostics_fingerprint"] == "def"
     # The raster covers the same bins as the events: [time[start], time[stop]).
     t_end = render_data.time[time_slice.stop]
-    for unit, times in enumerate(render_data.recording.spike_times):
+    for cell, times in enumerate(render_data.recording.spike_times):
         in_bins = (times >= render_data.time[time_slice.start]) & (times < t_end)
-        assert len(payload["spike_times"][unit]) == int(in_bins.sum())
+        assert len(payload["spike_times"][cell]) == int(in_bins.sum())
 
 
 # ---------------------------------------------------------------------------
