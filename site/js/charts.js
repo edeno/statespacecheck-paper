@@ -635,7 +635,7 @@ export class DistributionChart {
           x2: this.x(marker),
           y1: this.margin.top,
           y2: this.margin.top + this.plotHeight,
-          stroke: cssVar("--position-ink"),
+          stroke: cssVar("--position"),
           "stroke-width": 2,
         },
         this.layers.marker,
@@ -664,7 +664,7 @@ export class DistributionChart {
     for (const { cell, rect, path } of this.cells) {
       const isSelected = cell === selected;
       rect.classList.toggle("focused", cell === this.focusedCell);
-      path.setAttribute("stroke", isSelected ? cssVar("--likelihood-ink") : cssVar("--curve-muted"));
+      path.setAttribute("stroke", isSelected ? cssVar("--likelihood") : cssVar("--curve-muted"));
       path.setAttribute("stroke-width", isSelected ? 2.5 : 1.2);
     }
     for (const [cell, input] of this.radios) input.checked = cell === selected;

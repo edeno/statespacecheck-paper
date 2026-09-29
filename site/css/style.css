@@ -1,6 +1,7 @@
 /* Project website for "Local goodness-of-fit measures for neural decoding".
-   Colors follow the paper's figures (statespacecheck_paper.style): Wong palette,
-   predictive blue, likelihood orange, posterior black, animal position magenta. */
+   Colors follow the hues of the paper's figures (statespacecheck_paper.style):
+   Wong palette, predictive blue, likelihood orange, posterior black, animal
+   position magenta. */
 
 :root {
   color-scheme: light;
@@ -17,23 +18,18 @@
   --link: #005a8c;
 
   --predictive: #0072b2;
-  --likelihood: #e69f00;
+  --likelihood: #b67e00;
   --posterior: #000000;
-  --position: #ff00ff;
+  --position: #f000f0;
   --threshold: #666666;
-  --hpd: #56b4e9;
-  --pvalue: #cc79a7;
-  --kl: #009e73;
-  /* The colors above are the paper's figures'. Five are fainter than 3:1 (WCAG
-     1.4.11) against these light surfaces, so the page draws with a darker shade
-     of each: its channels scaled by the largest hundredth that reaches 3:1
-     against --surface, --surface-muted, and --surface-sunken (0.79, 0.94, 0.80,
-     0.93, and 0.99). tests/contrast.test.mjs checks the ratios and hues. */
-  --likelihood-ink: #b67e00;
-  --position-ink: #f000f0;
-  --hpd-ink: #4590ba;
-  --pvalue-ink: #be719b;
-  --kl-ink: #009c72;
+  --hpd: #4590ba;
+  --pvalue: #be719b;
+  --kl: #009c72;
+  /* Likelihood, position, and the three metric colors are the figures' colors
+     (#e69f00, #ff00ff, #56b4e9, #cc79a7, #009e73) darkened to 3:1 contrast
+     (WCAG 1.4.11) against --surface, --surface-muted, and --surface-sunken:
+     each channel scaled by the largest hundredth that reaches it (0.79, 0.94,
+     0.80, 0.93, 0.99). tests/contrast.test.mjs checks the marks' contrast. */
   /* Unselected place fields: 3.4:1 against the panel, enough for graphics. */
   --curve-muted: #858581;
   /* Place fields in the filter explainer: the cell that fired, and the rest. */

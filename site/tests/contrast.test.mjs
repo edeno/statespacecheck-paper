@@ -1,7 +1,5 @@
 // Chart marks reach WCAG 1.4.11's 3:1 non-text contrast against the page's
-// light surfaces. The paper's palette tokens stay as the figures define them
-// (tests/test_site_export.py); marks too faint on these surfaces use a darker
-// `-ink` shade of the same hue, and the page draws with that shade.
+// light surfaces.
 
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
@@ -30,7 +28,6 @@ const SURFACES = ["--surface", "--surface-muted", "--surface-sunken"];
 // and the faint fields of the cells that did not fire in the filter explainer,
 // context beside the highlighted field.
 const DECORATION = ["--grid", "--border", "--field-muted"];
-const INKS = Object.keys(tokens).filter((name) => name.endsWith("-ink"));
 // Every other color the page's markup and scripts use marks something a reader needs.
 const used = new Set(pageSources.flatMap(([, source]) => source.match(/--[\w-]+/g) ?? []));
 const MARKS = Object.keys(tokens).filter(
@@ -51,14 +48,6 @@ function contrast(a, b) {
   return (high + 0.05) / (low + 0.05);
 }
 
-function hue(hex) {
-  const [r, g, b] = channels(hex);
-  const max = Math.max(r, g, b);
-  const span = max - Math.min(r, g, b);
-  const h = max === r ? ((g - b) / span) % 6 : max === g ? (b - r) / span + 2 : (r - g) / span + 4;
-  return (h * 60 + 360) % 360;
-}
-
 test("every chart mark has 3:1 contrast against each surface", () => {
   assert.ok(MARKS.includes("--predictive"), MARKS.join(", "));
   const failures = [];
@@ -69,25 +58,4 @@ test("every chart mark has 3:1 contrast against each surface", () => {
     }
   }
   assert.deepEqual(failures, []);
-});
-
-test("each ink is a shade of its palette color's hue", () => {
-  assert.ok(INKS.length > 0);
-  for (const ink of INKS) {
-    const base = ink.slice(0, -"-ink".length);
-    assert.ok(tokens[base], `${ink} has no palette color ${base}`);
-    const difference = Math.abs(hue(tokens[ink]) - hue(tokens[base]));
-    assert.ok(Math.min(difference, 360 - difference) < 1, `${ink} vs ${base}`);
-  }
-});
-
-test("the page draws with the inks, not the palette colors they darken", () => {
-  const uses = [];
-  for (const [file, source] of pageSources) {
-    for (const ink of INKS) {
-      const base = ink.slice(0, -"-ink".length);
-      if (new RegExp(`${base}(?![\\w-])`).test(source)) uses.push(`${file}: ${base}`);
-    }
-  }
-  assert.deepEqual(uses, []);
 });

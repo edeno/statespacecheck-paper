@@ -100,7 +100,7 @@ export function initPlayground(root, data) {
     chart.update({
       series: [
         { values: predictive, color: cssVar("--predictive"), name: "prediction" },
-        { values: result.likelihood, color: cssVar("--likelihood-ink"), name: "spike likelihood" },
+        { values: result.likelihood, color: cssVar("--likelihood"), name: "spike likelihood" },
       ],
       bands: [
         {
@@ -110,7 +110,7 @@ export function initPlayground(root, data) {
         },
         {
           mask: highestDensityRegion(result.likelihood, data.coverage),
-          color: cssVar("--likelihood-ink"),
+          color: cssVar("--likelihood"),
           name: `the likelihood's ${coveragePercent}% HPD region`,
         },
       ],

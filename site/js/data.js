@@ -28,7 +28,7 @@ export const METRICS = [
     // paper's figures label it).
     worse: "lower",
     plottedWorse: "below",
-    color: "--hpd-ink",
+    color: "--hpd",
     display: (v) => v,
     // Plotted on a symlog axis, with gridlines at Figure 3's interior ticks.
     axis: symlog,
@@ -43,7 +43,7 @@ export const METRICS = [
     label: "Predictive p-value",
     worse: "lower",
     plottedWorse: "above",
-    color: "--pvalue-ink",
+    color: "--pvalue",
     // Plotted as −log(p) (natural log), as in the paper's figures. p > 0 by
     // construction; the floor only guards the axis against a degenerate value.
     display: (v) => -Math.log(Math.max(v, Number.MIN_VALUE)),
@@ -55,7 +55,7 @@ export const METRICS = [
     label: "KL divergence",
     worse: "higher",
     plottedWorse: "above",
-    color: "--kl-ink",
+    color: "--kl",
     display: (v) => v,
     displayLabel: "KL (nats)",
     format: (v) => (!Number.isFinite(v) ? "∞" : v >= 100 ? v.toFixed(0) : v.toFixed(2)),

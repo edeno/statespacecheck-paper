@@ -168,8 +168,8 @@
           </p>
           <div class="panel">
             <div class="legend">
-              <span><i class="swatch" style="background: var(--position-ink)"></i>Animal's position</span>
-              <span><i class="swatch" style="background: var(--likelihood-ink)"></i>Spike in this step</span>
+              <span><i class="swatch" style="background: var(--position)"></i>Animal's position</span>
+              <span><i class="swatch" style="background: var(--likelihood)"></i>Spike in this step</span>
               <span><i class="swatch dashed"></i>Earlier posterior the prediction spread from</span>
               <span><i class="swatch" style="background: var(--field)"></i>Place field of the cell that fired (other fields faint)</span>
               <span><i class="swatch dashed muted"></i>exp(−Λ(x)): probability that no cell fires</span>
@@ -228,7 +228,7 @@
             divergence is included as the familiar reference that measures difference.
           </p>
           <div class="cards">
-            <article class="card" style="--metric-color: var(--hpd-ink)">
+            <article class="card" style="--metric-color: var(--hpd)">
               <h3>HPD overlap</h3>
               <p class="note">HPD: highest probability density.</p>
               <math display="block">
@@ -245,7 +245,7 @@
                 consistent.
               </p>
             </article>
-            <article class="card" style="--metric-color: var(--pvalue-ink)">
+            <article class="card" style="--metric-color: var(--pvalue)">
               <h3>Rank-based predictive p-value</h3>
               <math display="block">
                 <mrow>
@@ -268,7 +268,7 @@
                 <span data-macro="SimPredictiveCutoffNegLog"></span>.
               </p>
             </article>
-            <article class="card" style="--metric-color: var(--kl-ink)">
+            <article class="card" style="--metric-color: var(--kl)">
               <h3>KL divergence</h3>
               <math display="block">
                 <mrow>
@@ -352,9 +352,9 @@
             </div>
             <div class="legend">
               <span><i class="swatch" style="background: var(--predictive)"></i>Prediction P(x)</span>
-              <span><i class="swatch" style="background: var(--likelihood-ink)"></i>Spike likelihood Q(x)</span>
+              <span><i class="swatch" style="background: var(--likelihood)"></i>Spike likelihood Q(x)</span>
               <span><i class="swatch band" style="background: var(--predictive)"></i><span data-macro="HpdCoveragePercent"></span>% HPD region of P</span>
-              <span><i class="swatch band" style="background: var(--likelihood-ink)"></i><span data-macro="HpdCoveragePercent"></span>% HPD region of Q</span>
+              <span><i class="swatch band" style="background: var(--likelihood)"></i><span data-macro="HpdCoveragePercent"></span>% HPD region of Q</span>
             </div>
             <div id="pg-chart"></div>
             <div class="readouts" id="pg-readouts"></div>
