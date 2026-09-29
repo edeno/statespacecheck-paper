@@ -753,10 +753,12 @@ class DecoderViewer(QtWidgets.QMainWindow):
         truncated list plus the unique total so the panel can show a
         ``(+K more)`` indicator.
 
-        Each row's ``place_field_norm`` is the event likelihood when the
-        cache provides one, otherwise the cell's first-state place field.
+        Each row's ``event_likelihood_peak_scaled`` is the normalized
+        likelihood of the cell's first event in the bin
+        (``DecoderDataSource.event_likelihood_at``: stored by the simulation
+        cache, computed from the cell's static place field for a recording).
         It is embedded into the full per-state position grid (non-interior
-        bins stay at zero) and normalized to its own peak so it sits on a
+        bins stay at zero) and scaled to its own peak so it sits on a
         [0, 1] axis alongside the predictive overlay.
         """
         ds = self._ds
@@ -783,15 +785,17 @@ class DecoderViewer(QtWidgets.QMainWindow):
         for cell_id in kept:
             first_event = seen[cell_id]
             n_spikes = int(count_by_cell[cell_id])
-            pf = ds.event_likelihood_at(first_event, cell_id)[:n_interior]
-            peak = float(pf.max())
-            pf_norm_interior = (pf / peak).astype(np.float32, copy=False) if peak > 0 else pf
+            likelihood = ds.event_likelihood_at(first_event, cell_id)[:n_interior]
+            peak = float(likelihood.max())
+            peak_scaled_interior = (
+                (likelihood / peak).astype(np.float32, copy=False) if peak > 0 else likelihood
+            )
             curve = np.zeros(ds.n_position_full, dtype=np.float32)
-            curve[ds.interior_mask] = pf_norm_interior
+            curve[ds.interior_mask] = peak_scaled_interior
             slices.append(
                 CellSlice(
                     cell_id=cell_id,
-                    place_field_norm=curve,
+                    event_likelihood_peak_scaled=curve,
                     hpd=float(ds.event_hpd_overlap[first_event]),
                     kl=float(ds.event_kl_divergence[first_event]),
                     predictive_pvalue=float(ds.event_predictive_pvalue[first_event]),

@@ -77,7 +77,7 @@ _STATE_LIKELIHOOD_RGB: tuple[tuple[int, int, int], ...] = (
 )
 _TRUE_POSITION_PEN = pg.mkPen((50, 50, 50), width=1, style=QtCore.Qt.PenStyle.DashLine)
 
-# Palette for the per-cell place-field overlay. Picked to be distinct
+# Palette for the per-cell event-likelihood curves. Picked to be distinct
 # from the joint predictive (blue), joint likelihood (orange), pinned
 # curve (gold), and true-position line (gray). Cells are colored by
 # ``cell_id % len(palette)``, so distinct cells in the same bin land
@@ -722,10 +722,17 @@ class MetricPanel(pg.PlotWidget):
 
 @dataclass(frozen=True)
 class CellSlice:
-    """One per-cell row payload pushed by the viewer per tick."""
+    """One per-cell row payload pushed by the viewer per tick.
+
+    ``event_likelihood_peak_scaled`` is the normalized likelihood of the cell's
+    first event in the bin, scaled to a peak of 1, on the full per-state
+    position grid. During the simulation's remap window it follows the
+    decoder's active rate table, so it can differ from the cell's static
+    place field.
+    """
 
     cell_id: int
-    place_field_norm: NDArray[np.float32]
+    event_likelihood_peak_scaled: NDArray[np.float32]
     hpd: float
     kl: float
     predictive_pvalue: float
@@ -733,7 +740,7 @@ class CellSlice:
     is_pinned: bool
 
     def __post_init__(self) -> None:
-        # ``place_field_norm`` shape is checked by the panel renderer
+        # ``event_likelihood_peak_scaled`` shape is checked by the panel renderer
         # (it must match the position-bin axis the panel was built
         # against); only the scalar invariants live here.
         if self.cell_id < 0:
@@ -1234,7 +1241,7 @@ class SlicePanel(QtWidgets.QWidget):
         n = len(slices)
         for i, cs in enumerate(slices):
             row = self._ensure_row(i)
-            row.cell_curve.setData(self._position_bins_uniform, cs.place_field_norm)
+            row.cell_curve.setData(self._position_bins_uniform, cs.event_likelihood_peak_scaled)
             rgb = _PER_CELL_PALETTE[cs.cell_id % len(_PER_CELL_PALETTE)]
             row.cell_curve.setPen(pg.mkPen(*rgb, 230, width=3))
             n_spikes_str = f"  ({cs.n_spikes} spikes)" if cs.n_spikes > 1 else ""

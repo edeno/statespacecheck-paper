@@ -339,7 +339,7 @@ def test_simulated_viewer_uses_event_likelihood_in_remap(tmp_path: Path) -> None
         row = next(item for item in rows if item.cell_id == cell_id)
         expected = ds.event_likelihood_at(first_event, cell_id)[: ds.n_interior]
         expected = expected / expected.max()
-        np.testing.assert_allclose(row.place_field_norm[ds.interior_mask], expected)
+        np.testing.assert_allclose(row.event_likelihood_peak_scaled[ds.interior_mask], expected)
 
         static = ds.place_fields[cell_id, : ds.n_interior]
         static = static / static.max()
