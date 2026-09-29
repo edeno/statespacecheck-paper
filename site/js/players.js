@@ -451,13 +451,13 @@ export function initConditions(root, manifest) {
     url.searchParams.set("condition", id);
     window.history.replaceState(null, "", url);
     if (!cache.has(id)) {
-      view.innerHTML = '<p class="loading">Loading simulation…</p>';
+      view.innerHTML = '<p class="loading" role="status">Loading simulation…</p>';
       const entry = manifest.conditions.find((c) => c.condition_id === id);
       try {
         cache.set(id, await loadJSON(`data/${entry.file}`));
       } catch (error) {
         if (request === generation) {
-          view.innerHTML = `<p class="error">Could not load this condition (${error.message}).</p>`;
+          view.innerHTML = `<p class="error" role="alert">Could not load this condition (${error.message}).</p>`;
         }
         return;
       }
@@ -466,7 +466,7 @@ export function initConditions(root, manifest) {
     try {
       teardown = renderCondition(view, cache.get(id), manifest);
     } catch (error) {
-      view.innerHTML = `<p class="error">Could not display this condition (${error.message}).</p>`;
+      view.innerHTML = `<p class="error" role="alert">Could not display this condition (${error.message}).</p>`;
       console.error(error);
     }
   }

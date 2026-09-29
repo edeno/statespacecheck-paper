@@ -113,6 +113,29 @@ section {
   color: var(--text-muted);
 }
 
+/* ------------------------------------------------------------- Skip link */
+
+.skip-link {
+  position: absolute;
+  left: 16px;
+  top: -100px;
+  z-index: 10;
+  padding: 0.5rem 1rem;
+  background: var(--surface);
+  color: var(--link);
+  border: 2px solid var(--link);
+  border-radius: var(--radius);
+}
+
+.skip-link:focus {
+  top: 16px;
+}
+
+/* The skip link's target takes focus only programmatically. */
+main:focus {
+  outline: none;
+}
+
 /* ---------------------------------------------------------------- Header */
 
 .hero {
@@ -183,11 +206,11 @@ section {
   background: #3a3a3a;
 }
 
-.button[aria-disabled="true"] {
+/* A resource without a link yet, shown as plain text. */
+.button.pending {
   background: var(--surface);
   color: var(--text-muted);
   border-color: var(--border);
-  cursor: default;
 }
 
 .button svg {

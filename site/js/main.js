@@ -9,6 +9,7 @@ function showError(container, what, error) {
   container.innerHTML = "";
   const message = document.createElement("p");
   message.className = "error";
+  message.setAttribute("role", "alert");
   message.textContent = `Could not load the ${what} (${error.message}).`;
   container.appendChild(message);
   console.error(error);

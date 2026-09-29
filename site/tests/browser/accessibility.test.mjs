@@ -155,3 +155,32 @@ describe("condition tabs", () => {
       assert.equal(await page.locator(`#cond-tab-${focused}`).getAttribute("aria-selected"), "true");
     }));
 });
+
+describe("navigation and states", () => {
+  test("a skip link is the first tab stop and moves focus to the main content", () =>
+    withPage({}, async (page) => {
+      await page.keyboard.press("Tab");
+      const link = await page.evaluate(() => ({
+        text: document.activeElement.textContent.trim(),
+        visible: document.activeElement.getBoundingClientRect().top >= 0,
+      }));
+      assert.deepEqual(link, { text: "Skip to content", visible: true });
+      await page.keyboard.press("Enter");
+      assert.equal(await page.evaluate(() => document.activeElement.tagName), "MAIN");
+    }));
+
+  test("nothing without a destination is presented as a link", () =>
+    withPage({}, async (page) => {
+      assert.equal(await page.locator("[role=link]:not([href]), a:not([href])").count(), 0);
+    }));
+
+  test("loading and error messages are status messages", () =>
+    withPage({}, async (page) => {
+      await page.route("**/data/condition_*.json", (route) => route.abort());
+      const other = page.locator("#cond-tabs [aria-selected=false]").first();
+      await other.click();
+      const error = page.locator("#cond-view .error");
+      await error.waitFor();
+      assert.equal(await error.getAttribute("role"), "alert");
+    }));
+});
