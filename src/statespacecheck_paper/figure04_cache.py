@@ -11,14 +11,17 @@ is ``data/`` unless ``STATESPACECHECK_DATA_PATH`` is set; see :class:`Figure4Pat
   **decode fingerprint** (:func:`compute_figure04_cache_provenance`): schema,
   decode-affecting configuration, input-data identity and content hashes,
   executable source of :mod:`figure04_fit` and the modules it depends on, and
-  the installed ``non_local_detector`` version;
+  the computational environment: the Python version, the machine architecture,
+  and the installed versions of ``non_local_detector`` and its transitive
+  runtime dependencies (:func:`installed_dependency_versions`);
 - the *diagnostics* cache (``{epoch}_figure04_diagnostics.joblib``) holds the
   per-spike diagnostics for both models, gated by the decode fingerprint **and**
   a **diagnostics fingerprint** (:func:`compute_figure04_diagnostics_fingerprint`):
   the diagnostics schema, the :class:`~figure04_decoder.Figure4DiagnosticsConfig`
-  (HPD coverage, event-selection rule), the installed ``statespacecheck``
-  version, and a digest of the *executable* source of the diagnostic modules
-  (docstrings and comments excluded).
+  (HPD coverage, event-selection rule), the Python version, the machine
+  architecture, the installed versions of ``statespacecheck`` and its transitive
+  runtime dependencies, and a digest of the *executable* source of the
+  diagnostic modules (docstrings and comments excluded).
 
 Changes confined to the diagnostic modules or configuration recompute diagnostics
 from cached predictions. Changes to the fit, its model construction, the input
@@ -36,13 +39,17 @@ import ast
 import dataclasses
 import hashlib
 import json
+import platform
+import sys
 import warnings
-from collections.abc import Mapping
-from importlib.metadata import PackageNotFoundError, version
+from collections.abc import Callable, Iterable, Mapping
+from importlib.metadata import PackageNotFoundError, requires, version
 from pathlib import Path
 from typing import TypedDict
 
 import joblib
+from packaging.requirements import Requirement
+from packaging.utils import canonicalize_name
 
 from statespacecheck_paper.figure04_decoder import Figure4Config, Figure4DiagnosticsConfig
 from statespacecheck_paper.figure04_input import (
@@ -124,6 +131,10 @@ class Figure4CacheArtifactProvenance(TypedDict):
     diagnostics_fingerprint_sha256: str
     statespacecheck_version: str
     diagnostics_config: dict[str, object]
+    python_version: str
+    machine: str
+    decode_dependency_versions: dict[str, str]
+    diagnostics_dependency_versions: dict[str, str]
 
 
 # The Figure-4 input file is named by ``figure04_input`` (which owns
@@ -189,7 +200,15 @@ def _decode_source_digest() -> str:
 
 @dataclasses.dataclass(frozen=True)
 class Figure4CacheProvenance:
-    """Identity of the validated Figure-4 decode and diagnostics caches and inputs."""
+    """Identity of the validated Figure-4 decode and diagnostics caches and inputs.
+
+    ``python_version`` (``major.minor.micro``) and ``machine``
+    (:func:`platform.machine`) identify the interpreter and architecture;
+    ``decode_dependency_versions`` and ``diagnostics_dependency_versions`` map the
+    normalized distribution names of ``non_local_detector`` and ``statespacecheck``,
+    respectively, and of their transitive runtime dependencies to the installed
+    versions. All four are hashed into the corresponding fingerprints.
+    """
 
     fingerprint_sha256: str
     schema_version: int
@@ -200,6 +219,10 @@ class Figure4CacheProvenance:
     diagnostics_schema_version: int
     statespacecheck_version: str
     diagnostics_config: Figure4DiagnosticsConfig
+    python_version: str
+    machine: str
+    decode_dependency_versions: dict[str, str]
+    diagnostics_dependency_versions: dict[str, str]
 
     def artifact_payload(self) -> Figure4CacheArtifactProvenance:
         """Return path-independent cache provenance for a summary artifact.
@@ -221,6 +244,10 @@ class Figure4CacheProvenance:
             "diagnostics_fingerprint_sha256": self.diagnostics_fingerprint_sha256,
             "statespacecheck_version": self.statespacecheck_version,
             "diagnostics_config": dataclasses.asdict(self.diagnostics_config),
+            "python_version": self.python_version,
+            "machine": self.machine,
+            "decode_dependency_versions": dict(self.decode_dependency_versions),
+            "diagnostics_dependency_versions": dict(self.diagnostics_dependency_versions),
         }
 
 
@@ -277,19 +304,121 @@ def _installed_statespacecheck_version() -> str:
     return _installed_version("statespacecheck")
 
 
+def runtime_dependency_closure(
+    root: str,
+    requirements_of: Callable[[str], Iterable[str] | None],
+) -> frozenset[str]:
+    """Return ``root`` and its transitive runtime dependencies, as normalized names.
+
+    Walks the dependency graph from ``root``. Each requirement string is parsed
+    as a :class:`packaging.requirements.Requirement`, and its environment marker
+    is evaluated for the running interpreter. The root is walked with no extras,
+    so requirements gated only by an extra (``extra == "dev"``) are excluded;
+    extras that a followed requirement requests (``pkg[extra]``) are followed in
+    turn. Cycles terminate because each (distribution, extra) pair is visited
+    once. Distributions that ``requirements_of`` reports as not installed are
+    omitted.
+
+    Parameters
+    ----------
+    root : str
+        Distribution name to start from, in any spelling (``non_local_detector``).
+    requirements_of : Callable[[str], Iterable[str] | None]
+        Returns a distribution's requirement strings (as
+        :func:`importlib.metadata.requires` does), or ``None`` when that
+        distribution is not installed.
+
+    Returns
+    -------
+    frozenset[str]
+        PEP 503-normalized names (``non-local-detector``) of the installed
+        distributions in the closure, including ``root`` when it is installed.
+    """
+    closure: set[str] = set()
+    visited: set[tuple[str, str]] = set()
+    pending = [(str(canonicalize_name(root)), "")]
+    while pending:
+        name, extra = pending.pop()
+        if (name, extra) in visited:
+            continue
+        visited.add((name, extra))
+        requirement_strings = requirements_of(name)
+        if requirement_strings is None:
+            continue
+        closure.add(name)
+        for requirement_string in requirement_strings:
+            requirement = Requirement(requirement_string)
+            if requirement.marker is not None and not requirement.marker.evaluate({"extra": extra}):
+                continue
+            dependency = str(canonicalize_name(requirement.name))
+            pending.append((dependency, ""))
+            pending.extend(
+                (dependency, str(canonicalize_name(requested))) for requested in requirement.extras
+            )
+    return frozenset(closure)
+
+
+def _installed_requirements(distribution: str) -> list[str] | None:
+    """Return an installed distribution's requirement strings, or ``None`` if absent."""
+    try:
+        return requires(distribution) or []
+    except PackageNotFoundError:
+        return None
+
+
+def installed_dependency_versions(root: str) -> dict[str, str]:
+    """Map ``root`` and its installed runtime dependency closure to their versions.
+
+    Parameters
+    ----------
+    root : str
+        Distribution whose closure is recorded (see
+        :func:`runtime_dependency_closure`).
+
+    Returns
+    -------
+    dict[str, str]
+        Installed version for each normalized distribution name, sorted by name.
+
+    Raises
+    ------
+    RuntimeError
+        If ``root`` is not installed.
+    """
+    names = runtime_dependency_closure(root, _installed_requirements) | {
+        str(canonicalize_name(root))
+    }
+    return {name: _installed_version(name) for name in sorted(names)}
+
+
+def _python_version() -> str:
+    """Return the running interpreter's ``major.minor.micro`` version."""
+    return ".".join(str(part) for part in sys.version_info[:3])
+
+
+def _machine() -> str:
+    """Return the machine architecture (``platform.machine()``, e.g. ``arm64``)."""
+    return platform.machine()
+
+
 def compute_figure04_diagnostics_fingerprint(config: Figure4DiagnosticsConfig) -> str:
     """Return the fingerprint gating the Figure-4 *diagnostics* cache.
 
     Hashes the diagnostics schema version, the diagnostics configuration (HPD
     coverage and event-selection rule), the installed ``statespacecheck``
-    version, and the executable-source digest of the diagnostic modules. It
-    deliberately excludes the decode identity: the diagnostics cache stores
-    the decode fingerprint alongside this one, and both must match.
+    version, the Python version, the machine architecture, the installed
+    versions of ``statespacecheck``'s runtime dependency closure, and the
+    executable-source digest of the diagnostic modules. It deliberately
+    excludes the decode identity: the diagnostics cache stores the decode
+    fingerprint alongside this one, and both must match.
     """
     payload = {
         "diagnostics_schema_version": FIGURE04_DIAGNOSTICS_SCHEMA_VERSION,
         "diagnostics_config": dataclasses.asdict(config),
         "statespacecheck_version": _installed_statespacecheck_version(),
+        "python_version": _python_version(),
+        "machine": _machine(),
+        "dependency_versions": installed_dependency_versions("statespacecheck"),
         "diagnostic_source_digest": _diagnostic_source_digest(),
     }
     blob = json.dumps(payload, sort_keys=True, default=str).encode()
@@ -308,8 +437,12 @@ def compute_figure04_cache_provenance(
     and leaves the decode identical, nor ``diagnostics``, which does not touch
     the fit), the input-data identifier *and the content hash of the
     Figure-4 input file*, the executable source of the fit-and-decode modules
-    (``_DECODE_SOURCE_FILES``), and the *installed* ``non_local_detector``
-    revision. Any change forces a refit; the decode cache stores this
+    (``_DECODE_SOURCE_FILES``), the *installed* ``non_local_detector``
+    revision, and the computational environment: the Python version, the
+    machine architecture (so a cache moved between, e.g., arm64 and x86_64
+    machines refits), and the installed versions of ``non_local_detector``'s
+    runtime dependency closure (:func:`installed_dependency_versions`; numpy,
+    scipy, jax, ...). Any change forces a refit; the decode cache stores this
     fingerprint so a stale cache cannot silently produce a figure that no longer
     matches the current method, input data, or dependency. Hashing the file
     contents (not just ``animal_date_epoch``) is what makes replacing the input
@@ -328,6 +461,9 @@ def compute_figure04_cache_provenance(
     """
     input_file_sha256 = _input_file_checksum(paths)
     non_local_detector_version = _installed_non_local_detector_version()
+    python_version = _python_version()
+    machine = _machine()
+    decode_dependency_versions = installed_dependency_versions("non_local_detector")
     fingerprint_payload = {
         "schema_version": FIGURE04_DECODE_SCHEMA_VERSION,
         "config": {
@@ -337,6 +473,9 @@ def compute_figure04_cache_provenance(
         "animal_date_epoch": paths.animal_date_epoch,
         "input_file_sha256": input_file_sha256,
         "non_local_detector_version": non_local_detector_version,
+        "python_version": python_version,
+        "machine": machine,
+        "dependency_versions": decode_dependency_versions,
         "decode_source_digest": _decode_source_digest(),
     }
     blob = json.dumps(fingerprint_payload, sort_keys=True, default=str).encode()
@@ -350,6 +489,10 @@ def compute_figure04_cache_provenance(
         diagnostics_schema_version=FIGURE04_DIAGNOSTICS_SCHEMA_VERSION,
         statespacecheck_version=_installed_statespacecheck_version(),
         diagnostics_config=config.diagnostics,
+        python_version=python_version,
+        machine=machine,
+        decode_dependency_versions=decode_dependency_versions,
+        diagnostics_dependency_versions=installed_dependency_versions("statespacecheck"),
     )
 
 

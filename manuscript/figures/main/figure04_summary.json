@@ -112,26 +112,84 @@
   },
   "provenance": {
     "figure04_caches": {
+      "decode_dependency_versions": {
+        "click": "8.3.0",
+        "cloudpickle": "3.1.2",
+        "contourpy": "1.3.3",
+        "cycler": "0.12.1",
+        "dask": "2025.11.0",
+        "fonttools": "4.60.1",
+        "fsspec": "2025.10.0",
+        "importlib-metadata": "8.7.0",
+        "jax": "0.8.0",
+        "jaxlib": "0.8.0",
+        "joblib": "1.5.2",
+        "kiwisolver": "1.4.9",
+        "locket": "1.0.0",
+        "matplotlib": "3.10.7",
+        "ml-dtypes": "0.5.3",
+        "networkx": "3.5",
+        "non-local-detector": "0.6.10.dev214+g956fdccaf",
+        "numpy": "2.3.4",
+        "opt-einsum": "3.4.0",
+        "packaging": "25.0",
+        "pandas": "2.3.3",
+        "partd": "1.4.2",
+        "patsy": "1.0.2",
+        "pillow": "12.0.0",
+        "pyparsing": "3.2.5",
+        "python-dateutil": "2.9.0.post0",
+        "pytz": "2025.2",
+        "pyyaml": "6.0.3",
+        "scikit-learn": "1.7.2",
+        "scipy": "1.16.3",
+        "seaborn": "0.13.2",
+        "six": "1.17.0",
+        "threadpoolctl": "3.6.0",
+        "toolz": "1.1.0",
+        "tqdm": "4.67.1",
+        "track-linearization": "2.4.0",
+        "tzdata": "2025.2",
+        "xarray": "2025.10.1",
+        "zipp": "3.23.0"
+      },
       "diagnostics_config": {
         "event_selection": "all_spikes_in_recording",
         "hpd_coverage": 0.95
       },
-      "diagnostics_fingerprint_sha256": "1ef77b917ada65c62cee167b3877ee7299cadee63782eaea4aef8d452b608dbf",
+      "diagnostics_dependency_versions": {
+        "contourpy": "1.3.3",
+        "cycler": "0.12.1",
+        "fonttools": "4.60.1",
+        "kiwisolver": "1.4.9",
+        "matplotlib": "3.10.7",
+        "numpy": "2.3.4",
+        "packaging": "25.0",
+        "pillow": "12.0.0",
+        "pyparsing": "3.2.5",
+        "python-dateutil": "2.9.0.post0",
+        "scipy": "1.16.3",
+        "six": "1.17.0",
+        "statespacecheck": "0.3.1"
+      },
+      "diagnostics_fingerprint_sha256": "4a6cee516ef2c54fbbb6597beee10cdaaa91168a5f40d21d3b8ac960693005ba",
       "diagnostics_schema_version": 2,
-      "fingerprint_sha256": "bab8d84154b6a6194a6061b2d0d8eda0825c8a59420cdbf4688c55620681689e",
+      "fingerprint_sha256": "f2ce107dd821128f4b663c93dec1b61b0e57bf66516bfd27d7d41f1dfe625ded",
       "input_file_sha256": {
         "j1620210710_02_r1_figure04_inputs.npz": "60383b394b597e2900545548ecac7c53a8601038ace9dbeb42d7f9a5fe1c93b3"
       },
+      "machine": "arm64",
       "non_local_detector_version": "0.6.10.dev214+g956fdccaf",
+      "python_version": "3.11.15",
       "schema_version": 6,
       "statespacecheck_version": "0.3.1"
     },
     "source": {
-      "source_tree_sha256": "83e399ba6bc6b17c8403fb2741368441b9861ed8c205421f80cde7297e55093f",
+      "source_tree_sha256": "bf4693a2647fd4b300b832f866fe072dfc560f384eceb8a7d8423655fcf4b1ed",
       "statespacecheck_paper_version": "0.1.0",
       "statespacecheck_version": "0.3.1",
-      "uv_lock_sha256": "7db5bb03266cfeab8f804cd7262232f3ffa16ebaf423722a399076043b640574"
+      "uv_lock_sha256": "280ef8920b3302f206621349c0733c017b8a329e3d85c789b21bf6350c093fe2"
     }
   },
-  "schema_version": 7
+  "schema_version": 8
 }

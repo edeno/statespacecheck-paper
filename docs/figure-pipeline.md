@@ -599,6 +599,15 @@ regardless.
   check, fit, spike counts), `figure04_input.py` (reading and validating the
   recording), and `figure04_place_fields.py` (the cached place fields). This
   covers helper functions, imports, defaults, and recording preparation.
+  The fingerprint also hashes the computational environment: the Python
+  version (`major.minor.micro`), the machine architecture (`platform.machine()`),
+  and the installed version of every distribution in `non_local_detector`'s
+  runtime dependency closure (`figure04_cache.installed_dependency_versions`:
+  the requirements in the installed package metadata, followed transitively,
+  with environment markers evaluated for the running interpreter and
+  extras-only requirements excluded; numpy, scipy, jax, and so on). Upgrading
+  any of these, changing Python, or moving a cache between architectures
+  (for example arm64 and x86_64) therefore refits.
   `tests/test_import_boundaries.py` checks that every paper module these
   import, directly or through others, is hashed too or is in a commented
   allowlist of decode-neutral imports (`diagnostics.HPD_COVERAGE`, the
@@ -608,7 +617,9 @@ regardless.
   **diagnostics fingerprint**
   (`figure04_cache.compute_figure04_diagnostics_fingerprint`): the diagnostics
   schema version, the `Figure4DiagnosticsConfig`, the installed
-  `statespacecheck` version, and the docstring-stripped syntax trees of
+  `statespacecheck` version, the same environment components for
+  `statespacecheck`'s runtime dependency closure (Python version, machine
+  architecture, installed versions), and the docstring-stripped syntax trees of
   `diagnostics.py`, `figure04_diagnostics.py`, `figure04_place_fields.py`, and
   `figure04_workflow.py` (whose `_compute_diagnostics_payload` pairs each
   model's predictions with the spikes and coverage).
@@ -629,7 +640,7 @@ manual overrides: bumping one invalidates every cache of that kind.
 
 `figure03_summary.json` uses schema version 9
 (`figure03_generation.FIGURE03_SUMMARY_SCHEMA_VERSION`) and `figure04_summary.json`
-uses schema version 7 (`figure04_generation.FIGURE04_SUMMARY_SCHEMA_VERSION`). The
+uses schema version 8 (`figure04_generation.FIGURE04_SUMMARY_SCHEMA_VERSION`). The
 Figure-3 configuration block records every
 `Figure3Config` field together with the step length in seconds
 (`configuration.step_seconds`, the protocol constant `STEP_SECONDS`) and the
@@ -699,7 +710,11 @@ expensive decoder cache, `diagnostics_fingerprint_sha256` the identity of the
 diagnostics cache (recorded with the diagnostics configuration and the
 installed `statespacecheck` version), and the record includes the installed
 `non_local_detector` version plus the content
-SHA-256 of the named input file. Canonical artifact generation fails
+SHA-256 of the named input file. It also records the environment both
+fingerprints hash: `python_version`, `machine`, and the installed versions of
+the two dependency closures (`decode_dependency_versions` for
+`non_local_detector`, `diagnostics_dependency_versions` for `statespacecheck`),
+so a reader can see what the decode and diagnostics ran with. Canonical artifact generation fails
 if the input checksum is missing. Thus a summary can be traced to the exact
 derived inputs even when those large files are distributed separately.
 

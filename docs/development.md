@@ -152,7 +152,12 @@ Any executable change to those modules refits both models, including an edited
 message string. Changes confined to `diagnostics.py`, `figure04_diagnostics.py`,
 `figure04_workflow.py`, or the diagnostics configuration recompute diagnostics
 from cached predictions. Comments and docstrings are excluded from both cache
-hashes. See [the cache specification](figure-pipeline.md#figure-4-cache-behavior).
+hashes. Both fingerprints also hash the Python version, the machine
+architecture, and the installed versions of the relevant package's runtime
+dependency closure (`non_local_detector` for the decode, `statespacecheck` for
+the diagnostics), so a dependency upgrade, a different Python, or a cache moved
+to another architecture recomputes. See
+[the cache specification](figure-pipeline.md#figure-4-cache-behavior).
 
 The guides quote configured values readers need (the figure resolution, flag
 cutoffs, Figure-4 decoder settings, input-file identifiers, summary schema
