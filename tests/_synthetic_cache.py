@@ -4,7 +4,7 @@ The five ``test_interactive_*.py`` files all want a tiny but
 self-consistent cache (Zarr posterior + log-likelihood, Parquet event
 table, place-fields .npz, meta + spike-times sidecars) to drive
 ``DecoderDataSource`` and ``DecoderViewer`` without touching the real
-~5 GB of decoder outputs. This module is the single source of truth.
+~8 GB Figure 4 decode cache. This module is the single source of truth.
 """
 
 from __future__ import annotations
@@ -35,8 +35,8 @@ def build_synthetic_cache(
 ) -> None:
     """Write a minimal, self-consistent cache for the given model name.
 
-    The cache is fully populated: a chunked Zarr store (with one
-    pyramid level), a sorted Parquet event table, a place-fields
+    The cache is fully populated: a time-chunked Zarr store, a sorted
+    Parquet event table, a place-fields
     ``.npz``, the meta sidecar, and the spike-times ``.npy``.
 
     Parameters

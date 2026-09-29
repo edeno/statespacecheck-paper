@@ -4,8 +4,8 @@ Builds a tiny simulation cache via ``build_simulated_cache``, opens it
 through ``DecoderDataSource.for_simulation``, and exercises the loader
 contract + the viewer's adaptation to ``dataset_kind == "simulation"``.
 
-The simulation params are scaled down (``T_*`` shrunk by a factor of
-~30) so the full forward filter runs in well under a second on CI;
+The simulation params are scaled down (``phase_boundaries`` shrink the
+timeline from 32,000 to 900 steps) so the forward filter runs quickly on CI;
 the assertions don't depend on phase-specific behaviour, just on the
 end-to-end shape contract.
 """

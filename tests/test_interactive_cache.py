@@ -1,8 +1,8 @@
 """Smoke tests for the interactive viewer cache builders.
 
-The pure-data tests exercise the array-shape logic (max-pool, pyramid
-build, event-table assembly, Zarr writer) on synthetic inputs and must
-pass without ``non_local_detector`` or any real recording files.
+The pure-data tests exercise the event-table assembly, the Zarr writer,
+and the Figure 4 viewer-cache builder and CLI on synthetic inputs and
+must pass without ``non_local_detector`` or any real recording files.
 
 The real-data integration test is skipped unless the canonical Figure 4 joblib
 bundle and exported recording inputs are available.
@@ -34,11 +34,11 @@ def _synthetic_results_dataset(
     n_states: int,
     n_position: int,
 ) -> xr.Dataset:
-    """Build a synthetic decoder-results Dataset matching the on-disk layout.
+    """Build a synthetic decoder-results Dataset in the flat state layout.
 
     ``state_bins`` is a plain integer dim with ``state`` and ``position``
-    as non-dim coords on it (this mirrors what the real NetCDF
-    round-trip produces).
+    as non-dim coords on it: the layout the Zarr writer stores after
+    flattening the joblib cache's ``state_bins`` MultiIndex.
     """
     rng = np.random.default_rng(0)
     n_state_bins = n_states * n_position
@@ -236,7 +236,7 @@ def test_build_cli_loads_the_canonical_figure04_workflow(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The CLI no longer asks for disconnected NetCDF/model intermediates."""
+    """The CLI builds from the canonical Figure 4 workflow's render data."""
     from statespacecheck_paper import figure04_workflow
 
     sentinel = object()
