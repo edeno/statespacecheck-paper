@@ -39,9 +39,10 @@ Figure 3 calls the wrapper from `decoding.decode_with_diagnostics`, once with th
 baseline rate table and again for the spikes inside each decoder override window
 that swaps the rate table; Figure 4 calls it from
 `figure04_diagnostics.compute_results_diagnostics`. Equation numbers are those
-of the Methods in `manuscript/main.tex` (labels in parentheses).
+of `manuscript/main.tex` (labels in parentheses): Eqs. 1–10 are in the Methods,
+and Eq. 11 is in the simulation study's generative model.
 
-| Paper quantity | Methods | `statespacecheck` function | Paper-side name |
+| Paper quantity | Equation | `statespacecheck` function | Paper-side name |
 | --- | --- | --- | --- |
 | Event factorization of the Poisson likelihood | Eq. 1 (`eq:poisson_event_factorization`) | — | Figure 3's decoder forms $p(\mathbf{n}_k \mid x_k)$ from a rate table of expected counts (`decoding.decode_with_diagnostics`) |
 | One-step predictive distribution $P_k(x_k)=p(x_k\mid y_{1:k-1})$ | unnumbered, after Eq. 1 | input to every function below | `predictive` (see the vocabulary below) |
@@ -51,7 +52,7 @@ of the Methods in `manuscript/main.tex` (labels in parentheses).
 | Rank-based predictive $p$-value, exact for sorted spikes | Eqs. 8–9 (`eq:predictive_application`, `eq:predictive_application_sorted`) | `mark_predictive_pvalue` | `event_predictive_pvalue` |
 | Monte Carlo predictive $p$-value (clusterless form, Eq. 7; Figure 2b) | Eqs. 7–8 | `monte_carlo_mark_pvalue` | used only by `figure02_panels` |
 | KL divergence $D_{\mathrm{KL}}(P_k\,\|\,Q_{k,j})$ | Eq. 10 (`eq:kl`) | `kl_divergence` | `event_kl_divergence` |
-| Simulated expected counts $m_c(x)=\lambda_c(x)\Delta t=\alpha\phi(x\mid\mu_c,\sigma_{\mathrm{pf}}^2)$ | Eq. 11 (`eq:rate`) | — | `simulation.place_field_rates` |
+| Simulated expected counts $m_c(x)=\lambda_c(x)\Delta t=\alpha\phi(x\mid\mu_c,\sigma_{\mathrm{pf}}^2)$ | Eq. 11 (`eq:rate`, simulation study) | — | `simulation.place_field_rates` |
 
 ### Flag thresholds
 
@@ -286,9 +287,9 @@ Trace: `create_shared_example(rng)` returns one immutable
   the scientific orchestrator
   `figure03_generation.generate_figure03(config, *, n_realizations)`.
 - **Configuration:** `Figure3Config` (frozen; in `figure03_protocol.py`).
-  The generation recipe uses the default `Figure3Config()` (whose canonical
-  `drift_momentum` is `0.88`) and `figure03_summary.N_REALIZATIONS = 100`; both values are
-  load-bearing for the published PNG.
+  The generation recipe uses the default `Figure3Config()` and
+  `figure03_summary.N_REALIZATIONS = 100`; the published figure and summary
+  depend on both.
 - **Computation (reading order):**
   `figure03_protocol` (config + phase ladder) →
   `figure03_simulation.run_figure03_simulation` (drives the 8-phase trajectory,

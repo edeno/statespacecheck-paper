@@ -44,15 +44,15 @@ from statespacecheck_paper.figure03_simulation import run_figure03_simulation
 SUMMARY_FLAG_METRICS: tuple[tuple[str, FlagDirection], ...] = tuple(METRIC_FLAG_DIRECTIONS.items())
 
 # Row order of the per-condition decoding-accuracy block beneath the flag
-# heatmap: currently the median absolute error of the filtered-posterior
-# mean (position units).
+# heatmap: the median absolute error of the filtered-posterior mean
+# (position units).
 SUMMARY_ACCURACY_METRICS: tuple[str, ...] = ("median_absolute_error",)
 
 # Number of independent realizations pooled to stabilize the panel-(b)
 # summary. A single run's flag thresholds and per-phase percentages are
-# noisy (the KL 99th-percentile threshold varies ~17% across seeds, and
-# the remap flag percentage swings with the trajectory); pooling many
-# realizations gives a stable threshold and a median per-phase summary.
+# noisy (the tail quantiles rest on few events, and the remap flag
+# percentage swings with the trajectory); pooling many realizations gives
+# a stable threshold and a median per-phase summary.
 # The seed-1 realization shown in panel (a) is one of these.
 N_REALIZATIONS = 100
 
@@ -96,9 +96,9 @@ def build_summary_conditions(config: Figure3Config) -> list[Figure3SummaryCondit
     ``median_flag_percentages`` rather than recomputing them.
 
     The first column ("Well-specified") aggregates the clean-recovery
-    conditions (with the replay sub-window carved out) into an out-of-sample
-    false-positive rate against the matched misfit columns. The "Replay"
-    column scores the replay event, which is not a misspecification.
+    conditions (with the replay sub-window carved out) into a false-positive
+    rate outside the opening baseline that sets the thresholds. The "Replay"
+    column scores the replay event, a control with no observation misfit.
 
     Parameters
     ----------
@@ -123,9 +123,9 @@ def build_summary_conditions(config: Figure3Config) -> list[Figure3SummaryCondit
     t_recovery3_end = bnd[PhaseBoundary.RECOVERY3_END]
     t_sparse_pop_end = bnd[PhaseBoundary.SPARSE_POP_END]
     # The replay event sits inside clean-recovery 2; carve it out of the
-    # well-specified pool (it is scored in its own column) so its spikes
-    # neither define the baseline thresholds nor dilute the false-positive
-    # rate.
+    # well-specified pool (it is scored in its own column) so its spikes do
+    # not dilute the false-positive rate. The thresholds come from the opening
+    # baseline, which no column includes.
     r0, r1 = compute_replay_step_window(config)
     return [
         Figure3SummaryCondition(
@@ -412,8 +412,7 @@ class Figure3RealizationSummary:
 
     Aggregates ``n_realizations`` independent realizations of the figure-3
     simulation so the Figure-3b heatmap and its flag thresholds do not
-    depend on a single noisy run (a single run's KL 99th-percentile
-    threshold varies ~17% across seeds).
+    depend on a single noisy run.
 
     - ``diagnostic_thresholds`` are computed from the per-spike baseline diagnostics
       pooled across all realizations — a far more stable estimate of the

@@ -125,8 +125,8 @@ def generate_figure03(
     ----------
     config : Figure3Config, optional
         Figure-3 experimental configuration (timeline, place fields, controls).
-        When omitted, uses the manuscript configuration with drift momentum
-        0.88.
+        When omitted, uses the default ``Figure3Config()``, the manuscript
+        configuration.
     n_realizations : int, default ``N_REALIZATIONS``
         Independent realizations pooled for the panel-(b) thresholds and
         median flag percentages.
@@ -148,8 +148,8 @@ def generate_figure03(
         config, simulation_result.sparse_place_field_centers
     )
 
-    # Pool many realizations for a stable threshold (from the pooled
-    # clean-baseline windows) and a stable median panel-(b) summary.
+    # Pool many realizations for stable thresholds (from the pooled opening
+    # baseline, before the remap) and a stable median panel-(b) summary.
     realization_summary = estimate_realization_summary(config, n_realizations=n_realizations)
     print(f"Pooled thresholds: {realization_summary.diagnostic_thresholds}")
     print(

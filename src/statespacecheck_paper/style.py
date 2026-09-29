@@ -116,7 +116,7 @@ COLORS: dict[str, str] = {
     # Figure-3 Replay Band
     # -------------------------------------------------------------------------
     # Replay event (in clean-recovery 2) — immobile animal, decoded
-    # trajectory sweeps the track; not a misspecification. Used to mark
+    # trajectory sweeps the track; a control. Used to mark
     # the replay band in the Figure-3 time series.
     "phase_replay": "#009E73",  # Vivid green (WONG[3]); marks the replay band
     #

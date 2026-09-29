@@ -645,9 +645,9 @@ def decode_with_diagnostics(
         Per-spike-event arrays of shape ``(n_spikes,)``
             ``event_time_ind`` (time bin), ``event_cell_ind`` (cell
             index), and ``event_hpd_overlap`` / ``event_kl_divergence``
-            / ``event_predictive_pvalue`` (the dense matrices scattered to one
-            value per event). Spike-count > 1 in a bin produces that
-            many repeated events.
+            / ``event_predictive_pvalue`` (one value per event; the dense
+            matrices above scatter these values into their (t, cell) entries).
+            Spike-count > 1 in a bin produces that many repeated events.
 
         ``event_likelihood`` of shape ``(n_spikes, n_bins)``
             Normalized likelihood for each individual spike event,
@@ -725,7 +725,8 @@ def decode_with_diagnostics(
     # Preallocate outputs
     posterior: NDArray[np.floating] = np.zeros((n_time, n_bins))
     predictive: NDArray[np.floating] = np.zeros((n_time, n_bins))  # p(x_t | y_{1:t-1})
-    combined_likelihood: NDArray[np.floating] = np.zeros((n_time, n_bins))  # p(y_t | x_t)
+    # p(y_t | x_t) over all cells, normalized over position for display.
+    combined_likelihood: NDArray[np.floating] = np.zeros((n_time, n_bins))
 
     # Initial state law p(x_0): the t=0 prediction. It is not propagated
     # through the transition matrix; the first bin's spikes update it directly.
