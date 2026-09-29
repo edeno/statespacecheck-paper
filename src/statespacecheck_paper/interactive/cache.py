@@ -22,8 +22,9 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import json
 import shutil
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -35,7 +36,7 @@ from numpy.typing import NDArray
 from statespacecheck_paper.diagnostics import DecodingDiagnostics, SpikeEventDiagnostics
 from statespacecheck_paper.figure04_models import FIGURE4_MODEL_IDS, Figure4ModelId
 from statespacecheck_paper.figure04_place_fields import DECODER_PREDICTIVE_VAR
-from statespacecheck_paper.paths import ANIMAL_DATE_EPOCH
+from statespacecheck_paper.paths import ANIMAL_DATE_EPOCH, FIGURE03_SUMMARY_PATH
 
 if TYPE_CHECKING:
     from statespacecheck_paper.figure04_workflow import Figure4RenderData
@@ -263,13 +264,29 @@ def _write_meta(
     time: NDArray[np.float64],
     linear_position: NDArray[np.float64],
     n_cells: int,
+    flag_thresholds: Mapping[str, float] | None = None,
 ) -> None:
-    np.savez(
-        out_path,
-        time=time.astype(np.float64),
-        linear_position=linear_position.astype(np.float64),
-        n_cells=np.int64(n_cells),
-    )
+    """Write the meta sidecar; ``flag_thresholds`` adds ``flag_metrics``/``flag_thresholds``."""
+    arrays: dict[str, Any] = {
+        "time": time.astype(np.float64),
+        "linear_position": linear_position.astype(np.float64),
+        "n_cells": np.int64(n_cells),
+    }
+    if flag_thresholds is not None:
+        arrays["flag_metrics"] = np.array(list(flag_thresholds), dtype=str)
+        arrays["flag_thresholds"] = np.array(list(flag_thresholds.values()), dtype=np.float64)
+    np.savez(out_path, **arrays)
+
+
+def figure03_flag_thresholds() -> dict[str, float]:
+    """Return Figure 3's published flag threshold per metric.
+
+    Read from the committed ``figure03_summary.json`` ``flag_rules``: the HPD
+    overlap and KL divergence thresholds come from the pooled baseline of the
+    manuscript configuration, and the predictive p-value's is a fixed cutoff.
+    """
+    rules = json.loads(FIGURE03_SUMMARY_PATH.read_text(encoding="utf-8"))["flag_rules"]
+    return {metric: float(rule["threshold"]) for metric, rule in rules.items()}
 
 
 def _write_spike_times(
@@ -485,6 +502,7 @@ def build_simulated_cache(
     seed: int | None = None,
     time_chunk: int = DEFAULT_TIME_CHUNK,
     force: bool = False,
+    flag_thresholds: Mapping[str, float] | None = None,
 ) -> dict[str, Any]:
     """Run the figure-3 simulation and write a viewer-compatible cache.
 
@@ -509,6 +527,10 @@ def build_simulated_cache(
         Zarr chunk size along the time axis.
     force : bool
         Overwrite an existing ``simulation.zarr``.
+    flag_thresholds : mapping of str to float, optional
+        Flag threshold per metric, recorded in the meta sidecar so the viewer
+        draws the thresholds this dataset is scored with. ``None`` ⇒ Figure 3's
+        published thresholds (:func:`figure03_flag_thresholds`).
 
     Returns
     -------
@@ -638,6 +660,7 @@ def build_simulated_cache(
         time=time_arr,
         linear_position=x_true,
         n_cells=n_cells,
+        flag_thresholds=figure03_flag_thresholds() if flag_thresholds is None else flag_thresholds,
     )
 
     # Per-cell spike-time arrays. Build by gathering the absolute times

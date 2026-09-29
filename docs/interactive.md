@@ -49,7 +49,8 @@ uv run --frozen python -m statespacecheck_paper.interactive.cache build \
     --model both
 
 # Figure-3 simulation: runs the demo simulation + decoder and writes
-# simulation.zarr + sidecars.
+# simulation.zarr + sidecars, recording Figure 3's flag thresholds (from
+# figure03_summary.json) for the metric panels' threshold lines.
 uv run --frozen python -m statespacecheck_paper.interactive.cache build-simulated \
     --cache-dir data/cache/simulation
 ```

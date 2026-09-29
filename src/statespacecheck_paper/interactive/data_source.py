@@ -131,7 +131,9 @@ class DecoderDataSource:
     Sidecar schema (the same for both kinds):
 
     * ``meta``: ``time`` f64 ``(n_time,)``, ``linear_position`` f64
-      ``(n_time,)``, ``n_cells`` i64.
+      ``(n_time,)``, ``n_cells`` i64; the simulation cache also records
+      ``flag_metrics`` str ``(n_rules,)`` and ``flag_thresholds`` f64
+      ``(n_rules,)``, the thresholds its diagnostics are scored with.
     * ``place_fields .npz``: shared positional ``place_fields`` f32
       ``(n_cells, n_interior)``,
       ``position_bins`` f64 ``(n_interior,)``,
@@ -162,6 +164,10 @@ class DecoderDataSource:
         Human-readable name for the loaded dataset (drives the window
         title): the model's display label (``Figure4Model.label``) or
         ``"Figure 3 simulation"``.
+    flag_thresholds : dict[str, float] | None
+        Flag threshold per metric recorded in a simulation cache (Figure 3's
+        thresholds); ``None`` for real-data caches, which are scored with
+        Figure 4's fixed cutoffs.
     time : np.ndarray, shape (n_time,), float64
         Decoder time grid (absolute seconds).
     linear_position : np.ndarray, shape (n_time,), float64
@@ -243,6 +249,19 @@ class DecoderDataSource:
         self.time = _readonly(np.asarray(meta["time"], dtype=np.float64))
         self.linear_position = _readonly(np.asarray(meta["linear_position"], dtype=np.float64))
         self.n_cells = int(meta["n_cells"])
+        self.flag_thresholds: dict[str, float] | None = None
+        if dataset_kind == "simulation":
+            if "flag_thresholds" not in meta.files:
+                raise ValueError(
+                    f"{self._layout.meta} records no flag thresholds; rebuild it with "
+                    "'python -m statespacecheck_paper.interactive.cache build-simulated --force'."
+                )
+            self.flag_thresholds = {
+                str(metric): float(threshold)
+                for metric, threshold in zip(
+                    meta["flag_metrics"], meta["flag_thresholds"], strict=True
+                )
+            }
 
         pfs = np.load(self._layout.place_fields)
         self.place_fields = _readonly(np.asarray(pfs["place_fields"], dtype=np.float32))

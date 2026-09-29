@@ -162,9 +162,72 @@ def test_simulated_event_likelihood_round_trips_in_event_order(tmp_path: Path) -
         ds.close()
 
 
+def test_simulated_cache_records_figure3_flag_thresholds(tmp_path: Path) -> None:
+    """The simulation cache carries Figure 3's thresholds, not Figure 4's cutoffs."""
+    import json
+
+    from statespacecheck_paper.interactive.data_source import DecoderDataSource
+    from statespacecheck_paper.paths import FIGURE03_SUMMARY_PATH
+
+    rules = json.loads(FIGURE03_SUMMARY_PATH.read_text(encoding="utf-8"))["flag_rules"]
+    _build_simulated(tmp_path)
+    ds = DecoderDataSource.for_simulation(tmp_path)
+    try:
+        assert ds.flag_thresholds == {metric: rule["threshold"] for metric, rule in rules.items()}
+        # Figure 3's HPD threshold is the pooled-baseline 1st percentile (0),
+        # not Figure 4's fixed 0.05, and KL divergence has a threshold.
+        assert ds.flag_thresholds["hpd_overlap"] == 0.0
+        assert "kl_divergence" in ds.flag_thresholds
+    finally:
+        ds.close()
+
+
+def test_simulation_cache_without_thresholds_is_rejected(tmp_path: Path) -> None:
+    """An older simulation cache must be rebuilt, not drawn with Figure 4's cutoffs."""
+    from statespacecheck_paper.interactive.cache import simulated_meta_path
+    from statespacecheck_paper.interactive.data_source import DecoderDataSource
+
+    _build_simulated(tmp_path)
+    meta_file = simulated_meta_path(tmp_path)
+    with np.load(meta_file) as meta:
+        kept = {key: meta[key] for key in ("time", "linear_position", "n_cells")}
+    np.savez(meta_file, **kept)
+
+    with pytest.raises(ValueError, match="no flag thresholds"):
+        DecoderDataSource.for_simulation(tmp_path)
+
+
 # ---------------------------------------------------------------------------
 # Viewer wiring
 # ---------------------------------------------------------------------------
+
+
+def test_simulated_viewer_draws_the_cached_thresholds(tmp_path: Path) -> None:
+    """Each metric panel's threshold line sits at the cache's threshold."""
+    from PySide6 import QtWidgets
+
+    from statespacecheck_paper.interactive.cache import build_simulated_cache
+    from statespacecheck_paper.interactive.data_source import DecoderDataSource
+    from statespacecheck_paper.interactive.viewer import DecoderViewer
+    from statespacecheck_paper.plotting import negative_log_pvalue
+    from statespacecheck_paper.style import METRIC_SPECS
+
+    thresholds = {"hpd_overlap": 0.0, "predictive_pvalue": 0.01, "kl_divergence": 4.5}
+    build_simulated_cache(
+        tmp_path, params=_tiny_params(), seed=0, time_chunk=128, flag_thresholds=thresholds
+    )
+    _ = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    viewer = DecoderViewer(DecoderDataSource.for_simulation(tmp_path))
+    try:
+        for spec in METRIC_SPECS:
+            line = viewer.metric_panels[spec.event_attr]._threshold_line  # noqa: SLF001
+            assert line is not None, spec.name
+            expected = thresholds[spec.name]
+            if spec.display_transform == "neg_log_p":
+                expected = float(negative_log_pvalue(expected))
+            assert line.value() == pytest.approx(expected), spec.name
+    finally:
+        viewer.close()
 
 
 def test_simulated_viewer_hides_model_combo(tmp_path: Path) -> None:

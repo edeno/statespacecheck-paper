@@ -327,12 +327,14 @@ class DecoderViewer(QtWidgets.QMainWindow):
             place_field_peaks=ds.place_field_peaks,
         )
         # One diagnostic-metric panel per metric, in the paper's order and
-        # keyed by the per-spike event column it plots, with Figure 4's fixed
-        # thresholds (KL divergence has none).
+        # keyed by the per-spike event column it plots. A simulation cache
+        # records Figure 3's thresholds; real-data caches take Figure 4's
+        # fixed cutoffs (KL divergence has none there).
+        thresholds = (
+            FIGURE4_DIAGNOSTIC_THRESHOLDS if ds.flag_thresholds is None else ds.flag_thresholds
+        )
         self.metric_panels: dict[str, MetricPanel] = {
-            spec.event_attr: MetricPanel(
-                spec=spec, threshold=FIGURE4_DIAGNOSTIC_THRESHOLDS.get(spec.name)
-            )
+            spec.event_attr: MetricPanel(spec=spec, threshold=thresholds.get(spec.name))
             for spec in METRIC_SPECS
         }
         self.slice_panel = SlicePanel(
