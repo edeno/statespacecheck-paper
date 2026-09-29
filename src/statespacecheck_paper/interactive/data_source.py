@@ -119,8 +119,8 @@ class DecoderDataSource:
       canonical Figure 4 workflow/cache. The viewer
       can swap between
       ``"continuous"`` and ``"continuous_fragmented"`` if both caches are present
-      in ``cache_dir``. Use ``DecoderDataSource.for_model`` (or the
-      legacy ``DecoderDataSource(cache_dir, model)``) to load.
+      in ``cache_dir``. Use ``DecoderDataSource.for_model`` (or
+      ``DecoderDataSource(cache_dir, model)``) to load.
 
     * **Figure-3 simulation cache** (``dataset_kind == "simulation"``) —
       built by ``cache.build_simulated_cache`` (CLI ``cache build-simulated``).
@@ -183,7 +183,7 @@ class DecoderDataSource:
         Exact normalized likelihood for each event, on the interior position
         grid. Present in the simulation
         cache so remap-window slices use the decoder's active place fields;
-        ``None`` for legacy and real-data caches with static place fields.
+        ``None`` for real-data caches, whose place fields are static.
     spike_times : list[np.ndarray]
         Per-cell spike-time arrays (float64).
     events : pandas.DataFrame
@@ -215,7 +215,7 @@ class DecoderDataSource:
         dataset_kind: DatasetKind = "model",
         display_name: str | None = None,
     ) -> None:
-        # ``__init__`` accepts either the legacy real-data signature
+        # ``__init__`` accepts either the real-data signature
         # (``cache_dir, model``) or an explicit ``layout`` for the
         # simulation path. Use the named constructors
         # (``for_model`` / ``for_simulation``) for new callers.
@@ -538,9 +538,9 @@ class DecoderDataSource:
     def load_acausal(self, sl: slice) -> NDArray[np.float32] | None:
         """Load the acausal (smoothed) posterior, or ``None`` if absent.
 
-        Older caches built before the smoothed-overlay feature landed
-        did not include this variable; callers should fall back to
-        predictive in that case.
+        Caches without ``acausal_posterior`` (the simulation cache, or a
+        real-data cache built without it) return ``None``; callers fall back
+        to the predictive distribution.
         """
         if self._acausal_arr is None:
             return None

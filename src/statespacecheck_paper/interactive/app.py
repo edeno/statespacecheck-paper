@@ -112,8 +112,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.simulation:
         return launch(args.cache_dir, simulation=True)
-    # Default to ``continuous`` when the user hasn't specified either
-    # flag (preserves the legacy CLI behaviour).
+    # Default to ``continuous`` when neither flag is given.
     model: ModelName = args.model if args.model is not None else "continuous"
     return launch(args.cache_dir, model=model)
 

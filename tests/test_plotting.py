@@ -138,8 +138,8 @@ class TestCreateDistributionComparisonPanel:
         likelihood_params: tuple[float, float],
     ) -> None:
         """Both configurations must complete without error and still
-        produce HPD patches (regression: very-different-mean distributions
-        used to crash HPD bar placement)."""
+        produce HPD patches (HPD bar placement must handle distributions with
+        very different means)."""
         _, ax = fresh_axes
         create_distribution_comparison_panel(
             ax,

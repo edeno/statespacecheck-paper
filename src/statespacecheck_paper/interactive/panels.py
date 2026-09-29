@@ -834,9 +834,8 @@ class SlicePanel(QtWidgets.QWidget):
             position_bins=self._position_bins,
             height=140,
         )
-        # Top-plot overlay. Renamed from ``_lik_predictive_curve`` to
-        # match its new role as a switchable predictive / filtered /
-        # smoothed line; legacy alias kept for back-compat with tests.
+        # Top-plot overlay: the predictive, filtered, or smoothed
+        # distribution, chosen with the overlay combo.
         self._lik_overlay_curve = pg.PlotDataItem(
             self._position_bins_uniform,
             self._zero_curve,

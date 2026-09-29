@@ -647,9 +647,7 @@ def decode_with_diagnostics(
             index), and ``event_hpd_overlap`` / ``event_kl_divergence``
             / ``event_predictive_pvalue`` (the dense matrices scattered to one
             value per event). Spike-count > 1 in a bin produces that
-            many repeated events. The legacy ``spike_time_ind`` /
-            ``spike_cell_ind`` aliases were removed; use the
-            ``event_*_ind`` fields instead.
+            many repeated events.
 
         ``event_likelihood`` of shape ``(n_spikes, n_bins)``
             Normalized likelihood for each individual spike event,
@@ -700,7 +698,7 @@ def decode_with_diagnostics(
     ... )
     >>> results.posterior.shape
     (10, 21)
-    >>> results.hpd_overlap.shape  # Now per-cell
+    >>> results.hpd_overlap.shape  # one value per (time, cell)
     (10, 3)
     >>> bool(np.allclose(results.predictive[0], 1.0 / n_bins))  # t=0 prediction = p(x_0)
     True

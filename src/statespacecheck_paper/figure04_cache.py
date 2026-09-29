@@ -47,19 +47,13 @@ import joblib
 from statespacecheck_paper.figure04_decoder import Figure4Config, Figure4DiagnosticsConfig
 from statespacecheck_paper.load_local_data import EXPORT_FILE_SUFFIXES, file_sha256
 
-# Decode-bundle schema. Version 5 changed the cached HPD/KL event likelihood
-# from normalized Poisson(1; lambda) to normalized event intensity while the
-# diagnostics still lived in the decode bundle. The decode payload did not
-# change with the split; later payload changes (dropping the unused causal
-# "filter" outputs) are invalidated by the decode-source digest, not a bump.
-# Version 6 renamed the ``contfrag_results`` key to
-# ``continuous_fragmented_results``.
+# Decode-bundle schema version, hashed into the decode fingerprint. Bump it to
+# invalidate every decode cache when the payload layout changes in a way the
+# decode-source digest does not capture.
 FIGURE04_CACHE_SCHEMA_VERSION = 6
 
-# Diagnostics-bundle schema. Version 1 is the first separately cached
-# diagnostics payload (events binned with the decoder's ``digitize`` rule).
-# Version 2 renamed the ``contfrag_diagnostics`` key to
-# ``continuous_fragmented_diagnostics``.
+# Diagnostics-bundle schema version, hashed into the diagnostics fingerprint;
+# bump it to invalidate every diagnostics cache.
 FIGURE04_DIAGNOSTICS_SCHEMA_VERSION = 2
 
 # Hash entire modules so changes to helpers, imports, defaults, or recording
@@ -332,7 +326,6 @@ def compute_figure04_cache_provenance(
     Comments and docstrings do not affect the source digest. Edits to shared
     workflow or place-field code conservatively refit; edits confined to
     ``diagnostics.py`` or ``figure04_diagnostics.py`` only recompute diagnostics.
-    Caches created before source hashing was added miss once and are rebuilt.
 
     The *diagnostics* fingerprint is :func:`compute_figure04_diagnostics_fingerprint`.
 

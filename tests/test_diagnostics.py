@@ -233,7 +233,7 @@ class TestDecodingDiagnosticsInvariants:
     def test_out_of_range_metric_names_the_field(
         self, field: str, bad_value: float, message: str
     ) -> None:
-        # The per-event arrays feed the manuscript means, which no longer
+        # The per-event arrays feed the manuscript means, which do not
         # re-check them, so these range checks are their only guard.
         kwargs = self._kwargs()
         kwargs[field].flat[0] = bad_value

@@ -303,7 +303,7 @@ def compose_figure01() -> Figure:
         va="top",
     )
 
-    # Add panel labels (a, b, c) - now consistent since all panels use set_title()
+    # Panel labels (a, b, c), aligned because every panel uses set_title()
     label_x = axes["goodness_of_fit"].get_position().x0 - 0.02
     for label, axis_name in (
         ("a", "graphical_model"),

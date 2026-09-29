@@ -179,7 +179,7 @@ def test_slice_panel_live_readout_updates_with_center(tmp_path: Path) -> None:
         text = viewer.slice_panel._readout_label.text()  # noqa: SLF001
         assert text.startswith("t = ")
         assert "predictive(x_true)" in text
-        # Per-cell metrics now live in the row headers, not the readout.
+        # Per-cell metrics live in the row headers, not the readout.
         assert "HPD=" not in text and "spikes in bin" not in text
 
         viewer.set_center_time(float(ds.time[200]))

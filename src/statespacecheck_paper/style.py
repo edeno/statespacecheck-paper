@@ -172,10 +172,9 @@ class MetricSpec:
     """Display metadata for one diagnostic metric.
 
     Single source of truth for how each metric is rendered and flagged on a
-    plotted axis, collapsing the parallel ``(metric, color, transform,
-    direction)`` tables and ``metric == "..."`` special cases that were
-    otherwise repeated across ``figure03_plotting``, ``figure04_panels``, and
-    the interactive viewer.
+    plotted axis: its color, display transform, label, and worse-fit
+    direction, shared by ``figure03_plotting``, ``figure04_panels``, and the
+    interactive viewer.
 
     ``plotted_worse`` is the worse-fit direction **on the plotted axis** (after
     ``display_transform``), derived from the flag rule's

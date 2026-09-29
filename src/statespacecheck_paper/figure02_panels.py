@@ -39,8 +39,8 @@ HISTOGRAM_LOWER_QUANTILE = 0.001
 class Figure2ExampleData:
     """Validated shared example used by every Figure-2 panel.
 
-    Named attributes replace the former ``dict[str, Any]`` boundary, making the
-    scientific quantities discoverable to readers and checkable by mypy. Array
+    Named attributes make the scientific quantities discoverable to readers
+    and checkable by mypy. Array
     fields are defensively copied and made read-only so all nine panels are
     guaranteed to render the same immutable realization.
     """

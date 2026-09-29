@@ -267,7 +267,7 @@ def compose_figure02(rng: np.random.Generator | None = None) -> Figure:
 
     # The 8 pt legends/titles need clear space above the data. Expand the
     # y-limits of the distribution panels (the formula and HPD-bar panels are
-    # excluded) so the corner-anchored legends no longer sit on the curves;
+    # excluded) so the corner-anchored legends do not sit on the curves;
     # the data-max y-tick stays put, the extra room opens up above it.
     for key in (
         "kl_distributions",

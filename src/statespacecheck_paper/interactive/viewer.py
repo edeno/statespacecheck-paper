@@ -376,7 +376,7 @@ class DecoderViewer(QtWidgets.QMainWindow):
         ``_WindowLoadWorker.run`` so the slice panel sees the same kind
         of arrays whether the row came from the buffered window or
         from this direct-read path. Returns ``(predictive, lik, acausal)``;
-        ``acausal`` is ``None`` for older caches without
+        ``acausal`` is ``None`` for caches without
         ``acausal_posterior``.
         """
         ds = self._ds
@@ -481,8 +481,8 @@ class DecoderViewer(QtWidgets.QMainWindow):
         )
         for choice in OVERLAY_CHOICES:
             self._overlay_combo.addItem(_OVERLAY_LABELS[choice], userData=choice)
-        # Smoothed requires ``acausal_posterior`` in the cache; older
-        # caches don't have it, so disable the option there.
+        # Smoothed requires ``acausal_posterior`` in the cache; disable the
+        # option for caches without it.
         if not self._ds.has_acausal:
             smoothed_idx = OVERLAY_CHOICES.index("smoothed")
             combo_model = cast(QtGui.QStandardItemModel, self._overlay_combo.model())

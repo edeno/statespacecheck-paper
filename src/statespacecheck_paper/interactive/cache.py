@@ -551,8 +551,8 @@ def build_simulated_cache(
     likelihood panel would visually flatten.
 
     No ``acausal_posterior`` is written: the simulation only forward-
-    filters, so the smoothed-overlay control is honestly disabled by
-    the loader (matching legacy real-data caches without acausal).
+    filters, so the loader disables the smoothed-overlay control, as it
+    does for any cache without ``acausal_posterior``.
     """
     # Imported here so the cache module doesn't pull simulation
     # machinery on every figure-4 cache build.

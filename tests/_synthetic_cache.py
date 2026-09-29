@@ -57,9 +57,8 @@ def build_synthetic_cache(
     seed : int
         RNG seed for reproducibility.
     with_acausal : bool, default True
-        Include ``acausal_posterior`` in the dataset (matches caches
-        built post-smoothed-overlay feature). Set ``False`` to
-        produce a legacy-shape cache for fallback tests.
+        Include ``acausal_posterior`` in the dataset. Set ``False`` to
+        produce a cache without it for the fallback tests.
     """
     rng = np.random.default_rng(seed)
     n_state_bins = n_states * n_position
@@ -100,9 +99,9 @@ def build_synthetic_cache(
     if with_acausal:
         # Synthetic acausal (smoothed) posterior: a different Dirichlet
         # draw so it is distinguishable from ``predictive_posterior`` in
-        # round-trip tests. Uses a separate RNG to keep the main ``rng``
-        # sequence (and therefore spike times / event metadata) identical
-        # to the pre-acausal version of the cache builder.
+        # round-trip tests. Uses a separate RNG so the main ``rng``
+        # sequence (and therefore spike times / event metadata) is the same
+        # with or without it.
         acausal_rng = np.random.default_rng(seed + 1)
         acausal = acausal_rng.dirichlet(np.ones(n_state_bins), size=n_time).astype(np.float32)
         data_vars["acausal_posterior"] = (("time", "state_bins"), acausal)
