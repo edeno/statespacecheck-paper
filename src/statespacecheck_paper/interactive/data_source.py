@@ -112,14 +112,16 @@ class DecoderDataSource:
     The data source serves two distinct dataset kinds:
 
     * **Real-data decoder caches** (``dataset_kind == "model"``) — derived
-      by ``cache.build`` from the canonical Figure 4 workflow/cache. The viewer
+      by ``cache.build_figure04_viewer_cache`` (CLI ``cache build``) from the
+      canonical Figure 4 workflow/cache. The viewer
       can swap between
       ``"continuous"`` and ``"contfrag"`` if both caches are present
       in ``cache_dir``. Use ``DecoderDataSource.for_model`` (or the
       legacy ``DecoderDataSource(cache_dir, model)``) to load.
 
     * **Figure-3 simulation cache** (``dataset_kind == "simulation"``) —
-      built by ``cache.build_simulated``. Single dataset, no model
+      built by ``cache.build_simulated_cache`` (CLI ``cache build-simulated``).
+      Single dataset, no model
       choice, no smoothed posterior. Use
       ``DecoderDataSource.for_simulation``.
 

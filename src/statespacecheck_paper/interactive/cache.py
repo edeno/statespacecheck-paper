@@ -17,8 +17,6 @@ Usage::
 
     python -m statespacecheck_paper.interactive.cache build \\
         --model continuous --data-dir DATA --cache-dir DATA/cache
-
-See the package's ``__init__.py`` for the public surface.
 """
 
 from __future__ import annotations
@@ -159,7 +157,7 @@ def _write_zarr_store(
     out_dir: Path,
     time_chunk: int,
 ) -> dict[str, tuple[int, ...]]:
-    """Stream the decoder NetCDF into a chunked Zarr store.
+    """Stream a decoder result dataset into a chunked Zarr store.
 
     Writes ``predictive_posterior``, ``log_likelihood``, and — when
     present — ``acausal_posterior`` (the smoothed distribution powering
@@ -173,10 +171,12 @@ def _write_zarr_store(
 
     Notes
     -----
-    The input dataset is the original NetCDF round-trip — ``state_bins``
-    is a plain integer dim with ``state`` and ``position`` as non-dim
-    coords. Both round-trip cleanly through Zarr; the data_source
-    restores the ``(state, position)`` MultiIndex on read.
+    Figure 4 results come from the canonical joblib decode cache, whose
+    ``state_bins`` axis carries a ``(state, position)`` pandas MultiIndex.
+    Zarr cannot serialize a MultiIndex, so it is flattened into ``state``
+    and ``position`` non-dim coords on an integer ``state_bins`` dim; the
+    simulation builder already supplies that flat layout. The data source
+    reads the flat ``position`` coord directly.
     """
     if out_dir.exists():
         shutil.rmtree(out_dir)
@@ -400,10 +400,11 @@ def build_figure04_viewer_cache(
     """Derive viewer artifacts from the canonical Figure 4 workflow output.
 
     The input is the same Figure4RenderData used to render the static figure.
-    In the normal CLI path it is loaded from the epoch's fig4_cache.joblib by
-    prepare_figure04_render_data. This keeps the viewer and paper on one
-    decode/diagnostic source of truth and eliminates the former dependency on
-    separately produced NetCDF results and fitted-model pickles.
+    In the normal CLI path prepare_figure04_render_data loads it from the
+    epoch's decode and diagnostics caches, refitting or recomputing (and
+    rewriting those caches) when either is missing or its fingerprint is
+    stale. This keeps the viewer and paper on one decode/diagnostic source
+    of truth.
     """
     selected = tuple(models)
     if not selected:
@@ -760,8 +761,9 @@ def main(argv: list[str] | None = None) -> int:
         "--data-dir",
         required=True,
         help=(
-            "Figure 4 data directory. Must contain the exported recording inputs "
-            "and the canonical intermediates/{epoch}_fig4_cache.joblib bundle."
+            "Figure 4 data directory. Must contain the exported recording inputs; "
+            "the Figure 4 decode and diagnostics caches under intermediates/ are "
+            "reused when current and otherwise rebuilt there."
         ),
     )
     build.add_argument(
