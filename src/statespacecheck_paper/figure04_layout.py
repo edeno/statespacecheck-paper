@@ -243,8 +243,8 @@ def _layout_hexbin_row(
         render_data.decode_results.continuous_diagnostics,
         render_data.decode_results.continuous_fragmented_diagnostics,
         axes_hexbin,
-        model_a=CONTINUOUS,
-        model_b=CONTINUOUS_FRAGMENTED,
+        reference_model=CONTINUOUS,
+        comparison_model=CONTINUOUS_FRAGMENTED,
         thresholds=thresholds,
         colorbar_pad=0.006,
     )

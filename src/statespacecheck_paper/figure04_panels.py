@@ -640,20 +640,20 @@ def plot_single_model_diagnostics(
 
 
 def plot_event_metric_hexbin_row(
-    diagnostics_a: SpikeEventDiagnostics,
-    diagnostics_b: SpikeEventDiagnostics,
+    reference_diagnostics: SpikeEventDiagnostics,
+    comparison_diagnostics: SpikeEventDiagnostics,
     axes: Sequence[Axes],
     *,
-    model_a: Figure4Model = CONTINUOUS,
-    model_b: Figure4Model = CONTINUOUS_FRAGMENTED,
+    reference_model: Figure4Model = CONTINUOUS,
+    comparison_model: Figure4Model = CONTINUOUS_FRAGMENTED,
     thresholds: dict[str, float] | None = None,
     colorbar_pad: float = 0.02,
 ) -> None:
     """Plot a 1x3 row of hexbin densities comparing per-spike diagnostics between two decoders.
 
     Each panel shows one diagnostic on the x-axis (the reference decoder,
-    ``model_a``) and the same diagnostic on the y-axis (the comparison decoder,
-    ``model_b``). Each hexagon's colour encodes
+    ``reference_model``) and the same diagnostic on the y-axis (the comparison decoder,
+    ``comparison_model``). Each hexagon's colour encodes
     log-scaled spike-event count (matplotlib ``bins='log'``). Points on
     the identity line indicate decoder agreement on that spike.
 
@@ -665,14 +665,14 @@ def plot_event_metric_hexbin_row(
 
     Parameters
     ----------
-    diagnostics_a, diagnostics_b : SpikeEventDiagnostics
+    reference_diagnostics, comparison_diagnostics : SpikeEventDiagnostics
         Per-spike-event diagnostics whose ``event_hpd_overlap``,
         ``event_kl_divergence``, ``event_predictive_pvalue`` attributes (each
         shape ``(n_spikes,)``) supply the hexbin values.
     axes : Sequence[matplotlib.axes.Axes]
         Three axes, one per metric (HPD overlap, ``-log(p)`` natural
         log, KL divergence).
-    model_a, model_b : Figure4Model, default Continuous and Continuous-Fragmented
+    reference_model, comparison_model : Figure4Model, default Continuous and Continuous-Fragmented
         The reference and comparison decoders; their full labels name the
         axes, and the reference's short label names the callout for spikes
         flagged by the reference only.
@@ -688,16 +688,19 @@ def plot_event_metric_hexbin_row(
     """
     if len(axes) != 3:
         raise ValueError(f"axes must have length 3, got {len(axes)}")
-    if diagnostics_a.event_time_ind.shape != diagnostics_b.event_time_ind.shape:
+    if reference_diagnostics.event_time_ind.shape != comparison_diagnostics.event_time_ind.shape:
         raise ValueError(
-            "diagnostics_a and diagnostics_b must carry the same set of spike events "
-            "in the same order"
+            "reference_diagnostics and comparison_diagnostics must carry the same set "
+            "of spike events in the same order"
         )
-    if not np.array_equal(diagnostics_a.event_time_ind, diagnostics_b.event_time_ind) or not (
-        np.array_equal(diagnostics_a.event_cell_ind, diagnostics_b.event_cell_ind)
+    if not np.array_equal(
+        reference_diagnostics.event_time_ind, comparison_diagnostics.event_time_ind
+    ) or not (
+        np.array_equal(reference_diagnostics.event_cell_ind, comparison_diagnostics.event_cell_ind)
     ):
         raise ValueError(
-            "diagnostics_a and diagnostics_b must carry identical spike events in the same order"
+            "reference_diagnostics and comparison_diagnostics must carry identical "
+            "spike events in the same order"
         )
 
     # Event attr, colour, display transform, threshold key, title, and plotted
@@ -712,28 +715,28 @@ def plot_event_metric_hexbin_row(
         log_transform = spec.display_transform == "neg_log_p"
         thr_key = spec.name
         direction = spec.plotted_worse
-        data_a = np.asarray(getattr(diagnostics_a, key), dtype=np.float64)
-        data_b = np.asarray(getattr(diagnostics_b, key), dtype=np.float64)
-        if data_a.shape != data_b.shape:
+        reference_values = np.asarray(getattr(reference_diagnostics, key), dtype=np.float64)
+        comparison_values = np.asarray(getattr(comparison_diagnostics, key), dtype=np.float64)
+        if reference_values.shape != comparison_values.shape:
             raise ValueError(
-                f"diagnostics_a[{key!r}] and diagnostics_b[{key!r}] must "
+                f"reference_diagnostics[{key!r}] and comparison_diagnostics[{key!r}] must "
                 f"carry the same set of spike events in the same order; "
-                f"got shapes {data_a.shape} vs {data_b.shape}."
+                f"got shapes {reference_values.shape} vs {comparison_values.shape}."
             )
         if log_transform:
-            data_a = negative_log_pvalue(data_a)
-            data_b = negative_log_pvalue(data_b)
-        if data_a.size == 0:
+            reference_values = negative_log_pvalue(reference_values)
+            comparison_values = negative_log_pvalue(comparison_values)
+        if reference_values.size == 0:
             raise ValueError(f"Cannot plot {key}: no spike events are present")
-        if not np.all(np.isfinite(data_a)) or not np.all(np.isfinite(data_b)):
+        if not np.all(np.isfinite(reference_values)) or not np.all(np.isfinite(comparison_values)):
             raise ValueError(
                 f"Cannot plot {key}: every aligned spike event must have a finite value"
             )
 
         cmap = mcolors.LinearSegmentedColormap.from_list("custom", ["white", color])
         hb = ax.hexbin(
-            data_a,
-            data_b,
+            reference_values,
+            comparison_values,
             gridsize=40,
             cmap=cmap,
             mincnt=1,
@@ -743,7 +746,7 @@ def plot_event_metric_hexbin_row(
 
         # Identity line — span the actual data range so the visual
         # agreement reference doesn't depend on matplotlib's autoscale.
-        combined = np.concatenate([data_a, data_b])
+        combined = np.concatenate([reference_values, comparison_values])
         lims = (float(np.min(combined)), float(np.max(combined)))
         # Pad limits so hexbins centred on the data extrema (e.g. at 0)
         # render fully instead of being clipped at the axis spine.
@@ -782,7 +785,7 @@ def plot_event_metric_hexbin_row(
                     zorder=4,
                 )
             )
-            label = f"flagged by\n{model_a.short_label} only"
+            label = f"flagged by\n{reference_model.short_label} only"
             label_bbox = {
                 "boxstyle": "round,pad=0.15",
                 "facecolor": "white",
@@ -824,15 +827,15 @@ def plot_event_metric_hexbin_row(
         ax.set_ylim(padded_lims)
         ax.set_aspect("equal", adjustable="box")
 
-        ax.set_xlabel(model_a.label, labelpad=4)
-        ax.set_ylabel(model_b.label if panel_idx == 0 else "", labelpad=4)
+        ax.set_xlabel(reference_model.label, labelpad=4)
+        ax.set_ylabel(comparison_model.label if panel_idx == 0 else "", labelpad=4)
         ax.set_title(spec.title)
 
         if key == "event_kl_divergence":
             ax.text(
                 0.02,
                 0.98,
-                f"n={len(data_a):,}",
+                f"n={len(reference_values):,}",
                 transform=ax.transAxes,
                 va="top",
                 ha="left",

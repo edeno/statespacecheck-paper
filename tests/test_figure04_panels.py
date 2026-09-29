@@ -72,9 +72,9 @@ class TestPlotEventMetricHexbinRow:
         """Every panel must carry a hexbin (PolyCollection) and an identity
         Line2D — the two load-bearing visual elements of the comparison.
         """
-        diag_a, diag_b = paired_diagnostics
+        reference, comparison = paired_diagnostics
         fig, axes = plt.subplots(1, 3)
-        plot_event_metric_hexbin_row(diag_a, diag_b, axes)
+        plot_event_metric_hexbin_row(reference, comparison, axes)
 
         assert [ax.get_title() for ax in axes] == [
             "HPD overlap",
@@ -97,12 +97,12 @@ class TestPlotEventMetricHexbinRow:
         self,
         paired_diagnostics: tuple[SpikeEventDiagnostics, SpikeEventDiagnostics],
     ) -> None:
-        diag_a, _diag_b = paired_diagnostics
-        hpd = diag_a.event_hpd_overlap.copy()
+        reference, _comparison = paired_diagnostics
+        hpd = reference.event_hpd_overlap.copy()
         hpd[0] = np.nan
         with pytest.raises(ValueError, match="required per-event value"):
             event_diagnostics(
-                hpd=hpd, kl=diag_a.event_kl_divergence, pvalue=diag_a.event_predictive_pvalue
+                hpd=hpd, kl=reference.event_kl_divergence, pvalue=reference.event_predictive_pvalue
             )
 
     def test_validates_same_length(
@@ -112,15 +112,15 @@ class TestPlotEventMetricHexbinRow:
         """Mismatched-shape inputs must raise — the helper would otherwise
         produce a plausible-looking hexbin on misaligned arrays.
         """
-        diag_a, diag_b = paired_diagnostics
-        diag_b_short = event_diagnostics(
-            hpd=diag_b.event_hpd_overlap[:25],
-            kl=diag_b.event_kl_divergence[:25],
-            pvalue=diag_b.event_predictive_pvalue[:25],
+        reference, comparison = paired_diagnostics
+        comparison_short = event_diagnostics(
+            hpd=comparison.event_hpd_overlap[:25],
+            kl=comparison.event_kl_divergence[:25],
+            pvalue=comparison.event_predictive_pvalue[:25],
         )
         fig, axes = plt.subplots(1, 3)
         with pytest.raises(ValueError, match="same set of spike events"):
-            plot_event_metric_hexbin_row(diag_a, diag_b_short, axes)
+            plot_event_metric_hexbin_row(reference, comparison_short, axes)
         plt.close(fig)
 
     def test_rejects_wrong_axes_count(
@@ -128,10 +128,10 @@ class TestPlotEventMetricHexbinRow:
         paired_diagnostics: tuple[SpikeEventDiagnostics, SpikeEventDiagnostics],
     ) -> None:
         """The helper expects exactly three axes (one per metric)."""
-        diag_a, diag_b = paired_diagnostics
+        reference, comparison = paired_diagnostics
         fig, axes = plt.subplots(1, 2)
         with pytest.raises(ValueError, match="axes must have length 3"):
-            plot_event_metric_hexbin_row(diag_a, diag_b, axes)
+            plot_event_metric_hexbin_row(reference, comparison, axes)
         plt.close(fig)
 
     def test_thresholds_draw_dotted_lines_and_rescue_patch(
@@ -143,11 +143,11 @@ class TestPlotEventMetricHexbinRow:
         """
         from matplotlib.patches import Rectangle
 
-        diag_a, diag_b = paired_diagnostics
+        reference, comparison = paired_diagnostics
         thresholds = {"hpd_overlap": 0.05, "kl_divergence": 4.52, "predictive_pvalue": 0.05}
 
         fig, axes = plt.subplots(1, 3)
-        plot_event_metric_hexbin_row(diag_a, diag_b, axes, thresholds=thresholds)
+        plot_event_metric_hexbin_row(reference, comparison, axes, thresholds=thresholds)
 
         for ax in axes:
             dotted = [ln for ln in ax.lines if ln.get_linestyle() in (":", "dotted")]
@@ -172,9 +172,9 @@ class TestPlotEventMetricHexbinRow:
         """
         from matplotlib.patches import Rectangle
 
-        diag_a, diag_b = paired_diagnostics
+        reference, comparison = paired_diagnostics
         fig, axes = plt.subplots(1, 3)
-        plot_event_metric_hexbin_row(diag_a, diag_b, axes)
+        plot_event_metric_hexbin_row(reference, comparison, axes)
 
         for ax in axes:
             assert not [ln for ln in ax.lines if ln.get_linestyle() in (":", "dotted")]
