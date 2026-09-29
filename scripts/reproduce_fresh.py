@@ -96,7 +96,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         check=True,
     )
     with tarfile.open(archive) as tar:
-        tar.extractall(repo, filter="data")
+        # The "data" extraction filter is missing from older 3.10/3.11 patch
+        # releases; the archive is git's own export of HEAD either way.
+        if hasattr(tarfile, "data_filter"):
+            tar.extractall(repo, filter="data")
+        else:
+            tar.extractall(repo)
     archive.unlink()
     for name in SUMMARIES:
         shutil.copy2(repo / FIGURES / name, committed / name)
