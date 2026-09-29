@@ -10,9 +10,8 @@ scalars are computed from the result by :mod:`figure04_summary`. Both models are
 fitted on the full recording and their diagnostics are computed on that same
 recording; no training/validation split is applied.
 
-The in-memory decode results are a typed :class:`Figure4DecodeResults` whose
-fields spell out ``continuous_fragmented_*``; the on-disk cache keys stay
-``contfrag_*`` and the mapping is confined to
+The in-memory decode results are a typed :class:`Figure4DecodeResults`; its
+field names are also the on-disk cache keys, read and written by
 :meth:`Figure4DecodeResults.from_cache_payload` / ``to_cache_payload``.
 """
 
@@ -71,8 +70,8 @@ class Figure4DecodeResults:
     read-only by convention (the frozen wrapper does not deep-freeze them); the
     four arrays are converted to their dtypes and made read-only at
     construction, copied unless they are a read-only memory map (the cache).
-    In-memory field names spell out ``continuous_fragmented_*``; the serialized
-    cache keys remain ``contfrag_*`` (see :meth:`from_cache_payload`).
+    The field names are also the serialized cache keys (see
+    :meth:`from_cache_payload`).
 
     Parameters
     ----------
@@ -177,15 +176,17 @@ class Figure4DecodeResults:
 
     @classmethod
     def from_cache_payload(cls, payload: Mapping[str, object]) -> Figure4DecodeResults:
-        """Build from the serialized cache payload (the ``contfrag_*`` keys)."""
+        """Build from the serialized cache payload."""
         missing = [key for key in _FIGURE04_CACHE_PAYLOAD_KEYS if key not in payload]
         if missing:
             raise ValueError(f"decode payload missing keys: {missing}")
         return cls(
             continuous_results=_cast_dataset(payload["continuous_results"]),
-            continuous_fragmented_results=_cast_dataset(payload["contfrag_results"]),
+            continuous_fragmented_results=_cast_dataset(payload["continuous_fragmented_results"]),
             continuous_diagnostics=_cast_diagnostics(payload["continuous_diagnostics"]),
-            continuous_fragmented_diagnostics=_cast_diagnostics(payload["contfrag_diagnostics"]),
+            continuous_fragmented_diagnostics=_cast_diagnostics(
+                payload["continuous_fragmented_diagnostics"]
+            ),
             spike_counts=np.asarray(payload["spike_counts"], dtype=np.int64),
             place_field_peaks=np.asarray(payload["place_field_peaks"], dtype=np.float64),
             diagnostic_place_fields=np.asarray(
@@ -197,14 +198,14 @@ class Figure4DecodeResults:
         )
 
     def to_cache_payload(self) -> dict[str, object]:
-        """Return the serialized cache payload (mapping fields to ``contfrag_*``)."""
+        """Return the serialized cache payload (decode and diagnostics keys)."""
         return {**self.to_decode_payload(), **self.to_diagnostics_payload()}
 
     def to_decode_payload(self) -> dict[str, object]:
         """Return the serialized *decode* payload (the expensive fitted part)."""
         return {
             "continuous_results": self.continuous_results,
-            "contfrag_results": self.continuous_fragmented_results,
+            "continuous_fragmented_results": self.continuous_fragmented_results,
             "spike_counts": self.spike_counts,
             "place_field_peaks": self.place_field_peaks,
             "diagnostic_place_fields": self.diagnostic_place_fields,
@@ -215,7 +216,7 @@ class Figure4DecodeResults:
         """Return the serialized *diagnostics* payload (derived from the decode)."""
         return {
             "continuous_diagnostics": self.continuous_diagnostics,
-            "contfrag_diagnostics": self.continuous_fragmented_diagnostics,
+            "continuous_fragmented_diagnostics": self.continuous_fragmented_diagnostics,
         }
 
 
@@ -378,7 +379,7 @@ def _fit_and_decode(
 
     return {
         "continuous_results": continuous_results,
-        "contfrag_results": continuous_fragmented_results,
+        "continuous_fragmented_results": continuous_fragmented_results,
         "spike_counts": spike_counts,
         "place_field_peaks": place_field_peaks,
         "diagnostic_place_fields": diagnostic_place_fields,
@@ -410,7 +411,7 @@ def _compute_diagnostics_payload(
     payload: dict[str, object] = {}
     for decode_key, diagnostics_key in (
         ("continuous_results", "continuous_diagnostics"),
-        ("contfrag_results", "contfrag_diagnostics"),
+        ("continuous_fragmented_results", "continuous_fragmented_diagnostics"),
     ):
         print(f"Computing diagnostics ({diagnostics_key}) ...")
         payload[diagnostics_key] = compute_results_diagnostics(

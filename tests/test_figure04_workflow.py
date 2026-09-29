@@ -149,12 +149,12 @@ class TestFigure4Summary:
 
 
 class TestFigure4DecodeResults:
-    def test_cache_payload_round_trip_through_contfrag_keys(self) -> None:
+    def test_cache_payload_round_trip_through_field_named_keys(self) -> None:
         decode = _synthetic_decode_results()
         payload = decode.to_cache_payload()
-        # The serialized keys keep the historical ``contfrag_*`` spelling.
-        assert "contfrag_results" in payload
-        assert "contfrag_diagnostics" in payload
+        # The serialized keys are the field names.
+        assert "continuous_fragmented_results" in payload
+        assert "continuous_fragmented_diagnostics" in payload
         rebuilt = Figure4DecodeResults.from_cache_payload(payload)
         assert rebuilt.continuous_fragmented_results is decode.continuous_fragmented_results
         assert rebuilt.continuous_fragmented_diagnostics is decode.continuous_fragmented_diagnostics

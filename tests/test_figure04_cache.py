@@ -33,7 +33,7 @@ def _payload() -> dict[str, Any]:
     """A joblib-serializable *decode* payload matching the decode-cache keys."""
     return {
         "continuous_results": np.zeros(3),
-        "contfrag_results": np.ones(3),
+        "continuous_fragmented_results": np.ones(3),
         "spike_counts": np.zeros((8, 2), dtype=np.int64),
         "place_field_peaks": np.zeros(2),
         "diagnostic_place_fields": np.zeros((2, 4)),
@@ -43,7 +43,10 @@ def _payload() -> dict[str, Any]:
 
 def _diagnostics_payload() -> dict[str, Any]:
     """A joblib-serializable *diagnostics* payload matching the diagnostics-cache keys."""
-    return {"continuous_diagnostics": {"tag": "cont"}, "contfrag_diagnostics": {"tag": "cf"}}
+    return {
+        "continuous_diagnostics": {"tag": "cont"},
+        "continuous_fragmented_diagnostics": {"tag": "cf"},
+    }
 
 
 def test_cache_path_uses_injected_identifiers(tmp_path: Path) -> None:
@@ -73,7 +76,9 @@ def test_round_trip(tmp_path: Path) -> None:
     loaded = load_figure04_cache(path, "fp1")
     assert loaded is not None
     assert set(loaded.keys()) == set(payload.keys())
-    np.testing.assert_array_equal(loaded["contfrag_results"], payload["contfrag_results"])
+    np.testing.assert_array_equal(
+        loaded["continuous_fragmented_results"], payload["continuous_fragmented_results"]
+    )
     assert not path.with_name(path.name + ".tmp").exists()
 
 

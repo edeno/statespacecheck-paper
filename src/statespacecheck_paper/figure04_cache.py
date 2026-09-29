@@ -51,11 +51,15 @@ from statespacecheck_paper.load_local_data import EXPORT_FILE_SUFFIXES, file_sha
 # diagnostics still lived in the decode bundle. The decode payload did not
 # change with the split; later payload changes (dropping the unused causal
 # "filter" outputs) are invalidated by the decode-source digest, not a bump.
-FIGURE04_CACHE_SCHEMA_VERSION = 5
+# Version 6 renamed the ``contfrag_results`` key to
+# ``continuous_fragmented_results``.
+FIGURE04_CACHE_SCHEMA_VERSION = 6
 
 # Diagnostics-bundle schema. Version 1 is the first separately cached
 # diagnostics payload (events binned with the decoder's ``digitize`` rule).
-FIGURE04_DIAGNOSTICS_SCHEMA_VERSION = 1
+# Version 2 renamed the ``contfrag_diagnostics`` key to
+# ``continuous_fragmented_diagnostics``.
+FIGURE04_DIAGNOSTICS_SCHEMA_VERSION = 2
 
 # Hash entire modules so changes to helpers, imports, defaults, or recording
 # preparation cannot silently reuse an old decode. Shared workflow/place-field
@@ -82,7 +86,7 @@ _DIAGNOSTIC_SOURCE_FILES: tuple[str, ...] = (
 # The decode payload keys (the expensive, fitted part).
 _FIGURE04_DECODE_PAYLOAD_KEYS = (
     "continuous_results",
-    "contfrag_results",
+    "continuous_fragmented_results",
     "spike_counts",
     "place_field_peaks",
     "diagnostic_place_fields",
@@ -91,12 +95,11 @@ _FIGURE04_DECODE_PAYLOAD_KEYS = (
 # The diagnostics payload keys (derived from the decode payload).
 _FIGURE04_DIAGNOSTICS_PAYLOAD_KEYS = (
     "continuous_diagnostics",
-    "contfrag_diagnostics",
+    "continuous_fragmented_diagnostics",
 )
 # The full in-memory payload consumed by :class:`Figure4DecodeResults`. These
-# are the serialized key spellings and MUST NOT change without a schema bump
-# (``contfrag_*`` is retained as the serialized name even though the in-memory
-# render-data fields are spelled ``continuous_fragmented_*``).
+# are the serialized key spellings, equal to the in-memory field names, and
+# MUST NOT change without a schema bump.
 _FIGURE04_CACHE_PAYLOAD_KEYS = _FIGURE04_DECODE_PAYLOAD_KEYS + _FIGURE04_DIAGNOSTICS_PAYLOAD_KEYS
 
 
