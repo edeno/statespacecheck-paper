@@ -23,6 +23,7 @@ import pytest
 import statespacecheck as ssc
 
 from statespacecheck_paper.diagnostics import (
+    HPD_COVERAGE,
     DiagnosticThresholds,
     compute_spike_event_diagnostics_from_rates,
 )
@@ -223,7 +224,7 @@ def test_remap_phase_uses_decoder_likelihood(sim: Figure3SimulationResult) -> No
         ssc.hpd_overlap(
             predictive,
             sim.diagnostics.per_spike_likelihood[in_window],
-            coverage=0.95,
+            coverage=HPD_COVERAGE,
         ),
         err_msg="remap HPD was not computed from the displayed event likelihood",
     )

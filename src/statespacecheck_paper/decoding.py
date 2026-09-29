@@ -25,6 +25,7 @@ from numpy.typing import NDArray
 from scipy.special import gammaln, logsumexp, xlogy
 
 from statespacecheck_paper.diagnostics import (
+    HPD_COVERAGE,
     DecodingDiagnostics,
     SpikeEventDiagnostics,
     compute_spike_event_diagnostics_from_rates,
@@ -349,7 +350,6 @@ def _apply_window_rate_overrides(
     windows: tuple[DecoderOverrideWindow, ...],
     spike_time_ind: NDArray[np.intp],
     spike_cell_ind: NDArray[np.intp],
-    coverage: float = 0.95,
 ) -> SpikeEventDiagnostics:
     """Overwrite per-event / dense diagnostics inside each rate-override window.
 
@@ -388,7 +388,7 @@ def _apply_window_rate_overrides(
             window.firing_rate_table,
             window_times,
             window_cells,
-            coverage=coverage,
+            coverage=HPD_COVERAGE,
             return_likelihood=True,
         )
         assert window_events.likelihood is not None
@@ -807,7 +807,7 @@ def decode_with_diagnostics(
         rates,
         spike_time_ind,
         spike_cell_ind,
-        coverage=0.95,
+        coverage=HPD_COVERAGE,
     )
 
     overridden = _apply_window_rate_overrides(

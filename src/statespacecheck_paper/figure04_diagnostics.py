@@ -17,6 +17,7 @@ import statespacecheck as ssc
 from numpy.typing import NDArray
 
 from statespacecheck_paper.diagnostics import (
+    HPD_COVERAGE,
     FlagDirection,
     SpikeEventDiagnostics,
     compute_spike_event_diagnostics_from_rates,
@@ -78,7 +79,7 @@ def compute_spike_event_diagnostics(
     predictive_posterior: NDArray[np.float64],
     spike_counts: NDArray[np.int64],
     place_fields: NDArray[np.float64],
-    coverage: float = 0.95,
+    coverage: float = HPD_COVERAGE,
     spike_times: list[NDArray[np.float64]] | None = None,
     time: NDArray[np.float64] | None = None,
     include_dense_matrices: bool = True,
@@ -99,7 +100,7 @@ def compute_spike_event_diagnostics(
     place_fields : np.ndarray, shape (n_cells, n_bins)
         Expected spike count at each position bin for each cell (spikes/bin).
         This is the format returned by non_local_detector.
-    coverage : float, default 0.95
+    coverage : float, default ``HPD_COVERAGE``
         Coverage probability for HPD region computation.
     spike_times : list of np.ndarray, optional
         Exact spike timestamps for each cell. If supplied, diagnostics are
@@ -243,7 +244,7 @@ def compute_results_diagnostics(
     time: NDArray[np.float64],
     spike_times: list[NDArray[np.float64]] | None = None,
     *,
-    coverage: float = 0.95,
+    coverage: float = HPD_COVERAGE,
     include_dense_matrices: bool = False,
 ) -> SpikeEventDiagnostics:
     """Compute per-spike diagnostics from decode outputs and shared place fields.
@@ -270,7 +271,7 @@ def compute_results_diagnostics(
     spike_times : list of np.ndarray, optional
         Exact spike timestamps for each cell. If supplied, diagnostics are
         computed as one event per spike instead of one event per nonzero bin.
-    coverage : float, default 0.95
+    coverage : float, default ``HPD_COVERAGE``
         HPD-region coverage used by the HPD-overlap diagnostic.
     include_dense_matrices : bool, default False
         Forwarded to :func:`compute_spike_event_diagnostics`. The dense
@@ -308,7 +309,7 @@ def compute_model_diagnostics(
     time: NDArray[np.float64],
     spike_times: list[NDArray[np.float64]] | None = None,
     *,
-    coverage: float = 0.95,
+    coverage: float = HPD_COVERAGE,
 ) -> SpikeEventDiagnostics:
     """Compute per-cell diagnostics for a fitted decoder model.
 
@@ -331,7 +332,7 @@ def compute_model_diagnostics(
     spike_times : list of np.ndarray, optional
         Exact spike timestamps for each cell. If supplied, diagnostics are
         computed as one event per spike instead of one event per nonzero bin.
-    coverage : float, default 0.95
+    coverage : float, default ``HPD_COVERAGE``
         HPD-region coverage used by the HPD-overlap diagnostic.
 
     Returns

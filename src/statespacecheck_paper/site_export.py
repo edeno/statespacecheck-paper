@@ -44,6 +44,7 @@ from numpy.typing import NDArray
 
 from statespacecheck_paper.decoding import decode_with_diagnostics
 from statespacecheck_paper.diagnostics import (
+    HPD_COVERAGE,
     INCLUSIVE_FLAG_COMPARISONS,
     DecodingDiagnostics,
     FlagDirection,
@@ -94,9 +95,6 @@ EVENT_VALUE_SIGNIFICANT_FIGURES = 4
 
 # Entries in each exported colormap lookup table.
 COLORMAP_LUT_SIZE = 64
-
-# Probability mass of the HPD regions, as throughout the paper.
-HPD_COVERAGE = 0.95
 
 # Color scale of the Figure-4 predictive heatmaps (xarray's ``robust=True``):
 # the 2nd to 98th percentiles of the plotted window. Figure 3's scale is

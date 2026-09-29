@@ -22,6 +22,7 @@ from matplotlib.axes import Axes
 from numpy.typing import NDArray
 from scipy.stats import norm
 
+from statespacecheck_paper.diagnostics import HPD_COVERAGE
 from statespacecheck_paper.simulation import normalize
 from statespacecheck_paper.style import COLORS
 
@@ -347,8 +348,7 @@ def _plot_hpd_panel(
     Figure-2 panel styling. Only the color, title, threshold-label placement,
     and legend keywords differ between the two columns.
     """
-    coverage = 0.95
-    hpd_mask = ssc.highest_density_region(dist[np.newaxis], coverage=coverage)[0]
+    hpd_mask = ssc.highest_density_region(dist[np.newaxis], coverage=HPD_COVERAGE)[0]
 
     # HPD threshold is the minimum density value inside the HPD region.
     hpd_threshold = np.min(dist[hpd_mask])
@@ -361,13 +361,13 @@ def _plot_hpd_panel(
         where=list(hpd_mask),
         alpha=0.35,
         color=color,
-        label="95% HPD",
+        label=f"{HPD_COVERAGE:.0%} HPD",
     )
     ax.axhline(hpd_threshold, color=color, linestyle="--", linewidth=0.8, alpha=0.7)
     ax.text(
         label_x,
         hpd_threshold,
-        "95% threshold",
+        f"{HPD_COVERAGE:.0%} threshold",
         ha=label_ha,
         va="bottom",
         color=color,
@@ -442,11 +442,10 @@ def plot_hpd_intersection(ax: Axes, data: Figure2ExampleData) -> tuple[float, fl
     x = data.position_bins
     pred = data.predictive
     like = data.likelihood
-    coverage = 0.95
     dx = x[1] - x[0]
 
-    pred_hpd = ssc.highest_density_region(pred[np.newaxis], coverage=coverage)[0]
-    like_hpd = ssc.highest_density_region(like[np.newaxis], coverage=coverage)[0]
+    pred_hpd = ssc.highest_density_region(pred[np.newaxis], coverage=HPD_COVERAGE)[0]
+    like_hpd = ssc.highest_density_region(like[np.newaxis], coverage=HPD_COVERAGE)[0]
     intersection = pred_hpd & like_hpd
 
     # Compute sizes for annotation

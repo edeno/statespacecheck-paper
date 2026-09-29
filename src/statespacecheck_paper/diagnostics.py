@@ -44,6 +44,10 @@ BASELINE_HPD_OVERLAP_QUANTILE = 0.01
 BASELINE_KL_DIVERGENCE_QUANTILE = 0.99
 FIXED_PREDICTIVE_PVALUE_CUTOFF = 0.05
 
+# Probability mass of the highest-density regions compared by the HPD-overlap
+# diagnostic, throughout the paper.
+HPD_COVERAGE = 0.95
+
 FlagDirection = Literal["below", "above"]
 
 # Side of the threshold on which each raw per-event diagnostic indicates worse
@@ -423,7 +427,7 @@ def compute_spike_event_diagnostics_from_rates(
     rates: NDArray[np.floating],
     spike_time_ind: NDArray[np.intp],
     spike_cell_ind: NDArray[np.intp],
-    coverage: float = 0.95,
+    coverage: float = HPD_COVERAGE,
     include_dense_matrices: bool = True,
 ) -> SpikeEventDiagnostics:
     """Compute per-cell diagnostic metrics at spike times.
@@ -444,7 +448,7 @@ def compute_spike_event_diagnostics_from_rates(
         Time indices where spikes occurred.
     spike_cell_ind : np.ndarray, shape (n_spikes,)
         Cell indices for each spike event.
-    coverage : float, default 0.95
+    coverage : float, default ``HPD_COVERAGE``
         Coverage probability for HPD region computation.
     include_dense_matrices : bool, default True
         If True (default), also populate the (n_time, n_cells) ``hpd_overlap``,
