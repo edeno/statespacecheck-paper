@@ -41,12 +41,14 @@ Macros are prefixed ``\Sim`` (simulation study, Figure 3) or ``\Rec``
 name clash, so a collision with a package macro fails the build rather than
 silently redefining anything.
 
-This module reads the committed summary JSONs; the one exception is the
-archived DOI of the cited ``statespacecheck`` version, which
-:func:`write_macro_file` looks up on Zenodo (so emitting needs internet
-access). Its sibling imports are ``number_format``, the rounding shared with
-the Figure-3 summary panel, so the figure and the prose cannot round the same
-number differently, and ``paths``, for the Figure-4 data DOI.
+The analysis numbers come only from the committed summary JSONs. The three
+DOIs come from elsewhere: the archived DOI of the cited ``statespacecheck``
+version, which :func:`write_macro_file` looks up on Zenodo (so emitting needs
+internet access); this repository's DOI, read from ``CITATION.cff``; and the
+Figure-4 input file's DOI, ``paths.FIGURE04_INPUTS_DOI``. Its sibling imports
+are ``number_format``, the rounding shared with the Figure-3 summary panel, so
+the figure and the prose cannot round the same number differently, and
+``paths``, for the summary locations and that data DOI.
 """
 
 from __future__ import annotations
