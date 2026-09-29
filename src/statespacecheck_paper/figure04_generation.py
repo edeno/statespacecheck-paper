@@ -56,6 +56,9 @@ FIGURE04_DIAGNOSTIC_THRESHOLDS: dict[str, float] = {
 FIGURE04_METRIC_DIRECTIONS: dict[str, FlagDirection] = {
     metric: METRIC_FLAG_DIRECTIONS[metric] for metric in FIGURE04_DIAGNOSTIC_THRESHOLDS
 }
+# Version of the figure04_summary.json layout written by
+# figure04_summary_payload. Bump it when a field is added, removed, or renamed.
+FIGURE04_SUMMARY_SCHEMA_VERSION = 7
 # Manuscript detail view: a KL-divergence spike during immobility at a reward
 # well, shown with 500 samples on either side (~2 seconds total at 500 Hz).
 FIGURE04_DETAIL_WINDOW = Figure4DetailWindow(
@@ -118,7 +121,7 @@ def figure04_summary_payload(
         )
     statistics = figure04_reported_statistics(summary)
     return {
-        "schema_version": 6,
+        "schema_version": FIGURE04_SUMMARY_SCHEMA_VERSION,
         "figure": "figure04",
         "dataset": {
             "animal_date_epoch": paths.animal_date_epoch,

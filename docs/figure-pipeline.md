@@ -448,9 +448,11 @@ $\Lambda(x)$.
     $\sqrt{12.5}\approx3.54$ cm), `position_bin_size_cm` (2 cm), and
     `sampling_frequency_hz` (500 Hz, i.e. 2 ms bins);
   - `package_defaults`, a `Figure4PackageDefaults`: the `non_local_detector`
-    defaults the decode relies on without passing them — `movement_var`
-    (6 cm²), the Continuous–Fragmented mode-transition diagonal and mode initial
-    conditions, and the package version. They are recorded and checked against
+    defaults the decode relies on without passing them — the observation
+    algorithm, `movement_var` (6 cm²) and `movement_mean`, each model's
+    position initial-condition and transition classes, the Continuous–Fragmented
+    mode-transition class, diagonal, and mode initial conditions, and the package
+    version, which must equal the installed one. They are recorded and checked against
     the built models at decode time (`validate_package_defaults`) and in the
     tests, but not injected: injecting them would mean rebuilding the nested
     transition grid. The discrete-transition concentration and regularization
@@ -619,7 +621,7 @@ manual overrides: bumping one invalidates every cache of that kind.
 ## Machine-readable summary schema
 
 `figure03_summary.json` uses schema version 9 and `figure04_summary.json`
-uses schema version 6. The Figure-3 configuration block records every
+uses schema version 7 (`figure04_generation.FIGURE04_SUMMARY_SCHEMA_VERSION`). The Figure-3 configuration block records every
 `Figure3Config` field together with the step length in seconds
 (`configuration.step_seconds`, the protocol constant `STEP_SECONDS`) and the
 HPD coverage (`configuration.hpd_coverage`, `diagnostics.HPD_COVERAGE`). The
@@ -646,7 +648,13 @@ flagged under the recorded threshold.
 The Figure-4 schema records `dataset.n_units` alongside the recording
 identifier, names the second decoder `continuous_fragmented` throughout, and
 keeps the recorded `non_local_detector` defaults under
-`configuration.package_defaults`. Each `flag_confusions` entry counts
+`configuration.package_defaults`: the observation-model algorithm
+(`sorted_spikes_kde`), the random-walk `movement_var` and `movement_mean`,
+each model's position initial conditions and position transitions per mode
+as `non_local_detector` class names (`UniformInitialConditions`; `RandomWalk`
+for Continuous to Continuous and `Uniform` otherwise), its mode initial
+conditions, the Continuous–Fragmented mode-transition class and diagonal, and
+the package version. Each `flag_confusions` entry counts
 spikes flagged by `both` decoders, by the reference only (`rescued`), by the
 comparison only (`newly_flagged`), and by `neither`; `flag_confusion_models`
 names the reference (`continuous`) and comparison (`continuous_fragmented`)

@@ -88,6 +88,55 @@ class TestFigure4ConfigMatchesManuscript:
             ),
         )
 
+    def test_observation_initial_conditions_and_position_transitions(self) -> None:
+        from non_local_detector.continuous_state_transitions import RandomWalk, Uniform
+        from non_local_detector.initial_conditions import UniformInitialConditions
+
+        continuous_model, continuous_fragmented_model = self._build_models()
+        defaults = figure04_decoder.Figure4Config().package_defaults
+
+        for model in (continuous_model, continuous_fragmented_model):
+            # sec:realdatamethods -- one sorted-spikes kernel-density observation model.
+            assert model.sorted_spikes_algorithm == "sorted_spikes_kde"
+            # sec:realdatamethods -- position initialized uniformly over the
+            # track-interior bins, in every mode.
+            assert all(
+                type(item) is UniformInitialConditions
+                for item in model.continuous_initial_conditions_types
+            )
+            # sec:realdatamethods -- zero-mean random walk.
+            assert model.continuous_transition_types[0][0].movement_mean == 0.0
+
+        # sec:realdatamethods -- the Continuous model's sole mode has probability one.
+        np.testing.assert_array_equal(continuous_model.discrete_initial_conditions, [1.0])
+        assert [
+            [type(item) for item in row] for row in continuous_model.continuous_transition_types
+        ] == [[RandomWalk]]
+        # sec:realdatamethods -- Continuous-to-Continuous uses the random walk;
+        # the other three mode transitions are uniform over track-interior bins.
+        assert [
+            [type(item) for item in row]
+            for row in continuous_fragmented_model.continuous_transition_types
+        ] == [[RandomWalk, Uniform], [Uniform, Uniform]]
+
+        # The recorded class names are those classes.
+        assert defaults.sorted_spikes_algorithm == "sorted_spikes_kde"
+        assert defaults.movement_mean == 0.0
+        assert defaults.continuous_discrete_initial_conditions == (1.0,)
+        assert defaults.continuous_initial_conditions_types == ("UniformInitialConditions",)
+        assert defaults.continuous_fragmented_initial_conditions_types == (
+            "UniformInitialConditions",
+            "UniformInitialConditions",
+        )
+        assert defaults.continuous_transition_types == (("RandomWalk",),)
+        assert defaults.continuous_fragmented_transition_types == (
+            ("RandomWalk", "Uniform"),
+            ("Uniform", "Uniform"),
+        )
+        assert defaults.continuous_fragmented_discrete_transition_type == (
+            "DiscreteStationaryDiagonal"
+        )
+
     def test_binning_values_the_code_uses(self) -> None:
         """Position bin size (from the Environment) and time bin size (from the
         sampling frequency) are the values the decode actually uses."""
@@ -137,7 +186,10 @@ class TestConfigValueValidation:
         "kwargs",
         [
             {"movement_var": 0.0},
+            {"movement_mean": float("nan")},
+            {"continuous_discrete_initial_conditions": (0.5, 0.5)},
             {"continuous_fragmented_diagonal_values": (1.2, 0.98)},
+            {"continuous_fragmented_diagonal_values": (0.98,)},
             {"continuous_fragmented_discrete_initial_conditions": (-0.1, 1.1)},
             {"non_local_detector_version": ""},
         ],
@@ -202,17 +254,50 @@ class TestValidatePackageDefaults:
             cont, cf, figure04_decoder.Figure4PackageDefaults()
         )
 
-    def test_raises_on_scalar_drift(self) -> None:
-        cont, cf = self._models()
-        drifted = dataclasses.replace(figure04_decoder.Figure4PackageDefaults(), movement_var=999.0)
-        with pytest.raises(ValueError, match="default drift"):
-            figure04_decoder.validate_package_defaults(cont, cf, drifted)
-
-    def test_raises_on_array_drift(self) -> None:
+    @pytest.mark.parametrize(
+        ("field", "drifted_value", "label"),
+        [
+            ("sorted_spikes_algorithm", "sorted_spikes_glm", "sorted_spikes_algorithm"),
+            ("movement_var", 999.0, "movement_var"),
+            ("movement_mean", 1.0, "movement_mean"),
+            (
+                "continuous_initial_conditions_types",
+                ("EmpiricalInitialConditions",),
+                "continuous continuous_initial_conditions_types",
+            ),
+            (
+                "continuous_transition_types",
+                (("Uniform",),),
+                "continuous continuous_transition_types",
+            ),
+            (
+                "continuous_fragmented_initial_conditions_types",
+                ("UniformInitialConditions", "EmpiricalInitialConditions"),
+                "continuous_fragmented continuous_initial_conditions_types",
+            ),
+            (
+                "continuous_fragmented_transition_types",
+                (("RandomWalk", "Uniform"), ("Uniform", "RandomWalk")),
+                "continuous_fragmented continuous_transition_types",
+            ),
+            (
+                "continuous_fragmented_discrete_transition_type",
+                "DiscreteStationaryCustom",
+                "discrete_transition_type",
+            ),
+            ("continuous_discrete_initial_conditions", (0.0,), "continuous discrete_initial"),
+            ("continuous_fragmented_diagonal_values", (0.5, 0.5), "diagonal_values"),
+            (
+                "continuous_fragmented_discrete_initial_conditions",
+                (0.9, 0.1),
+                "continuous_fragmented discrete_initial",
+            ),
+        ],
+    )
+    def test_raises_on_drift(self, field: str, drifted_value: object, label: str) -> None:
         cont, cf = self._models()
         drifted = dataclasses.replace(
-            figure04_decoder.Figure4PackageDefaults(),
-            continuous_fragmented_diagonal_values=(0.5, 0.5),
+            figure04_decoder.Figure4PackageDefaults(), **{field: drifted_value}
         )
-        with pytest.raises(ValueError, match="default drift"):
+        with pytest.raises(ValueError, match=f"default drift: .*{label}"):
             figure04_decoder.validate_package_defaults(cont, cf, drifted)

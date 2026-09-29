@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import dataclasses
 import importlib
+import json
 import sys
 from collections.abc import Iterator
 from pathlib import Path
@@ -15,11 +17,12 @@ from statespacecheck_paper import figure04_generation
 from statespacecheck_paper.figure04_cache import (
     Figure4Paths,
 )
-from statespacecheck_paper.figure04_decoder import Figure4Config
+from statespacecheck_paper.figure04_decoder import Figure4Config, Figure4PackageDefaults
 from statespacecheck_paper.figure04_diagnostics import FlagConfusion
 from statespacecheck_paper.figure04_input import INPUT_FILE_SUFFIX
 from statespacecheck_paper.figure04_layout import Figure4Composition
 from statespacecheck_paper.figure04_summary import Figure4DiagnosticMeans, Figure4Summary
+from statespacecheck_paper.paths import FIGURE04_SUMMARY_PATH, REPO_ROOT
 
 from ._figure04 import synthetic_cache_provenance
 from ._scripts import SCRIPTS_DIR
@@ -125,7 +128,14 @@ def test_summary_payload_contains_reported_counts_rates_and_provenance(
     flag_rules = cast(dict[str, dict[str, str | float]], payload["flag_rules"])
     provenance = cast(dict[str, Any], payload["provenance"])
 
-    assert payload["schema_version"] == 6
+    assert payload["schema_version"] == figure04_generation.FIGURE04_SUMMARY_SCHEMA_VERSION
+    # The recorded package defaults include the per-state classes the decode relies on.
+    package_defaults = payload["configuration"]["package_defaults"]
+    assert package_defaults["continuous_fragmented_transition_types"] == (
+        ("RandomWalk", "Uniform"),
+        ("Uniform", "Uniform"),
+    )
+    assert package_defaults["continuous_initial_conditions_types"] == ("UniformInitialConditions",)
     assert payload["dataset"] == {"animal_date_epoch": "epoch_x", "n_units": 7}
     assert flag_rules["hpd_overlap"] == {
         "comparison": "less_than_or_equal",
@@ -155,6 +165,15 @@ def test_summary_payload_contains_reported_counts_rates_and_provenance(
     assert cache_provenance_payload["input_file_sha256"] == {
         f"epoch_x{INPUT_FILE_SUFFIX}": "d" * 64
     }
+
+
+def test_committed_summary_records_the_current_schema_and_package_defaults() -> None:
+    """The committed summary uses the current layout and records exactly the
+    package defaults the code checks the decoders against."""
+    committed = json.loads((REPO_ROOT / FIGURE04_SUMMARY_PATH).read_text(encoding="utf-8"))
+    assert committed["schema_version"] == figure04_generation.FIGURE04_SUMMARY_SCHEMA_VERSION
+    expected = json.loads(json.dumps(dataclasses.asdict(Figure4PackageDefaults())))
+    assert committed["configuration"]["package_defaults"] == expected
 
 
 def test_cli_force_recompute_forwards_use_cache(

@@ -154,16 +154,49 @@ class Figure4PackageDefaults:
     also hashed into the cache fingerprint, so a recorded value changing
     invalidates the cache.
 
-    The discrete-transition concentration and regularization are not recorded:
-    ``non_local_detector`` reads them only when re-estimating the discrete
-    transitions in ``estimate_parameters`` (EM), and Figure 4 only fits and
-    predicts, so they cannot affect the decode.
+    Classes are recorded by name (``type(obj).__name__``): the class, not an
+    instance parameter, is what the manuscript describes (for example
+    ``UniformInitialConditions``, a uniform distribution over the track-interior
+    position bins, and ``Uniform``, a uniform transition to the track-interior
+    bins of the same environment). Per-state entries are ordered by the model's
+    states: ``("Continuous",)`` and ``("Continuous", "Fragmented")``; a
+    transition grid's row is the state transitioned from.
+
+    Not recorded, because they cannot affect this decode: the discrete-transition
+    concentration, stickiness, and regularization, which ``non_local_detector``
+    reads only when re-estimating the discrete transitions in
+    ``estimate_parameters`` (EM), while Figure 4 only fits and predicts; and the
+    ``RandomWalk`` ``use_manifold_distance`` / ``direction`` options and the
+    models' ``infer_track_interior``, which apply only to environments without a
+    track graph, while Figure 4 always decodes on a track graph.
 
     Attributes
     ----------
+    sorted_spikes_algorithm : str
+        Observation model of both decoders, ``"sorted_spikes_kde"`` (the
+        sorted-spikes kernel-density model).
     movement_var : float
         Random-walk position-transition variance, ``6.0 cm^2`` (``RandomWalk``
         default).
+    movement_mean : float
+        Random-walk mean displacement per step, ``0.0 cm`` (zero-mean;
+        ``RandomWalk`` default).
+    continuous_discrete_initial_conditions : tuple[float]
+        Continuous-model mode initial conditions ``(1.0,)``: its sole mode has
+        probability one.
+    continuous_initial_conditions_types : tuple[str]
+        Continuous-model position initial condition, ``("UniformInitialConditions",)``.
+    continuous_transition_types : tuple[tuple[str]]
+        Continuous-model position transition, ``(("RandomWalk",),)``.
+    continuous_fragmented_initial_conditions_types : tuple[str, str]
+        Continuous-Fragmented position initial condition per mode, both
+        ``"UniformInitialConditions"``.
+    continuous_fragmented_transition_types : tuple[tuple[str, str], tuple[str, str]]
+        Continuous-Fragmented position transition per mode pair:
+        ``RandomWalk`` for Continuous to Continuous and ``Uniform`` for the
+        other three.
+    continuous_fragmented_discrete_transition_type : str
+        Continuous-Fragmented mode-transition class, ``"DiscreteStationaryDiagonal"``.
     continuous_fragmented_diagonal_values : tuple[float, float]
         Continuous-Fragmented ``DiscreteStationaryDiagonal`` diagonal ``(0.98, 0.98)``
         (mode-transition matrix ``[[0.98, 0.02], [0.02, 0.98]]``).
@@ -173,7 +206,21 @@ class Figure4PackageDefaults:
         Manuscript-stated ``non_local_detector`` version whose defaults these are.
     """
 
+    sorted_spikes_algorithm: str = "sorted_spikes_kde"
     movement_var: float = 6.0
+    movement_mean: float = 0.0
+    continuous_discrete_initial_conditions: tuple[float] = (1.0,)
+    continuous_initial_conditions_types: tuple[str] = ("UniformInitialConditions",)
+    continuous_transition_types: tuple[tuple[str]] = (("RandomWalk",),)
+    continuous_fragmented_initial_conditions_types: tuple[str, str] = (
+        "UniformInitialConditions",
+        "UniformInitialConditions",
+    )
+    continuous_fragmented_transition_types: tuple[tuple[str, str], tuple[str, str]] = (
+        ("RandomWalk", "Uniform"),
+        ("Uniform", "Uniform"),
+    )
+    continuous_fragmented_discrete_transition_type: str = "DiscreteStationaryDiagonal"
     continuous_fragmented_diagonal_values: tuple[float, float] = (0.98, 0.98)
     continuous_fragmented_discrete_initial_conditions: tuple[float, float] = (0.5, 0.5)
     non_local_detector_version: str = "0.6.10.dev214+g956fdccaf"
@@ -184,22 +231,36 @@ class Figure4PackageDefaults:
                 "Figure4PackageDefaults.movement_var must be finite and positive; "
                 f"got {self.movement_var!r}"
             )
-        for name, pair in (
-            ("continuous_fragmented_diagonal_values", self.continuous_fragmented_diagonal_values),
+        if not np.isfinite(self.movement_mean):
+            raise ValueError(
+                f"Figure4PackageDefaults.movement_mean must be finite; got {self.movement_mean!r}"
+            )
+        for name, values, n_states in (
+            (
+                "continuous_discrete_initial_conditions",
+                self.continuous_discrete_initial_conditions,
+                1,
+            ),
+            (
+                "continuous_fragmented_diagonal_values",
+                self.continuous_fragmented_diagonal_values,
+                2,
+            ),
             (
                 "continuous_fragmented_discrete_initial_conditions",
                 self.continuous_fragmented_discrete_initial_conditions,
+                2,
             ),
         ):
-            arr = np.asarray(pair, dtype=float)
+            arr = np.asarray(values, dtype=float)
             if (
-                arr.shape != (2,)
+                arr.shape != (n_states,)
                 or not np.all(np.isfinite(arr))
                 or np.any((arr < 0.0) | (arr > 1.0))
             ):
                 raise ValueError(
-                    f"Figure4PackageDefaults.{name} must be two finite probabilities in [0, 1]; "
-                    f"got {pair!r}"
+                    f"Figure4PackageDefaults.{name} must be {n_states} finite "
+                    f"probabilities in [0, 1]; got {values!r}"
                 )
         if not self.non_local_detector_version:
             raise ValueError("Figure4PackageDefaults.non_local_detector_version must be non-empty")
@@ -252,8 +313,10 @@ class Figure4Config:
     from: :attr:`decoder` holds the values this code passes to
     ``non_local_detector`` (KDE bandwidth, position bin size, time-bin rate);
     :attr:`package_defaults` records the ``non_local_detector`` defaults the
-    decode relies on without passing them (the random-walk variance and the
-    Continuous-Fragmented mode transitions and initial conditions);
+    decode relies on without passing them (the observation-model algorithm,
+    each model's position initial conditions and position transitions with the
+    random-walk mean and variance, and the mode initial conditions and
+    transitions);
     :attr:`diagnostics` sets how the per-spike diagnostics are computed from the
     predictions (HPD coverage, which spikes); and :attr:`execution` holds
     performance settings that do not change any result.
@@ -299,11 +362,12 @@ def build_decoder_models(
     :func:`fit_decoder_models` and the config drift guard. The
     :class:`Figure4DecoderConfig` values (``position_std``,
     ``sampling_frequency_hz``) and the :class:`Figure4ExecutionConfig`
-    ``block_size`` are injected here; ``movement_var``, the mode-transition
-    matrix, and the mode initial conditions come from ``non_local_detector``
-    class defaults (see :class:`Figure4PackageDefaults` for why they are pinned rather than
-    injected). The drift guard inspects the resolved attributes of these objects,
-    so it never needs real data or a fit.
+    ``block_size`` are injected here; the observation-model algorithm, the
+    position initial conditions and transitions (with ``movement_var``), the
+    mode-transition matrix, and the mode initial conditions come from
+    ``non_local_detector`` class defaults (see :class:`Figure4PackageDefaults`
+    for why they are pinned rather than injected). The drift guard inspects the
+    resolved attributes of these objects, so it never needs real data or a fit.
 
     Parameters
     ----------
@@ -387,18 +451,72 @@ def validate_package_defaults(
     ValueError
         If any resolved model attribute diverges from the recorded default.
     """
-    scalar_checks: tuple[tuple[str, Any, float], ...] = (
-        (
-            "continuous movement_var",
-            continuous_model.continuous_transition_types[0][0].movement_var,
-            package_defaults.movement_var,
-        ),
-        (
-            "continuous_fragmented movement_var",
-            continuous_fragmented_model.continuous_transition_types[0][0].movement_var,
-            package_defaults.movement_var,
-        ),
+    models = (
+        ("continuous", continuous_model),
+        ("continuous_fragmented", continuous_fragmented_model),
     )
+    # Class names first, so a changed class is reported as such rather than as
+    # a missing attribute of the parameter checks below.
+    name_checks: list[tuple[str, object, object]] = [
+        (
+            f"{label} sorted_spikes_algorithm",
+            model.sorted_spikes_algorithm,
+            package_defaults.sorted_spikes_algorithm,
+        )
+        for label, model in models
+    ]
+    for label, model, initial_conditions_types, transition_types in (
+        (
+            "continuous",
+            continuous_model,
+            package_defaults.continuous_initial_conditions_types,
+            package_defaults.continuous_transition_types,
+        ),
+        (
+            "continuous_fragmented",
+            continuous_fragmented_model,
+            package_defaults.continuous_fragmented_initial_conditions_types,
+            package_defaults.continuous_fragmented_transition_types,
+        ),
+    ):
+        name_checks += [
+            (
+                f"{label} continuous_initial_conditions_types",
+                tuple(type(item).__name__ for item in model.continuous_initial_conditions_types),
+                tuple(initial_conditions_types),
+            ),
+            (
+                f"{label} continuous_transition_types",
+                tuple(
+                    tuple(type(item).__name__ for item in row)
+                    for row in model.continuous_transition_types
+                ),
+                tuple(tuple(row) for row in transition_types),
+            ),
+        ]
+    name_checks.append(
+        (
+            "continuous_fragmented discrete_transition_type",
+            type(continuous_fragmented_model.discrete_transition_type).__name__,
+            package_defaults.continuous_fragmented_discrete_transition_type,
+        )
+    )
+    for label, resolved_name, expected_name in name_checks:
+        if resolved_name != expected_name:
+            raise ValueError(
+                f"non_local_detector default drift: {label} resolved to {resolved_name!r} but "
+                f"Figure4PackageDefaults records {expected_name!r}. A dependency change moved a "
+                "decode-shaping default; update Figure4PackageDefaults (and re-verify Figure 4) "
+                "if this is intentional."
+            )
+
+    scalar_checks: list[tuple[str, Any, float]] = []
+    for label, model in models:
+        random_walk = model.continuous_transition_types[0][0]
+        scalar_checks += [
+            (f"{label} movement_var", random_walk.movement_var, package_defaults.movement_var),
+            (f"{label} movement_mean", random_walk.movement_mean, package_defaults.movement_mean),
+        ]
     for label, resolved, expected in scalar_checks:
         if not np.isclose(float(resolved), float(expected)):
             raise ValueError(
@@ -408,7 +526,12 @@ def validate_package_defaults(
                 "if this is intentional."
             )
 
-    array_checks: tuple[tuple[str, Any, tuple[float, float]], ...] = (
+    array_checks: tuple[tuple[str, Any, tuple[float, ...]], ...] = (
+        (
+            "continuous discrete_initial_conditions",
+            continuous_model.discrete_initial_conditions,
+            package_defaults.continuous_discrete_initial_conditions,
+        ),
         (
             "continuous_fragmented discrete_transition_type.diagonal_values",
             continuous_fragmented_model.discrete_transition_type.diagonal_values,
@@ -420,15 +543,17 @@ def validate_package_defaults(
             package_defaults.continuous_fragmented_discrete_initial_conditions,
         ),
     )
-    for label, resolved, expected_pair in array_checks:
-        if not np.allclose(
-            np.asarray(resolved, dtype=float), np.asarray(expected_pair, dtype=float)
+    for label, resolved, expected_values in array_checks:
+        resolved_array = np.asarray(resolved, dtype=float)
+        expected_array = np.asarray(expected_values, dtype=float)
+        if resolved_array.shape != expected_array.shape or not np.allclose(
+            resolved_array, expected_array
         ):
             raise ValueError(
                 f"non_local_detector default drift: {label} resolved to "
-                f"{np.asarray(resolved)!r} but Figure4PackageDefaults records {expected_pair!r}. "
-                "A dependency change moved a decode-shaping default; update "
-                "Figure4PackageDefaults (and re-verify Figure 4) if this is intentional."
+                f"{np.asarray(resolved)!r} but Figure4PackageDefaults records "
+                f"{expected_values!r}. A dependency change moved a decode-shaping default; "
+                "update Figure4PackageDefaults (and re-verify Figure 4) if this is intentional."
             )
 
 

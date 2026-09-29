@@ -16,7 +16,10 @@ from statespacecheck_paper.figure03_summary import Figure3RealizationSummary
 from statespacecheck_paper.figure04_cache import Figure4CacheProvenance, Figure4Paths
 from statespacecheck_paper.figure04_decoder import Figure4Config, Figure4DiagnosticsConfig
 from statespacecheck_paper.figure04_diagnostics import FlagConfusion
-from statespacecheck_paper.figure04_generation import figure04_summary_payload
+from statespacecheck_paper.figure04_generation import (
+    FIGURE04_SUMMARY_SCHEMA_VERSION,
+    figure04_summary_payload,
+)
 from statespacecheck_paper.figure04_input import INPUT_FILE_SUFFIX
 from statespacecheck_paper.figure04_summary import Figure4DiagnosticMeans, Figure4Summary
 from statespacecheck_paper.paths import REPO_ROOT
@@ -150,7 +153,7 @@ def test_figure03_reported_statistics_match_canonical_run(tmp_path: Path) -> Non
 def test_figure04_reported_statistics_counts_partition_events(tmp_path: Path) -> None:
     payload = _load("figure04_summary.json")
 
-    assert payload["schema_version"] == 6
+    assert payload["schema_version"] == FIGURE04_SUMMARY_SCHEMA_VERSION
     # 203 units is the count reported in the Figure-4 caption.
     assert payload["dataset"] == {
         "animal_date_epoch": "j1620210710_02_r1",

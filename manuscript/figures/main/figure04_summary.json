@@ -13,6 +13,9 @@
       "block_size": 10000
     },
     "package_defaults": {
+      "continuous_discrete_initial_conditions": [
+        1.0
+      ],
       "continuous_fragmented_diagonal_values": [
         0.98,
         0.98
@@ -21,8 +24,33 @@
         0.5,
         0.5
       ],
+      "continuous_fragmented_discrete_transition_type": "DiscreteStationaryDiagonal",
+      "continuous_fragmented_initial_conditions_types": [
+        "UniformInitialConditions",
+        "UniformInitialConditions"
+      ],
+      "continuous_fragmented_transition_types": [
+        [
+          "RandomWalk",
+          "Uniform"
+        ],
+        [
+          "Uniform",
+          "Uniform"
+        ]
+      ],
+      "continuous_initial_conditions_types": [
+        "UniformInitialConditions"
+      ],
+      "continuous_transition_types": [
+        [
+          "RandomWalk"
+        ]
+      ],
+      "movement_mean": 0.0,
       "movement_var": 6.0,
-      "non_local_detector_version": "0.6.10.dev214+g956fdccaf"
+      "non_local_detector_version": "0.6.10.dev214+g956fdccaf",
+      "sorted_spikes_algorithm": "sorted_spikes_kde"
     }
   },
   "dataset": {
@@ -90,7 +118,7 @@
       },
       "diagnostics_fingerprint_sha256": "ee5ee5dcef07def97ea0091d728024b3fd2fd24666ed460849789aae26cc69ff",
       "diagnostics_schema_version": 2,
-      "fingerprint_sha256": "658b214346e347687c6ed1674e5fdf62d503432bcd72586df9eef83393b116ff",
+      "fingerprint_sha256": "e64b1a47697bdfadc348941822b413313d89b1aaab3068209c67d2621602bc70",
       "input_file_sha256": {
         "j1620210710_02_r1_figure04_inputs.npz": "60383b394b597e2900545548ecac7c53a8601038ace9dbeb42d7f9a5fe1c93b3"
       },
@@ -99,11 +127,11 @@
       "statespacecheck_version": "0.3.1"
     },
     "source": {
-      "source_tree_sha256": "7f32642e5ecc243de025898a49c3b475bc9fd3388fde55d0784ec8f4f231c1f0",
+      "source_tree_sha256": "78a5dba7ceda5341d2d013da53d3fc8ebf5c813d25255d2278d259b83bdfab0f",
       "statespacecheck_paper_version": "0.1.0",
       "statespacecheck_version": "0.3.1",
       "uv_lock_sha256": "7db5bb03266cfeab8f804cd7262232f3ffa16ebaf423722a399076043b640574"
     }
   },
-  "schema_version": 6
+  "schema_version": 7
 }
