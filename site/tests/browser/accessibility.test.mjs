@@ -127,6 +127,27 @@ describe("players", () => {
       }
     }));
 
+  test("hovering a focused track stack does not change its spoken value", () =>
+    withPage({}, async (page) => {
+      const stack = page.locator("#rec-view .stack");
+      await stack.scrollIntoViewIfNeeded();
+      const box = await stack.boundingBox();
+      const y = box.y + box.height / 2;
+      await page.mouse.click(box.x + box.width * 0.6, y);
+      assert.equal(await page.evaluate(() => document.activeElement.classList.contains("stack")), true);
+      const pressed = await stack.getAttribute("aria-valuetext");
+      for (const fraction of [0.3, 0.4, 0.5, 0.7, 0.9]) {
+        await page.mouse.move(box.x + box.width * fraction, y);
+      }
+      assert.equal(await stack.getAttribute("aria-valuetext"), pressed);
+      // The keys step from the spike under the cursor, where hovering left it.
+      await page.keyboard.press("ArrowUp");
+      const up = await stack.getAttribute("aria-valuetext");
+      assert.notEqual(up, pressed);
+      await page.keyboard.press("ArrowDown");
+      assert.notEqual(await stack.getAttribute("aria-valuetext"), up);
+    }));
+
   test("each player lists every spike in a table", () =>
     withPage({}, async (page) => {
       for (const view of ["#cond-view", "#rec-view"]) {

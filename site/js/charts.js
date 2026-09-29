@@ -112,14 +112,16 @@ export function heatmapBitmap(rows, lut, scale = rows.range ? rows : null) {
 
 /**
  * A vertical stack of canvas tracks sharing one time axis and a cursor. For
- * assistive technology the stack is a slider over the time range: its value
- * is the cursor time, and `setValueText` names what the cursor selects.
+ * assistive technology the stack is a slider over the time range whose value
+ * the owner sets with `setValue(time, text)`. Owners set it only for discrete
+ * selections: a focused slider's screen reader speaks every change.
  *
  * tracks: [{ label, note?, top, bottom, height, draw(ctx, width, height, xOf) }]
  * range:  [t0, t1] in seconds (or the unit tickLabel names).
- * onCursor(time): mouse hover (unless hover is false) or press, or a tap (not
- *   a scroll) on touch screens.
- * onKey(key): ArrowLeft/ArrowRight/Home/End while the stack has focus.
+ * onCursor(time, pressed): mouse hover (unless hover is false; pressed false)
+ *   or press, or a tap (not a scroll) on touch screens (pressed true).
+ * onKey(key): ArrowLeft/ArrowRight/Home/End while the stack has focus;
+ *   ArrowDown and ArrowUp arrive as ArrowLeft and ArrowRight, as on a slider.
  * tickLabel(time): axis tick text; seconds by default.
  */
 export class TrackStack {
@@ -169,24 +171,32 @@ export class TrackStack {
     let touchStart = null;
     this.root.addEventListener("pointerdown", (event) => {
       if (event.pointerType === "touch") touchStart = { x: event.clientX, y: event.clientY };
-      else this.onCursor(timeAt(event.clientX));
+      else this.onCursor(timeAt(event.clientX), true);
     });
     this.root.addEventListener("pointermove", (event) => {
-      if (hover && event.pointerType !== "touch") this.onCursor(timeAt(event.clientX));
+      if (hover && event.pointerType !== "touch") this.onCursor(timeAt(event.clientX), false);
     });
     this.root.addEventListener("pointerup", (event) => {
       if (event.pointerType !== "touch" || !touchStart) return;
       const moved = Math.hypot(event.clientX - touchStart.x, event.clientY - touchStart.y);
       touchStart = null;
-      if (moved < TAP_SLOP) this.onCursor(timeAt(event.clientX));
+      if (moved < TAP_SLOP) this.onCursor(timeAt(event.clientX), true);
     });
     this.root.addEventListener("pointercancel", () => {
       touchStart = null;
     });
+    const keys = {
+      ArrowRight: "ArrowRight",
+      ArrowUp: "ArrowRight",
+      ArrowLeft: "ArrowLeft",
+      ArrowDown: "ArrowLeft",
+      Home: "Home",
+      End: "End",
+    };
     this.root.addEventListener("keydown", (event) => {
-      if (["ArrowRight", "ArrowLeft", "Home", "End"].includes(event.key)) {
+      if (event.key in keys) {
         event.preventDefault();
-        onKey(event.key);
+        onKey(keys[event.key]);
       }
     });
 
@@ -245,8 +255,9 @@ export class TrackStack {
     context.stroke();
   }
 
-  /** The slider's spoken value, e.g. the selected spike. */
-  setValueText(text) {
+  /** The slider's value, a time in the range, and its spoken text, e.g. the selected spike. */
+  setValue(time, text) {
+    this.root.setAttribute("aria-valuenow", String(Number(time.toFixed(3))));
     this.root.setAttribute("aria-valuetext", text);
   }
 
@@ -256,7 +267,6 @@ export class TrackStack {
       this.cursor.style.display = "none";
       return;
     }
-    this.root.setAttribute("aria-valuenow", String(Number(time.toFixed(3))));
     const first = this.canvases[0].canvas;
     const left = first.offsetLeft + this.xOf(first.clientWidth)(time);
     this.cursor.style.left = `${left}px`;

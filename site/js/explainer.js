@@ -281,7 +281,8 @@ export function initExplainer(root, data, manifest) {
     stack.placeCursor(t + 0.5);
     caption.textContent = describe(frame !== null);
     status.textContent = `Step ${t} of ${nSteps - 1} · ${fired.length ? `spike${fired.length > 1 ? "s" : ""} from ${listCells(fired.map((s) => s.cell))}` : "no spike"}`;
-    stack.setValueText(status.textContent);
+    // Not while playing: a focused slider's screen reader would speak every step.
+    if (frame === null) stack.setValue(t + 0.5, status.textContent);
     nextButton.disabled = t === nSteps - 1;
   }
 

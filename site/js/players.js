@@ -244,12 +244,13 @@ function animate(range, from, setTime, onDone) {
 }
 
 /**
- * Cursor and spike selection for one player. `select(index)` draws a spike;
- * `announce(index)` is called only for the step buttons, so screen readers are
- * not flooded during hover or playback. Arrow keys on the focused tracks need
- * no announcement: the slider's value text names the spike.
+ * Cursor and spike selection for one player. `select(index)` draws a spike.
+ * `settle(index)` marks a discrete selection (a key, a step button, a press,
+ * or the end of playback), not hover or playback frames, so screen readers are
+ * not flooded; `announce(index)` is called only for the step buttons, whose
+ * focus is not on the tracks.
  */
-function wirePlayback(stack, range, eventTimes, select, controls, announce) {
+function wirePlayback(stack, range, eventTimes, select, controls, { settle, announce }) {
   let stop = null;
   let current = null;
   const setTime = (time) => {
@@ -271,13 +272,19 @@ function wirePlayback(stack, range, eventTimes, select, controls, announce) {
     current = index;
     stack.placeCursor(eventTimes[index]);
     select(index);
+    settle(index);
     if (speak) announce(index);
+  };
+  const settleCurrent = () => {
+    if (current !== null && current >= 0) settle(current);
   };
   const clamp = (index) => Math.min(eventTimes.length - 1, Math.max(0, index));
   return {
-    setTime: (time) => {
+    current: () => current,
+    setTime: (time, { pressed = false } = {}) => {
       halt();
       setTime(time);
+      if (pressed) settleCurrent();
     },
     selectIndex,
     step: (direction) => selectIndex(clamp((current ?? -1) + direction), { speak: true }),
@@ -294,10 +301,14 @@ function wirePlayback(stack, range, eventTimes, select, controls, announce) {
     toggle: () => {
       if (stop) {
         halt();
+        settleCurrent();
         return;
       }
       controls.play.textContent = "❚❚ Pause";
-      stop = animate(range, stack.cursorTime ?? range[0], setTime, halt);
+      stop = animate(range, stack.cursorTime ?? range[0], setTime, () => {
+        halt();
+        settleCurrent();
+      });
     },
     halt,
   };
@@ -366,7 +377,7 @@ function mountTracks(left, { ariaLabel, range, tracks, eventTimes, select, descr
     ariaLabel,
     range,
     tracks,
-    onCursor: (time) => playback.setTime(time),
+    onCursor: (time, pressed) => playback.setTime(time, { pressed }),
     onKey: (key) => playback.key(key),
   });
   const controls = transport(left, {
@@ -376,16 +387,19 @@ function mountTracks(left, { ariaLabel, range, tracks, eventTimes, select, descr
   const say = liveRegion(left);
   const show = (index) => {
     select(index);
-    if (index < 0) {
-      stack.setValueText("No spikes in this window");
-      return;
-    }
-    controls.time.textContent = `${eventTimes[index].toFixed(3)} s`;
-    stack.setValueText(describe(index));
+    if (index >= 0) controls.time.textContent = `${eventTimes[index].toFixed(3)} s`;
   };
-  const playback = wirePlayback(stack, range, eventTimes, show, controls, (index) =>
-    say(describe(index)),
-  );
+  const settle = (index) => stack.setValue(eventTimes[index], describe(index));
+  const playback = wirePlayback(stack, range, eventTimes, show, controls, {
+    settle,
+    announce: (index) => say(describe(index)),
+  });
+  if (!eventTimes.length) stack.setValue(range[0], "No spikes in this window");
+  // Hover moves the selection without settling it; focus catches the value up.
+  stack.root.addEventListener("focus", () => {
+    const index = playback.current();
+    if (index !== null && index >= 0) settle(index);
+  });
   stack.draw();
   return { stack, playback };
 }
