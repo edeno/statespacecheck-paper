@@ -208,6 +208,7 @@ def test_download_script_saves_into_the_data_path(
     assert capsys.readouterr().out == f"Verified {expected / FIGURE04_INPUTS_FILE}\n"
 
 
+@pytest.mark.network
 def test_zenodo_record_is_the_cited_version_with_the_file() -> None:
     """The DOI names one version (not all versions), and that record holds the file."""
     try:

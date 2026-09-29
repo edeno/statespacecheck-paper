@@ -31,6 +31,11 @@ FIGURE04_SUMMARY_PATH = FIGURE_DIR / "figure04_summary.json"
 MACRO_FILE_PATH = REPO_ROOT / "manuscript" / "reported_values.tex"
 CITATION_PATH = REPO_ROOT / "CITATION.cff"
 
+# Committed Zenodo DOIs of the cited software releases, keyed by package and
+# version, so emitting the macros needs no network access
+# (``reported_values.refresh_statespacecheck_doi`` fills and verifies it).
+SOFTWARE_DOIS_PATH = REPO_ROOT / "manuscript" / "software_dois.json"
+
 # The website's exported data (``site_export``) and the reference cases that
 # check the JavaScript port of the diagnostics.
 SITE_DATA_DIR = REPO_ROOT / "site" / "data"

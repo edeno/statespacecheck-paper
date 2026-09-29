@@ -125,7 +125,13 @@ make manuscript
 uv run --frozen python scripts/export_site_data.py
 ```
 
-The macro emitter needs internet for the package DOI lookup. Website export
+The macro emitter runs offline: it reads the cited `statespacecheck` release's
+DOI from `manuscript/software_dois.json`. After the summaries record a new
+`statespacecheck` version, run
+`uv run --frozen python scripts/emit_reported_values.py --refresh-dois` once
+(needs internet); it looks the DOI up on Zenodo, records it, and fails if an
+already-recorded DOI disagrees. `uv run --frozen pytest -m network` checks the
+committed DOIs against Zenodo; the default test run excludes these tests. Website export
 needs the Figure 4 input file for the recording window; it reuses the Figure 4
 caches when they are current and otherwise refits both models (several minutes)
 and writes the ~8 GB decode cache, as `generate_figure04.py` does.

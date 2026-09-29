@@ -18,6 +18,7 @@ The dependencies and full analysis workflow are in
 | `main.tex` | Manuscript and preamble |
 | `Local-GoF-Paper.bib` | Bibliography exported from Zotero/Better BibTeX |
 | `reported_values.tex` | Generated numerical macros read by `main.tex` |
+| `software_dois.json` | Zenodo DOIs of cited software releases, read by the macro emitter |
 | `figures/main/` | Four main figures and Figure 3/4 analysis summaries |
 | `.latexmkrc`, `Makefile` | LaTeX build settings and commands |
 | `LICENSE` | CC BY 4.0 for manuscript text and figures |

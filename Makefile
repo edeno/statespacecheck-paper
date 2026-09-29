@@ -13,7 +13,7 @@ help:
 	@echo "make figures-simulated  Regenerate Figures 1-3 (no recording data)"
 	@echo "make download-data      Download and verify the 75 MB Figure-4 input"
 	@echo "make figures            Regenerate all figures (Figure-4 input required)"
-	@echo "make reported-values    Update manuscript macros (needs internet)"
+	@echo "make reported-values    Update manuscript macros (offline)"
 	@echo "make reproduce          Sync, download, regenerate figures/macros, build PDF"
 	@echo "make sync-dev           Install locked development and viewer dependencies"
 	@echo "make check              Run Python checks and website tests (Node 22+)"

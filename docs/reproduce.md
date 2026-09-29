@@ -17,9 +17,10 @@ and orders the steps needed to build the paper.
   provide these; a minimal TeX installation may need additional packages.
 - **Optional tools:** Node 22+ for website tests and assembly. Desktop-viewer
   dependencies are installed separately; see [the viewer guide](interactive.md).
-- **Network:** installation, the initial Figure 4 download, and the reported-value
-  emitter's lookup of the cited `statespacecheck` DOI on Zenodo need internet.
-  Building the manuscript from committed figures/macros can run offline.
+- **Network:** installation and the initial Figure 4 download need internet.
+  Generating figures, emitting the reported-value macros (the cited
+  `statespacecheck` DOI is committed in `manuscript/software_dois.json`), and
+  building the manuscript run offline.
 
 | Work | Approximate cost |
 | --- | --- |
@@ -102,7 +103,7 @@ are documented separately in [data lineage](data-lineage.md) and the
 | `make download-data` | Download and verify the Figure 4 input |
 | `make figures-simulated` | Regenerate Figures 1–3 and the Figure 3 summary |
 | `make figures` | Regenerate all four figures and both summaries; input must exist |
-| `make reported-values` | Regenerate the manuscript's numerical macros from both summaries |
+| `make reported-values` | Regenerate the manuscript's numerical macros from both summaries (offline) |
 | `make manuscript` | Build the PDF from the current figures and macros |
 
 An individual figure can be regenerated with
