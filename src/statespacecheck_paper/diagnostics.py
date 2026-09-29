@@ -23,7 +23,6 @@ paper's dependency graph.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal
 
@@ -515,8 +514,10 @@ def compute_spike_event_diagnostics_from_rates(
 class DiagnosticThresholds:
     """Threshold values for diagnostic metrics.
 
-    Computed from the baseline period across all cells (flattened).
-    Frozen so a downstream consumer cannot rebind a field mid-pipeline.
+    Figure 3 computes them with :func:`compute_baseline_diagnostic_thresholds`
+    (baseline quantiles for HPD overlap and KL divergence, a fixed
+    predictive p-value cutoff). Frozen so a downstream consumer cannot rebind
+    a field mid-pipeline.
 
     Parameters
     ----------
@@ -574,32 +575,27 @@ class DiagnosticThresholds:
 
 
 def compute_baseline_diagnostic_thresholds(
-    diagnostics: Mapping[str, NDArray[np.floating]],
     *,
-    baseline_end_index: int,
+    hpd_overlap: NDArray[np.floating],
+    kl_divergence: NDArray[np.floating],
 ) -> DiagnosticThresholds:
-    """Compute threshold values from baseline period.
+    """Compute flag thresholds from baseline diagnostic values.
 
-    Thresholds are computed across all values (a ``(n_time, n_cells)`` array
-    is flattened) so a single threshold scalar can compare against any cell's
-    diagnostic time series:
+    The caller selects the baseline values (Figure 3 pools every spike event
+    of the opening baseline window across its realizations); each array is
+    flattened so a single threshold scalar applies to any cell or event:
 
     - HPD overlap threshold: 1st percentile (low values indicate misfit)
     - KL divergence threshold: 99th percentile (high values indicate misfit)
-    - predictive_pvalue threshold: fixed at 0.05 (a conventional rank-statistic cutoff)
+    - predictive_pvalue threshold: fixed at 0.05 (a conventional rank-statistic
+      cutoff), not derived from the data
 
     Parameters
     ----------
-    diagnostics : Mapping[str, NDArray]
-        Diagnostic values by metric name, each with time (or pooled events)
-        on the first axis: ``(n_time,)`` or ``(n_time, n_cells)``. Only
-        ``hpd_overlap`` and ``kl_divergence`` are read; the ``predictive_pvalue``
-        threshold is a fixed constant (0.05) and is not derived from the input.
-    baseline_end_index : int, keyword-only
-        Index marking end of baseline period (exclusive). Required —
-        silently slicing the whole recording would contaminate
-        "baseline" thresholds with misfit data and is rarely what
-        the caller intends.
+    hpd_overlap : np.ndarray, any shape, keyword-only
+        Baseline HPD-overlap values. NaN values are ignored.
+    kl_divergence : np.ndarray, any shape, keyword-only
+        Baseline KL-divergence values. NaN values are ignored.
 
     Returns
     -------
@@ -609,46 +605,35 @@ def compute_baseline_diagnostic_thresholds(
     Raises
     ------
     ValueError
-        If ``baseline_end_index`` is not between 1 and the number of time bins
-        (an index past the end would silently use the whole recording, and a
-        negative one would drop its last rows). If the baseline slice of
-        ``hpd_overlap`` or ``kl_divergence`` contains no finite values (thresholds would be NaN and
-        downstream comparisons would silently evaluate False), or if the
-        slice contains infinity (a finite empirical threshold cannot be
-        estimated).
+        If either baseline has no finite values (thresholds would be NaN and
+        downstream comparisons would silently evaluate False) or holds values
+        :func:`statespacecheck.baseline_threshold` rejects, or if the resulting
+        threshold is out of range (e.g. an infinite KL threshold).
 
     Examples
     --------
     >>> import numpy as np
     >>> rng = np.random.default_rng(42)
-    >>> diagnostics = {
-    ...     'hpd_overlap': rng.uniform(0.5, 1.0, (100, 5)),
-    ...     'kl_divergence': rng.uniform(0.0, 2.0, (100, 5)),
-    ...     'predictive_pvalue': rng.uniform(0.0, 1.0, (100, 5)),
-    ... }
-    >>> thresholds = compute_baseline_diagnostic_thresholds(diagnostics, baseline_end_index=50)
+    >>> thresholds = compute_baseline_diagnostic_thresholds(
+    ...     hpd_overlap=rng.uniform(0.5, 1.0, 500),
+    ...     kl_divergence=rng.uniform(0.0, 2.0, 500),
+    ... )
     >>> thresholds.predictive_pvalue  # Fixed at 0.05
     0.05
     """
 
-    def _threshold(name: str, quantile: float) -> float:
-        values = diagnostics[name]
-        n_time = values.shape[0]
-        if not 0 < baseline_end_index <= n_time:
-            raise ValueError(
-                f"compute_baseline_diagnostic_thresholds: baseline_end_index must be in "
-                f"1..{n_time} (the {name} time bins); got {baseline_end_index}"
-            )
+    def _threshold(name: str, values: NDArray[np.floating], quantile: float) -> float:
         try:
-            return ssc.baseline_threshold(values[:baseline_end_index], quantile)
+            return ssc.baseline_threshold(values, quantile)
         except ValueError as err:
             raise ValueError(
-                f"compute_baseline_diagnostic_thresholds: {name} baseline slice "
-                f"(:{baseline_end_index}): {err}"
+                f"compute_baseline_diagnostic_thresholds: {name} baseline: {err}"
             ) from err
 
-    hpd_overlap_threshold = _threshold("hpd_overlap", BASELINE_HPD_OVERLAP_QUANTILE)
-    kl_divergence_threshold = _threshold("kl_divergence", BASELINE_KL_DIVERGENCE_QUANTILE)
+    hpd_overlap_threshold = _threshold("hpd_overlap", hpd_overlap, BASELINE_HPD_OVERLAP_QUANTILE)
+    kl_divergence_threshold = _threshold(
+        "kl_divergence", kl_divergence, BASELINE_KL_DIVERGENCE_QUANTILE
+    )
 
     # Fixed rank-statistic cutoff; not derived from the data.
     predictive_pvalue_threshold = FIXED_PREDICTIVE_PVALUE_CUTOFF

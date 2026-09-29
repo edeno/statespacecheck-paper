@@ -592,11 +592,10 @@ def estimate_realization_summary(
     baseline_end = config.phase_boundaries[PhaseBoundary.REMAP_START]
     conditions = build_summary_conditions(config)
 
-    # ``compute_baseline_diagnostic_thresholds`` reads only hpd_overlap and kl_divergence (the
-    # predictive_pvalue threshold is the fixed 0.05 cutoff), but pool all three so
-    # the dict is a faithful baseline sample if that ever changes. Pool the
-    # per-*event* baseline values (one per spike event), matching the
-    # event-based phase fractions from ``extract_condition_flag_values``.
+    # Pool the per-*event* baseline values (one per spike event), matching the
+    # event-based phase fractions from ``extract_condition_flag_values``. The
+    # thresholds use only hpd_overlap and kl_divergence (the predictive_pvalue
+    # cutoff is fixed), but all three are checked for non-finite values.
     baseline_values: dict[str, list[NDArray[np.floating]]] = {
         key: [] for key in METRIC_FLAG_DIRECTIONS
     }
@@ -624,7 +623,8 @@ def estimate_realization_summary(
 
     pooled_baseline = {key: np.concatenate(vals) for key, vals in baseline_values.items()}
     diagnostic_thresholds = compute_baseline_diagnostic_thresholds(
-        pooled_baseline, baseline_end_index=pooled_baseline["hpd_overlap"].shape[0]
+        hpd_overlap=pooled_baseline["hpd_overlap"],
+        kl_divergence=pooled_baseline["kl_divergence"],
     )
 
     # (n_realizations, n_metrics, n_columns) flag-fraction stack.

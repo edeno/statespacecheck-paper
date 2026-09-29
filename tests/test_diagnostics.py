@@ -39,85 +39,48 @@ def metrics_2d() -> dict[str, np.ndarray]:
 
 
 class TestComputeBaselineDiagnosticThresholds:
-    def test_thresholds_match_quantile_definitions(self, metrics_2d: dict[str, np.ndarray]) -> None:
-        baseline_end = 50
-        thresholds = compute_baseline_diagnostic_thresholds(
-            metrics_2d, baseline_end_index=baseline_end
-        )
+    @pytest.mark.parametrize("shape", [(250,), (50, 5)])
+    def test_thresholds_match_quantile_definitions(
+        self, metrics_2d: dict[str, np.ndarray], shape: tuple[int, ...]
+    ) -> None:
+        """1-D pooled events and 2-D (time, cell) baselines are both flattened."""
+        hpd = metrics_2d["hpd_overlap"][:50].reshape(shape)
+        kl = metrics_2d["kl_divergence"][:50].reshape(shape)
+        thresholds = compute_baseline_diagnostic_thresholds(hpd_overlap=hpd, kl_divergence=kl)
 
-        expected_hpdo = np.nanquantile(metrics_2d["hpd_overlap"][:baseline_end].ravel(), 0.01)
-        expected_kl = np.nanquantile(metrics_2d["kl_divergence"][:baseline_end].ravel(), 0.99)
-        assert thresholds.hpd_overlap == pytest.approx(expected_hpdo)
-        assert thresholds.kl_divergence == pytest.approx(expected_kl)
+        assert thresholds.hpd_overlap == np.nanquantile(hpd.ravel(), 0.01)
+        assert thresholds.kl_divergence == np.nanquantile(kl.ravel(), 0.99)
         # predictive_pvalue is a fixed rank-statistic cutoff, not data-driven.
         assert thresholds.predictive_pvalue == 0.05
 
     def test_handles_partial_nan_baseline(self) -> None:
         """NaNs in the baseline must be ignored, not propagate to thresholds."""
-        n_time, n_cells = 20, 3
-        hpdo = np.full((n_time, n_cells), 0.8)
+        hpdo = np.full(30, 0.8)
         hpdo[:5] = np.nan
-        metrics: dict[str, np.ndarray] = {
-            "hpd_overlap": hpdo,
-            "kl_divergence": np.full((n_time, n_cells), 1.0),
-            "predictive_pvalue": np.full((n_time, n_cells), 0.5),
-        }
-        thresholds = compute_baseline_diagnostic_thresholds(metrics, baseline_end_index=10)
-        assert not np.isnan(thresholds.hpd_overlap)
-        assert not np.isnan(thresholds.kl_divergence)
+        thresholds = compute_baseline_diagnostic_thresholds(
+            hpd_overlap=hpdo, kl_divergence=np.full(30, 1.0)
+        )
+        assert thresholds.hpd_overlap == pytest.approx(0.8)
+        assert thresholds.kl_divergence == pytest.approx(1.0)
 
-    def test_baseline_end_index_is_keyword_only(self, metrics_2d: dict[str, np.ndarray]) -> None:
-        """Passing baseline_end_index positionally must fail — the argument is
-        keyword-only so callers can't accidentally omit it via the prior
-        ``None`` default that silently used the whole recording."""
+    def test_arguments_are_keyword_only(self, metrics_2d: dict[str, np.ndarray]) -> None:
+        """Both baselines are arrays of the same type; keyword-only arguments
+        keep a caller from swapping them silently."""
         # Cast to Any to probe the runtime contract without the static
         # type checker rejecting the deliberately-wrong call.
         unchecked: Any = compute_baseline_diagnostic_thresholds
         with pytest.raises(TypeError, match="positional"):
-            unchecked(metrics_2d, 50)
+            unchecked(metrics_2d["hpd_overlap"], metrics_2d["kl_divergence"])
 
-    @pytest.mark.parametrize("case", ["past_end", "zero", "negative"])
-    def test_baseline_end_index_out_of_range_raises(
-        self, metrics_2d: dict[str, np.ndarray], case: str
-    ) -> None:
-        """An index past the end would silently use the whole recording and a
-        negative one would drop its last rows; both, and zero, raise."""
-        n_time = metrics_2d["hpd_overlap"].shape[0]
-        index = {"past_end": n_time + 1, "zero": 0, "negative": -1}[case]
-        with pytest.raises(ValueError, match="baseline_end_index must be in"):
-            compute_baseline_diagnostic_thresholds(metrics_2d, baseline_end_index=index)
-
-    def test_baseline_end_index_may_cover_the_recording(
-        self, metrics_2d: dict[str, np.ndarray]
-    ) -> None:
-        n_time = metrics_2d["hpd_overlap"].shape[0]
-        thresholds = compute_baseline_diagnostic_thresholds(metrics_2d, baseline_end_index=n_time)
-        assert thresholds.hpd_overlap == pytest.approx(
-            np.nanquantile(metrics_2d["hpd_overlap"].ravel(), 0.01)
-        )
-
-    def test_all_nan_hpd_baseline_raises(self) -> None:
-        """An all-NaN baseline slice would produce a NaN threshold and
-        every downstream ``metric < threshold`` comparison would silently
-        evaluate False. Raise instead."""
-        n_time, n_cells = 20, 3
-        metrics: dict[str, np.ndarray] = {
-            "hpd_overlap": np.full((n_time, n_cells), np.nan),
-            "kl_divergence": np.full((n_time, n_cells), 1.0),
-            "predictive_pvalue": np.full((n_time, n_cells), 0.5),
-        }
-        with pytest.raises(ValueError, match="hpd_overlap baseline slice"):
-            compute_baseline_diagnostic_thresholds(metrics, baseline_end_index=10)
-
-    def test_all_nan_kl_baseline_raises(self) -> None:
-        n_time, n_cells = 20, 3
-        metrics: dict[str, np.ndarray] = {
-            "hpd_overlap": np.full((n_time, n_cells), 0.8),
-            "kl_divergence": np.full((n_time, n_cells), np.nan),
-            "predictive_pvalue": np.full((n_time, n_cells), 0.5),
-        }
-        with pytest.raises(ValueError, match="kl_divergence baseline slice"):
-            compute_baseline_diagnostic_thresholds(metrics, baseline_end_index=10)
+    @pytest.mark.parametrize("metric", ["hpd_overlap", "kl_divergence"])
+    def test_all_nan_baseline_raises(self, metric: str) -> None:
+        """An all-NaN baseline would produce a NaN threshold and every
+        downstream ``metric < threshold`` comparison would silently evaluate
+        False. Raise instead, naming the metric."""
+        baselines = {"hpd_overlap": np.full(20, 0.8), "kl_divergence": np.full(20, 1.0)}
+        baselines[metric] = np.full(20, np.nan)
+        with pytest.raises(ValueError, match=f"{metric} baseline"):
+            compute_baseline_diagnostic_thresholds(**baselines)
 
 
 class TestDiagnosticThresholdsInvariants:
