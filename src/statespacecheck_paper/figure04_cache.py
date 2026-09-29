@@ -105,7 +105,7 @@ _FIGURE04_DIAGNOSTICS_PAYLOAD_KEYS = (
     "continuous_diagnostics",
     "continuous_fragmented_diagnostics",
 )
-# The full in-memory payload consumed by :class:`Figure4DecodeResults`. These
+# The full in-memory payload consumed by :class:`Figure4AnalysisResults`. These
 # are the serialized key spellings, equal to the in-memory field names, and
 # MUST NOT change without a schema bump.
 _FIGURE04_DECODE_AND_DIAGNOSTICS_PAYLOAD_KEYS = (

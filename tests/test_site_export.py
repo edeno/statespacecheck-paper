@@ -502,13 +502,13 @@ def test_recording_payload_slices_both_models_to_the_detail_window() -> None:
     payload = recording_payload(render_data, summary, window)
     time_slice = window.to_slice(render_data.time.size)
     n_time = time_slice.stop - time_slice.start
-    decode = render_data.decode_results
-    n_bins = decode.diagnostic_position_bins.size
+    analysis = render_data.analysis_results
+    n_bins = analysis.diagnostic_position_bins.size
 
     assert len(payload["time"]) == n_time
     assert payload["time"][0] == 0.0
     likelihood, has_spikes = mean_event_likelihood_by_time(
-        decode.spike_counts[time_slice], decode.diagnostic_place_fields
+        analysis.spike_counts[time_slice], analysis.diagnostic_place_fields
     )
     np.testing.assert_array_equal(
         decode_display_rows(payload["likelihood"], n_bins),
@@ -518,13 +518,13 @@ def test_recording_payload_slices_both_models_to_the_detail_window() -> None:
     np.testing.assert_array_equal(
         decode_display_rows(payload["cell_likelihoods"], n_bins),
         decode_display_rows(
-            encode_display_rows(ssc.event_likelihood(decode.diagnostic_place_fields)),
+            encode_display_rows(ssc.event_likelihood(analysis.diagnostic_place_fields)),
             n_bins,
         ),
     )
     for name, diagnostics in (
-        ("continuous", decode.continuous_diagnostics),
-        ("continuous_fragmented", decode.continuous_fragmented_diagnostics),
+        ("continuous", analysis.continuous_diagnostics),
+        ("continuous_fragmented", analysis.continuous_fragmented_diagnostics),
     ):
         model = payload["models"][name]
         # The page takes the model labels from the export, not its own copy.
@@ -547,7 +547,7 @@ def test_recording_payload_slices_both_models_to_the_detail_window() -> None:
         assert len(model["events"]["t"]) == int(in_window.sum())
         assert set(model["events"]["flagged"]) == {"hpd_overlap", "predictive_pvalue"}
     # Cells are ranked by place-field peak.
-    assert sorted(payload["cell_rank"]) == list(range(decode.place_field_peaks.size))
+    assert sorted(payload["cell_rank"]) == list(range(analysis.place_field_peaks.size))
     assert payload["decode_cache_fingerprint"] == render_data.cache_provenance.fingerprint_sha256
     assert (
         payload["diagnostics_fingerprint"]

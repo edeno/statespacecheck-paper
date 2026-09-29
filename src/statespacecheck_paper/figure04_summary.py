@@ -75,11 +75,11 @@ def compute_figure04_summary(
     These scalars can appear in the manuscript text, so their computation must
     stay identical to the cached decode; the render layer never alters them.
     """
-    decode = render_data.decode_results
+    analysis = render_data.analysis_results
     return summarize_figure04_diagnostics(
-        decode.continuous_diagnostics,
-        decode.continuous_fragmented_diagnostics,
-        n_units=int(decode.spike_counts.shape[1]),
+        analysis.continuous_diagnostics,
+        analysis.continuous_fragmented_diagnostics,
+        n_units=int(analysis.spike_counts.shape[1]),
         thresholds=thresholds,
         metric_directions=metric_directions,
     )

@@ -11,9 +11,10 @@ scalars are computed from the result by :mod:`figure04_summary`. Both models are
 fitted on the full recording and their diagnostics are computed on that same
 recording; no training/validation split is applied.
 
-The in-memory decode results are a typed :class:`Figure4DecodeResults`; its
+The in-memory analysis results (both decodes, their per-spike diagnostics,
+spike counts, and place fields) are a typed :class:`Figure4AnalysisResults`; its
 field names are also the on-disk cache keys, read and written by
-:meth:`Figure4DecodeResults.from_cache_payload` / ``to_cache_payload``.
+:meth:`Figure4AnalysisResults.from_cache_payload` / ``to_cache_payload``.
 
 The fit and decode themselves are :func:`figure04_fit.fit_and_decode`, whose
 modules alone form the decode-cache fingerprint; this module's containers,
@@ -57,8 +58,12 @@ from statespacecheck_paper.figure04_input import (
 
 
 @dataclasses.dataclass(frozen=True)
-class Figure4DecodeResults:
-    """The expensive, cacheable Figure-4 decode outputs, typed and validated.
+class Figure4AnalysisResults:
+    """The expensive, cacheable Figure-4 analysis results, typed and validated.
+
+    Both models' decoder outputs and per-spike diagnostics, with the spike
+    counts and place fields they share; assembled from the decode cache and
+    the diagnostics cache.
 
     The contained xarray datasets and diagnostic objects are treated as
     read-only by convention (the frozen wrapper does not deep-freeze them); the
@@ -169,7 +174,7 @@ class Figure4DecodeResults:
         object.__setattr__(self, "diagnostic_position_bins", diagnostic_position_bins)
 
     @classmethod
-    def from_cache_payload(cls, payload: Mapping[str, object]) -> Figure4DecodeResults:
+    def from_cache_payload(cls, payload: Mapping[str, object]) -> Figure4AnalysisResults:
         """Build from the serialized cache payload."""
         missing = [
             key for key in _FIGURE04_DECODE_AND_DIAGNOSTICS_PAYLOAD_KEYS if key not in payload
@@ -248,23 +253,23 @@ def _cast_diagnostics(value: object) -> SpikeEventDiagnostics:
 
 @dataclasses.dataclass(frozen=True)
 class Figure4RenderData:
-    """Everything the Figure-4 render needs: the recording + typed decode results.
+    """Everything the Figure-4 render needs: the recording + typed analysis results.
 
     The position/track data is always loaded fresh (:class:`NeuralRecordingData`,
-    cheap, never cached); the decode results are the expensive cacheable content
-    (:class:`Figure4DecodeResults`). ``cache_provenance`` records the exact
+    cheap, never cached); the analysis results are the expensive cacheable content
+    (:class:`Figure4AnalysisResults`). ``cache_provenance`` records the exact
     cache fingerprint, input checksums, and decoder dependency version used to
     produce those results. The two per-time arrays derived from the
     recording are copied and marked read-only at construction, must share a
     single 1-D ``n_time``, and that ``n_time`` must match the decode timeline
-    (``decode_results.spike_counts.shape[0]``) so a cached decode cannot pair
+    (``analysis_results.spike_counts.shape[0]``) so a cached decode cannot pair
     with a differently sized fresh recording.
     """
 
     recording: NeuralRecordingData
     time: NDArray[np.float64]
     linear_position: NDArray[np.float64]
-    decode_results: Figure4DecodeResults
+    analysis_results: Figure4AnalysisResults
     cache_provenance: Figure4CacheProvenance
 
     def __post_init__(self) -> None:
@@ -281,10 +286,10 @@ class Figure4RenderData:
         # The decode results must have been produced on this same recording
         # timeline; a cached decode of a different-length session would otherwise
         # silently pair with the freshly loaded position data.
-        decode_n_time = self.decode_results.spike_counts.shape[0]
+        decode_n_time = self.analysis_results.spike_counts.shape[0]
         if decode_n_time != n_time:
             raise ValueError(
-                f"decode_results timeline ({decode_n_time}) does not match the "
+                f"analysis_results timeline ({decode_n_time}) does not match the "
                 f"recording timeline ({n_time}); they must be the same session."
             )
         for name, arr in (
@@ -422,7 +427,7 @@ def prepare_figure04_render_data(
             diagnostics_payload,
         )
 
-    decode_results = Figure4DecodeResults.from_cache_payload(
+    analysis_results = Figure4AnalysisResults.from_cache_payload(
         {
             **{key: decode_payload[key] for key in _FIGURE04_DECODE_PAYLOAD_KEYS},
             **{key: diagnostics_payload[key] for key in _FIGURE04_DIAGNOSTICS_PAYLOAD_KEYS},
@@ -433,6 +438,6 @@ def prepare_figure04_render_data(
         recording=recording,
         time=time,
         linear_position=linear_position,
-        decode_results=decode_results,
+        analysis_results=analysis_results,
         cache_provenance=cache_provenance,
     )

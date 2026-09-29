@@ -22,7 +22,7 @@ from statespacecheck_paper.figure04_layout import (  # noqa: E402
 )
 from statespacecheck_paper.figure04_protocol import Figure4DetailWindow  # noqa: E402
 from statespacecheck_paper.figure04_workflow import (  # noqa: E402
-    Figure4DecodeResults,
+    Figure4AnalysisResults,
     Figure4RenderData,
 )
 
@@ -133,7 +133,7 @@ def _compose_render_data() -> Figure4RenderData:
         event_cell_ind=continuous_diagnostics.event_cell_ind,
         event_time=continuous_diagnostics.event_time,
     )
-    decode = Figure4DecodeResults(
+    decode = Figure4AnalysisResults(
         continuous_results=_compose_results(1),
         continuous_fragmented_results=_compose_results(2),
         continuous_diagnostics=continuous_diagnostics,
@@ -147,7 +147,7 @@ def _compose_render_data() -> Figure4RenderData:
         recording=_compose_recording(),
         time=np.arange(_N_TIME, dtype=float),
         linear_position=np.linspace(0.0, 100.0, _N_TIME),
-        decode_results=decode,
+        analysis_results=decode,
         cache_provenance=synthetic_cache_provenance(),
     )
 

@@ -545,8 +545,8 @@ $\Lambda(x)$.
 `Figure4Config` + `Figure4Paths` → `prepare_figure04_render_data(config, paths, use_cache=…)`
 loads a `NeuralRecordingData` and returns a `Figure4RenderData`
 (`.recording`, `.time`, `.linear_position`,
-`.decode_results: Figure4DecodeResults`, `.cache_provenance`) — the decode
-results are built by `Figure4DecodeResults.from_cache_payload` from a decode
+`.analysis_results: Figure4AnalysisResults`, `.cache_provenance`) — the analysis
+results (decodes, per-spike diagnostics, spike counts, place fields) are built by `Figure4AnalysisResults.from_cache_payload` from a decode
 payload and a diagnostics payload, each loaded from its fingerprint-matching
 cache or computed fresh (`figure04_fit.fit_and_decode` for the decode,
 `_compute_diagnostics_payload` for the diagnostics) → `compute_figure04_summary`

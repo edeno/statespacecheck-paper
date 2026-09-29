@@ -25,7 +25,7 @@ from statespacecheck_paper.figure04_summary import (
     format_figure04_summary,
 )
 from statespacecheck_paper.figure04_workflow import (
-    Figure4DecodeResults,
+    Figure4AnalysisResults,
     Figure4RenderData,
     prepare_figure04_render_data,
 )
@@ -63,9 +63,9 @@ def _ds(values: np.ndarray) -> xr.Dataset:
     )
 
 
-def _synthetic_decode_results() -> Figure4DecodeResults:
+def _synthetic_analysis_results() -> Figure4AnalysisResults:
     n_time, n_cells, n_bins = 8, 2, 4
-    return Figure4DecodeResults(
+    return Figure4AnalysisResults(
         continuous_results=_ds(np.zeros(n_time)),
         continuous_fragmented_results=_ds(np.ones(n_time)),
         continuous_diagnostics=event_diagnostics(hpd=np.array([0.5])),
@@ -94,7 +94,7 @@ class TestComputeMeanSpikeEventDiagnostic:
 class TestFigure4Summary:
     def _render_data(self) -> Figure4RenderData:
         decode = dataclasses.replace(
-            _synthetic_decode_results(),
+            _synthetic_analysis_results(),
             continuous_diagnostics=event_diagnostics(hpd=np.array([0.01, 0.20])),
             continuous_fragmented_diagnostics=event_diagnostics(hpd=np.array([0.40, 0.20])),
         )
@@ -102,7 +102,7 @@ class TestFigure4Summary:
             recording=_synthetic_recording(),
             time=np.arange(8, dtype=float),
             linear_position=np.zeros(8),
-            decode_results=decode,
+            analysis_results=decode,
             cache_provenance=synthetic_cache_provenance(),
         )
 
@@ -152,14 +152,14 @@ class TestFigure4Summary:
             )
 
 
-class TestFigure4DecodeResults:
+class TestFigure4AnalysisResults:
     def test_cache_payload_round_trip_through_field_named_keys(self) -> None:
-        decode = _synthetic_decode_results()
+        decode = _synthetic_analysis_results()
         payload = decode.to_cache_payload()
         # The serialized keys are the field names.
         assert "continuous_fragmented_results" in payload
         assert "continuous_fragmented_diagnostics" in payload
-        rebuilt = Figure4DecodeResults.from_cache_payload(payload)
+        rebuilt = Figure4AnalysisResults.from_cache_payload(payload)
         assert rebuilt.continuous_fragmented_results is decode.continuous_fragmented_results
         assert rebuilt.continuous_fragmented_diagnostics is decode.continuous_fragmented_diagnostics
         np.testing.assert_array_equal(rebuilt.spike_counts, decode.spike_counts)
@@ -167,25 +167,25 @@ class TestFigure4DecodeResults:
     def test_payload_keys_match_cache_module_source_of_truth(self) -> None:
         # Guard against drift between the on-disk key list (owned by
         # figure04_cache) and the field->key mapping in to_cache_payload.
-        assert set(_synthetic_decode_results().to_cache_payload().keys()) == set(
+        assert set(_synthetic_analysis_results().to_cache_payload().keys()) == set(
             _FIGURE04_DECODE_AND_DIAGNOSTICS_PAYLOAD_KEYS
         )
 
     def test_from_cache_payload_rejects_missing_key(self) -> None:
-        payload = _synthetic_decode_results().to_cache_payload()
+        payload = _synthetic_analysis_results().to_cache_payload()
         del payload["spike_counts"]
         with pytest.raises(ValueError, match="missing keys"):
-            Figure4DecodeResults.from_cache_payload(payload)
+            Figure4AnalysisResults.from_cache_payload(payload)
 
     def test_from_cache_payload_rejects_wrong_type(self) -> None:
-        payload = _synthetic_decode_results().to_cache_payload()
+        payload = _synthetic_analysis_results().to_cache_payload()
         payload["continuous_results"] = np.zeros(3)  # not an xr.Dataset
         with pytest.raises(TypeError, match="xr.Dataset"):
-            Figure4DecodeResults.from_cache_payload(payload)
+            Figure4AnalysisResults.from_cache_payload(payload)
 
     def test_rejects_incompatible_shapes(self) -> None:
         with pytest.raises(ValueError, match="place_field_peaks"):
-            Figure4DecodeResults(
+            Figure4AnalysisResults(
                 continuous_results=xr.Dataset(),
                 continuous_fragmented_results=xr.Dataset(),
                 continuous_diagnostics=event_diagnostics(hpd=np.array([0.5])),
@@ -197,7 +197,7 @@ class TestFigure4DecodeResults:
             )
 
     def test_arrays_are_read_only(self) -> None:
-        decode = _synthetic_decode_results()
+        decode = _synthetic_analysis_results()
         with pytest.raises(ValueError, match="read-only|write"):
             decode.spike_counts[0, 0] = 1
 
@@ -205,7 +205,7 @@ class TestFigure4DecodeResults:
         # Freezing must not reach back into a caller-owned array, and the stored
         # copy must be isolated from later mutation of that array.
         spike_counts = np.zeros((8, 2), dtype=np.int64)
-        decode = Figure4DecodeResults(
+        decode = Figure4AnalysisResults(
             continuous_results=_ds(np.zeros(8)),
             continuous_fragmented_results=_ds(np.zeros(8)),
             continuous_diagnostics=event_diagnostics(hpd=np.array([0.5])),
@@ -224,7 +224,7 @@ class TestFigure4DecodeResults:
         # The memory-mapped cache arrives read-only; it is used in place.
         np.save(tmp_path / "counts.npy", np.zeros((8, 2), dtype=np.int64))
         spike_counts = np.load(tmp_path / "counts.npy", mmap_mode="r")
-        decode = dataclasses.replace(_synthetic_decode_results(), spike_counts=spike_counts)
+        decode = dataclasses.replace(_synthetic_analysis_results(), spike_counts=spike_counts)
         assert np.shares_memory(decode.spike_counts, spike_counts)
         assert not decode.spike_counts.flags.writeable
 
@@ -233,21 +233,21 @@ class TestFigure4DecodeResults:
         base = np.zeros((8, 2), dtype=np.int64)
         view = base.view()
         view.setflags(write=False)
-        decode = dataclasses.replace(_synthetic_decode_results(), spike_counts=view)
+        decode = dataclasses.replace(_synthetic_analysis_results(), spike_counts=view)
         base[0, 0] = 7
         assert decode.spike_counts[0, 0] == 0
 
     def test_converts_a_read_only_memmap_of_another_dtype(self, tmp_path: Path) -> None:
         np.save(tmp_path / "counts.npy", np.ones((8, 2), dtype=np.int32))
         spike_counts = np.load(tmp_path / "counts.npy", mmap_mode="r")
-        decode = dataclasses.replace(_synthetic_decode_results(), spike_counts=spike_counts)
+        decode = dataclasses.replace(_synthetic_analysis_results(), spike_counts=spike_counts)
         assert decode.spike_counts.dtype == np.int64
         assert not np.shares_memory(decode.spike_counts, spike_counts)
         assert not decode.spike_counts.flags.writeable
 
     def test_rejects_dataset_timeline_mismatch(self) -> None:
         with pytest.raises(ValueError, match="decode timelines must match"):
-            Figure4DecodeResults(
+            Figure4AnalysisResults(
                 continuous_results=_ds(np.zeros(3)),
                 continuous_fragmented_results=_ds(np.zeros(8)),
                 continuous_diagnostics=event_diagnostics(hpd=np.array([0.5])),
@@ -262,7 +262,7 @@ class TestFigure4DecodeResults:
         # A time *dimension* is not enough; compose_figure04 reads the ``time``
         # coordinate, so require it at construction.
         with pytest.raises(ValueError, match="must carry a 'time' coordinate"):
-            Figure4DecodeResults(
+            Figure4AnalysisResults(
                 continuous_results=xr.Dataset({"acausal_posterior": ("time", np.zeros(8))}),
                 continuous_fragmented_results=_ds(np.zeros(8)),
                 continuous_diagnostics=event_diagnostics(hpd=np.array([0.5])),
@@ -277,7 +277,7 @@ class TestFigure4DecodeResults:
         # Same length, different coordinate values: the two decoders were run on
         # different windows. A length-only check would miss this.
         with pytest.raises(ValueError, match="different 'time' coordinates"):
-            Figure4DecodeResults(
+            Figure4AnalysisResults(
                 continuous_results=xr.Dataset(
                     {"acausal_posterior": ("time", np.zeros(8))},
                     coords={"time": np.arange(8, dtype=float)},
@@ -296,7 +296,7 @@ class TestFigure4DecodeResults:
 
     def test_rejects_diagnostic_event_index_out_of_range(self) -> None:
         with pytest.raises(ValueError, match="event_time_ind falls outside"):
-            Figure4DecodeResults(
+            Figure4AnalysisResults(
                 continuous_results=_ds(np.zeros(8)),
                 continuous_fragmented_results=_ds(np.zeros(8)),
                 continuous_diagnostics=event_diagnostics(
@@ -315,14 +315,14 @@ class TestFigure4RenderData:
         self,
         *,
         time: np.ndarray,
-        decode_results: Figure4DecodeResults | None = None,
+        analysis_results: Figure4AnalysisResults | None = None,
     ) -> Figure4RenderData:
         n_time = time.shape[0]
         return Figure4RenderData(
             recording=_synthetic_recording(),
             time=time,
             linear_position=np.zeros(n_time),
-            decode_results=decode_results or _synthetic_decode_results(),
+            analysis_results=analysis_results or _synthetic_analysis_results(),
             cache_provenance=synthetic_cache_provenance(),
         )
 
@@ -360,11 +360,11 @@ class TestPrepareRenderData:
 
         def fake_fit(*a: object, **k: object) -> dict[str, object]:
             calls["fit"] += 1
-            return _synthetic_decode_results().to_decode_payload()
+            return _synthetic_analysis_results().to_decode_payload()
 
         def fake_diagnostics(*a: object, **k: object) -> dict[str, object]:
             calls["diagnostics"] += 1
-            return _synthetic_decode_results().to_diagnostics_payload()
+            return _synthetic_analysis_results().to_diagnostics_payload()
 
         monkeypatch.setattr(figure04_workflow, "fit_and_decode", fake_fit)
         monkeypatch.setattr(figure04_workflow, "_compute_diagnostics_payload", fake_diagnostics)
@@ -413,13 +413,13 @@ class TestPrepareRenderData:
 
         def fake_fit(*a: object, **k: object) -> dict[str, object]:
             calls["n"] += 1
-            return _synthetic_decode_results().to_decode_payload()
+            return _synthetic_analysis_results().to_decode_payload()
 
         monkeypatch.setattr(figure04_workflow, "fit_and_decode", fake_fit)
         monkeypatch.setattr(
             figure04_workflow,
             "_compute_diagnostics_payload",
-            lambda *a, **k: _synthetic_decode_results().to_diagnostics_payload(),
+            lambda *a, **k: _synthetic_analysis_results().to_diagnostics_payload(),
         )
         monkeypatch.setattr(
             figure04_cache, "_installed_non_local_detector_version", lambda: "1.0.0"
@@ -453,12 +453,12 @@ class TestPrepareRenderData:
         monkeypatch.setattr(
             figure04_workflow,
             "fit_and_decode",
-            lambda *a, **k: _synthetic_decode_results().to_decode_payload(),
+            lambda *a, **k: _synthetic_analysis_results().to_decode_payload(),
         )
         monkeypatch.setattr(
             figure04_workflow,
             "_compute_diagnostics_payload",
-            lambda *a, **k: _synthetic_decode_results().to_diagnostics_payload(),
+            lambda *a, **k: _synthetic_analysis_results().to_diagnostics_payload(),
         )
 
         injected = Figure4Paths(data_path=tmp_path, animal_date_epoch="injected_epoch")
@@ -473,12 +473,12 @@ class TestPrepareRenderData:
         # The recording and typed decode results are threaded through by attribute.
         assert render_data.recording.spike_times[0].shape == (2,)
         np.testing.assert_array_equal(
-            render_data.decode_results.continuous_fragmented_results[
+            render_data.analysis_results.continuous_fragmented_results[
                 "acausal_posterior"
             ].to_numpy(),
             np.ones(8),
         )
-        assert render_data.decode_results.spike_counts.shape == (8, 2)
+        assert render_data.analysis_results.spike_counts.shape == (8, 2)
         assert render_data.time.shape == (8,)
 
 
@@ -524,7 +524,7 @@ def test_fit_and_decode_payload_feeds_the_caches_and_results() -> None:
         time=figure04_fit.decode_time(recording),
         diagnostics_config=config.diagnostics,
     )
-    results = Figure4DecodeResults.from_cache_payload({**decode_payload, **diagnostics_payload})
+    results = Figure4AnalysisResults.from_cache_payload({**decode_payload, **diagnostics_payload})
     assert results.spike_counts.shape == (n_time, 2)
     # Every spike lies inside [time[0], time[-1]], so each is counted once.
     assert results.spike_counts.sum() == 50

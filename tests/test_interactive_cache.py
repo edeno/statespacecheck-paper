@@ -207,7 +207,7 @@ def _canonical_render_data(
         diagnostic_position_bins=position_bins,
     )
     return SimpleNamespace(
-        decode_results=decode,
+        analysis_results=decode,
         recording=SimpleNamespace(spike_times=spike_times),
         time=time,
         linear_position=np.linspace(0.0, 100.0, n_time),

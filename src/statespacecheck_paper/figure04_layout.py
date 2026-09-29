@@ -241,8 +241,8 @@ def _layout_hexbin_row(
     axes_hexbin = subfigs_bot[1].subplots(1, 3, gridspec_kw={"wspace": -0.02})
     axes_before_hexbin = tuple(fig.axes)
     plot_event_metric_hexbin_row(
-        render_data.decode_results.continuous_diagnostics,
-        render_data.decode_results.continuous_fragmented_diagnostics,
+        render_data.analysis_results.continuous_diagnostics,
+        render_data.analysis_results.continuous_fragmented_diagnostics,
         axes_hexbin,
         reference_model=CONTINUOUS,
         comparison_model=CONTINUOUS_FRAGMENTED,
@@ -337,12 +337,12 @@ def compose_figure04(
     time_relative = time_arr - time_offset
 
     # Shift xarray time coordinates to relative seconds
-    continuous_results = render_data.decode_results.continuous_results.assign_coords(
-        time=render_data.decode_results.continuous_results.coords["time"].values - time_offset
+    continuous_results = render_data.analysis_results.continuous_results.assign_coords(
+        time=render_data.analysis_results.continuous_results.coords["time"].values - time_offset
     )
     continuous_fragmented_results = (
-        render_data.decode_results.continuous_fragmented_results.assign_coords(
-            time=render_data.decode_results.continuous_fragmented_results.coords["time"].values
+        render_data.analysis_results.continuous_fragmented_results.assign_coords(
+            time=render_data.analysis_results.continuous_fragmented_results.coords["time"].values
             - time_offset
         )
     )
@@ -352,11 +352,11 @@ def compose_figure04(
         np.asarray(st - time_offset, dtype=np.float64) for st in render_data.recording.spike_times
     ]
     continuous_diagnostics_relative = _shift_diagnostic_event_times(
-        render_data.decode_results.continuous_diagnostics,
+        render_data.analysis_results.continuous_diagnostics,
         time_offset,
     )
     continuous_fragmented_diagnostics_relative = _shift_diagnostic_event_times(
-        render_data.decode_results.continuous_fragmented_diagnostics,
+        render_data.analysis_results.continuous_fragmented_diagnostics,
         time_offset,
     )
 
@@ -376,10 +376,10 @@ def compose_figure04(
             results=results,
             diagnostics=diagnostics,
             spike_times=spike_times_relative,
-            spike_counts=render_data.decode_results.spike_counts,
-            place_field_peaks=render_data.decode_results.place_field_peaks,
-            place_fields=render_data.decode_results.diagnostic_place_fields,
-            position_bins=render_data.decode_results.diagnostic_position_bins,
+            spike_counts=render_data.analysis_results.spike_counts,
+            place_field_peaks=render_data.analysis_results.place_field_peaks,
+            place_fields=render_data.analysis_results.diagnostic_place_fields,
+            position_bins=render_data.analysis_results.diagnostic_position_bins,
             track_graph=render_data.recording.track_graph,
             edge_order=render_data.recording.linear_edge_order,
             edge_spacing=render_data.recording.linear_edge_spacing,

@@ -310,13 +310,13 @@ def _figure04_model_inputs(
     model: Figure4ModelId,
 ) -> tuple[xr.Dataset, SpikeEventDiagnostics]:
     """Return the canonical result dataset and diagnostics for one model."""
-    decode = render_data.decode_results
+    analysis = render_data.analysis_results
     if model == CONTINUOUS.id:
-        return decode.continuous_results, decode.continuous_diagnostics
+        return analysis.continuous_results, analysis.continuous_diagnostics
     if model == CONTINUOUS_FRAGMENTED.id:
         return (
-            decode.continuous_fragmented_results,
-            decode.continuous_fragmented_diagnostics,
+            analysis.continuous_fragmented_results,
+            analysis.continuous_fragmented_diagnostics,
         )
     raise ValueError(f"Unknown model: {model!r}")
 
@@ -381,11 +381,11 @@ def _write_figure04_model_cache(
         time_chunk=time_chunk,
     )
 
-    decode = render_data.decode_results
-    position_bins = np.asarray(decode.diagnostic_position_bins, dtype=np.float64)
+    analysis = render_data.analysis_results
+    position_bins = np.asarray(analysis.diagnostic_position_bins, dtype=np.float64)
     _, interior_mask, n_states = _position_grid_and_interior_mask(results, position_bins)
-    place_fields = np.asarray(decode.diagnostic_place_fields, dtype=np.float64)
-    n_cells = int(decode.spike_counts.shape[1])
+    place_fields = np.asarray(analysis.diagnostic_place_fields, dtype=np.float64)
+    n_cells = int(analysis.spike_counts.shape[1])
     if place_fields.shape != (n_cells, position_bins.size):
         raise ValueError(
             "Shared Figure 4 place fields must have shape "
@@ -403,12 +403,12 @@ def _write_figure04_model_cache(
         place_fields=place_fields,
         interior_mask=interior_mask,
         position_bins=position_bins,
-        place_field_peaks=np.asarray(decode.place_field_peaks, dtype=np.float64),
+        place_field_peaks=np.asarray(analysis.place_field_peaks, dtype=np.float64),
     )
 
     return {
         "model": model,
-        "n_time": int(decode.spike_counts.shape[0]),
+        "n_time": int(analysis.spike_counts.shape[0]),
         "n_cells": n_cells,
         "n_states": n_states,
         "n_state_bins_full_res": int(zarr_shapes[DECODER_PREDICTIVE_VAR][1]),
@@ -467,8 +467,8 @@ def build_figure04_viewer_cache(
             time_chunk=time_chunk,
         )
 
-    decode = render_data.decode_results
-    n_cells = int(decode.spike_counts.shape[1])
+    analysis = render_data.analysis_results
+    n_cells = int(analysis.spike_counts.shape[1])
     spike_times = [
         np.asarray(cell_spike_times, dtype=np.float64)
         for cell_spike_times in render_data.recording.spike_times

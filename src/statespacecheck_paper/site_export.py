@@ -942,7 +942,7 @@ def recording_payload(
             "the same decode and diagnostics caches before exporting the recording window."
         )
     window = detail_window.to_slice(render_data.time.size)
-    decode = render_data.decode_results
+    analysis = render_data.analysis_results
     time = np.asarray(render_data.time, dtype=np.float64)
     # Decoder bins are left-closed; the window spans [time[start], time[stop]).
     t0 = float(time[window.start])
@@ -951,19 +951,19 @@ def recording_payload(
         if window.stop < time.size
         else float(time[-1] + (time[-1] - time[-2]))
     )
-    place_fields = np.asarray(decode.diagnostic_place_fields, dtype=np.float64)
+    place_fields = np.asarray(analysis.diagnostic_place_fields, dtype=np.float64)
     mean_likelihood, has_spikes = mean_event_likelihood_by_time(
-        decode.spike_counts[window], place_fields
+        analysis.spike_counts[window], place_fields
     )
     flag_rules = figure04_summary["flag_rules"]
 
     models: dict[str, Any] = {}
     for model, results, diagnostics in (
-        (CONTINUOUS, decode.continuous_results, decode.continuous_diagnostics),
+        (CONTINUOUS, analysis.continuous_results, analysis.continuous_diagnostics),
         (
             CONTINUOUS_FRAGMENTED,
-            decode.continuous_fragmented_results,
-            decode.continuous_fragmented_diagnostics,
+            analysis.continuous_fragmented_results,
+            analysis.continuous_fragmented_diagnostics,
         ),
     ):
         predictive = marginal_position_distribution(results.isel(time=window), "predictive")
@@ -994,10 +994,10 @@ def recording_payload(
         }
 
     spike_times = render_data.recording.spike_times
-    cell_rank = np.argsort(np.argsort(decode.place_field_peaks))
+    cell_rank = np.argsort(np.argsort(analysis.place_field_peaks))
     return {
         "time": _rounded(time[window] - t0, 4),
-        "position_bins": _rounded(decode.diagnostic_position_bins, 2),
+        "position_bins": _rounded(analysis.diagnostic_position_bins, 2),
         "linear_position": _rounded(render_data.linear_position[window], 2),
         "likelihood": encode_display_rows(mean_likelihood),
         "has_spikes": has_spikes.tolist(),
