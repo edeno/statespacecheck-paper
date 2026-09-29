@@ -133,9 +133,15 @@ export function formatMacro(value, format) {
   return format === "count" ? Number(value).toLocaleString("en-US") : value;
 }
 
+/** Link target of a DOI. */
+export function doiUrl(doi) {
+  return `https://doi.org/${doi}`;
+}
+
 /**
  * Fill every [data-macro] element with its value: a manuscript macro or a
- * number only the page states (manifest `macros` and `page_values`).
+ * number only the page states (manifest `macros` and `page_values`). Every
+ * [data-doi-macro] link points at the DOI that macro holds.
  */
 export function fillMacros(root, macros) {
   for (const element of root.querySelectorAll("[data-macro]")) {
@@ -146,6 +152,14 @@ export function fillMacros(root, macros) {
       continue;
     }
     element.textContent = formatMacro(value, element.dataset.format);
+  }
+  for (const element of root.querySelectorAll("[data-doi-macro]")) {
+    const doi = macros[element.dataset.doiMacro];
+    if (doi === undefined) {
+      console.warn(`Unknown macro ${element.dataset.doiMacro}`);
+      continue;
+    }
+    element.href = doiUrl(doi);
   }
 }
 
