@@ -1,10 +1,13 @@
 """Tests for ``DecoderDataSource``.
 
 The unit-style tests build a tiny synthetic cache (Zarr + Parquet +
-sidecars) in ``tmp_path`` and exercise the windowed-read API. The
-real-data integration test (marked ``slow``) opens the cache built by
-``cache.build`` from the live intermediates and checks the same API
-plus the window-read latency target (p95 ≤ 50 ms for 20 s windows).
+sidecars) in ``tmp_path`` and exercise the windowed-read API. Two
+real-data tests run only when viewer caches built by ``cache build``
+exist under ``data/cache/`` and are skipped otherwise (they carry no
+``slow`` marker). They check the recording's dimensions, the
+Continuous-Fragmented cache's two discrete states, and that a 2 s window
+read takes under 100 ms, a smoke check on the viewer's target of
+p95 ≤ 50 ms for 20 s windows.
 """
 
 from __future__ import annotations
