@@ -11,7 +11,7 @@ import pandas as pd
 import pytest
 import xarray as xr
 
-from statespacecheck_paper import figure04_cache, figure04_workflow
+from statespacecheck_paper import figure04_cache, figure04_fit, figure04_workflow
 from statespacecheck_paper.figure04_cache import (
     _FIGURE04_DECODE_AND_DIAGNOSTICS_PAYLOAD_KEYS,
     Figure4Paths,
@@ -366,7 +366,7 @@ class TestPrepareRenderData:
             calls["diagnostics"] += 1
             return _synthetic_decode_results().to_diagnostics_payload()
 
-        monkeypatch.setattr(figure04_workflow, "_fit_and_decode", fake_fit)
+        monkeypatch.setattr(figure04_workflow, "fit_and_decode", fake_fit)
         monkeypatch.setattr(figure04_workflow, "_compute_diagnostics_payload", fake_diagnostics)
 
         paths = Figure4Paths(data_path=tmp_path, animal_date_epoch="synthetic_epoch")
@@ -415,7 +415,7 @@ class TestPrepareRenderData:
             calls["n"] += 1
             return _synthetic_decode_results().to_decode_payload()
 
-        monkeypatch.setattr(figure04_workflow, "_fit_and_decode", fake_fit)
+        monkeypatch.setattr(figure04_workflow, "fit_and_decode", fake_fit)
         monkeypatch.setattr(
             figure04_workflow,
             "_compute_diagnostics_payload",
@@ -452,7 +452,7 @@ class TestPrepareRenderData:
         monkeypatch.setattr(figure04_workflow, "load_figure04_input", spy_load)
         monkeypatch.setattr(
             figure04_workflow,
-            "_fit_and_decode",
+            "fit_and_decode",
             lambda *a, **k: _synthetic_decode_results().to_decode_payload(),
         )
         monkeypatch.setattr(
@@ -480,3 +480,51 @@ class TestPrepareRenderData:
         )
         assert render_data.decode_results.spike_counts.shape == (8, 2)
         assert render_data.time.shape == (8,)
+
+
+def test_fit_and_decode_payload_feeds_the_caches_and_results() -> None:
+    """A real fit and decode of a small synthetic linear-track recording returns
+    exactly the decode-cache keys, and its diagnostics build valid results."""
+    pytest.importorskip("non_local_detector")
+    rng = np.random.default_rng(0)
+    n_time = 400
+    time = np.arange(n_time) / 500.0
+    x = np.linspace(0.0, 40.0, n_time)
+    track_graph = nx.Graph()
+    track_graph.add_node(0, pos=(0.0, 0.0))
+    track_graph.add_node(1, pos=(40.0, 0.0))
+    track_graph.add_edge(0, 1, distance=40.0, edge_id=0)
+    recording = NeuralRecordingData(
+        position_info=pd.DataFrame(
+            {"head_position_x": x, "head_position_y": np.zeros(n_time), "linear_position": x},
+            index=time,
+        ),
+        spike_times=(
+            np.sort(rng.uniform(0.0, time[-1], 30)),
+            np.sort(rng.uniform(0.0, time[-1], 20)),
+        ),
+        track_graph=track_graph,
+        linear_edge_order=((0, 1),),
+        linear_edge_spacing=0.0,
+    )
+    config = Figure4Config()
+
+    decode_payload = figure04_fit.fit_and_decode(
+        recording,
+        decoder_config=config.decoder,
+        execution_config=config.execution,
+        package_defaults=config.package_defaults,
+    )
+
+    assert set(decode_payload) == set(figure04_cache._FIGURE04_DECODE_PAYLOAD_KEYS)
+    np.testing.assert_array_equal(figure04_fit.decode_time(recording), time)
+    diagnostics_payload = figure04_workflow._compute_diagnostics_payload(
+        decode_payload,
+        recording=recording,
+        time=figure04_fit.decode_time(recording),
+        diagnostics_config=config.diagnostics,
+    )
+    results = Figure4DecodeResults.from_cache_payload({**decode_payload, **diagnostics_payload})
+    assert results.spike_counts.shape == (n_time, 2)
+    # Every spike lies inside [time[0], time[-1]], so each is counted once.
+    assert results.spike_counts.sum() == 50

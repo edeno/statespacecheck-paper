@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import inspect
 from importlib.metadata import PackageNotFoundError
 from pathlib import Path
 from typing import Any
@@ -11,7 +12,12 @@ import joblib
 import numpy as np
 import pytest
 
-from statespacecheck_paper import figure04_cache
+from statespacecheck_paper import (
+    figure04_cache,
+    figure04_diagnostics,
+    figure04_fit,
+    figure04_workflow,
+)
 from statespacecheck_paper.figure04_cache import (
     FIGURE04_DECODE_SCHEMA_VERSION,
     FIGURE04_DIAGNOSTICS_SCHEMA_VERSION,
@@ -238,7 +244,7 @@ def source_tree(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     "filename",
     [
         "figure04_decoder.py",
-        "figure04_workflow.py",
+        "figure04_fit.py",
         "figure04_place_fields.py",
         "figure04_input.py",
     ],
@@ -274,7 +280,9 @@ def test_documentation_and_plotting_edits_preserve_both_caches(
     assert compute_figure04_cache_provenance(config, paths) == original
 
 
-@pytest.mark.parametrize("filename", ["diagnostics.py", "figure04_diagnostics.py"])
+@pytest.mark.parametrize(
+    "filename", ["diagnostics.py", "figure04_diagnostics.py", "figure04_workflow.py"]
+)
 def test_diagnostic_only_source_edit_preserves_decode_cache(
     source_tree: Path, tmp_path: Path, filename: str
 ) -> None:
@@ -285,6 +293,20 @@ def test_diagnostic_only_source_edit_preserves_decode_cache(
     changed = compute_figure04_cache_provenance(config, paths)
     assert changed.fingerprint_sha256 == original.fingerprint_sha256
     assert changed.diagnostics_fingerprint_sha256 != original.diagnostics_fingerprint_sha256
+
+
+def test_diagnostics_and_decode_are_computed_in_their_hashed_modules() -> None:
+    """The functions that compute each cached payload live in modules hashed
+    into that cache's fingerprint, so editing them cannot reuse a stale cache."""
+    assert (
+        Path(inspect.getfile(figure04_fit.fit_and_decode)).name
+        in figure04_cache._DECODE_SOURCE_FILES
+    )
+    for function in (
+        figure04_workflow._compute_diagnostics_payload,
+        figure04_diagnostics.compute_results_diagnostics,
+    ):
+        assert Path(inspect.getfile(function)).name in figure04_cache._DIAGNOSTIC_SOURCE_FILES
 
 
 def test_fingerprint_unchanged_when_block_size_changes(tmp_path: Path) -> None:

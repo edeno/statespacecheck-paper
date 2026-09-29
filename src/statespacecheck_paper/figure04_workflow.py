@@ -14,12 +14,18 @@ recording; no training/validation split is applied.
 The in-memory decode results are a typed :class:`Figure4DecodeResults`; its
 field names are also the on-disk cache keys, read and written by
 :meth:`Figure4DecodeResults.from_cache_payload` / ``to_cache_payload``.
+
+The fit and decode themselves are :func:`figure04_fit.fit_and_decode`, whose
+modules alone form the decode-cache fingerprint; this module's containers,
+orchestration, and progress messages stay outside it, so editing them refits
+nothing. This module does compute the cached diagnostics
+(:func:`_compute_diagnostics_payload`), so it is hashed into the diagnostics
+fingerprint.
 """
 
 from __future__ import annotations
 
 import dataclasses
-import warnings
 from collections.abc import Mapping
 from typing import Any
 
@@ -40,26 +46,12 @@ from statespacecheck_paper.figure04_cache import (
     save_figure04_decode_cache,
     save_figure04_diagnostics_cache,
 )
-from statespacecheck_paper.figure04_decoder import (
-    Figure4Config,
-    Figure4DecoderConfig,
-    Figure4DiagnosticsConfig,
-    Figure4ExecutionConfig,
-    Figure4PackageDefaults,
-    create_decoder_environment,
-    fit_decoder_models,
-    get_spike_counts,
-    validate_package_defaults,
-)
+from statespacecheck_paper.figure04_decoder import Figure4Config, Figure4DiagnosticsConfig
 from statespacecheck_paper.figure04_diagnostics import compute_results_diagnostics
+from statespacecheck_paper.figure04_fit import decode_time, fit_and_decode
 from statespacecheck_paper.figure04_input import (
     NeuralRecordingData,
     load_figure04_input,
-)
-from statespacecheck_paper.figure04_place_fields import (
-    DECODER_PREDICTIVE_VAR,
-    extract_agreed_place_fields,
-    extract_place_fields,
 )
 
 
@@ -302,89 +294,6 @@ class Figure4RenderData:
             object.__setattr__(self, name, arr)
 
 
-def _fit_and_decode(
-    recording: NeuralRecordingData,
-    *,
-    time: NDArray[np.float64],
-    head_position: NDArray[np.float64],
-    decoder_config: Figure4DecoderConfig,
-    execution_config: Figure4ExecutionConfig,
-    package_defaults: Figure4PackageDefaults,
-) -> dict[str, object]:
-    """Fit both decoders on the full recording, decode it, and return the decode payload.
-
-    Both models are fitted with every position sample and every spike in the
-    supplied recording (no training mask), then decode that same recording.
-    The returned mapping carries exactly the decode-cache keys.
-    """
-    spike_times_list = list(recording.spike_times)  # non_local_detector wants a list
-
-    # Environment is only needed to fit the decoders.
-    env = create_decoder_environment(
-        track_graph=recording.track_graph,
-        edge_order=list(recording.linear_edge_order),
-        edge_spacing=recording.linear_edge_spacing,
-        place_bin_size=decoder_config.position_bin_size_cm,
-    )
-
-    print("Fitting models...")
-    continuous_model, continuous_fragmented_model = fit_decoder_models(
-        position=head_position,
-        spike_times=spike_times_list,
-        time=time,
-        environment=env,
-        decoder_config=decoder_config,
-        execution_config=execution_config,
-    )
-
-    # Runtime guard: the recorded non_local_detector package defaults shape
-    # the decode but are not injected, so a dependency bump could silently change
-    # them. Fail loudly here rather than produce a different published figure.
-    validate_package_defaults(continuous_model, continuous_fragmented_model, package_defaults)
-
-    print(f"Decoding {len(time)} time points...")
-    # non_local_detector always returns the smoothed (acausal) posterior. The
-    # diagnostics, figure, and site export read the prediction; the viewer cache
-    # also reads the log-likelihood and the smoothed posterior. Nothing reads
-    # the causal "filter" output, so it is not requested.
-    decode_outputs = [DECODER_PREDICTIVE_VAR, "log_likelihood"]
-    continuous_results = continuous_model.predict(
-        spike_times=spike_times_list,
-        time=time,
-        return_outputs=decode_outputs,
-    )
-    continuous_fragmented_results = continuous_fragmented_model.predict(
-        spike_times=spike_times_list,
-        time=time,
-        return_outputs=decode_outputs,
-    )
-
-    spike_counts = get_spike_counts(spike_times_list, time)
-
-    # Extract place fields for raster sorting (use continuous model).
-    place_fields, position_bins = extract_place_fields(continuous_model)
-    if np.any(np.all(np.isnan(place_fields), axis=1)):
-        warnings.warn(
-            "Some cells have all-NaN place fields; peak positions may be incorrect",
-            stacklevel=2,
-        )
-    place_field_peaks = position_bins[np.nanargmax(place_fields, axis=1)]
-
-    # Shared interior place fields for the mean per-spike likelihood row.
-    diagnostic_place_fields, diagnostic_position_bins = extract_agreed_place_fields(
-        continuous_model, continuous_fragmented_model
-    )
-
-    return {
-        "continuous_results": continuous_results,
-        "continuous_fragmented_results": continuous_fragmented_results,
-        "spike_counts": spike_counts,
-        "place_field_peaks": place_field_peaks,
-        "diagnostic_place_fields": diagnostic_place_fields,
-        "diagnostic_position_bins": diagnostic_position_bins,
-    }
-
-
 def _compute_diagnostics_payload(
     decode_payload: Mapping[str, object],
     *,
@@ -456,10 +365,8 @@ def prepare_figure04_render_data(
     recording = load_figure04_input(paths.data_path, paths.animal_date_epoch)
     print(f"  Loaded {len(recording.spike_times)} cells")
 
-    position_info = recording.position_info
-    time = np.asarray(position_info.index.to_numpy(), dtype=np.float64)
-    head_position = position_info[["head_position_x", "head_position_y"]].to_numpy(dtype=np.float64)
-    linear_position = position_info["linear_position"].to_numpy(dtype=np.float64)
+    time = decode_time(recording)
+    linear_position = recording.position_info["linear_position"].to_numpy(dtype=np.float64)
 
     cache_provenance = compute_figure04_cache_provenance(config, paths)
     expected_fingerprint = cache_provenance.fingerprint_sha256
@@ -476,10 +383,9 @@ def prepare_figure04_render_data(
                 "refitting."
             )
     if decode_payload is None:
-        decode_payload = _fit_and_decode(
+        print(f"Fitting both models and decoding {len(time)} time points...")
+        decode_payload = fit_and_decode(
             recording,
-            time=time,
-            head_position=head_position,
             decoder_config=config.decoder,
             execution_config=config.execution,
             package_defaults=config.package_defaults,

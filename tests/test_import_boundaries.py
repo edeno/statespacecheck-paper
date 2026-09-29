@@ -120,10 +120,11 @@ def test_figure01_and_figure02_generation_dependencies_are_explicit() -> None:
 
 
 def test_figure04_family_dependency_edges_are_acyclic() -> None:
-    """The Figure-4 family is layered cache < workflow < summary/layout < generation:
+    """The Figure-4 family is layered fit/cache < workflow < summary/layout < generation:
+    fit imports only the decoder construction, input, and place-field modules;
     cache imports only ``figure04_decoder`` (the configuration it hashes) and
     ``figure04_input`` (the input-file name and checksum); workflow imports
-    cache; summary and layout import workflow (never cache/config/paths);
+    fit and cache; summary and layout import workflow (never cache/config/paths);
     generation ties them together.
 
     The analysis and plotting modules (``figure04_decoder`` /
@@ -151,6 +152,11 @@ def test_figure04_family_dependency_edges_are_acyclic() -> None:
             prefix + "plotting",
             prefix + "style",
         },
+        "figure04_fit.py": {
+            prefix + "figure04_decoder",
+            prefix + "figure04_input",
+            prefix + "figure04_place_fields",
+        },
         "figure04_cache.py": {
             prefix + "figure04_decoder",
             prefix + "figure04_input",
@@ -159,7 +165,7 @@ def test_figure04_family_dependency_edges_are_acyclic() -> None:
             prefix + "figure04_cache",
             prefix + "figure04_decoder",
             prefix + "figure04_diagnostics",
-            prefix + "figure04_place_fields",
+            prefix + "figure04_fit",
             prefix + "diagnostics",
             prefix + "figure04_input",
         },
@@ -193,18 +199,6 @@ def test_figure04_family_dependency_edges_are_acyclic() -> None:
     }
     for module_file, permitted in allowed.items():
         assert _sibling_module_imports(module_file) <= permitted, module_file
-
-
-def test_decode_hashed_modules_do_not_import_unhashed_figure04_helpers() -> None:
-    """The decode cache fingerprints only its source files; the summary and the
-    model display labels stay outside it, so the decode must not come to depend
-    on them. (The input-file writer is in ``spyglass_pipeline``, which no figure
-    module imports.)"""
-    prefix = "statespacecheck_paper."
-    for module_file in figure04_cache._DECODE_SOURCE_FILES:
-        imports = _sibling_module_imports(module_file)
-        assert prefix + "figure04_summary" not in imports, module_file
-        assert prefix + "figure04_models" not in imports, module_file
 
 
 def test_reported_values_imports_no_analysis_module() -> None:
@@ -434,3 +428,74 @@ def _documented_graph() -> dict[str, dict[str, set[str]]]:
 def test_documented_module_graph_matches_the_source() -> None:
     """The graph in docs/figure-pipeline.md lists every module and exactly its imports."""
     assert _documented_graph() == _module_graph()
+
+
+# ---------------------------------------------------------------------------
+# The decode-cache fingerprint covers everything the fitted decode imports
+# ---------------------------------------------------------------------------
+
+# Paper modules that decode-hashed modules may import although their source is
+# not in the decode fingerprint, each with the only names that may be imported
+# from it. An entry must be unable to change the fitted decode; justify each.
+_DECODE_NEUTRAL_IMPORTS: dict[str, frozenset[str]] = {
+    # figure04_decoder: the default of Figure4DiagnosticsConfig.hpd_coverage.
+    # The fit never reads it; the diagnostics fingerprint hashes the configured
+    # coverage value.
+    "diagnostics": frozenset({"HPD_COVERAGE"}),
+    # figure04_input: the published epoch, which decides only whether a missing
+    # input file's error message offers the download command. The decode
+    # fingerprint hashes the requested epoch and the input file's content.
+    "paths": frozenset({"FIGURE04_INPUTS_EPOCH"}),
+}
+
+
+def _names_imported_from(importer: str, target: str) -> set[str]:
+    """Names the top-level module ``importer`` imports from sibling ``target``.
+
+    ``import statespacecheck_paper.target`` and ``from statespacecheck_paper
+    import target`` bring in the whole module, reported as ``"*"``.
+    """
+    tree = ast.parse((_SRC / f"{importer}.py").read_text(encoding="utf-8"))
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            if any(alias.name == f"{_PACKAGE}.{target}" for alias in node.names):
+                names.add("*")
+        elif isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            if (node.level == 0 and module == f"{_PACKAGE}.{target}") or (
+                node.level == 1 and module == target
+            ):
+                names |= {alias.name for alias in node.names}
+            elif (node.level == 0 and module == _PACKAGE) or (node.level == 1 and not module):
+                if any(alias.name == target for alias in node.names):
+                    names.add("*")
+    return names
+
+
+def test_decode_hashed_modules_import_only_hashed_or_decode_neutral_modules() -> None:
+    """Every paper module reachable from a decode-hashed module (module-level and
+    function-level imports, transitively) is decode-hashed itself or named in
+    ``_DECODE_NEUTRAL_IMPORTS``, and only the allowlisted names are imported
+    from it. Otherwise an edit to an unhashed module could change the decode
+    while a stale decode cache is still accepted."""
+    graph = _module_graph()
+    hashed = {name.removesuffix(".py") for name in figure04_cache._DECODE_SOURCE_FILES}
+    assert hashed <= graph.keys()
+
+    def imports(name: str) -> set[str]:
+        return graph[name]["top"] | graph[name]["lazy"]
+
+    reached: set[str] = set()
+    pending = sorted(hashed)
+    while pending:
+        for target in sorted(imports(pending.pop()) - reached):
+            reached.add(target)
+            pending.append(target)
+    unhashed = reached - hashed
+    # Equality also catches an allowlist entry that is no longer needed.
+    assert unhashed == _DECODE_NEUTRAL_IMPORTS.keys()
+    for importer in sorted(hashed | unhashed):
+        for target in sorted(imports(importer) & unhashed):
+            imported = _names_imported_from(importer, target)
+            assert imported <= _DECODE_NEUTRAL_IMPORTS[target], (importer, target, imported)

@@ -10,8 +10,8 @@ is ``data/`` unless ``STATESPACECHECK_DATA_PATH`` is set; see :class:`Figure4Pat
   counts, and place fields, gated by the
   **decode fingerprint** (:func:`compute_figure04_cache_provenance`): schema,
   decode-affecting configuration, input-data identity and content hashes,
-  executable source of the fitting/data-preparation modules, and the installed
-  ``non_local_detector`` version;
+  executable source of :mod:`figure04_fit` and the modules it depends on, and
+  the installed ``non_local_detector`` version;
 - the *diagnostics* cache (``{epoch}_figure04_diagnostics.joblib``) holds the
   per-spike diagnostics for both models, gated by the decode fingerprint **and**
   a **diagnostics fingerprint** (:func:`compute_figure04_diagnostics_fingerprint`):
@@ -21,8 +21,8 @@ is ``data/`` unless ``STATESPACECHECK_DATA_PATH`` is set; see :class:`Figure4Pat
   (docstrings and comments excluded).
 
 Changes confined to the diagnostic modules or configuration recompute diagnostics
-from cached predictions. Changes to decoding, data preparation, or their shared
-workflow/place-field modules refit both models.
+from cached predictions. Changes to the fit, its model construction, the input
+reader, or the shared place-field module refit both models.
 This module owns the cache locations (:class:`Figure4Paths`), both fingerprints,
 the machine-readable provenance record stored in the summary, and the load/save
 helpers with explicit invalid-cache behavior. It imports ``Figure4Config`` from
@@ -60,26 +60,35 @@ FIGURE04_DECODE_SCHEMA_VERSION = 6
 # bump it to invalidate every diagnostics cache.
 FIGURE04_DIAGNOSTICS_SCHEMA_VERSION = 2
 
-# Hash entire modules so changes to helpers, imports, defaults, or recording
-# preparation cannot silently reuse an old decode. Shared workflow/place-field
-# edits conservatively invalidate both caches; diagnostic-only modules below
-# remain independent of the expensive decode. Hashing files by name means this
-# module need not import figure04_workflow (which imports it).
+# The decode payload is computed by figure04_fit.fit_and_decode. Hash it and
+# every paper module it imports, whole, so changes to helpers, imports,
+# defaults, or recording preparation cannot silently reuse an old decode:
+# figure04_decoder builds, checks, and fits the models and bins the spikes;
+# figure04_input reads and validates the recording; figure04_place_fields
+# extracts the cached place fields. The workflow's containers, orchestration,
+# and messages stay outside, so editing them refits nothing.
+# tests/test_import_boundaries.py checks that every paper module these import
+# is hashed here or named in its allowlist of decode-neutral modules. Hashing
+# files by name means this module need not import figure04_fit.
 _DECODE_SOURCE_FILES: tuple[str, ...] = (
     "figure04_decoder.py",
-    "figure04_place_fields.py",
-    "figure04_workflow.py",
+    "figure04_fit.py",
     "figure04_input.py",
+    "figure04_place_fields.py",
 )
 
 # Source files whose executable content shapes the cached diagnostics. Their
 # docstring-stripped syntax trees are hashed into the diagnostics fingerprint,
 # so an implementation change recomputes the diagnostics while a comment or
-# docstring edit does not.
+# docstring edit does not. figure04_workflow computes the diagnostics payload
+# (which predictions and spikes are diagnosed, with which coverage), so its
+# edits recompute the diagnostics but never refit. The diagnostics cache is
+# also keyed by the decode fingerprint, which covers the decode-hashed modules.
 _DIAGNOSTIC_SOURCE_FILES: tuple[str, ...] = (
     "diagnostics.py",
     "figure04_diagnostics.py",
     "figure04_place_fields.py",
+    "figure04_workflow.py",
 )
 
 # The decode payload keys (the expensive, fitted part).
@@ -173,7 +182,7 @@ def _diagnostic_source_digest() -> str:
 
 
 def _decode_source_digest() -> str:
-    """Executable-source digest of the modules that prepare and decode the recording."""
+    """Executable-source digest of the fit-and-decode modules."""
     package_root = Path(__file__).resolve().parent
     return executable_source_digest(tuple(package_root / name for name in _DECODE_SOURCE_FILES))
 
@@ -298,8 +307,8 @@ def compute_figure04_cache_provenance(
     ``package_defaults`` parts -- but **not** ``execution``, which is performance-only
     and leaves the decode identical, nor ``diagnostics``, which does not touch
     the fit), the input-data identifier *and the content hash of the
-    Figure-4 input file*, the executable source of the fitting and
-    data-preparation modules, and the *installed* ``non_local_detector``
+    Figure-4 input file*, the executable source of the fit-and-decode modules
+    (``_DECODE_SOURCE_FILES``), and the *installed* ``non_local_detector``
     revision. Any change forces a refit; the decode cache stores this
     fingerprint so a stale cache cannot silently produce a figure that no longer
     matches the current method, input data, or dependency. Hashing the file
@@ -307,9 +316,10 @@ def compute_figure04_cache_provenance(
     file under the same epoch invalidate the cache rather than reuse a decode of
     the old bytes.
 
-    Comments and docstrings do not affect the source digest. Edits to shared
-    workflow or place-field code conservatively refit; edits confined to
-    ``diagnostics.py`` or ``figure04_diagnostics.py`` only recompute diagnostics.
+    Comments and docstrings do not affect the source digest. Edits to the
+    shared place-field code refit; edits confined to ``diagnostics.py``,
+    ``figure04_diagnostics.py``, or ``figure04_workflow.py`` only recompute
+    diagnostics.
 
     The *diagnostics* fingerprint is :func:`compute_figure04_diagnostics_fingerprint`.
 

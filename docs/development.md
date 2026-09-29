@@ -139,12 +139,14 @@ and run the commands above. Edits confined to `reported_values`, `site_export`,
 or `figure04_download` may use this procedure while no figure imports them and
 the reported values remain unchanged. Markdown-only edits do not affect the hash.
 
-Figure 4 caches have separate decode and diagnostic fingerprints. Decode source
-hashes cover fitting, recording preparation, and shared workflow/place-field code.
+Figure 4 caches have separate decode and diagnostic fingerprints. The decode
+source hash covers the fit and decode (`figure04_fit.py`) and the modules it
+uses: `figure04_decoder.py`, `figure04_input.py`, and `figure04_place_fields.py`.
 Any executable change to those modules refits both models, including an edited
 message string. Changes confined to `diagnostics.py`, `figure04_diagnostics.py`,
-or the diagnostics configuration recompute diagnostics from cached predictions. Comments and docstrings
-are excluded from both cache hashes. See [the cache specification](figure-pipeline.md#figure-4-cache-behavior).
+`figure04_workflow.py`, or the diagnostics configuration recompute diagnostics
+from cached predictions. Comments and docstrings are excluded from both cache
+hashes. See [the cache specification](figure-pipeline.md#figure-4-cache-behavior).
 
 Keep publication PDFs, previews, summaries, macros, and website data committed
 together after a result change. Inspect binary diffs visually: PDF creation

@@ -136,7 +136,7 @@ families**:
 - **Per-figure families**: `figure01_generation`;
   `figure02_{panels,generation}`;
   `figure03_{protocol,simulation,summary,plotting,generation}`; and
-  `figure04_{input,models,decoder,place_fields,diagnostics,plot_primitives,track_plots,panels,cache,workflow,summary,layout,generation}`.
+  `figure04_{input,models,decoder,place_fields,diagnostics,plot_primitives,track_plots,panels,fit,cache,workflow,summary,layout,generation}`.
   `figure04_models` holds each decoder's one machine ID (`continuous`,
   `continuous_fragmented`) and its display labels; the figure, summary
   printout, viewer, and website data take the labels from it, and the
@@ -146,14 +146,16 @@ families**:
   diagnose → summarize → render).
 
   Some Figure-4 boundaries also protect the expensive decode cache. Refitting
-  and decoding both models takes minutes and writes an ~8 GB cache, so the
-  decode fingerprint hashes only the modules that shape the decode
-  (`figure04_decoder`, `figure04_place_fields`, `figure04_workflow`,
-  `figure04_input`), and the diagnostics fingerprint only those that shape
-  the per-spike diagnostics (`diagnostics`, `figure04_diagnostics`,
-  `figure04_place_fields`). Model labels (`figure04_models`), cache I/O
-  (`figure04_cache`), whole-session statistics (`figure04_summary`), and all
-  plotting live elsewhere, so editing them refits nothing.
+  and decoding both models takes minutes and writes an ~8 GB cache, so the fit
+  and decode live in `figure04_fit`, and the decode fingerprint hashes only it
+  and the modules it imports (`figure04_decoder`, `figure04_input`,
+  `figure04_place_fields`). The diagnostics fingerprint hashes the modules that
+  compute the per-spike diagnostics (`diagnostics`, `figure04_diagnostics`,
+  `figure04_place_fields`, and `figure04_workflow`, which assembles them).
+  Result containers, orchestration, and progress messages (`figure04_workflow`),
+  model labels (`figure04_models`), cache I/O (`figure04_cache`), whole-session
+  statistics (`figure04_summary`), and all plotting live outside the decode
+  fingerprint, so editing them refits nothing.
 - **Shared support**: `plotting`, `style`, and `schematic` (figure drawing);
   `paths` (repository and data locations, published identifiers);
   `scientific_artifacts` (summary provenance and flag rules); `number_format`
@@ -204,8 +206,9 @@ figure04_diagnostics                → diagnostics, figure04_place_fields
 figure04_plot_primitives            → figure04_place_fields, style
 figure04_track_plots                → figure04_plot_primitives
 figure04_panels                     → diagnostics, figure04_diagnostics, figure04_models, figure04_place_fields, figure04_plot_primitives, figure04_track_plots, plotting, style
+figure04_fit                        → figure04_decoder, figure04_input, figure04_place_fields
 figure04_cache                      → figure04_decoder, figure04_input
-figure04_workflow                   → diagnostics, figure04_cache, figure04_decoder, figure04_diagnostics, figure04_input, figure04_place_fields
+figure04_workflow                   → diagnostics, figure04_cache, figure04_decoder, figure04_diagnostics, figure04_fit, figure04_input
 figure04_summary                    → diagnostics, figure04_diagnostics, figure04_models, figure04_workflow
 figure04_layout                     → diagnostics, figure04_models, figure04_panels, figure04_track_plots, figure04_workflow, plotting, style
 figure04_generation                 → diagnostics, figure04_cache, figure04_decoder, figure04_layout, figure04_models, figure04_summary, figure04_workflow, paths, scientific_artifacts, style
@@ -475,7 +478,7 @@ $\Lambda(x)$.
 - **Computation (reading order):**
   `figure04_generation` (recipe) → `figure04_workflow.prepare_figure04_render_data`
   (loads the recording; loads the cached decode or fits and decodes both models
-  via `figure04_decoder`/`figure04_place_fields`; loads the cached diagnostics or
+  with `figure04_fit.fit_and_decode`; loads the cached diagnostics or
   computes them with `figure04_diagnostics`) →
   `figure04_summary.compute_figure04_summary` (whole-session means and flag
   confusions) → `figure04_layout.compose_figure04` (artist arrangement) →
@@ -536,7 +539,7 @@ loads a `NeuralRecordingData` and returns a `Figure4RenderData`
 `.decode_results: Figure4DecodeResults`, `.cache_provenance`) — the decode
 results are built by `Figure4DecodeResults.from_cache_payload` from a decode
 payload and a diagnostics payload, each loaded from its fingerprint-matching
-cache or computed fresh (`_fit_and_decode` for the decode,
+cache or computed fresh (`figure04_fit.fit_and_decode` for the decode,
 `_compute_diagnostics_payload` for the diagnostics) → `compute_figure04_summary`
 returns a `Figure4Summary` (`.n_units`, per-decoder `Figure4DiagnosticMeans`, and
 typed `FlagConfusion` counts) → `format_figure04_summary` handles CLI text separately
@@ -581,18 +584,29 @@ regardless.
   of `Figure4Config`, the data identifier, the installed `non_local_detector`
   version, the **content hash of the input file** (so replacing it under the
   same `animal_date_epoch` invalidates the cache), and the docstring-stripped
-  syntax trees of `figure04_decoder.py`, `figure04_place_fields.py`,
-  `figure04_workflow.py`, and `figure04_input.py`. This covers helper
-  functions, imports, defaults, and recording preparation.
+  syntax trees of the fit-and-decode modules (`figure04_cache._DECODE_SOURCE_FILES`):
+  `figure04_fit.py` (`fit_and_decode` and the decode time grid), with the
+  modules it imports, `figure04_decoder.py` (model construction, defaults
+  check, fit, spike counts), `figure04_input.py` (reading and validating the
+  recording), and `figure04_place_fields.py` (the cached place fields). This
+  covers helper functions, imports, defaults, and recording preparation.
+  `tests/test_import_boundaries.py` checks that every paper module these
+  import, directly or through others, is hashed too or is in a commented
+  allowlist of decode-neutral imports (`diagnostics.HPD_COVERAGE`, the
+  default diagnostics coverage; `paths.FIGURE04_INPUTS_EPOCH`, which only
+  chooses the missing-file message).
 - The **diagnostics cache** is keyed by the decode fingerprint plus a
   **diagnostics fingerprint**
   (`figure04_cache.compute_figure04_diagnostics_fingerprint`): the diagnostics
   schema version, the `Figure4DiagnosticsConfig`, the installed
   `statespacecheck` version, and the docstring-stripped syntax trees of
-  `diagnostics.py`, `figure04_diagnostics.py`, and `figure04_place_fields.py`.
+  `diagnostics.py`, `figure04_diagnostics.py`, `figure04_place_fields.py`, and
+  `figure04_workflow.py` (whose `_compute_diagnostics_payload` pairs each
+  model's predictions with the spikes and coverage).
 
 Any change that refits therefore also recomputes the diagnostics. A change
-confined to `diagnostics.py`, `figure04_diagnostics.py`, or the diagnostics
+confined to `diagnostics.py`, `figure04_diagnostics.py`, `figure04_workflow.py`
+(including its result containers and progress messages), or the diagnostics
 configuration recomputes only the diagnostics from the cached predictions
 (about a minute). The `execution` settings are in neither fingerprint.
 Docstring and comment edits invalidate neither cache, and the summary scalars
