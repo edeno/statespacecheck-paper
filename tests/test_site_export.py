@@ -35,7 +35,6 @@ from statespacecheck_paper.figure03_simulation import (
     run_figure03_simulation,
 )
 from statespacecheck_paper.figure03_summary import conditions_by_id
-from statespacecheck_paper.figure04_diagnostics import mean_event_likelihood_by_time
 from statespacecheck_paper.figure04_models import FIGURE04_MODELS, figure04_model
 from statespacecheck_paper.figure04_protocol import Figure4DetailWindow
 from statespacecheck_paper.figure04_workflow import Figure4RenderData
@@ -507,20 +506,25 @@ def test_recording_payload_slices_both_models_to_the_detail_window() -> None:
 
     assert len(payload["time"]) == n_time
     assert payload["time"][0] == 0.0
-    likelihood, has_spikes = mean_event_likelihood_by_time(
-        analysis.spike_counts[time_slice], analysis.diagnostic_place_fields
-    )
-    np.testing.assert_array_equal(
-        decode_display_rows(payload["likelihood"], n_bins),
-        decode_display_rows(encode_display_rows(likelihood), n_bins),
-    )
-    assert payload["has_spikes"] == has_spikes.tolist()
+    # The page draws the likelihood track and the raster from the events; that
+    # events count every binned spike is checked in test_figure04_diagnostics
+    # (test_event_binning_matches_decoder_bin_assignment).
+    assert {"likelihood", "has_spikes", "spike_times"}.isdisjoint(payload)
     np.testing.assert_array_equal(
         decode_display_rows(payload["cell_likelihoods"], n_bins),
         decode_display_rows(
             encode_display_rows(ssc.event_likelihood(analysis.diagnostic_place_fields)),
             n_bins,
         ),
+    )
+    np.testing.assert_array_equal(
+        decode_display_rows(payload["place_fields"]["rows"], n_bins),
+        decode_display_rows(encode_display_rows(analysis.diagnostic_place_fields), n_bins),
+    )
+    np.testing.assert_allclose(
+        payload["place_fields"]["row_max"],
+        analysis.diagnostic_place_fields.max(axis=1),
+        rtol=1e-5,
     )
     for name, diagnostics in (
         ("continuous", analysis.continuous_diagnostics),
@@ -545,6 +549,8 @@ def test_recording_payload_slices_both_models_to_the_detail_window() -> None:
             diagnostics.event_time_ind[in_window],
         )
         assert len(model["events"]["t"]) == int(in_window.sum())
+        # Session-wide spike numbers: positions in the diagnostics' event arrays.
+        assert model["events"]["id"] == np.flatnonzero(in_window).tolist()
         assert set(model["events"]["flagged"]) == {"hpd_overlap", "predictive_pvalue"}
     # Cells are ranked by place-field peak.
     assert sorted(payload["cell_rank"]) == list(range(analysis.place_field_peaks.size))
@@ -553,11 +559,6 @@ def test_recording_payload_slices_both_models_to_the_detail_window() -> None:
         payload["diagnostics_fingerprint"]
         == render_data.cache_provenance.diagnostics_fingerprint_sha256
     )
-    # The raster covers the same bins as the events: [time[start], time[stop]).
-    t_end = render_data.time[time_slice.stop]
-    for cell, times in enumerate(render_data.recording.spike_times):
-        in_bins = (times >= render_data.time[time_slice.start]) & (times < t_end)
-        assert len(payload["spike_times"][cell]) == int(in_bins.sum())
 
 
 @pytest.mark.parametrize("key", ["fingerprint_sha256", "diagnostics_fingerprint_sha256"])

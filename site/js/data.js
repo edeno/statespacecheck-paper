@@ -68,11 +68,17 @@ export async function loadJSON(path) {
   return response.json();
 }
 
-/** Decode base64 uint8 rows written by site_export.encode_display_rows. */
+/**
+ * Rows of uint8 display values: base64 written by site_export.encode_display_rows,
+ * or the bytes themselves (the recording explorer's binary blocks).
+ */
 export function decodeRows(encoded, nBins) {
-  const binary = atob(encoded);
-  const data = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) data[i] = binary.charCodeAt(i);
+  let data = encoded;
+  if (typeof encoded === "string") {
+    const binary = atob(encoded);
+    data = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) data[i] = binary.charCodeAt(i);
+  }
   if (data.length % nBins !== 0) {
     throw new Error(`${data.length} values do not divide into rows of ${nBins}`);
   }

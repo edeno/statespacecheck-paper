@@ -39,6 +39,8 @@ SOFTWARE_DOIS_PATH = REPO_ROOT / "manuscript" / "software_dois.json"
 # The website's exported data (``site_export``) and the reference cases that
 # check the JavaScript port of the diagnostics.
 SITE_DATA_DIR = REPO_ROOT / "site" / "data"
+# The session explorer's archive: published as a release asset, never committed.
+SITE_EXPLORER_ARCHIVE_DIR = REPO_ROOT / "site" / ".explorer"
 PARITY_FIXTURE_PATH = REPO_ROOT / "site" / "tests" / "fixtures" / "metric_parity.json"
 
 # The published Figure-4 input: the one epoch whose input file is archived on

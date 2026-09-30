@@ -61,6 +61,13 @@ jobs:
         with:
           node-version: 22
 
+      # The session explorer's archive (a release asset, named and checksummed
+      # by the committed overview); the build downloads it only on a miss.
+      - uses: actions/cache@v4
+        with:
+          path: site/.explorer
+          key: site-explorer-${{ hashFiles('site/data/recording_explorer.json') }}
+
       - name: Assemble the site
         run: make -C site build
 

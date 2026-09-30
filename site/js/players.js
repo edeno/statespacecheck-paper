@@ -75,7 +75,7 @@ function axisHelp(macros, study) {
 }
 
 const SCALE_HELP =
-  "Darker prediction shading means higher probability, on one color scale per panel as in the paper's figures. The likelihood track is drawn only in time bins that contain spikes. Likelihood columns and the curves in the spike panel are each scaled to their own maximum.";
+  "Darker prediction shading means higher probability, on a separate color scale for each model or simulation condition as in the paper's figures. The likelihood track is drawn only in time bins that contain spikes. Likelihood columns and the curves in the spike panel are each scaled to their own maximum.";
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -90,8 +90,8 @@ function metricRange(metric, values, rule) {
 }
 
 /** Track showing one metric per spike, for one or two series. */
-function metricTrack(metric, series, rule, shading) {
-  const allValues = series.flatMap((s) => s.values);
+function metricTrack(metric, series, rule, shading, rangeValues = null) {
+  const allValues = rangeValues ?? series.flatMap((s) => s.values);
   const [lo, hi] = metricRange(metric, allValues, rule);
   const pad = 4;
   return {
@@ -151,6 +151,31 @@ function rankOf(values) {
     rank[index] = r;
   });
   return rank;
+}
+
+/**
+ * Mean normalized likelihood of the spikes in each time step, as in Figures 3a
+ * and 4 (figure04_diagnostics.mean_event_likelihood_by_time): spike `i` falls in
+ * step `steps[i]` with likelihood row `rowOf(i)`. Rows come back scaled to their
+ * maxima, as display rows, with each step's spike `count`.
+ */
+function meanEventLikelihood(steps, rowOf, nSteps, nBins) {
+  const sum = new Float64Array(nSteps * nBins);
+  const count = new Uint16Array(nSteps);
+  steps.forEach((t, i) => {
+    const row = normalized(rowOf(i));
+    for (let b = 0; b < nBins; b += 1) sum[t * nBins + b] += row[b];
+    count[t] += 1;
+  });
+  const bytes = new Uint8Array(nSteps * nBins);
+  for (let t = 0; t < nSteps; t += 1) {
+    let max = 0;
+    for (let b = 0; b < nBins; b += 1) max = Math.max(max, sum[t * nBins + b]);
+    for (let b = 0; b < nBins; b += 1) {
+      bytes[t * nBins + b] = max > 0 ? Math.round((sum[t * nBins + b] / max) * 255) : 0;
+    }
+  }
+  return { nRows: nSteps, nBins, count, row: (t) => bytes.subarray(t * nBins, (t + 1) * nBins) };
 }
 
 function note(text) {
@@ -281,6 +306,12 @@ function wirePlayback(stack, range, eventTimes, select, controls, { settle, anno
   const clamp = (index) => Math.min(eventTimes.length - 1, Math.max(0, index));
   return {
     current: () => current,
+    refresh: () => {
+      if (current !== null && current >= 0) {
+        select(current);
+        settle(current);
+      }
+    },
     setTime: (time, { pressed = false } = {}) => {
       halt();
       setTime(time);
@@ -372,7 +403,10 @@ const formatPosition = (value) => (value === null ? "—" : value.toFixed(1));
  * the tracks' value text, `describe(index)`, are kept here. The step buttons
  * read the description to screen readers.
  */
-function mountTracks(left, { ariaLabel, range, tracks, eventTimes, select, describe }) {
+function mountTracks(
+  left,
+  { ariaLabel, range, tracks, eventTimes, select, describe, onSettle = null },
+) {
   const stack = new TrackStack(left, {
     ariaLabel,
     range,
@@ -389,7 +423,10 @@ function mountTracks(left, { ariaLabel, range, tracks, eventTimes, select, descr
     select(index);
     if (index >= 0) controls.time.textContent = `${eventTimes[index].toFixed(3)} s`;
   };
-  const settle = (index) => stack.setValue(eventTimes[index], describe(index));
+  const settle = (index) => {
+    stack.setValue(eventTimes[index], describe(index));
+    onSettle?.(index);
+  };
   const playback = wirePlayback(stack, range, eventTimes, show, controls, {
     settle,
     announce: (index) => say(describe(index)),
@@ -534,33 +571,13 @@ function renderCondition(view, payload, manifest) {
     `Medians across ${manifest.macros.SimNRealizations} simulated sessions: the percentage of spikes each diagnostic flags, and the decoding error, the median absolute difference between the decoder's position estimate (the filtered posterior mean) and the true position. Perturbed model component: ${component}. Below: ${(range[1] - range[0]).toFixed(1)} s of one session, with the condition's time window shaded gray.`,
   );
 
-  // Mean normalized likelihood per spike-containing step, as in Figure 3a.
-  const likelihoodSum = new Float64Array(nSteps * nBins);
-  const likelihoodCount = new Uint16Array(nSteps);
-  events.t.forEach((t, i) => {
-    const row = normalized(likelihoodRows.row(events.likelihood_row[i]));
-    for (let b = 0; b < nBins; b += 1) likelihoodSum[t * nBins + b] += row[b];
-    likelihoodCount[t] += 1;
-  });
-  const likelihoodBytes = new Uint8Array(nSteps * nBins);
-  for (let t = 0; t < nSteps; t += 1) {
-    let max = 0;
-    for (let b = 0; b < nBins; b += 1) max = Math.max(max, likelihoodSum[t * nBins + b]);
-    for (let b = 0; b < nBins; b += 1) {
-      likelihoodBytes[t * nBins + b] =
-        max > 0 ? Math.round((likelihoodSum[t * nBins + b] / max) * 255) : 0;
-    }
-  }
-  const likelihoodMean = {
-    nRows: nSteps,
-    nBins,
-    row: (t) => likelihoodBytes.subarray(t * nBins, (t + 1) * nBins),
-  };
+  const likelihoodMean = meanEventLikelihood(events.t, (i) =>
+    likelihoodRows.row(events.likelihood_row[i]), nSteps, nBins);
 
   const lut = manifest.colormaps;
   const predictiveBitmap = heatmapBitmap(predictive, lut.predictive);
   const likelihoodBitmap = heatmapBitmap(likelihoodMean, lut.likelihood);
-  const hasSpikes = (t) => likelihoodCount[t] > 0;
+  const hasSpikes = (t) => likelihoodMean.count[t] > 0;
   const cellRank = rankOf(payload.cell_centers);
   const position = payload.physical_position;
   const track = (label, bitmap, height, mask = null) =>
@@ -696,11 +713,11 @@ function renderCondition(view, payload, manifest) {
 // ---------------------------------------------------------------------------
 
 /**
- * Time of peak population firing (all cells), which marks the replay event,
- * searched in steps of one decoder bin `dt`.
+ * Time of peak population firing (every spike, all cells), which marks the
+ * replay event, searched in steps of one decoder bin `dt`.
  */
 function populationPeak(spikeTimes, range, dt) {
-  const all = spikeTimes.flat().sort((a, b) => a - b);
+  const all = [...spikeTimes].sort((a, b) => a - b);
   let best = range[0];
   let bestCount = -1;
   let lo = 0;
@@ -716,7 +733,19 @@ function populationPeak(spikeTimes, range, dt) {
   return best;
 }
 
-export function renderRecording(root, payload, manifest) {
+/**
+ * The recording window `payload` (recording.json's shape) under both decoders.
+ * For a window of the session explorer, whose events carry session-wide `id`s,
+ * `initialEventId` opens a spike and `onEventSelect(id)` hears each discrete
+ * selection (not hover or playback frames). Returns `selectEventId(id)` and
+ * `destroy()`.
+ */
+export function renderRecording(
+  root,
+  payload,
+  manifest,
+  { initialEventId = null, onEventSelect = null } = {},
+) {
   const view = root.querySelector("#rec-view");
   view.replaceChildren();
   const bins = payload.position_bins;
@@ -737,31 +766,69 @@ export function renderRecording(root, payload, manifest) {
   const events = payload.models[reference.id].events;
   const eventTimes = events.t;
   const position = payload.linear_position;
-  const likelihood = decodeRows(payload.likelihood, nBins);
   const cellLikelihoods = decodeRows(payload.cell_likelihoods, nBins);
+  // Every spike is an event, so the likelihood track and the raster come from the events.
+  const likelihood = meanEventLikelihood(events.bin, (i) => cellLikelihoods.row(events.cell[i]),
+    time.length, nBins);
+  const placeFields = decodeHeatmap(payload.place_fields, nBins);
+  const timeBinMs = manifest.macros.RecTimeBinMs;
   const predictive = Object.fromEntries(
     MODELS.map((m) => [m.id, decodeHeatmap(payload.models[m.id].predictive, nBins)]),
   );
-  const predictiveBitmap = (id) => heatmapBitmap(predictive[id], lut.predictive);
+  const predictiveBitmaps = Object.fromEntries(
+    MODELS.map((model) => [model.id, heatmapBitmap(predictive[model.id], lut.predictive)]),
+  );
+  const likelihoodBitmap = heatmapBitmap(likelihood, lut.likelihood);
   const track = (label, bitmap, height, mask = null) =>
     heatmapTrack({ label, bitmap, height, mask, times: time, bins, position, unit: "cm" });
+  let selectedModel = reference;
 
-  // Cells: raster of every spike in the window, sorted by place-field peak.
-  const rasterTimes = [];
-  const rasterRows = [];
-  payload.spike_times.forEach((times, cell) => {
-    for (const t of times) {
-      rasterTimes.push(t);
-      rasterRows.push(payload.cell_rank[cell]);
-    }
-  });
+  // Units sorted by place-field peak.
+  const rasterRows = Array.from(events.cell, (cell) => payload.cell_rank[cell]);
 
-  const seriesFor = (metricName) =>
-    MODELS.map((model, index) => ({
-      times: eventTimes,
-      values: payload.models[model.id].events[metricName],
-      style: () => (index === 0 ? { fill: false, radius: 3 } : { fill: true, radius: 2.4 }),
-    }));
+  // Use one fixed vertical scale per diagnostic when switching models.
+  const metricValues = Object.fromEntries(
+    METRICS.map((metric) => [
+      metric.name,
+      MODELS.flatMap((model) => payload.models[model.id].events[metric.name]),
+    ]),
+  );
+  const tracksFor = (model) => [
+    track(`Prediction: ${model.label}`, predictiveBitmaps[model.id], 92),
+    track("Likelihood", likelihoodBitmap, 64, (t) => likelihood.count[t] > 0),
+    rasterTrack(eventTimes, rasterRows, payload.cell_rank.length, null, "Units"),
+    ...METRICS.map((metric) =>
+      metricTrack(
+        metric,
+        [
+          {
+            times: eventTimes,
+            values: payload.models[model.id].events[metric.name],
+            style: () => ({ fill: true, radius: 2.6 }),
+          },
+        ],
+        rules[metric.name],
+        null,
+        metricValues[metric.name],
+      ),
+    ),
+  ];
+
+  const modelSwitch = document.createElement("fieldset");
+  modelSwitch.className = "model-switch";
+  const modelLegend = document.createElement("legend");
+  modelLegend.textContent = "Model shown in the tracks and spike chart";
+  modelSwitch.appendChild(modelLegend);
+  for (const model of MODELS) {
+    const label = document.createElement("label");
+    const input = document.createElement("input");
+    input.type = "radio";
+    input.name = "recording-model";
+    input.value = model.id;
+    input.checked = model.id === selectedModel.id;
+    label.append(input, ` ${model.label}`);
+    modelSwitch.appendChild(label);
+  }
 
   // Window counts per model and metric.
   const counts = document.createElement("table");
@@ -779,8 +846,7 @@ export function renderRecording(root, payload, manifest) {
 
   const legend = legendBlock(`
     <span><i class="swatch" style="background:var(--position)"></i>Animal's position</span>
-    <span><i class="swatch ring" style="border-color:var(--text)"></i>${reference.label} model</span>
-    <span><i class="swatch dot" style="background:var(--text)"></i>${comparison.label} model</span>
+    <span><i class="swatch dot" style="background:var(--text)"></i>Selected model's spike</span>
     <span><i class="swatch" style="background:var(--threshold)"></i>Flag threshold</span>`);
 
   const spikes = spikeTable(eventTimes.length, [
@@ -801,13 +867,14 @@ export function renderRecording(root, payload, manifest) {
 
   const { body, left, detail } = playerFrame();
   view.append(
+    modelSwitch,
     legend,
     body,
     tableWrap(counts, "Spikes flagged in this window"),
     spikes,
     note(INTERACTION_HELP),
     note(
-      `Here the dots do not show flag status: open circles are the ${reference.label} model and filled dots the ${comparison.label} model, and a spike is flagged when its marker lies beyond the dashed threshold. The ${comparison.label} prediction is summed over its Continuous and Fragmented states. Position is linearized distance along the maze (cm).`,
+      `Switch models to compare the same spike without moving the cursor. The diagnostic axes keep the same scales across models. A spike is flagged when its marker lies beyond the dashed threshold. The ${comparison.label} prediction is summed over its Continuous and Fragmented states. Position is linearized distance along the maze (cm).`,
     ),
     note(axisHelp(manifest.macros, "Rec")),
     note(SCALE_HELP),
@@ -815,22 +882,35 @@ export function renderRecording(root, payload, manifest) {
 
   const detailTitle = document.createElement("h3");
   const chartLegend = legendBlock(DETAIL_LEGEND);
-  detail.append(detailTitle, chartLegend);
-  const charts = {};
-  for (const model of MODELS) {
-    const heading = document.createElement("div");
-    heading.className = "row-label";
-    heading.textContent = model.label;
-    const box = document.createElement("div");
-    detail.append(heading, box);
-    charts[model.id] = new DistributionChart(box, {
-      positionBins: bins,
-      xLabel: "Linearized position (cm)",
-      title: `${model.label} model: prediction and spike likelihood at the selected spike`,
-      unit: "cm",
-      plotHeight: 70,
-    });
-  }
+  const chartBox = document.createElement("div");
+  const chart = new DistributionChart(chartBox, {
+    positionBins: bins,
+    xLabel: "Linearized position (cm)",
+    title: `${selectedModel.label} model: prediction and spike likelihood at the selected spike`,
+    unit: "cm",
+    plotHeight: 95,
+  });
+  const fieldHeading = document.createElement("div");
+  fieldHeading.className = "row-label";
+  const fieldBox = document.createElement("div");
+  const fieldChart = new DistributionChart(fieldBox, {
+    positionBins: bins,
+    xLabel: "Linearized position (cm)",
+    title: "Place field of the selected unit, shared by both models",
+    unit: "cm",
+    plotHeight: 60,
+    axis: false,
+  });
+  detail.append(
+    detailTitle,
+    chartLegend,
+    chartBox,
+    fieldHeading,
+    fieldBox,
+    note(
+      "The models share this place field. The spike likelihood is the same spatial profile normalized over position; the models differ in their predictions. Every unit's field is drawn on one scale, the largest peak in the recording, so a weak field looks flat.",
+    ),
+  );
   // One row per metric; only the value cells change with the selected spike.
   const table = document.createElement("table");
   table.className = "compare-table";
@@ -872,23 +952,37 @@ export function renderRecording(root, payload, manifest) {
     const step = events.bin[index];
     const cell = events.cell[index];
     detailTitle.textContent = describeSpike(index);
-    for (const model of MODELS) {
-      charts[model.id].update({
-        series: [
-          {
-            values: normalized(predictive[model.id].row(step)),
-            color: cssVar("--predictive"),
-            name: "prediction",
-          },
-          {
-            values: normalized(cellLikelihoods.row(cell)),
-            color: cssVar("--likelihood"),
-            name: "spike likelihood",
-          },
-        ],
-        marker: position[step],
-      });
-    }
+    chart.title = `${selectedModel.label} model: prediction and spike likelihood at the selected spike`;
+    chart.update({
+      series: [
+        {
+          values: normalized(predictive[selectedModel.id].row(step)),
+          color: cssVar("--predictive"),
+          name: "prediction",
+        },
+        {
+          values: normalized(cellLikelihoods.row(cell)),
+          color: cssVar("--likelihood"),
+          name: "spike likelihood",
+        },
+      ],
+      marker: position[step],
+    });
+    const peak = placeFields.rowMax[cell].toPrecision(3);
+    fieldHeading.textContent = `Place field of unit ${cell + 1} (peak ${peak} expected spikes per ${timeBinMs}-ms time bin)`;
+    fieldChart.update({
+      series: [
+        {
+          values: placeFields.values(cell),
+          color: cssVar("--field"),
+          name: `unit ${cell + 1} place field`,
+          filled: false,
+        },
+      ],
+      marker: position[step],
+      // One scale for every unit, so field strengths compare across spikes.
+      scaleMax: placeFields.range[1],
+    });
     for (const metric of METRICS) {
       for (const model of MODELS) {
         const modelEvents = payload.models[model.id].events;
@@ -903,33 +997,48 @@ export function renderRecording(root, payload, manifest) {
       : "";
   }
 
-  const { playback } = mountTracks(left, {
+  const { stack, playback } = mountTracks(left, {
     ariaLabel: "Hippocampal recording tracks. Use the arrow keys to step between spikes.",
     range,
-    tracks: [
-      track(`Prediction: ${reference.label}`, predictiveBitmap(reference.id), 92),
-      track(`Prediction: ${comparison.short}`, predictiveBitmap(comparison.id), 92),
-      track(
-        "Likelihood",
-        heatmapBitmap(likelihood, lut.likelihood),
-        64,
-        (t) => payload.has_spikes[t],
-      ),
-      rasterTrack(rasterTimes, rasterRows, payload.spike_times.length, null, "Units"),
-      ...METRICS.map((metric) => metricTrack(metric, seriesFor(metric.name), rules[metric.name], null)),
-    ],
+    tracks: tracksFor(selectedModel),
     eventTimes,
     select: selectEvent,
     describe: (index) =>
-      `${describeSpike(index)}. ${reference.label} model: ${flagSummary(index, events.flagged)}`,
+      `${describeSpike(index)}. ${selectedModel.label} model: ${flagSummary(index, payload.models[selectedModel.id].events.flagged)}`,
+    onSettle: events.id && onEventSelect ? (index) => onEventSelect(events.id[index]) : null,
+  });
+  modelSwitch.addEventListener("change", (event) => {
+    if (event.target.type !== "radio" || !event.target.checked) return;
+    selectedModel = MODELS.find((model) => model.id === event.target.value);
+    stack.setTracks(tracksFor(selectedModel));
+    playback.refresh();
   });
   // Open on the HPD-overlap rescue nearest the peak of population firing,
   // i.e., inside the replay event.
-  const peak = populationPeak(payload.spike_times, range, dt);
+  const peak = populationPeak(eventTimes, range, dt);
   let initial = -1;
   eventTimes.forEach((t, i) => {
     if (!isRescued("hpd_overlap", i)) return;
     if (initial < 0 || Math.abs(t - peak) < Math.abs(eventTimes[initial] - peak)) initial = i;
   });
+  if (initialEventId !== null && events.id) {
+    const index = events.id.indexOf(initialEventId);
+    if (index < 0) throw new RangeError(`Spike ${initialEventId} is absent from this window`);
+    initial = index;
+  }
   if (eventTimes.length) playback.selectIndex(Math.max(0, initial));
+  return {
+    selectEventId(id) {
+      const index = events.id?.indexOf(id) ?? -1;
+      if (index < 0) return false;
+      playback.selectIndex(index);
+      return true;
+    },
+    destroy() {
+      playback.halt();
+      stack.destroy();
+      chart.destroy();
+      fieldChart.destroy();
+    },
+  };
 }

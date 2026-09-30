@@ -164,7 +164,9 @@ families**:
   `paths` (repository and data locations, published identifiers);
   `scientific_artifacts` (summary provenance and flag rules); `number_format`
   and `reported_values` (summary to prose); `figure04_download` (the
-  Figure-4 input file's download); `site_export` (website data).
+  Figure-4 input file's download); `site_export` (website data) and
+  `site_explorer_export` (the website's session explorer, whose archive is a
+  release asset rather than a committed file).
 
 ### Module dependency graph
 
@@ -218,7 +220,8 @@ figure04_summary                    → diagnostics, figure04_diagnostics, figur
 figure04_layout                     → diagnostics, figure04_models, figure04_panels, figure04_protocol, figure04_track_plots, figure04_workflow, plotting, style
 figure04_generation                 → figure04_cache, figure04_decoder, figure04_layout, figure04_models, figure04_protocol, figure04_summary, figure04_workflow, paths, scientific_artifacts, style
 
-site_export                         → decoding, diagnostics, figure03_protocol, figure03_simulation, figure03_summary, figure04_cache, figure04_decoder, figure04_diagnostics, figure04_models, figure04_place_fields, figure04_protocol, figure04_workflow, number_format, paths, reported_values, simulation, style
+site_export                         → decoding, diagnostics, figure03_protocol, figure03_simulation, figure03_summary, figure04_cache, figure04_decoder, figure04_models, figure04_place_fields, figure04_protocol, figure04_workflow, number_format, paths, reported_values, simulation, style
+site_explorer_export                → diagnostics, figure04_cache, figure04_models, figure04_place_fields, figure04_workflow, site_export, style
 
 interactive                         → (none)
 interactive.__main__                → interactive.app

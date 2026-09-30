@@ -3,7 +3,8 @@
 import { fillMacros, loadJSON } from "./data.js";
 import { initExplainer } from "./explainer.js";
 import { initPlayground } from "./playground.js";
-import { initConditions, renderRecording } from "./players.js";
+import { initConditions } from "./players.js";
+import { initRecordingExplorer } from "./recording_explorer.js";
 
 function showError(container, what, error) {
   container.innerHTML = "";
@@ -90,11 +91,7 @@ async function main() {
 
   whenNearOrIdle(simulation, () => initConditions(simulation, manifest));
 
-  whenNearOrIdle(recording, () =>
-    loadJSON("data/recording.json")
-      .then((data) => renderRecording(recording, data, manifest))
-      .catch((error) => showError(recording.querySelector("#rec-view"), "recording", error)),
-  );
+  whenNearOrIdle(recording, () => initRecordingExplorer(recording, manifest));
 }
 
 main();

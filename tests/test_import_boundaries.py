@@ -292,7 +292,9 @@ def test_no_figure_or_analysis_module_imports_the_spyglass_pipeline() -> None:
 
 def test_site_export_depends_only_on_analysis_layers() -> None:
     """The website export reads the figure pipelines' outputs and the reported
-    values; it sits above both figure families and nothing imports it."""
+    values; it sits above both figure families. Only the session explorer's
+    export, which reuses its encodings and flag rules, imports it, and nothing
+    imports that."""
     prefix = "statespacecheck_paper."
     assert _sibling_module_imports("site_export.py") <= {
         prefix + "decoding",
@@ -313,19 +315,21 @@ def test_site_export_depends_only_on_analysis_layers() -> None:
         prefix + "simulation",
         prefix + "style",
     }
+    exporters = {"site_export": {"site_explorer_export.py"}, "site_explorer_export": set()}
     for path in sorted(_SRC.rglob("*.py")):
-        if path.name == "site_export.py":
-            continue
-        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
-            if isinstance(node, ast.ImportFrom):
-                names = {alias.name for alias in node.names}
-                # Covers ``from statespacecheck_paper(.site_export) import ...``
-                # and the relative forms ``from . import site_export`` /
-                # ``from .site_export import ...``.
-                assert not (node.module or "").endswith("site_export"), path
-                assert "site_export" not in names, path
-            elif isinstance(node, ast.Import):
-                assert all(not a.name.endswith("site_export") for a in node.names), path
+        for module, allowed in exporters.items():
+            if path.name in allowed or path.name == f"{module}.py":
+                continue
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+                if isinstance(node, ast.ImportFrom):
+                    names = {alias.name for alias in node.names}
+                    # Covers ``from statespacecheck_paper(.module) import ...``
+                    # and the relative forms ``from . import module`` /
+                    # ``from .module import ...``.
+                    assert not (node.module or "").endswith(module), path
+                    assert module not in names, path
+                elif isinstance(node, ast.Import):
+                    assert all(not a.name.endswith(module) for a in node.names), path
 
 
 # ---------------------------------------------------------------------------
