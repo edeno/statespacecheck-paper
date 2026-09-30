@@ -367,6 +367,79 @@ describe("recording explorer", () => {
       await page.waitForFunction((text) => document.querySelector("#rec-view .detail h3")?.textContent === text, chosen);
     }));
 
+  const unitOf = (text) => text.match(/unit (\d+)/)[1];
+  const explorerShows = (page, unit) =>
+    page.waitForFunction(
+      (u) => new RegExp(`in this square: unit ${u},`).test(document.querySelector("#rec-explorer [aria-live]")?.textContent ?? ""),
+      unit,
+    );
+
+  test("returning to the paper's window moves the explorer back to its spike", () =>
+    withPage({}, async (page) => {
+      const detail = page.locator("#rec-view .detail h3");
+      const paperUnit = unitOf(await detail.textContent());
+      await clickSquare(page, 2, 30);
+      await spikeShown(page);
+      const chosenUnit = unitOf(await detail.textContent());
+      await page.locator("input[name=recording-window][value=paper]").check();
+      await explorerShows(page, paperUnit);
+      // The outlined square and the square controls are the paper spike's.
+      const index = await sessionIndex(page);
+      const { paperId, grid } = await page.evaluate(async () => {
+        const paper = await (await fetch("data/recording.json")).json();
+        const overview = await (await fetch("data/recording_explorer.json")).json();
+        const title = document.querySelector("#rec-view .detail h3").textContent;
+        const events = paper.models.continuous.events;
+        const i = events.t.findIndex(
+          (t, k) => title === `Spike at ${t.toFixed(3)} s — unit ${events.cell[k] + 1}`,
+        );
+        return { paperId: events.id[i], grid: overview.grid_size };
+      });
+      assert.notEqual(chosenUnit, undefined);
+      // Under the diagnostic the chosen square set: the third plot's.
+      const metric = await page.locator("#rec-explorer select").inputValue();
+      assert.equal(metric, "kl_divergence");
+      const square = index[`square_${metric}`][paperId];
+      const inputs = page.locator("#rec-explorer input[type=range]");
+      assert.deepEqual(
+        [Number(await inputs.nth(0).inputValue()), Number(await inputs.nth(1).inputValue())],
+        [Math.floor(square / grid) + 1, (square % grid) + 1],
+      );
+    }));
+
+  test("a window that fails to load leaves the selection on what is shown", () =>
+    withPage({}, async (page) => {
+      const detail = page.locator("#rec-view .detail h3");
+      const shown = await detail.textContent();
+      await page.route("**/explorer/blocks/**", (route) => route.abort());
+      await clickSquare(page, 0, 10);
+      await page.waitForFunction(() =>
+        /Could not load/.test(document.querySelector("#rec-explorer [role=status]")?.textContent ?? ""),
+      );
+      assert.equal(await detail.textContent(), shown);
+      assert.equal(await page.locator("input[name=recording-window][value=paper]").isChecked(), true);
+      assert.equal(await page.locator("input[name=recording-window][value=spike]").isDisabled(), true);
+      assert.equal(new URL(page.url()).searchParams.has("recording_event"), false);
+      await explorerShows(page, unitOf(shown));
+    }));
+
+  test("a failed window leaves an earlier chosen spike, its link, and the switch", () =>
+    withPage({}, async (page) => {
+      const detail = page.locator("#rec-view .detail h3");
+      await clickSquare(page, 0, 10);
+      await spikeShown(page);
+      const [shown, link] = [await detail.textContent(), page.url()];
+      await page.route("**/explorer/blocks/**", (route) => route.abort());
+      await clickSquare(page, 1, 50);
+      await page.waitForFunction(() =>
+        /Could not load/.test(document.querySelector("#rec-explorer [role=status]")?.textContent ?? ""),
+      );
+      assert.equal(await detail.textContent(), shown);
+      assert.equal(page.url(), link);
+      assert.equal(await page.locator("input[name=recording-window][value=spike]").isChecked(), true);
+      await explorerShows(page, unitOf(shown));
+    }));
+
   test("stepping through the paper's window moves the explorer to each spike", () =>
     withPage({}, async (page) => {
       const stack = page.locator("#rec-view .stack");

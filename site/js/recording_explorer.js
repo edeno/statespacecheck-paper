@@ -562,17 +562,27 @@ export async function initRecordingExplorer(root, manifest) {
     draw();
   }
 
-  /** Open spike `id`, chosen from the plots, in the window around it. */
+  /**
+   * Open spike `id`, chosen from the plots, in the window around it. The
+   * selection (switch, link, circled spike) changes only once the window is
+   * shown; if it cannot load, everything returns to the spike still shown.
+   */
   async function showSpike(id) {
     const request = ++generation;
-    chosenId = id;
-    highlightedId = id;
-    spikeOption.disabled = false;
-    spikeOption.checked = true;
-    setLink(id);
-    draw();
     const windowIndex = windowFor(index.time_bin[id]);
-    if (shown?.window === windowIndex && player?.selectEventId(id)) return;
+    const select = () => {
+      chosenId = id;
+      highlightedId = id;
+      spikeOption.disabled = false;
+      spikeOption.checked = true;
+      setLink(id);
+      viewLink.hidden = false;
+      draw();
+    };
+    if (shown?.window === windowIndex && player?.selectEventId(id)) {
+      select();
+      return;
+    }
     spikeStatus.textContent += " Loading its recording window…";
     try {
       const blocks = await Promise.all(
@@ -580,14 +590,22 @@ export async function initRecordingExplorer(root, manifest) {
       );
       if (request !== generation) return;
       render(windowPayload(blocks, windowIndex, overview, shared), windowIndex, id);
-      viewLink.hidden = false;
-      draw();
+      select();
     } catch (error) {
-      if (request === generation) {
-        spikeStatus.textContent = `Could not load this recording window (${error.message}).`;
-        console.error(error);
-      }
+      if (request !== generation) return;
+      console.error(error);
+      (shown?.window === "paper" ? paperOption : spikeOption).checked = true;
+      if (highlightedId !== null) syncControls(highlightedId);
+      squareStatus.textContent = `Could not load that spike's recording window (${error.message}); the controls are back on the spike shown below.`;
     }
+  }
+
+  /** Move the square and spike controls, and the plots' outline, to spike `id`. */
+  function syncControls(id) {
+    const square = index[`square_${selectedMetric.name}`][id];
+    if (square !== selectedSquare) setSquare(square);
+    setPosition(candidates.indexOf(id));
+    draw();
   }
 
   /** Circle the player's spike in the plots and move the controls to it. */
@@ -599,15 +617,12 @@ export async function initRecordingExplorer(root, manifest) {
       setLink(id);
     }
     draw();
-    // A player's opening spike is marked, but loads nothing.
-    if (!following) return;
+    // A player's opening spike moves the controls only once the index is here:
+    // opening the page downloads nothing.
+    if (!following && !index) return;
     loadIndex()
       .then(() => {
-        if (highlightedId !== id) return;
-        const square = index[`square_${selectedMetric.name}`][id];
-        if (square !== selectedSquare) setSquare(square);
-        setPosition(candidates.indexOf(id));
-        draw();
+        if (highlightedId === id) syncControls(id);
       })
       .catch((error) => {
         squareStatus.textContent = `Could not load the spike index (${error.message}).`;
