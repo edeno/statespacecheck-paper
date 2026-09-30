@@ -20,6 +20,9 @@ and website metric parity. The website tests need the Node version that
 `site/package.json` requires (`engines`); run
 `make check-python` or `make check-site` separately when working on one component.
 An explicit Node executable can be passed as `make check NODE=/path/to/node`.
+After changing the website, also run `make check-site-browser`, the accessibility
+and keyboard tests of the assembled page in headless Chromium; CI runs them, and
+their one-time setup is in the [website README](../site/README.md).
 
 For focused checks or formatting:
 

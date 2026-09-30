@@ -46,9 +46,12 @@ export function initPlayground(root, data) {
   const cellOutput = root.querySelector("#pg-cell-out");
   const verdictBox = root.querySelector("#pg-verdict");
 
+  const coveragePercent = Math.round(data.coverage * 100);
   const chart = new DistributionChart(root.querySelector("#pg-chart"), {
     positionBins: bins,
     xLabel: "Position (a.u.)",
+    title: "Prediction and spike likelihood over position",
+    unit: "a.u.",
     cellStrip: {
       label: "Cell that fired",
       state: () => ({
@@ -96,12 +99,20 @@ export function initPlayground(root, data) {
     const result = spikeDiagnostics(predictive, ensemble.rates, state.cell, data.coverage);
     chart.update({
       series: [
-        { values: predictive, color: cssVar("--predictive") },
-        { values: result.likelihood, color: cssVar("--likelihood") },
+        { values: predictive, color: cssVar("--predictive"), name: "prediction" },
+        { values: result.likelihood, color: cssVar("--likelihood"), name: "spike likelihood" },
       ],
       bands: [
-        { mask: highestDensityRegion(predictive, data.coverage), color: cssVar("--predictive") },
-        { mask: highestDensityRegion(result.likelihood, data.coverage), color: cssVar("--likelihood") },
+        {
+          mask: highestDensityRegion(predictive, data.coverage),
+          color: cssVar("--predictive"),
+          name: `the prediction's ${coveragePercent}% HPD region`,
+        },
+        {
+          mask: highestDensityRegion(result.likelihood, data.coverage),
+          color: cssVar("--likelihood"),
+          name: `the likelihood's ${coveragePercent}% HPD region`,
+        },
       ],
     });
 

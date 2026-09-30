@@ -69,7 +69,7 @@ from statespacecheck_paper.site_export import (
     playground_payload,
     recording_payload,
 )
-from statespacecheck_paper.style import COLORS, METRIC_NAMES, METRIC_SPECS, PREDICTIVE_VMAX_QUANTILE
+from statespacecheck_paper.style import METRIC_NAMES, PREDICTIVE_VMAX_QUANTILE
 from tests.test_figure04_layout import _compose_render_data
 
 
@@ -722,31 +722,6 @@ def test_committed_recording_matches_the_figure04_decode(figure04_summary: dict[
     # Both decoders are scored on the same spikes.
     assert continuous["t"] == fragmented["t"]
     assert continuous["cell"] == fragmented["cell"]
-
-
-def test_site_stylesheet_uses_the_paper_palette() -> None:
-    """The site's CSS color tokens match the figures' colors in ``style``."""
-    css = (REPO_ROOT / "site/css/style.css").read_text(encoding="utf-8").lower()
-    tokens = {
-        "--predictive": COLORS["predictive"],
-        "--likelihood": COLORS["likelihood"],
-        "--posterior": COLORS["posterior"],
-        "--position": COLORS["ground_truth"],
-        "--threshold": COLORS["threshold"],
-        **{f"--{css_name}": spec.color for css_name, spec in _METRIC_CSS.items()},
-    }
-    for token, color in tokens.items():
-        assert f"{token}: {color.lower()};" in css, token
-
-
-_METRIC_CSS = {
-    css_name: next(spec for spec in METRIC_SPECS if spec.name == metric)
-    for css_name, metric in (
-        ("hpd", "hpd_overlap"),
-        ("pvalue", "predictive_pvalue"),
-        ("kl", "kl_divergence"),
-    )
-}
 
 
 def test_simulation_hpd_threshold_matches_the_page_text(figure03_summary: dict[str, Any]) -> None:

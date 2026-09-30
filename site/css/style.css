@@ -1,6 +1,7 @@
 /* Project website for "Local goodness-of-fit measures for neural decoding".
-   Colors follow the paper's figures (statespacecheck_paper.style): Wong palette,
-   predictive blue, likelihood orange, posterior black, animal position magenta. */
+   Colors follow the hues of the paper's figures (statespacecheck_paper.style):
+   Wong palette, predictive blue, likelihood orange, posterior black, animal
+   position magenta. */
 
 :root {
   color-scheme: light;
@@ -17,13 +18,18 @@
   --link: #005a8c;
 
   --predictive: #0072b2;
-  --likelihood: #e69f00;
+  --likelihood: #b67e00;
   --posterior: #000000;
-  --position: #ff00ff;
+  --position: #f000f0;
   --threshold: #666666;
-  --hpd: #56b4e9;
-  --pvalue: #cc79a7;
-  --kl: #009e73;
+  --hpd: #4590ba;
+  --pvalue: #be719b;
+  --kl: #009c72;
+  /* Likelihood, position, and the three metric colors are the figures' colors
+     (#e69f00, #ff00ff, #56b4e9, #cc79a7, #009e73) darkened to 3:1 contrast
+     (WCAG 1.4.11) against --surface, --surface-muted, and --surface-sunken:
+     each channel scaled by the largest hundredth that reaches it (0.79, 0.94,
+     0.80, 0.93, 0.99). tests/contrast.test.mjs checks the marks' contrast. */
   /* Unselected place fields: 3.4:1 against the panel, enough for graphics. */
   --curve-muted: #858581;
   /* Place fields in the filter explainer: the cell that fired, and the rest. */
@@ -113,6 +119,29 @@ section {
   color: var(--text-muted);
 }
 
+/* ------------------------------------------------------------- Skip link */
+
+.skip-link {
+  position: absolute;
+  left: 16px;
+  top: -100px;
+  z-index: 10;
+  padding: 0.5rem 1rem;
+  background: var(--surface);
+  color: var(--link);
+  border: 2px solid var(--link);
+  border-radius: var(--radius);
+}
+
+.skip-link:focus {
+  top: 16px;
+}
+
+/* The skip link's target takes focus only programmatically. */
+main:focus {
+  outline: none;
+}
+
 /* ---------------------------------------------------------------- Header */
 
 .hero {
@@ -183,11 +212,11 @@ section {
   background: #3a3a3a;
 }
 
-.button[aria-disabled="true"] {
+/* A resource without a link yet, shown as plain text. */
+.button.pending {
   background: var(--surface);
   color: var(--text-muted);
   border-color: var(--border);
-  cursor: default;
 }
 
 .button svg {
@@ -255,6 +284,8 @@ figcaption {
   position: absolute;
   width: 1px;
   height: 1px;
+  /* A fieldset is otherwise at least as wide as its content. */
+  min-inline-size: 0;
   padding: 0;
   margin: -1px;
   overflow: hidden;
@@ -319,17 +350,16 @@ input[type="range"] {
 .chip:focus-visible,
 .button:focus-visible,
 input:focus-visible,
+summary:focus-visible,
+.table-wrap:focus-visible,
+[role="tabpanel"]:focus-visible,
 .stack:focus-visible {
   outline: 2px solid var(--link);
   outline-offset: 2px;
 }
 
-/* The cell hit area outlines itself (SVG outline support varies). */
-.dist-chart .cell-hit:focus {
-  outline: none;
-}
-
-.dist-chart .cell-hit:focus-visible {
+/* The visually hidden cell radio outlines its field in the SVG strip. */
+.dist-chart .cell-hit.focused {
   stroke: var(--link);
   stroke-width: 2;
 }
@@ -359,7 +389,7 @@ input:focus-visible,
   margin: 0.25rem 0 0.5rem;
 }
 
-.legend span {
+.legend > span {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
@@ -524,6 +554,20 @@ input:focus-visible,
   color: var(--text-secondary);
 }
 
+/* Row headers keep the look of the table's values. */
+.compare-table tbody th {
+  font-weight: normal;
+  color: var(--text);
+}
+
+.compare-table caption {
+  text-align: left;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  padding: 0 0 0.3rem;
+}
+
 /* ------------------------------------------------------ Diagnostic cards */
 
 .cards {
@@ -544,11 +588,15 @@ input:focus-visible,
   font-size: 0.95rem;
 }
 
+/* Fraction bars reach a few pixels past a formula's box; the padding holds
+   them, so the formula scrolls only sideways, when it is wider than the card. */
 .card math {
   display: block;
   margin: 0.6rem 0 0.9rem;
+  padding: 0.25em 0;
   font-size: 1.05rem;
   overflow-x: auto;
+  overflow-y: hidden;
 }
 
 /* ----------------------------------------------------------- Track stack */
@@ -587,6 +635,28 @@ input:focus-visible,
   font-size: 0.68rem;
   color: var(--text-muted);
   white-space: nowrap;
+}
+
+.spike-table {
+  margin-top: 1rem;
+  font-size: 0.9rem;
+}
+
+.spike-table summary {
+  cursor: pointer;
+  color: var(--text-secondary);
+}
+
+.spike-table .table-wrap {
+  max-height: 24rem;
+  overflow-y: auto;
+  margin-top: 0.5rem;
+}
+
+.spike-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--surface);
 }
 
 .compare-table .rule {
@@ -730,6 +800,9 @@ pre.bibtex {
   font-family: var(--mono);
   font-size: 0.85rem;
   line-height: 1.45;
+  /* Wrap on narrow screens rather than scroll; copying keeps the line breaks. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .copy {

@@ -23,6 +23,7 @@
     <script type="module" src="js/main.js"></script>
   </head>
   <body>
+    <a class="skip-link" href="#main">Skip to content</a>
     <header class="hero">
       <div class="wrap">
         <h1>Local goodness-of-fit measures for neural decoding</h1>
@@ -47,7 +48,7 @@
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h8l6 6v14H6zM13 3.5V9h5.5z" /></svg>
             Paper (PDF)
           </a>
-          <span class="button" role="link" aria-disabled="true" title="The preprint link will appear here once it is posted">
+          <span class="button pending">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v16H4zm3 4v2h10V8zm0 4v2h10v-2zm0 4v2h7v-2z" /></svg>
             bioRxiv (coming soon)
           </span>
@@ -71,7 +72,7 @@
       </div>
     </header>
 
-    <main>
+    <main id="main" tabindex="-1">
       <section id="summary">
         <div class="wrap">
           <p class="lede">
@@ -345,15 +346,15 @@
               <div class="control">
                 <div class="control-head">
                   <span class="control-name">Cell that fired</span>
-                  <span id="pg-cell-out" aria-live="polite"></span>
+                  <span id="pg-cell-out"></span>
                 </div>
               </div>
             </div>
             <div class="legend">
               <span><i class="swatch" style="background: var(--predictive)"></i>Prediction P(x)</span>
               <span><i class="swatch" style="background: var(--likelihood)"></i>Spike likelihood Q(x)</span>
-              <span><i class="swatch band" style="background: var(--predictive)"></i><span data-macro="HpdCoveragePercent"></span>% HPD region of P</span>
-              <span><i class="swatch band" style="background: var(--likelihood)"></i><span data-macro="HpdCoveragePercent"></span>% HPD region of Q</span>
+              <span><i class="swatch band" style="background: var(--predictive)"></i><span><span data-macro="HpdCoveragePercent"></span>% HPD region of P</span></span>
+              <span><i class="swatch band" style="background: var(--likelihood)"></i><span><span data-macro="HpdCoveragePercent"></span>% HPD region of Q</span></span>
             </div>
             <div id="pg-chart"></div>
             <div class="readouts" id="pg-readouts"></div>
@@ -385,7 +386,7 @@
           <div class="panel">
             <div class="segmented" id="cond-tabs" role="tablist" aria-label="Simulated condition"></div>
             <p class="condition-text" id="cond-text"></p>
-            <div id="cond-view"><p class="loading">Loading simulation…</p></div>
+            <div id="cond-view"><p class="loading" role="status">Loading simulation…</p></div>
           </div>
         </div>
       </section>
@@ -429,7 +430,7 @@
             Inspect spikes the same way as in the simulation.
           </p>
           <div class="panel">
-            <div id="rec-view"><p class="loading">Loading recording…</p></div>
+            <div id="rec-view"><p class="loading" role="status">Loading recording…</p></div>
           </div>
           <p class="note">
             A <strong>rescued</strong> spike is flagged under the Continuous model but not under the

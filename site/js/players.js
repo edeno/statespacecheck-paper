@@ -16,6 +16,7 @@ import {
   TrackStack,
 } from "./charts.js";
 import {
+  argmax,
   badge,
   decodeHeatmap,
   decodeRows,
@@ -79,12 +80,6 @@ const SCALE_HELP =
 // ---------------------------------------------------------------------------
 // Shared helpers
 // ---------------------------------------------------------------------------
-
-function argmax(values) {
-  let best = 0;
-  for (let i = 1; i < values.length; i += 1) if (values[i] > values[best]) best = i;
-  return best;
-}
 
 function metricRange(metric, values, rule) {
   if (metric.range) return metric.range;
@@ -249,11 +244,13 @@ function animate(range, from, setTime, onDone) {
 }
 
 /**
- * Cursor and spike selection for one player. `select(index)` draws a spike;
- * `announce(index)` is called only for discrete steps (buttons and keys), so
- * screen readers are not flooded during hover or playback.
+ * Cursor and spike selection for one player. `select(index)` draws a spike.
+ * `settle(index)` marks a discrete selection (a key, a step button, a press,
+ * or the end of playback), not hover or playback frames, so screen readers are
+ * not flooded; `announce(index)` is called only for the step buttons, whose
+ * focus is not on the tracks.
  */
-function wirePlayback(stack, range, eventTimes, select, controls, announce) {
+function wirePlayback(stack, range, eventTimes, select, controls, { settle, announce }) {
   let stop = null;
   let current = null;
   const setTime = (time) => {
@@ -275,13 +272,19 @@ function wirePlayback(stack, range, eventTimes, select, controls, announce) {
     current = index;
     stack.placeCursor(eventTimes[index]);
     select(index);
+    settle(index);
     if (speak) announce(index);
+  };
+  const settleCurrent = () => {
+    if (current !== null && current >= 0) settle(current);
   };
   const clamp = (index) => Math.min(eventTimes.length - 1, Math.max(0, index));
   return {
-    setTime: (time) => {
+    current: () => current,
+    setTime: (time, { pressed = false } = {}) => {
       halt();
       setTime(time);
+      if (pressed) settleCurrent();
     },
     selectIndex,
     step: (direction) => selectIndex(clamp((current ?? -1) + direction), { speak: true }),
@@ -293,47 +296,110 @@ function wirePlayback(stack, range, eventTimes, select, controls, announce) {
         Home: 0,
         End: eventTimes.length - 1,
       }[key];
-      selectIndex(clamp(target), { speak: true });
+      selectIndex(clamp(target));
     },
     toggle: () => {
       if (stop) {
         halt();
+        settleCurrent();
         return;
       }
       controls.play.textContent = "❚❚ Pause";
-      stop = animate(range, stack.cursorTime ?? range[0], setTime, halt);
+      stop = animate(range, stack.cursorTime ?? range[0], setTime, () => {
+        halt();
+        settleCurrent();
+      });
     },
     halt,
   };
 }
 
+/** Labels of the metrics that flag spike `index`. */
+function flaggedBy(index, flagsByMetric) {
+  return METRICS.filter((m) => flagsByMetric[m.name]?.[index]).map((m) => m.label);
+}
+
 function flagSummary(index, flagsByMetric) {
-  const flagged = METRICS.filter((m) => flagsByMetric[m.name]?.[index]).map((m) => m.label);
+  const flagged = flaggedBy(index, flagsByMetric);
   return flagged.length ? `Flagged by ${flagged.join(", ")}.` : "Not flagged.";
 }
 
+/** A keyboard-scrollable region around a table that may be wider than the page. */
+function tableWrap(table, label) {
+  const wrap = document.createElement("div");
+  wrap.className = "table-wrap";
+  wrap.tabIndex = 0;
+  wrap.setAttribute("role", "region");
+  wrap.setAttribute("aria-label", label);
+  wrap.appendChild(table);
+  return wrap;
+}
+
+/**
+ * A collapsed table of every spike in the window, the text equivalent of the
+ * tracks, built when first opened. `columns`: [{label, value(index)}]; the
+ * first column heads each row.
+ */
+function spikeTable(count, columns) {
+  const details = document.createElement("details");
+  details.className = "spike-table";
+  const summary = document.createElement("summary");
+  summary.textContent = `All ${count} spikes in this window, as a table`;
+  details.appendChild(summary);
+  details.addEventListener("toggle", () => {
+    if (!details.open || details.querySelector("table")) return;
+    const [first, ...rest] = columns;
+    const rows = Array.from(
+      { length: count },
+      (_, i) =>
+        `<tr><th scope="row">${first.value(i)}</th>${rest.map((c) => `<td>${c.value(i)}</td>`).join("")}</tr>`,
+    );
+    const table = document.createElement("table");
+    table.className = "compare-table";
+    table.innerHTML = `<caption class="sr-only">Every spike in this window</caption><thead><tr>${columns
+      .map((c) => `<th scope="col">${c.label}</th>`)
+      .join("")}</tr></thead><tbody>${rows.join("")}</tbody>`;
+    details.appendChild(tableWrap(table, "Every spike in this window"));
+  });
+  return details;
+}
+
+const formatPosition = (value) => (value === null ? "—" : value.toFixed(1));
+
 /**
  * Tracks, transport, and spike selection for one player. `select(index)` shows
- * the spike nearest the cursor (-1 when there are none); the time readout is
- * kept here. `announce(index)` is read to screen readers on discrete steps.
+ * the spike nearest the cursor (-1 when there are none); the time readout and
+ * the tracks' value text, `describe(index)`, are kept here. The step buttons
+ * read the description to screen readers.
  */
-function mountTracks(left, { ariaLabel, range, tracks, eventTimes, select, announce }) {
+function mountTracks(left, { ariaLabel, range, tracks, eventTimes, select, describe }) {
   const stack = new TrackStack(left, {
     ariaLabel,
     range,
     tracks,
-    onCursor: (time) => playback.setTime(time),
+    onCursor: (time, pressed) => playback.setTime(time, { pressed }),
     onKey: (key) => playback.key(key),
   });
   const controls = transport(left, {
     onStep: (direction) => playback.step(direction),
     onPlay: () => playback.toggle(),
   });
+  const say = liveRegion(left);
   const show = (index) => {
     select(index);
     if (index >= 0) controls.time.textContent = `${eventTimes[index].toFixed(3)} s`;
   };
-  const playback = wirePlayback(stack, range, eventTimes, show, controls, announce);
+  const settle = (index) => stack.setValue(eventTimes[index], describe(index));
+  const playback = wirePlayback(stack, range, eventTimes, show, controls, {
+    settle,
+    announce: (index) => say(describe(index)),
+  });
+  if (!eventTimes.length) stack.setValue(range[0], "No spikes in this window");
+  // Hover moves the selection without settling it; focus catches the value up.
+  stack.root.addEventListener("focus", () => {
+    const index = playback.current();
+    if (index !== null && index >= 0) settle(index);
+  });
   stack.draw();
   return { stack, playback };
 }
@@ -354,7 +420,11 @@ export function initConditions(root, manifest) {
   let teardown = null;
 
   view.setAttribute("role", "tabpanel");
-  view.tabIndex = -1;
+  // A Tab stop, so Tab from the tabs enters the panel at its summary, not at
+  // its first control (the tracks), as the ARIA tabs pattern recommends.
+  view.tabIndex = 0;
+  // The condition's description sits just before the panel.
+  view.setAttribute("aria-describedby", text.id);
   const buttons = manifest.conditions.map(({ condition_id: id, title }) => {
     const button = document.createElement("button");
     button.type = "button";
@@ -364,6 +434,8 @@ export function initConditions(root, manifest) {
     button.setAttribute("aria-controls", view.id);
     button.dataset.condition = id;
     button.textContent = title;
+    // Manual activation: the arrow keys move focus between tabs, and Enter or
+    // Space (a button's click) selects one, since a first selection loads a file.
     button.addEventListener("click", () => select(id));
     button.addEventListener("keydown", (event) => {
       const i = ids.indexOf(id);
@@ -375,14 +447,14 @@ export function initConditions(root, manifest) {
       }[event.key];
       if (target === undefined) return;
       event.preventDefault();
-      select(ids[target]);
       buttons[target].focus();
     });
     tabs.appendChild(button);
     return button;
   });
 
-  async function select(id) {
+  /** Show condition `id`; `remember` records it in the URL, for a reader's own choice. */
+  async function select(id, { remember = true } = {}) {
     const request = ++generation;
     // Stop the previous player before anything else can go wrong.
     if (teardown) teardown();
@@ -394,17 +466,19 @@ export function initConditions(root, manifest) {
     }
     view.setAttribute("aria-labelledby", `cond-tab-${id}`);
     text.textContent = CONDITION_TEXT[id] ?? "";
-    const url = new URL(window.location.href);
-    url.searchParams.set("condition", id);
-    window.history.replaceState(null, "", url);
+    if (remember) {
+      const url = new URL(window.location.href);
+      url.searchParams.set("condition", id);
+      window.history.replaceState(null, "", url);
+    }
     if (!cache.has(id)) {
-      view.innerHTML = '<p class="loading">Loading simulation…</p>';
+      view.innerHTML = '<p class="loading" role="status">Loading simulation…</p>';
       const entry = manifest.conditions.find((c) => c.condition_id === id);
       try {
         cache.set(id, await loadJSON(`data/${entry.file}`));
       } catch (error) {
         if (request === generation) {
-          view.innerHTML = `<p class="error">Could not load this condition (${error.message}).</p>`;
+          view.innerHTML = `<p class="error" role="alert">Could not load this condition (${error.message}).</p>`;
         }
         return;
       }
@@ -413,14 +487,15 @@ export function initConditions(root, manifest) {
     try {
       teardown = renderCondition(view, cache.get(id), manifest);
     } catch (error) {
-      view.innerHTML = `<p class="error">Could not display this condition (${error.message}).</p>`;
+      view.innerHTML = `<p class="error" role="alert">Could not display this condition (${error.message}).</p>`;
       console.error(error);
     }
   }
 
   // ?condition=<id> links to one condition; otherwise start on remapping.
   const requested = new URLSearchParams(window.location.search).get("condition");
-  select(ids.includes(requested) ? requested : ids.includes("remap") ? "remap" : ids[0]);
+  const initial = ids.includes(requested) ? requested : ids.includes("remap") ? "remap" : ids[0];
+  select(initial, { remember: false });
 }
 
 function renderCondition(view, payload, manifest) {
@@ -500,15 +575,33 @@ function renderCondition(view, payload, manifest) {
     <span><i class="swatch" style="background:var(--threshold)"></i>Flag threshold</span>
     <span><i class="swatch band" style="background:var(--text-muted)"></i>Condition window</span>`);
 
+  const spikes = spikeTable(eventTimes.length, [
+    { label: "Time (s)", value: (i) => eventTimes[i].toFixed(3) },
+    { label: "Cell", value: (i) => events.cell[i] + 1 },
+    { label: "Animal's position (a.u.)", value: (i) => formatPosition(position[events.t[i]]) },
+    ...METRICS.map((m) => ({ label: m.label, value: (i) => m.format(events[m.name][i]) })),
+    { label: "Flagged by", value: (i) => flaggedBy(i, rules).join(", ") || "none" },
+  ]);
+
   const { body, left, detail } = playerFrame();
-  view.append(stats, statsNote, legend, body, note(INTERACTION_HELP), note(axisHelp(manifest.macros, "Sim")), note(SCALE_HELP));
-  const say = liveRegion(view);
+  view.append(
+    stats,
+    statsNote,
+    legend,
+    body,
+    spikes,
+    note(INTERACTION_HELP),
+    note(axisHelp(manifest.macros, "Sim")),
+    note(SCALE_HELP),
+  );
 
   const detailTitle = document.createElement("h3");
   const chartBox = document.createElement("div");
   const chart = new DistributionChart(chartBox, {
     positionBins: bins,
     xLabel: "Position (a.u.)",
+    title: "Prediction and spike likelihood at the selected spike",
+    unit: "a.u.",
     plotHeight: 110,
   });
   const chartLegend = legendBlock(DETAIL_LEGEND);
@@ -546,10 +639,11 @@ function renderCondition(view, payload, manifest) {
     detailTitle.textContent = describeSpike(index);
     chart.update({
       series: [
-        { values: normalized(predictive.row(t)), color: cssVar("--predictive") },
+        { values: normalized(predictive.row(t)), color: cssVar("--predictive"), name: "prediction" },
         {
           values: normalized(likelihoodRows.row(events.likelihood_row[index])),
           color: cssVar("--likelihood"),
+          name: "spike likelihood",
         },
       ],
       marker: position[t],
@@ -577,7 +671,7 @@ function renderCondition(view, payload, manifest) {
     ],
     eventTimes,
     select: selectEvent,
-    announce: (index) => say(`${describeSpike(index)}. ${flagSummary(index, rules)}`),
+    describe: (index) => `${describeSpike(index)}. ${flagSummary(index, rules)}`,
   });
   // Open inside the condition's window on a flagged or a typical spike.
   const inCondition = (i) =>
@@ -673,10 +767,10 @@ export function renderRecording(root, payload, manifest) {
   const counts = document.createElement("table");
   counts.className = "compare-table";
   const flaggedMetrics = METRICS.filter((m) => rules[m.name]);
-  counts.innerHTML = `<thead><tr><th>Spikes flagged in this window</th>${MODELS.map((m) => `<th>${m.label}</th>`).join("")}</tr></thead><tbody>${flaggedMetrics
+  counts.innerHTML = `<caption>Spikes flagged in this window</caption><thead><tr><th scope="col">Diagnostic</th>${MODELS.map((m) => `<th scope="col">${m.label}</th>`).join("")}</tr></thead><tbody>${flaggedMetrics
     .map(
       (metric) =>
-        `<tr><td>${metric.label}</td>${MODELS.map((model) => {
+        `<tr><th scope="row">${metric.label}</th>${MODELS.map((model) => {
           const flags = payload.models[model.id].events.flagged[metric.name];
           return `<td>${flags.filter(Boolean).length} of ${flags.length}</td>`;
         }).join("")}</tr>`,
@@ -689,14 +783,28 @@ export function renderRecording(root, payload, manifest) {
     <span><i class="swatch dot" style="background:var(--text)"></i>${comparison.label} model</span>
     <span><i class="swatch" style="background:var(--threshold)"></i>Flag threshold</span>`);
 
+  const spikes = spikeTable(eventTimes.length, [
+    { label: "Time (s)", value: (i) => eventTimes[i].toFixed(3) },
+    { label: "Unit", value: (i) => events.cell[i] + 1 },
+    { label: "Animal's position (cm)", value: (i) => formatPosition(position[events.bin[i]]) },
+    ...METRICS.flatMap((m) =>
+      MODELS.map((model) => ({
+        label: `${m.label}, ${model.short}`,
+        value: (i) => m.format(payload.models[model.id].events[m.name][i]),
+      })),
+    ),
+    ...MODELS.map((model) => ({
+      label: `Flagged by, ${model.short}`,
+      value: (i) => flaggedBy(i, payload.models[model.id].events.flagged).join(", ") || "none",
+    })),
+  ]);
+
   const { body, left, detail } = playerFrame();
-  const countsWrap = document.createElement("div");
-  countsWrap.className = "table-wrap";
-  countsWrap.appendChild(counts);
   view.append(
     legend,
     body,
-    countsWrap,
+    tableWrap(counts, "Spikes flagged in this window"),
+    spikes,
     note(INTERACTION_HELP),
     note(
       `Here the dots do not show flag status: open circles are the ${reference.label} model and filled dots the ${comparison.label} model, and a spike is flagged when its marker lies beyond the dashed threshold. The ${comparison.label} prediction is summed over its Continuous and Fragmented states. Position is linearized distance along the maze (cm).`,
@@ -704,7 +812,6 @@ export function renderRecording(root, payload, manifest) {
     note(axisHelp(manifest.macros, "Rec")),
     note(SCALE_HELP),
   );
-  const say = liveRegion(view);
 
   const detailTitle = document.createElement("h3");
   const chartLegend = legendBlock(DETAIL_LEGEND);
@@ -719,18 +826,21 @@ export function renderRecording(root, payload, manifest) {
     charts[model.id] = new DistributionChart(box, {
       positionBins: bins,
       xLabel: "Linearized position (cm)",
+      title: `${model.label} model: prediction and spike likelihood at the selected spike`,
+      unit: "cm",
       plotHeight: 70,
     });
   }
   // One row per metric; only the value cells change with the selected spike.
   const table = document.createElement("table");
   table.className = "compare-table";
-  table.innerHTML = `<thead><tr><th></th>${MODELS.map((m) => `<th>${m.short}</th>`).join("")}</tr></thead>`;
+  table.innerHTML = `<caption class="sr-only">Diagnostics of the selected spike under each model</caption><thead><tr><th scope="col">Diagnostic</th>${MODELS.map((m) => `<th scope="col">${m.short}</th>`).join("")}</tr></thead>`;
   const tbody = document.createElement("tbody");
   const valueCells = {};
   for (const metric of METRICS) {
     const tr = document.createElement("tr");
-    const name = document.createElement("td");
+    const name = document.createElement("th");
+    name.scope = "row";
     name.innerHTML = `${metric.label}<div class="rule">${worseFit(metric)}</div>`;
     tr.appendChild(name);
     valueCells[metric.name] = Object.fromEntries(
@@ -743,10 +853,7 @@ export function renderRecording(root, payload, manifest) {
     tbody.appendChild(tr);
   }
   table.appendChild(tbody);
-  const tableWrap = document.createElement("div");
-  tableWrap.className = "table-wrap";
-  tableWrap.appendChild(table);
-  detail.appendChild(tableWrap);
+  detail.appendChild(tableWrap(table, "Diagnostics of the selected spike"));
   const rescue = document.createElement("p");
   rescue.className = "note";
   detail.appendChild(rescue);
@@ -768,8 +875,16 @@ export function renderRecording(root, payload, manifest) {
     for (const model of MODELS) {
       charts[model.id].update({
         series: [
-          { values: normalized(predictive[model.id].row(step)), color: cssVar("--predictive") },
-          { values: normalized(cellLikelihoods.row(cell)), color: cssVar("--likelihood") },
+          {
+            values: normalized(predictive[model.id].row(step)),
+            color: cssVar("--predictive"),
+            name: "prediction",
+          },
+          {
+            values: normalized(cellLikelihoods.row(cell)),
+            color: cssVar("--likelihood"),
+            name: "spike likelihood",
+          },
         ],
         marker: position[step],
       });
@@ -805,8 +920,8 @@ export function renderRecording(root, payload, manifest) {
     ],
     eventTimes,
     select: selectEvent,
-    announce: (index) =>
-      say(`${describeSpike(index)}. ${reference.label} model: ${flagSummary(index, events.flagged)}`),
+    describe: (index) =>
+      `${describeSpike(index)}. ${reference.label} model: ${flagSummary(index, events.flagged)}`,
   });
   // Open on the HPD-overlap rescue nearest the peak of population firing,
   // i.e., inside the replay event.
