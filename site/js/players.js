@@ -50,7 +50,7 @@ export const CONDITION_TEXT = {
   history_dependent:
     "Spikes are generated with refractoriness and bursting, but the decoder assumes Poisson firing. Each spike still carries the same spatial information, so decoding stays accurate and the diagnostics rarely flag: they test spatial consistency, not spike timing.",
   replay:
-    "The animal sits still while the ensemble replays a sweep across the track. The decoder follows the sweep, far from the animal's physical position, yet the prediction stays consistent with the spikes, and flags stay at the well-specified rate. The large decoding error is by construction: it is measured against the physical position.",
+    "The animal sits still while the ensemble replays a sweep across the track. The decoder follows the sweep, far from the animal's physical position, while its predictive distribution stays consistent with the spikes and flags stay at the well-specified rate. The large distance to the animal's physical position is expected because the decoder tracks the represented trajectory.",
   drift:
     "The animal moves with momentum while the decoder assumes a memoryless random walk. The decoded position lags behind and decoding error rises, but each spike is compared with a prediction that earlier spikes have already pulled toward the lagged estimate, so only a modest share of spikes is flagged — a limitation of event-level checks.",
   sparse_population:
@@ -527,11 +527,11 @@ function renderCondition(view, payload, manifest) {
       (m) =>
         `<div class="stat"><div class="label">${m.label}</div><div class="value">${summary.median_flag_percent_text[m.name]}% flagged</div></div>`,
     ).join("") +
-    `<div class="stat"><div class="label">Decoding error</div><div class="value">${summary.median_absolute_error_text} a.u.</div></div>`;
+    `<div class="stat"><div class="label">Distance to physical position</div><div class="value">${summary.median_absolute_error_text} a.u.</div></div>`;
   const component =
     payload.model_component === "—" ? "none" : payload.model_component.toLowerCase();
   const statsNote = note(
-    `Medians across ${manifest.macros.SimNRealizations} simulated sessions: the percentage of spikes each diagnostic flags, and the decoding error, the median absolute difference between the decoder's position estimate (the filtered posterior mean) and the true position. Perturbed model component: ${component}. Below: ${(range[1] - range[0]).toFixed(1)} s of one session, with the condition's time window shaded gray.`,
+    `Medians across ${manifest.macros.SimNRealizations} simulated sessions: the percentage of spikes each diagnostic flags, and the median absolute distance between the decoder's position estimate (the filtered posterior mean) and the animal's physical position. Perturbed model component: ${component}. Below: ${(range[1] - range[0]).toFixed(1)} s of one session, with the condition's time window shaded gray.`,
   );
 
   // Mean normalized likelihood per spike-containing step, as in Figure 3a.

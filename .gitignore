@@ -233,3 +233,6 @@ site/_build/
 
 # The website's page data is committed (uv run python scripts/export_site_data.py)
 !site/data/
+
+# Generated outputs of explorations/ scripts (on the explore/figure04-misfit branch)
+explorations/*/output/

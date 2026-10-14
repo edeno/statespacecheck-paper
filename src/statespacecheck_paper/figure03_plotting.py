@@ -68,8 +68,7 @@ FIGURE03_SUMMARY_KNOWN_COMPONENT_LABEL_GID = "figure03-summary-known-model-compo
 
 
 FIGURE03_SUMMARY_TITLE_GID = "figure03-summary-title"
-# Per-condition decoding-error row (median absolute error) rendered as text
-# beneath the flag heatmap, plus its row header.
+# Per-condition decoding-error row and its header.
 FIGURE03_SUMMARY_ERROR_CELL_LABEL_GID = "figure03-summary-error-cell-label"
 FIGURE03_SUMMARY_ERROR_HEADER_GID = "figure03-summary-error-header"
 
@@ -420,10 +419,10 @@ def _plot_figure03_summary_heatmap(
 ) -> None:
     """Plot the across-realization phase-by-metric flag percentages.
 
-    A plain-text row beneath the heatmap reports the per-condition decoding
-    error (median absolute error in position units) so each flag
-    percentage can be read against ground truth. It is not colour-mapped
-    because its units differ from the flag percentages.
+    A plain-text row beneath the heatmap reports the median absolute distance
+    between the decoded and physical positions. During replay this distance
+    reflects the represented trajectory's separation from the immobile animal.
+    The row is not colour-mapped because its units differ from flag percentages.
     """
     conditions = build_summary_conditions(config)
     component_labels = [col.model_component for col in conditions]
@@ -481,36 +480,32 @@ def _plot_figure03_summary_heatmap(
             )
             cell_label.set_gid(FIGURE03_SUMMARY_CELL_LABEL_GID)
 
-    # The decoding-error row sits directly beneath the heatmap; the known
-    # component row follows it.
-    # Both rows round with the same functions the manuscript prose uses, so a
-    # value cannot read differently in the panel and in the text beside it.
-    error_headers = ("Median |error|\n(a.u.):",)
-    for row_offset, header in enumerate(error_headers):
-        row_y = float(n_metrics + row_offset)
-        for col_idx in range(len(conditions)):
-            error_label = ax.text(
-                col_idx,
-                row_y,
-                significant(decoding_error[row_offset, col_idx]),
-                ha="center",
-                va="center",
-                color="black",
-            )
-            error_label.set_gid(FIGURE03_SUMMARY_ERROR_CELL_LABEL_GID)
-        error_header = ax.text(
-            -0.04,
-            row_y,
-            header,
-            transform=ax.get_yaxis_transform(),
-            ha="right",
+    # Include replay's decoded-to-physical distance alongside the other phases.
+    # All values use the manuscript's rounding.
+    error_header = ax.text(
+        -0.04,
+        float(n_metrics),
+        "Decoded–physical\ndist. (a.u.)",
+        transform=ax.get_yaxis_transform(),
+        ha="right",
+        va="center",
+        color="0.4",
+        fontstyle="italic",
+    )
+    error_header.set_gid(FIGURE03_SUMMARY_ERROR_HEADER_GID)
+    error_row_y = float(n_metrics)
+    for col_idx in range(len(conditions)):
+        error_label = ax.text(
+            col_idx,
+            error_row_y,
+            significant(decoding_error[0, col_idx]),
+            ha="center",
             va="center",
-            color="0.4",
-            fontstyle="italic",
+            color="black",
         )
-        error_header.set_gid(FIGURE03_SUMMARY_ERROR_HEADER_GID)
+        error_label.set_gid(FIGURE03_SUMMARY_ERROR_CELL_LABEL_GID)
 
-    component_row_y = float(n_metrics + len(error_headers))
+    component_row_y = float(n_metrics) + 1
     # The observation model is the likelihood's component; the transition
     # model is the predictive's.
     component_color = {"Observation": COLORS["likelihood"], "Transition": COLORS["predictive"]}
@@ -588,10 +583,10 @@ def compose_figure03(
         This stabilized summary is deliberately required: substituting the
         displayed realization would change the meaning of panel (b).
     median_decoding_error : NDArray, shape (1, n_columns)
-        Median per-condition decoding error (rows follow
+        Median per-condition distance to physical position (rows follow
         :data:`statespacecheck_paper.figure03_summary.SUMMARY_ERROR_METRICS`:
-        median absolute error in position units), rendered as a text row
-        beneath the panel-(b) heatmap.
+        median absolute distance in position units), rendered as a text row
+        beneath panel (b), including the replay control.
 
     Returns
     -------
@@ -607,8 +602,8 @@ def compose_figure03(
     >>> # and how to plumb it into compose_figure03.
     """
     fig_width = 6.85  # Full page width; tight PDF stays within ~183 mm.
-    # Extra height (and bottom margin) holds the error row and the
-    # known-component row beneath the panel-(b) heatmap; the plotted area
+    # Extra height (and bottom margin) holds the error and known-component
+    # rows beneath the panel-(b) heatmap; the plotted area
     # above them is unchanged.
     fig_height = 7.4
     fig = plt.figure(figsize=(fig_width, fig_height), dpi=FIGURE_DPI)
