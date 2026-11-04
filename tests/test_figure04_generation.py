@@ -22,7 +22,11 @@ from statespacecheck_paper.figure04_diagnostics import FlagConfusion
 from statespacecheck_paper.figure04_input import INPUT_FILE_SUFFIX
 from statespacecheck_paper.figure04_layout import Figure4Composition
 from statespacecheck_paper.figure04_protocol import FIGURE04_DETAIL_WINDOW
-from statespacecheck_paper.figure04_summary import Figure4DiagnosticMeans, Figure4Summary
+from statespacecheck_paper.figure04_summary import (
+    Figure4DiagnosticMeans,
+    Figure4KlDivergenceComparison,
+    Figure4Summary,
+)
 from statespacecheck_paper.paths import FIGURE04_SUMMARY_PATH, REPO_ROOT
 
 from ._figure04 import synthetic_cache_provenance
@@ -55,9 +59,17 @@ def test_generation_passes_figure_and_bbox_to_save(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(
         figure04_generation,
         "prepare_figure04_render_data",
-        lambda *a, **k: SimpleNamespace(cache_provenance=provenance_token),
+        lambda *a, **k: SimpleNamespace(
+            cache_provenance=provenance_token,
+            analysis_results=SimpleNamespace(
+                continuous_diagnostics=None, continuous_fragmented_diagnostics=None
+            ),
+        ),
     )
     monkeypatch.setattr(figure04_generation, "compute_figure04_summary", lambda *a, **k: object())
+    monkeypatch.setattr(
+        figure04_generation, "compute_kl_divergence_comparison", lambda *a, **k: object()
+    )
     monkeypatch.setattr(figure04_generation, "format_figure04_summary", lambda *a, **k: "summary")
     monkeypatch.setattr(
         figure04_generation,
@@ -109,6 +121,7 @@ def test_summary_payload_contains_reported_counts_rates_and_provenance(
         neither=77,
     )
     summary = Figure4Summary(means_a, means_b, (confusion,), n_units=7)
+    kl_comparison = Figure4KlDivergenceComparison(0.9, (2.5, 3.5), 0.08, 1.5, 30.0)
     cache_provenance = synthetic_cache_provenance("epoch_x")
     source = {
         "statespacecheck_paper_version": "test",
@@ -123,6 +136,7 @@ def test_summary_payload_contains_reported_counts_rates_and_provenance(
             config=Figure4Config(),
             paths=Figure4Paths(tmp_path, "epoch_x"),
             summary=summary,
+            kl_divergence_comparison=kl_comparison,
             cache_provenance=cache_provenance,
         ),
     )
@@ -157,6 +171,13 @@ def test_summary_payload_contains_reported_counts_rates_and_provenance(
         "newly_flagged": 3,
         "neither": 77,
         "rescued_fraction": 0.9,
+    }
+    assert payload["kl_divergence_comparison"] == {
+        "lower_fraction": 0.9,
+        "lower_continuous_quartiles": (2.5, 3.5),
+        "higher_fraction": 0.08,
+        "higher_continuous_median": 1.5,
+        "higher_continuous_fragmented_max": 30.0,
     }
     assert provenance["source"] == source
     cache_provenance_payload = provenance["figure04_caches"]

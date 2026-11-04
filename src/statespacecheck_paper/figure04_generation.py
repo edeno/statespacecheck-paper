@@ -24,8 +24,10 @@ from statespacecheck_paper.figure04_protocol import (
     FIGURE04_METRIC_DIRECTIONS,
 )
 from statespacecheck_paper.figure04_summary import (
+    Figure4KlDivergenceComparison,
     Figure4Summary,
     compute_figure04_summary,
+    compute_kl_divergence_comparison,
     format_figure04_summary,
 )
 from statespacecheck_paper.figure04_workflow import prepare_figure04_render_data
@@ -44,7 +46,7 @@ from statespacecheck_paper.style import save_figure, set_figure_defaults
 
 # Version of the figure04_summary.json layout written by
 # figure04_summary_payload. Bump it when a field is added, removed, or renamed.
-FIGURE04_SUMMARY_SCHEMA_VERSION = 8
+FIGURE04_SUMMARY_SCHEMA_VERSION = 9
 
 
 def figure04_reported_statistics(summary: Figure4Summary) -> dict[str, object]:
@@ -91,6 +93,7 @@ def figure04_summary_payload(
     config: Figure4Config,
     paths: Figure4Paths,
     summary: Figure4Summary,
+    kl_divergence_comparison: Figure4KlDivergenceComparison,
     cache_provenance: Figure4CacheProvenance,
 ) -> dict[str, object]:
     """Return the canonical Figure 4 reported statistics as JSON-ready data."""
@@ -116,6 +119,7 @@ def figure04_summary_payload(
         "diagnostic_means": statistics["diagnostic_means"],
         "flag_confusion_models": statistics["flag_confusion_models"],
         "flag_confusions": statistics["flag_confusions"],
+        "kl_divergence_comparison": dataclasses.asdict(kl_divergence_comparison),
         "provenance": {
             "source": scientific_source_provenance(),
             "figure04_caches": cache_provenance.artifact_payload(),
@@ -149,6 +153,10 @@ def generate_figure04(*, use_cache: bool = True) -> None:
         FIGURE04_DIAGNOSTIC_THRESHOLDS,
         FIGURE04_METRIC_DIRECTIONS,
     )
+    kl_divergence_comparison = compute_kl_divergence_comparison(
+        render_data.analysis_results.continuous_diagnostics,
+        render_data.analysis_results.continuous_fragmented_diagnostics,
+    )
     print(f"\n{format_figure04_summary(summary)}")
     summary_path = write_json_artifact(
         FIGURE04_SUMMARY_PATH,
@@ -156,6 +164,7 @@ def generate_figure04(*, use_cache: bool = True) -> None:
             config=config,
             paths=paths,
             summary=summary,
+            kl_divergence_comparison=kl_divergence_comparison,
             cache_provenance=render_data.cache_provenance,
         ),
     )

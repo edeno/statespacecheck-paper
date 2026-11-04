@@ -1,9 +1,9 @@
 """Figure-4 manuscript scalars from the two decoders' per-spike diagnostics.
 
-Whole-session event means and the two-decoder flag agreement, plus their
-command-line formatting. Kept apart from :mod:`figure04_workflow` so that
-editing a summary or its printed text does not change the decode cache's
-source fingerprint and refit the models.
+Whole-session event means, the two-decoder flag agreement, and the two-decoder
+KL-divergence comparison, plus their command-line formatting. Kept apart from
+:mod:`figure04_workflow` so that editing a summary or its printed text does not
+change the decode cache's source fingerprint and refit the models.
 """
 
 from __future__ import annotations
@@ -52,6 +52,83 @@ class Figure4Summary:
     continuous_fragmented: Figure4DiagnosticMeans
     flag_confusions: tuple[FlagConfusion, ...]
     n_units: int
+
+
+@dataclasses.dataclass(frozen=True)
+class Figure4KlDivergenceComparison:
+    """Per-spike KL divergence under the two decoders, split at the identity line.
+
+    Describes the two sides of the identity line in the KL panel of Figure 4c:
+    spikes whose KL divergence is lower under the Continuous-Fragmented decoder
+    than under the Continuous decoder, and spikes whose KL divergence is higher.
+    Spikes with equal values are on neither side. Fractions are of all spike events.
+
+    Attributes
+    ----------
+    lower_fraction : float
+        Fraction of spike events with lower KL divergence under Continuous-Fragmented.
+    lower_continuous_quartiles : tuple of float
+        25th and 75th percentiles of those events' Continuous-model KL divergence.
+    higher_fraction : float
+        Fraction of spike events with higher KL divergence under Continuous-Fragmented.
+    higher_continuous_median : float
+        Median Continuous-model KL divergence of those events.
+    higher_continuous_fragmented_max : float
+        Largest Continuous-Fragmented KL divergence among those events.
+    """
+
+    lower_fraction: float
+    lower_continuous_quartiles: tuple[float, float]
+    higher_fraction: float
+    higher_continuous_median: float
+    higher_continuous_fragmented_max: float
+
+
+def compute_kl_divergence_comparison(
+    continuous_diagnostics: SpikeEventDiagnostics,
+    continuous_fragmented_diagnostics: SpikeEventDiagnostics,
+) -> Figure4KlDivergenceComparison:
+    """Compare per-spike KL divergence between the two decoders.
+
+    Parameters
+    ----------
+    continuous_diagnostics, continuous_fragmented_diagnostics : SpikeEventDiagnostics
+        Per-spike diagnostics of the Continuous and Continuous-Fragmented decoders,
+        on the same spikes; ``event_kl_divergence`` has shape ``(n_events,)``.
+
+    Returns
+    -------
+    Figure4KlDivergenceComparison
+        Both sides of the identity line in the Figure-4c KL panel.
+
+    Raises
+    ------
+    ValueError
+        If the two decoders' events differ in number, or either side of the
+        identity line is empty.
+    """
+    continuous = np.asarray(continuous_diagnostics.event_kl_divergence, dtype=np.float64)
+    fragmented = np.asarray(continuous_fragmented_diagnostics.event_kl_divergence, dtype=np.float64)
+    if continuous.shape != fragmented.shape:
+        raise ValueError(
+            "The two decoders' KL divergences must cover the same spike events; "
+            f"got shapes {continuous.shape} and {fragmented.shape}"
+        )
+    lower = fragmented < continuous
+    higher = fragmented > continuous
+    if not lower.any() or not higher.any():
+        raise ValueError(
+            "Both sides of the KL identity line need spike events; "
+            f"got {int(lower.sum())} lower and {int(higher.sum())} higher"
+        )
+    q25, q75 = np.percentile(continuous[lower], [25.0, 75.0])
+    return Figure4KlDivergenceComparison(
+        lower_fraction=float(lower.mean()),
+        lower_continuous_quartiles=(float(q25), float(q75)),
+        higher_fraction=float(higher.mean()),
+        higher_continuous_median=float(np.median(continuous[higher])),
+        higher_continuous_fragmented_max=float(np.max(fragmented[higher])),
+    )
 
 
 def _compute_diagnostic_means(

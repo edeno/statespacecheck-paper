@@ -12,15 +12,16 @@ and "92%" where it holds ``0.9201170835550825``. Ranges such as the remap
 flag percentages are emitted as separate ``\dots Min`` / ``\dots Max`` macros
 so the en-dash stays in the prose.
 
-**Prose reporting policy.** Decoding errors are reported to two significant figures,
-and flag and rescue percentages to the nearest whole percent. Exact counts and
+**Prose reporting policy.** Decoding errors and KL-divergence values are reported to
+two significant figures, and flag, rescue, and KL-comparison percentages to the
+nearest whole percent. Exact counts and
 configured parameters are reported without approximation. Machine-readable
 summaries retain full numerical precision.
 
 Rounding is a communication choice, not a statement about uncertainty: each
 rule preserves the distinctions the prose draws with the number. Decoding
-errors are compared as ratios ("four times the well-specified value", "one
-fifth of a place-field width"), which two significant figures support; flag
+errors are compared as ratios ("four times the well-specified value", "one-fifth
+of a place-field width"), which two significant figures support; flag
 percentages are compared as substantial, low, or modest, which whole percents
 support; rescued percentages are descriptive of this recording and appear next to
 their exact counts. Constants the text hedges with "approximately" (199.47 Hz,
@@ -621,6 +622,42 @@ def _recording_statistics(payload: dict[str, Any]) -> list[MacroDefinition]:
                 ),
             ]
         )
+    kl = payload["kl_divergence_comparison"]
+    quartile_low, quartile_high = kl["lower_continuous_quartiles"]
+    macros.extend(
+        [
+            MacroDefinition(
+                "RecKlLowerPercent",
+                whole_percent(100.0 * kl["lower_fraction"]),
+                "kl_divergence_comparison.lower_fraction",
+            ),
+            MacroDefinition(
+                "RecKlLowerContinuousQuartileLow",
+                significant(quartile_low, SIGNIFICANT_FIGURES),
+                "kl_divergence_comparison.lower_continuous_quartiles[0]",
+            ),
+            MacroDefinition(
+                "RecKlLowerContinuousQuartileHigh",
+                significant(quartile_high, SIGNIFICANT_FIGURES),
+                "kl_divergence_comparison.lower_continuous_quartiles[1]",
+            ),
+            MacroDefinition(
+                "RecKlHigherPercent",
+                whole_percent(100.0 * kl["higher_fraction"]),
+                "kl_divergence_comparison.higher_fraction",
+            ),
+            MacroDefinition(
+                "RecKlHigherContinuousMedian",
+                significant(kl["higher_continuous_median"], SIGNIFICANT_FIGURES),
+                "kl_divergence_comparison.higher_continuous_median",
+            ),
+            MacroDefinition(
+                "RecKlHigherFragmentedMax",
+                significant(kl["higher_continuous_fragmented_max"], SIGNIFICANT_FIGURES),
+                "kl_divergence_comparison.higher_continuous_fragmented_max",
+            ),
+        ]
+    )
     return macros
 
 

@@ -115,6 +115,7 @@ field it came from. See [From summary to prose](#from-summary-to-prose-the-repor
 | The Figure-3 remap, replay, and sparse-population windows | decoder override windows: `decoding.DecoderOverrideWindow`, `DecoderOverrideSchedule` | a half-open step interval `[start, end)` in which the decoder uses another expected-count table; the remap window is the observation misfit, the replay and sparse-population windows are controls |
 | Position and decoding error, Figure 3 | “a.u.”; summary `error_units: position_units` | the simulated track is in arbitrary position units (axis label “Position (a.u.)”); Figure 4 positions are in cm |
 | Rescued percentage (Figure 4) | `FlagConfusion.rescued_fraction`; summary `flag_confusions[].rescued_fraction` | fraction (0–1) of the spikes the Continuous model flags that the Continuous–Fragmented model does not; the prose prints it as a whole percent (`\RecHpdRescuedPercent`, `\RecPvalueRescuedPercent`) |
+| KL comparison (Figure 4) | `figure04_summary.Figure4KlDivergenceComparison`; summary `kl_divergence_comparison` | the two sides of the identity line in the Figure-4c KL panel; the prose prints the fractions as whole percents and the KL values to two significant figures (`\RecKlLowerPercent`, `\RecKlHigherFragmentedMax`, …) |
 | Rank-based predictive $p$-value | `statespacecheck.mark_predictive_pvalue` (called by `event_diagnostics`) | `statespacecheck` also exports `predictive_pvalue`, a Monte Carlo check for a user-supplied replicate generator, which the paper does not use |
 | Summary source digest | `provenance.source.source_tree_sha256` | SHA-256 of every `.py` file under `src/statespacecheck_paper`, comments and docstrings included: any source edit changes it, so both summaries' `provenance.source` are refreshed together |
 | Cache fingerprints | `fingerprint_sha256` (decode), `diagnostics_fingerprint_sha256` | SHA-256 of the docstring-stripped syntax trees of listed modules plus the relevant configuration, input-file checksum, and package versions; comment and docstring edits leave them unchanged (see [Figure-4 cache behavior](#figure-4-cache-behavior)) |
@@ -640,7 +641,7 @@ manual overrides: bumping one invalidates every cache of that kind.
 
 `figure03_summary.json` uses schema version 9
 (`figure03_generation.FIGURE03_SUMMARY_SCHEMA_VERSION`) and `figure04_summary.json`
-uses schema version 8 (`figure04_generation.FIGURE04_SUMMARY_SCHEMA_VERSION`). The
+uses schema version 9 (`figure04_generation.FIGURE04_SUMMARY_SCHEMA_VERSION`). The
 Figure-3 configuration block records every
 `Figure3Config` field together with the step length in seconds
 (`configuration.step_seconds`, the protocol constant `STEP_SECONDS`) and the
@@ -681,7 +682,12 @@ checks that the committed summary's two values agree. Each `flag_confusions` ent
 spikes flagged by `both` decoders, by the reference only (`rescued`), by the
 comparison only (`newly_flagged`), and by `neither`; `flag_confusion_models`
 names the reference (`continuous`) and comparison (`continuous_fragmented`)
-decoders.
+decoders. `kl_divergence_comparison` describes the two sides of the identity
+line in the KL panel of Figure 4c, as fractions of all spike events: events
+with lower KL divergence under Continuous–Fragmented (`lower_fraction`, and the
+quartiles of their Continuous-model values) and events with higher KL
+divergence (`higher_fraction`, their median Continuous-model value, and their
+largest Continuous–Fragmented value). Ties are on neither side.
 
 In both summaries, the `flag_rules` object binds each numeric threshold to its
 executable semantics: `less_than_or_equal` means a value is flagged when

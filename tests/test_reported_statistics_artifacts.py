@@ -24,7 +24,11 @@ from statespacecheck_paper.figure04_generation import (
     figure04_summary_payload,
 )
 from statespacecheck_paper.figure04_input import INPUT_FILE_SUFFIX
-from statespacecheck_paper.figure04_summary import Figure4DiagnosticMeans, Figure4Summary
+from statespacecheck_paper.figure04_summary import (
+    Figure4DiagnosticMeans,
+    Figure4KlDivergenceComparison,
+    Figure4Summary,
+)
 from statespacecheck_paper.paths import FIGURE_DIR, REPO_ROOT
 from statespacecheck_paper.scientific_artifacts import write_json_artifact
 
@@ -193,6 +197,20 @@ def test_figure04_reported_statistics_counts_partition_events(tmp_path: Path) ->
             "threshold": 0.05,
         },
     }
+    # The two sides of the KL identity line are disjoint shares of all events.
+    kl = payload["kl_divergence_comparison"]
+    assert kl == pytest.approx(
+        {
+            "lower_fraction": 0.9418851104230027,
+            "lower_continuous_quartiles": [2.680094002621728, 3.519977868656886],
+            "higher_fraction": 0.058111441372477354,
+            "higher_continuous_median": 1.5000024843568083,
+            "higher_continuous_fragmented_max": 29.92218273894178,
+        }
+    )
+    assert kl["lower_fraction"] + kl["higher_fraction"] <= 1.0
+    assert kl["lower_continuous_quartiles"][0] <= kl["lower_continuous_quartiles"][1]
+    assert kl["higher_continuous_fragmented_max"] > kl["higher_continuous_median"]
     source = payload["provenance"]["source"]
     assert len(source["source_tree_sha256"]) == 64
     assert len(source["uv_lock_sha256"]) == 64
@@ -236,6 +254,16 @@ def test_figure04_reported_statistics_counts_partition_events(tmp_path: Path) ->
         config=Figure4Config(),
         paths=Figure4Paths(REPO_ROOT / "data", epoch),
         summary=summary,
+        kl_divergence_comparison=Figure4KlDivergenceComparison(
+            lower_fraction=kl["lower_fraction"],
+            lower_continuous_quartiles=(
+                kl["lower_continuous_quartiles"][0],
+                kl["lower_continuous_quartiles"][1],
+            ),
+            higher_fraction=kl["higher_fraction"],
+            higher_continuous_median=kl["higher_continuous_median"],
+            higher_continuous_fragmented_max=kl["higher_continuous_fragmented_max"],
+        ),
         cache_provenance=cache_provenance,
     )
     assert _round_trip_live_payload(tmp_path, live) == payload

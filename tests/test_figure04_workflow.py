@@ -21,6 +21,7 @@ from statespacecheck_paper.figure04_input import NeuralRecordingData
 from statespacecheck_paper.figure04_summary import (
     Figure4Summary,
     compute_figure04_summary,
+    compute_kl_divergence_comparison,
     compute_mean_spike_event_diagnostic,
     format_figure04_summary,
 )
@@ -88,6 +89,41 @@ class TestComputeMeanSpikeEventDiagnostic:
         with pytest.raises(KeyError, match="event_made_up_metric"):
             compute_mean_spike_event_diagnostic(
                 event_diagnostics(hpd=np.array([0.5])), "made_up_metric"
+            )
+
+
+class TestComputeKlDivergenceComparison:
+    def test_splits_events_at_the_identity_line(self) -> None:
+        # Events 0-3 lower under Continuous-Fragmented, 4-5 higher, 6 tied.
+        continuous = np.array([1.0, 2.0, 3.0, 4.0, 0.5, 1.5, 2.0])
+        fragmented = np.array([0.5, 1.0, 1.0, 1.0, 9.0, 2.0, 2.0])
+        comparison = compute_kl_divergence_comparison(
+            event_diagnostics(kl=continuous), event_diagnostics(kl=fragmented)
+        )
+        assert comparison.lower_fraction == pytest.approx(4 / 7)
+        assert comparison.lower_continuous_quartiles == pytest.approx(
+            tuple(np.percentile([1.0, 2.0, 3.0, 4.0], [25, 75]))
+        )
+        assert comparison.higher_fraction == pytest.approx(2 / 7)
+        assert comparison.higher_continuous_median == pytest.approx(1.0)
+        assert comparison.higher_continuous_fragmented_max == pytest.approx(9.0)
+
+    def test_rejects_mismatched_events(self) -> None:
+        with pytest.raises(ValueError, match="same spike events"):
+            compute_kl_divergence_comparison(
+                event_diagnostics(kl=np.array([1.0, 2.0])),
+                event_diagnostics(kl=np.array([1.0])),
+            )
+
+    @pytest.mark.parametrize(
+        "fragmented",
+        [np.array([0.5, 0.5]), np.array([3.0, 3.0]), np.array([1.0, 2.0])],
+        ids=["all-lower", "all-higher", "all-tied"],
+    )
+    def test_rejects_an_empty_side(self, fragmented: np.ndarray) -> None:
+        with pytest.raises(ValueError, match="Both sides"):
+            compute_kl_divergence_comparison(
+                event_diagnostics(kl=np.array([1.0, 2.0])), event_diagnostics(kl=fragmented)
             )
 
 
