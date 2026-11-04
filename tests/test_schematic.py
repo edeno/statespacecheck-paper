@@ -224,5 +224,5 @@ class TestDrawEquationBoxes:
         assert ax.get_ylim() == (-0.85, 2.45)
         assert ax.get_title() == "Recursive Estimation Algorithm"
         labels = {text.get_text() for child_ax in fig.axes for text in child_ax.texts}
-        assert r"$p(y_t|x_t)$" in labels
-        assert r"$p(x_t|y_t)$" not in labels
+        assert r"$p(y_k|x_k)$" in labels
+        assert r"$p(x_k|y_k)$" not in labels

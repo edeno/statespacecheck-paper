@@ -394,9 +394,9 @@ and their configuration to `figure03_summary.json`.
 
 | Code name | Manuscript notation | Meaning / shape |
 | --- | --- | --- |
-| `physical_position` | $x_t$ outside replay; $z_t$ during replay | physical position, shape `(n_time,)`; decoding error is measured against this trajectory |
+| `physical_position` | $x_k$ outside replay; $z_k$ during replay | physical position, shape `(n_time,)`; decoding error is measured against this trajectory |
 | `position_bins` | discretized $x$ grid | position bin centers, shape `(n_bins,)` |
-| `spike_counts` | $y_{c,t}$ | integer spike counts, shape `(n_time, n_cells)` |
+| `spike_counts` | $n_{k,c}$ | integer spike counts, shape `(n_time, n_cells)` |
 | `place_field_centers` | $\mu_c$ | per-cell place-field centers, shape `(n_cells,)` |
 | `place_field_std` | $\sigma_\mathrm{pf}$ | Gaussian place-field standard deviation |
 | `place_field_rate_scale` | $\alpha$ | expected-count scale multiplying the normalized Gaussian field |

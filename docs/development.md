@@ -88,8 +88,8 @@ Use dataclasses for configurations and scientific result containers.
 - Arrays have time first: spatial distributions are `(n_time, n_position_bins)`
   or `(n_time, n_x_bins, n_y_bins)`; spike counts are `(n_time, n_cells)`;
   the simulated expected-count table is `(n_bins, n_cells)`.
-- Predictions mean `p(x_t | y_{1:t-1})`, filtering means `p(x_t | y_{1:t})`, and
-  smoothing means `p(x_t | y_{1:T})`. Keep them distinct in code and prose.
+- Predictions mean `p(x_k | y_{1:k-1})`, filtering means `p(x_k | y_{1:k})`, and
+  smoothing means `p(x_k | y_{1:K})`. Keep them distinct in code and prose.
 - Manuscript rates are `lambda`; expected counts are `lambda * dt`. The
   simulation's Poisson inputs are expected counts per step and are named so
   (`place_field_expected_counts`, `expected_counts_per_step`,

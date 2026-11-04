@@ -63,7 +63,7 @@ def draw_node(
     --------
     >>> import matplotlib.pyplot as plt
     >>> fig, ax = plt.subplots()
-    >>> circle = draw_node(ax, (0.5, 0.5), 0.1, r"$x_t$")
+    >>> circle = draw_node(ax, (0.5, 0.5), 0.1, r"$x_k$")
     >>> plt.close(fig)
     """
     circle = Circle(
@@ -370,8 +370,8 @@ def draw_graphical_model(
 ) -> None:
     """Draw state space model graphical model.
 
-    Draws the chain of latent states (x_{t-1} -> x_t) with
-    observations (y_{t-1}, y_t) below, including spike raster insets.
+    Draws the chain of latent states (x_{k-1} -> x_k) with
+    observations (y_{k-1}, y_k) below, including spike raster insets.
 
     Parameters
     ----------
@@ -413,22 +413,22 @@ def draw_graphical_model(
         fontsize=14,
     )
 
-    # Arrow from ellipsis to x_{t-1}
+    # Arrow from ellipsis to x_{k-1}
     arrow_start = (x_prev_pos[0] - 0.9, y_latent)
     arrow_end = (x_prev_pos[0] - node_radius - 0.05, y_latent)
     draw_arrow(ax, arrow_start, arrow_end, color="black")
 
     # Draw state nodes
-    draw_node(ax, x_prev_pos, node_radius, r"$x_{t-1}$", edgecolor="black")
-    draw_node(ax, x_curr_pos, node_radius, r"$x_t$", edgecolor="black")
+    draw_node(ax, x_prev_pos, node_radius, r"$x_{k-1}$", edgecolor="black")
+    draw_node(ax, x_curr_pos, node_radius, r"$x_k$", edgecolor="black")
 
     # Draw observation nodes (filled to indicate observed)
     draw_node(
-        ax, y_prev_obs_pos, node_radius, r"$y_{t-1}$", facecolor="lightgray", edgecolor="black"
+        ax, y_prev_obs_pos, node_radius, r"$y_{k-1}$", facecolor="lightgray", edgecolor="black"
     )
-    draw_node(ax, y_curr_obs_pos, node_radius, r"$y_t$", facecolor="lightgray", edgecolor="black")
+    draw_node(ax, y_curr_obs_pos, node_radius, r"$y_k$", facecolor="lightgray", edgecolor="black")
 
-    # Horizontal arrow: x_{t-1} -> x_t
+    # Horizontal arrow: x_{k-1} -> x_k
     arrow_start = (x_prev_pos[0] + node_radius + 0.05, x_prev_pos[1])
     arrow_end = (x_curr_pos[0] - node_radius - 0.05, x_curr_pos[1])
     draw_arrow(ax, arrow_start, arrow_end, color="black")
@@ -446,7 +446,7 @@ def draw_graphical_model(
     ax.text(
         (x_prev_pos[0] + x_curr_pos[0]) / 2,
         transition_label_y - 0.02,
-        r"$p(x_t|x_{t-1})$",
+        r"$p(x_k|x_{k-1})$",
         ha="center",
         va="top",
         color=COLORS["annotation"],
@@ -466,14 +466,14 @@ def draw_graphical_model(
     ax.text(
         x_curr_pos[0] + 0.15,
         arrow_midpoint_y,
-        "Likelihood\n" + r"$p(y_t|x_t)$",
+        "Likelihood\n" + r"$p(y_k|x_k)$",
         ha="left",
         va="center",
         color=COLORS["likelihood"],
         linespacing=1.0,
     )
 
-    # Arrow from x_t to ellipsis (chain continues to the right)
+    # Arrow from x_k to ellipsis (chain continues to the right)
     arrow_start = (x_curr_pos[0] + node_radius + 0.05, y_latent)
     arrow_end = (x_curr_pos[0] + 0.9, y_latent)
     draw_arrow(ax, arrow_start, arrow_end, color="black")
@@ -692,7 +692,7 @@ def draw_equation_boxes(ax: Axes) -> None:
         mean=45,
         std=12,
         color=COLORS["predictive"],
-        label=r"$p(x_t|y_{1:t-1})$",
+        label=r"$p(x_k|y_{1:k-1})$",
         title="Predictive\nDistribution",
     )
 
@@ -706,7 +706,7 @@ def draw_equation_boxes(ax: Axes) -> None:
             mean=40,
             std=8,
             color=COLORS["posterior"],
-            label=r"$p(x_{t-1}|y_{1:t-1})$",
+            label=r"$p(x_{k-1}|y_{1:k-1})$",
             title="Previous\nPosterior",
         ),
         operator=r"$\circledast$",
@@ -716,7 +716,7 @@ def draw_equation_boxes(ax: Axes) -> None:
             mean=45,
             std=10,
             color=COLORS["annotation"],
-            label=r"$p(x_t|x_{t-1})$",
+            label=r"$p(x_k|x_{k-1})$",
             title="Transition",
         ),
         result=predictive_inset,
@@ -737,14 +737,14 @@ def draw_equation_boxes(ax: Axes) -> None:
             mean=50,
             std=10,
             color=COLORS["likelihood"],
-            label=r"$p(y_t|x_t)$",
+            label=r"$p(y_k|x_k)$",
             title="Likelihood",
         ),
         result=_InsetSpec(
             mean=48,
             std=7,
             color=COLORS["posterior"],
-            label=r"$p(x_t|y_{1:t})$",
+            label=r"$p(x_k|y_{1:k})$",
             title="Current\nPosterior",
         ),
         box_center_x=box_center_x,
@@ -783,7 +783,7 @@ def draw_equation_boxes(ax: Axes) -> None:
     ax.text(
         bracket_x - 0.1,
         bracket_mid,
-        "Each\ntime $t$",
+        "Each\ntime $k$",
         ha="right",
         va="center",
         fontweight="bold",

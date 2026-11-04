@@ -98,8 +98,8 @@ Figure 3's values), so small overlaps separate from exact zeros as they do in
 the paper and on the website; the p-value panel shows −log p.
 
 The slice panel's "Overlay" combo switches the population-likelihood
-plot's blue overlay between predictive `p(x_t | y_{1:t-1})`, filtered
-`p(x_t | y_{1:t})`, and smoothed `p(x_t | y_{1:T})` distributions.
+plot's blue overlay between predictive `p(x_k | y_{1:k-1})`, filtered
+`p(x_k | y_{1:k})`, and smoothed `p(x_k | y_{1:K})` distributions.
 Every Figure-4 cache carries the smoothed posterior (`acausal_posterior`).
 The Figure-3 simulation cache has none, because the simulation only
 forward-filters, so the Smoothed entry is disabled there.
