@@ -11,6 +11,7 @@ from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from typing import Any, cast
 
+import numpy as np
 import pytest
 
 from statespacecheck_paper import figure04_generation
@@ -23,6 +24,7 @@ from statespacecheck_paper.figure04_input import INPUT_FILE_SUFFIX
 from statespacecheck_paper.figure04_layout import Figure4Composition
 from statespacecheck_paper.figure04_protocol import FIGURE04_DETAIL_WINDOW
 from statespacecheck_paper.figure04_summary import (
+    Figure4DetailWindowComparison,
     Figure4DiagnosticMeans,
     Figure4KlDivergenceComparison,
     Figure4Summary,
@@ -64,11 +66,15 @@ def test_generation_passes_figure_and_bbox_to_save(monkeypatch: pytest.MonkeyPat
             analysis_results=SimpleNamespace(
                 continuous_diagnostics=None, continuous_fragmented_diagnostics=None
             ),
+            time=np.zeros(200_000),
         ),
     )
     monkeypatch.setattr(figure04_generation, "compute_figure04_summary", lambda *a, **k: object())
     monkeypatch.setattr(
         figure04_generation, "compute_kl_divergence_comparison", lambda *a, **k: object()
+    )
+    monkeypatch.setattr(
+        figure04_generation, "compute_detail_window_comparison", lambda *a, **k: object()
     )
     monkeypatch.setattr(figure04_generation, "format_figure04_summary", lambda *a, **k: "summary")
     monkeypatch.setattr(
@@ -122,6 +128,11 @@ def test_summary_payload_contains_reported_counts_rates_and_provenance(
     )
     summary = Figure4Summary(means_a, means_b, (confusion,), n_units=7)
     kl_comparison = Figure4KlDivergenceComparison(0.9, (2.5, 3.5), 0.08, 1.5, 30.0)
+    detail_comparison = Figure4DetailWindowComparison(
+        n_events=50,
+        hpd_overlap=FlagConfusion("hpd_overlap", 0.05, 50, 1, 4, 0, 45),
+        predictive_pvalue_higher=30,
+    )
     cache_provenance = synthetic_cache_provenance("epoch_x")
     source = {
         "statespacecheck_paper_version": "test",
@@ -137,6 +148,7 @@ def test_summary_payload_contains_reported_counts_rates_and_provenance(
             paths=Figure4Paths(tmp_path, "epoch_x"),
             summary=summary,
             kl_divergence_comparison=kl_comparison,
+            detail_window_comparison=detail_comparison,
             cache_provenance=cache_provenance,
         ),
     )
@@ -178,6 +190,19 @@ def test_summary_payload_contains_reported_counts_rates_and_provenance(
         "higher_fraction": 0.08,
         "higher_continuous_median": 1.5,
         "higher_continuous_fragmented_max": 30.0,
+    }
+    assert payload["detail_window_comparison"] == {
+        "n_events": 50,
+        "hpd_overlap": {
+            "metric": "hpd_overlap",
+            "threshold": 0.05,
+            "n": 50,
+            "both": 1,
+            "rescued": 4,
+            "newly_flagged": 0,
+            "neither": 45,
+        },
+        "predictive_pvalue_higher": 30,
     }
     assert provenance["source"] == source
     cache_provenance_payload = provenance["figure04_caches"]

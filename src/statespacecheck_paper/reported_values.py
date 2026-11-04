@@ -658,6 +658,32 @@ def _recording_statistics(payload: dict[str, Any]) -> list[MacroDefinition]:
             ),
         ]
     )
+    detail = payload["detail_window_comparison"]
+    detail_hpd = detail["hpd_overlap"]
+    macros.extend(
+        [
+            MacroDefinition(
+                "RecDetailNEvents",
+                _exact(detail["n_events"]),
+                "detail_window_comparison.n_events",
+            ),
+            MacroDefinition(
+                "RecDetailHpdFlaggedContinuous",
+                _exact(detail_hpd["rescued"] + detail_hpd["both"]),
+                "detail_window_comparison.hpd_overlap: rescued + both",
+            ),
+            MacroDefinition(
+                "RecDetailHpdRescued",
+                _exact(detail_hpd["rescued"]),
+                "detail_window_comparison.hpd_overlap.rescued",
+            ),
+            MacroDefinition(
+                "RecDetailPvalueHigher",
+                _exact(detail["predictive_pvalue_higher"]),
+                "detail_window_comparison.predictive_pvalue_higher",
+            ),
+        ]
+    )
     return macros
 
 

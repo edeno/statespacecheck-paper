@@ -1,7 +1,8 @@
 """Figure-4 manuscript scalars from the two decoders' per-spike diagnostics.
 
-Whole-session event means, the two-decoder flag agreement, and the two-decoder
-KL-divergence comparison, plus their command-line formatting. Kept apart from
+Whole-session event means, the two-decoder flag agreement, the two-decoder
+KL-divergence comparison, and the detail-window comparison, plus their
+command-line formatting. Kept apart from
 :mod:`figure04_workflow` so that editing a summary or its printed text does not
 change the decode cache's source fingerprint and refit the models.
 """
@@ -12,6 +13,7 @@ import dataclasses
 from collections.abc import Mapping
 
 import numpy as np
+from numpy.typing import NDArray
 
 from statespacecheck_paper.diagnostics import FlagDirection, SpikeEventDiagnostics
 from statespacecheck_paper.figure04_diagnostics import FlagConfusion, compute_flag_confusion
@@ -128,6 +130,108 @@ def compute_kl_divergence_comparison(
         higher_fraction=float(higher.mean()),
         higher_continuous_median=float(np.median(continuous[higher])),
         higher_continuous_fragmented_max=float(np.max(fragmented[higher])),
+    )
+
+
+@dataclasses.dataclass(frozen=True)
+class Figure4DetailWindowComparison:
+    """Two-decoder comparison of the spike events in the Figure-4 detail window.
+
+    Describes the detail panels of Figure 4a,b: how many of the window's spikes
+    that HPD overlap flags under the Continuous decoder are no longer flagged
+    under the Continuous-Fragmented decoder, and how many spikes the
+    Continuous-Fragmented decoder makes less unexpected under the predictive check.
+
+    Attributes
+    ----------
+    n_events : int
+        Spike events in the window.
+    hpd_overlap : FlagConfusion
+        HPD-overlap flag agreement on those events, with the Continuous decoder
+        as the reference.
+    predictive_pvalue_higher : int
+        Events with a higher predictive p-value (lower ``-log(p)``) under
+        Continuous-Fragmented than under Continuous.
+    """
+
+    n_events: int
+    hpd_overlap: FlagConfusion
+    predictive_pvalue_higher: int
+
+
+def _select_events(
+    diagnostics: SpikeEventDiagnostics, mask: NDArray[np.bool_]
+) -> SpikeEventDiagnostics:
+    """Return the per-spike diagnostics of the events in ``mask``, without dense matrices."""
+    return SpikeEventDiagnostics(
+        event_time_ind=diagnostics.event_time_ind[mask],
+        event_cell_ind=diagnostics.event_cell_ind[mask],
+        event_hpd_overlap=diagnostics.event_hpd_overlap[mask],
+        event_kl_divergence=diagnostics.event_kl_divergence[mask],
+        event_predictive_pvalue=diagnostics.event_predictive_pvalue[mask],
+        hpd_overlap=None,
+        kl_divergence=None,
+        predictive_pvalue=None,
+        event_likelihood=None,
+        event_time=None if diagnostics.event_time is None else diagnostics.event_time[mask],
+    )
+
+
+def compute_detail_window_comparison(
+    continuous_diagnostics: SpikeEventDiagnostics,
+    continuous_fragmented_diagnostics: SpikeEventDiagnostics,
+    time_slice: slice,
+    *,
+    thresholds: Mapping[str, float],
+    metric_directions: Mapping[str, FlagDirection],
+) -> Figure4DetailWindowComparison:
+    """Compare the two decoders' per-spike diagnostics within the detail window.
+
+    Parameters
+    ----------
+    continuous_diagnostics, continuous_fragmented_diagnostics : SpikeEventDiagnostics
+        Per-spike diagnostics of the Continuous and Continuous-Fragmented decoders,
+        on the same spikes; ``event_time_ind`` indexes the decode time samples.
+    time_slice : slice
+        Half-open range of decode time samples, from
+        :meth:`Figure4DetailWindow.to_slice`.
+    thresholds, metric_directions : Mapping
+        Flag threshold and direction of worse fit per metric, as for
+        :func:`summarize_figure04_diagnostics`; ``"hpd_overlap"`` is used.
+
+    Returns
+    -------
+    Figure4DetailWindowComparison
+        The window's event count, HPD-overlap flag agreement, and count of
+        events with a higher predictive p-value under Continuous-Fragmented.
+
+    Raises
+    ------
+    ValueError
+        If the window contains no spike events, or the two decoders' events
+        differ (from :func:`compute_flag_confusion`).
+    """
+    time_ind = np.asarray(continuous_diagnostics.event_time_ind)
+    in_window = (time_ind >= time_slice.start) & (time_ind < time_slice.stop)
+    if not in_window.any():
+        raise ValueError(
+            f"The detail window [{time_slice.start}, {time_slice.stop}) contains no spike events"
+        )
+    continuous = _select_events(continuous_diagnostics, in_window)
+    fragmented = _select_events(continuous_fragmented_diagnostics, in_window)
+    hpd_overlap = compute_flag_confusion(
+        continuous,
+        fragmented,
+        "hpd_overlap",
+        thresholds["hpd_overlap"],
+        worse_when=metric_directions["hpd_overlap"],
+    )
+    return Figure4DetailWindowComparison(
+        n_events=int(in_window.sum()),
+        hpd_overlap=hpd_overlap,
+        predictive_pvalue_higher=int(
+            np.sum(fragmented.event_predictive_pvalue > continuous.event_predictive_pvalue)
+        ),
     )
 
 

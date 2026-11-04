@@ -3,8 +3,8 @@
 % Every value below is read from the canonical figure summaries
 % (except the DOIs, whose comments name their sources):
 %   figures/main/figure03_summary.json (schema 9)
-%   figures/main/figure04_summary.json (schema 9)
-% source_tree_sha256: 2a32a33bbd91e00f517848a9986d90277fc6833d771fce74672686dd41eade0d
+%   figures/main/figure04_summary.json (schema 10)
+% source_tree_sha256: fdbf2951ece0beeb90581ffcfde27f74e5c45992e3189a3771764123ce0a6861
 %
 % Regenerate with: uv run python scripts/emit_reported_values.py
 
@@ -101,6 +101,10 @@
 \newcommand{\RecKlHigherPercent}{6}                  % kl_divergence_comparison.higher_fraction
 \newcommand{\RecKlHigherContinuousMedian}{1.5}       % kl_divergence_comparison.higher_continuous_median
 \newcommand{\RecKlHigherFragmentedMax}{30}           % kl_divergence_comparison.higher_continuous_fragmented_max
+\newcommand{\RecDetailNEvents}{649}                  % detail_window_comparison.n_events
+\newcommand{\RecDetailHpdFlaggedContinuous}{43}      % detail_window_comparison.hpd_overlap: rescued + both
+\newcommand{\RecDetailHpdRescued}{38}                % detail_window_comparison.hpd_overlap.rescued
+\newcommand{\RecDetailPvalueHigher}{457}             % detail_window_comparison.predictive_pvalue_higher
 
 % --- Hippocampal recording (Figure 4) --- recorded configuration
 \newcommand{\RecPositionBinSizeCm}{2}                  % configuration.decoder.position_bin_size_cm

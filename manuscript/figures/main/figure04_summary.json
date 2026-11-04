@@ -61,6 +61,19 @@
     "center_index": 193069,
     "half_width_samples": 500
   },
+  "detail_window_comparison": {
+    "hpd_overlap": {
+      "both": 5,
+      "metric": "hpd_overlap",
+      "n": 649,
+      "neither": 606,
+      "newly_flagged": 0,
+      "rescued": 38,
+      "threshold": 0.05
+    },
+    "n_events": 649,
+    "predictive_pvalue_higher": 457
+  },
   "diagnostic_means": {
     "continuous": {
       "hpd_overlap": 0.8312001903462088,
@@ -195,11 +208,11 @@
       "statespacecheck_version": "0.3.1"
     },
     "source": {
-      "source_tree_sha256": "2a32a33bbd91e00f517848a9986d90277fc6833d771fce74672686dd41eade0d",
+      "source_tree_sha256": "fdbf2951ece0beeb90581ffcfde27f74e5c45992e3189a3771764123ce0a6861",
       "statespacecheck_paper_version": "0.1.0",
       "statespacecheck_version": "0.3.1",
       "uv_lock_sha256": "280ef8920b3302f206621349c0733c017b8a329e3d85c789b21bf6350c093fe2"
     }
   },
-  "schema_version": 9
+  "schema_version": 10
 }

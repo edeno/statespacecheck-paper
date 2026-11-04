@@ -25,6 +25,7 @@ from statespacecheck_paper.figure04_generation import (
 )
 from statespacecheck_paper.figure04_input import INPUT_FILE_SUFFIX
 from statespacecheck_paper.figure04_summary import (
+    Figure4DetailWindowComparison,
     Figure4DiagnosticMeans,
     Figure4KlDivergenceComparison,
     Figure4Summary,
@@ -211,6 +212,19 @@ def test_figure04_reported_statistics_counts_partition_events(tmp_path: Path) ->
     assert kl["lower_fraction"] + kl["higher_fraction"] <= 1.0
     assert kl["lower_continuous_quartiles"][0] <= kl["lower_continuous_quartiles"][1]
     assert kl["higher_continuous_fragmented_max"] > kl["higher_continuous_median"]
+    # The detail window's HPD flag agreement partitions its spike events.
+    detail = payload["detail_window_comparison"]
+    detail_hpd = detail["hpd_overlap"]
+    assert detail["n_events"] == 649
+    assert detail["predictive_pvalue_higher"] == 457
+    assert (
+        detail_hpd["both"],
+        detail_hpd["rescued"],
+        detail_hpd["newly_flagged"],
+        detail_hpd["neither"],
+    ) == (5, 38, 0, 606)
+    assert detail_hpd["n"] == detail["n_events"]
+    assert detail["predictive_pvalue_higher"] <= detail["n_events"]
     source = payload["provenance"]["source"]
     assert len(source["source_tree_sha256"]) == 64
     assert len(source["uv_lock_sha256"]) == 64
@@ -263,6 +277,11 @@ def test_figure04_reported_statistics_counts_partition_events(tmp_path: Path) ->
             higher_fraction=kl["higher_fraction"],
             higher_continuous_median=kl["higher_continuous_median"],
             higher_continuous_fragmented_max=kl["higher_continuous_fragmented_max"],
+        ),
+        detail_window_comparison=Figure4DetailWindowComparison(
+            n_events=detail["n_events"],
+            hpd_overlap=FlagConfusion(**detail_hpd),
+            predictive_pvalue_higher=detail["predictive_pvalue_higher"],
         ),
         cache_provenance=cache_provenance,
     )

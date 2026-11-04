@@ -12,6 +12,7 @@ import pytest
 import xarray as xr
 
 from statespacecheck_paper import figure04_cache, figure04_fit, figure04_workflow
+from statespacecheck_paper.diagnostics import FlagDirection
 from statespacecheck_paper.figure04_cache import (
     _FIGURE04_DECODE_AND_DIAGNOSTICS_PAYLOAD_KEYS,
     Figure4Paths,
@@ -20,6 +21,7 @@ from statespacecheck_paper.figure04_decoder import Figure4Config
 from statespacecheck_paper.figure04_input import NeuralRecordingData
 from statespacecheck_paper.figure04_summary import (
     Figure4Summary,
+    compute_detail_window_comparison,
     compute_figure04_summary,
     compute_kl_divergence_comparison,
     compute_mean_spike_event_diagnostic,
@@ -89,6 +91,48 @@ class TestComputeMeanSpikeEventDiagnostic:
         with pytest.raises(KeyError, match="event_made_up_metric"):
             compute_mean_spike_event_diagnostic(
                 event_diagnostics(hpd=np.array([0.5])), "made_up_metric"
+            )
+
+
+class TestComputeDetailWindowComparison:
+    THRESHOLDS = {"hpd_overlap": 0.05}
+    DIRECTIONS: dict[str, FlagDirection] = {"hpd_overlap": "below"}
+
+    def test_counts_only_events_inside_the_window(self) -> None:
+        # Events at bins 1 and 9 fall outside [2, 8); the five inside are scored.
+        time_ind = [1, 2, 3, 4, 5, 7, 9]
+        continuous = event_diagnostics(
+            hpd=np.array([0.0, 0.0, 0.0, 0.0, 0.5, 0.5, 0.0]),
+            pvalue=np.array([0.5, 0.01, 0.2, 0.3, 0.4, 0.5, 0.01]),
+            time_ind=time_ind,
+        )
+        fragmented = event_diagnostics(
+            hpd=np.array([0.5, 0.5, 0.0, 0.5, 0.0, 0.5, 0.5]),
+            pvalue=np.array([0.1, 0.02, 0.1, 0.3, 0.9, 0.5, 0.9]),
+            time_ind=time_ind,
+        )
+        comparison = compute_detail_window_comparison(
+            continuous,
+            fragmented,
+            slice(2, 8),
+            thresholds=self.THRESHOLDS,
+            metric_directions=self.DIRECTIONS,
+        )
+        assert comparison.n_events == 5
+        hpd = comparison.hpd_overlap
+        assert (hpd.n, hpd.both, hpd.rescued, hpd.newly_flagged, hpd.neither) == (5, 1, 2, 1, 1)
+        # Inside the window, p rises for bins 2 and 5, falls for 3, ties at 4 and 7.
+        assert comparison.predictive_pvalue_higher == 2
+
+    def test_rejects_an_empty_window(self) -> None:
+        diagnostics = event_diagnostics(hpd=np.array([0.5, 0.5]), time_ind=[0, 10])
+        with pytest.raises(ValueError, match="contains no spike events"):
+            compute_detail_window_comparison(
+                diagnostics,
+                diagnostics,
+                slice(2, 8),
+                thresholds=self.THRESHOLDS,
+                metric_directions=self.DIRECTIONS,
             )
 
 
