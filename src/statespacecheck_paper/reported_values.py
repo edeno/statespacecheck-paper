@@ -479,6 +479,22 @@ def _simulation_configuration(payload: dict[str, Any]) -> list[MacroDefinition]:
             "peak expected count per step / step_seconds, in Hz",
         ),
         MacroDefinition(
+            "SimReplayRateScale",
+            _exact(config["replay_place_field_rate_scale"]),
+            "replay_place_field_rate_scale",
+        ),
+        MacroDefinition(
+            "SimReplayPeakRateHz",
+            significant(
+                peak_count_per_step
+                * config["replay_place_field_rate_scale"]
+                / rate_scale
+                / step_seconds,
+                SIGNIFICANT_FIGURES,
+            ),
+            "replay peak expected count per step / step_seconds, in Hz",
+        ),
+        MacroDefinition(
             "SimPredictionStepStd",
             _exact(config["prediction_step_std"], 1),
             "prediction_step_std",
