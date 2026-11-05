@@ -7,6 +7,19 @@ uv sync --frozen --extra interactive
 ```
 
 For development, `make sync-dev` installs both the development and viewer extras.
+
+On Linux, PySide6 needs system libraries that a server or container may lack. If
+the viewer fails with an `ImportError` naming a `.so` file, install them (Debian or
+Ubuntu):
+
+```bash
+sudo apt-get install libegl1 libgl1 libxkbcommon0 libdbus-1-3 libglib2.0-0 libfreetype6 libfontconfig1
+```
+
+On ARM Linux with Python 3.10 or 3.11, the PySide6 wheels mishandle a reference
+count and Python aborts with `none_dealloc`, including under the locked 6.11. Use
+Python 3.12 there. PySide6 6.12 does the same on x86_64 Linux, so keep the lock
+below it while the viewer supports Python below 3.12.
 For the recording input and decode-cache requirements, see [reproduction](reproduce.md).
 
 A pyqtgraph desktop app (`statespacecheck_paper.interactive`) renders
