@@ -381,6 +381,14 @@ def _simulation_statistics(payload: dict[str, Any]) -> list[MacroDefinition]:
                 "threshold_provenance.kl_divergence.quantile",
             ),
             MacroDefinition(
+                "SimHpdBaselineFlagPercent",
+                significant(
+                    100.0 * provenance["hpd_overlap"]["baseline_flagged_fraction"],
+                    SIGNIFICANT_FIGURES,
+                ),
+                "threshold_provenance.hpd_overlap.baseline_flagged_fraction",
+            ),
+            MacroDefinition(
                 "SimPredictiveCutoff",
                 _exact(provenance["predictive_pvalue"]["cutoff"], 2),
                 "threshold_provenance.predictive_pvalue.cutoff",
@@ -606,8 +614,15 @@ _RECORDING_FLAG_MACRO_PREFIXES = {"hpd_overlap": "RecHpd", "predictive_pvalue": 
 
 def _recording_statistics(payload: dict[str, Any]) -> list[MacroDefinition]:
     """Build the Figure-4 macros computed from the hippocampal recording."""
+    # Every flag confusion counts the same spike events, which Figure 4c plots.
+    event_counts = {confusion["n"] for confusion in payload["flag_confusions"]}
+    if not event_counts:
+        raise ValueError("figure04_summary.json has no flag_confusions to count spike events from")
+    if len(event_counts) != 1:
+        raise ValueError(f"flag_confusions disagree on the spike-event count: {event_counts}")
     macros = [
-        MacroDefinition("RecNUnits", _exact(payload["dataset"]["n_units"]), "dataset.n_units")
+        MacroDefinition("RecNUnits", _exact(payload["dataset"]["n_units"]), "dataset.n_units"),
+        MacroDefinition("RecNEvents", _exact(event_counts.pop()), "flag_confusions[].n"),
     ]
     for metric in payload["flag_rules"]:
         prefix = _RECORDING_FLAG_MACRO_PREFIXES[metric]

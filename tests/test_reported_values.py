@@ -119,6 +119,24 @@ def test_asymmetric_mode_parameters_are_reported_independently() -> None:
     assert values["RecModeFragmentedStay"] == "0.80"
 
 
+@pytest.mark.parametrize(
+    ("event_counts", "message"),
+    [((870, 871), "disagree on the spike-event count"), ((), "no flag_confusions")],
+)
+def test_spike_event_count_requires_one_shared_confusion_total(
+    event_counts: tuple[int, ...], message: str
+) -> None:
+    """``RecNEvents`` is the one spike-event total every flag confusion counts."""
+    figure03 = _load("figure03_summary.json")
+    figure04 = copy.deepcopy(_load("figure04_summary.json"))
+    template = figure04["flag_confusions"][0]
+    figure04["flag_confusions"] = [{**template, "n": n} for n in event_counts]
+    with pytest.raises(ValueError, match=message):
+        render_macro_file(
+            figure03, figure04, statespacecheck_doi=CITED_DOI, analysis_code_doi=CODE_DOI
+        )
+
+
 def test_every_figure04_flag_rule_is_reported_or_fails_the_emit() -> None:
     """The flag-count macros follow the summary's flag rules, not a fixed list."""
     figure03 = _load("figure03_summary.json")
