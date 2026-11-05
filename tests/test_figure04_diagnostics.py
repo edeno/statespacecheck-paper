@@ -10,6 +10,11 @@ import pandas as pd
 import pytest
 
 import statespacecheck_paper.figure04_diagnostics as figure04_diagnostics
+from statespacecheck_paper.diagnostics import (
+    HPD_COVERAGE,
+    compute_spike_event_diagnostics_from_rates,
+)
+from statespacecheck_paper.figure04_decoder import get_spike_counts
 from statespacecheck_paper.figure04_diagnostics import (
     compute_flag_confusion,
     compute_results_diagnostics,
@@ -155,6 +160,25 @@ class TestComputePerCellDiagnostics:
         )
         assert time_ind.shape == (0,)
 
+    def test_events_reproduce_the_decoders_spike_counts(self) -> None:
+        """The per-event path and the decoder's count path bin spikes alike, so the
+        likelihood row (counts) and the per-spike diagnostics (events) agree,
+        including at the grid's interior edges and its last sample."""
+        time = np.linspace(0.0, 1.0, 51)
+        rng = np.random.default_rng(0)
+        spike_times = [
+            np.sort(np.concatenate([rng.uniform(0.0, 1.0, 200), time[[0, 7, 49, 50]]])),
+            np.sort(rng.uniform(0.2, 0.4, 100)),
+        ]
+
+        time_ind, cell_ind, _ = figure04_diagnostics._get_spike_events_from_spike_times(
+            spike_times, time
+        )
+
+        event_counts = np.zeros((time.size, len(spike_times)), dtype=np.int64)
+        np.add.at(event_counts, (time_ind, cell_ind), 1)
+        np.testing.assert_array_equal(event_counts, get_spike_counts(spike_times, time))
+
     def test_duplicate_spikes_in_same_bin_are_separate_events(
         self, rng: np.random.Generator
     ) -> None:
@@ -275,6 +299,32 @@ class TestComputeResultsDiagnostics:
             state_bins=state_bins,
         )
         return results, posterior_per_state[:, :, interior_mask].sum(axis=1)
+
+    def test_coverage_sets_the_hpd_overlap(self) -> None:
+        """A coverage other than the default reaches the HPD-overlap computation."""
+        results, marginal = self._two_state_results()
+        # Cell 0 peaks away from the predictive mode, so the two HPD regions
+        # are disjoint at low coverage and overlap once they hold both bins.
+        place_fields = np.array([[3.0, 1.0], [1.0, 3.0]])  # interior bins only
+        time = np.array([0.0, 0.002])
+        spike_times = [np.array([0.001]), np.array([0.001])]
+        coverage = 0.3
+        assert coverage != HPD_COVERAGE
+
+        diagnostics = compute_results_diagnostics(
+            results, place_fields, time, spike_times, coverage=coverage
+        )
+        expected = compute_spike_event_diagnostics_from_rates(
+            marginal,
+            place_fields,
+            diagnostics.event_time_ind,
+            diagnostics.event_cell_ind,
+            coverage=coverage,
+        )
+        at_default = compute_results_diagnostics(results, place_fields, time, spike_times)
+
+        np.testing.assert_array_equal(diagnostics.event_hpd_overlap, expected.event_hpd_overlap)
+        assert not np.array_equal(diagnostics.event_hpd_overlap, at_default.event_hpd_overlap)
 
     def test_marginalizes_state_and_forwards_the_shared_place_fields(
         self, monkeypatch: pytest.MonkeyPatch

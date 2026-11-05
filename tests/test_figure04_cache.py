@@ -30,7 +30,11 @@ from statespacecheck_paper.figure04_cache import (
     save_figure04_decode_cache,
     save_figure04_diagnostics_cache,
 )
-from statespacecheck_paper.figure04_decoder import Figure4Config, Figure4DiagnosticsConfig
+from statespacecheck_paper.figure04_decoder import (
+    Figure4Config,
+    Figure4DecoderConfig,
+    Figure4DiagnosticsConfig,
+)
 from statespacecheck_paper.figure04_input import INPUT_FILE_SUFFIX
 
 
@@ -228,6 +232,24 @@ def test_fingerprint_changes_with_config_and_dependency(
 
     monkeypatch.setattr(figure04_cache, "_installed_non_local_detector_version", lambda: "2.0.0")
     assert compute_figure04_cache_provenance(config, paths).fingerprint_sha256 != fp1
+
+
+@pytest.mark.parametrize(
+    "field", [field.name for field in dataclasses.fields(Figure4DecoderConfig)]
+)
+def test_every_decoder_field_changes_the_fingerprint(tmp_path: Path, field: str) -> None:
+    paths = _paths_with_input(tmp_path)
+    config = Figure4Config()
+    changed = dataclasses.replace(
+        config,
+        decoder=dataclasses.replace(
+            config.decoder, **{field: getattr(config.decoder, field) * 2.0}
+        ),
+    )
+    assert (
+        compute_figure04_cache_provenance(changed, paths).fingerprint_sha256
+        != compute_figure04_cache_provenance(config, paths).fingerprint_sha256
+    )
 
 
 def test_runtime_dependency_closure_walks_a_metadata_graph() -> None:

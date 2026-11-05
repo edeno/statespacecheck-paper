@@ -16,6 +16,7 @@ from statespacecheck_paper.figure03_summary import (
     compute_condition_decoding_error,
     extract_condition_flag_values,
     flag_percentages_from_values,
+    median_standard_error,
 )
 
 
@@ -157,6 +158,19 @@ class TestSummaryFlagPercentages:
             extract_condition_flag_values(_events(metrics), conditions)
 
 
+def test_median_standard_error_uses_the_stated_order_statistics() -> None:
+    """For n = 100, k = floor(50 - 1.96 * 10 / 2) = 40, so the 1-based order
+    statistics 40 and 61 bound the median; the SE is their half-width over z."""
+    values = np.arange(100, dtype=float) ** 2
+    samples = np.column_stack([values, 2.0 * values])[np.random.default_rng(0).permutation(100)]
+
+    half_width_over_z = (60.0**2 - 39.0**2) / (2.0 * 1.96)
+
+    np.testing.assert_allclose(
+        median_standard_error(samples), [half_width_over_z, 2.0 * half_width_over_z]
+    )
+
+
 class TestConditionDecodingError:
     """Per-phase decoding error of the filtered posterior against the
     physical position: median absolute error of the posterior mean (row
@@ -220,6 +234,39 @@ class TestConditionDecodingError:
         )
 
         assert np.allclose(decoding_error, 0.3)
+
+    def test_error_is_measured_from_the_posterior_mean_not_its_mode(self) -> None:
+        """A bimodal posterior's mean lies between its modes, where the animal is."""
+        params = self._params()
+        n_time = params.phase_boundaries[PhaseBoundary.SPARSE_POP_END]
+        position_bins = np.arange(11, dtype=float)
+        posterior = np.zeros((n_time, position_bins.size))
+        posterior[:, 0] = 0.6
+        posterior[:, 10] = 0.4
+        conditions = build_summary_conditions(params)
+
+        decoding_error = compute_condition_decoding_error(
+            posterior, position_bins, np.full(n_time, 4.0), conditions
+        )
+
+        np.testing.assert_allclose(decoding_error, 0.0, atol=1e-12)
+
+    def test_error_is_the_median_over_the_window(self) -> None:
+        """One outlying step in the remap window [6, 10) leaves the median at zero."""
+        params = self._params()
+        n_time = params.phase_boundaries[PhaseBoundary.SPARSE_POP_END]
+        position_bins = np.arange(10, dtype=float)
+        true_bin = np.zeros(n_time, dtype=int)
+        decoded_bin = true_bin.copy()
+        decoded_bin[6] = 8
+        posterior = self._delta_posterior(decoded_bin, position_bins.size)
+        conditions = build_summary_conditions(params)
+
+        decoding_error = compute_condition_decoding_error(
+            posterior, position_bins, position_bins[true_bin], conditions
+        )
+
+        np.testing.assert_array_equal(decoding_error, 0.0)
 
     def test_shape_mismatch_raises(self) -> None:
         params = self._params()

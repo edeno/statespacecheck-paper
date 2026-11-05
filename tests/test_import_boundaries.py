@@ -483,6 +483,13 @@ _DECODE_NEUTRAL_IMPORTS: dict[str, frozenset[str]] = {
 }
 
 
+# Unhashed modules that the diagnostics-hashed modules may reach: figure04_cache
+# decides whether the diagnostics are recomputed, not their values, and paths
+# names files. The decode-hashed modules they reach are covered by the decode
+# fingerprint, which the diagnostics cache is also keyed on.
+_DIAGNOSTIC_NEUTRAL_IMPORTS = {"figure04_cache", "paths"}
+
+
 def _names_imported_from(importer: str, target: str) -> set[str]:
     """Names the top-level module ``importer`` imports from sibling ``target``.
 
@@ -505,6 +512,27 @@ def _names_imported_from(importer: str, target: str) -> set[str]:
                 if any(alias.name == target for alias in node.names):
                     names.add("*")
     return names
+
+
+def test_diagnostics_hashed_modules_import_only_hashed_or_neutral_modules() -> None:
+    """Every paper module reachable from a diagnostics-hashed module is hashed into
+    the decode or diagnostics fingerprint, or is in ``_DIAGNOSTIC_NEUTRAL_IMPORTS``.
+    Otherwise an edit to an unhashed module could change the diagnostics while a
+    stale diagnostics cache is still accepted."""
+    graph = _module_graph()
+    hashed = {name.removesuffix(".py") for name in figure04_cache._DIAGNOSTIC_SOURCE_FILES}
+    decode_hashed = {name.removesuffix(".py") for name in figure04_cache._DECODE_SOURCE_FILES}
+    assert hashed <= graph.keys()
+
+    reached: set[str] = set()
+    pending = sorted(hashed)
+    while pending:
+        name = pending.pop()
+        for target in sorted((graph[name]["top"] | graph[name]["lazy"]) - reached):
+            reached.add(target)
+            pending.append(target)
+
+    assert reached - hashed - decode_hashed == _DIAGNOSTIC_NEUTRAL_IMPORTS
 
 
 def test_decode_hashed_modules_import_only_hashed_or_decode_neutral_modules() -> None:

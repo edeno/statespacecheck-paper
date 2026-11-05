@@ -23,6 +23,8 @@ import dataclasses
 import numpy as np
 import pytest
 import statespacecheck as ssc
+from numpy.typing import NDArray
+from scipy.special import xlogy
 
 from statespacecheck_paper.diagnostics import (
     HPD_COVERAGE,
@@ -31,11 +33,17 @@ from statespacecheck_paper.diagnostics import (
     compute_spike_event_diagnostics_from_rates,
     flag_mask,
 )
-from statespacecheck_paper.figure03_protocol import Figure3Config, PhaseBoundary
+from statespacecheck_paper.figure03_protocol import (
+    Figure3Config,
+    PhaseBoundary,
+    compute_replay_step_window,
+)
 from statespacecheck_paper.figure03_simulation import (
+    Figure3ExpectedCountTables,
     Figure3SimulationResult,
     _single_out_and_back_sweep,
     build_figure03_expected_count_tables,
+    build_sparse_population,
     remap_place_field_centers,
     run_figure03_simulation,
     simulate_drift_phase,
@@ -43,6 +51,8 @@ from statespacecheck_paper.figure03_simulation import (
 )
 from statespacecheck_paper.figure03_summary import (
     Figure3RealizationSummary,
+    _realization_values,
+    build_summary_conditions,
     estimate_realization_summary,
     median_standard_error,
 )
@@ -55,6 +65,7 @@ def _moderate_params() -> Figure3Config:
     """
     return Figure3Config(
         phase_boundaries=(600, 900, 1100, 1400, 1600, 1900, 2100, 3100),
+        sparse_approach_duration_steps=100,
     )
 
 
@@ -100,6 +111,245 @@ def test_phase_boundaries_end_the_timeline(sim: Figure3SimulationResult) -> None
     end = params.phase_boundaries[PhaseBoundary.SPARSE_POP_END]
     x_true = np.asarray(sim.physical_position)
     assert x_true.shape[0] == end
+
+
+def _expected_count_tables(sim: Figure3SimulationResult) -> Figure3ExpectedCountTables:
+    """Return the decoder's tables; each has shape ``(n_bins, n_cells)``."""
+    return build_figure03_expected_count_tables(
+        sim.position_bins,
+        sim.config.place_field_centers,
+        np.asarray(sim.sparse_place_field_centers),
+        sim.config,
+    )
+
+
+def _nearest_bin(sim: Figure3SimulationResult, position: NDArray[np.floating]) -> NDArray[np.intp]:
+    """Return the position bin nearest each of ``position``, shape ``(n_time,)``."""
+    return np.abs(sim.position_bins[None, :] - position[:, None]).argmin(axis=1)
+
+
+def _replay_sweep(sim: Figure3SimulationResult) -> NDArray[np.floating]:
+    """Rebuild the represented sweep, which starts from the immobile position."""
+    config = sim.config
+    r0, r1 = compute_replay_step_window(config)
+    return _single_out_and_back_sweep(
+        float(sim.physical_position[r0]),
+        r1 - r0,
+        float(config.position_min),
+        float(config.position_max),
+        config.replay_speed_per_step,
+    )
+
+
+def _assert_count_matches_poisson_total(observed: int, expected: float, label: str) -> None:
+    """Check a Poisson total against its mean, within 4.5 standard deviations."""
+    assert abs(observed - expected) <= 4.5 * np.sqrt(max(expected, 1.0)), (
+        f"{label}: observed {observed} spikes, the decoder expects {expected:.1f}"
+    )
+
+
+def test_decoder_updates_with_the_declared_table_on_every_step(
+    sim: Figure3SimulationResult,
+) -> None:
+    """Every step's stored update is the Poisson update under its phase's table.
+
+    ``posterior[t]`` is ``predictive[t]`` times the likelihood of that step's
+    spikes, so the stored outputs reveal the table the decoder actually used. A
+    window that is missing, starts or ends late, or reaches only the diagnostics
+    fails here, whichever tables those windows were configured with.
+    """
+    config = sim.config
+    bounds = config.phase_boundaries
+    tables = _expected_count_tables(sim)
+    remap = (bounds[PhaseBoundary.REMAP_START], bounds[PhaseBoundary.REMAP_END])
+    replay = compute_replay_step_window(config)
+    sparse = (bounds[PhaseBoundary.RECOVERY3_END], bounds[PhaseBoundary.SPARSE_POP_END])
+    windows = (
+        (0, remap[0], tables.baseline_expected_counts_per_step),
+        (*remap, tables.remapped_expected_counts_per_step),
+        (remap[1], replay[0], tables.baseline_expected_counts_per_step),
+        (*replay, tables.replay_expected_counts_per_step),
+        (replay[1], sparse[0], tables.baseline_expected_counts_per_step),
+        (*sparse, tables.sparse_population_expected_counts_per_step),
+    )
+    for start, end, table in windows:
+        log_likelihood = xlogy(sim.spike_counts[start:end, None, :], table).sum(axis=2) - table.sum(
+            axis=1
+        )
+        weights = sim.diagnostics.predictive[start:end] * np.exp(
+            log_likelihood - log_likelihood.max(axis=1, keepdims=True)
+        )
+        np.testing.assert_allclose(
+            sim.diagnostics.posterior[start:end],
+            weights / weights.sum(axis=1, keepdims=True),
+            atol=1e-10,
+            err_msg=f"steps [{start}, {end})",
+        )
+
+
+def test_prediction_is_the_declared_walk_on_every_step(sim: Figure3SimulationResult) -> None:
+    """No phase changes the decoder's transition: each prediction is the walk
+    applied to the preceding posterior."""
+    transition = gaussian_transition_matrix(sim.position_bins, sim.config.prediction_step_std)
+    expected = sim.diagnostics.posterior[:-1] @ transition.T
+    expected /= expected.sum(axis=1, keepdims=True)
+    np.testing.assert_allclose(sim.diagnostics.predictive[1:], expected, atol=1e-12)
+
+
+def test_spikes_fire_at_the_rates_the_decoder_declares(sim: Figure3SimulationResult) -> None:
+    """Spike totals match the decoder's table at the generating position.
+
+    This compares the simulated spikes, not the configuration, so a control
+    whose generator drifts from the decoder's rates fails here. The remap window
+    is included with the baseline table because its spikes stay ordinary; only
+    the decoder is wrong there. The history-dependent window is left out because
+    its spikes deliberately do not follow the table.
+    """
+    config = sim.config
+    bounds = config.phase_boundaries
+    tables = _expected_count_tables(sim)
+    n_ordinary = len(config.place_field_centers)
+    replay = compute_replay_step_window(config)
+    sparse = (bounds[PhaseBoundary.RECOVERY3_END], bounds[PhaseBoundary.SPARSE_POP_END])
+    baseline = tables.baseline_expected_counts_per_step
+    position = sim.physical_position
+    sweep = _replay_sweep(sim)
+    windows = (
+        ("baseline", 0, bounds[PhaseBoundary.RECOVERY1_END], baseline, position),
+        ("recovery 2", bounds[PhaseBoundary.HIST_DEP_END], replay[0], baseline, position),
+        ("replay", *replay, tables.replay_expected_counts_per_step, None),
+        ("drift", replay[1], sparse[0], baseline, position),
+        ("sparse", *sparse, tables.sparse_population_expected_counts_per_step, position),
+    )
+    for label, start, end, table, generating in windows:
+        bins = _nearest_bin(sim, sweep if generating is None else generating[start:end])
+        expected = table[bins, :n_ordinary].sum()
+        observed = int(sim.spike_counts[start:end, :n_ordinary].sum())
+        _assert_count_matches_poisson_total(observed, float(expected), label)
+
+
+def test_sparse_cells_fire_at_the_rates_the_decoder_declares() -> None:
+    """Sparse-cell spikes match both decoder tables, at their baseline gain before
+    the window and at the full rate within it.
+
+    The sparse rates are too low to measure within one realization, so a long
+    stay at the sparse location gives the generator enough spikes.
+    """
+    config = Figure3Config()
+    n_baseline, n_active = 400_000, 200_000
+    position = np.full(n_baseline + n_active, config.sparse_position)
+    spikes, centers = build_sparse_population(
+        position, config, 0, n_baseline, n_baseline + n_active
+    )
+    tables = build_figure03_expected_count_tables(
+        config.position_bins, config.place_field_centers, centers, config
+    )
+    n_ordinary = len(config.place_field_centers)
+    position_bin = int(np.abs(config.position_bins - config.sparse_position).argmin())
+
+    for label, count, table, window in (
+        ("baseline", n_baseline, tables.baseline_expected_counts_per_step, spikes[:n_baseline]),
+        (
+            "active",
+            n_active,
+            tables.sparse_population_expected_counts_per_step,
+            spikes[n_baseline:],
+        ),
+    ):
+        expected = count * table[position_bin, n_ordinary:].sum()
+        _assert_count_matches_poisson_total(int(window.sum()), float(expected), label)
+
+
+def test_clean_phases_walk_at_the_decoders_step_size(sim: Figure3SimulationResult) -> None:
+    """The well-specified windows' trajectory has the decoder's step size."""
+    config = sim.config
+    bounds = config.phase_boundaries
+    replay_start, _ = compute_replay_step_window(config)
+    increments = np.concatenate(
+        [
+            np.diff(sim.physical_position[start:end])
+            for start, end in (
+                (0, bounds[PhaseBoundary.RECOVERY1_END]),
+                (bounds[PhaseBoundary.HIST_DEP_END], replay_start),
+            )
+        ]
+    )
+    assert increments.mean() == pytest.approx(0.0, abs=0.1)
+    assert increments.std() == pytest.approx(config.prediction_step_std, rel=0.1)
+
+
+def test_each_phase_starts_where_the_last_one_ended(sim: Figure3SimulationResult) -> None:
+    """Crossing a phase boundary is one ordinary step, not a jump."""
+    position = sim.physical_position
+    boundaries = np.asarray(sim.config.phase_boundaries[:-1])
+    jumps = np.abs(position[boundaries] - position[boundaries - 1])
+    assert np.all(jumps <= 5.0 * sim.config.prediction_step_std), f"got {jumps}"
+
+
+def test_history_phase_bursts_and_suppresses_spikes(sim: Figure3SimulationResult) -> None:
+    """The misfit is present: a spike is followed by silence, then a burst.
+
+    For each spike, compares the same cell's spikes in the following steps with
+    the rates the decoder expects there; the "missed by the diagnostics" tests
+    would pass trivially if the phase were ordinary Poisson firing.
+    """
+    config = sim.config
+    bounds = config.phase_boundaries
+    n_ordinary = len(config.place_field_centers)
+    expected_counts = _expected_count_tables(sim).baseline_expected_counts_per_step[
+        _nearest_bin(sim, sim.physical_position)
+    ]
+    burst_start, burst_end = config.history_burst_window
+
+    def following_spikes(start: int, end: int, lag_start: int, lag_end: int) -> tuple[int, float]:
+        observed, expected = 0, 0.0
+        for time_ind, cell_ind in np.argwhere(sim.spike_counts[start:end, :n_ordinary]):
+            following = np.arange(start + time_ind + lag_start, start + time_ind + lag_end + 1)
+            following = following[following < end]
+            observed += int(sim.spike_counts[following, cell_ind].sum())
+            expected += float(expected_counts[following, cell_ind].sum())
+        return observed, expected
+
+    history = (bounds[PhaseBoundary.RECOVERY1_END], bounds[PhaseBoundary.HIST_DEP_END])
+    baseline = (0, bounds[PhaseBoundary.REMAP_START])
+
+    observed, expected = following_spikes(*history, burst_start, burst_end)
+    assert observed > 1.5 * expected, f"history burst: {observed} vs expected {expected:.1f}"
+    observed, expected = following_spikes(*baseline, burst_start, burst_end)
+    assert observed < 1.25 * expected, f"baseline burst: {observed} vs expected {expected:.1f}"
+    observed, expected = following_spikes(*history, 1, config.history_refractory_steps)
+    assert expected > 10.0
+    assert observed == 0, f"history refractory: {observed} spikes, {expected:.1f} expected"
+
+
+def test_drift_phase_has_persistent_velocity(sim: Figure3SimulationResult) -> None:
+    """The misfit is present: drift steps are correlated, unlike the decoder's walk."""
+    bounds = sim.config.phase_boundaries
+    position = sim.physical_position
+
+    def lag_one_correlation(start: int, end: int) -> float:
+        steps = np.diff(position[start:end])
+        return float(np.corrcoef(steps[:-1], steps[1:])[0, 1])
+
+    drift = lag_one_correlation(
+        bounds[PhaseBoundary.RECOVERY2_END], bounds[PhaseBoundary.DRIFT_END]
+    )
+    baseline = lag_one_correlation(0, bounds[PhaseBoundary.REMAP_START])
+
+    assert drift > 0.7, f"drift steps should persist; got lag-1 correlation {drift:.2f}"
+    assert abs(baseline) < 0.15, f"baseline steps should not persist; got {baseline:.2f}"
+
+
+def test_replay_decoded_position_leaves_the_immobile_animal(sim: Figure3SimulationResult) -> None:
+    """The animal stays still while the decoder follows the sweep away from it."""
+    r0, r1 = compute_replay_step_window(sim.config)
+    physical = sim.physical_position[r0:r1]
+    posterior_mean = sim.diagnostics.posterior[r0:r1] @ sim.position_bins
+    sweep = _replay_sweep(sim)
+
+    np.testing.assert_allclose(physical, physical[0])
+    assert np.max(np.abs(posterior_mean - physical)) > 10.0
+    assert np.median(np.abs(posterior_mean - sweep)) < np.median(np.abs(posterior_mean - physical))
 
 
 @pytest.mark.parametrize("initial_position", [0.0, 50.0])
@@ -429,9 +679,9 @@ def test_history_dependent_firing_per_spike_metrics_near_baseline(
     # relative to the remap collapse: the claim is "near baseline", and
     # a midpoint-vs-remap bound would be trivially satisfied because the
     # remap inflation is ~30x.
-    assert hd_kl < 3 * base_kl, (
+    assert hd_kl < 2 * base_kl, (
         "per-spike KL in the history-dependent phase should stay within "
-        f"3x baseline; got baseline={base_kl:.3f}, hist-dep={hd_kl:.3f}"
+        f"2x baseline; got baseline={base_kl:.3f}, hist-dep={hd_kl:.3f}"
     )
     assert hd_hpd > 0.9 * base_hpd, (
         "per-spike HPD overlap in the history-dependent phase should stay within "
@@ -454,13 +704,11 @@ def test_drift_phase_inflates_kl(sim: Figure3SimulationResult) -> None:
     medians = _per_phase_medians(sim)
     base_kl, _, _ = medians[PhaseBoundary.REMAP_START]
     drift_kl, _, _ = medians[PhaseBoundary.DRIFT_END]
-    # Bound chosen against observed ratio (~1.38x at the moderate test
-    # scale) — strict enough to catch a regression where drift becomes
-    # indistinguishable from baseline, loose enough to absorb normal
-    # seed-to-seed variation. Tighten if a wider session shows clearer
-    # separation.
-    assert drift_kl > 1.2 * base_kl, (
-        f"drift phase should inflate KL by >1.2x baseline; "
+    # Bound chosen against the observed ratio (~1.8x at the moderate test
+    # scale, ~1.4x with no momentum at all), so it catches a drift that has
+    # become a plain walk.
+    assert drift_kl > 1.6 * base_kl, (
+        f"drift phase should inflate KL by >1.6x baseline; "
         f"got base={base_kl:.3f}, drift={drift_kl:.3f}"
     )
 
@@ -527,10 +775,44 @@ class TestEstimateRealizationSummary:
         params = _seed0_params()
         first = estimate_realization_summary(params, n_realizations=2, n_jobs=1)
         repeat = estimate_realization_summary(params, n_realizations=2, n_jobs=2)
-        np.testing.assert_array_equal(first.median_flag_percentages, repeat.median_flag_percentages)
-        assert (
-            first.diagnostic_thresholds.kl_divergence == repeat.diagnostic_thresholds.kl_divergence
+        np.testing.assert_array_equal(
+            first.realization_flag_percentages, repeat.realization_flag_percentages
         )
+        np.testing.assert_array_equal(
+            first.realization_decoding_error, repeat.realization_decoding_error
+        )
+        assert first.diagnostic_thresholds == repeat.diagnostic_thresholds
+
+    def test_realizations_are_stored_in_seed_order(self) -> None:
+        """Row i of the published per-realization arrays is seed ``first + i``."""
+        params = _seed0_params()
+        pooled = estimate_realization_summary(params, n_realizations=2, n_jobs=1)
+        second_alone = estimate_realization_summary(
+            dataclasses.replace(params, random_seed=1), n_realizations=1, n_jobs=1
+        )
+        np.testing.assert_array_equal(
+            pooled.realization_decoding_error[1], second_alone.realization_decoding_error[0]
+        )
+
+    def test_baseline_pool_stops_before_the_first_remap_step(self) -> None:
+        """The first remap step's spikes are not baseline events."""
+        params = Figure3Config(phase_boundaries=(200, 300, 400, 500, 600, 700, 800, 900))
+        baseline_end = params.phase_boundaries[PhaseBoundary.REMAP_START]
+        seed, diagnostics = next(
+            (seed, diagnostics)
+            for seed in range(20)
+            if np.any(
+                (
+                    diagnostics := run_figure03_simulation(params, seed=seed).diagnostics
+                ).event_time_ind
+                == baseline_end
+            )
+        )
+
+        values = _realization_values(params, seed, build_summary_conditions(params))
+
+        expected = int(np.sum(diagnostics.event_time_ind < baseline_end))
+        assert values.baseline_values["kl_divergence"].size == expected
 
     def test_baseline_flagged_fractions_score_the_pooled_baseline(self) -> None:
         """Each fraction is the share of pooled opening-baseline events flagged.
@@ -620,7 +902,7 @@ class TestEstimateRealizationSummary:
         percentages are smaller than the full-length figure (~37--43%)
         because ``_moderate_params`` uses short windows the trajectory only
         partly explores; bounds are set against the observed deterministic
-        values (remap ~[15, 20, 14]% vs well ~[4, 5, 3]%, drift ~[3, 5, 1]%).
+        values (remap ~[31, 35, 24]% vs well ~[10, 11, 7]%, drift ~[10, 14, 7]%).
         """
         well = summary.median_flag_percentages[:, 0]
         remap = summary.median_flag_percentages[:, 1]

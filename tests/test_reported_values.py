@@ -9,12 +9,15 @@ file fails here rather than silently leaving a stale number in the paper.
 
 from __future__ import annotations
 
+import copy
 import dataclasses
 import json
 import re
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pytest
@@ -32,7 +35,9 @@ from statespacecheck_paper.paths import (
 from statespacecheck_paper.reported_values import (
     REFRESH_DOIS_COMMAND,
     _exact,
+    _recording_statistics,
     _simulation_configuration,
+    _simulation_statistics,
     analysis_code_doi,
     cardinal_word,
     doi_from_zenodo_search,
@@ -127,6 +132,235 @@ def test_macro_values_round_trip_the_canonical_statistics() -> None:
     assert values["RecHpdRescued"] == str(hpd["rescued"])
     assert values["RecHpdFlaggedContinuous"] == str(hpd["rescued"] + hpd["both"])
     assert values["RecHpdRescuedPercent"] == f"{100 * hpd['rescued_fraction']:.0f}"
+
+
+_SummaryEdit = Callable[[dict[str, Any], dict[str, Any]], None]
+
+
+def _set_flags(condition: str, *metrics: str) -> _SummaryEdit:
+    """Edit the Figure-3 flag percentage of ``condition`` for ``metrics``."""
+
+    def edit(figure03: dict[str, Any], _: dict[str, Any]) -> None:
+        column = figure03["condition_order"].index(condition)
+        for metric in metrics:
+            figure03["median_flag_percentages"][figure03["metric_order"].index(metric)][column] = (
+                77.0
+            )
+
+    return edit
+
+
+def _set_error(condition: str) -> _SummaryEdit:
+    """Edit the Figure-3 median decoding error of ``condition``."""
+
+    def edit(figure03: dict[str, Any], _: dict[str, Any]) -> None:
+        figure03["median_decoding_error"][figure03["condition_order"].index(condition)] = 0.37
+
+    return edit
+
+
+def _set_figure03(path: tuple[str, ...], value: float) -> _SummaryEdit:
+    """Edit one nested Figure-3 summary field."""
+
+    def edit(figure03: dict[str, Any], _: dict[str, Any]) -> None:
+        target = figure03
+        for key in path[:-1]:
+            target = target[key]
+        target[path[-1]] = value
+
+    return edit
+
+
+def _set_figure04(path: tuple[str | int, ...], value: float) -> _SummaryEdit:
+    """Edit one nested Figure-4 summary field."""
+
+    def edit(_: dict[str, Any], figure04: dict[str, Any]) -> None:
+        target: Any = figure04
+        for key in path[:-1]:
+            target = target[key]
+        target[path[-1]] = value
+
+    return edit
+
+
+def _set_confusion(metric: str, field: str, value: float) -> _SummaryEdit:
+    """Edit one count of the Figure-4 flag confusion of ``metric``."""
+
+    def edit(_: dict[str, Any], figure04: dict[str, Any]) -> None:
+        confusion = next(c for c in figure04["flag_confusions"] if c["metric"] == metric)
+        confusion[field] = value
+
+    return edit
+
+
+def _set_event_count(_: dict[str, Any], figure04: dict[str, Any]) -> None:
+    """Edit the spike-event count, which every flag confusion must agree on."""
+    for confusion in figure04["flag_confusions"]:
+        confusion["n"] = 1_234_567
+
+
+_ALL_METRICS = ("hpd_overlap", "predictive_pvalue", "kl_divergence")
+
+# The mapping the prose depends on, written out independently of the emitter:
+# one summary field, and the exact statistic macros that field alone may move.
+# An empty set is a field no statistic macro may read.
+_SUMMARY_FIELD_MACROS: dict[str, tuple[_SummaryEdit, set[str]]] = {
+    "realization_count": (_set_figure03(("realizations", "count"), 7), {"SimNRealizations"}),
+    "remap_flags": (_set_flags("remap", *_ALL_METRICS), {"SimRemapFlagMin", "SimRemapFlagMax"}),
+    "history_flags": (
+        _set_flags("history_dependent", *_ALL_METRICS),
+        {"SimHistoryFlagMin", "SimHistoryFlagMax"},
+    ),
+    "replay_flags": (_set_flags("replay", *_ALL_METRICS), {"SimReplayFlagMin", "SimReplayFlagMax"}),
+    "drift_flags": (_set_flags("drift", *_ALL_METRICS), {"SimDriftFlagMin", "SimDriftFlagMax"}),
+    "well_specified_flags": (_set_flags("well_specified", *_ALL_METRICS), set()),
+    "sparse_kl_flag": (_set_flags("sparse_population", "kl_divergence"), {"SimSparseKlFlag"}),
+    "sparse_hpd_flag": (_set_flags("sparse_population", "hpd_overlap"), set()),
+    "sparse_pvalue_flag": (_set_flags("sparse_population", "predictive_pvalue"), set()),
+    "well_specified_error": (_set_error("well_specified"), {"SimWellSpecifiedError"}),
+    "remap_error": (_set_error("remap"), {"SimRemapError"}),
+    "history_error": (_set_error("history_dependent"), {"SimHistoryError"}),
+    "replay_error": (_set_error("replay"), {"SimReplayError"}),
+    "drift_error": (_set_error("drift"), {"SimDriftError"}),
+    "sparse_error": (_set_error("sparse_population"), {"SimSparseError"}),
+    "hpd_quantile": (
+        _set_figure03(("threshold_provenance", "hpd_overlap", "quantile"), 0.02),
+        {"SimHpdPercentile"},
+    ),
+    "kl_quantile": (
+        _set_figure03(("threshold_provenance", "kl_divergence", "quantile"), 0.98),
+        {"SimKlPercentile"},
+    ),
+    "hpd_baseline_flagged": (
+        _set_figure03(("threshold_provenance", "hpd_overlap", "baseline_flagged_fraction"), 0.37),
+        {"SimHpdBaselineFlagPercent"},
+    ),
+    "predictive_cutoff": (
+        _set_figure03(("threshold_provenance", "predictive_pvalue", "cutoff"), 0.1),
+        {"SimPredictiveCutoff", "SimPredictiveCutoffNegLog"},
+    ),
+    "baseline_end": (
+        _set_figure03(("threshold_provenance", "baseline_end_index"), 1234),
+        {"SimBaselineEnd"},
+    ),
+    "n_units": (_set_figure04(("dataset", "n_units"), 7), {"RecNUnits"}),
+    "n_units_with_spikes": (
+        _set_figure04(("dataset", "n_units_with_spikes"), 7),
+        {"RecNUnitsWithSpikes"},
+    ),
+    "n_events": (_set_event_count, {"RecNEvents"}),
+    "hpd_rescued": (
+        _set_confusion("hpd_overlap", "rescued", 1_234),
+        {"RecHpdRescued", "RecHpdFlaggedContinuous"},
+    ),
+    "hpd_both": (_set_confusion("hpd_overlap", "both", 1_234), {"RecHpdFlaggedContinuous"}),
+    "hpd_rescued_fraction": (
+        _set_confusion("hpd_overlap", "rescued_fraction", 0.37),
+        {"RecHpdRescuedPercent"},
+    ),
+    "hpd_newly_flagged": (
+        _set_confusion("hpd_overlap", "newly_flagged", 1_234),
+        {"RecHpdNewlyFlagged"},
+    ),
+    "pvalue_rescued": (
+        _set_confusion("predictive_pvalue", "rescued", 1_234),
+        {"RecPvalueRescued", "RecPvalueFlaggedContinuous"},
+    ),
+    "pvalue_both": (
+        _set_confusion("predictive_pvalue", "both", 1_234),
+        {"RecPvalueFlaggedContinuous"},
+    ),
+    "pvalue_rescued_fraction": (
+        _set_confusion("predictive_pvalue", "rescued_fraction", 0.37),
+        {"RecPvalueRescuedPercent"},
+    ),
+    "pvalue_newly_flagged": (
+        _set_confusion("predictive_pvalue", "newly_flagged", 1_234),
+        {"RecPvalueNewlyFlagged"},
+    ),
+    "kl_lower_fraction": (
+        _set_figure04(("kl_divergence_comparison", "lower_fraction"), 0.37),
+        {"RecKlLowerPercent"},
+    ),
+    "kl_lower_quartile_low": (
+        _set_figure04(("kl_divergence_comparison", "lower_continuous_quartiles", 0), 0.37),
+        {"RecKlLowerContinuousQuartileLow"},
+    ),
+    "kl_lower_quartile_high": (
+        _set_figure04(("kl_divergence_comparison", "lower_continuous_quartiles", 1), 0.37),
+        {"RecKlLowerContinuousQuartileHigh"},
+    ),
+    "kl_higher_fraction": (
+        _set_figure04(("kl_divergence_comparison", "higher_fraction"), 0.37),
+        {"RecKlHigherPercent"},
+    ),
+    "kl_higher_median": (
+        _set_figure04(("kl_divergence_comparison", "higher_continuous_median"), 0.37),
+        {"RecKlHigherContinuousMedian"},
+    ),
+    "kl_higher_max": (
+        _set_figure04(("kl_divergence_comparison", "higher_continuous_fragmented_max"), 0.37),
+        {"RecKlHigherFragmentedMax"},
+    ),
+    "detail_n_events": (
+        _set_figure04(("detail_window_comparison", "n_events"), 1_234),
+        {"RecDetailNEvents"},
+    ),
+    "detail_rescued": (
+        _set_figure04(("detail_window_comparison", "hpd_overlap", "rescued"), 1_234),
+        {"RecDetailHpdRescued", "RecDetailHpdFlaggedContinuous"},
+    ),
+    "detail_both": (
+        _set_figure04(("detail_window_comparison", "hpd_overlap", "both"), 1_234),
+        {"RecDetailHpdFlaggedContinuous"},
+    ),
+    "detail_newly_flagged": (
+        _set_figure04(("detail_window_comparison", "hpd_overlap", "newly_flagged"), 1_234),
+        set(),
+    ),
+    "detail_pvalue_higher": (
+        _set_figure04(("detail_window_comparison", "predictive_pvalue_higher"), 1_234),
+        {"RecDetailPvalueHigher"},
+    ),
+}
+
+
+def _statistic_macros(figure03: dict[str, Any], figure04: dict[str, Any]) -> dict[str, str]:
+    """Return the macros computed from the two summaries' statistics."""
+    return {
+        macro.name: macro.value
+        for macro in (*_simulation_statistics(figure03), *_recording_statistics(figure04))
+    }
+
+
+@pytest.fixture(scope="module")
+def committed_summaries() -> tuple[dict[str, Any], dict[str, Any]]:
+    return load_summary(FIGURE03_SUMMARY_PATH), load_summary(FIGURE04_SUMMARY_PATH)
+
+
+@pytest.mark.parametrize("field", _SUMMARY_FIELD_MACROS)
+def test_each_summary_field_moves_exactly_its_macros(
+    field: str, committed_summaries: tuple[dict[str, Any], dict[str, Any]]
+) -> None:
+    """Editing one statistic moves its macros and no others, so a macro reading
+    the wrong condition, metric, or count fails here. Comparing the committed
+    file with a fresh render cannot see that, because both use the same emitter."""
+    edit, expected = _SUMMARY_FIELD_MACROS[field]
+    figure03, figure04 = copy.deepcopy(committed_summaries)
+    before = _statistic_macros(figure03, figure04)
+
+    edit(figure03, figure04)
+    after = _statistic_macros(figure03, figure04)
+
+    assert {name for name, value in before.items() if after[name] != value} == expected
+
+
+def test_every_statistic_macro_has_a_summary_field(
+    committed_summaries: tuple[dict[str, Any], dict[str, Any]],
+) -> None:
+    """A new statistic macro must declare its field in ``_SUMMARY_FIELD_MACROS``."""
+    mapped = set().union(*(macros for _, macros in _SUMMARY_FIELD_MACROS.values()))
+    assert mapped == set(_statistic_macros(*committed_summaries))
 
 
 def test_asymmetric_mode_parameters_are_reported_independently() -> None:

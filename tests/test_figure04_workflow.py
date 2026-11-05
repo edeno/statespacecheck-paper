@@ -19,8 +19,17 @@ from statespacecheck_paper.figure04_cache import (
     _FIGURE04_DIAGNOSTICS_PAYLOAD_KEYS,
     Figure4Paths,
 )
-from statespacecheck_paper.figure04_decoder import Figure4Config
-from statespacecheck_paper.figure04_input import INPUT_FILE_SUFFIX, NeuralRecordingData
+from statespacecheck_paper.figure04_decoder import (
+    Figure4Config,
+    create_decoder_environment,
+    fit_decoder_models,
+)
+from statespacecheck_paper.figure04_input import (
+    HEAD_POSITION_COLUMNS,
+    INPUT_FILE_SUFFIX,
+    NeuralRecordingData,
+)
+from statespacecheck_paper.figure04_place_fields import DECODER_PREDICTIVE_VAR
 from statespacecheck_paper.figure04_summary import (
     Figure4Summary,
     compute_detail_window_comparison,
@@ -500,6 +509,32 @@ class TestPrepareRenderData:
         prepare_figure04_render_data(changed, paths, use_cache=False)
         assert calls == {"fit": 3, "diagnostics": 4}
 
+    def test_configured_coverage_reaches_each_decoders_diagnostics(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The recorded ``hpd_coverage`` is the one the diagnostics are computed at."""
+        coverages: list[float] = []
+
+        def record_coverage(*args: object, coverage: float, **kwargs: object) -> object:
+            coverages.append(coverage)
+            return object()
+
+        monkeypatch.setattr(figure04_workflow, "compute_results_diagnostics", record_coverage)
+        monkeypatch.setattr(figure04_workflow, "_cast_dataset", lambda value: value)
+        config = Figure4Config()
+        config = dataclasses.replace(
+            config, diagnostics=dataclasses.replace(config.diagnostics, hpd_coverage=0.8)
+        )
+
+        figure04_workflow._compute_diagnostics_payload(
+            _decode_payload(),
+            recording=_synthetic_recording(),
+            time=np.arange(8, dtype=float),
+            diagnostics_config=config.diagnostics,
+        )
+
+        assert coverages == [0.8, 0.8]
+
     def test_cache_invalidates_on_dependency_change(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
@@ -587,10 +622,8 @@ class TestPrepareRenderData:
         assert render_data.time.shape == (8,)
 
 
-def test_fit_and_decode_payload_feeds_the_caches_and_results() -> None:
-    """A real fit and decode of a small synthetic linear-track recording returns
-    exactly the decode-cache keys, and its diagnostics build valid results."""
-    pytest.importorskip("non_local_detector")
+def _linear_track_recording() -> NeuralRecordingData:
+    """A small recording, with two units, that a real decoder can fit."""
     rng = np.random.default_rng(0)
     n_time = 400
     time = np.arange(n_time) / 500.0
@@ -599,7 +632,7 @@ def test_fit_and_decode_payload_feeds_the_caches_and_results() -> None:
     track_graph.add_node(0, pos=(0.0, 0.0))
     track_graph.add_node(1, pos=(40.0, 0.0))
     track_graph.add_edge(0, 1, distance=40.0, edge_id=0)
-    recording = NeuralRecordingData(
+    return NeuralRecordingData(
         position_info=pd.DataFrame(
             {"head_position_x": x, "head_position_y": np.zeros(n_time), "linear_position": x},
             index=time,
@@ -612,6 +645,15 @@ def test_fit_and_decode_payload_feeds_the_caches_and_results() -> None:
         linear_edge_order=((0, 1),),
         linear_edge_spacing=0.0,
     )
+
+
+def test_fit_and_decode_payload_feeds_the_caches_and_results() -> None:
+    """A real fit and decode of a small synthetic linear-track recording returns
+    exactly the decode-cache keys, and its diagnostics build valid results."""
+    pytest.importorskip("non_local_detector")
+    recording = _linear_track_recording()
+    time = figure04_fit.decode_time(recording)
+    n_time = time.size
     config = Figure4Config()
 
     decode_payload = figure04_fit.fit_and_decode(
@@ -635,6 +677,48 @@ def test_fit_and_decode_payload_feeds_the_caches_and_results() -> None:
     assert results.spike_counts.sum() == 50
 
 
+def test_decoder_prediction_at_a_row_excludes_that_rows_spikes() -> None:
+    """The diagnostics score each spike against ``predictive_posterior[t]``, so that
+    row must not already contain the spike. Spikes added to row 200 of a fitted
+    decoder leave rows through 200 unchanged and first move row 201."""
+    pytest.importorskip("non_local_detector")
+    recording = _linear_track_recording()
+    config = Figure4Config()
+    time = figure04_fit.decode_time(recording)
+    spike_times = list(recording.spike_times)
+    environment = create_decoder_environment(
+        track_graph=recording.track_graph,
+        edge_order=list(recording.linear_edge_order),
+        edge_spacing=recording.linear_edge_spacing,
+        place_bin_size=config.decoder.position_bin_size_cm,
+    )
+    models = fit_decoder_models(
+        position=recording.position_info[list(HEAD_POSITION_COLUMNS)].to_numpy(dtype=np.float64),
+        spike_times=spike_times,
+        time=time,
+        environment=environment,
+        decoder_config=config.decoder,
+        execution_config=config.execution,
+    )
+    row = 200
+    with_added_spikes = [
+        np.sort(np.append(spike_times[0], np.full(3, time[row] + 0.0005))),
+        spike_times[1],
+    ]
+
+    for model in models:
+        unchanged, changed = (
+            np.asarray(
+                model.predict(
+                    spike_times=spikes, time=time, return_outputs=[DECODER_PREDICTIVE_VAR]
+                )[DECODER_PREDICTIVE_VAR]
+            )
+            for spikes in (spike_times, with_added_spikes)
+        )
+        np.testing.assert_array_equal(unchanged[: row + 1], changed[: row + 1])
+        assert np.nanmax(np.abs(unchanged[row + 1] - changed[row + 1])) > 1e-3
+
+
 def test_reported_statistics_come_from_the_render_data() -> None:
     render_data = synthetic_render_data()
     analysis = render_data.analysis_results
@@ -651,6 +735,62 @@ def test_reported_statistics_come_from_the_render_data() -> None:
         == analysis.continuous_diagnostics.event_time_ind.size
     )
     assert 0.0 < statistics.kl_divergence_comparison.lower_fraction < 1.0
+
+
+def test_reported_statistics_keep_each_decoder_on_its_own_side() -> None:
+    """Rescued and newly flagged, and both sides of the KL identity line, are
+    computed with Continuous as the reference. Swapping the two decoders in any
+    of the three comparisons exchanges rescued with newly flagged, so every count
+    here is asymmetric and written out by hand."""
+    render_data = synthetic_render_data()
+    n_events = 6
+    time_ind = np.arange(n_events)
+    cell_ind = np.array([0, 0, 1, 1, 2, 2])
+    # Flagged at hpd <= 0.5: Continuous on events 0-3, Continuous-Fragmented on 3-5.
+    continuous = event_diagnostics(
+        hpd=np.array([0.1, 0.2, 0.3, 0.4, 0.9, 0.9]),
+        kl=np.array([9.0, 8.0, 7.0, 6.0, 1.0, 2.0]),
+        pvalue=np.array([0.01, 0.01, 0.01, 0.01, 0.5, 0.5]),
+        time_ind=time_ind,
+        cell_ind=cell_ind,
+    )
+    fragmented = event_diagnostics(
+        hpd=np.array([0.9, 0.9, 0.9, 0.4, 0.2, 0.3]),
+        kl=np.array([1.0, 2.0, 3.0, 4.0, 20.0, 30.0]),
+        pvalue=np.array([0.5, 0.5, 0.5, 0.01, 0.6, 0.7]),
+        time_ind=time_ind,
+        cell_ind=cell_ind,
+    )
+    render_data = dataclasses.replace(
+        render_data,
+        analysis_results=dataclasses.replace(
+            render_data.analysis_results,
+            continuous_diagnostics=continuous,
+            continuous_fragmented_diagnostics=fragmented,
+        ),
+    )
+    thresholds = {"hpd_overlap": 0.5, "kl_divergence": 100.0, "predictive_pvalue": 0.05}
+
+    statistics = compute_figure04_reported_statistics(
+        render_data, thresholds, METRIC_FLAG_DIRECTIONS, slice(0, n_events)
+    )
+
+    hpd = next(c for c in statistics.summary.flag_confusions if c.metric == "hpd_overlap")
+    assert (hpd.rescued, hpd.both, hpd.newly_flagged) == (3, 1, 2)
+    assert statistics.summary.continuous.hpd_overlap == pytest.approx(2.8 / 6)
+    assert statistics.summary.continuous_fragmented.hpd_overlap == pytest.approx(3.6 / 6)
+
+    detail = statistics.detail_window_comparison.hpd_overlap
+    assert (detail.rescued, detail.both, detail.newly_flagged) == (3, 1, 2)
+    # Higher under Continuous-Fragmented on every event but the tied event 3.
+    assert statistics.detail_window_comparison.predictive_pvalue_higher == 5
+
+    kl = statistics.kl_divergence_comparison
+    assert kl.lower_fraction == pytest.approx(4 / 6)
+    assert kl.lower_continuous_quartiles == pytest.approx((6.75, 8.25))
+    assert kl.higher_fraction == pytest.approx(2 / 6)
+    assert kl.higher_continuous_median == pytest.approx(1.5)
+    assert kl.higher_continuous_fragmented_max == pytest.approx(30.0)
 
 
 def test_count_units_with_spikes_counts_each_firing_unit_once() -> None:

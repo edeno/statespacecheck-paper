@@ -700,6 +700,26 @@ def test_committed_playground_is_current(
         np.testing.assert_allclose(old["rates"], new["rates"], rtol=1e-12)
 
 
+def test_committed_recording_is_the_figure04_detail_window(
+    figure04_summary: dict[str, Any],
+) -> None:
+    """The window's size, events, and flags match the summary's comparison of that
+    window. The fingerprints below cannot see a moved window, because neither
+    hashes the module that defines it."""
+    committed = load_summary(SITE_DATA_DIR / "recording.json")
+    detail = figure04_summary["detail_window_comparison"]
+    hpd = detail["hpd_overlap"]
+
+    assert len(committed["time"]) == 2 * figure04_summary["detail_window"]["half_width_samples"]
+    for model, n_flagged in (
+        ("continuous", hpd["rescued"] + hpd["both"]),
+        ("continuous_fragmented", hpd["both"] + hpd["newly_flagged"]),
+    ):
+        events = committed["models"][model]["events"]
+        assert len(events["t"]) == detail["n_events"]
+        assert sum(events["flagged"]["hpd_overlap"]) == n_flagged
+
+
 def test_committed_recording_matches_the_figure04_decode(figure04_summary: dict[str, Any]) -> None:
     committed = load_summary(SITE_DATA_DIR / "recording.json")
     caches = figure04_summary["provenance"]["figure04_caches"]

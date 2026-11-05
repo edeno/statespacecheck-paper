@@ -422,7 +422,8 @@ class TestDecodeWithDiagnostics:
             place_field_rate_scale=0.1,
         )
 
-        # post[0] is the flat prior; predictive[1] = normalize(T @ post[0]).
+        # post[0] is the first update of the uniform initial law;
+        # predictive[1] = normalize(T @ post[0]).
         expected = normalize(transition @ result.posterior[0])
         np.testing.assert_allclose(result.predictive[1], expected, atol=1e-12)
 
@@ -636,22 +637,32 @@ class TestDecodeWithDiagnosticsLogSpace:
         position_bins = np.linspace(0.0, 100.0, n_bins)
         # Narrow transition kernel so the predictive stays concentrated.
         transition_matrix = gaussian_transition_matrix(position_bins, step_std=0.5)
-        # Two cells with place fields at x≈90 — far from the
-        # bias-initialized posterior which mostly accumulates near 0.
+        # Two cells with place fields at x≈90, far from the initial law at x=0.
         place_field_centers = np.array([88.0, 92.0])
-        # Both cells fire every time step → strong likelihood signal at
-        # x≈90.
-        spike_counts = np.ones((n_time, n_cells), dtype=np.int_)
+        place_field_std, place_field_rate_scale = 6.0, 5.0
+        # Both cells fire repeatedly every time step → strong likelihood signal
+        # at x≈90.
+        spike_counts = np.full((n_time, n_cells), 6, dtype=np.int_)
+        initial_state = np.zeros(n_bins)
+        initial_state[0] = 1.0
 
         results = decode_with_diagnostics(
             spike_counts,
             position_bins,
             transition_matrix,
             place_field_centers,
-            place_field_std=2.0,
-            place_field_rate_scale=5.0,
+            place_field_std=place_field_std,
+            place_field_rate_scale=place_field_rate_scale,
+            initial_state_distribution=initial_state,
         )
         posterior = results.posterior
+
+        # The regime this test exists for: the linear-space product underflows.
+        rates = place_field_expected_counts(
+            position_bins, place_field_centers, place_field_std, place_field_rate_scale
+        )
+        linear_likelihood = np.prod(rates**6, axis=1) * np.exp(-rates.sum(axis=1))
+        assert (results.predictive[1] * linear_likelihood).sum() < 1e-300
 
         # Every step's posterior sums to 1 (no underflow, no reset).
         np.testing.assert_allclose(posterior.sum(axis=1), 1.0, rtol=1e-8, atol=1e-10)
@@ -809,17 +820,44 @@ class TestLogSpaceReferenceComparison:
     here.
     """
 
+    @staticmethod
+    def _reference_posterior(
+        spike_counts: np.ndarray,
+        rates_at: Any,
+        transition_at: Any,
+    ) -> np.ndarray:
+        """Filter step by step with the rates and transition of each time step."""
+        from scipy.stats import poisson as _poisson
+
+        n_time = spike_counts.shape[0]
+        n_bins = rates_at(0).shape[0]
+        ref_post = np.zeros((n_time, n_bins))
+        for t in range(n_time):
+            # ``transition`` is column-stochastic (column j = P(next | current
+            # = j)), so the predictive marginal is ``T @ post``. This mirrors
+            # the production convention and keeps the reference an independent
+            # check of orientation, not just of the log-space arithmetic. At
+            # t=0 the prediction is the uniform initial law itself.
+            if t == 0:
+                predictive = np.ones(n_bins) / n_bins
+            else:
+                predictive = transition_at(t) @ ref_post[t - 1]
+                predictive = predictive / predictive.sum()
+            log_lik = _poisson.logpmf(spike_counts[t][None, :], rates_at(t)).sum(axis=1)
+            ll_max = float(np.max(log_lik))
+            assert np.isfinite(ll_max)
+            weighted = predictive * np.exp(log_lik - ll_max)
+            norm = weighted.sum()
+            assert norm > 0
+            ref_post[t] = weighted / norm
+        return ref_post
+
     def test_posterior_matches_independent_log_space_reference(
         self, decoder_inputs: DecoderInputs
     ) -> None:
-        from scipy.stats import poisson as _poisson
-
         from statespacecheck_paper.simulation import place_field_expected_counts
 
-        spike_counts = decoder_inputs.spike_counts
-        position_bins = decoder_inputs.position_bins
-        n_time, _ = spike_counts.shape
-        n_bins = position_bins.size
+        n_bins = decoder_inputs.position_bins.size
 
         # Use an *asymmetric* column-stochastic transition (upward drift) so
         # the reference is a genuine orientation guard. The fixture's
@@ -833,32 +871,59 @@ class TestLogSpaceReferenceComparison:
         # Reference: linear-space predictive, log-space combined likelihood,
         # softmax-shift normalization. No reset-to-uniform branch.
         rates = place_field_expected_counts(
-            position_bins,
+            decoder_inputs.position_bins,
             decoder_inputs.place_field_centers,
             decoder_inputs.place_field_std,
             decoder_inputs.place_field_rate_scale,
         )
-        ref_post = np.zeros((n_time, n_bins))
-        for t in range(n_time):
-            # ``transition`` is column-stochastic (column j = P(next | current
-            # = j)), so the predictive marginal is ``T @ post``. This mirrors
-            # the production convention and keeps the reference an independent
-            # check of orientation, not just of the log-space arithmetic. At
-            # t=0 the prediction is the uniform initial law itself.
-            if t == 0:
-                predictive = np.ones(n_bins) / n_bins
-            else:
-                predictive = transition @ ref_post[t - 1]
-                predictive = predictive / predictive.sum()
-            log_lik = _poisson.logpmf(spike_counts[t][None, :], rates).sum(axis=1)
-            ll_max = float(np.max(log_lik))
-            assert np.isfinite(ll_max)
-            weighted = predictive * np.exp(log_lik - ll_max)
-            norm = weighted.sum()
-            assert norm > 0
-            ref_post[t] = weighted / norm
+        ref_post = self._reference_posterior(
+            decoder_inputs.spike_counts, lambda _: rates, lambda _: transition
+        )
 
         result = decoder_inputs.call(transition_matrix=transition)
+        np.testing.assert_allclose(result.posterior, ref_post, rtol=1e-10, atol=1e-12)
+
+    def test_override_windows_apply_on_exactly_their_steps(
+        self, decoder_inputs: DecoderInputs
+    ) -> None:
+        """Each window's rates or transition apply on its half-open range of steps,
+        in the update as well as the prediction, including a window starting at
+        t=0. Asymmetric overrides make a step applied one early or late visible."""
+        from statespacecheck_paper.simulation import place_field_expected_counts
+
+        n_bins = decoder_inputs.position_bins.size
+        rates = place_field_expected_counts(
+            decoder_inputs.position_bins,
+            decoder_inputs.place_field_centers,
+            decoder_inputs.place_field_std,
+            decoder_inputs.place_field_rate_scale,
+        )
+        alt_rates = place_field_expected_counts(
+            decoder_inputs.position_bins,
+            decoder_inputs.place_field_centers[::-1] + 7.0,
+            decoder_inputs.place_field_std,
+            2.0 * decoder_inputs.place_field_rate_scale,
+        )
+        transition = _diag_dominant_transition(n_bins)
+        alt_transition = np.eye(n_bins) * 0.4 + np.eye(n_bins, k=-1) * 0.6
+        alt_transition /= alt_transition.sum(axis=0, keepdims=True)
+        rate_steps = {*range(0, 2), *range(6, 8)}
+        transition_steps = set(range(3, 5))
+        schedule = DecoderOverrideSchedule(
+            (
+                DecoderOverrideWindow(0, 2, expected_counts_per_step=alt_rates),
+                DecoderOverrideWindow(3, 5, transition_matrix=alt_transition),
+                DecoderOverrideWindow(6, 8, expected_counts_per_step=alt_rates),
+            )
+        )
+
+        ref_post = self._reference_posterior(
+            decoder_inputs.spike_counts,
+            lambda t: alt_rates if t in rate_steps else rates,
+            lambda t: alt_transition if t in transition_steps else transition,
+        )
+
+        result = decoder_inputs.call(override_schedule=schedule)
         np.testing.assert_allclose(result.posterior, ref_post, rtol=1e-10, atol=1e-12)
 
 
