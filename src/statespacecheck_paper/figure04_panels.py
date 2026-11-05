@@ -373,7 +373,8 @@ def plot_event_diagnostic_scatter(
         threshold=threshold,
         xlim=(time_arr.min(), time_arr.max()),
         ylabel=metric_name if ylabel is None else ylabel,
-        symlog_yticks=(0.0, 0.1, 1.0),
+        # The detail rows are too short to label 0.1 without it crowding 1.
+        symlog_yticks=(0.0, 1.0),
         symlog_ylim=(-0.005, 1.0),
         worse_fit_y=_WORSE_FIT_LABEL_Y.get(metric_name, 0.5),
         show_annotations=show_annotations,
@@ -401,7 +402,7 @@ def _draw_predictive_heatmap_row(
 ) -> None:
     """Draw one predictive-distribution heatmap row (heatmap + standard labels).
 
-    The legend / "Animal Position" annotation is added by the caller.
+    The legend / "Physical position" annotation is added by the caller.
     """
     plot_distribution_heatmap(
         ax=ax,
@@ -508,7 +509,7 @@ def plot_single_model_diagnostics(
     fig : Figure, optional
         Existing figure to draw into.
     show_y_labels : bool, default True
-        Whether to draw the row labels, y-axis ticks, and the "Animal Position"
+        Whether to draw the row labels, y-axis ticks, and the "Physical position"
         label. A stack placed beside another with the same rows omits them.
     show_annotations : bool, default True
         Whether to label each diagnostic row's threshold and worse-fit
@@ -554,16 +555,17 @@ def plot_single_model_diagnostics(
         ylabel="Predictive\nposition (cm)",
     )
     if show_y_labels:
-        # Self-label the position trace in its own color instead of a legend.
+        # Self-label the position trace in its own color instead of a legend,
+        # in the lower corner, where the predictive distribution is empty.
         animal_position_label = axes[0].text(
             0.02,
-            0.90,
-            "Animal Position",
+            0.06,
+            "Physical position",
             transform=axes[0].transAxes,
             fontweight="normal",
             color=COLORS["ground_truth"],
             alpha=0.85,
-            va="top",
+            va="bottom",
             ha="left",
             bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.45, "pad": 0.15},
         )
@@ -607,7 +609,7 @@ def plot_single_model_diagnostics(
     sliced_time = time_arr[time_slice_ind]
     time_slice = slice(float(sliced_time[0]), float(sliced_time[-1]))
     plot_raster(spike_times, time_slice, ax=axes[2], sort_order=sort_order)
-    axes[2].set_ylabel("Neuron", labelpad=7)
+    axes[2].set_ylabel("Unit", labelpad=7)
     axes[2].set_xlabel("")
     axes[2].tick_params(labelbottom=False)
 
@@ -632,7 +634,7 @@ def plot_single_model_diagnostics(
         # labels here rather than threading the option through each of them.
         for ax in axes:
             ax.set_ylabel("")
-            ax.tick_params(axis="y", left=False, labelleft=False)
+            ax.tick_params(axis="y", which="both", left=False, labelleft=False)
 
     return fig, axes
 
@@ -783,42 +785,23 @@ def plot_event_metric_hexbin_row(
                     zorder=4,
                 )
             )
-            label = f"flagged by\n{reference_model.short_label} only"
-            label_bbox = {
-                "boxstyle": "round,pad=0.15",
-                "facecolor": "white",
-                "edgecolor": "none",
-                "alpha": 0.7,
-            }
-            if direction == "below":
-                # Rescue box is a tall left strip (HPD overlap) full of points;
-                # place the label above the panel so it does not cover the data.
-                # Sit it above the centered panel title so the two do not collide.
-                ax.text(
-                    -0.02,
-                    1.16,
-                    label,
-                    transform=ax.transAxes,
-                    ha="left",
+            # The HPD strip is too narrow to hold a label, and any label beside
+            # or inside it covers data; text above it would shrink the whole
+            # row. It shares its color with the labeled -log(p) box.
+            if direction != "below":
+                # Rescue box is a low wide strip; label it from just above its
+                # far end, where the panel is empty.
+                ax.annotate(
+                    f"flagged by\n{reference_model.short_label} only",
+                    xy=(rect_xy[0] + rect_w, rect_xy[1] + rect_h),
+                    xytext=(-2, 2),
+                    textcoords="offset points",
+                    ha="right",
                     va="bottom",
+                    linespacing=0.95,
                     color=rescue_accent,
                     fontstyle="italic",
                     zorder=5,
-                    clip_on=False,
-                )
-            else:
-                # Rescue box is in the lower-right (KL, -log(p)); place the label
-                # at the bottom edge of the box, in the sparse far corner.
-                ax.text(
-                    rect_xy[0] + rect_w / 2.0,
-                    rect_xy[1],
-                    label,
-                    ha="center",
-                    va="bottom",
-                    color=rescue_accent,
-                    fontstyle="italic",
-                    zorder=5,
-                    bbox=label_bbox,
                 )
 
         ax.set_xlim(padded_lims)

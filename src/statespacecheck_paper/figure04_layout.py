@@ -406,7 +406,7 @@ def compose_figure04(
         continuous_panel_data,
         time_slice_ind=detail_slice,
         thresholds=thresholds_dict,
-        model_name=f"{CONTINUOUS.label} Model",
+        model_name=f"{CONTINUOUS.label} model",
         fig=subfigs_top[1],
         show_annotations=False,
     )
@@ -416,7 +416,7 @@ def compose_figure04(
         continuous_fragmented_panel_data,
         time_slice_ind=detail_slice,
         thresholds=thresholds_dict,
-        model_name=f"{CONTINUOUS_FRAGMENTED.label} Model",
+        model_name=f"{CONTINUOUS_FRAGMENTED.label} model",
         fig=subfigs_top[2],
         show_y_labels=False,
     )
@@ -446,6 +446,15 @@ def compose_figure04(
     # metric hexbin row underneath.
     ax_track = _place_track_inset(subfigs_top[3], fig, render_data, axes_b)
     _layout_hexbin_row(subfigs_rows[1], fig, render_data, thresholds_dict, ax_track)
+
+    # The detail stacks lay out in separate subfigures, whose different tick
+    # labels and annotations leave their rows a few pixels apart. With the
+    # layout frozen (the hexbin layout already froze it; repeat that here so
+    # this step does not depend on it), give panel (b) panel (a)'s row heights.
+    fig.set_layout_engine("none")
+    for ax_a, ax_b in zip(axes_a, axes_b, strict=True):
+        pos_a, pos_b = ax_a.get_position(), ax_b.get_position()
+        ax_b.set_position([pos_b.x0, pos_a.y0, pos_b.width, pos_a.height])
 
     side_tight_bbox = _axes_tight_bbox_inches(fig, pad_inches=0.05)
     return Figure4Composition(figure=fig, bbox_inches=side_tight_bbox)

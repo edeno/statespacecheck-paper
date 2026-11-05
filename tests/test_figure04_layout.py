@@ -175,6 +175,24 @@ def test_compose_figure04_produces_panels_and_finite_bbox() -> None:
     plt.close(result.figure)
 
 
+def test_compose_figure04_aligns_the_two_detail_stacks_row_by_row() -> None:
+    """Panel (b)'s rows sit at panel (a)'s heights although the two stacks lay
+    out in separate subfigures with different decorations."""
+    import matplotlib.pyplot as plt
+
+    result = compose_figure04(
+        _compose_render_data(),
+        diagnostic_thresholds={"hpd_overlap": 0.05, "predictive_pvalue": 0.05},
+        detail_window=Figure4DetailWindow(center_index=20, half_width_samples=10),
+    )
+    result.figure.draw_without_rendering()
+    axes_a, axes_b = result.figure.axes[:6], result.figure.axes[6:12]
+    for ax_a, ax_b in zip(axes_a, axes_b, strict=True):
+        pos_a, pos_b = ax_a.get_position(), ax_b.get_position()
+        np.testing.assert_allclose((pos_b.y0, pos_b.height), (pos_a.y0, pos_a.height))
+    plt.close(result.figure)
+
+
 def test_compose_figure04_labels_rows_once_across_the_two_stacks() -> None:
     """Panel (a) carries the row labels, panel (b) the right-edge threshold and
     worse-fit labels (which the track inset aligns to); neither repeats them."""

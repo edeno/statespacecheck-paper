@@ -145,7 +145,7 @@ Each needs the user's go-ahead before anything is written.
   After a Figure-4 summary change, also update `site/data/recording.json` (its
   decode-cache fingerprint); other re-exported site files that differ only in the
   last floating-point digit need not be committed.
-- Figure-4 renders are not byte-stable: the "Continuous–Fragmented Model" panel title can
+- Figure-4 renders are not byte-stable: the "Continuous–Fragmented model" panel title can
   land about a pixel differently between runs (seen with fresh and cache-backed
   renders alike). Keep the committed PNG when that title is the only difference
   (check pixels, e.g. with PIL), and compare PDFs by rendering them (their bytes

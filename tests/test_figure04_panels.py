@@ -158,8 +158,12 @@ class TestPlotEventMetricHexbinRow:
             assert rects, f"{ax.get_title()!r}: no shaded rescue-quadrant patch"
             # Axis labels and the callout name the models by their registry labels.
             assert ax.get_xlabel() == CONTINUOUS.label
+            # The narrow HPD strip goes unlabeled; the other boxes carry the callout.
             callouts = [text.get_text() for text in ax.texts if "flagged by" in text.get_text()]
-            assert callouts == [f"flagged by\n{CONTINUOUS.short_label} only"]
+            is_hpd_strip = ax is axes[0]
+            assert callouts == (
+                [] if is_hpd_strip else [f"flagged by\n{CONTINUOUS.short_label} only"]
+            )
         assert axes[0].get_ylabel() == CONTINUOUS_FRAGMENTED.label
         plt.close(fig)
 
@@ -366,6 +370,8 @@ class TestPlotSingleModelDiagnostics:
         fig, axes = plot_single_model_diagnostics(self._panel_data(), show_y_labels=False)
         assert all(ax.get_ylabel() == "" for ax in axes)
         assert not any(label.get_visible() for label in axes[3].get_yticklabels())
+        # The HPD row's symlog axis has minor ticks, which must be hidden too.
+        assert not any(tick.tick1line.get_visible() for tick in axes[3].yaxis.get_minor_ticks())
         assert not any(text.get_gid() == ANIMAL_POSITION_LABEL_GID for text in axes[0].texts)
         plt.close(fig)
 
