@@ -12,26 +12,22 @@ Basic usage for creating a publication figure:
 ...     WONG, set_figure_defaults, save_figure
 ... )
 >>> import matplotlib.pyplot as plt
->>> set_figure_defaults(context="paper")
+>>> set_figure_defaults()
 >>> fig, ax = plt.subplots(figsize=(3.5, 2.3))
 >>> _ = ax.plot([1, 2, 3], [1, 2, 3], color=WONG[1])
 >>> save_figure("manuscript/figures/my_figure", fig=fig)  # doctest: +SKIP
-
-For presentations:
-
->>> set_figure_defaults(context="presentation")
->>> fig, ax = plt.subplots(figsize=(7.0, 4.7))
->>> save_figure("manuscript/figures/presentation_figure", dpi=300, fig=fig)  # doctest: +SKIP
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Literal, overload
 
 import matplotlib.pyplot as plt
+import numpy as np
 from matplotlib.figure import Figure
+from numpy.typing import NDArray
 
 from statespacecheck_paper.diagnostics import METRIC_FLAG_DIRECTIONS, FlagDirection
 
@@ -166,6 +162,54 @@ MetricName = Literal["hpd_overlap", "kl_divergence", "predictive_pvalue"]
 DisplayTransform = Literal["identity", "neg_log_p"]
 
 
+@overload
+def negative_log_pvalue(x: NDArray[np.floating]) -> NDArray[np.float64]: ...
+
+
+@overload
+def negative_log_pvalue(x: float) -> np.float64: ...
+
+
+def negative_log_pvalue(
+    x: NDArray[np.floating] | float,
+) -> NDArray[np.float64] | np.float64:
+    """Return the exact natural-log display transform ``-log(p)``.
+
+    Predictive p-values are shown on a ``-log(p)`` scale (natural log) so that
+    higher values indicate worse fit; Figures 3, 4, and the interactive viewer
+    share this transform. NaN is preserved as structural missingness. A zero
+    p-value cannot be represented on a finite log axis and raises instead of
+    being silently capped.
+
+    Parameters
+    ----------
+    x : NDArray[np.float64] or float
+        Probability value(s) to transform.
+
+    Returns
+    -------
+    NDArray[np.float64] or np.float64
+        ``-log(x)`` with the same shape as ``x``.
+
+    Raises
+    ------
+    ValueError
+        If a present value is not in ``(0, 1]``.
+    """
+    values = np.asarray(x, dtype=np.float64)
+    present = ~np.isnan(values)
+    if np.any(~np.isfinite(values[present])) or np.any(values[present] <= 0.0):
+        raise ValueError("Predictive p-values must be finite and strictly positive for -log(p)")
+    if np.any(values[present] > 1.0 + 1e-9):
+        raise ValueError("Predictive p-values must not exceed 1")
+    # Only correct floating-point overshoot within the validated tolerance.
+    values = np.minimum(values, 1.0)
+    transformed = -np.log(values)
+    if np.isscalar(x):
+        return np.float64(transformed)
+    return transformed
+
+
 @dataclass(frozen=True)
 class MetricSpec:
     """Display metadata for one diagnostic metric.
@@ -204,6 +248,18 @@ class MetricSpec:
     title: str
     display_transform: DisplayTransform = "identity"
     symlog_axis: bool = False
+
+    @overload
+    def to_display(self, values: NDArray[np.floating]) -> NDArray[np.floating]: ...
+
+    @overload
+    def to_display(self, values: float) -> float: ...
+
+    def to_display(self, values: NDArray[np.floating] | float) -> NDArray[np.floating] | float:
+        """Map raw metric values (or a threshold) onto the plotted axis."""
+        if self.display_transform == "neg_log_p":
+            return negative_log_pvalue(values)
+        return values
 
     @property
     def plotted_worse(self) -> FlagDirection:
@@ -263,20 +319,12 @@ METRIC_NAMES: tuple[MetricName, ...] = tuple(s.name for s in METRIC_SPECS)
 METRIC_SPEC_BY_NAME: dict[str, MetricSpec] = {s.name: s for s in METRIC_SPECS}
 
 
-def set_figure_defaults(context: Literal["paper", "presentation", "poster"] = "paper") -> None:
+def set_figure_defaults() -> None:
     """Set matplotlib defaults for publication figures.
 
-    Configures matplotlib rcParams for consistent, publication-ready figures
-    with appropriate font sizes for different contexts. All settings ensure
-    compatibility with journal requirements (Nature, Science, Cell, etc.).
-
-    Parameters
-    ----------
-    context : {"paper", "presentation", "poster"}, default "paper"
-        Context for figure display:
-        - "paper": Small fonts (8pt base) for journal publications
-        - "presentation": Medium fonts (12pt base) for talks/slides
-        - "poster": Large fonts (16pt base) for conference posters
+    Configures matplotlib rcParams for consistent, publication-ready figures.
+    All settings ensure compatibility with journal requirements (Nature,
+    Science, Cell, etc.).
 
     Returns
     -------
@@ -284,57 +332,25 @@ def set_figure_defaults(context: Literal["paper", "presentation", "poster"] = "p
 
     Notes
     -----
-    - Font sizes for "paper" context meet the 8-12 pt in-figure range most journals require
+    - Journals typically require 8-12 pt for all in-figure text; 8 pt is the floor
     - TrueType font embedding (fonttype 42) required for journal submission
     - Uses Arial font family (widely available and accepted by journals)
     - Sets thin line widths (0.5pt) for professional appearance
 
     Examples
     --------
-    For a journal manuscript:
-
-    >>> set_figure_defaults(context="paper")
+    >>> set_figure_defaults()
     >>> fig, ax = plt.subplots()
     >>> _ = ax.plot([1, 2, 3], [1, 2, 3])
-
-    For a presentation:
-
-    >>> set_figure_defaults(context="presentation")
-    >>> fig, ax = plt.subplots(figsize=(10, 6))
     """
-    # Font sizes for different contexts
-    font_sizes = {
-        "paper": {
-            # Journals typically require 8-12 pt for all in-figure text; 8 pt is the floor.
+    plt.rcParams.update(
+        {
             "font.size": 8,
             "axes.labelsize": 8,
             "axes.titlesize": 8,
             "xtick.labelsize": 8,
             "ytick.labelsize": 8,
             "legend.fontsize": 8,
-        },
-        "presentation": {
-            "font.size": 12,
-            "axes.labelsize": 12,
-            "axes.titlesize": 14,
-            "xtick.labelsize": 10,
-            "ytick.labelsize": 10,
-            "legend.fontsize": 10,
-        },
-        "poster": {
-            "font.size": 16,
-            "axes.labelsize": 16,
-            "axes.titlesize": 18,
-            "xtick.labelsize": 14,
-            "ytick.labelsize": 14,
-            "legend.fontsize": 14,
-        },
-    }
-
-    sizes = font_sizes[context]
-    plt.rcParams.update(
-        {
-            **sizes,
             "font.family": "sans-serif",
             "font.sans-serif": ["Arial"],
             "axes.linewidth": 0.5,

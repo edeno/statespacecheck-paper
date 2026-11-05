@@ -36,7 +36,6 @@ from statespacecheck_paper.figure03_simulation import (
 )
 from statespacecheck_paper.figure03_summary import (
     N_REALIZATIONS,
-    SUMMARY_ERROR_METRICS,
     SUMMARY_FLAG_METRICS,
     Figure3RealizationSummary,
     baseline_threshold_provenance,
@@ -54,7 +53,7 @@ from statespacecheck_paper.style import save_figure, set_figure_defaults
 # Version of the ``figure03_summary.json`` layout that
 # :func:`figure03_summary_payload` writes. Bump it whenever a field is added,
 # removed, renamed, or changes meaning.
-FIGURE03_SUMMARY_SCHEMA_VERSION = 9
+FIGURE03_SUMMARY_SCHEMA_VERSION = 10
 
 
 def figure03_summary_payload(
@@ -90,8 +89,7 @@ def figure03_summary_payload(
         "condition_labels": [condition.unwrapped_label for condition in conditions],
         "median_flag_percentages": summary.median_flag_percentages,
         "percentage_unit": "percent_of_spike_events",
-        "error_metric_order": list(SUMMARY_ERROR_METRICS),
-        "error_units": {"median_absolute_error": "position_units"},
+        "error_units": "position_units",
         "median_decoding_error": summary.median_decoding_error,
         # Approximate across-realization standard errors, conditional on this
         # configuration. Published as data about how variable each median is;
@@ -164,7 +162,7 @@ def generate_figure03(
 
     # Panel (a) shows the single seed-1 realization; panel (b) shows the
     # pooled median percentages scored against the pooled-baseline thresholds.
-    set_figure_defaults(context="paper")
+    set_figure_defaults()
     fig = compose_figure03(
         physical_position=simulation_result.physical_position,
         spike_counts=simulation_result.spike_counts.astype(np.float64),

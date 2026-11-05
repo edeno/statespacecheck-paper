@@ -9,7 +9,8 @@ viewer panels:
   Parquet) — all together ~50 MB.
 - Lazy ``xarray.Dataset`` handles for the per-model Zarr stores so
   predictive / log-likelihood reads pull only the chunks that overlap
-  the current view.
+  the current view, and a bounded cache of the most recently decoded
+  chunks so that repeated reads of a nearby view skip decompression.
 
 The hot-path methods (``window_indices``, ``load_predictive``,
 ``load_log_likelihood``, ``events_in_window``, ``slice_at_index``) accept
@@ -25,6 +26,8 @@ data source just hands it the requested 1D row.
 
 from __future__ import annotations
 
+import threading
+from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -42,6 +45,12 @@ from . import cache as cache_mod
 
 DatasetKind = Literal["recording", "simulation"]
 
+# Decoded chunks kept per variable. The viewer's widest window (60 s, or 30 001
+# rows at the recording's 500 Hz) spans at most five of the caches' 8192-row
+# chunks; a smaller limit would evict a wide window's first chunk while reading
+# its last, so the next reload would hit nothing.
+MAX_DECODED_CHUNKS_PER_VARIABLE = 5
+
 
 def _readonly(arr: NDArray[Any]) -> NDArray[Any]:
     """Mark ``arr`` write-protected in place and return it.
@@ -53,6 +62,89 @@ def _readonly(arr: NDArray[Any]) -> NDArray[Any]:
     """
     arr.setflags(write=False)
     return arr
+
+
+class _DecodedChunkLRU:
+    """Serve rows and windows of one Zarr variable from its recently decoded chunks.
+
+    A Zarr read decompresses every chunk it touches, and the viewer rereads the
+    same few chunks on each slider and autoscroll tick. This class keeps the
+    last ``max_chunks`` decoded chunks, least recently used evicted first.
+
+    Reads return fresh writable arrays, never views: a caller can neither
+    corrupt a cached chunk nor keep an evicted one alive past the bound. The
+    chunks themselves are read-only.
+
+    The lock is held across a decode, so two threads wanting the same chunk
+    decode it once and the bound is never exceeded, at the cost of a reader
+    waiting for at most one decode.
+
+    Parameters
+    ----------
+    arr : zarr.Array, shape (n_time, n_state_bins)
+        The variable, chunked along time. A chunk here is the whole
+        ``chunks[0]`` rows, however the state axis is chunked.
+    max_chunks : int, default MAX_DECODED_CHUNKS_PER_VARIABLE
+        Most decoded chunks held at once.
+    """
+
+    def __init__(self, arr: zarr.Array, max_chunks: int = MAX_DECODED_CHUNKS_PER_VARIABLE) -> None:
+        self._arr = arr
+        self._max_chunks = max_chunks
+        self._n_rows, self._n_columns = (int(size) for size in arr.shape)
+        self._chunk_rows = int(arr.chunks[0])
+        self._chunks: OrderedDict[int, NDArray[np.float32]] = OrderedDict()
+        self._lock = threading.Lock()
+
+    def _chunk(self, index: int) -> NDArray[np.float32]:
+        """Return decoded chunk ``index``, shape (chunk_rows, n_state_bins), read-only."""
+        with self._lock:
+            chunk = self._chunks.get(index)
+            if chunk is not None:
+                self._chunks.move_to_end(index)
+                return chunk
+            start = index * self._chunk_rows
+            chunk = _readonly(
+                np.asarray(self._arr[start : start + self._chunk_rows], dtype=np.float32)
+            )
+            self._chunks[index] = chunk
+            if len(self._chunks) > self._max_chunks:
+                self._chunks.popitem(last=False)
+            return chunk
+
+    def row(self, t_idx: int) -> NDArray[np.float32]:
+        """Return row ``t_idx`` as a fresh array, shape (n_state_bins,)."""
+        row: NDArray[np.float32] = self._chunk(t_idx // self._chunk_rows)[
+            t_idx % self._chunk_rows
+        ].copy()
+        return row
+
+    def window(self, sl: slice) -> NDArray[np.float32]:
+        """Return the rows of ``sl`` as a fresh array, shape (n_visible, n_state_bins).
+
+        Raises
+        ------
+        ValueError
+            If ``sl`` has a step other than 1.
+        """
+        start, stop, step = sl.indices(self._n_rows)
+        if step != 1:
+            raise ValueError(f"Window slice must have step 1; got {sl}")
+        window = np.empty((max(stop - start, 0), self._n_columns), dtype=np.float32)
+        for index in range(start // self._chunk_rows, (stop - 1) // self._chunk_rows + 1):
+            chunk_start = index * self._chunk_rows
+            first = max(start, chunk_start)
+            last = min(stop, chunk_start + self._chunk_rows)
+            window[first - start : last - start] = self._chunk(index)[
+                first - chunk_start : last - chunk_start
+            ]
+        return window
+
+    def close(self) -> None:
+        """Release the decoded chunks and the Zarr array; later reads raise."""
+        with self._lock:
+            self._arr = None
+            self._chunks.clear()
 
 
 @dataclass(frozen=True)
@@ -107,7 +199,12 @@ class DecoderDataSource:
 
     Construction is cheap: it reads the small sidecars (~50 MB total)
     and opens the Zarr store as a lazy ``xarray.Dataset``. The full
-    predictive / log-likelihood arrays are never realized in memory.
+    predictive / log-likelihood arrays are never realized in memory: each
+    of the (up to three) Zarr variables keeps at most
+    ``MAX_DECODED_CHUNKS_PER_VARIABLE`` decoded chunks. On the Figure-4 caches
+    a chunk is 8192 rows, 8.4 MB for Continuous and 16.8 MB for
+    Continuous-Fragmented, so the decoded chunks take at most 126 MB and
+    252 MB. ``close`` releases them, including on a model swap.
 
     The data source serves two distinct dataset kinds:
 
@@ -368,16 +465,18 @@ class DecoderDataSource:
                 f"{self.state_interior_mask.shape} vs ({self.n_state_bins},)"
             )
 
-        # Direct zarr arrays for the hot path.
-        self._predictive_arr: zarr.Array = self._zarr_group[self.PREDICTIVE_VAR]
-        self._loglik_arr: zarr.Array = self._zarr_group[self.LOG_LIKELIHOOD_VAR]
+        # Direct zarr arrays for the hot path, read through decoded chunks.
+        self._predictive_chunks = _DecodedChunkLRU(self._zarr_group[self.PREDICTIVE_VAR])
+        self._loglik_chunks = _DecodedChunkLRU(self._zarr_group[self.LOG_LIKELIHOOD_VAR])
         # ``acausal_posterior`` (smoothed distribution) is optional. The viewer
         # disables the smoothed choice when it is absent; it never substitutes
         # a predictive distribution under the smoothed label.
-        self._smoothed_arr: zarr.Array | None = (
-            self._zarr_group[self.SMOOTHED_VAR] if self.SMOOTHED_VAR in self._zarr_group else None
+        self._smoothed_chunks: _DecodedChunkLRU | None = (
+            _DecodedChunkLRU(self._zarr_group[self.SMOOTHED_VAR])
+            if self.SMOOTHED_VAR in self._zarr_group
+            else None
         )
-        self.has_smoothed: bool = self._smoothed_arr is not None
+        self.has_smoothed: bool = self._smoothed_chunks is not None
 
     # ------------------------------------------------------------------
     # Consistency / sanity
@@ -549,7 +648,7 @@ class DecoderDataSource:
 
     def load_predictive(self, sl: slice) -> NDArray[np.float32]:
         """Load the predictive distribution for the given time slice."""
-        return self._read_window(self._predictive_arr, sl)
+        return self._predictive_chunks.window(sl)
 
     def load_log_likelihood(self, sl: slice) -> NDArray[np.float32]:
         """Load the (log) likelihood for the given time slice.
@@ -559,7 +658,7 @@ class DecoderDataSource:
         result; the slice panel exponentiates per-row when computing
         the likelihood curve.
         """
-        return self._read_window(self._loglik_arr, sl)
+        return self._loglik_chunks.window(sl)
 
     def load_smoothed(self, sl: slice) -> NDArray[np.float32] | None:
         """Load the smoothed posterior, or ``None`` if absent.
@@ -567,9 +666,9 @@ class DecoderDataSource:
         Caches without ``acausal_posterior`` (the simulation cache) return
         ``None``; callers fall back to the predictive distribution.
         """
-        if self._smoothed_arr is None:
+        if self._smoothed_chunks is None:
             return None
-        return self._read_window(self._smoothed_arr, sl)
+        return self._smoothed_chunks.window(sl)
 
     def slice_at_index(
         self,
@@ -583,33 +682,30 @@ class DecoderDataSource:
         (true log space, as :meth:`load_log_likelihood` returns it), or the
         smoothed posterior.
 
-        Hot-path call from the slice panel: a single Zarr row read.
-        Typical chunk size (8192 along time) means one chunk fetched and
-        decompressed per read; decoded chunks are not kept.
+        Hot-path call from the slice panel: a copy of one row of a decoded
+        chunk. A row in a recently read chunk (8192 rows along time) needs no
+        disk read or decompression; any other fetches and decompresses its
+        chunk and keeps it for the next reads.
         """
         if not 0 <= t_idx < self.n_time:
             raise IndexError(f"t_idx {t_idx} out of range [0, {self.n_time})")
         if which == "predictive":
-            arr = self._predictive_arr
+            chunks = self._predictive_chunks
         elif which == "log_likelihood":
-            arr = self._loglik_arr
+            chunks = self._loglik_chunks
         elif which == "smoothed":
-            if self._smoothed_arr is None:
+            if self._smoothed_chunks is None:
                 raise ValueError(
                     "acausal_posterior is not present in this cache; "
                     "rebuild via 'python -m statespacecheck_paper.interactive.cache build'."
                 )
-            arr = self._smoothed_arr
+            chunks = self._smoothed_chunks
         else:
             raise ValueError(
                 f"Unknown slice variant: {which!r}; expected 'predictive', "
                 "'log_likelihood', or 'smoothed'"
             )
-        return np.asarray(arr[t_idx], dtype=np.float32)
-
-    @staticmethod
-    def _read_window(arr: zarr.Array, sl: slice) -> NDArray[np.float32]:
-        return np.ascontiguousarray(arr[sl], dtype=np.float32)
+        return chunks.row(t_idx)
 
     # ------------------------------------------------------------------
     # Events
@@ -672,7 +768,7 @@ class DecoderDataSource:
     # ------------------------------------------------------------------
 
     def close(self) -> None:
-        """Close the underlying Zarr store handle.
+        """Close the underlying Zarr store handle and free the decoded chunks.
 
         Direct ``zarr`` arrays do not have a ``close`` method; their
         store closes via garbage collection. Holding the references
@@ -680,9 +776,11 @@ class DecoderDataSource:
         """
         # Drop array references so the underlying store can be GC'd.
         self._zarr_group = None
-        self._predictive_arr = None
-        self._loglik_arr = None
-        self._smoothed_arr = None
+        self._predictive_chunks.close()
+        self._loglik_chunks.close()
+        if self._smoothed_chunks is not None:
+            self._smoothed_chunks.close()
+            self._smoothed_chunks = None
 
     def __enter__(self) -> DecoderDataSource:
         return self

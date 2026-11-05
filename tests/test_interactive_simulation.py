@@ -190,8 +190,7 @@ def test_simulated_viewer_draws_the_cached_thresholds(tmp_path: Path) -> None:
     from statespacecheck_paper.interactive.cache import build_simulated_cache
     from statespacecheck_paper.interactive.data_source import DecoderDataSource
     from statespacecheck_paper.interactive.viewer import DecoderViewer
-    from statespacecheck_paper.plotting import negative_log_pvalue
-    from statespacecheck_paper.style import METRIC_SPECS
+    from statespacecheck_paper.style import METRIC_SPECS, negative_log_pvalue
 
     thresholds = {"hpd_overlap": 0.0, "predictive_pvalue": 0.01, "kl_divergence": 4.5}
     build_simulated_cache(

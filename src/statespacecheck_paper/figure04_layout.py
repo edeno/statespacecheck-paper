@@ -26,12 +26,13 @@ from numpy.typing import NDArray
 from statespacecheck_paper.diagnostics import SpikeEventDiagnostics
 from statespacecheck_paper.figure04_models import CONTINUOUS, CONTINUOUS_FRAGMENTED
 from statespacecheck_paper.figure04_panels import (
+    DETAIL_ROW_RATIOS,
     ModelDiagnosticPanelData,
     plot_event_metric_hexbin_row,
     plot_single_model_diagnostics,
 )
 from statespacecheck_paper.figure04_protocol import Figure4DetailWindow
-from statespacecheck_paper.figure04_track_plots import plot_track_graph_2d
+from statespacecheck_paper.figure04_track_plots import plot_track_graph_2d, reward_well_nodes
 from statespacecheck_paper.figure04_workflow import Figure4RenderData
 from statespacecheck_paper.plotting import THRESHOLD_LABEL_GID, WORSE_FIT_LABEL_GID
 from statespacecheck_paper.style import FIGURE_DPI
@@ -43,11 +44,12 @@ FIGURE04_DIAGNOSTIC_ANNOTATION_GIDS = {THRESHOLD_LABEL_GID, WORSE_FIT_LABEL_GID}
 # 6.1 in) and DPI (``FIGURE_DPI``, 450). They tune only artist placement, never any decoded or
 # diagnostic value; changing the figure size or DPI would require re-measuring.
 #
-# ``add_scalebar`` appends the scale bar as the final line; FIGURE04_SCALE_BAR_HORIZONTAL_SHIFT_PX /
-# FIGURE04_SCALE_BAR_VERTICAL_DROP_PX move the bar and its label together so the label clears the
-# nearby reward-well marker.
-FIGURE04_SCALE_BAR_HORIZONTAL_SHIFT_PX = 22.0
-FIGURE04_SCALE_BAR_VERTICAL_DROP_PX = 5.0
+# The scale bar and its label shift together, in cm (the track's data units), so
+# the label clears the nearby reward-well marker; the label then moves a little
+# further right and down, beside its bar.
+FIGURE04_SCALE_BAR_OFFSET_CM = (22.0, -5.0)
+FIGURE04_SCALE_BAR_LABEL_OFFSET_CM = (10.0, -4.0)
+FIGURE04_SCALE_BAR_LABEL_FONTSIZE = 8.5
 # The trajectory line's vector bbox extends slightly farther left than the
 # visually salient rendered diagram, so the track inset's left edge is nudged
 # right by this many pixels when aligning it to the diagnostic annotations.
@@ -137,7 +139,7 @@ def _place_track_inset(
 ) -> Any:
     """Draw the unlettered 2D track inset and align it to the diagnostic labels.
 
-    Pixel-nudging is confined here and to the module-level ``SCALE_BAR_*`` /
+    Nudging is confined here and to the module-level ``FIGURE04_SCALE_BAR_*`` /
     ``FIGURE04_TRACK_VISUAL_EDGE_CORRECTION_PX`` / ``FIGURE04_TRACK_SIZE_SCALE`` constants
     (measured at
     the current figure size and DPI). Returns the inset axis so the hexbin
@@ -148,47 +150,26 @@ def _place_track_inset(
     track_gs = track_subfig.add_gridspec(
         6,
         3,
-        height_ratios=[2, 2, 1.5, 1, 1, 1],
+        height_ratios=DETAIL_ROW_RATIOS,
         width_ratios=[0.01, 0.68, 0.31],
     )
     ax_track = track_subfig.add_subplot(track_gs[1, 1])
-    # Reward wells sit at the arm tips, i.e. the degree-1 (leaf) nodes of the
-    # track graph. Mark them so the 2D layout connects to the linearized axis
-    # used in panels (a)-(b).
+    # Mark the reward wells so the 2D layout connects to the linearized axis used
+    # in panels (a)-(b).
     track_graph = render_data.recording.track_graph
-    reward_well_nodes = [n for n in track_graph.nodes if track_graph.degree(n) == 1]
     plot_track_graph_2d(
         track_graph=track_graph,
         position_info=render_data.recording.position_info,
         ax=ax_track,
         edge_order=render_data.recording.linear_edge_order,
-        reward_well_nodes=reward_well_nodes,
+        well_nodes=reward_well_nodes(track_graph),
         scalebar_length=20,
         scalebar_label="20 cm",
+        scalebar_offset=FIGURE04_SCALE_BAR_OFFSET_CM,
+        scalebar_label_offset=FIGURE04_SCALE_BAR_LABEL_OFFSET_CM,
+        scalebar_label_fontsize=FIGURE04_SCALE_BAR_LABEL_FONTSIZE,
     )
     ax_track.set_anchor("W")
-    # Move the scale bar and its label together so the label clears the nearby
-    # reward-well marker.
-    scale_bar_line = ax_track.lines[-1]
-    scale_bar_line.set_xdata(
-        np.asarray(scale_bar_line.get_xdata()) + FIGURE04_SCALE_BAR_HORIZONTAL_SHIFT_PX
-    )
-    scale_bar_line.set_ydata(
-        np.asarray(scale_bar_line.get_ydata()) - FIGURE04_SCALE_BAR_VERTICAL_DROP_PX
-    )
-    scale_bar_line.set_linewidth(2.0)
-    for text in ax_track.texts:
-        if text.get_text() == "20 cm":
-            x_pos, y_pos = text.get_position()
-            text.set_position(
-                (
-                    x_pos + FIGURE04_SCALE_BAR_HORIZONTAL_SHIFT_PX + 10,
-                    y_pos - 4 - FIGURE04_SCALE_BAR_VERTICAL_DROP_PX,
-                )
-            )
-            text.set_fontsize(8.5)
-            text.set_clip_on(False)
-
     # Align the track diagram itself with the shared right-side diagnostic
     # annotations: the diagram's left edge should begin where the annotation
     # text ends.

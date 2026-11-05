@@ -45,6 +45,65 @@ def test_structural_padding_helper_rejects_unexpected_values(
         _replace_structural_padding(values, mask, fill_value=0.0, name="predictive_posterior")
 
 
+def test_structural_padding_helper_checks_the_interior_before_the_padding() -> None:
+    from statespacecheck_paper.interactive.viewer import _replace_structural_padding
+
+    values = np.array([[1.0, np.nan, 0.8, np.nan]], dtype=np.float32)
+    mask = np.array([False, True, True, False])
+    with pytest.raises(ValueError, match="inside"):
+        _replace_structural_padding(values, mask, fill_value=0.0, name="predictive_posterior")
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        pytest.param(np.array([np.nan, -np.inf, 0.0, np.nan], dtype=np.float32), id="row"),
+        pytest.param(
+            np.array(
+                [[np.nan, -np.inf, 0.0, np.nan], [np.nan, -1.0, -np.inf, np.nan]],
+                dtype=np.float32,
+            ),
+            id="window",
+        ),
+    ],
+)
+def test_structural_padding_helper_keeps_allowed_negative_infinity(values: np.ndarray) -> None:
+    from statespacecheck_paper.interactive.viewer import _replace_structural_padding
+
+    mask = np.array([False, True, True, False])
+    expected = values.copy()
+    expected[..., ~mask] = -np.inf
+    result = _replace_structural_padding(
+        values, mask, fill_value=-np.inf, name="log_likelihood", allow_negative_infinity=True
+    )
+    assert result.tobytes() == expected.tobytes()
+
+    bad = expected.copy()
+    bad[..., ~mask] = np.nan
+    with pytest.raises(ValueError, match="inside"):
+        _replace_structural_padding(bad, mask, fill_value=0.0, name="predictive_posterior")
+
+
+def test_structural_padding_helper_leaves_decoded_chunks_untouched() -> None:
+    """The in-place fill lands on the read's own array, never on a cached chunk."""
+    import zarr
+
+    from statespacecheck_paper.interactive.data_source import _DecodedChunkLRU
+    from statespacecheck_paper.interactive.viewer import _replace_structural_padding
+
+    data = np.full((6, 4), np.nan, dtype=np.float32)
+    data[:, 1:3] = 0.5
+    chunks = _DecodedChunkLRU(zarr.array(data, chunks=(4, 4)))
+    mask = np.array([False, True, True, False])
+
+    for read in (lambda: chunks.window(slice(2, 6)), lambda: chunks.row(3)):
+        filled = _replace_structural_padding(
+            read(), mask, fill_value=0.0, name="predictive_posterior"
+        )
+        assert not np.any(np.isnan(filled))
+        assert np.all(np.isnan(read()[..., ~mask]))
+
+
 def test_relative_likelihood_rejects_all_impossible_row() -> None:
     from statespacecheck_paper.interactive.viewer import _relative_likelihood_from_log
 

@@ -108,6 +108,12 @@ def _replace_structural_padding(
     Those structural entries must be finite for pyqtgraph, but a blanket
     ``nan_to_num`` would also conceal corruption inside the modeled state
     space. This helper verifies both regions before filling only the padding.
+
+    The fill happens in place in ``values``, which the caller must own, as it
+    does the fresh array of any ``DecoderDataSource`` read; ``values`` is left
+    partly filled when validation raises. Padding is taken by integer index so
+    that only the padding columns are copied and the whole array is scanned
+    once, which matters at this function's several calls per window load.
     """
     array = np.asarray(values, dtype=np.float32)
     mask = np.asarray(state_interior_mask, dtype=bool)
@@ -115,21 +121,22 @@ def _replace_structural_padding(
         raise ValueError(
             f"{name} must be 1-D or 2-D with {mask.size} state bins; got {array.shape}"
         )
-    interior = array[..., mask]
-    invalid_interior = np.isnan(interior) | np.isposinf(interior)
-    if not allow_negative_infinity:
-        invalid_interior |= np.isneginf(interior)
+    padding_columns = np.flatnonzero(~mask)
+    padding = array[..., padding_columns]
+    # A finite placeholder leaves only interior values for the scan below.
+    array[..., padding_columns] = 0.0
+    invalid_interior = (
+        np.isnan(array) | np.isposinf(array) if allow_negative_infinity else ~np.isfinite(array)
+    )
     if np.any(invalid_interior):
         raise ValueError(f"{name} contains an invalid value inside the modeled state space")
-    padding = array[..., ~mask]
     if padding.size and not np.all(np.isnan(padding)):
         raise ValueError(
             f"{name} contains non-NaN values outside the modeled state space; "
             "the cache padding contract is inconsistent"
         )
-    result: NDArray[np.float32] = np.array(array, dtype=np.float32, copy=True)
-    result[..., ~mask] = fill_value
-    return result
+    array[..., padding_columns] = fill_value
+    return array
 
 
 def _relative_likelihood_from_log(

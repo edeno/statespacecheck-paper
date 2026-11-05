@@ -326,7 +326,7 @@ def compose_figure01() -> Figure:
 
 def generate_figure01() -> None:
     """Compose Figure 1 with paper styling and save its PDF and PNG."""
-    set_figure_defaults(context="paper")
+    set_figure_defaults()
     fig = compose_figure01()
     save_figure(FIGURE_DIR / "figure01", close=True, fig=fig)
     print(f"\nFigure 1 saved to {FIGURE_DIR / 'figure01'}.{{pdf,png}}")

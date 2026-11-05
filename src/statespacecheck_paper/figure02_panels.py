@@ -228,6 +228,24 @@ def create_shared_example(rng: np.random.Generator) -> Figure2ExampleData:
 # =============================================================================
 
 
+def _style_state_axis(ax: Axes) -> None:
+    """Hide the top and right spines and mark only the ends of the latent-state axis."""
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.set_xlim(0, 100)
+    ax.set_xticks([0, 100])
+    ax.set_xticklabels(["0", "100"])
+
+
+def _finish_density_axes(ax: Axes) -> None:
+    """Style a density panel: the state axis, then a y axis marked at zero and its top."""
+    _style_state_axis(ax)
+    ax.set_ylim(bottom=0)
+    y_max = ax.get_ylim()[1]
+    ax.set_yticks([0, y_max])
+    ax.set_yticklabels(["0", f"{y_max:.2f}"])
+
+
 def plot_kl_distributions(ax: Axes, data: Figure2ExampleData) -> None:
     """Predictive and Likelihood distributions overlaid."""
     x = data.position_bins
@@ -242,17 +260,7 @@ def plot_kl_distributions(ax: Axes, data: Figure2ExampleData) -> None:
     ax.set_xlabel("Latent state (a.u.)", labelpad=8)
     ax.set_ylabel("Probability", labelpad=8)
     ax.legend(frameon=False, loc="upper right")
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    ax.set_xlim(0, 100)
-    ax.set_ylim(bottom=0)
-    # Minimal x-ticks: first and last only
-    ax.set_xticks([0, 100])
-    ax.set_xticklabels(["0", "100"])
-    # Minimal y-ticks: first and last only
-    y_max = ax.get_ylim()[1]
-    ax.set_yticks([0, y_max])
-    ax.set_yticklabels(["0", f"{y_max:.2f}"])
+    _finish_density_axes(ax)
 
 
 def plot_kl_log_ratio(ax: Axes, data: Figure2ExampleData) -> None:
@@ -288,12 +296,7 @@ def plot_kl_log_ratio(ax: Axes, data: Figure2ExampleData) -> None:
     ax.set_xlabel("Latent state (a.u.)", labelpad=8)
     ax.set_ylabel(r"$\log P - \log Q$", labelpad=8)
     ax.set_title("Log ratio", pad=4)
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    ax.set_xlim(0, 100)
-    # Minimal x-ticks: first and last only
-    ax.set_xticks([0, 100])
-    ax.set_xticklabels(["0", "100"])
+    _style_state_axis(ax)
     # Minimal y-ticks: first and last only
     y_min, y_max = ax.get_ylim()
     ax.set_yticks([y_min, 0, y_max])
@@ -319,12 +322,7 @@ def plot_kl_pointwise(ax: Axes, data: Figure2ExampleData) -> None:
         labelpad=8,
     )
     ax.set_title(r"Pointwise KL: $P\,\times$ log ratio", pad=4)
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    ax.set_xlim(0, 100)
-    # Minimal x-ticks: first and last only
-    ax.set_xticks([0, 100])
-    ax.set_xticklabels(["0", "100"])
+    _style_state_axis(ax)
     # Minimal y-ticks: first and last only
     y_min, y_max = ax.get_ylim()
     ax.set_yticks([y_min, 0, y_max])
@@ -384,17 +382,7 @@ def _plot_hpd_panel(
     ax.set_ylabel("Probability", labelpad=8)
     ax.set_title(title, pad=4)
     ax.legend(frameon=False, **legend_kwargs)
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    ax.set_xlim(0, 100)
-    ax.set_ylim(bottom=0)
-    # Minimal x-ticks: first and last only
-    ax.set_xticks([0, 100])
-    ax.set_xticklabels(["0", "100"])
-    # Minimal y-ticks: first and last only
-    y_max = ax.get_ylim()[1]
-    ax.set_yticks([0, y_max])
-    ax.set_yticklabels(["0", f"{y_max:.2f}"])
+    _finish_density_axes(ax)
 
 
 def plot_hpd_predictive(ax: Axes, data: Figure2ExampleData) -> None:
@@ -527,10 +515,8 @@ def plot_hpd_intersection(ax: Axes, data: Figure2ExampleData) -> tuple[float, fl
 
     ax.set_xlabel("Latent state (a.u.)", labelpad=8)
     ax.set_ylabel("", labelpad=8)  # No y-label needed
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
+    _style_state_axis(ax)
     ax.spines["left"].set_visible(False)
-    ax.set_xlim(0, 100)
     ax.set_ylim(0, 1.0)
     ax.set_yticks([0.8, 0.5, 0.2])
 
@@ -540,9 +526,6 @@ def plot_hpd_intersection(ax: Axes, data: Figure2ExampleData) -> tuple[float, fl
     )
 
     ax.tick_params(axis="y", length=0)  # Hide tick marks
-    # Minimal x-ticks: first and last only
-    ax.set_xticks([0, 100])
-    ax.set_xticklabels(["0", "100"])
 
     return pred_hpd_size, like_hpd_size, intersection_size
 
@@ -600,17 +583,7 @@ def plot_predictive_check_predictive_fan(ax: Axes, data: Figure2ExampleData) -> 
         handletextpad=0.4,
         borderaxespad=0.0,
     )
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    ax.set_xlim(0, 100)
-    ax.set_ylim(bottom=0)
-    # Minimal x-ticks: first and last only
-    ax.set_xticks([0, 100])
-    ax.set_xticklabels(["0", "100"])
-    # Minimal y-ticks: first and last only
-    y_max = ax.get_ylim()[1]
-    ax.set_yticks([0, y_max])
-    ax.set_yticklabels(["0", f"{y_max:.2f}"])
+    _finish_density_axes(ax)
 
 
 def plot_predictive_check_likelihood_fan(ax: Axes, data: Figure2ExampleData) -> None:
@@ -709,15 +682,7 @@ def plot_predictive_check_likelihood_fan(ax: Axes, data: Figure2ExampleData) -> 
     )
     ax.set_xlabel("Latent state (a.u.)", labelpad=8)
     ax.set_ylabel("Probability", labelpad=8)
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    ax.set_xlim(0, 100)
-    ax.set_ylim(bottom=0)
-    ax.set_xticks([0, 100])
-    ax.set_xticklabels(["0", "100"])
-    y_max = ax.get_ylim()[1]
-    ax.set_yticks([0, y_max])
-    ax.set_yticklabels(["0", f"{y_max:.2f}"])
+    _finish_density_axes(ax)
 
     ax.text(
         0.5,

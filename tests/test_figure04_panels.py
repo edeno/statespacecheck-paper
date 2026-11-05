@@ -21,6 +21,7 @@ from statespacecheck_paper.diagnostics import SpikeEventDiagnostics  # noqa: E40
 from statespacecheck_paper.figure04_models import CONTINUOUS, CONTINUOUS_FRAGMENTED  # noqa: E402
 from statespacecheck_paper.figure04_panels import (  # noqa: E402
     ModelDiagnosticPanelData,
+    _draw_place_field_likelihood_image,
     _draw_predictive_heatmap_row,
     _draw_track_graph_edges,
     plot_event_diagnostic_scatter,
@@ -535,3 +536,18 @@ def test_scatter_event_time_ind_keeps_repeated_events_distinct(
     assert offsets.shape[0] == 2  # two distinct events, not one
     np.testing.assert_allclose(sorted(offsets[:, 0]), [0.5, 0.5])  # both at time[5]
     np.testing.assert_allclose(sorted(offsets[:, 1]), [0.4, 0.8])
+
+
+def test_negative_spike_counts_in_the_plotted_window_are_rejected(
+    fresh_axes: tuple[plt.Figure, plt.Axes],
+) -> None:
+    _, ax = fresh_axes
+    with pytest.raises(ValueError, match="spike_counts must be non-negative"):
+        _draw_place_field_likelihood_image(
+            ax,
+            np.arange(4.0),
+            np.array([[0], [-1], [0], [0]]),
+            np.ones((1, 3)),
+            np.arange(3.0),
+            slice(0, 4),
+        )

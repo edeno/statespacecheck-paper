@@ -456,7 +456,6 @@ def test_condition_summaries_come_from_the_figure_summary(
 ) -> None:
     """The page quotes the summary's medians, rounded with the manuscript's policy."""
     metric_order = figure03_summary["metric_order"]
-    error_row = figure03_summary["error_metric_order"].index("median_absolute_error")
     for column, condition_id in enumerate(figure03_summary["condition_order"]):
         summary = site_conditions[condition_id]["summary"]
         assert set(summary["median_flag_percent_text"]) == set(METRIC_NAMES)
@@ -464,7 +463,7 @@ def test_condition_summaries_come_from_the_figure_summary(
             row = metric_order.index(metric)
             assert text == whole_percent(figure03_summary["median_flag_percentages"][row][column])
         assert summary["median_absolute_error_text"] == significant(
-            figure03_summary["median_decoding_error"][error_row][column]
+            figure03_summary["median_decoding_error"][column]
         )
 
 

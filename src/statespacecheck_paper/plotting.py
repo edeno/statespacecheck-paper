@@ -8,7 +8,6 @@ GIDs.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import overload
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -28,54 +27,6 @@ from statespacecheck_paper.style import (
 THRESHOLD_LINE_GID = "threshold-line"
 THRESHOLD_LABEL_GID = "threshold-label"
 WORSE_FIT_LABEL_GID = "worse-fit-label"
-
-
-@overload
-def negative_log_pvalue(x: NDArray[np.floating]) -> NDArray[np.float64]: ...
-
-
-@overload
-def negative_log_pvalue(x: float) -> np.float64: ...
-
-
-def negative_log_pvalue(
-    x: NDArray[np.floating] | float,
-) -> NDArray[np.float64] | np.float64:
-    """Return the exact natural-log display transform ``-log(p)``.
-
-    Predictive p-values are shown on a ``-log(p)`` scale (natural log) so that
-    higher values indicate worse fit; Figures 3, 4, and the interactive viewer
-    share this transform. NaN is preserved as structural missingness. A zero
-    p-value cannot be represented on a finite log axis and raises instead of
-    being silently capped.
-
-    Parameters
-    ----------
-    x : NDArray[np.float64] or float
-        Probability value(s) to transform.
-
-    Returns
-    -------
-    NDArray[np.float64] or np.float64
-        ``-log(x)`` with the same shape as ``x``.
-
-    Raises
-    ------
-    ValueError
-        If a present value is not in ``(0, 1]``.
-    """
-    values = np.asarray(x, dtype=np.float64)
-    present = ~np.isnan(values)
-    if np.any(~np.isfinite(values[present])) or np.any(values[present] <= 0.0):
-        raise ValueError("Predictive p-values must be finite and strictly positive for -log(p)")
-    if np.any(values[present] > 1.0 + 1e-9):
-        raise ValueError("Predictive p-values must not exceed 1")
-    # Only correct floating-point overshoot within the validated tolerance.
-    values = np.minimum(values, 1.0)
-    transformed = -np.log(values)
-    if np.isscalar(x):
-        return np.float64(transformed)
-    return transformed
 
 
 def extract_contiguous_regions(
@@ -250,15 +201,12 @@ def plot_event_metric_row(
         Whether to draw the right-edge threshold and worse-fit labels (a
         figure with side-by-side stacks shows them on one stack only).
     """
-    neg_log = spec.display_transform == "neg_log_p"
-    plot_values = np.asarray(values, dtype=float)
-    if neg_log:
-        plot_values = negative_log_pvalue(plot_values)
+    plot_values = spec.to_display(np.asarray(values, dtype=float))
     ax.scatter(event_x, plot_values, s=0.8, alpha=0.6, c=spec.color, rasterized=True)
 
     plot_threshold = None
     if threshold is not None:
-        plot_threshold = float(negative_log_pvalue(threshold)) if neg_log else float(threshold)
+        plot_threshold = float(spec.to_display(threshold))
         threshold_line = ax.axhline(
             plot_threshold, color=COLORS["threshold"], linewidth=1.2, alpha=0.7, zorder=10
         )

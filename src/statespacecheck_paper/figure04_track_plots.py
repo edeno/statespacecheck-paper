@@ -25,14 +25,22 @@ def _edge_colors() -> NDArray[np.float64]:
     return np.array([cmap(i) for i in range(10)])
 
 
+def reward_well_nodes(track_graph: nx.Graph) -> list[int]:
+    """Return the reward-well nodes: the arm tips, i.e. the graph's degree-1 leaves."""
+    return [node for node in track_graph.nodes if track_graph.degree(node) == 1]
+
+
 def plot_track_graph_2d(
     track_graph: nx.Graph,
     position_info: pd.DataFrame,
     edge_order: Sequence[tuple[Hashable, Hashable]],
     ax: Axes,
-    reward_well_nodes: list[int] | None = None,
+    well_nodes: list[int] | None = None,
     scalebar_length: float = 20,
     scalebar_label: str = "20 cm",
+    scalebar_offset: tuple[float, float] = (0.0, 0.0),
+    scalebar_label_offset: tuple[float, float] = (0.0, 0.0),
+    scalebar_label_fontsize: float = 8.0,
 ) -> Axes:
     """Plot the 2D track graph over the head-position trajectory.
 
@@ -47,20 +55,23 @@ def plot_track_graph_2d(
         cycle through the tab10 colors in this order.
     ax : Axes
         Axes to plot on.
-    reward_well_nodes : list of int, optional
+    well_nodes : list of int, optional
         Node indices that are reward wells (marked with scatter points).
     scalebar_length : float, optional
         Length of scale bar in data units, by default 20.
     scalebar_label : str, optional
         Label for scale bar, by default "20 cm".
+    scalebar_offset, scalebar_label_offset, scalebar_label_fontsize
+        Passed to :func:`add_scalebar` as ``offset``, ``label_offset``, and
+        ``label_fontsize``.
 
     Returns
     -------
     ax : Axes
         The axes object.
     """
-    if reward_well_nodes is None:
-        reward_well_nodes = []
+    if well_nodes is None:
+        well_nodes = []
     edge_colors = _edge_colors()
     x_column, y_column = HEAD_POSITION_COLUMNS
     ax.plot(
@@ -83,7 +94,7 @@ def plot_track_graph_2d(
             linewidth=2,
             color=edge_color,
         )
-        if node1 in reward_well_nodes:
+        if node1 in well_nodes:
             ax.scatter(
                 node1_pos[0],
                 node1_pos[1],
@@ -93,7 +104,7 @@ def plot_track_graph_2d(
                 edgecolors="black",
                 linewidths=0.5,
             )
-        if node2 in reward_well_nodes:
+        if node2 in well_nodes:
             ax.scatter(
                 node2_pos[0],
                 node2_pos[1],
@@ -104,7 +115,14 @@ def plot_track_graph_2d(
                 linewidths=0.5,
             )
 
-    add_scalebar(ax, scalebar_length, scalebar_label)
+    add_scalebar(
+        ax,
+        scalebar_length,
+        scalebar_label,
+        offset=scalebar_offset,
+        label_offset=scalebar_label_offset,
+        label_fontsize=scalebar_label_fontsize,
+    )
     ax.set_aspect("equal", adjustable="box")
     ax.axis("off")
 
@@ -116,7 +134,7 @@ def plot_track_graph_1d(
     ax: Axes,
     edge_order: Sequence[tuple[Hashable, Hashable]],
     edge_spacing: float | list[float] = 0.0,
-    reward_well_nodes: list[int] | None = None,
+    well_nodes: list[int] | None = None,
     other_axis_start: float = 0,
     reward_well_size: int = 10,
     edge_linewidth: int = 2,
@@ -138,7 +156,7 @@ def plot_track_graph_1d(
         through the tab10 colors in this order.
     edge_spacing : float or list of float, optional
         Spacing between edges in cm. By default 0.0.
-    reward_well_nodes : list of int, optional
+    well_nodes : list of int, optional
         Node indices that are reward wells (marked with scatter points).
     other_axis_start : float, optional
         x-position of the segments.
@@ -147,8 +165,8 @@ def plot_track_graph_1d(
     edge_linewidth : int, optional
         Line width for edge segments, by default 2.
     """
-    if reward_well_nodes is None:
-        reward_well_nodes = []
+    if well_nodes is None:
+        well_nodes = []
     edge_colors = _edge_colors()
 
     n_edges = len(edge_order)
@@ -175,7 +193,7 @@ def plot_track_graph_1d(
             (edge[0], start_node_linear_position),
             (edge[1], end_node_linear_position),
         ):
-            if node in reward_well_nodes:
+            if node in well_nodes:
                 ax.scatter(
                     other_axis_start,
                     node_position,

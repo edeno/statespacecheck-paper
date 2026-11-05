@@ -13,7 +13,6 @@ import dataclasses
 from collections.abc import Mapping
 
 import numpy as np
-from numpy.typing import NDArray
 
 from statespacecheck_paper.diagnostics import FlagDirection, SpikeEventDiagnostics
 from statespacecheck_paper.figure04_diagnostics import FlagConfusion, compute_flag_confusion
@@ -165,24 +164,6 @@ class Figure4DetailWindowComparison:
     predictive_pvalue_higher: int
 
 
-def _select_events(
-    diagnostics: SpikeEventDiagnostics, mask: NDArray[np.bool_]
-) -> SpikeEventDiagnostics:
-    """Return the per-spike diagnostics of the events in ``mask``, without dense matrices."""
-    return SpikeEventDiagnostics(
-        event_time_ind=diagnostics.event_time_ind[mask],
-        event_cell_ind=diagnostics.event_cell_ind[mask],
-        event_hpd_overlap=diagnostics.event_hpd_overlap[mask],
-        event_kl_divergence=diagnostics.event_kl_divergence[mask],
-        event_predictive_pvalue=diagnostics.event_predictive_pvalue[mask],
-        hpd_overlap=None,
-        kl_divergence=None,
-        predictive_pvalue=None,
-        event_likelihood=None,
-        event_time=None if diagnostics.event_time is None else diagnostics.event_time[mask],
-    )
-
-
 def compute_detail_window_comparison(
     continuous_diagnostics: SpikeEventDiagnostics,
     continuous_fragmented_diagnostics: SpikeEventDiagnostics,
@@ -223,8 +204,8 @@ def compute_detail_window_comparison(
         raise ValueError(
             f"The detail window [{time_slice.start}, {time_slice.stop}) contains no spike events"
         )
-    continuous = _select_events(continuous_diagnostics, in_window)
-    fragmented = _select_events(continuous_fragmented_diagnostics, in_window)
+    continuous = continuous_diagnostics.select_events(in_window)
+    fragmented = continuous_fragmented_diagnostics.select_events(in_window)
     hpd_overlap = compute_flag_confusion(
         continuous,
         fragmented,
@@ -252,23 +233,75 @@ def _compute_diagnostic_means(
     )
 
 
-def compute_figure04_summary(
+@dataclasses.dataclass(frozen=True)
+class Figure4ReportedStatistics:
+    """Every statistic the Figure-4 summary reports about the two decodes.
+
+    Attributes
+    ----------
+    summary : Figure4Summary
+        The part the Spyglass rows can rebuild.
+    n_units_with_spikes : int
+        Units with at least one spike event.
+    kl_divergence_comparison : Figure4KlDivergenceComparison
+        The two sides of the identity line in the Figure-4c KL panel.
+    detail_window_comparison : Figure4DetailWindowComparison
+        The two decoders' spike events in the Figure-4a,b detail window.
+    """
+
+    summary: Figure4Summary
+    n_units_with_spikes: int
+    kl_divergence_comparison: Figure4KlDivergenceComparison
+    detail_window_comparison: Figure4DetailWindowComparison
+
+
+def compute_figure04_reported_statistics(
     render_data: Figure4RenderData,
     thresholds: Mapping[str, float],
     metric_directions: Mapping[str, FlagDirection],
-) -> Figure4Summary:
-    """Compute whole-session event means and two-decoder flag agreement.
+    detail_slice: slice,
+) -> Figure4ReportedStatistics:
+    """Compute the Figure-4 statistics from the cached decode.
 
     These scalars can appear in the manuscript text, so their computation must
     stay identical to the cached decode; the render layer never alters them.
+
+    Parameters
+    ----------
+    render_data : Figure4RenderData
+        The two decoders' per-spike diagnostics and spike counts.
+    thresholds, metric_directions : Mapping
+        Flag threshold and direction of worse fit per metric, as for
+        :func:`summarize_figure04_diagnostics`.
+    detail_slice : slice
+        Half-open range of decode time samples, from
+        :meth:`Figure4DetailWindow.to_slice`.
+
+    Returns
+    -------
+    Figure4ReportedStatistics
+        The whole-session summary and the Figure-4 comparisons.
     """
     analysis = render_data.analysis_results
-    return summarize_figure04_diagnostics(
-        analysis.continuous_diagnostics,
-        analysis.continuous_fragmented_diagnostics,
-        n_units=int(analysis.spike_counts.shape[1]),
-        thresholds=thresholds,
-        metric_directions=metric_directions,
+    continuous = analysis.continuous_diagnostics
+    fragmented = analysis.continuous_fragmented_diagnostics
+    return Figure4ReportedStatistics(
+        summary=summarize_figure04_diagnostics(
+            continuous,
+            fragmented,
+            n_units=int(analysis.spike_counts.shape[1]),
+            thresholds=thresholds,
+            metric_directions=metric_directions,
+        ),
+        n_units_with_spikes=count_units_with_spikes(continuous),
+        kl_divergence_comparison=compute_kl_divergence_comparison(continuous, fragmented),
+        detail_window_comparison=compute_detail_window_comparison(
+            continuous,
+            fragmented,
+            detail_slice,
+            thresholds=thresholds,
+            metric_directions=metric_directions,
+        ),
     )
 
 

@@ -514,7 +514,7 @@ class TestEstimateRealizationSummary:
         assert isinstance(summary, Figure3RealizationSummary)
         assert summary.n_realizations == 5
         assert summary.median_flag_percentages.shape == (3, 6)
-        assert summary.median_decoding_error.shape == (1, 6)
+        assert summary.median_decoding_error.shape == (6,)
         assert np.all(summary.median_decoding_error >= 0.0)
         # Percentages in [0, 100].
         assert np.all(summary.median_flag_percentages >= 0.0)
@@ -523,10 +523,10 @@ class TestEstimateRealizationSummary:
         assert summary.diagnostic_thresholds.predictive_pvalue == 0.05
         assert np.isfinite(summary.diagnostic_thresholds.kl_divergence)
 
-    def test_same_seeds_reproduce_the_same_result(self) -> None:
+    def test_same_seeds_reproduce_the_same_result_at_any_worker_count(self) -> None:
         params = _seed0_params()
-        first = estimate_realization_summary(params, n_realizations=1)
-        repeat = estimate_realization_summary(params, n_realizations=1)
+        first = estimate_realization_summary(params, n_realizations=2, n_jobs=1)
+        repeat = estimate_realization_summary(params, n_realizations=2, n_jobs=2)
         np.testing.assert_array_equal(first.median_flag_percentages, repeat.median_flag_percentages)
         assert (
             first.diagnostic_thresholds.kl_divergence == repeat.diagnostic_thresholds.kl_divergence
@@ -661,7 +661,7 @@ class TestFigure3RealizationSummaryInvariants:
                 diagnostic_thresholds=self._thresholds(),
                 baseline_flagged_fractions=fractions,
                 realization_flag_percentages=np.zeros((2, 3, 5)),
-                realization_decoding_error=np.zeros((2, 1, 5)),
+                realization_decoding_error=np.zeros((2, 5)),
             )
 
     def test_non_3d_realizations_raise(self) -> None:
@@ -670,7 +670,7 @@ class TestFigure3RealizationSummaryInvariants:
                 diagnostic_thresholds=self._thresholds(),
                 baseline_flagged_fractions=self._fractions(),
                 realization_flag_percentages=np.zeros((3, 5)),
-                realization_decoding_error=np.zeros((1, 5)),
+                realization_decoding_error=np.zeros(5),
             )
 
     def test_error_column_mismatch_raises(self) -> None:
@@ -679,7 +679,7 @@ class TestFigure3RealizationSummaryInvariants:
                 diagnostic_thresholds=self._thresholds(),
                 baseline_flagged_fractions=self._fractions(),
                 realization_flag_percentages=np.zeros((2, 3, 5)),
-                realization_decoding_error=np.zeros((2, 1, 4)),
+                realization_decoding_error=np.zeros((2, 4)),
             )
 
     def test_error_realization_mismatch_raises(self) -> None:
@@ -688,7 +688,7 @@ class TestFigure3RealizationSummaryInvariants:
                 diagnostic_thresholds=self._thresholds(),
                 baseline_flagged_fractions=self._fractions(),
                 realization_flag_percentages=np.zeros((2, 3, 5)),
-                realization_decoding_error=np.zeros((3, 1, 5)),
+                realization_decoding_error=np.zeros((3, 5)),
             )
 
     def test_no_realizations_raises(self) -> None:
@@ -697,14 +697,14 @@ class TestFigure3RealizationSummaryInvariants:
                 diagnostic_thresholds=self._thresholds(),
                 baseline_flagged_fractions=self._fractions(),
                 realization_flag_percentages=np.zeros((0, 3, 5)),
-                realization_decoding_error=np.zeros((0, 1, 5)),
+                realization_decoding_error=np.zeros((0, 5)),
             )
 
     def test_medians_and_errors_come_from_the_realizations(self) -> None:
         """The summary keeps every realization; its medians cannot disagree with them."""
         rng = np.random.default_rng(0)
         flags = rng.uniform(0.0, 100.0, size=(7, 3, 5))
-        decoding_error = rng.uniform(0.0, 10.0, size=(7, 1, 5))
+        decoding_error = rng.uniform(0.0, 10.0, size=(7, 5))
         summary = Figure3RealizationSummary(
             diagnostic_thresholds=self._thresholds(),
             baseline_flagged_fractions=self._fractions(),

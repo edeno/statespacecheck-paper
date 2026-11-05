@@ -16,7 +16,11 @@ from statespacecheck_paper.figure03_generation import (
 )
 from statespacecheck_paper.figure03_protocol import Figure3Config
 from statespacecheck_paper.figure03_summary import Figure3RealizationSummary
-from statespacecheck_paper.figure04_cache import Figure4CacheProvenance, Figure4Paths
+from statespacecheck_paper.figure04_cache import (
+    Figure4CacheEnvironment,
+    Figure4CacheProvenance,
+    Figure4Paths,
+)
 from statespacecheck_paper.figure04_decoder import Figure4Config, Figure4DiagnosticsConfig
 from statespacecheck_paper.figure04_diagnostics import FlagConfusion
 from statespacecheck_paper.figure04_generation import (
@@ -28,6 +32,7 @@ from statespacecheck_paper.figure04_summary import (
     Figure4DetailWindowComparison,
     Figure4DiagnosticMeans,
     Figure4KlDivergenceComparison,
+    Figure4ReportedStatistics,
     Figure4Summary,
 )
 from statespacecheck_paper.paths import (
@@ -80,10 +85,9 @@ def test_figure03_reported_statistics_match_canonical_run(tmp_path: Path) -> Non
         atol=5e-4,
         rtol=0.0,
     )
-    assert payload["error_metric_order"] == ["median_absolute_error"]
     np.testing.assert_allclose(
         np.asarray(payload["median_decoding_error"]),
-        np.array([[1.767, 42.169, 1.630, 36.039, 8.010, 1.028]]),
+        np.array([1.767, 42.169, 1.630, 36.039, 8.010, 1.028]),
         atol=5e-4,
         rtol=0.0,
     )
@@ -241,10 +245,7 @@ def test_figure04_reported_statistics_counts_partition_events(tmp_path: Path) ->
         diagnostics_schema_version=cache_payload["diagnostics_schema_version"],
         statespacecheck_version=cache_payload["statespacecheck_version"],
         diagnostics_config=Figure4DiagnosticsConfig(**cache_payload["diagnostics_config"]),
-        python_version=cache_payload["python_version"],
-        machine=cache_payload["machine"],
-        decode_dependency_versions=cache_payload["decode_dependency_versions"],
-        diagnostics_dependency_versions=cache_payload["diagnostics_dependency_versions"],
+        environment=Figure4CacheEnvironment(**cache_payload["environment"]),
     )
     means = payload["diagnostic_means"]
     summary = Figure4Summary(
@@ -267,22 +268,24 @@ def test_figure04_reported_statistics_counts_partition_events(tmp_path: Path) ->
     live = figure04_summary_payload(
         config=Figure4Config(),
         paths=Figure4Paths(REPO_ROOT / "data", epoch),
-        summary=summary,
-        n_units_with_spikes=payload["dataset"]["n_units_with_spikes"],
-        kl_divergence_comparison=Figure4KlDivergenceComparison(
-            lower_fraction=kl["lower_fraction"],
-            lower_continuous_quartiles=(
-                kl["lower_continuous_quartiles"][0],
-                kl["lower_continuous_quartiles"][1],
+        statistics=Figure4ReportedStatistics(
+            summary=summary,
+            n_units_with_spikes=payload["dataset"]["n_units_with_spikes"],
+            kl_divergence_comparison=Figure4KlDivergenceComparison(
+                lower_fraction=kl["lower_fraction"],
+                lower_continuous_quartiles=(
+                    kl["lower_continuous_quartiles"][0],
+                    kl["lower_continuous_quartiles"][1],
+                ),
+                higher_fraction=kl["higher_fraction"],
+                higher_continuous_median=kl["higher_continuous_median"],
+                higher_continuous_fragmented_max=kl["higher_continuous_fragmented_max"],
             ),
-            higher_fraction=kl["higher_fraction"],
-            higher_continuous_median=kl["higher_continuous_median"],
-            higher_continuous_fragmented_max=kl["higher_continuous_fragmented_max"],
-        ),
-        detail_window_comparison=Figure4DetailWindowComparison(
-            n_events=detail["n_events"],
-            hpd_overlap=FlagConfusion(**detail_hpd),
-            predictive_pvalue_higher=detail["predictive_pvalue_higher"],
+            detail_window_comparison=Figure4DetailWindowComparison(
+                n_events=detail["n_events"],
+                hpd_overlap=FlagConfusion(**detail_hpd),
+                predictive_pvalue_higher=detail["predictive_pvalue_higher"],
+            ),
         ),
         cache_provenance=cache_provenance,
     )

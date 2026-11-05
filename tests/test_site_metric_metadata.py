@@ -31,7 +31,6 @@ from statespacecheck_paper.diagnostics import (
 )
 from statespacecheck_paper.figure03_plotting import FIGURE03_SYMLOG_YTICKS
 from statespacecheck_paper.paths import FIGURE03_SUMMARY_PATH, REPO_ROOT
-from statespacecheck_paper.plotting import negative_log_pvalue
 from statespacecheck_paper.style import (
     METRIC_SPECS,
     SYMLOG_LINSCALE,
@@ -175,7 +174,7 @@ def test_site_display_transform_matches_the_registry(
 ) -> None:
     probes = np.asarray(PROBES)
     for site, spec in zip(site_metrics, METRIC_SPECS, strict=True):
-        expected = negative_log_pvalue(probes) if spec.display_transform == "neg_log_p" else probes
+        expected = spec.to_display(probes)
         np.testing.assert_allclose(site["display"], expected, rtol=1e-12, err_msg=spec.name)
 
 

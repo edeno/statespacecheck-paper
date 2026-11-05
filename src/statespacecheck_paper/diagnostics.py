@@ -271,6 +271,33 @@ class SpikeEventDiagnostics:
             if arr is not None:
                 arr.setflags(write=False)
 
+    def select_events(self, mask: NDArray[np.bool_]) -> SpikeEventDiagnostics:
+        """Return the per-spike diagnostics of the events in ``mask``, without dense matrices.
+
+        Parameters
+        ----------
+        mask : np.ndarray of bool, shape (n_spikes,)
+            Events to keep.
+
+        Returns
+        -------
+        SpikeEventDiagnostics
+            The selected per-event arrays; the dense matrices and per-spike
+            likelihoods are omitted.
+        """
+        return SpikeEventDiagnostics(
+            event_time_ind=self.event_time_ind[mask],
+            event_cell_ind=self.event_cell_ind[mask],
+            event_hpd_overlap=self.event_hpd_overlap[mask],
+            event_kl_divergence=self.event_kl_divergence[mask],
+            event_predictive_pvalue=self.event_predictive_pvalue[mask],
+            hpd_overlap=None,
+            kl_divergence=None,
+            predictive_pvalue=None,
+            event_likelihood=None,
+            event_time=None if self.event_time is None else self.event_time[mask],
+        )
+
 
 @dataclass(frozen=True)
 class DecodingDiagnostics:

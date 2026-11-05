@@ -19,8 +19,10 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import NamedTuple
 
 import numpy as np
+from joblib import Parallel, delayed
 from numpy.typing import NDArray
 
 from statespacecheck_paper.diagnostics import (
@@ -42,11 +44,6 @@ from statespacecheck_paper.figure03_protocol import (
 from statespacecheck_paper.figure03_simulation import run_figure03_simulation
 
 SUMMARY_FLAG_METRICS: tuple[tuple[str, FlagDirection], ...] = tuple(METRIC_FLAG_DIRECTIONS.items())
-
-# Row order of the per-condition decoding-error block beneath the flag
-# heatmap: the median absolute error of the filtered-posterior mean
-# (position units).
-SUMMARY_ERROR_METRICS: tuple[str, ...] = ("median_absolute_error",)
 
 # Number of independent realizations pooled to stabilize the panel-(b)
 # summary. A single run's flag thresholds and per-phase percentages are
@@ -327,10 +324,9 @@ def compute_condition_decoding_error(
 
     Returns
     -------
-    np.ndarray, shape (1, n_columns)
-        Rows follow :data:`SUMMARY_ERROR_METRICS`: the median absolute
-        error between the posterior mean and ``physical_position``, in position
-        units.
+    np.ndarray, shape (n_columns,)
+        The median absolute error between the posterior mean and
+        ``physical_position``, in position units.
 
     Raises
     ------
@@ -367,14 +363,14 @@ def compute_condition_decoding_error(
     posterior_mean = (posterior @ position_bins) / mass
     abs_error = np.abs(posterior_mean - physical_position)
 
-    out = np.zeros((len(SUMMARY_ERROR_METRICS), len(conditions)))
+    out = np.zeros(len(conditions))
     for j, col in enumerate(conditions):
         mask = np.zeros(n_time, dtype=bool)
         for t0, t1 in col.step_windows:
             mask[t0:t1] = True
         if not mask.any():
             raise ValueError(f"Condition {col.label!r} contains no time steps")
-        out[0, j] = float(np.median(abs_error[mask]))
+        out[j] = float(np.median(abs_error[mask]))
     return out
 
 
@@ -478,17 +474,16 @@ class Figure3RealizationSummary:
         follows :data:`statespacecheck_paper.figure03_summary.SUMMARY_FLAG_METRICS`;
         columns follow
         :func:`statespacecheck_paper.figure03_summary.build_summary_conditions`.
-    realization_decoding_error : np.ndarray, shape (n_realizations, 1, n_columns)
-        Decoding error in each realization. The middle axis follows
-        :data:`statespacecheck_paper.figure03_summary.SUMMARY_ERROR_METRICS`;
-        realizations and columns match ``realization_flag_percentages``.
+    realization_decoding_error : np.ndarray, shape (n_realizations, n_columns)
+        Median absolute decoding error in each realization. Realizations and
+        columns match ``realization_flag_percentages``.
 
     Raises
     ------
     ValueError
         If ``realization_flag_percentages`` is not 3-D with at least one
         realization, ``realization_decoding_error`` is not
-        ``(n_realizations, 1, n_columns)``, or ``baseline_flagged_fractions``
+        ``(n_realizations, n_columns)``, or ``baseline_flagged_fractions``
         does not hold one fraction in ``[0, 1]`` per flag metric.
     """
 
@@ -513,7 +508,7 @@ class Figure3RealizationSummary:
                 "Figure3RealizationSummary.realization_flag_percentages must be 3-D "
                 f"(n_realizations >= 1, n_metrics, n_columns); got shape {flags.shape}"
             )
-        expected = (flags.shape[0], len(SUMMARY_ERROR_METRICS), flags.shape[2])
+        expected = (flags.shape[0], flags.shape[2])
         if self.realization_decoding_error.shape != expected:
             raise ValueError(
                 "Figure3RealizationSummary.realization_decoding_error must have shape "
@@ -535,7 +530,7 @@ class Figure3RealizationSummary:
 
     @property
     def median_decoding_error(self) -> NDArray[np.floating]:
-        """Median decoding error across realizations, shape ``(1, n_columns)``."""
+        """Median decoding error across realizations, shape ``(n_columns,)``."""
         return np.asarray(np.median(self.realization_decoding_error, axis=0), dtype=float)
 
     @property
@@ -551,7 +546,7 @@ class Figure3RealizationSummary:
 
     @property
     def decoding_error_standard_errors(self) -> NDArray[np.floating]:
-        """Approximate standard error of each median decoding error, ``(1, n_columns)``."""
+        """Approximate standard error of each median decoding error, ``(n_columns,)``."""
         return median_standard_error(self.realization_decoding_error)
 
 
@@ -608,10 +603,58 @@ def baseline_threshold_provenance(
     }
 
 
+class _RealizationValues(NamedTuple):
+    """What one realization contributes to the pooled summary.
+
+    Parameters
+    ----------
+    baseline_values : dict of str to np.ndarray, shape (n_baseline_events,)
+        Per-metric event values in the opening baseline.
+    condition_values : list of list of np.ndarray
+        Per-metric, per-condition flag values
+        (:func:`extract_condition_flag_values`).
+    decoding_error : np.ndarray
+        Per-condition decoding error (:func:`compute_condition_decoding_error`).
+    """
+
+    baseline_values: dict[str, NDArray[np.floating]]
+    condition_values: list[list[NDArray[np.floating]]]
+    decoding_error: NDArray[np.floating]
+
+
+def _realization_values(
+    config: Figure3Config,
+    seed: int,
+    conditions: list[Figure3SummaryCondition],
+) -> _RealizationValues:
+    """Simulate one realization and keep only the values the summary pools."""
+    sim = run_figure03_simulation(config, seed=seed)
+    diagnostics = sim.diagnostics
+    baseline_end = config.phase_boundaries[PhaseBoundary.REMAP_START]
+    base_mask = np.asarray(diagnostics.event_time_ind) < baseline_end
+    baseline_values = {}
+    for key in METRIC_FLAG_DIRECTIONS:
+        values = np.asarray(getattr(diagnostics, "event_" + key), dtype=float)[base_mask]
+        if not np.all(np.isfinite(values)):
+            raise ValueError(
+                f"Baseline event_{key} contains a non-finite value in realization "
+                f"seed {seed}; pooled thresholds would be undefined."
+            )
+        baseline_values[key] = values
+    return _RealizationValues(
+        baseline_values=baseline_values,
+        condition_values=extract_condition_flag_values(diagnostics, conditions),
+        decoding_error=compute_condition_decoding_error(
+            diagnostics.posterior, sim.position_bins, sim.physical_position, conditions
+        ),
+    )
+
+
 def estimate_realization_summary(
     config: Figure3Config,
     *,
     n_realizations: int = N_REALIZATIONS,
+    n_jobs: int = -1,
 ) -> Figure3RealizationSummary:
     """Pool many realizations into stable Figure-3 flag thresholds and fractions.
 
@@ -621,10 +664,11 @@ def estimate_realization_summary(
     per-spike *baseline-window* diagnostics to compute the flag
     thresholds, then scores every realization's per-phase flag fractions
     against those shared thresholds and returns them all (their
-    medians are properties of the result). A single pass holds only the finite
-    per-spike values (not the dense ``DecodingDiagnostics``) per realization, so
-    memory stays bounded even at
-    large ``n_realizations``.
+    medians are properties of the result). Each realization owns its seed, so
+    they run in parallel and pool in seed order, and the result does not depend
+    on ``n_jobs``. A single pass holds only the finite per-spike values (not the
+    dense ``DecodingDiagnostics``) per realization, so memory stays bounded even
+    at large ``n_realizations``.
 
     Parameters
     ----------
@@ -634,6 +678,8 @@ def estimate_realization_summary(
         it by default).
     n_realizations : int, default ``N_REALIZATIONS``
         Number of independent realizations to aggregate. Must be >= 1.
+    n_jobs : int, default -1
+        Worker processes, as for :class:`joblib.Parallel`; -1 uses every core.
 
     Returns
     -------
@@ -650,40 +696,20 @@ def estimate_realization_summary(
     if n_realizations < 1:
         raise ValueError(f"n_realizations must be >= 1; got {n_realizations}")
 
-    base = config.random_seed
-    baseline_end = config.phase_boundaries[PhaseBoundary.REMAP_START]
     conditions = build_summary_conditions(config)
+    seeds = range(config.random_seed, config.random_seed + n_realizations)
+    realizations = Parallel(n_jobs=n_jobs)(
+        delayed(_realization_values)(config, seed, conditions) for seed in seeds
+    )
 
     # Pool the per-*event* baseline values (one per spike event), matching the
     # event-based phase fractions from ``extract_condition_flag_values``. The
     # thresholds use only hpd_overlap and kl_divergence (the predictive_pvalue
     # cutoff is fixed), but all three are checked for non-finite values.
-    baseline_values: dict[str, list[NDArray[np.floating]]] = {
-        key: [] for key in METRIC_FLAG_DIRECTIONS
+    pooled_baseline = {
+        key: np.concatenate([realization.baseline_values[key] for realization in realizations])
+        for key in METRIC_FLAG_DIRECTIONS
     }
-    per_realization_values: list[list[list[NDArray[np.floating]]]] = []
-    per_realization_error: list[NDArray[np.floating]] = []
-
-    for offset in range(n_realizations):
-        sim = run_figure03_simulation(config, seed=base + offset)
-        diagnostics = sim.diagnostics
-        base_mask = np.asarray(diagnostics.event_time_ind) < baseline_end
-        for key in baseline_values:
-            ev = np.asarray(getattr(diagnostics, "event_" + key), dtype=float)[base_mask]
-            if not np.all(np.isfinite(ev)):
-                raise ValueError(
-                    f"Baseline event_{key} contains a non-finite value in realization "
-                    f"seed {base + offset}; pooled thresholds would be undefined."
-                )
-            baseline_values[key].append(ev)
-        per_realization_values.append(extract_condition_flag_values(diagnostics, conditions))
-        per_realization_error.append(
-            compute_condition_decoding_error(
-                diagnostics.posterior, sim.position_bins, sim.physical_position, conditions
-            )
-        )
-
-    pooled_baseline = {key: np.concatenate(vals) for key, vals in baseline_values.items()}
     diagnostic_thresholds = compute_baseline_diagnostic_thresholds(
         hpd_overlap=pooled_baseline["hpd_overlap"],
         kl_divergence=pooled_baseline["kl_divergence"],
@@ -706,8 +732,8 @@ def estimate_realization_summary(
     # (n_realizations, n_metrics, n_columns) flag-fraction stack.
     frac = np.stack(
         [
-            flag_percentages_from_values(values, diagnostic_thresholds)
-            for values in per_realization_values
+            flag_percentages_from_values(realization.condition_values, diagnostic_thresholds)
+            for realization in realizations
         ],
         axis=0,
     )
@@ -715,5 +741,7 @@ def estimate_realization_summary(
         diagnostic_thresholds=diagnostic_thresholds,
         baseline_flagged_fractions=baseline_flagged_fractions,
         realization_flag_percentages=frac,
-        realization_decoding_error=np.stack(per_realization_error, axis=0),
+        realization_decoding_error=np.stack(
+            [realization.decoding_error for realization in realizations], axis=0
+        ),
     )

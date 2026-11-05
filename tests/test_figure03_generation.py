@@ -39,7 +39,7 @@ def test_generation_threads_one_config_through_simulation_summary_and_plot(
             "kl_divergence": 0.01,
         },
         realization_flag_percentages=np.zeros((7, 3, 6)),
-        realization_decoding_error=np.zeros((7, 1, 6)),
+        realization_decoding_error=np.zeros((7, 6)),
     )
 
     seen: dict[str, Any] = {}
@@ -57,7 +57,7 @@ def test_generation_threads_one_config_through_simulation_summary_and_plot(
             or realization_summary
         ),
     )
-    monkeypatch.setattr(figure03_generation, "set_figure_defaults", lambda **kwargs: None)
+    monkeypatch.setattr(figure03_generation, "set_figure_defaults", lambda: None)
 
     fig = plt.figure()
 
@@ -121,7 +121,7 @@ def test_summary_payload_preserves_labels_rules_and_source_provenance(
             "kl_divergence": 0.01,
         },
         realization_flag_percentages=np.zeros((2, 3, 6)),
-        realization_decoding_error=np.zeros((2, 1, 6)),
+        realization_decoding_error=np.zeros((2, 6)),
     )
     source = {
         "statespacecheck_paper_version": "test",
@@ -138,10 +138,9 @@ def test_summary_payload_preserves_labels_rules_and_source_provenance(
     flag_rules = cast(dict[str, dict[str, str | float]], payload["flag_rules"])
 
     assert payload["schema_version"] == figure03_generation.FIGURE03_SUMMARY_SCHEMA_VERSION
-    assert payload["error_metric_order"] == ["median_absolute_error"]
     assert np.asarray(payload["realization_flag_percentages"]).shape == (2, 3, 6)
-    assert np.asarray(payload["realization_decoding_error"]).shape == (2, 1, 6)
-    assert np.asarray(payload["median_decoding_error"]).shape == (1, 6)
+    assert np.asarray(payload["realization_decoding_error"]).shape == (2, 6)
+    assert np.asarray(payload["median_decoding_error"]).shape == (6,)
     assert payload["condition_labels"] == [
         "Well-specified",
         "Remap",

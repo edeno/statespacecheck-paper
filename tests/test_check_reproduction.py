@@ -31,10 +31,12 @@ def _summary() -> dict[str, Any]:
             "figure04_caches": {
                 "fingerprint_sha256": "c" * 64,
                 "diagnostics_fingerprint_sha256": "d" * 64,
-                "python_version": "3.11.15",
-                "machine": "arm64",
-                "decode_dependency_versions": {"numpy": "2.3.4"},
-                "diagnostics_dependency_versions": {"numpy": "2.3.4"},
+                "environment": {
+                    "python_version": "3.11.15",
+                    "machine": "arm64",
+                    "decode_dependency_versions": {"numpy": "2.3.4"},
+                    "diagnostics_dependency_versions": {"numpy": "2.3.4"},
+                },
                 "input_file_sha256": {"inputs.npz": "e" * 64},
             },
         },
@@ -51,10 +53,12 @@ def test_machine_specific_provenance_is_ignored(check: ModuleType) -> None:
     caches.update(
         fingerprint_sha256="0" * 64,
         diagnostics_fingerprint_sha256="1" * 64,
-        python_version="3.11.9",
-        machine="x86_64",
-        decode_dependency_versions={"numpy": "2.3.5", "jax": "0.8.0"},
-        diagnostics_dependency_versions={},
+        environment={
+            "python_version": "3.11.9",
+            "machine": "x86_64",
+            "decode_dependency_versions": {"numpy": "2.3.5", "jax": "0.8.0"},
+            "diagnostics_dependency_versions": {},
+        },
     )
     assert check.compare_json(_summary(), fresh) == []
 

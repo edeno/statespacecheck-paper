@@ -24,13 +24,9 @@ from statespacecheck_paper.figure04_protocol import (
     FIGURE04_METRIC_DIRECTIONS,
 )
 from statespacecheck_paper.figure04_summary import (
-    Figure4DetailWindowComparison,
-    Figure4KlDivergenceComparison,
+    Figure4ReportedStatistics,
     Figure4Summary,
-    compute_detail_window_comparison,
-    compute_figure04_summary,
-    compute_kl_divergence_comparison,
-    count_units_with_spikes,
+    compute_figure04_reported_statistics,
     format_figure04_summary,
 )
 from statespacecheck_paper.figure04_workflow import prepare_figure04_render_data
@@ -49,7 +45,7 @@ from statespacecheck_paper.style import save_figure, set_figure_defaults
 
 # Version of the figure04_summary.json layout written by
 # figure04_summary_payload. Bump it when a field is added, removed, or renamed.
-FIGURE04_SUMMARY_SCHEMA_VERSION = 11
+FIGURE04_SUMMARY_SCHEMA_VERSION = 12
 
 
 def figure04_reported_statistics(summary: Figure4Summary) -> dict[str, object]:
@@ -95,10 +91,7 @@ def figure04_summary_payload(
     *,
     config: Figure4Config,
     paths: Figure4Paths,
-    summary: Figure4Summary,
-    n_units_with_spikes: int,
-    kl_divergence_comparison: Figure4KlDivergenceComparison,
-    detail_window_comparison: Figure4DetailWindowComparison,
+    statistics: Figure4ReportedStatistics,
     cache_provenance: Figure4CacheProvenance,
 ) -> dict[str, object]:
     """Return the canonical Figure 4 reported statistics as JSON-ready data."""
@@ -107,14 +100,14 @@ def figure04_summary_payload(
             "Figure 4 cache provenance identifies a different dataset: "
             f"{cache_provenance.animal_date_epoch!r} != {paths.animal_date_epoch!r}."
         )
-    statistics = figure04_reported_statistics(summary)
+    summary_statistics = figure04_reported_statistics(statistics.summary)
     return {
         "schema_version": FIGURE04_SUMMARY_SCHEMA_VERSION,
         "figure": "figure04",
         "dataset": {
             "animal_date_epoch": paths.animal_date_epoch,
-            "n_units": summary.n_units,
-            "n_units_with_spikes": n_units_with_spikes,
+            "n_units": statistics.summary.n_units,
+            "n_units_with_spikes": statistics.n_units_with_spikes,
         },
         "configuration": dataclasses.asdict(config),
         "flag_rules": inclusive_flag_rules(
@@ -122,11 +115,11 @@ def figure04_summary_payload(
             FIGURE04_METRIC_DIRECTIONS,
         ),
         "detail_window": dataclasses.asdict(FIGURE04_DETAIL_WINDOW),
-        "detail_window_comparison": dataclasses.asdict(detail_window_comparison),
-        "diagnostic_means": statistics["diagnostic_means"],
-        "flag_confusion_models": statistics["flag_confusion_models"],
-        "flag_confusions": statistics["flag_confusions"],
-        "kl_divergence_comparison": dataclasses.asdict(kl_divergence_comparison),
+        "detail_window_comparison": dataclasses.asdict(statistics.detail_window_comparison),
+        "diagnostic_means": summary_statistics["diagnostic_means"],
+        "flag_confusion_models": summary_statistics["flag_confusion_models"],
+        "flag_confusions": summary_statistics["flag_confusions"],
+        "kl_divergence_comparison": dataclasses.asdict(statistics.kl_divergence_comparison),
         "provenance": {
             "source": scientific_source_provenance(),
             "figure04_caches": cache_provenance.artifact_payload(),
@@ -155,41 +148,26 @@ def generate_figure04(*, use_cache: bool = True) -> None:
     paths = Figure4Paths(data_path=DATA_PATH, animal_date_epoch=ANIMAL_DATE_EPOCH)
     render_data = prepare_figure04_render_data(config, paths, use_cache=use_cache)
 
-    summary = compute_figure04_summary(
+    statistics = compute_figure04_reported_statistics(
         render_data,
         FIGURE04_DIAGNOSTIC_THRESHOLDS,
         FIGURE04_METRIC_DIRECTIONS,
-    )
-    kl_divergence_comparison = compute_kl_divergence_comparison(
-        render_data.analysis_results.continuous_diagnostics,
-        render_data.analysis_results.continuous_fragmented_diagnostics,
-    )
-    detail_window_comparison = compute_detail_window_comparison(
-        render_data.analysis_results.continuous_diagnostics,
-        render_data.analysis_results.continuous_fragmented_diagnostics,
         FIGURE04_DETAIL_WINDOW.to_slice(render_data.time.size),
-        thresholds=FIGURE04_DIAGNOSTIC_THRESHOLDS,
-        metric_directions=FIGURE04_METRIC_DIRECTIONS,
     )
-    print(f"\n{format_figure04_summary(summary)}")
+    print(f"\n{format_figure04_summary(statistics.summary)}")
     summary_path = write_json_artifact(
         FIGURE04_SUMMARY_PATH,
         figure04_summary_payload(
             config=config,
             paths=paths,
-            summary=summary,
-            n_units_with_spikes=count_units_with_spikes(
-                render_data.analysis_results.continuous_diagnostics
-            ),
-            kl_divergence_comparison=kl_divergence_comparison,
-            detail_window_comparison=detail_window_comparison,
+            statistics=statistics,
             cache_provenance=render_data.cache_provenance,
         ),
     )
     print(f"Saved canonical statistics to {summary_path}")
 
     print("\nGenerating Figure 4...")
-    set_figure_defaults(context="paper")
+    set_figure_defaults()
     composition = compose_figure04(
         render_data,
         diagnostic_thresholds=FIGURE04_DIAGNOSTIC_THRESHOLDS,

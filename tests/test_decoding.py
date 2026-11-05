@@ -6,12 +6,14 @@ from typing import Any
 
 import numpy as np
 import pytest
+from scipy.special import logsumexp
 
 from statespacecheck_paper.decoding import (
     DecoderOverrideSchedule,
     DecoderOverrideWindow,
     FilterStep,
     _condition_on,
+    _logsumexp,
     _resolve_baseline_expected_counts,
     decode_with_diagnostics,
     filter_step,
@@ -475,6 +477,29 @@ class TestDecoderOverrideSchedule:
         single expected-count table for the overlap."""
         with pytest.raises(ValueError, match="must not overlap"):
             DecoderOverrideSchedule((DecoderOverrideWindow(10, 25), DecoderOverrideWindow(20, 30)))
+
+
+class TestLogsumexp:
+    @pytest.mark.parametrize(
+        "log_weights",
+        [
+            np.array([-1.0, -2.0, -3.0]),
+            np.array([-1.0, -1.0, -3.0]),  # tied largest terms
+            np.array([-np.inf, -2.0, -np.inf]),
+            np.array([-1000.0, -1000.5, -2000.0]),  # underflows in linear space
+            np.array([-5.0]),
+            np.array([-np.inf, -np.inf]),
+        ],
+    )
+    def test_matches_scipy_exactly(self, log_weights: np.ndarray) -> None:
+        assert _logsumexp(log_weights) == float(logsumexp(log_weights))
+
+    def test_matches_scipy_exactly_on_random_vectors(self, rng: np.random.Generator) -> None:
+        for _ in range(200):
+            log_weights = rng.normal(-50.0, 30.0, size=rng.integers(1, 300))
+            log_weights[rng.random(log_weights.size) < 0.2] = -np.inf
+            log_weights[rng.random(log_weights.size) < 0.1] = log_weights.max()
+            assert _logsumexp(log_weights) == float(logsumexp(log_weights))
 
 
 class TestConditionOn:

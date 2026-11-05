@@ -25,7 +25,7 @@ def test_wong_palette_is_eight_hex_colors() -> None:
 
 def test_set_figure_defaults_paper_font_sizes_within_journal_range() -> None:
     """Paper context pins all in-figure text to the 8-12 pt journal range."""
-    set_figure_defaults(context="paper")
+    set_figure_defaults()
     expected = {
         "font.size": 8,
         "axes.labelsize": 8,
@@ -41,7 +41,7 @@ def test_set_figure_defaults_paper_font_sizes_within_journal_range() -> None:
 
 def test_set_figure_defaults_paper_journal_settings() -> None:
     """Paper context must use Arial, thin lines, and TrueType embedding."""
-    set_figure_defaults(context="paper")
+    set_figure_defaults()
     assert plt.rcParams["font.family"] == ["sans-serif"]
     assert "Arial" in plt.rcParams["font.sans-serif"]
     assert plt.rcParams["axes.linewidth"] == 0.5
@@ -50,16 +50,6 @@ def test_set_figure_defaults_paper_journal_settings() -> None:
     # TrueType (42) is required for Nature/Science final figures.
     assert plt.rcParams["pdf.fonttype"] == 42
     assert plt.rcParams["ps.fonttype"] == 42
-
-
-def test_set_figure_defaults_font_sizes_increase_with_context() -> None:
-    """Paper < presentation < poster fonts (regression: any reordering breaks contract)."""
-    sizes = []
-    for context in ("paper", "presentation", "poster"):
-        set_figure_defaults(context=context)
-        sizes.append(plt.rcParams["font.size"])
-    assert sizes == sorted(sizes)
-    assert len(set(sizes)) == 3
 
 
 def _make_simple_figure() -> plt.Figure:

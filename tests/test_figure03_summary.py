@@ -11,7 +11,6 @@ import pytest
 from statespacecheck_paper.diagnostics import DiagnosticThresholds
 from statespacecheck_paper.figure03_protocol import Figure3Config, PhaseBoundary
 from statespacecheck_paper.figure03_summary import (
-    SUMMARY_ERROR_METRICS,
     _flag_percentage,
     build_summary_conditions,
     compute_condition_decoding_error,
@@ -173,9 +172,6 @@ class TestConditionDecodingError:
         posterior[np.arange(bin_index.shape[0]), bin_index] = 1.0
         return posterior
 
-    def test_metric_order(self) -> None:
-        assert SUMMARY_ERROR_METRICS == ("median_absolute_error",)
-
     def test_perfect_decoder_has_zero_error(self) -> None:
         params = self._params()
         n_time = params.phase_boundaries[PhaseBoundary.SPARSE_POP_END]
@@ -188,8 +184,8 @@ class TestConditionDecodingError:
             posterior, position_bins, position_bins[true_bin], conditions
         )
 
-        assert decoding_error.shape == (1, 6)
-        assert np.allclose(decoding_error[0], 0.0)
+        assert decoding_error.shape == (6,)
+        assert np.allclose(decoding_error, 0.0)
 
     def test_shift_confined_to_remap_window(self) -> None:
         """A posterior displaced by two bins only inside remap [6, 10) must
@@ -207,8 +203,8 @@ class TestConditionDecodingError:
             posterior, position_bins, position_bins[true_bin], conditions
         )
 
-        assert decoding_error[0, 1] == pytest.approx(4.0)  # two bins of 2 a.u.
-        assert np.allclose(np.delete(decoding_error[0], 1), 0.0)
+        assert decoding_error[1] == pytest.approx(4.0)  # two bins of 2 a.u.
+        assert np.allclose(np.delete(decoding_error, 1), 0.0)
 
     def test_error_uses_continuous_physical_position(self) -> None:
         """The error is measured against the continuous position, not its bin."""
@@ -223,7 +219,7 @@ class TestConditionDecodingError:
             posterior, position_bins, physical_position, conditions
         )
 
-        assert np.allclose(decoding_error[0], 0.3)
+        assert np.allclose(decoding_error, 0.3)
 
     def test_shape_mismatch_raises(self) -> None:
         params = self._params()

@@ -21,6 +21,8 @@ from statespacecheck_paper.diagnostics import (
     flag_mask,
 )
 
+from ._diagnostics import event_diagnostics
+
 
 @pytest.fixture
 def metrics_2d() -> dict[str, np.ndarray]:
@@ -372,3 +374,18 @@ class TestFlagMask:
             "kl_divergence": "above",
         }
         assert set(INCLUSIVE_FLAG_COMPARISONS) == set(METRIC_FLAG_DIRECTIONS.values())
+
+
+def test_select_events_keeps_the_masked_per_event_arrays() -> None:
+    diagnostics = event_diagnostics(
+        hpd=np.array([0.1, 0.2, 0.3]),
+        time_ind=[4, 5, 6],
+        cell_ind=[0, 1, 2],
+        event_time=np.array([1.0, 2.0, 3.0]),
+    )
+    selected = diagnostics.select_events(np.array([True, False, True]))
+    np.testing.assert_array_equal(selected.event_hpd_overlap, [0.1, 0.3])
+    np.testing.assert_array_equal(selected.event_time_ind, [4, 6])
+    np.testing.assert_array_equal(selected.event_cell_ind, [0, 2])
+    np.testing.assert_array_equal(selected.event_time, [1.0, 3.0])
+    assert selected.hpd_overlap is None

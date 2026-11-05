@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 from matplotlib.axes import Axes
+from matplotlib.lines import Line2D
 from numpy.typing import NDArray
 
 from statespacecheck_paper.figure04_place_fields import marginalize_state_bins
@@ -64,10 +65,19 @@ def compute_half_pixel_extent(
     return (t0 - dt, t1 + dt, p0 - dp, p1 + dp)
 
 
-def add_scalebar(ax: Axes, length: float, label: str) -> None:
-    """Add a scale bar with an 8 pt label to the lower right of an axes.
+def add_scalebar(
+    ax: Axes,
+    length: float,
+    label: str,
+    *,
+    offset: tuple[float, float] = (0.0, 0.0),
+    label_offset: tuple[float, float] = (0.0, 0.0),
+    label_fontsize: float = 8.0,
+) -> None:
+    """Add a scale bar with a label to the lower right of an axes.
 
-    The bar sits 10% of the axes' extent in from the right and bottom edges.
+    The bar sits 10% of the axes' extent in from the right and bottom edges,
+    plus ``offset``.
 
     Parameters
     ----------
@@ -77,23 +87,33 @@ def add_scalebar(ax: Axes, length: float, label: str) -> None:
         Length of the scale bar in data units.
     label : str
         Label text for the scale bar.
+    offset : tuple of float, default (0.0, 0.0)
+        Shift of the bar and its label, in data units.
+    label_offset : tuple of float, default (0.0, 0.0)
+        Further shift of the label alone, in data units.
+    label_fontsize : float, default 8.0
+        Label size in points.
     """
     xlim = ax.get_xlim()
     ylim = ax.get_ylim()
     x_range = xlim[1] - xlim[0]
     y_range = ylim[1] - ylim[0]
     pad = 0.1
-    x_start = xlim[1] - pad * x_range - length
-    y_pos = ylim[0] + pad * y_range
+    x_start = xlim[1] - pad * x_range - length + offset[0]
+    y_pos = ylim[0] + pad * y_range + offset[1]
 
-    ax.plot([x_start, x_start + length], [y_pos, y_pos], "k-", linewidth=2, clip_on=False)
+    # Added as an artist: an offset bar must not move the axis limits it is placed by.
+    ax.add_artist(
+        Line2D([x_start, x_start + length], [y_pos, y_pos], color="k", linewidth=2, clip_on=False)
+    )
     ax.text(
-        x_start + length / 2,
-        y_pos - 0.03 * y_range,
+        x_start + length / 2 + label_offset[0],
+        y_pos - 0.03 * y_range + label_offset[1],
         label,
         ha="center",
         va="top",
-        fontsize=8,
+        fontsize=label_fontsize,
+        clip_on=False,
     )
 
 

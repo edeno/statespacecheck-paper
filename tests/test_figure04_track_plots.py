@@ -17,6 +17,7 @@ from statespacecheck_paper.figure04_plot_primitives import add_scalebar  # noqa:
 from statespacecheck_paper.figure04_track_plots import (  # noqa: E402
     plot_track_graph_1d,
     plot_track_graph_2d,
+    reward_well_nodes,
 )
 
 _TAB10 = matplotlib.colormaps.get_cmap("tab10")
@@ -46,7 +47,7 @@ def test_1d_track_stacks_edges_vertically_with_spacing(
         ax=ax,
         edge_order=_EDGE_ORDER,
         edge_spacing=edge_spacing,
-        reward_well_nodes=[0, 3],
+        well_nodes=[0, 3],
         other_axis_start=2.0,
     )
     # Each edge is a vertical segment at x = other_axis_start, separated by the
@@ -71,9 +72,7 @@ def test_2d_track_draws_trajectory_edges_wells_and_scale_bar(
         {"head_position_x": [0.0, 30.0, 60.0], "head_position_y": [4.0, 6.0, 5.0]}
     )
     _, ax = fresh_axes
-    returned = plot_track_graph_2d(
-        track_graph, position_info, _EDGE_ORDER, ax, reward_well_nodes=[0, 3]
-    )
+    returned = plot_track_graph_2d(track_graph, position_info, _EDGE_ORDER, ax, well_nodes=[0, 3])
     assert returned is ax
     trajectory, *edges, scale_bar = ax.lines
     np.testing.assert_array_equal(trajectory.get_xdata(), position_info["head_position_x"])
@@ -102,3 +101,29 @@ def test_scalebar_sits_in_the_lower_right(fresh_axes: tuple[plt.Figure, plt.Axes
     assert label.get_text() == "20 cm"
     assert label.get_position() == pytest.approx((80.0, 5.0 - 0.03 * 50.0))
     assert label.get_fontsize() == 8
+
+
+def test_scalebar_offsets_move_the_bar_and_label_without_moving_the_limits(
+    fresh_axes: tuple[plt.Figure, plt.Axes],
+) -> None:
+    _, ax = fresh_axes
+    ax.set_xlim(0, 100)
+    ax.set_ylim(0, 100)
+    add_scalebar(ax, 20, "20 cm")
+    add_scalebar(ax, 20, "20 cm", offset=(5.0, -3.0), label_offset=(2.0, -1.0), label_fontsize=9.0)
+    plain_bar, shifted_bar = ax.lines
+    plain_label, shifted_label = ax.texts
+    np.testing.assert_allclose(shifted_bar.get_xdata(), np.asarray(plain_bar.get_xdata()) + 5.0)
+    np.testing.assert_allclose(shifted_bar.get_ydata(), np.asarray(plain_bar.get_ydata()) - 3.0)
+    np.testing.assert_allclose(
+        shifted_label.get_position(),
+        np.asarray(plain_label.get_position()) + (7.0, -4.0),
+    )
+    assert shifted_label.get_fontsize() == 9.0
+    assert ax.get_xlim() == (0, 100)
+    assert ax.get_ylim() == (0, 100)
+
+
+def test_reward_wells_are_the_leaf_nodes() -> None:
+    graph = nx.Graph([(0, 1), (1, 2), (1, 3)])
+    assert sorted(reward_well_nodes(graph)) == [0, 2, 3]

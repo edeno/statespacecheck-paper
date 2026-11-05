@@ -12,21 +12,24 @@ import pytest
 import xarray as xr
 
 from statespacecheck_paper import figure04_cache, figure04_fit, figure04_workflow
-from statespacecheck_paper.diagnostics import FlagDirection
+from statespacecheck_paper.diagnostics import METRIC_FLAG_DIRECTIONS, FlagDirection
 from statespacecheck_paper.figure04_cache import (
     _FIGURE04_DECODE_AND_DIAGNOSTICS_PAYLOAD_KEYS,
+    _FIGURE04_DECODE_PAYLOAD_KEYS,
+    _FIGURE04_DIAGNOSTICS_PAYLOAD_KEYS,
     Figure4Paths,
 )
 from statespacecheck_paper.figure04_decoder import Figure4Config
-from statespacecheck_paper.figure04_input import NeuralRecordingData
+from statespacecheck_paper.figure04_input import INPUT_FILE_SUFFIX, NeuralRecordingData
 from statespacecheck_paper.figure04_summary import (
     Figure4Summary,
     compute_detail_window_comparison,
-    compute_figure04_summary,
+    compute_figure04_reported_statistics,
     compute_kl_divergence_comparison,
     compute_mean_spike_event_diagnostic,
     count_units_with_spikes,
     format_figure04_summary,
+    summarize_figure04_diagnostics,
 )
 from statespacecheck_paper.figure04_workflow import (
     Figure4AnalysisResults,
@@ -35,7 +38,7 @@ from statespacecheck_paper.figure04_workflow import (
 )
 
 from ._diagnostics import event_diagnostics
-from ._figure04 import synthetic_cache_provenance
+from ._figure04 import synthetic_cache_provenance, synthetic_render_data
 
 
 def _synthetic_recording() -> NeuralRecordingData:
@@ -65,6 +68,20 @@ def _ds(values: np.ndarray) -> xr.Dataset:
         {"acausal_posterior": ("time", values)},
         coords={"time": np.arange(len(values), dtype=float)},
     )
+
+
+def _paths_with_input(data_path: Path, epoch: str) -> Figure4Paths:
+    """Paths of an epoch whose input file exists (the fingerprints hash its bytes)."""
+    (data_path / f"{epoch}{INPUT_FILE_SUFFIX}").write_bytes(b"input")
+    return Figure4Paths(data_path=data_path, animal_date_epoch=epoch)
+
+
+def _cache_payload(
+    results: Figure4AnalysisResults,
+    keys: tuple[str, ...] = _FIGURE04_DECODE_AND_DIAGNOSTICS_PAYLOAD_KEYS,
+) -> dict[str, object]:
+    """The serialized cache payload of ``results``: its keys are the field names."""
+    return {key: getattr(results, key) for key in keys}
 
 
 def _synthetic_analysis_results() -> Figure4AnalysisResults:
@@ -173,26 +190,18 @@ class TestComputeKlDivergenceComparison:
 
 
 class TestFigure4Summary:
-    def _render_data(self) -> Figure4RenderData:
-        decode = dataclasses.replace(
-            _synthetic_analysis_results(),
-            continuous_diagnostics=event_diagnostics(hpd=np.array([0.01, 0.20])),
-            continuous_fragmented_diagnostics=event_diagnostics(hpd=np.array([0.40, 0.20])),
-        )
-        return Figure4RenderData(
-            recording=_synthetic_recording(),
-            time=np.arange(8, dtype=float),
-            linear_position=np.zeros(8),
-            analysis_results=decode,
-            cache_provenance=synthetic_cache_provenance(),
+    @staticmethod
+    def _summarize(thresholds: dict[str, float]) -> Figure4Summary:
+        return summarize_figure04_diagnostics(
+            event_diagnostics(hpd=np.array([0.01, 0.20])),
+            event_diagnostics(hpd=np.array([0.40, 0.20])),
+            n_units=2,
+            thresholds=thresholds,
+            metric_directions={"hpd_overlap": "below"},
         )
 
     def test_computes_typed_means_and_flag_counts(self) -> None:
-        summary = compute_figure04_summary(
-            self._render_data(),
-            thresholds={"hpd_overlap": 0.05},
-            metric_directions={"hpd_overlap": "below"},
-        )
+        summary = self._summarize({"hpd_overlap": 0.05})
 
         assert isinstance(summary, Figure4Summary)
         assert summary.continuous.hpd_overlap == pytest.approx(0.105)
@@ -214,11 +223,7 @@ class TestFigure4Summary:
         )
 
     def test_formatter_does_not_recompute(self) -> None:
-        summary = compute_figure04_summary(
-            self._render_data(),
-            thresholds={"hpd_overlap": 0.05},
-            metric_directions={"hpd_overlap": "below"},
-        )
+        summary = self._summarize({"hpd_overlap": 0.05})
         text = format_figure04_summary(summary)
         assert "Continuous:" in text
         assert "hpd_overlap: 0.1050" in text
@@ -226,17 +231,21 @@ class TestFigure4Summary:
 
     def test_requires_threshold_for_every_direction(self) -> None:
         with pytest.raises(ValueError, match="without thresholds"):
-            compute_figure04_summary(
-                self._render_data(),
-                thresholds={},
-                metric_directions={"hpd_overlap": "below"},
-            )
+            self._summarize({})
+
+
+def _decode_payload() -> dict[str, object]:
+    return _cache_payload(_synthetic_analysis_results(), _FIGURE04_DECODE_PAYLOAD_KEYS)
+
+
+def _diagnostics_payload() -> dict[str, object]:
+    return _cache_payload(_synthetic_analysis_results(), _FIGURE04_DIAGNOSTICS_PAYLOAD_KEYS)
 
 
 class TestFigure4AnalysisResults:
     def test_cache_payload_round_trip_through_field_named_keys(self) -> None:
         decode = _synthetic_analysis_results()
-        payload = decode.to_cache_payload()
+        payload = _cache_payload(decode)
         # The serialized keys are the field names.
         assert "continuous_fragmented_results" in payload
         assert "continuous_fragmented_diagnostics" in payload
@@ -245,21 +254,30 @@ class TestFigure4AnalysisResults:
         assert rebuilt.continuous_fragmented_diagnostics is decode.continuous_fragmented_diagnostics
         np.testing.assert_array_equal(rebuilt.spike_counts, decode.spike_counts)
 
-    def test_payload_keys_match_cache_module_source_of_truth(self) -> None:
+    def test_cache_keys_are_the_field_names(self) -> None:
         # Guard against drift between the on-disk key list (owned by
-        # figure04_cache) and the field->key mapping in to_cache_payload.
-        assert set(_synthetic_analysis_results().to_cache_payload().keys()) == set(
+        # figure04_cache) and the container's fields.
+        assert {field.name for field in dataclasses.fields(Figure4AnalysisResults)} == set(
             _FIGURE04_DECODE_AND_DIAGNOSTICS_PAYLOAD_KEYS
         )
 
+    def test_from_cache_payload_keeps_the_memory_mapped_spike_counts(self, tmp_path: Path) -> None:
+        # The session-sized counts arrive memory-mapped; loading must not copy them.
+        np.save(tmp_path / "counts.npy", np.zeros((8, 2), dtype=np.int64))
+        spike_counts = np.load(tmp_path / "counts.npy", mmap_mode="r")
+        payload = _cache_payload(_synthetic_analysis_results())
+        payload["spike_counts"] = spike_counts
+        rebuilt = Figure4AnalysisResults.from_cache_payload(payload)
+        assert np.shares_memory(rebuilt.spike_counts, spike_counts)
+
     def test_from_cache_payload_rejects_missing_key(self) -> None:
-        payload = _synthetic_analysis_results().to_cache_payload()
+        payload = _cache_payload(_synthetic_analysis_results())
         del payload["spike_counts"]
         with pytest.raises(ValueError, match="missing keys"):
             Figure4AnalysisResults.from_cache_payload(payload)
 
     def test_from_cache_payload_rejects_wrong_type(self) -> None:
-        payload = _synthetic_analysis_results().to_cache_payload()
+        payload = _cache_payload(_synthetic_analysis_results())
         payload["continuous_results"] = np.zeros(3)  # not an xr.Dataset
         with pytest.raises(TypeError, match="xr.Dataset"):
             Figure4AnalysisResults.from_cache_payload(payload)
@@ -441,16 +459,16 @@ class TestPrepareRenderData:
 
         def fake_fit(*a: object, **k: object) -> dict[str, object]:
             calls["fit"] += 1
-            return _synthetic_analysis_results().to_decode_payload()
+            return _decode_payload()
 
         def fake_diagnostics(*a: object, **k: object) -> dict[str, object]:
             calls["diagnostics"] += 1
-            return _synthetic_analysis_results().to_diagnostics_payload()
+            return _diagnostics_payload()
 
         monkeypatch.setattr(figure04_workflow, "fit_and_decode", fake_fit)
         monkeypatch.setattr(figure04_workflow, "_compute_diagnostics_payload", fake_diagnostics)
 
-        paths = Figure4Paths(data_path=tmp_path, animal_date_epoch="synthetic_epoch")
+        paths = _paths_with_input(tmp_path, "synthetic_epoch")
         config = Figure4Config()
 
         prepare_figure04_render_data(config, paths, use_cache=True)
@@ -494,19 +512,21 @@ class TestPrepareRenderData:
 
         def fake_fit(*a: object, **k: object) -> dict[str, object]:
             calls["n"] += 1
-            return _synthetic_analysis_results().to_decode_payload()
+            return _decode_payload()
 
         monkeypatch.setattr(figure04_workflow, "fit_and_decode", fake_fit)
         monkeypatch.setattr(
             figure04_workflow,
             "_compute_diagnostics_payload",
-            lambda *a, **k: _synthetic_analysis_results().to_diagnostics_payload(),
+            lambda *a, **k: _cache_payload(
+                _synthetic_analysis_results(), _FIGURE04_DIAGNOSTICS_PAYLOAD_KEYS
+            ),
         )
         monkeypatch.setattr(
             figure04_cache, "_installed_non_local_detector_version", lambda: "1.0.0"
         )
 
-        paths = Figure4Paths(data_path=tmp_path, animal_date_epoch="synthetic_epoch")
+        paths = _paths_with_input(tmp_path, "synthetic_epoch")
         config = Figure4Config()
         prepare_figure04_render_data(config, paths, use_cache=True)
         assert calls["n"] == 1
@@ -534,15 +554,19 @@ class TestPrepareRenderData:
         monkeypatch.setattr(
             figure04_workflow,
             "fit_and_decode",
-            lambda *a, **k: _synthetic_analysis_results().to_decode_payload(),
+            lambda *a, **k: _cache_payload(
+                _synthetic_analysis_results(), _FIGURE04_DECODE_PAYLOAD_KEYS
+            ),
         )
         monkeypatch.setattr(
             figure04_workflow,
             "_compute_diagnostics_payload",
-            lambda *a, **k: _synthetic_analysis_results().to_diagnostics_payload(),
+            lambda *a, **k: _cache_payload(
+                _synthetic_analysis_results(), _FIGURE04_DIAGNOSTICS_PAYLOAD_KEYS
+            ),
         )
 
-        injected = Figure4Paths(data_path=tmp_path, animal_date_epoch="injected_epoch")
+        injected = _paths_with_input(tmp_path, "injected_epoch")
         render_data = prepare_figure04_render_data(Figure4Config(), injected, use_cache=False)
 
         assert seen == {"data_path": tmp_path, "animal_date_epoch": "injected_epoch"}
@@ -609,6 +633,24 @@ def test_fit_and_decode_payload_feeds_the_caches_and_results() -> None:
     assert results.spike_counts.shape == (n_time, 2)
     # Every spike lies inside [time[0], time[-1]], so each is counted once.
     assert results.spike_counts.sum() == 50
+
+
+def test_reported_statistics_come_from_the_render_data() -> None:
+    render_data = synthetic_render_data()
+    analysis = render_data.analysis_results
+    thresholds = {"hpd_overlap": 0.5, "kl_divergence": 1.0, "predictive_pvalue": 0.05}
+    statistics = compute_figure04_reported_statistics(
+        render_data, thresholds, METRIC_FLAG_DIRECTIONS, slice(0, render_data.time.size)
+    )
+    assert statistics.summary.n_units == analysis.spike_counts.shape[1]
+    assert statistics.n_units_with_spikes == count_units_with_spikes(
+        analysis.continuous_diagnostics
+    )
+    assert (
+        statistics.detail_window_comparison.n_events
+        == analysis.continuous_diagnostics.event_time_ind.size
+    )
+    assert 0.0 < statistics.kl_divergence_comparison.lower_fraction < 1.0
 
 
 def test_count_units_with_spikes_counts_each_firing_unit_once() -> None:

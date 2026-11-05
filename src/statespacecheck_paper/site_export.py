@@ -428,8 +428,6 @@ def filter_explainer_sequence(config: Figure3Config) -> FilterExplainerSequence:
     config : Figure3Config
         Supplies the track and the place-field centers and width.
     """
-    if config.place_field_centers is None:
-        raise ValueError("config.place_field_centers must be initialized")
     explainer = FILTER_EXPLAINER
     centers = np.asarray(config.place_field_centers, dtype=np.float64)
     position_bins = config.position_bins
@@ -619,8 +617,6 @@ def playground_ensembles(
         Place cells, then the sparse epoch. Cells are ordered as in
         :func:`all_place_field_centers`.
     """
-    if config.place_field_centers is None:
-        raise ValueError("config.place_field_centers must be initialized")
     sparse = np.asarray(sparse_centers, dtype=np.float64)
     tables = build_figure03_expected_count_tables(
         config.position_bins, config.place_field_centers, sparse, config

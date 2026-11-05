@@ -22,7 +22,7 @@ from typing import NamedTuple
 
 import numpy as np
 from numpy.typing import NDArray
-from scipy.special import gammaln, logsumexp, xlogy
+from scipy.special import gammaln, xlogy
 
 from statespacecheck_paper.diagnostics import (
     HPD_COVERAGE,
@@ -36,6 +36,33 @@ from statespacecheck_paper.simulation import (
     place_field_expected_counts,
     softmax_with_shift,
 )
+
+
+def _logsumexp(log_weights: NDArray[np.floating]) -> float:
+    """Return ``log(sum(exp(log_weights)))`` for a 1D array.
+
+    ``scipy.special.logsumexp``'s operations in its order, so the result is
+    bit-identical to it, without its array-API dispatch, which the filter would
+    otherwise pay once per time step. The largest terms are factored out of the
+    sum for precision.
+
+    Parameters
+    ----------
+    log_weights : np.ndarray, shape (n_bins,)
+        Log-weights, with no NaN or ``+inf``. ``-inf`` entries contribute nothing.
+
+    Returns
+    -------
+    float
+        The log of the sum; ``-inf`` if every weight is zero.
+    """
+    largest = log_weights.max()
+    if np.isneginf(largest):
+        return float(largest)
+    is_largest = log_weights == largest
+    n_largest = is_largest.sum(dtype=log_weights.dtype)
+    remainder = np.exp(np.where(is_largest, -np.inf, log_weights) - largest).sum() / n_largest
+    return float(np.log1p(remainder) + np.log(n_largest) + largest)
 
 
 def _condition_on(
@@ -89,7 +116,7 @@ def _condition_on(
         )
     with np.errstate(divide="ignore", invalid="ignore"):
         log_joint = np.log(probs) + ll
-    log_norm = float(logsumexp(log_joint))
+    log_norm = _logsumexp(log_joint)
     if np.isneginf(log_norm):
         raise ValueError(
             "Bayesian update is undefined: the observation has zero likelihood "

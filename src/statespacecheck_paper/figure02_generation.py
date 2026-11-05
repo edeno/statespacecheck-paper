@@ -287,7 +287,7 @@ def compose_figure02(rng: np.random.Generator | None = None) -> Figure:
 
 def generate_figure02() -> None:
     """Compose Figure 2 with paper styling and save its PDF and PNG."""
-    set_figure_defaults(context="paper")
+    set_figure_defaults()
     fig = compose_figure02()
     save_figure(FIGURE_DIR / "figure02", close=True, fig=fig)
     print(f"\nFigure 2 saved to {FIGURE_DIR / 'figure02'}.{{pdf,png}}")

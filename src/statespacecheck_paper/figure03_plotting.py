@@ -26,7 +26,6 @@ from statespacecheck_paper.figure03_protocol import (
     compute_replay_step_window,
 )
 from statespacecheck_paper.figure03_summary import (
-    SUMMARY_ERROR_METRICS,
     SUMMARY_FLAG_METRICS,
     build_summary_conditions,
 )
@@ -437,7 +436,7 @@ def _plot_figure03_summary_heatmap(
         raise ValueError("median_flag_percentages must contain finite percentages in [0, 100]")
 
     decoding_error = np.asarray(median_decoding_error, dtype=float)
-    expected_error_shape = (len(SUMMARY_ERROR_METRICS), len(conditions))
+    expected_error_shape = (len(conditions),)
     if decoding_error.shape != expected_error_shape:
         raise ValueError(
             f"median_decoding_error must have shape {expected_error_shape}; "
@@ -498,7 +497,7 @@ def _plot_figure03_summary_heatmap(
         error_label = ax.text(
             col_idx,
             error_row_y,
-            significant(decoding_error[0, col_idx]),
+            significant(decoding_error[col_idx]),
             ha="center",
             va="center",
             color="black",
@@ -582,11 +581,10 @@ def compose_figure03(
         columns follow :func:`statespacecheck_paper.figure03_summary.build_summary_conditions`).
         This stabilized summary is deliberately required: substituting the
         displayed realization would change the meaning of panel (b).
-    median_decoding_error : NDArray, shape (1, n_columns)
-        Median per-condition distance to physical position (rows follow
-        :data:`statespacecheck_paper.figure03_summary.SUMMARY_ERROR_METRICS`:
-        median absolute distance in position units), rendered as a text row
-        beneath panel (b), including the replay control.
+    median_decoding_error : NDArray, shape (n_columns,)
+        Median per-condition absolute distance to physical position, in
+        position units, rendered as a text row beneath panel (b), including
+        the replay control.
 
     Returns
     -------

@@ -13,7 +13,7 @@ imports no sibling paper module.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import IntEnum
 
 import numpy as np
@@ -214,7 +214,8 @@ class Figure3Config:
 
     # Place fields
     place_field_std: float = 10.0
-    place_field_centers: NDArray[np.floating] | None = None  # set in __post_init__
+    # Empty selects one center every 10 position units in __post_init__.
+    place_field_centers: NDArray[np.floating] = field(default_factory=lambda: np.empty(0))
     place_field_rate_scale: float = 5.0
 
     random_seed: int = 1
@@ -306,12 +307,11 @@ class Figure3Config:
         # normalization the dataclass performs on its own fields.
         object.__setattr__(self, "phase_boundaries", bnds)
 
-        if self.place_field_centers is None:
+        # Copy the caller's array so we don't write-protect their
+        # reference; they keep a writable original.
+        centers = np.asarray(self.place_field_centers).copy()
+        if centers.size == 0:
             centers = np.arange(self.position_min, self.position_max + 1, 10, dtype=float)
-        else:
-            # Copy the caller's array so we don't write-protect their
-            # reference; they keep a writable original.
-            centers = np.asarray(self.place_field_centers).copy()
         # Write-protect against in-place mutation. ``Figure3Config`` is frozen,
         # so the field cannot be rebound (``config.place_field_centers = other``
         # raises), and marking the array read-only also blocks

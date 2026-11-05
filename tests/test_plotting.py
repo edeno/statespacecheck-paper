@@ -14,10 +14,14 @@ from statespacecheck_paper.plotting import (
     THRESHOLD_LINE_GID,
     WORSE_FIT_LABEL_GID,
     extract_contiguous_regions,
-    negative_log_pvalue,
     plot_event_metric_row,
 )
-from statespacecheck_paper.style import METRIC_SPEC_BY_NAME, SYMLOG_LINSCALE, SYMLOG_LINTHRESH
+from statespacecheck_paper.style import (
+    METRIC_SPEC_BY_NAME,
+    SYMLOG_LINSCALE,
+    SYMLOG_LINTHRESH,
+    negative_log_pvalue,
+)
 
 
 class TestNegativeLogPvalue:

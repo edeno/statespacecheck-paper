@@ -36,9 +36,8 @@ from statespacecheck_paper.figure04_plot_primitives import (
     compute_half_pixel_extent,
     plot_distribution_heatmap,
 )
-from statespacecheck_paper.figure04_track_plots import plot_track_graph_1d
+from statespacecheck_paper.figure04_track_plots import plot_track_graph_1d, reward_well_nodes
 from statespacecheck_paper.plotting import (
-    negative_log_pvalue,
     plot_event_metric_row,
     plot_likelihood_columns,
 )
@@ -176,8 +175,6 @@ class ModelDiagnosticPanelData:
                 f"spike_counts must have shape ({time.size}, {n_cells}); "
                 f"got {self.spike_counts.shape}"
             )
-        if np.any(self.spike_counts < 0):
-            raise ValueError("spike_counts must be non-negative")
         if len(self.spike_times) != n_cells:
             raise ValueError(
                 f"spike_times must contain {n_cells} cells; got {len(self.spike_times)}"
@@ -436,6 +433,8 @@ def _draw_place_field_likelihood_image(
     for a ~1000-bin plot.
     """
     counts_win = spike_counts[time_slice_ind]
+    if np.any(counts_win < 0):
+        raise ValueError("spike_counts must be non-negative")
     lik_np, has_spk_slice = mean_event_likelihood_by_time(counts_win, place_fields)
     time_win = np.asarray(time)[time_slice_ind]
     pos = np.asarray(position_bins, dtype=np.float64)
@@ -470,8 +469,12 @@ def _draw_track_graph_edges(
             other_axis_start=x_pos,
             edge_linewidth=3,
             reward_well_size=20,
-            reward_well_nodes=list(range(6)),
+            well_nodes=reward_well_nodes(track_graph),
         )
+
+
+# Row heights of a detail stack: predictive, likelihood, raster, three diagnostics.
+DETAIL_ROW_RATIOS: tuple[float, ...] = (2, 2, 1.5, 1, 1, 1)
 
 
 def plot_single_model_diagnostics(
@@ -534,7 +537,7 @@ def plot_single_model_diagnostics(
 
     if fig is None:
         fig = plt.figure(figsize=(7.0, 8.0), constrained_layout=True)
-    gs = fig.add_gridspec(6, 1, height_ratios=[2, 2, 1.5, 1, 1, 1])
+    gs = fig.add_gridspec(6, 1, height_ratios=DETAIL_ROW_RATIOS)
 
     axes = np.empty(6, dtype=object)
     axes[0] = fig.add_subplot(gs[0])
@@ -712,20 +715,20 @@ def plot_event_metric_hexbin_row(
     for panel_idx, (ax, spec) in enumerate(zip(axes, METRIC_SPECS, strict=True)):
         key = spec.event_attr
         color = spec.color
-        log_transform = spec.display_transform == "neg_log_p"
         thr_key = spec.name
         direction = spec.plotted_worse
-        reference_values = np.asarray(getattr(reference_diagnostics, key), dtype=np.float64)
-        comparison_values = np.asarray(getattr(comparison_diagnostics, key), dtype=np.float64)
+        reference_values = spec.to_display(
+            np.asarray(getattr(reference_diagnostics, key), dtype=np.float64)
+        )
+        comparison_values = spec.to_display(
+            np.asarray(getattr(comparison_diagnostics, key), dtype=np.float64)
+        )
         if reference_values.shape != comparison_values.shape:
             raise ValueError(
                 f"reference_diagnostics[{key!r}] and comparison_diagnostics[{key!r}] must "
                 f"carry the same set of spike events in the same order; "
                 f"got shapes {reference_values.shape} vs {comparison_values.shape}."
             )
-        if log_transform:
-            reference_values = negative_log_pvalue(reference_values)
-            comparison_values = negative_log_pvalue(comparison_values)
         if reference_values.size == 0:
             raise ValueError(f"Cannot plot {key}: no spike events are present")
         if not np.all(np.isfinite(reference_values)) or not np.all(np.isfinite(comparison_values)):
@@ -759,7 +762,7 @@ def plot_event_metric_hexbin_row(
         # quadrant — spikes flagged by the reference but not the comparison.
         thr_raw = thresholds.get(thr_key) if thresholds else None
         if thr_raw is not None:
-            thr = negative_log_pvalue(thr_raw) if log_transform else float(thr_raw)
+            thr = float(spec.to_display(thr_raw))
             lo, hi = padded_lims
             if direction == "below":
                 # Flagged below threshold: reference flagged (x < thr), comparison not (y > thr).

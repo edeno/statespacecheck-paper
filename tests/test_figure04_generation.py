@@ -27,6 +27,7 @@ from statespacecheck_paper.figure04_summary import (
     Figure4DetailWindowComparison,
     Figure4DiagnosticMeans,
     Figure4KlDivergenceComparison,
+    Figure4ReportedStatistics,
     Figure4Summary,
 )
 from statespacecheck_paper.paths import FIGURE04_SUMMARY_PATH, REPO_ROOT
@@ -69,13 +70,10 @@ def test_generation_passes_figure_and_bbox_to_save(monkeypatch: pytest.MonkeyPat
             time=np.zeros(200_000),
         ),
     )
-    monkeypatch.setattr(figure04_generation, "compute_figure04_summary", lambda *a, **k: object())
-    monkeypatch.setattr(figure04_generation, "count_units_with_spikes", lambda *a, **k: 0)
     monkeypatch.setattr(
-        figure04_generation, "compute_kl_divergence_comparison", lambda *a, **k: object()
-    )
-    monkeypatch.setattr(
-        figure04_generation, "compute_detail_window_comparison", lambda *a, **k: object()
+        figure04_generation,
+        "compute_figure04_reported_statistics",
+        lambda *a, **k: SimpleNamespace(summary=object()),
     )
     monkeypatch.setattr(figure04_generation, "format_figure04_summary", lambda *a, **k: "summary")
     monkeypatch.setattr(
@@ -147,10 +145,12 @@ def test_summary_payload_contains_reported_counts_rates_and_provenance(
         figure04_generation.figure04_summary_payload(
             config=Figure4Config(),
             paths=Figure4Paths(tmp_path, "epoch_x"),
-            summary=summary,
-            n_units_with_spikes=5,
-            kl_divergence_comparison=kl_comparison,
-            detail_window_comparison=detail_comparison,
+            statistics=Figure4ReportedStatistics(
+                summary=summary,
+                n_units_with_spikes=5,
+                kl_divergence_comparison=kl_comparison,
+                detail_window_comparison=detail_comparison,
+            ),
             cache_provenance=cache_provenance,
         ),
     )

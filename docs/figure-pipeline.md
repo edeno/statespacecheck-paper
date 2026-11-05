@@ -227,7 +227,7 @@ interactive.__main__                → interactive.app
 interactive.app                     → figure04_models, interactive.data_source; lazy: interactive.viewer
 interactive.cache                   → diagnostics, figure04_models, figure04_place_fields, paths; lazy: figure03_protocol, figure03_simulation, figure04_cache, figure04_decoder, figure04_workflow
 interactive.data_source             → figure04_models, figure04_place_fields, interactive.cache
-interactive.panels                  → figure03_plotting, plotting, style
+interactive.panels                  → figure03_plotting, style
 interactive.viewer                  → figure04_models, figure04_protocol, interactive.data_source, interactive.panels, style
 
 spyglass_pipeline                   → (none)
@@ -640,16 +640,15 @@ manual overrides: bumping one invalidates every cache of that kind.
 
 ## Machine-readable summary schema
 
-`figure03_summary.json` uses schema version 9
+`figure03_summary.json` uses schema version 10
 (`figure03_generation.FIGURE03_SUMMARY_SCHEMA_VERSION`) and `figure04_summary.json`
-uses schema version 11 (`figure04_generation.FIGURE04_SUMMARY_SCHEMA_VERSION`). The
+uses schema version 12 (`figure04_generation.FIGURE04_SUMMARY_SCHEMA_VERSION`). The
 Figure-3 configuration block records every
 `Figure3Config` field together with the step length in seconds
 (`configuration.step_seconds`, the protocol constant `STEP_SECONDS`) and the
 HPD coverage (`configuration.hpd_coverage`, `diagnostics.HPD_COVERAGE`). The
 Figure-3 schema includes the decoding-error block:
-`error_metric_order` (`median_absolute_error`), `error_units`, and
-`median_decoding_error`, a `(1, n_conditions)` matrix of the
+`error_units` and `median_decoding_error`, a `(n_conditions,)` vector of the
 across-realization median absolute error of the filtered-posterior mean
 (position units), in the same column order as `median_flag_percentages`. It also
 records `median_flag_percentage_standard_errors` and
@@ -659,7 +658,7 @@ uncertainty in the aggregated medians under repeated simulation with the same
 configuration, not the spread of individual realizations, and do not set
 reported precision. The spread itself is in `realization_flag_percentages`
 `(n_realizations, 3, n_conditions)` and `realization_decoding_error`
-`(n_realizations, 1, n_conditions)`: every realization's values, in seed order
+`(n_realizations, n_conditions)`: every realization's values, in seed order
 from `realizations.first_seed`; the medians are their medians over the first
 axis. The summary also records the baseline-threshold provenance
 (`threshold_provenance`) quoted in the Methods: the baseline's end step, each
@@ -723,8 +722,8 @@ expensive decoder cache, `diagnostics_fingerprint_sha256` the identity of the
 diagnostics cache (recorded with the diagnostics configuration and the
 installed `statespacecheck` version), and the record includes the installed
 `non_local_detector` version plus the content
-SHA-256 of the named input file. It also records the environment both
-fingerprints hash: `python_version`, `machine`, and the installed versions of
+SHA-256 of the named input file. Its `environment` block records what both
+fingerprints hash about the machine: `python_version`, `machine`, and the installed versions of
 the two dependency closures (`decode_dependency_versions` for
 `non_local_detector`, `diagnostics_dependency_versions` for `statespacecheck`),
 so a reader can see what the decode and diagnostics ran with. Canonical artifact generation fails

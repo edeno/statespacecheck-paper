@@ -33,7 +33,6 @@ from numpy.typing import ArrayLike, NDArray
 from PySide6 import QtCore, QtWidgets
 
 from statespacecheck_paper.figure03_plotting import FIGURE03_SYMLOG_YTICKS
-from statespacecheck_paper.plotting import negative_log_pvalue
 from statespacecheck_paper.style import (
     COLORS,
     SYMLOG_LINSCALE,
@@ -171,7 +170,89 @@ def symlog_position(values: ArrayLike) -> NDArray[np.float64]:
 # ---------------------------------------------------------------------------
 
 
-class _BaseHeatmapPanel(pg.PlotWidget):
+class _TimeAxisPanel(pg.PlotWidget):
+    """A left-column plot whose bottom axis is time relative to the view center.
+
+    Holds the chrome these panels share. A subclass adds its data items first
+    and then calls :meth:`_add_cursor_items`, so that items at the same z-value
+    stack the cursor lines over the data.
+
+    Parameters
+    ----------
+    left_label : str
+        Left-axis label.
+    title : str, optional
+        Plot title; None sets none.
+    """
+
+    def __init__(self, *, left_label: str, title: str | None = None) -> None:
+        super().__init__()
+        self.setBackground("w")
+        self.setMenuEnabled(False)
+        self.setMouseEnabled(x=False, y=False)
+        self.setLabel("left", left_label)
+        self.setLabel("bottom", "Time relative to center (s)")
+        # Disable pyqtgraph's auto-SI-prefix on the time axis so the
+        # tick labels do not flip between e.g. ``0.500`` and ``500
+        # (×10⁻³)`` as the user scrolls through small / large values.
+        self.getAxis("bottom").enableAutoSIPrefix(False)
+        if title is not None:
+            self.getPlotItem().setTitle(title)
+
+    def _add_cursor_items(self, *, band_z: int, pin_rgb: tuple[int, int, int]) -> None:
+        """Add the active-bin band, the center line, and the hidden pin line.
+
+        The center dashed line marks ``t_center`` (a continuous value); on its
+        own it can sit on a bin edge when ``t_center`` aligns with a sample
+        tick, leaving the user uncertain which bin is the one the slice panel
+        is showing. The translucent band over the active bin's real-time
+        interval ``[time[t_idx], time[t_idx+1])`` makes the active bin
+        unambiguous.
+
+        Parameters
+        ----------
+        band_z : int
+            Z-value of the band: above an opaque heatmap, below scatter points.
+        pin_rgb : tuple of int
+            Color of the pin line.
+        """
+        self._center_bin_band = pg.LinearRegionItem(
+            values=(0.0, 0.0),
+            orientation="vertical",
+            brush=pg.mkBrush(255, 255, 0, 55),
+            pen=pg.mkPen(None),
+            movable=False,
+        )
+        self._center_bin_band.setZValue(band_z)
+        self.addItem(self._center_bin_band)
+
+        self._center_line = pg.InfiniteLine(
+            angle=90,
+            pos=0.0,
+            pen=pg.mkPen((100, 100, 100), width=1, style=QtCore.Qt.PenStyle.DashLine),
+            movable=False,
+        )
+        self.addItem(self._center_line)
+
+        self._pin_line = pg.InfiniteLine(
+            angle=90,
+            pen=pg.mkPen(pin_rgb, width=2),
+            movable=False,
+        )
+        self._pin_line.setVisible(False)
+        self.addItem(self._pin_line)
+
+    def update_active_bin_band(self, left_rel: float, right_rel: float) -> None:
+        """Set the active-bin highlight band's bounds (window-relative seconds).
+
+        ``left_rel`` is ``time[t_idx] - t_center`` and ``right_rel`` is
+        ``time[t_idx + 1] - t_center`` (the half-open interval the
+        slice panel is showing under the LEFT-EDGE bin convention).
+        """
+        self._center_bin_band.setRegion([left_rel, right_rel])
+
+
+class _BaseHeatmapPanel(_TimeAxisPanel):
     """Common predictive / likelihood heatmap behavior.
 
     Subclasses provide ``update_with_window`` which decides how to
@@ -182,17 +263,7 @@ class _BaseHeatmapPanel(pg.PlotWidget):
     """
 
     def __init__(self, *, title: str, position_bins: NDArray[np.float64]) -> None:
-        super().__init__()
-        self.setBackground("w")
-        self.setMenuEnabled(False)
-        self.setMouseEnabled(x=False, y=False)
-        self.setLabel("left", "Position (cm)")
-        self.setLabel("bottom", "Time relative to center (s)")
-        # Disable pyqtgraph's auto-SI-prefix on the time axis so the
-        # tick labels do not flip between e.g. ``0.500`` and ``500
-        # (×10⁻³)`` as the user scrolls through small / large values.
-        self.getAxis("bottom").enableAutoSIPrefix(False)
-        self.getPlotItem().setTitle(title)
+        super().__init__(left_label="Position (cm)", title=title)
 
         # ``axisOrder='col-major'`` interprets ``image[i, j]`` as
         # ``(x_index=i, y_index=j)``. Window arrays come in as
@@ -224,38 +295,7 @@ class _BaseHeatmapPanel(pg.PlotWidget):
         # ``setImage`` calls don't trigger a full nanmin/nanmax scan.
         self._levels: tuple[float, float] | None = None
 
-        # Translucent shaded band over the active bin's real-time
-        # interval ``[time[t_idx], time[t_idx+1])``, drawn *behind* the
-        # heatmap data. The center dashed line marks ``t_center`` (a
-        # continuous value); on its own it can sit on a bin edge when
-        # ``t_center`` aligns with a sample tick, leaving the user
-        # uncertain which bin is the one the slice panel is showing.
-        # The band makes the active bin unambiguous.
-        self._center_bin_band = pg.LinearRegionItem(
-            values=(0.0, 0.0),
-            orientation="vertical",
-            brush=pg.mkBrush(255, 255, 0, 55),
-            pen=pg.mkPen(None),
-            movable=False,
-        )
-        self._center_bin_band.setZValue(5)
-        self.addItem(self._center_bin_band)
-
-        self._center_line = pg.InfiniteLine(
-            angle=90,
-            pos=0.0,
-            pen=pg.mkPen((100, 100, 100), width=1, style=QtCore.Qt.PenStyle.DashLine),
-            movable=False,
-        )
-        self.addItem(self._center_line)
-
-        self._pin_line = pg.InfiniteLine(
-            angle=90,
-            pen=pg.mkPen((255, 255, 0), width=2),
-            movable=False,
-        )
-        self._pin_line.setVisible(False)
-        self.addItem(self._pin_line)
+        self._add_cursor_items(band_z=5, pin_rgb=(255, 255, 0))
 
         # Animal's physical position trajectory across the visible window.
         # White on viridis stays readable across the full colormap range
@@ -265,15 +305,6 @@ class _BaseHeatmapPanel(pg.PlotWidget):
             pen=pg.mkPen((255, 255, 255), width=1.5),
         )
         self.addItem(self._position_curve)
-
-    def update_active_bin_band(self, left_rel: float, right_rel: float) -> None:
-        """Set the active-bin highlight band's bounds (window-relative seconds).
-
-        ``left_rel`` is ``time[t_idx] - t_center`` and ``right_rel`` is
-        ``time[t_idx + 1] - t_center`` (the half-open interval the
-        slice panel is showing under the LEFT-EDGE bin convention).
-        """
-        self._center_bin_band.setRegion([left_rel, right_rel])
 
     def update_pinned_event(self, relative_time: float | None) -> None:
         if relative_time is None:
@@ -430,86 +461,46 @@ def _dispatch_scatter_click(
     on_click(int(window_event_indices[local_idx]))
 
 
-class RasterPanel(pg.PlotWidget):
-    """Spike raster sorted by place-field peak position."""
+class _EventScatterPanel(_TimeAxisPanel):
+    """A time-axis panel drawing one clickable scatter point per spike event.
+
+    Parameters
+    ----------
+    scatter : pg.ScatterPlotItem
+        The event scatter, added to the plot here.
+    left_label : str
+        Left-axis label.
+    title : str, optional
+        Plot title; None sets none.
+    """
 
     def __init__(
-        self,
-        *,
-        n_cells: int,
-        place_field_peaks: NDArray[np.float64],
+        self, *, scatter: pg.ScatterPlotItem, left_label: str, title: str | None = None
     ) -> None:
-        super().__init__()
-        self.setBackground("w")
-        self.setMenuEnabled(False)
-        self.setMouseEnabled(x=False, y=False)
-        self.setLabel("left", "Cell (PF rank)")
-        self.setLabel("bottom", "Time relative to center (s)")
-        self.getAxis("bottom").enableAutoSIPrefix(False)
-        self.getPlotItem().setTitle("Raster")
-
-        if not np.all(np.isfinite(place_field_peaks)):
-            raise ValueError("place_field_peaks must be finite to define the raster order")
-        order = np.argsort(place_field_peaks)
-        rank = np.empty_like(order)
-        rank[order] = np.arange(order.size)
-        self._cell_rank = rank
-
-        self._scatter = pg.ScatterPlotItem(
-            pen=None,
-            brush=pg.mkBrush(0, 0, 0, 255),
-            size=2,
-            pxMode=True,
-            useCache=True,
-        )
+        super().__init__(left_label=left_label, title=title)
+        self._scatter = scatter
         self.addItem(self._scatter)
-        self.setYRange(-0.5, n_cells - 0.5, padding=0)
-
         self._window_event_indices: NDArray[np.int64] = np.empty(0, dtype=np.int64)
         self._on_click: Callable[[int], None] | None = None
         self._scatter.sigClicked.connect(self._handle_click)
 
-        # Active-bin highlight band — see ``_BaseHeatmapPanel`` for
-        # the rationale (the dashed center line marks ``t_center`` but
-        # can sit on a bin edge; the band makes the active bin
-        # unambiguous on this panel as well).
-        self._center_bin_band = pg.LinearRegionItem(
-            values=(0.0, 0.0),
-            orientation="vertical",
-            brush=pg.mkBrush(255, 255, 0, 55),
-            pen=pg.mkPen(None),
-            movable=False,
-        )
-        self._center_bin_band.setZValue(-5)
-        self.addItem(self._center_bin_band)
-
-        self._center_line = pg.InfiniteLine(
-            angle=90,
-            pos=0.0,
-            pen=pg.mkPen((100, 100, 100), width=1, style=QtCore.Qt.PenStyle.DashLine),
-            movable=False,
-        )
-        self.addItem(self._center_line)
-
-        self._pin_line = pg.InfiniteLine(
-            angle=90,
-            pen=pg.mkPen((50, 50, 50), width=2),
-            movable=False,
-        )
-        self._pin_line.setVisible(False)
-        self.addItem(self._pin_line)
+    def _add_event_cursor_items(
+        self, *, pin_rgb: tuple[int, int, int], dot_rgb: tuple[int, int, int]
+    ) -> None:
+        """Add the cursor items, the band behind the events, and the hidden pin dot."""
+        self._add_cursor_items(band_z=-5, pin_rgb=pin_rgb)
         self._pin_dot = pg.ScatterPlotItem(
             pen=pg.mkPen("k", width=1),
-            brush=pg.mkBrush(255, 255, 0, 255),
+            brush=pg.mkBrush(*dot_rgb, 255),
             size=10,
             pxMode=True,
         )
         self._pin_dot.setVisible(False)
         self.addItem(self._pin_dot)
 
-    def update_active_bin_band(self, left_rel: float, right_rel: float) -> None:
-        """Set the active-bin highlight band's bounds (window-relative seconds)."""
-        self._center_bin_band.setRegion([left_rel, right_rel])
+    def _event_heights(self, event_values: NDArray[Any]) -> NDArray[Any]:
+        """Map the events' per-panel values to plotted heights."""
+        raise NotImplementedError
 
     def set_click_handler(self, handler: Callable[[int], None]) -> None:
         """Register a callback invoked with the clicked item's integer id."""
@@ -518,19 +509,83 @@ class RasterPanel(pg.PlotWidget):
     def update_window(
         self,
         events_time: NDArray[np.float64],
-        events_cell_id: NDArray[np.int32],
+        event_values: NDArray[Any],
         time_offset: float,
         global_event_indices: NDArray[np.int64],
     ) -> None:
-        """Redraw the spike raster for the given time window."""
-        self._window_event_indices = np.asarray(global_event_indices, dtype=np.int64)
+        """Redraw the events for the given time window.
 
+        Parameters
+        ----------
+        events_time : np.ndarray, shape (n_events,)
+            Absolute event times.
+        event_values : np.ndarray, shape (n_events,)
+            The value :meth:`_event_heights` plots for each event: its cell id
+            on the raster, its metric value on a metric panel.
+        time_offset : float
+            Absolute time of the panel's x = 0.
+        global_event_indices : np.ndarray, shape (n_events,)
+            Row of each event in the full event table, reported on a click.
+        """
+        self._window_event_indices = np.asarray(global_event_indices, dtype=np.int64)
         if events_time.size == 0:
             self._scatter.setData(x=[], y=[], data=[])
             return
         x = events_time - time_offset
-        y = self._cell_rank[events_cell_id]
+        y = self._event_heights(event_values)
         self._scatter.setData(x=x, y=y, data=np.arange(x.shape[0], dtype=np.int64))
+
+    def _clear_pin(self) -> None:
+        """Hide the pin line and dot."""
+        self._pin_line.setVisible(False)
+        self._pin_dot.setVisible(False)
+
+    def _show_pin(self, relative_time: float, height: float) -> None:
+        """Show the pin line at ``relative_time`` and the dot at ``height`` on it."""
+        self._pin_line.setPos(relative_time)
+        self._pin_line.setVisible(True)
+        self._pin_dot.setData(x=[relative_time], y=[height])
+        self._pin_dot.setVisible(True)
+
+    def _handle_click(self, _scatter: pg.ScatterPlotItem, points: Any) -> None:
+        _dispatch_scatter_click(self._on_click, self._window_event_indices, points)
+
+
+class RasterPanel(_EventScatterPanel):
+    """Spike raster sorted by place-field peak position."""
+
+    def __init__(
+        self,
+        *,
+        n_cells: int,
+        place_field_peaks: NDArray[np.float64],
+    ) -> None:
+        super().__init__(
+            scatter=pg.ScatterPlotItem(
+                pen=None,
+                brush=pg.mkBrush(0, 0, 0, 255),
+                size=2,
+                pxMode=True,
+                useCache=True,
+            ),
+            left_label="Cell (PF rank)",
+            title="Raster",
+        )
+
+        if not np.all(np.isfinite(place_field_peaks)):
+            raise ValueError("place_field_peaks must be finite to define the raster order")
+        order = np.argsort(place_field_peaks)
+        rank = np.empty_like(order)
+        rank[order] = np.arange(order.size)
+        self._cell_rank = rank
+
+        self.setYRange(-0.5, n_cells - 0.5, padding=0)
+        self._add_event_cursor_items(pin_rgb=(50, 50, 50), dot_rgb=(255, 255, 0))
+
+    def _event_heights(self, event_values: NDArray[Any]) -> NDArray[Any]:
+        """Map cell ids to their place-field rank."""
+        heights: NDArray[Any] = self._cell_rank[event_values]
+        return heights
 
     def update_pinned_event(
         self,
@@ -540,20 +595,12 @@ class RasterPanel(pg.PlotWidget):
     ) -> None:
         """Pin (or clear) the highlighted spike at the given relative time and cell."""
         if relative_time is None or cell_id is None:
-            self._pin_line.setVisible(False)
-            self._pin_dot.setVisible(False)
+            self._clear_pin()
             return
-        rank = float(self._cell_rank[int(cell_id)])
-        self._pin_line.setPos(relative_time)
-        self._pin_line.setVisible(True)
-        self._pin_dot.setData(x=[relative_time], y=[rank])
-        self._pin_dot.setVisible(True)
-
-    def _handle_click(self, _scatter: pg.ScatterPlotItem, points: Any) -> None:
-        _dispatch_scatter_click(self._on_click, self._window_event_indices, points)
+        self._show_pin(relative_time, float(self._cell_rank[int(cell_id)]))
 
 
-class MetricPanel(pg.PlotWidget):
+class MetricPanel(_EventScatterPanel):
     """Per-spike scatter for one diagnostic metric.
 
     Parameters
@@ -569,17 +616,21 @@ class MetricPanel(pg.PlotWidget):
     """
 
     def __init__(self, *, spec: MetricSpec, threshold: float | None = None) -> None:
-        super().__init__()
-        self.setBackground("w")
-        self.setMenuEnabled(False)
-        self.setMouseEnabled(x=False, y=False)
-        self.setLabel("bottom", "Time relative to center (s)")
-        self.getAxis("bottom").enableAutoSIPrefix(False)
-        # Plain-text label: pyqtgraph renders no mathtext.
-        self.setLabel("left", spec.label)
+        rgb = hex_to_rgb(spec.color)
+        super().__init__(
+            scatter=pg.ScatterPlotItem(
+                pen=pg.mkPen(rgb, width=0),
+                brush=pg.mkBrush(*rgb, 200),
+                size=4,
+                pxMode=True,
+                useCache=True,
+            ),
+            # Plain-text label: pyqtgraph renders no mathtext.
+            left_label=spec.label,
+        )
 
         self._metric = spec.event_attr
-        self._neg_log_p = spec.display_transform == "neg_log_p"
+        self._spec = spec
         self._symlog = spec.symlog_axis
         if self._symlog:
             self.getAxis("left").setTicks(
@@ -593,22 +644,13 @@ class MetricPanel(pg.PlotWidget):
                     [],
                 ]
             )
-        rgb = hex_to_rgb(spec.color)
-        self._scatter = pg.ScatterPlotItem(
-            pen=pg.mkPen(rgb, width=0),
-            brush=pg.mkBrush(*rgb, 200),
-            size=4,
-            pxMode=True,
-            useCache=True,
-        )
-        self.addItem(self._scatter)
 
         # Threshold horizontal line, on the display scale (a p-value of
         # 0.05 sits at -log(0.05) ≈ 3.0 on this axis).
         self._threshold_line: pg.InfiniteLine | None = None
         if threshold is not None:
             self._threshold_line = pg.InfiniteLine(
-                pos=float(self._display_values(np.array([threshold]))[0]),
+                pos=float(self._event_heights(np.array([threshold]))[0]),
                 angle=0,
                 pen=pg.mkPen(
                     hex_to_rgb(COLORS["threshold"]), width=1, style=QtCore.Qt.PenStyle.DashLine
@@ -617,74 +659,12 @@ class MetricPanel(pg.PlotWidget):
             )
             self.addItem(self._threshold_line)
 
-        # Active-bin highlight band — see ``_BaseHeatmapPanel`` for
-        # the rationale.
-        self._center_bin_band = pg.LinearRegionItem(
-            values=(0.0, 0.0),
-            orientation="vertical",
-            brush=pg.mkBrush(255, 255, 0, 55),
-            pen=pg.mkPen(None),
-            movable=False,
-        )
-        self._center_bin_band.setZValue(-5)
-        self.addItem(self._center_bin_band)
-
-        self._center_line = pg.InfiniteLine(
-            angle=90,
-            pos=0.0,
-            pen=pg.mkPen((100, 100, 100), width=1, style=QtCore.Qt.PenStyle.DashLine),
-            movable=False,
-        )
-        self.addItem(self._center_line)
-
-        self._pin_line = pg.InfiniteLine(
-            angle=90,
-            pen=pg.mkPen(rgb, width=2),
-            movable=False,
-        )
-        self._pin_line.setVisible(False)
-        self.addItem(self._pin_line)
-        self._pin_dot = pg.ScatterPlotItem(
-            pen=pg.mkPen("k", width=1),
-            brush=pg.mkBrush(*rgb, 255),
-            size=10,
-            pxMode=True,
-        )
-        self._pin_dot.setVisible(False)
-        self.addItem(self._pin_dot)
-
-        self._window_event_indices: NDArray[np.int64] = np.empty(0, dtype=np.int64)
-        self._on_click: Callable[[int], None] | None = None
-        self._scatter.sigClicked.connect(self._handle_click)
+        self._add_event_cursor_items(pin_rgb=rgb, dot_rgb=rgb)
 
     @property
     def metric(self) -> str:
         """Name of the diagnostic metric this panel displays."""
         return self._metric
-
-    def set_click_handler(self, handler: Callable[[int], None]) -> None:
-        """Register a callback invoked with the clicked item's integer id."""
-        self._on_click = handler
-
-    def update_active_bin_band(self, left_rel: float, right_rel: float) -> None:
-        """Set the active-bin highlight band's bounds (window-relative seconds)."""
-        self._center_bin_band.setRegion([left_rel, right_rel])
-
-    def update_window(
-        self,
-        events_time: NDArray[np.float64],
-        events_metric: NDArray[np.float32],
-        time_offset: float,
-        global_event_indices: NDArray[np.int64],
-    ) -> None:
-        """Redraw the metric time series for the given time window."""
-        self._window_event_indices = np.asarray(global_event_indices, dtype=np.int64)
-        if events_time.size == 0:
-            self._scatter.setData(x=[], y=[], data=[])
-            return
-        x = events_time - time_offset
-        y = self._display_values(events_metric)
-        self._scatter.setData(x=x, y=y, data=np.arange(x.shape[0], dtype=np.int64))
 
     def update_pinned_event(
         self,
@@ -694,25 +674,16 @@ class MetricPanel(pg.PlotWidget):
     ) -> None:
         """Pin (or clear) the highlighted event at the given relative time and value."""
         if relative_time is None or metric_value is None:
-            self._pin_line.setVisible(False)
-            self._pin_dot.setVisible(False)
+            self._clear_pin()
             return
-        self._pin_line.setPos(relative_time)
-        self._pin_line.setVisible(True)
-        disp = self._display_values(np.array([metric_value]))[0]
-        self._pin_dot.setData(x=[relative_time], y=[float(disp)])
-        self._pin_dot.setVisible(True)
+        self._show_pin(relative_time, float(self._event_heights(np.array([metric_value]))[0]))
 
-    def _display_values(self, raw: NDArray[np.floating]) -> NDArray[np.float32]:
+    def _event_heights(self, event_values: NDArray[np.floating]) -> NDArray[np.float32]:
         """Map raw metric values to plotted heights: ``-log p``, symlog, or unchanged."""
-        if self._neg_log_p:
-            return np.asarray(negative_log_pvalue(raw), dtype=np.float32)
+        heights = self._spec.to_display(event_values)
         if self._symlog:
-            return np.asarray(symlog_position(raw), dtype=np.float32)
-        return np.asarray(raw, dtype=np.float32)
-
-    def _handle_click(self, _scatter: pg.ScatterPlotItem, points: Any) -> None:
-        _dispatch_scatter_click(self._on_click, self._window_event_indices, points)
+            heights = symlog_position(heights)
+        return np.asarray(heights, dtype=np.float32)
 
 
 # ---------------------------------------------------------------------------

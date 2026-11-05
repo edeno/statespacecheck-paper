@@ -21,7 +21,6 @@ from statespacecheck_paper import (
 from statespacecheck_paper.figure04_cache import (
     FIGURE04_DECODE_SCHEMA_VERSION,
     FIGURE04_DIAGNOSTICS_SCHEMA_VERSION,
-    Figure4CacheProvenance,
     Figure4Paths,
     compute_figure04_cache_provenance,
     compute_figure04_diagnostics_fingerprint,
@@ -64,6 +63,12 @@ def test_cache_path_uses_injected_identifiers(tmp_path: Path) -> None:
     )
 
 
+def _paths_with_input(data_path: Path, epoch: str = "epoch_x") -> Figure4Paths:
+    """Paths of an epoch whose input file exists (the fingerprints hash its bytes)."""
+    (data_path / f"{epoch}{INPUT_FILE_SUFFIX}").write_bytes(b"input")
+    return Figure4Paths(data_path=data_path, animal_date_epoch=epoch)
+
+
 def test_missing_decoder_version_rejects_unknown_provenance(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -98,16 +103,6 @@ def test_diagnostics_cache_round_trip_and_misses(tmp_path: Path) -> None:
     assert load_figure04_diagnostics_cache(path, "fp2", "dfp1") is None
     assert load_figure04_diagnostics_cache(path, "fp1", "dfp2") is None
     assert load_figure04_diagnostics_cache(tmp_path / "nope.joblib", "fp1", "dfp1") is None
-    joblib.dump(
-        {
-            "diagnostics_schema_version": FIGURE04_DIAGNOSTICS_SCHEMA_VERSION + 1,
-            "fingerprint": "fp1",
-            "diagnostics_fingerprint": "dfp1",
-            **_diagnostics_payload(),
-        },
-        path,
-    )
-    assert load_figure04_diagnostics_cache(path, "fp1", "dfp1") is None
 
 
 def test_diagnostics_save_rejects_wrong_payload_keys(tmp_path: Path) -> None:
@@ -147,13 +142,22 @@ def test_miss_on_fingerprint_mismatch(tmp_path: Path) -> None:
     assert load_figure04_decode_cache(path, "fp2") is None
 
 
-def test_miss_on_schema_mismatch(tmp_path: Path) -> None:
-    path = tmp_path / "c.joblib"
-    joblib.dump(
-        {"schema_version": FIGURE04_DECODE_SCHEMA_VERSION + 1, "fingerprint": "fp", **_payload()},
-        path,
+def test_schema_bumps_change_the_fingerprints_that_gate_the_caches(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    paths = _paths_with_input(tmp_path)
+    original = compute_figure04_cache_provenance(Figure4Config(), paths)
+    monkeypatch.setattr(
+        figure04_cache, "FIGURE04_DECODE_SCHEMA_VERSION", FIGURE04_DECODE_SCHEMA_VERSION + 1
     )
-    assert load_figure04_decode_cache(path, "fp") is None
+    monkeypatch.setattr(
+        figure04_cache,
+        "FIGURE04_DIAGNOSTICS_SCHEMA_VERSION",
+        FIGURE04_DIAGNOSTICS_SCHEMA_VERSION + 1,
+    )
+    changed = compute_figure04_cache_provenance(Figure4Config(), paths)
+    assert changed.fingerprint_sha256 != original.fingerprint_sha256
+    assert changed.diagnostics_fingerprint_sha256 != original.diagnostics_fingerprint_sha256
 
 
 def test_miss_on_non_mapping(tmp_path: Path) -> None:
@@ -206,7 +210,7 @@ def test_save_rejects_extra_payload_key(tmp_path: Path) -> None:
 def test_fingerprint_changes_with_config_and_dependency(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    paths = Figure4Paths(data_path=tmp_path, animal_date_epoch="epoch_x")
+    paths = _paths_with_input(tmp_path)
     config = Figure4Config()
     monkeypatch.setattr(figure04_cache, "_installed_non_local_detector_version", lambda: "1.0.0")
     fp1 = compute_figure04_cache_provenance(config, paths).fingerprint_sha256
@@ -293,7 +297,7 @@ def test_fingerprints_track_dependency_closure_versions(
     changes_decode: bool,
     changes_diagnostics: bool,
 ) -> None:
-    paths = Figure4Paths(data_path=tmp_path, animal_date_epoch="epoch_x")
+    paths = _paths_with_input(tmp_path)
     config = Figure4Config()
     original = compute_figure04_cache_provenance(config, paths)
     _patched_versions(monkeypatch, {package: "0.0.0.test"})
@@ -310,14 +314,15 @@ def test_fingerprints_track_dependency_closure_versions(
 def test_fingerprints_track_python_version_and_machine(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, helper: str, value: str
 ) -> None:
-    paths = Figure4Paths(data_path=tmp_path, animal_date_epoch="epoch_x")
+    paths = _paths_with_input(tmp_path)
     config = Figure4Config()
     original = compute_figure04_cache_provenance(config, paths)
     monkeypatch.setattr(figure04_cache, helper, lambda: value)
     changed = compute_figure04_cache_provenance(config, paths)
     assert changed.fingerprint_sha256 != original.fingerprint_sha256
     assert changed.diagnostics_fingerprint_sha256 != original.diagnostics_fingerprint_sha256
-    recorded = changed.python_version if helper == "_python_version" else changed.machine
+    environment = changed.environment
+    recorded = environment.python_version if helper == "_python_version" else environment.machine
     assert recorded == value
 
 
@@ -347,7 +352,7 @@ def source_tree(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 def test_decode_source_change_rejects_existing_cache(
     source_tree: Path, tmp_path: Path, filename: str
 ) -> None:
-    paths = Figure4Paths(tmp_path, "epoch")
+    paths = _paths_with_input(tmp_path, "epoch")
     config = Figure4Config()
     original = compute_figure04_cache_provenance(config, paths).fingerprint_sha256
     save_figure04_decode_cache(paths.decode_cache_path, original, _payload())
@@ -362,7 +367,7 @@ def test_decode_source_change_rejects_existing_cache(
 def test_documentation_and_plotting_edits_preserve_both_caches(
     source_tree: Path, tmp_path: Path
 ) -> None:
-    paths = Figure4Paths(tmp_path, "epoch")
+    paths = _paths_with_input(tmp_path, "epoch")
     config = Figure4Config()
     original = compute_figure04_cache_provenance(config, paths)
     for filename in set(figure04_cache._DECODE_SOURCE_FILES) | set(
@@ -381,7 +386,7 @@ def test_documentation_and_plotting_edits_preserve_both_caches(
 def test_diagnostic_only_source_edit_preserves_decode_cache(
     source_tree: Path, tmp_path: Path, filename: str
 ) -> None:
-    paths = Figure4Paths(tmp_path, "epoch")
+    paths = _paths_with_input(tmp_path, "epoch")
     config = Figure4Config()
     original = compute_figure04_cache_provenance(config, paths)
     (source_tree / filename).write_text("VALUE = 2\n", encoding="utf-8")
@@ -408,7 +413,7 @@ def test_fingerprint_unchanged_when_block_size_changes(tmp_path: Path) -> None:
     # block_size (Figure4ExecutionConfig) is a performance-only knob that leaves
     # the decode result identical, so it must NOT be hashed into the fingerprint:
     # changing it must not invalidate a cached decode.
-    paths = Figure4Paths(data_path=tmp_path, animal_date_epoch="epoch_x")
+    paths = _paths_with_input(tmp_path)
     config = Figure4Config()
     fp = compute_figure04_cache_provenance(config, paths).fingerprint_sha256
 
@@ -424,7 +429,7 @@ def test_fingerprint_changes_when_input_file_content_changes(
 ) -> None:
     # Replacing the input file under the same epoch must invalidate the cache:
     # the fingerprint hashes the file contents, not just ``animal_date_epoch``.
-    paths = Figure4Paths(data_path=tmp_path, animal_date_epoch="epoch_x")
+    paths = _paths_with_input(tmp_path)
     config = Figure4Config()
     monkeypatch.setattr(figure04_cache, "_installed_non_local_detector_version", lambda: "1.0.0")
 
@@ -442,7 +447,7 @@ def test_fingerprint_changes_when_input_file_content_changes(
 def test_cache_provenance_serializes_complete_path_independent_inputs(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    paths = Figure4Paths(data_path=tmp_path, animal_date_epoch="epoch_x")
+    paths = _paths_with_input(tmp_path)
     (tmp_path / f"epoch_x{INPUT_FILE_SUFFIX}").write_bytes(b"input")
     monkeypatch.setattr(figure04_cache, "_installed_non_local_detector_version", lambda: "1.2.3")
 
@@ -460,32 +465,14 @@ def test_cache_provenance_serializes_complete_path_independent_inputs(
         "hpd_coverage": 0.95,
         "event_selection": "all_spikes_in_recording",
     }
-    assert payload["python_version"] == figure04_cache._python_version()
-    assert payload["machine"] == figure04_cache._machine()
-    assert payload["decode_dependency_versions"] == (
-        figure04_cache.installed_dependency_versions("non_local_detector")
-    )
-    assert payload["diagnostics_dependency_versions"] == (
-        figure04_cache.installed_dependency_versions("statespacecheck")
-    )
+    assert payload["environment"] == {
+        "python_version": figure04_cache._python_version(),
+        "machine": figure04_cache._machine(),
+        "decode_dependency_versions": figure04_cache.installed_dependency_versions(
+            "non_local_detector"
+        ),
+        "diagnostics_dependency_versions": figure04_cache.installed_dependency_versions(
+            "statespacecheck"
+        ),
+    }
     assert str(tmp_path) not in repr(payload)
-
-
-def test_cache_provenance_rejects_missing_canonical_input_checksum() -> None:
-    provenance = Figure4CacheProvenance(
-        fingerprint_sha256="f" * 64,
-        schema_version=FIGURE04_DECODE_SCHEMA_VERSION,
-        animal_date_epoch="epoch_x",
-        input_file_sha256=None,
-        non_local_detector_version="1.2.3",
-        diagnostics_fingerprint_sha256="d" * 64,
-        diagnostics_schema_version=FIGURE04_DIAGNOSTICS_SCHEMA_VERSION,
-        statespacecheck_version="0.1.0",
-        diagnostics_config=Figure4DiagnosticsConfig(),
-        python_version="3.11.0",
-        machine="x86_64",
-        decode_dependency_versions={"non-local-detector": "1.2.3", "numpy": "2.0.0"},
-        diagnostics_dependency_versions={"numpy": "2.0.0", "statespacecheck": "0.1.0"},
-    )
-    with pytest.raises(ValueError, match="requires the input file's checksum"):
-        provenance.artifact_payload()

@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import dataclasses
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import xarray as xr
@@ -38,7 +38,6 @@ from statespacecheck_paper.diagnostics import SpikeEventDiagnostics
 from statespacecheck_paper.figure04_cache import (
     _FIGURE04_DECODE_AND_DIAGNOSTICS_PAYLOAD_KEYS,
     _FIGURE04_DECODE_PAYLOAD_KEYS,
-    _FIGURE04_DIAGNOSTICS_PAYLOAD_KEYS,
     Figure4CacheProvenance,
     Figure4Paths,
     compute_figure04_cache_provenance,
@@ -188,7 +187,9 @@ class Figure4AnalysisResults:
             continuous_fragmented_diagnostics=_cast_diagnostics(
                 payload["continuous_fragmented_diagnostics"]
             ),
-            spike_counts=np.asarray(payload["spike_counts"], dtype=np.int64),
+            # The constructor keeps a read-only memory map in place; a conversion
+            # here would copy the session-sized counts.
+            spike_counts=cast("NDArray[np.int64]", payload["spike_counts"]),
             place_field_peaks=np.asarray(payload["place_field_peaks"], dtype=np.float64),
             diagnostic_place_fields=np.asarray(
                 payload["diagnostic_place_fields"], dtype=np.float64
@@ -197,28 +198,6 @@ class Figure4AnalysisResults:
                 payload["diagnostic_position_bins"], dtype=np.float64
             ),
         )
-
-    def to_cache_payload(self) -> dict[str, object]:
-        """Return the serialized cache payload (decode and diagnostics keys)."""
-        return {**self.to_decode_payload(), **self.to_diagnostics_payload()}
-
-    def to_decode_payload(self) -> dict[str, object]:
-        """Return the serialized *decode* payload (the expensive fitted part)."""
-        return {
-            "continuous_results": self.continuous_results,
-            "continuous_fragmented_results": self.continuous_fragmented_results,
-            "spike_counts": self.spike_counts,
-            "place_field_peaks": self.place_field_peaks,
-            "diagnostic_place_fields": self.diagnostic_place_fields,
-            "diagnostic_position_bins": self.diagnostic_position_bins,
-        }
-
-    def to_diagnostics_payload(self) -> dict[str, object]:
-        """Return the serialized *diagnostics* payload (derived from the decode)."""
-        return {
-            "continuous_diagnostics": self.continuous_diagnostics,
-            "continuous_fragmented_diagnostics": self.continuous_fragmented_diagnostics,
-        }
 
 
 def _read_only_array(value: object, dtype: type[np.generic]) -> NDArray[Any]:
@@ -428,10 +407,7 @@ def prepare_figure04_render_data(
         )
 
     analysis_results = Figure4AnalysisResults.from_cache_payload(
-        {
-            **{key: decode_payload[key] for key in _FIGURE04_DECODE_PAYLOAD_KEYS},
-            **{key: diagnostics_payload[key] for key in _FIGURE04_DIAGNOSTICS_PAYLOAD_KEYS},
-        }
+        {**decode_payload, **diagnostics_payload}
     )
 
     return Figure4RenderData(

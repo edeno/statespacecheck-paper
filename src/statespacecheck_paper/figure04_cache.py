@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import ast
 import dataclasses
+import functools
 import hashlib
 import json
 import platform
@@ -45,7 +46,6 @@ import warnings
 from collections.abc import Callable, Iterable, Mapping
 from importlib.metadata import PackageNotFoundError, requires, version
 from pathlib import Path
-from typing import TypedDict
 
 import joblib
 from packaging.requirements import Requirement
@@ -120,40 +120,10 @@ _FIGURE04_DECODE_AND_DIAGNOSTICS_PAYLOAD_KEYS = (
 )
 
 
-class Figure4CacheArtifactProvenance(TypedDict):
-    """Path-independent cache and input identities stored in the summary."""
-
-    schema_version: int
-    fingerprint_sha256: str
-    non_local_detector_version: str
-    input_file_sha256: dict[str, str]
-    diagnostics_schema_version: int
-    diagnostics_fingerprint_sha256: str
-    statespacecheck_version: str
-    diagnostics_config: dict[str, object]
-    python_version: str
-    machine: str
-    decode_dependency_versions: dict[str, str]
-    diagnostics_dependency_versions: dict[str, str]
-
-
 # The Figure-4 input file is named by ``figure04_input`` (which owns
 # ``INPUT_FILE_SUFFIX``); its content hash goes into the fingerprint so that
 # replacing the file under the same ``{epoch}`` prefix invalidates the cache
 # instead of silently reusing a decode of the old data.
-
-
-def _input_file_checksum(paths: Figure4Paths) -> str | None:
-    """sha256 of the Figure-4 input file (``None`` when the file is absent).
-
-    A missing file hashes to ``None`` rather than raising, so the fingerprint
-    stays well-defined for synthetic/test paths that have no real input file; a
-    real run hashes the actual bytes so any data-content change invalidates.
-    """
-    file_path = input_file_path(paths.data_path, paths.animal_date_epoch)
-    if not file_path.exists():
-        return None
-    return file_sha256(file_path)
 
 
 def _strip_docstrings(tree: ast.AST) -> ast.AST:
@@ -199,56 +169,45 @@ def _decode_source_digest() -> str:
 
 
 @dataclasses.dataclass(frozen=True)
-class Figure4CacheProvenance:
-    """Identity of the validated Figure-4 decode and diagnostics caches and inputs.
+class Figure4CacheEnvironment:
+    """The computational environment hashed into the Figure-4 cache fingerprints.
 
     ``python_version`` (``major.minor.micro``) and ``machine``
     (:func:`platform.machine`) identify the interpreter and architecture;
     ``decode_dependency_versions`` and ``diagnostics_dependency_versions`` map the
     normalized distribution names of ``non_local_detector`` and ``statespacecheck``,
     respectively, and of their transitive runtime dependencies to the installed
-    versions. All four are hashed into the corresponding fingerprints.
+    versions.
     """
 
-    fingerprint_sha256: str
-    schema_version: int
-    animal_date_epoch: str
-    input_file_sha256: str | None
-    non_local_detector_version: str
-    diagnostics_fingerprint_sha256: str
-    diagnostics_schema_version: int
-    statespacecheck_version: str
-    diagnostics_config: Figure4DiagnosticsConfig
     python_version: str
     machine: str
     decode_dependency_versions: dict[str, str]
     diagnostics_dependency_versions: dict[str, str]
 
-    def artifact_payload(self) -> Figure4CacheArtifactProvenance:
-        """Return path-independent cache provenance for a summary artifact.
 
-        Raises ``ValueError`` unless the input file has a checksum.
-        """
+@dataclasses.dataclass(frozen=True)
+class Figure4CacheProvenance:
+    """Identity of the validated Figure-4 decode and diagnostics caches and inputs."""
+
+    fingerprint_sha256: str
+    schema_version: int
+    animal_date_epoch: str
+    input_file_sha256: str
+    non_local_detector_version: str
+    diagnostics_fingerprint_sha256: str
+    diagnostics_schema_version: int
+    statespacecheck_version: str
+    diagnostics_config: Figure4DiagnosticsConfig
+    environment: Figure4CacheEnvironment
+
+    def artifact_payload(self) -> dict[str, object]:
+        """Return path-independent cache provenance for a summary artifact."""
+        payload = dataclasses.asdict(self)
+        del payload["animal_date_epoch"]
         input_file = f"{self.animal_date_epoch}{INPUT_FILE_SUFFIX}"
-        if self.input_file_sha256 is None:
-            raise ValueError(
-                "Canonical Figure 4 provenance requires the input file's checksum; "
-                f"{input_file} has none."
-            )
-        return {
-            "schema_version": self.schema_version,
-            "fingerprint_sha256": self.fingerprint_sha256,
-            "non_local_detector_version": self.non_local_detector_version,
-            "input_file_sha256": {input_file: self.input_file_sha256},
-            "diagnostics_schema_version": self.diagnostics_schema_version,
-            "diagnostics_fingerprint_sha256": self.diagnostics_fingerprint_sha256,
-            "statespacecheck_version": self.statespacecheck_version,
-            "diagnostics_config": dataclasses.asdict(self.diagnostics_config),
-            "python_version": self.python_version,
-            "machine": self.machine,
-            "decode_dependency_versions": dict(self.decode_dependency_versions),
-            "diagnostics_dependency_versions": dict(self.diagnostics_dependency_versions),
-        }
+        payload["input_file_sha256"] = {input_file: self.input_file_sha256}
+        return payload
 
 
 @dataclasses.dataclass(frozen=True)
@@ -358,6 +317,7 @@ def runtime_dependency_closure(
     return frozenset(closure)
 
 
+@functools.cache
 def _installed_requirements(distribution: str) -> list[str] | None:
     """Return an installed distribution's requirement strings, or ``None`` if absent."""
     try:
@@ -459,7 +419,7 @@ def compute_figure04_cache_provenance(
     Bumping :data:`FIGURE04_DECODE_SCHEMA_VERSION` is the manual override ---
     it is part of the hashed payload, so a bump invalidates every existing cache.
     """
-    input_file_sha256 = _input_file_checksum(paths)
+    input_file_sha256 = file_sha256(input_file_path(paths.data_path, paths.animal_date_epoch))
     non_local_detector_version = _installed_non_local_detector_version()
     python_version = _python_version()
     machine = _machine()
@@ -489,10 +449,12 @@ def compute_figure04_cache_provenance(
         diagnostics_schema_version=FIGURE04_DIAGNOSTICS_SCHEMA_VERSION,
         statespacecheck_version=_installed_statespacecheck_version(),
         diagnostics_config=config.diagnostics,
-        python_version=python_version,
-        machine=machine,
-        decode_dependency_versions=decode_dependency_versions,
-        diagnostics_dependency_versions=installed_dependency_versions("statespacecheck"),
+        environment=Figure4CacheEnvironment(
+            python_version=python_version,
+            machine=machine,
+            decode_dependency_versions=decode_dependency_versions,
+            diagnostics_dependency_versions=installed_dependency_versions("statespacecheck"),
+        ),
     )
 
 
@@ -519,8 +481,9 @@ def load_figure04_decode_cache(path: Path, expected_fingerprint: str) -> dict[st
     """Load a Figure-4 *decode* payload from ``path``, or ``None`` on any miss.
 
     Returns ``None`` (a cache miss) when the file is absent or unreadable, the
-    wrapper is not a mapping, its schema/fingerprint does not match, or its
-    keys are not exactly the wrapper keys plus the decode payload keys. A valid
+    wrapper is not a mapping, its fingerprint (which hashes the schema version)
+    does not match, or its keys are not exactly the wrapper keys plus the decode
+    payload keys. A valid
     load returns the decode payload (the six :data:`_FIGURE04_DECODE_PAYLOAD_KEYS`).
 
     Large arrays are memory-mapped read-only (``mmap_mode="r"``) so a
@@ -534,8 +497,6 @@ def load_figure04_decode_cache(path: Path, expected_fingerprint: str) -> dict[st
     if cached is None:
         return None
     if set(cached.keys()) != {"schema_version", "fingerprint", *_FIGURE04_DECODE_PAYLOAD_KEYS}:
-        return None
-    if cached.get("schema_version") != FIGURE04_DECODE_SCHEMA_VERSION:
         return None
     if cached.get("fingerprint") != expected_fingerprint:
         return None
@@ -574,9 +535,9 @@ def load_figure04_diagnostics_cache(
 ) -> dict[str, object] | None:
     """Load a Figure-4 *diagnostics* payload from ``path``, or ``None`` on a miss.
 
-    The cache must carry the diagnostics schema version, the decode
-    fingerprint of the predictions it was derived from, and the diagnostics
-    fingerprint; all three must match, and the keys must be exactly the wrapper
+    The cache must carry the decode fingerprint of the predictions it was
+    derived from and the diagnostics fingerprint, which hashes the diagnostics
+    schema version; both must match, and the keys must be exactly the wrapper
     plus :data:`_FIGURE04_DIAGNOSTICS_PAYLOAD_KEYS`.
     """
     cached = _load_wrapper(path, mmap_mode=None)
@@ -589,8 +550,6 @@ def load_figure04_diagnostics_cache(
         *_FIGURE04_DIAGNOSTICS_PAYLOAD_KEYS,
     }
     if set(cached.keys()) != expected_keys:
-        return None
-    if cached.get("diagnostics_schema_version") != FIGURE04_DIAGNOSTICS_SCHEMA_VERSION:
         return None
     if cached.get("fingerprint") != expected_fingerprint:
         return None

@@ -117,7 +117,7 @@ def test_macro_values_round_trip_the_canonical_statistics() -> None:
     assert values["SimRemapFlagMin"] == f"{min(remap_percentages):.0f}"
     assert values["SimRemapFlagMax"] == f"{max(remap_percentages):.0f}"
 
-    decoding_error = figure03["median_decoding_error"][0]
+    decoding_error = figure03["median_decoding_error"]
     assert values["SimRemapError"] == significant(decoding_error[remap], 2)
     assert values["SimNRealizations"] == str(figure03["realizations"]["count"])
 
@@ -487,7 +487,7 @@ def test_zero_decoding_error_renders() -> None:
     """A perfectly decoded phase must not abort the emit."""
     figure03 = load_summary(FIGURE03_SUMMARY_PATH)
     well_specified = figure03["condition_order"].index("well_specified")
-    figure03["median_decoding_error"][0][well_specified] = 0.0
+    figure03["median_decoding_error"][well_specified] = 0.0
 
     values = _macro_values(
         render_macro_file(
@@ -590,7 +590,7 @@ def test_published_standard_errors_do_not_set_precision() -> None:
         "median_flag_percentage_standard_errors",
         "median_decoding_error_standard_errors",
     ):
-        figure03[key] = [[value / 1000.0 for value in row] for row in figure03[key]]
+        figure03[key] = (np.asarray(figure03[key]) / 1000.0).tolist()
     assert (
         _macro_values(
             render_macro_file(

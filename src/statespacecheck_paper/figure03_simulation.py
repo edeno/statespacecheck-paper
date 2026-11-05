@@ -537,13 +537,7 @@ def all_place_field_expected_counts(
     np.ndarray, shape (n_bins, n_normal_cells + sparse_cell_count)
         Expected counts per step for each cell at each position.
 
-    Raises
-    ------
-    ValueError
-        If ``config.place_field_centers`` is not initialized.
     """
-    if config.place_field_centers is None:
-        raise ValueError("config.place_field_centers must be initialized")
     return np.hstack(
         _place_field_expected_count_blocks(
             position_bins,
@@ -641,8 +635,6 @@ def all_place_field_centers(
     sparse_centers : array-like, shape (sparse_cell_count,)
         ``Figure3SimulationResult.sparse_place_field_centers``.
     """
-    if config.place_field_centers is None:
-        raise ValueError("config.place_field_centers must be initialized")
     return np.append(
         np.asarray(config.place_field_centers, dtype=np.float64),
         np.asarray(sparse_centers, dtype=np.float64),
@@ -710,8 +702,6 @@ def run_figure03_simulation(
     random_seed = config.random_seed if seed is None else seed
     rng = np.random.default_rng(random_seed)
 
-    if config.place_field_centers is None:
-        raise ValueError("config.place_field_centers must be initialized")
     place_field_centers = config.place_field_centers
 
     position_bins = config.position_bins

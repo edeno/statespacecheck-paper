@@ -25,7 +25,7 @@ and orders the steps needed to build the paper.
 | Work | Approximate cost |
 | --- | --- |
 | Figures 1–2 | Small simulations and figure rendering |
-| Figure 3 | About 5 minutes for its 100 realizations in the reviewed macOS ARM64 environment, plus rendering |
+| Figure 3 | About 1 minute on 18 cores for its 100 realizations, which run on every core; longer on fewer cores |
 | Figure 4 input | 75 MB download, verified by SHA-256 |
 | Figure 4 fresh fit/decode | Several minutes per model, followed by diagnostics and rendering; runtime depends on hardware |
 | Figure 4 cached decode | Approximately 8 GB on disk; arrays are memory-mapped when loaded |
@@ -141,9 +141,10 @@ Figure 3 floats differ from the macOS-committed values by at most 1.9e-13
 relative (round-off); its Figure 4 values are bit-identical. The comparison's
 tolerances and their basis are in `scripts/check_reproduction.py`.
 
-Individual steps on the same machine, with current Figure 4 caches: Figures 1
-and 2 take about 1 s each (under 0.6 GB); Figure 4 from its caches 8 s (4.7 GB);
-the website export 5 s (3.3 GB).
+Those fresh-run times predate Figure 3's parallel realizations. Individual steps
+on the same machine, with current Figure 4 caches: Figures 1 and 2 take about
+1 s each (under 0.6 GB); Figure 3 63 s; Figure 4 from its caches 9 s (3.4 GB);
+the website export 4 s (0.9 GB).
 
 ## Individual steps
 
@@ -202,7 +203,8 @@ configuration, counts, and the source and `uv.lock` digests, and equality within
 the tolerances defined at the top of the script (`RTOL`, `ATOL`) for
 floating-point statistics. It skips only the provenance entries that describe
 the machine rather than the result (`MACHINE_SPECIFIC_PATHS`: the Figure-4 cache
-fingerprints, Python version, architecture, and dependency versions), prints
+fingerprints and its `environment` block of Python version, architecture, and
+dependency versions), prints
 every difference with its JSON path, and exits nonzero if there is any.
 `--committed-dir` compares against summaries elsewhere than
 `manuscript/figures/main/`. PDF timestamps and small rendering differences can

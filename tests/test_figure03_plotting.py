@@ -132,7 +132,7 @@ def test_compose_figure03_runs(
         params,
         np.linspace(0, 1, n_cells),
         median_flag_percentages=np.zeros((3, 6)),
-        median_decoding_error=np.zeros((1, 6)),
+        median_decoding_error=np.zeros(6),
     )
     try:
         assert isinstance(fig, plt.Figure)
@@ -170,7 +170,7 @@ def test_compose_figure03_renders_precomputed_summary(
         params,
         np.linspace(0, 1, n_cells),
         median_flag_percentages=median,
-        median_decoding_error=np.array([[1.5, 20.16, 2.45, 30.0, 6.0, 0.5]]),
+        median_decoding_error=np.array([1.5, 20.16, 2.45, 30.0, 6.0, 0.5]),
     )
     try:
         # The summary axis is the last one added; its title flags the median
@@ -215,7 +215,7 @@ def test_compose_figure03_tags_figure03_annotations(
         params,
         np.linspace(0, 1, n_cells),
         median_flag_percentages=np.zeros((3, 6)),
-        median_decoding_error=np.zeros((1, 6)),
+        median_decoding_error=np.zeros(6),
     )
     try:
         texts = [text for ax in fig.axes for text in ax.texts]
@@ -290,7 +290,7 @@ def test_compose_figure03_uses_event_diagnostics_for_scatter() -> None:
         params,
         place_field_centers=np.linspace(0, 1, n_cells),
         median_flag_percentages=np.zeros((3, 6)),
-        median_decoding_error=np.zeros((1, 6)),
+        median_decoding_error=np.zeros(6),
     )
     try:
         # Diagnostic rows are ordered HPD (axis 3), -log(p) (axis 4),

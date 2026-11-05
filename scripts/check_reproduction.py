@@ -36,10 +36,7 @@ MACHINE_SPECIFIC_PATHS: frozenset[str] = frozenset(
     {
         "provenance.figure04_caches.fingerprint_sha256",
         "provenance.figure04_caches.diagnostics_fingerprint_sha256",
-        "provenance.figure04_caches.python_version",
-        "provenance.figure04_caches.machine",
-        "provenance.figure04_caches.decode_dependency_versions",
-        "provenance.figure04_caches.diagnostics_dependency_versions",
+        "provenance.figure04_caches.environment",
     }
 )
 
