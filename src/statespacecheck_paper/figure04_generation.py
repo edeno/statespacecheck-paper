@@ -45,7 +45,7 @@ from statespacecheck_paper.style import save_figure, set_figure_defaults
 
 # Version of the figure04_summary.json layout written by
 # figure04_summary_payload. Bump it when a field is added, removed, or renamed.
-FIGURE04_SUMMARY_SCHEMA_VERSION = 12
+FIGURE04_SUMMARY_SCHEMA_VERSION = 13
 
 
 def figure04_reported_statistics(summary: Figure4Summary) -> dict[str, object]:

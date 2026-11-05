@@ -136,11 +136,13 @@
   },
   "provenance": {
     "figure04_caches": {
+      "decode_identity_sha256": "332443a114e6810947d5fc3001a8d8a6e9a9bbe11807841206159c0f48ccd0fb",
       "diagnostics_config": {
         "event_selection": "all_spikes_in_recording",
         "hpd_coverage": 0.95
       },
       "diagnostics_fingerprint_sha256": "aefb2b201d6f144e5b9457d4ec53ecf32cd671e09e6b909010dd80edcf0d4281",
+      "diagnostics_identity_sha256": "aca5e44787244479087985071eec08197580a9c2301febf512f8a1fa9f6eed6b",
       "diagnostics_schema_version": 2,
       "environment": {
         "decode_dependency_versions": {
@@ -211,11 +213,11 @@
       "statespacecheck_version": "0.3.1"
     },
     "source": {
-      "source_tree_sha256": "684496a88ad508fe00a26a68c87fe3c8ab02676e3d817ff1a330e6beca1b1d35",
+      "source_tree_sha256": "4ad095a3cfff37eac0797df381aabc56325a2e272b2dc4145c1fdc6cfc4cd34f",
       "statespacecheck_paper_version": "0.1.0",
       "statespacecheck_version": "0.3.1",
       "uv_lock_sha256": "280ef8920b3302f206621349c0733c017b8a329e3d85c789b21bf6350c093fe2"
     }
   },
-  "schema_version": 12
+  "schema_version": 13
 }

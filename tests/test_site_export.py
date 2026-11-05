@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import base64
 import copy
+import dataclasses
 import re
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -19,6 +21,7 @@ import pytest
 import statespacecheck as ssc
 from numpy.typing import NDArray
 
+from statespacecheck_paper import site_export
 from statespacecheck_paper.decoding import decode_with_diagnostics
 from statespacecheck_paper.diagnostics import (
     METRIC_FLAG_DIRECTIONS,
@@ -33,12 +36,14 @@ from statespacecheck_paper.figure03_simulation import (
     run_figure03_simulation,
 )
 from statespacecheck_paper.figure03_summary import conditions_by_id
+from statespacecheck_paper.figure04_cache import Figure4Paths
 from statespacecheck_paper.figure04_diagnostics import mean_event_likelihood_by_time
 from statespacecheck_paper.figure04_models import FIGURE04_MODELS, figure04_model
 from statespacecheck_paper.figure04_protocol import Figure4DetailWindow
 from statespacecheck_paper.figure04_workflow import Figure4RenderData
 from statespacecheck_paper.number_format import significant, whole_percent
 from statespacecheck_paper.paths import (
+    ANIMAL_DATE_EPOCH,
     FIGURE03_SUMMARY_PATH,
     FIGURE04_SUMMARY_PATH,
     PARITY_FIXTURE_PATH,
@@ -473,7 +478,7 @@ def test_condition_summaries_come_from_the_figure_summary(
 
 
 def _recording_summary(render_data: Figure4RenderData) -> dict[str, Any]:
-    """A Figure-4 summary whose cache fingerprints match ``render_data``."""
+    """A Figure-4 summary whose analysis identities match ``render_data``."""
     provenance = render_data.cache_provenance
     return {
         "flag_rules": {
@@ -482,8 +487,8 @@ def _recording_summary(render_data: Figure4RenderData) -> dict[str, Any]:
         },
         "provenance": {
             "figure04_caches": {
-                "fingerprint_sha256": provenance.fingerprint_sha256,
-                "diagnostics_fingerprint_sha256": provenance.diagnostics_fingerprint_sha256,
+                "decode_identity_sha256": provenance.decode_identity_sha256,
+                "diagnostics_identity_sha256": provenance.diagnostics_identity_sha256,
             }
         },
     }
@@ -542,10 +547,9 @@ def test_recording_payload_slices_both_models_to_the_detail_window() -> None:
         assert set(model["events"]["flagged"]) == {"hpd_overlap", "predictive_pvalue"}
     # Cells are ranked by place-field peak.
     assert sorted(payload["cell_rank"]) == list(range(analysis.place_field_peaks.size))
-    assert payload["decode_cache_fingerprint"] == render_data.cache_provenance.fingerprint_sha256
+    assert payload["decode_identity"] == render_data.cache_provenance.decode_identity_sha256
     assert (
-        payload["diagnostics_fingerprint"]
-        == render_data.cache_provenance.diagnostics_fingerprint_sha256
+        payload["diagnostics_identity"] == render_data.cache_provenance.diagnostics_identity_sha256
     )
     # The raster covers the same bins as the events: [time[start], time[stop]).
     t_end = render_data.time[time_slice.stop]
@@ -554,15 +558,56 @@ def test_recording_payload_slices_both_models_to_the_detail_window() -> None:
         assert len(payload["spike_times"][cell]) == int(in_bins.sum())
 
 
-@pytest.mark.parametrize("key", ["fingerprint_sha256", "diagnostics_fingerprint_sha256"])
-def test_recording_payload_rejects_a_summary_from_another_decode(key: str) -> None:
-    """The window is not labeled with fingerprints of a decode other than the exported one."""
+@pytest.mark.parametrize("key", ["decode_identity_sha256", "diagnostics_identity_sha256"])
+def test_recording_payload_rejects_a_summary_from_another_analysis(key: str) -> None:
+    """The window is not labeled with the identity of another analysis."""
     render_data = synthetic_render_data()
     summary = _recording_summary(render_data)
     summary["provenance"]["figure04_caches"][key] = "0" * 64
     window = Figure4DetailWindow(center_index=20, half_width_samples=10)
     with pytest.raises(ValueError, match=rf"\({key} differ\)"):
         recording_payload(render_data, summary, window)
+
+
+def test_recording_payload_accepts_the_same_analysis_from_another_machine() -> None:
+    """A reader's decode has its own cache fingerprints and environment. The same
+    code and input is still the summary's analysis, so the export proceeds."""
+    render_data = synthetic_render_data()
+    summary = _recording_summary(render_data)
+    other_machine = dataclasses.replace(
+        render_data.cache_provenance,
+        fingerprint_sha256="1" * 64,
+        diagnostics_fingerprint_sha256="2" * 64,
+    )
+    window = Figure4DetailWindow(center_index=20, half_width_samples=10)
+
+    payload = recording_payload(
+        dataclasses.replace(render_data, cache_provenance=other_machine), summary, window
+    )
+
+    assert payload["decode_identity"] == other_machine.decode_identity_sha256
+
+
+def test_export_refuses_another_analysis_before_writing_or_fitting(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A summary of another analysis fails at once, not after several minutes of
+    fitting and with the other site files already rewritten."""
+    render_data = synthetic_render_data()
+    other_analysis = dataclasses.replace(
+        render_data.cache_provenance, decode_identity_sha256="0" * 64
+    )
+    Figure4Paths(tmp_path, ANIMAL_DATE_EPOCH).input_path.touch()
+    site_data = tmp_path / "site"
+    monkeypatch.setattr(site_export, "DATA_PATH", tmp_path)
+    monkeypatch.setattr(site_export, "compute_figure04_cache_provenance", lambda *_: other_analysis)
+    monkeypatch.setattr(site_export, "load_summary", lambda _: _recording_summary(render_data))
+    monkeypatch.setattr(site_export, "SITE_DATA_DIR", site_data)
+
+    with pytest.raises(ValueError, match="decode_identity_sha256"):
+        site_export.export_site_data()
+
+    assert not site_data.exists()
 
 
 # ---------------------------------------------------------------------------
@@ -704,7 +749,7 @@ def test_committed_recording_is_the_figure04_detail_window(
     figure04_summary: dict[str, Any],
 ) -> None:
     """The window's size, events, and flags match the summary's comparison of that
-    window. The fingerprints below cannot see a moved window, because neither
+    window. The identities below cannot see a moved window, because neither
     hashes the module that defines it."""
     committed = load_summary(SITE_DATA_DIR / "recording.json")
     detail = figure04_summary["detail_window_comparison"]
@@ -724,8 +769,8 @@ def test_committed_recording_matches_the_figure04_decode(figure04_summary: dict[
     committed = load_summary(SITE_DATA_DIR / "recording.json")
     caches = figure04_summary["provenance"]["figure04_caches"]
     # A decoder or a diagnostics change must be followed by a re-export.
-    assert committed["decode_cache_fingerprint"] == caches["fingerprint_sha256"]
-    assert committed["diagnostics_fingerprint"] == caches["diagnostics_fingerprint_sha256"]
+    assert committed["decode_identity"] == caches["decode_identity_sha256"]
+    assert committed["diagnostics_identity"] == caches["diagnostics_identity_sha256"]
     assert committed["flag_rules"] == figure04_summary["flag_rules"]
     assert {
         name: (model["label"], model["short_label"]) for name, model in committed["models"].items()

@@ -644,7 +644,7 @@ manual overrides: bumping one invalidates every cache of that kind.
 
 `figure03_summary.json` uses schema version 10
 (`figure03_generation.FIGURE03_SUMMARY_SCHEMA_VERSION`) and `figure04_summary.json`
-uses schema version 12 (`figure04_generation.FIGURE04_SUMMARY_SCHEMA_VERSION`). The
+uses schema version 13 (`figure04_generation.FIGURE04_SUMMARY_SCHEMA_VERSION`). The
 Figure-3 configuration block records every
 `Figure3Config` field together with the step length in seconds
 (`configuration.step_seconds`, the protocol constant `STEP_SECONDS`) and the
@@ -719,12 +719,16 @@ regenerating the affected results; documentation-only source edits can refresh
 the provenance after verifying that executable code is unchanged.
 
 Figure 4 also contains `provenance.figure04_caches`. Its
-`fingerprint_sha256` is the same identity used to accept or reject the
-expensive decoder cache, `diagnostics_fingerprint_sha256` the identity of the
-diagnostics cache (recorded with the diagnostics configuration and the
-installed `statespacecheck` version), and the record includes the installed
+`fingerprint_sha256` is the key used to accept or reject the expensive decoder
+cache and `diagnostics_fingerprint_sha256` the key of the diagnostics cache
+(recorded with the diagnostics configuration and the installed `statespacecheck`
+version). Both hash the machine, so they differ on every other computer.
+`decode_identity_sha256` and `diagnostics_identity_sha256` hash the same analysis
+without the machine, so they agree wherever the same code runs on the same input:
+the website export and `tests/test_figure04_cache.py` compare these, and
+`check_reproduction.py` requires them to match exactly. The record includes the installed
 `non_local_detector` version plus the content
-SHA-256 of the named input file. Its `environment` block records what both
+SHA-256 of the named input file. Its `environment` block records what the
 fingerprints hash about the machine: `python_version`, `machine`, and the installed versions of
 the two dependency closures (`decode_dependency_versions` for
 `non_local_detector`, `diagnostics_dependency_versions` for `statespacecheck`),

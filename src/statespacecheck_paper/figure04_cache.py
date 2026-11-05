@@ -23,6 +23,12 @@ is ``data/`` unless ``STATESPACECHECK_DATA_PATH`` is set; see :class:`Figure4Pat
   runtime dependencies, and a digest of the *executable* source of the
   diagnostic modules (docstrings and comments excluded).
 
+Both fingerprints are cache keys, so they hash the machine a cache was built on
+and cannot match on another machine. The machine-independent parts are hashed
+separately into the **decode identity** and **diagnostics identity**, which name
+the analysis rather than one machine's cache; the website export and the
+committed-artifact tests compare those.
+
 Changes confined to the diagnostic modules or configuration recompute diagnostics
 from cached predictions. Changes to the fit, its model construction, the input
 reader, or the shared place-field module refit both models.
@@ -156,16 +162,61 @@ def executable_source_digest(paths: tuple[Path, ...]) -> str:
     return digest.hexdigest()
 
 
+def _canonical_syntax(node: object) -> object:
+    """Return a syntax tree as nested tuples, without its empty fields.
+
+    ``ast.dump`` varies with the Python version because new versions add fields
+    (3.12 gives every function an empty ``type_params``). Those fields are empty
+    in code that older versions can parse, so omitting them leaves the same form.
+    """
+    if isinstance(node, ast.AST):
+        fields = ((name, value) for name, value in ast.iter_fields(node))
+        return (
+            type(node).__name__,
+            tuple((name, _canonical_syntax(v)) for name, v in fields if v is not None and v != []),
+        )
+    if isinstance(node, list):
+        return tuple(_canonical_syntax(item) for item in node)
+    return repr(node)
+
+
+def portable_source_digest(paths: tuple[Path, ...]) -> str:
+    """SHA-256 of the executable source of ``paths``, the same on every Python.
+
+    Like :func:`executable_source_digest`, which stays the cache key's digest
+    because the cache key hashes the Python version anyway.
+
+    Parameters
+    ----------
+    paths : tuple of Path
+        Python source files, hashed in the given order.
+
+    Returns
+    -------
+    str
+        Hexadecimal SHA-256.
+    """
+    digest = hashlib.sha256()
+    for path in paths:
+        tree = _strip_docstrings(ast.parse(path.read_text(encoding="utf-8")))
+        digest.update(f"{path.name}\0{_canonical_syntax(tree)!r}\0".encode())
+    return digest.hexdigest()
+
+
+def _package_paths(names: tuple[str, ...]) -> tuple[Path, ...]:
+    """Return the paths of the named modules of this package."""
+    package_root = Path(__file__).resolve().parent
+    return tuple(package_root / name for name in names)
+
+
 def _diagnostic_source_digest() -> str:
     """Executable-source digest of the modules that compute the diagnostics."""
-    package_root = Path(__file__).resolve().parent
-    return executable_source_digest(tuple(package_root / name for name in _DIAGNOSTIC_SOURCE_FILES))
+    return executable_source_digest(_package_paths(_DIAGNOSTIC_SOURCE_FILES))
 
 
 def _decode_source_digest() -> str:
     """Executable-source digest of the fit-and-decode modules."""
-    package_root = Path(__file__).resolve().parent
-    return executable_source_digest(tuple(package_root / name for name in _DECODE_SOURCE_FILES))
+    return executable_source_digest(_package_paths(_DECODE_SOURCE_FILES))
 
 
 @dataclasses.dataclass(frozen=True)
@@ -188,14 +239,22 @@ class Figure4CacheEnvironment:
 
 @dataclasses.dataclass(frozen=True)
 class Figure4CacheProvenance:
-    """Identity of the validated Figure-4 decode and diagnostics caches and inputs."""
+    """Identity of the validated Figure-4 decode and diagnostics caches and inputs.
+
+    ``fingerprint_sha256`` and ``diagnostics_fingerprint_sha256`` are cache keys
+    and hash the machine. ``decode_identity_sha256`` and
+    ``diagnostics_identity_sha256`` hash the same analysis without it, so they
+    agree between machines running the same code on the same input.
+    """
 
     fingerprint_sha256: str
+    decode_identity_sha256: str
     schema_version: int
     animal_date_epoch: str
     input_file_sha256: str
     non_local_detector_version: str
     diagnostics_fingerprint_sha256: str
+    diagnostics_identity_sha256: str
     diagnostics_schema_version: int
     statespacecheck_version: str
     diagnostics_config: Figure4DiagnosticsConfig
@@ -221,6 +280,11 @@ class Figure4Paths:
 
     data_path: Path
     animal_date_epoch: str
+
+    @property
+    def input_path(self) -> Path:
+        """Path of the Figure-4 input file."""
+        return input_file_path(self.data_path, self.animal_date_epoch)
 
     @property
     def decode_cache_path(self) -> Path:
@@ -361,6 +425,78 @@ def _machine() -> str:
     return platform.machine()
 
 
+def _sha256_of_payload(payload: Mapping[str, object]) -> str:
+    """Return the SHA-256 of a payload's canonical JSON."""
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, default=str).encode()).hexdigest()
+
+
+def _decode_identity_payload(
+    config: Figure4Config, animal_date_epoch: str, input_file_sha256: str
+) -> dict[str, object]:
+    """Return the parts of the decode fingerprint that do not depend on the machine."""
+    return {
+        "schema_version": FIGURE04_DECODE_SCHEMA_VERSION,
+        "config": {
+            "decoder": dataclasses.asdict(config.decoder),
+            "package_defaults": dataclasses.asdict(config.package_defaults),
+        },
+        "animal_date_epoch": animal_date_epoch,
+        "input_file_sha256": input_file_sha256,
+        "non_local_detector_version": _installed_non_local_detector_version(),
+        "decode_source_digest": portable_source_digest(_package_paths(_DECODE_SOURCE_FILES)),
+    }
+
+
+def _diagnostics_identity_payload(config: Figure4DiagnosticsConfig) -> dict[str, object]:
+    """Return the parts of the diagnostics fingerprint that do not depend on the machine."""
+    return {
+        "diagnostics_schema_version": FIGURE04_DIAGNOSTICS_SCHEMA_VERSION,
+        "diagnostics_config": dataclasses.asdict(config),
+        "statespacecheck_version": _installed_statespacecheck_version(),
+        "diagnostic_source_digest": portable_source_digest(
+            _package_paths(_DIAGNOSTIC_SOURCE_FILES)
+        ),
+    }
+
+
+def compute_figure04_decode_identity(
+    config: Figure4Config, animal_date_epoch: str, input_file_sha256: str
+) -> str:
+    """Return the machine-independent identity of the Figure-4 decode.
+
+    Hashes what the decode fingerprint hashes except the Python version, the
+    machine architecture, and the installed dependency closure. Identical on
+    every machine running the same code, configuration, and input file.
+
+    Parameters
+    ----------
+    config : Figure4Config
+        Figure-4 configuration; its ``decoder`` and ``package_defaults`` count.
+    animal_date_epoch : str
+        Dataset identifier.
+    input_file_sha256 : str
+        SHA-256 of the Figure-4 input file.
+
+    Returns
+    -------
+    str
+        Hexadecimal SHA-256.
+    """
+    return _sha256_of_payload(
+        _decode_identity_payload(config, animal_date_epoch, input_file_sha256)
+    )
+
+
+def compute_figure04_diagnostics_identity(config: Figure4DiagnosticsConfig) -> str:
+    """Return the machine-independent identity of the Figure-4 diagnostics.
+
+    Hashes what :func:`compute_figure04_diagnostics_fingerprint` hashes except
+    the Python version, the machine architecture, and the installed dependency
+    closure.
+    """
+    return _sha256_of_payload(_diagnostics_identity_payload(config))
+
+
 def compute_figure04_diagnostics_fingerprint(config: Figure4DiagnosticsConfig) -> str:
     """Return the fingerprint gating the Figure-4 *diagnostics* cache.
 
@@ -372,17 +508,15 @@ def compute_figure04_diagnostics_fingerprint(config: Figure4DiagnosticsConfig) -
     excludes the decode identity: the diagnostics cache stores the decode
     fingerprint alongside this one, and both must match.
     """
-    payload = {
-        "diagnostics_schema_version": FIGURE04_DIAGNOSTICS_SCHEMA_VERSION,
-        "diagnostics_config": dataclasses.asdict(config),
-        "statespacecheck_version": _installed_statespacecheck_version(),
-        "python_version": _python_version(),
-        "machine": _machine(),
-        "dependency_versions": installed_dependency_versions("statespacecheck"),
-        "diagnostic_source_digest": _diagnostic_source_digest(),
-    }
-    blob = json.dumps(payload, sort_keys=True, default=str).encode()
-    return hashlib.sha256(blob).hexdigest()
+    return _sha256_of_payload(
+        {
+            **_diagnostics_identity_payload(config),
+            "diagnostic_source_digest": _diagnostic_source_digest(),
+            "python_version": _python_version(),
+            "machine": _machine(),
+            "dependency_versions": installed_dependency_versions("statespacecheck"),
+        }
+    )
 
 
 def compute_figure04_cache_provenance(
@@ -419,33 +553,29 @@ def compute_figure04_cache_provenance(
     Bumping :data:`FIGURE04_DECODE_SCHEMA_VERSION` is the manual override ---
     it is part of the hashed payload, so a bump invalidates every existing cache.
     """
-    input_file_sha256 = file_sha256(input_file_path(paths.data_path, paths.animal_date_epoch))
+    input_file_sha256 = file_sha256(paths.input_path)
     non_local_detector_version = _installed_non_local_detector_version()
     python_version = _python_version()
     machine = _machine()
     decode_dependency_versions = installed_dependency_versions("non_local_detector")
-    fingerprint_payload = {
-        "schema_version": FIGURE04_DECODE_SCHEMA_VERSION,
-        "config": {
-            "decoder": dataclasses.asdict(config.decoder),
-            "package_defaults": dataclasses.asdict(config.package_defaults),
-        },
-        "animal_date_epoch": paths.animal_date_epoch,
-        "input_file_sha256": input_file_sha256,
-        "non_local_detector_version": non_local_detector_version,
-        "python_version": python_version,
-        "machine": machine,
-        "dependency_versions": decode_dependency_versions,
-        "decode_source_digest": _decode_source_digest(),
-    }
-    blob = json.dumps(fingerprint_payload, sort_keys=True, default=str).encode()
+    decode_identity = _decode_identity_payload(config, paths.animal_date_epoch, input_file_sha256)
     return Figure4CacheProvenance(
-        fingerprint_sha256=hashlib.sha256(blob).hexdigest(),
+        fingerprint_sha256=_sha256_of_payload(
+            {
+                **decode_identity,
+                "decode_source_digest": _decode_source_digest(),
+                "python_version": python_version,
+                "machine": machine,
+                "dependency_versions": decode_dependency_versions,
+            }
+        ),
+        decode_identity_sha256=_sha256_of_payload(decode_identity),
         schema_version=FIGURE04_DECODE_SCHEMA_VERSION,
         animal_date_epoch=paths.animal_date_epoch,
         input_file_sha256=input_file_sha256,
         non_local_detector_version=non_local_detector_version,
         diagnostics_fingerprint_sha256=compute_figure04_diagnostics_fingerprint(config.diagnostics),
+        diagnostics_identity_sha256=compute_figure04_diagnostics_identity(config.diagnostics),
         diagnostics_schema_version=FIGURE04_DIAGNOSTICS_SCHEMA_VERSION,
         statespacecheck_version=_installed_statespacecheck_version(),
         diagnostics_config=config.diagnostics,

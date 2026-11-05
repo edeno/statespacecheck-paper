@@ -23,7 +23,9 @@ from statespacecheck_paper.figure04_cache import (
     FIGURE04_DIAGNOSTICS_SCHEMA_VERSION,
     Figure4Paths,
     compute_figure04_cache_provenance,
+    compute_figure04_decode_identity,
     compute_figure04_diagnostics_fingerprint,
+    compute_figure04_diagnostics_identity,
     executable_source_digest,
     load_figure04_decode_cache,
     load_figure04_diagnostics_cache,
@@ -35,7 +37,9 @@ from statespacecheck_paper.figure04_decoder import (
     Figure4DecoderConfig,
     Figure4DiagnosticsConfig,
 )
-from statespacecheck_paper.figure04_input import INPUT_FILE_SUFFIX
+from statespacecheck_paper.figure04_input import INPUT_FILE_SUFFIX, input_file_path
+from statespacecheck_paper.paths import FIGURE04_SUMMARY_PATH
+from statespacecheck_paper.reported_values import load_summary
 
 
 def _payload() -> dict[str, Any]:
@@ -249,6 +253,88 @@ def test_every_decoder_field_changes_the_fingerprint(tmp_path: Path, field: str)
     assert (
         compute_figure04_cache_provenance(changed, paths).fingerprint_sha256
         != compute_figure04_cache_provenance(config, paths).fingerprint_sha256
+    )
+
+
+def test_identity_is_the_same_on_another_machine(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Python, the architecture, and the dependency closure move the cache keys and
+    leave the analysis identities alone: a reader's computer is not a new analysis."""
+    paths = _paths_with_input(tmp_path)
+    config = Figure4Config()
+    here = compute_figure04_cache_provenance(config, paths)
+
+    monkeypatch.setattr(figure04_cache, "_python_version", lambda: "3.99.0")
+    monkeypatch.setattr(figure04_cache, "_machine", lambda: "riscv64")
+    monkeypatch.setattr(
+        figure04_cache, "installed_dependency_versions", lambda _: {"numpy": "99.0"}
+    )
+    there = compute_figure04_cache_provenance(config, paths)
+
+    assert there.fingerprint_sha256 != here.fingerprint_sha256
+    assert there.diagnostics_fingerprint_sha256 != here.diagnostics_fingerprint_sha256
+    assert there.decode_identity_sha256 == here.decode_identity_sha256
+    assert there.diagnostics_identity_sha256 == here.diagnostics_identity_sha256
+
+
+def test_identity_changes_with_the_analysis(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Configuration, input bytes, and hashed source each change the identity."""
+    paths = _paths_with_input(tmp_path)
+    config = Figure4Config()
+    base = compute_figure04_cache_provenance(config, paths)
+
+    changed = dataclasses.replace(
+        config,
+        decoder=dataclasses.replace(config.decoder, position_bin_size_cm=3.0),
+        diagnostics=dataclasses.replace(config.diagnostics, hpd_coverage=0.8),
+    )
+    other_config = compute_figure04_cache_provenance(changed, paths)
+    assert other_config.decode_identity_sha256 != base.decode_identity_sha256
+    assert other_config.diagnostics_identity_sha256 != base.diagnostics_identity_sha256
+
+    monkeypatch.setattr(figure04_cache, "portable_source_digest", lambda _: "edited")
+    other_source = compute_figure04_cache_provenance(config, paths)
+    assert other_source.decode_identity_sha256 != base.decode_identity_sha256
+    assert other_source.diagnostics_identity_sha256 != base.diagnostics_identity_sha256
+    monkeypatch.undo()
+
+    input_file_path(paths.data_path, paths.animal_date_epoch).write_bytes(b"other bytes")
+    other_input = compute_figure04_cache_provenance(config, paths)
+    assert other_input.decode_identity_sha256 != base.decode_identity_sha256
+
+
+def test_portable_source_digest_sees_code_and_ignores_comments(tmp_path: Path) -> None:
+    path = tmp_path / "module.py"
+
+    def digest(source: str) -> str:
+        path.write_text(source, encoding="utf-8")
+        return figure04_cache.portable_source_digest((path,))
+
+    base = digest("def f(a, b=None):\n    return a + 1\n")
+
+    assert digest('# note\ndef f(a, b=None):\n    """Doc."""\n    return a + 1\n') == base
+    assert digest("def f(a, b=None):\n    return a + 2\n") != base
+    assert digest("def f(a, b=0):\n    return a + 1\n") != base
+
+
+def test_committed_summary_identifies_the_current_analysis() -> None:
+    """The summary's identities are recomputed from the live source here, on any
+    machine and Python version, with no data. An executable edit to a hashed module therefore
+    fails until Figure 4 is regenerated; refreshing the source digest alone does
+    not satisfy this."""
+    payload = load_summary(FIGURE04_SUMMARY_PATH)
+    epoch = payload["dataset"]["animal_date_epoch"]
+    caches = payload["provenance"]["figure04_caches"]
+    config = Figure4Config()
+
+    assert caches["decode_identity_sha256"] == compute_figure04_decode_identity(
+        config, epoch, caches["input_file_sha256"][f"{epoch}{INPUT_FILE_SUFFIX}"]
+    )
+    assert caches["diagnostics_identity_sha256"] == compute_figure04_diagnostics_identity(
+        config.diagnostics
     )
 
 

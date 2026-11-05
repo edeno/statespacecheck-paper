@@ -60,7 +60,11 @@ from statespacecheck_paper.figure03_simulation import (
     run_figure03_simulation,
 )
 from statespacecheck_paper.figure03_summary import conditions_by_id
-from statespacecheck_paper.figure04_cache import Figure4Paths
+from statespacecheck_paper.figure04_cache import (
+    Figure4CacheProvenance,
+    Figure4Paths,
+    compute_figure04_cache_provenance,
+)
 from statespacecheck_paper.figure04_decoder import Figure4Config
 from statespacecheck_paper.figure04_diagnostics import mean_event_likelihood_by_time
 from statespacecheck_paper.figure04_models import CONTINUOUS, CONTINUOUS_FRAGMENTED
@@ -899,6 +903,44 @@ def condition_payloads(
 # ---------------------------------------------------------------------------
 
 
+def require_summary_describes_decode(
+    provenance: Figure4CacheProvenance, figure04_summary: Mapping[str, Any]
+) -> None:
+    """Refuse a Figure-4 summary that describes a different analysis.
+
+    Compares the machine-independent identities, not the cache fingerprints: the
+    same code and input on another machine is the same analysis, whereas changed
+    code, configuration, or input is not.
+
+    Parameters
+    ----------
+    provenance : Figure4CacheProvenance
+        Provenance of the decode and diagnostics being exported.
+    figure04_summary : Mapping
+        Parsed ``figure04_summary.json``.
+
+    Raises
+    ------
+    ValueError
+        If either identity differs.
+    """
+    caches = figure04_summary["provenance"]["figure04_caches"]
+    mismatched = [
+        key
+        for key, value in (
+            ("decode_identity_sha256", provenance.decode_identity_sha256),
+            ("diagnostics_identity_sha256", provenance.diagnostics_identity_sha256),
+        )
+        if caches[key] != value
+    ]
+    if mismatched:
+        raise ValueError(
+            "figure04_summary.json provenance.figure04_caches describes a different analysis "
+            f"from the decode being exported ({', '.join(mismatched)} differ); regenerate "
+            "Figure 4 with scripts/generate_figure04.py before exporting the recording window."
+        )
+
+
 def recording_payload(
     render_data: Figure4RenderData,
     figure04_summary: Mapping[str, Any],
@@ -918,26 +960,11 @@ def recording_payload(
     Raises
     ------
     ValueError
-        If the summary's decode or diagnostics fingerprint differs from the
-        provenance of the decode being exported (``render_data.cache_provenance``),
-        so the window would be labeled with another decode's identity.
+        If the summary's decode or diagnostics identity differs from the provenance
+        of the decode being exported (:func:`require_summary_describes_decode`).
     """
+    require_summary_describes_decode(render_data.cache_provenance, figure04_summary)
     caches = figure04_summary["provenance"]["figure04_caches"]
-    exported = render_data.cache_provenance
-    mismatched = [
-        key
-        for key, exported_value in (
-            ("fingerprint_sha256", exported.fingerprint_sha256),
-            ("diagnostics_fingerprint_sha256", exported.diagnostics_fingerprint_sha256),
-        )
-        if caches[key] != exported_value
-    ]
-    if mismatched:
-        raise ValueError(
-            "figure04_summary.json provenance.figure04_caches does not match the decode "
-            f"being exported ({', '.join(mismatched)} differ); regenerate Figure 4 from "
-            "the same decode and diagnostics caches before exporting the recording window."
-        )
     window = detail_window.to_slice(render_data.time.size)
     analysis = render_data.analysis_results
     time = np.asarray(render_data.time, dtype=np.float64)
@@ -1007,8 +1034,8 @@ def recording_payload(
         "models": models,
         "flag_rules": flag_rules,
         # Identify the decode and the diagnostics this window was exported from.
-        "decode_cache_fingerprint": caches["fingerprint_sha256"],
-        "diagnostics_fingerprint": caches["diagnostics_fingerprint_sha256"],
+        "decode_identity": caches["decode_identity_sha256"],
+        "diagnostics_identity": caches["diagnostics_identity_sha256"],
     }
 
 
@@ -1104,7 +1131,8 @@ def export_site_data(*, include_recording: bool = True) -> list[Path]:
     ----------
     include_recording : bool, default True
         Also export the Figure-4 recording window. This needs the Figure-4 input
-        file in ``DATA_PATH``. It reuses the Figure-4 decode and diagnostics
+        file in ``DATA_PATH``. It first refuses a Figure-4 summary that describes
+        a different analysis, then reuses the Figure-4 decode and diagnostics
         caches when their fingerprints match and otherwise rebuilds them as
         ``generate_figure04.py`` does: a stale or missing decode cache refits
         both models (several minutes) and writes the ~8 GB decode cache. Pass
@@ -1118,6 +1146,13 @@ def export_site_data(*, include_recording: bool = True) -> list[Path]:
     """
     figure03_summary = load_summary(FIGURE03_SUMMARY_PATH)
     figure04_summary = load_summary(FIGURE04_SUMMARY_PATH)
+    figure04_paths = Figure4Paths(data_path=DATA_PATH, animal_date_epoch=ANIMAL_DATE_EPOCH)
+    if include_recording and figure04_paths.input_path.exists():
+        # Before anything is written or refit, not after several minutes of fitting.
+        # A missing input file fails below, with the command that downloads it.
+        require_summary_describes_decode(
+            compute_figure04_cache_provenance(Figure4Config(), figure04_paths), figure04_summary
+        )
     config = Figure3Config()
     simulation = run_figure03_simulation(config)
     sparse_centers = np.asarray(simulation.sparse_place_field_centers, dtype=np.float64)
@@ -1135,10 +1170,7 @@ def export_site_data(*, include_recording: bool = True) -> list[Path]:
     for condition_id, payload in condition_payloads(simulation, figure03_summary).items():
         written.append(write_site_json(SITE_DATA_DIR / f"condition_{condition_id}.json", payload))
     if include_recording:
-        render_data = prepare_figure04_render_data(
-            Figure4Config(),
-            Figure4Paths(data_path=DATA_PATH, animal_date_epoch=ANIMAL_DATE_EPOCH),
-        )
+        render_data = prepare_figure04_render_data(Figure4Config(), figure04_paths)
         written.append(
             write_site_json(
                 SITE_DATA_DIR / "recording.json", recording_payload(render_data, figure04_summary)

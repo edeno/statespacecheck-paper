@@ -237,11 +237,13 @@ def test_figure04_reported_statistics_counts_partition_events(tmp_path: Path) ->
     cache_payload = payload["provenance"]["figure04_caches"]
     cache_provenance = Figure4CacheProvenance(
         fingerprint_sha256=cache_payload["fingerprint_sha256"],
+        decode_identity_sha256=cache_payload["decode_identity_sha256"],
         schema_version=cache_payload["schema_version"],
         animal_date_epoch=epoch,
         input_file_sha256=cache_payload["input_file_sha256"][f"{epoch}{INPUT_FILE_SUFFIX}"],
         non_local_detector_version=cache_payload["non_local_detector_version"],
         diagnostics_fingerprint_sha256=cache_payload["diagnostics_fingerprint_sha256"],
+        diagnostics_identity_sha256=cache_payload["diagnostics_identity_sha256"],
         diagnostics_schema_version=cache_payload["diagnostics_schema_version"],
         statespacecheck_version=cache_payload["statespacecheck_version"],
         diagnostics_config=Figure4DiagnosticsConfig(**cache_payload["diagnostics_config"]),
