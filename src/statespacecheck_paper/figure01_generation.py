@@ -220,11 +220,11 @@ def compose_figure01() -> Figure:
     axes["filtering_equations"] = fig.add_subplot(gs[1, :])
 
     # Panel C: Create spanning axes for title, then sub-panels for content
-    # The spanning axes is invisible but holds the "Goodness-of-Fit" title
+    # The spanning axes is invisible but holds the "Goodness-of-fit" title
     axes["goodness_of_fit"] = fig.add_subplot(gs[2, :])
     axes["goodness_of_fit"].axis("off")
     axes["goodness_of_fit"].set_title(
-        "Goodness-of-Fit: Predictive vs. Likelihood",
+        "Goodness-of-fit: predictive vs. likelihood",
         fontweight="bold",
         pad=4,
     )

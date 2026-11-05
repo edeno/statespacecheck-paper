@@ -510,7 +510,7 @@ def draw_graphical_model(
     ax.text(
         x_prev_pos[0],
         y_latent + 0.45,
-        "Previous\nState",
+        "Previous\nstate",
         ha="center",
         va="bottom",
         color="black",
@@ -518,7 +518,7 @@ def draw_graphical_model(
     ax.text(
         x_curr_pos[0],
         y_latent + 0.45,
-        "Current\nState",
+        "Current\nstate",
         ha="center",
         va="bottom",
         color="black",
@@ -532,7 +532,7 @@ def draw_graphical_model(
         height=0.35,
         n_cells=5,
         rng=rng,
-        label="Previous\nSpikes",
+        label="Previous\nspikes",
     )
     draw_spikes_inset(
         ax,
@@ -541,11 +541,11 @@ def draw_graphical_model(
         height=0.35,
         n_cells=5,
         rng=rng,
-        label="Current\nSpikes",
+        label="Current\nspikes",
     )
 
     # Title (using set_title for consistent positioning across panels)
-    ax.set_title("State Space Model", fontweight="bold", pad=4)
+    ax.set_title("State-space model", fontweight="bold", pad=4)
 
     # Time direction indicator
     ax.text(
@@ -693,7 +693,7 @@ def draw_equation_boxes(ax: Axes) -> None:
         std=12,
         color=COLORS["predictive"],
         label=r"$p(x_k|y_{1:k-1})$",
-        title="Predictive\nDistribution",
+        title="Predictive\ndistribution",
     )
 
     _draw_equation_row(
@@ -707,7 +707,7 @@ def draw_equation_boxes(ax: Axes) -> None:
             std=8,
             color=COLORS["posterior"],
             label=r"$p(x_{k-1}|y_{1:k-1})$",
-            title="Previous\nPosterior",
+            title="Previous\nposterior",
         ),
         operator=r"$\circledast$",
         operator_label="Convolve",
@@ -745,7 +745,7 @@ def draw_equation_boxes(ax: Axes) -> None:
             std=7,
             color=COLORS["posterior"],
             label=r"$p(x_k|y_{1:k})$",
-            title="Current\nPosterior",
+            title="Current\nposterior",
         ),
         box_center_x=box_center_x,
         box_width=box_width,
@@ -791,4 +791,4 @@ def draw_equation_boxes(ax: Axes) -> None:
     )
 
     # Title (using set_title for consistent positioning across panels)
-    ax.set_title("Recursive Estimation Algorithm", fontweight="bold", pad=4)
+    ax.set_title("Recursive estimation algorithm", fontweight="bold", pad=4)

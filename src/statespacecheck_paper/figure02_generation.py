@@ -187,9 +187,9 @@ def compose_figure02(rng: np.random.Generator | None = None) -> Figure:
     plot_predictive_check_density_histogram(axes["predictive_histogram"], data)
 
     column_titles = [
-        ("hpd_predictive", "HPD Overlap"),
-        ("predictive_distribution", "Predictive Check"),
-        ("kl_distributions", "KL Divergence"),
+        ("hpd_predictive", "HPD overlap"),
+        ("predictive_distribution", "Predictive check"),
+        ("kl_distributions", "KL divergence"),
     ]
     for ax_key, col_title in column_titles:
         ax = axes[ax_key]
@@ -208,7 +208,7 @@ def compose_figure02(rng: np.random.Generator | None = None) -> Figure:
     axes["kl_formula"].text(
         0.5,
         0.5,
-        r"$D_{\mathrm{KL}} = \sum \mathrm{pred} \cdot \log(\mathrm{pred}/\mathrm{like})$"
+        r"$D_{\mathrm{KL}}(P\,\|\,Q) = \int P \log(P/Q)\,dx_k$"
         f" = {data.kl_divergence:.2f}",
         transform=axes["kl_formula"].transAxes,
         fontweight="bold",
@@ -220,8 +220,8 @@ def compose_figure02(rng: np.random.Generator | None = None) -> Figure:
     pred_size, like_size, intersection_size = hpd_sizes
     axes["hpd_formula"].axis("off")
     hpd_formula = (
-        r"$\frac{|H_{\mathrm{pred}} \cap H_{\mathrm{like}}|}"
-        r"{\min(|H_{\mathrm{pred}}|, |H_{\mathrm{like}}|)}$"
+        r"$\frac{|\mathrm{HPD}_P \cap \mathrm{HPD}_Q|}"
+        r"{\min(|\mathrm{HPD}_P|, |\mathrm{HPD}_Q|)}$"
         f" = "
         rf"$\frac{{{intersection_size:.1f}}}{{{min(pred_size, like_size):.1f}}}$"
         f" = {data.hpd_overlap:.2f}"
@@ -241,7 +241,8 @@ def compose_figure02(rng: np.random.Generator | None = None) -> Figure:
     axes["predictive_formula"].text(
         0.5,
         0.5,
-        f"$p = P(T^{{rep}} \\leq T^{{obs}})$ = {data.predictive_pvalue:.2f}",
+        r"$p = \Pr(\log f_{\mathrm{pred}}(y) \geq \log f_{\mathrm{pred}}(\tilde{y}))$"
+        f" = {data.predictive_pvalue:.2f}",
         transform=axes["predictive_formula"].transAxes,
         fontweight="bold",
         ha="center",

@@ -206,10 +206,10 @@ class TestDrawGraphicalModel:
         assert ax.get_xlim() == (-0.5, 7.5)
         assert ax.get_ylim() == (2.7, 6.4)
         labels = {text.get_text() for text in ax.texts}
-        assert "Previous\nState" in labels
-        assert "Current\nState" in labels
-        assert "Previous\nPosterior" not in labels
-        assert "Current\nPosterior" not in labels
+        assert "Previous\nstate" in labels
+        assert "Current\nstate" in labels
+        assert "Previous\nposterior" not in labels
+        assert "Current\nposterior" not in labels
 
 
 class TestDrawEquationBoxes:
@@ -222,7 +222,7 @@ class TestDrawEquationBoxes:
         assert len(ax.texts) > 0
         assert ax.get_xlim() == (-0.5, 7.5)
         assert ax.get_ylim() == (-0.85, 2.45)
-        assert ax.get_title() == "Recursive Estimation Algorithm"
+        assert ax.get_title() == "Recursive estimation algorithm"
         labels = {text.get_text() for child_ax in fig.axes for text in child_ax.texts}
         assert r"$p(y_k|x_k)$" in labels
         assert r"$p(x_k|y_k)$" not in labels

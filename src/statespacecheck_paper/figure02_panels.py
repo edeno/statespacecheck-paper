@@ -286,8 +286,8 @@ def plot_kl_log_ratio(ax: Axes, data: Figure2ExampleData) -> None:
     )
 
     ax.set_xlabel("Latent state (a.u.)", labelpad=8)
-    ax.set_ylabel(r"$\log(\mathrm{pred}) - \log(\mathrm{like})$", labelpad=8)
-    ax.set_title("Log Ratio", pad=4)
+    ax.set_ylabel(r"$\log P - \log Q$", labelpad=8)
+    ax.set_title("Log ratio", pad=4)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     ax.set_xlim(0, 100)
@@ -315,10 +315,10 @@ def plot_kl_pointwise(ax: Axes, data: Figure2ExampleData) -> None:
 
     ax.set_xlabel("Latent state (a.u.)", labelpad=8)
     ax.set_ylabel(
-        r"$\mathrm{pred} \cdot [\log(\mathrm{pred}) - \log(\mathrm{like})]$",
+        r"$P \cdot (\log P - \log Q)$",
         labelpad=8,
     )
-    ax.set_title("Pointwise KL: pred × log ratio", pad=4)
+    ax.set_title(r"Pointwise KL: $P\,\times$ log ratio", pad=4)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     ax.set_xlim(0, 100)
@@ -404,7 +404,7 @@ def plot_hpd_predictive(ax: Axes, data: Figure2ExampleData) -> None:
         data.position_bins,
         data.predictive,
         color=COLORS["predictive"],
-        title=r"Predictive HPD ($H_{\mathrm{pred}}$)",
+        title=r"Predictive HPD ($\mathrm{HPD}_P$)",
         label_x=95,
         label_ha="right",
         legend_kwargs={"loc": "upper right"},
@@ -420,7 +420,7 @@ def plot_hpd_likelihood(ax: Axes, data: Figure2ExampleData) -> None:
         data.position_bins,
         data.likelihood,
         color=COLORS["likelihood"],
-        title=r"Likelihood HPD ($H_{\mathrm{like}}$)",
+        title=r"Likelihood HPD ($\mathrm{HPD}_Q$)",
         label_x=5,
         label_ha="left",
         legend_kwargs={
@@ -503,7 +503,7 @@ def plot_hpd_intersection(ax: Axes, data: Figure2ExampleData) -> tuple[float, fl
     ax.text(
         pred_center,
         0.84,
-        rf"|$H_{{\mathrm{{pred}}}}$| = {pred_hpd_size:.1f}",
+        rf"$|\mathrm{{HPD}}_P|$ = {pred_hpd_size:.1f}",
         ha="center",
         va="bottom",
         color=COLORS["predictive"],
@@ -511,7 +511,7 @@ def plot_hpd_intersection(ax: Axes, data: Figure2ExampleData) -> tuple[float, fl
     ax.text(
         like_center,
         0.54,
-        rf"|$H_{{\mathrm{{like}}}}$| = {like_hpd_size:.1f}",
+        rf"$|\mathrm{{HPD}}_Q|$ = {like_hpd_size:.1f}",
         ha="center",
         va="bottom",
         color=COLORS["likelihood"],
@@ -519,7 +519,7 @@ def plot_hpd_intersection(ax: Axes, data: Figure2ExampleData) -> tuple[float, fl
     ax.text(
         inter_center,
         0.24,
-        rf"|$H_{{\mathrm{{pred}}}} \cap H_{{\mathrm{{like}}}}$| = {intersection_size:.1f}",
+        rf"$|\mathrm{{HPD}}_P \cap \mathrm{{HPD}}_Q|$ = {intersection_size:.1f}",
         ha="center",
         va="bottom",
         color=COLORS["hpd_overlap"],
@@ -536,7 +536,7 @@ def plot_hpd_intersection(ax: Axes, data: Figure2ExampleData) -> tuple[float, fl
 
     # Descriptive labels with formula notation
     ax.set_yticklabels(
-        [r"Pred. HPD ($H_{\mathrm{pred}}$)", r"Like. HPD ($H_{\mathrm{like}}$)", r"Intersection"],
+        [r"Pred. HPD ($\mathrm{HPD}_P$)", r"Like. HPD ($\mathrm{HPD}_Q$)", r"Intersection"],
     )
 
     ax.tick_params(axis="y", length=0)  # Hide tick marks
@@ -585,15 +585,17 @@ def plot_predictive_check_predictive_fan(ax: Axes, data: Figure2ExampleData) -> 
         ax.axvline(pos, color=color, linestyle="-", linewidth=1.0, alpha=0.7)
         ax.scatter([pos], [pred[idx]], color=color, s=30, zorder=5)
     # Single legend entry summarises the fan.
-    ax.scatter([], [], color=colors[len(colors) // 2], s=30, label="Samples")
+    ax.scatter([], [], color=colors[len(colors) // 2], s=30, label=r"Sampled $x_k$")
 
     ax.set_xlabel("Latent state (a.u.)", labelpad=8)
     ax.set_ylabel("Probability", labelpad=8)
-    # Sample fan sits center-left; push the legend into the far upper-right
-    # with a short handle so its left edge clears the markers.
+    # Sample fan sits center-left; push the legend past the upper-right corner
+    # into the column margin with a short handle so its left edge clears the
+    # sample lines.
     ax.legend(
         frameon=False,
         loc="upper right",
+        bbox_to_anchor=(1.1, 1.0),
         handlelength=1.0,
         handletextpad=0.4,
         borderaxespad=0.0,
@@ -683,7 +685,7 @@ def plot_predictive_check_likelihood_fan(ax: Axes, data: Figure2ExampleData) -> 
         color=neutral,
         linestyle=":",
         linewidth=0.8,
-        label=r"State $x_s$",
+        label=r"Sampled $x_k$",
     )
     ax.scatter(
         [],
@@ -693,7 +695,7 @@ def plot_predictive_check_likelihood_fan(ax: Axes, data: Figure2ExampleData) -> 
         s=24,
         edgecolors="white",
         linewidths=0.4,
-        label=r"Obs. $\tilde{y}$",
+        label=r"Replicate $\tilde{y}$",
     )
 
     # Curves spread across the panel; push the legend into the far
@@ -720,7 +722,7 @@ def plot_predictive_check_likelihood_fan(ax: Axes, data: Figure2ExampleData) -> 
     ax.text(
         0.5,
         1.02,
-        "Simulated obs. likelihoods",
+        "Replicate mark densities",
         transform=ax.transAxes,
         ha="center",
         va="bottom",
@@ -756,7 +758,7 @@ def plot_predictive_check_density_histogram(ax: Axes, data: Figure2ExampleData) 
         alpha=0.5,
         color=COLORS["predictive"],
         edgecolor="none",
-        label="Simulated",
+        label="Replicates",
     )
 
     # Mark observed value (from likelihood/actual observation)
