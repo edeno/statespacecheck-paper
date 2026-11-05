@@ -66,7 +66,7 @@ import math
 import re
 import urllib.parse
 import urllib.request
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -252,7 +252,7 @@ def _negative_log_cutoff(cutoff: float) -> str:
     return f"{-math.log(cutoff):.0f}"
 
 
-def _load(path: Path) -> dict[str, Any]:
+def load_summary(path: Path) -> dict[str, Any]:
     """Read one summary JSON."""
     with open(path, encoding="utf-8") as handle:
         payload: dict[str, Any] = json.load(handle)
@@ -279,7 +279,7 @@ def _flag_percentage_range(payload: dict[str, Any], condition: str) -> tuple[flo
     return min(values), max(values)
 
 
-def _flag_percentage(payload: dict[str, Any], metric: str, condition: str) -> float:
+def flag_percentage(payload: Mapping[str, Any], metric: str, condition: str) -> float:
     """Return one metric's median flag percentage for one condition."""
     row = payload["metric_order"].index(metric)
     column = payload["condition_order"].index(condition)
@@ -287,7 +287,7 @@ def _flag_percentage(payload: dict[str, Any], metric: str, condition: str) -> fl
     return percentage
 
 
-def _decoding_error(payload: dict[str, Any], condition: str) -> float:
+def decoding_error(payload: Mapping[str, Any], condition: str) -> float:
     """Return the median absolute decoding error for one condition."""
     row = payload["error_metric_order"].index("median_absolute_error")
     column = payload["condition_order"].index(condition)
@@ -339,7 +339,7 @@ def _simulation_statistics(payload: dict[str, Any]) -> list[MacroDefinition]:
     macros.append(
         MacroDefinition(
             "SimSparseKlFlag",
-            whole_percent(_flag_percentage(payload, "kl_divergence", "sparse_population")),
+            whole_percent(flag_percentage(payload, "kl_divergence", "sparse_population")),
             "median_flag_percentages[kl_divergence, sparse_population]",
         )
     )
@@ -355,7 +355,7 @@ def _simulation_statistics(payload: dict[str, Any]) -> list[MacroDefinition]:
         macros.append(
             MacroDefinition(
                 name,
-                significant(_decoding_error(payload, condition), SIGNIFICANT_FIGURES),
+                significant(decoding_error(payload, condition), SIGNIFICANT_FIGURES),
                 f"median_decoding_error[median_absolute_error, {condition}]",
             )
         )
@@ -449,7 +449,9 @@ def _simulation_configuration(payload: dict[str, Any]) -> list[MacroDefinition]:
     )
 
     def replay_bound(fraction: float) -> int:
-        return int(round(recovery_two_start + fraction * recovery_two_span))
+        # figure03_protocol.compute_replay_step_window's rounding, so the macros
+        # name the steps the simulation scores.
+        return int(recovery_two_start) + int(round(recovery_two_span * fraction))
 
     return [
         MacroDefinition("SimTrackLength", _exact(config["position_max"]), "position_max"),
@@ -622,6 +624,11 @@ def _recording_statistics(payload: dict[str, Any]) -> list[MacroDefinition]:
         raise ValueError(f"flag_confusions disagree on the spike-event count: {event_counts}")
     macros = [
         MacroDefinition("RecNUnits", _exact(payload["dataset"]["n_units"]), "dataset.n_units"),
+        MacroDefinition(
+            "RecNUnitsWithSpikes",
+            _exact(payload["dataset"]["n_units_with_spikes"]),
+            "dataset.n_units_with_spikes",
+        ),
         MacroDefinition("RecNEvents", _exact(event_counts.pop()), "flag_confusions[].n"),
     ]
     for metric in payload["flag_rules"]:
@@ -1184,47 +1191,32 @@ def render_macro_file(
     return "\n".join(lines) + "\n"
 
 
-def write_macro_file(
-    output_path: Path = MACRO_FILE_PATH,
-    *,
-    figure03_path: Path = FIGURE03_SUMMARY_PATH,
-    figure04_path: Path = FIGURE04_SUMMARY_PATH,
-    statespacecheck_doi: str | None = None,
-    citation_path: Path = CITATION_PATH,
-    software_dois_path: Path = SOFTWARE_DOIS_PATH,
-) -> Path:
+def write_macro_file(output_path: Path = MACRO_FILE_PATH) -> Path:
     """Write ``reported_values.tex`` from the committed figure summaries.
+
+    The cited ``statespacecheck`` DOI comes from the committed
+    ``SOFTWARE_DOIS_PATH`` (:func:`recorded_statespacecheck_doi`), without
+    network access.
 
     Parameters
     ----------
     output_path : Path, default ``MACRO_FILE_PATH``
         Destination of the generated macro file.
-    figure03_path, figure04_path : Path
-        Canonical summary JSONs to read.
-    statespacecheck_doi : str, optional
-        Zenodo DOI of the recorded ``statespacecheck`` version. By default it is
-        read from ``software_dois_path`` (:func:`recorded_statespacecheck_doi`),
-        without network access.
-    citation_path : Path, default ``CITATION_PATH``
-        This repository's CITATION.cff, whose ``doi`` the manuscript cites.
-    software_dois_path : Path, default ``SOFTWARE_DOIS_PATH``
-        Committed DOIs of the cited software releases.
 
     Returns
     -------
     Path
         The path written.
     """
-    figure03_payload, figure04_payload = _load(figure03_path), _load(figure04_path)
-    if statespacecheck_doi is None:
-        statespacecheck_doi = recorded_statespacecheck_doi(
-            statespacecheck_version(figure03_payload, figure04_payload), software_dois_path
-        )
+    figure03_payload = load_summary(FIGURE03_SUMMARY_PATH)
+    figure04_payload = load_summary(FIGURE04_SUMMARY_PATH)
     text = render_macro_file(
         figure03_payload,
         figure04_payload,
-        statespacecheck_doi=statespacecheck_doi,
-        analysis_code_doi=analysis_code_doi(citation_path),
+        statespacecheck_doi=recorded_statespacecheck_doi(
+            statespacecheck_version(figure03_payload, figure04_payload)
+        ),
+        analysis_code_doi=analysis_code_doi(),
     )
     output_path.write_text(text, encoding="utf-8")
     return output_path

@@ -25,6 +25,7 @@ from statespacecheck_paper.figure04_summary import (
     compute_figure04_summary,
     compute_kl_divergence_comparison,
     compute_mean_spike_event_diagnostic,
+    count_units_with_spikes,
     format_figure04_summary,
 )
 from statespacecheck_paper.figure04_workflow import (
@@ -608,3 +609,10 @@ def test_fit_and_decode_payload_feeds_the_caches_and_results() -> None:
     assert results.spike_counts.shape == (n_time, 2)
     # Every spike lies inside [time[0], time[-1]], so each is counted once.
     assert results.spike_counts.sum() == 50
+
+
+def test_count_units_with_spikes_counts_each_firing_unit_once() -> None:
+    """Repeated spikes count one unit, and units absent from the events count none."""
+    diagnostics = event_diagnostics(time_ind=[0, 1, 2, 3], cell_ind=[0, 0, 2, 5])
+
+    assert count_units_with_spikes(diagnostics) == 3

@@ -32,6 +32,11 @@ def compute_mean_spike_event_diagnostic(diagnostics: SpikeEventDiagnostics, metr
     return float(np.mean(values))
 
 
+def count_units_with_spikes(diagnostics: SpikeEventDiagnostics) -> int:
+    """Return the number of units with at least one spike event."""
+    return int(np.unique(diagnostics.event_cell_ind).size)
+
+
 @dataclasses.dataclass(frozen=True)
 class Figure4DiagnosticMeans:
     """Whole-session mean of each per-spike diagnostic for one decoder."""
@@ -45,8 +50,9 @@ class Figure4DiagnosticMeans:
 class Figure4Summary:
     """Manuscript-facing Figure-4 scalars, independent of output formatting.
 
-    ``n_units`` is the number of simultaneously recorded units the decoders
-    were fit on — reported in the figure caption, so it is carried here
+    ``n_units`` is the number of sorted units the decoders were fit on, including
+    units with no spikes in this epoch (:func:`count_units_with_spikes` counts
+    the others). It is reported in the figure caption, so it is carried here
     rather than recounted at render time.
     """
 

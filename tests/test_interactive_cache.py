@@ -25,6 +25,9 @@ from statespacecheck_paper.interactive import cache as cache_mod
 from statespacecheck_paper.interactive.data_source import DecoderDataSource
 from statespacecheck_paper.paths import REPO_ROOT
 
+from ._diagnostics import event_diagnostics
+from ._synthetic_cache import synthetic_results_dataset
+
 INTERMEDIATES = REPO_ROOT / "data" / "intermediates"
 RAW_DATA = REPO_ROOT / "data"
 ANIMAL_DATE_EPOCH = "j1620210710_02_r1"
@@ -35,84 +38,28 @@ def _synthetic_results_dataset(
     n_states: int,
     n_position: int,
 ) -> xr.Dataset:
-    """Build a synthetic decoder-results Dataset in the flat state layout.
-
-    ``state_bins`` is a plain integer dim with ``state`` and ``position``
-    as non-dim coords on it: the layout the Zarr writer stores after
-    flattening the joblib cache's ``state_bins`` MultiIndex. Like the
-    decoder's output it also carries ``acausal_state_probabilities``, which
-    the viewer does not read and the writer leaves out.
+    """Decoder results that, like the decoder's output, also carry
+    ``acausal_state_probabilities``, which the viewer does not read and the
+    writer leaves out.
     """
     rng = np.random.default_rng(0)
-    n_state_bins = n_states * n_position
-    state_names = [f"state_{i}" for i in range(n_states)]
-    state_coord = np.array(
-        [state_names[i] for i in range(n_states) for _ in range(n_position)],
-        dtype=object,
-    )
-    position_grid = np.linspace(0.0, 100.0, n_position)
-    position_coord = np.tile(position_grid, n_states)
-
-    predictive = rng.dirichlet(np.ones(n_state_bins), size=n_time).astype(np.float32)
-    log_likelihood = np.log(predictive + 1e-12).astype(np.float32)
+    ds = synthetic_results_dataset(rng, n_time=n_time, n_states=n_states, n_position=n_position)
     state_probs = rng.dirichlet(np.ones(n_states), size=n_time).astype(np.float32)
-
-    time = np.arange(n_time, dtype=np.float64) * 0.002
-    coords: dict[str, Any] = {
-        "time": ("time", time),
-        "state_bins": ("state_bins", np.arange(n_state_bins, dtype=np.int64)),
-        "state": ("state_bins", state_coord),
-        "position": ("state_bins", position_coord),
-    }
     if n_states > 1:
-        coords["states"] = ("states", np.array(state_names, dtype=object))
-
-    data_vars: dict[str, Any] = {
-        "predictive_posterior": (("time", "state_bins"), predictive),
-        "log_likelihood": (("time", "state_bins"), log_likelihood),
-    }
-    if n_states > 1:
-        data_vars["acausal_state_probabilities"] = (("time", "states"), state_probs)
+        ds["acausal_state_probabilities"] = (("time", "states"), state_probs)
     else:
-        data_vars["acausal_state_probabilities"] = (
-            ("time",),
-            state_probs[:, 0],
-        )
-
-    return xr.Dataset(data_vars=data_vars, coords=coords)
-
-
-def _per_spike(
-    *,
-    event_time: np.ndarray,
-    event_time_ind: np.ndarray,
-    event_cell_ind: np.ndarray,
-    event_hpd_overlap: np.ndarray,
-    event_kl_divergence: np.ndarray,
-    event_predictive_pvalue: np.ndarray,
-) -> SpikeEventDiagnostics:
-    return SpikeEventDiagnostics(
-        event_time_ind=event_time_ind.astype(np.intp),
-        event_cell_ind=event_cell_ind.astype(np.intp),
-        event_hpd_overlap=event_hpd_overlap,
-        event_kl_divergence=event_kl_divergence,
-        event_predictive_pvalue=event_predictive_pvalue,
-        hpd_overlap=None,
-        kl_divergence=None,
-        predictive_pvalue=None,
-        event_likelihood=None,
-        event_time=event_time,
-    )
+        ds["acausal_state_probabilities"] = (("time",), state_probs[:, 0])
+    return ds
 
 
 def test_events_dataframe_sorts_by_time_and_validates_cell_id() -> None:
-    diagnostics = _per_spike(
+    diagnostics = event_diagnostics(
         event_time=np.array([2.0, 1.0, 3.0], dtype=np.float64),
-        event_time_ind=np.array([2, 1, 2]),
-        event_cell_ind=np.array([0, 2, 1], dtype=np.int64),
-        event_hpd_overlap=np.array([0.1, 0.2, 0.3], dtype=np.float32),
-        event_kl_divergence=np.array([1.0, 2.0, 3.0], dtype=np.float32),
-        event_predictive_pvalue=np.array([0.5, 0.4, 0.3], dtype=np.float32),
+        time_ind=np.array([2, 1, 2]),
+        cell_ind=np.array([0, 2, 1], dtype=np.int64),
+        hpd=np.array([0.1, 0.2, 0.3], dtype=np.float32),
+        kl=np.array([1.0, 2.0, 3.0], dtype=np.float32),
+        pvalue=np.array([0.5, 0.4, 0.3], dtype=np.float32),
     )
     df = cache_mod._events_dataframe(diagnostics, n_cells=3, time=np.arange(4.0))
     assert list(df.columns) == [
@@ -131,13 +78,13 @@ def test_events_dataframe_sorts_by_time_and_validates_cell_id() -> None:
 
 
 def test_events_dataframe_rejects_out_of_range_cell_id() -> None:
-    diagnostics = _per_spike(
+    diagnostics = event_diagnostics(
         event_time=np.array([1.0], dtype=np.float64),
-        event_time_ind=np.array([1]),
-        event_cell_ind=np.array([5], dtype=np.int64),
-        event_hpd_overlap=np.array([0.0], dtype=np.float32),
-        event_kl_divergence=np.array([0.0], dtype=np.float32),
-        event_predictive_pvalue=np.array([0.0], dtype=np.float32),
+        time_ind=np.array([1]),
+        cell_ind=np.array([5], dtype=np.int64),
+        hpd=np.array([0.0], dtype=np.float32),
+        kl=np.array([0.0], dtype=np.float32),
+        pvalue=np.array([0.0], dtype=np.float32),
     )
     with pytest.raises(ValueError, match="event_cell_ind out of range"):
         cache_mod._events_dataframe(diagnostics, n_cells=3, time=np.arange(4.0))
@@ -219,13 +166,13 @@ def test_build_figure04_viewer_cache_uses_canonical_render_data(tmp_path: Path) 
     n_time, n_cells, n_position = 200, 3, 8
     time = np.arange(n_time, dtype=np.float64) * 0.002
     event_time = np.array([time[10], time[50], time[150]])
-    diagnostics = _per_spike(
+    diagnostics = event_diagnostics(
         event_time=event_time,
-        event_time_ind=np.array([10, 50, 150]),
-        event_cell_ind=np.array([0, 2, 1]),
-        event_hpd_overlap=np.array([0.1, 0.2, 0.3]),
-        event_kl_divergence=np.array([1.0, 2.0, 3.0]),
-        event_predictive_pvalue=np.array([0.5, 0.4, 0.3]),
+        time_ind=np.array([10, 50, 150]),
+        cell_ind=np.array([0, 2, 1]),
+        hpd=np.array([0.1, 0.2, 0.3]),
+        kl=np.array([1.0, 2.0, 3.0]),
+        pvalue=np.array([0.5, 0.4, 0.3]),
     )
     render_data = _canonical_render_data(
         time=time,

@@ -11,9 +11,7 @@ from __future__ import annotations
 
 import base64
 import copy
-import json
 import re
-from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -47,6 +45,7 @@ from statespacecheck_paper.paths import (
     REPO_ROOT,
     SITE_DATA_DIR,
 )
+from statespacecheck_paper.reported_values import load_summary
 from statespacecheck_paper.scientific_artifacts import inclusive_flag_rules
 from statespacecheck_paper.simulation import gaussian_transition_matrix, place_field_expected_counts
 from statespacecheck_paper.site_export import (
@@ -70,12 +69,8 @@ from statespacecheck_paper.site_export import (
     recording_payload,
 )
 from statespacecheck_paper.style import METRIC_NAMES, PREDICTIVE_VMAX_QUANTILE
-from tests.test_figure04_layout import _compose_render_data
 
-
-def _load(path: Path) -> dict[str, Any]:
-    loaded: dict[str, Any] = json.loads((REPO_ROOT / path).read_text(encoding="utf-8"))
-    return loaded
+from ._figure04 import synthetic_render_data
 
 
 def decode_display_rows(encoded: str, n_bins: int) -> NDArray[np.uint8]:
@@ -88,12 +83,12 @@ def decode_display_rows(encoded: str, n_bins: int) -> NDArray[np.uint8]:
 
 @pytest.fixture(scope="module")
 def figure03_summary() -> dict[str, Any]:
-    return _load(FIGURE03_SUMMARY_PATH)
+    return load_summary(FIGURE03_SUMMARY_PATH)
 
 
 @pytest.fixture(scope="module")
 def figure04_summary() -> dict[str, Any]:
-    return _load(FIGURE04_SUMMARY_PATH)
+    return load_summary(FIGURE04_SUMMARY_PATH)
 
 
 @pytest.fixture(scope="module")
@@ -496,7 +491,7 @@ def _recording_summary(render_data: Figure4RenderData) -> dict[str, Any]:
 
 
 def test_recording_payload_slices_both_models_to_the_detail_window() -> None:
-    render_data = _compose_render_data()
+    render_data = synthetic_render_data()
     summary = _recording_summary(render_data)
     window = Figure4DetailWindow(center_index=20, half_width_samples=10)
     payload = recording_payload(render_data, summary, window)
@@ -563,7 +558,7 @@ def test_recording_payload_slices_both_models_to_the_detail_window() -> None:
 @pytest.mark.parametrize("key", ["fingerprint_sha256", "diagnostics_fingerprint_sha256"])
 def test_recording_payload_rejects_a_summary_from_another_decode(key: str) -> None:
     """The window is not labeled with fingerprints of a decode other than the exported one."""
-    render_data = _compose_render_data()
+    render_data = synthetic_render_data()
     summary = _recording_summary(render_data)
     summary["provenance"]["figure04_caches"][key] = "0" * 64
     window = Figure4DetailWindow(center_index=20, half_width_samples=10)
@@ -591,12 +586,12 @@ def test_page_values_spell_the_recording_window_length(figure04_summary: dict[st
 def test_committed_manifest_matches_the_figure_summaries(
     figure03_summary: dict[str, Any], figure04_summary: dict[str, Any]
 ) -> None:
-    committed = _load(SITE_DATA_DIR / "manifest.json")
+    committed = load_summary(SITE_DATA_DIR / "manifest.json")
     assert committed == manifest_payload(figure03_summary, figure04_summary)
 
 
 def test_committed_parity_fixture_is_current(parity_fixture: dict[str, Any]) -> None:
-    committed = _load(PARITY_FIXTURE_PATH)
+    committed = load_summary(PARITY_FIXTURE_PATH)
     fresh = parity_fixture
     np.testing.assert_allclose(committed["ensembles"], fresh["ensembles"], rtol=1e-12)
     np.testing.assert_allclose(committed["predictives"], fresh["predictives"], rtol=1e-12)
@@ -630,7 +625,7 @@ def test_committed_condition_payloads_are_current(
     site_conditions: dict[str, dict[str, Any]],
 ) -> None:
     for condition_id, fresh in site_conditions.items():
-        committed = _load(SITE_DATA_DIR / f"condition_{condition_id}.json")
+        committed = load_summary(SITE_DATA_DIR / f"condition_{condition_id}.json")
         assert committed.keys() == fresh.keys(), condition_id
         n_bins = len(fresh["position_bins"])
         for key in (
@@ -665,7 +660,7 @@ def test_committed_condition_payloads_are_current(
 
 
 def test_committed_filter_data_is_current() -> None:
-    committed = _load(SITE_DATA_DIR / "filter.json")
+    committed = load_summary(SITE_DATA_DIR / "filter.json")
     fresh = filter_explainer_payload(Figure3Config())
     assert committed.keys() == fresh.keys()
     n_bins = len(fresh["position_bins"])
@@ -688,7 +683,7 @@ def test_committed_filter_data_is_current() -> None:
 def test_committed_playground_is_current(
     config: Figure3Config, sparse_centers: NDArray[np.float64], figure03_summary: dict[str, Any]
 ) -> None:
-    committed = _load(SITE_DATA_DIR / "playground.json")
+    committed = load_summary(SITE_DATA_DIR / "playground.json")
     fresh = playground_payload(config, sparse_centers, figure03_summary)
     assert committed.keys() == fresh.keys()
     for key in (
@@ -707,7 +702,7 @@ def test_committed_playground_is_current(
 
 
 def test_committed_recording_matches_the_figure04_decode(figure04_summary: dict[str, Any]) -> None:
-    committed = _load(SITE_DATA_DIR / "recording.json")
+    committed = load_summary(SITE_DATA_DIR / "recording.json")
     caches = figure04_summary["provenance"]["figure04_caches"]
     # A decoder or a diagnostics change must be followed by a re-export.
     assert committed["decode_cache_fingerprint"] == caches["fingerprint_sha256"]

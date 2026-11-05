@@ -30,6 +30,7 @@ from statespacecheck_paper.figure04_summary import (
     compute_detail_window_comparison,
     compute_figure04_summary,
     compute_kl_divergence_comparison,
+    count_units_with_spikes,
     format_figure04_summary,
 )
 from statespacecheck_paper.figure04_workflow import prepare_figure04_render_data
@@ -48,7 +49,7 @@ from statespacecheck_paper.style import save_figure, set_figure_defaults
 
 # Version of the figure04_summary.json layout written by
 # figure04_summary_payload. Bump it when a field is added, removed, or renamed.
-FIGURE04_SUMMARY_SCHEMA_VERSION = 10
+FIGURE04_SUMMARY_SCHEMA_VERSION = 11
 
 
 def figure04_reported_statistics(summary: Figure4Summary) -> dict[str, object]:
@@ -95,6 +96,7 @@ def figure04_summary_payload(
     config: Figure4Config,
     paths: Figure4Paths,
     summary: Figure4Summary,
+    n_units_with_spikes: int,
     kl_divergence_comparison: Figure4KlDivergenceComparison,
     detail_window_comparison: Figure4DetailWindowComparison,
     cache_provenance: Figure4CacheProvenance,
@@ -112,6 +114,7 @@ def figure04_summary_payload(
         "dataset": {
             "animal_date_epoch": paths.animal_date_epoch,
             "n_units": summary.n_units,
+            "n_units_with_spikes": n_units_with_spikes,
         },
         "configuration": dataclasses.asdict(config),
         "flag_rules": inclusive_flag_rules(
@@ -175,6 +178,9 @@ def generate_figure04(*, use_cache: bool = True) -> None:
             config=config,
             paths=paths,
             summary=summary,
+            n_units_with_spikes=count_units_with_spikes(
+                render_data.analysis_results.continuous_diagnostics
+            ),
             kl_divergence_comparison=kl_divergence_comparison,
             detail_window_comparison=detail_window_comparison,
             cache_provenance=render_data.cache_provenance,

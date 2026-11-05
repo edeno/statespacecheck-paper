@@ -9,7 +9,6 @@ new and failing if it disagrees with the recorded one.
 from __future__ import annotations
 
 import argparse
-import json
 from collections.abc import Sequence
 
 from statespacecheck_paper.paths import (
@@ -18,6 +17,7 @@ from statespacecheck_paper.paths import (
     SOFTWARE_DOIS_PATH,
 )
 from statespacecheck_paper.reported_values import (
+    load_summary,
     refresh_statespacecheck_doi,
     statespacecheck_version,
     write_macro_file,
@@ -38,8 +38,8 @@ def main(argv: Sequence[str] | None = None) -> None:
     args = parser.parse_args(argv)
     if args.refresh_dois:
         version = statespacecheck_version(
-            json.loads(FIGURE03_SUMMARY_PATH.read_text(encoding="utf-8")),
-            json.loads(FIGURE04_SUMMARY_PATH.read_text(encoding="utf-8")),
+            load_summary(FIGURE03_SUMMARY_PATH),
+            load_summary(FIGURE04_SUMMARY_PATH),
         )
         doi = refresh_statespacecheck_doi(version)
         print(f"statespacecheck {version}: {doi} (recorded in {SOFTWARE_DOIS_PATH})")

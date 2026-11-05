@@ -15,7 +15,7 @@ import json
 from collections.abc import Sequence
 from pathlib import Path
 
-from statespacecheck_paper.paths import FIGURE_DIR
+from statespacecheck_paper.paths import FIGURE03_SUMMARY_PATH, FIGURE04_SUMMARY_PATH, FIGURE_DIR
 
 # Floating-point tolerances: a fresh value ``f`` matches the committed ``c`` when
 # ``|f - c| <= ATOL + RTOL * |c|``. The summaries come from seeded, deterministic
@@ -43,7 +43,7 @@ MACHINE_SPECIFIC_PATHS: frozenset[str] = frozenset(
     }
 )
 
-SUMMARY_NAMES = ("figure03_summary.json", "figure04_summary.json")
+SUMMARY_NAMES = (FIGURE03_SUMMARY_PATH.name, FIGURE04_SUMMARY_PATH.name)
 
 
 def _type_name(value: object) -> str:
@@ -63,15 +63,7 @@ def _type_name(value: object) -> str:
     return "object"
 
 
-def compare_json(
-    committed: object,
-    fresh: object,
-    path: str = "",
-    *,
-    rtol: float = RTOL,
-    atol: float = ATOL,
-    ignored: frozenset[str] = MACHINE_SPECIFIC_PATHS,
-) -> list[str]:
+def compare_json(committed: object, fresh: object, path: str = "") -> list[str]:
     """Return one message per difference between two parsed JSON values.
 
     Parameters
@@ -80,10 +72,6 @@ def compare_json(
         Parsed JSON values (``json.load`` output) to compare.
     path : str
         JSON path of these values, used as the prefix of each message.
-    rtol, atol : float
-        Tolerances for floating-point values, ``|f - c| <= atol + rtol * |c|``.
-    ignored : frozenset[str]
-        Dotted paths of mapping entries that are not compared.
 
     Returns
     -------
@@ -91,51 +79,41 @@ def compare_json(
         Messages of the form ``"<path>: <description>"``, in document order;
         empty when the values match.
     """
-    if path in ignored:
+    if path in MACHINE_SPECIFIC_PATHS:
         return []
     where = path or "<root>"
     committed_type, fresh_type = _type_name(committed), _type_name(fresh)
     if committed_type != fresh_type:
         return [f"{where}: type {committed_type} committed, {fresh_type} fresh"]
     if isinstance(committed, dict) and isinstance(fresh, dict):
+
+        def child(key: str) -> str:
+            return f"{path}.{key}" if path else key
+
         differences = [
-            f"{path + '.' if path else ''}{key}: missing from the fresh summary"
+            f"{child(key)}: missing from the fresh summary"
             for key in sorted(committed.keys() - fresh.keys())
         ]
         differences += [
-            f"{path + '.' if path else ''}{key}: not in the committed summary"
+            f"{child(key)}: not in the committed summary"
             for key in sorted(fresh.keys() - committed.keys())
         ]
         for key in sorted(committed.keys() & fresh.keys()):
-            differences += compare_json(
-                committed[key],
-                fresh[key],
-                f"{path}.{key}" if path else key,
-                rtol=rtol,
-                atol=atol,
-                ignored=ignored,
-            )
+            differences += compare_json(committed[key], fresh[key], child(key))
         return differences
     if isinstance(committed, list) and isinstance(fresh, list):
         if len(committed) != len(fresh):
             return [f"{where}: length {len(committed)} committed, {len(fresh)} fresh"]
         differences = []
         for index, (committed_item, fresh_item) in enumerate(zip(committed, fresh, strict=True)):
-            differences += compare_json(
-                committed_item,
-                fresh_item,
-                f"{path}[{index}]",
-                rtol=rtol,
-                atol=atol,
-                ignored=ignored,
-            )
+            differences += compare_json(committed_item, fresh_item, f"{path}[{index}]")
         return differences
     if isinstance(committed, float) and isinstance(fresh, float):
         difference = abs(fresh - committed)
-        if difference > atol + rtol * abs(committed):
+        if difference > ATOL + RTOL * abs(committed):
             return [
                 f"{where}: {committed!r} committed, {fresh!r} fresh (|difference| "
-                f"{difference:.3g} exceeds atol {atol:g} + rtol {rtol:g} * |committed|)"
+                f"{difference:.3g} exceeds atol {ATOL:g} + rtol {RTOL:g} * |committed|)"
             ]
         return []
     if committed != fresh:

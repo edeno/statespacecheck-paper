@@ -30,14 +30,13 @@ from statespacecheck_paper.figure04_summary import (
     Figure4KlDivergenceComparison,
     Figure4Summary,
 )
-from statespacecheck_paper.paths import FIGURE_DIR, REPO_ROOT
+from statespacecheck_paper.paths import (
+    FIGURE03_SUMMARY_PATH,
+    FIGURE04_SUMMARY_PATH,
+    REPO_ROOT,
+)
+from statespacecheck_paper.reported_values import load_summary
 from statespacecheck_paper.scientific_artifacts import write_json_artifact
-
-
-def _load(name: str) -> dict[str, Any]:
-    with open(FIGURE_DIR / name, encoding="utf-8") as handle:
-        payload: dict[str, Any] = json.load(handle)
-    return payload
 
 
 def _round_trip_live_payload(tmp_path: Path, payload: dict[str, object]) -> dict[str, Any]:
@@ -48,7 +47,7 @@ def _round_trip_live_payload(tmp_path: Path, payload: dict[str, object]) -> dict
 
 
 def test_figure03_reported_statistics_match_canonical_run(tmp_path: Path) -> None:
-    payload = _load("figure03_summary.json")
+    payload = load_summary(FIGURE03_SUMMARY_PATH)
 
     assert payload["schema_version"] == FIGURE03_SUMMARY_SCHEMA_VERSION
     assert payload["realizations"] == {
@@ -157,13 +156,14 @@ def test_figure03_reported_statistics_match_canonical_run(tmp_path: Path) -> Non
 
 
 def test_figure04_reported_statistics_counts_partition_events(tmp_path: Path) -> None:
-    payload = _load("figure04_summary.json")
+    payload = load_summary(FIGURE04_SUMMARY_PATH)
 
     assert payload["schema_version"] == FIGURE04_SUMMARY_SCHEMA_VERSION
-    # 203 units is the count reported in the Figure-4 caption.
+    # The Figure-4 caption reports both unit counts.
     assert payload["dataset"] == {
         "animal_date_epoch": "j1620210710_02_r1",
         "n_units": 203,
+        "n_units_with_spikes": 182,
     }
     assert payload["diagnostic_means"]["continuous"] == pytest.approx(
         {
@@ -268,6 +268,7 @@ def test_figure04_reported_statistics_counts_partition_events(tmp_path: Path) ->
         config=Figure4Config(),
         paths=Figure4Paths(REPO_ROOT / "data", epoch),
         summary=summary,
+        n_units_with_spikes=payload["dataset"]["n_units_with_spikes"],
         kl_divergence_comparison=Figure4KlDivergenceComparison(
             lower_fraction=kl["lower_fraction"],
             lower_continuous_quartiles=(

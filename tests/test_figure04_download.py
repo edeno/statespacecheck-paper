@@ -6,11 +6,12 @@ import hashlib
 import json
 import os
 import shutil
+import socketserver
 import stat
 import threading
 import urllib.error
 import urllib.request
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from typing import Any, BinaryIO
 
@@ -21,8 +22,13 @@ from statespacecheck_paper.figure04_download import (
     download_figure04_inputs,
 )
 from statespacecheck_paper.figure04_input import FIGURE04_INPUTS_FILE
-from statespacecheck_paper.paths import DATA_PATH, FIGURE04_INPUTS_DOI, FIGURE04_INPUTS_SHA256
-from tests.test_reported_statistics_artifacts import _load
+from statespacecheck_paper.paths import (
+    DATA_PATH,
+    FIGURE04_INPUTS_DOI,
+    FIGURE04_INPUTS_SHA256,
+    FIGURE04_SUMMARY_PATH,
+)
+from statespacecheck_paper.reported_values import load_summary
 
 from ._scripts import load_script
 
@@ -113,13 +119,15 @@ def test_interrupted_download_is_reported_as_interrupted(
     """Python returns the short body without an error; the download must not."""
     # Reach the local server directly even where an HTTP proxy is configured.
     monkeypatch.setenv("no_proxy", "127.0.0.1")
-    server = HTTPServer(("127.0.0.1", 0), _TruncatingHandler)
+    # TCPServer, not HTTPServer, whose bind resolves the host's name, a reverse DNS
+    # lookup this local server does not need.
+    server = socketserver.TCPServer(("127.0.0.1", 0), _TruncatingHandler)
     # shutdown() always ends serve_forever, even if no request arrives; a short poll
     # interval keeps that wait at ~10 ms instead of the default 0.5 s.
     thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01})
     thread.start()
     try:
-        url = f"http://127.0.0.1:{server.server_port}/"
+        url = f"http://127.0.0.1:{server.server_address[1]}/"
         with pytest.raises(ConnectionError, match="stopped after 10 of 100 bytes"):
             download_figure04_inputs(tmp_path, url=url, sha256="0" * 64)
     finally:
@@ -223,5 +231,7 @@ def test_zenodo_record_is_the_cited_version_with_the_file() -> None:
 
 def test_published_checksum_is_the_one_figure04_records() -> None:
     """The file the download verifies is the file the Figure-4 summary was made from."""
-    recorded = _load("figure04_summary.json")["provenance"]["figure04_caches"]["input_file_sha256"]
+    recorded = load_summary(FIGURE04_SUMMARY_PATH)["provenance"]["figure04_caches"][
+        "input_file_sha256"
+    ]
     assert recorded == {FIGURE04_INPUTS_FILE: FIGURE04_INPUTS_SHA256}

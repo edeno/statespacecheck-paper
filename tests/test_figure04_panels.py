@@ -13,8 +13,6 @@ import pytest
 matplotlib.use("Agg")  # noqa: E402
 
 import matplotlib.pyplot as plt  # noqa: E402
-import networkx as nx  # noqa: E402
-import pandas as pd  # noqa: E402
 import xarray as xr  # noqa: E402
 from matplotlib.collections import PolyCollection  # noqa: E402
 from matplotlib.lines import Line2D  # noqa: E402
@@ -32,6 +30,11 @@ from statespacecheck_paper.figure04_panels import (  # noqa: E402
 from statespacecheck_paper.figure04_plot_primitives import ANIMAL_POSITION_LABEL_GID  # noqa: E402
 
 from ._diagnostics import event_diagnostics  # noqa: E402
+from ._figure04 import (  # noqa: E402
+    chain_track_graph,
+    synthetic_dense_diagnostics,
+    synthetic_results,
+)
 
 # ---------------------------------------------------------------------------
 # plot_event_metric_hexbin_row
@@ -244,7 +247,9 @@ def _scatter_offsets(ax: plt.Axes) -> np.ndarray:
 
 
 class TestPlotEventDiagnosticScatter:
-    def test_event_diagnostics_plot_at_exact_event_times(self) -> None:
+    def test_event_diagnostics_plot_at_exact_event_times(
+        self, fresh_axes: tuple[plt.Figure, plt.Axes]
+    ) -> None:
         """When ``event_*`` arrays are present, scatter uses their times
         directly with no bin lookup."""
         time = np.linspace(0.0, 0.9, 10)
@@ -257,14 +262,15 @@ class TestPlotEventDiagnosticScatter:
             event_values=np.array([0.8, 0.6]),
         )
 
-        fig, ax = plt.subplots()
+        _, ax = fresh_axes
         plot_event_diagnostic_scatter(time, diagnostics, ax=ax)
         offsets = _scatter_offsets(ax)
         np.testing.assert_allclose(offsets[:, 0], [0.151, 0.157])
         np.testing.assert_allclose(offsets[:, 1], [0.8, 0.6])
-        plt.close(fig)
 
-    def test_without_spike_times_uses_bin_centers(self) -> None:
+    def test_without_spike_times_uses_bin_centers(
+        self, fresh_axes: tuple[plt.Figure, plt.Axes]
+    ) -> None:
         """Without per-spike alignment, scatter uses bin-start times."""
         time = np.linspace(0.0, 0.9, 10)
         hpd = np.full((10, 2), np.nan)
@@ -272,11 +278,10 @@ class TestPlotEventDiagnosticScatter:
         hpd[3, 1] = 0.6
         diagnostics = _diagnostics_from_metric("hpd_overlap", hpd)
 
-        fig, ax = plt.subplots()
+        _, ax = fresh_axes
         plot_event_diagnostic_scatter(time, diagnostics, ax=ax)
         offsets = _scatter_offsets(ax)
         np.testing.assert_allclose(sorted(offsets[:, 0]), [0.1, 0.3])
-        plt.close(fig)
 
 
 # ---------------------------------------------------------------------------
@@ -284,55 +289,16 @@ class TestPlotEventDiagnosticScatter:
 # ---------------------------------------------------------------------------
 
 _N_TIME, _N_CELLS, _N_POS = 20, 6, 10
-_STATES = ("Continuous", "Fragmented")
 
 
 def _multistate_results(seed: int) -> xr.Dataset:
-    """Synthetic decoder results with a (state, position) MultiIndex."""
-    rng = np.random.default_rng(seed)
-    pos = np.linspace(0.0, 100.0, _N_POS)
-    state_bins = pd.MultiIndex.from_product([list(_STATES), pos], names=["state", "position"])
-    time = np.arange(_N_TIME, dtype=float)
-    n_sb = len(state_bins)
-
-    def _da(a: np.ndarray) -> xr.DataArray:
-        return xr.DataArray(
-            a, dims=("time", "state_bins"), coords={"time": time, "state_bins": state_bins}
-        )
-
-    return xr.Dataset(
-        {
-            "predictive_posterior": _da(rng.dirichlet(np.ones(n_sb), size=_N_TIME)),
-            "log_likelihood": _da(rng.normal(size=(_N_TIME, n_sb))),
-        }
-    )
+    return synthetic_results(seed, n_time=_N_TIME, n_position=_N_POS)
 
 
 def _dense_diagnostics(seed: int) -> SpikeEventDiagnostics:
-    """SpikeEventDiagnostics with dense (n_time, n_cells) metric matrices."""
-    rng = np.random.default_rng(seed)
-    n_spk = 15
-    return SpikeEventDiagnostics(
-        event_time_ind=rng.integers(0, _N_TIME, n_spk).astype(np.intp),
-        event_cell_ind=rng.integers(0, _N_CELLS, n_spk).astype(np.intp),
-        event_hpd_overlap=rng.uniform(0, 1, n_spk),
-        event_kl_divergence=rng.gamma(2.0, 0.5, n_spk),
-        event_predictive_pvalue=rng.uniform(0.01, 1, n_spk),
-        hpd_overlap=rng.uniform(0, 1, (_N_TIME, _N_CELLS)),
-        kl_divergence=rng.gamma(2.0, 0.5, (_N_TIME, _N_CELLS)),
-        predictive_pvalue=rng.uniform(0.01, 1, (_N_TIME, _N_CELLS)),
-        event_likelihood=rng.uniform(0, 1, (n_spk, _N_POS)),
-        event_time=rng.uniform(0, _N_TIME, n_spk),
+    return synthetic_dense_diagnostics(
+        seed, n_time=_N_TIME, n_cells=_N_CELLS, n_position=_N_POS, n_spikes=15
     )
-
-
-def _linear_track_graph() -> nx.Graph:
-    g = nx.Graph()
-    for i in range(6):
-        g.add_node(i, pos=(float(i), 0.0))
-    for i in range(5):
-        g.add_edge(i, i + 1, distance=1.0)
-    return g
 
 
 def _panel_inputs() -> dict:
@@ -362,7 +328,7 @@ class TestPlotSingleModelDiagnostics:
             place_field_peaks=c["place_field_peaks"],
             place_fields=rng.random((_N_CELLS, _N_POS)) * 10 + 0.1,
             position_bins=np.linspace(0.0, 100.0, _N_POS),
-            track_graph=_linear_track_graph(),
+            track_graph=chain_track_graph(1.0),
             edge_order=[(i, i + 1) for i in range(5)],
         )
 
@@ -400,7 +366,7 @@ class TestPlotSingleModelDiagnostics:
             place_field_peaks=c["place_field_peaks"],
             place_fields=rng.random((_N_CELLS, _N_POS)) * 10 + 0.1,
             position_bins=np.linspace(0.0, 100.0, _N_POS),
-            track_graph=_linear_track_graph(),
+            track_graph=chain_track_graph(1.0),
             edge_order=[(i, i + 1) for i in range(5)],
         )
         fig, axes = plot_single_model_diagnostics(
@@ -419,8 +385,10 @@ class TestPlotSingleModelDiagnostics:
 
 
 class TestExtractedRowRenderers:
-    def test_predictive_row_sets_title_and_ylabel(self) -> None:
-        fig, ax = plt.subplots()
+    def test_predictive_row_sets_title_and_ylabel(
+        self, fresh_axes: tuple[plt.Figure, plt.Axes]
+    ) -> None:
+        _, ax = fresh_axes
         _draw_predictive_heatmap_row(
             ax,
             _multistate_results(1),
@@ -432,13 +400,12 @@ class TestExtractedRowRenderers:
         )
         assert ax.get_title() == "ModelX"
         assert ax.get_ylabel() == "Predictive"
-        plt.close(fig)
 
     def test_track_graph_edges_draw_lines_on_each_axis(self) -> None:
         fig, (ax0, ax1) = plt.subplots(1, 2)
         _draw_track_graph_edges(
             [ax0, ax1],
-            _linear_track_graph(),
+            chain_track_graph(1.0),
             [(i, i + 1) for i in range(5)],
             0.0,
             np.arange(_N_TIME, dtype=float),
@@ -451,22 +418,6 @@ class TestExtractedRowRenderers:
 # ---------------------------------------------------------------------------
 # ModelDiagnosticPanelData validation
 # ---------------------------------------------------------------------------
-
-
-def _diag_all_dense_none() -> SpikeEventDiagnostics:
-    """Diagnostics with the dense matrices absent (event arrays only)."""
-    n = 5
-    return SpikeEventDiagnostics(
-        event_time_ind=np.zeros(n, dtype=np.intp),
-        event_cell_ind=np.zeros(n, dtype=np.intp),
-        event_hpd_overlap=np.zeros(n),
-        event_kl_divergence=np.zeros(n),
-        event_predictive_pvalue=np.zeros(n),
-        hpd_overlap=None,
-        kl_divergence=None,
-        predictive_pvalue=None,
-        event_likelihood=None,
-    )
 
 
 def _diag_wrong_time_rows() -> SpikeEventDiagnostics:
@@ -499,7 +450,7 @@ def _valid_panel_kwargs() -> dict:
         "place_field_peaks": c["place_field_peaks"],
         "place_fields": rng.random((_N_CELLS, _N_POS)) * 10 + 0.1,
         "position_bins": np.linspace(0.0, 100.0, _N_POS),
-        "track_graph": _linear_track_graph(),
+        "track_graph": chain_track_graph(1.0),
         "edge_order": [(i, i + 1) for i in range(5)],
     }
 
@@ -508,7 +459,7 @@ class TestModelDiagnosticPanelDataValidation:
     def test_event_only_diagnostics_construct(self) -> None:
         """The cached diagnostics omit the dense matrices; the panel renders from events."""
         kwargs = _valid_panel_kwargs()
-        kwargs["diagnostics"] = _diag_all_dense_none()
+        kwargs["diagnostics"] = event_diagnostics(hpd=np.zeros(5))
         ModelDiagnosticPanelData(**kwargs)
 
     def test_valid_kwargs_construct(self) -> None:
@@ -558,7 +509,9 @@ class TestModelDiagnosticPanelDataValidation:
             ModelDiagnosticPanelData(**kwargs)
 
 
-def test_scatter_event_time_ind_keeps_repeated_events_distinct() -> None:
+def test_scatter_event_time_ind_keeps_repeated_events_distinct(
+    fresh_axes: tuple[plt.Figure, plt.Axes],
+) -> None:
     """Without wall-clock event_time or spike_times, two events in the same
     (time bin, cell) must produce two scatter points via event_time_ind, not one
     collapsed dense-matrix observation."""
@@ -576,10 +529,9 @@ def test_scatter_event_time_ind_keeps_repeated_events_distinct() -> None:
         event_likelihood=np.zeros((n_spk, 1)),
         event_time=None,
     )
-    fig, ax = plt.subplots()
+    _, ax = fresh_axes
     plot_event_diagnostic_scatter(time, diagnostics, ax=ax)
     offsets = _scatter_offsets(ax)
     assert offsets.shape[0] == 2  # two distinct events, not one
     np.testing.assert_allclose(sorted(offsets[:, 0]), [0.5, 0.5])  # both at time[5]
     np.testing.assert_allclose(sorted(offsets[:, 1]), [0.4, 0.8])
-    plt.close(fig)

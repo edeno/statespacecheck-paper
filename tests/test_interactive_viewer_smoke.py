@@ -13,34 +13,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from ._qt import (
-    make_viewer,
-    qt_offscreen,  # noqa: F401 -- registers the autouse fixture here
-    wait_for_request,
-)
+from ._qt import open_viewer, reload_and_wait, requires_qt, wait_for_request
 from ._synthetic_cache import build_synthetic_cache
 
-PYSIDE6_AVAILABLE = True
-try:
-    import PySide6  # noqa: F401
-except ImportError:
-    PYSIDE6_AVAILABLE = False
-
-PYQTGRAPH_AVAILABLE = True
-try:
-    import pyqtgraph  # noqa: F401
-except ImportError:
-    PYQTGRAPH_AVAILABLE = False
-
-
-pytestmark = pytest.mark.skipif(
-    not (PYSIDE6_AVAILABLE and PYQTGRAPH_AVAILABLE),
-    reason="PySide6 / pyqtgraph not installed (optional [interactive] extra).",
-)
-
-
-def _build_synthetic_cache(cache_dir: Path) -> None:
-    build_synthetic_cache(cache_dir, n_spikes_per_cell=20)
+pytestmark = requires_qt
 
 
 def test_structural_padding_helper_fills_only_non_interior_bins() -> None:
@@ -79,20 +55,16 @@ def test_relative_likelihood_rejects_all_impossible_row() -> None:
 @pytest.fixture
 def viewer_setup(tmp_path: Path):
     cache_dir = tmp_path / "cache"
-    _build_synthetic_cache(cache_dir)
-    app, viewer, ds = make_viewer(cache_dir)
-    yield app, viewer, ds
-    viewer.close()
-    ds.close()
+    build_synthetic_cache(cache_dir, n_spikes_per_cell=20)
+    with open_viewer(cache_dir) as session:
+        yield session
 
 
 def test_viewer_constructs_and_loads_initial_window(viewer_setup) -> None:
     app, viewer, ds = viewer_setup
     viewer.show()
 
-    initial_request = viewer._next_request_id  # noqa: SLF001
-    viewer.force_reload_now()
-    assert wait_for_request(app, viewer, initial_request)
+    assert reload_and_wait(app, viewer)
 
     # Heatmap image was populated.
     img = viewer.predictive_panel._image  # noqa: SLF001
@@ -105,9 +77,7 @@ def test_viewer_set_center_time_drives_load(viewer_setup) -> None:
     app, viewer, ds = viewer_setup
     viewer.show()
     # Initial load.
-    initial_request = viewer._next_request_id  # noqa: SLF001
-    viewer.force_reload_now()
-    assert wait_for_request(app, viewer, initial_request)
+    assert reload_and_wait(app, viewer)
 
     # Programmatically scroll to a different time.
     target_t = ds.time[200]

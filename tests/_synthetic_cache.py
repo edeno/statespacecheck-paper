@@ -20,6 +20,46 @@ from statespacecheck_paper.figure04_models import Figure4ModelId
 from statespacecheck_paper.interactive import cache as cache_mod
 
 
+def synthetic_results_dataset(
+    rng: np.random.Generator,
+    *,
+    n_time: int,
+    n_states: int,
+    n_position: int,
+    start_time: float = 0.0,
+) -> xr.Dataset:
+    """Build a synthetic decoder-results Dataset in the flat state layout.
+
+    ``state_bins`` is a plain integer dim with ``state`` and ``position``
+    as non-dim coords on it: the layout the Zarr writer stores after
+    flattening the joblib cache's ``state_bins`` MultiIndex.
+    """
+    n_state_bins = n_states * n_position
+    state_names = [f"state_{i}" for i in range(n_states)]
+    state_coord = np.array(
+        [state_names[i] for i in range(n_states) for _ in range(n_position)], dtype=object
+    )
+    predictive = rng.dirichlet(np.ones(n_state_bins), size=n_time).astype(np.float32)
+    log_likelihood = np.log(predictive + 1e-12).astype(np.float32)
+
+    coords: dict[str, Any] = {
+        "time": ("time", start_time + np.arange(n_time, dtype=np.float64) * 0.002),
+        "state_bins": ("state_bins", np.arange(n_state_bins, dtype=np.int64)),
+        "state": ("state_bins", state_coord),
+        "position": ("state_bins", np.tile(np.linspace(0.0, 100.0, n_position), n_states)),
+    }
+    if n_states > 1:
+        coords["states"] = ("states", np.array(state_names, dtype=object))
+
+    return xr.Dataset(
+        data_vars={
+            "predictive_posterior": (("time", "state_bins"), predictive),
+            "log_likelihood": (("time", "state_bins"), log_likelihood),
+        },
+        coords=coords,
+    )
+
+
 def build_synthetic_cache(
     cache_dir: Path,
     *,
@@ -61,29 +101,10 @@ def build_synthetic_cache(
     """
     rng = np.random.default_rng(seed)
     n_state_bins = n_states * n_position
-
-    state_names = [f"state_{i}" for i in range(n_states)]
-    state_coord = np.array([state_names[i] for i in range(n_states) for _ in range(n_position)])
-    position_grid = np.linspace(0.0, 100.0, n_position)
-    position_coord = np.tile(position_grid, n_states)
-
-    predictive = rng.dirichlet(np.ones(n_state_bins), size=n_time).astype(np.float32)
-    log_likelihood = np.log(predictive + 1e-12).astype(np.float32)
-    time_arr = 1000.0 + np.arange(n_time, dtype=np.float64) * 0.002
-
-    coords: dict[str, Any] = {
-        "time": ("time", time_arr),
-        "state_bins": ("state_bins", np.arange(n_state_bins, dtype=np.int64)),
-        "state": ("state_bins", state_coord),
-        "position": ("state_bins", position_coord),
-    }
-    if n_states > 1:
-        coords["states"] = ("states", np.array(state_names))
-
-    data_vars: dict[str, Any] = {
-        "predictive_posterior": (("time", "state_bins"), predictive),
-        "log_likelihood": (("time", "state_bins"), log_likelihood),
-    }
+    ds = synthetic_results_dataset(
+        rng, n_time=n_time, n_states=n_states, n_position=n_position, start_time=1000.0
+    )
+    time_arr = ds["time"].to_numpy()
     if with_acausal:
         # Synthetic acausal (smoothed) posterior: a different Dirichlet
         # draw so it is distinguishable from ``predictive_posterior`` in
@@ -92,9 +113,7 @@ def build_synthetic_cache(
         # with or without it.
         acausal_rng = np.random.default_rng(seed + 1)
         acausal = acausal_rng.dirichlet(np.ones(n_state_bins), size=n_time).astype(np.float32)
-        data_vars["acausal_posterior"] = (("time", "state_bins"), acausal)
-
-    ds = xr.Dataset(data_vars=data_vars, coords=coords)
+        ds["acausal_posterior"] = (("time", "state_bins"), acausal)
 
     paths = cache_mod.recording_cache_paths(cache_dir, model)
     cache_mod._write_zarr_store(ds=ds, out_dir=paths["zarr"], time_chunk=64)
@@ -143,24 +162,24 @@ def build_synthetic_cache(
     )
     events.to_parquet(paths["events"], engine="pyarrow", compression="zstd")
 
-    place_fields = rng.uniform(0.0, 5.0, size=(n_cells, n_state_bins)).astype(np.float32)
+    position_grid = np.linspace(0.0, 100.0, n_position)
+    place_fields = rng.uniform(0.0, 5.0, size=(n_cells, n_state_bins))
     peak_idx = np.argmax(place_fields[:, :n_position], axis=1)
-    np.savez(
-        paths["place_fields"],
+    cache_mod._write_place_fields(
+        out_path=paths["place_fields"],
         place_fields=place_fields,
         interior_mask=np.ones(n_state_bins, dtype=bool),
-        position_bins=position_grid.astype(np.float64),
-        place_field_peaks=position_grid[peak_idx].astype(np.float64),
+        position_bins=position_grid,
+        place_field_peaks=position_grid[peak_idx],
     )
 
-    np.savez(
-        cache_mod.recording_meta_path(cache_dir),
+    cache_mod._write_meta(
+        out_path=cache_mod.recording_meta_path(cache_dir),
         time=time_arr,
-        linear_position=rng.uniform(0.0, 100.0, size=n_time).astype(np.float64),
-        n_cells=np.int64(n_cells),
+        linear_position=rng.uniform(0.0, 100.0, size=n_time),
+        n_cells=n_cells,
     )
 
-    container = np.empty(n_cells, dtype=object)
-    for i, st in enumerate(spike_times):
-        container[i] = st
-    np.save(cache_mod.recording_spike_times_path(cache_dir), container, allow_pickle=True)
+    cache_mod._write_spike_times(
+        out_path=cache_mod.recording_spike_times_path(cache_dir), spike_times=spike_times
+    )

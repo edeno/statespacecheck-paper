@@ -642,7 +642,7 @@ manual overrides: bumping one invalidates every cache of that kind.
 
 `figure03_summary.json` uses schema version 9
 (`figure03_generation.FIGURE03_SUMMARY_SCHEMA_VERSION`) and `figure04_summary.json`
-uses schema version 10 (`figure04_generation.FIGURE04_SUMMARY_SCHEMA_VERSION`). The
+uses schema version 11 (`figure04_generation.FIGURE04_SUMMARY_SCHEMA_VERSION`). The
 Figure-3 configuration block records every
 `Figure3Config` field together with the step length in seconds
 (`configuration.step_seconds`, the protocol constant `STEP_SECONDS`) and the
@@ -667,8 +667,9 @@ metric's rule (quantile or fixed cutoff), and each metric's
 `baseline_flagged_fraction`, the fraction (0–1) of pooled baseline spike events
 flagged under the recorded threshold.
 
-The Figure-4 schema records `dataset.n_units` alongside the recording
-identifier, names the second decoder `continuous_fragmented` throughout, and
+The Figure-4 schema records `dataset.n_units` (the sorted units the decoders
+were fit on) and `dataset.n_units_with_spikes` (those that fired in this epoch)
+alongside the recording identifier, names the second decoder `continuous_fragmented` throughout, and
 keeps the recorded `non_local_detector` defaults under
 `configuration.package_defaults`: the observation-model algorithm
 (`sorted_spikes_kde`), the random-walk `movement_var` and `movement_mean`,

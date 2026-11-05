@@ -41,6 +41,7 @@ import matplotlib as mpl
 import numpy as np
 import statespacecheck as ssc
 from numpy.typing import NDArray
+from xarray.plot.utils import ROBUST_PERCENTILE
 
 from statespacecheck_paper.decoding import decode_with_diagnostics
 from statespacecheck_paper.diagnostics import (
@@ -75,7 +76,13 @@ from statespacecheck_paper.paths import (
     PARITY_FIXTURE_PATH,
     SITE_DATA_DIR,
 )
-from statespacecheck_paper.reported_values import cardinal_word, macro_sections
+from statespacecheck_paper.reported_values import (
+    cardinal_word,
+    decoding_error,
+    flag_percentage,
+    load_summary,
+    macro_sections,
+)
 from statespacecheck_paper.simulation import (
     gaussian_transition_matrix,
     place_field_expected_counts,
@@ -95,16 +102,12 @@ EVENT_VALUE_SIGNIFICANT_FIGURES = 4
 # Entries in each exported colormap lookup table.
 COLORMAP_LUT_SIZE = 64
 
-# Color scale of the Figure-4 predictive heatmaps: the 2nd to 98th percentiles
-# of the plotted window, restating the limits that xarray's ``robust=True``
-# (``xarray.plot.utils.ROBUST_PERCENTILE``) gives the figure in
-# ``figure04_plot_primitives.plot_distribution_heatmap``. xarray drops
-# non-finite values before taking them, whereas the export zero-fills NaN
-# first. The zero-fill changes nothing here, since the state marginal the
-# export reads has already dropped every bin holding a NaN in the window, but
-# it would lower the limits of a window with NaN. Figure 3's scale is
-# ``style.PREDICTIVE_VMAX_QUANTILE``, shared with ``figure03_plotting``.
-FIGURE04_PREDICTIVE_PERCENTILES = (2.0, 98.0)
+# Color scale of the Figure-4 predictive heatmaps: the limits xarray's
+# ``robust=True`` gives the figure in
+# ``figure04_plot_primitives.plot_distribution_heatmap``, over the plotted
+# window. Figure 3's scale is ``style.PREDICTIVE_VMAX_QUANTILE``, shared with
+# ``figure03_plotting``.
+FIGURE04_PREDICTIVE_PERCENTILES = (ROBUST_PERCENTILE, 100.0 - ROBUST_PERCENTILE)
 
 
 @dataclass(frozen=True)
@@ -833,12 +836,7 @@ def condition_payloads(
     position_bins = np.asarray(sim.position_bins, dtype=np.float64)
     cell_centers = _rounded(all_place_field_centers(sim.config, sim.sparse_place_field_centers), 2)
     conditions = conditions_by_id(sim.config)
-    order = list(figure03_summary["condition_order"])
-    metric_order = list(figure03_summary["metric_order"])
-    flag_percentages = np.asarray(figure03_summary["median_flag_percentages"], dtype=np.float64)
-    decoding_error = np.asarray(figure03_summary["median_decoding_error"], dtype=np.float64)
     flag_rules = figure03_summary["flag_rules"]
-    error_row = list(figure03_summary["error_metric_order"]).index("median_absolute_error")
 
     event_time = np.asarray(diagnostics.event_time_ind)
     event_cell = np.asarray(diagnostics.event_cell_ind)
@@ -853,7 +851,6 @@ def condition_payloads(
         if not 0 <= window.start < window.stop <= n_time:
             raise ValueError(f"{window} lies outside the {n_time}-step timeline")
         condition = conditions[window.condition_id]
-        column = order.index(window.condition_id)
         in_window = (event_time >= window.start) & (event_time < window.stop)
         likelihood_rows, likelihood_index = np.unique(
             event_likelihood[in_window], axis=0, return_inverse=True
@@ -885,10 +882,14 @@ def condition_payloads(
             # Formatted with the manuscript's rounding policy.
             "summary": {
                 "median_flag_percent_text": {
-                    metric: whole_percent(flag_percentages[metric_order.index(metric), column])
+                    metric: whole_percent(
+                        flag_percentage(figure03_summary, metric, window.condition_id)
+                    )
                     for metric in METRIC_NAMES
                 },
-                "median_absolute_error_text": significant(decoding_error[error_row, column]),
+                "median_absolute_error_text": significant(
+                    decoding_error(figure03_summary, window.condition_id)
+                ),
             },
         }
     for condition_id in conditions:
@@ -974,8 +975,8 @@ def recording_payload(
             )
         if diagnostics.event_time is None:
             raise ValueError(f"{model.id} diagnostics lack exact event times")
+        low, high = np.nanpercentile(predictive, FIGURE04_PREDICTIVE_PERCENTILES)
         predictive = np.nan_to_num(predictive)
-        low, high = np.percentile(predictive, FIGURE04_PREDICTIVE_PERCENTILES)
         # Events belong to the decoder bin that counted them (event_time_ind),
         # as in Figure 4, not to the bin nearest their exact spike time.
         event_bin = np.asarray(diagnostics.event_time_ind)
@@ -1119,8 +1120,8 @@ def export_site_data(*, include_recording: bool = True) -> list[Path]:
     list of Path
         Files written.
     """
-    figure03_summary = json.loads(FIGURE03_SUMMARY_PATH.read_text(encoding="utf-8"))
-    figure04_summary = json.loads(FIGURE04_SUMMARY_PATH.read_text(encoding="utf-8"))
+    figure03_summary = load_summary(FIGURE03_SUMMARY_PATH)
+    figure04_summary = load_summary(FIGURE04_SUMMARY_PATH)
     config = Figure3Config()
     simulation = run_figure03_simulation(config)
     sparse_centers = np.asarray(simulation.sparse_place_field_centers, dtype=np.float64)

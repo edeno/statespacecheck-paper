@@ -68,6 +68,17 @@ export async function loadJSON(path) {
   return response.json();
 }
 
+/** Replace `container`'s content with an alert reading `summary (error message).` */
+export function showError(container, summary, error) {
+  container.innerHTML = "";
+  const message = document.createElement("p");
+  message.className = "error";
+  message.setAttribute("role", "alert");
+  message.textContent = `${summary} (${error.message}).`;
+  container.appendChild(message);
+  console.error(error);
+}
+
 /** Decode base64 uint8 rows written by site_export.encode_display_rows. */
 export function decodeRows(encoded, nBins) {
   const binary = atob(encoded);

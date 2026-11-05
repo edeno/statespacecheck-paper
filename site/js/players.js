@@ -26,6 +26,7 @@ import {
   nearestIndex,
   plottedWorseFit,
   readoutCard,
+  showError,
   SYMLOG_LINTHRESH,
   worseFit,
 } from "./data.js";
@@ -478,7 +479,7 @@ export function initConditions(root, manifest) {
         cache.set(id, await loadJSON(`data/${entry.file}`));
       } catch (error) {
         if (request === generation) {
-          view.innerHTML = `<p class="error" role="alert">Could not load this condition (${error.message}).</p>`;
+          showError(view, "Could not load this condition", error);
         }
         return;
       }
@@ -487,8 +488,7 @@ export function initConditions(root, manifest) {
     try {
       teardown = renderCondition(view, cache.get(id), manifest);
     } catch (error) {
-      view.innerHTML = `<p class="error" role="alert">Could not display this condition (${error.message}).</p>`;
-      console.error(error);
+      showError(view, "Could not display this condition", error);
     }
   }
 

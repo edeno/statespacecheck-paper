@@ -65,7 +65,9 @@ class TestPlotDistributionHeatmap:
         expected = da.dropna("state_bins", how="all").indexes["state_bins"]
         assert da.indexes["state_bins"][kept].equals(expected)
 
-    def test_bin_nan_only_inside_window_is_kept_as_nan_row(self) -> None:
+    def test_bin_nan_only_inside_window_is_kept_as_nan_row(
+        self, fresh_axes: tuple[plt.Figure, plt.Axes]
+    ) -> None:
         """A bin that is NaN inside the plotted window but valid elsewhere in the
         session keeps its position row (drawn as NaN), as with a session-wide
         dropna before slicing; off-track bins are dropped."""
@@ -74,7 +76,7 @@ class TestPlotDistributionHeatmap:
         values[:, [0, 5]] = np.nan  # position 0 off-track in both states
         values[3:8, [2, 7]] = np.nan  # position 2 NaN only within the window
         da = _two_state_distribution(values, np.arange(5.0))
-        fig, ax = plt.subplots()
+        _, ax = fresh_axes
 
         plot_distribution_heatmap(
             ax, da, da.time.values, np.zeros(12), slice(3, 8), show_position=False
@@ -84,9 +86,10 @@ class TestPlotDistributionHeatmap:
         plotted = np.ma.getdata(mesh.get_array()).reshape(4, 5)  # (position, time)
         assert np.isnan(plotted[1]).all()  # position 2 kept, NaN in the window
         assert np.isfinite(np.delete(plotted, 1, axis=0)).all()
-        plt.close(fig)
 
-    def test_single_state_plots_against_state_bins(self) -> None:
+    def test_single_state_plots_against_state_bins(
+        self, fresh_axes: tuple[plt.Figure, plt.Axes]
+    ) -> None:
         values = np.random.default_rng(2).random((10, 5))
         values[:, 0] = np.nan  # off-track bin, dropped
         da = xr.DataArray(
@@ -94,25 +97,23 @@ class TestPlotDistributionHeatmap:
             dims=("time", "state_bins"),
             coords={"time": np.arange(10, dtype=float), "state_bins": np.arange(5)},
         )
-        fig, ax = plt.subplots()
+        _, ax = fresh_axes
         plot_distribution_heatmap(
             ax, da, da.time.values, np.zeros(10), slice(2, 8), show_position=False
         )
         assert np.ma.getdata(ax.collections[0].get_array()).size == 6 * 4
-        plt.close(fig)
 
-    def test_window_without_values_raises(self) -> None:
+    def test_window_without_values_raises(self, fresh_axes: tuple[plt.Figure, plt.Axes]) -> None:
         values = np.random.default_rng(3).random((10, 8))
         values[2:6] = np.nan
         da = _two_state_distribution(values, np.arange(4.0))
-        fig, ax = plt.subplots()
+        _, ax = fresh_axes
         with pytest.raises(ValueError, match="no plottable values"):
             plot_distribution_heatmap(
                 ax, da, da.time.values, np.zeros(10), slice(2, 6), show_position=False
             )
-        plt.close(fig)
 
-    def test_malformed_state_index_raises(self) -> None:
+    def test_malformed_state_index_raises(self, fresh_axes: tuple[plt.Figure, plt.Axes]) -> None:
         state_bins = pd.MultiIndex.from_tuples(
             [("A", 0.0), ("A", 0.0), ("B", 0.0), ("B", 0.0)], names=["state", "position"]
         )
@@ -121,9 +122,8 @@ class TestPlotDistributionHeatmap:
             dims=("time", "state_bins"),
             coords={"time": np.arange(6, dtype=float), "state_bins": state_bins},
         )
-        fig, ax = plt.subplots()
+        _, ax = fresh_axes
         with pytest.raises(ValueError, match="Failed to unstack"):
             plot_distribution_heatmap(
                 ax, da, da.time.values, np.zeros(6), slice(0, 6), show_position=False
             )
-        plt.close(fig)

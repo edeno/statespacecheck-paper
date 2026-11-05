@@ -47,7 +47,7 @@ def _combined_metrics(
     rng: np.random.Generator, n_time: int, n_bins: int, n_cells: int
 ) -> dict[str, Any]:
     """Build the full ``DecodingDiagnostics`` accepted by ``compose_figure03``."""
-    spikes = rng.poisson(0.5, (n_time, n_cells))
+    spikes = rng.poisson(0.02, (n_time, n_cells))
 
     event_time_ind, event_cell_ind = np.nonzero(spikes[1:])
     event_time_ind = (event_time_ind + 1).astype(np.intp)

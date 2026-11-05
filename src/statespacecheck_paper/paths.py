@@ -7,8 +7,9 @@ redeclare the same constants. Every repository path is anchored at
 :data:`REPO_ROOT`, so the recipes read and write the same files from any
 working directory. (``scripts/spyglass_pipeline_figure04.py`` anchors its own
 summary path to the repository root, since it imports no package module at
-startup.) Override ``DATA_PATH`` via the ``STATESPACECHECK_DATA_PATH``
-environment variable and ``ANIMAL_DATE_EPOCH`` via
+startup, and ``scripts/reproduce_fresh.py``, which runs outside the project
+environment, repeats the paths it needs.) Override ``DATA_PATH`` via the
+``STATESPACECHECK_DATA_PATH`` environment variable and ``ANIMAL_DATE_EPOCH`` via
 ``STATESPACECHECK_ANIMAL_DATE_EPOCH`` to run them against a different dataset
 without editing source.
 """

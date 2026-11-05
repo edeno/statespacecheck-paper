@@ -10,44 +10,12 @@ from typing import Any
 
 import pytest
 
-from statespacecheck_paper.figure04_models import Figure4ModelId
 from statespacecheck_paper.figure04_protocol import FIGURE04_DETAIL_WINDOW, Figure4DetailWindow
 
-from ._qt import (
-    make_viewer,
-    qt_offscreen,  # noqa: F401 -- registers the autouse fixture here
-    wait_for_request,
-)
-from ._synthetic_cache import build_synthetic_cache as _build_cache_impl
+from ._qt import open_viewer, requires_qt, wait_for_request
+from ._synthetic_cache import build_synthetic_cache
 
-PYSIDE6_AVAILABLE = True
-try:
-    import PySide6  # noqa: F401
-except ImportError:
-    PYSIDE6_AVAILABLE = False
-
-PYQTGRAPH_AVAILABLE = True
-try:
-    import pyqtgraph  # noqa: F401
-except ImportError:
-    PYQTGRAPH_AVAILABLE = False
-
-
-pytestmark = pytest.mark.skipif(
-    not (PYSIDE6_AVAILABLE and PYQTGRAPH_AVAILABLE),
-    reason="PySide6 / pyqtgraph not installed (optional [interactive] extra).",
-)
-
-
-def _build_cache(
-    cache_dir: Path,
-    *,
-    model: Figure4ModelId = "continuous",
-    n_states: int = 1,
-    seed: int = 0,
-) -> None:
-    """Controls tests need both Continuous and Continuous-Fragmented caches for swap tests."""
-    _build_cache_impl(cache_dir, model=model, n_states=n_states, seed=seed)
+pytestmark = requires_qt
 
 
 @pytest.fixture
@@ -58,13 +26,9 @@ def viewer_session(tmp_path: Path) -> Iterator[tuple[Any, Any, Any]]:
     tests building both caches) build their own viewer and skip this fixture.
     """
     cache_dir = tmp_path / "cache"
-    _build_cache(cache_dir)
-    app, viewer, ds = make_viewer(cache_dir, model_swaps=True)
-    try:
+    build_synthetic_cache(cache_dir)
+    with open_viewer(cache_dir, model_swaps=True) as (app, viewer, ds):
         yield app, viewer, ds
-    finally:
-        viewer.close()
-        ds.close()
 
 
 # ---------------------------------------------------------------------------
@@ -275,11 +239,10 @@ def test_autoscroll_pauses_at_session_end(
 
 def test_model_swap_rebuilds_panels_and_loads(tmp_path: Path) -> None:
     cache_dir = tmp_path / "cache"
-    _build_cache(cache_dir, model="continuous", n_states=1)
-    _build_cache(cache_dir, model="continuous_fragmented", n_states=2, seed=1)
+    build_synthetic_cache(cache_dir, model="continuous", n_states=1)
+    build_synthetic_cache(cache_dir, model="continuous_fragmented", n_states=2, seed=1)
 
-    app, viewer, ds = make_viewer(cache_dir, model_swaps=True)
-    try:
+    with open_viewer(cache_dir, model_swaps=True) as (app, viewer, ds):
         assert viewer._ds.model == "continuous"  # noqa: SLF001
         assert viewer.slice_panel._n_states == 1  # noqa: SLF001
 
@@ -292,18 +255,14 @@ def test_model_swap_rebuilds_panels_and_loads(tmp_path: Path) -> None:
         # The new central widget should commit a fresh load.
         target = viewer._next_request_id  # noqa: SLF001
         assert wait_for_request(app, viewer, target)
-    finally:
-        viewer.close()
-        ds.close()
 
 
 def test_model_toggle_alternates_between_the_two_models(tmp_path: Path) -> None:
     cache_dir = tmp_path / "cache"
-    _build_cache(cache_dir, model="continuous", n_states=1)
-    _build_cache(cache_dir, model="continuous_fragmented", n_states=2, seed=1)
+    build_synthetic_cache(cache_dir, model="continuous", n_states=1)
+    build_synthetic_cache(cache_dir, model="continuous_fragmented", n_states=2, seed=1)
 
-    _, viewer, _ = make_viewer(cache_dir, model_swaps=True)
-    try:
+    with open_viewer(cache_dir, model_swaps=True) as (_, viewer, _):
         combo = viewer._model_combo  # noqa: SLF001
         # The combo shows display labels and carries the machine IDs.
         assert [combo.itemText(i) for i in range(combo.count())] == [
@@ -325,22 +284,14 @@ def test_model_toggle_alternates_between_the_two_models(tmp_path: Path) -> None:
         combo = viewer._model_combo  # noqa: SLF001
         combo.setCurrentIndex(combo.findData("continuous_fragmented"))
         assert viewer._ds.model == "continuous_fragmented"  # noqa: SLF001
-    finally:
-        viewer.close()
-        # Each switch closes the source it replaces; close the current one.
-        viewer._ds.close()  # noqa: SLF001
 
 
 def test_model_swap_revert_when_cache_missing(tmp_path: Path) -> None:
     cache_dir = tmp_path / "cache"
-    _build_cache(cache_dir, model="continuous", n_states=1)
+    build_synthetic_cache(cache_dir, model="continuous", n_states=1)
     # Note: do NOT build the continuous_fragmented cache.
 
-    _, viewer, ds = make_viewer(cache_dir, model_swaps=True)
-    try:
+    with open_viewer(cache_dir, model_swaps=True) as (_, viewer, _):
         viewer._switch_model("continuous_fragmented")  # noqa: SLF001
         # The data source should remain on continuous.
         assert viewer._ds.model == "continuous"  # noqa: SLF001
-    finally:
-        viewer.close()
-        ds.close()

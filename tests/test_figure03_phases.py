@@ -508,15 +508,11 @@ def summary() -> Figure3RealizationSummary:
 
 
 class TestEstimateRealizationSummary:
-    def test_shapes_and_determinism(self) -> None:
+    def test_shapes(self, summary: Figure3RealizationSummary) -> None:
         """The summary is (3 metrics x 6 columns: well-specified, remap,
-        history, replay, drift, sparse population), fractions are percentages,
-        and the same seeds reproduce the same result."""
-        params = _seed0_params()
-        summary = estimate_realization_summary(params, n_realizations=3)
-
+        history, replay, drift, sparse population) and fractions are percentages."""
         assert isinstance(summary, Figure3RealizationSummary)
-        assert summary.n_realizations == 3
+        assert summary.n_realizations == 5
         assert summary.median_flag_percentages.shape == (3, 6)
         assert summary.median_decoding_error.shape == (1, 6)
         assert np.all(summary.median_decoding_error >= 0.0)
@@ -527,13 +523,13 @@ class TestEstimateRealizationSummary:
         assert summary.diagnostic_thresholds.predictive_pvalue == 0.05
         assert np.isfinite(summary.diagnostic_thresholds.kl_divergence)
 
-        repeat = estimate_realization_summary(params, n_realizations=3)
-        np.testing.assert_array_equal(
-            summary.median_flag_percentages, repeat.median_flag_percentages
-        )
+    def test_same_seeds_reproduce_the_same_result(self) -> None:
+        params = _seed0_params()
+        first = estimate_realization_summary(params, n_realizations=1)
+        repeat = estimate_realization_summary(params, n_realizations=1)
+        np.testing.assert_array_equal(first.median_flag_percentages, repeat.median_flag_percentages)
         assert (
-            summary.diagnostic_thresholds.kl_divergence
-            == repeat.diagnostic_thresholds.kl_divergence
+            first.diagnostic_thresholds.kl_divergence == repeat.diagnostic_thresholds.kl_divergence
         )
 
     def test_baseline_flagged_fractions_score_the_pooled_baseline(self) -> None:

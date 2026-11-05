@@ -13,8 +13,8 @@ recording; no training/validation split is applied.
 
 The in-memory analysis results (both decodes, their per-spike diagnostics,
 spike counts, and place fields) are a typed :class:`Figure4AnalysisResults`; its
-field names are also the on-disk cache keys, read and written by
-:meth:`Figure4AnalysisResults.from_cache_payload` / ``to_cache_payload``.
+field names are also the on-disk cache keys, read by
+:meth:`Figure4AnalysisResults.from_cache_payload`.
 
 The fit and decode themselves are :func:`figure04_fit.fit_and_decode`, whose
 modules alone form the decode-cache fingerprint; this module's containers,

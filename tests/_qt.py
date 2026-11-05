@@ -1,16 +1,18 @@
 """Shared Qt helpers for the interactive-viewer tests.
 
-``qt_offscreen`` is a module-scoped autouse fixture: importing it into a
-test module registers it there, so Qt renders offscreen before that module
-creates a ``QApplication``. The helpers import PySide6 and the viewer
-lazily, so a module can still be collected (and skipped) without the
-optional ``[interactive]`` extra.
+Importing this module selects Qt's offscreen platform, so viewer tests run
+headless. The helpers import PySide6 and the viewer lazily, so a module can
+still be collected (and skipped, through ``requires_qt``) without the optional
+``[interactive]`` extra.
 """
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -19,21 +21,24 @@ import pytest
 if TYPE_CHECKING:
     from statespacecheck_paper.figure04_models import Figure4ModelId
 
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-@pytest.fixture(scope="module", autouse=True)
-def qt_offscreen() -> None:
-    """Select Qt's offscreen platform so viewer tests run headless."""
-    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+requires_qt = pytest.mark.skipif(
+    any(importlib.util.find_spec(name) is None for name in ("PySide6", "pyqtgraph")),
+    reason="PySide6 / pyqtgraph not installed (optional [interactive] extra).",
+)
 
 
-def make_viewer(
+@contextmanager
+def open_viewer(
     cache_dir: Path, *, model: Figure4ModelId = "continuous", model_swaps: bool = False
-) -> tuple[Any, Any, Any]:
-    """Open a viewer on ``cache_dir``'s ``model`` cache.
+) -> Iterator[tuple[Any, Any, Any]]:
+    """Open a viewer on ``cache_dir``'s ``model`` cache and close it on exit.
 
     ``model_swaps`` hands the viewer ``cache_dir`` so it can switch to the
-    other model's cache. Returns ``(app, viewer, data_source)``; the caller
-    closes the viewer and the data source.
+    other model's cache. Yields ``(app, viewer, data_source)``. On exit the
+    viewer's current data source is closed; each model swap closes the one it
+    replaces.
     """
     from PySide6 import QtWidgets
 
@@ -43,7 +48,11 @@ def make_viewer(
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     ds = DecoderDataSource(cache_dir, model=model)
     viewer = DecoderViewer(ds, cache_dir=cache_dir) if model_swaps else DecoderViewer(ds)
-    return app, viewer, ds
+    try:
+        yield app, viewer, ds
+    finally:
+        viewer.close()
+        viewer._ds.close()  # noqa: SLF001
 
 
 def wait_for_request(app: Any, viewer: Any, request_id: int, timeout_s: float = 5.0) -> bool:
@@ -55,3 +64,10 @@ def wait_for_request(app: Any, viewer: Any, request_id: int, timeout_s: float = 
             return True
         time.sleep(0.005)
     return False
+
+
+def reload_and_wait(app: Any, viewer: Any) -> bool:
+    """Force a reload of the current window and wait for it to commit; False on timeout."""
+    request_id = viewer._next_request_id  # noqa: SLF001
+    viewer.force_reload_now()
+    return wait_for_request(app, viewer, request_id)

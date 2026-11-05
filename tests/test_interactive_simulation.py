@@ -17,28 +17,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from ._qt import (
-    qt_offscreen,  # noqa: F401 -- registers the autouse fixture here
-    wait_for_request,
-)
+from ._qt import reload_and_wait, requires_qt
 
-PYSIDE6_AVAILABLE = True
-try:
-    import PySide6  # noqa: F401
-except ImportError:
-    PYSIDE6_AVAILABLE = False
-
-PYQTGRAPH_AVAILABLE = True
-try:
-    import pyqtgraph  # noqa: F401
-except ImportError:
-    PYQTGRAPH_AVAILABLE = False
-
-
-pytestmark = pytest.mark.skipif(
-    not (PYSIDE6_AVAILABLE and PYQTGRAPH_AVAILABLE),
-    reason="PySide6 / pyqtgraph not installed (optional [interactive] extra).",
-)
+pytestmark = requires_qt
 
 
 def _tiny_params():
@@ -280,9 +261,7 @@ def test_simulated_viewer_loads_window(tmp_path: Path) -> None:
     ds = DecoderDataSource.for_simulation(tmp_path)
     viewer = DecoderViewer(ds)
     try:
-        target = viewer._next_request_id  # noqa: SLF001
-        viewer.force_reload_now()
-        assert wait_for_request(app, viewer, target)
+        assert reload_and_wait(app, viewer)
 
         sp = viewer.slice_panel
         assert sp._buffer_predictive is not None  # noqa: SLF001

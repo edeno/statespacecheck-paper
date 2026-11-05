@@ -584,8 +584,8 @@ class DecoderDataSource:
         smoothed posterior.
 
         Hot-path call from the slice panel: a single Zarr row read.
-        Typical chunk size (8192 along time) means at most one chunk
-        fetch from disk, then in-cache for repeat reads.
+        Typical chunk size (8192 along time) means one chunk fetched and
+        decompressed per read; decoded chunks are not kept.
         """
         if not 0 <= t_idx < self.n_time:
             raise IndexError(f"t_idx {t_idx} out of range [0, {self.n_time})")

@@ -55,7 +55,8 @@
   },
   "dataset": {
     "animal_date_epoch": "j1620210710_02_r1",
-    "n_units": 203
+    "n_units": 203,
+    "n_units_with_spikes": 182
   },
   "detail_window": {
     "center_index": 193069,
@@ -208,11 +209,11 @@
       "statespacecheck_version": "0.3.1"
     },
     "source": {
-      "source_tree_sha256": "b021b61e20a4882b891a4bdcc2b7a7c1db2b1c23452708c75f50edb266a79689",
+      "source_tree_sha256": "07ce3c12880e7c96c0690539cb95adf784fc0dc9512de1a3fe8cf181414ef95b",
       "statespacecheck_paper_version": "0.1.0",
       "statespacecheck_version": "0.3.1",
       "uv_lock_sha256": "280ef8920b3302f206621349c0733c017b8a329e3d85c789b21bf6350c093fe2"
     }
   },
-  "schema_version": 10
+  "schema_version": 11
 }

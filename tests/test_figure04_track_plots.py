@@ -36,9 +36,11 @@ def track_graph() -> nx.Graph:
 
 @pytest.mark.parametrize("edge_spacing", [5.0, [5.0, 5.0]])
 def test_1d_track_stacks_edges_vertically_with_spacing(
-    track_graph: nx.Graph, edge_spacing: float | list[float]
+    track_graph: nx.Graph,
+    edge_spacing: float | list[float],
+    fresh_axes: tuple[plt.Figure, plt.Axes],
 ) -> None:
-    fig, ax = plt.subplots()
+    _, ax = fresh_axes
     plot_track_graph_1d(
         track_graph,
         ax=ax,
@@ -60,14 +62,15 @@ def test_1d_track_stacks_edges_vertically_with_spacing(
     # Reward wells sit at the track ends.
     offsets = np.concatenate([c.get_offsets() for c in ax.collections])
     np.testing.assert_array_equal(offsets, [[2.0, 0.0], [2.0, 70.0]])
-    plt.close(fig)
 
 
-def test_2d_track_draws_trajectory_edges_wells_and_scale_bar(track_graph: nx.Graph) -> None:
+def test_2d_track_draws_trajectory_edges_wells_and_scale_bar(
+    track_graph: nx.Graph, fresh_axes: tuple[plt.Figure, plt.Axes]
+) -> None:
     position_info = pd.DataFrame(
         {"head_position_x": [0.0, 30.0, 60.0], "head_position_y": [4.0, 6.0, 5.0]}
     )
-    fig, ax = plt.subplots()
+    _, ax = fresh_axes
     returned = plot_track_graph_2d(
         track_graph, position_info, _EDGE_ORDER, ax, reward_well_nodes=[0, 3]
     )
@@ -84,11 +87,10 @@ def test_2d_track_draws_trajectory_edges_wells_and_scale_bar(track_graph: nx.Gra
     offsets = np.concatenate([c.get_offsets() for c in ax.collections])
     np.testing.assert_array_equal(offsets, [[0.0, 5.0], [60.0, 5.0]])
     assert not ax.axison
-    plt.close(fig)
 
 
-def test_scalebar_sits_in_the_lower_right() -> None:
-    fig, ax = plt.subplots()
+def test_scalebar_sits_in_the_lower_right(fresh_axes: tuple[plt.Figure, plt.Axes]) -> None:
+    _, ax = fresh_axes
     ax.set_xlim(0.0, 100.0)
     ax.set_ylim(0.0, 50.0)
     add_scalebar(ax, 20.0, "20 cm")
@@ -100,4 +102,3 @@ def test_scalebar_sits_in_the_lower_right() -> None:
     assert label.get_text() == "20 cm"
     assert label.get_position() == pytest.approx((80.0, 5.0 - 0.03 * 50.0))
     assert label.get_fontsize() == 8
-    plt.close(fig)

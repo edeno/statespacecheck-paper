@@ -1,19 +1,9 @@
 // Page entry point: fill reported numbers, then start the interactive pieces.
 
-import { fillMacros, loadJSON } from "./data.js";
+import { fillMacros, loadJSON, showError } from "./data.js";
 import { initExplainer } from "./explainer.js";
 import { initPlayground } from "./playground.js";
 import { initConditions, renderRecording } from "./players.js";
-
-function showError(container, what, error) {
-  container.innerHTML = "";
-  const message = document.createElement("p");
-  message.className = "error";
-  message.setAttribute("role", "alert");
-  message.textContent = `Could not load the ${what} (${error.message}).`;
-  container.appendChild(message);
-  console.error(error);
-}
 
 /**
  * Run `start` once, when `element` comes within a screen of the viewport or
@@ -73,17 +63,17 @@ async function main() {
   const manifestLoad = loadJSON("data/manifest.json");
   Promise.all([loadJSON("data/filter.json"), manifestLoad])
     .then(([data, manifest]) => initExplainer(explainer, data, manifest))
-    .catch((error) => showError(explainer.querySelector("#ft-tracks"), "filter explainer", error));
+    .catch((error) => showError(explainer.querySelector("#ft-tracks"), "Could not load the filter explainer", error));
   Promise.all([loadJSON("data/playground.json"), manifestLoad])
     .then(([data]) => initPlayground(playground, data))
-    .catch((error) => showError(playground.querySelector("#pg-chart"), "playground", error));
+    .catch((error) => showError(playground.querySelector("#pg-chart"), "Could not load the playground", error));
 
   let manifest;
   try {
     manifest = await manifestLoad;
   } catch (error) {
-    showError(simulation.querySelector("#cond-view"), "simulation", error);
-    showError(recording.querySelector("#rec-view"), "recording", error);
+    showError(simulation.querySelector("#cond-view"), "Could not load the simulation", error);
+    showError(recording.querySelector("#rec-view"), "Could not load the recording", error);
     return;
   }
   fillMacros(document, { ...manifest.macros, ...manifest.page_values });
@@ -93,7 +83,7 @@ async function main() {
   whenNearOrIdle(recording, () =>
     loadJSON("data/recording.json")
       .then((data) => renderRecording(recording, data, manifest))
-      .catch((error) => showError(recording.querySelector("#rec-view"), "recording", error)),
+      .catch((error) => showError(recording.querySelector("#rec-view"), "Could not load the recording", error)),
   );
 }
 
