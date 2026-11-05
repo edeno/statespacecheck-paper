@@ -491,8 +491,8 @@ $\Lambda(x)$.
   (loads the recording; loads the cached decode or fits and decodes both models
   with `figure04_fit.fit_and_decode`; loads the cached diagnostics or
   computes them with `figure04_diagnostics`) →
-  `figure04_summary.compute_figure04_summary` (whole-session means and flag
-  confusions) → `figure04_layout.compose_figure04` (artist arrangement) →
+  `figure04_summary.compute_figure04_reported_statistics` (whole-session means and
+  flag confusions) → `figure04_layout.compose_figure04` (artist arrangement) →
   `save_figure`.
 - **Intermediate data — the honest boundary.** Figure 4 is reproduced **from
   the Figure-4 input file (derived data) onward**, not from raw acquisition. The loader
@@ -551,8 +551,10 @@ loads a `NeuralRecordingData` and returns a `Figure4RenderData`
 results (decodes, per-spike diagnostics, spike counts, place fields) are built by `Figure4AnalysisResults.from_cache_payload` from a decode
 payload and a diagnostics payload, each loaded from its fingerprint-matching
 cache or computed fresh (`figure04_fit.fit_and_decode` for the decode,
-`_compute_diagnostics_payload` for the diagnostics) → `compute_figure04_summary`
-returns a `Figure4Summary` (`.n_units`, per-decoder `Figure4DiagnosticMeans`, and
+`_compute_diagnostics_payload` for the diagnostics) → `compute_figure04_reported_statistics`
+returns a `Figure4ReportedStatistics` (`.n_units_with_spikes`,
+`.kl_divergence_comparison`, `.detail_window_comparison`, and `.summary`, a
+`Figure4Summary` with `.n_units`, per-decoder `Figure4DiagnosticMeans`, and
 typed `FlagConfusion` counts) → `format_figure04_summary` handles CLI text separately
 → `compose_figure04(render_data, diagnostic_thresholds=…,
 detail_window=Figure4DetailWindow(…))`

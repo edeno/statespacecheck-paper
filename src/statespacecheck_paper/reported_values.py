@@ -28,8 +28,8 @@ their exact counts. Constants the text hedges with "approximately" (199.47 Hz,
 sqrt(12.5) cm) are exact functions of chosen parameters and are shown to two
 significant figures. The p-value cutoff's position on the figures' -log(p)
 axis (-log(0.05) = 2.996) is shown to the nearest whole number, because the text
-reads it off that axis ("x = 3"). Where variability matters to a claim it belongs in the
-text or a figure, not in the digit count; the Figure-3 summary publishes
+reads it off that axis ("a Continuous-model value of 3"). Where variability matters to a
+claim it belongs in the text or a figure, not in the digit count; the Figure-3 summary publishes
 approximate standard errors of the aggregated medians, conditional on the
 simulation setup. These do not describe the spread of individual realizations
 and play no part in formatting.

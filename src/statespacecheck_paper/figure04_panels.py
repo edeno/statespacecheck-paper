@@ -657,10 +657,10 @@ def plot_event_metric_hexbin_row(
     Each panel shows one diagnostic on the x-axis (the reference decoder,
     ``reference_model``) and the same diagnostic on the y-axis (the comparison decoder,
     ``comparison_model``). Each hexagon's colour encodes
-    log-scaled spike-event count (matplotlib ``bins='log'``). Points on
+    log-scaled spike-event count (a ``LogNorm`` shared by the three panels). Points on
     the identity line indicate decoder agreement on that spike.
 
-    Both diagnostics dicts must carry the same set of per-spike events
+    Both diagnostics objects must carry the same set of per-spike events
     in the same order (i.e. ``event_*`` arrays produced from the same
     spike trains by
     :func:`statespacecheck_paper.figure04_diagnostics.compute_results_diagnostics`).

@@ -27,7 +27,7 @@ and orders the steps needed to build the paper.
 | Figures 1–2 | Small simulations and figure rendering |
 | Figure 3 | About 1 minute on 18 cores for its 100 realizations, which run on every core; longer on fewer cores |
 | Figure 4 input | 75 MB download, verified by SHA-256 |
-| Figure 4 fresh fit/decode | Several minutes per model, followed by diagnostics and rendering; runtime depends on hardware |
+| Figure 4 fresh fit/decode | Several minutes for both models, followed by diagnostics and rendering; runtime depends on hardware |
 | Figure 4 cached decode | Approximately 8 GB on disk; arrays are memory-mapped when loaded |
 
 Peak RAM for a fresh Figure 4 run has not been benchmarked; the disk-cache size
@@ -116,8 +116,8 @@ The target exits nonzero on any difference.
 
 The work directory keeps `fresh/` (figures, summaries, macros, and PDF),
 `committed/` (HEAD's summaries and macros), `reproduction_report.txt`, and
-`steps.tsv` (seconds and the largest child-process resident memory for each
-step). Running in a copy, rather than regenerating the committed files in place
+`steps.tsv` (seconds and the largest child-process resident memory so far, a
+running maximum rather than each step's own peak). Running in a copy, rather than regenerating the committed files in place
 and restoring them, leaves a working tree with local edits untouched and needs no
 cleanup.
 

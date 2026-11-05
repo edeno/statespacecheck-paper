@@ -78,8 +78,8 @@ class Figure3SummaryCondition:
         single pair.
     model_component : str
         Model component the column's misfit perturbs (``"Observation"``,
-        ``"Transition"``, or ``"—"`` for the well-specified column). Shown
-        in the attribution row beneath the heatmap.
+        ``"Transition"``, or ``"—"`` for the well-specified and control
+        columns). Shown in the attribution row beneath the heatmap.
     """
 
     condition_id: str
@@ -656,13 +656,13 @@ def estimate_realization_summary(
     n_realizations: int = N_REALIZATIONS,
     n_jobs: int = -1,
 ) -> Figure3RealizationSummary:
-    """Pool many realizations into stable Figure-3 flag thresholds and fractions.
+    """Pool many realizations into stable Figure-3 flag thresholds and percentages.
 
     Runs ``n_realizations`` independent realizations of the figure-3
     simulation (seeds ``config.random_seed, config.random_seed + 1, ...``, so
     the displayed seed-``config.random_seed`` run is one of them), pools their
     per-spike *baseline-window* diagnostics to compute the flag
-    thresholds, then scores every realization's per-phase flag fractions
+    thresholds, then scores every realization's per-phase flag percentages
     against those shared thresholds and returns them all (their
     medians are properties of the result). Each realization owns its seed, so
     they run in parallel and pool in seed order, and the result does not depend
@@ -674,8 +674,6 @@ def estimate_realization_summary(
     ----------
     config : Figure3Config
         Simulation configuration; ``config.random_seed`` is the first seed.
-        ``config.place_field_centers`` must be set (the dataclass initializes
-        it by default).
     n_realizations : int, default ``N_REALIZATIONS``
         Number of independent realizations to aggregate. Must be >= 1.
     n_jobs : int, default -1
@@ -685,7 +683,7 @@ def estimate_realization_summary(
     -------
     Figure3RealizationSummary
         Pooled flag thresholds with the fraction of pooled baseline events each
-        flags, and every realization's per-phase flag fractions and decoding
+        flags, and every realization's per-phase flag percentages and decoding
         error (with their medians).
 
     Raises
@@ -729,7 +727,7 @@ def estimate_realization_summary(
         for metric, direction in SUMMARY_FLAG_METRICS
     }
 
-    # (n_realizations, n_metrics, n_columns) flag-fraction stack.
+    # (n_realizations, n_metrics, n_columns) flag-percentage stack.
     frac = np.stack(
         [
             flag_percentages_from_values(realization.condition_values, diagnostic_thresholds)

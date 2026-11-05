@@ -11,7 +11,8 @@ committed artifact needs restoring; uncommitted changes are not reproduced.
 
 Outputs, kept after the run: ``fresh/`` (figures, summaries, macros, PDF),
 ``committed/`` (HEAD's summaries and macros), ``reproduction_report.txt``, and
-``steps.tsv`` (seconds and peak child-process memory per step).
+``steps.tsv`` (seconds and the largest child-process memory so far, a running
+maximum rather than each step's own peak).
 """
 
 from __future__ import annotations

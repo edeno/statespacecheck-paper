@@ -3,8 +3,8 @@
 Small building blocks used across the Figure-4 track, raster, and diagnostic
 panels: the Animal-Position label GID, the half-pixel ``imshow`` extent, the
 scale-bar drawer, and the distribution heatmap renderer. The shared ``-log(p)``
-display transform and the diagnostic rows' threshold / worse-fit label GIDs
-live in :mod:`plotting`.
+display transform lives in :mod:`style`, and the diagnostic rows' threshold /
+worse-fit label GIDs live in :mod:`plotting`.
 """
 
 from __future__ import annotations

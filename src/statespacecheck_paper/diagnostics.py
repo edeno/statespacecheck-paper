@@ -177,8 +177,9 @@ class SpikeEventDiagnostics:
     Per-spike-event arrays are always present; the four dense
     ``(n_time, n_cells)`` / ``(n_spikes, n_bins)`` arrays are
     optional, populated only when ``include_dense_matrices=True``.
-    Frozen + write-protected so a downstream consumer cannot
-    accidentally mutate a metric mid-pipeline.
+    Frozen, and its arrays are write-protected at construction so a downstream
+    consumer cannot accidentally mutate a metric mid-pipeline. Unpickling skips
+    ``__post_init__``, so arrays loaded from a cache are not write-protected.
 
     Parameters
     ----------
@@ -476,7 +477,7 @@ def compute_spike_event_diagnostics_from_rates(
         attributes are left ``None`` and the matching allocations / scatters are
         skipped — useful for callers that only need the per-spike event arrays
         (the cache builder is the canonical example), since for real
-        recordings the dense matrices can be hundreds of MB.
+        recordings each dense matrix can exceed a gigabyte.
 
     Returns
     -------

@@ -77,8 +77,9 @@ FIGURE03_SUMMARY_ERROR_HEADER_GID = "figure03-summary-error-header"
 FIGURE03_SYMLOG_YTICKS: tuple[float, ...] = (0.0, 0.01, 0.1, 1.0)
 
 
-# Shaded Figure 3 misfit bands: (start, end) boundary indices and the ``COLORS``
-# key. Saturated colors keep the bands visible at low alpha.
+# Shaded Figure 3 bands for the misfit windows and the sparse-population control:
+# (start, end) boundary indices and the ``COLORS`` key. Saturated colors keep the
+# bands visible at low alpha.
 FIGURE03_MISFIT_BANDS: tuple[tuple[PhaseBoundary, PhaseBoundary, str], ...] = (
     (PhaseBoundary.REMAP_START, PhaseBoundary.REMAP_END, "likelihood"),
     (PhaseBoundary.RECOVERY1_END, PhaseBoundary.HIST_DEP_END, "reference"),
@@ -88,7 +89,7 @@ FIGURE03_MISFIT_BANDS: tuple[tuple[PhaseBoundary, PhaseBoundary, str], ...] = (
 
 
 def add_phase_boundaries(axes: list[Axes], config: Figure3Config) -> None:
-    """Shade the misfit phases and the replay control on each time-series axis.
+    """Shade the misfit phases and both controls on each time-series axis.
 
     Parameters
     ----------
@@ -563,11 +564,10 @@ def compose_figure03(
     spike_counts : NDArray, shape (n_time, n_cells)
         Spike counts for each cell at each time point.
     diagnostics : DecodingDiagnostics
-        Diagnostics from ``decode_with_diagnostics``. The panels read its
-        dense ``(n_time, n_cells)`` metric matrices (``hpd_overlap``,
-        ``kl_divergence``, ``predictive_pvalue``) and its per-event
-        ``(n_events,)`` arrays (``event_time_ind``, ``event_cell_ind``, and the
-        matching ``event_*`` metric values).
+        Diagnostics from ``decode_with_diagnostics``. The panels read
+        ``predictive``, ``event_likelihood``, the shape of ``posterior``, and the
+        per-event ``(n_events,)`` arrays (``event_time_ind`` and the matching
+        ``event_*`` metric values).
     diagnostic_thresholds : DiagnosticThresholds
         Threshold values for each diagnostic.
     config : Figure3Config
@@ -596,7 +596,7 @@ def compose_figure03(
     >>> from statespacecheck_paper.figure03_protocol import Figure3Config
     >>> from statespacecheck_paper.decoding import decode_with_diagnostics
     >>> from statespacecheck_paper.diagnostics import DecodingDiagnostics, DiagnosticThresholds
-    >>> # See tests/test_plotting.py for a worked DecodingDiagnostics fixture
+    >>> # See tests/test_figure03_plotting.py for a worked DecodingDiagnostics fixture
     >>> # and how to plumb it into compose_figure03.
     """
     fig_width = 6.85  # Full page width; tight PDF stays within ~183 mm.

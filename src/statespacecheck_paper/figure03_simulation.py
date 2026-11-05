@@ -292,7 +292,7 @@ def simulate_replay_phase(
     then ``x_post``) before ANY spikes, then the spikes of the three
     segments in time order. Draw order is part of the seeded experiment:
     reordering to walk -> spike -> walk -> spike would move the ``x_post``
-    walk ahead of the ``x_pre`` spikes and shift every downstream draw,
+    walk behind the ``x_pre`` spikes and shift every downstream draw,
     changing Figure 3 and the interactive simulated cache.
     """
     x_pre = simulate_walk(

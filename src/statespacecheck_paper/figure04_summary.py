@@ -315,7 +315,7 @@ def summarize_figure04_diagnostics(
 ) -> Figure4Summary:
     """Compute the Figure-4 summary from the two decoders' per-spike diagnostics.
 
-    The computation behind :func:`compute_figure04_summary`, usable without
+    The computation behind :func:`compute_figure04_reported_statistics`, usable without
     render data (e.g. on decodes stored by the Spyglass pipeline).
 
     Parameters

@@ -104,8 +104,8 @@ def compute_spike_event_diagnostics(
     include_dense_matrices : bool, default True
         Forwarded to ``compute_spike_event_diagnostics_from_rates``. Set False
         when only the per-spike event arrays are needed (avoids the
-        ``(n_time, n_cells)`` allocations, which can be hundreds of MB
-        for full-session real-data builds).
+        ``(n_time, n_cells)`` allocations, each of which can exceed a
+        gigabyte for full-session real-data builds).
 
     Returns
     -------
@@ -252,7 +252,7 @@ def compute_results_diagnostics(
     -------
     diagnostics : SpikeEventDiagnostics
         See :func:`compute_spike_event_diagnostics` for the schema. The dense
-        ``(n_time, n_cells)`` matrices, hundreds of MB for a full recording and
+        ``(n_time, n_cells)`` matrices, over a gigabyte each for a full recording and
         read by no consumer, are left ``None``.
     """
     predictive = marginal_position_distribution(results, "predictive")

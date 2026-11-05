@@ -12,8 +12,8 @@ For the recording input and decode-cache requirements, see [reproduction](reprod
 A pyqtgraph desktop app (`statespacecheck_paper.interactive`) renders
 the decoder's per-time outputs alongside the diagnostics so you can
 scrub through a session, click on a spike to inspect its bin, and
-swap between the predictive / filtered / smoothed posterior on the
-slice column. The viewer reads from a chunked on-disk cache (Zarr +
+swap between the predictive distribution and the filtered / smoothed
+posterior on the slice column. The viewer reads from a chunked on-disk cache (Zarr +
 Parquet + `.npz` sidecars); it never realises the full posterior in
 memory.
 

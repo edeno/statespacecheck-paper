@@ -78,8 +78,9 @@ class Figure4DecoderConfig:
     """Figure-4 decoder parameters that the construction code actually injects.
 
     Every field here is threaded into :func:`create_decoder_environment` /
-    :func:`build_decoder_models` and genuinely controls the *scientific result*:
-    changing one changes the decode. Contrast :class:`Figure4ExecutionConfig`
+    :func:`build_decoder_models`, and ``position_std`` and ``position_bin_size_cm``
+    control the *scientific result*: changing one changes the decode. Contrast
+    :class:`Figure4ExecutionConfig`
     (performance-only knobs that do not change the result) and
     :class:`Figure4PackageDefaults` (``non_local_detector`` defaults that are
     *recorded* and drift-guard pinned but deliberately **not** injected).
@@ -92,7 +93,9 @@ class Figure4DecoderConfig:
     position_bin_size_cm : float
         Environment ``place_bin_size``, ``2 cm``.
     sampling_frequency_hz : float
-        Decoder ``sampling_frequency`` ``500 Hz`` (i.e. ``2 ms`` spike bins).
+        Decoder ``sampling_frequency`` ``500 Hz`` (i.e. ``2 ms`` spike bins). The
+        KDE encoder does not read it: the decode runs on the recording's time grid,
+        which must have this cadence for the value to describe the decode.
     """
 
     position_std: float = float(np.sqrt(12.5))

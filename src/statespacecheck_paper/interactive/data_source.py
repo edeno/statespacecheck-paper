@@ -269,8 +269,9 @@ class DecoderDataSource:
     linear_position : np.ndarray, shape (n_time,), float64
         Animal linear position at each decoder time bin.
     place_fields : np.ndarray, shape (n_cells, n_interior), float32
-        Shared positional place-field firing rates on the interior grid. The
-        observation model is identical across the discrete Continuous-Fragmented states.
+        Shared positional place fields on the interior grid, in expected spikes
+        per decoder time bin (not Hz). The observation model is identical across
+        the discrete Continuous-Fragmented states.
     position_bins : np.ndarray, shape (n_interior,), float64
         Per-state interior position grid (1D, identical across states).
     place_field_peaks : np.ndarray, shape (n_cells,), float64
@@ -664,7 +665,8 @@ class DecoderDataSource:
         """Load the smoothed posterior, or ``None`` if absent.
 
         Caches without ``acausal_posterior`` (the simulation cache) return
-        ``None``; callers fall back to the predictive distribution.
+        ``None``; the viewer disables its smoothed choice and never substitutes
+        the predictive distribution.
         """
         if self._smoothed_chunks is None:
             return None

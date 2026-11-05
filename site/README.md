@@ -26,8 +26,10 @@ simulation conditions, and the Figure-4 recording window under both decoders.
 # Regenerate the page data after a figure summary or a diagnostic changes.
 # The Figure-4 window needs the Figure-4 input file. It reuses the Figure-4
 # caches when current; otherwise it refits both models (several minutes) and
-# writes the ~8 GB decode cache. Add --skip-recording to leave recording.json
-# untouched when the recording outputs are unchanged.
+# writes the ~8 GB decode cache. On a machine or Python version other than the
+# one recorded in the Figure-4 summary, the export then refuses: regenerate
+# Figure 4 first. Add --skip-recording to leave recording.json untouched when
+# the recording outputs are unchanged.
 uv run --frozen python scripts/export_site_data.py
 
 # Check the JavaScript diagnostics against the Python reference

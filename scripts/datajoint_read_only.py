@@ -1,4 +1,4 @@
-"""Run a Python script with DataJoint unable to write to the database.
+"""Run a Python script with DataJoint's ordinary write methods disabled.
 
 For checking Spyglass code against the shared lab database without changing it:
 schemas and tables are never created (``create_schema`` / ``create_tables`` are
@@ -6,7 +6,8 @@ forced off, so importing a module that defines tables the database lacks raises
 instead of declaring them), and ``insert``, ``insert1``, ``delete``,
 ``delete_quick``, ``drop``, ``drop_quick``, and ``update1`` raise. That includes
 the default rows DataJoint inserts into ``Lookup`` tables on import. Reads work
-as usual. Files outside the database (e.g. analysis NWB files) are not guarded.
+as usual. ``Schema.drop``, ``Table.alter``, ``Table.declare``, and files outside
+the database (e.g. analysis NWB files) are not guarded.
 
 Usage::
 

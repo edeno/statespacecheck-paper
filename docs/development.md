@@ -137,7 +137,10 @@ already-recorded DOI disagrees. `uv run --frozen pytest -m network` checks the
 committed DOIs against Zenodo; the default test run excludes these tests. Website export
 needs the Figure 4 input file for the recording window; it reuses the Figure 4
 caches when they are current and otherwise refits both models (several minutes)
-and writes the ~8 GB decode cache, as `generate_figure04.py` does.
+and writes the ~8 GB decode cache, as `generate_figure04.py` does. On a machine or
+Python version other than the one recorded in the Figure 4 summary, the fingerprints
+cannot match, so the export refits and then refuses: regenerate Figure 4 first or
+pass `--skip-recording`.
 `--skip-recording` leaves `site/data/recording.json` untouched and is appropriate
 only when the recording outputs are unchanged. The recording export refuses a
 Figure-4 summary whose decode or diagnostics fingerprint differs from the decode

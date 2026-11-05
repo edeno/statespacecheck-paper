@@ -39,10 +39,8 @@ class PhaseBoundary(IntEnum):
     SPARSE_POP_END = 7  # end of sparse-population control
 
 
-# Default phase ladder in 1-ms steps. Used as the default of
-# ``Figure3Config.phase_boundaries`` and re-exported here so tests and
-# scripts that want to override a subset don't have to re-list the
-# unchanged entries.
+# Default phase ladder in 1-ms steps; the default of
+# ``Figure3Config.phase_boundaries``.
 _DEFAULT_PHASE_BOUNDARIES: tuple[int, ...] = (
     6_000,
     10_000,
@@ -125,8 +123,8 @@ class Figure3Config:
         Position grid bounds and step.
     place_field_std : float, default 10.0
         Gaussian place-field std (in position units).
-    place_field_centers : NDArray[np.floating] | None
-        Place-field center positions; defaults to ``np.arange(0, 101, 10)``.
+    place_field_centers : NDArray[np.floating], default empty
+        Place-field center positions; empty selects ``np.arange(0, 101, 10)``.
     place_field_rate_scale : float, default 5.0
         Scale factor multiplying the normalized Gaussian place-field density.
         With the default field width and a 1-ms step, a value of 5.0 gives a
@@ -222,8 +220,9 @@ class Figure3Config:
     # Global-remapping model: a fixed random permutation (derangement) of
     # the eleven place-field centers, so each cell ``src`` adopts cell
     # ``dst``'s center. Chosen using the first NumPy default_rng seed (737)
-    # whose permutation displaces every field by >=3 positions, so no cell
-    # keeps a field near its original location. The scramble is spatially
+    # whose permutation displaces every field by >=3 place-field spacings (30
+    # position units), so no cell keeps a field near its original location. The
+    # scramble is spatially
     # *incoherent*: because
     # the decoder's diagnostics judge each spike against this same remapped
     # likelihood (not the true fields), the misfit surfaces only through the

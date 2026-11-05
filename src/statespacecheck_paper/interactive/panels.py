@@ -324,7 +324,7 @@ class _BaseHeatmapPanel(_TimeAxisPanel):
         the center marker), matching the heatmap's time axis.
 
         ``linear_position`` is in cm. ``position_bins`` (the decoder's
-        bin centers) are non-uniformly spaced — for the W-track they
+        bin centers) are non-uniformly spaced — on this track they
         drift up to ~1.1 cm (>0.5 bin width) from a uniform grid — so
         an ``ImageItem`` stretched uniformly between the first and last
         center renders bin ``i`` at a y that is *not*
@@ -823,7 +823,7 @@ class SlicePanel(QtWidgets.QWidget):
         # Plot the slice curves on a uniform x-grid that matches the
         # heatmap's uniform-stretched y-axis (see ``_BaseHeatmapPanel``).
         # The decoder's ``position_bins`` are non-uniformly spaced (≲ 1
-        # cm cumulative drift on the W-track), so plotting at the real
+        # cm cumulative drift on this track), so plotting at the real
         # cm values would offset the slice peaks from the heatmap
         # pixels they correspond to and from the animal-position line.
         # The first / last bin centers and therefore the x-axis range

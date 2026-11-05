@@ -1,8 +1,7 @@
 """Plotting helpers shared by more than one figure.
 
-The ``-log(p)`` display transform, contiguous HPD-region extraction, the
-per-spike likelihood columns, and the per-spike diagnostic row with its artist
-GIDs.
+Contiguous HPD-region extraction, the per-spike likelihood columns, and the
+per-spike diagnostic row with its artist GIDs.
 """
 
 from __future__ import annotations
