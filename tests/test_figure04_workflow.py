@@ -151,6 +151,27 @@ class TestComputeDetailWindowComparison:
         # Inside the window, p rises for bins 2 and 5, falls for 3, ties at 4 and 7.
         assert comparison.predictive_pvalue_higher == 2
 
+    def test_pvalue_count_ignores_rounding_noise(self) -> None:
+        """Two models' p-values that differ only by round-off are ties, whichever way
+        the rounding falls on a given CPU. Only the last event is really higher."""
+        time_ind = [0, 1, 2, 3]
+        continuous = event_diagnostics(
+            hpd=np.full(4, 0.5), pvalue=np.array([0.5, 0.5, 0.5, 0.5]), time_ind=time_ind
+        )
+        fragmented = event_diagnostics(
+            hpd=np.full(4, 0.5),
+            pvalue=np.array([0.5, 0.5 + 1e-12, 0.5 - 1e-12, 0.5 + 1e-6]),
+            time_ind=time_ind,
+        )
+        comparison = compute_detail_window_comparison(
+            continuous,
+            fragmented,
+            slice(0, 4),
+            thresholds=self.THRESHOLDS,
+            metric_directions=self.DIRECTIONS,
+        )
+        assert comparison.predictive_pvalue_higher == 1
+
     def test_rejects_an_empty_window(self) -> None:
         diagnostics = event_diagnostics(hpd=np.array([0.5, 0.5]), time_ind=[0, 10])
         with pytest.raises(ValueError, match="contains no spike events"):

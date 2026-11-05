@@ -73,7 +73,7 @@
       "threshold": 0.05
     },
     "n_events": 649,
-    "predictive_pvalue_higher": 457
+    "predictive_pvalue_higher": 448
   },
   "diagnostic_means": {
     "continuous": {
@@ -213,11 +213,11 @@
       "statespacecheck_version": "0.3.1"
     },
     "source": {
-      "source_tree_sha256": "4ad095a3cfff37eac0797df381aabc56325a2e272b2dc4145c1fdc6cfc4cd34f",
+      "source_tree_sha256": "5d2faf204a2c6f35632fdd4ded8598963d17a66228f23e4bafb7a0eec3cfeb63",
       "statespacecheck_paper_version": "0.1.0",
       "statespacecheck_version": "0.3.1",
       "uv_lock_sha256": "280ef8920b3302f206621349c0733c017b8a329e3d85c789b21bf6350c093fe2"
     }
   },
-  "schema_version": 13
+  "schema_version": 14
 }

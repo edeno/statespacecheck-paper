@@ -19,6 +19,12 @@ from statespacecheck_paper.figure04_diagnostics import FlagConfusion, compute_fl
 from statespacecheck_paper.figure04_models import CONTINUOUS, CONTINUOUS_FRAGMENTED
 from statespacecheck_paper.figure04_workflow import Figure4RenderData
 
+# Two models' per-spike p-values closer than this are ties. Near-equal p-values
+# differ by round-off that varies with the CPU: in the detail window 19 events
+# differ by less than this, 9 of them upward, and none lie between 1e-9 and 1e-7,
+# so a strict comparison makes the count depend on the machine.
+FIGURE04_PVALUE_TIE_TOLERANCE = 1e-9
+
 
 def compute_mean_spike_event_diagnostic(diagnostics: SpikeEventDiagnostics, metric: str) -> float:
     """Return the per-spike mean for a diagnostic metric."""
@@ -156,7 +162,8 @@ class Figure4DetailWindowComparison:
         as the reference.
     predictive_pvalue_higher : int
         Events with a higher predictive p-value (lower ``-log(p)``) under
-        Continuous-Fragmented than under Continuous.
+        Continuous-Fragmented than under Continuous, by more than
+        :data:`FIGURE04_PVALUE_TIE_TOLERANCE`.
     """
 
     n_events: int
@@ -217,7 +224,10 @@ def compute_detail_window_comparison(
         n_events=int(in_window.sum()),
         hpd_overlap=hpd_overlap,
         predictive_pvalue_higher=int(
-            np.sum(fragmented.event_predictive_pvalue > continuous.event_predictive_pvalue)
+            np.sum(
+                fragmented.event_predictive_pvalue - continuous.event_predictive_pvalue
+                > FIGURE04_PVALUE_TIE_TOLERANCE
+            )
         ),
     )
 

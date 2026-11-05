@@ -220,7 +220,7 @@ def test_figure04_reported_statistics_counts_partition_events(tmp_path: Path) ->
     detail = payload["detail_window_comparison"]
     detail_hpd = detail["hpd_overlap"]
     assert detail["n_events"] == 649
-    assert detail["predictive_pvalue_higher"] == 457
+    assert detail["predictive_pvalue_higher"] == 448
     assert (
         detail_hpd["both"],
         detail_hpd["rescued"],

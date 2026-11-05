@@ -644,7 +644,7 @@ manual overrides: bumping one invalidates every cache of that kind.
 
 `figure03_summary.json` uses schema version 10
 (`figure03_generation.FIGURE03_SUMMARY_SCHEMA_VERSION`) and `figure04_summary.json`
-uses schema version 13 (`figure04_generation.FIGURE04_SUMMARY_SCHEMA_VERSION`). The
+uses schema version 14 (`figure04_generation.FIGURE04_SUMMARY_SCHEMA_VERSION`). The
 Figure-3 configuration block records every
 `Figure3Config` field together with the step length in seconds
 (`configuration.step_seconds`, the protocol constant `STEP_SECONDS`) and the
@@ -695,7 +695,10 @@ largest Continuous–Fragmented value). Ties are on neither side.
 Figure 4a,b (`detail_window`): their number (`n_events`), their HPD-overlap flag
 agreement (`hpd_overlap`, counted as in `flag_confusions`), and how many have a
 higher predictive p-value under Continuous–Fragmented
-(`predictive_pvalue_higher`).
+(`predictive_pvalue_higher`). P-values within 1e-09
+(`figure04_summary.FIGURE04_PVALUE_TIE_TOLERANCE`) count as ties: they differ by
+round-off that varies with the CPU, so a strict comparison would make the count
+depend on the machine.
 
 In both summaries, the `flag_rules` object binds each numeric threshold to its
 executable semantics: `less_than_or_equal` means a value is flagged when

@@ -31,6 +31,7 @@ from statespacecheck_paper.figure04_protocol import (
     FIGURE04_DETAIL_WINDOW,
     FIGURE04_DIAGNOSTIC_THRESHOLDS,
 )
+from statespacecheck_paper.figure04_summary import FIGURE04_PVALUE_TIE_TOLERANCE
 from statespacecheck_paper.number_format import significant
 from statespacecheck_paper.paths import (
     CITATION_PATH,
@@ -132,6 +133,7 @@ DOCUMENTED_VALUES: tuple[tuple[str, str, str], ...] = (
     ),
     (LINEAGE, r"upsampled\s+linearly to (\d+) Hz", f"{_DECODER.sampling_frequency_hz:g}"),
     # Figure-4 detail window (a candidate replay event)
+    (PIPELINE, r"P-values within (\S+)\n", f"{FIGURE04_PVALUE_TIE_TOLERANCE:g}"),
     (
         PIPELINE,
         r"Figure4DetailWindow\(center_index=(\d+),",
