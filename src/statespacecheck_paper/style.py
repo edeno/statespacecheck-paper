@@ -186,8 +186,10 @@ class MetricSpec:
 
     - ``label``: plain-text full name (the pyqtgraph viewer, which renders no
       mathtext).
-    - ``short_label``: plain-text abbreviated axis label (Figure 3's rows; its
-      summary heatmap stacks the words one per line).
+    - ``short_label``: plain-text abbreviated axis label (Figure 3's rows).
+    - ``flag_label``: plain-text abbreviated name of the flagged statistic
+      itself, not its display transform (Figure 3's summary heatmap, which
+      stacks the words one per line).
     - ``wrapped_ylabel``: mathtext abbreviated axis label, broken over two
       lines where it would not fit beside Figure 4's narrow detail rows.
     - ``title``: mathtext full name (Figure 4's hexbin titles).
@@ -197,6 +199,7 @@ class MetricSpec:
     color: str
     label: str
     short_label: str
+    flag_label: str
     wrapped_ylabel: str
     title: str
     display_transform: DisplayTransform = "identity"
@@ -231,6 +234,7 @@ METRIC_SPECS: tuple[MetricSpec, ...] = (
         color=COLORS["hpd_overlap"],
         label="HPD overlap",
         short_label="HPD overlap",
+        flag_label="HPD overlap",
         wrapped_ylabel="HPD\noverlap",
         title="HPD overlap",
         symlog_axis=True,
@@ -240,6 +244,7 @@ METRIC_SPECS: tuple[MetricSpec, ...] = (
         color=COLORS["predictive_pvalue"],
         label="−log(p)",
         short_label="−log(p)",
+        flag_label="Pred. p-value",
         wrapped_ylabel=r"$-\log(p)$",
         title=r"$-\log(p)$",
         display_transform="neg_log_p",
@@ -249,6 +254,7 @@ METRIC_SPECS: tuple[MetricSpec, ...] = (
         color=COLORS["kl_divergence"],
         label="KL divergence",
         short_label="KL div.",
+        flag_label="KL div.",
         wrapped_ylabel="KL div.",
         title="KL divergence",
     ),
