@@ -7,8 +7,8 @@ This figure combines (see :func:`compose_figure01` for the exact layout):
   inconsistent scenarios
 
 The schematic demonstrates the two-step Bayesian filtering process:
-1. Prediction: Integrate previous posterior against transition to get predictive
-2. Update: Multiply predictive with likelihood to get current posterior
+1. Prediction: Integrate previous filtering distribution against transition to get predictive
+2. Update: Multiply predictive with likelihood to get current filtering distribution
 
 The distribution panels show scenarios where predictive and normalized likelihood
 are consistent or inconsistent, using HPD overlap as a diagnostic.

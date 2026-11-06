@@ -674,8 +674,8 @@ def draw_equation_boxes(ax: Axes) -> None:
     """Draw the Bayesian filtering equation boxes.
 
     Draws two equation boxes showing:
-    1. Prediction: Previous Posterior (integrated against) Transition = Predictive
-    2. Update: Predictive x Likelihood = Current Posterior
+    1. Prediction: Previous Filtering Distribution (integrated against) Transition = Predictive
+    2. Update: Predictive x Likelihood = Current Filtering Distribution
 
     Parameters
     ----------
@@ -725,7 +725,7 @@ def draw_equation_boxes(ax: Axes) -> None:
             std=8,
             color=COLORS["posterior"],
             label=r"$p(x_{k-1}|y_{1:k-1})$",
-            title="Previous\nposterior",
+            title="Filtering\ndistribution",
         ),
         operator=r"$\int$",
         operator_label="Integrate",
@@ -763,7 +763,7 @@ def draw_equation_boxes(ax: Axes) -> None:
             std=7,
             color=COLORS["posterior"],
             label=r"$p(x_k|y_{1:k})$",
-            title="Current\nposterior",
+            title="Filtering\ndistribution",
         ),
         box_center_x=box_center_x,
         box_width=box_width,

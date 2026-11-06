@@ -241,6 +241,9 @@ def test_equation_insets_share_one_scale() -> None:
         assert len(insets) == 6
         assert len({inset.get_xlim() for inset in insets}) == 1
         assert len({inset.get_ylim() for inset in insets}) == 1
+        titles = [text.get_text() for inset in insets for text in inset.texts]
+        assert titles.count("Filtering\ndistribution") == 2
+        assert not any("posterior" in title for title in titles)
         peaks = [max(line.get_ydata().max() for line in inset.lines) for inset in insets]
         previous_posterior, _, predictive, _, _, current_posterior = peaks
         assert predictive < previous_posterior < current_posterior
