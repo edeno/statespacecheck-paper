@@ -211,8 +211,7 @@ def _plot_likelihood_overlay(
         np.arange(n_time),
         physical_position,
         color=COLORS["ground_truth"],
-        linewidth=1.0,
-        alpha=0.5,
+        linewidth=0.6,
     )
 
     ax.set_xlim(0, n_time - 1)
