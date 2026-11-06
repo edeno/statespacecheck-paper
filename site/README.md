@@ -21,6 +21,9 @@ simulation conditions, and the Figure-4 recording window under both decoders.
   reference cases computed by the Python implementation. Its example buttons
   load `site_export.PLAYGROUND_PRESETS`; `tests/test_site_export.py` checks
   that each flags what its label claims.
+- The page shows the paper's Figure 1, copied in at assembly, and declares its
+  pixel size in `index.html`. `site/tests/figure-size.test.mjs` checks that
+  size against the committed PNG, so update it after regenerating the figure.
 
 ```bash
 # Regenerate the page data after a figure summary or a diagnostic changes.
