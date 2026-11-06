@@ -137,9 +137,13 @@ Measured fresh runs (`steps.tsv`; peak memory is the largest child process):
 | Time | 7 minutes: figures 385 s (Figure 3 about 260 s, the Figure 4 fit about 140 s), download 27 s, manuscript 3 s | 20-minute job: figures 907 s, download 44 s, manuscript 3 s |
 
 Both runs reproduced the committed summaries and macros. The Linux run's
-Figure 3 floats differ from the macOS-committed values by at most 1.9e-13
-relative (round-off); its Figure 4 values are bit-identical. The comparison's
-tolerances and their basis are in `scripts/check_reproduction.py`.
+Figure 3 floats differ from the macOS-committed values by at most 5.9e-13
+relative (round-off); its Figure 4 values are bit-identical. Its cache
+fingerprints differ, as they do on any other machine, while the decode and
+diagnostics identities match. The comparison's tolerances and their basis are in
+`scripts/check_reproduction.py`. Round-off also decides strict comparisons
+between near-equal values, so the Figure 4 detail window's count of higher
+p-values treats differences below `FIGURE04_PVALUE_TIE_TOLERANCE` as ties.
 
 Those fresh-run times predate Figure 3's parallel realizations. Individual steps
 on the same machine, with current Figure 4 caches: Figures 1 and 2 take about
