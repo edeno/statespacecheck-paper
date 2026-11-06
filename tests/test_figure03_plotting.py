@@ -180,7 +180,7 @@ def test_compose_figure03_renders_precomputed_summary(
         # Rows follow the flag-rule order, each label one word per line.
         assert [label.get_text() for label in summary_ax.get_yticklabels()] == [
             "HPD\noverlap",
-            "Pred.\np-value",
+            "Pred.\n$p$-value",
             "KL\ndiv.",
         ]
         cell_texts = {t.get_text() for t in summary_ax.texts}
@@ -330,10 +330,9 @@ def test_compose_figure03_uses_event_diagnostics_for_scatter() -> None:
         np.testing.assert_array_equal(predictive_pvalue_offsets[:, 0], [10, 10])
         # Plotted as -log(predictive_pvalue) (natural log); 0.1 -> -ln(0.1), 0.01 -> -ln(0.01).
         np.testing.assert_allclose(predictive_pvalue_offsets[:, 1], [-np.log(0.1), -np.log(0.01)])
-        # Figure 3 labels the p-value row in plain text, not the shared LaTeX.
         assert [ax.get_ylabel() for ax in fig.axes[3:6]] == [
-            "HPD overlap",
-            "−log(p)",
+            "HPD\noverlap",
+            r"$-\log(p)$",
             "KL div.",
         ]
         # Four misfit bands plus the replay band shade every time-series row

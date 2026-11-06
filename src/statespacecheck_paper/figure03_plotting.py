@@ -370,7 +370,7 @@ def _plot_figure03_diagnostic_row(
         spec,
         threshold=threshold,
         xlim=(0, n_time),
-        ylabel=spec.short_label,
+        ylabel=spec.wrapped_ylabel,
         symlog_yticks=FIGURE03_SYMLOG_YTICKS,
         # Headroom above 1 keeps the "1" tick label (and the dense band of
         # fully nested HPD regions at overlap = 1) clear of the raster panel

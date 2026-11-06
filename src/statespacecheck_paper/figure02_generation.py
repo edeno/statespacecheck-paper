@@ -188,7 +188,7 @@ def compose_figure02(rng: np.random.Generator | None = None) -> Figure:
 
     column_titles = [
         ("hpd_predictive", "HPD overlap"),
-        ("predictive_distribution", "Predictive check"),
+        ("predictive_distribution", r"Predictive $\mathbfit{p}$-value"),
         ("kl_distributions", "KL divergence"),
     ]
     for ax_key, col_title in column_titles:

@@ -230,19 +230,17 @@ class MetricSpec:
 
     - ``label``: plain-text full name (the pyqtgraph viewer, which renders no
       mathtext).
-    - ``short_label``: plain-text abbreviated axis label (Figure 3's rows).
-    - ``flag_label``: plain-text abbreviated name of the flagged statistic
+    - ``flag_label``: mathtext abbreviated name of the flagged statistic
       itself, not its display transform (Figure 3's summary heatmap, which
       stacks the words one per line).
     - ``wrapped_ylabel``: mathtext abbreviated axis label, broken over two
-      lines where it would not fit beside Figure 4's narrow detail rows.
+      lines where it would not fit beside the short rows of Figures 3 and 4.
     - ``title``: mathtext full name (Figure 4's hexbin titles).
     """
 
     name: MetricName
     color: str
     label: str
-    short_label: str
     flag_label: str
     wrapped_ylabel: str
     title: str
@@ -289,7 +287,6 @@ METRIC_SPECS: tuple[MetricSpec, ...] = (
         name="hpd_overlap",
         color=COLORS["hpd_overlap"],
         label="HPD overlap",
-        short_label="HPD overlap",
         flag_label="HPD overlap",
         wrapped_ylabel="HPD\noverlap",
         title="HPD overlap",
@@ -299,8 +296,7 @@ METRIC_SPECS: tuple[MetricSpec, ...] = (
         name="predictive_pvalue",
         color=COLORS["predictive_pvalue"],
         label="−log(p)",
-        short_label="−log(p)",
-        flag_label="Pred. p-value",
+        flag_label="Pred. $p$-value",
         wrapped_ylabel=r"$-\log(p)$",
         title=r"$-\log(p)$",
         display_transform="neg_log_p",
@@ -309,7 +305,6 @@ METRIC_SPECS: tuple[MetricSpec, ...] = (
         name="kl_divergence",
         color=COLORS["kl_divergence"],
         label="KL divergence",
-        short_label="KL div.",
         flag_label="KL div.",
         wrapped_ylabel="KL div.",
         title="KL divergence",
@@ -334,7 +329,7 @@ def set_figure_defaults() -> None:
     -----
     - Journals typically require 8-12 pt for all in-figure text; 8 pt is the floor
     - TrueType font embedding (fonttype 42) required for journal submission
-    - Uses Arial font family (widely available and accepted by journals)
+    - Uses Arial for text and math (widely available and accepted by journals)
     - Sets thin line widths (0.5pt) for professional appearance
 
     Examples
@@ -353,6 +348,12 @@ def set_figure_defaults() -> None:
             "legend.fontsize": 8,
             "font.family": "sans-serif",
             "font.sans-serif": ["Arial"],
+            "mathtext.fontset": "custom",
+            "mathtext.rm": "Arial",
+            "mathtext.it": "Arial:italic",
+            "mathtext.bf": "Arial:bold",
+            "mathtext.bfit": "Arial:italic:bold",
+            "mathtext.fallback": "stixsans",
             "axes.linewidth": 0.5,
             "xtick.major.width": 0.5,
             "ytick.major.width": 0.5,
