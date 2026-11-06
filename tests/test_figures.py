@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import re
 import subprocess
 import sys
 from collections.abc import Iterator
@@ -136,6 +137,34 @@ def test_figure02_create_shared_example_samples_y_tilde_with_noise() -> None:
     assert not data.showcase_likelihoods.flags.writeable
     with pytest.raises(ValueError, match="predictive_pvalue must lie"):
         replace(data, predictive_pvalue=float("nan"))
+
+
+def test_figure02_numeric_ticks_are_labeled_with_the_values_they_sit_at() -> None:
+    """A tick label names the tick's real position on every axis of the figure,
+    so an axis cannot print a rounded limit in place of the value it marks."""
+    import matplotlib.pyplot as plt
+
+    from statespacecheck_paper.figure02_generation import compose_figure02
+
+    fig = compose_figure02()
+    try:
+        fig.canvas.draw()
+        numeric_ticks = []
+        for ax in fig.axes:
+            for axis, (lower, upper) in (
+                (ax.xaxis, sorted(ax.get_xlim())),
+                (ax.yaxis, sorted(ax.get_ylim())),
+            ):
+                for tick in axis.get_major_ticks():
+                    location, text = tick.get_loc(), tick.label1.get_text()
+                    if lower <= location <= upper and re.fullmatch(r"-?[\d.]+", text):
+                        numeric_ticks.append((location, float(text)))
+    finally:
+        plt.close(fig)
+
+    assert len(numeric_ticks) > 20
+    locations, labels = zip(*numeric_ticks, strict=True)
+    np.testing.assert_allclose(locations, labels, rtol=1e-9, atol=1e-12)
 
 
 @pytest.mark.parametrize("observed_in_tail", [False, True])

@@ -19,6 +19,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import statespacecheck as ssc
 from matplotlib.axes import Axes
+from matplotlib.axis import Axis
+from matplotlib.ticker import FuncFormatter, MaxNLocator
 from numpy.typing import NDArray
 from scipy.stats import norm
 
@@ -237,13 +239,21 @@ def _style_state_axis(ax: Axes) -> None:
     ax.set_xticklabels(["0", "100"])
 
 
+def _mark_round_values(axis: Axis) -> None:
+    """Mark an axis at round values, each labeled with the value it sits at.
+
+    The ticks follow later changes to the axis limits.
+    """
+    axis.set_major_locator(MaxNLocator(nbins=3, steps=[1, 2, 5, 10]))
+    # Adding 0.0 turns a tick at -0.0 into 0.
+    axis.set_major_formatter(FuncFormatter(lambda value, _: f"{value + 0.0:g}"))
+
+
 def _finish_density_axes(ax: Axes) -> None:
-    """Style a density panel: the state axis, then a y axis marked at zero and its top."""
+    """Style a density panel: the state axis, then a y axis rising from zero."""
     _style_state_axis(ax)
     ax.set_ylim(bottom=0)
-    y_max = ax.get_ylim()[1]
-    ax.set_yticks([0, y_max])
-    ax.set_yticklabels(["0", f"{y_max:.2f}"])
+    _mark_round_values(ax.yaxis)
 
 
 def plot_kl_distributions(ax: Axes, data: Figure2ExampleData) -> None:
@@ -297,10 +307,7 @@ def plot_kl_log_ratio(ax: Axes, data: Figure2ExampleData) -> None:
     ax.set_ylabel(r"$\log P - \log Q$", labelpad=8)
     ax.set_title("Log ratio", pad=4)
     _style_state_axis(ax)
-    # Minimal y-ticks: first and last only
-    y_min, y_max = ax.get_ylim()
-    ax.set_yticks([y_min, 0, y_max])
-    ax.set_yticklabels([f"{y_min:.0f}", "0", f"{y_max:.0f}"])
+    _mark_round_values(ax.yaxis)
 
 
 def plot_kl_pointwise(ax: Axes, data: Figure2ExampleData) -> None:
@@ -323,10 +330,7 @@ def plot_kl_pointwise(ax: Axes, data: Figure2ExampleData) -> None:
     )
     ax.set_title(r"Pointwise KL: $P\,\times$ log ratio", pad=4)
     _style_state_axis(ax)
-    # Minimal y-ticks: first and last only
-    y_min, y_max = ax.get_ylim()
-    ax.set_yticks([y_min, 0, y_max])
-    ax.set_yticklabels([f"{y_min:.3f}", "0", f"{y_max:.3f}"])
+    _mark_round_values(ax.yaxis)
 
 
 # =============================================================================
@@ -740,11 +744,5 @@ def plot_predictive_check_density_histogram(ax: Axes, data: Figure2ExampleData) 
     ax.legend(frameon=False, loc="upper left")
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
-    # Minimal x-ticks: first and last only
-    x_min, x_max = ax.get_xlim()
-    ax.set_xticks([x_min, x_max])
-    ax.set_xticklabels([f"{x_min:.0f}", f"{x_max:.0f}"])
-    # Minimal y-ticks: first and last only
-    y_max = ax.get_ylim()[1]
-    ax.set_yticks([0, y_max])
-    ax.set_yticklabels(["0", f"{y_max:.1f}"])
+    _mark_round_values(ax.xaxis)
+    _mark_round_values(ax.yaxis)
