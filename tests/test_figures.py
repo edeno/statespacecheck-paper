@@ -210,6 +210,8 @@ def test_figure02_predictive_column_shows_four_ordered_steps() -> None:
     """The column reads top to bottom as the procedure, on one mark and state
     scale, and each sample keeps its color from its curve to its score."""
     import matplotlib.pyplot as plt
+    from matplotlib.collections import LineCollection, PathCollection
+    from matplotlib.legend import Legend
 
     from statespacecheck_paper.figure02_generation import compose_figure02
     from statespacecheck_paper.figure02_panels import _showcase_colors, create_shared_example
@@ -229,16 +231,19 @@ def test_figure02_predictive_column_shows_four_ordered_steps() -> None:
 
         data = create_shared_example(np.random.default_rng(42))
         colors = _showcase_colors(5)
-        drawn = {len(points.get_offsets()): points for points in steps[1].collections}
-        # The dots are the sampled states, at the peak of the curve each one sets.
-        np.testing.assert_allclose(drawn[5].get_offsets()[:, 0], data.showcase_positions)
-        np.testing.assert_allclose(drawn[5].get_facecolor(), colors)
+        # Each vertical line is a sampled state, rising to the peak of its curve.
+        state_lines = next(c for c in steps[1].collections if isinstance(c, LineCollection))
+        segments = np.array(state_lines.get_segments())
+        np.testing.assert_allclose(segments[:, 0, 0], data.showcase_positions)
         np.testing.assert_allclose(
-            drawn[5].get_offsets()[:, 1], data.showcase_mark_densities.max(axis=1)
+            segments[:, :, 1].max(axis=1), data.showcase_mark_densities.max(axis=1)
         )
+        np.testing.assert_allclose(state_lines.get_color()[:, :3], colors[:, :3])
         # The triangles are the marks, and the same marks are scored below them.
         marks_on_curves = [
-            points for points in steps[1].collections if len(points.get_offsets()) == 1
+            points
+            for points in steps[1].collections
+            if isinstance(points, PathCollection) and len(points.get_offsets()) == 1
         ]
         np.testing.assert_allclose(
             [points.get_offsets()[0, 0] for points in marks_on_curves],
@@ -252,9 +257,11 @@ def test_figure02_predictive_column_shows_four_ordered_steps() -> None:
             "Predictive",
             r"Sampled $x_k$",
         ]
-        assert [text.get_text() for text in steps[1].get_legend().get_texts()] == [
+        legends = steps[1].findobj(Legend)
+        assert {text.get_text() for legend in legends for text in legend.get_texts()} == {
+            "Observation model",
             r"Replicates $\tilde{y}$",
-        ]
+        }
         assert [text.get_text() for text in steps[2].get_legend().get_texts()] == ["Observed $y$"]
     finally:
         plt.close(fig)

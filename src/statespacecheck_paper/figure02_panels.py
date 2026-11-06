@@ -20,6 +20,7 @@ import numpy as np
 import statespacecheck as ssc
 from matplotlib.axes import Axes
 from matplotlib.axis import Axis
+from matplotlib.legend import Legend
 from matplotlib.legend_handler import HandlerTuple
 from matplotlib.lines import Line2D
 from matplotlib.ticker import FuncFormatter, MaxNLocator
@@ -570,12 +571,17 @@ def plot_hpd_intersection(ax: Axes, data: Figure2ExampleData) -> tuple[float, fl
 # Predictive Check column
 # =============================================================================
 
-# Each kind of quantity keeps one shape through the column: a dot for a sampled
-# state and a triangle for a mark.
-_STATE_DOT: dict[str, Any] = {"marker": "o", "s": 14, "zorder": 6}
+# A dot marks a sampled state in step 1 and a triangle marks a mark in every step.
+_STATE_DOT: dict[str, Any] = {
+    "marker": "o",
+    "s": 20,
+    "edgecolors": "white",
+    "linewidths": 0.4,
+    "zorder": 6,
+}
 _TRIANGLE: dict[str, Any] = {
     "marker": "v",
-    "s": 24,
+    "s": 30,
     "edgecolors": "white",
     "linewidths": 0.4,
     "zorder": 5,
@@ -647,15 +653,16 @@ def _color_key(ax: Axes, colors: NDArray[np.float64], **marker: Any) -> tuple[An
 
 
 def _legend_with_color_keys(
-    ax: Axes, keys: list[Any], labels: list[str], *, handlelength: float = 2.6
-) -> None:
+    ax: Axes, keys: list[Any], labels: list[str], *, handlelength: float = 2.6, top: float = 1.0
+) -> Legend:
     """Add a compact upper-right legend whose keys may span several colors."""
-    ax.legend(
+    return ax.legend(
         keys,
         labels,
         handler_map={tuple: HandlerTuple(ndivide=None, pad=0.0)},
         frameon=False,
         loc="upper right",
+        bbox_to_anchor=(1.0, top),
         labelspacing=0.25,
         handlelength=handlelength,
         handletextpad=0.4,
@@ -664,30 +671,44 @@ def _legend_with_color_keys(
 
 
 def plot_predictive_check_replicate_marks(ax: Axes, data: Figure2ExampleData) -> None:
-    """Step 2: each sampled state's mark distribution and the mark drawn from it.
+    """Step 2: each sampled state's observation model and the mark drawn from it.
 
-    A dot is a sampled state, as in step 1 and directly below it, at the peak of
-    the mark distribution p(y | x_s) it sets. The triangle on each curve is the
-    replicate mark drawn from that curve. Color follows the sample.
+    A dotted line is a sampled state, directly below its line in step 1, rising
+    to the peak of the observation model p(y | x_s) that state sets. The triangle
+    on each curve is the replicate mark drawn from that curve. Color follows the
+    sample, and the curves are light so that the markers stand out.
     """
     marks = data.mark_bins
     colors = _showcase_colors(len(data.showcase_positions))
+    curve: dict[str, Any] = {"linewidth": 0.8, "alpha": 0.6}
     for density, y_tilde, color in zip(
         data.showcase_mark_densities, data.showcase_y_tildes, colors, strict=True
     ):
-        ax.plot(marks, density, color=color, linewidth=1.0, alpha=0.85)
+        ax.plot(marks, density, color=color, **curve)
         ax.scatter([y_tilde], [np.interp(y_tilde, marks, density)], color=[color], **_TRIANGLE)
-    ax.scatter(
+    ax.vlines(
         data.showcase_positions,
+        0,
         data.showcase_mark_densities.max(axis=1),
-        color=colors,
-        **_STATE_DOT,
+        colors=[tuple(color) for color in colors],
+        linestyle=":",
+        linewidth=1.0,
     )
 
     ax.text(99, 0.016, r"$p(y\,|\,x_k)$", color="0.35", ha="right", va="center")
-    _legend_with_color_keys(ax, [_color_key(ax, colors, **_TRIANGLE)], [r"Replicates $\tilde{y}$"])
+    # Two legends, because the triangles' key is too wide to share with this name.
+    model_legend = _legend_with_color_keys(
+        ax,
+        [tuple(Line2D([], [], color=color, linewidth=1.2) for color in colors)],
+        ["Observation model"],
+        handlelength=1.0,
+    )
+    ax.add_artist(model_legend)
+    _legend_with_color_keys(
+        ax, [_color_key(ax, colors, **_TRIANGLE)], [r"Replicates $\tilde{y}$"], top=0.84
+    )
     ax.set_title(r"Sample a mark $\tilde{y}$ from each state", pad=3)
-    _style_mark_axis(ax, top=0.05)
+    _style_mark_axis(ax, top=0.066)
     # The panel below shares this axis.
     ax.tick_params(labelbottom=False)
 
