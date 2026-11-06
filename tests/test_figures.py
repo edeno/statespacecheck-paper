@@ -265,6 +265,29 @@ def test_figure02_predictive_column_shows_four_ordered_steps() -> None:
         plt.close(fig)
 
 
+def test_figure02_plots_densities_whose_areas_are_the_printed_values() -> None:
+    """The drawn state densities integrate to one, the predictive is taller than
+    the wider f_pred, and the pointwise KL panel's area is the printed divergence."""
+    import matplotlib.pyplot as plt
+
+    from statespacecheck_paper.figure02_generation import compose_figure02
+    from statespacecheck_paper.figure02_panels import create_shared_example
+
+    data = create_shared_example(np.random.default_rng(42))
+    x = data.position_bins
+    for density in (data.predictive_density, data.likelihood_density):
+        assert np.trapezoid(density, x) == pytest.approx(1.0, abs=1e-3)
+    assert data.predictive_density.max() > data.predictive_mark_density.max()
+
+    fig = compose_figure02()
+    try:
+        ax = next(ax for ax in fig.axes if ax.get_title().startswith("Pointwise KL"))
+        curve_x, curve_y = ax.lines[0].get_data()
+    finally:
+        plt.close(fig)
+    assert np.trapezoid(curve_y, curve_x) == pytest.approx(data.kl_divergence, rel=1e-2)
+
+
 def test_figure02_replicate_marks_can_be_told_apart() -> None:
     """The schematic's replicate marks and the observed mark stay separate on
     the axis, the replicates sample different parts of their curves, and drawing
@@ -305,7 +328,7 @@ def test_figure02_hpd_level_label_clears_its_curve(dist_name: str) -> None:
             )
             box = label.get_window_extent()
             curve = ax.transData.transform(
-                np.column_stack([data.position_bins, getattr(data, dist_name)])
+                np.column_stack([data.position_bins, getattr(data, f"{dist_name}_density")])
             )
         finally:
             plt.close(fig)

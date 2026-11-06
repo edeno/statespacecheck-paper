@@ -132,6 +132,22 @@ class Figure2ExampleData:
             array.setflags(write=False)
             object.__setattr__(self, name, array)
 
+    @property
+    def predictive_density(self) -> NDArray[np.float64]:
+        """Predictive as a density over the state, shape (n_bins,)."""
+        density: NDArray[np.float64] = self.predictive / (
+            self.position_bins[1] - self.position_bins[0]
+        )
+        return density
+
+    @property
+    def likelihood_density(self) -> NDArray[np.float64]:
+        """Normalized likelihood as a density over the state, shape (n_bins,)."""
+        density: NDArray[np.float64] = self.likelihood / (
+            self.position_bins[1] - self.position_bins[0]
+        )
+        return density
+
 
 def create_shared_example(rng: np.random.Generator) -> Figure2ExampleData:
     """Create shared example data for all three metrics.
@@ -291,15 +307,15 @@ def _finish_density_axes(ax: Axes) -> None:
 def plot_kl_distributions(ax: Axes, data: Figure2ExampleData) -> None:
     """Predictive and Likelihood distributions overlaid."""
     x = data.position_bins
-    pred = data.predictive
-    like = data.likelihood
+    pred = data.predictive_density
+    like = data.likelihood_density
 
     ax.plot(x, pred, color=COLORS["predictive"], linewidth=1.5, label="Predictive")
     ax.fill_between(x, pred, alpha=0.3, color=COLORS["predictive"])
     ax.plot(x, like, color=COLORS["likelihood"], linewidth=1.5, label="Likelihood")
     ax.fill_between(x, like, alpha=0.3, color=COLORS["likelihood"])
 
-    ax.set_ylabel("Probability", labelpad=8)
+    ax.set_ylabel("Density", labelpad=8)
     ax.legend(
         frameon=False,
         loc="upper right",
@@ -354,7 +370,8 @@ def plot_kl_pointwise(ax: Axes, data: Figure2ExampleData) -> None:
     like = data.likelihood
 
     log_ratio = np.log(pred) - np.log(like)
-    pointwise_kl = pred * log_ratio
+    # The density, not the per-bin probability, so the area is the divergence.
+    pointwise_kl = data.predictive_density * log_ratio
 
     ax.plot(x, pointwise_kl, color=COLORS["kl_divergence"], linewidth=1.5)
     ax.fill_between(x, pointwise_kl, alpha=0.3, color=COLORS["kl_divergence"])
@@ -395,14 +412,15 @@ def _plot_hpd_panel(
     """
     hpd_mask = ssc.highest_density_region(dist[np.newaxis], coverage=HPD_COVERAGE)[0]
 
+    density = dist / (x[1] - x[0])
     # The HPD density level is the minimum density value inside the HPD region.
-    hpd_density_level = np.min(dist[hpd_mask])
+    hpd_density_level = np.min(density[hpd_mask])
 
-    ax.plot(x, dist, color=color, linewidth=1.2)
+    ax.plot(x, density, color=color, linewidth=1.2)
     ax.fill_between(
         x,
         0,
-        dist,
+        density,
         where=list(hpd_mask),
         alpha=0.35,
         color=color,
@@ -421,7 +439,7 @@ def _plot_hpd_panel(
         alpha=0.8,
     )
 
-    ax.set_ylabel("Probability", labelpad=8)
+    ax.set_ylabel("Density", labelpad=8)
     ax.set_title(title, pad=4)
     ax.legend(frameon=False, **legend_kwargs)
     _finish_density_axes(ax)
@@ -607,7 +625,7 @@ def plot_predictive_check_predictive_fan(ax: Axes, data: Figure2ExampleData) -> 
     that state gives the matching curve in the mark-density panel.
     """
     x = data.position_bins
-    pred = data.predictive
+    pred = data.predictive_density
     positions = data.showcase_positions
     colors = _showcase_colors(len(positions))
 
@@ -631,7 +649,7 @@ def plot_predictive_check_predictive_fan(ax: Axes, data: Figure2ExampleData) -> 
 
     ax.set_title("Sample states $x_k$", pad=3)
     ax.set_xlabel("Latent state (a.u.)", labelpad=2)
-    ax.set_ylabel("Probability", labelpad=8)
+    ax.set_ylabel("Density", labelpad=8)
     _finish_density_axes(ax)
 
 
