@@ -494,6 +494,21 @@ def _recording_summary(render_data: Figure4RenderData) -> dict[str, Any]:
     }
 
 
+def test_recording_refuses_an_infinite_predictive() -> None:
+    """A corrupt decode stops the export; it must not reach the page as a huge
+    finite value."""
+    render_data = synthetic_render_data()
+    window = Figure4DetailWindow(center_index=20, half_width_samples=10)
+    analysis = render_data.analysis_results
+    corrupt = analysis.continuous_results.copy(deep=True)
+    corrupt["predictive_posterior"].values[window.to_slice(render_data.time.size).start, 0] = np.inf
+    broken = dataclasses.replace(
+        render_data, analysis_results=dataclasses.replace(analysis, continuous_results=corrupt)
+    )
+    with pytest.raises(ValueError, match="finite"):
+        recording_payload(broken, _recording_summary(render_data), window)
+
+
 def test_recording_payload_slices_both_models_to_the_detail_window() -> None:
     render_data = synthetic_render_data()
     summary = _recording_summary(render_data)

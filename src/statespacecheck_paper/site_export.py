@@ -999,7 +999,6 @@ def recording_payload(
         if diagnostics.event_time is None:
             raise ValueError(f"{model.id} diagnostics lack exact event times")
         low, high = np.nanpercentile(predictive, FIGURE04_PREDICTIVE_PERCENTILES)
-        predictive = np.nan_to_num(predictive)
         # Events belong to the decoder bin that counted them (event_time_ind),
         # as in Figure 4, not to the bin nearest their exact spike time.
         event_bin = np.asarray(diagnostics.event_time_ind)
