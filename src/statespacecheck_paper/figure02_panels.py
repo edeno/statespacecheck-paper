@@ -649,15 +649,20 @@ def _style_mark_axis(ax: Axes, top: float) -> None:
 
 
 def _compact_legend(ax: Axes, keys: list[Any], labels: list[str]) -> None:
-    """Add a compact upper-right legend for a panel of the predictive column."""
+    """Add a compact upper-right legend for a panel of the predictive column.
+
+    Small key markers keep a key from reading as one more point on the curves
+    beside it. A frame would hide the curves that rise into this corner.
+    """
     ax.legend(
         keys,
         labels,
-        frameon=False,
         loc="upper right",
+        frameon=False,
+        markerscale=0.7,
         labelspacing=0.25,
-        handlelength=1.0,
-        handletextpad=0.4,
+        handlelength=0.8,
+        handletextpad=0.3,
         borderaxespad=0.0,
     )
 
@@ -696,7 +701,7 @@ def plot_predictive_check_replicate_marks(ax: Axes, data: Figure2ExampleData) ->
         [r"$p(y\,|\,x_k)$", r"$\tilde{y}$"],
     )
     ax.set_title(r"Sample a mark $\tilde{y}$ from each state", pad=3)
-    _style_mark_axis(ax, top=0.046)
+    _style_mark_axis(ax, top=0.041)
     # The panel below shares this axis.
     ax.tick_params(labelbottom=False)
 
@@ -728,7 +733,7 @@ def plot_predictive_check_mark_scores(ax: Axes, data: Figure2ExampleData) -> Non
     _compact_legend(ax, [observed], ["Observed $y$"])
     ax.set_title(r"Score each mark on $f_{\mathrm{pred}}$", pad=3)
     ax.set_xlabel("Mark (a.u.)", labelpad=2)
-    _style_mark_axis(ax, top=0.042)
+    _style_mark_axis(ax, top=0.039)
 
 
 def plot_predictive_check_density_histogram(ax: Axes, data: Figure2ExampleData) -> None:

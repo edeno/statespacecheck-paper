@@ -241,7 +241,7 @@ def compose_figure02(rng: np.random.Generator | None = None) -> Figure:
     for key, headroom in (
         ("kl_distributions", 1.36),
         ("hpd_predictive", 1.36),
-        ("predictive_distribution", 1.2),
+        ("predictive_distribution", 1.08),
         ("hpd_likelihood", 1.2),
         ("predictive_histogram", 1.28),
     ):
