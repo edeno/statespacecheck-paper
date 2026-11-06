@@ -69,8 +69,9 @@ def test_compose_figure04_produces_panels_and_finite_bbox() -> None:
 
 
 def test_compose_figure04_aligns_the_two_detail_stacks_row_by_row() -> None:
-    """Panel (b)'s rows sit at panel (a)'s heights although the two stacks lay
-    out in separate subfigures with different decorations."""
+    """Panel (b)'s rows share panel (a)'s heights and widths, so both draw the
+    window at one time scale, although the two stacks lay out in separate
+    subfigures with different decorations."""
     import matplotlib.pyplot as plt
 
     result = compose_figure04(
@@ -80,9 +81,13 @@ def test_compose_figure04_aligns_the_two_detail_stacks_row_by_row() -> None:
     )
     result.figure.draw_without_rendering()
     axes_a, axes_b = result.figure.axes[:6], result.figure.axes[6:12]
+    # Window extents are drawn sizes; get_position() is a fraction of each subfigure.
     for ax_a, ax_b in zip(axes_a, axes_b, strict=True):
-        pos_a, pos_b = ax_a.get_position(), ax_b.get_position()
-        np.testing.assert_allclose((pos_b.y0, pos_b.height), (pos_a.y0, pos_a.height))
+        extent_a, extent_b = ax_a.get_window_extent(), ax_b.get_window_extent()
+        np.testing.assert_allclose(
+            (extent_b.y0, extent_b.height, extent_b.width),
+            (extent_a.y0, extent_a.height, extent_a.width),
+        )
     plt.close(result.figure)
 
 

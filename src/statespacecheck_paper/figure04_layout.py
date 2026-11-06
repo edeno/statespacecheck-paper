@@ -376,7 +376,7 @@ def compose_figure04(
     subfigs_top = subfigs_rows[0].subfigures(
         1,
         5,
-        width_ratios=[0.055, 1.0, 1.07, 0.42, 0.04],
+        width_ratios=[0.055, 1.0, 1.03, 0.42, 0.04],
         wspace=0.005,
     )
 
@@ -431,11 +431,14 @@ def compose_figure04(
     # The detail stacks lay out in separate subfigures, whose different tick
     # labels and annotations leave their rows a few pixels apart. With the
     # layout frozen (the hexbin layout already froze it; repeat that here so
-    # this step does not depend on it), give panel (b) panel (a)'s row heights.
+    # this step does not depend on it), give panel (b) panel (a)'s row heights
+    # and drawn widths, so both show the window at the same time scale. Axes
+    # positions are fractions of their own subfigure, so widths need rescaling.
     fig.set_layout_engine("none")
+    width_scale = subfigs_top[1].bbox.width / subfigs_top[2].bbox.width
     for ax_a, ax_b in zip(axes_a, axes_b, strict=True):
         pos_a, pos_b = ax_a.get_position(), ax_b.get_position()
-        ax_b.set_position([pos_b.x0, pos_a.y0, pos_b.width, pos_a.height])
+        ax_b.set_position([pos_b.x0, pos_a.y0, pos_a.width * width_scale, pos_a.height])
 
     side_tight_bbox = _axes_tight_bbox_inches(fig, pad_inches=0.05)
     return Figure4Composition(figure=fig, bbox_inches=side_tight_bbox)
