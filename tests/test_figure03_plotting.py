@@ -197,6 +197,33 @@ def test_compose_figure03_renders_precomputed_summary(
         plt.close(fig)
 
 
+def test_compose_figure03_keeps_the_abutting_position_rows_readable(
+    thresholds_default: DiagnosticThresholds,
+) -> None:
+    """Each position row keeps its 0 at its own baseline; only the likelihood
+    row's top label gives way, so the stack never reads 100, 50, 100."""
+    rng = np.random.default_rng(0)
+    n_time, n_bins, n_cells = 3500, 31, 5
+    bundle = _combined_metrics(rng, n_time, n_bins, n_cells)
+
+    fig = compose_figure03(
+        rng.uniform(0, n_bins - 1, n_time),
+        bundle["spikes"],
+        bundle["metrics"],
+        thresholds_default,
+        _params_for_short_run(n_time, n_cells),
+        np.linspace(0, 1, n_cells),
+        median_flag_percentages=np.zeros((3, 6)),
+        median_decoding_error=np.zeros(6),
+    )
+    try:
+        ax_pred, ax_like = fig.axes[:2]
+        assert [label.get_text() for label in ax_pred.get_yticklabels()] == ["0", "15", "30"]
+        assert [label.get_text() for label in ax_like.get_yticklabels()] == ["0", "15", ""]
+    finally:
+        plt.close(fig)
+
+
 def test_compose_figure03_tags_figure03_annotations(
     thresholds_default: DiagnosticThresholds,
 ) -> None:

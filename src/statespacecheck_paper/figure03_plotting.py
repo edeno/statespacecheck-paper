@@ -637,12 +637,12 @@ def compose_figure03(
     _plot_figure03_predictive_row(ax_pred, diagnostics.predictive, physical_position)
     _plot_figure03_likelihood_row(ax_like, diagnostics, physical_position)
     # The two position rows abut, so give them the same ticks and leave the
-    # predictive row's lowest tick unlabeled to keep it off the likelihood
-    # row's highest label.
+    # likelihood row's highest tick unlabeled to keep it off the predictive
+    # row's lowest label.
     position_ticks = np.linspace(0, diagnostics.predictive.shape[1] - 1, 3)
     position_labels = [f"{tick:g}" for tick in position_ticks]
-    ax_pred.set_yticks(position_ticks, labels=["", *position_labels[1:]])
-    ax_like.set_yticks(position_ticks, labels=position_labels)
+    ax_pred.set_yticks(position_ticks, labels=position_labels)
+    ax_like.set_yticks(position_ticks, labels=[*position_labels[:-1], ""])
     _plot_figure03_raster_row(ax_raster, spike_counts, place_field_centers)
 
     event_time_ind = diagnostics.event_time_ind
