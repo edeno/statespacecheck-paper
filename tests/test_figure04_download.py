@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import os
@@ -188,6 +189,36 @@ def test_different_file_appearing_during_the_download_is_not_overwritten(
     data.mkdir()
     output = data / FIGURE04_INPUTS_FILE
     _another_writer_saves(monkeypatch, output, b"something else")
+    with pytest.raises(FileExistsError, match="different SHA-256"):
+        download_figure04_inputs(data, url=url, sha256=sha256)
+    assert output.read_bytes() == b"something else"
+    assert list(data.iterdir()) == [output]
+
+
+def _no_hard_links(source: Path, destination: Path) -> None:
+    raise OSError(errno.EPERM, "Operation not permitted")
+
+
+def test_filesystem_without_hard_links_still_saves_the_verified_file(
+    tmp_path: Path, published_copy: tuple[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    url, sha256 = published_copy
+    data = tmp_path / "data"
+    monkeypatch.setattr(os, "link", _no_hard_links)
+    output = download_figure04_inputs(data, url=url, sha256=sha256)
+    assert output.read_bytes() == _PUBLISHED
+    assert list(data.iterdir()) == [output]
+
+
+def test_filesystem_without_hard_links_does_not_overwrite_a_different_file(
+    tmp_path: Path, published_copy: tuple[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    url, sha256 = published_copy
+    data = tmp_path / "data"
+    data.mkdir()
+    output = data / FIGURE04_INPUTS_FILE
+    _another_writer_saves(monkeypatch, output, b"something else")
+    monkeypatch.setattr(os, "link", _no_hard_links)
     with pytest.raises(FileExistsError, match="different SHA-256"):
         download_figure04_inputs(data, url=url, sha256=sha256)
     assert output.read_bytes() == b"something else"

@@ -101,6 +101,12 @@ def download_figure04_inputs(
             os.link(partial, output)
         except FileExistsError:
             return _keep_existing(output, sha256)
+        except OSError:
+            # Some filesystems (exFAT, some network shares) have no hard links. A
+            # rename is as atomic, but only checks for that file just beforehand.
+            if output.exists():
+                return _keep_existing(output, sha256)
+            os.replace(partial, output)
     finally:
         partial.unlink(missing_ok=True)
     return output
