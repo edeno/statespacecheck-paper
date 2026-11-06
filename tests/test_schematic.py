@@ -226,3 +226,23 @@ class TestDrawEquationBoxes:
         labels = {text.get_text() for child_ax in fig.axes for text in child_ax.texts}
         assert r"$p(y_k|x_k)$" in labels
         assert r"$p(x_k|y_k)$" not in labels
+
+
+def test_equation_insets_share_one_scale() -> None:
+    """Every filtering-equation inset uses the same axes limits, so the widths
+    set for each distribution stay visible: the prediction widens the previous
+    posterior and the update narrows the predictive."""
+    from statespacecheck_paper.schematic import draw_equation_boxes
+
+    fig, ax = plt.subplots(figsize=(8, 4))
+    draw_equation_boxes(ax)
+    insets = [inset for inset in fig.axes if inset is not ax]
+    try:
+        assert len(insets) == 6
+        assert len({inset.get_xlim() for inset in insets}) == 1
+        assert len({inset.get_ylim() for inset in insets}) == 1
+        peaks = [max(line.get_ydata().max() for line in inset.lines) for inset in insets]
+        previous_posterior, _, predictive, _, _, current_posterior = peaks
+        assert predictive < previous_posterior < current_posterior
+    finally:
+        plt.close(fig)

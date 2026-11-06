@@ -164,18 +164,18 @@ def create_distribution_comparison_panel(
     if show_labels:
         # Label predictive on left side, likelihood on right side
         ax.text(
-            -12,
+            -2.2,
             0.22,
             "Predictive",
-            ha="center",
+            ha="right",
             va="bottom",
             color=color_predictive,
         )
         ax.text(
-            16,
+            7.2,
             0.22,
             "Likelihood",
-            ha="center",
+            ha="left",
             va="bottom",
             color=color_likelihood,
         )
@@ -231,9 +231,11 @@ def compose_figure01() -> Figure:
 
     # Sub-panels for distribution plots (using inset_axes for precise positioning)
     # Calculate sub-panel positions within the spanning axes
-    sub_width = 0.23  # Width of each sub-panel as fraction of parent
+    # The row spans the same width as the panel (b) boxes.
+    row_left, row_right = 0.0625, 0.9563
     sub_gap = 0.02  # Gap between sub-panels
-    sub_left_positions = [i * (sub_width + sub_gap) + 0.02 for i in range(4)]
+    sub_width = (row_right - row_left - 3 * sub_gap) / 4  # Fraction of parent
+    sub_left_positions = [row_left + i * (sub_width + sub_gap) for i in range(4)]
 
     distribution_axis_names = (
         "inconsistent_narrow",

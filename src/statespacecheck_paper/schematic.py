@@ -148,6 +148,8 @@ def draw_distribution_inset(
     label: str | None = None,
     label_size: int = 8,
     title: str | None = None,
+    x_limits: tuple[float, float] | None = None,
+    y_max: float | None = None,
 ) -> None:
     """Draw a small distribution plot as an inset.
 
@@ -176,6 +178,12 @@ def draw_distribution_inset(
         Font size for label.
     title : str | None, optional
         Title above distribution, in 8 pt.
+    x_limits : tuple[float, float] | None, optional
+        State range of the inset, for insets compared on one scale. By default
+        the range is fitted to this distribution.
+    y_max : float | None, optional
+        Density at the top of the inset, for insets compared on one scale. By
+        default the height is fitted to this distribution.
 
     Examples
     --------
@@ -198,14 +206,15 @@ def draw_distribution_inset(
         borderpad=0,
     )
 
-    x: NDArray[np.floating] = np.linspace(mean - 3.5 * std, mean + 3.5 * std, 100)
+    x_start, x_stop = x_limits or (mean - 3.5 * std, mean + 3.5 * std)
+    x: NDArray[np.floating] = np.linspace(x_start, x_stop, 100)
     y: NDArray[np.floating] = stats.norm.pdf(x, mean, std)
 
     inset.plot(x, y, color=color, linewidth=1.2)
     inset.fill_between(x, y, alpha=0.3, color=color)
 
-    inset.set_xlim(mean - 3.5 * std, mean + 3.5 * std)
-    inset.set_ylim(0, float(y.max()) * 1.1)
+    inset.set_xlim(x_start, x_stop)
+    inset.set_ylim(0, y_max if y_max is not None else float(y.max()) * 1.1)
     inset.axis("off")
 
     if title:
@@ -434,7 +443,7 @@ def draw_graphical_model(
     draw_arrow(ax, arrow_start, arrow_end, color="black")
 
     # Transition label above the arrow
-    transition_label_y = y_latent + 0.32
+    transition_label_y = y_latent + 0.38
     ax.text(
         (x_prev_pos[0] + x_curr_pos[0]) / 2,
         transition_label_y + 0.02,
@@ -545,7 +554,7 @@ def draw_graphical_model(
     )
 
     # Title (using set_title for consistent positioning across panels)
-    ax.set_title("State-space model", fontweight="bold", pad=4)
+    ax.set_title("State-space model", fontweight="bold", pad=10)
 
     # Time direction indicator
     ax.text(
@@ -557,6 +566,13 @@ def draw_graphical_model(
         fontstyle="italic",
         color=COLORS["annotation"],
     )
+
+
+# Every filtering-equation inset shares these limits, so a reader can see the
+# prediction widen a distribution and the update narrow it. The widest inset
+# (std 12) fits the range, and the narrowest (std 7) sets the height.
+_INSET_STATE_LIMITS = (0.0, 90.0)
+_INSET_DENSITY_MAX = float(stats.norm.pdf(0.0, 0.0, 7.0)) * 1.1
 
 
 class _InsetSpec(NamedTuple):
@@ -618,6 +634,8 @@ def _draw_equation_row(
             label=spec.label,
             label_size=8,
             title=spec.title,
+            x_limits=_INSET_STATE_LIMITS,
+            y_max=_INSET_DENSITY_MAX,
         )
 
     operator_x = 2.3 + eq_offset
