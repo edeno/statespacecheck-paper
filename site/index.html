@@ -92,15 +92,16 @@
               width="2261"
               height="2392"
               decoding="async"
-              alt="Schematic: a state-space model's graphical model, the filter recursion from prediction to posterior, and examples of consistent and inconsistent prediction and likelihood pairs."
+              alt="Schematic: a state-space model's graphical model, the filter recursion from prediction to filtering distribution, and examples of consistent and inconsistent prediction and likelihood pairs."
             />
             <figcaption>
               <strong>Figure 1 of the paper.</strong> (a) A state-space model links a latent state
-              to neural observations. (b) At each step the filter turns the previous posterior into a
-              one-step prediction, then multiplies it by the likelihood of the new spikes. (c) We
-              compare the prediction with each spike's likelihood. They are inconsistent when their
-              high-probability regions are mostly disjoint, and consistent when those regions overlap,
-              even if the two differ in center or spread.
+              to neural observations. (b) At each step the filter turns the previous filtering
+              distribution into a one-step prediction, then multiplies it by the likelihood of the
+              new spikes. (c) We compare the prediction with each spike's likelihood; bars beneath
+              each pair mark the high-probability region of each distribution. The two are
+              inconsistent when their high-probability regions are mostly disjoint, and consistent
+              when those regions overlap, even if they differ in center or spread.
             </figcaption>
           </figure>
         </div>
@@ -134,7 +135,8 @@
           <p>
             The decoder is a recursive Bayesian filter, the cycle in Figure 1b. It keeps a
             <strong>posterior</strong>, its probability distribution over position given every spike
-            so far, and advances it one time step at a time in two moves. First it
+            so far (the filtering distribution in Figure 1b), and advances it one time step at a
+            time in two moves. First it
             <strong>predicts</strong>: the animal may have moved since the last step, so a movement
             model spreads the posterior into the prediction <i>P</i>(<i>x</i>). Then it
             <strong>updates</strong>: it multiplies the prediction by the likelihood of what the
@@ -400,7 +402,7 @@
           <p>
             We decoded <span data-macro="RecNUnits"></span> units, of which
             <span data-macro="RecNUnitsWithSpikes"></span> fired in this epoch, recorded from rat
-            hippocampus during a spatial foraging task
+            hippocampus during a spatial bandit task
             (<a href="https://doi.org/10.1016/j.neuron.2026.08.023">Comrie et al., 2026</a>) with two
             models. They share an observation model, built from each unit's place field, and differ
             in the prediction step: how they expect the represented position to move. The
@@ -409,24 +411,24 @@
             <strong>Continuous–Fragmented</strong> model is related to a model structure we previously
             used to capture replay and other nonlocal hippocampal representations
             (<a href="https://doi.org/10.7554/eLife.64505">Denovellis et al., 2021</a>). It adds a
-            second, fragmented movement state: when the model is in, or switches into, that state,
-            its next position can be anywhere on the track with equal probability, regardless of the
-            current one. In each <span data-macro="RecTimeBinMs"></span> ms time bin the model
-            switches from continuous to fragmented with probability
+            second dynamics mode, the Fragmented mode: when the model is in, or switches into, that
+            mode, its next position can be anywhere on the track with equal probability, regardless
+            of the current one. In each <span data-macro="RecTimeBinMs"></span> ms time bin the model
+            switches from the Continuous mode to the Fragmented mode with probability
             <span data-macro="RecModeContinuousToFragmented"></span> and back with probability
             <span data-macro="RecModeFragmentedToContinuous"></span>, inferring from the spikes which
-            state is active along with the position. A fragmented state suits the
+            mode is active along with the position. A Fragmented mode suits the
             hippocampus: while an animal is still, its hippocampal representation can jump to
             distant locations, as in awake replay
             (<a href="https://doi.org/10.1038/nn.2344">Karlsson &amp; Frank, 2009</a>). For the
-            diagnostics, the Continuous–Fragmented prediction is summed over its two states, so both
+            diagnostics, the Continuous–Fragmented prediction is summed over its two modes, so both
             models are compared on the same position grid.
           </p>
           <p>
             This <span data-macro="RecordingWindowSecondsWord"></span>-second window contains a candidate replay event while the animal is still. The
             Continuous model's prediction cannot keep up with the rapidly moving representation, so
-            many spikes are flagged. When the Continuous–Fragmented model switches to its fragmented
-            state, its prediction becomes broad, the next spikes can move the estimate, and most of
+            many spikes are flagged. When the Continuous–Fragmented model switches to its Fragmented
+            mode, its prediction becomes broad, the next spikes can move the estimate, and most of
             the HPD-overlap flags disappear. The recording has no known-good baseline period, so
             fixed cutoffs are used: a spike is flagged when HPD overlap is at or below
             <span data-macro="RecHpdCutoff"></span> or the p-value at or below
@@ -450,13 +452,15 @@
             <span data-macro="RecHpdNewlyFlagged" data-format="count"></span> spikes are flagged only
             under the Continuous–Fragmented model. The predictive p-value flags
             <span data-macro="RecPvalueFlaggedContinuous" data-format="count"></span> spikes under the
-            Continuous model, rescues <span data-macro="RecPvalueRescuedPercent"></span>% of them, and
-            newly flags <span data-macro="RecPvalueNewlyFlagged" data-format="count"></span>. KL
+            Continuous model; <span data-macro="RecPvalueRescuedPercent"></span>% of them are rescued
+            by the Continuous–Fragmented model, whereas
+            <span data-macro="RecPvalueNewlyFlagged" data-format="count"></span> spikes are newly
+            flagged. KL
             divergence falls for <span data-macro="RecKlLowerPercent"></span>% of spikes under the
             Continuous–Fragmented model. For the <span data-macro="RecKlHigherPercent"></span>%
             where it rises, values reach <span data-macro="RecKlHigherFragmentedMax"></span> nats.
             As in the simulation, these values occur when the model produces a broad prediction
-            after estimating the fragmented state. Together with the comparison
+            after estimating the Fragmented mode. Together with the comparison
             between models and what is known about hippocampal replay, the local diagnostics support
             a specific refinement, a transition model that allows discontinuous jumps, rather than
             simply rejecting the Continuous model.

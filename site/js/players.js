@@ -807,7 +807,7 @@ export function renderRecording(root, payload, manifest) {
     spikes,
     note(INTERACTION_HELP),
     note(
-      `Here the dots do not show flag status: open circles are the ${reference.label} model and filled dots the ${comparison.label} model, and a spike is flagged when its marker lies beyond the dashed threshold. The ${comparison.label} prediction is summed over its Continuous and Fragmented states. Position is linearized distance along the maze (cm).`,
+      `Here the dots do not show flag status: open circles are the ${reference.label} model and filled dots the ${comparison.label} model, and a spike is flagged when its marker lies beyond the dashed threshold. The ${comparison.label} prediction is summed over its Continuous and Fragmented modes. Position is linearized distance along the maze (cm).`,
     ),
     note(axisHelp(manifest.macros, "Rec")),
     note(SCALE_HELP),
