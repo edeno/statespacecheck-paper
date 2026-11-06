@@ -342,6 +342,14 @@ class TestPlotSingleModelDiagnostics:
         assert not any(text.get_gid() == ANIMAL_POSITION_LABEL_GID for text in axes[0].texts)
         plt.close(fig)
 
+    def test_hpd_row_labels_its_threshold(self) -> None:
+        """The symlog axis sets 0.05 far up the row, so the row must name it."""
+        fig, axes = plot_single_model_diagnostics(
+            self._panel_data(), thresholds={"hpd_overlap": 0.05}
+        )
+        assert [label.get_text() for label in axes[3].get_yticklabels()] == ["0", "0.05", "1"]
+        plt.close(fig)
+
     def test_annotations_can_be_omitted(self) -> None:
         thresholds = {"hpd_overlap": 0.05, "predictive_pvalue": 0.05}
         fig, axes = plot_single_model_diagnostics(self._panel_data(), thresholds=thresholds)

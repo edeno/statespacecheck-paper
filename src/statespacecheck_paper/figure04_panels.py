@@ -370,9 +370,10 @@ def plot_event_diagnostic_scatter(
         threshold=threshold,
         xlim=(time_arr.min(), time_arr.max()),
         ylabel=metric_name if ylabel is None else ylabel,
-        # The detail rows are too short to label 0.1 without it crowding 1.
-        symlog_yticks=(0.0, 1.0),
-        symlog_ylim=(-0.005, 1.0),
+        # The detail rows have room for one label between 0 and 1. Give it to
+        # the threshold, which a symlog axis otherwise places misleadingly high.
+        symlog_yticks=(0.0, 1.0) if threshold is None else (0.0, threshold, 1.0),
+        symlog_ylim=(-0.005, 1.6),
         worse_fit_y=_WORSE_FIT_LABEL_Y.get(metric_name, 0.5),
         show_annotations=show_annotations,
     )
