@@ -33,7 +33,7 @@ from __future__ import annotations
 import base64
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -1019,6 +1019,7 @@ def recording_payload(
     spike_times = render_data.recording.spike_times
     cell_rank = np.argsort(np.argsort(analysis.place_field_peaks))
     return {
+        "detail_window": asdict(detail_window),
         "time": _rounded(time[window] - t0, 4),
         "position_bins": _rounded(analysis.diagnostic_position_bins, 2),
         "linear_position": _rounded(render_data.linear_position[window], 2),

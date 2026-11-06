@@ -39,7 +39,7 @@ from statespacecheck_paper.figure03_summary import conditions_by_id
 from statespacecheck_paper.figure04_cache import Figure4Paths
 from statespacecheck_paper.figure04_diagnostics import mean_event_likelihood_by_time
 from statespacecheck_paper.figure04_models import FIGURE04_MODELS, figure04_model
-from statespacecheck_paper.figure04_protocol import Figure4DetailWindow
+from statespacecheck_paper.figure04_protocol import FIGURE04_DETAIL_WINDOW, Figure4DetailWindow
 from statespacecheck_paper.figure04_workflow import Figure4RenderData
 from statespacecheck_paper.number_format import significant, whole_percent
 from statespacecheck_paper.paths import (
@@ -562,6 +562,7 @@ def test_recording_payload_slices_both_models_to_the_detail_window() -> None:
         assert set(model["events"]["flagged"]) == {"hpd_overlap", "predictive_pvalue"}
     # Cells are ranked by place-field peak.
     assert sorted(payload["cell_rank"]) == list(range(analysis.place_field_peaks.size))
+    assert payload["detail_window"] == dataclasses.asdict(window)
     assert payload["decode_identity"] == render_data.cache_provenance.decode_identity_sha256
     assert (
         payload["diagnostics_identity"] == render_data.cache_provenance.diagnostics_identity_sha256
@@ -787,6 +788,12 @@ def test_committed_recording_matches_the_figure04_decode(figure04_summary: dict[
     assert committed["decode_identity"] == caches["decode_identity_sha256"]
     assert committed["diagnostics_identity"] == caches["diagnostics_identity_sha256"]
     assert committed["flag_rules"] == figure04_summary["flag_rules"]
+    # Moving the window must be followed by regenerating Figure 4 and a re-export.
+    assert (
+        committed["detail_window"]
+        == figure04_summary["detail_window"]
+        == dataclasses.asdict(FIGURE04_DETAIL_WINDOW)
+    )
     assert {
         name: (model["label"], model["short_label"]) for name, model in committed["models"].items()
     } == {model.id: (model.label, model.short_label) for model in FIGURE04_MODELS}
