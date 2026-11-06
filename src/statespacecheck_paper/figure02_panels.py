@@ -609,11 +609,11 @@ _TRIANGLE: dict[str, Any] = {
 def _showcase_colors(n: int) -> NDArray[np.float64]:
     """Distinct colors for the predictive-check sample fan.
 
-    Sampled from viridis avoiding the very dark and very light ends so
+    Sampled from viridis, avoiding the very dark end and the pale yellow-greens, so
     every curve stays legible at small panel sizes.
     """
     cmap = plt.get_cmap("viridis")
-    return cmap(np.linspace(0.15, 0.85, n))
+    return cmap(np.linspace(0.15, 0.7, n))
 
 
 def plot_predictive_check_predictive_fan(ax: Axes, data: Figure2ExampleData) -> None:
