@@ -21,6 +21,7 @@ import xarray as xr
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.patches import Rectangle
+from matplotlib.ticker import MaxNLocator
 from numpy.typing import NDArray
 
 from statespacecheck_paper.diagnostics import SpikeEventDiagnostics
@@ -50,6 +51,10 @@ from statespacecheck_paper.style import (
     METRIC_SPECS,
     WONG,
 )
+
+# Upper display limit by metric in the hexbin row. A single extreme spike would
+# otherwise set the axis range and squeeze nearly all spikes into a corner.
+_HEXBIN_DISPLAY_LIMITS = {"predictive_pvalue": 12.0}
 
 # Strength of a hexagon of one spike, as a fraction of the metric's full color.
 _HEXBIN_LOWEST_COUNT_STRENGTH = 0.2
@@ -675,7 +680,8 @@ def plot_event_metric_hexbin_row(
     ``reference_model``) and the same diagnostic on the y-axis (the comparison decoder,
     ``comparison_model``). Each hexagon's colour encodes
     log-scaled spike-event count (a ``LogNorm`` shared by the three panels). Points on
-    the identity line indicate decoder agreement on that spike.
+    the identity line indicate decoder agreement on that spike. Spikes above a
+    metric's limit in ``_HEXBIN_DISPLAY_LIMITS`` under either decoder are left out.
 
     Both diagnostics objects must carry the same set of per-spike events
     in the same order (i.e. ``event_*`` arrays produced from the same
@@ -753,6 +759,11 @@ def plot_event_metric_hexbin_row(
                 f"Cannot plot {key}: every aligned spike event must have a finite value"
             )
 
+        display_limit = _HEXBIN_DISPLAY_LIMITS.get(spec.name, np.inf)
+        shown = (reference_values <= display_limit) & (comparison_values <= display_limit)
+        reference_values = reference_values[shown]
+        comparison_values = comparison_values[shown]
+
         hb = ax.hexbin(
             reference_values,
             comparison_values,
@@ -808,12 +819,12 @@ def plot_event_metric_hexbin_row(
             # or inside it covers data; text above it would shrink the whole
             # row. It shares its color with the labeled -log(p) box.
             if direction != "below":
-                # Rescue box is a low wide strip; label it from just above its
-                # far end, where the panel is empty.
+                # Rescue box is a low wide strip; label it inside its far end,
+                # where few spikes fall.
                 ax.annotate(
                     f"flagged by\n{reference_model.short_label} only",
-                    xy=(rect_xy[0] + rect_w, rect_xy[1] + rect_h),
-                    xytext=(-2, 2),
+                    xy=(rect_xy[0] + rect_w, rect_xy[1]),
+                    xytext=(-3, 3),
                     textcoords="offset points",
                     ha="right",
                     va="bottom",
@@ -826,6 +837,9 @@ def plot_event_metric_hexbin_row(
         ax.set_xlim(padded_lims)
         ax.set_ylim(padded_lims)
         ax.set_aspect("equal", adjustable="box")
+        if spec.name in _HEXBIN_DISPLAY_LIMITS:
+            ax.xaxis.set_major_locator(MaxNLocator(nbins=3, integer=True))
+            ax.yaxis.set_major_locator(MaxNLocator(nbins=3, integer=True))
 
         ax.set_xlabel(reference_model.label, labelpad=4)
         ax.set_ylabel(comparison_model.label if panel_idx == 0 else "", labelpad=4)

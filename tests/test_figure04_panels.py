@@ -6,6 +6,8 @@ comparison panel — and the spike-event diagnostic scatter's spike-time alignme
 
 from __future__ import annotations
 
+import dataclasses
+
 import matplotlib
 import numpy as np
 import pytest
@@ -206,6 +208,30 @@ class TestPlotEventMetricHexbinRow:
         lowest_count.append(colorbar_axis.collections[-1].get_cmap()(0.0)[:3])
         for rgb in lowest_count:
             assert min(rgb) < 0.9, f"lowest count is too close to white: {rgb}"
+        plt.close(fig)
+
+    def test_spikes_beyond_a_display_limit_are_left_out(
+        self,
+        paired_diagnostics: tuple[SpikeEventDiagnostics, SpikeEventDiagnostics],
+    ) -> None:
+        """An extreme -log(p) under either decoder leaves the panel and its axis
+        range; other panels keep their spikes."""
+        reference, comparison = paired_diagnostics
+        reference_pvalue = reference.event_predictive_pvalue.copy()
+        comparison_pvalue = comparison.event_predictive_pvalue.copy()
+        reference_pvalue[0] = 1e-14
+        comparison_pvalue[1] = 1e-10
+
+        fig, axes = plt.subplots(1, 3)
+        plot_event_metric_hexbin_row(
+            dataclasses.replace(reference, event_predictive_pvalue=reference_pvalue),
+            dataclasses.replace(comparison, event_predictive_pvalue=comparison_pvalue),
+            axes,
+        )
+
+        assert axes[1].get_xlim()[1] < 14.0
+        assert axes[1].collections[0].get_array().sum() == 48
+        assert axes[0].collections[0].get_array().sum() == 50
         plt.close(fig)
 
 
