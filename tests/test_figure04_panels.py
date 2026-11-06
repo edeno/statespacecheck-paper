@@ -189,6 +189,25 @@ class TestPlotEventMetricHexbinRow:
             assert not [p for p in ax.patches if isinstance(p, Rectangle)]
         plt.close(fig)
 
+    def test_hexagon_of_one_spike_stays_visible_on_the_white_panel(
+        self,
+        paired_diagnostics: tuple[SpikeEventDiagnostics, SpikeEventDiagnostics],
+    ) -> None:
+        """The lowest count draws a tint of the metric color, not white, in every
+        panel and at the bottom of the shared count colorbar."""
+        reference, comparison = paired_diagnostics
+        fig, axes = plt.subplots(1, 3)
+        plot_event_metric_hexbin_row(reference, comparison, axes)
+
+        lowest_count = [
+            ax.collections[0].get_cmap()(ax.collections[0].norm(1.0))[:3] for ax in axes
+        ]
+        colorbar_axis = fig.axes[-1]
+        lowest_count.append(colorbar_axis.collections[-1].get_cmap()(0.0)[:3])
+        for rgb in lowest_count:
+            assert min(rgb) < 0.9, f"lowest count is too close to white: {rgb}"
+        plt.close(fig)
+
 
 # ---------------------------------------------------------------------------
 # plot_event_diagnostic_scatter (spike-time alignment behavior)

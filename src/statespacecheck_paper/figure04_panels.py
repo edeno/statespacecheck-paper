@@ -51,6 +51,9 @@ from statespacecheck_paper.style import (
     WONG,
 )
 
+# Strength of a hexagon of one spike, as a fraction of the metric's full color.
+_HEXBIN_LOWEST_COUNT_STRENGTH = 0.2
+
 
 @dataclasses.dataclass(frozen=True)
 class ModelDiagnosticPanelData:
@@ -643,6 +646,19 @@ def plot_single_model_diagnostics(
     return fig, axes
 
 
+def _event_count_cmap(color: str) -> mcolors.LinearSegmentedColormap:
+    """Return a count colormap that ends at ``color`` and starts at a pale tint of it.
+
+    The lowest count must stay visible on the white panel: a hexagon of one spike
+    is often the extreme value a reader is looking for.
+    """
+    start = mcolors.to_rgb(color)
+    tint = tuple(
+        channel + (1.0 - channel) * (1.0 - _HEXBIN_LOWEST_COUNT_STRENGTH) for channel in start
+    )
+    return mcolors.LinearSegmentedColormap.from_list(f"event-count-{color}", [tint, start])
+
+
 def plot_event_metric_hexbin_row(
     reference_diagnostics: SpikeEventDiagnostics,
     comparison_diagnostics: SpikeEventDiagnostics,
@@ -737,12 +753,11 @@ def plot_event_metric_hexbin_row(
                 f"Cannot plot {key}: every aligned spike event must have a finite value"
             )
 
-        cmap = mcolors.LinearSegmentedColormap.from_list("custom", ["white", color])
         hb = ax.hexbin(
             reference_values,
             comparison_values,
             gridsize=40,
-            cmap=cmap,
+            cmap=_event_count_cmap(color),
             mincnt=1,
             rasterized=True,
         )
@@ -840,7 +855,9 @@ def plot_event_metric_hexbin_row(
         for hb in hex_artists:
             hb.set_norm(shared_norm)
 
-        count_mappable = matplotlib.cm.ScalarMappable(norm=shared_norm, cmap="Greys")
+        count_mappable = matplotlib.cm.ScalarMappable(
+            norm=shared_norm, cmap=_event_count_cmap("black")
+        )
         count_mappable.set_array([])
         cbar = axes[-1].figure.colorbar(
             count_mappable,
