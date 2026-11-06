@@ -142,7 +142,7 @@ and writes the ~8 GB decode cache, as `generate_figure04.py` does.
 only when the recording outputs are unchanged. The recording export refuses a
 Figure-4 summary whose decode or diagnostics identity differs from the decode it
 exports, before it writes or fits anything. Identities are machine-independent, so
-this concerns changed code, configuration, or input, never a different computer. Figure 3 and 4 summaries must carry the same current source
+this concerns changed code, configuration, input, or `uv.lock`, never a different computer. Figure 3 and 4 summaries must carry the same current source
 provenance before emitting macros: the emitter refuses summaries whose
 `provenance.source` blocks differ, naming the differing keys, and the tests
 check that the recorded source digest is current.

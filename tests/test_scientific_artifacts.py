@@ -11,6 +11,7 @@ import pytest
 from statespacecheck_paper.scientific_artifacts import (
     inclusive_flag_rules,
     scientific_source_provenance,
+    uv_lock_digest,
     write_json_artifact,
 )
 
@@ -72,6 +73,7 @@ def test_scientific_source_provenance_tracks_source_and_lockfile(tmp_path: Path)
     lockfile.write_text("version = 2\n", encoding="utf-8")
     lock_changed = scientific_source_provenance(tmp_path)
     assert lock_changed["uv_lock_sha256"] != original["uv_lock_sha256"]
+    assert lock_changed["uv_lock_sha256"] == uv_lock_digest(tmp_path)
 
 
 def test_scientific_source_provenance_is_line_ending_independent(tmp_path: Path) -> None:

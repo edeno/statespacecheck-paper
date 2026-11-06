@@ -910,7 +910,7 @@ def require_summary_describes_decode(
 
     Compares the machine-independent identities, not the cache fingerprints: the
     same code and input on another machine is the same analysis, whereas changed
-    code, configuration, or input is not.
+    code, configuration, input, or locked dependencies is not.
 
     Parameters
     ----------

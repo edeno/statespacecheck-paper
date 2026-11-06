@@ -307,6 +307,25 @@ def test_identity_changes_with_the_analysis(
     assert other_input.decode_identity_sha256 != base.decode_identity_sha256
 
 
+def test_lock_changes_the_identities_but_not_the_cache_keys(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A dependency upgrade names a new analysis. The cache keys follow what is
+    installed, not the lock file, so they must not gain a term that refits on
+    every lock edit."""
+    paths = _paths_with_input(tmp_path)
+    config = Figure4Config()
+    base = compute_figure04_cache_provenance(config, paths)
+
+    monkeypatch.setattr(figure04_cache, "uv_lock_digest", lambda: "upgraded")
+    upgraded = compute_figure04_cache_provenance(config, paths)
+
+    assert upgraded.decode_identity_sha256 != base.decode_identity_sha256
+    assert upgraded.diagnostics_identity_sha256 != base.diagnostics_identity_sha256
+    assert upgraded.fingerprint_sha256 == base.fingerprint_sha256
+    assert upgraded.diagnostics_fingerprint_sha256 == base.diagnostics_fingerprint_sha256
+
+
 def test_portable_source_digest_sees_code_and_ignores_comments(tmp_path: Path) -> None:
     path = tmp_path / "module.py"
 

@@ -24,10 +24,11 @@ is ``data/`` unless ``STATESPACECHECK_DATA_PATH`` is set; see :class:`Figure4Pat
   diagnostic modules (docstrings and comments excluded).
 
 Both fingerprints are cache keys, so they hash the machine a cache was built on
-and cannot match on another machine. The machine-independent parts are hashed
-separately into the **decode identity** and **diagnostics identity**, which name
-the analysis rather than one machine's cache; the website export and the
-committed-artifact tests compare those.
+and differ on a machine with another architecture or Python version. The
+machine-independent parts and the ``uv.lock`` digest, which pins the dependencies
+on every machine, are hashed separately into the **decode identity** and
+**diagnostics identity**. Those name the analysis rather than one machine's cache;
+the website export and the committed-artifact tests compare them.
 
 Changes confined to the diagnostic modules or configuration recompute diagnostics
 from cached predictions. Changes to the fit, its model construction, the input
@@ -63,6 +64,7 @@ from statespacecheck_paper.figure04_input import (
     file_sha256,
     input_file_path,
 )
+from statespacecheck_paper.scientific_artifacts import uv_lock_digest
 
 # Decode-cache schema version, hashed into the decode fingerprint. Bump it to
 # invalidate every decode cache when the payload layout changes in a way the
@@ -443,6 +445,16 @@ def _sha256_of_payload(payload: Mapping[str, object]) -> str:
     return hashlib.sha256(json.dumps(payload, sort_keys=True, default=str).encode()).hexdigest()
 
 
+def _identity_sha256(payload: Mapping[str, object]) -> str:
+    """Return the identity of a fingerprint's machine-independent parts.
+
+    The fingerprints hash the dependencies installed on one machine. An identity
+    hashes ``uv.lock`` instead, which pins them everywhere, so a dependency upgrade
+    changes the identity while another machine does not.
+    """
+    return _sha256_of_payload({**payload, "uv_lock_sha256": uv_lock_digest()})
+
+
 def _decode_identity_payload(
     config: Figure4Config, animal_date_epoch: str, input_file_sha256: str
 ) -> dict[str, object]:
@@ -478,8 +490,9 @@ def compute_figure04_decode_identity(
     """Return the machine-independent identity of the Figure-4 decode.
 
     Hashes what the decode fingerprint hashes except the Python version, the
-    machine architecture, and the installed dependency closure. Identical on
-    every machine running the same code, configuration, and input file.
+    machine architecture, and the installed dependency closure, with the
+    ``uv.lock`` digest in place of that closure. Identical on every machine running
+    the same code, configuration, input file, and lock.
 
     Parameters
     ----------
@@ -495,9 +508,7 @@ def compute_figure04_decode_identity(
     str
         Hexadecimal SHA-256.
     """
-    return _sha256_of_payload(
-        _decode_identity_payload(config, animal_date_epoch, input_file_sha256)
-    )
+    return _identity_sha256(_decode_identity_payload(config, animal_date_epoch, input_file_sha256))
 
 
 def compute_figure04_diagnostics_identity(config: Figure4DiagnosticsConfig) -> str:
@@ -505,9 +516,9 @@ def compute_figure04_diagnostics_identity(config: Figure4DiagnosticsConfig) -> s
 
     Hashes what :func:`compute_figure04_diagnostics_fingerprint` hashes except
     the Python version, the machine architecture, and the installed dependency
-    closure.
+    closure, with the ``uv.lock`` digest in place of that closure.
     """
-    return _sha256_of_payload(_diagnostics_identity_payload(config))
+    return _identity_sha256(_diagnostics_identity_payload(config))
 
 
 def compute_figure04_diagnostics_fingerprint(config: Figure4DiagnosticsConfig) -> str:
@@ -582,7 +593,7 @@ def compute_figure04_cache_provenance(
                 "dependency_versions": decode_dependency_versions,
             }
         ),
-        decode_identity_sha256=_sha256_of_payload(decode_identity),
+        decode_identity_sha256=_identity_sha256(decode_identity),
         schema_version=FIGURE04_DECODE_SCHEMA_VERSION,
         animal_date_epoch=paths.animal_date_epoch,
         input_file_sha256=input_file_sha256,

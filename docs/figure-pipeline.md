@@ -214,7 +214,7 @@ figure04_plot_primitives            → figure04_place_fields, style
 figure04_track_plots                → figure04_input, figure04_plot_primitives
 figure04_panels                     → diagnostics, figure04_diagnostics, figure04_models, figure04_place_fields, figure04_plot_primitives, figure04_track_plots, plotting, style
 figure04_fit                        → figure04_decoder, figure04_input, figure04_place_fields
-figure04_cache                      → figure04_decoder, figure04_input
+figure04_cache                      → figure04_decoder, figure04_input, scientific_artifacts
 figure04_workflow                   → diagnostics, figure04_cache, figure04_decoder, figure04_diagnostics, figure04_fit, figure04_input
 figure04_summary                    → diagnostics, figure04_diagnostics, figure04_models, figure04_workflow
 figure04_layout                     → diagnostics, figure04_models, figure04_panels, figure04_protocol, figure04_track_plots, figure04_workflow, plotting, style
@@ -644,7 +644,7 @@ manual overrides: bumping one invalidates every cache of that kind.
 
 `figure03_summary.json` uses schema version 10
 (`figure03_generation.FIGURE03_SUMMARY_SCHEMA_VERSION`) and `figure04_summary.json`
-uses schema version 14 (`figure04_generation.FIGURE04_SUMMARY_SCHEMA_VERSION`). The
+uses schema version 15 (`figure04_generation.FIGURE04_SUMMARY_SCHEMA_VERSION`). The
 Figure-3 configuration block records every
 `Figure3Config` field together with the step length in seconds
 (`configuration.step_seconds`, the protocol constant `STEP_SECONDS`) and the
@@ -725,10 +725,12 @@ Figure 4 also contains `provenance.figure04_caches`. Its
 `fingerprint_sha256` is the key used to accept or reject the expensive decoder
 cache and `diagnostics_fingerprint_sha256` the key of the diagnostics cache
 (recorded with the diagnostics configuration and the installed `statespacecheck`
-version). Both hash the machine, so they differ on every other computer.
+version). Both hash the machine, so they differ on a computer with another
+architecture, Python version, or installed dependency version.
 `decode_identity_sha256` and `diagnostics_identity_sha256` hash the same analysis
-without the machine, so they agree wherever the same code runs on the same input:
-the website export and `tests/test_figure04_cache.py` compare these, and
+without the machine, with the `uv.lock` digest in place of the installed
+dependency versions, so they agree wherever the same code and lock run on the
+same input: the website export and `tests/test_figure04_cache.py` compare these, and
 `check_reproduction.py` requires them to match exactly. The record includes the installed
 `non_local_detector` version plus the content
 SHA-256 of the named input file. Its `environment` block records what the

@@ -165,6 +165,7 @@ def test_figure04_family_dependency_edges_are_acyclic() -> None:
         "figure04_cache.py": {
             prefix + "figure04_decoder",
             prefix + "figure04_input",
+            prefix + "scientific_artifacts",
         },
         "figure04_workflow.py": {
             prefix + "figure04_cache",
@@ -484,10 +485,11 @@ _DECODE_NEUTRAL_IMPORTS: dict[str, frozenset[str]] = {
 
 
 # Unhashed modules that the diagnostics-hashed modules may reach: figure04_cache
-# decides whether the diagnostics are recomputed, not their values, and paths
-# names files. The decode-hashed modules they reach are covered by the decode
-# fingerprint, which the diagnostics cache is also keyed on.
-_DIAGNOSTIC_NEUTRAL_IMPORTS = {"figure04_cache", "paths"}
+# decides whether the diagnostics are recomputed, not their values, paths names
+# files, and scientific_artifacts gives figure04_cache the uv.lock digest. The
+# decode-hashed modules they reach are covered by the decode fingerprint, which
+# the diagnostics cache is also keyed on.
+_DIAGNOSTIC_NEUTRAL_IMPORTS = {"figure04_cache", "paths", "scientific_artifacts"}
 
 
 def _names_imported_from(importer: str, target: str) -> set[str]:

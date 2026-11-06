@@ -43,6 +43,31 @@ def _sha256_normalized_text(path: Path) -> str:
     return hashlib.sha256(_normalized_text_bytes(path)).hexdigest()
 
 
+def uv_lock_digest(repo_root: Path | None = None) -> str:
+    """Return the SHA-256 of the repository's ``uv.lock``, LF-normalized.
+
+    Parameters
+    ----------
+    repo_root : Path, optional
+        Repository root. Defaults to the checkout inferred from this module's
+        location.
+
+    Returns
+    -------
+    str
+        Hexadecimal SHA-256.
+
+    Raises
+    ------
+    FileNotFoundError
+        If ``uv.lock`` is missing.
+    """
+    lock_path = (REPO_ROOT if repo_root is None else Path(repo_root)) / "uv.lock"
+    if not lock_path.is_file():
+        raise FileNotFoundError(f"Locked dependency graph not found: {lock_path}")
+    return _sha256_normalized_text(lock_path)
+
+
 def scientific_source_provenance(repo_root: Path | None = None) -> ScientificSourceProvenance:
     """Identify the source and locked dependency graph that produced an artifact.
 
@@ -86,15 +111,11 @@ def scientific_source_provenance(repo_root: Path | None = None) -> ScientificSou
         source_digest.update(_normalized_text_bytes(source_path))
         source_digest.update(b"\0")
 
-    lock_path = root / "uv.lock"
-    if not lock_path.is_file():
-        raise FileNotFoundError(f"Locked dependency graph not found: {lock_path}")
-
     return {
         "statespacecheck_paper_version": version("statespacecheck-paper"),
         "statespacecheck_version": version("statespacecheck"),
         "source_tree_sha256": source_digest.hexdigest(),
-        "uv_lock_sha256": _sha256_normalized_text(lock_path),
+        "uv_lock_sha256": uv_lock_digest(root),
     }
 
 
