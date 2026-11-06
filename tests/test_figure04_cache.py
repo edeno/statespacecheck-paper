@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import dataclasses
 import inspect
 from importlib.metadata import PackageNotFoundError
@@ -318,6 +319,28 @@ def test_portable_source_digest_sees_code_and_ignores_comments(tmp_path: Path) -
     assert digest('# note\ndef f(a, b=None):\n    """Doc."""\n    return a + 1\n') == base
     assert digest("def f(a, b=None):\n    return a + 2\n") != base
     assert digest("def f(a, b=0):\n    return a + 1\n") != base
+
+
+def test_canonical_syntax_omits_only_what_newer_pythons_add() -> None:
+    """Python 3.15 sets ``is_lazy=0`` on every ordinary import. It must read as the
+    same code as on older versions, and a genuinely lazy import, or a constant 0
+    against None, must not."""
+
+    class Import(ast.Import):
+        _fields = ("names", "is_lazy")
+
+    names = [ast.alias(name="numpy")]
+    plain = ast.Import(names=names)
+
+    assert figure04_cache._canonical_syntax(Import(names=names, is_lazy=0)) == (
+        figure04_cache._canonical_syntax(plain)
+    )
+    assert figure04_cache._canonical_syntax(Import(names=names, is_lazy=1)) != (
+        figure04_cache._canonical_syntax(plain)
+    )
+    assert figure04_cache._canonical_syntax(ast.Constant(value=0)) != (
+        figure04_cache._canonical_syntax(ast.Constant(value=None))
+    )
 
 
 def test_committed_summary_identifies_the_current_analysis() -> None:

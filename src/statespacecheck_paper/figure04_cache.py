@@ -162,18 +162,31 @@ def executable_source_digest(paths: tuple[Path, ...]) -> str:
     return digest.hexdigest()
 
 
-def _canonical_syntax(node: object) -> object:
-    """Return a syntax tree as nested tuples, without its empty fields.
+def _is_added_syntax_default(name: str, value: object) -> bool:
+    """Return whether a syntax field holds what older Pythons leave out.
 
-    ``ast.dump`` varies with the Python version because new versions add fields
-    (3.12 gives every function an empty ``type_params``). Those fields are empty
-    in code that older versions can parse, so omitting them leaves the same form.
+    Fields added by new versions are empty in code that older versions can parse
+    (3.12 gives every function an empty ``type_params``), except ``is_lazy``, which
+    3.15 sets to 0 on every ordinary import. A general rule for zeros would make
+    ``Constant(0)`` equal ``Constant(None)``.
+    """
+    return value is None or value == [] or (name == "is_lazy" and value == 0)
+
+
+def _canonical_syntax(node: object) -> object:
+    """Return a syntax tree as nested tuples, without the fields versions disagree on.
+
+    ``ast.dump`` varies with the Python version because new versions add fields;
+    omitting them leaves the same form (:func:`_is_added_syntax_default`).
     """
     if isinstance(node, ast.AST):
-        fields = ((name, value) for name, value in ast.iter_fields(node))
         return (
             type(node).__name__,
-            tuple((name, _canonical_syntax(v)) for name, v in fields if v is not None and v != []),
+            tuple(
+                (name, _canonical_syntax(value))
+                for name, value in ast.iter_fields(node)
+                if not _is_added_syntax_default(name, value)
+            ),
         )
     if isinstance(node, list):
         return tuple(_canonical_syntax(item) for item in node)
@@ -181,7 +194,7 @@ def _canonical_syntax(node: object) -> object:
 
 
 def portable_source_digest(paths: tuple[Path, ...]) -> str:
-    """SHA-256 of the executable source of ``paths``, the same on every Python.
+    """SHA-256 of the executable source of ``paths``, the same on Python 3.10-3.15.
 
     Like :func:`executable_source_digest`, which stays the cache key's digest
     because the cache key hashes the Python version anyway.
