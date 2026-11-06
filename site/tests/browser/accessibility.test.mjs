@@ -331,3 +331,18 @@ describe("text layout", () => {
       for (const gap of gaps) assert.ok(Math.abs(gap) < 1, `gap ${gap}`);
     }));
 });
+
+test("without JavaScript the page says nothing is loading", async () => {
+  const context = await browser.newContext({ javaScriptEnabled: false });
+  const page = await context.newPage();
+  try {
+    await page.goto(server.url);
+    assert.equal(await page.locator(".loading:visible").count(), 0);
+    // A CSS locator: Playwright's text matching skips <noscript> content.
+    const note = page.locator("noscript .note");
+    assert.ok(await note.isVisible());
+    assert.match(await note.innerText(), /need JavaScript/);
+  } finally {
+    await context.close();
+  }
+});
