@@ -25,7 +25,7 @@ function verdict(flags) {
   }
   if (flags.hpd_overlap && !flags.predictive_pvalue) {
     const kl = flags.kl_divergence ? " KL divergence also flags it." : "";
-    return `HPD overlap flags this spike, but the predictive p-value does not. Averaged over the prediction, this cell is about as likely to fire as the others, so the spike does not look unusual among the cells even though its likelihood and the prediction do not overlap: a high p-value does not guarantee overlap.${kl}`;
+    return `HPD overlap flags this spike, but the predictive p-value does not. The p-value only ranks the cells against each other, given that some cell fired, and this cell does not rank low enough to be flagged, even though its likelihood and the prediction do not overlap: a p-value above the cutoff does not guarantee overlap.${kl}`;
   }
   return `Flagged by ${names.join(" and ")}.`;
 }
