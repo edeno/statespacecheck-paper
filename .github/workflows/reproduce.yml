@@ -31,7 +31,7 @@ jobs:
       # The development pin (.python-version); also inherited by the fresh copy's uv calls.
       UV_PYTHON: "3.11"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Install LaTeX
         # The TeX Live collections holding main.tex's packages: newtx
@@ -46,7 +46,7 @@ jobs:
             texlive-bibtex-extra texlive-plain-generic
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         with:
           enable-cache: true
 
@@ -73,7 +73,7 @@ jobs:
 
       - name: Upload the report and fresh summaries
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: reproduction-${{ github.sha }}
           path: |
