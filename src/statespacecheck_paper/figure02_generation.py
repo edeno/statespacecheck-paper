@@ -3,20 +3,18 @@
 This figure explains the three diagnostic metrics (HPD overlap, predictive
 checks, and KL divergence) using a shared synthetic example.
 
-Layout (3 columns x 4 rows):
-    Row 1: Input distributions for each metric
-    Row 2: Intermediate computation
-    Row 3: Final result
-    Row 4: Formula with computed value
+Layout (3 columns over a row of formulas with computed values):
+    Outer columns: input distributions, intermediate computation, final result
+    Middle column: the four steps of the predictive check
 
 Columns (single panel label per column, left to right):
     a = HPD Overlap mechanics
     b = Predictive Check mechanics
     c = KL Divergence mechanics
 
-The subplot mosaic uses semantic axis names (for example,
-``hpd_predictive`` and ``kl_pointwise``), so the on-page order and each
-renderer's scientific role are visible directly in the layout recipe.
+Each column has its own rows, and its panels have semantic axis names (for
+example, ``hpd_predictive`` and ``kl_pointwise``), so the on-page order and
+each renderer's scientific role are visible directly in the layout recipe.
 
 Per-panel renderers live in :mod:`statespacecheck_paper.figure02_panels`.
 This module handles layout, panel labels, formula row, and saving.
@@ -24,8 +22,7 @@ This module handles layout, panel labels, formula row, and saving.
 
 from __future__ import annotations
 
-from collections.abc import Hashable, Mapping
-from typing import cast
+from collections.abc import Mapping
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -33,7 +30,6 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.patches import Rectangle
 from matplotlib.transforms import Bbox
-from matplotlib.typing import HashableList
 
 from statespacecheck_paper.figure02_panels import (
     create_shared_example,
@@ -44,8 +40,9 @@ from statespacecheck_paper.figure02_panels import (
     plot_kl_log_ratio,
     plot_kl_pointwise,
     plot_predictive_check_density_histogram,
-    plot_predictive_check_likelihood_fan,
+    plot_predictive_check_mark_scores,
     plot_predictive_check_predictive_fan,
+    plot_predictive_check_replicate_marks,
 )
 from statespacecheck_paper.paths import FIGURE_DIR
 from statespacecheck_paper.style import FIGURE_DPI, save_figure, set_figure_defaults
@@ -53,7 +50,7 @@ from statespacecheck_paper.style import FIGURE_DPI, save_figure, set_figure_defa
 
 def _add_column_group_backplates(
     fig: Figure,
-    axes: Mapping[Hashable, Axes],
+    axes: Mapping[str, Axes],
 ) -> None:
     """Add subtle column backplates so each metric reads as one group."""
     fig.draw_without_rendering()
@@ -62,7 +59,8 @@ def _add_column_group_backplates(
         ("hpd_predictive", "hpd_likelihood", "hpd_overlap", "hpd_formula"),
         (
             "predictive_distribution",
-            "predictive_simulations",
+            "predictive_marks",
+            "predictive_scores",
             "predictive_histogram",
             "predictive_formula",
         ),
@@ -112,64 +110,33 @@ def compose_figure02(rng: np.random.Generator | None = None) -> Figure:
     # Shared example data; the Monte Carlo p-value path uses ``rng``.
     data = create_shared_example(rng)
 
-    # 3 metric columns × 4 rows (3 content + 1 formula); '.' spacer
-    # columns visually separate the metrics without splitting them
-    # across subfigures.
-    # Semantic axis names make the visual reading order explicit. Each name is
-    # repeated across two mosaic columns; ``.`` is the narrow inter-metric spacer.
-    layout: list[list[Hashable]] = [
-        [
-            "hpd_predictive",
-            "hpd_predictive",
-            ".",
+    # Three metric columns, separated by narrow spacers, over a row of formulas.
+    # Each column has its own rows: the outer two have three panels and the middle
+    # one has four, the steps of a procedure. Semantic axis names make the visual
+    # reading order explicit.
+    columns = (
+        ("hpd_predictive", "hpd_likelihood", "hpd_overlap"),
+        (
             "predictive_distribution",
-            "predictive_distribution",
-            ".",
-            "kl_distributions",
-            "kl_distributions",
-        ],
-        [
-            "hpd_likelihood",
-            "hpd_likelihood",
-            ".",
-            "predictive_simulations",
-            "predictive_simulations",
-            ".",
-            "kl_log_ratio",
-            "kl_log_ratio",
-        ],
-        [
-            "hpd_overlap",
-            "hpd_overlap",
-            ".",
+            "predictive_marks",
+            "predictive_scores",
             "predictive_histogram",
-            "predictive_histogram",
-            ".",
-            "kl_pointwise",
-            "kl_pointwise",
-        ],
-        [
-            "hpd_formula",
-            "hpd_formula",
-            ".",
-            "predictive_formula",
-            "predictive_formula",
-            ".",
-            "kl_formula",
-            "kl_formula",
-        ],
-    ]
-    fig, axes = plt.subplot_mosaic(
-        # matplotlib's stub types the mosaic as ``list[HashableList[Hashable]]``;
-        # a plain nested string list is the documented form but needs a cast to
-        # satisfy list invariance.
-        cast("list[HashableList[Hashable]]", layout),
+        ),
+        ("kl_distributions", "kl_log_ratio", "kl_pointwise"),
+    )
+    formulas = ("hpd_formula", "predictive_formula", "kl_formula")
+    fig = plt.figure(
         figsize=(6.2, 6.1),
-        width_ratios=[1, 1, 0.2, 1, 1, 0.2, 1, 1],
-        height_ratios=[1, 1, 1, 0.35],
         dpi=FIGURE_DPI,
         constrained_layout={"h_pad": 0.10, "w_pad": 0.04},
     )
+    outer = fig.add_gridspec(2, 5, width_ratios=[2, 0.2, 2, 0.2, 2], height_ratios=[3, 0.27])
+    axes: dict[str, Axes] = {}
+    for grid_column, names, formula in zip((0, 2, 4), columns, formulas, strict=True):
+        rows = outer[0, grid_column].subgridspec(len(names), 1)
+        for row, name in enumerate(names):
+            axes[name] = fig.add_subplot(rows[row])
+        axes[formula] = fig.add_subplot(outer[1, grid_column])
 
     # KL Divergence column
     plot_kl_distributions(axes["kl_distributions"], data)
@@ -183,7 +150,8 @@ def compose_figure02(rng: np.random.Generator | None = None) -> Figure:
 
     # Predictive Check column
     plot_predictive_check_predictive_fan(axes["predictive_distribution"], data)
-    plot_predictive_check_likelihood_fan(axes["predictive_simulations"], data)
+    plot_predictive_check_replicate_marks(axes["predictive_marks"], data)
+    plot_predictive_check_mark_scores(axes["predictive_scores"], data)
     plot_predictive_check_density_histogram(axes["predictive_histogram"], data)
 
     column_titles = [
@@ -273,8 +241,7 @@ def compose_figure02(rng: np.random.Generator | None = None) -> Figure:
     for key, headroom in (
         ("kl_distributions", 1.36),
         ("hpd_predictive", 1.36),
-        ("predictive_distribution", 1.36),
-        ("predictive_simulations", 1.36),
+        ("predictive_distribution", 1.72),
         ("hpd_likelihood", 1.2),
         ("predictive_histogram", 1.28),
     ):

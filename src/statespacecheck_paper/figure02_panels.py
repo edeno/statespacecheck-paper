@@ -20,6 +20,8 @@ import numpy as np
 import statespacecheck as ssc
 from matplotlib.axes import Axes
 from matplotlib.axis import Axis
+from matplotlib.legend_handler import HandlerTuple
+from matplotlib.lines import Line2D
 from matplotlib.ticker import FuncFormatter, MaxNLocator
 from numpy.typing import NDArray
 from scipy.stats import norm
@@ -62,7 +64,9 @@ class Figure2ExampleData:
     simulated_log_pred: NDArray[np.float64]
     showcase_positions: NDArray[np.float64]
     showcase_y_tildes: NDArray[np.float64]
-    showcase_likelihoods: NDArray[np.float64]
+    mark_bins: NDArray[np.float64]
+    predictive_mark_density: NDArray[np.float64]
+    showcase_mark_densities: NDArray[np.float64]
 
     def __post_init__(self) -> None:
         arrays = {
@@ -74,7 +78,9 @@ class Figure2ExampleData:
                 "simulated_log_pred",
                 "showcase_positions",
                 "showcase_y_tildes",
-                "showcase_likelihoods",
+                "mark_bins",
+                "predictive_mark_density",
+                "showcase_mark_densities",
             )
         }
         n_bins = arrays["position_bins"].size
@@ -97,10 +103,18 @@ class Figure2ExampleData:
                 "showcase_y_tildes must match showcase_positions; "
                 f"got {arrays['showcase_y_tildes'].shape} vs ({n_showcase},)"
             )
-        if arrays["showcase_likelihoods"].shape != (n_showcase, n_bins):
+        n_marks = arrays["mark_bins"].size
+        if arrays["mark_bins"].ndim != 1 or n_marks < 2:
+            raise ValueError("mark_bins must be a 1-D array with at least two bins")
+        if arrays["predictive_mark_density"].shape != (n_marks,):
             raise ValueError(
-                "showcase_likelihoods must have shape "
-                f"({n_showcase}, {n_bins}); got {arrays['showcase_likelihoods'].shape}"
+                f"predictive_mark_density must have shape ({n_marks},); "
+                f"got {arrays['predictive_mark_density'].shape}"
+            )
+        if arrays["showcase_mark_densities"].shape != (n_showcase, n_marks):
+            raise ValueError(
+                "showcase_mark_densities must have shape "
+                f"({n_showcase}, {n_marks}); got {arrays['showcase_mark_densities'].shape}"
             )
         for name, array in arrays.items():
             if not np.all(np.isfinite(array)):
@@ -198,13 +212,12 @@ def create_shared_example(rng: np.random.Generator) -> Figure2ExampleData:
     simulated_log_pred_values = check.simulated_log_density[0]
 
     # Showcase samples for the predictive-check schematic (the
-    # ``predictive_simulations`` fan and ``predictive_histogram`` panels).
+    # ``predictive_marks`` and ``predictive_histogram`` panels).
     # State positions are picked at evenly-spaced quantiles of the predictive
     # CDF so the displayed fan spans the predictive's support rather than
     # clustering near the peak. For each state, a simulated observation
     # y_tilde is then drawn from p(y | x_s) = N(x_s, like_std^2) -- the same
-    # step the Monte Carlo p-value takes -- and the simulated likelihood is
-    # p(y_tilde | x) plotted as a function of x.
+    # step the Monte Carlo p-value takes.
     cumsum = np.cumsum(predictive)
     cumsum = cumsum / cumsum[-1]  # Ensure sums to 1
     showcase_quantiles = np.array([0.10, 0.30, 0.50, 0.70, 0.90])
@@ -213,8 +226,17 @@ def create_shared_example(rng: np.random.Generator) -> Figure2ExampleData:
     showcase_y_tildes = np.random.default_rng(SHOWCASE_MARK_SEED).normal(
         loc=showcase_positions, scale=like_std
     )
-    showcase_likelihoods = np.stack(
-        [normalize(norm.pdf(position_bins, loc=y, scale=like_std)) for y in showcase_y_tildes]
+
+    # The mark axis, wide enough to hold nearly all of f_pred, which has its mode
+    # at pred_mean and a standard deviation near 14. Each showcase state has its
+    # own mark distribution p(y | x_s), and f_pred (eq:fpred) is p(y | x) averaged
+    # over the predictive distribution of the state.
+    mark_bins = np.linspace(-30.0, 100.0, 651)
+    predictive_mark_density = (
+        norm.pdf(mark_bins[:, np.newaxis], loc=position_bins, scale=like_std) @ predictive
+    )
+    showcase_mark_densities = norm.pdf(
+        mark_bins[np.newaxis, :], loc=showcase_positions[:, np.newaxis], scale=like_std
     )
 
     return Figure2ExampleData(
@@ -229,7 +251,9 @@ def create_shared_example(rng: np.random.Generator) -> Figure2ExampleData:
         simulated_log_pred=simulated_log_pred_values,
         showcase_positions=showcase_positions,
         showcase_y_tildes=showcase_y_tildes,
-        showcase_likelihoods=showcase_likelihoods,
+        mark_bins=mark_bins,
+        predictive_mark_density=predictive_mark_density,
+        showcase_mark_densities=showcase_mark_densities,
     )
 
 
@@ -546,6 +570,17 @@ def plot_hpd_intersection(ax: Axes, data: Figure2ExampleData) -> tuple[float, fl
 # Predictive Check column
 # =============================================================================
 
+# Each kind of quantity keeps one shape through the column: a dot for a sampled
+# state and a triangle for a mark.
+_STATE_DOT: dict[str, Any] = {"marker": "o", "s": 14, "zorder": 6}
+_TRIANGLE: dict[str, Any] = {
+    "marker": "v",
+    "s": 24,
+    "edgecolors": "white",
+    "linewidths": 0.4,
+    "zorder": 5,
+}
+
 
 def _showcase_colors(n: int) -> NDArray[np.float64]:
     """Distinct colors for the predictive-check sample fan.
@@ -563,143 +598,131 @@ def plot_predictive_check_predictive_fan(ax: Axes, data: Figure2ExampleData) -> 
     Each colored marker is a state at a fixed quantile of the predictive
     (the 10th, 30th, 50th, 70th, and 90th percentiles, chosen to span its
     support rather than drawn at random); the simulated observation drawn at
-    that state gives the matching curve in the simulated-likelihood panel.
+    that state gives the matching curve in the mark-density panel.
     """
     x = data.position_bins
     pred = data.predictive
     positions = data.showcase_positions
     colors = _showcase_colors(len(positions))
 
-    ax.plot(x, pred, color=COLORS["predictive"], linewidth=1.5, label="Predictive")
+    predictive_line = ax.plot(x, pred, color=COLORS["predictive"], linewidth=1.5)[0]
     ax.fill_between(x, pred, alpha=0.3, color=COLORS["predictive"])
 
     # Each showcase state is shown as a colored tick + dot on the predictive
-    # so the matching curve in the simulated-likelihood panel can be read off by colour.
+    # so the matching curve in the mark-density panel can be read off by colour.
     sample_indices = np.argmin(np.abs(x[None, :] - positions[:, None]), axis=1)
     for pos, idx, color in zip(positions, sample_indices, colors, strict=True):
         ax.vlines(pos, 0, pred[idx], color=color, linewidth=1.0, alpha=0.7)
-        ax.scatter([pos], [pred[idx]], color=color, s=30, zorder=5)
-    # Single legend entry summarises the fan.
-    ax.scatter([], [], color=colors[len(colors) // 2], s=30, label=r"Sampled $x_k$")
+        ax.scatter([pos], [pred[idx]], color=color, s=22, zorder=5)
+    # The key introduces the dots for the whole column, so step 2 reuses them
+    # without one.
+    _legend_with_color_keys(
+        ax,
+        [predictive_line, _color_key(ax, colors, **_STATE_DOT)],
+        ["Predictive", r"Sampled $x_k$"],
+    )
 
+    ax.set_title("Sample states $x_k$", pad=3)
+    ax.set_xlabel("Latent state (a.u.)", labelpad=2)
     ax.set_ylabel("Probability", labelpad=8)
-    # The sample fan sits center-left and stops at the curve, which leaves the
-    # upper-right corner free.
+    _finish_density_axes(ax)
+
+
+def _style_mark_axis(ax: Axes, top: float) -> None:
+    """Style a mark-density panel. Its axis matches the state axis of step 1.
+
+    A mark here is a state plus noise, so the two share a scale: f_pred sits under
+    the predictive, only wider. The far left tail of f_pred, below 0, falls off
+    the axis.
+    """
+    _style_state_axis(ax)
+    ax.set_ylim(0, top)
+    _mark_round_values(ax.yaxis)
+    ax.set_ylabel("Density", labelpad=8)
+
+
+def _color_key(ax: Axes, colors: NDArray[np.float64], **marker: Any) -> tuple[Any, ...]:
+    """Return a legend key that shows a marker in every sample's color."""
+    return tuple(ax.scatter([], [], color=[color], **marker) for color in colors)
+
+
+def _legend_with_color_keys(
+    ax: Axes, keys: list[Any], labels: list[str], *, handlelength: float = 2.6
+) -> None:
+    """Add a compact upper-right legend whose keys may span several colors."""
     ax.legend(
+        keys,
+        labels,
+        handler_map={tuple: HandlerTuple(ndivide=None, pad=0.0)},
         frameon=False,
         loc="upper right",
         labelspacing=0.25,
-        handlelength=1.0,
+        handlelength=handlelength,
         handletextpad=0.4,
         borderaxespad=0.0,
     )
-    _finish_density_axes(ax)
 
 
-def plot_predictive_check_likelihood_fan(ax: Axes, data: Figure2ExampleData) -> None:
-    """Fan of simulated observation likelihoods.
+def plot_predictive_check_replicate_marks(ax: Axes, data: Figure2ExampleData) -> None:
+    """Step 2: each sampled state's mark distribution and the mark drawn from it.
 
-    For each state x_s it samples from the predictive, the Monte Carlo
-    p-value draws an observation y_tilde ~ p(y | x_s) and constructs the
-    corresponding observation likelihood p(y_tilde | x). This panel shows
-    that step for the showcase states of the predictive-distribution panel
-    (fixed predictive quantiles standing in for random samples), colored to
-    match them. Per-curve markers distinguish the state
-    (dotted line at x_s) from the drawn observation (triangle
-    at the curve peak, at y_tilde). A faint dashed copy of the
-    predictive is overlaid so the reader can see what the curves get
-    multiplied by when computing the log predictive density that ends
-    up in the predictive-density histogram.
+    A dot is a sampled state, as in step 1 and directly below it, at the peak of
+    the mark distribution p(y | x_s) it sets. The triangle on each curve is the
+    replicate mark drawn from that curve. Color follows the sample.
     """
-    x = data.position_bins
-    pred = data.predictive
-    positions = data.showcase_positions
-    y_tildes = data.showcase_y_tildes
-    likelihoods = data.showcase_likelihoods
-    colors = _showcase_colors(len(positions))
-
-    # Faint dashed predictive overlay so the reader sees what each
-    # simulated likelihood gets weighted by when integrated into the predictive-density histogram.
-    ax.plot(
-        x,
-        pred,
-        color=COLORS["predictive"],
-        linewidth=0.8,
-        linestyle="--",
-        alpha=0.4,
-    )
-
-    for pos, y_t, lik, color in zip(positions, y_tildes, likelihoods, colors, strict=True):
-        ax.plot(x, lik, color=color, linewidth=1.0, alpha=0.85)
-        ax.fill_between(x, lik, color=color, alpha=0.12)
-        # Dotted vertical at the originating state sample x_s — lines up
-        # with the dot at the same color in the predictive-distribution panel.
-        ax.vlines(
-            pos, 0, np.interp(pos, x, pred), color=color, linestyle=":", linewidth=0.8, alpha=0.5
-        )
-        # Downward triangle at the curve peak marks the drawn observation
-        # y_tilde. Distinct from the dot symbol used for state samples in
-        # the predictive-distribution panel so the two quantities are never conflated.
-        peak_idx = int(np.argmin(np.abs(x - y_t)))
-        ax.scatter(
-            [x[peak_idx]],
-            [lik[peak_idx]],
-            color=color,
-            marker="v",
-            s=24,
-            zorder=5,
-            edgecolors="white",
-            linewidths=0.4,
-        )
-
-    # Legend-only proxy artists describe the visual conventions of the
-    # panel; the real curves/markers are colored per-sample.
-    neutral = "0.4"
+    marks = data.mark_bins
+    colors = _showcase_colors(len(data.showcase_positions))
+    for density, y_tilde, color in zip(
+        data.showcase_mark_densities, data.showcase_y_tildes, colors, strict=True
+    ):
+        ax.plot(marks, density, color=color, linewidth=1.0, alpha=0.85)
+        ax.scatter([y_tilde], [np.interp(y_tilde, marks, density)], color=[color], **_TRIANGLE)
     ax.scatter(
-        [],
-        [],
-        color=neutral,
-        marker="v",
-        s=24,
-        edgecolors="white",
-        linewidths=0.4,
-        label=r"Replicate $\tilde{y}$",
+        data.showcase_positions,
+        data.showcase_mark_densities.max(axis=1),
+        color=colors,
+        **_STATE_DOT,
     )
-    ax.plot(x, data.likelihood, color=COLORS["likelihood"], linewidth=1.0)
+
+    ax.text(99, 0.016, r"$p(y\,|\,x_k)$", color="0.35", ha="right", va="center")
+    _legend_with_color_keys(ax, [_color_key(ax, colors, **_TRIANGLE)], [r"Replicates $\tilde{y}$"])
+    ax.set_title(r"Sample a mark $\tilde{y}$ from each state", pad=3)
+    _style_mark_axis(ax, top=0.05)
+    # The panel below shares this axis.
+    ax.tick_params(labelbottom=False)
+
+
+def plot_predictive_check_mark_scores(ax: Axes, data: Figure2ExampleData) -> None:
+    """Step 3: every mark scored by its height on the predictive mark density.
+
+    ``f_pred`` averages the curves of step 2 over the predictive states. It gives
+    each mark one score, its height: the replicate marks of step 2 sit on it as
+    the same triangles, and the dashed line carries the observed mark's score to
+    step 4. No state appears here: the score depends only on the mark.
+    """
+    marks = data.mark_bins
+    f_pred = data.predictive_mark_density
+    colors = _showcase_colors(len(data.showcase_positions))
+    observed_density = np.exp(data.observed_log_pred)
+
+    ax.plot(marks, f_pred, color=COLORS["predictive"], linewidth=1.5)
+    ax.axhline(observed_density, color=COLORS["likelihood"], linestyle="--", linewidth=0.8)
     ax.scatter(
-        [data.observed_mark],
-        [data.likelihood.max()],
-        color=COLORS["likelihood"],
-        marker="v",
-        s=24,
-        edgecolors="white",
-        linewidths=0.4,
-        zorder=4,
-        label="Observed $y$",
+        data.showcase_y_tildes,
+        np.interp(data.showcase_y_tildes, marks, f_pred),
+        color=colors,
+        **_TRIANGLE,
+    )
+    observed = ax.scatter(
+        [data.observed_mark], [observed_density], color=COLORS["likelihood"], **_TRIANGLE
     )
 
-    # The panel above defines the predictive and the sampled states, drawn here
-    # in the same colors. The curves leave the upper-right corner free.
-    ax.legend(
-        frameon=False,
-        loc="upper right",
-        handlelength=1.3,
-        handletextpad=0.4,
-        borderaxespad=0.0,
-    )
-    ax.set_xlabel("Latent state (a.u.)", labelpad=8)
-    ax.set_ylabel("Probability", labelpad=8)
-    _finish_density_axes(ax)
-
-    ax.text(
-        0.5,
-        1.02,
-        "Replicate mark densities",
-        transform=ax.transAxes,
-        ha="center",
-        va="bottom",
-        style="italic",
-    )
+    ax.text(99, 0.016, r"$f_{\mathrm{pred}}$", color=COLORS["predictive"], ha="right", va="center")
+    # The replicates were introduced in step 2.
+    _legend_with_color_keys(ax, [observed], ["Observed $y$"], handlelength=1.0)
+    ax.set_title(r"Score each mark on $f_{\mathrm{pred}}$", pad=3)
+    ax.set_xlabel("Mark (a.u.)", labelpad=2)
+    _style_mark_axis(ax, top=0.042)
 
 
 def plot_predictive_check_density_histogram(ax: Axes, data: Figure2ExampleData) -> None:
@@ -730,25 +753,28 @@ def plot_predictive_check_density_histogram(ax: Axes, data: Figure2ExampleData) 
         alpha=0.5,
         color=COLORS["predictive"],
         edgecolor="none",
-        label="Replicates",
     )
 
     # Mark observed value (from likelihood/actual observation)
-    ax.axvline(
+    observed_line = ax.axvline(
         observed_log_pred,
         color=COLORS["likelihood"],
         linewidth=2,
         linestyle="-",
-        label="Observed",
     )
+    # Both keys are lines, so the legend reads as one kind of entry.
+    replicates_key = Line2D([], [], color=COLORS["predictive"], linewidth=2, alpha=0.5)
 
-    ax.set_xlabel("Log pred. density", labelpad=8)
+    ax.set_title("Rank the observed score", pad=3)
+    ax.set_xlabel("Log pred. density", labelpad=2)
     ax.set_ylabel("Density", labelpad=8)
     # A short handle keeps the legend's right edge left of the observed value.
     ax.legend(
+        [replicates_key, observed_line],
+        ["Replicates", "Observed"],
         frameon=False,
         loc="upper left",
-        handlelength=0.7,
+        handlelength=1.0,
         handletextpad=0.3,
         borderaxespad=0.0,
     )

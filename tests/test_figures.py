@@ -134,7 +134,7 @@ def test_figure02_create_shared_example_samples_y_tilde_with_noise() -> None:
         f"the y_tilde ~ N(x_s, like_std) draw step was skipped or shortcut."
     )
     assert not data.predictive.flags.writeable
-    assert not data.showcase_likelihoods.flags.writeable
+    assert not data.showcase_mark_densities.flags.writeable
     with pytest.raises(ValueError, match="predictive_pvalue must lie"):
         replace(data, predictive_pvalue=float("nan"))
 
@@ -180,6 +180,84 @@ def test_full_width_figures_are_drawn_at_page_width(figure: str) -> None:
     assert 460.0 <= float(match[1]) <= 468.0
     source = (manuscript / "main.tex").read_text()
     assert rf"\includegraphics[width=\textwidth]{{figures/main/{figure}.pdf}}" in source
+
+
+def test_figure02_mark_density_panel_draws_what_the_p_value_uses() -> None:
+    """The drawn f_pred scores the observed mark with the value the check used,
+    its tails no higher than that score hold the p-value, and each thin curve is
+    a sampled state's mark distribution, centered on that state."""
+    from statespacecheck_paper.figure02_panels import create_shared_example
+
+    data = create_shared_example(np.random.default_rng(42))
+    marks, f_pred = data.mark_bins, data.predictive_mark_density
+    mark_step = marks[1] - marks[0]
+
+    assert f_pred.sum() * mark_step == pytest.approx(1.0, abs=1e-3)
+    assert np.log(np.interp(data.observed_mark, marks, f_pred)) == pytest.approx(
+        data.observed_log_pred, abs=1e-3
+    )
+    tail_area = f_pred[f_pred <= np.exp(data.observed_log_pred)].sum() * mark_step
+    standard_error = np.sqrt(tail_area * (1.0 - tail_area) / data.simulated_log_pred.size)
+    assert abs(tail_area - data.predictive_pvalue) < 4.0 * standard_error
+    np.testing.assert_allclose(
+        marks[data.showcase_mark_densities.argmax(axis=1)],
+        data.showcase_positions,
+        atol=marks[1] - marks[0],
+    )
+
+
+def test_figure02_predictive_column_shows_four_ordered_steps() -> None:
+    """The column reads top to bottom as the procedure, on one mark and state
+    scale, and each sample keeps its color from its curve to its score."""
+    import matplotlib.pyplot as plt
+
+    from statespacecheck_paper.figure02_generation import compose_figure02
+    from statespacecheck_paper.figure02_panels import _showcase_colors, create_shared_example
+
+    fig = compose_figure02()
+    try:
+        titles = [
+            "Sample states $x_k$",
+            r"Sample a mark $\tilde{y}$ from each state",
+            r"Score each mark on $f_{\mathrm{pred}}$",
+            "Rank the observed score",
+        ]
+        steps = [next(ax for ax in fig.axes if ax.get_title() == t) for t in titles]
+        assert steps[0].get_xlim() == steps[1].get_xlim() == steps[2].get_xlim()
+        heights = [ax.get_position().y0 for ax in steps]
+        assert heights == sorted(heights, reverse=True)
+
+        data = create_shared_example(np.random.default_rng(42))
+        colors = _showcase_colors(5)
+        drawn = {len(points.get_offsets()): points for points in steps[1].collections}
+        # The dots are the sampled states, at the peak of the curve each one sets.
+        np.testing.assert_allclose(drawn[5].get_offsets()[:, 0], data.showcase_positions)
+        np.testing.assert_allclose(drawn[5].get_facecolor(), colors)
+        np.testing.assert_allclose(
+            drawn[5].get_offsets()[:, 1], data.showcase_mark_densities.max(axis=1)
+        )
+        # The triangles are the marks, and the same marks are scored below them.
+        marks_on_curves = [
+            points for points in steps[1].collections if len(points.get_offsets()) == 1
+        ]
+        np.testing.assert_allclose(
+            [points.get_offsets()[0, 0] for points in marks_on_curves],
+            data.showcase_y_tildes,
+        )
+        np.testing.assert_allclose(
+            steps[2].collections[0].get_offsets()[:, 0], data.showcase_y_tildes
+        )
+        np.testing.assert_allclose(steps[2].collections[0].get_facecolor(), colors)
+        assert [text.get_text() for text in steps[0].get_legend().get_texts()] == [
+            "Predictive",
+            r"Sampled $x_k$",
+        ]
+        assert [text.get_text() for text in steps[1].get_legend().get_texts()] == [
+            r"Replicates $\tilde{y}$",
+        ]
+        assert [text.get_text() for text in steps[2].get_legend().get_texts()] == ["Observed $y$"]
+    finally:
+        plt.close(fig)
 
 
 def test_figure02_replicate_marks_can_be_told_apart() -> None:
