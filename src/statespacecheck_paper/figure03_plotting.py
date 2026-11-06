@@ -482,9 +482,9 @@ def _plot_figure03_summary_heatmap(
     # Include replay's decoded-to-physical distance alongside the other phases.
     # All values use the manuscript's rounding.
     error_header = ax.text(
-        -0.04,
+        -0.012,
         float(n_metrics),
-        "Decoded–physical\ndist. (a.u.)",
+        "Distance\n(a.u.)",
         transform=ax.get_yaxis_transform(),
         ha="right",
         va="center",
@@ -521,7 +521,7 @@ def _plot_figure03_summary_heatmap(
         )
         component_label.set_gid(FIGURE03_SUMMARY_COMPONENT_LABEL_GID)
     known_component_label = ax.text(
-        -0.04,
+        -0.012,
         component_row_y,
         "Known\ncomponent:",
         transform=ax.get_yaxis_transform(),
@@ -598,11 +598,11 @@ def compose_figure03(
     >>> # See tests/test_figure03_plotting.py for a worked DecodingDiagnostics fixture
     >>> # and how to plumb it into compose_figure03.
     """
-    fig_width = 6.85  # Full page width; tight PDF stays within ~183 mm.
+    fig_width = 6.5  # Page width, so the 8 pt text prints at 8 pt.
     # Extra height (and bottom margin) holds the error and known-component
     # rows beneath the panel-(b) heatmap; the plotted area
     # above them is unchanged.
-    fig_height = 7.55
+    fig_height = 6.2
     fig = plt.figure(figsize=(fig_width, fig_height), dpi=FIGURE_DPI)
 
     # Outer grid: time-series block on top, summary heatmap on bottom.
@@ -610,12 +610,12 @@ def compose_figure03(
         2,
         1,
         figure=fig,
-        height_ratios=[5.3, 1.2],
-        hspace=0.42,
-        left=0.08,
-        right=0.93,
-        top=0.97,
-        bottom=0.11,
+        height_ratios=[4.0, 0.98],
+        hspace=0.5,
+        left=0.1015,
+        right=0.88,
+        top=0.965,
+        bottom=0.105,
     )
 
     gs = gs_outer[0].subgridspec(
@@ -659,11 +659,11 @@ def compose_figure03(
     time_series_axes = [ax_pred, ax_like, ax_raster, *diagnostic_axes]
     add_phase_boundaries(time_series_axes, config)
     _add_figure03_phase_labels(ax_pred, config)
-    _add_figure03_panel_label(ax_pred, "a", y=1.15)
+    _add_figure03_panel_label(ax_pred, "a", y=1.21)
 
     # ===== SUMMARY HEATMAP: % exceeding baseline threshold per phase =====
     ax_summary = fig.add_subplot(gs_summary)
-    _add_figure03_panel_label(ax_summary, "b", y=1.54)
+    _add_figure03_panel_label(ax_summary, "b", y=1.62)
     _plot_figure03_summary_heatmap(
         ax_summary,
         config,
