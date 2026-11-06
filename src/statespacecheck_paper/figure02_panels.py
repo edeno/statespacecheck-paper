@@ -372,10 +372,12 @@ def _plot_hpd_panel(
         label=f"{HPD_COVERAGE:.0%} HPD",
     )
     ax.axhline(hpd_density_level, color=color, linestyle="--", linewidth=0.8, alpha=0.7)
-    ax.text(
-        label_x,
-        hpd_density_level,
-        f"{HPD_COVERAGE:.0%} HPD level",
+    # Lift the label off the line: the curve leans away from it as it rises.
+    ax.annotate(
+        f"{HPD_COVERAGE:.0%} level",
+        xy=(label_x, hpd_density_level),
+        xytext=(0, 3),
+        textcoords="offset points",
         ha=label_ha,
         va="bottom",
         color=color,
@@ -397,7 +399,7 @@ def plot_hpd_predictive(ax: Axes, data: Figure2ExampleData) -> None:
         data.predictive,
         color=COLORS["predictive"],
         title=r"Predictive HPD ($\mathrm{HPD}_P$)",
-        label_x=95,
+        label_x=99,
         label_ha="right",
         legend_kwargs={"loc": "upper right"},
     )
@@ -405,7 +407,7 @@ def plot_hpd_predictive(ax: Axes, data: Figure2ExampleData) -> None:
 
 def plot_hpd_likelihood(ax: Axes, data: Figure2ExampleData) -> None:
     """Likelihood distribution with 95% HPD region shaded."""
-    # Curve peaks center-right, so the HPD-level label sits on the left and the
+    # Curve peaks center-right, so the level label sits on the left and the
     # legend is tucked into the empty upper-left corner against the y-axis.
     _plot_hpd_panel(
         ax,
@@ -413,7 +415,7 @@ def plot_hpd_likelihood(ax: Axes, data: Figure2ExampleData) -> None:
         data.likelihood,
         color=COLORS["likelihood"],
         title=r"Likelihood HPD ($\mathrm{HPD}_Q$)",
-        label_x=5,
+        label_x=1,
         label_ha="left",
         legend_kwargs={
             "loc": "upper left",
@@ -741,7 +743,14 @@ def plot_predictive_check_density_histogram(ax: Axes, data: Figure2ExampleData) 
 
     ax.set_xlabel("Log pred. density", labelpad=8)
     ax.set_ylabel("Density", labelpad=8)
-    ax.legend(frameon=False, loc="upper left")
+    # A short handle keeps the legend's right edge left of the observed value.
+    ax.legend(
+        frameon=False,
+        loc="upper left",
+        handlelength=1.0,
+        handletextpad=0.4,
+        borderaxespad=0.0,
+    )
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     _mark_round_values(ax.xaxis)

@@ -167,6 +167,41 @@ def test_figure02_numeric_ticks_are_labeled_with_the_values_they_sit_at() -> Non
     np.testing.assert_allclose(locations, labels, rtol=1e-9, atol=1e-12)
 
 
+@pytest.mark.parametrize("dist_name", ["predictive", "likelihood"])
+def test_figure02_hpd_level_label_clears_its_curve(dist_name: str) -> None:
+    """Every curve point under the drawn "95% level" label lies below the
+    label, so the curve never runs through the text."""
+    import matplotlib.pyplot as plt
+
+    from statespacecheck_paper.figure02_generation import compose_figure02
+    from statespacecheck_paper.figure02_panels import create_shared_example
+    from statespacecheck_paper.style import set_figure_defaults
+
+    data = create_shared_example(np.random.default_rng(42))
+    # Text size and layout decide the clearance, so measure the published style.
+    with plt.rc_context():
+        set_figure_defaults()
+        fig = compose_figure02()
+        try:
+            fig.canvas.draw()
+            ax, label = next(
+                (ax, text)
+                for ax in fig.axes
+                for text in ax.texts
+                if text.get_text() == "95% level" and ax.get_title().lower().startswith(dist_name)
+            )
+            box = label.get_window_extent()
+            curve = ax.transData.transform(
+                np.column_stack([data.position_bins, getattr(data, dist_name)])
+            )
+        finally:
+            plt.close(fig)
+
+    under_label = (curve[:, 0] >= box.x0) & (curve[:, 0] <= box.x1)
+    assert under_label.sum() > 5
+    assert curve[under_label, 1].max() < box.y0
+
+
 @pytest.mark.parametrize("observed_in_tail", [False, True])
 def test_figure02_density_histogram_crops_the_sparse_tail(observed_in_tail: bool) -> None:
     """The histogram drops the simulated values below the crop quantile but

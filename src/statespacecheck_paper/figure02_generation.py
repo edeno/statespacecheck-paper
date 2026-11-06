@@ -272,6 +272,7 @@ def compose_figure02(rng: np.random.Generator | None = None) -> Figure:
     for key in (
         "kl_distributions",
         "hpd_predictive",
+        "hpd_likelihood",
         "predictive_distribution",
         "predictive_simulations",
         "predictive_histogram",
