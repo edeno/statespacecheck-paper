@@ -44,7 +44,7 @@ def _refuse(method: str) -> Callable[..., Any]:
 
 
 def make_datajoint_read_only() -> None:
-    """Patch DataJoint in this process so it cannot write to the database."""
+    """Patch DataJoint's ordinary write methods in this process so they raise."""
     schema_init, schema_activate = dj.Schema.__init__, dj.Schema.activate
 
     def init(self: Any, *args: Any, create_schema: bool = True, **kwargs: Any) -> None:

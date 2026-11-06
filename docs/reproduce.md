@@ -30,8 +30,9 @@ and orders the steps needed to build the paper.
 | Figure 4 fresh fit/decode | Several minutes for both models, followed by diagnostics and rendering; runtime depends on hardware |
 | Figure 4 cached decode | Approximately 8 GB on disk; arrays are memory-mapped when loaded |
 
-Peak RAM for a fresh Figure 4 run has not been benchmarked; the disk-cache size
-is not a RAM requirement. Cache replacement is atomic and temporarily keeps the
+A fresh Figure 4 run peaks at about 14 GB of RAM
+([measured below](#check-a-fresh-reproduction)); the disk-cache size is not a RAM
+requirement. Cache replacement is atomic and temporarily keeps the
 old and new decode caches, so allow roughly 16 GB for those two files when
 refitting, plus space for inputs, diagnostics, dependencies, and optional viewer
 caches. A source change in the fitting/data-preparation modules invalidates the
@@ -139,8 +140,8 @@ Measured fresh runs (`steps.tsv`; peak memory is the largest child process):
 Both runs reproduced the committed summaries and macros. The Linux run's
 Figure 3 floats differ from the macOS-committed values by at most 5.9e-13
 relative (round-off); its Figure 4 values are bit-identical. Its cache
-fingerprints differ, as they do on any other machine, while the decode and
-diagnostics identities match. The comparison's tolerances and their basis are in
+fingerprints differ, because they hash the architecture and Python version, while
+the decode and diagnostics identities match. The comparison's tolerances and their basis are in
 `scripts/check_reproduction.py`. Round-off also decides strict comparisons
 between near-equal values, so the Figure 4 detail window's count of higher
 p-values treats differences below `FIGURE04_PVALUE_TIE_TOLERANCE` as ties.
