@@ -546,16 +546,37 @@ def test_remap_phase_uses_decoder_likelihood(sim: Figure3SimulationResult) -> No
         )
 
 
-def test_sparse_population_dissociates_kl_from_other_metrics(
-    sim: Figure3SimulationResult,
-) -> None:
+def test_sparse_population_dissociates_kl_from_other_metrics() -> None:
     """Load-bearing: isolated sparse-population spikes elevate KL while HPD
     overlap and the predictive p-value remain consistent.
-    """
-    medians = _per_phase_medians(sim)
-    base_kl, base_hpd, _ = medians[PhaseBoundary.REMAP_START]
-    sparse_kl, sparse_hpd, sparse_p = medians[PhaseBoundary.SPARSE_POP_END]
 
+    The phase has about 12 spikes per realization even at this length, too few for
+    one realization's median, so the claim is about events pooled over five seeds.
+    """
+    params = dataclasses.replace(
+        _moderate_params(),
+        phase_boundaries=(1200, 1500, 1700, 2000, 2200, 2500, 2700, 5700),
+    )
+    realizations = [run_figure03_simulation(params, seed=seed).diagnostics for seed in range(5)]
+    boundaries = np.asarray(params.phase_boundaries)
+
+    def pooled_median(values: str, phase: PhaseBoundary) -> float:
+        pooled = [
+            getattr(metrics, values)[
+                np.searchsorted(boundaries, metrics.event_time_ind, side="right") == phase
+            ]
+            for metrics in realizations
+        ]
+        return float(np.nanmedian(np.concatenate(pooled)))
+
+    base_kl = pooled_median("event_kl_divergence", PhaseBoundary.REMAP_START)
+    base_hpd = pooled_median("event_hpd_overlap", PhaseBoundary.REMAP_START)
+    sparse_kl = pooled_median("event_kl_divergence", PhaseBoundary.SPARSE_POP_END)
+    sparse_hpd = pooled_median("event_hpd_overlap", PhaseBoundary.SPARSE_POP_END)
+    sparse_p = pooled_median("event_predictive_pvalue", PhaseBoundary.SPARSE_POP_END)
+
+    # Over 40 seeds, any five consecutive seeds give a KL ratio of 3.95-6.67, an
+    # HPD ratio of 1.00, and a median p-value of 0.40-0.59.
     assert sparse_kl > 3 * base_kl, (
         "sparse-population spikes should inflate KL by >3x; "
         f"got base={base_kl:.3f}, sparse={sparse_kl:.3f}"
