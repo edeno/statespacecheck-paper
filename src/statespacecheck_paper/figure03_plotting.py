@@ -603,7 +603,7 @@ def compose_figure03(
     # Extra height (and bottom margin) holds the error and known-component
     # rows beneath the panel-(b) heatmap; the plotted area
     # above them is unchanged.
-    fig_height = 7.4
+    fig_height = 7.55
     fig = plt.figure(figsize=(fig_width, fig_height), dpi=FIGURE_DPI)
 
     # Outer grid: time-series block on top, summary heatmap on bottom.
@@ -612,7 +612,7 @@ def compose_figure03(
         1,
         figure=fig,
         height_ratios=[5.3, 1.2],
-        hspace=0.34,
+        hspace=0.42,
         left=0.08,
         right=0.93,
         top=0.97,
@@ -664,7 +664,7 @@ def compose_figure03(
 
     # ===== SUMMARY HEATMAP: % exceeding baseline threshold per phase =====
     ax_summary = fig.add_subplot(gs_summary)
-    _add_figure03_panel_label(ax_summary, "b", y=1.25)
+    _add_figure03_panel_label(ax_summary, "b", y=1.54)
     _plot_figure03_summary_heatmap(
         ax_summary,
         config,
