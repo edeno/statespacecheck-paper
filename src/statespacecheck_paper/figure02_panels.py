@@ -620,11 +620,13 @@ def plot_predictive_check_predictive_fan(ax: Axes, data: Figure2ExampleData) -> 
     for pos, idx, color in zip(positions, sample_indices, colors, strict=True):
         ax.vlines(pos, 0, pred[idx], color=color, linestyle=":", linewidth=1.0)
         ax.scatter([pos], [pred[idx]], color=color, s=22, zorder=5)
-    # Gray keys name the kind of thing; the colors tell the samples apart.
+    # Gray keys name the kind of thing; the colors tell the samples apart. The
+    # titles spell out the symbols, which keeps these keys short enough to sit
+    # beside the curves instead of above them.
     _compact_legend(
         ax,
         [predictive_line, ax.scatter([], [], color=_KEY_GRAY, **_STATE_DOT)],
-        ["Predictive", r"Sampled $x_k$"],
+        ["Pred.", "$x_k$"],
     )
 
     ax.set_title("Sample states $x_k$", pad=3)
@@ -691,10 +693,10 @@ def plot_predictive_check_replicate_marks(ax: Axes, data: Figure2ExampleData) ->
             Line2D([], [], color=_KEY_GRAY, linewidth=1.2),
             ax.scatter([], [], color=_KEY_GRAY, **_TRIANGLE),
         ],
-        [r"$p(y\,|\,x_k)$", r"Replicates $\tilde{y}$"],
+        [r"$p(y\,|\,x_k)$", r"$\tilde{y}$"],
     )
     ax.set_title(r"Sample a mark $\tilde{y}$ from each state", pad=3)
-    _style_mark_axis(ax, top=0.064)
+    _style_mark_axis(ax, top=0.046)
     # The panel below shares this axis.
     ax.tick_params(labelbottom=False)
 

@@ -253,12 +253,12 @@ def test_figure02_predictive_column_shows_four_ordered_steps() -> None:
         )
         np.testing.assert_allclose(steps[2].collections[0].get_facecolor(), colors)
         assert [text.get_text() for text in steps[0].get_legend().get_texts()] == [
-            "Predictive",
-            r"Sampled $x_k$",
+            "Pred.",
+            "$x_k$",
         ]
         assert [text.get_text() for text in steps[1].get_legend().get_texts()] == [
             r"$p(y\,|\,x_k)$",
-            r"Replicates $\tilde{y}$",
+            r"$\tilde{y}$",
         ]
         assert [text.get_text() for text in steps[2].get_legend().get_texts()] == ["Observed $y$"]
     finally:
