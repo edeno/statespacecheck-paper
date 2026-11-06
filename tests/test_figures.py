@@ -211,7 +211,6 @@ def test_figure02_predictive_column_shows_four_ordered_steps() -> None:
     scale, and each sample keeps its color from its curve to its score."""
     import matplotlib.pyplot as plt
     from matplotlib.collections import LineCollection, PathCollection
-    from matplotlib.legend import Legend
 
     from statespacecheck_paper.figure02_generation import compose_figure02
     from statespacecheck_paper.figure02_panels import _showcase_colors, create_shared_example
@@ -230,7 +229,7 @@ def test_figure02_predictive_column_shows_four_ordered_steps() -> None:
         assert heights == sorted(heights, reverse=True)
 
         data = create_shared_example(np.random.default_rng(42))
-        colors = _showcase_colors(5)
+        colors = _showcase_colors(3)
         # Each vertical line is a sampled state, rising to the peak of its curve.
         state_lines = next(c for c in steps[1].collections if isinstance(c, LineCollection))
         segments = np.array(state_lines.get_segments())
@@ -257,11 +256,10 @@ def test_figure02_predictive_column_shows_four_ordered_steps() -> None:
             "Predictive",
             r"Sampled $x_k$",
         ]
-        legends = steps[1].findobj(Legend)
-        assert {text.get_text() for legend in legends for text in legend.get_texts()} == {
-            "Observation model",
+        assert [text.get_text() for text in steps[1].get_legend().get_texts()] == [
+            r"$p(y\,|\,x_k)$",
             r"Replicates $\tilde{y}$",
-        }
+        ]
         assert [text.get_text() for text in steps[2].get_legend().get_texts()] == ["Observed $y$"]
     finally:
         plt.close(fig)
@@ -269,12 +267,16 @@ def test_figure02_predictive_column_shows_four_ordered_steps() -> None:
 
 def test_figure02_replicate_marks_can_be_told_apart() -> None:
     """The schematic's replicate marks and the observed mark stay separate on
-    the axis, and drawing them leaves the Monte Carlo p-value untouched."""
+    the axis, the replicates sample different parts of their curves, and drawing
+    them leaves the Monte Carlo p-value untouched."""
     from statespacecheck_paper.figure02_panels import create_shared_example
 
     data = create_shared_example(np.random.default_rng(42))
     marks = np.sort(np.append(data.showcase_y_tildes, data.observed_mark))
     assert np.diff(marks).min() > 5.0
+    offsets = np.sort(data.showcase_y_tildes - data.showcase_positions)
+    assert offsets[0] < -6.0 < 6.0 < offsets[-1]
+    assert abs(offsets[1]) < 6.0
     assert data.predictive_pvalue == pytest.approx(0.082)
 
 

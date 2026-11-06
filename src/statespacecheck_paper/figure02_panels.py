@@ -20,8 +20,6 @@ import numpy as np
 import statespacecheck as ssc
 from matplotlib.axes import Axes
 from matplotlib.axis import Axis
-from matplotlib.legend import Legend
-from matplotlib.legend_handler import HandlerTuple
 from matplotlib.lines import Line2D
 from matplotlib.ticker import FuncFormatter, MaxNLocator
 from numpy.typing import NDArray
@@ -35,9 +33,10 @@ from statespacecheck_paper.style import COLORS
 # predictive-check histogram crops its sparse left tail
 HISTOGRAM_LOWER_QUANTILE = 0.001
 
-# Seed of the five replicate marks drawn in the schematic, chosen so that the
-# marks and the observed mark are far enough apart to tell apart.
-SHOWCASE_MARK_SEED = 91
+# Seed of the three replicate marks drawn in the schematic, chosen so that the
+# marks and the observed mark are far apart and the replicates fall in different
+# parts of their observation models.
+SHOWCASE_MARK_SEED = 2281
 
 # =============================================================================
 # Shared Example Data
@@ -221,7 +220,7 @@ def create_shared_example(rng: np.random.Generator) -> Figure2ExampleData:
     # step the Monte Carlo p-value takes.
     cumsum = np.cumsum(predictive)
     cumsum = cumsum / cumsum[-1]  # Ensure sums to 1
-    showcase_quantiles = np.array([0.10, 0.30, 0.50, 0.70, 0.90])
+    showcase_quantiles = np.array([0.10, 0.50, 0.90])
     showcase_idx = np.minimum(np.searchsorted(cumsum, showcase_quantiles), n_bins - 1)
     showcase_positions = position_bins[showcase_idx]
     showcase_y_tildes = np.random.default_rng(SHOWCASE_MARK_SEED).normal(
@@ -572,6 +571,7 @@ def plot_hpd_intersection(ax: Axes, data: Figure2ExampleData) -> tuple[float, fl
 # =============================================================================
 
 # A dot marks a sampled state in step 1 and a triangle marks a mark in every step.
+_KEY_GRAY = "0.4"
 _STATE_DOT: dict[str, Any] = {
     "marker": "o",
     "s": 20,
@@ -602,7 +602,7 @@ def plot_predictive_check_predictive_fan(ax: Axes, data: Figure2ExampleData) -> 
     """Predictive distribution with a fan of showcase positions.
 
     Each colored marker is a state at a fixed quantile of the predictive
-    (the 10th, 30th, 50th, 70th, and 90th percentiles, chosen to span its
+    (the 10th, 50th, and 90th percentiles, chosen to span its
     support rather than drawn at random); the simulated observation drawn at
     that state gives the matching curve in the mark-density panel.
     """
@@ -618,13 +618,12 @@ def plot_predictive_check_predictive_fan(ax: Axes, data: Figure2ExampleData) -> 
     # so the matching curve in the mark-density panel can be read off by colour.
     sample_indices = np.argmin(np.abs(x[None, :] - positions[:, None]), axis=1)
     for pos, idx, color in zip(positions, sample_indices, colors, strict=True):
-        ax.vlines(pos, 0, pred[idx], color=color, linewidth=1.0, alpha=0.7)
+        ax.vlines(pos, 0, pred[idx], color=color, linestyle=":", linewidth=1.0)
         ax.scatter([pos], [pred[idx]], color=color, s=22, zorder=5)
-    # The key introduces the dots for the whole column, so step 2 reuses them
-    # without one.
-    _legend_with_color_keys(
+    # Gray keys name the kind of thing; the colors tell the samples apart.
+    _compact_legend(
         ax,
-        [predictive_line, _color_key(ax, colors, **_STATE_DOT)],
+        [predictive_line, ax.scatter([], [], color=_KEY_GRAY, **_STATE_DOT)],
         ["Predictive", r"Sampled $x_k$"],
     )
 
@@ -647,24 +646,15 @@ def _style_mark_axis(ax: Axes, top: float) -> None:
     ax.set_ylabel("Density", labelpad=8)
 
 
-def _color_key(ax: Axes, colors: NDArray[np.float64], **marker: Any) -> tuple[Any, ...]:
-    """Return a legend key that shows a marker in every sample's color."""
-    return tuple(ax.scatter([], [], color=[color], **marker) for color in colors)
-
-
-def _legend_with_color_keys(
-    ax: Axes, keys: list[Any], labels: list[str], *, handlelength: float = 2.6, top: float = 1.0
-) -> Legend:
-    """Add a compact upper-right legend whose keys may span several colors."""
-    return ax.legend(
+def _compact_legend(ax: Axes, keys: list[Any], labels: list[str]) -> None:
+    """Add a compact upper-right legend for a panel of the predictive column."""
+    ax.legend(
         keys,
         labels,
-        handler_map={tuple: HandlerTuple(ndivide=None, pad=0.0)},
         frameon=False,
         loc="upper right",
-        bbox_to_anchor=(1.0, top),
         labelspacing=0.25,
-        handlelength=handlelength,
+        handlelength=1.0,
         handletextpad=0.4,
         borderaxespad=0.0,
     )
@@ -695,20 +685,16 @@ def plot_predictive_check_replicate_marks(ax: Axes, data: Figure2ExampleData) ->
         linewidth=1.0,
     )
 
-    ax.text(99, 0.016, r"$p(y\,|\,x_k)$", color="0.35", ha="right", va="center")
-    # Two legends, because the triangles' key is too wide to share with this name.
-    model_legend = _legend_with_color_keys(
+    _compact_legend(
         ax,
-        [tuple(Line2D([], [], color=color, linewidth=1.2) for color in colors)],
-        ["Observation model"],
-        handlelength=1.0,
-    )
-    ax.add_artist(model_legend)
-    _legend_with_color_keys(
-        ax, [_color_key(ax, colors, **_TRIANGLE)], [r"Replicates $\tilde{y}$"], top=0.84
+        [
+            Line2D([], [], color=_KEY_GRAY, linewidth=1.2),
+            ax.scatter([], [], color=_KEY_GRAY, **_TRIANGLE),
+        ],
+        [r"$p(y\,|\,x_k)$", r"Replicates $\tilde{y}$"],
     )
     ax.set_title(r"Sample a mark $\tilde{y}$ from each state", pad=3)
-    _style_mark_axis(ax, top=0.066)
+    _style_mark_axis(ax, top=0.064)
     # The panel below shares this axis.
     ax.tick_params(labelbottom=False)
 
@@ -718,8 +704,7 @@ def plot_predictive_check_mark_scores(ax: Axes, data: Figure2ExampleData) -> Non
 
     ``f_pred`` averages the curves of step 2 over the predictive states. It gives
     each mark one score, its height: the replicate marks of step 2 sit on it as
-    the same triangles, and the dashed line carries the observed mark's score to
-    step 4. No state appears here: the score depends only on the mark.
+    the same triangles. No state appears here: the score depends only on the mark.
     """
     marks = data.mark_bins
     f_pred = data.predictive_mark_density
@@ -727,7 +712,6 @@ def plot_predictive_check_mark_scores(ax: Axes, data: Figure2ExampleData) -> Non
     observed_density = np.exp(data.observed_log_pred)
 
     ax.plot(marks, f_pred, color=COLORS["predictive"], linewidth=1.5)
-    ax.axhline(observed_density, color=COLORS["likelihood"], linestyle="--", linewidth=0.8)
     ax.scatter(
         data.showcase_y_tildes,
         np.interp(data.showcase_y_tildes, marks, f_pred),
@@ -738,9 +722,8 @@ def plot_predictive_check_mark_scores(ax: Axes, data: Figure2ExampleData) -> Non
         [data.observed_mark], [observed_density], color=COLORS["likelihood"], **_TRIANGLE
     )
 
-    ax.text(99, 0.016, r"$f_{\mathrm{pred}}$", color=COLORS["predictive"], ha="right", va="center")
     # The replicates were introduced in step 2.
-    _legend_with_color_keys(ax, [observed], ["Observed $y$"], handlelength=1.0)
+    _compact_legend(ax, [observed], ["Observed $y$"])
     ax.set_title(r"Score each mark on $f_{\mathrm{pred}}$", pad=3)
     ax.set_xlabel("Mark (a.u.)", labelpad=2)
     _style_mark_axis(ax, top=0.042)
