@@ -126,9 +126,10 @@ Each needs the user's go-ahead before anything is written.
   specific step: inserts, `populate`, schema creation, deletes, and exports. The
   scripts dry-run by default and ask before writing.
 - To check Spyglass code against the live database without writing, run it through
-  `scripts/datajoint_read_only.py`: it stops DataJoint from creating schemas or tables
-  and makes table inserts, deletes, drops, and `update1` raise (including the default rows
-  DataJoint inserts into `Lookup` tables on import).
+  `scripts/datajoint_read_only.py`: it refuses every SQL statement except reads and
+  transaction control, stops DataJoint from creating schemas or tables, and makes table
+  inserts, deletes, drops, and `update1` raise (including the default rows DataJoint
+  inserts into `Lookup` tables on import).
 - Importing Spyglass connects to the database. The Spyglass code lives in the
   `statespacecheck_paper.spyglass_pipeline` package, which no figure or analysis module imports
   (`tests/test_import_boundaries.py` enforces this). Keep Spyglass imports inside
