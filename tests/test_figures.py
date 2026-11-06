@@ -167,10 +167,21 @@ def test_figure02_numeric_ticks_are_labeled_with_the_values_they_sit_at() -> Non
     np.testing.assert_allclose(locations, labels, rtol=1e-9, atol=1e-12)
 
 
+def test_figure02_replicate_marks_can_be_told_apart() -> None:
+    """The schematic's replicate marks and the observed mark stay separate on
+    the axis, and drawing them leaves the Monte Carlo p-value untouched."""
+    from statespacecheck_paper.figure02_panels import create_shared_example
+
+    data = create_shared_example(np.random.default_rng(42))
+    marks = np.sort(np.append(data.showcase_y_tildes, data.observed_mark))
+    assert np.diff(marks).min() > 5.0
+    assert data.predictive_pvalue == pytest.approx(0.082)
+
+
 @pytest.mark.parametrize("dist_name", ["predictive", "likelihood"])
 def test_figure02_hpd_level_label_clears_its_curve(dist_name: str) -> None:
-    """Every curve point under the drawn "95% level" label lies below the
-    label, so the curve never runs through the text."""
+    """Every curve point under the drawn level label lies below the label, so
+    the curve never runs through the text."""
     import matplotlib.pyplot as plt
 
     from statespacecheck_paper.figure02_generation import compose_figure02
@@ -188,7 +199,7 @@ def test_figure02_hpd_level_label_clears_its_curve(dist_name: str) -> None:
                 (ax, text)
                 for ax in fig.axes
                 for text in ax.texts
-                if text.get_text() == "95% level" and ax.get_title().lower().startswith(dist_name)
+                if text.get_text() == "95%\nlevel" and ax.get_title().lower().startswith(dist_name)
             )
             box = label.get_window_extent()
             curve = ax.transData.transform(

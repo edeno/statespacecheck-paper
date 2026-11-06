@@ -164,7 +164,7 @@ def compose_figure02(rng: np.random.Generator | None = None) -> Figure:
         # a plain nested string list is the documented form but needs a cast to
         # satisfy list invariance.
         cast("list[HashableList[Hashable]]", layout),
-        figsize=(7.15, 7.0),
+        figsize=(6.2, 6.1),
         width_ratios=[1, 1, 0.2, 1, 1, 0.2, 1, 1],
         height_ratios=[1, 1, 1, 0.35],
         dpi=FIGURE_DPI,
@@ -220,10 +220,10 @@ def compose_figure02(rng: np.random.Generator | None = None) -> Figure:
     pred_size, like_size, intersection_size = hpd_sizes
     axes["hpd_formula"].axis("off")
     hpd_formula = (
-        r"$\frac{|\mathrm{HPD}_P \cap \mathrm{HPD}_Q|}"
+        r"$\dfrac{|\mathrm{HPD}_P \cap \mathrm{HPD}_Q|}"
         r"{\min(|\mathrm{HPD}_P|, |\mathrm{HPD}_Q|)}$"
         f" = "
-        rf"$\frac{{{intersection_size:.1f}}}{{{min(pred_size, like_size):.1f}}}$"
+        rf"$\dfrac{{{intersection_size:.1f}}}{{{min(pred_size, like_size):.1f}}}$"
         f" = {data.hpd_overlap:.2f}"
     )
     axes["hpd_formula"].text(
@@ -258,7 +258,7 @@ def compose_figure02(rng: np.random.Generator | None = None) -> Figure:
         ax = axes[ax_key]
         ax.text(
             -0.15,
-            1.08,
+            1.18,
             label,
             transform=ax.transAxes,
             fontweight="bold",
@@ -268,17 +268,18 @@ def compose_figure02(rng: np.random.Generator | None = None) -> Figure:
 
     # The 8 pt legends/titles need clear space above the data. Expand the
     # y-limits of the distribution panels (the formula and HPD-bar panels are
-    # excluded) so the corner-anchored legends do not sit on the curves.
-    for key in (
-        "kl_distributions",
-        "hpd_predictive",
-        "hpd_likelihood",
-        "predictive_distribution",
-        "predictive_simulations",
-        "predictive_histogram",
+    # excluded) so the corner-anchored legends do not sit on the curves. The
+    # panels showing the tall predictive peak need the most room.
+    for key, headroom in (
+        ("kl_distributions", 1.36),
+        ("hpd_predictive", 1.36),
+        ("predictive_distribution", 1.36),
+        ("predictive_simulations", 1.36),
+        ("hpd_likelihood", 1.2),
+        ("predictive_histogram", 1.28),
     ):
         lo, hi = axes[key].get_ylim()
-        axes[key].set_ylim(lo, hi * 1.28)
+        axes[key].set_ylim(lo, hi * headroom)
 
     _add_column_group_backplates(fig, axes)
 

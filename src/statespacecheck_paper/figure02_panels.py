@@ -32,6 +32,10 @@ from statespacecheck_paper.style import COLORS
 # predictive-check histogram crops its sparse left tail
 HISTOGRAM_LOWER_QUANTILE = 0.001
 
+# Seed of the five replicate marks drawn in the schematic, chosen so that the
+# marks and the observed mark are far enough apart to tell apart.
+SHOWCASE_MARK_SEED = 91
+
 # =============================================================================
 # Shared Example Data
 # =============================================================================
@@ -54,6 +58,7 @@ class Figure2ExampleData:
     hpd_overlap: float
     predictive_pvalue: float
     observed_log_pred: float
+    observed_mark: float
     simulated_log_pred: NDArray[np.float64]
     showcase_positions: NDArray[np.float64]
     showcase_y_tildes: NDArray[np.float64]
@@ -100,7 +105,7 @@ class Figure2ExampleData:
         for name, array in arrays.items():
             if not np.all(np.isfinite(array)):
                 raise ValueError(f"{name} must contain only finite values")
-        for name in ("kl_divergence", "hpd_overlap", "observed_log_pred"):
+        for name in ("kl_divergence", "hpd_overlap", "observed_log_pred", "observed_mark"):
             if not np.isfinite(getattr(self, name)):
                 raise ValueError(f"{name} must be finite")
         if self.kl_divergence < 0.0:
@@ -205,7 +210,9 @@ def create_shared_example(rng: np.random.Generator) -> Figure2ExampleData:
     showcase_quantiles = np.array([0.10, 0.30, 0.50, 0.70, 0.90])
     showcase_idx = np.minimum(np.searchsorted(cumsum, showcase_quantiles), n_bins - 1)
     showcase_positions = position_bins[showcase_idx]
-    showcase_y_tildes = rng.normal(loc=showcase_positions, scale=like_std)
+    showcase_y_tildes = np.random.default_rng(SHOWCASE_MARK_SEED).normal(
+        loc=showcase_positions, scale=like_std
+    )
     showcase_likelihoods = np.stack(
         [normalize(norm.pdf(position_bins, loc=y, scale=like_std)) for y in showcase_y_tildes]
     )
@@ -218,6 +225,7 @@ def create_shared_example(rng: np.random.Generator) -> Figure2ExampleData:
         hpd_overlap=hpd_overlap,
         predictive_pvalue=predictive_pvalue,
         observed_log_pred=observed_log_pred,
+        observed_mark=like_mean,
         simulated_log_pred=simulated_log_pred_values,
         showcase_positions=showcase_positions,
         showcase_y_tildes=showcase_y_tildes,
@@ -267,9 +275,15 @@ def plot_kl_distributions(ax: Axes, data: Figure2ExampleData) -> None:
     ax.plot(x, like, color=COLORS["likelihood"], linewidth=1.5, label="Likelihood")
     ax.fill_between(x, like, alpha=0.3, color=COLORS["likelihood"])
 
-    ax.set_xlabel("Latent state (a.u.)", labelpad=8)
     ax.set_ylabel("Probability", labelpad=8)
-    ax.legend(frameon=False, loc="upper right")
+    ax.legend(
+        frameon=False,
+        loc="upper right",
+        handlelength=1.0,
+        handletextpad=0.4,
+        labelspacing=0.25,
+        borderaxespad=0.0,
+    )
     _finish_density_axes(ax)
 
 
@@ -303,7 +317,6 @@ def plot_kl_log_ratio(ax: Axes, data: Figure2ExampleData) -> None:
         color=COLORS["likelihood"],
     )
 
-    ax.set_xlabel("Latent state (a.u.)", labelpad=8)
     ax.set_ylabel(r"$\log P - \log Q$", labelpad=8)
     ax.set_title("Log ratio", pad=4)
     _style_state_axis(ax)
@@ -374,7 +387,7 @@ def _plot_hpd_panel(
     ax.axhline(hpd_density_level, color=color, linestyle="--", linewidth=0.8, alpha=0.7)
     # Lift the label off the line: the curve leans away from it as it rises.
     ax.annotate(
-        f"{HPD_COVERAGE:.0%} level",
+        f"{HPD_COVERAGE:.0%}\nlevel",
         xy=(label_x, hpd_density_level),
         xytext=(0, 3),
         textcoords="offset points",
@@ -384,7 +397,6 @@ def _plot_hpd_panel(
         alpha=0.8,
     )
 
-    ax.set_xlabel("Latent state (a.u.)", labelpad=8)
     ax.set_ylabel("Probability", labelpad=8)
     ax.set_title(title, pad=4)
     ax.legend(frameon=False, **legend_kwargs)
@@ -492,7 +504,6 @@ def plot_hpd_intersection(ax: Axes, data: Figure2ExampleData) -> tuple[float, fl
 
     pred_center = get_center(pred_hpd, x)
     like_center = get_center(like_hpd, x)
-    inter_center = get_center(intersection, x)
 
     ax.text(
         pred_center,
@@ -510,27 +521,22 @@ def plot_hpd_intersection(ax: Axes, data: Figure2ExampleData) -> tuple[float, fl
         va="bottom",
         color=COLORS["likelihood"],
     )
+    # This is the longest label, so it ends at the axis instead of centering on
+    # its bar, which would carry it into the row label.
     ax.text(
-        inter_center,
+        100,
         0.24,
         rf"$|\mathrm{{HPD}}_P \cap \mathrm{{HPD}}_Q|$ = {intersection_size:.1f}",
-        ha="center",
+        ha="right",
         va="bottom",
         color=COLORS["hpd_overlap"],
     )
 
     ax.set_xlabel("Latent state (a.u.)", labelpad=8)
-    ax.set_ylabel("", labelpad=8)  # No y-label needed
     _style_state_axis(ax)
     ax.spines["left"].set_visible(False)
     ax.set_ylim(0, 1.0)
-    ax.set_yticks([0.8, 0.5, 0.2])
-
-    # Descriptive labels with formula notation
-    ax.set_yticklabels(
-        [r"Pred. HPD ($\mathrm{HPD}_P$)", r"Like. HPD ($\mathrm{HPD}_Q$)", r"Intersection"],
-    )
-
+    ax.set_yticks([0.8, 0.5, 0.2], labels=["Pred. HPD", "Like. HPD", "Intersection"])
     ax.tick_params(axis="y", length=0)  # Hide tick marks
 
     return pred_hpd_size, like_hpd_size, intersection_size
@@ -571,20 +577,18 @@ def plot_predictive_check_predictive_fan(ax: Axes, data: Figure2ExampleData) -> 
     # so the matching curve in the simulated-likelihood panel can be read off by colour.
     sample_indices = np.argmin(np.abs(x[None, :] - positions[:, None]), axis=1)
     for pos, idx, color in zip(positions, sample_indices, colors, strict=True):
-        ax.axvline(pos, color=color, linestyle="-", linewidth=1.0, alpha=0.7)
+        ax.vlines(pos, 0, pred[idx], color=color, linewidth=1.0, alpha=0.7)
         ax.scatter([pos], [pred[idx]], color=color, s=30, zorder=5)
     # Single legend entry summarises the fan.
     ax.scatter([], [], color=colors[len(colors) // 2], s=30, label=r"Sampled $x_k$")
 
-    ax.set_xlabel("Latent state (a.u.)", labelpad=8)
     ax.set_ylabel("Probability", labelpad=8)
-    # Sample fan sits center-left; push the legend past the upper-right corner
-    # into the column margin with a short handle so its left edge clears the
-    # sample lines.
+    # The sample fan sits center-left and stops at the curve, which leaves the
+    # upper-right corner free.
     ax.legend(
         frameon=False,
         loc="upper right",
-        bbox_to_anchor=(1.1, 1.0),
+        labelspacing=0.25,
         handlelength=1.0,
         handletextpad=0.4,
         borderaxespad=0.0,
@@ -630,7 +634,9 @@ def plot_predictive_check_likelihood_fan(ax: Axes, data: Figure2ExampleData) -> 
         ax.fill_between(x, lik, color=color, alpha=0.12)
         # Dotted vertical at the originating state sample x_s — lines up
         # with the dot at the same color in the predictive-distribution panel.
-        ax.axvline(pos, color=color, linestyle=":", linewidth=0.8, alpha=0.5)
+        ax.vlines(
+            pos, 0, np.interp(pos, x, pred), color=color, linestyle=":", linewidth=0.8, alpha=0.5
+        )
         # Downward triangle at the curve peak marks the drawn observation
         # y_tilde. Distinct from the dot symbol used for state samples in
         # the predictive-distribution panel so the two quantities are never conflated.
@@ -649,23 +655,6 @@ def plot_predictive_check_likelihood_fan(ax: Axes, data: Figure2ExampleData) -> 
     # Legend-only proxy artists describe the visual conventions of the
     # panel; the real curves/markers are colored per-sample.
     neutral = "0.4"
-    ax.plot(
-        [],
-        [],
-        color=COLORS["predictive"],
-        linewidth=0.8,
-        linestyle="--",
-        alpha=0.6,
-        label="Predictive",
-    )
-    ax.plot(
-        [],
-        [],
-        color=neutral,
-        linestyle=":",
-        linewidth=0.8,
-        label=r"Sampled $x_k$",
-    )
     ax.scatter(
         [],
         [],
@@ -676,9 +665,21 @@ def plot_predictive_check_likelihood_fan(ax: Axes, data: Figure2ExampleData) -> 
         linewidths=0.4,
         label=r"Replicate $\tilde{y}$",
     )
+    ax.plot(x, data.likelihood, color=COLORS["likelihood"], linewidth=1.0)
+    ax.scatter(
+        [data.observed_mark],
+        [data.likelihood.max()],
+        color=COLORS["likelihood"],
+        marker="v",
+        s=24,
+        edgecolors="white",
+        linewidths=0.4,
+        zorder=4,
+        label="Observed $y$",
+    )
 
-    # Curves spread across the panel; push the legend into the far
-    # upper-right with a short handle so it clears the curves and markers.
+    # The panel above defines the predictive and the sampled states, drawn here
+    # in the same colors. The curves leave the upper-right corner free.
     ax.legend(
         frameon=False,
         loc="upper right",
@@ -747,8 +748,8 @@ def plot_predictive_check_density_histogram(ax: Axes, data: Figure2ExampleData) 
     ax.legend(
         frameon=False,
         loc="upper left",
-        handlelength=1.0,
-        handletextpad=0.4,
+        handlelength=0.7,
+        handletextpad=0.3,
         borderaxespad=0.0,
     )
     ax.spines["top"].set_visible(False)
