@@ -91,6 +91,36 @@ def test_compose_figure04_aligns_the_two_detail_stacks_row_by_row() -> None:
     plt.close(result.figure)
 
 
+def test_compose_figure04_keeps_the_track_inset_clear_of_panel_b() -> None:
+    """The 2D track inset starts to the right of the 1D track segments and
+    reward-well dots drawn outside panel (b)'s position rows. Measured from the
+    artists, because an axes' tight bounding box leaves those segments out."""
+    import matplotlib.pyplot as plt
+
+    result = compose_figure04(
+        synthetic_render_data(),
+        diagnostic_thresholds={"hpd_overlap": 0.05, "predictive_pvalue": 0.05},
+        detail_window=Figure4DetailWindow(center_index=20, half_width_samples=10),
+    )
+    result.figure.draw_without_rendering()
+    axes_b = result.figure.axes[6:12]
+    ax_track = result.figure.axes[12]
+    points_to_px = result.figure.dpi / 72.0
+    edges = []
+    for ax in axes_b[:2]:
+        segment_x = max(line.get_xdata().max() for line in ax.lines if not line.get_clip_on())
+        edges.append(ax.transData.transform((segment_x, 0.0))[0])
+        for wells in ax.collections:
+            if wells.get_clip_on():
+                continue
+            well_x = wells.get_offsets()[:, 0].max()
+            radius = np.sqrt(wells.get_sizes().max()) / 2 * points_to_px
+            edges.append(ax.transData.transform((well_x, 0.0))[0] + radius)
+    assert len(edges) > 2
+    assert ax_track.get_tightbbox().x0 > max(edges)
+    plt.close(result.figure)
+
+
 def test_compose_figure04_labels_rows_once_across_the_two_stacks() -> None:
     """Panel (a) carries the row labels, panel (b) the right-edge threshold and
     worse-fit labels (which the track inset aligns to); neither repeats them."""

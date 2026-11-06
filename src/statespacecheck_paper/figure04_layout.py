@@ -40,8 +40,8 @@ from statespacecheck_paper.style import FIGURE_DPI
 FIGURE04_DIAGNOSTIC_ANNOTATION_GIDS = {THRESHOLD_LABEL_GID, WORSE_FIT_LABEL_GID}
 
 # --- Track-inset / hexbin pixel-nudge constants ---------------------------
-# Empirically measured on the exported PNG at the current figure size (7.2 x
-# 6.1 in) and DPI (``FIGURE_DPI``, 450). They tune only artist placement, never any decoded or
+# Empirically measured on the exported PNG at the current figure size (7.53 x
+# 5.6 in) and DPI (``FIGURE_DPI``, 450). They tune only artist placement, never any decoded or
 # diagnostic value; changing the figure size or DPI would require re-measuring.
 #
 # The scale bar and its label shift together, in cm (the track's data units), so
@@ -54,8 +54,6 @@ FIGURE04_SCALE_BAR_LABEL_FONTSIZE = 8.5
 # visually salient rendered diagram, so the track inset's left edge is nudged
 # right by this many pixels when aligning it to the diagnostic annotations.
 FIGURE04_TRACK_VISUAL_EDGE_CORRECTION_PX = 7.0
-# Enlarge the track inset about its center for legibility.
-FIGURE04_TRACK_SIZE_SCALE = 1.10
 
 
 def _shift_diagnostic_event_times(
@@ -140,9 +138,8 @@ def _place_track_inset(
     """Draw the unlettered 2D track inset and align it to the diagnostic labels.
 
     Nudging is confined here and to the module-level ``FIGURE04_SCALE_BAR_*`` /
-    ``FIGURE04_TRACK_VISUAL_EDGE_CORRECTION_PX`` / ``FIGURE04_TRACK_SIZE_SCALE`` constants
-    (measured at
-    the current figure size and DPI). Returns the inset axis so the hexbin
+    ``FIGURE04_TRACK_VISUAL_EDGE_CORRECTION_PX`` constants (measured at the current
+    figure size and DPI). Returns the inset axis so the hexbin
     layout can later align its right edge to the colorbar label.
     """
     # Unlettered track inset beside panels (a) and (b). Use the same row
@@ -193,15 +190,6 @@ def _place_track_inset(
             edge="left",
             correction_px=FIGURE04_TRACK_VISUAL_EDGE_CORRECTION_PX,
         )
-    pos = ax_track.get_position()
-    ax_track.set_position(
-        [
-            pos.x0,
-            pos.y0 - pos.height * (FIGURE04_TRACK_SIZE_SCALE - 1) / 2,
-            pos.width * FIGURE04_TRACK_SIZE_SCALE,
-            pos.height * FIGURE04_TRACK_SIZE_SCALE,
-        ]
-    )
     return ax_track
 
 
@@ -343,7 +331,8 @@ def compose_figure04(
 
     # Two-row figure: (a)/(b) detail zooms with a track inset on top, and
     # (c) whole-session metric hexbins on the bottom.
-    fig = plt.figure(figsize=(7.2, 6.1), dpi=FIGURE_DPI, constrained_layout=True)
+    # Drawn at page width, so the 8 pt text prints at 8 pt.
+    fig = plt.figure(figsize=(7.53, 5.6), dpi=FIGURE_DPI, constrained_layout=True)
     subfigs_rows = fig.subfigures(2, 1, height_ratios=[5.0, 2.6], hspace=0.02)
 
     def _panel_data(

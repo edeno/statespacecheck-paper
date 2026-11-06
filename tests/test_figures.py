@@ -167,6 +167,21 @@ def test_figure02_numeric_ticks_are_labeled_with_the_values_they_sit_at() -> Non
     np.testing.assert_allclose(locations, labels, rtol=1e-9, atol=1e-12)
 
 
+@pytest.mark.parametrize("figure", ["figure02", "figure03", "figure04"])
+def test_full_width_figures_are_drawn_at_page_width(figure: str) -> None:
+    """The figures fill the 6.5 in text width at nearly their drawn size, so the
+    8 pt text they are set in prints at 8 pt instead of being scaled down."""
+    manuscript = Path(__file__).parents[1] / "manuscript"
+    match = re.search(
+        rb"/MediaBox \[\s*0 0 ([\d.]+) ([\d.]+)",
+        (manuscript / "figures" / "main" / f"{figure}.pdf").read_bytes(),
+    )
+    assert match is not None
+    assert 460.0 <= float(match[1]) <= 468.0
+    source = (manuscript / "main.tex").read_text()
+    assert rf"\includegraphics[width=\textwidth]{{figures/main/{figure}.pdf}}" in source
+
+
 def test_figure02_replicate_marks_can_be_told_apart() -> None:
     """The schematic's replicate marks and the observed mark stay separate on
     the axis, and drawing them leaves the Monte Carlo p-value untouched."""

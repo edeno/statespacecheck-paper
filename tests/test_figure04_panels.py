@@ -387,6 +387,15 @@ class TestPlotSingleModelDiagnostics:
         assert not any(text.get_gid() == ANIMAL_POSITION_LABEL_GID for text in axes[0].texts)
         plt.close(fig)
 
+    def test_track_segments_sit_outside_the_position_rows(self) -> None:
+        """The linearized track covers none of the data on its two rows."""
+        fig, axes = plot_single_model_diagnostics(self._panel_data())
+        for ax in axes[:2]:
+            segments = [line for line in ax.lines if line.get_clip_on() is False]
+            assert segments
+            assert min(line.get_xdata().min() for line in segments) > ax.get_xlim()[1]
+        plt.close(fig)
+
     def test_hpd_row_labels_its_threshold(self) -> None:
         """The symlog axis sets 0.05 far up the row, so the row must name it."""
         fig, axes = plot_single_model_diagnostics(

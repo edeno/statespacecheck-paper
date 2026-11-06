@@ -56,6 +56,14 @@ from statespacecheck_paper.style import (
 # otherwise set the axis range and squeeze nearly all spikes into a corner.
 _HEXBIN_DISPLAY_LIMITS = {"predictive_pvalue": 12.0}
 
+# Gap between the detail rows and the track segments beside them, as a fraction
+# of the time window.
+_TRACK_SEGMENT_OFFSET = 0.025
+
+# Room above the top of the track on the position rows, as a fraction of their
+# range, so that a position trace at the track's end is not pressed to the frame.
+_POSITION_ROW_HEADROOM = 0.04
+
 # Strength of a hexagon of one spike, as a fraction of the metric's full color.
 _HEXBIN_LOWEST_COUNT_STRENGTH = 0.2
 
@@ -274,7 +282,7 @@ def plot_raster(
 
 # Height of each row's worse-fit label (axes fraction), placed where it clears
 # the row's threshold label.
-_WORSE_FIT_LABEL_Y = {"hpd_overlap": 0.28, "predictive_pvalue": 0.68}
+_WORSE_FIT_LABEL_Y = {"hpd_overlap": 0.12, "predictive_pvalue": 0.68}
 
 
 def plot_event_diagnostic_scatter(
@@ -466,9 +474,12 @@ def _draw_track_graph_edges(
     time: NDArray[np.float64] | pd.Index,
     time_slice_ind: slice,
 ) -> None:
-    """Draw the 1D linearized track graph on the right edge of two rows."""
-    time_arr = np.asarray(time)
-    x_pos = float(time_arr[time_slice_ind][-1])
+    """Draw the 1D linearized track graph just past the right edge of two rows.
+
+    The segments sit outside the axes so that they cover none of the data.
+    """
+    window = np.asarray(time)[time_slice_ind]
+    x_pos = float(window[-1]) + _TRACK_SEGMENT_OFFSET * float(window[-1] - window[0])
     for ax in axes_pair:
         plot_track_graph_1d(
             track_graph,
@@ -606,7 +617,7 @@ def plot_single_model_diagnostics(
     ax_lik.set_xlabel("")
     ax_lik.tick_params(labelbottom=False)
 
-    # 1D track graph on right edge of predictive and likelihood rows
+    # 1D track graph beside the predictive and likelihood rows
     _draw_track_graph_edges(
         [axes[0], axes[1]],
         data.track_graph,
@@ -615,6 +626,9 @@ def plot_single_model_diagnostics(
         time,
         time_slice_ind,
     )
+    for ax in (axes[0], axes[1]):
+        y_min, y_max = ax.get_ylim()
+        ax.set_ylim(y_min, y_max + _POSITION_ROW_HEADROOM * (y_max - y_min))
 
     # Row 2: Spike raster
     sort_order = np.argsort(place_field_peaks)
