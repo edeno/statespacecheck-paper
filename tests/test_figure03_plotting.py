@@ -153,7 +153,7 @@ def test_compose_figure03_renders_precomputed_summary(
     bundle = _combined_metrics(rng, n_time, n_bins, n_cells)
     params = _params_for_short_run(n_time, n_cells)
 
-    # Columns: well-specified, remap, history, replay, drift, sparse population.
+    # Columns: well-specified, remap, history, replay, momentum, sparse population.
     median = np.array(
         [
             [1.0, 60.0, 1.0, 4.0, 10.0, 0.0],
@@ -252,8 +252,8 @@ def test_compose_figure03_tags_figure03_annotations(
         phase_labels = [text for text in texts if text.get_gid() == FIGURE03_PHASE_LABEL_GID]
         # Every single-window condition names its band, in its unwrapped label.
         assert sorted(text.get_text() for text in phase_labels) == [
-            "Drift",
             "History-dep.",
+            "Momentum",
             "Remap",
             "Replay",
             "Sparse population",

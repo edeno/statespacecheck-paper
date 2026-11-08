@@ -30,7 +30,7 @@ def test_figure03_config_is_frozen_with_exact_fields() -> None:
         "phase_boundaries",
         "prediction_step_std",
         "initial_position",
-        "drift_momentum",
+        "momentum_coefficient",
         "history_refractory_steps",
         "history_burst_window",
         "history_burst_factor",

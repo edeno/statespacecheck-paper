@@ -1,7 +1,7 @@
 """Generate Figure 3: per-spike diagnostics across an 8-phase simulation.
 
 Steps a Bayesian decoder through three model-misfit conditions (remap,
-history-dependent firing, drift) and two specificity controls (a replay event
+history-dependent firing, momentum) and two specificity controls (a replay event
 and a sparse-population epoch), separated by clean-recovery windows, chosen to
 span the metric-disagreement space (which misfits each of HPD overlap, KL
 divergence, and the rank-based predictive p-value detects vs. misses).
@@ -146,12 +146,12 @@ def generate_figure03(
     print(f"Pooled thresholds: {realization_summary.diagnostic_thresholds}")
     print(
         "Median flag percentages [HPD, predictive p, KL] x "
-        "[well-specified, remap, history, replay, drift, sparse population]:\n"
+        "[well-specified, remap, history, replay, momentum, sparse population]:\n"
         f"{np.array2string(realization_summary.median_flag_percentages, precision=3)}"
     )
     print(
         "Median decoding error [median |error| (a.u.)] x "
-        "[well-specified, remap, history, replay, drift, sparse population]:\n"
+        "[well-specified, remap, history, replay, momentum, sparse population]:\n"
         f"{np.array2string(realization_summary.median_decoding_error, precision=3)}"
     )
     summary_path = write_json_artifact(

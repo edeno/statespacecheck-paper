@@ -44,7 +44,7 @@ class TestSummaryFlagPercentages:
             "remap",
             "history_dependent",
             "replay",
-            "drift",
+            "momentum",
             "sparse_population",
         ]
         # Full names for the website's tabs; abbreviated headers for the heatmap.
@@ -53,7 +53,7 @@ class TestSummaryFlagPercentages:
             "Remap",
             "History-dependent firing",
             "Replay",
-            "Drift",
+            "Momentum",
             "Sparse population",
         ]
         assert [c.label for c in cols] == [
@@ -61,7 +61,7 @@ class TestSummaryFlagPercentages:
             "Remap",
             "History-\ndep.",
             "Replay",
-            "Drift",
+            "Momentum",
             "Sparse\npopulation",
         ]
         assert [c.model_component for c in cols] == [
@@ -108,7 +108,7 @@ class TestSummaryFlagPercentages:
 
         Row order follows ``SUMMARY_FLAG_METRICS``: HPD overlap (0), predictive p-value (1),
         KL (2). Column order: well-specified (0), remap (1), history (2),
-        replay (3), drift (4), sparse population (5)."""
+        replay (3), momentum (4), sparse population (5)."""
         params = self._params()
         n_time = params.phase_boundaries[PhaseBoundary.SPARSE_POP_END]
         # One spike event per time step; KL high only inside remap [6, 10).

@@ -35,7 +35,7 @@ Two dataset kinds are supported:
 - **Real-data decoder caches** (`continuous` / `continuous_fragmented` models from
   fitted `non_local_detector` decoders).
 - **Figure-3 simulation cache** — the simulated demonstration with
-  baseline / remap / history-dependent-firing / drift phases plus the
+  baseline / remap / history-dependent-firing / momentum phases plus the
   replay and sparse-population specificity controls (clean-recovery
   windows between).
 

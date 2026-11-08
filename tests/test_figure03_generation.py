@@ -20,7 +20,7 @@ def test_generation_threads_one_config_through_simulation_summary_and_plot(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The displayed realization and pooled summary share the same config."""
-    config = Figure3Config(drift_momentum=0.91)
+    config = Figure3Config(momentum_coefficient=0.91)
     simulation_result = SimpleNamespace(
         physical_position=np.zeros(5),
         spike_counts=np.zeros((5, 2), dtype=np.int64),
@@ -90,7 +90,7 @@ def test_generation_threads_one_config_through_simulation_summary_and_plot(
     assert seen["summary_payload"]["realizations"]["count"] == 7
 
 
-def test_default_recipe_uses_manuscript_drift_momentum(
+def test_default_recipe_uses_manuscript_momentum_coefficient(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Omitting config selects the documented manuscript configuration."""
@@ -103,7 +103,7 @@ def test_default_recipe_uses_manuscript_drift_momentum(
     monkeypatch.setattr(figure03_generation, "run_figure03_simulation", _stop_after_config)
     with pytest.raises(RuntimeError, match="stop after config"):
         figure03_generation.generate_figure03(n_realizations=1)
-    assert seen["config"].drift_momentum == pytest.approx(0.88)
+    assert seen["config"].momentum_coefficient == pytest.approx(0.88)
 
 
 def test_summary_payload_preserves_labels_rules_and_source_provenance(
@@ -146,7 +146,7 @@ def test_summary_payload_preserves_labels_rules_and_source_provenance(
         "Remap",
         "History-dep.",
         "Replay",
-        "Drift",
+        "Momentum",
         "Sparse population",
     ]
     assert flag_rules == {

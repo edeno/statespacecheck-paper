@@ -83,7 +83,7 @@ FIGURE03_SYMLOG_YTICKS: tuple[float, ...] = (0.0, 0.01, 0.1, 1.0)
 FIGURE03_MISFIT_BANDS: tuple[tuple[PhaseBoundary, PhaseBoundary, str], ...] = (
     (PhaseBoundary.REMAP_START, PhaseBoundary.REMAP_END, "likelihood"),
     (PhaseBoundary.RECOVERY1_END, PhaseBoundary.HIST_DEP_END, "reference"),
-    (PhaseBoundary.RECOVERY2_END, PhaseBoundary.DRIFT_END, "predictive"),
+    (PhaseBoundary.RECOVERY2_END, PhaseBoundary.MOMENTUM_END, "predictive"),
     (PhaseBoundary.RECOVERY3_END, PhaseBoundary.SPARSE_POP_END, "predictive_pvalue"),
 )
 

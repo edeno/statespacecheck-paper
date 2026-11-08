@@ -4,7 +4,7 @@
     "Remap",
     "History-dep.",
     "Replay",
-    "Drift",
+    "Momentum",
     "Sparse population"
   ],
   "condition_order": [
@@ -12,11 +12,10 @@
     "remap",
     "history_dependent",
     "replay",
-    "drift",
+    "momentum",
     "sparse_population"
   ],
   "configuration": {
-    "drift_momentum": 0.88,
     "history_burst_factor": 3.0,
     "history_burst_window": [
       2,
@@ -25,6 +24,7 @@
     "history_refractory_steps": 1,
     "hpd_coverage": 0.95,
     "initial_position": 0.0,
+    "momentum_coefficient": 0.88,
     "phase_boundaries": [
       6000,
       10000,
@@ -207,7 +207,7 @@
   "percentage_unit": "percent_of_spike_events",
   "provenance": {
     "source": {
-      "source_tree_sha256": "69c8c23d4af957eae3c8ee6f9d4ed7890cf42d0482becdab206613b85a0d2433",
+      "source_tree_sha256": "18f904226cc621951c74fb42323b5c4dc6e5fce515f72690e663b99d9e014f39",
       "statespacecheck_paper_version": "0.1.0",
       "statespacecheck_version": "0.3.1",
       "uv_lock_sha256": "280ef8920b3302f206621349c0733c017b8a329e3d85c789b21bf6350c093fe2"

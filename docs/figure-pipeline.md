@@ -363,7 +363,7 @@ condition's `title`, the website's tab):
    is immobile; *control* (benign decoded-vs-true divergence). The decoder has
    the correct place fields but keeps its random-walk prior, which does not describe
    the deterministic sweep.
-5. **Drift** (`drift`) — AR(1) persistent-velocity trajectory;
+5. **Momentum** (`momentum`) — AR(1) persistent-velocity trajectory;
    *transition-model* misfit.
 6. **Sparse population** (`sparse_population`) — a quiet ordinary ensemble with
    a few narrow cells firing sparsely; *control* (KL responds; HPD/rank-p stay
@@ -371,7 +371,7 @@ condition's `title`, the website's tab):
    random-walk prior.
 
 The simulation's eight phases are the opening baseline, remap, clean recovery 1,
-history-dependent firing, clean recovery 2 (containing the replay sweep), drift,
+history-dependent firing, clean recovery 2 (containing the replay sweep), momentum,
 clean recovery 3, and the sparse population. `figure03_protocol.PhaseBoundary`
 names their end steps, and the numeric boundaries live in
 `Figure3Config.phase_boundaries` — see that dataclass for values rather than
@@ -410,7 +410,7 @@ and their configuration to `figure03_summary.json`.
 | `event_predictive_pvalue` | rank-based predictive $p$-value | per-spike rank statistic |
 | `event_kl_divergence` | KL divergence | per-spike prediction→likelihood KL |
 | `DecoderOverrideWindow` | the remap, replay, and sparse-population windows | decoder override windows that swap the decoder's expected-count table |
-| `well_specified`, `remap`, `history_dependent`, `replay`, `drift`, `sparse_population` | the heatmap's condition columns | `condition_order` in the summary |
+| `well_specified`, `remap`, `history_dependent`, `replay`, `momentum`, `sparse_population` | the heatmap's condition columns | `condition_order` in the summary |
 
 ### Rates and expected counts
 

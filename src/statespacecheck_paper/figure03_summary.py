@@ -2,7 +2,7 @@
 
 This module builds the Figure-3b summary: it groups spike-event diagnostics into
 the experimental *conditions* (well-specified, remap, history-dependent, replay,
-drift, sparse population), computes the percentage of spike events each metric
+momentum, sparse population), computes the percentage of spike events each metric
 flags as poor fit in each condition, and pools many independent realizations
 into stabilized thresholds and every realization's per-condition flag
 percentages and decoding errors, with their medians
@@ -124,7 +124,7 @@ def build_summary_conditions(config: Figure3Config) -> list[Figure3SummaryCondit
     -------
     list of Figure3SummaryCondition
         Six columns in heatmap order: well-specified, remap,
-        history-dependent firing, replay, drift, sparse population. After
+        history-dependent firing, replay, momentum, sparse population. After
         the pooled reference column, the conditions follow their chronology
         in Figure 3a.
     """
@@ -134,7 +134,7 @@ def build_summary_conditions(config: Figure3Config) -> list[Figure3SummaryCondit
     t_recovery1_end = bnd[PhaseBoundary.RECOVERY1_END]
     t_hist_dep_end = bnd[PhaseBoundary.HIST_DEP_END]
     t_recovery2_end = bnd[PhaseBoundary.RECOVERY2_END]
-    t_drift_end = bnd[PhaseBoundary.DRIFT_END]
+    t_momentum_end = bnd[PhaseBoundary.MOMENTUM_END]
     t_recovery3_end = bnd[PhaseBoundary.RECOVERY3_END]
     t_sparse_pop_end = bnd[PhaseBoundary.SPARSE_POP_END]
     # The replay event sits inside clean-recovery 2; carve it out of the
@@ -151,7 +151,7 @@ def build_summary_conditions(config: Figure3Config) -> list[Figure3SummaryCondit
                 (t_remap_end, t_recovery1_end),
                 (t_hist_dep_end, r0),
                 (r1, t_recovery2_end),
-                (t_drift_end, t_recovery3_end),
+                (t_momentum_end, t_recovery3_end),
             ),
             "—",
         ),
@@ -167,7 +167,7 @@ def build_summary_conditions(config: Figure3Config) -> list[Figure3SummaryCondit
         ),
         Figure3SummaryCondition("replay", "Replay", "Replay", ((r0, r1),), "—"),
         Figure3SummaryCondition(
-            "drift", "Drift", "Drift", ((t_recovery2_end, t_drift_end),), "Transition"
+            "momentum", "Momentum", "Momentum", ((t_recovery2_end, t_momentum_end),), "Transition"
         ),
         Figure3SummaryCondition(
             "sparse_population",

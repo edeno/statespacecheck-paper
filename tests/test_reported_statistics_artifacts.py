@@ -70,7 +70,7 @@ def test_figure03_reported_statistics_match_canonical_run(tmp_path: Path) -> Non
         "remap",
         "history_dependent",
         "replay",
-        "drift",
+        "momentum",
         "sparse_population",
     ]
     np.testing.assert_allclose(

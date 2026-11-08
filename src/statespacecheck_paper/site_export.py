@@ -134,7 +134,7 @@ class ConditionWindow:
 # Display choices, like ``FIGURE04_DETAIL_WINDOW``; each overlaps its condition's
 # scored step windows (checked by the test suite). Abrupt conditions (remap,
 # history dependence, replay) start a few hundred clean steps before onset so
-# the change is visible. Drift builds up gradually, so its window sits mid-phase,
+# the change is visible. The lag builds up gradually, so its window sits mid-phase,
 # where the flag rates are close to the across-realization medians. The sparse
 # population fires only a handful of spikes, so its window spans the whole phase.
 CONDITION_WINDOWS: tuple[ConditionWindow, ...] = (
@@ -142,7 +142,7 @@ CONDITION_WINDOWS: tuple[ConditionWindow, ...] = (
     ConditionWindow("remap", 5_700, 7_200),
     ConditionWindow("history_dependent", 13_700, 15_200),
     ConditionWindow("replay", 18_700, 21_300),
-    ConditionWindow("drift", 24_000, 25_500),
+    ConditionWindow("momentum", 24_000, 25_500),
     ConditionWindow("sparse_population", 29_700, 32_000),
 )
 

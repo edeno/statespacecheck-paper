@@ -46,7 +46,7 @@ from statespacecheck_paper.figure03_simulation import (
     build_sparse_population,
     remap_place_field_centers,
     run_figure03_simulation,
-    simulate_drift_phase,
+    simulate_momentum_phase,
     simulate_sparse_approach_phase,
 )
 from statespacecheck_paper.figure03_summary import (
@@ -218,7 +218,7 @@ def test_spikes_fire_at_the_rates_the_decoder_declares(sim: Figure3SimulationRes
         ("baseline", 0, bounds[PhaseBoundary.RECOVERY1_END], baseline, position),
         ("recovery 2", bounds[PhaseBoundary.HIST_DEP_END], replay[0], baseline, position),
         ("replay", *replay, tables.replay_expected_counts_per_step, None),
-        ("drift", replay[1], sparse[0], baseline, position),
+        ("momentum", replay[1], sparse[0], baseline, position),
         ("sparse", *sparse, tables.sparse_population_expected_counts_per_step, position),
     )
     for label, start, end, table, generating in windows:
@@ -322,8 +322,8 @@ def test_history_phase_bursts_and_suppresses_spikes(sim: Figure3SimulationResult
     assert observed == 0, f"history refractory: {observed} spikes, {expected:.1f} expected"
 
 
-def test_drift_phase_has_persistent_velocity(sim: Figure3SimulationResult) -> None:
-    """The misfit is present: drift steps are correlated, unlike the decoder's walk."""
+def test_momentum_phase_has_persistent_velocity(sim: Figure3SimulationResult) -> None:
+    """The misfit is present: momentum steps are correlated, unlike the decoder's walk."""
     bounds = sim.config.phase_boundaries
     position = sim.physical_position
 
@@ -331,12 +331,12 @@ def test_drift_phase_has_persistent_velocity(sim: Figure3SimulationResult) -> No
         steps = np.diff(position[start:end])
         return float(np.corrcoef(steps[:-1], steps[1:])[0, 1])
 
-    drift = lag_one_correlation(
-        bounds[PhaseBoundary.RECOVERY2_END], bounds[PhaseBoundary.DRIFT_END]
+    momentum = lag_one_correlation(
+        bounds[PhaseBoundary.RECOVERY2_END], bounds[PhaseBoundary.MOMENTUM_END]
     )
     baseline = lag_one_correlation(0, bounds[PhaseBoundary.REMAP_START])
 
-    assert drift > 0.7, f"drift steps should persist; got lag-1 correlation {drift:.2f}"
+    assert momentum > 0.7, f"momentum steps should persist; got lag-1 correlation {momentum:.2f}"
     assert abs(baseline) < 0.15, f"baseline steps should not persist; got {baseline:.2f}"
 
 
@@ -689,7 +689,7 @@ def test_history_dependent_firing_per_spike_metrics_near_baseline(
     spike trains, not in any individual spike's spatial likelihood. We
     therefore expect the per-spike metrics in the history-dependent
     phase to stay close to baseline rather than crossing the flagging
-    thresholds the way remap/drift do.
+    thresholds the way remap/momentum do.
     """
     medians = _per_phase_medians(sim)
     base_kl, base_hpd, base_sp = medians[PhaseBoundary.REMAP_START]
@@ -717,11 +717,11 @@ def test_history_dependent_firing_per_spike_metrics_near_baseline(
     )
 
 
-def test_drift_phase_inflates_kl() -> None:
-    """The drift misfit (persistent-velocity trajectory vs. memoryless decoder)
+def test_momentum_phase_inflates_kl() -> None:
+    """The momentum misfit (persistent-velocity trajectory vs. memoryless decoder)
     raises the typical per-spike KL above baseline. One realization does not show
     this at test scale, where a single seed's ratio can fall below 1, so the claim
-    is about the median over several seeds, with longer baseline and drift phases.
+    is about the median over several seeds, with longer baseline and momentum phases.
     """
     params = dataclasses.replace(
         _moderate_params(),
@@ -730,24 +730,26 @@ def test_drift_phase_inflates_kl() -> None:
     ratios = []
     for seed in range(5):
         medians = _per_phase_medians(run_figure03_simulation(params, seed=seed))
-        ratios.append(medians[PhaseBoundary.DRIFT_END][0] / medians[PhaseBoundary.REMAP_START][0])
+        ratios.append(
+            medians[PhaseBoundary.MOMENTUM_END][0] / medians[PhaseBoundary.REMAP_START][0]
+        )
     # Over 40 seeds, the median of any five consecutive seeds spans 1.32-1.76 for
-    # this drift and 0.94-1.31 with no momentum (1.15 for these seeds), so the
-    # bound catches a drift that has become a plain walk.
-    assert np.median(ratios) > 1.25, f"drift/baseline KL ratios: {np.round(ratios, 2)}"
+    # this momentum window and 0.94-1.31 with no momentum (1.15 for these seeds), so the
+    # bound catches a momentum window that has become a plain walk.
+    assert np.median(ratios) > 1.25, f"momentum/baseline KL ratios: {np.round(ratios, 2)}"
 
 
-def test_simulate_drift_phase() -> None:
-    """The drift trajectory starts at ``x_last``, stays on the track, and is
+def test_simulate_momentum_phase() -> None:
+    """The momentum trajectory starts at ``x_last``, stays on the track, and is
     reproducible under a fixed seed."""
     params = Figure3Config()
-    x = simulate_drift_phase(500, x_last=40.0, config=params, rng=np.random.default_rng(0))
+    x = simulate_momentum_phase(500, x_last=40.0, config=params, rng=np.random.default_rng(0))
 
     assert x.shape == (500,)
     assert x[0] == pytest.approx(40.0)
     assert np.all(x >= params.position_min) and np.all(x <= params.position_max)
 
-    repeat = simulate_drift_phase(500, x_last=40.0, config=params, rng=np.random.default_rng(0))
+    repeat = simulate_momentum_phase(500, x_last=40.0, config=params, rng=np.random.default_rng(0))
     np.testing.assert_array_equal(x, repeat)
 
 
@@ -782,7 +784,7 @@ def summary() -> Figure3RealizationSummary:
 class TestEstimateRealizationSummary:
     def test_shapes(self, summary: Figure3RealizationSummary) -> None:
         """The summary is (3 metrics x 6 columns: well-specified, remap,
-        history, replay, drift, sparse population) and fractions are percentages."""
+        history, replay, momentum, sparse population) and fractions are percentages."""
         assert isinstance(summary, Figure3RealizationSummary)
         assert summary.n_realizations == 5
         assert summary.median_flag_percentages.shape == (3, 6)
@@ -918,7 +920,7 @@ class TestEstimateRealizationSummary:
     ) -> None:
         """Magnitude guard: the incoherent random-remap is
         the headline positive control, so every metric must flag it well
-        above both the well-specified baseline and the drift misfit.
+        above both the well-specified baseline and the momentum misfit.
 
         A near-noop remap, or a spatially *coherent* remap (e.g. a pure
         reflection) — which is self-consistent under the decoder's own
@@ -926,17 +928,18 @@ class TestEstimateRealizationSummary:
         percentages are smaller than the full-length figure (~37--43%)
         because ``_moderate_params`` uses short windows the trajectory only
         partly explores; bounds are set against the observed deterministic
-        values (remap ~[31, 35, 24]% vs well ~[10, 11, 7]%, drift ~[10, 14, 7]%).
+        values (remap ~[31, 35, 24]% vs well ~[10, 11, 7]%, momentum ~[10, 14, 7]%).
         """
         well = summary.median_flag_percentages[:, 0]
         remap = summary.median_flag_percentages[:, 1]
-        drift = summary.median_flag_percentages[:, 4]
+        momentum = summary.median_flag_percentages[:, 4]
         assert np.all(remap > 10.0), f"remap should flag >10% for every metric; got {remap}"
         assert np.all(remap > 2.0 * well), (
             f"remap should flag >2x the well-specified baseline; got remap={remap}, well={well}"
         )
-        assert np.all(remap > drift), (
-            f"remap should flag more than drift for every metric; got remap={remap}, drift={drift}"
+        assert np.all(remap > momentum), (
+            "remap should flag more than momentum for every metric; "
+            f"got remap={remap}, momentum={momentum}"
         )
 
     def test_rejects_nonpositive_realizations(self) -> None:

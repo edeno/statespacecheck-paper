@@ -212,7 +212,10 @@ _SUMMARY_FIELD_MACROS: dict[str, tuple[_SummaryEdit, set[str]]] = {
         {"SimHistoryFlagMin", "SimHistoryFlagMax"},
     ),
     "replay_flags": (_set_flags("replay", *_ALL_METRICS), {"SimReplayFlagMin", "SimReplayFlagMax"}),
-    "drift_flags": (_set_flags("drift", *_ALL_METRICS), {"SimDriftFlagMin", "SimDriftFlagMax"}),
+    "momentum_flags": (
+        _set_flags("momentum", *_ALL_METRICS),
+        {"SimMomentumFlagMin", "SimMomentumFlagMax"},
+    ),
     "well_specified_flags": (_set_flags("well_specified", *_ALL_METRICS), set()),
     "sparse_kl_flag": (_set_flags("sparse_population", "kl_divergence"), {"SimSparseKlFlag"}),
     "sparse_hpd_flag": (_set_flags("sparse_population", "hpd_overlap"), set()),
@@ -221,7 +224,7 @@ _SUMMARY_FIELD_MACROS: dict[str, tuple[_SummaryEdit, set[str]]] = {
     "remap_error": (_set_error("remap"), {"SimRemapError"}),
     "history_error": (_set_error("history_dependent"), {"SimHistoryError"}),
     "replay_error": (_set_error("replay"), {"SimReplayError"}),
-    "drift_error": (_set_error("drift"), {"SimDriftError"}),
+    "momentum_error": (_set_error("momentum"), {"SimMomentumError"}),
     "sparse_error": (_set_error("sparse_population"), {"SimSparseError"}),
     "hpd_quantile": (
         _set_figure03(("threshold_provenance", "hpd_overlap", "quantile"), 0.02),

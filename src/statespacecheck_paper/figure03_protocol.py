@@ -1,7 +1,7 @@
 """Figure-3 experimental protocol: phase ladder and immutable configuration.
 
 The figure-3 simulation walks a hippocampal-style decoder through three misfit
-conditions (remap, history-dependent firing, drift) and two specificity controls
+conditions (remap, history-dependent firing, momentum) and two specificity controls
 (a replay event embedded in clean-recovery 2, and a final sparse-population
 epoch), separated by clean-recovery windows. This module holds the immutable
 experimental configuration (:class:`Figure3Config`), the phase-transition index
@@ -34,7 +34,7 @@ class PhaseBoundary(IntEnum):
     RECOVERY1_END = 2  # end of clean recovery 1
     HIST_DEP_END = 3  # end of history-dependent firing misfit
     RECOVERY2_END = 4  # end of clean recovery 2
-    DRIFT_END = 5  # end of drift misfit
+    MOMENTUM_END = 5  # end of momentum misfit
     RECOVERY3_END = 6  # end of clean recovery 3
     SPARSE_POP_END = 7  # end of sparse-population control
 
@@ -80,7 +80,7 @@ class Figure3Config:
     - 14k–18k: History-dependent firing misfit (4 s)
     - 18k–22k: Clean recovery, with the replay control occupying the
       ``[replay_start_fraction, replay_end_fraction)`` sub-window
-    - 22k–26k: Drift misfit (4 s)
+    - 22k–26k: Momentum misfit (4 s)
     - 26k–30k: Clean recovery
     - 30k–32k: Sparse-population control (2 s)
 
@@ -101,11 +101,11 @@ class Figure3Config:
         random-walk increment is taken; must lie in
         ``[position_min, position_max]``. Each later phase starts where the
         previous one ended.
-    drift_momentum : float, default 0.88
-        AR(1) coefficient on the animal's velocity during the drift
+    momentum_coefficient : float, default 0.88
+        AR(1) coefficient on the animal's velocity during the momentum
         misfit phase. The true trajectory is
         ``x[t] = x[t-1] + v[t]`` with
-        ``v[t] = drift_momentum * v[t-1] + N(0, prediction_step_std)``. The
+        ``v[t] = momentum_coefficient * v[t-1] + N(0, prediction_step_std)``. The
         decoder assumes ``x[t] = x[t-1] + N(0, prediction_step_std)`` (no
         persistent velocity).
     history_refractory_steps : int, default 1
@@ -194,7 +194,7 @@ class Figure3Config:
     # Decoder & dynamics parameters
     prediction_step_std: float = 0.5  # baseline dynamics std
     initial_position: float = 0.0  # x_0, before the first increment
-    drift_momentum: float = 0.88  # AR(1) coefficient for drift-misfit trajectory
+    momentum_coefficient: float = 0.88  # AR(1) coefficient for momentum-misfit trajectory
 
     # History-dependence misfit: hard refractory + post-spike burst window.
     # At the 1-ms step these are the 1 ms refractory, 2-10 ms burst window,

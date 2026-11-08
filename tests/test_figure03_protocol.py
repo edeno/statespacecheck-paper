@@ -59,7 +59,7 @@ class TestFigure3ConfigPhaseBoundaries:
             (PhaseBoundary.RECOVERY1_END, 2),
             (PhaseBoundary.HIST_DEP_END, 3),
             (PhaseBoundary.RECOVERY2_END, 4),
-            (PhaseBoundary.DRIFT_END, 5),
+            (PhaseBoundary.MOMENTUM_END, 5),
             (PhaseBoundary.RECOVERY3_END, 6),
             (PhaseBoundary.SPARSE_POP_END, 7),
         ],

@@ -1,7 +1,7 @@
 """Reusable figure-3 simulation driver.
 
 The figure-3 demo simulates a hippocampal-style decoder under a
-sequence of misfit conditions (remap, history-dependent firing, drift) and
+sequence of misfit conditions (remap, history-dependent firing, momentum) and
 two specificity controls (a replay event embedded in clean-recovery 2 and a
 final sparse-population epoch). It drives both
 ``statespacecheck_paper.figure03_generation`` and
@@ -342,21 +342,21 @@ def simulate_replay_phase(
     return x_rec2, sp_rec2
 
 
-def simulate_drift_phase(
+def simulate_momentum_phase(
     n: int,
     x_last: float,
     config: Figure3Config,
     rng: np.random.Generator,
 ) -> NDArray[np.floating]:
-    """Drift misfit: an AR(1) persistent-velocity trajectory.
+    """Momentum misfit: an AR(1) persistent-velocity trajectory.
 
     ``x[t] = x[t-1] + v[t]`` with
-    ``v[t] = drift_momentum * v[t-1] + N(0, prediction_step_std)``; the decoder
+    ``v[t] = momentum_coefficient * v[t-1] + N(0, prediction_step_std)``; the decoder
     assumes a memoryless walk. Returns the trajectory only; the caller
-    then draws the position-tuned spikes from it. Draw order (drift steps,
+    then draws the position-tuned spikes from it. Draw order (momentum steps,
     then spikes) is part of the seeded experiment.
     """
-    momentum = config.drift_momentum
+    momentum = config.momentum_coefficient
     x_mom = np.zeros(n)
     x_mom[0] = x_last
     velocity = 0.0
@@ -666,8 +666,8 @@ def run_figure03_simulation(
        decoded-vs-true divergence that none of the diagnostics should flag.
        The replay rates are modeled correctly; the decoder's random-walk
        transition does not describe the deterministic sweep.)
-    6. **Drift Misfit** (transition: trajectory has persistent velocity
-       at AR(1) coefficient ``config.drift_momentum``; decoder assumes
+    6. **Momentum Misfit** (transition: trajectory has persistent velocity
+       at AR(1) coefficient ``config.momentum_coefficient``; decoder assumes
        memoryless walk)
     7. Clean Recovery
     8. **Sparse Population** (control: the ordinary ensemble is quiet while a
@@ -758,13 +758,13 @@ def run_figure03_simulation(
     x, sp = simulate_replay_phase(n, r0, r1, x_last, config, place_field_centers, rng)
     x_last = _record_phase(phases, x, sp)
 
-    # 6. Drift misfit — persistent-velocity walk; decoder assumes memoryless.
-    n = bnd[PhaseBoundary.DRIFT_END] - bnd[PhaseBoundary.RECOVERY2_END]
-    x = simulate_drift_phase(n, x_last, config, rng)
+    # 6. Momentum misfit — persistent-velocity walk; decoder assumes memoryless.
+    n = bnd[PhaseBoundary.MOMENTUM_END] - bnd[PhaseBoundary.RECOVERY2_END]
+    x = simulate_momentum_phase(n, x_last, config, rng)
     x_last = _record_phase(phases, x, _spikes(x))
 
     # 7. Clean recovery 3 — ends by approaching the sparse-population location.
-    n = bnd[PhaseBoundary.RECOVERY3_END] - bnd[PhaseBoundary.DRIFT_END]
+    n = bnd[PhaseBoundary.RECOVERY3_END] - bnd[PhaseBoundary.MOMENTUM_END]
     x = simulate_sparse_approach_phase(n, x_last, config, rng)
     x_last = _record_phase(phases, x, _spikes(x))
 

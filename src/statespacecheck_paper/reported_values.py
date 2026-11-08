@@ -317,7 +317,7 @@ def _simulation_statistics(payload: dict[str, Any]) -> list[MacroDefinition]:
         ("SimRemapFlag", "remap"),
         ("SimHistoryFlag", "history_dependent"),
         ("SimReplayFlag", "replay"),
-        ("SimDriftFlag", "drift"),
+        ("SimMomentumFlag", "momentum"),
     ):
         low, high = _flag_percentage_range(payload, condition)
         macros.append(
@@ -348,7 +348,7 @@ def _simulation_statistics(payload: dict[str, Any]) -> list[MacroDefinition]:
         ("SimRemapError", "remap"),
         ("SimHistoryError", "history_dependent"),
         ("SimReplayError", "replay"),
-        ("SimDriftError", "drift"),
+        ("SimMomentumError", "momentum"),
         ("SimSparseError", "sparse_population"),
     ):
         macros.append(
@@ -565,7 +565,7 @@ def _simulation_configuration(payload: dict[str, Any]) -> list[MacroDefinition]:
         MacroDefinition("SimRecoveryOneEnd", _exact(boundaries[2]), "phase_boundaries[2]"),
         MacroDefinition("SimHistoryEnd", _exact(boundaries[3]), "phase_boundaries[3]"),
         MacroDefinition("SimRecoveryTwoEnd", _exact(boundaries[4]), "phase_boundaries[4]"),
-        MacroDefinition("SimDriftEnd", _exact(boundaries[5]), "phase_boundaries[5]"),
+        MacroDefinition("SimMomentumEnd", _exact(boundaries[5]), "phase_boundaries[5]"),
         MacroDefinition("SimRecoveryThreeEnd", _exact(boundaries[6]), "phase_boundaries[6]"),
         MacroDefinition("SimSparseEnd", _exact(boundaries[7]), "phase_boundaries[7]"),
         MacroDefinition(
@@ -583,7 +583,11 @@ def _simulation_configuration(payload: dict[str, Any]) -> list[MacroDefinition]:
             cardinal_word(remap_displacement),
             "min displacement in place_field_remapping",
         ),
-        MacroDefinition("SimDriftMomentum", _exact(config["drift_momentum"], 2), "drift_momentum"),
+        MacroDefinition(
+            "SimMomentumCoefficient",
+            _exact(config["momentum_coefficient"], 2),
+            "momentum_coefficient",
+        ),
         MacroDefinition(
             "SimRefractoryMs",
             _exact(config["history_refractory_steps"] * step_ms),
