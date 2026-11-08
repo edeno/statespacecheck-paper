@@ -150,6 +150,19 @@ def _set_flags(condition: str, *metrics: str) -> _SummaryEdit:
     return edit
 
 
+def _spread_realization_flags(condition: str, *metrics: str) -> _SummaryEdit:
+    """Replace the per-realization flag percentages of ``condition`` with 0..99."""
+
+    def edit(figure03: dict[str, Any], _: dict[str, Any]) -> None:
+        column = figure03["condition_order"].index(condition)
+        rows = [figure03["metric_order"].index(metric) for metric in metrics]
+        for i, realization in enumerate(figure03["realization_flag_percentages"]):
+            for row in rows:
+                realization[row][column] = float(i % 100)
+
+    return edit
+
+
 def _set_error(condition: str) -> _SummaryEdit:
     """Edit the Figure-3 median decoding error of ``condition``."""
 
@@ -216,8 +229,23 @@ _SUMMARY_FIELD_MACROS: dict[str, tuple[_SummaryEdit, set[str]]] = {
         _set_flags("momentum", *_ALL_METRICS),
         {"SimMomentumFlagMin", "SimMomentumFlagMax"},
     ),
-    "well_specified_flags": (_set_flags("well_specified", *_ALL_METRICS), set()),
+    "well_specified_flags": (
+        _set_flags("well_specified", *_ALL_METRICS),
+        {"SimWellSpecifiedFlagMin", "SimWellSpecifiedFlagMax"},
+    ),
     "sparse_kl_flag": (_set_flags("sparse_population", "kl_divergence"), {"SimSparseKlFlag"}),
+    "remap_realization_spread": (
+        _spread_realization_flags("remap", *_ALL_METRICS),
+        {"SimRemapFlagQuartileLow", "SimRemapFlagQuartileHigh"},
+    ),
+    "sparse_kl_realization_spread": (
+        _spread_realization_flags("sparse_population", "kl_divergence"),
+        {"SimSparseKlFlagQuartileLow", "SimSparseKlFlagQuartileHigh"},
+    ),
+    "other_realization_spread": (
+        _spread_realization_flags("history_dependent", *_ALL_METRICS),
+        {"SimOtherFlagIqrMaxPoints"},
+    ),
     "sparse_hpd_flag": (_set_flags("sparse_population", "hpd_overlap"), set()),
     "sparse_pvalue_flag": (_set_flags("sparse_population", "predictive_pvalue"), set()),
     "well_specified_error": (_set_error("well_specified"), {"SimWellSpecifiedError"}),

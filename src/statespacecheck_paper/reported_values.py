@@ -64,6 +64,7 @@ from __future__ import annotations
 import json
 import math
 import re
+import statistics
 import urllib.parse
 import urllib.request
 from collections.abc import Callable, Mapping
@@ -287,6 +288,24 @@ def flag_percentage(payload: Mapping[str, Any], metric: str, condition: str) -> 
     return percentage
 
 
+def realization_flag_quartiles(
+    payload: Mapping[str, Any], metric: str, condition: str
+) -> tuple[float, float]:
+    """Return the quartiles of one metric's flag percentage across realizations.
+
+    Returns
+    -------
+    first, third : float
+        The 25th and 75th percentiles (linear interpolation, as NumPy's default)
+        of ``realization_flag_percentages[:, metric, condition]``.
+    """
+    row = payload["metric_order"].index(metric)
+    column = payload["condition_order"].index(condition)
+    values = [realization[row][column] for realization in payload["realization_flag_percentages"]]
+    first, _, third = statistics.quantiles(values, n=4, method="inclusive")
+    return first, third
+
+
 def decoding_error(payload: Mapping[str, Any], condition: str) -> float:
     """Return the median absolute decoding error for one condition."""
     column = payload["condition_order"].index(condition)
@@ -314,6 +333,7 @@ def _simulation_statistics(payload: dict[str, Any]) -> list[MacroDefinition]:
 
     # Flag-percentage ranges across the three diagnostics, one condition per row.
     for name, condition in (
+        ("SimWellSpecifiedFlag", "well_specified"),
         ("SimRemapFlag", "remap"),
         ("SimHistoryFlag", "history_dependent"),
         ("SimReplayFlag", "replay"),
@@ -342,6 +362,46 @@ def _simulation_statistics(payload: dict[str, Any]) -> list[MacroDefinition]:
             "median_flag_percentages[kl_divergence, sparse_population]",
         )
     )
+
+    # Spread across realizations: the two widely varying cells get their
+    # interquartile range; every other cell is summarized by its widest IQR.
+    metrics = payload["metric_order"]
+    remap_quartiles = [realization_flag_quartiles(payload, m, "remap") for m in metrics]
+    sparse_kl_quartiles = realization_flag_quartiles(payload, "kl_divergence", "sparse_population")
+    other_iqr_widths = [
+        third - first
+        for condition in payload["condition_order"]
+        for metric in metrics
+        if condition != "remap" and (metric, condition) != ("kl_divergence", "sparse_population")
+        for first, third in [realization_flag_quartiles(payload, metric, condition)]
+    ]
+    macros += [
+        MacroDefinition(
+            "SimRemapFlagQuartileLow",
+            whole_percent(min(first for first, _ in remap_quartiles)),
+            "min over metrics of the 25th percentile of realization_flag_percentages[:, remap]",
+        ),
+        MacroDefinition(
+            "SimRemapFlagQuartileHigh",
+            whole_percent(max(third for _, third in remap_quartiles)),
+            "max over metrics of the 75th percentile of realization_flag_percentages[:, remap]",
+        ),
+        MacroDefinition(
+            "SimSparseKlFlagQuartileLow",
+            whole_percent(sparse_kl_quartiles[0]),
+            "25th percentile of realization_flag_percentages[kl_divergence, sparse_population]",
+        ),
+        MacroDefinition(
+            "SimSparseKlFlagQuartileHigh",
+            whole_percent(sparse_kl_quartiles[1]),
+            "75th percentile of realization_flag_percentages[kl_divergence, sparse_population]",
+        ),
+        MacroDefinition(
+            "SimOtherFlagIqrMaxPoints",
+            whole_percent(max(other_iqr_widths)),
+            "max interquartile range of realization_flag_percentages over the other cells",
+        ),
+    ]
 
     for name, condition in (
         ("SimWellSpecifiedError", "well_specified"),
@@ -516,11 +576,6 @@ def _simulation_configuration(payload: dict[str, Any]) -> list[MacroDefinition]:
             cardinal_word(config["sparse_cell_count"]),
             "sparse_cell_count",
         ),
-        MacroDefinition(
-            "SimNSparseCellsWordCap",
-            cardinal_word(config["sparse_cell_count"]).capitalize(),
-            "sparse_cell_count, sentence-initial",
-        ),
         MacroDefinition("SimSparsePosition", _exact(config["sparse_position"]), "sparse_position"),
         MacroDefinition(
             "SimSparseApproachDuration",
@@ -559,7 +614,6 @@ def _simulation_configuration(payload: dict[str, Any]) -> list[MacroDefinition]:
             _exact(boundaries[-1] * step_seconds),
             "phase_boundaries[-1] * step_seconds",
         ),
-        MacroDefinition("SimNPhasesWord", cardinal_word(len(boundaries)), "len(phase_boundaries)"),
         MacroDefinition("SimRemapStart", _exact(boundaries[0]), "phase_boundaries[0]"),
         MacroDefinition("SimRemapEnd", _exact(boundaries[1]), "phase_boundaries[1]"),
         MacroDefinition("SimRecoveryOneEnd", _exact(boundaries[2]), "phase_boundaries[2]"),
