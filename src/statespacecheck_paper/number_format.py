@@ -2,9 +2,11 @@
 
 The reporting policy (see ``reported_values``) says decoding errors print to
 two significant figures and flag and rescue percentages to the nearest whole
-percent. Figure 3b prints the same quantities in its heatmap and error row,
-so both the macro emitter and the figure code call these two functions: the
-figure and the text beside it cannot round the same number differently.
+percent, except that the prose gives Figure-3 flag percentages below 10% to
+one decimal place. Figure 3b prints the same quantities in its heatmap and
+error row, so both the macro emitter and the figure code call these
+functions: the figure and the text beside it cannot round the same number
+differently.
 
 Imports no sibling module, so it is a leaf of the dependency graph.
 """
@@ -37,6 +39,27 @@ def whole_percent(value: float) -> str:
     ('37', '1')
     """
     return f"{float(value):.0f}"
+
+
+def one_decimal_percent(value: float) -> str:
+    """Render a percentage to one decimal place.
+
+    Parameters
+    ----------
+    value : float
+        Percentage in ``[0, 100]``.
+
+    Returns
+    -------
+    str
+        The rounded percentage without a sign.
+
+    Examples
+    --------
+    >>> one_decimal_percent(1.7637), one_decimal_percent(0.0)
+    ('1.8', '0.0')
+    """
+    return f"{float(value):.1f}"
 
 
 def significant(value: float, digits: int = SIGNIFICANT_FIGURES) -> str:

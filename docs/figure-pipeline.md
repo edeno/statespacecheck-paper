@@ -765,8 +765,8 @@ Prose precision follows the policy defined in the
 
 | Quantity | Prose format | Purpose |
 | --- | --- | --- |
-| Decoding errors | Two significant figures | Supports the ratios discussed in the Results |
-| Flag percentages | Nearest whole percent | Supports comparisons described as substantial, low, or modest |
+| Decoding errors | Two significant figures, with the interquartile range across realizations for Figure 3 | Supports the ratios discussed in the Results |
+| Flag percentages (Figure 3) | Per metric and window: median across realizations with its interquartile range; nearest whole percent at a median of 10% or more, one decimal place below | Shows each rate and how much it varies between realizations |
 | Rescued percentages | Nearest whole percent, with exact counts alongside | Describes this recording |
 | Derived constants introduced with “approximately” | Two significant figures | Communicates their approximate scale |
 | Exact counts and configured parameters | In full | Preserves the specified count or setting |

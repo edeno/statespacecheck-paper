@@ -8,13 +8,17 @@ from the artifacts the way hand-typed numbers can.
 
 Rounding and derivation happen here, in Python, rather than in the document:
 the manuscript says "42 a.u." where the summary holds ``42.16926259332958``,
-and "92%" where it holds ``0.9201170835550825``. Ranges such as the remap
-flag percentages are emitted as separate ``\dots Min`` / ``\dots Max`` macros
-so the en-dash stays in the prose.
+and "92%" where it holds ``0.9201170835550825``. Interquartile ranges are
+emitted as separate ``\dots QuartileLow`` / ``\dots QuartileHigh`` macros so
+the en-dash stays in the prose.
 
 **Prose reporting policy.** Decoding errors and KL-divergence values are reported to
-two significant figures, and flag, rescue, and KL-comparison percentages to the
-nearest whole percent. Exact counts and
+two significant figures, and rescue and KL-comparison percentages to the
+nearest whole percent. Each Figure-3 flag percentage and decoding error is
+reported per metric and window as the median across realizations with its
+interquartile range; flag percentages whose median is 10% or more, and their
+quartiles, are given to the nearest whole percent, and smaller ones to one
+decimal place so that the spread of the low flag rates stays visible. Exact counts and
 configured parameters are reported without approximation. Machine-readable
 summaries retain full numerical precision.
 
@@ -22,17 +26,18 @@ Rounding is a communication choice, not a statement about uncertainty: each
 rule preserves the distinctions the prose draws with the number. Decoding
 errors are compared as ratios ("four times the well-specified value", "one-fifth
 of a place-field width"), which two significant figures support; flag
-percentages are compared as substantial, low, or modest, which whole percents
-support; rescued percentages are descriptive of this recording and appear next to
-their exact counts. Constants the text hedges with "approximately" (199.47 Hz,
-sqrt(12.5) cm) are exact functions of chosen parameters and are shown to two
-significant figures. The p-value cutoff's position on the figures' -log(p)
-axis (-log(0.05) = 2.996) is shown to the nearest whole number, because the text
-reads it off that axis ("a Continuous-model value of 3"). Where variability matters to a
-claim it belongs in the text or a figure, not in the digit count; the Figure-3 summary publishes
-approximate standard errors of the aggregated medians, conditional on the
-simulation setup. These do not describe the spread of individual realizations
-and play no part in formatting.
+percentages are compared across windows and metrics, and their interquartile
+ranges show how much each varies between realizations; rescued percentages
+are descriptive of this recording and appear next to their exact counts.
+Constants the text hedges with "approximately" (199.47 Hz, sqrt(12.5) cm) are
+exact functions of chosen parameters and are shown to two significant figures.
+The p-value cutoff's position on the figures' -log(p) axis (-log(0.05) = 2.996)
+is shown to the nearest whole number, because the text reads it off that axis
+("a Continuous-model value of 3"). Where variability matters to a claim it
+belongs in the text or a figure, not in the digit count: the Figure-3 prose
+gives the interquartile range across realizations next to each median. The
+Figure-3 summary also publishes approximate standard errors of the aggregated
+medians, conditional on the simulation setup; these play no part in formatting.
 
 Exact counts and configured parameters go through :func:`_exact`, which prints
 them in full and *raises* if the requested precision would lose information,
@@ -72,7 +77,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from statespacecheck_paper.number_format import SIGNIFICANT_FIGURES, significant, whole_percent
+from statespacecheck_paper.number_format import (
+    SIGNIFICANT_FIGURES,
+    one_decimal_percent,
+    significant,
+    whole_percent,
+)
 from statespacecheck_paper.paths import (
     CITATION_PATH,
     FIGURE03_SUMMARY_PATH,
@@ -91,6 +101,25 @@ REFRESH_DOIS_COMMAND = "uv run --frozen python scripts/emit_reported_values.py -
 
 # Unit conversion for the durations the prose gives in milliseconds
 _MS_PER_SECOND = 1000.0
+
+# Figure-3 flag percentages with a median at or above this many percent print
+# to whole percents; smaller ones to one decimal place.
+WHOLE_PERCENT_FROM = 10.0
+
+# Macro-name fragments for each Figure-3 window and diagnostic.
+_CONDITION_MACRO_NAMES = {
+    "well_specified": "WellSpecified",
+    "remap": "Remap",
+    "history_dependent": "History",
+    "replay": "Replay",
+    "momentum": "Momentum",
+    "sparse_population": "Sparse",
+}
+_METRIC_MACRO_NAMES = {
+    "hpd_overlap": "Hpd",
+    "predictive_pvalue": "Pvalue",
+    "kl_divergence": "Kl",
+}
 
 # Spelled-out cardinals for the counts the manuscript writes as words
 # ("eleven place cells", "Five additional cells"). Only small counts appear,
@@ -260,26 +289,6 @@ def load_summary(path: Path) -> dict[str, Any]:
     return payload
 
 
-def _flag_percentage_range(payload: dict[str, Any], condition: str) -> tuple[float, float]:
-    """Return the min and max median flag percentage across the three metrics.
-
-    Parameters
-    ----------
-    payload : dict
-        Figure-3 summary payload.
-    condition : str
-        Entry of ``condition_order`` naming the column to summarize.
-
-    Returns
-    -------
-    tuple of float
-        ``(minimum, maximum)`` over the three diagnostic rows.
-    """
-    column = payload["condition_order"].index(condition)
-    values = [row[column] for row in payload["median_flag_percentages"]]
-    return min(values), max(values)
-
-
 def flag_percentage(payload: Mapping[str, Any], metric: str, condition: str) -> float:
     """Return one metric's median flag percentage for one condition."""
     row = payload["metric_order"].index(metric)
@@ -302,6 +311,21 @@ def realization_flag_quartiles(
     row = payload["metric_order"].index(metric)
     column = payload["condition_order"].index(condition)
     values = [realization[row][column] for realization in payload["realization_flag_percentages"]]
+    first, _, third = statistics.quantiles(values, n=4, method="inclusive")
+    return first, third
+
+
+def realization_error_quartiles(payload: Mapping[str, Any], condition: str) -> tuple[float, float]:
+    """Return the quartiles of one window's decoding error across realizations.
+
+    Returns
+    -------
+    first, third : float
+        The 25th and 75th percentiles (linear interpolation, as NumPy's default)
+        of ``realization_decoding_error[:, condition]``, in position units.
+    """
+    column = payload["condition_order"].index(condition)
+    values = [realization[column] for realization in payload["realization_decoding_error"]]
     first, _, third = statistics.quantiles(values, n=4, method="inclusive")
     return first, third
 
@@ -331,93 +355,53 @@ def _simulation_statistics(payload: dict[str, Any]) -> list[MacroDefinition]:
         )
     ]
 
-    # Flag-percentage ranges across the three diagnostics, one condition per row.
-    for name, condition in (
-        ("SimWellSpecifiedFlag", "well_specified"),
-        ("SimRemapFlag", "remap"),
-        ("SimHistoryFlag", "history_dependent"),
-        ("SimReplayFlag", "replay"),
-        ("SimMomentumFlag", "momentum"),
-    ):
-        low, high = _flag_percentage_range(payload, condition)
-        macros.append(
-            MacroDefinition(
-                f"{name}Min",
-                whole_percent(low),
-                f"min over metrics of median_flag_percentages[:, {condition}]",
-            )
-        )
-        macros.append(
-            MacroDefinition(
-                f"{name}Max",
-                whole_percent(high),
-                f"max over metrics of median_flag_percentages[:, {condition}]",
-            )
-        )
+    # Per-metric flag percentages: the median across realizations and its
+    # interquartile range. A median of 10% or more and its quartiles print to
+    # whole percents; smaller ones to one decimal place, so the spread of the
+    # low flag rates stays visible.
+    for condition in payload["condition_order"]:
+        window = _CONDITION_MACRO_NAMES[condition]
+        for metric in payload["metric_order"]:
+            name = f"SimFlag{window}{_METRIC_MACRO_NAMES[metric]}"
+            median = flag_percentage(payload, metric, condition)
+            first, third = realization_flag_quartiles(payload, metric, condition)
+            render = whole_percent if median >= WHOLE_PERCENT_FROM else one_decimal_percent
+            cell = f"{metric}, {condition}"
+            macros += [
+                MacroDefinition(name, render(median), f"median_flag_percentages[{cell}]"),
+                MacroDefinition(
+                    f"{name}QuartileLow",
+                    render(first),
+                    f"25th percentile of realization_flag_percentages[:, {cell}]",
+                ),
+                MacroDefinition(
+                    f"{name}QuartileHigh",
+                    render(third),
+                    f"75th percentile of realization_flag_percentages[:, {cell}]",
+                ),
+            ]
 
-    macros.append(
-        MacroDefinition(
-            "SimSparseKlFlag",
-            whole_percent(flag_percentage(payload, "kl_divergence", "sparse_population")),
-            "median_flag_percentages[kl_divergence, sparse_population]",
-        )
-    )
-
-    # Spread across realizations: the two widely varying cells get their
-    # interquartile range; every other cell is summarized by its widest IQR.
-    metrics = payload["metric_order"]
-    remap_quartiles = [realization_flag_quartiles(payload, m, "remap") for m in metrics]
-    sparse_kl_quartiles = realization_flag_quartiles(payload, "kl_divergence", "sparse_population")
-    other_iqr_widths = [
-        third - first
-        for condition in payload["condition_order"]
-        for metric in metrics
-        if condition != "remap" and (metric, condition) != ("kl_divergence", "sparse_population")
-        for first, third in [realization_flag_quartiles(payload, metric, condition)]
-    ]
-    macros += [
-        MacroDefinition(
-            "SimRemapFlagQuartileLow",
-            whole_percent(min(first for first, _ in remap_quartiles)),
-            "min over metrics of the 25th percentile of realization_flag_percentages[:, remap]",
-        ),
-        MacroDefinition(
-            "SimRemapFlagQuartileHigh",
-            whole_percent(max(third for _, third in remap_quartiles)),
-            "max over metrics of the 75th percentile of realization_flag_percentages[:, remap]",
-        ),
-        MacroDefinition(
-            "SimSparseKlFlagQuartileLow",
-            whole_percent(sparse_kl_quartiles[0]),
-            "25th percentile of realization_flag_percentages[kl_divergence, sparse_population]",
-        ),
-        MacroDefinition(
-            "SimSparseKlFlagQuartileHigh",
-            whole_percent(sparse_kl_quartiles[1]),
-            "75th percentile of realization_flag_percentages[kl_divergence, sparse_population]",
-        ),
-        MacroDefinition(
-            "SimOtherFlagIqrMaxPoints",
-            whole_percent(max(other_iqr_widths)),
-            "max interquartile range of realization_flag_percentages over the other cells",
-        ),
-    ]
-
-    for name, condition in (
-        ("SimWellSpecifiedError", "well_specified"),
-        ("SimRemapError", "remap"),
-        ("SimHistoryError", "history_dependent"),
-        ("SimReplayError", "replay"),
-        ("SimMomentumError", "momentum"),
-        ("SimSparseError", "sparse_population"),
-    ):
-        macros.append(
+    # Decoding error per window: the median and its interquartile range.
+    for condition in payload["condition_order"]:
+        name = f"Sim{_CONDITION_MACRO_NAMES[condition]}Error"
+        first, third = realization_error_quartiles(payload, condition)
+        macros += [
             MacroDefinition(
                 name,
                 significant(decoding_error(payload, condition), SIGNIFICANT_FIGURES),
                 f"median_decoding_error[{condition}]",
-            )
-        )
+            ),
+            MacroDefinition(
+                f"{name}QuartileLow",
+                significant(first, SIGNIFICANT_FIGURES),
+                f"25th percentile of realization_decoding_error[:, {condition}]",
+            ),
+            MacroDefinition(
+                f"{name}QuartileHigh",
+                significant(third, SIGNIFICANT_FIGURES),
+                f"75th percentile of realization_decoding_error[:, {condition}]",
+            ),
+        ]
 
     # Thresholds: the HPD and KL cutoff values are estimated from the pooled
     # baseline at fixed percentile levels. The prose writes those levels as

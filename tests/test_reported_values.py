@@ -118,9 +118,16 @@ def test_macro_values_round_trip_the_canonical_statistics() -> None:
     figure04 = load_summary(FIGURE04_SUMMARY_PATH)
 
     remap = figure03["condition_order"].index("remap")
-    remap_percentages = [row[remap] for row in figure03["median_flag_percentages"]]
-    assert values["SimRemapFlagMin"] == f"{min(remap_percentages):.0f}"
-    assert values["SimRemapFlagMax"] == f"{max(remap_percentages):.0f}"
+    hpd = figure03["metric_order"].index("hpd_overlap")
+    remap_hpd = [
+        realization[hpd][remap] for realization in figure03["realization_flag_percentages"]
+    ]
+    assert values["SimFlagRemapHpd"] == f"{figure03['median_flag_percentages'][hpd][remap]:.0f}"
+    assert values["SimFlagRemapHpdQuartileLow"] == f"{np.percentile(remap_hpd, 25):.0f}"
+    assert values["SimFlagRemapHpdQuartileHigh"] == f"{np.percentile(remap_hpd, 75):.0f}"
+    # Below 10% the flag percentages keep one decimal place.
+    history = figure03["condition_order"].index("history_dependent")
+    assert values["SimFlagHistoryHpd"] == f"{figure03['median_flag_percentages'][hpd][history]:.1f}"
 
     decoding_error = figure03["median_decoding_error"]
     assert values["SimRemapError"] == significant(decoding_error[remap], 2)
@@ -159,6 +166,20 @@ def _spread_realization_flags(condition: str, *metrics: str) -> _SummaryEdit:
         for i, realization in enumerate(figure03["realization_flag_percentages"]):
             for row in rows:
                 realization[row][column] = float(i % 100)
+
+    return edit
+
+
+def _spread_realization_errors(condition: str) -> _SummaryEdit:
+    """Replace the per-realization decoding errors of ``condition`` with 100..397.
+
+    The range lies above every window's real error, so both quartiles move.
+    """
+
+    def edit(figure03: dict[str, Any], _: dict[str, Any]) -> None:
+        column = figure03["condition_order"].index(condition)
+        for i, realization in enumerate(figure03["realization_decoding_error"]):
+            realization[column] = 100.0 + 3.0 * (i % 100)
 
     return edit
 
@@ -213,41 +234,78 @@ def _set_event_count(_: dict[str, Any], figure04: dict[str, Any]) -> None:
 
 
 _ALL_METRICS = ("hpd_overlap", "predictive_pvalue", "kl_divergence")
+_ALL_METRIC_NAMES = ("Hpd", "Pvalue", "Kl")
+_QUARTILES = ("QuartileLow", "QuartileHigh")
+_MEDIAN_AND_QUARTILES = ("", *_QUARTILES)
+_WINDOWS = {
+    "well_specified": "WellSpecified",
+    "remap": "Remap",
+    "history_dependent": "History",
+    "replay": "Replay",
+    "momentum": "Momentum",
+    "sparse_population": "Sparse",
+}
+
+
+def _flag_macros(window: str, metrics: tuple[str, ...], parts: tuple[str, ...]) -> set[str]:
+    """Name the per-metric flag macros of one window."""
+    return {f"SimFlag{window}{metric}{part}" for metric in metrics for part in parts}
+
 
 # The mapping the prose depends on, written out independently of the emitter:
 # one summary field, and the exact statistic macros that field alone may move.
 # An empty set is a field no statistic macro may read.
 _SUMMARY_FIELD_MACROS: dict[str, tuple[_SummaryEdit, set[str]]] = {
     "realization_count": (_set_figure03(("realizations", "count"), 7), {"SimNRealizations"}),
-    "remap_flags": (_set_flags("remap", *_ALL_METRICS), {"SimRemapFlagMin", "SimRemapFlagMax"}),
-    "history_flags": (
-        _set_flags("history_dependent", *_ALL_METRICS),
-        {"SimHistoryFlagMin", "SimHistoryFlagMax"},
-    ),
-    "replay_flags": (_set_flags("replay", *_ALL_METRICS), {"SimReplayFlagMin", "SimReplayFlagMax"}),
-    "momentum_flags": (
-        _set_flags("momentum", *_ALL_METRICS),
-        {"SimMomentumFlagMin", "SimMomentumFlagMax"},
-    ),
     "well_specified_flags": (
         _set_flags("well_specified", *_ALL_METRICS),
-        {"SimWellSpecifiedFlagMin", "SimWellSpecifiedFlagMax"},
+        _flag_macros("WellSpecified", _ALL_METRIC_NAMES, _MEDIAN_AND_QUARTILES),
     ),
-    "sparse_kl_flag": (_set_flags("sparse_population", "kl_divergence"), {"SimSparseKlFlag"}),
-    "remap_realization_spread": (
-        _spread_realization_flags("remap", *_ALL_METRICS),
-        {"SimRemapFlagQuartileLow", "SimRemapFlagQuartileHigh"},
+    "remap_flags": (
+        _set_flags("remap", *_ALL_METRICS),
+        _flag_macros("Remap", _ALL_METRIC_NAMES, ("",)),
     ),
-    "sparse_kl_realization_spread": (
-        _spread_realization_flags("sparse_population", "kl_divergence"),
-        {"SimSparseKlFlagQuartileLow", "SimSparseKlFlagQuartileHigh"},
+    "history_flags": (
+        _set_flags("history_dependent", *_ALL_METRICS),
+        _flag_macros("History", _ALL_METRIC_NAMES, _MEDIAN_AND_QUARTILES),
     ),
-    "other_realization_spread": (
-        _spread_realization_flags("history_dependent", *_ALL_METRICS),
-        {"SimOtherFlagIqrMaxPoints"},
+    "replay_flags": (
+        _set_flags("replay", *_ALL_METRICS),
+        _flag_macros("Replay", _ALL_METRIC_NAMES, _MEDIAN_AND_QUARTILES),
     ),
-    "sparse_hpd_flag": (_set_flags("sparse_population", "hpd_overlap"), set()),
-    "sparse_pvalue_flag": (_set_flags("sparse_population", "predictive_pvalue"), set()),
+    # HPD overlap and the p-value already print to whole percents here; KL
+    # crosses 10%, so its quartiles change precision too.
+    "momentum_flags": (
+        _set_flags("momentum", *_ALL_METRICS),
+        _flag_macros("Momentum", _ALL_METRIC_NAMES, ("",))
+        | _flag_macros("Momentum", ("Kl",), _QUARTILES),
+    ),
+    "sparse_kl_flag": (
+        _set_flags("sparse_population", "kl_divergence"),
+        _flag_macros("Sparse", ("Kl",), ("",)),
+    ),
+    "sparse_hpd_flag": (
+        _set_flags("sparse_population", "hpd_overlap"),
+        _flag_macros("Sparse", ("Hpd",), _MEDIAN_AND_QUARTILES),
+    ),
+    "sparse_pvalue_flag": (
+        _set_flags("sparse_population", "predictive_pvalue"),
+        _flag_macros("Sparse", ("Pvalue",), _MEDIAN_AND_QUARTILES),
+    ),
+    **{
+        f"{condition}_realization_flags": (
+            _spread_realization_flags(condition, *_ALL_METRICS),
+            _flag_macros(window, _ALL_METRIC_NAMES, _QUARTILES),
+        )
+        for condition, window in _WINDOWS.items()
+    },
+    **{
+        f"{condition}_realization_errors": (
+            _spread_realization_errors(condition),
+            {f"Sim{window}ErrorQuartileLow", f"Sim{window}ErrorQuartileHigh"},
+        )
+        for condition, window in _WINDOWS.items()
+    },
     "well_specified_error": (_set_error("well_specified"), {"SimWellSpecifiedError"}),
     "remap_error": (_set_error("remap"), {"SimRemapError"}),
     "history_error": (_set_error("history_dependent"), {"SimHistoryError"}),
