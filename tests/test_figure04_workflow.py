@@ -12,7 +12,11 @@ import pytest
 import xarray as xr
 
 from statespacecheck_paper import figure04_cache, figure04_fit, figure04_workflow
-from statespacecheck_paper.diagnostics import METRIC_FLAG_DIRECTIONS, FlagDirection
+from statespacecheck_paper.diagnostics import (
+    METRIC_FLAG_DIRECTIONS,
+    FlagDirection,
+    SpikeEventDiagnostics,
+)
 from statespacecheck_paper.figure04_cache import (
     _FIGURE04_DECODE_AND_DIAGNOSTICS_PAYLOAD_KEYS,
     _FIGURE04_DECODE_PAYLOAD_KEYS,
@@ -31,13 +35,17 @@ from statespacecheck_paper.figure04_input import (
 )
 from statespacecheck_paper.figure04_place_fields import DECODER_PREDICTIVE_VAR
 from statespacecheck_paper.figure04_summary import (
+    Figure4DetailWindowComparison,
     Figure4Summary,
     compute_detail_window_comparison,
     compute_figure04_reported_statistics,
+    compute_immobility_comparison,
     compute_kl_divergence_comparison,
     compute_mean_spike_event_diagnostic,
+    count_flagged_with_nonzero_overlap,
     count_units_with_spikes,
     format_figure04_summary,
+    predictive_state_share,
     summarize_figure04_diagnostics,
 )
 from statespacecheck_paper.figure04_workflow import (
@@ -122,34 +130,68 @@ class TestComputeMeanSpikeEventDiagnostic:
 
 
 class TestComputeDetailWindowComparison:
-    THRESHOLDS = {"hpd_overlap": 0.05}
-    DIRECTIONS: dict[str, FlagDirection] = {"hpd_overlap": "below"}
+    THRESHOLDS = {"hpd_overlap": 0.05, "predictive_pvalue": 0.05}
+    DIRECTIONS: dict[str, FlagDirection] = {"hpd_overlap": "below", "predictive_pvalue": "below"}
+    # Speed per decode sample (10 samples) and Fragmented share per sample of [2, 8).
+    SPEED = np.array([10.0, 10.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 10.0, 10.0])
+    SHARE = np.array([0.1, 0.2, 0.6, 0.9, 0.4, 0.1])
+
+    def _compare(
+        self,
+        continuous: SpikeEventDiagnostics,
+        fragmented: SpikeEventDiagnostics,
+        time_slice: slice | None = None,
+        share: np.ndarray | None = None,
+    ) -> Figure4DetailWindowComparison:
+        time_slice = slice(2, 8) if time_slice is None else time_slice
+        return compute_detail_window_comparison(
+            continuous,
+            fragmented,
+            time_slice,
+            thresholds=self.THRESHOLDS,
+            metric_directions=self.DIRECTIONS,
+            speed_cm_per_s=self.SPEED,
+            fragmented_share=(
+                np.full(time_slice.stop - time_slice.start, 0.1) if share is None else share
+            ),
+        )
 
     def test_counts_only_events_inside_the_window(self) -> None:
         # Events at bins 1 and 9 fall outside [2, 8); the five inside are scored.
         time_ind = [1, 2, 3, 4, 5, 7, 9]
         continuous = event_diagnostics(
             hpd=np.array([0.0, 0.0, 0.0, 0.0, 0.5, 0.5, 0.0]),
+            kl=np.array([9.0, 1.0, 2.0, 3.0, 4.0, 5.0, 9.0]),
             pvalue=np.array([0.5, 0.01, 0.2, 0.3, 0.4, 0.5, 0.01]),
             time_ind=time_ind,
         )
         fragmented = event_diagnostics(
             hpd=np.array([0.5, 0.5, 0.0, 0.5, 0.0, 0.5, 0.5]),
+            kl=np.array([9.0, 2.5, 2.0, 1.5, 1.0, 0.5, 9.0]),
             pvalue=np.array([0.1, 0.02, 0.1, 0.3, 0.9, 0.5, 0.9]),
             time_ind=time_ind,
         )
-        comparison = compute_detail_window_comparison(
-            continuous,
-            fragmented,
-            slice(2, 8),
-            thresholds=self.THRESHOLDS,
-            metric_directions=self.DIRECTIONS,
-        )
+        comparison = self._compare(continuous, fragmented, share=self.SHARE)
         assert comparison.n_events == 5
         hpd = comparison.hpd_overlap
         assert (hpd.n, hpd.both, hpd.rescued, hpd.newly_flagged, hpd.neither) == (5, 1, 2, 1, 1)
+        # Only bin 2 has p <= 0.05, under both decoders.
+        pvalue = comparison.predictive_pvalue
+        assert (pvalue.both, pvalue.rescued, pvalue.newly_flagged, pvalue.neither) == (1, 0, 0, 4)
         # Inside the window, p rises for bins 2 and 5, falls for 3, ties at 4 and 7.
         assert comparison.predictive_pvalue_higher == 2
+        assert comparison.continuous_kl_median == pytest.approx(3.0)
+        assert comparison.continuous_fragmented_kl_median == pytest.approx(1.5)
+        # Speed over samples 2-7 is 1..6 cm/s.
+        assert comparison.median_speed_cm_per_s == pytest.approx(3.5)
+        assert comparison.fragmented_share_median == pytest.approx(0.3)
+        assert comparison.fragmented_share_peak == pytest.approx(0.9)
+        assert comparison.fragmented_share_above_half_samples == 2
+
+    def test_rejects_a_share_that_does_not_cover_the_window(self) -> None:
+        diagnostics = event_diagnostics(hpd=np.array([0.5]), time_ind=[3])
+        with pytest.raises(ValueError, match="one value per window sample"):
+            self._compare(diagnostics, diagnostics, share=np.full(5, 0.1))
 
     def test_pvalue_count_ignores_rounding_noise(self) -> None:
         """Two models' p-values that differ only by round-off are ties, whichever way
@@ -163,25 +205,90 @@ class TestComputeDetailWindowComparison:
             pvalue=np.array([0.5, 0.5 + 1e-12, 0.5 - 1e-12, 0.5 + 1e-6]),
             time_ind=time_ind,
         )
-        comparison = compute_detail_window_comparison(
-            continuous,
-            fragmented,
-            slice(0, 4),
-            thresholds=self.THRESHOLDS,
-            metric_directions=self.DIRECTIONS,
-        )
+        comparison = self._compare(continuous, fragmented, slice(0, 4))
         assert comparison.predictive_pvalue_higher == 1
 
     def test_rejects_an_empty_window(self) -> None:
         diagnostics = event_diagnostics(hpd=np.array([0.5, 0.5]), time_ind=[0, 10])
         with pytest.raises(ValueError, match="contains no spike events"):
-            compute_detail_window_comparison(
+            self._compare(diagnostics, diagnostics)
+
+
+class TestPredictiveStateShare:
+    def test_sums_the_mode_over_interior_bins(self) -> None:
+        # Two modes over two positions; the second Fragmented bin is outside the track.
+        index = pd.MultiIndex.from_tuples(
+            [("Continuous", 0.0), ("Continuous", 1.0), ("Fragmented", 0.0), ("Fragmented", 1.0)],
+            names=("state", "position"),
+        )
+        predictive = np.array([[0.5, 0.3, 0.2, np.nan], [0.1, 0.1, 0.8, np.nan]])
+        results = xr.Dataset(
+            {"predictive_posterior": (("time", "state_bins"), predictive)},
+            coords=xr.Coordinates.from_pandas_multiindex(index, "state_bins"),
+        )
+        share = predictive_state_share(results, "Fragmented", slice(0, 2))
+        np.testing.assert_allclose(share, [0.2, 0.8])
+
+    def test_rejects_an_unknown_mode(self) -> None:
+        index = pd.MultiIndex.from_tuples([("Continuous", 0.0)], names=("state", "position"))
+        results = xr.Dataset(
+            {"predictive_posterior": (("time", "state_bins"), np.ones((1, 1)))},
+            coords=xr.Coordinates.from_pandas_multiindex(index, "state_bins"),
+        )
+        with pytest.raises(ValueError, match="no 'Fragmented' mode"):
+            predictive_state_share(results, "Fragmented", slice(0, 1))
+
+
+class TestComputeImmobilityComparison:
+    THRESHOLDS = {"hpd_overlap": 0.05, "predictive_pvalue": 0.05}
+    DIRECTIONS: dict[str, FlagDirection] = {"hpd_overlap": "below", "predictive_pvalue": "below"}
+
+    def test_splits_spikes_and_flags_by_speed(self) -> None:
+        # Samples 0-1 are immobile (< 4 cm/s); spikes at samples 0, 1, 2, 3.
+        speed = np.array([0.5, 3.9, 4.0, 20.0])
+        diagnostics = event_diagnostics(
+            hpd=np.array([0.0, 0.5, 0.0, 0.0]),
+            pvalue=np.array([0.5, 0.01, 0.01, 0.5]),
+            time_ind=[0, 1, 2, 3],
+        )
+        comparison = compute_immobility_comparison(
+            diagnostics,
+            speed,
+            4.0,
+            thresholds=self.THRESHOLDS,
+            metric_directions=self.DIRECTIONS,
+        )
+        assert comparison.speed_threshold_cm_per_s == 4.0
+        assert comparison.spike_fraction == pytest.approx(0.5)
+        # HPD flags spikes 0, 2, 3 (one immobile); the p-value flags 1 and 2 (one immobile).
+        assert comparison.flagged_fractions == pytest.approx(
+            {"hpd_overlap": 1 / 3, "predictive_pvalue": 0.5}
+        )
+
+    @pytest.mark.parametrize(
+        ("speed", "hpd", "match"),
+        [
+            (np.array([np.nan, 1.0]), np.array([0.0, 0.0]), "NaN"),
+            (np.array([1.0, 1.0]), np.array([0.5, 0.5]), "flags no spike events"),
+        ],
+        ids=["nan-speed", "no-flags"],
+    )
+    def test_rejects_unusable_input(self, speed: np.ndarray, hpd: np.ndarray, match: str) -> None:
+        diagnostics = event_diagnostics(hpd=hpd, pvalue=np.array([0.01, 0.01]), time_ind=[0, 1])
+        with pytest.raises(ValueError, match=match):
+            compute_immobility_comparison(
                 diagnostics,
-                diagnostics,
-                slice(2, 8),
+                speed,
+                4.0,
                 thresholds=self.THRESHOLDS,
                 metric_directions=self.DIRECTIONS,
             )
+
+
+def test_count_flagged_with_nonzero_overlap() -> None:
+    # Flagged at <= 0.05: 0.0, 0.0, 0.03, 0.05; of these, 0.03 and 0.05 overlap.
+    diagnostics = event_diagnostics(hpd=np.array([0.0, 0.0, 0.03, 0.05, 0.5]))
+    assert count_flagged_with_nonzero_overlap(diagnostics, 0.05) == 2
 
 
 class TestComputeKlDivergenceComparison:
@@ -193,11 +300,11 @@ class TestComputeKlDivergenceComparison:
             event_diagnostics(kl=continuous), event_diagnostics(kl=fragmented)
         )
         assert comparison.lower_fraction == pytest.approx(4 / 7)
-        assert comparison.lower_continuous_quartiles == pytest.approx(
-            tuple(np.percentile([1.0, 2.0, 3.0, 4.0], [25, 75]))
-        )
+        assert comparison.lower_continuous_median == pytest.approx(2.5)
+        assert comparison.lower_continuous_fragmented_median == pytest.approx(1.0)
         assert comparison.higher_fraction == pytest.approx(2 / 7)
         assert comparison.higher_continuous_median == pytest.approx(1.0)
+        assert comparison.higher_continuous_fragmented_median == pytest.approx(5.5)
         assert comparison.higher_continuous_fragmented_max == pytest.approx(9.0)
 
     def test_rejects_mismatched_events(self) -> None:
@@ -743,7 +850,8 @@ def test_decoder_prediction_at_a_row_excludes_that_rows_spikes() -> None:
 def test_reported_statistics_come_from_the_render_data() -> None:
     render_data = synthetic_render_data()
     analysis = render_data.analysis_results
-    thresholds = {"hpd_overlap": 0.5, "kl_divergence": 1.0, "predictive_pvalue": 0.05}
+    # Cutoffs every synthetic metric crosses, so each flags some spikes.
+    thresholds = {"hpd_overlap": 0.5, "kl_divergence": 1.0, "predictive_pvalue": 0.5}
     statistics = compute_figure04_reported_statistics(
         render_data, thresholds, METRIC_FLAG_DIRECTIONS, slice(0, render_data.time.size)
     )
@@ -756,6 +864,7 @@ def test_reported_statistics_come_from_the_render_data() -> None:
         == analysis.continuous_diagnostics.event_time_ind.size
     )
     assert 0.0 < statistics.kl_divergence_comparison.lower_fraction < 1.0
+    assert 0.0 <= statistics.immobility_comparison.spike_fraction <= 1.0
 
 
 def test_reported_statistics_keep_each_decoder_on_its_own_side() -> None:
@@ -790,7 +899,8 @@ def test_reported_statistics_keep_each_decoder_on_its_own_side() -> None:
             continuous_fragmented_diagnostics=fragmented,
         ),
     )
-    thresholds = {"hpd_overlap": 0.5, "kl_divergence": 100.0, "predictive_pvalue": 0.05}
+    # Every metric flags some spikes, as the immobility comparison requires.
+    thresholds = {"hpd_overlap": 0.5, "kl_divergence": 5.0, "predictive_pvalue": 0.05}
 
     statistics = compute_figure04_reported_statistics(
         render_data, thresholds, METRIC_FLAG_DIRECTIONS, slice(0, n_events)
@@ -803,15 +913,28 @@ def test_reported_statistics_keep_each_decoder_on_its_own_side() -> None:
 
     detail = statistics.detail_window_comparison.hpd_overlap
     assert (detail.rescued, detail.both, detail.newly_flagged) == (3, 1, 2)
+    detail_pvalue = statistics.detail_window_comparison.predictive_pvalue
+    assert (detail_pvalue.rescued, detail_pvalue.both, detail_pvalue.newly_flagged) == (3, 1, 0)
     # Higher under Continuous-Fragmented on every event but the tied event 3.
     assert statistics.detail_window_comparison.predictive_pvalue_higher == 5
+    assert statistics.detail_window_comparison.continuous_kl_median == pytest.approx(6.5)
+    assert statistics.detail_window_comparison.continuous_fragmented_kl_median == pytest.approx(3.5)
 
     kl = statistics.kl_divergence_comparison
     assert kl.lower_fraction == pytest.approx(4 / 6)
-    assert kl.lower_continuous_quartiles == pytest.approx((6.75, 8.25))
+    assert kl.lower_continuous_median == pytest.approx(7.5)
+    assert kl.lower_continuous_fragmented_median == pytest.approx(2.5)
     assert kl.higher_fraction == pytest.approx(2 / 6)
     assert kl.higher_continuous_median == pytest.approx(1.5)
+    assert kl.higher_continuous_fragmented_median == pytest.approx(25.0)
     assert kl.higher_continuous_fragmented_max == pytest.approx(30.0)
+
+    # The six events fall in the synthetic recording's first samples, all below 4 cm/s.
+    immobility = statistics.immobility_comparison
+    assert immobility.spike_fraction == pytest.approx(1.0)
+    assert immobility.flagged_fractions["hpd_overlap"] == pytest.approx(1.0)
+    # The Continuous model flags events 0-3, whose overlaps are all nonzero.
+    assert statistics.hpd_flagged_nonzero_overlap == 4
 
 
 def test_count_units_with_spikes_counts_each_firing_unit_once() -> None:

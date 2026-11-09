@@ -45,7 +45,7 @@ from statespacecheck_paper.style import save_figure, set_figure_defaults
 
 # Version of the figure04_summary.json layout written by
 # figure04_summary_payload. Bump it when a field is added, removed, or renamed.
-FIGURE04_SUMMARY_SCHEMA_VERSION = 15
+FIGURE04_SUMMARY_SCHEMA_VERSION = 16
 
 
 def figure04_reported_statistics(summary: Figure4Summary) -> dict[str, object]:
@@ -120,6 +120,8 @@ def figure04_summary_payload(
         "flag_confusion_models": summary_statistics["flag_confusion_models"],
         "flag_confusions": summary_statistics["flag_confusions"],
         "kl_divergence_comparison": dataclasses.asdict(statistics.kl_divergence_comparison),
+        "immobility_comparison": dataclasses.asdict(statistics.immobility_comparison),
+        "hpd_flagged_nonzero_overlap": statistics.hpd_flagged_nonzero_overlap,
         "provenance": {
             "source": scientific_source_provenance(),
             "figure04_caches": cache_provenance.artifact_payload(),

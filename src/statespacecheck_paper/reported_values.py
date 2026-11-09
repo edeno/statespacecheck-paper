@@ -18,7 +18,9 @@ nearest whole percent. Each Figure-3 flag percentage and decoding error is
 reported per metric and window as the median across realizations with its
 interquartile range; flag percentages whose median is 10% or more, and their
 quartiles, are given to the nearest whole percent, and smaller ones to one
-decimal place so that the spread of the low flag rates stays visible. Exact counts and
+decimal place so that the spread of the low flag rates stays visible. Figure-4 flag
+rates follow the same rule; the shares of spikes and flags that fall while the
+animal is immobile are given to the nearest whole percent. Exact counts and
 configured parameters are reported without approximation. Machine-readable
 summaries retain full numerical precision.
 
@@ -102,8 +104,9 @@ REFRESH_DOIS_COMMAND = "uv run --frozen python scripts/emit_reported_values.py -
 # Unit conversion for the durations the prose gives in milliseconds
 _MS_PER_SECOND = 1000.0
 
-# Figure-3 flag percentages with a median at or above this many percent print
-# to whole percents; smaller ones to one decimal place.
+# Figure-3 flag percentages with a median at or above this many percent, and
+# Figure-4 flag rates at or above it, print to whole percents; smaller ones to
+# one decimal place.
 WHOLE_PERCENT_FROM = 10.0
 
 # Macro-name fragments for each Figure-3 window and diagnostic.
@@ -655,6 +658,11 @@ def _simulation_configuration(payload: dict[str, Any]) -> list[MacroDefinition]:
 _RECORDING_FLAG_MACRO_PREFIXES = {"hpd_overlap": "RecHpd", "predictive_pvalue": "RecPvalue"}
 
 
+def _flag_rate_percent(value: float) -> str:
+    """Render a Figure-4 flag rate: whole percents from WHOLE_PERCENT_FROM, else one decimal."""
+    return whole_percent(value) if value >= WHOLE_PERCENT_FROM else one_decimal_percent(value)
+
+
 def _recording_statistics(payload: dict[str, Any]) -> list[MacroDefinition]:
     """Build the Figure-4 macros computed from the hippocampal recording."""
     # Every flag confusion counts the same spike events, which Figure 4c plots.
@@ -677,12 +685,30 @@ def _recording_statistics(payload: dict[str, Any]) -> list[MacroDefinition]:
         confusion = _confusion(payload, metric)
         # Flagged by the Continuous model = rescued by Continuous-Fragmented + flagged by both.
         flagged_continuous = confusion["rescued"] + confusion["both"]
+        flagged_fragmented = confusion["both"] + confusion["newly_flagged"]
         macros.extend(
             [
                 MacroDefinition(
                     f"{prefix}FlaggedContinuous",
                     _exact(flagged_continuous),
                     f"flag_confusions[{metric}]: rescued + both",
+                ),
+                MacroDefinition(
+                    f"{prefix}FlagRateContinuous",
+                    _flag_rate_percent(100.0 * flagged_continuous / confusion["n"]),
+                    f"flag_confusions[{metric}]: (rescued + both) / n",
+                ),
+                MacroDefinition(
+                    f"{prefix}FlagRateFragmented",
+                    _flag_rate_percent(100.0 * flagged_fragmented / confusion["n"]),
+                    f"flag_confusions[{metric}]: (both + newly_flagged) / n",
+                ),
+                MacroDefinition(
+                    f"{prefix}FlaggedImmobilePercent",
+                    whole_percent(
+                        100.0 * payload["immobility_comparison"]["flagged_fractions"][metric]
+                    ),
+                    f"immobility_comparison.flagged_fractions[{metric}]",
                 ),
                 MacroDefinition(
                     f"{prefix}Rescued",
@@ -701,8 +727,27 @@ def _recording_statistics(payload: dict[str, Any]) -> list[MacroDefinition]:
                 ),
             ]
         )
+    immobility = payload["immobility_comparison"]
+    macros.extend(
+        [
+            MacroDefinition(
+                "RecImmobileSpeed",
+                _exact(immobility["speed_threshold_cm_per_s"]),
+                "immobility_comparison.speed_threshold_cm_per_s",
+            ),
+            MacroDefinition(
+                "RecSpikesImmobilePercent",
+                whole_percent(100.0 * immobility["spike_fraction"]),
+                "immobility_comparison.spike_fraction",
+            ),
+            MacroDefinition(
+                "RecHpdFlaggedNonzero",
+                _exact(payload["hpd_flagged_nonzero_overlap"]),
+                "hpd_flagged_nonzero_overlap",
+            ),
+        ]
+    )
     kl = payload["kl_divergence_comparison"]
-    quartile_low, quartile_high = kl["lower_continuous_quartiles"]
     macros.extend(
         [
             MacroDefinition(
@@ -711,14 +756,14 @@ def _recording_statistics(payload: dict[str, Any]) -> list[MacroDefinition]:
                 "kl_divergence_comparison.lower_fraction",
             ),
             MacroDefinition(
-                "RecKlLowerContinuousQuartileLow",
-                significant(quartile_low, SIGNIFICANT_FIGURES),
-                "kl_divergence_comparison.lower_continuous_quartiles[0]",
+                "RecKlLowerMedianContinuous",
+                significant(kl["lower_continuous_median"], SIGNIFICANT_FIGURES),
+                "kl_divergence_comparison.lower_continuous_median",
             ),
             MacroDefinition(
-                "RecKlLowerContinuousQuartileHigh",
-                significant(quartile_high, SIGNIFICANT_FIGURES),
-                "kl_divergence_comparison.lower_continuous_quartiles[1]",
+                "RecKlLowerMedianFragmented",
+                significant(kl["lower_continuous_fragmented_median"], SIGNIFICANT_FIGURES),
+                "kl_divergence_comparison.lower_continuous_fragmented_median",
             ),
             MacroDefinition(
                 "RecKlHigherPercent",
@@ -731,6 +776,11 @@ def _recording_statistics(payload: dict[str, Any]) -> list[MacroDefinition]:
                 "kl_divergence_comparison.higher_continuous_median",
             ),
             MacroDefinition(
+                "RecKlHigherFragmentedMedian",
+                significant(kl["higher_continuous_fragmented_median"], SIGNIFICANT_FIGURES),
+                "kl_divergence_comparison.higher_continuous_fragmented_median",
+            ),
+            MacroDefinition(
                 "RecKlHigherFragmentedMax",
                 significant(kl["higher_continuous_fragmented_max"], SIGNIFICANT_FIGURES),
                 "kl_divergence_comparison.higher_continuous_fragmented_max",
@@ -739,8 +789,20 @@ def _recording_statistics(payload: dict[str, Any]) -> list[MacroDefinition]:
     )
     detail = payload["detail_window_comparison"]
     detail_hpd = detail["hpd_overlap"]
+    detail_pvalue = detail["predictive_pvalue"]
+    seconds_per_sample = 1.0 / payload["configuration"]["decoder"]["sampling_frequency_hz"]
     macros.extend(
         [
+            MacroDefinition(
+                "RecDetailDurationS",
+                _exact(2 * payload["detail_window"]["half_width_samples"] * seconds_per_sample),
+                "2 * detail_window.half_width_samples / sampling_frequency_hz, in s",
+            ),
+            MacroDefinition(
+                "RecDetailMedianSpeed",
+                significant(detail["median_speed_cm_per_s"], SIGNIFICANT_FIGURES),
+                "detail_window_comparison.median_speed_cm_per_s",
+            ),
             MacroDefinition(
                 "RecDetailNEvents",
                 _exact(detail["n_events"]),
@@ -752,9 +814,49 @@ def _recording_statistics(payload: dict[str, Any]) -> list[MacroDefinition]:
                 "detail_window_comparison.hpd_overlap: rescued + both",
             ),
             MacroDefinition(
-                "RecDetailHpdRescued",
-                _exact(detail_hpd["rescued"]),
-                "detail_window_comparison.hpd_overlap.rescued",
+                "RecDetailHpdFlaggedFragmented",
+                _exact(detail_hpd["both"] + detail_hpd["newly_flagged"]),
+                "detail_window_comparison.hpd_overlap: both + newly_flagged",
+            ),
+            MacroDefinition(
+                "RecDetailPvalueFlaggedContinuous",
+                _exact(detail_pvalue["rescued"] + detail_pvalue["both"]),
+                "detail_window_comparison.predictive_pvalue: rescued + both",
+            ),
+            MacroDefinition(
+                "RecDetailPvalueFlaggedFragmented",
+                _exact(detail_pvalue["both"] + detail_pvalue["newly_flagged"]),
+                "detail_window_comparison.predictive_pvalue: both + newly_flagged",
+            ),
+            MacroDefinition(
+                "RecDetailKlMedianContinuous",
+                significant(detail["continuous_kl_median"], SIGNIFICANT_FIGURES),
+                "detail_window_comparison.continuous_kl_median",
+            ),
+            MacroDefinition(
+                "RecDetailKlMedianFragmented",
+                significant(detail["continuous_fragmented_kl_median"], SIGNIFICANT_FIGURES),
+                "detail_window_comparison.continuous_fragmented_kl_median",
+            ),
+            MacroDefinition(
+                "RecDetailFragmentedShareMedian",
+                significant(detail["fragmented_share_median"], SIGNIFICANT_FIGURES),
+                "detail_window_comparison.fragmented_share_median",
+            ),
+            MacroDefinition(
+                "RecDetailFragmentedSharePeak",
+                significant(detail["fragmented_share_peak"], SIGNIFICANT_FIGURES),
+                "detail_window_comparison.fragmented_share_peak",
+            ),
+            MacroDefinition(
+                "RecDetailFragmentedAboveHalfMs",
+                significant(
+                    detail["fragmented_share_above_half_samples"]
+                    * seconds_per_sample
+                    * _MS_PER_SECOND,
+                    SIGNIFICANT_FIGURES,
+                ),
+                "detail_window_comparison.fragmented_share_above_half_samples, in ms",
             ),
             MacroDefinition(
                 "RecDetailPvalueHigher",

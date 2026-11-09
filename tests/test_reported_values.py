@@ -337,47 +337,83 @@ _SUMMARY_FIELD_MACROS: dict[str, tuple[_SummaryEdit, set[str]]] = {
         _set_figure04(("dataset", "n_units_with_spikes"), 7),
         {"RecNUnitsWithSpikes"},
     ),
-    "n_events": (_set_event_count, {"RecNEvents"}),
-    "hpd_rescued": (
-        _set_confusion("hpd_overlap", "rescued", 1_234),
-        {"RecHpdRescued", "RecHpdFlaggedContinuous"},
+    "n_events": (
+        _set_event_count,
+        {
+            "RecNEvents",
+            "RecHpdFlagRateContinuous",
+            "RecHpdFlagRateFragmented",
+            "RecPvalueFlagRateContinuous",
+            "RecPvalueFlagRateFragmented",
+        },
     ),
-    "hpd_both": (_set_confusion("hpd_overlap", "both", 1_234), {"RecHpdFlaggedContinuous"}),
+    "hpd_rescued": (
+        _set_confusion("hpd_overlap", "rescued", 12_345),
+        {"RecHpdRescued", "RecHpdFlaggedContinuous", "RecHpdFlagRateContinuous"},
+    ),
+    "hpd_both": (
+        _set_confusion("hpd_overlap", "both", 12_345),
+        {"RecHpdFlaggedContinuous", "RecHpdFlagRateContinuous", "RecHpdFlagRateFragmented"},
+    ),
     "hpd_rescued_fraction": (
         _set_confusion("hpd_overlap", "rescued_fraction", 0.37),
         {"RecHpdRescuedPercent"},
     ),
     "hpd_newly_flagged": (
-        _set_confusion("hpd_overlap", "newly_flagged", 1_234),
-        {"RecHpdNewlyFlagged"},
+        _set_confusion("hpd_overlap", "newly_flagged", 12_345),
+        {"RecHpdNewlyFlagged", "RecHpdFlagRateFragmented"},
     ),
     "pvalue_rescued": (
-        _set_confusion("predictive_pvalue", "rescued", 1_234),
-        {"RecPvalueRescued", "RecPvalueFlaggedContinuous"},
+        _set_confusion("predictive_pvalue", "rescued", 12_345),
+        {"RecPvalueRescued", "RecPvalueFlaggedContinuous", "RecPvalueFlagRateContinuous"},
     ),
     "pvalue_both": (
-        _set_confusion("predictive_pvalue", "both", 1_234),
-        {"RecPvalueFlaggedContinuous"},
+        _set_confusion("predictive_pvalue", "both", 12_345),
+        {
+            "RecPvalueFlaggedContinuous",
+            "RecPvalueFlagRateContinuous",
+            "RecPvalueFlagRateFragmented",
+        },
     ),
     "pvalue_rescued_fraction": (
         _set_confusion("predictive_pvalue", "rescued_fraction", 0.37),
         {"RecPvalueRescuedPercent"},
     ),
     "pvalue_newly_flagged": (
-        _set_confusion("predictive_pvalue", "newly_flagged", 1_234),
-        {"RecPvalueNewlyFlagged"},
+        _set_confusion("predictive_pvalue", "newly_flagged", 12_345),
+        {"RecPvalueNewlyFlagged", "RecPvalueFlagRateFragmented"},
+    ),
+    "immobile_speed": (
+        _set_figure04(("immobility_comparison", "speed_threshold_cm_per_s"), 7.0),
+        {"RecImmobileSpeed"},
+    ),
+    "immobile_spike_fraction": (
+        _set_figure04(("immobility_comparison", "spike_fraction"), 0.37),
+        {"RecSpikesImmobilePercent"},
+    ),
+    "immobile_hpd_fraction": (
+        _set_figure04(("immobility_comparison", "flagged_fractions", "hpd_overlap"), 0.37),
+        {"RecHpdFlaggedImmobilePercent"},
+    ),
+    "immobile_pvalue_fraction": (
+        _set_figure04(("immobility_comparison", "flagged_fractions", "predictive_pvalue"), 0.37),
+        {"RecPvalueFlaggedImmobilePercent"},
+    ),
+    "hpd_flagged_nonzero_overlap": (
+        _set_figure04(("hpd_flagged_nonzero_overlap",), 1_234),
+        {"RecHpdFlaggedNonzero"},
     ),
     "kl_lower_fraction": (
         _set_figure04(("kl_divergence_comparison", "lower_fraction"), 0.37),
         {"RecKlLowerPercent"},
     ),
-    "kl_lower_quartile_low": (
-        _set_figure04(("kl_divergence_comparison", "lower_continuous_quartiles", 0), 0.37),
-        {"RecKlLowerContinuousQuartileLow"},
+    "kl_lower_median_continuous": (
+        _set_figure04(("kl_divergence_comparison", "lower_continuous_median"), 0.37),
+        {"RecKlLowerMedianContinuous"},
     ),
-    "kl_lower_quartile_high": (
-        _set_figure04(("kl_divergence_comparison", "lower_continuous_quartiles", 1), 0.37),
-        {"RecKlLowerContinuousQuartileHigh"},
+    "kl_lower_median_fragmented": (
+        _set_figure04(("kl_divergence_comparison", "lower_continuous_fragmented_median"), 0.37),
+        {"RecKlLowerMedianFragmented"},
     ),
     "kl_higher_fraction": (
         _set_figure04(("kl_divergence_comparison", "higher_fraction"), 0.37),
@@ -387,9 +423,17 @@ _SUMMARY_FIELD_MACROS: dict[str, tuple[_SummaryEdit, set[str]]] = {
         _set_figure04(("kl_divergence_comparison", "higher_continuous_median"), 0.37),
         {"RecKlHigherContinuousMedian"},
     ),
+    "kl_higher_median_fragmented": (
+        _set_figure04(("kl_divergence_comparison", "higher_continuous_fragmented_median"), 0.37),
+        {"RecKlHigherFragmentedMedian"},
+    ),
     "kl_higher_max": (
         _set_figure04(("kl_divergence_comparison", "higher_continuous_fragmented_max"), 0.37),
         {"RecKlHigherFragmentedMax"},
+    ),
+    "detail_half_width": (
+        _set_figure04(("detail_window", "half_width_samples"), 1_250),
+        {"RecDetailDurationS"},
     ),
     "detail_n_events": (
         _set_figure04(("detail_window_comparison", "n_events"), 1_234),
@@ -397,19 +441,55 @@ _SUMMARY_FIELD_MACROS: dict[str, tuple[_SummaryEdit, set[str]]] = {
     ),
     "detail_rescued": (
         _set_figure04(("detail_window_comparison", "hpd_overlap", "rescued"), 1_234),
-        {"RecDetailHpdRescued", "RecDetailHpdFlaggedContinuous"},
+        {"RecDetailHpdFlaggedContinuous"},
     ),
     "detail_both": (
         _set_figure04(("detail_window_comparison", "hpd_overlap", "both"), 1_234),
-        {"RecDetailHpdFlaggedContinuous"},
+        {"RecDetailHpdFlaggedContinuous", "RecDetailHpdFlaggedFragmented"},
     ),
     "detail_newly_flagged": (
         _set_figure04(("detail_window_comparison", "hpd_overlap", "newly_flagged"), 1_234),
-        set(),
+        {"RecDetailHpdFlaggedFragmented"},
+    ),
+    "detail_pvalue_rescued": (
+        _set_figure04(("detail_window_comparison", "predictive_pvalue", "rescued"), 1_234),
+        {"RecDetailPvalueFlaggedContinuous"},
+    ),
+    "detail_pvalue_both": (
+        _set_figure04(("detail_window_comparison", "predictive_pvalue", "both"), 1_234),
+        {"RecDetailPvalueFlaggedContinuous", "RecDetailPvalueFlaggedFragmented"},
+    ),
+    "detail_pvalue_newly_flagged": (
+        _set_figure04(("detail_window_comparison", "predictive_pvalue", "newly_flagged"), 1_234),
+        {"RecDetailPvalueFlaggedFragmented"},
     ),
     "detail_pvalue_higher": (
         _set_figure04(("detail_window_comparison", "predictive_pvalue_higher"), 1_234),
         {"RecDetailPvalueHigher"},
+    ),
+    "detail_kl_median_continuous": (
+        _set_figure04(("detail_window_comparison", "continuous_kl_median"), 0.37),
+        {"RecDetailKlMedianContinuous"},
+    ),
+    "detail_kl_median_fragmented": (
+        _set_figure04(("detail_window_comparison", "continuous_fragmented_kl_median"), 0.37),
+        {"RecDetailKlMedianFragmented"},
+    ),
+    "detail_median_speed": (
+        _set_figure04(("detail_window_comparison", "median_speed_cm_per_s"), 0.37),
+        {"RecDetailMedianSpeed"},
+    ),
+    "detail_fragmented_share_median": (
+        _set_figure04(("detail_window_comparison", "fragmented_share_median"), 0.37),
+        {"RecDetailFragmentedShareMedian"},
+    ),
+    "detail_fragmented_share_peak": (
+        _set_figure04(("detail_window_comparison", "fragmented_share_peak"), 0.37),
+        {"RecDetailFragmentedSharePeak"},
+    ),
+    "detail_fragmented_above_half": (
+        _set_figure04(("detail_window_comparison", "fragmented_share_above_half_samples"), 1_234),
+        {"RecDetailFragmentedAboveHalfMs"},
     ),
 }
 

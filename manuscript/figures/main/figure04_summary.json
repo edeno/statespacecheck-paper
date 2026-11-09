@@ -63,6 +63,11 @@
     "half_width_samples": 500
   },
   "detail_window_comparison": {
+    "continuous_fragmented_kl_median": 2.2300206560951934,
+    "continuous_kl_median": 3.2090136426793574,
+    "fragmented_share_above_half_samples": 63,
+    "fragmented_share_median": 0.047147804871201515,
+    "fragmented_share_peak": 0.9595553874969482,
     "hpd_overlap": {
       "both": 5,
       "metric": "hpd_overlap",
@@ -72,7 +77,17 @@
       "rescued": 38,
       "threshold": 0.05
     },
+    "median_speed_cm_per_s": 0.8620317664898807,
     "n_events": 649,
+    "predictive_pvalue": {
+      "both": 33,
+      "metric": "predictive_pvalue",
+      "n": 649,
+      "neither": 604,
+      "newly_flagged": 0,
+      "rescued": 12,
+      "threshold": 0.05
+    },
     "predictive_pvalue_higher": 448
   },
   "diagnostic_means": {
@@ -124,14 +139,22 @@
       "threshold": 0.05
     }
   },
+  "hpd_flagged_nonzero_overlap": 61,
+  "immobility_comparison": {
+    "flagged_fractions": {
+      "hpd_overlap": 0.6056412985630655,
+      "predictive_pvalue": 0.31201036696707307
+    },
+    "speed_threshold_cm_per_s": 4.0,
+    "spike_fraction": 0.2968766163458687
+  },
   "kl_divergence_comparison": {
     "higher_continuous_fragmented_max": 29.92218273894178,
+    "higher_continuous_fragmented_median": 2.249285450240589,
     "higher_continuous_median": 1.5000024843568083,
     "higher_fraction": 0.058111441372477354,
-    "lower_continuous_quartiles": [
-      2.680094002621728,
-      3.519977868656886
-    ],
+    "lower_continuous_fragmented_median": 2.2364756617607484,
+    "lower_continuous_median": 3.080624005065858,
     "lower_fraction": 0.9418851104230027
   },
   "provenance": {
@@ -213,11 +236,11 @@
       "statespacecheck_version": "0.3.1"
     },
     "source": {
-      "source_tree_sha256": "7aaeb4315ea77fb8a5714e6dc69f849b750cae4d830cb3df27432d6bba936cda",
+      "source_tree_sha256": "3a3491d6da0153f4258b5c300b84df5b58514c7260df50a0fe2c993ad5406db4",
       "statespacecheck_paper_version": "0.1.0",
       "statespacecheck_version": "0.3.1",
       "uv_lock_sha256": "280ef8920b3302f206621349c0733c017b8a329e3d85c789b21bf6350c093fe2"
     }
   },
-  "schema_version": 15
+  "schema_version": 16
 }

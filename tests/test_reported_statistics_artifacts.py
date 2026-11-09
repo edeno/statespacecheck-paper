@@ -31,6 +31,7 @@ from statespacecheck_paper.figure04_input import INPUT_FILE_SUFFIX
 from statespacecheck_paper.figure04_summary import (
     Figure4DetailWindowComparison,
     Figure4DiagnosticMeans,
+    Figure4ImmobilityComparison,
     Figure4KlDivergenceComparison,
     Figure4ReportedStatistics,
     Figure4Summary,
@@ -207,15 +208,19 @@ def test_figure04_reported_statistics_counts_partition_events(tmp_path: Path) ->
     assert kl == pytest.approx(
         {
             "lower_fraction": 0.9418851104230027,
-            "lower_continuous_quartiles": [2.680094002621728, 3.519977868656886],
+            "lower_continuous_median": 3.080624005065858,
+            "lower_continuous_fragmented_median": 2.2364756617607484,
             "higher_fraction": 0.058111441372477354,
             "higher_continuous_median": 1.5000024843568083,
+            "higher_continuous_fragmented_median": 2.249285450240589,
             "higher_continuous_fragmented_max": 29.92218273894178,
         }
     )
     assert kl["lower_fraction"] + kl["higher_fraction"] <= 1.0
-    assert kl["lower_continuous_quartiles"][0] <= kl["lower_continuous_quartiles"][1]
-    assert kl["higher_continuous_fragmented_max"] > kl["higher_continuous_median"]
+    # Lower and higher are defined by each event's change, so the medians follow.
+    assert kl["lower_continuous_fragmented_median"] < kl["lower_continuous_median"]
+    assert kl["higher_continuous_fragmented_median"] > kl["higher_continuous_median"]
+    assert kl["higher_continuous_fragmented_max"] >= kl["higher_continuous_fragmented_median"]
     # The detail window's HPD flag agreement partitions its spike events.
     detail = payload["detail_window_comparison"]
     detail_hpd = detail["hpd_overlap"]
@@ -228,7 +233,49 @@ def test_figure04_reported_statistics_counts_partition_events(tmp_path: Path) ->
         detail_hpd["neither"],
     ) == (5, 38, 0, 606)
     assert detail_hpd["n"] == detail["n_events"]
+    detail_pvalue = detail["predictive_pvalue"]
+    assert (
+        detail_pvalue["both"],
+        detail_pvalue["rescued"],
+        detail_pvalue["newly_flagged"],
+        detail_pvalue["neither"],
+    ) == (33, 12, 0, 604)
     assert detail["predictive_pvalue_higher"] <= detail["n_events"]
+    detail_scalars = {
+        key: detail[key]
+        for key in (
+            "continuous_kl_median",
+            "continuous_fragmented_kl_median",
+            "median_speed_cm_per_s",
+            "fragmented_share_median",
+            "fragmented_share_peak",
+            "fragmented_share_above_half_samples",
+        )
+    }
+    assert detail_scalars == pytest.approx(
+        {
+            "continuous_kl_median": 3.2090136426793574,
+            "continuous_fragmented_kl_median": 2.2300206560951934,
+            "median_speed_cm_per_s": 0.8620317664898807,
+            "fragmented_share_median": 0.047147804871201515,
+            "fragmented_share_peak": 0.9595553874969482,
+            "fragmented_share_above_half_samples": 63,
+        }
+    )
+    assert 0.0 <= detail["fragmented_share_median"] <= detail["fragmented_share_peak"] <= 1.0
+    # Where the Continuous model's flags fall, by the animal's speed.
+    immobility = payload["immobility_comparison"]
+    assert immobility["speed_threshold_cm_per_s"] == 4.0
+    assert immobility["spike_fraction"] == pytest.approx(0.2968766163458687)
+    assert immobility["flagged_fractions"] == pytest.approx(
+        {"hpd_overlap": 0.6056412985630655, "predictive_pvalue": 0.31201036696707307}
+    )
+    assert set(immobility["flagged_fractions"]) == set(payload["flag_rules"])
+    hpd_confusion = next(c for c in payload["flag_confusions"] if c["metric"] == "hpd_overlap")
+    assert payload["hpd_flagged_nonzero_overlap"] == 61
+    assert (
+        payload["hpd_flagged_nonzero_overlap"] <= hpd_confusion["rescued"] + hpd_confusion["both"]
+    )
     source = payload["provenance"]["source"]
     assert len(source["source_tree_sha256"]) == 64
     assert len(source["uv_lock_sha256"]) == 64
@@ -273,21 +320,16 @@ def test_figure04_reported_statistics_counts_partition_events(tmp_path: Path) ->
         statistics=Figure4ReportedStatistics(
             summary=summary,
             n_units_with_spikes=payload["dataset"]["n_units_with_spikes"],
-            kl_divergence_comparison=Figure4KlDivergenceComparison(
-                lower_fraction=kl["lower_fraction"],
-                lower_continuous_quartiles=(
-                    kl["lower_continuous_quartiles"][0],
-                    kl["lower_continuous_quartiles"][1],
-                ),
-                higher_fraction=kl["higher_fraction"],
-                higher_continuous_median=kl["higher_continuous_median"],
-                higher_continuous_fragmented_max=kl["higher_continuous_fragmented_max"],
-            ),
+            kl_divergence_comparison=Figure4KlDivergenceComparison(**kl),
             detail_window_comparison=Figure4DetailWindowComparison(
-                n_events=detail["n_events"],
-                hpd_overlap=FlagConfusion(**detail_hpd),
-                predictive_pvalue_higher=detail["predictive_pvalue_higher"],
+                **{
+                    **detail,
+                    "hpd_overlap": FlagConfusion(**detail_hpd),
+                    "predictive_pvalue": FlagConfusion(**detail_pvalue),
+                }
             ),
+            immobility_comparison=Figure4ImmobilityComparison(**immobility),
+            hpd_flagged_nonzero_overlap=payload["hpd_flagged_nonzero_overlap"],
         ),
         cache_provenance=cache_provenance,
     )

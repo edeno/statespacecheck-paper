@@ -179,6 +179,8 @@ def test_figure04_family_dependency_edges_are_acyclic() -> None:
             prefix + "diagnostics",
             prefix + "figure04_diagnostics",
             prefix + "figure04_models",
+            prefix + "figure04_place_fields",
+            prefix + "figure04_protocol",
             prefix + "figure04_workflow",
         },
         "figure04_layout.py": {

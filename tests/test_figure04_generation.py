@@ -26,6 +26,7 @@ from statespacecheck_paper.figure04_protocol import FIGURE04_DETAIL_WINDOW
 from statespacecheck_paper.figure04_summary import (
     Figure4DetailWindowComparison,
     Figure4DiagnosticMeans,
+    Figure4ImmobilityComparison,
     Figure4KlDivergenceComparison,
     Figure4ReportedStatistics,
     Figure4Summary,
@@ -126,11 +127,23 @@ def test_summary_payload_contains_reported_counts_rates_and_provenance(
         neither=77,
     )
     summary = Figure4Summary(means_a, means_b, (confusion,), n_units=7)
-    kl_comparison = Figure4KlDivergenceComparison(0.9, (2.5, 3.5), 0.08, 1.5, 30.0)
+    kl_comparison = Figure4KlDivergenceComparison(0.9, 3.0, 2.0, 0.08, 1.5, 2.5, 30.0)
     detail_comparison = Figure4DetailWindowComparison(
         n_events=50,
         hpd_overlap=FlagConfusion("hpd_overlap", 0.05, 50, 1, 4, 0, 45),
+        predictive_pvalue=FlagConfusion("predictive_pvalue", 0.05, 50, 2, 3, 1, 44),
         predictive_pvalue_higher=30,
+        continuous_kl_median=3.0,
+        continuous_fragmented_kl_median=2.0,
+        median_speed_cm_per_s=0.5,
+        fragmented_share_median=0.05,
+        fragmented_share_peak=0.9,
+        fragmented_share_above_half_samples=12,
+    )
+    immobility_comparison = Figure4ImmobilityComparison(
+        speed_threshold_cm_per_s=4.0,
+        spike_fraction=0.3,
+        flagged_fractions={"hpd_overlap": 0.6},
     )
     cache_provenance = synthetic_cache_provenance("epoch_x")
     source = {
@@ -150,6 +163,8 @@ def test_summary_payload_contains_reported_counts_rates_and_provenance(
                 n_units_with_spikes=5,
                 kl_divergence_comparison=kl_comparison,
                 detail_window_comparison=detail_comparison,
+                immobility_comparison=immobility_comparison,
+                hpd_flagged_nonzero_overlap=2,
             ),
             cache_provenance=cache_provenance,
         ),
@@ -192,9 +207,11 @@ def test_summary_payload_contains_reported_counts_rates_and_provenance(
     }
     assert payload["kl_divergence_comparison"] == {
         "lower_fraction": 0.9,
-        "lower_continuous_quartiles": (2.5, 3.5),
+        "lower_continuous_median": 3.0,
+        "lower_continuous_fragmented_median": 2.0,
         "higher_fraction": 0.08,
         "higher_continuous_median": 1.5,
+        "higher_continuous_fragmented_median": 2.5,
         "higher_continuous_fragmented_max": 30.0,
     }
     assert payload["detail_window_comparison"] == {
@@ -208,8 +225,29 @@ def test_summary_payload_contains_reported_counts_rates_and_provenance(
             "newly_flagged": 0,
             "neither": 45,
         },
+        "predictive_pvalue": {
+            "metric": "predictive_pvalue",
+            "threshold": 0.05,
+            "n": 50,
+            "both": 2,
+            "rescued": 3,
+            "newly_flagged": 1,
+            "neither": 44,
+        },
         "predictive_pvalue_higher": 30,
+        "continuous_kl_median": 3.0,
+        "continuous_fragmented_kl_median": 2.0,
+        "median_speed_cm_per_s": 0.5,
+        "fragmented_share_median": 0.05,
+        "fragmented_share_peak": 0.9,
+        "fragmented_share_above_half_samples": 12,
     }
+    assert payload["immobility_comparison"] == {
+        "speed_threshold_cm_per_s": 4.0,
+        "spike_fraction": 0.3,
+        "flagged_fractions": {"hpd_overlap": 0.6},
+    }
+    assert payload["hpd_flagged_nonzero_overlap"] == 2
     assert provenance["source"] == source
     cache_provenance_payload = provenance["figure04_caches"]
     assert cache_provenance_payload["fingerprint_sha256"] == "c" * 64

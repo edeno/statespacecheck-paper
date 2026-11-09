@@ -32,6 +32,10 @@ FIGURE04_METRIC_DIRECTIONS: dict[str, FlagDirection] = {
     metric: METRIC_FLAG_DIRECTIONS[metric] for metric in FIGURE04_DIAGNOSTIC_THRESHOLDS
 }
 
+# The animal counts as immobile below this head speed (cm/s) when the summary
+# reports where in the session the Continuous model's flags fall.
+FIGURE04_IMMOBILE_SPEED_CM_PER_S = 4.0
+
 
 def _is_integer(value: object) -> bool:
     """Return True for Python and NumPy integers, excluding ``bool`` (an ``int`` subclass).
