@@ -230,8 +230,8 @@ def test_committed_summary_records_the_current_schema_and_package_defaults() -> 
 
 
 def test_committed_summary_states_the_nld_version_it_was_decoded_with() -> None:
-    """The version the manuscript states (the RecNldVersion macro, from the recorded
-    package defaults) is the installed version the decode cache recorded."""
+    """The version the summary's package defaults record is the installed version
+    the decode cache recorded."""
     committed = json.loads((REPO_ROOT / FIGURE04_SUMMARY_PATH).read_text(encoding="utf-8"))
     stated = committed["configuration"]["package_defaults"]["non_local_detector_version"]
     decoded_with = committed["provenance"]["figure04_caches"]["non_local_detector_version"]

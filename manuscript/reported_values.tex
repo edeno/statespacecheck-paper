@@ -4,7 +4,7 @@
 % (except the DOIs, whose comments name their sources):
 %   figures/main/figure03_summary.json (schema 10)
 %   figures/main/figure04_summary.json (schema 15)
-% source_tree_sha256: c08777b63db375f2b2cb960b68e8b3a29aaaf6cff35177e41e63753067146085
+% source_tree_sha256: 7aaeb4315ea77fb8a5714e6dc69f849b750cae4d830cb3df27432d6bba936cda
 %
 % Regenerate with: uv run python scripts/emit_reported_values.py
 
@@ -167,18 +167,17 @@
 \newcommand{\RecDetailPvalueHigher}{448}             % detail_window_comparison.predictive_pvalue_higher
 
 % --- Hippocampal recording (Figure 4) --- recorded configuration
-\newcommand{\RecPositionBinSizeCm}{2}                  % configuration.decoder.position_bin_size_cm
-\newcommand{\RecTimeBinMs}{2}                          % 1 / configuration.decoder.sampling_frequency_hz
-\newcommand{\RecPositionStdVariance}{12.5}             % configuration.decoder.position_std squared
-\newcommand{\RecPositionStdCm}{3.5}                    % configuration.decoder.position_std
-\newcommand{\RecMovementVar}{6.0}                      % configuration.package_defaults.movement_var
-\newcommand{\RecModeContinuousInitial}{0.5}            % configuration.package_defaults.continuous_fragmented_discrete_initial_conditions[0]
-\newcommand{\RecModeFragmentedInitial}{0.5}            % configuration.package_defaults.continuous_fragmented_discrete_initial_conditions[1]
-\newcommand{\RecModeContinuousStay}{0.98}              % configuration.package_defaults.continuous_fragmented_diagonal_values[0]
-\newcommand{\RecModeContinuousToFragmented}{0.02}      % 1 - configuration.package_defaults.continuous_fragmented_diagonal_values[0]
-\newcommand{\RecModeFragmentedToContinuous}{0.02}      % 1 - configuration.package_defaults.continuous_fragmented_diagonal_values[1]
-\newcommand{\RecModeFragmentedStay}{0.98}              % configuration.package_defaults.continuous_fragmented_diagonal_values[1]
-\newcommand{\RecNldVersion}{0.6.10.dev214+g956fdccaf}  % configuration.package_defaults.non_local_detector_version
-\newcommand{\RecHpdCutoff}{0.05}                       % flag_rules.hpd_overlap.threshold
-\newcommand{\RecPredictiveCutoff}{0.05}                % flag_rules.predictive_pvalue.threshold
-\newcommand{\RecPredictiveCutoffNegLog}{3}             % -log(flag_rules.predictive_pvalue.threshold), nearest whole number
+\newcommand{\RecPositionBinSizeCm}{2}              % configuration.decoder.position_bin_size_cm
+\newcommand{\RecTimeBinMs}{2}                      % 1 / configuration.decoder.sampling_frequency_hz
+\newcommand{\RecPositionStdVariance}{12.5}         % configuration.decoder.position_std squared
+\newcommand{\RecPositionStdCm}{3.5}                % configuration.decoder.position_std
+\newcommand{\RecMovementVar}{6.0}                  % configuration.package_defaults.movement_var
+\newcommand{\RecModeContinuousInitial}{0.5}        % configuration.package_defaults.continuous_fragmented_discrete_initial_conditions[0]
+\newcommand{\RecModeFragmentedInitial}{0.5}        % configuration.package_defaults.continuous_fragmented_discrete_initial_conditions[1]
+\newcommand{\RecModeContinuousStay}{0.98}          % configuration.package_defaults.continuous_fragmented_diagonal_values[0]
+\newcommand{\RecModeContinuousToFragmented}{0.02}  % 1 - configuration.package_defaults.continuous_fragmented_diagonal_values[0]
+\newcommand{\RecModeFragmentedToContinuous}{0.02}  % 1 - configuration.package_defaults.continuous_fragmented_diagonal_values[1]
+\newcommand{\RecModeFragmentedStay}{0.98}          % configuration.package_defaults.continuous_fragmented_diagonal_values[1]
+\newcommand{\RecHpdCutoff}{0.05}                   % flag_rules.hpd_overlap.threshold
+\newcommand{\RecPredictiveCutoff}{0.05}            % flag_rules.predictive_pvalue.threshold
+\newcommand{\RecPredictiveCutoffNegLog}{3}         % -log(flag_rules.predictive_pvalue.threshold), nearest whole number

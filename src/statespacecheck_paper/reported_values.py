@@ -835,11 +835,6 @@ def _recording_configuration(payload: dict[str, Any]) -> list[MacroDefinition]:
             "configuration.package_defaults.continuous_fragmented_diagonal_values[1]",
         ),
         MacroDefinition(
-            "RecNldVersion",
-            package_defaults["non_local_detector_version"],
-            "configuration.package_defaults.non_local_detector_version",
-        ),
-        MacroDefinition(
             "RecHpdCutoff",
             _exact(flag_rules["hpd_overlap"]["threshold"], 2),
             "flag_rules.hpd_overlap.threshold",
