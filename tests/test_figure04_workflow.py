@@ -246,11 +246,12 @@ class TestComputeImmobilityComparison:
     THRESHOLDS = {"hpd_overlap": 0.05, "predictive_pvalue": 0.05}
     DIRECTIONS: dict[str, FlagDirection] = {"hpd_overlap": "below", "predictive_pvalue": "below"}
 
-    def test_splits_spikes_and_flags_by_speed(self) -> None:
-        # Samples 0-1 are immobile (< 4 cm/s); spikes at samples 0, 1, 2, 3.
+    def test_compares_the_two_movement_states(self) -> None:
+        # Samples 0-1 are immobile (< 4 cm/s, exclusive); spikes at samples 0, 1, 2, 3.
         speed = np.array([0.5, 3.9, 4.0, 20.0])
         diagnostics = event_diagnostics(
             hpd=np.array([0.0, 0.5, 0.0, 0.0]),
+            kl=np.array([4.0, 2.0, 1.0, 3.0]),
             pvalue=np.array([0.5, 0.01, 0.01, 0.5]),
             time_ind=[0, 1, 2, 3],
         )
@@ -262,22 +263,29 @@ class TestComputeImmobilityComparison:
             metric_directions=self.DIRECTIONS,
         )
         assert comparison.speed_threshold_cm_per_s == 4.0
-        assert comparison.spike_fraction == pytest.approx(0.5)
-        # HPD flags spikes 0, 2, 3 (one immobile); the p-value flags 1 and 2 (one immobile).
-        assert comparison.flagged_fractions == pytest.approx(
-            {"hpd_overlap": 1 / 3, "predictive_pvalue": 0.5}
+        # HPD flags spikes 0, 2, 3; the p-value flags 1 and 2.
+        assert comparison.immobile_flag_rates == pytest.approx(
+            {"hpd_overlap": 0.5, "predictive_pvalue": 0.5}
         )
+        assert comparison.moving_flag_rates == pytest.approx(
+            {"hpd_overlap": 1.0, "predictive_pvalue": 0.5}
+        )
+        assert comparison.immobile_kl_median == pytest.approx(3.0)
+        assert comparison.moving_kl_median == pytest.approx(2.0)
 
     @pytest.mark.parametrize(
-        ("speed", "hpd", "match"),
+        ("speed", "match"),
         [
-            (np.array([np.nan, 1.0]), np.array([0.0, 0.0]), "NaN"),
-            (np.array([1.0, 1.0]), np.array([0.5, 0.5]), "flags no spike events"),
+            (np.array([np.nan, 1.0]), "NaN"),
+            (np.array([1.0, 1.0]), "both below and at or above"),
+            (np.array([5.0, 9.0]), "both below and at or above"),
         ],
-        ids=["nan-speed", "no-flags"],
+        ids=["nan-speed", "all-immobile", "all-moving"],
     )
-    def test_rejects_unusable_input(self, speed: np.ndarray, hpd: np.ndarray, match: str) -> None:
-        diagnostics = event_diagnostics(hpd=hpd, pvalue=np.array([0.01, 0.01]), time_ind=[0, 1])
+    def test_rejects_unusable_input(self, speed: np.ndarray, match: str) -> None:
+        diagnostics = event_diagnostics(
+            hpd=np.array([0.0, 0.0]), pvalue=np.array([0.01, 0.01]), time_ind=[0, 1]
+        )
         with pytest.raises(ValueError, match=match):
             compute_immobility_comparison(
                 diagnostics,
@@ -853,8 +861,7 @@ def test_decoder_prediction_at_a_row_excludes_that_rows_spikes() -> None:
 def test_reported_statistics_come_from_the_render_data() -> None:
     render_data = synthetic_render_data()
     analysis = render_data.analysis_results
-    # Cutoffs every synthetic metric crosses, so each flags some spikes.
-    thresholds = {"hpd_overlap": 0.5, "kl_divergence": 1.0, "predictive_pvalue": 0.5}
+    thresholds = {"hpd_overlap": 0.5, "kl_divergence": 1.0, "predictive_pvalue": 0.05}
     statistics = compute_figure04_reported_statistics(
         render_data, thresholds, METRIC_FLAG_DIRECTIONS, slice(0, render_data.time.size)
     )
@@ -867,7 +874,7 @@ def test_reported_statistics_come_from_the_render_data() -> None:
         == analysis.continuous_diagnostics.event_time_ind.size
     )
     assert 0.0 < statistics.kl_divergence_comparison.lower_fraction < 1.0
-    assert 0.0 <= statistics.immobility_comparison.spike_fraction <= 1.0
+    assert set(statistics.immobility_comparison.moving_flag_rates) == set(METRIC_FLAG_DIRECTIONS)
 
 
 def test_reported_statistics_keep_each_decoder_on_its_own_side() -> None:
@@ -902,8 +909,7 @@ def test_reported_statistics_keep_each_decoder_on_its_own_side() -> None:
             continuous_fragmented_diagnostics=fragmented,
         ),
     )
-    # Every metric flags some spikes, as the immobility comparison requires.
-    thresholds = {"hpd_overlap": 0.5, "kl_divergence": 5.0, "predictive_pvalue": 0.05}
+    thresholds = {"hpd_overlap": 0.5, "kl_divergence": 100.0, "predictive_pvalue": 0.05}
 
     statistics = compute_figure04_reported_statistics(
         render_data, thresholds, METRIC_FLAG_DIRECTIONS, slice(0, n_events)
@@ -932,10 +938,13 @@ def test_reported_statistics_keep_each_decoder_on_its_own_side() -> None:
     assert kl.higher_continuous_fragmented_median == pytest.approx(25.0)
     assert kl.higher_continuous_fragmented_max == pytest.approx(30.0)
 
-    # The six events fall in the synthetic recording's first samples, all below 4 cm/s.
+    # The synthetic animal is immobile at even samples: events 0, 2, 4 and moving at 1, 3, 5.
+    # Continuous flags HPD on events 0-3, so two of three in each state.
     immobility = statistics.immobility_comparison
-    assert immobility.spike_fraction == pytest.approx(1.0)
-    assert immobility.flagged_fractions["hpd_overlap"] == pytest.approx(1.0)
+    assert immobility.immobile_flag_rates["hpd_overlap"] == pytest.approx(2 / 3)
+    assert immobility.moving_flag_rates["hpd_overlap"] == pytest.approx(2 / 3)
+    assert immobility.immobile_kl_median == pytest.approx(7.0)
+    assert immobility.moving_kl_median == pytest.approx(6.0)
     # The Continuous model flags events 0-3, whose overlaps are all nonzero.
     assert statistics.hpd_flagged_nonzero_overlap == 4
 

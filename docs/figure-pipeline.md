@@ -116,7 +116,7 @@ field it came from. See [From summary to prose](#from-summary-to-prose-the-repor
 | Position and decoding error, Figure 3 | “a.u.”; summary `error_units: position_units` | the simulated track is in arbitrary position units (axis label “Position (a.u.)”); Figure 4 positions are in cm |
 | Rescued percentage (Figure 4) | `FlagConfusion.rescued_fraction`; summary `flag_confusions[].rescued_fraction` | fraction (0–1) of the spikes the Continuous model flags that the Continuous–Fragmented model does not; the prose prints it as a whole percent (`\RecHpdRescuedPercent`, `\RecPvalueRescuedPercent`) |
 | Detail-window comparison (Figure 4) | `figure04_summary.Figure4DetailWindowComparison`; summary `detail_window_comparison` | exact counts for the spike events in the Figure-4a,b window (`\RecDetailHpdFlaggedContinuous`, `\RecDetailPvalueHigher`, …), and the window's median speed, KL divergence, and Fragmented-mode share to two significant figures (`\RecDetailMedianSpeed`, `\RecDetailFragmentedSharePeak`, …) |
-| Immobility comparison (Figure 4) | `figure04_summary.Figure4ImmobilityComparison`; summary `immobility_comparison` | the fractions (0–1) of all spikes and of the Continuous model's flagged spikes that fall while the animal is below `figure04_protocol.FIGURE04_IMMOBILE_SPEED_CM_PER_S`; the prose prints them as whole percents (`\RecSpikesImmobilePercent`, `\RecHpdFlaggedImmobilePercent`, …) |
+| Immobility comparison (Figure 4) | `figure04_summary.Figure4ImmobilityComparison`; summary `immobility_comparison` | the Continuous model's flag rates (fractions, 0–1) and median KL divergence for spikes while the animal is below `figure04_protocol.FIGURE04_IMMOBILE_SPEED_CM_PER_S` and while it moves; the prose prints the rates as flag rates and the medians to two significant figures (`\RecHpdFlagRateImmobile`, `\RecKlMedianMoving`, …) |
 | KL comparison (Figure 4) | `figure04_summary.Figure4KlDivergenceComparison`; summary `kl_divergence_comparison` | the two sides of the identity line in the Figure-4c KL panel; the prose prints the fractions as whole percents and the KL values to two significant figures (`\RecKlLowerPercent`, `\RecKlHigherFragmentedMax`, …) |
 | Rank-based predictive $p$-value | `statespacecheck.mark_predictive_pvalue` (called by `event_diagnostics`) | `statespacecheck` also exports `predictive_pvalue`, a Monte Carlo check for a user-supplied replicate generator, which the paper does not use |
 | Summary source digest | `provenance.source.source_tree_sha256` | SHA-256 of every `.py` file under `src/statespacecheck_paper`, comments and docstrings included: any source edit changes it, so both summaries' `provenance.source` are refreshed together |
@@ -645,7 +645,7 @@ manual overrides: bumping one invalidates every cache of that kind.
 
 `figure03_summary.json` uses schema version 10
 (`figure03_generation.FIGURE03_SUMMARY_SCHEMA_VERSION`) and `figure04_summary.json`
-uses schema version 17 (`figure04_generation.FIGURE04_SUMMARY_SCHEMA_VERSION`). The
+uses schema version 18 (`figure04_generation.FIGURE04_SUMMARY_SCHEMA_VERSION`). The
 Figure-3 configuration block records every
 `Figure3Config` field together with the step length in seconds
 (`configuration.step_seconds`, the protocol constant `STEP_SECONDS`) and the
@@ -702,8 +702,9 @@ peak, and number of samples above `fragmented_probability_threshold`
 (`figure04_protocol.FIGURE04_FRAGMENTED_PROBABILITY_THRESHOLD`) of the share of
 the Continuous–Fragmented prediction assigned to the Fragmented mode
 (`fragmented_share_*`). `immobility_comparison` records the speed below which
-the animal counts as immobile and the fractions of all spikes and of each
-metric's Continuous-model flags that fall below it; `hpd_flagged_nonzero_overlap`
+the animal counts as immobile and, for the Continuous model's spikes in each
+movement state, each metric's flag rate and the median KL divergence;
+`hpd_flagged_nonzero_overlap`
 counts the Continuous model's HPD-overlap flags whose overlap is not exactly
 zero. P-values within 1e-09
 (`figure04_summary.FIGURE04_PVALUE_TIE_TOLERANCE`) count as ties: they differ by

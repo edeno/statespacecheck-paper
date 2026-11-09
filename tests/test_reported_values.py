@@ -387,17 +387,29 @@ _SUMMARY_FIELD_MACROS: dict[str, tuple[_SummaryEdit, set[str]]] = {
         _set_figure04(("immobility_comparison", "speed_threshold_cm_per_s"), 7.0),
         {"RecImmobileSpeed"},
     ),
-    "immobile_spike_fraction": (
-        _set_figure04(("immobility_comparison", "spike_fraction"), 0.37),
-        {"RecSpikesImmobilePercent"},
+    "immobile_hpd_rate": (
+        _set_figure04(("immobility_comparison", "immobile_flag_rates", "hpd_overlap"), 0.37),
+        {"RecHpdFlagRateImmobile"},
     ),
-    "immobile_hpd_fraction": (
-        _set_figure04(("immobility_comparison", "flagged_fractions", "hpd_overlap"), 0.37),
-        {"RecHpdFlaggedImmobilePercent"},
+    "moving_hpd_rate": (
+        _set_figure04(("immobility_comparison", "moving_flag_rates", "hpd_overlap"), 0.37),
+        {"RecHpdFlagRateMoving"},
     ),
-    "immobile_pvalue_fraction": (
-        _set_figure04(("immobility_comparison", "flagged_fractions", "predictive_pvalue"), 0.37),
-        {"RecPvalueFlaggedImmobilePercent"},
+    "immobile_pvalue_rate": (
+        _set_figure04(("immobility_comparison", "immobile_flag_rates", "predictive_pvalue"), 0.37),
+        {"RecPvalueFlagRateImmobile"},
+    ),
+    "moving_pvalue_rate": (
+        _set_figure04(("immobility_comparison", "moving_flag_rates", "predictive_pvalue"), 0.37),
+        {"RecPvalueFlagRateMoving"},
+    ),
+    "immobile_kl_median": (
+        _set_figure04(("immobility_comparison", "immobile_kl_median"), 0.37),
+        {"RecKlMedianImmobile"},
+    ),
+    "moving_kl_median": (
+        _set_figure04(("immobility_comparison", "moving_kl_median"), 0.37),
+        {"RecKlMedianMoving"},
     ),
     "hpd_flagged_nonzero_overlap": (
         _set_figure04(("hpd_flagged_nonzero_overlap",), 1_234),

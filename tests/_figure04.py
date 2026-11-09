@@ -82,7 +82,8 @@ def _synthetic_recording() -> NeuralRecordingData:
             "head_position_x": np.linspace(0.0, 100.0, _N_TIME),
             "head_position_y": np.zeros(_N_TIME),
             "linear_position": np.linspace(0.0, 100.0, _N_TIME),
-            "head_speed": np.linspace(0.0, 20.0, _N_TIME),
+            # Immobile (0 cm/s) at even samples and moving (10 cm/s) at odd ones.
+            "head_speed": np.tile([0.0, 10.0], _N_TIME // 2),
         },
         index=np.arange(_N_TIME, dtype=float),
     )

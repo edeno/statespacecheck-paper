@@ -268,11 +268,16 @@ def test_figure04_reported_statistics_counts_partition_events(tmp_path: Path) ->
     # Where the Continuous model's flags fall, by the animal's speed.
     immobility = payload["immobility_comparison"]
     assert immobility["speed_threshold_cm_per_s"] == 4.0
-    assert immobility["spike_fraction"] == pytest.approx(0.2968766163458687)
-    assert immobility["flagged_fractions"] == pytest.approx(
-        {"hpd_overlap": 0.6056412985630655, "predictive_pvalue": 0.31201036696707307}
+    assert immobility["immobile_flag_rates"] == pytest.approx(
+        {"hpd_overlap": 0.04405934460756984, "predictive_pvalue": 0.04101622994486775}
     )
-    assert set(immobility["flagged_fractions"]) == set(payload["flag_rules"])
+    assert immobility["moving_flag_rates"] == pytest.approx(
+        {"hpd_overlap": 0.012113187190427149, "predictive_pvalue": 0.03818678175011852}
+    )
+    assert immobility["immobile_kl_median"] == pytest.approx(3.450935528770409)
+    assert immobility["moving_kl_median"] == pytest.approx(2.902935118280253)
+    assert set(immobility["immobile_flag_rates"]) == set(payload["flag_rules"])
+    assert set(immobility["moving_flag_rates"]) == set(payload["flag_rules"])
     hpd_confusion = next(c for c in payload["flag_confusions"] if c["metric"] == "hpd_overlap")
     assert payload["hpd_flagged_nonzero_overlap"] == 61
     assert (

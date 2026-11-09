@@ -19,8 +19,7 @@ reported per metric and window as the median across realizations with its
 interquartile range; flag percentages whose median is 10% or more, and their
 quartiles, are given to the nearest whole percent, and smaller ones to one
 decimal place so that the spread of the low flag rates stays visible. Figure-4 flag
-rates follow the same rule; the shares of spikes and flags that fall while the
-animal is immobile are given to the nearest whole percent. Exact counts and
+rates follow the same rule. Exact counts and
 configured parameters are reported without approximation. Machine-readable
 summaries retain full numerical precision.
 
@@ -704,11 +703,18 @@ def _recording_statistics(payload: dict[str, Any]) -> list[MacroDefinition]:
                     f"flag_confusions[{metric}]: (both + newly_flagged) / n",
                 ),
                 MacroDefinition(
-                    f"{prefix}FlaggedImmobilePercent",
-                    whole_percent(
-                        100.0 * payload["immobility_comparison"]["flagged_fractions"][metric]
+                    f"{prefix}FlagRateImmobile",
+                    _flag_rate_percent(
+                        100.0 * payload["immobility_comparison"]["immobile_flag_rates"][metric]
                     ),
-                    f"immobility_comparison.flagged_fractions[{metric}]",
+                    f"immobility_comparison.immobile_flag_rates[{metric}]",
+                ),
+                MacroDefinition(
+                    f"{prefix}FlagRateMoving",
+                    _flag_rate_percent(
+                        100.0 * payload["immobility_comparison"]["moving_flag_rates"][metric]
+                    ),
+                    f"immobility_comparison.moving_flag_rates[{metric}]",
                 ),
                 MacroDefinition(
                     f"{prefix}Rescued",
@@ -736,9 +742,14 @@ def _recording_statistics(payload: dict[str, Any]) -> list[MacroDefinition]:
                 "immobility_comparison.speed_threshold_cm_per_s",
             ),
             MacroDefinition(
-                "RecSpikesImmobilePercent",
-                whole_percent(100.0 * immobility["spike_fraction"]),
-                "immobility_comparison.spike_fraction",
+                "RecKlMedianImmobile",
+                significant(immobility["immobile_kl_median"], SIGNIFICANT_FIGURES),
+                "immobility_comparison.immobile_kl_median",
+            ),
+            MacroDefinition(
+                "RecKlMedianMoving",
+                significant(immobility["moving_kl_median"], SIGNIFICANT_FIGURES),
+                "immobility_comparison.moving_kl_median",
             ),
             MacroDefinition(
                 "RecHpdFlaggedNonzero",

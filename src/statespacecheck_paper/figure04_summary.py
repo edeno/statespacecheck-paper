@@ -1,9 +1,9 @@
 """Figure-4 manuscript scalars from the two decoders' per-spike diagnostics.
 
 Whole-session event means, the two-decoder flag agreement, the two-decoder
-KL-divergence comparison, the detail-window comparison, where the Continuous
-decoder's flags fall by the animal's speed, and how many HPD-overlap flags have
-nonzero overlap, plus the command-line formatting. Kept apart from
+KL-divergence comparison, the detail-window comparison, the Continuous decoder's
+flag rates and KL divergence during immobility and movement, and how many
+HPD-overlap flags have nonzero overlap, plus the command-line formatting. Kept apart from
 :mod:`figure04_workflow` so that editing a summary or its printed text does not
 change the decode cache's source fingerprint and refit the models.
 """
@@ -336,22 +336,24 @@ def predictive_state_share(
 
 @dataclasses.dataclass(frozen=True)
 class Figure4ImmobilityComparison:
-    """Where in the session the Continuous decoder's flags fall, by the animal's speed.
+    """One decoder's per-spike diagnostics while the animal is immobile and while it moves.
 
     Attributes
     ----------
     speed_threshold_cm_per_s : float
         The animal counts as immobile below this head speed.
-    spike_fraction : float
-        Fraction of all spike events that occur while the animal is immobile.
-    flagged_fractions : dict of str to float
-        Per thresholded metric, the fraction of the spikes it flags under the
-        Continuous decoder that occur while the animal is immobile.
+    immobile_flag_rates, moving_flag_rates : dict of str to float
+        Per thresholded metric, the fraction (0-1) of the spikes in each
+        movement state that the metric flags.
+    immobile_kl_median, moving_kl_median : float
+        Median KL divergence of the spikes in each movement state.
     """
 
     speed_threshold_cm_per_s: float
-    spike_fraction: float
-    flagged_fractions: dict[str, float]
+    immobile_flag_rates: dict[str, float]
+    moving_flag_rates: dict[str, float]
+    immobile_kl_median: float
+    moving_kl_median: float
 
 
 def compute_immobility_comparison(
@@ -362,7 +364,7 @@ def compute_immobility_comparison(
     thresholds: Mapping[str, float],
     metric_directions: Mapping[str, FlagDirection],
 ) -> Figure4ImmobilityComparison:
-    """Compare where one decoder's flags fall with where its spikes fall, by speed.
+    """Compare one decoder's diagnostics between immobility and movement.
 
     Parameters
     ----------
@@ -379,30 +381,38 @@ def compute_immobility_comparison(
     Returns
     -------
     Figure4ImmobilityComparison
-        The immobile fraction of all spikes and of each metric's flagged spikes.
+        Each metric's flag rate and the median KL divergence in each movement state.
 
     Raises
     ------
     ValueError
-        If there are no spike events, the speed contains NaN at a spike, or a
-        metric flags no spikes.
+        If the speed contains NaN at a spike, or either movement state has no
+        spike events.
     """
     event_speed = np.asarray(speed_cm_per_s, dtype=np.float64)[diagnostics.event_time_ind]
-    if event_speed.size == 0:
-        raise ValueError("Cannot compare immobility: no spike events are present")
     if np.isnan(event_speed).any():
         raise ValueError("The animal's speed is NaN at some spike events")
     immobile = event_speed < speed_threshold_cm_per_s
-    flagged_fractions = {}
-    for metric, worse_when in metric_directions.items():
-        flagged = flag_mask(getattr(diagnostics, f"event_{metric}"), thresholds[metric], worse_when)
-        if not flagged.any():
-            raise ValueError(f"{metric} flags no spike events")
-        flagged_fractions[metric] = float(immobile[flagged].mean())
+    if immobile.all() or not immobile.any():
+        raise ValueError(
+            "Comparing movement states needs spike events both below and at or above "
+            f"{speed_threshold_cm_per_s} cm/s; got {int(immobile.sum())} of {immobile.size} below"
+        )
+    flagged = {
+        metric: flag_mask(getattr(diagnostics, f"event_{metric}"), thresholds[metric], worse_when)
+        for metric, worse_when in metric_directions.items()
+    }
+    kl = np.asarray(diagnostics.event_kl_divergence, dtype=np.float64)
     return Figure4ImmobilityComparison(
         speed_threshold_cm_per_s=float(speed_threshold_cm_per_s),
-        spike_fraction=float(immobile.mean()),
-        flagged_fractions=flagged_fractions,
+        immobile_flag_rates={
+            metric: float(mask[immobile].mean()) for metric, mask in flagged.items()
+        },
+        moving_flag_rates={
+            metric: float(mask[~immobile].mean()) for metric, mask in flagged.items()
+        },
+        immobile_kl_median=float(np.median(kl[immobile])),
+        moving_kl_median=float(np.median(kl[~immobile])),
     )
 
 
@@ -453,7 +463,8 @@ class Figure4ReportedStatistics:
     detail_window_comparison : Figure4DetailWindowComparison
         The two decoders' spike events in the Figure-4a,b detail window.
     immobility_comparison : Figure4ImmobilityComparison
-        Where the Continuous decoder's flags fall by the animal's speed.
+        The Continuous decoder's flag rates and KL divergence while the animal
+        is immobile and while it moves.
     hpd_flagged_nonzero_overlap : int
         Spikes HPD overlap flags under the Continuous decoder whose overlap is
         not exactly zero.

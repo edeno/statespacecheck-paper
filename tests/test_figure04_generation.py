@@ -143,8 +143,10 @@ def test_summary_payload_contains_reported_counts_rates_and_provenance(
     )
     immobility_comparison = Figure4ImmobilityComparison(
         speed_threshold_cm_per_s=4.0,
-        spike_fraction=0.3,
-        flagged_fractions={"hpd_overlap": 0.6},
+        immobile_flag_rates={"hpd_overlap": 0.04},
+        moving_flag_rates={"hpd_overlap": 0.01},
+        immobile_kl_median=3.5,
+        moving_kl_median=2.9,
     )
     cache_provenance = synthetic_cache_provenance("epoch_x")
     source = {
@@ -246,8 +248,10 @@ def test_summary_payload_contains_reported_counts_rates_and_provenance(
     }
     assert payload["immobility_comparison"] == {
         "speed_threshold_cm_per_s": 4.0,
-        "spike_fraction": 0.3,
-        "flagged_fractions": {"hpd_overlap": 0.6},
+        "immobile_flag_rates": {"hpd_overlap": 0.04},
+        "moving_flag_rates": {"hpd_overlap": 0.01},
+        "immobile_kl_median": 3.5,
+        "moving_kl_median": 2.9,
     }
     assert payload["hpd_flagged_nonzero_overlap"] == 2
     assert provenance["source"] == source
