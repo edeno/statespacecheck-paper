@@ -849,14 +849,19 @@ def _recording_statistics(payload: dict[str, Any]) -> list[MacroDefinition]:
                 "detail_window_comparison.fragmented_share_peak",
             ),
             MacroDefinition(
-                "RecDetailFragmentedAboveHalfMs",
+                "RecFragmentedThreshold",
+                _exact(detail["fragmented_probability_threshold"], 1),
+                "detail_window_comparison.fragmented_probability_threshold",
+            ),
+            MacroDefinition(
+                "RecDetailFragmentedAboveThresholdMs",
                 significant(
-                    detail["fragmented_share_above_half_samples"]
+                    detail["fragmented_share_above_threshold_samples"]
                     * seconds_per_sample
                     * _MS_PER_SECOND,
                     SIGNIFICANT_FIGURES,
                 ),
-                "detail_window_comparison.fragmented_share_above_half_samples, in ms",
+                "detail_window_comparison.fragmented_share_above_threshold_samples, in ms",
             ),
             MacroDefinition(
                 "RecDetailPvalueHigher",

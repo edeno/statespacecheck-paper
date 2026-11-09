@@ -645,7 +645,7 @@ manual overrides: bumping one invalidates every cache of that kind.
 
 `figure03_summary.json` uses schema version 10
 (`figure03_generation.FIGURE03_SUMMARY_SCHEMA_VERSION`) and `figure04_summary.json`
-uses schema version 16 (`figure04_generation.FIGURE04_SUMMARY_SCHEMA_VERSION`). The
+uses schema version 17 (`figure04_generation.FIGURE04_SUMMARY_SCHEMA_VERSION`). The
 Figure-3 configuration block records every
 `Figure3Config` field together with the step length in seconds
 (`configuration.step_seconds`, the protocol constant `STEP_SECONDS`) and the
@@ -698,8 +698,9 @@ predictive p-value flag agreement (`hpd_overlap`, `predictive_pvalue`, counted
 as in `flag_confusions`), how many have a higher predictive p-value under
 Continuous–Fragmented (`predictive_pvalue_higher`), their median KL divergence
 under each decoder, the animal's median speed over the window, and the median,
-peak, and number of samples above one half of the share of the
-Continuous–Fragmented prediction assigned to the Fragmented mode
+peak, and number of samples above `fragmented_probability_threshold`
+(`figure04_protocol.FIGURE04_FRAGMENTED_PROBABILITY_THRESHOLD`) of the share of
+the Continuous–Fragmented prediction assigned to the Fragmented mode
 (`fragmented_share_*`). `immobility_comparison` records the speed below which
 the animal counts as immobile and the fractions of all spikes and of each
 metric's Continuous-model flags that fall below it; `hpd_flagged_nonzero_overlap`

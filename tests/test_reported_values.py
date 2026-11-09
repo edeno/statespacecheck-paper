@@ -487,9 +487,15 @@ _SUMMARY_FIELD_MACROS: dict[str, tuple[_SummaryEdit, set[str]]] = {
         _set_figure04(("detail_window_comparison", "fragmented_share_peak"), 0.37),
         {"RecDetailFragmentedSharePeak"},
     ),
-    "detail_fragmented_above_half": (
-        _set_figure04(("detail_window_comparison", "fragmented_share_above_half_samples"), 1_234),
-        {"RecDetailFragmentedAboveHalfMs"},
+    "detail_fragmented_threshold": (
+        _set_figure04(("detail_window_comparison", "fragmented_probability_threshold"), 0.7),
+        {"RecFragmentedThreshold"},
+    ),
+    "detail_fragmented_above_threshold": (
+        _set_figure04(
+            ("detail_window_comparison", "fragmented_share_above_threshold_samples"), 1_234
+        ),
+        {"RecDetailFragmentedAboveThresholdMs"},
     ),
 }
 

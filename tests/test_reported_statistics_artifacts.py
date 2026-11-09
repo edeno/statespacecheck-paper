@@ -249,7 +249,8 @@ def test_figure04_reported_statistics_counts_partition_events(tmp_path: Path) ->
             "median_speed_cm_per_s",
             "fragmented_share_median",
             "fragmented_share_peak",
-            "fragmented_share_above_half_samples",
+            "fragmented_probability_threshold",
+            "fragmented_share_above_threshold_samples",
         )
     }
     assert detail_scalars == pytest.approx(
@@ -259,7 +260,8 @@ def test_figure04_reported_statistics_counts_partition_events(tmp_path: Path) ->
             "median_speed_cm_per_s": 0.8620317664898807,
             "fragmented_share_median": 0.047147804871201515,
             "fragmented_share_peak": 0.9595553874969482,
-            "fragmented_share_above_half_samples": 63,
+            "fragmented_probability_threshold": 0.8,
+            "fragmented_share_above_threshold_samples": 27,
         }
     )
     assert 0.0 <= detail["fragmented_share_median"] <= detail["fragmented_share_peak"] <= 1.0

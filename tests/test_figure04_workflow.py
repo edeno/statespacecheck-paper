@@ -154,6 +154,7 @@ class TestComputeDetailWindowComparison:
             fragmented_share=(
                 np.full(time_slice.stop - time_slice.start, 0.1) if share is None else share
             ),
+            fragmented_probability_threshold=0.8,
         )
 
     def test_counts_only_events_inside_the_window(self) -> None:
@@ -186,7 +187,9 @@ class TestComputeDetailWindowComparison:
         assert comparison.median_speed_cm_per_s == pytest.approx(3.5)
         assert comparison.fragmented_share_median == pytest.approx(0.3)
         assert comparison.fragmented_share_peak == pytest.approx(0.9)
-        assert comparison.fragmented_share_above_half_samples == 2
+        # Only the 0.9 sample exceeds the 0.8 threshold.
+        assert comparison.fragmented_probability_threshold == 0.8
+        assert comparison.fragmented_share_above_threshold_samples == 1
 
     def test_rejects_a_share_that_does_not_cover_the_window(self) -> None:
         diagnostics = event_diagnostics(hpd=np.array([0.5]), time_ind=[3])

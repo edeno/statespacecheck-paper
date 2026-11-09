@@ -36,6 +36,11 @@ FIGURE04_METRIC_DIRECTIONS: dict[str, FlagDirection] = {
 # reports where in the session the Continuous model's flags fall.
 FIGURE04_IMMOBILE_SPEED_CM_PER_S = 4.0
 
+# The summary reports how long, in the detail window, the Continuous-Fragmented
+# decoder's predicted probability of its Fragmented mode exceeds this value,
+# the probability threshold used to classify decoded dynamics in earlier work.
+FIGURE04_FRAGMENTED_PROBABILITY_THRESHOLD = 0.8
+
 
 def _is_integer(value: object) -> bool:
     """Return True for Python and NumPy integers, excluding ``bool`` (an ``int`` subclass).

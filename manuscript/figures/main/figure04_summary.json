@@ -65,7 +65,8 @@
   "detail_window_comparison": {
     "continuous_fragmented_kl_median": 2.2300206560951934,
     "continuous_kl_median": 3.2090136426793574,
-    "fragmented_share_above_half_samples": 63,
+    "fragmented_probability_threshold": 0.8,
+    "fragmented_share_above_threshold_samples": 27,
     "fragmented_share_median": 0.047147804871201515,
     "fragmented_share_peak": 0.9595553874969482,
     "hpd_overlap": {
@@ -236,11 +237,11 @@
       "statespacecheck_version": "0.3.1"
     },
     "source": {
-      "source_tree_sha256": "3a3491d6da0153f4258b5c300b84df5b58514c7260df50a0fe2c993ad5406db4",
+      "source_tree_sha256": "0befbed680a8bd348541f1d80e8374c42c0b274923146fe8c9a6a8ef7e661980",
       "statespacecheck_paper_version": "0.1.0",
       "statespacecheck_version": "0.3.1",
       "uv_lock_sha256": "280ef8920b3302f206621349c0733c017b8a329e3d85c789b21bf6350c093fe2"
     }
   },
-  "schema_version": 16
+  "schema_version": 17
 }

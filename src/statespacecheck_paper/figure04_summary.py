@@ -26,7 +26,10 @@ from statespacecheck_paper.diagnostics import (
 from statespacecheck_paper.figure04_diagnostics import FlagConfusion, compute_flag_confusion
 from statespacecheck_paper.figure04_models import CONTINUOUS, CONTINUOUS_FRAGMENTED
 from statespacecheck_paper.figure04_place_fields import DECODER_PREDICTIVE_VAR
-from statespacecheck_paper.figure04_protocol import FIGURE04_IMMOBILE_SPEED_CM_PER_S
+from statespacecheck_paper.figure04_protocol import (
+    FIGURE04_FRAGMENTED_PROBABILITY_THRESHOLD,
+    FIGURE04_IMMOBILE_SPEED_CM_PER_S,
+)
 from statespacecheck_paper.figure04_workflow import Figure4RenderData
 
 # The Continuous-Fragmented decoder's jump mode, as non_local_detector names it.
@@ -187,8 +190,10 @@ class Figure4DetailWindowComparison:
     fragmented_share_median, fragmented_share_peak : float
         Median and largest share of the Continuous-Fragmented one-step prediction
         assigned to the Fragmented mode over the window's time samples.
-    fragmented_share_above_half_samples : int
-        Time samples in the window at which that share exceeds one half.
+    fragmented_probability_threshold : float
+        Threshold on that share.
+    fragmented_share_above_threshold_samples : int
+        Time samples in the window at which that share exceeds the threshold.
     """
 
     n_events: int
@@ -200,7 +205,8 @@ class Figure4DetailWindowComparison:
     median_speed_cm_per_s: float
     fragmented_share_median: float
     fragmented_share_peak: float
-    fragmented_share_above_half_samples: int
+    fragmented_probability_threshold: float
+    fragmented_share_above_threshold_samples: int
 
 
 def compute_detail_window_comparison(
@@ -212,6 +218,7 @@ def compute_detail_window_comparison(
     metric_directions: Mapping[str, FlagDirection],
     speed_cm_per_s: NDArray[np.floating],
     fragmented_share: NDArray[np.floating],
+    fragmented_probability_threshold: float,
 ) -> Figure4DetailWindowComparison:
     """Compare the two decoders' per-spike diagnostics within the detail window.
 
@@ -233,6 +240,8 @@ def compute_detail_window_comparison(
         Share of the Continuous-Fragmented one-step prediction assigned to the
         Fragmented mode at each time sample of the window, from
         :func:`predictive_state_share`.
+    fragmented_probability_threshold : float
+        Share above which the window's time is counted.
 
     Returns
     -------
@@ -286,7 +295,10 @@ def compute_detail_window_comparison(
         median_speed_cm_per_s=float(np.median(np.asarray(speed_cm_per_s)[time_slice])),
         fragmented_share_median=float(np.median(share)),
         fragmented_share_peak=float(np.max(share)),
-        fragmented_share_above_half_samples=int(np.sum(share > 0.5)),
+        fragmented_probability_threshold=float(fragmented_probability_threshold),
+        fragmented_share_above_threshold_samples=int(
+            np.sum(share > fragmented_probability_threshold)
+        ),
     )
 
 
@@ -512,6 +524,7 @@ def compute_figure04_reported_statistics(
             fragmented_share=predictive_state_share(
                 analysis.continuous_fragmented_results, FRAGMENTED_STATE, detail_slice
             ),
+            fragmented_probability_threshold=FIGURE04_FRAGMENTED_PROBABILITY_THRESHOLD,
         ),
         immobility_comparison=compute_immobility_comparison(
             continuous,

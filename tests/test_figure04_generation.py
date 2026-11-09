@@ -138,7 +138,8 @@ def test_summary_payload_contains_reported_counts_rates_and_provenance(
         median_speed_cm_per_s=0.5,
         fragmented_share_median=0.05,
         fragmented_share_peak=0.9,
-        fragmented_share_above_half_samples=12,
+        fragmented_probability_threshold=0.8,
+        fragmented_share_above_threshold_samples=12,
     )
     immobility_comparison = Figure4ImmobilityComparison(
         speed_threshold_cm_per_s=4.0,
@@ -240,7 +241,8 @@ def test_summary_payload_contains_reported_counts_rates_and_provenance(
         "median_speed_cm_per_s": 0.5,
         "fragmented_share_median": 0.05,
         "fragmented_share_peak": 0.9,
-        "fragmented_share_above_half_samples": 12,
+        "fragmented_probability_threshold": 0.8,
+        "fragmented_share_above_threshold_samples": 12,
     }
     assert payload["immobility_comparison"] == {
         "speed_threshold_cm_per_s": 4.0,
