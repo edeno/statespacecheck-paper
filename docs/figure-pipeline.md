@@ -678,7 +678,7 @@ each model's position initial conditions and position transitions per mode
 as `non_local_detector` class names (`UniformInitialConditions`; `RandomWalk`
 for Continuous to Continuous and `Uniform` otherwise), its mode initial
 conditions, the Continuous–Fragmented mode-transition class and diagonal, and
-the package version the manuscript states (`\RecNldVersion`). The decode
+the `non_local_detector` version it was decoded with. The decode
 refuses to run unless that version is the installed one, which
 `provenance.figure04_caches.non_local_detector_version` records, and a test
 checks that the committed summary's two values agree. Each `flag_confusions` entry counts
