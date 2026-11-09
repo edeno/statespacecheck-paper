@@ -333,7 +333,7 @@ The predictive $p$-value rescued fewer spikes, and its flag rate fell only from 
 
 KL divergence fell under the Continuous--Fragmented model for \RecKlLowerPercent\% of spikes (median \RecKlLowerMedianContinuous{} to \RecKlLowerMedianFragmented), in line with the other two metrics. For the remaining \RecKlHigherPercent\%, which started low (median \RecKlHigherContinuousMedian), KL divergence rose, usually modestly (median \RecKlHigherFragmentedMedian), although a few values reached \RecKlHigherFragmentedMax.
 
-The diagnostics thus located the moments when the Continuous model's prediction was inconsistent with the spikes, and adding a Fragmented mode removed most of these inconsistencies, identifying jumps in the hippocampal representation as the structure the Continuous model lacked.
+Together, these results show that the diagnostics can guide a modeling decision on real data. The Continuous model's HPD-overlap flags were concentrated where a random walk is expected to fail, during immobility, when the hippocampal representation can jump, and adding a mode that allows such jumps removed most of them while creating few new ones. The other two metrics agreed that the Continuous--Fragmented model fit these spikes better: the predictive $p$-value more weakly, and KL divergence for most but not all spikes.
 
 \section*{Discussion}\label{sec:discussion}
 
