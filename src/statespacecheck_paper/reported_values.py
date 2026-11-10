@@ -657,8 +657,17 @@ def _simulation_configuration(payload: dict[str, Any]) -> list[MacroDefinition]:
 _RECORDING_FLAG_MACRO_PREFIXES = {"hpd_overlap": "RecHpd", "predictive_pvalue": "RecPvalue"}
 
 
-def _flag_rate_percent(value: float) -> str:
-    """Render a Figure-4 flag rate: whole percents from WHOLE_PERCENT_FROM, else one decimal."""
+def flag_rate_percent(value: float) -> str:
+    """Render a flag rate: whole percents from WHOLE_PERCENT_FROM, else one decimal.
+
+    The rule for the Figure-4 flag rates and for a Figure-3 median flag
+    percentage; the website's condition player prints its medians with it.
+
+    Examples
+    --------
+    >>> flag_rate_percent(36.77115625352582), flag_rate_percent(1.7586596328949538)
+    ('37', '1.8')
+    """
     return whole_percent(value) if value >= WHOLE_PERCENT_FROM else one_decimal_percent(value)
 
 
@@ -699,24 +708,24 @@ def _recording_statistics(payload: dict[str, Any]) -> list[MacroDefinition]:
                 ),
                 MacroDefinition(
                     f"{prefix}FlagRateContinuous",
-                    _flag_rate_percent(100.0 * flagged_continuous / confusion["n"]),
+                    flag_rate_percent(100.0 * flagged_continuous / confusion["n"]),
                     f"flag_confusions[{metric}]: (rescued + both) / n",
                 ),
                 MacroDefinition(
                     f"{prefix}FlagRateFragmented",
-                    _flag_rate_percent(100.0 * flagged_fragmented / confusion["n"]),
+                    flag_rate_percent(100.0 * flagged_fragmented / confusion["n"]),
                     f"flag_confusions[{metric}]: (both + newly_flagged) / n",
                 ),
                 MacroDefinition(
                     f"{prefix}FlagRateImmobile",
-                    _flag_rate_percent(
+                    flag_rate_percent(
                         100.0 * payload["immobility_comparison"]["immobile_flag_rates"][metric]
                     ),
                     f"immobility_comparison.immobile_flag_rates[{metric}]",
                 ),
                 MacroDefinition(
                     f"{prefix}FlagRateMoving",
-                    _flag_rate_percent(
+                    flag_rate_percent(
                         100.0 * payload["immobility_comparison"]["moving_flag_rates"][metric]
                     ),
                     f"immobility_comparison.moving_flag_rates[{metric}]",

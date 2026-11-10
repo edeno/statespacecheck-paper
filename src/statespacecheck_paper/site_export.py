@@ -71,7 +71,7 @@ from statespacecheck_paper.figure04_models import CONTINUOUS, CONTINUOUS_FRAGMEN
 from statespacecheck_paper.figure04_place_fields import marginal_position_distribution
 from statespacecheck_paper.figure04_protocol import FIGURE04_DETAIL_WINDOW, Figure4DetailWindow
 from statespacecheck_paper.figure04_workflow import Figure4RenderData, prepare_figure04_render_data
-from statespacecheck_paper.number_format import SIGNIFICANT_FIGURES, significant, whole_percent
+from statespacecheck_paper.number_format import SIGNIFICANT_FIGURES, significant
 from statespacecheck_paper.paths import (
     ANIMAL_DATE_EPOCH,
     DATA_PATH,
@@ -84,6 +84,7 @@ from statespacecheck_paper.reported_values import (
     cardinal_word,
     decoding_error,
     flag_percentage,
+    flag_rate_percent,
     load_summary,
     macro_sections,
 )
@@ -879,10 +880,10 @@ def condition_payloads(
                 **_event_payload(diagnostics, in_window, flag_rules),
             },
             "likelihood_rows": encode_display_rows(likelihood_rows),
-            # Formatted with the manuscript's rounding policy.
+            # Formatted as the manuscript's macros print them.
             "summary": {
                 "median_flag_percent_text": {
-                    metric: whole_percent(
+                    metric: flag_rate_percent(
                         flag_percentage(figure03_summary, metric, window.condition_id)
                     )
                     for metric in METRIC_NAMES

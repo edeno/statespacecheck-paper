@@ -21,7 +21,7 @@ import pytest
 import statespacecheck as ssc
 from numpy.typing import NDArray
 
-from statespacecheck_paper import site_export
+from statespacecheck_paper import reported_values, site_export
 from statespacecheck_paper.decoding import decode_with_diagnostics
 from statespacecheck_paper.diagnostics import (
     METRIC_FLAG_DIRECTIONS,
@@ -41,7 +41,7 @@ from statespacecheck_paper.figure04_diagnostics import mean_event_likelihood_by_
 from statespacecheck_paper.figure04_models import FIGURE04_MODELS, figure04_model
 from statespacecheck_paper.figure04_protocol import FIGURE04_DETAIL_WINDOW, Figure4DetailWindow
 from statespacecheck_paper.figure04_workflow import Figure4RenderData
-from statespacecheck_paper.number_format import significant, whole_percent
+from statespacecheck_paper.number_format import significant
 from statespacecheck_paper.paths import (
     ANIMAL_DATE_EPOCH,
     FIGURE03_SUMMARY_PATH,
@@ -457,16 +457,22 @@ def test_condition_events_match_the_decoded_diagnostics(
 
 
 def test_condition_summaries_come_from_the_figure_summary(
-    site_conditions: dict[str, dict[str, Any]], figure03_summary: dict[str, Any]
+    site_conditions: dict[str, dict[str, Any]],
+    figure03_summary: dict[str, Any],
+    figure04_summary: dict[str, Any],
 ) -> None:
-    """The page quotes the summary's medians, rounded with the manuscript's policy."""
-    metric_order = figure03_summary["metric_order"]
+    """The page quotes the summary's medians as the manuscript's macros print them."""
+    macros = {
+        macro.name: macro.value
+        for _, section in reported_values.macro_sections(figure03_summary, figure04_summary)
+        for macro in section
+    }
     for column, condition_id in enumerate(figure03_summary["condition_order"]):
         summary = site_conditions[condition_id]["summary"]
         assert set(summary["median_flag_percent_text"]) == set(METRIC_NAMES)
+        window = reported_values._CONDITION_MACRO_NAMES[condition_id]
         for metric, text in summary["median_flag_percent_text"].items():
-            row = metric_order.index(metric)
-            assert text == whole_percent(figure03_summary["median_flag_percentages"][row][column])
+            assert text == macros[f"SimFlag{window}{reported_values._METRIC_MACRO_NAMES[metric]}"]
         assert summary["median_absolute_error_text"] == significant(
             figure03_summary["median_decoding_error"][column]
         )

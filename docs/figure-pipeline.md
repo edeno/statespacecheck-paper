@@ -785,11 +785,14 @@ Prose precision follows the policy defined in the
 | Summary JSON values | Full numerical precision, retaining median SEs | Preserves the analysis detail |
 
 Decoding errors remain bare in the prose, without adding “about” before each
-value. Figure 3b's heatmap cells and error row round with the same two
-functions the emitter uses (`number_format.whole_percent` and
-`number_format.significant`), so a value cannot read differently in the panel
-and in the text beside it. Neither a binomial SE nor the published median SEs
-controls formatting. A distribution plot of the per-realization Figure-3
+value. Figure 3b's error row rounds with the function the emitter uses
+(`number_format.significant`), so an error cannot read differently in the panel
+and in the text beside it. Its heatmap cells print whole percents throughout
+(`number_format.whole_percent`), so a flag percentage below 10% reads to one
+decimal place in the prose and to the nearest percent in the panel. The
+website's condition player prints each median flag percentage as the prose does
+(`reported_values.flag_rate_percent`). Neither a binomial SE nor the published
+median SEs controls formatting. A distribution plot of the per-realization Figure-3
 results remains a [follow-up](../TODO.md).
 
 `tests/test_reported_values.py` holds the guards: the committed macro file must
