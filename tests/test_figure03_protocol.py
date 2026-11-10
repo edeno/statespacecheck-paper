@@ -5,7 +5,11 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from statespacecheck_paper.figure03_protocol import Figure3Config, PhaseBoundary
+from statespacecheck_paper.figure03_protocol import (
+    Figure3Config,
+    PhaseBoundary,
+    remapping_pairs,
+)
 
 
 class TestFigure3Config:
@@ -27,6 +31,38 @@ class TestFigure3Config:
         )
         np.testing.assert_array_equal(coarse.position_bins, np.arange(10.0, 51.0, 5.0))
         assert coarse.position_bins.dtype == np.float64
+
+
+class TestRemappingPairs:
+    """A remapping is one ``(src, dst)`` pair or a sequence of them."""
+
+    @pytest.mark.parametrize(
+        ("remapping", "expected"),
+        [
+            ((2, 0), ((2, 0),)),
+            (((2, 0),), ((2, 0),)),
+            (((0, 1), (1, 0)), ((0, 1), (1, 0))),
+            ((np.int64(2), np.int64(0)), ((2, 0),)),
+            (np.array([[0, 3], [3, 0]]), ((0, 3), (3, 0))),
+            ([[2, 0]], ((2, 0),)),
+            ((), ()),
+        ],
+    )
+    def test_normalizes_to_pairs_of_python_ints(
+        self, remapping: object, expected: tuple[tuple[int, int], ...]
+    ) -> None:
+        pairs = remapping_pairs(remapping)
+        assert pairs == expected
+        assert all(type(index) is int for pair in pairs for index in pair)
+
+    @pytest.mark.parametrize("remapping", [(1, 2, 3), ((1, 2, 3),), (1.5, 2.0), ((0.0, 1.0),)])
+    def test_rejects_anything_but_integer_pairs(self, remapping: object) -> None:
+        with pytest.raises(ValueError, match="place_field_remapping"):
+            remapping_pairs(remapping)
+
+    def test_config_stores_a_single_pair_as_pairs(self) -> None:
+        """Every reader of the config, and of the summary that records it, sees pairs."""
+        assert Figure3Config(place_field_remapping=(2, 0)).place_field_remapping == ((2, 0),)
 
 
 class TestFigure3ConfigPhaseBoundaries:

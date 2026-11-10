@@ -31,6 +31,7 @@ from statespacecheck_paper.figure03_protocol import (
     Figure3Config,
     PhaseBoundary,
     compute_replay_step_window,
+    remapping_pairs,
 )
 from statespacecheck_paper.simulation import (
     gaussian_transition_matrix,
@@ -92,21 +93,11 @@ def remap_place_field_centers(
     """
     if not active:
         return place_field_centers
-    place_field_centers = place_field_centers.copy()
-
-    # Normalize to iterable of pairs (handles both single and multiple remappings)
-    if len(place_field_remapping) == 2 and isinstance(place_field_remapping[0], int):
-        # Single remapping: (src, dst)
-        src, dst = place_field_remapping
-        place_field_centers[src] = place_field_centers[dst]
-    else:
-        # Multiple remappings: ((src1, dst1), (src2, dst2), ...)
-        # Note: We need the ORIGINAL centers for all targets, so copy first
-        original_centers = place_field_centers.copy()
-        for src, dst in place_field_remapping:
-            place_field_centers[src] = original_centers[dst]
-
-    return place_field_centers
+    # Every target reads the original centers, so a pair of swaps works.
+    remapped: NDArray[np.floating] = place_field_centers.copy()
+    for src, dst in remapping_pairs(place_field_remapping):
+        remapped[src] = place_field_centers[dst]
+    return remapped
 
 
 def _single_out_and_back_sweep(

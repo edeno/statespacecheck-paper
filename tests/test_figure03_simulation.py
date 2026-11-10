@@ -57,6 +57,13 @@ class TestRemapPlaceFieldCenters:
         result = remap_place_field_centers(place_field_centers, (2, 0), active=True)
         np.testing.assert_array_equal(result, [0.0, 10.0, 0.0, 30.0])
 
+    def test_single_remapping_accepts_numpy_integers(self) -> None:
+        """A pair built from array indices is still one pair, not two malformed ones."""
+        place_field_centers = np.array([0.0, 10.0, 20.0, 30.0])
+        src, dst = np.array([2, 0])
+        result = remap_place_field_centers(place_field_centers, (src, dst), active=True)
+        np.testing.assert_array_equal(result, [0.0, 10.0, 0.0, 30.0])
+
     def test_multiple_remappings_use_original_dst_values(self) -> None:
         """Bidirectional swap (0->1, 1->0) must use *original* values, not
         sequentially overwritten ones — otherwise both end up with the same

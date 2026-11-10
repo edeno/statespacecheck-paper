@@ -5,8 +5,9 @@ conditions (remap, history-dependent firing, momentum) and two specificity contr
 (a replay event embedded in clean-recovery 2, and a final sparse-population
 epoch), separated by clean-recovery windows. This module holds the immutable
 experimental configuration (:class:`Figure3Config`), the phase-transition index
-enum (:class:`PhaseBoundary`), and the replay-window step-bound helper
-(:func:`compute_replay_step_window`). The conditions' display names live with
+enum (:class:`PhaseBoundary`), the replay-window step-bound helper
+(:func:`compute_replay_step_window`), and the remapping normalizer
+(:func:`remapping_pairs`). The conditions' display names live with
 the summary columns (``figure03_summary.build_summary_conditions``). It
 imports no sibling paper module.
 """
@@ -56,6 +57,47 @@ _DEFAULT_PHASE_BOUNDARIES: tuple[int, ...] = (
 # Length of one simulation step, in seconds: the Figure-3 timeline is in 1 ms
 # steps by convention (see ``Figure3Config``).
 STEP_SECONDS = 1e-3
+
+
+def remapping_pairs(
+    place_field_remapping: tuple[tuple[int, int], ...] | tuple[int, int],
+) -> tuple[tuple[int, int], ...]:
+    """Normalize a place-field remapping to a tuple of ``(src, dst)`` pairs.
+
+    Parameters
+    ----------
+    place_field_remapping : (int, int) or sequence of (int, int)
+        One ``(src, dst)`` pair of cell indices, or a sequence of such pairs;
+        Python or NumPy integers. An empty sequence remaps nothing.
+
+    Returns
+    -------
+    tuple of (int, int)
+        The pairs, as Python integers.
+
+    Raises
+    ------
+    ValueError
+        If the input is not one pair or a sequence of pairs of integers.
+
+    Examples
+    --------
+    >>> remapping_pairs((2, 0))
+    ((2, 0),)
+    >>> remapping_pairs(((0, 1), (1, 0)))
+    ((0, 1), (1, 0))
+    """
+    pairs = np.asarray(place_field_remapping)
+    if pairs.size == 0:
+        return ()
+    if pairs.ndim == 1:
+        pairs = pairs[np.newaxis]
+    if pairs.ndim != 2 or pairs.shape[1] != 2 or not np.issubdtype(pairs.dtype, np.integer):
+        raise ValueError(
+            "place_field_remapping must be one (src, dst) pair of cell indices or a "
+            f"sequence of such pairs; got {place_field_remapping!r}"
+        )
+    return tuple((int(src), int(dst)) for src, dst in pairs)
 
 
 @dataclass(frozen=True)
@@ -135,6 +177,8 @@ class Figure3Config:
         Specification of which cells get remapped during the remap
         window. By default, all eleven cells participate in one fixed
         permutation that moves every field by at least three center spacings.
+        A single ``(src, dst)`` pair is accepted and stored as a one-pair
+        tuple (:func:`remapping_pairs`).
     replay_start_fraction, replay_end_fraction : float, default 0.25, 0.75
         Fractional bounds of the replay sub-window within clean-recovery 2.
         The coherent sweep fires over ``[replay_start_fraction,
@@ -305,6 +349,12 @@ class Figure3Config:
         # blocks normal assignment, so use ``object.__setattr__`` for the
         # normalization the dataclass performs on its own fields.
         object.__setattr__(self, "phase_boundaries", bnds)
+
+        # Store the remapping as pairs so the simulation, the summary, and the
+        # macro emitter all read one form.
+        object.__setattr__(
+            self, "place_field_remapping", remapping_pairs(self.place_field_remapping)
+        )
 
         # Copy the caller's array so we don't write-protect their
         # reference; they keep a writable original.
