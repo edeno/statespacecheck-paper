@@ -8,7 +8,7 @@ a rank-based predictive check, and KL divergence.
 - **Read:** [manuscript PDF](manuscript/main.pdf)
 - **Explore:** [interactive project website](https://edeno.github.io/statespacecheck-paper/)
 - **Reproduce:** [complete instructions](docs/reproduce.md)
-- **Apply the diagnostics:** [`statespacecheck` documentation](https://edeno.github.io/statespacecheck/)
+- **Apply the measures:** [`statespacecheck` documentation](https://edeno.github.io/statespacecheck/)
 
 ## Build the manuscript
 
@@ -86,15 +86,15 @@ make sync-dev
 make check  # Python checks and website tests; requires Node 22+
 ```
 
-## Use the diagnostics in your own work
+## Use the measures in your own work
 
-This repository contains the experiments for the paper. The reusable diagnostics
+This repository contains the experiments for the paper. The reusable measures
 are developed in the separate [`statespacecheck`](https://github.com/edeno/statespacecheck)
 package and installed here as a dependency. To apply them to your own decoder,
 use that package directly: `statespacecheck.event_diagnostics` takes a one-step
 predictive distribution, per-unit intensities, and each spike's time bin and unit,
-and returns all three diagnostics per spike. General computations (the per-spike
-diagnostics, HPD regions, the Monte Carlo predictive p-value, threshold
+and returns all three measures per spike. General computations (the per-spike
+measures, HPD regions, the Monte Carlo predictive p-value, threshold
 estimation) belong there; this repository holds what is specific to the paper
 (the simulations, the real-data decoding, the threshold choices, figures,
 reported values, the viewer, and the website).
