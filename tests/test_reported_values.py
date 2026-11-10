@@ -543,6 +543,21 @@ def test_each_summary_field_moves_exactly_its_macros(
     assert {name for name, value in before.items() if after[name] != value} == expected
 
 
+@pytest.mark.parametrize("metric", ["hpd_overlap", "predictive_pvalue"])
+def test_undefined_rescued_fraction_names_the_metric(
+    metric: str, committed_summaries: tuple[dict[str, Any], dict[str, Any]]
+) -> None:
+    """The summary writes ``null`` when the Continuous model flags no spikes; the
+    emitter must say which metric has no rescued percentage to print."""
+    _, figure04 = copy.deepcopy(committed_summaries)
+    for confusion in figure04["flag_confusions"]:
+        if confusion["metric"] == metric:
+            confusion.update(rescued=0, both=0, rescued_fraction=None)
+
+    with pytest.raises(ValueError, match=f"{metric}.*flags no spikes"):
+        _recording_statistics(figure04)
+
+
 def test_every_statistic_macro_has_a_summary_field(
     committed_summaries: tuple[dict[str, Any], dict[str, Any]],
 ) -> None:

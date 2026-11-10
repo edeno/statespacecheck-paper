@@ -699,6 +699,13 @@ def _recording_statistics(payload: dict[str, Any]) -> list[MacroDefinition]:
         # Flagged by the Continuous model = rescued by Continuous-Fragmented + flagged by both.
         flagged_continuous = confusion["rescued"] + confusion["both"]
         flagged_fragmented = confusion["both"] + confusion["newly_flagged"]
+        # The summary records an undefined fraction (nothing to rescue) as null.
+        if confusion["rescued_fraction"] is None:
+            raise ValueError(
+                f"flag_confusions[{metric}].rescued_fraction is undefined: the Continuous "
+                f"model flags no spikes on {metric}, so the manuscript's rescued percentage "
+                "has no value to print"
+            )
         macros.extend(
             [
                 MacroDefinition(
