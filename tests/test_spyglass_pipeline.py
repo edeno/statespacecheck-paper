@@ -152,6 +152,7 @@ def _inputs(spike_shift: float = 0.0) -> Figure4Inputs:
             "head_position_x": np.linspace(0.0, 10.0, 5),
             "head_position_y": np.zeros(5),
             "linear_position": np.linspace(0.0, 10.0, 5),
+            "head_speed": np.full(5, 1250.0),
             "patch_id": np.ones(5, dtype=np.int64),
         },
         index=pd.Index(np.linspace(0.0, 0.008, 5), name="time"),

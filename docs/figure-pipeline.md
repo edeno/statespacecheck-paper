@@ -456,7 +456,9 @@ $\Lambda(x)$.
   - `decoder`, a `Figure4DecoderConfig`: the values passed to
     `non_local_detector` — `position_std` (KDE bandwidth,
     $\sqrt{12.5}\approx3.54$ cm), `position_bin_size_cm` (2 cm), and
-    `sampling_frequency_hz` (500 Hz, i.e. 2 ms bins);
+    `sampling_frequency_hz` (500 Hz, i.e. 2 ms bins); the fit refuses a
+    recording whose time samples are not one such bin apart, since a gap would
+    be decoded, and reported, as a single bin;
   - `package_defaults`, a `Figure4PackageDefaults`: the `non_local_detector`
     defaults the decode relies on without passing them — the observation
     algorithm, `movement_var` (6 cm²) and `movement_mean`, each model's
@@ -503,7 +505,7 @@ $\Lambda(x)$.
 
   | `NeuralRecordingData` field | Arrays in the `.npz` | Contents |
   | --- | --- | --- |
-  | `position_info` | `position_time`, `position_columns`, `position/<column>` | time-indexed position (seconds; positions in cm) |
+  | `position_info` | `position_time`, `position_columns`, `position/<column>` | time-indexed position (seconds; positions in cm); the loader requires `head_position_x`, `head_position_y`, `linear_position`, and `head_speed` (cm/s) |
   | `spike_times` | `spike_times`, `spike_offsets` | per-cell spike times (seconds), concatenated with per-cell offsets |
   | `track_graph` | `track_nodes`, `track_node_positions`, `track_edges`, `track_edge_distance`, `track_edge_id` | track graph |
   | `linear_edge_order` | `linear_edge_order` | linearization edge order |

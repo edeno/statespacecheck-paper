@@ -14,8 +14,6 @@ messages therefore live in :mod:`figure04_workflow`, outside that hash.
 
 from __future__ import annotations
 
-import warnings
-
 import numpy as np
 from numpy.typing import NDArray
 
@@ -65,6 +63,11 @@ def fit_and_decode(
     checks the installed ``non_local_detector`` version and the built models
     against ``package_defaults`` and raises on any drift.
 
+    The decoder takes each row of the time grid as one bin of
+    ``1 / decoder_config.sampling_frequency_hz``, and the reported durations
+    count rows, so the grid must have that cadence: a recording with a gap, or
+    sampled at another rate, is refused before fitting.
+
     Parameters
     ----------
     recording : NeuralRecordingData
@@ -84,8 +87,26 @@ def fit_and_decode(
         ``spike_counts`` ``(n_time, n_cells)``, ``place_field_peaks``
         ``(n_cells,)``, ``diagnostic_place_fields`` ``(n_cells, n_position_bins)``,
         and ``diagnostic_position_bins`` ``(n_position_bins,)``.
+
+    Raises
+    ------
+    ValueError
+        If a step between consecutive time samples is not, to the nearest
+        whole bin, one bin of ``1 / decoder_config.sampling_frequency_hz``; or
+        if a fitted unit's place field is NaN at every position.
     """
     time = decode_time(recording)
+    steps_in_bins = np.diff(time) * decoder_config.sampling_frequency_hz
+    off_cadence = np.rint(steps_in_bins) != 1
+    if np.any(off_cadence):
+        bin_ms = 1000.0 / decoder_config.sampling_frequency_hz
+        raise ValueError(
+            f"{int(off_cadence.sum())} of {off_cadence.size} steps between decode time samples "
+            f"are not one {bin_ms:g} ms bin (sampling_frequency_hz="
+            f"{decoder_config.sampling_frequency_hz:g}); they range from "
+            f"{steps_in_bins[off_cadence].min() * bin_ms:g} to "
+            f"{steps_in_bins[off_cadence].max() * bin_ms:g} ms"
+        )
     head_position = recording.position_info[list(HEAD_POSITION_COLUMNS)].to_numpy(dtype=np.float64)
     spike_times_list = list(recording.spike_times)  # non_local_detector wants a list
 
@@ -111,6 +132,17 @@ def fit_and_decode(
     # them. Fail loudly here rather than produce a different published figure.
     validate_package_defaults(continuous_model, continuous_fragmented_model, package_defaults)
 
+    # Place fields for raster sorting (use the continuous model). Checked before
+    # decoding: a unit with no finite place field has no peak to sort by.
+    place_fields, position_bins = extract_place_fields(continuous_model)
+    without_field = np.flatnonzero(np.all(np.isnan(place_fields), axis=1))
+    if without_field.size:
+        raise ValueError(
+            f"{without_field.size} unit(s) have an all-NaN place field, so no peak position: "
+            f"unit indices {without_field.tolist()}"
+        )
+    place_field_peaks = position_bins[np.nanargmax(place_fields, axis=1)]
+
     # non_local_detector always returns the smoothed (acausal) posterior. The
     # diagnostics, figure, and site export read the prediction; the viewer cache
     # also reads the log-likelihood and the smoothed posterior. Nothing reads
@@ -128,15 +160,6 @@ def fit_and_decode(
     )
 
     spike_counts = get_spike_counts(spike_times_list, time)
-
-    # Extract place fields for raster sorting (use continuous model).
-    place_fields, position_bins = extract_place_fields(continuous_model)
-    if np.any(np.all(np.isnan(place_fields), axis=1)):
-        warnings.warn(
-            "Some cells have all-NaN place fields; peak positions may be incorrect",
-            stacklevel=2,
-        )
-    place_field_peaks = position_bins[np.nanargmax(place_fields, axis=1)]
 
     # Shared interior place fields for the mean per-spike likelihood row.
     diagnostic_place_fields, diagnostic_position_bins = extract_agreed_place_fields(

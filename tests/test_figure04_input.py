@@ -37,6 +37,7 @@ def _position_info(n_time: int = 8) -> pd.DataFrame:
             "head_position_x": np.linspace(0.0, 1.0, n_time),
             "head_position_y": np.linspace(1.0, 0.0, n_time),
             "linear_position": np.linspace(0.0, 2.0, n_time),
+            "head_speed": np.linspace(0.0, 10.0, n_time),
         },
         index=np.linspace(0.0, 0.014, n_time),
     )
@@ -71,9 +72,19 @@ def test_rejects_empty_position_info() -> None:
         _recording(position_info=_position_info(0))
 
 
-def test_rejects_missing_column() -> None:
-    df = _position_info().drop(columns=["linear_position"])
-    with pytest.raises(ValueError, match="missing required columns"):
+@pytest.mark.parametrize("column", ["head_position_x", "linear_position", "head_speed"])
+def test_rejects_missing_column(column: str) -> None:
+    df = _position_info().drop(columns=[column])
+    with pytest.raises(ValueError, match=f"missing required columns.*{column}"):
+        _recording(position_info=df)
+
+
+def test_rejects_nonfinite_head_speed() -> None:
+    """The Figure-4 summary splits flag rates by speed, so a NaN must fail at load,
+    before the fit."""
+    df = _position_info()
+    df.loc[df.index[3], "head_speed"] = np.nan
+    with pytest.raises(ValueError, match="'head_speed' must be numeric and finite"):
         _recording(position_info=df)
 
 

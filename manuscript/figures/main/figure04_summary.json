@@ -166,7 +166,7 @@
   },
   "provenance": {
     "figure04_caches": {
-      "decode_identity_sha256": "a5dda5e3e247b7589b5e0553b870616a386ea39b267473e623f7a22f7bcbd217",
+      "decode_identity_sha256": "7d1c3f841ee08e37950f9ac99a8d4c00c80431608d67f2e1b2e82a6aaa0299ba",
       "diagnostics_config": {
         "event_selection": "all_spikes_in_recording",
         "hpd_coverage": 0.95
@@ -234,7 +234,7 @@
         "machine": "arm64",
         "python_version": "3.11.15"
       },
-      "fingerprint_sha256": "f2ce107dd821128f4b663c93dec1b61b0e57bf66516bfd27d7d41f1dfe625ded",
+      "fingerprint_sha256": "af4d555dc3b205dce389e3bc6602eab136144aee602ba5b39eb2493d9fd74dea",
       "input_file_sha256": {
         "j1620210710_02_r1_figure04_inputs.npz": "60383b394b597e2900545548ecac7c53a8601038ace9dbeb42d7f9a5fe1c93b3"
       },
@@ -243,7 +243,7 @@
       "statespacecheck_version": "0.3.1"
     },
     "source": {
-      "source_tree_sha256": "b45c5f07c7063bb15d7be3c58ab44b011ea892fbd14c9c8424b8fd194e80f305",
+      "source_tree_sha256": "bc5c69e8959156ea516e120e516c429b20cca65e51b71c62a8eb383eeed391ed",
       "statespacecheck_paper_version": "0.1.0",
       "statespacecheck_version": "0.3.1",
       "uv_lock_sha256": "280ef8920b3302f206621349c0733c017b8a329e3d85c789b21bf6350c093fe2"

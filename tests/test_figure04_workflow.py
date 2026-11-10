@@ -65,6 +65,7 @@ def _synthetic_recording() -> NeuralRecordingData:
             "head_position_x": np.linspace(0.0, 1.0, n_time),
             "head_position_y": np.linspace(1.0, 0.0, n_time),
             "linear_position": np.linspace(0.0, 2.0, n_time),
+            "head_speed": np.linspace(0.0, 10.0, n_time),
         },
         index=np.linspace(0.0, 0.014, n_time),
     )
@@ -773,7 +774,12 @@ def _linear_track_recording() -> NeuralRecordingData:
     track_graph.add_edge(0, 1, distance=40.0, edge_id=0)
     return NeuralRecordingData(
         position_info=pd.DataFrame(
-            {"head_position_x": x, "head_position_y": np.zeros(n_time), "linear_position": x},
+            {
+                "head_position_x": x,
+                "head_position_y": np.zeros(n_time),
+                "linear_position": x,
+                "head_speed": np.full(n_time, 50.0),
+            },
             index=time,
         ),
         spike_times=(
@@ -814,6 +820,65 @@ def test_fit_and_decode_payload_feeds_the_caches_and_results() -> None:
     assert results.spike_counts.shape == (n_time, 2)
     # Every spike lies inside [time[0], time[-1]], so each is counted once.
     assert results.spike_counts.sum() == 50
+
+
+def _fit_and_decode(recording: NeuralRecordingData) -> dict[str, object]:
+    config = Figure4Config()
+    return figure04_fit.fit_and_decode(
+        recording,
+        decoder_config=config.decoder,
+        execution_config=config.execution,
+        package_defaults=config.package_defaults,
+    )
+
+
+@pytest.mark.parametrize(
+    ("drop", "problem"),
+    [
+        # A dropped sample leaves one 4 ms step in a 2 ms grid.
+        (slice(100, 101), "1 of 398 steps"),
+        # Every other sample dropped: a 250 Hz recording decoded as 500 Hz.
+        (slice(1, None, 2), "199 of 199 steps"),
+    ],
+)
+def test_fit_rejects_a_decode_grid_off_the_configured_cadence(
+    drop: slice, problem: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The decoder takes each row as one bin of 1 / sampling_frequency_hz, and the
+    reported durations count rows, so a gap must stop the fit."""
+    recording = _linear_track_recording()
+    keep = np.ones(len(recording.position_info), dtype=bool)
+    keep[drop] = False
+    gapped = dataclasses.replace(recording, position_info=recording.position_info[keep])
+    monkeypatch.setattr(
+        figure04_fit, "fit_decoder_models", lambda **_: pytest.fail("fitted a gapped grid")
+    )
+
+    with pytest.raises(ValueError, match=f"{problem} .* 2 ms"):
+        _fit_and_decode(gapped)
+
+
+def test_fit_rejects_a_unit_without_a_place_field(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An all-NaN place field has no peak; the fit must name the unit, and do so
+    before it spends minutes decoding."""
+    pytest.importorskip("non_local_detector")
+
+    class _FittedModel:
+        def predict(self, **_: object) -> None:
+            pytest.fail("decoded before checking the place fields")
+
+    place_fields = np.ones((2, 5))
+    place_fields[1] = np.nan
+    monkeypatch.setattr(
+        figure04_fit, "fit_decoder_models", lambda **_: (_FittedModel(), _FittedModel())
+    )
+    monkeypatch.setattr(figure04_fit, "validate_package_defaults", lambda *_: None)
+    monkeypatch.setattr(
+        figure04_fit, "extract_place_fields", lambda _model: (place_fields, np.arange(5.0))
+    )
+
+    with pytest.raises(ValueError, match=r"all-NaN place field.*\[1\]"):
+        _fit_and_decode(_linear_track_recording())
 
 
 def test_decoder_prediction_at_a_row_excludes_that_rows_spikes() -> None:

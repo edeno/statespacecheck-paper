@@ -32,11 +32,13 @@ from numpy.typing import NDArray
 
 from statespacecheck_paper.paths import FIGURE04_INPUTS_EPOCH
 
-# Position columns every downstream consumer relies on (centimeters): the head
-# position's x and y, then its linearization along the track.
+# Position columns every downstream consumer relies on: the head position's x
+# and y, then its linearization along the track (centimeters), then the head's
+# speed (cm/s), by which the Figure-4 summary splits its flag rates.
 HEAD_POSITION_COLUMNS = ("head_position_x", "head_position_y")
 LINEAR_POSITION_COLUMN = "linear_position"
-REQUIRED_POSITION_COLUMNS = (*HEAD_POSITION_COLUMNS, LINEAR_POSITION_COLUMN)
+HEAD_SPEED_COLUMN = "head_speed"
+REQUIRED_POSITION_COLUMNS = (*HEAD_POSITION_COLUMNS, LINEAR_POSITION_COLUMN, HEAD_SPEED_COLUMN)
 
 # File-name suffix (after the ``{animal_date_epoch}`` prefix) of the input file this
 # loader reads. This module owns it so the Figure-4 decode cache hashes exactly
@@ -64,14 +66,16 @@ class NeuralRecordingData:
 
     Units follow the input file: the ``position_info`` time index and the spike
     times are in seconds; ``head_position_x`` / ``head_position_y`` /
-    ``linear_position`` and ``linear_edge_spacing`` are in centimeters.
+    ``linear_position`` and ``linear_edge_spacing`` are in centimeters;
+    ``head_speed`` is in cm/s.
 
     Parameters
     ----------
     position_info : pd.DataFrame
         Time-indexed position data. Must be nonempty, carry the columns
-        ``head_position_x``, ``head_position_y``, ``linear_position`` (numeric,
-        finite), and have a numeric, finite, strictly increasing, unique index.
+        ``head_position_x``, ``head_position_y``, ``linear_position``,
+        ``head_speed`` (numeric, finite), and have a numeric, finite, strictly
+        increasing, unique index.
     spike_times : tuple of np.ndarray, shape (n_spikes,)
         Per-cell spike times (seconds). Each array is 1-D, finite, and
         nondecreasing.
