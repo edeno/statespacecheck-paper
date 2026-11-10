@@ -5,9 +5,10 @@ This module holds the figure-agnostic decoder — the Bayesian filter
 (``DecoderOverrideWindow`` / ``DecoderOverrideSchedule``). It takes scientific
 primitives (spike counts, a position grid, a transition matrix, and place-field
 parameters or an explicit baseline expected-count table), computes the per-spike
-diagnostics with ``diagnostics.compute_spike_event_diagnostics_from_rates`` (for
-the baseline expected-count table, then again for each override window that swaps
-it), and returns a ``DecodingDiagnostics``. It depends only on ``diagnostics`` and the general
+diagnostics with ``diagnostics.compute_spike_event_diagnostics_from_rates`` (each
+spike against the expected-count table the decoder used at its step: the
+baseline, or that of an override window that swaps it), and returns a
+``DecodingDiagnostics``. It depends only on ``diagnostics`` and the general
 ``simulation`` primitives — no figure-specific module.
 
 The ``(n_bins, n_cells)`` tables named ``expected_counts_per_step`` hold Poisson
@@ -378,74 +379,99 @@ def _select_decoder_components_for_step(
     return transition_t, expected_counts_t
 
 
-def _apply_window_rate_overrides(
-    diagnostics: SpikeEventDiagnostics,
+def _spike_event_diagnostics_by_table(
     predictive: NDArray[np.floating],
+    baseline_expected_counts_per_step: NDArray[np.floating],
     windows: tuple[DecoderOverrideWindow, ...],
     event_time_ind: NDArray[np.intp],
     event_cell_ind: NDArray[np.intp],
 ) -> SpikeEventDiagnostics:
-    """Overwrite per-event / dense diagnostics inside each rate-override window.
+    """Score each spike event against the expected-count table used at its step.
 
-    The baseline ``diagnostics`` were computed against the decoder's default
-    expected-count table. For every override window that swaps ``expected_counts_per_step``, the
-    events falling inside it are recomputed against that window's table, with
-    the same :func:`compute_spike_event_diagnostics_from_rates`, so the
-    posterior update, per-event diagnostics, and displayed likelihood stay on
-    one internally consistent decoder model. The base diagnostics' seven arrays
-    are copied first, so this mutates copies and leaves the passed-in dataclass
-    untouched; the returned dataclass is assembled from the mutated copies.
+    Events inside an override window that swaps ``expected_counts_per_step`` are
+    scored against that window's table and all others against the baseline, so
+    the posterior update, per-event diagnostics, and displayed likelihood stay
+    on one internally consistent decoder model. The events are grouped by table
+    and :func:`compute_spike_event_diagnostics_from_rates` runs once per group;
+    each event's diagnostics depend only on its own prediction and cell, so
+    grouping does not change them.
+
+    Parameters
+    ----------
+    predictive : np.ndarray, shape (n_time, n_bins)
+        One-step-ahead prediction at each step.
+    baseline_expected_counts_per_step : np.ndarray, shape (n_bins, n_cells)
+        The decoder's default expected-count table.
+    windows : tuple of DecoderOverrideWindow
+        The schedule's non-overlapping windows; those without
+        ``expected_counts_per_step`` leave their events on the baseline.
+    event_time_ind, event_cell_ind : np.ndarray, shape (n_spikes,)
+        Time bin and cell of each spike event.
+
+    Returns
+    -------
+    SpikeEventDiagnostics
+        Per-event arrays in the order of ``event_time_ind``, with the dense
+        ``(n_time, n_cells)`` matrices and the ``(n_spikes, n_bins)`` likelihood.
     """
-    assert diagnostics.hpd_overlap is not None
-    assert diagnostics.kl_divergence is not None
-    assert diagnostics.predictive_pvalue is not None
-    assert diagnostics.event_likelihood is not None
-
-    hpd_overlap = diagnostics.hpd_overlap.copy()
-    kl_divergence = diagnostics.kl_divergence.copy()
-    predictive_pvalue = diagnostics.predictive_pvalue.copy()
-    event_hpd_overlap = diagnostics.event_hpd_overlap.copy()
-    event_kl_divergence = diagnostics.event_kl_divergence.copy()
-    event_predictive_pvalue = diagnostics.event_predictive_pvalue.copy()
-    decoder_event_lik = diagnostics.event_likelihood.copy()
-
+    on_baseline = np.ones(event_time_ind.shape, dtype=bool)
+    groups: list[tuple[NDArray[np.bool_], NDArray[np.floating]]] = []
     for window in windows:
         if window.expected_counts_per_step is None:
             continue
         in_window = (event_time_ind >= window.start) & (event_time_ind < window.end)
-        if not np.any(in_window):
-            continue
-
-        window_times = event_time_ind[in_window]
-        window_cells = event_cell_ind[in_window]
-        window_events = compute_spike_event_diagnostics_from_rates(
+        on_baseline &= ~in_window
+        groups.append((in_window, window.expected_counts_per_step))
+    if not groups:
+        return compute_spike_event_diagnostics_from_rates(
             predictive,
-            window.expected_counts_per_step,
-            window_times,
-            window_cells,
+            baseline_expected_counts_per_step,
+            event_time_ind,
+            event_cell_ind,
             coverage=HPD_COVERAGE,
         )
-        assert window_events.event_likelihood is not None
+    groups.append((on_baseline, baseline_expected_counts_per_step))
 
-        event_hpd_overlap[in_window] = window_events.event_hpd_overlap
-        event_kl_divergence[in_window] = window_events.event_kl_divergence
-        event_predictive_pvalue[in_window] = window_events.event_predictive_pvalue
-        decoder_event_lik[in_window] = window_events.event_likelihood
+    n_events = event_time_ind.size
+    n_time, n_bins = predictive.shape
+    n_cells = baseline_expected_counts_per_step.shape[1]
+    event_hpd_overlap = np.empty(n_events)
+    event_kl_divergence = np.empty(n_events)
+    event_predictive_pvalue = np.empty(n_events)
+    event_likelihood = np.empty((n_events, n_bins))
+    # The windows do not overlap, so every event is in exactly one group.
+    for in_group, expected_counts in groups:
+        if not np.any(in_group):
+            continue
+        group = compute_spike_event_diagnostics_from_rates(
+            predictive,
+            expected_counts,
+            event_time_ind[in_group],
+            event_cell_ind[in_group],
+            coverage=HPD_COVERAGE,
+        )
+        assert group.event_likelihood is not None  # dense outputs requested above
+        event_hpd_overlap[in_group] = group.event_hpd_overlap
+        event_kl_divergence[in_group] = group.event_kl_divergence
+        event_predictive_pvalue[in_group] = group.event_predictive_pvalue
+        event_likelihood[in_group] = group.event_likelihood
 
-        hpd_overlap[window_times, window_cells] = window_events.event_hpd_overlap
-        kl_divergence[window_times, window_cells] = window_events.event_kl_divergence
-        predictive_pvalue[window_times, window_cells] = window_events.event_predictive_pvalue
+    def dense(values: NDArray[np.floating]) -> NDArray[np.floating]:
+        """Scatter per-event values into a NaN-filled (n_time, n_cells) matrix."""
+        matrix = np.full((n_time, n_cells), np.nan)
+        matrix[event_time_ind, event_cell_ind] = values
+        return matrix
 
     return SpikeEventDiagnostics(
-        event_time_ind=diagnostics.event_time_ind,
-        event_cell_ind=diagnostics.event_cell_ind,
+        event_time_ind=event_time_ind,
+        event_cell_ind=event_cell_ind,
         event_hpd_overlap=event_hpd_overlap,
         event_kl_divergence=event_kl_divergence,
         event_predictive_pvalue=event_predictive_pvalue,
-        hpd_overlap=hpd_overlap,
-        kl_divergence=kl_divergence,
-        predictive_pvalue=predictive_pvalue,
-        event_likelihood=decoder_event_lik,
+        hpd_overlap=dense(event_hpd_overlap),
+        kl_divergence=dense(event_kl_divergence),
+        predictive_pvalue=dense(event_predictive_pvalue),
+        event_likelihood=event_likelihood,
     )
 
 
@@ -822,41 +848,30 @@ def decode_with_diagnostics(
     # expanded so a bin with count k contributes k spike events.
     event_time_ind, event_cell_ind = expand_spike_events(spike_counts)
 
-    # Compute the baseline diagnostics first. Events inside a window with
-    # ``expected_counts_per_step`` are overwritten below using that same expected-count table,
-    # keeping the posterior update, per-event diagnostics, and displayed
-    # likelihood on one internally consistent decoder model.
-    diagnostics = compute_spike_event_diagnostics_from_rates(
+    # Score every event against the expected-count table its step decoded with.
+    diagnostics = _spike_event_diagnostics_by_table(
         predictive,
         expected_counts,
-        event_time_ind,
-        event_cell_ind,
-        coverage=HPD_COVERAGE,
-    )
-
-    overridden = _apply_window_rate_overrides(
-        diagnostics,
-        predictive,
         override_schedule.windows,
         event_time_ind,
         event_cell_ind,
     )
-    assert overridden.hpd_overlap is not None  # dense matrices requested above
-    assert overridden.kl_divergence is not None
-    assert overridden.predictive_pvalue is not None
-    assert overridden.event_likelihood is not None
+    assert diagnostics.hpd_overlap is not None  # dense matrices requested above
+    assert diagnostics.kl_divergence is not None
+    assert diagnostics.predictive_pvalue is not None
+    assert diagnostics.event_likelihood is not None
 
     return DecodingDiagnostics(
         posterior=posterior,
         predictive=predictive,
         combined_likelihood=combined_likelihood,
-        hpd_overlap=overridden.hpd_overlap,
-        kl_divergence=overridden.kl_divergence,
-        predictive_pvalue=overridden.predictive_pvalue,
-        event_likelihood=overridden.event_likelihood,
-        event_time_ind=overridden.event_time_ind,
-        event_cell_ind=overridden.event_cell_ind,
-        event_hpd_overlap=overridden.event_hpd_overlap,
-        event_kl_divergence=overridden.event_kl_divergence,
-        event_predictive_pvalue=overridden.event_predictive_pvalue,
+        hpd_overlap=diagnostics.hpd_overlap,
+        kl_divergence=diagnostics.kl_divergence,
+        predictive_pvalue=diagnostics.predictive_pvalue,
+        event_likelihood=diagnostics.event_likelihood,
+        event_time_ind=diagnostics.event_time_ind,
+        event_cell_ind=diagnostics.event_cell_ind,
+        event_hpd_overlap=diagnostics.event_hpd_overlap,
+        event_kl_divergence=diagnostics.event_kl_divergence,
+        event_predictive_pvalue=diagnostics.event_predictive_pvalue,
     )

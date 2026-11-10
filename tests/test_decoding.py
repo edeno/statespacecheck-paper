@@ -389,6 +389,50 @@ class TestDecodeWithDiagnostics:
                 getattr(with_alt, event_name),
             )
 
+    @pytest.mark.parametrize(
+        "window",
+        [(2, 4), (0, 6), (0, 1)],
+        ids=["some-spikes-inside", "every-spike-inside", "no-spike-inside"],
+    )
+    def test_dense_matrices_scatter_the_events_under_an_override_window(
+        self, window: tuple[int, int]
+    ) -> None:
+        """Each event is scored once, against its step's table, wherever the window
+        falls; the dense matrices hold those values and NaN elsewhere."""
+        position_bins = np.arange(5, dtype=float)
+        centers = np.array([0.0, 2.0, 4.0])
+        spike_counts = np.zeros((6, 3), dtype=int)
+        for time_ind, cell_ind in ((1, 0), (2, 0), (3, 1), (4, 2), (5, 0)):
+            spike_counts[time_ind, cell_ind] = 1
+        spike_counts[3, 1] = 2
+        baseline_rates = place_field_expected_counts(position_bins, centers, 0.45, 2.0)
+        alt_rates = place_field_expected_counts(position_bins, centers[[2, 0, 1]], 0.45, 2.0)
+
+        result = decode_with_diagnostics(
+            spike_counts=spike_counts,
+            position_bins=position_bins,
+            transition_matrix=np.eye(position_bins.size),
+            place_field_centers=centers,
+            place_field_std=0.45,
+            place_field_rate_scale=2.0,
+            override_schedule=DecoderOverrideSchedule(
+                (DecoderOverrideWindow(*window, expected_counts_per_step=alt_rates),)
+            ),
+        )
+
+        times, cells = result.event_time_ind, result.event_cell_ind
+        inside = (times >= window[0]) & (times < window[1])
+        for name in ("hpd_overlap", "kl_divergence", "predictive_pvalue"):
+            events = getattr(result, "event_" + name)
+            for in_group, rates in ((inside, alt_rates), (~inside, baseline_rates)):
+                expected = compute_spike_event_diagnostics_from_rates(
+                    result.predictive, rates, times[in_group], cells[in_group]
+                )
+                np.testing.assert_array_equal(events[in_group], getattr(expected, "event_" + name))
+            dense = getattr(result, name)
+            np.testing.assert_array_equal(dense[times, cells], events)
+            assert np.isnan(dense[spike_counts == 0]).all()
+
     def test_predictive_uses_column_stochastic_orientation(self) -> None:
         """The one-step predictive must marginalize as ``T @ post`` for the
         column-stochastic transition built by ``gaussian_transition_matrix``
