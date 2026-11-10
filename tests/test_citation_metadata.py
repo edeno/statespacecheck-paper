@@ -9,7 +9,10 @@ only). Nothing generates one from another, so these tests hold them together.
 
 from __future__ import annotations
 
+import json
 import re
+import urllib.error
+import urllib.request
 from typing import Any
 
 import pytest
@@ -113,3 +116,19 @@ def test_citation_version_is_the_package_version(citation: dict[str, Any]) -> No
     """``CITATION.cff`` restates the version that ``pyproject.toml`` sets."""
     project = _one(r"^\[project\]$(.*?)^\[", PYPROJECT)
     assert citation["version"] == _one(r'^version = "([^"]*)"$', project)
+
+
+@pytest.mark.network
+def test_citation_doi_is_the_zenodo_record_of_this_version(citation: dict[str, Any]) -> None:
+    """The DOI names this version's archive, not the record of all versions."""
+    record_id = citation["doi"].rsplit(".", 1)[1]
+    try:
+        with urllib.request.urlopen(
+            f"https://zenodo.org/api/records/{record_id}", timeout=30
+        ) as reply:
+            record = json.load(reply)
+    except (urllib.error.URLError, TimeoutError) as err:  # offline, or Zenodo unavailable
+        pytest.skip(f"Zenodo cannot be reached: {err}")
+    assert record["doi"] == citation["doi"]
+    assert record["conceptdoi"] != citation["doi"]
+    assert record["metadata"]["version"] == f"v{citation['version']}"

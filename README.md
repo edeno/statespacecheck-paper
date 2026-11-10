@@ -102,7 +102,9 @@ reported values, the viewer, and the website).
 ## Citation and licensing
 
 Use [CITATION.cff](CITATION.cff) for the authors and citation metadata. The analysis
-code is archived on [Zenodo](https://doi.org/10.5281/zenodo.23019296).
+code release the manuscript cites is archived on Zenodo
+([doi:10.5281/zenodo.24116403](https://doi.org/10.5281/zenodo.24116403)); the record
+of [all versions](https://doi.org/10.5281/zenodo.23019296) resolves to the newest.
 
 Code is licensed under [MIT](LICENSE). Manuscript text and figures are licensed
 under [CC BY 4.0](manuscript/LICENSE). The Figure 4 input file on Zenodo is

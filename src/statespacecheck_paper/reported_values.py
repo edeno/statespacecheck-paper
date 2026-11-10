@@ -1209,7 +1209,7 @@ def refresh_statespacecheck_doi(
 
 
 def analysis_code_doi(citation_path: Path = CITATION_PATH) -> str:
-    """Return this repository's Zenodo DOI (all versions), the ``doi`` of its CITATION.cff.
+    """Return the Zenodo DOI of this repository's cited release, the ``doi`` of its CITATION.cff.
 
     Raises
     ------
@@ -1267,7 +1267,7 @@ def macro_sections(
             MacroDefinition(
                 "AnalysisCodeDOI",
                 analysis_code_doi,
-                "this repository's Zenodo DOI, all versions (CITATION.cff doi)",
+                "Zenodo DOI of this repository's release (CITATION.cff doi)",
             )
         )
     data = [

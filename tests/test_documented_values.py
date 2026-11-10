@@ -167,7 +167,7 @@ DOCUMENTED_VALUES: tuple[tuple[str, str, str], ...] = (
     (LINEAGE, r"version 1\.0 of\s+record \[([^\]]+)\]", FIGURE04_INPUTS_DOI),
     (
         "README.md",
-        r"code is archived on \[Zenodo\]\(https://doi\.org/([^)]+)\)",
+        r"code release the manuscript cites is archived on Zenodo\s+\(\[doi:([^\]]+)\]",
         analysis_code_doi(CITATION_PATH),
     ),
     # The website's Node requirement

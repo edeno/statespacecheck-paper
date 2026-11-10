@@ -767,7 +767,7 @@ prose**. `scripts/emit_reported_values.py` (recipe:
 `statespacecheck_paper.reported_values`) takes every analysis value from the two
 committed summaries, so these values reach the paper through an artifact. The
 emitter also writes three DOI macros: the analysis code's, from the `doi` field
-of `CITATION.cff`; the Figure-4 input file's, from `paths.FIGURE04_INPUTS_DOI`;
+of `CITATION.cff` (the Zenodo record of the release its `version` names); the Figure-4 input file's, from `paths.FIGURE04_INPUTS_DOI`;
 and that of the `statespacecheck` version the summaries record, read from the
 committed `manuscript/software_dois.json`, so emitting runs offline (`--refresh-dois`
 adds a newly recorded version's DOI from Zenodo). Upstream acquisition and
