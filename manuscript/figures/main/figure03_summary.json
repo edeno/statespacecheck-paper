@@ -208,9 +208,9 @@
   "provenance": {
     "source": {
       "source_tree_sha256": "84a5b88f336c44b226ef968bff52eaf3ad11b6622ef30fb599d5232b1947011b",
-      "statespacecheck_paper_version": "0.1.0",
+      "statespacecheck_paper_version": "0.2.0",
       "statespacecheck_version": "0.3.1",
-      "uv_lock_sha256": "280ef8920b3302f206621349c0733c017b8a329e3d85c789b21bf6350c093fe2"
+      "uv_lock_sha256": "222b7c6319dc254394d41f9b3768d7307501ac521b6c0bf6e094753090983923"
     }
   },
   "realization_decoding_error": [
