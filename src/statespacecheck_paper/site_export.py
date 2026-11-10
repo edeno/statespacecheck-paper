@@ -452,7 +452,8 @@ def filter_explainer_sequence(config: Figure3Config) -> FilterExplainerSequence:
         here + explainer.conflict_offset if here <= midpoint else here - explainer.conflict_offset
     )
     counts[explainer.conflict_step] = 0
-    counts[explainer.conflict_step, np.argsort(np.abs(centers - target))[:2]] = 1
+    nearest_two = np.argsort(np.abs(centers - target), kind="stable")[:2]
+    counts[explainer.conflict_step, nearest_two] = 1
 
     rates = np.asarray(
         place_field_expected_counts(
@@ -1018,7 +1019,9 @@ def recording_payload(
         }
 
     spike_times = render_data.recording.spike_times
-    cell_rank = np.argsort(np.argsort(analysis.place_field_peaks))
+    # Figure 4's raster order: by peak position, ties in unit order (stable).
+    raster_order = np.argsort(analysis.place_field_peaks, kind="stable")
+    cell_rank = np.argsort(raster_order, kind="stable")
     return {
         "detail_window": asdict(detail_window),
         "time": _rounded(time[window] - t0, 4),

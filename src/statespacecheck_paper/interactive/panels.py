@@ -574,7 +574,8 @@ class RasterPanel(_EventScatterPanel):
 
         if not np.all(np.isfinite(place_field_peaks)):
             raise ValueError("place_field_peaks must be finite to define the raster order")
-        order = np.argsort(place_field_peaks)
+        # Stable, so cells with the same peak keep cell order, as in Figure 4.
+        order = np.argsort(place_field_peaks, kind="stable")
         rank = np.empty_like(order)
         rank[order] = np.arange(order.size)
         self._cell_rank = rank

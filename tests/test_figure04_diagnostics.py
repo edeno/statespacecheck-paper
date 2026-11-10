@@ -132,6 +132,19 @@ class TestComputePerCellDiagnostics:
         assert result.hpd_overlap is not None
         np.testing.assert_array_equal(np.isnan(result.hpd_overlap), spike_counts == 0)
 
+    def test_events_with_equal_timestamps_are_ordered_by_cell(self) -> None:
+        """Units often share a timestamp. Their order must not depend on the sort
+        the CPU selects, so ties keep cell order."""
+        shared = np.arange(0.5, 200.5)
+        time = np.arange(0.0, 202.0)
+
+        _, cell_ind, event_time = figure04_diagnostics._get_spike_events_from_spike_times(
+            [shared, shared, shared], time
+        )
+
+        np.testing.assert_array_equal(event_time, np.repeat(shared, 3))
+        np.testing.assert_array_equal(cell_ind, np.tile([0, 1, 2], shared.size))
+
     def test_event_binning_matches_decoder_bin_assignment(self) -> None:
         """Exact spike timestamps map to the bins the decoder's binning uses.
 

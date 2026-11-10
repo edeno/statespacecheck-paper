@@ -40,6 +40,9 @@ def _get_spike_events_from_spike_times(
     the penultimate row, exactly where the decoder counted it. Per-event
     diagnostics therefore compare each spike with the prediction the decoder
     actually updated with that spike.
+
+    Events are returned in time order; events of different cells with the same
+    timestamp are in cell order.
     """
     time = np.asarray(time, dtype=np.float64)
     event_time_inds = []
@@ -66,7 +69,9 @@ def _get_spike_events_from_spike_times(
     event_time_ind = np.concatenate(event_time_inds)
     event_cell_ind = np.concatenate(event_cell_inds)
     event_time = np.concatenate(event_times)
-    sort_ind = np.argsort(event_time)
+    # Stable, so units that share a timestamp keep cell order on every CPU: the
+    # default sort orders ties differently where NumPy uses AVX2.
+    sort_ind = np.argsort(event_time, kind="stable")
 
     return event_time_ind[sort_ind], event_cell_ind[sort_ind], event_time[sort_ind]
 

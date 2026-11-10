@@ -248,8 +248,9 @@ def _plot_spike_count_raster(
     >>> _plot_spike_count_raster(ax, spike_counts, pf_centers)
     >>> plt.close(fig)
     """
-    # Sort neurons by place field peak position
-    sort_order = np.argsort(place_field_centers)
+    # Sort neurons by place field peak position (stable, so cells with the same
+    # center keep cell order on every CPU)
+    sort_order = np.argsort(place_field_centers, kind="stable")
     spikes_sorted = spike_counts[:, sort_order]
 
     # Find spike locations (time, neuron pairs where spikes occurred)

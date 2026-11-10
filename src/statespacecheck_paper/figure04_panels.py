@@ -631,7 +631,8 @@ def plot_single_model_diagnostics(
         ax.set_ylim(y_min, y_max + _POSITION_ROW_HEADROOM * (y_max - y_min))
 
     # Row 2: Spike raster
-    sort_order = np.argsort(place_field_peaks)
+    # Stable, so units with the same peak position keep unit order on every CPU.
+    sort_order = np.argsort(place_field_peaks, kind="stable")
     sliced_time = time_arr[time_slice_ind]
     time_slice = slice(float(sliced_time[0]), float(sliced_time[-1]))
     plot_raster(spike_times, time_slice, ax=axes[2], sort_order=sort_order)
