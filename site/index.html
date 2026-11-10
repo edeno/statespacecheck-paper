@@ -426,8 +426,8 @@
             <span data-macro="RecModeContinuousToFragmented"></span> and back with probability
             <span data-macro="RecModeFragmentedToContinuous"></span>, inferring from the spikes which
             mode is active along with the position. Within the Continuous mode, position follows the
-            same random walk as in the Continuous model; whenever the model is in, or has just left,
-            the Fragmented mode, its new position is drawn uniformly from the track. A Fragmented mode suits the
+            same random walk as in the Continuous model, except in the first time bin after the model
+            leaves the Fragmented mode, when the position is again drawn uniformly. A Fragmented mode suits the
             hippocampus: while an animal is still, its hippocampal representation can jump to
             distant locations, as in awake replay
             (<a href="https://doi.org/10.1038/nn.2344">Karlsson &amp; Frank, 2009</a>). For the
