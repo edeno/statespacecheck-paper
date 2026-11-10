@@ -6,7 +6,7 @@
     <title>Local goodness-of-fit measures for neural decoding</title>
     <meta
       name="description"
-      content="Per-spike goodness-of-fit measures that show when a neural decoder's state-space model conflicts with the data, with interactive examples from simulated and hippocampal recordings."
+      content="Per-spike goodness-of-fit measures that show when a neural decoder's model conflicts with the data, with interactive simulated and hippocampal examples."
     />
     <meta property="og:type" content="website" />
     <meta property="og:title" content="Local goodness-of-fit measures for neural decoding" />
@@ -233,13 +233,6 @@
           <div class="cards">
             <article class="card" style="--metric-color: var(--hpd)">
               <h3>HPD overlap</h3>
-              <p class="note">
-                HPD: highest probability density. The <span data-macro="HpdCoveragePercent"></span>% HPD
-                region of a distribution is the smallest set of states that together hold
-                <span data-macro="HpdCoveragePercent"></span>% of its probability: every state inside it is
-                more probable than any state outside it, and for a distribution with several peaks it
-                can consist of several separate pieces.
-              </p>
               <math display="block">
                 <mfrac>
                   <mrow><mo stretchy="false">|</mo><msub><mi>HPD</mi><mi>P</mi></msub><mo>∩</mo><msub><mi>HPD</mi><mi>Q</mi></msub><mo stretchy="false">|</mo></mrow>
@@ -247,7 +240,14 @@
                 </mfrac>
               </math>
               <p>
-                Find the <span data-macro="HpdCoveragePercent"></span>% highest-probability-density regions of the prediction and of the
+                The <span data-macro="HpdCoveragePercent"></span>% highest probability-density (HPD)
+                region of a distribution is the smallest set of states that together hold
+                <span data-macro="HpdCoveragePercent"></span>% of its probability: every state inside it is
+                more probable than any state outside it, and for a distribution with several peaks it
+                can consist of several separate pieces.
+              </p>
+              <p>
+                Find the <span data-macro="HpdCoveragePercent"></span>% HPD regions of the prediction and of the
                 spike's likelihood, then divide the size of their intersection by the size of the
                 smaller region. The value is 1 whenever one region lies inside the other and 0 when
                 they do not meet, so a broad prediction containing a narrow spike still counts as
@@ -407,11 +407,12 @@
         <div class="wrap">
           <h2>Real hippocampal data</h2>
           <p>
-            We decoded <span data-macro="RecNUnits"></span> units recorded from rat hippocampus
-            during one <span data-macro="RecEpochDurationMin"></span>-minute epoch of a spatial bandit
-            task (<a href="https://doi.org/10.1016/j.neuron.2026.08.023">Comrie et al., 2026</a>), of
-            which <span data-macro="RecNUnitsWithSpikes"></span> fired in this epoch, and compared two
-            models. They share an observation model, built from each unit's place field, and differ
+            The recording comes from rat hippocampus during one
+            <span data-macro="RecEpochDurationMin"></span>-minute epoch of a spatial bandit task
+            (<a href="https://doi.org/10.1016/j.neuron.2026.08.023">Comrie et al., 2026</a>). We
+            decoded <span data-macro="RecNUnits"></span> units,
+            <span data-macro="RecNUnitsWithSpikes"></span> of which fired in this epoch, and compared
+            two models. They share an observation model, built from each unit's place field, and differ
             in the prediction step: how they expect the represented position to move. The
             <strong>Continuous</strong> model uses a random walk, like the filter above, so the
             represented position can move only a short distance in each time bin. The
@@ -515,7 +516,7 @@
             <li>
               <strong>Limitations.</strong> Per-spike checks assess the spatial information each
               spike carries; misfit in spike counts or timing, such as history-dependent firing,
-              calls for a complementary count- or time-rescaling test
+              calls for a complementary count or time-rescaling test
               (<a href="https://doi.org/10.1162/08997660252741149">Brown et al., 2002</a>;
               <a href="https://doi.org/10.1007/s10827-018-0698-4">Tao et al., 2018</a>). A
               persistent lag behind fast movement is only modestly flagged. HPD overlap and KL
