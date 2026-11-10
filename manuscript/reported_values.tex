@@ -3,8 +3,8 @@
 % Every value below is read from the canonical figure summaries
 % (except the DOIs, whose comments name their sources):
 %   figures/main/figure03_summary.json (schema 10)
-%   figures/main/figure04_summary.json (schema 18)
-% source_tree_sha256: bb34ea65e68d38dd32bd0f959f4ab5cf003be1058286524904910a5e8196a5ef
+%   figures/main/figure04_summary.json (schema 19)
+% source_tree_sha256: 4a42ca9979ae777f64408e612e082ade85ddc17b2eafbd458e6b998ff8ea9185
 %
 % Regenerate with: uv run python scripts/emit_reported_values.py
 
@@ -146,6 +146,7 @@
 % --- Hippocampal recording (Figure 4) --- computed from the recording
 \newcommand{\RecNUnits}{203}                           % dataset.n_units
 \newcommand{\RecNUnitsWithSpikes}{182}                 % dataset.n_units_with_spikes
+\newcommand{\RecEpochDurationMin}{24}                  % dataset.duration_s / 60, in min
 \newcommand{\RecNEvents}{870018}                       % flag_confusions[].n
 \newcommand{\RecHpdFlaggedContinuous}{18790}           % flag_confusions[hpd_overlap]: rescued + both
 \newcommand{\RecHpdFlagRateContinuous}{2.2}            % flag_confusions[hpd_overlap]: (rescued + both) / n

@@ -458,6 +458,9 @@ class Figure4ReportedStatistics:
         The part the Spyglass rows can rebuild.
     n_units_with_spikes : int
         Units with at least one spike event.
+    epoch_duration_s : float
+        Recording epoch duration in seconds: the span of the decode time grid,
+        from its first to its last sample.
     kl_divergence_comparison : Figure4KlDivergenceComparison
         The two sides of the identity line in the Figure-4c KL panel.
     detail_window_comparison : Figure4DetailWindowComparison
@@ -472,6 +475,7 @@ class Figure4ReportedStatistics:
 
     summary: Figure4Summary
     n_units_with_spikes: int
+    epoch_duration_s: float
     kl_divergence_comparison: Figure4KlDivergenceComparison
     detail_window_comparison: Figure4DetailWindowComparison
     immobility_comparison: Figure4ImmobilityComparison
@@ -524,6 +528,7 @@ def compute_figure04_reported_statistics(
             metric_directions=metric_directions,
         ),
         n_units_with_spikes=count_units_with_spikes(continuous),
+        epoch_duration_s=float(render_data.time[-1] - render_data.time[0]),
         kl_divergence_comparison=compute_kl_divergence_comparison(continuous, fragmented),
         detail_window_comparison=compute_detail_window_comparison(
             continuous,

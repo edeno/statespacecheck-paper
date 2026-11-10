@@ -677,6 +677,11 @@ def _recording_statistics(payload: dict[str, Any]) -> list[MacroDefinition]:
             _exact(payload["dataset"]["n_units_with_spikes"]),
             "dataset.n_units_with_spikes",
         ),
+        MacroDefinition(
+            "RecEpochDurationMin",
+            significant(payload["dataset"]["duration_s"] / 60, SIGNIFICANT_FIGURES),
+            "dataset.duration_s / 60, in min",
+        ),
         MacroDefinition("RecNEvents", _exact(event_counts.pop()), "flag_confusions[].n"),
     ]
     for metric in payload["flag_rules"]:

@@ -164,6 +164,7 @@ def test_summary_payload_contains_reported_counts_rates_and_provenance(
             statistics=Figure4ReportedStatistics(
                 summary=summary,
                 n_units_with_spikes=5,
+                epoch_duration_s=12.5,
                 kl_divergence_comparison=kl_comparison,
                 detail_window_comparison=detail_comparison,
                 immobility_comparison=immobility_comparison,
@@ -187,6 +188,7 @@ def test_summary_payload_contains_reported_counts_rates_and_provenance(
         "animal_date_epoch": "epoch_x",
         "n_units": 7,
         "n_units_with_spikes": 5,
+        "duration_s": 12.5,
     }
     assert flag_rules["hpd_overlap"] == {
         "comparison": "less_than_or_equal",

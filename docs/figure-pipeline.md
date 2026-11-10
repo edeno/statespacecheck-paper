@@ -553,7 +553,7 @@ results (decodes, per-spike diagnostics, spike counts, place fields) are built b
 payload and a diagnostics payload, each loaded from its fingerprint-matching
 cache or computed fresh (`figure04_fit.fit_and_decode` for the decode,
 `_compute_diagnostics_payload` for the diagnostics) → `compute_figure04_reported_statistics`
-returns a `Figure4ReportedStatistics` (`.n_units_with_spikes`,
+returns a `Figure4ReportedStatistics` (`.n_units_with_spikes`, `.epoch_duration_s`,
 `.kl_divergence_comparison`, `.detail_window_comparison`, and `.summary`, a
 `Figure4Summary` with `.n_units`, per-decoder `Figure4DiagnosticMeans`, and
 typed `FlagConfusion` counts) → `format_figure04_summary` handles CLI text separately
@@ -645,7 +645,7 @@ manual overrides: bumping one invalidates every cache of that kind.
 
 `figure03_summary.json` uses schema version 10
 (`figure03_generation.FIGURE03_SUMMARY_SCHEMA_VERSION`) and `figure04_summary.json`
-uses schema version 18 (`figure04_generation.FIGURE04_SUMMARY_SCHEMA_VERSION`). The
+uses schema version 19 (`figure04_generation.FIGURE04_SUMMARY_SCHEMA_VERSION`). The
 Figure-3 configuration block records every
 `Figure3Config` field together with the step length in seconds
 (`configuration.step_seconds`, the protocol constant `STEP_SECONDS`) and the
@@ -670,7 +670,8 @@ metric's rule (quantile or fixed cutoff), and each metric's
 flagged under the recorded threshold.
 
 The Figure-4 schema records `dataset.n_units` (the sorted units the decoders
-were fit on) and `dataset.n_units_with_spikes` (those that fired in this epoch)
+were fit on), `dataset.n_units_with_spikes` (those that fired in this epoch), and
+`dataset.duration_s` (the epoch's duration, the span of the decode time grid)
 alongside the recording identifier, names the second decoder `continuous_fragmented` throughout, and
 keeps the recorded `non_local_detector` defaults under
 `configuration.package_defaults`: the observation-model algorithm

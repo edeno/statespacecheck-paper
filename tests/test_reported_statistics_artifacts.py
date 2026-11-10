@@ -164,11 +164,12 @@ def test_figure04_reported_statistics_counts_partition_events(tmp_path: Path) ->
     payload = load_summary(FIGURE04_SUMMARY_PATH)
 
     assert payload["schema_version"] == FIGURE04_SUMMARY_SCHEMA_VERSION
-    # The Figure-4 caption reports both unit counts.
+    # The Figure-4 caption reports both unit counts; the text reports the duration.
     assert payload["dataset"] == {
         "animal_date_epoch": "j1620210710_02_r1",
         "n_units": 203,
         "n_units_with_spikes": 182,
+        "duration_s": pytest.approx(1418.64, abs=0.01),
     }
     assert payload["diagnostic_means"]["continuous"] == pytest.approx(
         {
@@ -327,6 +328,7 @@ def test_figure04_reported_statistics_counts_partition_events(tmp_path: Path) ->
         statistics=Figure4ReportedStatistics(
             summary=summary,
             n_units_with_spikes=payload["dataset"]["n_units_with_spikes"],
+            epoch_duration_s=payload["dataset"]["duration_s"],
             kl_divergence_comparison=Figure4KlDivergenceComparison(**kl),
             detail_window_comparison=Figure4DetailWindowComparison(
                 **{

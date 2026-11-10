@@ -337,6 +337,7 @@ _SUMMARY_FIELD_MACROS: dict[str, tuple[_SummaryEdit, set[str]]] = {
         _set_figure04(("dataset", "n_units_with_spikes"), 7),
         {"RecNUnitsWithSpikes"},
     ),
+    "duration_s": (_set_figure04(("dataset", "duration_s"), 600.0), {"RecEpochDurationMin"}),
     "n_events": (
         _set_event_count,
         {

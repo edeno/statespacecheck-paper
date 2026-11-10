@@ -45,7 +45,7 @@ from statespacecheck_paper.style import save_figure, set_figure_defaults
 
 # Version of the figure04_summary.json layout written by
 # figure04_summary_payload. Bump it when a field is added, removed, or renamed.
-FIGURE04_SUMMARY_SCHEMA_VERSION = 18
+FIGURE04_SUMMARY_SCHEMA_VERSION = 19
 
 
 def figure04_reported_statistics(summary: Figure4Summary) -> dict[str, object]:
@@ -108,6 +108,7 @@ def figure04_summary_payload(
             "animal_date_epoch": paths.animal_date_epoch,
             "n_units": statistics.summary.n_units,
             "n_units_with_spikes": statistics.n_units_with_spikes,
+            "duration_s": statistics.epoch_duration_s,
         },
         "configuration": dataclasses.asdict(config),
         "flag_rules": inclusive_flag_rules(

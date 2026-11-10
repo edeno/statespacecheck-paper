@@ -869,6 +869,7 @@ def test_reported_statistics_come_from_the_render_data() -> None:
     assert statistics.n_units_with_spikes == count_units_with_spikes(
         analysis.continuous_diagnostics
     )
+    assert statistics.epoch_duration_s == render_data.time[-1] - render_data.time[0]
     assert (
         statistics.detail_window_comparison.n_events
         == analysis.continuous_diagnostics.event_time_ind.size
