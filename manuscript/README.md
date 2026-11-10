@@ -7,7 +7,9 @@ Read [main.pdf](main.pdf), or build it from the committed source and figures:
 make manuscript
 ```
 
-This needs LaTeX, `latexmk`, and BibTeX with the `iopart-num` bibliography style.
+This needs LaTeX, `latexmk`, and BibTeX. The bibliography style, `iopart-num-jne.bst`,
+is committed here: `iopart-num` changed to print article titles and DOIs and to
+omit ISSNs and ISBNs, as IOP's reference style for J. Neural Eng. asks.
 The dependencies and full analysis workflow are in
 [the reproduction guide](../docs/reproduce.md).
 
@@ -17,6 +19,7 @@ The dependencies and full analysis workflow are in
 | --- | --- |
 | `main.tex` | Manuscript and preamble |
 | `Local-GoF-Paper.bib` | Bibliography exported from Zotero/Better BibTeX |
+| `iopart-num-jne.bst` | Numbered IOP bibliography style with titles and DOIs |
 | `reported_values.tex` | Generated numerical macros read by `main.tex` |
 | `software_dois.json` | Zenodo DOIs of cited software releases, read by the macro emitter |
 | `figures/main/` | Four main figures and Figure 3/4 analysis summaries |

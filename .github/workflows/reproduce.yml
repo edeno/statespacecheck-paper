@@ -36,14 +36,14 @@ jobs:
       - name: Install LaTeX
         # The TeX Live collections holding main.tex's packages: newtx
         # (fonts-extra; its binhex.tex is in plain-generic), orcidlink, multirow,
-        # and fontaxes (latex-extra), siunitx (science), and the iopart-num
-        # bibliography style (bibtex-extra).
+        # and fontaxes (latex-extra), and siunitx (science). The bibliography
+        # style is committed in manuscript/.
         run: |
           sudo apt-get update
           sudo apt-get install --no-install-recommends -y \
             latexmk texlive-latex-base texlive-latex-recommended texlive-latex-extra \
             texlive-fonts-recommended texlive-fonts-extra texlive-science \
-            texlive-bibtex-extra texlive-plain-generic
+            texlive-plain-generic
 
       - name: Install uv
         uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2

@@ -13,8 +13,9 @@ and orders the steps needed to build the paper.
 - **Commands:** Make and a shell. On Windows, use a Make installation with a
   compatible shell, or the Python commands listed below.
 - **Manuscript:** LaTeX, `latexmk`, and BibTeX, including the packages named in
-  `manuscript/main.tex` and the `iopart-num` bibliography style. TeX Live/MacTeX
-  provide these; a minimal TeX installation may need additional packages.
+  `manuscript/main.tex`; the bibliography style is committed in `manuscript/`.
+  TeX Live/MacTeX provide these; a minimal TeX installation may need additional
+  packages.
 - **Optional tools:** Node 22+ for website tests and assembly. Desktop-viewer
   dependencies are installed separately; see [the viewer guide](interactive.md).
 - **Network:** installation and the initial Figure 4 download need internet.
