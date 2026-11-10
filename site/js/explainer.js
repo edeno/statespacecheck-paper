@@ -213,7 +213,7 @@ export function initExplainer(root, data, manifest) {
     const regions = `The ${Math.round(data.coverage * 100)}% regions of the prediction and of ${manySpikes ? "each spike's" : "the spike's"} likelihood`;
     const overlaps = fired.map((s) => s.hpd.toFixed(2)).join(" and ");
     const verdict = fired.every((s) => s.hpd === 0) ? "do not overlap" : "barely overlap";
-    return `${head} ${regions} ${verdict} (HPD overlap ${overlaps}): ${manySpikes ? "these spikes are" : "the spike is"} inconsistent with the prediction. The posterior lands between the two: ${posteriorText}. On its own, it gives no sign of the disagreement; the diagnostics below detect it by comparing each spike's likelihood with the prediction.`;
+    return `${head} ${regions} ${verdict} (HPD overlap ${overlaps}): ${manySpikes ? "these spikes are" : "the spike is"} inconsistent with the prediction. The posterior lands between the two: ${posteriorText}. On its own, it gives no sign of the disagreement; the measures below detect it by comparing each spike's likelihood with the prediction.`;
   }
 
   // ----------------------------------------------------------- Render

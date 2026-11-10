@@ -47,13 +47,13 @@ export const CONDITION_TEXT = {
   well_specified:
     "Model and data agree. The few spikes flagged here show the false-positive rate that each threshold allows.",
   remap:
-    "The decoder evaluates spikes against a scrambled set of place fields, as after global remapping, so within milliseconds its own estimate is pulled away from the animal. The diagnostics test consistency, not accuracy: a spike whose likelihood agrees with that wrong prediction is not flagged. But the scramble sends successive spikes to scattered places, so many spikes conflict with the prediction, and all three diagnostics flag them.",
+    "The decoder evaluates spikes against a scrambled set of place fields, as after global remapping, so within milliseconds its own estimate is pulled away from the animal. The measures test consistency, not accuracy: a spike whose likelihood agrees with that wrong prediction is not flagged. But the scramble sends successive spikes to scattered places, so many spikes conflict with the prediction, and all three measures flag them.",
   history_dependent:
-    "Spikes are generated with refractoriness and bursting, but the decoder assumes Poisson firing. Each spike still carries the same spatial information, so decoding stays accurate and the diagnostics rarely flag: they test spatial consistency, not spike timing.",
+    "Spikes are generated with refractoriness and bursting, but the decoder assumes Poisson firing. Each spike still carries the same spatial information, so decoding stays accurate and the measures rarely flag: they test spatial consistency, not spike timing.",
   replay:
     "The animal sits still while the ensemble replays a sweep across the track at elevated firing rates, which the decoder is given. Its random walk does not describe this deterministic sweep, but each step of the sweep is small relative to the random walk's steps, so the decoder follows it far from the animal. The prediction stays consistent with the spikes, and flags stay near the well-specified rate. The large distance from the animal is expected: the decoder tracks the represented trajectory, not the animal.",
   momentum:
-    "The animal moves with momentum while the decoder assumes a memoryless random walk. The prediction lags behind the animal and decoding error rises. The diagnostics flag several times as many spikes as when the model is correct, but still only a modest share: a single spike localizes the animal only coarsely, so its likelihood extends well beyond the lag and most spikes still overlap the offset prediction. Only spikes from cells whose fields lie far from the predicted position are flagged — a limitation of checks made one spike at a time.",
+    "The animal moves with momentum while the decoder assumes a memoryless random walk. The prediction lags behind the animal and decoding error rises. The measures flag several times as many spikes as when the model is correct, but still only a modest share: a single spike localizes the animal only coarsely, so its likelihood extends well beyond the lag and most spikes still overlap the offset prediction. Only spikes from cells whose fields lie far from the predicted position are flagged — a limitation of checks made one spike at a time.",
   sparse_population:
     "The animal holds still, the ordinary ensemble falls quiet, and a few narrow cells near the animal fire occasionally. The decoder is given these rates, but its random walk still expects movement, so between spikes the prediction spreads out; each narrow spike lands inside it. HPD overlap and the predictive p-value see consistency, while KL divergence flags the difference in spread, even though decoding stays accurate.",
 };
@@ -531,7 +531,7 @@ function renderCondition(view, payload, manifest) {
   const component =
     payload.model_component === "—" ? "none" : payload.model_component.toLowerCase();
   const statsNote = note(
-    `Medians across ${manifest.macros.SimNRealizations} simulated sessions of the percentage of spikes each diagnostic flags and of the absolute distance between the decoder's position estimate (the filtered posterior mean) and the animal's physical position. Deliberately perturbed model component: ${component}. Below: ${(range[1] - range[0]).toFixed(1)} s of one session, with the condition's time window shaded gray.`,
+    `Medians across ${manifest.macros.SimNRealizations} simulated sessions of the percentage of spikes each measure flags and of the absolute distance between the decoder's position estimate (the filtered posterior mean) and the animal's physical position. Deliberately perturbed model component: ${component}. Below: ${(range[1] - range[0]).toFixed(1)} s of one session, with the condition's time window shaded gray.`,
   );
 
   // Mean normalized likelihood per spike-containing step, as in Figure 3a.
@@ -767,7 +767,7 @@ export function renderRecording(root, payload, manifest) {
   const counts = document.createElement("table");
   counts.className = "compare-table";
   const flaggedMetrics = METRICS.filter((m) => rules[m.name]);
-  counts.innerHTML = `<caption>Spikes flagged in this window</caption><thead><tr><th scope="col">Diagnostic</th>${MODELS.map((m) => `<th scope="col">${m.label}</th>`).join("")}</tr></thead><tbody>${flaggedMetrics
+  counts.innerHTML = `<caption>Spikes flagged in this window</caption><thead><tr><th scope="col">Measure</th>${MODELS.map((m) => `<th scope="col">${m.label}</th>`).join("")}</tr></thead><tbody>${flaggedMetrics
     .map(
       (metric) =>
         `<tr><th scope="row">${metric.label}</th>${MODELS.map((model) => {
@@ -834,7 +834,7 @@ export function renderRecording(root, payload, manifest) {
   // One row per metric; only the value cells change with the selected spike.
   const table = document.createElement("table");
   table.className = "compare-table";
-  table.innerHTML = `<caption class="sr-only">Diagnostics of the selected spike under each model</caption><thead><tr><th scope="col">Diagnostic</th>${MODELS.map((m) => `<th scope="col">${m.short}</th>`).join("")}</tr></thead>`;
+  table.innerHTML = `<caption class="sr-only">Measures of the selected spike under each model</caption><thead><tr><th scope="col">Measure</th>${MODELS.map((m) => `<th scope="col">${m.short}</th>`).join("")}</tr></thead>`;
   const tbody = document.createElement("tbody");
   const valueCells = {};
   for (const metric of METRICS) {
@@ -853,7 +853,7 @@ export function renderRecording(root, payload, manifest) {
     tbody.appendChild(tr);
   }
   table.appendChild(tbody);
-  detail.appendChild(tableWrap(table, "Diagnostics of the selected spike"));
+  detail.appendChild(tableWrap(table, "Measures of the selected spike"));
   const rescue = document.createElement("p");
   rescue.className = "note";
   detail.appendChild(rescue);

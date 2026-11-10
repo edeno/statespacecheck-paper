@@ -6,13 +6,13 @@
     <title>Local goodness-of-fit measures for neural decoding</title>
     <meta
       name="description"
-      content="Per-spike diagnostics that show when a neural decoder's state-space model conflicts with the data, with interactive examples from simulated and hippocampal recordings."
+      content="Per-spike goodness-of-fit measures that show when a neural decoder's state-space model conflicts with the data, with interactive examples from simulated and hippocampal recordings."
     />
     <meta property="og:type" content="website" />
     <meta property="og:title" content="Local goodness-of-fit measures for neural decoding" />
     <meta
       property="og:description"
-      content="Per-spike diagnostics that show when a neural decoder's state-space model conflicts with the data."
+      content="Per-spike goodness-of-fit measures that show when a neural decoder's state-space model conflicts with the data."
     />
     <meta property="og:url" content="https://edeno.github.io/statespacecheck-paper/" />
     <meta property="og:image" content="https://edeno.github.io/statespacecheck-paper/figures/figure01.png" />
@@ -218,7 +218,7 @@
 
       <section id="diagnostics">
         <div class="wrap">
-          <h2>Three diagnostics</h2>
+          <h2>Three measures</h2>
           <p>
             At each spike, the decoder's <strong>prediction</strong> <i>P</i>(<i>x</i>) is its
             probability distribution over the latent state <i>x</i> (here, position) given all
@@ -226,14 +226,20 @@
             <strong>likelihood</strong> <i>Q</i>(<i>x</i>) is its cell's place field
             λ<sub><i>c</i></sub>(<i>x</i>) normalized to sum to one: the factor that spike
             contributed to the step's likelihood above, and how strongly that one spike supports
-            each position. Each diagnostic compares <i>P</i> with <i>Q</i>, or with the spike
+            each position. Each measure compares <i>P</i> with <i>Q</i>, or with the spike
             itself. HPD overlap and the predictive p-value target consistency; KL divergence is
             included as a familiar reference that measures difference.
           </p>
           <div class="cards">
             <article class="card" style="--metric-color: var(--hpd)">
               <h3>HPD overlap</h3>
-              <p class="note">HPD: highest probability density.</p>
+              <p class="note">
+                HPD: highest probability density. The <span data-macro="HpdCoveragePercent"></span>% HPD
+                region of a distribution is the smallest set of states that together hold
+                <span data-macro="HpdCoveragePercent"></span>% of its probability: every state inside it is
+                more probable than any state outside it, and for a distribution with several peaks it
+                can consist of several separate pieces.
+              </p>
               <math display="block">
                 <mfrac>
                   <mrow><mo stretchy="false">|</mo><msub><mi>HPD</mi><mi>P</mi></msub><mo>∩</mo><msub><mi>HPD</mi><mi>Q</mi></msub><mo stretchy="false">|</mo></mrow>
@@ -308,7 +314,7 @@
             The prediction aggregates many past spikes, while the likelihood comes from a single
             spike, so the two usually differ in shape and spread. What matters is whether they
             concentrate their probability in overlapping regions. Move the prediction, change its
-            spread, and choose which cell fired: the three diagnostics update as you go.
+            spread, and choose which cell fired: the three measures update as you go.
           </p>
           <div class="panel">
             <div class="row">
@@ -370,7 +376,7 @@
             the sparse-population control, <span data-macro="SimNSparseCellsWord"></span> narrow, rarely firing
             cells near x = <span data-macro="SimSparsePosition"></span> a.u. while the ordinary
             ensemble is quiet. Curves are scaled to their own maxima. Flag thresholds are the
-            simulation's. The diagnostics are computed in your browser by a port of the paper's code
+            simulation's. The measures are computed in your browser by a port of the paper's code
             that is tested against the Python implementation.
           </p>
         </div>
@@ -402,8 +408,8 @@
           <h2>Real hippocampal data</h2>
           <p>
             We decoded <span data-macro="RecNUnits"></span> units recorded from rat hippocampus
-            during a spatial bandit task
-            (<a href="https://doi.org/10.1016/j.neuron.2026.08.023">Comrie et al., 2026</a>), of
+            during one <span data-macro="RecEpochDurationMin"></span>-minute epoch of a spatial bandit
+            task (<a href="https://doi.org/10.1016/j.neuron.2026.08.023">Comrie et al., 2026</a>), of
             which <span data-macro="RecNUnitsWithSpikes"></span> fired in this epoch, and compared two
             models. They share an observation model, built from each unit's place field, and differ
             in the prediction step: how they expect the represented position to move. The
@@ -412,17 +418,20 @@
             <strong>Continuous–Fragmented</strong> model is related to a model structure we previously
             used to capture replay and other nonlocal hippocampal representations
             (<a href="https://doi.org/10.7554/eLife.64505">Denovellis et al., 2021</a>). It adds a
-            second dynamics mode, the Fragmented mode: when the model is in, or switches into, that
-            mode, its next position can be anywhere on the track with equal probability, regardless
-            of the current one. In each <span data-macro="RecTimeBinMs"></span> ms time bin the model
-            switches from the Continuous mode to the Fragmented mode with probability
+            second dynamics mode, the Fragmented mode, in which the represented position in each time
+            bin can be anywhere on the track with equal probability, regardless of its previous value,
+            so it can jump to a distant location in a single step. In each
+            <span data-macro="RecTimeBinMs"></span> ms time bin the model switches from the Continuous
+            mode to the Fragmented mode with probability
             <span data-macro="RecModeContinuousToFragmented"></span> and back with probability
             <span data-macro="RecModeFragmentedToContinuous"></span>, inferring from the spikes which
-            mode is active along with the position. A Fragmented mode suits the
+            mode is active along with the position. Within the Continuous mode, position follows the
+            same random walk as in the Continuous model; whenever the model is in, or has just left,
+            the Fragmented mode, its new position is drawn uniformly from the track. A Fragmented mode suits the
             hippocampus: while an animal is still, its hippocampal representation can jump to
             distant locations, as in awake replay
             (<a href="https://doi.org/10.1038/nn.2344">Karlsson &amp; Frank, 2009</a>). For the
-            diagnostics, the Continuous–Fragmented prediction is summed over its two modes, so both
+            measures, the Continuous–Fragmented prediction is summed over its two modes, so both
             models are compared on the same position grid.
           </p>
           <p>
@@ -475,7 +484,7 @@
             <span data-macro="RecKlHigherFragmentedMedian"></span> nats), although a few values
             reach <span data-macro="RecKlHigherFragmentedMax"></span> nats. Combined with the
             comparison
-            between models and what is known about hippocampal replay, the local diagnostics support
+            between models and what is known about hippocampal replay, the local measures support
             a specific refinement, a transition model that allows discontinuous jumps, rather than
             simply rejecting the Continuous model.
           </p>
@@ -506,7 +515,7 @@
             <li>
               <strong>Limitations.</strong> Per-spike checks assess the spatial information each
               spike carries; misfit in spike counts or timing, such as history-dependent firing,
-              calls for a complementary count- or time-rescaling diagnostic
+              calls for a complementary count- or time-rescaling test
               (<a href="https://doi.org/10.1162/08997660252741149">Brown et al., 2002</a>;
               <a href="https://doi.org/10.1007/s10827-018-0698-4">Tao et al., 2018</a>). A
               persistent lag behind fast movement is only modestly flagged. HPD overlap and KL

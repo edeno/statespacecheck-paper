@@ -15,10 +15,10 @@ const stdToSlider = (std) => (1000 * Math.log(std / STD_MIN)) / Math.log(STD_MAX
 function verdict(flags) {
   const names = METRICS.filter((m) => flags[m.name]).map((m) => m.label);
   if (names.length === 0) {
-    return "None of the diagnostics flag this spike: its likelihood is consistent with the prediction.";
+    return "None of the measures flag this spike: its likelihood is consistent with the prediction.";
   }
   if (names.length === METRICS.length) {
-    return "All three diagnostics flag this spike: the prediction and the spike point to different places.";
+    return "All three measures flag this spike: the prediction and the spike point to different places.";
   }
   if (names.length === 1 && flags.kl_divergence) {
     return "Only KL divergence flags this spike. HPD overlap and the predictive p-value find it consistent; KL divergence responds to any difference between the two distributions, such as a difference in spread.";
