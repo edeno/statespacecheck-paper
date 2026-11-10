@@ -201,11 +201,11 @@
             <p class="verdict" id="ft-caption" aria-live="polite"></p>
           </div>
           <p class="note">
-            The recording is simulated and decoded by the paper's code, on the simulation's track
-            and place fields. As in the paper's simulation, the decoder's movement model is a
+            The recording is simulated and decoded with the paper's code, using the simulation's
+            track and place fields. As in the paper's simulation, the decoder's movement model is a
             Gaussian random walk, which ignores the animal's momentum, as such decoders usually do.
-            To make each step visible, the cells fire less often, and the random walk takes larger
-            steps, than in the paper's simulation. The spike at step 0 and the two distant
+            To make each step visible, the cells fire less often and the random walk takes larger
+            steps than in the paper's simulation. The spike at step 0 and the two distant
             spikes near the end were inserted into the simulated spike train. The prediction and
             posterior rows share one vertical scale, so a broader distribution is drawn lower; the
             likelihood is scaled to its own maximum. At a spike, the dashed curve is the posterior
@@ -227,8 +227,8 @@
             λ<sub><i>c</i></sub>(<i>x</i>) normalized to sum to one: the factor that spike
             contributed to the step's likelihood above, and how strongly that one spike supports
             each position. Each diagnostic compares <i>P</i> with <i>Q</i>, or with the spike
-            itself. Two target consistency; KL
-            divergence is included as the familiar reference that measures difference.
+            itself. HPD overlap and the predictive p-value target consistency; KL divergence is
+            included as a familiar reference that measures difference.
           </p>
           <div class="cards">
             <article class="card" style="--metric-color: var(--hpd)">
@@ -262,11 +262,12 @@
               </math>
               <p>
                 The predictive probability that a spike comes from cell <i>c</i>,
-                <i>f</i><sub>pred</sub>(<i>c</i>), averages each cell's place field
-                λ<sub><i>c</i></sub>(<i>x</i>) over the prediction and normalizes across cells. The p-value is the total predictive
+                <i>f</i><sub>pred</sub>(<i>c</i>), is that cell's place field
+                λ<sub><i>c</i></sub>(<i>x</i>) averaged over the prediction and normalized across
+                cells. The p-value is the total predictive
                 probability of every cell at least as unlikely as the one that fired, <i>y</i>. A
                 small value means the model did not expect this spike. We call it the predictive
-                p-value for short; the tracks below plot −log <i>p</i> (natural log), where
+                p-value for short. The tracks below plot −log <i>p</i> (natural log), on which
                 <i>p</i> = <span data-macro="SimPredictiveCutoff"></span> is about
                 <span data-macro="SimPredictiveCutoffNegLog"></span>.
               </p>
@@ -327,7 +328,7 @@
                   Place cells (σ = <span data-macro="SimPlaceFieldStd"></span> a.u.)
                 </button>
                 <button class="chip" type="button" data-ensemble="sparse_epoch">
-                  Sparse epoch (σ = <span data-macro="SimSparseFieldStd"></span> a.u.)
+                  Sparse population (σ =<span data-macro="SimSparseFieldStd"></span> a.u.)
                 </button>
               </div>
             </div>
@@ -366,7 +367,7 @@
           <p class="note">
             The cells and rates are those of the paper's simulation:
             <span data-macro="SimNPlaceCellsWord"></span> place cells with Gaussian fields, plus, in
-            the sparse epoch, <span data-macro="SimNSparseCellsWord"></span> narrow, rarely firing
+            the sparse-population control, <span data-macro="SimNSparseCellsWord"></span> narrow, rarely firing
             cells near x = <span data-macro="SimSparsePosition"></span> a.u. while the ordinary
             ensemble is quiet. Curves are scaled to their own maxima. Flag thresholds are the
             simulation's. The diagnostics are computed in your browser by a port of the paper's code
@@ -379,12 +380,12 @@
         <div class="wrap">
           <h2>Testing on known misspecifications</h2>
           <p>
-            We simulated place cells on a <span data-macro="SimTrackLength"></span> a.u. track and
-            decoded them with a Bayesian filter for
-            <span data-macro="SimDurationSeconds"></span> s. Three windows break the model on
-            purpose. Two controls contain activity that the decoder's observation model
-            describes correctly, because the decoder is given each control's firing rates; its
-            random walk fits neither control's movement, and they are not designed as misfits. Pick
+            We simulated <span data-macro="SimDurationSeconds"></span> s of place-cell activity on a
+            <span data-macro="SimTrackLength"></span> a.u. track and decoded it with a Bayesian
+            filter. Three windows break the model on purpose. Two controls, a replay sweep and
+            sparse firing during immobility, contain activity that the decoder's observation model
+            describes correctly, because the decoder is given each control's firing rates. Its
+            random walk fits neither control's movement, but neither is designed as a misfit. Pick
             a condition, then hover over or tap the tracks, press Play, or click the tracks and use
             the arrow keys to inspect individual spikes.
           </p>
@@ -400,10 +401,10 @@
         <div class="wrap">
           <h2>Real hippocampal data</h2>
           <p>
-            We decoded <span data-macro="RecNUnits"></span> units, of which
-            <span data-macro="RecNUnitsWithSpikes"></span> fired in this epoch, recorded from rat
-            hippocampus during a spatial bandit task
-            (<a href="https://doi.org/10.1016/j.neuron.2026.08.023">Comrie et al., 2026</a>) with two
+            We decoded <span data-macro="RecNUnits"></span> units recorded from rat hippocampus
+            during a spatial bandit task
+            (<a href="https://doi.org/10.1016/j.neuron.2026.08.023">Comrie et al., 2026</a>), of
+            which <span data-macro="RecNUnitsWithSpikes"></span> fired in this epoch, and compared two
             models. They share an observation model, built from each unit's place field, and differ
             in the prediction step: how they expect the represented position to move. The
             <strong>Continuous</strong> model uses a random walk, like the filter above, so the
@@ -427,7 +428,8 @@
           <p>
             This <span data-macro="RecordingWindowSecondsWord"></span>-second window contains a candidate replay event while the animal is still. The
             Continuous model's prediction cannot keep up with the rapidly moving representation, so
-            many spikes are flagged. When the Continuous–Fragmented model switches to its Fragmented
+            for some spikes it concentrates where the spike gives no support, and those spikes are
+            flagged. When the Continuous–Fragmented model switches to its Fragmented
             mode, its prediction becomes broad, the next spikes can move the estimate, and most of
             the HPD-overlap flags disappear. The recording has no known-good baseline period, so
             fixed cutoffs are used: a spike is flagged when HPD overlap is at or below
@@ -445,7 +447,16 @@
             does not mean that the prediction was centered on the spike.
           </p>
           <p>
-            Across the whole recording epoch, HPD overlap flags
+            Across the whole recording epoch, the Continuous model flags more spikes while the
+            animal is immobile (speed below <span data-macro="RecImmobileSpeed"></span> cm/s), when
+            the hippocampal representation can jump, than while it moves:
+            <span data-macro="RecHpdFlagRateImmobile"></span>% against
+            <span data-macro="RecHpdFlagRateMoving"></span>% for HPD overlap and
+            <span data-macro="RecPvalueFlagRateImmobile"></span>% against
+            <span data-macro="RecPvalueFlagRateMoving"></span>% for the predictive p-value.
+          </p>
+          <p>
+            In total, HPD overlap flags
             <span data-macro="RecHpdFlaggedContinuous" data-format="count"></span> spikes under the
             Continuous model. Once the model can jump,
             <span data-macro="RecHpdRescuedPercent"></span>% of them are no longer flagged, while
@@ -455,12 +466,15 @@
             Continuous model; <span data-macro="RecPvalueRescuedPercent"></span>% of them are rescued
             by the Continuous–Fragmented model, whereas
             <span data-macro="RecPvalueNewlyFlagged" data-format="count"></span> spikes are newly
-            flagged. KL
-            divergence falls for <span data-macro="RecKlLowerPercent"></span>% of spikes under the
-            Continuous–Fragmented model. For the <span data-macro="RecKlHigherPercent"></span>%
-            where it rises, values reach <span data-macro="RecKlHigherFragmentedMax"></span> nats.
-            As in the simulation, these values occur when the model produces a broad prediction
-            after estimating the Fragmented mode. Together with the comparison
+            flagged. It points the same way as HPD overlap but more weakly: its flags are less
+            concentrated during immobility and change less when the model can jump, so the two are
+            best read together. KL divergence falls for
+            <span data-macro="RecKlLowerPercent"></span>% of spikes under the Continuous–Fragmented
+            model. For the remaining <span data-macro="RecKlHigherPercent"></span>%, whose values
+            under the Continuous model were low, it rises, usually modestly (median
+            <span data-macro="RecKlHigherFragmentedMedian"></span> nats), although a few values
+            reach <span data-macro="RecKlHigherFragmentedMax"></span> nats. Combined with the
+            comparison
             between models and what is known about hippocampal replay, the local diagnostics support
             a specific refinement, a transition model that allows discontinuous jumps, rather than
             simply rejecting the Continuous model.
@@ -475,9 +489,10 @@
             <li>
               <strong>Target consistency, not difference.</strong> HPD overlap flags spikes whose
               likelihood falls outside the prediction's high-probability region, and tolerates
-              predictions that are broader or narrower than the spike. The rank-based predictive
+              predictions that are broader or narrower than the spike's likelihood. The rank-based predictive
               p-value behaves similarly when the observation model is informative about the state,
               but a high p-value does not by itself guarantee that the two distributions overlap.
+              Neither is triggered by replay that carries the decoded position far from the animal.
             </li>
             <li>
               <strong>KL divergence measures difference.</strong> It flags broad predictions and
@@ -492,7 +507,8 @@
               <strong>Limitations.</strong> Per-spike checks assess the spatial information each
               spike carries; misfit in spike counts or timing, such as history-dependent firing,
               calls for a complementary count- or time-rescaling diagnostic
-              (<a href="https://doi.org/10.1007/s10827-018-0698-4">Tao et al., 2018</a>). A
+              (<a href="https://doi.org/10.1162/08997660252741149">Brown et al., 2002</a>;
+              <a href="https://doi.org/10.1007/s10827-018-0698-4">Tao et al., 2018</a>). A
               persistent lag behind fast movement is only modestly flagged. HPD overlap and KL
               divergence are evaluated on a grid over the state space, and the grid grows
               exponentially with the state's dimension.

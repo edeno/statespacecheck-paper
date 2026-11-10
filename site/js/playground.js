@@ -21,11 +21,11 @@ function verdict(flags) {
     return "All three diagnostics flag this spike: the prediction and the spike point to different places.";
   }
   if (names.length === 1 && flags.kl_divergence) {
-    return "Only KL divergence flags this spike. HPD overlap and the predictive check find it consistent; KL divergence responds to any difference between the two distributions, such as a difference in spread.";
+    return "Only KL divergence flags this spike. HPD overlap and the predictive p-value find it consistent; KL divergence responds to any difference between the two distributions, such as a difference in spread.";
   }
   if (flags.hpd_overlap && !flags.predictive_pvalue) {
     const kl = flags.kl_divergence ? " KL divergence also flags it." : "";
-    return `HPD overlap flags this spike, but the predictive p-value does not. The p-value only ranks the cells against each other, given that some cell fired, and this cell does not rank low enough to be flagged, even though its likelihood and the prediction do not overlap: a p-value above the cutoff does not guarantee overlap.${kl}`;
+    return `HPD overlap flags this spike, but the predictive p-value does not. The p-value only ranks the cells against each other, given that some cell fired. This cell does not rank low enough to be flagged, even though its likelihood and the prediction do not overlap: a p-value above the cutoff does not guarantee overlap.${kl}`;
   }
   return `Flagged by ${names.join(" and ")}.`;
 }

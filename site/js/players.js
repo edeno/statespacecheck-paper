@@ -51,11 +51,11 @@ export const CONDITION_TEXT = {
   history_dependent:
     "Spikes are generated with refractoriness and bursting, but the decoder assumes Poisson firing. Each spike still carries the same spatial information, so decoding stays accurate and the diagnostics rarely flag: they test spatial consistency, not spike timing.",
   replay:
-    "The animal sits still while the ensemble replays a sweep across the track at elevated firing rates, which the decoder is given. Its random walk does not describe this deterministic sweep, but each step of the sweep is small relative to the random walk's steps, so the decoder follows it, far from the animal's physical position, while its predictive distribution stays consistent with the spikes and flags stay at the well-specified rate. The large distance to the animal's physical position is expected because the decoder tracks the represented trajectory.",
+    "The animal sits still while the ensemble replays a sweep across the track at elevated firing rates, which the decoder is given. Its random walk does not describe this deterministic sweep, but each step of the sweep is small relative to the random walk's steps, so the decoder follows it far from the animal. The prediction stays consistent with the spikes, and flags stay near the well-specified rate. The large distance from the animal is expected: the decoder tracks the represented trajectory, not the animal.",
   momentum:
-    "The animal moves with momentum while the decoder assumes a memoryless random walk. The decoded position lags behind and decoding error rises, but each spike is compared with a prediction that earlier spikes have already pulled toward the lagged estimate, so only a modest share of spikes is flagged — a limitation of event-level checks.",
+    "The animal moves with momentum while the decoder assumes a memoryless random walk. The prediction lags behind the animal and decoding error rises. The diagnostics flag several times as many spikes as when the model is correct, but still only a modest share: a single spike localizes the animal only coarsely, so its likelihood extends well beyond the lag and most spikes still overlap the offset prediction. Only spikes from cells whose fields lie far from the predicted position are flagged — a limitation of checks made one spike at a time.",
   sparse_population:
-    "The animal holds still, the ordinary ensemble falls quiet, and a few narrow cells near the animal fire occasionally. The decoder is given these rates, but its random walk still expects movement, so between spikes the prediction spreads out; each narrow spike lands inside it. HPD overlap and the predictive check see consistency, while KL divergence flags the difference in spread, even though decoding stays accurate.",
+    "The animal holds still, the ordinary ensemble falls quiet, and a few narrow cells near the animal fire occasionally. The decoder is given these rates, but its random walk still expects movement, so between spikes the prediction spreads out; each narrow spike lands inside it. HPD overlap and the predictive p-value see consistency, while KL divergence flags the difference in spread, even though decoding stays accurate.",
 };
 
 // Conditions whose flagged spikes are the point open on one; the rest open on
@@ -531,7 +531,7 @@ function renderCondition(view, payload, manifest) {
   const component =
     payload.model_component === "—" ? "none" : payload.model_component.toLowerCase();
   const statsNote = note(
-    `Medians across ${manifest.macros.SimNRealizations} simulated sessions: the percentage of spikes each diagnostic flags, and the median absolute distance between the decoder's position estimate (the filtered posterior mean) and the animal's physical position. Deliberately perturbed model component: ${component}. Below: ${(range[1] - range[0]).toFixed(1)} s of one session, with the condition's time window shaded gray.`,
+    `Medians across ${manifest.macros.SimNRealizations} simulated sessions of the percentage of spikes each diagnostic flags and of the absolute distance between the decoder's position estimate (the filtered posterior mean) and the animal's physical position. Deliberately perturbed model component: ${component}. Below: ${(range[1] - range[0]).toFixed(1)} s of one session, with the condition's time window shaded gray.`,
   );
 
   // Mean normalized likelihood per spike-containing step, as in Figure 3a.
