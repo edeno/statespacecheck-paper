@@ -5,7 +5,7 @@ Loren M. Frank, Uri T. Eden, and Eric L. Denovellis. The paper compares one-step
 state predictions with the information in individual spikes using HPD overlap,
 a rank-based predictive check, and KL divergence.
 
-- **Read:** [manuscript PDF](manuscript/main.pdf)
+- **Read:** [bioRxiv preprint](https://www.biorxiv.org/content/10.64898/2026.11.10.765696v1) or the [manuscript PDF](manuscript/main.pdf)
 - **Explore:** [interactive project website](https://edeno.github.io/statespacecheck-paper/)
 - **Reproduce:** [complete instructions](docs/reproduce.md)
 - **Apply the measures:** [`statespacecheck` documentation](https://edeno.github.io/statespacecheck/)

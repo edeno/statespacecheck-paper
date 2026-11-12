@@ -44,6 +44,9 @@ authors:
       Francisco
 preferred-citation:
   type: article
+  journal: "bioRxiv"
+  doi: "10.64898/2026.11.10.765696"
+  url: "https://www.biorxiv.org/content/10.64898/2026.11.10.765696v1"
   title: "Local goodness-of-fit measures for neural decoding"
   authors:
     - family-names: Zeng
